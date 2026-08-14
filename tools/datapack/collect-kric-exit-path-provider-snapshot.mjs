@@ -259,7 +259,11 @@ function classifyProviderPayload(payload, queryId) {
   if (Array.isArray(payload)) {
     providerRows = payload;
   } else {
-    assertKeys(payload, ["body", "header"], "KRIC EXIT response envelope keys");
+    try {
+      assertKeys(payload, ["body", "header"], "KRIC EXIT response envelope keys");
+    } catch {
+      throw new Error(buildEnvelopeDiagnostic(payload, queryId));
+    }
     if (!payload.header || typeof payload.header !== "object" || Array.isArray(payload.header)) {
       throw new Error(`KRIC EXIT response header mismatch: ${queryId}`);
     }
@@ -451,6 +455,27 @@ function assertKeys(value, keys, label) {
   const actual = Object.keys(value).sort(compareBytes);
   const expected = [...keys].sort(compareBytes);
   if (canonicalJson(actual) !== canonicalJson(expected)) throw new Error(`${label} mismatch`);
+}
+
+function buildEnvelopeDiagnostic(payload, queryId) {
+  const candidateResultCode = payload?.header?.resultCode ?? payload?.resultCode;
+  const resultCode = typeof candidateResultCode === "string"
+    && /^[A-Za-z0-9._-]{1,32}$/.test(candidateResultCode)
+    ? candidateResultCode
+    : "UNKNOWN";
+  return [
+    `KRIC EXIT response envelope keys mismatch: ${queryId}/${resultCode}`,
+    `keys=${safeDiagnosticKeys(payload).join(",")}`,
+    `bodyKeys=${safeDiagnosticKeys(payload?.body).join(",")}`,
+  ].join("; ");
+}
+
+function safeDiagnosticKeys(value) {
+  if (!value || typeof value !== "object") return [];
+  return Object.keys(value)
+    .filter((key) => /^[A-Za-z0-9._-]{1,32}$/.test(key))
+    .sort(compareBytes)
+    .slice(0, 12);
 }
 
 function assertNonBlank(value, label) {
