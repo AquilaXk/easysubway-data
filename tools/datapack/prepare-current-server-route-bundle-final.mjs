@@ -32,15 +32,17 @@ export async function prepareCurrentServerRouteBundleFinal(input) {
   const routeEdgeInputPath = path.join(inputRoot, "route-edge-input.json");
   try {
     await mkdir(inputRoot);
-    await Promise.all([
-      writeFile(stationLineInputPath, stationLine.bytes, { flag: "wx", mode: 0o600 }),
-      writeFile(routeEdgeInputPath, routeEdge.bytes, { flag: "wx", mode: 0o600 }),
-    ]);
+    await writeFile(stationLineInputPath, stationLine.bytes, { flag: "wx", mode: 0o600 });
     await stages.emit({ ...input.emitterInputs, repositoryRoot: input.repositoryRoot ?? process.cwd(), stationLineInput: stationLine.value, routeEdgeInput: routeEdge.value, evaluationAt, output: paths.components });
+    const routeEdgeInput = await bindEmittedTopology(
+      routeEdge.value,
+      path.join(paths.components, "server-route-bundle", "manifest.signing-input.json"),
+    );
+    await writeFile(routeEdgeInputPath, Buffer.from(canonicalJson(routeEdgeInput)), { flag: "wx", mode: 0o600 });
     await stages.sign({ input: path.join(paths.components, "server-route-bundle"), output: paths["signed-server-route-bundle"] });
     const finalInput = {
       repositoryRoot: input.repositoryRoot ?? process.cwd(), repositoryGitSha: required(input.repositoryGitSha, "repository git sha"),
-      artifactRoot: paths["signed-server-route-bundle"], stationLineInput: stationLine.value, routeEdgeInput: routeEdge.value,
+      artifactRoot: paths["signed-server-route-bundle"], stationLineInput: stationLine.value, routeEdgeInput,
       evaluationAt,
     };
     await stages.final({ ...finalInput, output: paths.provisional });
@@ -58,6 +60,19 @@ export async function prepareCurrentServerRouteBundleFinal(input) {
     throw error;
   }
   return output;
+}
+
+async function bindEmittedTopology(routeEdgeInput, manifestPath) {
+  const manifest = (await canonicalInput(manifestPath, "emitted signing input")).value;
+  const topologySha256 = requiredSha256(manifest?.topologySha256, "emitted topology sha256");
+  const candidate = routeEdgeInput?.candidate;
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+    throw new Error("route-edge seed candidate is required");
+  }
+  if (Object.hasOwn(candidate, "topologySha256")) {
+    throw new Error("route-edge seed must not prebind topology identity");
+  }
+  return { ...routeEdgeInput, candidate: { ...candidate, topologySha256 } };
 }
 
 async function canonicalInput(target, label) {
@@ -114,6 +129,12 @@ async function absent(target) {
 function required(value, label) {
   if (typeof value !== "string" || value === "") {
     throw new Error(`${label} is required`);
+  }
+  return value;
+}
+function requiredSha256(value, label) {
+  if (typeof value !== "string" || !/^[a-f0-9]{64}$/.test(value)) {
+    throw new Error(`${label} must be lowercase SHA-256`);
   }
   return value;
 }
