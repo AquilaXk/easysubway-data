@@ -162,11 +162,13 @@ async function fetchPage({ fetchImpl, serviceKey, page, expectedTotalCount }) {
       redirect: "error",
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MILLIS),
     });
-  } catch {
-    fail("PROVIDER");
+  } catch (error) {
+    fail(classifyTransportFailure(error));
   }
-  if (!response?.ok || !/^application\/json(?:\s*;|$)/iu.test(response.headers.get("content-type") ?? "")) {
-    fail("PROVIDER");
+  if (!response || !Number.isSafeInteger(response.status)) fail("PROVIDER_NETWORK");
+  if (!response.ok) fail(classifyHttpFailure(response.status));
+  if (!/^application\/json(?:\s*;|$)/iu.test(response.headers.get("content-type") ?? "")) {
+    fail("PROVIDER_CONTENT_TYPE");
   }
   const bytes = await readBoundedResponseBody(response);
   let document;
@@ -196,38 +198,61 @@ async function fetchPage({ fetchImpl, serviceKey, page, expectedTotalCount }) {
   };
 }
 
+function classifyTransportFailure(error) {
+  const code = error?.cause?.code ?? error?.code;
+  if (new Set(["ENOTFOUND", "EAI_AGAIN"]).has(code)) return "PROVIDER_DNS";
+  if (typeof code === "string" && (code.startsWith("ERR_TLS_")
+    || code.startsWith("CERT_")
+    || new Set(["DEPTH_ZERO_SELF_SIGNED_CERT", "UNABLE_TO_VERIFY_LEAF_SIGNATURE"]).has(code))) {
+    return "PROVIDER_TLS";
+  }
+  if (error?.name === "TimeoutError" || error?.name === "AbortError"
+    || new Set(["ETIMEDOUT", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT"])
+      .has(code)) return "PROVIDER_TIMEOUT";
+  return "PROVIDER_NETWORK";
+}
+
+function classifyHttpFailure(status) {
+  if (status === 401 || status === 403) return "PROVIDER_HTTP_AUTHORIZATION";
+  if (status === 429) return "PROVIDER_HTTP_RATE_LIMIT";
+  if (status >= 500 && status <= 599) return "PROVIDER_HTTP_SERVER";
+  return "PROVIDER_HTTP_OTHER";
+}
+
 async function readBoundedResponseBody(response) {
   const contentLength = response.headers.get("content-length");
   if (contentLength !== null) {
-    if (!/^(?:0|[1-9][0-9]*)$/u.test(contentLength)
-      || !Number.isSafeInteger(Number(contentLength))
-      || Number(contentLength) > MAX_PAGE_BYTES) {
+    if (!/^(?:0|[1-9][0-9]*)$/u.test(contentLength) || !Number.isSafeInteger(Number(contentLength))) {
       try { await response.body?.cancel(); } catch {}
-      fail("PROVIDER");
+      fail("PROVIDER_BODY");
+    }
+    if (Number(contentLength) > MAX_PAGE_BYTES) {
+      try { await response.body?.cancel(); } catch {}
+      fail("PROVIDER_BODY_TOO_LARGE");
     }
   }
   const reader = response.body?.getReader?.();
-  if (!reader) fail("PROVIDER");
+  if (!reader) fail("PROVIDER_BODY");
   const chunks = [];
   let totalBytes = 0;
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      if (!(value instanceof Uint8Array)) fail("PROVIDER");
+      if (!(value instanceof Uint8Array)) fail("PROVIDER_BODY");
       totalBytes += value.byteLength;
       if (totalBytes > MAX_PAGE_BYTES) {
         try { await reader.cancel(); } catch {}
-        fail("PROVIDER");
+        fail("PROVIDER_BODY_TOO_LARGE");
       }
       chunks.push(Buffer.from(value.buffer, value.byteOffset, value.byteLength));
     }
   } catch (error) {
     try { await reader.cancel(); } catch {}
     if (/^MOLIT_TRANSFER_REVALIDATION_/u.test(error?.message ?? "")) throw error;
-    fail("PROVIDER");
+    fail("PROVIDER_BODY");
   }
-  if (totalBytes === 0) fail("PROVIDER");
+  if (totalBytes === 0) fail("PROVIDER_BODY");
   return Buffer.concat(chunks, totalBytes);
 }
 
