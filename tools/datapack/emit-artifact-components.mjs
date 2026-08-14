@@ -214,6 +214,7 @@ async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSp
       generatedEvidence = buildGeneratedEvidence({
         ...evidenceInput,
         bundleId: ids.bundleId,
+        candidateId: buildSpec.candidateId,
         source,
         stationSetSha256,
         sourceSetSha256: buildSpec.sourceSnapshotSetHash,
@@ -250,7 +251,7 @@ function buildGeneratedEvidence(input) {
   const candidateSeed = requireObject(routeEdgeSeed.candidate, "route-edge seed candidate");
   assertKeys(candidateSeed, ROUTE_EDGE_SEED_CANDIDATE_KEYS, "route-edge seed candidate keys");
   for (const [field, expected, label] of [
-    ["candidateId", input.bundleId, "candidate"],
+    ["candidateId", input.candidateId, "candidate"],
     ["stationSetSha256", input.stationSetSha256, "station set"],
     ["sourceSetSha256", input.sourceSetSha256, "source set"],
   ]) {
@@ -321,7 +322,7 @@ function assertExactProjection(actual, expected, orderFields, label) {
 function assertStationLineCandidate(candidate, input) {
   requireObject(candidate, "station-line candidate");
   for (const [field, expected, label] of [
-    ["candidateId", input.bundleId, "candidate"],
+    ["candidateId", input.candidateId, "candidate"],
     ["sourceSetSha256", input.sourceSetSha256, "source set"],
   ]) {
     if (candidate[field] !== expected) throw new Error(`station-line ${label} identity mismatch`);
