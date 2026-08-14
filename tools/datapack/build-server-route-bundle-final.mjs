@@ -49,6 +49,7 @@ const OUTPUT_FILES = [
 const BASE_CLI_KEYS = [
   "artifact-root", "evaluation-at", "output", "repository-git-sha", "route-edge-input", "station-line-input",
 ];
+const ELIGIBILITY_CLI_KEY = "eligibility-report";
 const RELEASE_CLI_KEYS = [
   "approval-evidence", "compatibility-evidence", "promotion-component", "promotion-inventory",
   "promotion-request", "promotion-workflow-run-id", "publication-receipt", "rebuild-parity-evidence",
@@ -122,8 +123,7 @@ export async function buildServerRouteBundleFinalEvidence(input) {
     materializationBytes,
     outputParent,
   });
-  const prePublicationFinal = buildServerRouteBundleFinal({
-    candidate: {
+  const candidate = {
       repository: "AquilaXk/easysubway-data",
       gitSha: repositoryGitSha,
       bundleId: artifact.manifest.bundleId,
@@ -141,7 +141,17 @@ export async function buildServerRouteBundleFinalEvidence(input) {
       activeFrom: artifact.manifest.activeFrom,
       freshUntil: artifact.manifest.freshUntil,
       keyId: artifact.manifest.keyId,
-    },
+  };
+  const eligibility = await routeAccessibilityEligibilityGate({
+    reportPath: input.eligibilityReportPath,
+    candidate,
+    materialization,
+    materializationBytes,
+    evaluation,
+    evaluationBytes,
+  });
+  const prePublicationFinal = buildServerRouteBundleFinal({
+    candidate,
     gates: {
       sourceFreshness: { state: sourceFreshness.state, evidenceSha256: sha256(sourceFreshnessBytes) },
       stationLineAccessibility: {
@@ -152,6 +162,7 @@ export async function buildServerRouteBundleFinalEvidence(input) {
         state: routeEdgeGateState(evaluation),
         evidenceSha256: sha256(evaluationBytes),
       },
+      routeAccessibilityEligibility: eligibility,
       artifactInventory: { state: "PASS", evidenceSha256: sha256(artifactInventoryBytes) },
       signature: artifact.signedManifestRawSha256 === null
         ? { state: "UNAVAILABLE", evidenceSha256: null }
@@ -668,6 +679,48 @@ function parseCanonicalJson(bytes, label) {
   return value;
 }
 
+async function routeAccessibilityEligibilityGate({ reportPath, candidate, materialization, materializationBytes, evaluation, evaluationBytes }) {
+  if (reportPath === undefined) return { state: "UNAVAILABLE", evidenceSha256: null };
+  const bytes = await readNonEmptyRegular(path.resolve(requiredRaw(reportPath, "eligibility report")), "eligibility report");
+  const report = parseCanonicalJson(bytes, "eligibility report");
+  assertKeys(report, [
+    "schemaVersion", "artifactKind", "decision", "candidate", "stationLineAccessibility", "routeEdgeEvaluation", "blockers", "eligibilitySha256",
+  ], "eligibility report keys");
+  assertKeys(report.stationLineAccessibility, [
+    "rowCount", "stateSummary", "materializationDigest", "evidenceSha256",
+  ], "eligibility station-line keys");
+  assertKeys(report.routeEdgeEvaluation, [
+    "edgeCount", "stateSummary", "evaluationDigest", "evidenceSha256",
+  ], "eligibility route-edge keys");
+  const payload = { ...report };
+  delete payload.eligibilitySha256;
+  if (report.schemaVersion !== 1 || report.artifactKind !== "route-accessibility-eligibility"
+    || !["ELIGIBLE", "INELIGIBLE"].includes(report.decision)
+    || report.eligibilitySha256 !== sha256(Buffer.from(canonicalJson(payload)))) {
+    throw new Error("eligibility report identity mismatch");
+  }
+  if (!Array.isArray(report.blockers) || report.blockers.some((blocker) => typeof blocker !== "string" || blocker.length === 0)
+    || canonicalJson(report.blockers) !== canonicalJson([...new Set(report.blockers)].sort(bytewise))) {
+    throw new Error("eligibility report blockers mismatch");
+  }
+  const evidenceSha256 = sha256(bytes);
+  const matches = canonicalJson(report.candidate) === canonicalJson(candidate)
+    && report.stationLineAccessibility.rowCount === materialization.rows.length
+    && canonicalJson(report.stationLineAccessibility.stateSummary) === canonicalJson(materialization.stateSummary)
+    && report.stationLineAccessibility?.materializationDigest === materialization.materializationDigest
+    && report.stationLineAccessibility?.evidenceSha256 === sha256(materializationBytes)
+    && report.routeEdgeEvaluation.edgeCount === evaluation.results.length
+    && canonicalJson(report.routeEdgeEvaluation.stateSummary) === canonicalJson(evaluation.stateSummary)
+    && report.routeEdgeEvaluation?.evaluationDigest === evaluation.evaluationDigest
+    && report.routeEdgeEvaluation?.evidenceSha256 === sha256(evaluationBytes)
+    && (report.decision === "ELIGIBLE" ? report.blockers.length === 0 : report.blockers.length > 0);
+  if (!matches) return { state: "IDENTITY_MISMATCH", evidenceSha256 };
+  return {
+    state: report.decision === "ELIGIBLE" ? "PASS" : "INELIGIBLE",
+    evidenceSha256,
+  };
+}
+
 async function readNonEmptyRegular(target, label) {
   let stat;
   try {
@@ -779,10 +832,12 @@ async function main(argv) {
   const cliArguments = Object.fromEntries(args);
   const suppliedKeys = Object.keys(cliArguments).sort(bytewise);
   const baseKeys = [...BASE_CLI_KEYS].sort(bytewise);
-  const releaseKeys = [...BASE_CLI_KEYS, ...RELEASE_CLI_KEYS].sort(bytewise);
+  const boundKeys = [...BASE_CLI_KEYS, ELIGIBILITY_CLI_KEY].sort(bytewise);
+  const releaseKeys = [...boundKeys, ...RELEASE_CLI_KEYS].sort(bytewise);
   const baseMode = canonicalJson(suppliedKeys) === canonicalJson(baseKeys);
+  const boundMode = canonicalJson(suppliedKeys) === canonicalJson(boundKeys);
   const releaseMode = canonicalJson(suppliedKeys) === canonicalJson(releaseKeys);
-  if (!baseMode && !releaseMode) throw new Error("CLI arguments mismatch");
+  if (!baseMode && !boundMode && !releaseMode) throw new Error("CLI arguments mismatch");
   const stationLinePath = path.resolve(requiredArg(args, "station-line-input"));
   const routeEdgePath = path.resolve(requiredArg(args, "route-edge-input"));
   const [stationLineBytes, routeEdgeBytes] = await Promise.all([
@@ -797,6 +852,7 @@ async function main(argv) {
     routeEdgeInput: parseCanonicalJson(routeEdgeBytes, "route-edge input"),
     evaluationAt: requiredArg(args, "evaluation-at"),
     output: requiredArg(args, "output"),
+    ...(boundMode || releaseMode ? { eligibilityReportPath: requiredArg(args, ELIGIBILITY_CLI_KEY) } : {}),
     ...(releaseMode ? {
       releaseEvidence: {
         approvalEvidencePath: requiredArg(args, "approval-evidence"),
