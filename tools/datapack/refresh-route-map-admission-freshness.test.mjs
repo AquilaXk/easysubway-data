@@ -5,30 +5,114 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  applyRouteMapFreshnessExtension,
   assertInventoryMirrorByteParity,
   replaceFileAtomically,
   replaceInventoryMirrors,
-  withRouteMapAdmissionFreshness,
 } from "./refresh-route-map-admission-freshness.mjs";
+import { freshnessPolicySha256 } from "./freshness-policy.mjs";
 
 const paths = ["canonical.json", "mobile.json"];
-const inventory = JSON.stringify({
+const now = Date.parse("2026-08-14T00:00:00.000Z");
+const inventoryValue = {
   sources: [{
     id: "route-map-source",
-    routeMapAdmissionEvidence: { capturedAt: "2024-02-29T12:00:00.000Z" },
+    routeMapAdmissionEvidence: {
+      snapshotId: "route-map-snapshot-1",
+      snapshotSha256: "a".repeat(64),
+      rawSha256: "b".repeat(64),
+      capturedAt: "2026-07-01T00:00:00.000Z",
+      freshUntil: "2026-08-15T00:00:00.000Z",
+    },
   }],
-});
+};
+const inventory = JSON.stringify(inventoryValue);
+const policy = {
+  schemaVersion: 2,
+  clockSkewSeconds: 300,
+  sourceClasses: [{
+    id: "route_map_asset",
+    sourceIds: ["route-map-source"],
+    reverificationCadence: "P30D",
+  }],
+};
 
-test("route-map freshness refresh는 mirror 불일치를 parse/write 전에 거부하고 정규화는 멱등이다", () => {
+function input(observation = {}) {
+  return {
+    schemaVersion: 1,
+    artifactKind: "source-freshness-extension-input",
+    evaluationAt: "2026-08-14T00:00:00.000Z",
+    sourceIdentity: {
+      sourceId: "route-map-source",
+      snapshotId: "route-map-snapshot-1",
+      snapshotSha256: "a".repeat(64),
+      rawEvidenceSha256: "b".repeat(64),
+      currentFreshUntil: "2026-08-15T00:00:00.000Z",
+    },
+    policyBinding: {
+      sourceClassId: "route_map_asset",
+      policySha256: freshnessPolicySha256(policy),
+    },
+    observation: {
+      schemaVersion: 1,
+      artifactKind: "source-freshness-observation",
+      outcome: "POSITIVE",
+      sourceId: "route-map-source",
+      snapshotId: "route-map-snapshot-1",
+      snapshotSha256: "a".repeat(64),
+      rawEvidenceSha256: "b".repeat(64),
+      observedAt: "2026-08-14T00:00:00.000Z",
+      evidenceSha256: "c".repeat(64),
+      providerValidUntil: null,
+      sourceValidUntil: null,
+      licenseValidUntil: null,
+      ...observation,
+    },
+  };
+}
+
+test("route-map consumer는 shared EXTENDED receipt만 전파하고 모든 실패에서 mutation 0이다", () => {
   assert.throws(() => assertInventoryMirrorByteParity([
     { bytes: Buffer.from(inventory) },
     { bytes: Buffer.from(`${inventory}\n`) },
   ]), /source inventory mirrors must be byte-identical before refresh/);
   assert.doesNotThrow(() => assertInventoryMirrorByteParity(paths.map(() => ({ bytes: Buffer.from(inventory) }))));
 
-  const normalized = withRouteMapAdmissionFreshness(JSON.parse(inventory));
-  assert.deepEqual(withRouteMapAdmissionFreshness(normalized), normalized);
-  assert.equal(normalized.sources[0].routeMapAdmissionEvidence.freshUntil, "2025-03-01T12:00:00.000Z");
+  const extended = applyRouteMapFreshnessExtension(inventoryValue, { input: input(), policy, now });
+  assert.equal(extended.changed, true);
+  assert.equal(
+    extended.inventory.sources[0].routeMapAdmissionEvidence.freshUntil,
+    "2026-09-13T00:00:00.000Z",
+  );
+  assert.deepEqual(
+    extended.inventory.sources[0].routeMapAdmissionEvidence.freshnessExtension,
+    extended.result,
+  );
+  assert.equal(inventoryValue.sources[0].routeMapAdmissionEvidence.freshnessExtension, undefined);
+
+  const noChangeInput = input({ outcome: "NO_CHANGE" });
+  const noChange = applyRouteMapFreshnessExtension(inventoryValue, { input: noChangeInput, policy, now });
+  assert.equal(noChange.changed, false);
+  assert.deepEqual(noChange.inventory, inventoryValue);
+
+  const mismatchedInventoryInput = input();
+  mismatchedInventoryInput.sourceIdentity.snapshotId = "other-snapshot";
+  mismatchedInventoryInput.observation.snapshotId = "other-snapshot";
+  assert.throws(
+    () => applyRouteMapFreshnessExtension(inventoryValue, {
+      input: mismatchedInventoryInput,
+      policy,
+      now,
+    }),
+    /route-map admission identity mismatch/,
+  );
+
+  const duplicateSource = structuredClone(inventoryValue);
+  duplicateSource.sources.push(structuredClone(duplicateSource.sources[0]));
+  assert.throws(
+    () => applyRouteMapFreshnessExtension(duplicateSource, { input: input(), policy, now }),
+    /exactly one route-map source/,
+  );
 });
 
 test("inventory 교체는 임시 파일을 남기지 않고 기존 파일 권한을 보존한다", async () => {

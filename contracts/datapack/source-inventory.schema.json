@@ -361,6 +361,47 @@
                   }
                 }
               },
+              "freshnessExtension": {
+                "type": "object",
+                "description": "동일 source/snapshot을 reviewed positive observation으로 재검증한 closed freshness extension receipt다.",
+                "additionalProperties": false,
+                "required": [
+                  "schemaVersion",
+                  "artifactKind",
+                  "decision",
+                  "reasonCode",
+                  "sourceId",
+                  "snapshotId",
+                  "snapshotSha256",
+                  "rawEvidenceSha256",
+                  "sourceClassId",
+                  "policySha256",
+                  "observationEvidenceSha256",
+                  "currentFreshUntil",
+                  "extendedFreshUntil",
+                  "evaluatedAt",
+                  "observedAt",
+                  "resultSha256"
+                ],
+                "properties": {
+                  "schemaVersion": { "const": 1 },
+                  "artifactKind": { "const": "source-freshness-extension-result" },
+                  "decision": { "const": "EXTENDED" },
+                  "reasonCode": { "const": "POSITIVE_OBSERVATION_EXTENDED" },
+                  "sourceId": { "type": "string", "minLength": 1 },
+                  "snapshotId": { "type": "string", "minLength": 1 },
+                  "snapshotSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                  "rawEvidenceSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                  "sourceClassId": { "type": "string", "minLength": 1 },
+                  "policySha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                  "observationEvidenceSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                  "currentFreshUntil": { "type": "string", "format": "date-time" },
+                  "extendedFreshUntil": { "type": "string", "format": "date-time" },
+                  "evaluatedAt": { "type": "string", "format": "date-time" },
+                  "observedAt": { "type": "string", "format": "date-time" },
+                  "resultSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+                }
+              },
               "currentTopologyAdmission": {
                 "type": "object",
                 "description": "historical route-map position snapshot을 current capital topology에 다시 결속한 admission이다.",
