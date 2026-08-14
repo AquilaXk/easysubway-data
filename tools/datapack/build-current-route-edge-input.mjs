@@ -108,7 +108,7 @@ function validateMaterialization({ stationLineInput, materialization, policy, ca
     for (const node of endpointNodes(edge, rule.endpointTarget)) {
       const line = sourceLines.get(nodeKey(node));
       if (!line) throw new Error("current route-edge endpoint identity mismatch");
-      for (const domain of ["FACILITY", "EXIT", "TRANSFER"]) required.set(`${line.stationId}\u0000${line.lineId}\u0000${domain}`, { ...line, domain });
+      for (const domain of ["FACILITY", "EXIT", "TRANSFER"]) required.set(`${line.stationId}\u0000${line.lineId}\u0000${line.operatorId}\u0000${domain}`, { ...line, domain });
     }
   }
   const inputLines = stationLineInput.stationLines.map(({ stationId, lineId, operatorId }) => ({ stationId, lineId, operatorId })).sort(compareStationLines);
@@ -116,7 +116,7 @@ function validateMaterialization({ stationLineInput, materialization, policy, ca
   if (canonicalJson(inputLines) !== canonicalJson(requiredLines)) throw new Error("current route-edge materialization subset mismatch");
   const scopedStationSetSha256 = sha256(canonicalJson([...new Set(requiredLines.map(({ stationId }) => stationId))].sort(compareBytes)));
   if (stationLineInput.candidate.stationSetSha256 !== scopedStationSetSha256) throw new Error("current route-edge materialization station-set identity mismatch");
-  const actual = new Map(materialization.rows.map((row) => [`${row.stationId}\u0000${row.lineId}\u0000${row.domain}`, row]));
+  const actual = new Map(materialization.rows.map((row) => [`${row.stationId}\u0000${row.lineId}\u0000${row.operatorId}\u0000${row.domain}`, row]));
   if (actual.size !== required.size || [...required.keys()].some((key) => !actual.has(key))) throw new Error("current route-edge materialization subset mismatch");
 }
 

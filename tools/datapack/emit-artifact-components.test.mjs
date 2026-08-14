@@ -61,6 +61,15 @@ test("current Data #9 seed는 full topology와 policy-required materialization s
     materialization: JSON.parse(materializationBytes),
     policy: JSON.parse(policyBytes),
   }), /materialization|subset|identity/i);
+  const staleOperatorMaterialization = JSON.parse(materializationBytes);
+  staleOperatorMaterialization.rows[0].operatorId = "stale-operator";
+  assert.throws(() => buildCurrentRouteEdgeInput({
+    canonicalPack: JSON.parse(fixtureBytes),
+    buildSpec: JSON.parse(buildSpecBytes),
+    stationLineInput: JSON.parse(stationLineBytes),
+    materialization: staleOperatorMaterialization,
+    policy: JSON.parse(policyBytes),
+  }), /materialization|subset|identity/i);
 });
 
 test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만 결속한다", async (t) => {
