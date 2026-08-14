@@ -93,6 +93,7 @@ test("CI는 EXIT path admission contract를 standalone contracts에서 실행한
   assert.match(standalone, /node --test[\s\S]*tools\/datapack\/collect-current-kric-exit-path-provider-snapshot\.test\.mjs/);
   assert.match(standalone, /node --test[\s\S]*tools\/datapack\/diagnose-current-kric-exit-path-query\.test\.mjs/);
   assert.match(standalone, /node --test[\s\S]*tools\/datapack\/build-exit-path-admission\.test\.mjs/);
+  assert.match(standalone, /node --test[\s\S]*tools\/datapack\/build-current-exit-path-source-admission\.test\.mjs/);
 });
 
 test("CI는 current source-separated topology contracts를 standalone contracts에서 실행한다", () => {
