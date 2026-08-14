@@ -19,11 +19,15 @@ export async function prepareCurrentServerRouteBundleFinal(input) {
   const stationLineInput = await canonicalInput(input.stationLineInputPath, "station-line input");
   const routeEdgeInput = await canonicalInput(input.routeEdgeInputPath, "route-edge input");
   const stages = { emit: emitArtifactComponents, sign: signServerRouteBundle, final: buildServerRouteBundleFinalEvidence, eligibility: buildRouteAccessibilityEligibility, ...input.stages };
-  for (const name of ["emit", "sign", "final", "eligibility"]) if (typeof stages[name] !== "function") throw new Error(`${name} stage is required`);
+  for (const name of ["emit", "sign", "final", "eligibility"]) {
+    if (typeof stages[name] !== "function") {
+      throw new Error(`${name} stage is required`);
+    }
+  }
   const temp = await mkdtemp(path.join(parent, ".current-server-route-final-"));
   const paths = Object.fromEntries(OUTPUTS.map((name) => [name, path.join(temp, name)]));
   try {
-    await stages.emit({ ...(input.emitterInputs ?? {}), repositoryRoot: input.repositoryRoot ?? process.cwd(), stationLineInput, routeEdgeInput, output: paths.components });
+    await stages.emit({ ...input.emitterInputs, repositoryRoot: input.repositoryRoot ?? process.cwd(), stationLineInput, routeEdgeInput, output: paths.components });
     await stages.sign({ input: path.join(paths.components, "server-route-bundle"), output: paths["signed-server-route-bundle"] });
     const finalInput = {
       repositoryRoot: input.repositoryRoot ?? process.cwd(), repositoryGitSha: required(input.repositoryGitSha, "repository git sha"),
@@ -49,35 +53,70 @@ export async function prepareCurrentServerRouteBundleFinal(input) {
 async function canonicalInput(target, label) {
   const bytes = await regular(target, label);
   const value = JSON.parse(bytes);
-  if (!bytes.equals(Buffer.from(canonicalJson(value)))) throw new Error(`${label} must be canonical JSON`);
+  if (!bytes.equals(Buffer.from(canonicalJson(value)))) {
+    throw new Error(`${label} must be canonical JSON`);
+  }
   return value;
 }
 
 async function assertInventory(root) {
-  const actual = (await readdir(root)).sort();
-  if (canonicalJson(actual) !== canonicalJson([...OUTPUTS].sort())) throw new Error("prepared output inventory mismatch");
+  const actual = (await readdir(root)).sort(bytewise);
+  if (canonicalJson(actual) !== canonicalJson([...OUTPUTS].sort(bytewise))) {
+    throw new Error("prepared output inventory mismatch");
+  }
 }
 
 async function regular(target, label) {
   const resolved = path.resolve(required(target, label));
   let stat;
-  try { stat = await lstat(resolved); } catch (error) { if (error.code === "ENOENT") throw new Error(`${label} is missing`); throw error; }
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.size === 0) throw new Error(`${label} must be a non-empty regular non-symlink`);
+  try {
+    stat = await lstat(resolved);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      throw new Error(`${label} is missing`);
+    }
+    throw error;
+  }
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size === 0) {
+    throw new Error(`${label} must be a non-empty regular non-symlink`);
+  }
   return readFile(resolved);
 }
 async function realDirectory(target, label) {
   const resolved = path.resolve(required(target, label));
   const stat = await lstat(resolved);
-  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error(`${label} must be a real directory`);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) {
+    throw new Error(`${label} must be a real directory`);
+  }
   return resolved;
 }
-async function absent(target) { try { await lstat(target); } catch (error) { if (error.code === "ENOENT") return; throw error; } throw new Error("output must not already exist"); }
-function required(value, label) { if (typeof value !== "string" || value === "") throw new Error(`${label} is required`); return value; }
+async function absent(target) {
+  try {
+    await lstat(target);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return;
+    }
+    throw error;
+  }
+  throw new Error("output must not already exist");
+}
+function required(value, label) {
+  if (typeof value !== "string" || value === "") {
+    throw new Error(`${label} is required`);
+  }
+  return value;
+}
+function bytewise(left, right) {
+  return Buffer.compare(Buffer.from(left), Buffer.from(right));
+}
 
 export function parsePrepareCurrentServerRouteBundleFinalArgs(argv) {
   const args = parseArgs(argv);
   const keys = ["source-sqlite", "source-provenance", "build-spec", "output", "map-pack-id", "catalog-pack-id", "bundle-id", "release-sequence", "active-from", "fresh-until", "built-at", "key-id", "evaluation-at", "station-line-input", "route-edge-input", "repository-git-sha"];
-  if (args.size !== keys.length || keys.some((key) => !args.has(key))) throw new Error("CLI arguments mismatch");
+  if (args.size !== keys.length || keys.some((key) => !args.has(key))) {
+    throw new Error("CLI arguments mismatch");
+  }
   return {
     output: requiredArg(args, "output"), repositoryGitSha: requiredArg(args, "repository-git-sha"), evaluationAt: requiredArg(args, "evaluation-at"),
     stationLineInputPath: requiredArg(args, "station-line-input"), routeEdgeInputPath: requiredArg(args, "route-edge-input"),
@@ -95,5 +134,10 @@ async function main(argv) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  main(process.argv.slice(2)).catch((error) => { process.stderr.write(`prepare-current-server-route-bundle-final: ${error.message}\n`); process.exitCode = 1; });
+  try {
+    await main(process.argv.slice(2));
+  } catch (error) {
+    process.stderr.write(`prepare-current-server-route-bundle-final: ${error.message}\n`);
+    process.exitCode = 1;
+  }
 }
