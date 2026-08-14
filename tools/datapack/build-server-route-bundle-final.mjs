@@ -623,7 +623,7 @@ function assertCandidateBinding(candidate, artifact, requireTopology) {
     throw new Error("candidate identity is required");
   }
   if (candidate.candidateId !== artifact.manifest.bundleId) throw new Error("candidate identity mismatch");
-  if (candidate.stationSetSha256 !== artifact.manifest.stationSetSha256) throw new Error("station set identity mismatch");
+  if (requireTopology && candidate.stationSetSha256 !== artifact.manifest.stationSetSha256) throw new Error("station set identity mismatch");
   if (candidate.sourceSetSha256 !== artifact.provenance.sourceSnapshotSetHash) throw new Error("source set identity mismatch");
   if (requireTopology && candidate.topologySha256 !== artifact.manifest.topologySha256) {
     throw new Error("topology identity mismatch");

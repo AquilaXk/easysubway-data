@@ -39,14 +39,11 @@ export function evaluateRouteAccessibilityEdges(input, policy) {
   const evaluationAtMillis = requiredUtcInstant(input.evaluationAt, "evaluationAt");
   const evaluationAt = new Date(evaluationAtMillis).toISOString();
   const stationLineIndex = validateStationLines(input.stationLines);
-  const materialization = validateMaterialization(
-    input.materialization,
-    candidate,
-    stationLineIndex,
-    evaluationAtMillis,
-  );
   const edges = validateEdges(input.routeEdges, stationLineIndex);
   validateRideEdgeSet(edges, validatedPolicy);
+  const materialization = validateMaterialization(
+    input.materialization, candidate, stationLineIndex, evaluationAtMillis, edges, validatedPolicy,
+  );
 
   const materializationRows = new Map(materialization.rows.map((row) => [materializationCellKey(row), row]));
   const results = edges.map((edge) => evaluateEdge({
@@ -144,15 +141,15 @@ function validateRidePolicy(value) {
   assertKeys(value, ["subwayLocal", "itxCheongchunExpress"], "RIDE invariant keys");
   assertKeys(
     value.subwayLocal,
-    ["serviceClass", "servicePattern", "sameLine", "lineSequenceDelta", "measuredSpeedKmhMinimum", "measuredSpeedKmhMaximum"],
+    ["serviceClass", "servicePattern", "sameLine", "measuredSpeedKmhMinimum", "measuredSpeedKmhMaximum", "admittedEdgeSetSha256", "digestShape"],
     "SUBWAY LOCAL invariant keys",
   );
   if (value.subwayLocal.serviceClass !== "SUBWAY"
     || value.subwayLocal.servicePattern !== "LOCAL"
     || value.subwayLocal.sameLine !== true
-    || value.subwayLocal.lineSequenceDelta !== 1
     || value.subwayLocal.measuredSpeedKmhMinimum !== 15
-    || value.subwayLocal.measuredSpeedKmhMaximum !== 110) {
+    || value.subwayLocal.measuredSpeedKmhMaximum !== 110
+    || value.subwayLocal.digestShape !== "sqlite-route-graph-v1") {
     throw new Error("SUBWAY LOCAL RIDE policy mismatch");
   }
   assertKeys(
@@ -165,6 +162,7 @@ function validateRidePolicy(value) {
     || value.itxCheongchunExpress.digestShape !== "sqlite-route-graph-v1") {
     throw new Error("ITX EXPRESS RIDE policy mismatch");
   }
+  assertSha256(value.subwayLocal.admittedEdgeSetSha256, "SUBWAY LOCAL admitted edge set");
   assertSha256(value.itxCheongchunExpress.admittedEdgeSetSha256, "ITX admitted edge set");
 }
 
@@ -199,7 +197,7 @@ function validateStationLines(values) {
   return { rows, byKey, stationIds };
 }
 
-function validateMaterialization(value, candidate, stationLineIndex, evaluationAtMillis) {
+function validateMaterialization(value, candidate, stationLineIndex, evaluationAtMillis, edges, policy) {
   assertKeys(value, ["candidate", "rows", "stateSummary", "materializationDigest"], "materialization keys");
   assertKeys(
     value.candidate,
@@ -209,11 +207,11 @@ function validateMaterialization(value, candidate, stationLineIndex, evaluationA
   for (const [key, label] of [
     ["candidateId", "candidate"], ["stationSetSha256", "station set"], ["sourceSetSha256", "source set"],
   ]) {
-    if (value.candidate[key] !== candidate[key]) throw new Error(`materialization ${label} identity mismatch`);
+    if (key !== "stationSetSha256" && value.candidate[key] !== candidate[key]) throw new Error(`materialization ${label} identity mismatch`);
   }
   assertNonBlank(value.candidate.mappingContractVersion, "materialization mapping contract version");
   assertNonBlank(value.candidate.materializerVersion, "materialization version");
-  if (!Array.isArray(value.rows) || value.rows.length !== stationLineIndex.rows.length * DOMAINS.length) {
+  if (!Array.isArray(value.rows)) {
     throw new Error("materialization denominator mismatch");
   }
   const rows = value.rows.map((row) => validateMaterializationRow(
@@ -232,11 +230,20 @@ function validateMaterialization(value, candidate, stationLineIndex, evaluationA
     if (keys.has(key)) throw new Error("duplicate materialization cell");
     keys.add(key);
   }
-  for (const line of stationLineIndex.rows) {
-    for (const domain of DOMAINS) {
-      if (!keys.has(materializationCellKey({ ...line, domain }))) throw new Error("materialization denominator mismatch");
+  const targets = new Map();
+  for (const edge of edges) {
+    const mapping = policy.edgeDomainMap[edge.edgeType];
+    if (!mapping || edge.edgeType === "RIDE") continue;
+    validateKnownEndpointShape(edge, mapping.endpointTarget);
+    for (const target of targetStationLines(edge, mapping.endpointTarget)) {
+      targets.set(stationLineKey(target), target);
     }
   }
+  const targetRows = [...targets.values()];
+  const scopedHash = sha256(canonicalJson([...new Set(targetRows.map(({ stationId }) => stationId))].sort(compareBytes)));
+  if (value.candidate.stationSetSha256 !== scopedHash) throw new Error("materialization scoped station set identity mismatch");
+  const expected = new Set(targetRows.flatMap((line) => DOMAINS.map((domain) => materializationCellKey({ ...line, domain }))));
+  if (keys.size !== expected.size || [...expected].some((key) => !keys.has(key))) throw new Error("materialization policy target denominator mismatch");
   const summary = Object.fromEntries(MATERIALIZATION_STATES.map((state) => [state, 0]));
   for (const row of rows) summary[row.state] += 1;
   if (canonicalJson(summary) !== canonicalJson(value.stateSummary)) throw new Error("materialization state summary mismatch");
@@ -330,6 +337,8 @@ function routeEndpoint(nodeId, stationLineIndex, edge) {
 }
 
 function validateRideEdgeSet(edges, policy) {
+  const localEdges = edges.filter(({ edgeType, serviceClass, servicePattern }) => edgeType === "RIDE" && serviceClass === "SUBWAY" && servicePattern === "LOCAL");
+  if (canonicalRideEdgeSetSha256(localEdges) !== policy.rideInvariant.subwayLocal.admittedEdgeSetSha256) throw new Error("SUBWAY LOCAL edge set identity mismatch");
   const itxEdges = edges.filter(({ edgeType, serviceClass }) => edgeType === "RIDE" && serviceClass === "ITX_CHEONGCHUN");
   if (canonicalRideEdgeSetSha256(itxEdges) !== policy.rideInvariant.itxCheongchunExpress.admittedEdgeSetSha256) {
     throw new Error("ITX EXPRESS edge set identity mismatch");
@@ -398,10 +407,7 @@ function validateRideInvariant(edge, policy) {
   const local = policy.rideInvariant.subwayLocal;
   const itx = policy.rideInvariant.itxCheongchunExpress;
   if (edge.serviceClass === local.serviceClass && edge.servicePattern === local.servicePattern) {
-    if (edge.from.lineId !== edge.to.lineId
-      || Math.abs(edge.from.lineSequence - edge.to.lineSequence) !== local.lineSequenceDelta) {
-      throw new Error("SUBWAY LOCAL RIDE must connect adjacent station-line sequences");
-    }
+    if (edge.from.lineId !== edge.to.lineId) throw new Error("SUBWAY LOCAL RIDE must stay on one line");
     if (edge.durationSeconds > 0 && edge.distanceMeters > 0) {
       const speedKmh = (edge.distanceMeters / edge.durationSeconds) * 3.6;
       if (speedKmh < local.measuredSpeedKmhMinimum || speedKmh > local.measuredSpeedKmhMaximum) {
