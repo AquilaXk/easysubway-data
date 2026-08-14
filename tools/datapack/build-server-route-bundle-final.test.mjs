@@ -11,6 +11,9 @@ import { constants, zstdCompressSync, zstdDecompressSync } from "node:zlib";
 import {
   buildServerRouteBundleFinalEvidence,
 } from "./build-server-route-bundle-final.mjs";
+import {
+  buildRouteAccessibilityEligibility,
+} from "./build-route-accessibility-eligibility.mjs";
 import { GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL } from "./emit-artifact-components.mjs";
 import {
   canonicalJson,
@@ -40,6 +43,60 @@ const SCRIPT = path.resolve("tools/datapack/build-server-route-bundle-final.mjs"
 const signingKeys = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const signingPrivateKey = signingKeys.privateKey.export({ type: "pkcs8", format: "pem" });
 const signingPublicKey = signingKeys.publicKey.export({ type: "spki", format: "pem" });
+
+test("current accessibility eligibility는 canonical prepublication evidence만 집계한다", async (t) => {
+  const fixture = await createFixture(t);
+  await writeEligibilityInputs(fixture);
+  const prepublicationRoot = path.join(fixture.temp, "prepublication");
+  await build(fixture, prepublicationRoot, FRESH_AT);
+
+  const report = await buildRouteAccessibilityEligibility(eligibilityInput(
+    fixture,
+    prepublicationRoot,
+    path.join(fixture.temp, "eligibility.json"),
+  ));
+  assert.equal(report.decision, "ELIGIBLE");
+  assert.equal(report.stationLineAccessibility.rowCount, 6);
+  assert.equal(report.routeEdgeEvaluation.edgeCount, fixture.routeEdgeInput.routeEdges.length);
+  const unresolvedFixture = await createFixture(t, {
+    configureInputs: ({ stationLineInput }) => {
+      stationLineInput.evidenceRows[0] = {
+        ...stationLineInput.evidenceRows[0],
+        state: "UNKNOWN",
+        evidenceKind: "PROVIDER_NO_DATA",
+        evidenceReason: "official record unavailable",
+      };
+    },
+  });
+  await writeEligibilityInputs(unresolvedFixture);
+  const unresolvedRoot = path.join(unresolvedFixture.temp, "prepublication");
+  await build(unresolvedFixture, unresolvedRoot, FRESH_AT);
+  const ineligible = await buildRouteAccessibilityEligibility(eligibilityInput(
+    unresolvedFixture,
+    unresolvedRoot,
+    path.join(unresolvedFixture.temp, "ineligible.json"),
+  ));
+  assert.equal(ineligible.decision, "INELIGIBLE");
+  assert.ok(ineligible.blockers.includes("stationLineAccessibility:UNKNOWN"));
+
+  for (const name of [
+    "source-freshness.json",
+    "artifact-inventory.json",
+    "station-line-accessibility.json",
+    "route-edge-evaluation.json",
+    "server-route-bundle-final.json",
+  ]) {
+    const root = path.join(fixture.temp, `mutated-${name}`);
+    await cp(prepublicationRoot, root, { recursive: true });
+    const target = path.join(root, name);
+    const value = await readJson(target);
+    value.reviewMutation = true;
+    await writeCanonical(target, value);
+    const output = path.join(fixture.temp, `${name}.eligibility.json`);
+    await assert.rejects(() => buildRouteAccessibilityEligibility(eligibilityInput(fixture, root, output)), /prepublication .* mismatch/);
+    await assert.rejects(() => readFile(output), /ENOENT/);
+  }
+});
 
 test("current Data #8 three-handoff input과 materialization bytes를 exact consumer로 수용한다", async () => {
   const [inputBytes, materializationBytes] = await Promise.all([
@@ -799,7 +856,17 @@ function completeRouteEdgeInput(sourceSetSha256, topologySha256) {
     routeEdges: [
       edge({ edgeId: "entry-a", edgeType: "ENTRY", fromNodeId: "station-a", toNodeId: "station-a:line-1" }),
       edge({ edgeId: "entry-b", edgeType: "ENTRY", fromNodeId: "station-b", toNodeId: "station-b:line-1" }),
-      edge({ edgeId: "ride-a-b", edgeType: "RIDE", fromNodeId: "station-a:line-1", toNodeId: "station-b:line-1", durationSeconds: 120, distanceMeters: 1000, servicePattern: "LOCAL" }),
+      edge({ edgeId: "exit-a", edgeType: "EXIT", fromNodeId: "station-a:line-1", toNodeId: "station-a" }),
+      edge({ edgeId: "exit-b", edgeType: "EXIT", fromNodeId: "station-b:line-1", toNodeId: "station-b" }),
+      ...Array.from({ length: 2220 }, (_, index) => edge({
+        edgeId: `ride-${String(index).padStart(4, "0")}`,
+        edgeType: "RIDE",
+        fromNodeId: index % 2 === 0 ? "station-a:line-1" : "station-b:line-1",
+        toNodeId: index % 2 === 0 ? "station-b:line-1" : "station-a:line-1",
+        durationSeconds: 120,
+        distanceMeters: 1000,
+        servicePattern: "LOCAL",
+      })),
     ],
   };
 }
@@ -1059,6 +1126,26 @@ async function build(fixture, output, evaluationAt, releaseEvidence = undefined,
     ...(releaseEvidence === undefined ? {} : { clock: () => Date.parse(FRESH_AT) }),
     ...extraInput,
   });
+}
+
+function eligibilityInput(fixture, prepublicationRoot, output) {
+  return {
+    prepublicationRoot,
+    artifactRoot: fixture.artifactRoot,
+    stationLineInput: path.join(fixture.temp, "eligibility-station-line-input.json"),
+    routeEdgeInput: path.join(fixture.temp, "eligibility-route-edge-input.json"),
+    repositoryGitSha: fixture.repositoryGitSha,
+    evaluationAt: FRESH_AT,
+    output,
+    repositoryRoot: fixture.repositoryRoot,
+  };
+}
+
+async function writeEligibilityInputs(fixture) {
+  await Promise.all([
+    writeCanonical(path.join(fixture.temp, "eligibility-station-line-input.json"), fixture.stationLineInput),
+    writeCanonical(path.join(fixture.temp, "eligibility-route-edge-input.json"), fixture.routeEdgeInput),
+  ]);
 }
 
 function installSigningEnvironment(t) {
