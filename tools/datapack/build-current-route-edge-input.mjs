@@ -34,7 +34,9 @@ export function buildCurrentRouteEdgeInput({ canonicalPack, buildSpec, stationLi
 
 export async function buildCurrentSourceRouteEdgeInput(input) {
   const canonicalPack = structuredClone(input.canonicalPack);
-  await applyCandidateNetworkEdgeProjection(input.buildSpec, canonicalPack);
+  await applyCandidateNetworkEdgeProjection(input.buildSpec, canonicalPack, {
+    repositoryRoot: input.repositoryRoot,
+  });
   return buildCurrentRouteEdgeInput({ ...input, canonicalPack });
 }
 
@@ -63,6 +65,7 @@ export async function main(argv, { repositoryRoot = fileURLToPath(new URL("../..
     stationLineInput,
     materialization,
     policy,
+    repositoryRoot: root,
   });
   const bytes = canonicalCurrentRouteEdgeInputJson(result);
   await publish(output, bytes);

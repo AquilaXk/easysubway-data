@@ -656,9 +656,23 @@ async function validateCandidateBuildSpec(buildSpec, fixture, admissions, admiss
   };
 }
 
-export async function applyCandidateNetworkEdgeProjection(buildSpec, fixture) {
-  const itxTopologyEvidence = await validateTrackedItxTopologyEvidence(buildSpec, fixture);
-  return validateAndApplyNetworkEdgeProvenance(buildSpec, fixture, itxTopologyEvidence);
+export async function applyCandidateNetworkEdgeProjection(
+  buildSpec,
+  fixture,
+  { repositoryRoot = root } = {},
+) {
+  const projectionRoot = path.resolve(repositoryRoot);
+  const itxTopologyEvidence = await validateTrackedItxTopologyEvidence(
+    buildSpec,
+    fixture,
+    projectionRoot,
+  );
+  return validateAndApplyNetworkEdgeProvenance(
+    buildSpec,
+    fixture,
+    itxTopologyEvidence,
+    projectionRoot,
+  );
 }
 
 function candidateBuildProvenance(buildSpec, buildSpecSha256, officialOdFareEvidence) {
@@ -800,19 +814,28 @@ function pinnedBuildInput(reference, label, keys = ["path", "sha256"]) {
   };
 }
 
-async function readPinnedBuildJson(reference, label, keys) {
+async function readPinnedBuildJson(reference, label, keys, repositoryRoot = root) {
   const pinned = pinnedBuildInput(reference, label, keys);
-  const requestedPath = path.resolve(root, pinned.path);
+  const requestedPath = path.resolve(repositoryRoot, pinned.path);
   const metadata = await lstat(requestedPath);
   if (!metadata.isFile() || metadata.isSymbolicLink()) {
     throw new Error(`${label}.path must be a regular non-symlink file`);
   }
-  const bytes = await readFile(await resolveBuildInputPath(pinned.path, `${label}.path`));
+  const bytes = await readFile(await resolveBuildInputPath(
+    pinned.path,
+    `${label}.path`,
+    repositoryRoot,
+  ));
   if (sha256(bytes) !== pinned.sha256) throw new Error(`${label}.sha256 must match tracked input bytes`);
   return { bytes, pinned, value: JSON.parse(bytes) };
 }
 
-async function validateAndApplyNetworkEdgeProvenance(buildSpec, fixture, itxTopologyEvidence) {
+async function validateAndApplyNetworkEdgeProvenance(
+  buildSpec,
+  fixture,
+  itxTopologyEvidence,
+  repositoryRoot = root,
+) {
   const evidence = buildSpec.networkEdgeEvidence;
   if (evidence == null) {
     if (fixture.packs?.some(({ artifactKind }) => artifactKind === "production")) {
@@ -831,6 +854,8 @@ async function validateAndApplyNetworkEdgeProvenance(buildSpec, fixture, itxTopo
   const sourceInventory = await readPinnedBuildJson(
     evidence.sourceInventory,
     "buildSpec.networkEdgeEvidence.sourceInventory",
+    undefined,
+    repositoryRoot,
   );
   if (sha256(Buffer.from(JSON.stringify(sourceInventory.value)))
     !== sha256HexString(buildSpec.sourceInventorySha256, "buildSpec.sourceInventorySha256")) {
@@ -840,25 +865,33 @@ async function validateAndApplyNetworkEdgeProvenance(buildSpec, fixture, itxTopo
     evidence.capitalTopology,
     "buildSpec.networkEdgeEvidence.capitalTopology",
     ["path", "sha256", "snapshotId"],
+    repositoryRoot,
   );
   const capitalTopologyReverification = await readPinnedBuildJson(
     evidence.capitalTopologyReverification,
     "buildSpec.networkEdgeEvidence.capitalTopologyReverification",
+    undefined,
+    repositoryRoot,
   );
   const capitalTopologyCandidate = await readPinnedBuildJson(
     evidence.capitalTopologyCandidate,
     "buildSpec.networkEdgeEvidence.capitalTopologyCandidate",
     ["path", "sha256", "snapshotId"],
+    repositoryRoot,
   );
   const itxContract = await readPinnedBuildJson(
     evidence.itxCoverageContract,
     "buildSpec.networkEdgeEvidence.itxCoverageContract",
+    undefined,
+    repositoryRoot,
   );
   const itxCurrentTopologyAdmission = evidence.itxCurrentTopologyAdmission == null
     ? null
     : await readPinnedBuildJson(
         evidence.itxCurrentTopologyAdmission,
         "buildSpec.networkEdgeEvidence.itxCurrentTopologyAdmission",
+        undefined,
+        repositoryRoot,
       );
   const topology = loadCapitalRouteTopologySnapshot(capitalTopology.value);
   const candidateTopology = loadCapitalRouteTopologySnapshot(capitalTopologyCandidate.value);
@@ -874,6 +907,8 @@ async function validateAndApplyNetworkEdgeProvenance(buildSpec, fixture, itxTopo
       sha256: incheonSource.routeMapAdmissionEvidence.snapshotSha256,
     },
     "buildSpec.networkEdgeEvidence.incheonTopology",
+    undefined,
+    repositoryRoot,
   );
   const incheonAdmission = admittedIncheonTopologyEvidence({
     sourceInventory: sourceInventory.value,
@@ -1877,7 +1912,7 @@ function applyItxNetworkEdgeEvidence(pack, admission) {
   }
 }
 
-export async function validateTrackedItxTopologyEvidence(buildSpec, fixture) {
+export async function validateTrackedItxTopologyEvidence(buildSpec, fixture, repositoryRoot = root) {
   if (fixture.packs?.some((pack) => (pack.transitTrips ?? [])
     .some(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN"))) {
     throw new Error("production ITX timetable rows require explicit admission");
@@ -1890,6 +1925,7 @@ export async function validateTrackedItxTopologyEvidence(buildSpec, fixture) {
   const evidencePath = await resolveBuildInputPath(
     buildSpec.itxTopologyEvidencePath,
     "buildSpec.itxTopologyEvidencePath",
+    repositoryRoot,
   );
   const evidenceBytes = await readFile(evidencePath);
   if (sha256HexString(buildSpec.itxTopologyEvidenceSha256, "buildSpec.itxTopologyEvidenceSha256")
@@ -2234,25 +2270,25 @@ function candidateBuildNow() {
   return value ? new Date(requiredUtcDateString(value, "EASYSUBWAY_DATAPACK_BUILD_NOW")) : new Date();
 }
 
-async function resolveBuildInputPath(value, label) {
-  const resolved = path.resolve(root, requiredString(value, label));
+async function resolveBuildInputPath(value, label, repositoryRoot = root) {
+  const resolved = path.resolve(repositoryRoot, requiredString(value, label));
   const canonicalPath = await realpath(resolved);
-  if (!(await isWithinAllowedBuildInputRoot(canonicalPath))) {
+  if (!(await isWithinAllowedBuildInputRoot(canonicalPath, repositoryRoot))) {
     throw new Error(`${label} must stay inside repository or temp directory`);
   }
   return canonicalPath;
 }
 
-async function isWithinAllowedBuildInputRoot(resolvedPath) {
-  const allowedRoots = await allowedBuildInputRoots();
+async function isWithinAllowedBuildInputRoot(resolvedPath, repositoryRoot = root) {
+  const allowedRoots = await allowedBuildInputRoots(repositoryRoot);
   return allowedRoots.some((allowedRoot) => {
     const relative = path.relative(allowedRoot, resolvedPath);
     return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
   });
 }
 
-async function allowedBuildInputRoots() {
-  const candidateRoots = [root, tmpdir(), process.env.RUNNER_TEMP]
+async function allowedBuildInputRoots(repositoryRoot = root) {
+  const candidateRoots = [repositoryRoot, tmpdir(), process.env.RUNNER_TEMP]
     .filter((value) => typeof value === "string" && value.trim() !== "")
     .map((value) => path.resolve(value));
   const canonicalRoots = [];
