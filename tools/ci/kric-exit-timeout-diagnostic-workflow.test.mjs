@@ -1,14 +1,38 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import test from "node:test";
+import { EventEmitter } from "node:events";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const workflowPath = path.join(root, ".github/workflows/kric-exit-timeout-diagnostic.yml");
 const ciPath = path.join(root, ".github/workflows/ci.yml");
 const ownershipPath = path.join(root, "tools/ci/data-test-ownership.json");
+const secretSyncPath = path.join(root, "tools/ci/sync-kric-exit-diagnostic-secret.mjs");
 const queryId = "dd25f07bd2351a43024b0aae0cd6a8f6075c565b43606fb84771e0f3ca20868c";
+
+function childResult({ code = 0, signal = null, error = null } = {}) {
+  const child = new EventEmitter();
+  let input = "";
+  child.stdin = {
+    end(value) {
+      input = value;
+    },
+  };
+  child.input = () => input;
+  child.kill = () => true;
+  queueMicrotask(() => {
+    if (error) child.emit("error", error);
+    else child.emit("close", code, signal);
+  });
+  return child;
+}
+
+async function loadSecretSync() {
+  assert.ok(existsSync(secretSyncPath), "KRIC EXIT diagnostic secret 동기화 helper를 찾지 못함");
+  return import(`${pathToFileURL(secretSyncPath).href}?cacheBust=${Date.now()}`);
+}
 
 function workflow() {
   assert.ok(existsSync(workflowPath), "KRIC EXIT timeout diagnostic workflow를 찾지 못함");
@@ -61,4 +85,89 @@ test("Data CI는 hosted diagnostic workflow contract를 owned required runner에
   assert.equal(entries.length, 1);
   assert.equal(entries[0].semanticOwner, "data26");
   assert.ok(entries[0].classes.includes("required-pr"));
+});
+
+test("KRIC EXIT secret 동기화는 fixed repository secret을 stdin으로만 전달한다", async () => {
+  const { syncKricExitDiagnosticSecret } = await loadSecretSync();
+  const serviceKey = "synthetic-kric-service-key-2026%2Bencoded";
+  const calls = [];
+
+  const result = await syncKricExitDiagnosticSecret({
+    argv: [],
+    env: {
+      KRIC_SERVICE_KEY: serviceKey,
+      kric_service_key: "lowercase-secret",
+      DATA_GO_KR_SERVICE_KEY: "other-provider-secret",
+      PATH: "/usr/bin",
+      GH_HOST: "github.example.test",
+      GH_CONFIG_DIR: "/tmp/synthetic-gh-config",
+      SAFE_ENV: "must-not-be-forwarded",
+    },
+    spawnImpl(command, args, options) {
+      const child = childResult();
+      calls.push({ command, args, options, child });
+      return child;
+    },
+  });
+
+  assert.deepEqual(result, {
+    secretName: "KRIC_SERVICE_KEY",
+    repository: "AquilaXk/easysubway-data",
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].command, "gh");
+  assert.deepEqual(calls[0].args, [
+    "secret", "set", "KRIC_SERVICE_KEY",
+    "--repo", "github.com/AquilaXk/easysubway-data",
+  ]);
+  assert.equal(calls[0].options.shell, false);
+  assert.equal(calls[0].options.timeout, 15_000);
+  assert.deepEqual(calls[0].options.env, {
+    PATH: "/usr/bin",
+    GH_HOST: "github.example.test",
+    GH_CONFIG_DIR: "/tmp/synthetic-gh-config",
+  });
+  assert.doesNotMatch(calls[0].args.join(" "), /synthetic-kric|DATA_GO_KR/);
+  assert.equal(calls[0].child.input(), serviceKey);
+});
+
+test("KRIC EXIT secret 동기화는 invalid input과 gh 실패를 sanitized fail-closed 처리한다", async () => {
+  const { syncKricExitDiagnosticSecret } = await loadSecretSync();
+  for (const serviceKey of [undefined, "", "line-one\nline-two", Buffer.from([0xc3, 0x28])]) {
+    let calls = 0;
+    await assert.rejects(() => syncKricExitDiagnosticSecret({
+      argv: [],
+      env: { KRIC_SERVICE_KEY: serviceKey },
+      spawnImpl() {
+        calls += 1;
+        return childResult();
+      },
+    }), (error) => {
+      assert.doesNotMatch(error.message, /line-one|synthetic|\u00c3/);
+      return true;
+    });
+    assert.equal(calls, 0);
+  }
+
+  let calls = 0;
+  await assert.rejects(() => syncKricExitDiagnosticSecret({
+    argv: ["--unexpected"],
+    env: { KRIC_SERVICE_KEY: "synthetic-kric-service-key-2026" },
+    spawnImpl() {
+      calls += 1;
+      return childResult();
+    },
+  }));
+  assert.equal(calls, 0);
+
+  await assert.rejects(() => syncKricExitDiagnosticSecret({
+    argv: [],
+    env: { KRIC_SERVICE_KEY: "synthetic-kric-service-key-2026" },
+    spawnImpl() {
+      return childResult({ error: new Error("raw synthetic-kric-service-key-2026") });
+    },
+  }), (error) => {
+    assert.doesNotMatch(error.message, /raw|synthetic-kric/);
+    return true;
+  });
 });

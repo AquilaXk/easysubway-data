@@ -4,19 +4,13 @@ import { fileURLToPath } from "node:url";
 import { normalizeDataGoKrServiceKey } from "../datapack/lib/provider-call-integrity.mjs";
 import { syncGhSecret } from "./lib/sync-gh-secret.mjs";
 
-const SECRET_NAME = "DATA_GO_KR_SERVICE_KEY";
+const SECRET_NAME = "KRIC_SERVICE_KEY";
 const REPOSITORY = "AquilaXk/easysubway-data";
 const GH_REPOSITORY = "github.com/AquilaXk/easysubway-data";
-const ENVIRONMENT = "itx-current-collection";
-const FAILURE_MESSAGE = "ITX current collection secret synchronization failed";
+const FAILURE_MESSAGE = "KRIC EXIT diagnostic secret synchronization failed";
 
-function requireNoArguments(argv) {
-  if (!Array.isArray(argv) || argv.length !== 0) {
-    throw new Error(FAILURE_MESSAGE);
-  }
-}
-
-function requiredCanonicalServiceKey(env) {
+function requiredServiceKey(argv, env) {
+  if (!Array.isArray(argv) || argv.length !== 0) throw new Error(FAILURE_MESSAGE);
   const serviceKey = env?.[SECRET_NAME];
   try {
     normalizeDataGoKrServiceKey(serviceKey, { label: SECRET_NAME });
@@ -26,19 +20,17 @@ function requiredCanonicalServiceKey(env) {
   return serviceKey;
 }
 
-export async function syncItxCurrentCollectionSecret({
+export async function syncKricExitDiagnosticSecret({
   argv = process.argv.slice(2),
   env = process.env,
   spawnImpl = spawn,
   setTimeoutImpl = setTimeout,
   clearTimeoutImpl = clearTimeout,
 } = {}) {
-  requireNoArguments(argv);
-  const serviceKey = requiredCanonicalServiceKey(env);
+  const serviceKey = requiredServiceKey(argv, env);
   await syncGhSecret({
     secretName: SECRET_NAME,
     ghRepository: GH_REPOSITORY,
-    environment: ENVIRONMENT,
     serviceKey,
     failureMessage: FAILURE_MESSAGE,
     env,
@@ -46,15 +38,11 @@ export async function syncItxCurrentCollectionSecret({
     setTimeoutImpl,
     clearTimeoutImpl,
   });
-  return {
-    secretName: SECRET_NAME,
-    repository: REPOSITORY,
-    environment: ENVIRONMENT,
-  };
+  return { secretName: SECRET_NAME, repository: REPOSITORY };
 }
 
 async function main() {
-  const result = await syncItxCurrentCollectionSecret();
+  const result = await syncKricExitDiagnosticSecret();
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 

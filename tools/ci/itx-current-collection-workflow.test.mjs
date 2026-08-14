@@ -295,7 +295,7 @@ test("ITX current collection secret 동기화는 stdin으로 gh secret set을 �
   assert.equal(calls[0].options.timeout, 15_000);
   assert.equal(Object.keys(calls[0].options.env).some((key) => key.toUpperCase() === "DATA_GO_KR_SERVICE_KEY"), false);
   assert.ok(calls[0].options.env.PATH);
-  assert.equal(calls[0].options.env.SAFE_ENV, "safe");
+  assert.equal(calls[0].options.env.SAFE_ENV, undefined);
   assert.doesNotMatch(calls[0].args.join(" "), /(?:--body|synthetic-itx-service-key-2026%2Bencoded)/);
   assert.equal(calls[0].child.input(), serviceKey);
 });
