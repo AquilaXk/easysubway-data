@@ -153,6 +153,8 @@
     {"path":"tools/datapack/build-datapack-accessibility-freshness.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":143},
     {"path":"tools/datapack/build-datapack-current-admission.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":432},
     {"path":"tools/datapack/build-exit-path-admission.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":184},
+    {"path":"tools/datapack/build-facility-accessibility-admission.test.mjs","semanticOwner":"data10","classes":["required-pr"],"durationMs":1000},
+    {"path":"tools/datapack/build-facility-source-admission.test.mjs","semanticOwner":"data10","classes":["required-pr"],"durationMs":1000},
     {"path":"tools/datapack/build-itx-current-topology-admission.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":131},
     {"path":"tools/datapack/build-launch-denominator-report.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":208},
     {"path":"tools/datapack/build-molit-nationwide-fixture.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":127},
