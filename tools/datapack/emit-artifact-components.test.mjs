@@ -91,8 +91,14 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   routePolicy.rideInvariant.itxCheongchunExpress.admittedEdgeSetSha256 = canonicalRideEdgeSetSha256([]);
   await writeFile(routePolicyPath, `${JSON.stringify(routePolicy, null, 2)}\n`);
   await writeFile(path.join(temp, "current.provenance.json"), canonicalJson({ schemaVersion: 1, artifactKind: "datapack-field-provenance", manifestSha256: hash(Buffer.from(canonicalJson(current))), packs: current.packs, candidateBuild: { buildSpecSha256: hash(spec) } }));
-  const stationLineInput = completeStationLineInput(buildSpec.sourceSnapshotSetHash);
-  const routeEdgeInput = completeRouteEdgeInput(buildSpec.sourceSnapshotSetHash);
+  const stationLineInput = completeStationLineInput(
+    buildSpec.sourceSnapshotSetHash,
+    buildSpec.candidateId,
+  );
+  const routeEdgeInput = completeRouteEdgeInput(
+    buildSpec.sourceSnapshotSetHash,
+    buildSpec.candidateId,
+  );
   routePolicy.rideInvariant.subwayLocal.admittedEdgeSetSha256 = canonicalRideEdgeSetSha256(
     routeEdgeInput.routeEdges.filter(({ edgeType, serviceClass, servicePattern }) => edgeType === "RIDE" && serviceClass === "SUBWAY" && servicePattern === "LOCAL"),
   );
@@ -142,6 +148,13 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   operatorMismatch.evidenceRows = operatorMismatch.evidenceRows.map((row) => ({ ...row, operatorId: "other-operator" }));
   await assert.rejects(() => run("station-line-operator-mismatch", { stationLineInput: operatorMismatch }), /unmapped materialization row/);
   assert.equal(await exists(path.join(temp, "station-line-operator-mismatch")), false);
+  const stationCandidateMismatch = structuredClone(stationLineInput);
+  stationCandidateMismatch.candidate.candidateId = "other-candidate";
+  await assert.rejects(
+    () => run("station-line-candidate-mismatch", { stationLineInput: stationCandidateMismatch }),
+    /station-line candidate identity mismatch/,
+  );
+  assert.equal(await exists(path.join(temp, "station-line-candidate-mismatch")), false);
 
   applySourceSql("INSERT INTO lines(id,operator_id,name_ko,name_en,color) VALUES('l2','o1','2호선','Line 2','#654321'); INSERT INTO station_lines(station_id,line_id,line_sequence) VALUES('s1','l2',1)");
   await writeBindings(temp, source, current, spec);
@@ -371,9 +384,9 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
 });
 
 function hash(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
-function completeStationLineInput(sourceSetSha256) {
+function completeStationLineInput(sourceSetSha256, candidateId) {
   const candidate = {
-    candidateId: "bundle-v1",
+    candidateId,
     stationSetSha256: hash(Buffer.from(canonicalJson(["s1"]))),
     sourceSetSha256,
     mappingContractVersion: "station-line-v1",
@@ -402,7 +415,7 @@ function completeStationLineInput(sourceSetSha256) {
   })));
   return { candidate, stationLines, evidenceRows };
 }
-function completeRouteEdgeInput(sourceSetSha256) {
+function completeRouteEdgeInput(sourceSetSha256, candidateId) {
   const rawEdges = [
     { edgeId: "entry-s1", edgeType: "ENTRY", fromNodeId: "s1", toNodeId: "s1:l1", durationSeconds: 0, distanceMeters: 0, servicePattern: "", serviceClass: "SUBWAY" },
     { edgeId: "exit-s1", edgeType: "EXIT", fromNodeId: "s1:l1", toNodeId: "s1", durationSeconds: 0, distanceMeters: 0, servicePattern: "", serviceClass: "SUBWAY" },
@@ -410,7 +423,7 @@ function completeRouteEdgeInput(sourceSetSha256) {
   ];
   return {
     candidate: {
-      candidateId: "bundle-v1",
+      candidateId,
       stationSetSha256: hash(Buffer.from(canonicalJson(["s1", "s2"]))),
       sourceSetSha256,
       policyVersion: "route-edge-evaluation-v2",
