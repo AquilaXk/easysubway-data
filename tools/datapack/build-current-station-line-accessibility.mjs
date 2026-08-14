@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { lstat, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -66,14 +66,15 @@ export function canonicalCurrentStationLineInputJson(value) {
 export async function main(argv, {
   repositoryRoot = fileURLToPath(new URL("../../", import.meta.url)),
   log = console.log,
+  testHooks = {},
 } = {}) {
   const args = parseArgs(argv);
   await outputMustBeAbsent(args.outputDirectory);
   const root = path.resolve(repositoryRoot);
   const [facilityAdmission, exitAdmission, transferAdmission] = await Promise.all([
-    readJson(path.join(root, FACILITY_FILE)),
-    readJson(path.join(root, EXIT_FILE)),
-    readJson(path.join(root, TRANSFER_FILE)),
+    readCanonicalJson(path.join(root, FACILITY_FILE), canonicalFacilitySourceAdmissionJson),
+    readCanonicalJson(path.join(root, EXIT_FILE), canonicalExitPathAdmissionJson),
+    readCanonicalJson(path.join(root, TRANSFER_FILE), canonicalTransferTopologyAdmissionJson, { trailingNewline: true }),
   ]);
   const result = buildCurrentStationLineAccessibility({
     facilityAdmission,
@@ -81,7 +82,7 @@ export async function main(argv, {
     transferAdmission,
     observedAt: args.observedAt,
   });
-  await publishDirectory(args.outputDirectory, result);
+  await publishDirectory(args.outputDirectory, result, testHooks);
   log(JSON.stringify({
     materializationDigest: result.materialization.materializationDigest,
     stateSummary: result.materialization.stateSummary,
@@ -181,13 +182,14 @@ function projectedEvidenceStationLines(rows) {
   })).sort(compareStationLines);
 }
 
-async function publishDirectory(outputDirectory, result) {
+async function publishDirectory(outputDirectory, result, testHooks) {
   const parent = path.dirname(outputDirectory);
   const parentBefore = await lstat(parent);
   if (!parentBefore.isDirectory() || parentBefore.isSymbolicLink()) {
     throw new Error("output parent must be a directory");
   }
   const staging = await mkdtemp(path.join(parent, ".current-station-line-accessibility-"));
+  let outputIdentity;
   try {
     await Promise.all([
       writeFile(path.join(staging, INPUT_FILE), canonicalCurrentStationLineInputJson(result.stationLineInput), {
@@ -200,8 +202,14 @@ async function publishDirectory(outputDirectory, result) {
     await outputMustBeAbsent(outputDirectory);
     const parentAfter = await lstat(parent);
     if (!sameIdentity(parentBefore, parentAfter)) throw new Error("output parent changed during build");
-    await rename(staging, outputDirectory);
+    await testHooks.beforeOutputReservation?.();
+    await mkdir(outputDirectory, { mode: 0o700 });
+    outputIdentity = await lstat(outputDirectory);
+    await rename(path.join(staging, INPUT_FILE), path.join(outputDirectory, INPUT_FILE));
+    await rename(path.join(staging, MATERIALIZATION_FILE), path.join(outputDirectory, MATERIALIZATION_FILE));
+    await rm(staging, { recursive: true });
   } catch (error) {
+    await removeOwnedDirectory(outputDirectory, outputIdentity);
     await rm(staging, { force: true, recursive: true });
     throw error;
   }
@@ -237,11 +245,27 @@ async function outputMustBeAbsent(target) {
   throw new Error("output directory must be absent");
 }
 
-async function readJson(filePath) {
+async function readCanonicalJson(filePath, canonicalize, { trailingNewline = false } = {}) {
   try {
-    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(await readFile(filePath)));
+    const source = new TextDecoder("utf-8", { fatal: true }).decode(await readFile(filePath));
+    const value = JSON.parse(source);
+    const canonicalSource = `${canonicalize(value)}${trailingNewline ? "\n" : ""}`;
+    if (source !== canonicalSource) throw new Error("source bytes are not canonical");
+    return value;
   } catch (error) {
-    throw new Error(`${path.basename(filePath)} must be valid JSON`, { cause: error });
+    throw new Error(`${path.basename(filePath)} must be valid canonical JSON`, { cause: error });
+  }
+}
+
+async function removeOwnedDirectory(target, identity) {
+  if (!identity) return;
+  try {
+    const current = await lstat(target);
+    if (current.isDirectory() && !current.isSymbolicLink() && sameIdentity(current, identity)) {
+      await rm(target, { recursive: true });
+    }
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
   }
 }
 

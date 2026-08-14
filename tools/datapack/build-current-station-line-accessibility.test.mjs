@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, stat } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,6 +16,11 @@ import { canonicalStationLineAccessibilityJson } from "./materialize-station-lin
 const REPOSITORY_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const OBSERVED_AT = "2026-08-14T09:50:00.000Z";
 const BASE_INPUT = await trackedInput();
+const ADMISSION_FILES = [
+  "tools/datapack/release/facility-source-admission.json",
+  "tools/datapack/release/current-exit-admission/exit-path-source-admission.json",
+  "tools/datapack/release/current-transfer-admission/transfer-topology-admission.json",
+];
 
 test("current FACILITY·EXIT·TRANSFER를 exact six-cell eligible materialization으로 결속한다", () => {
   const result = buildCurrentStationLineAccessibility(cloneInput());
@@ -79,6 +84,42 @@ test("CLI는 absent directory에 canonical two-file handoff를 mode 0600으로 �
   await assert.rejects(main(argv, { repositoryRoot: REPOSITORY_ROOT, log: () => {} }), /output.*absent/i);
 });
 
+test("CLI는 object가 같아도 noncanonical admission source bytes를 거부한다", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "current-station-line-noncanonical-"));
+  await copyAdmissions(root);
+  const facilityPath = path.join(root, ADMISSION_FILES[0]);
+  await writeFile(facilityPath, ` ${await readFile(facilityPath, "utf8")}`);
+  const outputDirectory = path.join(root, "output");
+
+  await assert.rejects(main([
+    "--observed-at", OBSERVED_AT,
+    "--output-directory", outputDirectory,
+  ], { repositoryRoot: root, log: () => {} }), /canonical/i);
+  await assert.rejects(lstat(outputDirectory), { code: "ENOENT" });
+});
+
+test("CLI는 publication 직전 경쟁 producer가 만든 output directory를 보존한다", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "current-station-line-race-"));
+  const outputDirectory = path.join(root, "output");
+  const ownerPath = path.join(outputDirectory, "owner.txt");
+
+  await assert.rejects(main([
+    "--observed-at", OBSERVED_AT,
+    "--output-directory", outputDirectory,
+  ], {
+    repositoryRoot: REPOSITORY_ROOT,
+    log: () => {},
+    testHooks: {
+      beforeOutputReservation: async () => {
+        await mkdir(outputDirectory);
+        await writeFile(ownerPath, "foreign-owner");
+      },
+    },
+  }), /exist|absent/i);
+  assert.equal(await readFile(ownerPath, "utf8"), "foreign-owner");
+  await assert.rejects(lstat(path.join(outputDirectory, "station-line-input.json")), { code: "ENOENT" });
+});
+
 test("tracked current input·materialization은 fresh fan-in output과 byte-identical이다", async () => {
   const result = buildCurrentStationLineAccessibility(cloneInput());
   const [inputBytes, materializationBytes] = await Promise.all([
@@ -98,6 +139,14 @@ async function trackedInput() {
     readJson("tools/datapack/release/current-transfer-admission/transfer-topology-admission.json"),
   ]);
   return { facilityAdmission, exitAdmission, transferAdmission, observedAt: OBSERVED_AT };
+}
+
+async function copyAdmissions(root) {
+  for (const relative of ADMISSION_FILES) {
+    const target = path.join(root, relative);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, await readFile(path.join(REPOSITORY_ROOT, relative)));
+  }
 }
 
 function cloneInput() {
