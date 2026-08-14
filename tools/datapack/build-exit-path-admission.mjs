@@ -14,11 +14,17 @@ const SOURCE_ADMISSION_KEYS = [
   "schemaVersion", "artifactKind", "candidateId", "sourceId", "snapshotId", "rawSha256",
   "sourceSnapshotSetHash", "stationSetSha256", "stationLineMappingSha256", "queryPlanSha256",
   "coverageScopeSha256", "mappingContractVersion", "decision", "productionUseAllowed", "approvedAt",
-  "provenanceId", "licenseId",
+  "provenanceId", "licenseId", "providerSnapshotDigest", "providerSnapshotRawSha256",
+  "providerCollectionPlanDigest", "providerQueryPlanSha256", "facilityAdmissionDigest",
+  "facilityStationLineMappingSha256",
 ];
 const SNAPSHOT_KEYS = [
   "schemaVersion", "artifactKind", "sourceId", "snapshotId", "capturedAt", "freshUntil",
-  "coverage", "queryPlan", "results",
+  "coverage", "queryPlan", "results", "providerSnapshotIdentity",
+];
+const PROVIDER_SNAPSHOT_IDENTITY_KEYS = [
+  "sourceId", "snapshotId", "capturedAt", "freshUntil", "snapshotDigest", "rawSha256",
+  "collectionPlanDigest", "queryPlanSha256",
 ];
 const QUERY_KEYS = [
   "queryId", "routeEdgeId", "providerOperatorId", "providerLineId", "providerStationId", "providerNextStationId",
@@ -61,7 +67,7 @@ export function buildExitPathAdmission(input) {
     throw new Error("EXIT snapshot arrays must use canonical byte order");
   }
   const rawSha256 = sha256(rawSnapshotBytes);
-  validateSourceSnapshotSet(input.sourceSnapshots, candidate.sourceSetSha256, snapshot, rawSha256);
+  validateSourceSnapshotSet(input.sourceSnapshots, candidate.sourceSetSha256);
   const sourceAdmission = validateSourceAdmission({
     value: input.sourceAdmission,
     candidate,
@@ -91,6 +97,12 @@ export function buildExitPathAdmission(input) {
     productionUseAllowed: sourceAdmission.productionUseAllowed,
     provenanceId: sourceAdmission.provenanceId,
     licenseId: sourceAdmission.licenseId,
+    providerSnapshotDigest: sourceAdmission.providerSnapshotDigest,
+    providerSnapshotRawSha256: sourceAdmission.providerSnapshotRawSha256,
+    providerCollectionPlanDigest: sourceAdmission.providerCollectionPlanDigest,
+    providerQueryPlanSha256: sourceAdmission.providerQueryPlanSha256,
+    facilityAdmissionDigest: sourceAdmission.facilityAdmissionDigest,
+    facilityStationLineMappingSha256: sourceAdmission.facilityStationLineMappingSha256,
   });
   const cells = stationLines.map((stationLine) => buildCell({
     candidate,
@@ -188,7 +200,7 @@ function normalizeStationLine(line) {
 
 function validateSnapshot(value, observedAt) {
   assertKeys(value, SNAPSHOT_KEYS, "EXIT snapshot keys");
-  if (value.schemaVersion !== 2 || value.artifactKind !== "exit-path-normalized-source-snapshot") {
+  if (value.schemaVersion !== 3 || value.artifactKind !== "exit-path-normalized-source-snapshot") {
     throw new Error("EXIT snapshot schema mismatch");
   }
   for (const key of ["sourceId", "snapshotId"]) assertNonBlank(value[key], `EXIT snapshot ${key}`);
@@ -196,6 +208,9 @@ function validateSnapshot(value, observedAt) {
   const freshUntil = requiredUtcInstant(value.freshUntil, "EXIT snapshot freshUntil");
   if (capturedAt > observedAt) throw new Error("EXIT snapshot is future-dated");
   if (freshUntil <= capturedAt) throw new Error("EXIT snapshot freshness interval is invalid");
+  const providerSnapshotIdentity = validateProviderSnapshotIdentity(
+    value.providerSnapshotIdentity, value, capturedAt, freshUntil,
+  );
   assertKeys(value.coverage, ["exhaustive", "queryIds"], "EXIT snapshot coverage keys");
   if (typeof value.coverage.exhaustive !== "boolean") throw new Error("EXIT snapshot coverage exhaustive must be boolean");
   const queryPlan = validateQueryPlan(value.queryPlan);
@@ -213,9 +228,31 @@ function validateSnapshot(value, observedAt) {
     ...value,
     capturedAt: new Date(capturedAt).toISOString(),
     freshUntil: new Date(freshUntil).toISOString(),
+    providerSnapshotIdentity,
     coverage: canonicalObject({ exhaustive: value.coverage.exhaustive, queryIds: orderedQueryIds }),
     queryPlan: orderedQueryPlan,
     results: orderedResults,
+  });
+}
+
+function validateProviderSnapshotIdentity(value, snapshot, capturedAt, freshUntil) {
+  assertKeys(value, PROVIDER_SNAPSHOT_IDENTITY_KEYS, "EXIT provider snapshot identity keys");
+  for (const key of ["sourceId", "snapshotId"]) {
+    assertNonBlank(value[key], `EXIT provider snapshot ${key}`);
+  }
+  for (const key of ["snapshotDigest", "rawSha256", "collectionPlanDigest", "queryPlanSha256"]) {
+    assertSha256(value[key], `EXIT provider snapshot ${key}`);
+  }
+  const providerCapturedAt = requiredUtcInstant(value.capturedAt, "EXIT provider snapshot capturedAt");
+  const providerFreshUntil = requiredUtcInstant(value.freshUntil, "EXIT provider snapshot freshUntil");
+  if (value.sourceId !== snapshot.sourceId || value.snapshotId !== snapshot.snapshotId
+    || providerCapturedAt !== capturedAt || providerFreshUntil !== freshUntil) {
+    throw new Error("EXIT provider snapshot identity mismatch");
+  }
+  return canonicalObject({
+    ...value,
+    capturedAt: new Date(providerCapturedAt).toISOString(),
+    freshUntil: new Date(providerFreshUntil).toISOString(),
   });
 }
 
@@ -278,30 +315,27 @@ function validateRecord(record) {
   return canonicalObject(record);
 }
 
-function validateSourceSnapshotSet(value, expectedHash, snapshot, rawSha256) {
+function validateSourceSnapshotSet(value, expectedHash) {
   if (!Array.isArray(value) || value.length === 0) throw new Error("sourceSnapshots must be a non-empty array");
   if (sha256(JSON.stringify(value)) !== expectedHash) throw new Error("source snapshot set identity mismatch");
   const seen = new Set();
-  let matches = 0;
   for (const entry of value) {
-    assertKeys(entry, ["sourceId", "snapshotId", "rawSha256"], "source snapshot entry keys");
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new Error("source snapshot entry mismatch");
+    }
     for (const key of ["sourceId", "snapshotId"]) assertNonBlank(entry[key], `source snapshot ${key}`);
     assertSha256(entry.rawSha256, "source snapshot rawSha256");
     const key = `${entry.sourceId}\0${entry.snapshotId}`;
     if (seen.has(key)) throw new Error("duplicate source snapshot identity");
     seen.add(key);
-    if (entry.sourceId === snapshot.sourceId
-      && entry.snapshotId === snapshot.snapshotId
-      && entry.rawSha256 === rawSha256) matches += 1;
   }
-  if (matches !== 1) throw new Error("source snapshot membership mismatch");
 }
 
 function validateSourceAdmission({
   value, candidate, snapshot, rawSha256, observedAt, stationLineMappingSha256,
 }) {
   assertKeys(value, SOURCE_ADMISSION_KEYS, "EXIT source admission keys");
-  if (value.schemaVersion !== 1 || value.artifactKind !== "exit-path-source-admission") {
+  if (value.schemaVersion !== 2 || value.artifactKind !== "exit-path-source-admission") {
     throw new Error("EXIT source admission schema mismatch");
   }
   for (const key of [
@@ -310,6 +344,8 @@ function validateSourceAdmission({
   for (const key of [
     "rawSha256", "sourceSnapshotSetHash", "stationSetSha256", "stationLineMappingSha256",
     "queryPlanSha256", "coverageScopeSha256", "provenanceId", "licenseId",
+    "providerSnapshotDigest", "providerSnapshotRawSha256", "providerCollectionPlanDigest",
+    "providerQueryPlanSha256", "facilityAdmissionDigest", "facilityStationLineMappingSha256",
   ]) assertSha256(value[key], `EXIT source admission ${key}`);
   if (!new Set(["APPROVED", "BLOCKED"]).has(value.decision)
     || typeof value.productionUseAllowed !== "boolean") {
@@ -330,6 +366,10 @@ function validateSourceAdmission({
     [value.queryPlanSha256, sha256(canonicalJson(snapshot.queryPlan))],
     [value.coverageScopeSha256, sha256(canonicalJson(snapshot.coverage))],
     [value.mappingContractVersion, candidate.mappingContractVersion],
+    [value.providerSnapshotDigest, snapshot.providerSnapshotIdentity.snapshotDigest],
+    [value.providerSnapshotRawSha256, snapshot.providerSnapshotIdentity.rawSha256],
+    [value.providerCollectionPlanDigest, snapshot.providerSnapshotIdentity.collectionPlanDigest],
+    [value.providerQueryPlanSha256, snapshot.providerSnapshotIdentity.queryPlanSha256],
   ];
   if (identities.some(([actual, expected]) => actual !== expected)) {
     throw new Error("EXIT source admission identity mismatch");
@@ -452,11 +492,11 @@ function resolveCellOutcome({
   if (results.some(({ state }) => state === "FAILED")) {
     return cellOutcome("BLOCKED_WITH_EVIDENCE", "PROVIDER_REQUEST_FAILED", resultHash);
   }
-  if (results.some(({ state }) => state === "PROVIDER_NO_DATA")) {
-    return cellOutcome("UNKNOWN", "PROVIDER_NO_DATA_IS_NOT_ABSENCE", resultHash);
-  }
   if (results.some(({ state }) => state === "OBSERVED_EXIT_PATH")) {
     return cellOutcome("ADMITTED_EXIT_PATH", "OFFICIAL_EXIT_PATH_PRESENT", resultHash);
+  }
+  if (results.some(({ state }) => state === "PROVIDER_NO_DATA")) {
+    return cellOutcome("UNKNOWN", "PROVIDER_NO_DATA_IS_NOT_ABSENCE", resultHash);
   }
   if (results.every(({ state }) => state === "EXPLICIT_ZERO")) {
     return snapshot.coverage.exhaustive

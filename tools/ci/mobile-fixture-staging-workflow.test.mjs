@@ -107,6 +107,7 @@ test("CI는 TRANSFER topology admission과 current source revalidation contract�
   assertRequiredOwned([
     "tools/datapack/build-transfer-topology-admission.test.mjs",
     "tools/datapack/revalidate-current-molit-transfer-source.test.mjs",
+    "tools/datapack/build-current-transfer-source-admission.test.mjs",
   ]);
 });
 
@@ -118,6 +119,7 @@ test("CI는 EXIT path admission contract를 owned required runner에서 실행�
     "tools/datapack/collect-current-kric-exit-path-provider-snapshot.test.mjs",
     "tools/datapack/diagnose-current-kric-exit-path-query.test.mjs",
     "tools/datapack/build-exit-path-admission.test.mjs",
+    "tools/datapack/build-current-exit-path-source-admission.test.mjs",
   ]);
 });
 
