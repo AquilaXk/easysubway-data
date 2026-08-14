@@ -26,13 +26,26 @@ test("current FINAL preparation은 closed stage order와 output inventory를 보
   assert.equal(parsed.stationLineInputPath, stationLineInputPath);
   assert.equal(parsed.routeEdgeInputPath, routeEdgeInputPath);
   assert.equal(parsed.repositoryGitSha, "a".repeat(40));
+  assert.equal(parsed.emitterInputs.evaluationAt, undefined);
   assert.throws(() => parsePrepareCurrentServerRouteBundleFinalArgs([...argv, "--extra", "x"]), /CLI arguments mismatch/);
+  let eligibilityInputBytes;
   const stages = Object.fromEntries(["emit", "sign", "final", "eligibility"].map((name) => [name, async (input) => {
     calls.push([name, input]);
-    if (name === "eligibility") await writeFile(input.output, name);
-    else {
+    if (name === "eligibility") {
+      eligibilityInputBytes = await Promise.all([
+        readFile(input.stationLineInput, "utf8"),
+        readFile(input.routeEdgeInput, "utf8"),
+      ]);
+      await writeFile(input.output, name);
+    } else {
       await mkdir(input.output, { recursive: true });
       await writeFile(path.join(input.output, ".done"), name);
+    }
+    if (name === "sign") {
+      await Promise.all([
+        writeFile(stationLineInputPath, '{"mutated":true}'),
+        writeFile(routeEdgeInputPath, '{"mutated":true}'),
+      ]);
     }
   }]));
   await prepareCurrentServerRouteBundleFinal({
@@ -41,6 +54,7 @@ test("current FINAL preparation은 closed stage order와 output inventory를 보
     evaluationAt: "2026-08-14T00:00:00.000Z",
     stationLineInputPath,
     routeEdgeInputPath,
+    emitterInputs: { evaluationAt: "2026-08-13T00:00:00.000Z" },
     stages,
   });
   assert.deepEqual(calls.map(([name]) => name), ["emit", "sign", "final", "eligibility", "final"]);
@@ -48,6 +62,10 @@ test("current FINAL preparation은 closed stage order와 output inventory를 보
   assert.equal(calls[2][1].artifactRoot, calls[1][1].output);
   assert.equal(calls[3][1].prepublicationRoot, calls[2][1].output);
   assert.equal(calls[4][1].eligibilityReportPath, calls[3][1].output);
+  assert.equal(calls[0][1].evaluationAt, "2026-08-14T00:00:00.000Z");
+  assert.notEqual(calls[3][1].stationLineInput, stationLineInputPath);
+  assert.notEqual(calls[3][1].routeEdgeInput, routeEdgeInputPath);
+  assert.deepEqual(eligibilityInputBytes, ["{}", "{}"]);
   assert.deepEqual((await readdir(output)).sort(), ["bound", "components", "provisional", "route-accessibility-eligibility.json", "signed-server-route-bundle"]);
   assert.equal(await readFile(path.join(output, "route-accessibility-eligibility.json"), "utf8"), "eligibility");
 });
