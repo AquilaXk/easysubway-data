@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmod, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -83,11 +84,45 @@ test("current ODCloud rows가 locked snapshot과 같으면 sanitized no-change e
     const officialFile = path.join(fileDirectory, "official.csv");
     const tamperedFile = path.join(fileDirectory, "tampered.csv");
     const linkedFile = path.join(fileDirectory, "linked.csv");
+    const fifoFile = path.join(fileDirectory, "fifo.csv");
     const tamperedBytes = Buffer.from(trackedRawBytes);
     tamperedBytes[tamperedBytes.length - 1] ^= 1;
     await writeFile(officialFile, trackedRawBytes);
     await writeFile(tamperedFile, tamperedBytes);
     await symlink(officialFile, linkedFile);
+    assert.equal(spawnSync("mkfifo", [fifoFile]).status, 0);
+    const fifoOutput = path.join(fileDirectory, "fifo-evidence.json");
+    const fifoResult = spawnSync(process.execPath, [
+      path.join(root, "tools/datapack/revalidate-current-molit-transfer-source.mjs"),
+      "--observed-at", observedAt,
+      "--official-file", fifoFile,
+      "--output", fifoOutput,
+    ], { encoding: "utf8", timeout: 1_000 });
+    assert.equal(fifoResult.error, undefined);
+    assert.equal(fifoResult.status, 1);
+    assert.equal(fifoResult.stderr.trim(), "MOLIT_TRANSFER_REVALIDATION_OFFICIAL_FILE");
+    await assert.rejects(stat(fifoOutput), { code: "ENOENT" });
+
+    const growingFile = path.join(fileDirectory, "growing.csv");
+    const growingOutput = path.join(fileDirectory, "growing-evidence.json");
+    await writeFile(growingFile, trackedRawBytes);
+    let readCapacity = 0;
+    await assert.rejects(
+      runCurrentMolitTransferSourceRevalidation({
+        argv: ["--observed-at", observedAt, "--official-file", growingFile, "--output", growingOutput],
+        env: {},
+        fetchImpl: async () => { throw new Error("must not call"); },
+        officialFileFixture: {
+          afterStat: async () => writeFile(growingFile, Buffer.alloc(4 * 1024 * 1024), { flag: "a" }),
+          onReadCapacity: (capacity) => { readCapacity = capacity; },
+        },
+        repositoryRoot: root,
+      }),
+      /MOLIT_TRANSFER_REVALIDATION_OFFICIAL_FILE/u,
+    );
+    assert.ok(readCapacity > 0 && readCapacity <= (4 * 1024 * 1024) + 1);
+    await assert.rejects(stat(growingOutput), { code: "ENOENT" });
+
     for (const input of [tamperedFile, linkedFile]) {
       const output = path.join(fileDirectory, `${path.basename(input)}.evidence.json`);
       let calls = 0;

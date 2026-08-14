@@ -331,15 +331,28 @@ async function collectProviderObservation({ fetchImpl, serviceKey, locked }) {
   return { pageCount, pageResponseSha256, canonicalRowsSha256, totalCount: rows.length };
 }
 
-async function readOfficialFile(filePath) {
+async function readOfficialFile(filePath, fixture) {
   let handle;
   try {
-    handle = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+    handle = await open(
+      filePath,
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+    );
     const before = await handle.stat();
     if (!before.isFile() || before.size < 1 || before.size > MAX_OFFICIAL_FILE_BYTES) {
       fail("OFFICIAL_FILE");
     }
-    const bytes = await handle.readFile();
+    await fixture.afterStat?.();
+    const readCapacity = Math.min(before.size + 1, MAX_OFFICIAL_FILE_BYTES + 1);
+    fixture.onReadCapacity?.(readCapacity);
+    const buffer = Buffer.allocUnsafe(readCapacity);
+    let offset = 0;
+    while (offset < readCapacity) {
+      const { bytesRead } = await handle.read(buffer, offset, readCapacity - offset, offset);
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    const bytes = buffer.subarray(0, offset);
     const after = await handle.stat();
     if (!after.isFile()
       || after.dev !== before.dev
@@ -357,8 +370,8 @@ async function readOfficialFile(filePath) {
   }
 }
 
-async function collectOfficialFileObservation({ filePath, locked }) {
-  const bytes = await readOfficialFile(filePath);
+async function collectOfficialFileObservation({ filePath, locked, fixture }) {
+  const bytes = await readOfficialFile(filePath, fixture);
   let rebuilt;
   try {
     rebuilt = buildMolitRailwayTransferMovementSnapshot({
@@ -466,6 +479,7 @@ export async function runCurrentMolitTransferSourceRevalidation({
   argv = process.argv.slice(2),
   env = process.env,
   fetchImpl = fetch,
+  officialFileFixture = {},
   readFileImpl = readFile,
   publishFixture = {},
   repositoryRoot = path.resolve(import.meta.dirname, "../.."),
@@ -477,7 +491,11 @@ export async function runCurrentMolitTransferSourceRevalidation({
     let observation;
     let operation;
     if (args.officialFile) {
-      observation = await collectOfficialFileObservation({ filePath: args.officialFile, locked });
+      observation = await collectOfficialFileObservation({
+        filePath: args.officialFile,
+        locked,
+        fixture: officialFileFixture,
+      });
       operation = {
         method: "FILE_DOWNLOAD",
         operationId: "15130556-fileData-20250811",
