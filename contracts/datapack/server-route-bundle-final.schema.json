@@ -47,7 +47,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "sourceFreshness", "stationLineAccessibility", "routeEdgeEvaluation", "artifactInventory",
+        "sourceFreshness", "stationLineAccessibility", "routeEdgeEvaluation", "routeAccessibilityEligibility", "artifactInventory",
         "signature", "publication", "rebuildParityPromotion"
       ],
       "properties": {
@@ -77,6 +77,16 @@
           "required": ["state", "evidenceSha256"],
           "properties": {
             "state": { "enum": ["PASS", "UNAVAILABLE", "MISSING", "STALE", "UNKNOWN", "NOT_EVALUATED", "PARTIAL", "IDENTITY_MISMATCH"] },
+            "evidenceSha256": { "$ref": "#/$defs/nullableSha256" }
+          },
+          "allOf": [{ "$ref": "#/$defs/gateEvidenceBinding" }]
+        },
+        "routeAccessibilityEligibility": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "evidenceSha256"],
+          "properties": {
+            "state": { "enum": ["PASS", "UNAVAILABLE", "INELIGIBLE", "IDENTITY_MISMATCH"] },
             "evidenceSha256": { "$ref": "#/$defs/nullableSha256" }
           },
           "allOf": [{ "$ref": "#/$defs/gateEvidenceBinding" }]
@@ -135,6 +145,7 @@
           "routeEdgeEvaluation:UNAVAILABLE", "routeEdgeEvaluation:MISSING", "routeEdgeEvaluation:STALE",
           "routeEdgeEvaluation:UNKNOWN", "routeEdgeEvaluation:NOT_EVALUATED", "routeEdgeEvaluation:PARTIAL",
           "routeEdgeEvaluation:IDENTITY_MISMATCH", "artifactInventory:UNAVAILABLE", "artifactInventory:MISSING",
+          "routeAccessibilityEligibility:UNAVAILABLE", "routeAccessibilityEligibility:INELIGIBLE", "routeAccessibilityEligibility:IDENTITY_MISMATCH",
           "artifactInventory:PARTIAL", "artifactInventory:IDENTITY_MISMATCH", "signature:UNAVAILABLE",
           "signature:IDENTITY_MISMATCH", "publication:UNAVAILABLE", "publication:IDENTITY_MISMATCH",
           "rebuildParityPromotion:UNAVAILABLE", "rebuildParityPromotion:PARTIAL", "rebuildParityPromotion:IDENTITY_MISMATCH"

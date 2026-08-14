@@ -51,6 +51,14 @@ test("malformed publication CLI는 stack trace 없이 fail closed한다", () => 
   assert.equal(result.stderr, "publish-server-route-bundle: invalid argument near --artifact-root\n");
 });
 
+test("route accessibility eligibility gate가 PASS가 아니면 publication을 막는다", async (t) => {
+  const fixture = await createFixture(t, { routeAccessibilityEligibility: "INELIGIBLE" });
+  await assert.rejects(
+    () => publishFixture(fixture, memoryObjectStorageClient()),
+    /routeAccessibilityEligibility must be PASS before publication/,
+  );
+});
+
 test("credential-free public GET은 response 중단과 expected-size 초과를 즉시 거부한다", async () => {
   await assert.rejects(
     () => readCredentialFreeObject(PUBLIC_BASE_URL, 4, scriptedHttpsGet((response) => {
@@ -405,6 +413,7 @@ async function createFixture(t, options = {}) {
       sourceFreshness: gate(options.sourceFreshness ?? "PASS", "1"),
       stationLineAccessibility: gate("PASS", "2"),
       routeEdgeEvaluation: gate("PASS", "3"),
+      routeAccessibilityEligibility: gate(options.routeAccessibilityEligibility ?? "PASS", "e"),
       artifactInventory: gate("PASS", "4"),
       signature: { state: "PASS", evidenceSha256: signedManifestRawSha256 },
       publication: { state: "UNAVAILABLE", evidenceSha256: null },
