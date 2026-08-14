@@ -235,6 +235,13 @@ test("expanded EXIT query shape를 legacy normalized snapshot v1로 수용하지
   assert.throws(() => buildExitPathAdmission(input), /EXIT snapshot schema mismatch/);
 });
 
+test("expanded EXIT source admission v2는 legacy v1 shape와 구분된다", () => {
+  const input = validInput();
+  input.sourceAdmission.schemaVersion = 1;
+
+  assert.throws(() => buildExitPathAdmission(input), /EXIT source admission schema mismatch/);
+});
+
 test("duplicate query/result/record와 malformed result shape는 output 전에 거부한다", () => {
   const duplicateQuery = validInput();
   const duplicateQuerySnapshot = parseSnapshot(duplicateQuery);
@@ -273,11 +280,9 @@ test("candidate/source/snapshot/mapping/admission identity drift는 fail closed�
     ["station-line set", (input) => { input.stationLineSetSha256 = "0".repeat(64); }, /station-line denominator identity mismatch/],
     ["mapping", (input) => { input.stationLineMappingSha256 = "0".repeat(64); }, /station-line mapping identity mismatch/],
     ["source set", (input) => { input.candidate.sourceSetSha256 = "0".repeat(64); }, /source snapshot set identity mismatch/],
-    ["membership", (input) => {
-      input.sourceSnapshots[0].snapshotId = "another-snapshot";
-      input.candidate.sourceSetSha256 = sha256(JSON.stringify(input.sourceSnapshots));
-      input.sourceAdmission.sourceSnapshotSetHash = input.candidate.sourceSetSha256;
-    }, /source snapshot membership mismatch/],
+    ["provider snapshot", (input) => {
+      input.sourceAdmission.providerSnapshotDigest = "0".repeat(64);
+    }, /EXIT source admission identity mismatch/],
     ["raw", (input) => { input.sourceAdmission.rawSha256 = "0".repeat(64); }, /EXIT source admission identity mismatch/],
     ["query plan", (input) => { input.sourceAdmission.queryPlanSha256 = "0".repeat(64); }, /EXIT source admission identity mismatch/],
     ["coverage", (input) => { input.sourceAdmission.coverageScopeSha256 = "0".repeat(64); }, /EXIT source admission identity mismatch/],
@@ -391,12 +396,22 @@ function validInput() {
     regionId: line.regionId,
   }));
   const snapshot = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     artifactKind: "exit-path-normalized-source-snapshot",
     sourceId: "official-exit-path-source",
     snapshotId: "official-exit-path-source-20260810",
     capturedAt: CAPTURED_AT,
     freshUntil: FRESH_UNTIL,
+    providerSnapshotIdentity: {
+      sourceId: "official-exit-path-source",
+      snapshotId: "official-exit-path-source-20260810",
+      capturedAt: CAPTURED_AT,
+      freshUntil: FRESH_UNTIL,
+      snapshotDigest: sha256("provider-snapshot"),
+      rawSha256: sha256("provider-raw"),
+      collectionPlanDigest: sha256("provider-plan"),
+      queryPlanSha256: sha256("provider-query-plan"),
+    },
     coverage: {
       exhaustive: true,
       queryIds: queryPlan.map(({ queryId }) => queryId),
@@ -432,7 +447,7 @@ function validInput() {
     candidate,
     observedAt: OBSERVED_AT,
     sourceAdmission: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       artifactKind: "exit-path-source-admission",
       candidateId: candidate.candidateId,
       sourceId: snapshot.sourceId,
@@ -449,6 +464,12 @@ function validInput() {
       approvedAt: CAPTURED_AT,
       provenanceId: sha256("provenance"),
       licenseId: sha256("license"),
+      providerSnapshotDigest: snapshot.providerSnapshotIdentity.snapshotDigest,
+      providerSnapshotRawSha256: snapshot.providerSnapshotIdentity.rawSha256,
+      providerCollectionPlanDigest: snapshot.providerSnapshotIdentity.collectionPlanDigest,
+      providerQueryPlanSha256: snapshot.providerSnapshotIdentity.queryPlanSha256,
+      facilityAdmissionDigest: sha256("facility-admission"),
+      facilityStationLineMappingSha256: sha256("facility-mapping"),
     },
     sourceSnapshots,
     stationLines,
