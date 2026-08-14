@@ -131,12 +131,19 @@ test("current FINAL preparation middle failure는 output 없이 종료하고 pub
   t.after(() => rm(root, { recursive: true, force: true }));
   const stationLineInputPath = path.join(root, "station.json");
   const routeEdgeInputPath = path.join(root, "route.json");
-  await Promise.all([writeFile(stationLineInputPath, "{}"), writeFile(routeEdgeInputPath, "{}")]);
+  await Promise.all([
+    writeFile(stationLineInputPath, "{}"),
+    writeFile(routeEdgeInputPath, '{"candidate":{"candidateId":"candidate"}}'),
+  ]);
   const output = path.join(root, "output");
   await assert.rejects(() => prepareCurrentServerRouteBundleFinal({
     output, repositoryGitSha: "a".repeat(40), evaluationAt: "2026-08-14T00:00:00.000Z", stationLineInputPath, routeEdgeInputPath,
     stages: {
-      emit: async ({ output: stageOutput }) => { await mkdir(stageOutput, { recursive: true }); },
+      emit: async ({ output: stageOutput }) => {
+        const artifact = path.join(stageOutput, "server-route-bundle");
+        await mkdir(artifact, { recursive: true });
+        await writeFile(path.join(artifact, "manifest.signing-input.json"), `{"topologySha256":"${TOPOLOGY_SHA256}"}`);
+      },
       sign: async () => { throw new Error("representative middle failure"); },
     },
   }), /representative middle failure/);
