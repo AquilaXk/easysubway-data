@@ -11,6 +11,9 @@ import { constants, zstdCompressSync, zstdDecompressSync } from "node:zlib";
 import {
   buildServerRouteBundleFinalEvidence,
 } from "./build-server-route-bundle-final.mjs";
+import {
+  canonicalFacilitySourceAdmissionJson,
+} from "./build-facility-source-admission.mjs";
 import { GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL } from "./emit-artifact-components.mjs";
 import {
   canonicalJson,
@@ -39,6 +42,30 @@ const SCRIPT = path.resolve("tools/datapack/build-server-route-bundle-final.mjs"
 const signingKeys = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const signingPrivateKey = signingKeys.privateKey.export({ type: "pkcs8", format: "pem" });
 const signingPublicKey = signingKeys.publicKey.export({ type: "spki", format: "pem" });
+
+test("current FACILITY admission handoff를 Data #8 materializer가 exact candidate identity로 수용한다", async () => {
+  const target = path.resolve("tools/datapack/release/facility-source-admission.json");
+  const bytes = await readFile(target);
+  const handoff = JSON.parse(bytes);
+
+  assert.equal(canonicalFacilitySourceAdmissionJson(handoff), bytes.toString("utf8"));
+  assert.equal(handoff.decision, "GO");
+  assert.equal(handoff.denominatorRows.length, 6);
+  assert.equal(handoff.cells.length, 2);
+  assert.equal(handoff.materializerEvidenceRows.length, 2);
+
+  const materialized = materializeStationLineAccessibility({
+    candidate: handoff.candidate,
+    observedAt: handoff.observedAt,
+    stationLines: handoff.cells.map(({ stationId, lineId, operatorId }) => ({
+      stationId, lineId, operatorId,
+    })),
+    evidenceRows: handoff.materializerEvidenceRows,
+  });
+  assert.equal(materialized.stateSummary.VERIFIED_PRESENT, 2);
+  assert.equal(materialized.rows.filter(({ domain, state }) =>
+    domain === "FACILITY" && state === "VERIFIED_PRESENT").length, 2);
+});
 
 test("embedded #8/#9 evidence와 current keyless bytes를 deterministic NO_GO FINAL로 결속한다", async (t) => {
   const fixture = await createFixture(t);
