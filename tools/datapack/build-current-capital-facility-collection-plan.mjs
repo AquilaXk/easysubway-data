@@ -223,9 +223,16 @@ function validateFacilitySource(value) {
   const source = value?.sources?.filter(({ id }) => id === SOURCE_ID);
   if (!Array.isArray(source) || source.length !== 1 || source[0].productionUseAllowed !== true
     || source[0].requiredForProductionPack !== true || source[0].capabilities?.facility?.status !== "SUPPORTED"
-    || source[0].capabilities.facility.productionUseAllowed !== true) {
+    || source[0].capabilities.facility.productionUseAllowed !== true
+    || source[0].license?.commercialUseAllowed !== true || source[0].license?.derivativeWorkAllowed !== true
+    || source[0].license?.redistributionAllowed !== true || typeof source[0].license?.attribution !== "string"
+    || source[0].license.attribution.trim() === "" || source[0].admissionEvidence?.decision !== "APPROVED"
+    || source[0].accessibilityAdmissionEvidence?.decision !== "APPROVED"
+    || source[0].accessibilityAdmissionEvidence.productionUseAllowed !== true
+    || source[0].accessibilityAdmissionEvidence.licenseEvidenceHash !== source[0].admissionEvidence.licenseEvidenceHash) {
     throw new Error("KRIC FACILITY source admission mismatch");
   }
+  assertSha256(source[0].admissionEvidence.licenseEvidenceHash, "KRIC FACILITY license evidence");
 }
 
 function validateProviderCatalog(value) {

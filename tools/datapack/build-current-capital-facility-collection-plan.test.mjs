@@ -115,6 +115,19 @@ test("scope, canonical membership, provider roster와 raw identity drift를 fail
     ...input, routeRostersBytes: Buffer.from(JSON.stringify(rosterVersionDrift)),
   }), /route roster identity mismatch/);
 
+  const revokedFacilitySource = JSON.parse(input.sourceInventoryBytes);
+  revokedFacilitySource.sources.find(({ id }) => id === "kric-station-convenience-standard").license.commercialUseAllowed = false;
+  assert.throws(() => buildCurrentCapitalFacilityCollectionPlan({
+    ...input, sourceInventoryBytes: Buffer.from(JSON.stringify(revokedFacilitySource)),
+  }), /KRIC FACILITY source admission mismatch/);
+
+  const facilityLicenseHashDrift = JSON.parse(input.sourceInventoryBytes);
+  facilityLicenseHashDrift.sources.find(({ id }) => id === "kric-station-convenience-standard")
+    .admissionEvidence.licenseEvidenceHash = "0".repeat(64);
+  assert.throws(() => buildCurrentCapitalFacilityCollectionPlan({
+    ...input, sourceInventoryBytes: Buffer.from(JSON.stringify(facilityLicenseHashDrift)),
+  }), /KRIC FACILITY source admission mismatch/);
+
   const baseline = buildCurrentCapitalFacilityCollectionPlan(input);
   const rebound = buildCurrentCapitalFacilityCollectionPlan({
     ...input, sourceInventoryBytes: Buffer.concat([input.sourceInventoryBytes, Buffer.from("\n")]),

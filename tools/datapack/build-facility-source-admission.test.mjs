@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -177,6 +177,16 @@ test("FACILITY admission은 scope에 선언만 된 unused operator를 거부한�
   assert.throws(() => buildFacilitySourceAdmission(input), /current scope cardinality mismatch/);
 });
 
+test("FACILITY source license/admission evidence revoke와 hash drift를 provider call 전에 거부한다", async () => {
+  const revoked = await currentInput();
+  sourceEntry(revoked).license.commercialUseAllowed = false;
+  assert.throws(() => buildFacilitySourceAdmission(revoked), /FACILITY source production admission mismatch/);
+
+  const hashDrift = await currentInput();
+  sourceEntry(hashDrift).admissionEvidence.licenseEvidenceHash = "0".repeat(64);
+  assert.throws(() => buildFacilitySourceAdmission(hashDrift), /FACILITY source approval or license mismatch/);
+});
+
 test("등록된 current snapshot path만 resolver가 읽고 stale/pilot path mismatch는 admission 전에 거부한다", async (t) => {
   const temporary = await mkdtemp(path.join(tmpdir(), "easysubway-facility-current-path-"));
   t.after(() => rm(temporary, { recursive: true, force: true }));
@@ -194,7 +204,7 @@ test("등록된 current snapshot path만 resolver가 읽고 stale/pilot path mis
   ]);
   const inventory = JSON.parse(await readFile(path.join(sourceRoot, "source-inventory.json")));
   const source = inventory.sources.find(({ id }) => id === "kric-station-convenience-standard");
-  source.accessibilityAdmissionEvidence.snapshotPath = "tools/datapack/sources/current.json";
+  source.accessibilityAdmissionEvidence.snapshotPath = "tools\\datapack\\sources\\current.json";
   await writeFile(path.join(tempDatapack, "source-inventory.json"), JSON.stringify(inventory));
   const currentSnapshot = path.join(sourceRoot, "sources/kric-station-convenience-standard-20260813T200604805Z.json");
   await copyFile(currentSnapshot, path.join(tempDatapack, "sources/current.json"));
@@ -209,6 +219,18 @@ test("등록된 current snapshot path만 resolver가 읽고 stale/pilot path mis
   await copyFile(path.join(sourceRoot, "sources/kric-station-convenience-standard-20260728.json"), path.join(tempDatapack, "sources/pilot.json"));
   const stale = await loadCurrentFacilitySourceAdmissionInput({ repositoryRoot: temporary, observedAt: FRESH_AT });
   assert.throws(() => buildFacilitySourceAdmission(stale), /KRIC accessibility snapshot identity is invalid|snapshot admission identity mismatch/);
+
+  source.accessibilityAdmissionEvidence.snapshotPath = "tools/datapack/sources/current.json";
+  await writeFile(path.join(tempDatapack, "source-inventory.json"), JSON.stringify(inventory));
+  const outside = await mkdtemp(path.join(tmpdir(), "easysubway-facility-outside-"));
+  t.after(() => rm(outside, { recursive: true, force: true }));
+  await copyFile(currentSnapshot, path.join(outside, "current.json"));
+  await rm(path.join(tempDatapack, "sources"), { recursive: true, force: true });
+  await symlink(outside, path.join(tempDatapack, "sources"));
+  await assert.rejects(
+    loadCurrentFacilitySourceAdmissionInput({ repositoryRoot: temporary, observedAt: FRESH_AT }),
+    /registered snapshot path escapes repository/,
+  );
 });
 
 test("consumer input order가 달라도 admission bytes와 caller input은 동일하다", async () => {

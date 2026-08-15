@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { lstat, readFile, writeFile } from "node:fs/promises";
+import { lstat, readFile, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -60,7 +60,7 @@ export async function loadCurrentFacilitySourceAdmissionInput({ repositoryRoot, 
     readJson(path.join(root, "tools/datapack/source-inventory.json")),
     readJson(path.join(root, "tools/datapack/release/source-snapshots.json")),
   ]);
-  const snapshotPath = resolveRegisteredSnapshotPath(root, sourceInventory);
+  const snapshotPath = await resolveRegisteredSnapshotPath(root, sourceInventory);
   const snapshotBytes = await readRegularSnapshot(path.join(root, snapshotPath));
   return {
     observedAt,
@@ -214,7 +214,7 @@ function validateSourceContext({
     throw new Error("FACILITY source approval or license mismatch");
   }
   assertSha256(evidence.licenseEvidenceHash, "FACILITY license evidence");
-  if (evidence.snapshotPath !== snapshotPath
+  if (canonicalRegisteredSnapshotPath(evidence.snapshotPath) !== snapshotPath
     || evidence.snapshotId !== snapshot.snapshotId
     || evidence.rawSha256 !== snapshot.rawSha256
     || evidence.contentSha256 !== snapshot.contentSha256
@@ -279,6 +279,7 @@ function validateSourceContext({
   return {
     sourceIdentity: canonicalObject({
       sourceId: SOURCE_ID,
+      snapshotPath,
       snapshotId: snapshot.snapshotId,
       snapshotPayloadRawSha256: snapshot.rawSha256,
       snapshotFileSha256,
@@ -297,18 +298,29 @@ function validateSourceContext({
   };
 }
 
-function resolveRegisteredSnapshotPath(repositoryRoot, sourceInventory) {
+async function resolveRegisteredSnapshotPath(repositoryRoot, sourceInventory) {
   const source = exactlyOne(sourceInventory?.sources, ({ id }) => id === SOURCE_ID, "FACILITY source inventory");
-  const snapshotPath = source?.accessibilityAdmissionEvidence?.snapshotPath;
-  if (typeof snapshotPath !== "string" || snapshotPath === "" || path.isAbsolute(snapshotPath)) {
-    throw new Error("FACILITY registered snapshot path is invalid");
-  }
+  const snapshotPath = canonicalRegisteredSnapshotPath(source?.accessibilityAdmissionEvidence?.snapshotPath);
   const resolved = path.resolve(repositoryRoot, snapshotPath);
   const relative = path.relative(repositoryRoot, resolved);
   if (relative === "" || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
     throw new Error("FACILITY registered snapshot path escapes repository");
   }
-  return relative;
+  const [realRoot, realTarget] = await Promise.all([realpath(repositoryRoot), realpath(resolved)]);
+  const realRelative = path.relative(realRoot, realTarget);
+  if (realRelative === "" || realRelative === ".." || realRelative.startsWith(`..${path.sep}`) || path.isAbsolute(realRelative)) {
+    throw new Error("FACILITY registered snapshot path escapes repository");
+  }
+  return snapshotPath;
+}
+
+function canonicalRegisteredSnapshotPath(value) {
+  if (typeof value !== "string" || value === "") throw new Error("FACILITY registered snapshot path is invalid");
+  const snapshotPath = value.replaceAll("\\", "/");
+  if (snapshotPath.startsWith("/") || /^[A-Za-z]:\//.test(snapshotPath) || snapshotPath.startsWith("//")) {
+    throw new Error("FACILITY registered snapshot path is invalid");
+  }
+  return snapshotPath;
 }
 
 async function readRegularSnapshot(snapshotFile) {
