@@ -12,6 +12,7 @@ import { projectCapitalTopologyIntoCanonicalFixture } from "./build-datapack.mjs
 import { activateIncheonTopologyAdmission, activateStaticSourceRevalidations,
   buildCurrentCandidateSpec, buildCurrentSourcePrimaryOutputs, commitCurrentSourceActivation,
   collectPositionSnapshotBytes, parseCurrentSourceActivationArgs, requireCleanBuilder,
+  projectCurrentCanonicalRouteMapProvenance,
   readBuilderBaselineBytes,
   stageValidationItxTopologyEvidence,
   validatePreparedCandidate,
@@ -27,6 +28,31 @@ const TEST_GOVERNANCE_POLICY_BINDING = Object.freeze({
 
 function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 async function readJson(relativePath) { return JSON.parse(await readFile(path.join(root, relativePath), "utf8")); }
+
+test("activation canonical projection은 retired scope 뒤 strict route-map provenance를 결속한다", async () => {
+  const [canonical, policy, basemapManifest, reviewedAmbiguities, dorasanCsvBytes] = await Promise.all([
+    readJson("tools/datapack/release/capital-production-canonical-pack.json"),
+    readJson("tools/datapack/nationwide-coverage-targets.json"),
+    readJson("tools/route-map/basemap-build-manifest.json"),
+    readJson("tools/route-map/fixtures/reviewed-ambiguities.json"),
+    readFile(path.join(root, "tools/datapack/sources/seoul-wikimedia-svg-route-map-20260624.csv")),
+  ]);
+  const projected = projectCurrentCanonicalRouteMapProvenance({
+    canonical,
+    inactiveLineExclusions: policy.inactiveLineExclusions,
+    basemapManifest,
+    dorasanCsvBytes,
+    reviewedAmbiguities,
+  });
+  const capital = projected.packs.find(({ id }) => id === "capital");
+  assert.ok(capital.routeMapPositions.every(({ sourceSha256 }) => /^[a-f0-9]{64}$/u.test(sourceSha256)));
+  assert.deepEqual(
+    capital.routeMapPositions.find(({ stationId, lineId }) =>
+      stationId === "station-4c48e8115728" && lineId === "line-6e39be0cb6e2",
+    ).x,
+    1449,
+  );
+});
 
 test("prepared current candidate 검증은 build를 수행하고 final release eligibility를 선점하지 않는다", async (t) => {
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "prepared-current-candidate-"));

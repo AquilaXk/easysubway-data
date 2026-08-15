@@ -11,6 +11,7 @@ import { promisify } from "node:util";
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { syncCanonicalFixture } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
 import { assertNoRetiredTransitReferences, projectRetiredTransitLines } from "./project-retired-transit-lines.mjs";
+import { projectCanonicalRouteMapProvenance } from "./project-canonical-route-map-provenance.mjs";
 import { applySchedule } from "./apply-kric-line4-pilot-schedule.mjs";
 import {
   CAPITAL_MAP_LINE_IDS,
@@ -88,6 +89,7 @@ export const CURRENT_SOURCE_ACTIVATION_OUTPUTS = Object.freeze([
 const allowedOutputPaths = new Set(CURRENT_SOURCE_ACTIVATION_OUTPUTS);
 const CURRENT_SOURCE_DOWNSTREAM_OUTPUTS = Object.freeze([
   "tools/datapack/reports/nationwide-coverage-tally.json",
+  "tools/datapack/release/strict-route-regression-report.json",
 ]);
 
 function isAllowedActivationOutput(relativePath) {
@@ -883,6 +885,23 @@ function jsonBytes(value, pretty = true) {
   return Buffer.from(`${JSON.stringify(value, null, pretty ? 2 : 0)}\n`);
 }
 
+export function projectCurrentCanonicalRouteMapProvenance({
+  canonical,
+  inactiveLineExclusions,
+  basemapManifest,
+  dorasanCsvBytes,
+  reviewedAmbiguities,
+}) {
+  const projected = projectRetiredTransitLines(canonical, inactiveLineExclusions);
+  assertNoRetiredTransitReferences(projected, inactiveLineExclusions);
+  return projectCanonicalRouteMapProvenance({
+    fixture: projected,
+    basemapManifest,
+    dorasanCsvBytes,
+    reviewedAmbiguities,
+  });
+}
+
 function requiredSha(value, label) {
   if (!SHA256.test(value ?? "")) throw new Error(`${label} must be a lowercase sha256`);
   return value;
@@ -1481,7 +1500,8 @@ export async function generateCurrentSourceActivation({
       sourceInventoryBytes, productionInputBytes, quoteBundleBytes, baseSpecBytes,
       canonicalBytes, productionScopePolicyBytes,
       molitRevalidationSnapshotBytes, molitRevalidationEvidenceBytes,
-      seoulRevalidationSnapshotBytes, seoulRevalidationEvidenceBytes] = await Promise.all([
+      seoulRevalidationSnapshotBytes, seoulRevalidationEvidenceBytes,
+      basemapManifestBytes, dorasanCsvBytes, reviewedAmbiguitiesBytes] = await Promise.all([
       readRegularBytes(root, capitalTopologyPath, "current capital topology"),
       readRegularBytes(root, incheonTopologyPath, "current Incheon topology"),
       fetchCurrentRawArtifact(temporaryRoot, handoff),
@@ -1497,6 +1517,9 @@ export async function generateCurrentSourceActivation({
       readRegularBytes(root, molitRevalidationEvidencePath, "MOLIT revalidation evidence"),
       readRegularBytes(root, seoulRevalidationSnapshotPath, "Seoul revalidation snapshot"),
       readRegularBytes(root, seoulRevalidationEvidencePath, "Seoul revalidation evidence"),
+      readRegularBytes(root, "tools/route-map/basemap-build-manifest.json", "route-map basemap manifest"),
+      readRegularBytes(root, "tools/datapack/sources/seoul-wikimedia-svg-route-map-20260624.csv", "Dorasan route-map CSV"),
+      readRegularBytes(root, "tools/route-map/fixtures/reviewed-ambiguities.json", "reviewed route-map ambiguities"),
     ]);
     const sourceInventory = parseJson(sourceInventoryBytes, "source inventory");
     const quoteBundle = parseJson(quoteBundleBytes, "official OD fare quote bundle");
@@ -1586,8 +1609,13 @@ export async function generateCurrentSourceActivation({
       capitalTopologySnapshotId,
       capitalAdmissions,
     );
-    const projectedCanonical = projectRetiredTransitLines(canonical, productionScopePolicy.inactiveLineExclusions);
-    assertNoRetiredTransitReferences(projectedCanonical, productionScopePolicy.inactiveLineExclusions);
+    const projectedCanonical = projectCurrentCanonicalRouteMapProvenance({
+      canonical,
+      inactiveLineExclusions: productionScopePolicy.inactiveLineExclusions,
+      basemapManifest: parseJson(basemapManifestBytes, "route-map basemap manifest"),
+      dorasanCsvBytes,
+      reviewedAmbiguities: parseJson(reviewedAmbiguitiesBytes, "reviewed route-map ambiguities"),
+    });
     const nextCanonicalBytes = jsonBytes(projectedCanonical, false);
     await writeTempFile(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[4], nextCanonicalBytes);
 
