@@ -11,6 +11,7 @@ import {
 import { readRegularSnapshot } from "./build-current-kric-exit-collection-plan.mjs";
 import { canonicalFacilitySourceAdmissionJson } from "./build-facility-source-admission.mjs";
 import { canonicalKricExitPathProviderSnapshotJson } from "./collect-kric-exit-path-provider-snapshot.mjs";
+import { consumeCurrentKricExitCollectionBundle } from "./consume-current-kric-exit-collection-bundle.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { canonicalKricExitPathCollectionPlanJson } from "./plan-kric-exit-path-collection.mjs";
 
@@ -145,17 +146,28 @@ export function buildCurrentExitPathSourceAdmission(input) {
 export async function main(argv, { log = console.log } = {}) {
   const args = parseArgs(argv);
   await outputMustBeAbsent(args.outputDirectory);
-  const [provider, collectionPlan, facility, candidate, inventory, sourceSnapshots] = await Promise.all([
-    readRegularSnapshot(args.providerSnapshot, "provider snapshot"),
-    readRegularSnapshot(args.collectionPlan, "collection plan"),
+  const [collection, facility, candidate, inventory, sourceSnapshots] = await Promise.all([
+    args.collectionBundle
+      ? consumeCurrentKricExitCollectionBundle({
+        collectionBundle: args.collectionBundle,
+        expectedRepositorySha: args.expectedRepositorySha,
+        expectedWorkflowRunId: args.expectedWorkflowRunId,
+      })
+      : Promise.all([
+        readRegularSnapshot(args.providerSnapshot, "provider snapshot"),
+        readRegularSnapshot(args.collectionPlan, "collection plan"),
+      ]).then(([provider, collectionPlan]) => ({
+        providerSnapshotBytes: provider.bytes,
+        collectionPlanBytes: collectionPlan.bytes,
+      })),
     readRegularSnapshot(args.facilityAdmission, "facility admission"),
     readRegularSnapshot(args.candidateBuildSpec, "candidate build spec"),
     readRegularSnapshot(args.sourceInventory, "source inventory"),
     readRegularSnapshot(args.sourceSnapshots, "source snapshots"),
   ]);
   const result = buildCurrentExitPathSourceAdmission({
-    providerSnapshotBytes: provider.bytes,
-    collectionPlan: parseJson(collectionPlan.bytes, "collection plan"),
+    providerSnapshotBytes: collection.providerSnapshotBytes,
+    collectionPlan: parseJson(collection.collectionPlanBytes, "collection plan"),
     facilityAdmission: parseJson(facility.bytes, "facility admission"),
     candidateBuildSpec: parseJson(candidate.bytes, "candidate build spec"),
     sourceInventory: parseJson(inventory.bytes, "source inventory"),
@@ -533,12 +545,16 @@ async function publishDirectory({ outputDirectory, result }) {
 }
 
 function parseArgs(argv) {
-  const pathFlags = new Set([
-    "provider-snapshot", "collection-plan", "facility-admission", "candidate-build-spec",
-    "source-inventory", "source-snapshots", "output-directory",
+  const commonPathFlags = new Set([
+    "facility-admission", "candidate-build-spec", "source-inventory", "source-snapshots", "output-directory",
   ]);
-  const allowed = new Set([...pathFlags, "observed-at"]);
-  if (!Array.isArray(argv) || argv.length !== 16) throw new Error("current EXIT admission arguments mismatch");
+  const explicitPathFlags = new Set(["provider-snapshot", "collection-plan"]);
+  const bundlePathFlags = new Set(["collection-bundle"]);
+  const allowed = new Set([
+    ...commonPathFlags, ...explicitPathFlags, ...bundlePathFlags,
+    "observed-at", "expected-repository-sha", "expected-workflow-run-id",
+  ]);
+  if (!Array.isArray(argv) || argv.length % 2 !== 0) throw new Error("current EXIT admission arguments mismatch");
   const values = {};
   for (let index = 0; index < argv.length; index += 2) {
     const flag = String(argv[index] ?? "").replace(/^--/, "");
@@ -546,12 +562,29 @@ function parseArgs(argv) {
     if (!allowed.has(flag) || values[flag] !== undefined || typeof value !== "string" || value === "") {
       throw new Error("current EXIT admission arguments mismatch");
     }
-    values[flag] = pathFlags.has(flag) ? requiredAbsolutePath(value, `--${flag}`) : value;
+    values[flag] = commonPathFlags.has(flag) || explicitPathFlags.has(flag) || bundlePathFlags.has(flag)
+      ? requiredAbsolutePath(value, `--${flag}`)
+      : value;
   }
-  for (const flag of allowed) {
+  for (const flag of [...commonPathFlags, "observed-at", "output-directory"]) {
     if (values[flag] === undefined) throw new Error("current EXIT admission arguments mismatch");
   }
+  const explicit = [...explicitPathFlags].filter((flag) => values[flag] !== undefined).length;
+  const bundle = values["collection-bundle"] !== undefined;
+  if ((explicit !== 2 && !bundle) || (explicit !== 0 && bundle)
+    || (bundle && (values["expected-repository-sha"] === undefined || values["expected-workflow-run-id"] === undefined))
+    || (!bundle && (values["expected-repository-sha"] !== undefined || values["expected-workflow-run-id"] !== undefined))) {
+    throw new Error("current EXIT admission arguments mismatch");
+  }
   requiredUtcInstant(values["observed-at"], "--observed-at");
+  if (bundle) {
+    if (!/^[a-f0-9]{40}$/.test(values["expected-repository-sha"])) {
+      throw new Error("expected repository SHA mismatch");
+    }
+    if (!/^[1-9][0-9]*$/.test(values["expected-workflow-run-id"])) {
+      throw new Error("expected workflow run ID mismatch");
+    }
+  }
   return {
     providerSnapshot: values["provider-snapshot"],
     collectionPlan: values["collection-plan"],
@@ -561,6 +594,9 @@ function parseArgs(argv) {
     sourceSnapshots: values["source-snapshots"],
     outputDirectory: values["output-directory"],
     observedAt: values["observed-at"],
+    collectionBundle: values["collection-bundle"],
+    expectedRepositorySha: values["expected-repository-sha"],
+    expectedWorkflowRunId: bundle ? Number(values["expected-workflow-run-id"]) : undefined,
   };
 }
 
