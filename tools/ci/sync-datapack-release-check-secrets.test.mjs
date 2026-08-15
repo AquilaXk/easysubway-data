@@ -96,6 +96,14 @@ test("인자·누락·invalid token·불일치 key pair는 sync 전에 같은 sa
       env: {
         ...base,
         EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM:
+          base.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM,
+      },
+    },
+    {
+      argv: [],
+      env: {
+        ...base,
+        EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM:
           fixtureEnv().EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM,
       },
     },

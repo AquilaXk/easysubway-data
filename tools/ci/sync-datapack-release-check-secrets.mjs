@@ -34,6 +34,13 @@ function validatedSecrets(argv, env) {
   const values = Object.fromEntries(SECRET_NAMES.map((name) => [name, env[name]]));
   try {
     const privateKey = createPrivateKey(values.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM);
+    let publicSlotContainsPrivateKey = true;
+    try {
+      createPrivateKey(values.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM);
+    } catch {
+      publicSlotContainsPrivateKey = false;
+    }
+    if (publicSlotContainsPrivateKey) fail();
     const publicKey = createPublicKey(values.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM);
     const derivedPublic = createPublicKey(privateKey).export({ type: "spki", format: "der" });
     const configuredPublic = publicKey.export({ type: "spki", format: "der" });
