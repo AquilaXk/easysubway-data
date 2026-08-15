@@ -4,7 +4,7 @@
   "repository": "AquilaXk/easysubway-data",
   "sourceSha": "927bb091546a43d32f27a9c084a9ae4436a229e8",
   "status": "ACTIVE",
-  "lastVerifiedAt": "2026-08-15T06:40:00.000Z",
+  "lastVerifiedAt": "2026-08-15T07:29:00.000Z",
   "verificationEvidence": [
     "https://github.com/AquilaXk/easysubway-data/issues/237",
     "https://github.com/AquilaXk/easysubway-data/issues/281",
@@ -45,7 +45,7 @@
       "reviewTrigger": [
         "event:workflow-change"
       ],
-      "lastVerifiedAt": "2026-08-15T06:40:00.000Z",
+      "lastVerifiedAt": "2026-08-15T07:29:00.000Z",
       "lastVerifiedIdentity": "git:927bb091546a43d32f27a9c084a9ae4436a229e8:.github/workflows/ci.yml:a283eb216b5c2e1e46d5d921895ebebcdca7f67b",
       "verificationMethod": "contract-test",
       "verificationEvidence": [
@@ -96,7 +96,7 @@
       "reviewTrigger": [
         "event:release-workflow-change"
       ],
-      "lastVerifiedAt": "2026-08-15T06:40:00.000Z",
+      "lastVerifiedAt": "2026-08-15T07:29:00.000Z",
       "lastVerifiedIdentity": "git:927bb091546a43d32f27a9c084a9ae4436a229e8:.github/workflows/datapack-release.yml:6889d8e1e51967772d5cbd5ab63778b16473e368",
       "verificationMethod": "contract-test",
       "verificationEvidence": [
@@ -149,7 +149,7 @@
       "reviewTrigger": [
         "event:source-change"
       ],
-      "lastVerifiedAt": "2026-08-15T06:40:00.000Z",
+      "lastVerifiedAt": "2026-08-15T07:29:00.000Z",
       "lastVerifiedIdentity": "git:927bb091546a43d32f27a9c084a9ae4436a229e8:README.md:156a5bfa3accd369d6e2ce6df39cccac6aee2ef3",
       "verificationMethod": "owner-review",
       "verificationEvidence": [
@@ -200,7 +200,7 @@
       "reviewTrigger": [
         "event:artifact-boundary-change"
       ],
-      "lastVerifiedAt": "2026-08-15T06:40:00.000Z",
+      "lastVerifiedAt": "2026-08-15T07:29:00.000Z",
       "lastVerifiedIdentity": "git:927bb091546a43d32f27a9c084a9ae4436a229e8:contracts/datapack/bundle-component-contract.json:854a53ccf773a00b3c69bbd0b336854061cb06f2",
       "verificationMethod": "contract-test",
       "verificationEvidence": [
@@ -250,7 +250,7 @@
       "reviewTrigger": [
         "event:compatibility-contract-change"
       ],
-      "lastVerifiedAt": "2026-08-15T06:40:00.000Z",
+      "lastVerifiedAt": "2026-08-15T07:29:00.000Z",
       "lastVerifiedIdentity": "git:927bb091546a43d32f27a9c084a9ae4436a229e8:contracts/datapack/compatibility-matrix.json:6fbf25901c16c019c4f9cf6ea3da2975caf5c480",
       "verificationMethod": "contract-test",
       "verificationEvidence": [
@@ -301,7 +301,7 @@
       "reviewTrigger": [
         "event:manifest-schema-change"
       ],
-      "lastVerifiedAt": "2026-08-15T06:40:00.000Z",
+      "lastVerifiedAt": "2026-08-15T07:29:00.000Z",
       "lastVerifiedIdentity": "git:927bb091546a43d32f27a9c084a9ae4436a229e8:contracts/datapack/datapack-manifest.schema.json:6fd7d44ddd72c70fce266663977deecbe6401d91",
       "verificationMethod": "contract-test",
       "verificationEvidence": [
@@ -351,7 +351,7 @@
       "reviewTrigger": [
         "event:builder-change"
       ],
-      "lastVerifiedAt": "2026-08-15T06:40:00.000Z",
+      "lastVerifiedAt": "2026-08-15T07:29:00.000Z",
       "lastVerifiedIdentity": "git:927bb091546a43d32f27a9c084a9ae4436a229e8:tools/datapack/build-datapack.mjs:47ef769b779b09054fe7f5474ba6a17180d35bf8",
       "verificationMethod": "contract-test",
       "verificationEvidence": [
@@ -401,7 +401,7 @@
       "reviewTrigger": [
         "event:source-admission-change"
       ],
-      "lastVerifiedAt": "2026-08-15T06:40:00.000Z",
+      "lastVerifiedAt": "2026-08-15T07:29:00.000Z",
       "lastVerifiedIdentity": "git:927bb091546a43d32f27a9c084a9ae4436a229e8:tools/datapack/source-admission-runbook.json:b419f93e55a03b93dbe07ee24540b06b8fe3ac48",
       "verificationMethod": "contract-test",
       "verificationEvidence": [
@@ -451,7 +451,7 @@
       "reviewTrigger": [
         "event:source-governance-change"
       ],
-      "lastVerifiedAt": "2026-08-15T06:40:00.000Z",
+      "lastVerifiedAt": "2026-08-15T07:29:00.000Z",
       "lastVerifiedIdentity": "git:927bb091546a43d32f27a9c084a9ae4436a229e8:tools/datapack/source-governance-policy.json:96d69025c0874bc300eb4daf178e15c5496c305c",
       "verificationMethod": "contract-test",
       "verificationEvidence": [
@@ -502,7 +502,7 @@
       "reviewTrigger": [
         "event:source-freshness-change"
       ],
-      "lastVerifiedAt": "2026-08-15T06:40:00.000Z",
+      "lastVerifiedAt": "2026-08-15T07:29:00.000Z",
       "lastVerifiedIdentity": "git:927bb091546a43d32f27a9c084a9ae4436a229e8:tools/datapack/source-inventory.json:8fbee529113cdf6642df2576a78a3c2d9670b7df",
       "verificationMethod": "release-audit",
       "verificationEvidence": [
@@ -552,7 +552,7 @@
       "reviewTrigger": [
         "event:license-decision-change"
       ],
-      "lastVerifiedAt": "2026-08-15T06:40:00.000Z",
+      "lastVerifiedAt": "2026-08-15T07:29:00.000Z",
       "lastVerifiedIdentity": "git:927bb091546a43d32f27a9c084a9ae4436a229e8:tools/route-map/route-map-license-decision.json:272a4bdb05f2bdefb51256ceeed67561d95d8759",
       "verificationMethod": "contract-test",
       "verificationEvidence": [
