@@ -7,6 +7,12 @@ import path from "node:path";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const yml = readFileSync(path.join(root, ".github/workflows/datapack-release.yml"), "utf8");
 
+function assertRouteCoveragePair(source) {
+  assert.match(source, /--require-production/);
+  assert.match(source, /--server-route-coverage-evidence "\$\{EASYSUBWAY_DATAPACK_ROUTE_COVERAGE_AUTHORITY\}"/);
+  assert.match(source, /--server-route-coverage-provenance "\$\{EASYSUBWAY_DATAPACK_STAGE\}\/current\.provenance\.json"/);
+}
+
 test("route-final candidate는 authority·strict validation·signed route stage를 candidate 경계에서 순서대로 결속한다", () => {
   const step = (name) => yml.indexOf(`- name: ${name}`);
   const prepare = yml.slice(step("Data Pack Release / Prepare release fixture"), step("Data Pack Release / Audit route map coordinate coverage"));
@@ -17,14 +23,17 @@ test("route-final candidate는 authority·strict validation·signed route stage�
   assert.match(prepare, /tools\/datapack\/release\/current-route-edge-evaluation\/route-edge-input\.json/);
   assert.doesNotMatch(prepare.match(/release-candidate[\s\S]*?(?:elif|else)/)?.[0] ?? "", /import-official-sources|apply-admin-review-overrides/);
   const validate = yml.slice(step("Data Pack Release / Validate generated data packs"), step("Data Pack Release / Validate accessibility source coverage"));
-  assert.match(validate, /--server-route-coverage-evidence "\$\{EASYSUBWAY_DATAPACK_ROUTE_COVERAGE_AUTHORITY\}"/);
-  assert.match(validate, /--server-route-coverage-provenance "\$\{EASYSUBWAY_DATAPACK_OUTPUT\}\/current\.provenance\.json"/);
+  assertRouteCoveragePair(validate);
   const stager = step("Data Pack Release / Stage current server route bundle candidate");
   const metadata = step("Data Pack Release / Build candidate promotion metadata");
   assert.ok(stager > step("Data Pack Release / Validate generated data packs") && stager < metadata);
   const stagerText = yml.slice(stager, metadata);
   assert.match(stagerText, /stage-current-server-route-bundle-candidate\.mjs/);
   assert.match(stagerText, /--output "\$\{EASYSUBWAY_DATAPACK_STAGE\}\/server-route-bundle"/);
+  const checksums = yml.slice(step("Data Pack Release / Verify uploaded pack checksums before manifest publish"), step("Data Pack Release / Stage manifest"));
+  assertRouteCoveragePair(checksums);
+  const stagedManifest = yml.slice(step("Data Pack Release / Stage manifest"), step("Data Pack Release / Write route graph topology evidence"));
+  assertRouteCoveragePair(stagedManifest);
   const publish = yml.slice(step("Data Pack Release / Publish staged data packs to object storage"), step("Data Pack Release / Prepare no-change release identity"));
   assert.match(publish, /--server-route-coverage-evidence "\$\{EASYSUBWAY_DATAPACK_STAGE\}\/server-route-coverage-authority\.json"/);
   assert.match(publish, /--server-route-coverage-provenance "\$\{EASYSUBWAY_DATAPACK_STAGE\}\/current\.provenance\.json"/);

@@ -52,9 +52,10 @@ test("server route coverage authority is closed, canonical, and only consumes th
     exit: { denominator: 2, missingCount: 2 },
     transfer: { denominator: 0, missingCount: 0 },
   };
-  assert.equal(isAuthorizedServerRouteCoverageGap({ pack: { id: "capital", version: "1", artifactKind: "production" }, report, provenance, coverage, edgeRows: rows, unverifiedAccessibilityCoverageEdges: report.edges.map(({ edgeId }) => edgeId) }), true);
-  assert.equal(isAuthorizedServerRouteCoverageGap({ pack: { id: "capital", version: "2", artifactKind: "production" }, report, provenance, coverage, edgeRows: rows, unverifiedAccessibilityCoverageEdges: report.edges.map(({ edgeId }) => edgeId) }), false);
-  assert.equal(isAuthorizedServerRouteCoverageGap({ pack: { id: "capital", version: "1", artifactKind: "production" }, report, provenance: { ...provenance, candidateId: "other" }, coverage, edgeRows: rows, unverifiedAccessibilityCoverageEdges: report.edges.map(({ edgeId }) => edgeId) }), false);
+  assert.equal(isAuthorizedServerRouteCoverageGap({ pack: { id: "capital", version: "1", artifactKind: "production" }, report, provenance, coverage, edgeRows: rows, unverifiedAccessibilityCoverageEdges: [] }), true);
+  assert.equal(isAuthorizedServerRouteCoverageGap({ pack: { id: "capital", version: "2", artifactKind: "production" }, report, provenance, coverage, edgeRows: rows, unverifiedAccessibilityCoverageEdges: [] }), false);
+  assert.equal(isAuthorizedServerRouteCoverageGap({ pack: { id: "capital", version: "1", artifactKind: "production" }, report, provenance: { ...provenance, candidateId: "other" }, coverage, edgeRows: rows, unverifiedAccessibilityCoverageEdges: [] }), false);
+  assert.equal(isAuthorizedServerRouteCoverageGap({ pack: { id: "capital", version: "1", artifactKind: "production" }, report, provenance, coverage, edgeRows: rows, unverifiedAccessibilityCoverageEdges: ["unauthorized-step-free-gap"] }), false);
 
   const args = parseArgs(["--manifest", "manifest.json", "--root", "out", "--require-production", "--server-route-coverage-evidence", "authority.json", "--server-route-coverage-provenance", "provenance.json"]);
   assert.equal(args["server-route-coverage-evidence"], "authority.json");

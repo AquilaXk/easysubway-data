@@ -2529,12 +2529,11 @@ export function isAuthorizedServerRouteCoverageGap({
     || coverage.entry.denominator !== 2 || coverage.entry.missingCount !== 2
     || coverage.exit.denominator !== 2 || coverage.exit.missingCount !== 2
     || coverage.transfer.missingCount !== 0
-    || unverifiedAccessibilityCoverageEdges.length !== 4
-    || new Set(unverifiedAccessibilityCoverageEdges).size !== 4) {
+    || unverifiedAccessibilityCoverageEdges.length !== 0) {
     return false;
   }
   const reportIds = new Set(report.edges.map((edge) => edge.edgeId));
-  if (reportIds.size !== 4 || unverifiedAccessibilityCoverageEdges.some((edgeId) => !reportIds.has(edgeId))) {
+  if (reportIds.size !== 4) {
     return false;
   }
   return report.edges.every((authorityEdge) => {

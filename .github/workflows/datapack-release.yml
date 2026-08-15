@@ -729,20 +729,20 @@ jobs:
         run: |
           set -euo pipefail
           test -f tools/datapack/schema/manifest.schema.json
-          node tools/datapack/validate-datapack.mjs \
-            --manifest "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json" \
+          validation_args=(
+            tools/datapack/validate-datapack.mjs
+            --manifest "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json"
             --root "${EASYSUBWAY_DATAPACK_OUTPUT}"
-          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" =~ ^(release-candidate|production-publish)$ ]]; then
-            validation_args=(
-              tools/datapack/validate-datapack.mjs
-              --manifest "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json"
-              --root "${EASYSUBWAY_DATAPACK_OUTPUT}"
+          )
+          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "release-candidate" ]]; then
+            validation_args+=(
               --require-production
+              --server-route-coverage-evidence "${EASYSUBWAY_DATAPACK_ROUTE_COVERAGE_AUTHORITY}"
+              --server-route-coverage-provenance "${EASYSUBWAY_DATAPACK_STAGE}/current.provenance.json"
             )
-            if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "release-candidate" ]]; then
-              validation_args+=(--server-route-coverage-evidence "${EASYSUBWAY_DATAPACK_ROUTE_COVERAGE_AUTHORITY}" --server-route-coverage-provenance "${EASYSUBWAY_DATAPACK_OUTPUT}/current.provenance.json")
-            fi
-            node "${validation_args[@]}"
+          fi
+          node "${validation_args[@]}"
+          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "release-candidate" ]]; then
             node -e "const manifest=require(process.env.EASYSUBWAY_DATAPACK_OUTPUT + '/current.json'); if (manifest.channel !== process.env.EASYSUBWAY_DATAPACK_TARGET_CHANNEL) throw new Error('manifest channel must match targetChannel');"
             # 이슈 #2531: 앱이 심고 나가는 수락 순번 하한 아래로는 publish하지 않는다.
             # 이 게이트가 'live >= 하한' 불변식을 지켜 하한을 심은 빌드가 현재 매니페스트를
@@ -830,18 +830,38 @@ jobs:
         if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' }}
         run: |
           set -euo pipefail
-          node tools/datapack/validate-datapack.mjs \
-            --manifest "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json" \
+          validation_args=(
+            tools/datapack/validate-datapack.mjs
+            --manifest "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json"
             --root "${EASYSUBWAY_DATAPACK_STAGE}"
+          )
+          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "release-candidate" ]]; then
+            validation_args+=(
+              --require-production
+              --server-route-coverage-evidence "${EASYSUBWAY_DATAPACK_ROUTE_COVERAGE_AUTHORITY}"
+              --server-route-coverage-provenance "${EASYSUBWAY_DATAPACK_STAGE}/current.provenance.json"
+            )
+          fi
+          node "${validation_args[@]}"
 
       - name: Data Pack Release / Stage manifest
         if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' }}
         run: |
           set -euo pipefail
           cp "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json" "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json"
-          node tools/datapack/validate-datapack.mjs \
-            --manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json" \
+          validation_args=(
+            tools/datapack/validate-datapack.mjs
+            --manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json"
             --root "${EASYSUBWAY_DATAPACK_STAGE}"
+          )
+          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "release-candidate" ]]; then
+            validation_args+=(
+              --require-production
+              --server-route-coverage-evidence "${EASYSUBWAY_DATAPACK_ROUTE_COVERAGE_AUTHORITY}"
+              --server-route-coverage-provenance "${EASYSUBWAY_DATAPACK_STAGE}/current.provenance.json"
+            )
+          fi
+          node "${validation_args[@]}"
 
       - name: Data Pack Release / Write route graph topology evidence
         if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' }}
