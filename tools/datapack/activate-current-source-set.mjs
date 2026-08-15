@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { syncCanonicalFixture } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
+import { assertNoRetiredTransitReferences, projectRetiredTransitLines } from "./project-retired-transit-lines.mjs";
 import { applySchedule } from "./apply-kric-line4-pilot-schedule.mjs";
 import {
   CAPITAL_MAP_LINE_IDS,
@@ -883,6 +884,7 @@ export function buildCurrentCandidateSpec({
   currentTopologyBytes,
   currentTopologyPath,
   topologyReverificationBytes,
+  productionScopePolicyBytes,
 }) {
   if (!baseSpec || baseSpec.schemaVersion !== 1
     || baseSpec.artifactKind !== "datapack-candidate-build-spec"
@@ -891,7 +893,8 @@ export function buildCurrentCandidateSpec({
   }
   if (!Buffer.isBuffer(sourceInventoryBytes)
     || !Buffer.isBuffer(currentTopologyBytes)
-    || !Buffer.isBuffer(topologyReverificationBytes)) {
+    || !Buffer.isBuffer(topologyReverificationBytes)
+    || !Buffer.isBuffer(productionScopePolicyBytes)) {
     throw new Error("current capital topology candidate identity is invalid");
   }
   const topologySnapshotId = exactCurrentTopologySnapshotIdentity({
@@ -907,6 +910,10 @@ export function buildCurrentCandidateSpec({
   spec.builderGitSha = builderGitSha;
   spec.builderVersion = "build-datapack.mjs@26";
   spec.fixturePath = "tools/datapack/release/capital-production-canonical-pack.json";
+  spec.productionScopePolicy = {
+    path: "tools/datapack/nationwide-coverage-targets.json",
+    sha256: sha256(productionScopePolicyBytes),
+  };
   spec.networkEdgeEvidence = {
     ...spec.networkEdgeEvidence,
     sourceInventory: {
@@ -1460,7 +1467,7 @@ export async function generateCurrentSourceActivation({
       : readRegularBytes(root, relativePath);
     const [capitalTopologyBytes, incheonTopologyBytes, rawArtifact, baselineTopologyBytes, sourceSnapshotBytes,
       sourceInventoryBytes, productionInputBytes, quoteBundleBytes, baseSpecBytes,
-      canonicalBytes,
+      canonicalBytes, productionScopePolicyBytes,
       molitRevalidationSnapshotBytes, molitRevalidationEvidenceBytes,
       seoulRevalidationSnapshotBytes, seoulRevalidationEvidenceBytes] = await Promise.all([
       readRegularBytes(root, capitalTopologyPath, "current capital topology"),
@@ -1473,6 +1480,7 @@ export async function generateCurrentSourceActivation({
       readRegularBytes(root, "tools/datapack/official-od-fare-quotes.json"),
       readMutableInput("tools/datapack/release/candidate-build-spec.json"),
       readMutableInput("tools/datapack/release/capital-production-canonical-pack.json"),
+      readRegularBytes(root, "tools/datapack/nationwide-coverage-targets.json", "production scope policy"),
       readRegularBytes(root, molitRevalidationSnapshotPath, "MOLIT revalidation snapshot"),
       readRegularBytes(root, molitRevalidationEvidencePath, "MOLIT revalidation evidence"),
       readRegularBytes(root, seoulRevalidationSnapshotPath, "Seoul revalidation snapshot"),
@@ -1534,8 +1542,13 @@ export async function generateCurrentSourceActivation({
       "--input", contained(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[2]),
       "--output", reviewedPath,
     ]);
-    const reviewedBytes = await readFile(reviewedPath);
-    const reviewed = parseJson(reviewedBytes, "current reviewed pack");
+    const productionScopePolicy = parseJson(productionScopePolicyBytes, "production scope policy");
+    const reviewed = projectRetiredTransitLines(
+      parseJson(await readFile(reviewedPath), "current reviewed pack"),
+      productionScopePolicy.inactiveLineExclusions,
+    );
+    const reviewedBytes = jsonBytes(reviewed);
+    await writeFile(reviewedPath, reviewedBytes);
     const reviewedCapital = reviewed.packs?.find(({ id }) => id === "capital");
     if (!reviewedCapital) throw new Error("current reviewed capital pack is missing");
     const canonical = syncCanonicalFixture(
@@ -1561,7 +1574,9 @@ export async function generateCurrentSourceActivation({
       capitalTopologySnapshotId,
       capitalAdmissions,
     );
-    const nextCanonicalBytes = jsonBytes(canonical, false);
+    const projectedCanonical = projectRetiredTransitLines(canonical, productionScopePolicy.inactiveLineExclusions);
+    assertNoRetiredTransitReferences(projectedCanonical, productionScopePolicy.inactiveLineExclusions);
+    const nextCanonicalBytes = jsonBytes(projectedCanonical, false);
     await writeTempFile(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[4], nextCanonicalBytes);
 
     const nextSpec = buildCurrentCandidateSpec({
@@ -1572,6 +1587,7 @@ export async function generateCurrentSourceActivation({
       currentTopologyBytes: capitalTopologyBytes,
       currentTopologyPath: capitalTopologyPath,
       topologyReverificationBytes: primaryBytes.reverification,
+      productionScopePolicyBytes,
     });
     await writeTempFile(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[5], jsonBytes(nextSpec));
     await prepareReleaseEvidenceRoot(temporaryRoot, nextSpec);

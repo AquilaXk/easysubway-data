@@ -35,6 +35,7 @@ import {
 import { validateItxServiceDates } from "./collect-tago-itx-cheongchun-od.mjs";
 import { loadCapitalRouteTopologySnapshot } from "./apply-capital-route-topology-to-bundled-pack.mjs";
 import { validateIncheonStationInfoSnapshot } from "./collect-incheon-station-info.mjs";
+import { assertNoRetiredTransitReferences } from "./project-retired-transit-lines.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const canonicalSqliteHeaderVersion = 3_053_000;
@@ -645,6 +646,7 @@ async function validateCandidateBuildSpec(buildSpec, fixture, admissions, admiss
     throw new Error("buildSpec.builderGitSha must be a git sha");
   }
   requiredString(buildSpec.builderVersion, "buildSpec.builderVersion");
+  await validateCandidateProductionScope(buildSpec, fixture);
   const artifactFreshUntil = await applyCandidateNetworkEdgeProjection(buildSpec, fixture);
   return {
     officialOdFareEvidence: validateOfficialOdFareEvidence(
@@ -655,6 +657,17 @@ async function validateCandidateBuildSpec(buildSpec, fixture, admissions, admiss
     ),
     artifactFreshUntil,
   };
+}
+
+export async function validateCandidateProductionScope(buildSpec, fixture, { repositoryRoot = root } = {}) {
+  const policyPath = path.join(repositoryRoot, "tools/datapack/nationwide-coverage-targets.json");
+  const policyBytes = await readFile(policyPath);
+  if (buildSpec.productionScopePolicy?.path !== "tools/datapack/nationwide-coverage-targets.json"
+    || buildSpec.productionScopePolicy?.sha256 !== sha256(policyBytes)) {
+    throw new Error("buildSpec production scope policy identity mismatch");
+  }
+  const retiredPolicy = JSON.parse(policyBytes);
+  assertNoRetiredTransitReferences(fixture, retiredPolicy.inactiveLineExclusions);
 }
 
 export function applyCandidateReleaseIdentity(buildSpec, fixture) {

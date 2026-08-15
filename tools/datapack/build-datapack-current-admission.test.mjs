@@ -17,6 +17,7 @@ import {
   validateSourceSeparatedCurrentTopology,
   validateCapitalTopologyReverification,
   validateItxCurrentTopologyAdmission,
+  validateCandidateProductionScope,
 } from "./build-datapack.mjs";
 import {
   buildCapitalTopologyReverificationEvidence,
@@ -27,6 +28,22 @@ const root = path.resolve(import.meta.dirname, "../..");
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const currentNow = new Date("2026-08-10T00:00:00.000Z");
 const execFileAsync = promisify(execFile);
+
+test("retired production transit unprojected fixture는 candidate admission에서 거부된다", async () => {
+  const [fixture, policyBytes] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json")),
+  ]);
+  await assert.rejects(
+    validateCandidateProductionScope({
+      productionScopePolicy: {
+        path: "tools/datapack/nationwide-coverage-targets.json",
+        sha256: sha256(policyBytes),
+      },
+    }, fixture),
+    /retired transit remains in production fixture/,
+  );
+});
 
 function rehashAdmission(admission) {
   delete admission.evidenceHash;

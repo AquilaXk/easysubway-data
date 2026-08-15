@@ -574,9 +574,10 @@ test("current canonical pack은 admitted Seoul five-record membership을 그대�
 
 test("generated current candidate spec은 expired ITX topology overlay를 재도입하지 않는다", async () => {
   const currentTopologyPath = "tools/datapack/sources/capital-route-topology-20260813.json";
-  const [baseSpec, currentTopologyBytes] = await Promise.all([
+  const [baseSpec, currentTopologyBytes, productionScopePolicyBytes] = await Promise.all([
     readJson("tools/datapack/release/candidate-build-spec.json"),
     readFile(path.join(root, currentTopologyPath)),
+    readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json")),
   ]);
   const currentTopology = JSON.parse(currentTopologyBytes.toString("utf8"));
 
@@ -588,6 +589,7 @@ test("generated current candidate spec은 expired ITX topology overlay를 재도
     currentTopologyBytes,
     currentTopologyPath,
     topologyReverificationBytes: Buffer.from("{}"),
+    productionScopePolicyBytes,
   });
 
   assert.equal(Object.hasOwn(next.networkEdgeEvidence, "itxCurrentTopologyAdmission"), false);
