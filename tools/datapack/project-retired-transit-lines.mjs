@@ -32,8 +32,8 @@ export function projectRetiredTransitLines(fixture, policy) {
   const descriptors = retiredTransitDescriptors(policy);
   const next = structuredClone(fixture);
   for (const pack of next.packs ?? []) projectPack(pack, descriptors);
-  next.coverageLineOperatorScopes = removeScopes(next.coverageLineOperatorScopes, descriptors);
-  next.providerLineScopes = removeScopes(next.providerLineScopes, descriptors);
+  if (Array.isArray(next.coverageLineOperatorScopes)) next.coverageLineOperatorScopes = removeScopes(next.coverageLineOperatorScopes, descriptors);
+  if (Array.isArray(next.providerLineScopes)) next.providerLineScopes = removeScopes(next.providerLineScopes, descriptors);
   return next;
 }
 
@@ -45,7 +45,10 @@ export function assertNoRetiredTransitReferences(fixture, policy) {
 }
 
 function projectPack(pack, descriptors) {
-  for (const descriptor of descriptors) validateProjectionInput(pack, descriptor);
+  for (const descriptor of descriptors) {
+    if (!references(pack, descriptorTokens([descriptor]))) continue;
+    validateProjectionInput(pack, descriptor);
+  }
   const lineIds = new Set(descriptors.map(({ lineId }) => lineId));
   const retiredStationIds = new Set(descriptors.flatMap(({ stationIds, preservedStationIds }) =>
     stationIds.filter((id) => !preservedStationIds.includes(id))));
@@ -61,7 +64,7 @@ function projectPack(pack, descriptors) {
       pack[key] = value.filter((row) => !references(row, { lineIds, operatorIds, stationIds: retiredStationIds }));
     }
   }
-  pack.coverageLineOperatorScopes = removeScopes(pack.coverageLineOperatorScopes, descriptors);
+  if (Array.isArray(pack.coverageLineOperatorScopes)) pack.coverageLineOperatorScopes = removeScopes(pack.coverageLineOperatorScopes, descriptors);
   if (pack.minimumTableRows && typeof pack.minimumTableRows === "object") {
     for (const [table, field] of Object.entries({ operators: "operators", lines: "lines", stations: "stations", station_lines: "stationLines", network_edges: "networkEdges", route_map_positions: "routeMapPositions" })) {
       if (Object.hasOwn(pack.minimumTableRows, table)) pack.minimumTableRows[table] = pack[field]?.length ?? 0;
@@ -85,7 +88,7 @@ function validateProjectionInput(pack, { lineId, operatorIds, stationIds, preser
 
 function removeScopes(scopes, descriptors) {
   const lineIds = new Set(descriptors.map(({ lineId }) => lineId));
-  return (scopes ?? []).filter((scope) => !lineIds.has(scope.lineId));
+  return scopes.filter((scope) => !lineIds.has(scope.lineId));
 }
 
 function projectSourceScopes(source, lineIds) {

@@ -64,3 +64,11 @@ test("retired operator는 다른 active line이 참조하면 보존하고 dangli
   projected.packs[0].sourceInventory = [{ unknownLineId: lineId }];
   assert.throws(() => assertNoRetiredTransitReferences(projected, retiredPolicy), /retired transit remains/);
 });
+
+test("partial reviewed pack은 retired reference가 없으면 보존하고 dangling ref는 거부한다", () => {
+  const partial = { packs: [{ id: "capital", operators: [], lines: [], stations: [{ id: "station-fce26411d581" }], stationLines: [] }] };
+  assert.deepEqual(projectRetiredTransitLines(partial, retiredPolicy), partial);
+  const dangling = structuredClone(partial);
+  dangling.packs[0].stations.push({ id: "orphan" });
+  assert.throws(() => projectRetiredTransitLines(dangling, retiredPolicy), /projection input identity is invalid/);
+});
