@@ -39,6 +39,8 @@ test("route-final candidate parity는 runtime receipts를 canonical stage 밖 co
   assert.match(verify, /execution_root="\$\{RUNNER_TEMP\}\/downloaded-candidate-execution-evidence"/);
   assert.match(verify, /EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE=\$\{execution_root\}\/release-evidence-bundle\.json/);
   assert.doesNotMatch(verify, /EASYSUBWAY_DATAPACK_RELEASE_DECISION=/);
+  const lateDecision = yml.slice(step("Data Pack Release / Upload release decision artifact"), step("Data Pack Release / Upload staged data packs"));
+  assert.match(lateDecision, /always\(\) && steps\.release-mode\.outputs\.mode != 'release-candidate' && steps\.release-decision\.outputs\.outcome != ''/);
 });
 
 function assertRouteCoveragePair(source) {

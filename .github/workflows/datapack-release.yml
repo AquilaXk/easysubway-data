@@ -1607,7 +1607,7 @@ jobs:
           NODE
 
       - name: Data Pack Release / Upload release decision artifact
-        if: ${{ always() && steps.release-decision.outputs.outcome != '' }}
+        if: ${{ always() && steps.release-mode.outputs.mode != 'release-candidate' && steps.release-decision.outputs.outcome != '' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: easysubway-datapack-release-decision-${{ github.run_id }}
