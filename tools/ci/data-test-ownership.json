@@ -135,6 +135,7 @@
     {"path":"tools/ci/mobile-fixture-staging-workflow.test.mjs","semanticOwner":"data25","classes":["required-pr"],"durationMs":122},
     {"path":"tools/ci/public-sensitivity-owner-receipt-caller.test.mjs","semanticOwner":"data118","classes":["required-pr"],"durationMs":125},
     {"path":"tools/ci/require-workflow-artifact.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":478},
+    {"path":"tools/ci/sync-datapack-release-check-secrets.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":119},
     {"path":"tools/datapack/activate-current-source-set.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":389},
     {"path":"tools/datapack/admit-reviewed-kric-candidates.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":167},
     {"path":"tools/datapack/apply-accessibility-evidence-to-bundled-pack.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":320},
