@@ -1,14 +1,48 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { once } from "node:events";
 import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import test from "node:test";
 
 import { collectCurrentSeoulTransferDistanceDurationSnapshot } from "./collect-current-seoul-transfer-distance-duration-snapshot.mjs";
 
 const SERVICE_KEY = "test/key+with-symbol";
 const CAPTURED_AT = new Date("2026-08-15T00:00:00.000Z");
+
+test("escaped credential reflection, malformed CLI argv, and unsorted output inventory are closed", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "seoul-transfer-frozen-findings-"));
+  try {
+    const output = path.join(root, "escaped-reflection");
+    const escaped = JSON.stringify({
+      ...pagePayload(1, 100),
+      data: rows(1, 100).map((row, index) => index === 0 ? { ...row, "환승역명": SERVICE_KEY } : row),
+    }).replace(SERVICE_KEY, "test\\u002fkey\\u002bwith-symbol");
+    await assert.rejects(() => collectCurrentSeoulTransferDistanceDurationSnapshot({
+      output,
+      runnerTemp: root,
+      serviceKey: SERVICE_KEY,
+      now: CAPTURED_AT,
+      fetchImpl: async () => new Response(escaped, { status: 200, headers: { "content-type": "application/json" } }),
+    }), /credential reflection/);
+    await assert.rejects(() => readFile(path.join(output, "raw-snapshot.json")), { code: "ENOENT" });
+
+    const script = path.join(process.cwd(), "tools/datapack/collect-current-seoul-transfer-distance-duration-snapshot.mjs");
+    const child = spawn(process.execPath, [script, "--bad"], { env: { ...process.env, DATA_GO_KR_SERVICE_KEY: SERVICE_KEY, RUNNER_TEMP: root } });
+    const [stdout, stderr, exitCode] = await Promise.all([
+      readChild(child.stdout), readChild(child.stderr), once(child, "exit").then(([code]) => code),
+    ]);
+    assert.equal(exitCode, 1);
+    assert.equal(stdout, "");
+    assert.match(stderr, /^arguments must be --output-dir <absolute path>\n$/u);
+    assert.doesNotMatch(stderr, new RegExp(SERVICE_KEY));
+
+    const source = await readFile(script, "utf8");
+    assert.match(source, /readdir\(stage\).*sort\(codepointCompare\)/su);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
 
 test("malformed DATA_GO_KR_SERVICE_KEY는 provider 호출과 output 전에 거부한다", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "seoul-transfer-invalid-key-"));
@@ -181,3 +215,4 @@ function pagePayload(page, perPage) { const data = rows(page, perPage); return {
 function jsonResponse(value) { return new Response(JSON.stringify(value), { status: 200, headers: { "content-type": "application/json" } }); }
 function canonicalBytes(value) { return Buffer.from(`${JSON.stringify(value)}\n`, "utf8"); }
 function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
+async function readChild(stream) { const chunks = []; stream.on("data", (chunk) => chunks.push(chunk)); await once(stream, "end"); return Buffer.concat(chunks).toString("utf8"); }

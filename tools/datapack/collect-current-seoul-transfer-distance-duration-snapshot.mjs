@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { lstat, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -13,6 +13,7 @@ const EXPECTED_ROW_COUNT = 145;
 const PER_PAGE = 100;
 const REQUEST_TIMEOUT_MS = 30_000;
 const REQUIRED_FIELDS = Object.freeze(["연번", "호선", "환승역명", "환승노선", "환승거리", "환승소요시간"]);
+const SNAPSHOT_FILES = Object.freeze(["manifest.json", "observation.json", "raw-snapshot.json"]);
 
 export async function collectCurrentSeoulTransferDistanceDurationSnapshot({
   candidatesDocument,
@@ -33,7 +34,7 @@ export async function collectCurrentSeoulTransferDistanceDurationSnapshot({
   const capturedAt = requiredDate(now);
   let collection;
   try {
-    collection = await collectAllPages({ endpoint, fetchImpl, requestTimeoutMs, serviceKey: normalizedServiceKey });
+    collection = await collectAllPages({ endpoint, fetchImpl, rawServiceKey: serviceKey, requestTimeoutMs, serviceKey: normalizedServiceKey });
   } catch (error) {
     throw new Error(sanitize(error, serviceKey, normalizedServiceKey));
   }
@@ -92,7 +93,7 @@ export function resolveTrackedEndpoint(document) {
   return url.href;
 }
 
-async function collectAllPages({ endpoint, fetchImpl, requestTimeoutMs, serviceKey }) {
+async function collectAllPages({ endpoint, fetchImpl, rawServiceKey, requestTimeoutMs, serviceKey }) {
   if (!Number.isInteger(requestTimeoutMs) || requestTimeoutMs < 0 || requestTimeoutMs > REQUEST_TIMEOUT_MS) {
     throw new Error("request timeout must be a bounded integer");
   }
@@ -121,6 +122,7 @@ async function collectAllPages({ endpoint, fetchImpl, requestTimeoutMs, serviceK
       envelope = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
     } catch { throw new Error("ODCloud response is not strict UTF-8 JSON"); }
     assertCredentialAbsent(bytes, serviceKey);
+    assertDecodedCredentialAbsent(envelope, rawServiceKey, serviceKey);
     const expectedCurrent = page === 1 ? PER_PAGE : EXPECTED_ROW_COUNT - PER_PAGE;
     validateEnvelope(envelope, { expectedCurrent, page, totalCount });
     totalCount ??= envelope.totalCount;
@@ -172,6 +174,22 @@ function assertCredentialAbsent(bytes, serviceKey) {
   }
 }
 
+function assertDecodedCredentialAbsent(value, rawServiceKey, normalizedServiceKey) {
+  if (typeof value === "string") {
+    if (value.includes(rawServiceKey) || value.includes(normalizedServiceKey)) {
+      throw new Error("ODCloud response contains credential reflection");
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) assertDecodedCredentialAbsent(entry, rawServiceKey, normalizedServiceKey);
+    return;
+  }
+  if (value != null && typeof value === "object") {
+    for (const entry of Object.values(value)) assertDecodedCredentialAbsent(entry, rawServiceKey, normalizedServiceKey);
+  }
+}
+
 function validDuration(value) {
   if (typeof value !== "string") return false;
   const match = /^(\d{2}):(\d{2})$/u.exec(value.trim());
@@ -189,6 +207,8 @@ async function publishAtomicDirectory(output, runnerTemp, entries) {
   const stage = await mkdtemp(path.join(runnerTemp, ".seoul-transfer-snapshot-"));
   try {
     for (const [name, bytes] of Object.entries(entries)) await writeFile(path.join(stage, name), bytes, { flag: "wx", mode: 0o600 });
+    const inventory = (await readdir(stage)).sort(codepointCompare);
+    if (JSON.stringify(inventory) !== JSON.stringify(SNAPSHOT_FILES)) throw new Error("snapshot output inventory mismatch");
     await assertTaskOwnedOutput(output, runnerTemp);
     await rename(stage, output);
   } catch (error) { await rm(stage, { force: true, recursive: true }); throw error; }
@@ -204,8 +224,12 @@ function parseCli(argv) {
   if (!Array.isArray(argv) || argv.length !== 2 || argv[0] !== "--output-dir") throw new Error("arguments must be --output-dir <absolute path>");
   return argv[1];
 }
+async function main(argv = process.argv.slice(2)) {
+  const manifest = await collectCurrentSeoulTransferDistanceDurationSnapshot({ output: parseCli(argv) });
+  console.log(JSON.stringify({ result: "PASS", sourceId: manifest.sourceId, rowCount: manifest.rowCount, credentialRedacted: true }));
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  collectCurrentSeoulTransferDistanceDurationSnapshot({ output: parseCli(process.argv.slice(2)) })
-    .then((manifest) => console.log(JSON.stringify({ result: "PASS", sourceId: manifest.sourceId, rowCount: manifest.rowCount, credentialRedacted: true })))
+  main()
     .catch((error) => { console.error(sanitize(error, process.env.DATA_GO_KR_SERVICE_KEY ?? "", "")); process.exitCode = 1; });
 }
