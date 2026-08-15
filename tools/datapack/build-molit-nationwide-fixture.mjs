@@ -11,6 +11,7 @@ import {
   parseMolitSvgProviderIdentity,
 } from "./lib/molit-svg-provider-identity.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { retiredLineIds } from "./project-retired-transit-lines.mjs";
 
 const sourceId = "molit-urban-rail-full-route";
 const kricProviderCodeCatalogSourceId = "kric-provider-code-catalog-20260228";
@@ -96,6 +97,8 @@ async function main() {
   const csvBytes = await readFile(csvPath);
   const svgCsvBytes = await readFile(svgCsvPath);
   const kricCodeCatalogBytes = await readFile(kricCodeCatalogPath);
+  const retiredPolicyBytes = await readFile(args["production-scope-policy"]
+    ?? path.join(import.meta.dirname, "nationwide-coverage-targets.json"));
   const seoulMetroBytes = seoulMetroPath ? await readFile(seoulMetroPath) : Buffer.alloc(0);
   const humetroHtmlBytes = humetroHtmlPath ? await readFile(humetroHtmlPath) : Buffer.alloc(0);
   const humetroCssBytes = humetroCssPath ? await readFile(humetroCssPath) : Buffer.alloc(0);
@@ -124,8 +127,13 @@ async function main() {
     [dtroSourceId, sha256(dtroHtmlBytes)],
     [djtcSourceId, sha256(Buffer.concat([djtcHtmlBytes, djtcCssBytes]))],
   ]);
-  const rows = parseCsv(csv).map(rowFromCsv).filter(Boolean);
-  const svgRows = parseCsv(svgCsv).map(svgRowFromCsv).filter(Boolean);
+  const retiredLines = retiredLineIds(JSON.parse(retiredPolicyBytes).inactiveLineExclusions);
+  const rows = parseCsv(csv).map(rowFromCsv).filter(Boolean)
+    .filter((row) => !retiredLines.has(lineIdFor(row.regionName, row.lineName)));
+  const svgRows = filterRetiredSvgProviderRows(
+    parseCsv(svgCsv).map(svgRowFromCsv).filter(Boolean),
+    retiredLines,
+  );
   const kricCodeCatalog = JSON.parse(kricCodeCatalogBytes.toString("utf8"));
   validateKricProviderCodeCatalogIdentity(kricCodeCatalog);
   sourceShaById.set(kricCodeCatalog.sourceId, kricCodeCatalog.sourceSha256);
@@ -1152,6 +1160,14 @@ export function validateMolitProviderIdentities(svgRows, providerLineScopes) {
       throw new Error(`MOLIT/KRIC provider code mismatch: ${key}`);
     }
   }
+}
+
+export function filterRetiredSvgProviderRows(svgRows, retiredLines) {
+  return svgRows.filter((row) => {
+    if (!row.providerIdentity) return true;
+    const regionName = regionNameForProviderCode(row.providerIdentity.mreaWideCd);
+    return !retiredLines.has(lineIdFor(regionName, normalizeMolitProviderLineName(row.lineName)));
+  });
 }
 
 function providerRegionCode(regionId) {

@@ -162,7 +162,7 @@
   "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
   "approvedOverrideSetHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
   "sourceInventorySha256": "f4f1e871404065b1c4a5a9e02d4737cefb437f59ef3dc540c2f596b4b10b8f01",
-  "builderGitSha": "ac7af41088bd3624e4603a2bf6b79700062d8a1b",
+  "builderGitSha": "dd6c6d4586698de4717c6f00ac688ece383825ba",
   "builderVersion": "build-datapack.mjs@26",
   "officialOdFareEvidence": {
     "sourceId": "seoul-metro-official-od-fares",
@@ -199,5 +199,9 @@
         "childCashFare": 750
       }
     ]
+  },
+  "productionScopePolicy": {
+    "path": "tools/datapack/nationwide-coverage-targets.json",
+    "sha256": "925847f9b45844edd573c7e695a92c28b22729c05a592bb48b821e5e707f1641"
   }
 }

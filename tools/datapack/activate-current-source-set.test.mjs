@@ -437,6 +437,28 @@ test("static revalidation은 exact two NO_CHANGE child heads와 inventory eviden
   }), /static revalidation observation date mismatch/);
 });
 
+test("static revalidation current head reuse는 append 없이 exact stored identity만 수용한다", () => {
+  const previous = [staticRoot("molit-urban-rail-full-route"), staticRoot("seoulmetro-station-line-info")];
+  const revalidations = previous.map((snapshot) => staticRevalidation(snapshot, "2026-08-14T10:30:00.000Z"));
+  const sourceInventory = {
+    schemaVersion: 1, artifactKind: "production-source-inventory",
+    sources: previous.map(({ sourceId, snapshotId }) => ({ id: sourceId, retrievedAt: "2026-07-12", admissionEvidence: { snapshotId } })),
+  };
+  const args = {
+    revalidations, governancePolicyBinding: TEST_GOVERNANCE_POLICY_BINDING,
+    buildNow: "2026-08-14T10:30:01.000Z", observationDate: "20260814",
+  };
+  const activated = activateStaticSourceRevalidations({ sourceSnapshots: previous, sourceInventory, ...args });
+  const reused = activateStaticSourceRevalidations({
+    sourceSnapshots: activated.sourceSnapshots, sourceInventory: activated.sourceInventory, ...args,
+  });
+  assert.deepEqual(reused, activated);
+
+  const drifted = structuredClone(activated.sourceSnapshots);
+  drifted.at(-1).retrievedAt = "2026-08-14T10:30:01.000Z";
+  assert.throws(() => activateStaticSourceRevalidations({ sourceSnapshots: drifted, sourceInventory: activated.sourceInventory, ...args }), /current head reuse identity mismatch/);
+});
+
 test("activation은 MOLIT no-change와 Seoul changed-source admission의 exact mixed pair만 수용한다", () => {
   const canonicalPackBytes = Buffer.from('{"packs":[{"id":"capital"}]}');
   const previous = [
@@ -574,9 +596,10 @@ test("current canonical pack은 admitted Seoul five-record membership을 그대�
 
 test("generated current candidate spec은 expired ITX topology overlay를 재도입하지 않는다", async () => {
   const currentTopologyPath = "tools/datapack/sources/capital-route-topology-20260813.json";
-  const [baseSpec, currentTopologyBytes] = await Promise.all([
+  const [baseSpec, currentTopologyBytes, productionScopePolicyBytes] = await Promise.all([
     readJson("tools/datapack/release/candidate-build-spec.json"),
     readFile(path.join(root, currentTopologyPath)),
+    readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json")),
   ]);
   const currentTopology = JSON.parse(currentTopologyBytes.toString("utf8"));
 
@@ -588,6 +611,7 @@ test("generated current candidate spec은 expired ITX topology overlay를 재도
     currentTopologyBytes,
     currentTopologyPath,
     topologyReverificationBytes: Buffer.from("{}"),
+    productionScopePolicyBytes,
   });
 
   assert.equal(Object.hasOwn(next.networkEdgeEvidence, "itxCurrentTopologyAdmission"), false);

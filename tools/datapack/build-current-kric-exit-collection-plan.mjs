@@ -230,11 +230,12 @@ function validateCandidateLinePartition(lines, targets) {
       throw new Error(`inactive line exclusion evidence mismatch: ${lineId}`);
     }
   }
+  if (inactiveLineIds.size === 0) throw new Error("candidate line scope partition mismatch");
   for (const lineId of activeLineIds) {
     if (!packLineIds.has(lineId) || inactiveLineIds.has(lineId)) throw new Error("candidate line scope partition mismatch");
   }
   for (const lineId of inactiveLineIds) {
-    if (!packLineIds.has(lineId)) throw new Error("candidate line scope partition mismatch");
+    if (packLineIds.has(lineId)) throw new Error("candidate line scope partition mismatch");
   }
   for (const lineId of packLineIds) {
     if (activeLineIds.has(lineId) === inactiveLineIds.has(lineId)) {

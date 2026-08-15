@@ -9091,6 +9091,9 @@ test("전국 coverage target은 공식 snapshot의 현재 catalog 노선과 정�
   assert.deepEqual(targets.inactiveLineExclusions, [
     {
       lineId: "line-cbe75f5287a1",
+      operatorIds: ["operator-145e4415ee1f"],
+      stationIds: ["station-04529af2869a", "station-4404e10fdfef", "station-ae2b5b5f2ea5", "station-bdd848e7e432", "station-f311bc307610", "station-fce26411d581"],
+      preservedStationIds: ["station-fce26411d581"],
       status: "OUT_OF_ACTIVE_SCOPE",
       serviceLifecycle: "RETIRED",
       effectiveFrom: "2025-10-17",
@@ -9160,7 +9163,7 @@ test("전국 coverage target은 공식 snapshot의 현재 catalog 노선과 정�
     .filter(({ lineId }) => !inactiveLineIds.has(lineId))
     .map(({ lineId, operatorId, regionId }) => ({ lineId, operatorId, regionId }))
     .sort(compareCoverageLineScopes);
-  assert.equal(fixture.providerLineScopes.length, 46);
+  assert.equal(fixture.providerLineScopes.length, 45);
   assert.deepEqual(providerScopes, expected);
   assert.deepEqual(
     fixture.providerLineScopes.find(({ lineId, operatorId }) => (

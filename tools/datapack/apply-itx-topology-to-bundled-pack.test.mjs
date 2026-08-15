@@ -1071,6 +1071,24 @@ test("canonical fixture projection은 current source 84 edge를 결정적으로 
   assert.deepEqual(first, second);
 });
 
+test("canonical fixture topology projection은 resultant network edge floor를 동기화한다", async () => {
+  const [source, fixture] = await Promise.all([
+    readFile(path.join(
+      root,
+      "tools/datapack/sources/itx-cheongchun-source-timetable-20260727071853886.json",
+    ), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8")
+      .then(JSON.parse),
+  ]);
+  const topology = deriveTopology(source);
+  const pack = fixture.packs.find(({ id }) => id === "capital");
+
+  assert.equal(topology.edges.length, 48);
+  projectItxTopologyIntoCanonicalFixture(fixture, topology);
+  assert.equal(pack.networkEdges.length, 2178);
+  assert.equal(pack.minimumTableRows.network_edges, 2178);
+});
+
 test("assertStoredTopology는 foreign-key 손상을 거부한다", async (context) => {
   const fixture = await createFixture(context);
   const evidence = admissionEvidenceFrom(fixture.contract);

@@ -5,7 +5,13 @@ import test from "node:test";
 import {
   validateKricProviderCodeCatalogIdentity,
   validateMolitProviderIdentities,
+  filterRetiredSvgProviderRows,
 } from "./build-molit-nationwide-fixture.mjs";
+
+test("retired SVG provider row는 scope validation 전에 제외한다", () => {
+  const row = { lineName: "자기부상", providerIdentity: { mreaWideCd: "01", operatorName: "인천교통공사" } };
+  assert.deepEqual(filterRetiredSvgProviderRows([row], new Set(["line-cbe75f5287a1"])), []);
+});
 
 test("MOLIT provider identity가 coverage scope와 매칭되지 않으면 거부한다", () => {
   assert.throws(() => validateMolitProviderIdentities([{
