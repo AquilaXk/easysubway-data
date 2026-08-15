@@ -1,12 +1,19 @@
 import { canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
+import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
+import { deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
+import { validateLineage } from "./source-snapshot-policy.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 
 const SOURCE_ID = "kric-station-convenience-standard";
 const TYPES = Object.freeze(["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"]);
 const FACILITY_TYPES = new Map([["EV", "ELEVATOR"], ["ES", "ESCALATOR"], ["WCLF", "WHEELCHAIR_LIFT"]]);
 const AUXILIARY_CODES = new Set(["ELEC", "FEED", "INFO", "TOLT"]);
+const CURRENT_SOURCE_IDS = Object.freeze([
+  "seoulmetro-cyberstation-route-map", "kric-subway-timetable", "seoul-metro-accessibility",
+  "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info",
+]);
 const PROJECTION_KEYS = [
   "snapshotId", "sourceId", "rawObjectUri", "rawSha256", "redactedRequestFingerprint",
   "schemaFingerprint", "licenseStatus", "redistributionAllowed", "adminReviewRecordHash",
@@ -31,8 +38,11 @@ export function buildCurrentCapitalFacilitySourceAdmission(input) {
   const mappings = validateCurrentCapitalFacilityPlanAndCanonicalPack({ plan, planBytes, pack, canonicalPackBytes });
   const sourceContext = validateSourceContext({
     candidateBuildSpec: input?.candidateBuildSpec,
-    sourceInventory: input?.sourceInventory,
+    sourceInventoryBytes: input?.sourceInventoryBytes,
     sourceSnapshots: input?.sourceSnapshots,
+    governancePolicy: input?.governancePolicy,
+    governancePolicyBytes: input?.governancePolicyBytes,
+    freshnessPolicy: input?.freshnessPolicy,
     snapshot,
     snapshotBytes,
     observedAtMillis,
@@ -133,7 +143,7 @@ export function validateCurrentCapitalFacilityPlanAndCanonicalPack({ plan, planB
   return mappings;
 }
 
-function validateSourceContext({ candidateBuildSpec, sourceInventory, sourceSnapshots, snapshot, snapshotBytes, observedAtMillis }) {
+function validateSourceContext({ candidateBuildSpec, sourceInventoryBytes, sourceSnapshots, governancePolicy, governancePolicyBytes, freshnessPolicy, snapshot, snapshotBytes, observedAtMillis }) {
   if (candidateBuildSpec?.schemaVersion !== 1 || candidateBuildSpec.artifactKind !== "datapack-candidate-build-spec"
     || !Array.isArray(candidateBuildSpec.sourceSnapshotIds) || !Array.isArray(candidateBuildSpec.sourceSnapshots)
     || candidateBuildSpec.sourceSnapshotIds.length !== candidateBuildSpec.sourceSnapshots.length
@@ -141,14 +151,31 @@ function validateSourceContext({ candidateBuildSpec, sourceInventory, sourceSnap
     || !sha(candidateBuildSpec.sourceSnapshotSetHash)) {
     throw new Error("candidate build spec identity mismatch");
   }
-  if (!Array.isArray(sourceInventory?.sources) || !Array.isArray(sourceSnapshots)) {
+  const normalizedSourceInventoryBytes = requireBytes(sourceInventoryBytes, "source inventory");
+  const normalizedGovernancePolicyBytes = requireBytes(governancePolicyBytes, "source governance policy");
+  const sourceInventory = parse(normalizedSourceInventoryBytes, "source inventory");
+  if (!Array.isArray(sourceInventory?.sources) || !Array.isArray(sourceSnapshots)
+    || !governancePolicy || !freshnessPolicy
+    || canonicalJson(governancePolicy) !== canonicalJson(parse(normalizedGovernancePolicyBytes, "source governance policy"))) {
     throw new Error("source registries must be arrays");
+  }
+  validateSourceGovernancePolicy({ policy: governancePolicy, inventory: sourceInventory, freshnessPolicy });
+  validateCandidateInventoryBinding({ candidateBuildSpec, sourceInventory, sourceInventoryBytes: normalizedSourceInventoryBytes });
+  const headsBySource = validateLineage(sourceSnapshots).headsBySource;
+  if (candidateBuildSpec.sourceSnapshots.length !== CURRENT_SOURCE_IDS.length
+    || candidateBuildSpec.sourceSnapshots.map(({ sourceId }) => sourceId).join("\0") !== CURRENT_SOURCE_IDS.join("\0")) {
+    throw new Error("candidate source snapshot membership mismatch");
   }
   const selected = candidateBuildSpec.sourceSnapshotIds.map((snapshotId, index) => {
     const ledger = exactlyOne(sourceSnapshots, (entry) => entry?.snapshotId === snapshotId, "candidate source snapshot");
     const projection = candidateBuildSpec.sourceSnapshots[index];
+    if (ledger.sourceId !== CURRENT_SOURCE_IDS[index] || headsBySource[ledger.sourceId] !== ledger.snapshotId) {
+      throw new Error("candidate source snapshot membership mismatch");
+    }
+    assertExactKeys(projection, PROJECTION_KEYS, "candidate source snapshot projection");
+    const expected = deriveCandidateProjection({ ledger, sourceInventory, governancePolicy, governancePolicyBytes: normalizedGovernancePolicyBytes, freshnessPolicy, observedAtMillis });
     for (const key of PROJECTION_KEYS) {
-      if (projection?.[key] !== ledger[key]) throw new Error("candidate source snapshot projection mismatch");
+      if (projection?.[key] !== expected[key]) throw new Error("candidate source snapshot projection mismatch");
     }
     return ledger;
   });
@@ -193,8 +220,9 @@ function validateSourceContext({ candidateBuildSpec, sourceInventory, sourceSnap
     || !sha(ledger.rawSha256)) {
     throw new Error("KRIC source snapshot ledger mismatch");
   }
+  const expectedMember = deriveCandidateProjection({ ledger, sourceInventory, governancePolicy, governancePolicyBytes: normalizedGovernancePolicyBytes, freshnessPolicy, observedAtMillis });
   for (const key of PROJECTION_KEYS) {
-    if (member[key] !== ledger[key]) throw new Error("KRIC candidate membership mismatch");
+    if (member[key] !== expectedMember[key]) throw new Error("KRIC candidate membership mismatch");
   }
   const receipt = ledger.rawReceipt;
   if (receipt?.sourceId !== SOURCE_ID || receipt.snapshotId !== snapshot.snapshotId
@@ -236,6 +264,47 @@ function validateSourceContext({ candidateBuildSpec, sourceInventory, sourceSnap
       credentialRedacted: true,
       licenseEvidenceHash: evidence.licenseEvidenceHash,
     },
+  };
+}
+
+function validateCandidateInventoryBinding({ candidateBuildSpec, sourceInventory, sourceInventoryBytes }) {
+  const rawSha256 = sha256(sourceInventoryBytes);
+  if (candidateBuildSpec.sourceInventorySha256 !== sha256(JSON.stringify(sourceInventory))
+    || candidateBuildSpec.networkEdgeEvidence?.sourceInventory?.path !== "tools/datapack/source-inventory.json"
+    || candidateBuildSpec.networkEdgeEvidence.sourceInventory.sha256 !== rawSha256) {
+    throw new Error("candidate source inventory binding mismatch");
+  }
+}
+
+function deriveCandidateProjection({ ledger, sourceInventory, governancePolicy, governancePolicyBytes, freshnessPolicy, observedAtMillis }) {
+  const source = exactlyOne(sourceInventory.sources, ({ id }) => id === ledger?.sourceId, "candidate source inventory");
+  const adminReviewRecordHash = source?.admissionEvidence?.adminReviewRecordHash;
+  if (!sha(adminReviewRecordHash)) throw new Error("candidate source admin review mismatch");
+  const policySource = exactlyOne(governancePolicy.sources ?? [], ({ sourceId }) => sourceId === ledger.sourceId, "candidate source governance");
+  const sourceClass = exactlyOne(freshnessPolicy.sourceClasses ?? [], ({ id }) => id === policySource.sourceClassId, "candidate source freshness class");
+  const freshnessExpiresAt = deriveFreshnessExpiresAt({
+    policy: freshnessPolicy,
+    sourceClassId: sourceClass.id,
+    basisAt: ledger[sourceClass.basisField],
+    providerValidUntil: sourceClass.providerValidityEndField ? ledger[sourceClass.providerValidityEndField] : undefined,
+    evaluationAt: new Date(observedAtMillis).toISOString(),
+  });
+  return {
+    snapshotId: ledger.snapshotId,
+    sourceId: ledger.sourceId,
+    rawObjectUri: ledger.rawObjectUri,
+    rawSha256: ledger.rawSha256,
+    redactedRequestFingerprint: ledger.redactedRequestFingerprint,
+    schemaFingerprint: ledger.schemaFingerprint,
+    licenseStatus: ledger.licenseStatus,
+    redistributionAllowed: ledger.redistributionAllowed,
+    adminReviewRecordHash,
+    snapshotStatus: ledger.snapshotStatus,
+    credentialRedacted: ledger.credentialRedacted,
+    freshnessExpiresAt,
+    rawRetentionExpiresAt: deriveRawRetentionExpiresAt({ policy: governancePolicy, sourceId: ledger.sourceId, retrievedAt: ledger.retrievedAt }),
+    governancePolicyVersion: governancePolicy.policyVersion,
+    governancePolicySha256: sha256(governancePolicyBytes),
   };
 }
 

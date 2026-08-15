@@ -5,7 +5,10 @@ import test from "node:test";
 import { buildCurrentCapitalFacilitySourceAdmission, canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-current-capital-facility-source-admission.mjs";
 import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
 import { collectKricAccessibilitySnapshots } from "./collect-kric-accessibility-snapshots.mjs";
+import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
+import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
+import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 
 const root = import.meta.dirname;
 test("producer-neutral FACILITY admission emits the exact 213/199/639 closed matrix", async () => {
@@ -65,13 +68,18 @@ test("producer-neutral FACILITY admission rejects representative identity and qu
     (value) => { const snapshot = JSON.parse(value.snapshotBytes); snapshot.queries.pop(); snapshot.queryCount = 212; value.snapshotBytes = Buffer.from(JSON.stringify(snapshot)); },
     (value) => { const snapshot = JSON.parse(value.snapshotBytes); snapshot.queries.push(structuredClone(snapshot.queries[0])); value.snapshotBytes = Buffer.from(JSON.stringify(snapshot)); },
     (value) => { const snapshot = JSON.parse(value.snapshotBytes); snapshot.queries[0].rows[0].gubun = "UNKNOWN"; value.snapshotBytes = Buffer.from(JSON.stringify(snapshot)); },
-    (value) => { value.sourceInventory.sources.find(({ id }) => id === "kric-station-convenience-standard").accessibilityAdmissionEvidence.snapshotId = "wrong"; },
-    (value) => { value.sourceSnapshots[0].rawReceipt.snapshotId = "wrong"; },
+    (value) => { mutateInventory(value, (inventory) => { inventory.sources.find(({ id }) => id === "kric-station-convenience-standard").accessibilityAdmissionEvidence.snapshotId = "wrong"; }); },
+    (value) => { value.sourceSnapshots.at(-1).rawReceipt.snapshotId = "wrong"; },
+    (value) => { value.sourceSnapshots.at(-1).rawSha256 = "0".repeat(64); },
     (value) => { value.candidateBuildSpec.sourceSnapshotIds = []; },
+    (value) => { value.candidateBuildSpec.sourceSnapshotSetHash = "0".repeat(64); },
     (value) => { value.candidateBuildSpec.sourceSnapshots[1].licenseStatus = "WRONG"; },
-    (value) => { value.sourceSnapshots[0].freshnessExpiresAt = "2026-08-03T00:00:00.000Z"; },
-    (value) => { value.sourceSnapshots[0].rawReceipt.storedAt = "2026-08-03T00:02:00.000Z"; },
-    (value) => { value.candidateBuildSpec.sourceSnapshots[0].governancePolicySha256 = "wrong"; },
+    (value) => { value.candidateBuildSpec.sourceSnapshots[3].untrusted = true; },
+    (value) => { value.sourceSnapshots.at(-1).freshnessExpiresAt = "2026-08-03T00:00:00.000Z"; },
+    (value) => { value.candidateBuildSpec.sourceSnapshots[3].rawRetentionExpiresAt = "2026-08-03T00:00:00.000Z"; },
+    (value) => { value.sourceSnapshots.at(-1).rawReceipt.storedAt = "2026-08-03T00:02:00.000Z"; },
+    (value) => { mutateInventory(value, (inventory) => { inventory.sources.find(({ id }) => id === "kric-station-convenience-standard").admissionEvidence.adminReviewRecordHash = "0".repeat(64); }); },
+    (value) => { value.candidateBuildSpec.sourceSnapshots[3].governancePolicySha256 = "wrong"; },
     (value) => {
       const pack = JSON.parse(value.canonicalPackBytes);
       pack.packs[0].stationLines.push({ stationId: "station-extra", lineId: JSON.parse(value.planBytes).stationLineProviderMappings[0].lineId });
@@ -89,8 +97,30 @@ test("producer-neutral FACILITY admission rejects representative identity and qu
   }
 });
 
+test("producer-neutral FACILITY admission accepts the current six-source derived projection", async () => {
+  const values = await productionShapedFixture();
+  const admission = buildCurrentCapitalFacilitySourceAdmission(values);
+  assert.equal(admission.decision, "GO");
+  assert.equal(admission.candidate.sourceSnapshotSetHash, values.candidateBuildSpec.sourceSnapshotSetHash);
+});
+
+test("producer-neutral FACILITY admission normalizes byte inputs before binding checks", async () => {
+  const values = await fixture();
+  values.sourceInventoryBytes = new Uint8Array(values.sourceInventoryBytes);
+  values.governancePolicyBytes = new Uint8Array(values.governancePolicyBytes);
+  assert.equal(buildCurrentCapitalFacilitySourceAdmission(values).decision, "GO");
+
+  const inventoryRawDrift = await fixture();
+  inventoryRawDrift.sourceInventoryBytes = Buffer.concat([inventoryRawDrift.sourceInventoryBytes, Buffer.from("\n")]);
+  assert.throws(() => buildCurrentCapitalFacilitySourceAdmission(inventoryRawDrift), /candidate source inventory binding mismatch/);
+
+  const governanceRawDrift = await fixture();
+  governanceRawDrift.governancePolicyBytes = Buffer.concat([governanceRawDrift.governancePolicyBytes, Buffer.from("\n")]);
+  assert.throws(() => buildCurrentCapitalFacilitySourceAdmission(governanceRawDrift), /candidate source snapshot projection mismatch/);
+});
+
 async function fixture() {
-  const files = Object.fromEntries(await Promise.all(["release/capital-production-canonical-pack.json", "nationwide-coverage-targets.json", "sources/kric-provider-code-catalog-20260228.json", "sources/kric-nationwide-route-rosters-20260730T203926676Z.json", "source-inventory.json"].map(async (name) => [name, await readFile(path.join(root, name))])));
+  const files = Object.fromEntries(await Promise.all(["release/capital-production-canonical-pack.json", "nationwide-coverage-targets.json", "sources/kric-provider-code-catalog-20260228.json", "sources/kric-nationwide-route-rosters-20260730T203926676Z.json", "source-inventory.json", "source-governance-policy.json", "../../release/product-gates/datapack-freshness-sla.json", "release/candidate-build-spec.json", "release/source-snapshots.json"].map(async (name) => [name, await readFile(path.join(root, name))])));
   const plan = buildCurrentCapitalFacilityCollectionPlan({ canonicalPackBytes: files["release/capital-production-canonical-pack.json"], coverageTargetsBytes: files["nationwide-coverage-targets.json"], providerCodeCatalogBytes: files["sources/kric-provider-code-catalog-20260228.json"], routeRostersBytes: files["sources/kric-nationwide-route-rosters-20260730T203926676Z.json"], sourceInventoryBytes: files["source-inventory.json"] });
   const planBytes = Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(plan));
   const roster = plan.stationLineProviderMappings.map((m) => ({ stationId: m.stationId, lineId: m.lineId, railOprIsttCd: m.providerOperatorId, lnCd: m.providerLineId, stinCd: m.providerStationId, canonicalMappings: [{ artifactId: "bundled-capital", stationId: m.stationId, lineId: m.lineId }] }));
@@ -99,7 +129,7 @@ async function fixture() {
     [[roster[2].railOprIsttCd, roster[2].lnCd, roster[2].stinCd].join("\0"), ["ELEC"]],
     [[roster[3].railOprIsttCd, roster[3].lnCd, roster[3].stinCd].join("\0"), ["EV", "ES", "WCLF"]],
   ]);
-  const [snapshot] = await collectKricAccessibilitySnapshots({ roster, operations: [{ sourceId: "kric-station-convenience-standard", endpoint: "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl", responseFields: ["dtlLoc", "grndDvCd", "gubun", "imgPath", "mlFmlDvCd", "stinFlor", "trfcWeakDvCd"], tupleIdentityFields: [] }], serviceKey: "fixture-only-key", now: new Date("2026-08-03T00:00:00.000Z"), fetchImpl: async (url) => {
+  const [snapshot] = await collectKricAccessibilitySnapshots({ roster, operations: [{ sourceId: "kric-station-convenience-standard", endpoint: "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl", responseFields: ["dtlLoc", "grndDvCd", "gubun", "imgPath", "mlFmlDvCd", "stinFlor", "trfcWeakDvCd"], tupleIdentityFields: [] }], serviceKey: "fixture-only-key", now: new Date("2026-08-14T00:00:00.000Z"), fetchImpl: async (url) => {
     const codes = specialCodes.get([url.searchParams.get("railOprIsttCd"), url.searchParams.get("lnCd"), url.searchParams.get("stinCd")].join("\0")) ?? ["EV"];
     return { ok: true, status: 200, json: async () => ({ header: { resultCode: "00" }, body: codes.map((gubun) => ({ dtlLoc: "fixture", grndDvCd: "1", gubun, imgPath: "", mlFmlDvCd: "", stinFlor: 1, trfcWeakDvCd: "01" })) }) };
   } });
@@ -137,12 +167,12 @@ async function fixture() {
     sourceUpdatedAt: snapshot.observedAt,
     rowCount: snapshot.rowCount,
     coverageCount: 213,
-    freshnessExpiresAt: "2026-08-04T12:00:00.000Z",
+    freshnessExpiresAt: "2026-08-15T12:00:00.000Z",
     rawRetentionExpiresAt: "2026-10-01T00:00:00.000Z",
     governancePolicyVersion: "fixture-v1",
     governancePolicySha256: "b".repeat(64),
     adminReviewRecordHash: source.admissionEvidence.adminReviewRecordHash,
-    previousSnapshotId: "previous-fixture-snapshot",
+    previousSnapshotId: "",
     diffSummary: { added: 1 },
     snapshotStatus: "LOCKED",
     fetchStatus: "SUCCESS",
@@ -157,43 +187,58 @@ async function fixture() {
       snapshotRawSha256: snapshot.rawSha256,
       rawObjectSha256,
       capturedAt: snapshot.capturedAt,
-      storedAt: "2026-08-03T00:00:40.000Z",
+      storedAt: "2026-08-14T00:00:40.000Z",
       byteSize: 1234,
     },
   };
-  const unrelated = {
-    snapshotId: "unrelated-fixture-snapshot",
-    sourceId: "unrelated-fixture-source",
-    rawObjectUri: "s3://fixture/unrelated.json",
-    rawSha256: "c".repeat(64),
-    schemaFingerprint: "d".repeat(64),
-    licenseStatus: "PASS",
-    redistributionAllowed: true,
-    snapshotStatus: "LOCKED",
-    credentialRedacted: true,
-    redactedRequestFingerprint: "e".repeat(64),
-    adminReviewRecordHash: "f".repeat(64),
-    freshnessExpiresAt: "2026-08-04T12:00:00.000Z",
-    rawRetentionExpiresAt: "2026-10-01T00:00:00.000Z",
-    governancePolicyVersion: "fixture-v1",
-    governancePolicySha256: "b".repeat(64),
-  };
-  const sourceSnapshots = [ledger, unrelated];
+  const productionSpec = JSON.parse(files["release/candidate-build-spec.json"]);
+  const productionSnapshots = JSON.parse(files["release/source-snapshots.json"]);
+  const previousKric = productionSnapshots.find((entry) => entry.sourceId === ledger.sourceId && entry.snapshotId === productionSpec.sourceSnapshotIds[3]);
+  ledger.previousSnapshotId = previousKric.snapshotId;
+  ledger.diffSummary = buildSnapshotDiff(previousKric, ledger);
+  const sourceSnapshots = [...productionSnapshots, ledger];
+  const governancePolicy = JSON.parse(files["source-governance-policy.json"]);
+  const freshnessSla = JSON.parse(files["../../release/product-gates/datapack-freshness-sla.json"]);
+  const sourceInventoryBytes = Buffer.from(JSON.stringify(sourceInventory));
   const candidateBuildSpec = {
     schemaVersion: 1,
     artifactKind: "datapack-candidate-build-spec",
     candidateId: "fixture",
-    productionScopeId: "fixture",
-    sourceSnapshotIds: [snapshot.snapshotId, unrelated.snapshotId],
-    sourceSnapshots: [ledger, unrelated].map((entry) => Object.fromEntries([
-      "snapshotId", "sourceId", "rawObjectUri", "rawSha256", "redactedRequestFingerprint",
-      "schemaFingerprint", "licenseStatus", "redistributionAllowed", "adminReviewRecordHash",
-      "snapshotStatus", "credentialRedacted", "freshnessExpiresAt", "rawRetentionExpiresAt",
-      "governancePolicyVersion", "governancePolicySha256",
-    ].map((key) => [key, entry[key]]))),
-    sourceSnapshotSetHash: sha256(JSON.stringify(sourceSnapshots)),
+    productionScopeId: "capital_pilot_android_v1",
+    sourceSnapshotIds: productionSpec.sourceSnapshotIds.map((snapshotId) => snapshotId === previousKric.snapshotId ? ledger.snapshotId : snapshotId),
+    sourceSnapshots: productionSpec.sourceSnapshotIds.map((snapshotId) => snapshotId === previousKric.snapshotId ? ledger : productionSnapshots.find((entry) => entry.snapshotId === snapshotId)).map((entry) => derivedProjection({ entry, sourceInventory, governancePolicy, governancePolicyBytes: files["source-governance-policy.json"], freshnessSla, observedAt: "2026-08-14T16:00:00.000Z" })),
+    sourceSnapshotSetHash: sha256(JSON.stringify(productionSpec.sourceSnapshotIds.map((snapshotId) => snapshotId === previousKric.snapshotId ? ledger : productionSnapshots.find((entry) => entry.snapshotId === snapshotId)))),
+    sourceInventorySha256: sha256(JSON.stringify(sourceInventory)),
+    networkEdgeEvidence: { sourceInventory: { path: "tools/datapack/source-inventory.json", sha256: sha256(sourceInventoryBytes) } },
   };
-  return { planBytes, canonicalPackBytes: files["release/capital-production-canonical-pack.json"], snapshotBytes, sourceInventory, sourceSnapshots, candidateBuildSpec, observedAt: "2026-08-03T00:01:00.000Z" };
+  return { planBytes, canonicalPackBytes: files["release/capital-production-canonical-pack.json"], snapshotBytes, sourceInventoryBytes, sourceSnapshots, governancePolicy, governancePolicyBytes: files["source-governance-policy.json"], freshnessPolicy: freshnessSla, candidateBuildSpec, observedAt: "2026-08-14T16:00:00.000Z" };
+}
+
+function derivedProjection({ entry, sourceInventory, governancePolicy, governancePolicyBytes, freshnessSla, observedAt }) {
+  const source = sourceInventory.sources.find(({ id }) => id === entry.sourceId);
+  const policySource = governancePolicy.sources.find(({ sourceId }) => sourceId === entry.sourceId);
+  const sourceClass = freshnessSla.sourceClasses.find(({ id }) => id === policySource.sourceClassId);
+  return {
+    snapshotId: entry.snapshotId, sourceId: entry.sourceId, rawObjectUri: entry.rawObjectUri,
+    rawSha256: entry.rawSha256, redactedRequestFingerprint: entry.redactedRequestFingerprint,
+    schemaFingerprint: entry.schemaFingerprint, licenseStatus: entry.licenseStatus,
+    redistributionAllowed: entry.redistributionAllowed,
+    adminReviewRecordHash: source.admissionEvidence.adminReviewRecordHash,
+    snapshotStatus: entry.snapshotStatus, credentialRedacted: entry.credentialRedacted,
+    freshnessExpiresAt: deriveFreshnessExpiresAt({ policy: freshnessSla, sourceClassId: sourceClass.id, basisAt: entry[sourceClass.basisField], providerValidUntil: sourceClass.providerValidityEndField ? entry[sourceClass.providerValidityEndField] : undefined, evaluationAt: observedAt }),
+    rawRetentionExpiresAt: deriveRawRetentionExpiresAt({ policy: governancePolicy, sourceId: entry.sourceId, retrievedAt: entry.retrievedAt }),
+    governancePolicyVersion: governancePolicy.policyVersion, governancePolicySha256: sha256(governancePolicyBytes),
+  };
+}
+
+function mutateInventory(value, mutate) {
+  const inventory = JSON.parse(Buffer.from(value.sourceInventoryBytes));
+  mutate(inventory);
+  value.sourceInventoryBytes = Buffer.from(JSON.stringify(inventory));
+}
+
+async function productionShapedFixture() {
+  return fixture();
 }
 
 function rehash(value) {
