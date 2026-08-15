@@ -286,7 +286,10 @@ function validateMaterializationRow(row, materializationCandidate, stationLineIn
   assertSha256(row.evidenceRawSha256, "materialization evidenceRawSha256");
   if (terminal) {
     if (row.providerRecordHash !== null || row.terminalPolicy !== "EXACT_TUPLE_PROVIDER_RESULT_03"
-      || row.providerResultCode !== "03" || !/^[a-f0-9]{64}$/.test(row.providerResponseSha256)) {
+      || row.providerResultCode !== "03" || row.domain !== "FACILITY"
+      || row.stationId !== "station-b35616704ce3" || row.lineId !== "seoul-2"
+      || row.operatorId !== "seoul-metro" || row.sourceId !== "kric-station-convenience-standard"
+      || !/^[a-f0-9]{64}$/.test(row.providerResponseSha256)) {
       throw new Error("terminal materialization contract mismatch");
     }
   } else {
