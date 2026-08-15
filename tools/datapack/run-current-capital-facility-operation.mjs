@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createHash, randomUUID } from "node:crypto";
 import { execFile as execFileCallback } from "node:child_process";
-import { lstat, mkdir, open, readFile, realpath, rename, unlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, realpath, rename, rmdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
@@ -36,6 +36,7 @@ const RELEASE_INPUTS = Object.freeze({
 const ADMISSION = "tools/datapack/release/current-capital-facility-source-admission.json";
 const JOURNAL = "journal.json";
 const REGISTRAR_RESIDUES = Object.freeze(["tools/datapack/.kric-standard-registration-transaction.json", "tools/datapack/.kric-standard-registration.lock", "tools/datapack/.candidate-source-rebind.lock"]);
+const CURRENT_SOURCE_IDS = Object.freeze(["seoulmetro-cyberstation-route-map", "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info"]);
 
 function hash(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 function parse(bytes, label) { try { return JSON.parse(bytes.toString("utf8")); } catch { throw new Error(`${label} is invalid JSON`); } }
@@ -61,6 +62,11 @@ async function inputSnapshots(root) {
   return Object.fromEntries(await Promise.all(Object.entries(INPUTS).map(async ([key, relative]) => [key, await readStableRegularFile(path.join(root, relative), key)])));
 }
 function snapshotBytes(snapshots) { return Object.fromEntries(Object.entries(snapshots).map(([key, value]) => [key, value.bytes])); }
+async function acquireCollectionClaim(operationRoot) {
+  const lock = path.join(operationRoot, ".collection-claim");
+  try { await mkdir(lock, { mode: 0o700 }); } catch (error) { if (error?.code === "EEXIST") throw new Error("collection is already in progress"); throw error; }
+  return async () => { await rmdir(lock).catch(() => {}); };
+}
 async function assertPreparedInputs(root, journal) {
   const snapshots = await inputSnapshots(root); const expected = journal?.inputSha256;
   if (!expected || Object.keys(expected).length !== Object.keys(INPUTS).length || Object.entries(snapshots).some(([key, value]) => expected[key] !== hash(value.bytes))) throw new Error("prepared input identity mismatch");
@@ -104,7 +110,7 @@ async function validateReleasePreflight(root, planBytes, now) {
   if (request?.buildSpecSha256 !== hash(release.candidate.bytes)) throw new Error("release request is not bound to candidate bytes");
   validateSourceGovernancePolicy({ policy: governance, inventory, freshnessPolicy: freshness });
   const heads = validateLineage(snapshots).headsBySource;
-  if (!Array.isArray(candidate?.sourceSnapshotIds) || !Array.isArray(candidate?.sourceSnapshots) || candidate.sourceSnapshotIds.length !== candidate.sourceSnapshots.length) throw new Error("candidate source ledger/freshness binding mismatch");
+  if (!Array.isArray(candidate?.sourceSnapshotIds) || !Array.isArray(candidate?.sourceSnapshots) || candidate.sourceSnapshotIds.length !== candidate.sourceSnapshots.length || JSON.stringify(candidate.sourceSnapshots.map(({ sourceId }) => sourceId)) !== JSON.stringify(CURRENT_SOURCE_IDS)) throw new Error("candidate source ledger/freshness binding mismatch");
   for (const [index, snapshotId] of candidate.sourceSnapshotIds.entries()) {
     const ledger = snapshots.find((entry) => entry?.snapshotId === snapshotId); const projection = candidate.sourceSnapshots[index]; const source = inventory.sources?.find(({ id }) => id === ledger?.sourceId); const governanceSource = governance.sources?.find(({ sourceId }) => sourceId === ledger?.sourceId); const review = governanceSource?.licenseReview;
     let freshnessExpiresAt; let rawRetentionExpiresAt; let nextReviewAt;
@@ -134,7 +140,12 @@ async function readCompletedObservation(observationRoot) {
   const snapshotBytes = await regularBytes(path.join(observationRoot, manifest.snapshotFile), "collected snapshot"); const rawBytes = await regularBytes(path.join(observationRoot, manifest.rawArtifactFile), "collected raw artifact");
   const snapshot = validateKricAccessibilitySnapshotIdentity(parse(snapshotBytes, "collected snapshot")); const rawArtifact = validateKricAccessibilityRawCollection(parse(rawBytes, "collected raw artifact"), snapshot);
   if (manifest.sourceId !== snapshot.sourceId || manifest.snapshotId !== snapshot.snapshotId || manifest.capturedAt !== snapshot.capturedAt || manifest.snapshotRawSha256 !== snapshot.rawSha256 || manifest.snapshotFileSha256 !== hash(snapshotBytes) || manifest.rawObjectSha256 !== hash(rawBytes) || manifest.rawObjectChecksumSha256 !== createHash("sha256").update(rawBytes).digest("base64") || manifest.rawObjectByteSize !== rawBytes.length || rawArtifact.snapshotId !== snapshot.snapshotId) throw new Error("stored observation identity mismatch");
-  return { manifest, snapshot, rawArtifact };
+  return { manifest, manifestBytes, snapshot, snapshotBytes, rawArtifact, rawBytes };
+}
+function observationBinding(observation) { return { snapshotId: observation.snapshot.snapshotId, manifestSha256: hash(observation.manifestBytes), snapshotSha256: hash(observation.snapshotBytes), rawSha256: hash(observation.rawBytes) }; }
+function assertObservationBinding(journal, observation) {
+  const binding = journal?.completedObservation;
+  if (!binding || JSON.stringify(binding) !== JSON.stringify(observationBinding(observation))) throw new Error("completed observation identity mismatch");
 }
 function roster(plan) { return plan.stationLineProviderMappings.map((mapping) => ({
   stationId: mapping.stationId, lineId: mapping.lineId, railOprIsttCd: mapping.providerOperatorId,
@@ -164,33 +175,45 @@ export async function prepareCurrentCapitalFacilityOperation({ repositoryRoot = 
   const journal = { schemaVersion: 1, artifactKind: "current-capital-facility-operation-journal", operationId: randomUUID(), phase: "PREPARED", preparedAt: now.toISOString(), expectedMainSha, expectedBucketOwner, planSha256: hash(Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(plan))), inputSha256: Object.fromEntries(Object.entries(bytes).map(([key, value]) => [key, hash(value)])), completedStages: {} };
   await syncWrite(path.join(output, JOURNAL), journal); return { plan, journal };
 }
-export async function collectCurrentCapitalFacilityOperation({ repositoryRoot = ROOT, operationRoot, serviceKey, fetchImpl = fetch, delayImpl, now = new Date(), execFileImpl = execFile, collectImpl = collectKricStandardAccessibilityObservation, writeObservationImpl = writeKricStandardAccessibilityObservation } = {}) {
+export async function collectCurrentCapitalFacilityOperation({ repositoryRoot = ROOT, operationRoot, serviceKey, fetchImpl = fetch, delayImpl, now = new Date(), execFileImpl = execFile, journalWriteImpl = syncWrite, collectImpl = collectKricStandardAccessibilityObservation, writeObservationImpl = writeKricStandardAccessibilityObservation } = {}) {
   const repository = path.resolve(repositoryRoot); const root = path.resolve(requireText(operationRoot, "operation root")); let journal = parse(await regularBytes(path.join(root, JOURNAL), "operation journal"), "operation journal");
   await assertExternalOperationRoot(repository, root); const planBytes = await assertPlanBinding(root, journal);
   if (journal.phase === "COLLECTION_STARTED") {
     const observation = await readCompletedObservation(path.join(root, "observation"));
-    journal = { ...journal, phase: "COLLECTED", snapshotId: observation.snapshot.snapshotId, collectionReconciledAt: now.toISOString() }; await syncWrite(path.join(root, JOURNAL), journal); return summary(observation);
+    const binding = observationBinding(observation); journal = { ...journal, phase: "COLLECTED", snapshotId: observation.snapshot.snapshotId, completedObservation: binding, collectionReconciledAt: now.toISOString() }; await journalWriteImpl(path.join(root, JOURNAL), journal); return summary(observation);
   }
   if (journal.phase !== "PREPARED") throw new Error("collection may only start from PREPARED operation");
+  const key = requireText(serviceKey, "KRIC_SERVICE_KEY");
   await assertExactMain(repository, requireText(journal.expectedMainSha, "prepared expected main SHA"), execFileImpl); await assertNoRegistrarResidues(repository); await assertPreparedInputs(repository, journal); await validateReleasePreflight(repository, planBytes, now);
   const plan = parse(planBytes, "operation plan");
   if (canonicalCurrentCapitalFacilityCollectionPlanJson(plan) !== planBytes.toString("utf8") || plan.counts.providerTupleCount !== 213) throw new Error("operation plan is invalid");
   const owner = requireText(journal.expectedBucketOwner, "prepared expected bucket owner");
   if (!/^\d{12}$/.test(owner)) throw new Error("prepared expected bucket owner is invalid");
-  const { stdout } = await execFileImpl("aws", ["sts", "get-caller-identity", "--query", "Account", "--output", "text", "--no-cli-pager"]);
-  if (stdout.trim() !== owner) throw new Error("AWS caller account does not match expected bucket owner");
-  await execFileImpl("aws", ["s3api", "head-bucket", "--bucket", "easysubway-datapack-sources", "--expected-bucket-owner", owner, "--no-cli-pager"]);
-  await syncWrite(path.join(root, JOURNAL), { ...journal, phase: "COLLECTION_STARTED", collectionStartedAt: now.toISOString() });
+  const releaseClaim = await acquireCollectionClaim(root);
   try {
-    const observation = await collectImpl({ roster: roster(plan), serviceKey: requireText(serviceKey, "KRIC_SERVICE_KEY"), fetchImpl, delayImpl, now, requestTimeoutMs: 30_000, requestIntervalMs: 250 });
+    journal = parse(await regularBytes(path.join(root, JOURNAL), "operation journal"), "operation journal");
+    if (journal.phase !== "PREPARED") throw new Error("collection may only start from PREPARED operation");
+    await journalWriteImpl(path.join(root, JOURNAL), { ...journal, phase: "COLLECTION_STARTED", collectionStartedAt: now.toISOString() });
+    const { stdout } = await execFileImpl("aws", ["sts", "get-caller-identity", "--query", "Account", "--output", "text", "--no-cli-pager"]);
+    if (stdout.trim() !== owner) throw new Error("AWS caller account does not match expected bucket owner");
+    await execFileImpl("aws", ["s3api", "head-bucket", "--bucket", "easysubway-datapack-sources", "--expected-bucket-owner", owner, "--no-cli-pager"]);
+    const observation = await collectImpl({ roster: roster(plan), serviceKey: key, fetchImpl, delayImpl, now, requestTimeoutMs: 30_000, requestIntervalMs: 250 });
     if (observation.rawArtifact.requestCount !== 213) throw new Error("KRIC collection must make exactly 213 requests");
     const observationRoot = path.join(root, "observation"); await writeObservationImpl({ outputRoot: observationRoot, observation });
-    await syncWrite(path.join(root, JOURNAL), { ...journal, phase: "COLLECTED", collectionStartedAt: now.toISOString(), snapshotId: observation.snapshot.snapshotId });
+    const completed = await readCompletedObservation(observationRoot); const binding = observationBinding(completed);
+    await journalWriteImpl(path.join(root, JOURNAL), { ...journal, phase: "COLLECTED", collectionStartedAt: now.toISOString(), snapshotId: observation.snapshot.snapshotId, completedObservation: binding });
     return summary(observation);
   } catch (error) {
-    await syncWrite(path.join(root, JOURNAL), { ...journal, phase: "COLLECTION_FAILED", collectionStartedAt: now.toISOString() });
+    let completed;
+    try { completed = await readCompletedObservation(path.join(root, "observation")); } catch { /* incomplete observation follows normal failure path */ }
+    if (completed) {
+      const binding = observationBinding(completed);
+      try { await journalWriteImpl(path.join(root, JOURNAL), { ...journal, phase: "COLLECTED", collectionStartedAt: journal.collectionStartedAt ?? now.toISOString(), snapshotId: completed.snapshot.snapshotId, completedObservation: binding, collectionReconciledAt: now.toISOString() }); return summary(completed); }
+      catch { throw error; }
+    }
+    await journalWriteImpl(path.join(root, JOURNAL), { ...journal, phase: "COLLECTION_FAILED", collectionStartedAt: journal.collectionStartedAt ?? now.toISOString() });
     throw error;
-  }
+  } finally { await releaseClaim(); }
 }
 export async function finalizeCurrentCapitalFacilityOperation({ repositoryRoot = ROOT, operationRoot, expectedBucketOwner, now = new Date(), execFileImpl = execFile, publishImpl = publishKricAccessibilityRawArtifact, registerImpl = registerKricStandardAccessibilitySnapshot, rebindImpl = rebindCurrentCandidateSourceSnapshots, buildAdmissionImpl = buildCurrentCapitalFacilitySourceAdmission } = {}) {
   const root = path.resolve(repositoryRoot); const operation = path.resolve(requireText(operationRoot, "operation root")); const journal = parse(await regularBytes(path.join(operation, JOURNAL), "operation journal"), "operation journal");
@@ -198,7 +221,7 @@ export async function finalizeCurrentCapitalFacilityOperation({ repositoryRoot =
   let reconciledJournal = journal;
   if (journal.phase === "COLLECTION_STARTED") {
     const observation = await readCompletedObservation(path.join(operation, "observation"));
-    reconciledJournal = { ...journal, phase: "COLLECTED", snapshotId: observation.snapshot.snapshotId, collectionReconciledAt: now.toISOString() };
+    reconciledJournal = { ...journal, phase: "COLLECTED", snapshotId: observation.snapshot.snapshotId, completedObservation: observationBinding(observation), collectionReconciledAt: now.toISOString() };
     await syncWrite(path.join(operation, JOURNAL), reconciledJournal);
   }
   if (!["COLLECTED", "FINALIZE_STARTED"].includes(reconciledJournal.phase)) throw new Error("finalize requires collected observation");
@@ -206,7 +229,8 @@ export async function finalizeCurrentCapitalFacilityOperation({ repositoryRoot =
     "tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json", ADMISSION,
     "tools/datapack/.kric-standard-registration-transaction.json", "tools/datapack/.kric-standard-registration.lock", "tools/datapack/.candidate-source-rebind.lock",
   ]);
-  const observationManifest = parse(await regularBytes(path.join(operation, "observation/observation.json"), "observation manifest"), "observation manifest");
+  const completedObservation = await readCompletedObservation(path.join(operation, "observation")); assertObservationBinding(reconciledJournal, completedObservation);
+  const observationManifest = completedObservation.manifest;
   allowedResumePaths.add(`tools/datapack/sources/${observationManifest.snapshotId}.json`);
   if (reconciledJournal.phase === "COLLECTED") { await assertExactMain(root, requireText(reconciledJournal.expectedMainSha, "prepared expected main SHA"), execFileImpl); await assertNoRegistrarResidues(root); await assertPreparedInputs(root, reconciledJournal); await validateReleasePreflight(root, planBytes, now); }
   else await assertExactMain(root, requireText(reconciledJournal.expectedMainSha, "prepared expected main SHA"), execFileImpl, allowedResumePaths);

@@ -86,8 +86,9 @@ async function finalizeFixture(t) {
   const observationRoot = path.join(operationRoot, "observation");
   const planBytes = Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(plan));
   await mkdir(operationRoot, { recursive: true }); await writeFile(path.join(operationRoot, "plan.json"), planBytes);
-  await writeJson(path.join(observationRoot, "observation.json"), { snapshotFile: "snapshot.json" }); await writeFile(path.join(observationRoot, "snapshot.json"), snapshotBytes);
-  await writeJson(path.join(operationRoot, "journal.json"), { schemaVersion: 1, artifactKind: "current-capital-facility-operation-journal", phase: "FINALIZE_STARTED", expectedMainSha: EXACT_MAIN, expectedBucketOwner: "123456789012", planSha256: sha(planBytes), completedStages: {} });
+  await writeKricStandardAccessibilityObservation({ outputRoot: observationRoot, observation: observationFor(snapshot) });
+  const [manifestBytes, observedSnapshotBytes, rawBytes] = await Promise.all([readFile(path.join(observationRoot, "observation.json"), "utf8"), readFile(path.join(observationRoot, `${snapshot.snapshotId}.json`)), readFile(path.join(observationRoot, `${snapshot.snapshotId}.raw.json`))]);
+  await writeJson(path.join(operationRoot, "journal.json"), { schemaVersion: 1, artifactKind: "current-capital-facility-operation-journal", phase: "FINALIZE_STARTED", expectedMainSha: EXACT_MAIN, expectedBucketOwner: "123456789012", planSha256: sha(planBytes), completedObservation: { snapshotId: snapshot.snapshotId, manifestSha256: sha(Buffer.from(manifestBytes)), snapshotSha256: sha(observedSnapshotBytes), rawSha256: sha(rawBytes) }, completedStages: {} });
   return { root, operationRoot, snapshot, snapshotBytes, plan, ledger: next };
 }
 
@@ -121,7 +122,7 @@ test("wrong AWS owner stops before COLLECTION_STARTED and provider call 0", asyn
   await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: root, expectedMainSha: sha, expectedBucketOwner: "123456789012", execFileImpl: exactMainExec });
   let calls = 0;
   await assert.rejects(collectCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: root, serviceKey: "test", execFileImpl: async (file, args) => file === "git" ? exactMainExec(file, args) : ({ stdout: "999999999999\n" }), collectImpl: async () => { calls += 1; } }), /does not match/);
-  assert.equal(calls, 0); assert.equal(JSON.parse(await readFile(path.join(root, "journal.json"), "utf8")).phase, "PREPARED");
+  assert.equal(calls, 0); assert.equal(JSON.parse(await readFile(path.join(root, "journal.json"), "utf8")).phase, "COLLECTION_FAILED");
 });
 
 test("stale prepared main stops before AWS or KRIC", async (t) => {
@@ -138,6 +139,13 @@ test("stale prepared main stops before AWS or KRIC", async (t) => {
     if (file === "git") return exactMainExec(file, args); awsCalls += 1; return { stdout: "123456789012\n" };
   }, collectImpl: async () => { kricCalls += 1; } }), /operation plan identity mismatch/);
   assert.equal(awsCalls, 0); assert.equal(kricCalls, 0);
+});
+
+test("missing KRIC_SERVICE_KEY leaves PREPARED before any claim", async (t) => {
+  const temporaryRoot = await mkdtemp(path.join(tmpdir(), "facility-operation-")); const operationRoot = path.join(temporaryRoot, "operation"); t.after(() => rm(temporaryRoot, { recursive: true, force: true }));
+  await prepareCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot, expectedMainSha: EXACT_MAIN, expectedBucketOwner: "123456789012", execFileImpl: exactMainExec });
+  await assert.rejects(collectCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot, execFileImpl: exactMainExec }), /KRIC_SERVICE_KEY/);
+  assert.equal(JSON.parse(await readFile(path.join(operationRoot, "journal.json"), "utf8")).phase, "PREPARED");
 });
 
 test("expired or license-drift governance stops before AWS or KRIC", async (t) => {
@@ -214,6 +222,13 @@ test("finalize fails closed for an existing partial receipt before publishing ag
   assert.equal(published, 0);
 });
 
+test("finalize rejects a replaced completed observation before publication", async (t) => {
+  const fixture = await finalizeFixture(t); const observed = path.join(fixture.operationRoot, "observation", `${fixture.snapshot.snapshotId}.json`);
+  await writeFile(observed, `${await readFile(observed, "utf8")}\n`); let published = 0;
+  await assert.rejects(main(["--phase", "finalize", "--operation-root", fixture.operationRoot], { repositoryRoot: fixture.root, now: NOW, execFileImpl: exactMainExec, publishImpl: async () => { published += 1; } }), /stored observation identity mismatch/);
+  assert.equal(published, 0);
+});
+
 test("inconsistent external receipt cannot skip full registration reconciliation", async (t) => {
   const fixture = await finalizeFixture(t); const target = path.join(fixture.root, "tools/datapack/sources", `${fixture.snapshot.snapshotId}.json`);
   await mkdir(path.dirname(target), { recursive: true }); await writeFile(target, fixture.snapshotBytes); await writeJson(path.join(fixture.operationRoot, "receipt.json"), { ...receipt(fixture), rawObjectSha256: "0".repeat(64) });
@@ -230,4 +245,16 @@ test("stored complete observation reconciles COLLECTION_STARTED without KRIC rep
   const observation = await collectCurrentCapitalFacilityOperation({ repositoryRoot: fixture.root, operationRoot: fixture.operationRoot, collectImpl: async () => { kricCalls += 1; }, execFileImpl: exactMainExec, now: NOW });
   assert.equal(kricCalls, 0); assert.deepEqual(observation, { snapshotId: fixture.snapshot.snapshotId, requestCount: 213, status: "COLLECTED" });
   assert.equal(JSON.parse(await readFile(journalPath, "utf8")).phase, "COLLECTED");
+});
+
+test("finalize COLLECTION_STARTED reconciliation persists completed observation binding", async (t) => {
+  const fixture = await finalizeFixture(t); const journalPath = path.join(fixture.operationRoot, "journal.json"); const journal = JSON.parse(await readFile(journalPath, "utf8")); delete journal.completedObservation; journal.phase = "COLLECTION_STARTED"; await writeJson(journalPath, journal);
+  await assert.rejects(main(["--phase", "finalize", "--operation-root", fixture.operationRoot], { repositoryRoot: fixture.root, now: NOW, execFileImpl: exactMainExec }), /prepared input identity mismatch/);
+  const reconciled = JSON.parse(await readFile(journalPath, "utf8")); assert.equal(reconciled.phase, "COLLECTED"); assert.equal(reconciled.completedObservation.snapshotId, fixture.snapshot.snapshotId);
+});
+
+test("complete observation survives COLLECTED journal write failure as recoverable COLLECTION_STARTED", async (t) => {
+  const fixture = await finalizeFixture(t); const journalPath = path.join(fixture.operationRoot, "journal.json"); const journal = JSON.parse(await readFile(journalPath, "utf8")); journal.phase = "COLLECTION_STARTED"; await writeJson(journalPath, journal);
+  await assert.rejects(collectCurrentCapitalFacilityOperation({ repositoryRoot: fixture.root, operationRoot: fixture.operationRoot, now: NOW, execFileImpl: exactMainExec, journalWriteImpl: async () => { throw new Error("journal write failed"); } }), /journal write failed/);
+  assert.equal(JSON.parse(await readFile(journalPath, "utf8")).phase, "COLLECTION_STARTED");
 });
