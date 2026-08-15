@@ -145,6 +145,49 @@ test("근거 없는 VERIFIED_ABSENT와 NOT_APPLICABLE 및 닫히지 않은 schem
   ])), /evidence row keys mismatch/);
 });
 
+test("exact provider result 03의 EV/ES/WCLF carrier를 하나의 FACILITY terminal cell로 정규화한다", () => {
+  const rows = ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"].map((facilityType) => evidence({
+    stationId: "station-b35616704ce3",
+    lineId: "seoul-2",
+    operatorId: "seoul-metro",
+    sourceId: "kric-station-convenience-standard",
+    facilityType,
+    state: "UNVERIFIED_EVIDENCE_BLOCKED",
+    evidenceKind: "UNVERIFIED_EVIDENCE_BLOCKED",
+    terminalPolicy: "EXACT_TUPLE_PROVIDER_RESULT_03",
+    providerResultCode: "03",
+    strictRouteEligible: false,
+    strictRouteEligibleReason: "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED",
+    installationStatus: "UNKNOWN",
+    operationalStatus: "UNKNOWN",
+    statusMeaning: "PROVIDER_RESULT_UNVERIFIED",
+    confidence: 0,
+    providerRecordHash: null,
+    providerResponseSha256: "c".repeat(64),
+    evidenceHash: terminalEvidenceHash(facilityType),
+    evidenceReason: "시설 존재·부재가 검증되지 않아 경로를 차단했습니다.",
+  }));
+
+  const result = materializeStationLineAccessibility({ candidate: candidate(), stationLines: [{ stationId: "station-b35616704ce3", lineId: "seoul-2", operatorId: "seoul-metro" }], evidenceRows: rows, observedAt: NOW });
+
+  const cell = result.rows.find(({ stationId, lineId, domain }) => stationId === "station-b35616704ce3" && lineId === "seoul-2" && domain === "FACILITY");
+  assert.equal(cell.state, "UNVERIFIED_EVIDENCE_BLOCKED");
+  assert.equal(cell.terminalPolicy, "EXACT_TUPLE_PROVIDER_RESULT_03");
+  assert.equal(cell.providerResultCode, "03");
+  assert.equal(cell.providerResponseSha256, "c".repeat(64));
+  assert.equal(result.rows.filter(({ stationId, lineId, domain }) => stationId === "station-b35616704ce3" && lineId === "seoul-2" && domain === "FACILITY").length, 1);
+  for (const field of ["stationId", "lineId", "sourceId"]) {
+    const invalid = structuredClone(rows); invalid[0][field] = "wrong";
+    assert.throws(() => materializeStationLineAccessibility({ candidate: candidate(), stationLines: [{ stationId: "station-b35616704ce3", lineId: "seoul-2", operatorId: "seoul-metro" }], evidenceRows: invalid, observedAt: NOW }), /terminal evidence (tuple|identity) mismatch/);
+  }
+  const tampered = structuredClone(rows); tampered[0].evidenceHash = "0".repeat(64);
+  assert.throws(() => materializeStationLineAccessibility({ candidate: candidate(), stationLines: [{ stationId: "station-b35616704ce3", lineId: "seoul-2", operatorId: "seoul-metro" }], evidenceRows: tampered, observedAt: NOW }), /terminal evidence hash mismatch/);
+});
+
+function terminalEvidenceHash(facilityType) {
+  return createHash("sha256").update(JSON.stringify({ facilityType, lineId: "seoul-2", operatorId: "seoul-metro", providerResponseSha256: "c".repeat(64), sourceSnapshotId: "official-operator-accessibility-20260808", stationId: "station-b35616704ce3", terminalPolicy: "EXACT_TUPLE_PROVIDER_RESULT_03" })).digest("hex");
+}
+
 test("evidence 시간은 canonical UTC와 capturedAt <= observedAt < freshUntil 순서를 fail closed로 강제한다", () => {
   assert.doesNotThrow(() => materializeStationLineAccessibility(input([
     evidence({ capturedAt: NOW, freshUntil: "2026-08-09T00:00:00.001Z" }),

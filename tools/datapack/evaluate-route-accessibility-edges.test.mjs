@@ -207,6 +207,49 @@ test("모든 route edge를 한 번씩 평가하고 blocked·unresolved edge도 �
   assert.equal(first.results.find(({ edgeId }) => edgeId === "ride-a-b").materializationCells.length, 0);
 });
 
+test("exact terminal FACILITY cell은 availability claim 없이 dependent edge를 BLOCKED로 만든다", () => {
+  const terminal = materialization();
+  const cell = terminal.rows.find(({ stationId, lineId, domain }) => stationId === "station-a" && lineId === "line-1" && domain === "FACILITY");
+  cell.state = "UNVERIFIED_EVIDENCE_BLOCKED";
+  cell.evidenceKind = "UNVERIFIED_EVIDENCE_BLOCKED";
+  cell.evidenceReason = "시설 존재·부재가 검증되지 않아 경로를 차단했습니다.";
+  cell.providerRecordHash = null;
+  cell.terminalPolicy = "EXACT_TUPLE_PROVIDER_RESULT_03";
+  cell.providerResultCode = "03";
+  cell.providerResponseSha256 = "c".repeat(64);
+  terminal.stateSummary.VERIFIED_PRESENT -= 1;
+  terminal.stateSummary.UNVERIFIED_EVIDENCE_BLOCKED = 1;
+
+  const result = evaluateRouteAccessibilityEdges(input({ materialization: rebindMaterialization(terminal) }), policyForEdges(routeEdges()));
+
+  const edgeResult = result.results.find(({ edgeId }) => edgeId === "entry-a");
+  assert.equal(edgeResult.state, "BLOCKED");
+  assert.equal(edgeResult.reason, "시설 존재·부재가 검증되지 않아 경로를 차단했습니다.");
+  assert.equal(edgeResult.materializationCells[0].providerRecordHash, null);
+  assert.equal(edgeResult.materializationCells[0].providerResponseSha256, "c".repeat(64));
+});
+
+test("stale terminal carrier는 schema-valid unresolved STALE로 남는다", () => {
+  const terminal = materialization();
+  const cell = terminal.rows.find(({ stationId, lineId, domain }) => stationId === "station-a" && lineId === "line-1" && domain === "FACILITY");
+  cell.state = "STALE";
+  cell.evidenceKind = "UNVERIFIED_EVIDENCE_BLOCKED";
+  cell.evidenceReason = "시설 존재·부재가 검증되지 않아 경로를 차단했습니다.";
+  cell.providerRecordHash = null;
+  cell.terminalPolicy = "EXACT_TUPLE_PROVIDER_RESULT_03";
+  cell.providerResultCode = "03";
+  cell.providerResponseSha256 = "c".repeat(64);
+  cell.freshUntil = NOW;
+  terminal.stateSummary.VERIFIED_PRESENT -= 1;
+  terminal.stateSummary.STALE += 1;
+
+  const result = evaluateRouteAccessibilityEdges(input({ materialization: rebindMaterialization(terminal) }), policyForEdges(routeEdges()));
+
+  assert.equal(result.results.find(({ edgeId }) => edgeId === "entry-a").state, "STALE");
+  assert.equal(result.stateSummary.STALE, 2);
+  assert.equal(result.eligible, false);
+});
+
 test("SUBWAY LOCAL과 policy-bound ITX EXPRESS RIDE invariant를 exact하게 강제한다", () => {
   const local = routeEdges().find(({ edgeId }) => edgeId === "ride-a-b");
   const localPolicy = policyForEdges([local]);
