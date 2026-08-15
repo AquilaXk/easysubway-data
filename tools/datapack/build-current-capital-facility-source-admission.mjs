@@ -53,17 +53,18 @@ export function buildCurrentCapitalFacilitySourceAdmission(input) {
   const materializerEvidenceRows = [];
   for (const mapping of mappings) {
     const query = queries.get(mappingKey(mapping));
-    const presentTypes = queryFacilityTypes(query);
+    const blocked = query.status === "UNVERIFIED_EVIDENCE_BLOCKED";
+    const presentTypes = blocked ? new Set() : queryFacilityTypes(query);
     const rows = TYPES.map((facilityType) => ({
       stationId: mapping.stationId,
       lineId: mapping.lineId,
       facilityType,
-      state: presentTypes.has(facilityType) ? "VERIFIED_PRESENT" : "VERIFIED_ABSENT",
+      state: blocked ? "UNVERIFIED_EVIDENCE_BLOCKED" : presentTypes.has(facilityType) ? "VERIFIED_PRESENT" : "VERIFIED_ABSENT",
       sourceId: SOURCE_ID,
       snapshotId: snapshot.snapshotId,
     }));
     denominatorRows.push(...rows);
-    const state = rows.some((row) => row.state === "VERIFIED_PRESENT")
+    const state = blocked ? "ADMITTED_FACILITY_UNVERIFIED_BLOCKED" : rows.some((row) => row.state === "VERIFIED_PRESENT")
       ? "ADMITTED_FACILITY_PRESENT"
       : "ADMITTED_FACILITY_ABSENT";
     const cell = {
@@ -76,7 +77,7 @@ export function buildCurrentCapitalFacilitySourceAdmission(input) {
     cells.push(cell);
     materializerEvidenceRows.push({
       ...cell,
-      evidenceState: state === "ADMITTED_FACILITY_PRESENT" ? "VERIFIED_PRESENT" : "VERIFIED_ABSENT",
+      evidenceState: state === "ADMITTED_FACILITY_PRESENT" ? "VERIFIED_PRESENT" : state === "ADMITTED_FACILITY_UNVERIFIED_BLOCKED" ? "UNVERIFIED_EVIDENCE_BLOCKED" : "VERIFIED_ABSENT",
     });
   }
   const payload = {
@@ -90,9 +91,9 @@ export function buildCurrentCapitalFacilitySourceAdmission(input) {
     sourceIdentity: sourceContext.sourceIdentity,
     stationLineProviderMappingSha256: sha256(canonicalJson(mappings)),
     denominatorRows,
-    denominatorStateSummary: summarize(denominatorRows, ["VERIFIED_PRESENT", "VERIFIED_ABSENT"]),
+    denominatorStateSummary: summarize(denominatorRows, ["VERIFIED_PRESENT", "VERIFIED_ABSENT", "UNVERIFIED_EVIDENCE_BLOCKED"]),
     cells,
-    cellStateSummary: summarize(cells, ["ADMITTED_FACILITY_PRESENT", "ADMITTED_FACILITY_ABSENT"]),
+    cellStateSummary: summarize(cells, ["ADMITTED_FACILITY_PRESENT", "ADMITTED_FACILITY_ABSENT", "ADMITTED_FACILITY_UNVERIFIED_BLOCKED"]),
     materializerEvidenceRows,
     decision: "GO",
   };
@@ -201,7 +202,7 @@ function validateSourceContext({ candidateBuildSpec, sourceInventoryBytes, sourc
     || evidence.rawSha256 !== snapshot.rawSha256 || evidence.contentSha256 !== snapshot.contentSha256
     || evidence.schemaFingerprint !== snapshot.schemaFingerprint || evidence.snapshotFileSha256 !== snapshotFileSha256
     || evidence.capturedAt !== snapshot.capturedAt || evidence.observedAt !== snapshot.observedAt
-    || evidence.freshUntil !== snapshot.freshUntil || evidence.absenceEvidenceMode !== "EXHAUSTIVE_LIST") {
+    || evidence.freshUntil !== snapshot.freshUntil || evidence.absenceEvidenceMode !== snapshot.absenceEvidenceMode) {
     throw new Error("KRIC accessibility evidence identity mismatch");
   }
   const ledger = exactlyOne(sourceSnapshots, (entry) => entry?.sourceId === SOURCE_ID && entry.snapshotId === snapshot.snapshotId, "KRIC source snapshot ledger");
@@ -361,13 +362,14 @@ function validateRenderedAdmission(value) {
     || new Set(value.cells.map(rowKey)).size !== 213 || new Set(value.cells.map(({ stationId }) => stationId)).size !== 199) {
     throw new Error("capital FACILITY admission matrix mismatch");
   }
+  let blockedCellCount = 0;
   for (let index = 0; index < value.cells.length; index += 1) {
     const cell = value.cells[index];
     const evidence = value.materializerEvidenceRows[index];
     assertExactKeys(cell, ["stationId", "lineId", "state", "sourceId", "snapshotId"], "capital FACILITY cell");
     assertExactKeys(evidence, ["stationId", "lineId", "state", "sourceId", "snapshotId", "evidenceState"], "capital FACILITY materializer evidence");
     if (!rowEqual(cell, evidence, ["stationId", "lineId", "state", "sourceId", "snapshotId"])
-      || evidence.evidenceState !== (cell.state === "ADMITTED_FACILITY_PRESENT" ? "VERIFIED_PRESENT" : "VERIFIED_ABSENT")) {
+      || evidence.evidenceState !== (cell.state === "ADMITTED_FACILITY_PRESENT" ? "VERIFIED_PRESENT" : cell.state === "ADMITTED_FACILITY_UNVERIFIED_BLOCKED" ? "UNVERIFIED_EVIDENCE_BLOCKED" : "VERIFIED_ABSENT")) {
       throw new Error("capital FACILITY materializer evidence mismatch");
     }
     if (cell.sourceId !== value.sourceIdentity.sourceId || cell.snapshotId !== value.sourceIdentity.snapshotId
@@ -377,22 +379,33 @@ function validateRenderedAdmission(value) {
     const rows = value.denominatorRows.slice(index * TYPES.length, (index + 1) * TYPES.length);
     if (rows.length !== 3 || !rowEqual(cell, rows[0], ["stationId", "lineId", "sourceId", "snapshotId"]) || rows.some((row, typeIndex) => {
       assertExactKeys(row, ["stationId", "lineId", "facilityType", "state", "sourceId", "snapshotId"], "capital FACILITY denominator row");
-      return row.facilityType !== TYPES[typeIndex] || !["VERIFIED_PRESENT", "VERIFIED_ABSENT"].includes(row.state)
+      return row.facilityType !== TYPES[typeIndex] || !["VERIFIED_PRESENT", "VERIFIED_ABSENT", "UNVERIFIED_EVIDENCE_BLOCKED"].includes(row.state)
         || !rowEqual(cell, row, ["stationId", "lineId", "sourceId", "snapshotId"])
         || row.sourceId !== value.sourceIdentity.sourceId || row.snapshotId !== value.sourceIdentity.snapshotId;
     })) {
       throw new Error("capital FACILITY denominator ordering mismatch");
     }
-    const expectedCell = rows.some(({ state }) => state === "VERIFIED_PRESENT") ? "ADMITTED_FACILITY_PRESENT" : "ADMITTED_FACILITY_ABSENT";
+    const blockedRows = rows.filter(({ state }) => state === "UNVERIFIED_EVIDENCE_BLOCKED");
+    const blockedCell = cell.state === "ADMITTED_FACILITY_UNVERIFIED_BLOCKED";
+    if (blockedCell) {
+      blockedCellCount += 1;
+      if (cell.stationId !== "station-b35616704ce3" || cell.lineId !== "seoul-2" || blockedRows.length !== TYPES.length) {
+        throw new Error("capital FACILITY blocked terminal matrix mismatch");
+      }
+    } else if (blockedRows.length !== 0) {
+      throw new Error("capital FACILITY blocked terminal matrix mismatch");
+    }
+    const expectedCell = blockedRows.length === TYPES.length ? "ADMITTED_FACILITY_UNVERIFIED_BLOCKED" : rows.some(({ state }) => state === "VERIFIED_PRESENT") ? "ADMITTED_FACILITY_PRESENT" : "ADMITTED_FACILITY_ABSENT";
     if (cell.state !== expectedCell) throw new Error("capital FACILITY cell state mismatch");
     if (index > 0 && compareStationLine(value.cells[index - 1], cell) >= 0) {
       throw new Error("capital FACILITY cell ordering mismatch");
     }
   }
-  assertExactKeys(value.denominatorStateSummary, ["VERIFIED_PRESENT", "VERIFIED_ABSENT"], "capital FACILITY denominator summary");
-  assertExactKeys(value.cellStateSummary, ["ADMITTED_FACILITY_PRESENT", "ADMITTED_FACILITY_ABSENT"], "capital FACILITY cell summary");
-  if (canonicalJson(value.denominatorStateSummary) !== canonicalJson(summarize(value.denominatorRows, ["VERIFIED_PRESENT", "VERIFIED_ABSENT"]))
-    || canonicalJson(value.cellStateSummary) !== canonicalJson(summarize(value.cells, ["ADMITTED_FACILITY_PRESENT", "ADMITTED_FACILITY_ABSENT"]))
+  if (blockedCellCount > 1) throw new Error("capital FACILITY blocked terminal matrix mismatch");
+  assertExactKeys(value.denominatorStateSummary, ["VERIFIED_PRESENT", "VERIFIED_ABSENT", "UNVERIFIED_EVIDENCE_BLOCKED"], "capital FACILITY denominator summary");
+  assertExactKeys(value.cellStateSummary, ["ADMITTED_FACILITY_PRESENT", "ADMITTED_FACILITY_ABSENT", "ADMITTED_FACILITY_UNVERIFIED_BLOCKED"], "capital FACILITY cell summary");
+  if (canonicalJson(value.denominatorStateSummary) !== canonicalJson(summarize(value.denominatorRows, ["VERIFIED_PRESENT", "VERIFIED_ABSENT", "UNVERIFIED_EVIDENCE_BLOCKED"]))
+    || canonicalJson(value.cellStateSummary) !== canonicalJson(summarize(value.cells, ["ADMITTED_FACILITY_PRESENT", "ADMITTED_FACILITY_ABSENT", "ADMITTED_FACILITY_UNVERIFIED_BLOCKED"]))
     || !sha(value.stationLineProviderMappingSha256)) {
     throw new Error("capital FACILITY admission summary mismatch");
   }

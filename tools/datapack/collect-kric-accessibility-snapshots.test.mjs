@@ -507,6 +507,48 @@ test("provider 03은 전체 safe tuple을 모은 뒤 fail closed한다", async (
   assert.equal(calls, 2);
 });
 
+test("standard observation은 exact S1/2/234-4의 단일 03을 raw와 함께 terminal mixed snapshot으로 보존한다", async () => {
+  const terminal = {
+    stationId: "station-b35616704ce3", lineId: "seoul-2", railOprIsttCd: "S1", lnCd: "2", stinCd: "234-4",
+    canonicalMappings: [{ artifactId: "bundled-capital", stationId: "station-b35616704ce3", lineId: "seoul-2" }],
+  };
+  const normal = Array.from({ length: 212 }, (_, index) => ({
+    stationId: `station-${index}`, lineId: `line-${index}`, railOprIsttCd: "S1", lnCd: "2", stinCd: `normal-${index}`,
+    canonicalMappings: [{ artifactId: "bundled-capital", stationId: `station-${index}`, lineId: `line-${index}` }],
+  }));
+  const observation = await collectKricStandardAccessibilityObservation({
+    roster: [terminal, ...normal], serviceKey: "key",
+    fetchImpl: async (url) => url.searchParams.get("stinCd") === "234-4"
+      ? { ok: true, status: 200, json: async () => ({ header: { resultCode: "03" }, body: [] }) }
+      : response(200, []),
+  });
+  const blocked = observation.snapshot.queries.find(({ stinCd }) => stinCd === "234-4");
+  assert.equal(observation.snapshot.providerResultCode, "MIXED");
+  assert.equal(observation.snapshot.absenceEvidenceMode, "EXHAUSTIVE_LIST_WITH_UNVERIFIED_EVIDENCE_BLOCKED");
+  assert.deepEqual(blocked, {
+    ...terminal, providerResultCode: "03", status: "UNVERIFIED_EVIDENCE_BLOCKED",
+    terminalPolicy: "EXACT_TUPLE_PROVIDER_RESULT_03", rows: [], providerRecordHash: null,
+    rawResponseSha256: blocked.rawResponseSha256,
+  });
+  assert.equal(observation.rawArtifact.responses.filter(({ providerResultCode }) => providerResultCode === "03").length, 1);
+  assert.deepEqual(validateKricAccessibilityRawCollection(observation.rawArtifact, observation.snapshot), observation.rawArtifact);
+
+  for (const resultCodeFor of [
+    (stinCd) => stinCd === "normal-0" ? "03" : "00",
+    (stinCd) => stinCd === "234-4" || stinCd === "normal-0" ? "03" : "00",
+  ]) {
+    await assert.rejects(collectKricStandardAccessibilityObservation({
+      roster: [terminal, ...normal], serviceKey: "key",
+      fetchImpl: async (url) => resultCodeFor(url.searchParams.get("stinCd")) === "03"
+        ? { ok: true, status: 200, json: async () => ({ header: { resultCode: "03" }, body: [] }) }
+        : response(200, []),
+    }), /provider gaps/u);
+  }
+  const drifted = structuredClone(observation);
+  drifted.snapshot.queries.find(({ stinCd }) => stinCd === "234-4").lineId = "seoul-9";
+  assert.throws(() => validateKricAccessibilityRawCollection(drifted.rawArtifact, drifted.snapshot), /snapshot identity/u);
+});
+
 test("provider gap evidence는 exact 24 tuple과 operator 분포를 고정한다", async () => {
   const evidence = JSON.parse(await readFile(new URL(
     "./sources/kric-station-convenience-provider-gaps-20260729.json",

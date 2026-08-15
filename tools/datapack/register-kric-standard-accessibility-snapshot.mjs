@@ -535,11 +535,15 @@ function stageRegistries({ inventory, snapshots, input, snapshot, snapshotPath, 
     capturedAt: snapshot.capturedAt,
     observedAt: snapshot.observedAt,
     freshUntil: snapshot.freshUntil,
+    absenceEvidenceMode: snapshot.absenceEvidenceMode,
     rawSha256: snapshot.rawSha256,
     contentSha256: snapshot.contentSha256,
     schemaFingerprint: snapshot.schemaFingerprint,
     snapshotFileSha256,
   };
+  if (nextSource.accessibilityAdmissionEvidence.absenceEvidenceMode !== snapshot.absenceEvidenceMode) {
+    throw new Error("KRIC accessibility evidence mode mismatch");
+  }
   nextSource.admissionEvidence = {
     ...nextSource.admissionEvidence,
     productionUseNoteKo: `fresh KRIC standard snapshot ${snapshot.snapshotId} registration verified.`,
@@ -841,6 +845,9 @@ async function prepareRegistration({
     ...paths.map((file) => readFile(file)),
   ]);
   const snapshot = readStagedSnapshot(snapshotBytes, snapshotFileSha256);
+  if (snapshot.providerResultCode === "MIXED") {
+    throw new Error("mixed KRIC snapshot requires producer-neutral full registration");
+  }
   if (rawReceipt?.snapshotFileSha256 !== snapshotFileSha256) throw new Error("raw receipt snapshot binding is invalid");
   validateReceipt(snapshot, rawReceipt, now);
   const governancePolicy = await readGovernancePolicy(repositoryRoot, snapshot, rawReceipt);

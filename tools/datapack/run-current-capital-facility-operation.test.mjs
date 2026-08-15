@@ -61,6 +61,36 @@ function observationFor(snapshot) {
   return { snapshot, rawArtifact: { schemaVersion: 1, artifactKind: "kric-accessibility-raw-collection", sourceId: snapshot.sourceId, snapshotId: snapshot.snapshotId, capturedAt: snapshot.capturedAt, snapshotRawSha256: snapshot.rawSha256, credentialRedacted: true, requestCount: responses.length, inventorySha256: jsonSha(responses.map(({ bodyBase64: _ignored, ...response }) => response)), responses } };
 }
 
+function terminalObservationFor(plan) {
+  const snapshot = nextSnapshot(plan);
+  const query = snapshot.queries.find(({ stationId, lineId, railOprIsttCd, lnCd, stinCd }) => (
+    stationId === "station-b35616704ce3" && lineId === "seoul-2" && railOprIsttCd === "S1" && lnCd === "2" && stinCd === "234-4"
+  ));
+  assert.ok(query);
+  for (const normal of snapshot.queries) {
+    normal.providerResultCode = "00";
+    normal.terminalPolicy = null;
+  }
+  const bytes = Buffer.from(JSON.stringify({ header: { resultCode: "03" }, body: [] }));
+  Object.assign(query, { providerResultCode: "03", status: "UNVERIFIED_EVIDENCE_BLOCKED", terminalPolicy: "EXACT_TUPLE_PROVIDER_RESULT_03", providerRecordHash: null, rawResponseSha256: sha(bytes) });
+  snapshot.providerResultCode = "MIXED";
+  snapshot.absenceEvidenceMode = "EXHAUSTIVE_LIST_WITH_UNVERIFIED_EVIDENCE_BLOCKED";
+  snapshot.contentSha256 = jsonSha(snapshot.queries.map(({ rawResponseSha256: _ignored, ...value }) => value));
+  snapshot.rawSha256 = jsonSha(snapshot.queries.map(({
+    stationId, lineId, railOprIsttCd, lnCd, stinCd, rawResponseSha256,
+    providerResultCode, terminalPolicy, providerRecordHash,
+  }) => ({
+    stationId, lineId, railOprIsttCd, lnCd, stinCd, rawResponseSha256,
+    providerResultCode, terminalPolicy, providerRecordHash,
+  })));
+  const observation = observationFor(snapshot);
+  const response = observation.rawArtifact.responses.find(({ stinCd }) => stinCd === "234-4");
+  Object.assign(response, { providerResultCode: "03", rawResponseSha256: sha(bytes), byteSize: bytes.length, bodyBase64: bytes.toString("base64") });
+  observation.rawArtifact.snapshotRawSha256 = snapshot.rawSha256;
+  observation.rawArtifact.inventorySha256 = jsonSha(observation.rawArtifact.responses.map(({ bodyBase64: _ignored, ...value }) => value));
+  return observation;
+}
+
 async function writeJson(target, value) { await mkdir(path.dirname(target), { recursive: true }); await writeFile(target, `${JSON.stringify(value, null, 2)}\n`); }
 
 async function finalizeFixture(t) {
@@ -135,6 +165,20 @@ test("collect records failure after COLLECTION_STARTED and never resumes a provi
   assert.equal(JSON.parse(await readFile(path.join(root, "journal.json"), "utf8")).phase, "COLLECTION_FAILED");
   await assert.rejects(collectCurrentCapitalFacilityOperation({ operationRoot: root, serviceKey: "test", collectImpl: async () => { calls += 1; } }), /PREPARED/);
   assert.equal(calls, 1);
+});
+
+test("collect journals a complete exact terminal observation as COLLECTED without replay", async () => {
+  const temporaryRoot = await mkdtemp(path.join(tmpdir(), "facility-operation-"));
+  const operationRoot = path.join(temporaryRoot, "operation");
+  const repositoryRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
+  await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec });
+  const plan = JSON.parse(await readFile(path.join(operationRoot, "plan.json"), "utf8"));
+  const result = await collectCurrentCapitalFacilityOperation({
+    repositoryRoot, operationRoot, serviceKey: "test", env: OCI_ENV, execFileImpl: async (file, args) => file === "git" ? exactMainExec(file, args) : ({ stdout: args[0] === "sts" ? "123456789012\n" : "" }),
+    collectImpl: async () => terminalObservationFor(plan),
+  });
+  assert.deepEqual(result, { snapshotId: "kric-station-convenience-standard-20260815T110000000Z", requestCount: 213, status: "COLLECTED" });
+  assert.equal(JSON.parse(await readFile(path.join(operationRoot, "journal.json"), "utf8")).phase, "COLLECTED");
 });
 
 test("missing OCI PAR preflight stops before COLLECTION_STARTED and provider call 0", async () => {
