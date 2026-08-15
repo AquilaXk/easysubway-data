@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { lstat, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 
 const APPLICABLE = "APPLICABLE_TRANSFER_ENDPOINT";
 const NOT_APPLICABLE = "NOT_APPLICABLE_IN_CANONICAL_PAIR_SET";
@@ -11,7 +12,7 @@ export async function main(argv = process.argv.slice(2), { log = console.log } =
   const { canonicalPack, transferTopologyMetrics, output } = parseArgs(argv);
   await outputMustBeAbsent(output);
   const [canonicalPackBytes, metricsBytes] = await Promise.all([
-    readCanonicalFile(canonicalPack, "canonical pack"),
+    readRegularFile(canonicalPack, "canonical pack"),
     readCanonicalFile(transferTopologyMetrics, "transfer topology metrics"),
   ]);
   const result = buildApplicability({
@@ -27,14 +28,15 @@ export async function main(argv = process.argv.slice(2), { log = console.log } =
 
 export function buildApplicability({ canonicalPack, canonicalPackBytes, transferTopologyMetrics, metricsBytes }) {
   if (!Buffer.isBuffer(canonicalPackBytes) || !Buffer.isBuffer(metricsBytes)) throw new Error("NO_GO input bytes mismatch");
-  if (!canonicalPackBytes.equals(canonicalBytes(canonicalPack)) || !metricsBytes.equals(canonicalBytes(transferTopologyMetrics))) {
+  if (!isDeepStrictEqual(canonicalPack, parseJson(canonicalPackBytes, "canonical pack"))
+    || !metricsBytes.equals(canonicalBytes(transferTopologyMetrics))) {
     throw new Error("NO_GO parsed input binding mismatch");
   }
   const canonical = deriveCanonicalTarget(canonicalPack, canonicalPackBytes);
   const metrics = validateMetrics(transferTopologyMetrics, metricsBytes, canonical);
   const applicable = new Set(metrics.metrics.flatMap(({ stationId, fromLineId }) => [cellKey(stationId, fromLineId)]));
   if (applicable.size !== 27) throw new Error("NO_GO transfer endpoint count mismatch");
-  const cells = canonical.stationLines.map(({ stationId, lineId }) => ({
+  const cells = metrics.stationLines.map(({ stationId, lineId }) => ({
     stationId,
     lineId,
     state: applicable.has(cellKey(stationId, lineId)) ? APPLICABLE : NOT_APPLICABLE,
