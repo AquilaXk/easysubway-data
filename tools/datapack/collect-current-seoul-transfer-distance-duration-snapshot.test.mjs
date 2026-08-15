@@ -10,6 +10,22 @@ import { collectCurrentSeoulTransferDistanceDurationSnapshot } from "./collect-c
 const SERVICE_KEY = "test/key+with-symbol";
 const CAPTURED_AT = new Date("2026-08-15T00:00:00.000Z");
 
+test("malformed DATA_GO_KR_SERVICE_KEY는 provider 호출과 output 전에 거부한다", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "seoul-transfer-invalid-key-"));
+  try {
+    const output = path.join(root, "snapshot");
+    let calls = 0;
+    await assert.rejects(() => collectCurrentSeoulTransferDistanceDurationSnapshot({
+      output,
+      runnerTemp: root,
+      serviceKey: "invalid%ZZ",
+      fetchImpl: async () => { calls += 1; },
+    }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+    assert.equal(calls, 0);
+    await assert.rejects(() => readFile(path.join(output, "manifest.json")), { code: "ENOENT" });
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("145-row ODCloud 페이지를 완전 수집해 credential-free immutable snapshot directory로 원자 기록한다", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "seoul-transfer-snapshot-"));
   try {
