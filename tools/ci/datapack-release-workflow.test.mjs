@@ -43,6 +43,23 @@ test("route-final candidate parity는 runtime receipts를 canonical stage 밖 co
   assert.match(lateDecision, /always\(\) && steps\.release-mode\.outputs\.mode != 'release-candidate' && steps\.release-decision\.outputs\.outcome != ''/);
 });
 
+test("release-candidate parity는 runtime GO와 분리되고 production publish는 GO를 유지한다", () => {
+  const validation = yml.match(
+    /- name: Data Pack Release \/ Validate release evidence bundle[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(validation, "release evidence validation 스텝을 찾지 못함");
+  assert.match(
+    validation,
+    /if \[\[ "\$\{EASYSUBWAY_DATAPACK_RELEASE_MODE\}" == "production-publish" \]\]; then\s*\n\s*bundle_args\+=\(--require-pass\)/,
+  );
+  assert.doesNotMatch(validation, /\^\(release-candidate\|production-publish\)\$/);
+  const publishValidation = yml.match(
+    /- name: Data Pack Release \/ Publish staged data packs to object storage[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(publishValidation, "production publish evidence validation 스텝을 찾지 못함");
+  assert.match(publishValidation, /--require-pass/);
+});
+
 function assertRouteCoveragePair(source) {
   assert.match(source, /--require-production/);
   assert.match(source, /--server-route-coverage-evidence "\$\{EASYSUBWAY_DATAPACK_ROUTE_COVERAGE_AUTHORITY\}"/);
