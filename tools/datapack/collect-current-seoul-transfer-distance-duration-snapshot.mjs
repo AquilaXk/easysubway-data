@@ -141,7 +141,7 @@ async function collectAllPages({ endpoint, fetchImpl, requestTimeoutMs, serviceK
 
 function validateEnvelope(value, { expectedCurrent, page, totalCount }) {
   if (value == null || typeof value !== "object" || Array.isArray(value)
-    || Object.keys(value).sort().join(",") !== "currentCount,data,matchCount,page,perPage,totalCount"
+    || Object.keys(value).sort(codepointCompare).join(",") !== "currentCount,data,matchCount,page,perPage,totalCount"
     || !Array.isArray(value.data) || value.currentCount !== expectedCurrent || value.data.length !== expectedCurrent
     || value.page !== page || value.perPage !== PER_PAGE || value.totalCount !== EXPECTED_ROW_COUNT
     || value.matchCount !== EXPECTED_ROW_COUNT || (totalCount !== undefined && value.totalCount !== totalCount)) {
@@ -151,7 +151,7 @@ function validateEnvelope(value, { expectedCurrent, page, totalCount }) {
 
 function normalizeRow(value) {
   if (value == null || typeof value !== "object" || Array.isArray(value)
-    || Object.keys(value).sort().join(",") !== [...REQUIRED_FIELDS].sort().join(",")) throw new Error("ODCloud row schema mismatch");
+    || Object.keys(value).sort(codepointCompare).join(",") !== [...REQUIRED_FIELDS].sort(codepointCompare).join(",")) throw new Error("ODCloud row schema mismatch");
   if (!Number.isInteger(value["연번"]) || value["연번"] < 1
     || !(Number.isInteger(value["호선"]) && value["호선"] > 0)
       && !(typeof value["호선"] === "string" && /^[1-9]\d*호선$/u.test(value["호선"]))
