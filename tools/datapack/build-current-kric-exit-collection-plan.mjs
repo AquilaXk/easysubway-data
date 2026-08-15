@@ -90,7 +90,9 @@ export function buildCurrentKricExitCollectionPlan(
     "active line scope",
   );
   const expectedProviderScopes = providerLineScopesFor(providerCodeCatalog, coverageScopes, linesById);
-  const selectedRouteRosters = selectRouteRosters(routeRosters, expectedProviderScopes);
+  const selectedRouteRosters = coverageSelector === COVERAGE_SELECTOR_CAPITAL_SEOUL_METRO_PRODUCTION
+    ? selectRouteRosters(routeRosters, expectedProviderScopes)
+    : routeRosters;
   if (canonicalJson(expectedProviderScopes) !== canonicalJson(selectedRouteRosters.providerScopes)) {
     throw new Error("KRIC provider scope set mismatch");
   }

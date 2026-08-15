@@ -161,6 +161,31 @@ test("raw source identity는 candidate ID에 결속되고 provider scope drift�
     /provider scope set mismatch/,
   );
 
+  const unexpectedScopeAndRoster = JSON.parse(input.routeRostersBytes);
+  unexpectedScopeAndRoster.providerScopes.push({
+    ...unexpectedScopeAndRoster.providerScopes[0],
+    lineId: "unexpected-line",
+    regionId: "unexpected-region",
+    operatorId: "unexpected-operator",
+    mreaWideCd: "99",
+    lnCd: "EXTRA",
+    railOprIsttCd: "EXTRA",
+  });
+  unexpectedScopeAndRoster.rosters.push({
+    ...unexpectedScopeAndRoster.rosters[0],
+    mreaWideCd: "99",
+    lnCd: "EXTRA",
+  });
+  unexpectedScopeAndRoster.providerScopeCount += 1;
+  unexpectedScopeAndRoster.requestCount += 1;
+  assert.throws(
+    () => buildPlan({
+      ...input,
+      routeRostersBytes: Buffer.from(JSON.stringify(unexpectedScopeAndRoster)),
+    }),
+    /provider scope set mismatch/,
+  );
+
   const targets = JSON.parse(input.coverageTargetsBytes);
   targets.inactiveLineExclusions = [];
   assert.throws(
