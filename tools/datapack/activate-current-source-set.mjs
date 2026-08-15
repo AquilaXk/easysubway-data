@@ -89,6 +89,7 @@ export const CURRENT_SOURCE_ACTIVATION_OUTPUTS = Object.freeze([
 const allowedOutputPaths = new Set(CURRENT_SOURCE_ACTIVATION_OUTPUTS);
 const CURRENT_SOURCE_DOWNSTREAM_OUTPUTS = Object.freeze([
   "tools/datapack/reports/nationwide-coverage-tally.json",
+  "tools/datapack/release/strict-route-regression-report.json",
 ]);
 
 function isAllowedActivationOutput(relativePath) {

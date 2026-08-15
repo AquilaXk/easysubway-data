@@ -15,6 +15,11 @@ const OUTPUT = "tools/datapack/release/strict-route-regression-report.json";
 const AUDITOR = "tools/route-map/audit-route-map.mjs";
 const EXPECTED_REGIONS = ["광주권", "대구권", "대전권", "부산권", "수도권"];
 const SEVERITIES = ["BLOCKER", "HIGH", "MEDIUM", "LOW", "INFO"];
+const CURRENT_SOURCE_ACTIVATION_OUTPUTS = new Set([
+  "tools/datapack/release/source-snapshots.json", "tools/datapack/source-inventory.json", "tools/datapack/inputs/capital-pilot-production-source-input.json",
+  "tools/datapack/release/capital-production-reviewed-pack.json", "tools/datapack/release/capital-production-canonical-pack.json",
+  "tools/datapack/release/candidate-build-spec.json", "tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json",
+]);
 
 function same(left, right) { return JSON.stringify(left) === JSON.stringify(right); }
 
@@ -112,6 +117,37 @@ export async function runCurrentStrictRouteAudit({ execFileImpl = execFileAsync 
   }
 }
 
+export async function verifyCurrentStrictRouteReportBuilder({
+  builderGitSha,
+  execFileImpl = execFileAsync,
+  repositoryRoot = root,
+} = {}) {
+  if (!/^[a-f0-9]{40}$/u.test(builderGitSha ?? "")) throw new Error("strict report builder SHA is invalid");
+  let commitType;
+  let head;
+  let status;
+  try {
+    [{ stdout: commitType }, { stdout: head }, { stdout: status }] = await Promise.all([
+      execFileImpl("git", ["cat-file", "-t", builderGitSha], { cwd: repositoryRoot, encoding: "utf8" }),
+      execFileImpl("git", ["rev-parse", "HEAD"], { cwd: repositoryRoot, encoding: "utf8" }),
+      execFileImpl("git", ["status", "--porcelain=v1", "--untracked-files=all"], { cwd: repositoryRoot, encoding: "utf8" }),
+    ]);
+  } catch {
+    throw new Error("strict report builder commit identity is invalid");
+  }
+  if (commitType.trim() !== "commit") throw new Error("strict report builder SHA must name a commit");
+  if (head.trim() !== builderGitSha) throw new Error("strict report builder SHA does not match HEAD");
+  const dirtyPaths = status.split("\n").filter(Boolean).map((line) => {
+    if (!/^[ MADRCU?!]{2} /u.test(line)) throw new Error("strict report worktree status is invalid");
+    const relativePath = line.slice(3);
+    if (relativePath.includes(" -> ")) throw new Error("strict report worktree status is invalid");
+    return relativePath;
+  });
+  if (dirtyPaths.some((relativePath) => !CURRENT_SOURCE_ACTIVATION_OUTPUTS.has(relativePath))) {
+    throw new Error("strict report worktree has unrelated or untracked paths");
+  }
+}
+
 export async function writeCurrentStrictRouteRegressionReport(bytes, outputPath = path.join(root, OUTPUT)) {
   const temporaryPath = path.join(path.dirname(outputPath), `.${path.basename(outputPath)}.${randomUUID()}.tmp`);
   await writeFile(temporaryPath, bytes, { flag: "wx" });
@@ -120,6 +156,7 @@ export async function writeCurrentStrictRouteRegressionReport(bytes, outputPath 
 
 async function main() {
   const args = parseCurrentStrictRouteRegressionReportArgs(process.argv.slice(2));
+  await verifyCurrentStrictRouteReportBuilder({ builderGitSha: args.builderGitSha });
   const rawAudit = await runCurrentStrictRouteAudit();
   const report = buildCurrentStrictRouteRegressionReport({ rawAudit, ...args });
   await writeCurrentStrictRouteRegressionReport(Buffer.from(`${JSON.stringify(report, null, 2)}\n`));

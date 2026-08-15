@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildCurrentStrictRouteRegressionReport } from "./build-current-strict-route-regression-report.mjs";
+import { buildCurrentStrictRouteRegressionReport, verifyCurrentStrictRouteReportBuilder } from "./build-current-strict-route-regression-report.mjs";
 
 const generatedBy = {
   builderGitSha: "a".repeat(40),
@@ -69,4 +69,30 @@ test("strict route report는 non-green, source/region drift, 또는 raw summary 
   assert.throws(() => buildCurrentStrictRouteRegressionReport({ rawAudit: incoherent, ...generatedBy }), /audit findings summary is incoherent/);
 
   assert.throws(() => buildCurrentStrictRouteRegressionReport({ rawAudit, builderGitSha: "A".repeat(40), generatedAtUtc: generatedBy.generatedAtUtc }), /builderGitSha is invalid/);
+});
+
+test("strict report CLI builder gate는 exact HEAD와 activation output-only dirty state만 수용한다", async () => {
+  const exactHead = "b".repeat(40);
+  const execFor = ({ commitType = "commit\n", head = `${exactHead}\n`, status = "" } = {}) => async (_file, args) => {
+    if (args[0] === "cat-file") return { stdout: commitType };
+    if (args[0] === "rev-parse") return { stdout: head };
+    if (args[0] === "status") return { stdout: status };
+    throw new Error("unexpected git command");
+  };
+  await verifyCurrentStrictRouteReportBuilder({
+    builderGitSha: exactHead,
+    execFileImpl: execFor({ status: " M tools/datapack/release/capital-production-canonical-pack.json\n" }),
+  });
+  await assert.rejects(
+    verifyCurrentStrictRouteReportBuilder({ builderGitSha: exactHead, execFileImpl: execFor({ commitType: "blob\n" }) }),
+    /must name a commit/,
+  );
+  await assert.rejects(
+    verifyCurrentStrictRouteReportBuilder({ builderGitSha: exactHead, execFileImpl: execFor({ head: `${"c".repeat(40)}\n` }) }),
+    /does not match HEAD/,
+  );
+  await assert.rejects(
+    verifyCurrentStrictRouteReportBuilder({ builderGitSha: exactHead, execFileImpl: execFor({ status: "?? stray.txt\n" }) }),
+    /unrelated or untracked paths/,
+  );
 });

@@ -46,8 +46,14 @@ test("canonical route-map provenance는 tracked five-region source와 Dorasan CS
   assert.equal(capital.routeMapPositions.length, 1102);
   assert.ok(capital.routeMapPositions.every(({ sourceSha256 }) => SHA256.test(sourceSha256)));
   assert.deepEqual(
-    { x: dorasan.x, y: dorasan.y, sourceSha256: dorasan.sourceSha256 },
-    { x: DORASAN.x, y: DORASAN.y, sourceSha256: sha256(source.dorasanCsvBytes) },
+    { x: dorasan.x, y: dorasan.y, upPath: dorasan.upPath, labelPolygon: dorasan.labelPolygon, sourceSha256: dorasan.sourceSha256 },
+    {
+      x: DORASAN.x,
+      y: DORASAN.y,
+      upPath: "M 836 334 L 1449 763",
+      labelPolygon: [{ x: 1439.769, y: 751.693 }, { x: 1490.769, y: 751.693 }, { x: 1490.769, y: 773.693 }, { x: 1439.769, y: 773.693 }],
+      sourceSha256: sha256(source.dorasanCsvBytes),
+    },
   );
   const busanReceipt = source.reviewedAmbiguities.reviewedAmbiguities.find(
     ({ lineId, x, y }) => lineId === BUSAN_RECEIPT.lineId && x === BUSAN_RECEIPT.x && y === BUSAN_RECEIPT.y,
@@ -91,6 +97,13 @@ test("unknown source, mismatched Dorasan, 또는 Busan receipt drift는 fail clo
       .replace(",1449,763,\"도라산\"", ",1449.1,763,\"도라산\""),
   );
   assert.throws(() => projectCanonicalRouteMapProvenance(wrongDorasan), /Dorasan CSV identity is invalid/);
+
+  const staleDorasanGeometry = structuredClone(source);
+  staleDorasanGeometry.dorasanCsvBytes = source.dorasanCsvBytes;
+  staleDorasanGeometry.fixture.packs[0].routeMapPositions.find(({ stationId, lineId }) =>
+    stationId === DORASAN.stationId && lineId === DORASAN.lineId,
+  ).upPath = "M 836 334 L 1450 763";
+  assert.throws(() => projectCanonicalRouteMapProvenance(staleDorasanGeometry), /Dorasan geometry identity is invalid/);
 
   const missingReceipt = structuredClone(source);
   missingReceipt.dorasanCsvBytes = source.dorasanCsvBytes;

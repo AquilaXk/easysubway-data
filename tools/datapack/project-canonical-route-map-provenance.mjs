@@ -9,6 +9,17 @@ const DORASAN = Object.freeze({
   sourceId: "qa-wikimedia-seoul-svg-coordinate",
   sourceUrl: "https://commons.wikimedia.org/wiki/File:Seoul_subway_linemap_ko.svg",
 });
+const DORASAN_OLD = Object.freeze({
+  x: 1492.231,
+  y: 753.307,
+  upPath: "M 836 334 L 1492.231 753.307",
+  labelPolygon: [{ x: 1483, y: 742 }, { x: 1534, y: 742 }, { x: 1534, y: 764 }, { x: 1483, y: 764 }],
+});
+const DORASAN_PROJECTED = Object.freeze({
+  upPath: "M 836 334 L 1449 763",
+  labelPolygon: [{ x: 1439.769, y: 751.693 }, { x: 1490.769, y: 751.693 }, { x: 1490.769, y: 773.693 }, { x: 1439.769, y: 773.693 }],
+});
+const DORASAN_LABEL_DELTA = Object.freeze({ x: -43.231, y: 9.693 });
 const OWNER_SOURCES = Object.freeze([
   ["tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg", "821b636eac0f3b04c5baa995d39ae938d7648d04f7c32802fbef22e60537bf08"],
   ["tools/route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg", "8bd04aa7e94c8e6cd5c1a2dd83fda605e7d892bc66078db57ba8291cee80cdb0"],
@@ -102,6 +113,27 @@ function validateBusanCanonicalRows(positions) {
   }
 }
 
+function projectDorasanGeometry(position) {
+  const oldGeometry = same({ x: position.x, y: position.y, upPath: position.upPath, labelPolygon: position.labelPolygon }, DORASAN_OLD);
+  const partialGeometry = position.x === DORASAN.x && position.y === DORASAN.y
+    && same({ upPath: position.upPath, labelPolygon: position.labelPolygon }, {
+      upPath: DORASAN_OLD.upPath,
+      labelPolygon: DORASAN_OLD.labelPolygon,
+    });
+  const projectedGeometry = position.x === DORASAN.x && position.y === DORASAN.y
+    && same({ upPath: position.upPath, labelPolygon: position.labelPolygon }, DORASAN_PROJECTED);
+  if (!oldGeometry && !partialGeometry && !projectedGeometry || position.downPath !== "") {
+    throw new Error("Dorasan geometry identity is invalid");
+  }
+  position.x = DORASAN.x;
+  position.y = DORASAN.y;
+  position.upPath = DORASAN_PROJECTED.upPath;
+  position.labelPolygon = DORASAN_OLD.labelPolygon.map(({ x, y }) => ({
+    x: Number((x + DORASAN_LABEL_DELTA.x).toFixed(3)),
+    y: Number((y + DORASAN_LABEL_DELTA.y).toFixed(3)),
+  }));
+}
+
 export function projectCanonicalRouteMapProvenance({
   fixture,
   basemapManifest,
@@ -127,8 +159,7 @@ export function projectCanonicalRouteMapProvenance({
       if (position.sourceId !== DORASAN.sourceId || position.sourceUrl !== DORASAN.sourceUrl) {
         throw new Error("Dorasan position source identity is invalid");
       }
-      position.x = DORASAN.x;
-      position.y = DORASAN.y;
+      projectDorasanGeometry(position);
       position.sourceSha256 = dorasanSha256;
       continue;
     }
