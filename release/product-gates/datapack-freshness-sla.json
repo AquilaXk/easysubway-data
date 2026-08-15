@@ -55,7 +55,7 @@
     },
     {
       "id": "annual_official_file",
-      "sourceIds": ["molit-railway-transfer-movement"],
+      "sourceIds": ["molit-railway-transfer-movement", "seoul-metro-transfer-distance-duration"],
       "examples": ["official annual railway transfer movement CSV"],
       "basisField": "observedAt",
       "reverificationCadence": "P1Y",

@@ -7,16 +7,19 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { deriveFreshness, deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
-import { deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
+import { approvedGovernanceBindingTransition, deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
 import { requiredCredentialFreeObjectUri, validateLineage } from "./source-snapshot-policy.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import { approvedLegacyGovernanceBinding } from "./legacy-source-governance.mjs";
 
 const SOURCE_ID = "kric-station-convenience-standard";
+const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
 const ACTIVE_SOURCE_IDS = Object.freeze([
   "seoulmetro-cyberstation-route-map", "kric-subway-timetable", "seoul-metro-accessibility",
   SOURCE_ID, "molit-urban-rail-full-route", "seoulmetro-station-line-info",
 ]);
+const ACTIVE_SOURCE_IDS_WITH_TRANSFER = Object.freeze([...ACTIVE_SOURCE_IDS, TRANSFER_SOURCE_ID]);
 const CAPITAL_SOURCE_IDS = Object.freeze([
   "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoulmetro-cyberstation-route-map",
   "kric-subway-timetable", "seoul-metro-accessibility", SOURCE_ID, "seoul-metro-official-od-fares",
@@ -95,7 +98,7 @@ export function rebindCandidateSourceSnapshots({
   const sourceIds = projections.map(({ sourceId }) => sourceId);
   if (new Set(ids).size !== ids.length || new Set(sourceIds).size !== sourceIds.length
     || projections.some((projection, index) => projection?.snapshotId !== ids[index])
-    || JSON.stringify(sourceIds) !== JSON.stringify(ACTIVE_SOURCE_IDS)) {
+    || ![ACTIVE_SOURCE_IDS, ACTIVE_SOURCE_IDS_WITH_TRANSFER].some((expected) => JSON.stringify(sourceIds) === JSON.stringify(expected))) {
     throw new Error("candidate source identity is not one-to-one");
   }
   const bySnapshotId = new Map();
@@ -205,7 +208,7 @@ function validateCapitalReleaseHeads(pack, lineage, snapshots, selected) {
   if (JSON.stringify(actualCapitalHeadIds) !== JSON.stringify(CAPITAL_ACTIVE_SOURCE_IDS)
     || ACTIVE_SOURCE_IDS.some((sourceId) => !capitalIds.has(sourceId))
     || releaseHeads.some((snapshot, index) => snapshot?.sourceId !== ACTIVE_SOURCE_IDS[index])
-    || releaseHeads.length !== selected.length) {
+    || selected.filter(({ sourceId }) => ACTIVE_SOURCE_IDS.includes(sourceId)).length !== releaseHeads.length) {
     throw new Error("capital active source head identity drift");
   }
 }
@@ -291,7 +294,7 @@ function validateNewKricHead({ next, sourceInventory, governancePolicy, governan
   requiredCredentialFreeObjectUri(next.rawObjectUri, "KRIC raw object URI");
 }
 
-function deriveReleaseProjection({ snapshot, sourceInventory, governancePolicy, governancePolicyBytes, freshnessPolicy, nowMillis }) {
+export function deriveReleaseProjection({ snapshot, sourceInventory, governancePolicy, governancePolicyBytes, freshnessPolicy, nowMillis }) {
   const source = exactlyOne(sourceInventory?.sources ?? [], ({ id }) => id === snapshot.sourceId, `source inventory ${snapshot.sourceId}`);
   const adminReviewRecordHash = requiredSha(source.admissionEvidence?.adminReviewRecordHash, `${snapshot.sourceId} admin review hash`);
   const sourceClass = freshnessPolicy?.sourceClasses?.find(({ sourceIds }) => sourceIds?.includes(snapshot.sourceId));
@@ -301,6 +304,14 @@ function deriveReleaseProjection({ snapshot, sourceInventory, governancePolicy, 
     providerValidUntil: sourceClass.providerValidityEndField ? snapshot[sourceClass.providerValidityEndField] : undefined,
     evaluationAt: new Date(nowMillis).toISOString(),
   });
+  const governanceSnapshot = snapshot.governancePolicyVersion == null && snapshot.governancePolicySha256 == null
+    ? { ...snapshot, ...approvedLegacyGovernanceBinding(snapshot) }
+    : snapshot;
+  const governanceBinding = approvedGovernanceBindingTransition({
+    snapshot: governanceSnapshot,
+    currentPolicyVersion: governancePolicy.policyVersion,
+    currentPolicySha256: sha256(governancePolicyBytes),
+  });
   return {
     snapshotId: snapshot.snapshotId, sourceId: snapshot.sourceId, rawObjectUri: snapshot.rawObjectUri,
     rawSha256: snapshot.rawSha256, redactedRequestFingerprint: snapshot.redactedRequestFingerprint,
@@ -308,17 +319,39 @@ function deriveReleaseProjection({ snapshot, sourceInventory, governancePolicy, 
     redistributionAllowed: snapshot.redistributionAllowed, adminReviewRecordHash, snapshotStatus: snapshot.snapshotStatus,
     credentialRedacted: snapshot.credentialRedacted, freshnessExpiresAt,
     rawRetentionExpiresAt: deriveRawRetentionExpiresAt({ policy: governancePolicy, sourceId: snapshot.sourceId, retrievedAt: snapshot.retrievedAt }),
-    governancePolicyVersion: governancePolicy.policyVersion, governancePolicySha256: sha256(governancePolicyBytes),
+    ...governanceBinding,
   };
 }
 
-function assertProjectionEqual(projection, expected, label) {
+export function assertProjectionEqual(projection, expected, label) {
   if (!projection || typeof projection !== "object" || Array.isArray(projection)) throw new Error(`${label} is invalid`);
   const keys = Object.keys(projection).sort((left, right) => left.localeCompare(right, "en"));
   if (keys.length !== PROJECTION_KEYS.length || keys.some((key, index) => key !== [...PROJECTION_KEYS].sort((left, right) => left.localeCompare(right, "en"))[index])
     || PROJECTION_KEYS.some((key) => projection[key] !== expected[key])) {
     throw new Error(`${label} fields are not closed`);
   }
+}
+
+// #350 registration is the only operation allowed to grow the source set.  It
+// leaves the six authenticated projections untouched and always appends TRANSFER.
+export function appendTransferCandidateSourceSnapshot({ candidateBuildSpec, transferSnapshot, transferProjection }) {
+  const ids = candidateBuildSpec?.sourceSnapshotIds;
+  const projections = candidateBuildSpec?.sourceSnapshots;
+  if (!Array.isArray(ids) || !Array.isArray(projections)
+    || JSON.stringify(projections.map(({ sourceId }) => sourceId)) !== JSON.stringify(ACTIVE_SOURCE_IDS)
+    || ids.length !== ACTIVE_SOURCE_IDS.length || projections.some((row, index) => row.snapshotId !== ids[index])
+    || transferSnapshot?.sourceId !== TRANSFER_SOURCE_ID || typeof transferSnapshot.snapshotId !== "string"
+    || transferProjection?.sourceId !== TRANSFER_SOURCE_ID || transferProjection.snapshotId !== transferSnapshot.snapshotId) {
+    throw new Error("candidate transfer append identity mismatch");
+  }
+  const candidate = structuredClone(candidateBuildSpec);
+  candidate.sourceSnapshotIds.push(transferSnapshot.snapshotId);
+  candidate.sourceSnapshots.push(structuredClone(transferProjection));
+  if (JSON.stringify(candidate.sourceSnapshots.slice(0, ACTIVE_SOURCE_IDS.length)) !== JSON.stringify(projections)
+    || JSON.stringify(candidate.sourceSnapshots.map(({ sourceId }) => sourceId)) !== JSON.stringify(ACTIVE_SOURCE_IDS_WITH_TRANSFER)) {
+    throw new Error("candidate transfer append projection drift");
+  }
+  return candidate;
 }
 
 function assertOnlyAllowedCandidateChanges(before, after, oldProjection, nextProjection) {

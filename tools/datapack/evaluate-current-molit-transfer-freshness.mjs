@@ -64,9 +64,18 @@ function validatePolicy(policy) {
     || sourceClass?.basisField !== "observedAt"
     || sourceClass.reverificationCadence !== "P1Y"
     || sourceClass.offlinePackEligible !== true
-    || JSON.stringify(sourceClass.sourceIds) !== JSON.stringify([SOURCE_ID])) {
+    || JSON.stringify(sourceClass.sourceIds) !== JSON.stringify([SOURCE_ID, "seoul-metro-transfer-distance-duration"])) {
     fail("POLICY");
   }
+}
+
+function molitCompatibilityPolicy(policy) {
+  return {
+    ...policy,
+    sourceClasses: policy.sourceClasses.map((sourceClass) => sourceClass.id === SOURCE_CLASS_ID
+      ? { ...sourceClass, sourceIds: [SOURCE_ID] }
+      : sourceClass),
+  };
 }
 
 function validateMetadata(metadata, metadataBytes, gzipBytes) {
@@ -131,6 +140,7 @@ export function evaluateCurrentMolitTransferFreshness({
   policy,
 } = {}) {
   validatePolicy(policy);
+  const compatibilityPolicy = molitCompatibilityPolicy(policy);
   validateMetadata(metadata, metadataBytes, gzipBytes);
   validateEvidence(evidence, metadata, metadataBytes);
   parseEvaluationAt(evaluationAt);
@@ -149,7 +159,7 @@ export function evaluateCurrentMolitTransferFreshness({
     sourceIdentity,
     policyBinding: {
       sourceClassId: SOURCE_CLASS_ID,
-      policySha256: freshnessPolicySha256(policy),
+      policySha256: freshnessPolicySha256(compatibilityPolicy),
     },
     observation: {
       schemaVersion: 1,
@@ -166,7 +176,7 @@ export function evaluateCurrentMolitTransferFreshness({
       licenseValidUntil: null,
     },
   };
-  const result = evaluateFreshnessExtension({ input, policy, now });
+  const result = evaluateFreshnessExtension({ input, policy: compatibilityPolicy, now });
   if (result.decision !== "EXTENDED" || result.reasonCode !== "POSITIVE_OBSERVATION_EXTENDED") {
     fail("INELIGIBLE");
   }
