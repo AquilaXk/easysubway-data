@@ -144,7 +144,8 @@
             "properties": {
               "schedule": { "type": "object" },
               "realtime": { "type": "object" },
-              "facility": { "type": "object" }
+              "facility": { "type": "object" },
+              "transfer": { "type": "object" }
             }
           },
           "admissionEvidence": {
@@ -190,6 +191,17 @@
                 }
               },
               "productionUseNoteKo": { "type": "string" }
+            }
+          },
+          "transferAdmissionEvidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["artifactKind", "approvalIssue", "decision", "approvedBy", "approvedAt", "productionUseAllowed", "snapshotId", "snapshotPath", "snapshotFileSha256", "capturedAt", "observedAt", "freshUntil", "sourceEffectiveDate", "rawSha256", "contentSha256", "schemaFingerprint", "metricsPath", "metricsArtifactSha256", "applicabilityPath", "applicabilityArtifactSha256", "rowCount", "physicalPairCount", "directedMetricCount", "officialMetricCount", "derivedReciprocalMetricCount", "stationLineCount", "applicableStationLineCount", "notApplicableStationLineCount", "durationRole", "licenseEvidenceHash"],
+            "properties": {
+              "artifactKind": { "const": "transfer-source-admission-evidence" }, "approvalIssue": { "const": 350 }, "decision": { "const": "APPROVED" }, "approvedBy": { "const": "AquilaXk" }, "approvedAt": { "type": "string", "format": "date-time" }, "productionUseAllowed": { "const": true },
+              "snapshotId": { "type": "string" }, "snapshotPath": { "pattern": "^tools/datapack/sources/seoul-metro-transfer-distance-duration-[0-9TZ]+\\.json$" }, "snapshotFileSha256": { "pattern": "^[0-9a-f]{64}$" }, "capturedAt": { "type": "string", "format": "date-time" }, "observedAt": { "type": "string", "format": "date-time" }, "freshUntil": { "type": "string", "format": "date-time" }, "sourceEffectiveDate": { "const": "2025-12-31" },
+              "rawSha256": { "pattern": "^[0-9a-f]{64}$" }, "contentSha256": { "pattern": "^[0-9a-f]{64}$" }, "schemaFingerprint": { "pattern": "^[0-9a-f]{64}$" }, "metricsPath": { "const": "tools/datapack/release/current-transfer-topology-metrics.json" }, "metricsArtifactSha256": { "pattern": "^[0-9a-f]{64}$" }, "applicabilityPath": { "const": "tools/datapack/release/current-capital-transfer-topology-applicability.json" }, "applicabilityArtifactSha256": { "pattern": "^[0-9a-f]{64}$" },
+              "rowCount": { "const": 145 }, "physicalPairCount": { "const": 15 }, "directedMetricCount": { "const": 30 }, "officialMetricCount": { "const": 28 }, "derivedReciprocalMetricCount": { "const": 2 }, "stationLineCount": { "const": 213 }, "applicableStationLineCount": { "const": 27 }, "notApplicableStationLineCount": { "const": 186 }, "durationRole": { "const": "REFERENCE_ONLY" }, "licenseEvidenceHash": { "pattern": "^[0-9a-f]{64}$" }
             }
           },
           "membershipAdmissionEvidence": {
@@ -643,7 +655,41 @@
               "status": { "type": "string", "enum": ["LOCKED"] }
             }
           }
-        }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "id": { "const": "seoul-metro-transfer-distance-duration" },
+                "requiredForProductionPack": { "const": true }
+              },
+              "required": ["id", "requiredForProductionPack"]
+            },
+            "then": {
+              "properties": {
+                "capabilities": {
+                  "required": ["schedule", "realtime", "facility", "transfer"],
+                  "properties": {
+                    "transfer": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["status", "productionUseAllowed", "coverageStatus", "updateFrequency", "unsupportedNotes"],
+                      "properties": {
+                        "status": { "const": "SUPPORTED" },
+                        "productionUseAllowed": { "const": true },
+                        "coverageStatus": { "const": "CAPITAL_SEOUL_METRO_15_PAIRS_30_DIRECTED_METRICS" },
+                        "updateFrequency": { "const": "annual file snapshot" },
+                        "unsupportedNotes": { "const": "공식 소요시간은 reference-only이며 runtime 환승시간은 거리와 선택한 보행속도로 계산한다" }
+                      }
+                    }
+                  }
+                }
+                , "transferAdmissionEvidence": { "required": ["artifactKind"] }
+              }
+            },
+            "else": { "properties": { "capabilities": { "not": { "required": ["transfer"] } } } }
+          }
+        ]
       }
     }
   }

@@ -8,6 +8,7 @@ import test from "node:test";
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import {
   atomicReplace,
+  appendTransferCandidateSourceSnapshot,
   rebindCandidateSourceSnapshots,
   rebindCurrentCandidateSourceSnapshots,
 } from "./rebind-current-candidate-source-snapshots.mjs";
@@ -72,6 +73,16 @@ async function fixture() {
   const readJson = async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"));
   const snapshots = await readJson("tools/datapack/release/source-snapshots.json");
   const inventory = await readJson("tools/datapack/source-inventory.json");
+  const candidatePath = path.join(root, "tools/datapack/release/candidate-build-spec.json");
+  const candidate = JSON.parse(await readFile(candidatePath, "utf8"));
+  const governanceBytes = await readFile(path.join(root, "tools/datapack/source-governance-policy.json"));
+  for (const projection of candidate.sourceSnapshots) projection.governancePolicySha256 = sha(governanceBytes);
+  const candidateBytes = Buffer.from(`${JSON.stringify(candidate, null, 2)}\n`);
+  await writeFile(candidatePath, candidateBytes);
+  const requestPath = path.join(root, "tools/datapack/release/release-request.json");
+  const request = JSON.parse(await readFile(requestPath, "utf8"));
+  request.buildSpecSha256 = sha(candidateBytes);
+  await writeFile(requestPath, `${JSON.stringify(request, null, 2)}\n`);
   const previous = snapshots.find(({ snapshotId }) => snapshotId === "kric-station-convenience-standard-20260813T200604805Z");
   assert.ok(previous);
   const snapshot = kric213Snapshot();
@@ -87,6 +98,7 @@ async function fixture() {
   next.redactedRequestFingerprint = snapshot.redactedRequestFingerprint;
   next.schemaFingerprint = snapshot.schemaFingerprint;
   next.contentSha256 = snapshot.contentSha256;
+  next.governancePolicySha256 = sha(governanceBytes);
   next.freshnessExpiresAt = "2026-11-13T11:00:00.000Z";
   next.rawRetentionExpiresAt = "2026-11-13T11:00:00.000Z";
   next.rawReceipt = {
@@ -167,6 +179,24 @@ test("RED old candidate KRIC head cannot satisfy current FACILITY identity; GREE
   assert.notEqual(rebound.sourceInventorySha256, rebound.networkEdgeEvidence.sourceInventory.sha256);
   assert.equal(rebound.candidateId, old.candidateId);
   assert.equal(rebound.publishedAt, old.publishedAt);
+});
+
+test("six-source candidate appends TRANSFER last without changing its six projections", async (t) => {
+  const { root } = await fixture();
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const input = await readInput(root);
+  const projection = {
+    ...input.candidateBuildSpec.sourceSnapshots[0],
+    sourceId: "seoul-metro-transfer-distance-duration",
+    snapshotId: "seoul-metro-transfer-distance-duration-20260712T150000000Z",
+  };
+  const rebound = appendTransferCandidateSourceSnapshot({
+    candidateBuildSpec: input.candidateBuildSpec,
+    transferSnapshot: { sourceId: projection.sourceId, snapshotId: projection.snapshotId },
+    transferProjection: projection,
+  });
+  assert.deepEqual(rebound.sourceSnapshots.slice(0, 6), input.candidateBuildSpec.sourceSnapshots);
+  assert.equal(rebound.sourceSnapshots.at(-1).sourceId, "seoul-metro-transfer-distance-duration");
 });
 
 test("release request/hash evidence remain byte-identical and stale approval fails closed", async (t) => {

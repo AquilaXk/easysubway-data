@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { lstat, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, mkdtemp, open, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -149,6 +150,67 @@ function validateEnvelope(value, { expectedCurrent, page, totalCount }) {
     || value.matchCount !== EXPECTED_ROW_COUNT || (totalCount !== undefined && value.totalCount !== totalCount)) {
     throw new Error("ODCloud success envelope mismatch");
   }
+}
+
+// #350 reuses this #339 validator for post-collection private observation
+// admission. It does not issue requests or write output.
+export function validateSeoulTransferObservationFiles({ manifest, observation, rawSnapshot, manifestBytes, observationBytes, rawBytes }) {
+  if (manifest?.artifactKind !== "seoul-transfer-distance-duration-snapshot-manifest" || manifest.sourceId !== SOURCE_ID
+    || observation?.artifactKind !== "seoul-transfer-distance-duration-observation" || observation.sourceId !== SOURCE_ID
+    || rawSnapshot?.artifactKind !== "seoul-transfer-distance-duration-raw-snapshot" || rawSnapshot.sourceId !== SOURCE_ID
+    || !Buffer.isBuffer(manifestBytes) || !Buffer.isBuffer(observationBytes) || !Buffer.isBuffer(rawBytes)
+    || !manifestBytes.equals(canonicalBytes(manifest)) || !observationBytes.equals(canonicalBytes(observation)) || !rawBytes.equals(canonicalBytes(rawSnapshot))
+    || manifest.capturedAt !== observation.capturedAt || manifest.rowCount !== EXPECTED_ROW_COUNT || observation.rowCount !== EXPECTED_ROW_COUNT
+    || manifest.freshnessDate !== "2025-12-31" || manifest.credentialRedacted !== true || observation.credentialRedacted !== true
+    || manifest.rawSha256 !== sha256(rawBytes) || manifest.contentSha256 !== sha256(canonicalBytes(observation.rows))
+    || observation.rawSha256 !== manifest.rawSha256 || observation.contentSha256 !== manifest.contentSha256 || !Array.isArray(rawSnapshot.pages) || rawSnapshot.pages.length !== 2) {
+    throw new Error("transfer observation identity mismatch");
+  }
+  const rows = [];
+  for (const [index, page] of rawSnapshot.pages.entries()) {
+    if (!Number.isInteger(page?.page) || page.page !== index + 1 || page.perPage !== PER_PAGE || typeof page.base64 !== "string" || page.sha256 !== sha256(Buffer.from(page.base64, "base64"))) throw new Error("transfer raw page identity mismatch");
+    let envelope; try { envelope = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(page.base64, "base64"))); } catch { throw new Error("transfer raw page encoding mismatch"); }
+    validateEnvelope(envelope, { expectedCurrent: index === 0 ? PER_PAGE : EXPECTED_ROW_COUNT - PER_PAGE, page: index + 1, totalCount: EXPECTED_ROW_COUNT });
+    rows.push(...envelope.data.map(normalizeRow));
+  }
+  if (rows.length !== EXPECTED_ROW_COUNT || JSON.stringify(rows.sort((left, right) => codepointCompare(REQUIRED_FIELDS.map((field) => left[field]).join("\0"), REQUIRED_FIELDS.map((field) => right[field]).join("\0")))) !== JSON.stringify(observation.rows)) throw new Error("transfer observation rows mismatch");
+  return true;
+}
+
+// This is deliberately separate from collection: registration and publication
+// consume the exact private three-file snapshot without changing collection IO.
+export async function readSeoulTransferObservationDirectory(directory, { openImpl = open, readdirImpl = readdir } = {}) {
+  if (typeof directory !== "string" || !path.isAbsolute(directory)) throw new Error("transfer observation directory must be absolute");
+  const root = path.resolve(directory);
+  const parent = await lstat(root);
+  if (!parent.isDirectory() || parent.isSymbolicLink()) throw new Error("transfer observation directory must be a regular non-symlink directory");
+  const names = (await readdirImpl(root)).sort(codepointCompare);
+  if (JSON.stringify(names) !== JSON.stringify([...SNAPSHOT_FILES].sort(codepointCompare))) throw new Error("transfer observation inventory must contain exactly three files");
+  const read = async (name) => {
+    const target = path.join(root, name);
+    let handle;
+    try { handle = await openImpl(target, constants.O_RDONLY | constants.O_NOFOLLOW); }
+    catch (error) { throw new Error(`transfer observation ${name} must be a regular non-symlink file`, { cause: error }); }
+    try {
+      const before = await handle.stat();
+      if (!before.isFile()) throw new Error(`transfer observation ${name} must be a regular non-symlink file`);
+      const bytes = await handle.readFile();
+      const after = await handle.stat();
+      if (before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size || before.mtimeMs !== after.mtimeMs || bytes.length !== after.size) {
+        throw new Error(`transfer observation ${name} changed during read`);
+      }
+      return bytes;
+    } finally { await handle.close(); }
+  };
+  const [manifestBytes, observationBytes, rawBytes] = await Promise.all(SNAPSHOT_FILES.map(read));
+  let manifest; let observation; let rawSnapshot;
+  try {
+    manifest = JSON.parse(manifestBytes);
+    observation = JSON.parse(observationBytes);
+    rawSnapshot = JSON.parse(rawBytes);
+  } catch { throw new Error("transfer observation must be JSON"); }
+  validateSeoulTransferObservationFiles({ manifest, observation, rawSnapshot, manifestBytes, observationBytes, rawBytes });
+  return { directory: root, manifest, observation, rawSnapshot, manifestBytes, observationBytes, rawBytes };
 }
 
 function normalizeRow(value) {
