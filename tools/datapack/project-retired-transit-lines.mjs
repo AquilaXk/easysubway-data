@@ -45,6 +45,16 @@ export function assertNoRetiredTransitReferences(fixture, policy) {
 }
 
 function projectPack(pack, descriptors) {
+  const minimumFields = {
+    operators: "operators",
+    lines: "lines",
+    stations: "stations",
+    station_lines: "stationLines",
+    network_edges: "networkEdges",
+    route_map_positions: "routeMapPositions",
+  };
+  const countsBeforeProjection = Object.fromEntries(Object.entries(minimumFields)
+    .map(([table, field]) => [table, Array.isArray(pack[field]) ? pack[field].length : 0]));
   for (const descriptor of descriptors) {
     if (!references(pack, descriptorTokens([descriptor]))) continue;
     validateProjectionInput(pack, descriptor);
@@ -66,8 +76,14 @@ function projectPack(pack, descriptors) {
   }
   if (Array.isArray(pack.coverageLineOperatorScopes)) pack.coverageLineOperatorScopes = removeScopes(pack.coverageLineOperatorScopes, descriptors);
   if (pack.minimumTableRows && typeof pack.minimumTableRows === "object") {
-    for (const [table, field] of Object.entries({ operators: "operators", lines: "lines", stations: "stations", station_lines: "stationLines", network_edges: "networkEdges", route_map_positions: "routeMapPositions" })) {
-      if (Object.hasOwn(pack.minimumTableRows, table)) pack.minimumTableRows[table] = pack[field]?.length ?? 0;
+    for (const [table, field] of Object.entries(minimumFields)) {
+      if (!Object.hasOwn(pack.minimumTableRows, table)) continue;
+      const minimum = pack.minimumTableRows[table];
+      const removed = countsBeforeProjection[table] - (Array.isArray(pack[field]) ? pack[field].length : 0);
+      if (!Number.isSafeInteger(minimum) || minimum < removed) {
+        throw new Error(`retired transit minimumTableRows.${table} is invalid`);
+      }
+      pack.minimumTableRows[table] = minimum - removed;
     }
   }
 }

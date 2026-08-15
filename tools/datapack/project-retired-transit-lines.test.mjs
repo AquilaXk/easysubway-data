@@ -31,6 +31,14 @@ test("retired production transit는 line·membership·RIDE와 orphan station을 
       ],
       networkEdges: [{ id: "ride", fromNodeId: `orphan:${lineId}`, toNodeId: `station-fce26411d581:${lineId}`, edgeType: "RIDE" }],
       routeMapPositions: [{ stationId: "orphan", lineId }, { stationId: "station-fce26411d581", lineId }],
+      minimumTableRows: {
+        operators: 2,
+        lines: 2,
+        stations: 2,
+        station_lines: 3,
+        network_edges: 100,
+        route_map_positions: 100,
+      },
       sourceInventory: [{ id: "shared-source", coverageLineOperatorScopes: [{ lineId }, { lineId: "airport-line" }] }],
     }],
   };
@@ -43,6 +51,14 @@ test("retired production transit는 line·membership·RIDE와 orphan station을 
   assert.equal(pack.stations.some((station) => station.id === "orphan"), false);
   assert.equal(pack.stations.some((station) => station.id === "station-fce26411d581"), true);
   assert.equal(pack.operators.some((operator) => operator.id === "maglev"), false);
+  assert.deepEqual(pack.minimumTableRows, {
+    operators: 1,
+    lines: 1,
+    stations: 1,
+    station_lines: 1,
+    network_edges: 99,
+    route_map_positions: 98,
+  });
   assert.equal(pack.sourceInventory.some((source) => source.id === "shared-source"), true);
   assert.deepEqual(pack.sourceInventory[0].coverageLineOperatorScopes, [{ lineId: "airport-line" }]);
   pack.stations.push({ id: "orphan" });
