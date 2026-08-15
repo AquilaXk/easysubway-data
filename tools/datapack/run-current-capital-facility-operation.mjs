@@ -164,7 +164,7 @@ async function assertClosedRawReceipt({ root, receipt, observation, now }) {
     || receipt.sourceId !== snapshot.sourceId || receipt.snapshotId !== snapshot.snapshotId
     || receipt.snapshotRawSha256 !== snapshot.rawSha256 || receipt.capturedAt !== snapshot.capturedAt
     || receipt.snapshotFileSha256 !== hash(snapshotBytes) || receipt.rawObjectSha256 !== hash(rawBytes)
-    || receipt.byteSize !== rawBytes.length || receipt.rawObjectUri !== `oci://easysubway-datapacks/${objectKey}`
+    || receipt.byteSize !== rawBytes.length || receipt.rawObjectUri !== `oci://axvym6vk8g7i/easysubway-datapacks/${objectKey}`
     || receipt.rawRetentionExpiresAt !== expectedRetention || storedAt < Date.parse(snapshot.capturedAt)
     || storedAt > now.getTime()) throw new Error("published receipt identity mismatch");
 }
@@ -255,7 +255,6 @@ export async function finalizeCurrentCapitalFacilityOperation({ repositoryRoot =
   allowedResumePaths.add(`tools/datapack/sources/${observationManifest.snapshotId}.json`);
   if (reconciledJournal.phase === "COLLECTED") { await assertExactMain(root, requireText(reconciledJournal.expectedMainSha, "prepared expected main SHA"), execFileImpl); await assertNoRegistrarResidues(root); await assertPreparedInputs(root, reconciledJournal); await validateReleasePreflight(root, planBytes, now); }
   else await assertExactMain(root, requireText(reconciledJournal.expectedMainSha, "prepared expected main SHA"), execFileImpl, allowedResumePaths);
-  requireOciParBaseUrl(env);
   const observationRoot = path.join(operation, "observation"); const manifest = observationManifest;
   const finalizeObservedAt = reconciledJournal.finalizeObservedAt ?? now.toISOString();
   if (!Number.isFinite(Date.parse(finalizeObservedAt)) || new Date(finalizeObservedAt).toISOString() !== finalizeObservedAt) throw new Error("finalize observedAt is invalid");
@@ -265,7 +264,11 @@ export async function finalizeCurrentCapitalFacilityOperation({ repositoryRoot =
   const snapshotPath = path.join(observationRoot, manifest.snapshotFile); const snapshotBytes = await regularBytes(snapshotPath, "collected snapshot"); const snapshot = parse(snapshotBytes, "collected snapshot");
   if (!nextJournal.completedStages.published) {
     let receiptBytes = await existingRegularBytes(receiptPath, "raw receipt");
+    if (receiptBytes != null) {
+      await assertClosedRawReceipt({ root, receipt: parse(receiptBytes, "raw receipt"), observation: completedObservation, now });
+    }
     if (receiptBytes == null) {
+      requireOciParBaseUrl(env);
       try {
         await publishImpl({ observationRoot, receiptPath, repositoryRoot: root, env, now });
       } catch (error) {

@@ -13,7 +13,7 @@ import { collectCurrentCapitalFacilityOperation, main, parseArgs, prepareCurrent
 
 const REPOSITORY_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
 const NOW = new Date("2026-08-15T12:00:00.000Z");
-const OCI_ENV = Object.freeze({ EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/redacted/n/ns/b/easysubway-datapacks/o" });
+const OCI_ENV = Object.freeze({ EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/redacted/n/axvym6vk8g7i/b/easysubway-datapacks/o" });
 process.env.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL = OCI_ENV.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL;
 const EXACT_MAIN = "e8c391ffd051fa2ccd7a275a7865aa65b94f6523";
 const sha = (value) => createHash("sha256").update(value).digest("hex");
@@ -79,7 +79,7 @@ async function finalizeFixture(t) {
   const snapshotsPath = path.join(root, "tools/datapack/release/source-snapshots.json"); const inventoryPath = path.join(root, "tools/datapack/source-inventory.json");
   const snapshots = JSON.parse(await readFile(snapshotsPath, "utf8")); const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
   const previous = snapshots.find(({ snapshotId }) => snapshotId === "kric-station-convenience-standard-20260813T200604805Z"); assert.ok(previous);
-  const next = { ...structuredClone(previous), snapshotId: snapshot.snapshotId, previousSnapshotId: previous.snapshotId, retrievedAt: snapshot.capturedAt, sourceUpdatedAt: snapshot.capturedAt, rowCount: 0, coverageCount: 213, rawSha256: "a".repeat(64), rawObjectUri: `oci://easysubway-datapacks/source-raw/kric-station-convenience-standard/20260815/${"a".repeat(64)}.json`, redactedRequestFingerprint: snapshot.redactedRequestFingerprint, schemaFingerprint: snapshot.schemaFingerprint, contentSha256: snapshot.contentSha256, freshnessExpiresAt: "2026-11-13T11:00:00.000Z", rawRetentionExpiresAt: "2026-11-13T11:00:00.000Z" };
+  const next = { ...structuredClone(previous), snapshotId: snapshot.snapshotId, previousSnapshotId: previous.snapshotId, retrievedAt: snapshot.capturedAt, sourceUpdatedAt: snapshot.capturedAt, rowCount: 0, coverageCount: 213, rawSha256: "a".repeat(64), rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-station-convenience-standard/20260815/${"a".repeat(64)}.json`, redactedRequestFingerprint: snapshot.redactedRequestFingerprint, schemaFingerprint: snapshot.schemaFingerprint, contentSha256: snapshot.contentSha256, freshnessExpiresAt: "2026-11-13T11:00:00.000Z", rawRetentionExpiresAt: "2026-11-13T11:00:00.000Z" };
   next.rawReceipt = { ...next.rawReceipt, snapshotId: next.snapshotId, snapshotRawSha256: snapshot.rawSha256, rawObjectSha256: next.rawSha256, capturedAt: snapshot.capturedAt, storedAt: "2026-08-15T11:00:30.000Z", byteSize: 213, snapshotFileSha256: sha(snapshotBytes) };
   next.diffSummary = buildSnapshotDiff(previous, next); snapshots.push(next);
   const source = inventory.sources.find(({ id }) => id === next.sourceId); next.adminReviewRecordHash = source.admissionEvidence.adminReviewRecordHash; source.retrievedAt = "2026-08-15"; source.observedDataUpdatedAt = "2026-08-15";
@@ -90,7 +90,7 @@ async function finalizeFixture(t) {
   await mkdir(operationRoot, { recursive: true }); await writeFile(path.join(operationRoot, "plan.json"), planBytes);
   await writeKricStandardAccessibilityObservation({ outputRoot: observationRoot, observation: observationFor(snapshot) });
   const [manifestBytes, observedSnapshotBytes, rawBytes] = await Promise.all([readFile(path.join(observationRoot, "observation.json"), "utf8"), readFile(path.join(observationRoot, `${snapshot.snapshotId}.json`)), readFile(path.join(observationRoot, `${snapshot.snapshotId}.raw.json`))]);
-  next.rawSha256 = sha(rawBytes); next.rawObjectUri = `oci://easysubway-datapacks/source-raw/${next.sourceId}/20260815/${next.rawSha256}.json`;
+  next.rawSha256 = sha(rawBytes); next.rawObjectUri = `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/${next.sourceId}/20260815/${next.rawSha256}.json`;
   next.rawReceipt = { ...next.rawReceipt, rawObjectSha256: next.rawSha256, byteSize: rawBytes.length, snapshotFileSha256: sha(snapshotBytes) };
   next.diffSummary = buildSnapshotDiff(previous, next); await writeJson(snapshotsPath, snapshots);
   await writeJson(path.join(operationRoot, "journal.json"), { schemaVersion: 1, artifactKind: "current-capital-facility-operation-journal", phase: "FINALIZE_STARTED", expectedMainSha: EXACT_MAIN, planSha256: sha(planBytes), completedObservation: { snapshotId: snapshot.snapshotId, manifestSha256: sha(Buffer.from(manifestBytes)), snapshotSha256: sha(observedSnapshotBytes), rawSha256: sha(rawBytes) }, completedStages: {} });
@@ -107,7 +107,7 @@ function receipt(fixture) {
     snapshotRawSha256: fixture.snapshot.rawSha256,
     capturedAt: fixture.snapshot.capturedAt,
     snapshotFileSha256: sha(fixture.snapshotBytes),
-    rawObjectUri: `oci://easysubway-datapacks/source-raw/${fixture.snapshot.sourceId}/20260815/${rawObjectSha256}.json`,
+    rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/${fixture.snapshot.sourceId}/20260815/${rawObjectSha256}.json`,
     rawObjectSha256,
     byteSize: fixture.rawBytes.length,
     storedAt: "2026-08-15T11:00:30.000Z",
@@ -222,7 +222,7 @@ test("finalize crash-resume reconciles exact effects without replay and admits t
     }
     const calls = { publish: 0, register: 0, rebind: 0 };
     await main(["--phase", "finalize", "--operation-root", fixture.operationRoot], {
-      repositoryRoot: fixture.root, now: stage === "admitted" ? new Date("2026-08-15T13:00:00.000Z") : NOW, execFileImpl: exactMainExec,
+      repositoryRoot: fixture.root, now: stage === "admitted" ? new Date("2026-08-15T13:00:00.000Z") : NOW, env: {}, execFileImpl: exactMainExec,
       publishImpl: async () => { calls.publish += 1; throw new Error("published receipt must reconcile before replay"); },
       registerImpl: async ({ snapshotTargetPath }) => { calls.register += 1; await mkdir(path.dirname(snapshotTargetPath), { recursive: true }); await writeFile(snapshotTargetPath, fixture.snapshotBytes); },
       rebindImpl: async ({ repositoryRoot, now }) => { calls.rebind += 1; return rebindCurrentCandidateSourceSnapshots({ repositoryRoot, now }); },

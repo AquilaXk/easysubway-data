@@ -6,7 +6,8 @@ import { deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
 import { publishImmutableObjectPlan } from "../publish-object-storage.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
-const OCI_PAR_BASE_URL = /^https:\/\/objectstorage\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.oraclecloud\.com\/p\/[^/?#]+\/n\/[A-Za-z0-9_~-]+\/b\/easysubway-datapacks\/o\/?$/u;
+const OCI_NAMESPACE = "axvym6vk8g7i";
+const OCI_PAR_BASE_URL = new RegExp(`^https://objectstorage\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.oraclecloud\\.com/p/[^/?#]+/n/${OCI_NAMESPACE}/b/easysubway-datapacks/o/?$`, "u");
 
 export function parseAccessibilityRawPublisherArgs(argv) {
   const args = {};
@@ -62,6 +63,10 @@ export async function publishAccessibilityRawObservation({
     sourceId,
     retrievedAt: snapshot.capturedAt,
   });
+  const storedAt = canonicalUtcInstant(now, "raw object verification time");
+  if (Date.parse(storedAt) < Date.parse(snapshot.capturedAt)) {
+    throw new Error("raw object verification time precedes snapshot capture");
+  }
   // The generic publisher otherwise selects a signed-storage client when this exact process env is absent.
   requireOciParBaseUrl(client == null ? process.env : env);
   try {
@@ -78,10 +83,6 @@ export async function publishAccessibilityRawObservation({
   } catch (error) {
     throw sanitizedStorageError(error, errorPrefix);
   }
-  const storedAt = canonicalUtcInstant(now, "raw object verification time");
-  if (Date.parse(storedAt) < Date.parse(snapshot.capturedAt)) {
-    throw new Error("raw object verification time precedes snapshot capture");
-  }
   const receipt = {
     schemaVersion: 1,
     artifactKind: receiptArtifactKind,
@@ -90,7 +91,7 @@ export async function publishAccessibilityRawObservation({
     snapshotRawSha256: snapshot.rawSha256,
     capturedAt: snapshot.capturedAt,
     snapshotFileSha256: manifest.snapshotFileSha256,
-    rawObjectUri: `oci://easysubway-datapacks/${objectKey}`,
+    rawObjectUri: `oci://${OCI_NAMESPACE}/easysubway-datapacks/${objectKey}`,
     rawObjectSha256,
     byteSize: rawArtifactBytes.length,
     storedAt,

@@ -11,7 +11,7 @@ import {
 import { publishKricAccessibilityRawArtifact } from "./publish-kric-accessibility-raw.mjs";
 
 const OCI_ENV = Object.freeze({
-  EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/redacted/n/ns/b/easysubway-datapacks/o",
+  EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/redacted/n/axvym6vk8g7i/b/easysubway-datapacks/o",
 });
 const VERIFIED_AT = new Date("2026-08-14T00:01:00.000Z");
 const tuple = {
@@ -80,13 +80,13 @@ test("accessibility raw publisher는 observation identity를 content-addressed o
   assert.equal(receipt.sourceId, "kric-station-convenience-standard");
   assert.equal(receipt.snapshotId, values.observation.snapshot.snapshotId);
   assert.equal(receipt.snapshotRawSha256, values.observation.snapshot.rawSha256);
-  assert.match(receipt.rawObjectUri, /^oci:\/\/easysubway-datapacks\/source-raw\/kric-station-convenience-standard\/20260814\/[0-9a-f]{64}\.json$/u);
+  assert.match(receipt.rawObjectUri, /^oci:\/\/axvym6vk8g7i\/easysubway-datapacks\/source-raw\/kric-station-convenience-standard\/20260814\/[0-9a-f]{64}\.json$/u);
   assert.match(receipt.rawRetentionExpiresAt, /^2026-11-/u);
   assert.equal(receipt.storedAt, VERIFIED_AT.toISOString());
   assert.deepEqual(JSON.parse(await readFile(values.receiptPath, "utf8")), receipt);
   assert.deepEqual(oci.calls.map(({ type }) => type), ["put", "get"]);
   assert.equal(oci.calls[0].step.type, "put-immutable-bundle-object");
-  assert.equal(oci.calls[0].step.objectKey, receipt.rawObjectUri.slice("oci://easysubway-datapacks/".length));
+  assert.equal(oci.calls[0].step.objectKey, receipt.rawObjectUri.slice("oci://axvym6vk8g7i/easysubway-datapacks/".length));
   await assert.doesNotReject(publishKricAccessibilityRawArtifact({
     observationRoot: values.observationRoot, receiptPath: values.receiptPath, env: OCI_ENV, client: oci.client, now: VERIFIED_AT,
   }));
@@ -123,7 +123,7 @@ test("publisher는 exact existing object만 허용하고 full-byte mismatch를 f
     publishKricAccessibilityRawArtifact({
       observationRoot: invalidPolicy.observationRoot,
       receiptPath: invalidPolicy.receiptPath,
-      env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/secret-must-not-appear/n/ns/b/wrong-bucket/o" },
+      env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/secret-must-not-appear/n/wrong-namespace/b/easysubway-datapacks/o" },
       client: untouched.client,
     }),
     (error) => /EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL/u.test(error.message)
@@ -139,6 +139,7 @@ test("publisher는 verification instant가 invalid 또는 capture 이전이면 r
     await assert.rejects(publishKricAccessibilityRawArtifact({
       observationRoot: values.observationRoot, receiptPath: values.receiptPath, env: OCI_ENV, client: oci.client, now,
     }), /(valid Date|precedes snapshot capture)/u);
+    assert.equal(oci.calls.length, 0);
     await assert.rejects(readFile(values.receiptPath), { code: "ENOENT" });
   }
 });
