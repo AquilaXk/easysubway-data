@@ -78,6 +78,25 @@ test("213/199/420 synthetic admission ZIP을 canonical 3-file receipt로 determi
     }
     assert.deepEqual(await readFile(path.join(outputA, normalizedName)), normalizedBytes); assert.deepEqual(await readFile(path.join(outputA, admissionName)), admissionBytes);
     assert.deepEqual(JSON.parse(await readFile(path.join(outputA, receiptName), "utf8")), expected);
+    const observedNormalized = structuredClone(normalized); const observedAdmission = structuredClone(admission);
+    observedNormalized.results[0] = { queryId: observedNormalized.results[0].queryId, state: "OBSERVED_EXIT_PATH", records: [{ recordId: "observed-path", classification: "EXIT_TO_PLATFORM_PATH", providerRecordHash: sha256(canonical({ recordId: "observed-path", classification: "EXIT_TO_PLATFORM_PATH" })) }], zeroEvidenceSha256: null };
+    refreshAdmissionBindings(observedNormalized, observedAdmission);
+    const observedCell = observedAdmission.cells.find((cell) => cell.stationLineId === observedAdmission.queryPartition.joined[0].stationLineId);
+    observedCell.state = "ADMITTED_EXIT_PATH"; observedCell.admissionReason = "OFFICIAL_EXIT_PATH_PRESENT"; refreshMaterializerAndSummary(observedAdmission); rehashAdmission(observedAdmission);
+    const observedArchive = zip([{ name: normalizedName, bytes: Buffer.from(canonical(observedNormalized)) }, { name: admissionName, bytes: Buffer.from(canonical(observedAdmission)) }]);
+    assert.doesNotThrow(() => buildCurrentExitAdmissionArtifactReceipt({ ...input, artifactArchiveBytes: observedArchive, artifactArchiveSha256: sha256(observedArchive) }));
+    for (const state of ["FAILED", "PROVIDER_NO_DATA"]) {
+      const invalidNormalized = structuredClone(normalized); const invalidAdmission = structuredClone(admission);
+      for (const joined of invalidAdmission.queryPartition.joined.filter((item) => item.stationLineId === invalidAdmission.queryPartition.joined[0].stationLineId)) {
+        const result = invalidNormalized.results.find((item) => item.queryId === joined.queryId); result.state = state; result.records = []; result.zeroEvidenceSha256 = null;
+      }
+      refreshAdmissionBindings(invalidNormalized, invalidAdmission); rehashAdmission(invalidAdmission);
+      const invalidArchive = zip([{ name: normalizedName, bytes: Buffer.from(canonical(invalidNormalized)) }, { name: admissionName, bytes: Buffer.from(canonical(invalidAdmission)) }]);
+      assert.throws(() => buildCurrentExitAdmissionArtifactReceipt({ ...input, artifactArchiveBytes: invalidArchive, artifactArchiveSha256: sha256(invalidArchive) }), /admission cell outcome mismatch/);
+    }
+    const identityDrift = structuredClone(admission); identityDrift.cells[0].capturedAt = "2026-08-14T01:00:00.000Z"; identityDrift.materializerEvidenceRows[0].capturedAt = identityDrift.cells[0].capturedAt; rehashAdmission(identityDrift);
+    const identityDriftArchive = zip([{ name: normalizedName, bytes: normalizedBytes }, { name: admissionName, bytes: Buffer.from(canonical(identityDrift)) }]);
+    assert.throws(() => buildCurrentExitAdmissionArtifactReceipt({ ...input, artifactArchiveBytes: identityDriftArchive, artifactArchiveSha256: sha256(identityDriftArchive) }), /admission cell binding mismatch/);
     const drift = structuredClone(admission); drift.sourceIdentity.providerQueryPlanSha256 = "f".repeat(64); rehashAdmission(drift);
     const driftArchive = zip([{ name: normalizedName, bytes: normalizedBytes }, { name: admissionName, bytes: Buffer.from(canonical(drift)) }]);
     assert.throws(() => buildCurrentExitAdmissionArtifactReceipt({ ...input, artifactArchiveBytes: driftArchive, artifactArchiveSha256: sha256(driftArchive) }), /EXIT source\/provider binding mismatch/);
@@ -163,4 +182,18 @@ function syntheticPair() {
 
 function canonical(value) { if (Array.isArray(value)) return JSON.stringify(value.map((item) => JSON.parse(canonical(item)))); if (!value || typeof value !== "object") return JSON.stringify(value); return JSON.stringify(Object.fromEntries(Object.keys(value).sort().map((key) => [key, JSON.parse(canonical(value[key]))]))); }
 function rehashAdmission(admission) { admission.admissionDigest = sha256(canonical(Object.fromEntries(Object.entries(admission).filter(([key]) => key !== "admissionDigest")))); }
+function refreshAdmissionBindings(normalized, admission) {
+  const normalizedBytes = Buffer.from(canonical(normalized)); const normalizedEvidenceSha256 = sha256(canonical({ coverage: normalized.coverage, queryPlan: normalized.queryPlan, results: normalized.results }));
+  admission.sourceIdentity.rawSha256 = sha256(normalizedBytes); admission.normalizedEvidenceSha256 = normalizedEvidenceSha256;
+  const results = new Map(normalized.results.map((result) => [result.queryId, result]));
+  for (const cell of admission.cells) {
+    cell.evidenceRawSha256 = admission.sourceIdentity.rawSha256; cell.normalizedEvidenceSha256 = normalizedEvidenceSha256;
+    cell.providerRecordHash = sha256(canonical(admission.queryPartition.joined.filter((joined) => joined.stationLineId === cell.stationLineId).map(({ queryId }) => results.get(queryId))));
+  }
+  refreshMaterializerAndSummary(admission);
+}
+function refreshMaterializerAndSummary(admission) {
+  admission.materializerEvidenceRows = admission.cells.map((cell) => ({ candidateId: cell.candidateId, stationSetSha256: cell.stationSetSha256, sourceSetSha256: cell.sourceSetSha256, stationId: cell.stationId, lineId: cell.lineId, operatorId: cell.operatorId, domain: "EXIT", state: cell.state === "ADMITTED_EXIT_PATH" ? "VERIFIED_PRESENT" : "VERIFIED_ABSENT", sourceId: cell.sourceId, sourceSnapshotId: cell.sourceSnapshotId, evidenceRawSha256: cell.evidenceRawSha256, providerRecordHash: cell.providerRecordHash, capturedAt: cell.capturedAt, freshUntil: cell.freshUntil, provenanceId: cell.provenanceId, licenseId: cell.licenseId, mappingContractVersion: cell.mappingContractVersion, materializerVersion: cell.materializerVersion, evidenceKind: cell.state === "ADMITTED_EXIT_PATH" ? "OBSERVED" : "EXPLICIT_ZERO", evidenceReason: cell.admissionReason }));
+  admission.stateSummary = Object.fromEntries(["ADMITTED_EXIT_PATH", "ADMITTED_VERIFIED_ABSENCE", "BLOCKED_WITH_EVIDENCE", "MISSING", "STALE", "UNKNOWN"].map((state) => [state, admission.cells.filter((cell) => cell.state === state).length]));
+}
 function crc32(bytes) { let crc = 0xffffffff; for (const value of bytes) { crc ^= value; for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1)); } return (crc ^ 0xffffffff) >>> 0; }

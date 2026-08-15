@@ -110,6 +110,8 @@ function validateAdmissionContract(admission, normalized, planIds, resultIds) {
       || cell.candidateId !== admission.candidate.candidateId || cell.stationSetSha256 !== admission.candidate.stationSetSha256 || cell.sourceSetSha256 !== admission.candidate.sourceSetSha256
       || cell.stationLineMappingSha256 !== admission.stationLineMappingSha256 || cell.stationLineSetSha256 !== admission.stationLineSetSha256
       || cell.sourceId !== normalized.sourceId || cell.sourceSnapshotId !== normalized.snapshotId || cell.evidenceRawSha256 !== admission.sourceIdentity.rawSha256
+      || cell.capturedAt !== admission.sourceIdentity.capturedAt || cell.freshUntil !== admission.sourceIdentity.freshUntil
+      || cell.provenanceId !== admission.sourceIdentity.provenanceId || cell.licenseId !== admission.sourceIdentity.licenseId
       || cell.mappingContractVersion !== admission.candidate.mappingContractVersion || cell.materializerVersion !== admission.candidate.materializerVersion || cell.normalizedEvidenceSha256 !== admission.normalizedEvidenceSha256 || cell.domain !== "EXIT"
       || !/^[a-f0-9]{64}$/.test(cell.providerRecordHash) || !["OFFICIAL_EXIT_PATH_PRESENT", "OFFICIAL_EXIT_EXPLICIT_ZERO"].includes(cell.admissionReason)) throw new Error("admission cell binding mismatch");
     stationLineIds.add(cell.stationLineId); stationIds.add(cell.stationId);
@@ -122,12 +124,28 @@ function validateAdmissionContract(admission, normalized, planIds, resultIds) {
     || canonicalJson(resultIds.sort(compare)) !== canonicalJson([...planIds].sort(compare)) || !admission.queryPartition.summary || canonicalJson(admission.queryPartition.summary) !== canonicalJson({ queryCount: 420, joinedCount: 420, unmatchedCount: 0, ambiguousCount: 0 })) throw new Error("admission query partition mismatch");
   const cellsById = new Map(cells.map((cell) => [cell.stationLineId, cell])); const resultById = new Map(normalized.results.map((result) => [result.queryId, result]));
   for (const joined of admission.queryPartition.joined) { assertKeys(joined, [...QUERY_KEYS, "stationLineId"], "admission joined query"); const { stationLineId, ...query } = joined; const expected = normalized.queryPlan.find(({ queryId }) => queryId === joined.queryId); if (!cellsById.has(stationLineId) || canonicalJson(query) !== canonicalJson(expected)) throw new Error("admission joined query mismatch"); }
-  for (const cell of cells) { const joined = admission.queryPartition.joined.filter(({ stationLineId }) => stationLineId === cell.stationLineId); if (joined.length === 0 || cell.providerRecordHash !== sha256(canonicalJson(joined.map(({ queryId }) => resultById.get(queryId))))) throw new Error("admission cell result binding mismatch"); }
+  for (const cell of cells) {
+    const joined = admission.queryPartition.joined.filter(({ stationLineId }) => stationLineId === cell.stationLineId);
+    const results = joined.map(({ queryId }) => resultById.get(queryId));
+    const expected = expectedCellOutcome(results, normalized.coverage.exhaustive);
+    if (joined.length === 0 || cell.providerRecordHash !== sha256(canonicalJson(results))) throw new Error("admission cell result binding mismatch");
+    if (cell.state !== expected.state || cell.admissionReason !== expected.admissionReason) throw new Error("admission cell outcome mismatch");
+  }
   const summary = admission.stateSummary; const counts = Object.fromEntries(["ADMITTED_EXIT_PATH", "ADMITTED_VERIFIED_ABSENCE", "BLOCKED_WITH_EVIDENCE", "MISSING", "STALE", "UNKNOWN"].map((state) => [state, cells.filter((cell) => cell.state === state).length]));
   if (canonicalJson(summary) !== canonicalJson(counts) || !Array.isArray(admission.materializerEvidenceRows) || admission.materializerEvidenceRows.length !== cells.length || canonicalJson(admission.materializerEvidenceRows) !== canonicalJson(cells.map(materializerRow))) throw new Error("admission materializer mismatch");
 }
 
 function materializerRow(cell) { const present = cell.state === "ADMITTED_EXIT_PATH"; return canonicalObject({ candidateId: cell.candidateId, stationSetSha256: cell.stationSetSha256, sourceSetSha256: cell.sourceSetSha256, stationId: cell.stationId, lineId: cell.lineId, operatorId: cell.operatorId, domain: "EXIT", state: present ? "VERIFIED_PRESENT" : "VERIFIED_ABSENT", sourceId: cell.sourceId, sourceSnapshotId: cell.sourceSnapshotId, evidenceRawSha256: cell.evidenceRawSha256, providerRecordHash: cell.providerRecordHash, capturedAt: cell.capturedAt, freshUntil: cell.freshUntil, provenanceId: cell.provenanceId, licenseId: cell.licenseId, mappingContractVersion: cell.mappingContractVersion, materializerVersion: cell.materializerVersion, evidenceKind: present ? "OBSERVED" : "EXPLICIT_ZERO", evidenceReason: cell.admissionReason }); }
+
+function expectedCellOutcome(results, exhaustive) {
+  if (results.some(({ state }) => state === "FAILED")) return { state: "BLOCKED_WITH_EVIDENCE", admissionReason: "PROVIDER_REQUEST_FAILED" };
+  if (results.some(({ state }) => state === "OBSERVED_EXIT_PATH")) return { state: "ADMITTED_EXIT_PATH", admissionReason: "OFFICIAL_EXIT_PATH_PRESENT" };
+  if (results.some(({ state }) => state === "PROVIDER_NO_DATA")) return { state: "UNKNOWN", admissionReason: "PROVIDER_NO_DATA_IS_NOT_ABSENCE" };
+  if (results.every(({ state }) => state === "EXPLICIT_ZERO")) return exhaustive
+    ? { state: "ADMITTED_VERIFIED_ABSENCE", admissionReason: "OFFICIAL_EXIT_EXPLICIT_ZERO" }
+    : { state: "BLOCKED_WITH_EVIDENCE", admissionReason: "SOURCE_COVERAGE_PARTIAL" };
+  throw new Error("unsupported EXIT station-line result aggregation");
+}
 
 function validateNormalized(value) {
   assertKeys(value, ["schemaVersion", "artifactKind", "sourceId", "snapshotId", "capturedAt", "freshUntil", "providerSnapshotIdentity", "coverage", "queryPlan", "results"], "normalized snapshot keys");
