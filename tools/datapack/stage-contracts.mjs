@@ -4,7 +4,11 @@ import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/9251acdcc563975e8757d61f03e398d10c935d8b/contracts/bundles/data-contracts-v1.0.0.json";
+const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/e31f9fa4f46bbeb0bd75d6776eb5ff6643169798/contracts/bundles/data-contracts-v1.0.0.json";
+const annualOfficialFileSourceIds = [
+  "molit-railway-transfer-movement",
+  "seoul-metro-transfer-distance-duration",
+];
 const resourceNames = [
   "datapack/mobility-profile-policy.json",
   "datapack/datapack-freshness-sla.json",
@@ -34,6 +38,11 @@ export async function stageContracts({ root = process.cwd(), fetchBundle = downl
   }
   exactKeys(bundle.resources, resourceNames, "contract bundle resources");
   for (const name of resourceNames) JSON.parse(bundle.resources[name]);
+  const freshnessPolicy = JSON.parse(bundle.resources["datapack/datapack-freshness-sla.json"]);
+  const annualOfficialFile = freshnessPolicy.sourceClasses?.find(({ id }) => id === "annual_official_file");
+  if (JSON.stringify(annualOfficialFile?.sourceIds) !== JSON.stringify(annualOfficialFileSourceIds)) {
+    throw new Error("contract bundle annual_official_file sourceIds are invalid");
+  }
 
   const build = path.join(root, "build");
   await mkdir(build, { recursive: true });
