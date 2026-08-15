@@ -9,11 +9,12 @@ import { fileURLToPath } from "node:url";
 import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
 import { collectKricStandardAccessibilityObservation, validateKricAccessibilityRawCollection, validateKricAccessibilitySnapshotIdentity, writeKricStandardAccessibilityObservation } from "./collect-kric-accessibility-snapshots.mjs";
 import { publishKricAccessibilityRawArtifact } from "./publish-kric-accessibility-raw.mjs";
+import { requireOciParBaseUrl } from "./lib/kric-raw-object-storage.mjs";
 import { registerKricStandardAccessibilitySnapshot } from "./register-kric-standard-accessibility-snapshot.mjs";
 import { rebindCandidateSourceSnapshots, rebindCurrentCandidateSourceSnapshots, readStableRegularFile } from "./rebind-current-candidate-source-snapshots.mjs";
 import { buildCurrentCapitalFacilitySourceAdmission, canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-current-capital-facility-source-admission.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
-import { validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
+import { deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 
 const execFile = promisify(execFileCallback);
@@ -37,9 +38,16 @@ const ADMISSION = "tools/datapack/release/current-capital-facility-source-admiss
 const JOURNAL = "journal.json";
 const REGISTRAR_RESIDUES = Object.freeze(["tools/datapack/.kric-standard-registration-transaction.json", "tools/datapack/.kric-standard-registration.lock", "tools/datapack/.candidate-source-rebind.lock"]);
 const CURRENT_SOURCE_IDS = Object.freeze(["seoulmetro-cyberstation-route-map", "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info"]);
+const JOURNAL_KEYS = new Set(["schemaVersion", "artifactKind", "operationId", "phase", "preparedAt", "expectedMainSha", "planSha256", "inputSha256", "completedStages", "collectionStartedAt", "snapshotId", "completedObservation", "collectionReconciledAt", "finalizeObservedAt", "reboundExpectedCandidateSha256", "finalizedAt"]);
+const RAW_RECEIPT_KEYS = ["schemaVersion", "artifactKind", "sourceId", "snapshotId", "snapshotRawSha256", "capturedAt", "snapshotFileSha256", "rawObjectUri", "rawObjectSha256", "byteSize", "storedAt", "rawRetentionExpiresAt"];
 
 function hash(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 function parse(bytes, label) { try { return JSON.parse(bytes.toString("utf8")); } catch { throw new Error(`${label} is invalid JSON`); } }
+function parseJournal(bytes) {
+  const journal = parse(bytes, "operation journal");
+  if (!journal || typeof journal !== "object" || Array.isArray(journal) || Object.keys(journal).some((key) => !JOURNAL_KEYS.has(key))) throw new Error("operation journal has unsupported keys");
+  return journal;
+}
 function requireText(value, label) { if (typeof value !== "string" || value === "") throw new Error(`${label} is required`); return value; }
 export async function syncWrite(target, value, { openImpl = open, renameImpl = rename, unlinkImpl = unlink } = {}) {
   const bytes = Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
@@ -142,6 +150,24 @@ async function readCompletedObservation(observationRoot) {
   if (manifest.sourceId !== snapshot.sourceId || manifest.snapshotId !== snapshot.snapshotId || manifest.capturedAt !== snapshot.capturedAt || manifest.snapshotRawSha256 !== snapshot.rawSha256 || manifest.snapshotFileSha256 !== hash(snapshotBytes) || manifest.rawObjectSha256 !== hash(rawBytes) || manifest.rawObjectChecksumSha256 !== createHash("sha256").update(rawBytes).digest("base64") || manifest.rawObjectByteSize !== rawBytes.length || rawArtifact.snapshotId !== snapshot.snapshotId) throw new Error("stored observation identity mismatch");
   return { manifest, manifestBytes, snapshot, snapshotBytes, rawArtifact, rawBytes };
 }
+async function assertClosedRawReceipt({ root, receipt, observation, now }) {
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)
+    || Object.keys(receipt).length !== RAW_RECEIPT_KEYS.length
+    || RAW_RECEIPT_KEYS.some((key, index) => Object.keys(receipt)[index] !== key)) throw new Error("published receipt schema is invalid");
+  const { snapshot, snapshotBytes, rawBytes } = observation;
+  const objectKey = `source-raw/${snapshot.sourceId}/${snapshot.capturedAt.slice(0, 10).replaceAll("-", "")}/${hash(rawBytes)}.json`;
+  const policy = parse((await readStableRegularFile(path.join(root, RELEASE_INPUTS.governance), "source governance policy")).bytes, "source governance policy");
+  const expectedRetention = deriveRawRetentionExpiresAt({ policy, sourceId: snapshot.sourceId, retrievedAt: snapshot.capturedAt });
+  let storedAt;
+  try { storedAt = requiredUtcInstant(receipt.storedAt, "published receipt storedAt"); } catch { throw new Error("published receipt storedAt is invalid"); }
+  if (receipt.schemaVersion !== 1 || receipt.artifactKind !== "kric-accessibility-raw-object-receipt"
+    || receipt.sourceId !== snapshot.sourceId || receipt.snapshotId !== snapshot.snapshotId
+    || receipt.snapshotRawSha256 !== snapshot.rawSha256 || receipt.capturedAt !== snapshot.capturedAt
+    || receipt.snapshotFileSha256 !== hash(snapshotBytes) || receipt.rawObjectSha256 !== hash(rawBytes)
+    || receipt.byteSize !== rawBytes.length || receipt.rawObjectUri !== `oci://axvym6vk8g7i/easysubway-datapacks/${objectKey}`
+    || receipt.rawRetentionExpiresAt !== expectedRetention || storedAt < Date.parse(snapshot.capturedAt)
+    || storedAt > now.getTime()) throw new Error("published receipt identity mismatch");
+}
 function observationBinding(observation) { return { snapshotId: observation.snapshot.snapshotId, manifestSha256: hash(observation.manifestBytes), snapshotSha256: hash(observation.snapshotBytes), rawSha256: hash(observation.rawBytes) }; }
 function assertObservationBinding(journal, observation) {
   const binding = journal?.completedObservation;
@@ -154,15 +180,14 @@ function roster(plan) { return plan.stationLineProviderMappings.map((mapping) =>
 })); }
 export function parseArgs(argv) {
   const values = {}; for (let index = 0; index < argv.length; index += 2) { const key = argv[index]; if (!key?.startsWith("--") || values[key.slice(2)] !== undefined) throw new Error("operation arguments are invalid"); values[key.slice(2)] = argv[index + 1]; }
-  if (!["prepare", "collect", "finalize"].includes(values.phase) || Object.keys(values).some((key) => !["phase", "operation-root", "expected-main-sha", "expected-bucket-owner"].includes(key))) throw new Error("operation arguments are invalid");
+  if (!["prepare", "collect", "finalize"].includes(values.phase) || Object.keys(values).some((key) => !["phase", "operation-root", "expected-main-sha"].includes(key))) throw new Error("operation arguments are invalid");
   requireText(values["operation-root"], "operation root");
   if (!path.isAbsolute(values["operation-root"])) throw new Error("operation root must be absolute");
-  if (values.phase === "prepare") { requireText(values["expected-main-sha"], "expected main SHA"); requireText(values["expected-bucket-owner"], "expected bucket owner"); }
+  if (values.phase === "prepare") requireText(values["expected-main-sha"], "expected main SHA");
   return values;
 }
-export async function prepareCurrentCapitalFacilityOperation({ repositoryRoot = ROOT, operationRoot, expectedMainSha, expectedBucketOwner, execFileImpl = execFile, now = new Date() } = {}) {
+export async function prepareCurrentCapitalFacilityOperation({ repositoryRoot = ROOT, operationRoot, expectedMainSha, execFileImpl = execFile, now = new Date() } = {}) {
   requireText(expectedMainSha, "expected main SHA");
-  if (!/^\d{12}$/.test(requireText(expectedBucketOwner, "expected bucket owner"))) throw new Error("expected bucket owner is invalid");
   const root = path.resolve(repositoryRoot); const output = path.resolve(requireText(operationRoot, "operation root"));
   try { await lstat(output); throw new Error("operation root already exists"); } catch (error) { if (error?.code !== "ENOENT") throw error; }
   await assertExternalOperationRoot(root, output, { allowAbsent: true });
@@ -172,11 +197,11 @@ export async function prepareCurrentCapitalFacilityOperation({ repositoryRoot = 
   const reread = await inputSnapshots(root); if (Object.entries(snapshots).some(([key, value]) => hash(value.bytes) !== hash(reread[key].bytes) || JSON.stringify(value.identity) !== JSON.stringify(reread[key].identity))) throw new Error("prepared input changed during preflight");
   await mkdir(output, { mode: 0o700 });
   await writeFile(path.join(output, "plan.json"), canonicalCurrentCapitalFacilityCollectionPlanJson(plan), { flag: "wx", mode: 0o600 });
-  const journal = { schemaVersion: 1, artifactKind: "current-capital-facility-operation-journal", operationId: randomUUID(), phase: "PREPARED", preparedAt: now.toISOString(), expectedMainSha, expectedBucketOwner, planSha256: hash(Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(plan))), inputSha256: Object.fromEntries(Object.entries(bytes).map(([key, value]) => [key, hash(value)])), completedStages: {} };
+  const journal = { schemaVersion: 1, artifactKind: "current-capital-facility-operation-journal", operationId: randomUUID(), phase: "PREPARED", preparedAt: now.toISOString(), expectedMainSha, planSha256: hash(Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(plan))), inputSha256: Object.fromEntries(Object.entries(bytes).map(([key, value]) => [key, hash(value)])), completedStages: {} };
   await syncWrite(path.join(output, JOURNAL), journal); return { plan, journal };
 }
-export async function collectCurrentCapitalFacilityOperation({ repositoryRoot = ROOT, operationRoot, serviceKey, fetchImpl = fetch, delayImpl, now = new Date(), execFileImpl = execFile, journalWriteImpl = syncWrite, collectImpl = collectKricStandardAccessibilityObservation, writeObservationImpl = writeKricStandardAccessibilityObservation } = {}) {
-  const repository = path.resolve(repositoryRoot); const root = path.resolve(requireText(operationRoot, "operation root")); let journal = parse(await regularBytes(path.join(root, JOURNAL), "operation journal"), "operation journal");
+export async function collectCurrentCapitalFacilityOperation({ repositoryRoot = ROOT, operationRoot, serviceKey, fetchImpl = fetch, delayImpl, now = new Date(), env = process.env, execFileImpl = execFile, journalWriteImpl = syncWrite, collectImpl = collectKricStandardAccessibilityObservation, writeObservationImpl = writeKricStandardAccessibilityObservation } = {}) {
+  const repository = path.resolve(repositoryRoot); const root = path.resolve(requireText(operationRoot, "operation root")); let journal = parseJournal(await regularBytes(path.join(root, JOURNAL), "operation journal"));
   await assertExternalOperationRoot(repository, root); const planBytes = await assertPlanBinding(root, journal);
   if (journal.phase === "COLLECTION_STARTED") {
     const observation = await readCompletedObservation(path.join(root, "observation"));
@@ -187,16 +212,12 @@ export async function collectCurrentCapitalFacilityOperation({ repositoryRoot = 
   await assertExactMain(repository, requireText(journal.expectedMainSha, "prepared expected main SHA"), execFileImpl); await assertNoRegistrarResidues(repository); await assertPreparedInputs(repository, journal); await validateReleasePreflight(repository, planBytes, now);
   const plan = parse(planBytes, "operation plan");
   if (canonicalCurrentCapitalFacilityCollectionPlanJson(plan) !== planBytes.toString("utf8") || plan.counts.providerTupleCount !== 213) throw new Error("operation plan is invalid");
-  const owner = requireText(journal.expectedBucketOwner, "prepared expected bucket owner");
-  if (!/^\d{12}$/.test(owner)) throw new Error("prepared expected bucket owner is invalid");
+  requireOciParBaseUrl(env);
   const releaseClaim = await acquireCollectionClaim(root);
   try {
-    journal = parse(await regularBytes(path.join(root, JOURNAL), "operation journal"), "operation journal");
+    journal = parseJournal(await regularBytes(path.join(root, JOURNAL), "operation journal"));
     if (journal.phase !== "PREPARED") throw new Error("collection may only start from PREPARED operation");
     await journalWriteImpl(path.join(root, JOURNAL), { ...journal, phase: "COLLECTION_STARTED", collectionStartedAt: now.toISOString() });
-    const { stdout } = await execFileImpl("aws", ["sts", "get-caller-identity", "--query", "Account", "--output", "text", "--no-cli-pager"]);
-    if (stdout.trim() !== owner) throw new Error("AWS caller account does not match expected bucket owner");
-    await execFileImpl("aws", ["s3api", "head-bucket", "--bucket", "easysubway-datapack-sources", "--expected-bucket-owner", owner, "--no-cli-pager"]);
     const observation = await collectImpl({ roster: roster(plan), serviceKey: key, fetchImpl, delayImpl, now, requestTimeoutMs: 30_000, requestIntervalMs: 250 });
     if (observation.rawArtifact.requestCount !== 213) throw new Error("KRIC collection must make exactly 213 requests");
     const observationRoot = path.join(root, "observation"); await writeObservationImpl({ outputRoot: observationRoot, observation });
@@ -215,8 +236,8 @@ export async function collectCurrentCapitalFacilityOperation({ repositoryRoot = 
     throw error;
   } finally { await releaseClaim(); }
 }
-export async function finalizeCurrentCapitalFacilityOperation({ repositoryRoot = ROOT, operationRoot, expectedBucketOwner, now = new Date(), execFileImpl = execFile, publishImpl = publishKricAccessibilityRawArtifact, registerImpl = registerKricStandardAccessibilitySnapshot, rebindImpl = rebindCurrentCandidateSourceSnapshots, buildAdmissionImpl = buildCurrentCapitalFacilitySourceAdmission } = {}) {
-  const root = path.resolve(repositoryRoot); const operation = path.resolve(requireText(operationRoot, "operation root")); const journal = parse(await regularBytes(path.join(operation, JOURNAL), "operation journal"), "operation journal");
+export async function finalizeCurrentCapitalFacilityOperation({ repositoryRoot = ROOT, operationRoot, now = new Date(), env = process.env, execFileImpl = execFile, publishImpl = publishKricAccessibilityRawArtifact, registerImpl = registerKricStandardAccessibilitySnapshot, rebindImpl = rebindCurrentCandidateSourceSnapshots, buildAdmissionImpl = buildCurrentCapitalFacilitySourceAdmission } = {}) {
+  const root = path.resolve(repositoryRoot); const operation = path.resolve(requireText(operationRoot, "operation root")); const journal = parseJournal(await regularBytes(path.join(operation, JOURNAL), "operation journal"));
   await assertExternalOperationRoot(root, operation); const planBytes = await assertPlanBinding(operation, journal);
   let reconciledJournal = journal;
   if (journal.phase === "COLLECTION_STARTED") {
@@ -234,7 +255,6 @@ export async function finalizeCurrentCapitalFacilityOperation({ repositoryRoot =
   allowedResumePaths.add(`tools/datapack/sources/${observationManifest.snapshotId}.json`);
   if (reconciledJournal.phase === "COLLECTED") { await assertExactMain(root, requireText(reconciledJournal.expectedMainSha, "prepared expected main SHA"), execFileImpl); await assertNoRegistrarResidues(root); await assertPreparedInputs(root, reconciledJournal); await validateReleasePreflight(root, planBytes, now); }
   else await assertExactMain(root, requireText(reconciledJournal.expectedMainSha, "prepared expected main SHA"), execFileImpl, allowedResumePaths);
-  if (expectedBucketOwner != null && expectedBucketOwner !== journal.expectedBucketOwner) throw new Error("expected bucket owner differs from prepared operation");
   const observationRoot = path.join(operation, "observation"); const manifest = observationManifest;
   const finalizeObservedAt = reconciledJournal.finalizeObservedAt ?? now.toISOString();
   if (!Number.isFinite(Date.parse(finalizeObservedAt)) || new Date(finalizeObservedAt).toISOString() !== finalizeObservedAt) throw new Error("finalize observedAt is invalid");
@@ -242,21 +262,25 @@ export async function finalizeCurrentCapitalFacilityOperation({ repositoryRoot =
   await syncWrite(path.join(operation, JOURNAL), nextJournal);
   const receiptPath = path.join(operation, "receipt.json");
   const snapshotPath = path.join(observationRoot, manifest.snapshotFile); const snapshotBytes = await regularBytes(snapshotPath, "collected snapshot"); const snapshot = parse(snapshotBytes, "collected snapshot");
-  const preparedOwner = requireText(journal.expectedBucketOwner, "prepared expected bucket owner");
   if (!nextJournal.completedStages.published) {
     let receiptBytes = await existingRegularBytes(receiptPath, "raw receipt");
+    if (receiptBytes != null) {
+      await assertClosedRawReceipt({ root, receipt: parse(receiptBytes, "raw receipt"), observation: completedObservation, now });
+    }
     if (receiptBytes == null) {
+      requireOciParBaseUrl(env);
       try {
-        await publishImpl({ observationRoot, receiptPath, expectedBucketOwner: preparedOwner, repositoryRoot: root });
+        await publishImpl({ observationRoot, receiptPath, repositoryRoot: root, env, now });
       } catch (error) {
         receiptBytes = await existingRegularBytes(receiptPath, "raw receipt"); if (receiptBytes == null) throw error;
       }
     }
     receiptBytes ??= await regularBytes(receiptPath, "raw receipt"); const publishedReceipt = parse(receiptBytes, "raw receipt");
-    if (publishedReceipt.snapshotId !== snapshot.snapshotId || publishedReceipt.expectedBucketOwner !== preparedOwner) throw new Error("published receipt identity mismatch");
+    await assertClosedRawReceipt({ root, receipt: publishedReceipt, observation: completedObservation, now });
     nextJournal = { ...nextJournal, completedStages: { ...nextJournal.completedStages, published: { snapshotId: snapshot.snapshotId, receiptSha256: hash(receiptBytes) } } }; await syncWrite(path.join(operation, JOURNAL), nextJournal);
   }
   const receipt = parse(await regularBytes(receiptPath, "raw receipt"), "raw receipt");
+  await assertClosedRawReceipt({ root, receipt, observation: completedObservation, now });
   const targetSnapshot = path.join(root, "tools/datapack/sources", `${snapshot.snapshotId}.json`);
   if (!nextJournal.completedStages.registered) {
     let registered = await isRegisteredState({ root, snapshot, snapshotBytes, receipt, targetSnapshot });
@@ -313,5 +337,5 @@ export async function finalizeCurrentCapitalFacilityOperation({ repositoryRoot =
   } else if (!Buffer.from(await regularBytes(target, "current capital facility admission")).equals(admissionBytes)) throw new Error("current capital facility admission verification failed");
   await syncWrite(path.join(operation, JOURNAL), { ...nextJournal, phase: "FINALIZED", snapshotId: snapshot.snapshotId, finalizedAt: now.toISOString() }); return admission;
 }
-export async function main(argv, dependencies = {}) { const args = parseArgs(argv); const common = { operationRoot: args["operation-root"], ...dependencies }; if (args.phase === "prepare") return prepareCurrentCapitalFacilityOperation({ ...common, expectedMainSha: args["expected-main-sha"], expectedBucketOwner: args["expected-bucket-owner"] }); if (args.phase === "collect") return collectCurrentCapitalFacilityOperation({ ...common, serviceKey: dependencies.env?.KRIC_SERVICE_KEY ?? process.env.KRIC_SERVICE_KEY }); return finalizeCurrentCapitalFacilityOperation({ ...common, expectedBucketOwner: args["expected-bucket-owner"] }); }
+export async function main(argv, dependencies = {}) { const args = parseArgs(argv); const common = { operationRoot: args["operation-root"], ...dependencies }; if (args.phase === "prepare") return prepareCurrentCapitalFacilityOperation({ ...common, expectedMainSha: args["expected-main-sha"] }); if (args.phase === "collect") return collectCurrentCapitalFacilityOperation({ ...common, serviceKey: dependencies.env?.KRIC_SERVICE_KEY ?? process.env.KRIC_SERVICE_KEY }); return finalizeCurrentCapitalFacilityOperation(common); }
 if (process.argv[1] === fileURLToPath(import.meta.url)) main(process.argv.slice(2)).then((value) => process.stdout.write(`${JSON.stringify(value, null, 2)}\n`)).catch((error) => { console.error(error instanceof Error ? error.message : "FACILITY operation failed"); process.exitCode = 1; });
