@@ -69,7 +69,7 @@ function crc32(bytes) {
   return (crc ^ 0xffffffff) >>> 0;
 }
 
-function event() {
+function event(updatedAt = "2026-08-15T00:00:00.000Z") {
   return {
     repository: { full_name: REPOSITORY },
     workflow_run: {
@@ -80,7 +80,7 @@ function event() {
       head_branch: "main",
       conclusion: "success",
       head_sha: HEAD_SHA,
-      updated_at: "2026-08-15T00:00:00.000Z",
+      updated_at: updatedAt,
     },
   };
 }
@@ -121,6 +121,22 @@ test("archive metadata digest and one regular bundle entry bind the #330 invocat
   });
   assert.equal(calls.length, 2);
   assert.equal((await readFile(path.join(output, "exit-path-source-admission.json"), "utf8")), '{"decision":"GO"}');
+});
+
+test("GitHub second-precision UTC updated_at는 canonical milliseconds로 admission에 전달된다", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "exit-source-admission-time-")); const output = path.join(root, "output"); const archive = zipOne("current-kric-exit-collection-bundle.json", BUNDLE);
+  await runCurrentKricExitPathSourceAdmission({ event: event("2026-08-15T00:00:00Z"), token: "test-token", workspace: root, outputDirectory: output,
+    fetchImpl: async (url) => url.includes(`/actions/runs/${RUN_ID}/artifacts?`) ? responseJson({ total_count: 1, artifacts: [{ id: 87, name: `kric-exit-path-provider-snapshot-${RUN_ID}`, expired: false, digest: `sha256:${sha256(archive)}` }] }) : responseBytes(archive),
+    execFileImpl: async (_command, args) => { assert.equal(args[args.indexOf("--observed-at") + 1], "2026-08-15T00:00:00.000Z"); await mkdir(output, { recursive: true }); await writeFile(path.join(output, "exit-path-normalized-source-snapshot.json"), "{}", { mode: 0o600 }); await writeFile(path.join(output, "exit-path-source-admission.json"), '{"decision":"GO"}', { mode: 0o600 }); },
+  });
+});
+
+test("invalid or offset GitHub updated_at는 fetch 전에 fail closed한다", async () => {
+  for (const updatedAt of ["2026-02-30T00:00:00Z", "2026-08-15T24:00:00Z", "2026-08-15T00:00:00+09:00"]) {
+    let fetched = false;
+    await assert.rejects(() => runCurrentKricExitPathSourceAdmission({ event: event(updatedAt), token: "test-token", workspace: "/tmp", outputDirectory: "/tmp/exit-admission-invalid-time", fetchImpl: async () => { fetched = true; } }), /UTC instant/);
+    assert.equal(fetched, false);
+  }
 });
 
 test("self-consistent bundle alone and unsafe archive entries fail before admission", async () => {

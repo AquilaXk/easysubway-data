@@ -262,10 +262,15 @@ function requireAbsolutePath(value, label) {
 }
 
 function requireUtcInstant(value, label) {
-  if (typeof value !== "string" || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(value) || Number.isNaN(Date.parse(value))) {
+  const match = typeof value === "string" && /^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.(\d{1,3}))?Z$/.exec(value);
+  if (!match) {
     throw new Error(`${label} must be UTC instant`);
   }
-  return value;
+  const canonical = `${match[1]}.${(match[2] ?? "").padEnd(3, "0")}Z`;
+  if (Number.isNaN(Date.parse(canonical)) || new Date(canonical).toISOString() !== canonical) {
+    throw new Error(`${label} must be UTC instant`);
+  }
+  return canonical;
 }
 
 function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
