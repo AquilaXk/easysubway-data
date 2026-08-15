@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 import { validateAuthenticatedTransferObservation } from "./build-current-transfer-topology-metrics.mjs";
 import { rebuildAuthenticatedTransferTopologyMetrics } from "./build-current-transfer-topology-metrics.mjs";
 import { buildApplicability } from "./build-current-capital-transfer-topology-applicability.mjs";
+import { validateSeoulTransferObservationFiles } from "./collect-current-seoul-transfer-distance-duration-snapshot.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { assertExactMainPreflight, publishSeoulTransferRawArtifact, validateSeoulTransferRawReceipt } from "./publish-seoul-transfer-raw.mjs";
 import { registerCurrentSeoulTransferSource } from "./register-current-seoul-transfer-source.mjs";
@@ -85,7 +86,7 @@ async function readObservationDirectory(directory, repositoryRoot) {
   ]);
   let manifest; let observation; let rawSnapshot;
   try { manifest = JSON.parse(manifestBytes); observation = JSON.parse(observationBytes); rawSnapshot = JSON.parse(rawBytes); } catch { throw new Error("transfer observation must be JSON"); }
-  if (!manifestBytes.equals(Buffer.from(`${canonicalJson(manifest)}\n`)) || !observationBytes.equals(Buffer.from(`${canonicalJson(observation)}\n`)) || !rawBytes.equals(Buffer.from(`${canonicalJson(rawSnapshot)}\n`))) throw new Error("transfer observation must be canonical");
+  validateSeoulTransferObservationFiles({ manifest, observation, rawSnapshot, manifestBytes, observationBytes, rawBytes });
   validateAuthenticatedTransferObservation({ observation: { manifest, observation, raw: rawSnapshot, bytes: { manifest: manifestBytes, observation: observationBytes, raw: rawBytes } }, sourceCandidatesBytes });
   if (manifest.sourceId !== SOURCE_ID || manifest.rowCount !== 145) throw new Error("transfer observation identity mismatch");
   return { directory: root, manifest, observation, rawSnapshot, manifestBytes, observationBytes, rawBytes };
@@ -176,7 +177,7 @@ export async function finalizeCurrentSeoulTransferRegistration({ repositoryRoot 
     try { receipt = validateSeoulTransferRawReceipt(JSON.parse(await regularBytes(receiptPath, "transfer OCI receipt", { privateFile: true }))); assertReceiptBinding(receipt, journal); }
     catch (error) {
       const absent = error?.cause?.code === "ENOENT" || error?.code === "ENOENT";
-      if (!absent || journal.phase === "PUBLISHING") { journal = { ...journal, phase: "PUBLISH_FAILED", errorCode: "PUBLISH_FAILED" }; await writeJournal(operation, journal); throw new Error(absent ? "publication interrupted without receipt" : "published receipt identity mismatch"); }
+      if (!absent || journal.phase === "PUBLISHING") { journal = { ...journal, phase: "PUBLISH_FAILED", publishAt: journal.publishAt ?? now.toISOString(), errorCode: "PUBLISH_FAILED" }; await writeJournal(operation, journal); throw new Error(absent ? "publication interrupted without receipt" : "published receipt identity mismatch"); }
       journal = { ...journal, phase: "PUBLISHING", publishAt: now.toISOString() }; await writeJournal(operation, journal);
       try { receipt = await publish({ repositoryRoot: root, observationDirectory: journal.observationDirectory, receiptPath, expectedMainSha: journal.expectedMainSha, now: new Date(journal.publishAt) }); assertReceiptBinding(receipt, journal); }
       catch (publishError) { journal = { ...journal, phase: "PUBLISH_FAILED", errorCode: "PUBLISH_FAILED" }; await writeJournal(operation, journal); throw publishError; }

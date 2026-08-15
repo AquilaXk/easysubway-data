@@ -33,6 +33,12 @@ test("strictly parses prepare/finalize command boundaries", () => {
   assert.throws(() => parseArgs(["--phase", "finalize", "--operation-root", "/private/op"]), /arguments/);
 });
 
+test("default runner observation read reaches the collector contract", async (t) => {
+  const value = await fixture(t); const candidates = path.join(value.repositoryRoot, "tools/datapack/source-candidates.json"); await mkdir(path.dirname(candidates), { recursive: true }); await writeFile(candidates, "{}\n");
+  await Promise.all([["manifest.json", "{}\n"], ["observation.json", "{}\n"], ["raw-snapshot.json", "{}\n"]].map(([name, bytes]) => writeFile(path.join(value.observationDirectory, name), bytes, { mode: 0o600 })));
+  await assert.rejects(prepareCurrentSeoulTransferRegistration({ ...value, expectedMainSha: SHA, assertExactMain: exactMain }), /transfer observation identity mismatch/);
+});
+
 test("prepare seals the exact observation/artifact binding in a private operation root", async (t) => {
   const value = await fixture(t);
   await prepareCurrentSeoulTransferRegistration({ ...value, expectedMainSha: SHA, ...dependencies, now: new Date("2026-08-16T00:00:00.000Z") });
@@ -56,6 +62,10 @@ test("finalize publishes then registers exactly once and records terminal failur
   assert.equal(JSON.parse(await readFile(path.join(failed.operationRoot, "journal.json"), "utf8")).phase, "PUBLISH_FAILED");
   await assert.rejects(finalizeCurrentSeoulTransferRegistration({ ...failed, ...dependencies, publish: async () => { publishCalls += 1; } }), /terminal/);
   assert.equal(publishCalls, 1);
+  const malformed = await fixture(t); await prepareCurrentSeoulTransferRegistration({ ...malformed, expectedMainSha: SHA, ...dependencies, now: NOW }); await writeFile(path.join(malformed.operationRoot, "receipt.json"), "{bad\n", { mode: 0o600 }); let malformedCalls = 0;
+  await assert.rejects(finalizeCurrentSeoulTransferRegistration({ ...malformed, ...dependencies, now: new Date("2026-08-15T12:02:00.000Z"), publish: async () => { malformedCalls += 1; }, register: async () => { malformedCalls += 1; } }), /published receipt identity mismatch/);
+  const malformedJournal = JSON.parse(await readFile(path.join(malformed.operationRoot, "journal.json"), "utf8")); assert.deepEqual([malformedJournal.phase, malformedJournal.publishAt], ["PUBLISH_FAILED", "2026-08-15T12:02:00.000Z"]);
+  await assert.rejects(finalizeCurrentSeoulTransferRegistration({ ...malformed, ...dependencies, publish: async () => { malformedCalls += 1; }, register: async () => { malformedCalls += 1; } }), /terminal/); assert.equal(malformedCalls, 0);
 });
 
 test("an exact existing receipt skips publish, while REGISTERING residue never replays", async (t) => {
