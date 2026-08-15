@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { lstat, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -8,7 +8,6 @@ import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-access
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 
 const SOURCE_ID = "kric-station-convenience-standard";
-const SNAPSHOT_PATH = "tools/datapack/sources/kric-station-convenience-standard-20260813T200604805Z.json";
 const REQUIRED_TYPES = ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"];
 const FACILITY_CODE_BY_TYPE = Object.freeze({
   ELEVATOR: "EV",
@@ -55,19 +54,21 @@ export async function loadCurrentFacilitySourceAdmissionInput({ repositoryRoot, 
   assertNonBlank(repositoryRoot, "repositoryRoot");
   assertNonBlank(observedAt, "observedAt");
   const root = path.resolve(repositoryRoot);
-  const [candidateBuildSpec, productionInput, sourceInventory, sourceSnapshots, snapshotBytes] = await Promise.all([
+  const [candidateBuildSpec, productionInput, sourceInventory, sourceSnapshots] = await Promise.all([
     readJson(path.join(root, "tools/datapack/release/candidate-build-spec.json")),
     readJson(path.join(root, "tools/datapack/inputs/capital-pilot-production-source-input.json")),
     readJson(path.join(root, "tools/datapack/source-inventory.json")),
     readJson(path.join(root, "tools/datapack/release/source-snapshots.json")),
-    readFile(path.join(root, SNAPSHOT_PATH)),
   ]);
+  const snapshotPath = resolveRegisteredSnapshotPath(root, sourceInventory);
+  const snapshotBytes = await readRegularSnapshot(path.join(root, snapshotPath));
   return {
     observedAt,
     candidateBuildSpec,
     productionInput,
     sourceInventory,
     sourceSnapshots,
+    snapshotPath,
     snapshotBytes: new Uint8Array(snapshotBytes),
   };
 }
@@ -79,6 +80,7 @@ export function buildFacilitySourceAdmission(input) {
     "productionInput",
     "sourceInventory",
     "sourceSnapshots",
+    "snapshotPath",
     "snapshotBytes",
   ], "FACILITY admission input keys");
   const observedAtMillis = requiredUtcInstant(input.observedAt, "observedAt");
@@ -88,6 +90,7 @@ export function buildFacilitySourceAdmission(input) {
     candidateBuildSpec: input.candidateBuildSpec,
     sourceInventory: input.sourceInventory,
     sourceSnapshots: input.sourceSnapshots,
+    snapshotPath: input.snapshotPath,
     snapshot,
     snapshotBytes,
     observedAtMillis,
@@ -164,7 +167,7 @@ export function canonicalFacilitySourceAdmissionJson(result) {
 }
 
 function validateSourceContext({
-  candidateBuildSpec, sourceInventory, sourceSnapshots, snapshot, snapshotBytes, observedAtMillis,
+  candidateBuildSpec, sourceInventory, sourceSnapshots, snapshotPath, snapshot, snapshotBytes, observedAtMillis,
 }) {
   if (candidateBuildSpec?.schemaVersion !== 1
     || candidateBuildSpec?.artifactKind !== "datapack-candidate-build-spec"
@@ -211,7 +214,7 @@ function validateSourceContext({
     throw new Error("FACILITY source approval or license mismatch");
   }
   assertSha256(evidence.licenseEvidenceHash, "FACILITY license evidence");
-  if (evidence.snapshotPath !== SNAPSHOT_PATH
+  if (evidence.snapshotPath !== snapshotPath
     || evidence.snapshotId !== snapshot.snapshotId
     || evidence.rawSha256 !== snapshot.rawSha256
     || evidence.contentSha256 !== snapshot.contentSha256
@@ -294,6 +297,32 @@ function validateSourceContext({
   };
 }
 
+function resolveRegisteredSnapshotPath(repositoryRoot, sourceInventory) {
+  const source = exactlyOne(sourceInventory?.sources, ({ id }) => id === SOURCE_ID, "FACILITY source inventory");
+  const snapshotPath = source?.accessibilityAdmissionEvidence?.snapshotPath;
+  if (typeof snapshotPath !== "string" || snapshotPath === "" || path.isAbsolute(snapshotPath)) {
+    throw new Error("FACILITY registered snapshot path is invalid");
+  }
+  const resolved = path.resolve(repositoryRoot, snapshotPath);
+  const relative = path.relative(repositoryRoot, resolved);
+  if (relative === "" || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error("FACILITY registered snapshot path escapes repository");
+  }
+  return relative;
+}
+
+async function readRegularSnapshot(snapshotFile) {
+  const before = await lstat(snapshotFile);
+  if (!before.isFile() || before.isSymbolicLink()) throw new Error("FACILITY registered snapshot must be a regular file");
+  const bytes = await readFile(snapshotFile);
+  const after = await lstat(snapshotFile);
+  if (!after.isFile() || after.isSymbolicLink() || before.dev !== after.dev || before.ino !== after.ino
+    || before.size !== after.size || before.mtimeMs !== after.mtimeMs || bytes.length !== after.size) {
+    throw new Error("FACILITY registered snapshot changed during read");
+  }
+  return bytes;
+}
+
 function buildStationContext(productionInput, candidateBuildSpec) {
   const scope = productionInput?.supportedV1Scope;
   if (!scope || scope.scopeId !== candidateBuildSpec.productionScopeId
@@ -311,40 +340,46 @@ function buildStationContext(productionInput, candidateBuildSpec) {
   const lineIds = uniqueStrings(scope.includedLineIds, "included line id").sort(compareBytes);
   const operatorIds = uniqueStrings(scope.includedOperatorIds, "included operator id").sort(compareBytes);
   const regionIds = uniqueStrings(scope.includedRegionIds, "included region id").sort(compareBytes);
-  if (stationIds.length !== 2 || lineIds.length !== 1 || operatorIds.length !== 1 || regionIds.length !== 1) {
+  if (stationIds.length === 0 || lineIds.length === 0 || operatorIds.length === 0 || regionIds.length !== 1) {
     throw new Error("FACILITY current scope cardinality mismatch");
   }
   if (!Array.isArray(productionInput.stationMappings) || !Array.isArray(productionInput.stationLineRows)
     || !Array.isArray(productionInput.lines) || !Array.isArray(productionInput.operators)) {
     throw new Error("FACILITY station mapping inputs are required");
   }
-  const line = exactlyOne(productionInput.lines, ({ id }) => id === lineIds[0], "FACILITY line");
-  const operator = exactlyOne(productionInput.operators, ({ id }) => id === operatorIds[0], "FACILITY operator");
-  if (line.operatorId !== operator.id) throw new Error("FACILITY line operator identity mismatch");
-  const stationLines = stationIds.map((stationId) => {
-    const mapping = exactlyOne(
-      productionInput.stationMappings,
-      (row) => row.sourceId === "molit-urban-rail-full-route"
-        && row.stationId === stationId && row.lineId === line.id && row.mappingStatus === "active",
-      `FACILITY station mapping ${stationId}`,
-    );
-    if (mapping.stationLineId !== `${stationId}:${line.id}`) {
+  const linesById = new Map(lineIds.map((lineId) => [
+    lineId, exactlyOne(productionInput.lines, ({ id }) => id === lineId, `FACILITY line ${lineId}`),
+  ]));
+  const operatorsById = new Map(operatorIds.map((operatorId) => [
+    operatorId, exactlyOne(productionInput.operators, ({ id }) => id === operatorId, `FACILITY operator ${operatorId}`),
+  ]));
+  for (const line of linesById.values()) {
+    if (!operatorsById.has(line.operatorId)) throw new Error("FACILITY line operator identity mismatch");
+  }
+  const stationLines = productionInput.stationMappings.filter((row) => (
+    row.sourceId === "molit-urban-rail-full-route" && row.mappingStatus === "active"
+      && stationIds.includes(row.stationId) && lineIds.includes(row.lineId)
+  )).map((mapping) => {
+    const line = linesById.get(mapping.lineId);
+    const operator = operatorsById.get(line.operatorId);
+    if (!line || !operator) throw new Error("FACILITY line operator identity mismatch");
+    if (mapping.stationLineId !== `${mapping.stationId}:${line.id}`) {
       throw new Error("FACILITY station-line identity mismatch");
     }
     const sourceRow = exactlyOne(
       productionInput.stationLineRows,
       (row) => row.sourceId === mapping.sourceId
         && row.sourceStationCode === mapping.sourceStationCode && row.lineId === line.id,
-      `FACILITY station row ${stationId}`,
+      `FACILITY station row ${mapping.stationId}`,
     );
     const stationAliases = productionInput.stationMappings
-      .filter((row) => row.stationId === stationId && row.lineId === line.id && Array.isArray(row.previousNames))
+      .filter((row) => row.stationId === mapping.stationId && row.lineId === line.id && Array.isArray(row.previousNames))
       .flatMap(({ previousNames }) => previousNames)
       .filter((value) => typeof value === "string" && value.trim() !== "")
       .filter((value, index, values) => values.indexOf(value) === index)
       .sort(compareBytes);
     return canonicalObject({
-      stationId,
+      stationId: mapping.stationId,
       stationName: requiredString(sourceRow.normalizedName, "FACILITY station name"),
       stationAliases,
       regionId: regionIds[0],
@@ -356,6 +391,13 @@ function buildStationContext(productionInput, candidateBuildSpec) {
       sourceStationCode: mapping.sourceStationCode,
     });
   }).sort(compareStationLines);
+  const stationLineKeys = new Set(stationLines.map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
+  if (stationLineKeys.size !== stationLines.length
+    || canonicalJson([...new Set(stationLines.map(({ stationId }) => stationId))].sort(compareBytes)) !== canonicalJson(stationIds)
+    || canonicalJson([...new Set(stationLines.map(({ lineId }) => lineId))].sort(compareBytes)) !== canonicalJson(lineIds)
+    || canonicalJson([...new Set(stationLines.map(({ operatorId }) => operatorId))].sort(compareBytes)) !== canonicalJson(operatorIds)) {
+    throw new Error("FACILITY current scope cardinality mismatch");
+  }
   const sourceMappingKeys = new Set();
   for (const stationLine of stationLines) {
     const key = `${stationLine.sourceId}\0${stationLine.sourceStationCode}\0${stationLine.lineId}`;
