@@ -228,7 +228,7 @@ function journalPath(values) {
   return path.join(path.dirname(path.dirname(path.dirname(path.dirname(values.snapshotTargetPath)))), "tools/datapack/.kric-standard-registration-transaction.json");
 }
 
-async function fullRegistrationInputs(values) {
+async function fullRegistrationInputs(values, { mixed = false } = {}) {
   const planInput = await Promise.all([
     "tools/datapack/release/capital-production-canonical-pack.json",
     "tools/datapack/nationwide-coverage-targets.json",
@@ -264,7 +264,13 @@ async function fullRegistrationInputs(values) {
     operations: [operation],
     serviceKey: "fixture-only-key",
     now: fixtureNow,
-    fetchImpl: async () => ({
+    allowTerminalResult03: mixed,
+    fetchImpl: async (url) => mixed && url.searchParams.get("railOprIsttCd") === "S1"
+      && url.searchParams.get("lnCd") === "2" && url.searchParams.get("stinCd") === "234-4" ? ({
+        ok: true,
+        status: 200,
+        json: async () => ({ header: { resultCode: "03" }, body: [] }),
+      }) : ({
       ok: true,
       status: 200,
       json: async () => ({
@@ -358,6 +364,26 @@ test("producer-neutral full registration atomically registers 213 tuples without
     "sourceId",
     "storedAt",
   ]);
+});
+
+test("producer-neutral full registration preserves mixed evidence mode and legacy registration rejects it without mutation", async (t) => {
+  const values = await fixture(t);
+  const input = await fullRegistrationInputs(values, { mixed: true });
+  await registerFull(values, input);
+  const inventory = JSON.parse(await readFile(values.paths[registryPaths[0]], "utf8"));
+  assert.equal(inventory.sources.find(({ id }) => id === input.snapshot.sourceId)
+    .accessibilityAdmissionEvidence.absenceEvidenceMode, "EXHAUSTIVE_LIST_WITH_UNVERIFIED_EVIDENCE_BLOCKED");
+
+  const legacy = await fixture(t);
+  const legacyInput = await fullRegistrationInputs(legacy, { mixed: true });
+  await assert.rejects(register(legacy, {
+    snapshotFilePath: legacyInput.snapshotPath,
+    snapshotFileSha256: legacyInput.snapshotFileSha256,
+    snapshotTargetPath: legacyInput.target,
+    rawReceipt: legacyInput.rawReceipt,
+  }), /requires producer-neutral full registration/u);
+  await assertUnchanged(legacy);
+  await assert.rejects(readFile(legacyInput.target), { code: "ENOENT" });
 });
 
 test("producer-neutral full registration rejects plan, snapshot, and receipt drift before writes", async (t) => {

@@ -20,8 +20,8 @@ test("producer-neutral FACILITY admission emits the exact 213/199/639 closed mat
   assert.equal(first.materializerEvidenceRows.length, 213);
   assert.equal(new Set(first.cells.map(({ stationId }) => stationId)).size, 199);
   assert.equal(first.decision, "GO");
-  assert.deepEqual(first.denominatorStateSummary, { VERIFIED_PRESENT: 213, VERIFIED_ABSENT: 426 });
-  assert.deepEqual(first.cellStateSummary, { ADMITTED_FACILITY_PRESENT: 211, ADMITTED_FACILITY_ABSENT: 2 });
+  assert.deepEqual(first.denominatorStateSummary, { VERIFIED_PRESENT: 213, VERIFIED_ABSENT: 426, UNVERIFIED_EVIDENCE_BLOCKED: 0 });
+  assert.deepEqual(first.cellStateSummary, { ADMITTED_FACILITY_PRESENT: 211, ADMITTED_FACILITY_ABSENT: 2, ADMITTED_FACILITY_UNVERIFIED_BLOCKED: 0 });
   assert.deepEqual(first.denominatorRows.slice(0, 12).map(({ facilityType, state }) => ({ facilityType, state })), [
     { facilityType: "ELEVATOR", state: "VERIFIED_PRESENT" }, { facilityType: "ESCALATOR", state: "VERIFIED_ABSENT" }, { facilityType: "WHEELCHAIR_LIFT", state: "VERIFIED_ABSENT" },
     { facilityType: "ELEVATOR", state: "VERIFIED_ABSENT" }, { facilityType: "ESCALATOR", state: "VERIFIED_ABSENT" }, { facilityType: "WHEELCHAIR_LIFT", state: "VERIFIED_ABSENT" },
@@ -60,6 +60,45 @@ test("producer-neutral FACILITY admission emits the exact 213/199/639 closed mat
   pathDrift.sourceIdentity.snapshotPath = "tools/datapack/sources/wrong.json";
   rehash(pathDrift);
   assert.throws(() => canonicalCurrentCapitalFacilitySourceAdmissionJson(pathDrift));
+});
+
+test("exact terminal 03은 one blocked cell과 세 blocked denominator rows로 admission GO를 만든다", async () => {
+  const values = await fixture({ mixed: true });
+  const admission = buildCurrentCapitalFacilitySourceAdmission(values);
+  assert.deepEqual(admission.denominatorStateSummary, {
+    VERIFIED_PRESENT: 212,
+    VERIFIED_ABSENT: 424,
+    UNVERIFIED_EVIDENCE_BLOCKED: 3,
+  });
+  assert.deepEqual(admission.cellStateSummary, {
+    ADMITTED_FACILITY_PRESENT: 210,
+    ADMITTED_FACILITY_ABSENT: 2,
+    ADMITTED_FACILITY_UNVERIFIED_BLOCKED: 1,
+  });
+  const blocked = admission.cells.find(({ stationId, lineId }) => stationId === "station-b35616704ce3" && lineId === "seoul-2");
+  assert.equal(blocked.state, "ADMITTED_FACILITY_UNVERIFIED_BLOCKED");
+  assert.deepEqual(admission.denominatorRows.filter(({ stationId, lineId }) => stationId === blocked.stationId && lineId === blocked.lineId)
+    .map(({ state }) => state), Array(3).fill("UNVERIFIED_EVIDENCE_BLOCKED"));
+  assert.equal(admission.materializerEvidenceRows.find(({ stationId, lineId }) => stationId === blocked.stationId && lineId === blocked.lineId).evidenceState, "UNVERIFIED_EVIDENCE_BLOCKED");
+  assert.equal(admission.decision, "GO");
+
+  const blockedIndex = admission.cells.indexOf(blocked);
+  const partial = structuredClone(admission);
+  partial.denominatorRows[blockedIndex * 3 + 1].state = "VERIFIED_ABSENT";
+  refreshSummaries(partial); rehash(partial);
+  assert.throws(() => canonicalCurrentCapitalFacilitySourceAdmissionJson(partial), /blocked terminal matrix/u);
+
+  const wrongTuple = structuredClone(admission);
+  setAbsent(wrongTuple, blockedIndex);
+  const wrongIndex = blockedIndex === 0 ? 1 : 0;
+  setBlocked(wrongTuple, wrongIndex);
+  refreshSummaries(wrongTuple); rehash(wrongTuple);
+  assert.throws(() => canonicalCurrentCapitalFacilitySourceAdmissionJson(wrongTuple), /blocked terminal matrix/u);
+
+  const duplicate = structuredClone(admission);
+  setBlocked(duplicate, blockedIndex === 0 ? 1 : 0);
+  refreshSummaries(duplicate); rehash(duplicate);
+  assert.throws(() => canonicalCurrentCapitalFacilitySourceAdmissionJson(duplicate), /blocked terminal matrix/u);
 });
 
 test("producer-neutral FACILITY admission rejects representative identity and query drift before output", async () => {
@@ -119,7 +158,7 @@ test("producer-neutral FACILITY admission normalizes byte inputs before binding 
   assert.throws(() => buildCurrentCapitalFacilitySourceAdmission(governanceRawDrift), /candidate source snapshot projection mismatch/);
 });
 
-async function fixture() {
+async function fixture({ mixed = false } = {}) {
   const files = Object.fromEntries(await Promise.all(["release/capital-production-canonical-pack.json", "nationwide-coverage-targets.json", "sources/kric-provider-code-catalog-20260228.json", "sources/kric-nationwide-route-rosters-20260730T203926676Z.json", "source-inventory.json", "source-governance-policy.json", "../../release/product-gates/datapack-freshness-sla.json", "release/candidate-build-spec.json", "release/source-snapshots.json"].map(async (name) => [name, await readFile(path.join(root, name))])));
   const plan = buildCurrentCapitalFacilityCollectionPlan({ canonicalPackBytes: files["release/capital-production-canonical-pack.json"], coverageTargetsBytes: files["nationwide-coverage-targets.json"], providerCodeCatalogBytes: files["sources/kric-provider-code-catalog-20260228.json"], routeRostersBytes: files["sources/kric-nationwide-route-rosters-20260730T203926676Z.json"], sourceInventoryBytes: files["source-inventory.json"] });
   const planBytes = Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(plan));
@@ -129,7 +168,10 @@ async function fixture() {
     [[roster[2].railOprIsttCd, roster[2].lnCd, roster[2].stinCd].join("\0"), ["ELEC"]],
     [[roster[3].railOprIsttCd, roster[3].lnCd, roster[3].stinCd].join("\0"), ["EV", "ES", "WCLF"]],
   ]);
-  const [snapshot] = await collectKricAccessibilitySnapshots({ roster, operations: [{ sourceId: "kric-station-convenience-standard", endpoint: "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl", responseFields: ["dtlLoc", "grndDvCd", "gubun", "imgPath", "mlFmlDvCd", "stinFlor", "trfcWeakDvCd"], tupleIdentityFields: [] }], serviceKey: "fixture-only-key", now: new Date("2026-08-14T00:00:00.000Z"), fetchImpl: async (url) => {
+  const [snapshot] = await collectKricAccessibilitySnapshots({ roster, operations: [{ sourceId: "kric-station-convenience-standard", endpoint: "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl", responseFields: ["dtlLoc", "grndDvCd", "gubun", "imgPath", "mlFmlDvCd", "stinFlor", "trfcWeakDvCd"], tupleIdentityFields: [] }], serviceKey: "fixture-only-key", now: new Date("2026-08-14T00:00:00.000Z"), allowTerminalResult03: mixed, fetchImpl: async (url) => {
+    if (mixed && url.searchParams.get("railOprIsttCd") === "S1" && url.searchParams.get("lnCd") === "2" && url.searchParams.get("stinCd") === "234-4") {
+      return { ok: true, status: 200, json: async () => ({ header: { resultCode: "03" }, body: [] }) };
+    }
     const codes = specialCodes.get([url.searchParams.get("railOprIsttCd"), url.searchParams.get("lnCd"), url.searchParams.get("stinCd")].join("\0")) ?? ["EV"];
     return { ok: true, status: 200, json: async () => ({ header: { resultCode: "00" }, body: codes.map((gubun) => ({ dtlLoc: "fixture", grndDvCd: "1", gubun, imgPath: "", mlFmlDvCd: "", stinFlor: 1, trfcWeakDvCd: "01" })) }) };
   } });
@@ -150,7 +192,7 @@ async function fixture() {
     capturedAt: snapshot.capturedAt,
     observedAt: snapshot.observedAt,
     freshUntil: snapshot.freshUntil,
-    absenceEvidenceMode: "EXHAUSTIVE_LIST",
+    absenceEvidenceMode: snapshot.absenceEvidenceMode,
   };
   const ledger = {
     schemaVersion: 1,
@@ -244,4 +286,25 @@ async function productionShapedFixture() {
 function rehash(value) {
   delete value.admissionDigest;
   value.admissionDigest = sha256(canonicalJson(value));
+}
+
+function setBlocked(value, index) {
+  value.cells[index].state = "ADMITTED_FACILITY_UNVERIFIED_BLOCKED";
+  value.materializerEvidenceRows[index].state = "ADMITTED_FACILITY_UNVERIFIED_BLOCKED";
+  value.materializerEvidenceRows[index].evidenceState = "UNVERIFIED_EVIDENCE_BLOCKED";
+  for (const row of value.denominatorRows.slice(index * 3, index * 3 + 3)) row.state = "UNVERIFIED_EVIDENCE_BLOCKED";
+}
+
+function setAbsent(value, index) {
+  value.cells[index].state = "ADMITTED_FACILITY_ABSENT";
+  value.materializerEvidenceRows[index].state = "ADMITTED_FACILITY_ABSENT";
+  value.materializerEvidenceRows[index].evidenceState = "VERIFIED_ABSENT";
+  for (const row of value.denominatorRows.slice(index * 3, index * 3 + 3)) row.state = "VERIFIED_ABSENT";
+}
+
+function refreshSummaries(value) {
+  value.denominatorStateSummary = Object.fromEntries(["VERIFIED_PRESENT", "VERIFIED_ABSENT", "UNVERIFIED_EVIDENCE_BLOCKED"]
+    .map((state) => [state, value.denominatorRows.filter((row) => row.state === state).length]));
+  value.cellStateSummary = Object.fromEntries(["ADMITTED_FACILITY_PRESENT", "ADMITTED_FACILITY_ABSENT", "ADMITTED_FACILITY_UNVERIFIED_BLOCKED"]
+    .map((state) => [state, value.cells.filter((cell) => cell.state === state).length]));
 }

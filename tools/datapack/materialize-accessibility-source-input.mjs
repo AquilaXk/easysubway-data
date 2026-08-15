@@ -4,12 +4,17 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
 
 const KRIC_SOURCE_ID = "kric-station-convenience-standard";
 const SEOUL_SOURCE_ID = "seoul-metro-accessibility";
 // KRIC official stationCnvFacl contract: EV/ES/WCLF are the only route-relevant facility codes.
 const FACILITY_TYPES = new Map([["EV", "ELEVATOR"], ["ES", "ESCALATOR"], ["WCLF", "WHEELCHAIR_LIFT"]]);
 const KRIC_FACILITY_CODES = new Set([...FACILITY_TYPES.keys(), "ELEC", "FEED", "INFO", "TOLT"]);
+const TERMINAL_POLICY = "EXACT_TUPLE_PROVIDER_RESULT_03";
+const TERMINAL_TUPLE = Object.freeze({ stationId: "station-b35616704ce3", lineId: "seoul-2", railOprIsttCd: "S1", lnCd: "2", stinCd: "234-4" });
+const TERMINAL_OPERATOR_ID = "seoul-metro";
+const TERMINAL_REASON = "시설 존재·부재가 검증되지 않아 경로를 차단했습니다.";
 
 export function materializeAccessibilitySourceInput({ input, kricSnapshot, seoulSnapshot }) {
   if (kricSnapshot?.sourceId !== KRIC_SOURCE_ID || seoulSnapshot?.sourceId !== SEOUL_SOURCE_ID) {
@@ -50,6 +55,44 @@ export function materializeAccessibilitySourceInput({ input, kricSnapshot, seoul
     if (!mapping || mapping.lineId !== query.lineId || !Array.isArray(query.rows)) {
       throw new Error(`KRIC snapshot canonical mapping missing: ${query?.stationId}`);
     }
+    if (isTerminalQuery(query)) {
+      for (const facilityType of FACILITY_TYPES.values()) absenceRows.push({
+        stationId: query.stationId,
+        lineId: query.lineId,
+        operatorId: TERMINAL_OPERATOR_ID,
+        facilityType,
+        state: "UNVERIFIED_EVIDENCE_BLOCKED",
+        evidenceKind: "UNVERIFIED_EVIDENCE_BLOCKED",
+        terminalPolicy: TERMINAL_POLICY,
+        providerResultCode: "03",
+        sourceId: KRIC_SOURCE_ID,
+        sourceSnapshotId: kricSnapshot.snapshotId,
+        providerRecordHash: null,
+        providerResponseSha256: query.rawResponseSha256,
+        evidenceHash: createHash("sha256").update(canonicalJson({
+          sourceSnapshotId: kricSnapshot.snapshotId,
+          stationId: query.stationId,
+          lineId: query.lineId,
+          operatorId: TERMINAL_OPERATOR_ID,
+          facilityType,
+          terminalPolicy: TERMINAL_POLICY,
+          providerResponseSha256: query.rawResponseSha256,
+        })).digest("hex"),
+        provenanceKind: "OFFICIAL_SOURCE",
+        installationStatus: "UNKNOWN",
+        operationalStatus: "UNKNOWN",
+        statusMeaning: "PROVIDER_RESULT_UNVERIFIED",
+        confidence: 0,
+        verifiedAt: kricSnapshot.observedAt,
+        retrievedAt: kricSnapshot.capturedAt,
+        strictRouteEligible: false,
+        strictRouteEligibleReason: "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED",
+        evidenceReason: TERMINAL_REASON,
+        note: "KRIC provider result 03은 시설 존재·부재로 해석하지 않는다.",
+      });
+      continue;
+    }
+    if (query.providerResultCode === "03") throw new Error("KRIC terminal provider result is invalid");
     const stationName = stationLineIdentity(input, mapping).stationNameKo;
     const counts = new Map();
     const seenProviderRecordHashes = new Set();
@@ -246,6 +289,15 @@ function validateKricProviderRows(queries) {
 
 function tuple(query) {
   return { railOprIsttCd: query.railOprIsttCd, lnCd: query.lnCd, stinCd: query.stinCd };
+}
+
+function isTerminalQuery(query) {
+  return query?.providerResultCode === "03"
+    && query.terminalPolicy === TERMINAL_POLICY
+    && query.providerRecordHash === null
+    && query.rows?.length === 0
+    && /^[0-9a-f]{64}$/.test(query.rawResponseSha256 ?? "")
+    && Object.entries(TERMINAL_TUPLE).every(([field, value]) => query[field] === value);
 }
 
 function kricFloorLabel(row) {

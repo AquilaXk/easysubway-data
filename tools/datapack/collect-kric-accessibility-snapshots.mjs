@@ -49,6 +49,11 @@ export const KRIC_ACCESSIBILITY_OPERATIONS = Object.freeze([{
   tupleIdentityFields: [],
 }]);
 
+const TERMINAL_RESULT_03 = Object.freeze({
+  stationId: "station-b35616704ce3", lineId: "seoul-2", railOprIsttCd: "S1", lnCd: "2", stinCd: "234-4",
+});
+const TERMINAL_POLICY = "EXACT_TUPLE_PROVIDER_RESULT_03";
+
 // Provider roster의 개명·오기만 exact tuple로 결속한다. 이름 유사도 fallback은 두지 않는다.
 export const KRIC_STATION_TUPLE_MAPPINGS = Object.freeze([
   { stationId: "station-47b514f305d8", lineId: "seoul-4", railOprIsttCd: "KR", lnCd: "4", stinCd: "454" },
@@ -103,6 +108,7 @@ async function collectKricAccessibilitySnapshotResults({
   requestIntervalMs = 0,
   delayImpl = delay,
   retainRawResponses = false,
+  allowTerminalResult03 = false,
 } = {}) {
   if (typeof serviceKey !== "string" || serviceKey === "") throw new Error("KRIC_SERVICE_KEY is required");
   if (!Number.isInteger(requestIntervalMs) || requestIntervalMs < 0 || requestIntervalMs > 60_000) {
@@ -120,44 +126,45 @@ async function collectKricAccessibilitySnapshotResults({
   };
   for (const operation of operations) {
     validateOperation(operation);
-    const queries = [];
+    const collected = [];
     const rawResponses = [];
     const providerGaps = [];
     const responsesByProviderTuple = new Map();
     for (const tuple of tuples) {
       const providerKey = [tuple.railOprIsttCd, tuple.lnCd, tuple.stinCd].join("\0");
       if (!responsesByProviderTuple.has(providerKey)) {
-        try {
-          const requested = await requestRows({
-            operation, tuple, serviceKey, fetchImpl, requestTimeoutMs, paceRequest,
-          });
-          responsesByProviderTuple.set(providerKey, requested);
-          if (retainRawResponses) rawResponses.push(requested.rawResponse);
-        } catch (error) {
-          if (error?.kricResultCode !== "03") throw error;
-          providerGaps.push(`${error.kricRequestIdentity}/${error.kricResultCode}`);
-          responsesByProviderTuple.set(providerKey, null);
-        }
+        const requested = await requestRows({
+          operation, tuple, serviceKey, fetchImpl, requestTimeoutMs, paceRequest,
+        });
+        responsesByProviderTuple.set(providerKey, requested);
+        if (retainRawResponses) rawResponses.push(requested.rawResponse);
       }
       const response = responsesByProviderTuple.get(providerKey);
-      if (response === null) continue;
+      if (response.providerResultCode === "03") providerGaps.push(tuple);
+      collected.push({ tuple, response });
+    }
+    const isExactTerminal = (tuple) => Object.entries(TERMINAL_RESULT_03).every(([field, value]) => tuple?.[field] === value);
+    const isMixed = providerGaps.length === 1 && allowTerminalResult03 === true
+      && operation.sourceId === "kric-station-convenience-standard" && tuples.length === 213
+      && isExactTerminal(providerGaps[0]);
+    if (providerGaps.length > 0 && !isMixed) {
+      const gaps = providerGaps.map((tuple) => `${operation.sourceId}/${tuple.railOprIsttCd}/${tuple.lnCd}/${tuple.stinCd}/03`);
+      throw new Error(`KRIC accessibility provider gaps: count=${gaps.length}; tuples=${gaps.sort(compare).join(",")}`);
+    }
+    const queries = collected.map(({ tuple, response }) => {
+      if (isMixed && response.providerResultCode === "03") return {
+        ...tuple, providerResultCode: "03", status: "UNVERIFIED_EVIDENCE_BLOCKED", terminalPolicy: TERMINAL_POLICY,
+        rawResponseSha256: response.rawResponseSha256, providerRecordHash: null, rows: [],
+      };
       const { rows, rawResponseSha256 } = response;
-      const providerRecordHash = hash(rows);
-      queries.push({
-        ...tuple,
-        status: rows.length === 0 ? "ABSENT_EXPLICIT_ZERO" : "PRESENT",
-        rawResponseSha256,
-        providerRecordHash,
-        rows,
-      });
-    }
-    if (providerGaps.length > 0) {
-      throw new Error(`KRIC accessibility provider gaps: count=${providerGaps.length}; tuples=${providerGaps.sort(compare).join(",")}`);
-    }
+      const normal = {
+        ...tuple, status: rows.length === 0 ? "ABSENT_EXPLICIT_ZERO" : "PRESENT", rawResponseSha256,
+        providerRecordHash: hash(rows), rows,
+      };
+      return isMixed ? { ...tuple, providerResultCode: "00", status: normal.status, terminalPolicy: null, rawResponseSha256, providerRecordHash: normal.providerRecordHash, rows } : normal;
+    });
     const contentSha256 = hash(queries.map(({ rawResponseSha256: _, ...query }) => query));
-    const rawSha256 = hash(queries.map(({
-      stationId, lineId, railOprIsttCd, lnCd, stinCd, rawResponseSha256,
-    }) => ({ stationId, lineId, railOprIsttCd, lnCd, stinCd, rawResponseSha256 })));
+    const rawSha256 = hash(queries.map((query) => snapshotRawQueryIdentity(query, isMixed)));
     const timestamp = capturedAt.replaceAll(/[-:.]/g, "");
     snapshots.push({
       schemaVersion: 1,
@@ -168,9 +175,9 @@ async function collectKricAccessibilitySnapshotResults({
       observedAt: capturedAt,
       freshUntil,
       credentialRedacted: true,
-      providerResultCode: "00",
+      providerResultCode: isMixed ? "MIXED" : "00",
       schemaStatus: "PASS",
-      absenceEvidenceMode: "EXHAUSTIVE_LIST",
+      absenceEvidenceMode: isMixed ? "EXHAUSTIVE_LIST_WITH_UNVERIFIED_EVIDENCE_BLOCKED" : "EXHAUSTIVE_LIST",
       queryCount: queries.length,
       rowCount: queries.reduce((sum, query) => sum + query.rows.length, 0),
       rawSha256,
@@ -192,6 +199,7 @@ export async function collectKricStandardAccessibilityObservation(options = {}) 
     ...options,
     operations: KRIC_ACCESSIBILITY_OPERATIONS,
     retainRawResponses: true,
+    allowTerminalResult03: true,
   });
   if (snapshots.length !== 1 || rawCollections.length !== 1) {
     throw new Error("KRIC standard accessibility observation is invalid");
@@ -237,7 +245,8 @@ export function validateKricAccessibilityRawCollection(rawArtifact, snapshotValu
     if (!exactKeys(response, [
       "railOprIsttCd", "lnCd", "stinCd", "providerResultCode", "rawResponseSha256", "byteSize", "bodyBase64",
     ]) || !["railOprIsttCd", "lnCd", "stinCd"].every((field) => typeof response[field] === "string" && response[field] !== "")
-      || response.providerResultCode !== "00"
+      || !["00", "03"].includes(response.providerResultCode)
+      || (snapshot.providerResultCode !== "MIXED" && response.providerResultCode !== "00")
       || !/^[0-9a-f]{64}$/.test(response.rawResponseSha256 ?? "")
       || !Number.isSafeInteger(response.byteSize) || response.byteSize < 1
       || typeof response.bodyBase64 !== "string" || response.bodyBase64 === "") {
@@ -250,7 +259,9 @@ export function validateKricAccessibilityRawCollection(rawArtifact, snapshotValu
     }
     let payload;
     try { payload = JSON.parse(bytes); } catch { throw new Error("KRIC accessibility raw collection is invalid"); }
-    if (payload?.header?.resultCode !== "00" || !Array.isArray(payload?.body)) {
+    const isTerminalResponse = response.providerResultCode === "03";
+    if (payload?.header?.resultCode !== response.providerResultCode
+      || (!isTerminalResponse && !Array.isArray(payload?.body))) {
       throw new Error("KRIC accessibility raw collection is invalid");
     }
     const key = [response.railOprIsttCd, response.lnCd, response.stinCd].join("\0");
@@ -260,11 +271,15 @@ export function validateKricAccessibilityRawCollection(rawArtifact, snapshotValu
   const queryKeys = new Set(snapshot.queries.map(({ railOprIsttCd, lnCd, stinCd }) => [railOprIsttCd, lnCd, stinCd].join("\0")));
   const responseHashes = new Map(rawArtifact.responses.map((response) => [[
     response.railOprIsttCd, response.lnCd, response.stinCd,
-  ].join("\0"), response.rawResponseSha256]));
+  ].join("\0"), response]));
   if (seen.size !== queryKeys.size || [...queryKeys].some((key) => !seen.has(key))
-    || snapshot.queries.some((query) => responseHashes.get([
+    || snapshot.queries.some((query) => {
+      const response = responseHashes.get([
       query.railOprIsttCd, query.lnCd, query.stinCd,
-    ].join("\0")) !== query.rawResponseSha256)
+      ].join("\0"));
+      return response?.rawResponseSha256 !== query.rawResponseSha256
+        || (snapshot.providerResultCode === "MIXED" && response?.providerResultCode !== query.providerResultCode);
+    })
     || rawArtifact.inventorySha256 !== hash(rawArtifact.responses.map(({ bodyBase64: _, ...response }) => response))) {
     throw new Error("KRIC accessibility raw collection is invalid");
   }
@@ -393,9 +408,11 @@ export async function collectKricAccessibilityProviderTupleEvidence({
 export function validateKricAccessibilitySnapshotIdentity(snapshot) {
   const operation = KRIC_ACCESSIBILITY_OPERATIONS.find(({ sourceId }) => sourceId === snapshot?.sourceId)
     ?? KRIC_APPROVED_ACCESSIBILITY_OPERATIONS.find(({ sourceId }) => sourceId === snapshot?.sourceId);
+  const isMixed = snapshot?.providerResultCode === "MIXED";
   if (!operation || snapshot?.schemaVersion !== 1 || snapshot?.artifactKind !== "kric-accessibility-snapshot"
-    || snapshot.providerResultCode !== "00" || snapshot.schemaStatus !== "PASS"
-    || snapshot.absenceEvidenceMode !== "EXHAUSTIVE_LIST" || snapshot.credentialRedacted !== true || !Array.isArray(snapshot.queries)
+    || !(snapshot.providerResultCode === "00" || isMixed) || snapshot.schemaStatus !== "PASS"
+    || snapshot.absenceEvidenceMode !== (isMixed ? "EXHAUSTIVE_LIST_WITH_UNVERIFIED_EVIDENCE_BLOCKED" : "EXHAUSTIVE_LIST")
+    || snapshot.credentialRedacted !== true || !Array.isArray(snapshot.queries)
     || typeof snapshot.snapshotId !== "string" || typeof snapshot.sourceId !== "string"
     || !Number.isFinite(Date.parse(snapshot.capturedAt)) || !Number.isFinite(Date.parse(snapshot.observedAt))
     || !Number.isFinite(Date.parse(snapshot.freshUntil))) {
@@ -406,32 +423,51 @@ export function validateKricAccessibilitySnapshotIdentity(snapshot) {
     throw new Error("KRIC accessibility snapshot identity is invalid");
   }
   const tupleKeys = new Set();
+  let terminalCount = 0;
   for (const query of snapshot.queries) {
     if (!query || !["stationId", "lineId", "railOprIsttCd", "lnCd", "stinCd"].every((field) =>
       typeof query[field] === "string" && query[field] !== "")
       || !Array.isArray(query.rows) || !Array.isArray(query.canonicalMappings)
       || !/^[0-9a-f]{64}$/.test(query.rawResponseSha256 ?? "")
-      || !/^[0-9a-f]{64}$/.test(query.providerRecordHash ?? "")
-      || query.status !== (query.rows.length === 0 ? "ABSENT_EXPLICIT_ZERO" : "PRESENT")
       || query.canonicalMappings.length === 0
       || query.canonicalMappings.some((mapping) => !mapping
         || !["artifactId", "stationId", "lineId"].every((field) => typeof mapping[field] === "string" && mapping[field] !== "")
         || mapping.stationId !== query.stationId || mapping.lineId !== query.lineId)
-      || query.providerRecordHash !== hash(query.rows)
       || query.rows.some((row) => !row || typeof row !== "object"
         || Object.keys(row).length !== operation.responseFields.length
         || Object.keys(row).some((field) => !operation.responseFields.includes(field))
         || operation.tupleIdentityFields.some((field) => row[field] !== query[field]))) {
       throw new Error("KRIC accessibility snapshot identity is invalid");
     }
+    const isTerminal = isMixed && Object.entries(TERMINAL_RESULT_03).every(([field, value]) => query[field] === value)
+      && query.providerResultCode === "03";
+    if (isTerminal) {
+      terminalCount += 1;
+      if (query.status !== "UNVERIFIED_EVIDENCE_BLOCKED" || query.terminalPolicy !== TERMINAL_POLICY
+        || query.rows.length !== 0 || query.providerRecordHash !== null) {
+        throw new Error("KRIC accessibility snapshot identity is invalid");
+      }
+    } else if (isMixed) {
+      if (query.providerResultCode !== "00" || query.terminalPolicy !== null
+        || !/^[0-9a-f]{64}$/.test(query.providerRecordHash ?? "")
+        || query.status !== (query.rows.length === 0 ? "ABSENT_EXPLICIT_ZERO" : "PRESENT")
+        || query.providerRecordHash !== hash(query.rows)) {
+        throw new Error("KRIC accessibility snapshot identity is invalid");
+      }
+    } else if (!/^[0-9a-f]{64}$/.test(query.providerRecordHash ?? "")
+      || query.status !== (query.rows.length === 0 ? "ABSENT_EXPLICIT_ZERO" : "PRESENT")
+      || query.providerRecordHash !== hash(query.rows)) {
+      throw new Error("KRIC accessibility snapshot identity is invalid");
+    }
     const tupleKey = [query.stationId, query.lineId, query.railOprIsttCd, query.lnCd, query.stinCd].join("\0");
     if (tupleKeys.has(tupleKey)) throw new Error("KRIC accessibility snapshot identity is invalid");
     tupleKeys.add(tupleKey);
   }
+  if (isMixed && (snapshot.sourceId !== "kric-station-convenience-standard" || snapshot.queries.length !== 213 || terminalCount !== 1)) {
+    throw new Error("KRIC accessibility snapshot identity is invalid");
+  }
   const contentSha256 = hash(snapshot.queries.map(({ rawResponseSha256: _, ...query }) => query));
-  const rawSha256 = hash(snapshot.queries.map(({
-    stationId, lineId, railOprIsttCd, lnCd, stinCd, rawResponseSha256,
-  }) => ({ stationId, lineId, railOprIsttCd, lnCd, stinCd, rawResponseSha256 })));
+  const rawSha256 = hash(snapshot.queries.map((query) => snapshotRawQueryIdentity(query, isMixed)));
   const schemaFingerprint = hash([...operation.responseFields].sort(compare));
   const redactedRequestFingerprint = hash({
     endpoint: operation.endpoint,
@@ -711,6 +747,21 @@ async function requestRows({ operation, tuple, serviceKey, fetchImpl, requestTim
   const resultCode = payload?.header?.resultCode;
   if (resultCode === "00" && Array.isArray(payload?.body)) {
     payload = payload.body;
+  } else if (resultCode === "03") {
+    return {
+      providerResultCode: "03",
+      rows: [],
+      rawResponseSha256,
+      rawResponse: {
+        railOprIsttCd: tuple.railOprIsttCd,
+        lnCd: tuple.lnCd,
+        stinCd: tuple.stinCd,
+        providerResultCode: "03",
+        rawResponseSha256,
+        byteSize: rawResponseBytes.length,
+        bodyBase64: rawResponseBytes.toString("base64"),
+      },
+    };
   } else {
     const safeCode = /^[A-Za-z0-9._-]{1,32}$/.test(resultCode ?? "") ? resultCode : "UNKNOWN";
     const safeKeys = Object.keys(payload ?? {}).filter((key) => /^[A-Za-z0-9._-]{1,32}$/.test(key))
@@ -730,6 +781,7 @@ async function requestRows({ operation, tuple, serviceKey, fetchImpl, requestTim
     }
   }
   return {
+    providerResultCode: "00",
     rows: payload.map((row) => Object.fromEntries(
       operation.responseFields.map((field) => [field, row[field]]),
     )),
@@ -820,6 +872,18 @@ function containsStringValue(value, expected) {
 
 function tableExists(database, table) {
   return Boolean(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table));
+}
+
+function snapshotRawQueryIdentity(query, mixed) {
+  const identity = Object.fromEntries([
+    "stationId", "lineId", "railOprIsttCd", "lnCd", "stinCd", "rawResponseSha256",
+  ].map((field) => [field, query[field]]));
+  return mixed ? {
+    ...identity,
+    providerResultCode: query.providerResultCode,
+    terminalPolicy: query.terminalPolicy,
+    providerRecordHash: query.providerRecordHash,
+  } : identity;
 }
 
 function compare(left, right) {

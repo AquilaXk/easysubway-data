@@ -275,7 +275,7 @@ function validateNewKricHead({ next, sourceInventory, governancePolicy, governan
     || review.reviewedProvider !== inventory.provider || review.reviewedDatasetUrl !== inventory.datasetUrl
     || review.approvedByRole !== policySource.approvalRole || !review.redistributionScopes?.includes("DERIVED_DATAPACK")
     || !Number.isFinite(reviewedAt) || !Number.isFinite(nextReviewAt) || reviewedAt > nowMillis || nextReviewAt <= nowMillis
-    || evidence?.decision !== "APPROVED" || evidence.productionUseAllowed !== true || evidence.absenceEvidenceMode !== "EXHAUSTIVE_LIST"
+    || evidence?.decision !== "APPROVED" || evidence.productionUseAllowed !== true || evidence.absenceEvidenceMode !== snapshot.absenceEvidenceMode
     || evidence.snapshotId !== next.snapshotId || evidence.snapshotPath !== `tools/datapack/sources/${next.snapshotId}.json`
     || evidence.rawSha256 !== receipt.snapshotRawSha256 || evidence.contentSha256 !== next.contentSha256
     || evidence.schemaFingerprint !== next.schemaFingerprint || evidence.snapshotFileSha256 !== sha256(kricSnapshotBytes)
