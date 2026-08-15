@@ -56,6 +56,49 @@ test("journal commits all five targets and rolls PREPARED failures back", async 
   assert.equal(await readFile(path.join(root, relatives[4]), "utf8"), "after-4");
 });
 
+test("forward CAS preserves a foreign replacement before the first target write", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "transfer-registration-cas-")); t.after(() => rm(root, { recursive: true, force: true }));
+  const relatives = ["tools/datapack/sources/seoul-metro-transfer-distance-duration-20260712T150000000Z.json", "tools/datapack/source-inventory.json", "release/product-gates/production-datapack-scope.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json"];
+  for (const relative of relatives) await mkdir(path.dirname(path.join(root, relative)), { recursive: true });
+  for (const relative of relatives.slice(1)) await writeFile(path.join(root, relative), "before");
+  const outputs = relatives.map((relative, index) => ({ relative, bytes: Buffer.from(`after-${index}`) }));
+  const target = path.join(root, relatives[1]);
+  await assert.rejects(commitTransferRegistrationOutputs({ repositoryRoot: root, outputs, beforeWrite: async ({ index }) => { if (index === 1) await writeFile(target, "foreign"); } }), /preserves foreign replacement/);
+  assert.equal(await readFile(target, "utf8"), "foreign");
+});
+
+test("forward CAS preserves an interleaved foreign replacement after temp fsync", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "transfer-registration-publish-cas-")); t.after(() => rm(root, { recursive: true, force: true }));
+  const relatives = ["tools/datapack/sources/seoul-metro-transfer-distance-duration-20260712T150000000Z.json", "tools/datapack/source-inventory.json", "release/product-gates/production-datapack-scope.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json"];
+  for (const relative of relatives) await mkdir(path.dirname(path.join(root, relative)), { recursive: true });
+  for (const relative of relatives.slice(1)) await writeFile(path.join(root, relative), "before");
+  const outputs = relatives.map((relative, index) => ({ relative, bytes: Buffer.from(`after-${index}`) })); const target = path.join(root, relatives[1]);
+  await assert.rejects(commitTransferRegistrationOutputs({ repositoryRoot: root, outputs, beforePublish: async ({ index }) => { if (index === 1) await writeFile(target, "foreign-after-fsync"); } }), /preserves foreign replacement/);
+  assert.equal(await readFile(target, "utf8"), "foreign-after-fsync");
+  assert.ok(await readFile(path.join(root, "tools/datapack/.seoul-transfer-registration-transaction.json")));
+});
+
+test("PREPARED rollback and COMMITTED forward recovery preserve foreign replacements and journals", async (t) => {
+  const setup = async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "transfer-registration-recovery-"));
+    const relatives = ["tools/datapack/sources/seoul-metro-transfer-distance-duration-20260712T150000000Z.json", "tools/datapack/source-inventory.json", "release/product-gates/production-datapack-scope.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json"];
+    for (const relative of relatives) await mkdir(path.dirname(path.join(root, relative)), { recursive: true });
+    for (const relative of relatives.slice(1)) await writeFile(path.join(root, relative), "before");
+    return { root, relatives, outputs: relatives.map((relative, index) => ({ relative, bytes: Buffer.from(`after-${index}`) })) };
+  };
+  const prepared = await setup(); t.after(() => rm(prepared.root, { recursive: true, force: true }));
+  const preparedTarget = path.join(prepared.root, prepared.relatives[0]);
+  await assert.rejects(commitTransferRegistrationOutputs({ repositoryRoot: prepared.root, outputs: prepared.outputs, failAfter: 0, beforeRecoveryMutation: async ({ state, file, phase }) => { if (state === "PREPARED" && phase === "before-remove" && file === preparedTarget) await writeFile(file, "foreign-prepared"); } }), /preserves foreign replacement/);
+  assert.equal(await readFile(preparedTarget, "utf8"), "foreign-prepared");
+  assert.ok(await readFile(path.join(prepared.root, "tools/datapack/.seoul-transfer-registration-transaction.json")));
+
+  const committed = await setup(); t.after(() => rm(committed.root, { recursive: true, force: true }));
+  const committedTarget = path.join(committed.root, committed.relatives[1]);
+  await assert.rejects(commitTransferRegistrationOutputs({ repositoryRoot: committed.root, outputs: committed.outputs, beforeCommittedRecovery: async () => writeFile(committedTarget, "foreign-committed") }), /preserves foreign replacement/);
+  assert.equal(await readFile(committedTarget, "utf8"), "foreign-committed");
+  assert.ok(await readFile(path.join(committed.root, "tools/datapack/.seoul-transfer-registration-transaction.json")));
+});
+
 test("actual composition emits only the five targets and appends TRANSFER seventh", async () => {
   const outputs = buildTransferRegistrationOutputs(compositionFixture());
   assert.equal(outputs.length, 5);
@@ -76,4 +119,10 @@ test("governance-derived current projection drift rejects registration before ou
   const input = compositionFixture();
   input.candidate.sourceSnapshots[0].governancePolicyVersion = "2099-01-01";
   assert.throws(() => buildTransferRegistrationOutputs(input), /transfer pre-candidate projection mismatch/);
+});
+
+test("receipt storage after approval rejects registration before outputs", () => {
+  const input = compositionFixture();
+  input.receipt.storedAt = "2026-08-16T00:00:00.000Z";
+  assert.throws(() => buildTransferRegistrationOutputs(input), /transfer retention derivation mismatch/);
 });

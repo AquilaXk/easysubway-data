@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { CANDIDATES_PATH, sanitizeErrorMessage } from "./lib/source-candidate-evidence-collector.mjs";
+import { validateAuthenticatedTransferObservation } from "./build-current-transfer-topology-metrics.mjs";
 
 const SOURCE_ID = "seoul-metro-transfer-distance-duration";
 const EXPECTED_ROW_COUNT = 145;
@@ -159,27 +160,33 @@ export function validateSeoulTransferObservationFiles({ manifest, observation, r
     || observation?.artifactKind !== "seoul-transfer-distance-duration-observation" || observation.sourceId !== SOURCE_ID
     || rawSnapshot?.artifactKind !== "seoul-transfer-distance-duration-raw-snapshot" || rawSnapshot.sourceId !== SOURCE_ID
     || !Buffer.isBuffer(manifestBytes) || !Buffer.isBuffer(observationBytes) || !Buffer.isBuffer(rawBytes)
+    || Object.keys(manifest).sort(codepointCompare).join(",") !== "artifactKind,capturedAt,contentSha256,credentialRedacted,endpointSha256,freshnessDate,rawSha256,rowCount,schemaSha256,sourceId"
+    || Object.keys(observation).sort(codepointCompare).join(",") !== "artifactKind,capturedAt,contentSha256,credentialRedacted,rawSha256,rowCount,rows,sourceId"
+    || Object.keys(rawSnapshot).sort(codepointCompare).join(",") !== "artifactKind,pages,sourceId"
     || !manifestBytes.equals(canonicalBytes(manifest)) || !observationBytes.equals(canonicalBytes(observation)) || !rawBytes.equals(canonicalBytes(rawSnapshot))
     || manifest.capturedAt !== observation.capturedAt || manifest.rowCount !== EXPECTED_ROW_COUNT || observation.rowCount !== EXPECTED_ROW_COUNT
     || manifest.freshnessDate !== "2025-12-31" || manifest.credentialRedacted !== true || observation.credentialRedacted !== true
+    || !/^[0-9a-f]{64}$/u.test(manifest.endpointSha256 ?? "") || manifest.schemaSha256 !== sha256(canonicalBytes({ fields: REQUIRED_FIELDS }))
+    || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(manifest.capturedAt) || Number.isNaN(Date.parse(manifest.capturedAt))
     || manifest.rawSha256 !== sha256(rawBytes) || manifest.contentSha256 !== sha256(canonicalBytes(observation.rows))
     || observation.rawSha256 !== manifest.rawSha256 || observation.contentSha256 !== manifest.contentSha256 || !Array.isArray(rawSnapshot.pages) || rawSnapshot.pages.length !== 2) {
     throw new Error("transfer observation identity mismatch");
   }
   const rows = [];
   for (const [index, page] of rawSnapshot.pages.entries()) {
-    if (!Number.isInteger(page?.page) || page.page !== index + 1 || page.perPage !== PER_PAGE || typeof page.base64 !== "string" || page.sha256 !== sha256(Buffer.from(page.base64, "base64"))) throw new Error("transfer raw page identity mismatch");
+    if (!Number.isInteger(page?.page) || page.page !== index + 1 || page.perPage !== PER_PAGE || typeof page.base64 !== "string" || Buffer.from(page.base64, "base64").toString("base64") !== page.base64 || page.sha256 !== sha256(Buffer.from(page.base64, "base64"))) throw new Error("transfer raw page identity mismatch");
     let envelope; try { envelope = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(page.base64, "base64"))); } catch { throw new Error("transfer raw page encoding mismatch"); }
     validateEnvelope(envelope, { expectedCurrent: index === 0 ? PER_PAGE : EXPECTED_ROW_COUNT - PER_PAGE, page: index + 1, totalCount: EXPECTED_ROW_COUNT });
     rows.push(...envelope.data.map(normalizeRow));
   }
-  if (rows.length !== EXPECTED_ROW_COUNT || JSON.stringify(rows.sort((left, right) => codepointCompare(REQUIRED_FIELDS.map((field) => left[field]).join("\0"), REQUIRED_FIELDS.map((field) => right[field]).join("\0")))) !== JSON.stringify(observation.rows)) throw new Error("transfer observation rows mismatch");
+  const serials = new Set(rows.map((row) => row["연번"]));
+  if (rows.length !== EXPECTED_ROW_COUNT || serials.size !== EXPECTED_ROW_COUNT || [...serials].some((serial) => serial < 1 || serial > EXPECTED_ROW_COUNT) || JSON.stringify(rows.sort((left, right) => codepointCompare(REQUIRED_FIELDS.map((field) => left[field]).join("\0"), REQUIRED_FIELDS.map((field) => right[field]).join("\0")))) !== JSON.stringify(observation.rows)) throw new Error("transfer observation rows mismatch");
   return true;
 }
 
 // This is deliberately separate from collection: registration and publication
 // consume the exact private three-file snapshot without changing collection IO.
-export async function readSeoulTransferObservationDirectory(directory, { openImpl = open, readdirImpl = readdir } = {}) {
+export async function readSeoulTransferObservationDirectory(directory, { openImpl = open, readdirImpl = readdir, sourceCandidatesBytes } = {}) {
   if (typeof directory !== "string" || !path.isAbsolute(directory)) throw new Error("transfer observation directory must be absolute");
   const root = path.resolve(directory);
   const parent = await lstat(root);
@@ -210,6 +217,12 @@ export async function readSeoulTransferObservationDirectory(directory, { openImp
     rawSnapshot = JSON.parse(rawBytes);
   } catch { throw new Error("transfer observation must be JSON"); }
   validateSeoulTransferObservationFiles({ manifest, observation, rawSnapshot, manifestBytes, observationBytes, rawBytes });
+  if (sourceCandidatesBytes !== undefined) {
+    validateAuthenticatedTransferObservation({
+      observation: { manifest, observation, raw: rawSnapshot, bytes: { manifest: manifestBytes, observation: observationBytes, raw: rawBytes } },
+      sourceCandidatesBytes,
+    });
+  }
   return { directory: root, manifest, observation, rawSnapshot, manifestBytes, observationBytes, rawBytes };
 }
 

@@ -15,6 +15,7 @@ const SOURCE_ID = "seoul-metro-transfer-distance-duration";
 const OCI_NAMESPACE = "axvym6vk8g7i";
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const SHA256 = /^[0-9a-f]{64}$/u;
+const GIT_OBJECT_ID = /^[0-9a-f]{40}$/u;
 const OCI_PAR = new RegExp(`^https://objectstorage\\.[a-z0-9][a-z0-9-]*\\.oraclecloud\\.com/p/[^/?#]+/n/${OCI_NAMESPACE}/b/easysubway-datapacks/o/?$`, "u");
 const OCI_BUCKET = "easysubway-datapacks";
 const RECEIPT_KEYS = Object.freeze([
@@ -30,7 +31,7 @@ async function defaultGitRunner(args, { cwd }) {
 }
 
 export async function assertExactMainPreflight({ repositoryRoot, expectedMainSha, gitRunner = defaultGitRunner } = {}) {
-  if (typeof repositoryRoot !== "string" || !path.isAbsolute(repositoryRoot) || !SHA256.test(expectedMainSha ?? "")) {
+  if (typeof repositoryRoot !== "string" || !path.isAbsolute(repositoryRoot) || !GIT_OBJECT_ID.test(expectedMainSha ?? "")) {
     throw new Error("exact-main preflight arguments are invalid");
   }
   const root = path.resolve(repositoryRoot);
@@ -44,13 +45,14 @@ export async function assertExactMainPreflight({ repositoryRoot, expectedMainSha
   return { head, originMain };
 }
 
-export async function publishSeoulTransferRawArtifact({ observationDirectory, receiptPath, repositoryRoot = ROOT, expectedMainSha, gitRunner, env = process.env, client = null, now = new Date() } = {}) {
+export async function publishSeoulTransferRawArtifact({ observationDirectory, receiptPath, repositoryRoot = ROOT, expectedMainSha, gitRunner, env = process.env, client = null, now = new Date(), sourceCandidatesBytes } = {}) {
   requireAbsolute(observationDirectory, "observationDirectory");
   requireAbsolute(receiptPath, "receiptPath");
   if (!(now instanceof Date) || Number.isNaN(now.valueOf())) throw new Error("publication time must be a valid Date");
   if (!OCI_PAR.test(env?.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL?.trim() ?? "")) throw new Error("EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL must be an OCI HTTPS preauthenticated object URL");
   await assertExactMainPreflight({ repositoryRoot, expectedMainSha, gitRunner });
-  const observation = await readObservation(observationDirectory);
+  const candidates = sourceCandidatesBytes ?? await readFile(path.join(repositoryRoot, "tools/datapack/source-candidates.json"));
+  const observation = await readObservation(observationDirectory, candidates);
   if (now < new Date(observation.manifest.capturedAt)) throw new Error("publication time precedes snapshot capture");
   const rawObjectSha256 = sha(observation.rawBytes);
   const date = observation.manifest.capturedAt.slice(0, 10).replaceAll("-", "");
@@ -82,8 +84,8 @@ export async function publishSeoulTransferRawArtifact({ observationDirectory, re
   return validateSeoulTransferRawReceipt(receipt);
 }
 
-async function readObservation(directory) {
-  const observation = await readSeoulTransferObservationDirectory(directory);
+async function readObservation(directory, sourceCandidatesBytes) {
+  const observation = await readSeoulTransferObservationDirectory(directory, { sourceCandidatesBytes });
   if (observation.manifest?.rowCount !== 145 || observation.observation?.rowCount !== 145
     || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(observation.manifest.capturedAt)) {
     throw new Error("transfer observation identity mismatch");

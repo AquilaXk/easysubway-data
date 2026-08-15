@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, mkdir, open, readFile, rename, rmdir, rm, unlink } from "node:fs/promises";
+import { link, lstat, mkdir, open, readFile, rename, rmdir, rm, unlink } from "node:fs/promises";
 import path from "node:path";
 
 import { registerSeoulTransferSourceSnapshot, TRANSFER_REGISTRATION_PATHS } from "./register-seoul-transfer-source-snapshot.mjs";
@@ -11,6 +11,8 @@ import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { rebuildAuthenticatedTransferTopologyMetrics } from "./build-current-transfer-topology-metrics.mjs";
+import { buildApplicability } from "./build-current-capital-transfer-topology-applicability.mjs";
 
 const JOURNAL = "tools/datapack/.seoul-transfer-registration-transaction.json";
 const LOCK = "tools/datapack/.seoul-transfer-registration.lock";
@@ -24,6 +26,8 @@ const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const SOURCE_ID = "seoul-metro-transfer-distance-duration";
 const APPLICABILITY_PATH = TRANSFER_REGISTRATION_PATHS.applicability;
 const METRICS_PATH = TRANSFER_REGISTRATION_PATHS.metrics;
+const SOURCE_CANDIDATES_PATH = "tools/datapack/source-candidates.json";
+const KRIC_CATALOG_PATH = "tools/datapack/sources/kric-provider-code-catalog-20260228.json";
 const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 const canonicalBytes = (value) => Buffer.from(`${canonicalJson(value)}\n`);
 const without = (value, key) => { const copy = { ...value }; delete copy[key]; return copy; };
@@ -46,17 +50,32 @@ async function safeParent(file) {
   if (!info.isDirectory() || info.isSymbolicLink()) throw new Error("transfer registration target parent is unsafe");
   return parent;
 }
-async function atomicWrite(file, bytes) {
+async function syncParent(file) {
+  const directory = await open(await safeParent(file), constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+  try { await directory.sync(); } finally { await directory.close(); }
+}
+async function assertExpectedBytes(file, expected) {
+  const actual = await currentBytes(file);
+  if ((actual == null) !== (expected == null) || (actual != null && !actual.equals(expected))) {
+    throw new Error("transfer registration preserves foreign replacement");
+  }
+}
+async function atomicWrite(file, bytes, expected = undefined, { beforePublish = async () => {} } = {}) {
   const parent = await safeParent(file);
+  if (expected !== undefined) await assertExpectedBytes(file, expected);
   const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${randomUUID()}.tmp`);
   let temporaryCreated = false;
   try {
     const handle = await open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
     temporaryCreated = true;
     try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
-    await rename(temporary, file); temporaryCreated = false;
-    const directory = await open(parent, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
-    try { await directory.sync(); } finally { await directory.close(); }
+    await beforePublish({ file, bytes, expected });
+    if (expected !== undefined) await assertExpectedBytes(file, expected);
+    if (expected === null) { await link(temporary, file); await unlink(temporary); }
+    else await rename(temporary, file);
+    temporaryCreated = false;
+    await syncParent(file);
+    await assertExpectedBytes(file, bytes);
   }
   finally { await unlink(temporary).catch(() => {}); }
 }
@@ -83,25 +102,31 @@ async function currentBytes(file) {
   try { return (await readStableRegularFile(file, "transfer registration target")).bytes; }
   catch (error) { if (error?.cause?.code === "ENOENT" || error?.code === "ENOENT") return null; throw error; }
 }
-async function recover(root) {
+async function recover(root, { beforeRecoveryMutation = async () => {} } = {}) {
   const journal = path.join(root, JOURNAL); let entry;
   try { entry = JSON.parse(await readStableRegularFile(journal, "transfer registration journal").then(({ bytes }) => bytes)); } catch (error) { if (error?.cause?.code === "ENOENT" || error?.code === "ENOENT") return; throw new Error("transfer registration recovery required"); }
   exactJournal(entry);
   for (const record of entry.records) {
-    const file = target(root, record.relative); const current = await currentBytes(file);
+    const file = target(root, record.relative); await beforeRecoveryMutation({ state: entry.state, record, file }); const current = await currentBytes(file);
     const currentSha = current == null ? null : sha(current);
     if (entry.state === "COMMITTED") {
       if (currentSha === record.nextSha256) continue;
       if (currentSha !== record.beforeSha256) throw new Error("transfer registration recovery preserves foreign replacement");
-      await atomicWrite(file, Buffer.from(record.nextBase64, "base64"));
+      await atomicWrite(file, Buffer.from(record.nextBase64, "base64"), record.beforeBase64 == null ? null : Buffer.from(record.beforeBase64, "base64"));
     } else {
       if (currentSha === record.beforeSha256) continue;
       if (currentSha !== record.nextSha256) throw new Error("transfer registration recovery preserves foreign replacement");
-      if (record.beforeBase64 == null) await rm(file, { force: false });
-      else await atomicWrite(file, Buffer.from(record.beforeBase64, "base64"));
+      if (record.beforeBase64 == null) {
+        const next = Buffer.from(record.nextBase64, "base64");
+        await assertExpectedBytes(file, next);
+        await beforeRecoveryMutation({ state: entry.state, record, file, phase: "before-remove" });
+        await assertExpectedBytes(file, next);
+        await rm(file, { force: false }); await syncParent(file);
+      }
+      else await atomicWrite(file, Buffer.from(record.beforeBase64, "base64"), Buffer.from(record.nextBase64, "base64"));
     }
   }
-  await unlink(journal);
+  await unlink(journal); await syncParent(journal);
 }
 
 async function acquireLock(root) {
@@ -111,9 +136,9 @@ async function acquireLock(root) {
   return async () => { await rmdir(lock); };
 }
 
-export async function commitTransferRegistrationOutputs({ repositoryRoot, outputs, failAfter = null } = {}) {
+export async function commitTransferRegistrationOutputs({ repositoryRoot, outputs, failAfter = null, beforeWrite = async () => {}, beforePublish = async () => {}, beforeRecoveryMutation = async () => {}, beforeCommittedRecovery = async () => {} } = {}) {
   const root = requiredRoot(repositoryRoot); exactTargets(outputs); const release = await acquireLock(root);
-  try { await recover(root);
+  try { await recover(root, { beforeRecoveryMutation });
   const records = [];
   for (const output of outputs) {
     const file = target(root, output.relative); await safeParent(file); const before = await currentBytes(file);
@@ -123,13 +148,16 @@ export async function commitTransferRegistrationOutputs({ repositoryRoot, output
   await atomicWrite(journal, Buffer.from(JSON.stringify({ schemaVersion: 1, state: "PREPARED", records })));
   try {
     for (const [index, record] of records.entries()) {
-      const bytes = Buffer.from(record.nextBase64, "base64"); await atomicWrite(target(root, record.relative), bytes);
+      const bytes = Buffer.from(record.nextBase64, "base64"); const before = record.beforeBase64 == null ? null : Buffer.from(record.beforeBase64, "base64");
+      await beforeWrite({ index, target: target(root, record.relative), before, next: bytes });
+      await atomicWrite(target(root, record.relative), bytes, before, { beforePublish: () => beforePublish({ index, target: target(root, record.relative), before, next: bytes }) });
       if (sha(await currentBytes(target(root, record.relative))) !== record.nextSha256) throw new Error("transfer registration target verification failed");
       if (failAfter === index) throw new Error("injected commit failure");
     }
-  } catch (error) { await recover(root); throw error; }
+  } catch (error) { await recover(root, { beforeRecoveryMutation }); throw error; }
   await atomicWrite(journal, Buffer.from(JSON.stringify({ schemaVersion: 1, state: "COMMITTED", records })));
-  await recover(root);
+  await beforeCommittedRecovery({ root, records });
+  await recover(root, { beforeRecoveryMutation });
   return { targets: records.map(({ relative }) => relative) };
   } finally { await release(); }
 }
@@ -167,7 +195,9 @@ function validateCurrentTransferInputs({ observation, receipt, metrics, metricsB
     || metrics.sourceIdentity.manifestSha256 !== sha(observation.manifestBytes) || metrics.sourceIdentity.observationSha256 !== sha(observation.observationBytes)
     || metrics.sourceIdentity.rawSnapshotSha256 !== sha(observation.rawBytes) || metrics.sourceIdentity.rawSha256 !== observation.manifest.rawSha256
     || metrics.sourceIdentity.contentSha256 !== observation.manifest.contentSha256 || metrics.sourceIdentity.schemaSha256 !== observation.manifest.schemaSha256
-    || metrics.sourceIdentity.rowCount !== 145 || receipt.snapshotRawSha256 !== observation.manifest.rawSha256) throw new Error("transfer metrics observation binding mismatch");
+    || metrics.sourceIdentity.rowCount !== 145 || receipt.snapshotRawSha256 !== observation.manifest.rawSha256
+    || receipt.snapshotId !== sourceSnapshotId(observation.manifest.capturedAt)
+    || receipt.manifestSha256 !== sha(observation.manifestBytes) || receipt.observationSha256 !== sha(observation.observationBytes)) throw new Error("transfer metrics observation binding mismatch");
 }
 
 function validateTransferGovernance({ inventory, governancePolicy, governancePolicyBytes, freshnessPolicy, freshnessPolicyBytes, observation, receipt, approvedAt }) {
@@ -186,7 +216,9 @@ function validateTransferGovernance({ inventory, governancePolicy, governancePol
     || !(Date.parse(review.reviewedAt) <= approvedMillis && approvedMillis < Date.parse(review.nextReviewAt))) throw new Error("transfer governance or license is not current");
   const freshUntil = deriveFreshnessExpiresAt({ policy: freshnessPolicy, sourceClassId: "annual_official_file", basisAt: observation.manifest.capturedAt, evaluationAt: approvedAt });
   const retention = deriveRawRetentionExpiresAt({ policy: governancePolicy, sourceId: SOURCE_ID, retrievedAt: observation.manifest.capturedAt });
-  if (receipt.rawRetentionExpiresAt !== retention) throw new Error("transfer retention derivation mismatch");
+  const capturedMillis = Date.parse(observation.manifest.capturedAt);
+  const storedMillis = Date.parse(receipt.storedAt);
+  if (receipt.rawRetentionExpiresAt !== retention || !(capturedMillis <= storedMillis && storedMillis <= approvedMillis && approvedMillis < Date.parse(freshUntil) && approvedMillis < Date.parse(retention))) throw new Error("transfer retention derivation mismatch");
   return { freshUntil, retention };
 }
 
@@ -276,14 +308,19 @@ export async function registerCurrentSeoulTransferSource({ repositoryRoot, obser
     const entry = await readStableRegularFile(path.join(root, relative), label);
     return { bytes: entry.bytes, value: parseCanonical(entry.bytes, label) };
   };
+  const readBytes = async (relative, label) => readStableRegularFile(path.join(root, relative), label);
   const receiptRead = async () => {
     const entry = await readStableRegularFile(receiptPath, "transfer OCI receipt");
     const value = validateSeoulTransferRawReceipt(parseCanonical(entry.bytes, "transfer OCI receipt"));
     return { bytes: entry.bytes, value };
   };
-  const [observation, receipt, metrics, applicability, inventory, scope, ledger, candidate, governance, freshness, pack] = await Promise.all([
-    readSeoulTransferObservationDirectory(observationDirectory), receiptRead(), readJson(METRICS_PATH, "transfer metrics"), readJson(APPLICABILITY_PATH, "transfer applicability"), readJson("tools/datapack/source-inventory.json", "source inventory"), readJson("release/product-gates/production-datapack-scope.json", "production scope"), readJson("tools/datapack/release/source-snapshots.json", "source ledger"), readJson("tools/datapack/release/candidate-build-spec.json", "candidate"), readJson("tools/datapack/source-governance-policy.json", "governance policy"), readJson("release/product-gates/datapack-freshness-sla.json", "freshness SLA"), readJson("tools/datapack/release/capital-production-canonical-pack.json", "capital canonical pack"),
+  const [observation, receipt, metrics, applicability, inventory, scope, ledger, candidate, governance, freshness, pack, sourceCandidates, kricCatalog] = await Promise.all([
+    readSeoulTransferObservationDirectory(observationDirectory), receiptRead(), readJson(METRICS_PATH, "transfer metrics"), readJson(APPLICABILITY_PATH, "transfer applicability"), readJson("tools/datapack/source-inventory.json", "source inventory"), readJson("release/product-gates/production-datapack-scope.json", "production scope"), readJson("tools/datapack/release/source-snapshots.json", "source ledger"), readJson("tools/datapack/release/candidate-build-spec.json", "candidate"), readJson("tools/datapack/source-governance-policy.json", "governance policy"), readJson("release/product-gates/datapack-freshness-sla.json", "freshness SLA"), readJson("tools/datapack/release/capital-production-canonical-pack.json", "capital canonical pack"), readBytes(SOURCE_CANDIDATES_PATH, "source candidate contract"), readBytes(KRIC_CATALOG_PATH, "KRIC line identity"),
   ]);
+  const rebuiltMetrics = rebuildAuthenticatedTransferTopologyMetrics({ canonicalPack: pack.value, canonicalPackBytes: pack.bytes, sourceCandidatesBytes: sourceCandidates.bytes, kricCatalogBytes: kricCatalog.bytes, observation: { manifest: observation.manifest, observation: observation.observation, raw: observation.rawSnapshot, bytes: { manifest: observation.manifestBytes, observation: observation.observationBytes, raw: observation.rawBytes } } });
+  if (!metrics.bytes.equals(Buffer.from(`${canonicalJson(rebuiltMetrics)}\n`))) throw new Error("transfer metrics rebuild mismatch");
+  const rebuiltApplicability = buildApplicability({ canonicalPack: pack.value, canonicalPackBytes: pack.bytes, transferTopologyMetrics: rebuiltMetrics, metricsBytes: metrics.bytes });
+  if (!applicability.bytes.equals(Buffer.from(`${canonicalJson(rebuiltApplicability)}\n`))) throw new Error("transfer applicability rebuild mismatch");
   const outputs = buildTransferRegistrationOutputs({ observation, receipt: receipt.value, metrics: metrics.value, metricsBytes: metrics.bytes, applicability: applicability.value, applicabilityBytes: applicability.bytes, inventory: inventory.value, inventoryBytes: inventory.bytes, scope: scope.value, ledger: ledger.value, candidate: candidate.value, governancePolicy: governance.value, governancePolicyBytes: governance.bytes, freshnessPolicy: freshness.value, freshnessPolicyBytes: freshness.bytes, canonicalPack: pack.value, canonicalPackBytes: pack.bytes, approvedAt });
   return commitTransferRegistrationOutputs({ repositoryRoot: root, outputs });
 }
