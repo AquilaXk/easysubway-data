@@ -68,6 +68,40 @@ test("collector redacts request details from network failures", async () => {
   );
 });
 
+test("facility-location collector does not retry network failures", async () => {
+  let calls = 0;
+  await assert.rejects(
+    collectSeoulAccessibility({
+      endpoint: "https://apis.data.go.kr/B553766/facility/getFcElvtr",
+      serviceKey: "secret",
+      source: "facility-location",
+      fetchImpl: async () => {
+        calls += 1;
+        throw new Error("provider unavailable");
+      },
+    }),
+    /Seoul accessibility API request failed/,
+  );
+  assert.equal(calls, 1);
+});
+
+test("facility-location collector does not retry HTTP 5xx responses", async () => {
+  let calls = 0;
+  await assert.rejects(
+    collectSeoulAccessibility({
+      endpoint: "https://apis.data.go.kr/B553766/facility/getFcElvtr",
+      serviceKey: "secret",
+      source: "facility-location",
+      fetchImpl: async () => {
+        calls += 1;
+        return { ok: false, status: 503, text: async () => "unavailable" };
+      },
+    }),
+    /Seoul accessibility API HTTP 503/,
+  );
+  assert.equal(calls, 1);
+});
+
 test("collector aborts stalled provider requests after the configured timeout", async () => {
   let observedAbortSignal = false;
   await assert.rejects(
