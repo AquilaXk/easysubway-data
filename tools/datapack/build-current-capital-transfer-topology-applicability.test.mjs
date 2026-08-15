@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
-import { main } from "./build-current-capital-transfer-topology-applicability.mjs";
+import { buildApplicability, main } from "./build-current-capital-transfer-topology-applicability.mjs";
+
+const execFileAsync = promisify(execFile);
 
 test("current canonical 213-cell transfer applicability matrix is closed and non-production", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "transfer-applicability-"));
@@ -60,6 +65,51 @@ test("rehashed source and derived provenance drift fail closed without creating 
     await assert.rejects(main(["--canonical-pack", canonicalPath, "--transfer-topology-metrics", metricsPath, "--output", output], { log: () => {} }), /NO_GO/);
     await assert.rejects(readFile(output));
   }
+});
+
+test("parsed inputs must bind exactly to their canonical bytes", () => {
+  const canonical = canonicalPack();
+  const otherCanonical = canonicalPack();
+  otherCanonical.packs[0].stations[0].nameKo = "다른 역";
+  const metrics = topologyMetrics(otherCanonical);
+
+  assert.throws(() => buildApplicability({
+    canonicalPack: canonical,
+    canonicalPackBytes: canonicalBytes(otherCanonical),
+    transferTopologyMetrics: metrics,
+    metricsBytes: canonicalBytes(metrics),
+  }), /NO_GO parsed input binding mismatch/);
+});
+
+test("direct CLI invocation writes success JSON and malformed arguments leave no output", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "transfer-applicability-cli-"));
+  const canonical = canonicalPack();
+  const metrics = topologyMetrics(canonical);
+  const canonicalPath = path.join(root, "canonical.json");
+  const metricsPath = path.join(root, "metrics.json");
+  const output = path.join(root, "applicability.json");
+  const script = fileURLToPath(new URL("./build-current-capital-transfer-topology-applicability.mjs", import.meta.url));
+  await writeFile(canonicalPath, canonicalBytes(canonical));
+  await writeFile(metricsPath, canonicalBytes(metrics));
+
+  const { stdout } = await execFileAsync(process.execPath, [script,
+    "--canonical-pack", canonicalPath,
+    "--transfer-topology-metrics", metricsPath,
+    "--output", output,
+  ]);
+  assert.deepEqual(JSON.parse(stdout), {
+    cellCount: 213,
+    stateSummary: { APPLICABLE_TRANSFER_ENDPOINT: 27, NOT_APPLICABLE_IN_CANONICAL_PAIR_SET: 186 },
+    artifactSha256: JSON.parse(await readFile(output, "utf8")).artifactSha256,
+  });
+
+  const malformedOutput = path.join(root, "malformed.json");
+  await assert.rejects(execFileAsync(process.execPath, [script, "--output", malformedOutput]), (error) => {
+    assert.notEqual(error.code, 0);
+    assert.equal(error.stdout, "");
+    return true;
+  });
+  await assert.rejects(readFile(malformedOutput));
 });
 
 function canonicalPack() {

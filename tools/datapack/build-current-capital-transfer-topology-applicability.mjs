@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import { lstat, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 const APPLICABLE = "APPLICABLE_TRANSFER_ENDPOINT";
 const NOT_APPLICABLE = "NOT_APPLICABLE_IN_CANONICAL_PAIR_SET";
@@ -26,6 +27,9 @@ export async function main(argv = process.argv.slice(2), { log = console.log } =
 
 export function buildApplicability({ canonicalPack, canonicalPackBytes, transferTopologyMetrics, metricsBytes }) {
   if (!Buffer.isBuffer(canonicalPackBytes) || !Buffer.isBuffer(metricsBytes)) throw new Error("NO_GO input bytes mismatch");
+  if (!canonicalPackBytes.equals(canonicalBytes(canonicalPack)) || !metricsBytes.equals(canonicalBytes(transferTopologyMetrics))) {
+    throw new Error("NO_GO parsed input binding mismatch");
+  }
   const canonical = deriveCanonicalTarget(canonicalPack, canonicalPackBytes);
   const metrics = validateMetrics(transferTopologyMetrics, metricsBytes, canonical);
   const applicable = new Set(metrics.metrics.flatMap(({ stationId, fromLineId }) => [cellKey(stationId, fromLineId)]));
@@ -165,3 +169,10 @@ function metricKey(stationId, fromLineId, toLineId) { return `${stationId}\0${fr
 function compareBytes(left, right) { return Buffer.compare(Buffer.from(left), Buffer.from(right)); }
 function comparePair(left, right) { return compareBytes(`${left.stationId}\0${left.lineIds.join("\0")}`, `${right.stationId}\0${right.lineIds.join("\0")}`); }
 function compareCell(left, right) { return compareBytes(cellKey(left.stationId, left.lineId), cellKey(right.stationId, right.lineId)); }
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  main(process.argv.slice(2)).catch((error) => {
+    process.stderr.write(`${error instanceof Error ? error.message : "transfer applicability failed"}\n`);
+    process.exitCode = 1;
+  });
+}
