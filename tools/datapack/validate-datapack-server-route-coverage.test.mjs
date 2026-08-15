@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
 import {
+  assertServerRouteCoverageConsumed,
   isAuthorizedServerRouteCoverageGap,
   parseArgs,
   parseServerRouteCoverageProvenance,
@@ -58,4 +59,7 @@ test("server route coverage authority is closed, canonical, and only consumes th
   const args = parseArgs(["--manifest", "manifest.json", "--root", "out", "--require-production", "--server-route-coverage-evidence", "authority.json", "--server-route-coverage-provenance", "provenance.json"]);
   assert.equal(args["server-route-coverage-evidence"], "authority.json");
   assert.throws(() => parseArgs(["--manifest", "manifest.json", "--root", "out", "--require-production", "--server-route-coverage-evidence", "authority.json"]), /evidence and provenance/);
+  assert.doesNotThrow(() => assertServerRouteCoverageConsumed(null));
+  assert.doesNotThrow(() => assertServerRouteCoverageConsumed({ consumptionCount: 1 }));
+  assert.throws(() => assertServerRouteCoverageConsumed({ consumptionCount: 0 }), /not consumed exactly once/);
 });

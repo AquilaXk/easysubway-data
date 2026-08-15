@@ -113,9 +113,7 @@ async function main() {
         serverRouteCoverageEvidence,
       });
     }
-    if (serverRouteCoverageEvidence?.consumptionCount !== 1) {
-      throw new Error("server route coverage authority was not consumed exactly once");
-    }
+    assertServerRouteCoverageConsumed(serverRouteCoverageEvidence);
   } finally {
     await rm(temporaryDir, { recursive: true, force: true });
   }
@@ -2546,6 +2544,12 @@ export function parseServerRouteCoverageProvenance(bytes) {
     throw new Error("server route coverage provenance candidate is invalid");
   }
   return { candidateId: candidate.candidateId, sourceSetSha256: candidate.sourceSnapshotSetHash };
+}
+
+export function assertServerRouteCoverageConsumed(value) {
+  if (value && value.consumptionCount !== 1) {
+    throw new Error("server route coverage authority was not consumed exactly once");
+  }
 }
 
 function requireExactKeys(value, expectedKeys, label) {
