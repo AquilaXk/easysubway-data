@@ -130,17 +130,63 @@ async function regularTree(root, prefix = "") {
     else if (entry.isFile() && (await lstat(target)).size > 0) paths.push(relative);
     else throw new Error(`route bundle must contain non-empty regular files: ${relative}`);
   }
-  return paths.sort();
+  return paths.sort((left, right) => left.localeCompare(right));
 }
-function same(left, right) { return left.length === right.length && left.every((value, index) => value === [...right].sort()[index]); }
+function same(left, right) {
+  const sortedRight = [...right].sort((first, second) => first.localeCompare(second));
+  return left.length === sortedRight.length && left.every((value, index) => value === sortedRight[index]);
+}
 async function jsonFile(target, label) { return JSON.parse((await regular(target, label)).toString("utf8")); }
-async function regular(target, label) { const file = path.resolve(required(target, label)); const stat = await lstat(file); if (!stat.isFile() || stat.isSymbolicLink() || stat.size === 0) throw new Error(`${label} must be a non-empty regular non-symlink`); return readFile(file); }
-async function directory(target, label) { const resolved = path.resolve(required(target, label)); const stat = await lstat(resolved); if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error(`${label} must be a real directory`); return resolved; }
-async function absent(target) { try { await lstat(target); } catch (error) { if (error.code === "ENOENT") return; throw error; } throw new Error("output must be absent"); }
-function required(value, label) { if (typeof value !== "string" || value.length === 0) throw new Error(`${label} is required`); return value; }
-function requiredSha(value, label) { if (!/^[a-f0-9]{40}$/.test(value ?? "")) throw new Error(`${label} must be a lowercase git sha`); return value; }
-function positiveInteger(value, label) { if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${label} must be positive`); return value; }
-function requiredInstant(value, label) { const parsed = new Date(value); if (typeof value !== "string" || Number.isNaN(parsed.getTime()) || !value.endsWith("Z")) throw new Error(`${label} must be UTC instant`); return parsed; }
+async function regular(target, label) {
+  const file = path.resolve(required(target, label));
+  const stat = await lstat(file);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size === 0) {
+    throw new Error(`${label} must be a non-empty regular non-symlink`);
+  }
+  return readFile(file);
+}
+async function directory(target, label) {
+  const resolved = path.resolve(required(target, label));
+  const stat = await lstat(resolved);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) {
+    throw new Error(`${label} must be a real directory`);
+  }
+  return resolved;
+}
+async function absent(target) {
+  try {
+    await lstat(target);
+  } catch (error) {
+    if (error.code === "ENOENT") return;
+    throw error;
+  }
+  throw new Error("output must be absent");
+}
+function required(value, label) {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`${label} is required`);
+  }
+  return value;
+}
+function requiredSha(value, label) {
+  if (!/^[a-f0-9]{40}$/.test(value ?? "")) {
+    throw new Error(`${label} must be a lowercase git sha`);
+  }
+  return value;
+}
+function positiveInteger(value, label) {
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new Error(`${label} must be positive`);
+  }
+  return value;
+}
+function requiredInstant(value, label) {
+  const parsed = new Date(value);
+  if (typeof value !== "string" || Number.isNaN(parsed.getTime()) || !value.endsWith("Z")) {
+    throw new Error(`${label} must be UTC instant`);
+  }
+  return parsed;
+}
 function kstInstant(value) { return new Date(value.getTime() + 9 * 60 * 60 * 1000).toISOString().replace("Z", "+09:00"); }
 
 export function parseStageCurrentServerRouteBundleCandidateArgs(argv) {

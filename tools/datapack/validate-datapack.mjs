@@ -1580,6 +1580,22 @@ function validateProductionNetworkEdgeProvenance(database, pack, serverRouteCove
   };
   console.log(JSON.stringify(report));
 
+  return productionCoverageError({
+    pack,
+    coverage,
+    edgeRows,
+    unverifiedAccessibilityCoverageEdges,
+    serverRouteCoverageEvidence,
+  });
+}
+
+function productionCoverageError({
+  pack,
+  coverage,
+  edgeRows,
+  unverifiedAccessibilityCoverageEdges,
+  serverRouteCoverageEvidence,
+}) {
   if (serverRouteCoverageEvidence?.report && isAuthorizedServerRouteCoverageGap({
     pack,
     report: serverRouteCoverageEvidence.report,
@@ -2556,8 +2572,10 @@ function requireExactKeys(value, expectedKeys, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(`${label} shape is invalid`);
   }
-  const keys = Object.keys(value).sort();
-  if (keys.length !== expectedKeys.length || keys.some((key, index) => key !== [...expectedKeys].sort()[index])) {
+  const compareKeys = (left, right) => left.localeCompare(right);
+  const keys = Object.keys(value).sort(compareKeys);
+  const sortedExpectedKeys = [...expectedKeys].sort(compareKeys);
+  if (keys.length !== sortedExpectedKeys.length || keys.some((key, index) => key !== sortedExpectedKeys[index])) {
     throw new Error(`${label} shape is invalid`);
   }
 }
