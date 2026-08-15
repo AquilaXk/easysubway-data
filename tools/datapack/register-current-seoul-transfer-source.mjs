@@ -38,12 +38,12 @@ const SIX_SOURCE_IDS = Object.freeze([
 
 function requiredRoot(value) { if (typeof value !== "string" || !path.isAbsolute(value)) throw new Error("repositoryRoot is required"); return path.resolve(value); }
 function target(root, relative) { if (typeof relative !== "string" || path.isAbsolute(relative)) throw new Error("transaction target is invalid"); const resolved = path.resolve(root, relative); if (!resolved.startsWith(`${root}${path.sep}`)) throw new Error("transaction target escapes repository"); return resolved; }
-function exactTargets(outputs) {
+function exactTargets(outputs, { requirePrestate = true } = {}) {
   if (!Array.isArray(outputs) || outputs.length !== 5) throw new Error("transfer registration must stage exactly five outputs");
   const names = outputs.map(({ relative }) => relative);
   const source = names.filter((name) => /^tools\/datapack\/sources\/seoul-metro-transfer-distance-duration-[0-9TZ]+\.json$/u.test(name));
   if (source.length !== 1 || new Set(names).size !== 5 || names.some((name) => !FIXED.has(name) && name !== source[0])) throw new Error("transfer registration output allowlist mismatch");
-  if (outputs.some(({ bytes }) => !Buffer.isBuffer(bytes))) throw new Error("transaction output bytes are invalid");
+  if (outputs.some(({ bytes, prestateBytes }) => !Buffer.isBuffer(bytes) || (requirePrestate && !(prestateBytes === null || Buffer.isBuffer(prestateBytes))))) throw new Error("transaction output bytes are invalid");
 }
 async function safeParent(file) {
   const parent = path.dirname(file); const info = await lstat(parent);
@@ -86,7 +86,7 @@ function exactJournal(entry) {
     throw new Error("transfer registration recovery required");
   }
   const outputNames = entry.records.map(({ relative }) => relative);
-  exactTargets(outputNames.map((relative) => ({ relative, bytes: Buffer.alloc(0) })));
+  exactTargets(outputNames.map((relative) => ({ relative, bytes: Buffer.alloc(0) })), { requirePrestate: false });
   for (const record of entry.records) {
     if (JSON.stringify(Object.keys(record).sort()) !== JSON.stringify(["relative", "beforeBase64", "beforeSha256", "nextBase64", "nextSha256"].sort())
       || (record.beforeBase64 == null) !== (record.beforeSha256 == null) || !/^[0-9a-f]{64}$/u.test(record.nextSha256 ?? "")) throw new Error("transfer registration recovery required");
@@ -141,9 +141,10 @@ export async function commitTransferRegistrationOutputs({ repositoryRoot, output
   try { await recover(root, { beforeRecoveryMutation });
   const records = [];
   for (const output of outputs) {
-    const file = target(root, output.relative); await safeParent(file); const before = await currentBytes(file);
+    const file = target(root, output.relative); await safeParent(file); const before = output.prestateBytes;
     records.push({ relative: output.relative, beforeBase64: before?.toString("base64") ?? null, beforeSha256: before == null ? null : sha(before), nextBase64: output.bytes.toString("base64"), nextSha256: sha(output.bytes) });
   }
+  for (const record of records) await assertExpectedBytes(target(root, record.relative), record.beforeBase64 == null ? null : Buffer.from(record.beforeBase64, "base64"));
   const journal = path.join(root, JOURNAL);
   await atomicWrite(journal, Buffer.from(JSON.stringify({ schemaVersion: 1, state: "PREPARED", records })));
   try {
@@ -238,7 +239,7 @@ function validatePreTransferCandidate({ candidate, ledger, inventory, inventoryI
   }
 }
 
-export function buildTransferRegistrationOutputs({ observation, receipt, metrics, metricsBytes, applicability, applicabilityBytes, inventory, inventoryBytes: inventoryInputBytes, scope, ledger, candidate, governancePolicy, governancePolicyBytes, freshnessPolicy, freshnessPolicyBytes, canonicalPack, canonicalPackBytes, approvedAt }) {
+export function buildTransferRegistrationOutputs({ observation, receipt, metrics, metricsBytes, applicability, applicabilityBytes, inventory, inventoryBytes: inventoryInputBytes, scope, scopeBytes, ledger, ledgerBytes: ledgerInputBytes, candidate, candidateBytes: candidateInputBytes, governancePolicy, governancePolicyBytes, freshnessPolicy, freshnessPolicyBytes, canonicalPack, canonicalPackBytes, approvedAt }) {
   validateSeoulTransferRawReceipt(receipt);
   validateCurrentTransferInputs({ observation, receipt, metrics, metricsBytes, applicability, applicabilityBytes, canonicalPack, canonicalPackBytes });
   const governance = validateTransferGovernance({ inventory, governancePolicy, governancePolicyBytes, freshnessPolicy, freshnessPolicyBytes, observation, receipt, approvedAt });
@@ -268,7 +269,7 @@ export function buildTransferRegistrationOutputs({ observation, receipt, metrics
   const inventoryBytes = jsonBytes(nextInventory);
   const ledgerRow = {
     schemaVersion: 1, artifactKind: "official-source-snapshot", snapshotId: snapshot.snapshotId, sourceId: SOURCE_ID, provider: nextSource.provider,
-    retrievedAt: snapshot.capturedAt, sourceUpdatedAt: null, sourceEffectiveDate: "2025-12-31", rowCount: 145, coverageCount: 30,
+    retrievedAt: snapshot.capturedAt, observedAt: snapshot.observedAt, sourceUpdatedAt: null, sourceEffectiveDate: "2025-12-31", rowCount: 145, coverageCount: 30,
     rawSha256: snapshot.rawSha256, contentSha256: snapshot.contentSha256, rawObjectUri: receipt.rawObjectUri,
     redactedRequestFingerprint: snapshot.observationIdentity.sourceCandidateSha256, schemaFingerprint: snapshot.schemaFingerprint,
     snapshotStatus: "LOCKED", schemaStatus: "PASS", licenseStatus: "PASS", fetchStatus: "SUCCESS", redistributionAllowed: true,
@@ -292,12 +293,16 @@ export function buildTransferRegistrationOutputs({ observation, receipt, metrics
   nextCandidate.sourceSnapshotSetHash = sha(Buffer.from(JSON.stringify(selected)));
   nextCandidate.sourceInventorySha256 = sha(Buffer.from(JSON.stringify(nextInventory)));
   nextCandidate.networkEdgeEvidence.sourceInventory.sha256 = sha(inventoryBytes);
-  const nextScope = structuredClone(scope); nextScope.productionSourceSet.requiredSourceIds.push(SOURCE_ID);
+  if (!Buffer.isBuffer(scopeBytes) || !Buffer.isBuffer(ledgerInputBytes) || !Buffer.isBuffer(candidateInputBytes)) throw new Error("transfer prestate byte binding mismatch");
+  const nextScope = structuredClone(scope);
+  nextScope.productionSourceSet.requiredSourceIds.push(SOURCE_ID);
+  nextScope.productionSourceSet.optionalAccessibilitySourceIds = nextScope.productionSourceSet.optionalAccessibilitySourceIds.filter((id) => id !== SOURCE_ID);
+  nextScope.productionSourceSet.excludedFromV1SupportClaims = nextScope.productionSourceSet.excludedFromV1SupportClaims.filter((id) => id !== SOURCE_ID);
   return [
-    { relative: snapshotRelative, bytes: snapshotBytes }, { relative: "tools/datapack/source-inventory.json", bytes: inventoryBytes },
-    { relative: "release/product-gates/production-datapack-scope.json", bytes: jsonBytes(nextScope) },
-    { relative: "tools/datapack/release/source-snapshots.json", bytes: ledgerBytes },
-    { relative: "tools/datapack/release/candidate-build-spec.json", bytes: jsonBytes(nextCandidate) },
+    { relative: snapshotRelative, bytes: snapshotBytes, prestateBytes: null }, { relative: "tools/datapack/source-inventory.json", bytes: inventoryBytes, prestateBytes: inventoryInputBytes },
+    { relative: "release/product-gates/production-datapack-scope.json", bytes: jsonBytes(nextScope), prestateBytes: scopeBytes },
+    { relative: "tools/datapack/release/source-snapshots.json", bytes: ledgerBytes, prestateBytes: ledgerInputBytes },
+    { relative: "tools/datapack/release/candidate-build-spec.json", bytes: jsonBytes(nextCandidate), prestateBytes: candidateInputBytes },
   ];
 }
 
@@ -321,6 +326,6 @@ export async function registerCurrentSeoulTransferSource({ repositoryRoot, obser
   if (!metrics.bytes.equals(Buffer.from(`${canonicalJson(rebuiltMetrics)}\n`))) throw new Error("transfer metrics rebuild mismatch");
   const rebuiltApplicability = buildApplicability({ canonicalPack: pack.value, canonicalPackBytes: pack.bytes, transferTopologyMetrics: rebuiltMetrics, metricsBytes: metrics.bytes });
   if (!applicability.bytes.equals(Buffer.from(`${canonicalJson(rebuiltApplicability)}\n`))) throw new Error("transfer applicability rebuild mismatch");
-  const outputs = buildTransferRegistrationOutputs({ observation, receipt: receipt.value, metrics: metrics.value, metricsBytes: metrics.bytes, applicability: applicability.value, applicabilityBytes: applicability.bytes, inventory: inventory.value, inventoryBytes: inventory.bytes, scope: scope.value, ledger: ledger.value, candidate: candidate.value, governancePolicy: governance.value, governancePolicyBytes: governance.bytes, freshnessPolicy: freshness.value, freshnessPolicyBytes: freshness.bytes, canonicalPack: pack.value, canonicalPackBytes: pack.bytes, approvedAt });
+  const outputs = buildTransferRegistrationOutputs({ observation, receipt: receipt.value, metrics: metrics.value, metricsBytes: metrics.bytes, applicability: applicability.value, applicabilityBytes: applicability.bytes, inventory: inventory.value, inventoryBytes: inventory.bytes, scope: scope.value, scopeBytes: scope.bytes, ledger: ledger.value, ledgerBytes: ledger.bytes, candidate: candidate.value, candidateBytes: candidate.bytes, governancePolicy: governance.value, governancePolicyBytes: governance.bytes, freshnessPolicy: freshness.value, freshnessPolicyBytes: freshness.bytes, canonicalPack: pack.value, canonicalPackBytes: pack.bytes, approvedAt });
   return commitTransferRegistrationOutputs({ repositoryRoot: root, outputs });
 }

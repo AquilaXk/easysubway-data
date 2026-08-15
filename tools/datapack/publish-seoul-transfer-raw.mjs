@@ -10,6 +10,7 @@ import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { publishImmutableObjectPlan } from "./publish-object-storage.mjs";
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { readSeoulTransferObservationDirectory } from "./collect-current-seoul-transfer-distance-duration-snapshot.mjs";
+import { readStableRegularFile } from "./rebind-current-candidate-source-snapshots.mjs";
 
 const SOURCE_ID = "seoul-metro-transfer-distance-duration";
 const OCI_NAMESPACE = "axvym6vk8g7i";
@@ -57,6 +58,27 @@ export async function publishSeoulTransferRawArtifact({ observationDirectory, re
   const rawObjectSha256 = sha(observation.rawBytes);
   const date = observation.manifest.capturedAt.slice(0, 10).replaceAll("-", "");
   const objectKey = `source-raw/${SOURCE_ID}/${date}/${rawObjectSha256}.json`;
+  const policy = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/source-governance-policy.json"), "utf8"));
+  const rawRetentionExpiresAt = deriveRawRetentionExpiresAt({ policy, sourceId: SOURCE_ID, retrievedAt: observation.manifest.capturedAt });
+  if (now.valueOf() >= Date.parse(rawRetentionExpiresAt)) throw new Error("transfer raw retention has expired");
+  const receipt = validateSeoulTransferRawReceipt({
+    schemaVersion: 1, artifactKind: "seoul-transfer-raw-object-receipt", sourceId: SOURCE_ID,
+    snapshotId: `${SOURCE_ID}-${observation.manifest.capturedAt.replaceAll(/[-:.]/gu, "").replace("Z", "Z")}`,
+    snapshotRawSha256: observation.manifest.rawSha256, capturedAt: observation.manifest.capturedAt,
+    manifestSha256: sha(observation.manifestBytes), observationSha256: sha(observation.observationBytes),
+    rawObjectUri: `oci://${OCI_NAMESPACE}/${OCI_BUCKET}/${objectKey}`, rawObjectSha256,
+    ociNamespace: OCI_NAMESPACE, bucket: OCI_BUCKET, objectKey, capturedDate: date,
+    byteSize: observation.rawBytes.length, storedAt: now.toISOString(), rawRetentionExpiresAt,
+  });
+  const bytes = `${JSON.stringify(receipt, null, 2)}\n`;
+  await mkdir(path.dirname(receiptPath), { recursive: true });
+  try {
+    const existing = await readStableRegularFile(receiptPath, "transfer OCI receipt destination");
+    if (existing.bytes.equals(Buffer.from(bytes))) return receipt;
+    throw new Error("transfer OCI receipt destination collision");
+  } catch (error) {
+    if (error?.cause?.code !== "ENOENT" && error?.code !== "ENOENT") throw error;
+  }
   try {
     await publishImmutableObjectPlan({ root: path.resolve(observationDirectory), client, plan: { steps: [
       { type: "put-immutable-bundle-object", objectKey, sourcePath: "raw-snapshot.json", sha256: rawObjectSha256, sizeBytes: observation.rawBytes.length },
@@ -66,22 +88,9 @@ export async function publishSeoulTransferRawArtifact({ observationDirectory, re
     const status = /\bHTTP\s+([1-5]\d\d)\b/u.exec(String(error?.message ?? ""))?.[1];
     throw new Error(`Seoul transfer raw object storage publication failed${status ? `: HTTP ${status}` : ""}`);
   }
-  const policy = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/source-governance-policy.json"), "utf8"));
-  const receipt = {
-    schemaVersion: 1, artifactKind: "seoul-transfer-raw-object-receipt", sourceId: SOURCE_ID,
-    snapshotId: `${SOURCE_ID}-${observation.manifest.capturedAt.replaceAll(/[-:.]/gu, "").replace("Z", "Z")}`,
-    snapshotRawSha256: observation.manifest.rawSha256, capturedAt: observation.manifest.capturedAt,
-    manifestSha256: sha(observation.manifestBytes), observationSha256: sha(observation.observationBytes),
-    rawObjectUri: `oci://${OCI_NAMESPACE}/${OCI_BUCKET}/${objectKey}`, rawObjectSha256,
-    ociNamespace: OCI_NAMESPACE, bucket: OCI_BUCKET, objectKey, capturedDate: date,
-    byteSize: observation.rawBytes.length, storedAt: now.toISOString(),
-    rawRetentionExpiresAt: deriveRawRetentionExpiresAt({ policy, sourceId: SOURCE_ID, retrievedAt: observation.manifest.capturedAt }),
-  };
-  await mkdir(path.dirname(receiptPath), { recursive: true });
-  const bytes = `${JSON.stringify(receipt, null, 2)}\n`;
   try { await writeFile(receiptPath, bytes, { flag: "wx", mode: 0o600 }); }
-  catch (error) { if (error?.code !== "EEXIST" || await readFile(receiptPath, "utf8") !== bytes) throw error; }
-  return validateSeoulTransferRawReceipt(receipt);
+  catch (error) { throw error; }
+  return receipt;
 }
 
 async function readObservation(directory, sourceCandidatesBytes) {

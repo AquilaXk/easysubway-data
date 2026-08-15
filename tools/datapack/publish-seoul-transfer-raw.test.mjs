@@ -30,13 +30,33 @@ async function fixture(t) {
   const observation = { artifactKind: "seoul-transfer-distance-duration-observation", sourceId: manifest.sourceId, capturedAt, rowCount: 145, rawSha256: manifest.rawSha256, contentSha256: manifest.contentSha256, rows, credentialRedacted: true };
   await Promise.all([["manifest.json", bytes(manifest)], ["observation.json", bytes(observation)], ["raw-snapshot.json", rawBytes]].map(([name, body]) => writeFile(path.join(observationDirectory, name), body)));
   const sourceCandidatesBytes = bytes({ candidates: [{ id: "seoul-metro-transfer-distance-duration", requestUrl: "https://api.odcloud.kr", operation: { endpoint: "https://api.odcloud.kr", method: "GET" }, evidence: { outputFields: ["연번", "호선", "환승역명", "환승노선", "환승거리", "환승소요시간"] } }] });
+  await mkdir(path.join(root, "tools/datapack"), { recursive: true });
+  await writeFile(path.join(root, "tools/datapack/source-governance-policy.json"), JSON.stringify({ retentionClasses: [{ id: "standard-90d", retentionDays: 90 }], sources: [{ sourceId: "seoul-metro-transfer-distance-duration", retentionClassId: "standard-90d" }] }));
   return { root, observationDirectory, receiptPath: path.join(root, "receipt.json"), sourceCandidatesBytes };
 }
+
+test("expired retention stops before OCI calls", async (t) => {
+  const value = await fixture(t); let calls = 0;
+  await assert.rejects(publishSeoulTransferRawArtifact({ ...value, expectedMainSha, gitRunner, now: new Date("2026-10-10T15:00:00.000Z"), env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/redacted/n/axvym6vk8g7i/b/easysubway-datapacks/o" }, client: { async putObjectIfAbsent() { calls += 1; } } }), /retention/);
+  assert.equal(calls, 0);
+});
 test("transfer publisher publishes the exact private raw snapshot with a credential-free OCI receipt", async (t) => {
   const value = await fixture(t); const calls = []; let stored;
   const receipt = await publishSeoulTransferRawArtifact({ ...value, expectedMainSha, gitRunner, now: new Date("2026-07-12T15:00:01.000Z"), env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/redacted/n/axvym6vk8g7i/b/easysubway-datapacks/o" }, client: { async putObjectIfAbsent(key, value) { calls.push("put"); stored = value; return true; }, async readObject() { calls.push("get"); return { exists: true, body: stored }; } } });
   assert.match(receipt.rawObjectUri, /^oci:\/\/axvym6vk8g7i\/easysubway-datapacks\/source-raw\/seoul-metro-transfer-distance-duration\/20260712\/[a-f0-9]{64}\.json$/u);
   assert.deepEqual(calls, ["put", "get"]); assert.deepEqual(JSON.parse(await readFile(value.receiptPath, "utf8")), receipt);
+});
+
+test("existing receipt reconciles before OCI and collision stops without OCI", async (t) => {
+  const value = await fixture(t); const env = { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/redacted/n/axvym6vk8g7i/b/easysubway-datapacks/o" };
+  const client = { async putObjectIfAbsent() { return true; }, async readObject() { return { exists: true, body: await readFile(path.join(value.observationDirectory, "raw-snapshot.json")) }; } };
+  await publishSeoulTransferRawArtifact({ ...value, expectedMainSha, gitRunner, now: new Date("2026-07-12T15:00:01.000Z"), env, client });
+  let calls = 0;
+  await publishSeoulTransferRawArtifact({ ...value, expectedMainSha, gitRunner, now: new Date("2026-07-12T15:00:01.000Z"), env, client: { async putObjectIfAbsent() { calls += 1; } } });
+  assert.equal(calls, 0);
+  await writeFile(value.receiptPath, "collision");
+  await assert.rejects(publishSeoulTransferRawArtifact({ ...value, expectedMainSha, gitRunner, now: new Date("2026-07-12T15:00:01.000Z"), env, client: { async putObjectIfAbsent() { calls += 1; } } }), /receipt destination collision/);
+  assert.equal(calls, 0);
 });
 
 test("wrong HEAD or dirty worktree stops OCI calls and receipt writes", async (t) => {

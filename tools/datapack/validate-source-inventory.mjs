@@ -5,6 +5,8 @@ import path from "node:path";
 import { gunzipSync } from "node:zlib";
 import { validateQuotaEvidence } from "./lib/quota-evidence.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { readStableRegularFile } from "./rebind-current-candidate-source-snapshots.mjs";
 import { officialOdFareAdmissionsBySource } from "./lib/official-od-fare-evidence.mjs";
 import { validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
@@ -39,6 +41,7 @@ export async function main() {
   const candidates = JSON.parse(await readFile(candidatesPath, "utf8"));
   const scope = scopePath ? JSON.parse(await readFile(scopePath, "utf8")) : null;
   validateInventory(inventory);
+  await validateProductionTransferArtifacts(inventory);
   if ((governancePolicyPath == null) !== (freshnessPolicyPath == null)) {
     throw new Error("--governance-policy and --freshness-policy must be provided together");
   }
@@ -148,7 +151,7 @@ function validateSource(source, label) {
   validateOfficialOdFareReferences(source, id);
 }
 
-function validateTransferAdmissionEvidence(source) {
+export function validateTransferAdmissionEvidence(source) {
   const evidence = source.transferAdmissionEvidence;
   const exact = ["artifactKind", "approvalIssue", "decision", "approvedBy", "approvedAt", "productionUseAllowed", "snapshotId", "snapshotPath", "snapshotFileSha256", "capturedAt", "observedAt", "freshUntil", "sourceEffectiveDate", "rawSha256", "contentSha256", "schemaFingerprint", "metricsPath", "metricsArtifactSha256", "applicabilityPath", "applicabilityArtifactSha256", "rowCount", "physicalPairCount", "directedMetricCount", "officialMetricCount", "derivedReciprocalMetricCount", "stationLineCount", "applicableStationLineCount", "notApplicableStationLineCount", "durationRole", "licenseEvidenceHash"];
   if (!evidence || Object.keys(evidence).length !== exact.length || exact.some((key) => !(key in evidence))
@@ -158,6 +161,45 @@ function validateTransferAdmissionEvidence(source) {
     throw new Error("transfer admission evidence contract mismatch");
   }
   for (const key of ["snapshotFileSha256", "rawSha256", "contentSha256", "schemaFingerprint", "metricsArtifactSha256", "applicabilityArtifactSha256", "licenseEvidenceHash"]) assertSha256(evidence[key], `transfer.${key}`);
+  if (typeof evidence.snapshotId !== "string" || evidence.snapshotId.trim() === "" || evidence.snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`) throw new Error("transfer admission evidence snapshot identity mismatch");
+  const capturedAt = canonicalUtcInstant(evidence.capturedAt, "transfer.capturedAt");
+  const observedAt = canonicalUtcInstant(evidence.observedAt, "transfer.observedAt");
+  const approvedAt = canonicalUtcInstant(evidence.approvedAt, "transfer.approvedAt");
+  const freshUntil = canonicalUtcInstant(evidence.freshUntil, "transfer.freshUntil");
+  if (capturedAt !== observedAt || observedAt > approvedAt || approvedAt >= freshUntil) throw new Error("transfer admission evidence time ordering mismatch");
+}
+
+function canonicalUtcInstant(value, label) {
+  const millis = requiredUtcInstant(value, label);
+  if (new Date(millis).toISOString() !== value) throw new Error(`${label} must be canonical UTC`);
+  return millis;
+}
+
+export async function validateProductionTransferArtifacts(inventory, { repositoryRoot = process.cwd() } = {}) {
+  const source = inventory?.sources?.find(({ id }) => id === "seoul-metro-transfer-distance-duration");
+  if (!source || source.requiredForProductionPack !== true) return;
+  const evidence = source.transferAdmissionEvidence;
+  const stableJson = async (relative, label) => {
+    const entry = await readStableRegularFile(path.resolve(repositoryRoot, relative), label);
+    try { return { bytes: entry.bytes, value: JSON.parse(entry.bytes) }; } catch { throw new Error(`${label} is invalid JSON`); }
+  };
+  const [snapshot, metrics, applicability] = await Promise.all([
+    stableJson(evidence.snapshotPath, "transfer snapshot artifact"),
+    stableJson("tools/datapack/release/current-transfer-topology-metrics.json", "transfer metrics artifact"),
+    stableJson("tools/datapack/release/current-capital-transfer-topology-applicability.json", "transfer applicability artifact"),
+  ]);
+  const snapshotSelf = sha256(Buffer.from(canonicalJson(Object.fromEntries(Object.entries(snapshot.value).filter(([key]) => key !== "snapshotSha256")))));
+  if (sha256(snapshot.bytes) !== evidence.snapshotFileSha256 || snapshot.value.snapshotSha256 !== snapshotSelf || snapshot.value.snapshotId !== evidence.snapshotId || snapshot.value.sourceId !== source.id
+    || snapshot.value.rawSha256 !== evidence.rawSha256 || snapshot.value.contentSha256 !== evidence.contentSha256 || snapshot.value.schemaFingerprint !== evidence.schemaFingerprint) throw new Error("transfer snapshot artifact identity mismatch");
+  const metricsSelf = sha256(Buffer.from(canonicalJson(Object.fromEntries(Object.entries(metrics.value).filter(([key]) => key !== "artifactSha256")))));
+  if (!metrics.bytes.equals(Buffer.from(`${canonicalJson(metrics.value)}\n`)) || metrics.value.artifactSha256 !== evidence.metricsArtifactSha256 || metricsSelf !== evidence.metricsArtifactSha256
+    || metrics.value.sourceIdentity?.sourceId !== source.id || metrics.value.sourceIdentity?.rawSha256 !== evidence.rawSha256
+    || metrics.value.sourceIdentity?.contentSha256 !== evidence.contentSha256 || metrics.value.sourceIdentity?.schemaSha256 !== evidence.schemaFingerprint) throw new Error("transfer metrics artifact identity mismatch");
+  const applicabilitySelf = sha256(Buffer.from(`${canonicalJson(Object.fromEntries(Object.entries(applicability.value).filter(([key]) => key !== "artifactSha256")))}\n`));
+  if (!applicability.bytes.equals(Buffer.from(`${canonicalJson(applicability.value)}\n`)) || applicability.value.artifactSha256 !== evidence.applicabilityArtifactSha256 || applicabilitySelf !== evidence.applicabilityArtifactSha256
+    || JSON.stringify(applicability.value.canonicalIdentity) !== JSON.stringify(metrics.value.canonicalIdentity)
+    || JSON.stringify(applicability.value.sourceIdentity) !== JSON.stringify(metrics.value.sourceIdentity)
+    || applicability.value.transferTopologyMetricsIdentity?.artifactSha256 !== evidence.metricsArtifactSha256) throw new Error("transfer applicability artifact identity mismatch");
 }
 
 function validateOfficialOdFareReferences(source, sourceId) {

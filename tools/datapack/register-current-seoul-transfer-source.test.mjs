@@ -34,7 +34,7 @@ function compositionFixture() {
   candidate.value.sourceSnapshots = candidate.value.sourceSnapshotIds.map((snapshotId) => deriveReleaseProjection({ snapshot: ledger.value.find((row) => row.snapshotId === snapshotId), sourceInventory: inventory.value, governancePolicy: governance.value, governancePolicyBytes: governance.body, freshnessPolicy: freshness.value, nowMillis: Date.parse(approvedAt) }));
   const rawObjectSha256 = sha(rawBytes); const objectKey = `source-raw/seoul-metro-transfer-distance-duration/20260712/${rawObjectSha256}.json`;
   const receipt = { schemaVersion: 1, artifactKind: "seoul-transfer-raw-object-receipt", sourceId: observation.manifest.sourceId, snapshotId: "seoul-metro-transfer-distance-duration-20260712T150000000Z", snapshotRawSha256: observation.manifest.rawSha256, capturedAt, manifestSha256: sha(observation.manifestBytes), observationSha256: sha(observation.observationBytes), rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/${objectKey}`, rawObjectSha256, ociNamespace: "axvym6vk8g7i", bucket: "easysubway-datapacks", objectKey, capturedDate: "20260712", byteSize: rawBytes.length, storedAt: "2026-07-12T15:00:01.000Z", rawRetentionExpiresAt: "2026-10-10T15:00:00.000Z" };
-  return { observation, receipt, metrics, metricsBytes: bytes(metrics), applicability, applicabilityBytes: bytes(applicability), inventory: inventory.value, inventoryBytes: inventory.body, scope: scope.value, ledger: ledger.value, candidate: candidate.value, governancePolicy: governance.value, governancePolicyBytes: governance.body, freshnessPolicy: freshness.value, freshnessPolicyBytes: freshness.body, canonicalPack: pack.value, canonicalPackBytes: pack.body, approvedAt };
+  return { observation, receipt, metrics, metricsBytes: bytes(metrics), applicability, applicabilityBytes: bytes(applicability), inventory: inventory.value, inventoryBytes: inventory.body, scope: scope.value, scopeBytes: scope.body, ledger: ledger.value, ledgerBytes: ledger.body, candidate: candidate.value, candidateBytes: candidate.body, governancePolicy: governance.value, governancePolicyBytes: governance.body, freshnessPolicy: freshness.value, freshnessPolicyBytes: freshness.body, canonicalPack: pack.value, canonicalPackBytes: pack.body, approvedAt };
 }
 
 function sort(value, omit) { if (Array.isArray(value)) return value.map((item) => sort(item, omit)); if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).filter((key) => key !== omit).sort().map((key) => [key, sort(value[key], omit)])); return value; }
@@ -48,7 +48,7 @@ test("journal commits all five targets and rolls PREPARED failures back", async 
   const relatives = ["tools/datapack/sources/seoul-metro-transfer-distance-duration-20260712T150000000Z.json", "tools/datapack/source-inventory.json", "release/product-gates/production-datapack-scope.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json"];
   for (const relative of relatives) await mkdir(path.dirname(path.join(root, relative)), { recursive: true });
   for (const relative of relatives.slice(1)) await writeFile(path.join(root, relative), "before");
-  const outputs = relatives.map((relative, index) => ({ relative, bytes: Buffer.from(`after-${index}`) }));
+  const outputs = relatives.map((relative, index) => ({ relative, bytes: Buffer.from(`after-${index}`), prestateBytes: index === 0 ? null : Buffer.from("before") }));
   await assert.rejects(commitTransferRegistrationOutputs({ repositoryRoot: root, outputs, failAfter: 2 }), /injected/);
   assert.equal(await readFile(path.join(root, relatives[1]), "utf8"), "before");
   await commitTransferRegistrationOutputs({ repositoryRoot: root, outputs });
@@ -61,7 +61,7 @@ test("forward CAS preserves a foreign replacement before the first target write"
   const relatives = ["tools/datapack/sources/seoul-metro-transfer-distance-duration-20260712T150000000Z.json", "tools/datapack/source-inventory.json", "release/product-gates/production-datapack-scope.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json"];
   for (const relative of relatives) await mkdir(path.dirname(path.join(root, relative)), { recursive: true });
   for (const relative of relatives.slice(1)) await writeFile(path.join(root, relative), "before");
-  const outputs = relatives.map((relative, index) => ({ relative, bytes: Buffer.from(`after-${index}`) }));
+  const outputs = relatives.map((relative, index) => ({ relative, bytes: Buffer.from(`after-${index}`), prestateBytes: index === 0 ? null : Buffer.from("before") }));
   const target = path.join(root, relatives[1]);
   await assert.rejects(commitTransferRegistrationOutputs({ repositoryRoot: root, outputs, beforeWrite: async ({ index }) => { if (index === 1) await writeFile(target, "foreign"); } }), /preserves foreign replacement/);
   assert.equal(await readFile(target, "utf8"), "foreign");
@@ -72,7 +72,7 @@ test("forward CAS preserves an interleaved foreign replacement after temp fsync"
   const relatives = ["tools/datapack/sources/seoul-metro-transfer-distance-duration-20260712T150000000Z.json", "tools/datapack/source-inventory.json", "release/product-gates/production-datapack-scope.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json"];
   for (const relative of relatives) await mkdir(path.dirname(path.join(root, relative)), { recursive: true });
   for (const relative of relatives.slice(1)) await writeFile(path.join(root, relative), "before");
-  const outputs = relatives.map((relative, index) => ({ relative, bytes: Buffer.from(`after-${index}`) })); const target = path.join(root, relatives[1]);
+  const outputs = relatives.map((relative, index) => ({ relative, bytes: Buffer.from(`after-${index}`), prestateBytes: index === 0 ? null : Buffer.from("before") })); const target = path.join(root, relatives[1]);
   await assert.rejects(commitTransferRegistrationOutputs({ repositoryRoot: root, outputs, beforePublish: async ({ index }) => { if (index === 1) await writeFile(target, "foreign-after-fsync"); } }), /preserves foreign replacement/);
   assert.equal(await readFile(target, "utf8"), "foreign-after-fsync");
   assert.ok(await readFile(path.join(root, "tools/datapack/.seoul-transfer-registration-transaction.json")));
@@ -84,7 +84,7 @@ test("PREPARED rollback and COMMITTED forward recovery preserve foreign replacem
     const relatives = ["tools/datapack/sources/seoul-metro-transfer-distance-duration-20260712T150000000Z.json", "tools/datapack/source-inventory.json", "release/product-gates/production-datapack-scope.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json"];
     for (const relative of relatives) await mkdir(path.dirname(path.join(root, relative)), { recursive: true });
     for (const relative of relatives.slice(1)) await writeFile(path.join(root, relative), "before");
-    return { root, relatives, outputs: relatives.map((relative, index) => ({ relative, bytes: Buffer.from(`after-${index}`) })) };
+    return { root, relatives, outputs: relatives.map((relative, index) => ({ relative, bytes: Buffer.from(`after-${index}`), prestateBytes: index === 0 ? null : Buffer.from("before") })) };
   };
   const prepared = await setup(); t.after(() => rm(prepared.root, { recursive: true, force: true }));
   const preparedTarget = path.join(prepared.root, prepared.relatives[0]);
@@ -100,10 +100,33 @@ test("PREPARED rollback and COMMITTED forward recovery preserve foreign replacem
 });
 
 test("actual composition emits only the five targets and appends TRANSFER seventh", async () => {
-  const outputs = buildTransferRegistrationOutputs(compositionFixture());
+  const input = compositionFixture();
+  input.scope.productionSourceSet.optionalAccessibilitySourceIds.push("seoul-metro-transfer-distance-duration");
+  input.scope.productionSourceSet.excludedFromV1SupportClaims.push("seoul-metro-transfer-distance-duration");
+  const outputs = buildTransferRegistrationOutputs(input);
   assert.equal(outputs.length, 5);
   const candidate = JSON.parse(outputs.find(({ relative }) => relative.endsWith("candidate-build-spec.json")).bytes);
   assert.equal(candidate.sourceSnapshots.at(-1).sourceId, "seoul-metro-transfer-distance-duration");
+  const ledger = JSON.parse(outputs.find(({ relative }) => relative.endsWith("source-snapshots.json")).bytes);
+  assert.equal(ledger.at(-1).observedAt, "2026-07-12T15:00:00.000Z");
+  const inventory = JSON.parse(outputs.find(({ relative }) => relative.endsWith("source-inventory.json")).bytes);
+  assert.deepEqual(deriveReleaseProjection({ snapshot: ledger.at(-1), sourceInventory: inventory, governancePolicy: input.governancePolicy, governancePolicyBytes: input.governancePolicyBytes, freshnessPolicy: input.freshnessPolicy, nowMillis: Date.parse(input.approvedAt) }), candidate.sourceSnapshots.at(-1));
+  const scope = JSON.parse(outputs.find(({ relative }) => relative.endsWith("production-datapack-scope.json")).bytes);
+  assert.equal(scope.productionSourceSet.optionalAccessibilitySourceIds.includes("seoul-metro-transfer-distance-duration"), false);
+  assert.equal(scope.productionSourceSet.excludedFromV1SupportClaims.includes("seoul-metro-transfer-distance-duration"), false);
+});
+
+test("commit rejects drift from the authenticated composition prestate without mutation", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "transfer-registration-authenticated-prestate-")); t.after(() => rm(root, { recursive: true, force: true }));
+  const relatives = ["tools/datapack/sources/seoul-metro-transfer-distance-duration-20260712T150000000Z.json", "tools/datapack/source-inventory.json", "release/product-gates/production-datapack-scope.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json"];
+  for (const relative of relatives) await mkdir(path.dirname(path.join(root, relative)), { recursive: true });
+  for (const relative of relatives.slice(1)) await writeFile(path.join(root, relative), "before");
+  const outputs = relatives.map((relative, index) => ({ relative, bytes: Buffer.from(`after-${index}`), prestateBytes: index === 0 ? null : Buffer.from("before") }));
+  await writeFile(path.join(root, relatives[1]), "foreign");
+  await assert.rejects(commitTransferRegistrationOutputs({ repositoryRoot: root, outputs }), /preserves foreign replacement/);
+  await assert.rejects(readFile(path.join(root, relatives[0])), { code: "ENOENT" });
+  assert.equal(await readFile(path.join(root, relatives[1]), "utf8"), "foreign");
+  await assert.rejects(readFile(path.join(root, "tools/datapack/.seoul-transfer-registration-transaction.json")), { code: "ENOENT" });
 });
 
 test("cross-paired applicability identity fails before transaction outputs", () => {
