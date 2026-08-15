@@ -477,11 +477,11 @@ export function activateStaticSourceRevalidations({
     if (revalidation?.snapshot?.sourceId !== sourceId || revalidation?.evidence?.sourceId !== sourceId) {
       throw new Error("static revalidation source order mismatch");
     }
-    const previous = requireOne(
-      sourceSnapshots,
-      ({ snapshotId }) => snapshotId === heads[sourceId],
-      `static revalidation previous ${sourceId}`,
-    );
+    const head = requireOne(sourceSnapshots, ({ snapshotId }) => snapshotId === heads[sourceId], `static revalidation head ${sourceId}`);
+    const reusesCurrentHead = revalidation.snapshot.snapshotId === head.snapshotId;
+    const previous = reusesCurrentHead
+      ? requireOne(sourceSnapshots, ({ snapshotId }) => snapshotId === head.previousSnapshotId, `static revalidation predecessor ${sourceId}`)
+      : head;
     validateStaticRevalidation(
       previous,
       revalidation.snapshot,
@@ -512,27 +512,39 @@ export function activateStaticSourceRevalidations({
           !== governancePolicyBinding.governancePolicySha256)) {
       throw new Error("static revalidation governance policy binding mismatch");
     }
-    nextSnapshots.push({
-      ...structuredClone(revalidation.snapshot),
-      ...governancePolicyBinding,
-    });
     const source = requireOne(nextInventory.sources, ({ id }) => id === sourceId, sourceId);
     if (!source.admissionEvidence || typeof source.admissionEvidence !== "object") {
       throw new Error("static revalidation inventory admission evidence is missing");
     }
-    source.retrievedAt = revalidation.snapshot.retrievedAt.slice(0, 10);
-    source.admissionEvidence.snapshotId = revalidation.snapshot.snapshotId;
-    source.admissionEvidence.revalidationEvidenceSha256 = revalidation.evidence.evidenceSha256;
-    source.admissionEvidence.revalidationResponseSha256 = revalidation.evidence.responseSha256;
-    source.admissionEvidence.revalidatedAt = revalidation.snapshot.retrievedAt;
-    if (revalidation.evidence.outcome === "CONTENT_CHANGE_ADMITTED") {
-      source.admissionEvidence.rawSha256 = revalidation.snapshot.rawSha256;
-      source.admissionEvidence.schemaFingerprint = revalidation.snapshot.schemaFingerprint;
-      source.admissionEvidence.rawObjectUri = revalidation.snapshot.rawObjectUri;
+    if (reusesCurrentHead) {
+      const expectedSnapshot = { ...structuredClone(revalidation.snapshot), ...governancePolicyBinding };
+      const expectedSource = structuredClone(source);
+      applyStaticRevalidationToInventory(expectedSource, revalidation);
+      if (JSON.stringify(head) !== JSON.stringify(expectedSnapshot)
+        || source.retrievedAt !== expectedSource.retrievedAt
+        || JSON.stringify(source.admissionEvidence) !== JSON.stringify(expectedSource.admissionEvidence)) {
+        throw new Error("static revalidation current head reuse identity mismatch");
+      }
+    } else {
+      nextSnapshots.push({ ...structuredClone(revalidation.snapshot), ...governancePolicyBinding });
+      applyStaticRevalidationToInventory(source, revalidation);
     }
   }
   validateLineage(nextSnapshots);
   return { sourceSnapshots: nextSnapshots, sourceInventory: nextInventory };
+}
+
+function applyStaticRevalidationToInventory(source, revalidation) {
+  source.retrievedAt = revalidation.snapshot.retrievedAt.slice(0, 10);
+  source.admissionEvidence.snapshotId = revalidation.snapshot.snapshotId;
+  source.admissionEvidence.revalidationEvidenceSha256 = revalidation.evidence.evidenceSha256;
+  source.admissionEvidence.revalidationResponseSha256 = revalidation.evidence.responseSha256;
+  source.admissionEvidence.revalidatedAt = revalidation.snapshot.retrievedAt;
+  if (revalidation.evidence.outcome === "CONTENT_CHANGE_ADMITTED") {
+    source.admissionEvidence.rawSha256 = revalidation.snapshot.rawSha256;
+    source.admissionEvidence.schemaFingerprint = revalidation.snapshot.schemaFingerprint;
+    source.admissionEvidence.rawObjectUri = revalidation.snapshot.rawObjectUri;
+  }
 }
 
 export function activateIncheonTopologyAdmission({
