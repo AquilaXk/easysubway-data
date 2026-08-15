@@ -202,6 +202,17 @@ async function emitCatalog(out, source, ids, stationSetSha256) {
 
 async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSpecBytes, layout, build, evidenceInput) {
   const artifact = path.join(out, "server-route-bundle"); const payload = path.join(artifact, "payload"); await mkdir(payload, { recursive: true }); const hashes = {};
+  const provisionalEvidence = buildGeneratedEvidence({
+    ...evidenceInput,
+    bundleId: ids.bundleId,
+    candidateId: buildSpec.candidateId,
+    source,
+    stationSetSha256,
+    sourceSetSha256: buildSpec.sourceSnapshotSetHash,
+    topologySha256: "0".repeat(64),
+    skipSourceProjection: true,
+  });
+  const provisionalBlockedEdgeIds = blockedEdgeIds(provisionalEvidence.evaluation);
   let generatedEvidence;
   for (const [name, owned] of Object.entries(COMPONENTS)) {
     const componentPath = path.join(artifact, `.${name}.sqlite`); const target = new DatabaseSync(componentPath); sqliteProfile(target);
@@ -210,6 +221,7 @@ async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSp
     const requiredKeys = requiredUniqueKeys(source, present, selected);
     for (const [table, columns] of Object.entries(REFERENCES)) copyTable(source, target, table, columns, present, selected, requiredKeys.get(table));
     for (const table of owned) copyTable(source, target, table, undefined, present, selected, requiredKeys.get(table));
+    if (name === "topology") projectBlockedTopologyEdges(target, provisionalBlockedEdgeIds);
     if (name === "accessibility") {
       generatedEvidence = buildGeneratedEvidence({
         ...evidenceInput,
@@ -220,6 +232,7 @@ async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSp
         sourceSetSha256: buildSpec.sourceSnapshotSetHash,
         topologySha256: hashes.topologySha256,
       });
+      assertBlockedEdgeProjection(provisionalBlockedEdgeIds, blockedEdgeIds(generatedEvidence.evaluation));
       insertGeneratedEvidence(target, generatedEvidence);
     }
     target.exec(IDENTITY_DDL); target.prepare("INSERT INTO artifact_component_identity VALUES(?,?,?,?)").run(ids.bundleId, ids.releaseSequence, stationSetSha256, "Asia/Seoul");
@@ -237,6 +250,31 @@ async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSp
   const compatibility = { schemaVersion: 1, artifactKind: "server-route-bundle-compatibility", bundleId: ids.bundleId, releaseSequence: ids.releaseSequence, stationSetSha256, serviceTimezone: "Asia/Seoul", manifestVersion: 1, tableLayoutSchemaVersion: layout.schemaVersion, sourceSchemaPath: sourceSchema.path, sourceSqliteUserVersion: sourceSchema.sqliteUserVersion, sourceSchemaSha256: sourceSchema.sha256, schemaCompatibility: build.manifestLifecycle.schemaCompatibility, compressionProfile: build.compressionProfile, encoderRuntime: { node: process.versions.node, zstd: process.versions.zstd } };
   await json(path.join(artifact, "compatibility.json"), compatibility); manifest.compatibilitySha256 = sha(await readFile(path.join(artifact, "compatibility.json")));
   validateArtifactComponentManifest(manifest, stationSetSha256); await json(path.join(artifact, "manifest.signing-input.json"), withoutSignature(manifest));
+}
+
+function blockedEdgeIds(evaluation) {
+  return evaluation.results.filter(({ state }) => state === "BLOCKED").map(({ edgeId }) => edgeId).sort(bytes);
+}
+
+function projectBlockedTopologyEdges(target, edgeIds) {
+  const before = target.prepare("SELECT id, accessibility_status AS accessibilityStatus FROM network_edges ORDER BY id COLLATE BINARY").all();
+  const existing = new Map(before.map(({ id, accessibilityStatus }) => [id, accessibilityStatus]));
+  if (edgeIds.some((id) => !existing.has(id))) throw new Error("blocked edge projection identity mismatch");
+  const update = target.prepare("UPDATE network_edges SET accessibility_status = 'UNAVAILABLE' WHERE id = ?");
+  for (const edgeId of edgeIds) update.run(edgeId);
+  const after = target.prepare("SELECT id, accessibility_status AS accessibilityStatus FROM network_edges ORDER BY id COLLATE BINARY").all();
+  for (const { id, accessibilityStatus } of after) {
+    if (edgeIds.includes(id) ? accessibilityStatus !== "UNAVAILABLE" : accessibilityStatus !== existing.get(id)) {
+      throw new Error("blocked topology projection mismatch");
+    }
+  }
+}
+
+function assertBlockedEdgeProjection(provisional, final) {
+  if (canonicalJson(provisional) !== canonicalJson(final)
+    || sha(Buffer.from(canonicalJson(provisional))) !== sha(Buffer.from(canonicalJson(final)))) {
+    throw new Error("blocked edge projection identity mismatch");
+  }
 }
 
 function buildGeneratedEvidence(input) {
@@ -257,18 +295,20 @@ function buildGeneratedEvidence(input) {
   ]) {
     if (candidateSeed[field] !== expected) throw new Error(`route-edge seed ${label} identity mismatch`);
   }
-  assertExactProjection(
-    routeEdgeSeed.stationLines,
-    sourceStationLines(input.source, true),
-    ["stationId", "lineId", "operatorId", "lineSequence"],
-    "route-edge station-line source projection",
-  );
-  assertExactProjection(
-    routeEdgeSeed.routeEdges,
-    sourceRouteEdges(input.source),
-    ["edgeId"],
-    "route-edge source projection",
-  );
+  if (!input.skipSourceProjection) {
+    assertExactProjection(
+      routeEdgeSeed.stationLines,
+      sourceStationLines(input.source, true),
+      ["stationId", "lineId", "operatorId", "lineSequence"],
+      "route-edge station-line source projection",
+    );
+    assertExactProjection(
+      routeEdgeSeed.routeEdges,
+      sourceRouteEdges(input.source),
+      ["edgeId"],
+      "route-edge source projection",
+    );
+  }
   const evaluation = evaluateRouteAccessibilityEdges({
     ...routeEdgeSeed,
     candidate: { ...candidateSeed, topologySha256: input.topologySha256 },

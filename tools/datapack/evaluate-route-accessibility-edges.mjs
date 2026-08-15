@@ -18,6 +18,7 @@ const MATERIALIZATION_ROW_KEYS = [
   "evidenceRawSha256", "providerRecordHash", "capturedAt", "freshUntil", "provenanceId", "licenseId",
   "evidenceKind", "evidenceReason",
 ];
+const TERMINAL_MATERIALIZATION_ROW_KEYS = [...MATERIALIZATION_ROW_KEYS, "terminalPolicy", "providerResultCode", "providerResponseSha256"];
 const MATERIALIZATION_STATES = [
   "VERIFIED_PRESENT", "VERIFIED_ABSENT", "NOT_APPLICABLE", "UNKNOWN", "MISSING", "STALE",
 ];
@@ -244,7 +245,7 @@ function validateMaterialization(value, candidate, stationLineIndex, evaluationA
   if (value.candidate.stationSetSha256 !== scopedHash) throw new Error("materialization scoped station set identity mismatch");
   const expected = new Set(targetRows.flatMap((line) => DOMAINS.map((domain) => materializationCellKey({ ...line, domain }))));
   if (keys.size !== expected.size || [...expected].some((key) => !keys.has(key))) throw new Error("materialization policy target denominator mismatch");
-  const summary = Object.fromEntries(MATERIALIZATION_STATES.map((state) => [state, 0]));
+  const summary = Object.fromEntries([...MATERIALIZATION_STATES, ...(rows.some(({ state }) => state === "UNVERIFIED_EVIDENCE_BLOCKED") ? ["UNVERIFIED_EVIDENCE_BLOCKED"] : [])].map((state) => [state, 0]));
   for (const row of rows) summary[row.state] += 1;
   if (canonicalJson(summary) !== canonicalJson(value.stateSummary)) throw new Error("materialization state summary mismatch");
   const expectedDigest = sha256(canonicalStationLineAccessibilityPayloadJson(value));
@@ -253,13 +254,14 @@ function validateMaterialization(value, candidate, stationLineIndex, evaluationA
 }
 
 function validateMaterializationRow(row, materializationCandidate, stationLineIndex, evaluationAtMillis) {
-  assertKeys(row, MATERIALIZATION_ROW_KEYS, "materialization row keys");
+  const terminal = row?.evidenceKind === "UNVERIFIED_EVIDENCE_BLOCKED";
+  assertKeys(row, terminal ? TERMINAL_MATERIALIZATION_ROW_KEYS : MATERIALIZATION_ROW_KEYS, "materialization row keys");
   for (const key of ["candidateId", "stationSetSha256", "sourceSetSha256", "mappingContractVersion", "materializerVersion"]) {
     if (row[key] !== materializationCandidate[key]) throw new Error(`materialization row ${key} mismatch`);
   }
   const line = stationLineIndex.byKey.get(stationLineKey(row));
   if (!line || line.operatorId !== row.operatorId) throw new Error("unmapped materialization row");
-  if (!DOMAINS.includes(row.domain) || !MATERIALIZATION_STATES.includes(row.state)) throw new Error("materialization row state/domain mismatch");
+  if (!DOMAINS.includes(row.domain) || (!MATERIALIZATION_STATES.includes(row.state) && row.state !== "UNVERIFIED_EVIDENCE_BLOCKED")) throw new Error("materialization row state/domain mismatch");
   if (row.state === "MISSING") {
     if (LINEAGE_FIELDS.some((field) => row[field] !== null)) throw new Error("MISSING materialization lineage must be null");
     return canonicalObject(row);
@@ -272,15 +274,30 @@ function validateMaterializationRow(row, materializationCandidate, stationLineIn
     VERIFIED_ABSENT: ["EXHAUSTIVE_LIST", "EXPLICIT_ZERO"],
     NOT_APPLICABLE: ["CURRENT_APPLICABILITY_RULE"],
     UNKNOWN: ["BLANK", "NULL", "DEFAULT", "PROVIDER_NO_DATA", "UNSUPPORTED"],
+    UNVERIFIED_EVIDENCE_BLOCKED: ["UNVERIFIED_EVIDENCE_BLOCKED"],
     STALE: [
       "OBSERVED", "EXHAUSTIVE_LIST", "EXPLICIT_ZERO", "CURRENT_APPLICABILITY_RULE",
-      "BLANK", "NULL", "DEFAULT", "PROVIDER_NO_DATA", "UNSUPPORTED",
+      "BLANK", "NULL", "DEFAULT", "PROVIDER_NO_DATA", "UNSUPPORTED", "UNVERIFIED_EVIDENCE_BLOCKED",
     ],
   };
   if (!allowedKinds[row.state]?.includes(row.evidenceKind)) {
     throw new Error("materialization evidence kind mismatch");
   }
-  for (const field of ["evidenceRawSha256", "providerRecordHash"]) assertSha256(row[field], `materialization ${field}`);
+  assertSha256(row.evidenceRawSha256, "materialization evidenceRawSha256");
+  if (terminal) {
+    if (row.providerRecordHash !== null || row.terminalPolicy !== "EXACT_TUPLE_PROVIDER_RESULT_03"
+      || row.providerResultCode !== "03" || row.domain !== "FACILITY"
+      || row.stationId !== "station-b35616704ce3" || row.lineId !== "seoul-2"
+      || row.operatorId !== "seoul-metro" || row.sourceId !== "kric-station-convenience-standard"
+      || !/^[a-f0-9]{64}$/.test(row.providerResponseSha256)) {
+      throw new Error("terminal materialization contract mismatch");
+    }
+  } else {
+    if ([row.terminalPolicy, row.providerResultCode, row.providerResponseSha256].some((value) => value !== undefined && value !== null)) {
+      throw new Error("non-terminal materialization terminal fields must be null");
+    }
+    assertSha256(row.providerRecordHash, "materialization providerRecordHash");
+  }
   const capturedAt = requiredUtcInstant(row.capturedAt, "materialization capturedAt");
   const freshUntil = requiredUtcInstant(row.freshUntil, "materialization freshUntil");
   if (freshUntil <= capturedAt) throw new Error("materialization freshUntil must be after capturedAt");
@@ -368,6 +385,9 @@ function evaluateEdge(context) {
     NOT_APPLICABLE: "all required domains are not applicable",
     PASS: "all required materialization cells are terminal",
   };
+  if (state === "BLOCKED" && cells.some(({ effectiveState }) => effectiveState === "UNVERIFIED_EVIDENCE_BLOCKED")) {
+    return resultFor(context, mapping.domains, cells, state, "시설 존재·부재가 검증되지 않아 경로를 차단했습니다.");
+  }
   return resultFor(context, mapping.domains, cells, state, reasons[state]);
 }
 
@@ -434,6 +454,7 @@ function aggregateCellState(cells, precedence) {
     if (cells.some(({ effectiveState }) => effectiveState === state)) return state;
   }
   if (cells.some(({ effectiveState }) => effectiveState === "VERIFIED_ABSENT")) return "BLOCKED";
+  if (cells.some(({ effectiveState }) => effectiveState === "UNVERIFIED_EVIDENCE_BLOCKED")) return "BLOCKED";
   if (cells.every(({ effectiveState }) => effectiveState === "NOT_APPLICABLE")) return "NOT_APPLICABLE";
   if (cells.every(({ effectiveState }) => ["VERIFIED_PRESENT", "NOT_APPLICABLE"].includes(effectiveState))) return "PASS";
   return "NOT_EVALUATED";
