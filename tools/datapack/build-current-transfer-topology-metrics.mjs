@@ -30,14 +30,33 @@ export async function main(argv = process.argv.slice(2), { repositoryRoot = file
     readRegularFile(path.join(root, KRIC_PROVIDER_CATALOG_FILE), "KRIC line identity"),
     readObservationDirectory(observationDirectory),
   ]);
-  const sourceCandidate = validateSourceCandidate(parseJson(sourceCandidatesBytes, "source candidate contract"));
-  const canonical = deriveCanonicalTarget(parseJson(canonicalPackBytes, "canonical pack"), kricCatalogBytes);
-  const source = validateObservation(observation, sourceCandidate);
-  const result = buildTransferTopologyMetrics({ canonical, canonicalPackBytes, observation: source, sourceCandidate, sourceCandidatesBytes });
+  const result = rebuildAuthenticatedTransferTopologyMetrics({
+    canonicalPack: parseJson(canonicalPackBytes, "canonical pack"), canonicalPackBytes, observation,
+    sourceCandidatesBytes, kricCatalogBytes,
+  });
   const bytes = canonicalBytes(result);
   await writeFile(output, bytes, { flag: "wx", mode: 0o600 });
   log(JSON.stringify({ physicalPairCount: result.physicalPairs.length, metricCount: result.metrics.length, artifactSha256: result.artifactSha256 }));
   return result;
+}
+
+// Registration consumes the same #339 authentication and topology derivation
+// as the builder; it never reimplements an abbreviated metric check.
+export function rebuildAuthenticatedTransferTopologyMetrics({ canonicalPack, canonicalPackBytes, observation, sourceCandidatesBytes, kricCatalogBytes }) {
+  if (!Buffer.isBuffer(canonicalPackBytes) || !Buffer.isBuffer(sourceCandidatesBytes) || !Buffer.isBuffer(kricCatalogBytes)) {
+    throw new Error("NO_GO canonical input bytes mismatch");
+  }
+  const sourceCandidate = validateSourceCandidate(parseJson(sourceCandidatesBytes, "source candidate contract"));
+  const canonical = deriveCanonicalTarget(canonicalPack, kricCatalogBytes);
+  const source = validateObservation(observation, sourceCandidate);
+  return buildTransferTopologyMetrics({ canonical, canonicalPackBytes, observation: source, sourceCandidate, sourceCandidatesBytes });
+}
+
+// The collector and publisher admit the same sealed observation contract as
+// the metrics builder, including the tracked endpoint binding.
+export function validateAuthenticatedTransferObservation({ observation, sourceCandidatesBytes }) {
+  if (!Buffer.isBuffer(sourceCandidatesBytes)) throw new Error("NO_GO source candidate contract bytes mismatch");
+  return validateObservation(observation, validateSourceCandidate(parseJson(sourceCandidatesBytes, "source candidate contract")));
 }
 
 export function buildTransferTopologyMetrics({ canonical, canonicalPackBytes, observation, sourceCandidate, sourceCandidatesBytes }) {

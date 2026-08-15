@@ -8,6 +8,7 @@ import { deriveFreshness } from "./freshness-policy.mjs";
 import { approvedLegacyGovernanceBinding } from "./legacy-source-governance.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import {
+  approvedGovernanceBindingTransition,
   evaluateSourceGovernance,
   validateSourceGovernancePolicy,
 } from "./source-governance-policy.mjs";
@@ -131,12 +132,11 @@ export function validateSourceSnapshotFreshness({
     if (!/^[0-9a-f]{64}$/.test(governancePolicySha256 ?? "")) {
       throw new Error("SOURCE_GOVERNANCE_OWNER_MISSING: governance policy hash");
     }
-    if (effectiveSnapshots.some((snapshot) => (
-      snapshot.governancePolicyVersion !== governancePolicy.policyVersion
-      || snapshot.governancePolicySha256 !== governancePolicySha256
-    ))) {
-      throw new Error("SOURCE_FRESHNESS_POLICY_MISSING: governance policy binding");
-    }
+    for (const snapshot of effectiveSnapshots) approvedGovernanceBindingTransition({
+      snapshot,
+      currentPolicyVersion: governancePolicy.policyVersion,
+      currentPolicySha256: governancePolicySha256,
+    });
     const sources = new Map(inventory.sources.map((source) => [source.id, source]));
     governanceResults = effectiveSnapshots.map((snapshot) => {
       const rawState = purgeEvidence.get(`${snapshot.sourceId}\0${snapshot.snapshotId}`) ?? null;

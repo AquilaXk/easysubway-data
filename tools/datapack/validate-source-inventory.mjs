@@ -5,9 +5,12 @@ import path from "node:path";
 import { gunzipSync } from "node:zlib";
 import { validateQuotaEvidence } from "./lib/quota-evidence.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { readStableRegularFile } from "./rebind-current-candidate-source-snapshots.mjs";
 import { officialOdFareAdmissionsBySource } from "./lib/official-od-fare-evidence.mjs";
 import { validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { isMainModule } from "../lib/is-main-module.mjs";
 import {
   buildMolitRailwayTransferMovementSnapshot,
   MOLIT_RAILWAY_TRANSFER_MOVEMENT_RAW_SHA256,
@@ -32,11 +35,13 @@ const officialOdFareFields = new Set([
   "yungCashFare",
 ]);
 
-try {
+export async function main() {
+  try {
   const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
   const candidates = JSON.parse(await readFile(candidatesPath, "utf8"));
   const scope = scopePath ? JSON.parse(await readFile(scopePath, "utf8")) : null;
   validateInventory(inventory);
+  await validateProductionTransferArtifacts(inventory);
   if ((governancePolicyPath == null) !== (freshnessPolicyPath == null)) {
     throw new Error("--governance-policy and --freshness-policy must be provided together");
   }
@@ -54,9 +59,13 @@ try {
   if (scope) {
     validateProductionScope(inventory, scope);
   }
-} catch (error) {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : String(error));
+  }
+}
+
+if (isMainModule(import.meta.url)) {
+  main().catch((error) => { console.error(error.message); process.exitCode = 1; });
 }
 
 function optionValue(name) {
@@ -129,6 +138,9 @@ function validateSource(source, label) {
   validateLicense(source.license, id);
   validateCoverageScope(source.coverageScope, source, id);
   validateCapabilities(source.capabilities, source, id);
+  if (id === "seoul-metro-transfer-distance-duration" && source.requiredForProductionPack === true) {
+    validateTransferAdmissionEvidence(source);
+  }
 
   if (!Array.isArray(source.fieldsProvided) || source.fieldsProvided.length === 0) {
     throw new Error(`${id}.fieldsProvided must be a non-empty array`);
@@ -137,6 +149,57 @@ function validateSource(source, label) {
     assertString(field, `${id}.fieldsProvided[]`);
   }
   validateOfficialOdFareReferences(source, id);
+}
+
+export function validateTransferAdmissionEvidence(source) {
+  const evidence = source.transferAdmissionEvidence;
+  const exact = ["artifactKind", "approvalIssue", "decision", "approvedBy", "approvedAt", "productionUseAllowed", "snapshotId", "snapshotPath", "snapshotFileSha256", "capturedAt", "observedAt", "freshUntil", "sourceEffectiveDate", "rawSha256", "contentSha256", "schemaFingerprint", "metricsPath", "metricsArtifactSha256", "applicabilityPath", "applicabilityArtifactSha256", "rowCount", "physicalPairCount", "directedMetricCount", "officialMetricCount", "derivedReciprocalMetricCount", "stationLineCount", "applicableStationLineCount", "notApplicableStationLineCount", "durationRole", "licenseEvidenceHash"];
+  if (!evidence || Object.keys(evidence).length !== exact.length || exact.some((key) => !(key in evidence))
+    || evidence.artifactKind !== "transfer-source-admission-evidence" || evidence.approvalIssue !== 350 || evidence.decision !== "APPROVED" || evidence.approvedBy !== "AquilaXk" || evidence.productionUseAllowed !== true
+    || evidence.sourceEffectiveDate !== "2025-12-31" || evidence.observedAt !== evidence.capturedAt || evidence.rowCount !== 145 || evidence.physicalPairCount !== 15 || evidence.directedMetricCount !== 30 || evidence.officialMetricCount !== 28 || evidence.derivedReciprocalMetricCount !== 2 || evidence.stationLineCount !== 213 || evidence.applicableStationLineCount !== 27 || evidence.notApplicableStationLineCount !== 186 || evidence.durationRole !== "REFERENCE_ONLY"
+    || evidence.metricsPath !== "tools/datapack/release/current-transfer-topology-metrics.json" || evidence.applicabilityPath !== "tools/datapack/release/current-capital-transfer-topology-applicability.json" || evidence.licenseEvidenceHash !== source.admissionEvidence?.licenseEvidenceHash) {
+    throw new Error("transfer admission evidence contract mismatch");
+  }
+  for (const key of ["snapshotFileSha256", "rawSha256", "contentSha256", "schemaFingerprint", "metricsArtifactSha256", "applicabilityArtifactSha256", "licenseEvidenceHash"]) assertSha256(evidence[key], `transfer.${key}`);
+  if (typeof evidence.snapshotId !== "string" || evidence.snapshotId.trim() === "" || evidence.snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`) throw new Error("transfer admission evidence snapshot identity mismatch");
+  const capturedAt = canonicalUtcInstant(evidence.capturedAt, "transfer.capturedAt");
+  const observedAt = canonicalUtcInstant(evidence.observedAt, "transfer.observedAt");
+  const approvedAt = canonicalUtcInstant(evidence.approvedAt, "transfer.approvedAt");
+  const freshUntil = canonicalUtcInstant(evidence.freshUntil, "transfer.freshUntil");
+  if (capturedAt !== observedAt || observedAt > approvedAt || approvedAt >= freshUntil) throw new Error("transfer admission evidence time ordering mismatch");
+}
+
+function canonicalUtcInstant(value, label) {
+  const millis = requiredUtcInstant(value, label);
+  if (new Date(millis).toISOString() !== value) throw new Error(`${label} must be canonical UTC`);
+  return millis;
+}
+
+export async function validateProductionTransferArtifacts(inventory, { repositoryRoot = process.cwd() } = {}) {
+  const source = inventory?.sources?.find(({ id }) => id === "seoul-metro-transfer-distance-duration");
+  if (!source || source.requiredForProductionPack !== true) return;
+  const evidence = source.transferAdmissionEvidence;
+  const stableJson = async (relative, label) => {
+    const entry = await readStableRegularFile(path.resolve(repositoryRoot, relative), label);
+    try { return { bytes: entry.bytes, value: JSON.parse(entry.bytes) }; } catch { throw new Error(`${label} is invalid JSON`); }
+  };
+  const [snapshot, metrics, applicability] = await Promise.all([
+    stableJson(evidence.snapshotPath, "transfer snapshot artifact"),
+    stableJson("tools/datapack/release/current-transfer-topology-metrics.json", "transfer metrics artifact"),
+    stableJson("tools/datapack/release/current-capital-transfer-topology-applicability.json", "transfer applicability artifact"),
+  ]);
+  const snapshotSelf = sha256(Buffer.from(canonicalJson(Object.fromEntries(Object.entries(snapshot.value).filter(([key]) => key !== "snapshotSha256")))));
+  if (sha256(snapshot.bytes) !== evidence.snapshotFileSha256 || snapshot.value.snapshotSha256 !== snapshotSelf || snapshot.value.snapshotId !== evidence.snapshotId || snapshot.value.sourceId !== source.id
+    || snapshot.value.rawSha256 !== evidence.rawSha256 || snapshot.value.contentSha256 !== evidence.contentSha256 || snapshot.value.schemaFingerprint !== evidence.schemaFingerprint) throw new Error("transfer snapshot artifact identity mismatch");
+  const metricsSelf = sha256(Buffer.from(canonicalJson(Object.fromEntries(Object.entries(metrics.value).filter(([key]) => key !== "artifactSha256")))));
+  if (!metrics.bytes.equals(Buffer.from(`${canonicalJson(metrics.value)}\n`)) || metrics.value.artifactSha256 !== evidence.metricsArtifactSha256 || metricsSelf !== evidence.metricsArtifactSha256
+    || metrics.value.sourceIdentity?.sourceId !== source.id || metrics.value.sourceIdentity?.rawSha256 !== evidence.rawSha256
+    || metrics.value.sourceIdentity?.contentSha256 !== evidence.contentSha256 || metrics.value.sourceIdentity?.schemaSha256 !== evidence.schemaFingerprint) throw new Error("transfer metrics artifact identity mismatch");
+  const applicabilitySelf = sha256(Buffer.from(`${canonicalJson(Object.fromEntries(Object.entries(applicability.value).filter(([key]) => key !== "artifactSha256")))}\n`));
+  if (!applicability.bytes.equals(Buffer.from(`${canonicalJson(applicability.value)}\n`)) || applicability.value.artifactSha256 !== evidence.applicabilityArtifactSha256 || applicabilitySelf !== evidence.applicabilityArtifactSha256
+    || JSON.stringify(applicability.value.canonicalIdentity) !== JSON.stringify(metrics.value.canonicalIdentity)
+    || JSON.stringify(applicability.value.sourceIdentity) !== JSON.stringify(metrics.value.sourceIdentity)
+    || applicability.value.transferTopologyMetricsIdentity?.artifactSha256 !== evidence.metricsArtifactSha256) throw new Error("transfer applicability artifact identity mismatch");
 }
 
 function validateOfficialOdFareReferences(source, sourceId) {
@@ -151,12 +214,14 @@ function validateOfficialOdFareReferences(source, sourceId) {
   assertSha256(source.fareStationLineMappingLedgerHash, `${sourceId}.fareStationLineMappingLedgerHash`);
 }
 
-function validateCapabilities(capabilities, source, sourceId) {
+export function validateCapabilities(capabilities, source, sourceId) {
   if (!capabilities || typeof capabilities !== "object" || Array.isArray(capabilities)) {
     throw new Error(`${sourceId}.capabilities must be an object`);
   }
 
   const capabilityNames = ["schedule", "realtime", "facility"];
+  const transferSource = sourceId === "seoul-metro-transfer-distance-duration" && source.requiredForProductionPack === true;
+  if (transferSource) capabilityNames.push("transfer");
   for (const name of capabilityNames) {
     validateCapability(capabilities[name], source, sourceId, name);
   }
@@ -164,7 +229,7 @@ function validateCapabilities(capabilities, source, sourceId) {
   const declaredCapabilityNames = Object.keys(capabilities).sort(compareStrings);
   const expectedCapabilityNames = [...capabilityNames].sort(compareStrings);
   if (JSON.stringify(declaredCapabilityNames) !== JSON.stringify(expectedCapabilityNames)) {
-    throw new Error(`${sourceId}.capabilities must declare exactly schedule, realtime, and facility`);
+    throw new Error(`${sourceId}.capabilities must declare its exact closed capability set`);
   }
 }
 
@@ -198,6 +263,13 @@ function validateCapability(capability, source, sourceId, name) {
   }
 
   if (name !== "realtime") {
+    if (name === "transfer" && (capability.status !== "SUPPORTED"
+      || capability.productionUseAllowed !== true
+      || capability.coverageStatus !== "CAPITAL_SEOUL_METRO_15_PAIRS_30_DIRECTED_METRICS"
+      || capability.updateFrequency !== "annual file snapshot"
+      || capability.unsupportedNotes !== "공식 소요시간은 reference-only이며 runtime 환승시간은 거리와 선택한 보행속도로 계산한다")) {
+      throw new Error(`${sourceId}.capabilities.transfer contract mismatch`);
+    }
     return;
   }
   if (typeof capability.liveEtaEligible !== "boolean") {
