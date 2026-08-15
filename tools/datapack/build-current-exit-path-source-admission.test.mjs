@@ -9,6 +9,11 @@ import {
   buildCurrentExitPathSourceAdmission,
   main,
 } from "./build-current-exit-path-source-admission.mjs";
+import { buildCurrentKricExitCollectionPlan } from "./build-current-kric-exit-collection-plan.mjs";
+import {
+  buildCurrentKricExitCollectionBundle,
+  buildCurrentKricExitCollectionReceipt,
+} from "./build-current-kric-exit-collection-receipt.mjs";
 import { canonicalExitPathAdmissionJson } from "./build-exit-path-admission.mjs";
 
 const CAPTURED_AT = "2026-08-14T07:17:51.158Z";
@@ -224,6 +229,108 @@ test("CLI는 normalized snapshot과 admission을 absent directory에 함께 쓴�
     "--output-directory", paths.output,
   ], { log: () => {} }), /output directory must be absent/);
 });
+
+test("CLI는 explicit pair와 immutable collection bundle mode를 섞지 않는다", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "current-exit-args-"));
+  const common = [
+    "--facility-admission", path.join(root, "facility.json"),
+    "--candidate-build-spec", path.join(root, "candidate.json"),
+    "--source-inventory", path.join(root, "inventory.json"),
+    "--source-snapshots", path.join(root, "snapshots.json"),
+    "--observed-at", OBSERVED_AT,
+    "--output-directory", path.join(root, "output"),
+  ];
+  await assert.rejects(() => main([
+    "--provider-snapshot", path.join(root, "provider.json"),
+    "--collection-plan", path.join(root, "plan.json"),
+    "--collection-bundle", path.join(root, "bundle.json"),
+    "--expected-bundle-sha256", "a".repeat(64),
+    "--expected-repository-sha", "a".repeat(40),
+    "--expected-workflow-run-id", "123",
+    ...common,
+  ], { log: () => {} }), /arguments mismatch/);
+  await assert.rejects(() => main([
+    "--collection-bundle", path.join(root, "bundle.json"),
+    ...common,
+  ], { log: () => {} }), /arguments mismatch/);
+});
+
+test("CLI bundle mode는 explicit pair와 exact output을 만들고 collision을 보존한다", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "current-exit-bundle-mode-"));
+  const fixture = await fullBundleFixture();
+  const paths = {
+    provider: path.join(root, "provider.json"), plan: path.join(root, "plan.json"), bundle: path.join(root, "bundle.json"),
+    facility: path.join(root, "facility.json"), candidate: path.join(root, "candidate.json"),
+    inventory: path.join(root, "inventory.json"), snapshots: path.join(root, "snapshots.json"),
+    explicitOutput: path.join(root, "explicit"), bundleOutput: path.join(root, "bundle"), collisionOutput: path.join(root, "collision"),
+    missingDigestOutput: path.join(root, "missing-digest"), wrongDigestOutput: path.join(root, "wrong-digest"),
+  };
+  const copy = async (source, target) => writeFile(target, await readFile(new URL(source, import.meta.url)));
+  await Promise.all([
+    writeFile(paths.provider, fixture.snapshotBytes), writeFile(paths.plan, fixture.planBytes), writeFile(paths.bundle, fixture.bundleBytes),
+    copy("./release/facility-source-admission.json", paths.facility),
+    copy("./release/candidate-build-spec.json", paths.candidate), copy("./source-inventory.json", paths.inventory),
+    copy("./release/source-snapshots.json", paths.snapshots),
+  ]);
+  const common = [
+    "--facility-admission", paths.facility, "--candidate-build-spec", paths.candidate,
+    "--source-inventory", paths.inventory, "--source-snapshots", paths.snapshots,
+    "--observed-at", "2026-08-14T16:30:00.000Z",
+  ];
+  await main([
+    "--provider-snapshot", paths.provider, "--collection-plan", paths.plan,
+    ...common, "--output-directory", paths.explicitOutput,
+  ], { log: () => {} });
+  await assert.rejects(() => main([
+    "--collection-bundle", paths.bundle, "--expected-repository-sha", "a".repeat(40),
+    "--expected-workflow-run-id", "123", ...common, "--output-directory", paths.missingDigestOutput,
+  ], { log: () => {} }), /arguments mismatch/);
+  await assert.rejects(() => stat(paths.missingDigestOutput), /ENOENT/);
+  await assert.rejects(() => main([
+    "--collection-bundle", paths.bundle, "--expected-bundle-sha256", "b".repeat(64),
+    "--expected-repository-sha", "a".repeat(40), "--expected-workflow-run-id", "123",
+    ...common, "--output-directory", paths.wrongDigestOutput,
+  ], { log: () => {} }), /expected digest mismatch/);
+  await assert.rejects(() => stat(paths.wrongDigestOutput), /ENOENT/);
+  await main([
+    "--collection-bundle", paths.bundle, "--expected-bundle-sha256", sha256(fixture.bundleBytes), "--expected-repository-sha", "a".repeat(40),
+    "--expected-workflow-run-id", "123", ...common, "--output-directory", paths.bundleOutput,
+  ], { log: () => {} });
+  for (const file of ["exit-path-normalized-source-snapshot.json", "exit-path-source-admission.json"]) {
+    const [explicit, bundled, explicitStat, bundleStat] = await Promise.all([
+      readFile(path.join(paths.explicitOutput, file)), readFile(path.join(paths.bundleOutput, file)),
+      stat(path.join(paths.explicitOutput, file)), stat(path.join(paths.bundleOutput, file)),
+    ]);
+    assert.deepEqual(bundled, explicit);
+    assert.equal(explicitStat.mode & 0o777, 0o600);
+    assert.equal(bundleStat.mode & 0o777, 0o600);
+  }
+  await writeFile(paths.collisionOutput, "preserve");
+  await assert.rejects(() => main([
+    "--collection-bundle", paths.bundle, "--expected-bundle-sha256", sha256(fixture.bundleBytes), "--expected-repository-sha", "a".repeat(40),
+    "--expected-workflow-run-id", "123", ...common, "--output-directory", paths.collisionOutput,
+  ], { log: () => {} }), /output directory must be absent/);
+  assert.equal(await readFile(paths.collisionOutput, "utf8"), "preserve");
+});
+
+async function fullBundleFixture() {
+  const root = import.meta.dirname;
+  const files = {
+    canonicalPackBytes: "release/capital-production-canonical-pack.json", coverageTargetsBytes: "nationwide-coverage-targets.json",
+    providerCodeCatalogBytes: "sources/kric-provider-code-catalog-20260228.json", routeRostersBytes: "sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
+    sourceInventoryBytes: "source-inventory.json", incheonTopologyBytes: "sources/incheon-transit-station-info-20260814.json",
+  };
+  const input = Object.fromEntries(await Promise.all(Object.entries(files).map(async ([key, file]) => [key, await readFile(path.join(root, file))])));
+  const plan = buildCurrentKricExitCollectionPlan(input, { now: new Date("2026-08-14T16:00:00.000Z"), coverageSelector: "capital-seoul-metro-production" });
+  const rows = [{ edMovePath: null, elvtSttCd: null, elvtTpCd: null, exitMvTpOrdr: "1", imgPath: null, mvContDtl: null, mvPathMgNo: "1", stMovePath: null }];
+  const results = plan.queryPlan.map((query, index) => ({ queryId: query.queryId, state: index === 0 ? "ROWS_OBSERVED" : "EXPLICIT_ZERO", providerResultCode: "00", rawResponseSha256: sha256(`raw-${index}`), rawResponseByteSize: 1, providerRecordHash: sha256(canonicalJson(index === 0 ? rows : [])), rows: index === 0 ? rows : [] }));
+  const snapshotPayload = { schemaVersion: 1, artifactKind: "kric-exit-path-provider-snapshot", sourceId: SOURCE_ID, snapshotId: "kric-station-movement-standard-20260814T160000000Z", capturedAt: "2026-08-14T16:00:00.000Z", freshUntil: "2026-08-15T16:00:00.000Z", credentialRedacted: true, collectionPlanDigest: plan.collectionPlanDigest, queryPlanSha256: plan.queryPlanSha256, coverage: { requestPlanComplete: true, queryIds: plan.queryPlan.map(({ queryId }) => queryId) }, queryPlan: plan.queryPlan, results };
+  const snapshot = { ...snapshotPayload, snapshotDigest: sha256(canonicalJson(snapshotPayload)) };
+  const planBytes = Buffer.from(canonicalJson(plan)); const snapshotBytes = Buffer.from(canonicalJson(snapshot));
+  const receipt = buildCurrentKricExitCollectionReceipt({ collectionPlanBytes: planBytes, providerSnapshotBytes: snapshotBytes, repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), workflowRunId: 123 });
+  const bundle = buildCurrentKricExitCollectionBundle({ collectionPlanBytes: planBytes, providerSnapshotBytes: snapshotBytes, receipt });
+  return { planBytes, snapshotBytes, bundleBytes: Buffer.from(canonicalJson(bundle)) };
+}
 
 function validInput() {
   const sourceSnapshots = [{
