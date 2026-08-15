@@ -45,7 +45,7 @@ test("frozen F1-F4 drift는 output 없이 NO_GO다", async () => {
     (fixture) => { fixture.rows.find((row) => row["환승역명"] === "강남")["환승역명"] = "다른강남"; },
     (fixture) => { fixture.kric.providerLines[0].operatorName = "다른 운영사"; },
     (fixture) => { fixture.kric.providerLines.push({ railOprIsttCd: "DX", operatorName: "네오트랜스주식회사", lnCd: "D1", lineName: "신분당" }); },
-    (fixture) => { fixture.manifest.freshnessDate = "2026-12-31"; },
+    (fixture) => { fixture.freshnessDate = "2026-12-31"; },
     (fixture) => { fixture.canonical.manifest.channel = "preview"; },
     (fixture) => { fixture.canonical.manifest.activePack.version = "2"; },
   ]) {
@@ -54,6 +54,13 @@ test("frozen F1-F4 drift는 output 없이 NO_GO다", async () => {
     await assert.rejects(main(["--observation-directory", fixture.observationDirectory, "--output", output], { repositoryRoot: fixture.root, log: () => {} }), /NO_GO|mismatch|identity|alias|observation|reciprocal/i);
     await assert.rejects(readFile(output), { code: "ENOENT" });
   }
+});
+
+test("malformed non-target MM/SS row는 resealed observation이어도 output 0으로 거부한다", async () => {
+  const fixture = await fixtureRoot((value) => { value.rows.find((row) => row["환승역명"].startsWith("기타"))["환승소요시간"] = "99:00"; });
+  const output = path.join(fixture.root, "output.json");
+  await assert.rejects(main(["--observation-directory", fixture.observationDirectory, "--output", output], { repositoryRoot: fixture.root, log: () => {} }), /official transfer row schema mismatch/);
+  await assert.rejects(readFile(output), { code: "ENOENT" });
 });
 
 test("KRIC provider catalog raw hash는 artifact identity와 self hash에 결속한다", async () => {
@@ -75,15 +82,15 @@ async function fixtureRoot(mutate = () => {}) {
   const kric = { providerLines: [{ railOprIsttCd: "DX", operatorName: "네오트랜스주식회사", lnCd: "D1", lineName: "신분당" }] };
   const providerRows = observationRows();
   const rows = sortRows(providerRows);
-  const fixture = { canonical, kric, manifest: {}, rows, sourceCandidates };
+  const fixture = { canonical, kric, manifest: {}, rows, sourceCandidates, freshnessDate: "2025-12-31" };
+  mutate(fixture);
   const raw = rawSnapshot(providerRows);
   fixture.manifest = {
     artifactKind: "seoul-transfer-distance-duration-snapshot-manifest", sourceId: "seoul-metro-transfer-distance-duration",
-    endpointSha256: sha256(sourceCandidates.candidates[0].requestUrl), capturedAt: "2026-08-15T00:00:00.000Z", freshnessDate: "2025-12-31",
+    endpointSha256: sha256(sourceCandidates.candidates[0].requestUrl), capturedAt: "2026-08-15T00:00:00.000Z", freshnessDate: fixture.freshnessDate,
     rowCount: rows.length, rawSha256: sha256(snapshotBytes(raw)), contentSha256: sha256(snapshotBytes(rows)),
     schemaSha256: sha256(snapshotBytes({ fields: ["연번", "호선", "환승역명", "환승노선", "환승거리", "환승소요시간"] })), credentialRedacted: true,
   };
-  mutate(fixture);
   const observation = { artifactKind: "seoul-transfer-distance-duration-observation", sourceId: "seoul-metro-transfer-distance-duration", capturedAt: fixture.manifest.capturedAt, rowCount: rows.length, rawSha256: fixture.manifest.rawSha256, contentSha256: fixture.manifest.contentSha256, rows, credentialRedacted: true };
   await mkdir(path.join(root, "tools/datapack/release"), { recursive: true });
   await mkdir(path.join(root, "tools/datapack/sources"), { recursive: true });
