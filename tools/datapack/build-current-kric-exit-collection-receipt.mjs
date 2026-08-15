@@ -10,6 +10,11 @@ import { canonicalKricExitPathCollectionPlanJson } from "./plan-kric-exit-path-c
 
 const SOURCE_ID = "kric-station-movement-standard";
 const SELECTOR = "capital-seoul-metro-production";
+const CAPITAL_LINE_NAMES = new Map([
+  ["seoul-2", "수도권 2호선"], ["seoul-4", "수도권 4호선"],
+  ["line-80fc4d5350d4", "수도권 5호선"], ["line-3f41718e0833", "수도권 6호선"],
+  ["shinbundang", "수도권 신분당"],
+]);
 const RESULT_KEYS = ["queryId", "state", "providerResultCode", "rawResponseSha256", "rawResponseByteSize", "providerRecordHash", "rows"];
 const ROW_KEYS = ["edMovePath", "elvtSttCd", "elvtTpCd", "exitMvTpOrdr", "imgPath", "mvContDtl", "mvPathMgNo", "stMovePath"];
 const SNAPSHOT_KEYS = ["schemaVersion", "artifactKind", "sourceId", "snapshotId", "capturedAt", "freshUntil", "credentialRedacted", "collectionPlanDigest", "queryPlanSha256", "coverage", "queryPlan", "results", "snapshotDigest"];
@@ -56,7 +61,11 @@ export function canonicalCurrentKricExitCollectionReceiptJson(receipt) {
     || receipt.repository !== "AquilaXk/easysubway-data" || !/^[a-f0-9]{40}$/.test(receipt.repositorySha)
     || !Number.isSafeInteger(receipt.workflowRunId) || receipt.workflowRunId <= 0
     || receipt.coverageSelector !== SELECTOR || receipt.sourceId !== SOURCE_ID
-    || [receipt.providerMappingCount, receipt.stationLineQueryCount, receipt.stationCount, receipt.routeEdgeCount, receipt.queryCount].join(",") !== "213,213,199,420,420") {
+    || !Number.isSafeInteger(receipt.providerMappingCount) || receipt.providerMappingCount !== 213
+    || !Number.isSafeInteger(receipt.stationLineQueryCount) || receipt.stationLineQueryCount !== 213
+    || !Number.isSafeInteger(receipt.stationCount) || receipt.stationCount !== 199
+    || !Number.isSafeInteger(receipt.routeEdgeCount) || receipt.routeEdgeCount !== 420
+    || !Number.isSafeInteger(receipt.queryCount) || receipt.queryCount !== 420) {
     throw new Error("collection receipt identity mismatch");
   }
   for (const key of ["collectionPlanSha256", "providerSnapshotSha256", "collectionPlanDigest", "queryPlanSha256", "providerSnapshotDigest", "receiptSha256"]) assertSha256(receipt[key], key);
@@ -65,14 +74,17 @@ export function canonicalCurrentKricExitCollectionReceiptJson(receipt) {
 }
 
 export function buildCurrentKricExitCollectionBundle({ collectionPlanBytes, providerSnapshotBytes, receipt }) {
-  const plan = bytes(collectionPlanBytes, "collection plan");
-  const snapshot = bytes(providerSnapshotBytes, "provider snapshot");
+  const planBytes = bytes(collectionPlanBytes, "collection plan");
+  const snapshotBytes = bytes(providerSnapshotBytes, "provider snapshot");
+  const plan = parseCanonicalPlan(planBytes);
+  const snapshot = parseCanonicalSnapshot(snapshotBytes);
   const receiptBytes = Buffer.from(canonicalCurrentKricExitCollectionReceiptJson(receipt));
+  assertReceiptBinds({ plan, snapshot, receipt });
   const payload = canonicalObject({
     schemaVersion: 1,
     artifactKind: "kric-exit-path-collection-bundle",
-    collectionPlanJson: new TextDecoder("utf-8", { fatal: true }).decode(plan),
-    providerSnapshotJson: new TextDecoder("utf-8", { fatal: true }).decode(snapshot),
+    collectionPlanJson: new TextDecoder("utf-8", { fatal: true }).decode(planBytes),
+    providerSnapshotJson: new TextDecoder("utf-8", { fatal: true }).decode(snapshotBytes),
     collectionReceiptJson: new TextDecoder("utf-8", { fatal: true }).decode(receiptBytes),
   });
   return canonicalObject({ ...payload, bundleSha256: sha256(canonicalJson(payload)) });
@@ -84,7 +96,26 @@ export function canonicalCurrentKricExitCollectionBundleJson(bundle) {
   if (bundle.schemaVersion !== 1 || bundle.artifactKind !== "kric-exit-path-collection-bundle" || [bundle.collectionPlanJson, bundle.providerSnapshotJson, bundle.collectionReceiptJson].some((value) => typeof value !== "string" || value === "")) throw new Error("collection bundle identity mismatch");
   assertSha256(bundleSha256, "bundle SHA");
   if (sha256(canonicalJson(payload)) !== bundleSha256) throw new Error("collection bundle digest mismatch");
+  const planBytes = Buffer.from(bundle.collectionPlanJson);
+  const snapshotBytes = Buffer.from(bundle.providerSnapshotJson);
+  const receiptBytes = Buffer.from(bundle.collectionReceiptJson);
+  const plan = parseCanonicalPlan(planBytes);
+  const snapshot = parseCanonicalSnapshot(snapshotBytes);
+  const receipt = parseJson(receiptBytes, "collection receipt");
+  if (!receiptBytes.equals(Buffer.from(canonicalCurrentKricExitCollectionReceiptJson(receipt)))) throw new Error("collection receipt must be canonical JSON");
+  assertReceiptBinds({ plan, snapshot, receipt });
   return canonicalJson(bundle);
+}
+
+function assertReceiptBinds({ plan, snapshot, receipt }) {
+  canonicalCurrentKricExitCollectionReceiptJson(receipt);
+  if (receipt.collectionPlanSha256 !== sha256(Buffer.from(canonicalKricExitPathCollectionPlanJson(plan)))
+    || receipt.providerSnapshotSha256 !== sha256(Buffer.from(canonicalKricExitPathProviderSnapshotJson(snapshot)))
+    || receipt.collectionPlanDigest !== plan.collectionPlanDigest
+    || receipt.queryPlanSha256 !== plan.queryPlanSha256
+    || receipt.providerSnapshotDigest !== snapshot.snapshotDigest
+    || snapshot.collectionPlanDigest !== plan.collectionPlanDigest
+    || snapshot.queryPlanSha256 !== plan.queryPlanSha256) throw new Error("collection receipt binding mismatch");
 }
 
 export async function main(argv, { env = process.env, log = console.log } = {}) {
@@ -179,6 +210,10 @@ function validatePlanSemantics(plan) {
     assertKeys(edge, ["routeEdgeId", "fromStationId", "toStationId", "lineId", "edgeType", "servicePattern", "serviceClass"], "route edge keys");
     if (Object.values(edge).some((value) => typeof value !== "string" || value.trim() === "") || edge.edgeType !== "RIDE" || edge.servicePattern !== "LOCAL" || edge.serviceClass !== "SUBWAY" || edge.fromStationId === edge.toStationId || edgeIds.has(edge.routeEdgeId) || !stationLines.has(`${edge.fromStationId}\0${edge.lineId}`) || !stationLines.has(`${edge.toStationId}\0${edge.lineId}`)) throw new Error("route edge relation mismatch");
     edgeIds.add(edge.routeEdgeId);
+  }
+  for (const query of queries) {
+    const edge = edgeIds.has(query.routeEdgeId) ? edges.find(({ routeEdgeId }) => routeEdgeId === query.routeEdgeId) : undefined;
+    if (!edge || query.lineName !== CAPITAL_LINE_NAMES.get(edge.lineId)) throw new Error("provider query line identity mismatch");
   }
   if (canonicalJson(edges) !== canonicalJson([...edges].sort((a, b) => compare(a.routeEdgeId, b.routeEdgeId))) || new Set(queries.map(({ routeEdgeId }) => routeEdgeId)).size !== 420 || [...queryById.values()].some(({ routeEdgeId }) => !edgeIds.has(routeEdgeId))) throw new Error("route edge coverage mismatch");
 }

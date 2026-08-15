@@ -7,7 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { buildCurrentKricExitCollectionPlan } from "./build-current-kric-exit-collection-plan.mjs";
-import { buildCurrentKricExitCollectionReceipt, canonicalCurrentKricExitCollectionBundleJson, canonicalCurrentKricExitCollectionReceiptJson, main } from "./build-current-kric-exit-collection-receipt.mjs";
+import { buildCurrentKricExitCollectionBundle, buildCurrentKricExitCollectionReceipt, canonicalCurrentKricExitCollectionBundleJson, canonicalCurrentKricExitCollectionReceiptJson, main } from "./build-current-kric-exit-collection-receipt.mjs";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
 const hash = (value) => createHash("sha256").update(value).digest("hex");
@@ -101,6 +101,21 @@ test("유효하게 재해시한 mapping·time·row drift도 semantic closure에�
   assert.throws(() => buildCurrentKricExitCollectionReceipt({ ...input, providerSnapshotBytes: Buffer.from(canonical(longWindow)) }), /freshness mismatch/);
 });
 
+test("bundle은 cross-collection receipt, cross-line label, scalar coercion을 재해시해도 거부한다", async () => {
+  const { plan, snapshot } = await planAndSnapshot(); const planBytes = Buffer.from(canonical(plan)); const snapshotBytes = Buffer.from(canonical(snapshot));
+  const receipt = buildCurrentKricExitCollectionReceipt({ collectionPlanBytes: planBytes, providerSnapshotBytes: snapshotBytes, repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), workflowRunId: 1 });
+  const alternatePlan = structuredClone(plan); alternatePlan.candidate.candidateId = "other-collection"; rehashPlan(alternatePlan);
+  const alternateSnapshot = rebindSnapshotPlan(snapshot, alternatePlan);
+  assert.throws(() => buildCurrentKricExitCollectionBundle({ collectionPlanBytes: Buffer.from(canonical(alternatePlan)), providerSnapshotBytes: Buffer.from(canonical(alternateSnapshot)), receipt }), /receipt binding mismatch/);
+  const swapped = structuredClone(plan); const other = swapped.queryPlan.findIndex((query) => query.lineName !== swapped.queryPlan[0].lineName); [swapped.queryPlan[0].lineName, swapped.queryPlan[other].lineName] = [swapped.queryPlan[other].lineName, swapped.queryPlan[0].lineName]; swapped.queryPlanSha256 = hash(canonical(swapped.queryPlan)); rehashPlan(swapped);
+  const swappedSnapshot = rebindSnapshotPlan(snapshot, swapped);
+  assert.throws(() => buildCurrentKricExitCollectionReceipt({ collectionPlanBytes: Buffer.from(canonical(swapped)), providerSnapshotBytes: Buffer.from(canonical(swappedSnapshot)), repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), workflowRunId: 1 }), /line identity mismatch/);
+  const coerced = structuredClone(receipt); coerced.queryCount = "420"; rehashReceipt(coerced);
+  assert.throws(() => buildCurrentKricExitCollectionBundle({ collectionPlanBytes: planBytes, providerSnapshotBytes: snapshotBytes, receipt: coerced }), /receipt identity mismatch/);
+});
+
 function rehashPlan(plan) { plan.collectionPlanDigest = hash(canonical(Object.fromEntries(Object.entries(plan).filter(([key]) => key !== "collectionPlanDigest")))); }
 function rehashSnapshot(snapshot) { snapshot.snapshotDigest = hash(canonical(Object.fromEntries(Object.entries(snapshot).filter(([key]) => key !== "snapshotDigest")))); }
 function rebindSnapshot(snapshot, plan) { const rebound = structuredClone(snapshot); rebound.collectionPlanDigest = plan.collectionPlanDigest; rebound.queryPlanSha256 = plan.queryPlanSha256; rehashSnapshot(rebound); return rebound; }
+function rebindSnapshotPlan(snapshot, plan) { const rebound = rebindSnapshot(snapshot, plan); rebound.queryPlan = plan.queryPlan; rebound.coverage.queryIds = plan.queryPlan.map(({ queryId }) => queryId); rehashSnapshot(rebound); return rebound; }
+function rehashReceipt(receipt) { receipt.receiptSha256 = hash(canonical(Object.fromEntries(Object.entries(receipt).filter(([key]) => key !== "receiptSha256")))); }
