@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import test, { after } from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import { zstdDecompressSync } from "node:zlib";
 
@@ -30,6 +30,17 @@ const SCRIPT = path.resolve("tools/datapack/emit-artifact-components.mjs");
 const CURRENT_ACTIVE_FROM = "2026-08-15T00:34:07.000+09:00";
 const CURRENT_FRESH_UNTIL = "2026-08-15T05:06:04.805+09:00";
 const CURRENT_EVALUATION_AT = "2026-08-14T15:34:07.000Z";
+const buildNowEnvironmentKey = "EASYSUBWAY_DATAPACK_BUILD_NOW";
+const hadBuildNowEnvironmentValue = Object.hasOwn(process.env, buildNowEnvironmentKey);
+const previousBuildNowEnvironmentValue = process.env[buildNowEnvironmentKey];
+process.env[buildNowEnvironmentKey] = CURRENT_EVALUATION_AT;
+after(() => {
+  if (hadBuildNowEnvironmentValue) {
+    process.env[buildNowEnvironmentKey] = previousBuildNowEnvironmentValue;
+  } else {
+    delete process.env[buildNowEnvironmentKey];
+  }
+});
 
 test("current Data #9 seed는 full topology와 policy-required materialization subset을 exact projection한다", async () => {
   const [fixtureBytes, buildSpecBytes, stationLineBytes, materializationBytes, policyBytes] = await Promise.all([
