@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { cp, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, open, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import {
+  atomicReplace,
   rebindCandidateSourceSnapshots,
   rebindCurrentCandidateSourceSnapshots,
 } from "./rebind-current-candidate-source-snapshots.mjs";
@@ -199,6 +200,55 @@ test("CLI rejects candidate source-inventory and raw-inventory-hash drift before
     await assert.rejects(rebindCurrentCandidateSourceSnapshots({ repositoryRoot: root, now: NOW }));
     assert.deepEqual(await readFile(candidatePath), mutated);
   }
+});
+
+test("pure rebind rejects objects that drift from their authenticated raw buffers", async (t) => {
+  for (const mutate of [
+    (input) => { input.candidateBuildSpec.unboundCandidateDrift = true; },
+    (input) => { input.sourceInventory.unboundInventoryDrift = true; },
+    (input) => { input.governancePolicy.unboundGovernanceDrift = true; },
+  ]) {
+    const { root } = await fixture();
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const input = await readInput(root);
+    mutate(input);
+    assert.throws(() => rebindCandidateSourceSnapshots(input), /not bound to their authenticated bytes/);
+  }
+});
+
+test("interleaving candidate replacement preserves the newer target", async (t) => {
+  const { root } = await fixture();
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const target = path.join(root, "tools/datapack/release/candidate-build-spec.json");
+  const newer = Buffer.from(`${await readFile(target, "utf8")}\n`);
+  await assert.rejects(rebindCurrentCandidateSourceSnapshots({
+    repositoryRoot: root,
+    now: NOW,
+    beforeReplace: async () => { await rm(target); await writeFile(target, newer); },
+  }), /candidate changed during rebind/);
+  assert.deepEqual(await readFile(target), newer);
+});
+
+test("failed staged write removes the owned temporary candidate file", async (t) => {
+  const { root } = await fixture();
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const target = path.join(root, "tools/datapack/release/candidate-build-spec.json");
+  const before = await readFile(target);
+  await assert.rejects(atomicReplace(target, Buffer.from("replacement"), {
+    openImpl: async (...args) => {
+      const handle = await open(...args);
+      return new Proxy(handle, {
+        get(value, key) {
+          if (key === "writeFile") return async () => { throw new Error("injected write failure"); };
+          const member = Reflect.get(value, key, value);
+          return typeof member === "function" ? member.bind(value) : member;
+        },
+      });
+    },
+  }), /injected write failure/);
+  assert.deepEqual(await readFile(target), before);
+  const entries = await readdir(path.dirname(target));
+  assert.equal(entries.some((entry) => entry.startsWith(".candidate-build-spec.json.") && entry.endsWith(".tmp")), false);
 });
 
 test("unsafe target, input race, lock residue and replace failure leave candidate bytes unchanged", async (t) => {

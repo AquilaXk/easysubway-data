@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { createHash, randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, rename, rmdir, unlink } from "node:fs/promises";
 import path from "node:path";
@@ -66,6 +67,17 @@ export function rebindCandidateSourceSnapshots({
   now = new Date(),
 }) {
   const nowMillis = requiredUtcInstant(now.toISOString(), "now");
+  const authenticatedCandidate = parse(candidateBuildSpecBytes, "candidate");
+  const authenticatedInventory = parse(sourceInventoryBytes, "source inventory");
+  const authenticatedGovernance = parse(governancePolicyBytes, "source governance policy");
+  if (!isDeepStrictEqual(candidateBuildSpec, authenticatedCandidate)
+    || !isDeepStrictEqual(sourceInventory, authenticatedInventory)
+    || !isDeepStrictEqual(governancePolicy, authenticatedGovernance)) {
+    throw new Error("parsed source objects are not bound to their authenticated bytes");
+  }
+  candidateBuildSpec = authenticatedCandidate;
+  sourceInventory = authenticatedInventory;
+  governancePolicy = authenticatedGovernance;
   validateCandidate(candidateBuildSpec);
   if (!Buffer.isBuffer(candidateBuildSpecBytes) || releaseRequest?.buildSpecSha256 !== sha256(candidateBuildSpecBytes)) {
     throw new Error("release request is not bound to original candidate bytes");
@@ -357,24 +369,25 @@ async function assertStable(snapshot) {
   if (!sameBytes(snapshot.bytes, reread.bytes)) throw new Error(`${snapshot.label} bytes changed during rebind`);
 }
 
-async function atomicReplace(target, bytes) {
+export async function atomicReplace(target, bytes, { openImpl = open, original } = {}) {
   const parent = path.dirname(target);
   const parentStat = await lstat(parent);
   if (!parentStat.isDirectory() || parentStat.isSymbolicLink()) throw new Error("candidate target parent is unsafe");
-  const original = await readStableRegularFile(target, "candidate target");
+  const authenticated = original ?? await readStableRegularFile(target, "candidate target");
+  if (authenticated.target !== target) throw new Error("candidate target identity is invalid");
   const temporary = path.join(parent, `.${path.basename(target)}.${randomUUID()}.tmp`);
-  let staged = false;
+  let cleanupTemporary = false;
   try {
-    const handle = await open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+    const handle = await openImpl(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+    cleanupTemporary = true;
     try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
-    staged = true;
-    await assertStable(original);
+    await assertStable(authenticated);
     await rename(temporary, target);
-    staged = false;
+    cleanupTemporary = false;
     const directory = await open(parent, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
     try { await directory.sync(); } finally { await directory.close(); }
   } finally {
-    if (staged) await unlink(temporary).catch(() => {});
+    if (cleanupTemporary) await unlink(temporary).catch(() => {});
   }
 }
 
@@ -423,7 +436,7 @@ export async function rebindCurrentCandidateSourceSnapshots({
     const bytes = Buffer.from(`${JSON.stringify(result, null, 2)}\n`);
     await beforeReplace({ root, input, bytes });
     for (const snapshot of Object.values(input)) await assertStable(snapshot);
-    await atomicReplaceImpl(input.candidate.target, bytes);
+    await atomicReplaceImpl(input.candidate.target, bytes, { original: input.candidate });
     const final = await readStableRegularFile(input.candidate.target, "candidate target");
     if (!sameBytes(final.bytes, bytes)) throw new Error("candidate target replacement verification failed");
     return { target: input.candidate.target, bytes, candidate: result };
