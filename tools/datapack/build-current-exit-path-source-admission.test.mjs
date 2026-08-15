@@ -244,6 +244,7 @@ test("CLI는 explicit pair와 immutable collection bundle mode를 섞지 않는�
     "--provider-snapshot", path.join(root, "provider.json"),
     "--collection-plan", path.join(root, "plan.json"),
     "--collection-bundle", path.join(root, "bundle.json"),
+    "--expected-bundle-sha256", "a".repeat(64),
     "--expected-repository-sha", "a".repeat(40),
     "--expected-workflow-run-id", "123",
     ...common,
@@ -262,6 +263,7 @@ test("CLI bundle mode는 explicit pair와 exact output을 만들고 collision을
     facility: path.join(root, "facility.json"), candidate: path.join(root, "candidate.json"),
     inventory: path.join(root, "inventory.json"), snapshots: path.join(root, "snapshots.json"),
     explicitOutput: path.join(root, "explicit"), bundleOutput: path.join(root, "bundle"), collisionOutput: path.join(root, "collision"),
+    missingDigestOutput: path.join(root, "missing-digest"), wrongDigestOutput: path.join(root, "wrong-digest"),
   };
   const copy = async (source, target) => writeFile(target, await readFile(new URL(source, import.meta.url)));
   await Promise.all([
@@ -279,8 +281,19 @@ test("CLI bundle mode는 explicit pair와 exact output을 만들고 collision을
     "--provider-snapshot", paths.provider, "--collection-plan", paths.plan,
     ...common, "--output-directory", paths.explicitOutput,
   ], { log: () => {} });
-  await main([
+  await assert.rejects(() => main([
     "--collection-bundle", paths.bundle, "--expected-repository-sha", "a".repeat(40),
+    "--expected-workflow-run-id", "123", ...common, "--output-directory", paths.missingDigestOutput,
+  ], { log: () => {} }), /arguments mismatch/);
+  await assert.rejects(() => stat(paths.missingDigestOutput), /ENOENT/);
+  await assert.rejects(() => main([
+    "--collection-bundle", paths.bundle, "--expected-bundle-sha256", "b".repeat(64),
+    "--expected-repository-sha", "a".repeat(40), "--expected-workflow-run-id", "123",
+    ...common, "--output-directory", paths.wrongDigestOutput,
+  ], { log: () => {} }), /expected digest mismatch/);
+  await assert.rejects(() => stat(paths.wrongDigestOutput), /ENOENT/);
+  await main([
+    "--collection-bundle", paths.bundle, "--expected-bundle-sha256", sha256(fixture.bundleBytes), "--expected-repository-sha", "a".repeat(40),
     "--expected-workflow-run-id", "123", ...common, "--output-directory", paths.bundleOutput,
   ], { log: () => {} });
   for (const file of ["exit-path-normalized-source-snapshot.json", "exit-path-source-admission.json"]) {
@@ -294,7 +307,7 @@ test("CLI bundle mode는 explicit pair와 exact output을 만들고 collision을
   }
   await writeFile(paths.collisionOutput, "preserve");
   await assert.rejects(() => main([
-    "--collection-bundle", paths.bundle, "--expected-repository-sha", "a".repeat(40),
+    "--collection-bundle", paths.bundle, "--expected-bundle-sha256", sha256(fixture.bundleBytes), "--expected-repository-sha", "a".repeat(40),
     "--expected-workflow-run-id", "123", ...common, "--output-directory", paths.collisionOutput,
   ], { log: () => {} }), /output directory must be absent/);
   assert.equal(await readFile(paths.collisionOutput, "utf8"), "preserve");

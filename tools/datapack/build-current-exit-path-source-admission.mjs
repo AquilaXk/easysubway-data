@@ -150,6 +150,7 @@ export async function main(argv, { log = console.log } = {}) {
     args.collectionBundle
       ? consumeCurrentKricExitCollectionBundle({
         collectionBundle: args.collectionBundle,
+        expectedBundleSha256: args.expectedBundleSha256,
         expectedRepositorySha: args.expectedRepositorySha,
         expectedWorkflowRunId: args.expectedWorkflowRunId,
       })
@@ -552,7 +553,7 @@ function parseArgs(argv) {
   const bundlePathFlags = new Set(["collection-bundle"]);
   const allowed = new Set([
     ...commonPathFlags, ...explicitPathFlags, ...bundlePathFlags,
-    "observed-at", "expected-repository-sha", "expected-workflow-run-id",
+    "observed-at", "expected-bundle-sha256", "expected-repository-sha", "expected-workflow-run-id",
   ]);
   if (!Array.isArray(argv) || argv.length % 2 !== 0) throw new Error("current EXIT admission arguments mismatch");
   const values = {};
@@ -572,12 +573,15 @@ function parseArgs(argv) {
   const explicit = [...explicitPathFlags].filter((flag) => values[flag] !== undefined).length;
   const bundle = values["collection-bundle"] !== undefined;
   if ((explicit !== 2 && !bundle) || (explicit !== 0 && bundle)
-    || (bundle && (values["expected-repository-sha"] === undefined || values["expected-workflow-run-id"] === undefined))
-    || (!bundle && (values["expected-repository-sha"] !== undefined || values["expected-workflow-run-id"] !== undefined))) {
+    || (bundle && (values["expected-bundle-sha256"] === undefined || values["expected-repository-sha"] === undefined || values["expected-workflow-run-id"] === undefined))
+    || (!bundle && (values["expected-bundle-sha256"] !== undefined || values["expected-repository-sha"] !== undefined || values["expected-workflow-run-id"] !== undefined))) {
     throw new Error("current EXIT admission arguments mismatch");
   }
   requiredUtcInstant(values["observed-at"], "--observed-at");
   if (bundle) {
+    if (!/^[a-f0-9]{64}$/.test(values["expected-bundle-sha256"])) {
+      throw new Error("expected bundle SHA mismatch");
+    }
     if (!/^[a-f0-9]{40}$/.test(values["expected-repository-sha"])) {
       throw new Error("expected repository SHA mismatch");
     }
@@ -595,6 +599,7 @@ function parseArgs(argv) {
     outputDirectory: values["output-directory"],
     observedAt: values["observed-at"],
     collectionBundle: values["collection-bundle"],
+    expectedBundleSha256: values["expected-bundle-sha256"],
     expectedRepositorySha: values["expected-repository-sha"],
     expectedWorkflowRunId: bundle ? Number(values["expected-workflow-run-id"]) : undefined,
   };

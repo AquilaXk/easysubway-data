@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createHash } from "node:crypto";
 import { readRegularSnapshot } from "./build-current-kric-exit-collection-plan.mjs";
 import {
   buildCurrentKricExitCollectionReceipt,
@@ -10,10 +11,17 @@ const REPOSITORY = "AquilaXk/easysubway-data";
 
 export async function consumeCurrentKricExitCollectionBundle({
   collectionBundle,
+  expectedBundleSha256,
   expectedRepositorySha,
   expectedWorkflowRunId,
 }) {
   const snapshot = await readRegularSnapshot(collectionBundle, "collection bundle");
+  if (typeof expectedBundleSha256 !== "string" || !/^[a-f0-9]{64}$/.test(expectedBundleSha256)) {
+    throw new Error("expected bundle SHA mismatch");
+  }
+  if (sha256(snapshot.bytes) !== expectedBundleSha256) {
+    throw new Error("collection bundle expected digest mismatch");
+  }
   const bundle = parseJson(snapshot.bytes, "collection bundle");
   const canonical = canonicalCurrentKricExitCollectionBundleJson(bundle);
   if (!snapshot.bytes.equals(Buffer.from(canonical))) {
@@ -48,6 +56,10 @@ export async function consumeCurrentKricExitCollectionBundle({
     throw new Error("collection receipt producer reconstruction mismatch");
   }
   return { collectionPlanBytes, providerSnapshotBytes, receipt, bundleSha256: bundle.bundleSha256 };
+}
+
+function sha256(value) {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 function parseJson(bytes, label) {
