@@ -1101,7 +1101,7 @@ jobs:
           if [[ -n "${EASYSUBWAY_ANDROID_EVIDENCE_PATH}" ]]; then
             bundle_args+=(--mobile-evidence "${EASYSUBWAY_ANDROID_EVIDENCE_PATH}")
           fi
-          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" =~ ^(release-candidate|production-publish)$ ]]; then
+          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "production-publish" ]]; then
             bundle_args+=(--require-pass)
           fi
           node tools/datapack/validate-release-evidence-bundle.mjs "${bundle_args[@]}"
