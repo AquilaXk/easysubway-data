@@ -3,9 +3,10 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
+import { publishImmutableObjectPlan } from "../publish-object-storage.mjs";
 
-const ACCESSIBILITY_BUCKET = "easysubway-datapack-sources";
 const SHA256 = /^[0-9a-f]{64}$/u;
+const OCI_PAR_BASE_URL = /^https:\/\/objectstorage\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.oraclecloud\.com\/p\/[^/?#]+\/n\/[A-Za-z0-9_~-]+\/b\/easysubway-datapacks\/o\/?$/u;
 
 export function parseAccessibilityRawPublisherArgs(argv) {
   const args = {};
@@ -23,9 +24,10 @@ export function parseAccessibilityRawPublisherArgs(argv) {
 export async function publishAccessibilityRawObservation({
   observationRoot,
   receiptPath,
-  expectedBucketOwner,
   repositoryRoot,
-  execFileImpl,
+  env = process.env,
+  client = null,
+  now = new Date(),
   sourceId,
   observationArtifactKind,
   rawArtifactKind,
@@ -49,9 +51,8 @@ export async function publishAccessibilityRawObservation({
   validateAccessibilityObservationIdentity({ manifest, snapshot, rawArtifact, snapshotBytes, rawArtifactBytes });
 
   const rawObjectSha256 = sha256(rawArtifactBytes);
-  const checksumSha256 = createHash("sha256").update(rawArtifactBytes).digest("base64");
   const dateToken = snapshot.capturedAt.slice(0, 10).replaceAll("-", "");
-  const objectKey = `${sourceId}/${dateToken}/${rawObjectSha256}.json`;
+  const objectKey = `source-raw/${sourceId}/${dateToken}/${rawObjectSha256}.json`;
   const governancePolicy = JSON.parse(await readFile(
     path.join(path.resolve(repositoryRoot), "tools/datapack/source-governance-policy.json"),
     "utf8",
@@ -61,19 +62,26 @@ export async function publishAccessibilityRawObservation({
     sourceId,
     retrievedAt: snapshot.capturedAt,
   });
-  const { head, trustedBucketOwner, idempotentExistingObject } = await publishImmutableKricRawObject({
-    execFileImpl,
-    errorPrefix,
-    bucket: ACCESSIBILITY_BUCKET,
-    objectKey,
-    expectedBucketOwner,
-    bodyPath: rawArtifactPath,
-    checksumSha256,
-    byteSize: rawArtifactBytes.length,
-    rawObjectSha256,
-    artifactKind: rawArtifactKind,
-    sourceId,
-  });
+  // The generic publisher otherwise selects a signed-storage client when this exact process env is absent.
+  requireOciParBaseUrl(client == null ? process.env : env);
+  try {
+    await publishImmutableObjectPlan({
+      root,
+      client,
+      plan: {
+        steps: [
+          { type: "put-immutable-bundle-object", objectKey, sourcePath: manifest.rawArtifactFile, sha256: rawObjectSha256, sizeBytes: rawArtifactBytes.length },
+          { type: "verify-immutable-bundle-object", objectKey, sourcePath: manifest.rawArtifactFile, sha256: rawObjectSha256, sizeBytes: rawArtifactBytes.length },
+        ],
+      },
+    });
+  } catch (error) {
+    throw sanitizedStorageError(error, errorPrefix);
+  }
+  const storedAt = canonicalUtcInstant(now, "raw object verification time");
+  if (Date.parse(storedAt) < Date.parse(snapshot.capturedAt)) {
+    throw new Error("raw object verification time precedes snapshot capture");
+  }
   const receipt = {
     schemaVersion: 1,
     artifactKind: receiptArtifactKind,
@@ -82,16 +90,11 @@ export async function publishAccessibilityRawObservation({
     snapshotRawSha256: snapshot.rawSha256,
     capturedAt: snapshot.capturedAt,
     snapshotFileSha256: manifest.snapshotFileSha256,
-    rawObjectUri: `s3://${ACCESSIBILITY_BUCKET}/${objectKey}`,
+    rawObjectUri: `oci://easysubway-datapacks/${objectKey}`,
     rawObjectSha256,
-    checksumSha256,
     byteSize: rawArtifactBytes.length,
-    expectedBucketOwner: trustedBucketOwner,
-    versionId: head.VersionId == null ? null : requiredText(head.VersionId, "S3 VersionId"),
-    etag: requiredText(head.ETag, "S3 ETag"),
-    storedAt: requiredUtcInstant(head.LastModified, "S3 LastModified"),
+    storedAt,
     rawRetentionExpiresAt,
-    idempotentExistingObject,
   };
   await writeKricRawReceipt(resolvedReceipt, receipt, { mode: 0o600 });
   return receipt;
@@ -160,66 +163,6 @@ function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-export async function publishImmutableKricRawObject({
-  execFileImpl,
-  errorPrefix,
-  bucket,
-  objectKey,
-  expectedBucketOwner,
-  bodyPath,
-  checksumSha256,
-  byteSize,
-  rawObjectSha256,
-  artifactKind,
-  sourceId,
-}) {
-  const trustedBucketOwner = requiredAccount(expectedBucketOwner, "expectedBucketOwner");
-  const { stdout: callerStdout } = await runAws(execFileImpl, errorPrefix, "caller identity", [
-    "sts", "get-caller-identity", "--query", "Account", "--output", "text", "--no-cli-pager",
-  ]);
-  const caller = callerStdout.trim();
-  if (!/^\d{12}$/u.test(caller)) throw new Error("AWS caller account is invalid");
-  if (caller !== trustedBucketOwner) throw new Error("AWS caller account does not match expected bucket owner");
-
-  const common = [
-    "--bucket", bucket,
-    "--key", objectKey,
-    "--expected-bucket-owner", trustedBucketOwner,
-    "--output", "json",
-    "--no-cli-pager",
-  ];
-  let idempotentExistingObject = false;
-  try {
-    await runAws(execFileImpl, errorPrefix, "upload", [
-      "s3api", "put-object",
-      ...common,
-      "--body", bodyPath,
-      "--content-type", "application/json",
-      "--checksum-sha256", checksumSha256,
-      "--metadata", `artifact-kind=${artifactKind},source-id=${sourceId},sha256=${rawObjectSha256}`,
-      "--if-none-match", "*",
-    ]);
-  } catch (error) {
-    if (error?.awsFailureCode !== "PreconditionFailed" && error?.awsFailureCode !== "412") throw error;
-    idempotentExistingObject = true;
-  }
-
-  const { stdout } = await runAws(execFileImpl, errorPrefix, "head verification", [
-    "s3api", "head-object",
-    ...common,
-    "--checksum-mode", "ENABLED",
-  ]);
-  const head = JSON.parse(stdout);
-  if (head?.ContentLength !== byteSize
-    || head.ChecksumSHA256 !== checksumSha256
-    || head.Metadata?.sha256 !== rawObjectSha256
-    || head.Metadata?.["artifact-kind"] !== artifactKind
-    || head.Metadata?.["source-id"] !== sourceId) {
-    throw new Error("S3 object identity mismatch");
-  }
-  return { head, trustedBucketOwner, idempotentExistingObject };
-}
-
 export async function writeKricRawReceipt(receiptPath, receipt, { mode } = {}) {
   await mkdir(path.dirname(receiptPath), { recursive: true });
   const body = `${JSON.stringify(receipt, null, 2)}\n`;
@@ -239,34 +182,21 @@ export function requiredText(value, label) {
   return value.trim();
 }
 
-export function requiredAccount(value, label) {
-  const text = requiredText(value, label);
-  if (!/^\d{12}$/u.test(text)) throw new Error(`${label} is invalid`);
-  return text;
-}
-
-export function requiredUtcInstant(value, label) {
-  const text = requiredText(value, label);
-  const timestamp = Date.parse(text);
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|\+00:00)$/u.test(text)
-    || Number.isNaN(timestamp)) throw new Error(`${label} must be a UTC instant`);
-  return new Date(timestamp).toISOString();
-}
-
-function safeAwsFailureCode(error) {
-  const text = String(error?.stderr ?? error?.message ?? "");
-  return text.match(/\(([A-Za-z][A-Za-z0-9_-]*)\) when calling/u)?.[1]
-    ?? text.match(/\b([45]\d\d)\b/u)?.[1]
-    ?? "UNKNOWN";
-}
-
-async function runAws(execFileImpl, errorPrefix, context, args) {
-  try {
-    return await execFileImpl("aws", args, { maxBuffer: 1024 * 1024 });
-  } catch (error) {
-    const failureCode = safeAwsFailureCode(error);
-    const sanitized = new Error(`${errorPrefix} ${context} failed: ${failureCode}`);
-    sanitized.awsFailureCode = failureCode;
-    throw sanitized;
+export function requireOciParBaseUrl(env = process.env) {
+  const value = env?.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL;
+  if (typeof value !== "string" || !OCI_PAR_BASE_URL.test(value.trim())) {
+    throw new Error("EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL must be an OCI HTTPS preauthenticated object URL");
   }
+}
+
+function canonicalUtcInstant(value, label) {
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) {
+    throw new Error(`${label} must be a valid Date`);
+  }
+  return value.toISOString();
+}
+
+function sanitizedStorageError(error, errorPrefix) {
+  const status = /\bHTTP\s+([1-5]\d\d)\b/u.exec(String(error?.message ?? ""))?.[1];
+  return new Error(`${errorPrefix} storage publication failed${status == null ? "" : `: HTTP ${status}`}`);
 }
