@@ -4,40 +4,44 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { gunzipSync } from "node:zlib";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 const DOWNLOAD_TIMEOUT_MS = 30_000;
 
-const args = parseArgs(process.argv.slice(2));
-const manifestUrl = requireArg(args, "manifest-url");
-const outputRoot = path.resolve(requireArg(args, "output"));
-const requireProduction = args["require-production"] === true;
-const expectedManifestPath = args["expected-manifest"];
+async function main(argv) {
+  const args = parseRemoteDatapackArtifactArgs(argv);
+  const manifestUrl = requireArg(args, "manifest-url");
+  const outputRoot = path.resolve(requireArg(args, "output"));
+  const requireProduction = args["require-production"] === true;
+  const expectedManifestPath = args["expected-manifest"];
+  const serverRouteCoverageEvidence = args["server-route-coverage-evidence"];
+  const serverRouteCoverageProvenance = args["server-route-coverage-provenance"];
 
-await mkdir(path.join(outputRoot, "catalog"), { recursive: true });
-const manifestPath = path.join(outputRoot, "catalog", "current.json");
-const manifestBytes = await download(manifestUrl, { revalidate: true });
-if (expectedManifestPath) {
-  const expectedManifestBytes = await readFile(path.resolve(expectedManifestPath));
-  if (sha256(manifestBytes) !== sha256(expectedManifestBytes)) {
-    throw new Error("remote production manifest does not match the selected RC manifest");
+  await mkdir(path.join(outputRoot, "catalog"), { recursive: true });
+  const manifestPath = path.join(outputRoot, "catalog", "current.json");
+  const manifestBytes = await download(manifestUrl, { revalidate: true });
+  if (expectedManifestPath) {
+    const expectedManifestBytes = await readFile(path.resolve(expectedManifestPath));
+    if (sha256(manifestBytes) !== sha256(expectedManifestBytes)) {
+      throw new Error("remote production manifest does not match the selected RC manifest");
+    }
   }
-}
-await writeFile(manifestPath, manifestBytes);
+  await writeFile(manifestPath, manifestBytes);
 
-const manifest = JSON.parse(manifestBytes.toString("utf8"));
-const downloadedPacks = [];
-for (const pack of manifest.packs ?? []) {
-  const packUrl = /^https?:\/\//.test(pack.url)
-    ? pack.url
-    : new URL(pack.url, new URL("/", manifestUrl)).toString();
-  const packPath = path.join(outputRoot, "catalog", `${pack.id}-v${pack.version}.sqlite.gz`);
-  const packBytes = await download(packUrl);
-  await writeFile(packPath, packBytes);
-  downloadedPacks.push(summarizeDownloadedPack({ pack, packUrl, packBytes }));
-}
+  const manifest = JSON.parse(manifestBytes.toString("utf8"));
+  const downloadedPacks = [];
+  for (const pack of manifest.packs ?? []) {
+    const packUrl = /^https?:\/\//.test(pack.url)
+      ? pack.url
+      : new URL(pack.url, new URL("/", manifestUrl)).toString();
+    const packPath = path.join(outputRoot, "catalog", `${pack.id}-v${pack.version}.sqlite.gz`);
+    const packBytes = await download(packUrl);
+    await writeFile(packPath, packBytes);
+    downloadedPacks.push(summarizeDownloadedPack({ pack, packUrl, packBytes }));
+  }
 
-const validation = await runValidator({ manifestPath, outputRoot, requireProduction });
-const summary = {
+  const validation = await runValidator({ manifestPath, outputRoot, requireProduction, serverRouteCoverageEvidence, serverRouteCoverageProvenance });
+  const summary = {
   manifestUrl,
   manifestSha256: sha256(manifestBytes),
   manifestVersion: manifest.manifestVersion ?? 1,
@@ -60,24 +64,25 @@ const summary = {
     regionalQualityMetrics: pack.regionalQualityMetrics,
   })),
   validation,
-};
-await writeFile(
-  path.join(outputRoot, "remote-datapack-validation-summary.json"),
-  `${JSON.stringify(summary, null, 2)}\n`,
-);
+  };
+  await writeFile(
+    path.join(outputRoot, "remote-datapack-validation-summary.json"),
+    `${JSON.stringify(summary, null, 2)}\n`,
+  );
 
-if (validation.signal) {
-  process.stderr.write(validation.stderr || validation.stdout);
-  process.stderr.write(`validator terminated by signal ${validation.signal}\n`);
-  process.exit(1);
+  if (validation.signal) {
+    process.stderr.write(validation.stderr || validation.stdout);
+    process.exitCode = 1;
+    return;
+  }
+
+  if (validation.exitCode !== 0) {
+    process.stderr.write(validation.stderr || validation.stdout);
+    process.exitCode = validation.exitCode;
+  }
 }
 
-if (validation.exitCode !== 0) {
-  process.stderr.write(validation.stderr || validation.stdout);
-  process.exit(validation.exitCode);
-}
-
-function parseArgs(values) {
+export function parseRemoteDatapackArtifactArgs(values) {
   const parsed = {};
   for (let index = 0; index < values.length; index += 1) {
     const value = values[index];
@@ -90,6 +95,11 @@ function parseArgs(values) {
       continue;
     }
     parsed[key] = values[++index];
+  }
+  const evidence = parsed["server-route-coverage-evidence"];
+  const provenance = parsed["server-route-coverage-provenance"];
+  if ((evidence || provenance) && (!evidence || !provenance || parsed["require-production"] !== true)) {
+    throw new Error("server route coverage evidence and provenance require --require-production");
   }
   return parsed;
 }
@@ -150,7 +160,7 @@ async function download(url, { revalidate = false } = {}) {
   return Buffer.from(await response.arrayBuffer());
 }
 
-async function runValidator({ manifestPath, outputRoot, requireProduction }) {
+export function buildValidatorArgs({ manifestPath, outputRoot, requireProduction, serverRouteCoverageEvidence, serverRouteCoverageProvenance }) {
   const args = [
     "tools/datapack/validate-datapack.mjs",
     "--manifest",
@@ -161,6 +171,15 @@ async function runValidator({ manifestPath, outputRoot, requireProduction }) {
   if (requireProduction) {
     args.push("--require-production");
   }
+  if (serverRouteCoverageEvidence) {
+    args.push("--server-route-coverage-evidence", serverRouteCoverageEvidence);
+    args.push("--server-route-coverage-provenance", serverRouteCoverageProvenance);
+  }
+  return args;
+}
+
+async function runValidator({ manifestPath, outputRoot, requireProduction, serverRouteCoverageEvidence, serverRouteCoverageProvenance }) {
+  const args = buildValidatorArgs({ manifestPath, outputRoot, requireProduction, serverRouteCoverageEvidence, serverRouteCoverageProvenance });
   const result = await spawnResult(process.execPath, args);
   return {
     command: `${process.execPath} ${args.join(" ")}`,
@@ -192,4 +211,11 @@ function spawnResult(command, args) {
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  main(process.argv.slice(2)).catch((error) => {
+    process.stderr.write(`${error.message}\n`);
+    process.exitCode = 1;
+  });
 }

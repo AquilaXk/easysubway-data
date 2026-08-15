@@ -7,6 +7,7 @@ import path from "node:path";
 import { isMainModule } from "../lib/is-main-module.mjs";
 import {
   validateManifest,
+  canonicalJson,
   sha256,
   verifyRsaSha256Signature,
   signingPublicKey,
@@ -79,6 +80,18 @@ async function main() {
   const manifestPath = path.resolve(requireArg(args, "manifest"));
   const root = path.resolve(requireArg(args, "root"));
   const requireProduction = args["require-production"] === true;
+  const coverageEvidencePath = args["server-route-coverage-evidence"];
+  const coverageProvenancePath = args["server-route-coverage-provenance"];
+  if ((coverageEvidencePath || coverageProvenancePath) && (!coverageEvidencePath || !coverageProvenancePath || !requireProduction)) {
+    throw new Error("server route coverage evidence and provenance require --require-production");
+  }
+  const serverRouteCoverageEvidence = coverageEvidencePath
+    ? {
+      report: parseServerRouteCoverageEvidence(await readFile(path.resolve(coverageEvidencePath))),
+      provenance: parseServerRouteCoverageProvenance(await readFile(path.resolve(coverageProvenancePath))),
+      consumptionCount: 0,
+    }
+    : null;
   const releasesTarget = args["releases-target"] === true;
   const maxPublicCatalogUserVersion = optionalPositiveIntegerArgument(
     args["max-public-catalog-user-version"],
@@ -97,7 +110,11 @@ async function main() {
         requireProduction,
         maxPublicCatalogUserVersion,
         officialOdFareAdmission: officialOdFareAdmissions,
+        serverRouteCoverageEvidence,
       });
+    }
+    if (serverRouteCoverageEvidence?.consumptionCount !== 1) {
+      throw new Error("server route coverage authority was not consumed exactly once");
     }
   } finally {
     await rm(temporaryDir, { recursive: true, force: true });
@@ -109,7 +126,12 @@ async function validatePack(
   temporaryDir,
   pack,
   manifestVersion,
-  { requireProduction = false, maxPublicCatalogUserVersion = null, officialOdFareAdmission = null } = {},
+  {
+    requireProduction = false,
+    maxPublicCatalogUserVersion = null,
+    officialOdFareAdmission = null,
+    serverRouteCoverageEvidence = null,
+  } = {},
 ) {
   const compressedPath = localPackPathForUrl(root, pack);
   const compressedBytes = await readFile(compressedPath);
@@ -147,6 +169,7 @@ async function validatePack(
     requireProduction,
     maxPublicCatalogUserVersion,
     officialOdFareAdmission,
+    serverRouteCoverageEvidence,
   });
 }
 
@@ -160,7 +183,12 @@ function localPackPathForUrl(root, pack) {
 function validateSqlite(
   sqlitePath,
   pack,
-  { requireProduction, maxPublicCatalogUserVersion = null, officialOdFareAdmission = null },
+  {
+    requireProduction,
+    maxPublicCatalogUserVersion = null,
+    officialOdFareAdmission = null,
+    serverRouteCoverageEvidence = null,
+  },
 ) {
   const database = new DatabaseSync(sqlitePath, { readOnly: true });
   try {
@@ -209,7 +237,7 @@ function validateSqlite(
     validateOfficialOdFareQuotes(database, pack, officialOdFareAdmission);
     validateStationPathways(database, pack);
     validateStationCarDoorHints(database, pack);
-    const productionCoverageError = validateProductionNetworkEdgeProvenance(database, pack);
+    const productionCoverageError = validateProductionNetworkEdgeProvenance(database, pack, serverRouteCoverageEvidence);
     validateProductionInternalRouteEdgeProvenance(database, pack);
     validateProductionStationPathwayEdgeProvenance(database, pack);
     validateProductionFacilityProvenance(database, pack);
@@ -1486,7 +1514,7 @@ function validateNetworkEdgeFacilityReferences(database, pack) {
   }
 }
 
-function validateProductionNetworkEdgeProvenance(database, pack) {
+function validateProductionNetworkEdgeProvenance(database, pack, serverRouteCoverageEvidence = null) {
   if (pack.artifactKind !== "production" || !hasTable(database, "network_edges")) {
     return null;
   }
@@ -1514,7 +1542,7 @@ function validateProductionNetworkEdgeProvenance(database, pack) {
   );
   const edgeRows = database
     .prepare(`
-      SELECT id, from_node_id, to_node_id, edge_type, stair_access_state,
+      SELECT id, from_node_id, to_node_id, edge_type, duration_seconds, distance_meters, stair_access_state,
              accessibility_status, reliability_score, source_id,
              source_snapshot_id, provider_record_hash, provenance_kind,
              verification_status, last_verified_at, evidence_hash
@@ -1553,6 +1581,18 @@ function validateProductionNetworkEdgeProvenance(database, pack) {
       coverage.transfer.missingCount,
   };
   console.log(JSON.stringify(report));
+
+  if (serverRouteCoverageEvidence?.report && isAuthorizedServerRouteCoverageGap({
+    pack,
+    report: serverRouteCoverageEvidence.report,
+    provenance: serverRouteCoverageEvidence.provenance,
+    coverage,
+    edgeRows,
+    unverifiedAccessibilityCoverageEdges,
+  })) {
+    serverRouteCoverageEvidence.consumptionCount += 1;
+    return null;
+  }
 
   for (const [kind, item] of Object.entries(coverage)) {
     if (item.missingCount > 0) {
@@ -2414,7 +2454,111 @@ function canonicalProductionPackUrl(packUrl) {
   return new URL(packUrl).toString();
 }
 
-function parseArgs(argv) {
+export function parseServerRouteCoverageEvidence(bytes) {
+  let report;
+  try {
+    report = JSON.parse(Buffer.from(bytes).toString("utf8"));
+  } catch {
+    throw new Error("server route coverage authority must be valid JSON");
+  }
+  if (Buffer.compare(Buffer.from(canonicalJson(report)), Buffer.from(bytes)) !== 0) {
+    throw new Error("server route coverage authority must be canonical");
+  }
+  requireExactKeys(report, ["schemaVersion", "artifactKind", "candidate", "edges", "authoritySha256"], "server route coverage authority");
+  if (report.schemaVersion !== 1 || report.artifactKind !== "server-route-coverage-authority") {
+    throw new Error("server route coverage authority shape is invalid");
+  }
+  requireExactKeys(report.candidate, ["candidateId", "sourceSetSha256"], "server route coverage authority candidate");
+  if (typeof report.candidate.candidateId !== "string" || report.candidate.candidateId.length === 0
+    || !/^[a-f0-9]{64}$/.test(report.candidate.sourceSetSha256)) {
+    throw new Error("server route coverage authority candidate is invalid");
+  }
+  if (!Array.isArray(report.edges) || report.edges.length !== 4) {
+    throw new Error("server route coverage authority edges are invalid");
+  }
+  const edgeIds = new Set();
+  const kinds = { ENTRY: 0, EXIT: 0 };
+  for (const edge of report.edges) {
+    requireExactKeys(edge, ["edgeId", "fromNodeId", "toNodeId", "edgeType", "durationSeconds", "distanceMeters", "domain"], "server route coverage authority edge");
+    if (typeof edge.edgeId !== "string" || edge.edgeId.length === 0 || edgeIds.has(edge.edgeId)
+      || typeof edge.fromNodeId !== "string" || edge.fromNodeId.length === 0
+      || typeof edge.toNodeId !== "string" || edge.toNodeId.length === 0
+      || !["ENTRY", "EXIT"].includes(edge.edgeType)
+      || !Number.isInteger(edge.durationSeconds) || edge.durationSeconds < 0
+      || !Number.isInteger(edge.distanceMeters) || edge.distanceMeters < 0
+      || edge.domain !== (edge.edgeType === "ENTRY" ? "FACILITY" : "EXIT")) {
+      throw new Error("server route coverage authority edge is invalid");
+    }
+    edgeIds.add(edge.edgeId);
+    kinds[edge.edgeType] += 1;
+  }
+  if (kinds.ENTRY !== 2 || kinds.EXIT !== 2 || !/^[a-f0-9]{64}$/.test(report.authoritySha256)) {
+    throw new Error("server route coverage authority coverage is invalid");
+  }
+  const { authoritySha256, ...payload } = report;
+  if (sha256(Buffer.from(canonicalJson(payload))) !== authoritySha256) {
+    throw new Error("server route coverage authority hash mismatch");
+  }
+  return report;
+}
+
+export function isAuthorizedServerRouteCoverageGap({
+  pack,
+  report,
+  provenance,
+  coverage,
+  edgeRows,
+  unverifiedAccessibilityCoverageEdges,
+}) {
+  if (pack.id !== "capital" || String(pack.version) !== "1" || pack.artifactKind !== "production"
+    || report.candidate.candidateId !== provenance.candidateId || report.candidate.sourceSetSha256 !== provenance.sourceSetSha256
+    || coverage.entry.denominator !== 2 || coverage.entry.missingCount !== 2
+    || coverage.exit.denominator !== 2 || coverage.exit.missingCount !== 2
+    || coverage.transfer.missingCount !== 0
+    || unverifiedAccessibilityCoverageEdges.length !== 4
+    || new Set(unverifiedAccessibilityCoverageEdges).size !== 4) {
+    return false;
+  }
+  const reportIds = new Set(report.edges.map((edge) => edge.edgeId));
+  if (reportIds.size !== 4 || unverifiedAccessibilityCoverageEdges.some((edgeId) => !reportIds.has(edgeId))) {
+    return false;
+  }
+  return report.edges.every((authorityEdge) => {
+    const rows = edgeRows.filter((edge) => edge.id === authorityEdge.edgeId);
+    const edge = rows[0];
+    return rows.length === 1
+      && edge.from_node_id === authorityEdge.fromNodeId
+      && edge.to_node_id === authorityEdge.toNodeId
+      && edge.edge_type === authorityEdge.edgeType
+      && edge.duration_seconds === authorityEdge.durationSeconds
+      && edge.distance_meters === authorityEdge.distanceMeters
+      && edge.verification_status === "NOT_VERIFIED"
+      && edge.stair_access_state === "UNKNOWN"
+      && ["UNKNOWN", "NO_OFFICIAL_FEED"].includes(edge.accessibility_status);
+  });
+}
+
+export function parseServerRouteCoverageProvenance(bytes) {
+  let value;
+  try { value = JSON.parse(Buffer.from(bytes).toString("utf8")); } catch { throw new Error("server route coverage provenance must be valid JSON"); }
+  const candidate = value?.candidateBuild;
+  if (!candidate || typeof candidate.candidateId !== "string" || candidate.candidateId.length === 0 || !/^[a-f0-9]{64}$/.test(candidate.sourceSnapshotSetHash)) {
+    throw new Error("server route coverage provenance candidate is invalid");
+  }
+  return { candidateId: candidate.candidateId, sourceSetSha256: candidate.sourceSnapshotSetHash };
+}
+
+function requireExactKeys(value, expectedKeys, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${label} shape is invalid`);
+  }
+  const keys = Object.keys(value).sort();
+  if (keys.length !== expectedKeys.length || keys.some((key, index) => key !== [...expectedKeys].sort()[index])) {
+    throw new Error(`${label} shape is invalid`);
+  }
+}
+
+export function parseArgs(argv) {
   const args = {};
   for (let index = 0; index < argv.length; index += 1) {
     const key = argv[index];
@@ -2432,6 +2576,11 @@ function parseArgs(argv) {
     }
     args[key.slice(2)] = value;
     index += 1;
+  }
+  const evidence = args["server-route-coverage-evidence"];
+  const provenance = args["server-route-coverage-provenance"];
+  if ((evidence || provenance) && (!evidence || !provenance || args["require-production"] !== true)) {
+    throw new Error("server route coverage evidence and provenance require --require-production");
   }
   return args;
 }
