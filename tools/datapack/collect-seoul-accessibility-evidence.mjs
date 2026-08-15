@@ -215,6 +215,7 @@ export async function collectSeoulAccessibility({
   const rawPages = [];
   const rawResponses = [];
   const rowIdentities = new Set();
+  const requestAttempts = source === "facility-location" ? 1 : 2;
   let receivedCount = 0;
   let pageNo = 1;
   let totalCount;
@@ -225,14 +226,14 @@ export async function collectSeoulAccessibility({
     url.searchParams.set("numOfRows", "1000");
     url.searchParams.set("dataType", "JSON");
     let response;
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    for (let attempt = 0; attempt < requestAttempts; attempt += 1) {
       try {
         response = await fetchImpl(url, { signal: AbortSignal.timeout(requestTimeoutMs) });
       } catch {
-        if (attempt === 0) continue;
+        if (attempt < requestAttempts - 1) continue;
         throw new Error("Seoul accessibility API request failed");
       }
-      if (response.ok || response.status < 500 || attempt === 1) break;
+      if (response.ok || response.status < 500 || attempt === requestAttempts - 1) break;
     }
     if (!response.ok) {
       throw new Error(`Seoul accessibility API HTTP ${response.status}`);
