@@ -34,13 +34,19 @@ test("retired production transit unprojected fixture는 candidate admission에�
     readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8").then(JSON.parse),
     readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json")),
   ]);
+  const buildSpec = { productionScopePolicy: {
+    path: "tools/datapack/nationwide-coverage-targets.json", sha256: sha256(policyBytes),
+  } };
+  await assert.doesNotReject(validateCandidateProductionScope(buildSpec, fixture));
+  const unprojected = structuredClone(fixture);
+  const pack = unprojected.packs.find(({ id }) => id === "capital");
+  const lineId = "line-cbe75f5287a1";
+  const stationIds = ["station-04529af2869a", "station-4404e10fdfef", "station-ae2b5b5f2ea5", "station-bdd848e7e432", "station-f311bc307610", "station-fce26411d581"];
+  pack.operators.push({ id: "operator-145e4415ee1f", nameKo: "인천공항 자기부상" });
+  pack.lines.push({ id: lineId, operatorId: "operator-145e4415ee1f", nameKo: "수도권 자기부상" });
+  pack.stationLines.push(...stationIds.map((stationId, index) => ({ stationId, lineId, stationCode: String(index + 1), lineSequence: index + 1, platformInfo: "" })));
   await assert.rejects(
-    validateCandidateProductionScope({
-      productionScopePolicy: {
-        path: "tools/datapack/nationwide-coverage-targets.json",
-        sha256: sha256(policyBytes),
-      },
-    }, fixture),
+    validateCandidateProductionScope(buildSpec, unprojected),
     /retired transit remains in production fixture/,
   );
 });

@@ -51,21 +51,21 @@ test("current Data #9 seed는 full topology와 policy-required materialization s
   assert.equal(trackedBytes, canonicalCurrentRouteEdgeInputJson(input));
 
   assert.equal(input.candidate.topologySha256, undefined);
-  assert.equal(input.candidate.stationSetSha256, "18de0faea1cf3f4fd26ea6799a6b4ce7bcc319a609b435f1b1eefa6164c4bb17");
+  assert.equal(input.candidate.stationSetSha256, "d2cef87aa1eeee23a50ac94d7e784f432101e9d8936331152981dcaeb8d25dd9");
   assert.equal(JSON.parse(stationLineBytes).candidate.stationSetSha256, "58561f44334f0fc6a48911685e3730152156b4cd5c642bfdfdcd1a652400ed9f");
-  assert.equal(input.stationLines.length, 1108);
-  assert.equal(input.routeEdges.length, 2232);
+  assert.equal(input.stationLines.length, 1102);
+  assert.equal(input.routeEdges.length, 2222);
   assert.deepEqual(Object.fromEntries(input.routeEdges.reduce((counts, edge) => {
     counts.set(edge.edgeType, (counts.get(edge.edgeType) ?? 0) + 1);
     return counts;
-  }, new Map())), { ENTRY: 2, EXIT: 2, RIDE: 2228 });
+  }, new Map())), { ENTRY: 2, EXIT: 2, RIDE: 2218 });
   const localRideEdges = input.routeEdges.filter(({ edgeType, serviceClass, servicePattern }) => (
     edgeType === "RIDE" && serviceClass === "SUBWAY" && servicePattern === "LOCAL"
   ));
   const itxRideEdges = input.routeEdges.filter(({ edgeType, serviceClass, servicePattern }) => (
     edgeType === "RIDE" && serviceClass === "ITX_CHEONGCHUN" && servicePattern === "EXPRESS"
   ));
-  assert.equal(localRideEdges.length, 2144);
+  assert.equal(localRideEdges.length, 2134);
   assert.equal(itxRideEdges.length, 84);
   assert.equal(
     canonicalRideEdgeSetSha256(localRideEdges),
@@ -133,7 +133,7 @@ test("current Data #9 seed는 alternate repository root의 nested projection evi
     policy: JSON.parse(policyBytes),
     repositoryRoot,
   });
-  assert.equal(input.routeEdges.length, 2232);
+  assert.equal(input.routeEdges.length, 2222);
 });
 
 test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만 결속한다", async (t) => {

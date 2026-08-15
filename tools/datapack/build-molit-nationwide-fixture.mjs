@@ -130,7 +130,10 @@ async function main() {
   const retiredLines = retiredLineIds(JSON.parse(retiredPolicyBytes).inactiveLineExclusions);
   const rows = parseCsv(csv).map(rowFromCsv).filter(Boolean)
     .filter((row) => !retiredLines.has(lineIdFor(row.regionName, row.lineName)));
-  const svgRows = parseCsv(svgCsv).map(svgRowFromCsv).filter(Boolean);
+  const svgRows = filterRetiredSvgProviderRows(
+    parseCsv(svgCsv).map(svgRowFromCsv).filter(Boolean),
+    retiredLines,
+  );
   const kricCodeCatalog = JSON.parse(kricCodeCatalogBytes.toString("utf8"));
   validateKricProviderCodeCatalogIdentity(kricCodeCatalog);
   sourceShaById.set(kricCodeCatalog.sourceId, kricCodeCatalog.sourceSha256);
@@ -1157,6 +1160,14 @@ export function validateMolitProviderIdentities(svgRows, providerLineScopes) {
       throw new Error(`MOLIT/KRIC provider code mismatch: ${key}`);
     }
   }
+}
+
+export function filterRetiredSvgProviderRows(svgRows, retiredLines) {
+  return svgRows.filter((row) => {
+    if (!row.providerIdentity) return true;
+    const regionName = regionNameForProviderCode(row.providerIdentity.mreaWideCd);
+    return !retiredLines.has(lineIdFor(regionName, normalizeMolitProviderLineName(row.lineName)));
+  });
 }
 
 function providerRegionCode(regionId) {
