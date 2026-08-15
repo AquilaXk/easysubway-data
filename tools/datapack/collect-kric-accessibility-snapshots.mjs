@@ -750,6 +750,7 @@ async function requestRows({ operation, tuple, serviceKey, fetchImpl, requestTim
   } else if (resultCode === "03") {
     return {
       providerResultCode: "03",
+      rows: [],
       rawResponseSha256,
       rawResponse: {
         railOprIsttCd: tuple.railOprIsttCd,

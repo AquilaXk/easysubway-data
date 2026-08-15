@@ -11,6 +11,7 @@ import {
   buildKricAccessibilityRoster,
   collectKricStandardAccessibilityObservation,
   collectKricAccessibilitySnapshots,
+  collectKricAccessibilityProviderTupleEvidence,
   KRIC_ACCESSIBILITY_OPERATIONS,
   KRIC_APPROVED_ACCESSIBILITY_OPERATIONS,
   loadCanonicalStationLinesFromBundledIndex,
@@ -505,6 +506,22 @@ test("provider 03은 전체 safe tuple을 모은 뒤 fail closed한다", async (
     message: "KRIC accessibility provider gaps: count=2; tuples=kric-station-elevator/S1/1/101/03,kric-station-elevator/S1/2/202/03",
   });
   assert.equal(calls, 2);
+});
+
+test("provider tuple probe는 resultCode 03에서 controlled empty response로 실패한다", async () => {
+  await assert.rejects(() => collectKricAccessibilityProviderTupleEvidence({
+    tuples: [{ ...roster[0], stationName: "테스트역" }],
+    operations: [operation],
+    serviceKey: "key",
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ header: { resultCode: "03" } }),
+    }),
+  }), {
+    name: "Error",
+    message: "KRIC provider tuple probe empty response: kric-station-elevator/S1/2/202",
+  });
 });
 
 test("standard observation은 exact S1/2/234-4의 단일 03을 raw와 함께 terminal mixed snapshot으로 보존한다", async () => {
