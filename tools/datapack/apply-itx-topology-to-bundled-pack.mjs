@@ -821,6 +821,10 @@ export function projectItxTopologyIntoCanonicalFixture(fixture, topology) {
   const retained = pack.networkEdges.filter(({ serviceClass }) => serviceClass !== "ITX_CHEONGCHUN");
   pack.networkEdges = [...retained, ...projected]
     .sort((left, right) => codepointCompare(left.id, right.id));
+  if (pack.minimumTableRows && typeof pack.minimumTableRows === "object"
+    && Object.hasOwn(pack.minimumTableRows, "network_edges")) {
+    pack.minimumTableRows.network_edges = pack.networkEdges.length;
+  }
   return { edgeCount: projected.length, topologySha256: topology.sha256 };
 }
 
