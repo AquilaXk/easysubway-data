@@ -1,122 +1,3452 @@
 {
   "schemaVersion": 1,
   "artifactKind": "strict-route-regression-report",
-  "issue": 1996,
+  "issue": 309,
   "productionScopeId": "capital_pilot_android_v1",
   "generatedBy": {
-    "fixtureBuilder": "tools/datapack/build-molit-nationwide-fixture.mjs",
+    "fixtureBuilder": "tools/datapack/activate-current-source-set.mjs",
     "auditor": "tools/route-map/audit-route-map.mjs",
     "reviewedAmbiguities": "tools/route-map/fixtures/reviewed-ambiguities.json",
     "failOn": [
       "BLOCKER",
       "HIGH"
     ],
-    "builderGitSha": "4fc68131b397c0468d68728683bb6c79b7a42a39",
-    "generatedAtUtc": "2026-07-12T01:00:00Z"
+    "builderGitSha": "7a31ecc8d599c1be248bd950882a5eb3aa812c60",
+    "generatedAtUtc": "2026-08-15T06:47:25.000Z"
   },
-  "accessibilityGateNote": "#1996 게이트 재설계는 route-map 좌표 감사를 바꾸지 않는다(전국 5권역 nationwide fixture 기준, 좌표·라벨 폴리곤 findings 불변). 사당·상록수 4호선 접근성 상태 검증(UNDER_MAINTENANCE/NO_OFFICIAL_FEED)은 capital 게시 게이트(validate-datapack --require-production)에서 exit 0로 통과하며 strict route 보장(AVAILABLE 전용)은 불변이다.",
-  "regionScope": "전국 5권역(수도권·부산권·대구권·광주권·대전권)",
   "auditExitCode": 0,
   "summary": {
     "packCount": 1,
     "findingsBySeverity": {
       "BLOCKER": 0,
       "HIGH": 0,
-      "MEDIUM": 0,
+      "MEDIUM": 374,
       "LOW": 0,
-      "INFO": 7
+      "INFO": 1
     }
   },
   "regions": [
     {
       "region": "광주권",
       "stationLineCount": 20,
-      "coverageRatio": 1
+      "routeMapPositionCount": 20,
+      "coveredStationLineCount": 20,
+      "coverageRatio": 1,
+      "labelPolygonCount": 20,
+      "labelPolygonCoverageRatio": 1
     },
     {
       "region": "대구권",
-      "stationLineCount": 101,
-      "coverageRatio": 1
+      "stationLineCount": 102,
+      "routeMapPositionCount": 102,
+      "coveredStationLineCount": 102,
+      "coverageRatio": 1,
+      "labelPolygonCount": 102,
+      "labelPolygonCoverageRatio": 1
     },
     {
       "region": "대전권",
       "stationLineCount": 22,
-      "coverageRatio": 1
+      "routeMapPositionCount": 22,
+      "coveredStationLineCount": 22,
+      "coverageRatio": 1,
+      "labelPolygonCount": 22,
+      "labelPolygonCoverageRatio": 1
     },
     {
       "region": "부산권",
       "stationLineCount": 158,
-      "coverageRatio": 1
+      "routeMapPositionCount": 158,
+      "coveredStationLineCount": 158,
+      "coverageRatio": 1,
+      "labelPolygonCount": 158,
+      "labelPolygonCoverageRatio": 1
     },
     {
       "region": "수도권",
-      "stationLineCount": 802,
-      "coverageRatio": 1
+      "stationLineCount": 800,
+      "routeMapPositionCount": 800,
+      "coveredStationLineCount": 800,
+      "coverageRatio": 1,
+      "labelPolygonCount": 800,
+      "labelPolygonCoverageRatio": 1
     }
   ],
   "findings": [
     {
-      "severity": "INFO",
-      "code": "MISSING_ROUTE_MAP_LABEL_POLYGON",
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
       "packId": "capital",
       "region": "수도권",
-      "lineId": "",
-      "stationId": "",
-      "message": "802 station-line routeMapPositions across 25 lines do not include labelPolygon metadata."
+      "lineId": "line-051552e50435",
+      "stationId": "station-1f38f0831cb1",
+      "message": "labelPolygon center tap is ambiguous with station-1f38f0831cb1:line-5500c1600f71, station-1f38f0831cb1:line-80fc4d5350d4."
     },
     {
-      "severity": "INFO",
-      "code": "MISSING_ROUTE_MAP_LABEL_POLYGON",
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-051552e50435",
+      "stationId": "station-28be6a80c00e",
+      "message": "labelPolygon center tap is ambiguous with station-28be6a80c00e:line-15b3b8a93259."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-051552e50435",
+      "stationId": "station-2dc117218440",
+      "message": "labelPolygon center tap is ambiguous with station-2dc117218440:line-6e39be0cb6e2."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-051552e50435",
+      "stationId": "station-4c410bdd35be",
+      "message": "labelPolygon center tap is ambiguous with station-4c410bdd35be:line-558d0bd8312d, station-4c410bdd35be:seoul-4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-051552e50435",
+      "stationId": "station-591ee9cf8d18",
+      "message": "labelPolygon center tap is ambiguous with station-591ee9cf8d18:line-6e39be0cb6e2."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-051552e50435",
+      "stationId": "station-80233390722b",
+      "message": "labelPolygon center tap is ambiguous with station-80233390722b:line-6e39be0cb6e2."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-051552e50435",
+      "stationId": "station-a935653a9a38",
+      "message": "labelPolygon center tap is ambiguous with station-a935653a9a38:line-6e39be0cb6e2."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-051552e50435",
+      "stationId": "station-f502f9dba76c",
+      "message": "labelPolygon center tap is ambiguous with station-f502f9dba76c:line-6e39be0cb6e2."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
       "packId": "capital",
       "region": "대구권",
-      "lineId": "",
-      "stationId": "",
-      "message": "101 station-line routeMapPositions across 4 lines do not include labelPolygon metadata."
+      "lineId": "line-0ffaa95b1b5d",
+      "stationId": "station-3de9d5097085",
+      "message": "labelPolygon center tap is ambiguous with station-3de9d5097085:line-e2938a4cc492."
     },
     {
-      "severity": "INFO",
-      "code": "MISSING_ROUTE_MAP_LABEL_POLYGON",
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
       "packId": "capital",
-      "region": "대전권",
-      "lineId": "",
-      "stationId": "",
-      "message": "22 station-line routeMapPositions across 1 lines do not include labelPolygon metadata."
+      "region": "수도권",
+      "lineId": "line-15b3b8a93259",
+      "stationId": "station-18a5f1c674d8",
+      "message": "labelPolygon center tap is ambiguous with station-18a5f1c674d8:line-f0e747248a31."
     },
     {
-      "severity": "INFO",
-      "code": "MISSING_ROUTE_MAP_LABEL_POLYGON",
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
       "packId": "capital",
-      "region": "부산권",
-      "lineId": "",
-      "stationId": "",
-      "message": "158 station-line routeMapPositions across 6 lines do not include labelPolygon metadata."
+      "region": "수도권",
+      "lineId": "line-15b3b8a93259",
+      "stationId": "station-28be6a80c00e",
+      "message": "labelPolygon center tap is ambiguous with station-28be6a80c00e:line-051552e50435."
     },
     {
-      "severity": "INFO",
-      "code": "MISSING_ROUTE_MAP_LABEL_POLYGON",
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
       "packId": "capital",
-      "region": "광주권",
-      "lineId": "",
-      "stationId": "",
-      "message": "20 station-line routeMapPositions across 1 lines do not include labelPolygon metadata."
+      "region": "수도권",
+      "lineId": "line-15b3b8a93259",
+      "stationId": "station-4a2c2985d3b7",
+      "message": "labelPolygon center tap is ambiguous with station-4a2c2985d3b7:shinbundang."
     },
     {
-      "severity": "INFO",
-      "code": "REVIEWED_AMBIGUITY",
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-15b3b8a93259",
+      "stationId": "station-4fa9930bc5aa",
+      "message": "labelPolygon center tap is ambiguous with station-4fa9930bc5aa:line-472a81add377."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-15b3b8a93259",
+      "stationId": "station-57db2f1fb4f6",
+      "message": "labelPolygon center tap is ambiguous with station-57db2f1fb4f6:line-42b5805f3b5a."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-2b2d9eaa53d0",
+      "stationId": "station-78dbf4599e90",
+      "message": "labelPolygon center tap is ambiguous with station-78dbf4599e90:line-558d0bd8312d."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-2b2d9eaa53d0",
+      "stationId": "station-79a1cc0b6193",
+      "message": "labelPolygon center tap is ambiguous with station-79a1cc0b6193:seoul-2."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-30886152e4f8",
+      "stationId": "station-d490bb686722",
+      "message": "labelPolygon center tap is ambiguous with station-d490bb686722:seoul-4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-30886152e4f8",
+      "stationId": "station-sinseoldong",
+      "message": "labelPolygon center tap is ambiguous with station-sinseoldong:seoul-2."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-3f41718e0833",
+      "stationId": "station-239460025840",
+      "message": "labelPolygon center tap is ambiguous with station-239460025840:line-6e39be0cb6e2, station-239460025840:line-e9e9a5b520a4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-3f41718e0833",
+      "stationId": "station-e96a496bcd9f",
+      "message": "labelPolygon center tap is ambiguous with station-e96a496bcd9f:line-41a8c75ec9d8."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-41a8c75ec9d8",
+      "stationId": "station-11b135e75c83",
+      "message": "labelPolygon center tap is ambiguous with station-11b135e75c83:line-8604048b6430."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-41a8c75ec9d8",
+      "stationId": "station-1c24eb757f3c",
+      "message": "labelPolygon center tap is ambiguous with station-1c24eb757f3c:line-80fc4d5350d4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-41a8c75ec9d8",
+      "stationId": "station-32b6747795b6",
+      "message": "labelPolygon center tap is ambiguous with station-32b6747795b6:seoul-4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-41a8c75ec9d8",
+      "stationId": "station-33476e92e4e7",
+      "message": "labelPolygon center tap is ambiguous with station-33476e92e4e7:line-8604048b6430."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-41a8c75ec9d8",
+      "stationId": "station-344599f1b801",
+      "message": "labelPolygon center tap is ambiguous with station-344599f1b801:seoul-2."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-41a8c75ec9d8",
+      "stationId": "station-a935653a9a38",
+      "message": "labelPolygon center tap is ambiguous with station-a935653a9a38:line-8604048b6430."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-41a8c75ec9d8",
+      "stationId": "station-b3d6bc90c2fa",
+      "message": "labelPolygon center tap is ambiguous with station-b3d6bc90c2fa:line-558d0bd8312d."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-41a8c75ec9d8",
+      "stationId": "station-d36bf076a6e4",
+      "message": "labelPolygon center tap is ambiguous with station-d36bf076a6e4:shinbundang."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-41a8c75ec9d8",
+      "stationId": "station-e96a496bcd9f",
+      "message": "labelPolygon center tap is ambiguous with station-e96a496bcd9f:line-3f41718e0833."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
       "packId": "capital",
       "region": "수도권",
       "lineId": "line-42b5805f3b5a",
-      "stationId": "station-423d71b94cdc,station-be0bc5f41d9b",
-      "message": "Reviewed duplicate source coordinate: 인천2호선 인천시청/석천사거리 source 좌표가 공식 사이버스테이션 추출에서 동일하게 제공되는 현 상태를 후속 수동 보정 대상으로 분리 (2026-06-26T00:00:00.000Z, QA, https://github.com/AquilaXk/easysubway/issues/836)."
+      "stationId": "station-12984a8c7a35",
+      "message": "labelPolygon center tap is ambiguous with station-12984a8c7a35:line-e9e9a5b520a4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-42b5805f3b5a",
+      "stationId": "station-57db2f1fb4f6",
+      "message": "labelPolygon center tap is ambiguous with station-57db2f1fb4f6:line-15b3b8a93259."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-42b5805f3b5a",
+      "stationId": "station-aba7d8fea4fd",
+      "message": "labelPolygon center tap is ambiguous with station-aba7d8fea4fd:line-472a81add377."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-2899a45a9ebe",
+      "message": "labelPolygon center tap is ambiguous with station-13bca5055e72:line-42b5805f3b5a."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-28e5946b8e67",
+      "message": "labelPolygon center tap is ambiguous with station-28e5946b8e67:line-54a7b980b7c3, station-28e5946b8e67:line-6e39be0cb6e2."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-2af75c3d707b",
+      "message": "labelPolygon center tap is ambiguous with station-2af75c3d707b:line-8604048b6430, station-2af75c3d707b:line-e9e9a5b520a4, station-2af75c3d707b:seoul-4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-3abacea8104e",
+      "message": "labelPolygon center tap is ambiguous with station-3abacea8104e:line-f0e747248a31."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-4fa9930bc5aa",
+      "message": "labelPolygon center tap is ambiguous with station-4fa9930bc5aa:line-15b3b8a93259."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-5565cfc07e93",
+      "message": "labelPolygon center tap is ambiguous with station-5565cfc07e93:seoul-4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-86fdc698524b",
+      "message": "labelPolygon center tap is ambiguous with station-86fdc698524b:line-558d0bd8312d."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-a95a856ea633",
+      "message": "labelPolygon center tap is ambiguous with station-a95a856ea633:seoul-4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-aba7d8fea4fd",
+      "message": "labelPolygon center tap is ambiguous with station-aba7d8fea4fd:line-42b5805f3b5a."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-b819702fa7d9",
+      "message": "labelPolygon center tap is ambiguous with station-b819702fa7d9:line-54a7b980b7c3, station-b819702fa7d9:line-558d0bd8312d, station-b819702fa7d9:line-6e39be0cb6e2."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-54a7b980b7c3",
+      "stationId": "station-28e5946b8e67",
+      "message": "labelPolygon center tap is ambiguous with station-28e5946b8e67:line-472a81add377, station-28e5946b8e67:line-6e39be0cb6e2."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-54a7b980b7c3",
+      "stationId": "station-83bcb1eae340",
+      "message": "labelPolygon center tap is ambiguous with station-83bcb1eae340:line-6e39be0cb6e2."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-54a7b980b7c3",
+      "stationId": "station-b819702fa7d9",
+      "message": "labelPolygon center tap is ambiguous with station-b819702fa7d9:line-472a81add377, station-b819702fa7d9:line-558d0bd8312d, station-b819702fa7d9:line-6e39be0cb6e2."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-54a7b980b7c3",
+      "stationId": "station-edf782c1647a",
+      "message": "labelPolygon center tap is ambiguous with station-edf782c1647a:line-6e39be0cb6e2."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-5500c1600f71",
+      "stationId": "station-1f38f0831cb1",
+      "message": "labelPolygon center tap is ambiguous with station-1f38f0831cb1:line-051552e50435, station-1f38f0831cb1:line-80fc4d5350d4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-021157f2f07e",
+      "message": "labelPolygon center tap is ambiguous with station-021157f2f07e:seoul-4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-237d697179f3",
+      "message": "labelPolygon center tap is ambiguous with station-237d697179f3:seoul-4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-47b514f305d8",
+      "message": "labelPolygon center tap is ambiguous with station-47b514f305d8:seoul-4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-4c410bdd35be",
+      "message": "labelPolygon center tap is ambiguous with station-4c410bdd35be:line-051552e50435, station-4c410bdd35be:seoul-4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-5c711e1beea4",
+      "message": "labelPolygon center tap is ambiguous with station-5c711e1beea4:seoul-4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-6144b1b933c6",
+      "message": "labelPolygon center tap is ambiguous with station-6144b1b933c6:seoul-4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-62830a2b0d00",
+      "message": "labelPolygon center tap is ambiguous with station-62830a2b0d00:seoul-4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-78dbf4599e90",
+      "message": "labelPolygon center tap is ambiguous with station-78dbf4599e90:line-2b2d9eaa53d0."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-810f79bc1737",
+      "message": "labelPolygon center tap is ambiguous with station-810f79bc1737:shinbundang."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-86fdc698524b",
+      "message": "labelPolygon center tap is ambiguous with station-86fdc698524b:line-472a81add377."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-a2965d7b56d7",
+      "message": "labelPolygon center tap is ambiguous with station-a2965d7b56d7:seoul-4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-b3d6bc90c2fa",
+      "message": "labelPolygon center tap is ambiguous with station-b3d6bc90c2fa:line-41a8c75ec9d8."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-b819702fa7d9",
+      "message": "labelPolygon center tap is ambiguous with station-b819702fa7d9:line-472a81add377, station-b819702fa7d9:line-54a7b980b7c3, station-b819702fa7d9:line-6e39be0cb6e2."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-ea48bd3f46f2",
+      "message": "labelPolygon center tap is ambiguous with station-ea48bd3f46f2:line-e4939a4b4713."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-jeongja",
+      "message": "labelPolygon center tap is ambiguous with station-jeongja:shinbundang."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-6e39be0cb6e2",
+      "stationId": "station-0f50a307ac33",
+      "message": "labelPolygon center tap is ambiguous with station-0f50a307ac33:line-e9e9a5b520a4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-6e39be0cb6e2",
+      "stationId": "station-239460025840",
+      "message": "labelPolygon center tap is ambiguous with station-239460025840:line-3f41718e0833, station-239460025840:line-e9e9a5b520a4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-6e39be0cb6e2",
+      "stationId": "station-28e5946b8e67",
+      "message": "labelPolygon center tap is ambiguous with station-28e5946b8e67:line-472a81add377, station-28e5946b8e67:line-54a7b980b7c3."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-6e39be0cb6e2",
+      "stationId": "station-2dc117218440",
+      "message": "labelPolygon center tap is ambiguous with station-2dc117218440:line-051552e50435."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-6e39be0cb6e2",
+      "stationId": "station-591ee9cf8d18",
+      "message": "labelPolygon center tap is ambiguous with station-591ee9cf8d18:line-051552e50435."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-6e39be0cb6e2",
+      "stationId": "station-80233390722b",
+      "message": "labelPolygon center tap is ambiguous with station-80233390722b:line-051552e50435."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-6e39be0cb6e2",
+      "stationId": "station-83bcb1eae340",
+      "message": "labelPolygon center tap is ambiguous with station-83bcb1eae340:line-54a7b980b7c3."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-6e39be0cb6e2",
+      "stationId": "station-a935653a9a38",
+      "message": "labelPolygon center tap is ambiguous with station-a935653a9a38:line-051552e50435."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-6e39be0cb6e2",
+      "stationId": "station-b819702fa7d9",
+      "message": "labelPolygon center tap is ambiguous with station-b819702fa7d9:line-472a81add377, station-b819702fa7d9:line-54a7b980b7c3, station-b819702fa7d9:line-558d0bd8312d."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-6e39be0cb6e2",
+      "stationId": "station-e5cf592cf355",
+      "message": "labelPolygon center tap is ambiguous with station-e5cf592cf355:line-80fc4d5350d4, station-e5cf592cf355:seoul-2."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-6e39be0cb6e2",
+      "stationId": "station-edf782c1647a",
+      "message": "labelPolygon center tap is ambiguous with station-edf782c1647a:line-54a7b980b7c3."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-6e39be0cb6e2",
+      "stationId": "station-f502f9dba76c",
+      "message": "labelPolygon center tap is ambiguous with station-f502f9dba76c:line-051552e50435."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-6e39be0cb6e2",
+      "stationId": "station-f6474f3aa572",
+      "message": "labelPolygon center tap is ambiguous with station-f6474f3aa572:line-e9e9a5b520a4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-80fc4d5350d4",
+      "stationId": "station-1c24eb757f3c",
+      "message": "labelPolygon center tap is ambiguous with station-1c24eb757f3c:line-41a8c75ec9d8."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-80fc4d5350d4",
+      "stationId": "station-1f38f0831cb1",
+      "message": "labelPolygon center tap is ambiguous with station-1f38f0831cb1:line-051552e50435, station-1f38f0831cb1:line-5500c1600f71."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-80fc4d5350d4",
+      "stationId": "station-3ca689c9f4ab",
+      "message": "labelPolygon center tap is ambiguous with station-3ca689c9f4ab:seoul-2."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-80fc4d5350d4",
+      "stationId": "station-b1f32d3f7d4d",
+      "message": "labelPolygon center tap is ambiguous with station-b1f32d3f7d4d:seoul-2."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-80fc4d5350d4",
+      "stationId": "station-b2cbb36a5868",
+      "message": "labelPolygon center tap is ambiguous with station-b2cbb36a5868:line-f0e747248a31."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-80fc4d5350d4",
+      "stationId": "station-b35616704ce3",
+      "message": "labelPolygon center tap is ambiguous with station-b35616704ce3:seoul-2."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-80fc4d5350d4",
+      "stationId": "station-d38e269a314f",
+      "message": "labelPolygon center tap is ambiguous with station-d38e269a314f:line-f0e747248a31."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-80fc4d5350d4",
+      "stationId": "station-e5cf592cf355",
+      "message": "labelPolygon center tap is ambiguous with station-e5cf592cf355:line-6e39be0cb6e2, station-e5cf592cf355:seoul-2."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-8604048b6430",
+      "stationId": "station-11b135e75c83",
+      "message": "labelPolygon center tap is ambiguous with station-11b135e75c83:line-41a8c75ec9d8."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-8604048b6430",
+      "stationId": "station-2af75c3d707b",
+      "message": "labelPolygon center tap is ambiguous with station-2af75c3d707b:line-472a81add377, station-2af75c3d707b:line-e9e9a5b520a4, station-2af75c3d707b:seoul-4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-8604048b6430",
+      "stationId": "station-33476e92e4e7",
+      "message": "labelPolygon center tap is ambiguous with station-33476e92e4e7:line-41a8c75ec9d8."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-8604048b6430",
+      "stationId": "station-a935653a9a38",
+      "message": "labelPolygon center tap is ambiguous with station-a935653a9a38:line-41a8c75ec9d8."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-aefa08ccc0a9",
+      "stationId": "station-c98162ac99c4",
+      "message": "labelPolygon center tap is ambiguous with station-c98162ac99c4:line-f0e747248a31."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "부산권",
+      "lineId": "line-d74614a04530",
+      "stationId": "station-3b042820c466",
+      "message": "labelPolygon center tap is ambiguous with station-3b042820c466:line-d812a5bc1e5f."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "부산권",
+      "lineId": "line-d74614a04530",
+      "stationId": "station-623ba7995f56",
+      "message": "labelPolygon center tap is ambiguous with station-623ba7995f56:line-f52eb59d8497."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "부산권",
+      "lineId": "line-d74614a04530",
+      "stationId": "station-e0daeeda6b37",
+      "message": "labelPolygon center tap is ambiguous with station-e0daeeda6b37:line-e4cce88f0d7f."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "부산권",
+      "lineId": "line-d812a5bc1e5f",
+      "stationId": "station-3b042820c466",
+      "message": "labelPolygon center tap is ambiguous with station-3b042820c466:line-d74614a04530."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "대구권",
+      "lineId": "line-e2938a4cc492",
+      "stationId": "station-3de9d5097085",
+      "message": "labelPolygon center tap is ambiguous with station-3de9d5097085:line-0ffaa95b1b5d."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-e4939a4b4713",
+      "stationId": "station-ea48bd3f46f2",
+      "message": "labelPolygon center tap is ambiguous with station-ea48bd3f46f2:line-558d0bd8312d."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "부산권",
+      "lineId": "line-e4cce88f0d7f",
+      "stationId": "station-e0daeeda6b37",
+      "message": "labelPolygon center tap is ambiguous with station-e0daeeda6b37:line-d74614a04530."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-e9e9a5b520a4",
+      "stationId": "station-0f50a307ac33",
+      "message": "labelPolygon center tap is ambiguous with station-0f50a307ac33:line-6e39be0cb6e2."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-e9e9a5b520a4",
+      "stationId": "station-12984a8c7a35",
+      "message": "labelPolygon center tap is ambiguous with station-12984a8c7a35:line-42b5805f3b5a."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-e9e9a5b520a4",
+      "stationId": "station-1f38f0831cb1",
+      "message": "labelPolygon center tap is ambiguous with station-1f38f0831cb1:line-f0e747248a31."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-e9e9a5b520a4",
+      "stationId": "station-239460025840",
+      "message": "labelPolygon center tap is ambiguous with station-239460025840:line-3f41718e0833, station-239460025840:line-6e39be0cb6e2."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-e9e9a5b520a4",
+      "stationId": "station-2af75c3d707b",
+      "message": "labelPolygon center tap is ambiguous with station-2af75c3d707b:line-472a81add377, station-2af75c3d707b:line-8604048b6430, station-2af75c3d707b:seoul-4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-e9e9a5b520a4",
+      "stationId": "station-db4c1121869d",
+      "message": "labelPolygon center tap is ambiguous with station-db4c1121869d:line-f0e747248a31."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-e9e9a5b520a4",
+      "stationId": "station-f6474f3aa572",
+      "message": "labelPolygon center tap is ambiguous with station-f6474f3aa572:line-6e39be0cb6e2."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "부산권",
+      "lineId": "line-eb7b47920390",
+      "stationId": "station-080c154ce646",
+      "message": "labelPolygon center tap is ambiguous with station-61f6dbfb5d4b:line-eb7b47920390."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "부산권",
+      "lineId": "line-eb7b47920390",
+      "stationId": "station-61f6dbfb5d4b",
+      "message": "labelPolygon center tap is ambiguous with station-080c154ce646:line-eb7b47920390."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-f0e747248a31",
+      "stationId": "station-18a5f1c674d8",
+      "message": "labelPolygon center tap is ambiguous with station-18a5f1c674d8:line-15b3b8a93259."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-f0e747248a31",
+      "stationId": "station-1f38f0831cb1",
+      "message": "labelPolygon center tap is ambiguous with station-1f38f0831cb1:line-e9e9a5b520a4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-f0e747248a31",
+      "stationId": "station-3abacea8104e",
+      "message": "labelPolygon center tap is ambiguous with station-3abacea8104e:line-472a81add377."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-f0e747248a31",
+      "stationId": "station-71c84bed93c8",
+      "message": "labelPolygon center tap is ambiguous with station-71c84bed93c8:seoul-2."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-f0e747248a31",
+      "stationId": "station-b2cbb36a5868",
+      "message": "labelPolygon center tap is ambiguous with station-b2cbb36a5868:line-80fc4d5350d4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-f0e747248a31",
+      "stationId": "station-c98162ac99c4",
+      "message": "labelPolygon center tap is ambiguous with station-c98162ac99c4:line-aefa08ccc0a9."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-f0e747248a31",
+      "stationId": "station-d38e269a314f",
+      "message": "labelPolygon center tap is ambiguous with station-d38e269a314f:line-80fc4d5350d4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-f0e747248a31",
+      "stationId": "station-db4c1121869d",
+      "message": "labelPolygon center tap is ambiguous with station-db4c1121869d:line-e9e9a5b520a4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "부산권",
+      "lineId": "line-f52eb59d8497",
+      "stationId": "station-623ba7995f56",
+      "message": "labelPolygon center tap is ambiguous with station-623ba7995f56:line-d74614a04530."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "seoul-2",
+      "stationId": "station-344599f1b801",
+      "message": "labelPolygon center tap is ambiguous with station-344599f1b801:line-41a8c75ec9d8."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "seoul-2",
+      "stationId": "station-3ca689c9f4ab",
+      "message": "labelPolygon center tap is ambiguous with station-3ca689c9f4ab:line-80fc4d5350d4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "seoul-2",
+      "stationId": "station-71c84bed93c8",
+      "message": "labelPolygon center tap is ambiguous with station-71c84bed93c8:line-f0e747248a31."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "seoul-2",
+      "stationId": "station-79a1cc0b6193",
+      "message": "labelPolygon center tap is ambiguous with station-79a1cc0b6193:line-2b2d9eaa53d0."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "seoul-2",
+      "stationId": "station-b1f32d3f7d4d",
+      "message": "labelPolygon center tap is ambiguous with station-b1f32d3f7d4d:line-80fc4d5350d4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "seoul-2",
+      "stationId": "station-b35616704ce3",
+      "message": "labelPolygon center tap is ambiguous with station-b35616704ce3:line-80fc4d5350d4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "seoul-2",
+      "stationId": "station-e5cf592cf355",
+      "message": "labelPolygon center tap is ambiguous with station-e5cf592cf355:line-6e39be0cb6e2, station-e5cf592cf355:line-80fc4d5350d4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "seoul-2",
+      "stationId": "station-sinseoldong",
+      "message": "labelPolygon center tap is ambiguous with station-sinseoldong:line-30886152e4f8."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "seoul-4",
+      "stationId": "station-021157f2f07e",
+      "message": "labelPolygon center tap is ambiguous with station-021157f2f07e:line-558d0bd8312d."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "seoul-4",
+      "stationId": "station-237d697179f3",
+      "message": "labelPolygon center tap is ambiguous with station-237d697179f3:line-558d0bd8312d."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "seoul-4",
+      "stationId": "station-2af75c3d707b",
+      "message": "labelPolygon center tap is ambiguous with station-2af75c3d707b:line-472a81add377, station-2af75c3d707b:line-8604048b6430, station-2af75c3d707b:line-e9e9a5b520a4."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "seoul-4",
+      "stationId": "station-32b6747795b6",
+      "message": "labelPolygon center tap is ambiguous with station-32b6747795b6:line-41a8c75ec9d8."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "seoul-4",
+      "stationId": "station-47b514f305d8",
+      "message": "labelPolygon center tap is ambiguous with station-47b514f305d8:line-558d0bd8312d."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "seoul-4",
+      "stationId": "station-4c410bdd35be",
+      "message": "labelPolygon center tap is ambiguous with station-4c410bdd35be:line-051552e50435, station-4c410bdd35be:line-558d0bd8312d."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "seoul-4",
+      "stationId": "station-5565cfc07e93",
+      "message": "labelPolygon center tap is ambiguous with station-5565cfc07e93:line-472a81add377."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "seoul-4",
+      "stationId": "station-5c711e1beea4",
+      "message": "labelPolygon center tap is ambiguous with station-5c711e1beea4:line-558d0bd8312d."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "seoul-4",
+      "stationId": "station-6144b1b933c6",
+      "message": "labelPolygon center tap is ambiguous with station-6144b1b933c6:line-558d0bd8312d."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "seoul-4",
+      "stationId": "station-62830a2b0d00",
+      "message": "labelPolygon center tap is ambiguous with station-62830a2b0d00:line-558d0bd8312d."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "seoul-4",
+      "stationId": "station-a2965d7b56d7",
+      "message": "labelPolygon center tap is ambiguous with station-a2965d7b56d7:line-558d0bd8312d."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "seoul-4",
+      "stationId": "station-a95a856ea633",
+      "message": "labelPolygon center tap is ambiguous with station-a95a856ea633:line-472a81add377."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "seoul-4",
+      "stationId": "station-d490bb686722",
+      "message": "labelPolygon center tap is ambiguous with station-d490bb686722:line-30886152e4f8."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "shinbundang",
+      "stationId": "station-4a2c2985d3b7",
+      "message": "labelPolygon center tap is ambiguous with station-4a2c2985d3b7:line-15b3b8a93259."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "shinbundang",
+      "stationId": "station-810f79bc1737",
+      "message": "labelPolygon center tap is ambiguous with station-810f79bc1737:line-558d0bd8312d."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "shinbundang",
+      "stationId": "station-d36bf076a6e4",
+      "message": "labelPolygon center tap is ambiguous with station-d36bf076a6e4:line-41a8c75ec9d8."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "shinbundang",
+      "stationId": "station-jeongja",
+      "message": "labelPolygon center tap is ambiguous with station-jeongja:line-558d0bd8312d."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-051552e50435",
+      "stationId": "station-0b1a164dd6d5,station-0b1a164dd6d5",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-051552e50435",
+      "stationId": "station-1f38f0831cb1,station-1f38f0831cb1",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-051552e50435",
+      "stationId": "station-1f38f0831cb1,station-1f38f0831cb1",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-051552e50435",
+      "stationId": "station-1f38f0831cb1,station-1f38f0831cb1",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-051552e50435",
+      "stationId": "station-1f38f0831cb1,station-1f38f0831cb1",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-051552e50435",
+      "stationId": "station-28be6a80c00e,station-28be6a80c00e",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-051552e50435",
+      "stationId": "station-2dc117218440,station-2dc117218440",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-051552e50435",
+      "stationId": "station-4c410bdd35be,station-4c410bdd35be",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-051552e50435",
+      "stationId": "station-4c410bdd35be,station-4c410bdd35be",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-051552e50435",
+      "stationId": "station-591ee9cf8d18,station-591ee9cf8d18",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-051552e50435",
+      "stationId": "station-80233390722b,station-80233390722b",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-051552e50435",
+      "stationId": "station-94b303f8302e,station-94b303f8302e",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-051552e50435",
+      "stationId": "station-94b303f8302e,station-f3a02fd2ba53",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-051552e50435",
+      "stationId": "station-a935653a9a38,station-a935653a9a38",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-051552e50435",
+      "stationId": "station-a935653a9a38,station-a935653a9a38",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-051552e50435",
+      "stationId": "station-a935653a9a38,station-a935653a9a38",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-051552e50435",
+      "stationId": "station-f502f9dba76c,station-f502f9dba76c",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "대구권",
+      "lineId": "line-0ffaa95b1b5d",
+      "stationId": "station-3de9d5097085,station-3de9d5097085",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "대구권",
+      "lineId": "line-0ffaa95b1b5d",
+      "stationId": "station-a94cb65fc5ee,station-a94cb65fc5ee",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-15b3b8a93259",
+      "stationId": "station-0fe1a97dd89c,station-0fe1a97dd89c",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-15b3b8a93259",
+      "stationId": "station-18a5f1c674d8,station-18a5f1c674d8",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-15b3b8a93259",
+      "stationId": "station-18a5f1c674d8,station-18a5f1c674d8",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-15b3b8a93259",
+      "stationId": "station-18a5f1c674d8,station-3ec4583f2db5",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-15b3b8a93259",
+      "stationId": "station-239ba3bb73a6,station-239ba3bb73a6",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-15b3b8a93259",
+      "stationId": "station-2a2d0080fa4a,station-2a2d0080fa4a",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-15b3b8a93259",
+      "stationId": "station-4a2c2985d3b7,station-4a2c2985d3b7",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-15b3b8a93259",
+      "stationId": "station-4fa9930bc5aa,station-4fa9930bc5aa",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-15b3b8a93259",
+      "stationId": "station-57db2f1fb4f6,station-57db2f1fb4f6",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-15b3b8a93259",
+      "stationId": "station-662a880cfe7d,station-662a880cfe7d",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-15b3b8a93259",
+      "stationId": "station-6ca3b5e00e68,station-82ecbea93f37",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-15b3b8a93259",
+      "stationId": "station-83bcb1eae340,station-83bcb1eae340",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-15b3b8a93259",
+      "stationId": "station-83bcb1eae340,station-83bcb1eae340",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-15b3b8a93259",
+      "stationId": "station-8ca66fbf8f8b,station-8ca66fbf8f8b",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-15b3b8a93259",
+      "stationId": "station-a7c9205032ad,station-a7c9205032ad",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-15b3b8a93259",
+      "stationId": "station-b6c9b1f02168,station-b6c9b1f02168",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-15b3b8a93259",
+      "stationId": "station-ba1ae581ba54,station-ba1ae581ba54",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-15b3b8a93259",
+      "stationId": "station-db6cce397204,station-db6cce397204",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-15b3b8a93259",
+      "stationId": "station-db6cce397204,station-fb39deef75bd",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-15b3b8a93259",
+      "stationId": "station-e773d203ef9f,station-e773d203ef9f",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-15b3b8a93259",
+      "stationId": "station-e8106e98387a,station-e8106e98387a",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-2b2d9eaa53d0",
+      "stationId": "station-0da713fa586e,station-0da713fa586e",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-2b2d9eaa53d0",
+      "stationId": "station-17003d95f4f1,station-17003d95f4f1",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-2b2d9eaa53d0",
+      "stationId": "station-4846f4aca5c2,station-4846f4aca5c2",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-2b2d9eaa53d0",
+      "stationId": "station-6f6328bd8ba0,station-6f6328bd8ba0",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-2b2d9eaa53d0",
+      "stationId": "station-78dbf4599e90,station-78dbf4599e90",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-2b2d9eaa53d0",
+      "stationId": "station-79a1cc0b6193,station-79a1cc0b6193",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-2b2d9eaa53d0",
+      "stationId": "station-7b10e61aadea,station-7b10e61aadea",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-2b2d9eaa53d0",
+      "stationId": "station-cd832bcc1aba,station-cd832bcc1aba",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-30886152e4f8",
+      "stationId": "station-25705b9342f3,station-25705b9342f3",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-30886152e4f8",
+      "stationId": "station-3ad4357db746,station-b328d222aa6b",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-30886152e4f8",
+      "stationId": "station-76033dc7e872,station-de6fe37e2345",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-30886152e4f8",
+      "stationId": "station-832a0791f30e,station-b77401b617de",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-30886152e4f8",
+      "stationId": "station-b328d222aa6b,station-de6fe37e2345",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-30886152e4f8",
+      "stationId": "station-d490bb686722,station-d490bb686722",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-30886152e4f8",
+      "stationId": "station-sinseoldong,station-sinseoldong",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-30886152e4f8",
+      "stationId": "station-sinseoldong,station-sinseoldong",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-3f41718e0833",
+      "stationId": "station-198b6e06f06c,station-198b6e06f06c",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-3f41718e0833",
+      "stationId": "station-239460025840,station-239460025840",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-3f41718e0833",
+      "stationId": "station-239460025840,station-239460025840",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-3f41718e0833",
+      "stationId": "station-239460025840,station-239460025840",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-3f41718e0833",
+      "stationId": "station-319d94686a49,station-319d94686a49",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-3f41718e0833",
+      "stationId": "station-33476e92e4e7,station-33476e92e4e7",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-3f41718e0833",
+      "stationId": "station-33476e92e4e7,station-33476e92e4e7",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-3f41718e0833",
+      "stationId": "station-3d47f80ef181,station-3d47f80ef181",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-3f41718e0833",
+      "stationId": "station-63e60a85df8e,station-63e60a85df8e",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-3f41718e0833",
+      "stationId": "station-6b1b2ec1af31,station-6b1b2ec1af31",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-3f41718e0833",
+      "stationId": "station-8bd9b9aa311f,station-8bd9b9aa311f",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-3f41718e0833",
+      "stationId": "station-ab1814b092a9,station-ab1814b092a9",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-3f41718e0833",
+      "stationId": "station-b49a8c5ce5e5,station-b49a8c5ce5e5",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-3f41718e0833",
+      "stationId": "station-e43cb7fb4322,station-e43cb7fb4322",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-3f41718e0833",
+      "stationId": "station-e96a496bcd9f,station-e96a496bcd9f",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-3f41718e0833",
+      "stationId": "station-f6474f3aa572,station-f6474f3aa572",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-3f41718e0833",
+      "stationId": "station-f6474f3aa572,station-f6474f3aa572",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-41a8c75ec9d8",
+      "stationId": "station-11b135e75c83,station-11b135e75c83",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-41a8c75ec9d8",
+      "stationId": "station-11b135e75c83,station-11b135e75c83",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-41a8c75ec9d8",
+      "stationId": "station-18a5f1c674d8,station-18a5f1c674d8",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-41a8c75ec9d8",
+      "stationId": "station-18a5f1c674d8,station-3ec4583f2db5",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-41a8c75ec9d8",
+      "stationId": "station-1c24eb757f3c,station-1c24eb757f3c",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-41a8c75ec9d8",
+      "stationId": "station-1c24eb757f3c,station-1c24eb757f3c",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-41a8c75ec9d8",
+      "stationId": "station-32b6747795b6,station-32b6747795b6",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-41a8c75ec9d8",
+      "stationId": "station-33476e92e4e7,station-33476e92e4e7",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-41a8c75ec9d8",
+      "stationId": "station-344599f1b801,station-344599f1b801",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-41a8c75ec9d8",
+      "stationId": "station-344599f1b801,station-3769207d6eef",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-41a8c75ec9d8",
+      "stationId": "station-471b450ede82,station-471b450ede82",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-41a8c75ec9d8",
+      "stationId": "station-7dfc6ea6a83c,station-7dfc6ea6a83c",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-41a8c75ec9d8",
+      "stationId": "station-9707f89c740a,station-9707f89c740a",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-41a8c75ec9d8",
+      "stationId": "station-a935653a9a38,station-a935653a9a38",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-41a8c75ec9d8",
+      "stationId": "station-a935653a9a38,station-a935653a9a38",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-41a8c75ec9d8",
+      "stationId": "station-b3d6bc90c2fa,station-b3d6bc90c2fa",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-41a8c75ec9d8",
+      "stationId": "station-c0679b9a6cf8,station-c0679b9a6cf8",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-41a8c75ec9d8",
+      "stationId": "station-d36bf076a6e4,station-d36bf076a6e4",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-42b5805f3b5a",
+      "stationId": "station-12984a8c7a35,station-12984a8c7a35",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-42b5805f3b5a",
+      "stationId": "station-13bca5055e72,station-2899a45a9ebe",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-42b5805f3b5a",
+      "stationId": "station-423d71b94cdc,station-423d71b94cdc",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-42b5805f3b5a",
+      "stationId": "station-423d71b94cdc,station-8a4d8eb26107",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-42b5805f3b5a",
+      "stationId": "station-aba7d8fea4fd,station-aba7d8fea4fd",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-0dabe6716ac7,station-31d428fc4381",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-1c24eb757f3c,station-1c24eb757f3c",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-1cf13ec0de75,station-1cf13ec0de75",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-1cf13ec0de75,station-3da84617a6c6",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-1e9343d801ea,station-3eb92ae69e48",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-2005a7f81a41,station-2005a7f81a41",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-28e5946b8e67,station-28e5946b8e67",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-28e5946b8e67,station-28e5946b8e67",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-2af75c3d707b,station-2af75c3d707b",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-2af75c3d707b,station-2af75c3d707b",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-2af75c3d707b,station-2af75c3d707b",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-2af75c3d707b,station-2af75c3d707b",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-3abacea8104e,station-3abacea8104e",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-3eb92ae69e48,station-3eb92ae69e48",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-5565cfc07e93,station-5565cfc07e93",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-5e767000012b,station-5e767000012b",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-6a5e08288b46,station-6a5e08288b46",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-86fdc698524b,station-86fdc698524b",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-8aa315864466,station-8aa315864466",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-8ca66fbf8f8b,station-e6aedd094ca6",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-956facec872d,station-956facec872d",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-a2d54a5d63d2,station-a2d54a5d63d2",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-a95a856ea633,station-a95a856ea633",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-b42d22b753ca,station-b42d22b753ca",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-b819702fa7d9,station-b819702fa7d9",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-b819702fa7d9,station-b819702fa7d9",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-b819702fa7d9,station-b819702fa7d9",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-be476fd82950,station-be476fd82950",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-472a81add377",
+      "stationId": "station-sinseoldong,station-sinseoldong",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-54a7b980b7c3",
+      "stationId": "station-0ef4e01fa401,station-0ef4e01fa401",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-54a7b980b7c3",
+      "stationId": "station-28e5946b8e67,station-28e5946b8e67",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-54a7b980b7c3",
+      "stationId": "station-83bcb1eae340,station-83bcb1eae340",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-54a7b980b7c3",
+      "stationId": "station-b819702fa7d9,station-b819702fa7d9",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-54a7b980b7c3",
+      "stationId": "station-b819702fa7d9,station-b819702fa7d9",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-54a7b980b7c3",
+      "stationId": "station-edf782c1647a,station-edf782c1647a",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-5500c1600f71",
+      "stationId": "station-1f38f0831cb1,station-1f38f0831cb1",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-5500c1600f71",
+      "stationId": "station-1f38f0831cb1,station-1f38f0831cb1",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-5500c1600f71",
+      "stationId": "station-1f38f0831cb1,station-1f38f0831cb1",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-00089f8f97de,station-4fe5a2381ffe",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-021157f2f07e,station-021157f2f07e",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-0c2937ffe0e8,station-0c2937ffe0e8",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-0c2937ffe0e8,station-616ee3bf66cf",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-11b135e75c83,station-11b135e75c83",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-1c398a36808a,station-1c398a36808a",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-1c398a36808a,station-df7a2815b2d2",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-237d697179f3,station-237d697179f3",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-47b514f305d8,station-47b514f305d8",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-4c410bdd35be,station-4c410bdd35be",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-4fe5a2381ffe,station-4fe5a2381ffe",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-5c711e1beea4,station-5c711e1beea4",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-6144b1b933c6,station-6144b1b933c6",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-62830a2b0d00,station-62830a2b0d00",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-6d496d4ff1b6,station-6d496d4ff1b6",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-810f79bc1737,station-810f79bc1737",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-a2965d7b56d7,station-a2965d7b56d7",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-a99587157d2e,station-a99587157d2e",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-b819702fa7d9,station-b819702fa7d9",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-e5cf592cf355,station-e5cf592cf355",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-e5cf592cf355,station-e5cf592cf355",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-e5cf592cf355,station-e5cf592cf355",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-ea48bd3f46f2,station-ea48bd3f46f2",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-558d0bd8312d",
+      "stationId": "station-jeongja,station-jeongja",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "대구권",
+      "lineId": "line-5b8d9b05e7e6",
+      "stationId": "station-44dc03b65cae,station-44dc03b65cae",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "대구권",
+      "lineId": "line-5b8d9b05e7e6",
+      "stationId": "station-5b51eac5a29c,station-5b51eac5a29c",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "대구권",
+      "lineId": "line-5b8d9b05e7e6",
+      "stationId": "station-d5764b48d283,station-d5764b48d283",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-62096860ab09",
+      "stationId": "station-26a33ca517c1,station-2c0cffe8bea5",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-62096860ab09",
+      "stationId": "station-2c0cffe8bea5,station-b5f0619552cd",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-62096860ab09",
+      "stationId": "station-95dd211ccf50,station-b7b7f2b83b59",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-6e39be0cb6e2",
+      "stationId": "station-0f50a307ac33,station-0f50a307ac33",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-6e39be0cb6e2",
+      "stationId": "station-0f50a307ac33,station-0f50a307ac33",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-6e39be0cb6e2",
+      "stationId": "station-239460025840,station-239460025840",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-6e39be0cb6e2",
+      "stationId": "station-239460025840,station-239460025840",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-6e39be0cb6e2",
+      "stationId": "station-2af75c3d707b,station-2af75c3d707b",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-6e39be0cb6e2",
+      "stationId": "station-2af75c3d707b,station-2af75c3d707b",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-6e39be0cb6e2",
+      "stationId": "station-2af75c3d707b,station-2af75c3d707b",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-6e39be0cb6e2",
+      "stationId": "station-3117a2e7c7c5,station-f6474f3aa572",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-6e39be0cb6e2",
+      "stationId": "station-3117a2e7c7c5,station-f6474f3aa572",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-6e39be0cb6e2",
+      "stationId": "station-a935653a9a38,station-a935653a9a38",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-6e39be0cb6e2",
+      "stationId": "station-b90e3daa23a1,station-b90e3daa23a1",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-6e39be0cb6e2",
+      "stationId": "station-e5cf592cf355,station-e5cf592cf355",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-6e39be0cb6e2",
+      "stationId": "station-e5cf592cf355,station-e5cf592cf355",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-6e39be0cb6e2",
+      "stationId": "station-f6474f3aa572,station-f6474f3aa572",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-80fc4d5350d4",
+      "stationId": "station-1f38f0831cb1,station-1f38f0831cb1",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-80fc4d5350d4",
+      "stationId": "station-1f38f0831cb1,station-1f38f0831cb1",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-80fc4d5350d4",
+      "stationId": "station-239460025840,station-239460025840",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-80fc4d5350d4",
+      "stationId": "station-239460025840,station-63e60a85df8e",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-80fc4d5350d4",
+      "stationId": "station-31a568b41943,station-4b3fd398e5cc",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-80fc4d5350d4",
+      "stationId": "station-3ca689c9f4ab,station-3ca689c9f4ab",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-80fc4d5350d4",
+      "stationId": "station-b1f32d3f7d4d,station-b1f32d3f7d4d",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-80fc4d5350d4",
+      "stationId": "station-b1f32d3f7d4d,station-b1f32d3f7d4d",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-80fc4d5350d4",
+      "stationId": "station-b2cbb36a5868,station-b2cbb36a5868",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-80fc4d5350d4",
+      "stationId": "station-b35616704ce3,station-b35616704ce3",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-80fc4d5350d4",
+      "stationId": "station-cb86dcf14f2b,station-cb86dcf14f2b",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-80fc4d5350d4",
+      "stationId": "station-d0aceb7dd41f,station-d0aceb7dd41f",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-80fc4d5350d4",
+      "stationId": "station-d38e269a314f,station-d38e269a314f",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-80fc4d5350d4",
+      "stationId": "station-e5cf592cf355,station-e5cf592cf355",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-8604048b6430",
+      "stationId": "station-2af75c3d707b,station-2af75c3d707b",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-8604048b6430",
+      "stationId": "station-2af75c3d707b,station-2af75c3d707b",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-8604048b6430",
+      "stationId": "station-7d47928260ef,station-7d47928260ef",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-98718184f016",
+      "stationId": "station-1c398a36808a,station-df7a2815b2d2",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-98718184f016",
+      "stationId": "station-2671dacf496f,station-2671dacf496f",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-98718184f016",
+      "stationId": "station-dc474ca1fe74,station-f71737c17ce9",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-98718184f016",
+      "stationId": "station-dc9b41ca470c,station-f71737c17ce9",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "부산권",
+      "lineId": "line-ab1a041f6266",
+      "stationId": "station-0fb11e932dda,station-0fb11e932dda",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "부산권",
+      "lineId": "line-ab1a041f6266",
+      "stationId": "station-1fc7a7c971c8,station-1fc7a7c971c8",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "부산권",
+      "lineId": "line-ab1a041f6266",
+      "stationId": "station-803200d76012,station-803200d76012",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "부산권",
+      "lineId": "line-ab1a041f6266",
+      "stationId": "station-dbfe9e072d98,station-dbfe9e072d98",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-aefa08ccc0a9",
+      "stationId": "station-13a12c16a3c0,station-13a12c16a3c0",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-aefa08ccc0a9",
+      "stationId": "station-49a3c5577336,station-49f7436ac1a3",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-aefa08ccc0a9",
+      "stationId": "station-c98162ac99c4,station-c98162ac99c4",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-aefa08ccc0a9",
+      "stationId": "station-db6cce397204,station-fb39deef75bd",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "부산권",
+      "lineId": "line-d74614a04530",
+      "stationId": "station-3b042820c466,station-3b042820c466",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "부산권",
+      "lineId": "line-d74614a04530",
+      "stationId": "station-623ba7995f56,station-623ba7995f56",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "부산권",
+      "lineId": "line-d74614a04530",
+      "stationId": "station-85f3b04485c3,station-85f3b04485c3",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "부산권",
+      "lineId": "line-d74614a04530",
+      "stationId": "station-902ff39b9a39,station-902ff39b9a39",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "부산권",
+      "lineId": "line-d74614a04530",
+      "stationId": "station-e0daeeda6b37,station-e0daeeda6b37",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-e4939a4b4713",
+      "stationId": "station-5ba75cc204b9,station-5ba75cc204b9",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "부산권",
+      "lineId": "line-e4cce88f0d7f",
+      "stationId": "station-2d67389c6338,station-2d67389c6338",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-e9e9a5b520a4",
+      "stationId": "station-0f50a307ac33,station-0f50a307ac33",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-e9e9a5b520a4",
+      "stationId": "station-1f38f0831cb1,station-1f38f0831cb1",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-e9e9a5b520a4",
+      "stationId": "station-2af75c3d707b,station-2af75c3d707b",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-e9e9a5b520a4",
+      "stationId": "station-db4c1121869d,station-db4c1121869d",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "부산권",
+      "lineId": "line-eb7b47920390",
+      "stationId": "station-080c154ce646,station-61f6dbfb5d4b",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "부산권",
+      "lineId": "line-eb7b47920390",
+      "stationId": "station-fbcc387e1db9,station-fbcc387e1db9",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-f0e747248a31",
+      "stationId": "station-0c2937ffe0e8,station-616ee3bf66cf",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-f0e747248a31",
+      "stationId": "station-18a5f1c674d8,station-3ec4583f2db5",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-f0e747248a31",
+      "stationId": "station-616ee3bf66cf,station-80faee9a74b2",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-f0e747248a31",
+      "stationId": "station-71c84bed93c8,station-71c84bed93c8",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-f0e747248a31",
+      "stationId": "station-7ab006406857,station-7ab006406857",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-f0e747248a31",
+      "stationId": "station-83e71295d9e9,station-83e71295d9e9",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-f0e747248a31",
+      "stationId": "station-942ef1404a1e,station-f6e9e2a2c9e1",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-f0e747248a31",
+      "stationId": "station-e95f8616788c,station-e95f8616788c",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "seoul-2",
+      "stationId": "station-344599f1b801,station-3769207d6eef",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "seoul-2",
+      "stationId": "station-3769207d6eef,station-a2d54a5d63d2",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "seoul-2",
+      "stationId": "station-6d496d4ff1b6,station-b1185dd36f5d",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "seoul-2",
+      "stationId": "station-b1f32d3f7d4d,station-b1f32d3f7d4d",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "seoul-2",
+      "stationId": "station-gangnam,station-gangnam",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "seoul-2",
+      "stationId": "station-sadang,station-sadang",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "seoul-4",
+      "stationId": "station-493478141d7f,station-a5ca3701535e",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
+    },
+    {
+      "severity": "MEDIUM",
+      "code": "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "seoul-4",
+      "stationId": "station-56684b0f1770,station-c1a4e2fc5dc5",
+      "message": "routeMapPositions labelPolygon bounding boxes overlap."
     },
     {
       "severity": "INFO",
       "code": "REVIEWED_AMBIGUITY",
       "packId": "capital",
-      "region": "수도권",
-      "lineId": "line-cbe75f5287a1",
-      "stationId": "station-04529af2869a,station-bdd848e7e432",
-      "message": "Reviewed duplicate source coordinate: 수도권 자기부상 워터파크/용유 source 좌표가 공식 SVG선지도 추출에서 동일하게 제공되는 현 상태를 후속 수동 보정 대상으로 분리 (2026-06-26T00:00:00.000Z, QA, https://github.com/AquilaXk/easysubway/issues/891)."
+      "region": "부산권",
+      "lineId": "line-eb7b47920390",
+      "stationId": "station-080c154ce646,station-61f6dbfb5d4b",
+      "message": "Reviewed duplicate source coordinate: 동일 tracked Busan v3 SVG source coordinate의 owner-approved two-station overlap (2026-08-15T00:00:00.000Z, Owner, https://github.com/AquilaXk/easysubway-data/issues/309)."
     }
   ]
 }
