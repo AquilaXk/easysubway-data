@@ -11,6 +11,8 @@ import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { materializeAccessibilitySourceInput } from "./materialize-accessibility-source-input.mjs";
 import { deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 import { buildSnapshotDiff, requiredCredentialFreeObjectUri, validateLineage } from "./source-snapshot-policy.mjs";
+import { validateCurrentCapitalFacilityPlanAndCanonicalPack } from "./build-current-capital-facility-source-admission.mjs";
+import { readRegularSnapshot } from "./build-current-kric-exit-collection-plan.mjs";
 
 const SOURCE_ID = "kric-station-convenience-standard";
 const SEOUL_SOURCE_ID = "seoul-metro-accessibility";
@@ -515,6 +517,7 @@ function stageRegistries({ inventory, snapshots, input, snapshot, snapshotPath, 
     previousSnapshotId: previous.snapshotId,
     freshnessExpiresAt,
     rawRetentionExpiresAt: rawReceipt.rawRetentionExpiresAt,
+    adminReviewRecordHash: source.admissionEvidence?.adminReviewRecordHash,
     governancePolicySha256,
     governancePolicyVersion,
   };
@@ -551,6 +554,7 @@ function stageRegistries({ inventory, snapshots, input, snapshot, snapshotPath, 
   });
   const nextSnapshots = [...snapshots, ...(seoulLedger == null ? [] : [seoulLedger]), nextLedger];
   validateLineage(nextSnapshots);
+  if (input == null) return [nextInventory, nextSnapshots].map((value) => `${JSON.stringify(value, null, 2)}\n`);
   const nextInput = materializeAccessibilitySourceInput({
     input: { ...structuredClone(input), kricStandardAccessibilityRoster: kricAccessibilityRoster },
     kricSnapshot: snapshot, seoulSnapshot,
@@ -573,6 +577,120 @@ function stageRegistries({ inventory, snapshots, input, snapshot, snapshotPath, 
   return [nextInventory, nextSnapshots, nextInput].map((value) => `${JSON.stringify(value, null, 2)}\n`);
 }
 
+async function prepareProducerNeutralFullRegistration({ repositoryRoot, snapshotFilePath, snapshotFileSha256, snapshotTargetPath, rawReceipt, capitalFacilityPlanPath, capitalCanonicalPackPath, now }) {
+  await recoverKricStandardAccessibilitySnapshotTransaction({ repositoryRoot });
+  const [snapshotFile, planFile, canonicalFile, inventoryBytes, ledgerBytes] = await Promise.all([
+    readRegularSnapshot(snapshotFilePath, "snapshot file"),
+    readRegularSnapshot(capitalFacilityPlanPath, "capital FACILITY plan"),
+    readRegularSnapshot(capitalCanonicalPackPath, "capital canonical pack"),
+    readRegularSnapshot(path.join(repositoryRoot, "tools/datapack/source-inventory.json"), "source inventory"),
+    readRegularSnapshot(path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json"), "source snapshot ledger"),
+  ]);
+  const { bytes: snapshotBytes } = snapshotFile;
+  const { bytes: planBytes } = planFile;
+  const { bytes: canonicalBytes } = canonicalFile;
+  const snapshot = readStagedSnapshot(snapshotBytes, snapshotFileSha256);
+  if (snapshot.sourceId !== SOURCE_ID) throw new Error("capital FACILITY snapshot source is invalid");
+  let plan;
+  try {
+    plan = JSON.parse(planBytes);
+  } catch {
+    throw new Error("capital FACILITY plan is invalid JSON");
+  }
+  let canonicalPack;
+  try {
+    canonicalPack = JSON.parse(canonicalBytes);
+  } catch {
+    throw new Error("capital canonical pack is invalid JSON");
+  }
+  let mappings;
+  try {
+    mappings = validateCurrentCapitalFacilityPlanAndCanonicalPack({
+      plan, planBytes, pack: canonicalPack, canonicalPackBytes: canonicalBytes,
+    });
+  } catch (error) {
+    throw new Error("capital FACILITY full registration identity mismatch", { cause: error });
+  }
+  if (snapshot.queryCount !== 213) {
+    throw new Error("capital FACILITY full registration identity mismatch");
+  }
+  const expected = new Set(mappings.map((mapping) => [
+    mapping.stationId, mapping.lineId, mapping.providerOperatorId, mapping.providerLineId, mapping.providerStationId,
+  ].join("\0")));
+  const actual = new Set(snapshot.queries.map((query) => [
+    query.stationId, query.lineId, query.railOprIsttCd, query.lnCd, query.stinCd,
+  ].join("\0")));
+  if (expected.size !== 213 || actual.size !== 213 || [...expected].some((key) => !actual.has(key))) {
+    throw new Error("capital FACILITY snapshot tuple coverage mismatch");
+  }
+  if (rawReceipt?.snapshotFileSha256 !== snapshotFileSha256) {
+    throw new Error("raw receipt snapshot binding is invalid");
+  }
+  validateReceipt(snapshot, rawReceipt, now);
+  const governance = await readGovernancePolicy(repositoryRoot, snapshot, rawReceipt);
+  const freshness = await readFreshnessPolicy(repositoryRoot);
+  const inventory = JSON.parse(inventoryBytes.bytes);
+  const snapshots = JSON.parse(ledgerBytes.bytes);
+  const { policySources } = validateSourceGovernancePolicy({
+    policy: governance.policy,
+    inventory,
+    freshnessPolicy: freshness.policy,
+  });
+  validateLicenseGovernance({ inventory, policySources, sourceId: SOURCE_ID, label: "KRIC", now });
+  requiredSha256(inventory.sources.find(({ id }) => id === SOURCE_ID)?.admissionEvidence?.adminReviewRecordHash, "KRIC admin review record hash");
+  const relative = `tools/datapack/sources/${snapshot.snapshotId}.json`;
+  if (path.resolve(snapshotTargetPath) !== path.join(path.resolve(repositoryRoot), relative)) {
+    throw new Error("snapshot target path is invalid");
+  }
+  const freshnessExpiresAt = deriveFreshnessExpiresAt({
+    policy: freshness.policy,
+    sourceClassId: policySources.get(SOURCE_ID).sourceClassId,
+    basisAt: snapshot.capturedAt,
+    evaluationAt: now.toISOString(),
+  });
+  const staged = stageRegistries({
+    inventory,
+    snapshots,
+    input: null,
+    snapshot,
+    snapshotPath: relative,
+    snapshotFileSha256,
+    rawReceipt,
+    freshnessExpiresAt,
+    governancePolicySha256: sha256(governance.bytes),
+    governancePolicyVersion: governance.version,
+    now,
+  });
+  const existing = await readOptionalRegularSnapshot(snapshotTargetPath, "snapshot target");
+  if (existing && !existing.bytes.equals(snapshotBytes)) {
+    throw new Error("snapshot target already exists with different bytes");
+  }
+  const rechecked = await Promise.all([
+    readRegularSnapshot(snapshotFilePath, "snapshot file"),
+    readRegularSnapshot(capitalFacilityPlanPath, "capital FACILITY plan"),
+    readRegularSnapshot(capitalCanonicalPackPath, "capital canonical pack"),
+    readRegularSnapshot(path.join(repositoryRoot, "tools/datapack/source-inventory.json"), "source inventory"),
+    readRegularSnapshot(path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json"), "source snapshot ledger"),
+    readRegularSnapshot(path.join(repositoryRoot, "tools/datapack/source-governance-policy.json"), "source governance policy"),
+    readRegularSnapshot(path.join(repositoryRoot, "release/product-gates/datapack-freshness-sla.json"), "datapack freshness SLA"),
+  ]);
+  if (![snapshotBytes, planBytes, canonicalBytes, inventoryBytes.bytes, ledgerBytes.bytes, governance.bytes, freshness.bytes]
+    .every((bytes, index) => bytes.equals(rechecked[index].bytes))) {
+    throw new Error("capital FACILITY full registration input changed during preparation");
+  }
+  if (existing) {
+    const recheckedTarget = await readRegularSnapshot(snapshotTargetPath, "snapshot target");
+    if (!existing.bytes.equals(recheckedTarget.bytes)) {
+      throw new Error("snapshot target changed during preparation");
+    }
+  }
+  return [
+    ...(!existing ? [{ target: snapshotTargetPath, bytes: snapshotBytes }] : []),
+    { target: path.join(repositoryRoot, "tools/datapack/source-inventory.json"), bytes: Buffer.from(staged[0]) },
+    { target: path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json"), bytes: Buffer.from(staged[1]) },
+  ];
+}
+
 function resolveRegistryPaths(repositoryRoot, registryPaths) {
   const root = path.resolve(repositoryRoot);
   const paths = [
@@ -590,7 +708,7 @@ function resolveRegistryPaths(repositoryRoot, registryPaths) {
 }
 
 async function readGovernancePolicy(repositoryRoot, snapshot, rawReceipt) {
-  const bytes = await readFile(path.join(path.resolve(repositoryRoot), "tools/datapack/source-governance-policy.json"));
+  const { bytes } = await readRegularSnapshot(path.join(path.resolve(repositoryRoot), "tools/datapack/source-governance-policy.json"), "source governance policy");
   let policy;
   try { policy = JSON.parse(bytes); } catch { throw new Error("source governance policy is invalid"); }
   const expectedRawRetentionExpiresAt = deriveRawRetentionExpiresAt({
@@ -605,8 +723,8 @@ async function readGovernancePolicy(repositoryRoot, snapshot, rawReceipt) {
 }
 
 async function readFreshnessPolicy(repositoryRoot) {
-  const bytes = await readFile(path.join(path.resolve(repositoryRoot), "release/product-gates/datapack-freshness-sla.json"));
-  try { return JSON.parse(bytes); } catch { throw new Error("datapack freshness SLA is invalid"); }
+  const { bytes } = await readRegularSnapshot(path.join(path.resolve(repositoryRoot), "release/product-gates/datapack-freshness-sla.json"), "datapack freshness SLA");
+  try { return { bytes, policy: JSON.parse(bytes) }; } catch { throw new Error("datapack freshness SLA is invalid"); }
 }
 
 function validateLicenseGovernance({ inventory, policySources, sourceId, label, now }) {
@@ -630,6 +748,15 @@ async function readOptionalFile(file) {
     return await readFile(file);
   } catch (error) {
     if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+async function readOptionalRegularSnapshot(file, label) {
+  try {
+    return await readRegularSnapshot(file, label);
+  } catch (error) {
+    if (error?.cause?.code === "ENOENT" || error?.code === "ENOENT") return null;
     throw error;
   }
 }
@@ -717,7 +844,7 @@ async function prepareRegistration({
   if (rawReceipt?.snapshotFileSha256 !== snapshotFileSha256) throw new Error("raw receipt snapshot binding is invalid");
   validateReceipt(snapshot, rawReceipt, now);
   const governancePolicy = await readGovernancePolicy(repositoryRoot, snapshot, rawReceipt);
-  const freshnessPolicy = await readFreshnessPolicy(repositoryRoot);
+  const freshnessPolicy = (await readFreshnessPolicy(repositoryRoot)).policy;
   const snapshotPath = `tools/datapack/sources/${snapshot.snapshotId}.json`;
   const expectedSnapshotTargetPath = path.join(path.resolve(repositoryRoot), snapshotPath);
   if (!path.isAbsolute(requiredText(snapshotTargetPath, "snapshot target path"))
@@ -802,6 +929,9 @@ export async function registerKricStandardAccessibilitySnapshot({
   seoulSnapshotFileSha256,
   seoulSnapshotTargetPath,
   seoulRawReceipt,
+  capitalFacilityPlanPath,
+  capitalCanonicalPackPath,
+  producerNeutralFullRegistration = false,
   registryPaths,
   repositoryRoot = REPOSITORY_ROOT,
   now = new Date(),
@@ -812,12 +942,15 @@ export async function registerKricStandardAccessibilitySnapshot({
   syncTransactionDirectoryImpl,
   onLockAcquired,
 } = {}) {
-  const paths = resolveRegistryPaths(repositoryRoot, registryPaths);
+  if (producerNeutralFullRegistration !== true && producerNeutralFullRegistration !== false) throw new Error("producer neutral full registration is invalid");
+  if (producerNeutralFullRegistration && (!capitalFacilityPlanPath || !capitalCanonicalPackPath)) throw new Error("producer neutral full registration inputs are incomplete");
+  if (producerNeutralFullRegistration && (seoulSnapshot != null || seoulSnapshotFilePath != null || seoulSnapshotFileSha256 != null || seoulSnapshotTargetPath != null || seoulRawReceipt != null || registryPaths != null)) throw new Error("producer neutral full registration inputs are invalid");
+  const paths = producerNeutralFullRegistration ? null : resolveRegistryPaths(repositoryRoot, registryPaths);
   const releaseLock = await acquireRegistrationLock(repositoryRoot);
   let registrationError;
   try {
     await onLockAcquired?.();
-    const outputs = await prepareRegistration({
+    const outputs = producerNeutralFullRegistration ? await prepareProducerNeutralFullRegistration({ repositoryRoot, snapshotFilePath, snapshotFileSha256, snapshotTargetPath, rawReceipt, capitalFacilityPlanPath, capitalCanonicalPackPath, now }) : await prepareRegistration({
       repositoryRoot, paths, snapshotFilePath, snapshotFileSha256, snapshotTargetPath,
       rawReceipt,
       seoulSnapshot,
@@ -855,6 +988,9 @@ export function parseKricStandardAccessibilitySnapshotRegistrationArgs(args) {
     ["--seoul-snapshot", "seoulSnapshotPath"],
     ["--seoul-snapshot-sha256", "seoulSnapshotFileSha256"],
     ["--seoul-raw-receipt", "seoulRawReceiptPath"],
+    ["--capital-facility-plan", "capitalFacilityPlanPath"],
+    ["--capital-canonical-pack", "capitalCanonicalPackPath"],
+    ["--producer-neutral-full-registration", "producerNeutralFullRegistration"],
   ]);
   for (let index = 0; index < args.length; index += 2) {
     const name = args[index];
@@ -862,11 +998,19 @@ export function parseKricStandardAccessibilitySnapshotRegistrationArgs(args) {
     const value = args[index + 1];
     if (!key || value == null || names.has(value) || seen.has(key)) throw new Error("registration CLI arguments are invalid");
     seen.add(key);
-    options[key] = value;
+    options[key] = key === "producerNeutralFullRegistration" ? value === "true" : value;
   }
-  for (const key of ["repositoryRoot", "snapshotFilePath", "snapshotFileSha256", "rawReceiptPath", "seoulSnapshotPath"]) {
+  const full = options.producerNeutralFullRegistration === true;
+  for (const key of ["repositoryRoot", "snapshotFilePath", "snapshotFileSha256", "rawReceiptPath"]) {
     if (typeof options[key] !== "string" || options[key].trim() === "") throw new Error("registration CLI arguments are invalid");
   }
+  if (full) {
+    if (![options.capitalFacilityPlanPath, options.capitalCanonicalPackPath].every((value) => typeof value === "string" && value !== "")
+      || [options.seoulSnapshotPath, options.seoulSnapshotFileSha256, options.seoulRawReceiptPath].some((value) => value != null)) throw new Error("registration CLI arguments are invalid");
+    return options;
+  }
+  if (options.capitalFacilityPlanPath != null || options.capitalCanonicalPackPath != null || options.producerNeutralFullRegistration != null
+    || typeof options.seoulSnapshotPath !== "string" || options.seoulSnapshotPath.trim() === "") throw new Error("registration CLI arguments are invalid");
   const freshSeoulValues = [options.seoulSnapshotFileSha256, options.seoulRawReceiptPath];
   if (!freshSeoulValues.every((value) => value == null) && !freshSeoulValues.every((value) => typeof value === "string" && value !== "")) {
     throw new Error("registration CLI arguments are invalid");
@@ -879,6 +1023,19 @@ export async function runKricStandardAccessibilitySnapshotRegistration(args) {
   const repositoryRoot = path.resolve(options.repositoryRoot);
   const snapshotBytes = await readFile(options.snapshotFilePath);
   const snapshot = readStagedSnapshot(snapshotBytes, options.snapshotFileSha256);
+  if (options.producerNeutralFullRegistration === true) {
+    const rawReceipt = JSON.parse((await readRegularSnapshot(options.rawReceiptPath, "raw receipt")).bytes);
+    return registerKricStandardAccessibilitySnapshot({
+      snapshotFilePath: options.snapshotFilePath,
+      snapshotFileSha256: options.snapshotFileSha256,
+      snapshotTargetPath: path.join(repositoryRoot, "tools/datapack/sources", `${snapshot.snapshotId}.json`),
+      rawReceipt,
+      capitalFacilityPlanPath: options.capitalFacilityPlanPath,
+      capitalCanonicalPackPath: options.capitalCanonicalPackPath,
+      producerNeutralFullRegistration: true,
+      repositoryRoot,
+    });
+  }
   const seoulSnapshotBytes = await readFile(options.seoulSnapshotPath);
   const freshSeoulRequested = options.seoulSnapshotFileSha256 != null;
   const seoulSnapshot = freshSeoulRequested

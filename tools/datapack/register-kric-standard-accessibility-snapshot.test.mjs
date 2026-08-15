@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -9,8 +9,10 @@ import { fileURLToPath } from "node:url";
 
 import { collectKricAccessibilitySnapshots } from "./collect-kric-accessibility-snapshots.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
-import { parseKricStandardAccessibilitySnapshotRegistrationArgs, registerKricStandardAccessibilitySnapshot } from "./register-kric-standard-accessibility-snapshot.mjs";
+import { parseKricStandardAccessibilitySnapshotRegistrationArgs, registerKricStandardAccessibilitySnapshot, runKricStandardAccessibilitySnapshotRegistration } from "./register-kric-standard-accessibility-snapshot.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
+import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const registryPaths = [
@@ -225,6 +227,317 @@ async function registryBytes(values) {
 function journalPath(values) {
   return path.join(path.dirname(path.dirname(path.dirname(path.dirname(values.snapshotTargetPath)))), "tools/datapack/.kric-standard-registration-transaction.json");
 }
+
+async function fullRegistrationInputs(values) {
+  const planInput = await Promise.all([
+    "tools/datapack/release/capital-production-canonical-pack.json",
+    "tools/datapack/nationwide-coverage-targets.json",
+    "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
+    "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
+    "tools/datapack/source-inventory.json",
+  ].map((relative) => readFile(path.join(root, relative))));
+  const plan = buildCurrentCapitalFacilityCollectionPlan({
+    canonicalPackBytes: planInput[0],
+    coverageTargetsBytes: planInput[1],
+    providerCodeCatalogBytes: planInput[2],
+    routeRostersBytes: planInput[3],
+    sourceInventoryBytes: planInput[4],
+  });
+  const planPath = path.join(path.dirname(values.snapshotFilePath), "plan.json");
+  await writeFile(planPath, canonicalCurrentCapitalFacilityCollectionPlanJson(plan));
+  const roster213 = plan.stationLineProviderMappings.map((mapping) => ({
+    stationId: mapping.stationId,
+    lineId: mapping.lineId,
+    railOprIsttCd: mapping.providerOperatorId,
+    lnCd: mapping.providerLineId,
+    stinCd: mapping.providerStationId,
+    canonicalMappings: [{ artifactId: "bundled-capital", stationId: mapping.stationId, lineId: mapping.lineId }],
+  }));
+  const ledgerTimes = JSON.parse(await readFile(values.paths[registryPaths[1]], "utf8"))
+    .filter(({ sourceId }) => sourceId === operation.sourceId)
+    .flatMap((entry) => [entry.retrievedAt, entry.sourceUpdatedAt, entry.freshnessExpiresAt])
+    .map(Date.parse)
+    .filter(Number.isFinite);
+  const fixtureNow = new Date(Math.max(...ledgerTimes) + 60_000);
+  const [snapshot] = await collectKricAccessibilitySnapshots({
+    roster: roster213,
+    operations: [operation],
+    serviceKey: "fixture-only-key",
+    now: fixtureNow,
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        header: { resultCode: "00" },
+        body: [{ dtlLoc: "full", grndDvCd: "1", gubun: "EV", imgPath: "", mlFmlDvCd: "", stinFlor: 1, trfcWeakDvCd: "01" }],
+      }),
+    }),
+  });
+  const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot, null, 2)}\n`);
+  const snapshotPath = path.join(path.dirname(values.snapshotFilePath), "full.json");
+  await writeFile(snapshotPath, snapshotBytes);
+  const repositoryRoot = path.dirname(path.dirname(path.dirname(path.dirname(values.snapshotTargetPath))));
+  return {
+    plan,
+    roster213,
+    planPath,
+    snapshot,
+    snapshotBytes,
+    snapshotPath,
+    snapshotFileSha256: sha256(snapshotBytes),
+    target: path.join(repositoryRoot, "tools/datapack/sources", `${snapshot.snapshotId}.json`),
+    repositoryRoot,
+    fixtureNow,
+    rawReceipt: receipt(snapshot, sha256(snapshotBytes), deriveRawRetentionExpiresAt({
+      policy: values.governancePolicy,
+      sourceId: snapshot.sourceId,
+      retrievedAt: snapshot.capturedAt,
+    })),
+  };
+}
+
+async function registerFull(values, input, overrides = {}) {
+  return registerKricStandardAccessibilitySnapshot({
+    snapshotFilePath: input.snapshotPath,
+    snapshotFileSha256: input.snapshotFileSha256,
+    snapshotTargetPath: input.target,
+    rawReceipt: input.rawReceipt,
+    capitalFacilityPlanPath: input.planPath,
+    capitalCanonicalPackPath: path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"),
+    producerNeutralFullRegistration: true,
+    repositoryRoot: input.repositoryRoot,
+    now: new Date(input.fixtureNow.getTime() + 1_000),
+    ...overrides,
+  });
+}
+
+test("producer-neutral full registration requires its closed plan/canonical pair", async () => {
+  await assert.rejects(registerKricStandardAccessibilitySnapshot({
+    producerNeutralFullRegistration: true,
+  }), /producer neutral full registration inputs are incomplete/);
+  const full = parseKricStandardAccessibilitySnapshotRegistrationArgs([
+    "--repository-root", "/tmp/repository", "--snapshot", "/tmp/snapshot.json", "--snapshot-sha256", "a".repeat(64),
+    "--raw-receipt", "/tmp/receipt.json", "--capital-facility-plan", "/tmp/plan.json", "--capital-canonical-pack", "/tmp/pack.json",
+    "--producer-neutral-full-registration", "true",
+  ]);
+  assert.equal(full.producerNeutralFullRegistration, true);
+  assert.throws(() => parseKricStandardAccessibilitySnapshotRegistrationArgs([
+    "--repository-root", "/tmp/repository", "--snapshot", "/tmp/snapshot.json", "--snapshot-sha256", "a".repeat(64),
+    "--raw-receipt", "/tmp/receipt.json", "--capital-facility-plan", "/tmp/plan.json", "--capital-canonical-pack", "/tmp/pack.json",
+    "--producer-neutral-full-registration", "true", "--seoul-snapshot", "/tmp/seoul.json",
+  ]), /CLI arguments/);
+});
+
+test("producer-neutral full registration atomically registers 213 tuples without mutating pilot input", async (t) => {
+  const values = await fixture(t);
+  const input = await fullRegistrationInputs(values);
+  const beforeInventory = await readFile(values.paths[registryPaths[0]]);
+  const beforeLedger = await readFile(values.paths[registryPaths[1]]);
+  const pilotBefore = await readFile(values.paths[registryPaths[2]]);
+  await registerFull(values, input);
+  assert.deepEqual(await readFile(input.target), input.snapshotBytes);
+  assert.notDeepEqual(await readFile(values.paths[registryPaths[0]]), beforeInventory);
+  assert.notDeepEqual(await readFile(values.paths[registryPaths[1]]), beforeLedger);
+  assert.deepEqual(await readFile(values.paths[registryPaths[2]]), pilotBefore);
+  await assert.rejects(readFile(journalPath(values)), { code: "ENOENT" });
+  await assert.rejects(readFile(path.join(input.repositoryRoot, "tools/datapack/.kric-standard-registration.lock", ".owner")), { code: "ENOENT" });
+  const inventory = JSON.parse(await readFile(values.paths[registryPaths[0]], "utf8"));
+  const ledger = JSON.parse(await readFile(values.paths[registryPaths[1]], "utf8")).at(-1);
+  const evidence = inventory.sources.find(({ id }) => id === input.snapshot.sourceId).accessibilityAdmissionEvidence;
+  assert.equal(evidence.snapshotId, input.snapshot.snapshotId);
+  assert.equal(evidence.snapshotFileSha256, input.snapshotFileSha256);
+  assert.equal(ledger.snapshotId, input.snapshot.snapshotId);
+  assert.equal(ledger.rawReceipt.snapshotFileSha256, input.snapshotFileSha256);
+  assert.deepEqual(Object.keys(ledger.rawReceipt).sort((left, right) => left.localeCompare(right, "en")), [
+    "byteSize",
+    "capturedAt",
+    "rawObjectSha256",
+    "snapshotFileSha256",
+    "snapshotId",
+    "snapshotRawSha256",
+    "sourceId",
+    "storedAt",
+  ]);
+});
+
+test("producer-neutral full registration rejects plan, snapshot, and receipt drift before writes", async (t) => {
+  const cases = [
+    async (input) => writeFile(input.planPath, "{}\n"),
+    async (input) => writeFile(input.snapshotPath, `${JSON.stringify({})}\n`),
+    async (input) => { input.rawReceipt = { ...input.rawReceipt, snapshotId: "mismatch" }; },
+  ];
+  for (const mutate of cases) {
+    const values = await fixture(t);
+    const input = await fullRegistrationInputs(values);
+    await mutate(input);
+    await assert.rejects(registerFull(values, input));
+    await assertUnchanged(values);
+    await assert.rejects(readFile(input.target), { code: "ENOENT" });
+  }
+});
+
+test("producer-neutral full registration requires a lowercase admin review record hash before mutation", async (t) => {
+  const values = await fixture(t);
+  const input = await fullRegistrationInputs(values);
+  const inventory = JSON.parse(await readFile(values.paths[registryPaths[0]], "utf8"));
+  inventory.sources.find(({ id }) => id === operation.sourceId).admissionEvidence.adminReviewRecordHash = "INVALID";
+  await writeFile(values.paths[registryPaths[0]], `${JSON.stringify(inventory, null, 2)}\n`);
+  const mutatedInventory = await readFile(values.paths[registryPaths[0]]);
+  await assert.rejects(registerFull(values, input), /admin review record hash/);
+  assert.deepEqual(await readFile(values.paths[registryPaths[0]]), mutatedInventory);
+  assert.deepEqual(await readFile(values.paths[registryPaths[2]]), values.before[2]);
+  await assert.rejects(readFile(input.target), { code: "ENOENT" });
+});
+
+test("producer-neutral full registration rejects another approved KRIC operation and re-bound pack membership drift", async (t) => {
+  const values = await fixture(t);
+  const input = await fullRegistrationInputs(values);
+  const elevatorOperation = {
+    sourceId: "kric-station-elevator",
+    endpoint: "https://openapi.kric.go.kr/openapi/convenientInfo/stationElevator",
+    responseFields: ["dtlLoc", "exitNo", "grndDvNmFr", "grndDvNmTo", "lnCd", "railOprIsttCd", "rglnPsno", "rglnWgt", "runStinFlorFr", "runStinFlorTo", "stinCd"],
+    tupleIdentityFields: ["railOprIsttCd", "lnCd", "stinCd"],
+  };
+  const [otherSnapshot] = await collectKricAccessibilitySnapshots({
+    roster: input.roster213,
+    operations: [elevatorOperation],
+    serviceKey: "fixture-only-key",
+    now: input.fixtureNow,
+    fetchImpl: async (url) => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ header: { resultCode: "00" }, body: [{
+        dtlLoc: "fixture", exitNo: "1", grndDvNmFr: "1", grndDvNmTo: "2",
+        lnCd: url.searchParams.get("lnCd"), railOprIsttCd: url.searchParams.get("railOprIsttCd"),
+        rglnPsno: "1", rglnWgt: "1", runStinFlorFr: "1", runStinFlorTo: "2", stinCd: url.searchParams.get("stinCd"),
+      }] }),
+    }),
+  });
+  const otherBytes = Buffer.from(`${JSON.stringify(otherSnapshot, null, 2)}\n`);
+  const otherPath = path.join(path.dirname(input.snapshotPath), "other-operation.json");
+  await writeFile(otherPath, otherBytes);
+  const otherReceipt = {
+    ...input.rawReceipt,
+    sourceId: otherSnapshot.sourceId,
+    snapshotId: otherSnapshot.snapshotId,
+    snapshotRawSha256: otherSnapshot.rawSha256,
+    capturedAt: otherSnapshot.capturedAt,
+    snapshotFileSha256: sha256(otherBytes),
+  };
+  await assert.rejects(registerFull(values, input, {
+    snapshotFilePath: otherPath,
+    snapshotFileSha256: sha256(otherBytes),
+    snapshotTargetPath: path.join(input.repositoryRoot, "tools/datapack/sources", `${otherSnapshot.snapshotId}.json`),
+    rawReceipt: otherReceipt,
+  }));
+  await assertUnchanged(values);
+
+  const alteredPack = JSON.parse(await readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8"));
+  const missingMembership = input.plan.stationLineProviderMappings[0];
+  alteredPack.packs[0].stationLines = alteredPack.packs[0].stationLines.filter(({ stationId, lineId }) =>
+    stationId !== missingMembership.stationId || lineId !== missingMembership.lineId);
+  const alteredPackPath = path.join(path.dirname(input.planPath), "membership-drift-pack.json");
+  const alteredPackBytes = Buffer.from(`${JSON.stringify(alteredPack)}\n`);
+  await writeFile(alteredPackPath, alteredPackBytes);
+  const reboundPlan = structuredClone(input.plan);
+  reboundPlan.sourceIdentity.canonicalPackSha256 = sha256(alteredPackBytes);
+  const { planSha256: _, ...reboundPayload } = reboundPlan;
+  reboundPlan.planSha256 = sha256(Buffer.from(canonicalJson(reboundPayload)));
+  await writeFile(input.planPath, canonicalCurrentCapitalFacilityCollectionPlanJson(reboundPlan));
+  await assert.rejects(registerFull(values, input, { capitalCanonicalPackPath: alteredPackPath }));
+  await assertUnchanged(values);
+  await assert.rejects(readFile(input.target), { code: "ENOENT" });
+});
+
+test("producer-neutral full registration rejects nonregular full-mode inputs and preserves sentinels", async (t) => {
+  const cases = [
+    async (values, input) => {
+      const sentinel = path.join(path.dirname(input.planPath), "snapshot-sentinel.json");
+      await writeFile(sentinel, input.snapshotBytes);
+      await rm(input.snapshotPath);
+      await symlink(sentinel, input.snapshotPath);
+      return [sentinel];
+    },
+    async (_values, input) => {
+      await rm(input.planPath);
+      await mkdir(input.planPath);
+      return [];
+    },
+    async (_values, input) => {
+      const sentinel = path.join(path.dirname(input.planPath), "pack-sentinel.json");
+      await writeFile(sentinel, await readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json")));
+      const linkedPack = path.join(path.dirname(input.planPath), "pack-link.json");
+      await symlink(sentinel, linkedPack);
+      input.packPath = linkedPack;
+      return [sentinel];
+    },
+    async (values) => {
+      const sentinel = path.join(path.dirname(values.paths[registryPaths[0]]), "inventory-sentinel.json");
+      await writeFile(sentinel, await readFile(values.paths[registryPaths[0]]));
+      await rm(values.paths[registryPaths[0]]);
+      await symlink(sentinel, values.paths[registryPaths[0]]);
+      return [sentinel];
+    },
+    async (values) => {
+      await rm(values.paths[registryPaths[1]]);
+      await mkdir(values.paths[registryPaths[1]]);
+      return [];
+    },
+    async (_values, input) => {
+      const sentinel = path.join(path.dirname(input.target), "target-sentinel.json");
+      await writeFile(sentinel, "foreign sentinel\n");
+      await mkdir(path.dirname(input.target), { recursive: true });
+      await symlink(sentinel, input.target);
+      return [sentinel];
+    },
+    async (_values, input) => {
+      const policy = path.join(input.repositoryRoot, "tools/datapack/source-governance-policy.json");
+      const sentinel = path.join(path.dirname(input.planPath), "governance-sentinel.json");
+      await writeFile(sentinel, await readFile(policy));
+      await rm(policy);
+      await symlink(sentinel, policy);
+      return [sentinel];
+    },
+    async (_values, input) => {
+      const freshness = path.join(input.repositoryRoot, "release/product-gates/datapack-freshness-sla.json");
+      await rm(freshness);
+      await mkdir(freshness);
+      return [];
+    },
+  ];
+  for (const [index, mutate] of cases.entries()) {
+    const values = await fixture(t);
+    const input = await fullRegistrationInputs(values);
+    const sentinels = await mutate(values, input);
+    await assert.rejects(registerFull(values, input, input.packPath == null ? {} : { capitalCanonicalPackPath: input.packPath }));
+    if (index === 4) {
+      assert.deepEqual(await readFile(values.paths[registryPaths[2]]), values.before[2]);
+    } else {
+      await assertUnchanged(values);
+    }
+    for (const sentinel of sentinels) assert.ok((await readFile(sentinel)).length > 0);
+  }
+});
+
+test("producer-neutral full registration CLI rejects a raw receipt symlink before writes", async (t) => {
+  const values = await fixture(t);
+  const input = await fullRegistrationInputs(values);
+  const receiptTarget = path.join(path.dirname(input.planPath), "receipt-sentinel.json");
+  const receiptLink = path.join(path.dirname(input.planPath), "receipt-link.json");
+  await writeFile(receiptTarget, `${JSON.stringify(input.rawReceipt)}\n`);
+  await symlink(receiptTarget, receiptLink);
+  await assert.rejects(runKricStandardAccessibilitySnapshotRegistration([
+    "--repository-root", input.repositoryRoot,
+    "--snapshot", input.snapshotPath,
+    "--snapshot-sha256", input.snapshotFileSha256,
+    "--raw-receipt", receiptLink,
+    "--capital-facility-plan", input.planPath,
+    "--capital-canonical-pack", path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"),
+    "--producer-neutral-full-registration", "true",
+  ]));
+  await assertUnchanged(values);
+  assert.ok((await readFile(receiptTarget)).length > 0);
+});
 
 test("fresh KRIC queries를 materialize해 세 registry의 동일 identity로 원자 등록한다", async (t) => {
   const values = await fixture(t);
