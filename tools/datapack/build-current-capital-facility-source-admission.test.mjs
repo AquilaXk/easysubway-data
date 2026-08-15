@@ -49,6 +49,14 @@ test("producer-neutral FACILITY admission emits the exact 213/199/639 closed mat
   provenanceDrift.denominatorRows[0].snapshotId = "wrong";
   rehash(provenanceDrift);
   assert.throws(() => canonicalCurrentCapitalFacilitySourceAdmissionJson(provenanceDrift));
+  const staleDrift = structuredClone(first);
+  staleDrift.sourceIdentity.freshUntil = first.observedAt;
+  rehash(staleDrift);
+  assert.throws(() => canonicalCurrentCapitalFacilitySourceAdmissionJson(staleDrift));
+  const pathDrift = structuredClone(first);
+  pathDrift.sourceIdentity.snapshotPath = "tools/datapack/sources/wrong.json";
+  rehash(pathDrift);
+  assert.throws(() => canonicalCurrentCapitalFacilitySourceAdmissionJson(pathDrift));
 });
 
 test("producer-neutral FACILITY admission rejects representative identity and query drift before output", async () => {
@@ -64,6 +72,16 @@ test("producer-neutral FACILITY admission rejects representative identity and qu
     (value) => { value.sourceSnapshots[0].freshnessExpiresAt = "2026-08-03T00:00:00.000Z"; },
     (value) => { value.sourceSnapshots[0].rawReceipt.storedAt = "2026-08-03T00:02:00.000Z"; },
     (value) => { value.candidateBuildSpec.sourceSnapshots[0].governancePolicySha256 = "wrong"; },
+    (value) => {
+      const pack = JSON.parse(value.canonicalPackBytes);
+      pack.packs[0].stationLines.push({ stationId: "station-extra", lineId: JSON.parse(value.planBytes).stationLineProviderMappings[0].lineId });
+      value.canonicalPackBytes = Buffer.from(`${JSON.stringify(pack)}\n`);
+      const plan = JSON.parse(value.planBytes);
+      plan.sourceIdentity.canonicalPackSha256 = sha256(value.canonicalPackBytes);
+      const { planSha256: _, ...payload } = plan;
+      plan.planSha256 = sha256(canonicalJson(payload));
+      value.planBytes = Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(plan));
+    },
   ];
   for (const mutate of cases) {
     const current = structuredClone(values); current.planBytes = Buffer.from(values.planBytes); current.canonicalPackBytes = Buffer.from(values.canonicalPackBytes); current.snapshotBytes = Buffer.from(values.snapshotBytes); mutate(current);

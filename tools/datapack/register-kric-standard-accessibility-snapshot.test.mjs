@@ -376,6 +376,19 @@ test("producer-neutral full registration rejects plan, snapshot, and receipt dri
   }
 });
 
+test("producer-neutral full registration requires a lowercase admin review record hash before mutation", async (t) => {
+  const values = await fixture(t);
+  const input = await fullRegistrationInputs(values);
+  const inventory = JSON.parse(await readFile(values.paths[registryPaths[0]], "utf8"));
+  inventory.sources.find(({ id }) => id === operation.sourceId).admissionEvidence.adminReviewRecordHash = "INVALID";
+  await writeFile(values.paths[registryPaths[0]], `${JSON.stringify(inventory, null, 2)}\n`);
+  const mutatedInventory = await readFile(values.paths[registryPaths[0]]);
+  await assert.rejects(registerFull(values, input), /admin review record hash/);
+  assert.deepEqual(await readFile(values.paths[registryPaths[0]]), mutatedInventory);
+  assert.deepEqual(await readFile(values.paths[registryPaths[2]]), values.before[2]);
+  await assert.rejects(readFile(input.target), { code: "ENOENT" });
+});
+
 test("producer-neutral full registration rejects another approved KRIC operation and re-bound pack membership drift", async (t) => {
   const values = await fixture(t);
   const input = await fullRegistrationInputs(values);
@@ -476,6 +489,20 @@ test("producer-neutral full registration rejects nonregular full-mode inputs and
       await mkdir(path.dirname(input.target), { recursive: true });
       await symlink(sentinel, input.target);
       return [sentinel];
+    },
+    async (_values, input) => {
+      const policy = path.join(input.repositoryRoot, "tools/datapack/source-governance-policy.json");
+      const sentinel = path.join(path.dirname(input.planPath), "governance-sentinel.json");
+      await writeFile(sentinel, await readFile(policy));
+      await rm(policy);
+      await symlink(sentinel, policy);
+      return [sentinel];
+    },
+    async (_values, input) => {
+      const freshness = path.join(input.repositoryRoot, "release/product-gates/datapack-freshness-sla.json");
+      await rm(freshness);
+      await mkdir(freshness);
+      return [];
     },
   ];
   for (const [index, mutate] of cases.entries()) {

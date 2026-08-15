@@ -634,15 +634,16 @@ async function prepareProducerNeutralFullRegistration({ repositoryRoot, snapshot
   const { policySources } = validateSourceGovernancePolicy({
     policy: governance.policy,
     inventory,
-    freshnessPolicy: freshness,
+    freshnessPolicy: freshness.policy,
   });
   validateLicenseGovernance({ inventory, policySources, sourceId: SOURCE_ID, label: "KRIC", now });
+  requiredSha256(inventory.sources.find(({ id }) => id === SOURCE_ID)?.admissionEvidence?.adminReviewRecordHash, "KRIC admin review record hash");
   const relative = `tools/datapack/sources/${snapshot.snapshotId}.json`;
   if (path.resolve(snapshotTargetPath) !== path.join(path.resolve(repositoryRoot), relative)) {
     throw new Error("snapshot target path is invalid");
   }
   const freshnessExpiresAt = deriveFreshnessExpiresAt({
-    policy: freshness,
+    policy: freshness.policy,
     sourceClassId: policySources.get(SOURCE_ID).sourceClassId,
     basisAt: snapshot.capturedAt,
     evaluationAt: now.toISOString(),
@@ -670,8 +671,10 @@ async function prepareProducerNeutralFullRegistration({ repositoryRoot, snapshot
     readRegularSnapshot(capitalCanonicalPackPath, "capital canonical pack"),
     readRegularSnapshot(path.join(repositoryRoot, "tools/datapack/source-inventory.json"), "source inventory"),
     readRegularSnapshot(path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json"), "source snapshot ledger"),
+    readRegularSnapshot(path.join(repositoryRoot, "tools/datapack/source-governance-policy.json"), "source governance policy"),
+    readRegularSnapshot(path.join(repositoryRoot, "release/product-gates/datapack-freshness-sla.json"), "datapack freshness SLA"),
   ]);
-  if (![snapshotBytes, planBytes, canonicalBytes, inventoryBytes.bytes, ledgerBytes.bytes]
+  if (![snapshotBytes, planBytes, canonicalBytes, inventoryBytes.bytes, ledgerBytes.bytes, governance.bytes, freshness.bytes]
     .every((bytes, index) => bytes.equals(rechecked[index].bytes))) {
     throw new Error("capital FACILITY full registration input changed during preparation");
   }
@@ -705,7 +708,7 @@ function resolveRegistryPaths(repositoryRoot, registryPaths) {
 }
 
 async function readGovernancePolicy(repositoryRoot, snapshot, rawReceipt) {
-  const bytes = await readFile(path.join(path.resolve(repositoryRoot), "tools/datapack/source-governance-policy.json"));
+  const { bytes } = await readRegularSnapshot(path.join(path.resolve(repositoryRoot), "tools/datapack/source-governance-policy.json"), "source governance policy");
   let policy;
   try { policy = JSON.parse(bytes); } catch { throw new Error("source governance policy is invalid"); }
   const expectedRawRetentionExpiresAt = deriveRawRetentionExpiresAt({
@@ -720,8 +723,8 @@ async function readGovernancePolicy(repositoryRoot, snapshot, rawReceipt) {
 }
 
 async function readFreshnessPolicy(repositoryRoot) {
-  const bytes = await readFile(path.join(path.resolve(repositoryRoot), "release/product-gates/datapack-freshness-sla.json"));
-  try { return JSON.parse(bytes); } catch { throw new Error("datapack freshness SLA is invalid"); }
+  const { bytes } = await readRegularSnapshot(path.join(path.resolve(repositoryRoot), "release/product-gates/datapack-freshness-sla.json"), "datapack freshness SLA");
+  try { return { bytes, policy: JSON.parse(bytes) }; } catch { throw new Error("datapack freshness SLA is invalid"); }
 }
 
 function validateLicenseGovernance({ inventory, policySources, sourceId, label, now }) {
@@ -841,7 +844,7 @@ async function prepareRegistration({
   if (rawReceipt?.snapshotFileSha256 !== snapshotFileSha256) throw new Error("raw receipt snapshot binding is invalid");
   validateReceipt(snapshot, rawReceipt, now);
   const governancePolicy = await readGovernancePolicy(repositoryRoot, snapshot, rawReceipt);
-  const freshnessPolicy = await readFreshnessPolicy(repositoryRoot);
+  const freshnessPolicy = (await readFreshnessPolicy(repositoryRoot)).policy;
   const snapshotPath = `tools/datapack/sources/${snapshot.snapshotId}.json`;
   const expectedSnapshotTargetPath = path.join(path.resolve(repositoryRoot), snapshotPath);
   if (!path.isAbsolute(requiredText(snapshotTargetPath, "snapshot target path"))

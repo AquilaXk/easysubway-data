@@ -108,7 +108,12 @@ export function validateCurrentCapitalFacilityPlanAndCanonicalPack({ plan, planB
     || capital?.id !== "capital" || capital?.version !== "1") {
     throw new Error("capital canonical pack identity mismatch");
   }
-  const canonicalMembership = new Set((capital.stationLines ?? []).map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
+  const capitalLineIds = new Set((capital.lines ?? [])
+    .filter(({ operatorId }) => operatorId === "seoul-metro")
+    .map(({ id }) => id));
+  const canonicalMembership = new Set((capital.stationLines ?? [])
+    .filter(({ lineId }) => capitalLineIds.has(lineId))
+    .map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
   const mappings = plan.stationLineProviderMappings;
   if (!Array.isArray(mappings) || mappings.length !== 213) throw new Error("capital FACILITY mapping coverage mismatch");
   const seen = new Set();
@@ -120,7 +125,9 @@ export function validateCurrentCapitalFacilityPlanAndCanonicalPack({ plan, planB
     }
     seen.add(`${mapping.stationId}\0${mapping.lineId}`);
   }
-  if (seen.size !== 213 || new Set(mappings.map(({ stationId }) => stationId)).size !== 199) {
+  if (seen.size !== 213 || canonicalMembership.size !== 213
+    || [...canonicalMembership].some((stationLine) => !seen.has(stationLine))
+    || new Set(mappings.map(({ stationId }) => stationId)).size !== 199) {
     throw new Error("capital FACILITY mapping coverage mismatch");
   }
   return mappings;
@@ -270,6 +277,14 @@ function validateRenderedAdmission(value) {
     || ![value.sourceIdentity.snapshotId, value.sourceIdentity.snapshotPath, value.sourceIdentity.rawObjectUri].every((entry) => typeof entry === "string" && entry.trim() !== "")
     || ["capturedAt", "observedAt", "freshUntil"].some((key) => new Date(requiredUtcInstant(value.sourceIdentity[key], `source identity ${key}`)).toISOString() !== value.sourceIdentity[key])) {
     throw new Error("capital FACILITY source identity schema mismatch");
+  }
+  const capturedAt = requiredUtcInstant(value.sourceIdentity.capturedAt, "source identity capturedAt");
+  const sourceObservedAt = requiredUtcInstant(value.sourceIdentity.observedAt, "source identity observedAt");
+  const admissionObservedAt = requiredUtcInstant(value.observedAt, "observedAt");
+  const freshUntil = requiredUtcInstant(value.sourceIdentity.freshUntil, "source identity freshUntil");
+  if (capturedAt > sourceObservedAt || sourceObservedAt > admissionObservedAt || admissionObservedAt >= freshUntil
+    || value.sourceIdentity.snapshotPath !== `tools/datapack/sources/${value.sourceIdentity.snapshotId}.json`) {
+    throw new Error("capital FACILITY source identity time or path mismatch");
   }
   const rowKey = (row) => `${row.stationId}\0${row.lineId}`;
   if (!Array.isArray(value.denominatorRows) || value.denominatorRows.length !== 639
