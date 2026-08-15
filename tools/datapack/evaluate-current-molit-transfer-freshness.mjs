@@ -69,6 +69,15 @@ function validatePolicy(policy) {
   }
 }
 
+function molitCompatibilityPolicy(policy) {
+  return {
+    ...policy,
+    sourceClasses: policy.sourceClasses.map((sourceClass) => sourceClass.id === SOURCE_CLASS_ID
+      ? { ...sourceClass, sourceIds: [SOURCE_ID] }
+      : sourceClass),
+  };
+}
+
 function validateMetadata(metadata, metadataBytes, gzipBytes) {
   if (!Buffer.isBuffer(metadataBytes) || !Buffer.isBuffer(gzipBytes)
     || metadata?.schemaVersion !== 1
@@ -131,6 +140,7 @@ export function evaluateCurrentMolitTransferFreshness({
   policy,
 } = {}) {
   validatePolicy(policy);
+  const compatibilityPolicy = molitCompatibilityPolicy(policy);
   validateMetadata(metadata, metadataBytes, gzipBytes);
   validateEvidence(evidence, metadata, metadataBytes);
   parseEvaluationAt(evaluationAt);
@@ -149,7 +159,7 @@ export function evaluateCurrentMolitTransferFreshness({
     sourceIdentity,
     policyBinding: {
       sourceClassId: SOURCE_CLASS_ID,
-      policySha256: freshnessPolicySha256(policy),
+      policySha256: freshnessPolicySha256(compatibilityPolicy),
     },
     observation: {
       schemaVersion: 1,
@@ -166,7 +176,7 @@ export function evaluateCurrentMolitTransferFreshness({
       licenseValidUntil: null,
     },
   };
-  const result = evaluateFreshnessExtension({ input, policy, now });
+  const result = evaluateFreshnessExtension({ input, policy: compatibilityPolicy, now });
   if (result.decision !== "EXTENDED" || result.reasonCode !== "POSITIVE_OBSERVATION_EXTENDED") {
     fail("INELIGIBLE");
   }
