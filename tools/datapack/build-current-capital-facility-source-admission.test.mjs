@@ -104,6 +104,21 @@ test("producer-neutral FACILITY admission accepts the current six-source derived
   assert.equal(admission.candidate.sourceSnapshotSetHash, values.candidateBuildSpec.sourceSnapshotSetHash);
 });
 
+test("producer-neutral FACILITY admission normalizes byte inputs before binding checks", async () => {
+  const values = await fixture();
+  values.sourceInventoryBytes = new Uint8Array(values.sourceInventoryBytes);
+  values.governancePolicyBytes = new Uint8Array(values.governancePolicyBytes);
+  assert.equal(buildCurrentCapitalFacilitySourceAdmission(values).decision, "GO");
+
+  const inventoryRawDrift = await fixture();
+  inventoryRawDrift.sourceInventoryBytes = Buffer.concat([inventoryRawDrift.sourceInventoryBytes, Buffer.from("\n")]);
+  assert.throws(() => buildCurrentCapitalFacilitySourceAdmission(inventoryRawDrift), /candidate source inventory binding mismatch/);
+
+  const governanceRawDrift = await fixture();
+  governanceRawDrift.governancePolicyBytes = Buffer.concat([governanceRawDrift.governancePolicyBytes, Buffer.from("\n")]);
+  assert.throws(() => buildCurrentCapitalFacilitySourceAdmission(governanceRawDrift), /candidate source snapshot projection mismatch/);
+});
+
 async function fixture() {
   const files = Object.fromEntries(await Promise.all(["release/capital-production-canonical-pack.json", "nationwide-coverage-targets.json", "sources/kric-provider-code-catalog-20260228.json", "sources/kric-nationwide-route-rosters-20260730T203926676Z.json", "source-inventory.json", "source-governance-policy.json", "../../release/product-gates/datapack-freshness-sla.json", "release/candidate-build-spec.json", "release/source-snapshots.json"].map(async (name) => [name, await readFile(path.join(root, name))])));
   const plan = buildCurrentCapitalFacilityCollectionPlan({ canonicalPackBytes: files["release/capital-production-canonical-pack.json"], coverageTargetsBytes: files["nationwide-coverage-targets.json"], providerCodeCatalogBytes: files["sources/kric-provider-code-catalog-20260228.json"], routeRostersBytes: files["sources/kric-nationwide-route-rosters-20260730T203926676Z.json"], sourceInventoryBytes: files["source-inventory.json"] });

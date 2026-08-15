@@ -151,14 +151,16 @@ function validateSourceContext({ candidateBuildSpec, sourceInventoryBytes, sourc
     || !sha(candidateBuildSpec.sourceSnapshotSetHash)) {
     throw new Error("candidate build spec identity mismatch");
   }
-  const sourceInventory = parse(sourceInventoryBytes, "source inventory");
+  const normalizedSourceInventoryBytes = requireBytes(sourceInventoryBytes, "source inventory");
+  const normalizedGovernancePolicyBytes = requireBytes(governancePolicyBytes, "source governance policy");
+  const sourceInventory = parse(normalizedSourceInventoryBytes, "source inventory");
   if (!Array.isArray(sourceInventory?.sources) || !Array.isArray(sourceSnapshots)
-    || !Buffer.isBuffer(governancePolicyBytes) || !governancePolicy || !freshnessPolicy
-    || canonicalJson(governancePolicy) !== canonicalJson(parse(governancePolicyBytes, "source governance policy"))) {
+    || !governancePolicy || !freshnessPolicy
+    || canonicalJson(governancePolicy) !== canonicalJson(parse(normalizedGovernancePolicyBytes, "source governance policy"))) {
     throw new Error("source registries must be arrays");
   }
   validateSourceGovernancePolicy({ policy: governancePolicy, inventory: sourceInventory, freshnessPolicy });
-  validateCandidateInventoryBinding({ candidateBuildSpec, sourceInventory, sourceInventoryBytes });
+  validateCandidateInventoryBinding({ candidateBuildSpec, sourceInventory, sourceInventoryBytes: normalizedSourceInventoryBytes });
   const headsBySource = validateLineage(sourceSnapshots).headsBySource;
   if (candidateBuildSpec.sourceSnapshots.length !== CURRENT_SOURCE_IDS.length
     || candidateBuildSpec.sourceSnapshots.map(({ sourceId }) => sourceId).join("\0") !== CURRENT_SOURCE_IDS.join("\0")) {
@@ -171,7 +173,7 @@ function validateSourceContext({ candidateBuildSpec, sourceInventoryBytes, sourc
       throw new Error("candidate source snapshot membership mismatch");
     }
     assertExactKeys(projection, PROJECTION_KEYS, "candidate source snapshot projection");
-    const expected = deriveCandidateProjection({ ledger, sourceInventory, governancePolicy, governancePolicyBytes, freshnessPolicy, observedAtMillis });
+    const expected = deriveCandidateProjection({ ledger, sourceInventory, governancePolicy, governancePolicyBytes: normalizedGovernancePolicyBytes, freshnessPolicy, observedAtMillis });
     for (const key of PROJECTION_KEYS) {
       if (projection?.[key] !== expected[key]) throw new Error("candidate source snapshot projection mismatch");
     }
@@ -218,7 +220,7 @@ function validateSourceContext({ candidateBuildSpec, sourceInventoryBytes, sourc
     || !sha(ledger.rawSha256)) {
     throw new Error("KRIC source snapshot ledger mismatch");
   }
-  const expectedMember = deriveCandidateProjection({ ledger, sourceInventory, governancePolicy, governancePolicyBytes, freshnessPolicy, observedAtMillis });
+  const expectedMember = deriveCandidateProjection({ ledger, sourceInventory, governancePolicy, governancePolicyBytes: normalizedGovernancePolicyBytes, freshnessPolicy, observedAtMillis });
   for (const key of PROJECTION_KEYS) {
     if (member[key] !== expectedMember[key]) throw new Error("KRIC candidate membership mismatch");
   }
