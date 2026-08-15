@@ -7,6 +7,42 @@ import path from "node:path";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const yml = readFileSync(path.join(root, ".github/workflows/datapack-release.yml"), "utf8");
 
+test("route-final candidate parity는 runtime receipts를 canonical stage 밖 companion artifact로 분리한다", () => {
+  const step = (name) => yml.indexOf(`- name: ${name}`);
+  const coverage = yml.slice(step("Data Pack Release / Validate accessibility source coverage"), step("Data Pack Release / Write coverage gap evidence"));
+  assert.match(coverage, /buildSpec\.publishedAt/);
+  assert.doesNotMatch(coverage, /date -u/);
+  const override = yml.slice(step("Data Pack Release / Configure candidate execution evidence"), step("Data Pack Release / Write release evidence bundle"));
+  assert.match(override, /mode == 'release-candidate'/);
+  assert.match(override, /EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE=\$\{EASYSUBWAY_DATAPACK_EXECUTION_EVIDENCE_DIR\}/);
+  assert.match(override, /EASYSUBWAY_DATAPACK_RELEASE_DECISION=\$\{EASYSUBWAY_DATAPACK_EXECUTION_EVIDENCE_DIR\}/);
+  assert.match(yml, /EASYSUBWAY_DATAPACK_EXECUTION_EVIDENCE_DIR=.*execution-evidence/);
+  const metadata = step("Data Pack Release / Build candidate promotion metadata");
+  const companion = step("Data Pack Release / Upload candidate execution evidence");
+  const canonical = step("Data Pack Release / Upload candidate promotion artifact");
+  assert.ok(metadata < canonical && metadata < companion);
+  const companionText = yml.slice(companion, step("Data Pack Release / Publish staged data packs to object storage"));
+  assert.match(companionText, /release-evidence-bundle\.json/);
+  assert.match(companionText, /release-decision\.json/);
+  assert.doesNotMatch(yml.slice(step("Data Pack Release / Configure temp directories"), step("Data Pack Release / Configure candidate execution evidence")), /execution-evidence\/release-evidence-bundle/);
+  assert.ok(step("Data Pack Release / Stage current server route bundle candidate") < metadata);
+  const productionMetadata = yml.slice(step("Data Pack Release / Validate production artifact metadata"), step("Data Pack Release / Download exact production artifacts"));
+  assert.match(productionMetadata, /easysubway-datapack-candidate-execution-evidence-\$\{EASYSUBWAY_DATAPACK_CANDIDATE_RUN_ID\}/);
+  assert.match(productionMetadata, /require-workflow-artifact\.mjs/);
+  const download = yml.slice(step("Data Pack Release / Download exact candidate execution evidence"), step("Data Pack Release / Download exact promotion artifact"));
+  assert.match(download, /name: easysubway-datapack-candidate-execution-evidence-\$\{\{ steps\.release-mode\.outputs\.candidate_run_id \}\}/);
+  assert.match(download, /run-id: \$\{\{ steps\.release-mode\.outputs\.candidate_run_id \}\}/);
+  assert.doesNotMatch(download, /EASYSUBWAY_DATAPACK_STAGE/);
+  const verify = yml.slice(step("Data Pack Release / Verify attested promotion and candidate bytes"), step("Data Pack Release / Stage verified candidate artifact"));
+  assert.match(verify, /execution_entries[\s\S]*== 2/);
+  assert.match(verify, /release-evidence-bundle\.json release-decision\.json/);
+  assert.match(verify, /execution_root="\$\{RUNNER_TEMP\}\/downloaded-candidate-execution-evidence"/);
+  assert.match(verify, /EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE=\$\{execution_root\}\/release-evidence-bundle\.json/);
+  assert.doesNotMatch(verify, /EASYSUBWAY_DATAPACK_RELEASE_DECISION=/);
+  const lateDecision = yml.slice(step("Data Pack Release / Upload release decision artifact"), step("Data Pack Release / Upload staged data packs"));
+  assert.match(lateDecision, /always\(\) && steps\.release-mode\.outputs\.mode != 'release-candidate' && steps\.release-decision\.outputs\.outcome != ''/);
+});
+
 function assertRouteCoveragePair(source) {
   assert.match(source, /--require-production/);
   assert.match(source, /--server-route-coverage-evidence "\$\{EASYSUBWAY_DATAPACK_ROUTE_COVERAGE_AUTHORITY\}"/);

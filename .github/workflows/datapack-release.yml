@@ -73,6 +73,7 @@ jobs:
           {
             echo "EASYSUBWAY_DATAPACK_OUTPUT=${{ runner.temp }}/easysubway-datapacks"
             echo "EASYSUBWAY_DATAPACK_STAGE=${{ runner.temp }}/easysubway-datapack-stage"
+            echo "EASYSUBWAY_DATAPACK_EXECUTION_EVIDENCE_DIR=${{ runner.temp }}/easysubway-datapack-execution-evidence"
             echo "EASYSUBWAY_DATAPACK_ROUTE_COVERAGE_AUTHORITY=${{ runner.temp }}/easysubway-datapack-stage/server-route-coverage-authority.json"
             echo "EASYSUBWAY_DATAPACK_PUBLISH_PLAN=${{ runner.temp }}/easysubway-datapack-stage/publish-plan.json"
             echo "EASYSUBWAY_DATAPACK_IMPORTED_FIXTURE=${{ runner.temp }}/easysubway-production-source-fixture.json"
@@ -549,6 +550,9 @@ jobs:
           candidate_name="easysubway-datapack-candidate-${EASYSUBWAY_DATAPACK_CANDIDATE_RUN_ID}"
           gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${EASYSUBWAY_DATAPACK_CANDIDATE_RUN_ID}/artifacts?name=${candidate_name}&per_page=100" > "${RUNNER_TEMP}/${candidate_name}.json"
           node tools/ci/require-workflow-artifact.mjs "${RUNNER_TEMP}/${candidate_name}.json" "${candidate_name}" "${EASYSUBWAY_DATAPACK_CANDIDATE_RUN_ID}" "${CANDIDATE_HEAD_SHA}"
+          candidate_execution_name="easysubway-datapack-candidate-execution-evidence-${EASYSUBWAY_DATAPACK_CANDIDATE_RUN_ID}"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${EASYSUBWAY_DATAPACK_CANDIDATE_RUN_ID}/artifacts?name=${candidate_execution_name}&per_page=100" > "${RUNNER_TEMP}/${candidate_execution_name}.json"
+          node tools/ci/require-workflow-artifact.mjs "${RUNNER_TEMP}/${candidate_execution_name}.json" "${candidate_execution_name}" "${EASYSUBWAY_DATAPACK_CANDIDATE_RUN_ID}" "${CANDIDATE_HEAD_SHA}"
           promotion_name="easysubway-datapack-promotion-${EASYSUBWAY_DATAPACK_PROMOTION_RUN_ID}"
           GH_TOKEN="${EASYSUBWAY_HUB_ARTIFACT_READ_TOKEN}" gh api "repos/${EASYSUBWAY_HUB_REPOSITORY}/actions/runs/${EASYSUBWAY_DATAPACK_PROMOTION_RUN_ID}/artifacts?name=${promotion_name}&per_page=100" > "${RUNNER_TEMP}/${promotion_name}.json"
           node tools/ci/require-workflow-artifact.mjs "${RUNNER_TEMP}/${promotion_name}.json" "${promotion_name}" "${EASYSUBWAY_DATAPACK_PROMOTION_RUN_ID}" "${PROMOTION_HEAD_SHA}"
@@ -559,6 +563,15 @@ jobs:
         with:
           name: easysubway-datapack-candidate-${{ steps.release-mode.outputs.candidate_run_id }}
           path: ${{ runner.temp }}/downloaded-candidate
+          run-id: ${{ steps.release-mode.outputs.candidate_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Data Pack Release / Download exact candidate execution evidence
+        if: ${{ steps.release-mode.outputs.mode == 'production-publish' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: easysubway-datapack-candidate-execution-evidence-${{ steps.release-mode.outputs.candidate_run_id }}
+          path: ${{ runner.temp }}/downloaded-candidate-execution-evidence
           run-id: ${{ steps.release-mode.outputs.candidate_run_id }}
           github-token: ${{ github.token }}
 
@@ -579,8 +592,15 @@ jobs:
         run: |
           set -euo pipefail
           candidate_root="${RUNNER_TEMP}/downloaded-candidate"
+          execution_root="${RUNNER_TEMP}/downloaded-candidate-execution-evidence"
           promotion_root="${RUNNER_TEMP}/downloaded-promotion"
           shopt -s dotglob nullglob
+          execution_entries=("${execution_root}"/*)
+          [[ "${#execution_entries[@]}" == 2 ]]
+          for name in release-evidence-bundle.json release-decision.json; do
+            [[ -f "${execution_root}/${name}" && ! -L "${execution_root}/${name}" && -s "${execution_root}/${name}" ]]
+          done
+          echo "EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE=${execution_root}/release-evidence-bundle.json" >> "${GITHUB_ENV}"
           promotion_entries=("${promotion_root}"/*)
           [[ "${#promotion_entries[@]}" == 4 ]]
           for name in promotion-request.json promotion-approvals.json compatibility-evidence.json rebuild-parity-evidence.json; do
@@ -773,7 +793,7 @@ jobs:
         if: ${{ steps.release-mode.outputs.mode == 'release-candidate' }}
         run: |
           set -euo pipefail
-          evaluation_at="$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
+          evaluation_at="$(node -e 'const fs=require("fs"); const buildSpec=JSON.parse(fs.readFileSync(process.env.EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH,"utf8")); if (typeof buildSpec.publishedAt !== "string") throw new Error("buildSpec.publishedAt is required"); process.stdout.write(buildSpec.publishedAt);')"
           node tools/datapack/build-accessibility-source-coverage-report.mjs \
             --manifest "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json" \
             --manifest-root "${EASYSUBWAY_DATAPACK_OUTPUT}" \
@@ -885,6 +905,16 @@ jobs:
       - name: Data Pack Release / Validate ITX-청춘 coverage contract
         if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' }}
         run: node --test tools/datapack/itx-cheongchun-coverage-contract.test.mjs
+
+      - name: Data Pack Release / Configure candidate execution evidence
+        if: ${{ steps.release-mode.outputs.mode == 'release-candidate' }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${EASYSUBWAY_DATAPACK_EXECUTION_EVIDENCE_DIR}"
+          {
+            echo "EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE=${EASYSUBWAY_DATAPACK_EXECUTION_EVIDENCE_DIR}/release-evidence-bundle.json"
+            echo "EASYSUBWAY_DATAPACK_RELEASE_DECISION=${EASYSUBWAY_DATAPACK_EXECUTION_EVIDENCE_DIR}/release-decision.json"
+          } >> "${GITHUB_ENV}"
 
       - name: Data Pack Release / Write release evidence bundle
         if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' }}
@@ -1177,6 +1207,17 @@ jobs:
         with:
           name: easysubway-datapack-candidate-${{ github.run_id }}
           path: ${{ env.EASYSUBWAY_DATAPACK_STAGE }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Data Pack Release / Upload candidate execution evidence
+        if: ${{ steps.release-mode.outputs.mode == 'release-candidate' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: easysubway-datapack-candidate-execution-evidence-${{ github.run_id }}
+          path: |
+            ${{ env.EASYSUBWAY_DATAPACK_EXECUTION_EVIDENCE_DIR }}/release-evidence-bundle.json
+            ${{ env.EASYSUBWAY_DATAPACK_EXECUTION_EVIDENCE_DIR }}/release-decision.json
           if-no-files-found: error
           retention-days: 14
 
@@ -1566,7 +1607,7 @@ jobs:
           NODE
 
       - name: Data Pack Release / Upload release decision artifact
-        if: ${{ always() && steps.release-decision.outputs.outcome != '' }}
+        if: ${{ always() && steps.release-mode.outputs.mode != 'release-candidate' && steps.release-decision.outputs.outcome != '' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: easysubway-datapack-release-decision-${{ github.run_id }}
