@@ -46,6 +46,39 @@ test("current canonical 213-cell transfer applicability matrix is closed and non
   assert.deepEqual(JSON.parse(await readFile(output, "utf8")), result);
 });
 
+test("tracked raw canonical pack binds its parsed object without requiring lexical key order", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "transfer-applicability-tracked-"));
+  const canonicalPath = fileURLToPath(new URL("./release/capital-production-canonical-pack.json", import.meta.url));
+  const metricsPath = fileURLToPath(new URL("./release/current-transfer-topology-metrics.json", import.meta.url));
+  const output = path.join(root, "applicability.json");
+  const [canonicalPackBytes, metricsBytes] = await Promise.all([
+    readFile(canonicalPath),
+    readFile(metricsPath),
+  ]);
+  const result = await main([
+    "--canonical-pack", canonicalPath,
+    "--transfer-topology-metrics", metricsPath,
+    "--output", output,
+  ], { log: () => {} });
+
+  assert.equal(result.cells.length, 213);
+  assert.deepEqual(result.stateSummary, {
+    APPLICABLE_TRANSFER_ENDPOINT: 27,
+    NOT_APPLICABLE_IN_CANONICAL_PAIR_SET: 186,
+  });
+  const crossPairedPack = JSON.parse(canonicalPackBytes);
+  crossPairedPack.manifest.keyId = "cross-paired-but-unbound";
+  assert.throws(
+    () => buildApplicability({
+      canonicalPack: crossPairedPack,
+      canonicalPackBytes,
+      transferTopologyMetrics: JSON.parse(metricsBytes),
+      metricsBytes,
+    }),
+    /NO_GO parsed input binding mismatch/,
+  );
+});
+
 test("rehashed source and derived provenance drift fail closed without creating output", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "transfer-applicability-invalid-"));
   const canonical = canonicalPack();
