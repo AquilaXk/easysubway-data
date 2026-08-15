@@ -48,6 +48,7 @@
         "tools/datapack/collect-busan-accessibility.mjs",
         "tools/datapack/collect-busan-route-topology.mjs",
         "tools/datapack/collect-busan-timetable.mjs",
+        "tools/datapack/collect-current-seoul-transfer-distance-duration-snapshot.mjs",
         "tools/datapack/collect-daejeon-route-topology.mjs",
         "tools/datapack/collect-datago-source-candidate-evidence.mjs",
         "tools/datapack/collect-gwangju-timetable.mjs",

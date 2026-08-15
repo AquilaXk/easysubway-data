@@ -35,8 +35,9 @@ test("workflow는 current plan 뒤 reviewed collector를 exact once 실행하고
   assert.equal((yml.match(/collect-current-kric-exit-path-provider-snapshot\.mjs/g) ?? []).length, 1);
   for (const flag of [
     "--canonical-pack", "--coverage-targets", "--provider-code-catalog", "--route-rosters",
-    "--source-inventory", "--incheon-topology", "--output",
+    "--source-inventory", "--incheon-topology", "--coverage-selector", "--output",
   ]) assert.match(yml, new RegExp(flag));
+  assert.match(yml, /--coverage-selector capital-seoul-metro-production/);
   assert.match(yml, /--source-id kric-station-movement-standard/);
   assert.match(yml, /--request-timeout-ms 30000/);
   assert.match(yml, /--request-interval-ms 250/);

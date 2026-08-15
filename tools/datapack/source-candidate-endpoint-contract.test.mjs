@@ -56,6 +56,7 @@ const DATA_GO_FOCUSED_TESTS = Object.freeze({
   "tools/datapack/collect-busan-accessibility.mjs": "tools/datapack/collect-busan-accessibility.test.mjs",
   "tools/datapack/collect-busan-route-topology.mjs": "tools/datapack/collect-busan-route-topology.test.mjs",
   "tools/datapack/collect-busan-timetable.mjs": "tools/datapack/collect-busan-timetable.test.mjs",
+  "tools/datapack/collect-current-seoul-transfer-distance-duration-snapshot.mjs": "tools/datapack/collect-current-seoul-transfer-distance-duration-snapshot.test.mjs",
   "tools/datapack/collect-daejeon-route-topology.mjs": "tools/datapack/collect-daejeon-route-topology.test.mjs",
   "tools/datapack/collect-datago-source-candidate-evidence.mjs": "tools/datapack/collect-datago-source-candidate-evidence.test.mjs",
   "tools/datapack/collect-gwangju-timetable.mjs": "tools/datapack/collect-gwangju-timetable.test.mjs",
