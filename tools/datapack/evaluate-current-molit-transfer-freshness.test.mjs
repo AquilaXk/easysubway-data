@@ -138,6 +138,14 @@ test("policy/time/file/output boundary는 mismatch에서 mutation 0을 유지한
     evaluationAt,
     now,
   }), /MOLIT_TRANSFER_FRESHNESS_POLICY/);
+  const incompleteAnnualMembership = structuredClone(fixture.policy);
+  incompleteAnnualMembership.sourceClasses.find(({ id }) => id === "annual_official_file").sourceIds = ["molit-railway-transfer-movement"];
+  assert.throws(() => evaluateCurrentMolitTransferFreshness({
+    ...fixture,
+    policy: incompleteAnnualMembership,
+    evaluationAt,
+    now,
+  }), /MOLIT_TRANSFER_FRESHNESS_POLICY/);
   assert.throws(() => evaluateCurrentMolitTransferFreshness({
     ...fixture,
     evaluationAt,

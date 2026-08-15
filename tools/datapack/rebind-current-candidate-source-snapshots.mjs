@@ -7,10 +7,11 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { deriveFreshness, deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
-import { deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
+import { approvedGovernanceBindingTransition, deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
 import { requiredCredentialFreeObjectUri, validateLineage } from "./source-snapshot-policy.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import { approvedLegacyGovernanceBinding } from "./legacy-source-governance.mjs";
 
 const SOURCE_ID = "kric-station-convenience-standard";
 const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
@@ -303,6 +304,14 @@ export function deriveReleaseProjection({ snapshot, sourceInventory, governanceP
     providerValidUntil: sourceClass.providerValidityEndField ? snapshot[sourceClass.providerValidityEndField] : undefined,
     evaluationAt: new Date(nowMillis).toISOString(),
   });
+  const governanceSnapshot = snapshot.governancePolicyVersion == null && snapshot.governancePolicySha256 == null
+    ? { ...snapshot, ...approvedLegacyGovernanceBinding(snapshot) }
+    : snapshot;
+  const governanceBinding = approvedGovernanceBindingTransition({
+    snapshot: governanceSnapshot,
+    currentPolicyVersion: governancePolicy.policyVersion,
+    currentPolicySha256: sha256(governancePolicyBytes),
+  });
   return {
     snapshotId: snapshot.snapshotId, sourceId: snapshot.sourceId, rawObjectUri: snapshot.rawObjectUri,
     rawSha256: snapshot.rawSha256, redactedRequestFingerprint: snapshot.redactedRequestFingerprint,
@@ -310,7 +319,7 @@ export function deriveReleaseProjection({ snapshot, sourceInventory, governanceP
     redistributionAllowed: snapshot.redistributionAllowed, adminReviewRecordHash, snapshotStatus: snapshot.snapshotStatus,
     credentialRedacted: snapshot.credentialRedacted, freshnessExpiresAt,
     rawRetentionExpiresAt: deriveRawRetentionExpiresAt({ policy: governancePolicy, sourceId: snapshot.sourceId, retrievedAt: snapshot.retrievedAt }),
-    governancePolicyVersion: governancePolicy.policyVersion, governancePolicySha256: sha256(governancePolicyBytes),
+    ...governanceBinding,
   };
 }
 

@@ -5,6 +5,10 @@ import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
+const GOVERNANCE_POLICY_VERSION = "2026-07-15";
+const PRIOR_GOVERNANCE_POLICY_SHA256 = "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70";
+const CURRENT_GOVERNANCE_POLICY_SHA256 = "13f8a78c0ae0f7bfa6817005f44a92be3131e6f6708a69a4024747478203beaa";
+const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
 const RELEASE_PROTECTION_MAX_AGE_MS = 5 * 60 * 1_000;
 const RELEASE_PROTECTION_REASONS = new Set(["ACTIVE_RELEASE", "ROLLBACK_WINDOW"]);
 const LICENSE_STATUSES = new Set(["APPROVED", "REVIEW_REQUIRED", "BLOCKED", "EXPIRED"]);
@@ -68,6 +72,23 @@ export function deriveRawRetentionExpiresAt({ policy, sourceId, retrievedAt }) {
   if (!retentionClass) throw new Error(`RAW_RETENTION_OVERDUE: retention policy ${sourceId}`);
   const retentionDays = requiredPositiveInteger(retentionClass.retentionDays, "retentionDays");
   return new Date(requiredUtcInstant(retrievedAt, "retrievedAt") + retentionDays * DAY_MS).toISOString();
+}
+
+// #350 adds one source without rewriting approvals already sealed under the
+// immediately preceding policy bytes. The transition is deliberately closed.
+export function approvedGovernanceBindingTransition({ snapshot, currentPolicyVersion, currentPolicySha256 }) {
+  const binding = {
+    governancePolicyVersion: snapshot?.governancePolicyVersion,
+    governancePolicySha256: snapshot?.governancePolicySha256,
+  };
+  if (binding.governancePolicyVersion === currentPolicyVersion
+    && binding.governancePolicySha256 === currentPolicySha256) return binding;
+  if (currentPolicyVersion === GOVERNANCE_POLICY_VERSION
+    && currentPolicySha256 === CURRENT_GOVERNANCE_POLICY_SHA256
+    && snapshot?.sourceId !== TRANSFER_SOURCE_ID
+    && binding.governancePolicyVersion === GOVERNANCE_POLICY_VERSION
+    && binding.governancePolicySha256 === PRIOR_GOVERNANCE_POLICY_SHA256) return binding;
+  throw new Error("SOURCE_FRESHNESS_POLICY_MISSING: governance policy binding");
 }
 
 export function evaluateSourceGovernance({

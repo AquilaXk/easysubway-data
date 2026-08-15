@@ -64,7 +64,7 @@ function validatePolicy(policy) {
     || sourceClass?.basisField !== "observedAt"
     || sourceClass.reverificationCadence !== "P1Y"
     || sourceClass.offlinePackEligible !== true
-    || JSON.stringify(sourceClass.sourceIds) !== JSON.stringify([SOURCE_ID])) {
+    || JSON.stringify(sourceClass.sourceIds) !== JSON.stringify([SOURCE_ID, "seoul-metro-transfer-distance-duration"])) {
     fail("POLICY");
   }
 }
