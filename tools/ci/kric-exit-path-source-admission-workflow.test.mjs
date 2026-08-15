@@ -18,7 +18,7 @@ test("immutable EXIT admission은 exact provider workflow_run main success만 �
   assert.match(yml, /^on:\n\s+workflow_run:\n\s+workflows: \["KRIC EXIT Path Provider Snapshot"\]\n\s+types: \[completed\]\n\s+branches: \[main\]$/m);
   assert.doesNotMatch(yml, /^\s+(?:workflow_dispatch|push|pull_request|schedule|repository_dispatch):/m);
   assert.match(yml, /^permissions:\n\s+actions: read\n\s+contents: read\s*$/m);
-  assert.match(yml, /if: \$\{\{ github\.event\.workflow_run\.event == 'workflow_dispatch' && github\.event\.workflow_run\.conclusion == 'success' && github\.event\.workflow_run\.head_branch == 'main' \}\}/);
+  assert.match(yml, /if: \$\{\{ github\.event\.workflow_run\.event == 'workflow_dispatch' && github\.event\.workflow_run\.conclusion == 'success' && github\.event\.workflow_run\.head_branch == 'main' && github\.event\.workflow_run\.head_repository\.full_name == github\.repository \}\}/);
   assert.match(yml, /ref: \$\{\{ github\.event\.workflow_run\.head_sha \}\}/);
   assert.match(yml, /persist-credentials:\s*false/);
   assert.match(yml, /timeout-minutes:\s*15/);
