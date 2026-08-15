@@ -15,6 +15,12 @@ import {
   buildCurrentKricExitCollectionReceipt,
 } from "./build-current-kric-exit-collection-receipt.mjs";
 import { canonicalExitPathAdmissionJson } from "./build-exit-path-admission.mjs";
+import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
+import { buildCurrentCapitalFacilitySourceAdmission } from "./build-current-capital-facility-source-admission.mjs";
+import { collectKricAccessibilitySnapshots } from "./collect-kric-accessibility-snapshots.mjs";
+import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
+import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
+import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 
 const CAPTURED_AT = "2026-08-14T07:17:51.158Z";
 const OBSERVED_AT = "2026-08-14T07:36:53.296Z";
@@ -118,6 +124,49 @@ test("raw identity, candidate identity와 source license drift를 fail closed한
     assert.throws(() => buildCurrentExitPathSourceAdmission(input), expected, label);
   }
 });
+
+test("current capital FACILITY 형식은 legacy 2-station matrix로 downscope하지 않는다", () => {
+  const input = validInput();
+  const legacy = structuredClone(input.facilityAdmission);
+  legacy.artifactKind = "current-capital-facility-source-admission";
+  assert.throws(
+    () => buildCurrentExitPathSourceAdmission({ ...input, facilityAdmission: legacy }),
+    /capital FACILITY admission (?:output keys|matrix) mismatch/,
+  );
+});
+
+test("#331 builder canonical 213/199 FACILITY는 420 EXIT query GO로 직접 결속된다", async () => {
+  const root = import.meta.dirname;
+  const [canonicalPackBytes, coverageTargetsBytes, providerCodeCatalogBytes, routeRostersBytes, inventoryBytes, governancePolicyBytes, freshnessPolicyBytes, productionSnapshotsBytes, productionSpecBytes] = await Promise.all([
+    "release/capital-production-canonical-pack.json", "nationwide-coverage-targets.json", "sources/kric-provider-code-catalog-20260228.json",
+    "sources/kric-nationwide-route-rosters-20260730T203926676Z.json", "source-inventory.json", "source-governance-policy.json", "../../release/product-gates/datapack-freshness-sla.json", "release/source-snapshots.json", "release/candidate-build-spec.json",
+  ].map((name) => readFile(path.join(root, name))));
+  const facilityPlan = buildCurrentCapitalFacilityCollectionPlan({ canonicalPackBytes, coverageTargetsBytes, providerCodeCatalogBytes, routeRostersBytes, sourceInventoryBytes: inventoryBytes });
+  const roster = facilityPlan.stationLineProviderMappings.map((entry) => ({ stationId: entry.stationId, lineId: entry.lineId, railOprIsttCd: entry.providerOperatorId, lnCd: entry.providerLineId, stinCd: entry.providerStationId, canonicalMappings: [{ artifactId: "fixture", stationId: entry.stationId, lineId: entry.lineId }] }));
+  const [snapshot] = await collectKricAccessibilitySnapshots({ roster, operations: [{ sourceId: "kric-station-convenience-standard", endpoint: "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl", responseFields: ["dtlLoc", "grndDvCd", "gubun", "imgPath", "mlFmlDvCd", "stinFlor", "trfcWeakDvCd"], tupleIdentityFields: [] }], serviceKey: "fixture-only-key", now: new Date("2026-08-14T15:00:00.000Z"), fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ header: { resultCode: "00" }, body: [{ dtlLoc: "fixture", grndDvCd: "1", gubun: "EV", imgPath: "", mlFmlDvCd: "", stinFlor: 1, trfcWeakDvCd: "01" }] }) }) });
+  const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`); const rawSha256 = "a".repeat(64); const inventory = JSON.parse(inventoryBytes);
+  const source = inventory.sources.find(({ id }) => id === snapshot.sourceId); const admission = source.admissionEvidence;
+  source.accessibilityAdmissionEvidence = { ...source.accessibilityAdmissionEvidence, decision: "APPROVED", productionUseAllowed: true, snapshotId: snapshot.snapshotId, snapshotPath: `tools/datapack/sources/${snapshot.snapshotId}.json`, rawSha256: snapshot.rawSha256, contentSha256: snapshot.contentSha256, schemaFingerprint: snapshot.schemaFingerprint, redactedRequestFingerprint: snapshot.redactedRequestFingerprint, snapshotFileSha256: sha256(snapshotBytes), capturedAt: snapshot.capturedAt, observedAt: snapshot.observedAt, freshUntil: snapshot.freshUntil, absenceEvidenceMode: "EXHAUSTIVE_LIST" };
+  const productionSnapshots = JSON.parse(productionSnapshotsBytes); const productionSpec = JSON.parse(productionSpecBytes);
+  const previous = productionSnapshots.find((entry) => entry.sourceId === snapshot.sourceId && entry.snapshotId === productionSpec.sourceSnapshotIds[3]);
+  const ledger = { schemaVersion: 1, artifactKind: "official-source-snapshot", sourceId: snapshot.sourceId, snapshotId: snapshot.snapshotId, provider: source.provider, rawSha256, rawObjectUri: "s3://fixture/raw.json", rawReceipt: { sourceId: snapshot.sourceId, snapshotId: snapshot.snapshotId, snapshotRawSha256: snapshot.rawSha256, snapshotFileSha256: sha256(snapshotBytes), rawObjectSha256: rawSha256, capturedAt: snapshot.capturedAt, storedAt: snapshot.observedAt, byteSize: 1 }, contentSha256: snapshot.contentSha256, redactedRequestFingerprint: snapshot.redactedRequestFingerprint, schemaFingerprint: snapshot.schemaFingerprint, retrievedAt: snapshot.capturedAt, sourceUpdatedAt: snapshot.observedAt, rowCount: snapshot.rowCount, coverageCount: 213, freshnessExpiresAt: snapshot.freshUntil, rawRetentionExpiresAt: "2026-11-14T15:00:00.000Z", governancePolicyVersion: "fixture", governancePolicySha256: "b".repeat(64), adminReviewRecordHash: admission.adminReviewRecordHash, previousSnapshotId: previous.snapshotId, diffSummary: {}, snapshotStatus: "LOCKED", fetchStatus: "SUCCESS", schemaStatus: "PASS", licenseStatus: "PASS", credentialRedacted: true, redistributionAllowed: true };
+  ledger.diffSummary = buildSnapshotDiff(previous, ledger);
+  const governancePolicy = JSON.parse(governancePolicyBytes); const freshnessPolicy = JSON.parse(freshnessPolicyBytes); const sourceSnapshots = [...productionSnapshots, ledger];
+  const selected = productionSpec.sourceSnapshotIds.map((id) => id === previous.snapshotId ? ledger : productionSnapshots.find((entry) => entry.snapshotId === id));
+  const projection = (entry) => { const policySource = governancePolicy.sources.find(({ sourceId }) => sourceId === entry.sourceId); const sourceClass = freshnessPolicy.sourceClasses.find(({ id }) => id === policySource.sourceClassId); const governed = inventory.sources.find(({ id }) => id === entry.sourceId); return { snapshotId: entry.snapshotId, sourceId: entry.sourceId, rawObjectUri: entry.rawObjectUri, rawSha256: entry.rawSha256, redactedRequestFingerprint: entry.redactedRequestFingerprint, schemaFingerprint: entry.schemaFingerprint, licenseStatus: entry.licenseStatus, redistributionAllowed: entry.redistributionAllowed, adminReviewRecordHash: governed.admissionEvidence.adminReviewRecordHash, snapshotStatus: entry.snapshotStatus, credentialRedacted: entry.credentialRedacted, freshnessExpiresAt: deriveFreshnessExpiresAt({ policy: freshnessPolicy, sourceClassId: sourceClass.id, basisAt: entry[sourceClass.basisField], evaluationAt: "2026-08-14T16:30:00.000Z" }), rawRetentionExpiresAt: deriveRawRetentionExpiresAt({ policy: governancePolicy, sourceId: entry.sourceId, retrievedAt: entry.retrievedAt }), governancePolicyVersion: governancePolicy.policyVersion, governancePolicySha256: sha256(governancePolicyBytes) }; };
+  const candidateBuildSpec = { ...productionSpec, candidateId: "fixture", sourceSnapshotIds: selected.map(({ snapshotId }) => snapshotId), sourceSnapshots: selected.map(projection), sourceSnapshotSetHash: sha256(JSON.stringify(selected)), sourceInventorySha256: sha256(Buffer.from(JSON.stringify(inventory))), networkEdgeEvidence: { sourceInventory: { path: "tools/datapack/source-inventory.json", sha256: sha256(Buffer.from(JSON.stringify(inventory))) } } };
+  const facilityAdmission = buildCurrentCapitalFacilitySourceAdmission({ planBytes: Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(facilityPlan)), canonicalPackBytes, snapshotBytes, candidateBuildSpec, sourceInventoryBytes: Buffer.from(JSON.stringify(inventory)), sourceSnapshots, governancePolicy, governancePolicyBytes, freshnessPolicy, observedAt: "2026-08-14T16:30:00.000Z" });
+  const bundle = await fullBundleFixture();
+  const result = buildCurrentExitPathSourceAdmission({ providerSnapshotBytes: bundle.snapshotBytes, collectionPlan: JSON.parse(bundle.planBytes), facilityAdmission, candidateBuildSpec, sourceInventory: inventory, sourceSnapshots, observedAt: "2026-08-14T16:30:00.000Z" });
+  assert.equal(facilityAdmission.cells.length, 213); assert.equal(new Set(facilityAdmission.cells.map(({ stationId }) => stationId)).size, 199);
+  assert.equal(result.normalizedSnapshot.queryPlan.length, 420); assert.equal(result.admission.cells.length, 213); assert.equal(result.admission.decision, "GO");
+  const snapshotRawDrift = structuredClone(facilityAdmission);
+  snapshotRawDrift.sourceIdentity.rawSha256 = "f".repeat(64);
+  const { admissionDigest: ignoredDigest, ...snapshotRawPayload } = snapshotRawDrift;
+  snapshotRawDrift.admissionDigest = sha256(canonicalJson(snapshotRawPayload));
+  assert.throws(() => buildCurrentExitPathSourceAdmission({ providerSnapshotBytes: bundle.snapshotBytes, collectionPlan: JSON.parse(bundle.planBytes), facilityAdmission: snapshotRawDrift, candidateBuildSpec, sourceInventory: inventory, sourceSnapshots: [ledger], observedAt: "2026-08-14T16:30:00.000Z" }), /raw object provenance mismatch/);
+});
+
 
 test("station-line query와 source coverage를 provider mapping·inventory에 exact 결속한다", () => {
   const crossProvider = validInput();

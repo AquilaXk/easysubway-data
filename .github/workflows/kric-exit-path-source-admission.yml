@@ -1,0 +1,46 @@
+name: KRIC EXIT Path Source Admission
+
+on:
+  workflow_run:
+    workflows: ["KRIC EXIT Path Provider Snapshot"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  admit:
+    if: ${{ github.event.workflow_run.event == 'workflow_dispatch' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository }}
+    name: Admit immutable KRIC EXIT source snapshot
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout source workflow head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
+
+      - name: Build immutable KRIC EXIT source admission
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node tools/datapack/run-current-kric-exit-path-source-admission.mjs
+          --event-path "${GITHUB_EVENT_PATH}"
+          --output-directory "${RUNNER_TEMP}/current-kric-exit-path-source-admission"
+
+      - name: Upload approved KRIC EXIT source admission
+        if: ${{ success() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: kric-exit-path-source-admission-${{ github.event.workflow_run.id }}
+          path: ${{ runner.temp }}/current-kric-exit-path-source-admission
+          if-no-files-found: error
+          retention-days: 14

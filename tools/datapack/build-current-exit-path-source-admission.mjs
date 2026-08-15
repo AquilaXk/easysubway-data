@@ -10,6 +10,7 @@ import {
 } from "./build-exit-path-admission.mjs";
 import { readRegularSnapshot } from "./build-current-kric-exit-collection-plan.mjs";
 import { canonicalFacilitySourceAdmissionJson } from "./build-facility-source-admission.mjs";
+import { canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-current-capital-facility-source-admission.mjs";
 import { canonicalKricExitPathProviderSnapshotJson } from "./collect-kric-exit-path-provider-snapshot.mjs";
 import { consumeCurrentKricExitCollectionBundle } from "./consume-current-kric-exit-collection-bundle.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
@@ -60,7 +61,9 @@ export function buildCurrentExitPathSourceAdmission(input) {
   const providerBytes = requireBytes(input.providerSnapshotBytes, "provider snapshot");
   const providerSnapshot = validateProviderSnapshot(providerBytes, observedAt);
   const collectionPlan = validateCollectionPlan(input.collectionPlan, providerSnapshot);
-  const facilityAdmission = validateFacilityAdmission(input.facilityAdmission);
+  const facilityAdmission = validateFacilityAdmission(
+    input.facilityAdmission, collectionPlan, input.candidateBuildSpec, input.sourceSnapshots, observedAt,
+  );
   const { candidateBuildSpec, selectedSnapshots } = validateCandidateBuildSpec(
     input.candidateBuildSpec,
     facilityAdmission.candidate,
@@ -330,7 +333,10 @@ function validateProviderRow(row) {
   return canonicalObject(row);
 }
 
-function validateFacilityAdmission(value) {
+function validateFacilityAdmission(value, collectionPlan, candidateBuildSpec, sourceSnapshots, observedAt) {
+  if (value?.artifactKind === "current-capital-facility-source-admission") {
+    return adaptCurrentCapitalFacilityAdmission(value, collectionPlan, candidateBuildSpec, sourceSnapshots, observedAt);
+  }
   canonicalFacilitySourceAdmissionJson(value);
   if (value.artifactKind !== "facility-source-admission-matrix" || value.decision !== "GO"
     || !Array.isArray(value.cells) || value.cells.length === 0
@@ -338,6 +344,84 @@ function validateFacilityAdmission(value) {
     throw new Error("facility admission identity mismatch");
   }
   return value;
+}
+
+function adaptCurrentCapitalFacilityAdmission(value, collectionPlan, candidateBuildSpec, sourceSnapshots, observedAt) {
+  const canonical = canonicalCurrentCapitalFacilitySourceAdmissionJson(value);
+  if (canonical !== `${canonicalJson(value)}\n`) throw new Error("current capital FACILITY admission must be canonical JSON");
+  if (candidateBuildSpec?.candidateId !== value.candidate.candidateId
+    || candidateBuildSpec?.sourceSnapshotSetHash !== value.candidate.sourceSnapshotSetHash) {
+    throw new Error("current capital FACILITY candidate identity mismatch");
+  }
+  const source = sourceSnapshots?.filter((entry) => entry?.sourceId === "kric-station-convenience-standard"
+    && entry?.snapshotId === value.sourceIdentity.snapshotId);
+  const candidateMember = candidateBuildSpec?.sourceSnapshots?.filter((entry) => entry?.sourceId === source?.[0]?.sourceId
+    && entry?.snapshotId === source?.[0]?.snapshotId);
+  if (source?.length !== 1 || candidateMember?.length !== 1 || !candidateBuildSpec.sourceSnapshotIds?.includes(value.sourceIdentity.snapshotId)) {
+    throw new Error("current capital FACILITY KRIC membership mismatch");
+  }
+  for (const key of ["rawObjectUri", "schemaFingerprint"]) {
+    if (source[0][key] !== value.sourceIdentity[key]) throw new Error("current capital FACILITY provenance mismatch");
+  }
+  if (source[0].rawSha256 !== value.sourceIdentity.rawObjectSha256
+    || candidateMember[0].rawSha256 !== value.sourceIdentity.rawObjectSha256
+    || candidateMember[0].rawObjectUri !== value.sourceIdentity.rawObjectUri
+    || candidateMember[0].schemaFingerprint !== value.sourceIdentity.schemaFingerprint
+    || source[0].rawReceipt?.snapshotRawSha256 !== value.sourceIdentity.rawSha256) {
+    throw new Error("current capital FACILITY raw object provenance mismatch");
+  }
+  if (requiredUtcInstant(value.sourceIdentity.freshUntil, "current capital FACILITY freshUntil") <= observedAt) {
+    throw new Error("current capital FACILITY freshness mismatch");
+  }
+  const mappings = collectionPlan.providerMappings;
+  const queries = collectionPlan.stationLineQueries;
+  const queryIds = queries?.flatMap((entry) => entry?.queryIds ?? []);
+  const planQueryIds = collectionPlan.queryPlan?.map(({ queryId }) => queryId);
+  if (!Array.isArray(mappings) || mappings.length !== 213 || new Set(mappings.map(({ stationId, lineId }) => `${stationId}\0${lineId}`)).size !== 213
+    || !Array.isArray(queries) || queries.length !== 213 || new Set(queries.map(({ stationLineId }) => stationLineId)).size !== 213
+    || !Array.isArray(collectionPlan.queryPlan) || collectionPlan.queryPlan.length !== 420
+    || new Set(planQueryIds).size !== 420 || queryIds.length !== 420 || new Set(queryIds).size !== 420
+    || canonicalJson([...queryIds].sort(compareBytes)) !== canonicalJson([...planQueryIds].sort(compareBytes))) {
+    throw new Error("current capital FACILITY EXIT coverage mismatch");
+  }
+  const mappingSet = new Set(mappings.map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
+  const cellSet = new Set(value.cells.map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
+  const querySet = new Set(queries.map(({ stationLineId }) => stationLineId));
+  if (cellSet.size !== 213 || mappingSet.size !== 213 || querySet.size !== 213
+    || [...mappingSet].some((key) => !cellSet.has(key) || !querySet.has(key.replace("\0", ":")))) {
+    throw new Error("current capital FACILITY station-line set mismatch");
+  }
+  const providerProjection = mappings.map((mapping) => canonicalObject({
+    stationId: mapping.stationId, lineId: mapping.lineId, regionId: "capital", operatorId: "seoul-metro",
+    providerOperatorId: mapping.providerOperatorId, providerLineId: mapping.providerLineId, providerStationId: mapping.providerStationId,
+  })).sort(compareProviderMappingProjection);
+  if (sha256(canonicalJson(providerProjection)) !== value.stationLineProviderMappingSha256) {
+    throw new Error("current capital FACILITY provider mapping mismatch");
+  }
+  const candidate = canonicalObject({
+    candidateId: value.candidate.candidateId,
+    stationSetSha256: collectionPlan.candidate.stationSetSha256,
+    sourceSetSha256: value.candidate.sourceSnapshotSetHash,
+    mappingContractVersion: "station-line-v1",
+    materializerVersion: "1",
+  });
+  return canonicalObject({
+    ...value,
+    candidate,
+    stationLineSetSha256: sha256(canonicalJson(value.cells.map(({ stationId, lineId }) => ({ stationId, lineId, operatorId: "seoul-metro" })))),
+    stationLineMappingSha256: collectionPlan.candidate.stationLineMappingSha256,
+    directCurrentCapitalFacility: true,
+    queryPartition: {
+      joined: mappings.map((mapping) => canonicalObject({
+        stationId: mapping.stationId, lineId: mapping.lineId,
+        providerOperatorId: mapping.providerOperatorId, providerLineId: mapping.providerLineId, providerStationId: mapping.providerStationId,
+      })),
+    },
+    cells: value.cells.map((cell) => canonicalObject({
+      candidateId: candidate.candidateId, stationSetSha256: candidate.stationSetSha256, sourceSetSha256: candidate.sourceSetSha256,
+      stationId: cell.stationId, lineId: cell.lineId, operatorId: "seoul-metro", state: cell.state,
+    })),
+  });
 }
 
 function validateCandidateBuildSpec(value, candidate, sourceSnapshots) {
@@ -666,6 +750,16 @@ function compareStationLines(left, right) {
   return compareBytes(left.stationId, right.stationId)
     || compareBytes(left.lineId, right.lineId)
     || compareBytes(left.operatorId, right.operatorId);
+}
+
+function compareProviderMappingProjection(left, right) {
+  return compareBytes(left.stationId, right.stationId)
+    || compareBytes(left.lineId, right.lineId)
+    || compareBytes(left.regionId, right.regionId)
+    || compareBytes(left.operatorId, right.operatorId)
+    || compareBytes(left.providerOperatorId, right.providerOperatorId)
+    || compareBytes(left.providerLineId, right.providerLineId)
+    || compareBytes(left.providerStationId, right.providerStationId);
 }
 
 function compareQueries(left, right) {
