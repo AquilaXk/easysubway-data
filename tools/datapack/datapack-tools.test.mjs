@@ -18146,7 +18146,7 @@ test("official OD fare validator는 pack inventory에 없는 source를 거부한
 
 async function writeCurrentItxReleaseInputs(
   workspace,
-  { mutateFixture, mutateTopologyEvidence, mutateCompleteness } = {},
+  { mutateFixture, mutateTopologyEvidence, mutateCompleteness, mutateCurrentSourceContext } = {},
 ) {
   const repositoryRoot = await writeTransitionFreeCandidateRoot(workspace);
   const currentIdentity = {
@@ -18299,6 +18299,13 @@ async function writeCurrentItxReleaseInputs(
   });
   const sourceInventory = JSON.parse(await readFile(buildSpec.networkEdgeEvidence.sourceInventory.path, "utf8"));
   const currentInventory = structuredClone(sourceInventory);
+  mutateCurrentSourceContext?.({ buildSpec, currentInventory });
+  await bindCandidateAccessibilityContextToFixture({
+    fixture,
+    buildSpec,
+    currentInventory,
+    repositoryRoot,
+  });
   const currentInventoryPath = path.join(workspace, "source-inventory.json");
   const currentInventoryBytes = Buffer.from(`${JSON.stringify(currentInventory)}\n`);
   await writeFile(currentInventoryPath, currentInventoryBytes);
@@ -18334,6 +18341,7 @@ async function writeTransitionFreeCandidateRoot(workspace) {
     "tools/datapack/schema/catalog-schema.sql",
     "tools/datapack/official-od-fare-admission.json",
     "tools/datapack/nationwide-coverage-targets.json",
+    "tools/datapack/release/source-snapshots.json",
     "tools/datapack/sources/incheon-transit-station-info-20260814.json",
   ];
   for (const relativePath of requiredFiles) {
@@ -18342,6 +18350,98 @@ async function writeTransitionFreeCandidateRoot(workspace) {
     await copyFile(path.join(root, relativePath), target);
   }
   return repositoryRoot;
+}
+
+async function bindCandidateAccessibilityContextToFixture({
+  fixture,
+  buildSpec,
+  currentInventory,
+  repositoryRoot,
+}) {
+  const ledger = JSON.parse(await readFile(
+    path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json"),
+    "utf8",
+  ));
+  const inventorySources = new Map(currentInventory.sources.map((source) => [source.id, source]));
+  const fixtureSnapshotIds = new Map();
+  for (const pack of fixture.packs) {
+    for (const row of [
+      ...(pack.facilities ?? []),
+      ...(pack.stationFacilityEvidence ?? []),
+      ...(pack.networkEdges ?? []).filter(({ edgeType }) => ["ENTRY", "EXIT"].includes(edgeType)),
+    ]) {
+      if (!row.sourceId || !inventorySources.get(row.sourceId)?.accessibilityAdmissionEvidence) continue;
+      assert.equal(typeof row.sourceSnapshotId, "string", `${row.sourceId} fixture snapshot identity`);
+      const sourceSnapshotIds = fixtureSnapshotIds.get(row.sourceId) ?? new Set();
+      sourceSnapshotIds.add(row.sourceSnapshotId);
+      fixtureSnapshotIds.set(row.sourceId, sourceSnapshotIds);
+    }
+  }
+
+  for (const [sourceId, snapshotIds] of fixtureSnapshotIds) {
+    assert.equal(snapshotIds.size, 1, `${sourceId} fixture must use one accessibility snapshot`);
+    const [snapshotId] = snapshotIds;
+    const source = inventorySources.get(sourceId);
+    const snapshotMatches = ledger.filter(
+      (snapshot) => snapshot.sourceId === sourceId && snapshot.snapshotId === snapshotId,
+    );
+    assert.equal(snapshotMatches.length, 1, `${sourceId} fixture snapshot must exist once in ledger`);
+    const [ledgerSnapshot] = snapshotMatches;
+    const sourceArtifactRelativePath = `tools/datapack/sources/${snapshotId}.json`;
+    const sourceArtifactPath = path.join(repositoryRoot, sourceArtifactRelativePath);
+    await mkdir(path.dirname(sourceArtifactPath), { recursive: true });
+    await copyFile(path.join(root, sourceArtifactRelativePath), sourceArtifactPath);
+    const sourceArtifactBytes = await readFile(sourceArtifactPath);
+    const sourceArtifact = JSON.parse(sourceArtifactBytes);
+    assert.equal(sourceArtifact.sourceId, sourceId, `${sourceId} fixture source artifact identity`);
+    assert.equal(sourceArtifact.snapshotId, snapshotId, `${sourceId} fixture source snapshot identity`);
+    for (const field of [
+      "capturedAt",
+      "observedAt",
+      "freshUntil",
+      "rawSha256",
+      "contentSha256",
+      "schemaFingerprint",
+      "absenceEvidenceMode",
+    ]) assert.ok(sourceArtifact[field], `${sourceId} fixture source ${field}`);
+    Object.assign(source.accessibilityAdmissionEvidence, {
+      snapshotId,
+      snapshotPath: sourceArtifactRelativePath,
+      capturedAt: sourceArtifact.capturedAt,
+      observedAt: sourceArtifact.observedAt,
+      freshUntil: sourceArtifact.freshUntil,
+      rawSha256: sourceArtifact.rawSha256,
+      contentSha256: sourceArtifact.contentSha256,
+      schemaFingerprint: sourceArtifact.schemaFingerprint,
+      snapshotFileSha256: sha256(sourceArtifactBytes),
+      absenceEvidenceMode: sourceArtifact.absenceEvidenceMode,
+    });
+
+    const projectionIndex = buildSpec.sourceSnapshots.findIndex((snapshot) => snapshot.sourceId === sourceId);
+    assert.notEqual(projectionIndex, -1, `${sourceId} fixture candidate source projection`);
+    const currentProjection = buildSpec.sourceSnapshots[projectionIndex];
+    const adminReviewRecordHash = source.admissionEvidence?.adminReviewRecordHash;
+    assert.match(adminReviewRecordHash ?? "", /^[0-9a-f]{64}$/, `${sourceId} fixture admin review identity`);
+    const nextProjection = {};
+    for (const key of Object.keys(currentProjection)) {
+      const value = key === "adminReviewRecordHash"
+        ? adminReviewRecordHash
+        : ledgerSnapshot[key];
+      assert.notEqual(value, undefined, `${sourceId} fixture ledger projection ${key}`);
+      nextProjection[key] = value;
+    }
+    buildSpec.sourceSnapshots[projectionIndex] = nextProjection;
+    buildSpec.sourceSnapshotIds = buildSpec.sourceSnapshotIds.map(
+      (candidateSnapshotId) => candidateSnapshotId === currentProjection.snapshotId
+        ? snapshotId
+        : candidateSnapshotId,
+    );
+  }
+
+  const selectedIds = new Set(buildSpec.sourceSnapshotIds);
+  const selectedLedger = ledger.filter(({ snapshotId }) => selectedIds.has(snapshotId));
+  assert.equal(selectedLedger.length, selectedIds.size, "fixture candidate source-set must be ledger-complete");
+  buildSpec.sourceSnapshotSetHash = sha256(JSON.stringify(selectedLedger));
 }
 
 async function runCurrentItxCandidateBuild({ buildSpecPath, output, env, repositoryRoot }) {
@@ -18418,6 +18518,75 @@ test("official OD fare release candidate는 승인된 두 방향 quote와 proven
   } finally {
     await rm(outputDir, { recursive: true, force: true });
   }
+});
+
+test("staged accessibility successor에서도 official OD fare release candidate fixture source-set은 격리된다", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "official-od-fare-staged-accessibility-"));
+  try {
+    const successorSnapshotId = "kric-station-convenience-standard-test-successor";
+    const inputs = await writeCurrentItxReleaseInputs(workspace, {
+      mutateCurrentSourceContext: ({ buildSpec, currentInventory }) => {
+        const source = currentInventory.sources.find(({ id }) => id === "kric-station-convenience-standard");
+        assert.ok(source?.accessibilityAdmissionEvidence);
+        source.accessibilityAdmissionEvidence.snapshotId = successorSnapshotId;
+        source.accessibilityAdmissionEvidence.freshUntil = "2026-08-22T00:00:00.000Z";
+        const snapshot = buildSpec.sourceSnapshots.find(({ sourceId }) => sourceId === source.id);
+        assert.ok(snapshot);
+        const previousSnapshotId = snapshot.snapshotId;
+        snapshot.snapshotId = successorSnapshotId;
+        buildSpec.sourceSnapshotIds = buildSpec.sourceSnapshotIds.map(
+          (snapshotId) => snapshotId === previousSnapshotId ? successorSnapshotId : snapshotId,
+        );
+      },
+    });
+    await runCurrentItxCandidateBuild({ ...inputs, output: path.join(workspace, "output") });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("staged accessibility successor fixture는 복수·미등록 snapshot identity를 거부한다", async (t) => {
+  const mutateKricSnapshotIds = (fixture, mutate) => {
+    const rows = fixture.packs.flatMap((pack) => [
+      ...(pack.facilities ?? []),
+      ...(pack.stationFacilityEvidence ?? []),
+      ...(pack.networkEdges ?? []).filter(({ edgeType }) => ["ENTRY", "EXIT"].includes(edgeType)),
+    ]).filter(({ sourceId }) => sourceId === "kric-station-convenience-standard");
+    assert.ok(rows.length > 1);
+    mutate(rows);
+  };
+  await t.test("multiple identities", async () => {
+    const workspace = await mkdtemp(path.join(tmpdir(), "official-od-fare-multiple-accessibility-"));
+    try {
+      await assert.rejects(
+        writeCurrentItxReleaseInputs(workspace, {
+          mutateFixture: (fixture) => mutateKricSnapshotIds(
+            fixture,
+            ([row]) => { row.sourceSnapshotId = "kric-station-convenience-standard-untracked"; },
+          ),
+        }),
+        /fixture must use one accessibility snapshot/,
+      );
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+  await t.test("untracked identity", async () => {
+    const workspace = await mkdtemp(path.join(tmpdir(), "official-od-fare-untracked-accessibility-"));
+    try {
+      await assert.rejects(
+        writeCurrentItxReleaseInputs(workspace, {
+          mutateFixture: (fixture) => mutateKricSnapshotIds(
+            fixture,
+            (rows) => rows.forEach((row) => { row.sourceSnapshotId = "seoul-metro-accessibility-20260813T213842955Z"; }),
+          ),
+        }),
+        /fixture snapshot must exist once in ledger/,
+      );
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
 });
 
 test("official OD fare release candidate는 승인 quote 순서에 의존하지 않는다", async () => {
