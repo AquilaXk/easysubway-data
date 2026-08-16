@@ -111,7 +111,7 @@ export function rebindCandidateSourceSnapshots({
     if (!snapshot) throw new Error("candidate snapshot is absent from source ledger");
     return snapshot;
   });
-  if (sha256(JSON.stringify(selected)) !== candidate.sourceSnapshotSetHash) {
+  if (sha256(JSON.stringify(selectLedgerOrderedSnapshots(sourceSnapshots, ids))) !== candidate.sourceSnapshotSetHash) {
     throw new Error("candidate source snapshot set hash mismatch");
   }
   const lineage = validateLineage(sourceSnapshots);
@@ -153,12 +153,20 @@ export function rebindCandidateSourceSnapshots({
   });
   ids[oldIndex] = next.snapshotId;
   projections[oldIndex] = nextProjection;
-  const rebound = selected.map((snapshot, index) => (index === oldIndex ? next : snapshot));
-  candidate.sourceSnapshotSetHash = sha256(JSON.stringify(rebound));
+  candidate.sourceSnapshotSetHash = sha256(JSON.stringify(selectLedgerOrderedSnapshots(sourceSnapshots, ids)));
   candidate.sourceInventorySha256 = sha256(JSON.stringify(sourceInventory));
   candidate.networkEdgeEvidence.sourceInventory.sha256 = sha256(sourceInventoryBytes);
   assertOnlyAllowedCandidateChanges(candidateBuildSpec, candidate, oldProjection, nextProjection);
   return candidate;
+}
+
+function selectLedgerOrderedSnapshots(sourceSnapshots, snapshotIds) {
+  const selectedIds = new Set(snapshotIds);
+  const selected = sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
+  if (selectedIds.size !== snapshotIds.length || selected.length !== snapshotIds.length) {
+    throw new Error("candidate source snapshot set hash mismatch");
+  }
+  return selected;
 }
 
 function validateCandidate(candidate) {

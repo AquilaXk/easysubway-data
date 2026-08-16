@@ -180,8 +180,10 @@ function validateSourceContext({ candidateBuildSpec, sourceInventoryBytes, sourc
     }
     return ledger;
   });
-  if (new Set(candidateBuildSpec.sourceSnapshotIds).size !== selected.length
-    || sha256(JSON.stringify(selected)) !== candidateBuildSpec.sourceSnapshotSetHash) {
+  const selectedIds = new Set(candidateBuildSpec.sourceSnapshotIds);
+  const selectedInLedgerOrder = sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
+  if (selectedIds.size !== selected.length || selectedInLedgerOrder.length !== selected.length
+    || sha256(JSON.stringify(selectedInLedgerOrder)) !== candidateBuildSpec.sourceSnapshotSetHash) {
     throw new Error("candidate source snapshot set identity mismatch");
   }
   const source = exactlyOne(sourceInventory.sources, ({ id }) => id === SOURCE_ID, "KRIC source inventory");

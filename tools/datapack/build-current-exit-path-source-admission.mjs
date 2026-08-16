@@ -447,11 +447,14 @@ function validateCandidateBuildSpec(value, candidate, sourceSnapshots) {
     }
     return selected;
   });
+  const selectedIds = new Set(value.sourceSnapshotIds);
+  const selectedInLedgerOrder = sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
   if (value.sourceSnapshotSetHash !== candidate.sourceSetSha256
-    || sha256(JSON.stringify(selectedSnapshots)) !== value.sourceSnapshotSetHash) {
+    || selectedIds.size !== selectedSnapshots.length || selectedInLedgerOrder.length !== selectedSnapshots.length
+    || sha256(JSON.stringify(selectedInLedgerOrder)) !== value.sourceSnapshotSetHash) {
     throw new Error("source snapshot set identity mismatch");
   }
-  return { candidateBuildSpec: value, selectedSnapshots };
+  return { candidateBuildSpec: value, selectedSnapshots: selectedInLedgerOrder };
 }
 
 function validateSourceInventory(value) {
