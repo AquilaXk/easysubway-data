@@ -142,6 +142,20 @@ test("producer-neutral FACILITY admission accepts the current six-source derived
   assert.equal(admission.candidate.sourceSnapshotSetHash, values.candidateBuildSpec.sourceSnapshotSetHash);
 });
 
+test("replacement head의 source set hash는 selected append-only ledger order를 사용한다", async () => {
+  const values = await fixture();
+  const selectedIds = new Set(values.candidateBuildSpec.sourceSnapshotIds);
+  const selectedLedger = values.sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
+  const candidateOrder = values.candidateBuildSpec.sourceSnapshotIds.map((snapshotId) => values.sourceSnapshots.find((entry) => entry.snapshotId === snapshotId));
+  assert.notDeepEqual(selectedLedger.map(({ snapshotId }) => snapshotId), candidateOrder.map(({ snapshotId }) => snapshotId));
+  values.candidateBuildSpec.sourceSnapshotSetHash = sha256(JSON.stringify(selectedLedger));
+  assert.equal(buildCurrentCapitalFacilitySourceAdmission(values).decision, "GO");
+
+  const drift = structuredClone(values);
+  drift.candidateBuildSpec.sourceSnapshotSetHash = sha256(JSON.stringify(candidateOrder));
+  assert.throws(() => buildCurrentCapitalFacilitySourceAdmission(drift), /candidate source snapshot set identity mismatch/u);
+});
+
 test("producer-neutral FACILITY admission preserves the approved prior governance binding for unchanged sources", async () => {
   const values = await fixture();
   const productionSpec = JSON.parse(await readFile(path.join(root, "release/candidate-build-spec.json")));
@@ -168,7 +182,7 @@ test("producer-neutral FACILITY admission preserves the approved prior governanc
     target.governancePolicyVersion = priorProjection.governancePolicyVersion;
     target.governancePolicySha256 = priorProjection.governancePolicySha256;
   }
-  priorKric.candidateBuildSpec.sourceSnapshotSetHash = sha256(JSON.stringify(priorKric.candidateBuildSpec.sourceSnapshotIds.map((snapshotId) => priorKric.sourceSnapshots.find((entry) => entry.snapshotId === snapshotId))));
+  priorKric.candidateBuildSpec.sourceSnapshotSetHash = selectedLedgerHash(priorKric.sourceSnapshots, priorKric.candidateBuildSpec.sourceSnapshotIds);
   assert.throws(() => buildCurrentCapitalFacilitySourceAdmission(priorKric), /KRIC current governance binding mismatch/u);
 });
 
@@ -280,7 +294,7 @@ async function fixture({ mixed = false } = {}) {
     productionScopeId: "capital_pilot_android_v1",
     sourceSnapshotIds: productionSpec.sourceSnapshotIds.map((snapshotId) => snapshotId === previousKric.snapshotId ? ledger.snapshotId : snapshotId),
     sourceSnapshots: productionSpec.sourceSnapshotIds.map((snapshotId) => snapshotId === previousKric.snapshotId ? ledger : productionSnapshots.find((entry) => entry.snapshotId === snapshotId)).map((entry) => deriveReleaseProjection({ snapshot: entry, sourceInventory, governancePolicy, governancePolicyBytes: files["source-governance-policy.json"], freshnessPolicy: freshnessSla, nowMillis: Date.parse("2026-08-14T16:00:00.000Z") })),
-    sourceSnapshotSetHash: sha256(JSON.stringify(productionSpec.sourceSnapshotIds.map((snapshotId) => snapshotId === previousKric.snapshotId ? ledger : productionSnapshots.find((entry) => entry.snapshotId === snapshotId)))),
+    sourceSnapshotSetHash: selectedLedgerHash(sourceSnapshots, productionSpec.sourceSnapshotIds.map((snapshotId) => snapshotId === previousKric.snapshotId ? ledger.snapshotId : snapshotId)),
     sourceInventorySha256: sha256(JSON.stringify(sourceInventory)),
     networkEdgeEvidence: { sourceInventory: { path: "tools/datapack/source-inventory.json", sha256: sha256(sourceInventoryBytes) } },
   };
@@ -291,6 +305,11 @@ function mutateInventory(value, mutate) {
   const inventory = JSON.parse(Buffer.from(value.sourceInventoryBytes));
   mutate(inventory);
   value.sourceInventoryBytes = Buffer.from(JSON.stringify(inventory));
+}
+
+function selectedLedgerHash(sourceSnapshots, sourceSnapshotIds) {
+  const selectedIds = new Set(sourceSnapshotIds);
+  return sha256(JSON.stringify(sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId))));
 }
 
 async function productionShapedFixture() {
