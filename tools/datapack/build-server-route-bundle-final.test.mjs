@@ -137,12 +137,20 @@ test("current Data #8 three-handoff input과 materialization bytes를 exact cons
 
   assert.equal(inputBytes.toString("utf8"), canonicalJson(input));
   assert.equal(materializationBytes.toString("utf8"), canonicalStationLineAccessibilityJson(tracked));
+  const observedAt = sharedEvidenceWindowObservedAt(input.evidenceRows);
   const materialized = materializeStationLineAccessibility({
     ...input,
-    observedAt: FRESH_AT,
+    observedAt,
   });
   assert.equal(canonicalStationLineAccessibilityJson(materialized), materializationBytes.toString("utf8"));
   assert.equal(materialized.materializationDigest, "561ef3dde0f68e1223b05897d71a193d73b67b34cb677fc91201e99a4ae9eabb");
+  assert.throws(
+    () => sharedEvidenceWindowObservedAt([{
+      capturedAt: "2026-08-15T00:00:00.000Z",
+      freshUntil: "2026-08-15T00:00:00.000Z",
+    }]),
+    /shared evidence window is empty/,
+  );
 });
 
 test("embedded #8/#9 evidence와 current keyless bytes를 deterministic NO_GO FINAL로 결속한다", async (t) => {
@@ -753,6 +761,14 @@ async function selectedSourceWindow() {
 
 function kstInstant(milliseconds) {
   return new Date(milliseconds + 9 * 60 * 60 * 1_000).toISOString().replace("Z", "+09:00");
+}
+
+function sharedEvidenceWindowObservedAt(evidenceRows) {
+  const capturedAt = Math.max(...evidenceRows.map(({ capturedAt: value }) => Date.parse(value)));
+  const freshUntil = Math.min(...evidenceRows.map(({ freshUntil: value }) => Date.parse(value)));
+  assert.ok(Number.isFinite(capturedAt) && Number.isFinite(freshUntil) && capturedAt < freshUntil,
+    "shared evidence window is empty");
+  return new Date(capturedAt + 1).toISOString();
 }
 
 async function createArtifact(
