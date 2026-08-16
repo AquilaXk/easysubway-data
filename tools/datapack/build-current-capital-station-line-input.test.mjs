@@ -1,0 +1,106 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import test from "node:test";
+
+import { buildCurrentCapitalStationLineInput } from "./build-current-capital-station-line-input.mjs";
+import { collectKricAccessibilitySnapshots } from "./collect-kric-accessibility-snapshots.mjs";
+import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
+
+test("full-capital FACILITY·EXIT·TRANSFER fan-in은 213/199/641 closed input을 만든다", async () => {
+  const result = buildCurrentCapitalStationLineInput(await fixture());
+  assert.deepEqual(Object.keys(result).sort(), ["candidate", "evidenceRows", "stationLines"]);
+  assert.equal(result.stationLines.length, 213);
+  assert.equal(new Set(result.stationLines.map(({ stationId }) => stationId)).size, 199);
+  assert.equal(result.evidenceRows.length, 641);
+  assert.equal(result.evidenceRows.filter((row) => row.stationId === "station-b35616704ce3" && row.lineId === "seoul-2" && row.domain === "FACILITY").length, 3);
+  const materialization = materializeStationLineAccessibility({ ...result, observedAt: "2026-08-01T01:00:00.000Z" });
+  assert.equal(materialization.rows.length, 639);
+  assert.equal(materialization.rows.filter(({ state }) => state === "UNVERIFIED_EVIDENCE_BLOCKED").length, 1);
+  assert.equal(materialization.stateSummary.MISSING, 0);
+  assert.equal(materialization.stateSummary.STALE, 0);
+  assert.equal(materialization.stateSummary.UNKNOWN, 0);
+});
+
+test("blocked tuple·receipt·TRANSFER admission drift는 output 없이 fail-closed다", async () => {
+  for (const mutate of [
+    (value) => { value.facilityAdmission.cells.find((cell) => cell.stationId === "station-b35616704ce3" && cell.lineId === "seoul-2").state = "ADMITTED_FACILITY_PRESENT"; resealFacility(value.facilityAdmission); },
+    (value) => { value.exitReceipt.admissionDigest = "0".repeat(64); resealReceipt(value.exitReceipt); },
+    (value) => { value.transferMetrics.metrics[0].durationRole = "RUNTIME"; },
+    (value) => { value.transferApplicability.cells.pop(); resealApplicability(value.transferApplicability); },
+    (value) => { value.candidateBuildSpec.sourceSnapshots.pop(); },
+    (value) => { value.candidateBuildSpec.sourceSnapshots.at(-1).rawSha256 = "0".repeat(64); },
+    (value) => { value.candidateBuildSpec.sourceSnapshots.at(-1).extra = true; },
+    (value) => { value.sourceInventoryBytes = Buffer.concat([value.sourceInventoryBytes, Buffer.from(" ")]); },
+  ]) {
+    const value = await fixture(); mutate(value);
+    assert.throws(() => buildCurrentCapitalStationLineInput(value), /full-capital|mismatch|denominator|blocked/i);
+  }
+});
+
+test("count를 유지한 blocked carrier·directed pair·applicability swap drift도 fail-closed다", async () => {
+  for (const mutate of [
+    (value) => {
+      const blockedRows = value.facilityAdmission.denominatorRows.filter((row) => row.stationId === "station-b35616704ce3" && row.lineId === "seoul-2");
+      blockedRows.find(({ facilityType }) => facilityType === "ESCALATOR").facilityType = "ELEVATOR";
+      resealFacility(value.facilityAdmission);
+    },
+    (value) => {
+      value.transferMetrics.metrics[0].toLineId = value.transferMetrics.metrics[0].fromLineId;
+      rebindTransferArtifacts(value);
+    },
+    (value) => {
+      const applicable = value.transferApplicability.cells.find(({ state }) => state === "APPLICABLE_TRANSFER_ENDPOINT");
+      const notApplicable = value.transferApplicability.cells.find(({ state }) => state === "NOT_APPLICABLE_IN_CANONICAL_PAIR_SET");
+      applicable.state = "NOT_APPLICABLE_IN_CANONICAL_PAIR_SET";
+      notApplicable.state = "APPLICABLE_TRANSFER_ENDPOINT";
+      rebindTransferArtifacts(value);
+    },
+  ]) {
+    const value = await fixture(); mutate(value);
+    assert.throws(() => buildCurrentCapitalStationLineInput(value), /full-capital|mismatch|blocked/i);
+  }
+});
+
+export async function fixture() {
+  const lines = stationLines(); const stationIds = [...new Set(lines.map(({ stationId }) => stationId))].sort();
+  const snapshotIds = ["s0", "s1", "s2", "s3", "s4", "s5", "transfer-snapshot"];
+  const sourceSnapshots = snapshotIds.map((snapshotId, index) => index === 6 ? ({ snapshotId, sourceId: "seoul-metro-transfer-distance-duration", rawObjectUri: "oci://fixture/transfer", rawSha256: "a".repeat(64), redactedRequestFingerprint: "b".repeat(64), schemaFingerprint: "c".repeat(64), licenseStatus: "PASS", redistributionAllowed: true, adminReviewRecordHash: "d".repeat(64), snapshotStatus: "LOCKED", credentialRedacted: true, freshnessExpiresAt: "2026-09-01T00:00:00.000Z", rawRetentionExpiresAt: "2026-10-01T00:00:00.000Z", governancePolicyVersion: "fixture", governancePolicySha256: "e".repeat(64) }) : ({ sourceId: `source-${index}`, snapshotId, snapshotStatus: "LOCKED" }));
+  const sourceSet = sha(JSON.stringify(sourceSnapshots)); const stationSet = sha(canonical(stationIds));
+  const candidate = { candidateId: "capital-full-fixture", stationSetSha256: stationSet, sourceSetSha256: sourceSet, mappingContractVersion: "station-line-v1", materializerVersion: "1" };
+  const snapshot = await facilitySnapshot(lines); const snapshotBytes = Buffer.from(JSON.stringify(snapshot));
+  const sourceIdentity = { sourceId: snapshot.sourceId, snapshotId: snapshot.snapshotId, snapshotPath: `tools/datapack/sources/${snapshot.snapshotId}.json`, rawSha256: snapshot.rawSha256, redactedRequestFingerprint: snapshot.redactedRequestFingerprint, contentSha256: snapshot.contentSha256, schemaFingerprint: snapshot.schemaFingerprint, snapshotFileSha256: sha(snapshotBytes), capturedAt: snapshot.capturedAt, observedAt: snapshot.observedAt, freshUntil: snapshot.freshUntil, rawObjectUri: "oci://fixture/facility", rawObjectSha256: "7".repeat(64), credentialRedacted: true, licenseEvidenceHash: "8".repeat(64) };
+  const facilityAdmission = facility(lines, sourceSet, sourceIdentity);
+  const normalized = { sourceId: "kric-station-movement-standard", snapshotId: "exit-snapshot", queryPlan: Array.from({ length: 420 }, (_, index) => index < 213 ? ({ queryId: `query-${index}`, stationName: `역${index}`, lineName: "2호선", operatorName: "서울교통공사", regionId: "capital" }) : ({ queryId: `query-${index}` })), results: Array.from({ length: 420 }, (_, index) => ({ queryId: `query-${index}` })) };
+  const exitAdmission = exit(lines, candidate); exitAdmission.queryPartition = { joined: lines.map((line, index) => ({ stationLineId: `${line.stationId}:${line.lineId}`, queryId: `query-${index}` })) }; const mapping = lines.map((line, index) => ({ stationId: line.stationId, stationName: `역${index}`, stationAliases: [], regionId: "capital", lineId: line.lineId, lineName: "2호선", operatorId: "seoul-metro", operatorName: "서울교통공사" })).sort((a, b) => a.stationId.localeCompare(b.stationId) || a.lineId.localeCompare(b.lineId)); exitAdmission.stationLineMappingSha256 = sha(canonical(mapping)); resealFacility(exitAdmission); const exitNormalizedBytes = Buffer.from(canonical(normalized)); const exitAdmissionBytes = Buffer.from(canonical(exitAdmission));
+  const exitReceipt = receipt(exitNormalizedBytes, exitAdmissionBytes, exitAdmission.admissionDigest);
+  const metrics = transferMetrics(lines); const applicability = transferApplicability(lines, metrics);
+  const transferAdmissionEvidence = { decision: "APPROVED", metricsArtifactSha256: metrics.artifactSha256, applicabilityArtifactSha256: applicability.artifactSha256, physicalPairCount: 15, directedMetricCount: 30, officialMetricCount: 28, derivedReciprocalMetricCount: 2, durationRole: "REFERENCE_ONLY", snapshotId: "transfer-snapshot", freshUntil: "2026-09-01T00:00:00.000Z", licenseEvidenceHash: "9".repeat(64) };
+  const sourceInventory = { sources: [{ id: "seoul-metro-transfer-distance-duration", requiredForProductionPack: true, admissionEvidence: { adminReviewRecordHash: "d".repeat(64) }, transferAdmissionEvidence }] }; const sourceInventoryBytes = Buffer.from(canonical(sourceInventory));
+  const candidateBuildSpec = { candidateId: candidate.candidateId, sourceSnapshotIds: snapshotIds, sourceSnapshots: [...sourceSnapshots.slice(0, 6).map((entry) => ({ snapshotId: entry.snapshotId, sourceId: entry.sourceId })), Object.fromEntries(["snapshotId", "sourceId", "rawObjectUri", "rawSha256", "redactedRequestFingerprint", "schemaFingerprint", "licenseStatus", "redistributionAllowed", "adminReviewRecordHash", "snapshotStatus", "credentialRedacted", "freshnessExpiresAt", "rawRetentionExpiresAt", "governancePolicyVersion", "governancePolicySha256"].map((key) => [key, sourceSnapshots.at(-1)[key]]))], sourceSnapshotSetHash: sha(JSON.stringify(sourceSnapshots)), sourceInventorySha256: sha(sourceInventoryBytes), networkEdgeEvidence: { sourceInventory: { path: "tools/datapack/source-inventory.json", sha256: sha(sourceInventoryBytes) } } };
+  return { canonicalPack: { manifest: { channel: "production", activePack: { id: "capital" } }, packs: [{ id: "capital", lines: [{ id: "seoul-2", operatorId: "seoul-metro" }, { id: "seoul-4", operatorId: "seoul-metro" }, { id: "seoul-5", operatorId: "seoul-metro" }], stationLines: lines.map((line, lineSequence) => ({ ...line, lineSequence })) }] }, candidateBuildSpec, exitAdmission, exitAdmissionBytes, exitNormalized: normalized, exitNormalizedBytes, exitReceipt, facilityAdmission, facilitySnapshotBytes: snapshotBytes, policy: { artifactKind: "route-edge-evaluation-policy", policyVersion: "route-edge-evaluation-v2", edgeDomainMap: { RIDE: { endpointTarget: "NONE" } } }, sourceInventory, sourceInventoryBytes, sourceSnapshots, transferMetrics: metrics, transferApplicability: applicability };
+}
+
+function stationLines() { const stations = [...Array.from({ length: 198 }, (_, index) => `station-${String(index).padStart(3, "0")}`), "station-b35616704ce3"]; return stations.flatMap((stationId, index) => index < 12 ? ["seoul-2", "seoul-4"].map((lineId) => ({ stationId, lineId })) : index === 12 ? ["seoul-2", "seoul-4", "seoul-5"].map((lineId) => ({ stationId, lineId })) : [{ stationId, lineId: "seoul-2" }]).sort((a, b) => a.stationId.localeCompare(b.stationId) || a.lineId.localeCompare(b.lineId)); }
+async function facilitySnapshot(lines) { const roster = lines.map((line, index) => ({ ...line, railOprIsttCd: line.stationId === "station-b35616704ce3" ? "S1" : "S2", lnCd: line.lineId === "seoul-2" ? "2" : "4", stinCd: line.stationId === "station-b35616704ce3" ? "234-4" : String(index), canonicalMappings: [{ artifactId: "fixture", ...line }] })); const [snapshot] = await collectKricAccessibilitySnapshots({ roster, operations: [{ sourceId: "kric-station-convenience-standard", endpoint: "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl", responseFields: ["dtlLoc", "grndDvCd", "gubun", "imgPath", "mlFmlDvCd", "stinFlor", "trfcWeakDvCd"], tupleIdentityFields: [] }], serviceKey: "fixture", now: new Date("2026-08-01T00:00:00.000Z"), allowTerminalResult03: true, fetchImpl: async (url) => url.searchParams.get("railOprIsttCd") === "S1" ? ({ ok: true, status: 200, json: async () => ({ header: { resultCode: "03" }, body: [] }) }) : ({ ok: true, status: 200, json: async () => ({ header: { resultCode: "00" }, body: [{ dtlLoc: "x", grndDvCd: "1", gubun: "EV", imgPath: "", mlFmlDvCd: "", stinFlor: 1, trfcWeakDvCd: "01" }] }) }) }); return snapshot; }
+function facility(lines, sourceSet, sourceIdentity) { const cells = lines.map((line) => ({ ...line, state: line.stationId === "station-b35616704ce3" && line.lineId === "seoul-2" ? "ADMITTED_FACILITY_UNVERIFIED_BLOCKED" : "ADMITTED_FACILITY_PRESENT", sourceId: sourceIdentity.sourceId, snapshotId: sourceIdentity.snapshotId })); const denominatorRows = cells.flatMap((cell) => ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"].map((facilityType) => ({ stationId: cell.stationId, lineId: cell.lineId, facilityType, state: cell.state === "ADMITTED_FACILITY_UNVERIFIED_BLOCKED" ? "UNVERIFIED_EVIDENCE_BLOCKED" : "VERIFIED_PRESENT", sourceId: cell.sourceId, snapshotId: cell.snapshotId }))); const value = { schemaVersion: 1, artifactKind: "current-capital-facility-source-admission", observedAt: "2026-08-01T00:00:00.000Z", candidate: { candidateId: "capital-full-fixture", sourceSnapshotSetHash: sourceSet }, sourceIdentity, stationLineProviderMappingSha256: "a".repeat(64), denominatorRows, denominatorStateSummary: { VERIFIED_PRESENT: 636, VERIFIED_ABSENT: 0, UNVERIFIED_EVIDENCE_BLOCKED: 3 }, cells, cellStateSummary: { ADMITTED_FACILITY_PRESENT: 212, ADMITTED_FACILITY_ABSENT: 0, ADMITTED_FACILITY_UNVERIFIED_BLOCKED: 1 }, materializerEvidenceRows: cells.map((cell) => ({ ...cell, evidenceState: cell.state === "ADMITTED_FACILITY_UNVERIFIED_BLOCKED" ? "UNVERIFIED_EVIDENCE_BLOCKED" : "VERIFIED_PRESENT" })), decision: "GO" }; resealFacility(value); return value; }
+function exit(lines, candidate) { const projection = lines.map((line) => ({ ...line, operatorId: "seoul-metro" })).sort((a, b) => a.stationId.localeCompare(b.stationId) || a.lineId.localeCompare(b.lineId)); const projectionSha256 = sha(canonical(projection)); const evidence = projection.map((line) => ({ ...candidate, ...line, domain: "EXIT", state: "VERIFIED_PRESENT", sourceId: "kric-station-movement-standard", sourceSnapshotId: "exit-snapshot", evidenceRawSha256: "b".repeat(64), providerRecordHash: "c".repeat(64), capturedAt: "2026-08-01T00:00:00.000Z", freshUntil: "2026-09-01T00:00:00.000Z", provenanceId: "d".repeat(64), licenseId: "e".repeat(64), evidenceKind: "OBSERVED", evidenceReason: "fixture" })); const payload = { schemaVersion: 1, artifactKind: "exit-path-admission-matrix", candidate, sourceIdentity: { sourceId: "kric-station-movement-standard", snapshotId: "exit-snapshot" }, stationLineMappingSha256: projectionSha256, stationLineSetSha256: projectionSha256, normalizedEvidenceSha256: "1".repeat(64), queryPartition: {}, cells: [], materializerEvidenceRows: evidence, stateSummary: {}, decision: "GO" }; return { ...payload, admissionDigest: sha(canonical(payload)) }; }
+function receipt(normalizedBytes, admissionBytes, admissionDigest) { const payload = { schemaVersion: 1, artifactKind: "current-exit-admission-artifact-receipt", repository: "AquilaXk/easysubway-data", admissionWorkflowRunId: 1, providerWorkflowRunId: 2, headSha: "a".repeat(40), artifactId: 3, artifactName: "kric-exit-path-source-admission-2", artifactArchiveSha256: "4".repeat(64), normalizedSnapshotSha256: sha(normalizedBytes), admissionSha256: sha(admissionBytes), admissionDigest }; return { ...payload, receiptSha256: sha(canonical(payload)) }; }
+function transferMetrics(lines) { const pairs = [...Array.from({ length: 12 }, (_, index) => ({ stationId: `station-${String(index).padStart(3, "0")}`, lineIds: ["seoul-2", "seoul-4"] })), { stationId: "station-012", lineIds: ["seoul-2", "seoul-4"] }, { stationId: "station-012", lineIds: ["seoul-2", "seoul-5"] }, { stationId: "station-012", lineIds: ["seoul-4", "seoul-5"] }]; const metrics = pairs.flatMap((pair, index) => pair.lineIds.map((fromLineId, direction) => ({ stationId: pair.stationId, fromLineId, toLineId: pair.lineIds[1 - direction], distanceMeters: 10, officialDurationSecondsReference: 10, durationRole: "REFERENCE_ONLY", metricProvenance: index === 0 && direction < 2 ? "DERIVED_RECIPROCAL" : "OFFICIAL_SOURCE" }))); metrics[0].metricProvenance = "DERIVED_RECIPROCAL"; metrics[1].metricProvenance = "DERIVED_RECIPROCAL"; const canonicalIdentity = { stationLineCount: 213, stationCount: 199, physicalPairCount: 15 }; const sourceIdentity = { sourceId: "seoul-metro-transfer-distance-duration", rawSha256: "f".repeat(64), capturedAt: "2026-08-01T00:00:00.000Z" }; const payload = { artifactKind: "current-transfer-topology-metrics", physicalPairs: pairs, metrics, canonicalIdentity, sourceIdentity }; return { ...payload, artifactSha256: sha(canonical(payload)) }; }
+function transferApplicability(lines, metrics) { const endpoints = new Set(metrics.metrics.flatMap((metric) => [`${metric.stationId}\0${metric.fromLineId}`, `${metric.stationId}\0${metric.toLineId}`])); const cells = lines.map((line) => ({ ...line, state: endpoints.has(`${line.stationId}\0${line.lineId}`) ? "APPLICABLE_TRANSFER_ENDPOINT" : "NOT_APPLICABLE_IN_CANONICAL_PAIR_SET" })); const payload = { artifactKind: "current-capital-transfer-topology-applicability-pre-candidate", candidateBinding: null, productionUseAllowed: false, canonicalIdentity: metrics.canonicalIdentity, sourceIdentity: metrics.sourceIdentity, transferTopologyMetricsIdentity: { artifactSha256: metrics.artifactSha256 }, cells }; return { ...payload, artifactSha256: sha(`${canonical(payload)}\n`) }; }
+function resealFacility(value) { const { admissionDigest: _ignored, ...payload } = value; value.admissionDigest = sha(canonical(payload)); }
+function resealReceipt(value) { const { receiptSha256: _ignored, ...payload } = value; value.receiptSha256 = sha(canonical(payload)); }
+function resealApplicability(value) { const { artifactSha256: _ignored, ...payload } = value; value.artifactSha256 = sha(`${canonical(payload)}\n`); }
+function rebindTransferArtifacts(value) {
+  const { artifactSha256: _ignored, ...metricsPayload } = value.transferMetrics;
+  value.transferMetrics.artifactSha256 = sha(canonical(metricsPayload));
+  value.transferApplicability.transferTopologyMetricsIdentity.artifactSha256 = value.transferMetrics.artifactSha256;
+  resealApplicability(value.transferApplicability);
+  const admission = value.sourceInventory.sources[0].transferAdmissionEvidence;
+  admission.metricsArtifactSha256 = value.transferMetrics.artifactSha256;
+  admission.applicabilityArtifactSha256 = value.transferApplicability.artifactSha256;
+  value.sourceInventoryBytes = Buffer.from(canonical(value.sourceInventory));
+  value.candidateBuildSpec.sourceInventorySha256 = sha(value.sourceInventoryBytes);
+  value.candidateBuildSpec.networkEdgeEvidence.sourceInventory.sha256 = sha(value.sourceInventoryBytes);
+}
+function canonical(value) { if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`; if (value && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`; return JSON.stringify(value); }
+function sha(value) { return createHash("sha256").update(value).digest("hex"); }
