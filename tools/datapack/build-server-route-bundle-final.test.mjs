@@ -34,8 +34,9 @@ import {
 } from "./materialize-station-line-accessibility.mjs";
 import { signServerRouteBundle } from "./sign-server-route-bundle.mjs";
 
-const FRESH_AT = "2026-08-14T15:34:07.000Z";
-const STALE_AT = "2026-08-14T20:06:04.806Z";
+const CURRENT_SOURCE_WINDOW = await selectedSourceWindow();
+const FRESH_AT = CURRENT_SOURCE_WINDOW.evaluationAt;
+const STALE_AT = CURRENT_SOURCE_WINDOW.staleAt;
 const CANDIDATE_ID = "capital-pilot-candidate-20260814";
 const BUNDLE_ID = "capital-route-bundle-1";
 const STATION_SET_SHA256 = "1".repeat(64);
@@ -725,6 +726,35 @@ async function copyRepositoryInputs(repositoryRoot) {
   }
 }
 
+async function selectedSourceWindow() {
+  const [buildSpec, sourceSnapshots] = await Promise.all([
+    readJson("tools/datapack/release/candidate-build-spec.json"),
+    readJson("tools/datapack/release/source-snapshots.json"),
+  ]);
+  const selected = buildSpec.sourceSnapshotIds.map((snapshotId) => {
+    const matches = sourceSnapshots.filter((entry) => entry.snapshotId === snapshotId);
+    assert.equal(matches.length, 1, `selected source snapshot identity: ${snapshotId}`);
+    return matches[0];
+  });
+  const basisAt = Math.max(...selected.flatMap((entry) => [
+    entry.retrievedAt,
+    entry.sourceUpdatedAt,
+    entry.rawReceipt?.storedAt,
+  ].filter(Boolean).map(Date.parse)));
+  const freshUntil = Math.min(...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)));
+  assert.ok(Number.isFinite(basisAt) && Number.isFinite(freshUntil) && basisAt + 1_000 < freshUntil);
+  return {
+    evaluationAt: new Date(basisAt + 1_000).toISOString(),
+    evidenceFreshUntil: new Date(freshUntil).toISOString(),
+    freshUntil: kstInstant(freshUntil),
+    staleAt: new Date(freshUntil + 1).toISOString(),
+  };
+}
+
+function kstInstant(milliseconds) {
+  return new Date(milliseconds + 9 * 60 * 60 * 1_000).toISOString().replace("Z", "+09:00");
+}
+
 async function createArtifact(
   repositoryRoot,
   artifactRoot,
@@ -732,7 +762,7 @@ async function createArtifact(
   stationLineInput,
   routeEdgeInput,
   evaluationAt,
-  freshUntil = "2026-08-15T05:06:04.805+09:00",
+  freshUntil = CURRENT_SOURCE_WINDOW.freshUntil,
 ) {
   const routePolicy = await readJson(path.join(repositoryRoot, "release/product-gates/route-edge-evaluation-policy.json"));
   const materialization = materializeStationLineAccessibility({ ...stationLineInput, observedAt: evaluationAt });
@@ -899,7 +929,7 @@ function evidence(candidate, line, domain, state, evidenceKind, evidenceReason) 
     evidenceRawSha256: "b".repeat(64),
     providerRecordHash: "c".repeat(64),
     capturedAt: FRESH_AT,
-    freshUntil: "2026-08-14T20:06:04.805Z",
+    freshUntil: CURRENT_SOURCE_WINDOW.evidenceFreshUntil,
     provenanceId: "official-provider",
     licenseId: "public-data-license",
     evidenceKind,

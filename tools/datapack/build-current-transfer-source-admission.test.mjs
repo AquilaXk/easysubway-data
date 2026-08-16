@@ -20,6 +20,14 @@ const EVALUATED_AT = "2026-08-14T05:30:38.000Z";
 const EVIDENCE = observationEvidence();
 const BASE_INPUT = await trackedInput();
 
+test("legacy TRANSFER CLI는 staged transition을 입력보다 먼저 차단한다", async () => {
+  const source = await readFile(new URL("./build-current-transfer-source-admission.mjs", import.meta.url), "utf8");
+  const guard = source.indexOf("await assertCurrentCapitalAccessibilityBuildAllowed({ repositoryRoot: root });");
+  const inputRead = source.indexOf("const [\n    candidateBuildSpec, facilityAdmission");
+  assert.ok(guard >= 0, "staged transition guard가 필요하다");
+  assert.ok(guard < inputRead, "staged transition guard는 legacy 입력보다 먼저 실행돼야 한다");
+});
+
 test("current official full source를 present와 exhaustive not-applicable로 admission한다", () => {
   const result = buildCurrentTransferSourceAdmission(cloneInput());
 
@@ -95,6 +103,15 @@ test("CLI는 self-bound 두 handoff를 absent directory에 원자적으로 쓴�
     "--output-directory", outputDirectory,
   ];
 
+  if (await fileExists(path.join(REPOSITORY_ROOT, "tools/datapack/release/current-capital-accessibility-transition.json"))) {
+    await assert.rejects(
+      main(argv, { repositoryRoot: REPOSITORY_ROOT, log: () => {} }),
+      /CURRENT_ACCESSIBILITY_TRANSITION_BLOCKED/,
+    );
+    assert.equal(await fileExists(outputDirectory), false);
+    return;
+  }
+
   const result = await main(argv, { repositoryRoot: REPOSITORY_ROOT, log: () => {} });
   assert.equal(result.admission.decision, "GO");
   for (const fileName of ["transfer-topology-source-admission.json", "transfer-topology-admission.json"]) {
@@ -146,6 +163,26 @@ async function trackedInput() {
     readJson("tools/datapack/release/source-snapshots.json"),
   ]);
   const metadata = JSON.parse(metadataBytes);
+  const legacyKricSnapshotId = facilityAdmission.cells[0].sourceSnapshotId;
+  assert.ok(facilityAdmission.cells.every(({ sourceSnapshotId }) => sourceSnapshotId === legacyKricSnapshotId));
+  const selected = candidateBuildSpec.sourceSnapshots.map(({ sourceId, snapshotId }) => {
+    const selectedId = sourceId === "kric-station-convenience-standard" ? legacyKricSnapshotId : snapshotId;
+    const matches = sourceSnapshots.filter((entry) => entry.snapshotId === selectedId);
+    assert.equal(matches.length, 1, `legacy candidate snapshot identity: ${selectedId}`);
+    return matches[0];
+  });
+  const projectionKeys = [
+    "snapshotId", "sourceId", "rawObjectUri", "rawSha256", "schemaFingerprint",
+    "licenseStatus", "redistributionAllowed", "snapshotStatus", "credentialRedacted",
+  ];
+  const legacyCandidateBuildSpec = {
+    ...candidateBuildSpec,
+    candidateId: facilityAdmission.candidate.candidateId,
+    sourceSnapshotIds: selected.map(({ snapshotId }) => snapshotId),
+    sourceSnapshots: selected.map((entry) => Object.fromEntries(projectionKeys.map((key) => [key, entry[key]]))),
+    sourceSnapshotSetHash: sha256(JSON.stringify(selected)),
+  };
+  assert.equal(legacyCandidateBuildSpec.sourceSnapshotSetHash, facilityAdmission.candidate.sourceSetSha256);
   const freshnessResult = evaluateCurrentMolitTransferFreshness({
     evidence: EVIDENCE,
     evaluationAt: EVALUATED_AT,
@@ -156,7 +193,7 @@ async function trackedInput() {
     policy,
   });
   return {
-    candidateBuildSpec,
+    candidateBuildSpec: legacyCandidateBuildSpec,
     facilityAdmission,
     freshnessResult,
     gzipBytes,
@@ -170,6 +207,16 @@ async function trackedInput() {
     sourceInventory,
     sourceSnapshots,
   };
+}
+
+async function fileExists(target) {
+  try {
+    await stat(target);
+    return true;
+  } catch (error) {
+    if (error?.code === "ENOENT") return false;
+    throw error;
+  }
 }
 
 function cloneInput() {
