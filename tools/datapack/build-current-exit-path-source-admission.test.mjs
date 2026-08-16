@@ -358,7 +358,9 @@ async function fullBundleFixture() {
     providerCodeCatalogBytes: "sources/kric-provider-code-catalog-20260228.json", routeRostersBytes: "sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
     sourceInventoryBytes: "source-inventory.json", incheonTopologyBytes: "sources/incheon-transit-station-info-20260814.json",
   };
-  const input = Object.fromEntries(await Promise.all(Object.entries(files).map(async ([key, file]) => [key, await readFile(path.join(root, file))])));
+  const input = freshIncheonTopologyFixture(Object.fromEntries(
+    await Promise.all(Object.entries(files).map(async ([key, file]) => [key, await readFile(path.join(root, file))])),
+  ));
   const plan = buildCurrentKricExitCollectionPlan(input, { now: new Date(CAPTURED_AT), coverageSelector: "capital-seoul-metro-production" });
   const rows = [{ edMovePath: null, elvtSttCd: null, elvtTpCd: null, exitMvTpOrdr: "1", imgPath: null, mvContDtl: null, mvPathMgNo: "1", stMovePath: null }];
   const results = plan.queryPlan.map((query, index) => ({ queryId: query.queryId, state: index === 0 ? "ROWS_OBSERVED" : "EXPLICIT_ZERO", providerResultCode: "00", rawResponseSha256: sha256(`raw-${index}`), rawResponseByteSize: 1, providerRecordHash: sha256(canonicalJson(index === 0 ? rows : [])), rows: index === 0 ? rows : [] }));
@@ -368,6 +370,38 @@ async function fullBundleFixture() {
   const receipt = buildCurrentKricExitCollectionReceipt({ collectionPlanBytes: planBytes, providerSnapshotBytes: snapshotBytes, repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), workflowRunId: 123 });
   const bundle = buildCurrentKricExitCollectionBundle({ collectionPlanBytes: planBytes, providerSnapshotBytes: snapshotBytes, receipt });
   return { planBytes, snapshotBytes, bundleBytes: Buffer.from(canonicalJson(bundle)) };
+}
+
+function freshIncheonTopologyFixture(input) {
+  const capturedAt = new Date(Date.parse(CAPTURED_AT) - 1_000).toISOString();
+  const freshUntil = new Date(Date.parse(capturedAt) + 24 * 60 * 60 * 1_000).toISOString();
+  const snapshot = JSON.parse(input.incheonTopologyBytes);
+  snapshot.capturedAt = capturedAt;
+  snapshot.freshUntil = freshUntil;
+  const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
+
+  const inventory = JSON.parse(input.sourceInventoryBytes);
+  const source = inventory.sources.find(({ id }) => id === snapshot.sourceId);
+  assert.ok(source, "Incheon topology fixture source");
+  source.topologyAdmissionEvidence = {
+    ...source.topologyAdmissionEvidence,
+    capturedAt,
+    freshUntil,
+  };
+  source.membershipAdmissionEvidence = {
+    ...source.membershipAdmissionEvidence,
+    verifiedAt: capturedAt,
+  };
+  source.routeMapAdmissionEvidence = {
+    ...source.routeMapAdmissionEvidence,
+    capturedAt,
+    snapshotSha256: sha256(snapshotBytes),
+  };
+  return {
+    ...input,
+    incheonTopologyBytes: snapshotBytes,
+    sourceInventoryBytes: Buffer.from(canonicalJson(inventory)),
+  };
 }
 
 async function fullCapitalFixture() {
