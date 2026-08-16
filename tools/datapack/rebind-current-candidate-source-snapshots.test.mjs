@@ -175,6 +175,8 @@ test("RED old candidate KRIC head cannot satisfy current FACILITY identity; GREE
   assert.equal(rebound.sourceSnapshotIds.includes(next.snapshotId), true);
   assert.equal(rebound.sourceSnapshotIds.includes("kric-station-convenience-standard-20260813T200604805Z"), false);
   assert.notEqual(rebound.sourceSnapshotSetHash, old.sourceSnapshotSetHash);
+  const selectedIds = new Set(rebound.sourceSnapshotIds);
+  assert.equal(rebound.sourceSnapshotSetHash, sha(JSON.stringify(before.sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId)))));
   assert.equal(rebound.sourceInventorySha256, sha(JSON.stringify(before.sourceInventory)));
   assert.equal(rebound.networkEdgeEvidence.sourceInventory.sha256, sha(before.sourceInventoryBytes));
   assert.notEqual(rebound.sourceInventorySha256, rebound.networkEdgeEvidence.sourceInventory.sha256);

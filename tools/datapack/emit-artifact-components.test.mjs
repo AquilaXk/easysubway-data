@@ -51,13 +51,18 @@ test("current Data #9 seed는 full topology와 policy-required materialization s
     readFile("release/product-gates/route-edge-evaluation-policy.json"),
   ]);
   const policy = JSON.parse(policyBytes);
-  const input = await buildCurrentSourceRouteEdgeInput({
+  const build = () => buildCurrentSourceRouteEdgeInput({
     canonicalPack: JSON.parse(fixtureBytes),
     buildSpec: JSON.parse(buildSpecBytes),
     stationLineInput: JSON.parse(stationLineBytes),
     materialization: JSON.parse(materializationBytes),
     policy,
   });
+  if (await exists("tools/datapack/release/current-capital-accessibility-transition.json")) {
+    await assert.rejects(build, /CURRENT_ACCESSIBILITY_TRANSITION_BLOCKED/);
+    return;
+  }
+  const input = await build();
   const trackedBytes = await readFile("tools/datapack/release/current-route-edge-evaluation/route-edge-input.json", "utf8");
   assert.equal(trackedBytes, canonicalCurrentRouteEdgeInputJson(input));
 
@@ -108,6 +113,7 @@ test("current Data #9 seed는 alternate repository root의 nested projection evi
   const temp = await mkdtemp(path.join(os.tmpdir(), "current-route-edge-root-"));
   t.after(() => rm(temp, { recursive: true, force: true }));
   const repositoryRoot = path.join(temp, "repository");
+  const transitionPresent = await exists("tools/datapack/release/current-capital-accessibility-transition.json");
   const nestedEvidencePaths = [
     "tools/datapack/source-inventory.json",
     "tools/datapack/sources/capital-route-topology-20260724.json",
@@ -116,6 +122,12 @@ test("current Data #9 seed는 alternate repository root의 nested projection evi
     "tools/datapack/itx-cheongchun-coverage-contract.json",
     "tools/datapack/itx-cheongchun-topology-evidence-20260812165525800.json",
     "tools/datapack/sources/incheon-transit-station-info-20260814.json",
+    ...(transitionPresent ? [
+      "tools/datapack/release/current-capital-accessibility-transition.json",
+      "tools/datapack/release/candidate-build-spec.json",
+      "tools/datapack/release/current-station-line-accessibility/station-line-input.json",
+      "tools/datapack/release/current-capital-facility-source-admission.json",
+    ] : []),
   ];
   for (const relative of nestedEvidencePaths) {
     const destination = path.join(repositoryRoot, relative);
@@ -136,7 +148,7 @@ test("current Data #9 seed는 alternate repository root의 nested projection evi
   await writeFile(sourceInventoryPath, alternateSourceInventoryBytes);
   buildSpec.networkEdgeEvidence.sourceInventory.sha256 = hash(alternateSourceInventoryBytes);
 
-  const input = await buildCurrentSourceRouteEdgeInput({
+  const build = () => buildCurrentSourceRouteEdgeInput({
     canonicalPack: JSON.parse(fixtureBytes),
     buildSpec,
     stationLineInput: JSON.parse(stationLineBytes),
@@ -144,6 +156,11 @@ test("current Data #9 seed는 alternate repository root의 nested projection evi
     policy: JSON.parse(policyBytes),
     repositoryRoot,
   });
+  if (transitionPresent) {
+    await assert.rejects(build, /CURRENT_ACCESSIBILITY_TRANSITION_BLOCKED/);
+    return;
+  }
+  const input = await build();
   assert.equal(input.routeEdges.length, 2222);
 });
 
