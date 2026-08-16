@@ -1075,7 +1075,7 @@
     "inventory": {
       "path": "tools/datapack/source-inventory.json",
       "retrievedAt": "2026-06-22",
-      "sha256": "8abdd29eae1dedaf94b6581ad7530cb8ab116750af5b323b0fd5084fbac8f5bb"
+      "sha256": "942b9a21885e79a669e73cb815f58280dd07960f0334109604551235ba5896e9"
     },
     "resolutions": {
       "entryCount": 4,
