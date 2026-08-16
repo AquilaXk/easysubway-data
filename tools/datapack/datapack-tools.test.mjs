@@ -18160,6 +18160,8 @@ async function writeCurrentItxReleaseInputs(
   const selectedServiceDates = { "7": "20260822", "8": "20260812", "9": "20260816" };
   const observedAt = "2026-08-12T14:00:00.000Z";
   const freshUntil = "2026-08-23T00:00:00+09:00";
+  const itxFixtureDirectory = path.join(repositoryRoot, "tools/datapack/fixtures/current-itx");
+  await mkdir(itxFixtureDirectory, { recursive: true });
   const fixture = JSON.parse(await readFile("tools/datapack/release/capital-production-canonical-pack.json", "utf8"));
   for (const pack of fixture.packs) delete pack.routeServiceArtifactEvidence;
 
@@ -18174,7 +18176,7 @@ async function writeCurrentItxReleaseInputs(
   mutateCompleteness?.(completeness);
   const { evidenceHash: _completenessEvidenceHash, ...completenessWithoutEvidenceHash } = completeness;
   completeness.evidenceHash = sha256(Buffer.from(JSON.stringify(completenessWithoutEvidenceHash)));
-  const completenessPath = path.join(workspace, "itx-completeness.json");
+  const completenessPath = path.join(itxFixtureDirectory, "itx-completeness.json");
   const completenessBytes = Buffer.from(`${JSON.stringify(completeness)}\n`);
   await writeFile(completenessPath, completenessBytes);
 
@@ -18192,7 +18194,7 @@ async function writeCurrentItxReleaseInputs(
   source.evidenceHash = sha256(Buffer.from(JSON.stringify(sourceWithoutEvidenceHash)));
   projectItxTopologyIntoCanonicalFixture(fixture, deriveItxTopology(source));
   mutateFixture?.(fixture);
-  const sourcePath = path.join(workspace, "itx-source.json");
+  const sourcePath = path.join(itxFixtureDirectory, "itx-source.json");
   const sourceBytes = Buffer.from(`${JSON.stringify(source)}\n`);
   await writeFile(sourcePath, sourceBytes);
 
@@ -18221,9 +18223,9 @@ async function writeCurrentItxReleaseInputs(
   };
   Object.assign(contract.sourceTimetableArtifact, {
     artifactId: source.artifactId,
-    artifactPath: sourcePath,
+    artifactPath: path.relative(repositoryRoot, sourcePath),
     sha256: sha256(sourceBytes),
-    completenessEvidencePath: completenessPath,
+    completenessEvidencePath: path.relative(repositoryRoot, completenessPath),
     completenessEvidenceSha256: sha256(completenessBytes),
     freshUntil,
     policyVersion: source.policyVersion,
