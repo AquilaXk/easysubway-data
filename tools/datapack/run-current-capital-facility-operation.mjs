@@ -156,8 +156,9 @@ async function readCompletedObservation(observationRoot) {
   const keys = ["schemaVersion", "artifactKind", "sourceId", "capturedAt", "snapshotId", "snapshotRawSha256", "snapshotFile", "snapshotFileSha256", "rawArtifactFile", "rawObjectSha256", "rawObjectChecksumSha256", "rawObjectByteSize", "credentialRedacted"];
   if (Object.keys(manifest).length !== keys.length || keys.some((key) => !(key in manifest)) || manifest.schemaVersion !== 1 || manifest.artifactKind !== "kric-standard-accessibility-observation" || manifest.credentialRedacted !== true) throw new Error("stored observation is incomplete");
   const snapshotFile = `${manifest.snapshotId}.json`; const rawArtifactFile = `${manifest.snapshotId}.raw.json`;
-  const expectedInventory = ["observation.json", rawArtifactFile, snapshotFile].sort();
-  const actualInventory = (await readdir(observationRoot)).sort();
+  const byName = (left, right) => left.localeCompare(right);
+  const expectedInventory = ["observation.json", rawArtifactFile, snapshotFile].sort(byName);
+  const actualInventory = (await readdir(observationRoot)).sort(byName);
   if (typeof manifest.snapshotId !== "string" || manifest.snapshotId === "" || path.basename(manifest.snapshotId) !== manifest.snapshotId
     || manifest.snapshotFile !== snapshotFile || manifest.rawArtifactFile !== rawArtifactFile
     || JSON.stringify(actualInventory) !== JSON.stringify(expectedInventory)) throw new Error("stored observation inventory mismatch");
