@@ -12,6 +12,7 @@ import { canonicalTransferTopologyAdmissionJson } from "./build-transfer-topolog
 import { validateKricProviderCodeCatalogIdentity } from "./build-molit-nationwide-fixture.mjs";
 import { buildMolitRailwayTransferMovementSnapshot } from "./collect-molit-railway-transfer-movement.mjs";
 import { evaluateCurrentMolitTransferFreshness } from "./evaluate-current-molit-transfer-freshness.mjs";
+import { assertCurrentCapitalAccessibilityBuildAllowed } from "./current-capital-accessibility-transition.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 
 const SOURCE_ID = "molit-railway-transfer-movement";
@@ -187,6 +188,7 @@ export async function main(argv, { repositoryRoot = fileURLToPath(new URL("../..
   const args = parseArgs(argv);
   await outputMustBeAbsent(args.outputDirectory);
   const root = path.resolve(repositoryRoot);
+  await assertCurrentCapitalAccessibilityBuildAllowed({ repositoryRoot: root });
   const [
     candidateBuildSpec, facilityAdmission, freshnessFile, gzipBytes, metadataBytes, policy,
     productionInput, providerCodeCatalog, revalidationFile, sourceInventory, sourceSnapshots,

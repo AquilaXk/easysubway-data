@@ -27,9 +27,11 @@ import {
 } from "./materialize-station-line-accessibility.mjs";
 
 const SCRIPT = path.resolve("tools/datapack/emit-artifact-components.mjs");
-const CURRENT_ACTIVE_FROM = "2026-08-15T00:34:07.000+09:00";
-const CURRENT_FRESH_UNTIL = "2026-08-15T05:06:04.805+09:00";
-const CURRENT_EVALUATION_AT = "2026-08-14T15:34:07.000Z";
+const CURRENT_SOURCE_WINDOW = await selectedSourceWindow();
+const CURRENT_ACTIVE_FROM = CURRENT_SOURCE_WINDOW.activeFrom;
+const CURRENT_FRESH_UNTIL = CURRENT_SOURCE_WINDOW.freshUntil;
+const CURRENT_EVALUATION_AT = CURRENT_SOURCE_WINDOW.evaluationAt;
+const CURRENT_SOURCE_EXPIRES_AT = CURRENT_SOURCE_WINDOW.sourceExpiresAt;
 const buildNowEnvironmentKey = "EASYSUBWAY_DATAPACK_BUILD_NOW";
 const hadBuildNowEnvironmentValue = Object.hasOwn(process.env, buildNowEnvironmentKey);
 const previousBuildNowEnvironmentValue = process.env[buildNowEnvironmentKey];
@@ -41,6 +43,35 @@ after(() => {
     delete process.env[buildNowEnvironmentKey];
   }
 });
+
+async function selectedSourceWindow() {
+  const [buildSpec, sourceSnapshots] = await Promise.all([
+    readFile("tools/datapack/release/candidate-build-spec.json", "utf8").then(JSON.parse),
+    readFile("tools/datapack/release/source-snapshots.json", "utf8").then(JSON.parse),
+  ]);
+  const selected = buildSpec.sourceSnapshotIds.map((snapshotId) => {
+    const matches = sourceSnapshots.filter((entry) => entry.snapshotId === snapshotId);
+    assert.equal(matches.length, 1, `selected source snapshot identity: ${snapshotId}`);
+    return matches[0];
+  });
+  const basisAt = Math.max(...selected.flatMap((entry) => [
+    entry.retrievedAt,
+    entry.sourceUpdatedAt,
+    entry.rawReceipt?.storedAt,
+  ].filter(Boolean).map(Date.parse)));
+  const freshUntil = Math.min(...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)));
+  assert.ok(Number.isFinite(basisAt) && Number.isFinite(freshUntil) && basisAt + 1_000 < freshUntil);
+  return {
+    activeFrom: kstInstant(basisAt + 1_000),
+    evaluationAt: new Date(basisAt + 1_000).toISOString(),
+    freshUntil: kstInstant(freshUntil),
+    sourceExpiresAt: new Date(freshUntil).toISOString(),
+  };
+}
+
+function kstInstant(milliseconds) {
+  return new Date(milliseconds + 9 * 60 * 60 * 1_000).toISOString().replace("Z", "+09:00");
+}
 
 test("current Data #9 seed는 full topology와 policy-required materialization subset을 exact projection한다", async () => {
   const [fixtureBytes, buildSpecBytes, stationLineBytes, materializationBytes, policyBytes] = await Promise.all([
@@ -176,7 +207,7 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   db.exec("UPDATE network_edges SET accessibility_status='UNAVAILABLE' WHERE id='ride-s1-s2'");
   db.exec("INSERT INTO operators VALUES('seoul-metro','서울교통공사','Seoul Metro'); INSERT INTO lines(id,operator_id,name_ko,name_en,color) VALUES('seoul-2','seoul-metro','2호선','Line 2','#00aa00'); INSERT INTO stations(id,name_ko,name_en,normalized_name,region) VALUES('station-b35616704ce3','검증역','Terminal','검증역','수도권'); INSERT INTO station_lines(station_id,line_id,line_sequence) VALUES('station-b35616704ce3','seoul-2',1); INSERT INTO network_edges(id,from_node_id,to_node_id,duration_seconds,distance_meters,edge_type,service_pattern,service_class,accessibility_status) VALUES('entry-terminal','station-b35616704ce3','station-b35616704ce3:seoul-2',0,0,'ENTRY','','SUBWAY','AVAILABLE');");
   db.close();
-  const current = { packs: [{ id: "capital", artifactKind: "production", sqliteSha256: hash(await readFile(source)) }], expiresAt: "2026-08-14T20:06:04.805Z" };
+  const current = { packs: [{ id: "capital", artifactKind: "production", sqliteSha256: hash(await readFile(source)) }], expiresAt: CURRENT_SOURCE_EXPIRES_AT };
   await writeFile(path.join(temp, "current.json"), canonicalJson(current));
   const spec = await readFile(path.join(fixtureRoot, "tools/datapack/release/candidate-build-spec.json"));
   const buildSpec = JSON.parse(spec);
@@ -387,7 +418,7 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   }
   await writeBindings(temp, source, current, spec);
 
-  await assert.rejects(() => run("late", { freshUntil: "2026-08-15T05:06:04.806+09:00" }), /source freshness/);
+  await assert.rejects(() => run("late", { freshUntil: kstInstant(Date.parse(CURRENT_FRESH_UNTIL) + 1) }), /source freshness/);
   assert.equal(await exists(path.join(temp, "late")), false);
 
   const timezoneLessCurrent = { ...current, expiresAt: "2026-08-14T15:00:00.000" };

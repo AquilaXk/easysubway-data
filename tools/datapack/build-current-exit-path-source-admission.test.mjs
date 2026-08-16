@@ -21,9 +21,10 @@ import { collectKricAccessibilitySnapshots } from "./collect-kric-accessibility-
 import { deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 
-const CAPTURED_AT = "2026-08-14T07:17:51.158Z";
-const OBSERVED_AT = "2026-08-14T07:36:53.296Z";
-const FRESH_UNTIL = "2026-08-15T07:17:51.158Z";
+const CURRENT_SOURCE_HEAD_AT = await selectedSourceHeadAt();
+const CAPTURED_AT = new Date(CURRENT_SOURCE_HEAD_AT + 60_000).toISOString();
+const OBSERVED_AT = new Date(CURRENT_SOURCE_HEAD_AT + 120_000).toISOString();
+const FRESH_UNTIL = new Date(CURRENT_SOURCE_HEAD_AT + 60_000 + 24 * 60 * 60 * 1_000).toISOString();
 const SOURCE_ID = "kric-station-movement-standard";
 
 test("current provider snapshot을 candidate station-line EXIT admission으로 투영한다", () => {
@@ -135,38 +136,18 @@ test("current capital FACILITY 형식은 legacy 2-station matrix로 downscope하
 });
 
 test("#331 builder canonical 213/199 FACILITY는 420 EXIT query GO로 직접 결속된다", async () => {
-  const root = import.meta.dirname;
-  const [canonicalPackBytes, coverageTargetsBytes, providerCodeCatalogBytes, routeRostersBytes, inventoryBytes, governancePolicyBytes, freshnessPolicyBytes, productionSnapshotsBytes, productionSpecBytes] = await Promise.all([
-    "release/capital-production-canonical-pack.json", "nationwide-coverage-targets.json", "sources/kric-provider-code-catalog-20260228.json",
-    "sources/kric-nationwide-route-rosters-20260730T203926676Z.json", "source-inventory.json", "source-governance-policy.json", "../../release/product-gates/datapack-freshness-sla.json", "release/source-snapshots.json", "release/candidate-build-spec.json",
-  ].map((name) => readFile(path.join(root, name))));
-  const facilityPlan = buildCurrentCapitalFacilityCollectionPlan({ canonicalPackBytes, coverageTargetsBytes, providerCodeCatalogBytes, routeRostersBytes, sourceInventoryBytes: inventoryBytes });
-  const roster = facilityPlan.stationLineProviderMappings.map((entry) => ({ stationId: entry.stationId, lineId: entry.lineId, railOprIsttCd: entry.providerOperatorId, lnCd: entry.providerLineId, stinCd: entry.providerStationId, canonicalMappings: [{ artifactId: "fixture", stationId: entry.stationId, lineId: entry.lineId }] }));
-  const [snapshot] = await collectKricAccessibilitySnapshots({ roster, operations: [{ sourceId: "kric-station-convenience-standard", endpoint: "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl", responseFields: ["dtlLoc", "grndDvCd", "gubun", "imgPath", "mlFmlDvCd", "stinFlor", "trfcWeakDvCd"], tupleIdentityFields: [] }], serviceKey: "fixture-only-key", now: new Date("2026-08-14T15:00:00.000Z"), fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ header: { resultCode: "00" }, body: [{ dtlLoc: "fixture", grndDvCd: "1", gubun: "EV", imgPath: "", mlFmlDvCd: "", stinFlor: 1, trfcWeakDvCd: "01" }] }) }) });
-  const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`); const rawSha256 = "a".repeat(64); const inventory = JSON.parse(inventoryBytes);
-  const source = inventory.sources.find(({ id }) => id === snapshot.sourceId); const admission = source.admissionEvidence;
-  source.accessibilityAdmissionEvidence = { ...source.accessibilityAdmissionEvidence, decision: "APPROVED", productionUseAllowed: true, snapshotId: snapshot.snapshotId, snapshotPath: `tools/datapack/sources/${snapshot.snapshotId}.json`, rawSha256: snapshot.rawSha256, contentSha256: snapshot.contentSha256, schemaFingerprint: snapshot.schemaFingerprint, redactedRequestFingerprint: snapshot.redactedRequestFingerprint, snapshotFileSha256: sha256(snapshotBytes), capturedAt: snapshot.capturedAt, observedAt: snapshot.observedAt, freshUntil: snapshot.freshUntil, absenceEvidenceMode: "EXHAUSTIVE_LIST" };
-  const productionSnapshots = JSON.parse(productionSnapshotsBytes); const productionSpec = JSON.parse(productionSpecBytes);
-  const previous = productionSnapshots.find((entry) => entry.sourceId === snapshot.sourceId && entry.snapshotId === productionSpec.sourceSnapshotIds[3]);
-  const ledger = { schemaVersion: 1, artifactKind: "official-source-snapshot", sourceId: snapshot.sourceId, snapshotId: snapshot.snapshotId, provider: source.provider, rawSha256, rawObjectUri: "s3://fixture/raw.json", rawReceipt: { sourceId: snapshot.sourceId, snapshotId: snapshot.snapshotId, snapshotRawSha256: snapshot.rawSha256, snapshotFileSha256: sha256(snapshotBytes), rawObjectSha256: rawSha256, capturedAt: snapshot.capturedAt, storedAt: snapshot.observedAt, byteSize: 1 }, contentSha256: snapshot.contentSha256, redactedRequestFingerprint: snapshot.redactedRequestFingerprint, schemaFingerprint: snapshot.schemaFingerprint, retrievedAt: snapshot.capturedAt, sourceUpdatedAt: snapshot.observedAt, rowCount: snapshot.rowCount, coverageCount: 213, freshnessExpiresAt: snapshot.freshUntil, rawRetentionExpiresAt: "2026-11-14T15:00:00.000Z", governancePolicyVersion: "fixture", governancePolicySha256: "b".repeat(64), adminReviewRecordHash: admission.adminReviewRecordHash, previousSnapshotId: previous.snapshotId, diffSummary: {}, snapshotStatus: "LOCKED", fetchStatus: "SUCCESS", schemaStatus: "PASS", licenseStatus: "PASS", credentialRedacted: true, redistributionAllowed: true };
-  ledger.diffSummary = buildSnapshotDiff(previous, ledger);
-  const governancePolicy = JSON.parse(governancePolicyBytes); const freshnessPolicy = JSON.parse(freshnessPolicyBytes); const sourceSnapshots = [...productionSnapshots, ledger];
-  ledger.governancePolicyVersion = governancePolicy.policyVersion; ledger.governancePolicySha256 = sha256(governancePolicyBytes);
-  const selected = productionSpec.sourceSnapshotIds.map((id) => id === previous.snapshotId ? ledger : productionSnapshots.find((entry) => entry.snapshotId === id));
-  const selectedIds = new Set(selected.map(({ snapshotId }) => snapshotId));
-  const selectedInLedgerOrder = sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
-  const projection = (entry) => deriveReleaseProjection({ snapshot: entry, sourceInventory: inventory, governancePolicy, governancePolicyBytes, freshnessPolicy, nowMillis: Date.parse("2026-08-14T16:30:00.000Z") });
-  const candidateBuildSpec = { ...productionSpec, candidateId: "fixture", sourceSnapshotIds: selected.map(({ snapshotId }) => snapshotId), sourceSnapshots: selected.map(projection), sourceSnapshotSetHash: sha256(JSON.stringify(selectedInLedgerOrder)), sourceInventorySha256: sha256(Buffer.from(JSON.stringify(inventory))), networkEdgeEvidence: { sourceInventory: { path: "tools/datapack/source-inventory.json", sha256: sha256(Buffer.from(JSON.stringify(inventory))) } } };
-  const facilityAdmission = buildCurrentCapitalFacilitySourceAdmission({ planBytes: Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(facilityPlan)), canonicalPackBytes, snapshotBytes, candidateBuildSpec, sourceInventoryBytes: Buffer.from(JSON.stringify(inventory)), sourceSnapshots, governancePolicy, governancePolicyBytes, freshnessPolicy, observedAt: "2026-08-14T16:30:00.000Z" });
-  const bundle = await fullBundleFixture();
-  const result = buildCurrentExitPathSourceAdmission({ providerSnapshotBytes: bundle.snapshotBytes, collectionPlan: JSON.parse(bundle.planBytes), facilityAdmission, candidateBuildSpec, sourceInventory: inventory, sourceSnapshots, observedAt: "2026-08-14T16:30:00.000Z" });
+  const {
+    bundle, candidateBuildSpec, facilityAdmission, inventory, ledger, sourceSnapshots,
+    successorObservedAt,
+  } = await fullCapitalFixture();
+  const result = buildCurrentExitPathSourceAdmission({ providerSnapshotBytes: bundle.snapshotBytes, collectionPlan: JSON.parse(bundle.planBytes), facilityAdmission, candidateBuildSpec, sourceInventory: inventory, sourceSnapshots, observedAt: successorObservedAt });
   assert.equal(facilityAdmission.cells.length, 213); assert.equal(new Set(facilityAdmission.cells.map(({ stationId }) => stationId)).size, 199);
   assert.equal(result.normalizedSnapshot.queryPlan.length, 420); assert.equal(result.admission.cells.length, 213); assert.equal(result.admission.decision, "GO");
   const snapshotRawDrift = structuredClone(facilityAdmission);
   snapshotRawDrift.sourceIdentity.rawSha256 = "f".repeat(64);
   const { admissionDigest: ignoredDigest, ...snapshotRawPayload } = snapshotRawDrift;
   snapshotRawDrift.admissionDigest = sha256(canonicalJson(snapshotRawPayload));
-  assert.throws(() => buildCurrentExitPathSourceAdmission({ providerSnapshotBytes: bundle.snapshotBytes, collectionPlan: JSON.parse(bundle.planBytes), facilityAdmission: snapshotRawDrift, candidateBuildSpec, sourceInventory: inventory, sourceSnapshots: [ledger], observedAt: "2026-08-14T16:30:00.000Z" }), /raw object provenance mismatch/);
+  assert.throws(() => buildCurrentExitPathSourceAdmission({ providerSnapshotBytes: bundle.snapshotBytes, collectionPlan: JSON.parse(bundle.planBytes), facilityAdmission: snapshotRawDrift, candidateBuildSpec, sourceInventory: inventory, sourceSnapshots: [ledger], observedAt: successorObservedAt }), /raw object provenance mismatch/);
 });
 
 
@@ -308,7 +289,13 @@ test("CLI는 explicit pair와 immutable collection bundle mode를 섞지 않는�
 
 test("CLI bundle mode는 explicit pair와 exact output을 만들고 collision을 보존한다", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "current-exit-bundle-mode-"));
-  const fixture = await fullBundleFixture();
+  const fixture = await fullCapitalFixture();
+  const input = {
+    facilityAdmission: fixture.facilityAdmission,
+    candidateBuildSpec: fixture.candidateBuildSpec,
+    sourceInventory: fixture.inventory,
+    sourceSnapshots: fixture.sourceSnapshots,
+  };
   const paths = {
     provider: path.join(root, "provider.json"), plan: path.join(root, "plan.json"), bundle: path.join(root, "bundle.json"),
     facility: path.join(root, "facility.json"), candidate: path.join(root, "candidate.json"),
@@ -316,17 +303,17 @@ test("CLI bundle mode는 explicit pair와 exact output을 만들고 collision을
     explicitOutput: path.join(root, "explicit"), bundleOutput: path.join(root, "bundle"), collisionOutput: path.join(root, "collision"),
     missingDigestOutput: path.join(root, "missing-digest"), wrongDigestOutput: path.join(root, "wrong-digest"),
   };
-  const copy = async (source, target) => writeFile(target, await readFile(new URL(source, import.meta.url)));
   await Promise.all([
-    writeFile(paths.provider, fixture.snapshotBytes), writeFile(paths.plan, fixture.planBytes), writeFile(paths.bundle, fixture.bundleBytes),
-    copy("./release/facility-source-admission.json", paths.facility),
-    copy("./release/candidate-build-spec.json", paths.candidate), copy("./source-inventory.json", paths.inventory),
-    copy("./release/source-snapshots.json", paths.snapshots),
+    writeFile(paths.provider, fixture.bundle.snapshotBytes), writeFile(paths.plan, fixture.bundle.planBytes), writeFile(paths.bundle, fixture.bundle.bundleBytes),
+    writeFile(paths.facility, `${JSON.stringify(input.facilityAdmission, null, 2)}\n`),
+    writeFile(paths.candidate, `${JSON.stringify(input.candidateBuildSpec, null, 2)}\n`),
+    writeFile(paths.inventory, `${JSON.stringify(input.sourceInventory, null, 2)}\n`),
+    writeFile(paths.snapshots, `${JSON.stringify(input.sourceSnapshots, null, 2)}\n`),
   ]);
   const common = [
     "--facility-admission", paths.facility, "--candidate-build-spec", paths.candidate,
     "--source-inventory", paths.inventory, "--source-snapshots", paths.snapshots,
-    "--observed-at", "2026-08-14T16:30:00.000Z",
+    "--observed-at", OBSERVED_AT,
   ];
   await main([
     "--provider-snapshot", paths.provider, "--collection-plan", paths.plan,
@@ -344,7 +331,7 @@ test("CLI bundle mode는 explicit pair와 exact output을 만들고 collision을
   ], { log: () => {} }), /expected digest mismatch/);
   await assert.rejects(() => stat(paths.wrongDigestOutput), /ENOENT/);
   await main([
-    "--collection-bundle", paths.bundle, "--expected-bundle-sha256", sha256(fixture.bundleBytes), "--expected-repository-sha", "a".repeat(40),
+    "--collection-bundle", paths.bundle, "--expected-bundle-sha256", sha256(fixture.bundle.bundleBytes), "--expected-repository-sha", "a".repeat(40),
     "--expected-workflow-run-id", "123", ...common, "--output-directory", paths.bundleOutput,
   ], { log: () => {} });
   for (const file of ["exit-path-normalized-source-snapshot.json", "exit-path-source-admission.json"]) {
@@ -358,7 +345,7 @@ test("CLI bundle mode는 explicit pair와 exact output을 만들고 collision을
   }
   await writeFile(paths.collisionOutput, "preserve");
   await assert.rejects(() => main([
-    "--collection-bundle", paths.bundle, "--expected-bundle-sha256", sha256(fixture.bundleBytes), "--expected-repository-sha", "a".repeat(40),
+    "--collection-bundle", paths.bundle, "--expected-bundle-sha256", sha256(fixture.bundle.bundleBytes), "--expected-repository-sha", "a".repeat(40),
     "--expected-workflow-run-id", "123", ...common, "--output-directory", paths.collisionOutput,
   ], { log: () => {} }), /output directory must be absent/);
   assert.equal(await readFile(paths.collisionOutput, "utf8"), "preserve");
@@ -372,15 +359,62 @@ async function fullBundleFixture() {
     sourceInventoryBytes: "source-inventory.json", incheonTopologyBytes: "sources/incheon-transit-station-info-20260814.json",
   };
   const input = Object.fromEntries(await Promise.all(Object.entries(files).map(async ([key, file]) => [key, await readFile(path.join(root, file))])));
-  const plan = buildCurrentKricExitCollectionPlan(input, { now: new Date("2026-08-14T16:00:00.000Z"), coverageSelector: "capital-seoul-metro-production" });
+  const plan = buildCurrentKricExitCollectionPlan(input, { now: new Date(CAPTURED_AT), coverageSelector: "capital-seoul-metro-production" });
   const rows = [{ edMovePath: null, elvtSttCd: null, elvtTpCd: null, exitMvTpOrdr: "1", imgPath: null, mvContDtl: null, mvPathMgNo: "1", stMovePath: null }];
   const results = plan.queryPlan.map((query, index) => ({ queryId: query.queryId, state: index === 0 ? "ROWS_OBSERVED" : "EXPLICIT_ZERO", providerResultCode: "00", rawResponseSha256: sha256(`raw-${index}`), rawResponseByteSize: 1, providerRecordHash: sha256(canonicalJson(index === 0 ? rows : [])), rows: index === 0 ? rows : [] }));
-  const snapshotPayload = { schemaVersion: 1, artifactKind: "kric-exit-path-provider-snapshot", sourceId: SOURCE_ID, snapshotId: "kric-station-movement-standard-20260814T160000000Z", capturedAt: "2026-08-14T16:00:00.000Z", freshUntil: "2026-08-15T16:00:00.000Z", credentialRedacted: true, collectionPlanDigest: plan.collectionPlanDigest, queryPlanSha256: plan.queryPlanSha256, coverage: { requestPlanComplete: true, queryIds: plan.queryPlan.map(({ queryId }) => queryId) }, queryPlan: plan.queryPlan, results };
+  const snapshotPayload = { schemaVersion: 1, artifactKind: "kric-exit-path-provider-snapshot", sourceId: SOURCE_ID, snapshotId: `kric-station-movement-standard-${CAPTURED_AT.replaceAll(/[-:.]/gu, "")}`, capturedAt: CAPTURED_AT, freshUntil: FRESH_UNTIL, credentialRedacted: true, collectionPlanDigest: plan.collectionPlanDigest, queryPlanSha256: plan.queryPlanSha256, coverage: { requestPlanComplete: true, queryIds: plan.queryPlan.map(({ queryId }) => queryId) }, queryPlan: plan.queryPlan, results };
   const snapshot = { ...snapshotPayload, snapshotDigest: sha256(canonicalJson(snapshotPayload)) };
   const planBytes = Buffer.from(canonicalJson(plan)); const snapshotBytes = Buffer.from(canonicalJson(snapshot));
   const receipt = buildCurrentKricExitCollectionReceipt({ collectionPlanBytes: planBytes, providerSnapshotBytes: snapshotBytes, repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), workflowRunId: 123 });
   const bundle = buildCurrentKricExitCollectionBundle({ collectionPlanBytes: planBytes, providerSnapshotBytes: snapshotBytes, receipt });
   return { planBytes, snapshotBytes, bundleBytes: Buffer.from(canonicalJson(bundle)) };
+}
+
+async function fullCapitalFixture() {
+  const root = import.meta.dirname;
+  const [canonicalPackBytes, coverageTargetsBytes, providerCodeCatalogBytes, routeRostersBytes, inventoryBytes, governancePolicyBytes, freshnessPolicyBytes, productionSnapshotsBytes, productionSpecBytes] = await Promise.all([
+    "release/capital-production-canonical-pack.json", "nationwide-coverage-targets.json", "sources/kric-provider-code-catalog-20260228.json",
+    "sources/kric-nationwide-route-rosters-20260730T203926676Z.json", "source-inventory.json", "source-governance-policy.json", "../../release/product-gates/datapack-freshness-sla.json", "release/source-snapshots.json", "release/candidate-build-spec.json",
+  ].map((name) => readFile(path.join(root, name))));
+  const facilityPlan = buildCurrentCapitalFacilityCollectionPlan({ canonicalPackBytes, coverageTargetsBytes, providerCodeCatalogBytes, routeRostersBytes, sourceInventoryBytes: inventoryBytes });
+  const roster = facilityPlan.stationLineProviderMappings.map((entry) => ({ stationId: entry.stationId, lineId: entry.lineId, railOprIsttCd: entry.providerOperatorId, lnCd: entry.providerLineId, stinCd: entry.providerStationId, canonicalMappings: [{ artifactId: "fixture", stationId: entry.stationId, lineId: entry.lineId }] }));
+  const successorAt = new Date(CURRENT_SOURCE_HEAD_AT + 60_000).toISOString();
+  const successorObservedAt = new Date(CURRENT_SOURCE_HEAD_AT + 120_000).toISOString();
+  const [snapshot] = await collectKricAccessibilitySnapshots({ roster, operations: [{ sourceId: "kric-station-convenience-standard", endpoint: "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl", responseFields: ["dtlLoc", "grndDvCd", "gubun", "imgPath", "mlFmlDvCd", "stinFlor", "trfcWeakDvCd"], tupleIdentityFields: [] }], serviceKey: "fixture-only-key", now: new Date(successorAt), fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ header: { resultCode: "00" }, body: [{ dtlLoc: "fixture", grndDvCd: "1", gubun: "EV", imgPath: "", mlFmlDvCd: "", stinFlor: 1, trfcWeakDvCd: "01" }] }) }) });
+  const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`); const rawSha256 = "a".repeat(64); const inventory = JSON.parse(inventoryBytes);
+  const source = inventory.sources.find(({ id }) => id === snapshot.sourceId); const admission = source.admissionEvidence;
+  source.accessibilityAdmissionEvidence = { ...source.accessibilityAdmissionEvidence, decision: "APPROVED", productionUseAllowed: true, snapshotId: snapshot.snapshotId, snapshotPath: `tools/datapack/sources/${snapshot.snapshotId}.json`, rawSha256: snapshot.rawSha256, contentSha256: snapshot.contentSha256, schemaFingerprint: snapshot.schemaFingerprint, redactedRequestFingerprint: snapshot.redactedRequestFingerprint, snapshotFileSha256: sha256(snapshotBytes), capturedAt: snapshot.capturedAt, observedAt: snapshot.observedAt, freshUntil: snapshot.freshUntil, absenceEvidenceMode: "EXHAUSTIVE_LIST" };
+  const productionSnapshots = JSON.parse(productionSnapshotsBytes); const productionSpec = JSON.parse(productionSpecBytes);
+  const previousId = productionSpec.sourceSnapshots.find(({ sourceId }) => sourceId === snapshot.sourceId)?.snapshotId;
+  const previous = productionSnapshots.find((entry) => entry.sourceId === snapshot.sourceId && entry.snapshotId === previousId);
+  const ledger = { schemaVersion: 1, artifactKind: "official-source-snapshot", sourceId: snapshot.sourceId, snapshotId: snapshot.snapshotId, provider: source.provider, rawSha256, rawObjectUri: "s3://fixture/raw.json", rawReceipt: { sourceId: snapshot.sourceId, snapshotId: snapshot.snapshotId, snapshotRawSha256: snapshot.rawSha256, snapshotFileSha256: sha256(snapshotBytes), rawObjectSha256: rawSha256, capturedAt: snapshot.capturedAt, storedAt: snapshot.observedAt, byteSize: 1 }, contentSha256: snapshot.contentSha256, redactedRequestFingerprint: snapshot.redactedRequestFingerprint, schemaFingerprint: snapshot.schemaFingerprint, retrievedAt: snapshot.capturedAt, sourceUpdatedAt: snapshot.observedAt, rowCount: snapshot.rowCount, coverageCount: 213, freshnessExpiresAt: snapshot.freshUntil, rawRetentionExpiresAt: new Date(CURRENT_SOURCE_HEAD_AT + 90 * 24 * 60 * 60 * 1_000).toISOString(), governancePolicyVersion: "fixture", governancePolicySha256: "b".repeat(64), adminReviewRecordHash: admission.adminReviewRecordHash, previousSnapshotId: previous.snapshotId, diffSummary: {}, snapshotStatus: "LOCKED", fetchStatus: "SUCCESS", schemaStatus: "PASS", licenseStatus: "PASS", credentialRedacted: true, redistributionAllowed: true };
+  ledger.diffSummary = buildSnapshotDiff(previous, ledger);
+  const governancePolicy = JSON.parse(governancePolicyBytes); const freshnessPolicy = JSON.parse(freshnessPolicyBytes); const sourceSnapshots = [...productionSnapshots, ledger];
+  ledger.governancePolicyVersion = governancePolicy.policyVersion; ledger.governancePolicySha256 = sha256(governancePolicyBytes);
+  const selected = productionSpec.sourceSnapshotIds.map((id) => id === previous.snapshotId ? ledger : productionSnapshots.find((entry) => entry.snapshotId === id));
+  const selectedIds = new Set(selected.map(({ snapshotId }) => snapshotId));
+  const selectedInLedgerOrder = sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
+  const projection = (entry) => deriveReleaseProjection({ snapshot: entry, sourceInventory: inventory, governancePolicy, governancePolicyBytes, freshnessPolicy, nowMillis: Date.parse(successorObservedAt) });
+  const candidateBuildSpec = { ...productionSpec, candidateId: "fixture", sourceSnapshotIds: selected.map(({ snapshotId }) => snapshotId), sourceSnapshots: selected.map(projection), sourceSnapshotSetHash: sha256(JSON.stringify(selectedInLedgerOrder)), sourceInventorySha256: sha256(Buffer.from(JSON.stringify(inventory))), networkEdgeEvidence: { sourceInventory: { path: "tools/datapack/source-inventory.json", sha256: sha256(Buffer.from(JSON.stringify(inventory))) } } };
+  const facilityAdmission = buildCurrentCapitalFacilitySourceAdmission({ planBytes: Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(facilityPlan)), canonicalPackBytes, snapshotBytes, candidateBuildSpec, sourceInventoryBytes: Buffer.from(JSON.stringify(inventory)), sourceSnapshots, governancePolicy, governancePolicyBytes, freshnessPolicy, observedAt: successorObservedAt });
+  return { bundle: await fullBundleFixture(), candidateBuildSpec, facilityAdmission, inventory, ledger, sourceSnapshots, successorObservedAt };
+}
+
+async function selectedSourceHeadAt() {
+  const root = import.meta.dirname;
+  const [buildSpec, sourceSnapshots] = await Promise.all([
+    readFile(path.join(root, "release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "release/source-snapshots.json"), "utf8").then(JSON.parse),
+  ]);
+  const selected = buildSpec.sourceSnapshotIds.map((snapshotId) => {
+    const matches = sourceSnapshots.filter((entry) => entry.snapshotId === snapshotId);
+    assert.equal(matches.length, 1, `selected source snapshot identity: ${snapshotId}`);
+    return matches[0];
+  });
+  const latest = Math.max(...selected.flatMap((entry) => [entry.retrievedAt, entry.sourceUpdatedAt, entry.rawReceipt?.storedAt]
+    .filter(Boolean).map(Date.parse)));
+  assert.ok(Number.isFinite(latest));
+  return latest;
 }
 
 function validInput() {
