@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { finalizeCurrentSeoulTransferRegistration, parseArgs, prepareCurrentSeoulTransferRegistration, validateFinalStateStatus } from "./run-current-seoul-transfer-registration.mjs";
+import { finalizeCurrentSeoulTransferRegistration, parseArgs, prepareCurrentSeoulTransferRegistration, recoverPublishedCurrentSeoulTransferRegistration, validateFinalStateStatus } from "./run-current-seoul-transfer-registration.mjs";
 
 const SHA = "a".repeat(40);
 const NOW = new Date("2026-08-15T12:01:00.000Z");
@@ -27,8 +27,9 @@ async function fixture(t) {
 
 const dependencies = { assertExactMain: exactMain, assertFinalStateMain: exactMain, readObservation: async () => observation, readArtifacts: async (root) => ({ ...artifacts, paths: { metrics: path.join(root, "metrics.json"), applicability: path.join(root, "applicability.json") } }) };
 
-test("strictly parses prepare/finalize command boundaries", () => {
+test("strictly parses prepare/recover-published/finalize command boundaries", () => {
   assert.deepEqual(parseArgs(["prepare", "--operation-root", "/private/op", "--observation-directory", "/private/observation", "--expected-main-sha", SHA]), { phase: "prepare", operationRoot: "/private/op", observationDirectory: "/private/observation", expectedMainSha: SHA });
+  assert.deepEqual(parseArgs(["recover-published", "--source-operation-root", "/private/source", "--target-operation-root", "/private/target", "--expected-main-sha", SHA]), { phase: "recover-published", sourceOperationRoot: "/private/source", targetOperationRoot: "/private/target", expectedMainSha: SHA });
   assert.deepEqual(parseArgs(["finalize", "--operation-root", "/private/op"]), { phase: "finalize", operationRoot: "/private/op" });
   assert.throws(() => parseArgs(["--phase", "finalize", "--operation-root", "/private/op"]), /arguments/);
 });
@@ -77,6 +78,88 @@ test("an exact existing receipt skips publish, while REGISTERING residue never r
   const crash = await fixture(t); await prepareCurrentSeoulTransferRegistration({ ...crash, expectedMainSha: SHA, ...dependencies, now: NOW });
   await setPhase(crash.operationRoot, "REGISTERING");
   await assert.rejects(finalizeCurrentSeoulTransferRegistration({ ...crash, ...dependencies, register: async () => { throw new Error("must not replay"); } }), /manual recovery/);
+});
+
+test("FINALIZED published evidence recovers to current main and finalize never republishes", async (t) => {
+  const source = await fixture(t);
+  await prepareCurrentSeoulTransferRegistration({ ...source, expectedMainSha: SHA, ...dependencies, now: NOW });
+  await writeFile(path.join(source.operationRoot, "receipt.json"), `${JSON.stringify(receipt())}\n`, { mode: 0o600 });
+  await finalizeCurrentSeoulTransferRegistration({
+    ...source,
+    ...dependencies,
+    publish: async () => { throw new Error("source receipt must skip publish"); },
+    register: async () => writeTargets(source.repositoryRoot),
+  });
+
+  const target = await fixture(t);
+  await recoverPublishedCurrentSeoulTransferRegistration({
+    repositoryRoot: target.repositoryRoot,
+    sourceOperationRoot: source.operationRoot,
+    targetOperationRoot: target.operationRoot,
+    expectedMainSha: SHA,
+    ...dependencies,
+    assertAncestor: async () => {},
+    now: new Date("2026-08-16T01:00:00.000Z"),
+  });
+  const journal = JSON.parse(await readFile(path.join(target.operationRoot, "journal.json"), "utf8"));
+  assert.equal(journal.phase, "PUBLISHED");
+  assert.equal(journal.expectedMainSha, SHA);
+  assert.equal(journal.publishAt, receipt().storedAt);
+  assert.equal(journal.observationDirectory, path.join(target.operationRoot, "observation"));
+  assert.deepEqual((await readdir(target.operationRoot)).sort(), ["journal.json", "observation", "receipt.json"]);
+  assert.deepEqual((await readdir(journal.observationDirectory)).sort(), ["manifest.json", "observation.json", "raw-snapshot.json"]);
+  assert.equal((await stat(target.operationRoot)).mode & 0o777, 0o700);
+  assert.equal((await stat(path.join(target.operationRoot, "receipt.json"))).mode & 0o777, 0o600);
+
+  let publishCalls = 0; let registerCalls = 0;
+  await finalizeCurrentSeoulTransferRegistration({
+    ...target,
+    ...dependencies,
+    publish: async () => { publishCalls += 1; },
+    register: async () => { registerCalls += 1; return writeTargets(target.repositoryRoot); },
+  });
+  assert.deepEqual([publishCalls, registerCalls], [0, 1]);
+});
+
+test("published recovery rejects nonterminal, nonancestor and receipt-drift sources before target acceptance", async (t) => {
+  const prepared = await fixture(t);
+  await prepareCurrentSeoulTransferRegistration({ ...prepared, expectedMainSha: SHA, ...dependencies, now: NOW });
+  await writeFile(path.join(prepared.operationRoot, "receipt.json"), `${JSON.stringify(receipt())}\n`, { mode: 0o600 });
+  const preparedTarget = await fixture(t);
+  await assert.rejects(recoverPublishedCurrentSeoulTransferRegistration({ repositoryRoot: preparedTarget.repositoryRoot, sourceOperationRoot: prepared.operationRoot, targetOperationRoot: preparedTarget.operationRoot, expectedMainSha: SHA, ...dependencies, assertAncestor: async () => {} }), /FINALIZED/);
+  await assert.rejects(stat(preparedTarget.operationRoot), { code: "ENOENT" });
+
+  const source = await fixture(t);
+  await prepareCurrentSeoulTransferRegistration({ ...source, expectedMainSha: SHA, ...dependencies, now: NOW });
+  await writeFile(path.join(source.operationRoot, "receipt.json"), `${JSON.stringify(receipt())}\n`, { mode: 0o600 });
+  await finalizeCurrentSeoulTransferRegistration({ ...source, ...dependencies, register: async () => writeTargets(source.repositoryRoot) });
+
+  const cases = [
+    ["nonancestor", async () => {}, { assertAncestor: async () => { throw new Error("source main is not an ancestor"); } }, /not an ancestor/],
+    ["receipt drift", async () => { const changed = receipt(); changed.observationSha256 = "0".repeat(64); await writeFile(path.join(source.operationRoot, "receipt.json"), `${JSON.stringify(changed)}\n`, { mode: 0o600 }); }, {}, /receipt identity/],
+  ];
+  for (const [label, mutate, overrides, pattern] of cases) {
+    await mutate();
+    const target = await fixture(t);
+    await assert.rejects(recoverPublishedCurrentSeoulTransferRegistration({ repositoryRoot: target.repositoryRoot, sourceOperationRoot: source.operationRoot, targetOperationRoot: target.operationRoot, expectedMainSha: SHA, ...dependencies, assertAncestor: async () => {}, ...overrides }), pattern, label);
+    await assert.rejects(stat(target.operationRoot), { code: "ENOENT" });
+    if (label === "receipt drift") await writeFile(path.join(source.operationRoot, "receipt.json"), `${JSON.stringify(receipt())}\n`, { mode: 0o600 });
+  }
+
+  const changedTarget = await fixture(t); let reads = 0;
+  await assert.rejects(recoverPublishedCurrentSeoulTransferRegistration({
+    repositoryRoot: changedTarget.repositoryRoot,
+    sourceOperationRoot: source.operationRoot,
+    targetOperationRoot: changedTarget.operationRoot,
+    expectedMainSha: SHA,
+    ...dependencies,
+    assertAncestor: async () => {},
+    readObservation: async () => {
+      reads += 1;
+      return reads === 2 ? { ...observation, observationBytes: Buffer.from("changed") } : observation;
+    },
+  }), /changed during recovery/);
+  await assert.rejects(stat(changedTarget.operationRoot), { code: "ENOENT" });
 });
 
 test("resume and terminal states preserve one-shot publication and registration", async (t) => {
