@@ -37,7 +37,7 @@ jobs:
             --provider-code-catalog "${GITHUB_WORKSPACE}/tools/datapack/sources/kric-provider-code-catalog-20260228.json" \
             --route-rosters "${GITHUB_WORKSPACE}/tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json" \
             --source-inventory "${GITHUB_WORKSPACE}/tools/datapack/source-inventory.json" \
-            --incheon-topology "${GITHUB_WORKSPACE}/tools/datapack/sources/incheon-transit-station-info-20260813.json" \
+            --incheon-topology "${GITHUB_WORKSPACE}/tools/datapack/sources/incheon-transit-station-info-20260814.json" \
             --coverage-selector capital-seoul-metro-production \
             --output "${RUNNER_TEMP}/current-kric-exit-plan.json"
 
