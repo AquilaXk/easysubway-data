@@ -136,7 +136,9 @@ function validateFacility(value, snapshotBytes, stationLines, candidate) {
   const blocked = cells.get(key(BLOCKED));
   if (blocked?.state !== "ADMITTED_FACILITY_UNVERIFIED_BLOCKED" || value.cells.filter(({ state }) => state === "ADMITTED_FACILITY_UNVERIFIED_BLOCKED").length !== 1) throw new Error("full-capital FACILITY blocked tuple mismatch");
   const rows = value.denominatorRows.filter(({ stationId, lineId }) => stationId === BLOCKED.stationId && lineId === BLOCKED.lineId);
-  if (rows.length !== 3 || rows.some(({ state, facilityType }) => state !== "UNVERIFIED_EVIDENCE_BLOCKED" || !["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"].includes(facilityType))) throw new Error("full-capital FACILITY blocked carrier mismatch");
+  const requiredFacilityTypes = ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"];
+  if (rows.length !== 3 || rows.some(({ state }) => state !== "UNVERIFIED_EVIDENCE_BLOCKED")
+    || canonicalJson(rows.map(({ facilityType }) => facilityType).sort(compareBytes)) !== canonicalJson(requiredFacilityTypes)) throw new Error("full-capital FACILITY blocked carrier mismatch");
   const queries = indexExact(snapshot.queries, stationLines, "FACILITY snapshot queries");
   return stationLines.flatMap((line) => {
     const cell = cells.get(key(line));
@@ -183,7 +185,18 @@ function validateTransfer(input, stationLines, candidate) {
   const { transferMetrics: metrics, transferApplicability: applicability, sourceInventory: inventory } = input;
   if (metrics?.artifactKind !== "current-transfer-topology-metrics" || metrics?.physicalPairs?.length !== 15 || metrics?.metrics?.length !== 30
     || metrics.metrics.filter(({ metricProvenance }) => metricProvenance === "OFFICIAL_SOURCE").length !== 28 || metrics.metrics.filter(({ metricProvenance }) => metricProvenance === "DERIVED_RECIPROCAL").length !== 2
-    || metrics.metrics.some(({ durationRole }) => durationRole !== "REFERENCE_ONLY") || metrics.artifactSha256 !== sha256(canonicalJson(without(metrics, "artifactSha256")))) throw new Error("full-capital TRANSFER metrics mismatch");
+    || metrics.metrics.some(({ durationRole, distanceMeters, officialDurationSecondsReference }) => durationRole !== "REFERENCE_ONLY" || !Number.isSafeInteger(distanceMeters) || distanceMeters <= 0 || !Number.isSafeInteger(officialDurationSecondsReference) || officialDurationSecondsReference <= 0)
+    || metrics.artifactSha256 !== sha256(canonicalJson(without(metrics, "artifactSha256")))) throw new Error("full-capital TRANSFER metrics mismatch");
+  const stationLineKeys = new Set(stationLines.map(key));
+  const expectedDirections = new Set();
+  for (const pair of metrics.physicalPairs) {
+    if (!nonBlank(pair?.stationId) || !Array.isArray(pair.lineIds) || pair.lineIds.length !== 2 || pair.lineIds[0] === pair.lineIds[1]
+      || pair.lineIds.some((lineId) => !stationLineKeys.has(`${pair.stationId}\0${lineId}`))) throw new Error("full-capital TRANSFER physical pair mismatch");
+    expectedDirections.add(transferDirectionKey(pair.stationId, pair.lineIds[0], pair.lineIds[1]));
+    expectedDirections.add(transferDirectionKey(pair.stationId, pair.lineIds[1], pair.lineIds[0]));
+  }
+  const actualDirections = new Set(metrics.metrics.map(({ stationId, fromLineId, toLineId }) => transferDirectionKey(stationId, fromLineId, toLineId)));
+  if (expectedDirections.size !== 30 || actualDirections.size !== 30 || !equalSets(expectedDirections, actualDirections)) throw new Error("full-capital TRANSFER directed pair mismatch");
   if (applicability?.artifactKind !== "current-capital-transfer-topology-applicability-pre-candidate" || applicability.candidateBinding !== null || applicability.productionUseAllowed !== false
     || applicability.artifactSha256 !== sha256(`${canonicalJson(without(applicability, "artifactSha256"))}\n`) || canonicalJson(applicability.canonicalIdentity) !== canonicalJson(metrics.canonicalIdentity)
     || canonicalJson(applicability.sourceIdentity) !== canonicalJson(metrics.sourceIdentity) || applicability.transferTopologyMetricsIdentity?.artifactSha256 !== metrics.artifactSha256) throw new Error("full-capital TRANSFER applicability mismatch");
@@ -193,7 +206,8 @@ function validateTransfer(input, stationLines, candidate) {
     || admission.physicalPairCount !== 15 || admission.directedMetricCount !== 30 || admission.officialMetricCount !== 28 || admission.derivedReciprocalMetricCount !== 2 || admission.durationRole !== "REFERENCE_ONLY") throw new Error("full-capital TRANSFER admission mismatch");
   const cells = indexExact(applicability.cells, stationLines, "TRANSFER applicability");
   const endpoints = new Set(metrics.metrics.flatMap(({ stationId, fromLineId, toLineId }) => [`${stationId}\0${fromLineId}`, `${stationId}\0${toLineId}`]));
-  if (endpoints.size !== 27 || [...cells.values()].filter(({ state }) => state === "APPLICABLE_TRANSFER_ENDPOINT").length !== 27) throw new Error("full-capital TRANSFER endpoint mismatch");
+  const applicableEndpoints = new Set([...cells.entries()].filter(([, { state }]) => state === "APPLICABLE_TRANSFER_ENDPOINT").map(([cellKey]) => cellKey));
+  if (endpoints.size !== 27 || applicableEndpoints.size !== 27 || !equalSets(endpoints, applicableEndpoints)) throw new Error("full-capital TRANSFER endpoint mismatch");
   return stationLines.map((line) => {
     const state = cells.get(key(line)).state;
     if (!["APPLICABLE_TRANSFER_ENDPOINT", "NOT_APPLICABLE_IN_CANONICAL_PAIR_SET"].includes(state)) throw new Error("full-capital TRANSFER state mismatch");
@@ -241,6 +255,8 @@ async function readStable(file, label) {
 }
 function assertKeys(value, keys, label) { if (!value || typeof value !== "object" || Array.isArray(value) || canonicalJson(Object.keys(value).sort(compareBytes)) !== canonicalJson([...keys].sort(compareBytes))) throw new Error(`${label} keys mismatch`); }
 function exactlyOne(rows, predicate, label) { const matches = rows.filter(predicate); if (matches.length !== 1) throw new Error(`${label} must be exactly one`); return matches[0]; }
+function transferDirectionKey(stationId, fromLineId, toLineId) { return `${stationId}\0${fromLineId}\0${toLineId}`; }
+function equalSets(left, right) { return left.size === right.size && [...left].every((value) => right.has(value)); }
 function key({ stationId, lineId }) { return `${stationId}\0${lineId}`; }
 function compareStationLine(left, right) { return compareBytes(left.stationId, right.stationId) || compareBytes(left.lineId, right.lineId) || compareBytes(left.operatorId, right.operatorId); }
 function compareEvidence(left, right) { return compareStationLine(left, right) || compareBytes(left.domain, right.domain); }

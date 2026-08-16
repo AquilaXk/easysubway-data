@@ -37,6 +37,30 @@ test("blocked tuple·receipt·TRANSFER admission drift는 output 없이 fail-clo
   }
 });
 
+test("count를 유지한 blocked carrier·directed pair·applicability swap drift도 fail-closed다", async () => {
+  for (const mutate of [
+    (value) => {
+      const blockedRows = value.facilityAdmission.denominatorRows.filter((row) => row.stationId === "station-b35616704ce3" && row.lineId === "seoul-2");
+      blockedRows.find(({ facilityType }) => facilityType === "ESCALATOR").facilityType = "ELEVATOR";
+      resealFacility(value.facilityAdmission);
+    },
+    (value) => {
+      value.transferMetrics.metrics[0].toLineId = value.transferMetrics.metrics[0].fromLineId;
+      rebindTransferArtifacts(value);
+    },
+    (value) => {
+      const applicable = value.transferApplicability.cells.find(({ state }) => state === "APPLICABLE_TRANSFER_ENDPOINT");
+      const notApplicable = value.transferApplicability.cells.find(({ state }) => state === "NOT_APPLICABLE_IN_CANONICAL_PAIR_SET");
+      applicable.state = "NOT_APPLICABLE_IN_CANONICAL_PAIR_SET";
+      notApplicable.state = "APPLICABLE_TRANSFER_ENDPOINT";
+      rebindTransferArtifacts(value);
+    },
+  ]) {
+    const value = await fixture(); mutate(value);
+    assert.throws(() => buildCurrentCapitalStationLineInput(value), /full-capital|mismatch|blocked/i);
+  }
+});
+
 export async function fixture() {
   const lines = stationLines(); const stationIds = [...new Set(lines.map(({ stationId }) => stationId))].sort();
   const snapshotIds = ["s0", "s1", "s2", "s3", "s4", "s5", "transfer-snapshot"];
@@ -66,5 +90,17 @@ function transferApplicability(lines, metrics) { const endpoints = new Set(metri
 function resealFacility(value) { const { admissionDigest: _ignored, ...payload } = value; value.admissionDigest = sha(canonical(payload)); }
 function resealReceipt(value) { const { receiptSha256: _ignored, ...payload } = value; value.receiptSha256 = sha(canonical(payload)); }
 function resealApplicability(value) { const { artifactSha256: _ignored, ...payload } = value; value.artifactSha256 = sha(`${canonical(payload)}\n`); }
+function rebindTransferArtifacts(value) {
+  const { artifactSha256: _ignored, ...metricsPayload } = value.transferMetrics;
+  value.transferMetrics.artifactSha256 = sha(canonical(metricsPayload));
+  value.transferApplicability.transferTopologyMetricsIdentity.artifactSha256 = value.transferMetrics.artifactSha256;
+  resealApplicability(value.transferApplicability);
+  const admission = value.sourceInventory.sources[0].transferAdmissionEvidence;
+  admission.metricsArtifactSha256 = value.transferMetrics.artifactSha256;
+  admission.applicabilityArtifactSha256 = value.transferApplicability.artifactSha256;
+  value.sourceInventoryBytes = Buffer.from(canonical(value.sourceInventory));
+  value.candidateBuildSpec.sourceInventorySha256 = sha(value.sourceInventoryBytes);
+  value.candidateBuildSpec.networkEdgeEvidence.sourceInventory.sha256 = sha(value.sourceInventoryBytes);
+}
 function canonical(value) { if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`; if (value && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`; return JSON.stringify(value); }
 function sha(value) { return createHash("sha256").update(value).digest("hex"); }

@@ -19,6 +19,7 @@ test("full-capital route fan-in은 2218+213+213+30 edge contract를 만든다", 
   assert.equal(result.routeEdges.length, 2674);
   assert.deepEqual(Object.fromEntries(["RIDE", "ENTRY", "EXIT", "IN_STATION_TRANSFER"].map((type) => [type, result.routeEdges.filter((edge) => edge.edgeType === type).length])), { RIDE: 2218, ENTRY: 213, EXIT: 213, IN_STATION_TRANSFER: 30 });
   assert.equal(new Set(result.routeEdges.map(({ edgeId }) => edgeId)).size, 2674);
+  assert.ok(result.routeEdges.filter(({ edgeType }) => edgeType === "IN_STATION_TRANSFER").every(({ durationSeconds, distanceMeters }) => durationSeconds === 0 && distanceMeters > 0));
   const station = buildCurrentCapitalStationLineInput(input);
   const materialization = materializeStationLineAccessibility({ ...station, observedAt: "2026-08-01T01:00:00.000Z" });
   const policy = evaluatorPolicy(canonicalRideEdgeSetSha256(result.routeEdges.filter(({ edgeType }) => edgeType === "RIDE")));
