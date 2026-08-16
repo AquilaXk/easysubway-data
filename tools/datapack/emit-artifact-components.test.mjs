@@ -511,6 +511,9 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
 
 function hash(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 function completeStationLineInput(sourceSetSha256, candidateId) {
+  const evaluationAt = Date.parse(CURRENT_EVALUATION_AT);
+  const capturedAt = new Date(evaluationAt - 60_000).toISOString();
+  const freshUntil = new Date(evaluationAt + 24 * 60 * 60 * 1_000).toISOString();
   const candidate = {
     candidateId,
     stationSetSha256: hash(Buffer.from(canonicalJson(["s1", "station-b35616704ce3"]))),
@@ -531,8 +534,8 @@ function completeStationLineInput(sourceSetSha256, candidateId) {
     sourceSnapshotId: "fixture-snapshot",
     evidenceRawSha256: "a".repeat(64),
     providerRecordHash: "b".repeat(64),
-    capturedAt: "2026-08-13T15:06:46.000Z",
-    freshUntil: "2026-08-14T15:06:46.000Z",
+    capturedAt,
+    freshUntil,
     provenanceId: "fixture-provenance",
     licenseId: "fixture-license",
     mappingContractVersion: candidate.mappingContractVersion,
@@ -540,7 +543,7 @@ function completeStationLineInput(sourceSetSha256, candidateId) {
     evidenceKind: domain === "TRANSFER" ? "CURRENT_APPLICABILITY_RULE" : "OBSERVED",
     evidenceReason: domain === "TRANSFER" ? "no transfer boundary" : "official current evidence",
   })));
-  const terminal = ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"].map((facilityType) => ({ ...candidate, stationId: "station-b35616704ce3", lineId: "seoul-2", operatorId: "seoul-metro", domain: "FACILITY", state: "UNVERIFIED_EVIDENCE_BLOCKED", sourceId: "kric-station-convenience-standard", sourceSnapshotId: "fixture-terminal-snapshot", evidenceRawSha256: "a".repeat(64), providerRecordHash: null, capturedAt: "2026-08-13T15:06:46.000Z", freshUntil: "2026-08-14T16:06:46.000Z", provenanceId: "fixture-provenance", licenseId: "fixture-license", mappingContractVersion: candidate.mappingContractVersion, materializerVersion: candidate.materializerVersion, evidenceKind: "UNVERIFIED_EVIDENCE_BLOCKED", evidenceReason: "시설 존재·부재가 검증되지 않아 경로를 차단했습니다.", facilityType, terminalPolicy: "EXACT_TUPLE_PROVIDER_RESULT_03", providerResultCode: "03", strictRouteEligible: false, strictRouteEligibleReason: "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED", installationStatus: "UNKNOWN", operationalStatus: "UNKNOWN", statusMeaning: "PROVIDER_RESULT_UNVERIFIED", confidence: 0, providerResponseSha256: "c".repeat(64), evidenceHash: hash(Buffer.from(canonicalJson({ sourceSnapshotId: "fixture-terminal-snapshot", stationId: "station-b35616704ce3", lineId: "seoul-2", operatorId: "seoul-metro", facilityType, terminalPolicy: "EXACT_TUPLE_PROVIDER_RESULT_03", providerResponseSha256: "c".repeat(64) }))) }));
+  const terminal = ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"].map((facilityType) => ({ ...candidate, stationId: "station-b35616704ce3", lineId: "seoul-2", operatorId: "seoul-metro", domain: "FACILITY", state: "UNVERIFIED_EVIDENCE_BLOCKED", sourceId: "kric-station-convenience-standard", sourceSnapshotId: "fixture-terminal-snapshot", evidenceRawSha256: "a".repeat(64), providerRecordHash: null, capturedAt, freshUntil, provenanceId: "fixture-provenance", licenseId: "fixture-license", mappingContractVersion: candidate.mappingContractVersion, materializerVersion: candidate.materializerVersion, evidenceKind: "UNVERIFIED_EVIDENCE_BLOCKED", evidenceReason: "시설 존재·부재가 검증되지 않아 경로를 차단했습니다.", facilityType, terminalPolicy: "EXACT_TUPLE_PROVIDER_RESULT_03", providerResultCode: "03", strictRouteEligible: false, strictRouteEligibleReason: "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED", installationStatus: "UNKNOWN", operationalStatus: "UNKNOWN", statusMeaning: "PROVIDER_RESULT_UNVERIFIED", confidence: 0, providerResponseSha256: "c".repeat(64), evidenceHash: hash(Buffer.from(canonicalJson({ sourceSnapshotId: "fixture-terminal-snapshot", stationId: "station-b35616704ce3", lineId: "seoul-2", operatorId: "seoul-metro", facilityType, terminalPolicy: "EXACT_TUPLE_PROVIDER_RESULT_03", providerResponseSha256: "c".repeat(64) }))) }));
   return { candidate, stationLines, evidenceRows: [...evidenceRows, ...terminal] };
 }
 function completeRouteEdgeInput(sourceSetSha256, candidateId) {
