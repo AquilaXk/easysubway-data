@@ -5,9 +5,8 @@ import test from "node:test";
 import { buildCurrentCapitalFacilitySourceAdmission, canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-current-capital-facility-source-admission.mjs";
 import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
 import { collectKricAccessibilitySnapshots } from "./collect-kric-accessibility-snapshots.mjs";
-import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
-import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
+import { deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 
 const root = import.meta.dirname;
@@ -143,6 +142,36 @@ test("producer-neutral FACILITY admission accepts the current six-source derived
   assert.equal(admission.candidate.sourceSnapshotSetHash, values.candidateBuildSpec.sourceSnapshotSetHash);
 });
 
+test("producer-neutral FACILITY admission preserves the approved prior governance binding for unchanged sources", async () => {
+  const values = await fixture();
+  const productionSpec = JSON.parse(await readFile(path.join(root, "release/candidate-build-spec.json")));
+  const kricIndex = values.candidateBuildSpec.sourceSnapshots.findIndex(({ sourceId }) => sourceId === "kric-station-convenience-standard");
+  assert.notEqual(kricIndex, -1);
+  for (let index = 0; index < values.candidateBuildSpec.sourceSnapshots.length; index += 1) {
+    if (index === kricIndex) continue;
+    values.candidateBuildSpec.sourceSnapshots[index].governancePolicyVersion = productionSpec.sourceSnapshots[index].governancePolicyVersion;
+    values.candidateBuildSpec.sourceSnapshots[index].governancePolicySha256 = productionSpec.sourceSnapshots[index].governancePolicySha256;
+  }
+  assert.equal(buildCurrentCapitalFacilitySourceAdmission(values).decision, "GO");
+
+  const drift = structuredClone(values);
+  drift.candidateBuildSpec.sourceSnapshots[0].governancePolicySha256 = "0".repeat(64);
+  assert.throws(() => buildCurrentCapitalFacilitySourceAdmission(drift), /projection mismatch/u);
+
+  const priorKric = structuredClone(values);
+  const priorProjection = productionSpec.sourceSnapshots[kricIndex];
+  const kricProjection = priorKric.candidateBuildSpec.sourceSnapshots[kricIndex];
+  const kricLedger = priorKric.sourceSnapshots.find(({ snapshotId }) => snapshotId === kricProjection.snapshotId);
+  assert.ok(kricLedger);
+  assert.notEqual(priorProjection.governancePolicySha256, kricProjection.governancePolicySha256);
+  for (const target of [kricLedger, kricProjection]) {
+    target.governancePolicyVersion = priorProjection.governancePolicyVersion;
+    target.governancePolicySha256 = priorProjection.governancePolicySha256;
+  }
+  priorKric.candidateBuildSpec.sourceSnapshotSetHash = sha256(JSON.stringify(priorKric.candidateBuildSpec.sourceSnapshotIds.map((snapshotId) => priorKric.sourceSnapshots.find((entry) => entry.snapshotId === snapshotId))));
+  assert.throws(() => buildCurrentCapitalFacilitySourceAdmission(priorKric), /KRIC current governance binding mismatch/u);
+});
+
 test("producer-neutral FACILITY admission normalizes byte inputs before binding checks", async () => {
   const values = await fixture();
   values.sourceInventoryBytes = new Uint8Array(values.sourceInventoryBytes);
@@ -155,7 +184,7 @@ test("producer-neutral FACILITY admission normalizes byte inputs before binding 
 
   const governanceRawDrift = await fixture();
   governanceRawDrift.governancePolicyBytes = Buffer.concat([governanceRawDrift.governancePolicyBytes, Buffer.from("\n")]);
-  assert.throws(() => buildCurrentCapitalFacilitySourceAdmission(governanceRawDrift), /candidate source snapshot projection mismatch/);
+  assert.throws(() => buildCurrentCapitalFacilitySourceAdmission(governanceRawDrift), /governance policy binding/);
 });
 
 async function fixture({ mixed = false } = {}) {
@@ -241,6 +270,8 @@ async function fixture({ mixed = false } = {}) {
   const sourceSnapshots = [...productionSnapshots, ledger];
   const governancePolicy = JSON.parse(files["source-governance-policy.json"]);
   const freshnessSla = JSON.parse(files["../../release/product-gates/datapack-freshness-sla.json"]);
+  ledger.governancePolicyVersion = governancePolicy.policyVersion;
+  ledger.governancePolicySha256 = sha256(files["source-governance-policy.json"]);
   const sourceInventoryBytes = Buffer.from(JSON.stringify(sourceInventory));
   const candidateBuildSpec = {
     schemaVersion: 1,
@@ -248,29 +279,12 @@ async function fixture({ mixed = false } = {}) {
     candidateId: "fixture",
     productionScopeId: "capital_pilot_android_v1",
     sourceSnapshotIds: productionSpec.sourceSnapshotIds.map((snapshotId) => snapshotId === previousKric.snapshotId ? ledger.snapshotId : snapshotId),
-    sourceSnapshots: productionSpec.sourceSnapshotIds.map((snapshotId) => snapshotId === previousKric.snapshotId ? ledger : productionSnapshots.find((entry) => entry.snapshotId === snapshotId)).map((entry) => derivedProjection({ entry, sourceInventory, governancePolicy, governancePolicyBytes: files["source-governance-policy.json"], freshnessSla, observedAt: "2026-08-14T16:00:00.000Z" })),
+    sourceSnapshots: productionSpec.sourceSnapshotIds.map((snapshotId) => snapshotId === previousKric.snapshotId ? ledger : productionSnapshots.find((entry) => entry.snapshotId === snapshotId)).map((entry) => deriveReleaseProjection({ snapshot: entry, sourceInventory, governancePolicy, governancePolicyBytes: files["source-governance-policy.json"], freshnessPolicy: freshnessSla, nowMillis: Date.parse("2026-08-14T16:00:00.000Z") })),
     sourceSnapshotSetHash: sha256(JSON.stringify(productionSpec.sourceSnapshotIds.map((snapshotId) => snapshotId === previousKric.snapshotId ? ledger : productionSnapshots.find((entry) => entry.snapshotId === snapshotId)))),
     sourceInventorySha256: sha256(JSON.stringify(sourceInventory)),
     networkEdgeEvidence: { sourceInventory: { path: "tools/datapack/source-inventory.json", sha256: sha256(sourceInventoryBytes) } },
   };
   return { planBytes, canonicalPackBytes: files["release/capital-production-canonical-pack.json"], snapshotBytes, sourceInventoryBytes, sourceSnapshots, governancePolicy, governancePolicyBytes: files["source-governance-policy.json"], freshnessPolicy: freshnessSla, candidateBuildSpec, observedAt: "2026-08-14T16:00:00.000Z" };
-}
-
-function derivedProjection({ entry, sourceInventory, governancePolicy, governancePolicyBytes, freshnessSla, observedAt }) {
-  const source = sourceInventory.sources.find(({ id }) => id === entry.sourceId);
-  const policySource = governancePolicy.sources.find(({ sourceId }) => sourceId === entry.sourceId);
-  const sourceClass = freshnessSla.sourceClasses.find(({ id }) => id === policySource.sourceClassId);
-  return {
-    snapshotId: entry.snapshotId, sourceId: entry.sourceId, rawObjectUri: entry.rawObjectUri,
-    rawSha256: entry.rawSha256, redactedRequestFingerprint: entry.redactedRequestFingerprint,
-    schemaFingerprint: entry.schemaFingerprint, licenseStatus: entry.licenseStatus,
-    redistributionAllowed: entry.redistributionAllowed,
-    adminReviewRecordHash: source.admissionEvidence.adminReviewRecordHash,
-    snapshotStatus: entry.snapshotStatus, credentialRedacted: entry.credentialRedacted,
-    freshnessExpiresAt: deriveFreshnessExpiresAt({ policy: freshnessSla, sourceClassId: sourceClass.id, basisAt: entry[sourceClass.basisField], providerValidUntil: sourceClass.providerValidityEndField ? entry[sourceClass.providerValidityEndField] : undefined, evaluationAt: observedAt }),
-    rawRetentionExpiresAt: deriveRawRetentionExpiresAt({ policy: governancePolicy, sourceId: entry.sourceId, retrievedAt: entry.retrievedAt }),
-    governancePolicyVersion: governancePolicy.policyVersion, governancePolicySha256: sha256(governancePolicyBytes),
-  };
 }
 
 function mutateInventory(value, mutate) {
