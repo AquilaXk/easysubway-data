@@ -9,7 +9,7 @@ import path from "node:path";
 const execFile = promisify(execFileCallback);
 const REPOSITORY = "AquilaXk/easysubway-data";
 const PROVIDER_WORKFLOW = "KRIC EXIT Path Provider Snapshot";
-const PROVIDER_WORKFLOW_PATH = ".github/workflows/kric-exit-path-provider-snapshot.yml@main";
+const PROVIDER_WORKFLOW_PATH = ".github/workflows/kric-exit-path-provider-snapshot.yml";
 const BUNDLE_NAME = "current-kric-exit-collection-bundle.json";
 const MAX_ARCHIVE_BYTES = 16 * 1024 * 1024;
 const MAX_BUNDLE_BYTES = 8 * 1024 * 1024;
@@ -24,11 +24,43 @@ export async function runCurrentKricExitPathSourceAdmission({
   execFileImpl = execFile,
 }) {
   const run = validateEvent(event);
+  const context = await admissionContext({ token, workspace, outputDirectory });
+  return admitProviderRun({ run, fetchImpl, execFileImpl, ...context });
+}
+
+export async function recoverCurrentKricExitPathSourceAdmission({
+  providerRunId,
+  expectedProviderHeadSha,
+  token,
+  workspace,
+  outputDirectory,
+  fetchImpl = fetch,
+  execFileImpl = execFile,
+}) {
+  if (!Number.isSafeInteger(providerRunId) || providerRunId <= 0
+    || !/^[a-f0-9]{40}$/.test(expectedProviderHeadSha ?? "")) {
+    throw new Error("provider recovery identity mismatch");
+  }
+  const context = await admissionContext({ token, workspace, outputDirectory });
+  const runUrl = `https://api.github.com/repos/${REPOSITORY}/actions/runs/${providerRunId}`;
+  const runResponse = await githubFetch(fetchImpl, runUrl, token);
+  const run = validateProviderRun(await parseJsonResponse(runResponse), {
+    expectedRunId: providerRunId,
+    expectedHeadSha: expectedProviderHeadSha,
+    requireRepository: true,
+  });
+  return admitProviderRun({ run, fetchImpl, execFileImpl, ...context });
+}
+
+async function admissionContext({ token, workspace, outputDirectory }) {
   if (typeof token !== "string" || token.trim() === "") throw new Error("GITHUB_TOKEN is required");
   const root = requireAbsolutePath(workspace, "workspace");
   const output = requireAbsolutePath(outputDirectory, "output directory");
   await outputMustBeAbsent(output);
+  return { token, root, output };
+}
 
+async function admitProviderRun({ run, token, root, output, fetchImpl, execFileImpl }) {
   const artifactsUrl = `https://api.github.com/repos/${REPOSITORY}/actions/runs/${run.id}/artifacts?per_page=100&page=1`;
   const artifactsResponse = await githubFetch(fetchImpl, artifactsUrl, token);
   const metadata = validateArtifactMetadata(await parseJsonResponse(artifactsResponse), run);
@@ -112,12 +144,32 @@ function validateEvent(value) {
   if (value?.repository?.full_name !== REPOSITORY || !run || typeof run !== "object") {
     throw new Error("workflow event repository mismatch");
   }
-  if (!Number.isSafeInteger(run.id) || run.id <= 0 || run.name !== PROVIDER_WORKFLOW
-    || run.path !== PROVIDER_WORKFLOW_PATH || run.event !== "workflow_dispatch" || run.head_branch !== "main"
-    || run.conclusion !== "success" || !/^[a-f0-9]{40}$/.test(run.head_sha ?? "")) {
+  try {
+    return validateProviderRun(run, { requireRepository: false });
+  } catch (error) {
+    if (error?.message === "workflow run timestamp mismatch") throw new Error("workflow run updated_at must be UTC instant");
     throw new Error("workflow event identity mismatch");
   }
-  const updatedAt = requireUtcInstant(run.updated_at, "workflow run updated_at");
+}
+
+function validateProviderRun(run, { expectedRunId = null, expectedHeadSha = null, requireRepository }) {
+  if (!run || typeof run !== "object" || !Number.isSafeInteger(run.id) || run.id <= 0
+    || (expectedRunId !== null && run.id !== expectedRunId)
+    || run.name !== PROVIDER_WORKFLOW || run.path !== PROVIDER_WORKFLOW_PATH
+    || run.event !== "workflow_dispatch" || run.head_branch !== "main"
+    || run.status !== "completed" || run.conclusion !== "success"
+    || !/^[a-f0-9]{40}$/.test(run.head_sha ?? "")
+    || (expectedHeadSha !== null && run.head_sha !== expectedHeadSha)
+    || run.head_repository?.full_name !== REPOSITORY
+    || (requireRepository && run.repository?.full_name !== REPOSITORY)) {
+    throw new Error("workflow run identity mismatch");
+  }
+  let updatedAt;
+  try {
+    updatedAt = requireUtcInstant(run.updated_at, "workflow run updated_at");
+  } catch {
+    throw new Error("workflow run timestamp mismatch");
+  }
   return { id: run.id, headSha: run.head_sha, updatedAt };
 }
 
@@ -285,19 +337,24 @@ function crc32(bytes) {
 }
 
 function parseArgs(argv) {
-  if (!Array.isArray(argv) || argv.length !== 4 || argv[0] !== "--event-path" || argv[2] !== "--output-directory") {
-    throw new Error("usage: --event-path <absolute> --output-directory <absolute>");
+  if (Array.isArray(argv) && argv.length === 4 && argv[0] === "--event-path" && argv[2] === "--output-directory") {
+    return { mode: "automatic", eventPath: requireAbsolutePath(argv[1], "event path"), outputDirectory: requireAbsolutePath(argv[3], "output directory") };
   }
-  return { eventPath: requireAbsolutePath(argv[1], "event path"), outputDirectory: requireAbsolutePath(argv[3], "output directory") };
+  if (Array.isArray(argv) && argv.length === 6 && argv[0] === "--provider-run-id"
+    && argv[2] === "--expected-provider-head-sha" && argv[4] === "--output-directory"
+    && /^[1-9][0-9]*$/.test(argv[1] ?? "") && Number.isSafeInteger(Number(argv[1]))
+    && /^[a-f0-9]{40}$/.test(argv[3] ?? "")) {
+    return { mode: "recovery", providerRunId: Number(argv[1]), expectedProviderHeadSha: argv[3], outputDirectory: requireAbsolutePath(argv[5], "output directory") };
+  }
+  throw new Error("usage: --event-path <absolute> --output-directory <absolute> OR --provider-run-id <id> --expected-provider-head-sha <sha> --output-directory <absolute>");
 }
 
 if (import.meta.url === new URL(process.argv[1], "file:").href) {
   const args = parseArgs(process.argv.slice(2));
-  const event = JSON.parse(await readFile(args.eventPath, "utf8"));
-  await runCurrentKricExitPathSourceAdmission({
-    event,
-    token: process.env.GITHUB_TOKEN,
-    workspace: process.env.GITHUB_WORKSPACE,
-    outputDirectory: args.outputDirectory,
-  });
+  if (args.mode === "automatic") {
+    const event = JSON.parse(await readFile(args.eventPath, "utf8"));
+    await runCurrentKricExitPathSourceAdmission({ event, token: process.env.GITHUB_TOKEN, workspace: process.env.GITHUB_WORKSPACE, outputDirectory: args.outputDirectory });
+  } else {
+    await recoverCurrentKricExitPathSourceAdmission({ providerRunId: args.providerRunId, expectedProviderHeadSha: args.expectedProviderHeadSha, token: process.env.GITHUB_TOKEN, workspace: process.env.GITHUB_WORKSPACE, outputDirectory: args.outputDirectory });
+  }
 }

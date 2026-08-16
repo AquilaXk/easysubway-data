@@ -7,6 +7,7 @@ import test from "node:test";
 
 import {
   extractCurrentKricExitCollectionBundle,
+  recoverCurrentKricExitPathSourceAdmission,
   runCurrentKricExitPathSourceAdmission,
 } from "./run-current-kric-exit-path-source-admission.mjs";
 
@@ -75,12 +76,14 @@ function event(updatedAt = "2026-08-15T00:00:00.000Z") {
     workflow_run: {
       id: RUN_ID,
       name: "KRIC EXIT Path Provider Snapshot",
-      path: ".github/workflows/kric-exit-path-provider-snapshot.yml@main",
+      path: ".github/workflows/kric-exit-path-provider-snapshot.yml",
       event: "workflow_dispatch",
       head_branch: "main",
+      status: "completed",
       conclusion: "success",
       head_sha: HEAD_SHA,
       updated_at: updatedAt,
+      head_repository: { full_name: REPOSITORY },
     },
   };
 }
@@ -139,6 +142,76 @@ test("invalid or offset GitHub updated_at는 fetch 전에 fail closed한다", as
   }
 });
 
+test("actual suffix-less workflow path만 automatic event로 허용한다", async () => {
+  const oldSyntheticPath = event();
+  oldSyntheticPath.workflow_run.path = ".github/workflows/kric-exit-path-provider-snapshot.yml@main";
+  let fetched = false;
+  await assert.rejects(() => runCurrentKricExitPathSourceAdmission({
+    event: oldSyntheticPath,
+    token: "test-token",
+    workspace: "/tmp",
+    outputDirectory: "/tmp/exit-admission-old-synthetic-path",
+    fetchImpl: async () => { fetched = true; },
+  }), /workflow event identity mismatch/);
+  assert.equal(fetched, false);
+});
+
+test("A-only recovery는 exact retained Provider run metadata 뒤에만 artifact를 소비한다", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "exit-source-admission-recovery-"));
+  const output = path.join(root, "output");
+  const archive = zipOne("current-kric-exit-collection-bundle.json", BUNDLE);
+  const calls = [];
+  await recoverCurrentKricExitPathSourceAdmission({
+    providerRunId: RUN_ID,
+    expectedProviderHeadSha: HEAD_SHA,
+    token: "test-token",
+    workspace: root,
+    outputDirectory: output,
+    fetchImpl: async (url) => {
+      calls.push(url);
+      if (url.endsWith(`/actions/runs/${RUN_ID}`)) return responseJson(providerRun());
+      if (url.includes(`/actions/runs/${RUN_ID}/artifacts?`)) return responseJson({ total_count: 1, artifacts: [{ id: 87, name: `kric-exit-path-provider-snapshot-${RUN_ID}`, expired: false, digest: `sha256:${sha256(archive)}` }] });
+      if (url.endsWith("/actions/artifacts/87/zip")) return responseBytes(archive);
+      throw new Error(`unexpected URL ${url}`);
+    },
+    execFileImpl: async (_command, args) => {
+      assert.equal(args[args.indexOf("--expected-repository-sha") + 1], HEAD_SHA);
+      assert.equal(args[args.indexOf("--expected-workflow-run-id") + 1], String(RUN_ID));
+      await mkdir(output, { recursive: true, mode: 0o700 });
+      await writeFile(path.join(output, "exit-path-normalized-source-snapshot.json"), "{}", { mode: 0o600 });
+      await writeFile(path.join(output, "exit-path-source-admission.json"), '{"decision":"GO"}', { mode: 0o600 });
+    },
+  });
+  assert.deepEqual(calls, [
+    `https://api.github.com/repos/${REPOSITORY}/actions/runs/${RUN_ID}`,
+    `https://api.github.com/repos/${REPOSITORY}/actions/runs/${RUN_ID}/artifacts?per_page=100&page=1`,
+    `https://api.github.com/repos/${REPOSITORY}/actions/artifacts/87/zip`,
+  ]);
+});
+
+test("A-only recovery는 run identity drift를 artifact 조회 전에 거부한다", async () => {
+  const mutations = [
+    (run) => { run.path = `${run.path}@main`; },
+    (run) => { run.head_sha = "b".repeat(40); },
+    (run) => { run.status = "in_progress"; run.conclusion = null; },
+    (run) => { run.head_repository.full_name = "AquilaXk/other"; },
+  ];
+  for (const [index, mutate] of mutations.entries()) {
+    const run = providerRun();
+    mutate(run);
+    const calls = [];
+    await assert.rejects(() => recoverCurrentKricExitPathSourceAdmission({
+      providerRunId: RUN_ID,
+      expectedProviderHeadSha: HEAD_SHA,
+      token: "test-token",
+      workspace: "/tmp",
+      outputDirectory: `/tmp/exit-admission-recovery-drift-${index}`,
+      fetchImpl: async (url) => { calls.push(url); return responseJson(run); },
+    }), /workflow run identity mismatch/);
+    assert.equal(calls.length, 1);
+  }
+});
+
 test("self-consistent bundle alone and unsafe archive entries fail before admission", async () => {
   assert.throws(
     () => extractCurrentKricExitCollectionBundle(zipOne("../current-kric-exit-collection-bundle.json", BUNDLE)),
@@ -184,4 +257,20 @@ function responseJson(value) {
 
 function responseBytes(bytes) {
   return { ok: true, status: 200, headers: new Map(), json: async () => { throw new Error("not json"); }, arrayBuffer: async () => bytes };
+}
+
+function providerRun() {
+  return {
+    id: RUN_ID,
+    name: "KRIC EXIT Path Provider Snapshot",
+    path: ".github/workflows/kric-exit-path-provider-snapshot.yml",
+    event: "workflow_dispatch",
+    head_branch: "main",
+    head_sha: HEAD_SHA,
+    status: "completed",
+    conclusion: "success",
+    updated_at: "2026-08-15T00:00:00Z",
+    repository: { full_name: REPOSITORY },
+    head_repository: { full_name: REPOSITORY },
+  };
 }
