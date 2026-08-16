@@ -152,6 +152,8 @@ test("current Data #9 seed는 alternate repository root의 nested projection evi
     "tools/datapack/release/capital-topology-reverification-20260814.json",
     "tools/datapack/itx-cheongchun-coverage-contract.json",
     "tools/datapack/itx-cheongchun-topology-evidence-20260812165525800.json",
+    "tools/datapack/sources/itx-cheongchun-source-timetable-20260812165525800.json",
+    "tools/datapack/sources/itx-cheongchun-source-timetable-20260812165525800-completeness-evidence.json",
     "tools/datapack/sources/incheon-transit-station-info-20260814.json",
     ...(transitionPresent ? [
       "tools/datapack/release/current-capital-accessibility-transition.json",
