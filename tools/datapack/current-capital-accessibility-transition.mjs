@@ -120,6 +120,7 @@ export async function assertCurrentCapitalAccessibilityBuildAllowed({ repository
 export async function main(argv = process.argv.slice(2), {
   repositoryRoot = fileURLToPath(new URL("../../", import.meta.url)),
   log = console.log,
+  beforePublish = async () => {},
 } = {}) {
   if (!Array.isArray(argv) || argv.length !== 0) throw new Error("current accessibility transition arguments mismatch");
   const root = path.resolve(repositoryRoot);
@@ -136,7 +137,17 @@ export async function main(argv = process.argv.slice(2), {
     facilityAdmission: parse(facilityBytes, "current FACILITY admission"),
     facilityBytes,
   });
-  await publish(path.join(root, FILES.transition), Buffer.from(canonicalCurrentCapitalAccessibilityTransitionJson(result)));
+  const boundInputs = [
+    { target: path.join(root, FILES.candidate), label: "candidate build spec", bytes: candidateBytes },
+    { target: path.join(root, FILES.previous), label: "previous production station-line input", bytes: previousBytes },
+    { target: path.join(root, FILES.facility), label: "current FACILITY admission", bytes: facilityBytes },
+  ];
+  await beforePublish();
+  await publish(
+    path.join(root, FILES.transition),
+    Buffer.from(canonicalCurrentCapitalAccessibilityTransitionJson(result)),
+    () => assertBoundInputsUnchanged(boundInputs),
+  );
   log(JSON.stringify({ state: result.state, transitionSha256: result.transitionSha256 }));
   return result;
 }
@@ -187,7 +198,14 @@ async function readStableRegular(target, label) {
   }
 }
 
-async function publish(output, bytes) {
+async function assertBoundInputsUnchanged(bindings) {
+  const currentBytes = await Promise.all(bindings.map(({ target, label }) => readStableRegular(target, label)));
+  if (currentBytes.some((bytes, index) => !bytes.equals(bindings[index].bytes))) {
+    throw new Error("transition bound input changed");
+  }
+}
+
+async function publish(output, bytes, assertInputsStable) {
   const parent = path.dirname(output);
   const parentBefore = await lstat(parent);
   if (!parentBefore.isDirectory() || parentBefore.isSymbolicLink()) throw new Error("transition output parent mismatch");
@@ -216,6 +234,7 @@ async function publish(output, bytes) {
     } catch (error) {
       if (error?.code !== "ENOENT") throw error;
     }
+    await assertInputsStable();
     await link(temporary, output);
     const parentHandle = await open(parent, constants.O_RDONLY);
     try { await parentHandle.sync(); } finally { await parentHandle.close(); }

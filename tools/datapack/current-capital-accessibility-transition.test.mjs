@@ -56,6 +56,24 @@ test("CLI는 marker를 create-once 0600으로 게시하고 marker 부재는 buil
   await assert.rejects(() => main([], { repositoryRoot: fixture.root, log: () => {} }), /output already exists/);
 });
 
+test("CLI는 marker 게시 직전 결속 입력이 교체되면 output 0으로 실패한다", async (t) => {
+  const fixture = await createFixture(t);
+  const candidatePath = path.join(fixture.root, "tools/datapack/release/candidate-build-spec.json");
+  const output = path.join(fixture.root, "tools/datapack/release/current-capital-accessibility-transition.json");
+  await assert.rejects(
+    () => main([], {
+      repositoryRoot: fixture.root,
+      log: () => {},
+      beforePublish: async () => {
+        const current = await readFile(candidatePath);
+        await writeFile(candidatePath, Buffer.concat([current, Buffer.from(" ")]));
+      },
+    }),
+    /transition bound input changed/,
+  );
+  await assert.rejects(() => readFile(output), { code: "ENOENT" });
+});
+
 async function createFixture(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), "capital-transition-"));
   t.after(() => rm(root, { recursive: true, force: true }));
