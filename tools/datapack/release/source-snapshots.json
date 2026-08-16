@@ -1153,52 +1153,5 @@
     "revalidationEvidenceSha256": "39ecf870ff47f3fbed249414b00e82d4f970cae77576b6ae78345bbca3a8a476",
     "governancePolicyVersion": "2026-07-15",
     "governancePolicySha256": "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70"
-  },
-  {
-    "schemaVersion": 1,
-    "artifactKind": "official-source-snapshot",
-    "snapshotId": "kric-station-convenience-standard-20260816T015619375Z",
-    "sourceId": "kric-station-convenience-standard",
-    "provider": "국가철도공단",
-    "retrievedAt": "2026-08-16T01:56:19.375Z",
-    "sourceUpdatedAt": "2026-08-16T01:56:19.375Z",
-    "rowCount": 2019,
-    "coverageCount": 213,
-    "rawSha256": "32ef1453e5489263b3cb88e99379da91f10e20692eb1d608f696132b5a839b5e",
-    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-station-convenience-standard/20260816/32ef1453e5489263b3cb88e99379da91f10e20692eb1d608f696132b5a839b5e.json",
-    "rawReceipt": {
-      "sourceId": "kric-station-convenience-standard",
-      "snapshotId": "kric-station-convenience-standard-20260816T015619375Z",
-      "snapshotRawSha256": "9325f6ce549a699dc4988700a8f04e25ffc830ec84cdec6abcc4c18b3a5d967b",
-      "capturedAt": "2026-08-16T01:56:19.375Z",
-      "snapshotFileSha256": "b17b62128be4305889034c891ee84ac48da98a2599b47625de98ea960d2013ba",
-      "rawObjectSha256": "32ef1453e5489263b3cb88e99379da91f10e20692eb1d608f696132b5a839b5e",
-      "byteSize": 657550,
-      "storedAt": "2026-08-16T01:58:03.974Z"
-    },
-    "contentSha256": "4a12baebe8d9c311c7a8a3a2617807c31dbc8a8afa886c26b34ebd1df4be1b81",
-    "redactedRequestFingerprint": "6bfc760d8afac637c2cb39784a2b6b7c68c7e6fa81c15270a405dd8dfca86a49",
-    "schemaFingerprint": "6cf45df8488510187063c4b7396ca9628295d6961becdcf1de87f2ae521e8591",
-    "snapshotStatus": "LOCKED",
-    "schemaStatus": "PASS",
-    "licenseStatus": "PASS",
-    "fetchStatus": "SUCCESS",
-    "redistributionAllowed": true,
-    "credentialRedacted": true,
-    "previousSnapshotId": "kric-station-convenience-standard-20260813T200604805Z",
-    "freshnessExpiresAt": "2026-11-14T01:56:19.375Z",
-    "rawRetentionExpiresAt": "2026-11-14T01:56:19.375Z",
-    "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
-    "governancePolicySha256": "13f8a78c0ae0f7bfa6817005f44a92be3131e6f6708a69a4024747478203beaa",
-    "governancePolicyVersion": "2026-07-15",
-    "diffSummary": {
-      "status": "CHANGED",
-      "rawHashChanged": true,
-      "schemaHashChanged": false,
-      "requestHashChanged": true,
-      "sourceUpdatedAtChanged": true,
-      "rowDelta": 1926,
-      "coverageDelta": 206
-    }
   }
 ]
