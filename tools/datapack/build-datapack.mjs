@@ -292,8 +292,12 @@ export function materializeIncheonNetworkEdges(pack, snapshot, admission) {
   return { snapshotId: admission.snapshotId, edgeCount: generated.length };
 }
 
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
+export async function main(
+  argv = process.argv.slice(2),
+  { repositoryRoot = root } = {},
+) {
+  const root = path.resolve(repositoryRoot);
+  const args = parseArgs(argv);
   if (args["build-spec"] != null) {
     await assertCurrentCapitalAccessibilityBuildAllowed({ repositoryRoot: root });
   }
@@ -306,6 +310,7 @@ async function main() {
     args,
     officialOdFareAdmissions,
     officialOdFareAdmissionBytes,
+    root,
   );
 
   validateFixture(fixture);
@@ -441,14 +446,19 @@ async function main() {
   );
 }
 
-async function loadBuildInput(args, officialOdFareAdmissions, officialOdFareAdmissionBytes) {
+async function loadBuildInput(
+  args,
+  officialOdFareAdmissions,
+  officialOdFareAdmissionBytes,
+  repositoryRoot = root,
+) {
   const fixtureArg = args.fixture;
   const buildSpecArg = args["build-spec"];
   if ((fixtureArg == null) === (buildSpecArg == null)) {
     throw new Error("exactly one of --fixture or --build-spec is required");
   }
   if (fixtureArg != null) {
-    const fixture = JSON.parse(await readFile(path.resolve(root, fixtureArg), "utf8"));
+    const fixture = JSON.parse(await readFile(path.resolve(repositoryRoot, fixtureArg), "utf8"));
     rejectTestOnlyBuildInput(fixture);
     const hasProductionPack = fixture.packs?.some(({ artifactKind }) => artifactKind === "production");
     const fixtureChannel = fixture.manifest?.channel == null
@@ -475,6 +485,7 @@ async function loadBuildInput(args, officialOdFareAdmissions, officialOdFareAdmi
       const admissionPath = await resolveBuildInputPath(
         args["test-only-itx-admission"],
         "testOnlyItxAdmission",
+        repositoryRoot,
       );
       const admissionBytes = await readFile(admissionPath);
       await materializeTestOnlyItxAdmission(fixture, JSON.parse(admissionBytes), admissionBytes);
@@ -489,16 +500,21 @@ async function loadBuildInput(args, officialOdFareAdmissions, officialOdFareAdmi
     throw new Error("--test-only-itx-admission cannot be used with --build-spec");
   }
 
-  const buildSpecPath = await resolveBuildInputPath(buildSpecArg, "buildSpec");
+  const buildSpecPath = await resolveBuildInputPath(buildSpecArg, "buildSpec", repositoryRoot);
   const buildSpecBytes = await readFile(buildSpecPath);
   const buildSpec = JSON.parse(buildSpecBytes);
-  const fixture = JSON.parse(await readFile(await resolveBuildInputPath(buildSpec.fixturePath, "buildSpec.fixturePath"), "utf8"));
+  const fixture = JSON.parse(await readFile(await resolveBuildInputPath(
+    buildSpec.fixturePath,
+    "buildSpec.fixturePath",
+    repositoryRoot,
+  ), "utf8"));
   rejectTestOnlyBuildInput(fixture);
   const { officialOdFareEvidence, artifactFreshUntil } = await validateCandidateBuildSpec(
     buildSpec,
     fixture,
     officialOdFareAdmissions,
     officialOdFareAdmissionBytes,
+    repositoryRoot,
   );
   return {
     fixture,
@@ -625,7 +641,13 @@ function rejectTestOnlyBuildInput(fixture) {
   }
 }
 
-async function validateCandidateBuildSpec(buildSpec, fixture, admissions, admissionBytes) {
+async function validateCandidateBuildSpec(
+  buildSpec,
+  fixture,
+  admissions,
+  admissionBytes,
+  repositoryRoot = root,
+) {
   if (!buildSpec || typeof buildSpec !== "object" || Array.isArray(buildSpec)) {
     throw new Error("buildSpec must be an object");
   }
@@ -638,7 +660,7 @@ async function validateCandidateBuildSpec(buildSpec, fixture, admissions, admiss
   requiredString(buildSpec.candidateId, "buildSpec.candidateId");
   requiredString(buildSpec.productionScopeId, "buildSpec.productionScopeId");
   applyCandidateReleaseIdentity(buildSpec, fixture);
-  await resolveBuildInputPath(buildSpec.fixturePath, "buildSpec.fixturePath");
+  await resolveBuildInputPath(buildSpec.fixturePath, "buildSpec.fixturePath", repositoryRoot);
   requiredStringArray(buildSpec.sourceSnapshotIds, "buildSpec.sourceSnapshotIds");
   const sourceSnapshots = requiredSourceSnapshots(buildSpec.sourceSnapshots, "buildSpec.sourceSnapshots");
   assertSourceSnapshotSet(buildSpec.sourceSnapshotIds, sourceSnapshots);
@@ -650,8 +672,12 @@ async function validateCandidateBuildSpec(buildSpec, fixture, admissions, admiss
     throw new Error("buildSpec.builderGitSha must be a git sha");
   }
   requiredString(buildSpec.builderVersion, "buildSpec.builderVersion");
-  await validateCandidateProductionScope(buildSpec, fixture);
-  const artifactFreshUntil = await applyCandidateNetworkEdgeProjection(buildSpec, fixture);
+  await validateCandidateProductionScope(buildSpec, fixture, { repositoryRoot });
+  const artifactFreshUntil = await applyCandidateNetworkEdgeProjection(
+    buildSpec,
+    fixture,
+    { repositoryRoot },
+  );
   return {
     officialOdFareEvidence: validateOfficialOdFareEvidence(
       buildSpec.officialOdFareEvidence,
