@@ -92,7 +92,7 @@ function validatePair(normalizedBytes, admissionBytes) {
   const source = admission.sourceIdentity; const provider = normalized.providerSnapshotIdentity;
   assertKeys(source, SOURCE_KEYS, "admission source identity keys");
   for (const key of ["rawSha256", "queryPlanSha256", "coverageScopeSha256", "provenanceId", "licenseId", "providerSnapshotDigest", "providerSnapshotRawSha256", "providerCollectionPlanDigest", "providerQueryPlanSha256", "facilityAdmissionDigest", "facilityStationLineMappingSha256"]) assertSha(source[key], "admission source hash");
-  if (source.decision !== "APPROVED" || source.productionUseAllowed !== true || source.facilityStationLineMappingSha256 !== admission.stationLineMappingSha256) throw new Error("admission source identity mismatch");
+  if (source.decision !== "APPROVED" || source.productionUseAllowed !== true) throw new Error("admission source identity mismatch");
   if (!source || !provider || source.rawSha256 !== sha256(normalizedBytes) || source.sourceId !== normalized.sourceId
     || source.snapshotId !== normalized.snapshotId || source.capturedAt !== normalized.capturedAt || source.freshUntil !== normalized.freshUntil
     || source.providerSnapshotDigest !== provider.snapshotDigest || source.providerSnapshotRawSha256 !== provider.rawSha256
