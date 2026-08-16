@@ -237,7 +237,7 @@ function parse(bytes, label) { try { return JSON.parse(bytes.toString("utf8")); 
 function requiredBytes(value, label) { if (!Buffer.isBuffer(value) && !(value instanceof Uint8Array)) throw new Error(`${label} bytes are required`); return Buffer.from(value); }
 function requiredString(value, label) { if (typeof value !== "string" || value.trim() === "") throw new Error(`${label} is required`); return value; }
 function requiredSha(value, label) { if (!SHA.test(value ?? "")) throw new Error(`${label} is invalid`); return value; }
-function assertKeys(value, keys, label) { if (!value || typeof value !== "object" || Array.isArray(value) || canonicalJson(Object.keys(value).sort()) !== canonicalJson([...keys].sort())) throw new Error(`${label} keys mismatch`); }
+function assertKeys(value, keys, label) { if (!value || typeof value !== "object" || Array.isArray(value) || canonicalJson(Object.keys(value).sort((left, right) => left.localeCompare(right))) !== canonicalJson([...keys].sort((left, right) => left.localeCompare(right)))) throw new Error(`${label} keys mismatch`); }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   main().catch((error) => { console.error(`current-capital-accessibility-transition: ${error.message}`); process.exitCode = 1; });
