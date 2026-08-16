@@ -76,6 +76,35 @@ function parseJournal(bytes) {
   return value;
 }
 async function readJournal(operationRoot) { return parseJournal(await regularBytes(path.join(operationRoot, JOURNAL), "operation journal", { privateFile: true })); }
+async function assertGitAncestorDefault({ repositoryRoot, ancestorSha, descendantSha }) {
+  try {
+    await execFile("git", ["merge-base", "--is-ancestor", ancestorSha, descendantSha], { cwd: repositoryRoot });
+  } catch (error) {
+    if (error?.code === 1) throw new Error("source main is not an ancestor of target main");
+    throw new Error("source main ancestry could not be verified", { cause: error });
+  }
+}
+async function writePrivateFile(target, bytes) {
+  const handle = await open(target, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+  try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
+}
+async function settlePrivateCopies(copies) {
+  const results = await Promise.allSettled(copies.map((copy) => Promise.resolve().then(copy)));
+  const failure = results.find(({ status }) => status === "rejected");
+  if (failure) throw failure.reason;
+}
+async function syncDirectory(directory) {
+  const handle = await open(directory, constants.O_RDONLY | constants.O_DIRECTORY);
+  try { await handle.sync(); } finally { await handle.close(); }
+}
+async function cleanupRecoveredTarget(operationRoot) {
+  const observationDirectory = path.join(operationRoot, "observation");
+  await unlink(path.join(operationRoot, JOURNAL)).catch(() => {});
+  await unlink(path.join(operationRoot, RECEIPT)).catch(() => {});
+  for (const name of FILES) await unlink(path.join(observationDirectory, name)).catch(() => {});
+  await rmdir(observationDirectory).catch(() => {});
+  await rmdir(operationRoot).catch(() => {});
+}
 async function readObservationDirectory(directory, repositoryRoot) {
   const root = requireAbsolute(directory, "observationDirectory"); const stat = await lstat(root);
   if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("transfer observation directory must be a regular non-symlink directory"); privateMode(stat, "transfer observation directory");
@@ -148,6 +177,7 @@ export function validateFinalStateStatus(status, targets) {
 
 export function parseArgs(argv) {
   if (argv[0] === "finalize" && argv.length === 3 && argv[1] === "--operation-root") return { phase: "finalize", operationRoot: argv[2] };
+  if (argv[0] === "recover-published" && argv.length === 7 && argv[1] === "--source-operation-root" && argv[3] === "--target-operation-root" && argv[5] === "--expected-main-sha") return { phase: "recover-published", sourceOperationRoot: argv[2], targetOperationRoot: argv[4], expectedMainSha: argv[6] };
   if (argv[0] === "prepare" && argv.length === 7 && argv[1] === "--operation-root" && argv[3] === "--observation-directory" && argv[5] === "--expected-main-sha") return { phase: "prepare", operationRoot: argv[2], observationDirectory: argv[4], expectedMainSha: argv[6] };
   throw new Error("transfer registration arguments are invalid");
 }
@@ -159,6 +189,104 @@ export async function prepareCurrentSeoulTransferRegistration({ repositoryRoot =
     const observation = { ...await readObservation(observationDirectory, root), directory: requireAbsolute(observationDirectory, "observationDirectory") }; const artifacts = await artifactsReader(root, observation); const sealed = binding(observation, artifacts);
     await writeJournal(operation, { schemaVersion: 1, phase: "PREPARED", repositoryRoot: root, operationRoot: operation, expectedMainSha, preparedAt: now.toISOString(), observationDirectory: observation.directory, observation: { sourceId: sealed.sourceId, capturedAt: sealed.capturedAt, rowCount: sealed.rowCount, files: sealed.files }, metrics: sealed.metrics, applicability: sealed.applicability });
   } catch (error) { await unlink(path.join(operation, JOURNAL)).catch(() => {}); throw error; } finally { await release(); }
+}
+
+export async function recoverPublishedCurrentSeoulTransferRegistration({
+  repositoryRoot = ROOT,
+  sourceOperationRoot,
+  targetOperationRoot,
+  expectedMainSha,
+  assertExactMain = assertExactMainPreflight,
+  assertAncestor = assertGitAncestorDefault,
+  readObservation = readObservationDirectory,
+  readArtifacts: artifactsReader = readArtifacts,
+  writePrivate = writePrivateFile,
+  beforeCommit = async () => {},
+  now = new Date(),
+} = {}) {
+  const root = requireAbsolute(repositoryRoot, "repositoryRoot");
+  const sourceOperation = requireAbsolute(sourceOperationRoot, "sourceOperationRoot");
+  const targetOperationInput = requireAbsolute(targetOperationRoot, "targetOperationRoot");
+  if (!GIT_SHA.test(expectedMainSha ?? "") || !(now instanceof Date) || Number.isNaN(now.valueOf())) throw new Error("transfer registration recovery arguments are invalid");
+  if (targetOperationInput === sourceOperation || targetOperationInput.startsWith(`${sourceOperation}${path.sep}`) || sourceOperation.startsWith(`${targetOperationInput}${path.sep}`)) throw new Error("source and target operation roots must be separate");
+  await assertExactMain({ repositoryRoot: root, expectedMainSha });
+  await assertOperationRoot(root, sourceOperation);
+  const [realSourceOperation, realTargetParent] = await Promise.all([
+    realpath(sourceOperation),
+    realpath(path.dirname(targetOperationInput)),
+  ]);
+  const realTargetOperation = path.join(realTargetParent, path.basename(targetOperationInput));
+  if (realTargetOperation === realSourceOperation || realTargetOperation.startsWith(`${realSourceOperation}${path.sep}`) || realSourceOperation.startsWith(`${realTargetOperation}${path.sep}`)) throw new Error("source and target operation roots must be separate");
+  const sourceJournalPath = path.join(sourceOperation, JOURNAL);
+  const sourceReceiptPath = path.join(sourceOperation, RECEIPT);
+  const [sourceJournalBytes, sourceReceiptBytes] = await Promise.all([
+    regularBytes(sourceJournalPath, "source operation journal", { privateFile: true }),
+    regularBytes(sourceReceiptPath, "source transfer OCI receipt", { privateFile: true }),
+  ]);
+  const sourceJournal = parseJournal(sourceJournalBytes);
+  if (sourceJournal.phase !== "FINALIZED") throw new Error("source transfer registration must be FINALIZED");
+  if (sourceJournal.operationRoot !== sourceOperation) throw new Error("source operation journal location mismatch");
+  await assertAncestor({ repositoryRoot: root, ancestorSha: sourceJournal.expectedMainSha, descendantSha: expectedMainSha });
+  const sourceObservation = { ...await readObservation(sourceJournal.observationDirectory, sourceJournal.repositoryRoot), directory: sourceJournal.observationDirectory };
+  const sourceArtifacts = await artifactsReader(sourceJournal.repositoryRoot, sourceObservation);
+  assertBinding(sourceJournal, sourceObservation, sourceArtifacts);
+  let receipt;
+  try { receipt = validateSeoulTransferRawReceipt(JSON.parse(sourceReceiptBytes)); } catch (error) { throw new Error("source published receipt is invalid", { cause: error }); }
+  assertReceiptBinding(receipt, sourceJournal);
+
+  const currentArtifacts = await artifactsReader(root, sourceObservation);
+  const targetOperation = await assertOperationRoot(root, targetOperationInput, { create: true });
+  const targetObservationDirectory = path.join(targetOperation, "observation");
+  let accepted = false;
+  try {
+    await mkdir(targetObservationDirectory, { mode: 0o700 });
+    await settlePrivateCopies([
+      () => writePrivate(path.join(targetObservationDirectory, "manifest.json"), sourceObservation.manifestBytes),
+      () => writePrivate(path.join(targetObservationDirectory, "observation.json"), sourceObservation.observationBytes),
+      () => writePrivate(path.join(targetObservationDirectory, "raw-snapshot.json"), sourceObservation.rawBytes),
+      () => writePrivate(path.join(targetOperation, RECEIPT), sourceReceiptBytes),
+    ]);
+    await syncDirectory(targetObservationDirectory);
+    await syncDirectory(targetOperation);
+    const targetObservation = { ...sourceObservation, directory: targetObservationDirectory };
+    const sealed = binding(targetObservation, currentArtifacts);
+    const journal = {
+      schemaVersion: 1,
+      phase: "PUBLISHED",
+      repositoryRoot: root,
+      operationRoot: targetOperation,
+      expectedMainSha,
+      preparedAt: now.toISOString(),
+      observationDirectory: targetObservationDirectory,
+      observation: { sourceId: sealed.sourceId, capturedAt: sealed.capturedAt, rowCount: sealed.rowCount, files: sealed.files },
+      metrics: sealed.metrics,
+      applicability: sealed.applicability,
+      publishAt: receipt.storedAt,
+    };
+    parseJournal(Buffer.from(JSON.stringify(journal)));
+
+    await beforeCommit();
+    const [currentJournalBytes, currentReceiptBytes, sourceObservationAfter, copiedObservation, copiedReceiptBytes, currentArtifactsAfter] = await Promise.all([
+      regularBytes(sourceJournalPath, "source operation journal", { privateFile: true }),
+      regularBytes(sourceReceiptPath, "source transfer OCI receipt", { privateFile: true }),
+      readObservation(sourceJournal.observationDirectory, sourceJournal.repositoryRoot),
+      readObservation(targetObservationDirectory, root),
+      regularBytes(path.join(targetOperation, RECEIPT), "recovered transfer OCI receipt", { privateFile: true }),
+      artifactsReader(root, targetObservation),
+    ]);
+    if (!currentJournalBytes.equals(sourceJournalBytes) || !currentReceiptBytes.equals(sourceReceiptBytes) || !copiedReceiptBytes.equals(sourceReceiptBytes)
+      || !sourceObservationAfter.manifestBytes.equals(sourceObservation.manifestBytes) || !sourceObservationAfter.observationBytes.equals(sourceObservation.observationBytes) || !sourceObservationAfter.rawBytes.equals(sourceObservation.rawBytes)
+      || !copiedObservation.manifestBytes.equals(sourceObservation.manifestBytes) || !copiedObservation.observationBytes.equals(sourceObservation.observationBytes) || !copiedObservation.rawBytes.equals(sourceObservation.rawBytes)) {
+      throw new Error("source published evidence changed during recovery");
+    }
+    assertBinding(journal, { ...copiedObservation, directory: targetObservationDirectory }, currentArtifactsAfter);
+    await assertExactMain({ repositoryRoot: root, expectedMainSha });
+    await writeJournal(targetOperation, journal);
+    accepted = true;
+    return { phase: "PUBLISHED" };
+  } finally {
+    if (!accepted) await cleanupRecoveredTarget(targetOperation);
+  }
 }
 
 export async function finalizeCurrentSeoulTransferRegistration({ repositoryRoot = ROOT, operationRoot, assertExactMain = assertExactMainPreflight, assertFinalStateMain = assertFinalStateMainDefault, readObservation = readObservationDirectory, readArtifacts: artifactsReader = readArtifacts, publish = publishSeoulTransferRawArtifact, register = registerCurrentSeoulTransferSource, now = new Date() } = {}) {
@@ -196,6 +324,11 @@ export async function finalizeCurrentSeoulTransferRegistration({ repositoryRoot 
   } finally { await release(); }
 }
 
-export async function main(argv = process.argv.slice(2), options = {}) { const args = parseArgs(argv); return args.phase === "prepare" ? prepareCurrentSeoulTransferRegistration({ ...options, operationRoot: args.operationRoot, observationDirectory: args.observationDirectory, expectedMainSha: args.expectedMainSha }) : finalizeCurrentSeoulTransferRegistration({ ...options, operationRoot: args.operationRoot }); }
+export async function main(argv = process.argv.slice(2), options = {}) {
+  const args = parseArgs(argv);
+  if (args.phase === "prepare") return prepareCurrentSeoulTransferRegistration({ ...options, operationRoot: args.operationRoot, observationDirectory: args.observationDirectory, expectedMainSha: args.expectedMainSha });
+  if (args.phase === "recover-published") return recoverPublishedCurrentSeoulTransferRegistration({ ...options, sourceOperationRoot: args.sourceOperationRoot, targetOperationRoot: args.targetOperationRoot, expectedMainSha: args.expectedMainSha });
+  return finalizeCurrentSeoulTransferRegistration({ ...options, operationRoot: args.operationRoot });
+}
 
 if (import.meta.url === new URL(process.argv[1], "file:").href) main().catch((error) => { console.error(error.message); process.exitCode = 1; });

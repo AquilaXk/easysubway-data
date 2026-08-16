@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { finalizeCurrentSeoulTransferRegistration, parseArgs, prepareCurrentSeoulTransferRegistration, validateFinalStateStatus } from "./run-current-seoul-transfer-registration.mjs";
+import { finalizeCurrentSeoulTransferRegistration, parseArgs, prepareCurrentSeoulTransferRegistration, recoverPublishedCurrentSeoulTransferRegistration, validateFinalStateStatus } from "./run-current-seoul-transfer-registration.mjs";
 
 const SHA = "a".repeat(40);
 const NOW = new Date("2026-08-15T12:01:00.000Z");
@@ -27,8 +27,9 @@ async function fixture(t) {
 
 const dependencies = { assertExactMain: exactMain, assertFinalStateMain: exactMain, readObservation: async () => observation, readArtifacts: async (root) => ({ ...artifacts, paths: { metrics: path.join(root, "metrics.json"), applicability: path.join(root, "applicability.json") } }) };
 
-test("strictly parses prepare/finalize command boundaries", () => {
+test("strictly parses prepare/recover-published/finalize command boundaries", () => {
   assert.deepEqual(parseArgs(["prepare", "--operation-root", "/private/op", "--observation-directory", "/private/observation", "--expected-main-sha", SHA]), { phase: "prepare", operationRoot: "/private/op", observationDirectory: "/private/observation", expectedMainSha: SHA });
+  assert.deepEqual(parseArgs(["recover-published", "--source-operation-root", "/private/source", "--target-operation-root", "/private/target", "--expected-main-sha", SHA]), { phase: "recover-published", sourceOperationRoot: "/private/source", targetOperationRoot: "/private/target", expectedMainSha: SHA });
   assert.deepEqual(parseArgs(["finalize", "--operation-root", "/private/op"]), { phase: "finalize", operationRoot: "/private/op" });
   assert.throws(() => parseArgs(["--phase", "finalize", "--operation-root", "/private/op"]), /arguments/);
 });
@@ -79,6 +80,135 @@ test("an exact existing receipt skips publish, while REGISTERING residue never r
   await assert.rejects(finalizeCurrentSeoulTransferRegistration({ ...crash, ...dependencies, register: async () => { throw new Error("must not replay"); } }), /manual recovery/);
 });
 
+test("FINALIZED published evidence recovers to current main and finalize never republishes", async (t) => {
+  const source = await fixture(t);
+  await prepareCurrentSeoulTransferRegistration({ ...source, expectedMainSha: SHA, ...dependencies, now: NOW });
+  await writeFile(path.join(source.operationRoot, "receipt.json"), `${JSON.stringify(receipt())}\n`, { mode: 0o600 });
+  await finalizeCurrentSeoulTransferRegistration({
+    ...source,
+    ...dependencies,
+    publish: async () => { throw new Error("source receipt must skip publish"); },
+    register: async () => writeTargets(source.repositoryRoot),
+  });
+
+  const target = await fixture(t);
+  await recoverPublishedCurrentSeoulTransferRegistration({
+    repositoryRoot: target.repositoryRoot,
+    sourceOperationRoot: source.operationRoot,
+    targetOperationRoot: target.operationRoot,
+    expectedMainSha: SHA,
+    ...dependencies,
+    assertAncestor: async () => {},
+    now: new Date("2026-08-16T01:00:00.000Z"),
+  });
+  const journal = JSON.parse(await readFile(path.join(target.operationRoot, "journal.json"), "utf8"));
+  assert.equal(journal.phase, "PUBLISHED");
+  assert.equal(journal.expectedMainSha, SHA);
+  assert.equal(journal.publishAt, receipt().storedAt);
+  assert.equal(journal.observationDirectory, path.join(target.operationRoot, "observation"));
+  assert.deepEqual((await readdir(target.operationRoot)).sort(), ["journal.json", "observation", "receipt.json"]);
+  assert.deepEqual((await readdir(journal.observationDirectory)).sort(), ["manifest.json", "observation.json", "raw-snapshot.json"]);
+  assert.equal((await stat(target.operationRoot)).mode & 0o777, 0o700);
+  assert.equal((await stat(path.join(target.operationRoot, "receipt.json"))).mode & 0o777, 0o600);
+
+  let publishCalls = 0; let registerCalls = 0;
+  await finalizeCurrentSeoulTransferRegistration({
+    ...target,
+    ...dependencies,
+    publish: async () => { publishCalls += 1; },
+    register: async () => { registerCalls += 1; return writeTargets(target.repositoryRoot); },
+  });
+  assert.deepEqual([publishCalls, registerCalls], [0, 1]);
+});
+
+test("published recovery rejects nonterminal, nonancestor and receipt-drift sources before target acceptance", async (t) => {
+  const prepared = await fixture(t);
+  await prepareCurrentSeoulTransferRegistration({ ...prepared, expectedMainSha: SHA, ...dependencies, now: NOW });
+  await writeFile(path.join(prepared.operationRoot, "receipt.json"), `${JSON.stringify(receipt())}\n`, { mode: 0o600 });
+  const preparedTarget = await fixture(t);
+  await assert.rejects(recoverPublishedCurrentSeoulTransferRegistration({ repositoryRoot: preparedTarget.repositoryRoot, sourceOperationRoot: prepared.operationRoot, targetOperationRoot: preparedTarget.operationRoot, expectedMainSha: SHA, ...dependencies, assertAncestor: async () => {} }), /FINALIZED/);
+  await assert.rejects(stat(preparedTarget.operationRoot), { code: "ENOENT" });
+
+  const source = await fixture(t);
+  await prepareCurrentSeoulTransferRegistration({ ...source, expectedMainSha: SHA, ...dependencies, now: NOW });
+  await writeFile(path.join(source.operationRoot, "receipt.json"), `${JSON.stringify(receipt())}\n`, { mode: 0o600 });
+  await finalizeCurrentSeoulTransferRegistration({ ...source, ...dependencies, register: async () => writeTargets(source.repositoryRoot) });
+
+  const cases = [
+    ["nonancestor", async () => {}, { assertAncestor: async () => { throw new Error("source main is not an ancestor"); } }, /not an ancestor/],
+    ["receipt drift", async () => { const changed = receipt(); changed.observationSha256 = "0".repeat(64); await writeFile(path.join(source.operationRoot, "receipt.json"), `${JSON.stringify(changed)}\n`, { mode: 0o600 }); }, {}, /receipt identity/],
+  ];
+  for (const [label, mutate, overrides, pattern] of cases) {
+    await mutate();
+    const target = await fixture(t);
+    await assert.rejects(recoverPublishedCurrentSeoulTransferRegistration({ repositoryRoot: target.repositoryRoot, sourceOperationRoot: source.operationRoot, targetOperationRoot: target.operationRoot, expectedMainSha: SHA, ...dependencies, assertAncestor: async () => {}, ...overrides }), pattern, label);
+    await assert.rejects(stat(target.operationRoot), { code: "ENOENT" });
+    if (label === "receipt drift") await writeFile(path.join(source.operationRoot, "receipt.json"), `${JSON.stringify(receipt())}\n`, { mode: 0o600 });
+  }
+
+  const changedTarget = await fixture(t); let reads = 0;
+  await assert.rejects(recoverPublishedCurrentSeoulTransferRegistration({
+    repositoryRoot: changedTarget.repositoryRoot,
+    sourceOperationRoot: source.operationRoot,
+    targetOperationRoot: changedTarget.operationRoot,
+    expectedMainSha: SHA,
+    ...dependencies,
+    assertAncestor: async () => {},
+    readObservation: async () => {
+      reads += 1;
+      return reads === 2 ? { ...observation, observationBytes: Buffer.from("changed") } : observation;
+    },
+  }), /changed during recovery/);
+  await assert.rejects(stat(changedTarget.operationRoot), { code: "ENOENT" });
+});
+
+test("published recovery rejects source nesting reached through an intermediate symlink", async (t) => {
+  const source = await finalizedSource(t);
+  const nestedParent = path.join(source.operationRoot, "nested-parent");
+  await mkdir(nestedParent, { mode: 0o700 });
+  const alias = path.join(path.dirname(source.operationRoot), "source-alias");
+  await symlink(source.operationRoot, alias, "dir");
+  const targetOperationRoot = path.join(alias, "nested-parent", "target-operation");
+
+  await assert.rejects(recoverPublishedCurrentSeoulTransferRegistration({
+    repositoryRoot: source.repositoryRoot,
+    sourceOperationRoot: source.operationRoot,
+    targetOperationRoot,
+    expectedMainSha: SHA,
+    ...dependencies,
+    assertAncestor: async () => {},
+  }), /source and target operation roots must be separate/);
+  await assert.rejects(stat(path.join(nestedParent, "target-operation")), { code: "ENOENT" });
+});
+
+test("published recovery settles every private copy before cleaning a failed target", async (t) => {
+  const source = await finalizedSource(t);
+  const target = await fixture(t);
+  let lateCopyFinished = false;
+
+  await assert.rejects(recoverPublishedCurrentSeoulTransferRegistration({
+    repositoryRoot: target.repositoryRoot,
+    sourceOperationRoot: source.operationRoot,
+    targetOperationRoot: target.operationRoot,
+    expectedMainSha: SHA,
+    ...dependencies,
+    assertAncestor: async () => {},
+    writePrivate: async (file, bytes) => {
+      if (file.endsWith("receipt.json")) throw new Error("copy failure");
+      if (file.endsWith("manifest.json")) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+        await writeFile(file, bytes, { mode: 0o600 });
+        lateCopyFinished = true;
+        return;
+      }
+      await writeFile(file, bytes, { mode: 0o600 });
+    },
+  }), /copy failure/);
+  assert.equal(lateCopyFinished, true);
+  await assert.rejects(stat(target.operationRoot), { code: "ENOENT" });
+});
+
 test("resume and terminal states preserve one-shot publication and registration", async (t) => {
   const publishing = await fixture(t); await prepareCurrentSeoulTransferRegistration({ ...publishing, expectedMainSha: SHA, ...dependencies, now: NOW }); await writeFile(path.join(publishing.operationRoot, "receipt.json"), `${JSON.stringify(receipt())}\n`, { mode: 0o600 }); await setPhase(publishing.operationRoot, "PUBLISHING"); let publishCalls = 0; let registerCalls = 0;
   await finalizeCurrentSeoulTransferRegistration({ ...publishing, ...dependencies, publish: async () => { publishCalls += 1; }, register: async () => { registerCalls += 1; return writeTargets(publishing.repositoryRoot); } }); assert.deepEqual([publishCalls, registerCalls], [0, 1]);
@@ -100,6 +230,14 @@ test("operation lock excludes side effects and final porcelain has an exact part
 
 function receipt() { return { schemaVersion: 1, artifactKind: "seoul-transfer-raw-object-receipt", sourceId: observation.manifest.sourceId, snapshotId: "seoul-metro-transfer-distance-duration-20260815T120000000Z", snapshotRawSha256: observation.manifest.rawSha256, capturedAt: observation.manifest.capturedAt, manifestSha256: hash(observation.manifestBytes), observationSha256: hash(observation.observationBytes), rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-transfer-distance-duration/20260815/${hash(observation.rawBytes)}.json`, rawObjectSha256: hash(observation.rawBytes), ociNamespace: "axvym6vk8g7i", bucket: "easysubway-datapacks", objectKey: `source-raw/seoul-metro-transfer-distance-duration/20260815/${hash(observation.rawBytes)}.json`, capturedDate: "20260815", byteSize: observation.rawBytes.length, storedAt: "2026-08-15T12:01:00.000Z", rawRetentionExpiresAt: "2026-11-13T12:00:00.000Z" }; }
 function hash(value) { return createHash("sha256").update(value).digest("hex"); }
+
+async function finalizedSource(t) {
+  const source = await fixture(t);
+  await prepareCurrentSeoulTransferRegistration({ ...source, expectedMainSha: SHA, ...dependencies, now: NOW });
+  await writeFile(path.join(source.operationRoot, "receipt.json"), `${JSON.stringify(receipt())}\n`, { mode: 0o600 });
+  await finalizeCurrentSeoulTransferRegistration({ ...source, ...dependencies, register: async () => writeTargets(source.repositoryRoot) });
+  return source;
+}
 
 async function writeTargets(root) {
   const targets = ["tools/datapack/source-inventory.json", "release/product-gates/production-datapack-scope.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json", "tools/datapack/sources/seoul-metro-transfer-distance-duration-20260815T120000000Z.json"];
