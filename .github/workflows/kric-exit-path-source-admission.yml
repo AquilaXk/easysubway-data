@@ -51,10 +51,12 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          PROVIDER_RUN_ID: ${{ inputs.providerRunId }}
+          EXPECTED_PROVIDER_HEAD_SHA: ${{ inputs.expectedProviderHeadSha }}
         run: >-
           node tools/datapack/run-current-kric-exit-path-source-admission.mjs
-          --provider-run-id "${{ inputs.providerRunId }}"
-          --expected-provider-head-sha "${{ inputs.expectedProviderHeadSha }}"
+          --provider-run-id "${PROVIDER_RUN_ID}"
+          --expected-provider-head-sha "${EXPECTED_PROVIDER_HEAD_SHA}"
           --output-directory "${RUNNER_TEMP}/current-kric-exit-path-source-admission"
 
       - name: Upload approved KRIC EXIT source admission

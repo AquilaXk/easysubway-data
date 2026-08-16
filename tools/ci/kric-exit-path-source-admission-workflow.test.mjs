@@ -30,7 +30,13 @@ test("automatic과 A-only runner는 상호배타적이며 GO-guarded artifact id
   assert.equal((yml.match(/run-current-kric-exit-path-source-admission\.mjs/g) ?? []).length, 2);
   assert.match(yml, /if: \$\{\{ github\.event_name == 'workflow_run' \}\}[\s\S]+--event-path "\$\{GITHUB_EVENT_PATH\}"/);
   assert.match(yml, /--event-path "\$\{GITHUB_EVENT_PATH\}"/);
-  assert.match(yml, /if: \$\{\{ github\.event_name == 'workflow_dispatch' \}\}[\s\S]+--provider-run-id "\$\{\{ inputs\.providerRunId \}\}"[\s\S]+--expected-provider-head-sha "\$\{\{ inputs\.expectedProviderHeadSha \}\}"/);
+  assert.match(yml, /if: \$\{\{ github\.event_name == 'workflow_dispatch' \}\}[\s\S]+PROVIDER_RUN_ID: \$\{\{ inputs\.providerRunId \}\}[\s\S]+EXPECTED_PROVIDER_HEAD_SHA: \$\{\{ inputs\.expectedProviderHeadSha \}\}[\s\S]+--provider-run-id "\$\{PROVIDER_RUN_ID\}"[\s\S]+--expected-provider-head-sha "\$\{EXPECTED_PROVIDER_HEAD_SHA\}"/);
+  assert.match(yml, /PROVIDER_RUN_ID: \$\{\{ inputs\.providerRunId \}\}/);
+  assert.match(yml, /EXPECTED_PROVIDER_HEAD_SHA: \$\{\{ inputs\.expectedProviderHeadSha \}\}/);
+  assert.match(yml, /--provider-run-id "\$\{PROVIDER_RUN_ID\}"/);
+  assert.match(yml, /--expected-provider-head-sha "\$\{EXPECTED_PROVIDER_HEAD_SHA\}"/);
+  assert.doesNotMatch(yml, /--provider-run-id "\$\{\{ inputs\./);
+  assert.doesNotMatch(yml, /--expected-provider-head-sha "\$\{\{ inputs\./);
   assert.equal((yml.match(/--output-directory "\$\{RUNNER_TEMP\}\/current-kric-exit-path-source-admission"/g) ?? []).length, 2);
   assert.equal((yml.match(/actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/g) ?? []).length, 1);
   assert.match(yml, /if: \$\{\{ success\(\) \}\}/);
