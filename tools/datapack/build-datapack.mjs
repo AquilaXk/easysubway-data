@@ -294,7 +294,9 @@ export function materializeIncheonNetworkEdges(pack, snapshot, admission) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  await assertCurrentCapitalAccessibilityBuildAllowed({ repositoryRoot: root });
+  if (args["build-spec"] != null) {
+    await assertCurrentCapitalAccessibilityBuildAllowed({ repositoryRoot: root });
+  }
   const outputDir = path.resolve(root, requireArg(args, "output"));
   const schema = await readFile(path.join(root, "tools/datapack/schema/catalog-schema.sql"), "utf8");
   const officialOdFareAdmissionBytes = await readFile(path.join(root, "tools/datapack/official-od-fare-admission.json"));

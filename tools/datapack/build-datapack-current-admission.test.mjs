@@ -29,11 +29,14 @@ const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const currentNow = new Date("2026-08-10T00:00:00.000Z");
 const execFileAsync = promisify(execFile);
 
-test("build-datapack은 staged transition을 candidate 입력보다 먼저 차단한다", async () => {
+test("build-datapack은 candidate mode만 staged transition을 입력보다 먼저 차단한다", async () => {
   const source = await readFile(path.join(root, "tools/datapack/build-datapack.mjs"), "utf8");
+  const candidateMode = source.indexOf('if (args["build-spec"] != null) {');
   const guard = source.indexOf("await assertCurrentCapitalAccessibilityBuildAllowed({ repositoryRoot: root });");
   const buildInput = source.indexOf("const { fixture, candidateBuild, artifactFreshUntil } = await loadBuildInput(");
+  assert.ok(candidateMode >= 0, "staged transition guard는 candidate mode에만 적용돼야 한다");
   assert.ok(guard >= 0, "staged transition guard가 필요하다");
+  assert.ok(candidateMode < guard, "candidate mode를 확인한 뒤 guard를 실행해야 한다");
   assert.ok(guard < buildInput, "staged transition guard는 candidate 입력보다 먼저 실행돼야 한다");
 });
 
