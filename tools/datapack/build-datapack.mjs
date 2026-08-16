@@ -36,6 +36,7 @@ import { validateItxServiceDates } from "./collect-tago-itx-cheongchun-od.mjs";
 import { loadCapitalRouteTopologySnapshot } from "./apply-capital-route-topology-to-bundled-pack.mjs";
 import { validateIncheonStationInfoSnapshot } from "./collect-incheon-station-info.mjs";
 import { assertNoRetiredTransitReferences } from "./project-retired-transit-lines.mjs";
+import { assertCurrentCapitalAccessibilityBuildAllowed } from "./current-capital-accessibility-transition.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const canonicalSqliteHeaderVersion = 3_053_000;
@@ -293,6 +294,9 @@ export function materializeIncheonNetworkEdges(pack, snapshot, admission) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  if (args["build-spec"] != null) {
+    await assertCurrentCapitalAccessibilityBuildAllowed({ repositoryRoot: root });
+  }
   const outputDir = path.resolve(root, requireArg(args, "output"));
   const schema = await readFile(path.join(root, "tools/datapack/schema/catalog-schema.sql"), "utf8");
   const officialOdFareAdmissionBytes = await readFile(path.join(root, "tools/datapack/official-od-fare-admission.json"));

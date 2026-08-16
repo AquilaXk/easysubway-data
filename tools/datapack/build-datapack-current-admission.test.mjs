@@ -29,6 +29,17 @@ const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const currentNow = new Date("2026-08-10T00:00:00.000Z");
 const execFileAsync = promisify(execFile);
 
+test("build-datapack은 candidate mode만 staged transition을 입력보다 먼저 차단한다", async () => {
+  const source = await readFile(path.join(root, "tools/datapack/build-datapack.mjs"), "utf8");
+  const candidateMode = source.indexOf('if (args["build-spec"] != null) {');
+  const guard = source.indexOf("await assertCurrentCapitalAccessibilityBuildAllowed({ repositoryRoot: root });");
+  const buildInput = source.indexOf("const { fixture, candidateBuild, artifactFreshUntil } = await loadBuildInput(");
+  assert.ok(candidateMode >= 0, "staged transition guard는 candidate mode에만 적용돼야 한다");
+  assert.ok(guard >= 0, "staged transition guard가 필요하다");
+  assert.ok(candidateMode < guard, "candidate mode를 확인한 뒤 guard를 실행해야 한다");
+  assert.ok(guard < buildInput, "staged transition guard는 candidate 입력보다 먼저 실행돼야 한다");
+});
+
 test("retired production transit unprojected fixture는 candidate admission에서 거부된다", async () => {
   const [fixture, policyBytes] = await Promise.all([
     readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8").then(JSON.parse),
@@ -122,6 +133,21 @@ test("candidate build spec release identity는 wall clock과 workflow run number
       sqlite: await readFile(path.join(output, "catalog/capital-v1.sqlite")),
       gzip: await readFile(path.join(output, "catalog/capital-v1.sqlite.gz")),
     };
+  }
+
+  try {
+    await readFile(path.join(root, "tools/datapack/release/current-capital-accessibility-transition.json"));
+    await assert.rejects(
+      build("transition-blocked", "2026-08-16T05:00:00.000Z", "303"),
+      /CURRENT_ACCESSIBILITY_TRANSITION_BLOCKED/,
+    );
+    await assert.rejects(
+      readFile(path.join(directory, "transition-blocked/current.json")),
+      /ENOENT/,
+    );
+    return;
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
   }
 
   const first = await build("first", "2026-08-14T16:00:00.000Z", "101");
