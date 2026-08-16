@@ -138,6 +138,64 @@ test("provider no-data·failed·result omission은 explicit zero가 아니다", 
   assert.equal(omittedResult.decision, "NO_GO");
 });
 
+test("v4 provider no-data는 같은 station-line 관측보다 우선해 EXIT terminal-blocked로 닫는다", () => {
+  const input = validInput();
+  const snapshot = parseSnapshot(input);
+  snapshot.schemaVersion = 4;
+  for (const result of snapshot.results) {
+    result.providerResponseSha256 = sha256(`provider-response-${result.queryId}`);
+  }
+  Object.assign(snapshot.results[1], {
+    state: "PROVIDER_NO_DATA",
+    records: [],
+    zeroEvidenceSha256: null,
+  });
+  snapshot.queryPlan.push({
+    ...snapshot.queryPlan[1],
+    queryId: "query-3",
+    providerNextStationId: "S3",
+  });
+  snapshot.coverage.queryIds.push("query-3");
+  snapshot.results.push({
+    queryId: "query-3",
+    state: "OBSERVED_EXIT_PATH",
+    records: [record("path-3")],
+    zeroEvidenceSha256: null,
+    providerResponseSha256: sha256("provider-response-query-3"),
+  });
+  replaceSnapshot(input, snapshot);
+
+  const result = buildExitPathAdmission(input);
+
+  assert.equal(result.schemaVersion, 2);
+  assert.equal(result.decision, "GO");
+  assert.equal(result.stateSummary.ADMITTED_EXIT_UNVERIFIED_BLOCKED, 1);
+  assert.deepEqual(result.cells[1], {
+    ...result.cells[1],
+    state: "ADMITTED_EXIT_UNVERIFIED_BLOCKED",
+    admissionReason: "PROVIDER_NO_DATA_UNVERIFIED_BLOCKED",
+    providerResponseSha256: sha256(canonicalJson([{
+      queryId: "query-2",
+      providerResponseSha256: sha256("provider-response-query-2"),
+    }])),
+  });
+  assert.deepEqual(result.materializerEvidenceRows[1], {
+    ...result.materializerEvidenceRows[1],
+    domain: "EXIT",
+    state: "UNVERIFIED_EVIDENCE_BLOCKED",
+    evidenceKind: "UNVERIFIED_EVIDENCE_BLOCKED",
+    evidenceReason: "출구 이동경로가 검증되지 않아 경로를 차단했습니다.",
+    providerRecordHash: null,
+    terminalPolicy: "PROVIDER_NO_DATA_RESULT_03_BLOCKED",
+    providerResultCode: "03",
+    strictRouteEligible: false,
+    strictRouteEligibleReason: "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED",
+    statusMeaning: "PROVIDER_NO_DATA_NOT_ABSENCE",
+    confidence: 0,
+    providerResponseSha256: result.cells[1].providerResponseSha256,
+  });
+});
+
 test("non-exhaustive explicit zero는 verified absence가 아니고 partial coverage로 blocked다", () => {
   const input = validInput();
   const snapshot = parseSnapshot(input);

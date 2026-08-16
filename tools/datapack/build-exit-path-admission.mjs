@@ -30,9 +30,10 @@ const QUERY_KEYS = [
   "queryId", "routeEdgeId", "providerOperatorId", "providerLineId", "providerStationId", "providerNextStationId",
   "operatorName", "lineName", "stationName", "regionId",
 ];
-const RESULT_KEYS = ["queryId", "state", "records", "zeroEvidenceSha256"];
+const RESULT_KEYS_V3 = ["queryId", "state", "records", "zeroEvidenceSha256"];
+const RESULT_KEYS_V4 = [...RESULT_KEYS_V3, "providerResponseSha256"];
 const RECORD_KEYS = ["recordId", "classification", "providerRecordHash"];
-const STATES = [
+const LEGACY_STATES = [
   "ADMITTED_EXIT_PATH",
   "ADMITTED_VERIFIED_ABSENCE",
   "BLOCKED_WITH_EVIDENCE",
@@ -40,6 +41,9 @@ const STATES = [
   "STALE",
   "UNKNOWN",
 ];
+const TERMINAL_STATE = "ADMITTED_EXIT_UNVERIFIED_BLOCKED";
+const TERMINAL_POLICY = "PROVIDER_NO_DATA_RESULT_03_BLOCKED";
+const TERMINAL_REASON = "출구 이동경로가 검증되지 않아 경로를 차단했습니다.";
 const RESULT_STATES = new Set(["OBSERVED_EXIT_PATH", "EXPLICIT_ZERO", "PROVIDER_NO_DATA", "FAILED"]);
 const OUTPUT_KEYS = [
   "schemaVersion", "artifactKind", "candidate", "sourceIdentity", "stationLineMappingSha256",
@@ -117,21 +121,26 @@ export function buildExitPathAdmission(input) {
     normalizedEvidenceSha256,
     observedAt,
   }));
+  const terminalContract = snapshot.schemaVersion === 4;
+  const admittedStates = terminalContract
+    ? new Set(["ADMITTED_EXIT_PATH", "ADMITTED_VERIFIED_ABSENCE", TERMINAL_STATE])
+    : new Set(["ADMITTED_EXIT_PATH", "ADMITTED_VERIFIED_ABSENCE"]);
   const materializerEvidenceRows = cells
-    .filter(({ state }) => state === "ADMITTED_EXIT_PATH" || state === "ADMITTED_VERIFIED_ABSENCE")
+    .filter(({ state }) => admittedStates.has(state))
     .map(materializerEvidenceRow);
-  const stateSummary = Object.fromEntries(STATES.map((state) => [
+  const states = terminalContract ? [...LEGACY_STATES, TERMINAL_STATE] : LEGACY_STATES;
+  const stateSummary = Object.fromEntries(states.map((state) => [
     state, cells.filter((cell) => cell.state === state).length,
   ]));
   const decision = snapshot.coverage.exhaustive === true
     && queryPartition.unmatched.length === 0
     && queryPartition.ambiguous.length === 0
     && cells.length > 0
-    && cells.every(({ state }) => state === "ADMITTED_EXIT_PATH" || state === "ADMITTED_VERIFIED_ABSENCE")
+    && cells.every(({ state }) => admittedStates.has(state))
     ? "GO"
     : "NO_GO";
   const payload = canonicalObject({
-    schemaVersion: 1,
+    schemaVersion: terminalContract ? 2 : 1,
     artifactKind: "exit-path-admission-matrix",
     candidate,
     sourceIdentity,
@@ -200,7 +209,7 @@ function normalizeStationLine(line) {
 
 function validateSnapshot(value, observedAt) {
   assertKeys(value, SNAPSHOT_KEYS, "EXIT snapshot keys");
-  if (value.schemaVersion !== 3 || value.artifactKind !== "exit-path-normalized-source-snapshot") {
+  if (![3, 4].includes(value.schemaVersion) || value.artifactKind !== "exit-path-normalized-source-snapshot") {
     throw new Error("EXIT snapshot schema mismatch");
   }
   for (const key of ["sourceId", "snapshotId"]) assertNonBlank(value[key], `EXIT snapshot ${key}`);
@@ -220,7 +229,7 @@ function validateSnapshot(value, observedAt) {
   if (value.coverage.exhaustive && queryIds.length !== plannedIds.size) {
     throw new Error("EXIT snapshot exhaustive coverage is incomplete");
   }
-  const results = validateResults(value.results, plannedIds);
+  const results = validateResults(value.results, plannedIds, value.schemaVersion);
   const orderedQueryIds = queryIds.toSorted(compareBytes);
   const orderedQueryPlan = queryPlan.toSorted(compareQueries);
   const orderedResults = results.toSorted(compareResults);
@@ -274,11 +283,11 @@ function validateQueryPlan(value) {
   });
 }
 
-function validateResults(value, plannedIds) {
+function validateResults(value, plannedIds, schemaVersion) {
   if (!Array.isArray(value)) throw new Error("EXIT snapshot results must be an array");
   const seen = new Set();
   return value.map((result) => {
-    assertKeys(result, RESULT_KEYS, "EXIT result keys");
+    assertKeys(result, schemaVersion === 4 ? RESULT_KEYS_V4 : RESULT_KEYS_V3, "EXIT result keys");
     assertNonBlank(result.queryId, "EXIT result queryId");
     if (!plannedIds.has(result.queryId)) throw new Error("EXIT result references unknown query");
     if (seen.has(result.queryId)) throw new Error("duplicate EXIT query result");
@@ -291,6 +300,7 @@ function validateResults(value, plannedIds) {
       if (recordIds.has(record.recordId)) throw new Error("duplicate EXIT record");
       recordIds.add(record.recordId);
     }
+    if (schemaVersion === 4) assertSha256(result.providerResponseSha256, "EXIT provider response evidence");
     if (result.state === "OBSERVED_EXIT_PATH") {
       if (records.length === 0 || result.zeroEvidenceSha256 !== null) {
         throw new Error("observed EXIT path result shape mismatch");
@@ -298,6 +308,9 @@ function validateResults(value, plannedIds) {
     } else if (result.state === "EXPLICIT_ZERO") {
       if (records.length !== 0) throw new Error("explicit zero EXIT result must not contain records");
       assertSha256(result.zeroEvidenceSha256, "explicit zero EXIT evidence");
+      if (schemaVersion === 4 && result.zeroEvidenceSha256 !== result.providerResponseSha256) {
+        throw new Error("explicit zero EXIT response binding mismatch");
+      }
     } else if (records.length !== 0 || result.zeroEvidenceSha256 !== null) {
       throw new Error("non-success EXIT result shape mismatch");
     }
@@ -467,7 +480,9 @@ function buildCell({
     sourceAdmission,
     observedAt,
   });
-  return canonicalObject({ ...base, ...outcome });
+  return canonicalObject(snapshot.schemaVersion === 4
+    ? { ...base, ...outcome, providerResponseSha256: outcome.providerResponseSha256 ?? null }
+    : { ...base, ...outcome });
 }
 
 function resolveCellOutcome({
@@ -492,11 +507,19 @@ function resolveCellOutcome({
   if (results.some(({ state }) => state === "FAILED")) {
     return cellOutcome("BLOCKED_WITH_EVIDENCE", "PROVIDER_REQUEST_FAILED", resultHash);
   }
+  if (results.some(({ state }) => state === "PROVIDER_NO_DATA")) {
+    if (snapshot.schemaVersion === 4) {
+      const providerResponses = results
+        .filter(({ state }) => state === "PROVIDER_NO_DATA")
+        .map(({ queryId, providerResponseSha256 }) => canonicalObject({ queryId, providerResponseSha256 }))
+        .sort((left, right) => compareBytes(left.queryId, right.queryId));
+      return cellOutcome(TERMINAL_STATE, "PROVIDER_NO_DATA_UNVERIFIED_BLOCKED", resultHash,
+        sha256(canonicalJson(providerResponses)));
+    }
+    return cellOutcome("UNKNOWN", "PROVIDER_NO_DATA_IS_NOT_ABSENCE", resultHash);
+  }
   if (results.some(({ state }) => state === "OBSERVED_EXIT_PATH")) {
     return cellOutcome("ADMITTED_EXIT_PATH", "OFFICIAL_EXIT_PATH_PRESENT", resultHash);
-  }
-  if (results.some(({ state }) => state === "PROVIDER_NO_DATA")) {
-    return cellOutcome("UNKNOWN", "PROVIDER_NO_DATA_IS_NOT_ABSENCE", resultHash);
   }
   if (results.every(({ state }) => state === "EXPLICIT_ZERO")) {
     return snapshot.coverage.exhaustive
@@ -506,11 +529,52 @@ function resolveCellOutcome({
   throw new Error("unsupported EXIT station-line result aggregation");
 }
 
-function cellOutcome(state, admissionReason, providerRecordHash) {
-  return { state, admissionReason, providerRecordHash };
+function cellOutcome(state, admissionReason, providerRecordHash, providerResponseSha256 = undefined) {
+  return { state, admissionReason, providerRecordHash, ...(providerResponseSha256 === undefined ? {} : { providerResponseSha256 }) };
 }
 
 function materializerEvidenceRow(cell) {
+  if (cell.state === TERMINAL_STATE) {
+    const evidenceHash = sha256(canonicalJson({
+      sourceSnapshotId: cell.sourceSnapshotId,
+      stationId: cell.stationId,
+      lineId: cell.lineId,
+      operatorId: cell.operatorId,
+      domain: "EXIT",
+      terminalPolicy: TERMINAL_POLICY,
+      providerResponseSha256: cell.providerResponseSha256,
+    }));
+    return canonicalObject({
+      candidateId: cell.candidateId,
+      stationSetSha256: cell.stationSetSha256,
+      sourceSetSha256: cell.sourceSetSha256,
+      stationId: cell.stationId,
+      lineId: cell.lineId,
+      operatorId: cell.operatorId,
+      domain: "EXIT",
+      state: "UNVERIFIED_EVIDENCE_BLOCKED",
+      sourceId: cell.sourceId,
+      sourceSnapshotId: cell.sourceSnapshotId,
+      evidenceRawSha256: cell.evidenceRawSha256,
+      providerRecordHash: null,
+      capturedAt: cell.capturedAt,
+      freshUntil: cell.freshUntil,
+      provenanceId: cell.provenanceId,
+      licenseId: cell.licenseId,
+      mappingContractVersion: cell.mappingContractVersion,
+      materializerVersion: cell.materializerVersion,
+      evidenceKind: "UNVERIFIED_EVIDENCE_BLOCKED",
+      evidenceReason: TERMINAL_REASON,
+      terminalPolicy: TERMINAL_POLICY,
+      providerResultCode: "03",
+      strictRouteEligible: false,
+      strictRouteEligibleReason: "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED",
+      statusMeaning: "PROVIDER_NO_DATA_NOT_ABSENCE",
+      confidence: 0,
+      providerResponseSha256: cell.providerResponseSha256,
+      evidenceHash,
+    });
+  }
   const present = cell.state === "ADMITTED_EXIT_PATH";
   return canonicalObject({
     candidateId: cell.candidateId,
