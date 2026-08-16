@@ -141,6 +141,34 @@ test("capital Seoul Metro production selector는 canonical metadata와 실제 me
   );
 });
 
+test("capital selector는 비대상 Incheon freshness에 결합하지 않고 nationwide는 stale을 거부한다", async () => {
+  const input = await readProductionBytes();
+  const afterIncheonExpiry = new Date("2026-08-16T00:00:00.000Z");
+
+  assert.throws(
+    () => buildCurrentKricExitCollectionPlan(input, { now: afterIncheonExpiry }),
+    /Incheon topology admission is stale/,
+  );
+
+  const plan = buildCurrentKricExitCollectionPlan(input, {
+    now: afterIncheonExpiry,
+    coverageSelector: "capital-seoul-metro-production",
+  });
+  const incheonLineIds = new Set(["line-42b5805f3b5a", "line-98718184f016"]);
+  const stationLineKeys = new Set(plan.providerMappings.map(
+    ({ stationId, lineId }) => `${stationId}\0${lineId}`,
+  ));
+
+  assert.equal(plan.providerMappings.length, 213);
+  assert.equal(new Set(plan.providerMappings.map(({ stationId }) => stationId)).size, 199);
+  assert.equal(plan.queryPlan.length, 420);
+  assert.equal(plan.routeEdges.some(({ lineId }) => incheonLineIds.has(lineId)), false);
+  assert.ok(plan.routeEdges.every(({ fromStationId, toStationId, lineId }) => (
+    stationLineKeys.has(`${fromStationId}\0${lineId}`)
+      && stationLineKeys.has(`${toStationId}\0${lineId}`)
+  )));
+});
+
 test("raw source identity는 candidate ID에 결속되고 provider scope drift는 거부한다", async () => {
   const input = await readProductionBytes();
   const baseline = buildPlan(input);
