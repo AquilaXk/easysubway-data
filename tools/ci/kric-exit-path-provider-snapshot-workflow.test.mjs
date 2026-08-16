@@ -38,6 +38,8 @@ test("workflow는 current plan 뒤 collector와 immutable bundle builder를 exac
     "--canonical-pack", "--coverage-targets", "--provider-code-catalog", "--route-rosters",
     "--source-inventory", "--incheon-topology", "--coverage-selector", "--output",
   ]) assert.match(yml, new RegExp(flag));
+  assert.match(yml, /--incheon-topology "\$\{GITHUB_WORKSPACE\}\/tools\/datapack\/sources\/incheon-transit-station-info-20260814\.json"/);
+  assert.doesNotMatch(yml, /incheon-transit-station-info-20260813\.json/);
   assert.match(yml, /--coverage-selector capital-seoul-metro-production/);
   assert.match(yml, /--source-id kric-station-movement-standard/);
   assert.match(yml, /--request-timeout-ms 30000/);
