@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
-import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, readFile, readdir, rm, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
@@ -329,6 +329,99 @@ test("published observation recovery adopts exact bytes into a clean prepared ro
   await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot: source.operationRoot, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW }), /roots must differ/u);
 });
 
+test("published recovery runs current release preflight and rejects an expired observation before target mutation", async (t) => {
+  const { source } = await publishedRecoveryFixture(t);
+  const targetParent = await mkdtemp(path.join(tmpdir(), "facility-recovery-preflight-"));
+  t.after(() => rm(targetParent, { recursive: true, force: true }));
+  const prepareTarget = async (name) => {
+    const target = path.join(targetParent, name);
+    await prepareCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot: target, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
+    return target;
+  };
+  const assertUnchanged = async (target) => {
+    assert.equal(JSON.parse(await readFile(path.join(target, "journal.json"), "utf8")).phase, "PREPARED");
+    await assert.rejects(readFile(path.join(target, "receipt.json")), /ENOENT/u);
+    await assert.rejects(readFile(path.join(target, "observation", "observation.json")), /ENOENT/u);
+  };
+
+  const invalidRelease = await prepareTarget("invalid-release");
+  const invalidReleaseCalls = { preflight: 0, copy: 0, journal: 0 };
+  await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({
+    repositoryRoot: REPOSITORY_ROOT,
+    operationRoot: invalidRelease,
+    sourceOperationRoot: source.operationRoot,
+    execFileImpl: exactMainExec,
+    now: NOW,
+    releasePreflightImpl: async () => { invalidReleaseCalls.preflight += 1; throw new Error("candidate source ledger/freshness binding mismatch"); },
+    durableCreateImpl: async () => { invalidReleaseCalls.copy += 1; },
+    journalWriteImpl: async () => { invalidReleaseCalls.journal += 1; },
+  }), /candidate source ledger\/freshness binding mismatch/u);
+  assert.deepEqual(invalidReleaseCalls, { preflight: 1, copy: 0, journal: 0 });
+  await assertUnchanged(invalidRelease);
+
+  const expiredObservation = await prepareTarget("expired-observation");
+  await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({
+    repositoryRoot: REPOSITORY_ROOT,
+    operationRoot: expiredObservation,
+    sourceOperationRoot: source.operationRoot,
+    execFileImpl: exactMainExec,
+    now: new Date(source.snapshot.freshUntil),
+  }), /published recovery observation is stale/u);
+  await assertUnchanged(expiredObservation);
+});
+
+test("published recovery serializes collection and resumes its own staged durable create", async (t) => {
+  const { source } = await publishedRecoveryFixture(t);
+  const targetParent = await mkdtemp(path.join(tmpdir(), "facility-recovery-claim-"));
+  t.after(() => rm(targetParent, { recursive: true, force: true }));
+
+  const claimedTarget = path.join(targetParent, "claimed");
+  await prepareCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot: claimedTarget, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
+  await mkdir(path.join(claimedTarget, ".collection-claim"), { mode: 0o700 });
+  const blockedCalls = { copy: 0, journal: 0 };
+  await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({
+    repositoryRoot: REPOSITORY_ROOT,
+    operationRoot: claimedTarget,
+    sourceOperationRoot: source.operationRoot,
+    execFileImpl: exactMainExec,
+    now: NOW,
+    durableCreateImpl: async () => { blockedCalls.copy += 1; },
+    journalWriteImpl: async () => { blockedCalls.journal += 1; },
+  }), /collection is already in progress/u);
+  assert.deepEqual(blockedCalls, { copy: 0, journal: 0 });
+  assert.equal(JSON.parse(await readFile(path.join(claimedTarget, "journal.json"), "utf8")).phase, "PREPARED");
+  await assert.rejects(readFile(path.join(claimedTarget, "receipt.json")), /ENOENT/u);
+
+  const resumedTarget = path.join(targetParent, "staged-resume");
+  await prepareCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot: resumedTarget, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
+  const stagingRoot = path.join(resumedTarget, ".published-recovery-create");
+  let interrupted = false;
+  await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({
+    repositoryRoot: REPOSITORY_ROOT,
+    operationRoot: resumedTarget,
+    sourceOperationRoot: source.operationRoot,
+    execFileImpl: exactMainExec,
+    now: NOW,
+    durableCreateImpl: async (target, bytes, options) => {
+      assert.equal(options?.stagingRoot, stagingRoot);
+      await durableCreateBytes(target, bytes, {
+        ...options,
+        unlinkImpl: async (candidate) => {
+          if (!interrupted && path.dirname(candidate) === stagingRoot) {
+            interrupted = true;
+            throw new Error("injected staged unlink interruption");
+          }
+          await unlink(candidate);
+        },
+      });
+    },
+  }), /injected staged unlink interruption/u);
+  assert.equal(JSON.parse(await readFile(path.join(resumedTarget, "journal.json"), "utf8")).phase, "PREPARED");
+  assert.equal((await readdir(stagingRoot)).length, 1);
+  assert.equal((await recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot: resumedTarget, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW })).status, "RECOVERED_PUBLISHED");
+  await assert.rejects(readdir(stagingRoot), /ENOENT/u);
+});
+
 test("published recovery rejects escaped observation inventory and a resealed noncanonical plan before target mutation", async (t) => {
   const escaped = await publishedRecoveryFixture(t);
   const escapedParent = await mkdtemp(path.join(tmpdir(), "facility-recovery-escaped-"));
@@ -373,7 +466,7 @@ test("published recovery reconciles every exact partial copy and a failed journa
     let calls = 0;
     await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({
       repositoryRoot: REPOSITORY_ROOT, operationRoot: target, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW,
-      durableCreateImpl: async (target, bytes) => { calls += 1; if (calls === failAt) throw new Error("injected recovery copy failure"); await durableCreateBytes(target, bytes); },
+      durableCreateImpl: async (target, bytes, options) => { calls += 1; if (calls === failAt) throw new Error("injected recovery copy failure"); await durableCreateBytes(target, bytes, options); },
     }), /injected recovery copy failure/u);
     assert.equal(JSON.parse(await readFile(path.join(target, "journal.json"), "utf8")).phase, "PREPARED");
     assert.equal((await recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot: target, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW })).status, "RECOVERED_PUBLISHED");

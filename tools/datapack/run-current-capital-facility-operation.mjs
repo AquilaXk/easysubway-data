@@ -58,13 +58,40 @@ export async function syncWrite(target, value, { openImpl = open, renameImpl = r
     const directory = await openImpl(parent, "r"); try { await directory.sync(); } finally { await directory.close(); }
   } finally { if (!published) await unlinkImpl(temporary).catch(() => {}); }
 }
-export async function durableCreateBytes(target, bytes, { openImpl = open, linkImpl = link, unlinkImpl = unlink } = {}) {
-  const parent = path.dirname(target); const temporary = path.join(parent, `.${path.basename(target)}.${randomUUID()}.tmp`); let temporaryExists = true;
-  try {
-    const handle = await openImpl(temporary, "wx", 0o600); try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
-    await linkImpl(temporary, target); await unlinkImpl(temporary); temporaryExists = false;
-    const directory = await openImpl(parent, "r"); try { await directory.sync(); } finally { await directory.close(); }
-  } finally { if (temporaryExists) await unlinkImpl(temporary).catch(() => {}); }
+export async function durableCreateBytes(target, bytes, { stagingRoot, openImpl = open, linkImpl = link, unlinkImpl = unlink } = {}) {
+  const parent = path.dirname(target);
+  const stage = path.resolve(requireText(stagingRoot, "durable create staging root"));
+  const temporary = path.join(stage, `${hash(Buffer.from(path.resolve(target)))}.${path.basename(target)}.${hash(bytes)}.tmp`);
+  const [existingTarget, existingTemporary] = await Promise.all([
+    existingStableBytes(target, "durable create target"),
+    existingStableBytes(temporary, "durable create temporary"),
+  ]);
+  if (existingTarget != null && !existingTarget.equals(bytes)) throw new Error("durable create target mismatch");
+  if (existingTemporary != null && !existingTemporary.equals(bytes)) throw new Error("durable create temporary mismatch");
+  if (existingTarget != null) {
+    if (existingTemporary != null) { await unlinkImpl(temporary); await syncDirectory(stage, openImpl); }
+    return;
+  }
+  if (existingTemporary == null) {
+    try { await mkdir(stage, { mode: 0o700 }); }
+    catch (error) { if (error?.code !== "EEXIST") throw error; }
+    const stageStat = await lstat(stage);
+    if (!stageStat.isDirectory() || stageStat.isSymbolicLink()) throw new Error("durable create staging root must be a regular directory");
+    const handle = await openImpl(temporary, "wx", 0o600);
+    try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
+    await syncDirectory(stage, openImpl);
+  }
+  await linkImpl(temporary, target);
+  await syncDirectory(parent, openImpl);
+  await unlinkImpl(temporary);
+  await syncDirectory(stage, openImpl);
+}
+async function existingStableBytes(target, label) { try { return (await readStableRegularFile(target, label)).bytes; } catch (error) { if (error?.code === "ENOENT" || error?.cause?.code === "ENOENT") return undefined; throw error; } }
+async function syncDirectory(target, openImpl = open) { const directory = await openImpl(target, "r"); try { await directory.sync(); } finally { await directory.close(); } }
+async function removeEmptyDirectoryDurably(target, parent) {
+  try { await rmdir(target); }
+  catch (error) { if (error?.code === "ENOENT") return; throw error; }
+  await syncDirectory(parent);
 }
 async function regularBytes(target, label) {
   const stat = await lstat(target); if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`${label} must be a regular non-symlink file`);
@@ -259,7 +286,7 @@ export async function collectCurrentCapitalFacilityOperation({ repositoryRoot = 
     throw error;
   } finally { await releaseClaim(); }
 }
-export async function recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot = ROOT, operationRoot, sourceOperationRoot, now = new Date(), execFileImpl = execFile, durableCreateImpl = durableCreateBytes, journalWriteImpl = syncWrite } = {}) {
+export async function recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot = ROOT, operationRoot, sourceOperationRoot, now = new Date(), execFileImpl = execFile, durableCreateImpl = durableCreateBytes, journalWriteImpl = syncWrite, releasePreflightImpl = validateReleasePreflight } = {}) {
   const repository = path.resolve(repositoryRoot);
   const targetRoot = path.resolve(requireText(operationRoot, "operation root"));
   const sourceRoot = path.resolve(requireText(sourceOperationRoot, "source operation root"));
@@ -267,6 +294,8 @@ export async function recoverPublishedCurrentCapitalFacilityOperation({ reposito
   await Promise.all([assertExternalOperationRoot(repository, targetRoot), assertExternalOperationRoot(repository, sourceRoot)]);
   const [realTarget, realSource] = await Promise.all([realpath(targetRoot), realpath(sourceRoot)]);
   if (realTarget === realSource) throw new Error("source and target operation roots must differ");
+  const releaseClaim = await acquireCollectionClaim(targetRoot);
+  try {
 
   const targetJournalPath = path.join(targetRoot, JOURNAL);
   const sourceJournalPath = path.join(sourceRoot, JOURNAL);
@@ -294,9 +323,12 @@ export async function recoverPublishedCurrentCapitalFacilityOperation({ reposito
   const rebuiltPlan = buildCurrentCapitalFacilityCollectionPlan(snapshotBytes(preparedInputs));
   const rebuiltPlanBytes = Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(rebuiltPlan));
   if (!targetPlanBytes.equals(rebuiltPlanBytes) || rebuiltPlan.counts.stationLineCount !== 213 || rebuiltPlan.counts.stationCount !== 199 || rebuiltPlan.counts.providerTupleCount !== 213) throw new Error("published recovery canonical plan identity mismatch");
+  await releasePreflightImpl(repository, targetPlanBytes, now);
   const observation = await readCompletedObservation(path.join(sourceRoot, "observation"));
   assertObservationBinding(sourceJournal, observation);
   if (sourcePublished.snapshotId !== observation.snapshot.snapshotId) throw new Error("published recovery source stage is invalid");
+  const recoveryNowMillis = requiredUtcInstant(now.toISOString(), "published recovery now");
+  if (requiredUtcInstant(observation.snapshot.freshUntil, "published recovery freshUntil") <= recoveryNowMillis) throw new Error("published recovery observation is stale");
   const receiptBytes = await regularBytes(path.join(sourceRoot, "receipt.json"), "source raw receipt");
   if (hash(receiptBytes) !== sourcePublished.receiptSha256) throw new Error("published recovery receipt identity mismatch");
   const receipt = parse(receiptBytes, "source raw receipt");
@@ -306,8 +338,6 @@ export async function recoverPublishedCurrentCapitalFacilityOperation({ reposito
 
   const targetObservationRoot = path.join(targetRoot, "observation");
   const targetReceiptPath = path.join(targetRoot, "receipt.json");
-  const existingReceiptBytes = await existingRegularBytes(targetReceiptPath, "published recovery target receipt");
-  if (existingReceiptBytes != null && !existingReceiptBytes.equals(receiptBytes)) throw new Error("published recovery target receipt mismatch");
   const observationFiles = [
     ["observation.json", observation.manifestBytes],
     [observation.manifest.snapshotFile, observation.snapshotBytes],
@@ -323,19 +353,21 @@ export async function recoverPublishedCurrentCapitalFacilityOperation({ reposito
   } catch (error) {
     if (error?.code !== "ENOENT") throw error;
   }
-  const missingObservationFiles = [];
   for (const [name, bytes] of observationFiles) {
     const target = path.join(targetObservationRoot, name);
     const existing = observationRootExists ? await existingRegularBytes(target, `published recovery target ${name}`) : undefined;
-    if (existing == null) missingObservationFiles.push([target, bytes]);
-    else if (!existing.equals(bytes)) throw new Error("published recovery target observation mismatch");
+    if (existing != null && !existing.equals(bytes)) throw new Error("published recovery target observation mismatch");
   }
+  const existingReceiptBytes = await existingRegularBytes(targetReceiptPath, "published recovery target receipt");
+  if (existingReceiptBytes != null && !existingReceiptBytes.equals(receiptBytes)) throw new Error("published recovery target receipt mismatch");
   if (!observationRootExists) {
     await mkdir(targetObservationRoot, { mode: 0o700 });
-    const rootDirectory = await open(targetRoot, "r"); try { await rootDirectory.sync(); } finally { await rootDirectory.close(); }
+    await syncDirectory(targetRoot);
   }
-  for (const [target, bytes] of missingObservationFiles) await durableCreateImpl(target, bytes);
-  if (existingReceiptBytes == null) await durableCreateImpl(targetReceiptPath, receiptBytes);
+  const stagingRoot = path.join(targetRoot, ".published-recovery-create");
+  for (const [name, bytes] of observationFiles) await durableCreateImpl(path.join(targetObservationRoot, name), bytes, { stagingRoot });
+  await durableCreateImpl(targetReceiptPath, receiptBytes, { stagingRoot });
+  await removeEmptyDirectoryDurably(stagingRoot, targetRoot);
   const installedObservation = await readCompletedObservation(targetObservationRoot);
   if (!installedObservation.manifestBytes.equals(observation.manifestBytes)
     || !installedObservation.snapshotBytes.equals(observation.snapshotBytes)
@@ -352,6 +384,7 @@ export async function recoverPublishedCurrentCapitalFacilityOperation({ reposito
     finalizeObservedAt,
   });
   return { snapshotId: observation.snapshot.snapshotId, status: "RECOVERED_PUBLISHED" };
+  } finally { await releaseClaim(); }
 }
 export async function finalizeCurrentCapitalFacilityOperation({ repositoryRoot = ROOT, operationRoot, now = new Date(), env = process.env, execFileImpl = execFile, publishImpl = publishKricAccessibilityRawArtifact, registerImpl = registerKricStandardAccessibilitySnapshot, rebindImpl = rebindCurrentCandidateSourceSnapshots, buildAdmissionImpl = buildCurrentCapitalFacilitySourceAdmission } = {}) {
   const root = path.resolve(repositoryRoot); const operation = path.resolve(requireText(operationRoot, "operation root")); const journal = parseJournal(await regularBytes(path.join(operation, JOURNAL), "operation journal"));
