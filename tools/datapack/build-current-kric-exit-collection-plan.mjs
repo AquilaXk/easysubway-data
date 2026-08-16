@@ -72,17 +72,22 @@ export function buildCurrentKricExitCollectionPlan(
   const targets = validateCoverageTargets(sources.coverageTargets.value);
   const providerCodeCatalog = validateProviderCodeCatalog(sources.providerCodeCatalog.value);
   const routeRosters = validateRouteRosters(sources.routeRosters.value, targets);
+  validateCandidateLinePartition(pack.lines, targets);
+  const selectedCoverageScopes = selectCoverageScopes(pack, targets, coverageSelector);
+  const requiresIncheonTopology = coverageSelector === COVERAGE_SELECTOR_NATIONWIDE;
   const incheonAdmission = admittedIncheonTopologyEvidence({
     sourceInventory: sources.sourceInventory.value,
     snapshot: sources.incheonTopology.value,
     snapshotBytes: sources.incheonTopology.bytes,
     now,
+    requireFresh: requiresIncheonTopology,
   });
-  materializeIncheonNetworkEdges(pack, sources.incheonTopology.value, incheonAdmission);
+  // The capital-only plan authenticates the mandatory input but never consumes its edges.
+  if (requiresIncheonTopology) {
+    materializeIncheonNetworkEdges(pack, sources.incheonTopology.value, incheonAdmission);
+  }
 
   const linesById = uniqueMap(pack.lines, "id", "canonical line");
-  validateCandidateLinePartition(pack.lines, targets);
-  const selectedCoverageScopes = selectCoverageScopes(pack, targets, coverageSelector);
   const activeLineIds = new Set(selectedCoverageScopes.map(({ lineId }) => lineId));
   const coverageScopes = uniqueMap(
     selectedCoverageScopes,
