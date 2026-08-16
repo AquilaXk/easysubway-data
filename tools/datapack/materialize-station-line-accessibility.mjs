@@ -17,15 +17,19 @@ const EVIDENCE_KEYS = [
   "sourceId", "sourceSnapshotId", "evidenceRawSha256", "providerRecordHash", "capturedAt", "freshUntil",
   "provenanceId", "licenseId", "mappingContractVersion", "materializerVersion", "evidenceKind", "evidenceReason",
 ];
-const TERMINAL_EVIDENCE_KEYS = [
+const TERMINAL_COMMON_KEYS = [
   ...EVIDENCE_KEYS,
-  "facilityType", "terminalPolicy", "providerResultCode", "strictRouteEligible",
-  "strictRouteEligibleReason", "installationStatus", "operationalStatus", "statusMeaning",
+  "terminalPolicy", "providerResultCode", "strictRouteEligible",
+  "strictRouteEligibleReason", "statusMeaning",
   "confidence", "providerResponseSha256", "evidenceHash",
 ];
+const TERMINAL_FACILITY_EVIDENCE_KEYS = [...TERMINAL_COMMON_KEYS, "facilityType", "installationStatus", "operationalStatus"];
+const TERMINAL_EXIT_EVIDENCE_KEYS = TERMINAL_COMMON_KEYS;
 const TERMINAL_FACILITY_TYPES = ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"];
-const TERMINAL_REASON = "시설 존재·부재가 검증되지 않아 경로를 차단했습니다.";
+const TERMINAL_FACILITY_REASON = "시설 존재·부재가 검증되지 않아 경로를 차단했습니다.";
+const TERMINAL_EXIT_REASON = "출구 이동경로가 검증되지 않아 경로를 차단했습니다.";
 const TERMINAL_TUPLE = { stationId: "station-b35616704ce3", lineId: "seoul-2", operatorId: "seoul-metro", sourceId: "kric-station-convenience-standard" };
+const TERMINAL_EXIT_SOURCE_ID = "kric-station-movement-standard";
 const STATION_LINE_KEYS = ["stationId", "lineId", "operatorId"];
 
 export function materializeStationLineAccessibility(input) {
@@ -111,8 +115,9 @@ function assertMappedEvidence(evidence, lineIndex) {
 function addEvidence(byTarget, evidence) {
   const key = `${stationLineKey(evidence)}\u0000${evidence.domain}`;
   const existing = byTarget.get(key);
-  if (!existing) return byTarget.set(key, evidence.terminal ? [evidence] : evidence);
-  if (Array.isArray(existing) && evidence.terminal) return existing.push(evidence);
+  const aggregate = evidence.terminal && evidence.domain === "FACILITY";
+  if (!existing) return byTarget.set(key, aggregate ? [evidence] : evidence);
+  if (Array.isArray(existing) && aggregate) return existing.push(evidence);
   if (canonicalJson(existing) === canonicalJson(evidence)) throw new Error("duplicate evidence row");
   throw new Error("conflicting evidence rows");
 }
@@ -171,7 +176,10 @@ export function canonicalStationLineAccessibilityPayloadJson(result) {
 
 function validateEvidence(row, candidate, observedAt) {
   const terminal = row?.evidenceKind === "UNVERIFIED_EVIDENCE_BLOCKED";
-  assertKeys(row, terminal ? TERMINAL_EVIDENCE_KEYS : EVIDENCE_KEYS, "evidence row keys");
+  const keys = terminal
+    ? row?.domain === "FACILITY" ? TERMINAL_FACILITY_EVIDENCE_KEYS : TERMINAL_EXIT_EVIDENCE_KEYS
+    : EVIDENCE_KEYS;
+  assertKeys(row, keys, "evidence row keys");
   assertEvidenceIdentity(row, candidate);
   assertEvidenceTextFields(row);
   assertEvidenceState(row);
@@ -223,22 +231,39 @@ function assertEvidenceState(row) {
   };
   if (!validKinds[row.state].includes(row.evidenceKind)) throw new Error(`${row.state} evidence kind is not allowed`);
   if (row.state === "UNVERIFIED_EVIDENCE_BLOCKED") {
-    if (row.domain !== "FACILITY" || row.terminalPolicy !== "EXACT_TUPLE_PROVIDER_RESULT_03"
-      || row.providerResultCode !== "03" || row.strictRouteEligible !== false
-      || row.strictRouteEligibleReason !== "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED"
-      || row.installationStatus !== "UNKNOWN" || row.operationalStatus !== "UNKNOWN"
-      || row.statusMeaning !== "PROVIDER_RESULT_UNVERIFIED" || row.confidence !== 0
-      || !TERMINAL_FACILITY_TYPES.includes(row.facilityType) || row.evidenceReason !== TERMINAL_REASON) {
+    if (row.providerResultCode !== "03" || row.strictRouteEligible !== false
+      || row.strictRouteEligibleReason !== "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED" || row.confidence !== 0) {
       throw new Error("terminal evidence contract mismatch");
     }
-    for (const [field, expected] of Object.entries(TERMINAL_TUPLE)) {
-      if (row[field] !== expected) throw new Error("terminal evidence tuple mismatch");
+    let hashInput;
+    if (row.domain === "FACILITY") {
+      if (row.terminalPolicy !== "EXACT_TUPLE_PROVIDER_RESULT_03"
+        || row.installationStatus !== "UNKNOWN" || row.operationalStatus !== "UNKNOWN"
+        || row.statusMeaning !== "PROVIDER_RESULT_UNVERIFIED"
+        || !TERMINAL_FACILITY_TYPES.includes(row.facilityType) || row.evidenceReason !== TERMINAL_FACILITY_REASON) {
+        throw new Error("terminal evidence contract mismatch");
+      }
+      for (const [field, expected] of Object.entries(TERMINAL_TUPLE)) {
+        if (row[field] !== expected) throw new Error("terminal evidence tuple mismatch");
+      }
+      hashInput = {
+        sourceSnapshotId: row.sourceSnapshotId, stationId: row.stationId, lineId: row.lineId,
+        operatorId: row.operatorId, facilityType: row.facilityType, terminalPolicy: row.terminalPolicy,
+        providerResponseSha256: row.providerResponseSha256,
+      };
+    } else if (row.domain === "EXIT") {
+      if (row.sourceId !== TERMINAL_EXIT_SOURCE_ID || row.terminalPolicy !== "PROVIDER_NO_DATA_RESULT_03_BLOCKED"
+        || row.statusMeaning !== "PROVIDER_NO_DATA_NOT_ABSENCE" || row.evidenceReason !== TERMINAL_EXIT_REASON) {
+        throw new Error("terminal evidence contract mismatch");
+      }
+      hashInput = {
+        sourceSnapshotId: row.sourceSnapshotId, stationId: row.stationId, lineId: row.lineId,
+        operatorId: row.operatorId, domain: row.domain, terminalPolicy: row.terminalPolicy,
+        providerResponseSha256: row.providerResponseSha256,
+      };
+    } else {
+      throw new Error("terminal evidence contract mismatch");
     }
-    const hashInput = {
-      sourceSnapshotId: row.sourceSnapshotId, stationId: row.stationId, lineId: row.lineId,
-      operatorId: row.operatorId, facilityType: row.facilityType, terminalPolicy: row.terminalPolicy,
-      providerResponseSha256: row.providerResponseSha256,
-    };
     if (row.evidenceHash !== sha256(canonicalJson(hashInput))) throw new Error("terminal evidence hash mismatch");
   }
 }

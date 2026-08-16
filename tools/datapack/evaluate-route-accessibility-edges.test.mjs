@@ -185,6 +185,22 @@ function terminalScenario(overrides = {}) {
   return { value, policy: policyForEdges([route]) };
 }
 
+function exitTerminalScenario() {
+  const stationId = "station-exit"; const lineId = "line-exit"; const operatorId = "operator-exit";
+  const stationSetSha256 = createHash("sha256").update(JSON.stringify([stationId])).digest("hex");
+  const candidate = { candidateId: "candidate-capital-1", stationSetSha256, sourceSetSha256: "2".repeat(64), mappingContractVersion: "station-line-v1", materializerVersion: "1" };
+  const base = { ...candidate, stationId, lineId, operatorId, evidenceRawSha256: HASH, capturedAt: "2026-08-09T00:00:00.000Z", freshUntil: "2026-08-11T00:00:00.000Z", provenanceId: "official-provider", licenseId: "public-data-license" };
+  const responseSha256 = "9".repeat(64);
+  const terminalHash = createHash("sha256").update(JSON.stringify({ domain: "EXIT", lineId, operatorId, providerResponseSha256: responseSha256, sourceSnapshotId: "kric-exit-path-20260816", stationId, terminalPolicy: "PROVIDER_NO_DATA_RESULT_03_BLOCKED" })).digest("hex");
+  const terminal = { ...base, domain: "EXIT", state: "UNVERIFIED_EVIDENCE_BLOCKED", sourceId: "kric-station-movement-standard", sourceSnapshotId: "kric-exit-path-20260816", providerRecordHash: null, evidenceKind: "UNVERIFIED_EVIDENCE_BLOCKED", evidenceReason: "출구 이동경로가 검증되지 않아 경로를 차단했습니다.", terminalPolicy: "PROVIDER_NO_DATA_RESULT_03_BLOCKED", providerResultCode: "03", strictRouteEligible: false, strictRouteEligibleReason: "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED", statusMeaning: "PROVIDER_NO_DATA_NOT_ABSENCE", confidence: 0, providerResponseSha256: responseSha256, evidenceHash: terminalHash };
+  const normal = (domain) => ({ ...base, domain, state: "VERIFIED_PRESENT", sourceId: "official-accessibility", sourceSnapshotId: "official-accessibility-20260809", providerRecordHash: "b".repeat(64), evidenceKind: "OBSERVED", evidenceReason: "official evidence" });
+  const materialization = materializeStationLineAccessibility({ candidate, observedAt: NOW, stationLines: [{ stationId, lineId, operatorId }], evidenceRows: [normal("FACILITY"), terminal, normal("TRANSFER")] });
+  const raw = { edgeId: "exit-terminal", edgeType: "EXIT", fromNodeId: `${stationId}:${lineId}`, toNodeId: stationId, durationSeconds: 0, distanceMeters: 0, servicePattern: "", serviceClass: "SUBWAY" };
+  const route = { ...raw, edgeSha256: routeEdgeSha256(raw) };
+  const value = { candidate: { ...evaluationCandidate(), stationSetSha256 }, evaluationAt: NOW, stationLines: [{ stationId, lineId, operatorId, lineSequence: 1 }], routeEdges: [route], materialization };
+  return { value, policy: policyForEdges([route]) };
+}
+
 test("모든 route edge를 한 번씩 평가하고 blocked·unresolved edge도 분모에 보존한다", () => {
   const value = input();
   const before = structuredClone(value);
@@ -245,6 +261,26 @@ test("exact terminal FACILITY cell은 availability claim 없이 dependent edge�
       invalid.materialization.rows = invalid.materialization.rows.map((row) => ({ ...row, stationId: value, stationSetSha256 }));
       invalid.materialization = rebindMaterialization(invalid.materialization);
     }
+    assert.throws(() => evaluateRouteAccessibilityEdges(invalid, policy), /terminal materialization contract mismatch/);
+  }
+});
+
+test("provider no-data EXIT terminal cell은 exact EXIT edge를 BLOCKED로 만든다", () => {
+  const { value, policy: fixturePolicy } = exitTerminalScenario();
+  const result = evaluateRouteAccessibilityEdges(value, fixturePolicy);
+
+  const edgeResult = result.results.find(({ edgeId }) => edgeId === "exit-terminal");
+  assert.equal(edgeResult.state, "BLOCKED");
+  assert.equal(edgeResult.reason, "출구 이동경로가 검증되지 않아 경로를 차단했습니다.");
+  assert.equal(edgeResult.materializationCells[0].providerRecordHash, null);
+  assert.equal(edgeResult.materializationCells[0].providerResponseSha256, "9".repeat(64));
+
+  for (const [field, changed] of [["domain", "TRANSFER"], ["sourceId", "wrong-source"], ["providerResultCode", "00"]]) {
+    const { value: invalid, policy } = exitTerminalScenario();
+    const row = invalid.materialization.rows.find(({ evidenceKind }) => evidenceKind === "UNVERIFIED_EVIDENCE_BLOCKED");
+    row[field] = changed;
+    invalid.materialization.rows.sort((left, right) => `${left.stationId}\0${left.lineId}\0${left.operatorId}\0${left.domain}`.localeCompare(`${right.stationId}\0${right.lineId}\0${right.operatorId}\0${right.domain}`));
+    invalid.materialization = rebindMaterialization(invalid.materialization);
     assert.throws(() => evaluateRouteAccessibilityEdges(invalid, policy), /terminal materialization contract mismatch/);
   }
 });

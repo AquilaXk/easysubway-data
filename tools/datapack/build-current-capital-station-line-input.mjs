@@ -35,7 +35,7 @@ export function buildCurrentCapitalStationLineInput(input) {
   const transfer = validateTransfer(input, stationLines, candidate);
   validatePolicy(input.policy);
   const evidenceRows = [...facility, ...exit, ...transfer].sort(compareEvidence);
-  if (evidenceRows.length !== 641 || new Set(evidenceRows.filter(({ evidenceKind }) => evidenceKind !== "UNVERIFIED_EVIDENCE_BLOCKED").map((row) => `${row.stationId}\0${row.lineId}\0${row.domain}`)).size !== 638) {
+  if (evidenceRows.length !== 641 || new Set(evidenceRows.map((row) => `${row.stationId}\0${row.lineId}\0${row.domain}`)).size !== 639) {
     throw new Error("full-capital evidence denominator mismatch");
   }
   return canonicalObject({ candidate, stationLines, evidenceRows });
@@ -155,9 +155,9 @@ function validateExit(input, stationLines, candidate) {
   const receipt = input.exitReceipt;
   if (canonicalCurrentExitAdmissionArtifactReceiptJson(receipt) !== canonicalJson(receipt)
     || sha256(input.exitNormalizedBytes) !== receipt.normalizedSnapshotSha256 || sha256(input.exitAdmissionBytes) !== receipt.admissionSha256) throw new Error("full-capital EXIT receipt binding mismatch");
-  if (canonicalExitPathAdmissionJson(input.exitAdmission) !== input.exitAdmissionBytes.toString("utf8") || input.exitAdmission.admissionDigest !== receipt.admissionDigest || input.exitAdmission.decision !== "GO") throw new Error("full-capital EXIT admission binding mismatch");
+  if (canonicalExitPathAdmissionJson(input.exitAdmission) !== input.exitAdmissionBytes.toString("utf8") || input.exitAdmission.admissionDigest !== receipt.admissionDigest || input.exitAdmission.schemaVersion !== 2 || input.exitAdmission.decision !== "GO") throw new Error("full-capital EXIT admission binding mismatch");
   const normalized = input.exitNormalized;
-  if (canonicalJson(normalized) !== input.exitNormalizedBytes.toString("utf8") || normalized?.sourceId !== input.exitAdmission.sourceIdentity?.sourceId
+  if (canonicalJson(normalized) !== input.exitNormalizedBytes.toString("utf8") || normalized?.schemaVersion !== 4 || normalized?.sourceId !== input.exitAdmission.sourceIdentity?.sourceId
     || normalized?.snapshotId !== input.exitAdmission.sourceIdentity?.snapshotId || normalized?.queryPlan?.length !== 420 || normalized?.results?.length !== 420) throw new Error("full-capital EXIT normalized identity mismatch");
   if (input.exitAdmission.candidate?.candidateId !== candidate.candidateId || input.exitAdmission.candidate?.sourceSetSha256 !== candidate.sourceSetSha256
     || input.exitAdmission.candidate?.stationSetSha256 !== candidate.stationSetSha256) throw new Error("full-capital EXIT candidate mismatch");
@@ -176,9 +176,42 @@ function validateExit(input, stationLines, candidate) {
   const rows = indexExact(input.exitAdmission.materializerEvidenceRows, stationLines, "EXIT evidence");
   return stationLines.map((line) => {
     const row = rows.get(key(line));
-    if (row.domain !== "EXIT" || !["VERIFIED_PRESENT", "VERIFIED_ABSENT"].includes(row.state)) throw new Error("full-capital EXIT state mismatch");
+    validateExitEvidenceRow(row, input.exitAdmission);
     return canonicalObject({ ...row, candidateId: candidate.candidateId, stationSetSha256: candidate.stationSetSha256, sourceSetSha256: candidate.sourceSetSha256, mappingContractVersion: candidate.mappingContractVersion, materializerVersion: candidate.materializerVersion });
   });
+}
+
+function validateExitEvidenceRow(row, admission) {
+  const admissionCandidate = admission.candidate;
+  const source = admission.sourceIdentity;
+  if (row?.domain !== "EXIT" || row.candidateId !== admissionCandidate.candidateId
+    || row.stationSetSha256 !== admissionCandidate.stationSetSha256 || row.sourceSetSha256 !== admissionCandidate.sourceSetSha256
+    || row.mappingContractVersion !== admissionCandidate.mappingContractVersion || row.materializerVersion !== admissionCandidate.materializerVersion
+    || row.sourceId !== source.sourceId || row.sourceSnapshotId !== source.snapshotId
+    || row.evidenceRawSha256 !== source.rawSha256) throw new Error("full-capital EXIT identity mismatch");
+  if (["VERIFIED_PRESENT", "VERIFIED_ABSENT"].includes(row.state)) {
+    const allowedKind = row.state === "VERIFIED_PRESENT" ? "OBSERVED" : ["EXPLICIT_ZERO", "EXHAUSTIVE_LIST"];
+    if ((Array.isArray(allowedKind) ? !allowedKind.includes(row.evidenceKind) : row.evidenceKind !== allowedKind)
+      || !SHA.test(row.providerRecordHash ?? "")) throw new Error("full-capital EXIT state mismatch");
+    return;
+  }
+  if (row.state !== "UNVERIFIED_EVIDENCE_BLOCKED" || row.evidenceKind !== "UNVERIFIED_EVIDENCE_BLOCKED"
+    || row.sourceId !== "kric-station-movement-standard" || row.providerRecordHash !== null
+    || row.evidenceReason !== "출구 이동경로가 검증되지 않아 경로를 차단했습니다."
+    || row.terminalPolicy !== "PROVIDER_NO_DATA_RESULT_03_BLOCKED" || row.providerResultCode !== "03"
+    || row.strictRouteEligible !== false || row.strictRouteEligibleReason !== "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED"
+    || row.statusMeaning !== "PROVIDER_NO_DATA_NOT_ABSENCE" || row.confidence !== 0
+    || !SHA.test(row.providerResponseSha256 ?? "")) throw new Error("full-capital EXIT terminal mismatch");
+  const expectedEvidenceHash = sha256(canonicalJson({
+    sourceSnapshotId: row.sourceSnapshotId,
+    stationId: row.stationId,
+    lineId: row.lineId,
+    operatorId: row.operatorId,
+    domain: "EXIT",
+    terminalPolicy: row.terminalPolicy,
+    providerResponseSha256: row.providerResponseSha256,
+  }));
+  if (row.evidenceHash !== expectedEvidenceHash) throw new Error("full-capital EXIT terminal hash mismatch");
 }
 
 function validateTransfer(input, stationLines, candidate) {

@@ -25,6 +25,13 @@ test("full-capital route fan-in은 2218+213+213+30 edge contract를 만든다", 
   const policy = evaluatorPolicy(canonicalRideEdgeSetSha256(result.routeEdges.filter(({ edgeType }) => edgeType === "RIDE")));
   const evaluated = evaluateRouteAccessibilityEdges({ candidate: result.candidate, evaluationAt: "2026-08-01T01:00:00.000Z", stationLines: result.stationLines, routeEdges: result.routeEdges, materialization }, policy);
   assert.equal(evaluated.denominator.edgeCount, 2674);
+  const terminalExit = materialization.rows.find(({ state, domain }) => state === "UNVERIFIED_EVIDENCE_BLOCKED" && domain === "EXIT");
+  assert.ok(terminalExit);
+  const terminalExitEdge = result.routeEdges.find(({ edgeType, fromNodeId }) => edgeType === "EXIT" && fromNodeId === `${terminalExit.stationId}:${terminalExit.lineId}`);
+  assert.ok(terminalExitEdge);
+  const terminalExitResult = evaluated.results.find(({ edgeId }) => edgeId === terminalExitEdge.edgeId);
+  assert.equal(terminalExitResult.state, "BLOCKED");
+  assert.equal(terminalExitResult.reason, "출구 이동경로가 검증되지 않아 경로를 차단했습니다.");
 });
 
 test("route CLI만 temporary fixed target에 exact two-file handoff를 원자 publish한다", async () => {
@@ -34,6 +41,7 @@ test("route CLI만 temporary fixed target에 exact two-file handoff를 원자 pu
   const sourceSet = sha(JSON.stringify(input.sourceSnapshots));
   input.candidateBuildSpec.sourceSnapshotSetHash = sourceSet;
   input.exitAdmission.candidate.sourceSetSha256 = sourceSet;
+  input.exitAdmission.materializerEvidenceRows = input.exitAdmission.materializerEvidenceRows.map((row) => ({ ...row, sourceSetSha256: sourceSet }));
   resealAdmission(input.exitAdmission);
   input.facilityAdmission.candidate.sourceSnapshotSetHash = sourceSet;
   resealFacility(input.facilityAdmission);

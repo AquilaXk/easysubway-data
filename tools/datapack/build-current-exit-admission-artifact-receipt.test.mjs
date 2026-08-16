@@ -35,14 +35,14 @@ test("불완전한 EXIT denominator archive는 receipt 전에 fail closed한다"
       artifactId: 3,
       artifactName: "kric-exit-path-source-admission-1",
       artifactArchiveSha256: sha256(archive),
-    }), /EXIT denominator mismatch/);
+    }), /(?:normalized snapshot identity|EXIT denominator) mismatch/);
     await assert.rejects(main([
       "--artifact-archive", archivePath, "--repository", "AquilaXk/easysubway-data",
       "--admission-workflow-run-id", "2", "--provider-workflow-run-id", "1",
       "--head-sha", "a".repeat(40), "--artifact-id", "3",
       "--artifact-name", "kric-exit-path-source-admission-1",
       "--artifact-archive-sha256", sha256(archive), "--output-directory", output,
-    ], { log() {} }), /EXIT denominator mismatch/);
+    ], { log() {} }), /(?:normalized snapshot identity|EXIT denominator) mismatch/);
     await assert.rejects(lstat(output));
   } finally { await rm(temporary, { recursive: true, force: true }); }
 });
@@ -79,13 +79,42 @@ test("213/199/420 synthetic admission ZIP을 canonical 3-file receipt로 determi
     assert.deepEqual(await readFile(path.join(outputA, normalizedName)), normalizedBytes); assert.deepEqual(await readFile(path.join(outputA, admissionName)), admissionBytes);
     assert.deepEqual(JSON.parse(await readFile(path.join(outputA, receiptName), "utf8")), expected);
     const observedNormalized = structuredClone(normalized); const observedAdmission = structuredClone(admission);
-    observedNormalized.results[0] = { queryId: observedNormalized.results[0].queryId, state: "OBSERVED_EXIT_PATH", records: [{ recordId: "observed-path", classification: "EXIT_TO_PLATFORM_PATH", providerRecordHash: sha256(canonical({ recordId: "observed-path", classification: "EXIT_TO_PLATFORM_PATH" })) }], zeroEvidenceSha256: null };
+    observedNormalized.results[0] = { queryId: observedNormalized.results[0].queryId, state: "OBSERVED_EXIT_PATH", records: [{ recordId: "observed-path", classification: "EXIT_TO_PLATFORM_PATH", providerRecordHash: sha256(canonical({ recordId: "observed-path", classification: "EXIT_TO_PLATFORM_PATH" })) }], zeroEvidenceSha256: null, providerResponseSha256: sha256(canonical({ queryId: observedNormalized.results[0].queryId, state: "OBSERVED_EXIT_PATH" })) };
     refreshAdmissionBindings(observedNormalized, observedAdmission);
     const observedCell = observedAdmission.cells.find((cell) => cell.stationLineId === observedAdmission.queryPartition.joined[0].stationLineId);
     observedCell.state = "ADMITTED_EXIT_PATH"; observedCell.admissionReason = "OFFICIAL_EXIT_PATH_PRESENT"; refreshMaterializerAndSummary(observedAdmission); rehashAdmission(observedAdmission);
     const observedArchive = zip([{ name: normalizedName, bytes: Buffer.from(canonical(observedNormalized)) }, { name: admissionName, bytes: Buffer.from(canonical(observedAdmission)) }]);
     assert.doesNotThrow(() => buildCurrentExitAdmissionArtifactReceipt({ ...input, artifactArchiveBytes: observedArchive, artifactArchiveSha256: sha256(observedArchive) }));
-    for (const state of ["FAILED", "PROVIDER_NO_DATA"]) {
+    const terminalNormalized = structuredClone(normalized); const terminalAdmission = structuredClone(admission);
+    const terminalCellId = terminalAdmission.queryPartition.joined[0].stationLineId;
+    const terminalJoined = terminalAdmission.queryPartition.joined.filter((item) => item.stationLineId === terminalCellId);
+    for (const joined of terminalJoined) {
+      const result = terminalNormalized.results.find((item) => item.queryId === joined.queryId);
+      result.state = "PROVIDER_NO_DATA"; result.records = []; result.zeroEvidenceSha256 = null;
+      result.providerResponseSha256 = sha256(canonical({ queryId: result.queryId, state: result.state }));
+    }
+    const observedTerminalResult = terminalNormalized.results.find((item) => item.queryId === terminalJoined.at(-1).queryId);
+    observedTerminalResult.state = "OBSERVED_EXIT_PATH";
+    observedTerminalResult.records = [{ recordId: "mixed-observed-path", classification: "EXIT_TO_PLATFORM_PATH", providerRecordHash: sha256(canonical({ recordId: "mixed-observed-path", classification: "EXIT_TO_PLATFORM_PATH" })) }];
+    observedTerminalResult.zeroEvidenceSha256 = null;
+    observedTerminalResult.providerResponseSha256 = sha256(canonical({ queryId: observedTerminalResult.queryId, state: observedTerminalResult.state }));
+    refreshAdmissionBindings(terminalNormalized, terminalAdmission);
+    const terminalCell = terminalAdmission.cells.find((cell) => cell.stationLineId === terminalCellId);
+    const terminalResponses = terminalAdmission.queryPartition.joined
+      .filter((item) => item.stationLineId === terminalCellId)
+      .filter(({ queryId }) => terminalNormalized.results.find((result) => result.queryId === queryId).state === "PROVIDER_NO_DATA")
+      .map(({ queryId }) => ({ queryId, providerResponseSha256: terminalNormalized.results.find((result) => result.queryId === queryId).providerResponseSha256 }))
+      .sort((left, right) => left.queryId.localeCompare(right.queryId));
+    terminalCell.state = "ADMITTED_EXIT_UNVERIFIED_BLOCKED";
+    terminalCell.admissionReason = "PROVIDER_NO_DATA_UNVERIFIED_BLOCKED";
+    terminalCell.providerResponseSha256 = sha256(canonical(terminalResponses));
+    refreshMaterializerAndSummary(terminalAdmission); rehashAdmission(terminalAdmission);
+    const terminalArchive = zip([{ name: normalizedName, bytes: Buffer.from(canonical(terminalNormalized)) }, { name: admissionName, bytes: Buffer.from(canonical(terminalAdmission)) }]);
+    assert.doesNotThrow(() => buildCurrentExitAdmissionArtifactReceipt({ ...input, artifactArchiveBytes: terminalArchive, artifactArchiveSha256: sha256(terminalArchive) }));
+    const terminalHashDrift = structuredClone(terminalAdmission); terminalHashDrift.cells.find((cell) => cell.stationLineId === terminalCellId).providerResponseSha256 = "f".repeat(64); refreshMaterializerAndSummary(terminalHashDrift); rehashAdmission(terminalHashDrift);
+    const terminalHashDriftArchive = zip([{ name: normalizedName, bytes: Buffer.from(canonical(terminalNormalized)) }, { name: admissionName, bytes: Buffer.from(canonical(terminalHashDrift)) }]);
+    assert.throws(() => buildCurrentExitAdmissionArtifactReceipt({ ...input, artifactArchiveBytes: terminalHashDriftArchive, artifactArchiveSha256: sha256(terminalHashDriftArchive) }), /admission cell (?:result binding|outcome) mismatch/);
+    for (const state of ["FAILED"]) {
       const invalidNormalized = structuredClone(normalized); const invalidAdmission = structuredClone(admission);
       for (const joined of invalidAdmission.queryPartition.joined.filter((item) => item.stationLineId === invalidAdmission.queryPartition.joined[0].stationLineId)) {
         const result = invalidNormalized.results.find((item) => item.queryId === joined.queryId); result.state = state; result.records = []; result.zeroEvidenceSha256 = null;
@@ -167,16 +196,16 @@ function syntheticPair() {
   const provider = { sourceId: "source", snapshotId: "snapshot", capturedAt: "2026-08-14T00:00:00.000Z", freshUntil: "2026-08-15T00:00:00.000Z", snapshotDigest: "1".repeat(64), rawSha256: "2".repeat(64), collectionPlanDigest: "3".repeat(64), queryPlanSha256: "4".repeat(64) };
   const stationLines = Array.from({ length: 213 }, (_, index) => ({ stationId: `station-${String(index % 199).padStart(3, "0")}`, lineId: `line-${String(index).padStart(3, "0")}` }));
   const queries = queryIds.map((queryId, index) => ({ queryId, routeEdgeId: `edge-${String(index).padStart(3, "0")}`, providerOperatorId: "operator", providerLineId: "line", providerStationId: `station-${String(index).padStart(3, "0")}`, providerNextStationId: `next-${String(index).padStart(3, "0")}`, operatorName: "Operator", lineName: "Line", stationName: `Station-${String(index).padStart(3, "0")}`, regionId: "capital" }));
-  const results = queryIds.map((queryId) => ({ queryId, state: "EXPLICIT_ZERO", records: [], zeroEvidenceSha256: sha256(canonical({ queryId, state: "EXPLICIT_ZERO" })) }));
-  const normalized = { schemaVersion: 3, artifactKind: "exit-path-normalized-source-snapshot", sourceId: provider.sourceId, snapshotId: provider.snapshotId, capturedAt: provider.capturedAt, freshUntil: provider.freshUntil, providerSnapshotIdentity: provider, coverage: { exhaustive: true, queryIds }, queryPlan: queries, results };
+  const results = queryIds.map((queryId) => { const responseSha256 = sha256(canonical({ queryId, state: "EXPLICIT_ZERO" })); return { queryId, state: "EXPLICIT_ZERO", records: [], zeroEvidenceSha256: responseSha256, providerResponseSha256: responseSha256 }; });
+  const normalized = { schemaVersion: 4, artifactKind: "exit-path-normalized-source-snapshot", sourceId: provider.sourceId, snapshotId: provider.snapshotId, capturedAt: provider.capturedAt, freshUntil: provider.freshUntil, providerSnapshotIdentity: provider, coverage: { exhaustive: true, queryIds }, queryPlan: queries, results };
   const normalizedBytes = Buffer.from(canonical(normalized)); const normalizedEvidenceSha256 = sha256(canonical({ coverage: normalized.coverage, queryPlan: normalized.queryPlan, results: normalized.results }));
   const candidate = { candidateId: "candidate", stationSetSha256: sha256(canonical([...new Set(stationLines.map(({ stationId }) => stationId))].sort())), sourceSetSha256: "c".repeat(64), mappingContractVersion: "v1", materializerVersion: "v1" }; const mapping = "a".repeat(64); const lineSet = sha256(canonical(stationLines.map(({ stationId, lineId }) => ({ stationId, lineId, operatorId: "operator" })).sort((a, b) => a.stationId.localeCompare(b.stationId) || a.lineId.localeCompare(b.lineId))));
   const sourceIdentity = { sourceId: provider.sourceId, snapshotId: provider.snapshotId, rawSha256: sha256(normalizedBytes), capturedAt: provider.capturedAt, freshUntil: provider.freshUntil, queryPlanSha256: sha256(canonical(normalized.queryPlan)), coverageScopeSha256: "5".repeat(64), approvedAt: provider.capturedAt, decision: "APPROVED", productionUseAllowed: true, provenanceId: "6".repeat(64), licenseId: "7".repeat(64), providerSnapshotDigest: provider.snapshotDigest, providerSnapshotRawSha256: provider.rawSha256, providerCollectionPlanDigest: provider.collectionPlanDigest, providerQueryPlanSha256: provider.queryPlanSha256, facilityAdmissionDigest: "8".repeat(64), facilityStationLineMappingSha256: mapping };
   const joined = queries.map((query, index) => ({ ...query, stationLineId: `${stationLines[index % 213].stationId}:${stationLines[index % 213].lineId}` }));
-  const cells = stationLines.map(({ stationId, lineId }) => { const stationLineId = `${stationId}:${lineId}`; const joinedResults = joined.filter((item) => item.stationLineId === stationLineId).map(({ queryId }) => results.find((result) => result.queryId === queryId)); return { candidateId: candidate.candidateId, stationSetSha256: candidate.stationSetSha256, sourceSetSha256: candidate.sourceSetSha256, stationLineMappingSha256: mapping, stationLineSetSha256: lineSet, stationLineId, stationId, lineId, operatorId: "operator", domain: "EXIT", sourceId: provider.sourceId, sourceSnapshotId: provider.snapshotId, evidenceRawSha256: sourceIdentity.rawSha256, capturedAt: provider.capturedAt, freshUntil: provider.freshUntil, provenanceId: sourceIdentity.provenanceId, licenseId: sourceIdentity.licenseId, mappingContractVersion: candidate.mappingContractVersion, materializerVersion: candidate.materializerVersion, normalizedEvidenceSha256, state: "ADMITTED_VERIFIED_ABSENCE", admissionReason: "OFFICIAL_EXIT_EXPLICIT_ZERO", providerRecordHash: sha256(canonical(joinedResults)) }; });
+  const cells = stationLines.map(({ stationId, lineId }) => { const stationLineId = `${stationId}:${lineId}`; const joinedResults = joined.filter((item) => item.stationLineId === stationLineId).map(({ queryId }) => results.find((result) => result.queryId === queryId)); return { candidateId: candidate.candidateId, stationSetSha256: candidate.stationSetSha256, sourceSetSha256: candidate.sourceSetSha256, stationLineMappingSha256: mapping, stationLineSetSha256: lineSet, stationLineId, stationId, lineId, operatorId: "operator", domain: "EXIT", sourceId: provider.sourceId, sourceSnapshotId: provider.snapshotId, evidenceRawSha256: sourceIdentity.rawSha256, capturedAt: provider.capturedAt, freshUntil: provider.freshUntil, provenanceId: sourceIdentity.provenanceId, licenseId: sourceIdentity.licenseId, mappingContractVersion: candidate.mappingContractVersion, materializerVersion: candidate.materializerVersion, normalizedEvidenceSha256, state: "ADMITTED_VERIFIED_ABSENCE", admissionReason: "OFFICIAL_EXIT_EXPLICIT_ZERO", providerRecordHash: sha256(canonical(joinedResults)), providerResponseSha256: null }; });
   const rows = cells.map((cell) => ({ candidateId: cell.candidateId, stationSetSha256: cell.stationSetSha256, sourceSetSha256: cell.sourceSetSha256, stationId: cell.stationId, lineId: cell.lineId, operatorId: cell.operatorId, domain: "EXIT", state: "VERIFIED_ABSENT", sourceId: cell.sourceId, sourceSnapshotId: cell.sourceSnapshotId, evidenceRawSha256: cell.evidenceRawSha256, providerRecordHash: cell.providerRecordHash, capturedAt: cell.capturedAt, freshUntil: cell.freshUntil, provenanceId: cell.provenanceId, licenseId: cell.licenseId, mappingContractVersion: cell.mappingContractVersion, materializerVersion: cell.materializerVersion, evidenceKind: "EXPLICIT_ZERO", evidenceReason: cell.admissionReason }));
   const partition = { summary: { queryCount: 420, joinedCount: 420, unmatchedCount: 0, ambiguousCount: 0 }, joined, unmatched: [], ambiguous: [] };
-  const payload = { schemaVersion: 1, artifactKind: "exit-path-admission-matrix", candidate, sourceIdentity, stationLineMappingSha256: mapping, stationLineSetSha256: lineSet, normalizedEvidenceSha256, queryPartition: partition, cells, materializerEvidenceRows: rows, stateSummary: { ADMITTED_EXIT_PATH: 0, ADMITTED_VERIFIED_ABSENCE: 213, BLOCKED_WITH_EVIDENCE: 0, MISSING: 0, STALE: 0, UNKNOWN: 0 }, decision: "GO" };
+  const payload = { schemaVersion: 2, artifactKind: "exit-path-admission-matrix", candidate, sourceIdentity, stationLineMappingSha256: mapping, stationLineSetSha256: lineSet, normalizedEvidenceSha256, queryPartition: partition, cells, materializerEvidenceRows: rows, stateSummary: { ADMITTED_EXIT_PATH: 0, ADMITTED_VERIFIED_ABSENCE: 213, BLOCKED_WITH_EVIDENCE: 0, MISSING: 0, STALE: 0, UNKNOWN: 0, ADMITTED_EXIT_UNVERIFIED_BLOCKED: 0 }, decision: "GO" };
   return { normalized, admission: { ...payload, admissionDigest: sha256(canonical(payload)) } };
 }
 
@@ -193,7 +222,13 @@ function refreshAdmissionBindings(normalized, admission) {
   refreshMaterializerAndSummary(admission);
 }
 function refreshMaterializerAndSummary(admission) {
-  admission.materializerEvidenceRows = admission.cells.map((cell) => ({ candidateId: cell.candidateId, stationSetSha256: cell.stationSetSha256, sourceSetSha256: cell.sourceSetSha256, stationId: cell.stationId, lineId: cell.lineId, operatorId: cell.operatorId, domain: "EXIT", state: cell.state === "ADMITTED_EXIT_PATH" ? "VERIFIED_PRESENT" : "VERIFIED_ABSENT", sourceId: cell.sourceId, sourceSnapshotId: cell.sourceSnapshotId, evidenceRawSha256: cell.evidenceRawSha256, providerRecordHash: cell.providerRecordHash, capturedAt: cell.capturedAt, freshUntil: cell.freshUntil, provenanceId: cell.provenanceId, licenseId: cell.licenseId, mappingContractVersion: cell.mappingContractVersion, materializerVersion: cell.materializerVersion, evidenceKind: cell.state === "ADMITTED_EXIT_PATH" ? "OBSERVED" : "EXPLICIT_ZERO", evidenceReason: cell.admissionReason }));
-  admission.stateSummary = Object.fromEntries(["ADMITTED_EXIT_PATH", "ADMITTED_VERIFIED_ABSENCE", "BLOCKED_WITH_EVIDENCE", "MISSING", "STALE", "UNKNOWN"].map((state) => [state, admission.cells.filter((cell) => cell.state === state).length]));
+  admission.materializerEvidenceRows = admission.cells.map((cell) => {
+    if (cell.state === "ADMITTED_EXIT_UNVERIFIED_BLOCKED") {
+      const evidenceHash = sha256(canonical({ sourceSnapshotId: cell.sourceSnapshotId, stationId: cell.stationId, lineId: cell.lineId, operatorId: cell.operatorId, domain: "EXIT", terminalPolicy: "PROVIDER_NO_DATA_RESULT_03_BLOCKED", providerResponseSha256: cell.providerResponseSha256 }));
+      return { candidateId: cell.candidateId, stationSetSha256: cell.stationSetSha256, sourceSetSha256: cell.sourceSetSha256, stationId: cell.stationId, lineId: cell.lineId, operatorId: cell.operatorId, domain: "EXIT", state: "UNVERIFIED_EVIDENCE_BLOCKED", sourceId: cell.sourceId, sourceSnapshotId: cell.sourceSnapshotId, evidenceRawSha256: cell.evidenceRawSha256, providerRecordHash: null, capturedAt: cell.capturedAt, freshUntil: cell.freshUntil, provenanceId: cell.provenanceId, licenseId: cell.licenseId, mappingContractVersion: cell.mappingContractVersion, materializerVersion: cell.materializerVersion, evidenceKind: "UNVERIFIED_EVIDENCE_BLOCKED", evidenceReason: "출구 이동경로가 검증되지 않아 경로를 차단했습니다.", terminalPolicy: "PROVIDER_NO_DATA_RESULT_03_BLOCKED", providerResultCode: "03", strictRouteEligible: false, strictRouteEligibleReason: "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED", statusMeaning: "PROVIDER_NO_DATA_NOT_ABSENCE", confidence: 0, providerResponseSha256: cell.providerResponseSha256, evidenceHash };
+    }
+    return { candidateId: cell.candidateId, stationSetSha256: cell.stationSetSha256, sourceSetSha256: cell.sourceSetSha256, stationId: cell.stationId, lineId: cell.lineId, operatorId: cell.operatorId, domain: "EXIT", state: cell.state === "ADMITTED_EXIT_PATH" ? "VERIFIED_PRESENT" : "VERIFIED_ABSENT", sourceId: cell.sourceId, sourceSnapshotId: cell.sourceSnapshotId, evidenceRawSha256: cell.evidenceRawSha256, providerRecordHash: cell.providerRecordHash, capturedAt: cell.capturedAt, freshUntil: cell.freshUntil, provenanceId: cell.provenanceId, licenseId: cell.licenseId, mappingContractVersion: cell.mappingContractVersion, materializerVersion: cell.materializerVersion, evidenceKind: cell.state === "ADMITTED_EXIT_PATH" ? "OBSERVED" : "EXPLICIT_ZERO", evidenceReason: cell.admissionReason };
+  });
+  admission.stateSummary = Object.fromEntries(["ADMITTED_EXIT_PATH", "ADMITTED_VERIFIED_ABSENCE", "BLOCKED_WITH_EVIDENCE", "MISSING", "STALE", "UNKNOWN", "ADMITTED_EXIT_UNVERIFIED_BLOCKED"].map((state) => [state, admission.cells.filter((cell) => cell.state === state).length]));
 }
 function crc32(bytes) { let crc = 0xffffffff; for (const value of bytes) { crc ^= value; for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1)); } return (crc ^ 0xffffffff) >>> 0; }

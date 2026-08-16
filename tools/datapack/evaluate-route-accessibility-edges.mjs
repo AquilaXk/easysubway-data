@@ -32,6 +32,8 @@ const LINEAGE_FIELDS = [
   "sourceId", "sourceSnapshotId", "evidenceRawSha256", "providerRecordHash", "capturedAt", "freshUntil",
   "provenanceId", "licenseId", "evidenceKind", "evidenceReason",
 ];
+const TERMINAL_FACILITY_REASON = "시설 존재·부재가 검증되지 않아 경로를 차단했습니다.";
+const TERMINAL_EXIT_REASON = "출구 이동경로가 검증되지 않아 경로를 차단했습니다.";
 
 export function evaluateRouteAccessibilityEdges(input, policy) {
   const validatedPolicy = validatePolicy(policy);
@@ -285,11 +287,18 @@ function validateMaterializationRow(row, materializationCandidate, stationLineIn
   }
   assertSha256(row.evidenceRawSha256, "materialization evidenceRawSha256");
   if (terminal) {
-    if (row.providerRecordHash !== null || row.terminalPolicy !== "EXACT_TUPLE_PROVIDER_RESULT_03"
-      || row.providerResultCode !== "03" || row.domain !== "FACILITY"
-      || row.stationId !== "station-b35616704ce3" || row.lineId !== "seoul-2"
-      || row.operatorId !== "seoul-metro" || row.sourceId !== "kric-station-convenience-standard"
-      || !/^[a-f0-9]{64}$/.test(row.providerResponseSha256)) {
+    const facilityContract = row.domain === "FACILITY"
+      && row.terminalPolicy === "EXACT_TUPLE_PROVIDER_RESULT_03"
+      && row.stationId === "station-b35616704ce3" && row.lineId === "seoul-2"
+      && row.operatorId === "seoul-metro" && row.sourceId === "kric-station-convenience-standard"
+      && row.evidenceReason === TERMINAL_FACILITY_REASON;
+    const exitContract = row.domain === "EXIT"
+      && row.terminalPolicy === "PROVIDER_NO_DATA_RESULT_03_BLOCKED"
+      && row.sourceId === "kric-station-movement-standard"
+      && row.evidenceReason === TERMINAL_EXIT_REASON;
+    if (row.providerRecordHash !== null || row.providerResultCode !== "03"
+      || !/^[a-f0-9]{64}$/.test(row.providerResponseSha256)
+      || (!facilityContract && !exitContract)) {
       throw new Error("terminal materialization contract mismatch");
     }
   } else {
@@ -386,7 +395,9 @@ function evaluateEdge(context) {
     PASS: "all required materialization cells are terminal",
   };
   if (state === "BLOCKED" && cells.some(({ effectiveState }) => effectiveState === "UNVERIFIED_EVIDENCE_BLOCKED")) {
-    return resultFor(context, mapping.domains, cells, state, "시설 존재·부재가 검증되지 않아 경로를 차단했습니다.");
+    const terminalCell = cells.find(({ effectiveState }) => effectiveState === "UNVERIFIED_EVIDENCE_BLOCKED");
+    return resultFor(context, mapping.domains, cells, state,
+      terminalCell.domain === "EXIT" ? TERMINAL_EXIT_REASON : TERMINAL_FACILITY_REASON);
   }
   return resultFor(context, mapping.domains, cells, state, reasons[state]);
 }

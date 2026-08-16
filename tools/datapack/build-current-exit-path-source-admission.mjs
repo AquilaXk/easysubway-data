@@ -93,7 +93,7 @@ export function buildCurrentExitPathSourceAdmission(input) {
     queryPlanSha256: providerSnapshot.queryPlanSha256,
   });
   const normalizedSnapshot = canonicalObject({
-    schemaVersion: 3,
+    schemaVersion: 4,
     artifactKind: "exit-path-normalized-source-snapshot",
     sourceId: providerSnapshot.sourceId,
     snapshotId: providerSnapshot.snapshotId,
@@ -590,6 +590,7 @@ function normalizeResult(result) {
       state: "OBSERVED_EXIT_PATH",
       records: [{ ...record, providerRecordHash: sha256(canonicalJson(record)) }],
       zeroEvidenceSha256: null,
+      providerResponseSha256: result.rawResponseSha256,
     });
   }
   if (result.state === "EXPLICIT_ZERO") {
@@ -598,6 +599,7 @@ function normalizeResult(result) {
       state: "EXPLICIT_ZERO",
       records: [],
       zeroEvidenceSha256: result.rawResponseSha256,
+      providerResponseSha256: result.rawResponseSha256,
     });
   }
   return canonicalObject({
@@ -605,6 +607,7 @@ function normalizeResult(result) {
     state: result.state === "PROVIDER_NO_DATA" ? "PROVIDER_NO_DATA" : "FAILED",
     records: [],
     zeroEvidenceSha256: null,
+    providerResponseSha256: result.rawResponseSha256,
   });
 }
 

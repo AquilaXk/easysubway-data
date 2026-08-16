@@ -31,13 +31,15 @@ test("current provider snapshot을 candidate station-line EXIT admission으로 �
   const input = validInput();
   const result = buildCurrentExitPathSourceAdmission(input);
 
-  assert.equal(result.normalizedSnapshot.schemaVersion, 3);
+  assert.equal(result.normalizedSnapshot.schemaVersion, 4);
+  assert.equal(result.admission.schemaVersion, 2);
   assert.equal(result.normalizedSnapshot.queryPlan.length, 3);
   assert.deepEqual(result.normalizedSnapshot.results.map(({ state }) => state).sort(), [
     "OBSERVED_EXIT_PATH", "OBSERVED_EXIT_PATH", "PROVIDER_NO_DATA",
   ]);
   assert.equal(result.admission.decision, "GO");
-  assert.equal(result.admission.stateSummary.ADMITTED_EXIT_PATH, 2);
+  assert.equal(result.admission.stateSummary.ADMITTED_EXIT_PATH, 1);
+  assert.equal(result.admission.stateSummary.ADMITTED_EXIT_UNVERIFIED_BLOCKED, 1);
   assert.equal(result.admission.stateSummary.UNKNOWN, 0);
   assert.equal(result.admission.materializerEvidenceRows.length, 2);
   assert.equal(
@@ -82,7 +84,7 @@ test("tracked current EXIT handoff는 exact immutable snapshot과 GO admission�
   assert.equal(canonicalExitPathAdmissionJson(admission), admissionBytes.toString("utf8"));
 });
 
-test("positive observation이 없는 provider no-data station-line은 UNKNOWN으로 유지한다", () => {
+test("positive observation이 없는 provider no-data station-line은 terminal blocked로 닫는다", () => {
   const input = validInput();
   const snapshot = JSON.parse(input.providerSnapshotBytes);
   const stationBQueryId = input.collectionPlan.stationLineQueries
@@ -93,11 +95,17 @@ test("positive observation이 없는 provider no-data station-line은 UNKNOWN으
   input.providerSnapshotBytes = providerSnapshotBytes(snapshot);
 
   const result = buildCurrentExitPathSourceAdmission(input);
-  assert.equal(result.admission.decision, "NO_GO");
-  assert.equal(result.admission.stateSummary.ADMITTED_EXIT_PATH, 1);
-  assert.equal(result.admission.stateSummary.UNKNOWN, 1);
-  assert.equal(result.admission.cells.find(({ stationId }) => stationId === "station-b").admissionReason,
-    "PROVIDER_NO_DATA_IS_NOT_ABSENCE");
+  assert.equal(result.admission.decision, "GO");
+  assert.equal(result.admission.stateSummary.ADMITTED_EXIT_PATH, 0);
+  assert.equal(result.admission.stateSummary.ADMITTED_EXIT_UNVERIFIED_BLOCKED, 2);
+  const blocked = result.admission.cells.find(({ stationId }) => stationId === "station-b");
+  assert.equal(blocked.admissionReason, "PROVIDER_NO_DATA_UNVERIFIED_BLOCKED");
+  assert.match(blocked.providerResponseSha256, /^[a-f0-9]{64}$/);
+  const evidence = result.admission.materializerEvidenceRows.find(({ stationId }) => stationId === "station-b");
+  assert.equal(evidence.state, "UNVERIFIED_EVIDENCE_BLOCKED");
+  assert.equal(evidence.evidenceKind, "UNVERIFIED_EVIDENCE_BLOCKED");
+  assert.equal(evidence.providerResultCode, "03");
+  assert.equal(evidence.providerRecordHash, null);
 });
 
 test("raw identity, candidate identity와 source license drift를 fail closed한다", () => {
