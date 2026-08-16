@@ -44,6 +44,7 @@ const LEGACY_STATES = [
 const TERMINAL_STATE = "ADMITTED_EXIT_UNVERIFIED_BLOCKED";
 const TERMINAL_POLICY = "PROVIDER_NO_DATA_RESULT_03_BLOCKED";
 const TERMINAL_REASON = "출구 이동경로가 검증되지 않아 경로를 차단했습니다.";
+const TERMINAL_SOURCE_ID = "kric-station-movement-standard";
 const RESULT_STATES = new Set(["OBSERVED_EXIT_PATH", "EXPLICIT_ZERO", "PROVIDER_NO_DATA", "FAILED"]);
 const OUTPUT_KEYS = [
   "schemaVersion", "artifactKind", "candidate", "sourceIdentity", "stationLineMappingSha256",
@@ -509,6 +510,9 @@ function resolveCellOutcome({
   }
   if (results.some(({ state }) => state === "PROVIDER_NO_DATA")) {
     if (snapshot.schemaVersion === 4) {
+      if (snapshot.sourceId !== TERMINAL_SOURCE_ID) {
+        throw new Error("EXIT terminal source identity mismatch");
+      }
       const providerResponses = results
         .filter(({ state }) => state === "PROVIDER_NO_DATA")
         .map(({ queryId, providerResponseSha256 }) => canonicalObject({ queryId, providerResponseSha256 }))

@@ -142,6 +142,10 @@ test("v4 provider no-data는 같은 station-line 관측보다 우선해 EXIT ter
   const input = validInput();
   const snapshot = parseSnapshot(input);
   snapshot.schemaVersion = 4;
+  snapshot.sourceId = "kric-station-movement-standard";
+  snapshot.providerSnapshotIdentity.sourceId = snapshot.sourceId;
+  input.sourceSnapshots[0].sourceId = snapshot.sourceId;
+  input.sourceAdmission.sourceId = snapshot.sourceId;
   for (const result of snapshot.results) {
     result.providerResponseSha256 = sha256(`provider-response-${result.queryId}`);
   }
@@ -194,6 +198,26 @@ test("v4 provider no-data는 같은 station-line 관측보다 우선해 EXIT ter
     confidence: 0,
     providerResponseSha256: result.cells[1].providerResponseSha256,
   });
+});
+
+test("v4 provider no-data는 exact EXIT source identity가 아니면 terminal로 승격하지 않는다", () => {
+  const input = validInput();
+  const snapshot = parseSnapshot(input);
+  snapshot.schemaVersion = 4;
+  for (const result of snapshot.results) {
+    result.providerResponseSha256 = sha256(`provider-response-${result.queryId}`);
+  }
+  Object.assign(snapshot.results[1], {
+    state: "PROVIDER_NO_DATA",
+    records: [],
+    zeroEvidenceSha256: null,
+  });
+  replaceSnapshot(input, snapshot);
+
+  assert.throws(
+    () => buildExitPathAdmission(input),
+    /EXIT terminal source identity mismatch/,
+  );
 });
 
 test("non-exhaustive explicit zero는 verified absence가 아니고 partial coverage로 blocked다", () => {
