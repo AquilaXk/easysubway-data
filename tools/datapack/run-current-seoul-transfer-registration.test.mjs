@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -162,6 +162,53 @@ test("published recovery rejects nonterminal, nonancestor and receipt-drift sour
   await assert.rejects(stat(changedTarget.operationRoot), { code: "ENOENT" });
 });
 
+test("published recovery rejects source nesting reached through an intermediate symlink", async (t) => {
+  const source = await finalizedSource(t);
+  const nestedParent = path.join(source.operationRoot, "nested-parent");
+  await mkdir(nestedParent, { mode: 0o700 });
+  const alias = path.join(path.dirname(source.operationRoot), "source-alias");
+  await symlink(source.operationRoot, alias, "dir");
+  const targetOperationRoot = path.join(alias, "nested-parent", "target-operation");
+
+  await assert.rejects(recoverPublishedCurrentSeoulTransferRegistration({
+    repositoryRoot: source.repositoryRoot,
+    sourceOperationRoot: source.operationRoot,
+    targetOperationRoot,
+    expectedMainSha: SHA,
+    ...dependencies,
+    assertAncestor: async () => {},
+  }), /source and target operation roots must be separate/);
+  await assert.rejects(stat(path.join(nestedParent, "target-operation")), { code: "ENOENT" });
+});
+
+test("published recovery settles every private copy before cleaning a failed target", async (t) => {
+  const source = await finalizedSource(t);
+  const target = await fixture(t);
+  let lateCopyFinished = false;
+
+  await assert.rejects(recoverPublishedCurrentSeoulTransferRegistration({
+    repositoryRoot: target.repositoryRoot,
+    sourceOperationRoot: source.operationRoot,
+    targetOperationRoot: target.operationRoot,
+    expectedMainSha: SHA,
+    ...dependencies,
+    assertAncestor: async () => {},
+    writePrivate: async (file, bytes) => {
+      if (file.endsWith("receipt.json")) throw new Error("copy failure");
+      if (file.endsWith("manifest.json")) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+        await writeFile(file, bytes, { mode: 0o600 });
+        lateCopyFinished = true;
+        return;
+      }
+      await writeFile(file, bytes, { mode: 0o600 });
+    },
+  }), /copy failure/);
+  assert.equal(lateCopyFinished, true);
+  await assert.rejects(stat(target.operationRoot), { code: "ENOENT" });
+});
+
 test("resume and terminal states preserve one-shot publication and registration", async (t) => {
   const publishing = await fixture(t); await prepareCurrentSeoulTransferRegistration({ ...publishing, expectedMainSha: SHA, ...dependencies, now: NOW }); await writeFile(path.join(publishing.operationRoot, "receipt.json"), `${JSON.stringify(receipt())}\n`, { mode: 0o600 }); await setPhase(publishing.operationRoot, "PUBLISHING"); let publishCalls = 0; let registerCalls = 0;
   await finalizeCurrentSeoulTransferRegistration({ ...publishing, ...dependencies, publish: async () => { publishCalls += 1; }, register: async () => { registerCalls += 1; return writeTargets(publishing.repositoryRoot); } }); assert.deepEqual([publishCalls, registerCalls], [0, 1]);
@@ -183,6 +230,14 @@ test("operation lock excludes side effects and final porcelain has an exact part
 
 function receipt() { return { schemaVersion: 1, artifactKind: "seoul-transfer-raw-object-receipt", sourceId: observation.manifest.sourceId, snapshotId: "seoul-metro-transfer-distance-duration-20260815T120000000Z", snapshotRawSha256: observation.manifest.rawSha256, capturedAt: observation.manifest.capturedAt, manifestSha256: hash(observation.manifestBytes), observationSha256: hash(observation.observationBytes), rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-transfer-distance-duration/20260815/${hash(observation.rawBytes)}.json`, rawObjectSha256: hash(observation.rawBytes), ociNamespace: "axvym6vk8g7i", bucket: "easysubway-datapacks", objectKey: `source-raw/seoul-metro-transfer-distance-duration/20260815/${hash(observation.rawBytes)}.json`, capturedDate: "20260815", byteSize: observation.rawBytes.length, storedAt: "2026-08-15T12:01:00.000Z", rawRetentionExpiresAt: "2026-11-13T12:00:00.000Z" }; }
 function hash(value) { return createHash("sha256").update(value).digest("hex"); }
+
+async function finalizedSource(t) {
+  const source = await fixture(t);
+  await prepareCurrentSeoulTransferRegistration({ ...source, expectedMainSha: SHA, ...dependencies, now: NOW });
+  await writeFile(path.join(source.operationRoot, "receipt.json"), `${JSON.stringify(receipt())}\n`, { mode: 0o600 });
+  await finalizeCurrentSeoulTransferRegistration({ ...source, ...dependencies, register: async () => writeTargets(source.repositoryRoot) });
+  return source;
+}
 
 async function writeTargets(root) {
   const targets = ["tools/datapack/source-inventory.json", "release/product-gates/production-datapack-scope.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json", "tools/datapack/sources/seoul-metro-transfer-distance-duration-20260815T120000000Z.json"];

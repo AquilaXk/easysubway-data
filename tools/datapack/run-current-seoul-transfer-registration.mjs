@@ -88,6 +88,11 @@ async function writePrivateFile(target, bytes) {
   const handle = await open(target, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
   try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
 }
+async function settlePrivateCopies(copies) {
+  const results = await Promise.allSettled(copies.map((copy) => Promise.resolve().then(copy)));
+  const failure = results.find(({ status }) => status === "rejected");
+  if (failure) throw failure.reason;
+}
 async function syncDirectory(directory) {
   const handle = await open(directory, constants.O_RDONLY | constants.O_DIRECTORY);
   try { await handle.sync(); } finally { await handle.close(); }
@@ -195,6 +200,7 @@ export async function recoverPublishedCurrentSeoulTransferRegistration({
   assertAncestor = assertGitAncestorDefault,
   readObservation = readObservationDirectory,
   readArtifacts: artifactsReader = readArtifacts,
+  writePrivate = writePrivateFile,
   beforeCommit = async () => {},
   now = new Date(),
 } = {}) {
@@ -205,6 +211,12 @@ export async function recoverPublishedCurrentSeoulTransferRegistration({
   if (targetOperationInput === sourceOperation || targetOperationInput.startsWith(`${sourceOperation}${path.sep}`) || sourceOperation.startsWith(`${targetOperationInput}${path.sep}`)) throw new Error("source and target operation roots must be separate");
   await assertExactMain({ repositoryRoot: root, expectedMainSha });
   await assertOperationRoot(root, sourceOperation);
+  const [realSourceOperation, realTargetParent] = await Promise.all([
+    realpath(sourceOperation),
+    realpath(path.dirname(targetOperationInput)),
+  ]);
+  const realTargetOperation = path.join(realTargetParent, path.basename(targetOperationInput));
+  if (realTargetOperation === realSourceOperation || realTargetOperation.startsWith(`${realSourceOperation}${path.sep}`) || realSourceOperation.startsWith(`${realTargetOperation}${path.sep}`)) throw new Error("source and target operation roots must be separate");
   const sourceJournalPath = path.join(sourceOperation, JOURNAL);
   const sourceReceiptPath = path.join(sourceOperation, RECEIPT);
   const [sourceJournalBytes, sourceReceiptBytes] = await Promise.all([
@@ -228,11 +240,11 @@ export async function recoverPublishedCurrentSeoulTransferRegistration({
   let accepted = false;
   try {
     await mkdir(targetObservationDirectory, { mode: 0o700 });
-    await Promise.all([
-      writePrivateFile(path.join(targetObservationDirectory, "manifest.json"), sourceObservation.manifestBytes),
-      writePrivateFile(path.join(targetObservationDirectory, "observation.json"), sourceObservation.observationBytes),
-      writePrivateFile(path.join(targetObservationDirectory, "raw-snapshot.json"), sourceObservation.rawBytes),
-      writePrivateFile(path.join(targetOperation, RECEIPT), sourceReceiptBytes),
+    await settlePrivateCopies([
+      () => writePrivate(path.join(targetObservationDirectory, "manifest.json"), sourceObservation.manifestBytes),
+      () => writePrivate(path.join(targetObservationDirectory, "observation.json"), sourceObservation.observationBytes),
+      () => writePrivate(path.join(targetObservationDirectory, "raw-snapshot.json"), sourceObservation.rawBytes),
+      () => writePrivate(path.join(targetOperation, RECEIPT), sourceReceiptBytes),
     ]);
     await syncDirectory(targetObservationDirectory);
     await syncDirectory(targetOperation);
