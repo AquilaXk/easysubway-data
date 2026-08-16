@@ -1,8 +1,8 @@
 import { canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
-import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
-import { deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
+import { deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
+import { validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 
@@ -207,6 +207,7 @@ function validateSourceContext({ candidateBuildSpec, sourceInventoryBytes, sourc
   }
   const ledger = exactlyOne(sourceSnapshots, (entry) => entry?.sourceId === SOURCE_ID && entry.snapshotId === snapshot.snapshotId, "KRIC source snapshot ledger");
   const member = exactlyOne(candidateBuildSpec.sourceSnapshots, (entry) => entry?.sourceId === SOURCE_ID && entry.snapshotId === snapshot.snapshotId, "KRIC candidate membership");
+  const currentGovernancePolicySha256 = sha256(normalizedGovernancePolicyBytes);
   if (candidateBuildSpec.sourceSnapshotIds.filter((id) => id === snapshot.snapshotId).length !== 1
     || !["LOCKED", "SUCCESS", "PASS", "PASS"].every((expected, index) => [ledger.snapshotStatus, ledger.fetchStatus, ledger.schemaStatus, ledger.licenseStatus][index] === expected)
     || ledger.credentialRedacted !== true || ledger.redistributionAllowed !== true
@@ -215,11 +216,15 @@ function validateSourceContext({ candidateBuildSpec, sourceInventoryBytes, sourc
     || ledger.contentSha256 !== snapshot.contentSha256 || ledger.schemaFingerprint !== snapshot.schemaFingerprint
     || ledger.redactedRequestFingerprint !== snapshot.redactedRequestFingerprint
     || ledger.adminReviewRecordHash !== admission.adminReviewRecordHash
+    || ledger.governancePolicyVersion !== governancePolicy.policyVersion
+    || ledger.governancePolicySha256 !== currentGovernancePolicySha256
+    || member.governancePolicyVersion !== governancePolicy.policyVersion
+    || member.governancePolicySha256 !== currentGovernancePolicySha256
     || ledger.retrievedAt !== snapshot.capturedAt || ledger.sourceUpdatedAt !== snapshot.observedAt
     || typeof ledger.previousSnapshotId !== "string" || ledger.previousSnapshotId === ""
     || !ledger.diffSummary || typeof ledger.diffSummary !== "object" || Array.isArray(ledger.diffSummary)
     || !sha(ledger.rawSha256)) {
-    throw new Error("KRIC source snapshot ledger mismatch");
+    throw new Error("KRIC current governance binding mismatch");
   }
   const expectedMember = deriveCandidateProjection({ ledger, sourceInventory, governancePolicy, governancePolicyBytes: normalizedGovernancePolicyBytes, freshnessPolicy, observedAtMillis });
   for (const key of PROJECTION_KEYS) {
@@ -278,35 +283,14 @@ function validateCandidateInventoryBinding({ candidateBuildSpec, sourceInventory
 }
 
 function deriveCandidateProjection({ ledger, sourceInventory, governancePolicy, governancePolicyBytes, freshnessPolicy, observedAtMillis }) {
-  const source = exactlyOne(sourceInventory.sources, ({ id }) => id === ledger?.sourceId, "candidate source inventory");
-  const adminReviewRecordHash = source?.admissionEvidence?.adminReviewRecordHash;
-  if (!sha(adminReviewRecordHash)) throw new Error("candidate source admin review mismatch");
-  const policySource = exactlyOne(governancePolicy.sources ?? [], ({ sourceId }) => sourceId === ledger.sourceId, "candidate source governance");
-  const sourceClass = exactlyOne(freshnessPolicy.sourceClasses ?? [], ({ id }) => id === policySource.sourceClassId, "candidate source freshness class");
-  const freshnessExpiresAt = deriveFreshnessExpiresAt({
-    policy: freshnessPolicy,
-    sourceClassId: sourceClass.id,
-    basisAt: ledger[sourceClass.basisField],
-    providerValidUntil: sourceClass.providerValidityEndField ? ledger[sourceClass.providerValidityEndField] : undefined,
-    evaluationAt: new Date(observedAtMillis).toISOString(),
+  return deriveReleaseProjection({
+    snapshot: ledger,
+    sourceInventory,
+    governancePolicy,
+    governancePolicyBytes,
+    freshnessPolicy,
+    nowMillis: observedAtMillis,
   });
-  return {
-    snapshotId: ledger.snapshotId,
-    sourceId: ledger.sourceId,
-    rawObjectUri: ledger.rawObjectUri,
-    rawSha256: ledger.rawSha256,
-    redactedRequestFingerprint: ledger.redactedRequestFingerprint,
-    schemaFingerprint: ledger.schemaFingerprint,
-    licenseStatus: ledger.licenseStatus,
-    redistributionAllowed: ledger.redistributionAllowed,
-    adminReviewRecordHash,
-    snapshotStatus: ledger.snapshotStatus,
-    credentialRedacted: ledger.credentialRedacted,
-    freshnessExpiresAt,
-    rawRetentionExpiresAt: deriveRawRetentionExpiresAt({ policy: governancePolicy, sourceId: ledger.sourceId, retrievedAt: ledger.retrievedAt }),
-    governancePolicyVersion: governancePolicy.policyVersion,
-    governancePolicySha256: sha256(governancePolicyBytes),
-  };
 }
 
 function validateQueryCoverage(snapshot, mappings) {
