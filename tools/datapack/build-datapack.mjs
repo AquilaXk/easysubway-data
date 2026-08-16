@@ -112,12 +112,14 @@ export function admittedIncheonTopologyEvidence({
   snapshot,
   snapshotBytes,
   now = candidateBuildNow(),
+  requireFresh = true,
 }) {
   const incheon = validateIncheonStationInfoSnapshot(snapshot);
   if (!Buffer.isBuffer(snapshotBytes)
     || !snapshotBytes.equals(Buffer.from(`${JSON.stringify(snapshot)}\n`))
     || !(now instanceof Date)
-    || Number.isNaN(now.getTime())) {
+    || Number.isNaN(now.getTime())
+    || typeof requireFresh !== "boolean") {
     throw new TypeError("Incheon topology admission inputs are invalid");
   }
   const sources = sourceInventory?.sources?.filter(({ id }) => id === "incheon-transit-station-info") ?? [];
@@ -164,7 +166,7 @@ export function admittedIncheonTopologyEvidence({
   if (Date.parse(capturedAt) > now.getTime()) {
     throw new Error("Incheon topology admission is future-dated");
   }
-  if (Date.parse(freshUntil) <= now.getTime()) {
+  if (requireFresh && Date.parse(freshUntil) <= now.getTime()) {
     throw new Error("Incheon topology admission is stale");
   }
   return {

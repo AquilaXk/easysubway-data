@@ -167,6 +167,20 @@ test("capital selector는 비대상 Incheon freshness에 결합하지 않고 nat
     stationLineKeys.has(`${fromStationId}\0${lineId}`)
       && stationLineKeys.has(`${toStationId}\0${lineId}`)
   )));
+
+  const identityDrift = JSON.parse(input.sourceInventoryBytes);
+  identityDrift.sources.find(({ id }) => id === "incheon-transit-station-info")
+    .routeMapAdmissionEvidence.snapshotSha256 = "0".repeat(64);
+  assert.throws(
+    () => buildCurrentKricExitCollectionPlan({
+      ...input,
+      sourceInventoryBytes: Buffer.from(JSON.stringify(identityDrift)),
+    }, {
+      now: afterIncheonExpiry,
+      coverageSelector: "capital-seoul-metro-production",
+    }),
+    /Incheon topology admission identity mismatch/,
+  );
 });
 
 test("raw source identity는 candidate ID에 결속되고 provider scope drift는 거부한다", async () => {
