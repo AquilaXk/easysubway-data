@@ -20,6 +20,7 @@ import {
   officialOdFareAdmissionsBySource,
   officialOdFareQuoteSetHash,
 } from "./lib/official-od-fare-evidence.mjs";
+import { canonicalCurrentReleaseCandidateAccessibilityAuthorityJson } from "./build-current-release-candidate-accessibility-input.mjs";
 const facilityEvidenceProvenanceColumns = [
   "source_id",
   "source_snapshot_id",
@@ -2478,41 +2479,7 @@ export function parseServerRouteCoverageEvidence(bytes) {
   if (Buffer.compare(Buffer.from(canonicalJson(report)), Buffer.from(bytes)) !== 0) {
     throw new Error("server route coverage authority must be canonical");
   }
-  requireExactKeys(report, ["schemaVersion", "artifactKind", "candidate", "edges", "authoritySha256"], "server route coverage authority");
-  if (report.schemaVersion !== 1 || report.artifactKind !== "server-route-coverage-authority") {
-    throw new Error("server route coverage authority shape is invalid");
-  }
-  requireExactKeys(report.candidate, ["candidateId", "sourceSetSha256"], "server route coverage authority candidate");
-  if (typeof report.candidate.candidateId !== "string" || report.candidate.candidateId.length === 0
-    || !/^[a-f0-9]{64}$/.test(report.candidate.sourceSetSha256)) {
-    throw new Error("server route coverage authority candidate is invalid");
-  }
-  if (!Array.isArray(report.edges) || report.edges.length !== 4) {
-    throw new Error("server route coverage authority edges are invalid");
-  }
-  const edgeIds = new Set();
-  const kinds = { ENTRY: 0, EXIT: 0 };
-  for (const edge of report.edges) {
-    requireExactKeys(edge, ["edgeId", "fromNodeId", "toNodeId", "edgeType", "durationSeconds", "distanceMeters", "domain"], "server route coverage authority edge");
-    if (typeof edge.edgeId !== "string" || edge.edgeId.length === 0 || edgeIds.has(edge.edgeId)
-      || typeof edge.fromNodeId !== "string" || edge.fromNodeId.length === 0
-      || typeof edge.toNodeId !== "string" || edge.toNodeId.length === 0
-      || !["ENTRY", "EXIT"].includes(edge.edgeType)
-      || !Number.isInteger(edge.durationSeconds) || edge.durationSeconds < 0
-      || !Number.isInteger(edge.distanceMeters) || edge.distanceMeters < 0
-      || edge.domain !== (edge.edgeType === "ENTRY" ? "FACILITY" : "EXIT")) {
-      throw new Error("server route coverage authority edge is invalid");
-    }
-    edgeIds.add(edge.edgeId);
-    kinds[edge.edgeType] += 1;
-  }
-  if (kinds.ENTRY !== 2 || kinds.EXIT !== 2 || !/^[a-f0-9]{64}$/.test(report.authoritySha256)) {
-    throw new Error("server route coverage authority coverage is invalid");
-  }
-  const { authoritySha256, ...payload } = report;
-  if (sha256(Buffer.from(canonicalJson(payload))) !== authoritySha256) {
-    throw new Error("server route coverage authority hash mismatch");
-  }
+  canonicalCurrentReleaseCandidateAccessibilityAuthorityJson(report);
   return report;
 }
 
@@ -2526,14 +2493,27 @@ export function isAuthorizedServerRouteCoverageGap({
 }) {
   if (pack.id !== "capital" || String(pack.version) !== "1" || pack.artifactKind !== "production"
     || report.candidate.candidateId !== provenance.candidateId || report.candidate.sourceSetSha256 !== provenance.sourceSetSha256
-    || coverage.entry.denominator !== 2 || coverage.entry.missingCount !== 2
-    || coverage.exit.denominator !== 2 || coverage.exit.missingCount !== 2
-    || coverage.transfer.missingCount !== 0
+    || report.buildInput.buildSpecSha256 !== provenance.buildSpecSha256
+    || report.buildInput.sourceFixtureSha256 !== provenance.sourceFixtureSha256
+    || report.buildInput.candidateFixtureSha256 !== provenance.candidateFixtureSha256
+    || report.authoritySha256 !== provenance.serverRouteCoverageAuthoritySha256
+    || coverage.entry.denominator !== 213 || coverage.entry.missingCount !== 213
+    || coverage.exit.denominator !== 213 || coverage.exit.missingCount !== 213
+    || coverage.transfer.denominator !== 30 || coverage.transfer.missingCount !== 30
     || unverifiedAccessibilityCoverageEdges.length !== 0) {
     return false;
   }
   const reportIds = new Set(report.edges.map((edge) => edge.edgeId));
-  if (reportIds.size !== 4) {
+  if (reportIds.size !== 456) {
+    return false;
+  }
+  const missingRows = edgeRows.filter((edge) => ["ENTRY", "EXIT", "IN_STATION_TRANSFER"].includes(edge.edge_type)
+    && edge.verification_status === "UNKNOWN"
+    && edge.stair_access_state === "UNKNOWN"
+    && edge.accessibility_status === "UNKNOWN");
+  if (missingRows.length !== 456
+    || new Set(missingRows.map(({ id }) => id)).size !== 456
+    || missingRows.some(({ id }) => !reportIds.has(id))) {
     return false;
   }
   return report.edges.every((authorityEdge) => {
@@ -2545,9 +2525,9 @@ export function isAuthorizedServerRouteCoverageGap({
       && edge.edge_type === authorityEdge.edgeType
       && edge.duration_seconds === authorityEdge.durationSeconds
       && edge.distance_meters === authorityEdge.distanceMeters
-      && edge.verification_status === "NOT_VERIFIED"
+      && edge.verification_status === "UNKNOWN"
       && edge.stair_access_state === "UNKNOWN"
-      && ["UNKNOWN", "NO_OFFICIAL_FEED"].includes(edge.accessibility_status);
+      && edge.accessibility_status === "UNKNOWN";
   });
 }
 
@@ -2555,10 +2535,24 @@ export function parseServerRouteCoverageProvenance(bytes) {
   let value;
   try { value = JSON.parse(Buffer.from(bytes).toString("utf8")); } catch { throw new Error("server route coverage provenance must be valid JSON"); }
   const candidate = value?.candidateBuild;
-  if (!candidate || typeof candidate.candidateId !== "string" || candidate.candidateId.length === 0 || !/^[a-f0-9]{64}$/.test(candidate.sourceSnapshotSetHash)) {
+  if (!candidate || typeof candidate.candidateId !== "string" || candidate.candidateId.length === 0
+    || [
+      candidate.sourceSnapshotSetHash,
+      candidate.buildSpecSha256,
+      candidate.sourceFixtureSha256,
+      candidate.candidateFixtureSha256,
+      candidate.serverRouteCoverageAuthoritySha256,
+    ].some((hash) => !/^[a-f0-9]{64}$/.test(hash ?? ""))) {
     throw new Error("server route coverage provenance candidate is invalid");
   }
-  return { candidateId: candidate.candidateId, sourceSetSha256: candidate.sourceSnapshotSetHash };
+  return {
+    candidateId: candidate.candidateId,
+    sourceSetSha256: candidate.sourceSnapshotSetHash,
+    buildSpecSha256: candidate.buildSpecSha256,
+    sourceFixtureSha256: candidate.sourceFixtureSha256,
+    candidateFixtureSha256: candidate.candidateFixtureSha256,
+    serverRouteCoverageAuthoritySha256: candidate.serverRouteCoverageAuthoritySha256,
+  };
 }
 
 export function assertServerRouteCoverageConsumed(value) {
