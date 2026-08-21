@@ -173,14 +173,16 @@ test("producer-neutral FACILITY admission preserves the approved prior governanc
   assert.throws(() => buildCurrentCapitalFacilitySourceAdmission(drift), /projection mismatch/u);
 
   const priorKric = structuredClone(values);
-  const priorProjection = productionSpec.sourceSnapshots[kricIndex];
   const kricProjection = priorKric.candidateBuildSpec.sourceSnapshots[kricIndex];
   const kricLedger = priorKric.sourceSnapshots.find(({ snapshotId }) => snapshotId === kricProjection.snapshotId);
   assert.ok(kricLedger);
-  assert.notEqual(priorProjection.governancePolicySha256, kricProjection.governancePolicySha256);
+  const priorBinding = priorKric.sourceSnapshots.find(({ sourceId, governancePolicySha256 }) =>
+    sourceId === "kric-station-convenience-standard"
+    && governancePolicySha256 !== kricProjection.governancePolicySha256);
+  assert.ok(priorBinding);
   for (const target of [kricLedger, kricProjection]) {
-    target.governancePolicyVersion = priorProjection.governancePolicyVersion;
-    target.governancePolicySha256 = priorProjection.governancePolicySha256;
+    target.governancePolicyVersion = priorBinding.governancePolicyVersion;
+    target.governancePolicySha256 = priorBinding.governancePolicySha256;
   }
   priorKric.candidateBuildSpec.sourceSnapshotSetHash = selectedLedgerHash(priorKric.sourceSnapshots, priorKric.candidateBuildSpec.sourceSnapshotIds);
   assert.throws(() => buildCurrentCapitalFacilitySourceAdmission(priorKric), /KRIC current governance binding mismatch/u);
@@ -211,7 +213,7 @@ async function fixture({ mixed = false } = {}) {
     [[roster[2].railOprIsttCd, roster[2].lnCd, roster[2].stinCd].join("\0"), ["ELEC"]],
     [[roster[3].railOprIsttCd, roster[3].lnCd, roster[3].stinCd].join("\0"), ["EV", "ES", "WCLF"]],
   ]);
-  const [snapshot] = await collectKricAccessibilitySnapshots({ roster, operations: [{ sourceId: "kric-station-convenience-standard", endpoint: "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl", responseFields: ["dtlLoc", "grndDvCd", "gubun", "imgPath", "mlFmlDvCd", "stinFlor", "trfcWeakDvCd"], tupleIdentityFields: [] }], serviceKey: "fixture-only-key", now: new Date("2026-08-14T00:00:00.000Z"), allowTerminalResult03: mixed, fetchImpl: async (url) => {
+  const [snapshot] = await collectKricAccessibilitySnapshots({ roster, operations: [{ sourceId: "kric-station-convenience-standard", endpoint: "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl", responseFields: ["dtlLoc", "grndDvCd", "gubun", "imgPath", "mlFmlDvCd", "stinFlor", "trfcWeakDvCd"], tupleIdentityFields: [] }], serviceKey: "fixture-only-key", now: new Date("2026-08-16T11:00:00.000Z"), allowTerminalResult03: mixed, fetchImpl: async (url) => {
     if (mixed && url.searchParams.get("railOprIsttCd") === "S1" && url.searchParams.get("lnCd") === "2" && url.searchParams.get("stinCd") === "234-4") {
       return { ok: true, status: 200, json: async () => ({ header: { resultCode: "03" }, body: [] }) };
     }
@@ -252,8 +254,8 @@ async function fixture({ mixed = false } = {}) {
     sourceUpdatedAt: snapshot.observedAt,
     rowCount: snapshot.rowCount,
     coverageCount: 213,
-    freshnessExpiresAt: "2026-08-15T12:00:00.000Z",
-    rawRetentionExpiresAt: "2026-10-01T00:00:00.000Z",
+    freshnessExpiresAt: "2026-11-14T11:00:00.000Z",
+    rawRetentionExpiresAt: "2026-11-14T11:00:00.000Z",
     governancePolicyVersion: "fixture-v1",
     governancePolicySha256: "b".repeat(64),
     adminReviewRecordHash: source.admissionEvidence.adminReviewRecordHash,
@@ -272,7 +274,7 @@ async function fixture({ mixed = false } = {}) {
       snapshotRawSha256: snapshot.rawSha256,
       rawObjectSha256,
       capturedAt: snapshot.capturedAt,
-      storedAt: "2026-08-14T00:00:40.000Z",
+      storedAt: "2026-08-16T11:00:40.000Z",
       byteSize: 1234,
     },
   };
@@ -293,12 +295,12 @@ async function fixture({ mixed = false } = {}) {
     candidateId: "fixture",
     productionScopeId: "capital_pilot_android_v1",
     sourceSnapshotIds: productionSpec.sourceSnapshotIds.map((snapshotId) => snapshotId === previousKric.snapshotId ? ledger.snapshotId : snapshotId),
-    sourceSnapshots: productionSpec.sourceSnapshotIds.map((snapshotId) => snapshotId === previousKric.snapshotId ? ledger : productionSnapshots.find((entry) => entry.snapshotId === snapshotId)).map((entry) => deriveReleaseProjection({ snapshot: entry, sourceInventory, governancePolicy, governancePolicyBytes: files["source-governance-policy.json"], freshnessPolicy: freshnessSla, nowMillis: Date.parse("2026-08-14T16:00:00.000Z") })),
+    sourceSnapshots: productionSpec.sourceSnapshotIds.map((snapshotId) => snapshotId === previousKric.snapshotId ? ledger : productionSnapshots.find((entry) => entry.snapshotId === snapshotId)).map((entry) => deriveReleaseProjection({ snapshot: entry, sourceInventory, governancePolicy, governancePolicyBytes: files["source-governance-policy.json"], freshnessPolicy: freshnessSla, nowMillis: Date.parse("2026-08-16T12:00:00.000Z") })),
     sourceSnapshotSetHash: selectedLedgerHash(sourceSnapshots, productionSpec.sourceSnapshotIds.map((snapshotId) => snapshotId === previousKric.snapshotId ? ledger.snapshotId : snapshotId)),
     sourceInventorySha256: sha256(JSON.stringify(sourceInventory)),
     networkEdgeEvidence: { sourceInventory: { path: "tools/datapack/source-inventory.json", sha256: sha256(sourceInventoryBytes) } },
   };
-  return { planBytes, canonicalPackBytes: files["release/capital-production-canonical-pack.json"], snapshotBytes, sourceInventoryBytes, sourceSnapshots, governancePolicy, governancePolicyBytes: files["source-governance-policy.json"], freshnessPolicy: freshnessSla, candidateBuildSpec, observedAt: "2026-08-14T16:00:00.000Z" };
+  return { planBytes, canonicalPackBytes: files["release/capital-production-canonical-pack.json"], snapshotBytes, sourceInventoryBytes, sourceSnapshots, governancePolicy, governancePolicyBytes: files["source-governance-policy.json"], freshnessPolicy: freshnessSla, candidateBuildSpec, observedAt: "2026-08-16T12:00:00.000Z" };
 }
 
 function mutateInventory(value, mutate) {

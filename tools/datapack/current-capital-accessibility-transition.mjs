@@ -8,11 +8,13 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-current-capital-facility-source-admission.mjs";
 import { canonicalCurrentStationLineInputJson } from "./build-current-station-line-accessibility.mjs";
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
+import { isActiveCandidateSourceSequence } from "./rebind-current-candidate-source-snapshots.mjs";
 
 const FILES = Object.freeze({
   candidate: "tools/datapack/release/candidate-build-spec.json",
   previous: "tools/datapack/release/current-station-line-accessibility/station-line-input.json",
   facility: "tools/datapack/release/current-capital-facility-source-admission.json",
+  snapshots: "tools/datapack/release/source-snapshots.json",
   transition: "tools/datapack/release/current-capital-accessibility-transition.json",
 });
 const SHA = /^[a-f0-9]{64}$/u;
@@ -28,57 +30,20 @@ export function buildCurrentCapitalAccessibilityTransition(input) {
   const candidate = bindParsed(input?.candidate, candidateBytes, "candidate build spec");
   const previous = bindParsed(input?.previous, previousBytes, "previous production station-line input");
   const facility = bindParsed(input?.facilityAdmission, facilityBytes, "current FACILITY admission");
-  if (canonicalCurrentStationLineInputJson(previous) !== previousBytes.toString("utf8")) {
-    throw new Error("previous production station-line bytes are not canonical");
-  }
-  if (canonicalCurrentCapitalFacilitySourceAdmissionJson(facility) !== facilityBytes.toString("utf8")) {
-    throw new Error("current FACILITY admission bytes are not canonical");
-  }
   const candidateId = requiredString(candidate.candidateId, "candidateId");
   const nextSourceSet = requiredSha(candidate.sourceSnapshotSetHash, "candidate source snapshot set");
-  const previousSourceSet = requiredSha(previous.candidate?.sourceSetSha256, "previous production source snapshot set");
-  if (previous.candidate?.candidateId !== candidateId || previousSourceSet === nextSourceSet) {
-    throw new Error("transition source-set boundary mismatch");
-  }
-  if (facility.decision !== "GO" || facility.candidate?.candidateId !== candidateId
-    || facility.candidate?.sourceSnapshotSetHash !== nextSourceSet
-    || facility.cellStateSummary?.ADMITTED_FACILITY_UNVERIFIED_BLOCKED !== 1
-    || facility.cells?.filter(({ state }) => state === "ADMITTED_FACILITY_UNVERIFIED_BLOCKED").length !== 1) {
-    throw new Error("transition FACILITY admission binding mismatch");
-  }
-  const blocked = facility.cells.find(({ state }) => state === "ADMITTED_FACILITY_UNVERIFIED_BLOCKED");
-  if (blocked.stationId !== "station-b35616704ce3" || blocked.lineId !== "seoul-2") {
-    throw new Error("transition FACILITY blocked identity mismatch");
-  }
-  const payload = {
-    schemaVersion: 1,
-    artifactKind: "current-capital-accessibility-transition",
-    state: "PENDING_FULL_FAN_IN",
+  return finalizeTransitionPayload(buildTransitionPayload({
     nextCandidate: {
       path: FILES.candidate,
       sha256: sha256(candidateBytes),
       candidateId,
       sourceSnapshotSetHash: nextSourceSet,
     },
-    previousProduction: {
-      path: FILES.previous,
-      sha256: sha256(previousBytes),
-      sourceSnapshotSetHash: previousSourceSet,
-    },
-    facilityAdmission: {
-      path: FILES.facility,
-      sha256: sha256(facilityBytes),
-      admissionDigest: requiredSha(facility.admissionDigest, "FACILITY admission digest"),
-      snapshotId: requiredString(facility.sourceIdentity?.snapshotId, "FACILITY snapshotId"),
-    },
-    pendingPrerequisites: {
-      exitAdmissionDirectory: "tools/datapack/release/current-exit-admission-v2",
-      transferSourceId: "seoul-metro-transfer-distance-duration",
-      fullCapitalInputDirectory: "tools/datapack/release/current-capital-accessibility-full",
-      authorityEdgeCount: 456,
-    },
-  };
-  return { ...payload, transitionSha256: sha256(Buffer.from(canonicalJson(payload))) };
+    previous,
+    previousBytes,
+    facility,
+    facilityBytes,
+  }));
 }
 
 export function canonicalCurrentCapitalAccessibilityTransitionJson(value) {
@@ -101,20 +66,134 @@ export async function assertCurrentCapitalAccessibilityBuildAllowed({ repository
     readStableRegular(path.join(root, FILES.previous), "previous production station-line input"),
     readStableRegular(path.join(root, FILES.facility), "current FACILITY admission"),
   ]);
-  const rebuilt = buildCurrentCapitalAccessibilityTransition({
-    candidate: parse(candidateBytes, "candidate build spec"),
-    candidateBytes,
-    previous: parse(previousBytes, "previous production station-line input"),
-    previousBytes,
-    facilityAdmission: parse(facilityBytes, "current FACILITY admission"),
-    facilityBytes,
-  });
   const parsed = parse(transition, "current accessibility transition");
-  if (canonicalCurrentCapitalAccessibilityTransitionJson(parsed) !== transition.toString("utf8")
-    || canonicalJson(parsed) !== canonicalJson(rebuilt)) {
+  if (canonicalCurrentCapitalAccessibilityTransitionJson(parsed) !== transition.toString("utf8")) {
     throw new Error("transition candidate binding mismatch");
   }
+  const candidate = parse(candidateBytes, "candidate build spec");
+  const previous = parse(previousBytes, "previous production station-line input");
+  const facility = parse(facilityBytes, "current FACILITY admission");
+  if (candidate.sourceSnapshotSetHash === parsed.nextCandidate.sourceSnapshotSetHash) {
+    const rebuilt = buildCurrentCapitalAccessibilityTransition({
+      candidate,
+      candidateBytes,
+      previous,
+      previousBytes,
+      facilityAdmission: facility,
+      facilityBytes,
+    });
+    if (canonicalJson(parsed) !== canonicalJson(rebuilt)) {
+      throw new Error("transition candidate binding mismatch");
+    }
+  } else {
+    try {
+      const ledgerBytes = await readStableRegular(path.join(root, FILES.snapshots), "source snapshot ledger");
+      const rebuilt = finalizeTransitionPayload(buildTransitionPayload({
+        nextCandidate: parsed.nextCandidate,
+        previous,
+        previousBytes,
+        facility,
+        facilityBytes,
+      }));
+      if (canonicalJson(parsed) !== canonicalJson(rebuilt)) {
+        throw new Error("stored transition mismatch");
+      }
+      assertExactTransferAppend({
+        candidate,
+        ledger: parse(ledgerBytes, "source snapshot ledger"),
+        storedSourceSetHash: parsed.nextCandidate.sourceSnapshotSetHash,
+      });
+    } catch {
+      throw new Error("transition candidate binding mismatch");
+    }
+  }
   throw new Error("CURRENT_ACCESSIBILITY_TRANSITION_BLOCKED");
+}
+
+function buildTransitionPayload({ nextCandidate, previous, previousBytes, facility, facilityBytes }) {
+  if (canonicalCurrentStationLineInputJson(previous) !== previousBytes.toString("utf8")) {
+    throw new Error("previous production station-line bytes are not canonical");
+  }
+  if (canonicalCurrentCapitalFacilitySourceAdmissionJson(facility) !== facilityBytes.toString("utf8")) {
+    throw new Error("current FACILITY admission bytes are not canonical");
+  }
+  const candidateId = requiredString(nextCandidate.candidateId, "candidateId");
+  const nextSourceSet = requiredSha(nextCandidate.sourceSnapshotSetHash, "candidate source snapshot set");
+  const previousSourceSet = requiredSha(previous.candidate?.sourceSetSha256, "previous production source snapshot set");
+  if (previous.candidate?.candidateId !== candidateId || previousSourceSet === nextSourceSet) {
+    throw new Error("transition source-set boundary mismatch");
+  }
+  assertFacilityBinding(facility, candidateId, nextSourceSet);
+  return {
+    schemaVersion: 1,
+    artifactKind: "current-capital-accessibility-transition",
+    state: "PENDING_FULL_FAN_IN",
+    nextCandidate,
+    previousProduction: {
+      path: FILES.previous,
+      sha256: sha256(previousBytes),
+      sourceSnapshotSetHash: previousSourceSet,
+    },
+    facilityAdmission: {
+      path: FILES.facility,
+      sha256: sha256(facilityBytes),
+      admissionDigest: requiredSha(facility.admissionDigest, "FACILITY admission digest"),
+      snapshotId: requiredString(facility.sourceIdentity?.snapshotId, "FACILITY snapshotId"),
+    },
+    pendingPrerequisites: {
+      exitAdmissionDirectory: "tools/datapack/release/current-exit-admission-v2",
+      transferSourceId: "seoul-metro-transfer-distance-duration",
+      fullCapitalInputDirectory: "tools/datapack/release/current-capital-accessibility-full",
+      authorityEdgeCount: 456,
+    },
+  };
+}
+
+function finalizeTransitionPayload(payload) {
+  return { ...payload, transitionSha256: sha256(Buffer.from(canonicalJson(payload))) };
+}
+
+function assertFacilityBinding(facility, candidateId, sourceSnapshotSetHash) {
+  if (facility.decision !== "GO" || facility.candidate?.candidateId !== candidateId
+    || facility.candidate?.sourceSnapshotSetHash !== sourceSnapshotSetHash
+    || facility.cellStateSummary?.ADMITTED_FACILITY_UNVERIFIED_BLOCKED !== 1
+    || facility.cells?.filter(({ state }) => state === "ADMITTED_FACILITY_UNVERIFIED_BLOCKED").length !== 1) {
+    throw new Error("transition FACILITY admission binding mismatch");
+  }
+  const blocked = facility.cells.find(({ state }) => state === "ADMITTED_FACILITY_UNVERIFIED_BLOCKED");
+  if (blocked.stationId !== "station-b35616704ce3" || blocked.lineId !== "seoul-2") {
+    throw new Error("transition FACILITY blocked identity mismatch");
+  }
+}
+
+function assertExactTransferAppend({ candidate, ledger, storedSourceSetHash }) {
+  if (candidate?.schemaVersion !== 1 || candidate.artifactKind !== "datapack-candidate-build-spec"
+    || !Array.isArray(candidate.sourceSnapshotIds) || !Array.isArray(candidate.sourceSnapshots)
+    || candidate.sourceSnapshotIds.length !== 7 || candidate.sourceSnapshots.length !== 7
+    || candidate.sourceSnapshotIds.length !== candidate.sourceSnapshots.length
+    || !Array.isArray(ledger) || !isActiveCandidateSourceSequence(candidate.sourceSnapshots.map(({ sourceId }) => sourceId))) {
+    throw new Error("transition append shape mismatch");
+  }
+  const selectedIds = new Set(candidate.sourceSnapshotIds);
+  if (selectedIds.size !== 7 || candidate.sourceSnapshots.some((projection, index) =>
+    projection?.snapshotId !== candidate.sourceSnapshotIds[index])) {
+    throw new Error("transition append projection mismatch");
+  }
+  for (const [index, snapshotId] of candidate.sourceSnapshotIds.entries()) {
+    const matches = ledger.filter((entry) => entry?.snapshotId === snapshotId);
+    if (matches.length !== 1 || matches[0].sourceId !== candidate.sourceSnapshots[index].sourceId) {
+      throw new Error("transition append ledger mismatch");
+    }
+  }
+  const selected = ledger.filter(({ snapshotId }) => selectedIds.has(snapshotId));
+  const prefixIds = new Set(candidate.sourceSnapshotIds.slice(0, -1));
+  const prefix = ledger.filter(({ snapshotId }) => prefixIds.has(snapshotId));
+  if (selected.length !== 7 || prefix.length !== 6
+    || sha256(Buffer.from(JSON.stringify(selected))) !== candidate.sourceSnapshotSetHash
+    || sha256(Buffer.from(JSON.stringify(prefix))) !== storedSourceSetHash
+    || selected.at(-1)?.sourceId !== "seoul-metro-transfer-distance-duration") {
+    throw new Error("transition append source-set mismatch");
+  }
 }
 
 export async function main(argv = process.argv.slice(2), {
