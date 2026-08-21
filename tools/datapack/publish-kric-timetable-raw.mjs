@@ -71,7 +71,8 @@ export async function publishKricTimetableRawArtifact({
     });
   } catch (error) {
     const status = /\bHTTP\s+([1-5]\d\d)\b/u.exec(String(error?.message ?? ""))?.[1];
-    throw new Error(`KRIC raw object storage publication failed${status == null ? "" : `: HTTP ${status}`}`);
+    const statusSuffix = status == null ? "" : `: HTTP ${status}`;
+    throw new Error(`KRIC raw object storage publication failed${statusSuffix}`);
   }
 
   const receipt = {
