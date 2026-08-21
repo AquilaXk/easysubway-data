@@ -18,6 +18,21 @@ function compositionFixture() {
   const root = process.cwd();
   const load = (relative) => { const body = readFileSync(path.join(root, relative)); return { body, value: JSON.parse(body) }; };
   const inventory = load("tools/datapack/source-inventory.json"); const candidate = load("tools/datapack/release/candidate-build-spec.json"); const ledger = load("tools/datapack/release/source-snapshots.json"); const scope = load("release/product-gates/production-datapack-scope.json"); const governance = load("tools/datapack/source-governance-policy.json"); const freshness = load("release/product-gates/datapack-freshness-sla.json"); const pack = load("tools/datapack/release/capital-production-canonical-pack.json");
+  const sourceId = observation.manifest.sourceId;
+  const transferSource = inventory.value.sources.find(({ id }) => id === sourceId);
+  transferSource.requiredForProductionPack = false;
+  delete transferSource.capabilities.transfer;
+  delete transferSource.transferAdmissionEvidence;
+  ledger.value = ledger.value.filter(({ sourceId: ledgerSourceId }) => ledgerSourceId !== sourceId);
+  candidate.value.sourceSnapshots = candidate.value.sourceSnapshots.filter(
+    ({ sourceId: candidateSourceId }) => candidateSourceId !== sourceId,
+  );
+  candidate.value.sourceSnapshotIds = candidate.value.sourceSnapshots.map(({ snapshotId }) => snapshotId);
+  scope.value.productionSourceSet.requiredSourceIds = scope.value.productionSourceSet.requiredSourceIds.filter(
+    (requiredSourceId) => requiredSourceId !== sourceId,
+  );
+  scope.value.productionSourceSet.optionalAccessibilitySourceIds.push(sourceId);
+  scope.value.productionSourceSet.excludedFromV1SupportClaims.push(sourceId);
   const metrics = load("tools/datapack/release/current-transfer-topology-metrics.json").value;
   metrics.sourceIdentity = { ...metrics.sourceIdentity, sourceId: observation.manifest.sourceId, endpointSha256: observation.manifest.endpointSha256, manifestSha256: sha(observation.manifestBytes), observationSha256: sha(observation.observationBytes), rawSnapshotSha256: sha(rawBytes), rawSha256: observation.manifest.rawSha256, contentSha256: observation.manifest.contentSha256, schemaSha256: observation.manifest.schemaSha256, rowCount: 145, capturedAt, freshnessDate: "2025-12-31" };
   metrics.artifactSha256 = sha(Buffer.from(canonicalJson(sort(metrics, "artifactSha256"))));
@@ -32,9 +47,19 @@ function compositionFixture() {
   assert.equal(applicability.stateSummary.APPLICABLE_TRANSFER_ENDPOINT, 27); assert.equal(applicability.stateSummary.NOT_APPLICABLE_IN_CANONICAL_PAIR_SET, 186);
   const approvedAt = "2026-08-16T02:00:00.000Z";
   candidate.value.sourceSnapshots = candidate.value.sourceSnapshotIds.map((snapshotId) => deriveReleaseProjection({ snapshot: ledger.value.find((row) => row.snapshotId === snapshotId), sourceInventory: inventory.value, governancePolicy: governance.value, governancePolicyBytes: governance.body, freshnessPolicy: freshness.value, nowMillis: Date.parse(approvedAt) }));
+  const selectedSnapshotIds = new Set(candidate.value.sourceSnapshotIds);
+  candidate.value.sourceSnapshotSetHash = sha(Buffer.from(JSON.stringify(
+    ledger.value.filter(({ snapshotId }) => selectedSnapshotIds.has(snapshotId)),
+  )));
+  const inventoryBytes = Buffer.from(`${JSON.stringify(inventory.value, null, 2)}\n`);
+  candidate.value.sourceInventorySha256 = sha(Buffer.from(JSON.stringify(inventory.value)));
+  candidate.value.networkEdgeEvidence.sourceInventory.sha256 = sha(inventoryBytes);
+  const candidateBytes = Buffer.from(`${JSON.stringify(candidate.value, null, 2)}\n`);
+  const scopeBytes = Buffer.from(`${JSON.stringify(scope.value, null, 2)}\n`);
+  const ledgerBytes = Buffer.from(`${JSON.stringify(ledger.value, null, 2)}\n`);
   const rawObjectSha256 = sha(rawBytes); const objectKey = `source-raw/seoul-metro-transfer-distance-duration/20260712/${rawObjectSha256}.json`;
   const receipt = { schemaVersion: 1, artifactKind: "seoul-transfer-raw-object-receipt", sourceId: observation.manifest.sourceId, snapshotId: "seoul-metro-transfer-distance-duration-20260712T150000000Z", snapshotRawSha256: observation.manifest.rawSha256, capturedAt, manifestSha256: sha(observation.manifestBytes), observationSha256: sha(observation.observationBytes), rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/${objectKey}`, rawObjectSha256, ociNamespace: "axvym6vk8g7i", bucket: "easysubway-datapacks", objectKey, capturedDate: "20260712", byteSize: rawBytes.length, storedAt: "2026-07-12T15:00:01.000Z", rawRetentionExpiresAt: "2026-10-10T15:00:00.000Z" };
-  return { observation, receipt, metrics, metricsBytes: bytes(metrics), applicability, applicabilityBytes: bytes(applicability), inventory: inventory.value, inventoryBytes: inventory.body, scope: scope.value, scopeBytes: scope.body, ledger: ledger.value, ledgerBytes: ledger.body, candidate: candidate.value, candidateBytes: candidate.body, governancePolicy: governance.value, governancePolicyBytes: governance.body, freshnessPolicy: freshness.value, freshnessPolicyBytes: freshness.body, canonicalPack: pack.value, canonicalPackBytes: pack.body, approvedAt };
+  return { observation, receipt, metrics, metricsBytes: bytes(metrics), applicability, applicabilityBytes: bytes(applicability), inventory: inventory.value, inventoryBytes, scope: scope.value, scopeBytes, ledger: ledger.value, ledgerBytes, candidate: candidate.value, candidateBytes, governancePolicy: governance.value, governancePolicyBytes: governance.body, freshnessPolicy: freshness.value, freshnessPolicyBytes: freshness.body, canonicalPack: pack.value, canonicalPackBytes: pack.body, approvedAt };
 }
 
 function sort(value, omit) { if (Array.isArray(value)) return value.map((item) => sort(item, omit)); if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).filter((key) => key !== omit).sort().map((key) => [key, sort(value[key], omit)])); return value; }
@@ -101,8 +126,6 @@ test("PREPARED rollback and COMMITTED forward recovery preserve foreign replacem
 
 test("actual composition emits only the five targets and appends TRANSFER seventh", async () => {
   const input = compositionFixture();
-  input.scope.productionSourceSet.optionalAccessibilitySourceIds.push("seoul-metro-transfer-distance-duration");
-  input.scope.productionSourceSet.excludedFromV1SupportClaims.push("seoul-metro-transfer-distance-duration");
   const outputs = buildTransferRegistrationOutputs(input);
   assert.equal(outputs.length, 5);
   const candidate = JSON.parse(outputs.find(({ relative }) => relative.endsWith("candidate-build-spec.json")).bytes);
@@ -118,8 +141,6 @@ test("actual composition emits only the five targets and appends TRANSFER sevent
 
 test("replacement head는 selected append-only ledger order hash를 사용한다", () => {
   const input = compositionFixture();
-  input.scope.productionSourceSet.optionalAccessibilitySourceIds.push("seoul-metro-transfer-distance-duration");
-  input.scope.productionSourceSet.excludedFromV1SupportClaims.push("seoul-metro-transfer-distance-duration");
   const selectedIds = new Set(input.candidate.sourceSnapshotIds);
   const selectedInLedgerOrder = input.ledger.filter(({ snapshotId }) => selectedIds.has(snapshotId));
   const selectedInCandidateOrder = input.candidate.sourceSnapshotIds.map((snapshotId) => input.ledger.find((row) => row.snapshotId === snapshotId));

@@ -204,17 +204,26 @@ test("six-source candidate appends TRANSFER last without changing its six projec
   const { root } = await fixture();
   t.after(() => rm(root, { recursive: true, force: true }));
   const input = await readInput(root);
+  const sixSourceCandidate = structuredClone(input.candidateBuildSpec);
+  sixSourceCandidate.sourceSnapshots = sixSourceCandidate.sourceSnapshots.filter(
+    ({ sourceId }) => sourceId !== "seoul-metro-transfer-distance-duration",
+  );
+  sixSourceCandidate.sourceSnapshotIds = sixSourceCandidate.sourceSnapshots.map(({ snapshotId }) => snapshotId);
+  const selectedSnapshotIds = new Set(sixSourceCandidate.sourceSnapshotIds);
+  sixSourceCandidate.sourceSnapshotSetHash = sha(JSON.stringify(
+    input.sourceSnapshots.filter(({ snapshotId }) => selectedSnapshotIds.has(snapshotId)),
+  ));
   const projection = {
-    ...input.candidateBuildSpec.sourceSnapshots[0],
+    ...sixSourceCandidate.sourceSnapshots[0],
     sourceId: "seoul-metro-transfer-distance-duration",
     snapshotId: "seoul-metro-transfer-distance-duration-20260712T150000000Z",
   };
   const rebound = appendTransferCandidateSourceSnapshot({
-    candidateBuildSpec: input.candidateBuildSpec,
+    candidateBuildSpec: sixSourceCandidate,
     transferSnapshot: { sourceId: projection.sourceId, snapshotId: projection.snapshotId },
     transferProjection: projection,
   });
-  assert.deepEqual(rebound.sourceSnapshots.slice(0, 6), input.candidateBuildSpec.sourceSnapshots);
+  assert.deepEqual(rebound.sourceSnapshots.slice(0, 6), sixSourceCandidate.sourceSnapshots);
   assert.equal(rebound.sourceSnapshots.at(-1).sourceId, "seoul-metro-transfer-distance-duration");
 });
 
