@@ -20,7 +20,6 @@ import {
 import {
   buildCurrentCapitalStationLineInput,
   canonicalCurrentCapitalStationLineInputJson,
-  readCurrentCapitalInputs,
 } from "./build-current-capital-station-line-input.mjs";
 import { fixture as fullCapitalFixture } from "./build-current-capital-station-line-input.test.mjs";
 
@@ -63,32 +62,44 @@ test("full-capital authority는 213/639 input과 456 non-RIDE를 2,674-edge fixt
 
 test("current tracked inputs는 1,102 metadata·2,674 route·456 authority를 in-memory로 완성한다", async () => {
   const repositoryRoot = path.resolve(fileURLToPath(new URL("../../", import.meta.url)));
-  const input = await readCurrentCapitalInputs(repositoryRoot);
-  const projectedFixture = await projectCandidateFixtureForAccessibilityAuthority({
-    buildSpec: input.candidateBuildSpec,
-    sourceFixture: input.canonicalPack,
-    repositoryRoot,
-  });
-  const projectedInput = { ...input, canonicalPack: projectedFixture };
-  const stationLineInput = buildCurrentCapitalStationLineInput(projectedInput);
-  const route = buildCurrentCapitalRouteEdgeInput(projectedInput);
   const buildSpecBytes = await readFile(
     path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"),
   );
+  const buildSpec = JSON.parse(buildSpecBytes);
   const sourceFixtureBytes = await readFile(
-    path.join(repositoryRoot, input.candidateBuildSpec.fixturePath),
+    path.join(repositoryRoot, buildSpec.fixturePath),
+  );
+  const sourceFixture = JSON.parse(sourceFixtureBytes);
+  const projectedFixture = await projectCandidateFixtureForAccessibilityAuthority({
+    buildSpec,
+    sourceFixture,
+    repositoryRoot,
+  });
+  const stationLineInputBytes = await readFile(
+    path.join(repositoryRoot, "tools/datapack/release/current-capital-accessibility-full/station-line-input.json"),
+  );
+  const routeBytes = await readFile(
+    path.join(repositoryRoot, "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json"),
+  );
+  const stationLineInput = JSON.parse(stationLineInputBytes);
+  const route = JSON.parse(routeBytes);
+  assert.equal(
+    stationLineInputBytes.toString("utf8"),
+    canonicalCurrentCapitalStationLineInputJson(stationLineInput),
+  );
+  assert.equal(
+    routeBytes.toString("utf8"),
+    canonicalCurrentCapitalRouteEdgeInputJson(route),
   );
   const result = buildCurrentReleaseCandidateAccessibilityAuthority({
-    buildSpec: input.candidateBuildSpec,
+    buildSpec,
     buildSpecBytes,
     projectedFixture,
     route,
-    routeBytes: Buffer.from(canonicalCurrentCapitalRouteEdgeInputJson(route)),
+    routeBytes,
     sourceFixtureBytes,
     stationLineInput,
-    stationLineInputBytes: Buffer.from(
-      canonicalCurrentCapitalStationLineInputJson(stationLineInput),
-    ),
+    stationLineInputBytes,
   });
 
   assert.equal(route.stationLines.length, 1102);
