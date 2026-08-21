@@ -291,9 +291,10 @@ export function buildTransferRegistrationOutputs({ observation, receipt, metrics
     governancePolicyVersion: ledgerRow.governancePolicyVersion, governancePolicySha256: ledgerRow.governancePolicySha256,
   };
   const nextCandidate = appendTransferCandidateSourceSnapshot({ candidateBuildSpec: candidate, transferSnapshot: ledgerRow, transferProjection: projection });
-  const selected = nextCandidate.sourceSnapshotIds.map((id) => nextLedger.find((row) => row.snapshotId === id));
-  if (selected.some((row) => !row)) throw new Error("candidate source ledger binding mismatch");
-  nextCandidate.sourceSnapshotSetHash = sha(Buffer.from(JSON.stringify(selected)));
+  const nextSelectedIds = new Set(nextCandidate.sourceSnapshotIds);
+  const nextSelectedInLedgerOrder = nextLedger.filter(({ snapshotId }) => nextSelectedIds.has(snapshotId));
+  if (nextSelectedIds.size !== nextCandidate.sourceSnapshotIds.length || nextSelectedInLedgerOrder.length !== nextCandidate.sourceSnapshotIds.length) throw new Error("candidate source ledger binding mismatch");
+  nextCandidate.sourceSnapshotSetHash = sha(Buffer.from(JSON.stringify(nextSelectedInLedgerOrder)));
   nextCandidate.sourceInventorySha256 = sha(Buffer.from(JSON.stringify(nextInventory)));
   nextCandidate.networkEdgeEvidence.sourceInventory.sha256 = sha(inventoryBytes);
   if (!Buffer.isBuffer(scopeBytes) || !Buffer.isBuffer(ledgerInputBytes) || !Buffer.isBuffer(candidateInputBytes)) throw new Error("transfer prestate byte binding mismatch");

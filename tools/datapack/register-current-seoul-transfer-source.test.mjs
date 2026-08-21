@@ -125,7 +125,16 @@ test("replacement head는 selected append-only ledger order hash를 사용한다
   const selectedInCandidateOrder = input.candidate.sourceSnapshotIds.map((snapshotId) => input.ledger.find((row) => row.snapshotId === snapshotId));
   assert.notDeepEqual(selectedInLedgerOrder.map(({ snapshotId }) => snapshotId), selectedInCandidateOrder.map(({ snapshotId }) => snapshotId));
   input.candidate.sourceSnapshotSetHash = sha(Buffer.from(JSON.stringify(selectedInLedgerOrder)));
-  assert.equal(buildTransferRegistrationOutputs(input).length, 5);
+  const outputs = buildTransferRegistrationOutputs(input);
+  assert.equal(outputs.length, 5);
+  const outputLedger = JSON.parse(outputs.find(({ relative }) => relative.endsWith("source-snapshots.json")).bytes);
+  const outputCandidate = JSON.parse(outputs.find(({ relative }) => relative.endsWith("candidate-build-spec.json")).bytes);
+  const outputSelectedIds = new Set(outputCandidate.sourceSnapshotIds);
+  const outputInLedgerOrder = outputLedger.filter(({ snapshotId }) => outputSelectedIds.has(snapshotId));
+  const outputInCandidateOrder = outputCandidate.sourceSnapshotIds.map((snapshotId) => outputLedger.find((row) => row.snapshotId === snapshotId));
+  assert.notDeepEqual(outputInLedgerOrder.map(({ snapshotId }) => snapshotId), outputInCandidateOrder.map(({ snapshotId }) => snapshotId));
+  assert.equal(outputCandidate.sourceSnapshotSetHash, sha(Buffer.from(JSON.stringify(outputInLedgerOrder))));
+  assert.notEqual(outputCandidate.sourceSnapshotSetHash, sha(Buffer.from(JSON.stringify(outputInCandidateOrder))));
 
   const drift = compositionFixture();
   drift.candidate.sourceSnapshotSetHash = sha(Buffer.from(JSON.stringify(selectedInCandidateOrder)));
