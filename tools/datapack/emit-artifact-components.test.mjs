@@ -9,6 +9,7 @@ import { DatabaseSync } from "node:sqlite";
 import { zstdDecompressSync } from "node:zlib";
 
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { projectCandidateFixtureForAccessibilityAuthority } from "./build-datapack.mjs";
 import { emitArtifactComponents } from "./emit-artifact-components.mjs";
 import {
   buildCurrentRouteEdgeInput,
@@ -82,18 +83,38 @@ test("current Data #9 seed는 full topology와 policy-required materialization s
     readFile("release/product-gates/route-edge-evaluation-policy.json"),
   ]);
   const policy = JSON.parse(policyBytes);
-  const build = () => buildCurrentSourceRouteEdgeInput({
-    canonicalPack: JSON.parse(fixtureBytes),
-    buildSpec: JSON.parse(buildSpecBytes),
+  const buildSpec = JSON.parse(buildSpecBytes);
+  const sourceFixture = JSON.parse(fixtureBytes);
+  const buildSource = () => buildCurrentSourceRouteEdgeInput({
+    canonicalPack: sourceFixture,
+    buildSpec,
     stationLineInput: JSON.parse(stationLineBytes),
     materialization: JSON.parse(materializationBytes),
     policy,
   });
   if (await exists("tools/datapack/release/current-capital-accessibility-transition.json")) {
-    await assert.rejects(build, /CURRENT_ACCESSIBILITY_TRANSITION_BLOCKED/);
+    await assert.rejects(buildSource, /CURRENT_ACCESSIBILITY_TRANSITION_BLOCKED/);
     return;
   }
-  const input = await build();
+  const canonicalPack = await projectCandidateFixtureForAccessibilityAuthority({
+    buildSpec,
+    sourceFixture,
+  });
+  const stationLineInput = JSON.parse(stationLineBytes);
+  assert.notEqual(stationLineInput.candidate.sourceSetSha256, buildSpec.sourceSnapshotSetHash);
+  // The legacy #9 seed remains bound to previousProduction after the full-capital candidate takes over.
+  const previousProductionBuildSpec = {
+    ...buildSpec,
+    sourceSnapshotSetHash: stationLineInput.candidate.sourceSetSha256,
+  };
+  const build = () => buildCurrentRouteEdgeInput({
+    canonicalPack,
+    buildSpec: previousProductionBuildSpec,
+    stationLineInput,
+    materialization: JSON.parse(materializationBytes),
+    policy,
+  });
+  const input = build();
   const trackedBytes = await readFile("tools/datapack/release/current-route-edge-evaluation/route-edge-input.json", "utf8");
   assert.equal(trackedBytes, canonicalCurrentRouteEdgeInputJson(input));
 
@@ -123,8 +144,8 @@ test("current Data #9 seed는 full topology와 policy-required materialization s
     policy.rideInvariant.itxCheongchunExpress.admittedEdgeSetSha256,
   );
   assert.throws(() => buildCurrentRouteEdgeInput({
-    canonicalPack: JSON.parse(fixtureBytes),
-    buildSpec: JSON.parse(buildSpecBytes),
+    canonicalPack,
+    buildSpec: previousProductionBuildSpec,
     stationLineInput: { ...JSON.parse(stationLineBytes), stationLines: [] },
     materialization: JSON.parse(materializationBytes),
     policy: JSON.parse(policyBytes),
@@ -132,9 +153,9 @@ test("current Data #9 seed는 full topology와 policy-required materialization s
   const staleOperatorMaterialization = JSON.parse(materializationBytes);
   staleOperatorMaterialization.rows[0].operatorId = "stale-operator";
   assert.throws(() => buildCurrentRouteEdgeInput({
-    canonicalPack: JSON.parse(fixtureBytes),
-    buildSpec: JSON.parse(buildSpecBytes),
-    stationLineInput: JSON.parse(stationLineBytes),
+    canonicalPack,
+    buildSpec: previousProductionBuildSpec,
+    stationLineInput,
     materialization: staleOperatorMaterialization,
     policy: JSON.parse(policyBytes),
   }), /materialization|subset|identity/i);
@@ -155,6 +176,9 @@ test("current Data #9 seed는 alternate repository root의 nested projection evi
     "tools/datapack/sources/itx-cheongchun-source-timetable-20260812165525800.json",
     "tools/datapack/sources/itx-cheongchun-source-timetable-20260812165525800-completeness-evidence.json",
     "tools/datapack/sources/incheon-transit-station-info-20260814.json",
+    "tools/datapack/release/capital-production-canonical-pack.json",
+    "tools/datapack/official-od-fare-admission.json",
+    "tools/datapack/nationwide-coverage-targets.json",
     ...(transitionPresent ? [
       "tools/datapack/release/current-capital-accessibility-transition.json",
       "tools/datapack/release/candidate-build-spec.json",
@@ -177,8 +201,9 @@ test("current Data #9 seed는 alternate repository root의 nested projection evi
     readFile("release/product-gates/route-edge-evaluation-policy.json"),
   ]);
   const buildSpec = JSON.parse(buildSpecBytes);
-  const build = () => buildCurrentSourceRouteEdgeInput({
-    canonicalPack: JSON.parse(fixtureBytes),
+  const sourceFixture = JSON.parse(fixtureBytes);
+  const buildSource = () => buildCurrentSourceRouteEdgeInput({
+    canonicalPack: sourceFixture,
     buildSpec,
     stationLineInput: JSON.parse(stationLineBytes),
     materialization: JSON.parse(materializationBytes),
@@ -186,14 +211,31 @@ test("current Data #9 seed는 alternate repository root의 nested projection evi
     repositoryRoot,
   });
   if (transitionPresent) {
-    await assert.rejects(build, /CURRENT_ACCESSIBILITY_TRANSITION_BLOCKED/);
+    await assert.rejects(buildSource, /CURRENT_ACCESSIBILITY_TRANSITION_BLOCKED/);
     return;
   }
   const sourceInventoryPath = path.join(repositoryRoot, buildSpec.networkEdgeEvidence.sourceInventory.path);
   const alternateSourceInventoryBytes = Buffer.concat([await readFile(sourceInventoryPath), Buffer.from(" ")]);
   await writeFile(sourceInventoryPath, alternateSourceInventoryBytes);
   buildSpec.networkEdgeEvidence.sourceInventory.sha256 = hash(alternateSourceInventoryBytes);
-  const input = await build();
+  const canonicalPack = await projectCandidateFixtureForAccessibilityAuthority({
+    buildSpec,
+    sourceFixture,
+    repositoryRoot,
+  });
+  const stationLineInput = JSON.parse(stationLineBytes);
+  assert.notEqual(stationLineInput.candidate.sourceSetSha256, buildSpec.sourceSnapshotSetHash);
+  const previousProductionBuildSpec = {
+    ...buildSpec,
+    sourceSnapshotSetHash: stationLineInput.candidate.sourceSetSha256,
+  };
+  const input = buildCurrentRouteEdgeInput({
+    canonicalPack,
+    buildSpec: previousProductionBuildSpec,
+    stationLineInput,
+    materialization: JSON.parse(materializationBytes),
+    policy: JSON.parse(policyBytes),
+  });
   assert.equal(input.routeEdges.length, 2222);
 });
 
