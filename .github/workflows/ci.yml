@@ -16,25 +16,28 @@ jobs:
   contracts:
     name: Data contracts
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
       - name: Checkout pinned Mobile fixture
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: AquilaXk/easysubway-mobile
-          ref: d85742f14cbf97c526a6b94dd55bbf863e1d1346
+          ref: 39d2c4723d0ff855041c6162825930c7d12ffad3
           path: .external/mobile
           persist-credentials: false
+          fetch-depth: 0
 
       - name: Stage pinned Mobile fixture
         shell: bash
         run: |
           set -euo pipefail
-          expected_revision="d85742f14cbf97c526a6b94dd55bbf863e1d1346"
+          expected_revision="39d2c4723d0ff855041c6162825930c7d12ffad3"
           source=".external/mobile/apps/mobile"
           capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
           expected_sha256="f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3"
@@ -57,7 +60,7 @@ jobs:
           else
             mkdir apps
           fi
-          mv "${source}" apps/mobile
+          cp -a "${source}" apps/mobile
 
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
@@ -113,6 +116,42 @@ jobs:
           cmp -- "${backup}" "${source}"
           rm "${backup}"
 
+      - name: Verify and run migrated Mobile owned required tests
+        run: node tools/ci/data-test-discovery.mjs run --class required-pr --profile mobile-v19 --max-workers 1
+
+      - name: Restore pinned Mobile fixture for owned tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_revision="39d2c4723d0ff855041c6162825930c7d12ffad3"
+          expected_sha256="f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3"
+          source=".external/mobile/apps/mobile"
+          source_capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
+          target="apps/mobile"
+          target_capital_gzip="${target}/assets/datapacks/capital.sqlite.gz"
+
+          actual_revision="$(git -C .external/mobile rev-parse HEAD)"
+          [[ "${actual_revision}" == "${expected_revision}" ]]
+          [[ -d "${source}" && ! -L "${source}" ]]
+          [[ -f "${source_capital_gzip}" && ! -L "${source_capital_gzip}" ]]
+          source_sha256="$(sha256sum "${source_capital_gzip}" | awk '{print $1}')"
+          [[ "${source_sha256}" == "${expected_sha256}" ]]
+          [[ -d "${target}" && ! -L "${target}" ]]
+
+          rm -r -- "${target}"
+          test ! -e "${target}"
+          test ! -L "${target}"
+          cp -a "${source}" "${target}"
+
+          [[ -d "${target}" && ! -L "${target}" ]]
+          if find "${target}" -type l -print -quit | grep -q .; then
+            echo "restored Mobile fixture contains a symlink" >&2
+            exit 1
+          fi
+          [[ -f "${target_capital_gzip}" && ! -L "${target_capital_gzip}" ]]
+          target_sha256="$(sha256sum "${target_capital_gzip}" | awk '{print $1}')"
+          [[ "${target_sha256}" == "${expected_sha256}" ]]
+
       - name: Lint workflows
         shell: bash
         run: |
@@ -123,104 +162,10 @@ jobs:
           docker run --rm -v "${GITHUB_WORKSPACE}:/repo:ro" -w /repo \
             rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
 
-      - name: Verify standalone contracts
-        run: >-
-          node --test
-          tools/ci/automerge-queue.test.mjs
-          tools/datapack/stage-contracts.test.mjs
-          tools/datapack/bundle-component-contract.test.mjs
-          tools/datapack/artifact-component-manifest.test.mjs
-          tools/datapack/server-route-bundle-build-contract.test.mjs
-          tools/datapack/lib/server-route-bundle-final.test.mjs
-          tools/datapack/sign-server-route-bundle.test.mjs
-          tools/datapack/build-server-route-bundle-final.test.mjs
-          tools/datapack/build-transfer-topology-admission.test.mjs
-          tools/datapack/revalidate-current-molit-transfer-source.test.mjs
-          tools/datapack/evaluate-current-molit-transfer-freshness.test.mjs
-          tools/datapack/build-current-transfer-source-admission.test.mjs
-          tools/datapack/build-current-station-line-accessibility.test.mjs
-          tools/datapack/plan-kric-exit-path-collection.test.mjs
-          tools/datapack/build-current-kric-exit-collection-plan.test.mjs
-          tools/datapack/collect-kric-exit-path-provider-snapshot.test.mjs
-          tools/datapack/collect-current-kric-exit-path-provider-snapshot.test.mjs
-          tools/datapack/diagnose-current-kric-exit-path-query.test.mjs
-          tools/datapack/build-exit-path-admission.test.mjs
-          tools/datapack/build-current-exit-path-source-admission.test.mjs
-          tools/datapack/run-current-kric-exit-path-source-admission.test.mjs
-          tools/datapack/collect-capital-route-topology.test.mjs
-          tools/datapack/collect-incheon-station-info.test.mjs
-          tools/datapack/activate-current-source-set.test.mjs
-          tools/datapack/build-datapack-current-admission.test.mjs
-          tools/datapack/build-server-route-bundle-publication-descriptor.test.mjs
-          tools/datapack/publish-object-storage.test.mjs
-          tools/datapack/publish-server-route-bundle.test.mjs
-          tools/datapack/artifact-component-table-layout.test.mjs
-          tools/datapack/emit-artifact-components.test.mjs
-          tools/datapack/emit-station-catalog-pack.test.mjs
-          tools/datapack/check-timetable-snapshot-freshness.test.mjs
-          tools/datapack/run-current-itx-collection.test.mjs
-          tools/datapack/build-data-component-manifest.test.mjs
-          tools/ci/require-workflow-artifact.test.mjs
-          tools/release/validate-promotion-request.test.mjs
-          tools/ci/datapack-release-workflow.test.mjs
-          tools/ci/public-sensitivity-owner-receipt-caller.test.mjs
-          tools/ci/mobile-fixture-staging-workflow.test.mjs
-          tools/ci/kric-exit-timeout-diagnostic-workflow.test.mjs
-          tools/ci/kric-exit-path-provider-snapshot-workflow.test.mjs
-          tools/ci/kric-exit-path-source-admission-workflow.test.mjs
-          tools/ci/itx-current-collection-workflow.test.mjs
-          tools/ci/itx-current-collection-continuation-workflow.test.mjs
-          tools/ci/itx-current-collection-offline-replay-workflow.test.mjs
-          tools/ci/itx-current-replay-admission-candidate-workflow.test.mjs
-          tools/datapack/continue-current-itx-collection.test.mjs
-          tools/datapack/replay-current-itx-collection.test.mjs
-          tools/datapack/materialize-replayed-itx-admission-candidate.test.mjs
-          tools/datapack/provider-response-capture.test.mjs
-          tools/datapack/lib/provider-call-integrity.test.mjs
-          tools/datapack/source-candidate-endpoint-contract.test.mjs
-          tools/datapack/collect-kric-source-candidate-evidence.test.mjs
-          tools/datapack/collect-seoul-accessibility-evidence.test.mjs
-          tools/datapack/collect-korail-itx-cheongchun-timetable.test.mjs
-          tools/datapack/probe-korail-facility-workbook.test.mjs
-          tools/datapack/build-nationwide-coverage-tally.test.mjs
-          tools/datapack/contract-producer.test.mjs
-          tools/datapack/lib/datapack-manifest-schema.test.mjs
-          tools/datapack/catalog-raw-sql-tables.test.mjs
-
-      - name: Verify current ITX station catalog admission consumers
+      - name: Verify current KRIC exit path source admission contracts
         run: |
-          set -euo pipefail
-          node --test tools/datapack/itx-cheongchun-coverage-contract.test.mjs
-          node --test tools/datapack/apply-itx-topology-to-bundled-pack.test.mjs
-          node --test tools/datapack/apply-timetable-refresh.test.mjs
-          node --test tools/datapack/build-server-timetable-snapshot.test.mjs
-          node --test tools/datapack/build-backend-timetable-seed.test.mjs
-          node --test --test-name-pattern='ITX CLI promotion은 station catalog와 주입된 repository root를 전달한다|ITX CLI current refresh는 admitted source에 station catalog snapshot을 전달한다' tools/datapack/collect-korail-itx-cheongchun-timetable.test.mjs
-          node --test --test-name-pattern='official OD fare release candidate|production candidate' tools/datapack/datapack-tools.test.mjs
-          node --test tools/datapack/itx-cheongchun-service-layer.test.mjs
+          node --test tools/datapack/run-current-kric-exit-path-source-admission.test.mjs
+          node --test tools/ci/kric-exit-path-source-admission-workflow.test.mjs
 
-      - name: Verify regional materializer fixture projection
-        run: |
-          set -euo pipefail
-          node --test tools/datapack/materialize-test-fixture.test.mjs
-          node --test --test-name-pattern='production 시설 status|현장·운영기관 확인 시설|근거 없는 시설 operationalStatus|UNKNOWN 운행상태 시설|production verified edge coverage|UNKNOWN accessibility edge|production pack의 최소 coverage|coverage evidence 누락|source inventory가 뒷받침하지 않는|provenance 전용 source|selected source가 claim한|production pack의 최소 coverage 미달|production coverage 기준|production schedule pass-through|cross-line EXPRESS|admission 전 schedule provenance|quota 미승인 schedule|station-line 단위 facility|동일 station-line-type|stationLineRows 없는|station-line source provenance|missing strict operational|missing approved movement|station-line source 우회|station-line operational evidence|UNDER_MAINTENANCE|NO_OFFICIAL_FEED|임의 strict route reason|route evidence가 아니면|status probe와 결합|field provenance|승인된 이동 경로 누락|STAIR pathway|수도권 pilot source coverage|관리자 검수 NORMAL' tools/datapack/datapack-tools.test.mjs
-          node --test --test-concurrency=2 \
-            tools/datapack/materialize-busan-accessibility.test.mjs \
-            tools/datapack/materialize-busan-route-map-positions.test.mjs \
-            tools/datapack/materialize-busan-route-topology.test.mjs \
-            tools/datapack/materialize-daegu-accessibility.test.mjs \
-            tools/datapack/materialize-daegu-route-map-positions.test.mjs \
-            tools/datapack/materialize-daegu-timetable.test.mjs \
-            tools/datapack/materialize-daejeon-accessibility.test.mjs \
-            tools/datapack/materialize-daejeon-route-map-positions.test.mjs \
-            tools/datapack/materialize-daejeon-route-topology.test.mjs \
-            tools/datapack/materialize-daejeon-timetable.test.mjs \
-            tools/datapack/materialize-gwangju-accessibility.test.mjs \
-            tools/datapack/materialize-gwangju-route-map-positions.test.mjs \
-            tools/datapack/materialize-gwangju-timetable.test.mjs \
-            tools/datapack/materialize-incheon-accessibility.test.mjs \
-            tools/datapack/materialize-incheon-station-info.test.mjs \
-            tools/datapack/materialize-incheon-timetable.test.mjs \
-            tools/datapack/materialize-seoul-route-map-positions.test.mjs \
-            tools/datapack/materialize-seoul9-phase1-route-map-positions.test.mjs \
-            tools/datapack/materialize-seoul9-route-map-positions.test.mjs
+      - name: Verify and run pristine Mobile owned required tests
+        run: node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile

@@ -8,6 +8,7 @@ import { EventEmitter } from "node:events";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const workflowPath = path.join(root, ".github/workflows/kric-exit-timeout-diagnostic.yml");
 const ciPath = path.join(root, ".github/workflows/ci.yml");
+const ownershipPath = path.join(root, "tools/ci/data-test-ownership.json");
 const secretSyncPath = path.join(root, "tools/ci/sync-kric-exit-diagnostic-secret.mjs");
 const queryId = "dd25f07bd2351a43024b0aae0cd6a8f6075c565b43606fb84771e0f3ca20868c";
 
@@ -74,9 +75,16 @@ test("workflow는 raw/artifact/fallback과 untracked network tooling을 사용�
   assert.equal((yml.match(/\bnode tools\//g) ?? []).length, 2);
 });
 
-test("Data CI는 hosted diagnostic workflow contract를 실행한다", () => {
+test("Data CI는 hosted diagnostic workflow contract를 owned required runner에서 실행한다", () => {
   const ci = readFileSync(ciPath, "utf8");
-  assert.match(ci, /tools\/ci\/kric-exit-timeout-diagnostic-workflow\.test\.mjs/);
+  const ownership = JSON.parse(readFileSync(ownershipPath, "utf8"));
+  const entries = ownership.tests.filter(
+    ({ path: testPath }) => testPath === "tools/ci/kric-exit-timeout-diagnostic-workflow.test.mjs",
+  );
+  assert.match(ci, /node tools\/ci\/data-test-discovery\.mjs run --class required-pr/);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].semanticOwner, "data26");
+  assert.ok(entries[0].classes.includes("required-pr"));
 });
 
 test("KRIC EXIT secret 동기화는 fixed repository secret을 stdin으로만 전달한다", async () => {

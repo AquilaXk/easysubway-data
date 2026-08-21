@@ -6,8 +6,11 @@ import path from "node:path";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const workflow = ".github/workflows/ci.yml";
+const ownership = JSON.parse(
+  readFileSync(path.join(root, "tools/ci/data-test-ownership.json"), "utf8"),
+);
 const mobileRepository = "AquilaXk/easysubway-mobile";
-const mobileRevision = "d85742f14cbf97c526a6b94dd55bbf863e1d1346";
+const mobileRevision = "39d2c4723d0ff855041c6162825930c7d12ffad3";
 const capitalGzipSha256 = "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3";
 
 function namedWorkflowStep(yml, name) {
@@ -16,6 +19,28 @@ function namedWorkflowStep(yml, name) {
   assert.notEqual(start, -1, `${name} step을 찾지 못함`);
   const next = yml.indexOf("\n      - name:", start + marker.length);
   return yml.slice(start, next === -1 ? yml.length : next);
+}
+
+function assertRequiredOwned(paths) {
+  for (const expectedPath of paths) {
+    const entry = ownership.tests.find(({ path: testPath }) => testPath === expectedPath);
+    assert.ok(entry, `${expectedPath} ownership entry를 찾지 못함`);
+    assert.ok(entry.classes.includes("required-pr"), `${expectedPath} required-pr class가 필요함`);
+  }
+}
+
+function assertWorkflowStepOrder(yml, names) {
+  const positions = names.map((name) => {
+    const position = yml.indexOf(name);
+    assert.ok(position >= 0, `${name} 단계를 찾지 못함`);
+    return position;
+  });
+  for (let index = 1; index < positions.length; index += 1) {
+    assert.ok(
+      positions[index - 1] < positions[index],
+      `${names[index - 1]}는 ${names[index]}보다 앞서야 함`,
+    );
+  }
 }
 
 function fixtureStep(workflow) {
@@ -34,6 +59,7 @@ function fixtureStep(workflow) {
     assert.match(block, new RegExp(`ref:\\s*${mobileRevision}`));
     assert.match(block, /path:\s*\.external\/mobile/);
     assert.match(block, /persist-credentials:\s*false/);
+    assert.match(block, /fetch-depth:\s*0/);
     assert.match(stage, /git -C \.external\/mobile rev-parse HEAD/);
     assert.match(stage, new RegExp(mobileRevision));
     assert.ok(
@@ -59,55 +85,51 @@ function fixtureStep(workflow) {
     assert.match(stage, /if \[\[ -e apps \|\| -L apps \]\]; then/);
     assert.match(stage, /\[\[ -d apps && ! -L apps \]\]/);
     assert.match(stage, /else\s+mkdir apps\s+fi/);
-    assert.match(stage, /mv "\$\{source\}" apps\/mobile/);
+    assert.match(stage, /cp -a "\$\{source\}" apps\/mobile/);
     assert.ok(
-      stage.indexOf('[[ "${actual_sha256}" == "${expected_sha256}" ]]') < stage.indexOf("mv "),
+      stage.indexOf('[[ "${actual_sha256}" == "${expected_sha256}" ]]') < stage.indexOf("cp -a "),
       `${workflow}: digest 검증은 destination stage보다 앞서야 함`,
     );
     assert.ok(
-      stage.indexOf("mkdir apps") < stage.indexOf("mv "),
+      stage.indexOf("mkdir apps") < stage.indexOf("cp -a "),
       `${workflow}: 검증된 parent 생성은 fixture stage보다 앞서야 함`,
     );
   });
 }
 
-test("CI는 pinned Mobile fixture workflow 계약을 standalone contracts에서 실행한다", () => {
+test("CI는 pinned Mobile fixture workflow 계약을 owned required runner에서 실행한다", () => {
   const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
-  const standalone = namedWorkflowStep(ci, "Verify standalone contracts");
-  assert.match(standalone, /node --test[\s\S]*tools\/ci\/mobile-fixture-staging-workflow\.test\.mjs/);
+  assert.match(ci, /node tools\/ci\/data-test-discovery\.mjs run --class required-pr/);
+  assertRequiredOwned(["tools/ci/mobile-fixture-staging-workflow.test.mjs"]);
 });
 
-test("CI는 TRANSFER topology admission contract를 standalone contracts에서 실행한다", () => {
-  const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
-  const standalone = namedWorkflowStep(ci, "Verify standalone contracts");
-  assert.match(standalone, /node --test[\s\S]*tools\/datapack\/build-transfer-topology-admission\.test\.mjs/);
-  assert.match(standalone, /node --test[\s\S]*tools\/datapack\/revalidate-current-molit-transfer-source\.test\.mjs/);
-  assert.match(standalone, /node --test[\s\S]*tools\/datapack\/build-current-transfer-source-admission\.test\.mjs/);
+test("CI는 TRANSFER topology admission과 current source revalidation contract를 owned required runner에서 실행한다", () => {
+  assertRequiredOwned([
+    "tools/datapack/build-transfer-topology-admission.test.mjs",
+    "tools/datapack/revalidate-current-molit-transfer-source.test.mjs",
+    "tools/datapack/build-current-transfer-source-admission.test.mjs",
+  ]);
 });
 
-test("CI는 EXIT path admission contract를 standalone contracts에서 실행한다", () => {
-  const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
-  const standalone = namedWorkflowStep(ci, "Verify standalone contracts");
-  assert.match(standalone, /node --test[\s\S]*tools\/datapack\/plan-kric-exit-path-collection\.test\.mjs/);
-  assert.match(standalone, /node --test[\s\S]*tools\/datapack\/build-current-kric-exit-collection-plan\.test\.mjs/);
-  assert.match(standalone, /node --test[\s\S]*tools\/datapack\/collect-kric-exit-path-provider-snapshot\.test\.mjs/);
-  assert.match(standalone, /node --test[\s\S]*tools\/datapack\/collect-current-kric-exit-path-provider-snapshot\.test\.mjs/);
-  assert.match(standalone, /node --test[\s\S]*tools\/datapack\/diagnose-current-kric-exit-path-query\.test\.mjs/);
-  assert.match(standalone, /node --test[\s\S]*tools\/datapack\/build-exit-path-admission\.test\.mjs/);
-  assert.match(standalone, /node --test[\s\S]*tools\/datapack\/build-current-exit-path-source-admission\.test\.mjs/);
+test("CI는 EXIT path admission contract를 owned required runner에서 실행한다", () => {
+  assertRequiredOwned([
+    "tools/datapack/plan-kric-exit-path-collection.test.mjs",
+    "tools/datapack/build-current-kric-exit-collection-plan.test.mjs",
+    "tools/datapack/collect-kric-exit-path-provider-snapshot.test.mjs",
+    "tools/datapack/collect-current-kric-exit-path-provider-snapshot.test.mjs",
+    "tools/datapack/diagnose-current-kric-exit-path-query.test.mjs",
+    "tools/datapack/build-exit-path-admission.test.mjs",
+    "tools/datapack/build-current-exit-path-source-admission.test.mjs",
+  ]);
 });
 
-test("CI는 current source-separated topology contracts를 standalone contracts에서 실행한다", () => {
-  const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
-  const standalone = namedWorkflowStep(ci, "Verify standalone contracts");
-  for (const testPath of [
+test("CI는 current source-separated topology contracts를 owned required runner에서 실행한다", () => {
+  assertRequiredOwned([
     "tools/datapack/collect-capital-route-topology.test.mjs",
     "tools/datapack/collect-incheon-station-info.test.mjs",
     "tools/datapack/activate-current-source-set.test.mjs",
     "tools/datapack/build-datapack-current-admission.test.mjs",
-  ]) {
-    assert.match(standalone, new RegExp(testPath.replaceAll("/", "\\/")));
-  }
+  ]);
 });
 
 test("CI는 fixture stage 뒤에 #108 bundled-pack 회귀 검증을 직렬 실행한다", () => {
@@ -155,14 +177,39 @@ test("CI는 migration이 쓰는 tracked topology evidence를 #108 regression 뒤
   assert.match(backup, /\.external\/itx-cheongchun-topology-evidence\.json/);
   assert.match(restore, /\.external\/itx-cheongchun-topology-evidence\.json/);
   assert.match(restore, /tools\/datapack\/itx-cheongchun-topology-evidence\.json/);
-  assert.ok(
-    ci.indexOf("Backup tracked topology evidence") < ci.indexOf("Migrate pinned Mobile v18 pack to v19")
-      && ci.indexOf("Migrate pinned Mobile v18 pack to v19") < ci.indexOf("Verify Data issue 108 bundled-pack regression")
-      && ci.indexOf("Verify Data issue 108 bundled-pack regression") < ci.indexOf("Restore tracked topology evidence")
-      && ci.indexOf("Restore tracked topology evidence") < ci.indexOf("Lint workflows")
-      && ci.indexOf("Restore tracked topology evidence") < ci.indexOf("Verify standalone contracts"),
-    "evidence backup/restore는 migration regression과 later contract 사이에 있어야 함",
+  assertWorkflowStepOrder(ci, [
+    "Backup tracked topology evidence",
+    "Migrate pinned Mobile v18 pack to v19",
+    "Verify Data issue 108 bundled-pack regression",
+    "Restore tracked topology evidence",
+    "Verify and run migrated Mobile owned required tests",
+  ]);
+  assertWorkflowStepOrder(ci, ["Restore tracked topology evidence", "Lint workflows"]);
+});
+
+test("CI는 #108 derived pack을 버리고 pristine Mobile fixture를 owned runner 전에 복원한다", () => {
+  const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+  const restore = namedWorkflowStep(ci, "Restore pinned Mobile fixture for owned tests");
+  assert.match(restore, /source="\.external\/mobile\/apps\/mobile"/);
+  assert.match(restore, /target="apps\/mobile"/);
+  assert.match(restore, new RegExp(mobileRevision));
+  assert.match(restore, new RegExp(capitalGzipSha256));
+  assert.match(restore, /rm -r -- "\$\{target\}"/);
+  assert.match(restore, /cp -a "\$\{source\}" "\$\{target\}"/);
+  assert.match(restore, /find "\$\{target\}" -type l/);
+  assert.match(restore, /sha256sum "\$\{target_capital_gzip\}"/);
+  const withoutIssue108 = ci.replace(
+    "Verify Data issue 108 bundled-pack regression",
+    "Removed Data issue 108 bundled-pack regression",
   );
+  const executionOrder = [
+    "Verify Data issue 108 bundled-pack regression",
+    "Verify and run migrated Mobile owned required tests",
+    "Restore pinned Mobile fixture for owned tests",
+    "Verify and run pristine Mobile owned required tests",
+  ];
+  assert.throws(() => assertWorkflowStepOrder(withoutIssue108, executionOrder), /단계를 찾지 못함/);
+  assertWorkflowStepOrder(ci, executionOrder);
 });
 
 test("Data Pack Release는 Mobile fixture checkout 또는 stage를 포함하지 않는다", () => {

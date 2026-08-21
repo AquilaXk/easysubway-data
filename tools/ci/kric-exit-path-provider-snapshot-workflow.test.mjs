@@ -7,6 +7,7 @@ import test from "node:test";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const workflowPath = path.join(root, ".github/workflows/kric-exit-path-provider-snapshot.yml");
 const ciPath = path.join(root, ".github/workflows/ci.yml");
+const ownershipPath = path.join(root, "tools/ci/data-test-ownership.json");
 
 function workflow() {
   assert.ok(existsSync(workflowPath), "hosted KRIC EXIT full snapshot workflow를 찾지 못함");
@@ -59,12 +60,19 @@ test("workflow는 current plan 뒤 collector와 immutable bundle builder를 exac
   assert.doesNotMatch(yml, /if:\s*\$\{\{ always\(\) \}\}/);
 });
 
-test("workflow와 Data CI는 retry·fallback·untracked network 경계를 추가하지 않는다", () => {
+test("workflow와 Data dynamic owned runner는 retry·fallback·untracked network 경계를 추가하지 않는다", () => {
   const yml = workflow();
   assert.doesNotMatch(yml, /download-artifact|curl|wget|jq|source |set -a|retry|fallback|alternate|format xml|\bfind\b|\bwc\b|\bcp\b|\bmv\b|\btar\b/i);
   assert.doesNotMatch(yml, /git (?:add|commit|push)|gh |serviceKey=|echo .*KRIC|printf .*KRIC/i);
   assert.equal((yml.match(/\bnode tools\//g) ?? []).length, 3);
 
   const ci = readFileSync(ciPath, "utf8");
-  assert.match(ci, /tools\/ci\/kric-exit-path-provider-snapshot-workflow\.test\.mjs/);
+  assert.match(ci, /node tools\/ci\/data-test-discovery\.mjs run --class required-pr/);
+
+  const ownership = JSON.parse(readFileSync(ownershipPath, "utf8"));
+  const entry = ownership.tests.find(({ path: testPath }) =>
+    testPath === "tools/ci/kric-exit-path-provider-snapshot-workflow.test.mjs");
+  assert.ok(entry, "hosted KRIC EXIT workflow test ownership entry를 찾지 못함");
+  assert.equal(entry.semanticOwner, "data26");
+  assert.ok(entry.classes.includes("required-pr"));
 });

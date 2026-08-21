@@ -7,6 +7,7 @@ import test from "node:test";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const workflowPath = path.join(root, ".github/workflows/itx-current-replay-admission-candidate.yml");
 const ciPath = path.join(root, ".github/workflows/ci.yml");
+const ownershipPath = path.join(root, "tools/ci/data-test-ownership.json");
 
 function workflow() {
   assert.ok(existsSync(workflowPath), "ITX replay admission candidate workflow를 찾지 못함");
@@ -64,6 +65,15 @@ test("candidate CLI는 exact input과 two-output만 사용하고 provider/promot
 
 test("Data contracts가 candidate functional/static contract만 정확히 등록한다", () => {
   const ci = readFileSync(ciPath, "utf8");
-  assert.match(ci, /tools\/datapack\/materialize-replayed-itx-admission-candidate\.test\.mjs/);
-  assert.match(ci, /tools\/ci\/itx-current-replay-admission-candidate-workflow\.test\.mjs/);
+  assert.match(ci, /node tools\/ci\/data-test-discovery\.mjs run --class required-pr/);
+  const ownership = JSON.parse(readFileSync(ownershipPath, "utf8"));
+  for (const ownedPath of [
+    "tools/ci/itx-current-replay-admission-candidate-workflow.test.mjs",
+    "tools/datapack/materialize-replayed-itx-admission-candidate.test.mjs",
+  ]) {
+    const entries = ownership.tests.filter(({ path: testPath }) => testPath === ownedPath);
+    assert.equal(entries.length, 1, `${ownedPath} ownership entry는 정확히 하나여야 함`);
+    assert.equal(entries[0].semanticOwner, "data96");
+    assert.ok(entries[0].classes.includes("required-pr"));
+  }
 });
