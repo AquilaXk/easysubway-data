@@ -330,11 +330,26 @@ function validateCandidateIdentity(buildSpec, stationLineInput, route, projected
 }
 
 function validateRoute(route, stationLineInput, routeStationIndex) {
-  if (!Array.isArray(route.routeEdges) || route.routeEdges.length !== 2674) {
+  const routeEdges = validateRouteEdgeShapes(route.routeEdges);
+  const counts = edgeTypeCounts(routeEdges);
+  if (Object.entries(COUNTS).some(([type, count]) => counts[type] !== count)
+    || Object.keys(counts).length !== Object.keys(COUNTS).length) {
+    throw new Error("route edge coverage mismatch");
+  }
+  const rides = routeEdges.filter(({ edgeType }) => edgeType === "RIDE");
+  if (route.candidate.topologySha256 !== canonicalRideEdgeSetSha256(rides)) {
+    throw new Error("route topology hash mismatch");
+  }
+  validateRouteEndpoints(routeEdges, stationLineInput.stationLines, routeStationIndex);
+  return routeEdges;
+}
+
+function validateRouteEdgeShapes(routeEdges) {
+  if (!Array.isArray(routeEdges) || routeEdges.length !== 2674) {
     throw new Error("route edge denominator mismatch");
   }
   const ids = new Set();
-  for (const edge of route.routeEdges) {
+  for (const edge of routeEdges) {
     exact(edge, ROUTE_EDGE_KEYS, "route edge");
     const payload = Object.fromEntries(ROUTE_EDGE_KEYS
       .filter((key) => key !== "edgeSha256")
@@ -344,17 +359,12 @@ function validateRoute(route, stationLineInput, routeStationIndex) {
     }
     ids.add(edge.edgeId);
   }
-  const counts = edgeTypeCounts(route.routeEdges);
-  if (Object.entries(COUNTS).some(([type, count]) => counts[type] !== count)
-    || Object.keys(counts).length !== Object.keys(COUNTS).length) {
-    throw new Error("route edge coverage mismatch");
-  }
-  const rides = route.routeEdges.filter(({ edgeType }) => edgeType === "RIDE");
-  if (route.candidate.topologySha256 !== canonicalRideEdgeSetSha256(rides)) {
-    throw new Error("route topology hash mismatch");
-  }
-  const stationKeys = new Set(stationLineInput.stationLines.map(stationLineKey));
-  for (const edge of route.routeEdges) {
+  return routeEdges;
+}
+
+function validateRouteEndpoints(routeEdges, stationLines, routeStationIndex) {
+  const stationKeys = new Set(stationLines.map(stationLineKey));
+  for (const edge of routeEdges) {
     for (const node of [edge.fromNodeId, edge.toNodeId]) {
       validateRouteEndpoint(node, edge, routeStationIndex);
     }
@@ -368,7 +378,6 @@ function validateRoute(route, stationLineInput, routeStationIndex) {
       throw new Error("route edge endpoint mismatch");
     }
   }
-  return route.routeEdges;
 }
 
 function projectedRouteStationLines(pack) {
@@ -407,7 +416,7 @@ function validateRouteEndpoint(nodeId, edge, routeStationIndex) {
     && edge.edgeType === "RIDE"
     && edge.serviceClass === "ITX_CHEONGCHUN"
     && edge.servicePattern === "EXPRESS";
-  if (segments.some((segment) => segment.length === 0)
+  if (segments.includes("")
     || segments.length > 3
     || (segments.length === 3 && !isItxExpress)
     || (segments.length === 1 && !routeStationIndex.stationIds.has(segments[0]))

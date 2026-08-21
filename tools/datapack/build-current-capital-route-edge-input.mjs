@@ -129,7 +129,7 @@ function validateRouteEdgeEndpoints(routeEdges, stationLines) {
         && edgeValue.edgeType === "RIDE"
         && edgeValue.serviceClass === "ITX_CHEONGCHUN"
         && edgeValue.servicePattern === "EXPRESS";
-      if (segments.some((segment) => segment === "")
+      if (segments.includes("")
         || segments.length > 3
         || (segments.length === 3 && !isItxExpress)
         || (segments.length === 1 && !stationIds.has(segments[0]))
