@@ -176,11 +176,6 @@ test("current Data #9 seed는 alternate repository root의 nested projection evi
     readFile("release/product-gates/route-edge-evaluation-policy.json"),
   ]);
   const buildSpec = JSON.parse(buildSpecBytes);
-  const sourceInventoryPath = path.join(repositoryRoot, buildSpec.networkEdgeEvidence.sourceInventory.path);
-  const alternateSourceInventoryBytes = Buffer.concat([await readFile(sourceInventoryPath), Buffer.from(" ")]);
-  await writeFile(sourceInventoryPath, alternateSourceInventoryBytes);
-  buildSpec.networkEdgeEvidence.sourceInventory.sha256 = hash(alternateSourceInventoryBytes);
-
   const build = () => buildCurrentSourceRouteEdgeInput({
     canonicalPack: JSON.parse(fixtureBytes),
     buildSpec,
@@ -193,6 +188,10 @@ test("current Data #9 seed는 alternate repository root의 nested projection evi
     await assert.rejects(build, /CURRENT_ACCESSIBILITY_TRANSITION_BLOCKED/);
     return;
   }
+  const sourceInventoryPath = path.join(repositoryRoot, buildSpec.networkEdgeEvidence.sourceInventory.path);
+  const alternateSourceInventoryBytes = Buffer.concat([await readFile(sourceInventoryPath), Buffer.from(" ")]);
+  await writeFile(sourceInventoryPath, alternateSourceInventoryBytes);
+  buildSpec.networkEdgeEvidence.sourceInventory.sha256 = hash(alternateSourceInventoryBytes);
   const input = await build();
   assert.equal(input.routeEdges.length, 2222);
 });
