@@ -192,17 +192,18 @@ test("등록된 current snapshot path만 resolver가 읽고 stale/pilot path mis
   t.after(() => rm(temporary, { recursive: true, force: true }));
   const sourceRoot = path.join(root, "tools/datapack");
   const tempDatapack = path.join(temporary, "tools/datapack");
+  const fixture = await currentInput();
   await Promise.all([
     mkdir(path.join(tempDatapack, "release"), { recursive: true }),
     mkdir(path.join(tempDatapack, "inputs"), { recursive: true }),
     mkdir(path.join(tempDatapack, "sources"), { recursive: true }),
   ]);
   await Promise.all([
-    copyFile(path.join(sourceRoot, "release/candidate-build-spec.json"), path.join(tempDatapack, "release/candidate-build-spec.json")),
-    copyFile(path.join(sourceRoot, "release/source-snapshots.json"), path.join(tempDatapack, "release/source-snapshots.json")),
-    copyFile(path.join(sourceRoot, "inputs/capital-pilot-production-source-input.json"), path.join(tempDatapack, "inputs/capital-pilot-production-source-input.json")),
+    writeFile(path.join(tempDatapack, "release/candidate-build-spec.json"), JSON.stringify(fixture.candidateBuildSpec)),
+    writeFile(path.join(tempDatapack, "release/source-snapshots.json"), JSON.stringify(fixture.sourceSnapshots)),
+    writeFile(path.join(tempDatapack, "inputs/capital-pilot-production-source-input.json"), JSON.stringify(fixture.productionInput)),
   ]);
-  const inventory = JSON.parse(await readFile(path.join(sourceRoot, "source-inventory.json")));
+  const inventory = fixture.sourceInventory;
   const source = inventory.sources.find(({ id }) => id === "kric-station-convenience-standard");
   source.accessibilityAdmissionEvidence.snapshotPath = "tools\\datapack\\sources\\current.json";
   await writeFile(path.join(tempDatapack, "source-inventory.json"), JSON.stringify(inventory));
@@ -250,7 +251,41 @@ test("consumer input order가 달라도 admission bytes와 caller input은 동�
 });
 
 async function currentInput(observedAt = FRESH_AT) {
-  return loadCurrentFacilitySourceAdmissionInput({ repositoryRoot: root, observedAt });
+  const input = await loadCurrentFacilitySourceAdmissionInput({ repositoryRoot: root, observedAt });
+  const historicalSnapshotPath = "tools/datapack/sources/kric-station-convenience-standard-20260813T200604805Z.json";
+  const historicalSnapshotBytes = await readFile(path.join(root, historicalSnapshotPath));
+  const historicalSnapshot = JSON.parse(historicalSnapshotBytes);
+  const historicalLedger = sourceSnapshotEntry(input);
+  const source = sourceEntry(input);
+
+  Object.assign(source.accessibilityAdmissionEvidence, {
+    snapshotId: historicalSnapshot.snapshotId,
+    snapshotPath: historicalSnapshotPath,
+    capturedAt: historicalSnapshot.capturedAt,
+    observedAt: historicalSnapshot.observedAt,
+    freshUntil: historicalSnapshot.freshUntil,
+    rawSha256: historicalSnapshot.rawSha256,
+    contentSha256: historicalSnapshot.contentSha256,
+    schemaFingerprint: historicalSnapshot.schemaFingerprint,
+    snapshotFileSha256: sha256(historicalSnapshotBytes),
+    absenceEvidenceMode: "EXHAUSTIVE_LIST",
+  });
+  input.snapshotPath = historicalSnapshotPath;
+  input.snapshotBytes = new Uint8Array(historicalSnapshotBytes);
+
+  const candidateIndex = input.candidateBuildSpec.sourceSnapshots.findIndex(
+    ({ sourceId }) => sourceId === "kric-station-convenience-standard",
+  );
+  const projectionKeys = Object.keys(input.candidateBuildSpec.sourceSnapshots[candidateIndex]);
+  input.candidateBuildSpec.sourceSnapshots[candidateIndex] = Object.fromEntries(
+    projectionKeys.flatMap((key) => historicalLedger[key] === undefined ? [] : [[key, historicalLedger[key]]]),
+  );
+  input.candidateBuildSpec.sourceSnapshotIds[candidateIndex] = historicalLedger.snapshotId;
+  input.candidateBuildSpec.sourceSnapshotSetHash = sha256(JSON.stringify(
+    input.candidateBuildSpec.sourceSnapshotIds.map((snapshotId) =>
+      input.sourceSnapshots.find((entry) => entry.snapshotId === snapshotId)),
+  ));
+  return input;
 }
 
 function sourceEntry(input) {
