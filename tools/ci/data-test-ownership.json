@@ -159,6 +159,10 @@
     "data373": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/373",
       "title": "[Data][Release Blocker][P0] next candidate와 current production 사이 staged transition 고정"
+    },
+    "data396": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/396",
+      "title": "[Data][Release Blocker][P0] full-capital 2674-edge fixture와 456-edge authority로 release-candidate 전환"
     }
   },
   "workflows": {
@@ -245,6 +249,7 @@
     {"path":"tools/datapack/build-current-transfer-topology-metrics.test.mjs","semanticOwner":"data339","classes":["required-pr"],"durationMs":96},
     {"path":"tools/datapack/build-data-component-manifest.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":896},
     {"path":"tools/datapack/build-datapack-accessibility-freshness.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":143},
+    {"path":"tools/datapack/build-datapack-candidate-fixture-override.test.mjs","semanticOwner":"data396","classes":["required-pr"],"durationMs":564},
     {"path":"tools/datapack/build-datapack-current-admission.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":432},
     {"path":"tools/datapack/build-exit-path-admission.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":184},
     {"path":"tools/datapack/build-facility-accessibility-admission.test.mjs","semanticOwner":"data10","classes":["required-pr"],"durationMs":1000},

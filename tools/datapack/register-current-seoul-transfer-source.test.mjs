@@ -30,7 +30,7 @@ function compositionFixture() {
   assert.equal(applicability.productionUseAllowed, false); assert.equal(applicability.candidateBinding, null);
   assert.deepEqual(applicability.canonicalIdentity, metrics.canonicalIdentity); assert.deepEqual(applicability.sourceIdentity, metrics.sourceIdentity);
   assert.equal(applicability.stateSummary.APPLICABLE_TRANSFER_ENDPOINT, 27); assert.equal(applicability.stateSummary.NOT_APPLICABLE_IN_CANONICAL_PAIR_SET, 186);
-  const approvedAt = "2026-08-15T12:00:00.000Z";
+  const approvedAt = "2026-08-16T02:00:00.000Z";
   candidate.value.sourceSnapshots = candidate.value.sourceSnapshotIds.map((snapshotId) => deriveReleaseProjection({ snapshot: ledger.value.find((row) => row.snapshotId === snapshotId), sourceInventory: inventory.value, governancePolicy: governance.value, governancePolicyBytes: governance.body, freshnessPolicy: freshness.value, nowMillis: Date.parse(approvedAt) }));
   const rawObjectSha256 = sha(rawBytes); const objectKey = `source-raw/seoul-metro-transfer-distance-duration/20260712/${rawObjectSha256}.json`;
   const receipt = { schemaVersion: 1, artifactKind: "seoul-transfer-raw-object-receipt", sourceId: observation.manifest.sourceId, snapshotId: "seoul-metro-transfer-distance-duration-20260712T150000000Z", snapshotRawSha256: observation.manifest.rawSha256, capturedAt, manifestSha256: sha(observation.manifestBytes), observationSha256: sha(observation.observationBytes), rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/${objectKey}`, rawObjectSha256, ociNamespace: "axvym6vk8g7i", bucket: "easysubway-datapacks", objectKey, capturedDate: "20260712", byteSize: rawBytes.length, storedAt: "2026-07-12T15:00:01.000Z", rawRetentionExpiresAt: "2026-10-10T15:00:00.000Z" };
@@ -116,6 +116,31 @@ test("actual composition emits only the five targets and appends TRANSFER sevent
   assert.equal(scope.productionSourceSet.excludedFromV1SupportClaims.includes("seoul-metro-transfer-distance-duration"), false);
 });
 
+test("replacement head는 selected append-only ledger order hash를 사용한다", () => {
+  const input = compositionFixture();
+  input.scope.productionSourceSet.optionalAccessibilitySourceIds.push("seoul-metro-transfer-distance-duration");
+  input.scope.productionSourceSet.excludedFromV1SupportClaims.push("seoul-metro-transfer-distance-duration");
+  const selectedIds = new Set(input.candidate.sourceSnapshotIds);
+  const selectedInLedgerOrder = input.ledger.filter(({ snapshotId }) => selectedIds.has(snapshotId));
+  const selectedInCandidateOrder = input.candidate.sourceSnapshotIds.map((snapshotId) => input.ledger.find((row) => row.snapshotId === snapshotId));
+  assert.notDeepEqual(selectedInLedgerOrder.map(({ snapshotId }) => snapshotId), selectedInCandidateOrder.map(({ snapshotId }) => snapshotId));
+  input.candidate.sourceSnapshotSetHash = sha(Buffer.from(JSON.stringify(selectedInLedgerOrder)));
+  const outputs = buildTransferRegistrationOutputs(input);
+  assert.equal(outputs.length, 5);
+  const outputLedger = JSON.parse(outputs.find(({ relative }) => relative.endsWith("source-snapshots.json")).bytes);
+  const outputCandidate = JSON.parse(outputs.find(({ relative }) => relative.endsWith("candidate-build-spec.json")).bytes);
+  const outputSelectedIds = new Set(outputCandidate.sourceSnapshotIds);
+  const outputInLedgerOrder = outputLedger.filter(({ snapshotId }) => outputSelectedIds.has(snapshotId));
+  const outputInCandidateOrder = outputCandidate.sourceSnapshotIds.map((snapshotId) => outputLedger.find((row) => row.snapshotId === snapshotId));
+  assert.notDeepEqual(outputInLedgerOrder.map(({ snapshotId }) => snapshotId), outputInCandidateOrder.map(({ snapshotId }) => snapshotId));
+  assert.equal(outputCandidate.sourceSnapshotSetHash, sha(Buffer.from(JSON.stringify(outputInLedgerOrder))));
+  assert.notEqual(outputCandidate.sourceSnapshotSetHash, sha(Buffer.from(JSON.stringify(outputInCandidateOrder))));
+
+  const drift = compositionFixture();
+  drift.candidate.sourceSnapshotSetHash = sha(Buffer.from(JSON.stringify(selectedInCandidateOrder)));
+  assert.throws(() => buildTransferRegistrationOutputs(drift), /transfer pre-candidate ledger or inventory binding mismatch/);
+});
+
 test("commit rejects drift from the authenticated composition prestate without mutation", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "transfer-registration-authenticated-prestate-")); t.after(() => rm(root, { recursive: true, force: true }));
   const relatives = ["tools/datapack/sources/seoul-metro-transfer-distance-duration-20260712T150000000Z.json", "tools/datapack/source-inventory.json", "release/product-gates/production-datapack-scope.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json"];
@@ -146,6 +171,6 @@ test("governance-derived current projection drift rejects registration before ou
 
 test("receipt storage after approval rejects registration before outputs", () => {
   const input = compositionFixture();
-  input.receipt.storedAt = "2026-08-16T00:00:00.000Z";
+  input.receipt.storedAt = "2026-08-16T03:00:00.000Z";
   assert.throws(() => buildTransferRegistrationOutputs(input), /transfer retention derivation mismatch/);
 });
