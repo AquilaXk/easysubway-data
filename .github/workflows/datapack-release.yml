@@ -73,6 +73,8 @@ jobs:
           {
             echo "EASYSUBWAY_DATAPACK_OUTPUT=${{ runner.temp }}/easysubway-datapacks"
             echo "EASYSUBWAY_DATAPACK_STAGE=${{ runner.temp }}/easysubway-datapack-stage"
+            echo "EASYSUBWAY_DATAPACK_EXECUTION_EVIDENCE_DIR=${{ runner.temp }}/easysubway-datapack-execution-evidence"
+            echo "EASYSUBWAY_DATAPACK_ROUTE_COVERAGE_AUTHORITY=${{ runner.temp }}/easysubway-datapack-stage/server-route-coverage-authority.json"
             echo "EASYSUBWAY_DATAPACK_PUBLISH_PLAN=${{ runner.temp }}/easysubway-datapack-stage/publish-plan.json"
             echo "EASYSUBWAY_DATAPACK_IMPORTED_FIXTURE=${{ runner.temp }}/easysubway-production-source-fixture.json"
             echo "EASYSUBWAY_DATAPACK_REVIEWED_FIXTURE=${{ runner.temp }}/easysubway-reviewed-catalog-fixture.json"
@@ -548,6 +550,9 @@ jobs:
           candidate_name="easysubway-datapack-candidate-${EASYSUBWAY_DATAPACK_CANDIDATE_RUN_ID}"
           gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${EASYSUBWAY_DATAPACK_CANDIDATE_RUN_ID}/artifacts?name=${candidate_name}&per_page=100" > "${RUNNER_TEMP}/${candidate_name}.json"
           node tools/ci/require-workflow-artifact.mjs "${RUNNER_TEMP}/${candidate_name}.json" "${candidate_name}" "${EASYSUBWAY_DATAPACK_CANDIDATE_RUN_ID}" "${CANDIDATE_HEAD_SHA}"
+          candidate_execution_name="easysubway-datapack-candidate-execution-evidence-${EASYSUBWAY_DATAPACK_CANDIDATE_RUN_ID}"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${EASYSUBWAY_DATAPACK_CANDIDATE_RUN_ID}/artifacts?name=${candidate_execution_name}&per_page=100" > "${RUNNER_TEMP}/${candidate_execution_name}.json"
+          node tools/ci/require-workflow-artifact.mjs "${RUNNER_TEMP}/${candidate_execution_name}.json" "${candidate_execution_name}" "${EASYSUBWAY_DATAPACK_CANDIDATE_RUN_ID}" "${CANDIDATE_HEAD_SHA}"
           promotion_name="easysubway-datapack-promotion-${EASYSUBWAY_DATAPACK_PROMOTION_RUN_ID}"
           GH_TOKEN="${EASYSUBWAY_HUB_ARTIFACT_READ_TOKEN}" gh api "repos/${EASYSUBWAY_HUB_REPOSITORY}/actions/runs/${EASYSUBWAY_DATAPACK_PROMOTION_RUN_ID}/artifacts?name=${promotion_name}&per_page=100" > "${RUNNER_TEMP}/${promotion_name}.json"
           node tools/ci/require-workflow-artifact.mjs "${RUNNER_TEMP}/${promotion_name}.json" "${promotion_name}" "${EASYSUBWAY_DATAPACK_PROMOTION_RUN_ID}" "${PROMOTION_HEAD_SHA}"
@@ -558,6 +563,15 @@ jobs:
         with:
           name: easysubway-datapack-candidate-${{ steps.release-mode.outputs.candidate_run_id }}
           path: ${{ runner.temp }}/downloaded-candidate
+          run-id: ${{ steps.release-mode.outputs.candidate_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Data Pack Release / Download exact candidate execution evidence
+        if: ${{ steps.release-mode.outputs.mode == 'production-publish' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: easysubway-datapack-candidate-execution-evidence-${{ steps.release-mode.outputs.candidate_run_id }}
+          path: ${{ runner.temp }}/downloaded-candidate-execution-evidence
           run-id: ${{ steps.release-mode.outputs.candidate_run_id }}
           github-token: ${{ github.token }}
 
@@ -578,8 +592,15 @@ jobs:
         run: |
           set -euo pipefail
           candidate_root="${RUNNER_TEMP}/downloaded-candidate"
+          execution_root="${RUNNER_TEMP}/downloaded-candidate-execution-evidence"
           promotion_root="${RUNNER_TEMP}/downloaded-promotion"
           shopt -s dotglob nullglob
+          execution_entries=("${execution_root}"/*)
+          [[ "${#execution_entries[@]}" == 2 ]]
+          for name in release-evidence-bundle.json release-decision.json; do
+            [[ -f "${execution_root}/${name}" && ! -L "${execution_root}/${name}" && -s "${execution_root}/${name}" ]]
+          done
+          echo "EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE=${execution_root}/release-evidence-bundle.json" >> "${GITHUB_ENV}"
           promotion_entries=("${promotion_root}"/*)
           [[ "${#promotion_entries[@]}" == 4 ]]
           for name in promotion-request.json promotion-approvals.json compatibility-evidence.json rebuild-parity-evidence.json; do
@@ -637,7 +658,17 @@ jobs:
               --overrides tools/datapack/fixtures/admin-review-overrides.json \
               --output "${EASYSUBWAY_DATAPACK_REVIEWED_FIXTURE}"
             build_fixture="${EASYSUBWAY_DATAPACK_REVIEWED_FIXTURE}"
-          elif [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" != "release-candidate" && "${{ steps.remote-publish-env.outputs.enabled }}" != "true" ]]; then
+          elif [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "release-candidate" ]]; then
+            mkdir -p "${EASYSUBWAY_DATAPACK_STAGE}"
+            build_fixture="$(node -e "const fs=require('fs'); const spec=JSON.parse(fs.readFileSync(process.env.EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH, 'utf8')); process.stdout.write(spec.fixturePath);")"
+            node tools/datapack/build-current-release-candidate-accessibility-input.mjs \
+              --fixture "${build_fixture}" \
+              --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}" \
+              --station-line-input tools/datapack/release/current-station-line-accessibility/station-line-accessibility.json \
+              --route-edge-input tools/datapack/release/current-route-edge-evaluation/route-edge-input.json \
+              --output "${EASYSUBWAY_DATAPACK_ROUTE_COVERAGE_AUTHORITY}"
+            remote_publish_ready=true
+          elif [[ "${{ steps.remote-publish-env.outputs.enabled }}" != "true" ]]; then
             echo "release mode requires production publish env" >&2
             exit 1
           else
@@ -718,14 +749,20 @@ jobs:
         run: |
           set -euo pipefail
           test -f tools/datapack/schema/manifest.schema.json
-          node tools/datapack/validate-datapack.mjs \
-            --manifest "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json" \
+          validation_args=(
+            tools/datapack/validate-datapack.mjs
+            --manifest "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json"
             --root "${EASYSUBWAY_DATAPACK_OUTPUT}"
-          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" =~ ^(release-candidate|production-publish)$ ]]; then
-            node tools/datapack/validate-datapack.mjs \
-              --manifest "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json" \
-              --root "${EASYSUBWAY_DATAPACK_OUTPUT}" \
+          )
+          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "release-candidate" ]]; then
+            validation_args+=(
               --require-production
+              --server-route-coverage-evidence "${EASYSUBWAY_DATAPACK_ROUTE_COVERAGE_AUTHORITY}"
+              --server-route-coverage-provenance "${EASYSUBWAY_DATAPACK_STAGE}/current.provenance.json"
+            )
+          fi
+          node "${validation_args[@]}"
+          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "release-candidate" ]]; then
             node -e "const manifest=require(process.env.EASYSUBWAY_DATAPACK_OUTPUT + '/current.json'); if (manifest.channel !== process.env.EASYSUBWAY_DATAPACK_TARGET_CHANNEL) throw new Error('manifest channel must match targetChannel');"
             # 이슈 #2531: 앱이 심고 나가는 수락 순번 하한 아래로는 publish하지 않는다.
             # 이 게이트가 'live >= 하한' 불변식을 지켜 하한을 심은 빌드가 현재 매니페스트를
@@ -739,11 +776,24 @@ jobs:
           fi
           node -e "const manifest=require(process.env.EASYSUBWAY_DATAPACK_OUTPUT + '/current.json'); if (!manifest.packs.every((pack) => Array.isArray(pack.sourceInventory) && pack.sourceInventory.length > 0)) throw new Error('sourceInventory missing');"
 
+      - name: Data Pack Release / Stage current server route bundle candidate
+        if: ${{ steps.release-mode.outputs.mode == 'release-candidate' }}
+        run: |
+          set -euo pipefail
+          node tools/datapack/stage-current-server-route-bundle-candidate.mjs \
+            --datapack-root "${EASYSUBWAY_DATAPACK_OUTPUT}" \
+            --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}" \
+            --station-line-input tools/datapack/release/current-station-line-accessibility/station-line-input.json \
+            --route-edge-input tools/datapack/release/current-route-edge-evaluation/route-edge-input.json \
+            --repository-git-sha "${GITHUB_SHA}" \
+            --key-id "${EASYSUBWAY_DATAPACK_SIGNING_KEY_ID}" \
+            --output "${EASYSUBWAY_DATAPACK_STAGE}/server-route-bundle"
+
       - name: Data Pack Release / Validate accessibility source coverage
         if: ${{ steps.release-mode.outputs.mode == 'release-candidate' }}
         run: |
           set -euo pipefail
-          evaluation_at="$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
+          evaluation_at="$(node -e 'const fs=require("fs"); const buildSpec=JSON.parse(fs.readFileSync(process.env.EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH,"utf8")); if (typeof buildSpec.publishedAt !== "string") throw new Error("buildSpec.publishedAt is required"); process.stdout.write(buildSpec.publishedAt);')"
           node tools/datapack/build-accessibility-source-coverage-report.mjs \
             --manifest "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json" \
             --manifest-root "${EASYSUBWAY_DATAPACK_OUTPUT}" \
@@ -800,18 +850,38 @@ jobs:
         if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' }}
         run: |
           set -euo pipefail
-          node tools/datapack/validate-datapack.mjs \
-            --manifest "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json" \
+          validation_args=(
+            tools/datapack/validate-datapack.mjs
+            --manifest "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json"
             --root "${EASYSUBWAY_DATAPACK_STAGE}"
+          )
+          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "release-candidate" ]]; then
+            validation_args+=(
+              --require-production
+              --server-route-coverage-evidence "${EASYSUBWAY_DATAPACK_ROUTE_COVERAGE_AUTHORITY}"
+              --server-route-coverage-provenance "${EASYSUBWAY_DATAPACK_STAGE}/current.provenance.json"
+            )
+          fi
+          node "${validation_args[@]}"
 
       - name: Data Pack Release / Stage manifest
         if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' }}
         run: |
           set -euo pipefail
           cp "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json" "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json"
-          node tools/datapack/validate-datapack.mjs \
-            --manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json" \
+          validation_args=(
+            tools/datapack/validate-datapack.mjs
+            --manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json"
             --root "${EASYSUBWAY_DATAPACK_STAGE}"
+          )
+          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "release-candidate" ]]; then
+            validation_args+=(
+              --require-production
+              --server-route-coverage-evidence "${EASYSUBWAY_DATAPACK_ROUTE_COVERAGE_AUTHORITY}"
+              --server-route-coverage-provenance "${EASYSUBWAY_DATAPACK_STAGE}/current.provenance.json"
+            )
+          fi
+          node "${validation_args[@]}"
 
       - name: Data Pack Release / Write route graph topology evidence
         if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' }}
@@ -835,6 +905,16 @@ jobs:
       - name: Data Pack Release / Validate ITX-청춘 coverage contract
         if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' }}
         run: node tools/ci/data-test-discovery.mjs run --class deterministic-release --max-workers 1
+
+      - name: Data Pack Release / Configure candidate execution evidence
+        if: ${{ steps.release-mode.outputs.mode == 'release-candidate' }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${EASYSUBWAY_DATAPACK_EXECUTION_EVIDENCE_DIR}"
+          {
+            echo "EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE=${EASYSUBWAY_DATAPACK_EXECUTION_EVIDENCE_DIR}/release-evidence-bundle.json"
+            echo "EASYSUBWAY_DATAPACK_RELEASE_DECISION=${EASYSUBWAY_DATAPACK_EXECUTION_EVIDENCE_DIR}/release-decision.json"
+          } >> "${GITHUB_ENV}"
 
       - name: Data Pack Release / Write release evidence bundle
         if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' }}
@@ -1021,7 +1101,7 @@ jobs:
           if [[ -n "${EASYSUBWAY_ANDROID_EVIDENCE_PATH}" ]]; then
             bundle_args+=(--mobile-evidence "${EASYSUBWAY_ANDROID_EVIDENCE_PATH}")
           fi
-          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" =~ ^(release-candidate|production-publish)$ ]]; then
+          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "production-publish" ]]; then
             bundle_args+=(--require-pass)
           fi
           node tools/datapack/validate-release-evidence-bundle.mjs "${bundle_args[@]}"
@@ -1130,6 +1210,17 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Data Pack Release / Upload candidate execution evidence
+        if: ${{ steps.release-mode.outputs.mode == 'release-candidate' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: easysubway-datapack-candidate-execution-evidence-${{ github.run_id }}
+          path: |
+            ${{ env.EASYSUBWAY_DATAPACK_EXECUTION_EVIDENCE_DIR }}/release-evidence-bundle.json
+            ${{ env.EASYSUBWAY_DATAPACK_EXECUTION_EVIDENCE_DIR }}/release-decision.json
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Data Pack Release / Publish staged data packs to object storage
         if: ${{ steps.release-mode.outputs.mode == 'production-publish' && steps.remote-publish-env.outputs.enabled == 'true' && steps.release-decision.outputs.productionWriteAllowed == 'true' && github.ref == 'refs/heads/main' }}
         id: production-publish
@@ -1156,6 +1247,8 @@ jobs:
             --manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json" \
             --root "${EASYSUBWAY_DATAPACK_STAGE}" \
             --require-production \
+            --server-route-coverage-evidence "${EASYSUBWAY_DATAPACK_STAGE}/server-route-coverage-authority.json" \
+            --server-route-coverage-provenance "${EASYSUBWAY_DATAPACK_STAGE}/current.provenance.json" \
             --max-public-catalog-user-version 14
           node tools/datapack/publish-object-storage.mjs \
             --plan "${EASYSUBWAY_DATAPACK_PUBLISH_PLAN}" \
@@ -1232,7 +1325,9 @@ jobs:
             if node tools/datapack/validate-remote-datapack-artifact.mjs \
               --manifest-url "${EASYSUBWAY_DATA_PACK_BASE_URL%/}/catalog/current.json" \
               --output "${EASYSUBWAY_DATAPACK_REMOTE_VALIDATION}" \
-              --require-production; then
+              --require-production \
+              --server-route-coverage-evidence "${EASYSUBWAY_DATAPACK_STAGE}/server-route-coverage-authority.json" \
+              --server-route-coverage-provenance "${EASYSUBWAY_DATAPACK_STAGE}/current.provenance.json"; then
               if node - "${EASYSUBWAY_DATAPACK_REMOTE_VALIDATION}/remote-datapack-validation-summary.json" <<'NODE'
           const fs = require("fs");
           const summary = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
@@ -1512,7 +1607,7 @@ jobs:
           NODE
 
       - name: Data Pack Release / Upload release decision artifact
-        if: ${{ always() && steps.release-decision.outputs.outcome != '' }}
+        if: ${{ always() && steps.release-mode.outputs.mode != 'release-candidate' && steps.release-decision.outputs.outcome != '' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: easysubway-datapack-release-decision-${{ github.run_id }}

@@ -1,0 +1,69 @@
+name: KRIC EXIT Path Source Admission
+
+on:
+  workflow_run:
+    workflows: ["KRIC EXIT Path Provider Snapshot"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      providerRunId:
+        description: Exact retained Provider workflow run ID
+        required: true
+        type: string
+      expectedProviderHeadSha:
+        description: Exact retained Provider workflow head SHA
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  admit:
+    if: ${{ (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'workflow_dispatch' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository) || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
+    name: Admit immutable KRIC EXIT source snapshot
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout source workflow head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
+
+      - name: Build automatic immutable KRIC EXIT source admission
+        if: ${{ github.event_name == 'workflow_run' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node tools/datapack/run-current-kric-exit-path-source-admission.mjs
+          --event-path "${GITHUB_EVENT_PATH}"
+          --output-directory "${RUNNER_TEMP}/current-kric-exit-path-source-admission"
+
+      - name: Build retained-run immutable KRIC EXIT source admission
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PROVIDER_RUN_ID: ${{ inputs.providerRunId }}
+          EXPECTED_PROVIDER_HEAD_SHA: ${{ inputs.expectedProviderHeadSha }}
+        run: >-
+          node tools/datapack/run-current-kric-exit-path-source-admission.mjs
+          --provider-run-id "${PROVIDER_RUN_ID}"
+          --expected-provider-head-sha "${EXPECTED_PROVIDER_HEAD_SHA}"
+          --output-directory "${RUNNER_TEMP}/current-kric-exit-path-source-admission"
+
+      - name: Upload approved KRIC EXIT source admission
+        if: ${{ success() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: kric-exit-path-source-admission-${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || inputs.providerRunId }}
+          path: ${{ runner.temp }}/current-kric-exit-path-source-admission
+          if-no-files-found: error
+          retention-days: 14

@@ -47,8 +47,20 @@ const PROVIDER_SCOPE_KEYS = [
   "lineId", "lnCd", "mreaWideCd", "operatorId", "railOprIsttCd", "regionId",
 ];
 const REQUIRED_PACK_ARRAYS = ["lines", "networkEdges", "operators", "stationLines", "stations"];
+const COVERAGE_SELECTOR_NATIONWIDE = "nationwide";
+const COVERAGE_SELECTOR_CAPITAL_SEOUL_METRO_PRODUCTION = "capital-seoul-metro-production";
+const CAPITAL_SEOUL_METRO_QUERY_COUNTS = new Map([
+  ["수도권 6호선", 78],
+  ["수도권 5호선", 110],
+  ["수도권 2호선", 102],
+  ["수도권 4호선", 100],
+  ["수도권 신분당", 30],
+]);
 
-export function buildCurrentKricExitCollectionPlan(input, { now = new Date() } = {}) {
+export function buildCurrentKricExitCollectionPlan(
+  input,
+  { now = new Date(), coverageSelector = COVERAGE_SELECTOR_NATIONWIDE } = {},
+) {
   assertKeys(input, INPUT_KEYS, "current EXIT input keys");
   const sources = Object.fromEntries(INPUT_KEYS.map((key) => {
     const label = key.replace(/Bytes$/, "");
@@ -60,23 +72,33 @@ export function buildCurrentKricExitCollectionPlan(input, { now = new Date() } =
   const targets = validateCoverageTargets(sources.coverageTargets.value);
   const providerCodeCatalog = validateProviderCodeCatalog(sources.providerCodeCatalog.value);
   const routeRosters = validateRouteRosters(sources.routeRosters.value, targets);
+  validateCandidateLinePartition(pack.lines, targets);
+  const selectedCoverageScopes = selectCoverageScopes(pack, targets, coverageSelector);
+  const requiresIncheonTopology = coverageSelector === COVERAGE_SELECTOR_NATIONWIDE;
   const incheonAdmission = admittedIncheonTopologyEvidence({
     sourceInventory: sources.sourceInventory.value,
     snapshot: sources.incheonTopology.value,
     snapshotBytes: sources.incheonTopology.bytes,
     now,
+    requireFresh: requiresIncheonTopology,
   });
-  materializeIncheonNetworkEdges(pack, sources.incheonTopology.value, incheonAdmission);
+  // The capital-only plan authenticates the mandatory input but never consumes its edges.
+  if (requiresIncheonTopology) {
+    materializeIncheonNetworkEdges(pack, sources.incheonTopology.value, incheonAdmission);
+  }
 
   const linesById = uniqueMap(pack.lines, "id", "canonical line");
-  const activeLineIds = validateCandidateLinePartition(pack.lines, targets);
+  const activeLineIds = new Set(selectedCoverageScopes.map(({ lineId }) => lineId));
   const coverageScopes = uniqueMap(
-    targets.activeLineScopes,
+    selectedCoverageScopes,
     (scope) => `${scope.regionId}\0${scope.operatorId}\0${scope.lineId}`,
     "active line scope",
   );
   const expectedProviderScopes = providerLineScopesFor(providerCodeCatalog, coverageScopes, linesById);
-  if (canonicalJson(expectedProviderScopes) !== canonicalJson(routeRosters.providerScopes)) {
+  const selectedRouteRosters = coverageSelector === COVERAGE_SELECTOR_CAPITAL_SEOUL_METRO_PRODUCTION
+    ? selectRouteRosters(routeRosters, expectedProviderScopes)
+    : routeRosters;
+  if (canonicalJson(expectedProviderScopes) !== canonicalJson(selectedRouteRosters.providerScopes)) {
     throw new Error("KRIC provider scope set mismatch");
   }
 
@@ -88,10 +110,10 @@ export function buildCurrentKricExitCollectionPlan(input, { now = new Date() } =
     linesById,
   );
   const roster = buildKricAccessibilityRoster({
-    activeLineScopes: targets.activeLineScopes,
+    activeLineScopes: selectedCoverageScopes,
     fixture: { providerLineScopes: expectedProviderScopes },
     canonicalStationLines,
-    routeRosters,
+    routeRosters: selectedRouteRosters,
   });
   const providerScopeByTuple = uniqueMap(
     expectedProviderScopes,
@@ -137,6 +159,9 @@ export function buildCurrentKricExitCollectionPlan(input, { now = new Date() } =
   const routeEdges = buildRouteEdges(pack.networkEdges, activeLineIds, new Set(
     stationLines.map(({ stationId, lineId }) => `${stationId}\0${lineId}`),
   ));
+  if (coverageSelector === COVERAGE_SELECTOR_CAPITAL_SEOUL_METRO_PRODUCTION) {
+    assertCapitalSeoulMetroRouteSymmetry(routeEdges);
+  }
   const sourceIdentity = canonicalObject({
     canonicalPackSha256: sources.canonicalPack.sha256,
     coverageTargetsSha256: sources.coverageTargets.sha256,
@@ -158,6 +183,9 @@ export function buildCurrentKricExitCollectionPlan(input, { now = new Date() } =
     topologySha256: sha256(Buffer.from(canonicalJson(routeEdges))),
   });
   const plan = planKricExitPathCollection({ candidate, stationLines, providerMappings, routeEdges });
+  if (coverageSelector === COVERAGE_SELECTOR_CAPITAL_SEOUL_METRO_PRODUCTION) {
+    assertCapitalSeoulMetroProductionCoverage(plan, linesById);
+  }
   canonicalKricExitPathCollectionPlanJson(plan);
   return plan;
 }
@@ -230,11 +258,12 @@ function validateCandidateLinePartition(lines, targets) {
       throw new Error(`inactive line exclusion evidence mismatch: ${lineId}`);
     }
   }
+  if (inactiveLineIds.size === 0) throw new Error("candidate line scope partition mismatch");
   for (const lineId of activeLineIds) {
     if (!packLineIds.has(lineId) || inactiveLineIds.has(lineId)) throw new Error("candidate line scope partition mismatch");
   }
   for (const lineId of inactiveLineIds) {
-    if (!packLineIds.has(lineId)) throw new Error("candidate line scope partition mismatch");
+    if (packLineIds.has(lineId)) throw new Error("candidate line scope partition mismatch");
   }
   for (const lineId of packLineIds) {
     if (activeLineIds.has(lineId) === inactiveLineIds.has(lineId)) {
@@ -242,6 +271,94 @@ function validateCandidateLinePartition(lines, targets) {
     }
   }
   return activeLineIds;
+}
+
+function selectCoverageScopes(pack, targets, coverageSelector) {
+  if (coverageSelector === COVERAGE_SELECTOR_NATIONWIDE) return targets.activeLineScopes;
+  if (coverageSelector !== COVERAGE_SELECTOR_CAPITAL_SEOUL_METRO_PRODUCTION) {
+    throw new Error("EXIT collection-plan coverage selector mismatch");
+  }
+  const evidence = parseProductionCoverageEvidence(pack.metadata?.productionCoverageEvidence);
+  const stationLineCoverage = evidence.filter(({ sourceDomain }) => sourceDomain === "station_line_membership");
+  if (stationLineCoverage.length !== 1) throw new Error("capital Seoul Metro production coverage metadata mismatch");
+  const [{ regionId, operatorId }] = stationLineCoverage;
+  const capitalLineIds = new Set(targets.activeLineScopes
+    .filter((scope) => scope.regionId === regionId)
+    .map(({ lineId }) => lineId));
+  const selectedLines = pack.lines
+    .filter((line) => line.operatorId === operatorId && capitalLineIds.has(line.id))
+    .sort((left, right) => compareBytes(left.id, right.id));
+  const selectedLineIds = new Set(selectedLines.map(({ id }) => id));
+  const selected = targets.activeLineScopes.filter((scope) => (
+    scope.regionId === regionId && selectedLineIds.has(scope.lineId)
+  ));
+  if (selected.length === 0) throw new Error("capital Seoul Metro production coverage membership mismatch");
+  return selected;
+}
+
+function parseProductionCoverageEvidence(value) {
+  if (typeof value !== "string" || value === "") {
+    throw new Error("capital Seoul Metro production coverage metadata mismatch");
+  }
+  let evidence;
+  try {
+    evidence = JSON.parse(value);
+  } catch {
+    throw new Error("capital Seoul Metro production coverage metadata mismatch");
+  }
+  if (!Array.isArray(evidence)) throw new Error("capital Seoul Metro production coverage metadata mismatch");
+  for (const row of evidence) {
+    if (!row || typeof row !== "object" || Array.isArray(row)) {
+      throw new Error("capital Seoul Metro production coverage metadata mismatch");
+    }
+    requiredString(row.regionId, "production coverage regionId");
+    requiredString(row.operatorId, "production coverage operatorId");
+    requiredString(row.sourceDomain, "production coverage sourceDomain");
+  }
+  return evidence;
+}
+
+function selectRouteRosters(routeRosters, expectedProviderScopes) {
+  const scopeKeys = new Set(expectedProviderScopes.map((scope) => providerScopeKey(scope)));
+  const providerScopes = routeRosters.providerScopes.filter((scope) => scopeKeys.has(providerScopeKey(scope)));
+  const requestKeys = new Set(providerScopes.map(({ mreaWideCd, lnCd }) => `${mreaWideCd}\0${lnCd}`));
+  const rosters = routeRosters.rosters.filter(({ mreaWideCd, lnCd }) => requestKeys.has(`${mreaWideCd}\0${lnCd}`));
+  return { ...routeRosters, providerScopes, providerScopeCount: providerScopes.length, rosters, requestCount: rosters.length };
+}
+
+function providerScopeKey({ regionId, operatorId, lineId, mreaWideCd, lnCd, railOprIsttCd }) {
+  return `${regionId}\0${operatorId}\0${lineId}\0${mreaWideCd}\0${lnCd}\0${railOprIsttCd}`;
+}
+
+function assertCapitalSeoulMetroProductionCoverage(plan, linesById) {
+  if (plan.providerMappings.length !== 213 || plan.stationLineQueries.length !== 213
+    || new Set(plan.providerMappings.map(({ stationId }) => stationId)).size !== 199
+    || plan.routeEdges.length !== 420 || plan.queryPlan.length !== 420) {
+    throw new Error("capital Seoul Metro production coverage count mismatch");
+  }
+  const queryCounts = new Map();
+  for (const edge of plan.routeEdges) {
+    const line = linesById.get(edge.lineId);
+    const lineName = requiredString(line?.nameKo, "capital Seoul Metro line name");
+    queryCounts.set(lineName, (queryCounts.get(lineName) ?? 0) + 1);
+  }
+  if (queryCounts.size !== CAPITAL_SEOUL_METRO_QUERY_COUNTS.size
+    || [...CAPITAL_SEOUL_METRO_QUERY_COUNTS].some(([lineName, count]) => queryCounts.get(lineName) !== count)) {
+    throw new Error("capital Seoul Metro production coverage topology mismatch");
+  }
+}
+
+function assertCapitalSeoulMetroRouteSymmetry(routeEdges) {
+  const edgeCounts = new Map();
+  for (const { lineId, fromStationId, toStationId } of routeEdges) {
+    const key = `${lineId}\0${fromStationId}\0${toStationId}`;
+    edgeCounts.set(key, (edgeCounts.get(key) ?? 0) + 1);
+  }
+  for (const { lineId, fromStationId, toStationId } of routeEdges) {
+    if (edgeCounts.get(`${lineId}\0${toStationId}\0${fromStationId}`) !== 1) {
+      throw new Error("capital Seoul Metro production route symmetry mismatch");
+    }
+  }
 }
 
 function validateRouteRosters(value, targets) {
@@ -385,18 +502,31 @@ function compareBytes(left, right) {
 function parseArgs(argv) {
   const flags = [
     "canonical-pack", "coverage-targets", "provider-code-catalog", "route-rosters",
-    "source-inventory", "incheon-topology", "output",
+    "source-inventory", "incheon-topology", "coverage-selector", "output",
   ];
-  if (argv.length !== flags.length * 2) throw new Error("EXIT collection-plan arguments mismatch");
+  const pathFlags = new Set(flags.filter((flag) => flag !== "coverage-selector"));
+  if (argv.length !== (flags.length - 1) * 2 && argv.length !== flags.length * 2) {
+    throw new Error("EXIT collection-plan arguments mismatch");
+  }
   const result = {};
   for (let index = 0; index < argv.length; index += 2) {
     const flag = argv[index]?.replace(/^--/, "");
     if (!flags.includes(flag) || result[flag] !== undefined) throw new Error("EXIT collection-plan arguments mismatch");
     const value = argv[index + 1];
-    if (typeof value !== "string" || !path.isAbsolute(value)) throw new Error(`--${flag} must be an absolute path`);
-    result[flag] = path.resolve(value);
+    if (flag === "coverage-selector") {
+      if (value !== COVERAGE_SELECTOR_NATIONWIDE && value !== COVERAGE_SELECTOR_CAPITAL_SEOUL_METRO_PRODUCTION) {
+        throw new Error("EXIT collection-plan coverage selector mismatch");
+      }
+      result[flag] = value;
+    } else {
+      if (typeof value !== "string" || !path.isAbsolute(value)) throw new Error(`--${flag} must be an absolute path`);
+      result[flag] = path.resolve(value);
+    }
   }
-  if (flags.some((flag) => result[flag] === undefined)) throw new Error("EXIT collection-plan arguments mismatch");
+  if ([...pathFlags].some((flag) => result[flag] === undefined)) {
+    throw new Error("EXIT collection-plan arguments mismatch");
+  }
+  result["coverage-selector"] ??= COVERAGE_SELECTOR_NATIONWIDE;
   return result;
 }
 
@@ -466,7 +596,7 @@ export async function main(argv, { log = console.log, now = new Date() } = {}) {
   const snapshots = Object.fromEntries(entries);
   const plan = buildCurrentKricExitCollectionPlan(Object.fromEntries(
     Object.entries(snapshots).map(([key, snapshot]) => [`${key}Bytes`, snapshot.bytes]),
-  ), { now });
+  ), { now, coverageSelector: args["coverage-selector"] });
   await Promise.all(Object.values(snapshots).map(assertSnapshotUnchanged));
   await outputMustBeAbsent(args.output);
   const bytes = Buffer.from(canonicalKricExitPathCollectionPlanJson(plan));

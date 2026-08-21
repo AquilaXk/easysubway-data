@@ -17,6 +17,19 @@ const EVIDENCE_KEYS = [
   "sourceId", "sourceSnapshotId", "evidenceRawSha256", "providerRecordHash", "capturedAt", "freshUntil",
   "provenanceId", "licenseId", "mappingContractVersion", "materializerVersion", "evidenceKind", "evidenceReason",
 ];
+const TERMINAL_COMMON_KEYS = [
+  ...EVIDENCE_KEYS,
+  "terminalPolicy", "providerResultCode", "strictRouteEligible",
+  "strictRouteEligibleReason", "statusMeaning",
+  "confidence", "providerResponseSha256", "evidenceHash",
+];
+const TERMINAL_FACILITY_EVIDENCE_KEYS = [...TERMINAL_COMMON_KEYS, "facilityType", "installationStatus", "operationalStatus"];
+const TERMINAL_EXIT_EVIDENCE_KEYS = TERMINAL_COMMON_KEYS;
+const TERMINAL_FACILITY_TYPES = ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"];
+const TERMINAL_FACILITY_REASON = "시설 존재·부재가 검증되지 않아 경로를 차단했습니다.";
+const TERMINAL_EXIT_REASON = "출구 이동경로가 검증되지 않아 경로를 차단했습니다.";
+const TERMINAL_TUPLE = { stationId: "station-b35616704ce3", lineId: "seoul-2", operatorId: "seoul-metro", sourceId: "kric-station-convenience-standard" };
+const TERMINAL_EXIT_SOURCE_ID = "kric-station-movement-standard";
 const STATION_LINE_KEYS = ["stationId", "lineId", "operatorId"];
 
 export function materializeStationLineAccessibility(input) {
@@ -102,20 +115,22 @@ function assertMappedEvidence(evidence, lineIndex) {
 function addEvidence(byTarget, evidence) {
   const key = `${stationLineKey(evidence)}\u0000${evidence.domain}`;
   const existing = byTarget.get(key);
-  if (!existing) return byTarget.set(key, evidence);
+  const aggregate = evidence.terminal && evidence.domain === "FACILITY";
+  if (!existing) return byTarget.set(key, aggregate ? [evidence] : evidence);
+  if (Array.isArray(existing) && aggregate) return existing.push(evidence);
   if (canonicalJson(existing) === canonicalJson(evidence)) throw new Error("duplicate evidence row");
   throw new Error("conflicting evidence rows");
 }
 
 function materializedRows(lines, candidate, evidenceByTarget, observedAt) {
   return lines.flatMap((line) => [...DOMAINS].sort(compareBytes).map((domain) => {
-    const evidence = evidenceByTarget.get(`${stationLineKey(line)}\u0000${domain}`);
+    const evidence = normalizedEvidence(evidenceByTarget.get(`${stationLineKey(line)}\u0000${domain}`));
     return materializedRow(line, domain, candidate, evidence, observedAt);
   }));
 }
 
 function materializedRow(line, domain, candidate, evidence, observedAt) {
-  return canonicalObject({
+  const row = {
     ...candidate,
     stationId: line.stationId,
     lineId: line.lineId,
@@ -132,11 +147,19 @@ function materializedRow(line, domain, candidate, evidence, observedAt) {
     licenseId: evidence?.licenseId ?? null,
     evidenceKind: evidence?.evidenceKind ?? null,
     evidenceReason: evidence?.evidenceReason ?? null,
-  });
+  };
+  if (evidence?.state === "UNVERIFIED_EVIDENCE_BLOCKED") {
+    Object.assign(row, {
+      terminalPolicy: evidence.terminalPolicy,
+      providerResultCode: evidence.providerResultCode,
+      providerResponseSha256: evidence.providerResponseSha256,
+    });
+  }
+  return canonicalObject(row);
 }
 
 function summarizeStates(rows) {
-  const summary = Object.fromEntries(STATES.map((state) => [state, 0]));
+  const summary = Object.fromEntries([...STATES, ...(rows.some(({ state }) => state === "UNVERIFIED_EVIDENCE_BLOCKED") ? ["UNVERIFIED_EVIDENCE_BLOCKED"] : [])].map((state) => [state, 0]));
   for (const row of rows) summary[row.state] += 1;
   return summary;
 }
@@ -152,12 +175,16 @@ export function canonicalStationLineAccessibilityPayloadJson(result) {
 }
 
 function validateEvidence(row, candidate, observedAt) {
-  assertKeys(row, EVIDENCE_KEYS, "evidence row keys");
+  const terminal = row?.evidenceKind === "UNVERIFIED_EVIDENCE_BLOCKED";
+  const keys = terminal
+    ? row?.domain === "FACILITY" ? TERMINAL_FACILITY_EVIDENCE_KEYS : TERMINAL_EXIT_EVIDENCE_KEYS
+    : EVIDENCE_KEYS;
+  assertKeys(row, keys, "evidence row keys");
   assertEvidenceIdentity(row, candidate);
   assertEvidenceTextFields(row);
   assertEvidenceState(row);
   const timestamps = normalizedEvidenceTimestamps(row, observedAt);
-  return canonicalObject({ ...row, ...timestamps });
+  return canonicalObject({ ...row, ...timestamps, terminal });
 }
 
 function assertEvidenceIdentity(row, candidate) {
@@ -177,12 +204,18 @@ function assertEvidenceTextFields(row) {
   for (const key of ["candidateId", "stationSetSha256", "sourceSetSha256", "stationId", "lineId", "operatorId", "domain", "state", "sourceId", "sourceSnapshotId", "provenanceId", "licenseId", "mappingContractVersion", "materializerVersion", "evidenceKind"]) {
     assertNonBlank(row[key], `evidence ${key}`);
   }
-  validateSha256Fields(row, ["stationSetSha256", "sourceSetSha256", "evidenceRawSha256", "providerRecordHash"], "evidence");
+  validateSha256Fields(row, ["stationSetSha256", "sourceSetSha256", "evidenceRawSha256"], "evidence");
+  if (row.evidenceKind === "UNVERIFIED_EVIDENCE_BLOCKED") {
+    if (row.providerRecordHash !== null) throw new Error("terminal provider record hash must be null");
+    validateSha256Fields(row, ["providerResponseSha256", "evidenceHash"], "terminal evidence");
+    return;
+  }
+  validateSha256Fields(row, ["providerRecordHash"], "evidence");
 }
 
 function assertEvidenceState(row) {
   if (!DOMAINS.includes(row.domain)) throw new Error("unsupported evidence domain");
-  if (!STATES.includes(row.state) || row.state === "MISSING" || row.state === "STALE") {
+  if ((!STATES.includes(row.state) && row.state !== "UNVERIFIED_EVIDENCE_BLOCKED") || row.state === "MISSING" || row.state === "STALE") {
     throw new Error("unsupported admitted evidence state");
   }
   if (row.state === "NOT_APPLICABLE" && (typeof row.evidenceReason !== "string" || row.evidenceReason.trim() === "")) {
@@ -194,8 +227,45 @@ function assertEvidenceState(row) {
     VERIFIED_ABSENT: ["EXHAUSTIVE_LIST", "EXPLICIT_ZERO"],
     NOT_APPLICABLE: ["CURRENT_APPLICABILITY_RULE"],
     UNKNOWN: [...UNKNOWN_KINDS],
+    UNVERIFIED_EVIDENCE_BLOCKED: ["UNVERIFIED_EVIDENCE_BLOCKED"],
   };
   if (!validKinds[row.state].includes(row.evidenceKind)) throw new Error(`${row.state} evidence kind is not allowed`);
+  if (row.state === "UNVERIFIED_EVIDENCE_BLOCKED") {
+    if (row.providerResultCode !== "03" || row.strictRouteEligible !== false
+      || row.strictRouteEligibleReason !== "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED" || row.confidence !== 0) {
+      throw new Error("terminal evidence contract mismatch");
+    }
+    let hashInput;
+    if (row.domain === "FACILITY") {
+      if (row.terminalPolicy !== "EXACT_TUPLE_PROVIDER_RESULT_03"
+        || row.installationStatus !== "UNKNOWN" || row.operationalStatus !== "UNKNOWN"
+        || row.statusMeaning !== "PROVIDER_RESULT_UNVERIFIED"
+        || !TERMINAL_FACILITY_TYPES.includes(row.facilityType) || row.evidenceReason !== TERMINAL_FACILITY_REASON) {
+        throw new Error("terminal evidence contract mismatch");
+      }
+      for (const [field, expected] of Object.entries(TERMINAL_TUPLE)) {
+        if (row[field] !== expected) throw new Error("terminal evidence tuple mismatch");
+      }
+      hashInput = {
+        sourceSnapshotId: row.sourceSnapshotId, stationId: row.stationId, lineId: row.lineId,
+        operatorId: row.operatorId, facilityType: row.facilityType, terminalPolicy: row.terminalPolicy,
+        providerResponseSha256: row.providerResponseSha256,
+      };
+    } else if (row.domain === "EXIT") {
+      if (row.sourceId !== TERMINAL_EXIT_SOURCE_ID || row.terminalPolicy !== "PROVIDER_NO_DATA_RESULT_03_BLOCKED"
+        || row.statusMeaning !== "PROVIDER_NO_DATA_NOT_ABSENCE" || row.evidenceReason !== TERMINAL_EXIT_REASON) {
+        throw new Error("terminal evidence contract mismatch");
+      }
+      hashInput = {
+        sourceSnapshotId: row.sourceSnapshotId, stationId: row.stationId, lineId: row.lineId,
+        operatorId: row.operatorId, domain: row.domain, terminalPolicy: row.terminalPolicy,
+        providerResponseSha256: row.providerResponseSha256,
+      };
+    } else {
+      throw new Error("terminal evidence contract mismatch");
+    }
+    if (row.evidenceHash !== sha256(canonicalJson(hashInput))) throw new Error("terminal evidence hash mismatch");
+  }
 }
 
 function normalizedEvidenceTimestamps(row, observedAt) {
@@ -210,6 +280,21 @@ function derivedState(evidence, observedAt) {
   if (requiredUtcInstant(evidence.freshUntil, "evidence freshUntil") <= observedAt) return "STALE";
   if (UNKNOWN_KINDS.has(evidence.evidenceKind)) return "UNKNOWN";
   return evidence.state;
+}
+
+function normalizedEvidence(value) {
+  if (!Array.isArray(value)) return value;
+  if (value.length !== TERMINAL_FACILITY_TYPES.length) throw new Error("terminal evidence row count mismatch");
+  const types = new Set(value.map(({ facilityType }) => facilityType));
+  if (types.size !== TERMINAL_FACILITY_TYPES.length || TERMINAL_FACILITY_TYPES.some((type) => !types.has(type))) {
+    throw new Error("terminal evidence facility type mismatch");
+  }
+  const reference = value[0];
+  const identity = ["candidateId", "stationSetSha256", "sourceSetSha256", "stationId", "lineId", "operatorId", "domain", "state", "sourceId", "sourceSnapshotId", "evidenceRawSha256", "capturedAt", "freshUntil", "provenanceId", "licenseId", "mappingContractVersion", "materializerVersion", "evidenceKind", "evidenceReason", "terminalPolicy", "providerResultCode", "strictRouteEligible", "strictRouteEligibleReason", "installationStatus", "operationalStatus", "statusMeaning", "confidence", "providerRecordHash", "providerResponseSha256"];
+  for (const row of value) {
+    if (!row.terminal || identity.some((field) => row[field] !== reference[field])) throw new Error("terminal evidence identity mismatch");
+  }
+  return reference;
 }
 
 function stationLineKey(value) {

@@ -6,6 +6,10 @@
   "publishedAt": "2026-08-14T15:34:07.000Z",
   "releaseSequence": 1,
   "fixturePath": "tools/datapack/fixtures/catalog-fixture.json",
+  "productionScopePolicy": {
+    "path": "tools/datapack/nationwide-coverage-targets.json",
+    "sha256": "925847f9b45844edd573c7e695a92c28b22729c05a592bb48b821e5e707f1641"
+  },
   "sourceSnapshotIds": [
     "snapshot-molit-urban-rail-full-route-fixture",
     "snapshot-seoulmetro-station-line-info-fixture"

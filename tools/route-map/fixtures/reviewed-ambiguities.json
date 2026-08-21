@@ -15,18 +15,19 @@
       "reviewSource": "https://github.com/AquilaXk/easysubway/issues/836"
     },
     {
-      "region": "수도권",
-      "lineId": "line-cbe75f5287a1",
-      "x": 156,
-      "y": 791,
+      "region": "부산권",
+      "lineId": "line-eb7b47920390",
+      "x": 6597,
+      "y": 4425,
       "stationIds": [
-        "station-04529af2869a",
-        "station-bdd848e7e432"
+        "station-080c154ce646",
+        "station-61f6dbfb5d4b"
       ],
-      "reason": "수도권 자기부상 워터파크/용유 source 좌표가 공식 SVG선지도 추출에서 동일하게 제공되는 현 상태를 후속 수동 보정 대상으로 분리",
-      "reviewedAt": "2026-06-26T00:00:00.000Z",
-      "reviewedBy": "QA",
-      "reviewSource": "https://github.com/AquilaXk/easysubway/issues/891"
+      "sourceSha256": "8bd04aa7e94c8e6cd5c1a2dd83fda605e7d892bc66078db57ba8291cee80cdb0",
+      "reason": "동일 tracked Busan v3 SVG source coordinate의 owner-approved two-station overlap",
+      "reviewedAt": "2026-08-15T00:00:00.000Z",
+      "reviewedBy": "Owner",
+      "reviewSource": "https://github.com/AquilaXk/easysubway-data/issues/309"
     }
   ]
 }

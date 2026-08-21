@@ -29,23 +29,32 @@ test("hosted full snapshot은 main 전용 no-input read-only single job이다", 
   assert.doesNotMatch(yml, /strategy:|matrix:|continue-on-error:/);
 });
 
-test("workflow는 current plan 뒤 reviewed collector를 exact once 실행하고 success snapshot만 보존한다", () => {
+test("workflow는 current plan 뒤 collector와 immutable bundle builder를 exact once 실행한다", () => {
   const yml = workflow();
   assert.match(yml, /KRIC_SERVICE_KEY:\s*\$\{\{ secrets\.KRIC_SERVICE_KEY \}\}/);
   assert.equal((yml.match(/build-current-kric-exit-collection-plan\.mjs/g) ?? []).length, 1);
   assert.equal((yml.match(/collect-current-kric-exit-path-provider-snapshot\.mjs/g) ?? []).length, 1);
+  assert.equal((yml.match(/build-current-kric-exit-collection-receipt\.mjs/g) ?? []).length, 1);
   for (const flag of [
     "--canonical-pack", "--coverage-targets", "--provider-code-catalog", "--route-rosters",
-    "--source-inventory", "--incheon-topology", "--output",
+    "--source-inventory", "--incheon-topology", "--coverage-selector", "--output",
   ]) assert.match(yml, new RegExp(flag));
+  assert.match(yml, /--incheon-topology "\$\{GITHUB_WORKSPACE\}\/tools\/datapack\/sources\/incheon-transit-station-info-20260814\.json"/);
+  assert.doesNotMatch(yml, /incheon-transit-station-info-20260813\.json/);
+  assert.match(yml, /--coverage-selector capital-seoul-metro-production/);
   assert.match(yml, /--source-id kric-station-movement-standard/);
   assert.match(yml, /--request-timeout-ms 30000/);
   assert.match(yml, /--request-interval-ms 250/);
   assert.match(yml, /--output "\$\{RUNNER_TEMP\}\/current-kric-exit-snapshot\.json"/);
+  for (const flag of ["--collection-plan", "--provider-snapshot", "--repository", "--repository-sha", "--workflow-run-id", "--output"]) assert.match(yml, new RegExp(flag));
+  assert.match(yml, /--repository "\$\{GITHUB_REPOSITORY\}"/);
+  assert.match(yml, /--repository-sha "\$\{GITHUB_SHA\}"/);
+  assert.match(yml, /--workflow-run-id "\$\{GITHUB_RUN_ID\}"/);
+  assert.match(yml, /--output "\$\{RUNNER_TEMP\}\/current-kric-exit-collection-bundle\.json"/);
 
   assert.equal((yml.match(/actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/g) ?? []).length, 1);
   assert.match(yml, /name:\s+kric-exit-path-provider-snapshot-\$\{\{ github\.run_id \}\}/);
-  assert.match(yml, /path:\s+\$\{\{ runner\.temp \}\}\/current-kric-exit-snapshot\.json/);
+  assert.match(yml, /path:\s+\$\{\{ runner\.temp \}\}\/current-kric-exit-collection-bundle\.json/);
   assert.match(yml, /if-no-files-found:\s*error/);
   assert.match(yml, /retention-days:\s*14/);
   assert.doesNotMatch(yml, /if:\s*\$\{\{ always\(\) \}\}/);
@@ -53,9 +62,9 @@ test("workflow는 current plan 뒤 reviewed collector를 exact once 실행하고
 
 test("workflow와 Data dynamic owned runner는 retry·fallback·untracked network 경계를 추가하지 않는다", () => {
   const yml = workflow();
-  assert.doesNotMatch(yml, /download-artifact|curl|wget|jq|source |set -a|retry|fallback|alternate|format xml/i);
+  assert.doesNotMatch(yml, /download-artifact|curl|wget|jq|source |set -a|retry|fallback|alternate|format xml|\bfind\b|\bwc\b|\bcp\b|\bmv\b|\btar\b/i);
   assert.doesNotMatch(yml, /git (?:add|commit|push)|gh |serviceKey=|echo .*KRIC|printf .*KRIC/i);
-  assert.equal((yml.match(/\bnode tools\//g) ?? []).length, 2);
+  assert.equal((yml.match(/\bnode tools\//g) ?? []).length, 3);
 
   const ci = readFileSync(ciPath, "utf8");
   assert.match(ci, /node tools\/ci\/data-test-discovery\.mjs run --class required-pr/);

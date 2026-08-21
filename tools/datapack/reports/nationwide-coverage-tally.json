@@ -1075,7 +1075,7 @@
     "inventory": {
       "path": "tools/datapack/source-inventory.json",
       "retrievedAt": "2026-06-22",
-      "sha256": "8abdd29eae1dedaf94b6581ad7530cb8ab116750af5b323b0fd5084fbac8f5bb"
+      "sha256": "942b9a21885e79a669e73cb815f58280dd07960f0334109604551235ba5896e9"
     },
     "resolutions": {
       "entryCount": 4,
@@ -1085,7 +1085,7 @@
     },
     "targets": {
       "path": "tools/datapack/nationwide-coverage-targets.json",
-      "sha256": "8bdde12230dfa7f7bdf2e04f70e517f92ddfa0fa2306aea88149a09edd0d21a2",
+      "sha256": "925847f9b45844edd573c7e695a92c28b22729c05a592bb48b821e5e707f1641",
       "targetVersion": "2026-07-13"
     }
   },

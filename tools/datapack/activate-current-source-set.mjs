@@ -10,6 +10,8 @@ import { promisify } from "node:util";
 
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { syncCanonicalFixture } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
+import { assertNoRetiredTransitReferences, projectRetiredTransitLines } from "./project-retired-transit-lines.mjs";
+import { projectCanonicalRouteMapProvenance } from "./project-canonical-route-map-provenance.mjs";
 import { applySchedule } from "./apply-kric-line4-pilot-schedule.mjs";
 import {
   CAPITAL_MAP_LINE_IDS,
@@ -87,6 +89,7 @@ export const CURRENT_SOURCE_ACTIVATION_OUTPUTS = Object.freeze([
 const allowedOutputPaths = new Set(CURRENT_SOURCE_ACTIVATION_OUTPUTS);
 const CURRENT_SOURCE_DOWNSTREAM_OUTPUTS = Object.freeze([
   "tools/datapack/reports/nationwide-coverage-tally.json",
+  "tools/datapack/release/strict-route-regression-report.json",
 ]);
 
 function isAllowedActivationOutput(relativePath) {
@@ -476,11 +479,11 @@ export function activateStaticSourceRevalidations({
     if (revalidation?.snapshot?.sourceId !== sourceId || revalidation?.evidence?.sourceId !== sourceId) {
       throw new Error("static revalidation source order mismatch");
     }
-    const previous = requireOne(
-      sourceSnapshots,
-      ({ snapshotId }) => snapshotId === heads[sourceId],
-      `static revalidation previous ${sourceId}`,
-    );
+    const head = requireOne(sourceSnapshots, ({ snapshotId }) => snapshotId === heads[sourceId], `static revalidation head ${sourceId}`);
+    const reusesCurrentHead = revalidation.snapshot.snapshotId === head.snapshotId;
+    const previous = reusesCurrentHead
+      ? requireOne(sourceSnapshots, ({ snapshotId }) => snapshotId === head.previousSnapshotId, `static revalidation predecessor ${sourceId}`)
+      : head;
     validateStaticRevalidation(
       previous,
       revalidation.snapshot,
@@ -511,27 +514,39 @@ export function activateStaticSourceRevalidations({
           !== governancePolicyBinding.governancePolicySha256)) {
       throw new Error("static revalidation governance policy binding mismatch");
     }
-    nextSnapshots.push({
-      ...structuredClone(revalidation.snapshot),
-      ...governancePolicyBinding,
-    });
     const source = requireOne(nextInventory.sources, ({ id }) => id === sourceId, sourceId);
     if (!source.admissionEvidence || typeof source.admissionEvidence !== "object") {
       throw new Error("static revalidation inventory admission evidence is missing");
     }
-    source.retrievedAt = revalidation.snapshot.retrievedAt.slice(0, 10);
-    source.admissionEvidence.snapshotId = revalidation.snapshot.snapshotId;
-    source.admissionEvidence.revalidationEvidenceSha256 = revalidation.evidence.evidenceSha256;
-    source.admissionEvidence.revalidationResponseSha256 = revalidation.evidence.responseSha256;
-    source.admissionEvidence.revalidatedAt = revalidation.snapshot.retrievedAt;
-    if (revalidation.evidence.outcome === "CONTENT_CHANGE_ADMITTED") {
-      source.admissionEvidence.rawSha256 = revalidation.snapshot.rawSha256;
-      source.admissionEvidence.schemaFingerprint = revalidation.snapshot.schemaFingerprint;
-      source.admissionEvidence.rawObjectUri = revalidation.snapshot.rawObjectUri;
+    if (reusesCurrentHead) {
+      const expectedSnapshot = { ...structuredClone(revalidation.snapshot), ...governancePolicyBinding };
+      const expectedSource = structuredClone(source);
+      applyStaticRevalidationToInventory(expectedSource, revalidation);
+      if (JSON.stringify(head) !== JSON.stringify(expectedSnapshot)
+        || source.retrievedAt !== expectedSource.retrievedAt
+        || JSON.stringify(source.admissionEvidence) !== JSON.stringify(expectedSource.admissionEvidence)) {
+        throw new Error("static revalidation current head reuse identity mismatch");
+      }
+    } else {
+      nextSnapshots.push({ ...structuredClone(revalidation.snapshot), ...governancePolicyBinding });
+      applyStaticRevalidationToInventory(source, revalidation);
     }
   }
   validateLineage(nextSnapshots);
   return { sourceSnapshots: nextSnapshots, sourceInventory: nextInventory };
+}
+
+function applyStaticRevalidationToInventory(source, revalidation) {
+  source.retrievedAt = revalidation.snapshot.retrievedAt.slice(0, 10);
+  source.admissionEvidence.snapshotId = revalidation.snapshot.snapshotId;
+  source.admissionEvidence.revalidationEvidenceSha256 = revalidation.evidence.evidenceSha256;
+  source.admissionEvidence.revalidationResponseSha256 = revalidation.evidence.responseSha256;
+  source.admissionEvidence.revalidatedAt = revalidation.snapshot.retrievedAt;
+  if (revalidation.evidence.outcome === "CONTENT_CHANGE_ADMITTED") {
+    source.admissionEvidence.rawSha256 = revalidation.snapshot.rawSha256;
+    source.admissionEvidence.schemaFingerprint = revalidation.snapshot.schemaFingerprint;
+    source.admissionEvidence.rawObjectUri = revalidation.snapshot.rawObjectUri;
+  }
 }
 
 export function activateIncheonTopologyAdmission({
@@ -870,6 +885,23 @@ function jsonBytes(value, pretty = true) {
   return Buffer.from(`${JSON.stringify(value, null, pretty ? 2 : 0)}\n`);
 }
 
+export function projectCurrentCanonicalRouteMapProvenance({
+  canonical,
+  inactiveLineExclusions,
+  basemapManifest,
+  dorasanCsvBytes,
+  reviewedAmbiguities,
+}) {
+  const projected = projectRetiredTransitLines(canonical, inactiveLineExclusions);
+  assertNoRetiredTransitReferences(projected, inactiveLineExclusions);
+  return projectCanonicalRouteMapProvenance({
+    fixture: projected,
+    basemapManifest,
+    dorasanCsvBytes,
+    reviewedAmbiguities,
+  });
+}
+
 function requiredSha(value, label) {
   if (!SHA256.test(value ?? "")) throw new Error(`${label} must be a lowercase sha256`);
   return value;
@@ -883,6 +915,7 @@ export function buildCurrentCandidateSpec({
   currentTopologyBytes,
   currentTopologyPath,
   topologyReverificationBytes,
+  productionScopePolicyBytes,
 }) {
   if (!baseSpec || baseSpec.schemaVersion !== 1
     || baseSpec.artifactKind !== "datapack-candidate-build-spec"
@@ -891,7 +924,8 @@ export function buildCurrentCandidateSpec({
   }
   if (!Buffer.isBuffer(sourceInventoryBytes)
     || !Buffer.isBuffer(currentTopologyBytes)
-    || !Buffer.isBuffer(topologyReverificationBytes)) {
+    || !Buffer.isBuffer(topologyReverificationBytes)
+    || !Buffer.isBuffer(productionScopePolicyBytes)) {
     throw new Error("current capital topology candidate identity is invalid");
   }
   const topologySnapshotId = exactCurrentTopologySnapshotIdentity({
@@ -907,6 +941,10 @@ export function buildCurrentCandidateSpec({
   spec.builderGitSha = builderGitSha;
   spec.builderVersion = "build-datapack.mjs@26";
   spec.fixturePath = "tools/datapack/release/capital-production-canonical-pack.json";
+  spec.productionScopePolicy = {
+    path: "tools/datapack/nationwide-coverage-targets.json",
+    sha256: sha256(productionScopePolicyBytes),
+  };
   spec.networkEdgeEvidence = {
     ...spec.networkEdgeEvidence,
     sourceInventory: {
@@ -1460,9 +1498,10 @@ export async function generateCurrentSourceActivation({
       : readRegularBytes(root, relativePath);
     const [capitalTopologyBytes, incheonTopologyBytes, rawArtifact, baselineTopologyBytes, sourceSnapshotBytes,
       sourceInventoryBytes, productionInputBytes, quoteBundleBytes, baseSpecBytes,
-      canonicalBytes,
+      canonicalBytes, productionScopePolicyBytes,
       molitRevalidationSnapshotBytes, molitRevalidationEvidenceBytes,
-      seoulRevalidationSnapshotBytes, seoulRevalidationEvidenceBytes] = await Promise.all([
+      seoulRevalidationSnapshotBytes, seoulRevalidationEvidenceBytes,
+      basemapManifestBytes, dorasanCsvBytes, reviewedAmbiguitiesBytes] = await Promise.all([
       readRegularBytes(root, capitalTopologyPath, "current capital topology"),
       readRegularBytes(root, incheonTopologyPath, "current Incheon topology"),
       fetchCurrentRawArtifact(temporaryRoot, handoff),
@@ -1473,10 +1512,14 @@ export async function generateCurrentSourceActivation({
       readRegularBytes(root, "tools/datapack/official-od-fare-quotes.json"),
       readMutableInput("tools/datapack/release/candidate-build-spec.json"),
       readMutableInput("tools/datapack/release/capital-production-canonical-pack.json"),
+      readRegularBytes(root, "tools/datapack/nationwide-coverage-targets.json", "production scope policy"),
       readRegularBytes(root, molitRevalidationSnapshotPath, "MOLIT revalidation snapshot"),
       readRegularBytes(root, molitRevalidationEvidencePath, "MOLIT revalidation evidence"),
       readRegularBytes(root, seoulRevalidationSnapshotPath, "Seoul revalidation snapshot"),
       readRegularBytes(root, seoulRevalidationEvidencePath, "Seoul revalidation evidence"),
+      readRegularBytes(root, "tools/route-map/basemap-build-manifest.json", "route-map basemap manifest"),
+      readRegularBytes(root, "tools/datapack/sources/seoul-wikimedia-svg-route-map-20260624.csv", "Dorasan route-map CSV"),
+      readRegularBytes(root, "tools/route-map/fixtures/reviewed-ambiguities.json", "reviewed route-map ambiguities"),
     ]);
     const sourceInventory = parseJson(sourceInventoryBytes, "source inventory");
     const quoteBundle = parseJson(quoteBundleBytes, "official OD fare quote bundle");
@@ -1534,8 +1577,13 @@ export async function generateCurrentSourceActivation({
       "--input", contained(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[2]),
       "--output", reviewedPath,
     ]);
-    const reviewedBytes = await readFile(reviewedPath);
-    const reviewed = parseJson(reviewedBytes, "current reviewed pack");
+    const productionScopePolicy = parseJson(productionScopePolicyBytes, "production scope policy");
+    const reviewed = projectRetiredTransitLines(
+      parseJson(await readFile(reviewedPath), "current reviewed pack"),
+      productionScopePolicy.inactiveLineExclusions,
+    );
+    const reviewedBytes = jsonBytes(reviewed);
+    await writeFile(reviewedPath, reviewedBytes);
     const reviewedCapital = reviewed.packs?.find(({ id }) => id === "capital");
     if (!reviewedCapital) throw new Error("current reviewed capital pack is missing");
     const canonical = syncCanonicalFixture(
@@ -1561,7 +1609,14 @@ export async function generateCurrentSourceActivation({
       capitalTopologySnapshotId,
       capitalAdmissions,
     );
-    const nextCanonicalBytes = jsonBytes(canonical, false);
+    const projectedCanonical = projectCurrentCanonicalRouteMapProvenance({
+      canonical,
+      inactiveLineExclusions: productionScopePolicy.inactiveLineExclusions,
+      basemapManifest: parseJson(basemapManifestBytes, "route-map basemap manifest"),
+      dorasanCsvBytes,
+      reviewedAmbiguities: parseJson(reviewedAmbiguitiesBytes, "reviewed route-map ambiguities"),
+    });
+    const nextCanonicalBytes = jsonBytes(projectedCanonical, false);
     await writeTempFile(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[4], nextCanonicalBytes);
 
     const nextSpec = buildCurrentCandidateSpec({
@@ -1572,6 +1627,7 @@ export async function generateCurrentSourceActivation({
       currentTopologyBytes: capitalTopologyBytes,
       currentTopologyPath: capitalTopologyPath,
       topologyReverificationBytes: primaryBytes.reverification,
+      productionScopePolicyBytes,
     });
     await writeTempFile(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[5], jsonBytes(nextSpec));
     await prepareReleaseEvidenceRoot(temporaryRoot, nextSpec);

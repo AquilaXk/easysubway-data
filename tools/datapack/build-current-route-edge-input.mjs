@@ -8,6 +8,7 @@ import { routeEdgeSha256 } from "./evaluate-route-accessibility-edges.mjs";
 import { canonicalCurrentStationLineInputJson } from "./build-current-station-line-accessibility.mjs";
 import { applyCandidateNetworkEdgeProjection } from "./build-datapack.mjs";
 import { canonicalStationLineAccessibilityJson } from "./materialize-station-line-accessibility.mjs";
+import { assertCurrentCapitalAccessibilityBuildAllowed } from "./current-capital-accessibility-transition.mjs";
 
 const BUILD_SPEC_FILE = "tools/datapack/release/candidate-build-spec.json";
 const CANONICAL_PACK_FILE = "tools/datapack/release/capital-production-canonical-pack.json";
@@ -33,6 +34,7 @@ export function buildCurrentRouteEdgeInput({ canonicalPack, buildSpec, stationLi
 }
 
 export async function buildCurrentSourceRouteEdgeInput(input) {
+  await assertCurrentCapitalAccessibilityBuildAllowed({ repositoryRoot: input.repositoryRoot });
   const canonicalPack = structuredClone(input.canonicalPack);
   await applyCandidateNetworkEdgeProjection(input.buildSpec, canonicalPack, {
     repositoryRoot: input.repositoryRoot,

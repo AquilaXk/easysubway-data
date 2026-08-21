@@ -54,13 +54,28 @@ export async function buildRouteAccessibilityEligibility(input) {
     const final = validateServerRouteBundleFinal(JSON.parse(supplied["server-route-bundle-final.json"]));
     const station = JSON.parse(supplied["station-line-accessibility.json"]);
     const route = JSON.parse(supplied["route-edge-evaluation.json"]);
-    const blockers = [
+    const report = deriveAccessibilityEligibility({
+      final,
+      station,
+      route,
+      stationEvidenceBytes: supplied["station-line-accessibility.json"],
+      routeEvidenceBytes: supplied["route-edge-evaluation.json"],
+    });
+    await writeNewAtomic(output, Buffer.from(canonicalJson(report)));
+    return report;
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+}
+
+export function deriveAccessibilityEligibility({ final, station, route, stationEvidenceBytes, routeEvidenceBytes }) {
+  const blockers = [
       ...OWNER_GATES.filter((gate) => final.gates[gate].state !== "PASS").map((gate) => `${gate}:${final.gates[gate].state}`),
       ...STATION_UNRESOLVED.filter((state) => station.stateSummary[state] !== 0).map((state) => `stationLineAccessibility:${state}`),
       ...ROUTE_UNRESOLVED.filter((state) => route.stateSummary[state] !== 0).map((state) => `routeEdgeEvaluation:${state}`),
       ...(route.eligible ? [] : ["routeEdgeEvaluation:INELIGIBLE"]),
     ].sort(bytewise);
-    const payload = {
+  const payload = {
       schemaVersion: 1,
       artifactKind: "route-accessibility-eligibility",
       decision: blockers.length === 0 ? "ELIGIBLE" : "INELIGIBLE",
@@ -69,22 +84,17 @@ export async function buildRouteAccessibilityEligibility(input) {
         rowCount: station.rows.length,
         stateSummary: station.stateSummary,
         materializationDigest: station.materializationDigest,
-        evidenceSha256: sha256(supplied["station-line-accessibility.json"]),
+        evidenceSha256: sha256(stationEvidenceBytes),
       },
       routeEdgeEvaluation: {
         edgeCount: route.results.length,
         stateSummary: route.stateSummary,
         evaluationDigest: route.evaluationDigest,
-        evidenceSha256: sha256(supplied["route-edge-evaluation.json"]),
+        evidenceSha256: sha256(routeEvidenceBytes),
       },
       blockers: [...new Set(blockers)],
     };
-    const report = { ...payload, eligibilitySha256: sha256(Buffer.from(canonicalJson(payload))) };
-    await writeNewAtomic(output, Buffer.from(canonicalJson(report)));
-    return report;
-  } finally {
-    await rm(temporaryRoot, { recursive: true, force: true });
-  }
+  return { ...payload, eligibilitySha256: sha256(Buffer.from(canonicalJson(payload))) };
 }
 
 async function readCanonicalRegular(target, label) {

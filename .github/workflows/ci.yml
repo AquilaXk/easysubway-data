@@ -162,5 +162,10 @@ jobs:
           docker run --rm -v "${GITHUB_WORKSPACE}:/repo:ro" -w /repo \
             rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
 
+      - name: Verify current KRIC exit path source admission contracts
+        run: |
+          node --test tools/datapack/run-current-kric-exit-path-source-admission.test.mjs
+          node --test tools/ci/kric-exit-path-source-admission-workflow.test.mjs
+
       - name: Verify and run pristine Mobile owned required tests
         run: node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile

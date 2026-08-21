@@ -10,7 +10,9 @@ import {
 } from "./build-exit-path-admission.mjs";
 import { readRegularSnapshot } from "./build-current-kric-exit-collection-plan.mjs";
 import { canonicalFacilitySourceAdmissionJson } from "./build-facility-source-admission.mjs";
+import { canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-current-capital-facility-source-admission.mjs";
 import { canonicalKricExitPathProviderSnapshotJson } from "./collect-kric-exit-path-provider-snapshot.mjs";
+import { consumeCurrentKricExitCollectionBundle } from "./consume-current-kric-exit-collection-bundle.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { canonicalKricExitPathCollectionPlanJson } from "./plan-kric-exit-path-collection.mjs";
 
@@ -59,7 +61,9 @@ export function buildCurrentExitPathSourceAdmission(input) {
   const providerBytes = requireBytes(input.providerSnapshotBytes, "provider snapshot");
   const providerSnapshot = validateProviderSnapshot(providerBytes, observedAt);
   const collectionPlan = validateCollectionPlan(input.collectionPlan, providerSnapshot);
-  const facilityAdmission = validateFacilityAdmission(input.facilityAdmission);
+  const facilityAdmission = validateFacilityAdmission(
+    input.facilityAdmission, collectionPlan, input.candidateBuildSpec, input.sourceSnapshots, observedAt,
+  );
   const { candidateBuildSpec, selectedSnapshots } = validateCandidateBuildSpec(
     input.candidateBuildSpec,
     facilityAdmission.candidate,
@@ -89,7 +93,7 @@ export function buildCurrentExitPathSourceAdmission(input) {
     queryPlanSha256: providerSnapshot.queryPlanSha256,
   });
   const normalizedSnapshot = canonicalObject({
-    schemaVersion: 3,
+    schemaVersion: 4,
     artifactKind: "exit-path-normalized-source-snapshot",
     sourceId: providerSnapshot.sourceId,
     snapshotId: providerSnapshot.snapshotId,
@@ -145,17 +149,29 @@ export function buildCurrentExitPathSourceAdmission(input) {
 export async function main(argv, { log = console.log } = {}) {
   const args = parseArgs(argv);
   await outputMustBeAbsent(args.outputDirectory);
-  const [provider, collectionPlan, facility, candidate, inventory, sourceSnapshots] = await Promise.all([
-    readRegularSnapshot(args.providerSnapshot, "provider snapshot"),
-    readRegularSnapshot(args.collectionPlan, "collection plan"),
+  const [collection, facility, candidate, inventory, sourceSnapshots] = await Promise.all([
+    args.collectionBundle
+      ? consumeCurrentKricExitCollectionBundle({
+        collectionBundle: args.collectionBundle,
+        expectedBundleSha256: args.expectedBundleSha256,
+        expectedRepositorySha: args.expectedRepositorySha,
+        expectedWorkflowRunId: args.expectedWorkflowRunId,
+      })
+      : Promise.all([
+        readRegularSnapshot(args.providerSnapshot, "provider snapshot"),
+        readRegularSnapshot(args.collectionPlan, "collection plan"),
+      ]).then(([provider, collectionPlan]) => ({
+        providerSnapshotBytes: provider.bytes,
+        collectionPlanBytes: collectionPlan.bytes,
+      })),
     readRegularSnapshot(args.facilityAdmission, "facility admission"),
     readRegularSnapshot(args.candidateBuildSpec, "candidate build spec"),
     readRegularSnapshot(args.sourceInventory, "source inventory"),
     readRegularSnapshot(args.sourceSnapshots, "source snapshots"),
   ]);
   const result = buildCurrentExitPathSourceAdmission({
-    providerSnapshotBytes: provider.bytes,
-    collectionPlan: parseJson(collectionPlan.bytes, "collection plan"),
+    providerSnapshotBytes: collection.providerSnapshotBytes,
+    collectionPlan: parseJson(collection.collectionPlanBytes, "collection plan"),
     facilityAdmission: parseJson(facility.bytes, "facility admission"),
     candidateBuildSpec: parseJson(candidate.bytes, "candidate build spec"),
     sourceInventory: parseJson(inventory.bytes, "source inventory"),
@@ -317,7 +333,10 @@ function validateProviderRow(row) {
   return canonicalObject(row);
 }
 
-function validateFacilityAdmission(value) {
+function validateFacilityAdmission(value, collectionPlan, candidateBuildSpec, sourceSnapshots, observedAt) {
+  if (value?.artifactKind === "current-capital-facility-source-admission") {
+    return adaptCurrentCapitalFacilityAdmission(value, collectionPlan, candidateBuildSpec, sourceSnapshots, observedAt);
+  }
   canonicalFacilitySourceAdmissionJson(value);
   if (value.artifactKind !== "facility-source-admission-matrix" || value.decision !== "GO"
     || !Array.isArray(value.cells) || value.cells.length === 0
@@ -325,6 +344,84 @@ function validateFacilityAdmission(value) {
     throw new Error("facility admission identity mismatch");
   }
   return value;
+}
+
+function adaptCurrentCapitalFacilityAdmission(value, collectionPlan, candidateBuildSpec, sourceSnapshots, observedAt) {
+  const canonical = canonicalCurrentCapitalFacilitySourceAdmissionJson(value);
+  if (canonical !== `${canonicalJson(value)}\n`) throw new Error("current capital FACILITY admission must be canonical JSON");
+  if (candidateBuildSpec?.candidateId !== value.candidate.candidateId
+    || candidateBuildSpec?.sourceSnapshotSetHash !== value.candidate.sourceSnapshotSetHash) {
+    throw new Error("current capital FACILITY candidate identity mismatch");
+  }
+  const source = sourceSnapshots?.filter((entry) => entry?.sourceId === "kric-station-convenience-standard"
+    && entry?.snapshotId === value.sourceIdentity.snapshotId);
+  const candidateMember = candidateBuildSpec?.sourceSnapshots?.filter((entry) => entry?.sourceId === source?.[0]?.sourceId
+    && entry?.snapshotId === source?.[0]?.snapshotId);
+  if (source?.length !== 1 || candidateMember?.length !== 1 || !candidateBuildSpec.sourceSnapshotIds?.includes(value.sourceIdentity.snapshotId)) {
+    throw new Error("current capital FACILITY KRIC membership mismatch");
+  }
+  for (const key of ["rawObjectUri", "schemaFingerprint"]) {
+    if (source[0][key] !== value.sourceIdentity[key]) throw new Error("current capital FACILITY provenance mismatch");
+  }
+  if (source[0].rawSha256 !== value.sourceIdentity.rawObjectSha256
+    || candidateMember[0].rawSha256 !== value.sourceIdentity.rawObjectSha256
+    || candidateMember[0].rawObjectUri !== value.sourceIdentity.rawObjectUri
+    || candidateMember[0].schemaFingerprint !== value.sourceIdentity.schemaFingerprint
+    || source[0].rawReceipt?.snapshotRawSha256 !== value.sourceIdentity.rawSha256) {
+    throw new Error("current capital FACILITY raw object provenance mismatch");
+  }
+  if (requiredUtcInstant(value.sourceIdentity.freshUntil, "current capital FACILITY freshUntil") <= observedAt) {
+    throw new Error("current capital FACILITY freshness mismatch");
+  }
+  const mappings = collectionPlan.providerMappings;
+  const queries = collectionPlan.stationLineQueries;
+  const queryIds = queries?.flatMap((entry) => entry?.queryIds ?? []);
+  const planQueryIds = collectionPlan.queryPlan?.map(({ queryId }) => queryId);
+  if (!Array.isArray(mappings) || mappings.length !== 213 || new Set(mappings.map(({ stationId, lineId }) => `${stationId}\0${lineId}`)).size !== 213
+    || !Array.isArray(queries) || queries.length !== 213 || new Set(queries.map(({ stationLineId }) => stationLineId)).size !== 213
+    || !Array.isArray(collectionPlan.queryPlan) || collectionPlan.queryPlan.length !== 420
+    || new Set(planQueryIds).size !== 420 || queryIds.length !== 420 || new Set(queryIds).size !== 420
+    || canonicalJson([...queryIds].sort(compareBytes)) !== canonicalJson([...planQueryIds].sort(compareBytes))) {
+    throw new Error("current capital FACILITY EXIT coverage mismatch");
+  }
+  const mappingSet = new Set(mappings.map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
+  const cellSet = new Set(value.cells.map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
+  const querySet = new Set(queries.map(({ stationLineId }) => stationLineId));
+  if (cellSet.size !== 213 || mappingSet.size !== 213 || querySet.size !== 213
+    || [...mappingSet].some((key) => !cellSet.has(key) || !querySet.has(key.replace("\0", ":")))) {
+    throw new Error("current capital FACILITY station-line set mismatch");
+  }
+  const providerProjection = mappings.map((mapping) => canonicalObject({
+    stationId: mapping.stationId, lineId: mapping.lineId, regionId: "capital", operatorId: "seoul-metro",
+    providerOperatorId: mapping.providerOperatorId, providerLineId: mapping.providerLineId, providerStationId: mapping.providerStationId,
+  })).sort(compareProviderMappingProjection);
+  if (sha256(canonicalJson(providerProjection)) !== value.stationLineProviderMappingSha256) {
+    throw new Error("current capital FACILITY provider mapping mismatch");
+  }
+  const candidate = canonicalObject({
+    candidateId: value.candidate.candidateId,
+    stationSetSha256: collectionPlan.candidate.stationSetSha256,
+    sourceSetSha256: value.candidate.sourceSnapshotSetHash,
+    mappingContractVersion: "station-line-v1",
+    materializerVersion: "1",
+  });
+  return canonicalObject({
+    ...value,
+    candidate,
+    stationLineSetSha256: sha256(canonicalJson(value.cells.map(({ stationId, lineId }) => ({ stationId, lineId, operatorId: "seoul-metro" })))),
+    stationLineMappingSha256: collectionPlan.candidate.stationLineMappingSha256,
+    directCurrentCapitalFacility: true,
+    queryPartition: {
+      joined: mappings.map((mapping) => canonicalObject({
+        stationId: mapping.stationId, lineId: mapping.lineId,
+        providerOperatorId: mapping.providerOperatorId, providerLineId: mapping.providerLineId, providerStationId: mapping.providerStationId,
+      })),
+    },
+    cells: value.cells.map((cell) => canonicalObject({
+      candidateId: candidate.candidateId, stationSetSha256: candidate.stationSetSha256, sourceSetSha256: candidate.sourceSetSha256,
+      stationId: cell.stationId, lineId: cell.lineId, operatorId: "seoul-metro", state: cell.state,
+    })),
+  });
 }
 
 function validateCandidateBuildSpec(value, candidate, sourceSnapshots) {
@@ -350,11 +447,14 @@ function validateCandidateBuildSpec(value, candidate, sourceSnapshots) {
     }
     return selected;
   });
+  const selectedIds = new Set(value.sourceSnapshotIds);
+  const selectedInLedgerOrder = sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
   if (value.sourceSnapshotSetHash !== candidate.sourceSetSha256
-    || sha256(JSON.stringify(selectedSnapshots)) !== value.sourceSnapshotSetHash) {
+    || selectedIds.size !== selectedSnapshots.length || selectedInLedgerOrder.length !== selectedSnapshots.length
+    || sha256(JSON.stringify(selectedInLedgerOrder)) !== value.sourceSnapshotSetHash) {
     throw new Error("source snapshot set identity mismatch");
   }
-  return { candidateBuildSpec: value, selectedSnapshots };
+  return { candidateBuildSpec: value, selectedSnapshots: selectedInLedgerOrder };
 }
 
 function validateSourceInventory(value) {
@@ -490,6 +590,7 @@ function normalizeResult(result) {
       state: "OBSERVED_EXIT_PATH",
       records: [{ ...record, providerRecordHash: sha256(canonicalJson(record)) }],
       zeroEvidenceSha256: null,
+      providerResponseSha256: result.rawResponseSha256,
     });
   }
   if (result.state === "EXPLICIT_ZERO") {
@@ -498,6 +599,7 @@ function normalizeResult(result) {
       state: "EXPLICIT_ZERO",
       records: [],
       zeroEvidenceSha256: result.rawResponseSha256,
+      providerResponseSha256: result.rawResponseSha256,
     });
   }
   return canonicalObject({
@@ -505,6 +607,7 @@ function normalizeResult(result) {
     state: result.state === "PROVIDER_NO_DATA" ? "PROVIDER_NO_DATA" : "FAILED",
     records: [],
     zeroEvidenceSha256: null,
+    providerResponseSha256: result.rawResponseSha256,
   });
 }
 
@@ -533,12 +636,16 @@ async function publishDirectory({ outputDirectory, result }) {
 }
 
 function parseArgs(argv) {
-  const pathFlags = new Set([
-    "provider-snapshot", "collection-plan", "facility-admission", "candidate-build-spec",
-    "source-inventory", "source-snapshots", "output-directory",
+  const commonPathFlags = new Set([
+    "facility-admission", "candidate-build-spec", "source-inventory", "source-snapshots", "output-directory",
   ]);
-  const allowed = new Set([...pathFlags, "observed-at"]);
-  if (!Array.isArray(argv) || argv.length !== 16) throw new Error("current EXIT admission arguments mismatch");
+  const explicitPathFlags = new Set(["provider-snapshot", "collection-plan"]);
+  const bundlePathFlags = new Set(["collection-bundle"]);
+  const allowed = new Set([
+    ...commonPathFlags, ...explicitPathFlags, ...bundlePathFlags,
+    "observed-at", "expected-bundle-sha256", "expected-repository-sha", "expected-workflow-run-id",
+  ]);
+  if (!Array.isArray(argv) || argv.length % 2 !== 0) throw new Error("current EXIT admission arguments mismatch");
   const values = {};
   for (let index = 0; index < argv.length; index += 2) {
     const flag = String(argv[index] ?? "").replace(/^--/, "");
@@ -546,12 +653,32 @@ function parseArgs(argv) {
     if (!allowed.has(flag) || values[flag] !== undefined || typeof value !== "string" || value === "") {
       throw new Error("current EXIT admission arguments mismatch");
     }
-    values[flag] = pathFlags.has(flag) ? requiredAbsolutePath(value, `--${flag}`) : value;
+    values[flag] = commonPathFlags.has(flag) || explicitPathFlags.has(flag) || bundlePathFlags.has(flag)
+      ? requiredAbsolutePath(value, `--${flag}`)
+      : value;
   }
-  for (const flag of allowed) {
+  for (const flag of [...commonPathFlags, "observed-at", "output-directory"]) {
     if (values[flag] === undefined) throw new Error("current EXIT admission arguments mismatch");
   }
+  const explicit = [...explicitPathFlags].filter((flag) => values[flag] !== undefined).length;
+  const bundle = values["collection-bundle"] !== undefined;
+  if ((explicit !== 2 && !bundle) || (explicit !== 0 && bundle)
+    || (bundle && (values["expected-bundle-sha256"] === undefined || values["expected-repository-sha"] === undefined || values["expected-workflow-run-id"] === undefined))
+    || (!bundle && (values["expected-bundle-sha256"] !== undefined || values["expected-repository-sha"] !== undefined || values["expected-workflow-run-id"] !== undefined))) {
+    throw new Error("current EXIT admission arguments mismatch");
+  }
   requiredUtcInstant(values["observed-at"], "--observed-at");
+  if (bundle) {
+    if (!/^[a-f0-9]{64}$/.test(values["expected-bundle-sha256"])) {
+      throw new Error("expected bundle SHA mismatch");
+    }
+    if (!/^[a-f0-9]{40}$/.test(values["expected-repository-sha"])) {
+      throw new Error("expected repository SHA mismatch");
+    }
+    if (!/^[1-9][0-9]*$/.test(values["expected-workflow-run-id"])) {
+      throw new Error("expected workflow run ID mismatch");
+    }
+  }
   return {
     providerSnapshot: values["provider-snapshot"],
     collectionPlan: values["collection-plan"],
@@ -561,6 +688,10 @@ function parseArgs(argv) {
     sourceSnapshots: values["source-snapshots"],
     outputDirectory: values["output-directory"],
     observedAt: values["observed-at"],
+    collectionBundle: values["collection-bundle"],
+    expectedBundleSha256: values["expected-bundle-sha256"],
+    expectedRepositorySha: values["expected-repository-sha"],
+    expectedWorkflowRunId: bundle ? Number(values["expected-workflow-run-id"]) : undefined,
   };
 }
 
@@ -625,6 +756,16 @@ function compareStationLines(left, right) {
   return compareBytes(left.stationId, right.stationId)
     || compareBytes(left.lineId, right.lineId)
     || compareBytes(left.operatorId, right.operatorId);
+}
+
+function compareProviderMappingProjection(left, right) {
+  return compareBytes(left.stationId, right.stationId)
+    || compareBytes(left.lineId, right.lineId)
+    || compareBytes(left.regionId, right.regionId)
+    || compareBytes(left.operatorId, right.operatorId)
+    || compareBytes(left.providerOperatorId, right.providerOperatorId)
+    || compareBytes(left.providerLineId, right.providerLineId)
+    || compareBytes(left.providerStationId, right.providerStationId);
 }
 
 function compareQueries(left, right) {

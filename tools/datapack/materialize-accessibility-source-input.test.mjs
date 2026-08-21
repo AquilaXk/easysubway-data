@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 import { materializeAccessibilitySourceInput } from "./materialize-accessibility-source-input.mjs";
+import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -266,6 +269,47 @@ test("fresh KRIC codes와 Seoul status만 production source input으로 material
     kricSnapshot: { ...kricSnapshot, queries: [{ ...kricSnapshot.queries[0], stationId: "station-missing" }] },
     seoulSnapshot,
   }), /KRIC snapshot canonical mapping missing: station-missing/);
+});
+
+test("exact terminal 03은 facility를 만들지 않고 세 blocked carrier row로 보존한다", () => {
+  const input = {
+    sourceIds: [], coverageEvidence: [], movementPathCandidates: [], minimumProductionCoverage: { facilities: 0 },
+    stationMappings: [{ sourceId: "molit-urban-rail-full-route", stationId: "station-b35616704ce3", lineId: "seoul-2", sourceStationCode: "S1-234-4" }],
+    stationLineRows: [{ sourceId: "molit-urban-rail-full-route", sourceStationCode: "S1-234-4", stationCode: "4", lineId: "seoul-2", stationNameKo: "가역" }],
+  };
+  const output = materializeAccessibilitySourceInput({ input, kricSnapshot: {
+    sourceId: "kric-station-convenience-standard", snapshotId: "kric-mixed", observedAt: "2026-08-15T00:00:00Z", capturedAt: "2026-08-15T00:00:00Z",
+    providerResultCode: "MIXED", queries: [{ stationId: "station-b35616704ce3", lineId: "seoul-2", railOprIsttCd: "S1", lnCd: "2", stinCd: "234-4", providerResultCode: "03", terminalPolicy: "EXACT_TUPLE_PROVIDER_RESULT_03", providerRecordHash: null, rawResponseSha256: "a".repeat(64), rows: [] }],
+  }, seoulSnapshot: { sourceId: "seoul-metro-accessibility", snapshotId: "seoul-1", observedAt: "2026-08-15T00:00:00Z", capturedAt: "2026-08-15T00:00:00Z", stations: [] } });
+  assert.deepEqual(output.facilityRows, []);
+  const blocked = output.accessibilityStatusEvidence.filter(({ evidenceKind }) => evidenceKind === "UNVERIFIED_EVIDENCE_BLOCKED");
+  assert.equal(blocked.length, 3);
+  for (const row of blocked) {
+    assert.deepEqual(
+      [row.operatorId, row.state, row.terminalPolicy, row.providerResultCode, row.strictRouteEligible, row.strictRouteEligibleReason, row.installationStatus, row.operationalStatus, row.statusMeaning, row.confidence, row.providerRecordHash, row.providerResponseSha256, row.evidenceReason],
+      ["seoul-metro", "UNVERIFIED_EVIDENCE_BLOCKED", "EXACT_TUPLE_PROVIDER_RESULT_03", "03", false, "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED", "UNKNOWN", "UNKNOWN", "PROVIDER_RESULT_UNVERIFIED", 0, null, "a".repeat(64), "시설 존재·부재가 검증되지 않아 경로를 차단했습니다."],
+    );
+    assert.equal(row.evidenceHash, createHash("sha256").update(canonicalJson({
+      sourceSnapshotId: "kric-mixed", stationId: "station-b35616704ce3", lineId: "seoul-2",
+      operatorId: "seoul-metro", facilityType: row.facilityType,
+      terminalPolicy: "EXACT_TUPLE_PROVIDER_RESULT_03", providerResponseSha256: "a".repeat(64),
+    })).digest("hex"));
+  }
+  const candidate = {
+    candidateId: "candidate-terminal", stationSetSha256: "b".repeat(64), sourceSetSha256: "c".repeat(64),
+    mappingContractVersion: "station-line-v1", materializerVersion: "1",
+  };
+  const terminal = materializeStationLineAccessibility({
+    candidate,
+    stationLines: [{ stationId: "station-b35616704ce3", lineId: "seoul-2", operatorId: "seoul-metro" }],
+    evidenceRows: blocked.map(({ note: _note, provenanceKind: _provenanceKind, verifiedAt: _verifiedAt, retrievedAt: _retrievedAt, ...row }) => ({
+      ...row, ...candidate, domain: "FACILITY", evidenceRawSha256: "d".repeat(64),
+      capturedAt: "2026-08-15T00:00:00.000Z", freshUntil: "2026-08-16T00:00:00.000Z",
+      provenanceId: "kric-official", licenseId: "public-data-license",
+    })),
+    observedAt: "2026-08-15T12:00:00.000Z",
+  });
+  assert.equal(terminal.rows.find(({ domain }) => domain === "FACILITY").state, "UNVERIFIED_EVIDENCE_BLOCKED");
 });
 
 test("station과 edge identity는 line까지 일치해야 하고 결측 line은 부재로 만들지 않는다", () => {

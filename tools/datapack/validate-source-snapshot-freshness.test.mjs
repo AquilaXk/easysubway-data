@@ -124,6 +124,55 @@ function twoSourceInput() {
   return value;
 }
 
+test("replacement head는 append-only ledger order의 source-set hash를 검증한다", () => {
+  const value = twoSourceInput();
+  const previousA = value.snapshots[0];
+  const sourceB = value.snapshots[1];
+  const headA = {
+    ...previousA,
+    snapshotId: "snapshot-a-next",
+    rawObjectUri: "s3://bucket/snapshot-a-next.json",
+    rawSha256: "f".repeat(64),
+    retrievedAt: "2026-07-14T00:00:00Z",
+    freshnessExpiresAt: "2026-08-13T00:00:00Z",
+    rawRetentionExpiresAt: "2026-10-12T00:00:00.000Z",
+    previousSnapshotId: previousA.snapshotId,
+    diffSummary: {
+      status: "CHANGED",
+      rawHashChanged: true,
+      schemaHashChanged: false,
+      requestHashChanged: false,
+      sourceUpdatedAtChanged: false,
+      rowDelta: 0,
+      coverageDelta: 0,
+    },
+  };
+  value.snapshots = [previousA, sourceB, headA];
+  value.buildSpec.sourceSnapshotIds = [headA.snapshotId, sourceB.snapshotId];
+  value.buildSpec.sourceSnapshots = [headA, sourceB].map((snapshot) => ({
+    snapshotId: snapshot.snapshotId,
+    sourceId: snapshot.sourceId,
+    rawObjectUri: snapshot.rawObjectUri,
+    rawSha256: snapshot.rawSha256,
+    redactedRequestFingerprint: snapshot.redactedRequestFingerprint,
+    schemaFingerprint: snapshot.schemaFingerprint,
+    licenseStatus: snapshot.licenseStatus,
+    redistributionAllowed: snapshot.redistributionAllowed,
+    snapshotStatus: snapshot.snapshotStatus,
+    credentialRedacted: snapshot.credentialRedacted,
+    freshnessExpiresAt: snapshot.freshnessExpiresAt,
+    rawRetentionExpiresAt: snapshot.rawRetentionExpiresAt,
+    governancePolicyVersion: snapshot.governancePolicyVersion,
+    governancePolicySha256: snapshot.governancePolicySha256,
+  }));
+  value.buildSpec.sourceSnapshotSetHash = createHash("sha256")
+    .update(JSON.stringify([sourceB, headA]))
+    .digest("hex");
+
+  const result = validateSourceSnapshotFreshness(value);
+  assert.deepEqual(result.results.map(({ snapshotId }) => snapshotId), [sourceB.snapshotId, headA.snapshotId]);
+});
+
 function purgeReport(
   entries,
   completedAt = "2026-10-10T00:00:01.000Z",
@@ -611,7 +660,7 @@ test("실제 release build spec은 current source inventory에 결합되어 gove
     "--policy", "release/product-gates/datapack-freshness-sla.json",
     "--governance-policy", "tools/datapack/source-governance-policy.json",
     "--inventory", "tools/datapack/source-inventory.json",
-    "--evaluation-at", "2026-07-28T19:00:00.000Z",
+    "--evaluation-at", "2026-08-15T12:00:00.000Z",
   ], { cwd: root });
 
   assert.equal(JSON.parse(stdout).governanceDecision, "GO");

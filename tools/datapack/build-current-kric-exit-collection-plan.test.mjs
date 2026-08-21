@@ -22,7 +22,7 @@ const productionPaths = Object.freeze({
   incheonTopology: path.join(datapackRoot, "sources/incheon-transit-station-info-20260814.json"),
 });
 
-const buildPlan = (input) => buildCurrentKricExitCollectionPlan(input, { now: currentNow });
+const buildPlan = (input, options = {}) => buildCurrentKricExitCollectionPlan(input, { now: currentNow, ...options });
 
 test("current production 정본에서 exact EXIT collection plan을 결정적으로 만든다", async () => {
   const input = await readProductionBytes();
@@ -61,6 +61,128 @@ test("current production 정본에서 exact EXIT collection plan을 결정적으
   for (const [key, value] of Object.entries(input)) assert.deepEqual(value, before[key]);
 });
 
+test("capital Seoul Metro production selector는 canonical metadata와 실제 membership에서 213/420 scope를 만든다", async () => {
+  const input = await readProductionBytes();
+  const plan = buildPlan(input, { coverageSelector: "capital-seoul-metro-production" });
+  const nationwide = buildPlan(input);
+
+  assert.equal(nationwide.providerMappings.length, 1102);
+  assert.equal(nationwide.queryPlan.length, 2134);
+  assert.equal(plan.providerMappings.length, 213);
+  assert.equal(plan.stationLineQueries.length, 213);
+  assert.equal(new Set(plan.providerMappings.map(({ stationId }) => stationId)).size, 199);
+  assert.equal(plan.queryPlan.length, 420);
+  assert.deepEqual(Object.fromEntries([...new Map(plan.queryPlan.map(({ lineName }) => [lineName, 0])).keys()]
+    .sort()
+    .map((lineName) => [lineName, plan.queryPlan.filter((query) => query.lineName === lineName).length])), {
+    "수도권 2호선": 102,
+    "수도권 4호선": 100,
+    "수도권 5호선": 110,
+    "수도권 6호선": 78,
+    "수도권 신분당": 30,
+  });
+  assert.equal(new Set(plan.providerMappings.map(({ stationId, lineId }) => `${stationId}\0${lineId}`)).size, 213);
+  assert.ok(plan.routeEdges.every(({ fromStationId, toStationId, lineId }) => (
+    plan.providerMappings.some((row) => row.stationId === fromStationId && row.lineId === lineId)
+      && plan.providerMappings.some((row) => row.stationId === toStationId && row.lineId === lineId)
+  )));
+
+  const asymmetricTopology = JSON.parse(input.canonicalPackBytes);
+  const [targetEdge] = plan.routeEdges;
+  const selectedStationIds = plan.providerMappings
+    .filter(({ lineId }) => lineId === targetEdge.lineId)
+    .map(({ stationId }) => stationId);
+  const alternateStationId = selectedStationIds.find((stationId) => (
+    stationId !== targetEdge.fromStationId && stationId !== targetEdge.toStationId
+      && !plan.routeEdges.some((edge) => (
+        edge.lineId === targetEdge.lineId
+          && edge.fromStationId === targetEdge.toStationId
+          && edge.toStationId === stationId
+      ))
+  ));
+  assert.ok(alternateStationId);
+  const reverse = asymmetricTopology.packs[0].networkEdges.find((edge) => (
+    edge.fromNodeId === `${targetEdge.toStationId}:${targetEdge.lineId}`
+      && edge.toNodeId === `${targetEdge.fromStationId}:${targetEdge.lineId}`
+  ));
+  assert.ok(reverse);
+  reverse.toNodeId = `${alternateStationId}:${targetEdge.lineId}`;
+  const selectedLineIds = new Set(plan.providerMappings.map(({ lineId }) => lineId));
+  const alteredSelectedEdges = asymmetricTopology.packs[0].networkEdges.filter((edge) => (
+    edge.edgeType === "RIDE" && edge.servicePattern === "LOCAL" && edge.serviceClass === "SUBWAY"
+      && selectedLineIds.has(edge.fromNodeId.split(":")[1])
+  ));
+  assert.equal(alteredSelectedEdges.length, 420);
+  assert.ok(alteredSelectedEdges.every((edge) => {
+    const [fromStationId, lineId] = edge.fromNodeId.split(":");
+    const [toStationId, toLineId] = edge.toNodeId.split(":");
+    return lineId === toLineId
+      && plan.providerMappings.some((row) => row.stationId === fromStationId && row.lineId === lineId)
+      && plan.providerMappings.some((row) => row.stationId === toStationId && row.lineId === lineId);
+  }));
+  assert.throws(
+    () => buildPlan({ ...input, canonicalPackBytes: Buffer.from(JSON.stringify(asymmetricTopology)) }, {
+      coverageSelector: "capital-seoul-metro-production",
+    }),
+    /capital Seoul Metro production route symmetry mismatch/,
+  );
+
+  const metadataDrift = JSON.parse(input.canonicalPackBytes);
+  metadataDrift.packs[0].metadata.productionCoverageEvidence = "[]";
+  assert.throws(
+    () => buildPlan({ ...input, canonicalPackBytes: Buffer.from(JSON.stringify(metadataDrift)) }, {
+      coverageSelector: "capital-seoul-metro-production",
+    }),
+    /capital Seoul Metro production coverage metadata mismatch/,
+  );
+  assert.throws(
+    () => buildPlan(input, { coverageSelector: "wrong" }),
+    /EXIT collection-plan coverage selector mismatch/,
+  );
+});
+
+test("capital selector는 비대상 Incheon freshness에 결합하지 않고 nationwide는 stale을 거부한다", async () => {
+  const input = await readProductionBytes();
+  const afterIncheonExpiry = new Date("2026-08-16T00:00:00.000Z");
+
+  assert.throws(
+    () => buildCurrentKricExitCollectionPlan(input, { now: afterIncheonExpiry }),
+    /Incheon topology admission is stale/,
+  );
+
+  const plan = buildCurrentKricExitCollectionPlan(input, {
+    now: afterIncheonExpiry,
+    coverageSelector: "capital-seoul-metro-production",
+  });
+  const incheonLineIds = new Set(["line-42b5805f3b5a", "line-98718184f016"]);
+  const stationLineKeys = new Set(plan.providerMappings.map(
+    ({ stationId, lineId }) => `${stationId}\0${lineId}`,
+  ));
+
+  assert.equal(plan.providerMappings.length, 213);
+  assert.equal(new Set(plan.providerMappings.map(({ stationId }) => stationId)).size, 199);
+  assert.equal(plan.queryPlan.length, 420);
+  assert.equal(plan.routeEdges.some(({ lineId }) => incheonLineIds.has(lineId)), false);
+  assert.ok(plan.routeEdges.every(({ fromStationId, toStationId, lineId }) => (
+    stationLineKeys.has(`${fromStationId}\0${lineId}`)
+      && stationLineKeys.has(`${toStationId}\0${lineId}`)
+  )));
+
+  const identityDrift = JSON.parse(input.sourceInventoryBytes);
+  identityDrift.sources.find(({ id }) => id === "incheon-transit-station-info")
+    .routeMapAdmissionEvidence.snapshotSha256 = "0".repeat(64);
+  assert.throws(
+    () => buildCurrentKricExitCollectionPlan({
+      ...input,
+      sourceInventoryBytes: Buffer.from(JSON.stringify(identityDrift)),
+    }, {
+      now: afterIncheonExpiry,
+      coverageSelector: "capital-seoul-metro-production",
+    }),
+    /Incheon topology admission identity mismatch/,
+  );
+});
+
 test("raw source identity는 candidate ID에 결속되고 provider scope drift는 거부한다", async () => {
   const input = await readProductionBytes();
   const baseline = buildPlan(input);
@@ -77,6 +199,31 @@ test("raw source identity는 candidate ID에 결속되고 provider scope drift�
     () => buildPlan({
       ...input,
       routeRostersBytes: Buffer.from(JSON.stringify(routeRosters)),
+    }),
+    /provider scope set mismatch/,
+  );
+
+  const unexpectedScopeAndRoster = JSON.parse(input.routeRostersBytes);
+  unexpectedScopeAndRoster.providerScopes.push({
+    ...unexpectedScopeAndRoster.providerScopes[0],
+    lineId: "unexpected-line",
+    regionId: "unexpected-region",
+    operatorId: "unexpected-operator",
+    mreaWideCd: "99",
+    lnCd: "EXTRA",
+    railOprIsttCd: "EXTRA",
+  });
+  unexpectedScopeAndRoster.rosters.push({
+    ...unexpectedScopeAndRoster.rosters[0],
+    mreaWideCd: "99",
+    lnCd: "EXTRA",
+  });
+  unexpectedScopeAndRoster.providerScopeCount += 1;
+  unexpectedScopeAndRoster.requestCount += 1;
+  assert.throws(
+    () => buildPlan({
+      ...input,
+      routeRostersBytes: Buffer.from(JSON.stringify(unexpectedScopeAndRoster)),
     }),
     /provider scope set mismatch/,
   );
@@ -287,13 +434,19 @@ async function readProductionBytes() {
 }
 
 function cliArgs(output, overrides = {}) {
-  return [
+  const args = [
     "--canonical-pack", overrides.canonicalPack ?? productionPaths.canonicalPack,
     "--coverage-targets", productionPaths.coverageTargets,
     "--provider-code-catalog", productionPaths.providerCodeCatalog,
     "--route-rosters", productionPaths.routeRosters,
     "--source-inventory", productionPaths.sourceInventory,
     "--incheon-topology", productionPaths.incheonTopology,
+  ];
+  if (overrides.coverageSelector !== undefined) {
+    args.push("--coverage-selector", overrides.coverageSelector);
+  }
+  return [
+    ...args,
     "--output", output,
   ];
 }

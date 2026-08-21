@@ -19,6 +19,95 @@ test("release workflow는 owned deterministic-release subset만 실행한다", (
   assert.doesNotMatch(step, /node\s+--test|\.test\.mjs/);
 });
 
+test("route-final candidate parity는 runtime receipts를 canonical stage 밖 companion artifact로 분리한다", () => {
+  const step = (name) => yml.indexOf(`- name: ${name}`);
+  const coverage = yml.slice(step("Data Pack Release / Validate accessibility source coverage"), step("Data Pack Release / Write coverage gap evidence"));
+  assert.match(coverage, /buildSpec\.publishedAt/);
+  assert.doesNotMatch(coverage, /date -u/);
+  const override = yml.slice(step("Data Pack Release / Configure candidate execution evidence"), step("Data Pack Release / Write release evidence bundle"));
+  assert.match(override, /mode == 'release-candidate'/);
+  assert.match(override, /EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE=\$\{EASYSUBWAY_DATAPACK_EXECUTION_EVIDENCE_DIR\}/);
+  assert.match(override, /EASYSUBWAY_DATAPACK_RELEASE_DECISION=\$\{EASYSUBWAY_DATAPACK_EXECUTION_EVIDENCE_DIR\}/);
+  assert.match(yml, /EASYSUBWAY_DATAPACK_EXECUTION_EVIDENCE_DIR=.*execution-evidence/);
+  const metadata = step("Data Pack Release / Build candidate promotion metadata");
+  const companion = step("Data Pack Release / Upload candidate execution evidence");
+  const canonical = step("Data Pack Release / Upload candidate promotion artifact");
+  assert.ok(metadata < canonical && metadata < companion);
+  const companionText = yml.slice(companion, step("Data Pack Release / Publish staged data packs to object storage"));
+  assert.match(companionText, /release-evidence-bundle\.json/);
+  assert.match(companionText, /release-decision\.json/);
+  assert.doesNotMatch(yml.slice(step("Data Pack Release / Configure temp directories"), step("Data Pack Release / Configure candidate execution evidence")), /execution-evidence\/release-evidence-bundle/);
+  assert.ok(step("Data Pack Release / Stage current server route bundle candidate") < metadata);
+  const productionMetadata = yml.slice(step("Data Pack Release / Validate production artifact metadata"), step("Data Pack Release / Download exact production artifacts"));
+  assert.match(productionMetadata, /easysubway-datapack-candidate-execution-evidence-\$\{EASYSUBWAY_DATAPACK_CANDIDATE_RUN_ID\}/);
+  assert.match(productionMetadata, /require-workflow-artifact\.mjs/);
+  const download = yml.slice(step("Data Pack Release / Download exact candidate execution evidence"), step("Data Pack Release / Download exact promotion artifact"));
+  assert.match(download, /name: easysubway-datapack-candidate-execution-evidence-\$\{\{ steps\.release-mode\.outputs\.candidate_run_id \}\}/);
+  assert.match(download, /run-id: \$\{\{ steps\.release-mode\.outputs\.candidate_run_id \}\}/);
+  assert.doesNotMatch(download, /EASYSUBWAY_DATAPACK_STAGE/);
+  const verify = yml.slice(step("Data Pack Release / Verify attested promotion and candidate bytes"), step("Data Pack Release / Stage verified candidate artifact"));
+  assert.match(verify, /execution_entries[\s\S]*== 2/);
+  assert.match(verify, /release-evidence-bundle\.json release-decision\.json/);
+  assert.match(verify, /execution_root="\$\{RUNNER_TEMP\}\/downloaded-candidate-execution-evidence"/);
+  assert.match(verify, /EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE=\$\{execution_root\}\/release-evidence-bundle\.json/);
+  assert.doesNotMatch(verify, /EASYSUBWAY_DATAPACK_RELEASE_DECISION=/);
+  const lateDecision = yml.slice(step("Data Pack Release / Upload release decision artifact"), step("Data Pack Release / Upload staged data packs"));
+  assert.match(lateDecision, /always\(\) && steps\.release-mode\.outputs\.mode != 'release-candidate' && steps\.release-decision\.outputs\.outcome != ''/);
+});
+
+test("release-candidate parity는 runtime GO와 분리되고 production publish는 GO를 유지한다", () => {
+  const validation = yml.match(
+    /- name: Data Pack Release \/ Validate release evidence bundle[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(validation, "release evidence validation 스텝을 찾지 못함");
+  assert.match(
+    validation,
+    /if \[\[ "\$\{EASYSUBWAY_DATAPACK_RELEASE_MODE\}" == "production-publish" \]\]; then\s*\n\s*bundle_args\+=\(--require-pass\)/,
+  );
+  assert.doesNotMatch(validation, /\^\(release-candidate\|production-publish\)\$/);
+  const publishValidation = yml.match(
+    /- name: Data Pack Release \/ Publish staged data packs to object storage[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(publishValidation, "production publish evidence validation 스텝을 찾지 못함");
+  assert.match(publishValidation, /--require-pass/);
+});
+
+function assertRouteCoveragePair(source) {
+  assert.match(source, /--require-production/);
+  assert.match(source, /--server-route-coverage-evidence "\$\{EASYSUBWAY_DATAPACK_ROUTE_COVERAGE_AUTHORITY\}"/);
+  assert.match(source, /--server-route-coverage-provenance "\$\{EASYSUBWAY_DATAPACK_STAGE\}\/current\.provenance\.json"/);
+}
+
+test("route-final candidate는 authority·strict validation·signed route stage를 candidate 경계에서 순서대로 결속한다", () => {
+  const step = (name) => yml.indexOf(`- name: ${name}`);
+  const prepare = yml.slice(step("Data Pack Release / Prepare release fixture"), step("Data Pack Release / Audit route map coordinate coverage"));
+  assert.match(prepare, /EASYSUBWAY_DATAPACK_ROUTE_COVERAGE_AUTHORITY/);
+  assert.match(prepare, /build-current-release-candidate-accessibility-input\.mjs/);
+  assert.match(prepare, /--fixture "\$\{build_fixture\}"/);
+  assert.match(prepare, /tools\/datapack\/release\/current-station-line-accessibility\/station-line-accessibility\.json/);
+  assert.match(prepare, /tools\/datapack\/release\/current-route-edge-evaluation\/route-edge-input\.json/);
+  assert.doesNotMatch(prepare.match(/release-candidate[\s\S]*?(?:elif|else)/)?.[0] ?? "", /import-official-sources|apply-admin-review-overrides/);
+  const validate = yml.slice(step("Data Pack Release / Validate generated data packs"), step("Data Pack Release / Validate accessibility source coverage"));
+  assertRouteCoveragePair(validate);
+  const stager = step("Data Pack Release / Stage current server route bundle candidate");
+  const metadata = step("Data Pack Release / Build candidate promotion metadata");
+  assert.ok(stager > step("Data Pack Release / Validate generated data packs") && stager < metadata);
+  const stagerText = yml.slice(stager, metadata);
+  assert.match(stagerText, /stage-current-server-route-bundle-candidate\.mjs/);
+  assert.match(stagerText, /--output "\$\{EASYSUBWAY_DATAPACK_STAGE\}\/server-route-bundle"/);
+  const checksums = yml.slice(step("Data Pack Release / Verify uploaded pack checksums before manifest publish"), step("Data Pack Release / Stage manifest"));
+  assertRouteCoveragePair(checksums);
+  const stagedManifest = yml.slice(step("Data Pack Release / Stage manifest"), step("Data Pack Release / Write route graph topology evidence"));
+  assertRouteCoveragePair(stagedManifest);
+  const publish = yml.slice(step("Data Pack Release / Publish staged data packs to object storage"), step("Data Pack Release / Prepare no-change release identity"));
+  assert.match(publish, /--server-route-coverage-evidence "\$\{EASYSUBWAY_DATAPACK_STAGE\}\/server-route-coverage-authority\.json"/);
+  assert.match(publish, /--server-route-coverage-provenance "\$\{EASYSUBWAY_DATAPACK_STAGE\}\/current\.provenance\.json"/);
+  const remote = yml.slice(step("Data Pack Release / Validate published remote artifact"), step("Data Pack Release / Upload remote validation artifact"));
+  assert.match(remote, /--server-route-coverage-evidence "\$\{EASYSUBWAY_DATAPACK_STAGE\}\/server-route-coverage-authority\.json"/);
+  assert.match(remote, /--server-route-coverage-provenance "\$\{EASYSUBWAY_DATAPACK_STAGE\}\/current\.provenance\.json"/);
+  assert.match(prepare, /elif \[\[ "\$\{EASYSUBWAY_DATAPACK_RELEASE_MODE\}" == "release-candidate" \]\]; then/);
+});
+
 test("고정된 hub 계약은 mode 해석 뒤 pointer가 아닌 release에서만 stage한다", () => {
   assert.match(yml, /paths:[\s\S]*contracts\.lock\.json/);
   assert.doesNotMatch(yml, /paths:[\s\S]*release\/product-gates/);

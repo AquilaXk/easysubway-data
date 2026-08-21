@@ -17,6 +17,7 @@ import {
   validateSourceSeparatedCurrentTopology,
   validateCapitalTopologyReverification,
   validateItxCurrentTopologyAdmission,
+  validateCandidateProductionScope,
 } from "./build-datapack.mjs";
 import {
   buildCapitalTopologyReverificationEvidence,
@@ -27,6 +28,39 @@ const root = path.resolve(import.meta.dirname, "../..");
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const currentNow = new Date("2026-08-10T00:00:00.000Z");
 const execFileAsync = promisify(execFile);
+
+test("build-datapack은 candidate mode만 staged transition을 입력보다 먼저 차단한다", async () => {
+  const source = await readFile(path.join(root, "tools/datapack/build-datapack.mjs"), "utf8");
+  const candidateMode = source.indexOf('if (args["build-spec"] != null) {');
+  const guard = source.indexOf("await assertCurrentCapitalAccessibilityBuildAllowed({ repositoryRoot: root });");
+  const buildInput = source.indexOf("const { fixture, candidateBuild, artifactFreshUntil } = await loadBuildInput(");
+  assert.ok(candidateMode >= 0, "staged transition guard는 candidate mode에만 적용돼야 한다");
+  assert.ok(guard >= 0, "staged transition guard가 필요하다");
+  assert.ok(candidateMode < guard, "candidate mode를 확인한 뒤 guard를 실행해야 한다");
+  assert.ok(guard < buildInput, "staged transition guard는 candidate 입력보다 먼저 실행돼야 한다");
+});
+
+test("retired production transit unprojected fixture는 candidate admission에서 거부된다", async () => {
+  const [fixture, policyBytes] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json")),
+  ]);
+  const buildSpec = { productionScopePolicy: {
+    path: "tools/datapack/nationwide-coverage-targets.json", sha256: sha256(policyBytes),
+  } };
+  await assert.doesNotReject(validateCandidateProductionScope(buildSpec, fixture));
+  const unprojected = structuredClone(fixture);
+  const pack = unprojected.packs.find(({ id }) => id === "capital");
+  const lineId = "line-cbe75f5287a1";
+  const stationIds = ["station-04529af2869a", "station-4404e10fdfef", "station-ae2b5b5f2ea5", "station-bdd848e7e432", "station-f311bc307610", "station-fce26411d581"];
+  pack.operators.push({ id: "operator-145e4415ee1f", nameKo: "인천공항 자기부상" });
+  pack.lines.push({ id: lineId, operatorId: "operator-145e4415ee1f", nameKo: "수도권 자기부상" });
+  pack.stationLines.push(...stationIds.map((stationId, index) => ({ stationId, lineId, stationCode: String(index + 1), lineSequence: index + 1, platformInfo: "" })));
+  await assert.rejects(
+    validateCandidateProductionScope(buildSpec, unprojected),
+    /retired transit remains in production fixture/,
+  );
+});
 
 function rehashAdmission(admission) {
   delete admission.evidenceHash;
@@ -99,6 +133,21 @@ test("candidate build spec release identity는 wall clock과 workflow run number
       sqlite: await readFile(path.join(output, "catalog/capital-v1.sqlite")),
       gzip: await readFile(path.join(output, "catalog/capital-v1.sqlite.gz")),
     };
+  }
+
+  try {
+    await readFile(path.join(root, "tools/datapack/release/current-capital-accessibility-transition.json"));
+    await assert.rejects(
+      build("transition-blocked", "2026-08-16T05:00:00.000Z", "303"),
+      /CURRENT_ACCESSIBILITY_TRANSITION_BLOCKED/,
+    );
+    await assert.rejects(
+      readFile(path.join(directory, "transition-blocked/current.json")),
+      /ENOENT/,
+    );
+    return;
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
   }
 
   const first = await build("first", "2026-08-14T16:00:00.000Z", "101");

@@ -11,6 +11,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 import { sortJson } from "./run-source-admission-pipeline.mjs";
 import {
+  main as buildDatapack,
   normalizeUnverifiedNetworkEdgeStates,
   projectCapitalTopologyIntoCanonicalFixture,
 } from "./build-datapack.mjs";
@@ -9092,6 +9093,9 @@ test("전국 coverage target은 공식 snapshot의 현재 catalog 노선과 정�
   assert.deepEqual(targets.inactiveLineExclusions, [
     {
       lineId: "line-cbe75f5287a1",
+      operatorIds: ["operator-145e4415ee1f"],
+      stationIds: ["station-04529af2869a", "station-4404e10fdfef", "station-ae2b5b5f2ea5", "station-bdd848e7e432", "station-f311bc307610", "station-fce26411d581"],
+      preservedStationIds: ["station-fce26411d581"],
       status: "OUT_OF_ACTIVE_SCOPE",
       serviceLifecycle: "RETIRED",
       effectiveFrom: "2025-10-17",
@@ -9161,7 +9165,7 @@ test("전국 coverage target은 공식 snapshot의 현재 catalog 노선과 정�
     .filter(({ lineId }) => !inactiveLineIds.has(lineId))
     .map(({ lineId, operatorId, regionId }) => ({ lineId, operatorId, regionId }))
     .sort(compareCoverageLineScopes);
-  assert.equal(fixture.providerLineScopes.length, 46);
+  assert.equal(fixture.providerLineScopes.length, 45);
   assert.deepEqual(providerScopes, expected);
   assert.deepEqual(
     fixture.providerLineScopes.find(({ lineId, operatorId }) => (
@@ -18143,8 +18147,9 @@ test("official OD fare validator는 pack inventory에 없는 source를 거부한
 
 async function writeCurrentItxReleaseInputs(
   workspace,
-  { mutateFixture, mutateTopologyEvidence, mutateCompleteness } = {},
+  { mutateFixture, mutateTopologyEvidence, mutateCompleteness, mutateCurrentSourceContext } = {},
 ) {
+  const repositoryRoot = await writeTransitionFreeCandidateRoot(workspace);
   const currentIdentity = {
     artifactKind: "station-catalog-pack",
     manifestVersion: 1,
@@ -18156,6 +18161,8 @@ async function writeCurrentItxReleaseInputs(
   const selectedServiceDates = { "7": "20260822", "8": "20260812", "9": "20260816" };
   const observedAt = "2026-08-12T14:00:00.000Z";
   const freshUntil = "2026-08-23T00:00:00+09:00";
+  const itxFixtureDirectory = path.join(repositoryRoot, "tools/datapack/fixtures/current-itx");
+  await mkdir(itxFixtureDirectory, { recursive: true });
   const fixture = JSON.parse(await readFile("tools/datapack/release/capital-production-canonical-pack.json", "utf8"));
   for (const pack of fixture.packs) delete pack.routeServiceArtifactEvidence;
 
@@ -18170,7 +18177,7 @@ async function writeCurrentItxReleaseInputs(
   mutateCompleteness?.(completeness);
   const { evidenceHash: _completenessEvidenceHash, ...completenessWithoutEvidenceHash } = completeness;
   completeness.evidenceHash = sha256(Buffer.from(JSON.stringify(completenessWithoutEvidenceHash)));
-  const completenessPath = path.join(workspace, "itx-completeness.json");
+  const completenessPath = path.join(itxFixtureDirectory, "itx-completeness.json");
   const completenessBytes = Buffer.from(`${JSON.stringify(completeness)}\n`);
   await writeFile(completenessPath, completenessBytes);
 
@@ -18188,7 +18195,7 @@ async function writeCurrentItxReleaseInputs(
   source.evidenceHash = sha256(Buffer.from(JSON.stringify(sourceWithoutEvidenceHash)));
   projectItxTopologyIntoCanonicalFixture(fixture, deriveItxTopology(source));
   mutateFixture?.(fixture);
-  const sourcePath = path.join(workspace, "itx-source.json");
+  const sourcePath = path.join(itxFixtureDirectory, "itx-source.json");
   const sourceBytes = Buffer.from(`${JSON.stringify(source)}\n`);
   await writeFile(sourcePath, sourceBytes);
 
@@ -18217,9 +18224,9 @@ async function writeCurrentItxReleaseInputs(
   };
   Object.assign(contract.sourceTimetableArtifact, {
     artifactId: source.artifactId,
-    artifactPath: sourcePath,
+    artifactPath: path.relative(repositoryRoot, sourcePath),
     sha256: sha256(sourceBytes),
-    completenessEvidencePath: completenessPath,
+    completenessEvidencePath: path.relative(repositoryRoot, completenessPath),
     completenessEvidenceSha256: sha256(completenessBytes),
     freshUntil,
     policyVersion: source.policyVersion,
@@ -18280,19 +18287,26 @@ async function writeCurrentItxReleaseInputs(
     writeFile(topologyReverificationPath, topologyReverificationBytes),
   ]);
   Object.assign(buildSpec.networkEdgeEvidence.capitalTopology, {
-    path: path.relative(root, baselineTopologyPath),
+    path: baselineTopologyPath,
     sha256: sha256(baselineTopologyBytes),
   });
   Object.assign(buildSpec.networkEdgeEvidence.capitalTopologyCandidate, {
-    path: path.relative(root, candidateTopologyPath),
+    path: candidateTopologyPath,
     sha256: sha256(candidateTopologyBytes),
   });
   Object.assign(buildSpec.networkEdgeEvidence.capitalTopologyReverification, {
-    path: path.relative(root, topologyReverificationPath),
+    path: topologyReverificationPath,
     sha256: sha256(topologyReverificationBytes),
   });
   const sourceInventory = JSON.parse(await readFile(buildSpec.networkEdgeEvidence.sourceInventory.path, "utf8"));
   const currentInventory = structuredClone(sourceInventory);
+  mutateCurrentSourceContext?.({ buildSpec, currentInventory });
+  await bindCandidateAccessibilityContextToFixture({
+    fixture,
+    buildSpec,
+    currentInventory,
+    repositoryRoot,
+  });
   const currentInventoryPath = path.join(workspace, "source-inventory.json");
   const currentInventoryBytes = Buffer.from(`${JSON.stringify(currentInventory)}\n`);
   await writeFile(currentInventoryPath, currentInventoryBytes);
@@ -18318,7 +18332,144 @@ async function writeCurrentItxReleaseInputs(
   return {
     buildSpecPath,
     env: { ...productionEnv, EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-08-14T16:00:00.000Z" },
+    repositoryRoot,
   };
+}
+
+async function writeTransitionFreeCandidateRoot(workspace) {
+  const repositoryRoot = path.join(workspace, "transition-free-repository");
+  const requiredFiles = [
+    "tools/datapack/schema/catalog-schema.sql",
+    "tools/datapack/official-od-fare-admission.json",
+    "tools/datapack/nationwide-coverage-targets.json",
+    "tools/datapack/release/source-snapshots.json",
+    "tools/datapack/sources/incheon-transit-station-info-20260814.json",
+  ];
+  for (const relativePath of requiredFiles) {
+    const target = path.join(repositoryRoot, relativePath);
+    await mkdir(path.dirname(target), { recursive: true });
+    await copyFile(path.join(root, relativePath), target);
+  }
+  return repositoryRoot;
+}
+
+async function bindCandidateAccessibilityContextToFixture({
+  fixture,
+  buildSpec,
+  currentInventory,
+  repositoryRoot,
+}) {
+  const ledger = JSON.parse(await readFile(
+    path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json"),
+    "utf8",
+  ));
+  const inventorySources = new Map(currentInventory.sources.map((source) => [source.id, source]));
+  const fixtureSnapshotIds = new Map();
+  for (const pack of fixture.packs) {
+    for (const row of [
+      ...(pack.facilities ?? []),
+      ...(pack.stationFacilityEvidence ?? []),
+      ...(pack.networkEdges ?? []).filter(({ edgeType }) => ["ENTRY", "EXIT"].includes(edgeType)),
+    ]) {
+      if (!row.sourceId || !inventorySources.get(row.sourceId)?.accessibilityAdmissionEvidence) continue;
+      assert.equal(typeof row.sourceSnapshotId, "string", `${row.sourceId} fixture snapshot identity`);
+      const sourceSnapshotIds = fixtureSnapshotIds.get(row.sourceId) ?? new Set();
+      sourceSnapshotIds.add(row.sourceSnapshotId);
+      fixtureSnapshotIds.set(row.sourceId, sourceSnapshotIds);
+    }
+  }
+
+  for (const [sourceId, snapshotIds] of fixtureSnapshotIds) {
+    assert.equal(snapshotIds.size, 1, `${sourceId} fixture must use one accessibility snapshot`);
+    const [snapshotId] = snapshotIds;
+    const source = inventorySources.get(sourceId);
+    const snapshotMatches = ledger.filter(
+      (snapshot) => snapshot.sourceId === sourceId && snapshot.snapshotId === snapshotId,
+    );
+    assert.equal(snapshotMatches.length, 1, `${sourceId} fixture snapshot must exist once in ledger`);
+    const [ledgerSnapshot] = snapshotMatches;
+    const sourceArtifactRelativePath = `tools/datapack/sources/${snapshotId}.json`;
+    const sourceArtifactPath = path.join(repositoryRoot, sourceArtifactRelativePath);
+    await mkdir(path.dirname(sourceArtifactPath), { recursive: true });
+    await copyFile(path.join(root, sourceArtifactRelativePath), sourceArtifactPath);
+    const sourceArtifactBytes = await readFile(sourceArtifactPath);
+    const sourceArtifact = JSON.parse(sourceArtifactBytes);
+    assert.equal(sourceArtifact.sourceId, sourceId, `${sourceId} fixture source artifact identity`);
+    assert.equal(sourceArtifact.snapshotId, snapshotId, `${sourceId} fixture source snapshot identity`);
+    for (const field of [
+      "capturedAt",
+      "observedAt",
+      "freshUntil",
+      "rawSha256",
+      "contentSha256",
+      "schemaFingerprint",
+      "absenceEvidenceMode",
+    ]) assert.ok(sourceArtifact[field], `${sourceId} fixture source ${field}`);
+    Object.assign(source.accessibilityAdmissionEvidence, {
+      snapshotId,
+      snapshotPath: sourceArtifactRelativePath,
+      capturedAt: sourceArtifact.capturedAt,
+      observedAt: sourceArtifact.observedAt,
+      freshUntil: sourceArtifact.freshUntil,
+      rawSha256: sourceArtifact.rawSha256,
+      contentSha256: sourceArtifact.contentSha256,
+      schemaFingerprint: sourceArtifact.schemaFingerprint,
+      snapshotFileSha256: sha256(sourceArtifactBytes),
+      absenceEvidenceMode: sourceArtifact.absenceEvidenceMode,
+    });
+
+    const projectionIndex = buildSpec.sourceSnapshots.findIndex((snapshot) => snapshot.sourceId === sourceId);
+    assert.notEqual(projectionIndex, -1, `${sourceId} fixture candidate source projection`);
+    const currentProjection = buildSpec.sourceSnapshots[projectionIndex];
+    const adminReviewRecordHash = source.admissionEvidence?.adminReviewRecordHash;
+    assert.match(adminReviewRecordHash ?? "", /^[0-9a-f]{64}$/, `${sourceId} fixture admin review identity`);
+    const nextProjection = {};
+    for (const key of Object.keys(currentProjection)) {
+      const value = key === "adminReviewRecordHash"
+        ? adminReviewRecordHash
+        : ledgerSnapshot[key];
+      assert.notEqual(value, undefined, `${sourceId} fixture ledger projection ${key}`);
+      nextProjection[key] = value;
+    }
+    buildSpec.sourceSnapshots[projectionIndex] = nextProjection;
+    buildSpec.sourceSnapshotIds = buildSpec.sourceSnapshotIds.map(
+      (candidateSnapshotId) => candidateSnapshotId === currentProjection.snapshotId
+        ? snapshotId
+        : candidateSnapshotId,
+    );
+  }
+
+  const selectedIds = new Set(buildSpec.sourceSnapshotIds);
+  const selectedLedger = ledger.filter(({ snapshotId }) => selectedIds.has(snapshotId));
+  assert.equal(selectedLedger.length, selectedIds.size, "fixture candidate source-set must be ledger-complete");
+  buildSpec.sourceSnapshotSetHash = sha256(JSON.stringify(selectedLedger));
+}
+
+async function runCurrentItxCandidateBuild({ buildSpecPath, output, env, repositoryRoot }) {
+  const keys = [
+    "EASYSUBWAY_DATAPACK_BUILD_NOW",
+    "EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY",
+    "EASYSUBWAY_DATAPACK_SIGNING_KEY_ID",
+    "EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM",
+    "EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM",
+    "GITHUB_RUN_NUMBER",
+  ];
+  const previous = new Map(keys.map((key) => [key, process.env[key]]));
+  try {
+    for (const key of keys) {
+      if (env[key] === undefined) delete process.env[key];
+      else process.env[key] = env[key];
+    }
+    return await buildDatapack(
+      ["--build-spec", buildSpecPath, "--output", output],
+      { repositoryRoot },
+    );
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 }
 
 test("official OD fare release candidate는 승인된 두 방향 quote와 provenance를 SQLite에 남긴다", async () => {
@@ -18333,12 +18484,8 @@ test("official OD fare release candidate는 승인된 두 방향 quote와 proven
 
   const outputDir = await mkdtemp(path.join(tmpdir(), "official-od-fare-release-candidate-"));
   try {
-    const { buildSpecPath, env } = await writeCurrentItxReleaseInputs(outputDir);
-    await execFileAsync(
-      process.execPath,
-      ["tools/datapack/build-datapack.mjs", "--build-spec", buildSpecPath, "--output", outputDir],
-      { cwd: root, env },
-    );
+    const inputs = await writeCurrentItxReleaseInputs(outputDir);
+    await runCurrentItxCandidateBuild({ ...inputs, output: outputDir });
     const database = new DatabaseSync(path.join(outputDir, "catalog/capital-v1.sqlite"));
     let rows;
     try {
@@ -18374,18 +18521,82 @@ test("official OD fare release candidate는 승인된 두 방향 quote와 proven
   }
 });
 
+test("staged accessibility successor에서도 official OD fare release candidate fixture source-set은 격리된다", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "official-od-fare-staged-accessibility-"));
+  try {
+    const successorSnapshotId = "kric-station-convenience-standard-test-successor";
+    const inputs = await writeCurrentItxReleaseInputs(workspace, {
+      mutateCurrentSourceContext: ({ buildSpec, currentInventory }) => {
+        const source = currentInventory.sources.find(({ id }) => id === "kric-station-convenience-standard");
+        assert.ok(source?.accessibilityAdmissionEvidence);
+        source.accessibilityAdmissionEvidence.snapshotId = successorSnapshotId;
+        source.accessibilityAdmissionEvidence.freshUntil = "2026-08-22T00:00:00.000Z";
+        const snapshot = buildSpec.sourceSnapshots.find(({ sourceId }) => sourceId === source.id);
+        assert.ok(snapshot);
+        const previousSnapshotId = snapshot.snapshotId;
+        snapshot.snapshotId = successorSnapshotId;
+        buildSpec.sourceSnapshotIds = buildSpec.sourceSnapshotIds.map(
+          (snapshotId) => snapshotId === previousSnapshotId ? successorSnapshotId : snapshotId,
+        );
+      },
+    });
+    await runCurrentItxCandidateBuild({ ...inputs, output: path.join(workspace, "output") });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("staged accessibility successor fixture는 복수·미등록 snapshot identity를 거부한다", async (t) => {
+  const mutateKricSnapshotIds = (fixture, mutate) => {
+    const rows = fixture.packs.flatMap((pack) => [
+      ...(pack.facilities ?? []),
+      ...(pack.stationFacilityEvidence ?? []),
+      ...(pack.networkEdges ?? []).filter(({ edgeType }) => ["ENTRY", "EXIT"].includes(edgeType)),
+    ]).filter(({ sourceId }) => sourceId === "kric-station-convenience-standard");
+    assert.ok(rows.length > 1);
+    mutate(rows);
+  };
+  await t.test("multiple identities", async () => {
+    const workspace = await mkdtemp(path.join(tmpdir(), "official-od-fare-multiple-accessibility-"));
+    try {
+      await assert.rejects(
+        writeCurrentItxReleaseInputs(workspace, {
+          mutateFixture: (fixture) => mutateKricSnapshotIds(
+            fixture,
+            ([row]) => { row.sourceSnapshotId = "kric-station-convenience-standard-untracked"; },
+          ),
+        }),
+        /fixture must use one accessibility snapshot/,
+      );
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+  await t.test("untracked identity", async () => {
+    const workspace = await mkdtemp(path.join(tmpdir(), "official-od-fare-untracked-accessibility-"));
+    try {
+      await assert.rejects(
+        writeCurrentItxReleaseInputs(workspace, {
+          mutateFixture: (fixture) => mutateKricSnapshotIds(
+            fixture,
+            (rows) => rows.forEach((row) => { row.sourceSnapshotId = "seoul-metro-accessibility-20260813T213842955Z"; }),
+          ),
+        }),
+        /fixture snapshot must exist once in ledger/,
+      );
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+});
+
 test("official OD fare release candidate는 승인 quote 순서에 의존하지 않는다", async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), "official-od-fare-release-order-"));
   try {
-    const { buildSpecPath, env } = await writeCurrentItxReleaseInputs(workspace, {
+    const inputs = await writeCurrentItxReleaseInputs(workspace, {
       mutateFixture: (fixture) => fixture.packs[0].officialOdFareQuotes.reverse(),
     });
-
-    await execFileAsync(process.execPath, [
-      "tools/datapack/build-datapack.mjs",
-      "--build-spec", buildSpecPath,
-      "--output", path.join(workspace, "output"),
-    ], { cwd: root, env });
+    await runCurrentItxCandidateBuild({ ...inputs, output: path.join(workspace, "output") });
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -18394,16 +18605,12 @@ test("official OD fare release candidate는 승인 quote 순서에 의존하지 
 test("production candidate는 admission에 결속되지 않은 ITX timetable row를 거부한다", async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), "production-unadmitted-itx-timetable-"));
   try {
-    const { buildSpecPath, env } = await writeCurrentItxReleaseInputs(workspace, {
+    const inputs = await writeCurrentItxReleaseInputs(workspace, {
       mutateFixture: (fixture) => { fixture.packs[0].transitTrips[0].serviceClass = "ITX_CHEONGCHUN"; },
     });
 
     await assert.rejects(
-      execFileAsync(process.execPath, [
-        "tools/datapack/build-datapack.mjs",
-        "--build-spec", buildSpecPath,
-        "--output", path.join(workspace, "output"),
-      ], { cwd: root, env }),
+      runCurrentItxCandidateBuild({ ...inputs, output: path.join(workspace, "output") }),
       /production ITX timetable rows require explicit admission/,
     );
   } finally {
@@ -18414,7 +18621,7 @@ test("production candidate는 admission에 결속되지 않은 ITX timetable row
 test("production candidate는 중복 ITX admission pair로 다른 pair를 대체하면 거부한다", async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), "production-duplicate-itx-pair-"));
   try {
-    const { buildSpecPath, env } = await writeCurrentItxReleaseInputs(workspace, {
+    const inputs = await writeCurrentItxReleaseInputs(workspace, {
       mutateFixture: (fixture) => {
         const itxEdges = fixture.packs[0].networkEdges.filter(
           ({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN",
@@ -18427,11 +18634,7 @@ test("production candidate는 중복 ITX admission pair로 다른 pair를 대체
     });
 
     await assert.rejects(
-      execFileAsync(process.execPath, [
-        "tools/datapack/build-datapack.mjs",
-        "--build-spec", buildSpecPath,
-        "--output", path.join(workspace, "output"),
-      ], { cwd: root, env }),
+      runCurrentItxCandidateBuild({ ...inputs, output: path.join(workspace, "output") }),
       /ITX network edge fixture projection must contain each admitted directional pair exactly once/,
     );
   } finally {
@@ -18442,17 +18645,13 @@ test("production candidate는 중복 ITX admission pair로 다른 pair를 대체
 test("production candidate는 completeness station-catalog identity 불일치를 거부한다", async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), "production-itx-completeness-identity-"));
   try {
-    const { buildSpecPath, env } = await writeCurrentItxReleaseInputs(workspace, {
+    const inputs = await writeCurrentItxReleaseInputs(workspace, {
       mutateCompleteness: (completeness) => {
         completeness.stationCatalogPackIdentity.manifestSha256 = "9".repeat(64);
       },
     });
     await assert.rejects(
-      execFileAsync(process.execPath, [
-        "tools/datapack/build-datapack.mjs",
-        "--build-spec", buildSpecPath,
-        "--output", path.join(workspace, "output"),
-      ], { cwd: root, env }),
+      runCurrentItxCandidateBuild({ ...inputs, output: path.join(workspace, "output") }),
       /topology, source, completeness, and contract station catalog identities must match exactly/,
     );
   } finally {
@@ -18463,17 +18662,13 @@ test("production candidate는 completeness station-catalog identity 불일치를
 test("production candidate는 contract와 다른 topology input pack identity를 거부한다", async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), "production-itx-input-pack-identity-"));
   try {
-    const { buildSpecPath, env } = await writeCurrentItxReleaseInputs(workspace, {
+    const inputs = await writeCurrentItxReleaseInputs(workspace, {
       mutateTopologyEvidence: (evidence) => {
         evidence.pack.inputSha256 = "9".repeat(64);
       },
     });
     await assert.rejects(
-      execFileAsync(process.execPath, [
-        "tools/datapack/build-datapack.mjs",
-        "--build-spec", buildSpecPath,
-        "--output", path.join(workspace, "output"),
-      ], { cwd: root, env }),
+      runCurrentItxCandidateBuild({ ...inputs, output: path.join(workspace, "output") }),
       /ITX topology input pack identity does not match coverage contract admission/,
     );
   } finally {
@@ -18484,18 +18679,14 @@ test("production candidate는 contract와 다른 topology input pack identity를
 test("production candidate는 legacy ITX readmission projection을 거부한다", async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), "production-rewritten-itx-projection-"));
   try {
-    const { buildSpecPath, env } = await writeCurrentItxReleaseInputs(workspace, {
+    const inputs = await writeCurrentItxReleaseInputs(workspace, {
       mutateTopologyEvidence: (evidence) => {
         evidence.readmissions = [{ itxSubgraph: { edgesSha256: "f".repeat(64) } }];
       },
     });
 
     await assert.rejects(
-      execFileAsync(process.execPath, [
-        "tools/datapack/build-datapack.mjs",
-        "--build-spec", buildSpecPath,
-        "--output", path.join(workspace, "output"),
-      ], { cwd: root, env }),
+      runCurrentItxCandidateBuild({ ...inputs, output: path.join(workspace, "output") }),
       /ITX topology evidence\.readmissions is not allowed/,
     );
   } finally {
@@ -18506,16 +18697,13 @@ test("production candidate는 legacy ITX readmission projection을 거부한다"
 test("official OD fare release candidate는 admission과 다른 quote set evidence를 거부한다", async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), "official-od-fare-release-mismatch-"));
   try {
-    const { buildSpecPath, env } = await writeCurrentItxReleaseInputs(workspace);
+    const inputs = await writeCurrentItxReleaseInputs(workspace);
+    const { buildSpecPath } = inputs;
     const buildSpec = JSON.parse(await readFile(buildSpecPath, "utf8"));
     buildSpec.officialOdFareEvidence.quoteSetHash = "f".repeat(64);
     await writeFile(buildSpecPath, JSON.stringify(buildSpec));
     await assert.rejects(
-      execFileAsync(
-        process.execPath,
-        ["tools/datapack/build-datapack.mjs", "--build-spec", buildSpecPath, "--output", path.join(workspace, "output")],
-        { cwd: root, env },
-      ),
+      runCurrentItxCandidateBuild({ ...inputs, output: path.join(workspace, "output") }),
       /officialOdFareEvidence.quoteSetHash must match admission/,
     );
   } finally {

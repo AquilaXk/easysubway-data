@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
@@ -144,6 +146,90 @@ test("three-way raw identity mismatch와 duplicate/unmapped evidence를 거부�
   assert.throws(
     () => buildFacilitySourceAdmission(duplicateMapping),
     /source mapping tuple is ambiguous/,
+  );
+});
+
+test("FACILITY admission은 pilot의 2개 station-line 가정 없이 injected multi-line scope shape를 보존한다", async () => {
+  const input = await currentInput();
+  const extraLineId = "seoul-2";
+  const extraLine = { ...structuredClone(input.productionInput.lines.find(({ id }) => id === "seoul-4")), id: extraLineId, nameKo: "수도권 2호선" };
+  const sourceMapping = structuredClone(input.productionInput.stationMappings.find(({ stationId }) => stationId === "station-sangnoksu"));
+  const sourceRow = structuredClone(input.productionInput.stationLineRows.find((row) =>
+    row.sourceId === sourceMapping.sourceId && row.sourceStationCode === sourceMapping.sourceStationCode && row.lineId === sourceMapping.lineId));
+  const extraMapping = { ...sourceMapping, lineId: extraLineId, stationLineId: `station-sangnoksu:${extraLineId}` };
+  const extraRow = { ...sourceRow, lineId: extraLineId };
+  input.productionInput.lines.push(extraLine);
+  input.productionInput.stationMappings.push(extraMapping);
+  input.productionInput.stationLineRows.push(extraRow);
+  input.productionInput.supportedV1Scope.includedLineIds.push(extraLineId);
+  input.productionInput.supportedV1Scope.facilityCoverageDenominator.expectedRows = 9;
+
+  const result = buildFacilitySourceAdmission(input);
+  assert.equal(result.decision, "NO_GO");
+  assert.equal(result.queryPartition.summary.missingTargetCount, 1);
+  assert.equal(result.denominatorRows.length, 9);
+});
+
+test("FACILITY admission은 scope에 선언만 된 unused operator를 거부한다", async () => {
+  const input = await currentInput();
+  input.productionInput.supportedV1Scope.includedOperatorIds.push("operator-unused");
+  input.productionInput.operators.push({ id: "operator-unused", nameKo: "미사용 운영사" });
+  assert.throws(() => buildFacilitySourceAdmission(input), /current scope cardinality mismatch/);
+});
+
+test("FACILITY source license/admission evidence revoke와 hash drift를 provider call 전에 거부한다", async () => {
+  const revoked = await currentInput();
+  sourceEntry(revoked).license.commercialUseAllowed = false;
+  assert.throws(() => buildFacilitySourceAdmission(revoked), /FACILITY source production admission mismatch/);
+
+  const hashDrift = await currentInput();
+  sourceEntry(hashDrift).admissionEvidence.licenseEvidenceHash = "0".repeat(64);
+  assert.throws(() => buildFacilitySourceAdmission(hashDrift), /FACILITY source approval or license mismatch/);
+});
+
+test("등록된 current snapshot path만 resolver가 읽고 stale/pilot path mismatch는 admission 전에 거부한다", async (t) => {
+  const temporary = await mkdtemp(path.join(tmpdir(), "easysubway-facility-current-path-"));
+  t.after(() => rm(temporary, { recursive: true, force: true }));
+  const sourceRoot = path.join(root, "tools/datapack");
+  const tempDatapack = path.join(temporary, "tools/datapack");
+  await Promise.all([
+    mkdir(path.join(tempDatapack, "release"), { recursive: true }),
+    mkdir(path.join(tempDatapack, "inputs"), { recursive: true }),
+    mkdir(path.join(tempDatapack, "sources"), { recursive: true }),
+  ]);
+  await Promise.all([
+    copyFile(path.join(sourceRoot, "release/candidate-build-spec.json"), path.join(tempDatapack, "release/candidate-build-spec.json")),
+    copyFile(path.join(sourceRoot, "release/source-snapshots.json"), path.join(tempDatapack, "release/source-snapshots.json")),
+    copyFile(path.join(sourceRoot, "inputs/capital-pilot-production-source-input.json"), path.join(tempDatapack, "inputs/capital-pilot-production-source-input.json")),
+  ]);
+  const inventory = JSON.parse(await readFile(path.join(sourceRoot, "source-inventory.json")));
+  const source = inventory.sources.find(({ id }) => id === "kric-station-convenience-standard");
+  source.accessibilityAdmissionEvidence.snapshotPath = "tools\\datapack\\sources\\current.json";
+  await writeFile(path.join(tempDatapack, "source-inventory.json"), JSON.stringify(inventory));
+  const currentSnapshot = path.join(sourceRoot, "sources/kric-station-convenience-standard-20260813T200604805Z.json");
+  await copyFile(currentSnapshot, path.join(tempDatapack, "sources/current.json"));
+
+  const resolved = await loadCurrentFacilitySourceAdmissionInput({ repositoryRoot: temporary, observedAt: FRESH_AT });
+  assert.equal(resolved.snapshotPath, "tools/datapack/sources/current.json");
+  assert.deepEqual(Buffer.from(resolved.snapshotBytes), await readFile(path.join(tempDatapack, "sources/current.json")));
+  assert.equal(buildFacilitySourceAdmission(resolved).decision, "GO");
+
+  source.accessibilityAdmissionEvidence.snapshotPath = "tools/datapack/sources/pilot.json";
+  await writeFile(path.join(tempDatapack, "source-inventory.json"), JSON.stringify(inventory));
+  await copyFile(path.join(sourceRoot, "sources/kric-station-convenience-standard-20260728.json"), path.join(tempDatapack, "sources/pilot.json"));
+  const stale = await loadCurrentFacilitySourceAdmissionInput({ repositoryRoot: temporary, observedAt: FRESH_AT });
+  assert.throws(() => buildFacilitySourceAdmission(stale), /KRIC accessibility snapshot identity is invalid|snapshot admission identity mismatch/);
+
+  source.accessibilityAdmissionEvidence.snapshotPath = "tools/datapack/sources/current.json";
+  await writeFile(path.join(tempDatapack, "source-inventory.json"), JSON.stringify(inventory));
+  const outside = await mkdtemp(path.join(tmpdir(), "easysubway-facility-outside-"));
+  t.after(() => rm(outside, { recursive: true, force: true }));
+  await copyFile(currentSnapshot, path.join(outside, "current.json"));
+  await rm(path.join(tempDatapack, "sources"), { recursive: true, force: true });
+  await symlink(outside, path.join(tempDatapack, "sources"));
+  await assert.rejects(
+    loadCurrentFacilitySourceAdmissionInput({ repositoryRoot: temporary, observedAt: FRESH_AT }),
+    /registered snapshot path escapes repository/,
   );
 });
 

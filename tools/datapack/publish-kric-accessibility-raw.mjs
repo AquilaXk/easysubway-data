@@ -1,7 +1,5 @@
 #!/usr/bin/env node
-import { execFile as execFileCallback } from "node:child_process";
 import path from "node:path";
-import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 import { isMainModule } from "../lib/is-main-module.mjs";
@@ -14,7 +12,6 @@ import {
   publishAccessibilityRawObservation,
 } from "./lib/kric-raw-object-storage.mjs";
 
-const execFileAsync = promisify(execFileCallback);
 const SOURCE_ID = "kric-station-convenience-standard";
 const ARTIFACT_KIND = "kric-accessibility-raw-collection";
 const REPOSITORY_ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -22,16 +19,18 @@ const REPOSITORY_ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.
 export async function publishKricAccessibilityRawArtifact({
   observationRoot,
   receiptPath,
-  expectedBucketOwner,
   repositoryRoot = REPOSITORY_ROOT,
-  execFileImpl = execFileAsync,
+  env = process.env,
+  client = null,
+  now = new Date(),
 } = {}) {
   return publishAccessibilityRawObservation({
     observationRoot,
     receiptPath,
-    expectedBucketOwner,
     repositoryRoot,
-    execFileImpl,
+    env,
+    client,
+    now,
     sourceId: SOURCE_ID,
     observationArtifactKind: "kric-standard-accessibility-observation",
     rawArtifactKind: ARTIFACT_KIND,
@@ -44,10 +43,12 @@ export async function publishKricAccessibilityRawArtifact({
 
 async function main() {
   const args = parseAccessibilityRawPublisherArgs(process.argv.slice(2));
+  if (Object.keys(args).length !== 2 || typeof args.observation !== "string" || typeof args.receipt !== "string") {
+    throw new Error("invalid arguments");
+  }
   const receipt = await publishKricAccessibilityRawArtifact({
     observationRoot: args.observation,
     receiptPath: args.receipt,
-    expectedBucketOwner: args["expected-bucket-owner"],
   });
   process.stdout.write(`${JSON.stringify(receipt, null, 2)}\n`);
 }

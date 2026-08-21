@@ -192,6 +192,9 @@
   "inactiveLineExclusions": [
     {
       "lineId": "line-cbe75f5287a1",
+      "operatorIds": ["operator-145e4415ee1f"],
+      "stationIds": ["station-04529af2869a", "station-4404e10fdfef", "station-ae2b5b5f2ea5", "station-bdd848e7e432", "station-f311bc307610", "station-fce26411d581"],
+      "preservedStationIds": ["station-fce26411d581"],
       "status": "OUT_OF_ACTIVE_SCOPE",
       "serviceLifecycle": "RETIRED",
       "effectiveFrom": "2025-10-17",
