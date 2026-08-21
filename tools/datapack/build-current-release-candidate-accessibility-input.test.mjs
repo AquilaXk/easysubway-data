@@ -68,6 +68,39 @@ test("unresolved·stale·candidate·route·projected RIDE drift는 output 전에
   }
 });
 
+test("authority validator는 actual edge type denominator를 재집계한다", async () => {
+  const input = await fullInput();
+  const { authority } = buildCurrentReleaseCandidateAccessibilityAuthority(input);
+  const forged = structuredClone(authority);
+  const entry = forged.edges.find(({ edgeType }) => edgeType === "ENTRY");
+  const exit = forged.edges.find(({ edgeType }) => edgeType === "EXIT");
+  Object.assign(exit, {
+    edgeType: "ENTRY",
+    fromNodeId: entry.fromNodeId,
+    toNodeId: entry.toNodeId,
+    durationSeconds: entry.durationSeconds,
+    distanceMeters: entry.distanceMeters,
+    requiredCells: structuredClone(entry.requiredCells),
+  });
+  exit.routeEdgeSha256 = sha256(Buffer.from(canonical({
+    edgeId: exit.edgeId,
+    edgeType: exit.edgeType,
+    fromNodeId: exit.fromNodeId,
+    toNodeId: exit.toNodeId,
+    durationSeconds: exit.durationSeconds,
+    distanceMeters: exit.distanceMeters,
+    servicePattern: "",
+    serviceClass: "SUBWAY",
+  })));
+  const { authoritySha256: _ignored, ...payload } = forged;
+  forged.authoritySha256 = sha256(Buffer.from(canonical(payload)));
+
+  assert.throws(
+    () => canonicalCurrentReleaseCandidateAccessibilityAuthorityJson(forged),
+    /authority edge denominator mismatch/,
+  );
+});
+
 test("CLI는 canonical fixture/authority 두 파일을 만들고 output collision에는 mutation 0이다", async (context) => {
   const directory = await mkdtemp(path.join(tmpdir(), "full-capital-authority-"));
   context.after(() => rm(directory, { recursive: true, force: true }));

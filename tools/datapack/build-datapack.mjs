@@ -556,7 +556,10 @@ async function loadBuildInput(
       projectedFixture: sourceFixture,
       sourceFixtureBytes,
     });
-    fixture = validated.fixture;
+    fixture = transferValidatedItxStationCatalogEvidence(
+      sourceFixture,
+      validated.fixture,
+    );
     overrideBinding = validated.binding;
   }
   return {
@@ -569,6 +572,35 @@ async function loadBuildInput(
     ),
     artifactFreshUntil,
   };
+}
+
+export function transferValidatedItxStationCatalogEvidence(
+  sourceFixture,
+  replacementFixture,
+  evidenceStore = validatedItxStationCatalogEvidence,
+) {
+  if (!Array.isArray(sourceFixture?.packs) || !Array.isArray(replacementFixture?.packs)
+    || !(evidenceStore instanceof WeakMap)) {
+    throw new Error("candidate fixture override ITX evidence input mismatch");
+  }
+  const replacements = new Map();
+  for (const pack of replacementFixture.packs) {
+    const key = `${pack.id}\u0000${pack.version}`;
+    if (replacements.has(key)) {
+      throw new Error("candidate fixture override pack identity duplicate");
+    }
+    replacements.set(key, pack);
+  }
+  for (const sourcePack of sourceFixture.packs) {
+    const evidence = evidenceStore.get(sourcePack);
+    if (evidence === undefined) continue;
+    const replacementPack = replacements.get(`${sourcePack.id}\u0000${sourcePack.version}`);
+    if (replacementPack === undefined) {
+      throw new Error("candidate fixture override ITX pack identity mismatch");
+    }
+    evidenceStore.set(replacementPack, evidence);
+  }
+  return replacementFixture;
 }
 
 export async function projectCandidateFixtureForAccessibilityAuthority({

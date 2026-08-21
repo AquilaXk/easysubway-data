@@ -3,9 +3,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import {
-  validateCandidateFixtureOverride,
-} from "./build-datapack.mjs";
+import * as buildDatapack from "./build-datapack.mjs";
 import {
   canonicalCurrentReleaseCandidateAccessibilityAuthorityJson,
   canonicalCurrentReleaseCandidateFixtureJson,
@@ -14,13 +12,33 @@ import {
 
 test("candidate fixture override는 original/projected/authority identity를 exact 결속한다", () => {
   const value = overrideFixture();
-  const result = validateCandidateFixtureOverride(value);
+  const result = buildDatapack.validateCandidateFixtureOverride(value);
   assert.equal(result.fixture.packs[0].networkEdges.length, 2674);
   assert.deepEqual(result.binding, {
     sourceFixtureSha256: sha(value.sourceFixtureBytes),
     candidateFixtureSha256: sha(value.candidateFixtureBytes),
     serverRouteCoverageAuthoritySha256: value.authority.authoritySha256,
   });
+});
+
+test("candidate fixture override는 ITX route-service evidence binding을 보존한다", () => {
+  const sourcePack = { id: "capital", version: "1" };
+  const replacementPack = { id: "capital", version: "1" };
+  const sourceFixture = { packs: [sourcePack] };
+  const replacementFixture = { packs: [replacementPack] };
+  const evidence = { artifactEvidence: {}, stationCatalogEvidence: {} };
+  const evidenceStore = new WeakMap([[sourcePack, evidence]]);
+
+  assert.equal(typeof buildDatapack.transferValidatedItxStationCatalogEvidence, "function");
+  assert.strictEqual(
+    buildDatapack.transferValidatedItxStationCatalogEvidence(
+      sourceFixture,
+      replacementFixture,
+      evidenceStore,
+    ),
+    replacementFixture,
+  );
+  assert.strictEqual(evidenceStore.get(replacementPack), evidence);
 });
 
 test("단독 override·noncanonical·hash·projection drift는 build input 선택 전에 거부된다", async () => {
@@ -38,7 +56,7 @@ test("단독 override·noncanonical·hash·projection drift는 build input 선�
   ]) {
     const value = overrideFixture();
     mutate(value);
-    assert.throws(() => validateCandidateFixtureOverride(value), pattern, label);
+    assert.throws(() => buildDatapack.validateCandidateFixtureOverride(value), pattern, label);
   }
 });
 

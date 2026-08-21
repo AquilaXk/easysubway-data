@@ -162,6 +162,11 @@ function validateAuthorityPayload(payload) {
   }) || !Array.isArray(payload.edges) || payload.edges.length !== 456) {
     throw new Error("authority edge denominator mismatch");
   }
+  const actualCounts = edgeTypeCounts(payload.edges);
+  if (actualCounts.ENTRY !== 213 || actualCounts.EXIT !== 213
+    || actualCounts.IN_STATION_TRANSFER !== 30 || Object.keys(actualCounts).length !== 3) {
+    throw new Error("authority edge denominator mismatch");
+  }
   const ids = new Set();
   let previous = null;
   for (const edge of payload.edges) {
