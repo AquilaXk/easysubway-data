@@ -10,6 +10,7 @@ import {
   atomicReplace,
   appendTransferCandidateSourceSnapshot,
   deriveReleaseProjection,
+  isActiveCandidateSourceSequence,
   rebindCandidateSourceSnapshots,
   rebindCurrentCandidateSourceSnapshots,
 } from "./rebind-current-candidate-source-snapshots.mjs";
@@ -18,7 +19,7 @@ import { releaseRequestBindingViolations } from "./verify-release-request-bindin
 import { approvedGovernanceBindingTransition } from "./source-governance-policy.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
-const NOW = new Date("2026-08-15T12:00:00.000Z");
+const NOW = new Date("2026-08-16T12:00:00.000Z");
 const RELATIVE = [
   "tools/datapack/release/candidate-build-spec.json",
   "tools/datapack/source-inventory.json",
@@ -32,9 +33,22 @@ const RELATIVE = [
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const jsonSha = (value) => sha(Buffer.from(JSON.stringify(value)));
 
+test("active candidate source sequence는 exact six와 TRANSFER-last seven만 허용한다", () => {
+  const six = [
+    "seoulmetro-cyberstation-route-map", "kric-subway-timetable", "seoul-metro-accessibility",
+    "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info",
+  ];
+  const seven = [...six, "seoul-metro-transfer-distance-duration"];
+  assert.equal(isActiveCandidateSourceSequence(six), true);
+  assert.equal(isActiveCandidateSourceSequence(seven), true);
+  assert.equal(isActiveCandidateSourceSequence([...seven].reverse()), false);
+  assert.equal(isActiveCandidateSourceSequence([...six, "other-source"]), false);
+  assert.equal(isActiveCandidateSourceSequence([...six, six.at(-1)]), false);
+});
+
 function kric213Snapshot() {
   const operation = KRIC_ACCESSIBILITY_OPERATIONS[0];
-  const capturedAt = "2026-08-15T11:00:00.000Z";
+  const capturedAt = "2026-08-16T11:00:00.000Z";
   const queries = Array.from({ length: 213 }, (_, index) => {
     const stationId = `station-${index}`;
     const lineId = `line-${index}`;
@@ -49,8 +63,8 @@ function kric213Snapshot() {
   });
   return {
     schemaVersion: 1, artifactKind: "kric-accessibility-snapshot", sourceId: operation.sourceId,
-    snapshotId: "kric-station-convenience-standard-20260815T110000000Z", capturedAt, observedAt: capturedAt,
-    freshUntil: "2026-08-16T11:00:00.000Z", providerResultCode: "00", schemaStatus: "PASS",
+    snapshotId: "kric-station-convenience-standard-20260816T110000000Z", capturedAt, observedAt: capturedAt,
+    freshUntil: "2026-08-17T11:00:00.000Z", providerResultCode: "00", schemaStatus: "PASS",
     absenceEvidenceMode: "EXHAUSTIVE_LIST", credentialRedacted: true, queries, queryCount: queries.length,
     rowCount: 0,
     contentSha256: jsonSha(queries.map(({ rawResponseSha256: _, ...query }) => query)),
@@ -84,7 +98,9 @@ async function fixture() {
   const request = JSON.parse(await readFile(requestPath, "utf8"));
   request.buildSpecSha256 = sha(candidateBytes);
   await writeFile(requestPath, `${JSON.stringify(request, null, 2)}\n`);
-  const previous = snapshots.find(({ snapshotId }) => snapshotId === "kric-station-convenience-standard-20260813T200604805Z");
+  const selectedKricSnapshotId = candidate.sourceSnapshots
+    .find(({ sourceId }) => sourceId === "kric-station-convenience-standard")?.snapshotId;
+  const previous = snapshots.find(({ snapshotId }) => snapshotId === selectedKricSnapshotId);
   assert.ok(previous);
   const snapshot = kric213Snapshot();
   const next = structuredClone(previous);
@@ -100,15 +116,15 @@ async function fixture() {
   next.schemaFingerprint = snapshot.schemaFingerprint;
   next.contentSha256 = snapshot.contentSha256;
   next.governancePolicySha256 = sha(governanceBytes);
-  next.freshnessExpiresAt = "2026-11-13T11:00:00.000Z";
-  next.rawRetentionExpiresAt = "2026-11-13T11:00:00.000Z";
+  next.freshnessExpiresAt = "2026-11-14T11:00:00.000Z";
+  next.rawRetentionExpiresAt = "2026-11-14T11:00:00.000Z";
   next.rawReceipt = {
     ...next.rawReceipt,
     snapshotId: next.snapshotId,
     snapshotRawSha256: snapshot.rawSha256,
     rawObjectSha256: next.rawSha256,
     capturedAt: next.retrievedAt,
-    storedAt: "2026-08-15T11:00:30.000Z",
+    storedAt: "2026-08-16T11:00:30.000Z",
     byteSize: 213,
   };
   next.diffSummary = buildSnapshotDiff(previous, next);
@@ -362,7 +378,7 @@ test("head, source identity, receipt, governance and inventory binding drifts fa
     (input) => { input.sourceInventory.sources.find(({ id }) => id === "kric-station-convenience-standard").admissionEvidence.decision = "REJECTED"; },
     (input) => { input.sourceInventory.sources.find(({ id }) => id === "kric-station-convenience-standard").accessibilityAdmissionEvidence.snapshotFileSha256 = "0".repeat(64); },
     (input) => { input.sourceSnapshots.at(-1).rawReceipt.snapshotFileSha256 = "0".repeat(64); },
-    (input) => { input.sourceSnapshots.at(-1).rawReceipt.capturedAt = "2026-08-15T11:00:01.000Z"; },
+    (input) => { input.sourceSnapshots.at(-1).rawReceipt.capturedAt = "2026-08-16T11:00:01.000Z"; },
     (input) => { input.sourceInventory.sources.find(({ id }) => id === "kric-station-convenience-standard").accessibilityAdmissionEvidence.absenceEvidenceMode = "UNVERIFIED"; },
     (input) => {
       const snapshot = JSON.parse(input.kricSnapshotBytes);

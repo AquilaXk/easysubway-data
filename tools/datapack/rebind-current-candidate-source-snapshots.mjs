@@ -64,6 +64,12 @@ function sameBytes(left, right) { return Buffer.isBuffer(left) && Buffer.isBuffe
 function identity(stat) { return { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, mode: stat.mode }; }
 function sameIdentity(left, right) { return left.dev === right.dev && left.ino === right.ino && left.size === right.size && left.mtimeMs === right.mtimeMs && left.mode === right.mode; }
 
+export function isActiveCandidateSourceSequence(sourceIds) {
+  return Array.isArray(sourceIds)
+    && [ACTIVE_SOURCE_IDS, ACTIVE_SOURCE_IDS_WITH_TRANSFER]
+      .some((expected) => JSON.stringify(sourceIds) === JSON.stringify(expected));
+}
+
 export function rebindCandidateSourceSnapshots({
   candidateBuildSpec, candidateBuildSpecBytes, releaseRequest, sourceInventory, sourceInventoryBytes, sourceSnapshots, canonicalPack, governancePolicy, governancePolicyBytes,
   freshnessPolicy, kricSnapshotBytes,
@@ -98,7 +104,7 @@ export function rebindCandidateSourceSnapshots({
   const sourceIds = projections.map(({ sourceId }) => sourceId);
   if (new Set(ids).size !== ids.length || new Set(sourceIds).size !== sourceIds.length
     || projections.some((projection, index) => projection?.snapshotId !== ids[index])
-    || ![ACTIVE_SOURCE_IDS, ACTIVE_SOURCE_IDS_WITH_TRANSFER].some((expected) => JSON.stringify(sourceIds) === JSON.stringify(expected))) {
+    || !isActiveCandidateSourceSequence(sourceIds)) {
     throw new Error("candidate source identity is not one-to-one");
   }
   const bySnapshotId = new Map();

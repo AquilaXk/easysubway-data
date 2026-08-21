@@ -1,7 +1,7 @@
 import { canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
-import { deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
+import { deriveReleaseProjection, isActiveCandidateSourceSequence } from "./rebind-current-candidate-source-snapshots.mjs";
 import { validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
@@ -10,10 +10,6 @@ const SOURCE_ID = "kric-station-convenience-standard";
 const TYPES = Object.freeze(["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"]);
 const FACILITY_TYPES = new Map([["EV", "ELEVATOR"], ["ES", "ESCALATOR"], ["WCLF", "WHEELCHAIR_LIFT"]]);
 const AUXILIARY_CODES = new Set(["ELEC", "FEED", "INFO", "TOLT"]);
-const CURRENT_SOURCE_IDS = Object.freeze([
-  "seoulmetro-cyberstation-route-map", "kric-subway-timetable", "seoul-metro-accessibility",
-  "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info",
-]);
 const PROJECTION_KEYS = [
   "snapshotId", "sourceId", "rawObjectUri", "rawSha256", "redactedRequestFingerprint",
   "schemaFingerprint", "licenseStatus", "redistributionAllowed", "adminReviewRecordHash",
@@ -163,14 +159,14 @@ function validateSourceContext({ candidateBuildSpec, sourceInventoryBytes, sourc
   validateSourceGovernancePolicy({ policy: governancePolicy, inventory: sourceInventory, freshnessPolicy });
   validateCandidateInventoryBinding({ candidateBuildSpec, sourceInventory, sourceInventoryBytes: normalizedSourceInventoryBytes });
   const headsBySource = validateLineage(sourceSnapshots).headsBySource;
-  if (candidateBuildSpec.sourceSnapshots.length !== CURRENT_SOURCE_IDS.length
-    || candidateBuildSpec.sourceSnapshots.map(({ sourceId }) => sourceId).join("\0") !== CURRENT_SOURCE_IDS.join("\0")) {
+  const candidateSourceIds = candidateBuildSpec.sourceSnapshots.map(({ sourceId }) => sourceId);
+  if (!isActiveCandidateSourceSequence(candidateSourceIds)) {
     throw new Error("candidate source snapshot membership mismatch");
   }
   const selected = candidateBuildSpec.sourceSnapshotIds.map((snapshotId, index) => {
     const ledger = exactlyOne(sourceSnapshots, (entry) => entry?.snapshotId === snapshotId, "candidate source snapshot");
     const projection = candidateBuildSpec.sourceSnapshots[index];
-    if (ledger.sourceId !== CURRENT_SOURCE_IDS[index] || headsBySource[ledger.sourceId] !== ledger.snapshotId) {
+    if (ledger.sourceId !== candidateSourceIds[index] || headsBySource[ledger.sourceId] !== ledger.snapshotId) {
       throw new Error("candidate source snapshot membership mismatch");
     }
     assertExactKeys(projection, PROJECTION_KEYS, "candidate source snapshot projection");

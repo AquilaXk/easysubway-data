@@ -169,10 +169,9 @@ test("커밋된 전국 coverage tally ledger는 현행 입력에서 바이트 �
         + ` --expected-launch-required-total ${EXPECTED_LAUNCH_REQUIRED_TOTAL} --output ${LEDGER_PATH}`,
     );
 
-    // 기록된 입력 해시는 tracked 입력 파일의 실제 해시여야 한다(입력 drift 감지축).
+    // targets/resolutions는 raw bytes, inventory는 consumed normalized projection이 drift 감지축이다.
     for (const [name, relativePath] of [
       ["targets", TARGETS_PATH],
-      ["inventory", INVENTORY_PATH],
       ["resolutions", RESOLUTIONS_PATH],
     ]) {
       assert.equal(ledger.inputs[name].path, relativePath);
@@ -181,6 +180,12 @@ test("커밋된 전국 coverage tally ledger는 현행 입력에서 바이트 �
         createHash("sha256").update(await readFile(path.join(root, relativePath))).digest("hex"),
       );
     }
+    assert.equal(ledger.inputs.inventory.path, INVENTORY_PATH);
+    assert.match(ledger.inputs.inventory.sha256, /^[a-f0-9]{64}$/u);
+    assert.notEqual(
+      ledger.inputs.inventory.sha256,
+      createHash("sha256").update(await readFile(path.join(root, INVENTORY_PATH))).digest("hex"),
+    );
 
     assert.deepEqual(ledger.denominator, {
       activeLineScopeCount: 45,
@@ -227,11 +232,10 @@ test("커밋된 전국 coverage tally ledger는 현행 입력에서 바이트 �
   }
 });
 
-test("입력 3종이 바뀌면 ledger 재생성 없이는 tracked 바이트와 어긋난다", async (context) => {
+test("targets와 resolutions raw bytes가 바뀌면 ledger 재생성 없이는 tracked 바이트와 어긋난다", async (context) => {
   const tracked = await readFile(path.join(root, LEDGER_PATH), "utf8");
-  for (const relativePath of INPUT_PATHS) {
+  for (const relativePath of [TARGETS_PATH, RESOLUTIONS_PATH]) {
     await context.test(relativePath, async () => {
-      // 의미가 같은 공백 한 바이트만 바꿔도 입력 해시가 달라져 ledger 재생성이 강제돼야 한다.
       const workspace = await stageWorkspace(async (dir) => {
         await appendFile(path.join(dir, relativePath), "\n");
       });
@@ -241,6 +245,47 @@ test("입력 3종이 바뀌면 ledger 재생성 없이는 tracked 바이트와 �
         await rm(workspace, { recursive: true, force: true });
       }
     });
+  }
+});
+
+test("inventory digest는 tally가 소비하는 normalized coverage projection에만 결속한다", async () => {
+  const tracked = await readFile(path.join(root, LEDGER_PATH), "utf8");
+  const metadataOnly = await stageWorkspace(async (dir) => {
+    const target = path.join(dir, INVENTORY_PATH);
+    const inventory = JSON.parse(await readFile(target, "utf8"));
+    const source = inventory.sources.find(({ coverageScope }) =>
+      coverageScope?.sourceDomains?.includes("station_line_membership")
+      && Array.isArray(coverageScope.lineIds)
+      && coverageScope.lineIds.length > 0);
+    assert.ok(source);
+    source.displayName = `${source.displayName} `;
+    source.fieldsProvided.reverse();
+    for (const key of ["regionIds", "operatorIds", "lineIds", "sourceDomains"]) {
+      source.coverageScope[key]?.reverse();
+    }
+    await writeFile(target, `${JSON.stringify(inventory, null, 2)}\n\n`);
+  });
+  try {
+    assert.equal(await regenerateLedger(metadataOnly), tracked);
+  } finally {
+    await rm(metadataOnly, { recursive: true, force: true });
+  }
+
+  const consumedCoverage = await stageWorkspace(async (dir) => {
+    const target = path.join(dir, INVENTORY_PATH);
+    const inventory = JSON.parse(await readFile(target, "utf8"));
+    const source = inventory.sources.find(({ coverageScope }) =>
+      coverageScope?.sourceDomains?.includes("station_line_membership")
+      && Array.isArray(coverageScope.lineIds)
+      && coverageScope.lineIds.length > 0);
+    assert.ok(source);
+    source.fieldsProvided = source.fieldsProvided.filter((field) => field !== "station_code");
+    await writeFile(target, `${JSON.stringify(inventory, null, 2)}\n`);
+  });
+  try {
+    assert.notEqual(await regenerateLedger(consumedCoverage), tracked);
+  } finally {
+    await rm(consumedCoverage, { recursive: true, force: true });
   }
 });
 
