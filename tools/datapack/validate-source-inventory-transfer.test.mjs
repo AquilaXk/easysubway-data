@@ -80,7 +80,7 @@ test("production transfer artifact validation rejects missing and tampered authe
   const evidence = admission(); const source = { ...SOURCE, transferAdmissionEvidence: evidence };
   await assert.rejects(validateProductionTransferArtifacts({ sources: [source] }, { repositoryRoot: root }), /regular non-symlink/);
   const snapshot = { snapshotId: evidence.snapshotId, sourceId: source.id, rawSha256: evidence.rawSha256, contentSha256: evidence.contentSha256, schemaFingerprint: evidence.schemaFingerprint };
-  snapshot.snapshotSha256 = sha(Buffer.from(canonicalJson(snapshot)));
+  snapshot.snapshotSha256 = sha(Buffer.from(`${canonicalJson(snapshot)}\n`));
   const snapshotBytes = Buffer.from(JSON.stringify(snapshot)); evidence.snapshotFileSha256 = sha(snapshotBytes);
   const identity = { sourceId: source.id, rawSha256: evidence.rawSha256, contentSha256: evidence.contentSha256, schemaSha256: evidence.schemaFingerprint };
   const metrics = { artifactKind: "current-transfer-topology-metrics", canonicalIdentity: { value: 1 }, sourceIdentity: identity }; metrics.artifactSha256 = sha(Buffer.from(canonicalJson(metrics)));
@@ -94,7 +94,10 @@ test("production transfer artifact validation rejects missing and tampered authe
   snapshot.snapshotSha256 = "f".repeat(64); const resealedSnapshotBytes = Buffer.from(JSON.stringify(snapshot)); evidence.snapshotFileSha256 = sha(resealedSnapshotBytes);
   await writeFile(path.join(root, evidence.snapshotPath), resealedSnapshotBytes);
   await assert.rejects(validateProductionTransferArtifacts({ sources: [source] }, { repositoryRoot: root }), /snapshot artifact/);
-  snapshot.snapshotSha256 = sha(Buffer.from(canonicalJson(Object.fromEntries(Object.entries(snapshot).filter(([key]) => key !== "snapshotSha256"))))); const restoredSnapshotBytes = Buffer.from(JSON.stringify(snapshot)); evidence.snapshotFileSha256 = sha(restoredSnapshotBytes);
+  snapshot.snapshotSha256 = sha(Buffer.from(canonicalJson(Object.fromEntries(Object.entries(snapshot).filter(([key]) => key !== "snapshotSha256"))))); const newlineFreeSnapshotBytes = Buffer.from(JSON.stringify(snapshot)); evidence.snapshotFileSha256 = sha(newlineFreeSnapshotBytes);
+  await writeFile(path.join(root, evidence.snapshotPath), newlineFreeSnapshotBytes);
+  await assert.rejects(validateProductionTransferArtifacts({ sources: [source] }, { repositoryRoot: root }), /snapshot artifact/);
+  snapshot.snapshotSha256 = sha(Buffer.from(`${canonicalJson(Object.fromEntries(Object.entries(snapshot).filter(([key]) => key !== "snapshotSha256")))}\n`)); const restoredSnapshotBytes = Buffer.from(JSON.stringify(snapshot)); evidence.snapshotFileSha256 = sha(restoredSnapshotBytes);
   await writeFile(path.join(root, evidence.snapshotPath), restoredSnapshotBytes);
   await writeFile(path.join(root, evidence.metricsPath), JSON.stringify(metrics));
   await assert.rejects(validateProductionTransferArtifacts({ sources: [source] }, { repositoryRoot: root }), /metrics artifact/);

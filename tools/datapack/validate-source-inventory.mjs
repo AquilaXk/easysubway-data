@@ -188,7 +188,7 @@ export async function validateProductionTransferArtifacts(inventory, { repositor
     stableJson("tools/datapack/release/current-transfer-topology-metrics.json", "transfer metrics artifact"),
     stableJson("tools/datapack/release/current-capital-transfer-topology-applicability.json", "transfer applicability artifact"),
   ]);
-  const snapshotSelf = sha256(Buffer.from(canonicalJson(Object.fromEntries(Object.entries(snapshot.value).filter(([key]) => key !== "snapshotSha256")))));
+  const snapshotSelf = sha256(Buffer.from(`${canonicalJson(Object.fromEntries(Object.entries(snapshot.value).filter(([key]) => key !== "snapshotSha256")))}\n`));
   if (sha256(snapshot.bytes) !== evidence.snapshotFileSha256 || snapshot.value.snapshotSha256 !== snapshotSelf || snapshot.value.snapshotId !== evidence.snapshotId || snapshot.value.sourceId !== source.id
     || snapshot.value.rawSha256 !== evidence.rawSha256 || snapshot.value.contentSha256 !== evidence.contentSha256 || snapshot.value.schemaFingerprint !== evidence.schemaFingerprint) throw new Error("transfer snapshot artifact identity mismatch");
   const metricsSelf = sha256(Buffer.from(canonicalJson(Object.fromEntries(Object.entries(metrics.value).filter(([key]) => key !== "artifactSha256")))));
