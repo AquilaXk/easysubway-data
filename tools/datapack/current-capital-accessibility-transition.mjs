@@ -130,7 +130,9 @@ async function inspectCurrentCapitalAccessibilityTransition({ repositoryRoot, al
     }
   }
   return {
+    currentCandidateBytesSha256: sha256(candidateBytes),
     currentCandidateSourceSetSha256: requiredSha(candidate.sourceSnapshotSetHash, "current candidate source snapshot set"),
+    facilityAdmissionBytesSha256: sha256(facilityBytes),
     evidenceSourceSetSha256: requiredSha(parsed.nextCandidate.sourceSnapshotSetHash, "transition evidence source snapshot set"),
   };
 }

@@ -92,8 +92,10 @@ test("exact TRANSFER-last append는 six-source marker를 인증한 뒤에도 bui
   assert.deepEqual(
     await readCurrentCapitalAccessibilityTransitionBoundary({ repositoryRoot: fixture.root }),
     {
+      currentCandidateBytesSha256: sha256(Buffer.from(`${JSON.stringify(candidate, null, 2)}\n`)),
       currentCandidateSourceSetSha256: candidate.sourceSnapshotSetHash,
       evidenceSourceSetSha256: fixture.baseSourceSet,
+      facilityAdmissionBytesSha256: sha256(fixture.input.facilityBytes),
     },
   );
   await assert.rejects(

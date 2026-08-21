@@ -55,6 +55,10 @@ export async function readCurrentCapitalInputs(repositoryRoot, { readTransitionB
     readTransitionBoundaryImpl({ repositoryRoot: root }),
   ]);
   const values = Object.fromEntries(entries);
+  if (sourceSetTransition.currentCandidateBytesSha256 !== sha256(values.candidate.bytes)
+    || sourceSetTransition.facilityAdmissionBytesSha256 !== sha256(values.facility.bytes)) {
+    throw new Error("full-capital transition input snapshot mismatch");
+  }
   if (canonicalCurrentCapitalFacilitySourceAdmissionJson(values.facility.value) !== values.facility.bytes.toString("utf8")) throw new Error("FACILITY admission bytes are not canonical");
   const snapshotPath = values.facility.value.sourceIdentity.snapshotPath;
   if (snapshotPath !== `tools/datapack/sources/${values.facility.value.sourceIdentity.snapshotId}.json` || path.isAbsolute(snapshotPath)) throw new Error("FACILITY snapshot path mismatch");
@@ -92,7 +96,7 @@ function validateCandidate(input, stationLines) {
   const spec = input.candidateBuildSpec;
   const exitCandidate = input.exitAdmission?.candidate;
   const transition = input.sourceSetTransition;
-  assertKeys(transition, ["currentCandidateSourceSetSha256", "evidenceSourceSetSha256"], "full-capital source-set transition");
+  assertKeys(transition, ["currentCandidateBytesSha256", "currentCandidateSourceSetSha256", "evidenceSourceSetSha256", "facilityAdmissionBytesSha256"], "full-capital source-set transition");
   if (typeof spec?.candidateId !== "string" || spec.candidateId === "" || !Array.isArray(spec.sourceSnapshots) || !Array.isArray(spec.sourceSnapshotIds)
     || spec.sourceSnapshots.length !== 7 || spec.sourceSnapshotIds.length !== 7 || spec.sourceSnapshots.at(-1)?.sourceId !== "seoul-metro-transfer-distance-duration"
     || spec.sourceSnapshotIds.at(-1) !== spec.sourceSnapshots.at(-1)?.snapshotId || !SHA.test(spec.sourceSnapshotSetHash ?? "")) {
@@ -104,7 +108,8 @@ function validateCandidate(input, stationLines) {
   if (selectedIds.size !== 7 || selectedInLedgerOrder.length !== 7 || sha256(JSON.stringify(selectedInLedgerOrder)) !== spec.sourceSnapshotSetHash) throw new Error("full-capital candidate source-set mismatch");
   const predecessorIds = new Set(spec.sourceSnapshotIds.slice(0, -1));
   const predecessorInLedgerOrder = input.sourceSnapshots.filter(({ snapshotId }) => predecessorIds.has(snapshotId));
-  if (transition.currentCandidateSourceSetSha256 !== spec.sourceSnapshotSetHash || !SHA.test(transition.evidenceSourceSetSha256 ?? "")
+  if (![transition.currentCandidateBytesSha256, transition.evidenceSourceSetSha256, transition.facilityAdmissionBytesSha256].every((value) => SHA.test(value ?? ""))
+    || transition.currentCandidateSourceSetSha256 !== spec.sourceSnapshotSetHash
     || transition.evidenceSourceSetSha256 === spec.sourceSnapshotSetHash || predecessorIds.size !== 6 || predecessorInLedgerOrder.length !== 6
     || selectedInLedgerOrder.at(-1)?.sourceId !== "seoul-metro-transfer-distance-duration"
     || sha256(JSON.stringify(predecessorInLedgerOrder)) !== transition.evidenceSourceSetSha256) throw new Error("full-capital source-set transition mismatch");
