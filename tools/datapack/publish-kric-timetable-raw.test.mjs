@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
 import { publishKricTimetableRawArtifact } from "./publish-kric-timetable-raw.mjs";
 
-const ACCOUNT = "123456789012";
+const OCI_ENV = Object.freeze({
+  EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/redacted/n/axvym6vk8g7i/b/easysubway-datapacks/o",
+});
+const STORED_AT = new Date("2026-08-09T12:05:00.000Z");
 
 function artifact() {
   const responses = Array.from({ length: 153 }, (_, index) => {
@@ -47,8 +50,9 @@ function artifact() {
   };
 }
 
-async function fixture(value = artifact()) {
+async function fixture(t, value = artifact()) {
   const root = await mkdtemp(path.join(os.tmpdir(), "kric-raw-publish-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
   const inputPath = path.join(root, "collection.json");
   const receiptPath = path.join(root, "receipt.json");
   const bytes = Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
@@ -59,122 +63,94 @@ async function fixture(value = artifact()) {
     receiptPath,
     bytes,
     sha256: createHash("sha256").update(bytes).digest("hex"),
-    checksumSha256: createHash("sha256").update(bytes).digest("base64"),
   };
 }
 
-function fakeAws(values, { preconditionFailed = false, tamperHead = false, callerAccount = ACCOUNT, failAt = null } = {}) {
+function fakeClient(values, { existing = false, tamper = false, failAt = null } = {}) {
   const calls = [];
-  const execFileImpl = async (command, args) => {
-    calls.push([command, args]);
-    if ((args[0] === "sts" && failAt === "sts")
-      || (args[1] === "put-object" && failAt === "put")
-      || (args[1] === "head-object" && failAt === "head")) {
-      const error = new Error("SHOULD-NOT-LEAK");
-      error.stderr = "An error occurred (AccessDenied) when calling the AWS operation: SHOULD-NOT-LEAK";
-      throw error;
-    }
-    if (args[0] === "sts") return { stdout: `${callerAccount}\n`, stderr: "" };
-    if (args[1] === "put-object") {
-      if (preconditionFailed) {
-        const error = new Error("put failed");
-        error.stderr = "An error occurred (PreconditionFailed) when calling the PutObject operation: 412";
-        throw error;
-      }
-      return { stdout: JSON.stringify({ VersionId: "version-1" }), stderr: "" };
-    }
-    if (args[1] === "head-object") {
-      return {
-        stdout: JSON.stringify({
-          ContentLength: tamperHead ? values.bytes.length + 1 : values.bytes.length,
-          ChecksumSHA256: values.checksumSha256,
-          VersionId: "version-1",
-          ETag: '"etag"',
-          LastModified: "2026-08-09T12:05:00.000Z",
-          Metadata: {
-            sha256: values.sha256,
-            "artifact-kind": "kric-line4-timetable-collection",
-            "source-id": "kric-subway-timetable",
-          },
-        }),
-        stderr: "",
-      };
-    }
-    throw new Error(`unexpected AWS command: ${args.join(" ")}`);
+  let stored = existing ? (tamper ? Buffer.from("tampered") : values.bytes) : null;
+  return {
+    calls,
+    client: {
+      async putObjectIfAbsent(key, bytes) {
+        calls.push(["put", key]);
+        if (failAt === "put") throw new Error("HTTP 403 SHOULD-NOT-LEAK");
+        if (stored != null) return false;
+        stored = Buffer.from(bytes);
+        return true;
+      },
+      async readObject(key) {
+        calls.push(["get", key]);
+        if (failAt === "get") throw new Error("HTTP 503 SHOULD-NOT-LEAK");
+        return { exists: stored != null, body: stored ?? Buffer.alloc(0) };
+      },
+    },
   };
-  return { calls, execFileImpl };
 }
 
 function publishOptions(values, overrides = {}) {
   return {
     inputPath: values.inputPath,
     receiptPath: values.receiptPath,
-    expectedBucketOwner: ACCOUNT,
     expectedRawObjectSha256: values.sha256,
     expectedByteSize: values.bytes.length,
+    env: OCI_ENV,
+    now: STORED_AT,
     ...overrides,
   };
 }
 
-test("KRIC raw publisher는 content-addressed S3 object를 owner·checksum에 결속한다", async () => {
-  const values = await fixture();
-  const aws = fakeAws(values);
-
-  const receipt = await publishKricTimetableRawArtifact(publishOptions(values, { execFileImpl: aws.execFileImpl }));
-
-  const key = `kric-subway-timetable/20260809/${values.sha256}.json`;
-  assert.equal(receipt.rawObjectUri, `s3://easysubway-datapack-sources/${key}`);
+test("KRIC raw publisher는 content-addressed OCI object와 retention receipt를 결속한다", async (t) => {
+  const values = await fixture(t);
+  const storage = fakeClient(values);
+  const receipt = await publishKricTimetableRawArtifact(publishOptions(values, { client: storage.client }));
+  const key = `source-raw/kric-subway-timetable/20260809/${values.sha256}.json`;
+  assert.equal(receipt.rawObjectUri, `oci://axvym6vk8g7i/easysubway-datapacks/${key}`);
   assert.equal(receipt.rawObjectSha256, values.sha256);
+  assert.equal(receipt.objectKey, key);
+  assert.equal(receipt.ociNamespace, "axvym6vk8g7i");
+  assert.equal(receipt.bucket, "easysubway-datapacks");
   assert.equal(receipt.byteSize, values.bytes.length);
-  assert.equal(receipt.expectedBucketOwner, ACCOUNT);
+  assert.equal(receipt.storedAt, STORED_AT.toISOString());
+  assert.ok(Date.parse(receipt.rawRetentionExpiresAt) > STORED_AT.valueOf());
   assert.deepEqual(JSON.parse(await readFile(values.receiptPath, "utf8")), receipt);
-  assert.deepEqual(aws.calls.map(([, args]) => args.slice(0, 2)), [
-    ["sts", "get-caller-identity"],
-    ["s3api", "put-object"],
-    ["s3api", "head-object"],
-  ]);
-  const putArgs = aws.calls[1][1];
-  assert.ok(putArgs.includes("--if-none-match"));
-  assert.ok(putArgs.includes("*"));
-  assert.ok(putArgs.includes("--checksum-sha256"));
-  assert.ok(putArgs.includes(values.checksumSha256));
-  assert.ok(putArgs.includes("--expected-bucket-owner"));
-  assert.ok(putArgs.includes(ACCOUNT));
+  assert.deepEqual(storage.calls, [["put", key], ["get", key]]);
 });
 
-test("KRIC raw publisher는 existing exact object만 idempotent하게 허용한다", async () => {
-  const values = await fixture();
-  const exact = fakeAws(values, { preconditionFailed: true });
-  const receipt = await publishKricTimetableRawArtifact(publishOptions(values, { execFileImpl: exact.execFileImpl }));
-  assert.equal(receipt.idempotentExistingObject, true);
+test("KRIC raw publisher는 existing exact OCI object만 idempotent하게 허용한다", async (t) => {
+  const values = await fixture(t);
+  const exact = fakeClient(values, { existing: true });
+  await publishKricTimetableRawArtifact(publishOptions(values, { client: exact.client }));
+  assert.deepEqual(exact.calls.map(([operation]) => operation), ["put", "get", "get"]);
 
-  const tampered = fakeAws(values, { preconditionFailed: true, tamperHead: true });
+  const tamperedValues = await fixture(t);
+  const tampered = fakeClient(tamperedValues, { existing: true, tamper: true });
   await assert.rejects(
-    publishKricTimetableRawArtifact(publishOptions(values, {
-      receiptPath: path.join(values.root, "tampered-receipt.json"),
-      execFileImpl: tampered.execFileImpl,
-    })),
-    /S3 object identity mismatch/,
+    publishKricTimetableRawArtifact(publishOptions(tamperedValues, { client: tampered.client })),
+    /storage publication failed/,
   );
 });
 
-test("KRIC raw publisher는 AWS failure code만 credential-safe하게 보고한다", async () => {
-  const values = await fixture();
-  const secretText = "SHOULD-NOT-LEAK";
-  const execFileImpl = async (_command, args) => {
-    if (args[0] === "sts") return { stdout: `${ACCOUNT}\n`, stderr: "" };
-    const error = new Error("put failed");
-    error.stderr = `An error occurred (AccessDenied) when calling the PutObject operation: ${secretText}`;
-    throw error;
-  };
+test("KRIC raw publisher는 OCI PAR 부재와 storage failure를 credential-safe하게 보고한다", async (t) => {
+  const values = await fixture(t);
+  const storage = fakeClient(values);
   await assert.rejects(
-    publishKricTimetableRawArtifact(publishOptions(values, { execFileImpl })),
-    (error) => error.message === "KRIC raw object upload failed: AccessDenied"
-      && !error.message.includes(secretText),
+    publishKricTimetableRawArtifact(publishOptions(values, { env: {}, client: storage.client })),
+    /EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL/,
   );
+  assert.equal(storage.calls.length, 0);
+
+  for (const failAt of ["put", "get"]) {
+    const failedValues = await fixture(t);
+    const failed = fakeClient(failedValues, { failAt });
+    await assert.rejects(
+      publishKricTimetableRawArtifact(publishOptions(failedValues, { client: failed.client })),
+      (error) => /HTTP (403|503)/u.test(error.message) && !error.message.includes("SHOULD-NOT-LEAK"),
+    );
+  }
 });
 
-test("KRIC raw publisher는 full collection contract와 caller owner를 게시 전에 검증한다", async () => {
+test("KRIC raw publisher는 full collection contract를 게시 전에 검증한다", async (t) => {
   const base = artifact();
   for (const mutate of [
     (value) => { value.lineId = "other"; },
@@ -187,33 +163,32 @@ test("KRIC raw publisher는 full collection contract와 caller owner를 게시 �
   ]) {
     const changed = structuredClone(base);
     mutate(changed);
-    const values = await fixture(changed);
-    const aws = fakeAws(values);
+    const values = await fixture(t, changed);
+    const storage = fakeClient(values);
     await assert.rejects(
-      publishKricTimetableRawArtifact(publishOptions(values, { execFileImpl: aws.execFileImpl })),
+      publishKricTimetableRawArtifact(publishOptions(values, { client: storage.client })),
       /KRIC pilot artifact/,
     );
-    assert.equal(aws.calls.length, 0);
+    assert.equal(storage.calls.length, 0);
   }
-
-  const values = await fixture(base);
-  const wrongCaller = fakeAws(values, { callerAccount: "999999999999" });
-  await assert.rejects(
-    publishKricTimetableRawArtifact(publishOptions(values, { execFileImpl: wrongCaller.execFileImpl })),
-    /caller account does not match expected bucket owner/,
-  );
 });
 
-test("KRIC raw publisher는 STS·PUT·HEAD 실패를 모두 credential-safe하게 정제한다", async () => {
-  const values = await fixture();
-  for (const failAt of ["sts", "put", "head"]) {
-    const aws = fakeAws(values, { failAt });
-    await assert.rejects(
-      publishKricTimetableRawArtifact(publishOptions(values, {
-        receiptPath: path.join(values.root, `${failAt}.json`),
-        execFileImpl: aws.execFileImpl,
-      })),
-      (error) => error.message.includes("AccessDenied") && !error.message.includes("SHOULD-NOT-LEAK"),
-    );
-  }
+test("KRIC raw publisher는 expected identity와 publication clock drift를 거부한다", async (t) => {
+  const values = await fixture(t);
+  const storage = fakeClient(values);
+  await assert.rejects(
+    publishKricTimetableRawArtifact(publishOptions(values, {
+      client: storage.client,
+      expectedRawObjectSha256: "0".repeat(64),
+    })),
+    /raw object SHA-256 mismatch/,
+  );
+  await assert.rejects(
+    publishKricTimetableRawArtifact(publishOptions(values, {
+      client: storage.client,
+      now: new Date("2026-08-09T12:00:00.000Z"),
+    })),
+    /publication time precedes collection/,
+  );
+  assert.equal(storage.calls.length, 0);
 });

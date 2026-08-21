@@ -1,57 +1,80 @@
 #!/usr/bin/env node
-import { execFile as execFileCallback } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { validateKricLine4PilotCollectionArtifact } from "./apply-kric-line4-pilot-schedule.mjs";
 import {
-  publishImmutableKricRawObject,
-  requiredAccount,
+  requireOciParBaseUrl,
   requiredText,
-  requiredUtcInstant,
   writeKricRawReceipt,
 } from "./lib/kric-raw-object-storage.mjs";
+import { publishImmutableObjectPlan } from "./publish-object-storage.mjs";
+import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 
-const execFileAsync = promisify(execFileCallback);
-const BUCKET = "easysubway-datapack-sources";
 const SOURCE_ID = "kric-subway-timetable";
 const ARTIFACT_KIND = "kric-line4-timetable-collection";
+const OCI_NAMESPACE = "axvym6vk8g7i";
+const OCI_BUCKET = "easysubway-datapacks";
+const REPOSITORY_ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 
 export async function publishKricTimetableRawArtifact({
   inputPath,
   receiptPath,
-  expectedBucketOwner,
   expectedRawObjectSha256,
   expectedByteSize,
-  execFileImpl = execFileAsync,
-}) {
+  repositoryRoot = REPOSITORY_ROOT,
+  env = process.env,
+  client = null,
+  now = new Date(),
+} = {}) {
   const resolvedInput = path.resolve(requiredText(inputPath, "inputPath"));
   const resolvedReceipt = path.resolve(requiredText(receiptPath, "receiptPath"));
+  if (!(now instanceof Date) || Number.isNaN(now.valueOf())) throw new Error("publication time must be a valid Date");
+  requireOciParBaseUrl(env);
   const bytes = await readFile(resolvedInput);
   const artifact = JSON.parse(bytes.toString("utf8"));
   const rawObjectSha256 = createHash("sha256").update(bytes).digest("hex");
   validateKricLine4PilotCollectionArtifact(artifact);
   requireEqual(rawObjectSha256, requiredSha256(expectedRawObjectSha256, "expectedRawObjectSha256"), "raw object SHA-256");
   requireEqual(bytes.length, requiredPositiveInteger(expectedByteSize, "expectedByteSize"), "raw object byte size");
-  const checksumSha256 = createHash("sha256").update(bytes).digest("base64");
   const dateToken = artifact.capturedAt.replaceAll("-", "");
-  const objectKey = `${SOURCE_ID}/${dateToken}/${rawObjectSha256}.json`;
-  const { head, trustedBucketOwner, idempotentExistingObject } = await publishImmutableKricRawObject({
-    execFileImpl,
-    errorPrefix: "KRIC raw object",
-    bucket: BUCKET,
-    objectKey,
-    expectedBucketOwner,
-    bodyPath: resolvedInput,
-    checksumSha256,
-    byteSize: bytes.length,
-    rawObjectSha256,
-    artifactKind: ARTIFACT_KIND,
+  const objectKey = `source-raw/${SOURCE_ID}/${dateToken}/${rawObjectSha256}.json`;
+  const storedAt = now.toISOString();
+  if (Date.parse(storedAt) < Date.parse(artifact.collectedAt)) {
+    throw new Error("publication time precedes collection");
+  }
+  const governancePolicy = JSON.parse(await readFile(
+    path.join(path.resolve(repositoryRoot), "tools/datapack/source-governance-policy.json"),
+    "utf8",
+  ));
+  const rawRetentionExpiresAt = deriveRawRetentionExpiresAt({
+    policy: governancePolicy,
     sourceId: SOURCE_ID,
+    retrievedAt: artifact.collectedAt,
   });
+  if (Date.parse(storedAt) >= Date.parse(rawRetentionExpiresAt)) {
+    throw new Error("KRIC raw retention has expired");
+  }
+  try {
+    await publishImmutableObjectPlan({
+      root: path.dirname(resolvedInput),
+      client,
+      env,
+      plan: {
+        steps: [
+          { type: "put-immutable-bundle-object", objectKey, sourcePath: path.basename(resolvedInput), sha256: rawObjectSha256, sizeBytes: bytes.length },
+          { type: "verify-immutable-bundle-object", objectKey, sourcePath: path.basename(resolvedInput), sha256: rawObjectSha256, sizeBytes: bytes.length },
+        ],
+      },
+    });
+  } catch (error) {
+    const status = /\bHTTP\s+([1-5]\d\d)\b/u.exec(String(error?.message ?? ""))?.[1];
+    const statusSuffix = status == null ? "" : `: HTTP ${status}`;
+    throw new Error(`KRIC raw object storage publication failed${statusSuffix}`);
+  }
 
   const receipt = {
     schemaVersion: 1,
@@ -60,17 +83,17 @@ export async function publishKricTimetableRawArtifact({
     snapshotId: `kric-subway-timetable-line4-pilot-${dateToken}`,
     capturedAt: artifact.capturedAt,
     collectedAt: artifact.collectedAt,
-    rawObjectUri: `s3://${BUCKET}/${objectKey}`,
+    rawObjectUri: `oci://${OCI_NAMESPACE}/${OCI_BUCKET}/${objectKey}`,
     rawObjectSha256,
-    checksumSha256,
+    ociNamespace: OCI_NAMESPACE,
+    bucket: OCI_BUCKET,
+    objectKey,
+    capturedDate: dateToken,
     byteSize: bytes.length,
-    expectedBucketOwner: trustedBucketOwner,
-    versionId: requiredText(head.VersionId, "S3 VersionId"),
-    etag: requiredText(head.ETag, "S3 ETag"),
-    storedAt: requiredUtcInstant(head.LastModified, "S3 LastModified"),
-    idempotentExistingObject,
+    storedAt,
+    rawRetentionExpiresAt,
   };
-  await writeKricRawReceipt(resolvedReceipt, receipt);
+  await writeKricRawReceipt(resolvedReceipt, receipt, { mode: 0o600 });
   return receipt;
 }
 
@@ -108,7 +131,6 @@ async function main() {
   const receipt = await publishKricTimetableRawArtifact({
     inputPath: args.input,
     receiptPath: args.receipt,
-    expectedBucketOwner: args["expected-bucket-owner"],
     expectedRawObjectSha256: args["expected-sha256"],
     expectedByteSize: args["expected-byte-size"],
   });

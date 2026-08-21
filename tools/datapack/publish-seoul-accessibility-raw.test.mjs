@@ -11,7 +11,10 @@ import {
 } from "./collect-seoul-accessibility-evidence.mjs";
 import { publishSeoulAccessibilityRawArtifact } from "./publish-seoul-accessibility-raw.mjs";
 
-const ACCOUNT = "123456789012";
+const OCI_ENV = Object.freeze({
+  EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/redacted/n/axvym6vk8g7i/b/easysubway-datapacks/o",
+});
+const STORED_AT = new Date("2026-08-14T00:01:00.000Z");
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 async function fixture(t) {
@@ -37,69 +40,67 @@ async function fixture(t) {
     }),
   });
   await writeSeoulAccessibilityObservation({ outputRoot: observationRoot, observation });
-  return { root, observationRoot, observation, receiptPath: path.join(root, "receipt.json") };
+  const manifest = JSON.parse(await readFile(path.join(observationRoot, "observation.json"), "utf8"));
+  const rawBytes = await readFile(path.join(observationRoot, manifest.rawArtifactFile));
+  return { root, observationRoot, observation, rawBytes, receiptPath: path.join(root, "receipt.json") };
 }
 
-function fakeAws(values, { preconditionFailed = false } = {}) {
+function fakeClient(values, { existing = false, tamper = false } = {}) {
   const calls = [];
-  const execFileImpl = async (_command, args) => {
-    calls.push(args);
-    if (args[0] === "sts") return { stdout: `${ACCOUNT}\n`, stderr: "" };
-    if (args[1] === "put-object") {
-      if (preconditionFailed) {
-        const error = new Error("put failed");
-        error.stderr = "An error occurred (PreconditionFailed) when calling the PutObject operation: 412";
-        throw error;
-      }
-      return { stdout: "{}", stderr: "" };
-    }
-    if (args[1] === "head-object") {
-      const manifest = JSON.parse(await readFile(path.join(values.observationRoot, "observation.json"), "utf8"));
-      return { stdout: JSON.stringify({
-        ContentLength: manifest.rawObjectByteSize,
-        ChecksumSHA256: manifest.rawObjectChecksumSha256,
-        ETag: "\"etag\"",
-        LastModified: "2026-08-14T00:01:00+00:00",
-        Metadata: {
-          sha256: manifest.rawObjectSha256,
-          "artifact-kind": "seoul-accessibility-raw-collection",
-          "source-id": "seoul-metro-accessibility",
-        },
-      }), stderr: "" };
-    }
-    throw new Error(`unexpected AWS args: ${args.join(" ")}`);
+  let stored = existing ? (tamper ? Buffer.from("tampered") : values.rawBytes) : null;
+  return {
+    calls,
+    client: {
+      async putObjectIfAbsent(key, bytes) {
+        calls.push(["put", key]);
+        if (stored != null) return false;
+        stored = Buffer.from(bytes);
+        return true;
+      },
+      async readObject(key) {
+        calls.push(["get", key]);
+        return { exists: stored != null, body: stored ?? Buffer.alloc(0) };
+      },
+    },
   };
-  return { calls, execFileImpl };
 }
 
-test("Seoul raw publisher는 observation identity를 unversioned immutable receipt로 결속한다", async (t) => {
-  const values = await fixture(t);
-  const aws = fakeAws(values);
-  const receipt = await publishSeoulAccessibilityRawArtifact({
+function publishOptions(values, client, overrides = {}) {
+  return {
     observationRoot: values.observationRoot,
     receiptPath: values.receiptPath,
-    expectedBucketOwner: ACCOUNT,
-    execFileImpl: aws.execFileImpl,
-  });
+    env: OCI_ENV,
+    client,
+    now: STORED_AT,
+    ...overrides,
+  };
+}
+
+test("Seoul raw publisher는 observation identity를 OCI immutable receipt로 결속한다", async (t) => {
+  const values = await fixture(t);
+  const storage = fakeClient(values);
+  const receipt = await publishSeoulAccessibilityRawArtifact(publishOptions(values, storage.client));
   assert.equal(receipt.sourceId, "seoul-metro-accessibility");
   assert.equal(receipt.snapshotId, values.observation.snapshot.snapshotId);
-  assert.equal(receipt.versionId, null);
-  assert.match(receipt.rawObjectUri, /^s3:\/\/easysubway-datapack-sources\/seoul-metro-accessibility\/20260814\/[0-9a-f]{64}\.json$/u);
+  assert.match(receipt.rawObjectUri, /^oci:\/\/axvym6vk8g7i\/easysubway-datapacks\/source-raw\/seoul-metro-accessibility\/20260814\/[0-9a-f]{64}\.json$/u);
+  assert.equal(receipt.storedAt, STORED_AT.toISOString());
+  assert.ok(Date.parse(receipt.rawRetentionExpiresAt) > STORED_AT.valueOf());
   assert.deepEqual(JSON.parse(await readFile(values.receiptPath, "utf8")), receipt);
-  assert.deepEqual(aws.calls.map((args) => args.slice(0, 2)), [
-    ["sts", "get-caller-identity"], ["s3api", "put-object"], ["s3api", "head-object"],
-  ]);
+  assert.deepEqual(storage.calls.map(([operation]) => operation), ["put", "get"]);
 });
 
-test("Seoul raw publisher는 exact existing object만 idempotent하게 허용한다", async (t) => {
+test("Seoul raw publisher는 exact existing OCI object만 idempotent하게 허용한다", async (t) => {
   const values = await fixture(t);
-  const receipt = await publishSeoulAccessibilityRawArtifact({
-    observationRoot: values.observationRoot,
-    receiptPath: values.receiptPath,
-    expectedBucketOwner: ACCOUNT,
-    execFileImpl: fakeAws(values, { preconditionFailed: true }).execFileImpl,
-  });
-  assert.equal(receipt.idempotentExistingObject, true);
+  const exact = fakeClient(values, { existing: true });
+  await publishSeoulAccessibilityRawArtifact(publishOptions(values, exact.client));
+  assert.deepEqual(exact.calls.map(([operation]) => operation), ["put", "get", "get"]);
+
+  const tamperedValues = await fixture(t);
+  const tampered = fakeClient(tamperedValues, { existing: true, tamper: true });
+  await assert.rejects(
+    publishSeoulAccessibilityRawArtifact(publishOptions(tamperedValues, tampered.client)),
+    /storage publication failed/,
+  );
 });
 
 test("Seoul raw publisher는 self-consistent snapshot 변조도 raw page projection으로 거부한다", async (t) => {
@@ -114,12 +115,10 @@ test("Seoul raw publisher는 self-consistent snapshot 변조도 raw page project
   manifest.snapshotFileSha256 = sha256(snapshotBytes);
   await writeFile(snapshotPath, snapshotBytes);
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-  const aws = fakeAws(values);
-  await assert.rejects(publishSeoulAccessibilityRawArtifact({
-    observationRoot: values.observationRoot,
-    receiptPath: values.receiptPath,
-    expectedBucketOwner: ACCOUNT,
-    execFileImpl: aws.execFileImpl,
-  }), /raw collection is invalid/);
-  assert.equal(aws.calls.length, 0);
+  const storage = fakeClient(values);
+  await assert.rejects(
+    publishSeoulAccessibilityRawArtifact(publishOptions(values, storage.client)),
+    /raw collection is invalid/,
+  );
+  assert.equal(storage.calls.length, 0);
 });
