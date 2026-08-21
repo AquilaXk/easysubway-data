@@ -7,10 +7,18 @@ import test from "node:test";
 
 import { stageContracts } from "./stage-contracts.mjs";
 
-const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/e31f9fa4f46bbeb0bd75d6776eb5ff6643169798/contracts/bundles/data-contracts-v1.0.0.json";
-const bundleSha256 = "177bc2ff3fa2a7ef1f8fe0d7b4a572a58f2e47c1c54ada36ef0eb4b8cca1c76d";
+const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/1730210fa56b74d2266dfd071d892472a650fd0d/contracts/bundles/data-contracts-v1.0.0.json";
+const bundleSha256 = "00a88b901138326c7eabe4c82fd9fd97c4f460b377873dfb390a3ecb66ea6786";
 const annualOfficialFileSourceIds = [
   "molit-railway-transfer-movement",
+  "seoul-metro-transfer-distance-duration",
+];
+const productionRequiredSourceIds = [
+  "molit-urban-rail-full-route",
+  "seoulmetro-station-line-info",
+  "seoul-metro-accessibility",
+  "kric-station-convenience-standard",
+  "kric-subway-timetable",
   "seoul-metro-transfer-distance-duration",
 ];
 
@@ -20,7 +28,9 @@ const resources = {
     sourceClasses: [{ id: "annual_official_file", sourceIds: annualOfficialFileSourceIds }],
   })}\n`,
   "datapack/datapack-manifest-acceptance-policy.json": "{\"id\":\"acceptance\"}\n",
-  "datapack/production-datapack-scope.json": "{\"id\":\"scope\"}\n",
+  "datapack/production-datapack-scope.json": `${JSON.stringify({
+    productionSourceSet: { requiredSourceIds: productionRequiredSourceIds },
+  })}\n`,
   "datapack/train-search-itx-exclusion-gate.json": "{\"id\":\"itx\"}\n",
 };
 
@@ -84,6 +94,22 @@ test("고정된 hub bundle만 build/contracts에 원문 그대로 stage한다", 
     await assert.rejects(
       stageContracts({ root, fetchBundle: async () => invalidAnnualSourceBytes }),
       /annual_official_file sourceIds/,
+    );
+
+    const invalidProductionScopeResources = structuredClone(resources);
+    invalidProductionScopeResources["datapack/production-datapack-scope.json"] = `${JSON.stringify({
+      productionSourceSet: { requiredSourceIds: [...productionRequiredSourceIds].reverse() },
+    })}\n`;
+    const invalidProductionScopeBytes = Buffer.from(`${JSON.stringify({
+      schemaVersion: 1,
+      bundleVersion: "1.0.0",
+      resources: invalidProductionScopeResources,
+    }, null, 2)}\n`);
+    lock.sha256 = createHash("sha256").update(invalidProductionScopeBytes).digest("hex");
+    writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
+    await assert.rejects(
+      stageContracts({ root, fetchBundle: async () => invalidProductionScopeBytes }),
+      /production requiredSourceIds/,
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
