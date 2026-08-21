@@ -11,6 +11,7 @@ const workflowUrl = new URL(
   import.meta.url,
 );
 const ciWorkflowUrl = new URL('../../.github/workflows/ci.yml', import.meta.url);
+const ownershipUrl = new URL('./data-test-ownership.json', import.meta.url);
 const producerWorkflowUrl = new URL(
   '../../.github/workflows/datapack-release.yml',
   import.meta.url,
@@ -2224,8 +2225,11 @@ test('CI는 실제 YAML 파서로 워크플로를 검사한다', async () => {
   const ciWorkflow = await readFile(ciWorkflowUrl, 'utf8');
   assert.ok(ciWorkflow.includes('rhysd/actionlint@sha256:'));
   assert.match(ciWorkflow, /docker run --rm[\s\S]{0,200}rhysd\/actionlint@sha256:[a-f0-9]{64}/);
-  // 이 계약 테스트 자체가 CI에서 실행되어야 한다.
-  assert.match(ciWorkflow, /tools\/ci\/automerge-queue\.test\.mjs/);
+  assert.match(ciWorkflow, /node tools\/ci\/data-test-discovery\.mjs run --class required-pr/);
+  const ownership = JSON.parse(await readFile(ownershipUrl, 'utf8'));
+  const entry = ownership.tests.find(({ path }) => path === 'tools/ci/automerge-queue.test.mjs');
+  assert.ok(entry, 'automerge queue ownership entry를 찾지 못함');
+  assert.ok(entry.classes.includes('required-pr'));
 });
 
 test('코디네이터는 main push CI를 되살리지 않는다', async () => {

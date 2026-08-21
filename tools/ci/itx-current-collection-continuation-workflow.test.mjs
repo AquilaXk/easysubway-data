@@ -7,6 +7,7 @@ import test from "node:test";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const workflowPath = path.join(root, ".github/workflows/itx-current-collection-continuation.yml");
 const ciPath = path.join(root, ".github/workflows/ci.yml");
+const ownershipPath = path.join(root, "tools/ci/data-test-ownership.json");
 
 function workflow() {
   assert.ok(existsSync(workflowPath), "ITX continuation workflow를 찾지 못함");
@@ -74,7 +75,15 @@ test("결과·completeness·extended capture만 14일 보존하고 base/raw/secr
 
 test("Data contracts가 continuation workflow contract를 실행한다", () => {
   const ci = readFileSync(ciPath, "utf8");
-  assert.match(ci, /tools\/ci\/itx-current-collection-continuation-workflow\.test\.mjs/);
-  assert.match(ci, /tools\/datapack\/provider-response-capture\.test\.mjs/);
-  assert.match(ci, /tools\/datapack\/continue-current-itx-collection\.test\.mjs/);
+  assert.match(ci, /node tools\/ci\/data-test-discovery\.mjs run --class required-pr/);
+  const ownership = JSON.parse(readFileSync(ownershipPath, "utf8"));
+  for (const ownedPath of [
+    "tools/ci/itx-current-collection-continuation-workflow.test.mjs",
+    "tools/datapack/provider-response-capture.test.mjs",
+    "tools/datapack/continue-current-itx-collection.test.mjs",
+  ]) {
+    const entries = ownership.tests.filter(({ path: testPath }) => testPath === ownedPath);
+    assert.equal(entries.length, 1, `${ownedPath} ownership entry는 정확히 하나여야 함`);
+    assert.ok(entries[0].classes.includes("required-pr"));
+  }
 });

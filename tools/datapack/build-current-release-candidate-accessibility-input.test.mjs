@@ -4,15 +4,24 @@ import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
+import { projectCandidateFixtureForAccessibilityAuthority } from "./build-datapack.mjs";
 import {
   buildCurrentReleaseCandidateAccessibilityAuthority,
   canonicalCurrentReleaseCandidateAccessibilityAuthorityJson,
   canonicalCurrentReleaseCandidateFixtureJson,
   main,
 } from "./build-current-release-candidate-accessibility-input.mjs";
-import { buildCurrentCapitalRouteEdgeInput } from "./build-current-capital-route-edge-input.mjs";
-import { buildCurrentCapitalStationLineInput } from "./build-current-capital-station-line-input.mjs";
+import {
+  buildCurrentCapitalRouteEdgeInput,
+  canonicalCurrentCapitalRouteEdgeInputJson,
+} from "./build-current-capital-route-edge-input.mjs";
+import {
+  buildCurrentCapitalStationLineInput,
+  canonicalCurrentCapitalStationLineInputJson,
+  readCurrentCapitalInputs,
+} from "./build-current-capital-station-line-input.mjs";
 import { fixture as fullCapitalFixture } from "./build-current-capital-station-line-input.test.mjs";
 
 test("full-capital authority는 213/639 input과 456 non-RIDE를 2,674-edge fixture에 결속한다", async () => {
@@ -21,6 +30,7 @@ test("full-capital authority는 213/639 input과 456 non-RIDE를 2,674-edge fixt
   const result = buildCurrentReleaseCandidateAccessibilityAuthority(input);
 
   assert.equal(result.candidateFixture.packs[0].networkEdges.length, 2674);
+  assert.equal(input.route.stationLines.length, 1102);
   assert.deepEqual(edgeCounts(result.candidateFixture.packs[0].networkEdges), {
     ENTRY: 213,
     EXIT: 213,
@@ -51,12 +61,53 @@ test("full-capital authority는 213/639 input과 456 non-RIDE를 2,674-edge fixt
   assert.deepEqual(input.projectedFixture, before);
 });
 
+test("current tracked inputs는 1,102 metadata·2,674 route·456 authority를 in-memory로 완성한다", async () => {
+  const repositoryRoot = path.resolve(fileURLToPath(new URL("../../", import.meta.url)));
+  const input = await readCurrentCapitalInputs(repositoryRoot);
+  const projectedFixture = await projectCandidateFixtureForAccessibilityAuthority({
+    buildSpec: input.candidateBuildSpec,
+    sourceFixture: input.canonicalPack,
+    repositoryRoot,
+  });
+  const projectedInput = { ...input, canonicalPack: projectedFixture };
+  const stationLineInput = buildCurrentCapitalStationLineInput(projectedInput);
+  const route = buildCurrentCapitalRouteEdgeInput(projectedInput);
+  const buildSpecBytes = await readFile(
+    path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"),
+  );
+  const sourceFixtureBytes = await readFile(
+    path.join(repositoryRoot, input.candidateBuildSpec.fixturePath),
+  );
+  const result = buildCurrentReleaseCandidateAccessibilityAuthority({
+    buildSpec: input.candidateBuildSpec,
+    buildSpecBytes,
+    projectedFixture,
+    route,
+    routeBytes: Buffer.from(canonicalCurrentCapitalRouteEdgeInputJson(route)),
+    sourceFixtureBytes,
+    stationLineInput,
+    stationLineInputBytes: Buffer.from(
+      canonicalCurrentCapitalStationLineInputJson(stationLineInput),
+    ),
+  });
+
+  assert.equal(route.stationLines.length, 1102);
+  assert.equal(route.routeEdges.length, 2674);
+  assert.equal(result.authority.edges.length, 456);
+  assert.equal(result.authority.edges.flatMap(({ requiredCells }) => requiredCells)
+    .filter(({ state }) => state === "UNVERIFIED_EVIDENCE_BLOCKED").length, 10);
+  assert.equal(result.candidateFixture.packs[0].networkEdges.length, 2674);
+});
+
 test("unresolved·stale·candidate·route·projected RIDE drift는 output 전에 fail-closed다", async () => {
   const cases = [
     ["unresolved", (value) => { value.stationLineInput.evidenceRows.pop(); }, /unresolved|denominator|missing/i],
     ["stale", (value) => { value.stationLineInput.evidenceRows[0].freshUntil = "2026-08-01T00:00:00.000Z"; }, /fresh|stale/i],
     ["candidate", (value) => { value.route.candidate.sourceSetSha256 = "0".repeat(64); }, /candidate/i],
     ["route hash", (value) => { value.route.routeEdges[0].edgeSha256 = "0".repeat(64); }, /hash/i],
+    ["route metadata missing", (value) => { value.route.stationLines.pop(); }, /route station-line/i],
+    ["route metadata operator", (value) => { value.route.stationLines[0].operatorId = "drift"; }, /route station-line/i],
+    ["projected metadata missing", (value) => { value.projectedFixture.packs[0].stationLines.pop(); }, /route station-line/i],
     ["RIDE denominator", (value) => { value.projectedFixture.packs[0].networkEdges.pop(); }, /RIDE denominator/i],
     ["extra non-RIDE", (value) => { value.projectedFixture.packs[0].networkEdges.push(legacyEdge("extra", "WALKWAY")); }, /legacy non-RIDE/i],
   ];
@@ -180,16 +231,27 @@ async function assertFileAbsent(file) {
 
 async function fullInput() {
   const source = await fullCapitalFixture();
-  source.canonicalPack.packs[0].networkEdges = Array.from({ length: 2218 }, (_, index) => ({
-    id: `ride-${index}`,
-    edgeType: "RIDE",
-    fromNodeId: "station-000:seoul-2",
-    toNodeId: "station-001:seoul-2",
-    durationSeconds: 120,
-    distanceMeters: 1000,
-    serviceClass: "SUBWAY",
-    servicePattern: "LOCAL",
-  }));
+  const routeOnly = addFullRouteStationLines(source);
+  source.canonicalPack.packs[0].networkEdges = [
+    ...Array.from({ length: 2218 }, (_, index) => ({
+      id: `ride-${index}`,
+      edgeType: "RIDE",
+      fromNodeId: "station-000:seoul-2",
+      toNodeId: "station-001:seoul-2",
+      durationSeconds: 120,
+      distanceMeters: 1000,
+      serviceClass: "SUBWAY",
+      servicePattern: "LOCAL",
+    })),
+    legacyEdge("legacy-entry-1", "ENTRY"),
+    legacyEdge("legacy-entry-2", "ENTRY"),
+    legacyEdge("legacy-exit-1", "EXIT"),
+    legacyEdge("legacy-exit-2", "EXIT"),
+  ];
+  Object.assign(source.canonicalPack.packs[0].networkEdges[0], {
+    fromNodeId: `${routeOnly[0].stationId}:${routeOnly[0].lineId}`,
+    toNodeId: `${routeOnly[1].stationId}:${routeOnly[1].lineId}`,
+  });
   const stationLineInput = buildCurrentCapitalStationLineInput(source);
   const route = buildCurrentCapitalRouteEdgeInput(source);
   const projectedFixture = {
@@ -197,6 +259,8 @@ async function fullInput() {
     packs: [{
       id: "capital",
       version: "1",
+      lines: structuredClone(source.canonicalPack.packs[0].lines),
+      stationLines: structuredClone(source.canonicalPack.packs[0].stationLines),
       networkEdges: [
         ...route.routeEdges.filter(({ edgeType }) => edgeType === "RIDE").map(routeRide),
         legacyEdge("legacy-entry-1", "ENTRY"),
@@ -220,6 +284,19 @@ async function fullInput() {
     stationLineInput,
     stationLineInputBytes: Buffer.from(canonical(stationLineInput)),
   };
+}
+
+function addFullRouteStationLines(input) {
+  const pack = input.canonicalPack.packs[0];
+  const lineId = "route-only-line";
+  pack.lines.push({ id: lineId, operatorId: "route-only-operator" });
+  const extras = Array.from({ length: 1102 - pack.stationLines.length }, (_, index) => ({
+    stationId: `station-route-${String(index).padStart(4, "0")}`,
+    lineId,
+    lineSequence: index,
+  }));
+  pack.stationLines.push(...extras);
+  return extras;
 }
 
 function routeRide(edge) {

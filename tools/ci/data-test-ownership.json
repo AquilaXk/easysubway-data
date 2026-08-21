@@ -1,0 +1,509 @@
+{
+  "version": 1,
+  "executionOwner": "data25",
+  "executionProfiles": {
+    "mobile-v19": {}
+  },
+  "roots": [
+    "tools/ci",
+    "tools/datapack",
+    "tools/release",
+    "tools/route-map",
+    "tools/routes"
+  ],
+  "owners": {
+    "data7": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/7",
+      "title": "[Release Blocker][P0][Data] server-route-bundle production eligibility·FINAL coverage producer"
+    },
+    "data8": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/8",
+      "title": "[Release Blocker][P0][Data] server-route-bundle FACILITY·EXIT·TRANSFER station-line materialization"
+    },
+    "data9": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/9",
+      "title": "[Release Blocker][P0][Data] server-route-bundle route-relevant accessibility edge 전수 평가·RIDE invariant"
+    },
+    "data10": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/10",
+      "title": "[Release Blocker][P0][Data] FACILITY 전체 station-line official source admission"
+    },
+    "data21": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/21",
+      "title": "[Data][Map Pack][P2] 4면 SVG crop·원점 0 정규화·deterministic basemap component"
+    },
+    "data25": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/25",
+      "title": "[CI][Data][P1] 소유 테스트 dynamic discovery·누락 0 gate"
+    },
+    "data26": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/26",
+      "title": "[Release Blocker][P0][Data] EXIT 전체 station-line official source admission"
+    },
+    "data27": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/27",
+      "title": "[Release Blocker][P0][Data] TRANSFER 전체 station-line official source admission"
+    },
+    "data28": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/28",
+      "title": "[Release Blocker][P0][Data] source·timetable snapshot 재수집과 만료 fail-closed admission"
+    },
+    "data29": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/29",
+      "title": "[Fix][Data] provider blocked-evidence expiry·live reachability·credential pin hardening"
+    },
+    "data38": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/38",
+      "title": "[Feat][Epic][Architecture][Data][P0] Map Pack·Station Catalog·Server Route Bundle 3-artifact 정본"
+    },
+    "data39": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/39",
+      "title": "[Feat][Data][KRIC][P0] fresh standard accessibility snapshot live 등록·handoff"
+    },
+    "data54": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/54",
+      "title": "[CI][Data][P0] 3회 재빌드 parity evidence promotion consumer"
+    },
+    "data96": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/96",
+      "title": "[Feat][Data][P0] ITX current 3-service-day 수집·원자 admission handoff"
+    },
+    "data100": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/100",
+      "title": "[Chore][Data] datapack cross-repository issue references canonicalization"
+    },
+    "data101": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/101",
+      "title": "[Fix][Data][P1] deterministic materializer test fixture projection 복구"
+    },
+    "data118": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/118",
+      "title": "[Security][CI][P1] Data D20 owner receipt caller와 immutable handoff"
+    },
+    "data251": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/251",
+      "title": "[Data][KRIC][P0] fresh Seoul companion receipt·dual registration bridge"
+    },
+    "data302": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/302",
+      "title": "[Release Blocker][P0][Data] release-candidate에 current 접근성·signed route-bundle 결속"
+    },
+    "data308": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/308",
+      "title": "[Data][Release Blocker][P0] 인천공항 자기부상선 production transit 전면 제외"
+    },
+    "data309": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/309",
+      "title": "[Data][Release Blocker][P0] canonical route-map provenance를 strict admission에 결속"
+    },
+    "data319": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/319",
+      "title": "[Data][Release Blocker][P0] capital 213 KRIC FACILITY full-scope contract"
+    },
+    "data321": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/321",
+      "title": "[Data][Release Blocker][P0] 서울교통공사 145-row TRANSFER full snapshot"
+    },
+    "data325": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/325",
+      "title": "[Data][Release Blocker][P0] FACILITY 213 producer-neutral snapshot registration과 admission 결속"
+    },
+    "data326": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/326",
+      "title": "[Data][Release Blocker][P0] KRIC EXIT 213/420 collection bundle을 immutable handoff로 결속"
+    },
+    "data329": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/329",
+      "title": "[Data][Release Blocker][P0] FACILITY registered snapshot을 current candidate source identity에 결속"
+    },
+    "data330": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/330",
+      "title": "[Data][Release Blocker][P0] EXIT immutable bundle을 full source admission에 결속"
+    },
+    "data335": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/335",
+      "title": "[Data][Release Blocker][P0] FACILITY 213 exact-main one-shot operation을 결속"
+    },
+    "data336": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/336",
+      "title": "[Data][Release Blocker][P0] EXIT 420 immutable artifact를 exact-main source admission에 결속"
+    },
+    "data339": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/339",
+      "title": "[Data][Release Blocker][P0] TRANSFER 물리 통로 reciprocal metric을 full admission에 결속"
+    },
+    "data340": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/340",
+      "title": "[Data][Release Blocker][P0] EXIT admission artifact를 durable release input에 pin"
+    },
+    "data349": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/349",
+      "title": "[Data][Release Blocker][P0] TRANSFER 213 station-line pre-candidate applicability 결속"
+    },
+    "data350": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/350",
+      "title": "[Data][Release Blocker][P0] TRANSFER current snapshot OCI 등록과 candidate source rebind"
+    },
+    "data358": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/358",
+      "title": "[Data][Release Blocker][P0] FACILITY terminal block을 topology UNAVAILABLE에 투영"
+    },
+    "data364": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/364",
+      "title": "[Data][Release Blocker][P0] TRANSFER current 등록 one-shot runner 추가"
+    },
+    "data365": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/365",
+      "title": "[Data][Release Blocker][P0] full-capital 접근성 213/639/30/2674 입력 builder 추가"
+    },
+    "data373": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/373",
+      "title": "[Data][Release Blocker][P0] next candidate와 current production 사이 staged transition 고정"
+    },
+    "data396": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/396",
+      "title": "[Data][Release Blocker][P0] full-capital 2674-edge fixture와 456-edge authority로 release-candidate 전환"
+    }
+  },
+  "workflows": {
+    "required-pr": {
+      "file": ".github/workflows/ci.yml",
+      "jobId": "contracts",
+      "checkName": "Data contracts",
+      "invocation": "node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile",
+      "required": true,
+      "fixtures": [
+        "mobile"
+      ],
+      "fixtureStageContracts": {
+        "mobile": [
+          "source=\".external/mobile/apps/mobile\"",
+          "expected_revision=\"39d2c4723d0ff855041c6162825930c7d12ffad3\"",
+          "expected_sha256=\"f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3\"",
+          "fetch-depth: 0",
+          "cp -a \"${source}\" apps/mobile",
+          "rm -r -- \"${target}\"",
+          "cp -a \"${source}\" \"${target}\""
+        ]
+      },
+      "contextInvocations": [
+        "node --test tools/datapack/readmit-bundled-pack-identity.test.mjs",
+        "node --test --test-name-pattern='bundled 공식 OD quote|bundled 차량·출입문 힌트' tools/datapack/datapack-tools.test.mjs",
+        "node --test tools/datapack/run-current-kric-exit-path-source-admission.test.mjs",
+        "node --test tools/ci/kric-exit-path-source-admission-workflow.test.mjs"
+      ],
+      "profileInvocations": [
+        "node tools/ci/data-test-discovery.mjs run --class required-pr --profile mobile-v19 --max-workers 1"
+      ]
+    },
+    "deterministic-release": {
+      "file": ".github/workflows/datapack-release.yml",
+      "jobId": "data-pack-release",
+      "checkName": "Data Pack Release",
+      "invocation": "node tools/ci/data-test-discovery.mjs run --class deterministic-release --max-workers 1",
+      "required": false
+    }
+  },
+  "tests": [
+    {"path":"tools/ci/automerge-queue.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":4795},
+    {"path":"tools/ci/data-test-discovery.test.mjs","semanticOwner":"data25","classes":["required-pr"],"durationMs":141},
+    {"path":"tools/ci/datapack-release-workflow.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":133},
+    {"path":"tools/ci/itx-current-collection-continuation-workflow.test.mjs","semanticOwner":"data96","classes":["required-pr"],"durationMs":37},
+    {"path":"tools/ci/itx-current-collection-offline-replay-workflow.test.mjs","semanticOwner":"data96","classes":["required-pr"],"durationMs":37},
+    {"path":"tools/ci/itx-current-collection-workflow.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":130},
+    {"path":"tools/ci/itx-current-replay-admission-candidate-workflow.test.mjs","semanticOwner":"data96","classes":["required-pr"],"durationMs":41},
+    {"path":"tools/ci/kric-exit-path-provider-snapshot-workflow.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":42},
+    {"path":"tools/ci/kric-exit-path-source-admission-workflow.test.mjs","semanticOwner":"data336","classes":["required-pr"],"durationMs":40},
+    {"path":"tools/ci/kric-exit-timeout-diagnostic-workflow.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":39},
+    {"path":"tools/ci/mobile-fixture-staging-workflow.test.mjs","semanticOwner":"data25","classes":["required-pr"],"durationMs":122},
+    {"path":"tools/ci/public-sensitivity-owner-receipt-caller.test.mjs","semanticOwner":"data118","classes":["required-pr"],"durationMs":125},
+    {"path":"tools/ci/require-workflow-artifact.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":478},
+    {"path":"tools/ci/sync-datapack-release-check-secrets.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":119},
+    {"path":"tools/datapack/activate-current-source-set.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":389},
+    {"path":"tools/datapack/admit-reviewed-kric-candidates.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":167},
+    {"path":"tools/datapack/apply-accessibility-evidence-to-bundled-pack.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":320},
+    {"path":"tools/datapack/apply-capital-line1-topology-to-bundled-pack.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":536},
+    {"path":"tools/datapack/apply-capital-route-topology-to-bundled-pack.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":1111},
+    {"path":"tools/datapack/apply-itx-topology-to-bundled-pack.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":8406},
+    {"path":"tools/datapack/apply-kric-line4-pilot-schedule.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":111},
+    {"path":"tools/datapack/apply-timetable-refresh.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":867},
+    {"path":"tools/datapack/artifact-component-manifest.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":131},
+    {"path":"tools/datapack/artifact-component-table-layout.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":132},
+    {"path":"tools/datapack/build-accessibility-source-coverage-report.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":373},
+    {"path":"tools/datapack/build-backend-timetable-seed.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":210},
+    {"path":"tools/datapack/build-baseline-ingestion-gate-report.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":161},
+    {"path":"tools/datapack/build-callback-reconciliation-evidence.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":209},
+    {"path":"tools/datapack/build-current-capital-facility-collection-plan.test.mjs","semanticOwner":"data319","classes":["required-pr"],"durationMs":245},
+    {"path":"tools/datapack/build-current-capital-facility-source-admission.test.mjs","semanticOwner":"data325","classes":["required-pr"],"durationMs":409},
+    {"path":"tools/datapack/build-current-capital-route-edge-input.test.mjs","semanticOwner":"data365","classes":["required-pr"],"durationMs":851},
+    {"path":"tools/datapack/build-current-capital-station-line-input.test.mjs","semanticOwner":"data365","classes":["required-pr"],"durationMs":399},
+    {"path":"tools/datapack/build-current-capital-transfer-topology-applicability.test.mjs","semanticOwner":"data349","classes":["required-pr"],"durationMs":164},
+    {"path":"tools/datapack/build-current-exit-admission-artifact-receipt.test.mjs","semanticOwner":"data340","classes":["required-pr"],"durationMs":1319},
+    {"path":"tools/datapack/build-current-exit-path-source-admission.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":93},
+    {"path":"tools/datapack/build-current-kric-exit-collection-plan.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":1350},
+    {"path":"tools/datapack/build-current-kric-exit-collection-receipt.test.mjs","semanticOwner":"data326","classes":["required-pr"],"durationMs":1032},
+    {"path":"tools/datapack/build-current-release-candidate-accessibility-input.test.mjs","semanticOwner":"data302","classes":["required-pr"],"durationMs":47},
+    {"path":"tools/datapack/build-current-station-line-accessibility.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":72},
+    {"path":"tools/datapack/build-current-strict-route-regression-report.test.mjs","semanticOwner":"data309","classes":["required-pr"],"durationMs":43},
+    {"path":"tools/datapack/build-current-transfer-source-admission.test.mjs","semanticOwner":"data27","classes":["required-pr"],"durationMs":568},
+    {"path":"tools/datapack/build-current-transfer-topology-metrics.test.mjs","semanticOwner":"data339","classes":["required-pr"],"durationMs":96},
+    {"path":"tools/datapack/build-data-component-manifest.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":896},
+    {"path":"tools/datapack/build-datapack-accessibility-freshness.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":143},
+    {"path":"tools/datapack/build-datapack-candidate-fixture-override.test.mjs","semanticOwner":"data396","classes":["required-pr"],"durationMs":564},
+    {"path":"tools/datapack/build-datapack-current-admission.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":432},
+    {"path":"tools/datapack/build-exit-path-admission.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":184},
+    {"path":"tools/datapack/build-facility-accessibility-admission.test.mjs","semanticOwner":"data10","classes":["required-pr"],"durationMs":1000},
+    {"path":"tools/datapack/build-facility-source-admission.test.mjs","semanticOwner":"data10","classes":["required-pr"],"durationMs":1000},
+    {"path":"tools/datapack/build-itx-current-topology-admission.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":131},
+    {"path":"tools/datapack/build-launch-denominator-report.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":208},
+    {"path":"tools/datapack/build-molit-nationwide-fixture.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":127},
+    {"path":"tools/datapack/build-nationwide-coverage-tally.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":905},
+    {"path":"tools/datapack/build-release-request-binding.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":508},
+    {"path":"tools/datapack/build-rescue-manifest.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":537},
+    {"path":"tools/datapack/build-route-accessibility-eligibility.test.mjs","semanticOwner":"data358","classes":["required-pr"],"durationMs":59},
+    {"path":"tools/datapack/build-route-graph-topology-report.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":539},
+    {"path":"tools/datapack/build-server-route-bundle-publication-descriptor.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":1069},
+    {"path":"tools/datapack/build-server-route-bundle-final.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":5482},
+    {"path":"tools/datapack/build-server-timetable-snapshot.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":5932},
+    {"path":"tools/datapack/build-transfer-topology-admission.test.mjs","semanticOwner":"data27","classes":["required-pr"],"durationMs":174},
+    {"path":"tools/datapack/bundle-component-contract.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":119},
+    {"path":"tools/datapack/canonical-number-contract.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":146},
+    {"path":"tools/datapack/catalog-raw-sql-tables.test.mjs","semanticOwner":"data100","classes":["required-pr"],"durationMs":114},
+    {"path":"tools/datapack/check-manifest-acceptance-floor.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":294},
+    {"path":"tools/datapack/check-timetable-snapshot-freshness.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":136},
+    {"path":"tools/datapack/collect-busan-accessibility.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":261},
+    {"path":"tools/datapack/collect-busan-route-map-connectors.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":137},
+    {"path":"tools/datapack/collect-busan-route-map-positions.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":237},
+    {"path":"tools/datapack/collect-busan-route-topology.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":249},
+    {"path":"tools/datapack/collect-busan-timetable.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":434},
+    {"path":"tools/datapack/collect-capital-route-topology.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":309},
+    {"path":"tools/datapack/collect-current-kric-exit-path-provider-snapshot.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":34},
+    {"path":"tools/datapack/collect-current-seoul-transfer-distance-duration-snapshot.test.mjs","semanticOwner":"data321","classes":["required-pr"],"durationMs":118},
+    {"path":"tools/datapack/collect-daegu-accessibility.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":170},
+    {"path":"tools/datapack/collect-daegu-datapack-sources.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":264},
+    {"path":"tools/datapack/collect-daegu-route-map-positions.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":206},
+    {"path":"tools/datapack/collect-daejeon-accessibility.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":184},
+    {"path":"tools/datapack/collect-daejeon-route-map-positions.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":436},
+    {"path":"tools/datapack/collect-daejeon-route-topology.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":228},
+    {"path":"tools/datapack/collect-datago-source-candidate-evidence.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":912},
+    {"path":"tools/datapack/collect-facility-gap-source-evidence.test.mjs","semanticOwner":"data10","classes":["required-pr"],"durationMs":192},
+    {"path":"tools/datapack/collect-guri-station-facility-evidence.test.mjs","semanticOwner":"data10","classes":["required-pr"],"durationMs":171},
+    {"path":"tools/datapack/collect-gwangju-accessibility.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":154},
+    {"path":"tools/datapack/collect-gwangju-cyberstation-timetable.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":244},
+    {"path":"tools/datapack/collect-gwangju-route-map-positions.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":190},
+    {"path":"tools/datapack/collect-gwangju-route-topology.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":438},
+    {"path":"tools/datapack/collect-gwangju-timetable.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":158},
+    {"path":"tools/datapack/collect-incheon-accessibility.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":150},
+    {"path":"tools/datapack/collect-incheon-station-info.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":225},
+    {"path":"tools/datapack/collect-incheon-timetable.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":313},
+    {"path":"tools/datapack/collect-korail-itx-cheongchun-timetable.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":3673},
+    {"path":"tools/datapack/collect-kric-accessibility-snapshots.test.mjs","semanticOwner":"data39","classes":["required-pr"],"durationMs":187},
+    {"path":"tools/datapack/collect-kric-capital-light-rail-route-map-positions.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":223},
+    {"path":"tools/datapack/collect-kric-capital-wide-rail-route-map-positions.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":280},
+    {"path":"tools/datapack/collect-kric-code-catalog.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":191},
+    {"path":"tools/datapack/collect-kric-exit-path-provider-snapshot.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":267},
+    {"path":"tools/datapack/collect-kric-line4-timetables.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":182},
+    {"path":"tools/datapack/collect-kric-nationwide-route-rosters.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":137},
+    {"path":"tools/datapack/collect-kric-route-roster.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":158},
+    {"path":"tools/datapack/collect-kric-source-candidate-evidence.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":1661},
+    {"path":"tools/datapack/collect-molit-railway-transfer-movement.test.mjs","semanticOwner":"data27","classes":["required-pr"],"durationMs":130},
+    {"path":"tools/datapack/collect-nationwide-public-api-coverage.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":224},
+    {"path":"tools/datapack/collect-seoul-accessibility-evidence.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":274},
+    {"path":"tools/datapack/collect-seoul-route-map-positions.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":187},
+    {"path":"tools/datapack/collect-seoul9-phase1-route-map-positions.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":183},
+    {"path":"tools/datapack/collect-seoul9-route-map-positions.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":180},
+    {"path":"tools/datapack/collect-tago-itx-cheongchun-od.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":4856},
+    {"path":"tools/datapack/consume-current-kric-exit-collection-bundle.test.mjs","semanticOwner":"data330","classes":["required-pr"],"durationMs":669},
+    {"path":"tools/datapack/continue-current-itx-collection.test.mjs","semanticOwner":"data96","classes":["required-pr"],"durationMs":77},
+    {"path":"tools/datapack/contract-producer.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":554},
+    {"path":"tools/datapack/current-capital-accessibility-transition.test.mjs","semanticOwner":"data373","classes":["required-pr"],"durationMs":172},
+    {"path":"tools/datapack/datapack-tools.test.mjs","semanticOwner":"data38","classes":["required-pr"],"executionProfile":"mobile-v19","durationMs":52805},
+    {"path":"tools/datapack/decide-datapack-release.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":233},
+    {"path":"tools/datapack/diagnose-current-kric-exit-path-query.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":75},
+    {"path":"tools/datapack/emit-artifact-components.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":2502},
+    {"path":"tools/datapack/emit-station-catalog-from-bundled-pack.test.mjs","semanticOwner":"data25","classes":["required-pr"],"durationMs":318},
+    {"path":"tools/datapack/emit-station-catalog-pack.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":382},
+    {"path":"tools/datapack/evaluate-current-molit-transfer-freshness.test.mjs","semanticOwner":"data27","classes":["required-pr"],"durationMs":77},
+    {"path":"tools/datapack/evaluate-route-accessibility-edges.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":216},
+    {"path":"tools/datapack/export-bundled-pack-fixture.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":120},
+    {"path":"tools/datapack/fetch-kasi-public-holiday-calendar.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":148},
+    {"path":"tools/datapack/freshness-policy.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":111},
+    {"path":"tools/datapack/import-car-door-hints.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":119},
+    {"path":"tools/datapack/import-transfer-baseline.test.mjs","semanticOwner":"data27","classes":["required-pr"],"durationMs":138},
+    {"path":"tools/datapack/inspect-itx-current-collection-evidence.test.mjs","semanticOwner":"data96","classes":["required-pr"],"durationMs":2779},
+    {"path":"tools/datapack/itx-cheongchun-coverage-contract.test.mjs","semanticOwner":"data38","classes":["required-pr","deterministic-release"],"durationMs":183},
+    {"path":"tools/datapack/itx-cheongchun-service-layer.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":726},
+    {"path":"tools/datapack/launch-candidate-binding.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":118},
+    {"path":"tools/datapack/lib/datapack-manifest-schema.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":131},
+    {"path":"tools/datapack/lib/molit-svg-provider-identity.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":107},
+    {"path":"tools/datapack/lib/provider-call-integrity.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":135},
+    {"path":"tools/datapack/lib/route-map-admission-freshness.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":103},
+    {"path":"tools/datapack/lib/server-route-bundle-final.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":146},
+    {"path":"tools/datapack/materialize-accessibility-source-input.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":166},
+    {"path":"tools/datapack/materialize-busan-accessibility.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":16359},
+    {"path":"tools/datapack/materialize-busan-route-map-positions.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":12196},
+    {"path":"tools/datapack/materialize-busan-route-topology.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":719},
+    {"path":"tools/datapack/materialize-busan-timetable.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":9671},
+    {"path":"tools/datapack/materialize-daegu-accessibility.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":28318},
+    {"path":"tools/datapack/materialize-daegu-route-map-positions.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":24673},
+    {"path":"tools/datapack/materialize-daegu-timetable.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":48912},
+    {"path":"tools/datapack/materialize-daejeon-accessibility.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":15362},
+    {"path":"tools/datapack/materialize-daejeon-route-map-positions.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":18684},
+    {"path":"tools/datapack/materialize-daejeon-route-topology.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":3802},
+    {"path":"tools/datapack/materialize-daejeon-timetable.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":8325},
+    {"path":"tools/datapack/materialize-gwangju-accessibility.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":20227},
+    {"path":"tools/datapack/materialize-gwangju-route-map-positions.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":17196},
+    {"path":"tools/datapack/materialize-gwangju-timetable.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":23638},
+    {"path":"tools/datapack/materialize-incheon-accessibility.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":25554},
+    {"path":"tools/datapack/materialize-incheon-station-info.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":22043},
+    {"path":"tools/datapack/materialize-incheon-timetable.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":30040},
+    {"path":"tools/datapack/materialize-kric-capital-light-rail-route-map-positions.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":16405},
+    {"path":"tools/datapack/materialize-kric-capital-wide-rail-route-map-positions.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":23372},
+    {"path":"tools/datapack/materialize-replayed-itx-admission-candidate.test.mjs","semanticOwner":"data96","classes":["required-pr"],"durationMs":80},
+    {"path":"tools/datapack/materialize-seoul-route-map-positions.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":27297},
+    {"path":"tools/datapack/materialize-seoul9-phase1-route-map-positions.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":20861},
+    {"path":"tools/datapack/materialize-seoul9-route-map-positions.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":21482},
+    {"path":"tools/datapack/materialize-station-line-accessibility.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":134},
+    {"path":"tools/datapack/materialize-test-fixture.test.mjs","semanticOwner":"data101","classes":["required-pr"],"durationMs":155},
+    {"path":"tools/datapack/nationwide-candidate-coverage-gate.test.mjs","semanticOwner":"data7","classes":["deterministic-release"],"durationMs":null},
+    {"path":"tools/datapack/nationwide-public-api-coverage-evidence.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":281},
+    {"path":"tools/datapack/normalize-kric-timetable.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":119},
+    {"path":"tools/datapack/normalize-transfer-distance-duration-rows.test.mjs","semanticOwner":"data27","classes":["required-pr"],"durationMs":200},
+    {"path":"tools/datapack/parse-kric-code-catalog.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":118},
+    {"path":"tools/datapack/plan-kric-exit-path-collection.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":139},
+    {"path":"tools/datapack/plan-kric-line4-collection.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":114},
+    {"path":"tools/datapack/plan-tago-schedule-collection.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":304},
+    {"path":"tools/datapack/prepare-current-server-route-bundle-final.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":69},
+    {"path":"tools/datapack/probe-busan-fare-api.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":169},
+    {"path":"tools/datapack/probe-daejeon-coverage-api.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":206},
+    {"path":"tools/datapack/probe-korail-facility-workbook.test.mjs","semanticOwner":"data10","classes":["required-pr"],"durationMs":173},
+    {"path":"tools/datapack/probe-korail-train-operation-api.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":198},
+    {"path":"tools/datapack/probe-seoul-fare-api.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":213},
+    {"path":"tools/datapack/probe-seoul-open-data-api.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":191},
+    {"path":"tools/datapack/probe-tago-train-date-semantics.test.mjs","semanticOwner":"data96","classes":["required-pr"],"durationMs":374},
+    {"path":"tools/datapack/project-canonical-route-map-provenance.test.mjs","semanticOwner":"data309","classes":["required-pr"],"durationMs":234},
+    {"path":"tools/datapack/project-retired-transit-lines.test.mjs","semanticOwner":"data308","classes":["required-pr"],"durationMs":42},
+    {"path":"tools/datapack/provider-response-capture.test.mjs","semanticOwner":"data96","classes":["required-pr"],"durationMs":62},
+    {"path":"tools/datapack/publish-kric-accessibility-raw.test.mjs","semanticOwner":"data39","classes":["required-pr"],"durationMs":20},
+    {"path":"tools/datapack/publish-kric-timetable-raw.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":458},
+    {"path":"tools/datapack/publish-object-storage.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":1336},
+    {"path":"tools/datapack/publish-seoul-accessibility-raw.test.mjs","semanticOwner":"data251","classes":["required-pr"],"durationMs":51},
+    {"path":"tools/datapack/publish-seoul-transfer-raw.test.mjs","semanticOwner":"data350","classes":["required-pr"],"durationMs":103},
+    {"path":"tools/datapack/publish-server-route-bundle.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":940},
+    {"path":"tools/datapack/purge-expired-source-raw.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":3184},
+    {"path":"tools/datapack/readmit-bundled-pack-identity.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":7711},
+    {"path":"tools/datapack/rebind-capital-route-map-admissions.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":170},
+    {"path":"tools/datapack/rebind-current-candidate-source-snapshots.test.mjs","semanticOwner":"data329","classes":["required-pr"],"durationMs":696},
+    {"path":"tools/datapack/reconstruct-transit-trips.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":131},
+    {"path":"tools/datapack/refresh-route-map-admission-freshness.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":142},
+    {"path":"tools/datapack/register-current-seoul-transfer-source.test.mjs","semanticOwner":"data350","classes":["required-pr"],"durationMs":385},
+    {"path":"tools/datapack/register-kric-standard-accessibility-snapshot.test.mjs","semanticOwner":"data39","classes":["required-pr"],"durationMs":2317},
+    {"path":"tools/datapack/register-seoul-transfer-source-snapshot.test.mjs","semanticOwner":"data350","classes":["required-pr"],"durationMs":43},
+    {"path":"tools/datapack/replay-current-itx-collection.test.mjs","semanticOwner":"data96","classes":["required-pr"],"durationMs":59},
+    {"path":"tools/datapack/revalidate-current-molit-transfer-source.test.mjs","semanticOwner":"data27","classes":["required-pr"],"durationMs":1110},
+    {"path":"tools/datapack/revalidate-current-static-network-sources.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":64},
+    {"path":"tools/datapack/rollback-manifest.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":3330},
+    {"path":"tools/datapack/route-map-coverage-scope.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":1470},
+    {"path":"tools/datapack/run-callback-backend-outage-rehearsal.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":117},
+    {"path":"tools/datapack/run-current-capital-facility-operation.test.mjs","semanticOwner":"data335","classes":["required-pr"],"durationMs":965},
+    {"path":"tools/datapack/run-current-itx-collection.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":219},
+    {"path":"tools/datapack/run-current-kric-exit-path-source-admission.test.mjs","semanticOwner":"data336","classes":["required-pr"],"durationMs":57},
+    {"path":"tools/datapack/run-current-seoul-transfer-registration.test.mjs","semanticOwner":"data364","classes":["required-pr"],"durationMs":613},
+    {"path":"tools/datapack/send-release-callback.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":505},
+    {"path":"tools/datapack/server-route-bundle-build-contract.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":171},
+    {"path":"tools/datapack/sign-server-route-bundle.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":975},
+    {"path":"tools/datapack/source-candidate-endpoint-contract.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":301},
+    {"path":"tools/datapack/source-governance.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":696},
+    {"path":"tools/datapack/source-operation.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":182},
+    {"path":"tools/datapack/split-station-subnames.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":121},
+    {"path":"tools/datapack/stage-contracts.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":118},
+    {"path":"tools/datapack/stage-current-server-route-bundle-candidate.test.mjs","semanticOwner":"data302","classes":["required-pr"],"durationMs":90},
+    {"path":"tools/datapack/sync-current-route-edge-policy.test.mjs","semanticOwner":"data308","classes":["required-pr"],"durationMs":47},
+    {"path":"tools/datapack/validate-datapack-ride-adjacency.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":130},
+    {"path":"tools/datapack/validate-datapack-server-route-coverage.test.mjs","semanticOwner":"data302","classes":["required-pr"],"durationMs":50},
+    {"path":"tools/datapack/validate-release-evidence-bundle.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":2549},
+    {"path":"tools/datapack/validate-remote-datapack-artifact-server-route-coverage.test.mjs","semanticOwner":"data302","classes":["required-pr"],"durationMs":42},
+    {"path":"tools/datapack/validate-source-inventory-transfer.test.mjs","semanticOwner":"data350","classes":["required-pr"],"durationMs":57},
+    {"path":"tools/datapack/validate-source-snapshot-freshness.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":233},
+    {"path":"tools/datapack/validate-timetable-ride-consistency.test.mjs","semanticOwner":"data9","classes":["deterministic-release"],"durationMs":null},
+    {"path":"tools/datapack/verify-production-pack-artifact-identity.test.mjs","semanticOwner":"data7","classes":["deterministic-release"],"durationMs":null},
+    {"path":"tools/datapack/verify-release-request-binding.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":325},
+    {"path":"tools/release/validate-promotion-request.test.mjs","semanticOwner":"data54","classes":["required-pr"],"durationMs":1120},
+    {"path":"tools/route-map/add-daegu-buksam-catalog.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":133},
+    {"path":"tools/route-map/add-station-catalog-entries.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":140},
+    {"path":"tools/route-map/apply-busan-label-nudges.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":124},
+    {"path":"tools/route-map/apply-coordinate-overrides.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":112},
+    {"path":"tools/route-map/apply-euclidean-svg-respacing.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":168},
+    {"path":"tools/route-map/audit-octolinear-node-on-stroke.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":136},
+    {"path":"tools/route-map/audit-octolinearity.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":117},
+    {"path":"tools/route-map/audit-route-line-layout-quality.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":122},
+    {"path":"tools/route-map/audit-station-euclidean-spacing.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":110},
+    {"path":"tools/route-map/audit-station-spacing.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":118},
+    {"path":"tools/route-map/audit-transfer-groups.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":132},
+    {"path":"tools/route-map/basemap-font-weight-gate.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":10396},
+    {"path":"tools/route-map/basemap-ink-within-viewbox-gate.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":17794},
+    {"path":"tools/route-map/basemap-paint-order-gate.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":3660},
+    {"path":"tools/route-map/basemap-svg-fidelity-gate.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":10783},
+    {"path":"tools/route-map/build-polyline-pack.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":686},
+    {"path":"tools/route-map/busan-free-crossing-gate.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":156},
+    {"path":"tools/route-map/capital-route-map-coverage.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":448},
+    {"path":"tools/route-map/compile-basemap-vec.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":7372},
+    {"path":"tools/route-map/daegu-free-crossing-gate.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":173},
+    {"path":"tools/route-map/densify-corridors.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":132},
+    {"path":"tools/route-map/densify-hubs.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":114},
+    {"path":"tools/route-map/export-loom-geojson.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":123},
+    {"path":"tools/route-map/fix-svg-station-line-membership.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":131},
+    {"path":"tools/route-map/line-branches.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":167},
+    {"path":"tools/route-map/merge-alias-stations.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":126},
+    {"path":"tools/route-map/merge-busan-transfers.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":130},
+    {"path":"tools/route-map/merge-oversplit-transfers.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":122},
+    {"path":"tools/route-map/octi-to-pack.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":126},
+    {"path":"tools/route-map/octolinearize-line-tracks.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":126},
+    {"path":"tools/route-map/octolinearize-svg-route-lines.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":136},
+    {"path":"tools/route-map/oracle-metrics.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":119},
+    {"path":"tools/route-map/project-nodes-to-tracks.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":124},
+    {"path":"tools/route-map/relayout-svg-route-lines.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":162},
+    {"path":"tools/route-map/respace-route-map.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":151},
+    {"path":"tools/route-map/route-map-license-decision.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":4898},
+    {"path":"tools/route-map/route-map-major-stations.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":136},
+    {"path":"tools/route-map/route-map-single-source.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":127},
+    {"path":"tools/route-map/route-map-tile-expansion-adr.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":113},
+    {"path":"tools/route-map/route-map-tools.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":5178},
+    {"path":"tools/route-map/sma-pipeline.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":201},
+    {"path":"tools/route-map/splice-transfer-convergence.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":135},
+    {"path":"tools/route-map/split-mismerged-stations.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":121},
+    {"path":"tools/route-map/station-surgery.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":128},
+    {"path":"tools/route-map/verify-display-svg-provenance.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":191},
+    {"path":"tools/routes/build-route-graph-coverage-report.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":142}
+  ],
+  "fixtures": {
+    "mobile": {
+      "repository": "AquilaXk/easysubway-mobile",
+      "commit": "39d2c4723d0ff855041c6162825930c7d12ffad3",
+      "checkoutPath": ".external/mobile",
+      "sourcePath": "apps/mobile",
+      "path": "apps/mobile",
+      "requiredFiles": [
+        {
+          "path": "assets/datapacks/capital.sqlite.gz",
+          "sha256": "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
+          "profileSha256": {
+            "mobile-v19": "28de8771a22dd5188cd4c62662faba8dcf46f6c3370386bc2f5598334acf0cc2"
+          }
+        },
+        {
+          "path": "assets/datapacks/metro_map_pack/basemap/labels.json",
+          "sha256": "d9744505b0c954aa6a611bf7dac1a6f96ef3f5b13e4c665eeece7c44e6835833"
+        },
+        {
+          "path": "pubspec.yaml",
+          "sha256": "82bfad8bd6f06fd0163573fe45c08af050f8688010309bb04532c4481428ebf4"
+        },
+        {
+          "path": "pubspec.lock",
+          "sha256": "e42fbcce9ba3dd351ef4918e1c15bf231b2cf72cc281583db39e35f50ca4c03f"
+        }
+      ]
+    }
+  }
+}

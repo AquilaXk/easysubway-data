@@ -7,6 +7,18 @@ import path from "node:path";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const yml = readFileSync(path.join(root, ".github/workflows/datapack-release.yml"), "utf8");
 
+test("release workflow는 owned deterministic-release subset만 실행한다", () => {
+  const step = yml.match(
+    /- name: Data Pack Release \/ Validate ITX-청춘 coverage contract[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(step, "ITX coverage contract 검증 스텝을 찾지 못함");
+  assert.match(
+    step,
+    /node tools\/ci\/data-test-discovery\.mjs run --class deterministic-release/,
+  );
+  assert.doesNotMatch(step, /node\s+--test|\.test\.mjs/);
+});
+
 test("route-final candidate parity는 runtime receipts를 canonical stage 밖 companion artifact로 분리한다", () => {
   const step = (name) => yml.indexOf(`- name: ${name}`);
   const coverage = yml.slice(step("Data Pack Release / Validate accessibility source coverage"), step("Data Pack Release / Write coverage gap evidence"));
@@ -768,5 +780,6 @@ test("production-publish는 attested candidate를 no-rebuild로 소비한다", (
   assert.match(accessibility, /--bundled-root "\$\{EASYSUBWAY_DATAPACK_OUTPUT\}"/);
   assert.ok(yml.indexOf("Data Pack Release / Build data packs") < yml.indexOf("Data Pack Release / Stage candidate provenance"));
   assert.ok(yml.indexOf("Data Pack Release / Stage candidate provenance") < yml.indexOf("Data Pack Release / Validate release evidence bundle"));
+
   assert.doesNotMatch(yml, /apps\/mobile/);
 });

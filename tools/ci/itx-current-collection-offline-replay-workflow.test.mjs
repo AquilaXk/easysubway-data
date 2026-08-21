@@ -7,6 +7,7 @@ import test from "node:test";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const workflowPath = path.join(root, ".github/workflows/itx-current-collection-offline-replay.yml");
 const ciPath = path.join(root, ".github/workflows/ci.yml");
+const ownershipPath = path.join(root, "tools/ci/data-test-ownership.json");
 
 function workflow() {
   assert.ok(existsSync(workflowPath), "ITX offline replay workflow를 찾지 못함");
@@ -76,6 +77,14 @@ test("sanitized replay output 하나만 14일 보존한다", () => {
 
 test("Data contracts가 offline replay workflow와 functional replay contract를 실행한다", () => {
   const ci = readFileSync(ciPath, "utf8");
-  assert.match(ci, /tools\/ci\/itx-current-collection-offline-replay-workflow\.test\.mjs/);
-  assert.match(ci, /tools\/datapack\/replay-current-itx-collection\.test\.mjs/);
+  assert.match(ci, /node tools\/ci\/data-test-discovery\.mjs run --class required-pr/);
+  const ownership = JSON.parse(readFileSync(ownershipPath, "utf8"));
+  for (const ownedPath of [
+    "tools/ci/itx-current-collection-offline-replay-workflow.test.mjs",
+    "tools/datapack/replay-current-itx-collection.test.mjs",
+  ]) {
+    const entries = ownership.tests.filter(({ path: testPath }) => testPath === ownedPath);
+    assert.equal(entries.length, 1, `${ownedPath} ownership entry는 정확히 하나여야 함`);
+    assert.ok(entries[0].classes.includes("required-pr"));
+  }
 });
