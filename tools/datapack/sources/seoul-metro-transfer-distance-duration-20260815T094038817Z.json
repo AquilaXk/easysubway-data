@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "seoul-transfer-distance-duration-source-snapshot",
+  "sourceId": "seoul-metro-transfer-distance-duration",
+  "snapshotId": "seoul-metro-transfer-distance-duration-20260815T094038817Z",
+  "sourceEffectiveDate": "2025-12-31",
+  "sourceUpdatedAt": null,
+  "capturedAt": "2026-08-15T09:40:38.817Z",
+  "observedAt": "2026-08-15T09:40:38.817Z",
+  "freshUntil": "2027-08-15T09:40:38.817Z",
+  "credentialRedacted": true,
+  "absenceEvidenceMode": "EXHAUSTIVE_LIST",
+  "rowCount": 145,
+  "rawSha256": "3d872c9ac390426b5e0e26fa1916ae9d9a44b70077b632d3c85cb8e82381f7cf",
+  "contentSha256": "77725b1fdfa25173c5f009daf5b221a0e674cf667fb88110a6d8790081e87cf8",
+  "schemaFingerprint": "18cb8d6e4775fcb5d02ca80e03255dbb4021dabfbe95edd054e32923f767117e",
+  "observationIdentity": {
+    "endpointSha256": "ed67b36c04c87883ad96eb0b28d1471b4c2ecce3b73d55028ab6e7acd81c74da",
+    "manifestSha256": "8fcfe922559989998ff6fcdbb04f583b863a49f4bf7225177822d6e656f3e694",
+    "observationSha256": "2014adb22ab221aab82b83c821cdd480de560ffc344df56d1006e5b616efb555",
+    "rawSnapshotSha256": "3d872c9ac390426b5e0e26fa1916ae9d9a44b70077b632d3c85cb8e82381f7cf",
+    "sourceCandidateSha256": "74038fe545e46d6f43affe51f4cfbf924b21e8cf73d9327bcc7cd05dc29f5a5e",
+    "kricProviderCatalogSha256": "18ef12fce6a42f63e39f6804e62654f27c2dc199485fc5e6e49c77a02acbb837"
+  },
+  "transferTopology": {
+    "canonicalPackSha256": "ef4fecb976e5d29e3c29a84993ac55dfb8318e64c598ea5c478ae3ea3fa0db83",
+    "metricsArtifactSha256": "3977b84df6cb90cb752c6ebde2ea4f8f29455a34629b680dd7216bd7038bbda1",
+    "applicabilityArtifactSha256": "5651d4d481b8308994f413367faf1960dc1b1f53ccd9f00fe7dbc869d4d97d0d",
+    "stationLineCount": 213,
+    "stationCount": 199,
+    "physicalPairCount": 15,
+    "directedMetricCount": 30,
+    "officialMetricCount": 28,
+    "derivedReciprocalMetricCount": 2,
+    "applicableStationLineCount": 27,
+    "notApplicableStationLineCount": 186,
+    "durationRole": "REFERENCE_ONLY"
+  },
+  "snapshotSha256": "9c0d5f24c0f142e863d5370ba64d4a3c86694400ed5cc6ddeb0e473fd36ba83a"
+}

@@ -16,11 +16,24 @@
   },
   "verifiedAccessibilityScope": {
     "id": "capital_pilot_android_v1",
-    "regionIds": ["capital"],
-    "includedOperatorIds": ["seoul-metro"],
-    "includedLineIds": ["seoul-4"],
-    "includedStationIds": ["station-sangnoksu", "station-sadang"],
-    "requiredFacilityTypes": ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"],
+    "regionIds": [
+      "capital"
+    ],
+    "includedOperatorIds": [
+      "seoul-metro"
+    ],
+    "includedLineIds": [
+      "seoul-4"
+    ],
+    "includedStationIds": [
+      "station-sangnoksu",
+      "station-sadang"
+    ],
+    "requiredFacilityTypes": [
+      "ELEVATOR",
+      "ESCALATOR",
+      "WHEELCHAIR_LIFT"
+    ],
     "facilityCoverageDenominator": {
       "kind": "station_line_x_required_facility_type",
       "expectedRows": 6
@@ -28,18 +41,34 @@
     "supportedClaimKo": "상록수·사당 검증 pilot",
     "supportedClaimPolicyKo": "앱 화면과 Play listing은 production coverage evidence가 통과한 상록수·사당 검증 범위만 지원 범위로 표현한다.",
     "unsupportedRegionPolicy": {
-      "requiredAppStatus": ["UNSUPPORTED_REGION", "다시 확인"],
+      "requiredAppStatus": [
+        "UNSUPPORTED_REGION",
+        "다시 확인"
+      ],
       "policyKo": "coverageEvidence와 P0 gap 0을 만족하지 못한 지역, 운영기관, 노선은 지원 지역으로 표시하지 않는다."
     },
     "storeListingPolicyKo": "대한민국 도시철도 전체 또는 전국 완전 지원처럼 검증 범위를 넘는 문구를 사용하지 않는다."
   },
   "supportScope": {
     "id": "capital_pilot_android_v1",
-    "regionIds": ["capital"],
-    "includedOperatorIds": ["seoul-metro"],
-    "includedLineIds": ["seoul-4"],
-    "includedStationIds": ["station-sangnoksu", "station-sadang"],
-    "requiredFacilityTypes": ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"],
+    "regionIds": [
+      "capital"
+    ],
+    "includedOperatorIds": [
+      "seoul-metro"
+    ],
+    "includedLineIds": [
+      "seoul-4"
+    ],
+    "includedStationIds": [
+      "station-sangnoksu",
+      "station-sadang"
+    ],
+    "requiredFacilityTypes": [
+      "ELEVATOR",
+      "ESCALATOR",
+      "WHEELCHAIR_LIFT"
+    ],
     "facilityCoverageDenominator": {
       "kind": "station_line_x_required_facility_type",
       "expectedRows": 6
@@ -47,18 +76,36 @@
     "supportedClaimKo": "상록수·사당 검증 pilot",
     "supportedClaimPolicyKo": "앱 화면과 Play listing은 production coverage evidence가 통과한 상록수·사당 검증 범위만 지원 범위로 표현한다.",
     "unsupportedRegionPolicy": {
-      "requiredAppStatus": ["UNSUPPORTED_REGION", "다시 확인"],
+      "requiredAppStatus": [
+        "UNSUPPORTED_REGION",
+        "다시 확인"
+      ],
       "policyKo": "coverageEvidence와 P0 gap 0을 만족하지 못한 지역, 운영기관, 노선은 지원 지역으로 표시하지 않는다."
     },
     "storeListingPolicyKo": "대한민국 도시철도 전체 또는 전국 완전 지원처럼 검증 범위를 넘는 문구를 사용하지 않는다."
   },
   "routingLaunchScope": {
     "id": "capital_routing_android_v1",
-    "regionIds": ["capital"],
-    "operatorIds": ["seoul-metro", "korail"],
-    "lineIds": ["seoul-4", "line-6e39be0cb6e2", "line-54a7b980b7c3"],
-    "serviceIds": ["SUBWAY", "ITX_CHEONGCHUN"],
-    "baseRoutingStationIds": ["station-sangnoksu", "station-sadang"],
+    "regionIds": [
+      "capital"
+    ],
+    "operatorIds": [
+      "seoul-metro",
+      "korail"
+    ],
+    "lineIds": [
+      "seoul-4",
+      "line-6e39be0cb6e2",
+      "line-54a7b980b7c3"
+    ],
+    "serviceIds": [
+      "SUBWAY",
+      "ITX_CHEONGCHUN"
+    ],
+    "baseRoutingStationIds": [
+      "station-sangnoksu",
+      "station-sadang"
+    ],
     "requiredTransferStationIds": [
       "station-8aa315864466",
       "station-c0679b9a6cf8",
@@ -72,7 +119,9 @@
       "edge-entry-sadang-seoul-4",
       "edge-exit-sadang-seoul-4"
     ],
-    "requiredTransferEdgeIds": ["path-edge-sadang-4-to-2-fast"],
+    "requiredTransferEdgeIds": [
+      "path-edge-sadang-4-to-2-fast"
+    ],
     "admittedStationEvidenceRequired": true,
     "sourceDerivedConnectionEdgeEvidenceRequired": true,
     "fixtureOrLegacyEvidenceAllowed": false,
@@ -85,7 +134,11 @@
     "blocksRoutingLaunch": false
   },
   "identityMatrix": {
-    "consumers": ["source", "server", "mobile"],
+    "consumers": [
+      "source",
+      "server",
+      "mobile"
+    ],
     "requiredSharedFields": [
       "canonicalStationVersion",
       "corridorId",
@@ -105,7 +158,9 @@
       "schedule_timetable",
       "route_map_positions"
     ],
-    "enhancementDomains": ["demand_reference"],
+    "enhancementDomains": [
+      "demand_reference"
+    ],
     "completionRule": "ACTIVE_LAUNCH_REQUIRED_MISSING_ZERO"
   },
   "productionSourceSet": {
@@ -115,7 +170,8 @@
       "seoulmetro-station-line-info",
       "seoul-metro-accessibility",
       "kric-station-convenience-standard",
-      "kric-subway-timetable"
+      "kric-subway-timetable",
+      "seoul-metro-transfer-distance-duration"
     ],
     "optionalAccessibilitySourceIds": [
       "kric-disabled-toilet",
@@ -186,7 +242,15 @@
     "Android RC installer install and rollback evidence is missing",
     "app or Play listing claims a wider support scope than approved"
   ],
-  "linkedReleaseBlockers": [547, 571, 1016, 1020, 1021, 1022, 1414],
+  "linkedReleaseBlockers": [
+    547,
+    571,
+    1016,
+    1020,
+    1021,
+    1022,
+    1414
+  ],
   "evidencePolicy": {
     "githubSummaryOnly": true,
     "localOnlyEvidenceRoot": ".codex/evidence/datapack/production-scope/<rc-or-run>/",
