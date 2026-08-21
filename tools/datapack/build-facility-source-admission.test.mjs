@@ -61,6 +61,23 @@ test("current FACILITY official source admission은 exact six-cell handoff를 �
   assert.match(canonicalFacilitySourceAdmissionJson(result), /"admissionDigest"/);
 });
 
+test("historical FACILITY fixture는 변경된 inventory bytes에 candidate 결속을 갱신한다", async () => {
+  const input = await currentInput();
+  const inventoryBytes = Buffer.from(JSON.stringify(input.sourceInventory));
+
+  assert.equal(input.candidateBuildSpec.sourceInventorySha256, sha256(inventoryBytes));
+  assert.equal(input.candidateBuildSpec.networkEdgeEvidence.sourceInventory.sha256, sha256(inventoryBytes));
+});
+
+test("historical FACILITY fixture는 selected snapshot을 append-only ledger 순서로 결속한다", async () => {
+  const input = await currentInput();
+  const selectedIds = new Set(input.candidateBuildSpec.sourceSnapshotIds);
+  const selectedInLedgerOrder = input.sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
+  input.candidateBuildSpec.sourceSnapshotIds.reverse();
+
+  assert.equal(selectedSourceSnapshotSetHash(input), sha256(JSON.stringify(selectedInLedgerOrder)));
+});
+
 test("missing/non-exhaustive evidence와 stale admission은 partial handoff 없이 fail closed한다", async () => {
   const missing = await currentInput();
   missing.productionInput.accessibilityStatusEvidence =
@@ -118,10 +135,7 @@ test("three-way raw identity mismatch와 duplicate/unmapped evidence를 거부�
     snapshotId === ledger.snapshotId);
   ledger.schemaFingerprint = "drifted-schema";
   candidateMember.schemaFingerprint = "drifted-schema";
-  schemaDrift.candidateBuildSpec.sourceSnapshotSetHash = sha256(JSON.stringify(
-    schemaDrift.candidateBuildSpec.sourceSnapshotIds.map((snapshotId) =>
-      schemaDrift.sourceSnapshots.find((entry) => entry.snapshotId === snapshotId)),
-  ));
+  schemaDrift.candidateBuildSpec.sourceSnapshotSetHash = selectedSourceSnapshotSetHash(schemaDrift);
   assert.throws(
     () => buildFacilitySourceAdmission(schemaDrift),
     /schema fingerprint mismatch/,
@@ -281,11 +295,18 @@ async function currentInput(observedAt = FRESH_AT) {
     projectionKeys.flatMap((key) => historicalLedger[key] === undefined ? [] : [[key, historicalLedger[key]]]),
   );
   input.candidateBuildSpec.sourceSnapshotIds[candidateIndex] = historicalLedger.snapshotId;
-  input.candidateBuildSpec.sourceSnapshotSetHash = sha256(JSON.stringify(
-    input.candidateBuildSpec.sourceSnapshotIds.map((snapshotId) =>
-      input.sourceSnapshots.find((entry) => entry.snapshotId === snapshotId)),
-  ));
+  input.candidateBuildSpec.sourceSnapshotSetHash = selectedSourceSnapshotSetHash(input);
+  const inventoryBytes = Buffer.from(JSON.stringify(input.sourceInventory));
+  input.candidateBuildSpec.sourceInventorySha256 = sha256(inventoryBytes);
+  input.candidateBuildSpec.networkEdgeEvidence.sourceInventory.sha256 = sha256(inventoryBytes);
   return input;
+}
+
+function selectedSourceSnapshotSetHash(input) {
+  const selectedIds = new Set(input.candidateBuildSpec.sourceSnapshotIds);
+  return sha256(JSON.stringify(
+    input.sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId)),
+  ));
 }
 
 function sourceEntry(input) {

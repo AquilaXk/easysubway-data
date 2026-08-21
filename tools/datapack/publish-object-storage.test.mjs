@@ -131,6 +131,53 @@ test("generic immutable bundle object는 conditional create와 full-byte GET 검
   );
 });
 
+test("generic immutable publisher는 주입된 OCI 환경으로 기본 client를 생성한다", async (t) => {
+  const mock = await startMockStorage();
+  const workspace = await mkdtemp(path.join(tmpdir(), "publish-immutable-env-"));
+  t.after(async () => {
+    mock.server.close();
+    await rm(workspace, { recursive: true, force: true });
+  });
+
+  const bytes = Buffer.from("injected OCI environment");
+  await writeFile(path.join(workspace, "raw.json"), bytes);
+  const objectKey = `source-raw/test/20260821/${sha256(bytes)}.json`;
+  const step = {
+    objectKey,
+    sourcePath: "raw.json",
+    sha256: sha256(bytes),
+    sizeBytes: bytes.length,
+  };
+
+  const plan = {
+    steps: [
+      { type: "put-immutable-bundle-object", ...step },
+      { type: "verify-immutable-bundle-object", ...step },
+    ],
+  };
+  const moduleUrl = new URL("./publish-object-storage.mjs", import.meta.url).href;
+  const program = `
+    const { publishImmutableObjectPlan } = await import(${JSON.stringify(moduleUrl)});
+    await publishImmutableObjectPlan({
+      root: process.env.TEST_ROOT,
+      plan: JSON.parse(process.env.TEST_PLAN),
+      env: JSON.parse(process.env.TEST_INJECTED_ENV),
+    });
+  `;
+  await execFileAsync("node", ["--input-type=module", "--eval", program], {
+    env: {
+      PATH: process.env.PATH ?? "",
+      TEST_ROOT: workspace,
+      TEST_PLAN: JSON.stringify(plan),
+      TEST_INJECTED_ENV: JSON.stringify({
+        EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: `http://127.0.0.1:${mock.port}`,
+      }),
+    },
+  });
+
+  assert.deepEqual(mock.objects.get(objectKey)?.body, bytes);
+});
+
 test("게시 실행기는 동일 sha의 releases 객체 재게시를 멱등 skip하고 상이 sha는 거부한다", async () => {
   const mock = await startMockStorage();
   const workspace = await mkdtemp(path.join(tmpdir(), "publish-run-"));

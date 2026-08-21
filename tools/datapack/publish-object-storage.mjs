@@ -154,10 +154,10 @@ async function main() {
   }
 }
 
-export async function publishImmutableObjectPlan({ plan, root, client = null }) {
+export async function publishImmutableObjectPlan({ plan, root, client = null, env = process.env }) {
   const resolvedRoot = path.resolve(root);
   validateImmutableObjectPlan(plan);
-  const storage = client ?? objectStorageClient();
+  const storage = client ?? objectStorageClient(env);
   for (const step of plan.steps) {
     if (step.type === "put-immutable-bundle-object") {
       await putImmutableObject(storage, resolvedRoot, step);
@@ -202,17 +202,17 @@ function validateImmutableObjectPlan(plan) {
   }
 }
 
-function objectStorageClient() {
-  const preauthBaseUrl = process.env.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL?.trim();
+function objectStorageClient(env = process.env) {
+  const preauthBaseUrl = env?.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL?.trim();
   if (preauthBaseUrl) {
     return preauthenticatedObjectStorageClient(new URL(preauthBaseUrl));
   }
 
-  const endpoint = new URL(requireEnv("EASYSUBWAY_OBJECT_STORAGE_ENDPOINT"));
-  const bucket = requiredSafeObjectSegment(requireEnv("EASYSUBWAY_DATAPACK_BUCKET"), "EASYSUBWAY_DATAPACK_BUCKET");
-  const region = requireEnv("EASYSUBWAY_OBJECT_STORAGE_REGION");
-  const accessKey = requireEnv("EASYSUBWAY_OBJECT_STORAGE_ACCESS_KEY");
-  const secretKey = requireEnv("EASYSUBWAY_OBJECT_STORAGE_SECRET_KEY");
+  const endpoint = new URL(requireEnv(env, "EASYSUBWAY_OBJECT_STORAGE_ENDPOINT"));
+  const bucket = requiredSafeObjectSegment(requireEnv(env, "EASYSUBWAY_DATAPACK_BUCKET"), "EASYSUBWAY_DATAPACK_BUCKET");
+  const region = requireEnv(env, "EASYSUBWAY_OBJECT_STORAGE_REGION");
+  const accessKey = requireEnv(env, "EASYSUBWAY_OBJECT_STORAGE_ACCESS_KEY");
+  const secretKey = requireEnv(env, "EASYSUBWAY_OBJECT_STORAGE_SECRET_KEY");
 
   return {
     putObject: async (key, bytes, step) => {
@@ -676,8 +676,8 @@ function requireArg(args, name) {
   return value;
 }
 
-function requireEnv(name) {
-  const value = process.env[name]?.trim();
+function requireEnv(env, name) {
+  const value = env?.[name]?.trim();
   if (!value) {
     throw new Error(`${name} is required`);
   }

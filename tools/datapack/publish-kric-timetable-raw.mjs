@@ -33,7 +33,7 @@ export async function publishKricTimetableRawArtifact({
   const resolvedInput = path.resolve(requiredText(inputPath, "inputPath"));
   const resolvedReceipt = path.resolve(requiredText(receiptPath, "receiptPath"));
   if (!(now instanceof Date) || Number.isNaN(now.valueOf())) throw new Error("publication time must be a valid Date");
-  requireOciParBaseUrl(client == null ? process.env : env);
+  requireOciParBaseUrl(env);
   const bytes = await readFile(resolvedInput);
   const artifact = JSON.parse(bytes.toString("utf8"));
   const rawObjectSha256 = createHash("sha256").update(bytes).digest("hex");
@@ -62,6 +62,7 @@ export async function publishKricTimetableRawArtifact({
     await publishImmutableObjectPlan({
       root: path.dirname(resolvedInput),
       client,
+      env,
       plan: {
         steps: [
           { type: "put-immutable-bundle-object", objectKey, sourcePath: path.basename(resolvedInput), sha256: rawObjectSha256, sizeBytes: bytes.length },
