@@ -280,27 +280,34 @@ test("source-separated current topology materialization은 Incheon 1/2 exact 116
 });
 
 test("networkEdgeEvidence는 current source evidence와 historical topology overlay를 구분한다", () => {
-  const legacy = networkEdgeEvidenceFixture();
-  assert.equal(
-    Object.hasOwn(candidateNetworkEdgeEvidence(legacy), "itxCurrentTopologyAdmissionSha256"),
-    false,
-  );
+  const previousBuildNow = process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
+  process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = currentNow.toISOString();
+  try {
+    const legacy = networkEdgeEvidenceFixture();
+    assert.equal(
+      Object.hasOwn(candidateNetworkEdgeEvidence(legacy), "itxCurrentTopologyAdmissionSha256"),
+      false,
+    );
 
-  const current = {
-    ...legacy,
-    itxCurrentTopologyAdmission: {
-      path: "tools/datapack/itx-current-network-edge-admission-20260810.json",
-      sha256: "7".repeat(64),
-    },
-  };
-  assert.equal(
-    candidateNetworkEdgeEvidence(current).itxCurrentTopologyAdmissionSha256,
-    "7".repeat(64),
-  );
-  assert.throws(
-    () => candidateNetworkEdgeEvidence({ ...current, unknown: true }),
-    /unknown is not allowed/,
-  );
+    const current = {
+      ...legacy,
+      itxCurrentTopologyAdmission: {
+        path: "tools/datapack/itx-current-network-edge-admission-20260810.json",
+        sha256: "7".repeat(64),
+      },
+    };
+    assert.equal(
+      candidateNetworkEdgeEvidence(current).itxCurrentTopologyAdmissionSha256,
+      "7".repeat(64),
+    );
+    assert.throws(
+      () => candidateNetworkEdgeEvidence({ ...current, unknown: true }),
+      /unknown is not allowed/,
+    );
+  } finally {
+    if (previousBuildNow === undefined) delete process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
+    else process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = previousBuildNow;
+  }
 });
 
 test("capital topology reverification은 historical baseline과 current admitted candidate를 독립 검증한다", async () => {
