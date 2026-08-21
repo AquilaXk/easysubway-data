@@ -11,7 +11,7 @@
   "networkEdgeEvidence": {
     "sourceInventory": {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "942b9a21885e79a669e73cb815f58280dd07960f0334109604551235ba5896e9"
+      "sha256": "a9643282f327a6c2859940af7fde31bf1c41fd8aa04c02f521465f291b5e096c"
     },
     "capitalTopology": {
       "path": "tools/datapack/sources/capital-route-topology-20260724.json",
@@ -50,7 +50,8 @@
     "seoul-metro-accessibility-20260813T213842955Z",
     "kric-station-convenience-standard-20260816T015619375Z",
     "molit-urban-rail-full-route-revalidated-20260814",
-    "seoulmetro-station-line-info-revalidated-20260814"
+    "seoulmetro-station-line-info-revalidated-20260814",
+    "seoul-metro-transfer-distance-duration-20260815T094038817Z"
   ],
   "sourceSnapshots": [
     {
@@ -154,14 +155,31 @@
       "rawRetentionExpiresAt": "2026-11-12T15:34:07.000Z",
       "governancePolicyVersion": "2026-07-15",
       "governancePolicySha256": "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70"
+    },
+    {
+      "snapshotId": "seoul-metro-transfer-distance-duration-20260815T094038817Z",
+      "sourceId": "seoul-metro-transfer-distance-duration",
+      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-transfer-distance-duration/20260815/3d872c9ac390426b5e0e26fa1916ae9d9a44b70077b632d3c85cb8e82381f7cf.json",
+      "rawSha256": "3d872c9ac390426b5e0e26fa1916ae9d9a44b70077b632d3c85cb8e82381f7cf",
+      "redactedRequestFingerprint": "74038fe545e46d6f43affe51f4cfbf924b21e8cf73d9327bcc7cd05dc29f5a5e",
+      "schemaFingerprint": "18cb8d6e4775fcb5d02ca80e03255dbb4021dabfbe95edd054e32923f767117e",
+      "licenseStatus": "PASS",
+      "redistributionAllowed": true,
+      "adminReviewRecordHash": "f1636fbd2b36b2687fc8d728290158ca934461276936036606bc03a3156d594e",
+      "snapshotStatus": "LOCKED",
+      "credentialRedacted": true,
+      "freshnessExpiresAt": "2027-08-15T09:40:38.817Z",
+      "rawRetentionExpiresAt": "2026-11-13T09:40:38.817Z",
+      "governancePolicyVersion": "2026-07-15",
+      "governancePolicySha256": "13f8a78c0ae0f7bfa6817005f44a92be3131e6f6708a69a4024747478203beaa"
     }
   ],
-  "sourceSnapshotSetHash": "b02bd50ed53e7836e2666d8acc8277ad78438fabd8ca2ab26bea8280d5dcac18",
+  "sourceSnapshotSetHash": "8b779bb4fdd4315729209587bc6bca80b3be92b32912f9edfbd004a3583611db",
   "approvedAliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
   "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
   "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
   "approvedOverrideSetHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
-  "sourceInventorySha256": "85fc3c7d7f17dc051056946fd5442507a8c67519e12dace6118b2b450c11f534",
+  "sourceInventorySha256": "02692f4fab8b3a5300e8f370452c9a86abe1b4a9e98489476047647661d689a5",
   "builderGitSha": "1e25aa43b22253703c5102f477fa9a852bcd89b8",
   "builderVersion": "build-datapack.mjs@26",
   "officialOdFareEvidence": {
