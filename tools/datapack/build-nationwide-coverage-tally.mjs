@@ -7,7 +7,7 @@
 //
 // 입력:
 //   --targets     tools/datapack/nationwide-coverage-targets.json (분모·domain 계약 정본)
-//   --inventory   tools/datapack/source-inventory.json (coverageScope admission 정본)
+//   --inventory   tools/datapack/source-inventory.json (normalized coverage projection 정본)
 //   --resolutions EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE 정본. 생략하면 DEFAULT_RESOLUTIONS_PATH.
 //                 (경로를 인자로 받는 이유: resolutions 문서는 재생성 시 파일이 교체된다.)
 //   --output      ledger 출력 경로
@@ -82,7 +82,18 @@ export function buildNationwideCoverageTally({
   const targetIndex = coverageTargetIndex(targets);
   const sources = inventory.sources
     .filter((source) => source.rawSnapshotAdmission == null)
-    .map((source) => normalizeSource(source, targetIndex));
+    .map((source) => normalizeSource(source, targetIndex))
+    .sort((left, right) => codepointCompare(left.id, right.id));
+  const normalizedInventorySha256 = createHash("sha256")
+    .update(JSON.stringify(sources.map((source) => ({
+      id: source.id,
+      regionIds: [...source.regionIds].sort(codepointCompare),
+      operatorIds: [...source.operatorIds].sort(codepointCompare),
+      lineIds: [...source.lineIds].sort(codepointCompare),
+      sourceDomains: [...source.sourceDomains].sort(codepointCompare),
+      fields: [...source.fields].sort(codepointCompare),
+    }))))
+    .digest("hex");
   const scopes = [...targets.activeLineScopes]
     .map(({ regionId, operatorId, lineId }) => ({ regionId, operatorId, lineId }))
     .sort(compareScopes);
@@ -132,9 +143,12 @@ export function buildNationwideCoverageTally({
       command: regenerationCommand(inputs, expectedLaunchRequiredTotal),
       ledgerPath: LEDGER_PATH,
       pairedUpdateKo:
-        "targets·inventory·resolutions를 바꾸는 PR은 이 명령으로 ledger를 함께 재생성하고, "
+        "targets·resolutions 또는 inventory의 consumed coverage projection을 바꾸는 PR은 이 명령으로 "
+        + "ledger를 함께 재생성하고, "
         + "tools/datapack/build-nationwide-coverage-tally.test.mjs의 집계 기대 상수(admitted/EU/missing)도 "
-        + "같은 커밋에서 갱신해야 한다. 재생성 누락은 datapack 도구 테스트에서 fail closed 된다. "
+        + "같은 커밋에서 갱신해야 한다. inventory digest는 source id와 region/operator/line/domain/fields의 "
+        + "normalized projection에 결속하므로 raw whitespace·display/admission metadata만 바뀌면 ledger를 "
+        + "재생성하지 않는다. consumed projection 재생성 누락은 datapack 도구 테스트에서 fail closed 된다. "
         + "inventory admission만 늘리는 PR은 search plan·resolutions를 재발행하지 않아도 된다 — 계획은 "
         + "미admission requirement를 전부 덮기만 하면 되고(포함 관계, "
         + "tools/datapack/nationwide-public-api-coverage-evidence.test.mjs가 검증), 계획에 남은 admitted "
@@ -165,7 +179,11 @@ export function buildNationwideCoverageTally({
     },
     inputs: {
       targets: { ...inputRecord(inputs, "targets"), targetVersion: targets.targetVersion },
-      inventory: { ...inputRecord(inputs, "inventory"), retrievedAt: inventory.retrievedAt },
+      inventory: {
+        ...inputRecord(inputs, "inventory"),
+        sha256: normalizedInventorySha256,
+        retrievedAt: inventory.retrievedAt,
+      },
       resolutions: {
         ...inputRecord(inputs, "resolutions"),
         generatedAt: resolutions.generatedAt ?? null,

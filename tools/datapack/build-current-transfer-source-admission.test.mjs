@@ -165,7 +165,10 @@ async function trackedInput() {
   const metadata = JSON.parse(metadataBytes);
   const legacyKricSnapshotId = facilityAdmission.cells[0].sourceSnapshotId;
   assert.ok(facilityAdmission.cells.every(({ sourceSnapshotId }) => sourceSnapshotId === legacyKricSnapshotId));
-  const selected = candidateBuildSpec.sourceSnapshots.map(({ sourceId, snapshotId }) => {
+  const legacyProjections = candidateBuildSpec.sourceSnapshots
+    .filter(({ sourceId }) => sourceId !== "seoul-metro-transfer-distance-duration");
+  assert.equal(legacyProjections.length, 6);
+  const selected = legacyProjections.map(({ sourceId, snapshotId }) => {
     const selectedId = sourceId === "kric-station-convenience-standard" ? legacyKricSnapshotId : snapshotId;
     const matches = sourceSnapshots.filter((entry) => entry.snapshotId === selectedId);
     assert.equal(matches.length, 1, `legacy candidate snapshot identity: ${selectedId}`);
