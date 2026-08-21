@@ -31,11 +31,11 @@ export function canonicalCurrentCapitalRouteEdgeInputJson(value) {
   return canonicalJson(value);
 }
 
-export async function main(argv = process.argv.slice(2), { repositoryRoot = fileURLToPath(new URL("../../", import.meta.url)), log = console.log } = {}) {
+export async function main(argv = process.argv.slice(2), { repositoryRoot = fileURLToPath(new URL("../../", import.meta.url)), log = console.log, readTransitionBoundaryImpl } = {}) {
   if (!Array.isArray(argv) || argv.length !== 0) throw new Error("full-capital route arguments mismatch");
   const root = path.resolve(repositoryRoot); const output = path.join(root, OUTPUT_DIRECTORY);
   await outputMustBeAbsent(output);
-  const input = await readCurrentCapitalInputs(root);
+  const input = await readCurrentCapitalInputs(root, { readTransitionBoundaryImpl });
   const station = buildCurrentCapitalStationLineInput(input);
   const route = buildCurrentCapitalRouteEdgeInput(input);
   await publish(output, canonicalCurrentCapitalStationLineInputJson(station), canonicalCurrentCapitalRouteEdgeInputJson(route));

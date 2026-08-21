@@ -39,15 +39,20 @@ test("route CLI만 temporary fixed target에 exact two-file handoff를 원자 pu
   const input = await fixture();
   input.sourceSnapshots = JSON.parse(canonical(input.sourceSnapshots));
   const sourceSet = sha(JSON.stringify(input.sourceSnapshots));
+  const evidenceSourceSet = sha(JSON.stringify(input.sourceSnapshots.slice(0, -1)));
   input.candidateBuildSpec.sourceSnapshotSetHash = sourceSet;
-  input.exitAdmission.candidate.sourceSetSha256 = sourceSet;
-  input.exitAdmission.materializerEvidenceRows = input.exitAdmission.materializerEvidenceRows.map((row) => ({ ...row, sourceSetSha256: sourceSet }));
+  input.sourceSetTransition.currentCandidateSourceSetSha256 = sourceSet;
+  input.sourceSetTransition.evidenceSourceSetSha256 = evidenceSourceSet;
+  input.exitAdmission.candidate.sourceSetSha256 = evidenceSourceSet;
+  input.exitAdmission.materializerEvidenceRows = input.exitAdmission.materializerEvidenceRows.map((row) => ({ ...row, sourceSetSha256: evidenceSourceSet }));
   resealAdmission(input.exitAdmission);
-  input.facilityAdmission.candidate.sourceSnapshotSetHash = sourceSet;
+  input.facilityAdmission.candidate.sourceSnapshotSetHash = evidenceSourceSet;
   resealFacility(input.facilityAdmission);
   input.exitReceipt.admissionDigest = input.exitAdmission.admissionDigest;
   input.exitReceipt.admissionSha256 = sha(canonical(input.exitAdmission));
   resealReceipt(input.exitReceipt);
+  input.candidateBuildSpec.sourceInventorySha256 = sha(canonical(input.sourceInventory));
+  input.candidateBuildSpec.networkEdgeEvidence.sourceInventory.sha256 = sha(canonical(input.sourceInventory));
   input.canonicalPack.packs[0].networkEdges = Array.from({ length: 2218 }, (_, index) => ({ id: `ride-${index}`, edgeType: "RIDE", fromNodeId: "station-000:seoul-2", toNodeId: "station-001:seoul-2", durationSeconds: 120, distanceMeters: 1000, serviceClass: "SUBWAY", servicePattern: "LOCAL" }));
   const entries = {
     "tools/datapack/release/current-capital-facility-source-admission.json": input.facilityAdmission,
@@ -66,14 +71,15 @@ test("route CLI만 temporary fixed target에 exact two-file handoff를 원자 pu
   await Promise.all(Object.entries(entries).map(async ([relative, value]) => {
     const target = path.join(root, relative); await mkdir(path.dirname(target), { recursive: true }); await writeFile(target, Buffer.isBuffer(value) ? value : relative.endsWith("current-capital-facility-source-admission.json") ? `${canonical(value)}\n` : canonical(value));
   }));
-  const result = await main([], { repositoryRoot: root, log: () => {} });
+  const dependencies = { repositoryRoot: root, log: () => {}, readTransitionBoundaryImpl: async () => input.sourceSetTransition };
+  const result = await main([], dependencies);
   const output = path.join(root, "tools/datapack/release/current-capital-accessibility-full");
   const stationPath = path.join(output, "station-line-input.json"); const routePath = path.join(output, "route-edge-input.json");
   assert.equal(await readFile(stationPath, "utf8"), canonicalCurrentCapitalStationLineInputJson(result.station));
   assert.equal(await readFile(routePath, "utf8"), canonicalCurrentCapitalRouteEdgeInputJson(result.route));
   assert.equal((await stat(stationPath)).mode & 0o777, 0o600);
   assert.equal((await stat(routePath)).mode & 0o777, 0o600);
-  await assert.rejects(main([], { repositoryRoot: root, log: () => {} }), /absent/i);
+  await assert.rejects(main([], dependencies), /absent/i);
 });
 
 function canonical(value) { if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`; if (value && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`; return JSON.stringify(value); }

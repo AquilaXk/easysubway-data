@@ -9,6 +9,7 @@ import { canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-curr
 import { canonicalCurrentExitAdmissionArtifactReceiptJson } from "./build-current-exit-admission-artifact-receipt.mjs";
 import { canonicalExitPathAdmissionJson } from "./build-exit-path-admission.mjs";
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
+import { readCurrentCapitalAccessibilityTransitionBoundary } from "./current-capital-accessibility-transition.mjs";
 
 const FILES = Object.freeze({
   facility: "tools/datapack/release/current-capital-facility-source-admission.json",
@@ -27,11 +28,11 @@ const SHA = /^[a-f0-9]{64}$/u;
 const BLOCKED = { stationId: "station-b35616704ce3", lineId: "seoul-2" };
 
 export function buildCurrentCapitalStationLineInput(input) {
-  assertKeys(input, ["canonicalPack", "candidateBuildSpec", "exitAdmission", "exitAdmissionBytes", "exitNormalized", "exitNormalizedBytes", "exitReceipt", "facilityAdmission", "facilitySnapshotBytes", "policy", "sourceInventory", "sourceInventoryBytes", "sourceSnapshots", "transferApplicability", "transferMetrics"], "full-capital input");
-  const stationLines = canonicalStationLines(input.canonicalPack);
-  const candidate = validateCandidate(input, stationLines);
-  const facility = validateFacility(input.facilityAdmission, input.facilitySnapshotBytes, stationLines, candidate);
-  const exit = validateExit(input, stationLines, candidate);
+  assertKeys(input, ["canonicalPack", "candidateBuildSpec", "exitAdmission", "exitAdmissionBytes", "exitNormalized", "exitNormalizedBytes", "exitReceipt", "facilityAdmission", "facilitySnapshotBytes", "policy", "sourceInventory", "sourceInventoryBytes", "sourceSetTransition", "sourceSnapshots", "transferApplicability", "transferMetrics"], "full-capital input");
+  const stationLines = canonicalStationLines(input.canonicalPack, input.facilityAdmission);
+  const { candidate, evidenceSourceSetSha256 } = validateCandidate(input, stationLines);
+  const facility = validateFacility(input.facilityAdmission, input.facilitySnapshotBytes, stationLines, candidate, evidenceSourceSetSha256);
+  const exit = validateExit(input, stationLines, candidate, evidenceSourceSetSha256);
   const transfer = validateTransfer(input, stationLines, candidate);
   validatePolicy(input.policy);
   const evidenceRows = [...facility, ...exit, ...transfer].sort(compareEvidence);
@@ -47,9 +48,12 @@ export function canonicalCurrentCapitalStationLineInputJson(value) {
   return canonicalJson(value);
 }
 
-export async function readCurrentCapitalInputs(repositoryRoot) {
+export async function readCurrentCapitalInputs(repositoryRoot, { readTransitionBoundaryImpl = readCurrentCapitalAccessibilityTransitionBoundary } = {}) {
   const root = path.resolve(repositoryRoot);
-  const entries = await Promise.all(Object.entries(FILES).map(async ([key, relative]) => [key, await readJson(root, relative)]));
+  const [entries, sourceSetTransition] = await Promise.all([
+    Promise.all(Object.entries(FILES).map(async ([key, relative]) => [key, await readJson(root, relative)])),
+    readTransitionBoundaryImpl({ repositoryRoot: root }),
+  ]);
   const values = Object.fromEntries(entries);
   if (canonicalCurrentCapitalFacilitySourceAdmissionJson(values.facility.value) !== values.facility.bytes.toString("utf8")) throw new Error("FACILITY admission bytes are not canonical");
   const snapshotPath = values.facility.value.sourceIdentity.snapshotPath;
@@ -68,6 +72,7 @@ export async function readCurrentCapitalInputs(repositoryRoot) {
     policy: values.policy.value,
     sourceInventory: values.inventory.value,
     sourceInventoryBytes: values.inventory.bytes,
+    sourceSetTransition,
     sourceSnapshots: values.snapshots.value,
     transferApplicability: values.transferApplicability.value,
     transferMetrics: values.transferMetrics.value,
@@ -86,49 +91,84 @@ export async function main(argv = process.argv.slice(2), { repositoryRoot = file
 function validateCandidate(input, stationLines) {
   const spec = input.candidateBuildSpec;
   const exitCandidate = input.exitAdmission?.candidate;
+  const transition = input.sourceSetTransition;
+  assertKeys(transition, ["currentCandidateSourceSetSha256", "evidenceSourceSetSha256"], "full-capital source-set transition");
   if (typeof spec?.candidateId !== "string" || spec.candidateId === "" || !Array.isArray(spec.sourceSnapshots) || !Array.isArray(spec.sourceSnapshotIds)
     || spec.sourceSnapshots.length !== 7 || spec.sourceSnapshotIds.length !== 7 || spec.sourceSnapshots.at(-1)?.sourceId !== "seoul-metro-transfer-distance-duration"
     || spec.sourceSnapshotIds.at(-1) !== spec.sourceSnapshots.at(-1)?.snapshotId || !SHA.test(spec.sourceSnapshotSetHash ?? "")) {
     throw new Error("full-capital candidate seventh projection mismatch");
   }
   const selected = spec.sourceSnapshotIds.map((id) => exactlyOne(input.sourceSnapshots, (row) => row?.snapshotId === id, "candidate source snapshot"));
-  if (new Set(spec.sourceSnapshotIds).size !== 7 || sha256(JSON.stringify(selected)) !== spec.sourceSnapshotSetHash) throw new Error("full-capital candidate source-set mismatch");
+  const selectedIds = new Set(spec.sourceSnapshotIds);
+  const selectedInLedgerOrder = input.sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
+  if (selectedIds.size !== 7 || selectedInLedgerOrder.length !== 7 || sha256(JSON.stringify(selectedInLedgerOrder)) !== spec.sourceSnapshotSetHash) throw new Error("full-capital candidate source-set mismatch");
+  const predecessorIds = new Set(spec.sourceSnapshotIds.slice(0, -1));
+  const predecessorInLedgerOrder = input.sourceSnapshots.filter(({ snapshotId }) => predecessorIds.has(snapshotId));
+  if (transition.currentCandidateSourceSetSha256 !== spec.sourceSnapshotSetHash || !SHA.test(transition.evidenceSourceSetSha256 ?? "")
+    || transition.evidenceSourceSetSha256 === spec.sourceSnapshotSetHash || predecessorIds.size !== 6 || predecessorInLedgerOrder.length !== 6
+    || selectedInLedgerOrder.at(-1)?.sourceId !== "seoul-metro-transfer-distance-duration"
+    || sha256(JSON.stringify(predecessorInLedgerOrder)) !== transition.evidenceSourceSetSha256) throw new Error("full-capital source-set transition mismatch");
   if (!Buffer.isBuffer(input.sourceInventoryBytes) || canonicalJson(input.sourceInventory) !== canonicalJson(JSON.parse(input.sourceInventoryBytes.toString("utf8")))) throw new Error("full-capital source inventory raw binding mismatch");
-  const inventorySha256 = sha256(input.sourceInventoryBytes);
-  if (spec.sourceInventorySha256 !== inventorySha256 || spec.networkEdgeEvidence?.sourceInventory?.path !== "tools/datapack/source-inventory.json" || spec.networkEdgeEvidence.sourceInventory.sha256 !== inventorySha256) throw new Error("full-capital candidate inventory binding mismatch");
+  const inventorySha256 = sha256(JSON.stringify(input.sourceInventory));
+  const inventoryRawSha256 = sha256(input.sourceInventoryBytes);
+  if (spec.sourceInventorySha256 !== inventorySha256 || spec.networkEdgeEvidence?.sourceInventory?.path !== "tools/datapack/source-inventory.json" || spec.networkEdgeEvidence.sourceInventory.sha256 !== inventoryRawSha256) throw new Error("full-capital candidate inventory binding mismatch");
   const transferProjection = spec.sourceSnapshots.at(-1);
   const ledger = selected.at(-1);
   const source = exactlyOne(input.sourceInventory.sources ?? [], ({ id }) => id === "seoul-metro-transfer-distance-duration", "transfer source inventory");
   const keys = ["snapshotId", "sourceId", "rawObjectUri", "rawSha256", "redactedRequestFingerprint", "schemaFingerprint", "licenseStatus", "redistributionAllowed", "adminReviewRecordHash", "snapshotStatus", "credentialRedacted", "freshnessExpiresAt", "rawRetentionExpiresAt", "governancePolicyVersion", "governancePolicySha256"];
   const expected = Object.fromEntries(keys.map((keyName) => [keyName, keyName === "adminReviewRecordHash" ? source.admissionEvidence?.adminReviewRecordHash : ledger?.[keyName]]));
   if (ledger.sourceId !== "seoul-metro-transfer-distance-duration" || ledger.snapshotStatus !== "LOCKED" || source.transferAdmissionEvidence?.snapshotId !== ledger.snapshotId || spec.sourceSnapshotIds.at(-1) !== ledger.snapshotId || canonicalJson(transferProjection) !== canonicalJson(expected)) throw new Error("full-capital transfer ledger mismatch");
-  if (!exitCandidate || exitCandidate.candidateId !== spec.candidateId || exitCandidate.sourceSetSha256 !== spec.sourceSnapshotSetHash) throw new Error("full-capital EXIT candidate mismatch");
+  if (!exitCandidate || exitCandidate.candidateId !== spec.candidateId || exitCandidate.sourceSetSha256 !== transition.evidenceSourceSetSha256) throw new Error("full-capital EXIT candidate mismatch");
   const stationIds = [...new Set(stationLines.map(({ stationId }) => stationId))].sort(compareBytes);
   if (exitCandidate.stationSetSha256 !== sha256(canonicalJson(stationIds)) || exitCandidate.mappingContractVersion !== "station-line-v1" || exitCandidate.materializerVersion !== "1") {
     throw new Error("full-capital station candidate mismatch");
   }
-  return canonicalObject({
-    candidateId: spec.candidateId,
-    mappingContractVersion: exitCandidate.mappingContractVersion,
-    materializerVersion: exitCandidate.materializerVersion,
-    sourceSetSha256: spec.sourceSnapshotSetHash,
-    stationSetSha256: exitCandidate.stationSetSha256,
-  });
+  return {
+    candidate: canonicalObject({
+      candidateId: spec.candidateId,
+      mappingContractVersion: exitCandidate.mappingContractVersion,
+      materializerVersion: exitCandidate.materializerVersion,
+      sourceSetSha256: spec.sourceSnapshotSetHash,
+      stationSetSha256: exitCandidate.stationSetSha256,
+    }),
+    evidenceSourceSetSha256: transition.evidenceSourceSetSha256,
+  };
 }
 
-function canonicalStationLines(pack) {
+function canonicalStationLines(pack, facilityAdmission) {
   const capital = pack?.packs?.filter(({ id }) => id === "capital");
   if (pack?.manifest?.channel !== "production" || pack?.manifest?.activePack?.id !== "capital" || capital?.length !== 1) throw new Error("full-capital canonical pack mismatch");
-  const operators = new Map((capital[0].lines ?? []).map(({ id, operatorId }) => [id, operatorId]));
-  const lines = (capital[0].stationLines ?? []).map(({ stationId, lineId }) => ({ stationId, lineId, operatorId: operators.get(lineId) })).sort(compareStationLine);
+  if (!Array.isArray(facilityAdmission?.cells) || facilityAdmission.cells.length !== 213) throw new Error("full-capital station selector denominator mismatch");
+  const selected = new Map();
+  for (const { stationId, lineId } of facilityAdmission.cells) {
+    if (!nonBlank(stationId) || !nonBlank(lineId) || selected.has(`${stationId}\0${lineId}`)) throw new Error("full-capital station selector mismatch");
+    selected.set(`${stationId}\0${lineId}`, { stationId, lineId });
+  }
+  const lineMetadata = new Map();
+  for (const line of capital[0].lines ?? []) {
+    if (!lineMetadata.has(line?.id)) lineMetadata.set(line?.id, []);
+    lineMetadata.get(line?.id).push(line);
+  }
+  const stationLineMetadata = new Map();
+  for (const line of capital[0].stationLines ?? []) {
+    const lineKey = `${line?.stationId}\0${line?.lineId}`;
+    if (!stationLineMetadata.has(lineKey)) stationLineMetadata.set(lineKey, []);
+    stationLineMetadata.get(lineKey).push(line);
+  }
+  const lines = [...selected.entries()].map(([lineKey, identity]) => {
+    const stationMatches = stationLineMetadata.get(lineKey) ?? [];
+    const operatorMatches = lineMetadata.get(identity.lineId) ?? [];
+    if (stationMatches.length !== 1 || operatorMatches.length !== 1) throw new Error("full-capital canonical station selection mismatch");
+    return { ...identity, operatorId: operatorMatches[0].operatorId };
+  }).sort(compareStationLine);
   if (lines.length !== 213 || new Set(lines.map(({ stationId, lineId }) => `${stationId}\0${lineId}`)).size !== 213 || new Set(lines.map(({ stationId }) => stationId)).size !== 199
     || lines.some(({ stationId, lineId, operatorId }) => !nonBlank(stationId) || !nonBlank(lineId) || operatorId !== "seoul-metro")) throw new Error("full-capital station denominator mismatch");
   return lines;
 }
 
-function validateFacility(value, snapshotBytes, stationLines, candidate) {
+function validateFacility(value, snapshotBytes, stationLines, candidate, evidenceSourceSetSha256) {
   canonicalCurrentCapitalFacilitySourceAdmissionJson(value);
-  if (value.decision !== "GO" || value.candidate?.candidateId !== candidate.candidateId || value.candidate?.sourceSnapshotSetHash !== candidate.sourceSetSha256) throw new Error("full-capital FACILITY identity mismatch");
+  if (value.decision !== "GO" || value.candidate?.candidateId !== candidate.candidateId || value.candidate?.sourceSnapshotSetHash !== evidenceSourceSetSha256) throw new Error("full-capital FACILITY identity mismatch");
   if (!Buffer.isBuffer(snapshotBytes)) throw new Error("full-capital FACILITY snapshot bytes mismatch");
   let snapshot; try { snapshot = validateKricAccessibilitySnapshotIdentity(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(snapshotBytes))); } catch (error) { throw new Error("full-capital FACILITY snapshot identity mismatch", { cause: error }); }
   if (sha256(snapshotBytes) !== value.sourceIdentity.snapshotFileSha256 || snapshot.snapshotId !== value.sourceIdentity.snapshotId || snapshot.sourceId !== value.sourceIdentity.sourceId || snapshot.rawSha256 !== value.sourceIdentity.rawSha256 || snapshot.contentSha256 !== value.sourceIdentity.contentSha256 || snapshot.schemaFingerprint !== value.sourceIdentity.schemaFingerprint || snapshot.redactedRequestFingerprint !== value.sourceIdentity.redactedRequestFingerprint) throw new Error("full-capital FACILITY snapshot binding mismatch");
@@ -151,7 +191,7 @@ function validateFacility(value, snapshotBytes, stationLines, candidate) {
   });
 }
 
-function validateExit(input, stationLines, candidate) {
+function validateExit(input, stationLines, candidate, evidenceSourceSetSha256) {
   const receipt = input.exitReceipt;
   if (canonicalCurrentExitAdmissionArtifactReceiptJson(receipt) !== canonicalJson(receipt)
     || sha256(input.exitNormalizedBytes) !== receipt.normalizedSnapshotSha256 || sha256(input.exitAdmissionBytes) !== receipt.admissionSha256) throw new Error("full-capital EXIT receipt binding mismatch");
@@ -159,7 +199,7 @@ function validateExit(input, stationLines, candidate) {
   const normalized = input.exitNormalized;
   if (canonicalJson(normalized) !== input.exitNormalizedBytes.toString("utf8") || normalized?.schemaVersion !== 4 || normalized?.sourceId !== input.exitAdmission.sourceIdentity?.sourceId
     || normalized?.snapshotId !== input.exitAdmission.sourceIdentity?.snapshotId || normalized?.queryPlan?.length !== 420 || normalized?.results?.length !== 420) throw new Error("full-capital EXIT normalized identity mismatch");
-  if (input.exitAdmission.candidate?.candidateId !== candidate.candidateId || input.exitAdmission.candidate?.sourceSetSha256 !== candidate.sourceSetSha256
+  if (input.exitAdmission.candidate?.candidateId !== candidate.candidateId || input.exitAdmission.candidate?.sourceSetSha256 !== evidenceSourceSetSha256
     || input.exitAdmission.candidate?.stationSetSha256 !== candidate.stationSetSha256) throw new Error("full-capital EXIT candidate mismatch");
   const projection = stationLines.map(({ stationId, lineId, operatorId }) => ({ stationId, lineId, operatorId })).sort(compareStationLine);
   if (input.exitAdmission.stationLineSetSha256 !== sha256(canonicalJson(projection))) throw new Error("full-capital EXIT station-line set binding mismatch");
