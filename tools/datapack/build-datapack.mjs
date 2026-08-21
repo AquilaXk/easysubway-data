@@ -609,6 +609,10 @@ export async function projectCandidateFixtureForAccessibilityAuthority({
   repositoryRoot = root,
 }) {
   const fixture = structuredClone(sourceFixture);
+  const validationNow = new Date(requiredUtcDateString(
+    buildSpec?.publishedAt,
+    "buildSpec.publishedAt",
+  ));
   const officialOdFareAdmissionBytes = await readFile(
     path.join(repositoryRoot, "tools/datapack/official-od-fare-admission.json"),
   );
@@ -621,6 +625,8 @@ export async function projectCandidateFixtureForAccessibilityAuthority({
     officialOdFareAdmissions,
     officialOdFareAdmissionBytes,
     repositoryRoot,
+    validationNow,
+    { includePackAccessibilityFreshness: false },
   );
   return fixture;
 }
@@ -803,7 +809,12 @@ async function validateCandidateBuildSpec(
   admissions,
   admissionBytes,
   repositoryRoot = root,
+  now = candidateBuildNow(),
+  { includePackAccessibilityFreshness = true } = {},
 ) {
+  if (typeof includePackAccessibilityFreshness !== "boolean") {
+    throw new TypeError("candidate accessibility freshness mode is invalid");
+  }
   if (!buildSpec || typeof buildSpec !== "object" || Array.isArray(buildSpec)) {
     throw new Error("buildSpec must be an object");
   }
@@ -818,7 +829,11 @@ async function validateCandidateBuildSpec(
   applyCandidateReleaseIdentity(buildSpec, fixture);
   await resolveBuildInputPath(buildSpec.fixturePath, "buildSpec.fixturePath", repositoryRoot);
   requiredStringArray(buildSpec.sourceSnapshotIds, "buildSpec.sourceSnapshotIds");
-  const sourceSnapshots = requiredSourceSnapshots(buildSpec.sourceSnapshots, "buildSpec.sourceSnapshots");
+  const sourceSnapshots = requiredSourceSnapshots(
+    buildSpec.sourceSnapshots,
+    "buildSpec.sourceSnapshots",
+    now,
+  );
   assertSourceSnapshotSet(buildSpec.sourceSnapshotIds, sourceSnapshots);
   for (const field of candidateBuildSpecHashFields) {
     sha256HexString(buildSpec[field], `buildSpec.${field}`);
@@ -829,10 +844,10 @@ async function validateCandidateBuildSpec(
   }
   requiredString(buildSpec.builderVersion, "buildSpec.builderVersion");
   await validateCandidateProductionScope(buildSpec, fixture, { repositoryRoot });
-  const artifactFreshUntil = await applyCandidateNetworkEdgeProjection(
+  const artifactFreshUntil = await applyCandidateNetworkEdgeProjectionInternal(
     buildSpec,
     fixture,
-    { repositoryRoot },
+    { repositoryRoot, now, includePackAccessibilityFreshness },
   );
   return {
     officialOdFareEvidence: validateOfficialOdFareEvidence(
@@ -885,7 +900,23 @@ export function applyCandidateReleaseIdentity(buildSpec, fixture) {
 export async function applyCandidateNetworkEdgeProjection(
   buildSpec,
   fixture,
-  { repositoryRoot = root } = {},
+  { repositoryRoot = root, now = candidateBuildNow() } = {},
+) {
+  return applyCandidateNetworkEdgeProjectionInternal(buildSpec, fixture, {
+    repositoryRoot,
+    now,
+    includePackAccessibilityFreshness: true,
+  });
+}
+
+async function applyCandidateNetworkEdgeProjectionInternal(
+  buildSpec,
+  fixture,
+  {
+    repositoryRoot = root,
+    now = candidateBuildNow(),
+    includePackAccessibilityFreshness,
+  },
 ) {
   const projectionRoot = path.resolve(repositoryRoot);
   const itxTopologyEvidence = await validateTrackedItxTopologyEvidence(
@@ -898,6 +929,8 @@ export async function applyCandidateNetworkEdgeProjection(
     fixture,
     itxTopologyEvidence,
     projectionRoot,
+    now,
+    includePackAccessibilityFreshness,
   );
 }
 
@@ -1017,7 +1050,7 @@ export function candidateNetworkEdgeEvidence(evidence) {
   };
 }
 
-function candidateCapitalTopologyAdmission(admission) {
+function candidateCapitalTopologyAdmission(admission, validationNow = candidateBuildNow()) {
   if (admission == null) throw new Error("production build requires capital topology edge admission");
   assertExactKeys(
     admission,
@@ -1041,7 +1074,10 @@ function candidateCapitalTopologyAdmission(admission) {
     || normalized.status !== "ADMITTED") {
     throw new Error("capital topology edge admission identity is invalid");
   }
-  const now = candidateBuildNow().getTime();
+  if (!(validationNow instanceof Date) || Number.isNaN(validationNow.getTime())) {
+    throw new TypeError("capital topology admission validation time is invalid");
+  }
+  const now = validationNow.getTime();
   if (Date.parse(normalized.reviewedAt) > Date.parse(normalized.reverifiedAt)) {
     throw new Error("capital topology edge admission review order is invalid");
   }
@@ -1082,7 +1118,12 @@ async function validateAndApplyNetworkEdgeProvenance(
   fixture,
   itxTopologyEvidence,
   repositoryRoot = root,
+  now = candidateBuildNow(),
+  includePackAccessibilityFreshness = true,
 ) {
+  if (typeof includePackAccessibilityFreshness !== "boolean") {
+    throw new TypeError("network edge accessibility freshness mode is invalid");
+  }
   const evidence = buildSpec.networkEdgeEvidence;
   if (evidence == null) {
     if (fixture.packs?.some(({ artifactKind }) => artifactKind === "production")) {
@@ -1161,6 +1202,7 @@ async function validateAndApplyNetworkEdgeProvenance(
     sourceInventory: sourceInventory.value,
     snapshot: incheonTopology.value,
     snapshotBytes: incheonTopology.bytes,
+    now,
   });
   validateSourceSeparatedCurrentTopology({
     capitalTopology: candidateTopology,
@@ -1171,7 +1213,10 @@ async function validateAndApplyNetworkEdgeProvenance(
     JSON.stringify([...(snapshot.fieldsProvided ?? [])].sort(compareStrings)) !== expectedTopologyFields)) {
     throw new Error("capital topology fieldsProvided is invalid");
   }
-  const topologyAdmission = candidateCapitalTopologyAdmission(evidence.capitalTopologyAdmission);
+  const topologyAdmission = candidateCapitalTopologyAdmission(
+    evidence.capitalTopologyAdmission,
+    now,
+  );
   if (topologyAdmission.snapshotId !== capitalTopologyCandidate.pinned.snapshotId
     || topologyAdmission.contentSha256 !== candidateTopology.contentSha256) {
     throw new Error("capital topology edge admission does not match pinned snapshot");
@@ -1189,12 +1234,14 @@ async function validateAndApplyNetworkEdgeProvenance(
     candidateTopology,
     capitalTopologyCandidate.pinned.snapshotId,
     topologyAdmission.reviewedAt,
+    now,
   );
   const itxAdmission = await admittedItxNetworkEdgeEvidence(
     itxContract.value,
     itxTopologyEvidence,
     itxCurrentTopologyAdmission?.value ?? null,
     repositoryRoot,
+    now,
   );
   const productionPacks = fixture.packs?.filter(({ artifactKind }) => artifactKind === "production") ?? [];
   if (productionPacks.length === 0) throw new Error("network edge evidence requires a production pack");
@@ -1223,18 +1270,21 @@ async function validateAndApplyNetworkEdgeProvenance(
     validatedItxStationCatalogEvidence.set(pack, itxAdmission.routeServiceArtifactEvidence);
     normalizeUnverifiedNetworkEdgeStates(pack);
   }
-  const accessibilityFreshUntil = productionAccessibilityFreshUntil(
-    productionPacks,
-    sourceInventory.value,
-    buildSpec.sourceSnapshots,
-  );
-  return new Date(Math.min(
+  const freshnessMillis = [
     Date.parse(topologyAdmission.freshUntil),
     Date.parse(incheonAdmission.freshUntil),
     Date.parse(itxAdmission.freshUntil),
     ...[...capitalAdmissions.values()].map(({ freshUntil }) => Date.parse(freshUntil)),
-    Date.parse(accessibilityFreshUntil),
-  )).toISOString();
+  ];
+  if (includePackAccessibilityFreshness) {
+    freshnessMillis.push(Date.parse(productionAccessibilityFreshUntil(
+      productionPacks,
+      sourceInventory.value,
+      buildSpec.sourceSnapshots,
+      now,
+    )));
+  }
+  return new Date(Math.min(...freshnessMillis)).toISOString();
 }
 
 export function validateCapitalTopologyReverification(
@@ -1375,7 +1425,15 @@ function isReviewedAccessibilityEdge(edge, pack) {
     }));
 }
 
-export function productionAccessibilityFreshUntil(packs, inventory, sourceSnapshots) {
+export function productionAccessibilityFreshUntil(
+  packs,
+  inventory,
+  sourceSnapshots,
+  now = candidateBuildNow(),
+) {
+  if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
+    throw new TypeError("production accessibility validation time is invalid");
+  }
   const sources = new Map(inventory.sources.map((source) => [source.id, source]));
   const snapshots = new Map(sourceSnapshots.map((snapshot) => [snapshot.sourceId, snapshot]));
   const rows = packs.flatMap((pack) => [
@@ -1393,7 +1451,7 @@ export function productionAccessibilityFreshUntil(packs, inventory, sourceSnapsh
       || !Number.isFinite(Date.parse(snapshot.freshnessExpiresAt))) {
       throw new Error(`production accessibility snapshot mismatch: ${row.sourceId}`);
     }
-    if (Date.parse(snapshot.freshnessExpiresAt) <= candidateBuildNow().getTime()) {
+    if (Date.parse(snapshot.freshnessExpiresAt) <= now.getTime()) {
       throw new Error(`production accessibility snapshot is stale: ${row.sourceId}`);
     }
     return Date.parse(snapshot.freshnessExpiresAt);
@@ -1888,7 +1946,11 @@ export async function admittedItxNetworkEdgeEvidence(
   topologyAdmission,
   currentAdmission = null,
   repositoryRoot = root,
+  now = candidateBuildNow(),
 ) {
+  if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
+    throw new TypeError("ITX network edge validation time is invalid");
+  }
   const reference = contract?.sourceTimetableArtifact;
   const expectedPromotionMode = currentAdmission == null
     ? "CURRENT_CANDIDATE_OWNER_APPROVED"
@@ -1974,7 +2036,7 @@ export async function admittedItxNetworkEdgeEvidence(
       : source;
     validateSourceCandidateSchema(schemaSource);
     const observedAt = new Date(source.observedAt);
-    if (observedAt.getTime() > candidateBuildNow().getTime()) throw new Error("future-dated ITX observation");
+    if (observedAt.getTime() > now.getTime()) throw new Error("future-dated ITX observation");
     validateItxServiceDates(source.selectedServiceDates, { now: observedAt });
     validateSourceFreshness(source, source.selectedServiceDates, observedAt);
   } catch (error) {
@@ -2040,7 +2102,7 @@ export async function admittedItxNetworkEdgeEvidence(
   }
   const observedAt = requiredUtcDateString(source.observedAt, "ITX network edge source observedAt");
   const freshUntil = requiredUtcDateString(source.freshUntil, "ITX network edge source freshUntil");
-  if (currentAdmission == null && Date.parse(freshUntil) <= candidateBuildNow().getTime()) {
+  if (currentAdmission == null && Date.parse(freshUntil) <= now.getTime()) {
     throw new Error("ITX network edge admission is stale");
   }
   const legacyProjection = projectedItxDirectionalPairs(source.stationSequences);
@@ -2066,7 +2128,7 @@ export async function admittedItxNetworkEdgeEvidence(
     : validateItxCurrentTopologyAdmission(currentAdmission, {
         previousArtifactSha256: reference.sha256,
         stationSequences: source.stationSequences,
-        now: candidateBuildNow(),
+        now,
       });
   return {
     ...currentProjection,
@@ -2464,9 +2526,12 @@ function validateOfficialOdFareEvidence(evidence, fixture, admissions, admission
   return evidence;
 }
 
-function requiredSourceSnapshots(value, label) {
+function requiredSourceSnapshots(value, label, now = candidateBuildNow()) {
   if (!Array.isArray(value) || value.length === 0) {
     throw new Error(`${label} must be a non-empty array`);
+  }
+  if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
+    throw new TypeError(`${label} validation time is invalid`);
   }
   return value.map((snapshot, index) => {
     const prefix = `${label}[${index}]`;
@@ -2502,7 +2567,7 @@ function requiredSourceSnapshots(value, label) {
     if (snapshot.credentialRedacted !== true) {
       throw new Error(`${prefix}.credentialRedacted must be true`);
     }
-    if (Date.parse(normalized.freshnessExpiresAt) <= candidateBuildNow().getTime()) {
+    if (Date.parse(normalized.freshnessExpiresAt) <= now.getTime()) {
       throw new Error(`${prefix}.freshnessExpiresAt must be in the future`);
     }
     return normalized;
