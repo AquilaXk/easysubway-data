@@ -13,7 +13,7 @@ import { fixture } from "./build-current-capital-station-line-input.test.mjs";
 
 test("full-capital route fan-in은 2218+213+213+30 edge contract를 만든다", async () => {
   const input = await fixture();
-  input.canonicalPack.packs[0].networkEdges = Array.from({ length: 2218 }, (_, index) => ({ id: `ride-${index}`, edgeType: "RIDE", fromNodeId: "station-000:seoul-2", toNodeId: "station-001:seoul-2", durationSeconds: 120, distanceMeters: 1000, serviceClass: "SUBWAY", servicePattern: "LOCAL" }));
+  input.canonicalPack.packs[0].networkEdges = [...rideEdges(2218), ...legacyEdges()];
   const result = buildCurrentCapitalRouteEdgeInput(input);
   assert.deepEqual(Object.keys(result).sort(), ["candidate", "routeEdges", "stationLines"]);
   assert.equal(result.routeEdges.length, 2674);
@@ -54,7 +54,7 @@ test("route CLI만 temporary fixed target에 exact two-file handoff를 원자 pu
   resealReceipt(input.exitReceipt);
   input.candidateBuildSpec.sourceInventorySha256 = sha(canonical(input.sourceInventory));
   input.candidateBuildSpec.networkEdgeEvidence.sourceInventory.sha256 = sha(canonical(input.sourceInventory));
-  input.canonicalPack.packs[0].networkEdges = Array.from({ length: 2218 }, (_, index) => ({ id: `ride-${index}`, edgeType: "RIDE", fromNodeId: "station-000:seoul-2", toNodeId: "station-001:seoul-2", durationSeconds: 120, distanceMeters: 1000, serviceClass: "SUBWAY", servicePattern: "LOCAL" }));
+  input.canonicalPack.packs[0].networkEdges = [...rideEdges(2210), ...legacyEdges()];
   const entries = {
     "tools/datapack/release/current-capital-facility-source-admission.json": input.facilityAdmission,
     [input.facilityAdmission.sourceIdentity.snapshotPath]: input.facilitySnapshotBytes,
@@ -76,10 +76,37 @@ test("route CLI만 temporary fixed target에 exact two-file handoff를 원자 pu
   const candidateBytes = await readFile(candidatePath);
   input.sourceSetTransition.currentCandidateBytesSha256 = sha(candidateBytes);
   input.sourceSetTransition.facilityAdmissionBytesSha256 = sha(await readFile(path.join(root, "tools/datapack/release/current-capital-facility-source-admission.json")));
-  const dependencies = { repositoryRoot: root, log: () => {}, readTransitionBoundaryImpl: async () => input.sourceSetTransition };
+  const dependencies = {
+    repositoryRoot: root,
+    log: () => {},
+    readTransitionBoundaryImpl: async () => input.sourceSetTransition,
+    projectFixtureImpl: async ({ buildSpec, sourceFixture, repositoryRoot }) => {
+      assert.equal(buildSpec.candidateId, input.candidateBuildSpec.candidateId);
+      assert.equal(sourceFixture.packs[0].networkEdges.length, 2214);
+      assert.equal(repositoryRoot, root);
+      const projected = structuredClone(sourceFixture);
+      projected.packs[0].networkEdges = [...rideEdges(2218), ...legacyEdges()];
+      return projected;
+    },
+  };
   await writeFile(candidatePath, canonical({ ...JSON.parse(candidateBytes), replacementRace: true }));
   await assert.rejects(main([], dependencies), /transition input snapshot mismatch/);
   await writeFile(candidatePath, candidateBytes);
+  const packPath = path.join(root, "tools/datapack/release/capital-production-canonical-pack.json");
+  const rawPackBytes = await readFile(packPath);
+  const rawPack = JSON.parse(rawPackBytes);
+  rawPack.packs[0].networkEdges.pop();
+  await writeFile(packPath, canonical(rawPack));
+  await assert.rejects(main([], dependencies), /raw edge denominator mismatch/);
+  await writeFile(packPath, rawPackBytes);
+  const projected = dependencies.projectFixtureImpl;
+  dependencies.projectFixtureImpl = async (args) => {
+    const value = await projected(args);
+    value.packs[0].networkEdges = value.packs[0].networkEdges.filter(({ id }) => id !== "ride-2217");
+    return value;
+  };
+  await assert.rejects(main([], dependencies), /projected edge denominator mismatch/);
+  dependencies.projectFixtureImpl = projected;
   const result = await main([], dependencies);
   const output = path.join(root, "tools/datapack/release/current-capital-accessibility-full");
   const stationPath = path.join(output, "station-line-input.json"); const routePath = path.join(output, "route-edge-input.json");
@@ -90,6 +117,8 @@ test("route CLI만 temporary fixed target에 exact two-file handoff를 원자 pu
   await assert.rejects(main([], dependencies), /absent/i);
 });
 
+function rideEdges(count) { return Array.from({ length: count }, (_, index) => ({ id: `ride-${index}`, edgeType: "RIDE", fromNodeId: "station-000:seoul-2", toNodeId: "station-001:seoul-2", durationSeconds: 120, distanceMeters: 1000, serviceClass: "SUBWAY", servicePattern: "LOCAL" })); }
+function legacyEdges() { return [{ id: "legacy-entry-1", edgeType: "ENTRY", fromNodeId: "station-000", toNodeId: "station-000:seoul-2", durationSeconds: 90, distanceMeters: 0 }, { id: "legacy-entry-2", edgeType: "ENTRY", fromNodeId: "station-001", toNodeId: "station-001:seoul-2", durationSeconds: 90, distanceMeters: 0 }, { id: "legacy-exit-1", edgeType: "EXIT", fromNodeId: "station-000:seoul-2", toNodeId: "station-000", durationSeconds: 60, distanceMeters: 0 }, { id: "legacy-exit-2", edgeType: "EXIT", fromNodeId: "station-001:seoul-2", toNodeId: "station-001", durationSeconds: 60, distanceMeters: 0 }]; }
 function canonical(value) { if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`; if (value && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`; return JSON.stringify(value); }
 function sha(value) { return createHash("sha256").update(value).digest("hex"); }
 function resealAdmission(value) { const { admissionDigest: _ignored, ...payload } = value; value.admissionDigest = sha(canonical(payload)); }

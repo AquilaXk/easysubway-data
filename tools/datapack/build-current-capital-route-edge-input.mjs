@@ -13,7 +13,7 @@ export function buildCurrentCapitalRouteEdgeInput(input) {
   const station = buildCurrentCapitalStationLineInput(input);
   const pack = input.canonicalPack.packs.find(({ id }) => id === "capital");
   const stationLines = routeStationLines(pack, station.stationLines);
-  const rides = (pack.networkEdges ?? []).map(normalizeRide);
+  const rides = (pack.networkEdges ?? []).filter(({ edgeType }) => edgeType === "RIDE").map(normalizeRide);
   if (rides.length !== 2218 || new Set(rides.map(({ edgeId }) => edgeId)).size !== 2218) throw new Error("full-capital RIDE denominator mismatch");
   const entries = station.stationLines.map((line) => edge({ edgeId: `edge-entry-${line.stationId}-${line.lineId}`, edgeType: "ENTRY", fromNodeId: line.stationId, toNodeId: `${line.stationId}:${line.lineId}`, durationSeconds: 90, distanceMeters: 0 }));
   const exits = station.stationLines.map((line) => edge({ edgeId: `edge-exit-${line.stationId}-${line.lineId}`, edgeType: "EXIT", fromNodeId: `${line.stationId}:${line.lineId}`, toNodeId: line.stationId, durationSeconds: 60, distanceMeters: 0 }));
@@ -31,18 +31,24 @@ export function canonicalCurrentCapitalRouteEdgeInputJson(value) {
   return canonicalJson(value);
 }
 
-export async function main(argv = process.argv.slice(2), { repositoryRoot = fileURLToPath(new URL("../../", import.meta.url)), log = console.log, readTransitionBoundaryImpl } = {}) {
+export async function main(argv = process.argv.slice(2), { repositoryRoot = fileURLToPath(new URL("../../", import.meta.url)), log = console.log, readTransitionBoundaryImpl, projectFixtureImpl = defaultProjectFixture } = {}) {
   if (!Array.isArray(argv) || argv.length !== 0) throw new Error("full-capital route arguments mismatch");
   const root = path.resolve(repositoryRoot); const output = path.join(root, OUTPUT_DIRECTORY);
   await outputMustBeAbsent(output);
   const input = await readCurrentCapitalInputs(root, { readTransitionBoundaryImpl });
-  const station = buildCurrentCapitalStationLineInput(input);
-  const route = buildCurrentCapitalRouteEdgeInput(input);
+  validateFixtureEdgeCounts(input.canonicalPack, { RIDE: 2210, ENTRY: 2, EXIT: 2 }, "raw");
+  const projectedFixture = await projectFixtureImpl({ buildSpec: input.candidateBuildSpec, sourceFixture: input.canonicalPack, repositoryRoot: root });
+  validateFixtureEdgeCounts(projectedFixture, { RIDE: 2218, ENTRY: 2, EXIT: 2 }, "projected");
+  const projectedInput = { ...input, canonicalPack: projectedFixture };
+  const station = buildCurrentCapitalStationLineInput(projectedInput);
+  const route = buildCurrentCapitalRouteEdgeInput(projectedInput);
   await publish(output, canonicalCurrentCapitalStationLineInputJson(station), canonicalCurrentCapitalRouteEdgeInputJson(route));
   log(JSON.stringify({ stationLineCount: station.stationLines.length, routeEdgeCount: route.routeEdges.length }));
   return { station, route };
 }
 
+async function defaultProjectFixture({ buildSpec, sourceFixture, repositoryRoot }) { const { projectCandidateFixtureForAccessibilityAuthority } = await import("./build-datapack.mjs"); return projectCandidateFixtureForAccessibilityAuthority({ buildSpec, sourceFixture, repositoryRoot }); }
+function validateFixtureEdgeCounts(fixture, expected, label) { const packs = fixture?.packs?.filter(({ id }) => id === "capital") ?? []; if (fixture?.manifest?.channel !== "production" || fixture.manifest?.activePack?.id !== "capital" || packs.length !== 1 || !Array.isArray(packs[0].networkEdges)) throw new Error(`full-capital ${label} fixture mismatch`); const counts = Object.create(null); for (const { edgeType } of packs[0].networkEdges) counts[edgeType] = (counts[edgeType] ?? 0) + 1; const total = Object.values(expected).reduce((sum, count) => sum + count, 0); if (packs[0].networkEdges.length !== total || Object.keys(counts).length !== Object.keys(expected).length || Object.entries(expected).some(([type, count]) => counts[type] !== count)) throw new Error(`full-capital ${label} edge denominator mismatch`); }
 function normalizeRide(value) { if (value?.edgeType !== "RIDE" || ![value.id, value.fromNodeId, value.toNodeId].every(nonBlank) || !Number.isSafeInteger(value.durationSeconds) || value.durationSeconds < 0 || !Number.isSafeInteger(value.distanceMeters) || value.distanceMeters < 0) throw new Error("full-capital RIDE schema mismatch"); return edge({ edgeId: value.id, edgeType: value.edgeType, fromNodeId: value.fromNodeId, toNodeId: value.toNodeId, durationSeconds: value.durationSeconds, distanceMeters: value.distanceMeters, serviceClass: value.serviceClass ?? "SUBWAY", servicePattern: value.servicePattern ?? "LOCAL" }); }
 function routeStationLines(pack, inputLines) { const indexed = new Map((pack.stationLines ?? []).map((line) => [`${line.stationId}\0${line.lineId}`, line])); return inputLines.map((line) => { const source = indexed.get(`${line.stationId}\0${line.lineId}`); if (!Number.isSafeInteger(source?.lineSequence) || source.lineSequence < 0) throw new Error("full-capital route line sequence mismatch"); return { ...line, lineSequence: source.lineSequence }; }); }
 function edge(value) { const normalized = { edgeId: value.edgeId, edgeType: value.edgeType, fromNodeId: value.fromNodeId, toNodeId: value.toNodeId, durationSeconds: value.durationSeconds, distanceMeters: value.distanceMeters, servicePattern: value.servicePattern ?? "", serviceClass: value.serviceClass ?? "SUBWAY" }; return { ...normalized, edgeSha256: routeEdgeSha256(normalized) }; }
