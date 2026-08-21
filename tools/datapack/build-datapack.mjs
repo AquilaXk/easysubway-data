@@ -526,12 +526,15 @@ async function loadBuildInput(
   const sourceFixtureBytes = await readFile(sourceFixturePath);
   const sourceFixture = JSON.parse(sourceFixtureBytes);
   rejectTestOnlyBuildInput(sourceFixture);
+  const replaysAccessibilityAuthority = candidateFixtureOverrideArg != null;
   const { officialOdFareEvidence, artifactFreshUntil } = await validateCandidateBuildSpec(
     buildSpec,
     sourceFixture,
     officialOdFareAdmissions,
     officialOdFareAdmissionBytes,
     repositoryRoot,
+    replaysAccessibilityAuthority ? candidateReplayNow(buildSpec) : candidateBuildNow(),
+    { includePackAccessibilityFreshness: !replaysAccessibilityAuthority },
   );
   let fixture = sourceFixture;
   let overrideBinding = null;
@@ -617,10 +620,7 @@ export async function projectCandidateFixtureForAccessibilityAuthority({
     throw new Error("accessibility replay source fixture mismatch");
   }
   const fixture = structuredClone(sourceFixture);
-  const validationNow = new Date(requiredUtcDateString(
-    buildSpec?.publishedAt,
-    "buildSpec.publishedAt",
-  ));
+  const validationNow = candidateReplayNow(buildSpec);
   const officialOdFareAdmissionBytes = await readFile(
     path.join(repositoryRoot, "tools/datapack/official-od-fare-admission.json"),
   );
@@ -637,6 +637,13 @@ export async function projectCandidateFixtureForAccessibilityAuthority({
     { includePackAccessibilityFreshness: false },
   );
   return fixture;
+}
+
+function candidateReplayNow(buildSpec) {
+  return new Date(requiredUtcDateString(
+    buildSpec?.publishedAt,
+    "buildSpec.publishedAt",
+  ));
 }
 
 export function validateCandidateFixtureOverride({

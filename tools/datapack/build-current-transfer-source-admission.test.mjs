@@ -89,7 +89,7 @@ test("ambiguous target mapping과 partial official identity는 absence admission
   assert.throws(() => buildCurrentTransferSourceAdmission(partial), /source|snapshot|identity/i);
 });
 
-test("CLI는 self-bound 두 handoff를 absent directory에 원자적으로 쓴다", async () => {
+test("CLI는 self-bound 두 handoff를 legacy/current candidate 경계 밖에서 재발행하지 않는다", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "current-transfer-admission-"));
   const evidencePath = path.join(root, "evidence.json");
   const freshnessPath = path.join(root, "freshness.json");
@@ -112,12 +112,11 @@ test("CLI는 self-bound 두 handoff를 absent directory에 원자적으로 쓴�
     return;
   }
 
-  const result = await main(argv, { repositoryRoot: REPOSITORY_ROOT, log: () => {} });
-  assert.equal(result.admission.decision, "GO");
-  for (const fileName of ["transfer-topology-source-admission.json", "transfer-topology-admission.json"]) {
-    assert.equal((await stat(path.join(outputDirectory, fileName))).mode & 0o777, 0o600);
-  }
-  await assert.rejects(main(argv, { repositoryRoot: REPOSITORY_ROOT, log: () => {} }), /output.*absent/i);
+  await assert.rejects(
+    main(argv, { repositoryRoot: REPOSITORY_ROOT, log: () => {} }),
+    /candidate source identity mismatch/,
+  );
+  assert.equal(await fileExists(outputDirectory), false);
 });
 
 test("tracked current TRANSFER handoff는 exact two-cell GO identity를 고정한다", async () => {

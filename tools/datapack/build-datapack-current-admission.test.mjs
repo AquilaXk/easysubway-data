@@ -110,12 +110,43 @@ test("candidate build spec release identity는 wall clock과 workflow run number
     privateKeyEncoding: { type: "pkcs8", format: "pem" },
     publicKeyEncoding: { type: "spki", format: "pem" },
   });
+  const directOutput = path.join(directory, "direct-build");
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      "tools/datapack/build-datapack.mjs",
+      "--build-spec", buildSpecPath,
+      "--output", directOutput,
+    ], {
+      cwd: root,
+      env: {
+        ...process.env,
+        EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-08-14T16:00:00.000Z",
+        EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey,
+        EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: "production-v1",
+      },
+    }),
+    /production accessibility evidence mismatch/,
+  );
+  await assert.rejects(readFile(path.join(directOutput, "current.json")), /ENOENT/);
+  const candidateFixture = path.join(directory, "candidate-fixture.json");
+  const routeCoverageAuthority = path.join(directory, "server-route-coverage-authority.json");
+  await execFileAsync(process.execPath, [
+    "tools/datapack/build-current-release-candidate-accessibility-input.mjs",
+    "--fixture", buildSpec.fixturePath,
+    "--build-spec", buildSpecPath,
+    "--station-line-input", "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
+    "--route-edge-input", "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
+    "--fixture-output", candidateFixture,
+    "--authority-output", routeCoverageAuthority,
+  ], { cwd: root });
 
   async function build(name, buildNow, runNumber) {
     const output = path.join(directory, name);
     await execFileAsync(process.execPath, [
       "tools/datapack/build-datapack.mjs",
       "--build-spec", buildSpecPath,
+      "--candidate-fixture-override", candidateFixture,
+      "--server-route-coverage-authority", routeCoverageAuthority,
       "--output", output,
     ], {
       cwd: root,
