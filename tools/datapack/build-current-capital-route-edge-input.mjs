@@ -48,7 +48,20 @@ export async function main(argv = process.argv.slice(2), { repositoryRoot = file
 }
 
 async function defaultProjectFixture({ buildSpec, sourceFixture, repositoryRoot }) { const { projectCandidateFixtureForAccessibilityAuthority } = await import("./build-datapack.mjs"); return projectCandidateFixtureForAccessibilityAuthority({ buildSpec, sourceFixture, repositoryRoot }); }
-function validateFixtureEdgeCounts(fixture, expected, label) { const packs = fixture?.packs?.filter(({ id }) => id === "capital") ?? []; if (fixture?.manifest?.channel !== "production" || fixture.manifest?.activePack?.id !== "capital" || packs.length !== 1 || !Array.isArray(packs[0].networkEdges)) throw new Error(`full-capital ${label} fixture mismatch`); const counts = Object.create(null); for (const { edgeType } of packs[0].networkEdges) counts[edgeType] = (counts[edgeType] ?? 0) + 1; const total = Object.values(expected).reduce((sum, count) => sum + count, 0); if (packs[0].networkEdges.length !== total || Object.keys(counts).length !== Object.keys(expected).length || Object.entries(expected).some(([type, count]) => counts[type] !== count)) throw new Error(`full-capital ${label} edge denominator mismatch`); }
+function validateFixtureEdgeCounts(fixture, expected, label) {
+  const packs = fixture?.packs?.filter(({ id }) => id === "capital") ?? [];
+  if (fixture?.manifest?.channel !== "production" || fixture.manifest?.activePack?.id !== "capital" || packs.length !== 1 || !Array.isArray(packs[0].networkEdges)) {
+    throw new Error(`full-capital ${label} fixture mismatch`);
+  }
+  const counts = Object.create(null);
+  for (const { edgeType } of packs[0].networkEdges) {
+    counts[edgeType] = (counts[edgeType] ?? 0) + 1;
+  }
+  const total = Object.values(expected).reduce((sum, count) => sum + count, 0);
+  if (packs[0].networkEdges.length !== total || Object.keys(counts).length !== Object.keys(expected).length || Object.entries(expected).some(([type, count]) => counts[type] !== count)) {
+    throw new Error(`full-capital ${label} edge denominator mismatch`);
+  }
+}
 function normalizeRide(value) { if (value?.edgeType !== "RIDE" || ![value.id, value.fromNodeId, value.toNodeId].every(nonBlank) || !Number.isSafeInteger(value.durationSeconds) || value.durationSeconds < 0 || !Number.isSafeInteger(value.distanceMeters) || value.distanceMeters < 0) throw new Error("full-capital RIDE schema mismatch"); return edge({ edgeId: value.id, edgeType: value.edgeType, fromNodeId: value.fromNodeId, toNodeId: value.toNodeId, durationSeconds: value.durationSeconds, distanceMeters: value.distanceMeters, serviceClass: value.serviceClass ?? "SUBWAY", servicePattern: value.servicePattern ?? "LOCAL" }); }
 function routeStationLines(pack, inputLines) { const indexed = new Map((pack.stationLines ?? []).map((line) => [`${line.stationId}\0${line.lineId}`, line])); return inputLines.map((line) => { const source = indexed.get(`${line.stationId}\0${line.lineId}`); if (!Number.isSafeInteger(source?.lineSequence) || source.lineSequence < 0) throw new Error("full-capital route line sequence mismatch"); return { ...line, lineSequence: source.lineSequence }; }); }
 function edge(value) { const normalized = { edgeId: value.edgeId, edgeType: value.edgeType, fromNodeId: value.fromNodeId, toNodeId: value.toNodeId, durationSeconds: value.durationSeconds, distanceMeters: value.distanceMeters, servicePattern: value.servicePattern ?? "", serviceClass: value.serviceClass ?? "SUBWAY" }; return { ...normalized, edgeSha256: routeEdgeSha256(normalized) }; }
