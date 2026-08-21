@@ -14,10 +14,12 @@ const FILES = Object.freeze({
   candidate: "tools/datapack/release/candidate-build-spec.json",
   previous: "tools/datapack/release/current-station-line-accessibility/station-line-input.json",
   facility: "tools/datapack/release/current-capital-facility-source-admission.json",
+  inventory: "tools/datapack/source-inventory.json",
   snapshots: "tools/datapack/release/source-snapshots.json",
   transition: "tools/datapack/release/current-capital-accessibility-transition.json",
 });
 const SHA = /^[a-f0-9]{64}$/u;
+const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
 const TOP_LEVEL_KEYS = Object.freeze([
   "schemaVersion", "artifactKind", "state", "nextCandidate", "previousProduction",
   "facilityAdmission", "pendingPrerequisites", "transitionSha256",
@@ -87,7 +89,10 @@ export async function assertCurrentCapitalAccessibilityBuildAllowed({ repository
     }
   } else {
     try {
-      const ledgerBytes = await readStableRegular(path.join(root, FILES.snapshots), "source snapshot ledger");
+      const [ledgerBytes, inventoryBytes] = await Promise.all([
+        readStableRegular(path.join(root, FILES.snapshots), "source snapshot ledger"),
+        readStableRegular(path.join(root, FILES.inventory), "source inventory"),
+      ]);
       const rebuilt = finalizeTransitionPayload(buildTransitionPayload({
         nextCandidate: parsed.nextCandidate,
         previous,
@@ -100,7 +105,10 @@ export async function assertCurrentCapitalAccessibilityBuildAllowed({ repository
       }
       assertExactTransferAppend({
         candidate,
+        inventory: parse(inventoryBytes, "source inventory"),
+        inventoryBytes,
         ledger: parse(ledgerBytes, "source snapshot ledger"),
+        storedCandidateSha256: parsed.nextCandidate.sha256,
         storedSourceSetHash: parsed.nextCandidate.sourceSnapshotSetHash,
       });
     } catch {
@@ -166,7 +174,7 @@ function assertFacilityBinding(facility, candidateId, sourceSnapshotSetHash) {
   }
 }
 
-function assertExactTransferAppend({ candidate, ledger, storedSourceSetHash }) {
+function assertExactTransferAppend({ candidate, inventory, inventoryBytes, ledger, storedCandidateSha256, storedSourceSetHash }) {
   if (candidate?.schemaVersion !== 1 || candidate.artifactKind !== "datapack-candidate-build-spec"
     || !Array.isArray(candidate.sourceSnapshotIds) || !Array.isArray(candidate.sourceSnapshots)
     || candidate.sourceSnapshotIds.length !== 7 || candidate.sourceSnapshots.length !== 7
@@ -179,6 +187,21 @@ function assertExactTransferAppend({ candidate, ledger, storedSourceSetHash }) {
     projection?.snapshotId !== candidate.sourceSnapshotIds[index])) {
     throw new Error("transition append projection mismatch");
   }
+  const predecessorInventory = reverseTransferInventoryActivation({
+    candidate,
+    inventory,
+    inventoryBytes,
+    transferSnapshotId: candidate.sourceSnapshotIds.at(-1),
+  });
+  const predecessor = structuredClone(candidate);
+  predecessor.sourceSnapshotIds = candidate.sourceSnapshotIds.slice(0, -1);
+  predecessor.sourceSnapshots = candidate.sourceSnapshots.slice(0, -1);
+  predecessor.sourceSnapshotSetHash = storedSourceSetHash;
+  predecessor.sourceInventorySha256 = predecessorInventory.semanticSha256;
+  predecessor.networkEdgeEvidence.sourceInventory.sha256 = predecessorInventory.bytesSha256;
+  if (sha256(Buffer.from(`${JSON.stringify(predecessor, null, 2)}\n`)) !== storedCandidateSha256) {
+    throw new Error("transition append predecessor mismatch");
+  }
   for (const [index, snapshotId] of candidate.sourceSnapshotIds.entries()) {
     const matches = ledger.filter((entry) => entry?.snapshotId === snapshotId);
     if (matches.length !== 1 || matches[0].sourceId !== candidate.sourceSnapshots[index].sourceId) {
@@ -188,12 +211,47 @@ function assertExactTransferAppend({ candidate, ledger, storedSourceSetHash }) {
   const selected = ledger.filter(({ snapshotId }) => selectedIds.has(snapshotId));
   const prefixIds = new Set(candidate.sourceSnapshotIds.slice(0, -1));
   const prefix = ledger.filter(({ snapshotId }) => prefixIds.has(snapshotId));
+  const appendedProjection = candidate.sourceSnapshots.at(-1);
+  const appendedLedger = selected.at(-1);
+  const projectionKeys = Object.keys(candidate.sourceSnapshots[0]);
   if (selected.length !== 7 || prefix.length !== 6
     || sha256(Buffer.from(JSON.stringify(selected))) !== candidate.sourceSnapshotSetHash
     || sha256(Buffer.from(JSON.stringify(prefix))) !== storedSourceSetHash
-    || selected.at(-1)?.sourceId !== "seoul-metro-transfer-distance-duration") {
+    || appendedLedger?.sourceId !== TRANSFER_SOURCE_ID
+    || JSON.stringify(Object.keys(appendedProjection)) !== JSON.stringify(projectionKeys)
+    || projectionKeys.some((key) => !Object.hasOwn(appendedLedger, key) || appendedProjection[key] !== appendedLedger[key])) {
     throw new Error("transition append source-set mismatch");
   }
+}
+
+function reverseTransferInventoryActivation({ candidate, inventory, inventoryBytes, transferSnapshotId }) {
+  if (!Buffer.isBuffer(inventoryBytes)
+    || inventoryBytes.toString("utf8") !== `${JSON.stringify(inventory, null, 2)}\n`
+    || candidate.networkEdgeEvidence?.sourceInventory?.path !== FILES.inventory
+    || candidate.networkEdgeEvidence.sourceInventory.sha256 !== sha256(inventoryBytes)
+    || candidate.sourceInventorySha256 !== sha256(Buffer.from(JSON.stringify(inventory)))) {
+    throw new Error("transition append inventory binding mismatch");
+  }
+  const matches = inventory?.sources?.filter(({ id }) => id === TRANSFER_SOURCE_ID) ?? [];
+  const source = matches.length === 1 ? matches[0] : null;
+  if (source?.requiredForProductionPack !== true
+    || source.capabilities?.transfer?.status !== "SUPPORTED"
+    || source.capabilities.transfer.productionUseAllowed !== true
+    || source.capabilities.transfer.coverageStatus !== "CAPITAL_SEOUL_METRO_15_PAIRS_30_DIRECTED_METRICS"
+    || source.transferAdmissionEvidence?.decision !== "APPROVED"
+    || source.transferAdmissionEvidence.productionUseAllowed !== true
+    || source.transferAdmissionEvidence.snapshotId !== transferSnapshotId) {
+    throw new Error("transition append inventory activation mismatch");
+  }
+  const predecessor = structuredClone(inventory);
+  const predecessorSource = predecessor.sources.find(({ id }) => id === TRANSFER_SOURCE_ID);
+  predecessorSource.requiredForProductionPack = false;
+  delete predecessorSource.capabilities.transfer;
+  delete predecessorSource.transferAdmissionEvidence;
+  return {
+    bytesSha256: sha256(Buffer.from(`${JSON.stringify(predecessor, null, 2)}\n`)),
+    semanticSha256: sha256(Buffer.from(JSON.stringify(predecessor))),
+  };
 }
 
 export async function main(argv = process.argv.slice(2), {

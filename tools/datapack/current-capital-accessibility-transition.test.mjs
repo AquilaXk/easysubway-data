@@ -19,6 +19,7 @@ const BASE_SOURCE_IDS = Object.freeze([
   "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info",
 ]);
 const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
+const INVENTORY_PATH = "tools/datapack/source-inventory.json";
 
 test("pending full fan-in marker를 exact current identities에 결속하고 route build를 막는다", async (t) => {
   const fixture = await createFixture(t);
@@ -60,17 +61,58 @@ test("exact TRANSFER-last append는 six-source marker를 인증한 뒤에도 bui
 
   const transfer = { sourceId: TRANSFER_SOURCE_ID, snapshotId: "snapshot-transfer" };
   const ledger = [...fixture.baseLedger, transfer];
+  const sourceInventory = structuredClone(fixture.sourceInventory);
+  const transferSource = sourceInventory.sources[0];
+  transferSource.requiredForProductionPack = true;
+  transferSource.capabilities.transfer = {
+    status: "SUPPORTED",
+    productionUseAllowed: true,
+    coverageStatus: "CAPITAL_SEOUL_METRO_15_PAIRS_30_DIRECTED_METRICS",
+  };
+  transferSource.transferAdmissionEvidence = {
+    decision: "APPROVED",
+    productionUseAllowed: true,
+    snapshotId: transfer.snapshotId,
+  };
+  const sourceInventoryBytes = Buffer.from(`${JSON.stringify(sourceInventory, null, 2)}\n`);
   const candidate = {
     ...fixture.input.candidate,
     sourceSnapshotIds: ledger.map(({ snapshotId }) => snapshotId),
     sourceSnapshots: ledger.map(({ sourceId, snapshotId }) => ({ sourceId, snapshotId })),
     sourceSnapshotSetHash: sha256(Buffer.from(JSON.stringify(ledger))),
+    sourceInventorySha256: sha256(Buffer.from(JSON.stringify(sourceInventory))),
+    networkEdgeEvidence: {
+      sourceInventory: { path: INVENTORY_PATH, sha256: sha256(sourceInventoryBytes) },
+    },
   };
   await writeFile(candidatePath, `${JSON.stringify(candidate, null, 2)}\n`);
   await writeFile(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
+  await writeFile(path.join(fixture.root, INVENTORY_PATH), sourceInventoryBytes);
   await assert.rejects(
     () => assertCurrentCapitalAccessibilityBuildAllowed({ repositoryRoot: fixture.root }),
     /CURRENT_ACCESSIBILITY_TRANSITION_BLOCKED/,
+  );
+
+  await writeFile(candidatePath, `${JSON.stringify({ ...candidate, candidateId: "drifted-candidate" }, null, 2)}\n`);
+  await assert.rejects(
+    () => assertCurrentCapitalAccessibilityBuildAllowed({ repositoryRoot: fixture.root }),
+    /transition candidate binding mismatch/,
+  );
+
+  const projectionDrift = structuredClone(candidate);
+  projectionDrift.sourceSnapshots[0].governancePolicySha256 = "f".repeat(64);
+  await writeFile(candidatePath, `${JSON.stringify(projectionDrift, null, 2)}\n`);
+  await assert.rejects(
+    () => assertCurrentCapitalAccessibilityBuildAllowed({ repositoryRoot: fixture.root }),
+    /transition candidate binding mismatch/,
+  );
+
+  const appendedProjectionDrift = structuredClone(candidate);
+  appendedProjectionDrift.sourceSnapshots.at(-1).governancePolicySha256 = "f".repeat(64);
+  await writeFile(candidatePath, `${JSON.stringify(appendedProjectionDrift, null, 2)}\n`);
+  await assert.rejects(
+    () => assertCurrentCapitalAccessibilityBuildAllowed({ repositoryRoot: fixture.root }),
+    /transition candidate binding mismatch/,
   );
 
   const otherLedger = [...fixture.baseLedger, { sourceId: "other-source", snapshotId: "snapshot-other" }];
@@ -151,13 +193,26 @@ async function createFixture(t) {
     snapshotId: `snapshot-${index}`,
   }));
   const baseSourceSet = sha256(Buffer.from(JSON.stringify(baseLedger)));
+  const sourceInventory = {
+    schemaVersion: 1,
+    sources: [{
+      id: TRANSFER_SOURCE_ID,
+      requiredForProductionPack: false,
+      capabilities: { accessibility: { status: "SUPPORTED" } },
+    }],
+  };
+  const sourceInventoryBytes = Buffer.from(`${JSON.stringify(sourceInventory, null, 2)}\n`);
   const candidate = {
     schemaVersion: 1,
     artifactKind: "datapack-candidate-build-spec",
     candidateId: previous.candidate.candidateId,
+    networkEdgeEvidence: {
+      sourceInventory: { path: INVENTORY_PATH, sha256: sha256(sourceInventoryBytes) },
+    },
     sourceSnapshotIds: baseLedger.map(({ snapshotId }) => snapshotId),
     sourceSnapshots: baseLedger.map(({ sourceId, snapshotId }) => ({ sourceId, snapshotId })),
     sourceSnapshotSetHash: baseSourceSet,
+    sourceInventorySha256: sha256(Buffer.from(JSON.stringify(sourceInventory))),
   };
   const candidateBytes = Buffer.from(`${JSON.stringify(candidate, null, 2)}\n`);
   const facilityAdmission = buildFacilityAdmission(candidate.candidateId, baseSourceSet);
@@ -165,6 +220,7 @@ async function createFixture(t) {
   await mkdir(path.join(release, "current-station-line-accessibility"), { recursive: true });
   await writeFile(path.join(release, "candidate-build-spec.json"), candidateBytes);
   await writeFile(path.join(release, "source-snapshots.json"), `${JSON.stringify(baseLedger, null, 2)}\n`);
+  await writeFile(path.join(root, INVENTORY_PATH), sourceInventoryBytes);
   await writeFile(path.join(release, "current-station-line-accessibility/station-line-input.json"), previousBytes);
   await writeFile(path.join(release, "current-capital-facility-source-admission.json"), facilityBytes);
   return {
@@ -172,6 +228,7 @@ async function createFixture(t) {
     baseLedger,
     baseSourceSet,
     previousSourceSet,
+    sourceInventory,
     input: { candidate, candidateBytes, previous, previousBytes, facilityAdmission, facilityBytes },
   };
 }
