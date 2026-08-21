@@ -158,6 +158,7 @@ test("current Data #9 seed는 alternate repository root의 nested projection evi
     ...(transitionPresent ? [
       "tools/datapack/release/current-capital-accessibility-transition.json",
       "tools/datapack/release/candidate-build-spec.json",
+      "tools/datapack/release/source-snapshots.json",
       "tools/datapack/release/current-station-line-accessibility/station-line-input.json",
       "tools/datapack/release/current-capital-facility-source-admission.json",
     ] : []),
