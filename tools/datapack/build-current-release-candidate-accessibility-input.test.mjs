@@ -232,16 +232,22 @@ async function assertFileAbsent(file) {
 async function fullInput() {
   const source = await fullCapitalFixture();
   const routeOnly = addFullRouteStationLines(source);
-  source.canonicalPack.packs[0].networkEdges = Array.from({ length: 2218 }, (_, index) => ({
-    id: `ride-${index}`,
-    edgeType: "RIDE",
-    fromNodeId: "station-000:seoul-2",
-    toNodeId: "station-001:seoul-2",
-    durationSeconds: 120,
-    distanceMeters: 1000,
-    serviceClass: "SUBWAY",
-    servicePattern: "LOCAL",
-  }));
+  source.canonicalPack.packs[0].networkEdges = [
+    ...Array.from({ length: 2218 }, (_, index) => ({
+      id: `ride-${index}`,
+      edgeType: "RIDE",
+      fromNodeId: "station-000:seoul-2",
+      toNodeId: "station-001:seoul-2",
+      durationSeconds: 120,
+      distanceMeters: 1000,
+      serviceClass: "SUBWAY",
+      servicePattern: "LOCAL",
+    })),
+    legacyEdge("legacy-entry-1", "ENTRY"),
+    legacyEdge("legacy-entry-2", "ENTRY"),
+    legacyEdge("legacy-exit-1", "EXIT"),
+    legacyEdge("legacy-exit-2", "EXIT"),
+  ];
   Object.assign(source.canonicalPack.packs[0].networkEdges[0], {
     fromNodeId: `${routeOnly[0].stationId}:${routeOnly[0].lineId}`,
     toNodeId: `${routeOnly[1].stationId}:${routeOnly[1].lineId}`,

@@ -608,6 +608,14 @@ export async function projectCandidateFixtureForAccessibilityAuthority({
   sourceFixture,
   repositoryRoot = root,
 }) {
+  const trackedSourceFixture = JSON.parse(await readFile(await resolveBuildInputPath(
+    buildSpec?.fixturePath,
+    "buildSpec.fixturePath",
+    repositoryRoot,
+  )));
+  if (canonicalJson(sourceFixture) !== canonicalJson(trackedSourceFixture)) {
+    throw new Error("accessibility replay source fixture mismatch");
+  }
   const fixture = structuredClone(sourceFixture);
   const validationNow = new Date(requiredUtcDateString(
     buildSpec?.publishedAt,

@@ -16,7 +16,7 @@ import { fixture } from "./build-current-capital-station-line-input.test.mjs";
 test("full-capital route fan-in은 2218+213+213+30 edge contract를 만든다", async () => {
   const input = await fixture();
   const routeOnly = addFullRouteStationLines(input);
-  input.canonicalPack.packs[0].networkEdges = rideEdges(2218);
+  input.canonicalPack.packs[0].networkEdges = [...rideEdges(2218), ...legacyEdges()];
   Object.assign(input.canonicalPack.packs[0].networkEdges[0], {
     fromNodeId: `${routeOnly[0].stationId}:${routeOnly[0].lineId}`,
     toNodeId: `${routeOnly[1].stationId}:${routeOnly[1].lineId}`,
@@ -43,6 +43,28 @@ test("full-capital route fan-in은 2218+213+213+30 edge contract를 만든다", 
   assert.equal(terminalExitResult.reason, "출구 이동경로가 검증되지 않아 경로를 차단했습니다.");
 });
 
+test("route builder 직접 호출은 projected fixture의 non-RIDE drift를 거부한다", async () => {
+  const input = await fixture();
+  addFullRouteStationLines(input);
+  input.canonicalPack.packs[0].networkEdges = [
+    ...rideEdges(2218),
+    ...legacyEdges(),
+    {
+      id: "unexpected-walkway",
+      edgeType: "WALKWAY",
+      fromNodeId: "station-000",
+      toNodeId: "station-001",
+      durationSeconds: 60,
+      distanceMeters: 80,
+    },
+  ];
+
+  assert.throws(
+    () => buildCurrentCapitalRouteEdgeInput(input),
+    /projected edge denominator mismatch/,
+  );
+});
+
 test("accessibility-authority projector는 current candidate를 buildSpec.publishedAt 시점으로 재현한다", async () => {
   const repositoryRoot = path.resolve(fileURLToPath(new URL("../../", import.meta.url)));
   const buildSpec = JSON.parse(await readFile(
@@ -65,6 +87,28 @@ test("accessibility-authority projector는 current candidate를 buildSpec.publis
     EXIT: 2,
     RIDE: 2218,
   });
+});
+
+test("accessibility-authority replay도 historical accessibility provenance drift를 거부한다", async () => {
+  const repositoryRoot = path.resolve(fileURLToPath(new URL("../../", import.meta.url)));
+  const buildSpec = JSON.parse(await readFile(
+    path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"),
+    "utf8",
+  ));
+  const sourceFixture = JSON.parse(await readFile(
+    path.join(repositoryRoot, buildSpec.fixturePath),
+    "utf8",
+  ));
+  sourceFixture.packs[0].facilities[0].sourceSnapshotId = "drifted-accessibility-snapshot";
+
+  await assert.rejects(
+    projectCandidateFixtureForAccessibilityAuthority({
+      buildSpec,
+      sourceFixture,
+      repositoryRoot,
+    }),
+    /accessibility replay source fixture mismatch/,
+  );
 });
 
 test("route CLI만 temporary fixed target에 exact two-file handoff를 원자 publish한다", async (t) => {

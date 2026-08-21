@@ -11,6 +11,7 @@ const OUTPUT_DIRECTORY = "tools/datapack/release/current-capital-accessibility-f
 const ROUTE_STATION_LINE_COUNT = 1102;
 
 export function buildCurrentCapitalRouteEdgeInput(input) {
+  validateFixtureEdgeCounts(input.canonicalPack, { RIDE: 2218, ENTRY: 2, EXIT: 2 }, "projected");
   const station = buildCurrentCapitalStationLineInput(input);
   const pack = input.canonicalPack.packs.find(({ id }) => id === "capital");
   const stationLines = routeStationLines(pack, station.stationLines);
