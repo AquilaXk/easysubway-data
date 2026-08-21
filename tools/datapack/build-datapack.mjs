@@ -37,6 +37,11 @@ import { loadCapitalRouteTopologySnapshot } from "./apply-capital-route-topology
 import { validateIncheonStationInfoSnapshot } from "./collect-incheon-station-info.mjs";
 import { assertNoRetiredTransitReferences } from "./project-retired-transit-lines.mjs";
 import { assertCurrentCapitalAccessibilityBuildAllowed } from "./current-capital-accessibility-transition.mjs";
+import {
+  canonicalCurrentReleaseCandidateAccessibilityAuthorityJson,
+  canonicalCurrentReleaseCandidateFixtureJson,
+  rebuildCurrentReleaseCandidateFixture,
+} from "./build-current-release-candidate-accessibility-input.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const canonicalSqliteHeaderVersion = 3_053_000;
@@ -456,10 +461,18 @@ async function loadBuildInput(
 ) {
   const fixtureArg = args.fixture;
   const buildSpecArg = args["build-spec"];
+  const candidateFixtureOverrideArg = args["candidate-fixture-override"];
+  const routeCoverageAuthorityArg = args["server-route-coverage-authority"];
+  if ((candidateFixtureOverrideArg == null) !== (routeCoverageAuthorityArg == null)) {
+    throw new Error("--candidate-fixture-override and --server-route-coverage-authority must be provided together");
+  }
   if ((fixtureArg == null) === (buildSpecArg == null)) {
     throw new Error("exactly one of --fixture or --build-spec is required");
   }
   if (fixtureArg != null) {
+    if (candidateFixtureOverrideArg != null) {
+      throw new Error("candidate fixture override requires --build-spec");
+    }
     const fixture = JSON.parse(await readFile(path.resolve(repositoryRoot, fixtureArg), "utf8"));
     rejectTestOnlyBuildInput(fixture);
     const hasProductionPack = fixture.packs?.some(({ artifactKind }) => artifactKind === "production");
@@ -505,23 +518,132 @@ async function loadBuildInput(
   const buildSpecPath = await resolveBuildInputPath(buildSpecArg, "buildSpec", repositoryRoot);
   const buildSpecBytes = await readFile(buildSpecPath);
   const buildSpec = JSON.parse(buildSpecBytes);
-  const fixture = JSON.parse(await readFile(await resolveBuildInputPath(
+  const sourceFixturePath = await resolveBuildInputPath(
     buildSpec.fixturePath,
     "buildSpec.fixturePath",
     repositoryRoot,
-  ), "utf8"));
-  rejectTestOnlyBuildInput(fixture);
+  );
+  const sourceFixtureBytes = await readFile(sourceFixturePath);
+  const sourceFixture = JSON.parse(sourceFixtureBytes);
+  rejectTestOnlyBuildInput(sourceFixture);
   const { officialOdFareEvidence, artifactFreshUntil } = await validateCandidateBuildSpec(
     buildSpec,
+    sourceFixture,
+    officialOdFareAdmissions,
+    officialOdFareAdmissionBytes,
+    repositoryRoot,
+  );
+  let fixture = sourceFixture;
+  let overrideBinding = null;
+  if (candidateFixtureOverrideArg != null) {
+    const [candidateFixtureBytes, authorityBytes] = await Promise.all([
+      readFile(await resolveBuildInputPath(
+        candidateFixtureOverrideArg,
+        "candidateFixtureOverride",
+        repositoryRoot,
+      )),
+      readFile(await resolveBuildInputPath(
+        routeCoverageAuthorityArg,
+        "serverRouteCoverageAuthority",
+        repositoryRoot,
+      )),
+    ]);
+    const validated = validateCandidateFixtureOverride({
+      authorityBytes,
+      buildSpec,
+      buildSpecBytes,
+      candidateFixtureBytes,
+      projectedFixture: sourceFixture,
+      sourceFixtureBytes,
+    });
+    fixture = validated.fixture;
+    overrideBinding = validated.binding;
+  }
+  return {
+    fixture,
+    candidateBuild: candidateBuildProvenance(
+      buildSpec,
+      sha256(buildSpecBytes),
+      officialOdFareEvidence,
+      overrideBinding,
+    ),
+    artifactFreshUntil,
+  };
+}
+
+export async function projectCandidateFixtureForAccessibilityAuthority({
+  buildSpec,
+  sourceFixture,
+  repositoryRoot = root,
+}) {
+  const fixture = structuredClone(sourceFixture);
+  const officialOdFareAdmissionBytes = await readFile(
+    path.join(repositoryRoot, "tools/datapack/official-od-fare-admission.json"),
+  );
+  const officialOdFareAdmissions = officialOdFareAdmissionsBySource(
+    JSON.parse(officialOdFareAdmissionBytes.toString("utf8")),
+  );
+  await validateCandidateBuildSpec(
+    structuredClone(buildSpec),
     fixture,
     officialOdFareAdmissions,
     officialOdFareAdmissionBytes,
     repositoryRoot,
   );
+  return fixture;
+}
+
+export function validateCandidateFixtureOverride({
+  authorityBytes,
+  buildSpec,
+  buildSpecBytes,
+  candidateFixtureBytes,
+  projectedFixture,
+  sourceFixtureBytes,
+}) {
+  for (const [label, bytes] of Object.entries({
+    authorityBytes,
+    buildSpecBytes,
+    candidateFixtureBytes,
+    sourceFixtureBytes,
+  })) {
+    if (!Buffer.isBuffer(bytes)) throw new Error(`${label} must be bytes`);
+  }
+  let authority;
+  let candidateFixture;
+  try {
+    authority = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(authorityBytes));
+    candidateFixture = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(candidateFixtureBytes));
+  } catch {
+    throw new Error("candidate fixture override must be UTF-8 JSON");
+  }
+  const canonicalAuthority = canonicalCurrentReleaseCandidateAccessibilityAuthorityJson(authority);
+  const canonicalFixture = canonicalCurrentReleaseCandidateFixtureJson(candidateFixture);
+  if (authorityBytes.toString("utf8") !== canonicalAuthority
+    || candidateFixtureBytes.toString("utf8") !== canonicalFixture) {
+    throw new Error("candidate fixture override bytes are not canonical");
+  }
+  const buildSpecSha256 = sha256(buildSpecBytes);
+  const sourceFixtureSha256 = sha256(sourceFixtureBytes);
+  const candidateFixtureSha256 = sha256(candidateFixtureBytes);
+  if (authority.buildInput.buildSpecSha256 !== buildSpecSha256
+    || authority.buildInput.sourceFixtureSha256 !== sourceFixtureSha256
+    || authority.buildInput.candidateFixtureSha256 !== candidateFixtureSha256
+    || authority.candidate.candidateId !== buildSpec?.candidateId
+    || authority.candidate.sourceSetSha256 !== buildSpec?.sourceSnapshotSetHash) {
+    throw new Error("candidate fixture override authority binding mismatch");
+  }
+  const expected = rebuildCurrentReleaseCandidateFixture({ projectedFixture, authority });
+  if (canonicalJson(expected) !== canonicalJson(candidateFixture)) {
+    throw new Error("candidate fixture override projection mismatch");
+  }
   return {
-    fixture,
-    candidateBuild: candidateBuildProvenance(buildSpec, sha256(buildSpecBytes), officialOdFareEvidence),
-    artifactFreshUntil,
+    fixture: candidateFixture,
+    binding: {
+      sourceFixtureSha256,
+      candidateFixtureSha256,
+      serverRouteCoverageAuthoritySha256: authority.authoritySha256,
+    },
   };
 }
 
@@ -747,7 +869,12 @@ export async function applyCandidateNetworkEdgeProjection(
   );
 }
 
-function candidateBuildProvenance(buildSpec, buildSpecSha256, officialOdFareEvidence) {
+function candidateBuildProvenance(
+  buildSpec,
+  buildSpecSha256,
+  officialOdFareEvidence,
+  overrideBinding = null,
+) {
   const normalizedHashes = Object.fromEntries(candidateBuildSpecHashFields.map((field) => [
     field,
     sha256HexString(buildSpec[field], `buildSpec.${field}`),
@@ -770,6 +897,20 @@ function candidateBuildProvenance(buildSpec, buildSpecSha256, officialOdFareEvid
     sourceInventorySha256: normalizedHashes.sourceInventorySha256,
     builderGitSha: requiredString(buildSpec.builderGitSha, "buildSpec.builderGitSha"),
     builderVersion: requiredString(buildSpec.builderVersion, "buildSpec.builderVersion"),
+    ...(overrideBinding ? {
+      sourceFixtureSha256: sha256HexString(
+        overrideBinding.sourceFixtureSha256,
+        "candidate fixture override sourceFixtureSha256",
+      ),
+      candidateFixtureSha256: sha256HexString(
+        overrideBinding.candidateFixtureSha256,
+        "candidate fixture override candidateFixtureSha256",
+      ),
+      serverRouteCoverageAuthoritySha256: sha256HexString(
+        overrideBinding.serverRouteCoverageAuthoritySha256,
+        "candidate fixture override serverRouteCoverageAuthoritySha256",
+      ),
+    } : {}),
     ...(buildSpec.itxTopologyEvidenceSha256
       ? { itxTopologyEvidenceSha256: sha256HexString(
           buildSpec.itxTopologyEvidenceSha256,

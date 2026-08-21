@@ -74,6 +74,7 @@ jobs:
             echo "EASYSUBWAY_DATAPACK_OUTPUT=${{ runner.temp }}/easysubway-datapacks"
             echo "EASYSUBWAY_DATAPACK_STAGE=${{ runner.temp }}/easysubway-datapack-stage"
             echo "EASYSUBWAY_DATAPACK_EXECUTION_EVIDENCE_DIR=${{ runner.temp }}/easysubway-datapack-execution-evidence"
+            echo "EASYSUBWAY_DATAPACK_CANDIDATE_FIXTURE=${{ runner.temp }}/easysubway-datapack-stage/candidate-fixture.json"
             echo "EASYSUBWAY_DATAPACK_ROUTE_COVERAGE_AUTHORITY=${{ runner.temp }}/easysubway-datapack-stage/server-route-coverage-authority.json"
             echo "EASYSUBWAY_DATAPACK_PUBLISH_PLAN=${{ runner.temp }}/easysubway-datapack-stage/publish-plan.json"
             echo "EASYSUBWAY_DATAPACK_IMPORTED_FIXTURE=${{ runner.temp }}/easysubway-production-source-fixture.json"
@@ -664,9 +665,11 @@ jobs:
             node tools/datapack/build-current-release-candidate-accessibility-input.mjs \
               --fixture "${build_fixture}" \
               --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}" \
-              --station-line-input tools/datapack/release/current-station-line-accessibility/station-line-accessibility.json \
-              --route-edge-input tools/datapack/release/current-route-edge-evaluation/route-edge-input.json \
-              --output "${EASYSUBWAY_DATAPACK_ROUTE_COVERAGE_AUTHORITY}"
+              --station-line-input tools/datapack/release/current-capital-accessibility-full/station-line-input.json \
+              --route-edge-input tools/datapack/release/current-capital-accessibility-full/route-edge-input.json \
+              --fixture-output "${EASYSUBWAY_DATAPACK_CANDIDATE_FIXTURE}" \
+              --authority-output "${EASYSUBWAY_DATAPACK_ROUTE_COVERAGE_AUTHORITY}"
+            build_fixture="${EASYSUBWAY_DATAPACK_CANDIDATE_FIXTURE}"
             remote_publish_ready=true
           elif [[ "${{ steps.remote-publish-env.outputs.enabled }}" != "true" ]]; then
             echo "release mode requires production publish env" >&2
@@ -721,6 +724,8 @@ jobs:
           if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" =~ ^(release-candidate|production-publish)$ ]]; then
             node tools/datapack/build-datapack.mjs \
               --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}" \
+              --candidate-fixture-override "${EASYSUBWAY_DATAPACK_CANDIDATE_FIXTURE}" \
+              --server-route-coverage-authority "${EASYSUBWAY_DATAPACK_ROUTE_COVERAGE_AUTHORITY}" \
               --output "${EASYSUBWAY_DATAPACK_OUTPUT}"
           else
             node tools/datapack/build-datapack.mjs \
@@ -783,8 +788,8 @@ jobs:
           node tools/datapack/stage-current-server-route-bundle-candidate.mjs \
             --datapack-root "${EASYSUBWAY_DATAPACK_OUTPUT}" \
             --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}" \
-            --station-line-input tools/datapack/release/current-station-line-accessibility/station-line-input.json \
-            --route-edge-input tools/datapack/release/current-route-edge-evaluation/route-edge-input.json \
+            --station-line-input tools/datapack/release/current-capital-accessibility-full/station-line-input.json \
+            --route-edge-input tools/datapack/release/current-capital-accessibility-full/route-edge-input.json \
             --repository-git-sha "${GITHUB_SHA}" \
             --key-id "${EASYSUBWAY_DATAPACK_SIGNING_KEY_ID}" \
             --output "${EASYSUBWAY_DATAPACK_STAGE}/server-route-bundle"
