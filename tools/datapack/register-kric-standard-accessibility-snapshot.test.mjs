@@ -20,7 +20,7 @@ const registryPaths = [
   "tools/datapack/release/source-snapshots.json",
   "tools/datapack/inputs/capital-pilot-production-source-input.json",
 ];
-const seoulSnapshotPath = "tools/datapack/sources/seoul-metro-accessibility-20260728.json";
+const seoulSnapshotPath = "tools/datapack/sources/seoul-metro-accessibility-20260813T213842955Z.json";
 const governancePolicyPath = "tools/datapack/source-governance-policy.json";
 const freshnessPolicyPath = "release/product-gates/datapack-freshness-sla.json";
 const roster = [
@@ -36,7 +36,7 @@ const operation = {
 
 function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 
-async function snapshotFor(kricRoster, now = new Date("2026-08-03T00:00:00.000Z")) {
+async function snapshotFor(kricRoster, now = new Date("2026-08-17T00:00:00.000Z")) {
   return (await collectKricAccessibilitySnapshots({
     roster: kricRoster,
     operations: [operation],
@@ -65,7 +65,7 @@ async function stageSnapshot(values, snapshot) {
   values.snapshotFileSha256 = sha256(bytes);
 }
 
-async function fixture(t, now = new Date("2026-08-03T00:00:00.000Z")) {
+async function fixture(t, now = new Date("2026-08-17T00:00:00.000Z")) {
   const directory = await mkdtemp(path.join(tmpdir(), "easysubway-kric-registration-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   await Promise.all(registryPaths.map(async (relativePath) => {
@@ -105,6 +105,9 @@ async function fixture(t, now = new Date("2026-08-03T00:00:00.000Z")) {
     basisAt: admittedSeoul.capturedAt,
     evaluationAt: now.toISOString(),
   });
+  seoulLedger.rawReceipt.capturedAt = admittedSeoul.capturedAt;
+  seoulLedger.rawReceipt.snapshotFileSha256 = sha256(admittedSeoulBytes);
+  seoulLedger.rawReceipt.storedAt = new Date(now.getTime() + 30_000).toISOString();
   await writeFile(path.join(directory, registryPaths[1]), `${JSON.stringify(snapshots, null, 2)}\n`);
   const snapshot = await snapshotFor(roster, now);
   const snapshotFilePath = path.join(directory, "staging", `${snapshot.snapshotId}.json`);
@@ -123,6 +126,7 @@ async function fixture(t, now = new Date("2026-08-03T00:00:00.000Z")) {
     governancePolicy,
     governancePolicySha256: sha256(governancePolicyBytes),
     freshnessPolicy,
+    now,
     rawRetentionExpiresAt: deriveRawRetentionExpiresAt({ policy: governancePolicy, sourceId: "kric-station-convenience-standard", retrievedAt: snapshot.capturedAt }),
     seoulSnapshot: JSON.parse(await readFile(path.join(directory, seoulSnapshotPath), "utf8")),
     before: await Promise.all(registryPaths.map((relativePath) => readFile(paths[relativePath]))),
@@ -153,7 +157,7 @@ async function register(values, overrides = {}) {
     seoulSnapshot: values.seoulSnapshot,
     registryPaths: values.paths,
     repositoryRoot: path.dirname(path.dirname(path.dirname(path.dirname(values.snapshotTargetPath)))),
-    now: new Date("2026-08-03T00:01:00.000Z"),
+    now: new Date(values.now.getTime() + 60_000),
     ...overrides,
   });
 }
@@ -586,8 +590,13 @@ test("fresh KRIC queries를 materialize해 세 registry의 동일 identity로 �
   assert.equal(ledger.contentSha256, values.snapshot.contentSha256);
   assert.equal(source.accessibilityAdmissionEvidence.rawSha256, values.snapshot.rawSha256);
   assert.equal(ledger.rawObjectUri, receipt(values.snapshot, values.snapshotFileSha256).rawObjectUri);
-  assert.equal(ledger.freshnessExpiresAt, "2026-11-01T00:00:00.000Z");
-  assert.equal(values.snapshot.freshUntil, "2026-08-04T00:00:00.000Z");
+  assert.equal(ledger.freshnessExpiresAt, deriveFreshnessExpiresAt({
+    policy: values.freshnessPolicy,
+    sourceClassId: "static_accessibility_facility",
+    basisAt: values.snapshot.capturedAt,
+    evaluationAt: values.snapshot.capturedAt,
+  }));
+  assert.equal(values.snapshot.freshUntil, new Date(values.now.getTime() + 86_400_000).toISOString());
   assert.equal(seoulLedger.freshnessExpiresAt, deriveFreshnessExpiresAt({
     policy: values.freshnessPolicy,
     sourceClassId: "static_accessibility_facility",
@@ -772,7 +781,7 @@ test("KRIC snapshot includes and persists the exact regional tuple roster", asyn
     [{ ...roster[0], stinCd: "999" }, roster[1]],
   ]) {
     const values = await fixture(t);
-    await stageSnapshot(values, await snapshotFor(invalidRoster));
+    await stageSnapshot(values, await snapshotFor(invalidRoster, values.now));
     await assert.rejects(register(values), /KRIC accessibility (roster|snapshot) coverage is invalid/);
     await assertUnchanged(values);
   }
@@ -789,7 +798,7 @@ test("KRIC snapshot includes and persists the exact regional tuple roster", asyn
     stinCd: "999",
     canonicalMappings: [{ artifactId: "bundled-capital", stationId: "station-extra", lineId: "line-extra" }],
   };
-  await stageSnapshot(regionalValues, await snapshotFor([...roster, unrelated]));
+  await stageSnapshot(regionalValues, await snapshotFor([...roster, unrelated], regionalValues.now));
   await register(regionalValues);
   const regionalInput = JSON.parse(await readFile(regionalValues.paths[registryPaths[2]], "utf8"));
   assert.deepEqual(regionalInput.kricStandardAccessibilityRoster, input.kricStandardAccessibilityRoster);
@@ -1027,7 +1036,7 @@ test("등록 오류와 lock release 오류가 함께 나면 원래 오류와 표
 
 test("receipt 시간은 저장 시각과 raw retention 순서를 엄격히 검증한다", async (t) => {
   for (const mutate of [
-    (value) => { value.storedAt = "2026-08-03T00:02:00.000Z"; },
+    (value) => { value.storedAt = new Date(Date.parse(value.capturedAt) + 120_000).toISOString(); },
     (value) => { value.rawRetentionExpiresAt = value.storedAt; },
     (value) => { value.rawRetentionExpiresAt = "2099-01-01T00:00:00.000Z"; },
   ]) {

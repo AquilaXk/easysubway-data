@@ -53,14 +53,28 @@ export function canonicalCurrentCapitalAccessibilityTransitionJson(value) {
   return `${canonicalJson(value)}\n`;
 }
 
+export async function readCurrentCapitalAccessibilityTransitionBoundary({ repositoryRoot }) {
+  const boundary = await inspectCurrentCapitalAccessibilityTransition({ repositoryRoot, allowMissing: false });
+  if (boundary.currentCandidateSourceSetSha256 === boundary.evidenceSourceSetSha256) {
+    throw new Error("full fan-in transition append required");
+  }
+  return boundary;
+}
+
 export async function assertCurrentCapitalAccessibilityBuildAllowed({ repositoryRoot }) {
+  const boundary = await inspectCurrentCapitalAccessibilityTransition({ repositoryRoot, allowMissing: true });
+  if (!boundary) return;
+  throw new Error("CURRENT_ACCESSIBILITY_TRANSITION_BLOCKED");
+}
+
+async function inspectCurrentCapitalAccessibilityTransition({ repositoryRoot, allowMissing }) {
   const root = path.resolve(repositoryRoot ?? fileURLToPath(new URL("../../", import.meta.url)));
   const transitionPath = path.join(root, FILES.transition);
   let transition;
   try {
     transition = await readStableRegular(transitionPath, "current accessibility transition");
   } catch (error) {
-    if (error?.code === "ENOENT") return;
+    if (error?.code === "ENOENT" && allowMissing) return null;
     throw error;
   }
   const [candidateBytes, previousBytes, facilityBytes] = await Promise.all([
@@ -115,7 +129,12 @@ export async function assertCurrentCapitalAccessibilityBuildAllowed({ repository
       throw new Error("transition candidate binding mismatch");
     }
   }
-  throw new Error("CURRENT_ACCESSIBILITY_TRANSITION_BLOCKED");
+  return {
+    currentCandidateBytesSha256: sha256(candidateBytes),
+    currentCandidateSourceSetSha256: requiredSha(candidate.sourceSnapshotSetHash, "current candidate source snapshot set"),
+    facilityAdmissionBytesSha256: sha256(facilityBytes),
+    evidenceSourceSetSha256: requiredSha(parsed.nextCandidate.sourceSnapshotSetHash, "transition evidence source snapshot set"),
+  };
 }
 
 function buildTransitionPayload({ nextCandidate, previous, previousBytes, facility, facilityBytes }) {

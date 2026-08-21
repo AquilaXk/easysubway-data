@@ -12,7 +12,7 @@ import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import { collectCurrentCapitalFacilityOperation, durableCreateBytes, main, parseArgs, prepareCurrentCapitalFacilityOperation, recoverPublishedCurrentCapitalFacilityOperation, syncWrite } from "./run-current-capital-facility-operation.mjs";
 
 const REPOSITORY_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
-const NOW = new Date("2026-08-15T12:00:00.000Z");
+const NOW = new Date("2026-08-17T12:00:00.000Z");
 const OCI_ENV = Object.freeze({ EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/redacted/n/axvym6vk8g7i/b/easysubway-datapacks/o" });
 process.env.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL = OCI_ENV.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL;
 const EXACT_MAIN = "e8c391ffd051fa2ccd7a275a7865aa65b94f6523";
@@ -34,7 +34,7 @@ function exactMainExec(file, args) {
 
 function nextSnapshot(plan) {
   const operation = KRIC_ACCESSIBILITY_OPERATIONS.find(({ sourceId }) => sourceId === "kric-station-convenience-standard");
-  const capturedAt = "2026-08-15T11:00:00.000Z";
+  const capturedAt = "2026-08-17T11:00:00.000Z";
   const queries = plan.stationLineProviderMappings.map((mapping) => ({
     stationId: mapping.stationId, lineId: mapping.lineId, railOprIsttCd: mapping.providerOperatorId,
     lnCd: mapping.providerLineId, stinCd: mapping.providerStationId, rows: [], rawResponseSha256: sha(Buffer.from(JSON.stringify({ header: { resultCode: "00" }, body: [] }))),
@@ -43,8 +43,8 @@ function nextSnapshot(plan) {
   }));
   return {
     schemaVersion: 1, artifactKind: "kric-accessibility-snapshot", sourceId: operation.sourceId,
-    snapshotId: "kric-station-convenience-standard-20260815T110000000Z", capturedAt, observedAt: capturedAt,
-    freshUntil: "2026-08-16T11:00:00.000Z", providerResultCode: "00", schemaStatus: "PASS",
+    snapshotId: "kric-station-convenience-standard-20260817T110000000Z", capturedAt, observedAt: capturedAt,
+    freshUntil: "2026-08-18T11:00:00.000Z", providerResultCode: "00", schemaStatus: "PASS",
     absenceEvidenceMode: "EXHAUSTIVE_LIST", credentialRedacted: true, queries, queryCount: queries.length, rowCount: 0,
     contentSha256: jsonSha(queries.map(({ rawResponseSha256: _ignored, ...query }) => query)),
     rawSha256: jsonSha(queries.map(({ stationId, lineId, railOprIsttCd, lnCd, stinCd, rawResponseSha256 }) => ({ stationId, lineId, railOprIsttCd, lnCd, stinCd, rawResponseSha256 }))),
@@ -93,12 +93,53 @@ function terminalObservationFor(plan) {
 
 async function writeJson(target, value) { await mkdir(path.dirname(target), { recursive: true }); await writeFile(target, `${JSON.stringify(value, null, 2)}\n`); }
 
-async function finalizeFixture(t) {
-  const root = await mkdtemp(path.join(tmpdir(), "facility-finalize-"));
+async function bindReleaseRequestToCandidate(root) {
+  const candidatePath = path.join(root, "tools/datapack/release/candidate-build-spec.json");
+  const requestPath = path.join(root, "tools/datapack/release/release-request.json");
+  const candidate = JSON.parse(await readFile(candidatePath, "utf8"));
+  candidate.sourceSnapshots = candidate.sourceSnapshots.filter(
+    ({ sourceId }) => sourceId !== "seoul-metro-transfer-distance-duration",
+  );
+  candidate.sourceSnapshotIds = candidate.sourceSnapshots.map(({ snapshotId }) => snapshotId);
+  const selectedSnapshotIds = new Set(candidate.sourceSnapshotIds);
+  const snapshots = JSON.parse(await readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8"));
+  candidate.sourceSnapshotSetHash = sha(JSON.stringify(
+    snapshots.filter(({ snapshotId }) => selectedSnapshotIds.has(snapshotId)),
+  ));
+  await writeJson(candidatePath, candidate);
+  const candidateBytes = await readFile(candidatePath);
+  const request = JSON.parse(await readFile(requestPath, "utf8"));
+  await writeJson(requestPath, {
+    ...request,
+    candidateId: candidate.candidateId,
+    buildSpecSha256: sha(candidateBytes),
+    sourceSnapshotSetHash: candidate.sourceSnapshotSetHash,
+    approvedLedgerHash: candidate.approvedAliasLedgerHash,
+  });
+}
+
+async function currentReleaseFixture(t) {
+  const root = await mkdtemp(path.join(tmpdir(), "facility-current-release-"));
   t.after(() => rm(root, { recursive: true, force: true }));
+  for (const relative of FIXTURE_INPUTS) {
+    const target = path.join(root, relative);
+    await mkdir(path.dirname(target), { recursive: true });
+    await cp(path.join(REPOSITORY_ROOT, relative), target);
+  }
+  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const snapshotPath = inventory.sources.find(
+    ({ id }) => id === "kric-station-convenience-standard",
+  ).accessibilityAdmissionEvidence.snapshotPath;
+  await mkdir(path.dirname(path.join(root, snapshotPath)), { recursive: true });
+  await cp(path.join(REPOSITORY_ROOT, snapshotPath), path.join(root, snapshotPath));
+  await bindReleaseRequestToCandidate(root);
+  return root;
+}
+
+async function finalizeFixture(t) {
+  const root = await currentReleaseFixture(t);
   const operationRoot = await mkdtemp(path.join(tmpdir(), "facility-finalize-operation-"));
   t.after(() => rm(operationRoot, { recursive: true, force: true }));
-  for (const relative of FIXTURE_INPUTS) { const target = path.join(root, relative); await mkdir(path.dirname(target), { recursive: true }); await cp(path.join(REPOSITORY_ROOT, relative), target); }
   const load = (relative) => readFile(path.join(root, relative));
   const [canonicalPackBytes, coverageTargetsBytes, providerCodeCatalogBytes, routeRostersBytes, sourceInventoryBytes] = await Promise.all([
     load("tools/datapack/release/capital-production-canonical-pack.json"), load("tools/datapack/nationwide-coverage-targets.json"),
@@ -108,13 +149,13 @@ async function finalizeFixture(t) {
   const snapshot = nextSnapshot(plan); const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot, null, 2)}\n`);
   const snapshotsPath = path.join(root, "tools/datapack/release/source-snapshots.json"); const inventoryPath = path.join(root, "tools/datapack/source-inventory.json");
   const snapshots = JSON.parse(await readFile(snapshotsPath, "utf8")); const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
-  const previous = snapshots.find(({ snapshotId }) => snapshotId === "kric-station-convenience-standard-20260813T200604805Z"); assert.ok(previous);
-  const next = { ...structuredClone(previous), snapshotId: snapshot.snapshotId, previousSnapshotId: previous.snapshotId, retrievedAt: snapshot.capturedAt, sourceUpdatedAt: snapshot.capturedAt, rowCount: 0, coverageCount: 213, rawSha256: "a".repeat(64), rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-station-convenience-standard/20260815/${"a".repeat(64)}.json`, redactedRequestFingerprint: snapshot.redactedRequestFingerprint, schemaFingerprint: snapshot.schemaFingerprint, contentSha256: snapshot.contentSha256, freshnessExpiresAt: "2026-11-13T11:00:00.000Z", rawRetentionExpiresAt: "2026-11-13T11:00:00.000Z" };
+  const previous = snapshots.find(({ snapshotId }) => snapshotId === "kric-station-convenience-standard-20260816T015619375Z"); assert.ok(previous);
+  const next = { ...structuredClone(previous), snapshotId: snapshot.snapshotId, previousSnapshotId: previous.snapshotId, retrievedAt: snapshot.capturedAt, sourceUpdatedAt: snapshot.capturedAt, rowCount: 0, coverageCount: 213, rawSha256: "a".repeat(64), rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-station-convenience-standard/20260817/${"a".repeat(64)}.json`, redactedRequestFingerprint: snapshot.redactedRequestFingerprint, schemaFingerprint: snapshot.schemaFingerprint, contentSha256: snapshot.contentSha256, freshnessExpiresAt: "2026-11-15T11:00:00.000Z", rawRetentionExpiresAt: "2026-11-15T11:00:00.000Z" };
   const governanceBytes = await load("tools/datapack/source-governance-policy.json"); const governance = JSON.parse(governanceBytes);
   next.governancePolicyVersion = governance.policyVersion; next.governancePolicySha256 = sha(governanceBytes);
-  next.rawReceipt = { ...next.rawReceipt, snapshotId: next.snapshotId, snapshotRawSha256: snapshot.rawSha256, rawObjectSha256: next.rawSha256, capturedAt: snapshot.capturedAt, storedAt: "2026-08-15T11:00:30.000Z", byteSize: 213, snapshotFileSha256: sha(snapshotBytes) };
+  next.rawReceipt = { ...next.rawReceipt, snapshotId: next.snapshotId, snapshotRawSha256: snapshot.rawSha256, rawObjectSha256: next.rawSha256, capturedAt: snapshot.capturedAt, storedAt: "2026-08-17T11:00:30.000Z", byteSize: 213, snapshotFileSha256: sha(snapshotBytes) };
   next.diffSummary = buildSnapshotDiff(previous, next); snapshots.push(next);
-  const source = inventory.sources.find(({ id }) => id === next.sourceId); next.adminReviewRecordHash = source.admissionEvidence.adminReviewRecordHash; source.retrievedAt = "2026-08-15"; source.observedDataUpdatedAt = "2026-08-15";
+  const source = inventory.sources.find(({ id }) => id === next.sourceId); next.adminReviewRecordHash = source.admissionEvidence.adminReviewRecordHash; source.retrievedAt = "2026-08-17"; source.observedDataUpdatedAt = "2026-08-17";
   source.accessibilityAdmissionEvidence = { ...source.accessibilityAdmissionEvidence, snapshotId: next.snapshotId, capturedAt: snapshot.capturedAt, observedAt: snapshot.capturedAt, freshUntil: snapshot.freshUntil, rawSha256: snapshot.rawSha256, contentSha256: snapshot.contentSha256, schemaFingerprint: snapshot.schemaFingerprint, snapshotPath: `tools/datapack/sources/${next.snapshotId}.json`, snapshotFileSha256: sha(snapshotBytes), absenceEvidenceMode: "EXHAUSTIVE_LIST", licenseEvidenceHash: source.admissionEvidence.licenseEvidenceHash };
   await writeJson(snapshotsPath, snapshots); await writeJson(inventoryPath, inventory);
   const observationRoot = path.join(operationRoot, "observation");
@@ -122,7 +163,7 @@ async function finalizeFixture(t) {
   await mkdir(operationRoot, { recursive: true }); await writeFile(path.join(operationRoot, "plan.json"), planBytes);
   await writeKricStandardAccessibilityObservation({ outputRoot: observationRoot, observation: observationFor(snapshot) });
   const [manifestBytes, observedSnapshotBytes, rawBytes] = await Promise.all([readFile(path.join(observationRoot, "observation.json"), "utf8"), readFile(path.join(observationRoot, `${snapshot.snapshotId}.json`)), readFile(path.join(observationRoot, `${snapshot.snapshotId}.raw.json`))]);
-  next.rawSha256 = sha(rawBytes); next.rawObjectUri = `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/${next.sourceId}/20260815/${next.rawSha256}.json`;
+  next.rawSha256 = sha(rawBytes); next.rawObjectUri = `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/${next.sourceId}/20260817/${next.rawSha256}.json`;
   next.rawReceipt = { ...next.rawReceipt, rawObjectSha256: next.rawSha256, byteSize: rawBytes.length, snapshotFileSha256: sha(snapshotBytes) };
   next.diffSummary = buildSnapshotDiff(previous, next); await writeJson(snapshotsPath, snapshots);
   await writeJson(path.join(operationRoot, "journal.json"), { schemaVersion: 1, artifactKind: "current-capital-facility-operation-journal", phase: "FINALIZE_STARTED", expectedMainSha: EXACT_MAIN, planSha256: sha(planBytes), completedObservation: { snapshotId: snapshot.snapshotId, manifestSha256: sha(Buffer.from(manifestBytes)), snapshotSha256: sha(observedSnapshotBytes), rawSha256: sha(rawBytes) }, completedStages: {} });
@@ -139,11 +180,11 @@ function receipt(fixture) {
     snapshotRawSha256: fixture.snapshot.rawSha256,
     capturedAt: fixture.snapshot.capturedAt,
     snapshotFileSha256: sha(fixture.snapshotBytes),
-    rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/${fixture.snapshot.sourceId}/20260815/${rawObjectSha256}.json`,
+    rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/${fixture.snapshot.sourceId}/20260817/${rawObjectSha256}.json`,
     rawObjectSha256,
     byteSize: fixture.rawBytes.length,
-    storedAt: "2026-08-15T11:00:30.000Z",
-    rawRetentionExpiresAt: "2026-11-13T11:00:00.000Z",
+    storedAt: "2026-08-17T11:00:30.000Z",
+    rawRetentionExpiresAt: "2026-11-15T11:00:00.000Z",
   };
 }
 
@@ -169,10 +210,10 @@ async function admissionFor({ root, operationRoot, snapshot }) {
   return buildCurrentCapitalFacilitySourceAdmission({ observedAt: NOW.toISOString(), planBytes, canonicalPackBytes, snapshotBytes, candidateBuildSpec: JSON.parse(candidateBytes), sourceInventoryBytes: inventoryBytes, sourceSnapshots: JSON.parse(snapshotsBytes), governancePolicy: JSON.parse(governanceBytes), governancePolicyBytes: governanceBytes, freshnessPolicy: JSON.parse(freshnessBytes) });
 }
 
-test("collect records failure after COLLECTION_STARTED and never resumes a provider call", async () => {
+test("collect records failure after COLLECTION_STARTED and never resumes a provider call", async (t) => {
   const temporaryRoot = await mkdtemp(path.join(tmpdir(), "facility-operation-"));
   const root = path.join(temporaryRoot, "operation");
-  const repositoryRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
+  const repositoryRoot = await currentReleaseFixture(t);
   const sha = EXACT_MAIN;
   await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: root, expectedMainSha: sha, execFileImpl: exactMainExec });
   let calls = 0;
@@ -183,23 +224,23 @@ test("collect records failure after COLLECTION_STARTED and never resumes a provi
   assert.equal(calls, 1);
 });
 
-test("collect journals a complete exact terminal observation as COLLECTED without replay", async () => {
+test("collect journals a complete exact terminal observation as COLLECTED without replay", async (t) => {
   const temporaryRoot = await mkdtemp(path.join(tmpdir(), "facility-operation-"));
   const operationRoot = path.join(temporaryRoot, "operation");
-  const repositoryRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
+  const repositoryRoot = await currentReleaseFixture(t);
   await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec });
   const plan = JSON.parse(await readFile(path.join(operationRoot, "plan.json"), "utf8"));
   const result = await collectCurrentCapitalFacilityOperation({
     repositoryRoot, operationRoot, serviceKey: "test", env: OCI_ENV, execFileImpl: async (file, args) => file === "git" ? exactMainExec(file, args) : ({ stdout: args[0] === "sts" ? "123456789012\n" : "" }),
     collectImpl: async () => terminalObservationFor(plan),
   });
-  assert.deepEqual(result, { snapshotId: "kric-station-convenience-standard-20260815T110000000Z", requestCount: 213, status: "COLLECTED" });
+  assert.deepEqual(result, { snapshotId: "kric-station-convenience-standard-20260817T110000000Z", requestCount: 213, status: "COLLECTED" });
   assert.equal(JSON.parse(await readFile(path.join(operationRoot, "journal.json"), "utf8")).phase, "COLLECTED");
 });
 
-test("missing OCI PAR preflight stops before COLLECTION_STARTED and provider call 0", async () => {
+test("missing OCI PAR preflight stops before COLLECTION_STARTED and provider call 0", async (t) => {
   const temporaryRoot = await mkdtemp(path.join(tmpdir(), "facility-operation-")); const root = path.join(temporaryRoot, "operation");
-  const repositoryRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../.."); const sha = EXACT_MAIN;
+  const repositoryRoot = await currentReleaseFixture(t); const sha = EXACT_MAIN;
   await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: root, expectedMainSha: sha, execFileImpl: exactMainExec });
   let calls = 0;
   await assert.rejects(collectCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: root, serviceKey: "test", env: {}, execFileImpl: exactMainExec, collectImpl: async () => { calls += 1; } }), /EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL/);
@@ -209,14 +250,15 @@ test("missing OCI PAR preflight stops before COLLECTION_STARTED and provider cal
 test("stale prepared main stops before provider call", async (t) => {
   const temporaryRoot = await mkdtemp(path.join(tmpdir(), "facility-operation-")); const operationRoot = path.join(temporaryRoot, "operation");
   t.after(() => rm(temporaryRoot, { recursive: true, force: true }));
-  await prepareCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec });
+  const repositoryRoot = await currentReleaseFixture(t);
+  await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec });
   const journalPath = path.join(operationRoot, "journal.json"); const journal = JSON.parse(await readFile(journalPath, "utf8")); journal.expectedMainSha = "0".repeat(40); await writeJson(journalPath, journal);
   let unexpectedCalls = 0; let kricCalls = 0;
-  await assert.rejects(collectCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot, serviceKey: "test", execFileImpl: async (file, args) => {
+  await assert.rejects(collectCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot, serviceKey: "test", execFileImpl: async (file, args) => {
     if (file === "git") return exactMainExec(file, args); unexpectedCalls += 1; return { stdout: "" };
   }, collectImpl: async () => { kricCalls += 1; } }), /exact clean main preflight/);
   journal.expectedMainSha = EXACT_MAIN; await writeJson(journalPath, journal); await writeFile(path.join(operationRoot, "plan.json"), "{}\n");
-  await assert.rejects(collectCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot, serviceKey: "test", execFileImpl: async (file, args) => {
+  await assert.rejects(collectCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot, serviceKey: "test", execFileImpl: async (file, args) => {
     if (file === "git") return exactMainExec(file, args); unexpectedCalls += 1; return { stdout: "" };
   }, collectImpl: async () => { kricCalls += 1; } }), /operation plan identity mismatch/);
   assert.equal(unexpectedCalls, 0); assert.equal(kricCalls, 0);
@@ -224,8 +266,9 @@ test("stale prepared main stops before provider call", async (t) => {
 
 test("missing KRIC_SERVICE_KEY leaves PREPARED before any claim", async (t) => {
   const temporaryRoot = await mkdtemp(path.join(tmpdir(), "facility-operation-")); const operationRoot = path.join(temporaryRoot, "operation"); t.after(() => rm(temporaryRoot, { recursive: true, force: true }));
-  await prepareCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec });
-  await assert.rejects(collectCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot, execFileImpl: exactMainExec }), /KRIC_SERVICE_KEY/);
+  const repositoryRoot = await currentReleaseFixture(t);
+  await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec });
+  await assert.rejects(collectCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot, execFileImpl: exactMainExec }), /KRIC_SERVICE_KEY/);
   assert.equal(JSON.parse(await readFile(path.join(operationRoot, "journal.json"), "utf8")).phase, "PREPARED");
 });
 
@@ -234,6 +277,7 @@ test("expired or license-drift governance stops before provider call", async (t)
   t.after(() => Promise.all([rm(repositoryRoot, { recursive: true, force: true }), rm(operationRoot, { recursive: true, force: true })]));
   await rm(operationRoot, { recursive: true, force: true });
   for (const relative of FIXTURE_INPUTS) { const target = path.join(repositoryRoot, relative); await mkdir(path.dirname(target), { recursive: true }); await cp(path.join(REPOSITORY_ROOT, relative), target); }
+  await bindReleaseRequestToCandidate(repositoryRoot);
   const inventory = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/source-inventory.json"), "utf8")); const snapshotRelative = inventory.sources.find(({ id }) => id === "kric-station-convenience-standard").accessibilityAdmissionEvidence.snapshotPath;
   await mkdir(path.dirname(path.join(repositoryRoot, snapshotRelative)), { recursive: true }); await cp(path.join(REPOSITORY_ROOT, snapshotRelative), path.join(repositoryRoot, snapshotRelative));
   await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec });
@@ -253,6 +297,7 @@ test("CLI parser keeps collect and finalize one-shot boundaries explicit", () =>
 
 test("published observation recovery adopts exact bytes into a clean prepared root without replay", async (t) => {
   const { source, sourceReceipt, receiptBytes: sourceReceiptBytes, journal: sourceJournal, journalPath: sourceJournalPath } = await publishedRecoveryFixture(t);
+  const repositoryRoot = await currentReleaseFixture(t);
   const sourcePlanPath = path.join(source.operationRoot, "plan.json");
   const sourcePlanBytes = await readFile(sourcePlanPath);
   const sourceSnapshotPath = path.join(source.operationRoot, "observation", `${source.snapshot.snapshotId}.json`);
@@ -261,9 +306,9 @@ test("published observation recovery adopts exact bytes into a clean prepared ro
   const targetParent = await mkdtemp(path.join(tmpdir(), "facility-recovery-target-"));
   t.after(() => rm(targetParent, { recursive: true, force: true }));
   const targetRoot = path.join(targetParent, "operation");
-  await prepareCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot: targetRoot, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
+  await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: targetRoot, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
   const result = await recoverPublishedCurrentCapitalFacilityOperation({
-    repositoryRoot: REPOSITORY_ROOT,
+    repositoryRoot,
     operationRoot: targetRoot,
     sourceOperationRoot: source.operationRoot,
     execFileImpl: exactMainExec,
@@ -282,7 +327,7 @@ test("published observation recovery adopts exact bytes into a clean prepared ro
 
   async function preparedRoot(name) {
     const root = path.join(targetParent, name);
-    await prepareCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot: root, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
+    await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: root, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
     return root;
   }
   async function assertPreparedWithoutRecovery(root) {
@@ -295,25 +340,25 @@ test("published observation recovery adopts exact bytes into a clean prepared ro
 
   const rejectedRoot = await preparedRoot("rejected-receipt");
   await writeJson(path.join(source.operationRoot, "receipt.json"), { ...sourceReceipt, snapshotId: "wrong" });
-  await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot: rejectedRoot, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW }), /published recovery receipt identity mismatch/u);
+  await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: rejectedRoot, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW }), /published recovery receipt identity mismatch/u);
   await assertPreparedWithoutRecovery(rejectedRoot);
   await writeFile(path.join(source.operationRoot, "receipt.json"), sourceReceiptBytes);
 
   const wrongPhaseRoot = await preparedRoot("rejected-phase");
   await writeJson(sourceJournalPath, { ...sourceJournal, phase: "FINALIZED" });
-  await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot: wrongPhaseRoot, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW }), /source must be FINALIZE_STARTED/u);
+  await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: wrongPhaseRoot, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW }), /source must be FINALIZE_STARTED/u);
   await assertPreparedWithoutRecovery(wrongPhaseRoot);
   await writeJson(sourceJournalPath, sourceJournal);
 
   const planDriftRoot = await preparedRoot("rejected-plan");
   await writeFile(sourcePlanPath, Buffer.concat([sourcePlanBytes, Buffer.from("\n")]));
-  await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot: planDriftRoot, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW }), /operation plan identity mismatch/u);
+  await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: planDriftRoot, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW }), /operation plan identity mismatch/u);
   await assertPreparedWithoutRecovery(planDriftRoot);
   await writeFile(sourcePlanPath, sourcePlanBytes);
 
   const observationDriftRoot = await preparedRoot("rejected-observation");
   await writeFile(sourceSnapshotPath, Buffer.concat([sourceSnapshotBytes, Buffer.from("\n")]));
-  await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot: observationDriftRoot, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW }), /stored observation identity mismatch/u);
+  await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: observationDriftRoot, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW }), /stored observation identity mismatch/u);
   await assertPreparedWithoutRecovery(observationDriftRoot);
   await writeFile(sourceSnapshotPath, sourceSnapshotBytes);
 
@@ -322,20 +367,21 @@ test("published observation recovery adopts exact bytes into a clean prepared ro
     if (file === "git" && args[0] === "merge-base") throw new Error("not an ancestor");
     return exactMainExec(file, args);
   };
-  await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot: nonAncestorRoot, sourceOperationRoot: source.operationRoot, execFileImpl: nonAncestorExec, now: NOW }), /source main is not an ancestor/u);
+  await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: nonAncestorRoot, sourceOperationRoot: source.operationRoot, execFileImpl: nonAncestorExec, now: NOW }), /source main is not an ancestor/u);
   await assertPreparedWithoutRecovery(nonAncestorRoot);
 
-  await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot: targetRoot, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW }), /target must be PREPARED/u);
-  await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot: source.operationRoot, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW }), /roots must differ/u);
+  await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: targetRoot, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW }), /target must be PREPARED/u);
+  await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: source.operationRoot, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW }), /roots must differ/u);
 });
 
 test("published recovery runs current release preflight and rejects an expired observation before target mutation", async (t) => {
   const { source } = await publishedRecoveryFixture(t);
+  const repositoryRoot = await currentReleaseFixture(t);
   const targetParent = await mkdtemp(path.join(tmpdir(), "facility-recovery-preflight-"));
   t.after(() => rm(targetParent, { recursive: true, force: true }));
   const prepareTarget = async (name) => {
     const target = path.join(targetParent, name);
-    await prepareCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot: target, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
+    await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: target, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
     return target;
   };
   const assertUnchanged = async (target) => {
@@ -347,7 +393,7 @@ test("published recovery runs current release preflight and rejects an expired o
   const invalidRelease = await prepareTarget("invalid-release");
   const invalidReleaseCalls = { preflight: 0, copy: 0, journal: 0 };
   await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({
-    repositoryRoot: REPOSITORY_ROOT,
+    repositoryRoot,
     operationRoot: invalidRelease,
     sourceOperationRoot: source.operationRoot,
     execFileImpl: exactMainExec,
@@ -361,7 +407,7 @@ test("published recovery runs current release preflight and rejects an expired o
 
   const expiredObservation = await prepareTarget("expired-observation");
   await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({
-    repositoryRoot: REPOSITORY_ROOT,
+    repositoryRoot,
     operationRoot: expiredObservation,
     sourceOperationRoot: source.operationRoot,
     execFileImpl: exactMainExec,
@@ -372,15 +418,16 @@ test("published recovery runs current release preflight and rejects an expired o
 
 test("published recovery serializes collection and resumes its own staged durable create", async (t) => {
   const { source } = await publishedRecoveryFixture(t);
+  const repositoryRoot = await currentReleaseFixture(t);
   const targetParent = await mkdtemp(path.join(tmpdir(), "facility-recovery-claim-"));
   t.after(() => rm(targetParent, { recursive: true, force: true }));
 
   const claimedTarget = path.join(targetParent, "claimed");
-  await prepareCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot: claimedTarget, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
+  await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: claimedTarget, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
   await mkdir(path.join(claimedTarget, ".collection-claim"), { mode: 0o700 });
   const blockedCalls = { copy: 0, journal: 0 };
   await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({
-    repositoryRoot: REPOSITORY_ROOT,
+    repositoryRoot,
     operationRoot: claimedTarget,
     sourceOperationRoot: source.operationRoot,
     execFileImpl: exactMainExec,
@@ -393,11 +440,11 @@ test("published recovery serializes collection and resumes its own staged durabl
   await assert.rejects(readFile(path.join(claimedTarget, "receipt.json")), /ENOENT/u);
 
   const resumedTarget = path.join(targetParent, "staged-resume");
-  await prepareCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot: resumedTarget, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
+  await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: resumedTarget, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
   const stagingRoot = path.join(resumedTarget, ".published-recovery-create");
   let interrupted = false;
   await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({
-    repositoryRoot: REPOSITORY_ROOT,
+    repositoryRoot,
     operationRoot: resumedTarget,
     sourceOperationRoot: source.operationRoot,
     execFileImpl: exactMainExec,
@@ -418,16 +465,17 @@ test("published recovery serializes collection and resumes its own staged durabl
   }), /injected staged unlink interruption/u);
   assert.equal(JSON.parse(await readFile(path.join(resumedTarget, "journal.json"), "utf8")).phase, "PREPARED");
   assert.equal((await readdir(stagingRoot)).length, 1);
-  assert.equal((await recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot: resumedTarget, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW })).status, "RECOVERED_PUBLISHED");
+  assert.equal((await recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: resumedTarget, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW })).status, "RECOVERED_PUBLISHED");
   await assert.rejects(readdir(stagingRoot), /ENOENT/u);
 });
 
 test("published recovery rejects escaped observation inventory and a resealed noncanonical plan before target mutation", async (t) => {
   const escaped = await publishedRecoveryFixture(t);
+  const escapedRepositoryRoot = await currentReleaseFixture(t);
   const escapedParent = await mkdtemp(path.join(tmpdir(), "facility-recovery-escaped-"));
   t.after(() => rm(escapedParent, { recursive: true, force: true }));
   const escapedTarget = path.join(escapedParent, "operation");
-  await prepareCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot: escapedTarget, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
+  await prepareCurrentCapitalFacilityOperation({ repositoryRoot: escapedRepositoryRoot, operationRoot: escapedTarget, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
   const manifestPath = path.join(escaped.source.operationRoot, "observation", "observation.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
   const escapedFile = `../${escaped.source.snapshot.snapshotId}.json`;
@@ -437,13 +485,14 @@ test("published recovery rejects escaped observation inventory and a resealed no
   await writeFile(manifestPath, manifestBytes);
   escaped.journal.completedObservation.manifestSha256 = sha(manifestBytes);
   await writeJson(escaped.journalPath, escaped.journal);
-  await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot: escapedTarget, sourceOperationRoot: escaped.source.operationRoot, execFileImpl: exactMainExec, now: NOW }), /observation inventory/u);
+  await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot: escapedRepositoryRoot, operationRoot: escapedTarget, sourceOperationRoot: escaped.source.operationRoot, execFileImpl: exactMainExec, now: NOW }), /observation inventory/u);
   assert.equal(JSON.parse(await readFile(path.join(escapedTarget, "journal.json"), "utf8")).phase, "PREPARED");
   await assert.rejects(readFile(path.join(escapedTarget, escaped.source.snapshot.snapshotId)), /ENOENT/u);
 
   const resealed = await publishedRecoveryFixture(t);
+  const resealedRepositoryRoot = await currentReleaseFixture(t);
   const resealedTarget = path.join(escapedParent, "resealed");
-  await prepareCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot: resealedTarget, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
+  await prepareCurrentCapitalFacilityOperation({ repositoryRoot: resealedRepositoryRoot, operationRoot: resealedTarget, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
   const driftBytes = Buffer.from("{}\n");
   for (const [root, journalPath] of [[resealed.source.operationRoot, resealed.journalPath], [resealedTarget, path.join(resealedTarget, "journal.json")]]) {
     await writeFile(path.join(root, "plan.json"), driftBytes);
@@ -451,35 +500,36 @@ test("published recovery rejects escaped observation inventory and a resealed no
     journal.planSha256 = sha(driftBytes);
     await writeJson(journalPath, journal);
   }
-  await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot: resealedTarget, sourceOperationRoot: resealed.source.operationRoot, execFileImpl: exactMainExec, now: NOW }), /canonical plan identity mismatch/u);
+  await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot: resealedRepositoryRoot, operationRoot: resealedTarget, sourceOperationRoot: resealed.source.operationRoot, execFileImpl: exactMainExec, now: NOW }), /canonical plan identity mismatch/u);
   assert.equal(JSON.parse(await readFile(path.join(resealedTarget, "journal.json"), "utf8")).phase, "PREPARED");
   await assert.rejects(readFile(path.join(resealedTarget, "receipt.json")), /ENOENT/u);
 });
 
 test("published recovery reconciles every exact partial copy and a failed journal transition without replay", async (t) => {
   const { source } = await publishedRecoveryFixture(t);
+  const repositoryRoot = await currentReleaseFixture(t);
   const targetParent = await mkdtemp(path.join(tmpdir(), "facility-recovery-resume-"));
   t.after(() => rm(targetParent, { recursive: true, force: true }));
   for (let failAt = 1; failAt <= 4; failAt += 1) {
     const target = path.join(targetParent, `copy-${failAt}`);
-    await prepareCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot: target, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
+    await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: target, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
     let calls = 0;
     await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({
-      repositoryRoot: REPOSITORY_ROOT, operationRoot: target, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW,
+      repositoryRoot, operationRoot: target, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW,
       durableCreateImpl: async (target, bytes, options) => { calls += 1; if (calls === failAt) throw new Error("injected recovery copy failure"); await durableCreateBytes(target, bytes, options); },
     }), /injected recovery copy failure/u);
     assert.equal(JSON.parse(await readFile(path.join(target, "journal.json"), "utf8")).phase, "PREPARED");
-    assert.equal((await recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot: target, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW })).status, "RECOVERED_PUBLISHED");
+    assert.equal((await recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: target, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW })).status, "RECOVERED_PUBLISHED");
   }
 
   const journalTarget = path.join(targetParent, "journal");
-  await prepareCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot: journalTarget, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
+  await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: journalTarget, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
   await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({
-    repositoryRoot: REPOSITORY_ROOT, operationRoot: journalTarget, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW,
+    repositoryRoot, operationRoot: journalTarget, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW,
     journalWriteImpl: async () => { throw new Error("injected recovery journal failure"); },
   }), /injected recovery journal failure/u);
   assert.equal(JSON.parse(await readFile(path.join(journalTarget, "journal.json"), "utf8")).phase, "PREPARED");
-  assert.equal((await recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot: REPOSITORY_ROOT, operationRoot: journalTarget, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW })).status, "RECOVERED_PUBLISHED");
+  assert.equal((await recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: journalTarget, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW })).status, "RECOVERED_PUBLISHED");
 });
 
 test("journal replace failure preserves the prior durable journal", async (t) => {
@@ -514,7 +564,7 @@ test("finalize crash-resume reconciles exact effects without replay and admits t
     }
     const calls = { publish: 0, register: 0, rebind: 0 };
     await main(["--phase", "finalize", "--operation-root", fixture.operationRoot], {
-      repositoryRoot: fixture.root, now: stage === "admitted" ? new Date("2026-08-15T13:00:00.000Z") : NOW, env: {}, execFileImpl: exactMainExec,
+      repositoryRoot: fixture.root, now: stage === "admitted" ? new Date("2026-08-17T13:00:00.000Z") : NOW, env: {}, execFileImpl: exactMainExec,
       publishImpl: async () => { calls.publish += 1; throw new Error("published receipt must reconcile before replay"); },
       registerImpl: async ({ snapshotTargetPath }) => { calls.register += 1; await mkdir(path.dirname(snapshotTargetPath), { recursive: true }); await writeFile(snapshotTargetPath, fixture.snapshotBytes); },
       rebindImpl: async ({ repositoryRoot, now }) => { calls.rebind += 1; return rebindCurrentCandidateSourceSnapshots({ repositoryRoot, now }); },
@@ -548,7 +598,7 @@ test("finalize rejects a legacy journal before recovery effects", async (t) => {
 
 test("finalize rejects a legacy receipt URI before recovery effects", async (t) => {
   const fixture = await finalizeFixture(t); await writeJson(path.join(fixture.operationRoot, "receipt.json"), {
-    ...receipt(fixture), rawObjectUri: `s3://easysubway-datapacks/source-raw/${fixture.snapshot.sourceId}/20260815/${sha(fixture.rawBytes)}.json`,
+    ...receipt(fixture), rawObjectUri: `s3://easysubway-datapacks/source-raw/${fixture.snapshot.sourceId}/20260817/${sha(fixture.rawBytes)}.json`,
   });
   let published = 0;
   await assert.rejects(main(["--phase", "finalize", "--operation-root", fixture.operationRoot], {

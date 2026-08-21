@@ -11,6 +11,7 @@ import {
   buildCurrentCapitalAccessibilityTransition,
   canonicalCurrentCapitalAccessibilityTransitionJson,
   main,
+  readCurrentCapitalAccessibilityTransitionBoundary,
 } from "./current-capital-accessibility-transition.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
@@ -88,6 +89,15 @@ test("exact TRANSFER-last append는 six-source marker를 인증한 뒤에도 bui
   await writeFile(candidatePath, `${JSON.stringify(candidate, null, 2)}\n`);
   await writeFile(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
   await writeFile(path.join(fixture.root, INVENTORY_PATH), sourceInventoryBytes);
+  assert.deepEqual(
+    await readCurrentCapitalAccessibilityTransitionBoundary({ repositoryRoot: fixture.root }),
+    {
+      currentCandidateBytesSha256: sha256(Buffer.from(`${JSON.stringify(candidate, null, 2)}\n`)),
+      currentCandidateSourceSetSha256: candidate.sourceSnapshotSetHash,
+      evidenceSourceSetSha256: fixture.baseSourceSet,
+      facilityAdmissionBytesSha256: sha256(fixture.input.facilityBytes),
+    },
+  );
   await assert.rejects(
     () => assertCurrentCapitalAccessibilityBuildAllowed({ repositoryRoot: fixture.root }),
     /CURRENT_ACCESSIBILITY_TRANSITION_BLOCKED/,

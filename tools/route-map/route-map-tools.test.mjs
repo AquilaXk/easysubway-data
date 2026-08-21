@@ -2186,18 +2186,14 @@ test("MOLIT nationwide fixture builder emits route map source hashes", async () 
     );
 
     const fixture = JSON.parse(await readFile(fixturePath, "utf8"));
-    const pack = fixture.packs[0];
+    const pack = fixture.packs.find(({ routeMapPositions }) =>
+      routeMapPositions.some(({ sourceId }) => sourceId === "seoulmetro-cyberstation"));
+    assert.ok(pack, "Seoul route-map source pack must exist");
     const routePosition = pack.routeMapPositions.find(
       (row) => row.sourceId === "seoulmetro-cyberstation",
     );
     const routeStation = pack.stations.find(
       (row) => row.id === routePosition.stationId,
-    );
-    const svgRoutePosition = pack.routeMapPositions.find(
-      (row) => row.sourceId === "molit-rail-station-svg-route",
-    );
-    const svgRouteStation = pack.stations.find(
-      (row) => row.id === svgRoutePosition.stationId,
     );
     const interpolatedRoutePosition = pack.routeMapPositions.find(
       (row) => row.sourceId === "molit-urban-rail-full-route",
@@ -2208,6 +2204,9 @@ test("MOLIT nationwide fixture builder emits route map source hashes", async () 
     const source = pack.sourceInventory.find(
       (row) => row.id === "seoulmetro-cyberstation",
     );
+    const svgSource = pack.sourceInventory.find(
+      (row) => row.id === "molit-rail-station-svg-route",
+    );
     const expectedSha = createHash("sha256")
       .update(
         await readFile(
@@ -2215,16 +2214,23 @@ test("MOLIT nationwide fixture builder emits route map source hashes", async () 
         ),
       )
       .digest("hex");
+    const expectedSvgSha = createHash("sha256")
+      .update(
+        await readFile(
+          path.join(root, "tools/datapack/sources/molit-rail-station-svg-route-20250811.csv"),
+        ),
+      )
+      .digest("hex");
 
     assert.match(routePosition.sourceSha256, /^[a-f0-9]{64}$/);
     assert.equal(routePosition.sourceSha256, expectedSha);
     assert.equal(routePosition.sourceLabel, routeStation.nameKo);
-    assert.equal(svgRoutePosition.sourceLabel, svgRouteStation.nameKo);
     assert.equal(
       interpolatedRoutePosition.sourceLabel,
       interpolatedRouteStation.nameKo,
     );
     assert.equal(source.sourceSha256, expectedSha);
+    assert.equal(svgSource.sourceSha256, expectedSvgSha);
 
     const { stdout } = await execFileAsync(
       process.execPath,
