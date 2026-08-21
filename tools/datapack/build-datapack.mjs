@@ -42,6 +42,7 @@ import {
   canonicalCurrentReleaseCandidateFixtureJson,
   rebuildCurrentReleaseCandidateFixture,
 } from "./build-current-release-candidate-accessibility-input.mjs";
+import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const canonicalSqliteHeaderVersion = 3_053_000;
@@ -62,6 +63,8 @@ const productionMinimumTableRowNames = [
   "station_facility_evidence",
 ];
 const candidateBuildSpecArtifactKind = "datapack-candidate-build-spec";
+const currentFullCapitalStationLineInput =
+  "tools/datapack/release/current-capital-accessibility-full/station-line-input.json";
 const candidateBuildSpecHashFields = [
   "sourceSnapshotSetHash",
   "approvedAliasLedgerHash",
@@ -527,15 +530,20 @@ async function loadBuildInput(
   const sourceFixture = JSON.parse(sourceFixtureBytes);
   rejectTestOnlyBuildInput(sourceFixture);
   const replaysAccessibilityAuthority = candidateFixtureOverrideArg != null;
-  const { officialOdFareEvidence, artifactFreshUntil } = await validateCandidateBuildSpec(
+  const validationNow = replaysAccessibilityAuthority
+    ? candidateReplayNow(buildSpec)
+    : candidateBuildNow();
+  const candidateValidation = await validateCandidateBuildSpec(
     buildSpec,
     sourceFixture,
     officialOdFareAdmissions,
     officialOdFareAdmissionBytes,
     repositoryRoot,
-    replaysAccessibilityAuthority ? candidateReplayNow(buildSpec) : candidateBuildNow(),
+    validationNow,
     { includePackAccessibilityFreshness: !replaysAccessibilityAuthority },
   );
+  const { officialOdFareEvidence } = candidateValidation;
+  let { artifactFreshUntil } = candidateValidation;
   let fixture = sourceFixture;
   let overrideBinding = null;
   if (candidateFixtureOverrideArg != null) {
@@ -564,6 +572,20 @@ async function loadBuildInput(
       validated.fixture,
     );
     overrideBinding = validated.binding;
+    const stationLineInputBytes = await readFile(await resolveBuildInputPath(
+      currentFullCapitalStationLineInput,
+      "current full-capital station-line input",
+      repositoryRoot,
+    ));
+    const accessibilityFreshUntil = candidateOverrideAccessibilityFreshUntil({
+      authority: validated.authority,
+      stationLineInputBytes,
+      validationNow,
+    });
+    artifactFreshUntil = new Date(Math.min(
+      Date.parse(artifactFreshUntil),
+      Date.parse(accessibilityFreshUntil),
+    )).toISOString();
   }
   return {
     fixture,
@@ -572,6 +594,7 @@ async function loadBuildInput(
       sha256(buildSpecBytes),
       officialOdFareEvidence,
       overrideBinding,
+      validationNow,
     ),
     artifactFreshUntil,
   };
@@ -691,6 +714,7 @@ export function validateCandidateFixtureOverride({
     throw new Error("candidate fixture override projection mismatch");
   }
   return {
+    authority,
     fixture: candidateFixture,
     binding: {
       sourceFixtureSha256,
@@ -698,6 +722,80 @@ export function validateCandidateFixtureOverride({
       serverRouteCoverageAuthoritySha256: authority.authoritySha256,
     },
   };
+}
+
+export function candidateOverrideAccessibilityFreshUntil({
+  authority,
+  stationLineInputBytes,
+  validationNow,
+}) {
+  if (!Buffer.isBuffer(stationLineInputBytes)) {
+    throw new TypeError("station-line input must be bytes");
+  }
+  if (!(validationNow instanceof Date) || Number.isNaN(validationNow.getTime())) {
+    throw new TypeError("station-line input validation time is invalid");
+  }
+  let stationLineInput;
+  try {
+    stationLineInput = JSON.parse(new TextDecoder("utf-8", { fatal: true })
+      .decode(stationLineInputBytes));
+  } catch {
+    throw new Error("station-line input must be UTF-8 JSON");
+  }
+  const evidenceRows = stationLineInput?.evidenceRows;
+  if (sha256(stationLineInputBytes) !== authority?.buildInput?.stationLineInputSha256
+    || canonicalJson(stationLineInput?.candidate) !== canonicalJson(authority?.candidate)
+    || !Array.isArray(evidenceRows) || evidenceRows.length === 0) {
+    throw new Error("station-line input identity mismatch");
+  }
+  const freshness = evidenceRows.map((row, index) => {
+    requiredString(row?.sourceId, `station-line input evidenceRows[${index}].sourceId`);
+    requiredString(
+      row?.sourceSnapshotId,
+      `station-line input evidenceRows[${index}].sourceSnapshotId`,
+    );
+    const capturedAt = requiredUtcDateString(
+      row?.capturedAt,
+      `station-line input evidenceRows[${index}].capturedAt`,
+    );
+    const freshUntil = requiredUtcDateString(
+      row?.freshUntil,
+      `station-line input evidenceRows[${index}].freshUntil`,
+    );
+    if (Date.parse(freshUntil) <= Date.parse(capturedAt)) {
+      throw new Error("station-line input evidence freshness mismatch");
+    }
+    return { capturedAt, freshUntil };
+  });
+  const observedAt = new Date(Math.max(...freshness
+    .map(({ capturedAt }) => Date.parse(capturedAt)))).toISOString();
+  if (authority.buildInput.observedAt !== observedAt) {
+    throw new Error("station-line input identity mismatch");
+  }
+  const materialization = materializeStationLineAccessibility({
+    ...stationLineInput,
+    observedAt,
+  });
+  const closedStates = new Set([
+    "VERIFIED_PRESENT",
+    "VERIFIED_ABSENT",
+    "NOT_APPLICABLE",
+    "UNVERIFIED_EVIDENCE_BLOCKED",
+  ]);
+  if (materialization.materializationDigest !== authority.buildInput.materializationDigest
+    || materialization.rows.length !== 639
+    || materialization.stateSummary.UNKNOWN !== 0
+    || materialization.stateSummary.MISSING !== 0
+    || materialization.stateSummary.STALE !== 0
+    || materialization.rows.some(({ state }) => !closedStates.has(state))) {
+    throw new Error("station-line input identity mismatch");
+  }
+  const earliestFreshUntil = Math.min(...freshness
+    .map(({ freshUntil }) => Date.parse(freshUntil)));
+  if (earliestFreshUntil <= Math.max(validationNow.getTime(), Date.parse(observedAt))) {
+    throw new Error("station-line input accessibility evidence is stale");
+  }
+  return new Date(earliestFreshUntil).toISOString();
 }
 
 async function materializeTestOnlyItxAdmission(_fixture, admission, _admissionBytes) {
@@ -954,6 +1052,7 @@ function candidateBuildProvenance(
   buildSpecSha256,
   officialOdFareEvidence,
   overrideBinding = null,
+  validationNow = candidateBuildNow(),
 ) {
   const normalizedHashes = Object.fromEntries(candidateBuildSpecHashFields.map((field) => [
     field,
@@ -968,7 +1067,11 @@ function candidateBuildProvenance(
     releaseSequence: requiredPositiveInteger(buildSpec.releaseSequence, "buildSpec.releaseSequence"),
     buildSpecSha256,
     sourceSnapshotIds: requiredStringArray(buildSpec.sourceSnapshotIds, "buildSpec.sourceSnapshotIds"),
-    sourceSnapshots: requiredSourceSnapshots(buildSpec.sourceSnapshots, "buildSpec.sourceSnapshots"),
+    sourceSnapshots: requiredSourceSnapshots(
+      buildSpec.sourceSnapshots,
+      "buildSpec.sourceSnapshots",
+      validationNow,
+    ),
     sourceSnapshotSetHash: normalizedHashes.sourceSnapshotSetHash,
     approvedAliasLedgerHash: normalizedHashes.approvedAliasLedgerHash,
     facilityEvidenceLedgerHash: normalizedHashes.facilityEvidenceLedgerHash,
@@ -998,7 +1101,10 @@ function candidateBuildProvenance(
         ) }
       : {}),
     ...(buildSpec.networkEdgeEvidence
-      ? { networkEdgeEvidence: candidateNetworkEdgeEvidence(buildSpec.networkEdgeEvidence) }
+      ? { networkEdgeEvidence: candidateNetworkEdgeEvidence(
+          buildSpec.networkEdgeEvidence,
+          validationNow,
+        ) }
       : {}),
     ...(officialOdFareEvidence ? { officialOdFareEvidence } : {}),
   };
@@ -1019,7 +1125,7 @@ function exactNetworkEdgeEvidenceKeys(evidence) {
     : [...currentNetworkEdgeEvidenceKeys, "itxCurrentTopologyAdmission"];
 }
 
-export function candidateNetworkEdgeEvidence(evidence) {
+export function candidateNetworkEdgeEvidence(evidence, validationNow = candidateBuildNow()) {
   assertExactKeys(
     evidence,
     exactNetworkEdgeEvidenceKeys(evidence),
@@ -1057,7 +1163,10 @@ export function candidateNetworkEdgeEvidence(evidence) {
     capitalTopologyCandidateSnapshotId: capitalTopologyCandidate.snapshotId,
     capitalTopologyCandidateSha256: capitalTopologyCandidate.sha256,
     capitalTopologyReverificationSha256: capitalTopologyReverification.sha256,
-    capitalTopologyAdmission: candidateCapitalTopologyAdmission(evidence.capitalTopologyAdmission),
+    capitalTopologyAdmission: candidateCapitalTopologyAdmission(
+      evidence.capitalTopologyAdmission,
+      validationNow,
+    ),
     itxCoverageContractSha256: itxCoverageContract.sha256,
     ...(itxCurrentTopologyAdmission == null
       ? {}

@@ -23,6 +23,7 @@ import {
   buildCapitalTopologyReverificationEvidence,
   projectCapitalTopologyOwnership,
 } from "./collect-capital-route-topology.mjs";
+import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -182,7 +183,7 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   }
 
   const first = await build("first", "2026-08-14T16:00:00.000Z", "101");
-  const second = await build("second", "2026-08-14T17:00:00.000Z", "202");
+  const second = await build("second", "2026-08-21T00:00:00.000Z", "202");
   const manifest = JSON.parse(first.manifest);
   const provenance = JSON.parse(first.provenance);
 
@@ -221,6 +222,53 @@ test("candidate build spec release identity는 wall clock과 workflow run number
     () => applyCandidateReleaseIdentity(buildSpec, { manifest: { releaseSequence: 2 } }),
     /manifest\.releaseSequence must match buildSpec\.releaseSequence/,
   );
+});
+
+test("candidate override accessibility freshness는 authority input identity와 earliest expiry에 결속된다", async () => {
+  const stationLineInputBytes = await readFile(path.join(
+    root,
+    "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
+  ));
+  const stationLineInput = JSON.parse(stationLineInputBytes);
+  const observedAt = new Date(Math.max(...stationLineInput.evidenceRows
+    .map(({ capturedAt }) => Date.parse(capturedAt)))).toISOString();
+  const materialization = materializeStationLineAccessibility({
+    ...stationLineInput,
+    observedAt,
+  });
+  const authority = {
+    candidate: stationLineInput.candidate,
+    buildInput: {
+      stationLineInputSha256: sha256(stationLineInputBytes),
+      materializationDigest: materialization.materializationDigest,
+      observedAt,
+    },
+  };
+  const { candidateOverrideAccessibilityFreshUntil } = await import("./build-datapack.mjs");
+  const expected = new Date(Math.min(...stationLineInput.evidenceRows
+    .map(({ freshUntil }) => Date.parse(freshUntil)))).toISOString();
+
+  assert.equal(candidateOverrideAccessibilityFreshUntil({
+    authority,
+    stationLineInputBytes,
+    validationNow: new Date("2026-08-14T15:34:07.000Z"),
+  }), expected);
+  assert.throws(() => candidateOverrideAccessibilityFreshUntil({
+    authority: {
+      ...authority,
+      buildInput: { ...authority.buildInput, stationLineInputSha256: "0".repeat(64) },
+    },
+    stationLineInputBytes,
+    validationNow: new Date("2026-08-14T15:34:07.000Z"),
+  }), /station-line input identity mismatch/);
+  assert.throws(() => candidateOverrideAccessibilityFreshUntil({
+    authority: {
+      ...authority,
+      buildInput: { ...authority.buildInput, observedAt: "2026-08-18T00:00:00.000Z" },
+    },
+    stationLineInputBytes,
+    validationNow: new Date("2026-08-14T15:34:07.000Z"),
+  }), /station-line input identity mismatch/);
 });
 
 test("source-separated current topology는 capital과 Incheon 1/2 line ownership을 겹치지 않는다", async () => {
