@@ -163,6 +163,10 @@
     "data396": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/396",
       "title": "[Data][Release Blocker][P0] full-capital 2674-edge fixture와 456-edge authority로 release-candidate 전환"
+    },
+    "data444": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/444",
+      "title": "[Data][Release Blocker][P0] selected source raw lineage를 OCI 정본으로 교정"
     }
   },
   "workflows": {
@@ -413,6 +417,7 @@
     {"path":"tools/datapack/register-current-seoul-transfer-source.test.mjs","semanticOwner":"data350","classes":["required-pr"],"durationMs":385},
     {"path":"tools/datapack/register-kric-standard-accessibility-snapshot.test.mjs","semanticOwner":"data39","classes":["required-pr"],"durationMs":2317},
     {"path":"tools/datapack/register-seoul-transfer-source-snapshot.test.mjs","semanticOwner":"data350","classes":["required-pr"],"durationMs":43},
+    {"path":"tools/datapack/rehome-selected-release-source-lineage.test.mjs","semanticOwner":"data444","classes":["required-pr"],"durationMs":300},
     {"path":"tools/datapack/replay-current-itx-collection.test.mjs","semanticOwner":"data96","classes":["required-pr"],"durationMs":59},
     {"path":"tools/datapack/revalidate-current-molit-transfer-source.test.mjs","semanticOwner":"data27","classes":["required-pr"],"durationMs":1110},
     {"path":"tools/datapack/revalidate-current-static-network-sources.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":64},
