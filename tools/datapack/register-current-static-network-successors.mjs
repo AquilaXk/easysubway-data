@@ -25,6 +25,7 @@ const JOURNAL = "tools/datapack/.static-network-successors-transaction.json";
 const LOCK = "tools/datapack/.static-network-successors.lock";
 const SHA = /^[a-f0-9]{64}$/u;
 const MOLIT_FIELDS = Object.freeze(["region_code", "region_name", "operator_name", "line_name", "station_sequence", "station_name"]);
+const compareStrings = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const json = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 
@@ -63,7 +64,7 @@ function outputAllowlist(outputs) {
 function snapshotStamp(relative) { return relative.match(/-current-([0-9TZ]+)\.json$/u)?.[1] ?? ""; }
 function validateJournal(journal) {
   if (!journal || typeof journal !== "object" || Array.isArray(journal)
-    || JSON.stringify(Object.keys(journal).sort()) !== JSON.stringify(["records", "state"])
+    || JSON.stringify(Object.keys(journal).sort(compareStrings)) !== JSON.stringify(["records", "state"])
     || !["PREPARED", "COMMITTED"].includes(journal.state) || !Array.isArray(journal.records) || journal.records.length !== 7) throw new Error("static network recovery required");
   const names = journal.records.map(({ relative }) => relative);
   const first = names.slice(0, 2);
@@ -71,7 +72,7 @@ function validateJournal(journal) {
     || JSON.stringify(names.slice(2)) !== JSON.stringify(FIXED)) throw new Error("static network recovery required");
   for (const [index, record] of journal.records.entries()) {
     if (!record || typeof record !== "object" || Array.isArray(record)
-      || JSON.stringify(Object.keys(record).sort()) !== JSON.stringify(["after", "afterSha256", "before", "beforeSha256", "relative"])
+      || JSON.stringify(Object.keys(record).sort(compareStrings)) !== JSON.stringify(["after", "afterSha256", "before", "beforeSha256", "relative"])
       || typeof record.after !== "string" || !SHA.test(record.afterSha256 ?? "")
       || (record.before == null) !== (record.beforeSha256 == null) || (record.beforeSha256 != null && !SHA.test(record.beforeSha256))) throw new Error("static network recovery required");
     const after = Buffer.from(record.after, "base64"); const before = record.before == null ? null : Buffer.from(record.before, "base64");

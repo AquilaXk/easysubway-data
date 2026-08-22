@@ -16,6 +16,7 @@ const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const TARGETS = Object.freeze(["seoulmetro-cyberstation-route-map", "molit-urban-rail-full-route"]);
 const SHA = /^[a-f0-9]{64}$/u;
 const MOLIT_FIELDS = Object.freeze(["region_code", "region_name", "operator_name", "line_name", "station_sequence", "station_name"]);
+const compareStrings = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const canonicalBytes = (value) => Buffer.from(`${JSON.stringify(value)}\n`);
 const RECEIPT_TYPES = Object.freeze({
@@ -26,7 +27,7 @@ const RECEIPT_TYPES = Object.freeze({
 async function regularRoot(value, label) { const initial = await lstat(value); if (!initial.isDirectory() || initial.isSymbolicLink()) throw new Error(`${label} must be a regular non-symlink directory`); const resolved = await realpath(value); const stat = await lstat(resolved); if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error(`${label} must be a regular non-symlink directory`); return resolved; }
 async function defaultExactMain(repositoryRoot) { const { execFile } = await import("node:child_process"); const { promisify } = await import("node:util"); const run = promisify(execFile); const [{ stdout: head }, { stdout: originMain }, { stdout: status }] = await Promise.all([run("git", ["rev-parse", "HEAD"], { cwd: repositoryRoot }), run("git", ["rev-parse", "origin/main"], { cwd: repositoryRoot }), run("git", ["status", "--porcelain=v1", "--untracked-files=all"], { cwd: repositoryRoot })]); if (status !== "" || head.trim() !== originMain.trim()) throw new Error("static network repository must be exact clean main"); return head.trim(); }
 function snapshotId(sourceId, capturedAt) { return `${sourceId}-current-${capturedAt.replaceAll(/[-:.]/gu, "").replace("Z", "Z")}`; }
-function fingerprint(records) { return sha(JSON.stringify(Object.keys(records[0] ?? {}).sort())); }
+function fingerprint(records) { return sha(JSON.stringify(Object.keys(records[0] ?? {}).sort(compareStrings))); }
 function requireCapture(value) { if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(value)) throw new Error("static network observation timestamp is invalid"); return value; }
 function requirePrevious(previous, sourceId) { if (!previous || previous.sourceId !== sourceId || !SHA.test(previous.rawSha256 ?? "") || !SHA.test(previous.schemaFingerprint ?? "") || !SHA.test(previous.redactedRequestFingerprint ?? "") || typeof previous.snapshotId !== "string") throw new Error("static network predecessor identity is invalid"); return previous; }
 function governanceBinding(previous) { const binding = previous.governancePolicyVersion == null && previous.governancePolicySha256 == null ? approvedLegacyGovernanceBinding(previous) : { governancePolicyVersion: previous.governancePolicyVersion, governancePolicySha256: previous.governancePolicySha256 }; if (typeof binding?.governancePolicyVersion !== "string" || !SHA.test(binding.governancePolicySha256 ?? "")) throw new Error("static network predecessor governance binding is invalid"); return binding; }
