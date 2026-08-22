@@ -88,6 +88,30 @@ test("candidate inventory semantic hash와 authenticated raw-byte hash를 분리
   assert.equal(result.evidenceRows.length, 641);
 });
 
+test("Seoul direct successor refresh proof는 기존 TRANSFER append와 같은 fan-in denominator를 유지한다", async () => {
+  const input = await fixture();
+  const current = { sourceId: "seoul-metro-accessibility", snapshotId: "seoul-current", snapshotStatus: "LOCKED" };
+  input.sourceSnapshots[2] = { sourceId: "seoul-metro-accessibility", snapshotId: "seoul-previous", snapshotStatus: "LOCKED" };
+  input.sourceSnapshots.push(current);
+  input.candidateBuildSpec.sourceSnapshotIds[2] = current.snapshotId;
+  input.candidateBuildSpec.sourceSnapshots[2] = { sourceId: current.sourceId, snapshotId: current.snapshotId };
+  const selected = input.candidateBuildSpec.sourceSnapshotIds.map((snapshotId) => input.sourceSnapshots.find((row) => row.snapshotId === snapshotId));
+  const selectedLedgerOrder = input.sourceSnapshots.filter(({ snapshotId }) => input.candidateBuildSpec.sourceSnapshotIds.includes(snapshotId));
+  const predecessor = input.sourceSnapshots.filter(({ snapshotId }) => new Set([...input.candidateBuildSpec.sourceSnapshotIds.slice(0, 2), "seoul-previous", ...input.candidateBuildSpec.sourceSnapshotIds.slice(3)]).has(snapshotId));
+  const sourceSet = sha(JSON.stringify(selectedLedgerOrder)); const evidenceSourceSet = sha(JSON.stringify(predecessor.filter(({ sourceId }) => sourceId !== "seoul-metro-transfer-distance-duration")));
+  input.candidateBuildSpec.sourceSnapshotSetHash = sourceSet;
+  input.sourceSetTransition = { currentCandidateBytesSha256: "1".repeat(64), currentCandidateSourceSetSha256: sourceSet, evidenceSourceSetSha256: evidenceSourceSet, facilityAdmissionBytesSha256: "2".repeat(64), kind: "SEOUL_ACCESSIBILITY_SUCCESSOR_REFRESH", predecessorCandidateSourceSetSha256: sha(JSON.stringify(predecessor)), previousSnapshotId: "seoul-previous" };
+  input.facilityAdmission.candidate.sourceSnapshotSetHash = evidenceSourceSet; resealFacility(input.facilityAdmission);
+  input.exitAdmission.candidate.sourceSetSha256 = evidenceSourceSet;
+  input.exitAdmission.materializerEvidenceRows = input.exitAdmission.materializerEvidenceRows.map((row) => ({ ...row, sourceSetSha256: evidenceSourceSet })); rebindExitArtifacts(input);
+
+  const result = buildCurrentCapitalStationLineInput(input);
+
+  assert.equal(result.candidate.sourceSetSha256, sourceSet);
+  assert.equal(result.evidenceRows.length, 641);
+  assert.equal(selected.length, 7);
+});
+
 test("blocked tuple·receipt·TRANSFER admission drift는 output 없이 fail-closed다", async () => {
   for (const mutate of [
     (value) => { value.facilityAdmission.cells.find((cell) => cell.stationId === "station-b35616704ce3" && cell.lineId === "seoul-2").state = "ADMITTED_FACILITY_PRESENT"; resealFacility(value.facilityAdmission); },

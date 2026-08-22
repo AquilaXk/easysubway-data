@@ -60,6 +60,17 @@ test("runner validates the current head bytes and orders collector, publisher, a
   assert.deepEqual(result, { status: "PASS", snapshotId: SNAPSHOT_ID, outputs: outputsFor() });
 });
 
+test("malformed DATA_GO_KR_SERVICE_KEY stops every delegate before the current head read", async (t) => {
+  const values = await fixture(t); let calls = 0;
+  const deps = dependencies([], {});
+  for (const key of ["validateLineage", "validateSnapshotIdentity", "collect", "observationRoot", "writeObservation", "publish", "register"]) {
+    const original = deps[key];
+    deps[key] = (...args) => { calls += 1; return original(...args); };
+  }
+  await assert.rejects(runCurrentSeoulAccessibilityRegistration({ ...options(values, deps), env: { DATA_GO_KR_SERVICE_KEY: "invalid%ZZ" } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  assert.equal(calls, 0);
+});
+
 test("invalid current snapshot identity or receipt hash stops collector, publisher, and registrar", async (t) => {
   const identity = await fixture(t); const identityEvents = []; const invalid = dependencies(identityEvents); invalid.validateSnapshotIdentity = () => { throw new Error("identity invalid"); };
   await assert.rejects(runCurrentSeoulAccessibilityRegistration(options(identity, invalid)), /identity invalid/);

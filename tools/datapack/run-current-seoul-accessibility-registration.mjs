@@ -13,6 +13,7 @@ import {
 } from "./collect-seoul-accessibility-evidence.mjs";
 import { publishSeoulAccessibilityRawArtifact } from "./publish-seoul-accessibility-raw.mjs";
 import { registerCurrentSeoulAccessibilitySnapshot } from "./register-current-seoul-accessibility-snapshot.mjs";
+import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -81,8 +82,7 @@ export async function runCurrentSeoulAccessibilityRegistration({
     ...deps,
   };
   const root = path.resolve(repositoryRoot); const name = requiredObservationName(observationName); const externalReceipt = await requiredExternalReceipt(root, receiptPath);
-  const serviceKey = env?.DATA_GO_KR_SERVICE_KEY;
-  if (typeof serviceKey !== "string" || serviceKey.length === 0) throw new Error("DATA_GO_KR_SERVICE_KEY env is required");
+  const serviceKey = normalizeDataGoKrServiceKey(env?.DATA_GO_KR_SERVICE_KEY);
   const ledger = JSON.parse(await operations.readFile(path.join(root, LEDGER), "utf8"));
   const head = operations.validateLineage(ledger).headsBySource?.[SOURCE_ID]; const selected = ledger.filter((snapshot) => snapshot?.sourceId === SOURCE_ID && snapshot.snapshotId === head);
   if (selected.length !== 1 || !/^[a-f0-9]{64}$/u.test(selected[0].rawReceipt?.snapshotFileSha256 ?? "")) throw new Error("current Seoul accessibility source head is invalid");
