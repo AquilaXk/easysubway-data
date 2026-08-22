@@ -45,7 +45,9 @@ async function fixture() {
     const successor = structuredClone(previous);
     successor.snapshotId = `${sourceId}-oci-rehome-20260822`;
     successor.previousSnapshotId = previous.snapshotId;
-    successor.retrievedAt = "2026-08-22T00:00:00.000Z";
+    successor.retrievedAt = new Date(Date.parse(previous.retrievedAt) + 1).toISOString();
+    successor.freshnessExpiresAt = new Date(Date.parse(previous.freshnessExpiresAt) + 1).toISOString();
+    successor.rawRetentionExpiresAt = new Date(Date.parse(previous.rawRetentionExpiresAt) + 1).toISOString();
     successor.coverageCount ??= 0;
     successor.rawSha256 = rawSha256;
     successor.rawObjectUri = `oci://easysubway-datapacks/source-raw/${sourceId}/20260822/${rawSha256}.json`;

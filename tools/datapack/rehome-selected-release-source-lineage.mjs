@@ -87,9 +87,16 @@ export function validateSelectedReleaseSourceRehomeManifest({ manifest, snapshot
       || !SHA256.test(successor.rawSha256) || JSON.stringify(successor.diffSummary) !== JSON.stringify(buildSnapshotDiff(current, successor))) {
       throw new Error("rehome successor lineage or OCI bytes are invalid");
     }
-    for (const key of ["provider", "sourceUpdatedAt", "rowCount", "coverageCount", "redactedRequestFingerprint", "schemaFingerprint", "licenseStatus", "redistributionAllowed", "snapshotStatus", "credentialRedacted"]) {
-      if (key === "coverageCount" && current[key] == null) continue;
-      if (JSON.stringify(successor[key]) !== JSON.stringify(current[key])) throw new Error("rehome semantic evidence drift");
+    const allowedChanges = new Set(["snapshotId", "previousSnapshotId", "rawObjectUri", "retrievedAt", "freshnessExpiresAt", "rawRetentionExpiresAt", "diffSummary"]);
+    const legacyCoverageNormalization = current.coverageCount == null && successor.coverageCount === 0;
+    const successorKeys = Object.keys(successor).filter((key) => !(legacyCoverageNormalization && key === "coverageCount")).sort();
+    if (JSON.stringify(successorKeys) !== JSON.stringify(Object.keys(current).sort())) throw new Error("rehome successor schema drift");
+    for (const key of Object.keys(current)) if (!allowedChanges.has(key) && JSON.stringify(successor[key]) !== JSON.stringify(current[key])) throw new Error("rehome semantic evidence drift");
+    const plusOneMillisecond = (value) => new Date(Date.parse(value) + 1).toISOString();
+    if (successor.retrievedAt !== plusOneMillisecond(current.retrievedAt)
+      || successor.freshnessExpiresAt !== plusOneMillisecond(current.freshnessExpiresAt)
+      || successor.rawRetentionExpiresAt !== plusOneMillisecond(current.rawRetentionExpiresAt)) {
+      throw new Error("rehome successor freshness projection drift");
     }
     const locator = parseCredentialFreeObjectUri(successor.rawObjectUri, "rehome OCI object URI");
     if (!successor.rawObjectUri.startsWith("oci://")) throw new Error("rehome object URI must be OCI");
@@ -160,23 +167,31 @@ async function atomicReplace(target, bytes) {
   const handle = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
   try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
   await rename(temporary, target);
+  const parent = await open(path.dirname(target), constants.O_RDONLY);
+  try { await parent.sync(); } finally { await parent.close(); }
 }
 
 const JOURNAL = "tools/datapack/.selected-release-source-oci-rehome-transaction.json";
 const transactionIdPattern = /^[a-f0-9-]{36}$/u;
 
 async function restoreTransaction(root, journal) {
-  if (!journal || journal.schemaVersion !== 1 || journal.state !== "PREPARED"
+  if (!journal || journal.schemaVersion !== 1 || !["PREPARED", "COMMITTED"].includes(journal.state)
     || !transactionIdPattern.test(journal.transactionId ?? "") || !Array.isArray(journal.records)
     || JSON.stringify(journal.records.map(({ relativePath }) => relativePath)) !== JSON.stringify(OUTPUTS)) {
     throw new Error("selected source OCI rehome transaction journal is invalid");
   }
   const directory = path.join(root, "tools/datapack", `.selected-release-source-oci-rehome-${journal.transactionId}`);
   for (const [index, record] of journal.records.entries()) {
-    if (!SHA256.test(record.beforeSha256 ?? "")) throw new Error("selected source OCI rehome transaction journal is invalid");
+    if (!SHA256.test(record.beforeSha256 ?? "") || !SHA256.test(record.afterSha256 ?? "")) throw new Error("selected source OCI rehome transaction journal is invalid");
     const before = await regularBytes(root, path.relative(root, path.join(directory, `${index}.before`)), "selected source OCI rehome backup");
     if (sha256(before) !== record.beforeSha256) throw new Error("selected source OCI rehome backup checksum mismatch");
-    await atomicReplace(contained(root, record.relativePath), before);
+    const current = await regularBytes(root, record.relativePath, "selected source OCI rehome output");
+    if (journal.state === "COMMITTED") {
+      if (sha256(current) !== record.afterSha256) throw new Error("selected source OCI rehome committed output drift");
+    } else {
+      if (![record.beforeSha256, record.afterSha256].includes(sha256(current))) throw new Error("selected source OCI rehome output drift");
+      await atomicReplace(contained(root, record.relativePath), before);
+    }
   }
   await rm(directory, { recursive: true, force: true });
   await unlink(contained(root, JOURNAL));
@@ -204,11 +219,13 @@ async function transaction(root, outputs) {
       const before = await regularBytes(root, output.relativePath, "release transaction input");
       const backup = path.join(directory, `${index}.before`);
       await writeFile(backup, before, { flag: "wx", mode: 0o600 });
-      records.push({ relativePath: output.relativePath, beforeSha256: sha256(before) });
+      records.push({ relativePath: output.relativePath, beforeSha256: sha256(before), afterSha256: sha256(output.bytes) });
     }
     journal = { schemaVersion: 1, state: "PREPARED", transactionId, records };
     await writeFile(journalPath, jsonBytes(journal), { flag: "wx", mode: 0o600 });
     for (const output of outputs) await atomicReplace(contained(root, output.relativePath), output.bytes);
+    journal = { ...journal, state: "COMMITTED" };
+    await atomicReplace(journalPath, jsonBytes(journal));
     await unlink(journalPath);
     await rm(directory, { recursive: true });
   } catch (error) {
