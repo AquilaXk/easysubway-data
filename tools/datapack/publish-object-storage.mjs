@@ -725,6 +725,12 @@ function contentTypeForKey(key) {
   if (key.endsWith(".svg")) {
     return "image/svg+xml";
   }
+  if (key.endsWith(".js")) {
+    return "application/javascript";
+  }
+  if (key.endsWith(".csv")) {
+    return "text/csv; charset=euc-kr";
+  }
   return "application/octet-stream";
 }
 
