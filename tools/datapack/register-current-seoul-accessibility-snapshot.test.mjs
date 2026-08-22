@@ -164,6 +164,19 @@ test("invalid receipt, foreign replacement, and partial commit do not leave a mi
   assert.equal(await readFile(path.join(values.root, OUTPUTS[0]), "utf8"), "foreign");
 });
 
+test("failed COMMITTED journal persistence rolls every output back to prestate", async (t) => {
+  const values = await fixture();
+  t.after(() => Promise.all([rm(values.root, { recursive: true, force: true }), rm(values.observation, { recursive: true, force: true })]));
+  const outputs = await buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, snapshotPath: values.snapshotPath, receiptPath: values.receiptPath, now: new Date("2026-08-22T00:01:00.000Z") });
+  await assert.rejects(commitCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, outputs, failCommittedJournalWrite: true }), /injected COMMITTED journal persistence failure/);
+  for (const { relative, prestateBytes } of outputs) {
+    const target = path.join(values.root, relative);
+    if (prestateBytes == null) await assert.rejects(readFile(target), { code: "ENOENT" });
+    else assert.deepEqual(await readFile(target), prestateBytes);
+  }
+  await assert.rejects(readFile(path.join(values.root, "tools/datapack/.seoul-accessibility-registration-transaction.json")), { code: "ENOENT" });
+});
+
 test("lineage, time, governance, and freshness admission failures stop before registration", async (t) => {
   const invalid = [
     {

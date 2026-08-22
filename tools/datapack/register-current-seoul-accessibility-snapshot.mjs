@@ -321,14 +321,14 @@ async function recover(root, journal) {
   for (const record of journal.records) { const target = contained(root.lexical, record.relative); await assertRepositoryTarget(root, target, "Seoul registration recovery target"); const before = record.before == null ? null : Buffer.from(record.before, "base64"); const after = Buffer.from(record.after, "base64"); if (sha(after) !== record.afterSha256 || (before != null && sha(before) !== record.beforeSha256)) throw new Error("Seoul registration recovery required"); const current = await currentBytes(target); if (journal.state === "COMMITTED") { if (!current?.equals(after)) throw new Error("Seoul registration preserves foreign replacement"); continue; } if ((before != null && current?.equals(before)) || (current == null && before == null)) continue; if (!current?.equals(after)) throw new Error("Seoul registration preserves foreign replacement"); if (before == null) { await unlink(target); await syncParent(target); } else await writeAtomic(target, before, after); }
   const journalTarget = contained(root.lexical, JOURNAL); await unlink(journalTarget); await syncParent(journalTarget);
 }
-export async function commitCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot = ROOT, outputs, failAfter = null, lockHooks = {} } = {}) {
+export async function commitCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot = ROOT, outputs, failAfter = null, failCommittedJournalWrite = false, lockHooks = {} } = {}) {
   assertOutputs(outputs); const root = await repositoryRootInfo(repositoryRoot); const target = async (relative, label) => { const value = contained(root.lexical, relative); await assertRepositoryTarget(root, value, label); return value; }; const release = await acquireLock(root, lockHooks); let journal;
   try {
     const journalTarget = await target(JOURNAL, "Seoul registration journal"); const existing = await optionalBytes(journalTarget, "Seoul registration journal"); if (existing) await recover(root, parse(existing, "Seoul registration journal"));
     for (const output of outputs) await assertExpected(await target(output.relative, "Seoul registration output"), output.prestateBytes);
     journal = { state: "PREPARED", records: journalRecords(outputs) }; await writeAtomic(journalTarget, jsonBytes(journal), null);
     for (const [index, output] of outputs.entries()) { await writeAtomic(await target(output.relative, "Seoul registration output"), output.bytes, output.prestateBytes); if (index === failAfter) throw new Error("injected transaction failure"); }
-    journal.state = "COMMITTED"; await writeAtomic(journalTarget, jsonBytes(journal), jsonBytes({ ...journal, state: "PREPARED" })); await recover(root, journal);
+    const committedJournal = { ...journal, state: "COMMITTED" }; if (failCommittedJournalWrite) throw new Error("injected COMMITTED journal persistence failure"); await writeAtomic(journalTarget, jsonBytes(committedJournal), jsonBytes(journal)); journal = committedJournal; await recover(root, journal);
   } catch (error) { if (journal) { try { await recover(root, journal); } catch (recovery) { throw new AggregateError([error, recovery], "Seoul registration rollback failed"); } } throw error; }
   finally { await release(); }
 }
