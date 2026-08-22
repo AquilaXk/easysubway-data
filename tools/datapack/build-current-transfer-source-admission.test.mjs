@@ -15,8 +15,7 @@ import { canonicalTransferTopologyAdmissionJson } from "./build-transfer-topolog
 import { evaluateCurrentMolitTransferFreshness } from "./evaluate-current-molit-transfer-freshness.mjs";
 
 const REPOSITORY_ROOT = fileURLToPath(new URL("../../", import.meta.url));
-const OBSERVED_AT = "2026-08-14T15:34:07.000Z";
-const EVALUATED_AT = "2026-08-14T05:30:38.000Z";
+const TRANSFER_FRESHNESS_EVALUATED_AT = "2026-08-14T05:30:38.000Z";
 const EVIDENCE = observationEvidence();
 const BASE_INPUT = await trackedInput();
 
@@ -99,7 +98,7 @@ test("CLI는 self-bound 두 handoff를 legacy/current candidate 경계 밖에서
   const argv = [
     "--revalidation-evidence", evidencePath,
     "--freshness-result", freshnessPath,
-    "--observed-at", OBSERVED_AT,
+    "--observed-at", BASE_INPUT.observedAt,
     "--output-directory", outputDirectory,
   ];
 
@@ -164,15 +163,21 @@ async function trackedInput() {
   const metadata = JSON.parse(metadataBytes);
   const legacyKricSnapshotId = facilityAdmission.cells[0].sourceSnapshotId;
   assert.ok(facilityAdmission.cells.every(({ sourceSnapshotId }) => sourceSnapshotId === legacyKricSnapshotId));
-  const legacyProjections = candidateBuildSpec.sourceSnapshots
-    .filter(({ sourceId }) => sourceId !== "seoul-metro-transfer-distance-duration");
-  assert.equal(legacyProjections.length, 6);
-  const selected = legacyProjections.map(({ sourceId, snapshotId }) => {
-    const selectedId = sourceId === "kric-station-convenience-standard" ? legacyKricSnapshotId : snapshotId;
-    const matches = sourceSnapshots.filter((entry) => entry.snapshotId === selectedId);
-    assert.equal(matches.length, 1, `legacy candidate snapshot identity: ${selectedId}`);
-    return matches[0];
+  const legacySourceIds = candidateBuildSpec.sourceSnapshots
+    .filter(({ sourceId }) => sourceId !== "seoul-metro-transfer-distance-duration")
+    .map(({ sourceId }) => sourceId);
+  assert.equal(legacySourceIds.length, 6);
+  assert.equal(legacyKricSnapshotId, "kric-station-convenience-standard-20260813T200604805Z");
+  const historicalObservedAt = facilityAdmission.observedAt;
+  const selected = legacySourceIds.map((sourceId) => {
+    const candidates = sourceSnapshots.filter((entry) => entry.sourceId === sourceId
+      && sourceBasisAt(entry) <= Date.parse(historicalObservedAt));
+    assert.ok(candidates.length > 0, `historical source head: ${sourceId}`);
+    return candidates.at(-1);
   });
+  assert.equal(selected.find(({ sourceId }) => sourceId === "kric-station-convenience-standard").snapshotId, legacyKricSnapshotId);
+  const selectedIds = new Set(selected.map(({ snapshotId }) => snapshotId));
+  const selectedInLedgerOrder = sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
   const projectionKeys = [
     "snapshotId", "sourceId", "rawObjectUri", "rawSha256", "schemaFingerprint",
     "licenseStatus", "redistributionAllowed", "snapshotStatus", "credentialRedacted",
@@ -182,16 +187,19 @@ async function trackedInput() {
     candidateId: facilityAdmission.candidate.candidateId,
     sourceSnapshotIds: selected.map(({ snapshotId }) => snapshotId),
     sourceSnapshots: selected.map((entry) => Object.fromEntries(projectionKeys.map((key) => [key, entry[key]]))),
-    sourceSnapshotSetHash: sha256(JSON.stringify(selected)),
+    sourceSnapshotSetHash: sha256(JSON.stringify(selectedInLedgerOrder)),
   };
   assert.equal(legacyCandidateBuildSpec.sourceSnapshotSetHash, facilityAdmission.candidate.sourceSetSha256);
+  assert.ok(Date.parse(TRANSFER_FRESHNESS_EVALUATED_AT) <= Date.parse(historicalObservedAt),
+    "immutable TRANSFER freshness evaluation precedes the historical FACILITY handoff");
+  const evaluationAt = TRANSFER_FRESHNESS_EVALUATED_AT;
   const freshnessResult = evaluateCurrentMolitTransferFreshness({
     evidence: EVIDENCE,
-    evaluationAt: EVALUATED_AT,
+    evaluationAt,
     gzipBytes,
     metadata,
     metadataBytes,
-    now: Date.parse(EVALUATED_AT),
+    now: Date.parse(evaluationAt),
     policy,
   });
   return {
@@ -201,7 +209,7 @@ async function trackedInput() {
     gzipBytes,
     metadata,
     metadataBytes,
-    observedAt: OBSERVED_AT,
+    observedAt: historicalObservedAt,
     policy,
     productionInput,
     providerCodeCatalog,
@@ -209,6 +217,13 @@ async function trackedInput() {
     sourceInventory,
     sourceSnapshots,
   };
+}
+
+function sourceBasisAt(entry) {
+  const value = Math.max(...[entry.retrievedAt, entry.sourceUpdatedAt, entry.capturedAt, entry.rawReceipt?.storedAt]
+    .filter(Boolean).map(Date.parse));
+  assert.ok(Number.isFinite(value), `source basis: ${entry.snapshotId}`);
+  return value;
 }
 
 async function fileExists(target) {

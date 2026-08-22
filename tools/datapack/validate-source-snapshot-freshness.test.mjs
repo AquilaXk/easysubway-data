@@ -18,7 +18,26 @@ import {
 
 const evaluationAt = "2026-07-15T00:00:00.000Z";
 const execFileAsync = promisify(execFile);
+
+async function selectedSourceEvaluationAt() {
+  const [buildSpec, sourceSnapshots] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+  ]);
+  const selected = buildSpec.sourceSnapshotIds.map((snapshotId) => {
+    const matches = sourceSnapshots.filter((entry) => entry.snapshotId === snapshotId);
+    assert.equal(matches.length, 1, `selected source snapshot identity: ${snapshotId}`);
+    return matches[0];
+  });
+  const basisAt = Math.max(...selected.flatMap((entry) => [
+    entry.retrievedAt, entry.sourceUpdatedAt, entry.capturedAt, entry.rawReceipt?.storedAt,
+  ].filter(Boolean).map(Date.parse)));
+  const freshUntil = Math.min(...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)));
+  assert.ok(Number.isFinite(basisAt) && Number.isFinite(freshUntil) && basisAt + 1_000 < freshUntil);
+  return new Date(basisAt + 1_000).toISOString();
+}
 const root = path.resolve(import.meta.dirname, "../..");
+const currentEvaluationAt = await selectedSourceEvaluationAt();
 const purgeKeys = generateKeyPairSync("ed25519");
 const purgePublicKeyText = purgeKeys.publicKey.export({ type: "spki", format: "pem" });
 const purgePublicKeySha256 = createHash("sha256")
@@ -41,7 +60,7 @@ function input(overrides = {}) {
   const snapshots = [{
     snapshotId: "snapshot-a",
     sourceId: "source-a",
-    rawObjectUri: "s3://bucket/snapshot-a.json",
+    rawObjectUri: "oci://fixture/snapshot-a.json",
     rawSha256: "a".repeat(64),
     redactedRequestFingerprint: "b".repeat(64),
     schemaFingerprint: "c".repeat(64),
@@ -94,7 +113,7 @@ function twoSourceInput() {
     ...value.snapshots[0],
     snapshotId: "snapshot-b",
     sourceId: "source-b",
-    rawObjectUri: "s3://bucket/snapshot-b.json",
+    rawObjectUri: "oci://fixture/snapshot-b.json",
     rawSha256: "e".repeat(64),
     retrievedAt: "2026-07-13T00:00:00Z",
     freshnessExpiresAt: "2026-08-12T00:00:00Z",
@@ -131,7 +150,7 @@ test("replacement head는 append-only ledger order의 source-set hash를 검증�
   const headA = {
     ...previousA,
     snapshotId: "snapshot-a-next",
-    rawObjectUri: "s3://bucket/snapshot-a-next.json",
+    rawObjectUri: "oci://fixture/snapshot-a-next.json",
     rawSha256: "f".repeat(64),
     retrievedAt: "2026-07-14T00:00:00Z",
     freshnessExpiresAt: "2026-08-13T00:00:00Z",
@@ -660,7 +679,7 @@ test("실제 release build spec은 current source inventory에 결합되어 gove
     "--policy", "release/product-gates/datapack-freshness-sla.json",
     "--governance-policy", "tools/datapack/source-governance-policy.json",
     "--inventory", "tools/datapack/source-inventory.json",
-    "--evaluation-at", "2026-08-17T12:00:00.000Z",
+    "--evaluation-at", currentEvaluationAt,
   ], { cwd: root });
 
   assert.equal(JSON.parse(stdout).governanceDecision, "GO");

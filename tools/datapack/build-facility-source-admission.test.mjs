@@ -12,10 +12,10 @@ import {
 } from "./build-facility-source-admission.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
-const FRESH_AT = "2026-08-14T15:34:07.000Z";
+const FRESH_AT = await selectedSourceEvaluationAt();
 
 test("current FACILITY official source admission은 exact six-cell handoff를 만든다", async () => {
-  const input = await currentInput();
+  const input = await historicalFacilityFixtureInput();
   const before = structuredClone(input);
   const result = buildFacilitySourceAdmission(input);
 
@@ -61,8 +61,13 @@ test("current FACILITY official source admission은 exact six-cell handoff를 �
   assert.match(canonicalFacilitySourceAdmissionJson(result), /"admissionDigest"/);
 });
 
+test("current mixed accessibility evidence는 legacy FACILITY builder에서 fail-closed다", async () => {
+  const input = await loadCurrentFacilitySourceAdmissionInput({ repositoryRoot: root, observedAt: FRESH_AT });
+  assert.throws(() => buildFacilitySourceAdmission(input), /FACILITY absence evidence mode mismatch/);
+});
+
 test("historical FACILITY fixture는 변경된 inventory bytes에 candidate 결속을 갱신한다", async () => {
-  const input = await currentInput();
+  const input = await historicalFacilityFixtureInput();
   const inventoryBytes = Buffer.from(JSON.stringify(input.sourceInventory));
 
   assert.equal(input.candidateBuildSpec.sourceInventorySha256, sha256(inventoryBytes));
@@ -70,7 +75,7 @@ test("historical FACILITY fixture는 변경된 inventory bytes에 candidate 결�
 });
 
 test("historical FACILITY fixture는 selected snapshot을 append-only ledger 순서로 결속한다", async () => {
-  const input = await currentInput();
+  const input = await historicalFacilityFixtureInput();
   const selectedIds = new Set(input.candidateBuildSpec.sourceSnapshotIds);
   const selectedInLedgerOrder = input.sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
   input.candidateBuildSpec.sourceSnapshotIds.reverse();
@@ -79,7 +84,7 @@ test("historical FACILITY fixture는 selected snapshot을 append-only ledger 순
 });
 
 test("missing/non-exhaustive evidence와 stale admission은 partial handoff 없이 fail closed한다", async () => {
-  const missing = await currentInput();
+  const missing = await historicalFacilityFixtureInput();
   missing.productionInput.accessibilityStatusEvidence =
     missing.productionInput.accessibilityStatusEvidence.filter((row) => !(
       row.stationId === "station-sangnoksu" && row.facilityType === "WHEELCHAIR_LIFT"
@@ -89,7 +94,7 @@ test("missing/non-exhaustive evidence와 stale admission은 partial handoff 없�
   assert.equal(missingResult.denominatorStateSummary.MISSING, 1);
   assert.deepEqual(missingResult.materializerEvidenceRows, []);
 
-  const nonExhaustive = await currentInput();
+  const nonExhaustive = await historicalFacilityFixtureInput();
   const source = sourceEntry(nonExhaustive);
   source.accessibilityAdmissionEvidence.absenceEvidenceMode = "NONE";
   assert.throws(
@@ -97,7 +102,10 @@ test("missing/non-exhaustive evidence와 stale admission은 partial handoff 없�
     /absence evidence mode mismatch/,
   );
 
-  const stale = await currentInput("2026-08-14T20:06:04.805Z");
+  const fresh = await historicalFacilityFixtureInput();
+  const stale = await historicalFacilityFixtureInput(new Date(
+    Date.parse(sourceEntry(fresh).accessibilityAdmissionEvidence.freshUntil) + 1,
+  ).toISOString());
   const staleResult = buildFacilitySourceAdmission(stale);
   assert.equal(staleResult.decision, "NO_GO");
   assert.equal(staleResult.denominatorStateSummary.STALE, 6);
@@ -105,21 +113,21 @@ test("missing/non-exhaustive evidence와 stale admission은 partial handoff 없�
 });
 
 test("three-way raw identity mismatch와 duplicate/unmapped evidence를 거부한다", async () => {
-  const rawMismatch = await currentInput();
+  const rawMismatch = await historicalFacilityFixtureInput();
   sourceSnapshotEntry(rawMismatch).rawReceipt.snapshotRawSha256 = "0".repeat(64);
   assert.throws(
     () => buildFacilitySourceAdmission(rawMismatch),
     /raw receipt identity mismatch/,
   );
 
-  const duplicate = await currentInput();
+  const duplicate = await historicalFacilityFixtureInput();
   duplicate.productionInput.facilityRows.push(structuredClone(duplicate.productionInput.facilityRows[0]));
   assert.throws(
     () => buildFacilitySourceAdmission(duplicate),
     /duplicate FACILITY evidence/,
   );
 
-  const unmatched = await currentInput();
+  const unmatched = await historicalFacilityFixtureInput();
   unmatched.productionInput.accessibilityStatusEvidence.push({
     ...structuredClone(unmatched.productionInput.accessibilityStatusEvidence[0]),
     stationId: "station-unmapped",
@@ -129,7 +137,7 @@ test("three-way raw identity mismatch와 duplicate/unmapped evidence를 거부�
   assert.equal(unmatchedResult.inputEvidencePartition.summary.unmatchedCount, 1);
   assert.deepEqual(unmatchedResult.materializerEvidenceRows, []);
 
-  const schemaDrift = await currentInput();
+  const schemaDrift = await historicalFacilityFixtureInput();
   const ledger = sourceSnapshotEntry(schemaDrift);
   const candidateMember = schemaDrift.candidateBuildSpec.sourceSnapshots.find(({ snapshotId }) =>
     snapshotId === ledger.snapshotId);
@@ -141,7 +149,7 @@ test("three-way raw identity mismatch와 duplicate/unmapped evidence를 거부�
     /schema fingerprint mismatch/,
   );
 
-  const emptyScope = await currentInput();
+  const emptyScope = await historicalFacilityFixtureInput();
   emptyScope.productionInput.supportedV1Scope.includedStationIds = [];
   emptyScope.productionInput.supportedV1Scope.facilityCoverageDenominator.expectedRows = 0;
   emptyScope.productionInput.facilityRows = [];
@@ -151,7 +159,7 @@ test("three-way raw identity mismatch와 duplicate/unmapped evidence를 거부�
     /current scope cardinality mismatch/,
   );
 
-  const duplicateMapping = await currentInput();
+  const duplicateMapping = await historicalFacilityFixtureInput();
   const sangnoksu = duplicateMapping.productionInput.stationMappings.find((row) =>
     row.stationId === "station-sangnoksu" && row.sourceId === "molit-urban-rail-full-route");
   const sadang = duplicateMapping.productionInput.stationMappings.find((row) =>
@@ -164,7 +172,7 @@ test("three-way raw identity mismatch와 duplicate/unmapped evidence를 거부�
 });
 
 test("FACILITY admission은 pilot의 2개 station-line 가정 없이 injected multi-line scope shape를 보존한다", async () => {
-  const input = await currentInput();
+  const input = await historicalFacilityFixtureInput();
   const extraLineId = "seoul-2";
   const extraLine = { ...structuredClone(input.productionInput.lines.find(({ id }) => id === "seoul-4")), id: extraLineId, nameKo: "수도권 2호선" };
   const sourceMapping = structuredClone(input.productionInput.stationMappings.find(({ stationId }) => stationId === "station-sangnoksu"));
@@ -185,18 +193,18 @@ test("FACILITY admission은 pilot의 2개 station-line 가정 없이 injected mu
 });
 
 test("FACILITY admission은 scope에 선언만 된 unused operator를 거부한다", async () => {
-  const input = await currentInput();
+  const input = await historicalFacilityFixtureInput();
   input.productionInput.supportedV1Scope.includedOperatorIds.push("operator-unused");
   input.productionInput.operators.push({ id: "operator-unused", nameKo: "미사용 운영사" });
   assert.throws(() => buildFacilitySourceAdmission(input), /current scope cardinality mismatch/);
 });
 
 test("FACILITY source license/admission evidence revoke와 hash drift를 provider call 전에 거부한다", async () => {
-  const revoked = await currentInput();
+  const revoked = await historicalFacilityFixtureInput();
   sourceEntry(revoked).license.commercialUseAllowed = false;
   assert.throws(() => buildFacilitySourceAdmission(revoked), /FACILITY source production admission mismatch/);
 
-  const hashDrift = await currentInput();
+  const hashDrift = await historicalFacilityFixtureInput();
   sourceEntry(hashDrift).admissionEvidence.licenseEvidenceHash = "0".repeat(64);
   assert.throws(() => buildFacilitySourceAdmission(hashDrift), /FACILITY source approval or license mismatch/);
 });
@@ -206,7 +214,7 @@ test("등록된 current snapshot path만 resolver가 읽고 stale/pilot path mis
   t.after(() => rm(temporary, { recursive: true, force: true }));
   const sourceRoot = path.join(root, "tools/datapack");
   const tempDatapack = path.join(temporary, "tools/datapack");
-  const fixture = await currentInput();
+  const fixture = await historicalFacilityFixtureInput();
   await Promise.all([
     mkdir(path.join(tempDatapack, "release"), { recursive: true }),
     mkdir(path.join(tempDatapack, "inputs"), { recursive: true }),
@@ -221,10 +229,10 @@ test("등록된 current snapshot path만 resolver가 읽고 stale/pilot path mis
   const source = inventory.sources.find(({ id }) => id === "kric-station-convenience-standard");
   source.accessibilityAdmissionEvidence.snapshotPath = "tools\\datapack\\sources\\current.json";
   await writeFile(path.join(tempDatapack, "source-inventory.json"), JSON.stringify(inventory));
-  const currentSnapshot = path.join(sourceRoot, "sources/kric-station-convenience-standard-20260813T200604805Z.json");
+  const currentSnapshot = path.join(root, fixture.snapshotPath);
   await copyFile(currentSnapshot, path.join(tempDatapack, "sources/current.json"));
 
-  const resolved = await loadCurrentFacilitySourceAdmissionInput({ repositoryRoot: temporary, observedAt: FRESH_AT });
+  const resolved = await loadCurrentFacilitySourceAdmissionInput({ repositoryRoot: temporary, observedAt: fixture.observedAt });
   assert.equal(resolved.snapshotPath, "tools/datapack/sources/current.json");
   assert.deepEqual(Buffer.from(resolved.snapshotBytes), await readFile(path.join(tempDatapack, "sources/current.json")));
   assert.equal(buildFacilitySourceAdmission(resolved).decision, "GO");
@@ -232,7 +240,7 @@ test("등록된 current snapshot path만 resolver가 읽고 stale/pilot path mis
   source.accessibilityAdmissionEvidence.snapshotPath = "tools/datapack/sources/pilot.json";
   await writeFile(path.join(tempDatapack, "source-inventory.json"), JSON.stringify(inventory));
   await copyFile(path.join(sourceRoot, "sources/kric-station-convenience-standard-20260728.json"), path.join(tempDatapack, "sources/pilot.json"));
-  const stale = await loadCurrentFacilitySourceAdmissionInput({ repositoryRoot: temporary, observedAt: FRESH_AT });
+  const stale = await loadCurrentFacilitySourceAdmissionInput({ repositoryRoot: temporary, observedAt: fixture.observedAt });
   assert.throws(() => buildFacilitySourceAdmission(stale), /KRIC accessibility snapshot identity is invalid|snapshot admission identity mismatch/);
 
   source.accessibilityAdmissionEvidence.snapshotPath = "tools/datapack/sources/current.json";
@@ -243,13 +251,13 @@ test("등록된 current snapshot path만 resolver가 읽고 stale/pilot path mis
   await rm(path.join(tempDatapack, "sources"), { recursive: true, force: true });
   await symlink(outside, path.join(tempDatapack, "sources"));
   await assert.rejects(
-    loadCurrentFacilitySourceAdmissionInput({ repositoryRoot: temporary, observedAt: FRESH_AT }),
+    loadCurrentFacilitySourceAdmissionInput({ repositoryRoot: temporary, observedAt: fixture.observedAt }),
     /registered snapshot path escapes repository/,
   );
 });
 
 test("consumer input order가 달라도 admission bytes와 caller input은 동일하다", async () => {
-  const firstInput = await currentInput();
+  const firstInput = await historicalFacilityFixtureInput();
   const secondInput = structuredClone(firstInput);
   secondInput.productionInput.facilityRows.reverse();
   secondInput.productionInput.accessibilityStatusEvidence.reverse();
@@ -264,14 +272,40 @@ test("consumer input order가 달라도 admission bytes와 caller input은 동�
   assert.deepEqual(secondInput, secondBefore);
 });
 
-async function currentInput(observedAt = FRESH_AT) {
-  const input = await loadCurrentFacilitySourceAdmissionInput({ repositoryRoot: root, observedAt });
+async function historicalFacilityFixtureInput(observedAt) {
+  const [input, historicalAdmission] = await Promise.all([
+    loadCurrentFacilitySourceAdmissionInput({ repositoryRoot: root, observedAt: FRESH_AT }),
+    readFile(path.join(root, "tools/datapack/release/facility-source-admission.json"), "utf8").then(JSON.parse),
+  ]);
   const historicalSnapshotPath = "tools/datapack/sources/kric-station-convenience-standard-20260813T200604805Z.json";
   const historicalSnapshotBytes = await readFile(path.join(root, historicalSnapshotPath));
   const historicalSnapshot = JSON.parse(historicalSnapshotBytes);
-  const historicalLedger = sourceSnapshotEntry(input);
+  const historicalMembershipAt = historicalAdmission.observedAt;
+  const historicalObservedAt = observedAt ?? historicalMembershipAt;
+  if (observedAt == null) {
+    assert.ok(Date.parse(historicalSnapshot.capturedAt) < Date.parse(historicalObservedAt));
+    assert.ok(Date.parse(historicalObservedAt) < Date.parse(historicalSnapshot.freshUntil));
+  }
+  const historicalSourceIds = input.candidateBuildSpec.sourceSnapshots
+    .map(({ sourceId }) => sourceId)
+    .filter((sourceId) => sourceId !== "seoul-metro-transfer-distance-duration");
+  assert.equal(historicalSourceIds.length, 6, "historical FACILITY source count");
+  assert.equal(new Set(historicalSourceIds).size, historicalSourceIds.length, "historical FACILITY source identities");
+  const historicalLedgerHeads = historicalSourceIds.map((sourceId) => {
+    const entries = input.sourceSnapshots.filter((entry) =>
+      entry.sourceId === sourceId && snapshotEvidenceAt(entry) <= Date.parse(historicalMembershipAt));
+    assert.ok(entries.length > 0, `historical ${sourceId} ledger head`);
+    return entries.at(-1);
+  });
+  const historicalKricLedger = historicalLedgerHeads.find(({ sourceId }) =>
+    sourceId === "kric-station-convenience-standard");
+  assert.equal(historicalKricLedger?.snapshotId, historicalSnapshot.snapshotId, "historical KRIC ledger head");
+  const historicalSnapshotIds = new Set(historicalLedgerHeads.map(({ snapshotId }) => snapshotId));
+  const historicalLedgerOrder = input.sourceSnapshots.filter(({ snapshotId }) => historicalSnapshotIds.has(snapshotId));
+  assert.deepEqual(historicalLedgerOrder.map(({ sourceId }) => sourceId), historicalSourceIds);
+  const historicalSourceSetSha256 = sha256(JSON.stringify(historicalLedgerOrder));
+  assert.equal(historicalSourceSetSha256, historicalAdmission.candidate.sourceSetSha256);
   const source = sourceEntry(input);
-
   Object.assign(source.accessibilityAdmissionEvidence, {
     snapshotId: historicalSnapshot.snapshotId,
     snapshotPath: historicalSnapshotPath,
@@ -286,16 +320,17 @@ async function currentInput(observedAt = FRESH_AT) {
   });
   input.snapshotPath = historicalSnapshotPath;
   input.snapshotBytes = new Uint8Array(historicalSnapshotBytes);
-
-  const candidateIndex = input.candidateBuildSpec.sourceSnapshots.findIndex(
-    ({ sourceId }) => sourceId === "kric-station-convenience-standard",
-  );
-  const projectionKeys = Object.keys(input.candidateBuildSpec.sourceSnapshots[candidateIndex]);
-  input.candidateBuildSpec.sourceSnapshots[candidateIndex] = Object.fromEntries(
-    projectionKeys.flatMap((key) => historicalLedger[key] === undefined ? [] : [[key, historicalLedger[key]]]),
-  );
-  input.candidateBuildSpec.sourceSnapshotIds[candidateIndex] = historicalLedger.snapshotId;
-  input.candidateBuildSpec.sourceSnapshotSetHash = selectedSourceSnapshotSetHash(input);
+  input.observedAt = historicalObservedAt;
+  const currentProjectionsBySourceId = new Map(input.candidateBuildSpec.sourceSnapshots.map((projection) =>
+    [projection.sourceId, projection]));
+  input.candidateBuildSpec.sourceSnapshots = historicalLedgerHeads.map((entry) => {
+    const projection = currentProjectionsBySourceId.get(entry.sourceId);
+    assert.ok(projection, `current ${entry.sourceId} projection`);
+    return Object.fromEntries(Object.keys(projection).flatMap((key) =>
+      entry[key] === undefined ? [] : [[key, entry[key]]]));
+  });
+  input.candidateBuildSpec.sourceSnapshotIds = historicalLedgerHeads.map(({ snapshotId }) => snapshotId);
+  input.candidateBuildSpec.sourceSnapshotSetHash = historicalSourceSetSha256;
   const inventoryBytes = Buffer.from(JSON.stringify(input.sourceInventory));
   input.candidateBuildSpec.sourceInventorySha256 = sha256(inventoryBytes);
   input.candidateBuildSpec.networkEdgeEvidence.sourceInventory.sha256 = sha256(inventoryBytes);
@@ -309,15 +344,42 @@ function selectedSourceSnapshotSetHash(input) {
   ));
 }
 
+function snapshotEvidenceAt(entry) {
+  const value = Math.max(...[
+    entry.retrievedAt, entry.sourceUpdatedAt, entry.capturedAt, entry.rawReceipt?.storedAt,
+  ].filter(Boolean).map(Date.parse));
+  assert.ok(Number.isFinite(value), `snapshot evidence time: ${entry.snapshotId}`);
+  return value;
+}
+
 function sourceEntry(input) {
   return input.sourceInventory.sources.find(({ id }) => id === "kric-station-convenience-standard");
 }
 
 function sourceSnapshotEntry(input) {
-  return input.sourceSnapshots.find(({ snapshotId }) =>
-    snapshotId === "kric-station-convenience-standard-20260813T200604805Z");
+  const snapshotId = input.candidateBuildSpec.sourceSnapshots
+    .find(({ sourceId }) => sourceId === "kric-station-convenience-standard")?.snapshotId;
+  return input.sourceSnapshots.find((entry) => entry.snapshotId === snapshotId);
 }
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+async function selectedSourceEvaluationAt() {
+  const [buildSpec, sourceSnapshots] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+  ]);
+  const selected = buildSpec.sourceSnapshotIds.map((snapshotId) => {
+    const matches = sourceSnapshots.filter((entry) => entry.snapshotId === snapshotId);
+    assert.equal(matches.length, 1, `selected source snapshot identity: ${snapshotId}`);
+    return matches[0];
+  });
+  const basisAt = Math.max(...selected.flatMap((entry) => [
+    entry.retrievedAt, entry.sourceUpdatedAt, entry.capturedAt, entry.rawReceipt?.storedAt,
+  ].filter(Boolean).map(Date.parse)));
+  const freshUntil = Math.min(...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)));
+  assert.ok(Number.isFinite(basisAt) && Number.isFinite(freshUntil) && basisAt + 1_000 < freshUntil);
+  return new Date(basisAt + 1_000).toISOString();
 }
