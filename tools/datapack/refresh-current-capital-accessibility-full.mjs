@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, mkdir, open, rmdir, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, rmdir, unlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -18,6 +18,7 @@ const OUTPUTS = Object.freeze([
 ]);
 const JOURNAL = "tools/datapack/.current-capital-accessibility-refresh-transaction.json";
 const LOCK = "tools/datapack/.current-capital-accessibility-refresh.lock";
+const LOCK_OWNER = "owner.json";
 const SEOUL = "seoul-metro-accessibility";
 const TRANSFER = "seoul-metro-transfer-distance-duration";
 const sha = (value) => createHash("sha256").update(value).digest("hex");
@@ -126,9 +127,58 @@ async function recover(root) {
   }
   await unlink(journalPath); await syncParent(journalPath);
 }
+function parseLockLease(bytes) {
+  let lease;
+  try { lease = JSON.parse(bytes); } catch { throw new Error("current-capital refresh lock lease is invalid"); }
+  if (!lease || typeof lease !== "object" || Array.isArray(lease)
+    || JSON.stringify(Object.keys(lease).sort(codepointCompare)) !== JSON.stringify(["pid", "schemaVersion", "token"])
+    || lease.schemaVersion !== 1 || !Number.isSafeInteger(lease.pid) || lease.pid <= 0
+    || typeof lease.token !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(lease.token)) throw new Error("current-capital refresh lock lease is invalid");
+  return lease;
+}
+async function readLockLease(lock) {
+  const info = await lstat(lock);
+  if (!info.isDirectory() || info.isSymbolicLink()) throw new Error("current-capital refresh lock is unsafe");
+  const entries = await readdir(lock);
+  if (entries.length !== 1 || entries[0] !== LOCK_OWNER) throw new Error("current-capital refresh lock has foreign contents");
+  const ownerPath = path.join(lock, LOCK_OWNER); const owner = await readStableRegularFile(ownerPath, "current-capital refresh lock lease");
+  return { ownerPath, bytes: owner.bytes, lease: parseLockLease(owner.bytes) };
+}
+async function ownerIsDead(lease) {
+  try { process.kill(lease.pid, 0); return false; } catch (error) {
+    if (error?.code === "ESRCH") return true;
+    throw new Error("current-capital refresh lock owner cannot be verified");
+  }
+}
+async function writeLockLease(lock, lease) {
+  const ownerPath = path.join(lock, LOCK_OWNER); const bytes = Buffer.from(JSON.stringify(lease));
+  const handle = await open(ownerPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+  try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
+  await syncParent(ownerPath);
+  return { ownerPath, bytes };
+}
+async function reclaimDeadLock(lock) {
+  const owner = await readLockLease(lock);
+  if (!await ownerIsDead(owner.lease)) throw new Error("current-capital refresh lock is active");
+  const current = await readStableRegularFile(owner.ownerPath, "current-capital refresh lock lease");
+  if (!current.bytes.equals(owner.bytes)) throw new Error("current-capital refresh lock changed during reclaim");
+  await unlink(owner.ownerPath); await syncParent(owner.ownerPath);
+  await rmdir(lock); await syncParent(lock);
+}
 async function acquireLock(root) {
-  const file = target(root, LOCK); try { await mkdir(file, { mode: 0o700 }); } catch (error) { if (error?.code === "EEXIST") throw new Error("current-capital refresh lock residue exists"); throw error; }
-  return async () => rmdir(file);
+  const file = target(root, LOCK);
+  try { await mkdir(file, { mode: 0o700 }); } catch (error) {
+    if (error?.code !== "EEXIST") throw error;
+    await reclaimDeadLock(file);
+    try { await mkdir(file, { mode: 0o700 }); } catch (retry) { if (retry?.code === "EEXIST") throw new Error("current-capital refresh lock changed during reclaim"); throw retry; }
+  }
+  const lease = { schemaVersion: 1, token: randomUUID(), pid: process.pid }; const owner = await writeLockLease(file, lease);
+  return async () => {
+    const current = await readLockLease(file);
+    if (!current.bytes.equals(owner.bytes) || current.lease.token !== lease.token) throw new Error("current-capital refresh lock ownership lost");
+    await unlink(owner.ownerPath); await syncParent(owner.ownerPath);
+    await rmdir(file); await syncParent(file);
+  };
 }
 async function assertInputsStable(inputs) {
   for (const snapshot of inputs) {

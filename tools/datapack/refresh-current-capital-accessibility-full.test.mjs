@@ -83,6 +83,41 @@ test("PREPARED residue with already-current output bytes recovers under the refr
   assert.deepEqual(await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative)))), expected);
 });
 
+test("a demonstrably dead refresh owner lease permits PREPARED and COMMITTED journal recovery", async (t) => {
+  for (const state of ["PREPARED", "COMMITTED"]) {
+    const root = await stagedRefreshRepository(t);
+    const before = await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative))));
+    const expected = await Promise.all(OUTPUTS.map((relative) => readFile(path.join(ROOT, relative))));
+    const records = OUTPUTS.map((relative, index) => ({ relative, before: before[index].toString("base64"), beforeSha256: sha(before[index]), after: expected[index].toString("base64"), afterSha256: sha(expected[index]) }));
+    if (state === "PREPARED") for (const [index, relative] of OUTPUTS.entries()) await writeFile(path.join(root, relative), expected[index]);
+    await writeFile(path.join(root, "tools/datapack/.current-capital-accessibility-refresh-transaction.json"), JSON.stringify({ schemaVersion: 1, state, records }));
+    await writeRefreshLease(root, { schemaVersion: 1, token: "00000000-0000-4000-8000-000000000001", pid: 999999 });
+
+    await refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root });
+
+    assert.deepEqual(await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative)))), expected, state);
+    await assert.rejects(readFile(path.join(root, "tools/datapack/.current-capital-accessibility-refresh-transaction.json")), { code: "ENOENT" }, state);
+    await assert.rejects(readFile(path.join(root, "tools/datapack/.current-capital-accessibility-refresh.lock/owner.json")), { code: "ENOENT" }, state);
+  }
+});
+
+test("active, malformed, and foreign refresh leases remain fail-closed", async (t) => {
+  const cases = [
+    { name: "active", lease: { schemaVersion: 1, token: "00000000-0000-4000-8000-000000000002", pid: process.pid } },
+    { name: "malformed", lease: { schemaVersion: 1, token: "00000000-0000-4000-8000-000000000003", pid: "not-a-pid" } },
+    { name: "foreign", lease: { schemaVersion: 1, token: "00000000-0000-4000-8000-000000000004", pid: 999999 }, foreign: true },
+  ];
+  for (const fixture of cases) {
+    const root = await stagedRefreshRepository(t);
+    const before = await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative))));
+    await writeRefreshLease(root, fixture.lease);
+    if (fixture.foreign) await writeFile(path.join(root, "tools/datapack/.current-capital-accessibility-refresh.lock/foreign"), "foreign");
+
+    await assert.rejects(refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root }), /current-capital refresh lock/, fixture.name);
+    assert.deepEqual(await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative)))), before, fixture.name);
+  }
+});
+
 test("already-current canonical corruption fails closed instead of being returned or rewritten", async (t) => {
   const root = await stagedRefreshRepository(t);
   await refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root });
@@ -118,4 +153,10 @@ async function stagedRefreshRepository(t) {
   station.candidate.sourceSetSha256 = predecessorHash; station.evidenceRows = station.evidenceRows.map((row) => ({ ...row, sourceSetSha256: predecessorHash })); route.candidate.sourceSetSha256 = predecessorHash;
   await writeFile(stationPath, JSON.stringify(station)); await writeFile(routePath, JSON.stringify(route));
   return root;
+}
+
+async function writeRefreshLease(root, lease) {
+  const lock = path.join(root, "tools/datapack/.current-capital-accessibility-refresh.lock");
+  await mkdir(lock, { mode: 0o700 });
+  await writeFile(path.join(lock, "owner.json"), JSON.stringify(lease));
 }
