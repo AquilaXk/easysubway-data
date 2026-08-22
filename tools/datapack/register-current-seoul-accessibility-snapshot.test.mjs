@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { cp, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -13,6 +14,19 @@ import { validateLineage } from "./source-snapshot-policy.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const sha = (value) => createHash("sha256").update(value).digest("hex");
+const deferred = () => { let resolve; return { promise: new Promise((done) => { resolve = done; }), resolve }; };
+async function lease(port = 0) {
+  const server = createServer();
+  await new Promise((resolve, reject) => {
+    const fail = (error) => { server.off("listening", ready); reject(error); };
+    const ready = () => { server.off("error", fail); resolve(); };
+    server.once("error", fail); server.once("listening", ready); server.listen({ host: "127.0.0.1", port, exclusive: true });
+  });
+  return server;
+}
+async function closeLease(server) { if (server.listening) await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())); }
+async function closedLeasePort() { const server = await lease(); const { port } = server.address(); await closeLease(server); return port; }
+const lockRecord = (port, token = "00000000-0000-4000-8000-000000000000") => JSON.stringify({ schemaVersion: 1, host: "127.0.0.1", port, pid: process.pid, token });
 const OUTPUTS = [
   "tools/datapack/source-inventory.json",
   "tools/datapack/release/source-snapshots.json",
@@ -207,7 +221,7 @@ test("stale-lock restart recovers PREPARED state, while malformed or active lock
   for (const output of outputs.slice(0, 2)) await writeFile(path.join(values.root, output.relative), output.bytes);
   const records = outputs.map(({ relative, bytes, prestateBytes }) => ({ relative, before: prestateBytes?.toString("base64") ?? null, after: bytes.toString("base64"), beforeSha256: prestateBytes == null ? null : sha(prestateBytes), afterSha256: sha(bytes) }));
   await writeFile(path.join(values.root, "tools/datapack/.seoul-accessibility-registration-transaction.json"), JSON.stringify({ state: "PREPARED", records }));
-  await writeFile(path.join(values.root, "tools/datapack/.seoul-accessibility-registration.lock"), JSON.stringify({ schemaVersion: 1, pid: 999999, token: "00000000-0000-4000-8000-000000000000" }));
+  await writeFile(path.join(values.root, "tools/datapack/.seoul-accessibility-registration.lock"), lockRecord(await closedLeasePort()));
   await commitCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, outputs });
   for (const output of outputs) assert.deepEqual(await readFile(path.join(values.root, output.relative)), output.bytes);
   await assert.rejects(readFile(path.join(values.root, "tools/datapack/.seoul-accessibility-registration-transaction.json")), { code: "ENOENT" });
@@ -217,21 +231,33 @@ test("stale-lock restart recovers PREPARED state, while malformed or active lock
   t.after(() => Promise.all([rm(locked.root, { recursive: true, force: true }), rm(locked.observation, { recursive: true, force: true })]));
   const lockedOutputs = await buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: locked.root, snapshotPath: locked.snapshotPath, receiptPath: locked.receiptPath, now: new Date("2026-08-22T00:01:00.000Z") });
   const firstTarget = path.join(locked.root, lockedOutputs[0].relative);
-  for (const body of ["malformed", JSON.stringify({ schemaVersion: 1, pid: process.pid, token: "00000000-0000-4000-8000-000000000000" })]) {
+  const active = await lease();
+  t.after(() => closeLease(active));
+  for (const body of ["malformed", lockRecord(active.address().port)]) {
     await writeFile(path.join(locked.root, "tools/datapack/.seoul-accessibility-registration.lock"), body);
     await assert.rejects(commitCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: locked.root, outputs: lockedOutputs }), /lock residue/);
     await assert.rejects(readFile(firstTarget), { code: "ENOENT" });
+    assert.equal(await readFile(path.join(locked.root, "tools/datapack/.seoul-accessibility-registration.lock"), "utf8"), body);
     await rm(path.join(locked.root, "tools/datapack/.seoul-accessibility-registration.lock"));
   }
 });
 
-test("only one contender can reclaim a stale registration lock", async (t) => {
+test("old stale readers cannot move an active replacement lease", async (t) => {
   const values = await fixture();
   t.after(() => Promise.all([rm(values.root, { recursive: true, force: true }), rm(values.observation, { recursive: true, force: true })]));
   const outputs = await buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, snapshotPath: values.snapshotPath, receiptPath: values.receiptPath, now: new Date("2026-08-22T00:01:00.000Z") });
-  await writeFile(path.join(values.root, "tools/datapack/.seoul-accessibility-registration.lock"), JSON.stringify({ schemaVersion: 1, pid: 999999, token: "00000000-0000-4000-8000-000000000000" }));
-  const results = await Promise.allSettled(Array.from({ length: 32 }, () => commitCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, outputs })));
-  assert.equal(results.filter(({ status }) => status === "fulfilled").length, 1);
+  await writeFile(path.join(values.root, "tools/datapack/.seoul-accessibility-registration.lock"), lockRecord(await closedLeasePort()));
+  const oldReaderReady = deferred(); const releaseOldReader = deferred(); const newOwnerReady = deferred(); const releaseNewOwner = deferred();
+  const oldReader = commitCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, outputs, lockHooks: { afterStaleLockRead: async () => { oldReaderReady.resolve(); await releaseOldReader.promise; } } });
+  await oldReaderReady.promise;
+  const newOwner = commitCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, outputs, lockHooks: { afterLockAcquired: async () => { newOwnerReady.resolve(); await releaseNewOwner.promise; } } });
+  await newOwnerReady.promise;
+  const activeBody = await readFile(path.join(values.root, "tools/datapack/.seoul-accessibility-registration.lock"));
+  releaseOldReader.resolve();
+  await assert.rejects(oldReader, /lock residue/);
+  assert.deepEqual(await readFile(path.join(values.root, "tools/datapack/.seoul-accessibility-registration.lock")), activeBody);
+  releaseNewOwner.resolve();
+  await newOwner;
 });
 
 test("immutable snapshot collisions and symlink aliases fail before repository mutation", async (t) => {

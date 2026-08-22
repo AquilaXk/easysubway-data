@@ -2,6 +2,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, open, readFile, realpath, rename, unlink } from "node:fs/promises";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -261,39 +262,57 @@ async function writeAtomic(target, bytes, expected) {
   await safeParent(target); await assertExpected(target, expected); const temporary = path.join(path.dirname(target), `.${path.basename(target)}.${randomUUID()}.tmp`);
   try { const handle = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600); try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); } await assertExpected(target, expected); if (expected === null) { await rename(temporary, target); } else await rename(temporary, target); await syncParent(target); await assertExpected(target, bytes); } finally { await unlink(temporary).catch(() => {}); }
 }
-function lockBytes() { return jsonBytes({ schemaVersion: 1, pid: process.pid, token: randomUUID() }); }
+async function lease(port = 0) {
+  const server = createServer();
+  await new Promise((resolve, reject) => {
+    const fail = (error) => { server.off("listening", ready); reject(error); };
+    const ready = () => { server.off("error", fail); resolve(); };
+    server.once("error", fail); server.once("listening", ready); server.listen({ host: "127.0.0.1", port, exclusive: true });
+  });
+  return server;
+}
+async function closeLease(server) { if (server?.listening) await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())); }
+function lockBytes(server) {
+  const address = server.address();
+  if (!address || typeof address === "string" || address.address !== "127.0.0.1" || !Number.isInteger(address.port) || address.port < 1) throw new Error("Seoul registration lock lease is invalid");
+  return jsonBytes({ schemaVersion: 1, host: "127.0.0.1", port: address.port, pid: process.pid, token: randomUUID() });
+}
 async function createLock(lock, bytes) {
   const handle = await open(lock, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
   try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
   await syncParent(lock);
 }
-function staleLock(bytes) {
+function parseLock(bytes) {
   let value;
   try { value = parse(bytes, "Seoul registration lock"); } catch { throw new Error("Seoul registration lock residue exists"); }
-  if (JSON.stringify(Object.keys(value)) !== JSON.stringify(["schemaVersion", "pid", "token"])
-    || value.schemaVersion !== 1 || !Number.isInteger(value.pid) || value.pid <= 0
+  if (JSON.stringify(Object.keys(value)) !== JSON.stringify(["schemaVersion", "host", "port", "pid", "token"])
+    || value.schemaVersion !== 1 || value.host !== "127.0.0.1" || !Number.isInteger(value.port) || value.port < 1 || value.port > 65535
+    || !Number.isInteger(value.pid) || value.pid <= 0
     || typeof value.token !== "string" || !/^[a-f0-9-]{36}$/u.test(value.token)) {
     throw new Error("Seoul registration lock residue exists");
   }
-  try { process.kill(value.pid, 0); } catch (error) { if (error?.code === "ESRCH") return; throw new Error("Seoul registration lock residue exists"); }
-  throw new Error("Seoul registration lock residue exists");
+  return value;
 }
-async function acquireLock(root) {
-  const lock = contained(root.lexical, LOCK); await assertRepositoryTarget(root, lock, "Seoul registration lock"); const bytes = lockBytes();
+async function acquireLock(root, hooks = {}) {
+  const lock = contained(root.lexical, LOCK); await assertRepositoryTarget(root, lock, "Seoul registration lock"); let server = await lease(); let bytes = lockBytes(server);
   try {
     await createLock(lock, bytes);
   } catch (error) {
-    if (error?.code !== "EEXIST") throw error;
+    if (error?.code !== "EEXIST") { await closeLease(server); throw error; }
+    await closeLease(server); server = null;
     const expected = await stableBytes(lock, "Seoul registration lock", (target, label) => assertRepositoryTarget(root, target, label));
-    staleLock(expected);
-    const reclaimed = `${lock}.stale-${randomUUID()}`;
-    await rename(lock, reclaimed);
-    const moved = await stableBytes(reclaimed, "Seoul registration stale lock", (target, label) => assertRepositoryTarget(root, target, label));
-    if (!moved.equals(expected)) throw new Error("Seoul registration lock residue exists");
-    try { await createLock(lock, bytes); } catch (reclaimError) { throw new Error("Seoul registration lock residue exists", { cause: reclaimError }); }
-    await unlink(reclaimed); await syncParent(reclaimed);
+    const stale = parseLock(expected); await hooks.afterStaleLockRead?.();
+    try { server = await lease(stale.port); } catch (leaseError) { throw new Error("Seoul registration lock residue exists", { cause: leaseError }); }
+    bytes = lockBytes(server);
+    try { await writeAtomic(lock, bytes, expected); } catch (reclaimError) { await closeLease(server); throw new Error("Seoul registration lock residue exists", { cause: reclaimError }); }
   }
-  return async () => { await unlink(lock).catch(() => {}); await syncParent(lock).catch(() => {}); };
+  const release = async () => {
+    try { const current = await stableBytes(lock, "Seoul registration lock", (target, label) => assertRepositoryTarget(root, target, label)); if (!current.equals(bytes)) return; await unlink(lock); await syncParent(lock); }
+    catch (error) { if (error?.code !== "ENOENT") throw error; }
+    finally { await closeLease(server); }
+  };
+  try { await hooks.afterLockAcquired?.(); } catch (error) { await release(); throw error; }
+  return release;
 }
 function journalRecords(outputs) { return outputs.map(({ relative, bytes, prestateBytes }) => ({ relative, before: prestateBytes?.toString("base64") ?? null, after: bytes.toString("base64"), beforeSha256: prestateBytes == null ? null : sha(prestateBytes), afterSha256: sha(bytes) })); }
 async function recover(root, journal) {
@@ -301,8 +320,8 @@ async function recover(root, journal) {
   for (const record of journal.records) { const target = contained(root.lexical, record.relative); await assertRepositoryTarget(root, target, "Seoul registration recovery target"); const before = record.before == null ? null : Buffer.from(record.before, "base64"); const after = Buffer.from(record.after, "base64"); if (sha(after) !== record.afterSha256 || (before != null && sha(before) !== record.beforeSha256)) throw new Error("Seoul registration recovery required"); const current = await currentBytes(target); if (journal.state === "COMMITTED") { if (!current?.equals(after)) throw new Error("Seoul registration preserves foreign replacement"); continue; } if ((before != null && current?.equals(before)) || (current == null && before == null)) continue; if (!current?.equals(after)) throw new Error("Seoul registration preserves foreign replacement"); if (before == null) { await unlink(target); await syncParent(target); } else await writeAtomic(target, before, after); }
   const journalTarget = contained(root.lexical, JOURNAL); await unlink(journalTarget); await syncParent(journalTarget);
 }
-export async function commitCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot = ROOT, outputs, failAfter = null } = {}) {
-  assertOutputs(outputs); const root = await repositoryRootInfo(repositoryRoot); const target = async (relative, label) => { const value = contained(root.lexical, relative); await assertRepositoryTarget(root, value, label); return value; }; const release = await acquireLock(root); let journal;
+export async function commitCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot = ROOT, outputs, failAfter = null, lockHooks = {} } = {}) {
+  assertOutputs(outputs); const root = await repositoryRootInfo(repositoryRoot); const target = async (relative, label) => { const value = contained(root.lexical, relative); await assertRepositoryTarget(root, value, label); return value; }; const release = await acquireLock(root, lockHooks); let journal;
   try {
     const journalTarget = await target(JOURNAL, "Seoul registration journal"); const existing = await optionalBytes(journalTarget, "Seoul registration journal"); if (existing) await recover(root, parse(existing, "Seoul registration journal"));
     for (const output of outputs) await assertExpected(await target(output.relative, "Seoul registration output"), output.prestateBytes);
