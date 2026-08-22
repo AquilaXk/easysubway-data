@@ -781,5 +781,14 @@ test("production-publish는 attested candidate를 no-rebuild로 소비한다", (
   assert.ok(yml.indexOf("Data Pack Release / Build data packs") < yml.indexOf("Data Pack Release / Stage candidate provenance"));
   assert.ok(yml.indexOf("Data Pack Release / Stage candidate provenance") < yml.indexOf("Data Pack Release / Validate release evidence bundle"));
 
-  assert.doesNotMatch(yml, /apps\/mobile/);
+  for (const name of [
+    "Data Pack Release / Checkout pinned Mobile fixture",
+    "Data Pack Release / Stage pinned Mobile fixture",
+  ]) {
+    assert.match(
+      step(name),
+      /if:\s*\$\{\{ steps\.release-mode\.outputs\.is-pointer-only != 'true' && steps\.release-mode\.outputs\.mode != 'production-publish' \}\}/,
+      `${name}는 production-publish에서 실행되면 안 됨`,
+    );
+  }
 });

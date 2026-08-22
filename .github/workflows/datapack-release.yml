@@ -907,6 +907,57 @@ jobs:
             --output "${EASYSUBWAY_HEADWAY_REPORT}"
           test -s "${EASYSUBWAY_HEADWAY_REPORT}"
 
+      - name: Data Pack Release / Checkout pinned Mobile fixture
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: AquilaXk/easysubway-mobile
+          ref: 39d2c4723d0ff855041c6162825930c7d12ffad3
+          path: .external/mobile
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Data Pack Release / Stage pinned Mobile fixture
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_revision="39d2c4723d0ff855041c6162825930c7d12ffad3"
+          source=".external/mobile/apps/mobile"
+          capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
+          index="${source}/assets/datapacks/index.json"
+          source_inventory="${source}/assets/datapacks/source-inventory.json"
+          expected_capital_gzip_sha256="f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3"
+          expected_index_sha256="ad801ec865d385e86cf4094e3c007af9cbfbe1d4a8c42bab8f9b2682b229026e"
+          expected_source_inventory_sha256="69cdbd88a169d77ef4941d197c5bae5a0ab26999418ce513778903abbe7d70d2"
+
+          actual_revision="$(git -C .external/mobile rev-parse HEAD)"
+          [[ "${actual_revision}" == "${expected_revision}" ]]
+          [[ -d "${source}" && ! -L "${source}" ]]
+          if find "${source}" -type l -print -quit | grep -q .; then
+            echo "pinned Mobile fixture contains a symlink" >&2
+            exit 1
+          fi
+
+          for required_file in "${capital_gzip}" "${index}" "${source_inventory}"; do
+            [[ -f "${required_file}" && ! -L "${required_file}" ]]
+          done
+          actual_capital_gzip_sha256="$(sha256sum "${capital_gzip}" | awk '{print $1}')"
+          actual_index_sha256="$(sha256sum "${index}" | awk '{print $1}')"
+          actual_source_inventory_sha256="$(sha256sum "${source_inventory}" | awk '{print $1}')"
+          [[ "${actual_capital_gzip_sha256}" == "${expected_capital_gzip_sha256}" ]]
+          [[ "${actual_index_sha256}" == "${expected_index_sha256}" ]]
+          [[ "${actual_source_inventory_sha256}" == "${expected_source_inventory_sha256}" ]]
+
+          test ! -e apps/mobile
+          test ! -L apps/mobile
+          if [[ -e apps || -L apps ]]; then
+            [[ -d apps && ! -L apps ]]
+          else
+            mkdir apps
+          fi
+          cp -a "${source}" apps/mobile
+
       - name: Data Pack Release / Validate ITX-청춘 coverage contract
         if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' }}
         run: node tools/ci/data-test-discovery.mjs run --class deterministic-release --max-workers 1

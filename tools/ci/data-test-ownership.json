@@ -201,7 +201,21 @@
       "jobId": "data-pack-release",
       "checkName": "Data Pack Release",
       "invocation": "node tools/ci/data-test-discovery.mjs run --class deterministic-release --max-workers 1",
-      "required": false
+      "required": false,
+      "fixtures": [
+        "mobile"
+      ],
+      "fixtureStageContracts": {
+        "mobile": [
+          "source=\".external/mobile/apps/mobile\"",
+          "expected_revision=\"39d2c4723d0ff855041c6162825930c7d12ffad3\"",
+          "expected_capital_gzip_sha256=\"f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3\"",
+          "expected_index_sha256=\"ad801ec865d385e86cf4094e3c007af9cbfbe1d4a8c42bab8f9b2682b229026e\"",
+          "expected_source_inventory_sha256=\"69cdbd88a169d77ef4941d197c5bae5a0ab26999418ce513778903abbe7d70d2\"",
+          "fetch-depth: 0",
+          "cp -a \"${source}\" apps/mobile"
+        ]
+      }
     }
   },
   "tests": [
