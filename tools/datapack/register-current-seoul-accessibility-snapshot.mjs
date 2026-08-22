@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, open, readFile, rename, unlink } from "node:fs/promises";
+import { link, lstat, open, readFile, realpath, rename, unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -43,6 +44,32 @@ function contained(root, relative) {
   if (!target.startsWith(`${root}${path.sep}`)) throw new Error("registration path escapes repository");
   return target;
 }
+function within(root, candidate) { return candidate === root || candidate.startsWith(`${root}${path.sep}`); }
+async function repositoryRootInfo(repositoryRoot) {
+  const lexical = path.resolve(repositoryRoot); const stat = await lstat(lexical);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("repository root must be a regular directory");
+  return { lexical, real: await realpath(lexical) };
+}
+async function noSymlinkComponents(from, target, label) {
+  const relative = path.relative(from, path.dirname(target));
+  if (relative === "" || relative.startsWith(`..${path.sep}`) || relative === "..") throw new Error(`${label} escapes its root`);
+  let current = from;
+  for (const part of relative.split(path.sep).filter(Boolean)) {
+    current = path.join(current, part);
+    const stat = await lstat(current);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error(`${label} has a symlinked parent`);
+  }
+}
+async function assertRepositoryTarget(root, target, label) {
+  if (!within(root.lexical, target)) throw new Error(`${label} escapes repository`);
+  await noSymlinkComponents(root.lexical, target, label);
+  if (!within(root.real, await realpath(path.dirname(target)))) throw new Error(`${label} escapes repository`);
+}
+async function assertExternalTarget(root, target, label) {
+  const lexical = path.resolve(target); const temporary = path.resolve(tmpdir()); const anchor = within(temporary, lexical) ? temporary : path.parse(lexical).root;
+  await noSymlinkComponents(anchor, lexical, label);
+  if (within(root.real, await realpath(path.dirname(lexical)))) throw new Error(`${label} must stay outside repository`);
+}
 async function safeParent(target) {
   const parent = path.dirname(target); const stat = await lstat(parent);
   if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("registration target parent is unsafe");
@@ -52,7 +79,8 @@ async function syncParent(target) {
   const handle = await open(await safeParent(target), constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
   try { await handle.sync(); } finally { await handle.close(); }
 }
-async function stableBytes(target, label) {
+async function stableBytes(target, label, confinement = null) {
+  if (confinement) await confinement(target, label);
   await safeParent(target);
   const handle = await open(target, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
@@ -150,11 +178,14 @@ function deriveReleaseEvidence({ snapshots, inventory, canonical, governance, fr
 }
 
 export async function buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot = ROOT, snapshotPath, receiptPath, now = new Date() } = {}) {
-  const root = path.resolve(repositoryRoot); if (!path.isAbsolute(snapshotPath ?? "") || !path.isAbsolute(receiptPath ?? "")) throw new Error("external Seoul observation and receipt paths are required");
-  if ([snapshotPath, receiptPath].some((value) => path.resolve(value).startsWith(`${root}${path.sep}`))) throw new Error("Seoul observation and receipt must stay outside repository");
+  const root = await repositoryRootInfo(repositoryRoot); if (!path.isAbsolute(snapshotPath ?? "") || !path.isAbsolute(receiptPath ?? "")) throw new Error("external Seoul observation and receipt paths are required");
+  const external = (target, label) => assertExternalTarget(root, target, label);
+  const repository = (relative, label) => { const target = contained(root.lexical, relative); return { target, checked: assertRepositoryTarget(root, target, label) }; };
+  await Promise.all([external(snapshotPath, "external Seoul snapshot"), external(receiptPath, "external Seoul OCI receipt")]);
+  const readRepository = async (relative, label) => { const item = repository(relative, label); await item.checked; return stableBytes(item.target, label); };
   const [snapshotBytes, receiptBytes, inventoryBytes, ledgerBytes, inputBytes, specBytes, requestBytes, hashBytes, ...support] = await Promise.all([
-    stableBytes(snapshotPath, "external Seoul snapshot"), stableBytes(receiptPath, "external Seoul OCI receipt"),
-    stableBytes(contained(root, "tools/datapack/source-inventory.json"), "source inventory"), stableBytes(contained(root, "tools/datapack/release/source-snapshots.json"), "source ledger"), stableBytes(contained(root, "tools/datapack/inputs/capital-pilot-production-source-input.json"), "capital source input"), stableBytes(contained(root, "tools/datapack/release/candidate-build-spec.json"), "candidate build spec"), stableBytes(contained(root, "tools/datapack/release/release-request.json"), "release request"), stableBytes(contained(root, "tools/datapack/release/hash-evidence.json"), "hash evidence"), ...SUPPORT.map((relative) => stableBytes(contained(root, relative), relative)),
+    stableBytes(snapshotPath, "external Seoul snapshot", external), stableBytes(receiptPath, "external Seoul OCI receipt", external),
+    readRepository("tools/datapack/source-inventory.json", "source inventory"), readRepository("tools/datapack/release/source-snapshots.json", "source ledger"), readRepository("tools/datapack/inputs/capital-pilot-production-source-input.json", "capital source input"), readRepository("tools/datapack/release/candidate-build-spec.json", "candidate build spec"), readRepository("tools/datapack/release/release-request.json", "release request"), readRepository("tools/datapack/release/hash-evidence.json", "hash evidence"), ...SUPPORT.map((relative) => readRepository(relative, relative)),
   ]);
   const snapshot = validateSeoulAccessibilitySnapshotIdentity(parse(snapshotBytes, "external Seoul snapshot")); const receipt = parse(receiptBytes, "external Seoul OCI receipt");
   if (receipt.snapshotFileSha256 !== sha(snapshotBytes)) throw new Error("Seoul OCI receipt snapshot bytes mismatch");
@@ -171,10 +202,10 @@ export async function buildCurrentSeoulAccessibilityRegistrationOutputs({ reposi
     || currentCandidate.sourceSnapshots?.find(({ sourceId }) => sourceId === KRIC_SOURCE_ID)?.snapshotId !== kricEvidence.snapshotId) {
     throw new Error("current KRIC accessibility input is not the active head");
   }
-  const kricBytes = await stableBytes(contained(root, kricEvidence.snapshotPath), "current KRIC accessibility snapshot");
+  const kricBytes = await readRepository(kricEvidence.snapshotPath, "current KRIC accessibility snapshot");
   const nextInput = materializeAccessibilitySourceInput({ input: structuredClone(input), kricSnapshot: parse(kricBytes, "current KRIC accessibility snapshot"), seoulSnapshot: snapshot });
   const nextSnapshots = [...snapshots, nextLedger]; validateLineage(nextSnapshots);
-  const nextInventoryBytes = jsonBytes(nextInventory); const derived = deriveReleaseEvidence({ snapshots: nextSnapshots, inventory: nextInventory, canonical: parse(canonicalBytes, "canonical pack"), governance, freshness, spec: currentCandidate, request: parse(requestBytes, "release request"), hashes: parse(hashBytes, "hash evidence"), canonicalBytes, inventoryBytes: nextInventoryBytes, governanceBytes, itxBytes: await stableBytes(contained(root, currentCandidate.itxTopologyEvidencePath), "ITX evidence") });
+  const nextInventoryBytes = jsonBytes(nextInventory); const derived = deriveReleaseEvidence({ snapshots: nextSnapshots, inventory: nextInventory, canonical: parse(canonicalBytes, "canonical pack"), governance, freshness, spec: currentCandidate, request: parse(requestBytes, "release request"), hashes: parse(hashBytes, "hash evidence"), canonicalBytes, inventoryBytes: nextInventoryBytes, governanceBytes, itxBytes: await readRepository(currentCandidate.itxTopologyEvidencePath, "ITX evidence") });
   const allDerivedCandidate = parse(derived.specBytes, "derived candidate build spec");
   const nextCandidate = structuredClone(currentCandidate);
   const seoulIndex = nextCandidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === SOURCE_ID);
@@ -185,9 +216,7 @@ export async function buildCurrentSeoulAccessibilityRegistrationOutputs({ reposi
   nextCandidate.sourceSnapshotSetHash = allDerivedCandidate.sourceSnapshotSetHash;
   nextCandidate.sourceInventorySha256 = allDerivedCandidate.sourceInventorySha256;
   nextCandidate.networkEdgeEvidence.sourceInventory.sha256 = allDerivedCandidate.networkEdgeEvidence.sourceInventory.sha256;
-  const nextCandidateBytes = jsonBytes(nextCandidate);
   const nextRequest = parse(derived.requestBytes, "derived release request");
-  nextRequest.buildSpecSha256 = sha(nextCandidateBytes);
   const nextHashEvidence = parse(derived.hashBytes, "derived hash evidence");
   for (const projection of currentCandidate.sourceSnapshots) {
     if (projection.sourceId !== SOURCE_ID
@@ -195,13 +224,28 @@ export async function buildCurrentSeoulAccessibilityRegistrationOutputs({ reposi
       throw new Error("non-Seoul active candidate projection changed");
     }
   }
-  const snapshotRelative = `tools/datapack/sources/${snapshot.snapshotId}.json`;
+  const finalSelected = nextSnapshots.filter(({ snapshotId }) => nextCandidate.sourceSnapshotIds.includes(snapshotId));
+  if (finalSelected.length !== nextCandidate.sourceSnapshotIds.length
+    || JSON.stringify(finalSelected.map(({ snapshotId }) => snapshotId).sort()) !== JSON.stringify([...nextCandidate.sourceSnapshotIds].sort())) {
+    throw new Error("final candidate selected source IDs are invalid");
+  }
+  nextCandidate.sourceSnapshotSetHash = sha(JSON.stringify(finalSelected));
+  nextRequest.sourceSnapshotSetHash = nextCandidate.sourceSnapshotSetHash;
+  nextHashEvidence.sourceSnapshotSetHash.value = nextCandidate.sourceSnapshotSetHash;
+  nextHashEvidence.sourceSnapshotSetHash.contract = `source별 head ${finalSelected.length}종의 byte-ordered JSON hash와 build spec·release request가 일치해야 한다.`;
+  nextHashEvidence.sourceSnapshots.order = `release snapshot 순서: ${finalSelected.map(({ sourceId }) => sourceId).join(" → ")}`;
+  nextHashEvidence.perSourceEvidence = finalSelected.map((entry) => ({ sourceId: entry.sourceId, snapshotId: entry.snapshotId, rawSha256: entry.rawSha256, adminReviewRecordHash: nextInventory.sources.find(({ id }) => id === entry.sourceId).admissionEvidence.adminReviewRecordHash, perSourceSnapshotSetHash: sha(JSON.stringify([entry])) }));
+  const nextCandidateFinalBytes = jsonBytes(nextCandidate);
+  nextRequest.buildSpecSha256 = sha(nextCandidateFinalBytes);
+  const snapshotRelative = `tools/datapack/sources/${snapshot.snapshotId}.json`; const snapshotTarget = repository(snapshotRelative, "Seoul snapshot target"); await snapshotTarget.checked;
+  const existingSnapshot = await optionalBytes(snapshotTarget.target, "Seoul snapshot target");
+  if (existingSnapshot != null && !existingSnapshot.equals(snapshotBytes)) throw new Error("Seoul snapshot target immutable collision");
   return [
-    { relative: snapshotRelative, bytes: snapshotBytes, prestateBytes: await optionalBytes(contained(root, snapshotRelative), "Seoul snapshot target") },
+    { relative: snapshotRelative, bytes: snapshotBytes, prestateBytes: existingSnapshot },
     { relative: "tools/datapack/source-inventory.json", bytes: nextInventoryBytes, prestateBytes: inventoryBytes },
     { relative: "tools/datapack/release/source-snapshots.json", bytes: jsonBytes(nextSnapshots), prestateBytes: ledgerBytes },
     { relative: "tools/datapack/inputs/capital-pilot-production-source-input.json", bytes: jsonBytes(nextInput), prestateBytes: inputBytes },
-    { relative: "tools/datapack/release/candidate-build-spec.json", bytes: nextCandidateBytes, prestateBytes: specBytes },
+    { relative: "tools/datapack/release/candidate-build-spec.json", bytes: nextCandidateFinalBytes, prestateBytes: specBytes },
     { relative: "tools/datapack/release/release-request.json", bytes: jsonBytes(nextRequest), prestateBytes: requestBytes },
     { relative: "tools/datapack/release/hash-evidence.json", bytes: jsonBytes(nextHashEvidence), prestateBytes: hashBytes },
   ];
@@ -217,21 +261,57 @@ async function writeAtomic(target, bytes, expected) {
   await safeParent(target); await assertExpected(target, expected); const temporary = path.join(path.dirname(target), `.${path.basename(target)}.${randomUUID()}.tmp`);
   try { const handle = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600); try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); } await assertExpected(target, expected); if (expected === null) { await rename(temporary, target); } else await rename(temporary, target); await syncParent(target); await assertExpected(target, bytes); } finally { await unlink(temporary).catch(() => {}); }
 }
-async function acquireLock(root) { const lock = contained(root, LOCK); try { const handle = await open(lock, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600); try { await handle.writeFile(`${process.pid}\n`); await handle.sync(); } finally { await handle.close(); } await syncParent(lock); } catch (error) { if (error?.code === "EEXIST") throw new Error("Seoul registration lock residue exists"); throw error; } return async () => { await unlink(lock).catch(() => {}); await syncParent(lock).catch(() => {}); }; }
+function lockBytes() { return jsonBytes({ schemaVersion: 1, pid: process.pid, token: randomUUID() }); }
+function staleLock(bytes) {
+  let value;
+  try { value = parse(bytes, "Seoul registration lock"); } catch { throw new Error("Seoul registration lock residue exists"); }
+  if (JSON.stringify(Object.keys(value)) !== JSON.stringify(["schemaVersion", "pid", "token"])
+    || value.schemaVersion !== 1 || !Number.isInteger(value.pid) || value.pid <= 0
+    || typeof value.token !== "string" || !/^[a-f0-9-]{36}$/u.test(value.token)) {
+    throw new Error("Seoul registration lock residue exists");
+  }
+  try { process.kill(value.pid, 0); } catch (error) { if (error?.code === "ESRCH") return; throw new Error("Seoul registration lock residue exists"); }
+  throw new Error("Seoul registration lock residue exists");
+}
+async function replaceLockBody(lock, bytes) {
+  const handle = await open(lock, constants.O_WRONLY | constants.O_TRUNC | constants.O_NOFOLLOW);
+  try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
+  await syncParent(lock);
+}
+async function acquireLock(root) {
+  const lock = contained(root.lexical, LOCK); await assertRepositoryTarget(root, lock, "Seoul registration lock"); const bytes = lockBytes();
+  try {
+    const handle = await open(lock, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
+    try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
+    await syncParent(lock);
+  } catch (error) {
+    if (error?.code !== "EEXIST") throw error;
+    const expected = await stableBytes(lock, "Seoul registration lock", (target, label) => assertRepositoryTarget(root, target, label));
+    staleLock(expected);
+    const reclaimed = `${lock}.stale-${randomUUID()}`;
+    await rename(lock, reclaimed);
+    const moved = await stableBytes(reclaimed, "Seoul registration stale lock", (target, label) => assertRepositoryTarget(root, target, label));
+    if (!moved.equals(expected)) throw new Error("Seoul registration lock residue exists");
+    try { await link(reclaimed, lock); } catch { throw new Error("Seoul registration lock residue exists"); }
+    await replaceLockBody(lock, bytes);
+    await unlink(reclaimed); await syncParent(reclaimed);
+  }
+  return async () => { await unlink(lock).catch(() => {}); await syncParent(lock).catch(() => {}); };
+}
 function journalRecords(outputs) { return outputs.map(({ relative, bytes, prestateBytes }) => ({ relative, before: prestateBytes?.toString("base64") ?? null, after: bytes.toString("base64"), beforeSha256: prestateBytes == null ? null : sha(prestateBytes), afterSha256: sha(bytes) })); }
 async function recover(root, journal) {
   if (!journal || !["PREPARED", "COMMITTED"].includes(journal.state) || !Array.isArray(journal.records) || journal.records.length !== 7) throw new Error("Seoul registration recovery required");
-  for (const record of journal.records) { const target = contained(root, record.relative); const before = record.before == null ? null : Buffer.from(record.before, "base64"); const after = Buffer.from(record.after, "base64"); if (sha(after) !== record.afterSha256 || (before != null && sha(before) !== record.beforeSha256)) throw new Error("Seoul registration recovery required"); const current = await currentBytes(target); if (journal.state === "COMMITTED") { if (!current?.equals(after)) throw new Error("Seoul registration preserves foreign replacement"); continue; } if ((before != null && current?.equals(before)) || (current == null && before == null)) continue; if (!current?.equals(after)) throw new Error("Seoul registration preserves foreign replacement"); if (before == null) { await unlink(target); await syncParent(target); } else await writeAtomic(target, before, after); }
-  await unlink(contained(root, JOURNAL)); await syncParent(contained(root, JOURNAL));
+  for (const record of journal.records) { const target = contained(root.lexical, record.relative); await assertRepositoryTarget(root, target, "Seoul registration recovery target"); const before = record.before == null ? null : Buffer.from(record.before, "base64"); const after = Buffer.from(record.after, "base64"); if (sha(after) !== record.afterSha256 || (before != null && sha(before) !== record.beforeSha256)) throw new Error("Seoul registration recovery required"); const current = await currentBytes(target); if (journal.state === "COMMITTED") { if (!current?.equals(after)) throw new Error("Seoul registration preserves foreign replacement"); continue; } if ((before != null && current?.equals(before)) || (current == null && before == null)) continue; if (!current?.equals(after)) throw new Error("Seoul registration preserves foreign replacement"); if (before == null) { await unlink(target); await syncParent(target); } else await writeAtomic(target, before, after); }
+  const journalTarget = contained(root.lexical, JOURNAL); await unlink(journalTarget); await syncParent(journalTarget);
 }
 export async function commitCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot = ROOT, outputs, failAfter = null } = {}) {
-  assertOutputs(outputs); const root = path.resolve(repositoryRoot); const release = await acquireLock(root); let journal;
+  assertOutputs(outputs); const root = await repositoryRootInfo(repositoryRoot); const target = async (relative, label) => { const value = contained(root.lexical, relative); await assertRepositoryTarget(root, value, label); return value; }; const release = await acquireLock(root); let journal;
   try {
-    const existing = await optionalBytes(contained(root, JOURNAL), "Seoul registration journal"); if (existing) await recover(root, parse(existing, "Seoul registration journal"));
-    for (const output of outputs) await assertExpected(contained(root, output.relative), output.prestateBytes);
-    journal = { state: "PREPARED", records: journalRecords(outputs) }; await writeAtomic(contained(root, JOURNAL), jsonBytes(journal), null);
-    for (const [index, output] of outputs.entries()) { await writeAtomic(contained(root, output.relative), output.bytes, output.prestateBytes); if (index === failAfter) throw new Error("injected transaction failure"); }
-    journal.state = "COMMITTED"; await writeAtomic(contained(root, JOURNAL), jsonBytes(journal), jsonBytes({ ...journal, state: "PREPARED" })); await recover(root, journal);
+    const journalTarget = await target(JOURNAL, "Seoul registration journal"); const existing = await optionalBytes(journalTarget, "Seoul registration journal"); if (existing) await recover(root, parse(existing, "Seoul registration journal"));
+    for (const output of outputs) await assertExpected(await target(output.relative, "Seoul registration output"), output.prestateBytes);
+    journal = { state: "PREPARED", records: journalRecords(outputs) }; await writeAtomic(journalTarget, jsonBytes(journal), null);
+    for (const [index, output] of outputs.entries()) { await writeAtomic(await target(output.relative, "Seoul registration output"), output.bytes, output.prestateBytes); if (index === failAfter) throw new Error("injected transaction failure"); }
+    journal.state = "COMMITTED"; await writeAtomic(journalTarget, jsonBytes(journal), jsonBytes({ ...journal, state: "PREPARED" })); await recover(root, journal);
   } catch (error) { if (journal) { try { await recover(root, journal); } catch (recovery) { throw new AggregateError([error, recovery], "Seoul registration rollback failed"); } } throw error; }
   finally { await release(); }
 }
