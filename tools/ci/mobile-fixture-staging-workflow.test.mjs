@@ -12,6 +12,8 @@ const ownership = JSON.parse(
 const mobileRepository = "AquilaXk/easysubway-mobile";
 const mobileRevision = "39d2c4723d0ff855041c6162825930c7d12ffad3";
 const capitalGzipSha256 = "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3";
+const indexSha256 = "ad801ec865d385e86cf4094e3c007af9cbfbe1d4a8c42bab8f9b2682b229026e";
+const sourceInventorySha256 = "69cdbd88a169d77ef4941d197c5bae5a0ab26999418ce513778903abbe7d70d2";
 
 function namedWorkflowStep(yml, name) {
   const marker = `      - name: ${name}\n`;
@@ -212,7 +214,65 @@ test("CI는 #108 derived pack을 버리고 pristine Mobile fixture를 owned runn
   assertWorkflowStepOrder(ci, executionOrder);
 });
 
-test("Data Pack Release는 Mobile fixture checkout 또는 stage를 포함하지 않는다", () => {
-  const release = readFileSync(path.join(root, ".github/workflows/datapack-release.yml"), "utf8");
-  assert.doesNotMatch(release, /apps\/mobile|Checkout pinned Mobile fixture|Stage pinned Mobile fixture/);
+test("Data Pack Release는 deterministic-release 전에 immutable Mobile fixture를 검증하고 stage한다", () => {
+  const releaseWorkflow = ".github/workflows/datapack-release.yml";
+  const { yml, block, stage } = fixtureStep(releaseWorkflow);
+  const releaseOwnership = ownership.workflows["deterministic-release"];
+  const runner = namedWorkflowStep(yml, "Data Pack Release / Validate ITX-청춘 coverage contract");
+  const releaseGate = "if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' }}";
+
+  assert.match(block, /actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1/);
+  assert.match(block, new RegExp(`repository:\\s*${mobileRepository}`));
+  assert.match(block, new RegExp(`ref:\\s*${mobileRevision}`));
+  assert.match(block, /path:\s*\.external\/mobile/);
+  assert.match(block, /persist-credentials:\s*false/);
+  assert.match(block, /fetch-depth:\s*0/);
+  assert.match(stage, /git -C \.external\/mobile rev-parse HEAD/);
+  assert.match(stage, /find "\$\{source\}" -type l/);
+  assert.match(stage, /assets\/datapacks\/capital\.sqlite\.gz/);
+  assert.match(stage, /assets\/datapacks\/index\.json/);
+  assert.match(stage, /assets\/datapacks\/source-inventory\.json/);
+  assert.match(
+    stage,
+    /for required_file in "\$\{capital_gzip\}" "\$\{index\}" "\$\{source_inventory\}"; do/,
+  );
+  assert.match(stage, /\[\[ -f "\$\{required_file\}" && ! -L "\$\{required_file\}" \]\]/);
+  assert.match(stage, new RegExp(capitalGzipSha256));
+  assert.match(stage, new RegExp(indexSha256));
+  assert.match(stage, new RegExp(sourceInventorySha256));
+  const comparisons = [
+    '[[ "${actual_revision}" == "${expected_revision}" ]]',
+    '[[ "${actual_capital_gzip_sha256}" == "${expected_capital_gzip_sha256}" ]]',
+    '[[ "${actual_index_sha256}" == "${expected_index_sha256}" ]]',
+    '[[ "${actual_source_inventory_sha256}" == "${expected_source_inventory_sha256}" ]]',
+  ];
+  for (const comparison of comparisons) {
+    assert.ok(stage.includes(comparison), `release stage에 ${comparison} 검증이 필요함`);
+    assert.ok(
+      stage.indexOf(comparison) < stage.indexOf('cp -a "${source}" apps/mobile'),
+      `${comparison} 검증은 destination stage보다 앞서야 함`,
+    );
+  }
+  assert.match(stage, /test ! -e apps\/mobile/);
+  assert.match(stage, /test ! -L apps\/mobile/);
+  assert.match(stage, /\[\[ -d apps && ! -L apps \]\]/);
+  assert.match(stage, /cp -a "\$\{source\}" apps\/mobile/);
+  assert.ok(
+    yml.indexOf("Checkout pinned Mobile fixture") < yml.indexOf("Stage pinned Mobile fixture")
+      && yml.indexOf("Stage pinned Mobile fixture") < yml.indexOf("Validate ITX-청춘 coverage contract"),
+    "release fixture는 deterministic-release 전에 stage되어야 함",
+  );
+  for (const step of [block, stage, runner]) {
+    assert.ok(step.includes(releaseGate), `release fixture와 runner는 동일한 gate가 필요함: ${releaseGate}`);
+  }
+  assert.deepEqual(releaseOwnership.fixtures, ["mobile"]);
+  assert.deepEqual(releaseOwnership.fixtureStageContracts.mobile, [
+    'source=".external/mobile/apps/mobile"',
+    `expected_revision="${mobileRevision}"`,
+    `expected_capital_gzip_sha256="${capitalGzipSha256}"`,
+    `expected_index_sha256="${indexSha256}"`,
+    `expected_source_inventory_sha256="${sourceInventorySha256}"`,
+    "fetch-depth: 0",
+    'cp -a "${source}" apps/mobile',
+  ]);
 });
