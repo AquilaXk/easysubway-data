@@ -171,6 +171,10 @@
     "data447": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/447",
       "title": "[Data][Release Blocker] 노선도·도시철도 전체노선 current OCI successor 등록"
+    },
+    "data454": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454",
+      "title": "[Data][Nationwide] KRIC 도시철도 시간표 source admission"
     }
   },
   "workflows": {
@@ -396,6 +400,7 @@
     {"path":"tools/datapack/parse-kric-code-catalog.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":118},
     {"path":"tools/datapack/plan-kric-exit-path-collection.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":139},
     {"path":"tools/datapack/plan-kric-line4-collection.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":114},
+    {"path":"tools/datapack/plan-kric-nationwide-timetable-collection.test.mjs","semanticOwner":"data454","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/plan-tago-schedule-collection.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":304},
     {"path":"tools/datapack/prepare-current-server-route-bundle-final.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":69},
     {"path":"tools/datapack/probe-busan-fare-api.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":169},
