@@ -50,10 +50,15 @@ import {
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
 const TOOL_PATH = "tools/datapack/run-nationwide-candidate-coverage-gate.mjs";
+const TEST_PATH = "tools/datapack/nationwide-candidate-coverage-gate.test.mjs";
 const SPEC_PATH = "tools/datapack/nationwide-candidate-pack-spec.json";
 const TARGETS_PATH = "tools/datapack/nationwide-coverage-targets.json";
 const INVENTORY_PATH = "tools/datapack/source-inventory.json";
 const APP_INVENTORY_PATH = "apps/mobile/assets/datapacks/source-inventory.json";
+const TEST_OWNERSHIP_PATH = "tools/ci/data-test-ownership.json";
+const DETERMINISTIC_RELEASE_WORKFLOW = "deterministic-release";
+const MOBILE_FIXTURE = "mobile";
+const SOURCE_INVENTORY_SHA256_TOKEN = "expected_source_inventory_sha256";
 const RESOLUTION_PLAN_PATH =
   "tools/datapack/release/nationwide-public-api-coverage-search-plan-20260725.json";
 const RESOLUTIONS_PATH =
@@ -504,6 +509,29 @@ async function readJson(relativePath) {
 
 async function sha256Of(relativePath) {
   return createHash("sha256").update(await readFile(path.join(root, relativePath))).digest("hex");
+}
+
+function expectedSourceInventorySha256FromOwnership(ownership) {
+  assert.ok(ownership && typeof ownership === "object" && !Array.isArray(ownership), "test ownership must be an object");
+  assert.ok(Array.isArray(ownership.tests), "test ownership tests must be an array");
+  const testOwnership = ownership.tests.find(({ path: testPath }) => testPath === TEST_PATH);
+  assert.ok(testOwnership, `${TEST_PATH} ownership entry is required`);
+  assert.ok(
+    Array.isArray(testOwnership.classes) && testOwnership.classes.includes(DETERMINISTIC_RELEASE_WORKFLOW),
+    `${TEST_PATH} must be owned by ${DETERMINISTIC_RELEASE_WORKFLOW}`,
+  );
+
+  const workflow = ownership.workflows?.[DETERMINISTIC_RELEASE_WORKFLOW];
+  assert.ok(workflow && typeof workflow === "object" && !Array.isArray(workflow), "deterministic-release workflow is required");
+  const tokens = workflow.fixtureStageContracts?.[MOBILE_FIXTURE];
+  assert.ok(Array.isArray(tokens), "deterministic-release mobile fixture tokens must be an array");
+  assert.ok(tokens.every((token) => typeof token === "string"), "deterministic-release mobile fixture tokens must be strings");
+
+  const identityTokens = tokens.filter((token) => token.startsWith(`${SOURCE_INVENTORY_SHA256_TOKEN}=`));
+  assert.equal(identityTokens.length, 1, "expected_source_inventory_sha256 token must occur exactly once");
+  const match = /^expected_source_inventory_sha256="([0-9a-f]{64})"$/.exec(identityTokens[0]);
+  assert.ok(match, "expected_source_inventory_sha256 token must contain one lowercase SHA-256 value");
+  return match[1];
 }
 
 // 문자열 substring 탐침은 서술 문자열의 인접 문자에 좌우된다 — 전 노드를 순회해 금지 key 부재를 본다.
@@ -1448,9 +1476,14 @@ test("인천 13 requirement는 체인 편입으로 전이하고 7호선 구간�
 });
 
 test("candidate spec의 line-scope 재기술은 tracked source inventory와 동기다", async (context) => {
-  const spec = await readJson(SPEC_PATH);
-  const inventory = await readJson(INVENTORY_PATH);
-  const appInventory = await readJson(APP_INVENTORY_PATH);
+  const [spec, inventory, ownership, appInventoryRaw] = await Promise.all([
+    readJson(SPEC_PATH),
+    readJson(INVENTORY_PATH),
+    readJson(TEST_OWNERSHIP_PATH),
+    readFile(path.join(root, APP_INVENTORY_PATH)),
+  ]);
+  JSON.parse(appInventoryRaw.toString("utf8"));
+  const expectedAppInventorySha256 = expectedSourceInventorySha256FromOwnership(ownership);
   const capitalRouteMapRedescription = spec.lineScopeRedescriptions.find(
     ({ sourceId, sourceDomain }) =>
       sourceId === CAPITAL_SEOUL_ROUTE_MAP_SOURCE_ID && sourceDomain === "route_map_positions",
@@ -1487,7 +1520,55 @@ test("candidate spec의 line-scope 재기술은 tracked source inventory와 동�
       assert.equal(sourceDomain, entry.sourceDomain, requirementKey);
     }
   }
-  assert.deepEqual(appInventory, inventory, "앱 번들 사본은 datapack 정본과 같아야 한다");
+  assert.equal(
+    createHash("sha256").update(appInventoryRaw).digest("hex"),
+    expectedAppInventorySha256,
+    "staged Mobile source inventory must match the deterministic-release fixture identity",
+  );
+
+  await context.test("release fixture identity token은 ownership 경로에서 하나의 raw SHA-256으로만 파싱한다", () => {
+    const expectedToken = `${SOURCE_INVENTORY_SHA256_TOKEN}="${expectedAppInventorySha256}"`;
+    const mobileTokens = ownership.workflows[DETERMINISTIC_RELEASE_WORKFLOW].fixtureStageContracts[MOBILE_FIXTURE];
+    assert.equal(mobileTokens.filter((token) => token === expectedToken).length, 1);
+
+    const missingWorkflow = structuredClone(ownership);
+    delete missingWorkflow.workflows[DETERMINISTIC_RELEASE_WORKFLOW];
+    assert.throws(() => expectedSourceInventorySha256FromOwnership(missingWorkflow), /workflow is required/);
+
+    const nonArrayTokens = structuredClone(ownership);
+    nonArrayTokens.workflows[DETERMINISTIC_RELEASE_WORKFLOW].fixtureStageContracts[MOBILE_FIXTURE] = expectedToken;
+    assert.throws(() => expectedSourceInventorySha256FromOwnership(nonArrayTokens), /tokens must be an array/);
+
+    const noIdentityToken = structuredClone(ownership);
+    noIdentityToken.workflows[DETERMINISTIC_RELEASE_WORKFLOW].fixtureStageContracts[MOBILE_FIXTURE] = [];
+    assert.throws(() => expectedSourceInventorySha256FromOwnership(noIdentityToken), /occur exactly once/);
+
+    const duplicateIdentityToken = structuredClone(ownership);
+    duplicateIdentityToken.workflows[DETERMINISTIC_RELEASE_WORKFLOW].fixtureStageContracts[MOBILE_FIXTURE].push(expectedToken);
+    assert.throws(() => expectedSourceInventorySha256FromOwnership(duplicateIdentityToken), /occur exactly once/);
+
+    const conflictingIdentityToken = structuredClone(ownership);
+    const conflictingSha256 = expectedAppInventorySha256 === "0".repeat(64) ? "1".repeat(64) : "0".repeat(64);
+    conflictingIdentityToken.workflows[DETERMINISTIC_RELEASE_WORKFLOW].fixtureStageContracts[MOBILE_FIXTURE].push(
+      `${SOURCE_INVENTORY_SHA256_TOKEN}="${conflictingSha256}"`,
+    );
+    assert.throws(() => expectedSourceInventorySha256FromOwnership(conflictingIdentityToken), /occur exactly once/);
+
+    for (const malformedToken of [
+      `${SOURCE_INVENTORY_SHA256_TOKEN}=${expectedAppInventorySha256}`,
+      `${SOURCE_INVENTORY_SHA256_TOKEN}="${expectedAppInventorySha256.toUpperCase()}"`,
+      `${SOURCE_INVENTORY_SHA256_TOKEN}="${"a".repeat(63)}"`,
+      `${SOURCE_INVENTORY_SHA256_TOKEN}="${"a".repeat(65)}"`,
+      `${SOURCE_INVENTORY_SHA256_TOKEN}="${"g".repeat(64)}"`,
+    ]) {
+      const malformedIdentityToken = structuredClone(ownership);
+      const tokenIndex = malformedIdentityToken.workflows[DETERMINISTIC_RELEASE_WORKFLOW]
+        .fixtureStageContracts[MOBILE_FIXTURE].indexOf(expectedToken);
+      malformedIdentityToken.workflows[DETERMINISTIC_RELEASE_WORKFLOW]
+        .fixtureStageContracts[MOBILE_FIXTURE][tokenIndex] = malformedToken;
+      assert.throws(() => expectedSourceInventorySha256FromOwnership(malformedIdentityToken), /lowercase SHA-256/);
+    }
+  });
 
   await context.test("inventory lineIds가 spec과 어긋나면 하네스가 거부한다", () => {
     const drifted = structuredClone(inventory);
