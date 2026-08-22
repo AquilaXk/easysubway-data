@@ -62,6 +62,42 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Data Pack Release / Checkout pinned Mobile fixture
+        uses: actions/checkout@39d2c4723d0ff855041c6162825930c7d12ffad3
+        with:
+          repository: AquilaXk/easysubway-mobile
+          ref: 39d2c4723d0ff855041c6162825930c7d12ffad3
+          path: .external/mobile
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Data Pack Release / Stage pinned Mobile fixture
+        run: |
+          set -euo pipefail
+          expected_revision="39d2c4723d0ff855041c6162825930c7d12ffad3"
+          actual_revision="$(git -C .external/mobile rev-parse HEAD)"
+          [[ "${actual_revision}" == "${expected_revision}" ]]
+
+          source=".external/mobile/apps/mobile"
+          [[ -d "${source}" && ! -L "${source}" ]]
+          [[ "$(find "${source}" -type l -print -quit)" == "" ]]
+
+          capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
+          [[ -f "${capital_gzip}" && ! -L "${capital_gzip}" ]]
+          expected_sha256="f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3"
+          actual_sha256="$(sha256sum "${capital_gzip}" | cut -d ' ' -f 1)"
+          [[ "${actual_sha256}" == "${expected_sha256}" ]]
+
+          test ! -e apps/mobile
+          test ! -L apps/mobile
+          if [[ -e apps || -L apps ]]; then
+            [[ -d apps && ! -L apps ]]
+          else
+            mkdir apps
+          fi
+
+          cp -a "${source}" apps/mobile
+
       - name: Data Pack Release / Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:

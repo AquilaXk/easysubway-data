@@ -212,7 +212,43 @@ test("CI는 #108 derived pack을 버리고 pristine Mobile fixture를 owned runn
   assertWorkflowStepOrder(ci, executionOrder);
 });
 
-test("Data Pack Release는 Mobile fixture checkout 또는 stage를 포함하지 않는다", () => {
+test("Data Pack Release는 immutable Mobile fixture를 deterministic release 전에 검증·stage한다", () => {
   const release = readFileSync(path.join(root, ".github/workflows/datapack-release.yml"), "utf8");
-  assert.doesNotMatch(release, /apps\/mobile|Checkout pinned Mobile fixture|Stage pinned Mobile fixture/);
+  const checkout = namedWorkflowStep(release, "Data Pack Release / Checkout pinned Mobile fixture");
+  const stage = namedWorkflowStep(release, "Data Pack Release / Stage pinned Mobile fixture");
+  assert.match(checkout, new RegExp(`uses:\\s*actions/checkout@${mobileRevision}`));
+  assert.match(checkout, new RegExp(`repository:\\s*${mobileRepository}`));
+  assert.match(checkout, new RegExp(`ref:\\s*${mobileRevision}`));
+  assert.match(checkout, /path:\s*\.external\/mobile/);
+  assert.match(checkout, /persist-credentials:\s*false/);
+  assert.match(checkout, /fetch-depth:\s*0/);
+  assert.match(stage, /git -C \.external\/mobile rev-parse HEAD/);
+  assert.match(stage, new RegExp(mobileRevision));
+  assert.match(stage, /source="\.external\/mobile\/apps\/mobile"/);
+  assert.match(stage, /-d "\$\{source\}"/);
+  assert.match(stage, /-L "\$\{source\}"/);
+  assert.match(stage, /find "\$\{source\}" -type l/);
+  assert.match(stage, /capital_gzip="\$\{source\}\/assets\/datapacks\/capital\.sqlite\.gz"/);
+  assert.match(stage, /-f "\$\{capital_gzip\}"/);
+  assert.match(stage, /-L "\$\{capital_gzip\}"/);
+  assert.match(stage, new RegExp(capitalGzipSha256));
+  assert.match(stage, /test ! -e apps\/mobile/);
+  assert.match(stage, /test ! -L apps\/mobile/);
+  assert.match(stage, /if \[\[ -e apps \|\| -L apps \]\]; then/);
+  assert.match(stage, /\[\[ -d apps && ! -L apps \]\]/);
+  assert.match(stage, /else\s+mkdir apps\s+fi/);
+  assert.match(stage, /cp -a "\$\{source\}" apps\/mobile/);
+  assert.ok(
+    release.indexOf("Data Pack Release / Checkout repository")
+      < release.indexOf("Data Pack Release / Checkout pinned Mobile fixture")
+      && release.indexOf("Data Pack Release / Checkout pinned Mobile fixture")
+        < release.indexOf("Data Pack Release / Stage pinned Mobile fixture")
+      && release.indexOf("Data Pack Release / Stage pinned Mobile fixture")
+        < release.indexOf("Data Pack Release / Validate ITX-청춘 coverage contract"),
+    "release fixture는 Data checkout 뒤 deterministic release runner 앞에 있어야 함",
+  );
+  assert.ok(
+    stage.indexOf('[[ "${actual_sha256}" == "${expected_sha256}" ]]') < stage.indexOf("cp -a "),
+    "release fixture digest 검증은 stage보다 앞서야 함",
+  );
 });
