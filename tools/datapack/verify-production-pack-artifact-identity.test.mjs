@@ -556,19 +556,61 @@ test("network edge evidence는 pinned bytes·freshness·fixture projection misma
   const outputDir = path.join(workspace, "output");
   const spec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
   const inventory = JSON.parse(await readFile(spec.networkEdgeEvidence.sourceInventory.path, "utf8"));
-  const accessibilitySnapshots = new Map(inventory.sources
-    .filter(({ accessibilityAdmissionEvidence }) => accessibilityAdmissionEvidence)
-    .map(({ id, accessibilityAdmissionEvidence }) => [id, accessibilityAdmissionEvidence.snapshotId]));
+  const currentAccessibilityAdmissions = new Map(inventory.sources
+    .filter(({ id }) => ["kric-station-convenience-standard", "seoul-metro-accessibility"].includes(id))
+    .map(({ id, accessibilityAdmissionEvidence }) => [id, accessibilityAdmissionEvidence]));
+  assert.equal(currentAccessibilityAdmissions.size, 2);
   const currentAccessibilityFixture = JSON.parse(await readFile(spec.fixturePath, "utf8"));
   for (const pack of currentAccessibilityFixture.packs.filter(({ artifactKind }) => artifactKind === "production")) {
+    const kricTuplesByStationLine = new Map((pack.facilities ?? [])
+      .filter(({ sourceId }) => sourceId === "kric-station-convenience-standard")
+      .map((row) => {
+        const [railOprIsttCd, lnCd, stinCd] = row.providerFacilityRef.split(":");
+        return [`${row.stationId}\0${row.lineId}`, { railOprIsttCd, lnCd, stinCd }];
+      }));
     const rows = [
       ...(pack.facilities ?? []),
       ...(pack.stationFacilityEvidence ?? []),
       ...(pack.networkEdges ?? []).filter(({ edgeType }) => ["ENTRY", "EXIT"].includes(edgeType)),
     ];
     for (const row of rows) {
-      const snapshotId = accessibilitySnapshots.get(row.sourceId);
-      if (snapshotId) row.sourceSnapshotId = snapshotId;
+      const admission = currentAccessibilityAdmissions.get(row.sourceId);
+      if (!admission || row.sourceSnapshotId === admission.snapshotId) continue;
+      row.sourceSnapshotId = admission.snapshotId;
+      if (Object.hasOwn(row, "verifiedAt")) row.verifiedAt = admission.observedAt;
+      if (Object.hasOwn(row, "retrievedAt")) row.retrievedAt = admission.capturedAt;
+      if (Object.hasOwn(row, "lastVerifiedAt")) row.lastVerifiedAt = admission.observedAt;
+      if (row.sourceId === "kric-station-convenience-standard") {
+        const query = kricTuplesByStationLine.get(`${row.stationId}\0${row.lineId}`);
+        assert.ok(query);
+        row.evidenceHash = row.evidenceKind === "NOT_EXISTS"
+          ? sha256(JSON.stringify({
+              snapshotId: admission.snapshotId,
+              query,
+              type: row.facilityType,
+              evidenceKind: "NOT_EXISTS",
+            }))
+          : sha256(JSON.stringify({
+              snapshotId: admission.snapshotId,
+              query,
+              providerRecordHash: row.providerRecordHash,
+            }));
+      } else if (row.facilityType === "ACCESSIBILITY_STATUS_PROBE") {
+        row.evidenceHash = sha256(JSON.stringify({
+          snapshotId: admission.snapshotId,
+          stationId: row.stationId,
+          lineId: row.lineId,
+          providerRecordHash: row.providerRecordHash,
+        }));
+      } else if (["ENTRY", "EXIT"].includes(row.edgeType)) {
+        row.evidenceHash = sha256(JSON.stringify({
+          edgeId: row.id,
+          sourceSnapshotId: admission.snapshotId,
+          providerRecordHash: row.providerRecordHash,
+        }));
+      } else {
+        throw new Error(`unsupported accessibility fixture rebind: ${row.sourceId}`);
+      }
     }
   }
   const currentAccessibilityFixturePath = path.join(workspace, "current-accessibility-fixture.json");
