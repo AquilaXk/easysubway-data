@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { cp, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -217,6 +217,26 @@ test("foreign replacement immediately before forward or recovery replacement is 
     },
   }), /preserves foreign replacement/);
   assert.deepEqual(await readFile(path.join(recovery.root, tracked[0])), foreignRecovery);
+});
+
+test("foreign replacement after publication and before transaction entry leaves every tracked transaction target untouched", async (t) => {
+  const { root, operationRoot, manifestPath } = await fixture();
+  t.after(() => Promise.all([rm(root, { recursive: true, force: true }), rm(operationRoot, { recursive: true, force: true })]));
+  const before = await trackedBytes(root);
+  const foreign = Buffer.from("foreign post-publication replacement");
+  await assert.rejects(rehomeSelectedReleaseSourceLineage({
+    repositoryRoot: root,
+    manifestPath,
+    env,
+    publishImmutableObjectPlanImpl: async () => {},
+    transactionHooks: {
+      beforeTransaction: async ({ root: transactionRoot }) => writeFile(path.join(transactionRoot, tracked[0]), foreign),
+    },
+  }), /preserves foreign replacement/);
+  assert.deepEqual(await readFile(path.join(root, tracked[0])), foreign);
+  assert.deepEqual(await Promise.all(tracked.slice(1).map((relative) => readFile(path.join(root, relative)))), before.slice(1));
+  await assert.rejects(readFile(path.join(root, "tools/datapack/.selected-release-source-oci-rehome-transaction.json")), { code: "ENOENT" });
+  assert.equal((await readdir(path.join(root, "tools/datapack"))).some((name) => /^\.selected-release-source-oci-rehome-[a-f0-9-]+$/u.test(name)), false);
 });
 
 test("PREPARED publication resumes with GET verification for an exact receipt residue", async (t) => {

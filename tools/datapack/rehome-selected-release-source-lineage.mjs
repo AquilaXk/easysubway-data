@@ -309,31 +309,40 @@ async function acquireLock(root) {
   return async () => { await durableUnlink(lock).catch(() => {}); };
 }
 
-async function transaction(root, outputs, hooks = {}) {
+async function transaction(root, outputs, expectedBefore, hooks = {}) {
+  if (!Array.isArray(expectedBefore) || expectedBefore.length !== OUTPUTS.length || expectedBefore.some((bytes) => !Buffer.isBuffer(bytes))) {
+    throw new Error("selected source OCI rehome transaction prestate is invalid");
+  }
   const release = await acquireLock(root);
   let journal;
   let committed = false;
   try {
+    const assertExpectedPrestate = async () => {
+      for (const [index, relativePath] of OUTPUTS.entries()) {
+        const current = await regularBytes(root, relativePath, "release transaction input");
+        if (!current.equals(expectedBefore[index])) throw new Error("selected source OCI rehome preserves foreign replacement");
+      }
+    };
+    await assertExpectedPrestate();
     const prior = await readJournal(root);
     if (prior) await recoverTransaction(root, prior, hooks);
+    await assertExpectedPrestate();
     const transactionId = randomUUID();
     const directory = path.join(root, "tools/datapack", `.selected-release-source-oci-rehome-${transactionId}`);
     await mkdir(directory, { recursive: false });
     await syncParent(directory);
     const records = [];
-    const beforeByPath = new Map();
     for (const [index, output] of outputs.entries()) {
-      const before = await regularBytes(root, output.relativePath, "release transaction input");
+      const before = expectedBefore[index];
       const backup = path.join(directory, `${index}.before`);
       await durableCreate(backup, before);
-      beforeByPath.set(output.relativePath, before);
       records.push({ relativePath: output.relativePath, beforeSha256: sha256(before), afterSha256: sha256(output.bytes) });
     }
     journal = { schemaVersion: 1, state: "PREPARED", transactionId, records };
     await durableCreate(contained(root, JOURNAL), jsonBytes(journal));
     for (const [index, output] of outputs.entries()) {
       const target = contained(root, output.relativePath);
-      const before = beforeByPath.get(output.relativePath);
+      const before = expectedBefore[index];
       await atomicReplace(target, output.bytes, before, {
         beforePublish: () => hooks.beforeReplace?.({ index, target, before, next: output.bytes }),
       });
@@ -394,7 +403,7 @@ async function existingReceipt(target) {
 
 function exactPublicationJournal(journal) {
   const baseKeys = ["artifactKind", "manifestSha256", "schemaVersion", "sources", "state", "storedAt"];
-  const expectedKeys = journal?.state === "PREPARED" ? baseKeys : [...baseKeys, "outputs"];
+  const expectedKeys = [...baseKeys, "outputs"];
   if (!journal || journal.schemaVersion !== 1 || journal.artifactKind !== "selected-release-source-oci-rehome-publication"
     || !["PREPARED", "VERIFIED", "COMMITTED"].includes(journal.state)
     || !SHA256.test(journal.manifestSha256 ?? "") || !Array.isArray(journal.sources)
@@ -417,16 +426,29 @@ function exactPublicationJournal(journal) {
     }
     for (const key of ["snapshotPath", "rawPath", "receiptPath"]) safeRelative(source[key], "publication journal path");
   }
-  if (journal.state !== "PREPARED") {
-    if (!Array.isArray(journal.outputs) || JSON.stringify(journal.outputs.map(({ relativePath }) => relativePath)) !== JSON.stringify(OUTPUTS)) {
+  if (!Array.isArray(journal.outputs) || JSON.stringify(journal.outputs.map(({ relativePath }) => relativePath)) !== JSON.stringify(OUTPUTS)) {
+    throw new Error("selected source OCI rehome publication journal is invalid");
+  }
+  for (const output of journal.outputs) {
+    const outputKeys = journal.state === "PREPARED"
+      ? ["beforeSha256", "relativePath"]
+      : ["afterSha256", "beforeSha256", "relativePath"];
+    if (JSON.stringify(Object.keys(output).sort()) !== JSON.stringify(outputKeys.sort())
+      || !SHA256.test(output.beforeSha256 ?? "")
+      || (journal.state !== "PREPARED" && !SHA256.test(output.afterSha256 ?? ""))) {
       throw new Error("selected source OCI rehome publication journal is invalid");
     }
-    for (const output of journal.outputs) {
-      if (JSON.stringify(Object.keys(output).sort()) !== JSON.stringify(["afterSha256", "beforeSha256", "relativePath"].sort())
-        || !SHA256.test(output.beforeSha256 ?? "") || !SHA256.test(output.afterSha256 ?? "")) {
-        throw new Error("selected source OCI rehome publication journal is invalid");
-      }
-    }
+  }
+}
+
+function outputBeforeRecords(bytes) {
+  return OUTPUTS.map((relativePath, index) => ({ relativePath, beforeSha256: sha256(bytes[index]) }));
+}
+
+function assertOutputBeforeBytes(bytes, outputs) {
+  if (!Array.isArray(bytes) || bytes.length !== OUTPUTS.length
+    || bytes.some((value, index) => !Buffer.isBuffer(value) || sha256(value) !== outputs[index]?.beforeSha256)) {
+    throw new Error("selected source OCI rehome preserves foreign replacement");
   }
 }
 
@@ -527,16 +549,22 @@ export async function rehomeSelectedReleaseSourceLineage({ repositoryRoot = ROOT
   let journal;
   let journalBytes;
   let sources;
+  let preparedOutputs;
   if (publication.bytes) {
     journalBytes = publication.bytes;
     journal = parse(journalBytes, "selected source OCI rehome publication journal");
     sources = publicationSourcesFromJournal({ manifest, inputs, journal });
+    if (journal.state === "PREPARED") {
+      preparedOutputs = await Promise.all(OUTPUTS.map((relative) => regularBytes(root, relative, "release transaction input")));
+      assertOutputBeforeBytes(preparedOutputs, journal.outputs);
+    }
   } else {
     const snapshotBytes = await regularBytes(root, OUTPUTS[0], "source snapshot ledger");
     const snapshots = parse(snapshotBytes, "source snapshot ledger");
     sources = validateSelectedReleaseSourceRehomeManifest({ manifest, snapshots, inputs });
     const storedAtDate = now();
     if (!(storedAtDate instanceof Date) || !Number.isFinite(storedAtDate.valueOf())) throw new Error("rehome receipt time is invalid");
+    preparedOutputs = await Promise.all(OUTPUTS.map((relative) => regularBytes(root, relative, "release transaction input")));
     journal = {
       schemaVersion: 1,
       artifactKind: "selected-release-source-oci-rehome-publication",
@@ -544,6 +572,7 @@ export async function rehomeSelectedReleaseSourceLineage({ repositoryRoot = ROOT
       manifestSha256: sha256(manifestBytes),
       storedAt: storedAtDate.toISOString(),
       sources: publicationSources({ sources, inputs, storedAt: storedAtDate.toISOString() }),
+      outputs: outputBeforeRecords(preparedOutputs),
     };
     exactPublicationJournal(journal);
     for (const { entry } of sources) {
@@ -572,6 +601,8 @@ export async function rehomeSelectedReleaseSourceLineage({ repositoryRoot = ROOT
       await durableCreate(receiptTarget, jsonBytes(receipt));
     }
   }
+  const postPublicationOutputs = await Promise.all(OUTPUTS.map((relative) => regularBytes(root, relative, "release transaction input")));
+  if (journal.state === "PREPARED") assertOutputBeforeBytes(postPublicationOutputs, journal.outputs);
   const recoveredState = await recoverExistingTransaction(root, transactionHooks);
   const currentOutputs = await Promise.all(OUTPUTS.map((relative) => regularBytes(root, relative, "release transaction input")));
   if (journal.state === "PREPARED") {
@@ -590,7 +621,7 @@ export async function rehomeSelectedReleaseSourceLineage({ repositoryRoot = ROOT
     journal = {
       ...journal,
       state: "VERIFIED",
-      outputs: outputs.map(({ relativePath, bytes }, index) => ({ relativePath, beforeSha256: sha256(currentOutputs[index]), afterSha256: sha256(bytes) })),
+      outputs: outputs.map(({ relativePath, bytes }, index) => ({ ...journal.outputs[index], relativePath, afterSha256: sha256(bytes) })),
     };
     journalBytes = jsonBytes(journal);
     await atomicReplace(publication.target, journalBytes, preparedBytes);
@@ -618,7 +649,8 @@ export async function rehomeSelectedReleaseSourceLineage({ repositoryRoot = ROOT
     const itxBytes = await regularBytes(root, safeRelative(spec.itxTopologyEvidencePath, "ITX topology evidence path"), "ITX topology evidence");
     const outputs = deriveOutputs({ snapshots, inventory: parse(inventoryBytes, "source inventory"), canonical: parse(canonicalBytes, "canonical pack"), governance: parse(governanceBytes, "source governance policy"), freshness: parse(freshnessBytes, "freshness policy"), spec, request: parse(requestBytes, "release request"), hashes: parse(hashBytes, "hash evidence"), canonicalBytes, inventoryBytes, governanceBytes, itxBytes });
     if (outputs.some(({ bytes }, index) => sha256(bytes) !== outputRecords[index].afterSha256)) throw new Error("selected source OCI rehome verified output drift");
-    await transaction(root, outputs, transactionHooks);
+    await transactionHooks.beforeTransaction?.({ root, expectedBefore: currentOutputs, outputs });
+    await transaction(root, outputs, currentOutputs, transactionHooks);
   }
   const afterCommit = await Promise.all(OUTPUTS.map((relative) => regularBytes(root, relative, "release transaction output")));
   if (afterCommit.some((bytes, index) => sha256(bytes) !== outputRecords[index].afterSha256)) throw new Error("selected source OCI rehome committed output drift");
