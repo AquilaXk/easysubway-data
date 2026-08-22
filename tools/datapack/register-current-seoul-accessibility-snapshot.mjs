@@ -227,7 +227,8 @@ export async function buildCurrentSeoulAccessibilityRegistrationOutputs({ reposi
   }
   const finalSelected = nextSnapshots.filter(({ snapshotId }) => nextCandidate.sourceSnapshotIds.includes(snapshotId));
   if (finalSelected.length !== nextCandidate.sourceSnapshotIds.length
-    || JSON.stringify(finalSelected.map(({ snapshotId }) => snapshotId).sort()) !== JSON.stringify([...nextCandidate.sourceSnapshotIds].sort())) {
+    || JSON.stringify(finalSelected.map(({ snapshotId }) => snapshotId).sort((left, right) => left.localeCompare(right)))
+      !== JSON.stringify([...nextCandidate.sourceSnapshotIds].sort((left, right) => left.localeCompare(right)))) {
     throw new Error("final candidate selected source IDs are invalid");
   }
   nextCandidate.sourceSnapshotSetHash = sha(JSON.stringify(finalSelected));
