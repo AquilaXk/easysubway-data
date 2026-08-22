@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, mkdir, open, readFile, rename, rmdir, unlink } from "node:fs/promises";
+import { lstat, open, readFile, rename, unlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -70,10 +70,12 @@ async function optionalBytes(target, label) {
 function requiredSha(value, label) { if (!SHA256.test(value ?? "")) throw new Error(`${label} must be SHA-256`); return value; }
 function sameInstant(value, label) { const millis = Date.parse(value); if (!Number.isFinite(millis) || new Date(millis).toISOString() !== value) throw new Error(`${label} is invalid`); return millis; }
 function exactReceipt({ receipt, snapshot, governance, now }) {
-  if (!receipt || receipt.schemaVersion !== 1 || receipt.artifactKind !== "seoul-accessibility-raw-object-receipt"
+  const keys = ["schemaVersion", "artifactKind", "sourceId", "snapshotId", "snapshotRawSha256", "capturedAt", "snapshotFileSha256", "rawObjectUri", "rawObjectSha256", "byteSize", "storedAt", "rawRetentionExpiresAt"];
+  if (!receipt || JSON.stringify(Object.keys(receipt)) !== JSON.stringify(keys)
+    || receipt.schemaVersion !== 1 || receipt.artifactKind !== "seoul-accessibility-raw-object-receipt"
     || receipt.sourceId !== SOURCE_ID || receipt.snapshotId !== snapshot.snapshotId
     || receipt.snapshotRawSha256 !== snapshot.rawSha256 || receipt.capturedAt !== snapshot.capturedAt
-    || !Buffer.isBuffer(receipt.snapshotFileBytes) && !SHA256.test(receipt.snapshotFileSha256 ?? "")
+    || !SHA256.test(receipt.snapshotFileSha256 ?? "")
     || !Number.isSafeInteger(receipt.byteSize) || receipt.byteSize <= 0) throw new Error("Seoul OCI receipt binding is invalid");
   requiredCredentialFreeObjectUri(receipt.rawObjectUri, "Seoul OCI receipt URI");
   const rawSha = requiredSha(receipt.rawObjectSha256, "Seoul OCI receipt raw hash");
