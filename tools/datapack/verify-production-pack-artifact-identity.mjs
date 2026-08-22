@@ -12,6 +12,7 @@ import { gunzipSync } from "node:zlib";
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
 const READMISSION_VERIFIER_PATH = path.join(root, "tools/datapack/readmit-bundled-pack-identity.mjs");
+const DEPLOYED_EVIDENCE_ARTIFACT_KIND = "itx-cheongchun-mobile-topology-evidence";
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
@@ -87,6 +88,14 @@ export async function verifyProductionPackArtifactIdentity({ evidencePath, asset
   indexPath = path.resolve(indexPath);
   const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-production-pack-identity-"));
   try {
+    const evidence = JSON.parse(await readFile(evidencePath, "utf8"));
+    if (evidence.schemaVersion !== 1
+      || evidence.artifactKind !== DEPLOYED_EVIDENCE_ARTIFACT_KIND
+      || !Array.isArray(evidence.readmissions)
+      || evidence.readmissions.length === 0) {
+      throw new Error("deployed readmission evidence contract mismatch");
+    }
+
     // Deployed bytes are independently admitted through the complete readmission chain. Rebuilding the
     // current candidate here would conflate its advancing source inventory with the already shipped pack.
     await execFileAsync(process.execPath, [
@@ -106,7 +115,6 @@ export async function verifyProductionPackArtifactIdentity({ evidencePath, asset
     const gzipSha256 = sha256(assetGzip);
     const sqliteSha256 = sha256(assetSqlite);
     const byteSize = assetGzip.length;
-    const evidence = JSON.parse(await readFile(evidencePath, "utf8"));
 
     assertEqual(evidence.pack?.id, packId, "evidence pack id");
     assertEqual(evidence.pack?.outputSha256, gzipSha256, "evidence asset gzip sha256");

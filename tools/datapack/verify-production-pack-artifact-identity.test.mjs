@@ -157,6 +157,38 @@ test("deployed pack verifier는 current candidate build와 독립된 readmission
   });
 });
 
+test("deployed pack verifier는 invalid 또는 empty readmission chain을 거부한다", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-readmission-chain-"));
+  const trackedEvidence = JSON.parse(await readFile(DEPLOYED_EVIDENCE_PATH, "utf8"));
+  const cases = [
+    ["missing-readmissions", (evidence) => {
+      delete evidence.readmissions;
+      return evidence;
+    }],
+    ["non-array-readmissions", (evidence) => ({ ...evidence, readmissions: {} })],
+    ["empty-readmissions", (evidence) => ({ ...evidence, readmissions: [] })],
+    ["invalid-schema-version", (evidence) => ({ ...evidence, schemaVersion: 2 })],
+    ["invalid-artifact-kind", (evidence) => ({ ...evidence, artifactKind: "replacement-evidence" })],
+  ];
+  try {
+    for (const [name, mutate] of cases) {
+      const evidencePath = path.join(workspace, `${name}.json`);
+      await writeFile(evidencePath, `${JSON.stringify(mutate(structuredClone(trackedEvidence)), null, 2)}\n`);
+      await assert.rejects(
+        verifyProductionPackArtifactIdentity({
+          evidencePath,
+          assetPath: DEPLOYED_ASSET_PATH,
+          indexPath: DEPLOYED_INDEX_PATH,
+          packId: "capital",
+        }),
+        /deployed readmission evidence contract mismatch/,
+      );
+    }
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test("deployed pack과 bundled asset/index의 artifact identity를 exact-match한다", async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-production-pack-identity-"));
   const assetPath = DEPLOYED_ASSET_PATH;
