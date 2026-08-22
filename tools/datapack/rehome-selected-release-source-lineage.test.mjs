@@ -50,7 +50,8 @@ async function fixture() {
     successor.rawRetentionExpiresAt = new Date(Date.parse(previous.rawRetentionExpiresAt) + 1).toISOString();
     successor.coverageCount ??= 0;
     successor.rawSha256 = rawSha256;
-    successor.rawObjectUri = `oci://easysubway-datapacks/source-raw/${sourceId}/20260822/${rawSha256}.json`;
+    const retrievedDay = successor.retrievedAt.slice(0, 10).replaceAll("-", "");
+    successor.rawObjectUri = `oci://easysubway-datapacks/source-raw/${sourceId}/${retrievedDay}/${rawSha256}.json`;
     successor.diffSummary = buildSnapshotDiff(previous, successor);
     const sourceRoot = path.join(operationRoot, sourceId);
     await mkdir(sourceRoot, { recursive: true });
@@ -64,7 +65,23 @@ async function fixture() {
   await writeFile(snapshotsPath, `${JSON.stringify(snapshots, null, 2)}\n`);
   const manifestPath = path.join(operationRoot, "manifest.json");
   await writeFile(manifestPath, `${JSON.stringify({ schemaVersion: 1, artifactKind: "selected-release-source-oci-rehome-manifest", sources }, null, 2)}\n`);
-  return { root, operationRoot, manifestPath };
+  return { root, operationRoot, manifestPath, sources };
+}
+
+const env = {
+  EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/opaque/n/axvym6vk8g7i/b/easysubway-datapacks/o/",
+};
+
+async function trackedBytes(root) {
+  return Promise.all(tracked.map((relative) => readFile(path.join(root, relative))));
+}
+
+async function readManifest(manifestPath) {
+  return JSON.parse(await readFile(manifestPath));
+}
+
+async function writeManifest(manifestPath, manifest) {
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
 test("exact three OCI successor receipts publish and then atomically rehome the four release identities", async (t) => {
@@ -75,7 +92,8 @@ test("exact three OCI successor receipts publish and then atomically rehome the 
   await rehomeSelectedReleaseSourceLineage({
     repositoryRoot: root,
     manifestPath,
-    env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/opaque/n/axvym6vk8g7i/b/easysubway-datapacks/o/" },
+    env,
+    now: () => new Date("2026-08-22T07:00:00.000Z"),
     publishImmutableObjectPlanImpl: async ({ plan, root: planRoot }) => {
       calls.push({ plan, root: planRoot });
       assert.equal(plan.steps.length, 2);
@@ -90,15 +108,99 @@ test("exact three OCI successor receipts publish and then atomically rehome the 
   assert.equal(snapshots.filter((snapshot) => SELECTED_RELEASE_SOURCE_IDS.includes(snapshot.sourceId) && snapshot.rawObjectUri.startsWith("oci://")).length >= 3, true);
   assert.equal(spec.sourceSnapshots.filter((snapshot) => SELECTED_RELEASE_SOURCE_IDS.includes(snapshot.sourceId)).every((snapshot) => snapshot.rawObjectUri.startsWith("oci://")), true);
   assert.equal((await Promise.all(tracked.map((relative) => readFile(path.join(root, relative))))).some((bytes, index) => !bytes.equals(before[index])), true);
+  const manifest = await readManifest(manifestPath);
+  for (const source of manifest.sources) {
+    const receipt = JSON.parse(await readFile(path.join(operationRoot, source.receiptPath)));
+    assert.deepEqual(Object.keys(receipt), ["schemaVersion", "artifactKind", "sourceId", "snapshotId", "rawObjectUri", "rawObjectSha256", "byteSize", "storedAt"]);
+    assert.equal(receipt.storedAt, "2026-08-22T07:00:00.000Z");
+  }
 });
 
 test("a failed publication leaves all four tracked release files untouched", async (t) => {
   const { root, operationRoot, manifestPath } = await fixture();
   t.after(() => Promise.all([rm(root, { recursive: true, force: true }), rm(operationRoot, { recursive: true, force: true })]));
-  const before = await Promise.all(tracked.map((relative) => readFile(path.join(root, relative))));
+  const before = await trackedBytes(root);
   await assert.rejects(rehomeSelectedReleaseSourceLineage({
-    repositoryRoot: root, manifestPath, env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/opaque/n/axvym6vk8g7i/b/easysubway-datapacks/o/" },
+    repositoryRoot: root, manifestPath, env,
     publishImmutableObjectPlanImpl: async () => { throw new Error("injected publication failure"); },
   }), /OCI source publication failed/);
-  assert.deepEqual(await Promise.all(tracked.map((relative) => readFile(path.join(root, relative)))), before);
+  assert.deepEqual(await trackedBytes(root), before);
+});
+
+test("invalid raw bytes, receipt collision, absent PAR, and noncanonical OCI URI leave tracked outputs untouched", async (t) => {
+  const { root, operationRoot, manifestPath } = await fixture();
+  t.after(() => Promise.all([rm(root, { recursive: true, force: true }), rm(operationRoot, { recursive: true, force: true })]));
+  const before = await trackedBytes(root);
+  const manifest = await readManifest(manifestPath);
+  const first = manifest.sources[0];
+  await writeFile(path.join(operationRoot, first.rawPath), "byte mismatch");
+  await assert.rejects(rehomeSelectedReleaseSourceLineage({ repositoryRoot: root, manifestPath, env, publishImmutableObjectPlanImpl: async () => assert.fail("must not publish") }), /lineage or OCI bytes are invalid/);
+  assert.deepEqual(await trackedBytes(root), before);
+
+  await rm(operationRoot, { recursive: true, force: true });
+  const reset = await fixture();
+  t.after(() => Promise.all([rm(reset.root, { recursive: true, force: true }), rm(reset.operationRoot, { recursive: true, force: true })]));
+  const resetBefore = await trackedBytes(reset.root);
+  const resetManifest = await readManifest(reset.manifestPath);
+  await writeFile(path.join(reset.operationRoot, resetManifest.sources[0].receiptPath), "caller receipt");
+  await assert.rejects(rehomeSelectedReleaseSourceLineage({ repositoryRoot: reset.root, manifestPath: reset.manifestPath, env, publishImmutableObjectPlanImpl: async () => assert.fail("must not publish") }), /rehome receipt/);
+  assert.deepEqual(await trackedBytes(reset.root), resetBefore);
+
+  const invalidPar = await fixture();
+  t.after(() => Promise.all([rm(invalidPar.root, { recursive: true, force: true }), rm(invalidPar.operationRoot, { recursive: true, force: true })]));
+  const invalidParBefore = await trackedBytes(invalidPar.root);
+  await assert.rejects(rehomeSelectedReleaseSourceLineage({ repositoryRoot: invalidPar.root, manifestPath: invalidPar.manifestPath, env: {}, publishImmutableObjectPlanImpl: async () => assert.fail("must not publish") }), /preauthenticated object URL/);
+  assert.deepEqual(await trackedBytes(invalidPar.root), invalidParBefore);
+
+  const evil = await fixture();
+  t.after(() => Promise.all([rm(evil.root, { recursive: true, force: true }), rm(evil.operationRoot, { recursive: true, force: true })]));
+  const evilBefore = await trackedBytes(evil.root);
+  const evilManifest = await readManifest(evil.manifestPath);
+  const successorPath = path.join(evil.operationRoot, evilManifest.sources[0].snapshotPath);
+  const successor = JSON.parse(await readFile(successorPath));
+  successor.rawObjectUri = `oci://other-bucket/anything/${successor.rawSha256}.json`;
+  await writeFile(successorPath, `${JSON.stringify(successor, null, 2)}\n`);
+  await assert.rejects(rehomeSelectedReleaseSourceLineage({ repositoryRoot: evil.root, manifestPath: evil.manifestPath, env, publishImmutableObjectPlanImpl: async () => assert.fail("must not publish") }), /lineage or OCI bytes are invalid/);
+  assert.deepEqual(await trackedBytes(evil.root), evilBefore);
+});
+
+test("a mid-replace failure rolls back, and PREPARED or COMMITTED residue recovers without another publication", async (t) => {
+  const { root, operationRoot, manifestPath } = await fixture();
+  t.after(() => Promise.all([rm(root, { recursive: true, force: true }), rm(operationRoot, { recursive: true, force: true })]));
+  const before = await trackedBytes(root);
+  const calls = [];
+  await assert.rejects(rehomeSelectedReleaseSourceLineage({
+    repositoryRoot: root, manifestPath, env,
+    publishImmutableObjectPlanImpl: async () => { calls.push("publish"); },
+    transactionHooks: { failAfterReplace: 1 },
+  }), /injected transaction failure/);
+  assert.deepEqual(await trackedBytes(root), before);
+
+  const prepared = await fixture();
+  t.after(() => Promise.all([rm(prepared.root, { recursive: true, force: true }), rm(prepared.operationRoot, { recursive: true, force: true })]));
+  await assert.rejects(rehomeSelectedReleaseSourceLineage({
+    repositoryRoot: prepared.root, manifestPath: prepared.manifestPath, env,
+    publishImmutableObjectPlanImpl: async () => {}, transactionHooks: { leavePreparedAfterReplace: 0 },
+  }), /injected prepared residue/);
+  const preparedBeforeRetry = await trackedBytes(prepared.root);
+  await rehomeSelectedReleaseSourceLineage({ repositoryRoot: prepared.root, manifestPath: prepared.manifestPath, env, publishImmutableObjectPlanImpl: async () => assert.fail("prepared recovery must not republish") });
+  assert.notDeepEqual(await trackedBytes(prepared.root), preparedBeforeRetry);
+
+  const committedForward = await fixture();
+  t.after(() => Promise.all([rm(committedForward.root, { recursive: true, force: true }), rm(committedForward.operationRoot, { recursive: true, force: true })]));
+  await assert.rejects(rehomeSelectedReleaseSourceLineage({
+    repositoryRoot: committedForward.root, manifestPath: committedForward.manifestPath, env,
+    publishImmutableObjectPlanImpl: async () => {}, transactionHooks: { leaveCommittedResidue: true },
+  }), /injected committed residue/);
+  const forward = await rehomeSelectedReleaseSourceLineage({ repositoryRoot: committedForward.root, manifestPath: committedForward.manifestPath, env, publishImmutableObjectPlanImpl: async () => assert.fail("committed recovery must not republish") });
+  assert.equal(forward.recovered, true);
+
+  const committed = await fixture();
+  t.after(() => Promise.all([rm(committed.root, { recursive: true, force: true }), rm(committed.operationRoot, { recursive: true, force: true })]));
+  await assert.rejects(rehomeSelectedReleaseSourceLineage({
+    repositoryRoot: committed.root, manifestPath: committed.manifestPath, env,
+    publishImmutableObjectPlanImpl: async () => {}, transactionHooks: { leaveCommittedResidue: true },
+  }), /injected committed residue/);
+  await writeFile(path.join(committed.root, tracked[0]), "corrupt after-hash state");
+  await assert.rejects(rehomeSelectedReleaseSourceLineage({ repositoryRoot: committed.root, manifestPath: committed.manifestPath, env, publishImmutableObjectPlanImpl: async () => assert.fail("committed recovery must not republish") }), /committed output drift/);
 });
