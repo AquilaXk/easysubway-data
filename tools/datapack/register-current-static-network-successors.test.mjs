@@ -6,13 +6,18 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { commitStaticNetworkSuccessorOutputs, registerCurrentStaticNetworkSuccessors } from "./register-current-static-network-successors.mjs";
+import { buildStaticNetworkSuccessorOutputs, commitStaticNetworkSuccessorOutputs, registerCurrentStaticNetworkSuccessors } from "./register-current-static-network-successors.mjs";
+import { collectCurrentStaticNetworkSuccessors, MOLIT_URL, SEOUL_ASSET_URL, SEOUL_ROOT_URL } from "./collect-current-static-network-successors.mjs";
+import { runCurrentStaticNetworkSuccessors } from "./run-current-static-network-successors.mjs";
+import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 
 const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
+const repositoryRoot = path.resolve(import.meta.dirname, "../..");
 const INPUT_PATHS = [
   "tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json",
   "tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json", "tools/datapack/source-governance-policy.json",
-  "release/product-gates/datapack-freshness-sla.json",
+  "release/product-gates/datapack-freshness-sla.json", "tools/datapack/sources/seoulmetro-cyberstation-line-data-20260623.js",
+  "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv",
 ];
 
 async function registrationOutputs(root) {
@@ -43,6 +48,19 @@ async function freePort() {
   await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   return address.port;
 }
+
+async function receiptFor(input, operationRoot, now) {
+  const extension = input.sourceId === "seoulmetro-cyberstation-route-map" ? "js" : "csv";
+  const rawBytes = await readFile(path.join(operationRoot, `raw.${extension}`)); const rawSha256 = sha(rawBytes);
+  const date = input.capturedAt.slice(0, 10).replaceAll("-", ""); const objectKey = `source-raw/${input.sourceId}/${date}/${rawSha256}.${extension}`;
+  const policy = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/source-governance-policy.json"), "utf8"));
+  return { schemaVersion: 1, artifactKind: "static-network-source-raw-object-receipt", sourceId: input.sourceId, snapshotId: input.snapshotId, capturedAt: input.capturedAt,
+    rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/${objectKey}`, rawObjectSha256: rawSha256, byteSize: rawBytes.length, storedAt: now.toISOString(),
+    rawRetentionExpiresAt: deriveRawRetentionExpiresAt({ policy, sourceId: input.sourceId, retrievedAt: input.capturedAt }), ociNamespace: "axvym6vk8g7i", bucket: "easysubway-datapacks", objectKey,
+    contentType: extension === "js" ? "application/javascript" : "text/csv; charset=euc-kr" };
+}
+function cloneObservations(observations) { return observations.map(({ snapshot, receipt, bytes }) => ({ snapshot: structuredClone(snapshot), receipt: structuredClone(receipt), bytes: Buffer.from(bytes) })); }
+function replaceMigration(observations, sourceId, patch) { const entry = observations.find(({ snapshot }) => snapshot.sourceId === sourceId); entry.snapshot.projectionMigration = { ...entry.snapshot.projectionMigration, ...patch }; const normalized = JSON.parse(entry.bytes); normalized.migration = { ...normalized.migration, ...patch }; entry.bytes = Buffer.from(`${JSON.stringify(normalized)}\n`); entry.snapshot.normalizedObservationSha256 = sha(entry.bytes); }
 
 test("registrar commits only the exact seven-output allowlist and rolls back an interrupted write", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "static-network-registrar-"));
@@ -75,6 +93,39 @@ test("registrar rejects derivation input drift before staging any output", async
   await writeFile(path.join(root, "tools/datapack/source-governance-policy.json"), "foreign input\n");
   await assert.rejects(commitStaticNetworkSuccessorOutputs({ repositoryRoot: root, outputs }), /preserves foreign replacement/);
   await assert.rejects(readFile(path.join(root, outputs[0].relative)), /ENOENT/);
+});
+
+test("registrar build output hashes the current ledger's exact seven-snapshot set in ledger order", async (t) => {
+  const operationRoot = await mkdtemp(path.join(os.tmpdir(), "static-network-registrar-build-output-"));
+  t.after(() => rm(operationRoot, { recursive: true, force: true }));
+  const [routeBaseline, molitBaseline] = await Promise.all([
+    readFile(path.join(repositoryRoot, "tools/datapack/sources/seoulmetro-cyberstation-line-data-20260623.js")),
+    readFile(path.join(repositoryRoot, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
+  ]);
+  const now = new Date("2026-08-22T12:00:00.000Z"); let outputs; let captured;
+  await runCurrentStaticNetworkSuccessors({ repositoryRoot, operationRoot, now, assertExactMain: async () => "0".repeat(40),
+    collectImpl: (input) => collectCurrentStaticNetworkSuccessors({ ...input, fetchImpl: async (url) => {
+      if (url.href === MOLIT_URL) return new Response(molitBaseline, { headers: { "content-type": "text/csv" } });
+      if (url.href === SEOUL_ROOT_URL) return new Response('<script src="/kr/getLineData.do"></script>', { headers: { "content-type": "text/html" } });
+      if (url.href === SEOUL_ASSET_URL) return new Response(routeBaseline, { headers: { "content-type": "application/javascript" } });
+      throw new Error("unexpected official URL");
+    } }), publishImpl: (input) => receiptFor(input, operationRoot, now),
+    registerImpl: async ({ observations }) => { captured = cloneObservations(observations); outputs = await buildStaticNetworkSuccessorOutputs({ repositoryRoot, observations, now }); },
+  });
+  const candidate = JSON.parse(outputs[4].bytes); const request = JSON.parse(outputs[5].bytes); const hashes = JSON.parse(outputs[6].bytes); const nextLedger = JSON.parse(outputs[3].bytes);
+  const selected = nextLedger.filter(({ snapshotId }) => candidate.sourceSnapshotIds.includes(snapshotId)); const expected = sha(JSON.stringify(selected));
+  assert.equal(candidate.sourceSnapshotSetHash, expected); assert.equal(request.sourceSnapshotSetHash, expected); assert.equal(hashes.sourceSnapshotSetHash.value, expected);
+  assert.notDeepEqual(selected.map(({ snapshotId }) => snapshotId), candidate.sourceSnapshotIds);
+  const inconsistent = cloneObservations(captured); inconsistent[0].snapshot.projectionMigration = { ...inconsistent[0].snapshot.projectionMigration, legacyRawSha256: "0".repeat(64) };
+  await assert.rejects(buildStaticNetworkSuccessorOutputs({ repositoryRoot, observations: inconsistent, now }), /snapshot migration binding/);
+  const alteredKind = cloneObservations(captured); replaceMigration(alteredKind, "seoulmetro-cyberstation-route-map", { migrationKind: "OTHER" });
+  await assert.rejects(buildStaticNetworkSuccessorOutputs({ repositoryRoot, observations: alteredKind, now }), /migration contract/);
+  const alteredSource = cloneObservations(captured); replaceMigration(alteredSource, "seoulmetro-cyberstation-route-map", { sourceId: "wrong-source" });
+  await assert.rejects(buildStaticNetworkSuccessorOutputs({ repositoryRoot, observations: alteredSource, now }), /migration contract/);
+  const alteredLegacy = cloneObservations(captured); replaceMigration(alteredLegacy, "molit-urban-rail-full-route", { legacyRawSha256: "0".repeat(64) });
+  await assert.rejects(buildStaticNetworkSuccessorOutputs({ repositoryRoot, observations: alteredLegacy, now }), /migration predecessor binding/);
+  const alteredBaseline = cloneObservations(captured); replaceMigration(alteredBaseline, "molit-urban-rail-full-route", { retainedBaselineRawSha256: "0".repeat(64) });
+  await assert.rejects(buildStaticNetworkSuccessorOutputs({ repositoryRoot, observations: alteredBaseline, now }), /migration predecessor binding/);
 });
 
 test("register API acquires the active owner lease before validating observations or reading inputs", async (t) => {

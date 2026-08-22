@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, symlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -11,15 +11,20 @@ import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 
 const repositoryRoot = path.resolve(import.meta.dirname, "../..");
 const sha = (value) => createHash("sha256").update(value).digest("hex");
-const molitRecords = [
-  ["선바위", "30"], ["경마공원", "31"], ["대공원", "32"], ["과천", "33"], ["정부과천청사", "34"],
-].map(([stationName, sequence]) => ({ line_name: "4호선", operator_name: "코레일", region: "수도권", station_name: stationName, station_sequence: sequence }));
+const molitBaseline = await readFile(path.join(repositoryRoot, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv"));
+const molitRecords = new TextDecoder("euc-kr").decode(molitBaseline).trim().split(/\r?\n/u).slice(1).map((row) => {
+  const [region_code, region_name, operator_name, line_name, station_sequence, station_name] = row.split(",").map((value) => value.trim());
+  return { region_code, region_name, operator_name, line_name, station_sequence, station_name };
+});
 
 async function validCollection({ sourceSnapshots, baselineRouteMapBytes, observedAt }) {
   const routePrevious = sourceSnapshots.filter(({ sourceId }) => sourceId === "seoulmetro-cyberstation-route-map").find((row) => !sourceSnapshots.some(({ previousSnapshotId }) => previousSnapshotId === row.snapshotId));
   const molitPrevious = sourceSnapshots.filter(({ sourceId }) => sourceId === "molit-urban-rail-full-route").find((row) => !sourceSnapshots.some(({ previousSnapshotId }) => previousSnapshotId === row.snapshotId));
   const routeId = `seoulmetro-cyberstation-route-map-current-${observedAt.replaceAll(/[-:.]/gu, "").replace("Z", "Z")}`;
-  return { observedAt, routeMap: { sourceId: routePrevious.sourceId, rawBytes: baselineRouteMapBytes, rawSha256: sha(baselineRouteMapBytes), previous: routePrevious, migration: buildLegacySampleToFullConsumedFieldsMigration({ legacyHead: routePrevious, baselineRawBytes: baselineRouteMapBytes, freshRawBytes: baselineRouteMapBytes, snapshotId: routeId }) }, molit: { sourceId: molitPrevious.sourceId, rawBytes: Buffer.from("molit-current"), rawSha256: sha(Buffer.from("molit-current")), records: molitRecords, previous: molitPrevious } };
+  const molitId = `molit-urban-rail-full-route-current-${observedAt.replaceAll(/[-:.]/gu, "").replace("Z", "Z")}`;
+  const molitProjection = Buffer.from(`${JSON.stringify(molitRecords)}\n`);
+  const molitMigration = { schemaVersion: 1, artifactKind: "source-projection-migration-evidence", migrationKind: "LEGACY_SAMPLE_TO_FULL_CONSUMED_FIELDS", sourceId: molitPrevious.sourceId, legacySnapshotId: molitPrevious.snapshotId, legacyRawSha256: molitPrevious.rawSha256, legacySchemaFingerprint: molitPrevious.schemaFingerprint, legacyProviderRecordHashes: molitPrevious.providerRecordHashes, retainedBaselineRawSha256: sha(molitBaseline), fullProjectionSha256: sha(molitProjection), fullProjectionSchemaFingerprint: sha(JSON.stringify(["region_code", "region_name", "operator_name", "line_name", "station_sequence", "station_name"])), fullProjectionRowCount: molitRecords.length, newSnapshotId: molitId };
+  return { observedAt, routeMap: { sourceId: routePrevious.sourceId, rawBytes: baselineRouteMapBytes, rawSha256: sha(baselineRouteMapBytes), previous: routePrevious, migration: buildLegacySampleToFullConsumedFieldsMigration({ legacyHead: routePrevious, baselineRawBytes: baselineRouteMapBytes, freshRawBytes: baselineRouteMapBytes, snapshotId: routeId }) }, molit: { sourceId: molitPrevious.sourceId, rawBytes: Buffer.from("molit-current"), rawSha256: sha(Buffer.from("molit-current")), records: molitRecords, previous: molitPrevious, migration: molitMigration } };
 }
 
 async function receiptFor(input, operationRoot, now) {
@@ -81,4 +86,14 @@ test("runner does not register when the second immutable publication fails", asy
   const now = new Date("2026-08-22T12:00:00.000Z");
   await assert.rejects(runCurrentStaticNetworkSuccessors({ repositoryRoot, operationRoot, now, assertExactMain: async () => "0".repeat(40), collectImpl: validCollection, publishImpl: async (input) => { publishes += 1; if (publishes === 2) throw new Error("second publish failed"); return receiptFor(input, operationRoot, now); }, registerImpl: async () => { registrations += 1; } }), /second publish failed/);
   assert.equal(publishes, 2); assert.equal(registrations, 0);
+});
+
+test("runner rejects an operation-root symlink even when its resolved target is inside the repository", async (t) => {
+  const outside = await mkdtemp(path.join(os.tmpdir(), "static-network-operation-link-"));
+  t.after(() => rm(outside, { recursive: true, force: true }));
+  const link = path.join(outside, "repository");
+  await symlink(repositoryRoot, link);
+  let collected = 0;
+  await assert.rejects(runCurrentStaticNetworkSuccessors({ repositoryRoot, operationRoot: path.join(link, "tools", "datapack"), assertExactMain: async () => "0".repeat(40), collectImpl: async () => { collected += 1; }, publishImpl: async () => {}, registerImpl: async () => {} }), /operation root must be outside the repository/);
+  assert.equal(collected, 0);
 });
