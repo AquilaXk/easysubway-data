@@ -202,6 +202,6 @@ test("governance-derived current projection drift rejects registration before ou
 
 test("receipt storage after approval rejects registration before outputs", () => {
   const input = compositionFixture();
-  input.receipt.storedAt = "2026-08-16T03:00:00.000Z";
+  input.receipt.storedAt = new Date(Date.parse(input.approvedAt) + 1).toISOString();
   assert.throws(() => buildTransferRegistrationOutputs(input), /transfer retention derivation mismatch/);
 });

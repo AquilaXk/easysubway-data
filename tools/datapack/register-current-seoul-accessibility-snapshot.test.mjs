@@ -56,15 +56,17 @@ async function fixture() {
   await cp(path.join(ROOT, kricPath), path.join(root, kricPath));
   const seoul = inventory.sources.find(({ id }) => id === "seoul-metro-accessibility");
   const prior = await readJson(seoul.accessibilityAdmissionEvidence.snapshotPath);
-  const capturedAt = "2026-08-22T00:00:00.000Z";
+  const capturedMillis = Date.parse(prior.retrievedAt) + 60_000;
+  const capturedAt = new Date(capturedMillis).toISOString();
+  const snapshotId = `seoul-metro-accessibility-${capturedAt.replaceAll(/[-:.]/gu, "")}`;
   const snapshot = {
     ...prior,
-    snapshotId: "seoul-metro-accessibility-20260822T000000000Z",
+    snapshotId,
     previousSnapshotId: prior.snapshotId,
     retrievedAt: capturedAt,
     capturedAt,
     observedAt: capturedAt,
-    freshUntil: "2026-08-23T00:00:00.000Z",
+    freshUntil: new Date(capturedMillis + 86_400_000).toISOString(),
     rawSha256: sha("new provider observation identity"),
   };
   const observation = await mkdtemp(path.join(os.tmpdir(), "seoul-accessibility-observation-"));
@@ -81,15 +83,15 @@ async function fixture() {
     snapshotRawSha256: snapshot.rawSha256,
     capturedAt,
     snapshotFileSha256: sha(snapshotBytes),
-    rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-accessibility/20260822/${rawObjectSha256}.json`,
+    rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-accessibility/${capturedAt.slice(0, 10).replaceAll("-", "")}/${rawObjectSha256}.json`,
     rawObjectSha256,
     byteSize: 29,
-    storedAt: "2026-08-22T00:00:01.000Z",
-    rawRetentionExpiresAt: "2026-11-20T00:00:00.000Z",
+    storedAt: new Date(capturedMillis + 1_000).toISOString(),
+    rawRetentionExpiresAt: new Date(capturedMillis + 90 * 86_400_000).toISOString(),
   };
   const receiptPath = path.join(observation, "receipt.json");
   await writeFile(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
-  return { root, observation, snapshotPath, receiptPath, snapshot, receipt, kricPath };
+  return { root, observation, snapshotPath, receiptPath, snapshot, receipt, kricPath, now: new Date(capturedMillis + 60_000) };
 }
 
 async function writeObservation(values, snapshot, receipt) {
@@ -108,11 +110,11 @@ test("fresh Seoul observation and OCI receipt rebind exactly seven outputs", asy
   const before = await Promise.all(OUTPUTS.slice(0, 6).map((relative) => readFile(path.join(values.root, relative))));
   const outputs = await buildCurrentSeoulAccessibilityRegistrationOutputs({
     repositoryRoot: values.root, snapshotPath: values.snapshotPath, receiptPath: values.receiptPath,
-    now: new Date("2026-08-22T00:01:00.000Z"),
+    now: values.now,
   });
   assert.equal(outputs.length, 7);
   assert.deepEqual(outputs.map(({ relative }) => relative).slice(1), OUTPUTS.slice(0, 6));
-  assert.equal(outputs[0].relative, "tools/datapack/sources/seoul-metro-accessibility-20260822T000000000Z.json");
+  assert.equal(outputs[0].relative, `tools/datapack/sources/${values.snapshot.snapshotId}.json`);
   await commitCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, outputs });
   const after = await Promise.all(OUTPUTS.slice(0, 6).map((relative) => readFile(path.join(values.root, relative))));
   assert.equal(after.some((bytes, index) => !bytes.equals(before[index])), true);
@@ -150,12 +152,12 @@ test("invalid receipt, foreign replacement, and partial commit do not leave a mi
   const receipt = JSON.parse(await readFile(values.receiptPath, "utf8"));
   receipt.rawObjectUri = "oci://other-bucket/source-raw/invalid.json";
   await writeFile(values.receiptPath, `${JSON.stringify(receipt)}\n`);
-  await assert.rejects(buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, snapshotPath: values.snapshotPath, receiptPath: values.receiptPath, now: new Date("2026-08-22T00:01:00.000Z") }), /OCI receipt URI/);
+  await assert.rejects(buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, snapshotPath: values.snapshotPath, receiptPath: values.receiptPath, now: values.now }), /OCI receipt URI/);
   assert.deepEqual(await Promise.all(OUTPUTS.slice(0, 6).map((relative) => readFile(path.join(values.root, relative)))), before);
 
-  receipt.rawObjectUri = `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-accessibility/20260822/${receipt.rawObjectSha256}.json`;
+  receipt.rawObjectUri = `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-accessibility/${values.snapshot.capturedAt.slice(0, 10).replaceAll("-", "")}/${receipt.rawObjectSha256}.json`;
   await writeFile(values.receiptPath, `${JSON.stringify(receipt)}\n`);
-  const outputs = await buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, snapshotPath: values.snapshotPath, receiptPath: values.receiptPath, now: new Date("2026-08-22T00:01:00.000Z") });
+  const outputs = await buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, snapshotPath: values.snapshotPath, receiptPath: values.receiptPath, now: values.now });
   await assert.rejects(commitCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, outputs, failAfter: 2 }), /injected transaction failure/);
   assert.deepEqual(await Promise.all(OUTPUTS.slice(0, 6).map((relative) => readFile(path.join(values.root, relative)))), before);
 
@@ -167,7 +169,7 @@ test("invalid receipt, foreign replacement, and partial commit do not leave a mi
 test("failed COMMITTED journal persistence rolls every output back to prestate", async (t) => {
   const values = await fixture();
   t.after(() => Promise.all([rm(values.root, { recursive: true, force: true }), rm(values.observation, { recursive: true, force: true })]));
-  const outputs = await buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, snapshotPath: values.snapshotPath, receiptPath: values.receiptPath, now: new Date("2026-08-22T00:01:00.000Z") });
+  const outputs = await buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, snapshotPath: values.snapshotPath, receiptPath: values.receiptPath, now: values.now });
   await assert.rejects(commitCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, outputs, failCommittedJournalWrite: true }), /injected COMMITTED journal persistence failure/);
   for (const { relative, prestateBytes } of outputs) {
     const target = path.join(values.root, relative);
@@ -191,7 +193,7 @@ test("lineage, time, governance, and freshness admission failures stop before re
     },
     {
       name: "future receipt time",
-      mutate: (_snapshot, receipt) => { receipt.storedAt = "2026-08-22T00:02:00.000Z"; },
+      mutate: (_snapshot, receipt) => { receipt.storedAt = new Date(Date.parse(receipt.capturedAt) + 120_000).toISOString(); },
       expected: /storage time/,
     },
     {
@@ -205,7 +207,7 @@ test("lineage, time, governance, and freshness admission failures stop before re
     t.after(() => Promise.all([rm(values.root, { recursive: true, force: true }), rm(values.observation, { recursive: true, force: true })]));
     const snapshot = structuredClone(values.snapshot); const receipt = structuredClone(values.receipt);
     entry.mutate(snapshot, receipt); await writeObservation(values, snapshot, receipt);
-    await assert.rejects(buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, snapshotPath: values.snapshotPath, receiptPath: values.receiptPath, now: new Date("2026-08-22T00:01:00.000Z") }), entry.expected, entry.name);
+    await assert.rejects(buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, snapshotPath: values.snapshotPath, receiptPath: values.receiptPath, now: values.now }), entry.expected, entry.name);
   }
 
   const governance = await fixture();
@@ -214,23 +216,20 @@ test("lineage, time, governance, and freshness admission failures stop before re
   const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
   inventory.sources.find(({ id }) => id === "seoul-metro-accessibility").license.redistributionAllowed = false;
   await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
-  await assert.rejects(buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: governance.root, snapshotPath: governance.snapshotPath, receiptPath: governance.receiptPath, now: new Date("2026-08-22T00:01:00.000Z") }), /governance identity/);
+  await assert.rejects(buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: governance.root, snapshotPath: governance.snapshotPath, receiptPath: governance.receiptPath, now: governance.now }), /governance identity/);
 
   const stale = await fixture();
   t.after(() => Promise.all([rm(stale.root, { recursive: true, force: true }), rm(stale.observation, { recursive: true, force: true })]));
   const snapshot = structuredClone(stale.snapshot); const receipt = structuredClone(stale.receipt);
-  snapshot.snapshotId = "seoul-metro-accessibility-20260820T000000000Z";
-  snapshot.capturedAt = "2026-08-20T00:00:00.000Z"; snapshot.retrievedAt = snapshot.capturedAt; snapshot.observedAt = snapshot.capturedAt; snapshot.freshUntil = "2026-08-21T00:00:00.000Z";
-  receipt.rawObjectUri = `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-accessibility/20260820/${receipt.rawObjectSha256}.json`;
-  receipt.storedAt = "2026-08-20T00:00:01.000Z"; receipt.rawRetentionExpiresAt = "2026-11-18T00:00:00.000Z";
+  snapshot.freshUntil = new Date(Date.parse(snapshot.capturedAt) + 86_400_000).toISOString();
   await writeObservation(stale, snapshot, receipt);
-  await assert.rejects(buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: stale.root, snapshotPath: stale.snapshotPath, receiptPath: stale.receiptPath, now: new Date("2026-08-22T00:01:00.000Z") }), /snapshot is stale/);
+  await assert.rejects(buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: stale.root, snapshotPath: stale.snapshotPath, receiptPath: stale.receiptPath, now: new Date(Date.parse(snapshot.freshUntil) + 1) }), /snapshot is stale/);
 });
 
 test("stale-lock restart recovers PREPARED state, while malformed or active locks fail closed", async (t) => {
   const values = await fixture();
   t.after(() => Promise.all([rm(values.root, { recursive: true, force: true }), rm(values.observation, { recursive: true, force: true })]));
-  const outputs = await buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, snapshotPath: values.snapshotPath, receiptPath: values.receiptPath, now: new Date("2026-08-22T00:01:00.000Z") });
+  const outputs = await buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, snapshotPath: values.snapshotPath, receiptPath: values.receiptPath, now: values.now });
   for (const output of outputs.slice(0, 2)) await writeFile(path.join(values.root, output.relative), output.bytes);
   const records = outputs.map(({ relative, bytes, prestateBytes }) => ({ relative, before: prestateBytes?.toString("base64") ?? null, after: bytes.toString("base64"), beforeSha256: prestateBytes == null ? null : sha(prestateBytes), afterSha256: sha(bytes) }));
   await writeFile(path.join(values.root, "tools/datapack/.seoul-accessibility-registration-transaction.json"), JSON.stringify({ state: "PREPARED", records }));
@@ -242,7 +241,7 @@ test("stale-lock restart recovers PREPARED state, while malformed or active lock
 
   const locked = await fixture();
   t.after(() => Promise.all([rm(locked.root, { recursive: true, force: true }), rm(locked.observation, { recursive: true, force: true })]));
-  const lockedOutputs = await buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: locked.root, snapshotPath: locked.snapshotPath, receiptPath: locked.receiptPath, now: new Date("2026-08-22T00:01:00.000Z") });
+  const lockedOutputs = await buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: locked.root, snapshotPath: locked.snapshotPath, receiptPath: locked.receiptPath, now: locked.now });
   const firstTarget = path.join(locked.root, lockedOutputs[0].relative);
   const active = await lease();
   t.after(() => closeLease(active));
@@ -258,7 +257,7 @@ test("stale-lock restart recovers PREPARED state, while malformed or active lock
 test("old stale readers cannot move an active replacement lease", async (t) => {
   const values = await fixture();
   t.after(() => Promise.all([rm(values.root, { recursive: true, force: true }), rm(values.observation, { recursive: true, force: true })]));
-  const outputs = await buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, snapshotPath: values.snapshotPath, receiptPath: values.receiptPath, now: new Date("2026-08-22T00:01:00.000Z") });
+  const outputs = await buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, snapshotPath: values.snapshotPath, receiptPath: values.receiptPath, now: values.now });
   await writeFile(path.join(values.root, "tools/datapack/.seoul-accessibility-registration.lock"), lockRecord(await closedLeasePort()));
   const oldReaderReady = deferred(); const releaseOldReader = deferred(); const newOwnerReady = deferred(); const releaseNewOwner = deferred();
   const oldReader = commitCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, outputs, lockHooks: { afterStaleLockRead: async () => { oldReaderReady.resolve(); await releaseOldReader.promise; } } });
@@ -278,22 +277,22 @@ test("immutable snapshot collisions and symlink aliases fail before repository m
   t.after(() => Promise.all([rm(collision.root, { recursive: true, force: true }), rm(collision.observation, { recursive: true, force: true })]));
   const target = path.join(collision.root, "tools/datapack/sources", `${collision.snapshot.snapshotId}.json`);
   await writeFile(target, "different immutable bytes");
-  await assert.rejects(buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: collision.root, snapshotPath: collision.snapshotPath, receiptPath: collision.receiptPath, now: new Date("2026-08-22T00:01:00.000Z") }), /immutable collision/);
+  await assert.rejects(buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: collision.root, snapshotPath: collision.snapshotPath, receiptPath: collision.receiptPath, now: collision.now }), /immutable collision/);
   await writeFile(target, await readFile(collision.snapshotPath));
-  const idempotent = await buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: collision.root, snapshotPath: collision.snapshotPath, receiptPath: collision.receiptPath, now: new Date("2026-08-22T00:01:00.000Z") });
+  const idempotent = await buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: collision.root, snapshotPath: collision.snapshotPath, receiptPath: collision.receiptPath, now: collision.now });
   assert.deepEqual(idempotent[0].prestateBytes, await readFile(collision.snapshotPath));
 
   const aliases = await fixture();
   t.after(() => Promise.all([rm(aliases.root, { recursive: true, force: true }), rm(aliases.observation, { recursive: true, force: true })]));
   const outsideAlias = `${aliases.observation}-alias`; await symlink(aliases.observation, outsideAlias);
   t.after(() => rm(outsideAlias, { force: true }));
-  await assert.rejects(buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: aliases.root, snapshotPath: path.join(outsideAlias, path.basename(aliases.snapshotPath)), receiptPath: path.join(outsideAlias, path.basename(aliases.receiptPath)), now: new Date("2026-08-22T00:01:00.000Z") }), /symlinked parent/);
+  await assert.rejects(buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: aliases.root, snapshotPath: path.join(outsideAlias, path.basename(aliases.snapshotPath)), receiptPath: path.join(outsideAlias, path.basename(aliases.receiptPath)), now: aliases.now }), /symlinked parent/);
   const inside = path.join(aliases.root, "tools/datapack/sources/inside-alias"); await mkdir(inside, { recursive: true });
   await cp(aliases.snapshotPath, path.join(inside, "snapshot.json")); await cp(aliases.receiptPath, path.join(inside, "receipt.json"));
   const intoRepository = `${aliases.observation}-into-repository`; await symlink(inside, intoRepository);
   t.after(() => rm(intoRepository, { force: true }));
-  await assert.rejects(buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: aliases.root, snapshotPath: path.join(intoRepository, "snapshot.json"), receiptPath: path.join(intoRepository, "receipt.json"), now: new Date("2026-08-22T00:01:00.000Z") }), /symlinked parent/);
+  await assert.rejects(buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: aliases.root, snapshotPath: path.join(intoRepository, "snapshot.json"), receiptPath: path.join(intoRepository, "receipt.json"), now: aliases.now }), /symlinked parent/);
   const rootAlias = `${aliases.root}-alias`; await symlink(aliases.root, rootAlias);
   t.after(() => rm(rootAlias, { force: true }));
-  await assert.rejects(buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: rootAlias, snapshotPath: aliases.snapshotPath, receiptPath: aliases.receiptPath, now: new Date("2026-08-22T00:01:00.000Z") }), /root must be a regular directory/);
+  await assert.rejects(buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: rootAlias, snapshotPath: aliases.snapshotPath, receiptPath: aliases.receiptPath, now: aliases.now }), /root must be a regular directory/);
 });

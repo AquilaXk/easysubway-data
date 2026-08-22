@@ -321,6 +321,7 @@ async function historicalFacilityFixtureInput(observedAt) {
   input.snapshotPath = historicalSnapshotPath;
   input.snapshotBytes = new Uint8Array(historicalSnapshotBytes);
   input.observedAt = historicalObservedAt;
+  rebindHistoricalFacilityEvidence(input.productionInput, historicalSnapshot);
   const currentProjectionsBySourceId = new Map(input.candidateBuildSpec.sourceSnapshots.map((projection) =>
     [projection.sourceId, projection]));
   input.candidateBuildSpec.sourceSnapshots = historicalLedgerHeads.map((entry) => {
@@ -335,6 +336,79 @@ async function historicalFacilityFixtureInput(observedAt) {
   input.candidateBuildSpec.sourceInventorySha256 = sha256(inventoryBytes);
   input.candidateBuildSpec.networkEdgeEvidence.sourceInventory.sha256 = sha256(inventoryBytes);
   return input;
+}
+
+function rebindHistoricalFacilityEvidence(productionInput, snapshot) {
+  const sourceId = "kric-station-convenience-standard";
+  const queriesByStationLine = new Map(snapshot.queries.map((query) => [
+    `${query.stationId}\0${query.lineId}`, query,
+  ]));
+  const stationIdFor = (station) => {
+    const matches = productionInput.stationMappings.filter((mapping) => (
+      mapping.sourceId === station.sourceId
+      && mapping.sourceStationCode === station.sourceStationCode
+      && mapping.lineId === station.lineId
+    ));
+    assert.equal(matches.length, 1, "historical FACILITY station mapping");
+    return matches[0].stationId;
+  };
+  const queryFor = (stationId, lineId) => {
+    const query = queriesByStationLine.get(`${stationId}\0${lineId}`);
+    assert.ok(query, `historical FACILITY query: ${stationId}/${lineId}`);
+    return query;
+  };
+  const historicalFacilityRows = productionInput.facilityRows.filter((row) => row.sourceId === sourceId);
+  assert.equal(historicalFacilityRows.length, 4, "historical FACILITY present evidence count");
+  productionInput.facilityRows = historicalFacilityRows.map((row) => {
+    const stationId = stationIdFor(row.station);
+    const query = queryFor(stationId, row.station.lineId);
+    const matches = query.rows.filter((sourceRow) => sourceRow.gubun === "EV"
+      && sourceRow.dtlLoc === row.description);
+    assert.equal(matches.length, 1, `historical FACILITY present row: ${stationId}`);
+    const [sourceRow] = matches;
+    const providerRecordHash = sha256(JSON.stringify(sourceRow));
+    const tuple = providerTuple(query);
+    return {
+      ...row,
+      id: `facility-${stationId}-elevator-kric-standard-${providerRecordHash.slice(0, 16)}`,
+      providerFacilityRef: `${query.railOprIsttCd}:${query.lnCd}:${query.stinCd}:EV:${providerRecordHash}`,
+      floorFrom: `${sourceRow.grndDvCd === "2" ? "B" : ""}${sourceRow.stinFlor}F`,
+      description: sourceRow.dtlLoc,
+      verifiedAt: snapshot.capturedAt,
+      retrievedAt: snapshot.capturedAt,
+      sourceSnapshotId: snapshot.snapshotId,
+      providerRecordHash,
+      evidenceHash: sha256(JSON.stringify({ snapshotId: snapshot.snapshotId, query: tuple, providerRecordHash })),
+    };
+  });
+  const historicalAbsenceRows = productionInput.accessibilityStatusEvidence.filter((row) => row.sourceId === sourceId);
+  assert.equal(historicalAbsenceRows.length, 4, "historical FACILITY absence evidence count");
+  productionInput.accessibilityStatusEvidence = productionInput.accessibilityStatusEvidence.map((row) => {
+    if (row.sourceId !== sourceId) return row;
+    const query = queryFor(row.stationId, row.lineId);
+    const tuple = providerTuple(query);
+    return {
+      ...row,
+      sourceSnapshotId: snapshot.snapshotId,
+      providerRecordHash: query.providerRecordHash,
+      evidenceHash: sha256(JSON.stringify({
+        snapshotId: snapshot.snapshotId,
+        query: tuple,
+        type: row.facilityType,
+        evidenceKind: "NOT_EXISTS",
+      })),
+      verifiedAt: snapshot.capturedAt,
+      retrievedAt: snapshot.capturedAt,
+    };
+  });
+}
+
+function providerTuple(query) {
+  return {
+    railOprIsttCd: query.railOprIsttCd,
+    lnCd: query.lnCd,
+    stinCd: query.stinCd,
+  };
 }
 
 function selectedSourceSnapshotSetHash(input) {

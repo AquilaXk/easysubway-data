@@ -591,7 +591,7 @@ test("finalize crash-resume reconciles exact effects without replay and admits t
     }
     const calls = { publish: 0, register: 0, rebind: 0 };
     await main(["--phase", "finalize", "--operation-root", fixture.operationRoot], {
-      repositoryRoot: fixture.root, now: stage === "admitted" ? new Date("2026-08-17T13:00:00.000Z") : NOW, env: {}, execFileImpl: exactMainExec,
+      repositoryRoot: fixture.root, now: NOW, env: {}, execFileImpl: exactMainExec,
       publishImpl: async () => { calls.publish += 1; throw new Error("published receipt must reconcile before replay"); },
       registerImpl: async ({ snapshotTargetPath }) => { calls.register += 1; await mkdir(path.dirname(snapshotTargetPath), { recursive: true }); await writeFile(snapshotTargetPath, fixture.snapshotBytes); },
       rebindImpl: async ({ repositoryRoot, now }) => { calls.rebind += 1; return rebindCurrentCandidateSourceSnapshots({ repositoryRoot, now }); },

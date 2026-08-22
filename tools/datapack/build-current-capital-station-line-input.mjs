@@ -96,7 +96,10 @@ function validateCandidate(input, stationLines) {
   const spec = input.candidateBuildSpec;
   const exitCandidate = input.exitAdmission?.candidate;
   const transition = input.sourceSetTransition;
-  assertKeys(transition, ["currentCandidateBytesSha256", "currentCandidateSourceSetSha256", "evidenceSourceSetSha256", "facilityAdmissionBytesSha256"], "full-capital source-set transition");
+  const refresh = transition?.kind === "SEOUL_ACCESSIBILITY_SUCCESSOR_REFRESH";
+  assertKeys(transition, refresh
+    ? ["currentCandidateBytesSha256", "currentCandidateSourceSetSha256", "evidenceSourceSetSha256", "facilityAdmissionBytesSha256", "kind", "predecessorCandidateSourceSetSha256", "previousSnapshotId"]
+    : ["currentCandidateBytesSha256", "currentCandidateSourceSetSha256", "evidenceSourceSetSha256", "facilityAdmissionBytesSha256"], "full-capital source-set transition");
   if (typeof spec?.candidateId !== "string" || spec.candidateId === "" || !Array.isArray(spec.sourceSnapshots) || !Array.isArray(spec.sourceSnapshotIds)
     || spec.sourceSnapshots.length !== 7 || spec.sourceSnapshotIds.length !== 7 || spec.sourceSnapshots.at(-1)?.sourceId !== "seoul-metro-transfer-distance-duration"
     || spec.sourceSnapshotIds.at(-1) !== spec.sourceSnapshots.at(-1)?.snapshotId || !SHA.test(spec.sourceSnapshotSetHash ?? "")) {
@@ -106,13 +109,23 @@ function validateCandidate(input, stationLines) {
   const selectedIds = new Set(spec.sourceSnapshotIds);
   const selectedInLedgerOrder = input.sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
   if (selectedIds.size !== 7 || selectedInLedgerOrder.length !== 7 || sha256(JSON.stringify(selectedInLedgerOrder)) !== spec.sourceSnapshotSetHash) throw new Error("full-capital candidate source-set mismatch");
-  const predecessorIds = new Set(spec.sourceSnapshotIds.slice(0, -1));
+  const previousSnapshotId = refresh ? transition.previousSnapshotId : null;
+  const predecessorIds = new Set(refresh
+    ? spec.sourceSnapshotIds.map((snapshotId, index) => spec.sourceSnapshots[index].sourceId === "seoul-metro-accessibility" ? previousSnapshotId : snapshotId)
+    : spec.sourceSnapshotIds.slice(0, -1));
   const predecessorInLedgerOrder = input.sourceSnapshots.filter(({ snapshotId }) => predecessorIds.has(snapshotId));
   if (![transition.currentCandidateBytesSha256, transition.evidenceSourceSetSha256, transition.facilityAdmissionBytesSha256].every((value) => SHA.test(value ?? ""))
     || transition.currentCandidateSourceSetSha256 !== spec.sourceSnapshotSetHash
-    || transition.evidenceSourceSetSha256 === spec.sourceSnapshotSetHash || predecessorIds.size !== 6 || predecessorInLedgerOrder.length !== 6
-    || selectedInLedgerOrder.at(-1)?.sourceId !== "seoul-metro-transfer-distance-duration"
-    || sha256(JSON.stringify(predecessorInLedgerOrder)) !== transition.evidenceSourceSetSha256) throw new Error("full-capital source-set transition mismatch");
+    || transition.evidenceSourceSetSha256 === spec.sourceSnapshotSetHash
+    || (refresh
+      ? !SHA.test(transition.predecessorCandidateSourceSetSha256 ?? "")
+        || !nonBlank(previousSnapshotId)
+        || predecessorIds.size !== 7 || predecessorInLedgerOrder.length !== 7
+        || sha256(JSON.stringify(predecessorInLedgerOrder)) !== transition.predecessorCandidateSourceSetSha256
+        || sha256(JSON.stringify(predecessorInLedgerOrder.filter(({ sourceId }) => sourceId !== "seoul-metro-transfer-distance-duration"))) !== transition.evidenceSourceSetSha256
+      : predecessorIds.size !== 6 || predecessorInLedgerOrder.length !== 6
+        || selectedInLedgerOrder.at(-1)?.sourceId !== "seoul-metro-transfer-distance-duration"
+        || sha256(JSON.stringify(predecessorInLedgerOrder)) !== transition.evidenceSourceSetSha256)) throw new Error("full-capital source-set transition mismatch");
   if (!Buffer.isBuffer(input.sourceInventoryBytes) || canonicalJson(input.sourceInventory) !== canonicalJson(JSON.parse(input.sourceInventoryBytes.toString("utf8")))) throw new Error("full-capital source inventory raw binding mismatch");
   const inventorySha256 = sha256(JSON.stringify(input.sourceInventory));
   const inventoryRawSha256 = sha256(input.sourceInventoryBytes);
