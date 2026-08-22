@@ -5,10 +5,10 @@ import { lstat, mkdir, open, readFile, rename, rm, unlink, writeFile } from "nod
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { addCadence } from "./freshness-policy.mjs";
+import { deriveReleaseEvidence } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
 import { publishImmutableObjectPlan } from "./publish-object-storage.mjs";
-import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { buildSnapshotDiff, parseCredentialFreeObjectUri, validateLineage } from "./source-snapshot-policy.mjs";
+import { requireOciParBaseUrl } from "./lib/kric-raw-object-storage.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const SHA256 = /^[a-f0-9]{64}$/u;
@@ -79,11 +79,11 @@ export function validateSelectedReleaseSourceRehomeManifest({ manifest, snapshot
       throw new Error("rehome current source head is invalid");
     }
     const successor = parse(inputs.get(entry.snapshotPath), "rehome successor snapshot");
-    const receipt = parse(inputs.get(entry.receiptPath), "rehome OCI receipt");
     const raw = inputs.get(entry.rawPath);
     if (!Buffer.isBuffer(raw) || raw.length === 0 || successor?.sourceId !== entry.sourceId
       || successor.previousSnapshotId !== current.snapshotId || successor.snapshotId === current.snapshotId
       || successor.rawObjectUri?.startsWith("oci://") !== true || successor.rawSha256 !== sha256(raw)
+      || current.rawSha256 !== successor.rawSha256
       || !SHA256.test(successor.rawSha256) || JSON.stringify(successor.diffSummary) !== JSON.stringify(buildSnapshotDiff(current, successor))) {
       throw new Error("rehome successor lineage or OCI bytes are invalid");
     }
@@ -91,11 +91,6 @@ export function validateSelectedReleaseSourceRehomeManifest({ manifest, snapshot
       if (key === "coverageCount" && current[key] == null) continue;
       if (JSON.stringify(successor[key]) !== JSON.stringify(current[key])) throw new Error("rehome semantic evidence drift");
     }
-    exactKeys(receipt, ["schemaVersion", "artifactKind", "sourceId", "snapshotId", "rawObjectUri", "rawObjectSha256", "byteSize"], "rehome OCI receipt");
-    if (receipt.schemaVersion !== 1 || receipt.artifactKind !== "selected-release-source-oci-raw-receipt"
-      || receipt.sourceId !== successor.sourceId || receipt.snapshotId !== successor.snapshotId
-      || receipt.rawObjectUri !== successor.rawObjectUri || receipt.rawObjectSha256 !== successor.rawSha256
-      || receipt.byteSize !== raw.length) throw new Error("rehome OCI receipt does not bind full bytes");
     const locator = parseCredentialFreeObjectUri(successor.rawObjectUri, "rehome OCI object URI");
     if (!successor.rawObjectUri.startsWith("oci://")) throw new Error("rehome object URI must be OCI");
     successors.push({ entry, successor, raw, objectKey: locator.objectKey });
@@ -104,6 +99,14 @@ export function validateSelectedReleaseSourceRehomeManifest({ manifest, snapshot
 }
 
 function deriveOutputs({ snapshots, inventory, canonical, governance, freshness, spec, request, hashes, canonicalBytes, inventoryBytes, governanceBytes, itxBytes }) {
+  const derived = deriveReleaseEvidence({ snapshots, inventory, canonical, governance, freshness, spec, request, hashes, canonicalBytes, inventoryBytes, governanceBytes, itxBytes });
+  return [
+    { relativePath: OUTPUTS[0], bytes: jsonBytes(snapshots) },
+    { relativePath: OUTPUTS[1], bytes: derived.specBytes },
+    { relativePath: OUTPUTS[2], bytes: derived.requestBytes },
+    { relativePath: OUTPUTS[3], bytes: derived.hashBytes },
+  ];
+  /* c8 ignore next */
   const inventoryBySource = new Map(inventory.sources.map((entry) => [entry.id, entry]));
   const capital = canonical.packs?.find(({ id }) => id === "capital");
   if (!capital) throw new Error("canonical capital pack is missing");
@@ -219,10 +222,13 @@ async function transaction(root, outputs) {
   }
 }
 
+function sanitizedPublicationError() { return new Error("OCI source publication failed"); }
+
 export async function rehomeSelectedReleaseSourceLineage({ repositoryRoot = ROOT, manifestPath, publishImmutableObjectPlanImpl = publishImmutableObjectPlan, client = null, env = process.env }) {
   const root = path.resolve(repositoryRoot);
-  const relativeManifest = path.relative(root, path.resolve(manifestPath));
-  const manifestBytes = await regularBytes(root, relativeManifest, "rehome manifest");
+  requireOciParBaseUrl(env);
+  const operationRoot = path.dirname(path.resolve(manifestPath));
+  const manifestBytes = await regularBytes(operationRoot, path.basename(manifestPath), "rehome manifest");
   const [snapshotBytes, specBytes, requestBytes, hashBytes, inventoryBytes, canonicalBytes, governanceBytes, freshnessBytes] = await Promise.all([
     ...OUTPUTS.map((relative) => regularBytes(root, relative, "release transaction input")),
     regularBytes(root, SUPPORT.inventory, "source inventory"), regularBytes(root, SUPPORT.canonical, "canonical pack"),
@@ -230,21 +236,26 @@ export async function rehomeSelectedReleaseSourceLineage({ repositoryRoot = ROOT
   ]);
   const manifest = parse(manifestBytes, "rehome manifest");
   const inputs = new Map();
-  for (const entry of manifest.sources ?? []) for (const key of ["snapshotPath", "receiptPath", "rawPath"]) {
-    if (typeof entry?.[key] === "string" && !inputs.has(entry[key])) inputs.set(entry[key], await regularBytes(root, entry[key], `rehome ${key}`));
+  for (const entry of manifest.sources ?? []) for (const key of ["snapshotPath", "rawPath"]) {
+    if (typeof entry?.[key] === "string" && !inputs.has(entry[key])) inputs.set(entry[key], await regularBytes(operationRoot, entry[key], `rehome ${key}`));
   }
   const snapshots = parse(snapshotBytes, "source snapshot ledger");
   const successors = validateSelectedReleaseSourceRehomeManifest({ manifest, snapshots, inputs });
   for (const { entry, successor, raw, objectKey } of successors) {
-    await publishImmutableObjectPlanImpl({
-      root, client, env, sourceId: entry.sourceId,
+    const receiptTarget = contained(operationRoot, entry.receiptPath);
+    try { await lstat(receiptTarget); throw new Error("rehome receipt already exists"); } catch (error) { if (!/ENOENT/u.test(error.code ?? "")) throw error; }
+    try { await publishImmutableObjectPlanImpl({
+      root: operationRoot, client, env, sourceId: entry.sourceId,
       plan: { schemaVersion: 1, steps: [
         { type: "put-immutable-bundle-object", objectKey, sourcePath: entry.rawPath, sha256: successor.rawSha256, sizeBytes: raw.length },
         { type: "verify-immutable-bundle-object", objectKey, sourcePath: entry.rawPath, sha256: successor.rawSha256, sizeBytes: raw.length },
       ] },
-    });
+    }); } catch { throw sanitizedPublicationError(); }
+    const receipt = { schemaVersion: 1, artifactKind: "selected-release-source-oci-raw-receipt", sourceId: successor.sourceId, snapshotId: successor.snapshotId, rawObjectUri: successor.rawObjectUri, rawObjectSha256: successor.rawSha256, byteSize: raw.length };
+    await writeFile(receiptTarget, jsonBytes(receipt), { flag: "wx", mode: 0o600 });
   }
   snapshots.push(...successors.map(({ successor }) => successor));
+  validateLineage(snapshots);
   const spec = parse(specBytes, "candidate build spec");
   const itxBytes = await regularBytes(root, safeRelative(spec.itxTopologyEvidencePath, "ITX topology evidence path"), "ITX topology evidence");
   const outputs = deriveOutputs({ snapshots, inventory: parse(inventoryBytes, "source inventory"), canonical: parse(canonicalBytes, "canonical pack"), governance: parse(governanceBytes, "source governance policy"), freshness: parse(freshnessBytes, "freshness policy"), spec, request: parse(requestBytes, "release request"), hashes: parse(hashBytes, "hash evidence"), canonicalBytes, inventoryBytes, governanceBytes, itxBytes });

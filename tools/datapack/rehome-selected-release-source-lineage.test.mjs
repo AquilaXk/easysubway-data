@@ -26,6 +26,7 @@ const support = [
 
 async function fixture() {
   const root = await mkdtemp(path.join(os.tmpdir(), "source-lineage-rehome-"));
+  const operationRoot = await mkdtemp(path.join(os.tmpdir(), "source-lineage-operation-"));
   for (const relative of [...tracked, ...support]) {
     const target = path.join(root, relative);
     await mkdir(path.dirname(target), { recursive: true });
@@ -35,8 +36,11 @@ async function fixture() {
   const snapshots = JSON.parse(await readFile(snapshotsPath));
   const sources = [];
   for (const sourceId of SELECTED_RELEASE_SOURCE_IDS) {
-    const previous = snapshots.filter((snapshot) => snapshot.sourceId === sourceId).at(-1);
+    const chain = snapshots.filter((snapshot) => snapshot.sourceId === sourceId);
     const raw = Buffer.from(`immutable OCI raw bytes for ${sourceId}`);
+    for (const snapshot of chain) { snapshot.rawSha256 = sha(raw); snapshot.coverageCount ??= 0; }
+    for (const [index, snapshot] of chain.entries()) if (index > 0) snapshot.diffSummary = buildSnapshotDiff(chain[index - 1], snapshot);
+    const previous = chain.at(-1);
     const rawSha256 = sha(raw);
     const successor = structuredClone(previous);
     successor.snapshotId = `${sourceId}-oci-rehome-20260822`;
@@ -46,33 +50,30 @@ async function fixture() {
     successor.rawSha256 = rawSha256;
     successor.rawObjectUri = `oci://easysubway-datapacks/source-raw/${sourceId}/20260822/${rawSha256}.json`;
     successor.diffSummary = buildSnapshotDiff(previous, successor);
-    const sourceRoot = path.join(root, "operation", sourceId);
+    const sourceRoot = path.join(operationRoot, sourceId);
     await mkdir(sourceRoot, { recursive: true });
     const rawPath = path.join(sourceRoot, "raw.json");
     const snapshotPath = path.join(sourceRoot, "snapshot.json");
     const receiptPath = path.join(sourceRoot, "receipt.json");
     await writeFile(rawPath, raw);
     await writeFile(snapshotPath, `${JSON.stringify(successor, null, 2)}\n`);
-    await writeFile(receiptPath, `${JSON.stringify({
-      schemaVersion: 1, artifactKind: "selected-release-source-oci-raw-receipt", sourceId,
-      snapshotId: successor.snapshotId, rawObjectUri: successor.rawObjectUri,
-      rawObjectSha256: rawSha256, byteSize: raw.length,
-    }, null, 2)}\n`);
-    sources.push({ sourceId, currentSnapshotId: previous.snapshotId, snapshotPath: path.relative(root, snapshotPath), receiptPath: path.relative(root, receiptPath), rawPath: path.relative(root, rawPath) });
+    sources.push({ sourceId, currentSnapshotId: previous.snapshotId, snapshotPath: path.relative(operationRoot, snapshotPath), receiptPath: path.relative(operationRoot, receiptPath), rawPath: path.relative(operationRoot, rawPath) });
   }
-  const manifestPath = path.join(root, "operation", "manifest.json");
+  await writeFile(snapshotsPath, `${JSON.stringify(snapshots, null, 2)}\n`);
+  const manifestPath = path.join(operationRoot, "manifest.json");
   await writeFile(manifestPath, `${JSON.stringify({ schemaVersion: 1, artifactKind: "selected-release-source-oci-rehome-manifest", sources }, null, 2)}\n`);
-  return { root, manifestPath };
+  return { root, operationRoot, manifestPath };
 }
 
 test("exact three OCI successor receipts publish and then atomically rehome the four release identities", async (t) => {
-  const { root, manifestPath } = await fixture();
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const { root, operationRoot, manifestPath } = await fixture();
+  t.after(() => Promise.all([rm(root, { recursive: true, force: true }), rm(operationRoot, { recursive: true, force: true })]));
   const before = await Promise.all(tracked.map((relative) => readFile(path.join(root, relative))));
   const calls = [];
   await rehomeSelectedReleaseSourceLineage({
     repositoryRoot: root,
     manifestPath,
+    env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/opaque/n/axvym6vk8g7i/b/easysubway-datapacks/o/" },
     publishImmutableObjectPlanImpl: async ({ plan, root: planRoot }) => {
       calls.push({ plan, root: planRoot });
       assert.equal(plan.steps.length, 2);
@@ -81,6 +82,7 @@ test("exact three OCI successor receipts publish and then atomically rehome the 
     },
   });
   assert.deepEqual(calls.map(({ plan }) => plan.steps[0].objectKey.split("/")[1]), SELECTED_RELEASE_SOURCE_IDS);
+  assert.equal(calls.every(({ root: planRoot }) => planRoot === operationRoot), true);
   const snapshots = JSON.parse(await readFile(path.join(root, tracked[0])));
   const spec = JSON.parse(await readFile(path.join(root, tracked[1])));
   assert.equal(snapshots.filter((snapshot) => SELECTED_RELEASE_SOURCE_IDS.includes(snapshot.sourceId) && snapshot.rawObjectUri.startsWith("oci://")).length >= 3, true);
@@ -89,12 +91,12 @@ test("exact three OCI successor receipts publish and then atomically rehome the 
 });
 
 test("a failed publication leaves all four tracked release files untouched", async (t) => {
-  const { root, manifestPath } = await fixture();
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const { root, operationRoot, manifestPath } = await fixture();
+  t.after(() => Promise.all([rm(root, { recursive: true, force: true }), rm(operationRoot, { recursive: true, force: true })]));
   const before = await Promise.all(tracked.map((relative) => readFile(path.join(root, relative))));
   await assert.rejects(rehomeSelectedReleaseSourceLineage({
-    repositoryRoot: root, manifestPath,
+    repositoryRoot: root, manifestPath, env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/opaque/n/axvym6vk8g7i/b/easysubway-datapacks/o/" },
     publishImmutableObjectPlanImpl: async () => { throw new Error("injected publication failure"); },
-  }), /injected publication failure/);
+  }), /OCI source publication failed/);
   assert.deepEqual(await Promise.all(tracked.map((relative) => readFile(path.join(root, relative)))), before);
 });
