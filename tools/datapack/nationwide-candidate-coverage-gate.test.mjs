@@ -54,6 +54,7 @@ const SPEC_PATH = "tools/datapack/nationwide-candidate-pack-spec.json";
 const TARGETS_PATH = "tools/datapack/nationwide-coverage-targets.json";
 const INVENTORY_PATH = "tools/datapack/source-inventory.json";
 const APP_INVENTORY_PATH = "apps/mobile/assets/datapacks/source-inventory.json";
+const DATA_TEST_OWNERSHIP_PATH = "tools/ci/data-test-ownership.json";
 const RESOLUTION_PLAN_PATH =
   "tools/datapack/release/nationwide-public-api-coverage-search-plan-20260725.json";
 const RESOLUTIONS_PATH =
@@ -1450,7 +1451,8 @@ test("인천 13 requirement는 체인 편입으로 전이하고 7호선 구간�
 test("candidate spec의 line-scope 재기술은 tracked source inventory와 동기다", async (context) => {
   const spec = await readJson(SPEC_PATH);
   const inventory = await readJson(INVENTORY_PATH);
-  const appInventory = await readJson(APP_INVENTORY_PATH);
+  await readJson(APP_INVENTORY_PATH);
+  const dataTestOwnership = await readJson(DATA_TEST_OWNERSHIP_PATH);
   const capitalRouteMapRedescription = spec.lineScopeRedescriptions.find(
     ({ sourceId, sourceDomain }) =>
       sourceId === CAPITAL_SEOUL_ROUTE_MAP_SOURCE_ID && sourceDomain === "route_map_positions",
@@ -1487,7 +1489,32 @@ test("candidate spec의 line-scope 재기술은 tracked source inventory와 동�
       assert.equal(sourceDomain, entry.sourceDomain, requirementKey);
     }
   }
-  assert.deepEqual(appInventory, inventory, "앱 번들 사본은 datapack 정본과 같아야 한다");
+  const workflows = dataTestOwnership.workflows;
+  assert.ok(workflows && typeof workflows === "object" && !Array.isArray(workflows));
+  const deterministicRelease = workflows["deterministic-release"];
+  assert.ok(
+    deterministicRelease && typeof deterministicRelease === "object" && !Array.isArray(deterministicRelease),
+  );
+  const fixtureStageContracts = deterministicRelease.fixtureStageContracts;
+  assert.ok(
+    fixtureStageContracts && typeof fixtureStageContracts === "object" && !Array.isArray(fixtureStageContracts),
+  );
+  const mobileFixtureContract = fixtureStageContracts.mobile;
+  assert.ok(Array.isArray(mobileFixtureContract));
+  assert.ok(mobileFixtureContract.every((entry) => typeof entry === "string"));
+  const inventoryHashTokens = mobileFixtureContract.filter(
+    (entry) => entry.startsWith("expected_source_inventory_sha256="),
+  );
+  assert.equal(inventoryHashTokens.length, 1, "Mobile fixture source inventory hash contract must be unique");
+  const inventoryHashMatch = inventoryHashTokens[0].match(
+    /^expected_source_inventory_sha256="([a-f0-9]{64})"$/,
+  );
+  assert.ok(inventoryHashMatch, "Mobile fixture source inventory hash contract must be well-formed");
+  assert.equal(
+    await sha256Of(APP_INVENTORY_PATH),
+    inventoryHashMatch[1],
+    "앱 번들 source inventory는 deterministic-release fixture 계약과 같아야 한다",
+  );
 
   await context.test("inventory lineIds가 spec과 어긋나면 하네스가 거부한다", () => {
     const drifted = structuredClone(inventory);
