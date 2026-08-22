@@ -296,7 +296,12 @@ const NON_TRANSITION_KEYS = Object.freeze(["requirementKey", "reasonCode", "reas
 // 선언된 non-transition의 사유 코드. 코드마다 하네스가 실측으로 확인하는 술어가 하나씩 있어야 한다 —
 // 확인할 수 없는 사유를 자유 서술로 받으면 그 선언은 "왜 안 열리는가"를 감사할 수 없는 주장이 된다.
 // NO_SUPPORTING_ROWS_FOR_LINE: 조립 결과의 그 scope provenance 행이 필드마다 0건임을 확인한다.
-const NON_TRANSITION_REASON_CODES = Object.freeze(["NO_SUPPORTING_ROWS_FOR_LINE"]);
+// ALREADY_SUPPORTED_BY_INHERITED_SCOPE: 승계 source가 이미 requirement를 지원하고, 이 재기술 source가
+// 그 기존 근거를 바꾸지 않은 채 정확히 하나의 추가 근거가 되는지를 확인한다.
+const NON_TRANSITION_REASON_CODES = Object.freeze([
+  "ALREADY_SUPPORTED_BY_INHERITED_SCOPE",
+  "NO_SUPPORTING_ROWS_FOR_LINE",
+]);
 
 export function validateNationwideCandidateCoverageSpec(
   spec,
@@ -345,6 +350,12 @@ export async function runNationwideCandidateCoverageGate({
     targets,
     inclusions.inheritedPack,
   );
+  const inheritedAuditedRequirementKeys = auditedInheritedClaimRequirementKeys({
+    spec,
+    inventory,
+    targets,
+    inheritedPack: inherited,
+  });
 
   const signing = ephemeralSigningKeys();
   const variants = {};
@@ -400,7 +411,12 @@ export async function runNationwideCandidateCoverageGate({
 
     reports[variant] = JSON.parse(await readFile(reportPath, "utf8"));
     const provenance = JSON.parse(await readFile(path.join(buildDir, "current.provenance.json"), "utf8"));
-    variants[variant] = summarizeVariant(spec, reports[variant], provenance);
+    variants[variant] = summarizeVariant(
+      spec,
+      reports[variant],
+      provenance,
+      inheritedAuditedRequirementKeys,
+    );
   }
 
   return buildEvidence({
@@ -1579,7 +1595,7 @@ function sameStringSet(left, right) {
   return JSON.stringify([...left].sort(codepointCompare)) === JSON.stringify([...right].sort(codepointCompare));
 }
 
-function summarizeVariant(spec, report, provenance) {
+function summarizeVariant(spec, report, provenance, inheritedAuditedRequirementKeys = []) {
   const supported = report.requirements.filter((entry) => entry.status === "SUPPORTED");
   const supportedRequirementKeys = supported.map(requirementKey).sort(codepointCompare);
   return {
@@ -1591,9 +1607,68 @@ function summarizeVariant(spec, report, provenance) {
     enhancement: supportedCounts(report.summary.enhancement),
     // 한 requirement를 여러 소스가 함께 뒷받침하면(대구 membership처럼) 같은 키가 여러 재기술 항목에
     // 등재된다 — 판정 축은 requirement 하나이므로 중복을 접어 기록한다.
-    pilotRequirements: declaredRequirementKeys(spec)
+    pilotRequirements: [...new Set([
+      ...declaredRequirementKeys(spec),
+      ...inheritedAuditedRequirementKeys,
+    ])]
+      .sort(codepointCompare)
       .map((key) => pilotRequirement(report, key, provenance)),
   };
+}
+
+function routeMapRedescriptionSourceIds(spec) {
+  return new Set((spec.lineScopeRedescriptions ?? [])
+    .filter(({ sourceDomain }) => sourceDomain === "route_map_positions")
+    .map(({ sourceId }) => sourceId));
+}
+
+function snapshotlessRouteMapClaimants(inventory, redescribedSourceIds) {
+  return (inventory.sources ?? []).filter((source) => {
+    const scope = source.coverageScope;
+    return scope?.sourceDomains?.includes("route_map_positions")
+      && (scope.lineIds ?? []).length > 0
+      && !source.routeMapAdmissionEvidence?.snapshotPath
+      && !redescribedSourceIds.has(source.id);
+  });
+}
+
+function exactInheritedRouteMapSource(source, inheritedSources) {
+  const matches = inheritedSources.filter(({ id }) => id === source.id);
+  if (matches.length !== 1 || !["regionIds", "operatorIds", "lineIds", "sourceDomains"].every(
+    (key) => sameStringSet(matches[0].coverageScope?.[key], source.coverageScope?.[key]),
+  )) {
+    throw new Error(`inherited snapshotless route-map claimant is not exactly bound: ${source.id}`);
+  }
+}
+
+function activeRouteMapRequirementKeys(scope, activeScopeKeys) {
+  const keys = [];
+  for (const regionId of scope.regionIds) {
+    for (const operatorId of scope.operatorIds) {
+      for (const lineId of scope.lineIds) {
+        const scopeKey = `${regionId}:${operatorId}:${lineId}`;
+        if (activeScopeKeys.has(scopeKey)) keys.push(`${scopeKey}:route_map_positions`);
+      }
+    }
+  }
+  return keys;
+}
+
+export function auditedInheritedClaimRequirementKeys({ spec, inventory, targets, inheritedPack }) {
+  const redescribedSourceIds = routeMapRedescriptionSourceIds(spec);
+  const activeScopeKeys = new Set((targets.activeLineScopes ?? []).map(
+    ({ regionId, operatorId, lineId }) => `${regionId}:${operatorId}:${lineId}`,
+  ));
+  const inheritedSources = (inheritedPack.packs ?? [])
+    .flatMap((pack) => pack?.sourceInventory ?? []);
+  const keys = new Set();
+  for (const source of snapshotlessRouteMapClaimants(inventory, redescribedSourceIds)) {
+    exactInheritedRouteMapSource(source, inheritedSources);
+    for (const key of activeRouteMapRequirementKeys(source.coverageScope, activeScopeKeys)) {
+      keys.add(key);
+    }
+  }
+  return [...keys].sort(codepointCompare);
 }
 
 // SUPPORTED 건을 domain 증거 모델별로 센다. 판정 경로가 requirement마다 실어 준 값만 쓰고 여기서
@@ -1661,10 +1736,14 @@ function supportingRecordCountByField(provenance, entry) {
 
 function assertDeclaredNonTransitionsMatchVariants(spec, variants) {
   const nonTransitions = declaredNonTransitions(spec);
-  // 선언된 non-transition은 기대 전환 집합에서만 빠진다. 그 키가 실제로 전환됐다면 선언이 성공을 숨기는
-  // 데 쓰인 것이므로 여기서 먼저 거부한다(아래 집합 비교로도 걸리지만 원인을 문구로 특정한다).
+  // 선언된 non-transition은 기대 전환 집합에서만 빠진다. 단, 승계 scope가 이미 지원하던 requirement에
+  // 새 source를 정확히 추가하는 경우는 전이가 아니라 근거 확장이므로 별도 사유 코드로만 허용한다.
   const wronglyDeclared = [...nonTransitions.keys()]
-    .filter((key) => variants.lineScoped.supportedRequirementKeys.includes(key));
+    .filter((key) => {
+      const declaration = nonTransitions.get(key);
+      return declaration.reasonCode !== "ALREADY_SUPPORTED_BY_INHERITED_SCOPE"
+        && variants.lineScoped.supportedRequirementKeys.includes(key);
+    });
   if (wronglyDeclared.length > 0) {
     throw new Error(
       "requirements declared as non-transitioning must not be SUPPORTED after the line-scope redescription: "
@@ -1672,6 +1751,38 @@ function assertDeclaredNonTransitionsMatchVariants(spec, variants) {
     );
   }
   assertNonTransitionReasons(nonTransitions, variants.lineScoped);
+  for (const declaration of nonTransitions.values()) {
+    if (declaration.reasonCode !== "ALREADY_SUPPORTED_BY_INHERITED_SCOPE") continue;
+    const baseline = lineScopedPilotRequirement(variants.baseline, declaration.requirementKey);
+    const lineScoped = lineScopedPilotRequirement(variants.lineScoped, declaration.requirementKey);
+    if (baseline.status !== "SUPPORTED" || lineScoped.status !== "SUPPORTED") {
+      throw new Error(
+        "ALREADY_SUPPORTED_BY_INHERITED_SCOPE requires the requirement to be SUPPORTED in both variants: "
+          + declaration.requirementKey,
+      );
+    }
+    if (!variants.baseline.supportedRequirementKeys.includes(declaration.requirementKey)
+      || !variants.lineScoped.supportedRequirementKeys.includes(declaration.requirementKey)) {
+      throw new Error(
+        "ALREADY_SUPPORTED_BY_INHERITED_SCOPE requires the requirement key in both supportedRequirementKeys variants: "
+          + declaration.requirementKey,
+      );
+    }
+    if (baseline.sourceIds.includes(declaration.sourceId)) {
+      throw new Error(
+        "ALREADY_SUPPORTED_BY_INHERITED_SCOPE requires the declared source to be absent from baseline: "
+          + declaration.requirementKey,
+      );
+    }
+    const expectedSourceIds = [...baseline.sourceIds, declaration.sourceId].sort(codepointCompare);
+    if (JSON.stringify(lineScoped.sourceIds) !== JSON.stringify(expectedSourceIds)) {
+      throw new Error(
+        "ALREADY_SUPPORTED_BY_INHERITED_SCOPE requires the declared source to be added exactly: "
+          + `${declaration.requirementKey}: expected ${expectedSourceIds.join(",")}, `
+          + `got ${lineScoped.sourceIds.join(",")}`,
+      );
+    }
+  }
   return nonTransitions;
 }
 
@@ -1723,6 +1834,7 @@ function buildEvidence({ spec, inputs, packDataInclusions, reports, variants, si
       denominator: entry.denominator,
     }));
   const nonTransitionEntries = [...nonTransitions.values()].map((declaration) => {
+    const baselineEntry = lineScopedPilotRequirement(variants.baseline, declaration.requirementKey);
     const entry = lineScopedPilotRequirement(variants.lineScoped, declaration.requirementKey);
     return {
       requirementKey: declaration.requirementKey,
@@ -1732,6 +1844,10 @@ function buildEvidence({ spec, inputs, packDataInclusions, reports, variants, si
       reasonKo: declaration.reasonKo,
       before: baselineStatuses.get(declaration.requirementKey),
       after: entry.status,
+      ...(declaration.reasonCode === "ALREADY_SUPPORTED_BY_INHERITED_SCOPE" ? {
+        baselineSourceIds: [...baselineEntry.sourceIds].sort(codepointCompare),
+        lineScopedSourceIds: [...entry.sourceIds].sort(codepointCompare),
+      } : {}),
       supportingRecordCountByField: entry.supportingRecordCountByField,
     };
   });
@@ -1906,17 +2022,23 @@ function buildEvidence({ spec, inputs, packDataInclusions, reports, variants, si
         + "덮는 노선 중 일부만 전환되는 편입을 표현하려면 이 축이 필요하다 — 재기술 lineIds는 admission "
         + "정본과 정확히 같아야 하고 선언한 lineIds는 requirementKeys가 전수 덮어야 하기 때문이다. 이 "
         + "선언은 전환 범위를 넓히지 못한다: 기대 전환 집합에서 그 키를 빼는 것이 전부이고, 하네스가 "
-        + "① 그 키가 실제로 SUPPORTED면 거부하고 ② 사유 코드가 요구하는 실측 술어를 확인한다. 선언하지 "
-        + "않은 키가 전환되지 않으면 그대로 fail closed다.",
+        + "① NO_SUPPORTING_ROWS_FOR_LINE 키가 실제로 SUPPORTED면 거부하고 ② "
+        + "ALREADY_SUPPORTED_BY_INHERITED_SCOPE 키는 두 variant의 SUPPORTED·정확한 source 추가를 확인하며 "
+        + "③ 사유 코드가 요구하는 실측 술어를 확인한다. 선언하지 않은 키가 전환되지 않으면 그대로 fail "
+        + "closed다.",
       reasonCodesKo:
-        "NO_SUPPORTING_ROWS_FOR_LINE — 그 scope를 뒷받침하는 official/field-verified provenance 행이 "
+        "ALREADY_SUPPORTED_BY_INHERITED_SCOPE — baseline과 lineScoped 모두 SUPPORTED여야 하고, baseline "
+        + "근거 sourceIds에 없는 재기술 source 하나만 codepoint 순으로 추가됐음을 하네스가 확인한다. "
+        + "NO_SUPPORTING_ROWS_FOR_LINE — 그 scope를 뒷받침하는 official/field-verified provenance 행이 "
         + "조립 결과에 필드마다 0건임을 하네스가 확인한다(아래 supportingRecordCountByField). 사유가 "
         + "자유 서술로만 남지 않도록 코드마다 실측 술어를 하나씩 둔다. 새 사유 코드는 그 코드가 요구하는 "
         + "실측 술어를 함께 넣어야만 allowlist에 오른다.",
       scopeKo:
         "선언 단위는 (sourceId, sourceDomain, lineId)다. 선언은 그 재기술이 declare한 requirement 키 "
-        + "안에서만 고를 수 있어 도메인 전체·소스 전체·와일드카드 선언이 들어올 통로가 없고, 한 재기술의 "
-        + "노선을 전부 선언하면 그 재기술이 아무것도 열지 않게 되므로 거부된다.",
+        + "안에서만 고를 수 있어 도메인 전체·소스 전체·와일드카드 선언이 들어올 통로가 없다. 한 재기술의 "
+        + "노선을 전부 선언하는 것은 기존 SUPPORTED 근거에 source 하나만 정확히 더하는 "
+        + "ALREADY_SUPPORTED_BY_INHERITED_SCOPE일 때만 허용하고, 그 밖에는 아무것도 열지 않는 재기술로 "
+        + "거부한다.",
       // 이 축이 조용히 늘지 않도록 수치를 함께 남긴다 — evidence diff에서 한 줄로 드러난다.
       count: nonTransitionEntries.length,
       entries: nonTransitionEntries,
@@ -1992,6 +2114,9 @@ export function assertNonTransitionReasons(nonTransitions, lineScoped) {
   for (const declaration of nonTransitions.values()) {
     const entry = lineScopedPilotRequirement(lineScoped, declaration.requirementKey);
     switch (declaration.reasonCode) {
+      case "ALREADY_SUPPORTED_BY_INHERITED_SCOPE":
+        // baseline·source-set 술어는 두 variant가 필요한 별도 대조에서 확인한다.
+        break;
       case "NO_SUPPORTING_ROWS_FOR_LINE": {
         const supporting = Object.entries(entry.supportingRecordCountByField)
           .filter(([, count]) => count !== 0);
@@ -2192,8 +2317,9 @@ function validateSpec(spec, materializers) {
 // 구조적으로 만들지 않아 그 requirement 하나만 열리지 않는다(실측).
 //
 // 이 선언은 전환 범위를 넓히지 못한다. 선언이 하는 일은 기대 전환 집합에서 그 키를 빼는 것뿐이고,
-// buildEvidence가 ① 그 키가 실제로 SUPPORTED면 거부하고 ② 사유 코드가 요구하는 실측 술어(그 scope
-// provenance 행 0건)를 확인한다. 선언하지 않은 키가 전환되지 않으면 여전히 거부된다.
+// buildEvidence가 NO_SUPPORTING_ROWS_FOR_LINE은 SUPPORTED가 아닌지와 provenance 0건을,
+// ALREADY_SUPPORTED_BY_INHERITED_SCOPE는 양쪽 SUPPORTED와 source 하나의 정확한 추가를 확인한다.
+// 선언하지 않은 키가 전환되지 않으면 여전히 거부된다.
 function validateNonTransitions(redescription, redescriptionKey, requirementKeys, lineIds) {
   if (redescription.nonTransitioningRequirements === undefined) return;
   const declarations = redescription.nonTransitioningRequirements;
@@ -2235,11 +2361,14 @@ function validateNonTransitions(redescription, redescriptionKey, requirementKeys
   if (JSON.stringify([...seen]) !== JSON.stringify([...seen].sort(codepointCompare))) {
     throw new Error(`${redescriptionKey}.nonTransitioningRequirements must be sorted by requirementKey`);
   }
-  // 선언한 노선이 재기술 lineIds 전부가 되면 그 재기술은 아무것도 열지 않는다 — 등재의 뜻이 사라지므로
-  // 거부한다(그 경우 옳은 조치는 선언이 아니라 재기술 자체를 지우는 것이다). 판정 단위는 requirementKey
-  // 개수가 아니라 노선이다: 한 노선이 requirement 둘을 여는 재기술(dual-operator scope)에서 한쪽만
-  // 선언해도 그 노선은 여전히 열리므로 개수 비교는 이 성질을 잘못 읽는다.
-  if (declaredLineIds.size === new Set(lineIds).size) {
+  // 선언한 노선이 재기술 lineIds 전부이면 보통 아무것도 열지 않는 무의미한 재기술이므로 거부한다.
+  // 단, 전 노선이 승계 근거로 이미 SUPPORTED이고 이 source를 정확히 하나 더하는 경우는 근거 확장 자체가
+  // 재기술의 의미이므로 허용한다. 판정 단위는 requirementKey 개수가 아니라 노선이다: 한 노선이
+  // requirement 둘을 여는 재기술(dual-operator scope)에서 한쪽만 선언해도 그 노선은 여전히 열린다.
+  const allAlreadySupportedByInheritedScope = declarations.every(
+    ({ reasonCode }) => reasonCode === "ALREADY_SUPPORTED_BY_INHERITED_SCOPE",
+  );
+  if (declaredLineIds.size === new Set(lineIds).size && !allAlreadySupportedByInheritedScope) {
     throw new Error(`${redescriptionKey} must transition at least one redescribed line`);
   }
 }

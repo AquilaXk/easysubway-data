@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { parseMolitLineOperatorRosters } from "./build-molit-nationwide-fixture.mjs";
+import { auditedInheritedClaimRequirementKeys } from "./run-nationwide-candidate-coverage-gate.mjs";
 import { ROUTE_MAP_DOMAIN, auditRouteMapCoverageScopes } from "./route-map-coverage-scope.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
@@ -17,7 +18,9 @@ const DAEGU_SNAPSHOT_PATH = "tools/datapack/sources/daegu-transportation-route-m
 const CAPITAL_TOPOLOGY_PATH = "tools/datapack/sources/capital-route-topology-20260724.json";
 const CANDIDATE_SPEC_PATH = "tools/datapack/nationwide-candidate-pack-spec.json";
 const CANDIDATE_EVIDENCE_PATH = "tools/datapack/reports/nationwide-candidate-coverage-gate.json";
-// #2514(#2510 B0)가 line-scope로 재기술한 소스. admitted snapshot 파일이 없어 containment 근거가 되지 못한다.
+const INHERITED_REVIEWED_PACK_PATH = "tools/datapack/release/capital-production-reviewed-pack.json";
+// admitted snapshot 없이 active line-scope를 claim하지만, reviewed pack의 inherited source로 baseline부터
+// SUPPORTED인 source다. containment 근거는 별도 admitted snapshot source가 계속 제공한다.
 const CANDIDATE_REDESCRIBED_SOURCE_ID = "seoulmetro-cyberstation-route-map";
 const CANDIDATE_REDESCRIBED_SCOPE_KEY = "capital:seoul-metro:seoul-4";
 
@@ -77,13 +80,14 @@ async function readJson(relativePath) {
 }
 
 async function loadAuditInputs() {
-  const [inventory, targets, exemptions, molitCsvBytes, candidateSpecBytes, candidateEvidence] = await Promise.all([
+  const [inventory, targets, exemptions, molitCsvBytes, candidateSpecBytes, candidateEvidence, inheritedPackBytes] = await Promise.all([
     readJson("tools/datapack/source-inventory.json"),
     readJson("tools/datapack/nationwide-coverage-targets.json"),
     readJson(EXEMPTIONS_PATH),
     readFile(path.join(root, MOLIT_ROSTER_PATH)),
     readFile(path.join(root, CANDIDATE_SPEC_PATH)),
     readJson(CANDIDATE_EVIDENCE_PATH),
+    readFile(path.join(root, INHERITED_REVIEWED_PACK_PATH)),
   ]);
   const snapshotsByPath = new Map();
   for (const source of inventory.sources) {
@@ -117,6 +121,8 @@ async function loadAuditInputs() {
     candidateLineScopeAdmission: {
       specPath: CANDIDATE_SPEC_PATH,
       specBytes: candidateSpecBytes,
+      inheritedPackPath: INHERITED_REVIEWED_PACK_PATH,
+      inheritedPackBytes,
       evidence: candidateEvidence,
     },
   };
@@ -793,7 +799,7 @@ test("lineIds를 claim한 route_map_positions 소스는 admitted snapshot 경로
   const spec = JSON.parse(inputs.candidateLineScopeAdmission.specBytes.toString("utf8"));
   spec.lineScopeRedescriptions = spec.lineScopeRedescriptions.filter((entry) => entry.sourceId !== sourceId);
   // spec 바이트를 바꾸면 evidence 결속 해시도 함께 옮겨야 한다. 그러지 않으면 이 소스가 아니라 다른
-  // 재기술 소스가 결속 축(SOURCE_CANDIDATE_EVIDENCE_SPEC_UNBOUND)에서 먼저 걸려 축이 갈린다.
+  // 다른 snapshotless source가 입력 결속 축에서 먼저 걸리지 않도록 spec 해시도 함께 맞춘다.
   const specBytes = Buffer.from(JSON.stringify(spec));
   const evidence = structuredClone(inputs.candidateLineScopeAdmission.evidence);
   evidence.inputs.spec.sha256 = createHash("sha256").update(specBytes).digest("hex");
@@ -808,89 +814,256 @@ test("lineIds를 claim한 route_map_positions 소스는 admitted snapshot 경로
   assert.equal(result.auditedScopeKeys.includes("capital:korail:line-051552e50435"), false);
 });
 
-// #2514(#2510 B0)의 candidate 게이트 line-scope 재기술은 admitted snapshot 파일 없이 lineIds를 claim한다.
-// 이 claim은 containment 근거가 아니므로 감사 대상 scope를 만들지 못하고, 근거 결속이 하나라도
-// 깨지면 위반으로 남아야 한다.
-test("admitted snapshot 없는 재기술 claim은 근거가 전부 결속되면 위반이 아니다 (#2516)", async () => {
+test("inherited line-scope claim은 exact reviewed pack과 baseline support에 결속된다", async (context) => {
   const inputs = await loadAuditInputs();
+  const claimant = inputs.inventory.sources.find(({ id }) => id === CANDIDATE_REDESCRIBED_SOURCE_ID);
+  const boundAdmission = ({ specBytes = inputs.candidateLineScopeAdmission.specBytes, inheritedPackBytes = inputs.candidateLineScopeAdmission.inheritedPackBytes, evidence = inputs.candidateLineScopeAdmission.evidence } = {}) => {
+    const boundEvidence = structuredClone(evidence);
+    boundEvidence.inputs.spec.sha256 = sha256(specBytes);
+    boundEvidence.inputs.inheritedPack.sha256 = sha256(inheritedPackBytes);
+    return {
+      ...inputs.candidateLineScopeAdmission,
+      specBytes,
+      inheritedPackBytes,
+      evidence: boundEvidence,
+    };
+  };
 
-  const result = auditRouteMapCoverageScopes(inputs);
+  await context.test("exact pack·baseline·lineScoped 근거와 독립 containment가 모두 있으면 통과한다", () => {
+    const result = auditRouteMapCoverageScopes(inputs);
+    assert.deepEqual(violationKinds(result), []);
+    assert.ok(result.auditedScopeKeys.includes(CANDIDATE_REDESCRIBED_SCOPE_KEY));
+  });
 
-  // 이 소스에는 저장소에 admitted snapshot 파일이 없다. 창작한 snapshotPath로 통과시킨 것이 아님을 고정한다.
-  assert.equal(
-    inputs.inventory.sources
-      .find(({ id }) => id === CANDIDATE_REDESCRIBED_SOURCE_ID).routeMapAdmissionEvidence,
-    undefined,
-  );
-  assert.deepEqual(violationKinds(result), []);
-  // 이 scope의 containment는 admitted snapshot을 가진 seoul-metro-route-map-positions가 계속 실측한다.
-  assert.ok(result.auditedScopeKeys.includes(CANDIDATE_REDESCRIBED_SCOPE_KEY));
-});
+  await context.test("snapshotless inherited claimant key는 candidate 상세 evidence 대상에 포함된다", () => {
+    const source = structuredClone(claimant);
+    source.id = "synthetic-inherited-route-map";
+    const spec = { lineScopeRedescriptions: [] };
+    const inventory = { sources: [source] };
+    const targets = {
+      activeLineScopes: [{ regionId: "capital", operatorId: "seoul-metro", lineId: "seoul-4" }],
+    };
+    const inheritedPack = {
+      packs: [{ sourceInventory: [structuredClone(source)] }],
+    };
+    assert.deepEqual(
+      auditedInheritedClaimRequirementKeys({ spec, inventory, targets, inheritedPack }),
+      [`${CANDIDATE_REDESCRIBED_SCOPE_KEY}:${ROUTE_MAP_DOMAIN}`],
+    );
 
-test("candidate 재기술 근거가 없으면 snapshot 없는 lineIds claim은 위반이다 (#2516)", async () => {
-  const inputs = await loadAuditInputs();
+    const unrelatedDomainSpec = {
+      lineScopeRedescriptions: [{ sourceId: source.id, sourceDomain: "schedule_timetable" }],
+    };
+    assert.deepEqual(
+      auditedInheritedClaimRequirementKeys({
+        spec: unrelatedDomainSpec,
+        inventory,
+        targets,
+        inheritedPack,
+      }),
+      [`${CANDIDATE_REDESCRIBED_SCOPE_KEY}:${ROUTE_MAP_DOMAIN}`],
+    );
+  });
 
-  const result = auditRouteMapCoverageScopes({ ...inputs, candidateLineScopeAdmission: {} });
+  await context.test("입력 결속·pack source·scope drift는 fail closed한다", () => {
+    const specHashDriftEvidence = structuredClone(inputs.candidateLineScopeAdmission.evidence);
+    specHashDriftEvidence.inputs.spec.sha256 = "0".repeat(64);
+    assert.deepEqual(
+      violationKinds(auditRouteMapCoverageScopes({
+        ...inputs,
+        candidateLineScopeAdmission: { ...inputs.candidateLineScopeAdmission, evidence: specHashDriftEvidence },
+      })),
+      ["SOURCE_INHERITED_EVIDENCE_UNBOUND"],
+    );
 
-  assert.deepEqual(violationKinds(result), ["SOURCE_SNAPSHOT_PATH_MISSING"]);
-});
+    const specPathDriftEvidence = structuredClone(inputs.candidateLineScopeAdmission.evidence);
+    specPathDriftEvidence.inputs.spec.path = "tools/datapack/other-spec.json";
+    assert.deepEqual(
+      violationKinds(auditRouteMapCoverageScopes({
+        ...inputs,
+        candidateLineScopeAdmission: { ...inputs.candidateLineScopeAdmission, evidence: specPathDriftEvidence },
+      })),
+      ["SOURCE_INHERITED_EVIDENCE_UNBOUND"],
+    );
 
-test("candidate spec 재기술 lineIds가 claim과 다르면 거부된다 (#2516)", async () => {
-  const inputs = await loadAuditInputs();
-  const inventory = structuredClone(inputs.inventory);
-  const source = inventory.sources.find(({ id }) => id === CANDIDATE_REDESCRIBED_SOURCE_ID);
-  source.coverageScope.lineIds = [...source.coverageScope.lineIds, "seoul-2"];
+    const unboundEvidence = structuredClone(inputs.candidateLineScopeAdmission.evidence);
+    unboundEvidence.inputs.inheritedPack.sha256 = "0".repeat(64);
+    assert.deepEqual(
+      violationKinds(auditRouteMapCoverageScopes({
+        ...inputs,
+        candidateLineScopeAdmission: { ...inputs.candidateLineScopeAdmission, evidence: unboundEvidence },
+      })),
+      ["SOURCE_INHERITED_EVIDENCE_UNBOUND"],
+    );
 
-  const result = auditRouteMapCoverageScopes({ ...inputs, inventory });
+    const inheritedPackBytesDrift = Buffer.concat([
+      inputs.candidateLineScopeAdmission.inheritedPackBytes,
+      Buffer.from("\n"),
+    ]);
+    assert.deepEqual(
+      violationKinds(auditRouteMapCoverageScopes({
+        ...inputs,
+        candidateLineScopeAdmission: {
+          ...inputs.candidateLineScopeAdmission,
+          inheritedPackBytes: inheritedPackBytesDrift,
+        },
+      })),
+      ["SOURCE_INHERITED_EVIDENCE_UNBOUND"],
+    );
 
-  assert.deepEqual(violationKinds(result), ["SOURCE_CANDIDATE_LINE_SCOPE_MISMATCH"]);
-});
+    const pathDriftEvidence = structuredClone(inputs.candidateLineScopeAdmission.evidence);
+    pathDriftEvidence.inputs.inheritedPack.path = "tools/datapack/release/other.json";
+    assert.deepEqual(
+      violationKinds(auditRouteMapCoverageScopes({
+        ...inputs,
+        candidateLineScopeAdmission: { ...inputs.candidateLineScopeAdmission, evidence: pathDriftEvidence },
+      })),
+      ["SOURCE_INHERITED_EVIDENCE_UNBOUND"],
+    );
 
-test("게이트 evidence에 결속되지 않은 candidate spec은 근거가 되지 못한다 (#2516)", async () => {
-  const inputs = await loadAuditInputs();
-  // JSON 의미는 그대로 두고 바이트만 바꾼다 — evidence가 기록한 spec 해시와 어긋난다.
-  const specBytes = Buffer.concat([inputs.candidateLineScopeAdmission.specBytes, Buffer.from("\n")]);
-  const candidateLineScopeAdmission = { ...inputs.candidateLineScopeAdmission, specBytes };
+    assert.deepEqual(
+      violationKinds(auditRouteMapCoverageScopes({
+        ...inputs,
+        candidateLineScopeAdmission: {
+          ...inputs.candidateLineScopeAdmission,
+          inheritedPackBytes: Buffer.from("{"),
+        },
+      })),
+      ["SOURCE_INHERITED_EVIDENCE_UNBOUND"],
+    );
 
-  const result = auditRouteMapCoverageScopes({ ...inputs, candidateLineScopeAdmission });
+    const pack = JSON.parse(inputs.candidateLineScopeAdmission.inheritedPackBytes.toString("utf8"));
+    pack.packs[0].sourceInventory = pack.packs[0].sourceInventory.filter(({ id }) => id !== claimant.id);
+    const missingSourceBytes = Buffer.from(JSON.stringify(pack));
+    assert.deepEqual(
+      violationKinds(auditRouteMapCoverageScopes({
+        ...inputs,
+        candidateLineScopeAdmission: boundAdmission({ inheritedPackBytes: missingSourceBytes }),
+      })),
+      ["SOURCE_INHERITED_SOURCE_INVALID"],
+    );
 
-  assert.deepEqual(violationKinds(result), ["SOURCE_CANDIDATE_EVIDENCE_SPEC_UNBOUND"]);
-});
+    const duplicatePack = JSON.parse(inputs.candidateLineScopeAdmission.inheritedPackBytes.toString("utf8"));
+    duplicatePack.packs[0].sourceInventory.push(structuredClone(
+      duplicatePack.packs[0].sourceInventory.find(({ id }) => id === claimant.id),
+    ));
+    const duplicateSourceBytes = Buffer.from(JSON.stringify(duplicatePack));
+    assert.deepEqual(
+      violationKinds(auditRouteMapCoverageScopes({
+        ...inputs,
+        candidateLineScopeAdmission: boundAdmission({ inheritedPackBytes: duplicateSourceBytes }),
+      })),
+      ["SOURCE_INHERITED_SOURCE_INVALID"],
+    );
 
-test("게이트가 SUPPORTED로 실증하지 않은 재기술 scope는 거부된다 (#2516)", async () => {
-  const inputs = await loadAuditInputs();
-  const evidence = structuredClone(inputs.candidateLineScopeAdmission.evidence);
-  evidence.variants.lineScoped.supportedRequirementKeys = evidence.variants.lineScoped.supportedRequirementKeys
-    .filter((key) => key !== `${CANDIDATE_REDESCRIBED_SCOPE_KEY}:${ROUTE_MAP_DOMAIN}`);
-  const candidateLineScopeAdmission = { ...inputs.candidateLineScopeAdmission, evidence };
+    for (const [scopeKey, driftedValue] of [
+      ["regionIds", ["other-region"]],
+      ["operatorIds", ["other-operator"]],
+      ["lineIds", ["seoul-2"]],
+      ["sourceDomains", ["other-domain"]],
+    ]) {
+      const driftedPack = JSON.parse(inputs.candidateLineScopeAdmission.inheritedPackBytes.toString("utf8"));
+      driftedPack.packs[0].sourceInventory.find(({ id }) => id === claimant.id).coverageScope[scopeKey] = driftedValue;
+      const driftedScopeBytes = Buffer.from(JSON.stringify(driftedPack));
+      assert.deepEqual(
+        violationKinds(auditRouteMapCoverageScopes({
+          ...inputs,
+          candidateLineScopeAdmission: boundAdmission({ inheritedPackBytes: driftedScopeBytes }),
+        })),
+        ["SOURCE_INHERITED_SCOPE_MISMATCH"],
+        scopeKey,
+      );
+    }
+  });
 
-  const result = auditRouteMapCoverageScopes({ ...inputs, candidateLineScopeAdmission });
+  await context.test("baseline·lineScoped status/source와 independent containment를 유지해야 한다", () => {
+    const requirementKey = `${CANDIDATE_REDESCRIBED_SCOPE_KEY}:${ROUTE_MAP_DOMAIN}`;
+    const baselineMissing = structuredClone(inputs.candidateLineScopeAdmission.evidence);
+    baselineMissing.variants.baseline.supportedRequirementKeys = baselineMissing.variants.baseline.supportedRequirementKeys
+      .filter((key) => key !== requirementKey);
+    assert.deepEqual(
+      violationKinds(auditRouteMapCoverageScopes({
+        ...inputs,
+        candidateLineScopeAdmission: boundAdmission({ evidence: baselineMissing }),
+      })),
+      ["SOURCE_INHERITED_BASELINE_UNSUPPORTED"],
+    );
 
-  assert.deepEqual(violationKinds(result), ["SOURCE_CANDIDATE_SCOPE_NOT_SUPPORTED"]);
-});
+    const baselineSourceMissing = structuredClone(inputs.candidateLineScopeAdmission.evidence);
+    baselineSourceMissing.variants.baseline.pilotRequirements.find(
+      ({ requirementKey: key }) => key === requirementKey,
+    ).sourceIds = [];
+    assert.deepEqual(
+      violationKinds(auditRouteMapCoverageScopes({
+        ...inputs,
+        candidateLineScopeAdmission: boundAdmission({ evidence: baselineSourceMissing }),
+      })),
+      ["SOURCE_INHERITED_BASELINE_UNSUPPORTED"],
+    );
 
-test("재기술만으로는 containment 감사가 사라진 scope를 통과시킬 수 없다 (#2516)", async () => {
-  const inputs = await loadAuditInputs();
-  const inventory = structuredClone(inputs.inventory);
-  // 이 scope를 실측하던 admitted snapshot 소스의 claim을 지우면 containment를 판정할 근거가 없어진다.
-  const source = inventory.sources.find(({ id }) => id === "seoul-metro-route-map-positions");
-  source.coverageScope.lineIds = source.coverageScope.lineIds.filter((lineId) => lineId !== "seoul-4");
+    const baselineStatusMissing = structuredClone(inputs.candidateLineScopeAdmission.evidence);
+    baselineStatusMissing.variants.baseline.pilotRequirements.find(
+      ({ requirementKey: key }) => key === requirementKey,
+    ).status = "MISSING";
+    assert.deepEqual(
+      violationKinds(auditRouteMapCoverageScopes({
+        ...inputs,
+        candidateLineScopeAdmission: boundAdmission({ evidence: baselineStatusMissing }),
+      })),
+      ["SOURCE_INHERITED_BASELINE_UNSUPPORTED"],
+    );
 
-  const result = auditRouteMapCoverageScopes({ ...inputs, inventory });
+    const lineScopedSourceMissing = structuredClone(inputs.candidateLineScopeAdmission.evidence);
+    lineScopedSourceMissing.variants.lineScoped.pilotRequirements.find(
+      ({ requirementKey: key }) => key === requirementKey,
+    ).sourceIds = ["seoul-metro-route-map-positions"];
+    assert.deepEqual(
+      violationKinds(auditRouteMapCoverageScopes({
+        ...inputs,
+        candidateLineScopeAdmission: boundAdmission({ evidence: lineScopedSourceMissing }),
+      })),
+      ["SOURCE_INHERITED_LINE_SCOPED_UNSUPPORTED"],
+    );
 
-  assert.ok(violationKinds(result).includes("SOURCE_CANDIDATE_SCOPE_UNAUDITED"));
-  assert.equal(result.auditedScopeKeys.includes(CANDIDATE_REDESCRIBED_SCOPE_KEY), false);
-});
+    const lineScopedStatusMissing = structuredClone(inputs.candidateLineScopeAdmission.evidence);
+    lineScopedStatusMissing.variants.lineScoped.pilotRequirements.find(
+      ({ requirementKey: key }) => key === requirementKey,
+    ).status = "MISSING";
+    assert.deepEqual(
+      violationKinds(auditRouteMapCoverageScopes({
+        ...inputs,
+        candidateLineScopeAdmission: boundAdmission({ evidence: lineScopedStatusMissing }),
+      })),
+      ["SOURCE_INHERITED_LINE_SCOPED_UNSUPPORTED"],
+    );
 
-test("activeLineScopes에서 빠진 scope는 재기술 claim으로 통과시킬 수 없다 (#2516)", async () => {
-  const inputs = await loadAuditInputs();
-  const targets = structuredClone(inputs.targets);
-  // snapshot이 그대로 커버해도 #2138 requirement에서 빠지면 containment 감사 자체가 사라진다.
-  targets.activeLineScopes = targets.activeLineScopes
-    .filter((scope) => scopeKeyOf(scope) !== CANDIDATE_REDESCRIBED_SCOPE_KEY);
+    const inventory = structuredClone(inputs.inventory);
+    inventory.sources.find(({ id }) => id === "seoul-metro-route-map-positions").coverageScope.lineIds = [];
+    const result = auditRouteMapCoverageScopes({ ...inputs, inventory });
+    assert.ok(violationKinds(result).includes("SOURCE_INHERITED_SCOPE_UNAUDITED"));
+    assert.equal(result.auditedScopeKeys.includes(CANDIDATE_REDESCRIBED_SCOPE_KEY), false);
 
-  const result = auditRouteMapCoverageScopes({ ...inputs, targets });
+    const targets = structuredClone(inputs.targets);
+    targets.activeLineScopes = targets.activeLineScopes
+      .filter((scope) => scopeKeyOf(scope) !== CANDIDATE_REDESCRIBED_SCOPE_KEY);
+    const inactiveResult = auditRouteMapCoverageScopes({ ...inputs, targets });
+    assert.ok(violationKinds(inactiveResult).includes("SOURCE_INHERITED_SCOPE_UNAUDITED"));
+    assert.equal(inactiveResult.auditedScopeKeys.includes(CANDIDATE_REDESCRIBED_SCOPE_KEY), false);
+  });
 
-  assert.deepEqual(violationKinds(result), ["SOURCE_CANDIDATE_SCOPE_UNAUDITED", "ALIAS_SCOPE_NOT_AUDITED"]);
-  assert.equal(result.auditedScopeKeys.includes(CANDIDATE_REDESCRIBED_SCOPE_KEY), false);
+  await context.test("candidate redescription path도 같은 bound inputs에서 유지된다", () => {
+    const spec = JSON.parse(inputs.candidateLineScopeAdmission.specBytes.toString("utf8"));
+    spec.lineScopeRedescriptions.push({
+      sourceId: claimant.id,
+      sourceDomain: ROUTE_MAP_DOMAIN,
+      lineIds: [...claimant.coverageScope.lineIds],
+      requirementKeys: [`${CANDIDATE_REDESCRIBED_SCOPE_KEY}:${ROUTE_MAP_DOMAIN}`],
+    });
+    const specBytes = Buffer.from(JSON.stringify(spec));
+    const result = auditRouteMapCoverageScopes({
+      ...inputs,
+      candidateLineScopeAdmission: boundAdmission({ specBytes }),
+    });
+    assert.deepEqual(violationKinds(result), []);
+  });
 });
