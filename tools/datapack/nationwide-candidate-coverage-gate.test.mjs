@@ -3211,6 +3211,20 @@ test("already-supported non-transition은 inherited source에 새 source만 exac
     /ALREADY_SUPPORTED_BY_INHERITED_SCOPE requires the requirement to be SUPPORTED in both variants/,
   );
 
+  const baselineKeyMissing = structuredClone(variants);
+  baselineKeyMissing.baseline.supportedRequirementKeys = [];
+  assert.throws(
+    () => assertDeclaredTransitionsMatchVariants(spec, baselineKeyMissing),
+    /ALREADY_SUPPORTED_BY_INHERITED_SCOPE requires the requirement key in both supportedRequirementKeys variants/,
+  );
+
+  const lineScopedKeyMissing = structuredClone(variants);
+  lineScopedKeyMissing.lineScoped.supportedRequirementKeys = [];
+  assert.throws(
+    () => assertDeclaredTransitionsMatchVariants(spec, lineScopedKeyMissing),
+    /ALREADY_SUPPORTED_BY_INHERITED_SCOPE requires the requirement key in both supportedRequirementKeys variants/,
+  );
+
   const declaredSourceAlreadyInherited = structuredClone(variants);
   declaredSourceAlreadyInherited.baseline.pilotRequirements[0].sourceIds = ["inherited-source", "new-source"];
   declaredSourceAlreadyInherited.lineScoped.pilotRequirements[0].sourceIds = ["inherited-source", "new-source"];

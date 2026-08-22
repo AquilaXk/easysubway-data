@@ -350,6 +350,12 @@ export async function runNationwideCandidateCoverageGate({
     targets,
     inclusions.inheritedPack,
   );
+  const inheritedAuditedRequirementKeys = auditedInheritedClaimRequirementKeys({
+    spec,
+    inventory,
+    targets,
+    inheritedPack: inherited,
+  });
 
   const signing = ephemeralSigningKeys();
   const variants = {};
@@ -405,7 +411,12 @@ export async function runNationwideCandidateCoverageGate({
 
     reports[variant] = JSON.parse(await readFile(reportPath, "utf8"));
     const provenance = JSON.parse(await readFile(path.join(buildDir, "current.provenance.json"), "utf8"));
-    variants[variant] = summarizeVariant(spec, reports[variant], provenance);
+    variants[variant] = summarizeVariant(
+      spec,
+      reports[variant],
+      provenance,
+      inheritedAuditedRequirementKeys,
+    );
   }
 
   return buildEvidence({
@@ -1584,7 +1595,7 @@ function sameStringSet(left, right) {
   return JSON.stringify([...left].sort(codepointCompare)) === JSON.stringify([...right].sort(codepointCompare));
 }
 
-function summarizeVariant(spec, report, provenance) {
+function summarizeVariant(spec, report, provenance, inheritedAuditedRequirementKeys = []) {
   const supported = report.requirements.filter((entry) => entry.status === "SUPPORTED");
   const supportedRequirementKeys = supported.map(requirementKey).sort(codepointCompare);
   return {
@@ -1596,9 +1607,50 @@ function summarizeVariant(spec, report, provenance) {
     enhancement: supportedCounts(report.summary.enhancement),
     // 한 requirement를 여러 소스가 함께 뒷받침하면(대구 membership처럼) 같은 키가 여러 재기술 항목에
     // 등재된다 — 판정 축은 requirement 하나이므로 중복을 접어 기록한다.
-    pilotRequirements: declaredRequirementKeys(spec)
+    pilotRequirements: [...new Set([
+      ...declaredRequirementKeys(spec),
+      ...inheritedAuditedRequirementKeys,
+    ])]
+      .sort(codepointCompare)
       .map((key) => pilotRequirement(report, key, provenance)),
   };
+}
+
+export function auditedInheritedClaimRequirementKeys({ spec, inventory, targets, inheritedPack }) {
+  const redescribedSourceIds = new Set((spec.lineScopeRedescriptions ?? [])
+    .filter(({ sourceDomain }) => sourceDomain === "route_map_positions")
+    .map(({ sourceId }) => sourceId));
+  const activeScopeKeys = new Set((targets.activeLineScopes ?? []).map(
+    ({ regionId, operatorId, lineId }) => `${regionId}:${operatorId}:${lineId}`,
+  ));
+  const inheritedSources = (inheritedPack.packs ?? [])
+    .flatMap((pack) => pack?.sourceInventory ?? []);
+  const keys = new Set();
+  for (const source of inventory.sources ?? []) {
+    const scope = source.coverageScope;
+    if (!scope?.sourceDomains?.includes("route_map_positions")
+      || !(scope.lineIds ?? []).length
+      || source.routeMapAdmissionEvidence?.snapshotPath
+      || redescribedSourceIds.has(source.id)) {
+      continue;
+    }
+    const matches = inheritedSources.filter(({ id }) => id === source.id);
+    if (matches.length !== 1 || !["regionIds", "operatorIds", "lineIds", "sourceDomains"].every(
+      (key) => sameStringSet(matches[0].coverageScope?.[key], scope[key]),
+    )) {
+      throw new Error(`inherited snapshotless route-map claimant is not exactly bound: ${source.id}`);
+    }
+    for (const regionId of scope.regionIds) {
+      for (const operatorId of scope.operatorIds) {
+        for (const lineId of scope.lineIds) {
+          if (activeScopeKeys.has(`${regionId}:${operatorId}:${lineId}`)) {
+            keys.add(`${regionId}:${operatorId}:${lineId}:route_map_positions`);
+          }
+        }
+      }
+    }
+  }
+  return [...keys].sort(codepointCompare);
 }
 
 // SUPPORTED 건을 domain 증거 모델별로 센다. 판정 경로가 requirement마다 실어 준 값만 쓰고 여기서
@@ -1688,6 +1740,13 @@ function assertDeclaredNonTransitionsMatchVariants(spec, variants) {
     if (baseline.status !== "SUPPORTED" || lineScoped.status !== "SUPPORTED") {
       throw new Error(
         "ALREADY_SUPPORTED_BY_INHERITED_SCOPE requires the requirement to be SUPPORTED in both variants: "
+          + declaration.requirementKey,
+      );
+    }
+    if (!variants.baseline.supportedRequirementKeys.includes(declaration.requirementKey)
+      || !variants.lineScoped.supportedRequirementKeys.includes(declaration.requirementKey)) {
+      throw new Error(
+        "ALREADY_SUPPORTED_BY_INHERITED_SCOPE requires the requirement key in both supportedRequirementKeys variants: "
           + declaration.requirementKey,
       );
     }

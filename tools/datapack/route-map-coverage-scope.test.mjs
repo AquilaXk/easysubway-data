@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { parseMolitLineOperatorRosters } from "./build-molit-nationwide-fixture.mjs";
+import { auditedInheritedClaimRequirementKeys } from "./run-nationwide-candidate-coverage-gate.mjs";
 import { ROUTE_MAP_DOMAIN, auditRouteMapCoverageScopes } from "./route-map-coverage-scope.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
@@ -832,6 +833,36 @@ test("inherited line-scope claim은 exact reviewed pack과 baseline support에 �
     const result = auditRouteMapCoverageScopes(inputs);
     assert.deepEqual(violationKinds(result), []);
     assert.ok(result.auditedScopeKeys.includes(CANDIDATE_REDESCRIBED_SCOPE_KEY));
+  });
+
+  await context.test("snapshotless inherited claimant key는 candidate 상세 evidence 대상에 포함된다", () => {
+    const source = structuredClone(claimant);
+    source.id = "synthetic-inherited-route-map";
+    const spec = { lineScopeRedescriptions: [] };
+    const inventory = { sources: [source] };
+    const targets = {
+      activeLineScopes: [{ regionId: "capital", operatorId: "seoul-metro", lineId: "seoul-4" }],
+    };
+    const inheritedPack = {
+      packs: [{ sourceInventory: [structuredClone(source)] }],
+    };
+    assert.deepEqual(
+      auditedInheritedClaimRequirementKeys({ spec, inventory, targets, inheritedPack }),
+      [`${CANDIDATE_REDESCRIBED_SCOPE_KEY}:${ROUTE_MAP_DOMAIN}`],
+    );
+
+    const unrelatedDomainSpec = {
+      lineScopeRedescriptions: [{ sourceId: source.id, sourceDomain: "schedule_timetable" }],
+    };
+    assert.deepEqual(
+      auditedInheritedClaimRequirementKeys({
+        spec: unrelatedDomainSpec,
+        inventory,
+        targets,
+        inheritedPack,
+      }),
+      [`${CANDIDATE_REDESCRIBED_SCOPE_KEY}:${ROUTE_MAP_DOMAIN}`],
+    );
   });
 
   await context.test("입력 결속·pack source·scope drift는 fail closed한다", () => {
