@@ -984,14 +984,14 @@ test("current source static admission은 exact topology input tuple을 반환한
 test("OWNER-approved current source는 exact static topology input에 결속된다", async () => {
   const { contract, reference, source, completeness, sourceBytes, completenessBytes } =
     await trackedLegacyDocuments();
-  assert.doesNotThrow(() => validateAdmittedSourceDocuments(
+  withBuildNow(() => assert.doesNotThrow(() => validateAdmittedSourceDocuments(
     contract,
     reference,
     source,
     completeness,
     sha256(sourceBytes),
     sha256(completenessBytes),
-  ));
+  )));
   const admitted = await admittedTopologySource(reference, source);
   assert.deepEqual({
     id: "capital",
@@ -1243,14 +1243,14 @@ test("completeness top-level admission metadata는 source와 exact 결속한다"
       const documents = await trackedLegacyDocuments();
       mutate(documents.completeness);
       rebindAdmissionDocuments(documents);
-      assert.throws(() => validateAdmittedSourceDocuments(
+      withBuildNow(() => assert.throws(() => validateAdmittedSourceDocuments(
         documents.contract,
         documents.reference,
         documents.source,
         documents.completeness,
         sha256(documents.sourceBytes),
         sha256(documents.completenessBytes),
-      ), /source identity is invalid/);
+      ), /source identity is invalid/));
     });
   }
 });
@@ -1271,14 +1271,14 @@ test("source와 completeness observedAt은 각각 exact UTC instant여야 한다
       const documents = await trackedLegacyDocuments();
       mutate(documents);
       rebindAdmissionDocuments(documents);
-      assert.throws(() => validateAdmittedSourceDocuments(
+      withBuildNow(() => assert.throws(() => validateAdmittedSourceDocuments(
         documents.contract,
         documents.reference,
         documents.source,
         documents.completeness,
         sha256(documents.sourceBytes),
         sha256(documents.completenessBytes),
-      ), /source identity is invalid/);
+      ), /source identity is invalid/));
     });
   }
 });
