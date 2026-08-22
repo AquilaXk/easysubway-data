@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { execFile } from "node:child_process";
-import { createHash, generateKeyPairSync } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -9,10 +9,10 @@ import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
 import { gunzipSync } from "node:zlib";
 
-import { stagedPackPath } from "./lib/manifest-validation.mjs";
-
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
+const READMISSION_VERIFIER_PATH = path.join(root, "tools/datapack/readmit-bundled-pack-identity.mjs");
+const DEPLOYED_EVIDENCE_ARTIFACT_KIND = "itx-cheongchun-mobile-topology-evidence";
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
@@ -82,44 +82,44 @@ function networkEdgeCounts(sqlitePath) {
   }
 }
 
-export async function verifyProductionPackArtifactIdentity({ buildSpecPath, assetPath, indexPath, packId }) {
-  buildSpecPath = path.resolve(buildSpecPath);
+export async function verifyProductionPackArtifactIdentity({ evidencePath, assetPath, indexPath, packId }) {
+  evidencePath = path.resolve(evidencePath);
   assetPath = path.resolve(assetPath);
   indexPath = path.resolve(indexPath);
   const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-production-pack-identity-"));
   try {
-    // ponytail: manifest signatures are outside this SQLite identity gate, so CI needs no publish private key.
-    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
-    await execFileAsync(process.execPath, [
-      path.join(root, "tools/datapack/build-datapack.mjs"),
-      "--build-spec", buildSpecPath,
-      "--output", outputDir,
-    ], {
-      cwd: root,
-      env: {
-        ...process.env,
-        EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey.export({ type: "pkcs8", format: "pem" }),
-      },
-    });
-
-    const manifest = JSON.parse(await readFile(path.join(outputDir, "current.json"), "utf8"));
-    const packs = manifest.packs.filter(({ id }) => id === packId);
-    if (packs.length !== 1 || packs[0].artifactKind !== "production") {
-      throw new Error(`build must contain exactly one production pack: ${packId}`);
+    const evidence = JSON.parse(await readFile(evidencePath, "utf8"));
+    if (evidence.schemaVersion !== 1
+      || evidence.artifactKind !== DEPLOYED_EVIDENCE_ARTIFACT_KIND
+      || !Array.isArray(evidence.readmissions)
+      || evidence.readmissions.length === 0) {
+      throw new Error("deployed readmission evidence contract mismatch");
     }
-    const pack = packs[0];
-    const builtPath = path.join(outputDir, stagedPackPath(pack));
-    const builtGzip = await readFile(builtPath);
+
+    // Deployed bytes are independently admitted through the complete readmission chain. Rebuilding the
+    // current candidate here would conflate its advancing source inventory with the already shipped pack.
+    await execFileAsync(process.execPath, [
+      READMISSION_VERIFIER_PATH,
+      "--check",
+      "--pack", assetPath,
+      "--evidence", evidencePath,
+    ], { cwd: root });
+
     const assetGzip = await readFile(assetPath);
-    const assetSqlite = gunzipSync(assetGzip);
+    let assetSqlite;
+    try {
+      assetSqlite = gunzipSync(assetGzip);
+    } catch {
+      throw new Error("deployed asset is not valid gzip");
+    }
     const gzipSha256 = sha256(assetGzip);
     const sqliteSha256 = sha256(assetSqlite);
     const byteSize = assetGzip.length;
 
-    assertEqual(gzipSha256, pack.sha256, "asset gzip sha256");
-    assertEqual(sqliteSha256, pack.sqliteSha256, "asset SQLite sha256");
-    assertEqual(byteSize, pack.sizeBytes, "asset byteSize");
-    assertEqual(sha256(builtGzip), pack.sha256, "built gzip sha256");
+    assertEqual(evidence.pack?.id, packId, "evidence pack id");
+    assertEqual(evidence.pack?.outputSha256, gzipSha256, "evidence asset gzip sha256");
+    assertEqual(evidence.pack?.outputSqliteSha256, sqliteSha256, "evidence asset SQLite sha256");
+    assertEqual(evidence.pack?.byteSize, byteSize, "evidence asset byteSize");
 
     const index = JSON.parse(await readFile(indexPath, "utf8"));
     const indexPacks = index.packs?.filter(({ id }) => id === packId) ?? [];
@@ -129,13 +129,16 @@ export async function verifyProductionPackArtifactIdentity({ buildSpecPath, asse
     assertEqual(indexPacks[0].sqliteSha256, sqliteSha256, "index SQLite sha256");
     assertEqual(indexPacks[0].byteSize, byteSize, "index byteSize");
 
+    const sqlitePath = path.join(outputDir, "capital.sqlite");
+    await writeFile(sqlitePath, assetSqlite);
+
     return {
       packId,
       gzipSha256,
       sqliteSha256,
       byteSize,
-      rowCounts: tableRowCounts(builtPath.replace(/\.gz$/, "")),
-      networkEdgeCounts: networkEdgeCounts(builtPath.replace(/\.gz$/, "")),
+      rowCounts: tableRowCounts(sqlitePath),
+      networkEdgeCounts: networkEdgeCounts(sqlitePath),
     };
   } finally {
     await rm(outputDir, { recursive: true, force: true });
@@ -145,7 +148,7 @@ export async function verifyProductionPackArtifactIdentity({ buildSpecPath, asse
 async function main(argv) {
   const args = parseArgs(argv);
   const report = await verifyProductionPackArtifactIdentity({
-    buildSpecPath: requiredArg(args, "build-spec"),
+    evidencePath: requiredArg(args, "evidence"),
     assetPath: requiredArg(args, "asset"),
     indexPath: requiredArg(args, "index"),
     packId: requiredArg(args, "pack-id"),

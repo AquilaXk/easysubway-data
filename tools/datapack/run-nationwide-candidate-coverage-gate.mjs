@@ -132,7 +132,7 @@ const ALLOWED_FLAGS = new Set([
 const SPEC_ARTIFACT_KIND = "nationwide-candidate-pack-spec";
 const CANDIDATE_ARTIFACT_KIND = "production";
 const CANDIDATE_MANIFEST_CHANNEL = "candidate";
-const DEPLOYED_ARTIFACT_BUILD_SPEC_PATH = "tools/datapack/release/candidate-build-spec.json";
+const DEPLOYED_ARTIFACT_EVIDENCE_PATH = "tools/datapack/itx-cheongchun-topology-evidence.json";
 const DEPLOYED_ARTIFACT_ASSET_PATH = "apps/mobile/assets/datapacks/capital.sqlite.gz";
 const DEPLOYED_ARTIFACT_INDEX_PATH = "apps/mobile/assets/datapacks/index.json";
 const DEPLOYED_ARTIFACT_PACK_ID = "capital";
@@ -322,7 +322,7 @@ export async function runNationwideCandidateCoverageGate({
   // 임의 모듈을 실행시킬 수 없다"는 성질은 그대로다.
   materializers = PACK_DATA_MATERIALIZERS,
   verifyDeployedArtifact = () => verifyProductionPackArtifactIdentity({
-    buildSpecPath: path.join(root, DEPLOYED_ARTIFACT_BUILD_SPEC_PATH),
+    evidencePath: path.join(root, DEPLOYED_ARTIFACT_EVIDENCE_PATH),
     assetPath: path.join(root, DEPLOYED_ARTIFACT_ASSET_PATH),
     indexPath: path.join(root, DEPLOYED_ARTIFACT_INDEX_PATH),
     packId: DEPLOYED_ARTIFACT_PACK_ID,
