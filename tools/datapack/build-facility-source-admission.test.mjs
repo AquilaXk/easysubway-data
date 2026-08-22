@@ -345,9 +345,11 @@ function selectedSourceSnapshotSetHash(input) {
 }
 
 function snapshotEvidenceAt(entry) {
-  return Math.max(...[
+  const value = Math.max(...[
     entry.retrievedAt, entry.sourceUpdatedAt, entry.capturedAt, entry.rawReceipt?.storedAt,
   ].filter(Boolean).map(Date.parse));
+  assert.ok(Number.isFinite(value), `snapshot evidence time: ${entry.snapshotId}`);
+  return value;
 }
 
 function sourceEntry(input) {

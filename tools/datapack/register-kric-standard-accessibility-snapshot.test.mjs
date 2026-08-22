@@ -109,11 +109,13 @@ async function fixture(t, now = new Date(CURRENT_SOURCE_HEAD_AT + 60_000)) {
   const selectedSeoulLedger = snapshots.find(({ sourceId, snapshotId }) =>
     sourceId === "seoul-metro-accessibility" && snapshotId === selectedSeoul.snapshotId);
   assert.ok(selectedSeoulLedger);
+  const selectedSeoulRawObjectSha256 = selectedSeoulLedger.rawReceipt?.rawObjectSha256;
+  assert.match(selectedSeoulRawObjectSha256 ?? "", /^[a-f0-9]{64}$/);
   const seoulLedger = {
     ...structuredClone(selectedSeoulLedger),
     snapshotId: admittedSeoul.snapshotId,
     previousSnapshotId: selectedSeoulLedger.snapshotId,
-    rawObjectUri: `oci://fixture/seoul-metro-accessibility/${selectedSeoulLedger.rawObjectSha256}.json`,
+    rawObjectUri: `oci://fixture/seoul-metro-accessibility/${selectedSeoulRawObjectSha256}.json`,
     retrievedAt: admittedSeoul.capturedAt,
   };
   seoulLedger.sourceUpdatedAt = admittedSeoul.observedAt;
