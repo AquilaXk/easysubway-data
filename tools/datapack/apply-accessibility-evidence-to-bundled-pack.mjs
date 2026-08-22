@@ -578,8 +578,30 @@ export function deriveReleaseEvidence({ snapshots, inventory, canonical, governa
   const nextRequest = structuredClone(request);
   nextRequest.buildSpecSha256 = sha256(specBytes);
   nextRequest.sourceSnapshotSetHash = nextSpec.sourceSnapshotSetHash;
-  const nextHashes = structuredClone(hashes); nextHashes.truthfulnessRule = "모든 값은 tracked canonical fixture·inventory·official snapshot에서 결정적으로 재산출한다. 2026-07-28 신규 KRIC standard·서울 snapshot을 소비 claim에 결속하고 route 가용성은 추론하지 않는다."; nextHashes.sourceSnapshotSetHash.value = nextSpec.sourceSnapshotSetHash; nextHashes.sourceSnapshotSetHash.contract = `source별 head ${releaseSnapshots.length}종의 byte-ordered JSON hash와 build spec·release request가 일치해야 한다.`; nextHashes.sourceSnapshotSetHash.reproductionCommand = "node -e \"import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto'),s=require('./tools/datapack/release/source-snapshots.json'),p=require('./tools/datapack/release/capital-production-canonical-pack.json'),a=new Set(p.packs.find(x=>x.id==='capital').sourceInventory.map(x=>x.id)),h=validateLineage(s).headsBySource,r=s.filter(n=>a.has(n.sourceId)&&h[n.sourceId]===n.snapshotId);console.log(c.createHash('sha256').update(JSON.stringify(r)).digest('hex'))})\""; nextHashes.sourceInventorySha256.value = nextSpec.sourceInventorySha256; nextHashes.fixturePath.sha256 = sha256(canonicalBytes); nextHashes.sourceSnapshots.note = "historical source snapshot lineage는 유지하고 canonical capital sourceInventory의 active source만 release snapshot으로 소비한다. retired KRIC movement 2종은 소비하지 않는다."; nextHashes.sourceSnapshots.order = `release snapshot 순서: ${releaseSnapshots.map(({ sourceId }) => sourceId).join(" → ")}`; nextHashes.sourceSnapshots.committedVerificationCommand = "node -e \"import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto'),s=require('./tools/datapack/release/source-snapshots.json'),p=require('./tools/datapack/release/capital-production-canonical-pack.json'),a=new Set(p.packs.find(x=>x.id==='capital').sourceInventory.map(x=>x.id)),h=validateLineage(s).headsBySource,e=require('./tools/datapack/release/hash-evidence.json');for(const n of s.filter(x=>a.has(x.sourceId)&&h[x.sourceId]===x.snapshotId)){const q=e.perSourceEvidence.find(x=>x.snapshotId===n.snapshotId);if(!q||c.createHash('sha256').update(JSON.stringify([n])).digest('hex')!==q.perSourceSnapshotSetHash)throw new Error('source snapshot evidence mismatch: '+n.sourceId)}})\""; nextHashes.perSourceEvidence = releaseSnapshots.map((snapshot) => ({ sourceId: snapshot.sourceId, snapshotId: snapshot.snapshotId, rawSha256: snapshot.rawSha256, adminReviewRecordHash: inventoryBySource.get(snapshot.sourceId).admissionEvidence.adminReviewRecordHash, perSourceSnapshotSetHash: sha256(JSON.stringify([snapshot])) }));
-  return { spec: nextSpec, inventory, specBytes, requestBytes: Buffer.from(`${JSON.stringify(nextRequest, null, 2)}\n`), hashBytes: Buffer.from(`${JSON.stringify(nextHashes, null, 2)}\n`) };
+  const nextHashes = structuredClone(hashes);
+  nextHashes.truthfulnessRule = "모든 값은 tracked canonical fixture·inventory·official snapshot에서 결정적으로 재산출한다. 2026-07-28 신규 KRIC standard·서울 snapshot을 소비 claim에 결속하고 route 가용성은 추론하지 않는다.";
+  nextHashes.sourceSnapshotSetHash.value = nextSpec.sourceSnapshotSetHash;
+  nextHashes.sourceSnapshotSetHash.contract = `source별 head ${releaseSnapshots.length}종의 byte-ordered JSON hash와 build spec·release request가 일치해야 한다.`;
+  nextHashes.sourceSnapshotSetHash.reproductionCommand = "node -e \"import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto'),s=require('./tools/datapack/release/source-snapshots.json'),p=require('./tools/datapack/release/capital-production-canonical-pack.json'),a=new Set(p.packs.find(x=>x.id==='capital').sourceInventory.map(x=>x.id)),h=validateLineage(s).headsBySource,r=s.filter(n=>a.has(n.sourceId)&&h[n.sourceId]===n.snapshotId);console.log(c.createHash('sha256').update(JSON.stringify(r)).digest('hex'))})\"";
+  nextHashes.sourceInventorySha256.value = nextSpec.sourceInventorySha256;
+  nextHashes.fixturePath.sha256 = sha256(canonicalBytes);
+  nextHashes.sourceSnapshots.note = "historical source snapshot lineage는 유지하고 canonical capital sourceInventory의 active source만 release snapshot으로 소비한다. retired KRIC movement 2종은 소비하지 않는다.";
+  nextHashes.sourceSnapshots.order = `release snapshot 순서: ${releaseSnapshots.map(({ sourceId }) => sourceId).join(" → ")}`;
+  nextHashes.sourceSnapshots.committedVerificationCommand = "node -e \"import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto'),s=require('./tools/datapack/release/source-snapshots.json'),p=require('./tools/datapack/release/capital-production-canonical-pack.json'),a=new Set(p.packs.find(x=>x.id==='capital').sourceInventory.map(x=>x.id)),h=validateLineage(s).headsBySource,e=require('./tools/datapack/release/hash-evidence.json');for(const n of s.filter(x=>a.has(x.sourceId)&&h[x.sourceId]===x.snapshotId)){const q=e.perSourceEvidence.find(x=>x.snapshotId===n.snapshotId);if(!q||c.createHash('sha256').update(JSON.stringify([n])).digest('hex')!==q.perSourceSnapshotSetHash)throw new Error('source snapshot evidence mismatch: '+n.sourceId)}})\"";
+  nextHashes.perSourceEvidence = releaseSnapshots.map((snapshot) => ({
+    sourceId: snapshot.sourceId,
+    snapshotId: snapshot.snapshotId,
+    rawSha256: snapshot.rawSha256,
+    adminReviewRecordHash: inventoryBySource.get(snapshot.sourceId).admissionEvidence.adminReviewRecordHash,
+    perSourceSnapshotSetHash: sha256(JSON.stringify([snapshot])),
+  }));
+  return {
+    spec: nextSpec,
+    inventory,
+    specBytes,
+    requestBytes: Buffer.from(`${JSON.stringify(nextRequest, null, 2)}\n`),
+    hashBytes: Buffer.from(`${JSON.stringify(nextHashes, null, 2)}\n`),
+  };
 }
 
 async function syncReleaseEvidence({ check }) {
