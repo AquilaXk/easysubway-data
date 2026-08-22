@@ -1616,38 +1616,56 @@ function summarizeVariant(spec, report, provenance, inheritedAuditedRequirementK
   };
 }
 
-export function auditedInheritedClaimRequirementKeys({ spec, inventory, targets, inheritedPack }) {
-  const redescribedSourceIds = new Set((spec.lineScopeRedescriptions ?? [])
+function routeMapRedescriptionSourceIds(spec) {
+  return new Set((spec.lineScopeRedescriptions ?? [])
     .filter(({ sourceDomain }) => sourceDomain === "route_map_positions")
     .map(({ sourceId }) => sourceId));
+}
+
+function snapshotlessRouteMapClaimants(inventory, redescribedSourceIds) {
+  return (inventory.sources ?? []).filter((source) => {
+    const scope = source.coverageScope;
+    return scope?.sourceDomains?.includes("route_map_positions")
+      && (scope.lineIds ?? []).length > 0
+      && !source.routeMapAdmissionEvidence?.snapshotPath
+      && !redescribedSourceIds.has(source.id);
+  });
+}
+
+function exactInheritedRouteMapSource(source, inheritedSources) {
+  const matches = inheritedSources.filter(({ id }) => id === source.id);
+  if (matches.length !== 1 || !["regionIds", "operatorIds", "lineIds", "sourceDomains"].every(
+    (key) => sameStringSet(matches[0].coverageScope?.[key], source.coverageScope?.[key]),
+  )) {
+    throw new Error(`inherited snapshotless route-map claimant is not exactly bound: ${source.id}`);
+  }
+}
+
+function activeRouteMapRequirementKeys(scope, activeScopeKeys) {
+  const keys = [];
+  for (const regionId of scope.regionIds) {
+    for (const operatorId of scope.operatorIds) {
+      for (const lineId of scope.lineIds) {
+        const scopeKey = `${regionId}:${operatorId}:${lineId}`;
+        if (activeScopeKeys.has(scopeKey)) keys.push(`${scopeKey}:route_map_positions`);
+      }
+    }
+  }
+  return keys;
+}
+
+export function auditedInheritedClaimRequirementKeys({ spec, inventory, targets, inheritedPack }) {
+  const redescribedSourceIds = routeMapRedescriptionSourceIds(spec);
   const activeScopeKeys = new Set((targets.activeLineScopes ?? []).map(
     ({ regionId, operatorId, lineId }) => `${regionId}:${operatorId}:${lineId}`,
   ));
   const inheritedSources = (inheritedPack.packs ?? [])
     .flatMap((pack) => pack?.sourceInventory ?? []);
   const keys = new Set();
-  for (const source of inventory.sources ?? []) {
-    const scope = source.coverageScope;
-    if (!scope?.sourceDomains?.includes("route_map_positions")
-      || !(scope.lineIds ?? []).length
-      || source.routeMapAdmissionEvidence?.snapshotPath
-      || redescribedSourceIds.has(source.id)) {
-      continue;
-    }
-    const matches = inheritedSources.filter(({ id }) => id === source.id);
-    if (matches.length !== 1 || !["regionIds", "operatorIds", "lineIds", "sourceDomains"].every(
-      (key) => sameStringSet(matches[0].coverageScope?.[key], scope[key]),
-    )) {
-      throw new Error(`inherited snapshotless route-map claimant is not exactly bound: ${source.id}`);
-    }
-    for (const regionId of scope.regionIds) {
-      for (const operatorId of scope.operatorIds) {
-        for (const lineId of scope.lineIds) {
-          if (activeScopeKeys.has(`${regionId}:${operatorId}:${lineId}`)) {
-            keys.add(`${regionId}:${operatorId}:${lineId}:route_map_positions`);
-          }
-        }
-      }
+  for (const source of snapshotlessRouteMapClaimants(inventory, redescribedSourceIds)) {
+    exactInheritedRouteMapSource(source, inheritedSources);
+    for (const key of activeRouteMapRequirementKeys(source.coverageScope, activeScopeKeys)) {
+      keys.add(key);
     }
   }
   return [...keys].sort(codepointCompare);
