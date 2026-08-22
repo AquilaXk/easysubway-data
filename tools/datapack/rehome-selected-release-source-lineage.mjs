@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, mkdir, open, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, realpath, rename, rm, unlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { deriveReleaseEvidence } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
 import { publishImmutableObjectPlan } from "./publish-object-storage.mjs";
+import { readStableRegularFile } from "./rebind-current-candidate-source-snapshots.mjs";
 import { buildSnapshotDiff, parseCredentialFreeObjectUri, validateLineage } from "./source-snapshot-policy.mjs";
 import { requireOciParBaseUrl } from "./lib/kric-raw-object-storage.mjs";
 
@@ -51,12 +52,65 @@ function contained(root, relative) {
 function isWithin(root, candidate) {
   return candidate === root || candidate.startsWith(`${root}${path.sep}`);
 }
+
+async function assertSafeDirectoryPath(root, directory, label) {
+  const resolvedRoot = path.resolve(root);
+  const resolvedDirectory = path.resolve(directory);
+  if (!isWithin(resolvedRoot, resolvedDirectory)) throw new Error(`${label} escapes its root`);
+  const rootInfo = await lstat(resolvedRoot);
+  if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) throw new Error(`${label} root must be a regular directory`);
+  let current = resolvedRoot;
+  for (const component of path.relative(resolvedRoot, resolvedDirectory).split(path.sep).filter(Boolean)) {
+    current = path.join(current, component);
+    const info = await lstat(current);
+    if (!info.isDirectory() || info.isSymbolicLink()) throw new Error(`${label} parent is unsafe`);
+  }
+  return resolvedDirectory;
+}
+
+async function safeParent(target, label = "selected source OCI rehome target") {
+  const parent = path.dirname(target);
+  const info = await lstat(parent);
+  if (!info.isDirectory() || info.isSymbolicLink()) throw new Error(`${label} parent is unsafe`);
+  return parent;
+}
+
+async function stableAbsoluteBytes(target, label) {
+  await safeParent(target, label);
+  return (await readStableRegularFile(target, label)).bytes;
+}
+
+async function assertExternalOperationRoot(repositoryRoot, operationRoot) {
+  const repository = path.resolve(repositoryRoot);
+  const operation = path.resolve(operationRoot);
+  const parent = await safeParent(operation, "rehome operation root");
+  const operationInfo = await lstat(operation);
+  if (!operationInfo.isDirectory() || operationInfo.isSymbolicLink()) {
+    throw new Error("rehome operation root must be a regular directory");
+  }
+  const [realRepository, realParent, realOperation] = await Promise.all([
+    realpath(repository), realpath(parent), realpath(operation),
+  ]);
+  if (isWithin(realRepository, realParent) || isWithin(realRepository, realOperation)) {
+    throw new Error("rehome operation root must be outside repository");
+  }
+}
+
+async function externalRegularBytes(root, relative, label) {
+  const target = contained(root, relative);
+  await assertSafeDirectoryPath(root, path.dirname(target), "rehome operation path");
+  return stableAbsoluteBytes(target, label);
+}
+
 async function regularBytes(root, relative, label) {
   const target = contained(root, relative);
-  let stat;
-  try { stat = await lstat(target); } catch { throw new Error(`${label} is missing`); }
-  if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`${label} must be a regular non-symlink`);
-  return readFile(target);
+  try {
+    await assertSafeDirectoryPath(root, path.dirname(target), "selected source OCI rehome repository path");
+    return await stableAbsoluteBytes(target, label);
+  } catch (error) {
+    if (error?.cause?.code === "ENOENT" || error?.code === "ENOENT") throw new Error(`${label} is missing`);
+    throw error;
+  }
 }
 function exactKeys(value, keys, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)
@@ -124,26 +178,19 @@ function deriveOutputs({ snapshots, inventory, canonical, governance, freshness,
   ];
 }
 
-async function atomicReplace(target, bytes) {
-  const temporary = path.join(path.dirname(target), `.${path.basename(target)}.${randomUUID()}.tmp`);
-  const handle = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
-  try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
-  await rename(temporary, target);
-  const parent = await open(path.dirname(target), constants.O_RDONLY);
-  try { await parent.sync(); } finally { await parent.close(); }
-}
-
 const JOURNAL = "tools/datapack/.selected-release-source-oci-rehome-transaction.json";
 const LOCK = "tools/datapack/.selected-release-source-oci-rehome.lock";
+const PUBLICATION_JOURNAL = ".selected-release-source-oci-rehome-publication.json";
 const transactionIdPattern = /^[a-f0-9-]{36}$/u;
 
 async function syncParent(target) {
-  const parent = await open(path.dirname(target), constants.O_RDONLY | constants.O_DIRECTORY);
+  const parent = await open(await safeParent(target), constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
   try { await parent.sync(); } finally { await parent.close(); }
 }
 
 async function durableCreate(target, bytes) {
-  const handle = await open(target, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
+  await safeParent(target);
+  const handle = await open(target, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
   try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
   await syncParent(target);
 }
@@ -151,6 +198,31 @@ async function durableCreate(target, bytes) {
 async function durableUnlink(target) {
   await unlink(target);
   await syncParent(target);
+}
+
+async function assertExpectedBytes(target, expected) {
+  const actual = await stableAbsoluteBytes(target, "selected source OCI rehome target");
+  if (!actual.equals(expected)) throw new Error("selected source OCI rehome preserves foreign replacement");
+}
+
+async function atomicReplace(target, bytes, expected = undefined, { beforePublish = async () => {} } = {}) {
+  const parent = await safeParent(target);
+  if (expected !== undefined) await assertExpectedBytes(target, expected);
+  const temporary = path.join(parent, `.${path.basename(target)}.${randomUUID()}.tmp`);
+  let temporaryCreated = false;
+  try {
+    const handle = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
+    temporaryCreated = true;
+    try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
+    await beforePublish({ target, bytes, expected });
+    if (expected !== undefined) await assertExpectedBytes(target, expected);
+    await rename(temporary, target);
+    temporaryCreated = false;
+    await syncParent(target);
+    await assertExpectedBytes(target, bytes);
+  } finally {
+    if (temporaryCreated) await unlink(temporary).catch(() => {});
+  }
 }
 
 function validateJournal(journal) {
@@ -182,7 +254,7 @@ async function validatedRecoveryRecords(root, journal) {
     if (journal.state === "COMMITTED" && currentSha !== record.afterSha256) {
       throw new Error("selected source OCI rehome committed output drift");
     }
-    records.push({ ...record, before, currentSha });
+    records.push({ ...record, before, current, currentSha });
   }
   return { directory, records };
 }
@@ -193,11 +265,15 @@ async function cleanupTransaction(root, journal, directory) {
   await syncParent(directory);
 }
 
-async function recoverTransaction(root, journal) {
+async function recoverTransaction(root, journal, { beforeRecoveryReplace = async () => {} } = {}) {
   const { directory, records } = await validatedRecoveryRecords(root, journal);
   if (journal.state === "PREPARED") {
     for (const record of records) {
-      if (record.currentSha !== record.beforeSha256) await atomicReplace(contained(root, record.relativePath), record.before);
+      if (record.currentSha !== record.beforeSha256) {
+        const target = contained(root, record.relativePath);
+        await beforeRecoveryReplace({ record, target, expected: record.current, next: record.before });
+        await atomicReplace(target, record.before, record.current);
+      }
     }
   }
   await cleanupTransaction(root, journal, directory);
@@ -211,7 +287,8 @@ async function readJournal(root) {
 async function acquireLock(root) {
   const lock = contained(root, LOCK);
   const claim = async () => {
-    const handle = await open(lock, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
+    await safeParent(lock);
+    const handle = await open(lock, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
     try { await handle.writeFile(jsonBytes({ pid: process.pid, token: randomUUID() })); await handle.sync(); } finally { await handle.close(); }
     await syncParent(lock);
   };
@@ -238,33 +315,39 @@ async function transaction(root, outputs, hooks = {}) {
   let committed = false;
   try {
     const prior = await readJournal(root);
-    if (prior) await recoverTransaction(root, prior);
+    if (prior) await recoverTransaction(root, prior, hooks);
     const transactionId = randomUUID();
     const directory = path.join(root, "tools/datapack", `.selected-release-source-oci-rehome-${transactionId}`);
     await mkdir(directory, { recursive: false });
     await syncParent(directory);
     const records = [];
+    const beforeByPath = new Map();
     for (const [index, output] of outputs.entries()) {
       const before = await regularBytes(root, output.relativePath, "release transaction input");
       const backup = path.join(directory, `${index}.before`);
       await durableCreate(backup, before);
+      beforeByPath.set(output.relativePath, before);
       records.push({ relativePath: output.relativePath, beforeSha256: sha256(before), afterSha256: sha256(output.bytes) });
     }
     journal = { schemaVersion: 1, state: "PREPARED", transactionId, records };
     await durableCreate(contained(root, JOURNAL), jsonBytes(journal));
     for (const [index, output] of outputs.entries()) {
-      await atomicReplace(contained(root, output.relativePath), output.bytes);
+      const target = contained(root, output.relativePath);
+      const before = beforeByPath.get(output.relativePath);
+      await atomicReplace(target, output.bytes, before, {
+        beforePublish: () => hooks.beforeReplace?.({ index, target, before, next: output.bytes }),
+      });
       if (hooks.failAfterReplace === index) throw new Error("injected transaction failure");
       if (hooks.leavePreparedAfterReplace === index) throw Object.assign(new Error("injected prepared residue"), { leavePrepared: true });
     }
     journal = { ...journal, state: "COMMITTED" };
-    await atomicReplace(contained(root, JOURNAL), jsonBytes(journal));
+    await atomicReplace(contained(root, JOURNAL), jsonBytes(journal), jsonBytes({ ...journal, state: "PREPARED" }));
     committed = true;
     if (hooks.leaveCommittedResidue) throw Object.assign(new Error("injected committed residue"), { leaveCommitted: true });
-    await recoverTransaction(root, journal);
+    await recoverTransaction(root, journal, hooks);
   } catch (error) {
     if (!committed && journal && !error.leavePrepared) {
-      try { await recoverTransaction(root, journal); }
+      try { await recoverTransaction(root, journal, hooks); }
       catch (rollbackError) { throw new AggregateError([error, rollbackError], "selected source OCI rehome rollback failed"); }
     }
     throw error;
@@ -273,12 +356,12 @@ async function transaction(root, outputs, hooks = {}) {
   }
 }
 
-async function recoverExistingTransaction(root) {
+async function recoverExistingTransaction(root, hooks = {}) {
   const release = await acquireLock(root);
   try {
     const journal = await readJournal(root);
     if (!journal) return null;
-    await recoverTransaction(root, journal);
+    await recoverTransaction(root, journal, hooks);
     return journal.state;
   } finally {
     await release();
@@ -302,69 +385,246 @@ function exactReceipt({ successor, raw, storedAt }) {
 
 async function existingReceipt(target) {
   try {
-    const stat = await lstat(target);
-    if (!stat.isFile() || stat.isSymbolicLink()) throw new Error("rehome receipt must be a regular non-symlink");
-    return parse(await readFile(target), "rehome receipt");
+    return parse(await stableAbsoluteBytes(target, "rehome receipt"), "rehome receipt");
   } catch (error) {
-    if (error?.code === "ENOENT") return false;
+    if (error?.cause?.code === "ENOENT" || error?.code === "ENOENT") return false;
     throw error;
   }
+}
+
+function exactPublicationJournal(journal) {
+  const baseKeys = ["artifactKind", "manifestSha256", "schemaVersion", "sources", "state", "storedAt"];
+  const expectedKeys = journal?.state === "PREPARED" ? baseKeys : [...baseKeys, "outputs"];
+  if (!journal || journal.schemaVersion !== 1 || journal.artifactKind !== "selected-release-source-oci-rehome-publication"
+    || !["PREPARED", "VERIFIED", "COMMITTED"].includes(journal.state)
+    || !SHA256.test(journal.manifestSha256 ?? "") || !Array.isArray(journal.sources)
+    || !Number.isFinite(Date.parse(journal.storedAt ?? "")) || new Date(journal.storedAt).toISOString() !== journal.storedAt
+    || JSON.stringify(Object.keys(journal).sort()) !== JSON.stringify(expectedKeys.sort())) {
+    throw new Error("selected source OCI rehome publication journal is invalid");
+  }
+  if (journal.sources.length !== SELECTED_RELEASE_SOURCE_IDS.length
+    || JSON.stringify(journal.sources.map(({ sourceId }) => sourceId)) !== JSON.stringify(SELECTED_RELEASE_SOURCE_IDS)) {
+    throw new Error("selected source OCI rehome publication journal is invalid");
+  }
+  for (const source of journal.sources) {
+    if (JSON.stringify(Object.keys(source).sort()) !== JSON.stringify([
+      "rawByteSize", "rawObjectSha256", "rawObjectUri", "rawPath", "receiptPath", "receiptSha256",
+      "snapshotId", "snapshotPath", "snapshotSha256", "sourceId",
+    ].sort()) || !SHA256.test(source.rawObjectSha256 ?? "") || !SHA256.test(source.receiptSha256 ?? "")
+      || !SHA256.test(source.snapshotSha256 ?? "") || !Number.isInteger(source.rawByteSize) || source.rawByteSize < 1
+      || typeof source.snapshotId !== "string" || typeof source.rawObjectUri !== "string") {
+      throw new Error("selected source OCI rehome publication journal is invalid");
+    }
+    for (const key of ["snapshotPath", "rawPath", "receiptPath"]) safeRelative(source[key], "publication journal path");
+  }
+  if (journal.state !== "PREPARED") {
+    if (!Array.isArray(journal.outputs) || JSON.stringify(journal.outputs.map(({ relativePath }) => relativePath)) !== JSON.stringify(OUTPUTS)) {
+      throw new Error("selected source OCI rehome publication journal is invalid");
+    }
+    for (const output of journal.outputs) {
+      if (JSON.stringify(Object.keys(output).sort()) !== JSON.stringify(["afterSha256", "beforeSha256", "relativePath"].sort())
+        || !SHA256.test(output.beforeSha256 ?? "") || !SHA256.test(output.afterSha256 ?? "")) {
+        throw new Error("selected source OCI rehome publication journal is invalid");
+      }
+    }
+  }
+}
+
+function publicationSources({ sources, inputs, storedAt }) {
+  return sources.map(({ entry, successor, raw }) => {
+    const receipt = exactReceipt({ successor, raw, storedAt });
+    return {
+      sourceId: successor.sourceId,
+      snapshotId: successor.snapshotId,
+      snapshotPath: entry.snapshotPath,
+      snapshotSha256: sha256(inputs.get(entry.snapshotPath)),
+      rawPath: entry.rawPath,
+      rawObjectUri: successor.rawObjectUri,
+      rawObjectSha256: successor.rawSha256,
+      rawByteSize: raw.length,
+      receiptPath: entry.receiptPath,
+      receiptSha256: sha256(jsonBytes(receipt)),
+    };
+  });
+}
+
+function validatePublicationJournal({ journal, manifestBytes, sources, inputs }) {
+  exactPublicationJournal(journal);
+  if (journal.manifestSha256 !== sha256(manifestBytes)) throw new Error("selected source OCI rehome publication journal input drift");
+  const expectedSources = publicationSources({ sources, inputs, storedAt: journal.storedAt });
+  if (JSON.stringify(journal.sources) !== JSON.stringify(expectedSources)) {
+    throw new Error("selected source OCI rehome publication journal input drift");
+  }
+}
+
+function publicationSourcesFromJournal({ manifest, inputs, journal }) {
+  const sources = journal.sources.map((record) => {
+    const entry = manifest.sources?.find(({ sourceId }) => sourceId === record.sourceId);
+    const snapshotBytes = entry && inputs.get(entry.snapshotPath);
+    const raw = entry && inputs.get(entry.rawPath);
+    const successor = Buffer.isBuffer(snapshotBytes) ? parse(snapshotBytes, "rehome successor snapshot") : null;
+    if (!entry || !Buffer.isBuffer(raw) || !successor || successor.sourceId !== record.sourceId
+      || successor.snapshotId !== record.snapshotId || successor.rawObjectUri !== record.rawObjectUri
+      || successor.rawSha256 !== record.rawObjectSha256 || raw.length !== record.rawByteSize
+      || sha256(snapshotBytes) !== record.snapshotSha256 || sha256(raw) !== record.rawObjectSha256) {
+      throw new Error("selected source OCI rehome publication journal input drift");
+    }
+    const locator = parseCredentialFreeObjectUri(successor.rawObjectUri, "rehome OCI object URI");
+    return { entry, successor, raw, objectKey: locator.objectKey };
+  });
+  validatePublicationJournal({ journal, manifestBytes: inputs.get("__manifest__"), sources, inputs });
+  return sources;
+}
+
+async function readPublicationJournal(operationRoot) {
+  const target = contained(operationRoot, PUBLICATION_JOURNAL);
+  try { return { target, bytes: await externalRegularBytes(operationRoot, PUBLICATION_JOURNAL, "selected source OCI rehome publication journal") }; }
+  catch (error) { if (error?.cause?.code === "ENOENT" || error?.code === "ENOENT") return { target, bytes: null }; throw error; }
+}
+
+async function verifyPublishedObject({ operationRoot, source, publishImmutableObjectPlanImpl, client, env }) {
+  try {
+    await publishImmutableObjectPlanImpl({
+      root: operationRoot,
+      client,
+      env,
+      sourceId: source.entry.sourceId,
+      plan: { schemaVersion: 1, steps: [
+        { type: "verify-immutable-bundle-object", objectKey: source.objectKey, sourcePath: source.entry.rawPath, sha256: source.successor.rawSha256, sizeBytes: source.raw.length },
+      ] },
+    });
+  } catch { throw sanitizedPublicationError(); }
+}
+
+async function publishAndVerifyObject({ operationRoot, source, publishImmutableObjectPlanImpl, client, env }) {
+  try {
+    await publishImmutableObjectPlanImpl({
+      root: operationRoot,
+      client,
+      env,
+      sourceId: source.entry.sourceId,
+      plan: { schemaVersion: 1, steps: [
+        { type: "put-immutable-bundle-object", objectKey: source.objectKey, sourcePath: source.entry.rawPath, sha256: source.successor.rawSha256, sizeBytes: source.raw.length },
+        { type: "verify-immutable-bundle-object", objectKey: source.objectKey, sourcePath: source.entry.rawPath, sha256: source.successor.rawSha256, sizeBytes: source.raw.length },
+      ] },
+    });
+  } catch { throw sanitizedPublicationError(); }
 }
 
 export async function rehomeSelectedReleaseSourceLineage({ repositoryRoot = ROOT, manifestPath, publishImmutableObjectPlanImpl = publishImmutableObjectPlan, client = null, env = process.env, now = () => new Date(), transactionHooks = {} }) {
   const root = path.resolve(repositoryRoot);
   if (typeof manifestPath !== "string" || !path.isAbsolute(manifestPath)) throw new Error("rehome manifest path is invalid");
   const operationRoot = path.dirname(path.resolve(manifestPath));
-  if (isWithin(root, operationRoot)) throw new Error("rehome operation root must be outside repository");
-  const recoveredState = await recoverExistingTransaction(root);
-  if (recoveredState === "COMMITTED") return { sourceIds: SELECTED_RELEASE_SOURCE_IDS, outputPaths: OUTPUTS, recovered: true };
+  await assertExternalOperationRoot(root, operationRoot);
   requireOciParBaseUrl(env);
-  const manifestBytes = await regularBytes(operationRoot, path.basename(manifestPath), "rehome manifest");
-  const [snapshotBytes, specBytes, requestBytes, hashBytes, inventoryBytes, canonicalBytes, governanceBytes, freshnessBytes] = await Promise.all([
-    ...OUTPUTS.map((relative) => regularBytes(root, relative, "release transaction input")),
-    regularBytes(root, SUPPORT.inventory, "source inventory"), regularBytes(root, SUPPORT.canonical, "canonical pack"),
-    regularBytes(root, SUPPORT.governance, "source governance policy"), regularBytes(root, SUPPORT.freshness, "freshness policy"),
-  ]);
+  const manifestBytes = await externalRegularBytes(operationRoot, path.basename(manifestPath), "rehome manifest");
   const manifest = parse(manifestBytes, "rehome manifest");
-  const inputs = new Map();
+  const inputs = new Map([["__manifest__", manifestBytes]]);
   for (const entry of manifest.sources ?? []) for (const key of ["snapshotPath", "rawPath"]) {
-    if (typeof entry?.[key] === "string" && !inputs.has(entry[key])) inputs.set(entry[key], await regularBytes(operationRoot, entry[key], `rehome ${key}`));
+    if (typeof entry?.[key] === "string" && !inputs.has(entry[key])) inputs.set(entry[key], await externalRegularBytes(operationRoot, entry[key], `rehome ${key}`));
   }
-  const snapshots = parse(snapshotBytes, "source snapshot ledger");
-  const successors = validateSelectedReleaseSourceRehomeManifest({ manifest, snapshots, inputs });
-  const storedAtDate = now();
-  if (!(storedAtDate instanceof Date) || !Number.isFinite(storedAtDate.valueOf())) throw new Error("rehome receipt time is invalid");
-  const storedAt = storedAtDate.toISOString();
-  for (const { entry, successor, raw, objectKey } of successors) {
+  const publication = await readPublicationJournal(operationRoot);
+  let journal;
+  let journalBytes;
+  let sources;
+  if (publication.bytes) {
+    journalBytes = publication.bytes;
+    journal = parse(journalBytes, "selected source OCI rehome publication journal");
+    sources = publicationSourcesFromJournal({ manifest, inputs, journal });
+  } else {
+    const snapshotBytes = await regularBytes(root, OUTPUTS[0], "source snapshot ledger");
+    const snapshots = parse(snapshotBytes, "source snapshot ledger");
+    sources = validateSelectedReleaseSourceRehomeManifest({ manifest, snapshots, inputs });
+    const storedAtDate = now();
+    if (!(storedAtDate instanceof Date) || !Number.isFinite(storedAtDate.valueOf())) throw new Error("rehome receipt time is invalid");
+    journal = {
+      schemaVersion: 1,
+      artifactKind: "selected-release-source-oci-rehome-publication",
+      state: "PREPARED",
+      manifestSha256: sha256(manifestBytes),
+      storedAt: storedAtDate.toISOString(),
+      sources: publicationSources({ sources, inputs, storedAt: storedAtDate.toISOString() }),
+    };
+    exactPublicationJournal(journal);
+    for (const { entry } of sources) {
+      const receiptTarget = contained(operationRoot, entry.receiptPath);
+      await assertSafeDirectoryPath(operationRoot, path.dirname(receiptTarget), "rehome operation path");
+      if (await existingReceipt(receiptTarget)) throw new Error("rehome receipt already exists");
+    }
+    journalBytes = jsonBytes(journal);
+    await durableCreate(publication.target, journalBytes);
+  }
+  for (const source of sources) {
+    const { entry, successor, raw } = source;
     const receiptTarget = contained(operationRoot, entry.receiptPath);
-    const receipt = exactReceipt({ successor, raw, storedAt });
+    await assertSafeDirectoryPath(operationRoot, path.dirname(receiptTarget), "rehome operation path");
+    const receipt = exactReceipt({ successor, raw, storedAt: journal.storedAt });
     const priorReceipt = await existingReceipt(receiptTarget);
     if (priorReceipt) {
-      const { storedAt: priorStoredAt, ...priorIdentity } = priorReceipt;
-      const { storedAt: expectedStoredAt, ...expectedIdentity } = receipt;
-      if (recoveredState !== "PREPARED" || !Number.isFinite(Date.parse(priorStoredAt))
-        || JSON.stringify(priorIdentity) !== JSON.stringify(expectedIdentity)) {
+      if (JSON.stringify(priorReceipt) !== JSON.stringify(receipt)) {
         throw new Error("rehome receipt already exists");
       }
-      continue;
+      await verifyPublishedObject({ operationRoot, source, publishImmutableObjectPlanImpl, client, env });
+    } else {
+      if (journal.state !== "PREPARED") throw new Error("selected source OCI rehome receipt is missing");
+      try { await lstat(receiptTarget); throw new Error("rehome receipt already exists"); } catch (error) { if (error?.code !== "ENOENT") throw error; }
+      await publishAndVerifyObject({ operationRoot, source, publishImmutableObjectPlanImpl, client, env });
+      await durableCreate(receiptTarget, jsonBytes(receipt));
     }
-    try { await lstat(receiptTarget); throw new Error("rehome receipt already exists"); } catch (error) { if (error?.code !== "ENOENT") throw error; }
-    try { await publishImmutableObjectPlanImpl({
-      root: operationRoot, client, env, sourceId: entry.sourceId,
-      plan: { schemaVersion: 1, steps: [
-        { type: "put-immutable-bundle-object", objectKey, sourcePath: entry.rawPath, sha256: successor.rawSha256, sizeBytes: raw.length },
-        { type: "verify-immutable-bundle-object", objectKey, sourcePath: entry.rawPath, sha256: successor.rawSha256, sizeBytes: raw.length },
-      ] },
-    }); } catch { throw sanitizedPublicationError(); }
-    await writeFile(receiptTarget, jsonBytes(receipt), { flag: "wx", mode: 0o600 });
   }
-  snapshots.push(...successors.map(({ successor }) => successor));
-  validateLineage(snapshots);
-  const spec = parse(specBytes, "candidate build spec");
-  const itxBytes = await regularBytes(root, safeRelative(spec.itxTopologyEvidencePath, "ITX topology evidence path"), "ITX topology evidence");
-  const outputs = deriveOutputs({ snapshots, inventory: parse(inventoryBytes, "source inventory"), canonical: parse(canonicalBytes, "canonical pack"), governance: parse(governanceBytes, "source governance policy"), freshness: parse(freshnessBytes, "freshness policy"), spec, request: parse(requestBytes, "release request"), hashes: parse(hashBytes, "hash evidence"), canonicalBytes, inventoryBytes, governanceBytes, itxBytes });
-  await transaction(root, outputs, transactionHooks);
-  return { sourceIds: SELECTED_RELEASE_SOURCE_IDS, outputPaths: OUTPUTS };
+  const recoveredState = await recoverExistingTransaction(root, transactionHooks);
+  const currentOutputs = await Promise.all(OUTPUTS.map((relative) => regularBytes(root, relative, "release transaction input")));
+  if (journal.state === "PREPARED") {
+    const preparedBytes = journalBytes;
+    const [snapshotBytes, specBytes, requestBytes, hashBytes, inventoryBytes, canonicalBytes, governanceBytes, freshnessBytes] = await Promise.all([
+      ...currentOutputs,
+      regularBytes(root, SUPPORT.inventory, "source inventory"), regularBytes(root, SUPPORT.canonical, "canonical pack"),
+      regularBytes(root, SUPPORT.governance, "source governance policy"), regularBytes(root, SUPPORT.freshness, "freshness policy"),
+    ]);
+    const snapshots = parse(snapshotBytes, "source snapshot ledger");
+    snapshots.push(...sources.map(({ successor }) => successor));
+    validateLineage(snapshots);
+    const spec = parse(specBytes, "candidate build spec");
+    const itxBytes = await regularBytes(root, safeRelative(spec.itxTopologyEvidencePath, "ITX topology evidence path"), "ITX topology evidence");
+    const outputs = deriveOutputs({ snapshots, inventory: parse(inventoryBytes, "source inventory"), canonical: parse(canonicalBytes, "canonical pack"), governance: parse(governanceBytes, "source governance policy"), freshness: parse(freshnessBytes, "freshness policy"), spec, request: parse(requestBytes, "release request"), hashes: parse(hashBytes, "hash evidence"), canonicalBytes, inventoryBytes, governanceBytes, itxBytes });
+    journal = {
+      ...journal,
+      state: "VERIFIED",
+      outputs: outputs.map(({ relativePath, bytes }, index) => ({ relativePath, beforeSha256: sha256(currentOutputs[index]), afterSha256: sha256(bytes) })),
+    };
+    journalBytes = jsonBytes(journal);
+    await atomicReplace(publication.target, journalBytes, preparedBytes);
+  }
+  const outputRecords = journal.outputs;
+  const currentHashes = currentOutputs.map(sha256);
+  const recovered = recoveredState != null || journal.state === "COMMITTED";
+  const allBefore = currentHashes.every((hash, index) => hash === outputRecords[index].beforeSha256);
+  const allAfter = currentHashes.every((hash, index) => hash === outputRecords[index].afterSha256);
+  if (!allBefore && !allAfter) throw new Error("selected source OCI rehome output drift");
+  if (journal.state === "COMMITTED") {
+    if (!allAfter || recoveredState === "PREPARED") throw new Error("selected source OCI rehome committed output drift");
+    return { sourceIds: SELECTED_RELEASE_SOURCE_IDS, outputPaths: OUTPUTS, recovered: true };
+  }
+  if (allBefore) {
+    const [snapshotBytes, specBytes, requestBytes, hashBytes, inventoryBytes, canonicalBytes, governanceBytes, freshnessBytes] = await Promise.all([
+      ...currentOutputs,
+      regularBytes(root, SUPPORT.inventory, "source inventory"), regularBytes(root, SUPPORT.canonical, "canonical pack"),
+      regularBytes(root, SUPPORT.governance, "source governance policy"), regularBytes(root, SUPPORT.freshness, "freshness policy"),
+    ]);
+    const snapshots = parse(snapshotBytes, "source snapshot ledger");
+    snapshots.push(...sources.map(({ successor }) => successor));
+    validateLineage(snapshots);
+    const spec = parse(specBytes, "candidate build spec");
+    const itxBytes = await regularBytes(root, safeRelative(spec.itxTopologyEvidencePath, "ITX topology evidence path"), "ITX topology evidence");
+    const outputs = deriveOutputs({ snapshots, inventory: parse(inventoryBytes, "source inventory"), canonical: parse(canonicalBytes, "canonical pack"), governance: parse(governanceBytes, "source governance policy"), freshness: parse(freshnessBytes, "freshness policy"), spec, request: parse(requestBytes, "release request"), hashes: parse(hashBytes, "hash evidence"), canonicalBytes, inventoryBytes, governanceBytes, itxBytes });
+    if (outputs.some(({ bytes }, index) => sha256(bytes) !== outputRecords[index].afterSha256)) throw new Error("selected source OCI rehome verified output drift");
+    await transaction(root, outputs, transactionHooks);
+  }
+  const afterCommit = await Promise.all(OUTPUTS.map((relative) => regularBytes(root, relative, "release transaction output")));
+  if (afterCommit.some((bytes, index) => sha256(bytes) !== outputRecords[index].afterSha256)) throw new Error("selected source OCI rehome committed output drift");
+  journal = { ...journal, state: "COMMITTED" };
+  await atomicReplace(publication.target, jsonBytes(journal), journalBytes);
+  return { sourceIds: SELECTED_RELEASE_SOURCE_IDS, outputPaths: OUTPUTS, ...(recovered ? { recovered: true } : {}) };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

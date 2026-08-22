@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -164,6 +164,117 @@ test("invalid raw bytes, receipt collision, absent PAR, and noncanonical OCI URI
   assert.deepEqual(await trackedBytes(evil.root), evilBefore);
 });
 
+test("a symlinked operation root is rejected before any repository mutation", async (t) => {
+  const { root, operationRoot, manifestPath } = await fixture();
+  t.after(() => Promise.all([rm(root, { recursive: true, force: true }), rm(operationRoot, { recursive: true, force: true })]));
+  const before = await trackedBytes(root);
+  const linkedOperationRoot = `${operationRoot}-link`;
+  await symlink(operationRoot, linkedOperationRoot);
+  t.after(() => rm(linkedOperationRoot, { force: true }));
+  await assert.rejects(rehomeSelectedReleaseSourceLineage({
+    repositoryRoot: root,
+    manifestPath: path.join(linkedOperationRoot, path.basename(manifestPath)),
+    env,
+    publishImmutableObjectPlanImpl: async () => assert.fail("must not publish"),
+  }), /operation root must be a regular directory/);
+  assert.deepEqual(await trackedBytes(root), before);
+});
+
+test("foreign replacement immediately before forward or recovery replacement is preserved", async (t) => {
+  const forward = await fixture();
+  t.after(() => Promise.all([rm(forward.root, { recursive: true, force: true }), rm(forward.operationRoot, { recursive: true, force: true })]));
+  const foreignForward = Buffer.from("foreign forward replacement");
+  await assert.rejects(rehomeSelectedReleaseSourceLineage({
+    repositoryRoot: forward.root,
+    manifestPath: forward.manifestPath,
+    env,
+    publishImmutableObjectPlanImpl: async () => {},
+    transactionHooks: {
+      beforeReplace: async ({ index, target }) => { if (index === 0) await writeFile(target, foreignForward); },
+    },
+  }), /selected source OCI rehome rollback failed/);
+  assert.deepEqual(await readFile(path.join(forward.root, tracked[0])), foreignForward);
+
+  const recovery = await fixture();
+  t.after(() => Promise.all([rm(recovery.root, { recursive: true, force: true }), rm(recovery.operationRoot, { recursive: true, force: true })]));
+  await assert.rejects(rehomeSelectedReleaseSourceLineage({
+    repositoryRoot: recovery.root,
+    manifestPath: recovery.manifestPath,
+    env,
+    publishImmutableObjectPlanImpl: async () => {},
+    transactionHooks: { leavePreparedAfterReplace: 0 },
+  }), /injected prepared residue/);
+  const foreignRecovery = Buffer.from("foreign recovery replacement");
+  await assert.rejects(rehomeSelectedReleaseSourceLineage({
+    repositoryRoot: recovery.root,
+    manifestPath: recovery.manifestPath,
+    env,
+    publishImmutableObjectPlanImpl: async ({ plan }) => {
+      assert.deepEqual(plan.steps.map(({ type }) => type), ["verify-immutable-bundle-object"]);
+    },
+    transactionHooks: {
+      beforeRecoveryReplace: async ({ target }) => { await writeFile(target, foreignRecovery); },
+    },
+  }), /preserves foreign replacement/);
+  assert.deepEqual(await readFile(path.join(recovery.root, tracked[0])), foreignRecovery);
+});
+
+test("PREPARED publication resumes with GET verification for an exact receipt residue", async (t) => {
+  const { root, operationRoot, manifestPath } = await fixture();
+  t.after(() => Promise.all([rm(root, { recursive: true, force: true }), rm(operationRoot, { recursive: true, force: true })]));
+  const firstAttempt = [];
+  await assert.rejects(rehomeSelectedReleaseSourceLineage({
+    repositoryRoot: root,
+    manifestPath,
+    env,
+    publishImmutableObjectPlanImpl: async ({ sourceId, plan }) => {
+      firstAttempt.push({ sourceId, types: plan.steps.map(({ type }) => type) });
+      if (sourceId === SELECTED_RELEASE_SOURCE_IDS[1]) throw new Error("second publication failed");
+    },
+  }), /OCI source publication failed/);
+  assert.deepEqual(firstAttempt, [
+    { sourceId: SELECTED_RELEASE_SOURCE_IDS[0], types: ["put-immutable-bundle-object", "verify-immutable-bundle-object"] },
+    { sourceId: SELECTED_RELEASE_SOURCE_IDS[1], types: ["put-immutable-bundle-object", "verify-immutable-bundle-object"] },
+  ]);
+
+  const resumed = [];
+  await rehomeSelectedReleaseSourceLineage({
+    repositoryRoot: root,
+    manifestPath,
+    env,
+    publishImmutableObjectPlanImpl: async ({ sourceId, plan }) => resumed.push({ sourceId, types: plan.steps.map(({ type }) => type) }),
+  });
+  assert.deepEqual(resumed, [
+    { sourceId: SELECTED_RELEASE_SOURCE_IDS[0], types: ["verify-immutable-bundle-object"] },
+    { sourceId: SELECTED_RELEASE_SOURCE_IDS[1], types: ["put-immutable-bundle-object", "verify-immutable-bundle-object"] },
+    { sourceId: SELECTED_RELEASE_SOURCE_IDS[2], types: ["put-immutable-bundle-object", "verify-immutable-bundle-object"] },
+  ]);
+});
+
+test("VERIFIED and COMMITTED residues fail closed for missing receipt or object verification failure", async (t) => {
+  const missingReceipt = await fixture();
+  t.after(() => Promise.all([rm(missingReceipt.root, { recursive: true, force: true }), rm(missingReceipt.operationRoot, { recursive: true, force: true })]));
+  await rehomeSelectedReleaseSourceLineage({ repositoryRoot: missingReceipt.root, manifestPath: missingReceipt.manifestPath, env, publishImmutableObjectPlanImpl: async () => {} });
+  const manifest = await readManifest(missingReceipt.manifestPath);
+  await rm(path.join(missingReceipt.operationRoot, manifest.sources[0].receiptPath));
+  await assert.rejects(rehomeSelectedReleaseSourceLineage({
+    repositoryRoot: missingReceipt.root,
+    manifestPath: missingReceipt.manifestPath,
+    env,
+    publishImmutableObjectPlanImpl: async () => assert.fail("missing receipt must not publish"),
+  }), /receipt is missing/);
+
+  const verifyFailure = await fixture();
+  t.after(() => Promise.all([rm(verifyFailure.root, { recursive: true, force: true }), rm(verifyFailure.operationRoot, { recursive: true, force: true })]));
+  await rehomeSelectedReleaseSourceLineage({ repositoryRoot: verifyFailure.root, manifestPath: verifyFailure.manifestPath, env, publishImmutableObjectPlanImpl: async () => {} });
+  await assert.rejects(rehomeSelectedReleaseSourceLineage({
+    repositoryRoot: verifyFailure.root,
+    manifestPath: verifyFailure.manifestPath,
+    env,
+    publishImmutableObjectPlanImpl: async () => { throw new Error("GET mismatch"); },
+  }), /OCI source publication failed/);
+});
+
 test("a mid-replace failure rolls back, and PREPARED or COMMITTED residue recovers without another publication", async (t) => {
   const { root, operationRoot, manifestPath } = await fixture();
   t.after(() => Promise.all([rm(root, { recursive: true, force: true }), rm(operationRoot, { recursive: true, force: true })]));
@@ -175,6 +286,13 @@ test("a mid-replace failure rolls back, and PREPARED or COMMITTED residue recove
     transactionHooks: { failAfterReplace: 1 },
   }), /injected transaction failure/);
   assert.deepEqual(await trackedBytes(root), before);
+  await rehomeSelectedReleaseSourceLineage({
+    repositoryRoot: root,
+    manifestPath,
+    env,
+    publishImmutableObjectPlanImpl: async ({ plan }) => assert.deepEqual(plan.steps.map(({ type }) => type), ["verify-immutable-bundle-object"]),
+  });
+  assert.notDeepEqual(await trackedBytes(root), before);
 
   const prepared = await fixture();
   t.after(() => Promise.all([rm(prepared.root, { recursive: true, force: true }), rm(prepared.operationRoot, { recursive: true, force: true })]));
@@ -183,7 +301,12 @@ test("a mid-replace failure rolls back, and PREPARED or COMMITTED residue recove
     publishImmutableObjectPlanImpl: async () => {}, transactionHooks: { leavePreparedAfterReplace: 0 },
   }), /injected prepared residue/);
   const preparedBeforeRetry = await trackedBytes(prepared.root);
-  await rehomeSelectedReleaseSourceLineage({ repositoryRoot: prepared.root, manifestPath: prepared.manifestPath, env, publishImmutableObjectPlanImpl: async () => assert.fail("prepared recovery must not republish") });
+  await rehomeSelectedReleaseSourceLineage({
+    repositoryRoot: prepared.root,
+    manifestPath: prepared.manifestPath,
+    env,
+    publishImmutableObjectPlanImpl: async ({ plan }) => assert.deepEqual(plan.steps.map(({ type }) => type), ["verify-immutable-bundle-object"]),
+  });
   assert.notDeepEqual(await trackedBytes(prepared.root), preparedBeforeRetry);
 
   const committedForward = await fixture();
@@ -192,7 +315,12 @@ test("a mid-replace failure rolls back, and PREPARED or COMMITTED residue recove
     repositoryRoot: committedForward.root, manifestPath: committedForward.manifestPath, env,
     publishImmutableObjectPlanImpl: async () => {}, transactionHooks: { leaveCommittedResidue: true },
   }), /injected committed residue/);
-  const forward = await rehomeSelectedReleaseSourceLineage({ repositoryRoot: committedForward.root, manifestPath: committedForward.manifestPath, env, publishImmutableObjectPlanImpl: async () => assert.fail("committed recovery must not republish") });
+  const forward = await rehomeSelectedReleaseSourceLineage({
+    repositoryRoot: committedForward.root,
+    manifestPath: committedForward.manifestPath,
+    env,
+    publishImmutableObjectPlanImpl: async ({ plan }) => assert.deepEqual(plan.steps.map(({ type }) => type), ["verify-immutable-bundle-object"]),
+  });
   assert.equal(forward.recovered, true);
 
   const committed = await fixture();
@@ -202,5 +330,10 @@ test("a mid-replace failure rolls back, and PREPARED or COMMITTED residue recove
     publishImmutableObjectPlanImpl: async () => {}, transactionHooks: { leaveCommittedResidue: true },
   }), /injected committed residue/);
   await writeFile(path.join(committed.root, tracked[0]), "corrupt after-hash state");
-  await assert.rejects(rehomeSelectedReleaseSourceLineage({ repositoryRoot: committed.root, manifestPath: committed.manifestPath, env, publishImmutableObjectPlanImpl: async () => assert.fail("committed recovery must not republish") }), /committed output drift/);
+  await assert.rejects(rehomeSelectedReleaseSourceLineage({
+    repositoryRoot: committed.root,
+    manifestPath: committed.manifestPath,
+    env,
+    publishImmutableObjectPlanImpl: async ({ plan }) => assert.deepEqual(plan.steps.map(({ type }) => type), ["verify-immutable-bundle-object"]),
+  }), /committed output drift/);
 });
