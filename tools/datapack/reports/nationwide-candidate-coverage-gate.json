@@ -138,7 +138,7 @@
     },
     "inventory": {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "a9643282f327a6c2859940af7fde31bf1c41fd8aa04c02f521465f291b5e096c"
+      "sha256": "b4eacd3f2135d045440f4daedadd6314088c7fbbb1f6f38c55ebcb810b51f7ef"
     },
     "resolutionPlan": {
       "path": "tools/datapack/release/nationwide-public-api-coverage-search-plan-20260725.json",
