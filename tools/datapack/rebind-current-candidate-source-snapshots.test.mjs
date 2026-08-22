@@ -17,9 +17,12 @@ import {
 import { KRIC_ACCESSIBILITY_OPERATIONS } from "./collect-kric-accessibility-snapshots.mjs";
 import { releaseRequestBindingViolations } from "./verify-release-request-binding.mjs";
 import { approvedGovernanceBindingTransition } from "./source-governance-policy.mjs";
+import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
+import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
-const NOW = new Date("2026-08-16T12:00:00.000Z");
+const CURRENT_SOURCE_HEAD_AT = await selectedSourceHeadAt();
+const NOW = new Date(CURRENT_SOURCE_HEAD_AT + 120_000);
 const RELATIVE = [
   "tools/datapack/release/candidate-build-spec.json",
   "tools/datapack/source-inventory.json",
@@ -48,7 +51,7 @@ test("active candidate source sequence는 exact six와 TRANSFER-last seven만 �
 
 function kric213Snapshot() {
   const operation = KRIC_ACCESSIBILITY_OPERATIONS[0];
-  const capturedAt = "2026-08-16T11:00:00.000Z";
+  const capturedAt = new Date(CURRENT_SOURCE_HEAD_AT + 60_000).toISOString();
   const queries = Array.from({ length: 213 }, (_, index) => {
     const stationId = `station-${index}`;
     const lineId = `line-${index}`;
@@ -63,8 +66,8 @@ function kric213Snapshot() {
   });
   return {
     schemaVersion: 1, artifactKind: "kric-accessibility-snapshot", sourceId: operation.sourceId,
-    snapshotId: "kric-station-convenience-standard-20260816T110000000Z", capturedAt, observedAt: capturedAt,
-    freshUntil: "2026-08-17T11:00:00.000Z", providerResultCode: "00", schemaStatus: "PASS",
+    snapshotId: `kric-station-convenience-standard-${capturedAt.replaceAll(/[-:.]/g, "").replace("Z", "Z")}`, capturedAt, observedAt: capturedAt,
+    freshUntil: new Date(Date.parse(capturedAt) + 24 * 60 * 60 * 1_000).toISOString(), providerResultCode: "00", schemaStatus: "PASS",
     absenceEvidenceMode: "EXHAUSTIVE_LIST", credentialRedacted: true, queries, queryCount: queries.length,
     rowCount: 0,
     contentSha256: jsonSha(queries.map(({ rawResponseSha256: _, ...query }) => query)),
@@ -92,6 +95,8 @@ async function fixture() {
   const candidatePath = path.join(root, "tools/datapack/release/candidate-build-spec.json");
   const candidate = JSON.parse(await readFile(candidatePath, "utf8"));
   const governanceBytes = await readFile(path.join(root, "tools/datapack/source-governance-policy.json"));
+  const governancePolicy = JSON.parse(governanceBytes);
+  const freshnessPolicy = await readJson("release/product-gates/datapack-freshness-sla.json");
   const candidateBytes = Buffer.from(`${JSON.stringify(candidate, null, 2)}\n`);
   await writeFile(candidatePath, candidateBytes);
   const requestPath = path.join(root, "tools/datapack/release/release-request.json");
@@ -111,20 +116,20 @@ async function fixture() {
   next.rowCount = snapshot.rowCount;
   next.coverageCount = 213;
   next.rawSha256 = "a".repeat(64);
-  next.rawObjectUri = "s3://easysubway-datapack-sources/kric-station-convenience-standard/20260815/" + next.rawSha256 + ".json";
+  next.rawObjectUri = `oci://fixture/kric-station-convenience-standard/${next.rawSha256}.json`;
   next.redactedRequestFingerprint = snapshot.redactedRequestFingerprint;
   next.schemaFingerprint = snapshot.schemaFingerprint;
   next.contentSha256 = snapshot.contentSha256;
   next.governancePolicySha256 = sha(governanceBytes);
-  next.freshnessExpiresAt = "2026-11-14T11:00:00.000Z";
-  next.rawRetentionExpiresAt = "2026-11-14T11:00:00.000Z";
+  next.freshnessExpiresAt = deriveFreshnessExpiresAt({ policy: freshnessPolicy, sourceClassId: "static_accessibility_facility", basisAt: snapshot.capturedAt, evaluationAt: NOW.toISOString() });
+  next.rawRetentionExpiresAt = deriveRawRetentionExpiresAt({ policy: governancePolicy, sourceId: next.sourceId, retrievedAt: snapshot.capturedAt });
   next.rawReceipt = {
     ...next.rawReceipt,
     snapshotId: next.snapshotId,
     snapshotRawSha256: snapshot.rawSha256,
     rawObjectSha256: next.rawSha256,
     capturedAt: next.retrievedAt,
-    storedAt: "2026-08-16T11:00:30.000Z",
+    storedAt: new Date(CURRENT_SOURCE_HEAD_AT + 90_000).toISOString(),
     byteSize: 213,
   };
   next.diffSummary = buildSnapshotDiff(previous, next);
@@ -136,8 +141,8 @@ async function fixture() {
   const snapshotPath = path.join(root, "tools/datapack/sources", `${next.snapshotId}.json`);
   await mkdir(path.dirname(snapshotPath), { recursive: true });
   await writeFile(snapshotPath, snapshotBytes);
-  source.retrievedAt = "2026-08-15";
-  source.observedDataUpdatedAt = "2026-08-15";
+  source.retrievedAt = new Date(CURRENT_SOURCE_HEAD_AT + 60_000).toISOString().slice(0, 10);
+  source.observedDataUpdatedAt = new Date(CURRENT_SOURCE_HEAD_AT + 60_000).toISOString().slice(0, 10);
   source.accessibilityAdmissionEvidence = {
     ...source.accessibilityAdmissionEvidence,
     snapshotId: next.snapshotId,
@@ -155,6 +160,24 @@ async function fixture() {
   await writeFile(path.join(root, "tools/datapack/release/source-snapshots.json"), `${JSON.stringify(snapshots, null, 2)}\n`);
   await writeFile(path.join(root, "tools/datapack/source-inventory.json"), `${JSON.stringify(inventory, null, 2)}\n`);
   return { root, next };
+}
+
+async function selectedSourceHeadAt() {
+  const [buildSpec, sourceSnapshots] = await Promise.all([
+    readFile(path.join(ROOT, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(ROOT, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+  ]);
+  const selected = buildSpec.sourceSnapshotIds.map((snapshotId) => {
+    const matches = sourceSnapshots.filter((entry) => entry.snapshotId === snapshotId);
+    assert.equal(matches.length, 1, `selected source snapshot identity: ${snapshotId}`);
+    return matches[0];
+  });
+  const basisAt = Math.max(...selected.flatMap((entry) => [
+    entry.retrievedAt, entry.sourceUpdatedAt, entry.capturedAt, entry.rawReceipt?.storedAt,
+  ].filter(Boolean).map(Date.parse)));
+  const freshUntil = Math.min(...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)));
+  assert.ok(Number.isFinite(basisAt) && Number.isFinite(freshUntil) && basisAt + 120_000 < freshUntil);
+  return basisAt;
 }
 
 async function readInput(root) {
