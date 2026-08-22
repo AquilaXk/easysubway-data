@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { link, lstat, open, readFile, realpath, rename, unlink } from "node:fs/promises";
+import { lstat, open, readFile, realpath, rename, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -262,6 +262,11 @@ async function writeAtomic(target, bytes, expected) {
   try { const handle = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600); try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); } await assertExpected(target, expected); if (expected === null) { await rename(temporary, target); } else await rename(temporary, target); await syncParent(target); await assertExpected(target, bytes); } finally { await unlink(temporary).catch(() => {}); }
 }
 function lockBytes() { return jsonBytes({ schemaVersion: 1, pid: process.pid, token: randomUUID() }); }
+async function createLock(lock, bytes) {
+  const handle = await open(lock, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
+  try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
+  await syncParent(lock);
+}
 function staleLock(bytes) {
   let value;
   try { value = parse(bytes, "Seoul registration lock"); } catch { throw new Error("Seoul registration lock residue exists"); }
@@ -273,17 +278,10 @@ function staleLock(bytes) {
   try { process.kill(value.pid, 0); } catch (error) { if (error?.code === "ESRCH") return; throw new Error("Seoul registration lock residue exists"); }
   throw new Error("Seoul registration lock residue exists");
 }
-async function replaceLockBody(lock, bytes) {
-  const handle = await open(lock, constants.O_WRONLY | constants.O_TRUNC | constants.O_NOFOLLOW);
-  try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
-  await syncParent(lock);
-}
 async function acquireLock(root) {
   const lock = contained(root.lexical, LOCK); await assertRepositoryTarget(root, lock, "Seoul registration lock"); const bytes = lockBytes();
   try {
-    const handle = await open(lock, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
-    try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
-    await syncParent(lock);
+    await createLock(lock, bytes);
   } catch (error) {
     if (error?.code !== "EEXIST") throw error;
     const expected = await stableBytes(lock, "Seoul registration lock", (target, label) => assertRepositoryTarget(root, target, label));
@@ -292,8 +290,7 @@ async function acquireLock(root) {
     await rename(lock, reclaimed);
     const moved = await stableBytes(reclaimed, "Seoul registration stale lock", (target, label) => assertRepositoryTarget(root, target, label));
     if (!moved.equals(expected)) throw new Error("Seoul registration lock residue exists");
-    try { await link(reclaimed, lock); } catch { throw new Error("Seoul registration lock residue exists"); }
-    await replaceLockBody(lock, bytes);
+    try { await createLock(lock, bytes); } catch (reclaimError) { throw new Error("Seoul registration lock residue exists", { cause: reclaimError }); }
     await unlink(reclaimed); await syncParent(reclaimed);
   }
   return async () => { await unlink(lock).catch(() => {}); await syncParent(lock).catch(() => {}); };

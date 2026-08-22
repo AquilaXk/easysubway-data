@@ -225,6 +225,15 @@ test("stale-lock restart recovers PREPARED state, while malformed or active lock
   }
 });
 
+test("only one contender can reclaim a stale registration lock", async (t) => {
+  const values = await fixture();
+  t.after(() => Promise.all([rm(values.root, { recursive: true, force: true }), rm(values.observation, { recursive: true, force: true })]));
+  const outputs = await buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, snapshotPath: values.snapshotPath, receiptPath: values.receiptPath, now: new Date("2026-08-22T00:01:00.000Z") });
+  await writeFile(path.join(values.root, "tools/datapack/.seoul-accessibility-registration.lock"), JSON.stringify({ schemaVersion: 1, pid: 999999, token: "00000000-0000-4000-8000-000000000000" }));
+  const results = await Promise.allSettled(Array.from({ length: 32 }, () => commitCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, outputs })));
+  assert.equal(results.filter(({ status }) => status === "fulfilled").length, 1);
+});
+
 test("immutable snapshot collisions and symlink aliases fail before repository mutation", async (t) => {
   const collision = await fixture();
   t.after(() => Promise.all([rm(collision.root, { recursive: true, force: true }), rm(collision.observation, { recursive: true, force: true })]));
