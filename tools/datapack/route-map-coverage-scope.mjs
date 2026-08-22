@@ -160,26 +160,40 @@ function sameStringSet(left, right) {
   return leftSet.size === rightSet.size && [...leftSet].every((value) => rightSet.has(value));
 }
 
-// spec 바이트를 직접 해시해 parse 결과와 결속한다 — 호출자가 서로 다른 spec 문서와 해시를 넘길 수 없다.
-function readCandidateLineScopeAdmission({ specPath, specBytes, evidence } = {}) {
-  if (!isNonEmptyString(specPath) || !specBytes) {
+// spec·승계 reviewed pack 바이트를 직접 해시해 parse 결과와 결속한다 — 호출자가 서로 다른 문서와 해시를
+// 넘길 수 없다.
+function readCandidateLineScopeAdmission({ specPath, specBytes, inheritedPackPath, inheritedPackBytes, evidence } = {}) {
+  if (!isNonEmptyString(specPath) || !specBytes || !isNonEmptyString(inheritedPackPath) || !inheritedPackBytes) {
     return null;
   }
   let spec;
+  let inheritedPack;
   try {
     spec = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(specBytes));
+    inheritedPack = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(inheritedPackBytes));
   } catch {
     return null;
   }
-  return { specPath, specSha256: sha256(specBytes), spec, evidence };
+  return {
+    specPath,
+    specSha256: sha256(specBytes),
+    spec,
+    inheritedPackPath,
+    inheritedPackSha256: sha256(inheritedPackBytes),
+    inheritedPack,
+    evidence,
+  };
 }
 
-// evidence가 이 spec 바이트를 입력으로 기록했을 때만 SUPPORTED 실증을 근거로 인정한다.
-function candidateEvidenceBindsSpec(admission) {
-  const declared = admission.evidence?.inputs?.spec;
+// evidence가 이 spec·승계 pack 바이트를 입력으로 기록했을 때만 SUPPORTED 실증을 근거로 인정한다.
+function candidateEvidenceBindsInputs(admission) {
+  const declaredSpec = admission.evidence?.inputs?.spec;
+  const declaredInheritedPack = admission.evidence?.inputs?.inheritedPack;
   return admission.evidence?.artifactKind === CANDIDATE_GATE_EVIDENCE_KIND
-    && declared?.path === admission.specPath
-    && declared.sha256 === admission.specSha256;
+    && declaredSpec?.path === admission.specPath
+    && declaredSpec.sha256 === admission.specSha256
+    && declaredInheritedPack?.path === admission.inheritedPackPath
+    && declaredInheritedPack.sha256 === admission.inheritedPackSha256;
 }
 
 // 재기술 claim 하나의 근거 결속. 성립하면 등재된 재기술 항목을 돌려준다.
@@ -187,22 +201,78 @@ function boundCandidateRedescription({ source, admission, push }) {
   const redescription = (admission?.spec?.lineScopeRedescriptions ?? [])
     .find((entry) => entry?.sourceId === source.id && entry.sourceDomain === ROUTE_MAP_DOMAIN);
   if (!redescription) {
-    push(
-      "SOURCE_SNAPSHOT_PATH_MISSING",
-      "lineIds를 claim한 route_map_positions 소스는 routeMapAdmissionEvidence.snapshotPath 또는"
-      + " candidate 게이트 line-scope 재기술 근거가 필요하다",
-    );
     return null;
   }
   if (!sameStringSet(redescription.lineIds, source.coverageScope.lineIds)) {
     push("SOURCE_CANDIDATE_LINE_SCOPE_MISMATCH", "candidate spec 재기술 lineIds가 coverageScope.lineIds와 다르다");
     return null;
   }
-  if (!candidateEvidenceBindsSpec(admission)) {
-    push("SOURCE_CANDIDATE_EVIDENCE_SPEC_UNBOUND", "candidate 게이트 evidence가 이 spec 바이트를 입력으로 기록하지 않았다");
+  if (!candidateEvidenceBindsInputs(admission)) {
+    push("SOURCE_CANDIDATE_EVIDENCE_INPUT_UNBOUND", "candidate 게이트 evidence가 이 spec·승계 pack 바이트를 입력으로 기록하지 않았다");
     return null;
   }
   return redescription;
+}
+
+function inheritedReviewedPackSource({ source, admission, push }) {
+  if (!admission || !candidateEvidenceBindsInputs(admission)) {
+    push("SOURCE_INHERITED_EVIDENCE_UNBOUND", "candidate 게이트 evidence가 exact spec·승계 reviewed pack 입력에 결속되지 않았다");
+    return null;
+  }
+  if ((admission.spec.lineScopeRedescriptions ?? []).some((entry) => entry?.sourceId === source.id)) {
+    push("SOURCE_INHERITED_REDESCRIPTION_PRESENT", "승계 line-scope claim source가 candidate 재기술에도 등재됐다");
+    return null;
+  }
+  const matches = (admission.inheritedPack.packs ?? [])
+    .flatMap((pack) => pack?.sourceInventory ?? [])
+    .filter(({ id }) => id === source.id);
+  if (matches.length === 0) {
+    const baselineClaimsSource = (admission.evidence?.variants?.baseline?.pilotRequirements ?? [])
+      .some((entry) => entry?.sourceIds?.includes(source.id));
+    push(
+      baselineClaimsSource ? "SOURCE_INHERITED_SOURCE_INVALID" : "SOURCE_SNAPSHOT_PATH_MISSING",
+      baselineClaimsSource
+        ? "승계 reviewed pack에 baseline claimant sourceId가 정확히 하나여야 한다"
+        : "lineIds claim에 admitted snapshot, candidate 재기술 또는 inherited reviewed-pack source가 없다",
+    );
+    return null;
+  }
+  if (matches.length !== 1) {
+    push("SOURCE_INHERITED_SOURCE_INVALID", "승계 reviewed pack에 같은 sourceId가 정확히 하나여야 한다");
+    return null;
+  }
+  const inheritedScope = matches[0].coverageScope;
+  const activeScope = source.coverageScope;
+  if (!["regionIds", "operatorIds", "lineIds", "sourceDomains"].every(
+    (key) => sameStringSet(inheritedScope?.[key], activeScope?.[key]),
+  )) {
+    push("SOURCE_INHERITED_SCOPE_MISMATCH", "승계 reviewed pack source coverageScope가 active source와 다르다");
+    return null;
+  }
+  return matches[0];
+}
+
+function requirementEvidence(variant, requirementKey) {
+  return (variant?.pilotRequirements ?? []).find((entry) => entry?.requirementKey === requirementKey);
+}
+
+function validateInheritedScope({ key, source, admission, auditedScopeKeys, push }) {
+  const requirementKey = `${key}:${ROUTE_MAP_DOMAIN}`;
+  const baseline = requirementEvidence(admission.evidence?.variants?.baseline, requirementKey);
+  const lineScoped = requirementEvidence(admission.evidence?.variants?.lineScoped, requirementKey);
+  const baselineSupported = admission.evidence?.variants?.baseline?.supportedRequirementKeys ?? [];
+  const lineScopedSupported = admission.evidence?.variants?.lineScoped?.supportedRequirementKeys ?? [];
+  if (!baselineSupported.includes(requirementKey) || baseline?.status !== "SUPPORTED" || !baseline.sourceIds?.includes(source.id)) {
+    push("SOURCE_INHERITED_BASELINE_UNSUPPORTED", `${requirementKey}가 baseline에서 claimant source로 SUPPORTED여야 한다`);
+    return;
+  }
+  if (!lineScopedSupported.includes(requirementKey) || lineScoped?.status !== "SUPPORTED" || !lineScoped.sourceIds?.includes(source.id)) {
+    push("SOURCE_INHERITED_LINE_SCOPED_UNSUPPORTED", `${requirementKey}가 lineScoped에서 claimant source를 유지한 SUPPORTED여야 한다`);
+    return;
+  }
+  if (!auditedScopeKeys.has(key)) {
+    push("SOURCE_INHERITED_SCOPE_UNAUDITED", `${key}가 containment 감사 대상 scope가 아니어서 판정할 수 없다`);
+  }
 }
 
 function validateCandidateScope({ key, redescription, supported, auditedScopeKeys, push }) {
@@ -222,13 +292,21 @@ function validateCandidateScope({ key, redescription, supported, auditedScopeKey
 function validateCandidateLineScopeClaims({ sources, admission, auditedScopeKeys, violations }) {
   for (const source of sources) {
     const push = (kind, message) => violations.push({ kind, sourceId: source.id, message: `${source.id}: ${message}` });
-    const redescription = boundCandidateRedescription({ source, admission, push });
-    if (!redescription) {
+    const hasCandidateRedescription = (admission?.spec?.lineScopeRedescriptions ?? [])
+      .some((entry) => entry?.sourceId === source.id && entry.sourceDomain === ROUTE_MAP_DOMAIN);
+    if (hasCandidateRedescription) {
+      const redescription = boundCandidateRedescription({ source, admission, push });
+      if (!redescription) continue;
+      const supported = new Set(admission.evidence.variants?.lineScoped?.supportedRequirementKeys ?? []);
+      for (const { key } of claimedScopes(source.coverageScope)) {
+        validateCandidateScope({ key, redescription, supported, auditedScopeKeys, push });
+      }
       continue;
     }
-    const supported = new Set(admission.evidence.variants?.lineScoped?.supportedRequirementKeys ?? []);
+    const inheritedSource = inheritedReviewedPackSource({ source, admission, push });
+    if (!inheritedSource) continue;
     for (const { key } of claimedScopes(source.coverageScope)) {
-      validateCandidateScope({ key, redescription, supported, auditedScopeKeys, push });
+      validateInheritedScope({ key, source: inheritedSource, admission, auditedScopeKeys, push });
     }
   }
 }
