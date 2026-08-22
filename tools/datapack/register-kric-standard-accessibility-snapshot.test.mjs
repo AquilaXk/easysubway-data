@@ -13,6 +13,7 @@ import { parseKricStandardAccessibilitySnapshotRegistrationArgs, registerKricSta
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const registryPaths = [
@@ -20,7 +21,8 @@ const registryPaths = [
   "tools/datapack/release/source-snapshots.json",
   "tools/datapack/inputs/capital-pilot-production-source-input.json",
 ];
-const seoulSnapshotPath = "tools/datapack/sources/seoul-metro-accessibility-20260813T213842955Z.json";
+const CURRENT_SOURCE_HEAD_AT = await selectedSourceHeadAt();
+const seoulSnapshotPath = await selectedSnapshotPath("seoul-metro-accessibility");
 const governancePolicyPath = "tools/datapack/source-governance-policy.json";
 const freshnessPolicyPath = "release/product-gates/datapack-freshness-sla.json";
 const roster = [
@@ -36,7 +38,7 @@ const operation = {
 
 function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 
-async function snapshotFor(kricRoster, now = new Date("2026-08-17T00:00:00.000Z")) {
+async function snapshotFor(kricRoster, now = new Date(CURRENT_SOURCE_HEAD_AT + 60_000)) {
   return (await collectKricAccessibilitySnapshots({
     roster: kricRoster,
     operations: [operation],
@@ -65,7 +67,7 @@ async function stageSnapshot(values, snapshot) {
   values.snapshotFileSha256 = sha256(bytes);
 }
 
-async function fixture(t, now = new Date("2026-08-17T00:00:00.000Z")) {
+async function fixture(t, now = new Date(CURRENT_SOURCE_HEAD_AT + 60_000)) {
   const directory = await mkdtemp(path.join(tmpdir(), "easysubway-kric-registration-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   await Promise.all(registryPaths.map(async (relativePath) => {
@@ -79,25 +81,43 @@ async function fixture(t, now = new Date("2026-08-17T00:00:00.000Z")) {
     await cp(path.join(root, relativePath), target);
   }));
   const freshnessPolicy = JSON.parse(await readFile(path.join(directory, freshnessPolicyPath), "utf8"));
-  await mkdir(path.dirname(path.join(directory, seoulSnapshotPath)), { recursive: true });
-  await cp(path.join(root, seoulSnapshotPath), path.join(directory, seoulSnapshotPath));
-  const admittedSeoul = JSON.parse(await readFile(path.join(directory, seoulSnapshotPath), "utf8"));
-  admittedSeoul.capturedAt = now.toISOString();
-  admittedSeoul.observedAt = admittedSeoul.capturedAt;
-  admittedSeoul.freshUntil = new Date(now.getTime() + 86_400_000).toISOString();
+  const selectedSeoul = JSON.parse(await readFile(path.join(root, seoulSnapshotPath), "utf8"));
+  const capturedAt = now.toISOString();
+  const admittedSeoul = {
+    ...selectedSeoul,
+    snapshotId: `seoul-metro-accessibility-${capturedAt.replaceAll(/[-:.]/g, "")}`,
+    previousSnapshotId: selectedSeoul.snapshotId,
+    retrievedAt: capturedAt,
+    capturedAt,
+    observedAt: capturedAt,
+    freshUntil: new Date(now.getTime() + 86_400_000).toISOString(),
+  };
+  const admittedSeoulPath = `tools/datapack/sources/${admittedSeoul.snapshotId}.json`;
+  await mkdir(path.dirname(path.join(directory, admittedSeoulPath)), { recursive: true });
   const admittedSeoulBytes = Buffer.from(`${JSON.stringify(admittedSeoul, null, 2)}\n`);
-  await writeFile(path.join(directory, seoulSnapshotPath), admittedSeoulBytes);
+  await writeFile(path.join(directory, admittedSeoulPath), admittedSeoulBytes);
   const inventory = JSON.parse(await readFile(path.join(directory, registryPaths[0]), "utf8"));
   const seoulEvidence = inventory.sources.find(({ id }) => id === "seoul-metro-accessibility").accessibilityAdmissionEvidence;
+  seoulEvidence.snapshotId = admittedSeoul.snapshotId;
+  seoulEvidence.snapshotPath = admittedSeoulPath;
   seoulEvidence.capturedAt = admittedSeoul.capturedAt;
   seoulEvidence.observedAt = admittedSeoul.observedAt;
   seoulEvidence.freshUntil = admittedSeoul.freshUntil;
   seoulEvidence.snapshotFileSha256 = sha256(admittedSeoulBytes);
   await writeFile(path.join(directory, registryPaths[0]), `${JSON.stringify(inventory, null, 2)}\n`);
   const snapshots = JSON.parse(await readFile(path.join(directory, registryPaths[1]), "utf8"));
-  const seoulLedger = snapshots.find(({ sourceId, snapshotId }) =>
-    sourceId === "seoul-metro-accessibility" && snapshotId === admittedSeoul.snapshotId);
-  seoulLedger.retrievedAt = admittedSeoul.capturedAt;
+  const selectedSeoulLedger = snapshots.find(({ sourceId, snapshotId }) =>
+    sourceId === "seoul-metro-accessibility" && snapshotId === selectedSeoul.snapshotId);
+  assert.ok(selectedSeoulLedger);
+  const selectedSeoulRawObjectSha256 = selectedSeoulLedger.rawReceipt?.rawObjectSha256;
+  assert.match(selectedSeoulRawObjectSha256 ?? "", /^[a-f0-9]{64}$/);
+  const seoulLedger = {
+    ...structuredClone(selectedSeoulLedger),
+    snapshotId: admittedSeoul.snapshotId,
+    previousSnapshotId: selectedSeoulLedger.snapshotId,
+    rawObjectUri: `oci://fixture/seoul-metro-accessibility/${selectedSeoulRawObjectSha256}.json`,
+    retrievedAt: admittedSeoul.capturedAt,
+  };
   seoulLedger.sourceUpdatedAt = admittedSeoul.observedAt;
   seoulLedger.freshnessExpiresAt = deriveFreshnessExpiresAt({
     policy: freshnessPolicy,
@@ -108,6 +128,9 @@ async function fixture(t, now = new Date("2026-08-17T00:00:00.000Z")) {
   seoulLedger.rawReceipt.capturedAt = admittedSeoul.capturedAt;
   seoulLedger.rawReceipt.snapshotFileSha256 = sha256(admittedSeoulBytes);
   seoulLedger.rawReceipt.storedAt = new Date(now.getTime() + 30_000).toISOString();
+  seoulLedger.rawReceipt.snapshotId = admittedSeoul.snapshotId;
+  seoulLedger.diffSummary = buildSnapshotDiff(selectedSeoulLedger, seoulLedger);
+  snapshots.push(seoulLedger);
   await writeFile(path.join(directory, registryPaths[1]), `${JSON.stringify(snapshots, null, 2)}\n`);
   const snapshot = await snapshotFor(roster, now);
   const snapshotFilePath = path.join(directory, "staging", `${snapshot.snapshotId}.json`);
@@ -128,14 +151,15 @@ async function fixture(t, now = new Date("2026-08-17T00:00:00.000Z")) {
     freshnessPolicy,
     now,
     rawRetentionExpiresAt: deriveRawRetentionExpiresAt({ policy: governancePolicy, sourceId: "kric-station-convenience-standard", retrievedAt: snapshot.capturedAt }),
-    seoulSnapshot: JSON.parse(await readFile(path.join(directory, seoulSnapshotPath), "utf8")),
+    seoulSnapshot: admittedSeoul,
+    seoulSnapshotPath: admittedSeoulPath,
     before: await Promise.all(registryPaths.map((relativePath) => readFile(paths[relativePath]))),
   };
 }
 
 function receipt(snapshot, snapshotFileSha256, rawRetentionExpiresAt = new Date(Date.parse(snapshot.capturedAt) + 90 * 86_400_000).toISOString()) {
   return {
-    rawObjectUri: "s3://easysubway-datapack-sources/kric-station-convenience-standard/20260803.json",
+    rawObjectUri: "oci://fixture/kric-station-convenience-standard/raw.json",
     sourceId: snapshot.sourceId,
     snapshotId: snapshot.snapshotId,
     snapshotRawSha256: snapshot.rawSha256,
@@ -189,7 +213,7 @@ async function freshSeoulRegistration(values) {
   await writeFile(seoulSnapshotFilePath, seoulBytes);
   const seoulSnapshotFileSha256 = sha256(seoulBytes);
   const seoulRawReceipt = {
-    rawObjectUri: `s3://easysubway-datapack-sources/seoul-metro-accessibility/${dateToken}/${"d".repeat(64)}.json`,
+    rawObjectUri: `oci://fixture/seoul-metro-accessibility/${dateToken}/${"d".repeat(64)}.json`,
     sourceId: freshSeoul.sourceId,
     snapshotId: freshSeoul.snapshotId,
     snapshotRawSha256: freshSeoul.rawSha256,
@@ -259,7 +283,7 @@ async function fullRegistrationInputs(values, { mixed = false } = {}) {
   }));
   const ledgerTimes = JSON.parse(await readFile(values.paths[registryPaths[1]], "utf8"))
     .filter(({ sourceId }) => sourceId === operation.sourceId)
-    .flatMap((entry) => [entry.retrievedAt, entry.sourceUpdatedAt, entry.freshnessExpiresAt])
+    .flatMap((entry) => [entry.retrievedAt, entry.sourceUpdatedAt, entry.capturedAt, entry.rawReceipt?.storedAt])
     .map(Date.parse)
     .filter(Number.isFinite);
   const fixtureNow = new Date(Math.max(...ledgerTimes) + 60_000);
@@ -304,6 +328,31 @@ async function fullRegistrationInputs(values, { mixed = false } = {}) {
       retrievedAt: snapshot.capturedAt,
     })),
   };
+}
+
+async function selectedSourceHeadAt() {
+  const [buildSpec, sourceSnapshots] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+  ]);
+  const selected = buildSpec.sourceSnapshotIds.map((snapshotId) => {
+    const matches = sourceSnapshots.filter((entry) => entry.snapshotId === snapshotId);
+    assert.equal(matches.length, 1, `selected source snapshot identity: ${snapshotId}`);
+    return matches[0];
+  });
+  const basisAt = Math.max(...selected.flatMap((entry) => [
+    entry.retrievedAt, entry.sourceUpdatedAt, entry.capturedAt, entry.rawReceipt?.storedAt,
+  ].filter(Boolean).map(Date.parse)));
+  const freshUntil = Math.min(...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)));
+  assert.ok(Number.isFinite(basisAt) && Number.isFinite(freshUntil) && basisAt + 120_000 < freshUntil);
+  return basisAt;
+}
+
+async function selectedSnapshotPath(sourceId) {
+  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const source = inventory.sources.find(({ id }) => id === sourceId);
+  assert.ok(source?.accessibilityAdmissionEvidence?.snapshotPath, `selected ${sourceId} snapshot path`);
+  return source.accessibilityAdmissionEvidence.snapshotPath;
 }
 
 async function registerFull(values, input, overrides = {}) {
@@ -674,7 +723,7 @@ test("admitted Seoul snapshot object, file, evidence, and ledger mismatch reject
   const cases = [
     [async (values) => ({ seoulSnapshot: { ...values.seoulSnapshot, stations: [] } }), /Seoul snapshot admission is invalid/],
     [async (values) => {
-      await writeFile(path.join(path.dirname(path.dirname(path.dirname(path.dirname(values.snapshotTargetPath)))), seoulSnapshotPath), "{}");
+      await writeFile(path.join(path.dirname(path.dirname(path.dirname(path.dirname(values.snapshotTargetPath)))), values.seoulSnapshotPath), "{}");
       return {};
     }, /Seoul snapshot admission is invalid/],
     [async (values) => {
@@ -703,7 +752,7 @@ test("admitted Seoul snapshot object, file, evidence, and ledger mismatch reject
     }, /Seoul snapshot admission is invalid/],
     [async (values) => {
       const rootDirectory = path.dirname(path.dirname(path.dirname(path.dirname(values.snapshotTargetPath))));
-      const seoulPath = path.join(rootDirectory, seoulSnapshotPath);
+      const seoulPath = path.join(rootDirectory, values.seoulSnapshotPath);
       const stale = JSON.parse(await readFile(seoulPath, "utf8"));
       stale.freshUntil = "2026-08-03T00:00:00.000Z";
       const staleBytes = Buffer.from(`${JSON.stringify(stale, null, 2)}\n`);
@@ -717,7 +766,7 @@ test("admitted Seoul snapshot object, file, evidence, and ledger mismatch reject
     }, /Seoul snapshot admission freshness is invalid/],
     [async (values) => {
       const rootDirectory = path.dirname(path.dirname(path.dirname(path.dirname(values.snapshotTargetPath))));
-      const seoulPath = path.join(rootDirectory, seoulSnapshotPath);
+      const seoulPath = path.join(rootDirectory, values.seoulSnapshotPath);
       const relabeled = JSON.parse(await readFile(seoulPath, "utf8"));
       relabeled.capturedAt = "2020-01-01T00:00:00.000Z";
       relabeled.observedAt = relabeled.capturedAt;

@@ -45,7 +45,17 @@ function compositionFixture() {
   assert.equal(applicability.productionUseAllowed, false); assert.equal(applicability.candidateBinding, null);
   assert.deepEqual(applicability.canonicalIdentity, metrics.canonicalIdentity); assert.deepEqual(applicability.sourceIdentity, metrics.sourceIdentity);
   assert.equal(applicability.stateSummary.APPLICABLE_TRANSFER_ENDPOINT, 27); assert.equal(applicability.stateSummary.NOT_APPLICABLE_IN_CANONICAL_PAIR_SET, 186);
-  const approvedAt = "2026-08-16T02:00:00.000Z";
+  const selectedRows = candidate.value.sourceSnapshotIds.map((snapshotId) => {
+    const matches = ledger.value.filter((row) => row.snapshotId === snapshotId);
+    assert.equal(matches.length, 1, `selected source snapshot identity: ${snapshotId}`);
+    return matches[0];
+  });
+  const basisAt = Math.max(...selectedRows.flatMap((entry) => [
+    entry.retrievedAt, entry.sourceUpdatedAt, entry.capturedAt, entry.rawReceipt?.storedAt,
+  ].filter(Boolean).map(Date.parse)));
+  const freshUntil = Math.min(...selectedRows.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)));
+  assert.ok(Number.isFinite(basisAt) && Number.isFinite(freshUntil) && basisAt + 1_000 < freshUntil);
+  const approvedAt = new Date(basisAt + 1_000).toISOString();
   candidate.value.sourceSnapshots = candidate.value.sourceSnapshotIds.map((snapshotId) => deriveReleaseProjection({ snapshot: ledger.value.find((row) => row.snapshotId === snapshotId), sourceInventory: inventory.value, governancePolicy: governance.value, governancePolicyBytes: governance.body, freshnessPolicy: freshness.value, nowMillis: Date.parse(approvedAt) }));
   const selectedSnapshotIds = new Set(candidate.value.sourceSnapshotIds);
   candidate.value.sourceSnapshotSetHash = sha(Buffer.from(JSON.stringify(

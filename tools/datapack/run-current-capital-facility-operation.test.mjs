@@ -9,10 +9,13 @@ import { buildCurrentCapitalFacilitySourceAdmission, canonicalCurrentCapitalFaci
 import { KRIC_ACCESSIBILITY_OPERATIONS, writeKricStandardAccessibilityObservation } from "./collect-kric-accessibility-snapshots.mjs";
 import { rebindCurrentCandidateSourceSnapshots } from "./rebind-current-candidate-source-snapshots.mjs";
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
+import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
+import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { collectCurrentCapitalFacilityOperation, durableCreateBytes, main, parseArgs, prepareCurrentCapitalFacilityOperation, recoverPublishedCurrentCapitalFacilityOperation, syncWrite } from "./run-current-capital-facility-operation.mjs";
 
 const REPOSITORY_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
-const NOW = new Date("2026-08-17T12:00:00.000Z");
+const CURRENT_SOURCE_HEAD_AT = await selectedSourceHeadAt();
+const NOW = new Date(CURRENT_SOURCE_HEAD_AT + 120_000);
 const OCI_ENV = Object.freeze({ EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/redacted/n/axvym6vk8g7i/b/easysubway-datapacks/o" });
 process.env.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL = OCI_ENV.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL;
 const EXACT_MAIN = "e8c391ffd051fa2ccd7a275a7865aa65b94f6523";
@@ -32,9 +35,27 @@ function exactMainExec(file, args) {
   return { stdout: `${EXACT_MAIN}\n` };
 }
 
+async function selectedSourceHeadAt() {
+  const [buildSpec, sourceSnapshots] = await Promise.all([
+    readFile(path.join(REPOSITORY_ROOT, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(REPOSITORY_ROOT, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+  ]);
+  const selected = buildSpec.sourceSnapshotIds.map((snapshotId) => {
+    const matches = sourceSnapshots.filter((entry) => entry.snapshotId === snapshotId);
+    assert.equal(matches.length, 1, `selected source snapshot identity: ${snapshotId}`);
+    return matches[0];
+  });
+  const basisAt = Math.max(...selected.flatMap((entry) => [
+    entry.retrievedAt, entry.sourceUpdatedAt, entry.capturedAt, entry.rawReceipt?.storedAt,
+  ].filter(Boolean).map(Date.parse)));
+  const freshUntil = Math.min(...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)));
+  assert.ok(Number.isFinite(basisAt) && Number.isFinite(freshUntil) && basisAt + 120_000 < freshUntil);
+  return basisAt;
+}
+
 function nextSnapshot(plan) {
   const operation = KRIC_ACCESSIBILITY_OPERATIONS.find(({ sourceId }) => sourceId === "kric-station-convenience-standard");
-  const capturedAt = "2026-08-17T11:00:00.000Z";
+  const capturedAt = new Date(CURRENT_SOURCE_HEAD_AT + 60_000).toISOString();
   const queries = plan.stationLineProviderMappings.map((mapping) => ({
     stationId: mapping.stationId, lineId: mapping.lineId, railOprIsttCd: mapping.providerOperatorId,
     lnCd: mapping.providerLineId, stinCd: mapping.providerStationId, rows: [], rawResponseSha256: sha(Buffer.from(JSON.stringify({ header: { resultCode: "00" }, body: [] }))),
@@ -43,8 +64,8 @@ function nextSnapshot(plan) {
   }));
   return {
     schemaVersion: 1, artifactKind: "kric-accessibility-snapshot", sourceId: operation.sourceId,
-    snapshotId: "kric-station-convenience-standard-20260817T110000000Z", capturedAt, observedAt: capturedAt,
-    freshUntil: "2026-08-18T11:00:00.000Z", providerResultCode: "00", schemaStatus: "PASS",
+    snapshotId: `kric-station-convenience-standard-${capturedAt.replaceAll(/[-:.]/g, "")}`, capturedAt, observedAt: capturedAt,
+    freshUntil: new Date(Date.parse(capturedAt) + 24 * 60 * 60 * 1_000).toISOString(), providerResultCode: "00", schemaStatus: "PASS",
     absenceEvidenceMode: "EXHAUSTIVE_LIST", credentialRedacted: true, queries, queryCount: queries.length, rowCount: 0,
     contentSha256: jsonSha(queries.map(({ rawResponseSha256: _ignored, ...query }) => query)),
     rawSha256: jsonSha(queries.map(({ stationId, lineId, railOprIsttCd, lnCd, stinCd, rawResponseSha256 }) => ({ stationId, lineId, railOprIsttCd, lnCd, stinCd, rawResponseSha256 }))),
@@ -149,13 +170,19 @@ async function finalizeFixture(t) {
   const snapshot = nextSnapshot(plan); const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot, null, 2)}\n`);
   const snapshotsPath = path.join(root, "tools/datapack/release/source-snapshots.json"); const inventoryPath = path.join(root, "tools/datapack/source-inventory.json");
   const snapshots = JSON.parse(await readFile(snapshotsPath, "utf8")); const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
-  const previous = snapshots.find(({ snapshotId }) => snapshotId === "kric-station-convenience-standard-20260816T015619375Z"); assert.ok(previous);
-  const next = { ...structuredClone(previous), snapshotId: snapshot.snapshotId, previousSnapshotId: previous.snapshotId, retrievedAt: snapshot.capturedAt, sourceUpdatedAt: snapshot.capturedAt, rowCount: 0, coverageCount: 213, rawSha256: "a".repeat(64), rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-station-convenience-standard/20260817/${"a".repeat(64)}.json`, redactedRequestFingerprint: snapshot.redactedRequestFingerprint, schemaFingerprint: snapshot.schemaFingerprint, contentSha256: snapshot.contentSha256, freshnessExpiresAt: "2026-11-15T11:00:00.000Z", rawRetentionExpiresAt: "2026-11-15T11:00:00.000Z" };
+  const candidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
+  const previousId = candidate.sourceSnapshots.find(({ sourceId }) => sourceId === snapshot.sourceId)?.snapshotId;
+  const previous = snapshots.find(({ snapshotId }) => snapshotId === previousId); assert.ok(previous);
+  const dateToken = snapshot.capturedAt.slice(0, 10).replaceAll("-", "");
+  const next = { ...structuredClone(previous), snapshotId: snapshot.snapshotId, previousSnapshotId: previous.snapshotId, retrievedAt: snapshot.capturedAt, sourceUpdatedAt: snapshot.capturedAt, rowCount: 0, coverageCount: 213, rawSha256: "a".repeat(64), rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-station-convenience-standard/${dateToken}/${"a".repeat(64)}.json`, redactedRequestFingerprint: snapshot.redactedRequestFingerprint, schemaFingerprint: snapshot.schemaFingerprint, contentSha256: snapshot.contentSha256, freshnessExpiresAt: snapshot.freshUntil, rawRetentionExpiresAt: snapshot.freshUntil };
   const governanceBytes = await load("tools/datapack/source-governance-policy.json"); const governance = JSON.parse(governanceBytes);
+  const freshnessPolicy = JSON.parse(await load("release/product-gates/datapack-freshness-sla.json"));
+  next.freshnessExpiresAt = deriveFreshnessExpiresAt({ policy: freshnessPolicy, sourceClassId: "static_accessibility_facility", basisAt: snapshot.capturedAt, evaluationAt: NOW.toISOString() });
+  next.rawRetentionExpiresAt = deriveRawRetentionExpiresAt({ policy: governance, sourceId: next.sourceId, retrievedAt: snapshot.capturedAt });
   next.governancePolicyVersion = governance.policyVersion; next.governancePolicySha256 = sha(governanceBytes);
-  next.rawReceipt = { ...next.rawReceipt, snapshotId: next.snapshotId, snapshotRawSha256: snapshot.rawSha256, rawObjectSha256: next.rawSha256, capturedAt: snapshot.capturedAt, storedAt: "2026-08-17T11:00:30.000Z", byteSize: 213, snapshotFileSha256: sha(snapshotBytes) };
+  next.rawReceipt = { ...next.rawReceipt, snapshotId: next.snapshotId, snapshotRawSha256: snapshot.rawSha256, rawObjectSha256: next.rawSha256, capturedAt: snapshot.capturedAt, storedAt: new Date(CURRENT_SOURCE_HEAD_AT + 90_000).toISOString(), byteSize: 213, snapshotFileSha256: sha(snapshotBytes) };
   next.diffSummary = buildSnapshotDiff(previous, next); snapshots.push(next);
-  const source = inventory.sources.find(({ id }) => id === next.sourceId); next.adminReviewRecordHash = source.admissionEvidence.adminReviewRecordHash; source.retrievedAt = "2026-08-17"; source.observedDataUpdatedAt = "2026-08-17";
+  const source = inventory.sources.find(({ id }) => id === next.sourceId); next.adminReviewRecordHash = source.admissionEvidence.adminReviewRecordHash; source.retrievedAt = snapshot.capturedAt.slice(0, 10); source.observedDataUpdatedAt = snapshot.capturedAt.slice(0, 10);
   source.accessibilityAdmissionEvidence = { ...source.accessibilityAdmissionEvidence, snapshotId: next.snapshotId, capturedAt: snapshot.capturedAt, observedAt: snapshot.capturedAt, freshUntil: snapshot.freshUntil, rawSha256: snapshot.rawSha256, contentSha256: snapshot.contentSha256, schemaFingerprint: snapshot.schemaFingerprint, snapshotPath: `tools/datapack/sources/${next.snapshotId}.json`, snapshotFileSha256: sha(snapshotBytes), absenceEvidenceMode: "EXHAUSTIVE_LIST", licenseEvidenceHash: source.admissionEvidence.licenseEvidenceHash };
   await writeJson(snapshotsPath, snapshots); await writeJson(inventoryPath, inventory);
   const observationRoot = path.join(operationRoot, "observation");
@@ -163,7 +190,7 @@ async function finalizeFixture(t) {
   await mkdir(operationRoot, { recursive: true }); await writeFile(path.join(operationRoot, "plan.json"), planBytes);
   await writeKricStandardAccessibilityObservation({ outputRoot: observationRoot, observation: observationFor(snapshot) });
   const [manifestBytes, observedSnapshotBytes, rawBytes] = await Promise.all([readFile(path.join(observationRoot, "observation.json"), "utf8"), readFile(path.join(observationRoot, `${snapshot.snapshotId}.json`)), readFile(path.join(observationRoot, `${snapshot.snapshotId}.raw.json`))]);
-  next.rawSha256 = sha(rawBytes); next.rawObjectUri = `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/${next.sourceId}/20260817/${next.rawSha256}.json`;
+  next.rawSha256 = sha(rawBytes); next.rawObjectUri = `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/${next.sourceId}/${dateToken}/${next.rawSha256}.json`;
   next.rawReceipt = { ...next.rawReceipt, rawObjectSha256: next.rawSha256, byteSize: rawBytes.length, snapshotFileSha256: sha(snapshotBytes) };
   next.diffSummary = buildSnapshotDiff(previous, next); await writeJson(snapshotsPath, snapshots);
   await writeJson(path.join(operationRoot, "journal.json"), { schemaVersion: 1, artifactKind: "current-capital-facility-operation-journal", phase: "FINALIZE_STARTED", expectedMainSha: EXACT_MAIN, planSha256: sha(planBytes), completedObservation: { snapshotId: snapshot.snapshotId, manifestSha256: sha(Buffer.from(manifestBytes)), snapshotSha256: sha(observedSnapshotBytes), rawSha256: sha(rawBytes) }, completedStages: {} });
@@ -180,11 +207,11 @@ function receipt(fixture) {
     snapshotRawSha256: fixture.snapshot.rawSha256,
     capturedAt: fixture.snapshot.capturedAt,
     snapshotFileSha256: sha(fixture.snapshotBytes),
-    rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/${fixture.snapshot.sourceId}/20260817/${rawObjectSha256}.json`,
+    rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/${fixture.snapshot.sourceId}/${fixture.snapshot.capturedAt.slice(0, 10).replaceAll("-", "")}/${rawObjectSha256}.json`,
     rawObjectSha256,
     byteSize: fixture.rawBytes.length,
-    storedAt: "2026-08-17T11:00:30.000Z",
-    rawRetentionExpiresAt: "2026-11-15T11:00:00.000Z",
+    storedAt: new Date(CURRENT_SOURCE_HEAD_AT + 90_000).toISOString(),
+    rawRetentionExpiresAt: fixture.ledger.rawRetentionExpiresAt,
   };
 }
 
@@ -234,7 +261,7 @@ test("collect journals a complete exact terminal observation as COLLECTED withou
     repositoryRoot, operationRoot, serviceKey: "test", env: OCI_ENV, execFileImpl: async (file, args) => file === "git" ? exactMainExec(file, args) : ({ stdout: args[0] === "sts" ? "123456789012\n" : "" }),
     collectImpl: async () => terminalObservationFor(plan),
   });
-  assert.deepEqual(result, { snapshotId: "kric-station-convenience-standard-20260817T110000000Z", requestCount: 213, status: "COLLECTED" });
+  assert.deepEqual(result, { snapshotId: nextSnapshot(plan).snapshotId, requestCount: 213, status: "COLLECTED" });
   assert.equal(JSON.parse(await readFile(path.join(operationRoot, "journal.json"), "utf8")).phase, "COLLECTED");
 });
 
