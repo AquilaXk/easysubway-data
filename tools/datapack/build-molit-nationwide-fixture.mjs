@@ -4,7 +4,6 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { TextDecoder } from "node:util";
-import vm from "node:vm";
 
 import {
   normalizeMolitProviderLineName,
@@ -12,6 +11,7 @@ import {
 } from "./lib/molit-svg-provider-identity.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { retiredLineIds } from "./project-retired-transit-lines.mjs";
+import { parseSeoulMetroLineData } from "./lib/seoulmetro-line-data-parser.mjs";
 
 const sourceId = "molit-urban-rail-full-route";
 const kricProviderCodeCatalogSourceId = "kric-provider-code-catalog-20260228";
@@ -456,11 +456,9 @@ function seoulMetroRowsByKey(source) {
   if (!source.trim()) {
     return new Map();
   }
-  const context = {};
-  vm.createContext(context);
-  vm.runInContext(`${source}\nthis.__lines = lines;`, context);
+  const parsed = parseSeoulMetroLineData(source);
   const rows = new Map();
-  for (const line of Object.values(context.__lines ?? {})) {
+  for (const line of Object.values(parsed)) {
     const lineName = lineNameFromSeoulMetro(line.attr?.["data-label"]);
     if (!lineName) {
       continue;
