@@ -63,14 +63,8 @@ function expectedOutputs(snapshotId) {
   ];
 }
 
-export async function runCurrentSeoulAccessibilityRegistration({
-  observationName,
-  receiptPath,
-  repositoryRoot = ROOT,
-  env = process.env,
-  deps = {},
-} = {}) {
-  const operations = {
+function registrationOperations(deps) {
+  return {
     readFile,
     validateLineage,
     validateSnapshotIdentity: validateSeoulAccessibilitySnapshotIdentity,
@@ -81,15 +75,31 @@ export async function runCurrentSeoulAccessibilityRegistration({
     register: registerCurrentSeoulAccessibilitySnapshot,
     ...deps,
   };
-  const root = path.resolve(repositoryRoot); const name = requiredObservationName(observationName); const externalReceipt = await requiredExternalReceipt(root, receiptPath);
-  const serviceKey = normalizeDataGoKrServiceKey(env?.DATA_GO_KR_SERVICE_KEY);
+}
+
+async function readCurrentSeoulSnapshot(operations, root) {
   const ledger = JSON.parse(await operations.readFile(path.join(root, LEDGER), "utf8"));
-  const head = operations.validateLineage(ledger).headsBySource?.[SOURCE_ID]; const selected = ledger.filter((snapshot) => snapshot?.sourceId === SOURCE_ID && snapshot.snapshotId === head);
+  const head = operations.validateLineage(ledger).headsBySource?.[SOURCE_ID];
+  const selected = ledger.filter((snapshot) => snapshot?.sourceId === SOURCE_ID && snapshot.snapshotId === head);
   if (selected.length !== 1 || !/^[a-f0-9]{64}$/u.test(selected[0].rawReceipt?.snapshotFileSha256 ?? "")) throw new Error("current Seoul accessibility source head is invalid");
-  const previousPath = currentHeadSourcePath(root, head);
-  const previousBytes = await operations.readFile(previousPath); const previousSnapshot = operations.validateSnapshotIdentity(JSON.parse(previousBytes));
+  const previousBytes = await operations.readFile(currentHeadSourcePath(root, head));
+  const previousSnapshot = operations.validateSnapshotIdentity(JSON.parse(previousBytes));
   if (previousSnapshot?.snapshotId !== head || previousSnapshot.sourceId !== SOURCE_ID) throw new Error("current Seoul accessibility source head is invalid");
   if (selected[0].rawReceipt.snapshotFileSha256 !== sha(previousBytes)) throw new Error("current Seoul accessibility snapshot bytes mismatch");
+  return previousSnapshot;
+}
+
+export async function runCurrentSeoulAccessibilityRegistration({
+  observationName,
+  receiptPath,
+  repositoryRoot = ROOT,
+  env = process.env,
+  deps = {},
+} = {}) {
+  const operations = registrationOperations(deps);
+  const root = path.resolve(repositoryRoot); const name = requiredObservationName(observationName); const externalReceipt = await requiredExternalReceipt(root, receiptPath);
+  const serviceKey = normalizeDataGoKrServiceKey(env?.DATA_GO_KR_SERVICE_KEY);
+  const previousSnapshot = await readCurrentSeoulSnapshot(operations, root);
   const observation = await operations.collect({ serviceKey, previousSnapshot });
   if (observation?.snapshot?.sourceId !== SOURCE_ID || typeof observation.snapshot.snapshotId !== "string") throw new Error("current Seoul accessibility observation is invalid");
   const outputRoot = await operations.observationRoot(name);

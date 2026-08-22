@@ -9,6 +9,7 @@ import { buildCurrentCapitalRouteEdgeInput, canonicalCurrentCapitalRouteEdgeInpu
 import { buildCurrentCapitalStationLineInput, canonicalCurrentCapitalStationLineInputJson, readCurrentCapitalInputs } from "./build-current-capital-station-line-input.mjs";
 import { projectCandidateFixtureForAccessibilityAuthority } from "./build-datapack.mjs";
 import { atomicReplace, readStableRegularFile } from "./rebind-current-candidate-source-snapshots.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const OUTPUTS = Object.freeze([
@@ -28,7 +29,7 @@ function target(root, relative) {
   return resolved;
 }
 function parse(bytes, label) { try { return JSON.parse(bytes); } catch { throw new Error(`${label} is invalid JSON`); } }
-function canonical(value) { if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`; if (value && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`; return JSON.stringify(value); }
+function canonical(value) { if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`; if (value && typeof value === "object") return `{${Object.keys(value).sort(codepointCompare).map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`; return JSON.stringify(value); }
 function equalJson(left, right) { return canonical(left) === canonical(right); }
 function requireOne(rows, predicate, label) { const matches = rows.filter(predicate); if (matches.length !== 1) throw new Error(`${label} mismatch`); return matches[0]; }
 
