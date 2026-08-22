@@ -14,8 +14,28 @@
     "version": "1"
   },
   "declaredNonTransitions": {
-    "count": 1,
+    "count": 2,
     "entries": [
+      {
+        "after": "SUPPORTED",
+        "baselineSourceIds": [
+          "seoulmetro-cyberstation-route-map"
+        ],
+        "before": "SUPPORTED",
+        "lineScopedSourceIds": [
+          "seoul-metro-route-map-positions",
+          "seoulmetro-cyberstation-route-map"
+        ],
+        "reasonCode": "ALREADY_SUPPORTED_BY_INHERITED_SCOPE",
+        "reasonKo": "4호선 route_map_positions는 승계 pack의 cyberstation source만으로 이미 SUPPORTED다. 이 공식 좌표 source는 그 지원 상태를 전이시키지 않고 기존 근거를 보존한 채 하나의 추가 근거가 된다.",
+        "requirementKey": "capital:seoul-metro:seoul-4:route_map_positions",
+        "sourceDomain": "route_map_positions",
+        "sourceId": "seoul-metro-route-map-positions",
+        "supportingRecordCountByField": {
+          "route_map_label_polygon": 27,
+          "route_map_position": 27
+        }
+      },
       {
         "after": "MISSING",
         "before": "MISSING",
@@ -31,9 +51,9 @@
         }
       }
     ],
-    "modelKo": "재기술이 declare한 requirement 중 이 배치에서 전환되지 않는 것을 명시 선언한 목록이다. 소스가 덮는 노선 중 일부만 전환되는 편입을 표현하려면 이 축이 필요하다 — 재기술 lineIds는 admission 정본과 정확히 같아야 하고 선언한 lineIds는 requirementKeys가 전수 덮어야 하기 때문이다. 이 선언은 전환 범위를 넓히지 못한다: 기대 전환 집합에서 그 키를 빼는 것이 전부이고, 하네스가 ① 그 키가 실제로 SUPPORTED면 거부하고 ② 사유 코드가 요구하는 실측 술어를 확인한다. 선언하지 않은 키가 전환되지 않으면 그대로 fail closed다.",
-    "reasonCodesKo": "NO_SUPPORTING_ROWS_FOR_LINE — 그 scope를 뒷받침하는 official/field-verified provenance 행이 조립 결과에 필드마다 0건임을 하네스가 확인한다(아래 supportingRecordCountByField). 사유가 자유 서술로만 남지 않도록 코드마다 실측 술어를 하나씩 둔다. 새 사유 코드는 그 코드가 요구하는 실측 술어를 함께 넣어야만 allowlist에 오른다.",
-    "scopeKo": "선언 단위는 (sourceId, sourceDomain, lineId)다. 선언은 그 재기술이 declare한 requirement 키 안에서만 고를 수 있어 도메인 전체·소스 전체·와일드카드 선언이 들어올 통로가 없고, 한 재기술의 노선을 전부 선언하면 그 재기술이 아무것도 열지 않게 되므로 거부된다."
+    "modelKo": "재기술이 declare한 requirement 중 이 배치에서 전환되지 않는 것을 명시 선언한 목록이다. 소스가 덮는 노선 중 일부만 전환되는 편입을 표현하려면 이 축이 필요하다 — 재기술 lineIds는 admission 정본과 정확히 같아야 하고 선언한 lineIds는 requirementKeys가 전수 덮어야 하기 때문이다. 이 선언은 전환 범위를 넓히지 못한다: 기대 전환 집합에서 그 키를 빼는 것이 전부이고, 하네스가 ① NO_SUPPORTING_ROWS_FOR_LINE 키가 실제로 SUPPORTED면 거부하고 ② ALREADY_SUPPORTED_BY_INHERITED_SCOPE 키는 두 variant의 SUPPORTED·정확한 source 추가를 확인하며 ③ 사유 코드가 요구하는 실측 술어를 확인한다. 선언하지 않은 키가 전환되지 않으면 그대로 fail closed다.",
+    "reasonCodesKo": "ALREADY_SUPPORTED_BY_INHERITED_SCOPE — baseline과 lineScoped 모두 SUPPORTED여야 하고, baseline 근거 sourceIds에 없는 재기술 source 하나만 codepoint 순으로 추가됐음을 하네스가 확인한다. NO_SUPPORTING_ROWS_FOR_LINE — 그 scope를 뒷받침하는 official/field-verified provenance 행이 조립 결과에 필드마다 0건임을 하네스가 확인한다(아래 supportingRecordCountByField). 사유가 자유 서술로만 남지 않도록 코드마다 실측 술어를 하나씩 둔다. 새 사유 코드는 그 코드가 요구하는 실측 술어를 함께 넣어야만 allowlist에 오른다.",
+    "scopeKo": "선언 단위는 (sourceId, sourceDomain, lineId)다. 선언은 그 재기술이 declare한 requirement 키 안에서만 고를 수 있어 도메인 전체·소스 전체·와일드카드 선언이 들어올 통로가 없다. 한 재기술의 노선을 전부 선언하는 것은 기존 SUPPORTED 근거에 source 하나만 정확히 더하는 ALREADY_SUPPORTED_BY_INHERITED_SCOPE일 때만 허용하고, 그 밖에는 아무것도 열지 않는 재기술로 거부한다."
   },
   "deployedArtifact": {
     "byteSize": 1463745,
@@ -114,11 +134,11 @@
   "inputs": {
     "inheritedPack": {
       "path": "tools/datapack/release/capital-production-reviewed-pack.json",
-      "sha256": "3107c942c53ad5ccff7981a7bb8fb831a048e4e94176a0123bed0482cfd6f7b4"
+      "sha256": "ebda3a94dd6a21d05b58409e16e02dd5e64fc78bd32a62f01489280cd3241c90"
     },
     "inventory": {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "69cdbd88a169d77ef4941d197c5bae5a0ab26999418ce513778903abbe7d70d2"
+      "sha256": "a9643282f327a6c2859940af7fde31bf1c41fd8aa04c02f521465f291b5e096c"
     },
     "resolutionPlan": {
       "path": "tools/datapack/release/nationwide-public-api-coverage-search-plan-20260725.json",
@@ -130,25 +150,15 @@
     },
     "spec": {
       "path": "tools/datapack/nationwide-candidate-pack-spec.json",
-      "sha256": "57512260f212b10090b1d162453af509ae88753d20eb5a5ac8b1a931fc75f309"
+      "sha256": "c9f682db41ddad6b43a14c43d756108a951527d5facb3ffedc2ae6263d89ef3e"
     },
     "targets": {
       "path": "tools/datapack/nationwide-coverage-targets.json",
-      "sha256": "8bdde12230dfa7f7bdf2e04f70e517f92ddfa0fa2306aea88149a09edd0d21a2"
+      "sha256": "925847f9b45844edd573c7e695a92c28b22729c05a592bb48b821e5e707f1641"
     }
   },
   "issue": 2595,
   "lineScopeRedescriptions": [
-    {
-      "lineIds": [
-        "seoul-4"
-      ],
-      "requirementKeys": [
-        "capital:seoul-metro:seoul-4:route_map_positions"
-      ],
-      "sourceDomain": "route_map_positions",
-      "sourceId": "seoulmetro-cyberstation-route-map"
-    },
     {
       "lineIds": [
         "line-5b8d9b05e7e6"
@@ -507,6 +517,13 @@
         "line-3f41718e0833",
         "line-15b3b8a93259",
         "line-2b2d9eaa53d0"
+      ],
+      "nonTransitioningRequirements": [
+        {
+          "reasonCode": "ALREADY_SUPPORTED_BY_INHERITED_SCOPE",
+          "reasonKo": "4호선 route_map_positions는 승계 pack의 cyberstation source만으로 이미 SUPPORTED다. 이 공식 좌표 source는 그 지원 상태를 전이시키지 않고 기존 근거를 보존한 채 하나의 추가 근거가 된다.",
+          "requirementKey": "capital:seoul-metro:seoul-4:route_map_positions"
+        }
       ],
       "requirementKeys": [
         "capital:seoul-metro:line-472a81add377:route_map_positions",
@@ -1648,11 +1665,11 @@
         },
         "inputs": [
           {
-            "path": "tools/datapack/sources/incheon-transit-station-info-20260724.json",
-            "sha256": "52e5482eb42a40d7e29790a11742e59784753d1a60436ffc35cfea3be8e1b098"
+            "path": "tools/datapack/sources/incheon-transit-station-info-20260814.json",
+            "sha256": "5d1211aec21bebb544ac89c78344998e4f4b897191e6404278ad37421e14bac1"
           }
         ],
-        "materializedAt": "2026-07-24T06:00:00.000Z",
+        "materializedAt": "2026-08-14T15:34:07.000Z",
         "materializer": "tools/datapack/materialize-incheon-station-info.mjs",
         "regionId": "incheon",
         "reorderedTables": [
@@ -1698,8 +1715,8 @@
             "sha256": "b0df25d6747d63ac1577e4a57b556997bf581da549620b66afd8312fb096e5de"
           },
           {
-            "path": "tools/datapack/sources/incheon-transit-station-info-20260724.json",
-            "sha256": "52e5482eb42a40d7e29790a11742e59784753d1a60436ffc35cfea3be8e1b098"
+            "path": "tools/datapack/sources/incheon-transit-station-info-20260814.json",
+            "sha256": "5d1211aec21bebb544ac89c78344998e4f4b897191e6404278ad37421e14bac1"
           }
         ],
         "materializedAt": "2026-07-24T08:00:00.000Z",
@@ -1741,8 +1758,8 @@
             "sha256": "b0d6b3efcc4da46ec636a8ed409312d3078c7ff2fa68d7f76a682a19e0ce3ede"
           },
           {
-            "path": "tools/datapack/sources/incheon-transit-station-info-20260724.json",
-            "sha256": "52e5482eb42a40d7e29790a11742e59784753d1a60436ffc35cfea3be8e1b098"
+            "path": "tools/datapack/sources/incheon-transit-station-info-20260814.json",
+            "sha256": "5d1211aec21bebb544ac89c78344998e4f4b897191e6404278ad37421e14bac1"
           }
         ],
         "materializedAt": "2026-07-24T07:00:00.000Z",
@@ -2337,17 +2354,6 @@
     {
       "after": "SUPPORTED",
       "before": "MISSING",
-      "coveredFields": 2,
-      "denominator": 2,
-      "requirementKey": "capital:seoul-metro:seoul-4:route_map_positions",
-      "sourceIds": [
-        "seoul-metro-route-map-positions",
-        "seoulmetro-cyberstation-route-map"
-      ]
-    },
-    {
-      "after": "SUPPORTED",
-      "before": "MISSING",
       "coveredFields": 5,
       "denominator": 5,
       "requirementKey": "daegu:daegu-transportation:line-0ffaa95b1b5d:accessibility_facilities",
@@ -2610,8 +2616,8 @@
         "totalCount": 45
       },
       "launchRequired": {
-        "supportedCount": 0,
-        "supportedRatio": 0,
+        "supportedCount": 1,
+        "supportedRatio": 0.0037,
         "totalCount": 270
       },
       "pilotRequirements": [
@@ -4614,32 +4620,35 @@
         },
         {
           "blockingThreshold": 1,
-          "coverageRatio": 0,
-          "coveredFields": 0,
+          "coverageRatio": 1,
+          "coveredFields": 2,
           "denominator": 2,
           "fieldCoverage": [
             {
               "field": "route_map_position",
-              "sourceIds": [],
-              "status": "missing"
+              "sourceIds": [
+                "seoulmetro-cyberstation-route-map"
+              ],
+              "status": "covered"
             },
             {
               "field": "route_map_label_polygon",
-              "sourceIds": [],
-              "status": "missing"
+              "sourceIds": [
+                "seoulmetro-cyberstation-route-map"
+              ],
+              "status": "covered"
             }
           ],
-          "missingFields": [
-            "route_map_position",
-            "route_map_label_polygon"
-          ],
+          "missingFields": [],
           "releaseTier": "LAUNCH_REQUIRED",
           "requirementKey": "capital:seoul-metro:seoul-4:route_map_positions",
-          "sourceIds": [],
-          "status": "MISSING",
+          "sourceIds": [
+            "seoulmetro-cyberstation-route-map"
+          ],
+          "status": "SUPPORTED",
           "supportingRecordCountByField": {
-            "route_map_label_polygon": 0,
-            "route_map_position": 0
+            "route_map_label_polygon": 2,
+            "route_map_position": 2
           }
         },
         {
@@ -5603,8 +5612,12 @@
           }
         }
       ],
-      "supportedByEvidenceModel": {},
-      "supportedRequirementKeys": []
+      "supportedByEvidenceModel": {
+        "owner-authored-canonical": 1
+      },
+      "supportedRequirementKeys": [
+        "capital:seoul-metro:seoul-4:route_map_positions"
+      ]
     },
     "lineScoped": {
       "descriptionKo": "line-scope 재기술 이후 상태. candidate fixture와 tracked source-inventory.json이 같은 lineIds를 기술해 (operator, line) 단일 pair provenance가 나온 실행이다.",

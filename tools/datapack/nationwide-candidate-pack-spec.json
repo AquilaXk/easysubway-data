@@ -830,8 +830,8 @@
     {
       "regionId": "incheon",
       "materializer": "tools/datapack/materialize-incheon-station-info.mjs",
-      "materializedAt": "2026-07-24T06:00:00.000Z",
-      "snapshotPath": "tools/datapack/sources/incheon-transit-station-info-20260724.json",
+      "materializedAt": "2026-08-14T15:34:07.000Z",
+      "snapshotPath": "tools/datapack/sources/incheon-transit-station-info-20260814.json",
       "lines": [
         { "lineNumber": 2, "lineId": "line-42b5805f3b5a" },
         { "lineNumber": 1, "lineId": "line-98718184f016" },
@@ -869,13 +869,13 @@
       "reorderedTables": ["coverageLineOperatorScopes"],
       "reorderedTablesKo": "이 materializer는 7호선 scope를 더한 뒤 coverageLineOperatorScopes를 (권역:운영기관:노선) 오름차순으로 다시 정렬한다(실측). 운영기관·노선·역은 append만 하므로 선언 표는 이 하나뿐이다.",
       "reasonKo": "#2595 B3. 인천 1·2호선과 7호선 인천 구간의 route_graph_topology·route_map_positions·station_line_membership requirement를 판정에 올리려면 candidate root pack이 공식 역사정보 행을 담아야 한다. 승계 원본에 인천 운영기관·노선·역이 아예 없어 이 편입이 그 셋을 함께 싣고, 뒤 두 인천 편입이 이 편입의 소스 등재와 역노선 계보를 선행 조건으로 검사한다(부산과 같은 모양). 이미 admission이 끝난 snapshot(#2481·#2490)을 재생한다.",
-      "materializedAtReasonKo": "이 snapshot의 신선도 창은 capturedAt 2026-07-24T06:00:00Z ~ freshUntil 2026-07-25T06:00:00Z이며 materializer가 [capturedAt, freshUntil) 양끝과 창 길이 24시간을 함께 검사한다 — pin은 그 하한 정각이다. 인천 세 편입의 창은 서로소가 아니라 어긋나게 겹친다(실측): 이 창과 편의시설 창 [07:00Z, 다음날 07:00Z), 시각표 창 [08:00Z, 다음날 08:00Z)의 교집합은 [2026-07-24T08:00:00Z, 2026-07-25T06:00:00Z)이다. 그래도 pin은 편입마다 각자의 하한에 따로 둔다 — 한 소스의 snapshot이 갱신되면 다른 편입의 기준 시각까지 함께 흔들려서는 안 된다."
+      "materializedAtReasonKo": "이 current topology admission snapshot의 신선도 창은 capturedAt 2026-08-14T15:34:07Z ~ freshUntil 2026-08-15T15:34:07Z이며 materializer가 [capturedAt, freshUntil) 양끝과 창 길이 24시간을 함께 검사한다 — pin은 그 하한 정각이다. 인천 세 편입은 각자 소스의 신선도 pin을 유지하고, 시각표·편의시설 편입의 topologySnapshotPath만 이 current admission snapshot에 결속한다. 한 소스의 snapshot 갱신이 다른 편입의 고유 기준 시각까지 바꾸지는 않는다."
     },
     {
       "regionId": "incheon",
       "materializer": "tools/datapack/materialize-incheon-timetable.mjs",
       "materializedAt": "2026-07-24T08:00:00.000Z",
-      "topologySnapshotPath": "tools/datapack/sources/incheon-transit-station-info-20260724.json",
+      "topologySnapshotPath": "tools/datapack/sources/incheon-transit-station-info-20260814.json",
       "lines": [
         { "lineNumber": 1, "lineId": "line-98718184f016", "snapshotPath": "tools/datapack/sources/incheon-line1-train-timetable-20260724.json" },
         { "lineNumber": 2, "lineId": "line-42b5805f3b5a", "snapshotPath": "tools/datapack/sources/incheon-line2-train-timetable-20260724.json" }
@@ -917,7 +917,7 @@
       "materializer": "tools/datapack/materialize-incheon-accessibility.mjs",
       "materializedAt": "2026-07-24T07:00:00.000Z",
       "snapshotPath": "tools/datapack/sources/incheon-transit-accessibility-20260724.json",
-      "topologySnapshotPath": "tools/datapack/sources/incheon-transit-station-info-20260724.json",
+      "topologySnapshotPath": "tools/datapack/sources/incheon-transit-station-info-20260814.json",
       "lines": [
         { "lineNumber": 2, "lineId": "line-42b5805f3b5a" },
         { "lineNumber": 1, "lineId": "line-98718184f016" },
@@ -957,14 +957,6 @@
     }
   ],
   "lineScopeRedescriptions": [
-    {
-      "sourceId": "seoulmetro-cyberstation-route-map",
-      "sourceDomain": "route_map_positions",
-      "lineIds": ["seoul-4"],
-      "requirementKeys": ["capital:seoul-metro:seoul-4:route_map_positions"],
-      "reasonKo": "B0 파일럿 1건. 이 소스는 admission이 완결(admissionEvidence.decision=APPROVED)돼 있고 승계 pack에 seoul-4 route_map_positions 행 2건(derivationKind=OFFICIAL, labelPolygon 포함)이 이미 있다. coverageScope에 lineIds가 있어야 build-datapack.mjs recordCoverageScopes가 (operator, line) 단일 pair line-scoped provenance를 낸다.",
-      "inventorySyncKo": "같은 lineIds를 tools/datapack/source-inventory.json의 같은 소스 coverageScope에도 적어야 한다. 하네스가 두 정본의 lineIds 일치를 fail closed로 확인한다."
-    },
     {
       "sourceId": "molit-urban-rail-full-route-daegu-line1-membership",
       "sourceDomain": "station_line_membership",
@@ -1269,7 +1261,14 @@
         "capital:seoul-metro:line-15b3b8a93259:route_map_positions",
         "capital:seoul-metro:line-2b2d9eaa53d0:route_map_positions"
       ],
-      "reasonKo": "B3. 수도권 1~8호선 route_map_position·route_map_label_polygon을 대는 공식 좌표 snapshot 소스다. 8건 중 4호선은 B0 파일럿의 cyberstation 소스와 함께 뒷받침하므로 그 requirement의 근거 소스는 두 개다 — 하네스가 전이를 뒷받침한 소스 집합이 등재분과 정확히 같은지 fail closed로 확인한다. lineIds 순서는 admission 정본이 1호선부터 8호선 순으로 기술한 그대로다.",
+      "nonTransitioningRequirements": [
+        {
+          "requirementKey": "capital:seoul-metro:seoul-4:route_map_positions",
+          "reasonCode": "ALREADY_SUPPORTED_BY_INHERITED_SCOPE",
+          "reasonKo": "4호선 route_map_positions는 승계 pack의 cyberstation source만으로 이미 SUPPORTED다. 이 공식 좌표 source는 그 지원 상태를 전이시키지 않고 기존 근거를 보존한 채 하나의 추가 근거가 된다."
+        }
+      ],
+      "reasonKo": "B3. 수도권 1~8호선 route_map_position·route_map_label_polygon을 대는 공식 좌표 snapshot 소스다. 8건 중 4호선은 B0 파일럿의 cyberstation source만으로 이미 SUPPORTED였고, 이 source가 기존 근거를 보존한 채 추가된다. 하네스는 ALREADY_SUPPORTED_BY_INHERITED_SCOPE 선언에서 baseline·lineScoped 모두 SUPPORTED인지와 sourceIds가 기존 근거에 이 source 하나를 정확히 더한 집합인지 fail closed로 확인한다. 나머지 7건은 이 재기술로 전이한다. lineIds 순서는 admission 정본이 1호선부터 8호선 순으로 기술한 그대로다.",
       "inventorySyncKo": "하네스가 spec lineIds와 tracked source-inventory coverageScope.lineIds의 일치를 fail closed로 확인한다. 이 소스는 이미 8노선 line-scope로 기술돼 있어 재기술은 admission 정본을 그대로 승계한다(inventory 변경 없음)."
     },
     {
