@@ -10,6 +10,7 @@ import { publishImmutableObjectPlan } from "./publish-object-storage.mjs";
 import { readStableRegularFile } from "./rebind-current-candidate-source-snapshots.mjs";
 import { buildSnapshotDiff, parseCredentialFreeObjectUri, validateLineage } from "./source-snapshot-policy.mjs";
 import { requireOciParBaseUrl } from "./lib/kric-raw-object-storage.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const SHA256 = /^[a-f0-9]{64}$/u;
@@ -146,8 +147,8 @@ export function validateSelectedReleaseSourceRehomeManifest({ manifest, snapshot
     }
     const allowedChanges = new Set(["snapshotId", "previousSnapshotId", "rawObjectUri", "retrievedAt", "freshnessExpiresAt", "rawRetentionExpiresAt", "diffSummary"]);
     const legacyCoverageNormalization = current.coverageCount == null && successor.coverageCount === 0;
-    const successorKeys = Object.keys(successor).filter((key) => !(legacyCoverageNormalization && key === "coverageCount")).sort();
-    if (JSON.stringify(successorKeys) !== JSON.stringify(Object.keys(current).sort())) throw new Error("rehome successor schema drift");
+    const successorKeys = Object.keys(successor).filter((key) => !(legacyCoverageNormalization && key === "coverageCount")).sort(codepointCompare);
+    if (JSON.stringify(successorKeys) !== JSON.stringify(Object.keys(current).sort(codepointCompare))) throw new Error("rehome successor schema drift");
     for (const key of Object.keys(current)) if (!allowedChanges.has(key) && JSON.stringify(successor[key]) !== JSON.stringify(current[key])) throw new Error("rehome semantic evidence drift");
     const plusOneMillisecond = (value) => new Date(Date.parse(value) + 1).toISOString();
     if (successor.retrievedAt !== plusOneMillisecond(current.retrievedAt)
