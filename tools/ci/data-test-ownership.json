@@ -163,6 +163,10 @@
     "data396": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/396",
       "title": "[Data][Release Blocker][P0] full-capital 2674-edge fixture와 456-edge authority로 release-candidate 전환"
+    },
+    "data446": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/446",
+      "title": "[Data][Release Blocker][P0] Seoul 접근성 current OCI successor 등록"
     }
   },
   "workflows": {
@@ -410,6 +414,7 @@
     {"path":"tools/datapack/rebind-current-candidate-source-snapshots.test.mjs","semanticOwner":"data329","classes":["required-pr"],"durationMs":696},
     {"path":"tools/datapack/reconstruct-transit-trips.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":131},
     {"path":"tools/datapack/refresh-route-map-admission-freshness.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":142},
+    {"path":"tools/datapack/register-current-seoul-accessibility-snapshot.test.mjs","semanticOwner":"data446","classes":["required-pr"],"durationMs":900},
     {"path":"tools/datapack/register-current-seoul-transfer-source.test.mjs","semanticOwner":"data350","classes":["required-pr"],"durationMs":385},
     {"path":"tools/datapack/register-kric-standard-accessibility-snapshot.test.mjs","semanticOwner":"data39","classes":["required-pr"],"durationMs":2317},
     {"path":"tools/datapack/register-seoul-transfer-source-snapshot.test.mjs","semanticOwner":"data350","classes":["required-pr"],"durationMs":43},
