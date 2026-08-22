@@ -1606,8 +1606,13 @@ test("candidate 안전 경계는 spec 편집만으로 넓힐 수 없다", async 
     rejectsValidationWith(
       (value) => {
         // requirementKeys까지 함께 넓혀 spec 내부 정합은 맞춘 채로 정본 결속만 어긋나게 한다.
-        value.lineScopeRedescriptions[0].lineIds = ["seoul-4", "seoul-2"];
-        value.lineScopeRedescriptions[0].requirementKeys = [
+        const capitalRouteMapRedescription = value.lineScopeRedescriptions.find(
+          ({ sourceId, sourceDomain }) =>
+            sourceId === CAPITAL_SEOUL_ROUTE_MAP_SOURCE_ID && sourceDomain === "route_map_positions",
+        );
+        assert.ok(capitalRouteMapRedescription, "capital route-map line-scope redescription must exist");
+        capitalRouteMapRedescription.lineIds = ["seoul-4", "seoul-2"];
+        capitalRouteMapRedescription.requirementKeys = [
           PILOT_REQUIREMENT_KEY,
           "capital:seoul-metro:seoul-2:route_map_positions",
         ];
@@ -1619,8 +1624,13 @@ test("candidate 안전 경계는 spec 편집만으로 넓힐 수 없다", async 
   await context.test("requirementKeys가 덮지 않는 lineIds는 거부된다", () => {
     rejectsValidationWith(
       (value) => {
-        value.lineScopeRedescriptions[0].lineIds = ["seoul-4", "seoul-2"];
-        value.lineScopeRedescriptions[0].requirementKeys = [PILOT_REQUIREMENT_KEY];
+        const capitalRouteMapRedescription = value.lineScopeRedescriptions.find(
+          ({ sourceId, sourceDomain }) =>
+            sourceId === CAPITAL_SEOUL_ROUTE_MAP_SOURCE_ID && sourceDomain === "route_map_positions",
+        );
+        assert.ok(capitalRouteMapRedescription, "capital route-map line-scope redescription must exist");
+        capitalRouteMapRedescription.lineIds = ["seoul-4", "seoul-2"];
+        capitalRouteMapRedescription.requirementKeys = [PILOT_REQUIREMENT_KEY];
       },
       /requirementKeys must cover every redescribed line/,
     );
