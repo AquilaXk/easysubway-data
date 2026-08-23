@@ -513,6 +513,7 @@ test("activation CLI는 Data-owned capital/Incheon snapshot paths만 수용한�
   assert.deepEqual(parseCurrentTopologyRefreshArgs([
     "--capital-topology", "tools/datapack/sources/capital-route-topology-20260823.json",
     "--incheon-topology", "tools/datapack/sources/incheon-transit-station-info-20260823.json",
+    "--itx-current-admission", "tools/datapack/itx-current-network-edge-admission-20260823.json",
     "--builder-git-sha", "b".repeat(40),
     "--build-now", "2026-08-23T14:53:48.203Z",
     "--check",
@@ -520,6 +521,7 @@ test("activation CLI는 Data-owned capital/Incheon snapshot paths만 수용한�
     check: true,
     capital_topology: "tools/datapack/sources/capital-route-topology-20260823.json",
     incheon_topology: "tools/datapack/sources/incheon-transit-station-info-20260823.json",
+    itx_current_admission: "tools/datapack/itx-current-network-edge-admission-20260823.json",
     builder_git_sha: "b".repeat(40),
     build_now: "2026-08-23T14:53:48.203Z",
   });
@@ -888,8 +890,11 @@ test("topology-only refresh는 admission·canonical·candidate identity를 한 �
   const currentTopologyPath = "tools/datapack/sources/capital-route-topology-20260823.json";
   const currentIncheonTopologyPath =
     "tools/datapack/sources/incheon-transit-station-info-20260823.json";
+  const currentItxAdmissionPath =
+    "tools/datapack/itx-current-network-edge-admission-20260810.json";
   const [baseSpec, sourceInventory, currentTopologyBytes, baselineTopology, canonical,
-    productionScopePolicyBytes, currentIncheonTopologyBytes] = await Promise.all([
+    productionScopePolicyBytes, currentIncheonTopologyBytes, currentItxAdmissionBytes] =
+    await Promise.all([
     readJson("tools/datapack/release/candidate-build-spec.json"),
     readJson("tools/datapack/source-inventory.json"),
     readFile(path.join(root, currentTopologyPath)),
@@ -897,6 +902,7 @@ test("topology-only refresh는 admission·canonical·candidate identity를 한 �
     readJson("tools/datapack/release/capital-production-canonical-pack.json"),
     readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json")),
     readFile(path.join(root, currentIncheonTopologyPath)),
+    readFile(path.join(root, currentItxAdmissionPath)),
   ]);
   const currentTopology = JSON.parse(currentTopologyBytes);
   const currentIncheonTopology = JSON.parse(currentIncheonTopologyBytes);
@@ -914,6 +920,8 @@ test("topology-only refresh는 admission·canonical·candidate identity를 한 �
     currentIncheonTopology,
     currentIncheonTopologyBytes,
     currentIncheonTopologyPath,
+    currentItxAdmissionPath,
+    currentItxAdmissionBytes,
     baselineTopology,
     canonical,
     productionScopePolicyBytes,
@@ -935,6 +943,10 @@ test("topology-only refresh는 admission·canonical·candidate identity를 한 �
     sha256(result.topologyReverificationBytes),
   );
   assert.equal(result.projectedEdgeCount, currentTopology.totalEdgeCount);
+  assert.deepEqual(result.spec.networkEdgeEvidence.itxCurrentTopologyAdmission, {
+    path: currentItxAdmissionPath,
+    sha256: sha256(currentItxAdmissionBytes),
+  });
   const incheon = result.sourceInventory.sources
     .find(({ id }) => id === "incheon-transit-station-info");
   assert.equal(

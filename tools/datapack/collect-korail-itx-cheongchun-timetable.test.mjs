@@ -3348,19 +3348,26 @@ test("ITX CLI promotion은 station catalog와 주입된 repository root를 전�
   assert.equal(result.promotion.sourceTimetableArtifact.status, "ADMITTED");
 });
 
-test("ITX CLI current refresh는 admitted source에 station catalog snapshot을 전달한다", async () => {
+test("ITX CLI current refresh는 corridor가 동일한 admitted source의 이전 station catalog identity를 허용한다", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-current-baseline-"));
   const sourceDir = path.join(dir, "tools/datapack/sources");
   const output = path.join(dir, "missing.json");
   let previousAdmittedArtifact;
   try {
     await mkdir(sourceDir, { recursive: true });
+    const previousCatalogIdentity = {
+      ...structuredClone(PACK_IDENTITY),
+      catalogPackId: "itx-previous-catalog-v1",
+      payloadSha256: "1".repeat(64),
+      manifestSha256: "2".repeat(64),
+    };
     const previous = sourceCandidate({
       artifactId: "itx-cheongchun-source-timetable-20260714010000000",
       observedAt: "2026-07-14T01:00:00.000Z",
       selectedServiceDates: { "8": "20260715", "7": "20260718", "9": "20260719" },
       freshUntil: "2026-07-20T00:00:00+09:00",
       promotionStatus: "SUPPORTED",
+      stationCatalogPackIdentity: previousCatalogIdentity,
     });
     const { reference } = await writeAdmittedSourceBundle(sourceDir, previous);
     reference.promotion = {
@@ -3398,8 +3405,59 @@ test("ITX CLI current refresh는 admitted source에 station catalog snapshot을 
     });
 
     assert.equal(result.exitCode, 1);
-    assert.deepEqual(previousAdmittedArtifact.stationCatalogPackIdentity, PACK_IDENTITY);
+    assert.deepEqual(previousAdmittedArtifact.stationCatalogPackIdentity, previousCatalogIdentity);
     assert.equal(previousAdmittedArtifact.artifactId, previous.artifactId);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("ITX CLI current refresh는 admitted source의 corridor authority 변경을 거부한다", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-current-corridor-drift-"));
+  const sourceDir = path.join(dir, "tools/datapack/sources");
+  const output = path.join(dir, "missing.json");
+  try {
+    await mkdir(sourceDir, { recursive: true });
+    const previous = sourceCandidate({
+      artifactId: "itx-cheongchun-source-timetable-20260714010000000",
+      observedAt: "2026-07-14T01:00:00.000Z",
+      selectedServiceDates: { "8": "20260715", "7": "20260718", "9": "20260719" },
+      freshUntil: "2026-07-20T00:00:00+09:00",
+      promotionStatus: "SUPPORTED",
+    });
+    previous.stationRosters[0].stations[0].nameKo = "변경된역";
+    previous.stationRosters[0].stations[0].providerStationName = "변경된역";
+    const { reference } = await writeAdmittedSourceBundle(sourceDir, previous);
+    reference.promotion = {
+      mode: "CURRENT_CANDIDATE_OWNER_APPROVED",
+      previousArtifactSha256: null,
+      previousArtifactPath: null,
+      approvalUrl: "https://example.test/itx-current-admission",
+      approvedArtifactSha256: reference.sha256,
+    };
+    const contractPath = await writeCoverageContract(dir, JSON.stringify({
+      sourceTimetableArtifact: reference,
+      officialEvidence: {
+        korailCompletenessAdmission: {
+          stationCatalogPackIdentity: structuredClone(PACK_IDENTITY),
+        },
+      },
+    }));
+
+    await assert.rejects(runKorailItxCompletenessCli({
+      argv: [
+        "--day8-date", "20260715",
+        "--day7-date", "20260718",
+        "--day9-date", "20260719",
+        "--station-catalog-pack", PACK_PATH,
+        "--coverage-contract", contractPath,
+        "--output", output,
+      ],
+      env: { DATA_GO_KR_SERVICE_KEY: "key" },
+      repositoryRoot: dir,
+      now: new Date("2026-07-14T02:00:00.000Z"),
+      collectImpl: async () => assert.fail("corridor drift must stop before provider collection"),
+    }), /CANONICAL_CORRIDOR_AUTHORITY_INVALID/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
