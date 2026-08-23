@@ -19,7 +19,9 @@ const molitRecords = new TextDecoder("euc-kr").decode(molitRaw).trim().split(/\r
   return { region_code, region_name, operator_name, line_name, station_sequence: Number(station_sequence), station_name };
 });
 const positionCsv = await readFile(path.join(repositoryRoot, "tools/datapack/fixtures/seoul-route-map-positions-raw/data-go-15099316.csv"));
-const positionRows = parseSeoulRouteMapPositionsCsv(positionCsv).rawPositions.map(({ line, stationCode, stationName, latitude, longitude, basisDate }, index) => ({ "연번": `${index + 1}`, "호선": line, "고유역번호(외부역코드)": stationCode, "역명": stationName, "위도": `${latitude}`, "경도": `${longitude}`, "작성기준일": basisDate }));
+const positionProviderFields = ["연번", "호선", "고유역번호(외부역코드)", "역명", "위도", "경도", "작성기준일", "작성일자"];
+const positionProviderSchemaFingerprint = sha(JSON.stringify([...positionProviderFields].sort()));
+const positionRows = parseSeoulRouteMapPositionsCsv(positionCsv).rawPositions.map(({ line, stationCode, stationName, latitude, longitude, basisDate }, index) => ({ "연번": `${index + 1}`, "호선": line, "고유역번호(외부역코드)": stationCode, "역명": stationName, "위도": `${latitude}`, "경도": `${longitude}`, "작성기준일": basisDate, "작성일자": basisDate }));
 const positionsRaw = Buffer.from(JSON.stringify({ currentCount: positionRows.length, data: positionRows, matchCount: positionRows.length, page: 1, perPage: 1000, totalCount: positionRows.length }));
 const positionRecords = projectPositions(positionsRaw, "2026-08-22T12:00:00.000Z");
 
@@ -29,7 +31,7 @@ async function validCollection({ sourceSnapshots, observedAt }) {
   const molitId = `molit-urban-rail-full-route-current-${observedAt.replaceAll(/[-:.]/gu, "").replace("Z", "Z")}`;
   const molitProjection = Buffer.from(`${JSON.stringify(molitRecords)}\n`);
   const molitMigration = { schemaVersion: 1, artifactKind: "source-projection-migration-evidence", migrationKind: "LEGACY_SAMPLE_TO_FULL_CONSUMED_FIELDS", sourceId: molitPrevious.sourceId, legacySnapshotId: molitPrevious.snapshotId, legacyRawSha256: molitPrevious.rawSha256, legacySchemaFingerprint: molitPrevious.schemaFingerprint, legacyProviderRecordHashes: molitPrevious.providerRecordHashes, fullProjectionSha256: sha(molitProjection), fullProjectionSchemaFingerprint: sha(JSON.stringify(["region_code", "region_name", "operator_name", "line_name", "station_sequence", "station_name"])), fullProjectionRowCount: molitRecords.length, newSnapshotId: molitId };
-  return { observedAt, positions: { sourceId: "seoul-metro-route-map-positions", rawBytes: positionsRaw, rawSha256: sha(positionsRaw), records: positionRecords, replaced: routePrevious, replacement: { schemaVersion: 1, artifactKind: "source-projection-migration-evidence", migrationKind: "CROSS_SOURCE_CANONICAL_REPLACEMENT", sourceId: "seoul-metro-route-map-positions", replacedSourceId: routePrevious.sourceId, replacedSnapshotId: routePrevious.snapshotId, replacedRawSha256: routePrevious.rawSha256, replacedSchemaFingerprint: routePrevious.schemaFingerprint, candidateSlotSourceId: routePrevious.sourceId } }, molit: { sourceId: molitPrevious.sourceId, rawBytes: molitRaw, rawSha256: sha(molitRaw), records: molitRecords, previous: molitPrevious, migration: molitMigration } };
+  return { observedAt, positions: { sourceId: "seoul-metro-route-map-positions", rawBytes: positionsRaw, rawSha256: sha(positionsRaw), providerSchemaFingerprint: positionProviderSchemaFingerprint, records: positionRecords, replaced: routePrevious, replacement: { schemaVersion: 1, artifactKind: "source-projection-migration-evidence", migrationKind: "CROSS_SOURCE_CANONICAL_REPLACEMENT", sourceId: "seoul-metro-route-map-positions", replacedSourceId: routePrevious.sourceId, replacedSnapshotId: routePrevious.snapshotId, replacedRawSha256: routePrevious.rawSha256, replacedSchemaFingerprint: routePrevious.schemaFingerprint, candidateSlotSourceId: routePrevious.sourceId } }, molit: { sourceId: molitPrevious.sourceId, rawBytes: molitRaw, rawSha256: sha(molitRaw), records: molitRecords, previous: molitPrevious, migration: molitMigration } };
 }
 
 async function receiptFor(input, operationRoot, now) {
@@ -74,6 +76,7 @@ test("runner stages publisher-contract raw.json/raw.csv, publishes exactly two b
   assert.equal(calls.length, 2); assert.equal(registered.observations.length, 2);
   for (const { snapshot } of registered.observations) assert.equal(snapshot.providerRecordHashes.length, snapshot.rowCount);
   assert.equal(registered.observations[0].snapshot.previousSnapshotId, null);
+  assert.equal(registered.observations[0].snapshot.schemaFingerprint, positionProviderSchemaFingerprint);
   assert.equal(registered.observations[0].snapshot.projectionMigration.migrationKind, "CROSS_SOURCE_CANONICAL_REPLACEMENT");
 });
 
@@ -94,6 +97,14 @@ test("runner rejects an invalid second observation before the first publication"
   t.after(() => rm(operationRoot, { recursive: true, force: true }));
   let publishes = 0;
   await assert.rejects(runCurrentStaticNetworkSuccessors({ repositoryRoot, operationRoot, now: new Date("2026-08-14T16:00:00.000Z"), assertExactMain: async () => "0".repeat(40), collectImpl: async (input) => { const value = await validCollection(input); value.molit.rawSha256 = "0".repeat(64); return value; }, publishImpl: async () => { publishes += 1; }, registerImpl: async () => {} }), /MOLIT projection identity/);
+  assert.equal(publishes, 0);
+});
+
+test("runner rejects an unbound provider schema before the first publication", async (t) => {
+  const operationRoot = await mkdtemp(path.join(os.tmpdir(), "static-network-runner-provider-schema-"));
+  t.after(() => rm(operationRoot, { recursive: true, force: true }));
+  let publishes = 0;
+  await assert.rejects(runCurrentStaticNetworkSuccessors({ repositoryRoot, operationRoot, now: new Date("2026-08-14T16:00:00.000Z"), assertExactMain: async () => "0".repeat(40), collectImpl: async (input) => { const value = await validCollection(input); value.positions.providerSchemaFingerprint = "0".repeat(64); return value; }, publishImpl: async () => { publishes += 1; }, registerImpl: async () => {} }), /public replacement identity/);
   assert.equal(publishes, 0);
 });
 

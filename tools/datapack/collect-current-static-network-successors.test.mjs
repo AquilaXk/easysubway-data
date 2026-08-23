@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
@@ -9,6 +10,8 @@ const snapshots = JSON.parse(await readFile(new URL("./release/source-snapshots.
 const selected = snapshots.filter(({ sourceId }) => ["molit-urban-rail-full-route", "seoulmetro-cyberstation-route-map"].includes(sourceId));
 const csv = await readFile(new URL("./sources/molit-urban-rail-full-route-20251211.csv", import.meta.url));
 const positionCsv = await readFile(new URL("./fixtures/seoul-route-map-positions-raw/data-go-15099316.csv", import.meta.url));
+const positionProviderFields = ["연번", "호선", "고유역번호(외부역코드)", "역명", "위도", "경도", "작성기준일", "작성일자"];
+const positionProviderSchemaFingerprint = createHash("sha256").update(JSON.stringify([...positionProviderFields].sort())).digest("hex");
 const publicRows = parseSeoulRouteMapPositionsCsv(positionCsv).rawPositions.map(
   ({ line, stationCode, stationName, latitude, longitude, basisDate }, index) => ({
     "연번": `${index + 1}`,
@@ -18,6 +21,7 @@ const publicRows = parseSeoulRouteMapPositionsCsv(positionCsv).rawPositions.map(
     "위도": `${latitude}`,
     "경도": `${longitude}`,
     "작성기준일": basisDate,
+    "작성일자": basisDate,
   }),
 );
 const publicEnvelope = () => Buffer.from(JSON.stringify({ currentCount: publicRows.length, data: publicRows, matchCount: publicRows.length, page: 1, perPage: 1000, totalCount: publicRows.length }));
@@ -35,6 +39,8 @@ test("two official observations are equivalent before publication", async () => 
   const output = await collectCurrentStaticNetworkSuccessors({ sourceSnapshots: selected, observedAt: "2026-08-22T00:00:00.000Z", serviceKey: "test-key", fetchImpl: async (url, init) => { calls.push([url.href, init.redirect]); return fetchImpl(url, init); } });
   assert.equal(output.positions.sourceId, "seoul-metro-route-map-positions");
   assert.equal(output.positions.records.length, 276);
+  assert.equal(output.positions.providerSchemaFingerprint, positionProviderSchemaFingerprint);
+  assert.ok(output.positions.records.every((record) => !("작성일자" in record)));
   assert.equal(output.positions.records.filter(({ latitude, longitude }) =>
     latitude === 37.562182 && longitude === 126.82693).length, 2);
   assert.equal(output.positions.replacement.migrationKind, "CROSS_SOURCE_CANONICAL_REPLACEMENT");
@@ -87,6 +93,21 @@ test("Seoul public positions reject deletion and same-count membership substitut
     await assert.rejects(
       collectCurrentStaticNetworkSuccessors({ sourceSnapshots: selected, observedAt: "2026-08-22T00:00:00.000Z", serviceKey: "test-key", fetchImpl: publicFetcher({ positions }) }),
       /STATIC_NETWORK_SUCCESSOR_SEOUL_POSITIONS_SCOPE/,
+    );
+  }
+});
+
+test("Seoul public positions require the exact current provider schema", async () => {
+  const cases = [
+    publicRows.map((row, index) => index === 0 ? Object.fromEntries(Object.entries(row).filter(([field]) => field !== "작성일자")) : row),
+    publicRows.map((row, index) => index === 0 ? { ...row, "알수없는필드": "drift" } : row),
+    publicRows.map((row, index) => index === 0 ? { ...row, "작성일자": "2025/08/14" } : row),
+  ];
+  for (const rows of cases) {
+    const positions = Buffer.from(JSON.stringify({ currentCount: rows.length, data: rows, matchCount: rows.length, page: 1, perPage: 1000, totalCount: rows.length }));
+    await assert.rejects(
+      collectCurrentStaticNetworkSuccessors({ sourceSnapshots: selected, observedAt: "2026-08-22T00:00:00.000Z", serviceKey: "test-key", fetchImpl: publicFetcher({ positions }) }),
+      /STATIC_NETWORK_SUCCESSOR_SEOUL_POSITIONS_SCHEMA/,
     );
   }
 });
