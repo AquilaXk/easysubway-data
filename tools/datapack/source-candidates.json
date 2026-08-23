@@ -6542,7 +6542,7 @@
         "requiredParameters": ["serviceKey", "page", "perPage", "returnType"],
         "fixedParameters": { "returnType": "JSON" },
         "responseEnvelope": "data + currentCount + matchCount + page + perPage + totalCount",
-        "responseFields": ["연번", "호선", "고유역번호(외부역코드)", "역명", "위도", "경도", "작성기준일"],
+        "responseFields": ["연번", "호선", "고유역번호(외부역코드)", "역명", "위도", "경도", "작성기준일", "작성일자"],
         "runner": {
           "command": "node tools/datapack/run-current-static-network-successors.mjs",
           "requiredEnv": ["DATA_GO_KR_SERVICE_KEY"],
@@ -6572,7 +6572,8 @@
           "역명",
           "위도",
           "경도",
-          "작성기준일"
+          "작성기준일",
+          "작성일자"
         ],
         "datasetId": "15099316",
         "coverageAssessment": {

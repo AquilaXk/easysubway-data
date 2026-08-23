@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 
 import { deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
+import { SEOUL_POSITION_SCHEMA_FINGERPRINT } from "./collect-current-static-network-successors.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
@@ -115,7 +116,7 @@ function assertTwoObservations(observations) {
     const projectionBytes = Buffer.from(`${JSON.stringify(observation?.normalizedProjection)}\n`);
     const providerRecordHashes = Array.isArray(observation?.normalizedProjection) ? projectionRecordHashes(snapshot.sourceId, observation.normalizedProjection) : [];
     const expectedSchema = snapshot.sourceId === TARGETS[0]
-      ? sha(JSON.stringify(["basisDate", "latitude", "line", "longitude", "serial", "stationCode", "stationName"]))
+      ? SEOUL_POSITION_SCHEMA_FINGERPRINT
       : sha(JSON.stringify(MOLIT_FIELDS));
     if (observation?.schemaVersion !== 1 || observation.artifactKind !== "static-network-successor-observation"
       || observation.sourceId !== snapshot.sourceId || observation.snapshotId !== snapshot.snapshotId

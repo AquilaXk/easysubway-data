@@ -10,9 +10,11 @@ export const MOLIT_URL = "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFil
 export const SEOUL_POSITIONS_URL = "https://api.odcloud.kr/api/15099316/v1/uddi:bc51de47-d3ea-4aa1-8ac2-d70f2b5e701e";
 const CSV_HEADER = ["권역", "권역명", "철도운영기관명", "노선명", "순번", "역명"];
 const MOLIT_FIELDS = ["region_code", "region_name", "operator_name", "line_name", "station_sequence", "station_name"];
-const POSITION_FIELDS = ["연번", "호선", "고유역번호(외부역코드)", "역명", "위도", "경도", "작성기준일"];
+const POSITION_FIELDS = ["연번", "호선", "고유역번호(외부역코드)", "역명", "위도", "경도", "작성기준일", "작성일자"];
 const MOLIT_REGIONS = Object.freeze({ "01": "수도권", "02": "부산", "03": "대구", "04": "광주", "05": "대전" });
 const sha = (value) => createHash("sha256").update(value).digest("hex");
+const compareStrings = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
+export const SEOUL_POSITION_SCHEMA_FINGERPRINT = sha(JSON.stringify([...POSITION_FIELDS].sort(compareStrings)));
 const fail = (code) => { throw new Error(`STATIC_NETWORK_SUCCESSOR_${code}`); };
 
 export async function collectCurrentStaticNetworkSuccessors({ fetchImpl = fetch, sourceSnapshots, observedAt, serviceKey = process.env.DATA_GO_KR_SERVICE_KEY } = {}) {
@@ -30,7 +32,7 @@ export async function collectCurrentStaticNetworkSuccessors({ fetchImpl = fetch,
   const molitPrevious = currentHead(sourceSnapshots, "molit-urban-rail-full-route");
   return {
     observedAt,
-    positions: { sourceId: "seoul-metro-route-map-positions", rawBytes: positionsBytes, rawSha256: sha(positionsBytes), records: positions, replaced,
+    positions: { sourceId: "seoul-metro-route-map-positions", rawBytes: positionsBytes, rawSha256: sha(positionsBytes), providerSchemaFingerprint: SEOUL_POSITION_SCHEMA_FINGERPRINT, records: positions, replaced,
       replacement: { schemaVersion: 1, artifactKind: "source-projection-migration-evidence", migrationKind: "CROSS_SOURCE_CANONICAL_REPLACEMENT", sourceId: "seoul-metro-route-map-positions", replacedSourceId: replaced.sourceId, replacedSnapshotId: replaced.snapshotId, replacedRawSha256: replaced.rawSha256, replacedSchemaFingerprint: replaced.schemaFingerprint, candidateSlotSourceId: replaced.sourceId } },
     molit: { sourceId: molitPrevious.sourceId, rawBytes: molitBytes, rawSha256: sha(molitBytes), records: molit, previous: molitPrevious, migration: buildMolitMigration({ legacyHead: molitPrevious, projection: molit, snapshotId: snapshotId("molit-urban-rail-full-route", observedAt) }) },
   };
@@ -63,10 +65,11 @@ export function projectPositions(bytes, observedAt) {
   const seen = new Set(); let basisDate = null;
   const records = envelope.data.map((row) => {
     if (!row || typeof row !== "object" || Array.isArray(row) || JSON.stringify(Object.keys(row).sort()) !== JSON.stringify([...POSITION_FIELDS].sort())) fail("SEOUL_POSITIONS_SCHEMA");
-    const [serial, line, stationCode, stationName, latText, lonText, rowBasisDate] = POSITION_FIELDS.map((field) => String(row[field] ?? "").trim());
+    const [serial, line, stationCode, stationName, latText, lonText, rowBasisDate, rowCreatedDate] = POSITION_FIELDS.map((field) => String(row[field] ?? "").trim());
     const latitude = Number(latText); const longitude = Number(lonText); const key = `${line}:${stationCode}`;
     const basisMillis = Date.parse(`${rowBasisDate}T00:00:00.000Z`); const basisRoundTrip = Number.isFinite(basisMillis) && new Date(basisMillis).toISOString().slice(0, 10) === rowBasisDate;
-    if (!/^\d+$/u.test(serial) || !/^[1-8]$/u.test(line) || !/^\d{3,4}$/u.test(stationCode) || stationName === "" || !Number.isFinite(latitude) || latitude < 37 || latitude > 38.2 || !Number.isFinite(longitude) || longitude < 126.5 || longitude > 127.5 || !/^\d{4}-\d{2}-\d{2}$/u.test(rowBasisDate) || !basisRoundTrip || (observedAt != null && basisMillis > Date.parse(observedAt)) || seen.has(key)) fail("SEOUL_POSITIONS_SCHEMA");
+    const createdMillis = Date.parse(`${rowCreatedDate}T00:00:00.000Z`); const createdRoundTrip = Number.isFinite(createdMillis) && new Date(createdMillis).toISOString().slice(0, 10) === rowCreatedDate;
+    if (!/^\d+$/u.test(serial) || !/^[1-8]$/u.test(line) || !/^\d{3,4}$/u.test(stationCode) || stationName === "" || !Number.isFinite(latitude) || latitude < 37 || latitude > 38.2 || !Number.isFinite(longitude) || longitude < 126.5 || longitude > 127.5 || !/^\d{4}-\d{2}-\d{2}$/u.test(rowBasisDate) || !basisRoundTrip || !createdRoundTrip || (observedAt != null && (basisMillis > Date.parse(observedAt) || createdMillis > Date.parse(observedAt))) || seen.has(key)) fail("SEOUL_POSITIONS_SCHEMA");
     seen.add(key); if (basisDate !== null && basisDate !== rowBasisDate) fail("SEOUL_POSITIONS_SCHEMA"); basisDate = rowBasisDate;
     return { serial: Number(serial), line, stationCode, stationName, latitude, longitude, basisDate: rowBasisDate };
   });

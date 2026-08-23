@@ -7,11 +7,17 @@ import test from "node:test";
 
 import { stageContracts } from "./stage-contracts.mjs";
 
-const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/1730210fa56b74d2266dfd071d892472a650fd0d/contracts/bundles/data-contracts-v1.0.0.json";
-const bundleSha256 = "00a88b901138326c7eabe4c82fd9fd97c4f460b377873dfb390a3ecb66ea6786";
+const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/9dce859b13fc5ba3e5e7278318c34dc1895b5683/contracts/bundles/data-contracts-v1.0.0.json";
+const bundleSha256 = "164ded8b52c5aedc3645a793172f803a6d677ae6f182001f38b58cf45ff9d55c";
 const annualOfficialFileSourceIds = [
   "molit-railway-transfer-movement",
   "seoul-metro-transfer-distance-duration",
+];
+const routeMapPositionSourceIds = ["seoul-metro-route-map-positions"];
+const historicalRouteMapSourceIds = ["seoulmetro-cyberstation-route-map"];
+const routeMapGovernanceMappings = [
+  { sourceId: "seoul-metro-route-map-positions", sourceClassId: "route_map_positions" },
+  { sourceId: "seoulmetro-cyberstation-route-map", sourceClassId: "route_map_asset_historical" },
 ];
 const productionRequiredSourceIds = [
   "molit-urban-rail-full-route",
@@ -25,7 +31,14 @@ const productionRequiredSourceIds = [
 const resources = {
   "datapack/mobility-profile-policy.json": "{\"id\":\"mobility\"}\n",
   "datapack/datapack-freshness-sla.json": `${JSON.stringify({
-    sourceClasses: [{ id: "annual_official_file", sourceIds: annualOfficialFileSourceIds }],
+    sourceClasses: [
+      { id: "route_map_positions", sourceIds: routeMapPositionSourceIds, reverificationCadence: "P90D", offlinePackEligible: true },
+      { id: "route_map_asset_historical", sourceIds: historicalRouteMapSourceIds, reverificationCadence: "P1Y", offlinePackEligible: false },
+      { id: "annual_official_file", sourceIds: annualOfficialFileSourceIds },
+    ],
+  })}\n`,
+  "datapack/source-governance-policy.json": `${JSON.stringify({
+    sources: routeMapGovernanceMappings,
   })}\n`,
   "datapack/datapack-manifest-acceptance-policy.json": "{\"id\":\"acceptance\"}\n",
   "datapack/production-datapack-scope.json": `${JSON.stringify({
@@ -94,6 +107,44 @@ test("고정된 hub bundle만 build/contracts에 원문 그대로 stage한다", 
     await assert.rejects(
       stageContracts({ root, fetchBundle: async () => invalidAnnualSourceBytes }),
       /annual_official_file sourceIds/,
+    );
+
+    const invalidRouteMapResources = structuredClone(resources);
+    invalidRouteMapResources["datapack/datapack-freshness-sla.json"] = `${JSON.stringify({
+      sourceClasses: [
+        { id: "route_map_asset", sourceIds: historicalRouteMapSourceIds, reverificationCadence: "P1Y", offlinePackEligible: true },
+        { id: "annual_official_file", sourceIds: annualOfficialFileSourceIds },
+      ],
+    })}\n`;
+    const invalidRouteMapBytes = Buffer.from(`${JSON.stringify({
+      schemaVersion: 1,
+      bundleVersion: "1.0.0",
+      resources: invalidRouteMapResources,
+    }, null, 2)}\n`);
+    lock.sha256 = createHash("sha256").update(invalidRouteMapBytes).digest("hex");
+    writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
+    await assert.rejects(
+      stageContracts({ root, fetchBundle: async () => invalidRouteMapBytes }),
+      /route-map freshness classes/,
+    );
+
+    const invalidRouteMapGovernanceResources = structuredClone(resources);
+    invalidRouteMapGovernanceResources["datapack/source-governance-policy.json"] = `${JSON.stringify({
+      sources: [
+        { sourceId: "seoul-metro-route-map-positions", sourceClassId: "route_map_asset_historical" },
+        { sourceId: "seoulmetro-cyberstation-route-map", sourceClassId: "route_map_asset_historical" },
+      ],
+    })}\n`;
+    const invalidRouteMapGovernanceBytes = Buffer.from(`${JSON.stringify({
+      schemaVersion: 1,
+      bundleVersion: "1.0.0",
+      resources: invalidRouteMapGovernanceResources,
+    }, null, 2)}\n`);
+    lock.sha256 = createHash("sha256").update(invalidRouteMapGovernanceBytes).digest("hex");
+    writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
+    await assert.rejects(
+      stageContracts({ root, fetchBundle: async () => invalidRouteMapGovernanceBytes }),
+      /route-map source governance mappings/,
     );
 
     const invalidProductionScopeResources = structuredClone(resources);

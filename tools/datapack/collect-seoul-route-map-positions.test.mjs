@@ -168,6 +168,8 @@ test("v1 tracked snapshot의 inventory·candidate byte identity는 compatibility
   );
   assert.equal(candidate.admissionStatus, "production_route_map_positions_materialized");
   assert.equal(candidate.apiCatalog, false);
+  assert.deepEqual(candidate.operation.responseFields, ["연번", "호선", "고유역번호(외부역코드)", "역명", "위도", "경도", "작성기준일", "작성일자"]);
+  assert.deepEqual(candidate.evidence.outputFields, candidate.operation.responseFields);
   assert.equal(candidate.evidence.coverageAssessment.requirementCount, 8);
   assert.equal(JSON.parse(snapshotBytes).stationCount, 274);
   assert.equal(JSON.parse(snapshotBytes).rawStationCount, 276);
