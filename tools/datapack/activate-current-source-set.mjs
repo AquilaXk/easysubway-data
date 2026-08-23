@@ -1011,22 +1011,13 @@ export function buildCurrentSourcePrimaryOutputs({
   validateLineage(nextSnapshots);
 
   const capital = loadCapitalRouteTopologySnapshot(currentTopology);
-  const expectedCapitalLineIds = CAPITAL_MAP_LINE_IDS.filter(
-    (lineId) => !["line-42b5805f3b5a", "line-98718184f016"].includes(lineId),
-  );
   const capitalSnapshotId = exactCurrentTopologySnapshotIdentity({
     snapshot: capital,
     snapshotBytes: currentTopologyBytes,
     snapshotPath: currentTopologyPath,
     prefix: "capital-route-topology",
   });
-  const observedCapitalLineIds = capital.lines.map(({ lineId }) => lineId);
-  const expectedCapitalLineIdSet = new Set(expectedCapitalLineIds);
-  if (observedCapitalLineIds.length !== expectedCapitalLineIds.length
-    || new Set(observedCapitalLineIds).size !== observedCapitalLineIds.length
-    || observedCapitalLineIds.some((lineId) => !expectedCapitalLineIdSet.has(lineId))) {
-    throw new Error("current capital topology ownership projection is invalid");
-  }
+  validateCurrentCapitalTopologyOwnership(capital);
   const activationNow = new Date(requiredUtcInstant(validateBuildNow(buildNow, handoff), "buildNow"));
   if (Date.parse(capital.capturedAt) > activationNow.getTime()
     || Date.parse(capital.freshUntil) <= activationNow.getTime()) {
@@ -1092,6 +1083,7 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
     snapshotPath: currentTopologyPath,
     prefix: "capital-route-topology",
   });
+  validateCurrentCapitalTopologyOwnership(topology);
   const activationNow = new Date(requiredUtcInstant(buildNow, "buildNow"));
   if (activationNow < new Date(topology.capturedAt)
     || activationNow >= new Date(topology.freshUntil)) {
@@ -1181,6 +1173,19 @@ function exactCurrentTopologySnapshotIdentity({
     throw new Error(`current ${prefix} snapshot path identity mismatch`);
   }
   return match[1];
+}
+
+function validateCurrentCapitalTopologyOwnership(topology) {
+  const expectedLineIds = CAPITAL_MAP_LINE_IDS.filter(
+    (lineId) => !["line-42b5805f3b5a", "line-98718184f016"].includes(lineId),
+  );
+  const expectedLineIdSet = new Set(expectedLineIds);
+  const observedLineIds = topology.lines.map(({ lineId }) => lineId);
+  if (observedLineIds.length !== expectedLineIds.length
+    || new Set(observedLineIds).size !== observedLineIds.length
+    || observedLineIds.some((lineId) => !expectedLineIdSet.has(lineId))) {
+    throw new Error("current capital topology ownership projection is invalid");
+  }
 }
 
 function jsonBytes(value, pretty = true) {

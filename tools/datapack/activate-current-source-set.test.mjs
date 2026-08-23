@@ -953,6 +953,50 @@ test("topology-only refresh는 admission·canonical·candidate identity를 한 �
     incheon.topologyAdmissionEvidence.snapshotId,
     "incheon-transit-station-info-20260814",
   );
+
+  const refreshWithTopology = (topology) => buildCurrentTopologyRefreshPrimaryOutputs({
+    baseSpec,
+    builderGitSha: "a".repeat(40),
+    sourceInventory,
+    currentTopology: topology,
+    currentTopologyBytes: Buffer.from(`${JSON.stringify(topology)}\n`),
+    currentTopologyPath,
+    currentIncheonTopology,
+    currentIncheonTopologyBytes,
+    currentIncheonTopologyPath,
+    currentItxAdmissionPath,
+    currentItxAdmissionBytes,
+    baselineTopology,
+    canonical,
+    productionScopePolicyBytes,
+    buildNow,
+    snapshotBytesByPath: new Map(),
+  });
+  const withLines = (lines) => {
+    const topology = structuredClone(currentTopology);
+    topology.lines = lines;
+    topology.contentSha256 = sha256(JSON.stringify({
+      lines: topology.lines.map(({
+        lineId, edgeCount, stationCount, contentSha256, rawSha256, datasetId,
+      }) => ({ lineId, edgeCount, stationCount, contentSha256, rawSha256, datasetId })),
+      topologyGaps: topology.topologyGaps ?? [],
+    }));
+    return topology;
+  };
+  const duplicateLines = structuredClone(currentTopology.lines);
+  duplicateLines.at(-1).lineId = duplicateLines[0].lineId;
+  const excludedLines = structuredClone(currentTopology.lines);
+  excludedLines.push({ ...structuredClone(currentTopology.lines[0]), lineId: "line-42b5805f3b5a" });
+  for (const invalidTopology of [
+    withLines(structuredClone(currentTopology.lines).slice(1)),
+    withLines(duplicateLines),
+    withLines(excludedLines),
+  ]) {
+    assert.throws(
+      () => refreshWithTopology(invalidTopology),
+      /current capital topology ownership projection is invalid/,
+    );
+  }
 });
 
 test("current capital topology는 canonical fixture에 repaired 8 directions만 추가한다", async () => {
