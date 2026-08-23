@@ -170,6 +170,27 @@ test("CI는 exact staged v18에서만 station catalog를 emit하고 explicit mig
   assert.match(node, /node-version:\s*"24\.19\.0"/);
 });
 
+test("CI는 browser-dependent required tests 전에 pinned Chrome runtime을 제공한다", () => {
+  const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+  const setup = namedWorkflowStep(ci, "Set up Chrome for browser-dependent required tests");
+  const runner = namedWorkflowStep(ci, "Verify and run pristine Mobile owned required tests");
+
+  assert.match(setup, /id:\s*setup-chrome/);
+  assert.match(
+    setup,
+    /uses:\s*browser-actions\/setup-chrome@086160e580d6e8c142ad5ba29009dcde677c6321/,
+  );
+  assert.match(setup, /chrome-version:\s*"152\.0\.7977\.54"/);
+  assert.match(setup, /install-dependencies:\s*true/);
+  assert.match(runner, /CHROME_PATH:\s*\$\{\{ steps\.setup-chrome\.outputs\.chrome-path \}\}/);
+  assert.match(runner, /ROUTE_MAP_CHROME_NO_SANDBOX:\s*"1"/);
+  assertWorkflowStepOrder(ci, [
+    "Verify current KRIC exit path source admission contracts",
+    "Set up Chrome for browser-dependent required tests",
+    "Verify and run pristine Mobile owned required tests",
+  ]);
+});
+
 test("CI는 migration이 쓰는 tracked topology evidence를 #108 regression 뒤 즉시 원복한다", () => {
   const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
   const backup = ci.match(/- name: Backup tracked topology evidence[\s\S]*?\n\s+- name:/)?.[0];
