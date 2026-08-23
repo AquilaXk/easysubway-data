@@ -14,16 +14,10 @@ import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 
 const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const repositoryRoot = path.resolve(import.meta.dirname, "../..");
-const sourceInventory = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/source-inventory.json"), "utf8"));
-const currentTopologyAdmission = sourceInventory.sources
-  .find(({ id }) => id === "seoul-metro-route-map-positions")
-  .routeMapAdmissionEvidence.currentTopologyAdmission;
-const currentTopologyNow = new Date(Date.parse(currentTopologyAdmission.reviewedAt) + 1);
-const expiredTopologyNow = new Date(currentTopologyAdmission.freshUntil);
 const INPUT_PATHS = [
   "tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json",
   "tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json", "tools/datapack/source-governance-policy.json",
-  "release/product-gates/datapack-freshness-sla.json", `tools/datapack/sources/${currentTopologyAdmission.topologySnapshotId}.json`,
+  "release/product-gates/datapack-freshness-sla.json", "tools/datapack/sources/capital-route-topology-20260814.json",
 ];
 
 async function registrationOutputs(root) {
@@ -108,7 +102,7 @@ test("registrar build output hashes the current ledger's exact seven-snapshot se
   const positionCsv = await readFile(path.join(repositoryRoot, "tools/datapack/fixtures/seoul-route-map-positions-raw/data-go-15099316.csv"));
   const positions = parseSeoulRouteMapPositionsCsv(positionCsv).rawPositions.map(({ line, stationCode, stationName, latitude, longitude, basisDate }, index) => ({ "연번": `${index + 1}`, "호선": line, "고유역번호(외부역코드)": stationCode, "역명": stationName, "위도": `${latitude}`, "경도": `${longitude}`, "작성기준일": basisDate, "작성일자": basisDate }));
   const positionEnvelope = Buffer.from(JSON.stringify({ currentCount: positions.length, data: positions, matchCount: positions.length, page: 1, perPage: 1000, totalCount: positions.length }));
-  const now = currentTopologyNow; let outputs; let captured;
+  const now = new Date("2026-08-14T16:00:00.000Z"); let outputs; let captured;
   await runCurrentStaticNetworkSuccessors({ repositoryRoot, operationRoot, now, assertExactMain: async () => "0".repeat(40),
     collectImpl: (input) => collectCurrentStaticNetworkSuccessors({ ...input, serviceKey: "test-service-key", fetchImpl: async (url) => {
       if (url.href === MOLIT_URL) return new Response(molitBaseline, { headers: { "content-type": "text/csv" } });
@@ -127,7 +121,7 @@ test("registrar build output hashes the current ledger's exact seven-snapshot se
   assert.equal(positionSource.productionUseAllowed, true);
   assert.equal(positionSource.routeMapAdmissionEvidence.freshUntil, positionSnapshot.freshnessExpiresAt);
   await assert.rejects(buildStaticNetworkSuccessorOutputs({
-    repositoryRoot, observations: captured, now: expiredTopologyNow,
+    repositoryRoot, observations: captured, now: new Date("2026-08-15T15:34:07.000Z"),
   }), /topology admission snapshot is stale or future-dated/);
   const inconsistent = cloneObservations(captured); inconsistent[0].snapshot.projectionMigration = { ...inconsistent[0].snapshot.projectionMigration, replacedRawSha256: "0".repeat(64) };
   await assert.rejects(buildStaticNetworkSuccessorOutputs({ repositoryRoot, observations: inconsistent, now }), /snapshot migration binding/);

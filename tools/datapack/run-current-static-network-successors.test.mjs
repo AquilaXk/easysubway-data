@@ -12,12 +12,6 @@ import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 
 const repositoryRoot = path.resolve(import.meta.dirname, "../..");
 const sha = (value) => createHash("sha256").update(value).digest("hex");
-const sourceInventory = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/source-inventory.json"), "utf8"));
-const currentTopologyAdmission = sourceInventory.sources
-  .find(({ id }) => id === "seoul-metro-route-map-positions")
-  .routeMapAdmissionEvidence.currentTopologyAdmission;
-const currentTopologyNow = new Date(Date.parse(currentTopologyAdmission.reviewedAt) + 1);
-const expiredTopologyNow = new Date(currentTopologyAdmission.freshUntil);
 const molitBaseline = await readFile(path.join(repositoryRoot, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv"));
 const molitRaw = molitBaseline;
 const molitRecords = new TextDecoder("euc-kr").decode(molitRaw).trim().split(/\r?\n/u).slice(1).map((row) => {
@@ -73,7 +67,7 @@ test("runner stages publisher-contract raw.json/raw.csv, publishes exactly two b
   const operationRoot = await mkdtemp(path.join(os.tmpdir(), "static-network-runner-success-"));
   t.after(() => rm(operationRoot, { recursive: true, force: true }));
   const calls = []; let registered;
-  const now = currentTopologyNow;
+  const now = new Date("2026-08-14T16:00:00.000Z");
   await runCurrentStaticNetworkSuccessors({ repositoryRoot, operationRoot, now, assertExactMain: async () => "0".repeat(40), collectImpl: validCollection,
     publishImpl: async (input) => { calls.push(input); return receiptFor(input, operationRoot, now); },
     registerImpl: async (input) => { registered = input; return { outputs: [] }; },
@@ -91,7 +85,7 @@ test("runner rejects an expired topology admission before the first immutable pu
   t.after(() => rm(operationRoot, { recursive: true, force: true }));
   let publishes = 0;
   await assert.rejects(runCurrentStaticNetworkSuccessors({
-    repositoryRoot, operationRoot, now: expiredTopologyNow,
+    repositoryRoot, operationRoot, now: new Date("2026-08-15T15:34:07.000Z"),
     assertExactMain: async () => "0".repeat(40), collectImpl: validCollection,
     publishImpl: async () => { publishes += 1; }, registerImpl: async () => {},
   }), /topology admission snapshot is stale or future-dated/);
@@ -102,7 +96,7 @@ test("runner rejects an invalid second observation before the first publication"
   const operationRoot = await mkdtemp(path.join(os.tmpdir(), "static-network-runner-invalid-"));
   t.after(() => rm(operationRoot, { recursive: true, force: true }));
   let publishes = 0;
-  await assert.rejects(runCurrentStaticNetworkSuccessors({ repositoryRoot, operationRoot, now: currentTopologyNow, assertExactMain: async () => "0".repeat(40), collectImpl: async (input) => { const value = await validCollection(input); value.molit.rawSha256 = "0".repeat(64); return value; }, publishImpl: async () => { publishes += 1; }, registerImpl: async () => {} }), /MOLIT projection identity/);
+  await assert.rejects(runCurrentStaticNetworkSuccessors({ repositoryRoot, operationRoot, now: new Date("2026-08-14T16:00:00.000Z"), assertExactMain: async () => "0".repeat(40), collectImpl: async (input) => { const value = await validCollection(input); value.molit.rawSha256 = "0".repeat(64); return value; }, publishImpl: async () => { publishes += 1; }, registerImpl: async () => {} }), /MOLIT projection identity/);
   assert.equal(publishes, 0);
 });
 
@@ -110,7 +104,7 @@ test("runner rejects an unbound provider schema before the first publication", a
   const operationRoot = await mkdtemp(path.join(os.tmpdir(), "static-network-runner-provider-schema-"));
   t.after(() => rm(operationRoot, { recursive: true, force: true }));
   let publishes = 0;
-  await assert.rejects(runCurrentStaticNetworkSuccessors({ repositoryRoot, operationRoot, now: currentTopologyNow, assertExactMain: async () => "0".repeat(40), collectImpl: async (input) => { const value = await validCollection(input); value.positions.providerSchemaFingerprint = "0".repeat(64); return value; }, publishImpl: async () => { publishes += 1; }, registerImpl: async () => {} }), /public replacement identity/);
+  await assert.rejects(runCurrentStaticNetworkSuccessors({ repositoryRoot, operationRoot, now: new Date("2026-08-14T16:00:00.000Z"), assertExactMain: async () => "0".repeat(40), collectImpl: async (input) => { const value = await validCollection(input); value.positions.providerSchemaFingerprint = "0".repeat(64); return value; }, publishImpl: async () => { publishes += 1; }, registerImpl: async () => {} }), /public replacement identity/);
   assert.equal(publishes, 0);
 });
 
@@ -118,7 +112,7 @@ test("runner does not register when the second immutable publication fails", asy
   const operationRoot = await mkdtemp(path.join(os.tmpdir(), "static-network-runner-publish-failure-"));
   t.after(() => rm(operationRoot, { recursive: true, force: true }));
   let publishes = 0; let registrations = 0;
-  const now = currentTopologyNow;
+  const now = new Date("2026-08-14T16:00:00.000Z");
   await assert.rejects(runCurrentStaticNetworkSuccessors({ repositoryRoot, operationRoot, now, assertExactMain: async () => "0".repeat(40), collectImpl: validCollection, publishImpl: async (input) => { publishes += 1; if (publishes === 2) throw new Error("second publish failed"); return receiptFor(input, operationRoot, now); }, registerImpl: async () => { registrations += 1; } }), /second publish failed/);
   assert.equal(publishes, 2); assert.equal(registrations, 0);
 });
