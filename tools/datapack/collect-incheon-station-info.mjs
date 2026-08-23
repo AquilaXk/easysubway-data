@@ -537,7 +537,8 @@ export function validateIncheonStationInfoSnapshot(snapshot) {
       }
     }
   }
-  if (JSON.stringify(snapshot.stationCodeDerivations) !== JSON.stringify(STATION_CODE_DERIVATIONS)) {
+  if (snapshot.stationCodeDerivations !== undefined
+    && JSON.stringify(snapshot.stationCodeDerivations) !== JSON.stringify(STATION_CODE_DERIVATIONS)) {
     throw new Error("invalid Incheon station code derivations");
   }
   const edgeKeys = new Set();
@@ -563,6 +564,17 @@ export function validateIncheonStationInfoSnapshot(snapshot) {
   }
   if (JSON.stringify([...snapshot.positions].sort(comparePositions)) !== JSON.stringify(snapshot.positions)) {
     throw new Error("Incheon route map positions are not sorted");
+  }
+  return snapshot;
+}
+
+export function currentIncheonStationCodeDerivations() {
+  return STATION_CODE_DERIVATIONS.map((entry) => ({ ...entry }));
+}
+
+export function requireCurrentIncheonStationCodeDerivations(snapshot) {
+  if (JSON.stringify(snapshot?.stationCodeDerivations) !== JSON.stringify(STATION_CODE_DERIVATIONS)) {
+    throw new Error("current Incheon station code derivations are required");
   }
   return snapshot;
 }

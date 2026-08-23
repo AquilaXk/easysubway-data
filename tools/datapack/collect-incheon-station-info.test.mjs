@@ -6,12 +6,15 @@ import test from "node:test";
 
 import {
   collectIncheonStationInfo,
+  currentIncheonStationCodeDerivations,
   decodeIncheonStationInfoCsv,
   normalizeIncheonStationName,
   parseIncheonStationInfoCsv,
   projectLatLon,
   runIncheonStationInfoCollector,
   stationIdFor,
+  requireCurrentIncheonStationCodeDerivations,
+  validateIncheonStationInfoSnapshot,
 } from "./collect-incheon-station-info.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
@@ -139,11 +142,11 @@ test("인천 station-info collector는 1·2·7호선 71역 membership/positions�
   assert.doesNotMatch(JSON.stringify(snapshot), /cyberstation|web/i);
 
   const officialRows = new TextDecoder().decode(csvBytes).split("\n");
-  const firstLine1Index = officialRows.findIndex((row) => row.startsWith("3107,검단호수공원,"));
-  const secondLine1Index = officialRows.findIndex((row) => row.startsWith("3108,신검단중앙,"));
-  [officialRows[firstLine1Index], officialRows[secondLine1Index]] = [
-    officialRows[secondLine1Index],
-    officialRows[firstLine1Index],
+  const internationalBusinessIndex = officialRows.findIndex((row) => row.startsWith("3138,국제업무지구,"));
+  const songdoIndex = officialRows.findIndex((row) => row.startsWith("3138,송도달빛축제공원,"));
+  [officialRows[internationalBusinessIndex], officialRows[songdoIndex]] = [
+    officialRows[songdoIndex],
+    officialRows[internationalBusinessIndex],
   ];
   const reordered = collectIncheonStationInfo({
     csvBytes: Buffer.from(officialRows.join("\n"), "utf8"),
@@ -152,6 +155,24 @@ test("인천 station-info collector는 1·2·7호선 71역 membership/positions�
   assert.deepEqual(reordered.scope, snapshot.scope);
   assert.deepEqual(reordered.edges, snapshot.edges);
   assert.deepEqual(reordered.positions, snapshot.positions);
+  assert.deepEqual(reordered.stationCodeDerivations, snapshot.stationCodeDerivations);
+  assert.equal(reordered.contentSha256, snapshot.contentSha256);
+});
+
+test("인천 station-info generic validator는 historical snapshot을 읽되 current derivation을 요구하지 않는다", async () => {
+  const historical = JSON.parse(await readFile(path.join(
+    root,
+    "tools/datapack/sources/incheon-transit-station-info-20260813.json",
+  )));
+  assert.equal(validateIncheonStationInfoSnapshot(historical), historical);
+  assert.throws(
+    () => requireCurrentIncheonStationCodeDerivations(historical),
+    /current Incheon station code derivations are required/,
+  );
+  assert.deepEqual(currentIncheonStationCodeDerivations(), collectIncheonStationInfo({
+    csvBytes: await loadCsv(),
+    now: new Date("2026-07-24T06:00:00.000Z"),
+  }).stationCodeDerivations);
 });
 
 test("인천 station-info collector는 schema·좌표·중복 분기를 fail closed한다", async () => {

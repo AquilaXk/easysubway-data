@@ -9,6 +9,7 @@ import test from "node:test";
 
 import { syncCanonicalFixture } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
 import { projectCapitalTopologyIntoCanonicalFixture } from "./build-datapack.mjs";
+import { currentIncheonStationCodeDerivations } from "./collect-incheon-station-info.mjs";
 import { activateIncheonTopologyAdmission, activateStaticSourceRevalidations,
   buildCurrentCandidateSpec, buildCurrentSourcePrimaryOutputs,
   buildCurrentTopologyRefreshPrimaryOutputs, commitCurrentSourceActivation,
@@ -566,11 +567,16 @@ test("prepared candidate validation은 spec-selected current ITX evidence bytes�
 
 test("current Incheon topology admission은 exact snapshot bytes와 fresh source identity에 결속된다", async () => {
   const snapshotPath = "tools/datapack/sources/incheon-transit-station-info-20260813.json";
-  const [sourceInventory, snapshotBytes] = await Promise.all([
+  const [sourceInventory, historicalSnapshotBytes] = await Promise.all([
     readJson("tools/datapack/source-inventory.json"),
     readFile(path.join(root, snapshotPath)),
   ]);
-  const snapshot = JSON.parse(snapshotBytes);
+  const historicalSnapshot = JSON.parse(historicalSnapshotBytes);
+  const snapshot = {
+    ...structuredClone(historicalSnapshot),
+    stationCodeDerivations: currentIncheonStationCodeDerivations(),
+  };
+  const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
   const activated = activateIncheonTopologyAdmission({
     sourceInventory,
     snapshot,
@@ -605,6 +611,24 @@ test("current Incheon topology admission은 exact snapshot bytes와 fresh source
     scheduleTopologySnapshotIds,
     Array(2).fill("incheon-transit-station-info-20260813"),
   );
+
+  assert.throws(() => activateIncheonTopologyAdmission({
+    sourceInventory,
+    snapshot: historicalSnapshot,
+    snapshotBytes: historicalSnapshotBytes,
+    snapshotPath,
+    now: new Date("2026-08-14T00:00:00.000Z"),
+  }), /invalid Incheon station code derivations|current Incheon station code derivations are required/);
+
+  const oldDerivation = structuredClone(snapshot);
+  oldDerivation.stationCodeDerivations[1].basis = "LEGACY_CORRECTION";
+  assert.throws(() => activateIncheonTopologyAdmission({
+    sourceInventory,
+    snapshot: oldDerivation,
+    snapshotBytes: Buffer.from(`${JSON.stringify(oldDerivation)}\n`),
+    snapshotPath,
+    now: new Date("2026-08-14T00:00:00.000Z"),
+  }), /invalid Incheon station code derivations|current Incheon station code derivations are required/);
 
   const changedEdges = structuredClone(snapshot);
   changedEdges.edges[0].toStationId = changedEdges.edges[2].toStationId;
@@ -893,7 +917,7 @@ test("topology-only refresh는 admission·canonical·candidate identity를 한 �
   const currentItxAdmissionPath =
     "tools/datapack/itx-current-network-edge-admission-20260810.json";
   const [baseSpec, sourceInventory, currentTopologyBytes, baselineTopology, canonical,
-    productionScopePolicyBytes, currentIncheonTopologyBytes, currentItxAdmissionBytes] =
+    productionScopePolicyBytes, historicalIncheonTopologyBytes, currentItxAdmissionBytes] =
     await Promise.all([
     readJson("tools/datapack/release/candidate-build-spec.json"),
     readJson("tools/datapack/source-inventory.json"),
@@ -905,7 +929,11 @@ test("topology-only refresh는 admission·canonical·candidate identity를 한 �
     readFile(path.join(root, currentItxAdmissionPath)),
   ]);
   const currentTopology = JSON.parse(currentTopologyBytes);
-  const currentIncheonTopology = JSON.parse(currentIncheonTopologyBytes);
+  const currentIncheonTopology = {
+    ...JSON.parse(historicalIncheonTopologyBytes),
+    stationCodeDerivations: currentIncheonStationCodeDerivations(),
+  };
+  const currentIncheonTopologyBytes = Buffer.from(`${JSON.stringify(currentIncheonTopology)}\n`);
   const buildNow = new Date(Math.max(
     Date.parse(currentTopology.capturedAt),
     Date.parse(currentIncheonTopology.capturedAt),

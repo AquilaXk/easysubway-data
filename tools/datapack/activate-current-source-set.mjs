@@ -18,7 +18,10 @@ import {
   buildCapitalTopologyReverificationEvidence,
   projectCapitalTopologyOwnership,
 } from "./collect-capital-route-topology.mjs";
-import { validateIncheonStationInfoSnapshot } from "./collect-incheon-station-info.mjs";
+import {
+  requireCurrentIncheonStationCodeDerivations,
+  validateIncheonStationInfoSnapshot,
+} from "./collect-incheon-station-info.mjs";
 import {
   admittedCapitalLineEvidence,
   projectCapitalTopologyIntoCanonicalFixture,
@@ -737,6 +740,7 @@ export function activateIncheonTopologyAdmission({
   now,
 }) {
   const incheon = validateIncheonStationInfoSnapshot(snapshot);
+  requireCurrentIncheonStationCodeDerivations(incheon);
   if (!Buffer.isBuffer(snapshotBytes)
     || !snapshotBytes.equals(Buffer.from(`${JSON.stringify(snapshot)}\n`))
     || !(now instanceof Date)
