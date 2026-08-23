@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { deriveFreshnessExpiresAt } from "../freshness-policy.mjs";
@@ -20,6 +20,61 @@ const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 
 async function readJson(root, relative) {
   return JSON.parse(await readFile(path.join(root, relative), "utf8"));
+}
+
+function referencedPaths(value, paths = []) {
+  if (Array.isArray(value)) {
+    for (const item of value) referencedPaths(item, paths);
+    return paths;
+  }
+  if (value == null || typeof value !== "object") return paths;
+  for (const [key, item] of Object.entries(value)) {
+    if (/path$/iu.test(key) && typeof item === "string") paths.push(item);
+    else referencedPaths(item, paths);
+  }
+  return paths;
+}
+
+const SUCCESSOR_FIXTURE_PATHS = Object.freeze([
+  "tools/datapack/release/candidate-build-spec.json",
+  "tools/datapack/release/release-request.json",
+  "tools/datapack/release/hash-evidence.json",
+  "tools/datapack/release/source-snapshots.json",
+  "tools/datapack/release/capital-production-canonical-pack.json",
+  "tools/datapack/source-inventory.json",
+  "tools/datapack/source-governance-policy.json",
+  "release/product-gates/datapack-freshness-sla.json",
+  "tools/datapack/official-od-fare-admission.json",
+  "tools/datapack/nationwide-coverage-targets.json",
+]);
+
+export async function copySyntheticCurrentPublicRouteMapRepository(sourceRoot, targetRoot, { now }) {
+  const [candidate, inventory, itxContract] = await Promise.all([
+    readJson(sourceRoot, "tools/datapack/release/candidate-build-spec.json"),
+    readJson(sourceRoot, "tools/datapack/source-inventory.json"),
+    readJson(sourceRoot, "tools/datapack/itx-cheongchun-coverage-contract.json"),
+  ]);
+  const dynamicPaths = [
+    candidate.fixturePath,
+    candidate.sourceSnapshotEvidencePath,
+    candidate.itxTopologyEvidencePath,
+    candidate.productionScopePolicy?.path,
+    ...Object.values(candidate.networkEdgeEvidence ?? {}).map((evidence) => evidence?.path),
+    ...inventory.sources.map((source) => source.routeMapAdmissionEvidence?.snapshotPath),
+    ...referencedPaths(candidate),
+    ...referencedPaths(itxContract),
+  ];
+  const relatives = [...new Set([...SUCCESSOR_FIXTURE_PATHS, ...dynamicPaths]
+    .filter((relative) => typeof relative === "string"))];
+  for (const relative of relatives) {
+    if (path.isAbsolute(relative) || relative.split(path.sep).includes("..")) {
+      throw new Error(`synthetic successor fixture path is unsafe: ${relative}`);
+    }
+    const destination = path.join(targetRoot, relative);
+    await mkdir(path.dirname(destination), { recursive: true });
+    await cp(path.join(sourceRoot, relative), destination);
+  }
+  return activateSyntheticCurrentPublicRouteMapSuccessor(targetRoot, { now });
 }
 
 export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { now }) {

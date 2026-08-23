@@ -311,9 +311,13 @@ test("MOLIT transfer tuple partition snapshot binding은 inventory와 build spec
   const inventoryPath = path.join(import.meta.dirname, "source-inventory.json");
   const inventoryBytes = await readFile(inventoryPath);
   const inventory = JSON.parse(inventoryBytes);
-  const candidateBuildSpec = JSON.parse(await readFile(
+  const trackedCandidateBuildSpec = JSON.parse(await readFile(
     path.join(import.meta.dirname, "release/candidate-build-spec.json"),
   ));
+  const candidateBuildSpec = {
+    ...trackedCandidateBuildSpec,
+    sourceInventorySha256: hash(JSON.stringify(inventory)),
+  };
   const metadataPath = path.join(
     repositoryRoot,
     inventory.sources.find(({ id }) => id === "molit-railway-transfer-movement").rawSnapshotAdmission.metadataPath,

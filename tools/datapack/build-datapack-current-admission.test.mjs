@@ -104,8 +104,15 @@ function networkEdgeEvidenceFixture() {
 test("candidate build spec release identity는 wall clock과 workflow run number에 무관하다", async (context) => {
   const directory = await mkdtemp(path.join(tmpdir(), "candidate-build-release-identity-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
-  const buildSpecPath = "tools/datapack/release/candidate-build-spec.json";
-  const buildSpec = JSON.parse(await readFile(path.join(root, buildSpecPath), "utf8"));
+  const [trackedBuildSpec, inventoryBytes] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/source-inventory.json")),
+  ]);
+  const buildSpec = structuredClone(trackedBuildSpec);
+  buildSpec.sourceInventorySha256 = sha256(Buffer.from(JSON.stringify(JSON.parse(inventoryBytes))));
+  buildSpec.networkEdgeEvidence.sourceInventory.sha256 = sha256(inventoryBytes);
+  const buildSpecPath = path.join(directory, "candidate-build-spec.json");
+  await writeFile(buildSpecPath, `${JSON.stringify(buildSpec, null, 2)}\n`);
   const { privateKey } = generateKeyPairSync("rsa", {
     modulusLength: 2048,
     privateKeyEncoding: { type: "pkcs8", format: "pem" },

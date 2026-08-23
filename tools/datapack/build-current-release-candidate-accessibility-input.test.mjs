@@ -22,6 +22,7 @@ import {
   canonicalCurrentCapitalStationLineInputJson,
 } from "./build-current-capital-station-line-input.mjs";
 import { fixture as fullCapitalFixture } from "./build-current-capital-station-line-input.test.mjs";
+import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
 
 test("full-capital authority는 213/639 input과 456 non-RIDE를 2,674-edge fixture에 결속한다", async () => {
   const input = await fullInput();
@@ -60,8 +61,14 @@ test("full-capital authority는 213/639 input과 456 non-RIDE를 2,674-edge fixt
   assert.deepEqual(input.projectedFixture, before);
 });
 
-test("current tracked inputs는 1,102 metadata·2,674 route·456 authority를 in-memory로 완성한다", async () => {
-  const repositoryRoot = path.resolve(fileURLToPath(new URL("../../", import.meta.url)));
+test("합성 current public successor는 1,102 metadata·2,674 route·456 authority를 완성한다", async (t) => {
+  const sourceRoot = path.resolve(fileURLToPath(new URL("../../", import.meta.url)));
+  const temp = await mkdtemp(path.join(tmpdir(), "public-route-map-authority-"));
+  t.after(() => rm(temp, { recursive: true, force: true }));
+  const repositoryRoot = path.join(temp, "repository");
+  await copySyntheticCurrentPublicRouteMapRepository(sourceRoot, repositoryRoot, {
+    now: new Date("2026-08-22T09:45:18.609Z"),
+  });
   const buildSpecBytes = await readFile(
     path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"),
   );
@@ -75,14 +82,19 @@ test("current tracked inputs는 1,102 metadata·2,674 route·456 authority를 in
     sourceFixture,
     repositoryRoot,
   });
-  const stationLineInputBytes = await readFile(
-    path.join(repositoryRoot, "tools/datapack/release/current-capital-accessibility-full/station-line-input.json"),
+  const trackedStationLineInputBytes = await readFile(
+    path.join(sourceRoot, "tools/datapack/release/current-capital-accessibility-full/station-line-input.json"),
   );
-  const routeBytes = await readFile(
-    path.join(repositoryRoot, "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json"),
+  const trackedRouteBytes = await readFile(
+    path.join(sourceRoot, "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json"),
   );
-  const stationLineInput = JSON.parse(stationLineInputBytes);
-  const route = JSON.parse(routeBytes);
+  const stationLineInput = JSON.parse(trackedStationLineInputBytes);
+  const route = JSON.parse(trackedRouteBytes);
+  stationLineInput.candidate.sourceSetSha256 = buildSpec.sourceSnapshotSetHash;
+  for (const row of stationLineInput.evidenceRows) row.sourceSetSha256 = buildSpec.sourceSnapshotSetHash;
+  route.candidate.sourceSetSha256 = buildSpec.sourceSnapshotSetHash;
+  const stationLineInputBytes = Buffer.from(canonicalCurrentCapitalStationLineInputJson(stationLineInput));
+  const routeBytes = Buffer.from(canonicalCurrentCapitalRouteEdgeInputJson(route));
   assert.equal(
     stationLineInputBytes.toString("utf8"),
     canonicalCurrentCapitalStationLineInputJson(stationLineInput),

@@ -26,6 +26,7 @@ import {
   canonicalStationLineAccessibilityJson,
   materializeStationLineAccessibility,
 } from "./materialize-station-line-accessibility.mjs";
+import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
 
 const SCRIPT = path.resolve("tools/datapack/emit-artifact-components.mjs");
 const CURRENT_SOURCE_WINDOW = await selectedSourceWindow();
@@ -74,10 +75,16 @@ function kstInstant(milliseconds) {
   return new Date(milliseconds + 9 * 60 * 60 * 1_000).toISOString().replace("Z", "+09:00");
 }
 
-test("current Data #9 seed는 full topology와 policy-required materialization subset을 exact projection한다", async () => {
+test("historical Data #9 seed는 합성 current public successor topology에 exact projection한다", async (t) => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), "current-route-edge-public-successor-"));
+  t.after(() => rm(temp, { recursive: true, force: true }));
+  const repositoryRoot = path.join(temp, "repository");
+  await copySyntheticCurrentPublicRouteMapRepository(process.cwd(), repositoryRoot, {
+    now: new Date(CURRENT_EVALUATION_AT),
+  });
   const [fixtureBytes, buildSpecBytes, stationLineBytes, materializationBytes, policyBytes] = await Promise.all([
-    readFile("tools/datapack/release/capital-production-canonical-pack.json"),
-    readFile("tools/datapack/release/candidate-build-spec.json"),
+    readFile(path.join(repositoryRoot, "tools/datapack/release/capital-production-canonical-pack.json")),
+    readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json")),
     readFile("tools/datapack/release/current-station-line-accessibility/station-line-input.json"),
     readFile("tools/datapack/release/current-station-line-accessibility/station-line-accessibility.json"),
     readFile("release/product-gates/route-edge-evaluation-policy.json"),
@@ -99,6 +106,7 @@ test("current Data #9 seed는 full topology와 policy-required materialization s
   const canonicalPack = await projectCandidateFixtureForAccessibilityAuthority({
     buildSpec,
     sourceFixture,
+    repositoryRoot,
   });
   const stationLineInput = JSON.parse(stationLineBytes);
   assert.notEqual(stationLineInput.candidate.sourceSetSha256, buildSpec.sourceSnapshotSetHash);
@@ -166,36 +174,22 @@ test("current Data #9 seed는 alternate repository root의 nested projection evi
   t.after(() => rm(temp, { recursive: true, force: true }));
   const repositoryRoot = path.join(temp, "repository");
   const transitionPresent = await exists("tools/datapack/release/current-capital-accessibility-transition.json");
-  const nestedEvidencePaths = [
-    "tools/datapack/source-inventory.json",
-    "tools/datapack/sources/capital-route-topology-20260724.json",
-    "tools/datapack/sources/capital-route-topology-20260814.json",
-    "tools/datapack/release/capital-topology-reverification-20260814.json",
-    "tools/datapack/itx-cheongchun-coverage-contract.json",
-    "tools/datapack/itx-cheongchun-topology-evidence-20260812165525800.json",
-    "tools/datapack/sources/itx-cheongchun-source-timetable-20260812165525800.json",
-    "tools/datapack/sources/itx-cheongchun-source-timetable-20260812165525800-completeness-evidence.json",
-    "tools/datapack/sources/incheon-transit-station-info-20260814.json",
-    "tools/datapack/release/capital-production-canonical-pack.json",
-    "tools/datapack/official-od-fare-admission.json",
-    "tools/datapack/nationwide-coverage-targets.json",
-    ...(transitionPresent ? [
-      "tools/datapack/release/current-capital-accessibility-transition.json",
-      "tools/datapack/release/candidate-build-spec.json",
-      "tools/datapack/release/source-snapshots.json",
-      "tools/datapack/release/current-station-line-accessibility/station-line-input.json",
-      "tools/datapack/release/current-capital-facility-source-admission.json",
-    ] : []),
-  ];
-  for (const relative of nestedEvidencePaths) {
+  await copySyntheticCurrentPublicRouteMapRepository(process.cwd(), repositoryRoot, {
+    now: new Date(CURRENT_EVALUATION_AT),
+  });
+  for (const relative of transitionPresent ? [
+    "tools/datapack/release/current-capital-accessibility-transition.json",
+    "tools/datapack/release/current-station-line-accessibility/station-line-input.json",
+    "tools/datapack/release/current-capital-facility-source-admission.json",
+  ] : []) {
     const destination = path.join(repositoryRoot, relative);
     await mkdir(path.dirname(destination), { recursive: true });
     await cp(relative, destination);
   }
 
   const [fixtureBytes, buildSpecBytes, stationLineBytes, materializationBytes, policyBytes] = await Promise.all([
-    readFile("tools/datapack/release/capital-production-canonical-pack.json"),
-    readFile("tools/datapack/release/candidate-build-spec.json"),
+    readFile(path.join(repositoryRoot, "tools/datapack/release/capital-production-canonical-pack.json")),
+    readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json")),
     readFile("tools/datapack/release/current-station-line-accessibility/station-line-input.json"),
     readFile("tools/datapack/release/current-station-line-accessibility/station-line-accessibility.json"),
     readFile("release/product-gates/route-edge-evaluation-policy.json"),
@@ -244,6 +238,9 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   t.after(() => rm(temp, { recursive: true, force: true }));
   const fixtureRoot = path.join(temp, "repository");
   for (const relative of ["contracts/datapack", "tools/datapack/release", "tools/datapack/schema", "tools/datapack/source-governance-policy.json", "tools/datapack/source-inventory.json", "release/product-gates/datapack-freshness-sla.json", "release/product-gates/route-edge-evaluation-policy.json", "tools/route-map/basemap-build-manifest.json", "tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg"]) await cp(relative, path.join(fixtureRoot, relative), { recursive: true });
+  await copySyntheticCurrentPublicRouteMapRepository(process.cwd(), fixtureRoot, {
+    now: new Date(CURRENT_EVALUATION_AT),
+  });
   const source = path.join(temp, "source.sqlite");
   const db = new DatabaseSync(source);
   db.exec(await readFile(path.join(fixtureRoot, "tools/datapack/schema/catalog-schema.sql"), "utf8"));

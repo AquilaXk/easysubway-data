@@ -32,7 +32,7 @@ const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 const canonicalBytes = (value) => Buffer.from(`${canonicalJson(value)}\n`);
 const without = (value, key) => { const copy = { ...value }; delete copy[key]; return copy; };
 const SIX_SOURCE_IDS = Object.freeze([
-  "seoulmetro-cyberstation-route-map", "kric-subway-timetable", "seoul-metro-accessibility",
+  "seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility",
   "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info",
 ]);
 

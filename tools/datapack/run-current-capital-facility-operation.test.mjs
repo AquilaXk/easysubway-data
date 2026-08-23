@@ -24,6 +24,7 @@ const sha = (value) => createHash("sha256").update(value).digest("hex");
 const jsonSha = (value) => sha(Buffer.from(JSON.stringify(value)));
 const FIXTURE_INPUTS = [
   "tools/datapack/release/candidate-build-spec.json", "tools/datapack/release/release-request.json",
+  "tools/datapack/release/hash-evidence.json",
   "tools/datapack/release/source-snapshots.json", "tools/datapack/release/capital-production-canonical-pack.json",
   "tools/datapack/source-inventory.json", "tools/datapack/source-governance-policy.json",
   "release/product-gates/datapack-freshness-sla.json", "tools/datapack/nationwide-coverage-targets.json",

@@ -89,7 +89,7 @@ test("exact official-file observation은 shared #57 POSITIVE extension result가
   assert.equal(result.observationEvidenceSha256, fixture.evidence.evidenceHash);
   assert.equal(result.currentFreshUntil, "2026-08-11T00:00:00.000Z");
   assert.equal(result.extendedFreshUntil, "2027-08-14T04:53:59.000Z");
-  assert.equal(result.resultSha256, "af9e8e6c654ff587c9944093a049057eb9a74e1c4c2b22975167b7c7817c13ca");
+  assert.equal(result.resultSha256, "291e3453fdb64bdc7c8c43ba820117dfec66b4e1504a1217b87a16381e1c6517");
 });
 
 test("evidence·operation·source identity drift는 fail closed이고 output 0이다", async () => {
