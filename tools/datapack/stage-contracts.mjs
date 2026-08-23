@@ -4,13 +4,17 @@ import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/1730210fa56b74d2266dfd071d892472a650fd0d/contracts/bundles/data-contracts-v1.0.0.json";
+const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/9dce859b13fc5ba3e5e7278318c34dc1895b5683/contracts/bundles/data-contracts-v1.0.0.json";
 const annualOfficialFileSourceIds = [
   "molit-railway-transfer-movement",
   "seoul-metro-transfer-distance-duration",
 ];
 const routeMapPositionSourceIds = ["seoul-metro-route-map-positions"];
 const historicalRouteMapSourceIds = ["seoulmetro-cyberstation-route-map"];
+const routeMapGovernanceMappings = [
+  { sourceId: "seoul-metro-route-map-positions", sourceClassId: "route_map_positions" },
+  { sourceId: "seoulmetro-cyberstation-route-map", sourceClassId: "route_map_asset_historical" },
+];
 const productionRequiredSourceIds = [
   "molit-urban-rail-full-route",
   "seoulmetro-station-line-info",
@@ -22,6 +26,7 @@ const productionRequiredSourceIds = [
 const resourceNames = [
   "datapack/mobility-profile-policy.json",
   "datapack/datapack-freshness-sla.json",
+  "datapack/source-governance-policy.json",
   "datapack/datapack-manifest-acceptance-policy.json",
   "datapack/production-datapack-scope.json",
   "datapack/train-search-itx-exclusion-gate.json",
@@ -61,6 +66,13 @@ export async function stageContracts({ root = process.cwd(), fetchBundle = downl
       || historicalRouteMap?.reverificationCadence !== "P1Y" || historicalRouteMap?.offlinePackEligible !== false
       || freshnessPolicy.sourceClasses.some(({ id }) => id === "route_map_asset")) {
     throw new Error("contract bundle route-map freshness classes are invalid");
+  }
+  const sourceGovernancePolicy = JSON.parse(bundle.resources["datapack/source-governance-policy.json"]);
+  const routeMapGovernance = sourceGovernancePolicy.sources?.filter(({ sourceId }) =>
+    routeMapGovernanceMappings.some((mapping) => mapping.sourceId === sourceId))
+    .map(({ sourceId, sourceClassId }) => ({ sourceId, sourceClassId }));
+  if (JSON.stringify(routeMapGovernance) !== JSON.stringify(routeMapGovernanceMappings)) {
+    throw new Error("contract bundle route-map source governance mappings are invalid");
   }
   const productionScope = JSON.parse(bundle.resources["datapack/production-datapack-scope.json"]);
   if (JSON.stringify(productionScope.productionSourceSet?.requiredSourceIds)
