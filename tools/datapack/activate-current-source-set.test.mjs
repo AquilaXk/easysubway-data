@@ -512,12 +512,14 @@ test("activation CLI는 Data-owned capital/Incheon snapshot paths만 수용한�
   ]), /unknown activation argument/);
   assert.deepEqual(parseCurrentTopologyRefreshArgs([
     "--capital-topology", "tools/datapack/sources/capital-route-topology-20260823.json",
+    "--incheon-topology", "tools/datapack/sources/incheon-transit-station-info-20260823.json",
     "--builder-git-sha", "b".repeat(40),
     "--build-now", "2026-08-23T14:53:48.203Z",
     "--check",
   ]), {
     check: true,
     capital_topology: "tools/datapack/sources/capital-route-topology-20260823.json",
+    incheon_topology: "tools/datapack/sources/incheon-transit-station-info-20260823.json",
     builder_git_sha: "b".repeat(40),
     build_now: "2026-08-23T14:53:48.203Z",
   });
@@ -884,17 +886,24 @@ test("generated current candidate spec은 expired ITX topology overlay를 재도
 
 test("topology-only refresh는 admission·canonical·candidate identity를 한 입력에서 재생성한다", async () => {
   const currentTopologyPath = "tools/datapack/sources/capital-route-topology-20260823.json";
+  const currentIncheonTopologyPath =
+    "tools/datapack/sources/incheon-transit-station-info-20260823.json";
   const [baseSpec, sourceInventory, currentTopologyBytes, baselineTopology, canonical,
-    productionScopePolicyBytes] = await Promise.all([
+    productionScopePolicyBytes, currentIncheonTopologyBytes] = await Promise.all([
     readJson("tools/datapack/release/candidate-build-spec.json"),
     readJson("tools/datapack/source-inventory.json"),
     readFile(path.join(root, currentTopologyPath)),
     readJson("tools/datapack/sources/capital-route-topology-20260724.json"),
     readJson("tools/datapack/release/capital-production-canonical-pack.json"),
     readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json")),
+    readFile(path.join(root, currentIncheonTopologyPath)),
   ]);
   const currentTopology = JSON.parse(currentTopologyBytes);
-  const buildNow = new Date(Date.parse(currentTopology.capturedAt) + 1).toISOString();
+  const currentIncheonTopology = JSON.parse(currentIncheonTopologyBytes);
+  const buildNow = new Date(Math.max(
+    Date.parse(currentTopology.capturedAt),
+    Date.parse(currentIncheonTopology.capturedAt),
+  ) + 1).toISOString();
   const result = buildCurrentTopologyRefreshPrimaryOutputs({
     baseSpec,
     builderGitSha: "a".repeat(40),
@@ -902,6 +911,9 @@ test("topology-only refresh는 admission·canonical·candidate identity를 한 �
     currentTopology,
     currentTopologyBytes,
     currentTopologyPath,
+    currentIncheonTopology,
+    currentIncheonTopologyBytes,
+    currentIncheonTopologyPath,
     baselineTopology,
     canonical,
     productionScopePolicyBytes,
@@ -923,6 +935,12 @@ test("topology-only refresh는 admission·canonical·candidate identity를 한 �
     sha256(result.topologyReverificationBytes),
   );
   assert.equal(result.projectedEdgeCount, currentTopology.totalEdgeCount);
+  const incheon = result.sourceInventory.sources
+    .find(({ id }) => id === "incheon-transit-station-info");
+  assert.equal(
+    incheon.topologyAdmissionEvidence.snapshotId,
+    "incheon-transit-station-info-20260823",
+  );
 });
 
 test("current capital topology는 canonical fixture에 repaired 8 directions만 추가한다", async () => {

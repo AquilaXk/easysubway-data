@@ -1074,6 +1074,9 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
   currentTopology,
   currentTopologyBytes,
   currentTopologyPath,
+  currentIncheonTopology,
+  currentIncheonTopologyBytes,
+  currentIncheonTopologyPath,
   baselineTopology,
   canonical,
   productionScopePolicyBytes,
@@ -1092,13 +1095,20 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
     || activationNow >= new Date(topology.freshUntil)) {
     throw new Error("current capital topology snapshot is not active at buildNow");
   }
-  const nextInventory = withCurrentCapitalTopologyAdmissions({
+  const capitalInventory = withCurrentCapitalTopologyAdmissions({
     inventory: sourceInventory,
     topology,
     topologySnapshotId,
     reviewedAt: topology.capturedAt,
     snapshotBytesByPath,
     topologySnapshotBytes: currentTopologyBytes,
+  });
+  const nextInventory = activateIncheonTopologyAdmission({
+    sourceInventory: capitalInventory,
+    snapshot: currentIncheonTopology,
+    snapshotBytes: currentIncheonTopologyBytes,
+    snapshotPath: currentIncheonTopologyPath,
+    now: activationNow,
   });
   const topologyReverification = buildCapitalTopologyReverificationEvidence(
     projectCapitalTopologyOwnership(baselineTopology),
@@ -1737,6 +1747,7 @@ export async function readBuilderBaselineBytes(
 
 export async function generateCurrentCapitalTopologyRefresh({
   capitalTopologyPath,
+  incheonTopologyPath,
   builderGitSha,
   buildNow,
   check = false,
@@ -1745,6 +1756,10 @@ export async function generateCurrentCapitalTopologyRefresh({
     .exec(capitalTopologyPath ?? "");
   if (capitalPathMatch == null) {
     throw new Error("current topology input must be a tracked source snapshot path");
+  }
+  if (!/^tools\/datapack\/sources\/incheon-transit-station-info-[0-9]{8}\.json$/u
+    .test(incheonTopologyPath ?? "")) {
+    throw new Error("current Incheon topology input must be a tracked source snapshot path");
   }
   const topologyReverificationPath =
     `tools/datapack/release/capital-topology-reverification-${capitalPathMatch[1]}.json`;
@@ -1758,10 +1773,11 @@ export async function generateCurrentCapitalTopologyRefresh({
     const readMutableInput = (relativePath) => check
       ? readBuilderBaselineBytes(builderGitSha, relativePath)
       : readRegularBytes(root, relativePath);
-    const [currentTopologyBytes, baselineTopologyBytes, sourceInventoryBytes,
+    const [currentTopologyBytes, currentIncheonTopologyBytes, baselineTopologyBytes, sourceInventoryBytes,
       baseSpecBytes, canonicalBytes, productionScopePolicyBytes, sourceSnapshotsBytes] =
       await Promise.all([
         readRegularBytes(root, capitalTopologyPath, "current capital topology"),
+        readRegularBytes(root, incheonTopologyPath, "current Incheon topology"),
         readRegularBytes(root, "tools/datapack/sources/capital-route-topology-20260724.json"),
         readMutableInput("tools/datapack/source-inventory.json"),
         readMutableInput("tools/datapack/release/candidate-build-spec.json"),
@@ -1777,6 +1793,12 @@ export async function generateCurrentCapitalTopologyRefresh({
       currentTopology: parseJson(currentTopologyBytes, "current capital topology"),
       currentTopologyBytes,
       currentTopologyPath: capitalTopologyPath,
+      currentIncheonTopology: parseJson(
+        currentIncheonTopologyBytes,
+        "current Incheon topology",
+      ),
+      currentIncheonTopologyBytes,
+      currentIncheonTopologyPath: incheonTopologyPath,
       baselineTopology: parseJson(baselineTopologyBytes, "baseline capital topology"),
       canonical: parseJson(canonicalBytes, "canonical pack"),
       productionScopePolicyBytes,
@@ -2142,7 +2164,7 @@ export function parseCurrentTopologyRefreshArgs(argv) {
       args.check = true;
       continue;
     }
-    if (!["--capital-topology", "--builder-git-sha", "--build-now"].includes(flag)) {
+    if (!["--capital-topology", "--incheon-topology", "--builder-git-sha", "--build-now"].includes(flag)) {
       throw new Error(`unknown topology refresh argument: ${flag ?? ""}`);
     }
     const value = argv[index + 1];
@@ -2152,7 +2174,7 @@ export function parseCurrentTopologyRefreshArgs(argv) {
     args[key] = value;
     index += 1;
   }
-  for (const key of ["capital_topology", "builder_git_sha", "build_now"]) {
+  for (const key of ["capital_topology", "incheon_topology", "builder_git_sha", "build_now"]) {
     if (!args[key]) throw new Error(`--${key.replaceAll("_", "-")} is required`);
   }
   return args;
@@ -2167,6 +2189,7 @@ async function main() {
   const result = topologyOnly
     ? await generateCurrentCapitalTopologyRefresh({
         capitalTopologyPath: args.capital_topology,
+        incheonTopologyPath: args.incheon_topology,
         builderGitSha: args.builder_git_sha,
         buildNow: args.build_now,
         check: args.check,
