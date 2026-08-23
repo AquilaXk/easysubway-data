@@ -10,7 +10,7 @@ const NAMESPACE = "axvym6vk8g7i";
 const BUCKET = "easysubway-datapacks";
 const OCI_PAR = new RegExp(`^https://objectstorage\\.[a-z0-9][a-z0-9-]*\\.oraclecloud\\.com/p/[^/?#]+/n/${NAMESPACE}/b/${BUCKET}/o/?$`, "u");
 const SOURCE_TYPES = Object.freeze({
-  "seoulmetro-cyberstation-route-map": { extension: "js", contentType: "application/javascript" },
+  "seoul-metro-route-map-positions": { extension: "json", contentType: "application/json" },
   "molit-urban-rail-full-route": { extension: "csv", contentType: "text/csv; charset=euc-kr" },
 });
 const sha = (value) => createHash("sha256").update(value).digest("hex");

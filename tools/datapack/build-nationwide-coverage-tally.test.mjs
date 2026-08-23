@@ -200,14 +200,14 @@ test("커밋된 전국 coverage tally ledger는 현행 입력에서 바이트 �
     // 후속 #2138 admission PR은 (1) ledger.regeneration.command로 ledger를 재생성하고 (2) 이 상수를
     // 같은 커밋에서 함께 갱신해야 한다. 둘 중 하나만 하면 이 테스트가 fail closed 된다.
     assert.equal(ledger.launchRequired.totalCount, 270);
-    assert.equal(ledger.launchRequired.inventoryAdmittedCount, 83);
+    assert.equal(ledger.launchRequired.inventoryAdmittedCount, 75);
     assert.equal(ledger.launchRequired.explicitlyUnsupportedWithEvidenceCount, 4);
-    assert.equal(ledger.launchRequired.missingCount, 183);
+    assert.equal(ledger.launchRequired.missingCount, 191);
     assert.deepEqual(ledger.launchRequired.missingByKind, {
-      DUAL_OPERATOR_UNMATCHED: 9,
-      NO_ADMITTED_SOURCE: 174,
+      DUAL_OPERATOR_UNMATCHED: 4,
+      NO_ADMITTED_SOURCE: 187,
     });
-    assert.equal(ledger.launchRequired.terminalCount, 87);
+    assert.equal(ledger.launchRequired.terminalCount, 79);
     assert.equal(ledger.launchRequired.supportStartedResolutionCount, 0);
     assert.equal(ledger.launchRequired.earliestResolutionNextReviewAt, "2026-10-23T09:12:39.105Z");
     assert.equal(ledger.launchRequired.requirements.length, 270);
@@ -215,18 +215,15 @@ test("커밋된 전국 coverage tally ledger는 현행 입력에서 바이트 �
     assert.equal(ledger.enhancement.earliestResolutionNextReviewAt, null);
     assert.equal(ledger.enhancement.requirements.length, 45);
 
-    // #2514 B0 파일럿: candidate 게이트가 SUPPORTED로 전이시킨 requirement는 이 ledger에서도 같은 소스로
-    // INVENTORY_ADMITTED여야 한다(두 판정 축이 반대 결론을 내지 않도록 고정).
+    // 서울 1~8호선은 v2 admission 전 inventory tally에서도 MISSING이다. historical diagnostic 행은
+    // line scope를 claim하지 않으며, 이 상태를 candidate gate와 같은 방향으로 고정한다.
     const pilot = ledger.launchRequired.requirements.find((entry) =>
       entry.regionId === "capital"
       && entry.operatorId === "seoul-metro"
       && entry.lineId === "seoul-4"
       && entry.sourceDomain === "route_map_positions");
-    assert.equal(pilot.status, "INVENTORY_ADMITTED");
-    assert.deepEqual(pilot.admittedSourceIds, [
-      "seoul-metro-route-map-positions",
-      "seoulmetro-cyberstation-route-map",
-    ]);
+    assert.equal(pilot.status, "MISSING");
+    assert.deepEqual(pilot.admittedSourceIds, []);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

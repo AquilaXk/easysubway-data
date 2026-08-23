@@ -252,8 +252,29 @@
       }
     },
     {
+      "sourceId": "seoul-metro-route-map-positions",
+      "sourceClassId": "route_map_positions",
+      "retentionClassId": "standard-90d",
+      "ownerRole": "datapack-source-owner",
+      "stewardRole": "datapack-data-steward",
+      "approvalRole": "datapack-release-approver",
+      "escalationHours": 4,
+      "alertRoute": "github:area-datapack",
+      "licenseReview": {
+        "status": "APPROVED",
+        "termsHash": "f7c7534e3fbac3b218bd91c55da7259416478cb5eaa259400576cd04e5fef0e7",
+        "reviewedAt": "2026-08-14T15:34:07.000Z",
+        "nextReviewAt": "2027-08-14T15:34:07.000Z",
+        "termsUrl": "https://www.data.go.kr/data/15099316/fileData.do",
+        "reviewedProvider": "서울교통공사",
+        "reviewedDatasetUrl": "https://www.data.go.kr/data/15099316/fileData.do",
+        "redistributionScopes": ["DERIVED_DATAPACK"],
+        "approvedByRole": "datapack-release-approver"
+      }
+    },
+    {
       "sourceId": "seoulmetro-cyberstation-route-map",
-      "sourceClassId": "route_map_asset",
+      "sourceClassId": "route_map_asset_historical",
       "retentionClassId": "standard-90d",
       "ownerRole": "datapack-source-owner",
       "stewardRole": "datapack-data-steward",

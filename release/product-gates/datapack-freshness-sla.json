@@ -43,14 +43,25 @@
       "freshnessMetric": "plannedEtaCoverageRatio"
     },
     {
-      "id": "route_map_asset",
+      "id": "route_map_positions",
+      "sourceIds": ["seoul-metro-route-map-positions"],
+      "examples": ["official public station code/name/latitude/longitude", "versioned deterministic route-map layout"],
+      "basisField": "retrievedAt",
+      "reverificationCadence": "P90D",
+      "offlinePackEligible": true,
+      "eventTriggers": ["official public data revision", "new station opening", "line extension opening"],
+      "changePublishSla": "P3D",
+      "freshnessMetric": "routeMapPositionFreshnessRatio"
+    },
+    {
+      "id": "route_map_asset_historical",
       "sourceIds": ["seoulmetro-cyberstation-route-map"],
-      "examples": ["official cyber-station SVG", "route map label polygons"],
+      "examples": ["historical web route-map diagnostic only"],
       "basisField": "retrievedAt",
       "reverificationCadence": "P1Y",
-      "offlinePackEligible": true,
-      "eventTriggers": ["new station opening", "line extension opening", "official map revision"],
-      "changePublishSla": "P14D",
+      "offlinePackEligible": false,
+      "eventTriggers": ["historical evidence review"],
+      "changePublishSla": "not-applicable",
       "freshnessMetric": "routeMapPositionFreshnessRatio"
     },
     {

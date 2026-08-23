@@ -3,7 +3,7 @@
 //
 // 검증 축:
 //   1. tracked evidence가 현행 입력에서 바이트 단위로 재생성된다(오프라인·서명 키 없이).
-//   2. 파일럿 scope가 line-scope 재기술 전 MISSING → 후 SUPPORTED로 전이한다.
+//   2. 서울 1~8호선은 public v2 admission 전까지 두 candidate variant 모두 MISSING이다.
 //   3. 대구 9 requirement가 같은 실행에서 MISSING → SUPPORTED로 전이한다(B1).
 //   4. spec의 line-scope 재기술과 tracked source-inventory가 어긋나면 하네스가 fail closed 한다.
 //   5. 지역 데이터 편입은 allowlist materializer·tracked 입력·선언 행수·승계 행 불변에 묶인다(B1).
@@ -12,14 +12,13 @@
 //      스키마 일반화가 안전 경계를 넓히지 않는다(B2-a).
 //   8. 부산 4노선 5도메인 20 requirement가 같은 실행에서 전이하고, 지역 자체가 없는 승계 원본에
 //      topology → 나머지 도메인 순으로 체인되는 선행 조건이 조립에서 강제된다(B2-b).
-//   9. 대전·광주 5도메인, 수도권 노선도 23 requirement, 인천 13 requirement가 같은 실행에서 전이한다(B3).
+//   9. 대전·광주 5도메인, 수도권 KRIC·9호선 노선도, 인천 13 requirement가 같은 실행에서 전이한다(B3).
 //  10. 선언된 non-transition 축이 전환 범위를 넓히지 못한다(B3): 실제로 전환되는 키에 선언을 달거나,
 //      사유를 빼거나, 선언 없이 전환되지 않은 키가 남으면 모두 fail closed 된다.
 //
 // 실행 시간: 편입별 결속·창 회귀는 그 편입 하나만 담은 축소 spec으로 돈다. 대상 편입은 앞선 편입 결과에
 // 의존하지 않고(지역의 첫 편입이 운영기관·노선·역을 세우거나, 수도권 KRIC 노선도처럼 계보를 tracked
-// snapshot 파일로 대조한다. 서울 1~8호선 편입만 승계 pack에 의존하는데 그 선행 조건인 서울교통공사
-// 운영기관·cyberstation 소스는 승계 원본이 이미 갖고 있어 축소해도 그대로 만족된다),
+// snapshot 파일로 대조한다),
 // 이 회귀들이 겨냥한 두 가드는 모두 어댑터의 경로 결속과 materializer
 // requiredSource의 창 판정이라 승계 행수 대조·pack 선행 조건 검사보다 먼저 걸린다(실측). 축소로 달라지는
 // addedRows는 그 판정에 닿지 않고, 가드를 끄면 진단 문구가 달라져 assert.rejects가 그대로 FAIL한다.
@@ -38,11 +37,15 @@ import {
   EVIDENCE_PATH,
   applyPackDataInclusions,
   assertDeclaredTransitionsMatchVariants,
+  assertDeferredCandidateRequirementsMatchActualSet,
+  assertDeferredCandidateRequirementsMatchReports,
+  assertInheritedLineScopeRetirementsMatchActualSet,
   assertLineScopeRedescriptionsMatchActualRequiredSet,
   assertInheritedRowsUnchanged,
   assertNonTransitionReasons,
   classifyLineScopeTransition,
   inheritedRowSnapshot,
+  retireInheritedLineScopes,
   runNationwideCandidateCoverageGate,
   validateNationwideCandidateCoverageSpec,
 } from "./run-nationwide-candidate-coverage-gate.mjs";
@@ -60,8 +63,6 @@ const RESOLUTION_PLAN_PATH =
 const RESOLUTIONS_PATH =
   "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260725.json";
 const REVIEWED_PACK_PATH = "tools/datapack/release/capital-production-reviewed-pack.json";
-const PILOT_REQUIREMENT_KEY = "capital:seoul-metro:seoul-4:route_map_positions";
-const PILOT_SOURCE_ID = "seoulmetro-cyberstation-route-map";
 // #2549 B1 대상 9 requirement(대구 3노선 × membership/topology/timetable)와
 // #2580 B2-a 대상 6 requirement(대구 3노선 × route_map_positions/accessibility_facilities).
 const DAEGU_LINE_IDS = ["line-5b8d9b05e7e6", "line-e2938a4cc492", "line-0ffaa95b1b5d"];
@@ -110,8 +111,7 @@ const DAEJEON_REQUIREMENT_KEYS = SINGLE_LINE_DOMAINS
   .map((domain) => `daejeon:daejeon-transportation:${DAEJEON_LINE_ID}:${domain}`);
 const GWANGJU_REQUIREMENT_KEYS = SINGLE_LINE_DOMAINS
   .map((domain) => `gwangju:gwangju-metropolitan-rapid-transit:${GWANGJU_LINE_ID}:${domain}`);
-// 수도권 노선도 재기술이 여는 requirement. 4호선은 B0 파일럿 키와 같아 여기서 제외한다 — 이 배열은
-// "이 배치가 새로 여는 키"이고 4호선은 이미 SUPPORTED라 순증이 아니다(근거 소스만 둘로 는다).
+// 수도권 노선도 재기술이 여는 KRIC requirement.
 const CAPITAL_ROUTE_MAP_REQUIREMENT_KEYS = [
   ["korail", "line-6e39be0cb6e2"],
   ["korail", "line-54a7b980b7c3"],
@@ -123,13 +123,6 @@ const CAPITAL_ROUTE_MAP_REQUIREMENT_KEYS = [
   ["operator-3c623bf1a427", "line-30886152e4f8"],
   ["operator-10d7cf275a80", "line-aefa08ccc0a9"],
   ["operator-2e23276dfa94", "line-5500c1600f71"],
-  ["seoul-metro", "line-472a81add377"],
-  ["seoul-metro", "seoul-2"],
-  ["seoul-metro", "line-41a8c75ec9d8"],
-  ["seoul-metro", "line-80fc4d5350d4"],
-  ["seoul-metro", "line-3f41718e0833"],
-  ["seoul-metro", "line-15b3b8a93259"],
-  ["seoul-metro", "line-2b2d9eaa53d0"],
 ].map(([operatorId, lineId]) => `capital:${operatorId}:${lineId}:route_map_positions`);
 const DAEJEON_MATERIALIZERS = [
   "tools/datapack/materialize-daejeon-timetable.mjs",
@@ -171,7 +164,6 @@ const INCHEON_REQUIREMENT_KEYS = [
 const CAPITAL_MATERIALIZERS = [
   "tools/datapack/materialize-kric-capital-wide-rail-route-map-positions.mjs",
   "tools/datapack/materialize-kric-capital-light-rail-route-map-positions.mjs",
-  "tools/datapack/materialize-seoul-route-map-positions.mjs",
   "tools/datapack/materialize-seoul9-phase1-route-map-positions.mjs",
   "tools/datapack/materialize-seoul9-route-map-positions.mjs",
 ];
@@ -365,7 +357,7 @@ const GWANGJU_INCLUSION_BINDINGS = [
   },
 ];
 // 수도권 노선도 편입은 결속 단위가 편입이 아니라 노선(=소스)이다. 광역·경전철 편입은 노선별 snapshotPath를
-// 각 노선 소스의 정본 경로에 결속하고, 서울 편입만 편입 층 snapshotPath 하나를 쓴다.
+// 각 노선 소스의 정본 경로에 결속하고, 9호선 편입은 편입 층 snapshotPath 하나를 쓴다.
 const CAPITAL_WIDE_RAIL_LINE_SOURCE_IDS = [
   "kric-gyeongui-jungang-route-map-positions",
   "kric-gyeongchun-route-map-positions",
@@ -383,7 +375,6 @@ const CAPITAL_LIGHT_RAIL_LINE_SOURCE_IDS = [
   "kric-sillim-route-map-positions",
   "kric-gimpo-goldline-route-map-positions",
 ];
-const CAPITAL_SEOUL_ROUTE_MAP_SOURCE_ID = "seoul-metro-route-map-positions";
 const CAPITAL_INCLUSION_BINDINGS = [
   {
     labelKo: "광역철도",
@@ -403,21 +394,12 @@ const CAPITAL_INCLUSION_BINDINGS = [
     // 하한 위반은 편입이 체인하는 첫 노선 소스에서 걸린다 — 카탈로그 순서상 신분당선이 첫 노선이다.
     belowLowerBoundPattern: /kric-shinbundang-route-map-positions route-map admission snapshot is stale or future-dated/,
   },
-  {
-    labelKo: "서울 1~8호선",
-    slug: "seoul",
-    offset: 2,
-    sourceId: CAPITAL_SEOUL_ROUTE_MAP_SOURCE_ID,
-    evidenceKey: "routeMapAdmissionEvidence",
-    reorderedTables: ["lines"],
-    belowLowerBoundPattern: /seoul-metro-route-map-positions route-map admission snapshot is stale or future-dated/,
-  },
   // 9호선 두 소스는 노선 층 경로 키를 쓰지 않는다 — 한 편입이 소스 하나만 싣기 때문이다. 대신 편입 층에
   // snapshotPath와 topologySnapshotPath를 함께 두고 둘 다 그 소스의 정본에 결속한다.
   {
     labelKo: "9호선 1단계",
     slug: "seoul9-phase1",
-    offset: 3,
+    offset: 2,
     sourceId: "kric-seoul-metro-line9-1-route-map-positions",
     evidenceKey: "routeMapAdmissionEvidence",
     reorderedTables: ["coverageLineOperatorScopes", "lines", "operators"],
@@ -427,7 +409,7 @@ const CAPITAL_INCLUSION_BINDINGS = [
   {
     labelKo: "9호선 2·3단계",
     slug: "seoul9-phase23",
-    offset: 4,
+    offset: 3,
     sourceId: "seoul-metro-line9-23-route-map-positions",
     evidenceKey: "routeMapAdmissionEvidence",
     // 이 편입은 운영기관·노선·scope를 하나도 더하지 않아(1단계 편입이 이미 만들었고 FILE 계보 표기는
@@ -473,8 +455,8 @@ const INCHEON_INCLUSION_BINDINGS = [
     outsideWindowPattern: /incheon-transit-accessibility evidence freshness is invalid/,
   },
 ];
-// 이 spec이 실제 전이 대상으로 등재한 requirement 전량. 4호선(B0 파일럿 키)은 승계 source만으로 이미
-// SUPPORTED여서 ALREADY_SUPPORTED_BY_INHERITED_SCOPE로 따로 선언하며, 이 집합에는 넣지 않는다.
+// 이 spec이 실제 전이 대상으로 등재한 requirement 전량. 서울 1~8호선은 public v2 admission 전까지
+// candidate 지원 대상으로 등재하지 않는다.
 const ALL_TRANSITIONING_KEYS = [
   ...DAEGU_REQUIREMENT_KEYS,
   ...BUSAN_REQUIREMENT_KEYS,
@@ -547,18 +529,22 @@ test("tracked Incheon inclusions는 current topology admission identity에 결�
   assert.equal(accessibility.topologySnapshotPath, admission.snapshotPath);
 });
 
-test("tracked capital pilot line scope는 inherited boundary로 분류된다", async () => {
-  const [spec, reviewed] = await Promise.all([
+test("historical capital source는 inherited audit boundary로만 남는다", async () => {
+  const [spec, inventory, reviewed] = await Promise.all([
     readJson(SPEC_PATH),
+    readJson(INVENTORY_PATH),
     readJson(REVIEWED_PACK_PATH),
   ]);
   const inheritedPack = reviewed.packs.find(({ id }) => id === "capital");
-  const pilotSource = inheritedPack.sourceInventory.find(({ id }) => id === PILOT_SOURCE_ID);
+  const historicalSource = inventory.sources.find(({ id }) => id === "seoulmetro-cyberstation-route-map");
+  const inheritedSource = inheritedPack.sourceInventory.find(({ id }) => id === historicalSource.id);
 
-  assert.deepEqual(pilotSource.coverageScope.lineIds, ["seoul-4"]);
+  assert.equal(historicalSource.requiredForProductionPack, false);
+  assert.equal(historicalSource.coverageScope.lineIds, undefined);
+  assert.deepEqual(inheritedSource.coverageScope.lineIds, ["seoul-4"]);
   assert.equal(
     spec.lineScopeRedescriptions.some(
-      ({ sourceId, sourceDomain }) => sourceId === PILOT_SOURCE_ID && sourceDomain === "route_map_positions",
+      ({ sourceId }) => sourceId === "seoul-metro-route-map-positions",
     ),
     false,
   );
@@ -618,21 +604,7 @@ test("candidate evidence는 배포 artifact row count와 transition을 함께 �
       strictEligible: 652,
     },
   });
-  const pilotNonTransition = evidence.declaredNonTransitions.entries.find(
-    (entry) => entry.requirementKey === PILOT_REQUIREMENT_KEY,
-  );
-  assert.deepEqual(pilotNonTransition, {
-    requirementKey: PILOT_REQUIREMENT_KEY,
-    sourceId: CAPITAL_SEOUL_ROUTE_MAP_SOURCE_ID,
-    sourceDomain: "route_map_positions",
-    reasonCode: "ALREADY_SUPPORTED_BY_INHERITED_SCOPE",
-    reasonKo: pilotNonTransition.reasonKo,
-    before: "SUPPORTED",
-    after: "SUPPORTED",
-    baselineSourceIds: [PILOT_SOURCE_ID],
-    lineScopedSourceIds: [CAPITAL_SEOUL_ROUTE_MAP_SOURCE_ID, PILOT_SOURCE_ID],
-    supportingRecordCountByField: { route_map_position: 27, route_map_label_polygon: 27 },
-  });
+  assert.equal(evidence.declaredNonTransitions.entries.length, 1);
 });
 
 test("커밋된 candidate 게이트 evidence는 현행 입력에서 바이트 단위로 재생성된다", async () => {
@@ -695,7 +667,7 @@ test("커밋된 candidate 게이트 evidence는 현행 입력에서 바이트 �
   }
 });
 
-test("파일럿 scope는 승계 지원을 보존하고 line-scope 재기술 source를 추가한다", async () => {
+test("서울 1~8호선은 public v2 admission 전까지 두 candidate variant 모두 MISSING이다", async () => {
   const evidence = await readJson(EVIDENCE_PATH);
 
   // candidate는 root가 되는 단일 pack이어야 게이트가 단독 계약으로 판정한다.
@@ -703,11 +675,9 @@ test("파일럿 scope는 승계 지원을 보존하고 line-scope 재기술 sour
   assert.equal(evidence.candidatePack.artifactKind, "production");
   assert.equal(evidence.candidatePack.inheritsFrom.path, REVIEWED_PACK_PATH);
 
-  // 전이는 절대 수치가 아니라 상대 비교로 본다. 승계 팩의 다른 소스가 line-scope를 갖게 되면
-  // 두 variant의 supported 총량이 함께 늘 수 있고, 그때도 아래 두 축은 그대로 성립해야 한다.
   const transitioningKeys = ALL_TRANSITIONING_KEYS;
   const baselineKeys = evidence.variants.baseline.supportedRequirementKeys;
-  assert.equal(evidence.variants.baseline.launchRequired.supportedCount, 1);
+  assert.equal(evidence.variants.baseline.launchRequired.supportedCount, 0);
   for (const key of transitioningKeys) {
     assert.equal(baselineKeys.includes(key), false, `${key}는 재기술 전 SUPPORTED가 아니어야 한다`);
   }
@@ -720,34 +690,35 @@ test("파일럿 scope는 승계 지원을 보존하고 line-scope 재기술 sour
     evidence.variants.baseline.launchRequired.supportedCount + transitioningKeys.length,
   );
   assert.equal(evidence.variants.lineScoped.launchRequired.totalCount, 270);
-  assert.equal(evidence.variants.lineScoped.launchRequired.supportedCount, 82);
+  assert.equal(evidence.variants.lineScoped.launchRequired.supportedCount, 74);
 
-  // pilotRequirements는 codepoint 순이므로 첫 항목이 어느 지역인지는 등재 범위가 늘 때마다 바뀐다 —
-  // 위치가 아니라 키로 찾는다(#2587에서 busan 키가 capital 앞에 오면서 위치 가정이 깨졌다).
-  const requirementNamed = (variant, key) =>
-    evidence.variants[variant].pilotRequirements.find((entry) => entry.requirementKey === key);
-  const before = requirementNamed("baseline", PILOT_REQUIREMENT_KEY);
-  const after = requirementNamed("lineScoped", PILOT_REQUIREMENT_KEY);
-  assert.equal(before.requirementKey, PILOT_REQUIREMENT_KEY);
-  assert.equal(before.status, "SUPPORTED");
-  assert.equal(after.status, "SUPPORTED");
-  assert.equal(after.releaseTier, "LAUNCH_REQUIRED");
-  assert.equal(after.coveredFields, 2);
-  assert.equal(after.denominator, 2);
-  // #2595부터 4호선은 근거 소스가 둘이다 — B0 파일럿의 cyberstation 좌표 2행에 공식 좌표 snapshot이 더해진다.
-  assert.deepEqual(after.sourceIds, [CAPITAL_SEOUL_ROUTE_MAP_SOURCE_ID, PILOT_SOURCE_ID]);
-  assert.deepEqual(before.sourceIds, [PILOT_SOURCE_ID]);
-  assert.deepEqual(after.missingFields, []);
-  // denominator 2는 필수 필드 2개를 뜻하고 데이터 행 2개가 아니다 — 뒷받침 행수를 따로 고정한다.
-  // 27행은 cyberstation 2행 + 공식 좌표 편입 25행이며, 필드 수(2)와도 노선의 역 수와도 다른 축이다.
-  assert.deepEqual(after.supportingRecordCountByField, {
-    route_map_position: 27,
-    route_map_label_polygon: 27,
-  });
-  assert.deepEqual(before.supportingRecordCountByField, { route_map_position: 2, route_map_label_polygon: 2 });
-  assert.match(evidence.readingGuide.denominatorSemanticsKo, /데이터 행 수가 아니다/);
-
-  assert.equal(evidence.transitions.some((entry) => entry.requirementKey === PILOT_REQUIREMENT_KEY), false);
+  // deferredCandidateRequirements는 public v2 artifact pending gap의 exact active set을 따로 기록한다.
+  // 이 축은 SUPPORTED 전이 목록이 아니므로 pilotRequirements에 들어 있었는지에 의존하지 않는다.
+  const seoulKeys = [
+    "line-472a81add377", "seoul-2", "line-41a8c75ec9d8", "seoul-4",
+    "line-80fc4d5350d4", "line-3f41718e0833", "line-15b3b8a93259", "line-2b2d9eaa53d0",
+  ].map((lineId) => `capital:seoul-metro:${lineId}:route_map_positions`);
+  const deferredByKey = new Map(
+    evidence.deferredCandidateRequirements.entries.map((entry) => [entry.requirementKey, entry]),
+  );
+  assert.equal(evidence.deferredCandidateRequirements.count, 8);
+  assert.equal(evidence.deferredCandidateRequirements.declarationCount, 1);
+  assert.deepEqual([...deferredByKey.keys()].sort(), [...seoulKeys].sort());
+  for (const key of seoulKeys) {
+    const deferred = deferredByKey.get(key);
+    assert.equal(deferred.before, "MISSING", `baseline ${key}`);
+    assert.equal(deferred.after, "MISSING", `lineScoped ${key}`);
+    assert.equal(deferred.beforeSourceIds.includes("seoul-metro-route-map-positions"), false, `baseline ${key}`);
+    assert.equal(deferred.afterSourceIds.includes("seoul-metro-route-map-positions"), false, `lineScoped ${key}`);
+    assert.equal(deferred.beforeSourceIds.includes("seoulmetro-cyberstation-route-map"), false, `baseline ${key}`);
+    assert.equal(deferred.afterSourceIds.includes("seoulmetro-cyberstation-route-map"), false, `lineScoped ${key}`);
+  }
+  assert.deepEqual(evidence.inheritedLineScopeRetirements.entries, [{
+    sourceId: "seoulmetro-cyberstation-route-map",
+    inheritedLineIds: ["seoul-4"],
+    reasonCode: "HISTORICAL_PREDECESSOR_AUDIT_ONLY",
+    reasonKo: evidence.inheritedLineScopeRetirements.entries[0].reasonKo,
+  }]);
   assert.deepEqual(
     evidence.transitions.map(({ requirementKey }) => requirementKey),
     [...transitioningKeys].sort(),
@@ -1203,11 +1174,9 @@ test("광주 5 requirement는 체인 편입으로 MISSING에서 SUPPORTED로 전
   );
 });
 
-// #2595 B3: 수도권 노선도는 한 도메인에 소스 11건이 붙는다. 이 17건을 여는 편입은 materializer 단위로
-// 3건이며(광역철도 6소스 체인 / 경전철 4소스 체인 / 서울 1소스), 수도권 노선도 편입 전체는 9호선 두 건을
-// 더해 5건이다. 앞의 두 편입은 승계 pack에 의존하지 않고 서울 1~8호선 편입만 승계 원본의 운영기관·
-// cyberstation 소스 등재와 좌표 PK 집합에 의존한다(그 셋은 승계 원본이 이미 갖고 있다).
-test("수도권 노선도 17 requirement는 편입 3건으로 MISSING에서 SUPPORTED로 전이한다", async () => {
+// #2595 B3: 수도권 KRIC 노선도 10 requirement는 두 materializer로 전이한다. 서울 1~8호선은
+// 공공 관측의 v2 admission 전까지 이 candidate에서 의도적으로 열지 않는다.
+test("수도권 KRIC 노선도 10 requirement는 편입 2건으로 MISSING에서 SUPPORTED로 전이한다", async () => {
   const evidence = await readJson(EVIDENCE_PATH);
   const byKey = new Map(evidence.variants.lineScoped.pilotRequirements.map((entry) => [entry.requirementKey, entry]));
   const baselineByKey = new Map(
@@ -1215,7 +1184,7 @@ test("수도권 노선도 17 requirement는 편입 3건으로 MISSING에서 SUPP
   );
   const fields = SINGLE_LINE_DOMAIN_FIELDS.route_map_positions;
 
-  assert.equal(CAPITAL_ROUTE_MAP_REQUIREMENT_KEYS.length, 17);
+  assert.equal(CAPITAL_ROUTE_MAP_REQUIREMENT_KEYS.length, 10);
   for (const requirementKey of CAPITAL_ROUTE_MAP_REQUIREMENT_KEYS) {
     const before = baselineByKey.get(requirementKey);
     const after = byKey.get(requirementKey);
@@ -1230,35 +1199,20 @@ test("수도권 노선도 17 requirement는 편입 3건으로 MISSING에서 SUPP
       `${requirementKey} supporting rows`,
     );
   }
-  // 4호선만 근거 소스가 둘이다 — 이 배치가 여는 17건과 달리 키 자체는 B0 파일럿에서 이미 열려 있었다.
-  assert.equal(CAPITAL_ROUTE_MAP_REQUIREMENT_KEYS.includes(PILOT_REQUIREMENT_KEY), false);
-  assert.equal(byKey.get(PILOT_REQUIREMENT_KEY).sourceIds.length, 2);
-
-  const [wideRail, lightRail, seoul] = evidence.packDataInclusions.entries.slice(CAPITAL_INDEX);
+  const [wideRail, lightRail] = evidence.packDataInclusions.entries.slice(CAPITAL_INDEX);
   // 광역철도 편입은 승계 원본에 없던 표(coverageLineOperatorScopes)를 새로 만든다 — 뒤 편입은 자기 몫만 더한다.
   // 서해선·GTX-A는 두 운영기관 scope를 함께 내므로 광역철도의 scope 행이 노선 수보다 둘 많다. 경전철은
   // 노선당 하나다 — 신분당선 정본도 두 운영기관을 등재하지만 FILE 계보 표기(서울교통공사)는 scope로 내지 않는다.
   assert.equal(wideRail.addedRows.coverageLineOperatorScopes, 10);
   assert.equal(lightRail.addedRows.coverageLineOperatorScopes, 5);
-  assert.equal(seoul.addedRows.coverageLineOperatorScopes, 0);
   assert.equal(wideRail.addedRows.sourceInventory, 8);
   assert.equal(lightRail.addedRows.sourceInventory, 5);
-  assert.equal(seoul.addedRows.sourceInventory, 1);
   // 역 수와 역·노선 쌍 수는 다른 축이다 — 환승역은 역 하나에 노선 소속을 여러 개 낸다.
   assert.equal(wideRail.addedRows.stations, 192);
   assert.equal(wideRail.addedRows.stationLines, 217);
   assert.equal(wideRail.addedRows.routeMapPositions, 217);
   assert.equal(lightRail.addedRows.stations, 58);
   assert.equal(lightRail.addedRows.stationLines, 63);
-  assert.equal(seoul.addedRows.stations, 213);
-  assert.equal(seoul.addedRows.stationLines, 273);
-  // 서울 편입은 운영기관을 더하지 않고(승계 원본에 이미 있다) 노선은 4호선을 뺀 7개만 더한다.
-  assert.equal(seoul.addedRows.operators, 0);
-  assert.equal(seoul.addedRows.lines, 7);
-  // 승계 자산 보존: capital pilot cyberstation 좌표 2행과 PK가 겹치는 행은 건너뛴다 —
-  // 실린 좌표 273행은 이 편입이 만든 역·노선 쌍 수와 같다.
-  assert.equal(seoul.addedRows.routeMapPositions, 273);
-
   // 재정렬 선언은 evidence에도 남는다. 선언하지 않은 편입에는 키 자체가 없어야 한다(죽은 선언 방지).
   for (const { offset, reorderedTables } of CAPITAL_INCLUSION_BINDINGS) {
     assert.deepEqual(evidence.packDataInclusions.entries[CAPITAL_INDEX + offset].reorderedTables, reorderedTables);
@@ -1311,14 +1265,14 @@ test("수도권 dual-operator 노선 6 requirement는 편입으로 MISSING에서
     false,
   );
 
-  const [phase1, phase23] = evidence.packDataInclusions.entries.slice(CAPITAL_INDEX + 3);
+  const [phase1, phase23] = evidence.packDataInclusions.entries.slice(CAPITAL_INDEX + 2);
   assert.equal(phase1.addedRows.routeMapPositions, 25);
-  assert.equal(phase1.addedRows.stations, 18);
+  assert.equal(phase1.addedRows.stations, 21);
   assert.equal(phase1.addedRows.stationLines, 25);
   assert.equal(phase1.addedRows.operators, 1);
   assert.equal(phase1.addedRows.lines, 1);
   assert.equal(phase23.addedRows.routeMapPositions, 13);
-  assert.equal(phase23.addedRows.stations, 10);
+  assert.equal(phase23.addedRows.stations, 12);
   assert.equal(phase23.addedRows.stationLines, 13);
   // 2·3단계 편입은 1단계가 만든 운영기관·노선·scope를 다시 만들지 않는다. 정본이 dual coverage로 등재한
   // 나머지 표기(서울교통공사)는 activeLineScopes에 대응이 없는 FILE 계보라 scope 행으로도 내지 않는다.
@@ -1357,22 +1311,20 @@ test("게이트 evidence는 SUPPORTED를 근거 성격별로 나눠 기록하고
   // 이 배치의 실측 수치를 못박는다 — 범주 비율이 조용히 움직이면 여기서 걸린다.
   assert.deepEqual(evidence.variants.lineScoped.supportedByEvidenceModel, {
     "official-source": 46,
-    "owner-authored-canonical": 36,
+    "owner-authored-canonical": 28,
   });
-  assert.deepEqual(evidence.variants.baseline.supportedByEvidenceModel, { "owner-authored-canonical": 1 });
+  assert.deepEqual(evidence.variants.baseline.supportedByEvidenceModel, {});
 
-  // owner-authored-canonical 판정은 근거가 결정한다. 7호선 route-map 키는 이 편입으로 전이하되,
-  // 4호선은 승계 근거만으로 이미 SUPPORTED여서 별도 non-transition 계약으로 감사한다.
+  // owner-authored-canonical 판정은 근거가 결정한다. 인천교통공사 7호선 route-map 키는 이 편입으로
+  // 전이하지만, 같은 노선의 서울교통공사 scope는 public v2 admission artifact 전까지 deferred gap이다.
   const routeMapKey = `capital:seoul-metro:${INCHEON_LINE7_ID}:route_map_positions`;
-  const requirementNamed = (variant) =>
-    evidence.variants[variant].pilotRequirements.find((entry) => entry.requirementKey === routeMapKey);
-  assert.equal(requirementNamed("baseline").status, "MISSING");
-  assert.equal(requirementNamed("lineScoped").status, "SUPPORTED");
-  assert.equal(requirementNamed("baseline").denominator, requirementNamed("lineScoped").denominator);
-  assert.equal(
-    requirementNamed("baseline").blockingThreshold,
-    requirementNamed("lineScoped").blockingThreshold,
+  const deferred = evidence.deferredCandidateRequirements.entries.find(
+    (entry) => entry.requirementKey === routeMapKey,
   );
+  assert.equal(deferred.before, "MISSING");
+  assert.equal(deferred.after, "MISSING");
+  assert.deepEqual(deferred.beforeSourceIds, []);
+  assert.deepEqual(deferred.afterSourceIds, []);
 });
 
 // #2595 B3 두 번째 배치. 인천은 부산과 같은 모양(역사정보 편입이 지역 자체를 세운다)이지만, 소스가 덮는
@@ -1398,7 +1350,7 @@ test("인천 13 requirement는 체인 편입으로 전이하고 7호선 구간�
 
   // 선언된 non-transition은 evidence에 그대로 남고, 사유 코드가 요구한 실측 술어도 함께 기록된다.
   // 수치를 따로 못박아 이 축이 조용히 늘면 evidence diff와 이 회귀가 함께 걸리게 한다.
-  assert.equal(evidence.declaredNonTransitions.count, 2);
+  assert.equal(evidence.declaredNonTransitions.count, 1);
   assert.equal(evidence.declaredNonTransitions.entries.length, evidence.declaredNonTransitions.count);
   const incheonNonTransition = evidence.declaredNonTransitions.entries.find(
     (entry) => entry.requirementKey === INCHEON_NON_TRANSITION_KEY,
@@ -1423,12 +1375,11 @@ test("인천 13 requirement는 체인 편입으로 전이하고 7호선 구간�
     evidence.variants.lineScoped.supportedRequirementKeys.includes(INCHEON_NON_TRANSITION_KEY),
     false,
   );
-  // 7호선 서울 구간 route_map_positions는 그대로 남아야 한다 — 인천이 같은 노선에 운영기관 scope를
-  // 더하면서 승계 운영기관 scope를 밀어내면 그 requirement가 조용히 사라진다(잃은 키 0 축).
+  // 7호선 서울 구간 route_map_positions는 public v2 admission 전까지 열리지 않는다.
   assert.equal(
     evidence.variants.lineScoped.supportedRequirementKeys
       .includes(`capital:seoul-metro:${INCHEON_LINE7_ID}:route_map_positions`),
-    true,
+    false,
   );
 
   const [stationInfo, timetable, accessibility] = evidence.packDataInclusions.entries.slice(INCHEON_INDEX);
@@ -1437,9 +1388,9 @@ test("인천 13 requirement는 체인 편입으로 전이하고 7호선 구간�
   assert.equal(stationInfo.addedRows.stationLines, 71);
   assert.equal(stationInfo.addedRows.routeMapPositions, 71);
   assert.equal(stationInfo.addedRows.networkEdges, 116);
-  // 7호선 노선 레코드는 서울 편입이 이미 만들었고 운영기관 scope만 두 건(서울·인천)으로 는다.
-  assert.equal(stationInfo.addedRows.lines, 2);
-  assert.equal(stationInfo.addedRows.coverageLineOperatorScopes, 2);
+  // historical predecessor retirement 뒤에도 인천 편입이 7호선 노선 레코드까지 만들고 인천 scope 하나만 추가한다.
+  assert.equal(stationInfo.addedRows.lines, 3);
+  assert.equal(stationInfo.addedRows.coverageLineOperatorScopes, 1);
   assert.equal(timetable.addedRows.transitTrips, 1_414);
   assert.equal(timetable.addedRows.transitStopTimes, 40_898);
   assert.equal(timetable.addedRows.sourceInventory, 2);
@@ -1453,13 +1404,6 @@ test("candidate spec의 line-scope 재기술은 tracked source inventory와 동�
   const inventory = await readJson(INVENTORY_PATH);
   await readJson(APP_INVENTORY_PATH);
   const dataTestOwnership = await readJson(DATA_TEST_OWNERSHIP_PATH);
-  const capitalRouteMapRedescription = spec.lineScopeRedescriptions.find(
-    ({ sourceId, sourceDomain }) =>
-      sourceId === CAPITAL_SEOUL_ROUTE_MAP_SOURCE_ID && sourceDomain === "route_map_positions",
-  );
-  assert.ok(capitalRouteMapRedescription);
-  assert.ok(capitalRouteMapRedescription.lineIds.includes("seoul-4"));
-  assert.ok(capitalRouteMapRedescription.requirementKeys.includes(PILOT_REQUIREMENT_KEY));
 
   // 재기술 전건이 admission 정본과 동기여야 한다. #2549는 inventory를 바꾸지 않고 이미 line-scope로
   // 기술된 대구 소스를 그대로 승계하므로, 이 축이 깨지면 재기술이 정본을 앞질렀다는 뜻이다.
@@ -1467,7 +1411,7 @@ test("candidate spec의 line-scope 재기술은 tracked source inventory와 동�
   // 같아야 하므로 열리지 않는 노선도 declare하되, 그 키는 전이 집합에서 명시로 빠진다.
   assert.deepEqual(
     [...new Set(spec.lineScopeRedescriptions.flatMap(({ requirementKeys }) => requirementKeys))].sort(),
-    [...ALL_TRANSITIONING_KEYS, INCHEON_NON_TRANSITION_KEY, PILOT_REQUIREMENT_KEY].sort(),
+    [...ALL_TRANSITIONING_KEYS, INCHEON_NON_TRANSITION_KEY].sort(),
   );
   assert.deepEqual(
     spec.lineScopeRedescriptions.flatMap(
@@ -1475,7 +1419,7 @@ test("candidate spec의 line-scope 재기술은 tracked source inventory와 동�
         ({ requirementKey }) => requirementKey,
       ),
     ).sort(),
-    [INCHEON_NON_TRANSITION_KEY, PILOT_REQUIREMENT_KEY].sort(),
+    [INCHEON_NON_TRANSITION_KEY].sort(),
   );
   for (const entry of spec.lineScopeRedescriptions) {
     const declared = inventory.sources.find(({ id }) => id === entry.sourceId);
@@ -1518,7 +1462,8 @@ test("candidate spec의 line-scope 재기술은 tracked source inventory와 동�
 
   await context.test("inventory lineIds가 spec과 어긋나면 하네스가 거부한다", () => {
     const drifted = structuredClone(inventory);
-    delete drifted.sources.find(({ id }) => id === CAPITAL_SEOUL_ROUTE_MAP_SOURCE_ID).coverageScope.lineIds;
+    const { sourceId } = spec.lineScopeRedescriptions[0];
+    delete drifted.sources.find(({ id }) => id === sourceId).coverageScope.lineIds;
     assert.throws(
       () => validateNationwideCandidateCoverageSpec(spec, drifted),
       /source inventory coverageScope\.lineIds must match the spec redescription/,
@@ -1627,21 +1572,16 @@ test("candidate 안전 경계는 spec 편집만으로 넓힐 수 없다", async 
     );
   });
 
-  // #2549 B1이 파일럿의 "lineIds 1개" 단언을 근거 결속으로 바꿨다. 개수 제한이 사라진 자리를 아래 축이
-  // 대신 막는지 본다 — 선언 범위는 admission 정본(inventory)과 declare한 requirementKeys에 묶여 있다.
+  // 선언 범위는 admission 정본(inventory)과 declare한 requirementKeys에 묶여 있다.
   await context.test("선언 lineIds가 admission 정본과 다르면 거부된다", () => {
     rejectsValidationWith(
       (value) => {
-        // requirementKeys까지 함께 넓혀 spec 내부 정합은 맞춘 채로 정본 결속만 어긋나게 한다.
-        const capitalRouteMapRedescription = value.lineScopeRedescriptions.find(
-          ({ sourceId, sourceDomain }) =>
-            sourceId === CAPITAL_SEOUL_ROUTE_MAP_SOURCE_ID && sourceDomain === "route_map_positions",
-        );
-        assert.ok(capitalRouteMapRedescription, "capital route-map line-scope redescription must exist");
-        capitalRouteMapRedescription.lineIds = ["seoul-4", "seoul-2"];
-        capitalRouteMapRedescription.requirementKeys = [
-          PILOT_REQUIREMENT_KEY,
-          "capital:seoul-metro:seoul-2:route_map_positions",
+        value.lineScopeRedescriptions[0].lineIds = ["not-in-admission"];
+        value.lineScopeRedescriptions[0].requirementKeys = [
+          value.lineScopeRedescriptions[0].requirementKeys[0].replace(
+            value.lineScopeRedescriptions[0].requirementKeys[0].split(":")[2],
+            "not-in-admission",
+          ),
         ];
       },
       /source inventory coverageScope\.lineIds must match the spec redescription/,
@@ -1651,13 +1591,11 @@ test("candidate 안전 경계는 spec 편집만으로 넓힐 수 없다", async 
   await context.test("requirementKeys가 덮지 않는 lineIds는 거부된다", () => {
     rejectsValidationWith(
       (value) => {
-        const capitalRouteMapRedescription = value.lineScopeRedescriptions.find(
-          ({ sourceId, sourceDomain }) =>
-            sourceId === CAPITAL_SEOUL_ROUTE_MAP_SOURCE_ID && sourceDomain === "route_map_positions",
+        const multiLine = value.lineScopeRedescriptions.find(({ lineIds }) => lineIds.length > 1);
+        assert.ok(multiLine, "multi-line redescription must exist");
+        multiLine.requirementKeys = multiLine.requirementKeys.filter(
+          (requirementKey) => !requirementKey.includes(`:${multiLine.lineIds.at(-1)}:`),
         );
-        assert.ok(capitalRouteMapRedescription, "capital route-map line-scope redescription must exist");
-        capitalRouteMapRedescription.lineIds = ["seoul-4", "seoul-2"];
-        capitalRouteMapRedescription.requirementKeys = [PILOT_REQUIREMENT_KEY];
       },
       /requirementKeys must cover every redescribed line/,
     );
@@ -2207,7 +2145,7 @@ test("candidate 안전 경계는 spec 편집만으로 넓힐 수 없다", async 
     }
   }
 
-  // 서울 1~8호선·9호선 편입은 편입 층 snapshotPath 하나를 쓴다(소스 하나만 싣는다).
+  // 9호선 편입은 편입 층 snapshotPath 하나를 쓴다(소스 하나만 싣는다).
   for (const { labelKo, slug, offset, sourceId, evidenceKey } of CAPITAL_INCLUSION_BINDINGS) {
     if (sourceId === undefined) continue;
     await context.test(`수도권 ${labelKo} 편입 snapshotPath가 정본 밖 바이트 동일 사본이면 거부된다`, async () => {
@@ -2223,11 +2161,9 @@ test("candidate 안전 경계는 spec 편집만으로 넓힐 수 없다", async 
   }
 
   // capital-route-topology는 inventory 소스가 아니라 tracked snapshot 파일로만 존재해 admission 정본에
-  // snapshotPath 항목이 없다 — 노선도 정본의 topologySnapshotId에서 유도한 경로에 결속돼 있다. 서울
-  // 1~8호선 편입만 이 축이 없다(그 materializer는 경로 그래프 계보를 읽지 않는다).
+  // snapshotPath 항목이 없다 — 노선도 정본의 topologySnapshotId에서 유도한 경로에 결속돼 있다.
   for (const { labelKo, slug, offset, lineSourceIds, sourceId } of CAPITAL_INCLUSION_BINDINGS) {
     const topologySourceId = lineSourceIds?.[0] ?? sourceId;
-    if (topologySourceId === CAPITAL_SEOUL_ROUTE_MAP_SOURCE_ID) continue;
     await context.test(`수도권 ${labelKo} 편입 topologySnapshotPath가 정본 밖 사본이면 거부된다`, async () => {
       const declared = admissionEvidenceOf(inventory, topologySourceId, "routeMapAdmissionEvidence");
       await rejectsSnapshotCopy({
@@ -2381,17 +2317,15 @@ test("candidate 안전 경계는 spec 편집만으로 넓힐 수 없다", async 
     });
   }
 
-  // 수도권 세 편입 사이에는 선행 조건이 아예 없다(승계 pack 의존이 없다) — 그런데도 교환이 막히는 것은
+  // 수도권 네 편입 사이에는 선행 조건이 아예 없다(승계 pack 의존이 없다) — 그런데도 교환이 막히는 것은
   // 선언 행수 대조 때문이다. 새 표(coverageLineOperatorScopes)를 만드는 편입이 순서에 따라 갈리고,
   // 환승역 중복 제거 결과(stations·stationLines)도 앞선 편입이 무엇을 실었는지에 따라 갈린다.
   // 재정렬 선언도 같은 순서에 묶여 있지만(그 표에 승계 행이 있는지가 순서에 따라 갈린다) 실측상 먼저
   // 걸리는 것은 행수 대조다.
   for (const [labelKo, reordered, blockedMaterializer] of [
-    ["광역철도·경전철", [1, 0, 2, 3, 4], "materialize-kric-capital-light-rail-route-map-positions"],
-    ["서울·광역철도", [2, 0, 1, 3, 4], "materialize-seoul-route-map-positions"],
+    ["광역철도·경전철", [1, 0, 2, 3], "materialize-kric-capital-light-rail-route-map-positions"],
     // 9호선 두 소스는 같은 노선의 역을 나눠 실어 중복 제거 결과가 순서에 따라 갈린다.
-    ["9호선 1단계·2·3단계", [0, 1, 2, 4, 3], "materialize-seoul9-route-map-positions"],
-    ["9호선·서울 1~8호선", [0, 1, 3, 4, 2], "materialize-seoul9-phase1-route-map-positions"],
+    ["9호선 1단계·2·3단계", [0, 1, 3, 2], "materialize-seoul9-route-map-positions"],
   ]) {
     await context.test(`수도권 ${labelKo} 편입을 교환하면 선언 행수 대조에서 거부된다`, async () => {
       await rejectsWith(
@@ -2550,14 +2484,6 @@ test("candidate 안전 경계는 spec 편집만으로 넓힐 수 없다", async 
       (value) => { value.packDataInclusions[0].lines[0].lineId = "line-e57a361e8892"; },
       /lines must match the daejeon-station-distance-fare admission coverageScope lineIds/,
       { solo: DAEJEON_INDEX },
-    );
-  });
-
-  await context.test("서울 편입의 노선 번호가 정본 순서와 다르면 거부된다", async () => {
-    await rejectsWith(
-      (value) => { value.packDataInclusions[0].lines[0].lineNumber = 2; },
-      /must declare Seoul line numbers 1 through 8 in admission order/,
-      { solo: CAPITAL_INDEX + 2 },
     );
   });
 
@@ -3455,6 +3381,202 @@ test("승계 pack line scope의 축소는 빈 candidate와 inventory여도 거�
       fixture.spec, fixture.pack, fixture.inventory, fixture.targets, fixture.inheritedPack,
     ),
     /inherited candidate pack coverageScope\.lineIds must match candidate pack and source inventory: inherited-shrink/,
+  );
+});
+
+function inheritedLineScopeRetirementFixture(sourceId = "historical-source") {
+  const inheritedScope = {
+    lineIds: ["line-a"],
+    sourceDomains: ["route_map_positions"],
+    regionIds: ["region"],
+    operatorIds: ["operator"],
+  };
+  return {
+    spec: {
+      lineScopeRedescriptions: [],
+      inheritedLineScopeRetirements: [{
+        sourceId,
+        inheritedLineIds: ["line-a"],
+        reasonCode: "HISTORICAL_PREDECESSOR_AUDIT_ONLY",
+        reasonKo: "승계 원본 감사를 위한 historical predecessor 행이다.",
+      }],
+    },
+    inheritedPack: { sourceInventory: [{ id: sourceId, coverageScope: structuredClone(inheritedScope) }] },
+    pack: { sourceInventory: [{ id: sourceId, coverageScope: structuredClone(inheritedScope) }] },
+    inventory: {
+      sources: [{
+        id: sourceId,
+        requiredForProductionPack: false,
+        productionUseAllowed: false,
+        coverageScope: {
+          sourceDomains: ["route_map_positions"], regionIds: ["region"], operatorIds: ["operator"],
+        },
+      }],
+    },
+    targets: { requiredSourceDomains: [], activeLineScopes: [] },
+  };
+}
+
+test("inherited line-scope retirement은 명시된 historical predecessor audit 전이만 허용한다", () => {
+  const fixture = inheritedLineScopeRetirementFixture();
+  assert.doesNotThrow(() => assertInheritedLineScopeRetirementsMatchActualSet(
+    fixture.spec, fixture.pack, fixture.inventory, fixture.inheritedPack,
+  ));
+  assert.doesNotThrow(() => assertLineScopeRedescriptionsMatchActualRequiredSet(
+    fixture.spec, fixture.pack, fixture.inventory, fixture.targets, fixture.inheritedPack,
+  ));
+
+  const before = structuredClone(fixture.pack.sourceInventory[0]);
+  retireInheritedLineScopes(fixture.pack, fixture.spec.inheritedLineScopeRetirements);
+  const after = fixture.pack.sourceInventory[0];
+  const { lineIds: _retiredLineIds, ...coverageScopeWithoutLineIds } = before.coverageScope;
+  assert.deepEqual(after, { ...before, coverageScope: coverageScopeWithoutLineIds });
+});
+
+test("inherited line-scope retirement validator는 audit 계약 drift를 fail closed 한다", () => {
+  const invalidCases = [
+    ["duplicate", (fixture) => fixture.spec.inheritedLineScopeRetirements.push(structuredClone(
+      fixture.spec.inheritedLineScopeRetirements[0],
+    )), /duplicate inherited line-scope retirement sourceId/],
+    ["unknown", (fixture) => { fixture.spec.inheritedLineScopeRetirements[0].sourceId = "unknown"; }, /exactly once in source inventory/],
+    ["current lineIds", (fixture) => { fixture.inventory.sources[0].coverageScope.lineIds = []; }, /lineIds must be absent/],
+    ["production required", (fixture) => { fixture.inventory.sources[0].requiredForProductionPack = true; }, /requiredForProductionPack false/],
+    ["production allowed", (fixture) => { fixture.inventory.sources[0].productionUseAllowed = true; }, /productionUseAllowed false/],
+    ["redescription conflict", (fixture) => fixture.spec.lineScopeRedescriptions.push({ sourceId: "historical-source" }), /must not be line-scope redescribed/],
+  ];
+  for (const [label, mutate, expected] of invalidCases) {
+    const fixture = inheritedLineScopeRetirementFixture();
+    mutate(fixture);
+    assert.throws(
+      () => assertInheritedLineScopeRetirementsMatchActualSet(
+        fixture.spec, fixture.pack, fixture.inventory, fixture.inheritedPack,
+      ),
+      expected,
+      label,
+    );
+  }
+});
+
+test("inherited line-scope retirement은 predecessor 또는 candidate scope drift를 거부한다", () => {
+  for (const [label, mutate] of [
+    ["predecessor lineIds", (fixture) => { fixture.inheritedPack.sourceInventory[0].coverageScope.lineIds = ["line-b"]; }],
+    ["candidate lineIds", (fixture) => { fixture.pack.sourceInventory[0].coverageScope.lineIds = ["line-b"]; }],
+    ["candidate region scope", (fixture) => { fixture.pack.sourceInventory[0].coverageScope.regionIds = ["other"]; }],
+  ]) {
+    const fixture = inheritedLineScopeRetirementFixture();
+    mutate(fixture);
+    assert.throws(
+      () => assertInheritedLineScopeRetirementsMatchActualSet(
+        fixture.spec, fixture.pack, fixture.inventory, fixture.inheritedPack,
+      ),
+      /retired inherited source (lineIds|coverageScope\.regionIds) must match/,
+      label,
+    );
+  }
+});
+
+function deferredCandidateRequirementFixture() {
+  const sourceId = "deferred-source";
+  const sourceDomain = "route_map_positions";
+  const lineIds = ["line-a", "line-b"];
+  const requirementKeys = lineIds.map((lineId) => `region:operator:${lineId}:${sourceDomain}`);
+  return {
+    spec: {
+      lineScopeRedescriptions: [],
+      inheritedLineScopeRetirements: [],
+      deferredCandidateRequirements: [{
+        sourceId,
+        sourceDomain,
+        lineIds,
+        requirementKeys,
+        reasonCode: "CURRENT_CANDIDATE_ARTIFACT_PENDING",
+        reasonKo: "current candidate artifact를 아직 만들지 않았다.",
+      }],
+    },
+    pack: { sourceInventory: [] },
+    inventory: {
+      sources: [{
+        id: sourceId,
+        requiredForProductionPack: true,
+        productionUseAllowed: true,
+        coverageScope: {
+          regionIds: ["region"], operatorIds: ["operator"], lineIds, sourceDomains: [sourceDomain],
+        },
+      }],
+    },
+    targets: {
+      requiredSourceDomains: [{ id: sourceDomain, releaseTier: "LAUNCH_REQUIRED" }],
+      activeLineScopes: lineIds.map((lineId) => ({ regionId: "region", operatorId: "operator", lineId })),
+    },
+    reports: Object.fromEntries(["baseline", "lineScoped"].map((variant) => [variant, {
+      requirements: requirementKeys.map((key) => {
+        const [regionId, operatorId, lineId, sourceDomain] = key.split(":");
+        return { regionId, operatorId, lineId, sourceDomain, status: "MISSING", sourceIds: [] };
+      }),
+    }])),
+  };
+}
+
+test("deferred candidate requirement은 complete active intersection과 pre-variant source 부재를 강제한다", () => {
+  const fixture = deferredCandidateRequirementFixture();
+  assert.doesNotThrow(() => assertDeferredCandidateRequirementsMatchActualSet(
+    fixture.spec, fixture.pack, fixture.inventory, fixture.targets,
+  ));
+
+  const omitted = deferredCandidateRequirementFixture();
+  omitted.spec.deferredCandidateRequirements = [];
+  assert.throws(
+    () => assertDeferredCandidateRequirementsMatchActualSet(
+      omitted.spec, omitted.pack, omitted.inventory, omitted.targets,
+    ),
+    /must exactly match actual deferred candidate requirements/,
+  );
+
+  const extra = deferredCandidateRequirementFixture();
+  extra.spec.deferredCandidateRequirements.push({
+    ...structuredClone(extra.spec.deferredCandidateRequirements[0]),
+    sourceId: "extra-deferred-source",
+  });
+  assert.throws(
+    () => assertDeferredCandidateRequirementsMatchActualSet(
+      extra.spec, extra.pack, extra.inventory, extra.targets,
+    ),
+    /must exactly match actual deferred candidate requirements/,
+  );
+
+  fixture.spec.deferredCandidateRequirements[0].requirementKeys.pop();
+  assert.throws(
+    () => assertDeferredCandidateRequirementsMatchActualSet(
+      fixture.spec, fixture.pack, fixture.inventory, fixture.targets,
+    ),
+    /must exactly match actual deferred candidate requirements/,
+  );
+
+  const present = deferredCandidateRequirementFixture();
+  present.pack.sourceInventory.push({ id: "deferred-source", coverageScope: {} });
+  assert.throws(
+    () => assertDeferredCandidateRequirementsMatchActualSet(
+      present.spec, present.pack, present.inventory, present.targets,
+    ),
+    /must be absent from pre-variant candidate pack/,
+  );
+});
+
+test("deferred candidate requirement은 두 report에서 MISSING과 source 부재를 강제한다", () => {
+  const fixture = deferredCandidateRequirementFixture();
+  assert.doesNotThrow(() => assertDeferredCandidateRequirementsMatchReports(fixture.spec, fixture.reports));
+
+  fixture.reports.lineScoped.requirements[0].status = "SUPPORTED";
+  assert.throws(
+    () => assertDeferredCandidateRequirementsMatchReports(fixture.spec, fixture.reports),
+    /must be MISSING in lineScoped/,
+  );
+
+  const named = deferredCandidateRequirementFixture();
+  named.reports.baseline.requirements[0].sourceIds = ["deferred-source"];
+  assert.throws(
+    () => assertDeferredCandidateRequirementsMatchReports(named.spec, named.reports),
+    /must not name deferred or retired source/,
   );
 });
 

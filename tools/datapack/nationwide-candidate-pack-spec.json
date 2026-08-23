@@ -4,7 +4,7 @@
   "issue": 2595,
   "parentIssues": [2510, 2138],
   "candidateId": "nationwide-candidate-20260725",
-  "trackKo": "전국 candidate 트랙의 조립 정본이다. production 게시 트랙(capital pilot)과 분리되며 게시 대상이 아니다. 정본 게이트(report-coverage-gaps.mjs)는 manifest의 required root pack이 단독으로 coverage 계약을 만족해야 한다고 판정하므로 candidate는 root가 되는 단일 pack으로 조립한다. #2514 B0가 파일럿 1 scope 전환을 실증했고, #2549 B1이 대구 1·2·3호선 9 requirement를 같은 승계 모델로 편입했으며, #2580 B2-a가 같은 지역의 route_map_positions·accessibility_facilities 6 requirement를 B1 편입 뒤에 체인으로 올렸고, #2587 B2-b가 두 번째 지역(부산 1·2·3·4호선 5도메인 20 requirement)을 편입했다. #2595 B3이 대전 1호선 5 requirement·광주 1호선 5 requirement와 수도권 노선도 23 requirement, 인천 13 requirement를 같은 스키마로 올린다 — 대전·광주는 topology 전용 materializer가 편입 단위가 아니라 시각표 materializer가 topology·membership·시각표를 한 번에 싣고, 수도권 노선도 다섯 편입 중 넷은 경로 그래프 계보를 inventory 소스가 아니라 tracked snapshot 파일로 대조해 승계 pack에 의존하지 않고 서울 1~8호선 편입만 승계 원본의 운영기관·cyberstation 소스 등재와 좌표 PK 집합에 의존하며, 인천은 부산과 같이 역사정보 편입이 지역 자체(운영기관·노선·역)를 세우고 시각표·편의시설이 그 계보에 붙는다. 인천 역사정보 소스는 7호선을 세 도메인 scope로 덮지만 구간(network_edges)은 admit하지 않아 그 노선의 route_graph_topology 하나만 열리지 않는다 — 재기술이 그 사실을 nonTransitioningRequirements로 명시하고 하네스가 실측으로 확인한다.",
+  "trackKo": "전국 candidate 트랙의 조립 정본이다. production 게시 트랙(capital pilot)과 분리되며 게시 대상이 아니다. 정본 게이트(report-coverage-gaps.mjs)는 manifest의 required root pack이 단독으로 coverage 계약을 만족해야 한다고 판정하므로 candidate는 root가 되는 단일 pack으로 조립한다. #2514 B0가 파일럿 1 scope 전환을 실증했고, #2549 B1이 대구 1·2·3호선 9 requirement를 같은 승계 모델로 편입했으며, #2580 B2-a가 같은 지역의 route_map_positions·accessibility_facilities 6 requirement를 B1 편입 뒤에 체인으로 올렸고, #2587 B2-b가 두 번째 지역(부산 1·2·3·4호선 5도메인 20 requirement)을 편입했다. #2595 B3이 대전 1호선 5 requirement·광주 1호선 5 requirement와 수도권 노선도 11 requirement, 인천 13 requirement를 같은 스키마로 올린다 — 대전·광주는 topology 전용 materializer가 편입 단위가 아니라 시각표 materializer가 topology·membership·시각표를 한 번에 싣고, 수도권 노선도 네 편입은 경로 그래프 계보를 inventory 소스가 아니라 tracked snapshot 파일로 대조해 승계 pack에 의존하지 않으며, 인천은 부산과 같이 역사정보 편입이 지역 자체(운영기관·노선·역)를 세우고 시각표·편의시설이 그 계보에 붙는다. seoulmetro-cyberstation-route-map은 승계 원본의 historical predecessor audit 행으로만 보존하고 candidate의 현행 line scope에서는 retired 한다. 서울 1~8호선은 공공 좌표 관측·OCI 수령증·v2 admission이 모두 확정된 후 별도 candidate 전환으로만 다시 올린다. 인천 역사정보 소스는 7호선을 세 도메인 scope로 덮지만 구간(network_edges)은 admit하지 않아 그 노선의 route_graph_topology 하나만 열리지 않는다 — 재기술이 그 사실을 nonTransitioningRequirements로 명시하고 하네스가 실측으로 확인한다.",
   "harness": "tools/datapack/run-nationwide-candidate-coverage-gate.mjs",
   "productionTrackInvarianceKo": "승계 원본(capital-production-reviewed-pack.json)의 pack.sourceInventory는 게시 시점 스냅샷이므로 operator-scope 기술을 그대로 둔다. line-scope 재기술은 candidate 조립분과 admission 정본(tools/datapack/source-inventory.json)에만 반영한다. 게시 차단 판정(report-coverage-gaps.mjs --release-scope)은 capital pilot targets(schemaVersion 1)로 평가돼 lineIds 기술 유무에 영향을 받지 않으므로 두 정본의 이 차이는 게시 동작을 바꾸지 않는다. 지역 데이터 편입(packDataInclusions)도 candidate 조립분에서만 일어나며 게시 fixture·release-request는 어떤 경로로도 바뀌지 않는다.",
   "inheritsFrom": {
@@ -696,55 +696,6 @@
     },
     {
       "regionId": "capital",
-      "materializer": "tools/datapack/materialize-seoul-route-map-positions.mjs",
-      "materializedAt": "2026-07-24T02:00:00.000Z",
-      "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-20260724.json",
-      "lines": [
-        { "lineNumber": 1, "lineId": "line-472a81add377" },
-        { "lineNumber": 2, "lineId": "seoul-2" },
-        { "lineNumber": 3, "lineId": "line-41a8c75ec9d8" },
-        { "lineNumber": 4, "lineId": "seoul-4" },
-        { "lineNumber": 5, "lineId": "line-80fc4d5350d4" },
-        { "lineNumber": 6, "lineId": "line-3f41718e0833" },
-        { "lineNumber": 7, "lineId": "line-15b3b8a93259" },
-        { "lineNumber": 8, "lineId": "line-2b2d9eaa53d0" }
-      ],
-      "addedRows": {
-        "operators": 0,
-        "lines": 7,
-        "stations": 213,
-        "stationLines": 273,
-        "stationAliases": 0,
-        "stationExits": 0,
-        "networkEdges": 0,
-        "routeMapPositions": 273,
-        "routeMapLineTracks": 0,
-        "coverageLineOperatorScopes": 0,
-        "facilities": 0,
-        "stationFacilityEvidence": 0,
-        "stationAccessibilitySummaries": 0,
-        "officialOdFareQuotes": 0,
-        "serviceCalendars": 0,
-        "serviceCalendarDates": 0,
-        "transitRoutes": 0,
-        "transitTrips": 0,
-        "transitStopTimes": 0,
-        "transitFrequencies": 0,
-        "transitFeedInfo": 0,
-        "routeServiceArtifactEvidence": 0,
-        "movementPathCandidates": 0,
-        "representativeRouteRegressions": 0,
-        "requiredTables": 0,
-        "sourceInventory": 1
-      },
-      "addedRowsKo": "노선 7행은 승계 원본에 이미 4호선(seoul-4)이 있어 나머지 일곱 노선만 는 것이다. 운영기관은 0행 — 서울교통공사가 승계 원본에 이미 있다. snapshot의 좌표 274행 중 1행(사당 4호선)이 승계 원본의 capital pilot cyberstation 좌표와 (역, 노선, 권역) PK가 겹쳐 건너뛰므로(승계 자산 보존) 실리는 좌표는 273행이고 역·노선 쌍도 같은 273행이다. 역은 213행만 는다 — 좌표 274행의 고유 역은 237인데 그중 24곳(사당과 앞선 수도권 노선도 편입이 이미 실은 23곳)이 pack에 이미 있어 다시 실리지 않는다.",
-      "reorderedTables": ["lines"],
-      "reorderedTablesKo": "이 materializer는 노선 append 뒤 pack.lines를 id 오름차순으로 다시 정렬한다(실측). 운영기관은 이미 있어 건드리지 않고 coverageLineOperatorScopes에도 손대지 않으므로 선언 표는 lines 하나뿐이다.",
-      "reasonKo": "#2595 B3. 수도권 1~8호선 route_map_positions requirement를 판정에 올리려면 candidate root pack이 공식 좌표 행을 담아야 한다. materializer는 승계 원본의 서울교통공사 운영기관과 capital pilot cyberstation 소스가 pack에 남아 있을 것을 선행 조건으로 검사하지만, 그 둘은 승계 원본이 이미 갖고 있어 다른 편입에 대한 순서 의존은 없다. 4호선은 B0 파일럿에서 cyberstation 소스로 이미 SUPPORTED이므로 이 편입이 여는 것은 나머지 7 requirement이고, 4호선 requirement는 이후 두 소스가 함께 뒷받침한다. 이미 admission이 끝난 snapshot(#2470)을 재생한다.",
-      "materializedAtReasonKo": "이 snapshot의 P1Y 신선도 창은 [2026-07-24T02:00:00Z, 2027-07-24T02:00:00Z)이고 materializer가 양끝 밖을 fail closed 한다. KRIC 두 편입의 창 [2026-07-25T06:00:00Z, 2027-07-25T06:00:00Z)과는 겹치지만 시작·종료 시각이 모두 달라 어느 한쪽도 다른 창을 포함하지 않는다. pin은 각 편입의 창 하한에 따로 둔다."
-    },
-    {
-      "regionId": "capital",
       "materializer": "tools/datapack/materialize-seoul9-phase1-route-map-positions.mjs",
       "materializedAt": "2026-07-25T05:00:00.000Z",
       "snapshotPath": "tools/datapack/sources/kric-seoul-metro-line9-1-route-map-positions-20260725.json",
@@ -755,7 +706,7 @@
       "addedRows": {
         "operators": 1,
         "lines": 1,
-        "stations": 18,
+        "stations": 21,
         "stationLines": 25,
         "stationAliases": 0,
         "stationExits": 0,
@@ -780,7 +731,7 @@
         "requiredTables": 0,
         "sourceInventory": 1
       },
-      "addedRowsKo": "1단계 좌표 25행 중 정본 station id 기준으로 앞선 수도권 편입이 이미 실은 역 7곳(김포공항·마곡나루·당산·여의도·샛강·고속터미널·신논현)이 있어 역은 18행만 늘고 소속(역·노선 쌍)은 25행 전부 는다. 운영기관 1행은 서울시메트로9호선이며 이 편입이 9호선 노선 레코드도 만든다.",
+      "addedRowsKo": "historical predecessor retirement 뒤 1단계 좌표 25행 중 정본 station id 기준으로 앞선 수도권 편입이 이미 실은 역은 4곳이라 역은 21행만 늘고 소속(역·노선 쌍)은 25행 전부 는다. 운영기관 1행은 서울시메트로9호선이며 이 편입이 9호선 노선 레코드도 만든다.",
       "reorderedTables": ["coverageLineOperatorScopes", "lines", "operators"],
       "reorderedTablesKo": "이 materializer도 append 뒤 pack.operators·pack.lines를 id 오름차순으로, coverageLineOperatorScopes를 (권역:운영기관:노선) 오름차순으로 다시 정렬한다(실측). 세 표 모두 이 시점에는 승계 행이 있어 선언 대상이다.",
       "reasonKo": "#2595 B3. 수도권 9호선 route_map_positions requirement를 판정에 올리려면 candidate root pack이 공식 좌표 행을 담아야 한다. 9호선은 한 노선을 두 소스가 나눠 덮어(1단계 25역 / 2·3단계 13역) 편입도 소스마다 하나씩이고, 이 편입이 그중 1단계다. 승계 pack 의존이 없다 — 경로 그래프 계보를 tracked snapshot 파일로 대조하고 운영기관·노선·역·역노선을 스스로 만든다. 이미 admission이 끝난 snapshot(#2500)을 재생한다.",
@@ -798,7 +749,7 @@
       "addedRows": {
         "operators": 0,
         "lines": 0,
-        "stations": 10,
+        "stations": 12,
         "stationLines": 13,
         "stationAliases": 0,
         "stationExits": 0,
@@ -823,7 +774,7 @@
         "requiredTables": 0,
         "sourceInventory": 1
       },
-      "addedRowsKo": "2·3단계 좌표 13행 중 앞선 편입이 이미 실은 역 3곳(선정릉·종합운동장·석촌)이 있어 역은 10행만 늘고 소속은 13행 전부 는다. 1단계 소스와 겹치는 역은 없다(두 소스가 9호선을 구간으로 나눠 덮는다). 운영기관·노선은 0행 — 1단계 편입이 이미 만들었다. coverageLineOperatorScopes도 0행이다: 이 소스는 dual coverage(FILE 계보 표기 서울교통공사 + 노선 운영기관 서울시메트로9호선)로 등재돼 있지만 계보 표기에는 #2138 activeLineScopes에 대응 scope가 없어 scope 행으로 내지 않고, 노선 운영기관 scope는 1단계 편입이 이미 실었다. 그래서 이 편입은 어느 표에도 재정렬을 일으키지 않는다(reorderedTables 선언 없음).",
+      "addedRowsKo": "historical predecessor retirement 뒤 2·3단계 좌표 13행 중 앞선 편입이 이미 실은 역은 1곳이라 역은 12행만 늘고 소속은 13행 전부 는다. 1단계 소스와 겹치는 역은 없다(두 소스가 9호선을 구간으로 나눠 덮는다). 운영기관·노선은 0행 — 1단계 편입이 이미 만들었다. coverageLineOperatorScopes도 0행이다: 이 소스는 dual coverage(FILE 계보 표기 서울교통공사 + 노선 운영기관 서울시메트로9호선)로 등재돼 있지만 계보 표기에는 #2138 activeLineScopes에 대응 scope가 없어 scope 행으로 내지 않고, 노선 운영기관 scope는 1단계 편입이 이미 실었다. 그래서 이 편입은 어느 표에도 재정렬을 일으키지 않는다(reorderedTables 선언 없음).",
       "reasonKo": "#2595 B3. 9호선 2·3단계 소스를 같은 노선 위에 이어 싣는다. 1단계 편입과 서로 선행 조건은 없지만 두 편입이 같은 노선의 역을 나눠 실어 중복 제거 결과가 순서에 따라 갈리므로 선언 행수 대조가 순서를 고정한다. 이미 admission이 끝난 snapshot(#2498)을 재생한다.",
       "materializedAtReasonKo": "이 소스의 P1Y 신선도 창은 [2026-07-25T04:00:00Z, 2027-07-25T04:00:00Z)이고 materializer가 양끝 밖을 fail closed 한다. pin은 이 창의 하한 정각에 둔다."
     },
@@ -839,7 +790,7 @@
       ],
       "addedRows": {
         "operators": 1,
-        "lines": 2,
+        "lines": 3,
         "stations": 65,
         "stationLines": 71,
         "stationAliases": 0,
@@ -847,7 +798,7 @@
         "networkEdges": 116,
         "routeMapPositions": 71,
         "routeMapLineTracks": 0,
-        "coverageLineOperatorScopes": 2,
+        "coverageLineOperatorScopes": 1,
         "facilities": 0,
         "stationFacilityEvidence": 0,
         "stationAccessibilitySummaries": 0,
@@ -865,7 +816,7 @@
         "requiredTables": 0,
         "sourceInventory": 1
       },
-      "addedRowsKo": "노선 2행은 인천 1·2호선이다 — 7호선(line-15b3b8a93259)은 앞선 서울 편입이 이미 실어 다시 만들지 않는다. 역·노선 쌍 71행의 고유 역은 69로, 인천 1·2호선이 만나는 환승역 1곳과 인천 1호선·7호선이 만나는 환승역 1곳이 역은 한 번만 실린다. 그 69역 중 4곳(검암·계양·원인재·부천종합운동장)은 앞선 수도권 노선도 편입이 이미 실어 역은 65행만 늘고 소속은 71행 전부 는다 — 정본 station id가 저장소 전역에서 같은 역을 가리키기 때문이다. 7호선 인천 구간 11역은 서울 편입이 실은 7호선 42역(장암~온수)과 겹치지 않는다. coverageLineOperatorScopes 2행은 7호선이 두 운영기관 공유 노선이라 서울교통공사·인천교통공사 두 scope를 함께 명시하기 때문이다. networkEdges 116행은 인천 1·2호선 구간만이다 — 이 소스는 7호선 구간을 admit하지 않는다.",
+      "addedRowsKo": "historical predecessor retirement 뒤 인천 편입이 인천 1·2호선과 7호선 노선 3행을 모두 만든다. 역·노선 쌍 71행의 고유 역은 69로, 인천 1·2호선이 만나는 환승역 1곳과 인천 1호선·7호선이 만나는 환승역 1곳이 역은 한 번만 실린다. 그 69역 중 4곳(검암·계양·원인재·부천종합운동장)은 앞선 수도권 노선도 편입이 이미 실어 역은 65행만 늘고 소속은 71행 전부 는다 — 정본 station id가 저장소 전역에서 같은 역을 가리키기 때문이다. coverageLineOperatorScopes 1행은 새로 만든 7호선의 인천교통공사 scope다. 수도권 predecessor 행의 7호선 노선·서울교통공사 scope를 승계하지 않는다. networkEdges 116행은 인천 1·2호선 구간만이다 — 이 소스는 7호선 구간을 admit하지 않는다.",
       "reorderedTables": ["coverageLineOperatorScopes"],
       "reorderedTablesKo": "이 materializer는 7호선 scope를 더한 뒤 coverageLineOperatorScopes를 (권역:운영기관:노선) 오름차순으로 다시 정렬한다(실측). 운영기관·노선·역은 append만 하므로 선언 표는 이 하나뿐이다.",
       "reasonKo": "#2595 B3. 인천 1·2호선과 7호선 인천 구간의 route_graph_topology·route_map_positions·station_line_membership requirement를 판정에 올리려면 candidate root pack이 공식 역사정보 행을 담아야 한다. 승계 원본에 인천 운영기관·노선·역이 아예 없어 이 편입이 그 셋을 함께 싣고, 뒤 두 인천 편입이 이 편입의 소스 등재와 역노선 계보를 선행 조건으로 검사한다(부산과 같은 모양). 이미 admission이 끝난 snapshot(#2481·#2490)을 재생한다.",
@@ -954,6 +905,42 @@
       "addedRowsKo": "71 역·노선 쌍 × 3종(엘리베이터·에스컬레이터·휠체어리프트) = 213행이며 미설치도 NOT_EXISTS 근거로 함께 싣는다. 인천은 세 노선이 환승역을 공유해 역 수 69와 역·노선 쌍 수 71이 다르다 — 이 편입의 단위는 역·노선 쌍이다.",
       "reasonKo": "#2595 B3. 인천 1·2호선과 7호선 인천 구간의 accessibility_facilities requirement를 판정에 올리려면 candidate root pack이 공식 편의시설 행을 담아야 한다. 이 materializer도 인천 운영기관·역사정보 소스 등재와 topology·membership 계보를 선행 조건으로 검사하므로 역사정보 편입 뒤에 온다. 시각표 편입과는 서로 선행 조건이 없다. 이미 admission이 끝난 snapshot(#2492)을 재생한다.",
       "materializedAtReasonKo": "이 snapshot의 신선도 창은 capturedAt 2026-07-24T07:00:00Z ~ freshUntil 2026-07-25T07:00:00Z이며 materializer가 [capturedAt, freshUntil) 양끝과 창 길이 24시간을 검사한다 — pin은 그 하한 정각이다."
+    }
+  ],
+  "deferredCandidateRequirements": [
+    {
+      "sourceId": "seoul-metro-route-map-positions",
+      "sourceDomain": "route_map_positions",
+      "lineIds": [
+        "line-472a81add377",
+        "seoul-2",
+        "line-41a8c75ec9d8",
+        "seoul-4",
+        "line-80fc4d5350d4",
+        "line-3f41718e0833",
+        "line-15b3b8a93259",
+        "line-2b2d9eaa53d0"
+      ],
+      "requirementKeys": [
+        "capital:seoul-metro:line-472a81add377:route_map_positions",
+        "capital:seoul-metro:seoul-2:route_map_positions",
+        "capital:seoul-metro:line-41a8c75ec9d8:route_map_positions",
+        "capital:seoul-metro:seoul-4:route_map_positions",
+        "capital:seoul-metro:line-80fc4d5350d4:route_map_positions",
+        "capital:seoul-metro:line-3f41718e0833:route_map_positions",
+        "capital:seoul-metro:line-15b3b8a93259:route_map_positions",
+        "capital:seoul-metro:line-2b2d9eaa53d0:route_map_positions"
+      ],
+      "reasonCode": "CURRENT_CANDIDATE_ARTIFACT_PENDING",
+      "reasonKo": "서울교통공사 1~8호선 public coordinate source는 current inventory에서 production 사용이 승인됐지만, public v2 admission artifact와 결정론적 layout 재생이 candidate root pack에 아직 편입되지 않았다. 따라서 active route_map_positions requirement 8건은 두 variant 모두 MISSING으로 명시하며, artifact가 준비된 별도 candidate 전환 전에는 지원 또는 전이로 취급하지 않는다."
+    }
+  ],
+  "inheritedLineScopeRetirements": [
+    {
+      "sourceId": "seoulmetro-cyberstation-route-map",
+      "inheritedLineIds": ["seoul-4"],
+      "reasonCode": "HISTORICAL_PREDECESSOR_AUDIT_ONLY",
+      "reasonKo": "승계 원본의 서울 4호선 cyberstation 행은 predecessor audit 입력·행 바이트를 보존하기 위한 historical diagnostic이다. current source-inventory에서는 production 사용이 명시적으로 금지되고 lineIds도 없는 operator scope만 남으므로, candidate 두 variant에서 이 과거 line scope를 retired 한다. 이 선언은 서울 1~8호선 지원이나 전이를 열지 않는다."
     }
   ],
   "lineScopeRedescriptions": [
@@ -1237,39 +1224,6 @@
       "requirementKeys": ["gwangju:gwangju-metropolitan-rapid-transit:line-e57a361e8892:accessibility_facilities"],
       "reasonKo": "B3. 광주 1호선 elevator·escalator·wheelchair_lift·status·verified_at을 대는 공식 편의시설 snapshot 소스다.",
       "inventorySyncKo": "하네스가 spec lineIds와 tracked source-inventory coverageScope.lineIds의 일치를 fail closed로 확인한다."
-    },
-    {
-      "sourceId": "seoul-metro-route-map-positions",
-      "sourceDomain": "route_map_positions",
-      "lineIds": [
-        "line-472a81add377",
-        "seoul-2",
-        "line-41a8c75ec9d8",
-        "seoul-4",
-        "line-80fc4d5350d4",
-        "line-3f41718e0833",
-        "line-15b3b8a93259",
-        "line-2b2d9eaa53d0"
-      ],
-      "requirementKeys": [
-        "capital:seoul-metro:line-472a81add377:route_map_positions",
-        "capital:seoul-metro:seoul-2:route_map_positions",
-        "capital:seoul-metro:line-41a8c75ec9d8:route_map_positions",
-        "capital:seoul-metro:seoul-4:route_map_positions",
-        "capital:seoul-metro:line-80fc4d5350d4:route_map_positions",
-        "capital:seoul-metro:line-3f41718e0833:route_map_positions",
-        "capital:seoul-metro:line-15b3b8a93259:route_map_positions",
-        "capital:seoul-metro:line-2b2d9eaa53d0:route_map_positions"
-      ],
-      "nonTransitioningRequirements": [
-        {
-          "requirementKey": "capital:seoul-metro:seoul-4:route_map_positions",
-          "reasonCode": "ALREADY_SUPPORTED_BY_INHERITED_SCOPE",
-          "reasonKo": "4호선 route_map_positions는 승계 pack의 cyberstation source만으로 이미 SUPPORTED다. 이 공식 좌표 source는 그 지원 상태를 전이시키지 않고 기존 근거를 보존한 채 하나의 추가 근거가 된다."
-        }
-      ],
-      "reasonKo": "B3. 수도권 1~8호선 route_map_position·route_map_label_polygon을 대는 공식 좌표 snapshot 소스다. 8건 중 4호선은 B0 파일럿의 cyberstation source만으로 이미 SUPPORTED였고, 이 source가 기존 근거를 보존한 채 추가된다. 하네스는 ALREADY_SUPPORTED_BY_INHERITED_SCOPE 선언에서 baseline·lineScoped 모두 SUPPORTED인지와 sourceIds가 기존 근거에 이 source 하나를 정확히 더한 집합인지 fail closed로 확인한다. 나머지 7건은 이 재기술로 전이한다. lineIds 순서는 admission 정본이 1호선부터 8호선 순으로 기술한 그대로다.",
-      "inventorySyncKo": "하네스가 spec lineIds와 tracked source-inventory coverageScope.lineIds의 일치를 fail closed로 확인한다. 이 소스는 이미 8노선 line-scope로 기술돼 있어 재기술은 admission 정본을 그대로 승계한다(inventory 변경 없음)."
     },
     {
       "sourceId": "kric-gyeongui-jungang-route-map-positions",

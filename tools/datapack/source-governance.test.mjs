@@ -30,6 +30,26 @@ const second = snapshot({
 });
 second.diffSummary = buildSnapshotDiff(first, second);
 
+test("서울 공공 노선도 위치는 90일 보존·독립 freshness class를 가지며 web 노선도는 historical policy로만 남는다", async () => {
+  const [governance, freshness] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/source-governance-policy.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "release/product-gates/datapack-freshness-sla.json"), "utf8").then(JSON.parse),
+  ]);
+  const publicEntry = governance.sources.find(({ sourceId }) => sourceId === "seoul-metro-route-map-positions");
+  const historicalEntry = governance.sources.find(({ sourceId }) => sourceId === "seoulmetro-cyberstation-route-map");
+  assert.equal(publicEntry.sourceClassId, "route_map_positions");
+  assert.equal(publicEntry.retentionClassId, "standard-90d");
+  assert.equal(historicalEntry.sourceClassId, "route_map_asset_historical");
+  assert.deepEqual(
+    freshness.sourceClasses.find(({ id }) => id === "route_map_positions").sourceIds,
+    ["seoul-metro-route-map-positions"],
+  );
+  assert.deepEqual(
+    freshness.sourceClasses.find(({ id }) => id === "route_map_asset_historical").sourceIds,
+    ["seoulmetro-cyberstation-route-map"],
+  );
+});
+
 test("snapshot object URI는 dot-segment를 거부하고 Unicode·공백 key를 보존한다", () => {
   for (const uri of ["s3://bucket/raw/../victim", "s3://bucket/raw/%2e%2e/victim"]) {
     assert.throws(

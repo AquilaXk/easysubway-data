@@ -3,23 +3,13 @@ import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { TextDecoder } from "node:util";
 
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
-const MOLIT_SOURCE_ID = "molit-urban-rail-full-route";
 const SEOUL_SOURCE_ID = "seoulmetro-station-line-info";
-const SOURCE_IDS = Object.freeze([MOLIT_SOURCE_ID, SEOUL_SOURCE_ID]);
-const MOLIT_FIELDS = Object.freeze([
-  "line_name", "operator_name", "region", "station_name", "station_sequence",
-]);
-const MOLIT_CSV_HEADER = Object.freeze([
-  "권역", "권역명", "철도운영기관명", "노선명", "순번", "역명",
-]);
-const MOLIT_PUBLIC_CSV_URL =
-  "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003561913&fileDetailSn=1&insertDataPrcus=N";
+const SOURCE_IDS = Object.freeze([SEOUL_SOURCE_ID]);
 const SEOUL_PROVIDER_FIELDS = Object.freeze([
   "FR_CODE", "LINE_NUM", "STATION_CD", "STATION_NM", "STATION_NM_CHN",
   "STATION_NM_ENG", "STATION_NM_JPN",
@@ -65,85 +55,6 @@ function parseJson(bytes) {
 function canonicalRecord(row, fields) {
   assertExactKeys(row, fields);
   return Object.fromEntries([...fields].sort(codepointCompare).map((field) => [field, row[field]]));
-}
-
-function parseCsv(csv) {
-  const rows = [];
-  let row = [];
-  let cell = "";
-  let quoted = false;
-  let quoteClosed = false;
-  for (let index = 0; index < csv.length; index += 1) {
-    const character = csv[index];
-    if (character === '"') {
-      if (!quoted) {
-        if (cell !== "" || quoteClosed) fail("SCHEMA");
-        quoted = true;
-      } else if (csv[index + 1] === '"') {
-        cell += '"';
-        index += 1;
-      } else {
-        quoted = !quoted;
-        quoteClosed = true;
-      }
-    } else if (character === "," && !quoted) {
-      row.push(cell);
-      cell = "";
-      quoteClosed = false;
-    } else if ((character === "\n" || character === "\r") && !quoted) {
-      if (character === "\r" && csv[index + 1] === "\n") index += 1;
-      row.push(cell);
-      if (row.some((value) => value !== "")) rows.push(row);
-      row = [];
-      cell = "";
-      quoteClosed = false;
-    } else {
-      if (quoteClosed) fail("SCHEMA");
-      cell += character;
-    }
-  }
-  if (quoted) fail("SCHEMA");
-  if (cell !== "" || row.length > 0) {
-    row.push(cell);
-    rows.push(row);
-  }
-  return rows;
-}
-
-function projectMolit(bytes, previous) {
-  if (!Buffer.isBuffer(bytes) || bytes.length === 0 || bytes.length > 1024 * 1024) fail("SCHEMA");
-  let csv;
-  try {
-    csv = new TextDecoder("euc-kr", { fatal: true }).decode(bytes);
-  } catch {
-    fail("SCHEMA");
-  }
-  const rows = parseCsv(csv);
-  if (rows.length < 6
-    || rows[0].length !== MOLIT_CSV_HEADER.length
-    || rows[0].some((value, index) => value !== MOLIT_CSV_HEADER[index])) fail("SCHEMA");
-  const records = rows.slice(1).map((row) => {
-    if (row.length !== MOLIT_CSV_HEADER.length) fail("SCHEMA");
-    const values = row.map((value) => value.trim());
-    if (values.some((value) => value === "")
-      || !/^[1-9][0-9]*$/u.test(values[4])
-      || !Number.isSafeInteger(Number(values[4]))) fail("SCHEMA");
-    return canonicalRecord({
-      line_name: values[3],
-      operator_name: values[2],
-      region: values[1],
-      station_name: values[5],
-      station_sequence: values[4],
-    }, MOLIT_FIELDS);
-  });
-  const recordsByHash = new Map(previous.providerRecordHashes.map((hash) => [hash, []]));
-  for (const record of records) {
-    const recordHash = sha256(JSON.stringify(record));
-    recordsByHash.get(recordHash)?.push(record);
-  }
-  const selected = previous.providerRecordHashes.map((hash) => recordsByHash.get(hash));
-  if (selected.some((matches) => matches?.length !== 1)) fail("CONTENT_CHANGED");
-  return selected.map(([record]) => record);
 }
 
 function projectSeoul(bytes) {
@@ -240,14 +151,12 @@ function evidencePayload({ sourceId, previous, observedAt, responseBytes, record
 }
 
 function operationForSource(sourceId) {
-  return sourceId === MOLIT_SOURCE_ID
-    ? "molit-urban-rail-full-route-file-five-records"
-    : "seoulmetro-line4-stations-one-to-five";
+  if (sourceId !== SEOUL_SOURCE_ID) fail("ARGUMENT");
+  return "seoulmetro-line4-stations-one-to-five";
 }
 
 function sourceDefinitions() {
   return [
-    { sourceId: MOLIT_SOURCE_ID, key: "molit", fields: MOLIT_FIELDS, project: projectMolit },
     { sourceId: SEOUL_SOURCE_ID, key: "seoul", fields: SEOUL_FIELDS, project: projectSeoul },
   ];
 }
@@ -433,20 +342,9 @@ export function buildCurrentStaticSourceChangeAdmission({
 }) {
   if (!Array.isArray(sourceSnapshots) || !responseBytesBySource) fail("ARGUMENT");
   serializedChangeCapture(capture, responseBytesBySource);
-  if (capture.sources[0].status !== "UNCHANGED"
-    || capture.sources[1].status !== "CONTENT_CHANGED") fail("CAPTURE_STATUS");
+  if (capture.sources[0].status !== "CONTENT_CHANGED") fail("CAPTURE_STATUS");
   const observedMillis = requiredObservedAt(capture.observedAt);
-  const molitPrevious = previousHead(sourceSnapshots, MOLIT_SOURCE_ID);
   const seoulPrevious = previousHead(sourceSnapshots, SEOUL_SOURCE_ID);
-  const molit = buildOne({
-    sourceId: MOLIT_SOURCE_ID,
-    previous: molitPrevious,
-    observedAt: capture.observedAt,
-    observedMillis,
-    responseBytes: responseBytesBySource.molit,
-    records: projectMolit(responseBytesBySource.molit, molitPrevious),
-    fields: MOLIT_FIELDS,
-  });
   const seoul = buildSeoulChangeAdmission({
     previous: seoulPrevious,
     observedAt: capture.observedAt,
@@ -455,7 +353,7 @@ export function buildCurrentStaticSourceChangeAdmission({
     records: projectSeoul(responseBytesBySource.seoul),
     canonicalPackBytes,
   });
-  const revalidations = [molit, { sourceId: seoul.sourceId, evidence: seoul.evidence, snapshot: seoul.snapshot }];
+  const revalidations = [{ sourceId: seoul.sourceId, evidence: seoul.evidence, snapshot: seoul.snapshot }];
   validateLineage([...structuredClone(sourceSnapshots), ...revalidations.map(({ snapshot }) => snapshot)]);
   return {
     revalidations,
@@ -521,7 +419,7 @@ function buildCurrentStaticSourceChangeCapture({
       status,
       responseSha256: sha256(responseBytes),
       responseByteSize: responseBytes.length,
-      rawFile: key === "molit" ? "molit-response.bin" : "seoul-response.json",
+      rawFile: "seoul-response.json",
     };
   });
   if (!sources.some(({ status }) => status === "CONTENT_CHANGED")) fail("ARGUMENT");
@@ -586,22 +484,9 @@ export async function fetchCurrentStaticSourceResponses({
   fetchImpl = fetch,
 }) {
   const seoulKey = requiredSingleLine(seoulOpenApiKey, "SEOUL_OPENAPI_KEY");
-  const molitUrl = new URL(MOLIT_PUBLIC_CSV_URL);
   const seoulUrl = new URL(
     `http://openapi.seoul.go.kr:8088/${encodeURIComponent(seoulKey)}/json/SearchSTNBySubwayLineInfo/1/5/${encodeURIComponent(" ")}/${encodeURIComponent(" ")}/${encodeURIComponent("4호선")}`,
   );
-  const molit = await fetchSourceResponse({
-    source: "MOLIT",
-    url: molitUrl,
-    fetchImpl,
-    init: {
-      method: "GET",
-      redirect: "error",
-      signal: AbortSignal.timeout(15_000),
-      headers: { accept: "application/octet-stream" },
-    },
-    expectedContentType: "application/octet-stream",
-  });
   const seoul = await fetchSourceResponse({
     source: "SEOUL",
     url: seoulUrl,
@@ -614,11 +499,11 @@ export async function fetchCurrentStaticSourceResponses({
     },
     expectedContentType: "application/json",
   });
-  return { molit, seoul };
+  return { seoul };
 }
 
 function serializedOutputs(result) {
-  if (!Array.isArray(result) || result.length !== 2
+  if (!Array.isArray(result) || result.length !== 1
     || result.some(({ sourceId }, index) => sourceId !== SOURCE_IDS[index])) fail("ARGUMENT");
   return result.flatMap(({ sourceId, evidence, snapshot }) => [
     [`${sourceId}-revalidation-evidence.json`, Buffer.from(`${JSON.stringify(evidence, null, 2)}\n`)],
@@ -675,11 +560,11 @@ function serializedChangeCapture(capture, responseBytesBySource) {
     || capture.artifactKind !== "current-static-source-change-capture"
     || capture.outcome !== "CHANGE_REVIEW_REQUIRED"
     || capture.credentialRedacted !== true
-    || !Array.isArray(capture.sources) || capture.sources.length !== 2) fail("ARGUMENT");
-  const responses = [responseBytesBySource.molit, responseBytesBySource.seoul];
+    || !Array.isArray(capture.sources) || capture.sources.length !== 1) fail("ARGUMENT");
+  const responses = [responseBytesBySource.seoul];
   const entries = capture.sources.map((source, index) => {
     const expectedSourceId = SOURCE_IDS[index];
-    const expectedFile = index === 0 ? "molit-response.bin" : "seoul-response.json";
+    const expectedFile = "seoul-response.json";
     const bytes = responses[index];
     assertExactKeys(source, [
       "sourceId", "operation", "status", "responseSha256", "responseByteSize", "rawFile",
@@ -710,15 +595,14 @@ export async function writeCurrentStaticSourceChangeCapture({
 
 function serializedChangeAdmission(admission) {
   assertExactKeys(admission, ["revalidations", "seoulRawBytes", "sourceRawPublishPlan"], "ARGUMENT");
-  if (!Array.isArray(admission.revalidations) || admission.revalidations.length !== 2
+  if (!Array.isArray(admission.revalidations) || admission.revalidations.length !== 1
     || admission.revalidations.some(({ sourceId }, index) => sourceId !== SOURCE_IDS[index])
-    || admission.revalidations[0].evidence?.outcome !== "NO_CHANGE_REVALIDATED"
-    || admission.revalidations[1].evidence?.outcome !== "CONTENT_CHANGE_ADMITTED"
+    || admission.revalidations[0].evidence?.outcome !== "CONTENT_CHANGE_ADMITTED"
     || !Buffer.isBuffer(admission.seoulRawBytes)
-    || sha256(admission.seoulRawBytes) !== admission.revalidations[1].snapshot.rawSha256
+    || sha256(admission.seoulRawBytes) !== admission.revalidations[0].snapshot.rawSha256
     || JSON.stringify(admission.sourceRawPublishPlan)
       !== JSON.stringify(sourceRawPublishPlan(
-        admission.revalidations[1].snapshot,
+        admission.revalidations[0].snapshot,
         admission.seoulRawBytes,
       ))) fail("ARGUMENT");
   const entries = admission.revalidations.flatMap(({ sourceId, evidence, snapshot }) => [
@@ -753,7 +637,7 @@ export async function runCurrentStaticSourceRevalidation({
       responseBytesBySource,
     });
     const outputs = await writeCurrentStaticSourceRevalidation({ outputDirectory, result });
-    return { outcome: "NO_CHANGE_REVALIDATED", sourceCount: 2, outputs };
+    return { outcome: "NO_CHANGE_REVALIDATED", sourceCount: SOURCE_IDS.length, outputs };
   } catch (error) {
     if (error?.message === "STATIC_SOURCE_REVALIDATION_CONTENT_CHANGED"
       && changeOutputDirectory != null) {
@@ -809,16 +693,15 @@ async function main() {
   const sourceSnapshots = JSON.parse(await readFile(path.resolve(args["--source-snapshots"]), "utf8"));
   if (args["--change-capture-directory"] != null) {
     const captureDirectory = path.resolve(args["--change-capture-directory"]);
-    const [capture, molit, seoul, canonicalPackBytes] = await Promise.all([
+    const [capture, seoul, canonicalPackBytes] = await Promise.all([
       readFile(path.join(captureDirectory, "change-evidence.json"), "utf8").then(JSON.parse),
-      readFile(path.join(captureDirectory, "molit-response.bin")),
       readFile(path.join(captureDirectory, "seoul-response.json")),
       readFile(path.resolve(args["--canonical-pack"])),
     ]);
     const admission = buildCurrentStaticSourceChangeAdmission({
       sourceSnapshots,
       capture,
-      responseBytesBySource: { molit, seoul },
+      responseBytesBySource: { seoul },
       canonicalPackBytes,
     });
     await writeCurrentStaticSourceChangeAdmission({

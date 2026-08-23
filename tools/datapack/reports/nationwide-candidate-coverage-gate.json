@@ -14,28 +14,8 @@
     "version": "1"
   },
   "declaredNonTransitions": {
-    "count": 2,
+    "count": 1,
     "entries": [
-      {
-        "after": "SUPPORTED",
-        "baselineSourceIds": [
-          "seoulmetro-cyberstation-route-map"
-        ],
-        "before": "SUPPORTED",
-        "lineScopedSourceIds": [
-          "seoul-metro-route-map-positions",
-          "seoulmetro-cyberstation-route-map"
-        ],
-        "reasonCode": "ALREADY_SUPPORTED_BY_INHERITED_SCOPE",
-        "reasonKo": "4호선 route_map_positions는 승계 pack의 cyberstation source만으로 이미 SUPPORTED다. 이 공식 좌표 source는 그 지원 상태를 전이시키지 않고 기존 근거를 보존한 채 하나의 추가 근거가 된다.",
-        "requirementKey": "capital:seoul-metro:seoul-4:route_map_positions",
-        "sourceDomain": "route_map_positions",
-        "sourceId": "seoul-metro-route-map-positions",
-        "supportingRecordCountByField": {
-          "route_map_label_polygon": 27,
-          "route_map_position": 27
-        }
-      },
       {
         "after": "MISSING",
         "before": "MISSING",
@@ -54,6 +34,181 @@
     "modelKo": "재기술이 declare한 requirement 중 이 배치에서 전환되지 않는 것을 명시 선언한 목록이다. 소스가 덮는 노선 중 일부만 전환되는 편입을 표현하려면 이 축이 필요하다 — 재기술 lineIds는 admission 정본과 정확히 같아야 하고 선언한 lineIds는 requirementKeys가 전수 덮어야 하기 때문이다. 이 선언은 전환 범위를 넓히지 못한다: 기대 전환 집합에서 그 키를 빼는 것이 전부이고, 하네스가 ① NO_SUPPORTING_ROWS_FOR_LINE 키가 실제로 SUPPORTED면 거부하고 ② ALREADY_SUPPORTED_BY_INHERITED_SCOPE 키는 두 variant의 SUPPORTED·정확한 source 추가를 확인하며 ③ 사유 코드가 요구하는 실측 술어를 확인한다. 선언하지 않은 키가 전환되지 않으면 그대로 fail closed다.",
     "reasonCodesKo": "ALREADY_SUPPORTED_BY_INHERITED_SCOPE — baseline과 lineScoped 모두 SUPPORTED여야 하고, baseline 근거 sourceIds에 없는 재기술 source 하나만 codepoint 순으로 추가됐음을 하네스가 확인한다. NO_SUPPORTING_ROWS_FOR_LINE — 그 scope를 뒷받침하는 official/field-verified provenance 행이 조립 결과에 필드마다 0건임을 하네스가 확인한다(아래 supportingRecordCountByField). 사유가 자유 서술로만 남지 않도록 코드마다 실측 술어를 하나씩 둔다. 새 사유 코드는 그 코드가 요구하는 실측 술어를 함께 넣어야만 allowlist에 오른다.",
     "scopeKo": "선언 단위는 (sourceId, sourceDomain, lineId)다. 선언은 그 재기술이 declare한 requirement 키 안에서만 고를 수 있어 도메인 전체·소스 전체·와일드카드 선언이 들어올 통로가 없다. 한 재기술의 노선을 전부 선언하는 것은 기존 SUPPORTED 근거에 source 하나만 정확히 더하는 ALREADY_SUPPORTED_BY_INHERITED_SCOPE일 때만 허용하고, 그 밖에는 아무것도 열지 않는 재기술로 거부한다."
+  },
+  "deferredCandidateRequirements": {
+    "count": 8,
+    "declarationCount": 1,
+    "entries": [
+      {
+        "after": "MISSING",
+        "afterSourceIds": [],
+        "before": "MISSING",
+        "beforeSourceIds": [],
+        "lineIds": [
+          "line-472a81add377",
+          "seoul-2",
+          "line-41a8c75ec9d8",
+          "seoul-4",
+          "line-80fc4d5350d4",
+          "line-3f41718e0833",
+          "line-15b3b8a93259",
+          "line-2b2d9eaa53d0"
+        ],
+        "reasonCode": "CURRENT_CANDIDATE_ARTIFACT_PENDING",
+        "reasonKo": "서울교통공사 1~8호선 public coordinate source는 current inventory에서 production 사용이 승인됐지만, public v2 admission artifact와 결정론적 layout 재생이 candidate root pack에 아직 편입되지 않았다. 따라서 active route_map_positions requirement 8건은 두 variant 모두 MISSING으로 명시하며, artifact가 준비된 별도 candidate 전환 전에는 지원 또는 전이로 취급하지 않는다.",
+        "requirementKey": "capital:seoul-metro:line-472a81add377:route_map_positions",
+        "sourceDomain": "route_map_positions",
+        "sourceId": "seoul-metro-route-map-positions"
+      },
+      {
+        "after": "MISSING",
+        "afterSourceIds": [],
+        "before": "MISSING",
+        "beforeSourceIds": [],
+        "lineIds": [
+          "line-472a81add377",
+          "seoul-2",
+          "line-41a8c75ec9d8",
+          "seoul-4",
+          "line-80fc4d5350d4",
+          "line-3f41718e0833",
+          "line-15b3b8a93259",
+          "line-2b2d9eaa53d0"
+        ],
+        "reasonCode": "CURRENT_CANDIDATE_ARTIFACT_PENDING",
+        "reasonKo": "서울교통공사 1~8호선 public coordinate source는 current inventory에서 production 사용이 승인됐지만, public v2 admission artifact와 결정론적 layout 재생이 candidate root pack에 아직 편입되지 않았다. 따라서 active route_map_positions requirement 8건은 두 variant 모두 MISSING으로 명시하며, artifact가 준비된 별도 candidate 전환 전에는 지원 또는 전이로 취급하지 않는다.",
+        "requirementKey": "capital:seoul-metro:seoul-2:route_map_positions",
+        "sourceDomain": "route_map_positions",
+        "sourceId": "seoul-metro-route-map-positions"
+      },
+      {
+        "after": "MISSING",
+        "afterSourceIds": [],
+        "before": "MISSING",
+        "beforeSourceIds": [],
+        "lineIds": [
+          "line-472a81add377",
+          "seoul-2",
+          "line-41a8c75ec9d8",
+          "seoul-4",
+          "line-80fc4d5350d4",
+          "line-3f41718e0833",
+          "line-15b3b8a93259",
+          "line-2b2d9eaa53d0"
+        ],
+        "reasonCode": "CURRENT_CANDIDATE_ARTIFACT_PENDING",
+        "reasonKo": "서울교통공사 1~8호선 public coordinate source는 current inventory에서 production 사용이 승인됐지만, public v2 admission artifact와 결정론적 layout 재생이 candidate root pack에 아직 편입되지 않았다. 따라서 active route_map_positions requirement 8건은 두 variant 모두 MISSING으로 명시하며, artifact가 준비된 별도 candidate 전환 전에는 지원 또는 전이로 취급하지 않는다.",
+        "requirementKey": "capital:seoul-metro:line-41a8c75ec9d8:route_map_positions",
+        "sourceDomain": "route_map_positions",
+        "sourceId": "seoul-metro-route-map-positions"
+      },
+      {
+        "after": "MISSING",
+        "afterSourceIds": [],
+        "before": "MISSING",
+        "beforeSourceIds": [],
+        "lineIds": [
+          "line-472a81add377",
+          "seoul-2",
+          "line-41a8c75ec9d8",
+          "seoul-4",
+          "line-80fc4d5350d4",
+          "line-3f41718e0833",
+          "line-15b3b8a93259",
+          "line-2b2d9eaa53d0"
+        ],
+        "reasonCode": "CURRENT_CANDIDATE_ARTIFACT_PENDING",
+        "reasonKo": "서울교통공사 1~8호선 public coordinate source는 current inventory에서 production 사용이 승인됐지만, public v2 admission artifact와 결정론적 layout 재생이 candidate root pack에 아직 편입되지 않았다. 따라서 active route_map_positions requirement 8건은 두 variant 모두 MISSING으로 명시하며, artifact가 준비된 별도 candidate 전환 전에는 지원 또는 전이로 취급하지 않는다.",
+        "requirementKey": "capital:seoul-metro:seoul-4:route_map_positions",
+        "sourceDomain": "route_map_positions",
+        "sourceId": "seoul-metro-route-map-positions"
+      },
+      {
+        "after": "MISSING",
+        "afterSourceIds": [],
+        "before": "MISSING",
+        "beforeSourceIds": [],
+        "lineIds": [
+          "line-472a81add377",
+          "seoul-2",
+          "line-41a8c75ec9d8",
+          "seoul-4",
+          "line-80fc4d5350d4",
+          "line-3f41718e0833",
+          "line-15b3b8a93259",
+          "line-2b2d9eaa53d0"
+        ],
+        "reasonCode": "CURRENT_CANDIDATE_ARTIFACT_PENDING",
+        "reasonKo": "서울교통공사 1~8호선 public coordinate source는 current inventory에서 production 사용이 승인됐지만, public v2 admission artifact와 결정론적 layout 재생이 candidate root pack에 아직 편입되지 않았다. 따라서 active route_map_positions requirement 8건은 두 variant 모두 MISSING으로 명시하며, artifact가 준비된 별도 candidate 전환 전에는 지원 또는 전이로 취급하지 않는다.",
+        "requirementKey": "capital:seoul-metro:line-80fc4d5350d4:route_map_positions",
+        "sourceDomain": "route_map_positions",
+        "sourceId": "seoul-metro-route-map-positions"
+      },
+      {
+        "after": "MISSING",
+        "afterSourceIds": [],
+        "before": "MISSING",
+        "beforeSourceIds": [],
+        "lineIds": [
+          "line-472a81add377",
+          "seoul-2",
+          "line-41a8c75ec9d8",
+          "seoul-4",
+          "line-80fc4d5350d4",
+          "line-3f41718e0833",
+          "line-15b3b8a93259",
+          "line-2b2d9eaa53d0"
+        ],
+        "reasonCode": "CURRENT_CANDIDATE_ARTIFACT_PENDING",
+        "reasonKo": "서울교통공사 1~8호선 public coordinate source는 current inventory에서 production 사용이 승인됐지만, public v2 admission artifact와 결정론적 layout 재생이 candidate root pack에 아직 편입되지 않았다. 따라서 active route_map_positions requirement 8건은 두 variant 모두 MISSING으로 명시하며, artifact가 준비된 별도 candidate 전환 전에는 지원 또는 전이로 취급하지 않는다.",
+        "requirementKey": "capital:seoul-metro:line-3f41718e0833:route_map_positions",
+        "sourceDomain": "route_map_positions",
+        "sourceId": "seoul-metro-route-map-positions"
+      },
+      {
+        "after": "MISSING",
+        "afterSourceIds": [],
+        "before": "MISSING",
+        "beforeSourceIds": [],
+        "lineIds": [
+          "line-472a81add377",
+          "seoul-2",
+          "line-41a8c75ec9d8",
+          "seoul-4",
+          "line-80fc4d5350d4",
+          "line-3f41718e0833",
+          "line-15b3b8a93259",
+          "line-2b2d9eaa53d0"
+        ],
+        "reasonCode": "CURRENT_CANDIDATE_ARTIFACT_PENDING",
+        "reasonKo": "서울교통공사 1~8호선 public coordinate source는 current inventory에서 production 사용이 승인됐지만, public v2 admission artifact와 결정론적 layout 재생이 candidate root pack에 아직 편입되지 않았다. 따라서 active route_map_positions requirement 8건은 두 variant 모두 MISSING으로 명시하며, artifact가 준비된 별도 candidate 전환 전에는 지원 또는 전이로 취급하지 않는다.",
+        "requirementKey": "capital:seoul-metro:line-15b3b8a93259:route_map_positions",
+        "sourceDomain": "route_map_positions",
+        "sourceId": "seoul-metro-route-map-positions"
+      },
+      {
+        "after": "MISSING",
+        "afterSourceIds": [],
+        "before": "MISSING",
+        "beforeSourceIds": [],
+        "lineIds": [
+          "line-472a81add377",
+          "seoul-2",
+          "line-41a8c75ec9d8",
+          "seoul-4",
+          "line-80fc4d5350d4",
+          "line-3f41718e0833",
+          "line-15b3b8a93259",
+          "line-2b2d9eaa53d0"
+        ],
+        "reasonCode": "CURRENT_CANDIDATE_ARTIFACT_PENDING",
+        "reasonKo": "서울교통공사 1~8호선 public coordinate source는 current inventory에서 production 사용이 승인됐지만, public v2 admission artifact와 결정론적 layout 재생이 candidate root pack에 아직 편입되지 않았다. 따라서 active route_map_positions requirement 8건은 두 variant 모두 MISSING으로 명시하며, artifact가 준비된 별도 candidate 전환 전에는 지원 또는 전이로 취급하지 않는다.",
+        "requirementKey": "capital:seoul-metro:line-2b2d9eaa53d0:route_map_positions",
+        "sourceDomain": "route_map_positions",
+        "sourceId": "seoul-metro-route-map-positions"
+      }
+    ],
+    "modelKo": "current inventory에서 production 사용이 승인됐지만 아직 candidate root pack에 artifact 행이 없어 지원할 수 없는 active requirement를 명시한다. source/domain의 inventory scope와 active target 교집합을 전수 선언해야 하며, 하네스는 source가 pre-variant candidate pack에 없는지와 두 variant가 모두 MISSING인지 확인한다. 이 축은 서울 1~8호선 public v2 artifact pending gap을 전이로 위장하지 않는다."
   },
   "deployedArtifact": {
     "byteSize": 1463745,
@@ -119,7 +274,7 @@
     "excludedAxesReasonKo": "manifest·pack 서명과 그 서명이 포함된 manifest sha256은 실행마다 새로 만드는 임시 RSA 키에 좌우되고, sqliteSha256은 런타임 SQLite 구현에 좌우된다. EXPLICITLY_UNSUPPORTED·MISSING 집계는 게이트가 resolutions nextReviewAt을 wall-clock으로 판정하므로 시간이 지나면 같은 입력에서도 값이 갈린다.",
     "packPayloadIdenticalAcrossVariants": true,
     "packPayloadIdenticalReasonKo": "line-scope 재기술은 소스 coverageScope 기술만 바꾸고 pack row 데이터를 바꾸지 않는다 — 두 variant의 sqliteSha256이 같은 실행에서 동일함을 하네스가 확인한다.",
-    "recordedAxesKo": "SUPPORTED 판정(requirement 키·필드 근거·소스)과 tier 분모만 기록한다. 이 축은 tracked 입력만으로 오프라인·서명 키 없이 바이트 단위 재현된다."
+    "recordedAxesKo": "SUPPORTED 판정(requirement 키·필드 근거·소스)과 tier 분모, 명시 deferred requirement의 MISSING 상태만 기록한다. 이 축은 tracked 입력만으로 오프라인·서명 키 없이 바이트 단위 재현된다."
   },
   "harness": {
     "builder": "tools/datapack/build-datapack.mjs",
@@ -131,6 +286,20 @@
     },
     "tool": "tools/datapack/run-nationwide-candidate-coverage-gate.mjs"
   },
+  "inheritedLineScopeRetirements": {
+    "count": 1,
+    "entries": [
+      {
+        "inheritedLineIds": [
+          "seoul-4"
+        ],
+        "reasonCode": "HISTORICAL_PREDECESSOR_AUDIT_ONLY",
+        "reasonKo": "승계 원본의 서울 4호선 cyberstation 행은 predecessor audit 입력·행 바이트를 보존하기 위한 historical diagnostic이다. current source-inventory에서는 production 사용이 명시적으로 금지되고 lineIds도 없는 operator scope만 남으므로, candidate 두 variant에서 이 과거 line scope를 retired 한다. 이 선언은 서울 1~8호선 지원이나 전이를 열지 않는다.",
+        "sourceId": "seoulmetro-cyberstation-route-map"
+      }
+    ],
+    "modelKo": "승계 원본의 historical predecessor audit 행은 입력·행 바이트를 바꾸지 않고 candidate sourceInventory에 남긴다. 다만 current inventory가 production 사용 불가이며 coverageScope.lineIds를 아예 갖지 않는 소스는 이 명시 선언으로만 두 variant에서 lineIds를 제거한다. 하네스가 승계·pre-retirement candidate의 옛 lineIds와 region/operator/domain scope가 current inventory와 정확히 맞는지 확인하므로, 이 선언은 서울 1~8호선을 지원하거나 전이시키는 경로가 될 수 없다."
+  },
   "inputs": {
     "inheritedPack": {
       "path": "tools/datapack/release/capital-production-reviewed-pack.json",
@@ -138,7 +307,7 @@
     },
     "inventory": {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "b4eacd3f2135d045440f4daedadd6314088c7fbbb1f6f38c55ebcb810b51f7ef"
+      "sha256": "7006e369b2f89b8246549a3f2cee75c95639492e9710a9ee860c24bbf97397ef"
     },
     "resolutionPlan": {
       "path": "tools/datapack/release/nationwide-public-api-coverage-search-plan-20260725.json",
@@ -150,7 +319,7 @@
     },
     "spec": {
       "path": "tools/datapack/nationwide-candidate-pack-spec.json",
-      "sha256": "c9f682db41ddad6b43a14c43d756108a951527d5facb3ffedc2ae6263d89ef3e"
+      "sha256": "b25740fdc0f82d207eb62cd67880606c9c155b3d76ea6f253cf891a7de0f35bb"
     },
     "targets": {
       "path": "tools/datapack/nationwide-coverage-targets.json",
@@ -509,37 +678,6 @@
     },
     {
       "lineIds": [
-        "line-472a81add377",
-        "seoul-2",
-        "line-41a8c75ec9d8",
-        "seoul-4",
-        "line-80fc4d5350d4",
-        "line-3f41718e0833",
-        "line-15b3b8a93259",
-        "line-2b2d9eaa53d0"
-      ],
-      "nonTransitioningRequirements": [
-        {
-          "reasonCode": "ALREADY_SUPPORTED_BY_INHERITED_SCOPE",
-          "reasonKo": "4호선 route_map_positions는 승계 pack의 cyberstation source만으로 이미 SUPPORTED다. 이 공식 좌표 source는 그 지원 상태를 전이시키지 않고 기존 근거를 보존한 채 하나의 추가 근거가 된다.",
-          "requirementKey": "capital:seoul-metro:seoul-4:route_map_positions"
-        }
-      ],
-      "requirementKeys": [
-        "capital:seoul-metro:line-472a81add377:route_map_positions",
-        "capital:seoul-metro:seoul-2:route_map_positions",
-        "capital:seoul-metro:line-41a8c75ec9d8:route_map_positions",
-        "capital:seoul-metro:seoul-4:route_map_positions",
-        "capital:seoul-metro:line-80fc4d5350d4:route_map_positions",
-        "capital:seoul-metro:line-3f41718e0833:route_map_positions",
-        "capital:seoul-metro:line-15b3b8a93259:route_map_positions",
-        "capital:seoul-metro:line-2b2d9eaa53d0:route_map_positions"
-      ],
-      "sourceDomain": "route_map_positions",
-      "sourceId": "seoul-metro-route-map-positions"
-    },
-    {
-      "lineIds": [
         "line-6e39be0cb6e2"
       ],
       "requirementKeys": [
@@ -775,7 +913,7 @@
     }
   ],
   "packDataInclusions": {
-    "chainKo": "entries는 적용 순서다. 한 지역에 여러 도메인을 편입하면 뒤 편입의 승계 원본은 앞 편입 결과이므로 앞선 편입이 실은 행도 뒤 편입의 불변 대상이 된다. 순서를 조립이 강제하는 구간은 선행 조건이 있는 쌍뿐이다 — 대구 route_map·accessibility는 pack에 대구 시각표 소스가 이미 있을 것을 검사하므로 시각표 편입보다 앞서면 fail closed 되지만, 서로 선행 조건이 없는 두 편입(route_map↔accessibility)은 순서를 바꿔도 조립이 통과한다. 따라서 기록된 전체 순서를 고정하는 축은 조립 fail closed가 아니라 이 entries 배열 순서를 그대로 대조하는 회귀다. 부산은 선행 구조가 대구와 다르다 — 승계 원본에 부산 운영기관·노선·역이 아예 없어 topology 편입이 그 셋을 함께 싣고, 나머지 세 편입(시각표·노선도·편의시설)이 모두 그 소스 등재와 station_lines·network_edges 계보를 선행 조건으로 검사한다. 즉 부산 구간에서 선행 조건이 강제하는 것은 topology가 먼저라는 것뿐이다. 다만 부산 노선도 편입은 승계 원본에 없던 표(routeMapLineTracks)를 새로 만들기 때문에 뒤 세 편입끼리의 교환도 조립을 통과하지 못한다(실측) — 그 표를 0으로 선언해야 하는 편입이 순서에 따라 갈려 선언 행수 대조에서 걸리며, 이는 선행 조건 위반과 다른 축이다. 대전·광주는 부산과 같은 모양이되 편입 단위가 다르다: topology 전용 materializer가 편입이 아니고 시각표 편입 하나가 topology·membership·시각표를 함께 싣는다(대전은 시각표 materializer가 topology materializer를 호출하고, 광주는 한 함수가 세 소스를 함께 등재한다). 그래서 두 지역 모두 시각표 편입이 먼저다 — 노선도·편의시설 materializer는 그 지역 운영기관이 pack에 있을 것과 시각표 소스가 등재돼 있을 것을 함께 선행 조건으로 검사하고, 시각표 편입보다 앞서면 실측상 운영기관 조건에서 먼저 fail closed 된다. 반면 노선도와 편의시설 사이에는 선행 조건이 없어(대구와 같다) 두 편입의 교환은 조립을 통과한다(실측). 수도권 노선도 다섯 편입 사이에도 다른 지역에 대해서도 선행 조건이 없다 — 네 편입(광역철도·경전철·9호선 1단계·2·3단계)은 경로 그래프 계보를 inventory 소스가 아니라 tracked snapshot 파일로 대조하고 역·역노선을 스스로 만들어 승계 pack 의존이 아예 없다. 서울 1~8호선 편입만 승계 pack에 의존한다: 승계 원본의 서울교통공사 운영기관과 capital pilot cyberstation 소스 등재를 선행 조건으로 검사하고 승계 routeMapPositions의 (역, 노선, 권역) PK 집합으로 중복을 거른다. 그 셋은 전부 승계 원본이 이미 갖고 있어 다른 편입에 대한 순서 의존은 되지 않는다. 그런데도 순서를 바꾸면 조립이 막힌다(실측): 광역철도 편입이 승계 원본에 없던 표(coverageLineOperatorScopes)를 새로 만들고 환승역 중복 제거 결과(stations·stationLines)도 앞선 편입이 무엇을 실었는지에 따라 갈려, 부산 노선도와 같은 선언 행수 대조가 걸린다. 9호선 1단계·2·3단계 두 편입의 교환도, 9호선 두 편입을 서울 1~8호선 앞으로 옮기는 것도 같은 행수 대조에서 걸린다(실측). 재정렬 선언(reorderedTables)도 같은 순서에 묶여 있지만(그 표에 승계 행이 있는지가 순서에 따라 갈린다) 실측상 먼저 걸리는 것은 행수 대조다. 인천은 부산과 같은 모양이다 — 승계 원본에 인천 운영기관·노선·역이 아예 없어 역사정보 편입이 그 셋을 함께 싣고, 시각표·편의시설 편입이 그 운영기관 존재를 선행 조건으로 검사해 역사정보보다 앞서면 각각 `Incheon timetable requires incheon-transit operator pack`·`Incheon accessibility requires incheon-transit operator pack`으로 막힌다(실측). 시각표와 편의시설 사이에는 선행 조건이 없어 둘의 교환은 조립을 그대로 통과한다(실측). 인천 구간 전체를 수도권 앞으로 옮기는 것은 선행 조건이 아니라 행수 대조가 막는다: 7호선 노선 레코드와 환승역 4곳(검암·계양·원인재·부천종합운동장)을 수도권 편입이 먼저 실었는지에 따라 역사정보 편입의 lines·stations·coverageLineOperatorScopes 선언이 갈린다(실측).",
+    "chainKo": "entries는 적용 순서다. 한 지역에 여러 도메인을 편입하면 뒤 편입의 승계 원본은 앞 편입 결과이므로 앞선 편입이 실은 행도 뒤 편입의 불변 대상이 된다. 순서를 조립이 강제하는 구간은 선행 조건이 있는 쌍뿐이다 — 대구 route_map·accessibility는 pack에 대구 시각표 소스가 이미 있을 것을 검사하므로 시각표 편입보다 앞서면 fail closed 되지만, 서로 선행 조건이 없는 두 편입(route_map↔accessibility)은 순서를 바꿔도 조립이 통과한다. 따라서 기록된 전체 순서를 고정하는 축은 조립 fail closed가 아니라 이 entries 배열 순서를 그대로 대조하는 회귀다. 부산은 선행 구조가 대구와 다르다 — 승계 원본에 부산 운영기관·노선·역이 아예 없어 topology 편입이 그 셋을 함께 싣고, 나머지 세 편입(시각표·노선도·편의시설)이 모두 그 소스 등재와 station_lines·network_edges 계보를 선행 조건으로 검사한다. 즉 부산 구간에서 선행 조건이 강제하는 것은 topology가 먼저라는 것뿐이다. 다만 부산 노선도 편입은 승계 원본에 없던 표(routeMapLineTracks)를 새로 만들기 때문에 뒤 세 편입끼리의 교환도 조립을 통과하지 못한다(실측) — 그 표를 0으로 선언해야 하는 편입이 순서에 따라 갈려 선언 행수 대조에서 걸리며, 이는 선행 조건 위반과 다른 축이다. 대전·광주는 부산과 같은 모양이되 편입 단위가 다르다: topology 전용 materializer가 편입이 아니고 시각표 편입 하나가 topology·membership·시각표를 함께 싣는다(대전은 시각표 materializer가 topology materializer를 호출하고, 광주는 한 함수가 세 소스를 함께 등재한다). 그래서 두 지역 모두 시각표 편입이 먼저다 — 노선도·편의시설 materializer는 그 지역 운영기관이 pack에 있을 것과 시각표 소스가 등재돼 있을 것을 함께 선행 조건으로 검사하고, 시각표 편입보다 앞서면 실측상 운영기관 조건에서 먼저 fail closed 된다. 반면 노선도와 편의시설 사이에는 선행 조건이 없어(대구와 같다) 두 편입의 교환은 조립을 통과한다(실측). 수도권 노선도 네 편입 사이에도 다른 지역에 대해서도 선행 조건이 없다 — 네 편입(광역철도·경전철·9호선 1단계·2·3단계)은 경로 그래프 계보를 inventory 소스가 아니라 tracked snapshot 파일로 대조하고 역·역노선을 스스로 만들어 승계 pack 의존이 아예 없다. 순서를 바꾸면 조립이 막히는 경우는 광역철도 편입이 승계 원본에 없던 표(coverageLineOperatorScopes)를 새로 만들고 환승역 중복 제거 결과(stations·stationLines)도 앞선 편입이 무엇을 실었는지에 따라 갈려, 부산 노선도와 같은 선언 행수 대조가 걸린다. 9호선 1단계·2·3단계 두 편입의 교환도 같은 행수 대조에서 걸린다(실측). 재정렬 선언(reorderedTables)도 같은 순서에 묶여 있지만(그 표에 승계 행이 있는지가 순서에 따라 갈린다) 실측상 먼저 걸리는 것은 행수 대조다. 인천은 부산과 같은 모양이다 — 승계 원본에 인천 운영기관·노선·역이 아예 없어 역사정보 편입이 그 셋을 함께 싣고, 시각표·편의시설 편입이 그 운영기관 존재를 선행 조건으로 검사해 역사정보보다 앞서면 각각 `Incheon timetable requires incheon-transit operator pack`·`Incheon accessibility requires incheon-transit operator pack`으로 막힌다(실측). 시각표와 편의시설 사이에는 선행 조건이 없어 둘의 교환은 조립을 그대로 통과한다(실측). 인천 구간 전체를 수도권 앞으로 옮기는 것은 선행 조건이 아니라 행수 대조가 막는다: 7호선 노선 레코드와 환승역 4곳(검암·계양·원인재·부천종합운동장)을 수도권 편입이 먼저 실었는지에 따라 역사정보 편입의 lines·stations·coverageLineOperatorScopes 선언이 갈린다(실측).",
     "entries": [
       {
         "addedRows": {
@@ -1503,48 +1641,6 @@
       },
       {
         "addedRows": {
-          "coverageLineOperatorScopes": 0,
-          "facilities": 0,
-          "lines": 7,
-          "movementPathCandidates": 0,
-          "networkEdges": 0,
-          "officialOdFareQuotes": 0,
-          "operators": 0,
-          "representativeRouteRegressions": 0,
-          "requiredTables": 0,
-          "routeMapLineTracks": 0,
-          "routeMapPositions": 273,
-          "routeServiceArtifactEvidence": 0,
-          "serviceCalendarDates": 0,
-          "serviceCalendars": 0,
-          "sourceInventory": 1,
-          "stationAccessibilitySummaries": 0,
-          "stationAliases": 0,
-          "stationExits": 0,
-          "stationFacilityEvidence": 0,
-          "stationLines": 273,
-          "stations": 213,
-          "transitFeedInfo": 0,
-          "transitFrequencies": 0,
-          "transitRoutes": 0,
-          "transitStopTimes": 0,
-          "transitTrips": 0
-        },
-        "inputs": [
-          {
-            "path": "tools/datapack/sources/seoul-metro-route-map-positions-20260724.json",
-            "sha256": "9632acc47f76e735d40dc3346cf7b2298c7c921b61693d1f2f1cac940162633a"
-          }
-        ],
-        "materializedAt": "2026-07-24T02:00:00.000Z",
-        "materializer": "tools/datapack/materialize-seoul-route-map-positions.mjs",
-        "regionId": "capital",
-        "reorderedTables": [
-          "lines"
-        ]
-      },
-      {
-        "addedRows": {
           "coverageLineOperatorScopes": 1,
           "facilities": 0,
           "lines": 1,
@@ -1565,7 +1661,7 @@
           "stationExits": 0,
           "stationFacilityEvidence": 0,
           "stationLines": 25,
-          "stations": 18,
+          "stations": 21,
           "transitFeedInfo": 0,
           "transitFrequencies": 0,
           "transitRoutes": 0,
@@ -1613,7 +1709,7 @@
           "stationExits": 0,
           "stationFacilityEvidence": 0,
           "stationLines": 13,
-          "stations": 10,
+          "stations": 12,
           "transitFeedInfo": 0,
           "transitFrequencies": 0,
           "transitRoutes": 0,
@@ -1636,9 +1732,9 @@
       },
       {
         "addedRows": {
-          "coverageLineOperatorScopes": 2,
+          "coverageLineOperatorScopes": 1,
           "facilities": 0,
-          "lines": 2,
+          "lines": 3,
           "movementPathCandidates": 0,
           "networkEdges": 116,
           "officialOdFareQuotes": 0,
@@ -1768,7 +1864,7 @@
       }
     ],
     "modelKo": "승계 원본에 없는 지역 행은 tracked materializer가 tracked snapshot을 재생해 조립한다. 저장소에 행을 복제하지 않으므로 아래 입력 해시가 candidate 구성의 유일한 결속 축이며, 실제로 실린 행수(addedRows)가 spec 선언과 다르면(또는 승계 행이 바뀌면) 조립이 fail closed 된다.",
-    "reorderedTablesKo": "승계 행 불변 대조의 기본 전제는 append다 — 편입 후에도 각 표의 앞쪽 승계 행이 바이트 그대로여야 한다. 일부 materializer는 append 뒤 표를 id로 다시 정렬하는데(수도권 노선도 다섯 편입 중 넷이 operators·lines·coverageLineOperatorScopes 중 자기가 손댄 표를 그렇게 다시 정렬한다, 실측), 정렬은 승계 행 자체를 바꾸지 않으므로 편입을 막을 이유가 아니다. 그렇다고 전제를 조용히 풀지도 않는다: 편입이 reorderedTables로 그 표를 명시 선언한 경우에만 위치 대신 다중집합으로 본다. 선언한 표에서도 승계 행의 수정·삭제·중복도 변화는 그대로 fail closed이고, 선언하지 않은 표는 접두사 대조가 그대로 적용되며, 실제로 재정렬이 없는 표를 선언하거나 승계 행이 없는 표를 선언하면 그 선언 자체가 거부된다. 아래 entries에 이 키가 없는 편입은 append만 했다는 뜻이다.",
+    "reorderedTablesKo": "승계 행 불변 대조의 기본 전제는 append다 — 편입 후에도 각 표의 앞쪽 승계 행이 바이트 그대로여야 한다. 일부 materializer는 append 뒤 표를 id로 다시 정렬하는데(수도권 노선도 네 편입 중 셋이 operators·lines·coverageLineOperatorScopes 중 자기가 손댄 표를 그렇게 다시 정렬한다, 실측), 정렬은 승계 행 자체를 바꾸지 않으므로 편입을 막을 이유가 아니다. 그렇다고 전제를 조용히 풀지도 않는다: 편입이 reorderedTables로 그 표를 명시 선언한 경우에만 위치 대신 다중집합으로 본다. 선언한 표에서도 승계 행의 수정·삭제·중복도 변화는 그대로 fail closed이고, 선언하지 않은 표는 접두사 대조가 그대로 적용되며, 실제로 재정렬이 없는 표를 선언하거나 승계 행이 없는 표를 선언하면 그 선언 자체가 거부된다. 아래 entries에 이 키가 없는 편입은 append만 했다는 뜻이다.",
     "variantParityKo": "편입 행은 두 variant에 동일하게 들어간다. 편입은 line-scope 재기술과 독립이며, variant를 가르는 축은 재기술뿐이다."
   },
   "parentIssues": [
@@ -1779,8 +1875,8 @@
     "baselineSemanticsKo": "baseline은 저장소의 특정 과거 커밋 상태가 아니라 '등재된 재기술을 걷어낸' counterfactual이다. 아래 lineScopeRedescriptions에 등재된 소스의 coverageScope.lineIds만 fixture와 inventory 사본에서 지운 실행이며, 편입 행은 두 variant에 동일하게 들어간다. 따라서 이 evidence의 전이는 '어떤 소스의 line-scope 기술이 그 requirement를 여는가'를 뜻하고, 그 소스의 line-scope가 admission 정본에 언제 들어왔는지(대구 소스는 #2549 이전부터 line-scope였다)와는 다른 축이다. 전이를 뒷받침한 소스가 등재 목록과 정확히 같은지는 하네스가 fail closed로 확인한다.",
     "denominatorSemanticsKo": "pilotRequirements의 denominator·coveredFields는 domain requiredFields 개수이지 데이터 행 수가 아니다. route_map_positions의 denominator 2는 필수 필드 2개(route_map_position·route_map_label_polygon)를 뜻하며 역 2개나 행 2개를 뜻하지 않는다. 실제로 그 판정을 뒷받침한 provenance 행 수는 필드별 supportingRecordCountByField에 따로 기록한다.",
     "deployedArtifactSemanticsKo": "reviewed-seed counterfactual 전이는 line-scope 재기술의 판정 축이고, shipped artifact row counts는 실제 배포 팩의 별도 축이다.",
-    "supportedScopeKo": "이 evidence는 SUPPORTED 축만 기록하므로 전국 gap 총량 판독에 쓰면 안 된다. 전국 진행 집계는 tools/datapack/reports/nationwide-coverage-tally.json이 정본이다.",
-    "variantComparisonKo": "전이 판정은 두 variant의 상대 비교다. baseline SUPPORTED 총량은 승계 팩의 다른 소스가 line-scope를 갖게 되면 함께 늘어날 수 있고, 하네스는 파일럿 키가 baseline에 없고 lineScoped가 baseline ∪ 파일럿 키와 정확히 같은지만 fail closed로 본다."
+    "supportedScopeKo": "이 evidence의 전국 집계 축은 SUPPORTED뿐이므로 nationwide gap 총량 판독에 쓰면 안 된다. 다만 deferredCandidateRequirements는 public v2 후보 artifact를 기다리는 정확한 gap을 MISSING/MISSING으로 명시 기록한다. 전국 진행 집계는 tools/datapack/reports/nationwide-coverage-tally.json이 정본이다.",
+    "variantComparisonKo": "전이 판정은 두 variant의 상대 비교다. baseline SUPPORTED 총량은 승계 팩의 다른 소스가 line-scope를 갖게 되면 함께 늘어날 수 있고, 하네스는 lineScoped가 baseline ∪ 선언 transition 키와 정확히 같은지만 fail closed로 본다."
   },
   "regeneration": {
     "command": "node tools/datapack/run-nationwide-candidate-coverage-gate.mjs --spec tools/datapack/nationwide-candidate-pack-spec.json --targets tools/datapack/nationwide-coverage-targets.json --inventory tools/datapack/source-inventory.json --resolution-plan tools/datapack/release/nationwide-public-api-coverage-search-plan-20260725.json --resolutions tools/datapack/release/nationwide-public-api-coverage-resolutions-20260725.json --output tools/datapack/reports/nationwide-candidate-coverage-gate.json",
@@ -2284,76 +2380,6 @@
     {
       "after": "SUPPORTED",
       "before": "MISSING",
-      "coveredFields": 2,
-      "denominator": 2,
-      "requirementKey": "capital:seoul-metro:line-15b3b8a93259:route_map_positions",
-      "sourceIds": [
-        "seoul-metro-route-map-positions"
-      ]
-    },
-    {
-      "after": "SUPPORTED",
-      "before": "MISSING",
-      "coveredFields": 2,
-      "denominator": 2,
-      "requirementKey": "capital:seoul-metro:line-2b2d9eaa53d0:route_map_positions",
-      "sourceIds": [
-        "seoul-metro-route-map-positions"
-      ]
-    },
-    {
-      "after": "SUPPORTED",
-      "before": "MISSING",
-      "coveredFields": 2,
-      "denominator": 2,
-      "requirementKey": "capital:seoul-metro:line-3f41718e0833:route_map_positions",
-      "sourceIds": [
-        "seoul-metro-route-map-positions"
-      ]
-    },
-    {
-      "after": "SUPPORTED",
-      "before": "MISSING",
-      "coveredFields": 2,
-      "denominator": 2,
-      "requirementKey": "capital:seoul-metro:line-41a8c75ec9d8:route_map_positions",
-      "sourceIds": [
-        "seoul-metro-route-map-positions"
-      ]
-    },
-    {
-      "after": "SUPPORTED",
-      "before": "MISSING",
-      "coveredFields": 2,
-      "denominator": 2,
-      "requirementKey": "capital:seoul-metro:line-472a81add377:route_map_positions",
-      "sourceIds": [
-        "seoul-metro-route-map-positions"
-      ]
-    },
-    {
-      "after": "SUPPORTED",
-      "before": "MISSING",
-      "coveredFields": 2,
-      "denominator": 2,
-      "requirementKey": "capital:seoul-metro:line-80fc4d5350d4:route_map_positions",
-      "sourceIds": [
-        "seoul-metro-route-map-positions"
-      ]
-    },
-    {
-      "after": "SUPPORTED",
-      "before": "MISSING",
-      "coveredFields": 2,
-      "denominator": 2,
-      "requirementKey": "capital:seoul-metro:seoul-2:route_map_positions",
-      "sourceIds": [
-        "seoul-metro-route-map-positions"
-      ]
-    },
-    {
-      "after": "SUPPORTED",
-      "before": "MISSING",
       "coveredFields": 5,
       "denominator": 5,
       "requirementKey": "daegu:daegu-transportation:line-0ffaa95b1b5d:accessibility_facilities",
@@ -2616,8 +2642,8 @@
         "totalCount": 45
       },
       "launchRequired": {
-        "supportedCount": 1,
-        "supportedRatio": 0.0037,
+        "supportedCount": 0,
+        "supportedRatio": 0,
         "totalCount": 270
       },
       "pilotRequirements": [
@@ -4620,35 +4646,32 @@
         },
         {
           "blockingThreshold": 1,
-          "coverageRatio": 1,
-          "coveredFields": 2,
+          "coverageRatio": 0,
+          "coveredFields": 0,
           "denominator": 2,
           "fieldCoverage": [
             {
               "field": "route_map_position",
-              "sourceIds": [
-                "seoulmetro-cyberstation-route-map"
-              ],
-              "status": "covered"
+              "sourceIds": [],
+              "status": "missing"
             },
             {
               "field": "route_map_label_polygon",
-              "sourceIds": [
-                "seoulmetro-cyberstation-route-map"
-              ],
-              "status": "covered"
+              "sourceIds": [],
+              "status": "missing"
             }
           ],
-          "missingFields": [],
+          "missingFields": [
+            "route_map_position",
+            "route_map_label_polygon"
+          ],
           "releaseTier": "LAUNCH_REQUIRED",
           "requirementKey": "capital:seoul-metro:seoul-4:route_map_positions",
-          "sourceIds": [
-            "seoulmetro-cyberstation-route-map"
-          ],
-          "status": "SUPPORTED",
+          "sourceIds": [],
+          "status": "MISSING",
           "supportingRecordCountByField": {
-            "route_map_label_polygon": 2,
-            "route_map_position": 2
+            "route_map_label_polygon": 0,
+            "route_map_position": 0
           }
         },
         {
@@ -5612,12 +5635,8 @@
           }
         }
       ],
-      "supportedByEvidenceModel": {
-        "owner-authored-canonical": 1
-      },
-      "supportedRequirementKeys": [
-        "capital:seoul-metro:seoul-4:route_map_positions"
-      ]
+      "supportedByEvidenceModel": {},
+      "supportedRequirementKeys": []
     },
     "lineScoped": {
       "descriptionKo": "line-scope 재기술 이후 상태. candidate fixture와 tracked source-inventory.json이 같은 lineIds를 기술해 (operator, line) 단일 pair provenance가 나온 실행이다.",
@@ -5627,8 +5646,8 @@
         "totalCount": 45
       },
       "launchRequired": {
-        "supportedCount": 82,
-        "supportedRatio": 0.3037,
+        "supportedCount": 74,
+        "supportedRatio": 0.2741,
         "totalCount": 270
       },
       "pilotRequirements": [
@@ -7611,269 +7630,242 @@
         },
         {
           "blockingThreshold": 1,
-          "coverageRatio": 1,
-          "coveredFields": 2,
+          "coverageRatio": 0,
+          "coveredFields": 0,
           "denominator": 2,
           "fieldCoverage": [
             {
               "field": "route_map_position",
-              "sourceIds": [
-                "seoul-metro-route-map-positions"
-              ],
-              "status": "covered"
+              "sourceIds": [],
+              "status": "missing"
             },
             {
               "field": "route_map_label_polygon",
-              "sourceIds": [
-                "seoul-metro-route-map-positions"
-              ],
-              "status": "covered"
+              "sourceIds": [],
+              "status": "missing"
             }
           ],
-          "missingFields": [],
+          "missingFields": [
+            "route_map_position",
+            "route_map_label_polygon"
+          ],
           "releaseTier": "LAUNCH_REQUIRED",
           "requirementKey": "capital:seoul-metro:line-15b3b8a93259:route_map_positions",
-          "sourceIds": [
-            "seoul-metro-route-map-positions"
-          ],
-          "status": "SUPPORTED",
+          "sourceIds": [],
+          "status": "MISSING",
           "supportingRecordCountByField": {
-            "route_map_label_polygon": 42,
-            "route_map_position": 42
+            "route_map_label_polygon": 0,
+            "route_map_position": 0
           }
         },
         {
           "blockingThreshold": 1,
-          "coverageRatio": 1,
-          "coveredFields": 2,
+          "coverageRatio": 0,
+          "coveredFields": 0,
           "denominator": 2,
           "fieldCoverage": [
             {
               "field": "route_map_position",
-              "sourceIds": [
-                "seoul-metro-route-map-positions"
-              ],
-              "status": "covered"
+              "sourceIds": [],
+              "status": "missing"
             },
             {
               "field": "route_map_label_polygon",
-              "sourceIds": [
-                "seoul-metro-route-map-positions"
-              ],
-              "status": "covered"
+              "sourceIds": [],
+              "status": "missing"
             }
           ],
-          "missingFields": [],
+          "missingFields": [
+            "route_map_position",
+            "route_map_label_polygon"
+          ],
           "releaseTier": "LAUNCH_REQUIRED",
           "requirementKey": "capital:seoul-metro:line-2b2d9eaa53d0:route_map_positions",
-          "sourceIds": [
-            "seoul-metro-route-map-positions"
-          ],
-          "status": "SUPPORTED",
+          "sourceIds": [],
+          "status": "MISSING",
           "supportingRecordCountByField": {
-            "route_map_label_polygon": 18,
-            "route_map_position": 18
+            "route_map_label_polygon": 0,
+            "route_map_position": 0
           }
         },
         {
           "blockingThreshold": 1,
-          "coverageRatio": 1,
-          "coveredFields": 2,
+          "coverageRatio": 0,
+          "coveredFields": 0,
           "denominator": 2,
           "fieldCoverage": [
             {
               "field": "route_map_position",
-              "sourceIds": [
-                "seoul-metro-route-map-positions"
-              ],
-              "status": "covered"
+              "sourceIds": [],
+              "status": "missing"
             },
             {
               "field": "route_map_label_polygon",
-              "sourceIds": [
-                "seoul-metro-route-map-positions"
-              ],
-              "status": "covered"
+              "sourceIds": [],
+              "status": "missing"
             }
           ],
-          "missingFields": [],
+          "missingFields": [
+            "route_map_position",
+            "route_map_label_polygon"
+          ],
           "releaseTier": "LAUNCH_REQUIRED",
           "requirementKey": "capital:seoul-metro:line-3f41718e0833:route_map_positions",
-          "sourceIds": [
-            "seoul-metro-route-map-positions"
-          ],
-          "status": "SUPPORTED",
+          "sourceIds": [],
+          "status": "MISSING",
           "supportingRecordCountByField": {
-            "route_map_label_polygon": 39,
-            "route_map_position": 39
+            "route_map_label_polygon": 0,
+            "route_map_position": 0
           }
         },
         {
           "blockingThreshold": 1,
-          "coverageRatio": 1,
-          "coveredFields": 2,
+          "coverageRatio": 0,
+          "coveredFields": 0,
           "denominator": 2,
           "fieldCoverage": [
             {
               "field": "route_map_position",
-              "sourceIds": [
-                "seoul-metro-route-map-positions"
-              ],
-              "status": "covered"
+              "sourceIds": [],
+              "status": "missing"
             },
             {
               "field": "route_map_label_polygon",
-              "sourceIds": [
-                "seoul-metro-route-map-positions"
-              ],
-              "status": "covered"
+              "sourceIds": [],
+              "status": "missing"
             }
           ],
-          "missingFields": [],
+          "missingFields": [
+            "route_map_position",
+            "route_map_label_polygon"
+          ],
           "releaseTier": "LAUNCH_REQUIRED",
           "requirementKey": "capital:seoul-metro:line-41a8c75ec9d8:route_map_positions",
-          "sourceIds": [
-            "seoul-metro-route-map-positions"
-          ],
-          "status": "SUPPORTED",
+          "sourceIds": [],
+          "status": "MISSING",
           "supportingRecordCountByField": {
-            "route_map_label_polygon": 34,
-            "route_map_position": 34
+            "route_map_label_polygon": 0,
+            "route_map_position": 0
           }
         },
         {
           "blockingThreshold": 1,
-          "coverageRatio": 1,
-          "coveredFields": 2,
+          "coverageRatio": 0,
+          "coveredFields": 0,
           "denominator": 2,
           "fieldCoverage": [
             {
               "field": "route_map_position",
-              "sourceIds": [
-                "seoul-metro-route-map-positions"
-              ],
-              "status": "covered"
+              "sourceIds": [],
+              "status": "missing"
             },
             {
               "field": "route_map_label_polygon",
-              "sourceIds": [
-                "seoul-metro-route-map-positions"
-              ],
-              "status": "covered"
+              "sourceIds": [],
+              "status": "missing"
             }
           ],
-          "missingFields": [],
+          "missingFields": [
+            "route_map_position",
+            "route_map_label_polygon"
+          ],
           "releaseTier": "LAUNCH_REQUIRED",
           "requirementKey": "capital:seoul-metro:line-472a81add377:route_map_positions",
-          "sourceIds": [
-            "seoul-metro-route-map-positions"
-          ],
-          "status": "SUPPORTED",
+          "sourceIds": [],
+          "status": "MISSING",
           "supportingRecordCountByField": {
-            "route_map_label_polygon": 10,
-            "route_map_position": 10
+            "route_map_label_polygon": 0,
+            "route_map_position": 0
           }
         },
         {
           "blockingThreshold": 1,
-          "coverageRatio": 1,
-          "coveredFields": 2,
+          "coverageRatio": 0,
+          "coveredFields": 0,
           "denominator": 2,
           "fieldCoverage": [
             {
               "field": "route_map_position",
-              "sourceIds": [
-                "seoul-metro-route-map-positions"
-              ],
-              "status": "covered"
+              "sourceIds": [],
+              "status": "missing"
             },
             {
               "field": "route_map_label_polygon",
-              "sourceIds": [
-                "seoul-metro-route-map-positions"
-              ],
-              "status": "covered"
+              "sourceIds": [],
+              "status": "missing"
             }
           ],
-          "missingFields": [],
+          "missingFields": [
+            "route_map_position",
+            "route_map_label_polygon"
+          ],
           "releaseTier": "LAUNCH_REQUIRED",
           "requirementKey": "capital:seoul-metro:line-80fc4d5350d4:route_map_positions",
-          "sourceIds": [
-            "seoul-metro-route-map-positions"
-          ],
-          "status": "SUPPORTED",
+          "sourceIds": [],
+          "status": "MISSING",
           "supportingRecordCountByField": {
-            "route_map_label_polygon": 54,
-            "route_map_position": 54
+            "route_map_label_polygon": 0,
+            "route_map_position": 0
           }
         },
         {
           "blockingThreshold": 1,
-          "coverageRatio": 1,
-          "coveredFields": 2,
+          "coverageRatio": 0,
+          "coveredFields": 0,
           "denominator": 2,
           "fieldCoverage": [
             {
               "field": "route_map_position",
-              "sourceIds": [
-                "seoul-metro-route-map-positions"
-              ],
-              "status": "covered"
+              "sourceIds": [],
+              "status": "missing"
             },
             {
               "field": "route_map_label_polygon",
-              "sourceIds": [
-                "seoul-metro-route-map-positions"
-              ],
-              "status": "covered"
+              "sourceIds": [],
+              "status": "missing"
             }
           ],
-          "missingFields": [],
+          "missingFields": [
+            "route_map_position",
+            "route_map_label_polygon"
+          ],
           "releaseTier": "LAUNCH_REQUIRED",
           "requirementKey": "capital:seoul-metro:seoul-2:route_map_positions",
-          "sourceIds": [
-            "seoul-metro-route-map-positions"
-          ],
-          "status": "SUPPORTED",
+          "sourceIds": [],
+          "status": "MISSING",
           "supportingRecordCountByField": {
-            "route_map_label_polygon": 51,
-            "route_map_position": 51
+            "route_map_label_polygon": 0,
+            "route_map_position": 0
           }
         },
         {
           "blockingThreshold": 1,
-          "coverageRatio": 1,
-          "coveredFields": 2,
+          "coverageRatio": 0,
+          "coveredFields": 0,
           "denominator": 2,
           "fieldCoverage": [
             {
               "field": "route_map_position",
-              "sourceIds": [
-                "seoul-metro-route-map-positions",
-                "seoulmetro-cyberstation-route-map"
-              ],
-              "status": "covered"
+              "sourceIds": [],
+              "status": "missing"
             },
             {
               "field": "route_map_label_polygon",
-              "sourceIds": [
-                "seoul-metro-route-map-positions",
-                "seoulmetro-cyberstation-route-map"
-              ],
-              "status": "covered"
+              "sourceIds": [],
+              "status": "missing"
             }
           ],
-          "missingFields": [],
+          "missingFields": [
+            "route_map_position",
+            "route_map_label_polygon"
+          ],
           "releaseTier": "LAUNCH_REQUIRED",
           "requirementKey": "capital:seoul-metro:seoul-4:route_map_positions",
-          "sourceIds": [
-            "seoul-metro-route-map-positions",
-            "seoulmetro-cyberstation-route-map"
-          ],
-          "status": "SUPPORTED",
+          "sourceIds": [],
+          "status": "MISSING",
           "supportingRecordCountByField": {
-            "route_map_label_polygon": 27,
-            "route_map_position": 27
+            "route_map_label_polygon": 0,
+            "route_map_position": 0
           }
         },
         {
@@ -8949,7 +8941,7 @@
       ],
       "supportedByEvidenceModel": {
         "official-source": 46,
-        "owner-authored-canonical": 36
+        "owner-authored-canonical": 28
       },
       "supportedRequirementKeys": [
         "busan:busan-transportation:line-ab1a041f6266:accessibility_facilities",
@@ -9001,14 +8993,6 @@
         "capital:operator-936e454d0bfb:line-f0e747248a31:route_map_positions",
         "capital:operator-9e999d4aa596:line-8604048b6430:route_map_positions",
         "capital:operator-b2d80436b438:line-828f04afc588:route_map_positions",
-        "capital:seoul-metro:line-15b3b8a93259:route_map_positions",
-        "capital:seoul-metro:line-2b2d9eaa53d0:route_map_positions",
-        "capital:seoul-metro:line-3f41718e0833:route_map_positions",
-        "capital:seoul-metro:line-41a8c75ec9d8:route_map_positions",
-        "capital:seoul-metro:line-472a81add377:route_map_positions",
-        "capital:seoul-metro:line-80fc4d5350d4:route_map_positions",
-        "capital:seoul-metro:seoul-2:route_map_positions",
-        "capital:seoul-metro:seoul-4:route_map_positions",
         "daegu:daegu-transportation:line-0ffaa95b1b5d:accessibility_facilities",
         "daegu:daegu-transportation:line-0ffaa95b1b5d:route_graph_topology",
         "daegu:daegu-transportation:line-0ffaa95b1b5d:route_map_positions",

@@ -7,9 +7,20 @@ import { pathToFileURL } from "node:url";
 import { loadCapitalRouteTopologySnapshot } from "./apply-capital-route-topology-to-bundled-pack.mjs";
 import { normalizeStationName } from "./collect-capital-route-topology.mjs";
 import { replaceFileAtomically } from "./refresh-route-map-admission-freshness.mjs";
+import { validateSeoulRouteMapPositionsSnapshot } from "./collect-seoul-route-map-positions.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const SHA256 = /^[a-f0-9]{64}$/u;
+const LAYOUT_EVIDENCE_FIELDS = Object.freeze([
+  "aliasLedgerSha256", "aliasLedgerVersion", "layoutAlgorithmVersion", "layoutArtifactSha256",
+  "layoutPositionsSha256", "layoutTracksSha256", "lineOrderSha256", "outputSchemaSha256",
+  "rawPositionsSha256", "semanticInputSha256", "semanticOutputSha256", "topologySnapshotId",
+  "topologySnapshotIdentity", "topologySnapshotSha256",
+]);
+const CURRENT_LAYOUT_ADMISSION_FIELDS = Object.freeze([
+  "schemaVersion", "artifactKind", "status", "positionSnapshotId", "snapshotPath",
+  "snapshotSha256", "rawSha256", "contentSha256", ...LAYOUT_EVIDENCE_FIELDS,
+]);
 const STATION_ALIASES = Object.freeze({
   당고개: "불암산",
   능길: "신길온천",
@@ -55,6 +66,72 @@ function parseSnapshot(bytes, label) {
   } catch {
     throw new Error(`${label} is not valid JSON`);
   }
+}
+function canonicalBytes(value) { return Buffer.from(`${JSON.stringify(value)}\n`); }
+function currentLayoutSnapshot(source, evidence) {
+  const admission = evidence?.currentLayoutAdmission;
+  if (source.id !== "seoul-metro-route-map-positions" || admission == null) return null;
+  if (admission.schemaVersion !== 2
+    || admission.artifactKind !== "seoul-public-route-map-layout-admission"
+    || admission.status !== "ADMITTED"
+    || !same(Object.keys(admission).sort(compareStrings), [...CURRENT_LAYOUT_ADMISSION_FIELDS].sort(compareStrings))
+    || typeof admission.positionSnapshotId !== "string"
+    || admission.positionSnapshotId.length === 0
+    || admission.snapshotPath !== `tools/datapack/sources/${admission.positionSnapshotId}.json`
+    || CURRENT_LAYOUT_ADMISSION_FIELDS.filter((field) => field.endsWith("Sha256"))
+      .some((field) => !SHA256.test(admission[field] ?? ""))) {
+    throw new Error("Seoul current layout admission is invalid");
+  }
+  return admission;
+}
+function validateCurrentLayoutObservation({ source, admission, bytes, topologyBytes }) {
+  if (sha256(bytes) !== admission.snapshotSha256) throw new Error("Seoul current layout observation byte identity mismatch");
+  const observation = parseSnapshot(bytes, "Seoul current layout observation");
+  const artifact = observation?.routeMapLayoutArtifact;
+  const layout = observation?.layoutEvidence;
+  if (!artifact) throw new Error("Seoul current layout observation identity is invalid");
+  validateSeoulRouteMapPositionsSnapshot(artifact, { topologySnapshotBytes: topologyBytes });
+  const expectedLayout = Object.fromEntries(LAYOUT_EVIDENCE_FIELDS.map((field) => [
+    field,
+    field === "layoutArtifactSha256" ? sha256(canonicalBytes(artifact)) : artifact[field],
+  ]));
+  const expectedAdmission = {
+    schemaVersion: 2,
+    artifactKind: "seoul-public-route-map-layout-admission",
+    status: "ADMITTED",
+    positionSnapshotId: observation?.snapshotId,
+    snapshotPath: `tools/datapack/sources/${observation?.snapshotId}.json`,
+    snapshotSha256: sha256(bytes),
+    rawSha256: observation?.rawSha256,
+    contentSha256: observation?.contentSha256,
+    ...expectedLayout,
+  };
+  if (observation?.sourceId !== source.id
+    || observation.schemaVersion !== 1
+    || observation.artifactKind !== "static-network-successor-observation"
+    || observation.snapshotId !== admission.positionSnapshotId
+    || observation.capturedAt !== artifact.capturedAt
+    || artifact.rawSha256 !== observation.rawSha256
+    || observation.contentSha256 !== sha256(canonicalBytes(observation.normalizedProjection))
+    || observation.rowCount !== observation.normalizedProjection?.length
+    || !same(Object.keys(layout ?? {}).sort(compareStrings), [...LAYOUT_EVIDENCE_FIELDS].sort(compareStrings))
+    || LAYOUT_EVIDENCE_FIELDS.some((field) => layout[field] !== expectedLayout[field])
+    || CURRENT_LAYOUT_ADMISSION_FIELDS.some((field) => admission[field] !== expectedAdmission[field])) {
+    throw new Error("Seoul current layout observation identity is invalid");
+  }
+  const providerRows = observation.normalizedProjection?.map(({
+    line, stationCode, stationName, latitude, longitude, basisDate,
+  }) => ({ line, stationCode, stationName, latitude, longitude, basisDate }));
+  const rawRows = artifact.rawPositions.map(({
+    line, stationCode, stationName, latitude, longitude, basisDate,
+  }) => ({ line, stationCode, stationName, latitude, longitude, basisDate }));
+  if (!Array.isArray(providerRows)
+    || !same(providerRows, rawRows)
+    || artifact.rawPositions.length !== artifact.rawStationCount
+    || artifact.layoutPositions.length !== artifact.rawPositions.length) {
+    throw new Error("Seoul current layout artifact mismatch");
+  }
+  return { artifact, observation };
 }
 
 function topologyStationsByLine(topology) {
@@ -104,7 +181,8 @@ function currentCapitalTopologyBinding(source, evidence, topologySourceId) {
     && currentAdmission.status === "ADMITTED"
     && /^capital-route-topology-[0-9]{8}$/u.test(currentAdmission.topologySnapshotId ?? "")
     && SHA256.test(currentAdmission.topologyContentSha256 ?? "")
-    && currentAdmission.positionSnapshotSha256 === evidence.snapshotSha256
+    && currentAdmission.positionSnapshotSha256
+      === (evidence.currentLayoutAdmission?.snapshotSha256 ?? evidence.snapshotSha256)
     && Number.isFinite(Date.parse(currentAdmission.reviewedAt))
     && new Date(currentAdmission.reviewedAt).toISOString() === currentAdmission.reviewedAt
     && Number.isFinite(Date.parse(currentAdmission.freshUntil))
@@ -146,6 +224,7 @@ export function withCurrentCapitalTopologyAdmissions({
   topologySnapshotId,
   reviewedAt,
   snapshotBytesByPath,
+  topologySnapshotBytes = null,
 }) {
   if (inventory?.schemaVersion !== 1
     || inventory.artifactKind !== "production-source-inventory"
@@ -166,23 +245,26 @@ export function withCurrentCapitalTopologyAdmissions({
   if (!(snapshotBytesByPath instanceof Map)) throw new Error("snapshot bytes map is required");
 
   const stationsByLine = topologyStationsByLine(validatedTopology);
+  const topologyBytes = topologySnapshotBytes == null ? canonicalBytes(topology) : Buffer.from(topologySnapshotBytes);
   const next = structuredClone(inventory);
   let admissionCount = 0;
   for (const source of next.sources) {
     const evidence = source.routeMapAdmissionEvidence;
     const binding = currentCapitalTopologyBinding(source, evidence, topology.sourceId);
     if (binding == null) continue;
-    const snapshotBytes = snapshotBytesByPath.get(evidence.snapshotPath);
+    const layoutAdmission = currentLayoutSnapshot(source, evidence);
+    const snapshotPath = layoutAdmission?.snapshotPath ?? evidence.snapshotPath;
+    const snapshotBytes = snapshotBytesByPath.get(snapshotPath);
     if (snapshotBytes == null
-      || sha256(snapshotBytes) !== requiredSha256(evidence.snapshotSha256, `${source.id} snapshotSha256`)) {
+      || sha256(snapshotBytes) !== requiredSha256(layoutAdmission?.snapshotSha256 ?? evidence.snapshotSha256, `${source.id} snapshotSha256`)) {
       throw new Error(`${source.id} position snapshot byte identity mismatch`);
     }
     const snapshot = parseSnapshot(snapshotBytes, `${source.id} position snapshot`);
+    const currentLayout = layoutAdmission == null ? null : validateCurrentLayoutObservation({ source, admission: layoutAdmission, bytes: snapshotBytes, topologyBytes });
+    const positions = currentLayout?.artifact.rawPositions ?? snapshot.positions;
     if (snapshot.sourceId !== source.id
-      || !same(snapshot.lineIds, evidence.lineIds)
-      || snapshot.stationCount !== evidence.stationCount
-      || !Array.isArray(snapshot.positions)
-      || snapshot.positions.length !== evidence.stationCount) {
+      || !Array.isArray(positions)
+      || (currentLayout == null && (!same(snapshot.lineIds, evidence.lineIds) || snapshot.stationCount !== evidence.stationCount || positions.length !== evidence.stationCount))) {
       throw new Error(`${source.id} historical position admission mismatch`);
     }
     if (binding === "historical") {
@@ -192,39 +274,45 @@ export function withCurrentCapitalTopologyAdmissions({
         || !same(snapshot.topologyLineages, evidence.topologyLineages)) {
         throw new Error(`${source.id} historical position admission mismatch`);
       }
-    } else if (snapshot.positionsSha256 !== evidence.positionsSha256
+    } else if (currentLayout == null && (snapshot.positionsSha256 !== evidence.positionsSha256
       || snapshot.rawSha256 !== evidence.rawSha256
       || [
         snapshot.topologySourceId,
         snapshot.topologySnapshotId,
         snapshot.topologyContentSha256,
         snapshot.topologyLineages,
-      ].some((value) => value !== undefined)) {
+      ].some((value) => value !== undefined))) {
       throw new Error("Seoul route-map position snapshot identity is invalid");
     }
     if (new Set(evidence.lineIds).size !== evidence.lineIds.length || evidence.lineIds.length === 0) {
       throw new Error(`${source.id} admitted line set is invalid`);
     }
-    const observedStationsByLine = new Map();
-    const observedPositionKeys = new Set();
-    for (const position of snapshot.positions) {
-      const stations = stationsByLine.get(position.lineId);
-      const stationName = canonicalStationName(position.stationName);
-      if (!evidence.lineIds.includes(position.lineId)
-        || !stations?.has(stationName)) {
-        throw new Error(`${source.id} station membership mismatch: ${position.lineId}:${position.stationName}`);
+    if (currentLayout != null) {
+      if (!same([...currentLayout.artifact.lineIds].sort(compareStrings), [...evidence.lineIds].sort(compareStrings))) {
+        throw new Error(`${source.id} position line coverage mismatch`);
       }
-      const positionKey = `${position.lineId}\0${stationName}`;
-      if (observedPositionKeys.has(positionKey)) {
-        throw new Error(`${source.id} duplicate position: ${position.lineId}:${position.stationName}`);
+    } else {
+      const observedStationsByLine = new Map();
+      const observedPositionKeys = new Set();
+      for (const position of positions) {
+        const stations = stationsByLine.get(position.lineId);
+        const stationName = canonicalStationName(position.stationName);
+        if (!evidence.lineIds.includes(position.lineId)
+          || !stations?.has(stationName)) {
+          throw new Error(`${source.id} station membership mismatch: ${position.lineId}:${position.stationName}`);
+        }
+        const positionKey = `${position.lineId}\0${stationName}`;
+        if (observedPositionKeys.has(positionKey)) {
+          throw new Error(`${source.id} duplicate position: ${position.lineId}:${position.stationName}`);
+        }
+        observedPositionKeys.add(positionKey);
+        const observed = observedStationsByLine.get(position.lineId) ?? new Set();
+        observed.add(stationName);
+        observedStationsByLine.set(position.lineId, observed);
       }
-      observedPositionKeys.add(positionKey);
-      const observed = observedStationsByLine.get(position.lineId) ?? new Set();
-      observed.add(stationName);
-      observedStationsByLine.set(position.lineId, observed);
-    }
-    if (!same([...observedStationsByLine.keys()].sort(compareStrings), [...evidence.lineIds].sort(compareStrings))) {
-      throw new Error(`${source.id} position line coverage mismatch`);
+      if (!same([...observedStationsByLine.keys()].sort(compareStrings), [...evidence.lineIds].sort(compareStrings))) {
+        throw new Error(`${source.id} position line coverage mismatch`);
+      }
     }
     if (binding === "current-official") evidence.topologySourceId = topology.sourceId;
     evidence.currentTopologyAdmission = {
@@ -234,7 +322,7 @@ export function withCurrentCapitalTopologyAdmissions({
       status: "ADMITTED",
       topologySnapshotId,
       topologyContentSha256: topology.contentSha256,
-      positionSnapshotSha256: evidence.snapshotSha256,
+      positionSnapshotSha256: layoutAdmission?.snapshotSha256 ?? evidence.snapshotSha256,
       reviewedAt,
       freshUntil: topology.freshUntil,
       topologyLineages: [...evidence.lineIds].sort(compareStrings).map((lineId) => ({
@@ -286,8 +374,9 @@ async function main() {
   for (const source of inventory.sources ?? []) {
     const evidence = source.routeMapAdmissionEvidence;
     if (evidence?.topologySourceId !== topology.sourceId) continue;
-    const snapshot = await regularFile(evidence.snapshotPath, `${source.id} position snapshot`);
-    snapshotBytesByPath.set(evidence.snapshotPath, snapshot.bytes);
+    const snapshotPath = evidence.currentLayoutAdmission?.snapshotPath ?? evidence.snapshotPath;
+    const snapshot = await regularFile(snapshotPath, `${source.id} position snapshot`);
+    snapshotBytesByPath.set(snapshotPath, snapshot.bytes);
   }
   const next = withCurrentCapitalTopologyAdmissions({
     inventory,
@@ -295,6 +384,7 @@ async function main() {
     topologySnapshotId: args.topology_snapshot_id,
     reviewedAt: args.reviewed_at,
     snapshotBytesByPath,
+    topologySnapshotBytes: topologyFile.bytes,
   });
   const nextBytes = Buffer.from(`${JSON.stringify(next, null, 2)}\n`);
   if (args.check) {

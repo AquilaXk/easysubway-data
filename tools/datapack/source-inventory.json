@@ -7510,8 +7510,8 @@
       "providerDepartment": "토목처",
       "sourceSystem": "서울교통공사·공공데이터포털",
       "datasetUrl": "https://www.data.go.kr/data/15099316/fileData.do",
-      "datasetKind": "official-file-data",
-      "coverage": "서울교통공사 1~8호선 공식 위경도 좌표(원본 276행, 중복 좌표 quarantine 후 274개 admission)",
+      "datasetKind": "official-public-api-data",
+      "coverage": "서울교통공사 1~8호선 공식 역 코드·명칭·위경도와 기준일자; 노선도 배치는 제품 소유 결정론적 layout으로 산출",
       "coverageScope": {
         "regionIds": [
           "capital"
@@ -7533,7 +7533,7 @@
           "route_map_positions"
         ]
       },
-      "requiredForProductionPack": false,
+      "requiredForProductionPack": true,
       "productionUseAllowed": true,
       "updateFrequency": "on-change",
       "observedDataUpdatedAt": "2025-08-14",
@@ -7547,10 +7547,8 @@
         "redistributionAllowed": true,
         "evidenceUrl": "https://www.data.go.kr/data/15099316/fileData.do"
       },
-      "fieldsProvided": [
-        "route_map_position",
-        "route_map_label_polygon"
-      ],
+      "fieldsProvided": ["line", "station_code", "station_name", "latitude", "longitude", "basis_date"],
+      "productDerivedFields": ["route_map_position", "route_map_label_polygon", "route_map_line_track"],
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -7673,6 +7671,20 @@
             }
           ]
         }
+      },
+      "admissionEvidence": {
+        "artifactKind": "source-admission-pipeline-evidence-summary",
+        "issue": 447,
+        "candidateId": "seoul-metro-route-map-positions",
+        "sourceId": "seoul-metro-route-map-positions",
+        "snapshotId": "seoul-metro-route-map-positions-20260724",
+        "decision": "APPROVED",
+        "sampleEvidenceHash": "fb04a674e9e1ccf7491e1a20ac87cb79604edbbe31517d712fc290f919ee6398",
+        "rawSha256": "713d6a7353748f1f29b974cd70df9b7a24b3600b6aeb60a58ed7bfa6975e02ed",
+        "sourceSnapshotSetHash": "9632acc47f76e735d40dc3346cf7b2298c7c921b61693d1f2f1cac940162633a",
+        "adminReviewRecordHash": "ffff63f1182addecce58f285b2d982931dec58d6e403ecac9437a2959ed3aea1",
+        "licenseEvidenceHash": "f7c7534e3fbac3b218bd91c55da7259416478cb5eaa259400576cd04e5fef0e7",
+        "productionUseNoteKo": "공식 raw 좌표는 OCI snapshot으로 보존하고, 노선도 산출물은 versioned deterministic layout으로만 생성한다."
       }
     },
     {
@@ -8097,14 +8109,14 @@
     },
     {
       "id": "seoulmetro-cyberstation-route-map",
-      "displayName": "서울교통공사 사이버스테이션 노선도",
+      "displayName": "서울교통공사 노선도 historical diagnostic",
       "owner": "서울교통공사",
       "provider": "서울교통공사",
       "providerDepartment": "정보운영센터",
       "sourceSystem": "서울교통공사 사이버스테이션",
       "datasetUrl": "https://www.seoulmetro.co.kr/kr/cyberStation.do",
       "datasetKind": "official-route-map-web",
-      "coverage": "서울교통공사 사이버스테이션 수도권 노선도 좌표 검수 기준",
+      "coverage": "historical diagnostic lineage only; current route-map authority is public coordinate data plus deterministic layout",
       "coverageScope": {
         "regionIds": [
           "capital"
@@ -8112,14 +8124,12 @@
         "operatorIds": [
           "seoul-metro"
         ],
-        "lineIds": [
-          "seoul-4"
-        ],
         "sourceDomains": [
           "route_map_positions"
         ]
       },
       "requiredForProductionPack": false,
+      "productionUseAllowed": false,
       "updateFrequency": "irregular-on-change",
       "observedDataUpdatedAt": "2026-06-28",
       "retrievedAt": "2026-06-28",
@@ -8191,7 +8201,7 @@
           "unlockStatus": "not_required",
           "productionUseAllowed": false
         },
-        "productionUseNoteKo": "capital 팩 production inventory 소비 대상으로 승격한다."
+    "productionUseNoteKo": "historical diagnostic 및 cross-source predecessor audit에만 보존하며 current production source로 활성화하지 않는다."
       }
     },
     {

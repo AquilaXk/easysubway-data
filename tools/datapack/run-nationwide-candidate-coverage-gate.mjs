@@ -104,7 +104,6 @@ import {
 import {
   materializeCapitalWideRailRouteMapPositions,
 } from "./materialize-kric-capital-wide-rail-route-map-positions.mjs";
-import { materializeSeoulRouteMapPositions } from "./materialize-seoul-route-map-positions.mjs";
 import {
   materializeSeoul9Phase1RouteMapPositions,
 } from "./materialize-seoul9-phase1-route-map-positions.mjs";
@@ -202,13 +201,10 @@ const PACK_DATA_MATERIALIZERS = new Map([
     materialize: materializeGwangjuAccessibilityInclusion,
     inputs: { paths: ["snapshotPath", "topologySnapshotPath"], linePaths: [] },
   }],
-  // 수도권 노선도 다섯 편입 중 셋(#2595). KRIC 광역·경전철 materializer는 소스(=노선) 하나만 처리하므로
+  // 수도권 노선도 네 편입 중 앞의 둘(#2595). KRIC 광역·경전철 materializer는 소스(=노선) 하나만 처리하므로
   // 편입 하나가 노선별 snapshot을 노선 층 경로 키로 받아 카탈로그 순서대로 체인한다 — 대구 시각표가
-  // 노선별 snapshot을 받는 형상과 같다. 앞의 두 편입은 승계 pack에 의존하지 않는다: topology를
-  // inventory 소스가 아니라 tracked snapshot 파일로만 대조하고 역·역노선을 스스로 만든다. 서울 1~8호선
-  // 편입은 다르다 — 승계 원본의 서울교통공사 운영기관과 capital pilot cyberstation 소스 등재를 선행
-  // 조건으로 검사하고 승계 routeMapPositions의 (역, 노선, 권역) PK 집합으로 중복을 거른다. 다만 그 셋은
-  // 전부 승계 원본이 이미 갖고 있어 다른 편입에 대한 순서 의존은 없다.
+  // 노선별 snapshot을 받는 형상과 같다. 네 편입은 모두 승계 pack에 의존하지 않는다: topology를
+  // inventory 소스가 아니라 tracked snapshot 파일로만 대조하고 역·역노선을 스스로 만든다.
   ["tools/datapack/materialize-kric-capital-wide-rail-route-map-positions.mjs", {
     materialize: materializeCapitalWideRailRouteMapInclusion,
     inputs: { paths: ["topologySnapshotPath"], linePaths: ["snapshotPath"] },
@@ -216,10 +212,6 @@ const PACK_DATA_MATERIALIZERS = new Map([
   ["tools/datapack/materialize-kric-capital-light-rail-route-map-positions.mjs", {
     materialize: materializeCapitalLightRailRouteMapInclusion,
     inputs: { paths: ["topologySnapshotPath"], linePaths: ["snapshotPath"] },
-  }],
-  ["tools/datapack/materialize-seoul-route-map-positions.mjs", {
-    materialize: materializeSeoulRouteMapInclusion,
-    inputs: { paths: ["snapshotPath"], linePaths: [] },
   }],
   // 수도권 9호선 편입 2종(#2595). 노선 하나를 두 소스가 나눠 덮는다(1단계 25역 / 2·3단계 13역)라
   // 편입도 소스마다 하나씩이며, 두 소스의 admission 창 하한이 서로 달라(05:00Z / 04:00Z) pin도 갈린다.
@@ -264,7 +256,6 @@ const GWANGJU_TOPOLOGY_SOURCE_ID = "gwangju-transportation-route-topology";
 const GWANGJU_TIMETABLE_SOURCE_ID = "gwangju-transportation-cyberstation-timetable";
 const GWANGJU_ROUTE_MAP_SOURCE_ID = "gwangju-transportation-route-map-positions";
 const GWANGJU_ACCESSIBILITY_SOURCE_ID = "gwangju-transportation-accessibility";
-const SEOUL_ROUTE_MAP_SOURCE_ID = "seoul-metro-route-map-positions";
 // 수도권 9호선·인천 편입이 admission 정본을 찾을 때 쓰는 소스 id(#2595).
 const SEOUL9_PHASE1_ROUTE_MAP_SOURCE_ID = "kric-seoul-metro-line9-1-route-map-positions";
 const SEOUL9_PHASE23_ROUTE_MAP_SOURCE_ID = "seoul-metro-line9-23-route-map-positions";
@@ -310,6 +301,8 @@ export function validateNationwideCandidateCoverageSpec(
 ) {
   validateSpec(spec, materializers);
   assertInventoryLineScopeSync(spec, inventory);
+  validateInheritedLineScopeRetirements(spec, inventory);
+  validateDeferredCandidateRequirements(spec, inventory);
 }
 
 export async function runNationwideCandidateCoverageGate({
@@ -350,6 +343,7 @@ export async function runNationwideCandidateCoverageGate({
     targets,
     inclusions.inheritedPack,
   );
+  assertDeferredCandidateRequirementsMatchActualSet(spec, inclusions.pack, inventory, targets);
   const inheritedAuditedRequirementKeys = auditedInheritedClaimRequirementKeys({
     spec,
     inventory,
@@ -418,6 +412,8 @@ export async function runNationwideCandidateCoverageGate({
       inheritedAuditedRequirementKeys,
     );
   }
+
+  assertDeferredCandidateRequirementsMatchReports(spec, reports);
 
   return buildEvidence({
     spec,
@@ -980,32 +976,6 @@ async function materializeCapitalLightRailRouteMapInclusion(fixture, inclusion, 
   });
 }
 
-// 서울교통공사 1~8호선 노선도 좌표 편입 어댑터(#2595). 노선 선언은 admission 정본의 lineIds와 대조하고,
-// lineNumber는 그 정본이 1호선부터 8호선 순으로 기술된다는 사실(실측)에 결속한다.
-async function materializeSeoulRouteMapInclusion(fixture, inclusion, { readTracked, inventory }) {
-  assertDeclaredLinesMatchAdmissionScope(inclusion, inventory, SEOUL_ROUTE_MAP_SOURCE_ID);
-  if (inclusion.lines.some((line, index) => line.lineNumber !== index + 1)) {
-    throw new Error(
-      `${inclusionLabel(inclusion)} pack data inclusion lines must declare Seoul line numbers 1 through `
-        + `${inclusion.lines.length} in admission order`,
-    );
-  }
-  assertAdmissionSnapshotPath(
-    inventory,
-    SEOUL_ROUTE_MAP_SOURCE_ID,
-    "routeMapAdmissionEvidence",
-    inclusion.snapshotPath,
-  );
-  const snapshotBytes = await readTracked(inclusion.snapshotPath, "snapshotPath");
-  return materializeSeoulRouteMapPositions({
-    baseFixture: fixture,
-    snapshot: parseJsonBytes(snapshotBytes, inclusion.snapshotPath),
-    snapshotSha256: sha256Hex(snapshotBytes),
-    inventory,
-    now: new Date(inclusion.materializedAt),
-  });
-}
-
 // 수도권 9호선 편입 2종이 공유하는 어댑터(#2595). 두 materializer는 소스 하나·노선 하나를 처리하므로
 // 노선 선언을 admission 정본의 lineIds와 대조하고, snapshotPath와 topologySnapshotPath를 각각 그 소스의
 // 정본 경로·정본이 선언한 topologySnapshotId 경로에 결속한다. 광역·경전철 편입과 같은 축이며, 다른 점은
@@ -1197,8 +1167,8 @@ function packRowCounts(pack) {
 // 행수와 바이트 해시를 떠 두고, 편입 후 같은 표의 앞쪽 승계 행이 그대로인지 본다(기본 전제는 append —
 // 삽입·재정렬·수정이 일어나면 그 자체가 검토 대상이므로 fail closed가 옳다).
 //
-// #2595에서 그 검토가 실제로 왔다: 수도권 노선도 다섯 편입 중 넷(광역철도·경전철·서울 1~8호선·9호선
-// 1단계)이 append 뒤 pack.operators·pack.lines·pack.coverageLineOperatorScopes 중 자기가 손댄 표를 id로
+// #2595에서 그 검토가 실제로 왔다: 수도권 노선도 네 편입 중 셋(광역철도·경전철·9호선 1단계)이 append 뒤
+// pack.operators·pack.lines·pack.coverageLineOperatorScopes 중 자기가 손댄 표를 id로
 // 다시 정렬한다(실측 — 표 조합은 편입마다 다르다). 정렬 자체는 승계 행을 바꾸지 않으므로 편입을
 // 막을 이유가 아니지만, 전제를 조용히 푸는 것도 옳지 않다 — 편입이 reorderedTables로 재정렬 표를 명시
 // 선언한 경우에만 그 표를 위치 대신 다중집합으로 본다. 선언한 표에서도 승계 행의 수정·삭제·중복도 변화는
@@ -1353,6 +1323,7 @@ function materializeCandidateFixture(spec, basePack, { lineScoped }) {
       `${redescription.sourceId}.coverageScope`,
     );
   }
+  retireInheritedLineScopes(pack, spec.inheritedLineScopeRetirements ?? []);
   return {
     manifest: {
       manifestVersion: spec.manifest.manifestVersion,
@@ -1366,6 +1337,23 @@ function materializeCandidateFixture(spec, basePack, { lineScoped }) {
     },
     packs: [pack],
   };
+}
+
+// historical predecessor audit로만 남겨야 하는 source는 승계 원본의 행·입력 바이트는 보존하되,
+// candidate의 현행 scope에서는 lineIds만 없앤다. sourceId별 동작을 코드에 박지 않아 spec 계약과
+// actual-set 대조를 모두 통과한 선언만 이 전이를 만들 수 있다.
+export function retireInheritedLineScopes(pack, retirements) {
+  for (const retirement of retirements) {
+    const source = (pack.sourceInventory ?? []).find(({ id }) => id === retirement.sourceId);
+    if (!source) {
+      throw new Error(`retired inherited source is missing from candidate pack: ${retirement.sourceId}`);
+    }
+    source.coverageScope = coverageScopeWithLineIds(
+      source.coverageScope,
+      null,
+      `${retirement.sourceId}.coverageScope`,
+    );
+  }
 }
 
 // baseline inventory: 재기술 대상 소스의 lineIds만 지운 사본(다른 소스의 line-scope는 그대로 둔다).
@@ -1428,6 +1416,70 @@ function assertInventoryLineScopeSync(spec, inventory) {
   }
 }
 
+function assertNonEmptyUniqueStringArray(value, label) {
+  const values = requiredStringArray(value, label);
+  if (new Set(values).size !== values.length) throw new Error(`${label} must not repeat a value`);
+  return values;
+}
+
+function assertRetiredInventoryScope(source, sourceId) {
+  if (source.requiredForProductionPack !== false) {
+    throw new Error(`retired inherited source must have requiredForProductionPack false: ${sourceId}`);
+  }
+  if (source.productionUseAllowed !== false) {
+    throw new Error(`retired inherited source must have productionUseAllowed false: ${sourceId}`);
+  }
+  const scope = source.coverageScope;
+  if (!scope || typeof scope !== "object" || Array.isArray(scope)) {
+    throw new Error(`retired inherited source coverageScope must be an object: ${sourceId}`);
+  }
+  if (Object.hasOwn(scope, "lineIds")) {
+    throw new Error(`retired inherited source coverageScope.lineIds must be absent: ${sourceId}`);
+  }
+  assertNonEmptyUniqueStringArray(scope.regionIds, `${sourceId}.coverageScope.regionIds`);
+  assertNonEmptyUniqueStringArray(scope.operatorIds, `${sourceId}.coverageScope.operatorIds`);
+  assertNonEmptyUniqueStringArray(scope.sourceDomains, `${sourceId}.coverageScope.sourceDomains`);
+}
+
+export function assertInheritedLineScopeRetirementsMatchActualSet(spec, pack, inventory, inheritedPack) {
+  const retirements = spec.inheritedLineScopeRetirements ?? [];
+  const redescribedSourceIds = new Set((spec.lineScopeRedescriptions ?? []).map(({ sourceId }) => sourceId));
+  const retiredSourceIds = new Set();
+  for (const retirement of retirements) {
+    const sourceId = retirement.sourceId;
+    if (retiredSourceIds.has(sourceId)) {
+      throw new Error(`duplicate inherited line-scope retirement sourceId: ${sourceId}`);
+    }
+    retiredSourceIds.add(sourceId);
+    if (redescribedSourceIds.has(sourceId)) {
+      throw new Error(`retired inherited source must not be line-scope redescribed: ${sourceId}`);
+    }
+    const currentSources = (inventory.sources ?? []).filter(({ id }) => id === sourceId);
+    if (currentSources.length !== 1) {
+      throw new Error(`retired inherited source must occur exactly once in source inventory: ${sourceId}`);
+    }
+    const inheritedSources = (inheritedPack.sourceInventory ?? []).filter(({ id }) => id === sourceId);
+    const candidateSources = (pack.sourceInventory ?? []).filter(({ id }) => id === sourceId);
+    if (inheritedSources.length !== 1 || candidateSources.length !== 1) {
+      throw new Error(`retired inherited source must occur exactly once in inherited and candidate packs: ${sourceId}`);
+    }
+    const currentSource = currentSources[0];
+    const inheritedSource = inheritedSources[0];
+    const candidateSource = candidateSources[0];
+    assertRetiredInventoryScope(currentSource, sourceId);
+    if (!sameStringSet(inheritedSource.coverageScope?.lineIds, retirement.inheritedLineIds)
+      || !sameStringSet(candidateSource.coverageScope?.lineIds, retirement.inheritedLineIds)) {
+      throw new Error(`retired inherited source lineIds must match declared predecessor scope: ${sourceId}`);
+    }
+    for (const field of ["regionIds", "operatorIds", "sourceDomains"]) {
+      if (!sameStringSet(inheritedSource.coverageScope?.[field], currentSource.coverageScope[field])
+        || !sameStringSet(candidateSource.coverageScope?.[field], currentSource.coverageScope[field])) {
+        throw new Error(`retired inherited source coverageScope.${field} must match current inventory: ${sourceId}`);
+      }
+    }
+  }
+}
+
 // candidate pack에 실제로 실린 line-scope 소스가 LAUNCH_REQUIRED scope를 뒷받침하면, 그 근거는
 // lineScopeRedescriptions에 source/domain 단위로 빠짐없이 재기술돼야 한다. 선언 목록을 기준으로
 // fixture·baseline을 조립하면 선언을 지운 실제 소스가 두 variant에 함께 남아 fail open하므로, pack ×
@@ -1439,6 +1491,7 @@ export function assertLineScopeRedescriptionsMatchActualRequiredSet(
   targets,
   inheritedPack = { sourceInventory: [] },
 ) {
+  assertInheritedLineScopeRetirementsMatchActualSet(spec, pack, inventory, inheritedPack);
   const launchRequiredDomains = new Set(
     (targets.requiredSourceDomains ?? [])
       .filter(({ releaseTier }) => releaseTier === "LAUNCH_REQUIRED")
@@ -1466,12 +1519,15 @@ export function assertLineScopeRedescriptionsMatchActualRequiredSet(
     const inventoryScope = inventorySource.coverageScope;
     const inheritedLineIds = inheritedById.get(sourceId)?.coverageScope?.lineIds;
     if (!inventoryScope?.lineIds?.length) {
-      if (inheritedLineIds?.length) {
+      const retired = (spec.inheritedLineScopeRetirements ?? []).some(({ sourceId: retiredSourceId }) =>
+        retiredSourceId === sourceId,
+      );
+      if (inheritedLineIds?.length && !retired) {
         throw new Error(
           `inherited candidate pack coverageScope.lineIds must match candidate pack and source inventory: ${sourceId}`,
         );
       }
-      if (packScope?.lineIds?.length) {
+      if (packScope?.lineIds?.length && !retired) {
         throw new Error(`candidate pack coverageScope.lineIds must match source inventory: ${sourceId}`);
       }
       continue;
@@ -1610,6 +1666,7 @@ function summarizeVariant(spec, report, provenance, inheritedAuditedRequirementK
     pilotRequirements: [...new Set([
       ...declaredRequirementKeys(spec),
       ...inheritedAuditedRequirementKeys,
+      ...deferredCandidateRequirementKeys(spec),
     ])]
       .sort(codepointCompare)
       .map((key) => pilotRequirement(report, key, provenance)),
@@ -1686,6 +1743,11 @@ function supportedByEvidenceModel(supported) {
 
 function declaredRequirementKeys(spec) {
   return [...new Set(spec.lineScopeRedescriptions.flatMap(({ requirementKeys }) => requirementKeys))]
+    .sort(codepointCompare);
+}
+
+function deferredCandidateRequirementKeys(spec) {
+  return [...new Set((spec.deferredCandidateRequirements ?? []).flatMap(({ requirementKeys }) => requirementKeys))]
     .sort(codepointCompare);
 }
 
@@ -1823,7 +1885,9 @@ function buildEvidence({ spec, inputs, packDataInclusions, reports, variants, si
   const baselineStatuses = new Map(
     reports.baseline.requirements.map((entry) => [requirementKey(entry), entry.status]),
   );
+  const declaredTransitionKeys = new Set(declaredRequirementKeys(spec));
   const transitions = variants.lineScoped.pilotRequirements
+    .filter((entry) => declaredTransitionKeys.has(entry.requirementKey))
     .filter((entry) => !nonTransitions.has(entry.requirementKey))
     .map((entry) => ({
       requirementKey: entry.requirementKey,
@@ -1851,6 +1915,30 @@ function buildEvidence({ spec, inputs, packDataInclusions, reports, variants, si
       supportingRecordCountByField: entry.supportingRecordCountByField,
     };
   });
+  const deferredCandidateRequirementEntries = (spec.deferredCandidateRequirements ?? []).flatMap(
+    (declaration) => declaration.requirementKeys.map((key) => {
+      const baseline = lineScopedPilotRequirement(variants.baseline, key);
+      const lineScoped = lineScopedPilotRequirement(variants.lineScoped, key);
+      if (baseline.status !== "MISSING" || lineScoped.status !== "MISSING") {
+        throw new Error(`deferred candidate requirement must remain MISSING in evidence: ${key}`);
+      }
+      if (transitions.some(({ requirementKey: transitionKey }) => transitionKey === key)) {
+        throw new Error(`deferred candidate requirement must not appear in transitions: ${key}`);
+      }
+      return {
+        sourceId: declaration.sourceId,
+        sourceDomain: declaration.sourceDomain,
+        lineIds: [...declaration.lineIds],
+        requirementKey: key,
+        reasonCode: declaration.reasonCode,
+        reasonKo: declaration.reasonKo,
+        before: baseline.status,
+        after: lineScoped.status,
+        beforeSourceIds: [...baseline.sourceIds].sort(codepointCompare),
+        afterSourceIds: [...lineScoped.sourceIds].sort(codepointCompare),
+      };
+    }),
+  );
 
   return {
     schemaVersion: 1,
@@ -1882,7 +1970,7 @@ function buildEvidence({ spec, inputs, packDataInclusions, reports, variants, si
     },
     determinism: {
       recordedAxesKo:
-        "SUPPORTED 판정(requirement 키·필드 근거·소스)과 tier 분모만 기록한다. 이 축은 tracked 입력만으로 "
+        "SUPPORTED 판정(requirement 키·필드 근거·소스)과 tier 분모, 명시 deferred requirement의 MISSING 상태만 기록한다. 이 축은 tracked 입력만으로 "
         + "오프라인·서명 키 없이 바이트 단위 재현된다.",
       excludedAxes: [
         "candidate.manifestSha256",
@@ -1909,12 +1997,13 @@ function buildEvidence({ spec, inputs, packDataInclusions, reports, variants, si
         + "뜻하며 역 2개나 행 2개를 뜻하지 않는다. 실제로 그 판정을 뒷받침한 provenance 행 수는 필드별 "
         + "supportingRecordCountByField에 따로 기록한다.",
       supportedScopeKo:
-        "이 evidence는 SUPPORTED 축만 기록하므로 전국 gap 총량 판독에 쓰면 안 된다. 전국 진행 집계는 "
-        + "tools/datapack/reports/nationwide-coverage-tally.json이 정본이다.",
+        "이 evidence의 전국 집계 축은 SUPPORTED뿐이므로 nationwide gap 총량 판독에 쓰면 안 된다. 다만 "
+        + "deferredCandidateRequirements는 public v2 후보 artifact를 기다리는 정확한 gap을 MISSING/MISSING으로 "
+        + "명시 기록한다. 전국 진행 집계는 tools/datapack/reports/nationwide-coverage-tally.json이 정본이다.",
       variantComparisonKo:
         "전이 판정은 두 variant의 상대 비교다. baseline SUPPORTED 총량은 승계 팩의 다른 소스가 line-scope를 "
-        + "갖게 되면 함께 늘어날 수 있고, 하네스는 파일럿 키가 baseline에 없고 lineScoped가 baseline ∪ 파일럿 "
-        + "키와 정확히 같은지만 fail closed로 본다.",
+        + "갖게 되면 함께 늘어날 수 있고, 하네스는 lineScoped가 baseline ∪ 선언 transition 키와 정확히 "
+        + "같은지만 fail closed로 본다.",
       baselineSemanticsKo:
         "baseline은 저장소의 특정 과거 커밋 상태가 아니라 '등재된 재기술을 걷어낸' counterfactual이다. 아래 "
         + "lineScopeRedescriptions에 등재된 소스의 coverageScope.lineIds만 fixture와 inventory 사본에서 지운 "
@@ -1953,7 +2042,7 @@ function buildEvidence({ spec, inputs, packDataInclusions, reports, variants, si
         + "축은 재기술뿐이다.",
       reorderedTablesKo:
         "승계 행 불변 대조의 기본 전제는 append다 — 편입 후에도 각 표의 앞쪽 승계 행이 바이트 그대로여야 "
-        + "한다. 일부 materializer는 append 뒤 표를 id로 다시 정렬하는데(수도권 노선도 다섯 편입 중 넷이 "
+        + "한다. 일부 materializer는 append 뒤 표를 id로 다시 정렬하는데(수도권 노선도 네 편입 중 셋이 "
         + "operators·lines·coverageLineOperatorScopes 중 자기가 손댄 표를 그렇게 다시 정렬한다, 실측), "
         + "정렬은 승계 행 자체를 바꾸지 않으므로 편입을 막을 "
         + "이유가 아니다. 그렇다고 전제를 조용히 풀지도 않는다: 편입이 reorderedTables로 그 표를 명시 "
@@ -1981,16 +2070,13 @@ function buildEvidence({ spec, inputs, packDataInclusions, reports, variants, si
         + "materializer는 그 지역 운영기관이 pack에 있을 것과 시각표 소스가 등재돼 있을 것을 함께 선행 "
         + "조건으로 검사하고, 시각표 편입보다 앞서면 실측상 운영기관 조건에서 먼저 fail closed 된다. 반면 "
         + "노선도와 편의시설 사이에는 선행 조건이 없어(대구와 같다) 두 편입의 교환은 조립을 통과한다(실측). "
-        + "수도권 노선도 다섯 편입 사이에도 다른 지역에 대해서도 선행 조건이 없다 — 네 편입(광역철도·경전철·"
+        + "수도권 노선도 네 편입 사이에도 다른 지역에 대해서도 선행 조건이 없다 — 네 편입(광역철도·경전철·"
         + "9호선 1단계·2·3단계)은 경로 그래프 계보를 inventory 소스가 아니라 tracked snapshot 파일로 대조하고 "
-        + "역·역노선을 스스로 만들어 승계 pack 의존이 아예 없다. 서울 1~8호선 편입만 승계 pack에 의존한다: "
-        + "승계 원본의 서울교통공사 운영기관과 capital pilot cyberstation 소스 등재를 선행 조건으로 검사하고 "
-        + "승계 routeMapPositions의 (역, 노선, 권역) PK 집합으로 중복을 거른다. 그 셋은 전부 승계 원본이 이미 "
-        + "갖고 있어 다른 편입에 대한 순서 의존은 되지 않는다. 그런데도 순서를 바꾸면 조립이 막힌다(실측): "
-        + "광역철도 편입이 승계 원본에 없던 "
+        + "역·역노선을 스스로 만들어 승계 pack 의존이 아예 없다. 순서를 바꾸면 조립이 막히는 경우는 광역철도 "
+        + "편입이 승계 원본에 없던 "
         + "표(coverageLineOperatorScopes)를 새로 만들고 환승역 중복 제거 결과(stations·stationLines)도 앞선 "
         + "편입이 무엇을 실었는지에 따라 갈려, 부산 노선도와 같은 선언 행수 대조가 걸린다. 9호선 1단계·2·3단계 "
-        + "두 편입의 교환도, 9호선 두 편입을 서울 1~8호선 앞으로 옮기는 것도 같은 행수 대조에서 걸린다(실측). "
+        + "두 편입의 교환도 같은 행수 대조에서 걸린다(실측). "
         + "재정렬 선언(reorderedTables)도 같은 순서에 묶여 있지만(그 표에 승계 행이 있는지가 순서에 따라 "
         + "갈린다) 실측상 먼저 걸리는 것은 행수 대조다. 인천은 부산과 같은 모양이다 — 승계 원본에 인천 "
         + "운영기관·노선·역이 아예 없어 역사정보 편입이 그 셋을 함께 싣고, 시각표·편의시설 편입이 그 운영기관 "
@@ -2016,6 +2102,31 @@ function buildEvidence({ spec, inputs, packDataInclusions, reports, variants, si
         }
         : {}),
     })),
+    inheritedLineScopeRetirements: {
+      modelKo:
+        "승계 원본의 historical predecessor audit 행은 입력·행 바이트를 바꾸지 않고 candidate sourceInventory에 "
+        + "남긴다. 다만 current inventory가 production 사용 불가이며 coverageScope.lineIds를 아예 갖지 않는 "
+        + "소스는 이 명시 선언으로만 두 variant에서 lineIds를 제거한다. 하네스가 승계·pre-retirement candidate의 "
+        + "옛 lineIds와 region/operator/domain scope가 current inventory와 정확히 맞는지 확인하므로, 이 선언은 "
+        + "서울 1~8호선을 지원하거나 전이시키는 경로가 될 수 없다.",
+      count: (spec.inheritedLineScopeRetirements ?? []).length,
+      entries: (spec.inheritedLineScopeRetirements ?? []).map((retirement) => ({
+        sourceId: retirement.sourceId,
+        inheritedLineIds: [...retirement.inheritedLineIds],
+        reasonCode: retirement.reasonCode,
+        reasonKo: retirement.reasonKo,
+      })),
+    },
+    deferredCandidateRequirements: {
+      modelKo:
+        "current inventory에서 production 사용이 승인됐지만 아직 candidate root pack에 artifact 행이 없어 "
+        + "지원할 수 없는 active requirement를 명시한다. source/domain의 inventory scope와 active target 교집합을 "
+        + "전수 선언해야 하며, 하네스는 source가 pre-variant candidate pack에 없는지와 두 variant가 모두 MISSING인지 "
+        + "확인한다. 이 축은 서울 1~8호선 public v2 artifact pending gap을 전이로 위장하지 않는다.",
+      count: deferredCandidateRequirementEntries.length,
+      declarationCount: (spec.deferredCandidateRequirements ?? []).length,
+      entries: deferredCandidateRequirementEntries,
+    },
     declaredNonTransitions: {
       modelKo:
         "재기술이 declare한 requirement 중 이 배치에서 전환되지 않는 것을 명시 선언한 목록이다. 소스가 "
@@ -2256,6 +2367,8 @@ function validateSpec(spec, materializers) {
     throw new Error("candidate pack id must differ from the inherited production pack id");
   }
   validatePackDataInclusions(spec, materializers);
+  validateInheritedLineScopeRetirementDeclarations(spec);
+  validateDeferredCandidateRequirementDeclarations(spec);
   if (!Array.isArray(spec.lineScopeRedescriptions) || spec.lineScopeRedescriptions.length === 0) {
     throw new Error("candidate spec lineScopeRedescriptions must be a non-empty array");
   }
@@ -2306,6 +2419,221 @@ function validateSpec(spec, materializers) {
       throw new Error(`${redescriptionKey}.requirementKeys must cover every redescribed line`);
     }
     validateNonTransitions(redescription, redescriptionKey, requirementKeys, lineIds);
+  }
+}
+
+function validateInheritedLineScopeRetirementDeclarations(spec) {
+  const retirements = spec.inheritedLineScopeRetirements ?? [];
+  if (!Array.isArray(retirements)) {
+    throw new Error("candidate spec inheritedLineScopeRetirements must be an array when present");
+  }
+  const sourceIds = new Set();
+  for (const retirement of retirements) {
+    if (!retirement || typeof retirement !== "object" || Array.isArray(retirement)) {
+      throw new Error("inheritedLineScopeRetirements[] must be an object");
+    }
+    assertKnownKeys(
+      retirement,
+      ["sourceId", "inheritedLineIds", "reasonCode", "reasonKo"],
+      "inheritedLineScopeRetirements[]",
+    );
+    const sourceId = requiredString(retirement.sourceId, "inheritedLineScopeRetirements[].sourceId");
+    if (sourceIds.has(sourceId)) {
+      throw new Error(`duplicate inherited line-scope retirement sourceId: ${sourceId}`);
+    }
+    sourceIds.add(sourceId);
+    assertNonEmptyUniqueStringArray(
+      retirement.inheritedLineIds,
+      `${sourceId}.inheritedLineIds`,
+    );
+    if (retirement.reasonCode !== "HISTORICAL_PREDECESSOR_AUDIT_ONLY") {
+      throw new Error(`${sourceId}.reasonCode must be HISTORICAL_PREDECESSOR_AUDIT_ONLY`);
+    }
+    requiredString(retirement.reasonKo, `${sourceId}.reasonKo`);
+  }
+}
+
+function validateInheritedLineScopeRetirements(spec, inventory) {
+  const redescribedSourceIds = new Set(spec.lineScopeRedescriptions.map(({ sourceId }) => sourceId));
+  for (const retirement of spec.inheritedLineScopeRetirements ?? []) {
+    const { sourceId } = retirement;
+    if (redescribedSourceIds.has(sourceId)) {
+      throw new Error(`retired inherited source must not be line-scope redescribed: ${sourceId}`);
+    }
+    const sources = (inventory.sources ?? []).filter(({ id }) => id === sourceId);
+    if (sources.length !== 1) {
+      throw new Error(`retired inherited source must occur exactly once in source inventory: ${sourceId}`);
+    }
+    assertRetiredInventoryScope(sources[0], sourceId);
+  }
+}
+
+function validateDeferredCandidateRequirementDeclarations(spec) {
+  const deferred = spec.deferredCandidateRequirements ?? [];
+  if (!Array.isArray(deferred)) {
+    throw new Error("candidate spec deferredCandidateRequirements must be an array when present");
+  }
+  const sourceDomains = new Set();
+  for (const declaration of deferred) {
+    if (!declaration || typeof declaration !== "object" || Array.isArray(declaration)) {
+      throw new Error("deferredCandidateRequirements[] must be an object");
+    }
+    assertKnownKeys(
+      declaration,
+      ["sourceId", "sourceDomain", "lineIds", "requirementKeys", "reasonCode", "reasonKo"],
+      "deferredCandidateRequirements[]",
+    );
+    const sourceId = requiredString(declaration.sourceId, "deferredCandidateRequirements[].sourceId");
+    const sourceDomain = requiredString(declaration.sourceDomain, `${sourceId}.sourceDomain`);
+    const key = `${sourceId}:${sourceDomain}`;
+    if (sourceDomains.has(key)) throw new Error(`duplicate deferred candidate requirement source/domain: ${key}`);
+    sourceDomains.add(key);
+    assertNonEmptyUniqueStringArray(declaration.lineIds, `${key}.lineIds`);
+    assertNonEmptyUniqueStringArray(declaration.requirementKeys, `${key}.requirementKeys`);
+    if (declaration.reasonCode !== "CURRENT_CANDIDATE_ARTIFACT_PENDING") {
+      throw new Error(`${key}.reasonCode must be CURRENT_CANDIDATE_ARTIFACT_PENDING`);
+    }
+    requiredString(declaration.reasonKo, `${key}.reasonKo`);
+  }
+}
+
+function validateDeferredCandidateRequirements(spec, inventory) {
+  const redescriptions = new Set((spec.lineScopeRedescriptions ?? []).map(
+    ({ sourceId, sourceDomain }) => `${sourceId}:${sourceDomain}`,
+  ));
+  const retiredSourceIds = new Set((spec.inheritedLineScopeRetirements ?? []).map(({ sourceId }) => sourceId));
+  for (const declaration of spec.deferredCandidateRequirements ?? []) {
+    const key = `${declaration.sourceId}:${declaration.sourceDomain}`;
+    if (redescriptions.has(key)) {
+      throw new Error(`deferred candidate requirement must not be line-scope redescribed: ${key}`);
+    }
+    if (retiredSourceIds.has(declaration.sourceId)) {
+      throw new Error(`deferred candidate requirement must not retire its source: ${declaration.sourceId}`);
+    }
+    const sources = (inventory.sources ?? []).filter(({ id }) => id === declaration.sourceId);
+    if (sources.length !== 1) {
+      throw new Error(`deferred candidate requirement source must occur exactly once in source inventory: ${declaration.sourceId}`);
+    }
+    const source = sources[0];
+    if (source.requiredForProductionPack !== true || source.productionUseAllowed !== true) {
+      throw new Error(`deferred candidate requirement source must be production-eligible: ${declaration.sourceId}`);
+    }
+    const scope = source.coverageScope;
+    if (!scope || typeof scope !== "object" || Array.isArray(scope)) {
+      throw new Error(`deferred candidate requirement source coverageScope must be an object: ${declaration.sourceId}`);
+    }
+    for (const field of ["regionIds", "operatorIds", "lineIds", "sourceDomains"]) {
+      assertNonEmptyUniqueStringArray(scope[field], `${declaration.sourceId}.coverageScope.${field}`);
+    }
+    if (!scope.sourceDomains.includes(declaration.sourceDomain)
+      || !sameStringSet(scope.lineIds, declaration.lineIds)) {
+      throw new Error(`deferred candidate requirement scope must exactly match source inventory: ${key}`);
+    }
+  }
+}
+
+export function assertDeferredCandidateRequirementsMatchActualSet(spec, pack, inventory, targets) {
+  const launchRequiredDomains = new Set((targets.requiredSourceDomains ?? [])
+    .filter(({ releaseTier }) => releaseTier === "LAUNCH_REQUIRED")
+    .map(({ id }) => requiredString(id, "coverage target requiredSourceDomains[].id")));
+  const activeScopeKeys = new Set((targets.activeLineScopes ?? []).map(
+    ({ regionId, operatorId, lineId }) => `${regionId}:${operatorId}:${lineId}`,
+  ));
+  const candidateSourceIds = new Set((pack.sourceInventory ?? []).map(({ id }) => id));
+  const actual = new Map();
+  for (const source of inventory.sources ?? []) {
+    if (source.requiredForProductionPack !== true
+      || source.productionUseAllowed !== true
+      || !Array.isArray(source.coverageScope?.lineIds)
+      || source.coverageScope.lineIds.length === 0
+      || candidateSourceIds.has(source.id)) {
+      continue;
+    }
+    const { coverageScope: scope } = source;
+    const sourceId = requiredString(source.id, "source inventory deferred candidate sourceId");
+    for (const field of ["regionIds", "operatorIds", "lineIds", "sourceDomains"]) {
+      assertNonEmptyUniqueStringArray(scope[field], `${sourceId}.coverageScope.${field}`);
+    }
+    for (const sourceDomain of scope.sourceDomains) {
+      if (!launchRequiredDomains.has(sourceDomain)) continue;
+      const requirementKeys = [];
+      for (const regionId of scope.regionIds ?? []) {
+        for (const operatorId of scope.operatorIds ?? []) {
+          for (const lineId of scope.lineIds) {
+            const scopeKey = `${regionId}:${operatorId}:${lineId}`;
+            if (activeScopeKeys.has(scopeKey)) requirementKeys.push(`${scopeKey}:${sourceDomain}`);
+          }
+        }
+      }
+      if (requirementKeys.length === 0) continue;
+      const key = `${sourceId}:${sourceDomain}`;
+      if (actual.has(key)) throw new Error(`duplicate actual deferred candidate requirement source/domain: ${key}`);
+      actual.set(key, {
+        sourceId,
+        sourceDomain,
+        lineIds: scope.lineIds,
+        requirementKeys,
+      });
+    }
+  }
+
+  const declared = new Map();
+  for (const declaration of spec.deferredCandidateRequirements ?? []) {
+    const key = `${declaration.sourceId}:${declaration.sourceDomain}`;
+    if (declared.has(key)) throw new Error(`duplicate deferred candidate requirement source/domain: ${key}`);
+    if (candidateSourceIds.has(declaration.sourceId)) {
+      throw new Error(`deferred candidate requirement source must be absent from pre-variant candidate pack: ${declaration.sourceId}`);
+    }
+    declared.set(key, declaration);
+  }
+  if (actual.size !== declared.size) {
+    throw new Error(
+      "deferred candidate requirements must exactly match actual deferred candidate requirements: "
+        + `actual=${[...actual.keys()].sort(codepointCompare).join(",")}, `
+        + `declared=${[...declared.keys()].sort(codepointCompare).join(",")}`,
+    );
+  }
+  for (const [key, actualDeclaration] of actual) {
+    const declaration = declared.get(key);
+    if (!declaration
+      || !sameStringSet(declaration.lineIds, actualDeclaration.lineIds)
+      || !sameStringSet(declaration.requirementKeys, actualDeclaration.requirementKeys)) {
+      throw new Error(`deferred candidate requirements must exactly match actual deferred candidate requirements: ${key}`);
+    }
+  }
+  for (const declaration of spec.deferredCandidateRequirements ?? []) {
+    const source = (inventory.sources ?? []).find(({ id }) => id === declaration.sourceId);
+    const sourceDomain = declaration.sourceDomain;
+    const expectedRequirementKeys = [];
+    for (const regionId of source.coverageScope.regionIds) {
+      for (const operatorId of source.coverageScope.operatorIds) {
+        for (const lineId of source.coverageScope.lineIds) {
+          const scopeKey = `${regionId}:${operatorId}:${lineId}`;
+          if (activeScopeKeys.has(scopeKey)) expectedRequirementKeys.push(`${scopeKey}:${sourceDomain}`);
+        }
+      }
+    }
+    if (!sameStringSet(declaration.requirementKeys, expectedRequirementKeys)) {
+      throw new Error(`deferred candidate requirement keys must equal the complete active scope intersection: ${declaration.sourceId}:${sourceDomain}`);
+    }
+  }
+}
+
+export function assertDeferredCandidateRequirementsMatchReports(spec, reports) {
+  const retiredSourceIds = new Set((spec.inheritedLineScopeRetirements ?? []).map(({ sourceId }) => sourceId));
+  for (const declaration of spec.deferredCandidateRequirements ?? []) {
+    for (const key of declaration.requirementKeys) {
+      for (const variant of ["baseline", "lineScoped"]) {
+        const entry = reports[variant]?.requirements?.find((requirement) => requirementKey(requirement) === key);
+        if (!entry || entry.status !== "MISSING") {
+          throw new Error(`deferred candidate requirement must be MISSING in ${variant}: ${key}`);
+        }
+        if (entry.sourceIds.includes(declaration.sourceId)
+          || entry.sourceIds.some((sourceId) => retiredSourceIds.has(sourceId))) {
+          throw new Error(`deferred candidate requirement must not name deferred or retired source: ${variant}:${key}`);
+        }
+      }
+    }
   }
 }
 

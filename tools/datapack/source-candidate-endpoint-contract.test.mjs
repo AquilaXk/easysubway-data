@@ -57,6 +57,7 @@ const DATA_GO_FOCUSED_TESTS = Object.freeze({
   "tools/datapack/collect-busan-route-topology.mjs": "tools/datapack/collect-busan-route-topology.test.mjs",
   "tools/datapack/collect-busan-timetable.mjs": "tools/datapack/collect-busan-timetable.test.mjs",
   "tools/datapack/collect-current-seoul-transfer-distance-duration-snapshot.mjs": "tools/datapack/collect-current-seoul-transfer-distance-duration-snapshot.test.mjs",
+  "tools/datapack/collect-current-static-network-successors.mjs": "tools/datapack/collect-current-static-network-successors.test.mjs",
   "tools/datapack/collect-daejeon-route-topology.mjs": "tools/datapack/collect-daejeon-route-topology.test.mjs",
   "tools/datapack/collect-datago-source-candidate-evidence.mjs": "tools/datapack/collect-datago-source-candidate-evidence.test.mjs",
   "tools/datapack/collect-gwangju-timetable.mjs": "tools/datapack/collect-gwangju-timetable.test.mjs",
@@ -267,6 +268,33 @@ test("MOLIT 도시철도 전체노선은 official public 20251211 CSV artifact�
     "revalidate-current-static-network-sources.mjs",
   ), "utf8");
   assert.doesNotMatch(runner, /DATA_GO_KR_SERVICE_KEY|normalizeDataGoKrServiceKey|api\.odcloud|Authorization|serviceKey/u);
+});
+
+test("서울 1~8호선 위치는 공식 public API operation과 secret-redacted runner를 쓴다", () => {
+  const candidate = document.candidates.find(({ id }) => id === "seoul-metro-route-map-positions");
+  assert.ok(candidate);
+  const endpoint = "https://api.odcloud.kr/api/15099316/v1/uddi:bc51de47-d3ea-4aa1-8ac2-d70f2b5e701e";
+  assert.equal(candidate.detailUrl, "https://www.data.go.kr/data/15099316/fileData.do");
+  assert.equal(candidate.requestUrl, endpoint);
+  assert.equal(candidate.evidence.endpoint, endpoint);
+  assert.equal(candidate.operation.endpoint, endpoint);
+  assert.equal(candidate.operation.method, "GET");
+  assert.deepEqual(candidate.operation.auth, {
+    env: "DATA_GO_KR_SERVICE_KEY",
+    placement: "query",
+    parameter: "serviceKey",
+    valueEncoding: "url-search-params-once",
+    loadPolicy: "process-env-no-shell-parsing",
+  });
+  assert.deepEqual(candidate.operation.requiredParameters, ["serviceKey", "page", "perPage", "returnType"]);
+  assert.deepEqual(candidate.operation.fixedParameters, { returnType: "JSON" });
+  assert.equal(candidate.operation.responseEnvelope, "data + currentCount + matchCount + page + perPage + totalCount");
+  assert.equal(candidate.operation.runner.command, "node tools/datapack/run-current-static-network-successors.mjs");
+  assert.deepEqual(candidate.operation.runner.requiredEnv, ["DATA_GO_KR_SERVICE_KEY"]);
+  assert.deepEqual(candidate.operation.runner.arguments, ["<absolute-operation-root>"]);
+  assert.equal(candidate.operation.secretPolicy, "env-only-redacted-output");
+  assert.equal(candidate.serviceKeyHandling, "offline_collector_secret_only");
+  assert.doesNotMatch(JSON.stringify(candidate), /Authorization|serviceKey=[^\[]/u);
 });
 
 test("evidence.endpoint는 requestUrl과 같은 provider host를 가리킨다", () => {

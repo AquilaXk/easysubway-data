@@ -16,7 +16,7 @@ import {
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const BASE_SOURCE_IDS = Object.freeze([
-  "seoulmetro-cyberstation-route-map", "kric-subway-timetable", "seoul-metro-accessibility",
+  "seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility",
   "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info",
 ]);
 const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";

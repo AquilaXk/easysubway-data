@@ -10972,6 +10972,110 @@ test("전국 coverage gap report는 generated fixture manual provenance를 offic
   assert.ok(report.requirements.some((entry) => entry.missingFields.includes("line")));
 });
 
+test("v2 admission에 exact 결속된 generated 서울 노선도 geometry만 coverage를 충족한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-generated-route-map-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const provenancePath = path.join(outputDir, "current.provenance.json");
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
+  const inventory = completeCoverageInventory(targets);
+  const source = inventory.sources.find(({ coverageScope }) =>
+    coverageScope.regionIds.includes("capital")
+      && coverageScope.operatorIds.includes("seoul-metro")
+      && coverageScope.lineIds?.includes("seoul-2")
+      && coverageScope.sourceDomains.includes("route_map_positions"));
+  const originalSourceId = source.id;
+  const provenance = completeCoverageProvenance(inventory);
+  const snapshotId = "seoul-metro-route-map-positions-current-20260814T000000000Z";
+  const layoutArtifactSha256 = "7".repeat(64);
+  source.id = "seoul-metro-route-map-positions";
+  source.coverageScope = {
+    regionIds: ["capital"],
+    operatorIds: ["seoul-metro"],
+    lineIds: [
+      "line-472a81add377", "seoul-2", "line-41a8c75ec9d8", "seoul-4",
+      "line-80fc4d5350d4", "line-3f41718e0833", "line-15b3b8a93259", "line-2b2d9eaa53d0",
+    ],
+    sourceDomains: ["route_map_positions"],
+  };
+  source.fieldsProvided = ["line", "station_code", "station_name", "latitude", "longitude", "basis_date"];
+  source.productDerivedFields = ["route_map_position", "route_map_label_polygon", "route_map_line_track"];
+  source.routeMapAdmissionEvidence = {
+    capturedAt: "2026-08-14T00:00:00.000Z",
+    currentLayoutAdmission: {
+      schemaVersion: 2,
+      artifactKind: "seoul-public-route-map-layout-admission",
+      status: "ADMITTED",
+      positionSnapshotId: snapshotId,
+      layoutArtifactSha256,
+    },
+  };
+  const generatedRecords = provenance.packs[0].records.filter(({ sourceId, field }) =>
+    sourceId === originalSourceId
+      && ["route_map_position", "route_map_label_polygon"].includes(field));
+  assert.equal(generatedRecords.length, 2);
+  for (const record of generatedRecords) {
+    Object.assign(record, {
+      entityType: "route_map_position",
+      sourceId: source.id,
+      derivationKind: "GENERATED",
+      sourceSnapshotId: snapshotId,
+      providerRecordHash: "6".repeat(64),
+      evidenceHash: layoutArtifactSha256,
+      verifiedAt: source.routeMapAdmissionEvidence.capturedAt,
+    });
+  }
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  await writeCoverageCandidate(outputDir, provenance);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets", "tools/datapack/nationwide-coverage-targets.json",
+      "--inventory", inventoryPath,
+      "--manifest", path.join(outputDir, "current.json"),
+      "--provenance", provenancePath,
+      "--output", reportPath,
+    ],
+    { cwd: root },
+  );
+  let report = JSON.parse(await readFile(reportPath, "utf8"));
+  const routeMap = report.requirements.find((entry) =>
+    entry.regionId === "capital"
+      && entry.operatorId === "seoul-metro"
+      && entry.lineId === "seoul-2"
+      && entry.sourceDomain === "route_map_positions");
+  assert.deepEqual(routeMap.missingFields, []);
+  assert.ok(routeMap.fieldCoverage.every(({ sourceIds }) => sourceIds.includes(source.id)));
+
+  generatedRecords[0].evidenceHash = "8".repeat(64);
+  await writeCoverageCandidate(outputDir, provenance);
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets", "tools/datapack/nationwide-coverage-targets.json",
+      "--inventory", inventoryPath,
+      "--manifest", path.join(outputDir, "current.json"),
+      "--provenance", provenancePath,
+      "--output", reportPath,
+      "--allow-gaps",
+    ],
+    { cwd: root },
+  );
+  report = JSON.parse(await readFile(reportPath, "utf8"));
+  const tamperedRouteMap = report.requirements.find((entry) =>
+    entry.regionId === "capital"
+      && entry.operatorId === "seoul-metro"
+      && entry.lineId === "seoul-2"
+      && entry.sourceDomain === "route_map_positions");
+  assert.ok(tamperedRouteMap.missingFields.includes(generatedRecords[0].field));
+});
+
 test("공식 source ingest adapter는 stable id mapping으로 catalog fixture pack을 만든다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-source-ingest-${Date.now()}`);
   const inputPath = path.join(outputDir, "official-source-input.json");
@@ -13558,11 +13662,11 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
       entry.lineId === "seoul-4" &&
       entry.sourceDomain === "route_map_positions",
   );
-  // #2514 B0: seoulmetro-cyberstation-route-map coverageScope의 seoul-4 line-scope 재기술로 이 requirement가
-  // 전국 게이트에서 SUPPORTED로 전이한다. 재기술 이전에는 operator-scope provenance만 나와 MISSING이었다.
-  assert.equal(capitalRouteMapCoverage.status, "SUPPORTED");
-  assert.deepEqual(capitalRouteMapCoverage.missingFields, []);
-  assert.deepEqual(capitalRouteMapCoverage.sourceIds, ["seoulmetro-cyberstation-route-map"]);
+  // historical diagnostic source는 더 이상 active line scope를 claim하지 않는다. 공공 관측의 v2 admission
+  // 전에는 서울 4호선도 다른 서울 1~8호선과 같이 MISSING으로 남아야 한다.
+  assert.equal(capitalRouteMapCoverage.status, "MISSING");
+  assert.deepEqual(capitalRouteMapCoverage.missingFields, ["route_map_label_polygon", "route_map_position"]);
+  assert.deepEqual(capitalRouteMapCoverage.sourceIds, []);
 
   // #1999: release-scope 평가 모드는 게시 차단을 게시 범위(capital·seoul-metro × capitalPilotTargets domains) 내 gap만
   // 기준으로 판정한다. 현행 인벤토리는 전국 gap 다수 + scope 내 gap 0이므로, --allow-gaps 없이도 exit 0으로 통과하되

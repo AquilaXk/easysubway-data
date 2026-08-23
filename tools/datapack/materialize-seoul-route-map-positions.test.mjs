@@ -27,6 +27,7 @@ import {
   materializeSeoulRouteMapPositions,
   materializedSeoulRouteMapPackContentHash,
 } from "./materialize-seoul-route-map-positions.mjs";
+import { collectSeoulRouteMapPositions } from "./collect-seoul-route-map-positions.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
@@ -48,11 +49,28 @@ const DAEGU_ROUTE_MAP_SUPPORTED_COUNT = DAEGU_ACCESSIBILITY_BASELINE_SUPPORTED_C
 // seoul-metro 1~8 route_map_positions를 닫지 못하므로 이번 FILE admission이 +8을 더한다.
 const SEOUL_ROUTE_MAP_SUPPORTED_COUNT = DAEGU_ROUTE_MAP_SUPPORTED_COUNT + 8;
 
+function successorProviderHashes(snapshot) {
+  // This is the normalized runner projection shape. The public layout artifact
+  // deliberately omits provider-only `serial`, so materialization must consume
+  // the admitted successor hashes rather than trying to recreate them.
+  return snapshot.routeMapLayoutArtifact.rawPositions.map((position, index) => createHash("sha256")
+    .update(JSON.stringify({
+      serial: index + 1,
+      line: position.line,
+      stationCode: position.stationCode,
+      stationName: position.stationName,
+      latitude: position.latitude,
+      longitude: position.longitude,
+      basisDate: position.basisDate,
+    }))
+    .digest("hex"));
+}
+
 async function inputs() {
   const [
     base, busanTopology, busanTimetable, busanRouteMapBytes,
     daejeonTopology, daejeonTimetable, gwangjuTopology, gwangjuTimetable,
-    inventory, regionalMap, molitMap, daeguAccessibility, daeguRouteMapSnapshotBytes, seoulSnapshotBytes,
+    inventory, regionalMap, molitMap, daeguAccessibility, daeguRouteMapSnapshotBytes, seoulCsvBytes, topologyBytes,
   ] = await Promise.all([
     readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
     readJson("tools/datapack/sources/busan-transportation-route-topology-20260720.json"),
@@ -67,7 +85,8 @@ async function inputs() {
     readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
     readJson("tools/datapack/sources/daegu-transportation-accessibility-20260724.json"),
     readFile(path.join(root, "tools/datapack/sources/daegu-transportation-route-map-positions-20260724.json")),
-    readFile(path.join(root, "tools/datapack/sources/seoul-metro-route-map-positions-20260724.json")),
+    readFile(path.join(root, "tools/datapack/fixtures/seoul-route-map-positions-raw/data-go-15099316.csv")),
+    readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260814.json")),
   ]);
   const busanTopologyFixture = materializeBusanRouteTopology({
     baseFixture: base, snapshot: busanTopology, inventory,
@@ -125,40 +144,54 @@ async function inputs() {
     inventory,
     now: daeguRouteMapNow,
   });
+  const seoulSnapshot = collectSeoulRouteMapPositions({
+    csvBytes: seoulCsvBytes, topologySnapshotBytes: topologyBytes, topologySnapshotId: "capital-route-topology-20260814", now: routeMapNow,
+  });
+  const observation = { schemaVersion: 1, artifactKind: "static-network-successor-observation", sourceId: SOURCE_ID, routeMapLayoutArtifact: seoulSnapshot };
+  const seoulSnapshotBytes = Buffer.from(`${JSON.stringify(observation)}\n`);
+  const seoulSnapshotSha256 = createHash("sha256").update(seoulSnapshotBytes).digest("hex");
+  const publicSource = inventory.sources.find(({ id }) => id === SOURCE_ID);
+  publicSource.coverageScope = { regionIds: ["capital"], operatorIds: ["seoul-metro"], lineIds: [...LINE_IDS], sourceDomains: ["route_map_positions"] };
+  publicSource.routeMapAdmissionEvidence = {
+    ...(publicSource.routeMapAdmissionEvidence ?? {}), capturedAt: seoulSnapshot.capturedAt,
+    freshUntil: "2027-07-24T02:00:00.000Z",
+    currentLayoutAdmission: {
+      schemaVersion: 2, artifactKind: "seoul-public-route-map-layout-admission", status: "ADMITTED",
+      positionSnapshotId: "seoul-metro-route-map-positions-20260724", snapshotPath: "tools/datapack/sources/seoul-metro-route-map-positions-20260724.json", snapshotSha256: seoulSnapshotSha256,
+      layoutArtifactSha256: createHash("sha256").update(`${JSON.stringify(seoulSnapshot)}\n`).digest("hex"),
+      rawPositionsSha256: seoulSnapshot.rawPositionsSha256, layoutPositionsSha256: seoulSnapshot.layoutPositionsSha256, layoutTracksSha256: seoulSnapshot.layoutTracksSha256,
+      lineOrderSha256: seoulSnapshot.lineOrderSha256, topologySnapshotSha256: seoulSnapshot.topologySnapshotSha256, aliasLedgerSha256: seoulSnapshot.aliasLedgerSha256,
+      semanticInputSha256: seoulSnapshot.semanticInputSha256, semanticOutputSha256: seoulSnapshot.semanticOutputSha256,
+    },
+  };
   return {
     baseFixture: daeguRouteMapFixture,
-    seoulSnapshot: JSON.parse(seoulSnapshotBytes),
-    seoulSnapshotSha256: createHash("sha256").update(seoulSnapshotBytes).digest("hex"),
+    seoulSnapshot: observation, seoulSnapshotSha256, topologyBytes,
     inventory,
   };
 }
 
 test("공식 서울 위경도 snapshot을 누적 production candidate pack에 materialize한다", async () => {
-  const { baseFixture, seoulSnapshot, seoulSnapshotSha256, inventory } = await inputs();
-  const cyberstationBefore = baseFixture.packs[0].routeMapPositions
-    .filter(({ sourceId }) => sourceId === "seoulmetro-cyberstation-route-map");
-  assert.equal(cyberstationBefore.length, 2);
+  const { baseFixture, seoulSnapshot, seoulSnapshotSha256, topologyBytes, inventory } = await inputs();
 
   const fixture = materializeSeoulRouteMapPositions({
     baseFixture,
     snapshot: seoulSnapshot,
     snapshotSha256: seoulSnapshotSha256,
+    topologySnapshotBytes: topologyBytes,
     inventory,
     now: routeMapNow,
   });
   const pack = fixture.packs[0];
   const rows = pack.routeMapPositions.filter(({ sourceId }) => sourceId === SOURCE_ID);
-  const cyberstationAfter = pack.routeMapPositions
-    .filter(({ sourceId }) => sourceId === "seoulmetro-cyberstation-route-map");
   const source = pack.sourceInventory.find(({ id }) => id === SOURCE_ID);
 
-  assert.equal(cyberstationAfter.length, 2);
-  assert.deepEqual(cyberstationAfter, cyberstationBefore);
-  // admitted 274개 중 capital cyberstation과 PK가 겹치는 사당(seoul-4) 1건만 건너뛴다.
-  assert.equal(rows.length, 273);
+  assert.equal(pack.routeMapPositions.filter(({ sourceId }) => sourceId === "seoulmetro-cyberstation-route-map").length, 0);
+  assert.equal(pack.sourceInventory.filter(({ id }) => id === "seoulmetro-cyberstation-route-map").length, 0);
+  assert.equal(rows.length, 276);
   assert.equal(new Set(rows.map(({ lineId }) => lineId)).size, 8);
   assert.deepEqual([...new Set(rows.map(({ lineId }) => lineId))].sort(), [...LINE_IDS].sort());
-  assert.ok(rows.every(({ labelPolygon, region }) => labelPolygon.length === 4 && region === "수도권"));
+  assert.ok(rows.every(({ labelPolygon, region, derivationKind, provenanceKind }) => labelPolygon.length === 4 && region === "수도권" && derivationKind === "GENERATED" && provenanceKind === "OFFICIAL_SOURCE"));
   assert.deepEqual(source.coverageScope.lineIds, [...LINE_IDS]);
   assert.equal(pack.minimumTableRows.route_map_positions, pack.routeMapPositions.length);
   assert.match(pack.id, /^nationwide-seoul-route-map-[a-f0-9]{64}$/);
@@ -166,12 +199,61 @@ test("공식 서울 위경도 snapshot을 누적 production candidate pack에 ma
   assert.equal(pack.version, "20260724");
   assert.deepEqual(fixture.manifest.activePack, { id: pack.id, version: "20260724" });
 
-  const mismatchedInventory = structuredClone(inventory);
-  mismatchedInventory.sources.find(({ id }) => id === SOURCE_ID)
-    .routeMapAdmissionEvidence.positionsSha256 = "0".repeat(64);
+  const identityBaseFixture = structuredClone(baseFixture);
+  identityBaseFixture.packs[0].id = "capital";
+  identityBaseFixture.manifest.activePack = {
+    id: "capital",
+    version: identityBaseFixture.packs[0].version,
+  };
+  const basePack = identityBaseFixture.packs[0];
+  const identityPreserved = materializeSeoulRouteMapPositions({
+    baseFixture: identityBaseFixture,
+    snapshot: seoulSnapshot,
+    snapshotSha256: seoulSnapshotSha256,
+    topologySnapshotBytes: topologyBytes,
+    inventory,
+    now: routeMapNow,
+    rewritePackIdentity: false,
+    successorProviderRecordHashes: successorProviderHashes(seoulSnapshot),
+  });
+  const preservedPack = identityPreserved.packs[0];
+  assert.equal(basePack.id, "capital");
+  assert.equal(preservedPack.id, basePack.id);
+  assert.equal(preservedPack.version, basePack.version);
+  assert.equal(preservedPack.url, basePack.url);
+  assert.deepEqual(identityPreserved.manifest.activePack, identityBaseFixture.manifest.activePack);
+  assert.equal(identityPreserved.manifest.activePack.id, "capital");
+  assert.equal(preservedPack.routeMapPositions.filter(({ sourceId }) => sourceId === SOURCE_ID).length, 276);
+  assert.equal(preservedPack.sourceInventory.filter(({ id }) => id === SOURCE_ID).length, 1);
+  assert.equal(
+    preservedPack.routeMapPositions.find(({ sourceId }) => sourceId === SOURCE_ID).providerRecordHash,
+    successorProviderHashes(seoulSnapshot)[0],
+  );
+  assert.equal(preservedPack.routeMapPositions.some(({ sourceId }) => sourceId === "seoulmetro-cyberstation-route-map"), false);
+  const preservedSeoulTracks = preservedPack.routeMapLineTracks.filter(({ region, lineId }) =>
+    region === "수도권" && LINE_IDS.includes(lineId));
+  assert.equal(preservedSeoulTracks.length > 0, true);
+  assert.equal(preservedSeoulTracks.every(({ sourceId }) => sourceId === SOURCE_ID), true);
   assert.throws(
     () => materializeSeoulRouteMapPositions({
-      baseFixture, snapshot: seoulSnapshot, snapshotSha256: seoulSnapshotSha256,
+      baseFixture: identityBaseFixture,
+      snapshot: seoulSnapshot,
+      snapshotSha256: seoulSnapshotSha256,
+      topologySnapshotBytes: topologyBytes,
+      inventory,
+      now: routeMapNow,
+      rewritePackIdentity: false,
+      requireSuccessorProviderRecordHashes: true,
+    }),
+    /successor provider record hashes are invalid/,
+  );
+
+  const mismatchedInventory = structuredClone(inventory);
+  mismatchedInventory.sources.find(({ id }) => id === SOURCE_ID)
+    .routeMapAdmissionEvidence.currentLayoutAdmission.layoutPositionsSha256 = "0".repeat(64);
+  assert.throws(
+    () => materializeSeoulRouteMapPositions({
+      baseFixture, snapshot: seoulSnapshot, snapshotSha256: seoulSnapshotSha256, topologySnapshotBytes: topologyBytes,
       inventory: mismatchedInventory, now: routeMapNow,
     }),
     /inventory evidence/,
@@ -182,7 +264,7 @@ test("공식 서울 위경도 snapshot을 누적 production candidate pack에 ma
   assert.notEqual(byteDifferentSnapshotSha256, seoulSnapshotSha256);
   assert.throws(
     () => materializeSeoulRouteMapPositions({
-      baseFixture, snapshot: seoulSnapshot, snapshotSha256: byteDifferentSnapshotSha256,
+      baseFixture, snapshot: seoulSnapshot, snapshotSha256: byteDifferentSnapshotSha256, topologySnapshotBytes: topologyBytes,
       inventory, now: routeMapNow,
     }),
     /snapshot byte identity/,
@@ -193,17 +275,20 @@ test("materialized SQLite와 provenance가 서울 1~8호선 route_map_positions�
   const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-seoul-route-map-pack-"));
   context.after(() => rm(outputDir, { recursive: true, force: true }));
   const fixturePath = path.join(outputDir, "fixture.json");
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
   const packOutput = path.join(outputDir, "pack");
   const reportPath = path.join(outputDir, "coverage.json");
-  const { baseFixture, seoulSnapshot, seoulSnapshotSha256, inventory } = await inputs();
+  const { baseFixture, seoulSnapshot, seoulSnapshotSha256, topologyBytes, inventory } = await inputs();
   const fixture = materializeSeoulRouteMapPositions({
     baseFixture,
     snapshot: seoulSnapshot,
     snapshotSha256: seoulSnapshotSha256,
+    topologySnapshotBytes: topologyBytes,
     inventory,
     now: routeMapNow,
   });
   await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
   await mkdir(packOutput, { recursive: true });
 
   const { privateKey } = generateKeyPairSync("rsa", {
@@ -223,12 +308,12 @@ test("materialized SQLite와 provenance가 서울 1~8호선 route_map_positions�
   ).replace(/\.gz$/, "");
   const database = new DatabaseSync(sqlitePath, { readOnly: true });
   assert.equal(database.prepare("SELECT COUNT(*) AS count FROM route_map_positions WHERE source_id = ?")
-    .get(SOURCE_ID).count, 273);
+    .get(SOURCE_ID).count, 276);
   assert.equal(database.prepare("SELECT COUNT(*) AS count FROM route_map_positions WHERE source_id = ?")
-    .get("seoulmetro-cyberstation-route-map").count, 2);
+    .get("seoulmetro-cyberstation-route-map").count, 0);
   assert.equal(database.prepare(
-    "SELECT COUNT(DISTINCT line_id) AS count FROM route_map_positions WHERE source_id IN (?, ?)",
-  ).get(SOURCE_ID, "seoulmetro-cyberstation-route-map").count, 8);
+    "SELECT COUNT(DISTINCT line_id) AS count FROM route_map_positions WHERE source_id = ?",
+  ).get(SOURCE_ID).count, 8);
   database.close();
 
   const provenance = JSON.parse(await readFile(path.join(packOutput, "current.provenance.json"), "utf8"));
@@ -246,7 +331,7 @@ test("materialized SQLite와 provenance가 서울 1~8호선 route_map_positions�
   await execFileAsync(process.execPath, [
     "tools/datapack/report-coverage-gaps.mjs",
     "--targets", "tools/datapack/nationwide-coverage-targets.json",
-    "--inventory", "tools/datapack/source-inventory.json",
+    "--inventory", inventoryPath,
     "--manifest", manifestPath,
     "--provenance", path.join(packOutput, "current.provenance.json"),
     "--resolution-plan", "tools/datapack/release/nationwide-public-api-coverage-search-plan-20260725.json",

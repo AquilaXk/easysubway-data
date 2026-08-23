@@ -606,6 +606,8 @@ test("공식 OD fare source는 재현 가능한 operation과 조회 명령을 �
     "node tools/datapack/source-operation.mjs show <sourceId>",
   );
   assert.match(runbook.command, /--source-class-id <sourceClassId>/);
+  assert.match(runbook.command, /--raw-object-uri oci:\/\/<namespace>\/<bucket>\/<key>/);
+  assert.doesNotMatch(runbook.command, /s3:\/\//);
 });
 
 test("migrated KRIC evidence provenance와 TAGO output 경로를 보존한다", async () => {
