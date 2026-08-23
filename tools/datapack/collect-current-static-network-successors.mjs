@@ -36,7 +36,7 @@ export async function collectCurrentStaticNetworkSuccessors({ fetchImpl = fetch,
   };
 }
 
-function snapshotId(sourceId, observedAt) { return `${sourceId}-current-${observedAt.replaceAll(/[-:.]/gu, "").replace("Z", "Z")}`; }
+function snapshotId(sourceId, observedAt) { return `${sourceId}-current-${observedAt.replaceAll(/[-:.]/gu, "")}`; }
 async function fetchBytes(fetchImpl, url, source, contentType) {
   let response;
   try { response = await fetchImpl(url, { method: "GET", redirect: "error", signal: AbortSignal.timeout(15_000) }); } catch { fail(`${source}_TRANSPORT`); }
