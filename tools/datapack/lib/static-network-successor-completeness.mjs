@@ -17,7 +17,9 @@ const POSITION_MEMBERSHIP_SHA256 = "56ae4255e20e947030dd27cc480dca770d710f57b806
 
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const counts = (records, field) => Object.fromEntries(
-  [...new Set(records.map((record) => record[field]))].sort().map((key) => [key, records.filter((record) => record[field] === key).length]),
+  [...new Set(records.map((record) => record[field]))]
+    .sort((left, right) => left.localeCompare(right, "en"))
+    .map((key) => [key, records.filter((record) => record[field] === key).length]),
 );
 const positionKey = ({ line, stationCode, stationName }) => `${line}:${stationCode}:${stationName}`;
 const membershipSha = (records) => sha(JSON.stringify(
