@@ -576,6 +576,9 @@ export function requireCurrentIncheonStationCodeDerivations(snapshot) {
   if (JSON.stringify(snapshot?.stationCodeDerivations) !== JSON.stringify(STATION_CODE_DERIVATIONS)) {
     throw new Error("current Incheon station code derivations are required");
   }
+  if (snapshot.stationCodeCorrections !== undefined) {
+    throw new Error("current Incheon legacy station code corrections are forbidden");
+  }
   return snapshot;
 }
 

@@ -572,10 +572,9 @@ test("current Incheon topology admission은 exact snapshot bytes와 fresh source
     readFile(path.join(root, snapshotPath)),
   ]);
   const historicalSnapshot = JSON.parse(historicalSnapshotBytes);
-  const snapshot = {
-    ...structuredClone(historicalSnapshot),
-    stationCodeDerivations: currentIncheonStationCodeDerivations(),
-  };
+  const snapshot = structuredClone(historicalSnapshot);
+  delete snapshot.stationCodeCorrections;
+  snapshot.stationCodeDerivations = currentIncheonStationCodeDerivations();
   const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
   const activated = activateIncheonTopologyAdmission({
     sourceInventory,
@@ -619,6 +618,16 @@ test("current Incheon topology admission은 exact snapshot bytes와 fresh source
     snapshotPath,
     now: new Date("2026-08-14T00:00:00.000Z"),
   }), /invalid Incheon station code derivations|current Incheon station code derivations are required/);
+
+  const legacyCorrection = structuredClone(snapshot);
+  legacyCorrection.stationCodeCorrections = structuredClone(historicalSnapshot.stationCodeCorrections);
+  assert.throws(() => activateIncheonTopologyAdmission({
+    sourceInventory,
+    snapshot: legacyCorrection,
+    snapshotBytes: Buffer.from(`${JSON.stringify(legacyCorrection)}\n`),
+    snapshotPath,
+    now: new Date("2026-08-14T00:00:00.000Z"),
+  }), /current Incheon legacy station code corrections are forbidden/);
 
   const oldDerivation = structuredClone(snapshot);
   oldDerivation.stationCodeDerivations[1].basis = "LEGACY_CORRECTION";
@@ -929,10 +938,9 @@ test("topology-only refresh는 admission·canonical·candidate identity를 한 �
     readFile(path.join(root, currentItxAdmissionPath)),
   ]);
   const currentTopology = JSON.parse(currentTopologyBytes);
-  const currentIncheonTopology = {
-    ...JSON.parse(historicalIncheonTopologyBytes),
-    stationCodeDerivations: currentIncheonStationCodeDerivations(),
-  };
+  const currentIncheonTopology = JSON.parse(historicalIncheonTopologyBytes);
+  delete currentIncheonTopology.stationCodeCorrections;
+  currentIncheonTopology.stationCodeDerivations = currentIncheonStationCodeDerivations();
   const currentIncheonTopologyBytes = Buffer.from(`${JSON.stringify(currentIncheonTopology)}\n`);
   const buildNow = new Date(Math.max(
     Date.parse(currentTopology.capturedAt),
