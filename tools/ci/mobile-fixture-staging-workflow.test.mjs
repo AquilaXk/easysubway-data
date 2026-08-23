@@ -191,6 +191,18 @@ test("CI는 browser-dependent required tests 전에 pinned Chrome runtime을 제
   ]);
 });
 
+test("CI는 pristine owned required runner를 job timeout보다 짧은 process deadline으로 종료한다", () => {
+  const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+  const runner = namedWorkflowStep(ci, "Verify and run pristine Mobile owned required tests");
+
+  assert.match(
+    runner,
+    /run:\s*timeout --signal=TERM --kill-after=30s 25m node tools\/ci\/data-test-discovery\.mjs run --class required-pr --default-profile/,
+  );
+  assert.doesNotMatch(runner, /--preserve-status/);
+  assert.match(ci, /timeout-minutes:\s*30/);
+});
+
 test("CI는 migration이 쓰는 tracked topology evidence를 #108 regression 뒤 즉시 원복한다", () => {
   const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
   const backup = ci.match(/- name: Backup tracked topology evidence[\s\S]*?\n\s+- name:/)?.[0];

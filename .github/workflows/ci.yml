@@ -178,4 +178,4 @@ jobs:
         env:
           CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
           ROUTE_MAP_CHROME_NO_SANDBOX: "1"
-        run: node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile
+        run: timeout --signal=TERM --kill-after=30s 25m node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile
