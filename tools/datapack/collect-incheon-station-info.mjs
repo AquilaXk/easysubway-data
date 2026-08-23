@@ -7,10 +7,10 @@
 // topology edge는 capital 정본 중복 방지를 위해 admit하지 않는다(fail-closed on
 // unknown 노선명).
 //
-// Dedup: 동일 (노선명,역번호)가 이름·위경도까지 동일하면 1건만 유지.
-// 동일 키가 서로 다른 정체성이면 fail-closed. 단, FILE이 송도달빛축제공원에
-// 국제업무지구와 같은 3138을 부여한 결함은 수도권 사이버스테이션 station-cd=3139
-// 정본으로만 교정한다(그 외 코드 발명은 금지).
+// FILE의 역번호는 raw 증거로 그대로 보존한다. 인천 1호선의 공식 FILE은
+// 국제업무지구와 송도달빛축제공원 모두에 3138을 제공한다. 배포 stationCode는
+// 외부 자료로 교정하지 않고, 아래의 고정된 공식 노선 순서에서만 내부적으로
+// 충돌 없이 도출한다. 예상 밖의 중복·gap·역 정체성 변경은 fail-closed다.
 //
 // Topology: 1·2호선만 노선별 역번호를 숫자 정렬해 인접 역을 양방향 RIDE edge로
 // 연결한다. FILE에 거리·소요시간이 없어 durationSeconds=120·distanceMeters=0
@@ -102,16 +102,62 @@ const HEADERS = Object.freeze([
   "환승노선번호", "환승노선명", "역위도", "역경도", "운영기관명", "역사도로명주소",
   "역사전화번호", "데이터기준일자",
 ]);
-// FILE 15083751이 송도달빛축제공원에 국제업무지구와 동일 역번호 3138을 부여한다.
-// 수도권 사이버스테이션 station-cd 정본(3139)으로만 교정한다.
-const STATION_CODE_CORRECTIONS = Object.freeze([
-  {
-    lineName: "인천지하철 1호선",
-    stationName: "송도달빛축제공원",
+const OFFICIAL_LINE_SEQUENCES = Object.freeze({
+  [LINE1]: Object.freeze({
+    internalFirstStationCode: 3107,
+    rows: Object.freeze([
+      ["3107", "검단호수공원"], ["3108", "신검단중앙"], ["3109", "아라"], ["3110", "계양"],
+      ["3111", "귤현"], ["3112", "박촌"], ["3113", "임학"], ["3114", "계산"],
+      ["3115", "경인교대입구"], ["3116", "작전"], ["3117", "갈산"], ["3118", "부평구청"],
+      ["3119", "부평시장"], ["3120", "부평"], ["3121", "동수"], ["3122", "부평삼거리"],
+      ["3123", "간석오거리"], ["3124", "인천시청"], ["3125", "예술회관"], ["3126", "인천터미널"],
+      ["3127", "문학경기장"], ["3128", "선학"], ["3129", "신연수"], ["3130", "원인재"],
+      ["3131", "동춘"], ["3132", "동막"], ["3133", "캠퍼스타운"], ["3134", "테크노파크"],
+      ["3135", "지식정보단지"], ["3136", "인천대입구"], ["3137", "센트럴파크"],
+      ["3138", "국제업무지구"], ["3138", "송도달빛축제공원"],
+    ]),
+  }),
+  [LINE2]: Object.freeze({
+    internalFirstStationCode: 3201,
+    rows: Object.freeze([
+      ["3201", "검단오류"], ["3202", "왕길"], ["3203", "검단사거리"], ["3204", "마전"],
+      ["3205", "완정"], ["3206", "독정"], ["3207", "검암"], ["3208", "검바위"],
+      ["3209", "아시아드경기장"], ["3210", "서구청"], ["3211", "가정(루원시티)"],
+      ["3212", "가정중앙시장"], ["3213", "석남(거북시장)"], ["3214", "서부여성회관"],
+      ["3215", "인천가좌"], ["3216", "가재울"], ["3217", "주안국가산단"], ["3218", "주안"],
+      ["3219", "시민공원"], ["3220", "석바위시장"], ["3221", "인천시청"],
+      ["3222", "석천사거리"], ["3223", "모래내시장"], ["3224", "만수"],
+      ["3225", "남동구청"], ["3226", "인천대공원"], ["3227", "운연"],
+    ]),
+  }),
+  [LINE7]: Object.freeze({
+    internalFirstStationCode: 3753,
+    rows: Object.freeze([
+      ["3753", "까치울"], ["3754", "부천종합운동장"], ["3755", "춘의"], ["3756", "신중동"],
+      ["3757", "부천시청"], ["3758", "상동"], ["3759", "삼산체육관"], ["3760", "굴포천"],
+      ["3761", "부평구청"], ["3762", "산곡"], ["3763", "석남(거북시장)"],
+    ]),
+  }),
+});
+const STATION_CODE_DERIVATIONS = Object.freeze([
+  Object.freeze({
+    lineId: LINE1,
     rawStationCode: "3138",
-    correctedStationCode: "3139",
-    evidence: "seoulmetro-cyberstation-line-data station-cd=3139",
-  },
+    stationName: "국제업무지구",
+    internalStationCode: "3138",
+    lineSequence: 32,
+    basis: "OFFICIAL_FILE_LINE_SEQUENCE",
+    datasetId: DATASET_ID,
+  }),
+  Object.freeze({
+    lineId: LINE1,
+    rawStationCode: "3138",
+    stationName: "송도달빛축제공원",
+    internalStationCode: "3139",
+    lineSequence: 33,
+    basis: "OFFICIAL_FILE_LINE_SEQUENCE",
+    datasetId: DATASET_ID,
+  }),
 ]);
 // 수도권 정본 station id(위키 SVG + #1954 검단연장 salt). 환승역(인천시청)은 단일 id.
 const KNOWN_STATION_IDS = Object.freeze({
@@ -271,12 +317,10 @@ export function parseIncheonStationInfoCsv(csvBytes) {
     if (dataDate !== OBSERVED_DATA_UPDATED_AT) {
       throw new Error(`Incheon station info unexpected data date: ${dataDate}`);
     }
-    const stationCode = applyStationCodeCorrection(lineName, stationName, rawStationCode);
     if (line.lineId === LINE7) admittedLine7Count += 1;
     rawRows.push({
       lineName,
       lineId: line.lineId,
-      stationCode,
       rawStationCode,
       stationName,
       nameEn,
@@ -291,17 +335,9 @@ export function parseIncheonStationInfoCsv(csvBytes) {
     throw new Error(`Incheon station info admitted row count mismatch: ${rawRows.length}`);
   }
 
-  const deduped = dedupeRows(rawRows);
-  if (deduped.length !== EXPECTED_ADMITTED_ROW_COUNT) {
-    throw new Error(`Incheon station info deduped row count mismatch: ${deduped.length}`);
-  }
-
   const scope = [];
   for (const lineId of LINE_IDS) {
-    const lineRows = deduped
-      .filter((row) => row.lineId === lineId)
-      .sort((left, right) => Number(left.stationCode) - Number(right.stationCode)
-        || left.stationName.localeCompare(right.stationName, "ko"));
+    const lineRows = deriveInternalStationCodes(lineId, rawRows.filter((row) => row.lineId === lineId));
     const expected = EXPECTED_LINE_STATION_COUNTS[lineId];
     if (lineRows.length !== expected) {
       throw new Error(`Incheon station info line station count mismatch: ${lineId}`);
@@ -377,7 +413,7 @@ export function parseIncheonStationInfoCsv(csvBytes) {
     scope,
     edges,
     positions,
-    stationCodeCorrections: STATION_CODE_CORRECTIONS.map((entry) => ({ ...entry })),
+    stationCodeDerivations: STATION_CODE_DERIVATIONS.map((entry) => ({ ...entry })),
   };
 }
 
@@ -422,7 +458,7 @@ export function collectIncheonStationInfo({ csvBytes, now = new Date() } = {}) {
       redistributionAllowed: true,
       evidenceUrl: DETAIL_URL,
     },
-    stationCodeCorrections: parsed.stationCodeCorrections,
+    stationCodeDerivations: parsed.stationCodeDerivations,
     scope,
     edges,
     positions,
@@ -485,11 +521,24 @@ export function validateIncheonStationInfoSnapshot(snapshot) {
   for (const [lineId, expected] of Object.entries(EXPECTED_LINE_STATION_COUNTS)) {
     const lineScope = snapshot.scope.filter((station) => station.lineId === lineId);
     if (lineScope.length !== expected) throw new Error(`invalid Incheon line scope: ${lineId}`);
+    const official = OFFICIAL_LINE_SEQUENCES[lineId];
     for (let index = 0; index < lineScope.length - 1; index += 1) {
       if (Number(lineScope[index].stationCode) >= Number(lineScope[index + 1].stationCode)) {
         throw new Error(`Incheon station codes are not sorted: ${lineId}`);
       }
     }
+    for (let index = 0; index < lineScope.length; index += 1) {
+      const station = lineScope[index];
+      const [, stationName] = official.rows[index];
+      if (station.stationName !== stationName
+        || station.stationCode !== String(official.internalFirstStationCode + index)
+        || station.lineSequence !== index + 1) {
+        throw new Error(`invalid Incheon official line sequence: ${lineId}`);
+      }
+    }
+  }
+  if (JSON.stringify(snapshot.stationCodeDerivations) !== JSON.stringify(STATION_CODE_DERIVATIONS)) {
+    throw new Error("invalid Incheon station code derivations");
   }
   const edgeKeys = new Set();
   for (const edge of snapshot.edges) {
@@ -518,41 +567,31 @@ export function validateIncheonStationInfoSnapshot(snapshot) {
   return snapshot;
 }
 
-function applyStationCodeCorrection(lineName, stationName, rawStationCode) {
-  const correction = STATION_CODE_CORRECTIONS.find((entry) => (
-    entry.lineName === lineName
-      && entry.stationName === stationName
-      && entry.rawStationCode === rawStationCode
+function deriveInternalStationCodes(lineId, rows) {
+  const official = OFFICIAL_LINE_SEQUENCES[lineId];
+  if (!official || rows.length !== official.rows.length) {
+    throw new Error(`Incheon station info official line count mismatch: ${lineId}`);
+  }
+  const orderedRows = [...rows].sort((left, right) => (
+    Number(left.rawStationCode) - Number(right.rawStationCode)
+      || normalizeIncheonStationName(left.stationName)
+        .localeCompare(normalizeIncheonStationName(right.stationName), "ko")
   ));
-  if (correction) return correction.correctedStationCode;
-  return rawStationCode;
-}
-
-function dedupeRows(rows) {
-  // Dedup key=(노선명,역번호). 동일 정체성이면 1건 유지, 분기하면 fail-closed.
-  const groups = new Map();
-  for (const row of rows) {
-    const key = `${row.lineName}\0${row.stationCode}`;
-    const group = groups.get(key);
-    if (group) group.push(row);
-    else groups.set(key, [row]);
-  }
-  const deduped = [];
-  for (const group of groups.values()) {
-    const [first, ...rest] = group;
-    for (const other of rest) {
-      if (other.stationName !== first.stationName
-        || other.latitude !== first.latitude
-        || other.longitude !== first.longitude
-        || other.nameEn !== first.nameEn) {
-        throw new Error(
-          `Incheon station info divergent duplicate: ${first.lineName}:${first.stationCode}`,
-        );
-      }
+  for (let index = 0; index < orderedRows.length; index += 1) {
+    if (orderedRows[index].rawStationCode !== official.rows[index][0]) {
+      throw new Error(`Incheon station info official line code sequence mismatch: ${lineId}`);
     }
-    deduped.push(first);
   }
-  return deduped;
+  return orderedRows.map((row, index) => {
+    const [, expectedStationName] = official.rows[index];
+    if (row.stationName !== expectedStationName) {
+      throw new Error(`Incheon station info official line identity drift: ${lineId}`);
+    }
+    return {
+      ...row,
+      stationCode: String(official.internalFirstStationCode + index),
+    };
+  });
 }
 
 function buildAdjacentEdges(scope) {
