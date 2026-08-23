@@ -1161,9 +1161,6 @@ async function loadAdmittedSourceReference(contract, repositoryRoot, catalog) {
   else validateSourceCandidateSchema(source);
   validateSourceFreshness(source, source.selectedServiceDates);
   if (!historicalAudit) {
-    if (JSON.stringify(source.stationCatalogPackIdentity) !== JSON.stringify(catalog?.identity)) {
-      throw new Error("STATION_CATALOG_PACK_IDENTITY_MISMATCH");
-    }
     validateStationCatalogCorridorAuthority(source, catalog);
   }
   validateSourceSnapshotSets(source);
@@ -1183,7 +1180,7 @@ async function loadAdmittedSourceReference(contract, repositoryRoot, catalog) {
         source,
         repositoryRoot,
         null,
-        catalog.identity,
+        source.stationCatalogPackIdentity,
       );
     }
   } else if (reference.completenessEvidencePath !== undefined
