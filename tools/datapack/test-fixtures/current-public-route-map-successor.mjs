@@ -130,7 +130,11 @@ const SUCCESSOR_FIXTURE_PATHS = Object.freeze([
   "tools/datapack/schema/catalog-schema.sql",
 ]);
 
-export async function copySyntheticCurrentPublicRouteMapRepository(sourceRoot, targetRoot, { now }) {
+export async function copySyntheticCurrentPublicRouteMapRepository(
+  sourceRoot,
+  targetRoot,
+  { now, activateStaticNetwork = false },
+) {
   const [source, target] = await Promise.all([
     regularRoot(sourceRoot),
     regularRoot(targetRoot, { create: true }),
@@ -161,7 +165,9 @@ export async function copySyntheticCurrentPublicRouteMapRepository(sourceRoot, t
     ]);
     await cp(sourceFile, destination, { force: true });
   }
-  return activateSyntheticCurrentPublicRouteMapSuccessor(target, { now });
+  return activateStaticNetwork
+    ? activateSyntheticCurrentStaticNetworkSuccessors(target, { now })
+    : activateSyntheticCurrentPublicRouteMapSuccessor(target, { now });
 }
 
 export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { now }) {

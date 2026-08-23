@@ -20,7 +20,9 @@ const counts = (records, field) => Object.fromEntries(
   [...new Set(records.map((record) => record[field]))].sort().map((key) => [key, records.filter((record) => record[field] === key).length]),
 );
 const positionKey = ({ line, stationCode, stationName }) => `${line}:${stationCode}:${stationName}`;
-const membershipSha = (records) => sha(JSON.stringify(records.map(positionKey).sort()));
+const membershipSha = (records) => sha(JSON.stringify(
+  records.map(positionKey).sort((left, right) => left.localeCompare(right, "en")),
+));
 
 export function assertCurrentMolitFullRouteCompleteness(records) {
   if (!Array.isArray(records)

@@ -124,7 +124,10 @@ function networkEdgeEvidenceFixture() {
 test("candidate build spec release identity는 wall clock과 workflow run number에 무관하다", async (context) => {
   const directory = await mkdtemp(path.join(tmpdir(), "candidate-build-release-identity-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
-  await copySyntheticCurrentPublicRouteMapRepository(root, directory, { now: currentNow });
+  await copySyntheticCurrentPublicRouteMapRepository(root, directory, {
+    now: currentNow,
+    activateStaticNetwork: true,
+  });
   await refreshCurrentCapitalAccessibilityFull({ repositoryRoot: directory });
   const buildSpecPath = "tools/datapack/release/candidate-build-spec.json";
   const buildSpec = await readFile(path.join(directory, buildSpecPath), "utf8").then(JSON.parse);

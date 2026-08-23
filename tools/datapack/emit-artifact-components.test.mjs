@@ -77,6 +77,7 @@ test("current full-capital producer 출력은 합성 public successor의 route/e
   const repositoryRoot = path.join(temp, "repository");
   await copySyntheticCurrentPublicRouteMapRepository(process.cwd(), repositoryRoot, {
     now: new Date(CURRENT_EVALUATION_AT),
+    activateStaticNetwork: true,
   });
   const [stationOutput, routeOutput] = await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot });
   const policyBytes = await readFile(path.join(
@@ -141,6 +142,7 @@ test("current full-capital producer는 alternate repository root의 nested evide
   const repositoryRoot = path.join(temp, "repository");
   await copySyntheticCurrentPublicRouteMapRepository(process.cwd(), repositoryRoot, {
     now: new Date(CURRENT_EVALUATION_AT),
+    activateStaticNetwork: true,
   });
   const outputs = await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot });
   assert.equal(JSON.parse(outputs[1].bytes).routeEdges.length, 2674);

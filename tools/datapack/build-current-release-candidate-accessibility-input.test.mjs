@@ -69,6 +69,7 @@ test("합성 current public successor는 1,102 metadata·2,674 route·456 author
   const repositoryRoot = path.join(temp, "repository");
   await copySyntheticCurrentPublicRouteMapRepository(sourceRoot, repositoryRoot, {
     now: new Date("2026-08-22T09:45:18.609Z"),
+    activateStaticNetwork: true,
   });
   const buildSpecBytes = await readFile(
     path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"),
