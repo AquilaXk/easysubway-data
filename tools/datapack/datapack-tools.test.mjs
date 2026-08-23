@@ -13137,37 +13137,11 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
     { cwd: root },
   );
   const importedFixture = JSON.parse(await readFile(importedFixturePath, "utf8"));
-  assert.equal(importedFixture.packs[0].requiredTables.includes("route_map_positions"), true);
-  assert.equal(importedFixture.packs[0].minimumTableRows.route_map_positions, 2);
-  assert.equal(importedFixture.packs[0].routeMapPositions.length, 2);
-  assert.deepEqual(
-    importedFixture.packs[0].routeMapPositions.map((position) => ({
-      stationId: position.stationId,
-      lineId: position.lineId,
-      sourceId: position.sourceId,
-      sourceSha256: position.sourceSha256,
-      labelPolygonCount: position.labelPolygon.length,
-      updatedAt: position.updatedAt,
-    })),
-    [
-      {
-        stationId: "station-sangnoksu",
-        lineId: "seoul-4",
-        sourceId: "seoulmetro-cyberstation-route-map",
-        sourceSha256: "7370b4db2d2f398f46c55314b71d7335c77ec6745fd388793804874447cd25e0",
-        labelPolygonCount: 4,
-        updatedAt: "2026-06-28T00:00:00.000Z",
-      },
-      {
-        stationId: "station-sadang",
-        lineId: "seoul-4",
-        sourceId: "seoulmetro-cyberstation-route-map",
-        sourceSha256: "7370b4db2d2f398f46c55314b71d7335c77ec6745fd388793804874447cd25e0",
-        labelPolygonCount: 4,
-        updatedAt: "2026-06-28T00:00:00.000Z",
-      },
-    ],
-  );
+  assert.equal(importedFixture.packs[0].requiredTables.includes("route_map_positions"), false);
+  assert.equal(Object.hasOwn(importedFixture.packs[0].minimumTableRows, "route_map_positions"), false);
+  assert.deepEqual(importedFixture.packs[0].routeMapPositions, []);
+  assert.equal(importedFixture.packs[0].sourceInventory.some(
+    ({ id }) => id === "seoulmetro-cyberstation-route-map"), false);
   const scheduleScopeFixture = JSON.parse(JSON.stringify(importedFixture));
   scheduleScopeFixture.packs[0].sourceInventory.find(
     (source) => source.id === "kric-subway-timetable",
@@ -13278,7 +13252,9 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
       expected: /routeMapPositions\.upPath must be a string/,
     },
   ]) {
-    const invalidRouteMapPositionInput = JSON.parse(JSON.stringify(adjacencySafeInput));
+    const invalidRouteMapPositionInput = sourceIngestInput();
+    invalidRouteMapPositionInput.sourceIds.push("seoul-metro-route-map-positions");
+    invalidRouteMapPositionInput.routeMapPositions = [testPublicRouteMapPosition()];
     testCase.mutate(invalidRouteMapPositionInput.routeMapPositions[0]);
     const invalidRouteMapPositionInputPath = path.join(outputDir, `${testCase.name}-input.json`);
     const invalidRouteMapPositionOutputPath = path.join(outputDir, `${testCase.name}-fixture.json`);
@@ -13616,10 +13592,10 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
   }
 
   const provenance = JSON.parse(await readFile(path.join(packOutputDir, "current.provenance.json"), "utf8"));
-  const routeMapRecords = provenance.packs[0].records.filter(
+  const retiredRouteMapRecords = provenance.packs[0].records.filter(
     (record) => record.sourceId === "seoulmetro-cyberstation-route-map",
   );
-  assert.equal(routeMapRecords.length, 4);
+  assert.equal(retiredRouteMapRecords.length, 0);
   assert.equal(
     provenance.packs[0].records.filter(
       (record) => record.entityType === "facility" && record.field === "status",
@@ -13665,7 +13641,7 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
   // historical diagnostic source는 더 이상 active line scope를 claim하지 않는다. 공공 관측의 v2 admission
   // 전에는 서울 4호선도 다른 서울 1~8호선과 같이 MISSING으로 남아야 한다.
   assert.equal(capitalRouteMapCoverage.status, "MISSING");
-  assert.deepEqual(capitalRouteMapCoverage.missingFields, ["route_map_label_polygon", "route_map_position"]);
+  assert.deepEqual(capitalRouteMapCoverage.missingFields, ["route_map_position", "route_map_label_polygon"]);
   assert.deepEqual(capitalRouteMapCoverage.sourceIds, []);
 
   // #1999: release-scope 평가 모드는 게시 차단을 게시 범위(capital·seoul-metro × capitalPilotTargets domains) 내 gap만
@@ -15198,6 +15174,38 @@ function sourceIngestInput() {
         requiredEdgeIds: ["edge-sangnoksu-sadang-seoul-4"],
       },
     ],
+  };
+}
+
+function testPublicRouteMapPosition() {
+  return {
+    sourceId: "seoul-metro-route-map-positions",
+    station: {
+      sourceId: "seoulmetro-station-line-info",
+      sourceStationCode: "448",
+      lineId: "seoul-4",
+    },
+    region: "수도권",
+    x: 100,
+    y: 200,
+    labelDx: 0,
+    labelDy: -14,
+    labelPolygon: [
+      { x: 90, y: 170 },
+      { x: 110, y: 170 },
+      { x: 110, y: 190 },
+      { x: 90, y: 190 },
+    ],
+    sourceName: "공공 좌표 기반 결정론적 노선도 테스트 산출물",
+    sourceUrl: "https://www.data.go.kr/data/15099316/fileData.do",
+    sourceSha256: "a".repeat(64),
+    license: "공공데이터 이용허락범위 제한 없음",
+    licenseStatus: "redistributable-commercial-derivative",
+    commercialUseAllowed: true,
+    attributionRequired: true,
+    sourceLabel: "상록수",
+    reviewedAt: "2026-08-22T00:00:00.000Z",
+    updatedAt: "2026-08-22T00:00:00.000Z",
   };
 }
 
