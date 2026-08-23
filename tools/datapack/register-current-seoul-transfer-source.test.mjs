@@ -159,6 +159,28 @@ test("actual composition emits only the five targets and appends TRANSFER sevent
   assert.equal(scope.productionSourceSet.excludedFromV1SupportClaims.includes("seoul-metro-transfer-distance-duration"), false);
 });
 
+test("transfer registration은 candidate의 public 노선도와 다른 canonical content를 거부한다", async (t) => {
+  const input = await compositionFixture(t);
+  const row = input.canonicalPack.packs[0].routeMapPositions.find(
+    ({ sourceId }) => sourceId === "seoul-metro-route-map-positions",
+  );
+  row.x += 1;
+  input.canonicalPackBytes = Buffer.from(`${JSON.stringify(input.canonicalPack, null, 2)}\n`);
+  input.metrics.canonicalIdentity.canonicalPackSha256 = sha(input.canonicalPackBytes);
+  input.metrics.artifactSha256 = sha(Buffer.from(canonicalJson(sort(input.metrics, "artifactSha256"))));
+  input.metricsBytes = bytes(input.metrics);
+  input.applicability.canonicalIdentity = structuredClone(input.metrics.canonicalIdentity);
+  input.applicability.transferTopologyMetricsIdentity.artifactSha256 = input.metrics.artifactSha256;
+  const { artifactSha256: _old, ...applicabilityPayload } = input.applicability;
+  input.applicability.artifactSha256 = sha(Buffer.from(`${canonicalJson(applicabilityPayload)}\n`));
+  input.applicabilityBytes = bytes(input.applicability);
+
+  assert.throws(
+    () => buildTransferRegistrationOutputs(input),
+    /complete current public Seoul route map/,
+  );
+});
+
 test("replacement head는 selected append-only ledger order hash를 사용한다", async (t) => {
   const input = await compositionFixture(t);
   const selectedIds = new Set(input.candidate.sourceSnapshotIds);

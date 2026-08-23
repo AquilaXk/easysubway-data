@@ -22,6 +22,7 @@ import {
   canonicalCurrentCapitalStationLineInputJson,
 } from "./build-current-capital-station-line-input.mjs";
 import { fixture as fullCapitalFixture } from "./build-current-capital-station-line-input.test.mjs";
+import { buildCurrentCapitalAccessibilityRefreshOutputs } from "./refresh-current-capital-accessibility-full.mjs";
 import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
 
 test("full-capital authority는 213/639 input과 456 non-RIDE를 2,674-edge fixture에 결속한다", async () => {
@@ -82,19 +83,13 @@ test("합성 current public successor는 1,102 metadata·2,674 route·456 author
     sourceFixture,
     repositoryRoot,
   });
-  const trackedStationLineInputBytes = await readFile(
-    path.join(sourceRoot, "tools/datapack/release/current-capital-accessibility-full/station-line-input.json"),
-  );
-  const trackedRouteBytes = await readFile(
-    path.join(sourceRoot, "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json"),
-  );
-  const stationLineInput = JSON.parse(trackedStationLineInputBytes);
-  const route = JSON.parse(trackedRouteBytes);
-  stationLineInput.candidate.sourceSetSha256 = buildSpec.sourceSnapshotSetHash;
-  for (const row of stationLineInput.evidenceRows) row.sourceSetSha256 = buildSpec.sourceSnapshotSetHash;
-  route.candidate.sourceSetSha256 = buildSpec.sourceSnapshotSetHash;
-  const stationLineInputBytes = Buffer.from(canonicalCurrentCapitalStationLineInputJson(stationLineInput));
-  const routeBytes = Buffer.from(canonicalCurrentCapitalRouteEdgeInputJson(route));
+  const [stationOutput, routeOutput] = await buildCurrentCapitalAccessibilityRefreshOutputs({
+    repositoryRoot,
+  });
+  const stationLineInputBytes = stationOutput.bytes;
+  const routeBytes = routeOutput.bytes;
+  const stationLineInput = JSON.parse(stationLineInputBytes);
+  const route = JSON.parse(routeBytes);
   assert.equal(
     stationLineInputBytes.toString("utf8"),
     canonicalCurrentCapitalStationLineInputJson(stationLineInput),

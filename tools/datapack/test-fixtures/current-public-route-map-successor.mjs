@@ -1,8 +1,15 @@
 import { createHash } from "node:crypto";
-import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { buildSeoulRouteMapPositions } from "../collect-seoul-route-map-positions.mjs";
 import { deriveFreshnessExpiresAt } from "../freshness-policy.mjs";
+import {
+  CURRENT_SEOUL_PUBLIC_ROUTE_MAP_COVERAGE,
+  CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS,
+  materializeSeoulRouteMapPositions,
+  verifyCurrentCapitalPublicRouteMapDocument,
+} from "../materialize-seoul-route-map-positions.mjs";
 import { deriveReleaseProjection } from "../rebind-current-candidate-source-snapshots.mjs";
 import { deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
 
@@ -35,6 +42,70 @@ function referencedPaths(value, paths = []) {
   return paths;
 }
 
+function safeSegments(relative) {
+  if (path.isAbsolute(relative)) throw new Error(`synthetic successor fixture path is unsafe: ${relative}`);
+  const segments = relative.split("/");
+  if (segments.length === 0 || segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
+    throw new Error(`synthetic successor fixture path is unsafe: ${relative}`);
+  }
+  return segments;
+}
+
+async function regularRoot(root, { create = false } = {}) {
+  if (create) await mkdir(root, { recursive: true });
+  const metadata = await lstat(root);
+  if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
+    throw new Error("synthetic successor fixture root is unsafe");
+  }
+  return realpath(root);
+}
+
+async function regularSourceFile(root, relative) {
+  let current = root;
+  const segments = safeSegments(relative);
+  for (const [index, segment] of segments.entries()) {
+    current = path.join(current, segment);
+    const metadata = await lstat(current);
+    const last = index === segments.length - 1;
+    if (metadata.isSymbolicLink() || last && !metadata.isFile() || !last && !metadata.isDirectory()) {
+      throw new Error(`synthetic successor fixture source is unsafe: ${relative}`);
+    }
+  }
+  const resolved = await realpath(current);
+  if (!resolved.startsWith(`${root}${path.sep}`)) {
+    throw new Error(`synthetic successor fixture source escapes root: ${relative}`);
+  }
+  return resolved;
+}
+
+async function regularDestination(root, relative) {
+  const segments = safeSegments(relative);
+  const parentSegments = segments.slice(0, -1);
+  await mkdir(path.join(root, ...parentSegments), { recursive: true });
+  let current = root;
+  for (const segment of parentSegments) {
+    current = path.join(current, segment);
+    const metadata = await lstat(current);
+    if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
+      throw new Error(`synthetic successor fixture destination is unsafe: ${relative}`);
+    }
+  }
+  const resolvedParent = await realpath(current);
+  if (resolvedParent !== root && !resolvedParent.startsWith(`${root}${path.sep}`)) {
+    throw new Error(`synthetic successor fixture destination escapes root: ${relative}`);
+  }
+  const destination = path.join(resolvedParent, segments.at(-1));
+  try {
+    const metadata = await lstat(destination);
+    if (!metadata.isFile() || metadata.isSymbolicLink()) {
+      throw new Error(`synthetic successor fixture destination is unsafe: ${relative}`);
+    }
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  return destination;
+}
+
 const SUCCESSOR_FIXTURE_PATHS = Object.freeze([
   "tools/datapack/release/candidate-build-spec.json",
   "tools/datapack/release/release-request.json",
@@ -46,13 +117,28 @@ const SUCCESSOR_FIXTURE_PATHS = Object.freeze([
   "release/product-gates/datapack-freshness-sla.json",
   "tools/datapack/official-od-fare-admission.json",
   "tools/datapack/nationwide-coverage-targets.json",
+  "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
+  "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
+  "tools/datapack/release/current-capital-facility-source-admission.json",
+  "tools/datapack/release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json",
+  "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json",
+  "tools/datapack/release/current-exit-admission-v2/exit-path-admission-artifact-receipt.json",
+  "tools/datapack/release/current-transfer-topology-metrics.json",
+  "tools/datapack/release/current-capital-transfer-topology-applicability.json",
+  "release/product-gates/route-edge-evaluation-policy.json",
+  "tools/datapack/schema/catalog-schema.sql",
 ]);
 
 export async function copySyntheticCurrentPublicRouteMapRepository(sourceRoot, targetRoot, { now }) {
-  const [candidate, inventory, itxContract] = await Promise.all([
-    readJson(sourceRoot, "tools/datapack/release/candidate-build-spec.json"),
-    readJson(sourceRoot, "tools/datapack/source-inventory.json"),
-    readJson(sourceRoot, "tools/datapack/itx-cheongchun-coverage-contract.json"),
+  const [source, target] = await Promise.all([
+    regularRoot(sourceRoot),
+    regularRoot(targetRoot, { create: true }),
+  ]);
+  const [candidate, inventory, itxContract, facilityAdmission] = await Promise.all([
+    readJson(source, "tools/datapack/release/candidate-build-spec.json"),
+    readJson(source, "tools/datapack/source-inventory.json"),
+    readJson(source, "tools/datapack/itx-cheongchun-coverage-contract.json"),
+    readJson(source, "tools/datapack/release/current-capital-facility-source-admission.json"),
   ]);
   const dynamicPaths = [
     candidate.fixturePath,
@@ -63,18 +149,18 @@ export async function copySyntheticCurrentPublicRouteMapRepository(sourceRoot, t
     ...inventory.sources.map((source) => source.routeMapAdmissionEvidence?.snapshotPath),
     ...referencedPaths(candidate),
     ...referencedPaths(itxContract),
+    facilityAdmission.sourceIdentity?.snapshotPath,
   ];
   const relatives = [...new Set([...SUCCESSOR_FIXTURE_PATHS, ...dynamicPaths]
     .filter((relative) => typeof relative === "string"))];
   for (const relative of relatives) {
-    if (path.isAbsolute(relative) || relative.split(path.sep).includes("..")) {
-      throw new Error(`synthetic successor fixture path is unsafe: ${relative}`);
-    }
-    const destination = path.join(targetRoot, relative);
-    await mkdir(path.dirname(destination), { recursive: true });
-    await cp(path.join(sourceRoot, relative), destination);
+    const [sourceFile, destination] = await Promise.all([
+      regularSourceFile(source, relative),
+      regularDestination(target, relative),
+    ]);
+    await cp(sourceFile, destination, { force: true });
   }
-  return activateSyntheticCurrentPublicRouteMapSuccessor(targetRoot, { now });
+  return activateSyntheticCurrentPublicRouteMapSuccessor(target, { now });
 }
 
 export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { now }) {
@@ -104,11 +190,44 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
 
   const capturedAt = new Date(now.getTime() - 60_000).toISOString();
   const stamp = capturedAt.replaceAll(/[-:.]/gu, "");
-  const rawSha256 = sha256(`public-route-map-raw:${stamp}`);
-  const contentSha256 = sha256(`public-route-map-content:${stamp}`);
-  const schemaFingerprint = sha256("public-route-map-schema-v2");
   const redactedRequestFingerprint = sha256("public-route-map-request");
   const snapshotId = `${PUBLIC_SOURCE_ID}-current-${stamp}`;
+  const sourceSnapshotPath = publicSource.routeMapAdmissionEvidence?.snapshotPath;
+  const topologySnapshotId = publicSource.routeMapAdmissionEvidence?.currentTopologyAdmission?.topologySnapshotId;
+  if (typeof sourceSnapshotPath !== "string" || typeof topologySnapshotId !== "string") {
+    throw new Error("synthetic public route-map source evidence is incomplete");
+  }
+  const topologySnapshotPath = `tools/datapack/sources/${topologySnapshotId}.json`;
+  const [sourceSnapshotBytes, topologySnapshotBytes] = await Promise.all([
+    readFile(path.join(root, sourceSnapshotPath)),
+    readFile(path.join(root, topologySnapshotPath)),
+  ]);
+  const sourceSnapshot = JSON.parse(sourceSnapshotBytes);
+  const providerRecords = sourceSnapshot.positions.map((position) => ({
+    line: position.line,
+    lineId: position.lineId,
+    stationCode: position.stationCode,
+    stationName: position.stationName,
+    latitude: position.latitude,
+    longitude: position.longitude,
+    basisDate: sourceSnapshot.observedDataUpdatedAt,
+  }));
+  const rawBytes = Buffer.from(`${JSON.stringify(providerRecords)}\n`);
+  const rawSha256 = sha256(rawBytes);
+  const routeMapLayoutArtifact = buildSeoulRouteMapPositions({
+    records: providerRecords,
+    topologySnapshotBytes,
+    topologySnapshotId,
+    now: new Date(capturedAt),
+    rawSha256,
+  });
+  const routeMapLayoutArtifactBytes = jsonBytes(routeMapLayoutArtifact);
+  const layoutArtifactSha256 = sha256(Buffer.from(`${JSON.stringify(routeMapLayoutArtifact)}\n`));
+  const contentSha256 = sha256(Buffer.from(`${JSON.stringify(routeMapLayoutArtifact.rawPositions)}\n`));
+  const schemaFingerprint = sha256(JSON.stringify(Object.keys(routeMapLayoutArtifact.rawPositions[0]).sort()));
+  const layout = Object.fromEntries(SHA_KEYS.map((key) => [key, key === "layoutArtifactSha256"
+    ? layoutArtifactSha256
+    : routeMapLayoutArtifact[key]]));
   const sourceClass = freshnessPolicy.sourceClasses.find(({ sourceIds }) => sourceIds.includes(PUBLIC_SOURCE_ID));
   const freshnessExpiresAt = deriveFreshnessExpiresAt({
     policy: freshnessPolicy,
@@ -122,19 +241,15 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     retrievedAt: capturedAt,
   });
   const objectKey = `source-raw/${PUBLIC_SOURCE_ID}/${capturedAt.slice(0, 10).replaceAll("-", "")}/${rawSha256}.json`;
-  const layout = Object.fromEntries(SHA_KEYS.map((key) => [key, key.endsWith("Sha256")
-    ? sha256(`public-route-map-layout:${key}`)
-    : `test-${key}`]));
-  layout.topologySnapshotIdentity = `${layout.topologySnapshotId}:${layout.topologySnapshotSha256}`;
   const snapshot = {
     ...structuredClone(predecessor),
     snapshotId,
     sourceId: PUBLIC_SOURCE_ID,
     provider: publicSource.provider,
     retrievedAt: capturedAt,
-    sourceUpdatedAt: capturedAt,
-    rowCount: 274,
-    coverageCount: 274,
+    sourceUpdatedAt: `${routeMapLayoutArtifact.observedDataUpdatedAt}T00:00:00.000Z`,
+    rowCount: routeMapLayoutArtifact.rawPositions.length,
+    coverageCount: routeMapLayoutArtifact.rawPositions.length,
     rawSha256,
     rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/${objectKey}`,
     redactedRequestFingerprint,
@@ -146,6 +261,10 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     rawRetentionExpiresAt,
     governancePolicyVersion: governancePolicy.policyVersion,
     governancePolicySha256: sha256(governanceBytes),
+    providerRecordHashes: routeMapLayoutArtifact.rawPositions.map((record) => sha256(JSON.stringify(record))),
+    normalizedObservationSha256: sha256(routeMapLayoutArtifactBytes),
+    routeMapLayoutEvidence: layout,
+    routeMapLayoutArtifact,
     projectionMigration: {
       migrationKind: "CROSS_SOURCE_CANONICAL_REPLACEMENT",
       sourceId: PUBLIC_SOURCE_ID,
@@ -167,7 +286,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
       bucket: "easysubway-datapacks",
       objectKey,
       contentType: "application/json",
-      byteSize: 274,
+      byteSize: rawBytes.length,
       storedAt: capturedAt,
       rawRetentionExpiresAt,
     },
@@ -176,8 +295,12 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
 
   publicSource.requiredForProductionPack = true;
   publicSource.productionUseAllowed = true;
+  publicSource.coverageScope = {
+    ...publicSource.coverageScope,
+    operatorIds: [...CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS],
+  };
   publicSource.retrievedAt = capturedAt.slice(0, 10);
-  publicSource.observedDataUpdatedAt = capturedAt.slice(0, 10);
+  publicSource.observedDataUpdatedAt = routeMapLayoutArtifact.observedDataUpdatedAt;
   publicSource.admissionEvidence = {
     ...publicSource.admissionEvidence,
     snapshotId,
@@ -194,7 +317,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
       status: "ADMITTED",
       positionSnapshotId: snapshotId,
       snapshotPath: `tools/datapack/sources/${snapshotId}.json`,
-      snapshotSha256: sha256(`public-route-map-observation:${stamp}`),
+      snapshotSha256: sha256(routeMapLayoutArtifactBytes),
       rawSha256,
       contentSha256,
       ...layout,
@@ -203,16 +326,30 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   predecessorSource.requiredForProductionPack = false;
   predecessorSource.productionUseAllowed = false;
 
-  const capital = pack.packs[0];
-  const canonicalIndex = capital.sourceInventory.findIndex(({ id }) => id === PREDECESSOR_SOURCE_ID);
-  if (canonicalIndex < 0) throw new Error("synthetic public route-map canonical predecessor is absent");
-  capital.sourceInventory[canonicalIndex] = {
-    ...capital.sourceInventory[canonicalIndex],
-    id: PUBLIC_SOURCE_ID,
-    owner: publicSource.owner,
-    url: publicSource.datasetUrl,
-    coverageScope: structuredClone(publicSource.coverageScope),
-  };
+  const materializedPack = materializeSeoulRouteMapPositions({
+    baseFixture: pack,
+    snapshot: routeMapLayoutArtifact,
+    snapshotSha256: sha256(routeMapLayoutArtifactBytes),
+    topologySnapshotBytes,
+    inventory,
+    now,
+    rewritePackIdentity: false,
+    successorProviderRecordHashes: snapshot.providerRecordHashes,
+    requireSuccessorProviderRecordHashes: true,
+  });
+  const capital = materializedPack.packs[0];
+  let coverageEvidence;
+  try {
+    coverageEvidence = JSON.parse(capital.metadata.productionCoverageEvidence);
+  } catch {
+    throw new Error("synthetic public route-map coverage evidence is invalid");
+  }
+  capital.metadata.productionCoverageEvidence = JSON.stringify([
+    ...coverageEvidence.filter(({ sourceDomain }) => sourceDomain !== "route_map_positions"),
+    CURRENT_SEOUL_PUBLIC_ROUTE_MAP_COVERAGE,
+  ]);
+  Object.assign(pack, materializedPack);
+  verifyCurrentCapitalPublicRouteMapDocument(pack, snapshot, "synthetic successor fixture");
 
   const inventoryBytes = jsonBytes(inventory);
   candidate.sourceSnapshotIds[predecessorIndex] = snapshotId;
@@ -231,6 +368,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   candidate.sourceInventorySha256 = sha256(JSON.stringify(inventory));
   candidate.networkEdgeEvidence.sourceInventory.sha256 = sha256(inventoryBytes);
   const candidateBytes = jsonBytes(candidate);
+  const packBytes = jsonBytes(pack);
   Object.assign(request, {
     candidateId: candidate.candidateId,
     buildSpecSha256: sha256(candidateBytes),
@@ -240,6 +378,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   const selected = snapshots.filter(({ snapshotId: selectedId }) => selectedIds.has(selectedId));
   hashes.sourceSnapshotSetHash.value = candidate.sourceSnapshotSetHash;
   hashes.sourceInventorySha256.value = candidate.sourceInventorySha256;
+  hashes.fixturePath.sha256 = sha256(packBytes);
   hashes.sourceSnapshots.order = `release snapshot 순서: ${selected.map(({ sourceId }) => sourceId).join(" → ")}`;
   hashes.perSourceEvidence = selected.map((selectedSnapshot) => ({
     sourceId: selectedSnapshot.sourceId,
@@ -251,9 +390,10 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   }));
 
   await Promise.all([
+    writeFile(path.join(root, `tools/datapack/sources/${snapshotId}.json`), routeMapLayoutArtifactBytes),
     writeFile(path.join(root, paths.snapshots), jsonBytes(snapshots)),
     writeFile(path.join(root, paths.inventory), inventoryBytes),
-    writeFile(path.join(root, paths.pack), jsonBytes(pack)),
+    writeFile(path.join(root, paths.pack), packBytes),
     writeFile(path.join(root, paths.candidate), candidateBytes),
     writeFile(path.join(root, paths.request), jsonBytes(request)),
     writeFile(path.join(root, paths.hashes), jsonBytes(hashes)),

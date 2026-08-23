@@ -9,13 +9,8 @@ import { DatabaseSync } from "node:sqlite";
 import { zstdDecompressSync } from "node:zlib";
 
 import { canonicalJson } from "./lib/manifest-validation.mjs";
-import { projectCandidateFixtureForAccessibilityAuthority } from "./build-datapack.mjs";
+import { canonicalCurrentCapitalRouteEdgeInputJson } from "./build-current-capital-route-edge-input.mjs";
 import { emitArtifactComponents } from "./emit-artifact-components.mjs";
-import {
-  buildCurrentRouteEdgeInput,
-  buildCurrentSourceRouteEdgeInput,
-  canonicalCurrentRouteEdgeInputJson,
-} from "./build-current-route-edge-input.mjs";
 import {
   canonicalRouteEdgeEvaluationJson,
   canonicalRideEdgeSetSha256,
@@ -26,6 +21,7 @@ import {
   canonicalStationLineAccessibilityJson,
   materializeStationLineAccessibility,
 } from "./materialize-station-line-accessibility.mjs";
+import { buildCurrentCapitalAccessibilityRefreshOutputs } from "./refresh-current-capital-accessibility-full.mjs";
 import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
 
 const SCRIPT = path.resolve("tools/datapack/emit-artifact-components.mjs");
@@ -75,66 +71,38 @@ function kstInstant(milliseconds) {
   return new Date(milliseconds + 9 * 60 * 60 * 1_000).toISOString().replace("Z", "+09:00");
 }
 
-test("historical Data #9 seed는 합성 current public successor topology에 exact projection한다", async (t) => {
+test("current full-capital producer 출력은 합성 public successor의 route/evaluation 계약과 일치한다", async (t) => {
   const temp = await mkdtemp(path.join(os.tmpdir(), "current-route-edge-public-successor-"));
   t.after(() => rm(temp, { recursive: true, force: true }));
   const repositoryRoot = path.join(temp, "repository");
   await copySyntheticCurrentPublicRouteMapRepository(process.cwd(), repositoryRoot, {
     now: new Date(CURRENT_EVALUATION_AT),
   });
-  const [fixtureBytes, buildSpecBytes, stationLineBytes, materializationBytes, policyBytes] = await Promise.all([
-    readFile(path.join(repositoryRoot, "tools/datapack/release/capital-production-canonical-pack.json")),
-    readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json")),
-    readFile("tools/datapack/release/current-station-line-accessibility/station-line-input.json"),
-    readFile("tools/datapack/release/current-station-line-accessibility/station-line-accessibility.json"),
-    readFile("release/product-gates/route-edge-evaluation-policy.json"),
-  ]);
-  const policy = JSON.parse(policyBytes);
-  const buildSpec = JSON.parse(buildSpecBytes);
-  const sourceFixture = JSON.parse(fixtureBytes);
-  const buildSource = () => buildCurrentSourceRouteEdgeInput({
-    canonicalPack: sourceFixture,
-    buildSpec,
-    stationLineInput: JSON.parse(stationLineBytes),
-    materialization: JSON.parse(materializationBytes),
-    policy,
-  });
-  if (await exists("tools/datapack/release/current-capital-accessibility-transition.json")) {
-    await assert.rejects(buildSource, /CURRENT_ACCESSIBILITY_TRANSITION_BLOCKED/);
-    return;
-  }
-  const canonicalPack = await projectCandidateFixtureForAccessibilityAuthority({
-    buildSpec,
-    sourceFixture,
+  const [stationOutput, routeOutput] = await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot });
+  const policyBytes = await readFile(path.join(
     repositoryRoot,
+    "release/product-gates/route-edge-evaluation-policy.json",
+  ));
+  const policy = JSON.parse(policyBytes);
+  const stationLineInput = JSON.parse(stationOutput.bytes);
+  const input = JSON.parse(routeOutput.bytes);
+  const materialization = materializeStationLineAccessibility({
+    ...stationLineInput,
+    observedAt: CURRENT_EVALUATION_AT,
   });
-  const stationLineInput = JSON.parse(stationLineBytes);
-  assert.notEqual(stationLineInput.candidate.sourceSetSha256, buildSpec.sourceSnapshotSetHash);
-  // The legacy #9 seed remains bound to previousProduction after the full-capital candidate takes over.
-  const previousProductionBuildSpec = {
-    ...buildSpec,
-    sourceSnapshotSetHash: stationLineInput.candidate.sourceSetSha256,
-  };
-  const build = () => buildCurrentRouteEdgeInput({
-    canonicalPack,
-    buildSpec: previousProductionBuildSpec,
-    stationLineInput,
-    materialization: JSON.parse(materializationBytes),
-    policy,
-  });
-  const input = build();
-  const trackedBytes = await readFile("tools/datapack/release/current-route-edge-evaluation/route-edge-input.json", "utf8");
-  assert.equal(trackedBytes, canonicalCurrentRouteEdgeInputJson(input));
+  assert.equal(canonicalCurrentCapitalRouteEdgeInputJson(input), routeOutput.bytes.toString("utf8"));
 
-  assert.equal(input.candidate.topologySha256, undefined);
-  assert.equal(input.candidate.stationSetSha256, "d2cef87aa1eeee23a50ac94d7e784f432101e9d8936331152981dcaeb8d25dd9");
-  assert.equal(JSON.parse(stationLineBytes).candidate.stationSetSha256, "58561f44334f0fc6a48911685e3730152156b4cd5c642bfdfdcd1a652400ed9f");
+  assert.equal(
+    input.candidate.topologySha256,
+    canonicalRideEdgeSetSha256(input.routeEdges.filter(({ edgeType }) => edgeType === "RIDE")),
+  );
+  assert.equal(input.candidate.stationSetSha256, stationLineInput.candidate.stationSetSha256);
   assert.equal(input.stationLines.length, 1102);
-  assert.equal(input.routeEdges.length, 2222);
+  assert.equal(input.routeEdges.length, 2674);
   assert.deepEqual(Object.fromEntries(input.routeEdges.reduce((counts, edge) => {
     counts.set(edge.edgeType, (counts.get(edge.edgeType) ?? 0) + 1);
     return counts;
-  }, new Map())), { ENTRY: 2, EXIT: 2, RIDE: 2218 });
+  }, new Map())), { ENTRY: 213, EXIT: 213, IN_STATION_TRANSFER: 30, RIDE: 2218 });
   const localRideEdges = input.routeEdges.filter(({ edgeType, serviceClass, servicePattern }) => (
     edgeType === "RIDE" && serviceClass === "SUBWAY" && servicePattern === "LOCAL"
   ));
@@ -151,86 +119,44 @@ test("historical Data #9 seed는 합성 current public successor topology에 exa
     canonicalRideEdgeSetSha256(itxRideEdges),
     policy.rideInvariant.itxCheongchunExpress.admittedEdgeSetSha256,
   );
-  assert.throws(() => buildCurrentRouteEdgeInput({
-    canonicalPack,
-    buildSpec: previousProductionBuildSpec,
-    stationLineInput: { ...JSON.parse(stationLineBytes), stationLines: [] },
-    materialization: JSON.parse(materializationBytes),
-    policy: JSON.parse(policyBytes),
-  }), /materialization|subset|identity/i);
-  const staleOperatorMaterialization = JSON.parse(materializationBytes);
+  const evaluate = (values = {}) => evaluateRouteAccessibilityEdges({
+    ...input,
+    evaluationAt: CURRENT_EVALUATION_AT,
+    materialization,
+    ...values,
+  }, JSON.parse(policyBytes));
+  assert.equal(evaluate().denominator.edgeCount, 2674);
+  assert.throws(() => evaluate({ stationLines: [] }), /stationLines must be a non-empty array/);
+  const staleOperatorMaterialization = structuredClone(materialization);
   staleOperatorMaterialization.rows[0].operatorId = "stale-operator";
-  assert.throws(() => buildCurrentRouteEdgeInput({
-    canonicalPack,
-    buildSpec: previousProductionBuildSpec,
-    stationLineInput,
-    materialization: staleOperatorMaterialization,
-    policy: JSON.parse(policyBytes),
-  }), /materialization|subset|identity/i);
+  assert.throws(
+    () => evaluate({ materialization: staleOperatorMaterialization }),
+    /unmapped materialization row/,
+  );
 });
 
-test("current Data #9 seed는 alternate repository root의 nested projection evidence만 소비한다", async (t) => {
+test("current full-capital producer는 alternate repository root의 nested evidence drift를 거부한다", async (t) => {
   const temp = await mkdtemp(path.join(os.tmpdir(), "current-route-edge-root-"));
   t.after(() => rm(temp, { recursive: true, force: true }));
   const repositoryRoot = path.join(temp, "repository");
-  const transitionPresent = await exists("tools/datapack/release/current-capital-accessibility-transition.json");
   await copySyntheticCurrentPublicRouteMapRepository(process.cwd(), repositoryRoot, {
     now: new Date(CURRENT_EVALUATION_AT),
   });
-  for (const relative of transitionPresent ? [
-    "tools/datapack/release/current-capital-accessibility-transition.json",
-    "tools/datapack/release/current-station-line-accessibility/station-line-input.json",
-    "tools/datapack/release/current-capital-facility-source-admission.json",
-  ] : []) {
-    const destination = path.join(repositoryRoot, relative);
-    await mkdir(path.dirname(destination), { recursive: true });
-    await cp(relative, destination);
-  }
-
-  const [fixtureBytes, buildSpecBytes, stationLineBytes, materializationBytes, policyBytes] = await Promise.all([
-    readFile(path.join(repositoryRoot, "tools/datapack/release/capital-production-canonical-pack.json")),
-    readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json")),
-    readFile("tools/datapack/release/current-station-line-accessibility/station-line-input.json"),
-    readFile("tools/datapack/release/current-station-line-accessibility/station-line-accessibility.json"),
-    readFile("release/product-gates/route-edge-evaluation-policy.json"),
-  ]);
-  const buildSpec = JSON.parse(buildSpecBytes);
-  const sourceFixture = JSON.parse(fixtureBytes);
-  const buildSource = () => buildCurrentSourceRouteEdgeInput({
-    canonicalPack: sourceFixture,
-    buildSpec,
-    stationLineInput: JSON.parse(stationLineBytes),
-    materialization: JSON.parse(materializationBytes),
-    policy: JSON.parse(policyBytes),
-    repositoryRoot,
-  });
-  if (transitionPresent) {
-    await assert.rejects(buildSource, /CURRENT_ACCESSIBILITY_TRANSITION_BLOCKED/);
-    return;
-  }
+  const outputs = await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot });
+  assert.equal(JSON.parse(outputs[1].bytes).routeEdges.length, 2674);
+  const buildSpec = JSON.parse(await readFile(
+    path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"),
+    "utf8",
+  ));
   const sourceInventoryPath = path.join(repositoryRoot, buildSpec.networkEdgeEvidence.sourceInventory.path);
-  const alternateSourceInventoryBytes = Buffer.concat([await readFile(sourceInventoryPath), Buffer.from(" ")]);
-  await writeFile(sourceInventoryPath, alternateSourceInventoryBytes);
-  buildSpec.networkEdgeEvidence.sourceInventory.sha256 = hash(alternateSourceInventoryBytes);
-  const canonicalPack = await projectCandidateFixtureForAccessibilityAuthority({
-    buildSpec,
-    sourceFixture,
-    repositoryRoot,
-  });
-  const stationLineInput = JSON.parse(stationLineBytes);
-  assert.notEqual(stationLineInput.candidate.sourceSetSha256, buildSpec.sourceSnapshotSetHash);
-  const previousProductionBuildSpec = {
-    ...buildSpec,
-    sourceSnapshotSetHash: stationLineInput.candidate.sourceSetSha256,
-  };
-  const input = buildCurrentRouteEdgeInput({
-    canonicalPack,
-    buildSpec: previousProductionBuildSpec,
-    stationLineInput,
-    materialization: JSON.parse(materializationBytes),
-    policy: JSON.parse(policyBytes),
-  });
-  assert.equal(input.routeEdges.length, 2222);
+  await writeFile(sourceInventoryPath, Buffer.concat([
+    await readFile(sourceInventoryPath),
+    Buffer.from(" "),
+  ]));
+  await assert.rejects(
+    () => buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot }),
+    /source inventory|sourceInventory|mismatch/i,
+  );
 });
 
 test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만 결속한다", async (t) => {

@@ -96,8 +96,12 @@ function validateCandidate(input, stationLines) {
   const spec = input.candidateBuildSpec;
   const exitCandidate = input.exitAdmission?.candidate;
   const transition = input.sourceSetTransition;
-  const refresh = transition?.kind === "SEOUL_ACCESSIBILITY_SUCCESSOR_REFRESH";
-  assertKeys(transition, refresh
+  const seoulRefresh = transition?.kind === "SEOUL_ACCESSIBILITY_SUCCESSOR_REFRESH";
+  const staticRefresh = transition?.kind === "STATIC_NETWORK_SUCCESSOR_REFRESH";
+  const refresh = seoulRefresh || staticRefresh;
+  assertKeys(transition, staticRefresh
+    ? ["currentCandidateBytesSha256", "currentCandidateSourceSetSha256", "evidenceSourceSetSha256", "facilityAdmissionBytesSha256", "kind", "predecessorCandidateSourceSetSha256", "previousSnapshotId", "successorSourceId", "predecessorSourceId"]
+    : seoulRefresh
     ? ["currentCandidateBytesSha256", "currentCandidateSourceSetSha256", "evidenceSourceSetSha256", "facilityAdmissionBytesSha256", "kind", "predecessorCandidateSourceSetSha256", "previousSnapshotId"]
     : ["currentCandidateBytesSha256", "currentCandidateSourceSetSha256", "evidenceSourceSetSha256", "facilityAdmissionBytesSha256"], "full-capital source-set transition");
   if (typeof spec?.candidateId !== "string" || spec.candidateId === "" || !Array.isArray(spec.sourceSnapshots) || !Array.isArray(spec.sourceSnapshotIds)
@@ -110,10 +114,39 @@ function validateCandidate(input, stationLines) {
   const selectedInLedgerOrder = input.sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
   if (selectedIds.size !== 7 || selectedInLedgerOrder.length !== 7 || sha256(JSON.stringify(selectedInLedgerOrder)) !== spec.sourceSnapshotSetHash) throw new Error("full-capital candidate source-set mismatch");
   const previousSnapshotId = refresh ? transition.previousSnapshotId : null;
+  const successorSourceId = staticRefresh ? transition.successorSourceId : "seoul-metro-accessibility";
+  const predecessorSourceId = staticRefresh ? transition.predecessorSourceId : successorSourceId;
+  const successorRows = refresh ? selected.filter(({ sourceId }) => sourceId === successorSourceId) : [];
+  const predecessorRows = refresh ? input.sourceSnapshots.filter(({ snapshotId, sourceId }) =>
+    snapshotId === previousSnapshotId && sourceId === predecessorSourceId) : [];
+  if (refresh && (successorRows.length !== 1 || predecessorRows.length !== 1)) {
+    throw new Error("full-capital successor source identity mismatch");
+  }
+  if (staticRefresh) {
+    const migration = successorRows[0].projectionMigration;
+    if (migration?.migrationKind !== "CROSS_SOURCE_CANONICAL_REPLACEMENT"
+      || migration.sourceId !== successorSourceId
+      || migration.replacedSourceId !== predecessorSourceId
+      || migration.replacedSnapshotId !== previousSnapshotId
+      || migration.candidateSlotSourceId !== predecessorSourceId) {
+      throw new Error("full-capital static-network successor mismatch");
+    }
+  }
   const predecessorIds = new Set(refresh
-    ? spec.sourceSnapshotIds.map((snapshotId, index) => spec.sourceSnapshots[index].sourceId === "seoul-metro-accessibility" ? previousSnapshotId : snapshotId)
+    ? spec.sourceSnapshotIds.map((snapshotId, index) =>
+      spec.sourceSnapshots[index].sourceId === successorSourceId ? previousSnapshotId : snapshotId)
     : spec.sourceSnapshotIds.slice(0, -1));
   const predecessorInLedgerOrder = input.sourceSnapshots.filter(({ snapshotId }) => predecessorIds.has(snapshotId));
+  const currentSeoulRows = refresh ? selected.filter(({ sourceId }) =>
+    sourceId === "seoul-metro-accessibility") : [];
+  const previousSeoulSnapshotId = currentSeoulRows[0]?.previousSnapshotId;
+  const evidenceIds = refresh ? new Set(spec.sourceSnapshotIds.flatMap((snapshotId, index) => {
+    const sourceId = spec.sourceSnapshots[index].sourceId;
+    if (sourceId === "seoul-metro-transfer-distance-duration") return [];
+    if (sourceId === "seoul-metro-accessibility") return [previousSeoulSnapshotId];
+    return [sourceId === successorSourceId ? previousSnapshotId : snapshotId];
+  })) : predecessorIds;
+  const evidenceInLedgerOrder = input.sourceSnapshots.filter(({ snapshotId }) => evidenceIds.has(snapshotId));
   if (![transition.currentCandidateBytesSha256, transition.evidenceSourceSetSha256, transition.facilityAdmissionBytesSha256].every((value) => SHA.test(value ?? ""))
     || transition.currentCandidateSourceSetSha256 !== spec.sourceSnapshotSetHash
     || transition.evidenceSourceSetSha256 === spec.sourceSnapshotSetHash
@@ -121,8 +154,10 @@ function validateCandidate(input, stationLines) {
       ? !SHA.test(transition.predecessorCandidateSourceSetSha256 ?? "")
         || !nonBlank(previousSnapshotId)
         || predecessorIds.size !== 7 || predecessorInLedgerOrder.length !== 7
+        || currentSeoulRows.length !== 1 || !nonBlank(previousSeoulSnapshotId)
+        || evidenceIds.size !== 6 || evidenceInLedgerOrder.length !== 6
         || sha256(JSON.stringify(predecessorInLedgerOrder)) !== transition.predecessorCandidateSourceSetSha256
-        || sha256(JSON.stringify(predecessorInLedgerOrder.filter(({ sourceId }) => sourceId !== "seoul-metro-transfer-distance-duration"))) !== transition.evidenceSourceSetSha256
+        || sha256(JSON.stringify(evidenceInLedgerOrder)) !== transition.evidenceSourceSetSha256
       : predecessorIds.size !== 6 || predecessorInLedgerOrder.length !== 6
         || selectedInLedgerOrder.at(-1)?.sourceId !== "seoul-metro-transfer-distance-duration"
         || sha256(JSON.stringify(predecessorInLedgerOrder)) !== transition.evidenceSourceSetSha256)) throw new Error("full-capital source-set transition mismatch");

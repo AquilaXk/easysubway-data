@@ -137,7 +137,10 @@ function aliasLedger() { return { version: ALIAS_LEDGER_VERSION, entries: Object
 function providerRow(raw) { return Object.fromEntries(PROVIDER_FIELDS.map((field) => [field, raw[field]])); }
 function scopeRow(raw) { return { lineId: raw.lineId, stationCode: raw.stationCode, stationName: raw.stationName, stationId: stationId(raw.stationName) }; }
 function withStationId(raw) { return { ...raw, stationId: stationId(raw.stationName) }; }
-function orderName(raw) { return ALIASES[`${raw.line}:${raw.stationName}`] ?? raw.stationName; }
+export function canonicalSeoulRouteMapStationName(line, stationName) {
+  return ALIASES[`${line}:${stationName}`] ?? stationName;
+}
+function orderName(raw) { return canonicalSeoulRouteMapStationName(raw.line, raw.stationName); }
 function label(name, x, y) { const width = Math.max(28, [...norm(name)].length * 14), height = 22, left = Math.max(0, x - Math.floor(width / 2)), top = Math.max(0, y - 34); return { labelDx: Math.round(left + width / 2 - x), labelDy: Math.round(top + height / 2 - y), labelPolygon: [{ x: left, y: top }, { x: left + width, y: top }, { x: left + width, y: top + height }, { x: left, y: top + height }] }; }
 function counts(rows) { return Object.fromEntries(Object.keys(LINE_IDS_BY_NUMBER).map((line) => [line, rows.filter((row) => row.line === line).length])); }
 function key(raw) { return `${raw.lineId}:${raw.stationCode}`; }

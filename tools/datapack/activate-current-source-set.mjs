@@ -27,7 +27,12 @@ import { loadCapitalRouteTopologySnapshot } from "./apply-capital-route-topology
 import { addCadence } from "./freshness-policy.mjs";
 import { ROUTE_MAP_REVERIFICATION_CADENCE } from "./lib/route-map-admission-freshness.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
-import { materializeSeoulRouteMapPositions } from "./materialize-seoul-route-map-positions.mjs";
+import {
+  CURRENT_SEOUL_PUBLIC_ROUTE_MAP_COVERAGE,
+  CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS,
+  materializeSeoulRouteMapPositions,
+  verifyCurrentCapitalPublicRouteMapDocument,
+} from "./materialize-seoul-route-map-positions.mjs";
 import {
   requiresCurrentCapitalTopologyAdmission,
   withCurrentCapitalTopologyAdmissions,
@@ -359,6 +364,16 @@ function activateInventory(sourceInventory, handoff) {
   timetable.admissionEvidence.snapshotId = handoff.snapshotId;
   timetable.admissionEvidence.rawSha256 = handoff.rawSha256;
   timetable.admissionEvidence.schemaFingerprint = handoff.schemaFingerprint;
+
+  const routeMapPositions = requireOne(
+    next.sources,
+    ({ id }) => id === "seoul-metro-route-map-positions",
+    "current public route-map source",
+  );
+  routeMapPositions.coverageScope = {
+    ...routeMapPositions.coverageScope,
+    operatorIds: [...CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS],
+  };
 
   const convenience = requireOne(
     next.sources,
@@ -853,14 +868,6 @@ export function activateIncheonTopologyAdmission({
   return next;
 }
 
-const CURRENT_PUBLIC_ROUTE_MAP_COVERAGE = Object.freeze({
-  regionId: "capital",
-  operatorId: "seoul-metro",
-  sourceDomain: "route_map_positions",
-  sourceIds: ["seoul-metro-route-map-positions"],
-  evidence: "승인된 공공 좌표 snapshot과 versioned deterministic layout",
-});
-
 function withCurrentCapitalPublicRouteMapCoverage(document) {
   const pack = document?.packs?.find(({ id }) => id === "capital");
   if (!pack?.metadata || typeof pack.metadata.productionCoverageEvidence !== "string") {
@@ -878,42 +885,9 @@ function withCurrentCapitalPublicRouteMapCoverage(document) {
   }
   pack.metadata.productionCoverageEvidence = JSON.stringify([
     ...coverageEvidence.filter(({ sourceDomain }) => sourceDomain !== "route_map_positions"),
-    CURRENT_PUBLIC_ROUTE_MAP_COVERAGE,
+    CURRENT_SEOUL_PUBLIC_ROUTE_MAP_COVERAGE,
   ]);
   return document;
-}
-
-function assertCurrentCapitalPublicRouteMapDocument(document, artifact, label) {
-  const pack = document?.packs?.find(({ id }) => id === "capital");
-  const publicRows = pack?.routeMapPositions?.filter(({ sourceId }) =>
-    sourceId === "seoul-metro-route-map-positions") ?? [];
-  const coveredLineIds = new Set(publicRows.map(({ lineId }) => lineId));
-  const publicTracks = pack?.routeMapLineTracks?.filter(({ sourceId, region, lineId }) =>
-    sourceId === "seoul-metro-route-map-positions"
-      && region === "수도권"
-      && coveredLineIds.has(lineId)) ?? [];
-  let coverageEvidence;
-  try { coverageEvidence = JSON.parse(pack?.metadata?.productionCoverageEvidence ?? ""); } catch {
-    coverageEvidence = null;
-  }
-  const routeMapCoverage = coverageEvidence?.filter(({ sourceDomain }) =>
-    sourceDomain === "route_map_positions") ?? [];
-  if (pack?.id !== "capital"
-    || document.manifest?.activePack?.id !== "capital"
-    || document.manifest.activePack?.version !== pack.version
-    || !Array.isArray(artifact?.rawPositions)
-    || publicRows.length !== artifact.rawPositions.length
-    || coveredLineIds.size !== 8
-    || publicTracks.length === 0
-    || new Set(publicTracks.map(({ lineId }) => lineId)).size !== 8
-    || routeMapCoverage.length !== 1
-    || JSON.stringify(routeMapCoverage[0]) !== JSON.stringify(CURRENT_PUBLIC_ROUTE_MAP_COVERAGE)
-    || coverageEvidence?.some(({ sourceIds }) => sourceIds.includes("seoulmetro-cyberstation-route-map")) !== false
-    || pack.routeMapPositions.some(({ sourceId }) => sourceId === "seoulmetro-cyberstation-route-map")
-    || pack.sourceInventory?.filter(({ id }) => id === "seoul-metro-route-map-positions").length !== 1
-    || pack.sourceInventory?.some(({ id }) => id === "seoulmetro-cyberstation-route-map")) {
-    throw new Error(`${label} must contain the complete current public Seoul route map`);
-  }
 }
 
 function activateProductionInput({ productionInput, officialOdFareQuotes, handoff, rawArtifact, rawArtifactBytes, applyScheduleImpl }) {
@@ -1801,26 +1775,18 @@ export async function generateCurrentSourceActivation({
       || publicRouteMapSuccessor.routeMapLayoutArtifact?.topologySnapshotSha256 !== sha(capitalTopologyBytes)) {
       throw new Error("current public route map topology identity is invalid");
     }
+    const capitalAdmissions = admittedCapitalLineEvidence(
+      primary.sourceInventory,
+      capitalTopology,
+      capitalTopologySnapshotId,
+      capitalTopology.capturedAt,
+      new Date(buildNow),
+    );
     const reviewedBase = projectRetiredTransitLines(
       parseJson(await readFile(reviewedPath), "current reviewed pack"),
       productionScopePolicy.inactiveLineExclusions,
     );
-    const reviewed = withCurrentCapitalPublicRouteMapCoverage(materializeSeoulRouteMapPositions({
-      baseFixture: reviewedBase,
-      snapshot: publicRouteMapSuccessor.routeMapLayoutArtifact,
-      snapshotSha256: publicRouteMapSuccessor.normalizedObservationSha256,
-      topologySnapshotBytes: capitalTopologyBytes,
-      inventory: primary.sourceInventory,
-      now: new Date(buildNow),
-      rewritePackIdentity: false,
-      successorProviderRecordHashes: publicRouteMapSuccessor.providerRecordHashes,
-      requireSuccessorProviderRecordHashes: true,
-    }));
-    assertCurrentCapitalPublicRouteMapDocument(
-      reviewed,
-      publicRouteMapSuccessor.routeMapLayoutArtifact,
-      "current reviewed pack",
-    );
+    const reviewed = reviewedBase;
     const reviewedBytes = jsonBytes(reviewed);
     await writeFile(reviewedPath, reviewedBytes);
     const reviewedCapital = reviewed.packs?.find(({ id }) => id === "capital");
@@ -1828,13 +1794,6 @@ export async function generateCurrentSourceActivation({
     const canonical = syncCanonicalFixture(
       parseJson(canonicalBytes, "canonical pack"),
       reviewedCapital,
-    );
-    const capitalAdmissions = admittedCapitalLineEvidence(
-      primary.sourceInventory,
-      capitalTopology,
-      capitalTopologySnapshotId,
-      capitalTopology.capturedAt,
-      new Date(buildNow),
     );
     projectCapitalTopologyIntoCanonicalFixture(
       canonical,
@@ -1860,9 +1819,9 @@ export async function generateCurrentSourceActivation({
       successorProviderRecordHashes: publicRouteMapSuccessor.providerRecordHashes,
       requireSuccessorProviderRecordHashes: true,
     }));
-    assertCurrentCapitalPublicRouteMapDocument(
+    verifyCurrentCapitalPublicRouteMapDocument(
       canonicalWithPublicRouteMap,
-      publicRouteMapSuccessor.routeMapLayoutArtifact,
+      publicRouteMapSuccessor,
       "current canonical pack",
     );
     const nextCanonicalBytes = jsonBytes(canonicalWithPublicRouteMap, false);

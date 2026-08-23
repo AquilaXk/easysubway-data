@@ -4,13 +4,19 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { validateSeoulRouteMapPositionsSnapshot } from "./collect-seoul-route-map-positions.mjs";
+import {
+  canonicalSeoulRouteMapStationName,
+  validateSeoulRouteMapPositionsSnapshot,
+} from "./collect-seoul-route-map-positions.mjs";
 import { assertRouteMapAdmissionFreshness } from "./lib/route-map-admission-freshness.mjs";
 
 const SOURCE_ID = "seoul-metro-route-map-positions";
 const PACK_ID = "nationwide-seoul-route-map";
 const OPERATOR_ID = "seoul-metro";
 const REGION = "수도권";
+export const CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS = Object.freeze([
+  "incheon-transit", "korail", "operator-07a9e77a02b6", "seoul-metro",
+]);
 const LINE_META = Object.freeze({
   "line-472a81add377": { nameKo: "수도권 1호선", nameEn: "Seoul Subway Line 1", color: "#052f93", line: "1" },
   "seoul-2": { nameKo: "수도권 2호선", nameEn: "Seoul Subway Line 2", color: "#10a643", line: "2" },
@@ -22,6 +28,13 @@ const LINE_META = Object.freeze({
   "line-2b2d9eaa53d0": { nameKo: "수도권 8호선", nameEn: "Seoul Subway Line 8", color: "#e74e6d", line: "8" },
 });
 const LINE_IDS = Object.freeze(Object.keys(LINE_META));
+export const CURRENT_SEOUL_PUBLIC_ROUTE_MAP_COVERAGE = Object.freeze({
+  regionId: "capital",
+  operatorId: OPERATOR_ID,
+  sourceDomain: "route_map_positions",
+  sourceIds: [SOURCE_ID],
+  evidence: "승인된 공공 좌표 snapshot과 versioned deterministic layout",
+});
 
 export function materializeSeoulRouteMapPositions({
   baseFixture,
@@ -174,6 +187,90 @@ export function materializedSeoulRouteMapPackContentHash(pack, version) {
   return sha256(JSON.stringify({ version, content }));
 }
 
+export function verifyCurrentCapitalPublicRouteMapDocument(document, successor, label) {
+  const artifact = successor?.routeMapLayoutArtifact ?? successor;
+  const pack = document?.packs?.find(({ id }) => id === "capital");
+  const publicRows = pack?.routeMapPositions?.filter(({ sourceId }) => sourceId === SOURCE_ID) ?? [];
+  const publicTracks = pack?.routeMapLineTracks?.filter(({ sourceId }) => sourceId === SOURCE_ID) ?? [];
+  const rawPositions = artifact?.rawPositions;
+  const layoutPositions = artifact?.layoutPositions;
+  const layoutTracks = artifact?.layoutTracks;
+  let coverageEvidence;
+  try { coverageEvidence = JSON.parse(pack?.metadata?.productionCoverageEvidence ?? ""); } catch {
+    coverageEvidence = null;
+  }
+  const routeMapCoverage = coverageEvidence?.filter(({ sourceDomain }) =>
+    sourceDomain === "route_map_positions") ?? [];
+  if (pack?.id !== "capital"
+    || document.manifest?.activePack?.id !== "capital"
+    || document.manifest.activePack?.version !== pack.version
+    || !Array.isArray(rawPositions)
+    || !Array.isArray(layoutPositions)
+    || !Array.isArray(layoutTracks)
+    || publicRows.length !== rawPositions.length
+    || publicTracks.length !== layoutTracks.length
+    || new Set(publicRows.map(({ lineId }) => lineId)).size !== LINE_IDS.length
+    || new Set(publicTracks.map(({ lineId }) => lineId)).size !== LINE_IDS.length
+    || routeMapCoverage.length !== 1
+    || JSON.stringify(routeMapCoverage[0]) !== JSON.stringify(CURRENT_SEOUL_PUBLIC_ROUTE_MAP_COVERAGE)
+    || coverageEvidence?.some(({ sourceIds }) =>
+      Array.isArray(sourceIds) && sourceIds.includes("seoulmetro-cyberstation-route-map")) !== false
+    || pack.routeMapPositions.some(({ sourceId }) => sourceId === "seoulmetro-cyberstation-route-map")
+    || pack.sourceInventory?.filter(({ id }) => id === SOURCE_ID).length !== 1
+    || pack.sourceInventory?.some(({ id }) => id === "seoulmetro-cyberstation-route-map")) {
+    throw new Error(`${label} must contain the complete current public Seoul route map`);
+  }
+
+  const rawByKey = new Map(rawPositions.map((row) => [`${row.lineId}:${row.stationCode}`, row]));
+  const layoutByKey = new Map(layoutPositions.map((row) => [`${row.lineId}:${row.stationCode}`, row]));
+  const rowByKey = new Map(publicRows.map((row) => [`${row.lineId}:${row.sourceLabel}`, row]));
+  const providerRecordHashes = successor?.providerRecordHashes;
+  const layoutArtifactSha256 = successor?.routeMapLayoutEvidence?.layoutArtifactSha256
+    ?? sha256(Buffer.from(`${JSON.stringify(artifact)}\n`));
+  const stationIds = new Set(pack.stations.map(({ id }) => id));
+  const memberships = new Set(pack.stationLines.map(({ stationId, lineId }) => `${stationId}:${lineId}`));
+  if (rawByKey.size !== rawPositions.length
+    || layoutByKey.size !== layoutPositions.length
+    || rowByKey.size !== publicRows.length
+    || providerRecordHashes != null && providerRecordHashes.length !== rawPositions.length) {
+    throw new Error(`${label} must contain the complete current public Seoul route map`);
+  }
+  for (const [index, raw] of rawPositions.entries()) {
+    const layout = layoutByKey.get(`${raw.lineId}:${raw.stationCode}`);
+    const row = rowByKey.get(`${raw.lineId}:${raw.stationName}`);
+    const expectedProviderHash = providerRecordHashes?.[index] ?? sha256(JSON.stringify(raw));
+    if (!layout || !row
+      || !stationIds.has(row.stationId)
+      || !memberships.has(`${row.stationId}:${row.lineId}`)
+      || row.x !== layout.canvasX || row.y !== layout.canvasY
+      || row.labelDx !== layout.labelDx || row.labelDy !== layout.labelDy
+      || JSON.stringify(row.labelPolygon) !== JSON.stringify(layout.labelPolygon)
+      || row.sourceSha256 !== artifact.rawSha256
+      || row.providerRecordHash !== expectedProviderHash
+      || row.evidenceHash !== layoutArtifactSha256
+      || successor?.snapshotId != null && row.sourceSnapshotId !== successor.snapshotId) {
+      throw new Error(`${label} must contain the complete current public Seoul route map`);
+    }
+  }
+
+  const trackIndex = new Map();
+  for (const artifactTrack of layoutTracks) {
+    const index = trackIndex.get(artifactTrack.lineId) ?? 0;
+    trackIndex.set(artifactTrack.lineId, index + 1);
+    const matches = publicTracks.filter(({ lineId, trackIndex: actualIndex }) =>
+      lineId === artifactTrack.lineId && actualIndex === index);
+    const expectedPath = `M ${artifactTrack.points.map(({ x, y }) => `${x},${y}`).join(" L ")}`;
+    if (matches.length !== 1
+      || matches[0].region !== REGION
+      || matches[0].path !== expectedPath
+      || matches[0].sourceSha256 !== artifact.rawSha256
+      || matches[0].evidenceHash !== artifact.semanticOutputSha256) {
+      throw new Error(`${label} must contain the complete current public Seoul route map`);
+    }
+  }
+  return document;
+}
+
 function requiredSource(inventory, snapshot, snapshotSha256, layoutArtifactSha256, now) {
   const source = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
   const evidence = source?.routeMapAdmissionEvidence;
@@ -194,7 +291,7 @@ function requiredSource(inventory, snapshot, snapshotSha256, layoutArtifactSha25
     || admission.semanticInputSha256 !== snapshot.semanticInputSha256 || admission.semanticOutputSha256 !== snapshot.semanticOutputSha256
     || JSON.stringify(source.coverageScope) !== JSON.stringify({
       regionIds: ["capital"],
-      operatorIds: [OPERATOR_ID],
+      operatorIds: [...CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS],
       lineIds: [...LINE_IDS],
       sourceDomains: ["route_map_positions"],
     })
@@ -208,69 +305,41 @@ function requiredSource(inventory, snapshot, snapshotSha256, layoutArtifactSha25
 function ensureLines(pack) {
   const existing = new Set(pack.lines.map(({ id }) => id));
   for (const lineId of LINE_IDS) {
-    if (existing.has(lineId)) continue;
-    const meta = LINE_META[lineId];
-    pack.lines.push({
-      id: lineId,
-      operatorId: OPERATOR_ID,
-      nameKo: meta.nameKo,
-      nameEn: meta.nameEn,
-      color: meta.color,
-    });
+    if (!existing.has(lineId)) throw new Error(`Seoul route map canonical line is missing: ${lineId}`);
   }
-  pack.lines.sort((left, right) => left.id.localeCompare(right.id, "en"));
 }
 
 function ensureStationsAndMembership(pack, snapshot, layoutByKey) {
   const stationsById = new Map(pack.stations.map((station) => [station.id, station]));
-  const stationLineKeys = new Set(pack.stationLines.map(({ stationId, lineId }) => `${stationId}:${lineId}`));
-  const sequenceByLine = new Map(LINE_IDS.map((lineId) => [
-    lineId,
-    Math.max(0, ...pack.stationLines.filter((row) => row.lineId === lineId).map((row) => row.lineSequence)),
-  ]));
+  const canonicalStationIds = new Map();
+  for (const membership of pack.stationLines) {
+    const station = stationsById.get(membership.stationId);
+    if (!station) throw new Error(`Seoul route map membership station missing: ${membership.stationId}`);
+    const key = `${membership.lineId}:${normalizeStationName(station.nameKo)}`;
+    const ids = canonicalStationIds.get(key) ?? [];
+    ids.push(station.id);
+    canonicalStationIds.set(key, ids);
+  }
   const mapping = new Map();
   for (const rawPosition of snapshot.rawPositions) {
     const position = { ...rawPosition };
     const layout = layoutByKey.get(`${position.lineId}:${position.stationCode}`);
     if (!layout) throw new Error("Seoul route map layout station identity mismatch");
-    position.stationId = layout.stationId;
-    let station = stationsById.get(position.stationId);
-    if (!station) {
-      station = {
-        id: position.stationId,
-        nameKo: position.stationName,
-        nameEn: "",
-        normalizedName: normalizeStationName(position.stationName),
-        region: REGION,
-        latitude: position.latitude,
-        longitude: position.longitude,
-        dataQualityLevel: "LEVEL_2",
-        dataSourceType: "OFFICIAL_FILE",
-        sourceId: SOURCE_ID,
-        derivationKind: "OFFICIAL",
-        lastVerifiedAt: snapshot.capturedAt,
-      };
-      pack.stations.push(station);
-      stationsById.set(station.id, station);
-    } else if (station.latitude == null || station.longitude == null) {
+    const canonicalName = canonicalSeoulRouteMapStationName(position.line, position.stationName);
+    const existingStationIds = canonicalStationIds.get(
+      `${position.lineId}:${normalizeStationName(canonicalName)}`,
+    ) ?? [];
+    if (existingStationIds.length === 0) {
+      throw new Error(`Seoul route map canonical station is missing: ${position.lineId}:${canonicalName}`);
+    }
+    if (existingStationIds.length > 1) {
+      throw new Error(`Seoul route map canonical station is ambiguous: ${position.lineId}:${canonicalName}`);
+    }
+    position.stationId = existingStationIds[0];
+    const station = stationsById.get(position.stationId);
+    if (station.latitude == null || station.longitude == null) {
       station.latitude = position.latitude;
       station.longitude = position.longitude;
-    }
-    const membershipKey = `${station.id}:${position.lineId}`;
-    if (!stationLineKeys.has(membershipKey)) {
-      const nextSequence = (sequenceByLine.get(position.lineId) ?? 0) + 1;
-      sequenceByLine.set(position.lineId, nextSequence);
-      pack.stationLines.push({
-        stationId: station.id,
-        lineId: position.lineId,
-        stationCode: position.stationCode,
-        lineSequence: nextSequence,
-        platformInfo: "",
-        sourceId: SOURCE_ID,
-        derivationKind: "OFFICIAL",
-        lastVerifiedAt: snapshot.capturedAt,
-      });
-      stationLineKeys.add(membershipKey);
     }
     mapping.set(`${position.lineId}:${position.stationCode}`, station.id);
   }
