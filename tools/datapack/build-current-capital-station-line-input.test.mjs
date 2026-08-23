@@ -90,7 +90,7 @@ test("candidate inventory semantic hash와 authenticated raw-byte hash를 분리
 
 test("Seoul direct successor refresh proof는 기존 TRANSFER append와 같은 fan-in denominator를 유지한다", async () => {
   const input = await fixture();
-  const current = { sourceId: "seoul-metro-accessibility", snapshotId: "seoul-current", snapshotStatus: "LOCKED" };
+  const current = { sourceId: "seoul-metro-accessibility", snapshotId: "seoul-current", previousSnapshotId: "seoul-previous", snapshotStatus: "LOCKED" };
   input.sourceSnapshots[2] = { sourceId: "seoul-metro-accessibility", snapshotId: "seoul-previous", snapshotStatus: "LOCKED" };
   input.sourceSnapshots.push(current);
   input.candidateBuildSpec.sourceSnapshotIds[2] = current.snapshotId;

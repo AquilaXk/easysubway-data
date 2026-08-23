@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import test, { after } from "node:test";
 import { buildCurrentCapitalFacilitySourceAdmission, canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-current-capital-facility-source-admission.mjs";
 import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
 import { collectKricAccessibilitySnapshots } from "./collect-kric-accessibility-snapshots.mjs";
@@ -10,9 +11,22 @@ import { deriveReleaseProjection } from "./rebind-current-candidate-source-snaps
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
+import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
 
-const root = import.meta.dirname;
-const CURRENT_SOURCE_HEAD_AT = await selectedSourceHeadAt();
+const SOURCE_ROOT = import.meta.dirname;
+const REPOSITORY_ROOT = path.resolve(SOURCE_ROOT, "../..");
+const INITIAL_SOURCE_HEAD_AT = await selectedSourceHeadAt(SOURCE_ROOT);
+const FIXTURE_REPOSITORY_ROOT = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-facility-"));
+after(() => rm(FIXTURE_REPOSITORY_ROOT, { recursive: true, force: true }));
+await copySyntheticCurrentPublicRouteMapRepository(REPOSITORY_ROOT, FIXTURE_REPOSITORY_ROOT, {
+  now: new Date(INITIAL_SOURCE_HEAD_AT + 120_000),
+});
+const root = path.join(FIXTURE_REPOSITORY_ROOT, "tools/datapack");
+const CURRENT_SOURCE_HEAD_AT = await selectedSourceHeadAt(root);
+const STATIC_SOURCE_PATHS = new Set([
+  "sources/kric-provider-code-catalog-20260228.json",
+  "sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
+]);
 test("producer-neutral FACILITY admission emits the exact 213/199/639 closed matrix", async () => {
   const values = await fixture();
   const first = buildCurrentCapitalFacilitySourceAdmission(values);
@@ -207,7 +221,10 @@ test("producer-neutral FACILITY admission normalizes byte inputs before binding 
 });
 
 async function fixture({ mixed = false } = {}) {
-  const files = Object.fromEntries(await Promise.all(["release/capital-production-canonical-pack.json", "nationwide-coverage-targets.json", "sources/kric-provider-code-catalog-20260228.json", "sources/kric-nationwide-route-rosters-20260730T203926676Z.json", "source-inventory.json", "source-governance-policy.json", "../../release/product-gates/datapack-freshness-sla.json", "release/candidate-build-spec.json", "release/source-snapshots.json"].map(async (name) => [name, await readFile(path.join(root, name))])));
+  const files = Object.fromEntries(await Promise.all(["release/capital-production-canonical-pack.json", "nationwide-coverage-targets.json", "sources/kric-provider-code-catalog-20260228.json", "sources/kric-nationwide-route-rosters-20260730T203926676Z.json", "source-inventory.json", "source-governance-policy.json", "../../release/product-gates/datapack-freshness-sla.json", "release/candidate-build-spec.json", "release/source-snapshots.json"].map(async (name) => [
+    name,
+    await readFile(path.join(STATIC_SOURCE_PATHS.has(name) ? SOURCE_ROOT : root, name)),
+  ])));
   const plan = buildCurrentCapitalFacilityCollectionPlan({ canonicalPackBytes: files["release/capital-production-canonical-pack.json"], coverageTargetsBytes: files["nationwide-coverage-targets.json"], providerCodeCatalogBytes: files["sources/kric-provider-code-catalog-20260228.json"], routeRostersBytes: files["sources/kric-nationwide-route-rosters-20260730T203926676Z.json"], sourceInventoryBytes: files["source-inventory.json"] });
   const planBytes = Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(plan));
   const roster = plan.stationLineProviderMappings.map((m) => ({ stationId: m.stationId, lineId: m.lineId, railOprIsttCd: m.providerOperatorId, lnCd: m.providerLineId, stinCd: m.providerStationId, canonicalMappings: [{ artifactId: "bundled-capital", stationId: m.stationId, lineId: m.lineId }] }));
@@ -310,10 +327,10 @@ async function fixture({ mixed = false } = {}) {
   return { planBytes, canonicalPackBytes: files["release/capital-production-canonical-pack.json"], snapshotBytes, sourceInventoryBytes, sourceSnapshots, governancePolicy, governancePolicyBytes: files["source-governance-policy.json"], freshnessPolicy: freshnessSla, candidateBuildSpec, observedAt };
 }
 
-async function selectedSourceHeadAt() {
+async function selectedSourceHeadAt(datapackRoot) {
   const [buildSpec, sourceSnapshots] = await Promise.all([
-    readFile(path.join(root, "release/candidate-build-spec.json"), "utf8").then(JSON.parse),
-    readFile(path.join(root, "release/source-snapshots.json"), "utf8").then(JSON.parse),
+    readFile(path.join(datapackRoot, "release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(datapackRoot, "release/source-snapshots.json"), "utf8").then(JSON.parse),
   ]);
   const selected = buildSpec.sourceSnapshotIds.map((snapshotId) => {
     const matches = sourceSnapshots.filter((entry) => entry.snapshotId === snapshotId);

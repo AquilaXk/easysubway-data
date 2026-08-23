@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import test, { after } from "node:test";
 
 import {
   buildCurrentExitPathSourceAdmission,
@@ -20,8 +20,18 @@ import { buildCurrentCapitalFacilitySourceAdmission } from "./build-current-capi
 import { collectKricAccessibilitySnapshots } from "./collect-kric-accessibility-snapshots.mjs";
 import { deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
+import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
 
-const CURRENT_SOURCE_HEAD_AT = await selectedSourceHeadAt();
+const SOURCE_ROOT = import.meta.dirname;
+const REPOSITORY_ROOT = path.resolve(SOURCE_ROOT, "../..");
+const INITIAL_SOURCE_HEAD_AT = await selectedSourceHeadAt(SOURCE_ROOT);
+const FIXTURE_REPOSITORY_ROOT = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-exit-"));
+after(() => rm(FIXTURE_REPOSITORY_ROOT, { recursive: true, force: true }));
+await copySyntheticCurrentPublicRouteMapRepository(REPOSITORY_ROOT, FIXTURE_REPOSITORY_ROOT, {
+  now: new Date(INITIAL_SOURCE_HEAD_AT + 120_000),
+});
+const CURRENT_DATAPACK_ROOT = path.join(FIXTURE_REPOSITORY_ROOT, "tools/datapack");
+const CURRENT_SOURCE_HEAD_AT = await selectedSourceHeadAt(CURRENT_DATAPACK_ROOT);
 const CAPTURED_AT = new Date(CURRENT_SOURCE_HEAD_AT + 60_000).toISOString();
 const OBSERVED_AT = new Date(CURRENT_SOURCE_HEAD_AT + 120_000).toISOString();
 const FRESH_UNTIL = new Date(CURRENT_SOURCE_HEAD_AT + 60_000 + 24 * 60 * 60 * 1_000).toISOString();
@@ -413,11 +423,10 @@ function freshIncheonTopologyFixture(input) {
 }
 
 async function fullCapitalFixture() {
-  const root = import.meta.dirname;
   const [canonicalPackBytes, coverageTargetsBytes, providerCodeCatalogBytes, routeRostersBytes, inventoryBytes, governancePolicyBytes, freshnessPolicyBytes, productionSnapshotsBytes, productionSpecBytes] = await Promise.all([
     "release/capital-production-canonical-pack.json", "nationwide-coverage-targets.json", "sources/kric-provider-code-catalog-20260228.json",
     "sources/kric-nationwide-route-rosters-20260730T203926676Z.json", "source-inventory.json", "source-governance-policy.json", "../../release/product-gates/datapack-freshness-sla.json", "release/source-snapshots.json", "release/candidate-build-spec.json",
-  ].map((name) => readFile(path.join(root, name))));
+  ].map((name) => readFile(path.join(name.startsWith("sources/kric-") ? SOURCE_ROOT : CURRENT_DATAPACK_ROOT, name))));
   const facilityPlan = buildCurrentCapitalFacilityCollectionPlan({ canonicalPackBytes, coverageTargetsBytes, providerCodeCatalogBytes, routeRostersBytes, sourceInventoryBytes: inventoryBytes });
   const roster = facilityPlan.stationLineProviderMappings.map((entry) => ({ stationId: entry.stationId, lineId: entry.lineId, railOprIsttCd: entry.providerOperatorId, lnCd: entry.providerLineId, stinCd: entry.providerStationId, canonicalMappings: [{ artifactId: "fixture", stationId: entry.stationId, lineId: entry.lineId }] }));
   const successorAt = new Date(CURRENT_SOURCE_HEAD_AT + 60_000).toISOString();
@@ -429,7 +438,7 @@ async function fullCapitalFixture() {
   const productionSnapshots = JSON.parse(productionSnapshotsBytes); const productionSpec = JSON.parse(productionSpecBytes);
   const previousId = productionSpec.sourceSnapshots.find(({ sourceId }) => sourceId === snapshot.sourceId)?.snapshotId;
   const previous = productionSnapshots.find((entry) => entry.sourceId === snapshot.sourceId && entry.snapshotId === previousId);
-  const ledger = { schemaVersion: 1, artifactKind: "official-source-snapshot", sourceId: snapshot.sourceId, snapshotId: snapshot.snapshotId, provider: source.provider, rawSha256, rawObjectUri: "s3://fixture/raw.json", rawReceipt: { sourceId: snapshot.sourceId, snapshotId: snapshot.snapshotId, snapshotRawSha256: snapshot.rawSha256, snapshotFileSha256: sha256(snapshotBytes), rawObjectSha256: rawSha256, capturedAt: snapshot.capturedAt, storedAt: snapshot.observedAt, byteSize: 1 }, contentSha256: snapshot.contentSha256, redactedRequestFingerprint: snapshot.redactedRequestFingerprint, schemaFingerprint: snapshot.schemaFingerprint, retrievedAt: snapshot.capturedAt, sourceUpdatedAt: snapshot.observedAt, rowCount: snapshot.rowCount, coverageCount: 213, freshnessExpiresAt: snapshot.freshUntil, rawRetentionExpiresAt: new Date(CURRENT_SOURCE_HEAD_AT + 90 * 24 * 60 * 60 * 1_000).toISOString(), governancePolicyVersion: "fixture", governancePolicySha256: "b".repeat(64), adminReviewRecordHash: admission.adminReviewRecordHash, previousSnapshotId: previous.snapshotId, diffSummary: {}, snapshotStatus: "LOCKED", fetchStatus: "SUCCESS", schemaStatus: "PASS", licenseStatus: "PASS", credentialRedacted: true, redistributionAllowed: true };
+  const ledger = { schemaVersion: 1, artifactKind: "official-source-snapshot", sourceId: snapshot.sourceId, snapshotId: snapshot.snapshotId, provider: source.provider, rawSha256, rawObjectUri: "oci://fixture/easysubway-datapacks/raw.json", rawReceipt: { sourceId: snapshot.sourceId, snapshotId: snapshot.snapshotId, snapshotRawSha256: snapshot.rawSha256, snapshotFileSha256: sha256(snapshotBytes), rawObjectSha256: rawSha256, capturedAt: snapshot.capturedAt, storedAt: snapshot.observedAt, byteSize: 1 }, contentSha256: snapshot.contentSha256, redactedRequestFingerprint: snapshot.redactedRequestFingerprint, schemaFingerprint: snapshot.schemaFingerprint, retrievedAt: snapshot.capturedAt, sourceUpdatedAt: snapshot.observedAt, rowCount: snapshot.rowCount, coverageCount: 213, freshnessExpiresAt: snapshot.freshUntil, rawRetentionExpiresAt: new Date(CURRENT_SOURCE_HEAD_AT + 90 * 24 * 60 * 60 * 1_000).toISOString(), governancePolicyVersion: "fixture", governancePolicySha256: "b".repeat(64), adminReviewRecordHash: admission.adminReviewRecordHash, previousSnapshotId: previous.snapshotId, diffSummary: {}, snapshotStatus: "LOCKED", fetchStatus: "SUCCESS", schemaStatus: "PASS", licenseStatus: "PASS", credentialRedacted: true, redistributionAllowed: true };
   ledger.diffSummary = buildSnapshotDiff(previous, ledger);
   const governancePolicy = JSON.parse(governancePolicyBytes); const freshnessPolicy = JSON.parse(freshnessPolicyBytes); const sourceSnapshots = [...productionSnapshots, ledger];
   ledger.governancePolicyVersion = governancePolicy.policyVersion; ledger.governancePolicySha256 = sha256(governancePolicyBytes);
@@ -442,11 +451,10 @@ async function fullCapitalFixture() {
   return { bundle: await fullBundleFixture(), candidateBuildSpec, facilityAdmission, inventory, ledger, sourceSnapshots, successorObservedAt };
 }
 
-async function selectedSourceHeadAt() {
-  const root = import.meta.dirname;
+async function selectedSourceHeadAt(datapackRoot) {
   const [buildSpec, sourceSnapshots] = await Promise.all([
-    readFile(path.join(root, "release/candidate-build-spec.json"), "utf8").then(JSON.parse),
-    readFile(path.join(root, "release/source-snapshots.json"), "utf8").then(JSON.parse),
+    readFile(path.join(datapackRoot, "release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(datapackRoot, "release/source-snapshots.json"), "utf8").then(JSON.parse),
   ]);
   const selected = buildSpec.sourceSnapshotIds.map((snapshotId) => {
     const matches = sourceSnapshots.filter((entry) => entry.snapshotId === snapshotId);
@@ -464,7 +472,7 @@ function validInput() {
     sourceId: "base-source",
     snapshotId: "base-snapshot",
     rawSha256: "1".repeat(64),
-    rawObjectUri: "s3://example/base.json",
+    rawObjectUri: "oci://fixture/easysubway-datapacks/base.json",
     schemaFingerprint: "2".repeat(64),
     licenseStatus: "PASS",
     redistributionAllowed: true,

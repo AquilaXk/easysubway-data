@@ -120,8 +120,17 @@ export function materializeSeoulRouteMapPositions({
     }
   }
 
-  pack.sourceInventory = (pack.sourceInventory ?? []).filter(({ id }) => id !== SOURCE_ID && id !== "seoulmetro-cyberstation-route-map");
-  pack.sourceInventory.push(packSource(source, routeMapLayoutArtifact));
+  const replacedSourceIndex = (pack.sourceInventory ?? []).findIndex(
+    ({ id }) => id === SOURCE_ID || id === "seoulmetro-cyberstation-route-map",
+  );
+  pack.sourceInventory = (pack.sourceInventory ?? []).filter(
+    ({ id }) => id !== SOURCE_ID && id !== "seoulmetro-cyberstation-route-map",
+  );
+  pack.sourceInventory.splice(
+    replacedSourceIndex < 0 ? pack.sourceInventory.length : replacedSourceIndex,
+    0,
+    packSource(source, routeMapLayoutArtifact),
+  );
   pack.routeMapPositions = (pack.routeMapPositions ?? []).filter((row) => !replacementKeys.has(`${row.stationId}:${row.lineId}:${row.region}`) && row.sourceId !== "seoulmetro-cyberstation-route-map").concat(rows);
   const tracks = materializeTracks(routeMapLayoutArtifact, source);
   pack.routeMapLineTracks = (pack.routeMapLineTracks ?? []).filter((row) => !(row.region === REGION && LINE_IDS.includes(row.lineId))).concat(tracks);

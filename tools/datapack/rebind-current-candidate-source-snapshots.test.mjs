@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { cp, mkdtemp, mkdir, open, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, open, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -19,21 +19,11 @@ import { releaseRequestBindingViolations } from "./verify-release-request-bindin
 import { approvedGovernanceBindingTransition } from "./source-governance-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
-import { activateSyntheticCurrentPublicRouteMapSuccessor } from "./test-fixtures/current-public-route-map-successor.mjs";
+import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const CURRENT_SOURCE_HEAD_AT = await selectedSourceHeadAt();
 const NOW = new Date(CURRENT_SOURCE_HEAD_AT + 120_000);
-const RELATIVE = [
-  "tools/datapack/release/candidate-build-spec.json",
-  "tools/datapack/source-inventory.json",
-  "tools/datapack/release/source-snapshots.json",
-  "tools/datapack/release/capital-production-canonical-pack.json",
-  "tools/datapack/source-governance-policy.json",
-  "release/product-gates/datapack-freshness-sla.json",
-  "tools/datapack/release/release-request.json",
-  "tools/datapack/release/hash-evidence.json",
-];
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const jsonSha = (value) => sha(Buffer.from(JSON.stringify(value)));
 
@@ -88,12 +78,7 @@ function kric213Snapshot() {
 
 async function fixture() {
   const root = await mkdtemp(path.join(os.tmpdir(), "candidate-rebind-"));
-  for (const relative of RELATIVE) {
-    const target = path.join(root, relative);
-    await mkdir(path.dirname(target), { recursive: true });
-    await cp(path.join(ROOT, relative), target);
-  }
-  await activateSyntheticCurrentPublicRouteMapSuccessor(root, { now: NOW });
+  await copySyntheticCurrentPublicRouteMapRepository(ROOT, root, { now: NOW });
   const readJson = async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"));
   const snapshots = await readJson("tools/datapack/release/source-snapshots.json");
   const inventory = await readJson("tools/datapack/source-inventory.json");
