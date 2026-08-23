@@ -13,7 +13,8 @@ const MOLIT_FIELDS = ["region_code", "region_name", "operator_name", "line_name"
 const POSITION_FIELDS = ["연번", "호선", "고유역번호(외부역코드)", "역명", "위도", "경도", "작성기준일", "작성일자"];
 const MOLIT_REGIONS = Object.freeze({ "01": "수도권", "02": "부산", "03": "대구", "04": "광주", "05": "대전" });
 const sha = (value) => createHash("sha256").update(value).digest("hex");
-export const SEOUL_POSITION_SCHEMA_FINGERPRINT = sha(JSON.stringify([...POSITION_FIELDS].sort()));
+const compareStrings = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
+export const SEOUL_POSITION_SCHEMA_FINGERPRINT = sha(JSON.stringify([...POSITION_FIELDS].sort(compareStrings)));
 const fail = (code) => { throw new Error(`STATIC_NETWORK_SUCCESSOR_${code}`); };
 
 export async function collectCurrentStaticNetworkSuccessors({ fetchImpl = fetch, sourceSnapshots, observedAt, serviceKey = process.env.DATA_GO_KR_SERVICE_KEY } = {}) {
