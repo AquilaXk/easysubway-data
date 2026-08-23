@@ -167,5 +167,14 @@ jobs:
           node --test tools/datapack/run-current-kric-exit-path-source-admission.test.mjs
           node --test tools/ci/kric-exit-path-source-admission-workflow.test.mjs
 
+      - name: Set up Chrome for browser-dependent required tests
+        id: setup-chrome
+        uses: browser-actions/setup-chrome@086160e580d6e8c142ad5ba29009dcde677c6321
+        with:
+          install-dependencies: true
+
       - name: Verify and run pristine Mobile owned required tests
+        env:
+          CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+          ROUTE_MAP_CHROME_NO_SANDBOX: "1"
         run: node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile
