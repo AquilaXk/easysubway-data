@@ -34,7 +34,10 @@ import {
 } from "./collect-korail-itx-cheongchun-timetable.mjs";
 import { validateItxServiceDates } from "./collect-tago-itx-cheongchun-od.mjs";
 import { loadCapitalRouteTopologySnapshot } from "./apply-capital-route-topology-to-bundled-pack.mjs";
-import { validateIncheonStationInfoSnapshot } from "./collect-incheon-station-info.mjs";
+import {
+  requireCurrentIncheonStationCodeDerivations,
+  validateIncheonStationInfoSnapshot,
+} from "./collect-incheon-station-info.mjs";
 import { assertNoRetiredTransitReferences } from "./project-retired-transit-lines.mjs";
 import { assertCurrentCapitalAccessibilityBuildAllowed } from "./current-capital-accessibility-transition.mjs";
 import {
@@ -122,12 +125,15 @@ export function admittedIncheonTopologyEvidence({
   now = candidateBuildNow(),
   requireFresh = true,
 }) {
+  if (typeof requireFresh !== "boolean") {
+    throw new TypeError("Incheon topology admission inputs are invalid");
+  }
   const incheon = validateIncheonStationInfoSnapshot(snapshot);
+  if (requireFresh) requireCurrentIncheonStationCodeDerivations(incheon);
   if (!Buffer.isBuffer(snapshotBytes)
     || !snapshotBytes.equals(Buffer.from(`${JSON.stringify(snapshot)}\n`))
     || !(now instanceof Date)
-    || Number.isNaN(now.getTime())
-    || typeof requireFresh !== "boolean") {
+    || Number.isNaN(now.getTime())) {
     throw new TypeError("Incheon topology admission inputs are invalid");
   }
   const sources = sourceInventory?.sources?.filter(({ id }) => id === "incheon-transit-station-info") ?? [];

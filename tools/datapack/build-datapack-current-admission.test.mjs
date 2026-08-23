@@ -19,6 +19,7 @@ import {
   validateCandidateProductionScope,
   main as buildDatapackMain,
 } from "./build-datapack.mjs";
+import { currentIncheonStationCodeDerivations } from "./collect-incheon-station-info.mjs";
 import { main as buildAccessibilityAuthorityMain } from "./build-current-release-candidate-accessibility-input.mjs";
 import {
   buildCapitalTopologyReverificationEvidence,
@@ -32,6 +33,28 @@ const root = path.resolve(import.meta.dirname, "../..");
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const currentNow = new Date("2026-08-10T00:00:00.000Z");
 const PUBLIC_ROUTE_MAP_SOURCE_ID = "seoul-metro-route-map-positions";
+
+async function installCurrentIncheonTopologyClone(repositoryRoot) {
+  const inventoryPath = path.join(repositoryRoot, "tools/datapack/source-inventory.json");
+  const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
+  const source = inventory.sources.find(({ id }) => id === "incheon-transit-station-info");
+  const snapshotPath = path.join(repositoryRoot, source.routeMapAdmissionEvidence.snapshotPath);
+  const snapshot = JSON.parse(await readFile(snapshotPath, "utf8"));
+  delete snapshot.stationCodeCorrections;
+  snapshot.stationCodeDerivations = currentIncheonStationCodeDerivations();
+  const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
+  source.routeMapAdmissionEvidence.snapshotSha256 = sha256(snapshotBytes);
+  const inventoryBytes = Buffer.from(`${JSON.stringify(inventory)}\n`);
+  const specPath = path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json");
+  const spec = JSON.parse(await readFile(specPath, "utf8"));
+  spec.networkEdgeEvidence.sourceInventory.sha256 = sha256(inventoryBytes);
+  spec.sourceInventorySha256 = sha256(Buffer.from(JSON.stringify(inventory)));
+  await Promise.all([
+    writeFile(snapshotPath, snapshotBytes),
+    writeFile(inventoryPath, inventoryBytes),
+    writeFile(specPath, `${JSON.stringify(spec)}\n`),
+  ]);
+}
 const PUBLIC_ROUTE_MAP_LINE_IDS = Object.freeze([
   "line-472a81add377", "seoul-2", "line-41a8c75ec9d8", "seoul-4",
   "line-80fc4d5350d4", "line-3f41718e0833", "line-15b3b8a93259", "line-2b2d9eaa53d0",
@@ -128,6 +151,7 @@ test("candidate build spec release identity는 wall clock과 workflow run number
     now: currentNow,
     activateStaticNetwork: true,
   });
+  await installCurrentIncheonTopologyClone(directory);
   await refreshCurrentCapitalAccessibilityFull({ repositoryRoot: directory });
   const buildSpecPath = "tools/datapack/release/candidate-build-spec.json";
   const buildSpec = await readFile(path.join(directory, buildSpecPath), "utf8").then(JSON.parse);
@@ -365,12 +389,46 @@ test("source-separated current topology materialization은 Incheon 1/2 exact 116
     readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8")
       .then(JSON.parse),
   ]);
-  const snapshot = JSON.parse(snapshotBytes);
-  const admission = admittedIncheonTopologyEvidence({
+  const historicalSnapshot = JSON.parse(snapshotBytes);
+  const currentSnapshot = structuredClone(historicalSnapshot);
+  delete currentSnapshot.stationCodeCorrections;
+  currentSnapshot.stationCodeDerivations = currentIncheonStationCodeDerivations();
+  const currentSnapshotBytes = Buffer.from(`${JSON.stringify(currentSnapshot)}\n`);
+  const currentInventory = structuredClone(inventory);
+  currentInventory.sources.find(({ id }) => id === "incheon-transit-station-info")
+    .routeMapAdmissionEvidence.snapshotSha256 = sha256(currentSnapshotBytes);
+  const now = new Date("2026-08-14T16:00:00.000Z");
+  assert.doesNotThrow(() => admittedIncheonTopologyEvidence({
     sourceInventory: inventory,
-    snapshot,
+    snapshot: historicalSnapshot,
     snapshotBytes,
-    now: new Date("2026-08-14T16:00:00.000Z"),
+    now,
+    requireFresh: false,
+  }));
+  assert.throws(() => admittedIncheonTopologyEvidence({
+    sourceInventory: inventory,
+    snapshot: historicalSnapshot,
+    snapshotBytes,
+    now,
+  }), /current Incheon station code derivations are required/);
+  const legacyCorrectionSnapshot = structuredClone(currentSnapshot);
+  legacyCorrectionSnapshot.stationCodeCorrections = structuredClone(historicalSnapshot.stationCodeCorrections);
+  const legacyCorrectionBytes = Buffer.from(`${JSON.stringify(legacyCorrectionSnapshot)}\n`);
+  const legacyCorrectionInventory = structuredClone(inventory);
+  legacyCorrectionInventory.sources.find(({ id }) => id === "incheon-transit-station-info")
+    .routeMapAdmissionEvidence.snapshotSha256 = sha256(legacyCorrectionBytes);
+  assert.throws(() => admittedIncheonTopologyEvidence({
+    sourceInventory: legacyCorrectionInventory,
+    snapshot: legacyCorrectionSnapshot,
+    snapshotBytes: legacyCorrectionBytes,
+    now,
+  }), /current Incheon legacy station code corrections are forbidden/);
+  const snapshot = currentSnapshot;
+  const admission = admittedIncheonTopologyEvidence({
+    sourceInventory: currentInventory,
+    snapshot,
+    snapshotBytes: currentSnapshotBytes,
+    now,
   });
   const pack = structuredClone(fixture.packs[0]);
   const incheonLineIds = new Set(["line-42b5805f3b5a", "line-98718184f016"]);
@@ -397,9 +455,9 @@ test("source-separated current topology materialization은 Incheon 1/2 exact 116
     )), true);
   }
   assert.throws(() => admittedIncheonTopologyEvidence({
-    sourceInventory: inventory,
+    sourceInventory: currentInventory,
     snapshot,
-    snapshotBytes,
+    snapshotBytes: currentSnapshotBytes,
     now: new Date("2026-08-15T15:34:07.000Z"),
   }), /Incheon topology admission is stale/);
 });
