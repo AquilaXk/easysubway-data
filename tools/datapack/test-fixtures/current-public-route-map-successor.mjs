@@ -3,6 +3,7 @@ import { cp, lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promise
 import path from "node:path";
 
 import { buildSeoulRouteMapPositions } from "../collect-seoul-route-map-positions.mjs";
+import { currentIncheonStationCodeDerivations } from "../collect-incheon-station-info.mjs";
 import { deriveFreshnessExpiresAt } from "../freshness-policy.mjs";
 import {
   CURRENT_SEOUL_PUBLIC_ROUTE_MAP_COVERAGE,
@@ -358,6 +359,16 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   Object.assign(pack, materializedPack);
   verifyCurrentCapitalPublicRouteMapDocument(pack, snapshot, "synthetic successor fixture");
 
+  const incheonSource = inventory.sources.find(({ id }) => id === "incheon-transit-station-info");
+  const incheonSnapshotPath = incheonSource?.routeMapAdmissionEvidence?.snapshotPath;
+  if (typeof incheonSnapshotPath !== "string") {
+    throw new Error("synthetic Incheon topology source evidence is incomplete");
+  }
+  const incheonSnapshot = await readJson(root, incheonSnapshotPath);
+  delete incheonSnapshot.stationCodeCorrections;
+  incheonSnapshot.stationCodeDerivations = currentIncheonStationCodeDerivations();
+  const incheonSnapshotBytes = Buffer.from(`${JSON.stringify(incheonSnapshot)}\n`);
+  incheonSource.routeMapAdmissionEvidence.snapshotSha256 = sha256(incheonSnapshotBytes);
   const inventoryBytes = jsonBytes(inventory);
   candidate.sourceSnapshotIds[predecessorIndex] = snapshotId;
   candidate.sourceSnapshots[predecessorIndex] = deriveReleaseProjection({
@@ -398,6 +409,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
 
   await Promise.all([
     writeFile(path.join(root, `tools/datapack/sources/${snapshotId}.json`), routeMapLayoutArtifactBytes),
+    writeFile(path.join(root, incheonSnapshotPath), incheonSnapshotBytes),
     writeFile(path.join(root, paths.snapshots), jsonBytes(snapshots)),
     writeFile(path.join(root, paths.inventory), inventoryBytes),
     writeFile(path.join(root, paths.pack), packBytes),

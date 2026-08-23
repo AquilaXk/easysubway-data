@@ -6,12 +6,15 @@ import test from "node:test";
 
 import {
   collectIncheonStationInfo,
+  currentIncheonStationCodeDerivations,
   decodeIncheonStationInfoCsv,
   normalizeIncheonStationName,
   parseIncheonStationInfoCsv,
   projectLatLon,
   runIncheonStationInfoCollector,
   stationIdFor,
+  requireCurrentIncheonStationCodeDerivations,
+  validateIncheonStationInfoSnapshot,
 } from "./collect-incheon-station-info.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
@@ -59,20 +62,10 @@ test("인천 station-info collector는 1·2·7호선 71역 membership/positions�
   assert.equal(snapshot.freshUntil, "2026-07-25T06:00:00.000Z");
   assert.equal(snapshot.observedDataUpdatedAt, "2025-06-30");
   assert.equal(snapshot.rawSha256, createHash("sha256").update(csvBytes).digest("hex"));
-  assert.equal(snapshot.scopeSha256, createHash("sha256").update(JSON.stringify(snapshot.scope)).digest("hex"));
-  assert.equal(snapshot.edgesSha256, createHash("sha256").update(JSON.stringify(snapshot.edges)).digest("hex"));
-  assert.equal(
-    snapshot.positionsSha256,
-    createHash("sha256").update(JSON.stringify(snapshot.positions)).digest("hex"),
-  );
-  assert.deepEqual(snapshot.stationCodeCorrections, [{
-    lineName: "인천지하철 1호선",
-    stationName: "송도달빛축제공원",
-    rawStationCode: "3138",
-    correctedStationCode: "3139",
-    evidence: "seoulmetro-cyberstation-line-data station-cd=3139",
-  }]);
-
+  assert.equal(snapshot.scopeSha256, "b6c0040233f0d967b40edde161521c8e48d6767427246d94047b5b33536be154");
+  assert.equal(snapshot.edgesSha256, "97cabc36da6171490b7d3b7b87848200aa0aca0cd70a598027d6f07c46929af5");
+  assert.equal(snapshot.positionsSha256, "3d56d04c75db75e676516c8d3e819f67e94e8759309345505f8d451b526086bc");
+  assert.equal(snapshot.contentSha256, "710878689282ba967697cd9411940b657a51eee5499106ed884d5bd9111501a8");
   const line1 = snapshot.scope.filter(({ lineId }) => lineId === LINE1);
   const line2 = snapshot.scope.filter(({ lineId }) => lineId === LINE2);
   const line7 = snapshot.scope.filter(({ lineId }) => lineId === LINE7);
@@ -81,6 +74,26 @@ test("인천 station-info collector는 1·2·7호선 71역 membership/positions�
   assert.equal(line1.at(-1).stationName, "송도달빛축제공원");
   assert.equal(line1.at(-1).stationCode, "3139");
   assert.equal(line1.find(({ stationName }) => stationName === "국제업무지구").stationCode, "3138");
+  assert.deepEqual(snapshot.stationCodeDerivations, [
+    {
+      lineId: LINE1,
+      rawStationCode: "3138",
+      stationName: "국제업무지구",
+      internalStationCode: "3138",
+      lineSequence: 32,
+      basis: "OFFICIAL_FILE_LINE_SEQUENCE",
+      datasetId: "15083751",
+    },
+    {
+      lineId: LINE1,
+      rawStationCode: "3138",
+      stationName: "송도달빛축제공원",
+      internalStationCode: "3139",
+      lineSequence: 33,
+      basis: "OFFICIAL_FILE_LINE_SEQUENCE",
+      datasetId: "15083751",
+    },
+  ]);
   assert.equal(line2[0].stationCode, "3201");
   assert.equal(line2.at(-1).stationCode, "3227");
   assert.equal(stationIdFor("인천시청"), "station-423d71b94cdc");
@@ -126,6 +139,40 @@ test("인천 station-info collector는 1·2·7호선 71역 membership/positions�
   assert.equal(songdo.labelPolygon.length, 4);
   assert.equal(snapshot.positions.filter(({ lineId }) => lineId === LINE7).length, 11);
   assert.doesNotMatch(JSON.stringify(snapshot), /serviceKey/i);
+  assert.doesNotMatch(JSON.stringify(snapshot), /cyberstation|web/i);
+
+  const officialRows = new TextDecoder().decode(csvBytes).split("\n");
+  const internationalBusinessIndex = officialRows.findIndex((row) => row.startsWith("3138,국제업무지구,"));
+  const songdoIndex = officialRows.findIndex((row) => row.startsWith("3138,송도달빛축제공원,"));
+  [officialRows[internationalBusinessIndex], officialRows[songdoIndex]] = [
+    officialRows[songdoIndex],
+    officialRows[internationalBusinessIndex],
+  ];
+  const reordered = collectIncheonStationInfo({
+    csvBytes: Buffer.from(officialRows.join("\n"), "utf8"),
+    now: new Date("2026-07-24T06:00:00.000Z"),
+  });
+  assert.deepEqual(reordered.scope, snapshot.scope);
+  assert.deepEqual(reordered.edges, snapshot.edges);
+  assert.deepEqual(reordered.positions, snapshot.positions);
+  assert.deepEqual(reordered.stationCodeDerivations, snapshot.stationCodeDerivations);
+  assert.equal(reordered.contentSha256, snapshot.contentSha256);
+});
+
+test("인천 station-info generic validator는 historical snapshot을 읽되 current derivation을 요구하지 않는다", async () => {
+  const historical = JSON.parse(await readFile(path.join(
+    root,
+    "tools/datapack/sources/incheon-transit-station-info-20260813.json",
+  )));
+  assert.equal(validateIncheonStationInfoSnapshot(historical), historical);
+  assert.throws(
+    () => requireCurrentIncheonStationCodeDerivations(historical),
+    /current Incheon station code derivations are required/,
+  );
+  assert.deepEqual(currentIncheonStationCodeDerivations(), collectIncheonStationInfo({
+    csvBytes: await loadCsv(),
+    now: new Date("2026-07-24T06:00:00.000Z"),
+  }).stationCodeDerivations);
 });
 
 test("인천 station-info collector는 schema·좌표·중복 분기를 fail closed한다", async () => {
@@ -152,12 +199,24 @@ test("인천 station-info collector는 schema·좌표·중복 분기를 fail clo
   );
   assert.throws(() => parseIncheonStationInfoCsv(withMissingLat), /invalid coordinates/);
 
-  // 교정 없이 3138 중복이 서로 다른 역사명으로 남으면 fail-closed.
+  // 원본 3138 중복은 정해진 공식 line sequence에서만 내부 code로 분기한다.
   const withoutSongdoName = Buffer.from(
     text.replace("송도달빛축제공원", "가짜종점", 1),
     "utf8",
   );
-  assert.throws(() => parseIncheonStationInfoCsv(withoutSongdoName), /divergent duplicate|station id missing/);
+  assert.throws(() => parseIncheonStationInfoCsv(withoutSongdoName), /official line identity drift/);
+
+  const withUnexpectedDuplicate = Buffer.from(
+    text.replace("3137,센트럴파크", "3138,센트럴파크", 1),
+    "utf8",
+  );
+  assert.throws(() => parseIncheonStationInfoCsv(withUnexpectedDuplicate), /official line code sequence/);
+
+  const withGap = Buffer.from(
+    text.replace("3136,인천대입구", "3135,인천대입구", 1),
+    "utf8",
+  );
+  assert.throws(() => parseIncheonStationInfoCsv(withGap), /official line code sequence/);
 });
 
 test("인천 station-info collector CLI가 snapshot 파일을 기록한다", async (context) => {

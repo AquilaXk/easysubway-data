@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -7,9 +8,11 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import * as currentPlan from "./build-current-kric-exit-collection-plan.mjs";
+import { currentIncheonStationCodeDerivations } from "./collect-incheon-station-info.mjs";
 import { canonicalKricExitPathCollectionPlanJson } from "./plan-kric-exit-path-collection.mjs";
 
 const { buildCurrentKricExitCollectionPlan, main } = currentPlan;
+const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 const datapackRoot = fileURLToPath(new URL(".", import.meta.url));
 const currentNow = new Date("2026-08-14T16:00:00.000Z");
@@ -319,18 +322,26 @@ test("CLI는 regular input만 한 번 읽고 existing·symlink output을 덮어�
   const directory = await mkdtemp(path.join(tmpdir(), "easysubway-exit-production-plan-"));
   try {
     const output = path.join(directory, "plan.json");
-    await main(cliArgs(output), { now: currentNow });
+    const input = await readProductionBytes();
+    const sourceInventory = path.join(directory, "source-inventory.json");
+    const incheonTopology = path.join(directory, "incheon-topology.json");
+    await Promise.all([
+      writeFile(sourceInventory, input.sourceInventoryBytes, { flag: "wx" }),
+      writeFile(incheonTopology, input.incheonTopologyBytes, { flag: "wx" }),
+    ]);
+    const currentCliArgs = cliArgs(output, { sourceInventory, incheonTopology });
+    await main(currentCliArgs, { now: currentNow });
     const first = await readFile(output);
     assert.equal(first.toString("utf8"), canonicalKricExitPathCollectionPlanJson(
-      buildPlan(await readProductionBytes()),
+      buildPlan(input),
     ));
 
-    await assert.rejects(() => main(cliArgs(output), { now: currentNow }), /output must be absent/);
+    await assert.rejects(() => main(currentCliArgs, { now: currentNow }), /output must be absent/);
     assert.deepEqual(await readFile(output), first);
 
     const symlinkOutput = path.join(directory, "symlink.json");
     await symlink(output, symlinkOutput);
-    await assert.rejects(() => main(cliArgs(symlinkOutput), { now: currentNow }), /output must be absent/);
+    await assert.rejects(() => main(cliArgs(symlinkOutput, { sourceInventory, incheonTopology }), { now: currentNow }), /output must be absent/);
     assert.deepEqual(await readFile(output), first);
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -423,13 +434,20 @@ async function readProductionBytes() {
     readFile(productionPaths.sourceInventory),
     readFile(productionPaths.incheonTopology),
   ]);
+  const incheonTopology = JSON.parse(incheonTopologyBytes);
+  delete incheonTopology.stationCodeCorrections;
+  incheonTopology.stationCodeDerivations = currentIncheonStationCodeDerivations();
+  const currentIncheonTopologyBytes = Buffer.from(`${JSON.stringify(incheonTopology)}\n`);
+  const sourceInventory = JSON.parse(sourceInventoryBytes);
+  sourceInventory.sources.find(({ id }) => id === "incheon-transit-station-info")
+    .routeMapAdmissionEvidence.snapshotSha256 = sha256(currentIncheonTopologyBytes);
   return {
     canonicalPackBytes,
     coverageTargetsBytes,
     providerCodeCatalogBytes,
     routeRostersBytes,
-    sourceInventoryBytes,
-    incheonTopologyBytes,
+    sourceInventoryBytes: Buffer.from(`${JSON.stringify(sourceInventory)}\n`),
+    incheonTopologyBytes: currentIncheonTopologyBytes,
   };
 }
 
@@ -439,8 +457,8 @@ function cliArgs(output, overrides = {}) {
     "--coverage-targets", productionPaths.coverageTargets,
     "--provider-code-catalog", productionPaths.providerCodeCatalog,
     "--route-rosters", productionPaths.routeRosters,
-    "--source-inventory", productionPaths.sourceInventory,
-    "--incheon-topology", productionPaths.incheonTopology,
+    "--source-inventory", overrides.sourceInventory ?? productionPaths.sourceInventory,
+    "--incheon-topology", overrides.incheonTopology ?? productionPaths.incheonTopology,
   ];
   if (overrides.coverageSelector !== undefined) {
     args.push("--coverage-selector", overrides.coverageSelector);

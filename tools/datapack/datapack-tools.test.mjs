@@ -24,6 +24,7 @@ import {
   buildCapitalTopologyReverificationEvidence,
   projectCapitalTopologyOwnership,
 } from "./collect-capital-route-topology.mjs";
+import { currentIncheonStationCodeDerivations } from "./collect-incheon-station-info.mjs";
 import {
   deriveTopology as deriveItxTopology,
   projectItxTopologyIntoCanonicalFixture,
@@ -18349,6 +18350,14 @@ async function writeCurrentItxReleaseInputs(
   });
   const sourceInventory = JSON.parse(await readFile(buildSpec.networkEdgeEvidence.sourceInventory.path, "utf8"));
   const currentInventory = structuredClone(sourceInventory);
+  const incheonSource = currentInventory.sources.find(({ id }) => id === "incheon-transit-station-info");
+  const incheonSnapshotPath = path.join(repositoryRoot, incheonSource.routeMapAdmissionEvidence.snapshotPath);
+  const incheonSnapshot = JSON.parse(await readFile(incheonSnapshotPath, "utf8"));
+  delete incheonSnapshot.stationCodeCorrections;
+  incheonSnapshot.stationCodeDerivations = currentIncheonStationCodeDerivations();
+  const incheonSnapshotBytes = Buffer.from(`${JSON.stringify(incheonSnapshot)}\n`);
+  await writeFile(incheonSnapshotPath, incheonSnapshotBytes);
+  incheonSource.routeMapAdmissionEvidence.snapshotSha256 = sha256(incheonSnapshotBytes);
   mutateCurrentSourceContext?.({ buildSpec, currentInventory });
   await bindCandidateAccessibilityContextToFixture({
     fixture,
