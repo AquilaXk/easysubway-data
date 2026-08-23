@@ -9,6 +9,8 @@ const annualOfficialFileSourceIds = [
   "molit-railway-transfer-movement",
   "seoul-metro-transfer-distance-duration",
 ];
+const routeMapPositionSourceIds = ["seoul-metro-route-map-positions"];
+const historicalRouteMapSourceIds = ["seoulmetro-cyberstation-route-map"];
 const productionRequiredSourceIds = [
   "molit-urban-rail-full-route",
   "seoulmetro-station-line-info",
@@ -50,6 +52,15 @@ export async function stageContracts({ root = process.cwd(), fetchBundle = downl
   const annualOfficialFile = freshnessPolicy.sourceClasses?.find(({ id }) => id === "annual_official_file");
   if (JSON.stringify(annualOfficialFile?.sourceIds) !== JSON.stringify(annualOfficialFileSourceIds)) {
     throw new Error("contract bundle annual_official_file sourceIds are invalid");
+  }
+  const routeMapPositions = freshnessPolicy.sourceClasses?.find(({ id }) => id === "route_map_positions");
+  const historicalRouteMap = freshnessPolicy.sourceClasses?.find(({ id }) => id === "route_map_asset_historical");
+  if (JSON.stringify(routeMapPositions?.sourceIds) !== JSON.stringify(routeMapPositionSourceIds)
+      || routeMapPositions?.reverificationCadence !== "P90D" || routeMapPositions?.offlinePackEligible !== true
+      || JSON.stringify(historicalRouteMap?.sourceIds) !== JSON.stringify(historicalRouteMapSourceIds)
+      || historicalRouteMap?.reverificationCadence !== "P1Y" || historicalRouteMap?.offlinePackEligible !== false
+      || freshnessPolicy.sourceClasses.some(({ id }) => id === "route_map_asset")) {
+    throw new Error("contract bundle route-map freshness classes are invalid");
   }
   const productionScope = JSON.parse(bundle.resources["datapack/production-datapack-scope.json"]);
   if (JSON.stringify(productionScope.productionSourceSet?.requiredSourceIds)

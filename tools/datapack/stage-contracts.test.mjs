@@ -13,6 +13,8 @@ const annualOfficialFileSourceIds = [
   "molit-railway-transfer-movement",
   "seoul-metro-transfer-distance-duration",
 ];
+const routeMapPositionSourceIds = ["seoul-metro-route-map-positions"];
+const historicalRouteMapSourceIds = ["seoulmetro-cyberstation-route-map"];
 const productionRequiredSourceIds = [
   "molit-urban-rail-full-route",
   "seoulmetro-station-line-info",
@@ -25,7 +27,11 @@ const productionRequiredSourceIds = [
 const resources = {
   "datapack/mobility-profile-policy.json": "{\"id\":\"mobility\"}\n",
   "datapack/datapack-freshness-sla.json": `${JSON.stringify({
-    sourceClasses: [{ id: "annual_official_file", sourceIds: annualOfficialFileSourceIds }],
+    sourceClasses: [
+      { id: "route_map_positions", sourceIds: routeMapPositionSourceIds, reverificationCadence: "P90D", offlinePackEligible: true },
+      { id: "route_map_asset_historical", sourceIds: historicalRouteMapSourceIds, reverificationCadence: "P1Y", offlinePackEligible: false },
+      { id: "annual_official_file", sourceIds: annualOfficialFileSourceIds },
+    ],
   })}\n`,
   "datapack/datapack-manifest-acceptance-policy.json": "{\"id\":\"acceptance\"}\n",
   "datapack/production-datapack-scope.json": `${JSON.stringify({
@@ -94,6 +100,25 @@ test("고정된 hub bundle만 build/contracts에 원문 그대로 stage한다", 
     await assert.rejects(
       stageContracts({ root, fetchBundle: async () => invalidAnnualSourceBytes }),
       /annual_official_file sourceIds/,
+    );
+
+    const invalidRouteMapResources = structuredClone(resources);
+    invalidRouteMapResources["datapack/datapack-freshness-sla.json"] = `${JSON.stringify({
+      sourceClasses: [
+        { id: "route_map_asset", sourceIds: historicalRouteMapSourceIds, reverificationCadence: "P1Y", offlinePackEligible: true },
+        { id: "annual_official_file", sourceIds: annualOfficialFileSourceIds },
+      ],
+    })}\n`;
+    const invalidRouteMapBytes = Buffer.from(`${JSON.stringify({
+      schemaVersion: 1,
+      bundleVersion: "1.0.0",
+      resources: invalidRouteMapResources,
+    }, null, 2)}\n`);
+    lock.sha256 = createHash("sha256").update(invalidRouteMapBytes).digest("hex");
+    writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
+    await assert.rejects(
+      stageContracts({ root, fetchBundle: async () => invalidRouteMapBytes }),
+      /route-map freshness classes/,
     );
 
     const invalidProductionScopeResources = structuredClone(resources);
