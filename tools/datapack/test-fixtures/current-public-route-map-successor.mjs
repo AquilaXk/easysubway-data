@@ -15,6 +15,7 @@ import { deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
 
 const PUBLIC_SOURCE_ID = "seoul-metro-route-map-positions";
 const PREDECESSOR_SOURCE_ID = "seoulmetro-cyberstation-route-map";
+const MOLIT_SOURCE_ID = "molit-urban-rail-full-route";
 const SHA_KEYS = Object.freeze([
   "layoutAlgorithmVersion", "topologySnapshotId", "topologySnapshotSha256",
   "topologySnapshotIdentity", "lineOrderSha256", "aliasLedgerVersion", "aliasLedgerSha256",
@@ -399,4 +400,96 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     writeFile(path.join(root, paths.hashes), jsonBytes(hashes)),
   ]);
   return { snapshotId, predecessorSnapshotId: predecessor.snapshotId };
+}
+
+export async function activateSyntheticCurrentStaticNetworkSuccessors(root, { now }) {
+  const routeMap = await activateSyntheticCurrentPublicRouteMapSuccessor(root, { now });
+  const paths = {
+    candidate: "tools/datapack/release/candidate-build-spec.json",
+    request: "tools/datapack/release/release-request.json",
+    hashes: "tools/datapack/release/hash-evidence.json",
+    snapshots: "tools/datapack/release/source-snapshots.json",
+    inventory: "tools/datapack/source-inventory.json",
+    governance: "tools/datapack/source-governance-policy.json",
+    freshness: "release/product-gates/datapack-freshness-sla.json",
+  };
+  const [candidate, request, hashes, snapshots, inventory, governanceBytes, freshnessPolicy] = await Promise.all([
+    readJson(root, paths.candidate), readJson(root, paths.request), readJson(root, paths.hashes),
+    readJson(root, paths.snapshots), readJson(root, paths.inventory), readFile(path.join(root, paths.governance)),
+    readJson(root, paths.freshness),
+  ]);
+  const governancePolicy = JSON.parse(governanceBytes);
+  const molitIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === MOLIT_SOURCE_ID);
+  const predecessor = snapshots.find(({ snapshotId }) => snapshotId === candidate.sourceSnapshotIds[molitIndex]);
+  const source = inventory.sources.find(({ id }) => id === MOLIT_SOURCE_ID);
+  if (molitIndex < 0 || !predecessor || !source) throw new Error("synthetic MOLIT successor predecessor fixture is incomplete");
+  const snapshotId = `${MOLIT_SOURCE_ID}-current-${now.toISOString().replaceAll(/[-:.]/gu, "")}`;
+  const successor = {
+    ...structuredClone(predecessor),
+    snapshotId,
+    retrievedAt: now.toISOString(),
+    previousSnapshotId: predecessor.snapshotId,
+    diffSummary: { status: "NO_CHANGE", rawHashChanged: false, schemaHashChanged: false, requestHashChanged: false, sourceUpdatedAtChanged: false, rowDelta: 0, coverageDelta: 0 },
+    rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/${MOLIT_SOURCE_ID}/${now.toISOString().slice(0, 10).replaceAll("-", "")}/${predecessor.rawSha256}.csv`,
+    projectionMigration: {
+      schemaVersion: 1,
+      artifactKind: "source-projection-migration-evidence",
+      migrationKind: "LEGACY_SAMPLE_TO_FULL_CONSUMED_FIELDS",
+      sourceId: MOLIT_SOURCE_ID,
+      legacySnapshotId: predecessor.snapshotId,
+      legacyRawSha256: predecessor.rawSha256,
+      legacySchemaFingerprint: predecessor.schemaFingerprint,
+      legacyProviderRecordHashes: predecessor.providerRecordHashes,
+      fullProjectionSha256: predecessor.contentSha256 ?? sha256(JSON.stringify(predecessor.providerRecordHashes)),
+      fullProjectionSchemaFingerprint: predecessor.schemaFingerprint,
+      fullProjectionRowCount: predecessor.rowCount,
+      newSnapshotId: snapshotId,
+    },
+  };
+  snapshots.push(successor);
+  source.retrievedAt = now.toISOString().slice(0, 10);
+  source.admissionEvidence = {
+    ...source.admissionEvidence,
+    snapshotId,
+    rawSha256: successor.rawSha256,
+    schemaFingerprint: successor.schemaFingerprint,
+  };
+  const inventoryBytes = jsonBytes(inventory);
+  candidate.sourceSnapshotIds[molitIndex] = snapshotId;
+  candidate.sourceSnapshots[molitIndex] = deriveReleaseProjection({
+    snapshot: successor,
+    sourceInventory: inventory,
+    governancePolicy,
+    governancePolicyBytes: governanceBytes,
+    freshnessPolicy,
+    nowMillis: now.getTime(),
+  });
+  const selectedIds = new Set(candidate.sourceSnapshotIds);
+  const selected = snapshots.filter(({ snapshotId: selectedId }) => selectedIds.has(selectedId));
+  candidate.sourceSnapshotSetHash = sha256(JSON.stringify(selected));
+  candidate.sourceInventorySha256 = sha256(JSON.stringify(inventory));
+  candidate.networkEdgeEvidence.sourceInventory.sha256 = sha256(inventoryBytes);
+  const candidateBytes = jsonBytes(candidate);
+  Object.assign(request, {
+    buildSpecSha256: sha256(candidateBytes),
+    sourceSnapshotSetHash: candidate.sourceSnapshotSetHash,
+  });
+  hashes.sourceSnapshotSetHash.value = candidate.sourceSnapshotSetHash;
+  hashes.sourceInventorySha256.value = candidate.sourceInventorySha256;
+  hashes.sourceSnapshots.order = `release snapshot 순서: ${selected.map(({ sourceId }) => sourceId).join(" → ")}`;
+  hashes.perSourceEvidence = selected.map((selectedSnapshot) => ({
+    sourceId: selectedSnapshot.sourceId,
+    snapshotId: selectedSnapshot.snapshotId,
+    rawSha256: selectedSnapshot.rawSha256,
+    adminReviewRecordHash: inventory.sources.find(({ id }) => id === selectedSnapshot.sourceId).admissionEvidence.adminReviewRecordHash,
+    perSourceSnapshotSetHash: sha256(JSON.stringify([selectedSnapshot])),
+  }));
+  await Promise.all([
+    writeFile(path.join(root, paths.snapshots), jsonBytes(snapshots)),
+    writeFile(path.join(root, paths.inventory), inventoryBytes),
+    writeFile(path.join(root, paths.candidate), candidateBytes),
+    writeFile(path.join(root, paths.request), jsonBytes(request)),
+    writeFile(path.join(root, paths.hashes), jsonBytes(hashes)),
+  ]);
+  return { routeMap, molit: { snapshotId, predecessorSnapshotId: predecessor.snapshotId } };
 }

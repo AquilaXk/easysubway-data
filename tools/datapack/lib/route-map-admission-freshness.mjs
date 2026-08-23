@@ -22,3 +22,18 @@ export function assertRouteMapAdmissionFreshness(evidence, now, sourceId) {
   }
   return observedNow;
 }
+
+export function assertCurrentTopologyAdmissionFreshness(admission, snapshot, now) {
+  const reviewedAt = requiredUtcInstant(admission?.reviewedAt, "topology admission reviewedAt");
+  const admissionFreshUntil = requiredUtcInstant(admission?.freshUntil, "topology admission freshUntil");
+  const capturedAt = requiredUtcInstant(snapshot?.capturedAt, "topology snapshot capturedAt");
+  const snapshotFreshUntil = requiredUtcInstant(snapshot?.freshUntil, "topology snapshot freshUntil");
+  if (reviewedAt !== capturedAt || admissionFreshUntil !== snapshotFreshUntil) {
+    throw new Error("topology admission freshness identity is invalid");
+  }
+  const observedNow = now instanceof Date ? now.getTime() : Number.NaN;
+  if (!Number.isFinite(observedNow) || observedNow < capturedAt || observedNow >= snapshotFreshUntil) {
+    throw new Error("topology admission snapshot is stale or future-dated");
+  }
+  return observedNow;
+}

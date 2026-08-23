@@ -12,6 +12,11 @@ import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
 import { validateSeoulRouteMapPositionsSnapshot } from "./collect-seoul-route-map-positions.mjs";
+import {
+  assertCurrentMolitFullRouteCompleteness,
+  assertCurrentSeoulPositionProjectionCompleteness,
+} from "./lib/static-network-successor-completeness.mjs";
+import { assertCurrentTopologyAdmissionFreshness } from "./lib/route-map-admission-freshness.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const TARGETS = Object.freeze(["seoul-metro-route-map-positions", "molit-urban-rail-full-route"]);
@@ -105,6 +110,8 @@ function assertTwoObservations(observations) {
       throw new Error("static network OCI receipt binding is invalid");
     }
     const observation = parse(snapshotBytes, "static network normalized observation");
+    if (snapshot.sourceId === TARGETS[0]) assertCurrentSeoulPositionProjectionCompleteness(observation?.normalizedProjection);
+    if (snapshot.sourceId === TARGETS[1]) assertCurrentMolitFullRouteCompleteness(observation?.normalizedProjection);
     const projectionBytes = Buffer.from(`${JSON.stringify(observation?.normalizedProjection)}\n`);
     const providerRecordHashes = Array.isArray(observation?.normalizedProjection) ? projectionRecordHashes(snapshot.sourceId, observation.normalizedProjection) : [];
     const expectedSchema = snapshot.sourceId === TARGETS[0]
@@ -151,6 +158,7 @@ export async function buildStaticNetworkSuccessorOutputs({ repositoryRoot = ROOT
   if (!topologyAdmission || typeof topologyAdmission.topologySnapshotId !== "string" || !SHA.test(topologyAdmission.topologyContentSha256 ?? "")) throw new Error("static network topology admission is invalid");
   const topologyRelative = `tools/datapack/sources/${topologyAdmission.topologySnapshotId}.json`; const topologyBytes = await bytes(target(root, topologyRelative), "static network topology"); const inputs = [...baseInputs, { relative: topologyRelative, bytes: topologyBytes }]; let topology;
   try { topology = JSON.parse(topologyBytes); } catch { throw new Error("static network topology artifact is invalid"); }
+  assertCurrentTopologyAdmissionFreshness(topologyAdmission, topology, now);
   const requiredLineIds = ["line-472a81add377", "seoul-2", "line-41a8c75ec9d8", "seoul-4", "line-80fc4d5350d4", "line-3f41718e0833", "line-15b3b8a93259", "line-2b2d9eaa53d0"].sort(compareStrings);
   const lineages = topologyAdmission.topologyLineages?.map(({ sourceId, snapshotId, contentSha256, lineId }) => ({ sourceId, snapshotId, contentSha256, lineId })).sort((a, b) => compareStrings(JSON.stringify(a), JSON.stringify(b)));
   if (topology?.sourceId !== "capital-route-topology" || topology.artifactKind !== "capital-route-topology-snapshot" || topology.official !== true || topology.fixture !== false || topology.contentSha256 !== topologyAdmission.topologyContentSha256 || topologyAdmission.topologySnapshotId !== `capital-route-topology-${topologyAdmission.topologySnapshotId.slice(-8)}` || !Array.isArray(lineages) || JSON.stringify(lineages) !== JSON.stringify(requiredLineIds.map((lineId) => ({ sourceId: "capital-route-topology", snapshotId: topologyAdmission.topologySnapshotId, contentSha256: topologyAdmission.topologyContentSha256, lineId })).sort((a, b) => compareStrings(JSON.stringify(a), JSON.stringify(b))))) throw new Error("static network topology identity is invalid");

@@ -48,7 +48,7 @@ function currentSuccessorGateFixture() {
     diffSummary: null,
   };
   const molitRawSha256 = sha256("current-full-molit-raw");
-  const molitHashes = Array.from({ length: 6 }, (_, index) => sha256(`current-molit:${index}`));
+  const molitHashes = Array.from({ length: 1103 }, (_, index) => sha256(`current-molit:${index}`));
   const molit = {
     ...oldMolit,
     snapshotId: "molit-urban-rail-full-route-current-20260822T000000000Z",
@@ -131,12 +131,12 @@ function currentSuccessorGateFixture() {
     sourceId: "seoul-metro-route-map-positions",
     retrievedAt: "2026-08-22T00:00:00.000Z",
     sourceUpdatedAt: "2025-08-14T00:00:00.000Z",
-    rowCount: 2,
-    coverageCount: 2,
+    rowCount: 276,
+    coverageCount: 276,
     rawSha256: positionRawSha256,
     schemaFingerprint: sha256("current-public-position-schema"),
     redactedRequestFingerprint: sha256("current-public-position-request"),
-    providerRecordHashes: [sha256("position:1"), sha256("position:2")],
+    providerRecordHashes: Array.from({ length: 276 }, (_, index) => sha256(`position:${index}`)),
     contentSha256: sha256("current-public-position-content"),
     normalizedObservationSha256: sha256("normalized-position-observation"),
     previousSnapshotId: null,
@@ -218,7 +218,7 @@ function currentSuccessorGateFixture() {
 test("current activation은 full MOLIT·public layout v2·exact OCI successor heads만 수용한다", () => {
   const fixture = currentSuccessorGateFixture();
   const result = verifyCurrentStaticNetworkSuccessorHeads(fixture);
-  assert.equal(result.molit.rowCount, 6);
+  assert.equal(result.molit.rowCount, 1103);
   assert.equal(result.positions.sourceId, "seoul-metro-route-map-positions");
 
   const reducedMolit = structuredClone(fixture);
@@ -229,14 +229,26 @@ test("current activation은 full MOLIT·public layout v2·exact OCI successor he
   const predecessor = reducedMolit.sourceSnapshots.find(
     ({ snapshotId }) => snapshotId === molit.previousSnapshotId,
   );
-  molit.rowCount = 5;
-  molit.coverageCount = 5;
-  molit.providerRecordHashes = molit.providerRecordHashes.slice(0, 5);
-  molit.projectionMigration.fullProjectionRowCount = 5;
+  molit.rowCount = 1102;
+  molit.coverageCount = 1102;
+  molit.providerRecordHashes = molit.providerRecordHashes.slice(0, 1102);
+  molit.projectionMigration.fullProjectionRowCount = 1102;
   molit.diffSummary = buildSnapshotDiff(predecessor, molit);
   assert.throws(
     () => verifyCurrentStaticNetworkSuccessorHeads(reducedMolit),
     /current full route successor binding is invalid/,
+  );
+
+  const reducedPositions = structuredClone(fixture);
+  const positions = reducedPositions.sourceSnapshots.find(
+    ({ sourceId }) => sourceId === "seoul-metro-route-map-positions",
+  );
+  positions.rowCount = 275;
+  positions.coverageCount = 275;
+  positions.providerRecordHashes.pop();
+  assert.throws(
+    () => verifyCurrentStaticNetworkSuccessorHeads(reducedPositions),
+    /current public route map successor binding is invalid/,
   );
 
   const driftedLayout = structuredClone(fixture);

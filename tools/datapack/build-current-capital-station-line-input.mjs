@@ -25,6 +25,7 @@ const FILES = Object.freeze({
   policy: "release/product-gates/route-edge-evaluation-policy.json",
 });
 const SHA = /^[a-f0-9]{64}$/u;
+const MOLIT = "molit-urban-rail-full-route";
 const BLOCKED = { stationId: "station-b35616704ce3", lineId: "seoul-2" };
 
 export function buildCurrentCapitalStationLineInput(input) {
@@ -124,17 +125,31 @@ function validateCandidate(input, stationLines) {
   }
   if (staticRefresh) {
     const migration = successorRows[0].projectionMigration;
+    const molitRows = selected.filter(({ sourceId }) => sourceId === MOLIT);
+    const molit = molitRows[0];
+    const molitMigration = molit?.projectionMigration;
+    const previousMolitSnapshotId = molit?.previousSnapshotId;
     if (migration?.migrationKind !== "CROSS_SOURCE_CANONICAL_REPLACEMENT"
       || migration.sourceId !== successorSourceId
       || migration.replacedSourceId !== predecessorSourceId
       || migration.replacedSnapshotId !== previousSnapshotId
-      || migration.candidateSlotSourceId !== predecessorSourceId) {
+      || migration.candidateSlotSourceId !== predecessorSourceId
+      || molitRows.length !== 1
+      || molitMigration?.migrationKind !== "LEGACY_SAMPLE_TO_FULL_CONSUMED_FIELDS"
+      || molitMigration.sourceId !== MOLIT
+      || molitMigration.legacySnapshotId !== previousMolitSnapshotId
+      || !nonBlank(previousMolitSnapshotId)
+      || input.sourceSnapshots.filter(({ snapshotId, sourceId }) =>
+        snapshotId === previousMolitSnapshotId && sourceId === MOLIT).length !== 1) {
       throw new Error("full-capital static-network successor mismatch");
     }
   }
+  const staticMolit = staticRefresh ? selected.find(({ sourceId }) => sourceId === MOLIT) : null;
   const predecessorIds = new Set(refresh
     ? spec.sourceSnapshotIds.map((snapshotId, index) =>
-      spec.sourceSnapshots[index].sourceId === successorSourceId ? previousSnapshotId : snapshotId)
+      spec.sourceSnapshots[index].sourceId === successorSourceId ? previousSnapshotId
+        : staticRefresh && spec.sourceSnapshots[index].sourceId === MOLIT ? staticMolit.previousSnapshotId
+        : snapshotId)
     : spec.sourceSnapshotIds.slice(0, -1));
   const predecessorInLedgerOrder = input.sourceSnapshots.filter(({ snapshotId }) => predecessorIds.has(snapshotId));
   const currentSeoulRows = refresh ? selected.filter(({ sourceId }) =>
@@ -144,7 +159,9 @@ function validateCandidate(input, stationLines) {
     const sourceId = spec.sourceSnapshots[index].sourceId;
     if (sourceId === "seoul-metro-transfer-distance-duration") return [];
     if (sourceId === "seoul-metro-accessibility") return [previousSeoulSnapshotId];
-    return [sourceId === successorSourceId ? previousSnapshotId : snapshotId];
+    return [sourceId === successorSourceId ? previousSnapshotId
+      : staticRefresh && sourceId === MOLIT ? staticMolit.previousSnapshotId
+      : snapshotId];
   })) : predecessorIds;
   const evidenceInLedgerOrder = input.sourceSnapshots.filter(({ snapshotId }) => evidenceIds.has(snapshotId));
   if (![transition.currentCandidateBytesSha256, transition.evidenceSourceSetSha256, transition.facilityAdmissionBytesSha256].every((value) => SHA.test(value ?? ""))

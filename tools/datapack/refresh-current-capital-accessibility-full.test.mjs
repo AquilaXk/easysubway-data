@@ -7,7 +7,7 @@ import test from "node:test";
 
 import { buildCurrentCapitalAccessibilityRefreshOutputs, commitCurrentCapitalAccessibilityRefresh, refreshCurrentCapitalAccessibilityFull } from "./refresh-current-capital-accessibility-full.mjs";
 import { readStableRegularFile } from "./rebind-current-candidate-source-snapshots.mjs";
-import { activateSyntheticCurrentPublicRouteMapSuccessor } from "./test-fixtures/current-public-route-map-successor.mjs";
+import { activateSyntheticCurrentStaticNetworkSuccessors } from "./test-fixtures/current-public-route-map-successor.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const OUTPUTS = [
@@ -33,6 +33,19 @@ test("activated full-capital inputs are rebuilt across the exact public static-n
   assert.deepEqual(route.routeEdges, beforeRoute.routeEdges);
   assert.equal(station.evidenceRows.length, 641);
   assert.equal(route.routeEdges.length, 2674);
+});
+
+test("atomic route-map and MOLIT successors refresh the exact two-source predecessor boundary", async (t) => {
+  const root = await stagedRefreshRepository(t);
+  const beforeStation = JSON.parse(await readFile(path.join(root, OUTPUTS[0]), "utf8"));
+  const candidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
+
+  const outputs = await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root });
+  const [station, route] = outputs.map(({ bytes }) => JSON.parse(bytes));
+
+  assert.notEqual(beforeStation.candidate.sourceSetSha256, candidate.sourceSnapshotSetHash);
+  assert.equal(station.candidate.sourceSetSha256, candidate.sourceSnapshotSetHash);
+  assert.equal(route.candidate.sourceSetSha256, candidate.sourceSnapshotSetHash);
 });
 
 test("two-file refresh transaction rolls back a partial replacement without residue", async (t) => {
@@ -139,7 +152,7 @@ async function stagedRefreshRepository(t) {
     const target = path.join(root, relative); await mkdir(path.dirname(target), { recursive: true }); await cp(path.join(ROOT, relative), target);
   }
   await cp(path.join(ROOT, "tools/datapack/sources"), path.join(root, "tools/datapack/sources"), { recursive: true });
-  await activateSyntheticCurrentPublicRouteMapSuccessor(root, {
+  await activateSyntheticCurrentStaticNetworkSuccessors(root, {
     now: new Date("2026-08-22T09:45:18.609Z"),
   });
   const candidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));

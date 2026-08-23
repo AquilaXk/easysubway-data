@@ -28,6 +28,10 @@ import { addCadence } from "./freshness-policy.mjs";
 import { ROUTE_MAP_REVERIFICATION_CADENCE } from "./lib/route-map-admission-freshness.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import {
+  CURRENT_MOLIT_FULL_ROUTE_ROW_COUNT,
+  CURRENT_SEOUL_PUBLIC_POSITION_COUNT,
+} from "./lib/static-network-successor-completeness.mjs";
+import {
   CURRENT_SEOUL_PUBLIC_ROUTE_MAP_COVERAGE,
   CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS,
   materializeSeoulRouteMapPositions,
@@ -189,7 +193,7 @@ export function verifyCurrentStaticNetworkSuccessorHeads({ sourceSnapshots, sour
   const migration = molit.projectionMigration;
   if (molit.sourceId !== "molit-urban-rail-full-route"
     || !Array.isArray(molit.providerRecordHashes)
-    || molit.rowCount <= 5
+    || molit.rowCount !== CURRENT_MOLIT_FULL_ROUTE_ROW_COUNT
     || molit.coverageCount !== molit.rowCount
     || molit.providerRecordHashes.length !== molit.rowCount
     || molit.providerRecordHashes.some((value) => !SHA256.test(value ?? ""))
@@ -220,6 +224,7 @@ export function verifyCurrentStaticNetworkSuccessorHeads({ sourceSnapshots, sour
   if (positions.sourceId !== "seoul-metro-route-map-positions"
     || positions.previousSnapshotId !== null
     || positions.diffSummary !== null
+    || positions.rowCount !== CURRENT_SEOUL_PUBLIC_POSITION_COUNT
     || !Array.isArray(positions.providerRecordHashes)
     || positions.providerRecordHashes.length !== positions.rowCount
     || positions.providerRecordHashes.some((value) => !SHA256.test(value ?? ""))

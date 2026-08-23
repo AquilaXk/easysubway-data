@@ -4,6 +4,7 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  assertCurrentTopologyAdmissionFreshness,
   assertRouteMapAdmissionFreshness,
   ROUTE_MAP_REVERIFICATION_CADENCE,
   SEOUL_PUBLIC_ROUTE_MAP_REVERIFICATION_CADENCE,
@@ -68,4 +69,27 @@ test("서울 공공 route-map admission은 source SLA의 P90D 반개구간만 �
     new Date(publicEvidence.capturedAt),
     publicSourceId,
   ));
+});
+
+test("현재 topology admission과 snapshot은 동일한 검토 시각·만료 시각의 반개구간만 허용한다", () => {
+  const admission = {
+    reviewedAt: "2026-08-14T15:34:07.000Z",
+    freshUntil: "2026-08-15T15:34:07.000Z",
+  };
+  const snapshot = {
+    capturedAt: admission.reviewedAt,
+    freshUntil: admission.freshUntil,
+  };
+  assert.doesNotThrow(() => assertCurrentTopologyAdmissionFreshness(
+    admission, snapshot, new Date(admission.reviewedAt),
+  ));
+  assert.throws(() => assertCurrentTopologyAdmissionFreshness(
+    admission, snapshot, new Date(admission.freshUntil),
+  ), /topology admission snapshot is stale or future-dated/);
+  assert.throws(() => assertCurrentTopologyAdmissionFreshness(
+    { ...admission, freshUntil: "2026-08-16T15:34:07.000Z" }, snapshot, new Date(admission.reviewedAt),
+  ), /topology admission freshness identity is invalid/);
+  assert.throws(() => assertCurrentTopologyAdmissionFreshness(
+    { ...admission, reviewedAt: "2026-08-14T15:34:08.000Z" }, snapshot, new Date(admission.reviewedAt),
+  ), /topology admission freshness identity is invalid/);
 });

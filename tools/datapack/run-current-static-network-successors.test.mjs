@@ -6,21 +6,22 @@ import path from "node:path";
 import test from "node:test";
 
 import { runCurrentStaticNetworkSuccessors } from "./run-current-static-network-successors.mjs";
+import { projectPositions } from "./collect-current-static-network-successors.mjs";
 import { parseSeoulRouteMapPositionsCsv } from "./collect-seoul-route-map-positions.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 
 const repositoryRoot = path.resolve(import.meta.dirname, "../..");
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const molitBaseline = await readFile(path.join(repositoryRoot, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv"));
-const firstRowEnd = molitBaseline.indexOf(0x0a, molitBaseline.indexOf(0x0a) + 1);
-const molitRaw = molitBaseline.subarray(0, firstRowEnd + 1);
+const molitRaw = molitBaseline;
 const molitRecords = new TextDecoder("euc-kr").decode(molitRaw).trim().split(/\r?\n/u).slice(1).map((row) => {
   const [region_code, region_name, operator_name, line_name, station_sequence, station_name] = row.split(",").map((value) => value.trim());
   return { region_code, region_name, operator_name, line_name, station_sequence: Number(station_sequence), station_name };
 });
 const positionCsv = await readFile(path.join(repositoryRoot, "tools/datapack/fixtures/seoul-route-map-positions-raw/data-go-15099316.csv"));
 const positionRows = parseSeoulRouteMapPositionsCsv(positionCsv).rawPositions.map(({ line, stationCode, stationName, latitude, longitude, basisDate }, index) => ({ "연번": `${index + 1}`, "호선": line, "고유역번호(외부역코드)": stationCode, "역명": stationName, "위도": `${latitude}`, "경도": `${longitude}`, "작성기준일": basisDate }));
-const positionRecords = positionRows.map((row) => ({ serial: Number(row["연번"]), line: row["호선"], stationCode: row["고유역번호(외부역코드)"], stationName: row["역명"], latitude: Number(row["위도"]), longitude: Number(row["경도"]), basisDate: row["작성기준일"] }));
+const positionsRaw = Buffer.from(JSON.stringify({ currentCount: positionRows.length, data: positionRows, matchCount: positionRows.length, page: 1, perPage: 1000, totalCount: positionRows.length }));
+const positionRecords = projectPositions(positionsRaw, "2026-08-22T12:00:00.000Z");
 
 async function validCollection({ sourceSnapshots, observedAt }) {
   const routePrevious = sourceSnapshots.filter(({ sourceId }) => sourceId === "seoulmetro-cyberstation-route-map").find((row) => !sourceSnapshots.some(({ previousSnapshotId }) => previousSnapshotId === row.snapshotId));
@@ -28,7 +29,6 @@ async function validCollection({ sourceSnapshots, observedAt }) {
   const molitId = `molit-urban-rail-full-route-current-${observedAt.replaceAll(/[-:.]/gu, "").replace("Z", "Z")}`;
   const molitProjection = Buffer.from(`${JSON.stringify(molitRecords)}\n`);
   const molitMigration = { schemaVersion: 1, artifactKind: "source-projection-migration-evidence", migrationKind: "LEGACY_SAMPLE_TO_FULL_CONSUMED_FIELDS", sourceId: molitPrevious.sourceId, legacySnapshotId: molitPrevious.snapshotId, legacyRawSha256: molitPrevious.rawSha256, legacySchemaFingerprint: molitPrevious.schemaFingerprint, legacyProviderRecordHashes: molitPrevious.providerRecordHashes, fullProjectionSha256: sha(molitProjection), fullProjectionSchemaFingerprint: sha(JSON.stringify(["region_code", "region_name", "operator_name", "line_name", "station_sequence", "station_name"])), fullProjectionRowCount: molitRecords.length, newSnapshotId: molitId };
-  const positionsRaw = Buffer.from(JSON.stringify({ currentCount: positionRows.length, data: positionRows, matchCount: positionRows.length, page: 1, perPage: 1000, totalCount: positionRows.length }));
   return { observedAt, positions: { sourceId: "seoul-metro-route-map-positions", rawBytes: positionsRaw, rawSha256: sha(positionsRaw), records: positionRecords, replaced: routePrevious, replacement: { schemaVersion: 1, artifactKind: "source-projection-migration-evidence", migrationKind: "CROSS_SOURCE_CANONICAL_REPLACEMENT", sourceId: "seoul-metro-route-map-positions", replacedSourceId: routePrevious.sourceId, replacedSnapshotId: routePrevious.snapshotId, replacedRawSha256: routePrevious.rawSha256, replacedSchemaFingerprint: routePrevious.schemaFingerprint, candidateSlotSourceId: routePrevious.sourceId } }, molit: { sourceId: molitPrevious.sourceId, rawBytes: molitRaw, rawSha256: sha(molitRaw), records: molitRecords, previous: molitPrevious, migration: molitMigration } };
 }
 
@@ -65,7 +65,7 @@ test("runner stages publisher-contract raw.json/raw.csv, publishes exactly two b
   const operationRoot = await mkdtemp(path.join(os.tmpdir(), "static-network-runner-success-"));
   t.after(() => rm(operationRoot, { recursive: true, force: true }));
   const calls = []; let registered;
-  const now = new Date("2026-08-22T12:00:00.000Z");
+  const now = new Date("2026-08-14T16:00:00.000Z");
   await runCurrentStaticNetworkSuccessors({ repositoryRoot, operationRoot, now, assertExactMain: async () => "0".repeat(40), collectImpl: validCollection,
     publishImpl: async (input) => { calls.push(input); return receiptFor(input, operationRoot, now); },
     registerImpl: async (input) => { registered = input; return { outputs: [] }; },
@@ -77,11 +77,23 @@ test("runner stages publisher-contract raw.json/raw.csv, publishes exactly two b
   assert.equal(registered.observations[0].snapshot.projectionMigration.migrationKind, "CROSS_SOURCE_CANONICAL_REPLACEMENT");
 });
 
+test("runner rejects an expired topology admission before the first immutable publication", async (t) => {
+  const operationRoot = await mkdtemp(path.join(os.tmpdir(), "static-network-runner-expired-topology-"));
+  t.after(() => rm(operationRoot, { recursive: true, force: true }));
+  let publishes = 0;
+  await assert.rejects(runCurrentStaticNetworkSuccessors({
+    repositoryRoot, operationRoot, now: new Date("2026-08-15T15:34:07.000Z"),
+    assertExactMain: async () => "0".repeat(40), collectImpl: validCollection,
+    publishImpl: async () => { publishes += 1; }, registerImpl: async () => {},
+  }), /topology admission snapshot is stale or future-dated/);
+  assert.equal(publishes, 0);
+});
+
 test("runner rejects an invalid second observation before the first publication", async (t) => {
   const operationRoot = await mkdtemp(path.join(os.tmpdir(), "static-network-runner-invalid-"));
   t.after(() => rm(operationRoot, { recursive: true, force: true }));
   let publishes = 0;
-  await assert.rejects(runCurrentStaticNetworkSuccessors({ repositoryRoot, operationRoot, now: new Date("2026-08-22T12:00:00.000Z"), assertExactMain: async () => "0".repeat(40), collectImpl: async (input) => { const value = await validCollection(input); value.molit.rawSha256 = "0".repeat(64); return value; }, publishImpl: async () => { publishes += 1; }, registerImpl: async () => {} }), /MOLIT projection identity/);
+  await assert.rejects(runCurrentStaticNetworkSuccessors({ repositoryRoot, operationRoot, now: new Date("2026-08-14T16:00:00.000Z"), assertExactMain: async () => "0".repeat(40), collectImpl: async (input) => { const value = await validCollection(input); value.molit.rawSha256 = "0".repeat(64); return value; }, publishImpl: async () => { publishes += 1; }, registerImpl: async () => {} }), /MOLIT projection identity/);
   assert.equal(publishes, 0);
 });
 
@@ -89,7 +101,7 @@ test("runner does not register when the second immutable publication fails", asy
   const operationRoot = await mkdtemp(path.join(os.tmpdir(), "static-network-runner-publish-failure-"));
   t.after(() => rm(operationRoot, { recursive: true, force: true }));
   let publishes = 0; let registrations = 0;
-  const now = new Date("2026-08-22T12:00:00.000Z");
+  const now = new Date("2026-08-14T16:00:00.000Z");
   await assert.rejects(runCurrentStaticNetworkSuccessors({ repositoryRoot, operationRoot, now, assertExactMain: async () => "0".repeat(40), collectImpl: validCollection, publishImpl: async (input) => { publishes += 1; if (publishes === 2) throw new Error("second publish failed"); return receiptFor(input, operationRoot, now); }, registerImpl: async () => { registrations += 1; } }), /second publish failed/);
   assert.equal(publishes, 2); assert.equal(registrations, 0);
 });

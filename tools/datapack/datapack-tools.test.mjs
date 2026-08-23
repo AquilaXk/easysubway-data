@@ -28,6 +28,7 @@ import {
   deriveTopology as deriveItxTopology,
   projectItxTopologyIntoCanonicalFixture,
 } from "./apply-itx-topology-to-bundled-pack.mjs";
+import { CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS } from "./materialize-seoul-route-map-positions.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -10972,7 +10973,7 @@ test("전국 coverage gap report는 generated fixture manual provenance를 offic
   assert.ok(report.requirements.some((entry) => entry.missingFields.includes("line")));
 });
 
-test("v2 admission에 exact 결속된 generated 서울 노선도 geometry만 coverage를 충족한다", async () => {
+test("v2 admission과 current 4-operator scope에 exact 결속된 generated 서울 노선도 geometry만 coverage를 충족한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-generated-route-map-${Date.now()}`);
   const inventoryPath = path.join(outputDir, "source-inventory.json");
   const provenancePath = path.join(outputDir, "current.provenance.json");
@@ -10994,7 +10995,7 @@ test("v2 admission에 exact 결속된 generated 서울 노선도 geometry만 cov
   source.id = "seoul-metro-route-map-positions";
   source.coverageScope = {
     regionIds: ["capital"],
-    operatorIds: ["seoul-metro"],
+    operatorIds: [...CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS],
     lineIds: [
       "line-472a81add377", "seoul-2", "line-41a8c75ec9d8", "seoul-4",
       "line-80fc4d5350d4", "line-3f41718e0833", "line-15b3b8a93259", "line-2b2d9eaa53d0",
@@ -11051,6 +11052,34 @@ test("v2 admission에 exact 결속된 generated 서울 노선도 geometry만 cov
       && entry.sourceDomain === "route_map_positions");
   assert.deepEqual(routeMap.missingFields, []);
   assert.ok(routeMap.fieldCoverage.every(({ sourceIds }) => sourceIds.includes(source.id)));
+
+  source.coverageScope.operatorIds = CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS.filter(
+    (operatorId) => operatorId !== "korail",
+  );
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets", "tools/datapack/nationwide-coverage-targets.json",
+      "--inventory", inventoryPath,
+      "--manifest", path.join(outputDir, "current.json"),
+      "--provenance", provenancePath,
+      "--output", reportPath,
+      "--allow-gaps",
+    ],
+    { cwd: root },
+  );
+  report = JSON.parse(await readFile(reportPath, "utf8"));
+  const operatorDriftRouteMap = report.requirements.find((entry) =>
+    entry.regionId === "capital"
+      && entry.operatorId === "seoul-metro"
+      && entry.lineId === "seoul-2"
+      && entry.sourceDomain === "route_map_positions");
+  assert.deepEqual(operatorDriftRouteMap.missingFields, ["route_map_position", "route_map_label_polygon"]);
+
+  source.coverageScope.operatorIds = [...CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS];
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
 
   generatedRecords[0].evidenceHash = "8".repeat(64);
   await writeCoverageCandidate(outputDir, provenance);

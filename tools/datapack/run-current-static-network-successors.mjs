@@ -12,6 +12,7 @@ import { publishStaticNetworkSourceRaw } from "./publish-static-network-source-r
 import { readStaticNetworkRegularFile, registerCurrentStaticNetworkSuccessors } from "./register-current-static-network-successors.mjs";
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import { approvedLegacyGovernanceBinding } from "./legacy-source-governance.mjs";
+import { assertCurrentTopologyAdmissionFreshness } from "./lib/route-map-admission-freshness.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const TARGETS = Object.freeze(["seoul-metro-route-map-positions", "molit-urban-rail-full-route"]);
@@ -76,12 +77,13 @@ function snapshotFromDraft(draft, receipt) {
   snapshot.diffSummary = buildSnapshotDiff(draft.previous, snapshot); return snapshot;
 }
 async function createExclusive(file, bytes) { const parent = path.dirname(file); const stat = await lstat(parent); if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("static network operation parent is unsafe"); const handle = await open(file, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600); try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); } const directory = await open(parent, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW); try { await directory.sync(); } finally { await directory.close(); } }
-async function admittedTopology(root, inventoryBytes) {
+async function admittedTopology(root, inventoryBytes, now) {
   let inventory; try { inventory = JSON.parse(inventoryBytes); } catch { throw new Error("static network source inventory is invalid"); }
   const admission = inventory?.sources?.find(({ id }) => id === TARGETS[0])?.routeMapAdmissionEvidence?.currentTopologyAdmission;
   if (!admission || admission.status !== "ADMITTED" || admission.artifactKind !== "capital-route-map-current-topology-admission" || typeof admission.topologySnapshotId !== "string" || !SHA.test(admission.topologyContentSha256 ?? "")) throw new Error("static network topology admission is invalid");
   const relative = `tools/datapack/sources/${admission.topologySnapshotId}.json`; const bytes = await readStaticNetworkRegularFile(root, relative, "static network topology"); let snapshot; try { snapshot = JSON.parse(bytes); } catch { throw new Error("static network topology artifact is invalid"); }
   if (snapshot?.artifactKind !== "capital-route-topology-snapshot" || snapshot.sourceId !== "capital-route-topology" || snapshot.official !== true || snapshot.fixture !== false || snapshot.contentSha256 !== admission.topologyContentSha256) throw new Error("static network topology identity is invalid");
+  assertCurrentTopologyAdmissionFreshness(admission, snapshot, now);
   return { bytes, snapshotId: admission.topologySnapshotId };
 }
 
@@ -93,7 +95,7 @@ export async function runCurrentStaticNetworkSuccessors({ repositoryRoot = ROOT,
   const positions = projectPositions(collection?.positions?.rawBytes, collection?.observedAt);
   const molit = projectMolit(collection?.molit?.rawBytes);
   if (!isDeepStrictEqual(positions, collection?.positions?.records) || !isDeepStrictEqual(molit, collection?.molit?.records)) throw new Error("static network raw projection revalidation failed");
-  const topology = await admittedTopology(root, inventoryBytes);
+  const topology = await admittedTopology(root, inventoryBytes, now);
   const layoutSnapshot = buildSeoulRouteMapPositions({ records: positions, topologySnapshotBytes: topology.bytes, topologySnapshotId: topology.snapshotId, rawSha256: collection.positions.rawSha256, now });
   const drafts = buildDrafts(collection, layoutSnapshot);
   for (const draft of drafts) await createExclusive(path.join(operation, `raw.${draft.extension}`), draft.rawBytes);

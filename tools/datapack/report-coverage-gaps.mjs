@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { compareStrings } from "./lib/ledger-admission-cli.mjs";
+import { CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS } from "./materialize-seoul-route-map-positions.mjs";
 
 // 게시 범위(capital pilot)의 domain/field 계약 정본. --release-scope 평가는 이 targets로 in-scope gap을 판정한다.
 const DEFAULT_RELEASE_SCOPE_TARGETS = "tools/datapack/capital-pilot-coverage-targets.json";
@@ -1104,7 +1105,7 @@ function isAdmittedGeneratedRouteMapGeometry(record, normalizedRecord, source) {
     || normalizedRecord.coverageScope == null
     || source?.id !== SEOUL_PUBLIC_ROUTE_MAP_SOURCE_ID
     || !sameStrings(source.regionIds, ["capital"])
-    || !sameStrings(source.operatorIds, ["seoul-metro"])
+    || !sameStrings(source.operatorIds, CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS)
     || !sameStrings(source.lineIds, SEOUL_PUBLIC_LINE_IDS)
     || !sameStrings(source.sourceDomains, ["route_map_positions"])
     || !sameStrings(source.fields, SEOUL_PUBLIC_PROVIDER_FIELDS)

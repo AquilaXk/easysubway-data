@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import { TextDecoder } from "node:util";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
+import {
+  assertCurrentMolitFullRouteCompleteness,
+  normalizeCurrentSeoulPositionCompleteness,
+} from "./lib/static-network-successor-completeness.mjs";
 
 export const MOLIT_URL = "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003561913&fileDetailSn=1&insertDataPrcus=N";
 export const SEOUL_POSITIONS_URL = "https://api.odcloud.kr/api/15099316/v1/uddi:bc51de47-d3ea-4aa1-8ac2-d70f2b5e701e";
@@ -62,13 +66,14 @@ export function projectPositions(bytes, observedAt) {
     seen.add(key); if (basisDate !== null && basisDate !== rowBasisDate) fail("SEOUL_POSITIONS_SCHEMA"); basisDate = rowBasisDate;
     return { serial: Number(serial), line, stationCode, stationName, latitude, longitude, basisDate: rowBasisDate };
   });
-  if (new Set(records.map(({ line }) => line)).size !== 8) fail("SEOUL_POSITIONS_SCOPE");
-  return records.sort((left, right) => Number(left.line) - Number(right.line) || (left.stationCode < right.stationCode ? -1 : left.stationCode > right.stationCode ? 1 : 0));
+  return normalizeCurrentSeoulPositionCompleteness(records)
+    .sort((left, right) => Number(left.line) - Number(right.line) || (left.stationCode < right.stationCode ? -1 : left.stationCode > right.stationCode ? 1 : 0));
 }
 export function projectMolit(bytes) {
   let text; try { text = new TextDecoder("euc-kr", { fatal: true }).decode(bytes); } catch { fail("MOLIT_ENCODING"); }
   const rows = parseCsv(text); if (rows.length < 2 || JSON.stringify(rows[0]) !== JSON.stringify(CSV_HEADER) || rows.slice(1).some((row) => row.length !== 6)) fail("MOLIT_SCHEMA");
-  return rows.slice(1).map((cells) => { const values = cells.map((value) => value.trim()); const sequence = Number(values[4]); if (values.some((value) => value === "") || !Number.isInteger(sequence) || sequence < 1 || MOLIT_REGIONS[values[0]] !== values[1]) fail("MOLIT_SCHEMA"); values[4] = sequence; return Object.fromEntries(MOLIT_FIELDS.map((field, index) => [field, values[index]])); });
+  const records = rows.slice(1).map((cells) => { const values = cells.map((value) => value.trim()); const sequence = Number(values[4]); if (values.some((value) => value === "") || !Number.isInteger(sequence) || sequence < 1 || MOLIT_REGIONS[values[0]] !== values[1]) fail("MOLIT_SCHEMA"); values[4] = sequence; return Object.fromEntries(MOLIT_FIELDS.map((field, index) => [field, values[index]])); });
+  return assertCurrentMolitFullRouteCompleteness(records);
 }
 function buildMolitMigration({ legacyHead, projection, snapshotId: id }) {
   if (!legacyHead || legacyHead.sourceId !== "molit-urban-rail-full-route" || !Array.isArray(legacyHead.providerRecordHashes) || typeof legacyHead.snapshotId !== "string") fail("LINEAGE");

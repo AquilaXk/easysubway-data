@@ -21,6 +21,7 @@ const LOCK = "tools/datapack/.current-capital-accessibility-refresh.lock";
 const LOCK_OWNER = "owner.json";
 const SEOUL = "seoul-metro-accessibility";
 const TRANSFER = "seoul-metro-transfer-distance-duration";
+const MOLIT = "molit-urban-rail-full-route";
 const STATIC_SUCCESSOR = "STATIC_NETWORK_SUCCESSOR_REFRESH";
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 
@@ -52,6 +53,8 @@ function buildRefreshProof({ candidateFile, ledgerFile, requestFile, hashesFile,
     projectionMigration?.migrationKind === "CROSS_SOURCE_CANONICAL_REPLACEMENT");
   let successorIndex;
   let previousSnapshotId;
+  let molitSuccessorIndex = -1;
+  let previousMolitSnapshotId;
   let transitionIdentity;
   if (staticSuccessors.length === 1) {
     const successor = staticSuccessors[0];
@@ -65,6 +68,21 @@ function buildRefreshProof({ candidateFile, ledgerFile, requestFile, hashesFile,
       || ledger.filter(({ snapshotId, sourceId }) =>
         snapshotId === previousSnapshotId && sourceId === migration.replacedSourceId).length !== 1) {
       throw new Error("current static-network predecessor mismatch");
+    }
+    const molitSuccessors = selected.filter(({ sourceId }) => sourceId === MOLIT);
+    const molitSuccessor = molitSuccessors[0];
+    const molitMigration = molitSuccessor?.projectionMigration;
+    molitSuccessorIndex = selected.indexOf(molitSuccessor);
+    previousMolitSnapshotId = molitSuccessor?.previousSnapshotId;
+    if (molitSuccessors.length !== 1
+      || molitMigration?.migrationKind !== "LEGACY_SAMPLE_TO_FULL_CONSUMED_FIELDS"
+      || molitMigration.sourceId !== MOLIT
+      || molitMigration.legacySnapshotId !== previousMolitSnapshotId
+      || typeof previousMolitSnapshotId !== "string"
+      || previousMolitSnapshotId === molitSuccessor.snapshotId
+      || ledger.filter(({ snapshotId, sourceId }) =>
+        snapshotId === previousMolitSnapshotId && sourceId === MOLIT).length !== 1) {
+      throw new Error("current static-network MOLIT predecessor mismatch");
     }
     transitionIdentity = {
       kind: STATIC_SUCCESSOR,
@@ -88,7 +106,9 @@ function buildRefreshProof({ candidateFile, ledgerFile, requestFile, hashesFile,
     transitionIdentity = { kind: "SEOUL_ACCESSIBILITY_SUCCESSOR_REFRESH" };
   }
   const predecessorIds = candidate.sourceSnapshotIds.map((snapshotId, index) =>
-    index === successorIndex ? previousSnapshotId : snapshotId);
+    index === successorIndex ? previousSnapshotId
+      : index === molitSuccessorIndex ? previousMolitSnapshotId
+      : snapshotId);
   const predecessorIdSet = new Set(predecessorIds); const predecessor = ledger.filter(({ snapshotId }) => predecessorIdSet.has(snapshotId));
   const predecessorHash = sha(JSON.stringify(predecessor));
   const currentSeoul = selected.filter(({ sourceId }) => sourceId === SEOUL);
