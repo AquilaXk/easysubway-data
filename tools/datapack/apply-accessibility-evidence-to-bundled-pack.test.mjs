@@ -400,6 +400,11 @@ test("candidate-fixtures-only sync succeeds without reading mobile pack paths", 
       "--pack", path.join(directory, "missing.sqlite.gz"),
       "--index", path.join(directory, "missing-index.json"),
     ], { cwd: repository });
+    const [syncedSpec, syncedRequest] = await Promise.all([
+      readFile(path.join(directory, candidateBuildSpecPath), "utf8").then(JSON.parse),
+      readFile(path.join(directory, "tools/datapack/release/release-request.json"), "utf8").then(JSON.parse),
+    ]);
+    assert.equal(syncedRequest.candidateId, syncedSpec.candidateId);
     await assert.rejects(readFile(path.join(directory, "missing.sqlite.gz")), { code: "ENOENT" });
     await assert.rejects(readFile(path.join(directory, "missing-index.json")), { code: "ENOENT" });
   } finally {

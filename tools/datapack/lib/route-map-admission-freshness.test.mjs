@@ -92,4 +92,10 @@ test("현재 topology admission과 snapshot은 동일한 검토 시각·만료 �
   assert.throws(() => assertCurrentTopologyAdmissionFreshness(
     { ...admission, reviewedAt: "2026-08-14T15:34:08.000Z" }, snapshot, new Date(admission.reviewedAt),
   ), /topology admission freshness identity is invalid/);
+  const extendedFreshUntil = "2026-08-15T15:34:07.001Z";
+  assert.throws(() => assertCurrentTopologyAdmissionFreshness(
+    { ...admission, freshUntil: extendedFreshUntil },
+    { ...snapshot, freshUntil: extendedFreshUntil },
+    new Date(admission.reviewedAt),
+  ), /topology admission freshness contract is invalid/);
 });

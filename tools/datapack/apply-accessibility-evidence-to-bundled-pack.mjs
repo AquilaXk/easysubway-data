@@ -606,6 +606,7 @@ async function syncReleaseEvidence({ check }) {
   spec.itxTopologyEvidenceSha256 = sha256(await readFile(path.resolve(releaseRoot, spec.itxTopologyEvidencePath)));
   spec.networkEdgeEvidence.sourceInventory.sha256 = sha256(inventoryBytes);
   const nextSpecBytes = Buffer.from(`${JSON.stringify(spec, null, 2)}\n`);
+  request.candidateId = spec.candidateId;
   request.buildSpecSha256 = sha256(nextSpecBytes);
   request.sourceSnapshotSetHash = spec.sourceSnapshotSetHash;
   hashes.truthfulnessRule = "모든 값은 tracked canonical fixture·inventory·official snapshot에서 결정적으로 재산출한다. 2026-07-28 신규 KRIC standard·서울 snapshot을 소비 claim에 결속하고 route 가용성은 추론하지 않는다.";

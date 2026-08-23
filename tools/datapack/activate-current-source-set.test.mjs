@@ -10,8 +10,10 @@ import test from "node:test";
 import { syncCanonicalFixture } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
 import { projectCapitalTopologyIntoCanonicalFixture } from "./build-datapack.mjs";
 import { activateIncheonTopologyAdmission, activateStaticSourceRevalidations,
-  buildCurrentCandidateSpec, buildCurrentSourcePrimaryOutputs, commitCurrentSourceActivation,
-  collectPositionSnapshotBytes, parseCurrentSourceActivationArgs, requireCleanBuilder,
+  buildCurrentCandidateSpec, buildCurrentSourcePrimaryOutputs,
+  buildCurrentTopologyRefreshPrimaryOutputs, commitCurrentSourceActivation,
+  collectPositionSnapshotBytes, parseCurrentSourceActivationArgs,
+  parseCurrentTopologyRefreshArgs, requireCleanBuilder,
   CURRENT_PRODUCTION_SOURCE_IDS, CURRENT_SOURCE_INVENTORY_IDS,
   projectCurrentCanonicalRouteMapProvenance,
   readBuilderBaselineBytes,
@@ -508,6 +510,17 @@ test("activation CLI는 Data-owned capital/Incheon snapshot paths만 수용한�
     "--builder-git-sha", "a".repeat(40),
     "--build-now", "2026-08-11T00:00:00.000Z",
   ]), /unknown activation argument/);
+  assert.deepEqual(parseCurrentTopologyRefreshArgs([
+    "--capital-topology", "tools/datapack/sources/capital-route-topology-20260823.json",
+    "--builder-git-sha", "b".repeat(40),
+    "--build-now", "2026-08-23T14:53:48.203Z",
+    "--check",
+  ]), {
+    check: true,
+    capital_topology: "tools/datapack/sources/capital-route-topology-20260823.json",
+    builder_git_sha: "b".repeat(40),
+    build_now: "2026-08-23T14:53:48.203Z",
+  });
 });
 
 test("prepared candidate validation은 spec-selected current ITX evidence bytes만 stage한다", async (context) => {
@@ -867,6 +880,49 @@ test("generated current candidate spec은 expired ITX topology overlay를 재도
   });
 
   assert.equal(Object.hasOwn(next.networkEdgeEvidence, "itxCurrentTopologyAdmission"), false);
+});
+
+test("topology-only refresh는 admission·canonical·candidate identity를 한 입력에서 재생성한다", async () => {
+  const currentTopologyPath = "tools/datapack/sources/capital-route-topology-20260823.json";
+  const [baseSpec, sourceInventory, currentTopologyBytes, baselineTopology, canonical,
+    productionScopePolicyBytes] = await Promise.all([
+    readJson("tools/datapack/release/candidate-build-spec.json"),
+    readJson("tools/datapack/source-inventory.json"),
+    readFile(path.join(root, currentTopologyPath)),
+    readJson("tools/datapack/sources/capital-route-topology-20260724.json"),
+    readJson("tools/datapack/release/capital-production-canonical-pack.json"),
+    readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json")),
+  ]);
+  const currentTopology = JSON.parse(currentTopologyBytes);
+  const buildNow = new Date(Date.parse(currentTopology.capturedAt) + 1).toISOString();
+  const result = buildCurrentTopologyRefreshPrimaryOutputs({
+    baseSpec,
+    builderGitSha: "a".repeat(40),
+    sourceInventory,
+    currentTopology,
+    currentTopologyBytes,
+    currentTopologyPath,
+    baselineTopology,
+    canonical,
+    productionScopePolicyBytes,
+    buildNow,
+    snapshotBytesByPath: await collectPositionSnapshotBytes(sourceInventory),
+  });
+
+  const admissions = result.sourceInventory.sources
+    .map((source) => source.routeMapAdmissionEvidence?.currentTopologyAdmission)
+    .filter(Boolean);
+  assert.ok(admissions.length > 0);
+  assert.ok(admissions.every(({ topologySnapshotId }) =>
+    topologySnapshotId === "capital-route-topology-20260823"));
+  assert.equal(result.spec.candidateId, "capital-pilot-candidate-20260823");
+  assert.equal(result.spec.networkEdgeEvidence.sourceInventory.sha256, sha256(result.sourceInventoryBytes));
+  assert.equal(result.spec.networkEdgeEvidence.capitalTopologyCandidate.sha256, sha256(currentTopologyBytes));
+  assert.equal(
+    result.spec.networkEdgeEvidence.capitalTopologyReverification.sha256,
+    sha256(result.topologyReverificationBytes),
+  );
+  assert.equal(result.projectedEdgeCount, currentTopology.totalEdgeCount);
 });
 
 test("current capital topology는 canonical fixture에 repaired 8 directions만 추가한다", async () => {

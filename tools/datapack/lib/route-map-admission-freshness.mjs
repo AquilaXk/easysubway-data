@@ -3,6 +3,7 @@ import { requiredUtcInstant } from "./utc-instant.mjs";
 
 export const ROUTE_MAP_REVERIFICATION_CADENCE = "P1Y";
 export const SEOUL_PUBLIC_ROUTE_MAP_REVERIFICATION_CADENCE = "P90D";
+const CURRENT_TOPOLOGY_FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
 
 export function routeMapReverificationCadence(sourceId) {
   return sourceId === "seoul-metro-route-map-positions"
@@ -30,6 +31,9 @@ export function assertCurrentTopologyAdmissionFreshness(admission, snapshot, now
   const snapshotFreshUntil = requiredUtcInstant(snapshot?.freshUntil, "topology snapshot freshUntil");
   if (reviewedAt !== capturedAt || admissionFreshUntil !== snapshotFreshUntil) {
     throw new Error("topology admission freshness identity is invalid");
+  }
+  if (snapshotFreshUntil - capturedAt !== CURRENT_TOPOLOGY_FRESHNESS_MILLIS) {
+    throw new Error("topology admission freshness contract is invalid");
   }
   const observedNow = now instanceof Date ? now.getTime() : Number.NaN;
   if (!Number.isFinite(observedNow) || observedNow < capturedAt || observedNow >= snapshotFreshUntil) {
