@@ -1075,7 +1075,7 @@
     "inventory": {
       "path": "tools/datapack/source-inventory.json",
       "retrievedAt": "2026-06-22",
-      "sha256": "9d8fabab77d837f723c2e4fed7ae93078c53a42903efc1080da08bda513635fc"
+      "sha256": "374e8ee9385b777c113b1e25fea50676d63619e8f5e1bd163bb3c535afe432f5"
     },
     "resolutions": {
       "entryCount": 4,
@@ -1143,17 +1143,17 @@
       {
         "earliestResolutionNextReviewAt": null,
         "explicitlyUnsupportedWithEvidenceCount": 0,
-        "inventoryAdmittedCount": 36,
-        "inventoryAdmittedRatio": 0.8,
+        "inventoryAdmittedCount": 28,
+        "inventoryAdmittedRatio": 0.6222,
         "missingByKind": {
-          "DUAL_OPERATOR_UNMATCHED": 6,
-          "NO_ADMITTED_SOURCE": 3
+          "DUAL_OPERATOR_UNMATCHED": 1,
+          "NO_ADMITTED_SOURCE": 16
         },
-        "missingCount": 9,
+        "missingCount": 17,
         "sourceDomain": "route_map_positions",
         "supportStartedResolutionCount": 0,
-        "terminalCount": 36,
-        "terminalRatio": 0.8,
+        "terminalCount": 28,
+        "terminalRatio": 0.6222,
         "totalCount": 45
       },
       {
@@ -1209,17 +1209,17 @@
       {
         "earliestResolutionNextReviewAt": null,
         "explicitlyUnsupportedWithEvidenceCount": 0,
-        "inventoryAdmittedCount": 38,
-        "inventoryAdmittedRatio": 0.1919,
+        "inventoryAdmittedCount": 30,
+        "inventoryAdmittedRatio": 0.1515,
         "missingByKind": {
-          "DUAL_OPERATOR_UNMATCHED": 9,
-          "NO_ADMITTED_SOURCE": 151
+          "DUAL_OPERATOR_UNMATCHED": 4,
+          "NO_ADMITTED_SOURCE": 164
         },
-        "missingCount": 160,
+        "missingCount": 168,
         "regionId": "capital",
         "supportStartedResolutionCount": 0,
-        "terminalCount": 38,
-        "terminalRatio": 0.1919,
+        "terminalCount": 30,
+        "terminalRatio": 0.1515,
         "totalCount": 198
       },
       {
@@ -1273,13 +1273,13 @@
     ],
     "earliestResolutionNextReviewAt": "2026-10-23T09:12:39.105Z",
     "explicitlyUnsupportedWithEvidenceCount": 4,
-    "inventoryAdmittedCount": 83,
-    "inventoryAdmittedRatio": 0.3074,
+    "inventoryAdmittedCount": 75,
+    "inventoryAdmittedRatio": 0.2778,
     "missingByKind": {
-      "DUAL_OPERATOR_UNMATCHED": 9,
-      "NO_ADMITTED_SOURCE": 174
+      "DUAL_OPERATOR_UNMATCHED": 4,
+      "NO_ADMITTED_SOURCE": 187
     },
-    "missingCount": 183,
+    "missingCount": 191,
     "requirements": [
       {
         "admissionRatio": 1,
@@ -2593,16 +2593,9 @@
         "admittedFieldCount": 0,
         "admittedSourceIds": [],
         "blockingThreshold": 1,
-        "dualOperator": {
-          "coveringOperatorIds": [
-            "seoul-metro"
-          ],
-          "coveringSourceIds": [
-            "seoul-metro-route-map-positions"
-          ]
-        },
+        "dualOperator": null,
         "lineId": "line-41a8c75ec9d8",
-        "missingKind": "DUAL_OPERATOR_UNMATCHED",
+        "missingKind": "NO_ADMITTED_SOURCE",
         "operatorId": "korail",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
@@ -2731,16 +2724,9 @@
         "admittedFieldCount": 0,
         "admittedSourceIds": [],
         "blockingThreshold": 1,
-        "dualOperator": {
-          "coveringOperatorIds": [
-            "seoul-metro"
-          ],
-          "coveringSourceIds": [
-            "seoul-metro-route-map-positions"
-          ]
-        },
+        "dualOperator": null,
         "lineId": "line-472a81add377",
-        "missingKind": "DUAL_OPERATOR_UNMATCHED",
+        "missingKind": "NO_ADMITTED_SOURCE",
         "operatorId": "korail",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
@@ -3389,17 +3375,9 @@
         "admittedFieldCount": 0,
         "admittedSourceIds": [],
         "blockingThreshold": 1,
-        "dualOperator": {
-          "coveringOperatorIds": [
-            "seoul-metro"
-          ],
-          "coveringSourceIds": [
-            "seoul-metro-route-map-positions",
-            "seoulmetro-cyberstation-route-map"
-          ]
-        },
+        "dualOperator": null,
         "lineId": "seoul-4",
-        "missingKind": "DUAL_OPERATOR_UNMATCHED",
+        "missingKind": "NO_ADMITTED_SOURCE",
         "operatorId": "korail",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
@@ -3528,16 +3506,9 @@
         "admittedFieldCount": 0,
         "admittedSourceIds": [],
         "blockingThreshold": 1,
-        "dualOperator": {
-          "coveringOperatorIds": [
-            "seoul-metro"
-          ],
-          "coveringSourceIds": [
-            "seoul-metro-route-map-positions"
-          ]
-        },
+        "dualOperator": null,
         "lineId": "line-2b2d9eaa53d0",
-        "missingKind": "DUAL_OPERATOR_UNMATCHED",
+        "missingKind": "NO_ADMITTED_SOURCE",
         "operatorId": "operator-07a9e77a02b6",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
@@ -5097,16 +5068,9 @@
         "admittedFieldCount": 0,
         "admittedSourceIds": [],
         "blockingThreshold": 1,
-        "dualOperator": {
-          "coveringOperatorIds": [
-            "seoul-metro"
-          ],
-          "coveringSourceIds": [
-            "seoul-metro-route-map-positions"
-          ]
-        },
+        "dualOperator": null,
         "lineId": "line-2b2d9eaa53d0",
-        "missingKind": "DUAL_OPERATOR_UNMATCHED",
+        "missingKind": "NO_ADMITTED_SOURCE",
         "operatorId": "operator-c361f9fc17e9",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
@@ -5235,17 +5199,9 @@
         "admittedFieldCount": 0,
         "admittedSourceIds": [],
         "blockingThreshold": 1,
-        "dualOperator": {
-          "coveringOperatorIds": [
-            "seoul-metro"
-          ],
-          "coveringSourceIds": [
-            "seoul-metro-route-map-positions",
-            "seoulmetro-cyberstation-route-map"
-          ]
-        },
+        "dualOperator": null,
         "lineId": "seoul-4",
-        "missingKind": "DUAL_OPERATOR_UNMATCHED",
+        "missingKind": "NO_ADMITTED_SOURCE",
         "operatorId": "operator-c361f9fc17e9",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
@@ -5384,15 +5340,20 @@
         ]
       },
       {
-        "admissionRatio": 1,
-        "admittedFieldCount": 2,
-        "admittedSourceIds": [
-          "seoul-metro-route-map-positions"
-        ],
+        "admissionRatio": 0,
+        "admittedFieldCount": 0,
+        "admittedSourceIds": [],
         "blockingThreshold": 1,
-        "dualOperator": null,
+        "dualOperator": {
+          "coveringOperatorIds": [
+            "incheon-transit"
+          ],
+          "coveringSourceIds": [
+            "incheon-transit-station-info"
+          ]
+        },
         "lineId": "line-15b3b8a93259",
-        "missingKind": null,
+        "missingKind": "DUAL_OPERATOR_UNMATCHED",
         "operatorId": "seoul-metro",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
@@ -5400,8 +5361,11 @@
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_map_positions",
-        "status": "INVENTORY_ADMITTED",
-        "unadmittedFields": []
+        "status": "MISSING",
+        "unadmittedFields": [
+          "route_map_position",
+          "route_map_label_polygon"
+        ]
       },
       {
         "admissionRatio": 0,
@@ -5521,26 +5485,6 @@
         ]
       },
       {
-        "admissionRatio": 1,
-        "admittedFieldCount": 2,
-        "admittedSourceIds": [
-          "seoul-metro-route-map-positions"
-        ],
-        "blockingThreshold": 1,
-        "dualOperator": null,
-        "lineId": "line-2b2d9eaa53d0",
-        "missingKind": null,
-        "operatorId": "seoul-metro",
-        "regionId": "capital",
-        "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 2,
-        "resolution": null,
-        "resolutionReviewStatus": null,
-        "sourceDomain": "route_map_positions",
-        "status": "INVENTORY_ADMITTED",
-        "unadmittedFields": []
-      },
-      {
         "admissionRatio": 0,
         "admittedFieldCount": 0,
         "admittedSourceIds": [],
@@ -5551,15 +5495,14 @@
         "operatorId": "seoul-metro",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
-        "sourceDomain": "schedule_timetable",
+        "sourceDomain": "route_map_positions",
         "status": "MISSING",
         "unadmittedFields": [
-          "service_calendar",
-          "trip",
-          "stop_time"
+          "route_map_position",
+          "route_map_label_polygon"
         ]
       },
       {
@@ -5576,6 +5519,28 @@
         "requiredFieldCount": 3,
         "resolution": null,
         "resolutionReviewStatus": null,
+        "sourceDomain": "schedule_timetable",
+        "status": "MISSING",
+        "unadmittedFields": [
+          "service_calendar",
+          "trip",
+          "stop_time"
+        ]
+      },
+      {
+        "admissionRatio": 0,
+        "admittedFieldCount": 0,
+        "admittedSourceIds": [],
+        "blockingThreshold": 1,
+        "dualOperator": null,
+        "lineId": "line-2b2d9eaa53d0",
+        "missingKind": "NO_ADMITTED_SOURCE",
+        "operatorId": "seoul-metro",
+        "regionId": "capital",
+        "releaseTier": "LAUNCH_REQUIRED",
+        "requiredFieldCount": 3,
+        "resolution": null,
+        "resolutionReviewStatus": null,
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
@@ -5651,15 +5616,13 @@
         ]
       },
       {
-        "admissionRatio": 1,
-        "admittedFieldCount": 2,
-        "admittedSourceIds": [
-          "seoul-metro-route-map-positions"
-        ],
+        "admissionRatio": 0,
+        "admittedFieldCount": 0,
+        "admittedSourceIds": [],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-3f41718e0833",
-        "missingKind": null,
+        "missingKind": "NO_ADMITTED_SOURCE",
         "operatorId": "seoul-metro",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
@@ -5667,8 +5630,11 @@
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_map_positions",
-        "status": "INVENTORY_ADMITTED",
-        "unadmittedFields": []
+        "status": "MISSING",
+        "unadmittedFields": [
+          "route_map_position",
+          "route_map_label_polygon"
+        ]
       },
       {
         "admissionRatio": 0,
@@ -5781,15 +5747,13 @@
         ]
       },
       {
-        "admissionRatio": 1,
-        "admittedFieldCount": 2,
-        "admittedSourceIds": [
-          "seoul-metro-route-map-positions"
-        ],
+        "admissionRatio": 0,
+        "admittedFieldCount": 0,
+        "admittedSourceIds": [],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-41a8c75ec9d8",
-        "missingKind": null,
+        "missingKind": "NO_ADMITTED_SOURCE",
         "operatorId": "seoul-metro",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
@@ -5797,8 +5761,11 @@
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_map_positions",
-        "status": "INVENTORY_ADMITTED",
-        "unadmittedFields": []
+        "status": "MISSING",
+        "unadmittedFields": [
+          "route_map_position",
+          "route_map_label_polygon"
+        ]
       },
       {
         "admissionRatio": 0,
@@ -5911,15 +5878,13 @@
         ]
       },
       {
-        "admissionRatio": 1,
-        "admittedFieldCount": 2,
-        "admittedSourceIds": [
-          "seoul-metro-route-map-positions"
-        ],
+        "admissionRatio": 0,
+        "admittedFieldCount": 0,
+        "admittedSourceIds": [],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-472a81add377",
-        "missingKind": null,
+        "missingKind": "NO_ADMITTED_SOURCE",
         "operatorId": "seoul-metro",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
@@ -5927,8 +5892,11 @@
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_map_positions",
-        "status": "INVENTORY_ADMITTED",
-        "unadmittedFields": []
+        "status": "MISSING",
+        "unadmittedFields": [
+          "route_map_position",
+          "route_map_label_polygon"
+        ]
       },
       {
         "admissionRatio": 0,
@@ -6041,15 +6009,13 @@
         ]
       },
       {
-        "admissionRatio": 1,
-        "admittedFieldCount": 2,
-        "admittedSourceIds": [
-          "seoul-metro-route-map-positions"
-        ],
+        "admissionRatio": 0,
+        "admittedFieldCount": 0,
+        "admittedSourceIds": [],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-80fc4d5350d4",
-        "missingKind": null,
+        "missingKind": "NO_ADMITTED_SOURCE",
         "operatorId": "seoul-metro",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
@@ -6057,8 +6023,11 @@
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_map_positions",
-        "status": "INVENTORY_ADMITTED",
-        "unadmittedFields": []
+        "status": "MISSING",
+        "unadmittedFields": [
+          "route_map_position",
+          "route_map_label_polygon"
+        ]
       },
       {
         "admissionRatio": 0,
@@ -6171,15 +6140,13 @@
         ]
       },
       {
-        "admissionRatio": 1,
-        "admittedFieldCount": 2,
-        "admittedSourceIds": [
-          "seoul-metro-route-map-positions"
-        ],
+        "admissionRatio": 0,
+        "admittedFieldCount": 0,
+        "admittedSourceIds": [],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "seoul-2",
-        "missingKind": null,
+        "missingKind": "NO_ADMITTED_SOURCE",
         "operatorId": "seoul-metro",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
@@ -6187,8 +6154,11 @@
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_map_positions",
-        "status": "INVENTORY_ADMITTED",
-        "unadmittedFields": []
+        "status": "MISSING",
+        "unadmittedFields": [
+          "route_map_position",
+          "route_map_label_polygon"
+        ]
       },
       {
         "admissionRatio": 0,
@@ -6301,16 +6271,13 @@
         ]
       },
       {
-        "admissionRatio": 1,
-        "admittedFieldCount": 2,
-        "admittedSourceIds": [
-          "seoul-metro-route-map-positions",
-          "seoulmetro-cyberstation-route-map"
-        ],
+        "admissionRatio": 0,
+        "admittedFieldCount": 0,
+        "admittedSourceIds": [],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "seoul-4",
-        "missingKind": null,
+        "missingKind": "NO_ADMITTED_SOURCE",
         "operatorId": "seoul-metro",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
@@ -6318,8 +6285,11 @@
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_map_positions",
-        "status": "INVENTORY_ADMITTED",
-        "unadmittedFields": []
+        "status": "MISSING",
+        "unadmittedFields": [
+          "route_map_position",
+          "route_map_label_polygon"
+        ]
       },
       {
         "admissionRatio": 0,
@@ -7124,8 +7094,8 @@
       }
     ],
     "supportStartedResolutionCount": 0,
-    "terminalCount": 87,
-    "terminalRatio": 0.3222,
+    "terminalCount": 79,
+    "terminalRatio": 0.2926,
     "totalCount": 270
   },
   "parentIssue": 2138,

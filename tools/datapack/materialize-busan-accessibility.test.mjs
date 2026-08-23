@@ -29,8 +29,8 @@ const topologyNow = new Date("2026-07-19T18:14:03.004Z");
 const routeMapNow = new Date("2026-07-20T11:13:18.000Z");
 const accessibilityNow = new Date("2026-07-24T12:00:00.000Z");
 const SOURCE_ID = "busan-transportation-accessibility";
-// route-map 누적 fixture coverage baseline(실측): supportedCount=20 → accessibility +4 = 24.
-const ROUTE_MAP_BASELINE_SUPPORTED_COUNT = 20;
+// route-map 누적 fixture coverage baseline(실측): supportedCount=19 → accessibility +4 = 23.
+const ROUTE_MAP_BASELINE_SUPPORTED_COUNT = 19;
 const ACCESSIBILITY_SUPPORTED_COUNT = ROUTE_MAP_BASELINE_SUPPORTED_COUNT + 4;
 const BUSAN_LINE_IDS = Object.freeze([
   "line-ab1a041f6266",

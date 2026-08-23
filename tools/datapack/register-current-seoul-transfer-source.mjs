@@ -13,6 +13,7 @@ import { validateLineage } from "./source-snapshot-policy.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { rebuildAuthenticatedTransferTopologyMetrics } from "./build-current-transfer-topology-metrics.mjs";
 import { buildApplicability } from "./build-current-capital-transfer-topology-applicability.mjs";
+import { verifyCurrentCapitalPublicRouteMapDocument } from "./materialize-seoul-route-map-positions.mjs";
 
 const JOURNAL = "tools/datapack/.seoul-transfer-registration-transaction.json";
 const LOCK = "tools/datapack/.seoul-transfer-registration.lock";
@@ -32,7 +33,7 @@ const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 const canonicalBytes = (value) => Buffer.from(`${canonicalJson(value)}\n`);
 const without = (value, key) => { const copy = { ...value }; delete copy[key]; return copy; };
 const SIX_SOURCE_IDS = Object.freeze([
-  "seoulmetro-cyberstation-route-map", "kric-subway-timetable", "seoul-metro-accessibility",
+  "seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility",
   "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info",
 ]);
 
@@ -240,13 +241,19 @@ function validatePreTransferCandidate({ candidate, ledger, inventory, inventoryI
     try { assertProjectionEqual(projection, expected, "transfer pre-candidate projection"); }
     catch { throw new Error("transfer pre-candidate projection mismatch"); }
   }
+  return selected[0];
 }
 
 export function buildTransferRegistrationOutputs({ observation, receipt, metrics, metricsBytes, applicability, applicabilityBytes, inventory, inventoryBytes: inventoryInputBytes, scope, scopeBytes, ledger, ledgerBytes: ledgerInputBytes, candidate, candidateBytes: candidateInputBytes, governancePolicy, governancePolicyBytes, freshnessPolicy, freshnessPolicyBytes, canonicalPack, canonicalPackBytes, approvedAt }) {
   validateSeoulTransferRawReceipt(receipt);
   validateCurrentTransferInputs({ observation, receipt, metrics, metricsBytes, applicability, applicabilityBytes, canonicalPack, canonicalPackBytes });
   const governance = validateTransferGovernance({ inventory, governancePolicy, governancePolicyBytes, freshnessPolicy, freshnessPolicyBytes, observation, receipt, approvedAt });
-  validatePreTransferCandidate({ candidate, ledger, inventory, inventoryInputBytes, governancePolicy, governancePolicyBytes, freshnessPolicy, approvedAt });
+  const publicRouteMapSuccessor = validatePreTransferCandidate({ candidate, ledger, inventory, inventoryInputBytes, governancePolicy, governancePolicyBytes, freshnessPolicy, approvedAt });
+  verifyCurrentCapitalPublicRouteMapDocument(
+    canonicalPack,
+    publicRouteMapSuccessor,
+    "transfer canonical pack",
+  );
   const snapshot = registerSeoulTransferSourceSnapshot({ observation, receipt, metrics, metricsBytes, applicability, applicabilityBytes, now: new Date(approvedAt) });
   const source = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
   if (!source || source.requiredForProductionPack !== false || candidate?.sourceSnapshots?.length !== 6

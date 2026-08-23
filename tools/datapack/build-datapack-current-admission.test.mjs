@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
 import { createHash, generateKeyPairSync } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { promisify } from "node:util";
 
 import {
   admittedIncheonTopologyEvidence,
@@ -18,17 +17,38 @@ import {
   validateCapitalTopologyReverification,
   validateItxCurrentTopologyAdmission,
   validateCandidateProductionScope,
+  main as buildDatapackMain,
 } from "./build-datapack.mjs";
+import { main as buildAccessibilityAuthorityMain } from "./build-current-release-candidate-accessibility-input.mjs";
 import {
   buildCapitalTopologyReverificationEvidence,
   projectCapitalTopologyOwnership,
 } from "./collect-capital-route-topology.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
+import { refreshCurrentCapitalAccessibilityFull } from "./refresh-current-capital-accessibility-full.mjs";
+import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const currentNow = new Date("2026-08-10T00:00:00.000Z");
-const execFileAsync = promisify(execFile);
+const PUBLIC_ROUTE_MAP_SOURCE_ID = "seoul-metro-route-map-positions";
+const PUBLIC_ROUTE_MAP_LINE_IDS = Object.freeze([
+  "line-472a81add377", "seoul-2", "line-41a8c75ec9d8", "seoul-4",
+  "line-80fc4d5350d4", "line-3f41718e0833", "line-15b3b8a93259", "line-2b2d9eaa53d0",
+]);
+
+async function withEnvironment(values, action) {
+  const previous = new Map(Object.keys(values).map((key) => [key, process.env[key]]));
+  try {
+    for (const [key, value] of Object.entries(values)) process.env[key] = value;
+    return await action();
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
 
 test("build-datapack은 candidate mode만 staged transition을 입력보다 먼저 차단한다", async () => {
   const source = await readFile(path.join(root, "tools/datapack/build-datapack.mjs"), "utf8");
@@ -104,8 +124,13 @@ function networkEdgeEvidenceFixture() {
 test("candidate build spec release identity는 wall clock과 workflow run number에 무관하다", async (context) => {
   const directory = await mkdtemp(path.join(tmpdir(), "candidate-build-release-identity-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
+  await copySyntheticCurrentPublicRouteMapRepository(root, directory, {
+    now: currentNow,
+    activateStaticNetwork: true,
+  });
+  await refreshCurrentCapitalAccessibilityFull({ repositoryRoot: directory });
   const buildSpecPath = "tools/datapack/release/candidate-build-spec.json";
-  const buildSpec = JSON.parse(await readFile(path.join(root, buildSpecPath), "utf8"));
+  const buildSpec = await readFile(path.join(directory, buildSpecPath), "utf8").then(JSON.parse);
   const { privateKey } = generateKeyPairSync("rsa", {
     modulusLength: 2048,
     privateKeyEncoding: { type: "pkcs8", format: "pem" },
@@ -113,52 +138,41 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   });
   const directOutput = path.join(directory, "direct-build");
   await assert.rejects(
-    execFileAsync(process.execPath, [
-      "tools/datapack/build-datapack.mjs",
+    withEnvironment({
+      EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-08-14T16:00:00.000Z",
+      EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey,
+      EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: "production-v1",
+    }, () => buildDatapackMain([
       "--build-spec", buildSpecPath,
       "--output", directOutput,
-    ], {
-      cwd: root,
-      env: {
-        ...process.env,
-        EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-08-14T16:00:00.000Z",
-        EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey,
-        EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: "production-v1",
-      },
-    }),
+    ], { repositoryRoot: directory })),
     /production accessibility evidence mismatch/,
   );
   await assert.rejects(readFile(path.join(directOutput, "current.json")), /ENOENT/);
   const candidateFixture = path.join(directory, "candidate-fixture.json");
   const routeCoverageAuthority = path.join(directory, "server-route-coverage-authority.json");
-  await execFileAsync(process.execPath, [
-    "tools/datapack/build-current-release-candidate-accessibility-input.mjs",
+  await buildAccessibilityAuthorityMain([
     "--fixture", buildSpec.fixturePath,
     "--build-spec", buildSpecPath,
     "--station-line-input", "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
     "--route-edge-input", "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
     "--fixture-output", candidateFixture,
     "--authority-output", routeCoverageAuthority,
-  ], { cwd: root });
+  ], { repositoryRoot: directory });
 
   async function build(name, buildNow, runNumber) {
     const output = path.join(directory, name);
-    await execFileAsync(process.execPath, [
-      "tools/datapack/build-datapack.mjs",
+    await withEnvironment({
+      EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow,
+      EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey,
+      EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: "production-v1",
+      GITHUB_RUN_NUMBER: runNumber,
+    }, () => buildDatapackMain([
       "--build-spec", buildSpecPath,
       "--candidate-fixture-override", candidateFixture,
       "--server-route-coverage-authority", routeCoverageAuthority,
       "--output", output,
-    ], {
-      cwd: root,
-      env: {
-        ...process.env,
-        EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow,
-        EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey,
-        EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: "production-v1",
-        GITHUB_RUN_NUMBER: runNumber,
-      },
-    });
+    ], { repositoryRoot: directory }));
     return {
       manifest: await readFile(path.join(output, "current.json")),
       provenance: await readFile(path.join(output, "current.provenance.json")),
@@ -186,6 +200,12 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   const second = await build("second", "2026-08-21T00:00:00.000Z", "202");
   const manifest = JSON.parse(first.manifest);
   const provenance = JSON.parse(first.provenance);
+  const snapshots = await readFile(
+    path.join(directory, "tools/datapack/release/source-snapshots.json"),
+    "utf8",
+  ).then(JSON.parse);
+  const publicSnapshot = snapshots.find(({ sourceId }) => sourceId === PUBLIC_ROUTE_MAP_SOURCE_ID);
+  assert.ok(publicSnapshot?.routeMapLayoutArtifact);
 
   assert.equal(manifest.publishedAt, buildSpec.publishedAt);
   assert.equal(manifest.releaseSequence, buildSpec.releaseSequence);
@@ -193,6 +213,32 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   assert.equal(provenance.candidateBuild.releaseSequence, buildSpec.releaseSequence);
   for (const key of ["manifest", "provenance", "sqlite", "gzip"]) {
     assert.deepEqual(first[key], second[key], `${key} bytes drifted`);
+  }
+  const database = new DatabaseSync(path.join(directory, "first/catalog/capital-v1.sqlite"), {
+    readOnly: true,
+  });
+  try {
+    assert.equal(database.prepare(
+      "SELECT COUNT(*) AS count FROM route_map_positions WHERE source_id = ?",
+    ).get(PUBLIC_ROUTE_MAP_SOURCE_ID).count, publicSnapshot.routeMapLayoutArtifact.rawPositions.length);
+    assert.equal(database.prepare(
+      "SELECT COUNT(*) AS count FROM route_map_positions WHERE source_id = ?",
+    ).get("seoulmetro-cyberstation-route-map").count, 0);
+    assert.deepEqual(database.prepare(
+      "SELECT DISTINCT line_id FROM route_map_positions WHERE source_id = ? ORDER BY line_id",
+    ).all(PUBLIC_ROUTE_MAP_SOURCE_ID).map(({ line_id: lineId }) => lineId), [...PUBLIC_ROUTE_MAP_LINE_IDS].sort());
+  } finally {
+    database.close();
+  }
+  for (const field of ["route_map_position", "route_map_label_polygon"]) {
+    const records = provenance.packs.flatMap(({ records: rows }) => rows).filter(
+      ({ sourceId, field: recordField }) => sourceId === PUBLIC_ROUTE_MAP_SOURCE_ID && recordField === field,
+    );
+    assert.ok(records.length > 0, `provenance missing field: ${field}`);
+    assert.deepEqual(
+      [...new Set(records.flatMap(({ coverageScope }) => coverageScope?.lineIds ?? []))].sort(),
+      [...PUBLIC_ROUTE_MAP_LINE_IDS].sort(),
+    );
   }
 
   const missingPublishedAt = structuredClone(buildSpec);

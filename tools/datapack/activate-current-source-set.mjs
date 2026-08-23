@@ -28,6 +28,16 @@ import { addCadence } from "./freshness-policy.mjs";
 import { ROUTE_MAP_REVERIFICATION_CADENCE } from "./lib/route-map-admission-freshness.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import {
+  CURRENT_MOLIT_FULL_ROUTE_ROW_COUNT,
+  CURRENT_SEOUL_PUBLIC_POSITION_COUNT,
+} from "./lib/static-network-successor-completeness.mjs";
+import {
+  CURRENT_SEOUL_PUBLIC_ROUTE_MAP_COVERAGE,
+  CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS,
+  materializeSeoulRouteMapPositions,
+  verifyCurrentCapitalPublicRouteMapDocument,
+} from "./materialize-seoul-route-map-positions.mjs";
+import {
   requiresCurrentCapitalTopologyAdmission,
   withCurrentCapitalTopologyAdmissions,
 } from "./rebind-capital-route-map-admissions.mjs";
@@ -35,7 +45,6 @@ import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs
 
 const SHA256 = /^[0-9a-f]{64}$/u;
 const STATIC_REVALIDATION_SOURCE_IDS = Object.freeze([
-  "molit-urban-rail-full-route",
   "seoulmetro-station-line-info",
 ]);
 const STATIC_REVALIDATION_EVIDENCE_KEYS = Object.freeze([
@@ -55,11 +64,16 @@ const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
 const MAX_BUFFER = 64 * 1024 * 1024;
 
-export const CURRENT_PRODUCTION_SOURCE_IDS = Object.freeze([
+export const CURRENT_SOURCE_INVENTORY_IDS = Object.freeze([
   "molit-urban-rail-full-route", "seoulmetro-station-line-info",
-  "seoulmetro-cyberstation-route-map", "kric-subway-timetable",
+  "seoul-metro-route-map-positions", "kric-subway-timetable",
   "seoul-metro-accessibility", "kric-station-convenience-standard",
   "seoul-metro-official-od-fares",
+]);
+export const CURRENT_PRODUCTION_SOURCE_IDS = Object.freeze([
+  "molit-urban-rail-full-route", "seoulmetro-station-line-info",
+  "kric-subway-timetable", "seoul-metro-accessibility",
+  "kric-station-convenience-standard", "seoul-metro-official-od-fares",
 ]);
 
 export const CURRENT_SOURCE_HANDOFF = Object.freeze({
@@ -102,10 +116,161 @@ function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+function canonicalJsonSha256(value) {
+  return sha256(Buffer.from(`${JSON.stringify(value)}\n`));
+}
+
 function requireOne(rows, predicate, label) {
   const matches = rows.filter(predicate);
   if (matches.length !== 1) throw new Error(`${label} must have exactly one match`);
   return matches[0];
+}
+
+function requireCurrentSuccessorReceipt(snapshot, extension, contentType) {
+  const date = snapshot.retrievedAt?.slice(0, 10).replaceAll("-", "");
+  const objectKey = date == null
+    ? null
+    : `source-raw/${snapshot.sourceId}/${date}/${snapshot.rawSha256}.${extension}`;
+  const receipt = snapshot.rawReceipt;
+  const expectedUri = objectKey == null
+    ? null
+    : `oci://axvym6vk8g7i/easysubway-datapacks/${objectKey}`;
+  if (!SHA256.test(snapshot.rawSha256 ?? "")
+    || snapshot.rawObjectUri !== expectedUri
+    || receipt?.schemaVersion !== 1
+    || receipt.artifactKind !== "static-network-source-raw-object-receipt"
+    || receipt.sourceId !== snapshot.sourceId
+    || receipt.snapshotId !== snapshot.snapshotId
+    || receipt.capturedAt !== snapshot.retrievedAt
+    || receipt.rawObjectSha256 !== snapshot.rawSha256
+    || receipt.rawObjectUri !== snapshot.rawObjectUri
+    || receipt.ociNamespace !== "axvym6vk8g7i"
+    || receipt.bucket !== "easysubway-datapacks"
+    || receipt.objectKey !== objectKey
+    || receipt.contentType !== contentType
+    || !Number.isSafeInteger(receipt.byteSize) || receipt.byteSize < 1) {
+    throw new Error("current successor OCI receipt binding is invalid");
+  }
+}
+
+function requireCurrentInventoryHead(sourceInventory, snapshot) {
+  const source = requireOne(
+    sourceInventory.sources,
+    ({ id }) => id === snapshot.sourceId,
+    `current successor inventory ${snapshot.sourceId}`,
+  );
+  const admission = source.admissionEvidence;
+  if (admission?.snapshotId !== snapshot.snapshotId
+    || admission.rawSha256 !== snapshot.rawSha256
+    || admission.schemaFingerprint !== snapshot.schemaFingerprint) {
+    throw new Error("current successor inventory head binding is invalid");
+  }
+  return source;
+}
+
+// The static five-record sample is not an activation authority.  The successor
+// transaction is the only way the full national membership and public Seoul
+// coordinate heads become current.
+export function verifyCurrentStaticNetworkSuccessorHeads({ sourceSnapshots, sourceInventory }) {
+  if (!Array.isArray(sourceSnapshots)
+    || sourceInventory?.schemaVersion !== 1
+    || sourceInventory.artifactKind !== "production-source-inventory"
+    || !Array.isArray(sourceInventory.sources)) {
+    throw new Error("current successor inputs are invalid");
+  }
+  const heads = validateLineage(sourceSnapshots).headsBySource;
+  const headFor = (sourceId) => requireOne(
+    sourceSnapshots,
+    ({ snapshotId }) => snapshotId === heads[sourceId],
+    `current successor head ${sourceId}`,
+  );
+  const molit = headFor("molit-urban-rail-full-route");
+  const molitPrevious = requireOne(
+    sourceSnapshots,
+    ({ snapshotId }) => snapshotId === molit.previousSnapshotId,
+    "current full route predecessor",
+  );
+  const migration = molit.projectionMigration;
+  if (molit.sourceId !== "molit-urban-rail-full-route"
+    || !Array.isArray(molit.providerRecordHashes)
+    || molit.rowCount !== CURRENT_MOLIT_FULL_ROUTE_ROW_COUNT
+    || molit.coverageCount !== molit.rowCount
+    || molit.providerRecordHashes.length !== molit.rowCount
+    || molit.providerRecordHashes.some((value) => !SHA256.test(value ?? ""))
+    || !SHA256.test(molit.contentSha256 ?? "")
+    || !SHA256.test(molit.schemaFingerprint ?? "")
+    || migration?.migrationKind !== "LEGACY_SAMPLE_TO_FULL_CONSUMED_FIELDS"
+    || migration.sourceId !== molit.sourceId
+    || migration.legacySnapshotId !== molitPrevious.snapshotId
+    || migration.legacyRawSha256 !== molitPrevious.rawSha256
+    || migration.legacySchemaFingerprint !== molitPrevious.schemaFingerprint
+    || JSON.stringify(migration.legacyProviderRecordHashes) !== JSON.stringify(molitPrevious.providerRecordHashes)
+    || migration.fullProjectionSha256 !== molit.contentSha256
+    || migration.fullProjectionSchemaFingerprint !== molit.schemaFingerprint
+    || migration.fullProjectionRowCount !== molit.rowCount
+    || migration.newSnapshotId !== molit.snapshotId) {
+    throw new Error("current full route successor binding is invalid");
+  }
+  requireCurrentSuccessorReceipt(molit, "csv", "text/csv; charset=euc-kr");
+  requireCurrentInventoryHead(sourceInventory, molit);
+
+  const positions = headFor("seoul-metro-route-map-positions");
+  const replacement = positions.projectionMigration;
+  const replaced = requireOne(
+    sourceSnapshots,
+    ({ snapshotId }) => snapshotId === replacement?.replacedSnapshotId,
+    "current public route map predecessor",
+  );
+  if (positions.sourceId !== "seoul-metro-route-map-positions"
+    || positions.previousSnapshotId !== null
+    || positions.diffSummary !== null
+    || positions.rowCount !== CURRENT_SEOUL_PUBLIC_POSITION_COUNT
+    || !Array.isArray(positions.providerRecordHashes)
+    || positions.providerRecordHashes.length !== positions.rowCount
+    || positions.providerRecordHashes.some((value) => !SHA256.test(value ?? ""))
+    || replacement?.migrationKind !== "CROSS_SOURCE_CANONICAL_REPLACEMENT"
+    || replacement.sourceId !== positions.sourceId
+    || replacement.replacedSourceId !== "seoulmetro-cyberstation-route-map"
+    || replacement.replacedSnapshotId !== replaced.snapshotId
+    || replacement.replacedRawSha256 !== replaced.rawSha256
+    || replacement.replacedSchemaFingerprint !== replaced.schemaFingerprint
+    || replacement.candidateSlotSourceId !== replacement.replacedSourceId) {
+    throw new Error("current public route map successor binding is invalid");
+  }
+  requireCurrentSuccessorReceipt(positions, "json", "application/json");
+  const positionSource = requireCurrentInventoryHead(sourceInventory, positions);
+  const layout = positions.routeMapLayoutEvidence;
+  const artifact = positions.routeMapLayoutArtifact;
+  const currentLayout = positionSource.routeMapAdmissionEvidence?.currentLayoutAdmission;
+  const layoutKeys = [
+    "layoutAlgorithmVersion", "topologySnapshotId", "topologySnapshotSha256",
+    "topologySnapshotIdentity", "lineOrderSha256", "aliasLedgerVersion", "aliasLedgerSha256",
+    "rawPositionsSha256", "layoutPositionsSha256", "layoutTracksSha256", "semanticInputSha256",
+    "semanticOutputSha256", "outputSchemaSha256", "layoutArtifactSha256",
+  ];
+  if (!layout || !artifact || artifact.rawSha256 !== positions.rawSha256
+    || layout.layoutArtifactSha256 !== canonicalJsonSha256(artifact)
+    || layoutKeys.some((key) => key !== "layoutArtifactSha256"
+      && (layout[key] == null || layout[key] !== artifact[key]))
+    || positionSource.requiredForProductionPack !== true
+    || positionSource.productionUseAllowed !== true
+    || currentLayout?.schemaVersion !== 2
+    || currentLayout.artifactKind !== "seoul-public-route-map-layout-admission"
+    || currentLayout.status !== "ADMITTED"
+    || currentLayout.positionSnapshotId !== positions.snapshotId
+    || currentLayout.snapshotPath !== `tools/datapack/sources/${positions.snapshotId}.json`
+    || currentLayout.snapshotSha256 !== positions.normalizedObservationSha256
+    || currentLayout.rawSha256 !== positions.rawSha256
+    || currentLayout.contentSha256 !== positions.contentSha256
+    || layoutKeys.some((key) => currentLayout[key] !== layout[key])) {
+    throw new Error("current public route map layout admission binding is invalid");
+  }
+  const cyber = sourceInventory.sources.filter(({ id }) => id === "seoulmetro-cyberstation-route-map");
+  if (cyber.length > 1 || cyber.some(({ requiredForProductionPack, productionUseAllowed }) =>
+    requiredForProductionPack === true || productionUseAllowed === true)) {
+    throw new Error("legacy route map source cannot be current production");
+  }
+  return { molit, positions };
 }
 
 function validateHandoff(handoff, rawArtifact, rawArtifactBytes) {
@@ -188,7 +353,7 @@ function activateInventory(sourceInventory, handoff) {
     throw new Error("current source inventory identity is invalid");
   }
   const next = structuredClone(sourceInventory);
-  for (const sourceId of CURRENT_PRODUCTION_SOURCE_IDS) {
+  for (const sourceId of CURRENT_SOURCE_INVENTORY_IDS) {
     requireOne(next.sources, ({ id }) => id === sourceId, `current source inventory ${sourceId}`);
   }
   const timetable = requireOne(
@@ -204,6 +369,16 @@ function activateInventory(sourceInventory, handoff) {
   timetable.admissionEvidence.snapshotId = handoff.snapshotId;
   timetable.admissionEvidence.rawSha256 = handoff.rawSha256;
   timetable.admissionEvidence.schemaFingerprint = handoff.schemaFingerprint;
+
+  const routeMapPositions = requireOne(
+    next.sources,
+    ({ id }) => id === "seoul-metro-route-map-positions",
+    "current public route-map source",
+  );
+  routeMapPositions.coverageScope = {
+    ...routeMapPositions.coverageScope,
+    operatorIds: [...CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS],
+  };
 
   const convenience = requireOne(
     next.sources,
@@ -412,9 +587,7 @@ function validateStaticRevalidation(
   const { evidenceSha256, ...payload } = evidence;
   const observedMillis = requiredUtcInstant(evidence.observedAt, "static revalidation observedAt");
   const expectedDate = evidence.observedAt.slice(0, 10).replaceAll("-", "");
-  const expectedOperation = sourceId === "molit-urban-rail-full-route"
-    ? "molit-urban-rail-full-route-file-five-records"
-    : "seoulmetro-line4-stations-one-to-five";
+  const expectedOperation = "seoulmetro-line4-stations-one-to-five";
   if (evidence.schemaVersion !== 1
     || evidence.artifactKind !== "current-static-source-revalidation-evidence"
     || evidence.contractVersion !== "1.0.0"
@@ -700,6 +873,28 @@ export function activateIncheonTopologyAdmission({
   return next;
 }
 
+function withCurrentCapitalPublicRouteMapCoverage(document) {
+  const pack = document?.packs?.find(({ id }) => id === "capital");
+  if (!pack?.metadata || typeof pack.metadata.productionCoverageEvidence !== "string") {
+    throw new Error("current public route map coverage metadata is invalid");
+  }
+  let coverageEvidence;
+  try { coverageEvidence = JSON.parse(pack.metadata.productionCoverageEvidence); } catch {
+    throw new Error("current public route map coverage metadata is invalid");
+  }
+  if (!Array.isArray(coverageEvidence)
+    || coverageEvidence.some(({ sourceIds }) => !Array.isArray(sourceIds))
+    || coverageEvidence.some(({ sourceDomain, sourceIds }) =>
+      sourceDomain !== "route_map_positions" && sourceIds.includes("seoulmetro-cyberstation-route-map"))) {
+    throw new Error("current public route map coverage metadata is invalid");
+  }
+  pack.metadata.productionCoverageEvidence = JSON.stringify([
+    ...coverageEvidence.filter(({ sourceDomain }) => sourceDomain !== "route_map_positions"),
+    CURRENT_SEOUL_PUBLIC_ROUTE_MAP_COVERAGE,
+  ]);
+  return document;
+}
+
 function activateProductionInput({ productionInput, officialOdFareQuotes, handoff, rawArtifact, rawArtifactBytes, applyScheduleImpl }) {
   if (!productionInput || typeof productionInput !== "object" || Array.isArray(productionInput)) {
     throw new Error("current production input identity is invalid");
@@ -727,11 +922,12 @@ function activateProductionInput({ productionInput, officialOdFareQuotes, handof
     evidence: "승인된 서울교통공사 양방향 OD fare snapshot",
   };
   const coverageEvidence = (scheduled.coverageEvidence ?? [])
-    .filter(({ sourceDomain }) => sourceDomain !== "official_od_fares");
+    .filter(({ sourceDomain }) => !["official_od_fares", "route_map_positions"].includes(sourceDomain));
   return {
     ...scheduled,
     sourceIds: [...CURRENT_PRODUCTION_SOURCE_IDS],
     coverageEvidence: [...coverageEvidence, fareCoverage],
+    routeMapPositions: [],
     officialOdFareQuotes: structuredClone(officialOdFareQuotes),
     routeServiceArtifactEvidence: [],
     movementPathCandidates: [],
@@ -758,6 +954,7 @@ export function buildCurrentSourcePrimaryOutputs({
   currentIncheonTopologyPath,
   buildNow,
   snapshotBytesByPath,
+  verifySuccessorHeadsImpl = verifyCurrentStaticNetworkSuccessorHeads,
   applyScheduleImpl = applySchedule,
   rebindTopologyAdmissionsImpl = withCurrentCapitalTopologyAdmissions,
   activateIncheonTopologyAdmissionImpl = activateIncheonTopologyAdmission,
@@ -765,6 +962,7 @@ export function buildCurrentSourcePrimaryOutputs({
 }) {
   validateHandoff(handoff, rawArtifact, rawArtifactBytes);
   if (!Array.isArray(sourceSnapshots)) throw new Error("current source snapshots are required");
+  verifySuccessorHeadsImpl({ sourceSnapshots, sourceInventory });
   const changeAdmission = staticRevalidations?.find(
     ({ evidence }) => evidence?.artifactKind === "current-static-source-change-admission-evidence",
   );
@@ -1446,8 +1644,6 @@ export async function readBuilderBaselineBytes(
 export async function generateCurrentSourceActivation({
   capitalTopologyPath,
   incheonTopologyPath,
-  molitRevalidationSnapshotPath,
-  molitRevalidationEvidencePath,
   seoulRevalidationSnapshotPath,
   seoulRevalidationEvidencePath,
   builderGitSha,
@@ -1463,8 +1659,6 @@ export async function generateCurrentSourceActivation({
     throw new Error("current topology inputs must be tracked source snapshot paths");
   }
   const revalidationPaths = [
-    [molitRevalidationSnapshotPath, /^tools\/datapack\/sources\/current-static-revalidation-[0-9]{8}\/molit-urban-rail-full-route-snapshot\.json$/u],
-    [molitRevalidationEvidencePath, /^tools\/datapack\/sources\/current-static-revalidation-[0-9]{8}\/molit-urban-rail-full-route-revalidation-evidence\.json$/u],
     [seoulRevalidationSnapshotPath, /^tools\/datapack\/sources\/current-static-revalidation-[0-9]{8}\/seoulmetro-station-line-info-snapshot\.json$/u],
     [seoulRevalidationEvidencePath, /^tools\/datapack\/sources\/current-static-revalidation-[0-9]{8}\/seoulmetro-station-line-info-revalidation-evidence\.json$/u],
   ];
@@ -1499,7 +1693,6 @@ export async function generateCurrentSourceActivation({
     const [capitalTopologyBytes, incheonTopologyBytes, rawArtifact, baselineTopologyBytes, sourceSnapshotBytes,
       sourceInventoryBytes, productionInputBytes, quoteBundleBytes, baseSpecBytes,
       canonicalBytes, productionScopePolicyBytes,
-      molitRevalidationSnapshotBytes, molitRevalidationEvidenceBytes,
       seoulRevalidationSnapshotBytes, seoulRevalidationEvidenceBytes,
       basemapManifestBytes, dorasanCsvBytes, reviewedAmbiguitiesBytes] = await Promise.all([
       readRegularBytes(root, capitalTopologyPath, "current capital topology"),
@@ -1513,8 +1706,6 @@ export async function generateCurrentSourceActivation({
       readMutableInput("tools/datapack/release/candidate-build-spec.json"),
       readMutableInput("tools/datapack/release/capital-production-canonical-pack.json"),
       readRegularBytes(root, "tools/datapack/nationwide-coverage-targets.json", "production scope policy"),
-      readRegularBytes(root, molitRevalidationSnapshotPath, "MOLIT revalidation snapshot"),
-      readRegularBytes(root, molitRevalidationEvidencePath, "MOLIT revalidation evidence"),
       readRegularBytes(root, seoulRevalidationSnapshotPath, "Seoul revalidation snapshot"),
       readRegularBytes(root, seoulRevalidationEvidencePath, "Seoul revalidation evidence"),
       readRegularBytes(root, "tools/route-map/basemap-build-manifest.json", "route-map basemap manifest"),
@@ -1535,10 +1726,6 @@ export async function generateCurrentSourceActivation({
       sourceInventory,
       staticRevalidationDate: revalidationDateMatch[1],
       staticRevalidations: [
-        {
-          snapshot: parseJson(molitRevalidationSnapshotBytes, "MOLIT revalidation snapshot"),
-          evidence: parseJson(molitRevalidationEvidenceBytes, "MOLIT revalidation evidence"),
-        },
         {
           snapshot: parseJson(seoulRevalidationSnapshotBytes, "Seoul revalidation snapshot"),
           evidence: parseJson(seoulRevalidationEvidenceBytes, "Seoul revalidation evidence"),
@@ -1578,10 +1765,33 @@ export async function generateCurrentSourceActivation({
       "--output", reviewedPath,
     ]);
     const productionScopePolicy = parseJson(productionScopePolicyBytes, "production scope policy");
-    const reviewed = projectRetiredTransitLines(
+    const publicRouteMapSuccessor = requireOne(
+      primary.sourceSnapshots,
+      ({ sourceId }) => sourceId === "seoul-metro-route-map-positions",
+      "current public route map successor",
+    );
+    const capitalTopologySnapshotId = exactCurrentTopologySnapshotIdentity({
+      snapshot: capitalTopology,
+      snapshotBytes: capitalTopologyBytes,
+      snapshotPath: capitalTopologyPath,
+      prefix: "capital-route-topology",
+    });
+    if (publicRouteMapSuccessor.routeMapLayoutArtifact?.topologySnapshotId !== capitalTopologySnapshotId
+      || publicRouteMapSuccessor.routeMapLayoutArtifact?.topologySnapshotSha256 !== sha(capitalTopologyBytes)) {
+      throw new Error("current public route map topology identity is invalid");
+    }
+    const capitalAdmissions = admittedCapitalLineEvidence(
+      primary.sourceInventory,
+      capitalTopology,
+      capitalTopologySnapshotId,
+      capitalTopology.capturedAt,
+      new Date(buildNow),
+    );
+    const reviewedBase = projectRetiredTransitLines(
       parseJson(await readFile(reviewedPath), "current reviewed pack"),
       productionScopePolicy.inactiveLineExclusions,
     );
+    const reviewed = reviewedBase;
     const reviewedBytes = jsonBytes(reviewed);
     await writeFile(reviewedPath, reviewedBytes);
     const reviewedCapital = reviewed.packs?.find(({ id }) => id === "capital");
@@ -1590,33 +1800,36 @@ export async function generateCurrentSourceActivation({
       parseJson(canonicalBytes, "canonical pack"),
       reviewedCapital,
     );
-    const capitalTopologySnapshotId = exactCurrentTopologySnapshotIdentity({
-      snapshot: capitalTopology,
-      snapshotBytes: capitalTopologyBytes,
-      snapshotPath: capitalTopologyPath,
-      prefix: "capital-route-topology",
-    });
-    const capitalAdmissions = admittedCapitalLineEvidence(
-      primary.sourceInventory,
-      capitalTopology,
-      capitalTopologySnapshotId,
-      capitalTopology.capturedAt,
-      new Date(buildNow),
-    );
     projectCapitalTopologyIntoCanonicalFixture(
       canonical,
       capitalTopology,
       capitalTopologySnapshotId,
       capitalAdmissions,
     );
-    const projectedCanonical = projectCurrentCanonicalRouteMapProvenance({
+    const canonicalWithProjectedRouteMapProvenance = projectCurrentCanonicalRouteMapProvenance({
       canonical,
       inactiveLineExclusions: productionScopePolicy.inactiveLineExclusions,
       basemapManifest: parseJson(basemapManifestBytes, "route-map basemap manifest"),
       dorasanCsvBytes,
       reviewedAmbiguities: parseJson(reviewedAmbiguitiesBytes, "reviewed route-map ambiguities"),
     });
-    const nextCanonicalBytes = jsonBytes(projectedCanonical, false);
+    const canonicalWithPublicRouteMap = withCurrentCapitalPublicRouteMapCoverage(materializeSeoulRouteMapPositions({
+      baseFixture: canonicalWithProjectedRouteMapProvenance,
+      snapshot: publicRouteMapSuccessor.routeMapLayoutArtifact,
+      snapshotSha256: publicRouteMapSuccessor.normalizedObservationSha256,
+      topologySnapshotBytes: capitalTopologyBytes,
+      inventory: primary.sourceInventory,
+      now: new Date(buildNow),
+      rewritePackIdentity: false,
+      successorProviderRecordHashes: publicRouteMapSuccessor.providerRecordHashes,
+      requireSuccessorProviderRecordHashes: true,
+    }));
+    verifyCurrentCapitalPublicRouteMapDocument(
+      canonicalWithPublicRouteMap,
+      publicRouteMapSuccessor,
+      "current canonical pack",
+    );
+    const nextCanonicalBytes = jsonBytes(canonicalWithPublicRouteMap, false);
     await writeTempFile(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[4], nextCanonicalBytes);
 
     const nextSpec = buildCurrentCandidateSpec({
@@ -1693,7 +1906,6 @@ export function parseCurrentSourceActivationArgs(argv) {
       continue;
     }
     if (!["--capital-topology", "--incheon-topology",
-      "--molit-revalidation-snapshot", "--molit-revalidation-evidence",
       "--seoul-revalidation-snapshot", "--seoul-revalidation-evidence",
       "--builder-git-sha", "--build-now"].includes(flag)) {
       throw new Error(`unknown activation argument: ${flag ?? ""}`);
@@ -1706,7 +1918,6 @@ export function parseCurrentSourceActivationArgs(argv) {
     index += 1;
   }
   for (const key of ["capital_topology", "incheon_topology",
-    "molit_revalidation_snapshot", "molit_revalidation_evidence",
     "seoul_revalidation_snapshot", "seoul_revalidation_evidence",
     "builder_git_sha", "build_now"]) {
     if (!args[key]) throw new Error(`--${key.replaceAll("_", "-")} is required`);
@@ -1719,8 +1930,6 @@ async function main() {
   const result = await generateCurrentSourceActivation({
     capitalTopologyPath: args.capital_topology,
     incheonTopologyPath: args.incheon_topology,
-    molitRevalidationSnapshotPath: args.molit_revalidation_snapshot,
-    molitRevalidationEvidencePath: args.molit_revalidation_evidence,
     seoulRevalidationSnapshotPath: args.seoul_revalidation_snapshot,
     seoulRevalidationEvidencePath: args.seoul_revalidation_evidence,
     builderGitSha: args.builder_git_sha,

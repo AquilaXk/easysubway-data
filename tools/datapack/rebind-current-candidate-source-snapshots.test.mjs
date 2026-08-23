@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { cp, mkdtemp, mkdir, open, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, open, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -19,26 +19,17 @@ import { releaseRequestBindingViolations } from "./verify-release-request-bindin
 import { approvedGovernanceBindingTransition } from "./source-governance-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
+import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const CURRENT_SOURCE_HEAD_AT = await selectedSourceHeadAt();
 const NOW = new Date(CURRENT_SOURCE_HEAD_AT + 120_000);
-const RELATIVE = [
-  "tools/datapack/release/candidate-build-spec.json",
-  "tools/datapack/source-inventory.json",
-  "tools/datapack/release/source-snapshots.json",
-  "tools/datapack/release/capital-production-canonical-pack.json",
-  "tools/datapack/source-governance-policy.json",
-  "release/product-gates/datapack-freshness-sla.json",
-  "tools/datapack/release/release-request.json",
-  "tools/datapack/release/hash-evidence.json",
-];
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const jsonSha = (value) => sha(Buffer.from(JSON.stringify(value)));
 
-test("active candidate source sequence는 exact six와 TRANSFER-last seven만 허용한다", () => {
+test("active candidate source sequence는 public successor exact six와 TRANSFER-last seven만 허용한다", () => {
   const six = [
-    "seoulmetro-cyberstation-route-map", "kric-subway-timetable", "seoul-metro-accessibility",
+    "seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility",
     "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info",
   ];
   const seven = [...six, "seoul-metro-transfer-distance-duration"];
@@ -47,6 +38,9 @@ test("active candidate source sequence는 exact six와 TRANSFER-last seven만 �
   assert.equal(isActiveCandidateSourceSequence([...seven].reverse()), false);
   assert.equal(isActiveCandidateSourceSequence([...six, "other-source"]), false);
   assert.equal(isActiveCandidateSourceSequence([...six, six.at(-1)]), false);
+  assert.equal(isActiveCandidateSourceSequence([
+    "seoulmetro-cyberstation-route-map", ...six.slice(1),
+  ]), false);
 });
 
 function kric213Snapshot() {
@@ -84,11 +78,7 @@ function kric213Snapshot() {
 
 async function fixture() {
   const root = await mkdtemp(path.join(os.tmpdir(), "candidate-rebind-"));
-  for (const relative of RELATIVE) {
-    const target = path.join(root, relative);
-    await mkdir(path.dirname(target), { recursive: true });
-    await cp(path.join(ROOT, relative), target);
-  }
+  await copySyntheticCurrentPublicRouteMapRepository(ROOT, root, { now: NOW });
   const readJson = async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"));
   const snapshots = await readJson("tools/datapack/release/source-snapshots.json");
   const inventory = await readJson("tools/datapack/source-inventory.json");
@@ -261,7 +251,7 @@ test("additive governance successor preserves only approved non-TRANSFER prior p
     (value) => { value.governancePolicyVersion = "2099-01-01"; },
   ]) {
     const invalid = structuredClone(snapshot); mutate(invalid);
-    assert.throws(() => approvedGovernanceBindingTransition({ snapshot: invalid, currentPolicyVersion: "2026-07-15", currentPolicySha256: "13f8a78c0ae0f7bfa6817005f44a92be3131e6f6708a69a4024747478203beaa" }), /governance policy binding/);
+    assert.throws(() => approvedGovernanceBindingTransition({ snapshot: invalid, currentPolicyVersion: "2026-07-15", currentPolicySha256: sha(input.governancePolicyBytes) }), /governance policy binding/);
   }
 });
 

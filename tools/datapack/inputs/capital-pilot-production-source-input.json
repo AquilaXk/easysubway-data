@@ -21,7 +21,6 @@
   "sourceIds": [
     "molit-urban-rail-full-route",
     "seoulmetro-station-line-info",
-    "seoulmetro-cyberstation-route-map",
     "kric-subway-timetable",
     "seoul-metro-accessibility",
     "kric-station-convenience-standard",
@@ -68,15 +67,6 @@
         "seoulmetro-station-line-info"
       ],
       "evidence": "국토교통부 도시철도 전체노선정보와 서울교통공사 노선별 지하철역 정보 source inventory coverageScope"
-    },
-    {
-      "regionId": "capital",
-      "operatorId": "seoul-metro",
-      "sourceDomain": "route_map_positions",
-      "sourceIds": [
-        "seoulmetro-cyberstation-route-map"
-      ],
-      "evidence": "서울교통공사 사이버스테이션 route map snapshot sourceSha256와 label polygon 관리자 검수 기준"
     },
     {
       "regionId": "capital",
@@ -399,90 +389,7 @@
       "evidenceHash": "58829a139466e47070a2facd2f4e4c7968331f30909441e2c8d14fd94dfeb39b"
     }
   ],
-  "routeMapPositions": [
-    {
-      "sourceId": "seoulmetro-cyberstation-route-map",
-      "station": {
-        "sourceId": "seoulmetro-station-line-info",
-        "sourceStationCode": "448",
-        "lineId": "seoul-4"
-      },
-      "region": "수도권",
-      "x": 380,
-      "y": 945,
-      "labelDx": 0,
-      "labelDy": -14,
-      "labelPolygon": [
-        {
-          "x": 352,
-          "y": 915
-        },
-        {
-          "x": 408,
-          "y": 915
-        },
-        {
-          "x": 408,
-          "y": 937
-        },
-        {
-          "x": 352,
-          "y": 937
-        }
-      ],
-      "sourceName": "서울교통공사 사이버스테이션 노선도",
-      "sourceUrl": "https://www.seoulmetro.co.kr/kr/cyberStation.do",
-      "sourceSha256": "7370b4db2d2f398f46c55314b71d7335c77ec6745fd388793804874447cd25e0",
-      "license": "공공누리 제1유형",
-      "licenseStatus": "redistributable-commercial-derivative-attribution-required",
-      "commercialUseAllowed": true,
-      "attributionRequired": true,
-      "sourceLabel": "상록수",
-      "reviewedAt": "2026-06-28T00:00:00.000Z",
-      "updatedAt": "2026-06-28T00:00:00.000Z"
-    },
-    {
-      "sourceId": "seoulmetro-cyberstation-route-map",
-      "station": {
-        "sourceId": "seoulmetro-station-line-info",
-        "sourceStationCode": "433",
-        "lineId": "seoul-4"
-      },
-      "region": "수도권",
-      "x": 705,
-      "y": 680,
-      "labelDx": 20,
-      "labelDy": -20,
-      "labelPolygon": [
-        {
-          "x": 721,
-          "y": 650
-        },
-        {
-          "x": 769,
-          "y": 650
-        },
-        {
-          "x": 769,
-          "y": 672
-        },
-        {
-          "x": 721,
-          "y": 672
-        }
-      ],
-      "sourceName": "서울교통공사 사이버스테이션 노선도",
-      "sourceUrl": "https://www.seoulmetro.co.kr/kr/cyberStation.do",
-      "sourceSha256": "7370b4db2d2f398f46c55314b71d7335c77ec6745fd388793804874447cd25e0",
-      "license": "공공누리 제1유형",
-      "licenseStatus": "redistributable-commercial-derivative-attribution-required",
-      "commercialUseAllowed": true,
-      "attributionRequired": true,
-      "sourceLabel": "사당",
-      "reviewedAt": "2026-06-28T00:00:00.000Z",
-      "updatedAt": "2026-06-28T00:00:00.000Z"
-    }
-  ],
+  "routeMapPositions": [],
   "facilityRows": [
     {
       "sourceId": "kric-station-convenience-standard",

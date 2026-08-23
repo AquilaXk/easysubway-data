@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { compareStrings } from "./lib/ledger-admission-cli.mjs";
+import { CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS } from "./materialize-seoul-route-map-positions.mjs";
 
 // 게시 범위(capital pilot)의 domain/field 계약 정본. --release-scope 평가는 이 targets로 in-scope gap을 판정한다.
 const DEFAULT_RELEASE_SCOPE_TARGETS = "tools/datapack/capital-pilot-coverage-targets.json";
@@ -26,6 +27,19 @@ const DOMAIN_EVIDENCE_MODELS = new Set([DEFAULT_DOMAIN_EVIDENCE_MODEL, "owner-au
 // 선언하지 않은 소스는 기존 판정을 그대로 유지한다(하위 호환).
 const PLACEHOLDER_EVIDENCE_CATEGORY = "placeholder-fixture";
 const SOURCE_EVIDENCE_CATEGORIES = new Set([PLACEHOLDER_EVIDENCE_CATEGORY]);
+const SEOUL_PUBLIC_ROUTE_MAP_SOURCE_ID = "seoul-metro-route-map-positions";
+const SEOUL_PUBLIC_ROUTE_MAP_FIELDS = Object.freeze([
+  "route_map_position",
+  "route_map_label_polygon",
+  "route_map_line_track",
+]);
+const SEOUL_PUBLIC_PROVIDER_FIELDS = Object.freeze([
+  "line", "station_code", "station_name", "latitude", "longitude", "basis_date",
+]);
+const SEOUL_PUBLIC_LINE_IDS = Object.freeze([
+  "line-472a81add377", "seoul-2", "line-41a8c75ec9d8", "seoul-4",
+  "line-80fc4d5350d4", "line-3f41718e0833", "line-15b3b8a93259", "line-2b2d9eaa53d0",
+]);
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -114,7 +128,7 @@ function buildCoverageGapReport(
   const sources = inventory.sources
     .filter((source) => source.rawSnapshotAdmission == null)
     .map((source) => normalizeSource(source, targetIndex));
-  const provenanceIndex = provenance ? provenanceFieldIndex(provenance, candidateManifest) : null;
+  const provenanceIndex = provenance ? provenanceFieldIndex(provenance, candidateManifest, sources) : null;
 
   // 임시값(placeholder-fixture)으로 선언된 소스는 어떤 requirement도 뒷받침할 수 없다(#2138).
   const placeholderSourceIds = new Set(
@@ -989,11 +1003,13 @@ function normalizeSource(source, targetIndex) {
     sourceDomains,
     lineIds,
     fields,
+    productDerivedFields: optionalStringArray(source.productDerivedFields, `${id}.productDerivedFields`),
+    routeMapAdmissionEvidence: source.routeMapAdmissionEvidence,
     evidenceCategory: source.evidenceCategory,
   };
 }
 
-function provenanceFieldIndex(provenance, candidateManifest) {
+function provenanceFieldIndex(provenance, candidateManifest, sources) {
   if (!provenance || typeof provenance !== "object" || Array.isArray(provenance)) {
     throw new Error("field provenance must be an object");
   }
@@ -1014,6 +1030,7 @@ function provenanceFieldIndex(provenance, candidateManifest) {
   const officialFieldScopesByPack = new Map(
     [...candidateManifest.requiredPacks.keys()].map((identity) => [identity, new Set()]),
   );
+  const sourcesById = new Map(sources.map((source) => [source.id, source]));
   const packs = [];
   const packIdentities = new Set();
   for (const pack of provenance.packs) {
@@ -1046,7 +1063,13 @@ function provenanceFieldIndex(provenance, candidateManifest) {
     }
     for (const record of pack.records) {
       const normalizedRecord = validateProvenanceRecord(record, `${id}@${version}`);
-      if (!["OFFICIAL", "FIELD_VERIFIED"].includes(record.derivationKind)) {
+      const admittedGeneratedRouteMap = isAdmittedGeneratedRouteMapGeometry(
+        record,
+        normalizedRecord,
+        sourcesById.get(record.sourceId),
+      );
+      if (!["OFFICIAL", "FIELD_VERIFIED"].includes(record.derivationKind)
+        && !admittedGeneratedRouteMap) {
         continue;
       }
       for (const regionId of normalizedRecord.coverageScope.regionIds) {
@@ -1073,6 +1096,41 @@ function provenanceFieldIndex(provenance, candidateManifest) {
       packs,
     },
   };
+}
+
+function isAdmittedGeneratedRouteMapGeometry(record, normalizedRecord, source) {
+  if (record.derivationKind !== "GENERATED"
+    || record.entityType !== "route_map_position"
+    || !["route_map_position", "route_map_label_polygon"].includes(record.field)
+    || normalizedRecord.coverageScope == null
+    || source?.id !== SEOUL_PUBLIC_ROUTE_MAP_SOURCE_ID
+    || !sameStrings(source.regionIds, ["capital"])
+    || !sameStrings(source.operatorIds, CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS)
+    || !sameStrings(source.lineIds, SEOUL_PUBLIC_LINE_IDS)
+    || !sameStrings(source.sourceDomains, ["route_map_positions"])
+    || !sameStrings(source.fields, SEOUL_PUBLIC_PROVIDER_FIELDS)
+    || !sameStrings(source.productDerivedFields, SEOUL_PUBLIC_ROUTE_MAP_FIELDS)
+    || !source.productDerivedFields.includes(record.field)) {
+    return false;
+  }
+  const evidence = source.routeMapAdmissionEvidence;
+  const admission = evidence?.currentLayoutAdmission;
+  return admission?.schemaVersion === 2
+    && admission.artifactKind === "seoul-public-route-map-layout-admission"
+    && admission.status === "ADMITTED"
+    && typeof admission.positionSnapshotId === "string"
+    && admission.positionSnapshotId.length > 0
+    && /^[a-f0-9]{64}$/u.test(admission.layoutArtifactSha256 ?? "")
+    && record.sourceSnapshotId === admission.positionSnapshotId
+    && record.evidenceHash === admission.layoutArtifactSha256
+    && /^[a-f0-9]{64}$/u.test(record.providerRecordHash ?? "")
+    && record.verifiedAt === evidence.capturedAt;
+}
+
+function sameStrings(actual, expected) {
+  return Array.isArray(actual)
+    && actual.length === expected.length
+    && JSON.stringify([...actual].sort(compareStrings)) === JSON.stringify([...expected].sort(compareStrings));
 }
 
 function coverageManifestIndex(manifest, manifestSha256) {
@@ -1129,8 +1187,9 @@ function validateProvenanceRecord(record, label) {
   if (!["OFFICIAL", "FIELD_VERIFIED", "MANUAL_OVERRIDE", "GENERATED", "FIXTURE"].includes(derivationKind)) {
     throw new Error(`${label}.derivationKind is invalid: ${derivationKind}`);
   }
-  if (!["OFFICIAL", "FIELD_VERIFIED"].includes(derivationKind)) {
-    return { derivationKind };
+  const requiresCoverageScope = ["OFFICIAL", "FIELD_VERIFIED"].includes(derivationKind);
+  if (record.coverageScope == null && !requiresCoverageScope) {
+    return { derivationKind, coverageScope: null };
   }
   if (!record.coverageScope || typeof record.coverageScope !== "object" || Array.isArray(record.coverageScope)) {
     throw new Error(`${label}.coverageScope must be an object for official field provenance`);

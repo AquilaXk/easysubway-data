@@ -9,15 +9,24 @@ import { canonicalJson } from "./lib/manifest-validation.mjs";
 
 import { buildTransferRegistrationOutputs, commitTransferRegistrationOutputs } from "./register-current-seoul-transfer-source.mjs";
 import { deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
+import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
 
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const bytes = (value) => Buffer.from(`${JSON.stringify(value)}\n`);
-function compositionFixture() {
+async function compositionFixture(t) {
   const capturedAt = "2026-07-12T15:00:00.000Z"; const rawBytes = Buffer.from("raw");
   const observation = { manifest: { sourceId: "seoul-metro-transfer-distance-duration", capturedAt, rawSha256: sha(rawBytes), contentSha256: sha("content"), schemaSha256: sha("schema"), endpointSha256: sha("endpoint"), rowCount: 145, freshnessDate: "2025-12-31", credentialRedacted: true }, manifestBytes: Buffer.from("manifest"), observationBytes: Buffer.from("observation"), rawBytes };
   const root = process.cwd();
-  const load = (relative) => { const body = readFileSync(path.join(root, relative)); return { body, value: JSON.parse(body) }; };
-  const inventory = load("tools/datapack/source-inventory.json"); const candidate = load("tools/datapack/release/candidate-build-spec.json"); const ledger = load("tools/datapack/release/source-snapshots.json"); const scope = load("release/product-gates/production-datapack-scope.json"); const governance = load("tools/datapack/source-governance-policy.json"); const freshness = load("release/product-gates/datapack-freshness-sla.json"); const pack = load("tools/datapack/release/capital-production-canonical-pack.json");
+  const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "transfer-public-successor-"));
+  t.after(() => rm(fixtureRoot, { recursive: true, force: true }));
+  await copySyntheticCurrentPublicRouteMapRepository(root, fixtureRoot, {
+    now: new Date("2026-08-22T09:45:18.609Z"),
+  });
+  const load = (relative, base = fixtureRoot) => {
+    const body = readFileSync(path.join(base, relative));
+    return { body, value: JSON.parse(body) };
+  };
+  const inventory = load("tools/datapack/source-inventory.json"); const candidate = load("tools/datapack/release/candidate-build-spec.json"); const ledger = load("tools/datapack/release/source-snapshots.json"); const scope = load("release/product-gates/production-datapack-scope.json", root); const governance = load("tools/datapack/source-governance-policy.json"); const freshness = load("release/product-gates/datapack-freshness-sla.json"); const pack = load("tools/datapack/release/capital-production-canonical-pack.json");
   const sourceId = observation.manifest.sourceId;
   const transferSource = inventory.value.sources.find(({ id }) => id === sourceId);
   transferSource.requiredForProductionPack = false;
@@ -33,7 +42,8 @@ function compositionFixture() {
   );
   scope.value.productionSourceSet.optionalAccessibilitySourceIds.push(sourceId);
   scope.value.productionSourceSet.excludedFromV1SupportClaims.push(sourceId);
-  const metrics = load("tools/datapack/release/current-transfer-topology-metrics.json").value;
+  const metrics = load("tools/datapack/release/current-transfer-topology-metrics.json", root).value;
+  metrics.canonicalIdentity.canonicalPackSha256 = sha(pack.body);
   metrics.sourceIdentity = { ...metrics.sourceIdentity, sourceId: observation.manifest.sourceId, endpointSha256: observation.manifest.endpointSha256, manifestSha256: sha(observation.manifestBytes), observationSha256: sha(observation.observationBytes), rawSnapshotSha256: sha(rawBytes), rawSha256: observation.manifest.rawSha256, contentSha256: observation.manifest.contentSha256, schemaSha256: observation.manifest.schemaSha256, rowCount: 145, capturedAt, freshnessDate: "2025-12-31" };
   metrics.artifactSha256 = sha(Buffer.from(canonicalJson(sort(metrics, "artifactSha256"))));
   const applicability = { artifactKind: "current-capital-transfer-topology-applicability-pre-candidate", productionUseAllowed: false, candidateBinding: null, canonicalIdentity: metrics.canonicalIdentity, sourceIdentity: metrics.sourceIdentity, transferTopologyMetricsIdentity: { artifactSha256: metrics.artifactSha256 }, stateSummary: { APPLICABLE_TRANSFER_ENDPOINT: 27, NOT_APPLICABLE_IN_CANONICAL_PAIR_SET: 186 } };
@@ -134,8 +144,8 @@ test("PREPARED rollback and COMMITTED forward recovery preserve foreign replacem
   assert.ok(await readFile(path.join(committed.root, "tools/datapack/.seoul-transfer-registration-transaction.json")));
 });
 
-test("actual composition emits only the five targets and appends TRANSFER seventh", async () => {
-  const input = compositionFixture();
+test("actual composition emits only the five targets and appends TRANSFER seventh", async (t) => {
+  const input = await compositionFixture(t);
   const outputs = buildTransferRegistrationOutputs(input);
   assert.equal(outputs.length, 5);
   const candidate = JSON.parse(outputs.find(({ relative }) => relative.endsWith("candidate-build-spec.json")).bytes);
@@ -149,8 +159,30 @@ test("actual composition emits only the five targets and appends TRANSFER sevent
   assert.equal(scope.productionSourceSet.excludedFromV1SupportClaims.includes("seoul-metro-transfer-distance-duration"), false);
 });
 
-test("replacement head는 selected append-only ledger order hash를 사용한다", () => {
-  const input = compositionFixture();
+test("transfer registration은 candidate의 public 노선도와 다른 canonical content를 거부한다", async (t) => {
+  const input = await compositionFixture(t);
+  const row = input.canonicalPack.packs[0].routeMapPositions.find(
+    ({ sourceId }) => sourceId === "seoul-metro-route-map-positions",
+  );
+  row.x += 1;
+  input.canonicalPackBytes = Buffer.from(`${JSON.stringify(input.canonicalPack, null, 2)}\n`);
+  input.metrics.canonicalIdentity.canonicalPackSha256 = sha(input.canonicalPackBytes);
+  input.metrics.artifactSha256 = sha(Buffer.from(canonicalJson(sort(input.metrics, "artifactSha256"))));
+  input.metricsBytes = bytes(input.metrics);
+  input.applicability.canonicalIdentity = structuredClone(input.metrics.canonicalIdentity);
+  input.applicability.transferTopologyMetricsIdentity.artifactSha256 = input.metrics.artifactSha256;
+  const { artifactSha256: _old, ...applicabilityPayload } = input.applicability;
+  input.applicability.artifactSha256 = sha(Buffer.from(`${canonicalJson(applicabilityPayload)}\n`));
+  input.applicabilityBytes = bytes(input.applicability);
+
+  assert.throws(
+    () => buildTransferRegistrationOutputs(input),
+    /complete current public Seoul route map/,
+  );
+});
+
+test("replacement head는 selected append-only ledger order hash를 사용한다", async (t) => {
+  const input = await compositionFixture(t);
   const selectedIds = new Set(input.candidate.sourceSnapshotIds);
   const selectedInLedgerOrder = input.ledger.filter(({ snapshotId }) => selectedIds.has(snapshotId));
   const selectedInCandidateOrder = input.candidate.sourceSnapshotIds.map((snapshotId) => input.ledger.find((row) => row.snapshotId === snapshotId));
@@ -167,7 +199,7 @@ test("replacement head는 selected append-only ledger order hash를 사용한다
   assert.equal(outputCandidate.sourceSnapshotSetHash, sha(Buffer.from(JSON.stringify(outputInLedgerOrder))));
   assert.notEqual(outputCandidate.sourceSnapshotSetHash, sha(Buffer.from(JSON.stringify(outputInCandidateOrder))));
 
-  const drift = compositionFixture();
+  const drift = await compositionFixture(t);
   drift.candidate.sourceSnapshotSetHash = sha(Buffer.from(JSON.stringify(selectedInCandidateOrder)));
   assert.throws(() => buildTransferRegistrationOutputs(drift), /transfer pre-candidate ledger or inventory binding mismatch/);
 });
@@ -185,8 +217,8 @@ test("commit rejects drift from the authenticated composition prestate without m
   await assert.rejects(readFile(path.join(root, "tools/datapack/.seoul-transfer-registration-transaction.json")), { code: "ENOENT" });
 });
 
-test("cross-paired applicability identity fails before transaction outputs", () => {
-  const input = compositionFixture();
+test("cross-paired applicability identity fails before transaction outputs", async (t) => {
+  const input = await compositionFixture(t);
   input.applicability.transferTopologyMetricsIdentity.artifactSha256 = sha("different-metrics");
   const { artifactSha256: _old, ...resealed } = input.applicability;
   input.applicability.artifactSha256 = sha(bytes(resealed));
@@ -194,14 +226,14 @@ test("cross-paired applicability identity fails before transaction outputs", () 
   assert.throws(() => buildTransferRegistrationOutputs(input), /transfer applicability identity mismatch/);
 });
 
-test("governance-derived current projection drift rejects registration before outputs", () => {
-  const input = compositionFixture();
+test("governance-derived current projection drift rejects registration before outputs", async (t) => {
+  const input = await compositionFixture(t);
   input.candidate.sourceSnapshots[0].governancePolicyVersion = "2099-01-01";
   assert.throws(() => buildTransferRegistrationOutputs(input), /transfer pre-candidate projection mismatch/);
 });
 
-test("receipt storage after approval rejects registration before outputs", () => {
-  const input = compositionFixture();
+test("receipt storage after approval rejects registration before outputs", async (t) => {
+  const input = await compositionFixture(t);
   input.receipt.storedAt = new Date(Date.parse(input.approvedAt) + 1).toISOString();
   assert.throws(() => buildTransferRegistrationOutputs(input), /transfer retention derivation mismatch/);
 });

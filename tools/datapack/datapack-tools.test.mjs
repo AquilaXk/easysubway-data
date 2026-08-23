@@ -28,6 +28,7 @@ import {
   deriveTopology as deriveItxTopology,
   projectItxTopologyIntoCanonicalFixture,
 } from "./apply-itx-topology-to-bundled-pack.mjs";
+import { CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS } from "./materialize-seoul-route-map-positions.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -10972,6 +10973,138 @@ test("전국 coverage gap report는 generated fixture manual provenance를 offic
   assert.ok(report.requirements.some((entry) => entry.missingFields.includes("line")));
 });
 
+test("v2 admission과 current 4-operator scope에 exact 결속된 generated 서울 노선도 geometry만 coverage를 충족한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-generated-route-map-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const provenancePath = path.join(outputDir, "current.provenance.json");
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
+  const inventory = completeCoverageInventory(targets);
+  const source = inventory.sources.find(({ coverageScope }) =>
+    coverageScope.regionIds.includes("capital")
+      && coverageScope.operatorIds.includes("seoul-metro")
+      && coverageScope.lineIds?.includes("seoul-2")
+      && coverageScope.sourceDomains.includes("route_map_positions"));
+  const originalSourceId = source.id;
+  const provenance = completeCoverageProvenance(inventory);
+  const snapshotId = "seoul-metro-route-map-positions-current-20260814T000000000Z";
+  const layoutArtifactSha256 = "7".repeat(64);
+  source.id = "seoul-metro-route-map-positions";
+  source.coverageScope = {
+    regionIds: ["capital"],
+    operatorIds: [...CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS],
+    lineIds: [
+      "line-472a81add377", "seoul-2", "line-41a8c75ec9d8", "seoul-4",
+      "line-80fc4d5350d4", "line-3f41718e0833", "line-15b3b8a93259", "line-2b2d9eaa53d0",
+    ],
+    sourceDomains: ["route_map_positions"],
+  };
+  source.fieldsProvided = ["line", "station_code", "station_name", "latitude", "longitude", "basis_date"];
+  source.productDerivedFields = ["route_map_position", "route_map_label_polygon", "route_map_line_track"];
+  source.routeMapAdmissionEvidence = {
+    capturedAt: "2026-08-14T00:00:00.000Z",
+    currentLayoutAdmission: {
+      schemaVersion: 2,
+      artifactKind: "seoul-public-route-map-layout-admission",
+      status: "ADMITTED",
+      positionSnapshotId: snapshotId,
+      layoutArtifactSha256,
+    },
+  };
+  const generatedRecords = provenance.packs[0].records.filter(({ sourceId, field }) =>
+    sourceId === originalSourceId
+      && ["route_map_position", "route_map_label_polygon"].includes(field));
+  assert.equal(generatedRecords.length, 2);
+  for (const record of generatedRecords) {
+    Object.assign(record, {
+      entityType: "route_map_position",
+      sourceId: source.id,
+      derivationKind: "GENERATED",
+      sourceSnapshotId: snapshotId,
+      providerRecordHash: "6".repeat(64),
+      evidenceHash: layoutArtifactSha256,
+      verifiedAt: source.routeMapAdmissionEvidence.capturedAt,
+    });
+  }
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  await writeCoverageCandidate(outputDir, provenance);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets", "tools/datapack/nationwide-coverage-targets.json",
+      "--inventory", inventoryPath,
+      "--manifest", path.join(outputDir, "current.json"),
+      "--provenance", provenancePath,
+      "--output", reportPath,
+    ],
+    { cwd: root },
+  );
+  let report = JSON.parse(await readFile(reportPath, "utf8"));
+  const routeMap = report.requirements.find((entry) =>
+    entry.regionId === "capital"
+      && entry.operatorId === "seoul-metro"
+      && entry.lineId === "seoul-2"
+      && entry.sourceDomain === "route_map_positions");
+  assert.deepEqual(routeMap.missingFields, []);
+  assert.ok(routeMap.fieldCoverage.every(({ sourceIds }) => sourceIds.includes(source.id)));
+
+  source.coverageScope.operatorIds = CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS.filter(
+    (operatorId) => operatorId !== "korail",
+  );
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets", "tools/datapack/nationwide-coverage-targets.json",
+      "--inventory", inventoryPath,
+      "--manifest", path.join(outputDir, "current.json"),
+      "--provenance", provenancePath,
+      "--output", reportPath,
+      "--allow-gaps",
+    ],
+    { cwd: root },
+  );
+  report = JSON.parse(await readFile(reportPath, "utf8"));
+  const operatorDriftRouteMap = report.requirements.find((entry) =>
+    entry.regionId === "capital"
+      && entry.operatorId === "seoul-metro"
+      && entry.lineId === "seoul-2"
+      && entry.sourceDomain === "route_map_positions");
+  assert.deepEqual(operatorDriftRouteMap.missingFields, ["route_map_position", "route_map_label_polygon"]);
+
+  source.coverageScope.operatorIds = [...CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS];
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+
+  generatedRecords[0].evidenceHash = "8".repeat(64);
+  await writeCoverageCandidate(outputDir, provenance);
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets", "tools/datapack/nationwide-coverage-targets.json",
+      "--inventory", inventoryPath,
+      "--manifest", path.join(outputDir, "current.json"),
+      "--provenance", provenancePath,
+      "--output", reportPath,
+      "--allow-gaps",
+    ],
+    { cwd: root },
+  );
+  report = JSON.parse(await readFile(reportPath, "utf8"));
+  const tamperedRouteMap = report.requirements.find((entry) =>
+    entry.regionId === "capital"
+      && entry.operatorId === "seoul-metro"
+      && entry.lineId === "seoul-2"
+      && entry.sourceDomain === "route_map_positions");
+  assert.ok(tamperedRouteMap.missingFields.includes(generatedRecords[0].field));
+});
+
 test("공식 source ingest adapter는 stable id mapping으로 catalog fixture pack을 만든다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-source-ingest-${Date.now()}`);
   const inputPath = path.join(outputDir, "official-source-input.json");
@@ -13033,37 +13166,11 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
     { cwd: root },
   );
   const importedFixture = JSON.parse(await readFile(importedFixturePath, "utf8"));
-  assert.equal(importedFixture.packs[0].requiredTables.includes("route_map_positions"), true);
-  assert.equal(importedFixture.packs[0].minimumTableRows.route_map_positions, 2);
-  assert.equal(importedFixture.packs[0].routeMapPositions.length, 2);
-  assert.deepEqual(
-    importedFixture.packs[0].routeMapPositions.map((position) => ({
-      stationId: position.stationId,
-      lineId: position.lineId,
-      sourceId: position.sourceId,
-      sourceSha256: position.sourceSha256,
-      labelPolygonCount: position.labelPolygon.length,
-      updatedAt: position.updatedAt,
-    })),
-    [
-      {
-        stationId: "station-sangnoksu",
-        lineId: "seoul-4",
-        sourceId: "seoulmetro-cyberstation-route-map",
-        sourceSha256: "7370b4db2d2f398f46c55314b71d7335c77ec6745fd388793804874447cd25e0",
-        labelPolygonCount: 4,
-        updatedAt: "2026-06-28T00:00:00.000Z",
-      },
-      {
-        stationId: "station-sadang",
-        lineId: "seoul-4",
-        sourceId: "seoulmetro-cyberstation-route-map",
-        sourceSha256: "7370b4db2d2f398f46c55314b71d7335c77ec6745fd388793804874447cd25e0",
-        labelPolygonCount: 4,
-        updatedAt: "2026-06-28T00:00:00.000Z",
-      },
-    ],
-  );
+  assert.equal(importedFixture.packs[0].requiredTables.includes("route_map_positions"), false);
+  assert.equal(Object.hasOwn(importedFixture.packs[0].minimumTableRows, "route_map_positions"), false);
+  assert.deepEqual(importedFixture.packs[0].routeMapPositions, []);
+  assert.equal(importedFixture.packs[0].sourceInventory.some(
+    ({ id }) => id === "seoulmetro-cyberstation-route-map"), false);
   const scheduleScopeFixture = JSON.parse(JSON.stringify(importedFixture));
   scheduleScopeFixture.packs[0].sourceInventory.find(
     (source) => source.id === "kric-subway-timetable",
@@ -13174,7 +13281,9 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
       expected: /routeMapPositions\.upPath must be a string/,
     },
   ]) {
-    const invalidRouteMapPositionInput = JSON.parse(JSON.stringify(adjacencySafeInput));
+    const invalidRouteMapPositionInput = sourceIngestInput();
+    invalidRouteMapPositionInput.sourceIds.push("seoul-metro-route-map-positions");
+    invalidRouteMapPositionInput.routeMapPositions = [testPublicRouteMapPosition()];
     testCase.mutate(invalidRouteMapPositionInput.routeMapPositions[0]);
     const invalidRouteMapPositionInputPath = path.join(outputDir, `${testCase.name}-input.json`);
     const invalidRouteMapPositionOutputPath = path.join(outputDir, `${testCase.name}-fixture.json`);
@@ -13512,10 +13621,10 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
   }
 
   const provenance = JSON.parse(await readFile(path.join(packOutputDir, "current.provenance.json"), "utf8"));
-  const routeMapRecords = provenance.packs[0].records.filter(
+  const retiredRouteMapRecords = provenance.packs[0].records.filter(
     (record) => record.sourceId === "seoulmetro-cyberstation-route-map",
   );
-  assert.equal(routeMapRecords.length, 4);
+  assert.equal(retiredRouteMapRecords.length, 0);
   assert.equal(
     provenance.packs[0].records.filter(
       (record) => record.entityType === "facility" && record.field === "status",
@@ -13558,11 +13667,11 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
       entry.lineId === "seoul-4" &&
       entry.sourceDomain === "route_map_positions",
   );
-  // #2514 B0: seoulmetro-cyberstation-route-map coverageScope의 seoul-4 line-scope 재기술로 이 requirement가
-  // 전국 게이트에서 SUPPORTED로 전이한다. 재기술 이전에는 operator-scope provenance만 나와 MISSING이었다.
-  assert.equal(capitalRouteMapCoverage.status, "SUPPORTED");
-  assert.deepEqual(capitalRouteMapCoverage.missingFields, []);
-  assert.deepEqual(capitalRouteMapCoverage.sourceIds, ["seoulmetro-cyberstation-route-map"]);
+  // historical diagnostic source는 더 이상 active line scope를 claim하지 않는다. 공공 관측의 v2 admission
+  // 전에는 서울 4호선도 다른 서울 1~8호선과 같이 MISSING으로 남아야 한다.
+  assert.equal(capitalRouteMapCoverage.status, "MISSING");
+  assert.deepEqual(capitalRouteMapCoverage.missingFields, ["route_map_position", "route_map_label_polygon"]);
+  assert.deepEqual(capitalRouteMapCoverage.sourceIds, []);
 
   // #1999: release-scope 평가 모드는 게시 차단을 게시 범위(capital·seoul-metro × capitalPilotTargets domains) 내 gap만
   // 기준으로 판정한다. 현행 인벤토리는 전국 gap 다수 + scope 내 gap 0이므로, --allow-gaps 없이도 exit 0으로 통과하되
@@ -15094,6 +15203,38 @@ function sourceIngestInput() {
         requiredEdgeIds: ["edge-sangnoksu-sadang-seoul-4"],
       },
     ],
+  };
+}
+
+function testPublicRouteMapPosition() {
+  return {
+    sourceId: "seoul-metro-route-map-positions",
+    station: {
+      sourceId: "seoulmetro-station-line-info",
+      sourceStationCode: "448",
+      lineId: "seoul-4",
+    },
+    region: "수도권",
+    x: 100,
+    y: 200,
+    labelDx: 0,
+    labelDy: -14,
+    labelPolygon: [
+      { x: 90, y: 170 },
+      { x: 110, y: 170 },
+      { x: 110, y: 190 },
+      { x: 90, y: 190 },
+    ],
+    sourceName: "공공 좌표 기반 결정론적 노선도 테스트 산출물",
+    sourceUrl: "https://www.data.go.kr/data/15099316/fileData.do",
+    sourceSha256: "a".repeat(64),
+    license: "공공데이터 이용허락범위 제한 없음",
+    licenseStatus: "redistributable-commercial-derivative",
+    commercialUseAllowed: true,
+    attributionRequired: true,
+    sourceLabel: "상록수",
+    reviewedAt: "2026-08-22T00:00:00.000Z",
+    updatedAt: "2026-08-22T00:00:00.000Z",
   };
 }
 

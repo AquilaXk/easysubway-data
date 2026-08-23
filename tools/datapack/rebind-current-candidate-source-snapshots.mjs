@@ -16,16 +16,16 @@ import { approvedLegacyGovernanceBinding } from "./legacy-source-governance.mjs"
 const SOURCE_ID = "kric-station-convenience-standard";
 const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
 const ACTIVE_SOURCE_IDS = Object.freeze([
-  "seoulmetro-cyberstation-route-map", "kric-subway-timetable", "seoul-metro-accessibility",
+  "seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility",
   SOURCE_ID, "molit-urban-rail-full-route", "seoulmetro-station-line-info",
 ]);
 const ACTIVE_SOURCE_IDS_WITH_TRANSFER = Object.freeze([...ACTIVE_SOURCE_IDS, TRANSFER_SOURCE_ID]);
 const CAPITAL_SOURCE_IDS = Object.freeze([
-  "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoulmetro-cyberstation-route-map",
+  "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
   "kric-subway-timetable", "seoul-metro-accessibility", SOURCE_ID, "seoul-metro-official-od-fares",
 ]);
 const CAPITAL_ACTIVE_SOURCE_IDS = Object.freeze([
-  "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoulmetro-cyberstation-route-map",
+  "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
   "kric-subway-timetable", "seoul-metro-accessibility", SOURCE_ID,
 ]);
 const SHA256 = /^[0-9a-f]{64}$/u;

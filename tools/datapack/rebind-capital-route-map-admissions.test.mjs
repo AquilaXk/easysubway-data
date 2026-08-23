@@ -6,6 +6,7 @@ import test from "node:test";
 
 import { ARTIFACT_KIND, CAPITAL_MAP_LINE_IDS } from "./collect-capital-route-topology.mjs";
 import { admittedCapitalLineEvidence } from "./build-datapack.mjs";
+import { collectSeoulRouteMapPositions } from "./collect-seoul-route-map-positions.mjs";
 import { withCurrentCapitalTopologyAdmissions } from "./rebind-capital-route-map-admissions.mjs";
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -13,6 +14,8 @@ const root = path.resolve(import.meta.dirname, "../..");
 const positionPath = "tools/datapack/sources/official-route-map.json";
 const topologySnapshotId = "capital-route-topology-20260809";
 const reviewedAt = "2026-08-09T12:04:20.479Z";
+const publicCsvPath = path.join(root, "tools/datapack/fixtures/seoul-route-map-positions-raw/data-go-15099316.csv");
+const publicTopologyPath = path.join(root, "tools/datapack/sources/capital-route-topology-20260814.json");
 
 function fixture(stationName = "서울역") {
   const lineId = CAPITAL_MAP_LINE_IDS[0];
@@ -108,6 +111,80 @@ function seoulOfficialFixture() {
   return values;
 }
 
+async function seoulCurrentLayoutFixture() {
+  const [csvBytes, topologySnapshotBytes] = await Promise.all([
+    readFile(publicCsvPath),
+    readFile(publicTopologyPath),
+  ]);
+  const topology = JSON.parse(topologySnapshotBytes);
+  const artifact = collectSeoulRouteMapPositions({
+    csvBytes,
+    topologySnapshotBytes,
+    topologySnapshotId: "capital-route-topology-20260814",
+    now: new Date(topology.capturedAt),
+  });
+  const snapshotId = "seoul-metro-route-map-positions-current-20260814T000000000Z";
+  const normalizedProjection = artifact.rawPositions.map(({
+    line, stationCode, stationName, latitude, longitude, basisDate,
+  }) => ({ line, stationCode, stationName, latitude, longitude, basisDate }));
+  const layoutEvidence = Object.fromEntries([
+    "layoutAlgorithmVersion", "topologySnapshotId", "topologySnapshotSha256",
+    "topologySnapshotIdentity", "lineOrderSha256", "aliasLedgerVersion",
+    "aliasLedgerSha256", "rawPositionsSha256", "layoutPositionsSha256",
+    "layoutTracksSha256", "semanticInputSha256", "semanticOutputSha256",
+    "outputSchemaSha256",
+  ].map((field) => [field, artifact[field]]));
+  layoutEvidence.layoutArtifactSha256 = sha256(Buffer.from(`${JSON.stringify(artifact)}\n`));
+  const observation = {
+    schemaVersion: 1,
+    artifactKind: "static-network-successor-observation",
+    sourceId: artifact.sourceId,
+    snapshotId,
+    capturedAt: artifact.capturedAt,
+    rawSha256: artifact.rawSha256,
+    contentSha256: sha256(Buffer.from(`${JSON.stringify(normalizedProjection)}\n`)),
+    rowCount: normalizedProjection.length,
+    normalizedProjection,
+    layoutEvidence,
+    routeMapLayoutArtifact: artifact,
+  };
+  const snapshotBytes = Buffer.from(`${JSON.stringify(observation)}\n`);
+  const evidence = {
+    issue: 2470,
+    admissionKind: "official-file-latlon",
+    materializer: "tools/datapack/materialize-seoul-route-map-positions.mjs",
+    verificationTest: "tools/datapack/materialize-seoul-route-map-positions.test.mjs",
+    lineIds: [...artifact.lineIds],
+    currentLayoutAdmission: {
+      schemaVersion: 2,
+      artifactKind: "seoul-public-route-map-layout-admission",
+      status: "ADMITTED",
+      positionSnapshotId: snapshotId,
+      snapshotPath: `tools/datapack/sources/${snapshotId}.json`,
+      snapshotSha256: sha256(snapshotBytes),
+      rawSha256: observation.rawSha256,
+      contentSha256: observation.contentSha256,
+      ...layoutEvidence,
+    },
+  };
+  return {
+    inventory: {
+      schemaVersion: 1,
+      artifactKind: "production-source-inventory",
+      sources: [{
+        id: artifact.sourceId,
+        productionUseAllowed: true,
+        license: { redistributionAllowed: true },
+        routeMapAdmissionEvidence: evidence,
+      }],
+    },
+    topology,
+    topologySnapshotBytes,
+    snapshotBytes,
+    snapshotPath: evidence.currentLayoutAdmission.snapshotPath,
+  };
+}
+
 test("historical route-map snapshot은 current capital topology membership 검증 후 별도 admission으로 결속된다", () => {
   const values = fixture();
   const result = rebind(values);
@@ -188,6 +265,36 @@ test("서울 공식 current position admission은 다음 current topology에 exa
     () => rebind({ ...values, inventory: drifted }),
     /Seoul route-map position source contract is invalid/,
   );
+});
+
+test("서울 public v2 layout observation은 exact admission과 topology bytes에 재결속된다", async () => {
+  const values = await seoulCurrentLayoutFixture();
+  const result = withCurrentCapitalTopologyAdmissions({
+    inventory: values.inventory,
+    topology: values.topology,
+    topologySnapshotId: "capital-route-topology-20260814",
+    reviewedAt: values.topology.capturedAt,
+    snapshotBytesByPath: new Map([[values.snapshotPath, values.snapshotBytes]]),
+    topologySnapshotBytes: values.topologySnapshotBytes,
+  });
+  const evidence = result.sources[0].routeMapAdmissionEvidence;
+  assert.equal(
+    evidence.currentTopologyAdmission.positionSnapshotSha256,
+    evidence.currentLayoutAdmission.snapshotSha256,
+  );
+  assert.deepEqual(evidence.currentLayoutAdmission, values.inventory.sources[0].routeMapAdmissionEvidence.currentLayoutAdmission);
+
+  const tampered = await seoulCurrentLayoutFixture();
+  tampered.inventory.sources[0].routeMapAdmissionEvidence
+    .currentLayoutAdmission.layoutPositionsSha256 = "0".repeat(64);
+  assert.throws(() => withCurrentCapitalTopologyAdmissions({
+    inventory: tampered.inventory,
+    topology: tampered.topology,
+    topologySnapshotId: "capital-route-topology-20260814",
+    reviewedAt: tampered.topology.capturedAt,
+    snapshotBytesByPath: new Map([[tampered.snapshotPath, tampered.snapshotBytes]]),
+    topologySnapshotBytes: tampered.topologySnapshotBytes,
+  }), /layout observation identity/);
 });
 
 test("tracked 서울 공식 position snapshot의 exact renamed-station aliases는 current 22-line admission을 완성한다", async () => {
@@ -320,4 +427,9 @@ test("source inventory schema는 capital topology source에 current admission을
     "topologyLineages",
   ]);
   assert.equal(current.properties.artifactKind.const, "capital-route-map-current-topology-admission");
+  const layout = routeMapEvidence.properties.currentLayoutAdmission;
+  assert.equal(layout.additionalProperties, false);
+  assert.equal(layout.properties.schemaVersion.const, 2);
+  assert.equal(layout.properties.artifactKind.const, "seoul-public-route-map-layout-admission");
+  assert.equal(layout.required.length, 22);
 });

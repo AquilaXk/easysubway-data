@@ -137,6 +137,12 @@
             }
           },
           "fieldsProvided": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+          "productDerivedFields": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string" },
+            "description": "정본 raw field와 분리해 제품의 결정론적 materializer가 산출하는 필드다."
+          },
           "capabilities": {
             "type": "object",
             "additionalProperties": false,
@@ -458,6 +464,17 @@
                   }
                 }
               },
+              "currentLayoutAdmission": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["schemaVersion", "artifactKind", "status", "positionSnapshotId", "snapshotPath", "snapshotSha256", "rawSha256", "contentSha256", "layoutAlgorithmVersion", "topologySnapshotId", "topologySnapshotSha256", "topologySnapshotIdentity", "lineOrderSha256", "aliasLedgerVersion", "aliasLedgerSha256", "rawPositionsSha256", "layoutPositionsSha256", "layoutTracksSha256", "semanticInputSha256", "semanticOutputSha256", "outputSchemaSha256", "layoutArtifactSha256"],
+                "properties": {
+                  "schemaVersion": { "const": 2 }, "artifactKind": { "const": "seoul-public-route-map-layout-admission" }, "status": { "const": "ADMITTED" },
+                  "positionSnapshotId": { "type": "string", "minLength": 1 }, "snapshotPath": { "type": "string", "pattern": "^tools/datapack/sources/[^/]+\\.json$" },
+                  "layoutAlgorithmVersion": { "type": "string", "minLength": 1 }, "topologySnapshotId": { "type": "string", "minLength": 1 }, "topologySnapshotIdentity": { "type": "string", "minLength": 1 }, "aliasLedgerVersion": { "type": "string", "minLength": 1 },
+                  "snapshotSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "rawSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "contentSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "topologySnapshotSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "lineOrderSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "aliasLedgerSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "rawPositionsSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "layoutPositionsSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "layoutTracksSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "semanticInputSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "semanticOutputSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "outputSchemaSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "layoutArtifactSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+                }
+              },
               "overlayDatasetId": {
                 "type": "string",
                 "minLength": 1,
@@ -483,7 +500,19 @@
                 "type": "integer",
                 "minimum": 0,
                 "description": "공식 FILE 위경도 컬럼 스왑을 결정론 정규화한 행 수."
-              }
+              },
+              "layoutAlgorithmVersion": {
+                "type": "string",
+                "minLength": 1,
+                "description": "공개 raw 위치와 공개 노선 순서를 제품 노선도 배치로 바꾸는 결정론적 알고리즘 버전."
+              },
+              "layoutInput": {
+                "const": "rawPositions"
+              },
+              "lineOrderSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "rawPositionsSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "semanticInputSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "semanticOutputSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
             }
           },
           "scheduleAdmissionEvidence": {

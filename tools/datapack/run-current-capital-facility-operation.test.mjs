@@ -11,6 +11,7 @@ import { rebindCurrentCandidateSourceSnapshots } from "./rebind-current-candidat
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
+import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
 import { collectCurrentCapitalFacilityOperation, durableCreateBytes, main, parseArgs, prepareCurrentCapitalFacilityOperation, recoverPublishedCurrentCapitalFacilityOperation, syncWrite } from "./run-current-capital-facility-operation.mjs";
 
 const REPOSITORY_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
@@ -23,6 +24,7 @@ const sha = (value) => createHash("sha256").update(value).digest("hex");
 const jsonSha = (value) => sha(Buffer.from(JSON.stringify(value)));
 const FIXTURE_INPUTS = [
   "tools/datapack/release/candidate-build-spec.json", "tools/datapack/release/release-request.json",
+  "tools/datapack/release/hash-evidence.json",
   "tools/datapack/release/source-snapshots.json", "tools/datapack/release/capital-production-canonical-pack.json",
   "tools/datapack/source-inventory.json", "tools/datapack/source-governance-policy.json",
   "release/product-gates/datapack-freshness-sla.json", "tools/datapack/nationwide-coverage-targets.json",
@@ -147,6 +149,8 @@ async function currentReleaseFixture(t) {
     await mkdir(path.dirname(target), { recursive: true });
     await cp(path.join(REPOSITORY_ROOT, relative), target);
   }
+  await copySyntheticCurrentPublicRouteMapRepository(REPOSITORY_ROOT, root, { now: NOW });
+  await unlink(path.join(root, "tools/datapack/release/current-capital-facility-source-admission.json"));
   const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
   const snapshotPath = inventory.sources.find(
     ({ id }) => id === "kric-station-convenience-standard",

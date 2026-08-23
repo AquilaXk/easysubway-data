@@ -39,8 +39,8 @@ const OPERATOR_ID = "incheon-transit";
 const LINE1 = "line-98718184f016";
 const LINE2 = "line-42b5805f3b5a";
 const LINE7 = "line-15b3b8a93259";
-// gwangju accessibility 누적 fixture coverage baseline(실측): supportedCount=24 → incheon +8 = 32.
-const GWANGJU_ACCESSIBILITY_BASELINE_SUPPORTED_COUNT = 24;
+// gwangju accessibility 누적 fixture coverage baseline(실측): supportedCount=23 → incheon +8 = 31.
+const GWANGJU_ACCESSIBILITY_BASELINE_SUPPORTED_COUNT = 23;
 const INCHEON_SUPPORTED_COUNT = GWANGJU_ACCESSIBILITY_BASELINE_SUPPORTED_COUNT + 8;
 
 async function inputs() {

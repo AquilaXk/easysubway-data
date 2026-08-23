@@ -228,6 +228,19 @@ test("tracked freshness policy는 수동 decision 없이 파생 필드를 선언
   ]);
 });
 
+test("공공 노선도 위치 freshness는 90일이며 historical web asset을 current source와 분리한다", async () => {
+  const tracked = JSON.parse(await readFile(
+    "release/product-gates/datapack-freshness-sla.json",
+    "utf8",
+  ));
+  const positions = tracked.sourceClasses.find(({ id }) => id === "route_map_positions");
+  const historical = tracked.sourceClasses.find(({ id }) => id === "route_map_asset_historical");
+  assert.deepEqual(positions.sourceIds, ["seoul-metro-route-map-positions"]);
+  assert.equal(positions.reverificationCadence, "P90D");
+  assert.equal(historical.offlinePackEligible, false);
+  assert.deepEqual(historical.sourceIds, ["seoulmetro-cyberstation-route-map"]);
+});
+
 function expectedExpiry(basisAt, cadence) {
   const basis = new Date(basisAt);
   const days = /^P([1-9][0-9]*)D$/.exec(cadence);

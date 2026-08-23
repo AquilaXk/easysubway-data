@@ -19,8 +19,8 @@ const CAPITAL_TOPOLOGY_PATH = "tools/datapack/sources/capital-route-topology-202
 const CANDIDATE_SPEC_PATH = "tools/datapack/nationwide-candidate-pack-spec.json";
 const CANDIDATE_EVIDENCE_PATH = "tools/datapack/reports/nationwide-candidate-coverage-gate.json";
 const INHERITED_REVIEWED_PACK_PATH = "tools/datapack/release/capital-production-reviewed-pack.json";
-// admitted snapshot 없이 active line-scope를 claim하지만, reviewed pack의 inherited source로 baseline부터
-// SUPPORTED인 source다. containment 근거는 별도 admitted snapshot source가 계속 제공한다.
+// reviewed pack의 historical predecessor audit 행이다. 현재 inventory에서는 active line-scope를
+// claim하지 않으며, 아래 synthetic fixture만 과거 claim의 재활성화를 fail-closed로 검증한다.
 const CANDIDATE_REDESCRIBED_SOURCE_ID = "seoulmetro-cyberstation-route-map";
 const CANDIDATE_REDESCRIBED_SCOPE_KEY = "capital:seoul-metro:seoul-4";
 
@@ -814,9 +814,33 @@ test("lineIds를 claim한 route_map_positions 소스는 admitted snapshot 경로
   assert.equal(result.auditedScopeKeys.includes("capital:korail:line-051552e50435"), false);
 });
 
-test("inherited line-scope claim은 exact reviewed pack과 baseline support에 결속된다", async (context) => {
+test("historical inherited line-scope claim fixture는 exact reviewed pack과 baseline support에 결속된다", async (context) => {
   const inputs = await loadAuditInputs();
   const claimant = inputs.inventory.sources.find(({ id }) => id === CANDIDATE_REDESCRIBED_SOURCE_ID);
+  // 현재 inventory의 historical 행은 active line scope를 claim하지 않는다. 아래는 reviewed-pack의 과거
+  // 행이 다시 활성 claim으로 들어올 때 필요한 exact evidence를 독립적으로 고정하는 synthetic fixture다.
+  assert.equal(claimant.coverageScope.lineIds, undefined);
+  claimant.coverageScope.lineIds = ["seoul-4"];
+  const requirementKey = `${CANDIDATE_REDESCRIBED_SCOPE_KEY}:${ROUTE_MAP_DOMAIN}`;
+  for (const variant of ["baseline", "lineScoped"]) {
+    const requirement = inputs.candidateLineScopeAdmission.evidence.variants[variant].pilotRequirements
+      .find(({ requirementKey: key }) => key === requirementKey);
+    requirement.status = "SUPPORTED";
+    requirement.sourceIds = [claimant.id];
+    requirement.missingFields = [];
+    requirement.supportingRecordCountByField = {
+      route_map_position: 2,
+      route_map_label_polygon: 2,
+    };
+    inputs.candidateLineScopeAdmission.evidence.variants[variant].supportedRequirementKeys.push(requirementKey);
+    inputs.candidateLineScopeAdmission.evidence.variants[variant].supportedRequirementKeys.sort();
+  }
+  inputs.candidateLineScopeAdmission.evidence.inputs.spec.sha256 = sha256(
+    inputs.candidateLineScopeAdmission.specBytes,
+  );
+  inputs.candidateLineScopeAdmission.evidence.inputs.inheritedPack.sha256 = sha256(
+    inputs.candidateLineScopeAdmission.inheritedPackBytes,
+  );
   const boundAdmission = ({ specBytes = inputs.candidateLineScopeAdmission.specBytes, inheritedPackBytes = inputs.candidateLineScopeAdmission.inheritedPackBytes, evidence = inputs.candidateLineScopeAdmission.evidence } = {}) => {
     const boundEvidence = structuredClone(evidence);
     boundEvidence.inputs.spec.sha256 = sha256(specBytes);

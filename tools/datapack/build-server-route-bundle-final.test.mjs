@@ -732,6 +732,24 @@ async function copyRepositoryInputs(repositoryRoot) {
     await mkdir(path.dirname(path.join(repositoryRoot, relative)), { recursive: true });
     await cp(relative, path.join(repositoryRoot, relative));
   }
+  const candidatePath = path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json");
+  const inventoryPath = path.join(repositoryRoot, "tools/datapack/source-inventory.json");
+  const [candidate, snapshots, inventoryBytes] = await Promise.all([
+    readJson(candidatePath),
+    readJson(path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json")),
+    readFile(inventoryPath),
+  ]);
+  candidate.sourceSnapshots = candidate.sourceSnapshots.filter(
+    ({ sourceId }) => sourceId !== "seoulmetro-cyberstation-route-map",
+  );
+  candidate.sourceSnapshotIds = candidate.sourceSnapshots.map(({ snapshotId }) => snapshotId);
+  const selectedIds = new Set(candidate.sourceSnapshotIds);
+  candidate.sourceSnapshotSetHash = sha256(Buffer.from(JSON.stringify(
+    snapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId)),
+  )));
+  candidate.sourceInventorySha256 = sha256(Buffer.from(JSON.stringify(JSON.parse(inventoryBytes))));
+  candidate.networkEdgeEvidence.sourceInventory.sha256 = sha256(inventoryBytes);
+  await writeFile(candidatePath, `${JSON.stringify(candidate, null, 2)}\n`);
 }
 
 async function selectedSourceWindow() {

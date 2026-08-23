@@ -38,8 +38,8 @@ const OPERATOR_ID = "gwangju-metropolitan-rapid-transit";
 const ACCESSIBILITY_FIELDS = Object.freeze([
   "elevator", "escalator", "wheelchair_lift", "status", "verified_at",
 ]);
-// gwangju timetable 누적 fixture coverage baseline(실측): supportedCount=23 → accessibility +1 = 24.
-const TIMETABLE_BASELINE_SUPPORTED_COUNT = 23;
+// gwangju timetable 누적 fixture coverage baseline(실측): supportedCount=22 → accessibility +1 = 23.
+const TIMETABLE_BASELINE_SUPPORTED_COUNT = 22;
 const ACCESSIBILITY_SUPPORTED_COUNT = TIMETABLE_BASELINE_SUPPORTED_COUNT + 1;
 
 async function inputs() {

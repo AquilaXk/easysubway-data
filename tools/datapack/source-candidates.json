@@ -49,6 +49,7 @@
         "tools/datapack/collect-busan-route-topology.mjs",
         "tools/datapack/collect-busan-timetable.mjs",
         "tools/datapack/collect-current-seoul-transfer-distance-duration-snapshot.mjs",
+        "tools/datapack/collect-current-static-network-successors.mjs",
         "tools/datapack/collect-daejeon-route-topology.mjs",
         "tools/datapack/collect-datago-source-candidate-evidence.mjs",
         "tools/datapack/collect-gwangju-timetable.mjs",
@@ -6527,16 +6528,37 @@
       },
       "displayName": "서울교통공사_1_8호선 역사 좌표(위경도) 정보",
       "detailUrl": "https://www.data.go.kr/data/15099316/fileData.do",
-      "requestUrl": "https://www.data.go.kr/data/15099316/fileData.do",
+      "requestUrl": "https://api.odcloud.kr/api/15099316/v1/uddi:bc51de47-d3ea-4aa1-8ac2-d70f2b5e701e",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://api.odcloud.kr/api/15099316/v1/uddi:bc51de47-d3ea-4aa1-8ac2-d70f2b5e701e",
+        "auth": {
+          "env": "DATA_GO_KR_SERVICE_KEY",
+          "placement": "query",
+          "parameter": "serviceKey",
+          "valueEncoding": "url-search-params-once",
+          "loadPolicy": "process-env-no-shell-parsing"
+        },
+        "requiredParameters": ["serviceKey", "page", "perPage", "returnType"],
+        "fixedParameters": { "returnType": "JSON" },
+        "responseEnvelope": "data + currentCount + matchCount + page + perPage + totalCount",
+        "responseFields": ["연번", "호선", "고유역번호(외부역코드)", "역명", "위도", "경도", "작성기준일"],
+        "runner": {
+          "command": "node tools/datapack/run-current-static-network-successors.mjs",
+          "requiredEnv": ["DATA_GO_KR_SERVICE_KEY"],
+          "arguments": ["<absolute-operation-root>"]
+        },
+        "secretPolicy": "env-only-redacted-output"
+      },
       "licenseEvidenceStatus": "confirmed_unrestricted_public_data_free_use",
       "sampleEvidenceStatus": "validated_official_full_snapshot",
       "admissionStatus": "production_route_map_positions_materialized",
       "productionInventoryReferenceId": "seoul-metro-route-map-positions",
-      "serviceKeyHandling": "not_required",
+      "serviceKeyHandling": "offline_collector_secret_only",
       "mobileEmbeddingAllowed": true,
       "evidence": {
         "retrievedAt": "2026-07-24",
-        "endpoint": "https://www.data.go.kr/data/15099316/fileData.do",
+        "endpoint": "https://api.odcloud.kr/api/15099316/v1/uddi:bc51de47-d3ea-4aa1-8ac2-d70f2b5e701e",
         "licenseEvidenceUrl": "https://www.data.go.kr/data/15099316/fileData.do",
         "usePermissionRange": "공공데이터포털 이용허락범위 제한 없음",
         "formats": [
@@ -6544,34 +6566,15 @@
           "JSON"
         ],
         "outputFields": [
-          "route_map_position",
-          "route_map_label_polygon"
+          "연번",
+          "호선",
+          "고유역번호(외부역코드)",
+          "역명",
+          "위도",
+          "경도",
+          "작성기준일"
         ],
-        "stationCount": 274,
         "datasetId": "15099316",
-        "rawSha256": "713d6a7353748f1f29b974cd70df9b7a24b3600b6aeb60a58ed7bfa6975e02ed",
-        "positionsSha256": "fb04a674e9e1ccf7491e1a20ac87cb79604edbbe31517d712fc290f919ee6398",
-        "lineIds": [
-          "line-472a81add377",
-          "seoul-2",
-          "line-41a8c75ec9d8",
-          "seoul-4",
-          "line-80fc4d5350d4",
-          "line-3f41718e0833",
-          "line-15b3b8a93259",
-          "line-2b2d9eaa53d0"
-        ],
-        "lineStationCounts": {
-          "1": 10,
-          "2": 51,
-          "3": 34,
-          "4": 26,
-          "5": 54,
-          "6": 39,
-          "7": 42,
-          "8": 18
-        },
-        "evidenceArtifact": "tools/datapack/sources/seoul-metro-route-map-positions-20260724.json",
         "coverageAssessment": {
           "state": "SUPPORTED",
           "requirementCount": 8,
@@ -6581,12 +6584,11 @@
           "verificationTest": "tools/datapack/materialize-seoul-route-map-positions.test.mjs"
         },
         "coverageLimitations": [
-          "서울교통공사 1~8호선 공식 FILE 원본 276행 중 마곡·발산 동일 위경도 2건은 OFFICIAL_DUPLICATE_LATLON으로 quarantine하고 274개만 admission한다(9호선·다른 운영사 구간 제외)",
-          "공식 FILE 위경도를 offline materializer에서 canvas 정수 좌표로 투영하며 runtime 네트워크 호출은 하지 않는다",
-          "기존 seoulmetro-cyberstation-route-map capital pilot 행은 유지하고 동일 station/line/region PK(사당·seoul-4)는 FILE 행을 건너뛴다"
+          "공식 raw 위경도는 보존하고, 노선도 canvas 좌표·label·track은 versioned deterministic layout에서 별도 산출한다",
+          "runtime 네트워크 호출은 하지 않는다"
         ]
       },
-      "nextAction": "공식 FILE 갱신 시 CSV byte hash와 admitted 좌표 snapshot·quarantine을 함께 갱신한다"
+      "nextAction": "공식 API 관측과 결정론적 layout 입력·출력 hash를 함께 갱신한다"
     },
     {
       "id": "seoul-metro-transfer-distance-duration",

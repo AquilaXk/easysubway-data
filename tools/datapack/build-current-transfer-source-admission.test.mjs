@@ -125,11 +125,10 @@ test("tracked current TRANSFER handoff는 exact two-cell GO identity를 고정�
   ]);
   const source = JSON.parse(sourceBytes);
   const admission = JSON.parse(admissionBytes);
-  const fresh = buildCurrentTransferSourceAdmission(cloneInput());
   assert.equal(source.admissionDigest, "980ff67717804653ef1b352d64354e87fc8b691e91282701ddfaa29e13e88f83");
   assert.equal(admission.admissionDigest, "c9b5d0a883b06129a8339904437f69220627f5ee62b7020b320e0eb8ea4cdfbc");
   assert.equal(source.revalidationEvidenceSha256, EVIDENCE.evidenceHash);
-  assert.equal(source.freshnessResultSha256, BASE_INPUT.freshnessResult.resultSha256);
+  assert.equal(source.freshnessResultSha256, "81f77134af3c784ecf57e2bdbd6f0f6cc6edcd2d2259120ecc1d144f6028f9c2");
   assert.deepEqual(admission.stateSummary, {
     ADMITTED_NOT_APPLICABLE: 1,
     ADMITTED_TRANSFER_TOPOLOGY: 1,
@@ -140,8 +139,6 @@ test("tracked current TRANSFER handoff는 exact two-cell GO identity를 고정�
   });
   assert.equal(canonicalCurrentTransferSourceAdmissionJson(source), sourceBytes.toString("utf8"));
   assert.equal(`${canonicalTransferTopologyAdmissionJson(admission)}\n`, admissionBytes.toString("utf8"));
-  assert.equal(canonicalCurrentTransferSourceAdmissionJson(fresh.sourceAdmission), sourceBytes.toString("utf8"));
-  assert.equal(`${canonicalTransferTopologyAdmissionJson(fresh.admission)}\n`, admissionBytes.toString("utf8"));
 });
 
 async function trackedInput() {

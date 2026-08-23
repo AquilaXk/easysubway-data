@@ -12,6 +12,7 @@ import { buildCurrentCapitalStationLineInput, canonicalCurrentCapitalStationLine
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
 import { canonicalRideEdgeSetSha256, evaluateRouteAccessibilityEdges } from "./evaluate-route-accessibility-edges.mjs";
 import { fixture } from "./build-current-capital-station-line-input.test.mjs";
+import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
 
 test("full-capital route fan-in은 2218+213+213+30 edge contract를 만든다", async () => {
   const input = await fixture();
@@ -65,8 +66,14 @@ test("route builder 직접 호출은 projected fixture의 non-RIDE drift를 거�
   );
 });
 
-test("accessibility-authority projector는 current candidate를 buildSpec.publishedAt 시점으로 재현한다", async () => {
-  const repositoryRoot = path.resolve(fileURLToPath(new URL("../../", import.meta.url)));
+test("accessibility-authority projector는 합성 current public successor를 재현한다", async (t) => {
+  const sourceRoot = path.resolve(fileURLToPath(new URL("../../", import.meta.url)));
+  const temp = await mkdtemp(path.join(os.tmpdir(), "public-route-map-projector-"));
+  t.after(() => rm(temp, { recursive: true, force: true }));
+  const repositoryRoot = path.join(temp, "repository");
+  await copySyntheticCurrentPublicRouteMapRepository(sourceRoot, repositoryRoot, {
+    now: new Date("2026-08-22T09:45:18.609Z"),
+  });
   const buildSpec = JSON.parse(await readFile(
     path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"),
     "utf8",

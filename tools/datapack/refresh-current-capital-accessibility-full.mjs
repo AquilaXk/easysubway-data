@@ -21,6 +21,8 @@ const LOCK = "tools/datapack/.current-capital-accessibility-refresh.lock";
 const LOCK_OWNER = "owner.json";
 const SEOUL = "seoul-metro-accessibility";
 const TRANSFER = "seoul-metro-transfer-distance-duration";
+const MOLIT = "molit-urban-rail-full-route";
+const STATIC_SUCCESSOR = "STATIC_NETWORK_SUCCESSOR_REFRESH";
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 
 function target(root, relative) {
@@ -39,22 +41,94 @@ function buildRefreshProof({ candidateFile, ledgerFile, requestFile, hashesFile,
   const request = parse(requestFile.bytes, "release request"); const hashes = parse(hashesFile.bytes, "hash evidence");
   const station = parse(stationFile.bytes, "activated station input"); const route = parse(routeFile.bytes, "activated route input");
   if (!Array.isArray(candidate.sourceSnapshotIds) || !Array.isArray(candidate.sourceSnapshots) || candidate.sourceSnapshotIds.length !== 7
-    || candidate.sourceSnapshotIds.length !== candidate.sourceSnapshots.length || candidate.sourceSnapshotSetHash !== request.sourceSnapshotSetHash
+    || candidate.sourceSnapshotIds.length !== candidate.sourceSnapshots.length
+    || candidate.sourceSnapshots.at(-1)?.sourceId !== TRANSFER
+    || candidate.sourceSnapshotSetHash !== request.sourceSnapshotSetHash
     || candidate.sourceSnapshotSetHash !== hashes.sourceSnapshotSetHash?.value) throw new Error("current candidate/request/hash binding mismatch");
   const selected = candidate.sourceSnapshotIds.map((snapshotId) => requireOne(ledger, (row) => row?.snapshotId === snapshotId, "current candidate ledger"));
   const selectedIds = new Set(candidate.sourceSnapshotIds);
   const selectedLedgerOrder = ledger.filter(({ snapshotId }) => selectedIds.has(snapshotId));
   if (selectedIds.size !== 7 || selectedLedgerOrder.length !== 7 || sha(JSON.stringify(selectedLedgerOrder)) !== candidate.sourceSnapshotSetHash) throw new Error("current candidate source-set mismatch");
-  const seoulIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === SEOUL);
-  if (seoulIndex < 0 || candidate.sourceSnapshots.filter(({ sourceId }) => sourceId === SEOUL).length !== 1 || candidate.sourceSnapshots.at(-1)?.sourceId !== TRANSFER) throw new Error("current Seoul candidate shape mismatch");
-  const currentSeoul = selected[seoulIndex]; const previousSnapshotId = currentSeoul?.previousSnapshotId;
-  if (typeof previousSnapshotId !== "string" || previousSnapshotId === currentSeoul.snapshotId) throw new Error("current Seoul predecessor mismatch");
-  const predecessorIds = candidate.sourceSnapshotIds.map((snapshotId, index) => index === seoulIndex ? previousSnapshotId : snapshotId);
+  const staticSuccessors = selected.filter(({ projectionMigration }) =>
+    projectionMigration?.migrationKind === "CROSS_SOURCE_CANONICAL_REPLACEMENT");
+  let successorIndex;
+  let previousSnapshotId;
+  let molitSuccessorIndex = -1;
+  let previousMolitSnapshotId;
+  let transitionIdentity;
+  if (staticSuccessors.length === 1) {
+    const successor = staticSuccessors[0];
+    const migration = successor.projectionMigration;
+    successorIndex = selected.indexOf(successor);
+    previousSnapshotId = migration.replacedSnapshotId;
+    if (successor.sourceId !== migration.sourceId
+      || migration.candidateSlotSourceId !== migration.replacedSourceId
+      || typeof previousSnapshotId !== "string"
+      || previousSnapshotId === successor.snapshotId
+      || ledger.filter(({ snapshotId, sourceId }) =>
+        snapshotId === previousSnapshotId && sourceId === migration.replacedSourceId).length !== 1) {
+      throw new Error("current static-network predecessor mismatch");
+    }
+    const molitSuccessors = selected.filter(({ sourceId }) => sourceId === MOLIT);
+    const molitSuccessor = molitSuccessors[0];
+    const molitMigration = molitSuccessor?.projectionMigration;
+    molitSuccessorIndex = selected.indexOf(molitSuccessor);
+    previousMolitSnapshotId = molitSuccessor?.previousSnapshotId;
+    if (molitSuccessors.length !== 1
+      || molitMigration?.migrationKind !== "LEGACY_SAMPLE_TO_FULL_CONSUMED_FIELDS"
+      || molitMigration.sourceId !== MOLIT
+      || molitMigration.legacySnapshotId !== previousMolitSnapshotId
+      || typeof previousMolitSnapshotId !== "string"
+      || previousMolitSnapshotId === molitSuccessor.snapshotId
+      || ledger.filter(({ snapshotId, sourceId }) =>
+        snapshotId === previousMolitSnapshotId && sourceId === MOLIT).length !== 1) {
+      throw new Error("current static-network MOLIT predecessor mismatch");
+    }
+    transitionIdentity = {
+      kind: STATIC_SUCCESSOR,
+      successorSourceId: successor.sourceId,
+      predecessorSourceId: migration.replacedSourceId,
+    };
+  } else {
+    const seoulIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === SEOUL);
+    if (staticSuccessors.length !== 0
+      || seoulIndex < 0
+      || candidate.sourceSnapshots.filter(({ sourceId }) => sourceId === SEOUL).length !== 1
+      || candidate.sourceSnapshots.at(-1)?.sourceId !== TRANSFER) {
+      throw new Error("current successor candidate shape mismatch");
+    }
+    const currentSeoul = selected[seoulIndex];
+    successorIndex = seoulIndex;
+    previousSnapshotId = currentSeoul?.previousSnapshotId;
+    if (typeof previousSnapshotId !== "string" || previousSnapshotId === currentSeoul.snapshotId) {
+      throw new Error("current Seoul predecessor mismatch");
+    }
+    transitionIdentity = { kind: "SEOUL_ACCESSIBILITY_SUCCESSOR_REFRESH" };
+  }
+  const predecessorIds = candidate.sourceSnapshotIds.map((snapshotId, index) =>
+    index === successorIndex ? previousSnapshotId
+      : index === molitSuccessorIndex ? previousMolitSnapshotId
+      : snapshotId);
   const predecessorIdSet = new Set(predecessorIds); const predecessor = ledger.filter(({ snapshotId }) => predecessorIdSet.has(snapshotId));
   const predecessorHash = sha(JSON.stringify(predecessor));
-  const evidence = predecessor.filter(({ sourceId }) => sourceId !== TRANSFER); const evidenceHash = sha(JSON.stringify(evidence));
+  const currentSeoul = selected.filter(({ sourceId }) => sourceId === SEOUL);
+  const previousSeoulSnapshotId = currentSeoul[0]?.previousSnapshotId;
+  if (currentSeoul.length !== 1
+    || typeof previousSeoulSnapshotId !== "string"
+    || ledger.filter(({ snapshotId, sourceId }) =>
+      snapshotId === previousSeoulSnapshotId && sourceId === SEOUL).length !== 1) {
+    throw new Error("current Seoul evidence predecessor mismatch");
+  }
+  const evidenceIds = new Set(predecessorIds.flatMap((snapshotId, index) => {
+    const sourceId = candidate.sourceSnapshots[index].sourceId;
+    if (sourceId === TRANSFER) return [];
+    return [sourceId === SEOUL ? previousSeoulSnapshotId : snapshotId];
+  }));
+  const evidence = ledger.filter(({ snapshotId }) => evidenceIds.has(snapshotId));
+  const evidenceHash = sha(JSON.stringify(evidence));
   const activatedSourceSet = station.candidate?.sourceSetSha256;
-  if (predecessorIdSet.size !== 7 || predecessor.length !== 7 || evidence.length !== 6
+  if (predecessorIdSet.size !== 7 || predecessor.length !== 7
+    || evidenceIds.size !== 6 || evidence.length !== 6
     || activatedSourceSet !== route.candidate?.sourceSetSha256 || ![predecessorHash, candidate.sourceSnapshotSetHash].includes(activatedSourceSet)
     || station.candidate?.candidateId !== candidate.candidateId || route.candidate?.candidateId !== candidate.candidateId) {
     throw new Error("activated predecessor source-set mismatch");
@@ -62,7 +136,8 @@ function buildRefreshProof({ candidateFile, ledgerFile, requestFile, hashesFile,
   return {
     currentCandidateBytesSha256: sha(candidateFile.bytes), currentCandidateSourceSetSha256: candidate.sourceSnapshotSetHash,
     evidenceSourceSetSha256: evidenceHash, facilityAdmissionBytesSha256: null,
-    kind: "SEOUL_ACCESSIBILITY_SUCCESSOR_REFRESH", predecessorCandidateSourceSetSha256: predecessorHash, previousSnapshotId,
+    ...transitionIdentity,
+    predecessorCandidateSourceSetSha256: predecessorHash, previousSnapshotId,
     alreadyCurrent: activatedSourceSet === candidate.sourceSnapshotSetHash,
   };
 }

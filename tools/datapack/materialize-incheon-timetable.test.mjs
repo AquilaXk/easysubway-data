@@ -42,8 +42,8 @@ const OPERATOR_ID = "incheon-transit";
 const LINE1 = "line-98718184f016";
 const LINE2 = "line-42b5805f3b5a";
 const LINE7 = "line-15b3b8a93259";
-// accessibility 누적 fixture coverage baseline(실측): supportedCount=35 → timetable +2 = 37.
-const ACCESSIBILITY_SUPPORTED_COUNT = 35;
+// accessibility 누적 fixture coverage baseline(실측): supportedCount=34 → timetable +2 = 36.
+const ACCESSIBILITY_SUPPORTED_COUNT = 34;
 const TIMETABLE_SUPPORTED_COUNT = ACCESSIBILITY_SUPPORTED_COUNT + 2;
 
 async function inputs() {

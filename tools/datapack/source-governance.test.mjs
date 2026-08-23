@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -13,6 +14,7 @@ import {
   validateLineage,
 } from "./source-snapshot-policy.mjs";
 import {
+  approvedGovernanceBindingTransition,
   buildGovernanceSummary,
   deriveRawRetentionExpiresAt,
   evaluateSourceGovernance,
@@ -29,6 +31,45 @@ const second = snapshot({
   retrievedAt: "2026-07-02T00:00:00Z",
 });
 second.diffSummary = buildSnapshotDiff(first, second);
+
+test("서울 공공 노선도 위치는 90일 보존·독립 freshness class를 가지며 web 노선도는 historical policy로만 남는다", async () => {
+  const [governance, freshness] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/source-governance-policy.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "release/product-gates/datapack-freshness-sla.json"), "utf8").then(JSON.parse),
+  ]);
+  const publicEntry = governance.sources.find(({ sourceId }) => sourceId === "seoul-metro-route-map-positions");
+  const historicalEntry = governance.sources.find(({ sourceId }) => sourceId === "seoulmetro-cyberstation-route-map");
+  assert.equal(publicEntry.sourceClassId, "route_map_positions");
+  assert.equal(publicEntry.retentionClassId, "standard-90d");
+  assert.equal(historicalEntry.sourceClassId, "route_map_asset_historical");
+  assert.deepEqual(
+    freshness.sourceClasses.find(({ id }) => id === "route_map_positions").sourceIds,
+    ["seoul-metro-route-map-positions"],
+  );
+  assert.deepEqual(
+    freshness.sourceClasses.find(({ id }) => id === "route_map_asset_historical").sourceIds,
+    ["seoulmetro-cyberstation-route-map"],
+  );
+});
+
+test("governance policy 전이는 exact current와 닫힌 predecessor chain만 허용한다", async () => {
+  const currentPolicySha256 = createHash("sha256").update(await readFile(
+    path.join(root, "tools/datapack/source-governance-policy.json"),
+  )).digest("hex");
+  const currentPolicyVersion = "2026-07-15";
+  const transition = (sourceId, governancePolicySha256) => approvedGovernanceBindingTransition({
+    snapshot: { sourceId, governancePolicyVersion: currentPolicyVersion, governancePolicySha256 },
+    currentPolicyVersion,
+    currentPolicySha256,
+  });
+  const prior = "13f8a78c0ae0f7bfa6817005f44a92be3131e6f6708a69a4024747478203beaa";
+  const legacy = "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70";
+  assert.equal(transition("seoul-metro-transfer-distance-duration", currentPolicySha256).governancePolicySha256, currentPolicySha256);
+  assert.equal(transition("seoul-metro-transfer-distance-duration", prior).governancePolicySha256, prior);
+  assert.equal(transition("molit-urban-rail-full-route", legacy).governancePolicySha256, legacy);
+  assert.throws(() => transition("seoul-metro-transfer-distance-duration", legacy), /governance policy binding/);
+  assert.throws(() => transition("molit-urban-rail-full-route", "0".repeat(64)), /governance policy binding/);
+});
 
 test("snapshot object URI는 dot-segment를 거부하고 Unicode·공백 key를 보존한다", () => {
   for (const uri of ["s3://bucket/raw/../victim", "s3://bucket/raw/%2e%2e/victim"]) {

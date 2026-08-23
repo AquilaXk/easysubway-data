@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash, generateKeyPairSync } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
@@ -15,29 +16,23 @@ import {
   attachPurgeAttestation,
   purgeReportSha256,
 } from "./source-raw-purge-attestation.mjs";
+import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
 
 const evaluationAt = "2026-07-15T00:00:00.000Z";
 const execFileAsync = promisify(execFile);
 
-async function selectedSourceEvaluationAt() {
-  const [buildSpec, sourceSnapshots] = await Promise.all([
-    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
-    readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
-  ]);
-  const selected = buildSpec.sourceSnapshotIds.map((snapshotId) => {
-    const matches = sourceSnapshots.filter((entry) => entry.snapshotId === snapshotId);
-    assert.equal(matches.length, 1, `selected source snapshot identity: ${snapshotId}`);
-    return matches[0];
-  });
-  const basisAt = Math.max(...selected.flatMap((entry) => [
-    entry.retrievedAt, entry.sourceUpdatedAt, entry.capturedAt, entry.rawReceipt?.storedAt,
-  ].filter(Boolean).map(Date.parse)));
-  const freshUntil = Math.min(...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)));
-  assert.ok(Number.isFinite(basisAt) && Number.isFinite(freshUntil) && basisAt + 1_000 < freshUntil);
-  return new Date(basisAt + 1_000).toISOString();
-}
 const root = path.resolve(import.meta.dirname, "../..");
-const currentEvaluationAt = await selectedSourceEvaluationAt();
+const syntheticCurrentEvaluationAt = "2026-08-22T09:45:18.609Z";
+
+async function syntheticCurrentRepository(t, prefix) {
+  const temp = await mkdtemp(path.join(os.tmpdir(), prefix));
+  t.after(() => rm(temp, { recursive: true, force: true }));
+  const repositoryRoot = path.join(temp, "repository");
+  await copySyntheticCurrentPublicRouteMapRepository(root, repositoryRoot, {
+    now: new Date(syntheticCurrentEvaluationAt),
+  });
+  return repositoryRoot;
+}
 const purgeKeys = generateKeyPairSync("ed25519");
 const purgePublicKeyText = purgeKeys.publicKey.export({ type: "spki", format: "pem" });
 const purgePublicKeySha256 = createHash("sha256")
@@ -672,24 +667,26 @@ test("production 필수 source가 build snapshot에서 빠지면 governance GO�
   );
 });
 
-test("실제 release build spec은 current source inventory에 결합되어 governance를 통과한다", async () => {
+test("합성 current public successor build spec은 source inventory에 결합되어 governance를 통과한다", async (t) => {
+  const repositoryRoot = await syntheticCurrentRepository(t, "public-route-map-freshness-governance-");
   const { stdout } = await execFileAsync(process.execPath, [
-    "tools/datapack/validate-source-snapshot-freshness.mjs",
+    path.join(root, "tools/datapack/validate-source-snapshot-freshness.mjs"),
     "--build-spec", "tools/datapack/release/candidate-build-spec.json",
     "--policy", "release/product-gates/datapack-freshness-sla.json",
     "--governance-policy", "tools/datapack/source-governance-policy.json",
     "--inventory", "tools/datapack/source-inventory.json",
-    "--evaluation-at", currentEvaluationAt,
-  ], { cwd: root });
+    "--evaluation-at", syntheticCurrentEvaluationAt,
+  ], { cwd: repositoryRoot });
 
   assert.equal(JSON.parse(stdout).governanceDecision, "GO");
 });
 
-test("실제 release build spec은 current source inventory와 snapshot set에 결합된다", async () => {
+test("합성 current public successor build spec은 inventory와 snapshot set에 결합된다", async (t) => {
+  const repositoryRoot = await syntheticCurrentRepository(t, "public-route-map-freshness-binding-");
   const [inventory, buildSpec, snapshots] = await Promise.all([
-    readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
-    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
-    readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+    readFile(path.join(repositoryRoot, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
+    readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
   ]);
   const inventorySha256 = createHash("sha256")
     .update(JSON.stringify(inventory))

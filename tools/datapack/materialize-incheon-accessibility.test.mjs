@@ -44,8 +44,8 @@ const LINE7 = "line-15b3b8a93259";
 const ACCESSIBILITY_FIELDS = Object.freeze([
   "elevator", "escalator", "wheelchair_lift", "status", "verified_at",
 ]);
-// incheon station-info 누적 fixture coverage baseline(실측): supportedCount=32 → accessibility +3 = 35.
-const INCHEON_STATION_INFO_BASELINE_SUPPORTED_COUNT = 32;
+// incheon station-info 누적 fixture coverage baseline(실측): supportedCount=31 → accessibility +3 = 34.
+const INCHEON_STATION_INFO_BASELINE_SUPPORTED_COUNT = 31;
 const ACCESSIBILITY_SUPPORTED_COUNT = INCHEON_STATION_INFO_BASELINE_SUPPORTED_COUNT + 3;
 
 async function inputs() {
