@@ -511,16 +511,16 @@ test("activation CLI는 Data-owned capital/Incheon snapshot paths만 수용한�
     "--build-now", "2026-08-11T00:00:00.000Z",
   ]), /unknown activation argument/);
   assert.deepEqual(parseCurrentTopologyRefreshArgs([
-    "--capital-topology", "tools/datapack/sources/capital-route-topology-20260823.json",
-    "--incheon-topology", "tools/datapack/sources/incheon-transit-station-info-20260823.json",
+    "--capital-topology", "tools/datapack/sources/capital-route-topology-20260814.json",
+    "--incheon-topology", "tools/datapack/sources/incheon-transit-station-info-20260814.json",
     "--itx-current-admission", "tools/datapack/itx-current-network-edge-admission-20260823.json",
     "--builder-git-sha", "b".repeat(40),
     "--build-now", "2026-08-23T14:53:48.203Z",
     "--check",
   ]), {
     check: true,
-    capital_topology: "tools/datapack/sources/capital-route-topology-20260823.json",
-    incheon_topology: "tools/datapack/sources/incheon-transit-station-info-20260823.json",
+    capital_topology: "tools/datapack/sources/capital-route-topology-20260814.json",
+    incheon_topology: "tools/datapack/sources/incheon-transit-station-info-20260814.json",
     itx_current_admission: "tools/datapack/itx-current-network-edge-admission-20260823.json",
     builder_git_sha: "b".repeat(40),
     build_now: "2026-08-23T14:53:48.203Z",
@@ -887,9 +887,9 @@ test("generated current candidate spec은 expired ITX topology overlay를 재도
 });
 
 test("topology-only refresh는 admission·canonical·candidate identity를 한 입력에서 재생성한다", async () => {
-  const currentTopologyPath = "tools/datapack/sources/capital-route-topology-20260823.json";
+  const currentTopologyPath = "tools/datapack/sources/capital-route-topology-20260814.json";
   const currentIncheonTopologyPath =
-    "tools/datapack/sources/incheon-transit-station-info-20260823.json";
+    "tools/datapack/sources/incheon-transit-station-info-20260814.json";
   const currentItxAdmissionPath =
     "tools/datapack/itx-current-network-edge-admission-20260810.json";
   const [baseSpec, sourceInventory, currentTopologyBytes, baselineTopology, canonical,
@@ -934,8 +934,8 @@ test("topology-only refresh는 admission·canonical·candidate identity를 한 �
     .filter(Boolean);
   assert.ok(admissions.length > 0);
   assert.ok(admissions.every(({ topologySnapshotId }) =>
-    topologySnapshotId === "capital-route-topology-20260823"));
-  assert.equal(result.spec.candidateId, "capital-pilot-candidate-20260823");
+    topologySnapshotId === "capital-route-topology-20260814"));
+  assert.equal(result.spec.candidateId, "capital-pilot-candidate-20260814");
   assert.equal(result.spec.networkEdgeEvidence.sourceInventory.sha256, sha256(result.sourceInventoryBytes));
   assert.equal(result.spec.networkEdgeEvidence.capitalTopologyCandidate.sha256, sha256(currentTopologyBytes));
   assert.equal(
@@ -951,7 +951,7 @@ test("topology-only refresh는 admission·canonical·candidate identity를 한 �
     .find(({ id }) => id === "incheon-transit-station-info");
   assert.equal(
     incheon.topologyAdmissionEvidence.snapshotId,
-    "incheon-transit-station-info-20260823",
+    "incheon-transit-station-info-20260814",
   );
 });
 
