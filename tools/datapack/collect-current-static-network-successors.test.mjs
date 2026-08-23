@@ -95,6 +95,35 @@ test("partial observation failure is raised before any publisher can run", async
   await assert.rejects(collectCurrentStaticNetworkSuccessors({ sourceSnapshots: selected, observedAt: "2026-08-22T00:00:00.000Z", serviceKey: "test-key", fetchImpl: async () => { throw new Error("offline"); } }), /STATIC_NETWORK_SUCCESSOR/);
 });
 
+test("HTTP failures expose only a validated three-digit status", async () => {
+  for (const status of [401, 429]) {
+    await assert.rejects(
+      collectCurrentStaticNetworkSuccessors({
+        sourceSnapshots: selected,
+        observedAt: "2026-08-22T00:00:00.000Z",
+        serviceKey: "test-key",
+        fetchImpl: async (url) => url.href.startsWith(SEOUL_POSITIONS_URL)
+          ? new Response("serviceKey=test-key", { status, headers: { "content-type": "text/plain", "x-provider-secret": "redact-me" } })
+          : new Response(csv, { headers: { "content-type": "text/csv" } }),
+      }),
+      new RegExp(`^Error: STATIC_NETWORK_SUCCESSOR_SEOUL_POSITIONS_HTTP_${status}$`, "u"),
+    );
+  }
+  for (const status of [undefined, 99, 600, 999, 1000]) {
+    await assert.rejects(
+      collectCurrentStaticNetworkSuccessors({
+        sourceSnapshots: selected,
+        observedAt: "2026-08-22T00:00:00.000Z",
+        serviceKey: "test-key",
+        fetchImpl: async (url) => url.href.startsWith(SEOUL_POSITIONS_URL)
+          ? { ok: false, status, headers: { get: () => "serviceKey=test-key" } }
+          : new Response(csv, { headers: { "content-type": "text/csv" } }),
+      }),
+      /^Error: STATIC_NETWORK_SUCCESSOR_SEOUL_POSITIONS_HTTP$/u,
+    );
+  }
+});
+
 test("rejects malformed service keys and impossible or future basis dates before publication", async () => {
   let calls = 0;
   await assert.rejects(collectCurrentStaticNetworkSuccessors({ sourceSnapshots: selected, observedAt: "2026-08-22T00:00:00.000Z", serviceKey: "invalid%ZZ", fetchImpl: async () => { calls += 1; } }), /STATIC_NETWORK_SUCCESSOR_ARGUMENT/);
