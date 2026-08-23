@@ -224,7 +224,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   const routeMapLayoutArtifactBytes = jsonBytes(routeMapLayoutArtifact);
   const layoutArtifactSha256 = sha256(Buffer.from(`${JSON.stringify(routeMapLayoutArtifact)}\n`));
   const contentSha256 = sha256(Buffer.from(`${JSON.stringify(routeMapLayoutArtifact.rawPositions)}\n`));
-  const schemaFingerprint = sha256(JSON.stringify(Object.keys(routeMapLayoutArtifact.rawPositions[0]).sort()));
+  const schemaFingerprint = sha256(JSON.stringify(Object.keys(routeMapLayoutArtifact.rawPositions[0]).sort((left, right) => left.localeCompare(right, "en"))));
   const layout = Object.fromEntries(SHA_KEYS.map((key) => [key, key === "layoutArtifactSha256"
     ? layoutArtifactSha256
     : routeMapLayoutArtifact[key]]));
