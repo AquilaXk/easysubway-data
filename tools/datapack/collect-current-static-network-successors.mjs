@@ -40,7 +40,11 @@ function snapshotId(sourceId, observedAt) { return `${sourceId}-current-${observ
 async function fetchBytes(fetchImpl, url, source, contentType) {
   let response;
   try { response = await fetchImpl(url, { method: "GET", redirect: "error", signal: AbortSignal.timeout(15_000) }); } catch { fail(`${source}_TRANSPORT`); }
-  if (!response?.ok || response.status !== 200) fail(`${source}_HTTP`);
+  if (!response?.ok || response.status !== 200) {
+    const status = response?.status;
+    const suffix = Number.isSafeInteger(status) && status >= 100 && status <= 599 && status !== 200 ? `_${status}` : "";
+    fail(`${source}_HTTP${suffix}`);
+  }
   if (!contentType.test(response.headers?.get("content-type") ?? "")) fail(`${source}_CONTENT_TYPE`);
   const bytes = Buffer.from(await response.arrayBuffer());
   if (bytes.length === 0 || bytes.length > 16 * 1024 * 1024) fail(`${source}_BODY`);
