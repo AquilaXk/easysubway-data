@@ -180,6 +180,7 @@ test("CI는 browser-dependent required tests 전에 pinned Chrome runtime을 제
     setup,
     /uses:\s*browser-actions\/setup-chrome@086160e580d6e8c142ad5ba29009dcde677c6321/,
   );
+  assert.match(setup, /chrome-version:\s*"152\.0\.7977\.54"/);
   assert.match(setup, /install-dependencies:\s*true/);
   assert.match(runner, /CHROME_PATH:\s*\$\{\{ steps\.setup-chrome\.outputs\.chrome-path \}\}/);
   assert.match(runner, /ROUTE_MAP_CHROME_NO_SANDBOX:\s*"1"/);

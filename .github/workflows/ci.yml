@@ -171,6 +171,7 @@ jobs:
         id: setup-chrome
         uses: browser-actions/setup-chrome@086160e580d6e8c142ad5ba29009dcde677c6321
         with:
+          chrome-version: "152.0.7977.54"
           install-dependencies: true
 
       - name: Verify and run pristine Mobile owned required tests
