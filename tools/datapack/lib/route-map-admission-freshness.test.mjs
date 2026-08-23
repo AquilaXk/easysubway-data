@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   assertRouteMapAdmissionFreshness,
   ROUTE_MAP_REVERIFICATION_CADENCE,
+  SEOUL_PUBLIC_ROUTE_MAP_REVERIFICATION_CADENCE,
 } from "./route-map-admission-freshness.mjs";
 
 const root = path.resolve(import.meta.dirname, "../../..");
@@ -21,7 +22,7 @@ test("route-map admission은 SLA의 P1Y UTC calendar-year 반개구간만 허용
     "utf8",
   ));
   assert.equal(
-    policy.sourceClasses.find(({ id }) => id === "route_map_asset")?.reverificationCadence,
+    policy.sourceClasses.find(({ id }) => id === "route_map_asset_historical")?.reverificationCadence,
     ROUTE_MAP_REVERIFICATION_CADENCE,
   );
   assert.doesNotThrow(() => assertRouteMapAdmissionFreshness(
@@ -41,5 +42,30 @@ test("route-map admission은 SLA의 P1Y UTC calendar-year 반개구간만 허용
   ));
   assert.throws(() => assertRouteMapAdmissionFreshness(
     evidence, new Date(evidence.freshUntil), sourceId,
+  ));
+});
+
+test("서울 공공 route-map admission은 source SLA의 P90D 반개구간만 허용한다", async () => {
+  const policy = JSON.parse(await readFile(
+    path.join(root, "release/product-gates/datapack-freshness-sla.json"),
+    "utf8",
+  ));
+  const publicSourceId = "seoul-metro-route-map-positions";
+  assert.equal(
+    policy.sourceClasses.find(({ sourceIds }) => sourceIds.includes(publicSourceId))
+      ?.reverificationCadence,
+    SEOUL_PUBLIC_ROUTE_MAP_REVERIFICATION_CADENCE,
+  );
+  const publicEvidence = {
+    capturedAt: "2026-07-24T02:00:00.000Z",
+    freshUntil: "2026-10-22T02:00:00.000Z",
+  };
+  assert.doesNotThrow(() => assertRouteMapAdmissionFreshness(
+    publicEvidence, new Date(publicEvidence.capturedAt), publicSourceId,
+  ));
+  assert.throws(() => assertRouteMapAdmissionFreshness(
+    { ...publicEvidence, freshUntil: "2027-07-24T02:00:00.000Z" },
+    new Date(publicEvidence.capturedAt),
+    publicSourceId,
   ));
 });

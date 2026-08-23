@@ -242,6 +242,8 @@ export function verifyCurrentStaticNetworkSuccessorHeads({ sourceSnapshots, sour
     || layout.layoutArtifactSha256 !== canonicalJsonSha256(artifact)
     || layoutKeys.some((key) => key !== "layoutArtifactSha256"
       && (layout[key] == null || layout[key] !== artifact[key]))
+    || positionSource.requiredForProductionPack !== true
+    || positionSource.productionUseAllowed !== true
     || currentLayout?.schemaVersion !== 2
     || currentLayout.artifactKind !== "seoul-public-route-map-layout-admission"
     || currentLayout.status !== "ADMITTED"

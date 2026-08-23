@@ -111,10 +111,15 @@ test("registrar build output hashes the current ledger's exact seven-snapshot se
     } }), publishImpl: (input) => receiptFor(input, operationRoot, now),
     registerImpl: async ({ observations }) => { captured = cloneObservations(observations); outputs = await buildStaticNetworkSuccessorOutputs({ repositoryRoot, observations, now }); },
   });
-  const candidate = JSON.parse(outputs[4].bytes); const request = JSON.parse(outputs[5].bytes); const hashes = JSON.parse(outputs[6].bytes); const nextLedger = JSON.parse(outputs[3].bytes);
+  const nextInventory = JSON.parse(outputs[2].bytes); const candidate = JSON.parse(outputs[4].bytes); const request = JSON.parse(outputs[5].bytes); const hashes = JSON.parse(outputs[6].bytes); const nextLedger = JSON.parse(outputs[3].bytes);
   const selected = nextLedger.filter(({ snapshotId }) => candidate.sourceSnapshotIds.includes(snapshotId)); const expected = sha(JSON.stringify(selected));
   assert.equal(candidate.sourceSnapshotSetHash, expected); assert.equal(request.sourceSnapshotSetHash, expected); assert.equal(hashes.sourceSnapshotSetHash.value, expected);
   assert.notDeepEqual(selected.map(({ snapshotId }) => snapshotId), candidate.sourceSnapshotIds);
+  const positionSnapshot = nextLedger.find(({ sourceId }) => sourceId === "seoul-metro-route-map-positions");
+  const positionSource = nextInventory.sources.find(({ id }) => id === positionSnapshot.sourceId);
+  assert.equal(positionSource.requiredForProductionPack, true);
+  assert.equal(positionSource.productionUseAllowed, true);
+  assert.equal(positionSource.routeMapAdmissionEvidence.freshUntil, positionSnapshot.freshnessExpiresAt);
   const inconsistent = cloneObservations(captured); inconsistent[0].snapshot.projectionMigration = { ...inconsistent[0].snapshot.projectionMigration, replacedRawSha256: "0".repeat(64) };
   await assert.rejects(buildStaticNetworkSuccessorOutputs({ repositoryRoot, observations: inconsistent, now }), /snapshot migration binding/);
   const alteredKind = cloneObservations(captured); replaceMigration(alteredKind, "seoul-metro-route-map-positions", { migrationKind: "OTHER" });

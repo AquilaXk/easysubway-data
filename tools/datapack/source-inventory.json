@@ -7533,7 +7533,7 @@
           "route_map_positions"
         ]
       },
-      "requiredForProductionPack": true,
+      "requiredForProductionPack": false,
       "productionUseAllowed": true,
       "updateFrequency": "on-change",
       "observedDataUpdatedAt": "2025-08-14",

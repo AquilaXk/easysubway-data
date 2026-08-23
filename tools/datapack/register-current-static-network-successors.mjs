@@ -32,7 +32,6 @@ const compareStrings = (left, right) => (left < right ? -1 : left > right ? 1 : 
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const json = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 const canonicalBytes = (value) => Buffer.from(`${JSON.stringify(value)}\n`);
-const plusOneYear = (instant) => { const value = new Date(instant); value.setUTCFullYear(value.getUTCFullYear() + 1); return value.toISOString(); };
 
 function parse(bytes, label) { try { return JSON.parse(bytes.toString("utf8")); } catch { throw new Error(`${label} is invalid JSON`); } }
 function target(root, relative) {
@@ -185,7 +184,11 @@ export async function buildStaticNetworkSuccessorOutputs({ repositoryRoot = ROOT
     if (typeof snapshot.governancePolicyVersion !== "string" || !SHA.test(snapshot.governancePolicySha256)) throw new Error("static network governance binding is invalid");
     source.retrievedAt = snapshot.retrievedAt.slice(0, 10); source.observedDataUpdatedAt = snapshot.sourceUpdatedAt.slice(0, 10);
     source.admissionEvidence = { ...source.admissionEvidence, snapshotId: snapshot.snapshotId, rawSha256: snapshot.rawSha256, schemaFingerprint: snapshot.schemaFingerprint };
-    if (snapshot.sourceId === TARGETS[0]) source.routeMapAdmissionEvidence = { ...source.routeMapAdmissionEvidence, capturedAt: snapshot.retrievedAt, freshUntil: plusOneYear(snapshot.retrievedAt), currentLayoutAdmission: { schemaVersion: 2, artifactKind: "seoul-public-route-map-layout-admission", status: "ADMITTED", positionSnapshotId: snapshot.snapshotId, snapshotPath: `tools/datapack/sources/${snapshot.snapshotId}.json`, snapshotSha256: snapshot.normalizedObservationSha256, rawSha256: snapshot.rawSha256, contentSha256: snapshot.contentSha256, ...snapshot.routeMapLayoutEvidence } };
+    if (snapshot.sourceId === TARGETS[0]) {
+      source.requiredForProductionPack = true;
+      source.productionUseAllowed = true;
+      source.routeMapAdmissionEvidence = { ...source.routeMapAdmissionEvidence, capturedAt: snapshot.retrievedAt, freshUntil: snapshot.freshnessExpiresAt, currentLayoutAdmission: { schemaVersion: 2, artifactKind: "seoul-public-route-map-layout-admission", status: "ADMITTED", positionSnapshotId: snapshot.snapshotId, snapshotPath: `tools/datapack/sources/${snapshot.snapshotId}.json`, snapshotSha256: snapshot.normalizedObservationSha256, rawSha256: snapshot.rawSha256, contentSha256: snapshot.contentSha256, ...snapshot.routeMapLayoutEvidence } };
+    }
   }
   validateLineage(nextLedger);
   const nextCandidate = structuredClone(candidate); const nowMillis = now.getTime();

@@ -154,7 +154,7 @@ async function inputs() {
   publicSource.coverageScope = { regionIds: ["capital"], operatorIds: ["seoul-metro"], lineIds: [...LINE_IDS], sourceDomains: ["route_map_positions"] };
   publicSource.routeMapAdmissionEvidence = {
     ...(publicSource.routeMapAdmissionEvidence ?? {}), capturedAt: seoulSnapshot.capturedAt,
-    freshUntil: "2027-07-24T02:00:00.000Z",
+    freshUntil: "2026-10-22T02:00:00.000Z",
     currentLayoutAdmission: {
       schemaVersion: 2, artifactKind: "seoul-public-route-map-layout-admission", status: "ADMITTED",
       positionSnapshotId: "seoul-metro-route-map-positions-20260724", snapshotPath: "tools/datapack/sources/seoul-metro-route-map-positions-20260724.json", snapshotSha256: seoulSnapshotSha256,

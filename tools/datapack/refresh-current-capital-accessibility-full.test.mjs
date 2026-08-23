@@ -7,6 +7,13 @@ import test from "node:test";
 
 import { buildCurrentCapitalAccessibilityRefreshOutputs, commitCurrentCapitalAccessibilityRefresh, refreshCurrentCapitalAccessibilityFull } from "./refresh-current-capital-accessibility-full.mjs";
 import { readStableRegularFile } from "./rebind-current-candidate-source-snapshots.mjs";
+import { canonicalCurrentCapitalStationLineInputJson } from "./build-current-capital-station-line-input.mjs";
+import { canonicalCurrentCapitalRouteEdgeInputJson } from "./build-current-capital-route-edge-input.mjs";
+import { activateSyntheticCurrentPublicRouteMapSuccessor } from "./test-fixtures/current-public-route-map-successor.mjs";
+import { canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-current-capital-facility-source-admission.mjs";
+import { canonicalExitPathAdmissionJson } from "./build-exit-path-admission.mjs";
+import { canonicalCurrentExitAdmissionArtifactReceiptJson } from "./build-current-exit-admission-artifact-receipt.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const OUTPUTS = [
@@ -15,17 +22,18 @@ const OUTPUTS = [
 ];
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 
-test("activated full-capital inputs are rebuilt only across the exact Seoul direct-successor boundary", async () => {
-  const beforeStation = JSON.parse(await readFile(path.join(ROOT, "tools/datapack/release/current-capital-accessibility-full/station-line-input.json"), "utf8"));
-  const beforeRoute = JSON.parse(await readFile(path.join(ROOT, "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json"), "utf8"));
-  const outputs = await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: ROOT });
+test("activated full-capital inputs are rebuilt only across the exact Seoul direct-successor boundary", async (t) => {
+  const root = await stagedRefreshRepository(t);
+  const beforeStation = JSON.parse(await readFile(path.join(root, OUTPUTS[0]), "utf8"));
+  const beforeRoute = JSON.parse(await readFile(path.join(root, OUTPUTS[1]), "utf8"));
+  const outputs = await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root });
   assert.deepEqual(outputs.map(({ relative }) => relative), [
     "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
     "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
   ]);
   const station = JSON.parse(outputs[0].bytes); const route = JSON.parse(outputs[1].bytes);
-  assert.equal(station.candidate.sourceSetSha256, beforeStation.candidate.sourceSetSha256);
-  assert.equal(route.candidate.sourceSetSha256, beforeRoute.candidate.sourceSetSha256);
+  assert.notEqual(station.candidate.sourceSetSha256, beforeStation.candidate.sourceSetSha256);
+  assert.notEqual(route.candidate.sourceSetSha256, beforeRoute.candidate.sourceSetSha256);
   assert.deepEqual(station.stationLines, beforeStation.stationLines);
   assert.deepEqual(route.stationLines, beforeRoute.stationLines);
   assert.deepEqual(route.routeEdges, beforeRoute.routeEdges);
@@ -53,7 +61,7 @@ test("two-file refresh transaction rolls back a partial replacement without resi
 
 test("predecessor-bound activated inputs are rebuilt atomically to exact current bytes", async (t) => {
   const root = await stagedRefreshRepository(t);
-  const expected = await Promise.all(OUTPUTS.map((relative) => readFile(path.join(ROOT, relative))));
+  const expected = await expectedCurrentBytes(root);
   await refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root });
   assert.deepEqual(await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative)))), expected);
   const [station, route] = await Promise.all(OUTPUTS.map(async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"))));
@@ -75,7 +83,7 @@ test("input mutation after build is rejected before either output replacement", 
 test("PREPARED residue with already-current output bytes recovers under the refresh lock", async (t) => {
   const root = await stagedRefreshRepository(t);
   const before = await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative))));
-  const expected = await Promise.all(OUTPUTS.map((relative) => readFile(path.join(ROOT, relative))));
+  const expected = await expectedCurrentBytes(root);
   const records = OUTPUTS.map((relative, index) => ({ relative, before: before[index].toString("base64"), beforeSha256: sha(before[index]), after: expected[index].toString("base64"), afterSha256: sha(expected[index]) }));
   for (const [index, relative] of OUTPUTS.entries()) await writeFile(path.join(root, relative), expected[index]);
   await writeFile(path.join(root, "tools/datapack/.current-capital-accessibility-refresh-transaction.json"), JSON.stringify({ schemaVersion: 1, state: "PREPARED", records }));
@@ -87,7 +95,7 @@ test("a demonstrably dead refresh owner lease permits PREPARED and COMMITTED jou
   for (const state of ["PREPARED", "COMMITTED"]) {
     const root = await stagedRefreshRepository(t);
     const before = await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative))));
-    const expected = await Promise.all(OUTPUTS.map((relative) => readFile(path.join(ROOT, relative))));
+    const expected = await expectedCurrentBytes(root);
     const records = OUTPUTS.map((relative, index) => ({ relative, before: before[index].toString("base64"), beforeSha256: sha(before[index]), after: expected[index].toString("base64"), afterSha256: sha(expected[index]) }));
     if (state === "PREPARED") for (const [index, relative] of OUTPUTS.entries()) await writeFile(path.join(root, relative), expected[index]);
     await writeFile(path.join(root, "tools/datapack/.current-capital-accessibility-refresh-transaction.json"), JSON.stringify({ schemaVersion: 1, state, records }));
@@ -136,7 +144,10 @@ async function stagedRefreshRepository(t) {
   for (const relative of ["tools/datapack/source-inventory.json", "tools/datapack/source-governance-policy.json", "tools/datapack/official-od-fare-admission.json", "tools/datapack/nationwide-coverage-targets.json"]) {
     const target = path.join(root, relative); await mkdir(path.dirname(target), { recursive: true }); await cp(path.join(ROOT, relative), target);
   }
-  const candidate = JSON.parse(await readFile(path.join(ROOT, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
+  await activateSyntheticCurrentPublicRouteMapSuccessor(root, {
+    now: new Date("2026-08-22T09:45:18.609Z"),
+  });
+  const candidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
   await cp(path.join(ROOT, "tools/datapack/sources"), path.join(root, "tools/datapack/sources"), { recursive: true });
   const facility = JSON.parse(await readFile(path.join(ROOT, "tools/datapack/release/current-capital-facility-source-admission.json"), "utf8"));
   const facilitySnapshot = facility.sourceIdentity.snapshotPath; await mkdir(path.dirname(path.join(root, facilitySnapshot)), { recursive: true }); await cp(path.join(ROOT, facilitySnapshot), path.join(root, facilitySnapshot));
@@ -144,15 +155,72 @@ async function stagedRefreshRepository(t) {
   for (const relative of [candidate.networkEdgeEvidence.capitalTopology.path, candidate.networkEdgeEvidence.capitalTopologyCandidate.path, candidate.networkEdgeEvidence.capitalTopologyReverification.path, candidate.networkEdgeEvidence.itxCoverageContract.path]) {
     await mkdir(path.dirname(path.join(root, relative)), { recursive: true }); await cp(path.join(ROOT, relative), path.join(root, relative));
   }
-  const ledger = JSON.parse(await readFile(path.join(ROOT, "tools/datapack/release/source-snapshots.json"), "utf8"));
+  const ledger = JSON.parse(await readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8"));
   const seoul = candidate.sourceSnapshots.find(({ sourceId }) => sourceId === "seoul-metro-accessibility"); const current = ledger.find(({ snapshotId }) => snapshotId === seoul.snapshotId);
   const predecessorIds = candidate.sourceSnapshotIds.map((snapshotId) => snapshotId === current.snapshotId ? current.previousSnapshotId : snapshotId);
-  const predecessorHash = sha(JSON.stringify(ledger.filter(({ snapshotId }) => predecessorIds.includes(snapshotId))));
+  const predecessor = ledger.filter(({ snapshotId }) => predecessorIds.includes(snapshotId));
+  const predecessorHash = sha(JSON.stringify(predecessor));
+  const evidenceHash = sha(JSON.stringify(predecessor.filter(
+    ({ sourceId }) => sourceId !== "seoul-metro-transfer-distance-duration",
+  )));
+  await rebindAccessibilityAdmissionIdentity(root, evidenceHash);
   const stationPath = path.join(root, OUTPUTS[0]); const routePath = path.join(root, OUTPUTS[1]);
   const station = JSON.parse(await readFile(stationPath, "utf8")); const route = JSON.parse(await readFile(routePath, "utf8"));
   station.candidate.sourceSetSha256 = predecessorHash; station.evidenceRows = station.evidenceRows.map((row) => ({ ...row, sourceSetSha256: predecessorHash })); route.candidate.sourceSetSha256 = predecessorHash;
   await writeFile(stationPath, JSON.stringify(station)); await writeFile(routePath, JSON.stringify(route));
   return root;
+}
+
+async function expectedCurrentBytes(root) {
+  const [candidate, station, route] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(ROOT, OUTPUTS[0]), "utf8").then(JSON.parse),
+    readFile(path.join(ROOT, OUTPUTS[1]), "utf8").then(JSON.parse),
+  ]);
+  station.candidate.sourceSetSha256 = candidate.sourceSnapshotSetHash;
+  station.evidenceRows = station.evidenceRows.map((row) => ({
+    ...row,
+    sourceSetSha256: candidate.sourceSnapshotSetHash,
+  }));
+  route.candidate.sourceSetSha256 = candidate.sourceSnapshotSetHash;
+  return [
+    Buffer.from(canonicalCurrentCapitalStationLineInputJson(station)),
+    Buffer.from(canonicalCurrentCapitalRouteEdgeInputJson(route)),
+  ];
+}
+
+async function rebindAccessibilityAdmissionIdentity(root, sourceSetSha256) {
+  const facilityPath = path.join(root, "tools/datapack/release/current-capital-facility-source-admission.json");
+  const exitPath = path.join(root, "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json");
+  const receiptPath = path.join(root, "tools/datapack/release/current-exit-admission-v2/exit-path-admission-artifact-receipt.json");
+  const [facility, exit, receipt] = await Promise.all([
+    readFile(facilityPath, "utf8").then(JSON.parse),
+    readFile(exitPath, "utf8").then(JSON.parse),
+    readFile(receiptPath, "utf8").then(JSON.parse),
+  ]);
+  facility.candidate.sourceSnapshotSetHash = sourceSetSha256;
+  const { admissionDigest: _facilityDigest, ...facilityPayload } = facility;
+  facility.admissionDigest = sha(canonicalJson(facilityPayload));
+  const facilityBytes = Buffer.from(canonicalCurrentCapitalFacilitySourceAdmissionJson(facility));
+
+  exit.candidate.sourceSetSha256 = sourceSetSha256;
+  exit.materializerEvidenceRows = exit.materializerEvidenceRows.map((row) => ({
+    ...row,
+    sourceSetSha256,
+  }));
+  const { admissionDigest: _exitDigest, ...exitPayload } = exit;
+  exit.admissionDigest = sha(canonicalJson(exitPayload));
+  const exitBytes = Buffer.from(canonicalExitPathAdmissionJson(exit));
+
+  receipt.admissionSha256 = sha(exitBytes);
+  receipt.admissionDigest = exit.admissionDigest;
+  const { receiptSha256: _receiptDigest, ...receiptPayload } = receipt;
+  receipt.receiptSha256 = sha(canonicalJson(receiptPayload));
+  await Promise.all([
+    writeFile(facilityPath, facilityBytes),
+    writeFile(exitPath, exitBytes),
+    writeFile(receiptPath, canonicalCurrentExitAdmissionArtifactReceiptJson(receipt)),
+  ]);
 }
 
 async function writeRefreshLease(root, lease) {

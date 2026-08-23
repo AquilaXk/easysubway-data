@@ -19,8 +19,8 @@ const CAPITAL_TOPOLOGY_PATH = "tools/datapack/sources/capital-route-topology-202
 const CANDIDATE_SPEC_PATH = "tools/datapack/nationwide-candidate-pack-spec.json";
 const CANDIDATE_EVIDENCE_PATH = "tools/datapack/reports/nationwide-candidate-coverage-gate.json";
 const INHERITED_REVIEWED_PACK_PATH = "tools/datapack/release/capital-production-reviewed-pack.json";
-// admitted snapshot 없이 active line-scope를 claim하지만, reviewed pack의 inherited source로 baseline부터
-// SUPPORTED인 source다. containment 근거는 별도 admitted snapshot source가 계속 제공한다.
+// reviewed pack의 historical predecessor audit 행이다. 현재 inventory에서는 active line-scope를
+// claim하지 않으며, 아래 synthetic fixture만 과거 claim의 재활성화를 fail-closed로 검증한다.
 const CANDIDATE_REDESCRIBED_SOURCE_ID = "seoulmetro-cyberstation-route-map";
 const CANDIDATE_REDESCRIBED_SCOPE_KEY = "capital:seoul-metro:seoul-4";
 
@@ -65,6 +65,14 @@ const AUDITED_SCOPE_KEYS = Object.freeze([
   "capital:korail:line-558d0bd8312d",
   "capital:operator-3c623bf1a427:line-30886152e4f8",
   "capital:operator-29e323a78a93:line-62096860ab09",
+  "capital:seoul-metro:line-472a81add377",
+  "capital:seoul-metro:seoul-2",
+  "capital:seoul-metro:line-41a8c75ec9d8",
+  "capital:seoul-metro:seoul-4",
+  "capital:seoul-metro:line-80fc4d5350d4",
+  "capital:seoul-metro:line-3f41718e0833",
+  "capital:seoul-metro:line-15b3b8a93259",
+  "capital:seoul-metro:line-2b2d9eaa53d0",
 ]);
 
 async function readJson(relativePath) {

@@ -37,9 +37,9 @@ const execFileAsync = promisify(execFile);
 const SOURCE_ID = "gwangju-transportation-route-map-positions";
 const LINE_ID = "line-e57a361e8892";
 const OPERATOR_ID = "gwangju-metropolitan-rapid-transit";
-// gwangju accessibility 누적 fixture coverage baseline(실측): supportedCount=24.
+// gwangju accessibility 누적 fixture coverage baseline(실측): supportedCount=23.
 // 이번 FILE admission이 gwangju route_map_positions +1을 만든다.
-const GWANGJU_ACCESSIBILITY_BASELINE_SUPPORTED_COUNT = 24;
+const GWANGJU_ACCESSIBILITY_BASELINE_SUPPORTED_COUNT = 23;
 const GWANGJU_ROUTE_MAP_SUPPORTED_COUNT = GWANGJU_ACCESSIBILITY_BASELINE_SUPPORTED_COUNT + 1;
 
 async function inputs() {

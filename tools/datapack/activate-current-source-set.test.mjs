@@ -202,6 +202,8 @@ function currentSuccessorGateFixture() {
             schemaFingerprint: positions.schemaFingerprint,
           },
           routeMapAdmissionEvidence: { currentLayoutAdmission },
+          requiredForProductionPack: true,
+          productionUseAllowed: true,
         },
         {
           id: cyber.sourceId,
