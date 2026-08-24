@@ -105,22 +105,36 @@ export function validateLineage(snapshots) {
   }
 
   const children = new Map();
-  for (const snapshot of snapshots) {
-    if (snapshot.previousSnapshotId == null) continue;
-    const previous = byId.get(snapshot.previousSnapshotId);
-    if (!previous || previous.sourceId !== snapshot.sourceId) {
-      throw new Error("SOURCE_LINEAGE_BROKEN: previous snapshot");
-    }
-    if (requiredUtcInstant(snapshot.retrievedAt, "snapshot.retrievedAt")
-      <= requiredUtcInstant(previous.retrievedAt, "previous.retrievedAt")) {
-      throw new Error("SOURCE_LINEAGE_BROKEN: retrievedAt order");
-    }
+  const parents = new Map();
+  const addChild = (previous, snapshot) => {
+    if (parents.has(snapshot.snapshotId)) throw new Error("SOURCE_LINEAGE_BROKEN: mixed lineage edge");
     const childIds = children.get(previous.snapshotId) ?? [];
     childIds.push(snapshot.snapshotId);
     if (childIds.length > 1) throw new Error("SOURCE_LINEAGE_BROKEN: snapshot fork");
     children.set(previous.snapshotId, childIds);
-    if (!isDeepStrictEqual(snapshot.diffSummary, buildSnapshotDiff(previous, snapshot))) {
-      throw new Error("SOURCE_DIFF_MISSING: snapshot diff");
+    parents.set(snapshot.snapshotId, previous.snapshotId);
+  };
+  for (const snapshot of snapshots) {
+    const supersession = snapshot.rootSupersession;
+    if (snapshot.previousSnapshotId != null && supersession != null) {
+      throw new Error("SOURCE_LINEAGE_BROKEN: mixed lineage edge");
+    }
+    if (snapshot.previousSnapshotId != null) {
+      const previous = byId.get(snapshot.previousSnapshotId);
+      if (!previous || previous.sourceId !== snapshot.sourceId) {
+        throw new Error("SOURCE_LINEAGE_BROKEN: previous snapshot");
+      }
+      assertLaterSnapshot(snapshot, previous);
+      addChild(previous, snapshot);
+      if (!isDeepStrictEqual(snapshot.diffSummary, buildSnapshotDiff(previous, snapshot))) {
+        throw new Error("SOURCE_DIFF_MISSING: snapshot diff");
+      }
+    } else if (supersession != null) {
+      const previous = validateRootSupersession(snapshot, supersession, byId);
+      assertLaterSnapshot(snapshot, previous);
+      addChild(previous, snapshot);
+    } else if (snapshot.diffSummary != null) {
+      throw new Error("SOURCE_DIFF_MISSING: root snapshot diff");
     }
   }
 
@@ -128,7 +142,7 @@ export function validateLineage(snapshots) {
   const chainsBySource = {};
   for (const sourceId of new Set(snapshots.map((snapshot) => snapshot.sourceId))) {
     const sourceSnapshots = snapshots.filter((snapshot) => snapshot.sourceId === sourceId);
-    const roots = sourceSnapshots.filter((snapshot) => snapshot.previousSnapshotId == null);
+    const roots = sourceSnapshots.filter((snapshot) => !parents.has(snapshot.snapshotId));
     if (roots.length !== 1) throw new Error("SOURCE_LINEAGE_BROKEN: source root");
     if (roots[0].diffSummary != null) throw new Error("SOURCE_DIFF_MISSING: root snapshot diff");
     const chain = [];
@@ -148,6 +162,38 @@ export function validateLineage(snapshots) {
     chainsBySource[sourceId] = chain;
   }
   return { headsBySource, chainsBySource };
+}
+
+function assertLaterSnapshot(snapshot, previous) {
+  if (requiredUtcInstant(snapshot.retrievedAt, "snapshot.retrievedAt")
+    <= requiredUtcInstant(previous.retrievedAt, "previous.retrievedAt")) {
+    throw new Error("SOURCE_LINEAGE_BROKEN: retrievedAt order");
+  }
+}
+
+function validateRootSupersession(snapshot, supersession, byId) {
+  const keys = [
+    "schemaVersion", "artifactKind", "sourceId", "supersededHeadSnapshotId", "supersededHeadRawSha256",
+    "supersededHeadSchemaFingerprint", "reasonCode",
+  ];
+  if (!supersession || typeof supersession !== "object" || Array.isArray(supersession)
+    || JSON.stringify(Object.keys(supersession).sort()) !== JSON.stringify([...keys].sort())
+    || supersession.schemaVersion !== 1 || supersession.artifactKind !== "source-root-supersession"
+    || supersession.sourceId !== snapshot.sourceId
+    || supersession.reasonCode !== "CANONICAL_SOURCE_CONTRACT_RESET"
+    || typeof supersession.supersededHeadSnapshotId !== "string"
+    || !/^[0-9a-f]{64}$/.test(supersession.supersededHeadRawSha256 ?? "")
+    || !/^[0-9a-f]{64}$/.test(supersession.supersededHeadSchemaFingerprint ?? "")
+    || snapshot.previousSnapshotId != null || snapshot.diffSummary != null) {
+    throw new Error("SOURCE_LINEAGE_BROKEN: root supersession");
+  }
+  const previous = byId.get(supersession.supersededHeadSnapshotId);
+  if (!previous || previous.sourceId !== snapshot.sourceId
+    || previous.rawSha256 !== supersession.supersededHeadRawSha256
+    || previous.schemaFingerprint !== supersession.supersededHeadSchemaFingerprint) {
+    throw new Error("SOURCE_LINEAGE_BROKEN: root supersession");
+  }
+  return previous;
 }
 
 function optionalUtcInstant(value, label) {

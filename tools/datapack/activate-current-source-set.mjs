@@ -6,7 +6,7 @@ import {
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
+import { isDeepStrictEqual, promisify } from "node:util";
 
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { syncCanonicalFixture } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
@@ -30,10 +30,17 @@ import { loadCapitalRouteTopologySnapshot } from "./apply-capital-route-topology
 import { addCadence } from "./freshness-policy.mjs";
 import { ROUTE_MAP_REVERIFICATION_CADENCE } from "./lib/route-map-admission-freshness.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
-import { requirePublicStaticNetworkV2Admission } from "./public-static-network-v2-admission.mjs";
+import {
+  requireApprovedLegacyV1PublicPositionsPredecessor,
+  requireCanonicalPublicStaticNetworkV2OuterSnapshot,
+  requirePublicStaticNetworkV2Admission,
+} from "./public-static-network-v2-admission.mjs";
+import { SEOUL_POSITION_SCHEMA_FINGERPRINT } from "./collect-current-static-network-successors.mjs";
 import {
   CURRENT_MOLIT_FULL_ROUTE_ROW_COUNT,
   CURRENT_SEOUL_PUBLIC_POSITION_COUNT,
+  assertCurrentMolitFullRouteCompleteness,
+  assertCurrentSeoulPositionProjectionCompleteness,
 } from "./lib/static-network-successor-completeness.mjs";
 import {
   CURRENT_SEOUL_PUBLIC_ROUTE_MAP_COVERAGE,
@@ -48,6 +55,9 @@ import {
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
+const MOLIT_V2_FIELDS = Object.freeze([
+  "region_code", "region_name", "operator_name", "line_name", "station_sequence", "station_name",
+]);
 const STATIC_REVALIDATION_SOURCE_IDS = Object.freeze([
   "seoulmetro-station-line-info",
 ]);
@@ -184,7 +194,99 @@ function requireCurrentInventoryHead(sourceInventory, snapshot) {
 // The static five-record sample is not an activation authority.  The successor
 // transaction is the only way the full national membership and public Seoul
 // coordinate heads become current.
-export function verifyCurrentStaticNetworkSuccessorHeads({ sourceSnapshots, sourceInventory }) {
+function assertNoForbiddenV2SelectedPath(value) {
+  const visit = (current) => {
+    if (typeof current === "string") {
+      if (/(?:cyber|\.js(?:\b|$)|s3:\/\/|amazonaws\.com)/iu.test(current)) throw new Error("current v2 selected path is invalid");
+      return;
+    }
+    if (!current || typeof current !== "object") return;
+    for (const [key, child] of Object.entries(current)) if (key !== "historicalPredecessorAudit") visit(child);
+  };
+  visit(value);
+}
+
+export function verifyCurrentPublicStaticNetworkV2Heads({ sourceSnapshots, sourceInventory, now = new Date() }) {
+  if (!Array.isArray(sourceSnapshots) || sourceInventory?.schemaVersion !== 1 || sourceInventory.artifactKind !== "production-source-inventory" || !Array.isArray(sourceInventory.sources)) throw new Error("current v2 successor inputs are invalid");
+  const heads = validateLineage(sourceSnapshots).headsBySource;
+  const headFor = (sourceId) => requireOne(sourceSnapshots, ({ snapshotId }) => snapshotId === heads[sourceId], `current v2 successor head ${sourceId}`);
+  const positions = headFor("seoul-metro-route-map-positions"); const molit = headFor("molit-urban-rail-full-route");
+  for (const [snapshot, sourceId, count, extension, contentType] of [
+    [positions, "seoul-metro-route-map-positions", CURRENT_SEOUL_PUBLIC_POSITION_COUNT, "json", "application/json"],
+    [molit, "molit-urban-rail-full-route", CURRENT_MOLIT_FULL_ROUTE_ROW_COUNT, "csv", "text/csv; charset=euc-kr"],
+  ]) {
+    const isPositionRootReset = sourceId === "seoul-metro-route-map-positions" && snapshot.rootSupersession != null;
+    const predecessorId = isPositionRootReset
+      ? snapshot.rootSupersession?.supersededHeadSnapshotId
+      : snapshot.previousSnapshotId;
+    const previous = requireOne(sourceSnapshots, ({ snapshotId }) => snapshotId === predecessorId, `current v2 predecessor ${sourceId}`);
+    const observation = snapshot.publicStaticNetworkV2Observation;
+    const expectedSchemaFingerprint = sourceId === "seoul-metro-route-map-positions"
+      ? SEOUL_POSITION_SCHEMA_FINGERPRINT
+      : sha256(Buffer.from(JSON.stringify(MOLIT_V2_FIELDS)));
+    if (snapshot.sourceId !== sourceId || previous.sourceId !== sourceId
+      || (isPositionRootReset
+        ? snapshot.previousSnapshotId !== null || snapshot.diffSummary !== null
+          || snapshot.rootSupersession?.reasonCode !== "CANONICAL_SOURCE_CONTRACT_RESET"
+          || previous.publicStaticNetworkV2Observation?.schemaVersion === 2
+        : snapshot.previousSnapshotId !== previous.snapshotId || snapshot.rootSupersession != null
+          || (sourceId === "seoul-metro-route-map-positions"
+            && (previous.publicStaticNetworkV2Observation?.schemaVersion !== 2 || previous.projectionMigration != null)))
+      || snapshot.projectionMigration != null
+      || observation?.schemaVersion !== 2
+      || observation.sourceId !== sourceId
+      || observation.snapshotId !== snapshot.snapshotId
+      || observation.rawSha256 !== snapshot.rawSha256
+      || observation.contentSha256 !== snapshot.contentSha256
+      || observation.schemaFingerprint !== snapshot.schemaFingerprint
+      || observation.schemaFingerprint !== expectedSchemaFingerprint
+      || observation.rowCount !== snapshot.rowCount
+      || !isDeepStrictEqual(observation.providerRecordHashes, snapshot.providerRecordHashes)
+      || !isDeepStrictEqual(observation.rawReceipt, snapshot.rawReceipt)
+      || observation.contentSha256 !== canonicalJsonSha256(observation.normalizedProjection)
+      || !Array.isArray(observation.normalizedProjection)
+      || observation.rowCount !== observation.normalizedProjection.length
+      || !isDeepStrictEqual(observation.providerRecordHashes, observation.normalizedProjection.map((record) => sha256(Buffer.from(JSON.stringify(record)))))
+      || snapshot.normalizedObservationSha256 !== canonicalJsonSha256(observation)
+      || snapshot.rowCount !== count || snapshot.coverageCount !== count
+      || !Array.isArray(snapshot.providerRecordHashes) || snapshot.providerRecordHashes.length !== count) throw new Error("current v2 successor binding is invalid");
+    if (isPositionRootReset) {
+      requireApprovedLegacyV1PublicPositionsPredecessor({ sourceSnapshots, positions: previous, now });
+    }
+    requireCanonicalPublicStaticNetworkV2OuterSnapshot({ snapshot, now, requireCurrentFreshness: true });
+    if (sourceId === "seoul-metro-route-map-positions") assertCurrentSeoulPositionProjectionCompleteness(observation.normalizedProjection);
+    else assertCurrentMolitFullRouteCompleteness(observation.normalizedProjection);
+    requireCurrentSuccessorReceipt(snapshot, extension, contentType);
+    requireCurrentInventoryHead(sourceInventory, snapshot);
+  }
+  const positionSource = requireCurrentInventoryHead(sourceInventory, positions);
+  requirePublicStaticNetworkV2Admission({ positions, positionSource });
+  const cyber = sourceInventory.sources.filter(({ id }) => id === "seoulmetro-cyberstation-route-map");
+  if (cyber.some(({ requiredForProductionPack, productionUseAllowed }) => requiredForProductionPack === true || productionUseAllowed === true)) throw new Error("legacy route map source cannot be current production");
+  assertNoForbiddenV2SelectedPath({ positions, molit, positionSource });
+  return { positions, molit };
+}
+
+export function verifyCurrentStaticNetworkSuccessorHeads({ sourceSnapshots, sourceInventory, now = new Date() }) {
+  if (!Array.isArray(sourceSnapshots)
+    || sourceInventory?.schemaVersion !== 1
+    || sourceInventory.artifactKind !== "production-source-inventory"
+    || !Array.isArray(sourceInventory.sources)) {
+    throw new Error("current successor inputs are invalid");
+  }
+  const heads = validateLineage(sourceSnapshots).headsBySource;
+  const positions = sourceSnapshots.find(({ snapshotId }) => snapshotId === heads["seoul-metro-route-map-positions"]);
+  const molit = sourceSnapshots.find(({ snapshotId }) => snapshotId === heads["molit-urban-rail-full-route"]);
+  const hasPositionsV2 = positions?.publicStaticNetworkV2Observation != null;
+  const hasMolitV2 = molit?.publicStaticNetworkV2Observation != null;
+  if (!hasPositionsV2 && !hasMolitV2) throw new Error("V2_MISSING");
+  if (hasPositionsV2 !== hasMolitV2) throw new Error("V2_MIXED");
+  return verifyCurrentPublicStaticNetworkV2Heads({ sourceSnapshots, sourceInventory, now });
+}
+
+// Historical audit only. This function must never become a current activation
+// success path; current activation requires two schema-2 embedded observations.
+export function verifyHistoricalStaticNetworkSuccessorHeads({ sourceSnapshots, sourceInventory }) {
   if (!Array.isArray(sourceSnapshots)
     || sourceInventory?.schemaVersion !== 1
     || sourceInventory.artifactKind !== "production-source-inventory"
@@ -278,7 +380,15 @@ export function verifyCurrentStaticNetworkSuccessorHeads({ sourceSnapshots, sour
     || layoutKeys.some((key) => currentLayout[key] !== layout[key])) {
     throw new Error("current public route map layout admission binding is invalid");
   }
-  requirePublicStaticNetworkV2Admission({ positions, positionSource });
+  // Schema-1 records retain the narrow layout-version gate; schema-2 records
+  // are routed to the exact embedded-observation verifier first.
+  if (positions.publicStaticNetworkV2Observation != null) {
+    requirePublicStaticNetworkV2Admission({ positions, positionSource });
+  } else if (layout.layoutAlgorithmVersion !== "seoul-public-latlon-line-order-layout-v2"
+    || artifact.layoutAlgorithmVersion !== "seoul-public-latlon-line-order-layout-v2"
+    || currentLayout.layoutAlgorithmVersion !== "seoul-public-latlon-line-order-layout-v2") {
+    throw new Error("V2_MISSING");
+  }
   const cyber = sourceInventory.sources.filter(({ id }) => id === "seoulmetro-cyberstation-route-map");
   if (cyber.length > 1 || cyber.some(({ requiredForProductionPack, productionUseAllowed }) =>
     requiredForProductionPack === true || productionUseAllowed === true)) {

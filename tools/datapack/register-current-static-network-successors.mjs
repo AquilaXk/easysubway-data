@@ -11,7 +11,13 @@ import { deriveReleaseProjection } from "./rebind-current-candidate-source-snaps
 import { SEOUL_POSITION_SCHEMA_FINGERPRINT } from "./collect-current-static-network-successors.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
-import { validateLineage } from "./source-snapshot-policy.mjs";
+import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
+import {
+  requireApprovedLegacyV1PublicPositionsPredecessor,
+  requireCanonicalPublicStaticNetworkV2OuterSnapshot,
+  requirePublicStaticNetworkV2Admission,
+} from "./public-static-network-v2-admission.mjs";
+import { buildPublicStaticNetworkV2Observations } from "./build-public-static-network-v2-observations.mjs";
 import { validateSeoulRouteMapPositionsSnapshot } from "./collect-seoul-route-map-positions.mjs";
 import {
   assertCurrentMolitFullRouteCompleteness,
@@ -201,6 +207,39 @@ function rebindMolitMembershipEvidence(inventory, snapshot, rawBytes) {
   }
 }
 function selectedInLedgerOrder(ledger, ids) { if (!Array.isArray(ids) || new Set(ids).size !== ids.length || ids.length !== CANDIDATE_SOURCE_IDS.length) throw new Error("static network selected snapshot set is invalid"); const selected = ledger.filter(({ snapshotId }) => ids.includes(snapshotId)); if (selected.length !== ids.length || ids.some((snapshotId) => ledger.filter((snapshot) => snapshot.snapshotId === snapshotId).length !== 1)) throw new Error("static network selected snapshot set is invalid"); return selected; }
+function requireLegacyV1PositionResetAuthority({ ledger, candidate, inventory, governance, governanceBytes, freshness, nowMillis, heads, previous }) {
+  requireApprovedLegacyV1PublicPositionsPredecessor({ sourceSnapshots: ledger, positions: previous, now: new Date(nowMillis) });
+  const index = CANDIDATE_SOURCE_IDS.indexOf(TARGETS[0]);
+  const source = inventory.sources?.filter(({ id }) => id === TARGETS[0]);
+  const selected = selectedInLedgerOrder(ledger, candidate.sourceSnapshotIds);
+  const expectedProjection = deriveReleaseProjection({
+    snapshot: previous, sourceInventory: inventory, governancePolicy: governance,
+    governancePolicyBytes: Buffer.from(governanceBytes), freshnessPolicy: freshness, nowMillis,
+  });
+  if (heads[TARGETS[0]] !== previous.snapshotId
+    || source.length !== 1
+    || source[0].admissionEvidence?.snapshotId !== previous.snapshotId
+    || source[0].admissionEvidence.rawSha256 !== previous.rawSha256
+    || source[0].admissionEvidence.schemaFingerprint !== previous.schemaFingerprint
+    || candidate.sourceSnapshotIds[index] !== previous.snapshotId
+    || sha(JSON.stringify(selected)) !== candidate.sourceSnapshotSetHash
+    || !isDeepStrictEqual(candidate.sourceSnapshots[index], expectedProjection)) {
+    throw new Error("public v2 legacy reset authority is invalid");
+  }
+}
+
+async function readCurrentTopologyAdmissionInput({ root, inventory, now, read }) {
+  const topologyAdmission = inventory.sources?.find(({ id }) => id === TARGETS[0])?.routeMapAdmissionEvidence?.currentTopologyAdmission;
+  if (!topologyAdmission || typeof topologyAdmission.topologySnapshotId !== "string" || !SHA.test(topologyAdmission.topologyContentSha256 ?? "")) throw new Error("static network topology admission is invalid");
+  const topologyRelative = `tools/datapack/sources/${topologyAdmission.topologySnapshotId}.json`;
+  const topologyBytes = await read(topologyRelative);
+  const topology = parse(topologyBytes, "static network topology artifact");
+  assertCurrentTopologyAdmissionFreshness(topologyAdmission, topology, now);
+  const requiredLineIds = ["line-472a81add377", "seoul-2", "line-41a8c75ec9d8", "seoul-4", "line-80fc4d5350d4", "line-3f41718e0833", "line-15b3b8a93259", "line-2b2d9eaa53d0"].sort(compareStrings);
+  const lineages = topologyAdmission.topologyLineages?.map(({ sourceId, snapshotId, contentSha256, lineId }) => ({ sourceId, snapshotId, contentSha256, lineId })).sort((a, b) => compareStrings(JSON.stringify(a), JSON.stringify(b)));
+  if (topology?.sourceId !== "capital-route-topology" || topology.artifactKind !== "capital-route-topology-snapshot" || topology.official !== true || topology.fixture !== false || topology.contentSha256 !== topologyAdmission.topologyContentSha256 || topologyAdmission.topologySnapshotId !== `capital-route-topology-${topologyAdmission.topologySnapshotId.slice(-8)}` || !Array.isArray(lineages) || JSON.stringify(lineages) !== JSON.stringify(requiredLineIds.map((lineId) => ({ sourceId: "capital-route-topology", snapshotId: topologyAdmission.topologySnapshotId, contentSha256: topologyAdmission.topologyContentSha256, lineId })).sort((a, b) => compareStrings(JSON.stringify(a), JSON.stringify(b))))) throw new Error("static network topology identity is invalid");
+  return { topologyAdmission, topologyRelative, topologyBytes, topology };
+}
 
 export async function buildStaticNetworkSuccessorOutputs({ repositoryRoot = ROOT, observations, now = new Date() } = {}) {
   const root = path.resolve(repositoryRoot); await regularDirectory(root, "repository root"); assertTwoObservations(observations);
@@ -213,14 +252,8 @@ export async function buildStaticNetworkSuccessorOutputs({ repositoryRoot = ROOT
   const inventory = parse(inventoryBytes, "source inventory"); const ledger = parse(ledgerBytes, "source ledger");
   const candidate = parse(candidateBytes, "candidate build spec");
   const governance = parse(governanceBytes, "source governance policy"); const freshness = parse(freshnessBytes, "freshness policy");
-  const topologyAdmission = inventory.sources?.find(({ id }) => id === TARGETS[0])?.routeMapAdmissionEvidence?.currentTopologyAdmission;
-  if (!topologyAdmission || typeof topologyAdmission.topologySnapshotId !== "string" || !SHA.test(topologyAdmission.topologyContentSha256 ?? "")) throw new Error("static network topology admission is invalid");
-  const topologyRelative = `tools/datapack/sources/${topologyAdmission.topologySnapshotId}.json`; const topologyBytes = await bytes(target(root, topologyRelative), "static network topology"); const inputs = [...baseInputs, { relative: topologyRelative, bytes: topologyBytes }]; let topology;
-  try { topology = JSON.parse(topologyBytes); } catch { throw new Error("static network topology artifact is invalid"); }
-  assertCurrentTopologyAdmissionFreshness(topologyAdmission, topology, now);
-  const requiredLineIds = ["line-472a81add377", "seoul-2", "line-41a8c75ec9d8", "seoul-4", "line-80fc4d5350d4", "line-3f41718e0833", "line-15b3b8a93259", "line-2b2d9eaa53d0"].sort(compareStrings);
-  const lineages = topologyAdmission.topologyLineages?.map(({ sourceId, snapshotId, contentSha256, lineId }) => ({ sourceId, snapshotId, contentSha256, lineId })).sort((a, b) => compareStrings(JSON.stringify(a), JSON.stringify(b)));
-  if (topology?.sourceId !== "capital-route-topology" || topology.artifactKind !== "capital-route-topology-snapshot" || topology.official !== true || topology.fixture !== false || topology.contentSha256 !== topologyAdmission.topologyContentSha256 || topologyAdmission.topologySnapshotId !== `capital-route-topology-${topologyAdmission.topologySnapshotId.slice(-8)}` || !Array.isArray(lineages) || JSON.stringify(lineages) !== JSON.stringify(requiredLineIds.map((lineId) => ({ sourceId: "capital-route-topology", snapshotId: topologyAdmission.topologySnapshotId, contentSha256: topologyAdmission.topologyContentSha256, lineId })).sort((a, b) => compareStrings(JSON.stringify(a), JSON.stringify(b))))) throw new Error("static network topology identity is invalid");
+  const { topologyAdmission, topologyRelative, topologyBytes } = await readCurrentTopologyAdmissionInput({ root, inventory, now, read: async (relative) => bytes(target(root, relative), "static network topology") });
+  const inputs = [...baseInputs, { relative: topologyRelative, bytes: topologyBytes }];
   if (JSON.stringify(candidate.sourceSnapshotIds?.length === CANDIDATE_SOURCE_IDS.length ? candidate.sourceSnapshots?.map(({ sourceId }) => sourceId) : []) !== JSON.stringify(PREVIOUS_CANDIDATE_SOURCE_IDS)
     || JSON.stringify(candidate.sourceSnapshotIds.map((snapshotId, index) => candidate.sourceSnapshots[index]?.snapshotId)) !== JSON.stringify(candidate.sourceSnapshotIds)) throw new Error("static network candidate must preserve exact ordered seven sources");
   const heads = validateLineage(ledger).headsBySource;
@@ -307,6 +340,182 @@ export async function buildStaticNetworkSuccessorOutputs({ repositoryRoot = ROOT
     if (previous != null) throw new Error("static network snapshot immutable collision"); return { relative, bytes: snapshotBytes, prestateBytes: null };
   }));
   return [...staged, { relative: FIXED_OUTPUTS[0], bytes: nextInventoryBytes, prestateBytes: inventoryBytes }, { relative: FIXED_OUTPUTS[1], bytes: json(nextLedger), prestateBytes: ledgerBytes }, { relative: FIXED_OUTPUTS[2], bytes: nextCandidateBytes, prestateBytes: candidateBytes }].map((output) => ({ ...output, inputs }));
+}
+
+function assertV2ProducerOutput(producerOutput, rawBytesBySource) {
+  const observations = producerOutput?.observations;
+  if (!Array.isArray(observations) || JSON.stringify(producerOutput?.sourceOrder) !== JSON.stringify(TARGETS)
+    || observations.length !== TARGETS.length
+    || observations.some((observation, index) => observation?.sourceId !== TARGETS[index])
+    || !rawBytesBySource || typeof rawBytesBySource !== "object") throw new Error("public v2 observations are invalid");
+  for (const observation of observations) {
+    const rawBytes = rawBytesBySource[observation.sourceId];
+    const type = RECEIPT_TYPES[observation.sourceId];
+    if (observation.schemaVersion !== 2 || observation.artifactKind !== "public-static-network-v2-observation"
+      || typeof observation.snapshotId !== "string" || typeof observation.capturedAt !== "string"
+      || !Buffer.isBuffer(rawBytes) || sha(rawBytes) !== observation.rawSha256
+      || observation.rawReceipt?.rawObjectSha256 !== observation.rawSha256
+      || observation.rawReceipt?.byteSize !== rawBytes.length
+      || observation.rawReceipt?.sourceId !== observation.sourceId
+      || observation.rawReceipt?.snapshotId !== observation.snapshotId
+      || observation.rawReceipt?.capturedAt !== observation.capturedAt
+      || observation.rawReceipt?.contentType !== type.contentType
+      || observation.projectionMigration != null || observation.migration != null) throw new Error("public v2 observation binding is invalid");
+    if (observation.sourceId === TARGETS[0]) assertCurrentSeoulPositionProjectionCompleteness(observation.normalizedProjection);
+    else assertCurrentMolitFullRouteCompleteness(observation.normalizedProjection);
+  }
+}
+
+function revalidateV2ProducerOutput({ producerOutput, rawBytesBySource, sourceInventory, topologyAdmission, topologyBytes }) {
+  const [positions, molit] = producerOutput.observations;
+  if (positions.capturedAt !== molit.capturedAt) throw new Error("public v2 producer output is invalid");
+  let expected;
+  try {
+    expected = buildPublicStaticNetworkV2Observations({
+      positionRawBytes: rawBytesBySource[positions.sourceId],
+      molitRawBytes: rawBytesBySource[molit.sourceId],
+      capturedAt: positions.capturedAt,
+      admittedTopologyBytes: topologyBytes,
+      admittedTopologyId: topologyAdmission.topologySnapshotId,
+      positionReceipt: positions.rawReceipt,
+      molitReceipt: molit.rawReceipt,
+      sourceInventory,
+    });
+  } catch {
+    throw new Error("public v2 producer output is invalid");
+  }
+  const layout = positions.routeMapLayoutEvidence;
+  const artifact = positions.routeMapLayoutArtifact;
+  const topologySha256 = sha(topologyBytes);
+  if (!isDeepStrictEqual(expected, producerOutput)
+    || layout?.topologySnapshotId !== topologyAdmission.topologySnapshotId
+    || artifact?.topologySnapshotId !== topologyAdmission.topologySnapshotId
+    || layout?.topologySnapshotSha256 !== topologySha256
+    || artifact?.topologySnapshotSha256 !== topologySha256
+    || layout?.topologySnapshotIdentity !== `${topologyAdmission.topologySnapshotId}:${topologySha256}`
+    || artifact?.topologySnapshotIdentity !== `${topologyAdmission.topologySnapshotId}:${topologySha256}`) {
+    throw new Error("public v2 producer output is invalid");
+  }
+}
+
+function v2Snapshot({ observation, previous, sourceUpdatedAt, rootSupersession = null }) {
+  const snapshot = {
+    ...structuredClone(previous),
+    schemaVersion: 1,
+    artifactKind: "official-source-snapshot",
+    snapshotId: observation.snapshotId,
+    sourceId: observation.sourceId,
+    provider: observation.sourceId === TARGETS[0] ? "공공데이터포털" : "국토교통부",
+    retrievedAt: observation.capturedAt,
+    sourceUpdatedAt,
+    rowCount: observation.rowCount,
+    coverageCount: observation.rowCount,
+    rawSha256: observation.rawSha256,
+    rawObjectUri: observation.rawReceipt.rawObjectUri,
+    contentSha256: observation.contentSha256,
+    schemaFingerprint: observation.schemaFingerprint,
+    providerRecordHashes: structuredClone(observation.providerRecordHashes),
+    normalizedObservationSha256: sha(canonicalBytes(observation)),
+    publicStaticNetworkV2Observation: structuredClone(observation),
+    previousSnapshotId: rootSupersession == null ? previous.snapshotId : null,
+    rawReceipt: structuredClone(observation.rawReceipt),
+    snapshotStatus: "LOCKED",
+    schemaStatus: "PASS",
+    licenseStatus: "PASS",
+    fetchStatus: "SUCCESS",
+    redistributionAllowed: true,
+    credentialRedacted: true,
+  };
+  delete snapshot.projectionMigration;
+  delete snapshot.rootSupersession;
+  delete snapshot.routeMapLayoutEvidence;
+  delete snapshot.routeMapLayoutArtifact;
+  if (observation.sourceId === TARGETS[0]) {
+    snapshot.routeMapLayoutEvidence = structuredClone(observation.routeMapLayoutEvidence);
+    snapshot.routeMapLayoutArtifact = structuredClone(observation.routeMapLayoutArtifact);
+  }
+  if (rootSupersession != null) snapshot.rootSupersession = structuredClone(rootSupersession);
+  snapshot.diffSummary = rootSupersession == null ? buildSnapshotDiff(previous, snapshot) : null;
+  return snapshot;
+}
+
+export async function buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot = ROOT, producerOutput, rawBytesBySource, now = new Date() } = {}) {
+  const root = path.resolve(repositoryRoot); await regularDirectory(root, "repository root");
+  assertV2ProducerOutput(producerOutput, rawBytesBySource);
+  const read = async (relative) => bytes(target(root, relative), relative);
+  const [inventoryBytes, ledgerBytes, candidateBytes, requestBytes, hashBytes, governanceBytes, freshnessBytes] = await Promise.all([
+    read(FIXED_OUTPUTS[0]), read(FIXED_OUTPUTS[1]), read(FIXED_OUTPUTS[2]), read(APPROVAL_INPUTS[0]), read(APPROVAL_INPUTS[1]),
+    read("tools/datapack/source-governance-policy.json"), read("release/product-gates/datapack-freshness-sla.json"),
+  ]);
+  const inventory = parse(inventoryBytes, "source inventory"); const ledger = parse(ledgerBytes, "source ledger"); const candidate = parse(candidateBytes, "candidate build spec");
+  const governance = parse(governanceBytes, "source governance policy"); const freshness = parse(freshnessBytes, "freshness policy");
+  const { topologyAdmission, topologyRelative, topologyBytes } = await readCurrentTopologyAdmissionInput({ root, inventory, now, read });
+  revalidateV2ProducerOutput({ producerOutput, rawBytesBySource, sourceInventory: inventory, topologyAdmission, topologyBytes });
+  const inputs = INPUTS.map((relative, index) => ({ relative, bytes: [inventoryBytes, ledgerBytes, candidateBytes, requestBytes, hashBytes, governanceBytes, freshnessBytes][index] }));
+  inputs.push({ relative: topologyRelative, bytes: topologyBytes });
+  if (JSON.stringify(candidate.sourceSnapshots?.map(({ sourceId }) => sourceId)) !== JSON.stringify(CANDIDATE_SOURCE_IDS)
+    || JSON.stringify(candidate.sourceSnapshotIds) !== JSON.stringify(candidate.sourceSnapshots.map(({ snapshotId }) => snapshotId))) throw new Error("public v2 candidate source set is invalid");
+  const heads = validateLineage(ledger).headsBySource;
+  const priorPositions = ledger.filter(({ snapshotId }) => snapshotId === heads[TARGETS[0]]);
+  if (priorPositions.length !== 1) throw new Error("public v2 direct predecessor is invalid");
+  if (priorPositions[0].publicStaticNetworkV2Observation?.schemaVersion !== 2) {
+    requireLegacyV1PositionResetAuthority({
+      ledger, candidate, inventory, governance, governanceBytes, freshness, nowMillis: now.getTime(),
+      heads, previous: priorPositions[0],
+    });
+  }
+  const nextInventory = structuredClone(inventory); const nextLedger = [...ledger]; const snapshots = [];
+  for (const observation of producerOutput.observations) {
+    const previous = ledger.filter(({ snapshotId }) => snapshotId === heads[observation.sourceId]);
+    if (previous.length !== 1 || previous[0].snapshotId === observation.snapshotId) throw new Error("public v2 direct predecessor is invalid");
+    const sourceUpdatedAt = observation.sourceId === TARGETS[0]
+      ? `${observation.routeMapLayoutArtifact.observedDataUpdatedAt}T00:00:00.000Z`
+      : observation.capturedAt;
+    const isFirstPositionV2Reset = observation.sourceId === TARGETS[0]
+      && previous[0].publicStaticNetworkV2Observation?.schemaVersion !== 2;
+    const rootSupersession = isFirstPositionV2Reset ? {
+      schemaVersion: 1,
+      artifactKind: "source-root-supersession",
+      sourceId: observation.sourceId,
+      supersededHeadSnapshotId: previous[0].snapshotId,
+      supersededHeadRawSha256: previous[0].rawSha256,
+      supersededHeadSchemaFingerprint: previous[0].schemaFingerprint,
+      reasonCode: "CANONICAL_SOURCE_CONTRACT_RESET",
+    } : null;
+    const snapshot = v2Snapshot({ observation, previous: previous[0], sourceUpdatedAt, rootSupersession });
+    const source = nextInventory.sources?.find(({ id }) => id === observation.sourceId);
+    if (!source || source.admissionEvidence?.decision !== "APPROVED") throw new Error("public v2 source admission is invalid");
+    const sourceClass = freshness.sourceClasses?.find(({ sourceIds }) => sourceIds?.includes(observation.sourceId));
+    const retention = deriveRawRetentionExpiresAt({ policy: governance, sourceId: observation.sourceId, retrievedAt: snapshot.retrievedAt });
+    if (!sourceClass || snapshot.rawReceipt.rawRetentionExpiresAt !== retention || Date.parse(snapshot.rawReceipt.storedAt) > now.getTime()) throw new Error("public v2 receipt retention is invalid");
+    snapshot.freshnessExpiresAt = deriveFreshnessExpiresAt({ policy: freshness, sourceClassId: sourceClass.id, basisAt: snapshot[sourceClass.basisField], evaluationAt: now.toISOString() });
+    snapshot.rawRetentionExpiresAt = retention; snapshot.governancePolicyVersion = governance.policyVersion; snapshot.governancePolicySha256 = sha(governanceBytes);
+    requireCanonicalPublicStaticNetworkV2OuterSnapshot({ snapshot, now, requireCurrentFreshness: true });
+    if (nextLedger.some(({ snapshotId }) => snapshotId === snapshot.snapshotId)) throw new Error("public v2 snapshot immutable collision");
+    nextLedger.push(snapshot); snapshots.push(snapshot);
+    source.retrievedAt = snapshot.retrievedAt.slice(0, 10); source.observedDataUpdatedAt = snapshot.sourceUpdatedAt.slice(0, 10);
+    source.admissionEvidence = { ...source.admissionEvidence, snapshotId: snapshot.snapshotId, rawSha256: snapshot.rawSha256, schemaFingerprint: snapshot.schemaFingerprint };
+    if (observation.sourceId === TARGETS[0]) {
+      source.requiredForProductionPack = true; source.productionUseAllowed = true;
+      source.routeMapAdmissionEvidence = { ...source.routeMapAdmissionEvidence, currentTopologyAdmission: { ...source.routeMapAdmissionEvidence.currentTopologyAdmission, positionSnapshotSha256: snapshot.normalizedObservationSha256 }, currentLayoutAdmission: structuredClone(producerOutput.currentLayoutAdmission), capturedAt: snapshot.retrievedAt, freshUntil: snapshot.freshnessExpiresAt };
+      requirePublicStaticNetworkV2Admission({ positions: snapshot, positionSource: source });
+    }
+  }
+  rebindMolitMembershipEvidence(nextInventory, snapshots.find(({ sourceId }) => sourceId === TARGETS[1]), rawBytesBySource[TARGETS[1]]);
+  validateLineage(nextLedger);
+  const nextCandidate = structuredClone(candidate); const nowMillis = now.getTime();
+  for (const snapshot of snapshots) {
+    const index = nextCandidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === snapshot.sourceId);
+    const priorSnapshotId = snapshot.rootSupersession?.supersededHeadSnapshotId ?? snapshot.previousSnapshotId;
+    if (index < 0 || nextCandidate.sourceSnapshotIds[index] !== priorSnapshotId) throw new Error("public v2 candidate head drift");
+    nextCandidate.sourceSnapshotIds[index] = snapshot.snapshotId;
+    nextCandidate.sourceSnapshots[index] = deriveReleaseProjection({ snapshot, sourceInventory: nextInventory, governancePolicy: governance, governancePolicyBytes: governanceBytes, freshnessPolicy: freshness, nowMillis });
+  }
+  for (const projection of candidate.sourceSnapshots) if (!TARGETS.includes(projection.sourceId) && JSON.stringify(nextCandidate.sourceSnapshots.find(({ sourceId }) => sourceId === projection.sourceId)) !== JSON.stringify(projection)) throw new Error("public v2 non-target candidate projection changed");
+  const selected = selectedInLedgerOrder(nextLedger, nextCandidate.sourceSnapshotIds); nextCandidate.sourceSnapshotSetHash = sha(JSON.stringify(selected));
+  const nextInventoryBytes = json(nextInventory); nextCandidate.sourceInventorySha256 = sha(JSON.stringify(nextInventory)); nextCandidate.networkEdgeEvidence.sourceInventory.sha256 = sha(nextInventoryBytes);
+  const staged = snapshots.map((snapshot) => ({ relative: `tools/datapack/sources/${snapshot.snapshotId}.json`, bytes: canonicalBytes(snapshot.publicStaticNetworkV2Observation), prestateBytes: null }));
+  return [...staged, { relative: FIXED_OUTPUTS[0], bytes: nextInventoryBytes, prestateBytes: inventoryBytes }, { relative: FIXED_OUTPUTS[1], bytes: json(nextLedger), prestateBytes: ledgerBytes }, { relative: FIXED_OUTPUTS[2], bytes: json(nextCandidate), prestateBytes: candidateBytes }].map((output) => ({ ...output, inputs }));
 }
 
 async function expected(file, value) { const current = await bytes(file, "static network target", { absent: true }); if ((current == null) !== (value == null) || current?.equals(value) === false) throw new Error("static network registration preserves foreign replacement"); }
@@ -455,4 +664,9 @@ export async function commitStaticNetworkSuccessorOutputs({ repositoryRoot = ROO
 export async function registerCurrentStaticNetworkSuccessors(options = {}) {
   const root = path.resolve(options.repositoryRoot ?? ROOT); await regularDirectory(root, "repository root"); const release = await acquire(root, options);
   try { await recoverPending(root); const outputs = await buildStaticNetworkSuccessorOutputs({ ...options, repositoryRoot: root }); await commitUnlocked({ root, outputs }); return { outputs: outputs.map(({ relative }) => relative) }; } finally { await release(); }
+}
+
+export async function registerPublicStaticNetworkV2Successors(options = {}) {
+  const root = path.resolve(options.repositoryRoot ?? ROOT); await regularDirectory(root, "repository root"); const release = await acquire(root, options);
+  try { await recoverPending(root); const outputs = await buildPublicStaticNetworkV2SuccessorOutputs({ ...options, repositoryRoot: root }); await commitUnlocked({ root, outputs }); return { outputs: outputs.map(({ relative }) => relative) }; } finally { await release(); }
 }

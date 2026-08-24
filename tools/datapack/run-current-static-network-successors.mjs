@@ -13,6 +13,8 @@ import { readStaticNetworkRegularFile, registerCurrentStaticNetworkSuccessors } 
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import { approvedLegacyGovernanceBinding } from "./legacy-source-governance.mjs";
 import { assertCurrentTopologyAdmissionFreshness } from "./lib/route-map-admission-freshness.mjs";
+import { buildPublicStaticNetworkV2Observations } from "./build-public-static-network-v2-observations.mjs";
+import { registerPublicStaticNetworkV2Successors } from "./register-current-static-network-successors.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const TARGETS = Object.freeze(["seoul-metro-route-map-positions", "molit-urban-rail-full-route"]);
@@ -106,6 +108,21 @@ export async function runCurrentStaticNetworkSuccessors({ repositoryRoot = ROOT,
   await createExclusive(path.join(operation, "static-network-successors-receipt.json"), canonicalBytes({ sourceIds: TARGETS, receipts, normalizedObservationSha256: observations.map(({ bytes }) => sha(bytes)) }));
   if (await assertExactMain(root) !== expectedMainSha) throw new Error("static network repository changed before registration");
   return registerImpl({ repositoryRoot: root, observations, now });
+}
+
+// Input-only successor path. Collection and OCI publication are deliberately
+// outside this transition so a supplied receipt cannot be substituted.
+export async function runPublicStaticNetworkV2Transition({ repositoryRoot = ROOT, positionRawBytes, molitRawBytes, positionReceipt, molitReceipt, capturedAt, assertExactMain = defaultExactMain, produceImpl = buildPublicStaticNetworkV2Observations, registerImpl = registerPublicStaticNetworkV2Successors } = {}) {
+  const root = await regularRoot(repositoryRoot, "repository root");
+  const expectedMainSha = await assertExactMain(root);
+  const inventoryBytes = await readFile(path.join(root, "tools/datapack/source-inventory.json"));
+  let sourceInventory; try { sourceInventory = JSON.parse(inventoryBytes); } catch { throw new Error("public v2 source inventory is invalid"); }
+  const topologyId = sourceInventory?.sources?.find(({ id }) => id === TARGETS[0])?.routeMapAdmissionEvidence?.currentTopologyAdmission?.topologySnapshotId;
+  if (typeof topologyId !== "string" || topologyId === "") throw new Error("public v2 topology admission is invalid");
+  const admittedTopologyBytes = await readStaticNetworkRegularFile(root, `tools/datapack/sources/${topologyId}.json`, "public v2 topology");
+  const producerOutput = produceImpl({ positionRawBytes, molitRawBytes, positionReceipt, molitReceipt, capturedAt, sourceInventory, admittedTopologyBytes, admittedTopologyId: topologyId });
+  if (await assertExactMain(root) !== expectedMainSha) throw new Error("public v2 repository changed before registration");
+  return registerImpl({ repositoryRoot: root, producerOutput, rawBytesBySource: { [TARGETS[0]]: Buffer.from(positionRawBytes), [TARGETS[1]]: Buffer.from(molitRawBytes) }, now: new Date(capturedAt) });
 }
 
 async function main(argv) { if (argv.length !== 1 || !path.isAbsolute(argv[0])) throw new Error("static network runner requires an absolute operation root"); const result = await runCurrentStaticNetworkSuccessors({ operationRoot: argv[0] }); process.stdout.write(`${JSON.stringify(result)}\n`); }
