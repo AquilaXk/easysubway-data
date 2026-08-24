@@ -306,6 +306,10 @@ function validateLaunchDenominatorReport(
     if (!isDeepStrictEqual(report.evaluatorInput, authoritativeReport.evaluatorInput)) {
       throw new Error("launch denominator evaluator input must match current authoritative evidence");
     }
+    const candidateManifest = JSON.parse(candidateArtifactRaw.manifestRaw);
+    if (bundle.releaseSequence !== candidateManifest.releaseSequence) {
+      throw new Error("release evidence bundle releaseSequence must match current candidate manifest");
+    }
   }
   if (candidateBinding) {
     for (const [field, expected] of [
@@ -458,6 +462,9 @@ async function main() {
     "androidEvidenceSha256",
   ]) {
     validateSha(bundle, field);
+  }
+  if (!Number.isSafeInteger(bundle.releaseSequence) || bundle.releaseSequence < 1) {
+    throw new Error("releaseSequence must be a positive safe integer");
   }
   if (!["GO", "NO_GO", "NOT_EVALUATED"].includes(bundle.accessibilitySourceCoverageDecision)) {
     throw new Error("accessibilitySourceCoverageDecision must be GO, NO_GO, or NOT_EVALUATED");

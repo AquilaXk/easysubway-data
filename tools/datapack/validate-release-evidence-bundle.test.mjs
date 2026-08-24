@@ -62,7 +62,7 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
     builderGitSha: "abcdef1",
     sourceSnapshots: [{ freshnessExpiresAt: "2099-08-01T00:00:00Z" }],
   });
-  const manifestRaw = json({ packs: [{ id: "capital", version: "1" }] });
+  const manifestRaw = json({ releaseSequence: 1, packs: [{ id: "capital", version: "1" }] });
   const candidateIdentity = {
     candidateId: "candidate-a",
     buildSpecSha256: sha256(buildSpecRaw),
@@ -222,6 +222,7 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
   const bundle = {
     schemaVersion: 1,
     artifactKind: "datapack-release-evidence-bundle",
+    releaseSequence: 1,
     candidateId: "capital@1",
     buildCandidateId: "candidate-a",
     candidateBuilderGitSha: "abcdef1",
@@ -277,6 +278,23 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
     ],
     { cwd: root },
   );
+  bundle.releaseSequence = 2;
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      "tools/datapack/validate-release-evidence-bundle.mjs",
+      "--bundle",
+      bundlePath,
+      ...scopeArgs,
+      ...reportArgs,
+      ...accessibilityReportArgs,
+      ...candidateArgs,
+      "--require-pass",
+    ], { cwd: root }),
+    /releaseSequence must match current candidate manifest/,
+  );
+  bundle.releaseSequence = 1;
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
   await assert.rejects(
     execFileAsync(process.execPath, [
       "tools/datapack/validate-release-evidence-bundle.mjs",
@@ -653,6 +671,7 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
     "--launch-report",
     currentLaunchReportPath,
   ], { cwd: root });
+
   await assert.rejects(
     execFileAsync(process.execPath, [
       "tools/datapack/validate-release-evidence-bundle.mjs",
