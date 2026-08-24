@@ -186,15 +186,23 @@ function rebindMolitMembershipEvidence(inventory, snapshot, rawBytes) {
     if (!Array.isArray(mappings) || mappings.length === 0 || mappings.sourceRawSha256 !== snapshot.rawSha256) {
       throw new Error("static network MOLIT membership mapping is invalid");
     }
+    const mappingSha256 = sha(JSON.stringify(mappings));
+    const stationCodesSha256 = lineIds[0] === "line-7051a9c2525c" || lineIds[0] === "line-e57a361e8892"
+      ? sha(JSON.stringify(mappings.map(({ stationNumber }) => stationNumber)))
+      : null;
+    if (evidence.stationCount !== mappings.length || evidence.mappingSha256 !== mappingSha256
+      || stationCodesSha256 != null && evidence.stationCodesSha256 !== stationCodesSha256) {
+      throw new Error("static network MOLIT membership admission drift is invalid");
+    }
     source.membershipAdmissionEvidence = {
       ...evidence,
       verifiedAt: snapshot.retrievedAt,
       stationCount: mappings.length,
       membershipSourceRawSha256: snapshot.rawSha256,
       membershipSourceSnapshotSha256: mappings.sourceRawSha256,
-      mappingSha256: sha(JSON.stringify(mappings)),
-      ...(lineIds[0] === "line-7051a9c2525c" || lineIds[0] === "line-e57a361e8892"
-        ? { stationCodesSha256: sha(JSON.stringify(mappings.map(({ stationNumber }) => stationNumber))) }
+      mappingSha256,
+      ...(stationCodesSha256 != null
+        ? { stationCodesSha256 }
         : {}),
     };
   }
