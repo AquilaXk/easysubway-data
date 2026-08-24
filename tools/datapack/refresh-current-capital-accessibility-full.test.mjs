@@ -233,6 +233,7 @@ async function stageCurrentTopologyFixture(root) {
   const reverificationPath = result.spec.networkEdgeEvidence.capitalTopologyReverification.path;
   await Promise.all([
     writeFile(path.join(root, currentIncheonTopologyPath), currentIncheonTopologyBytes),
+    writeFile(path.join(root, result.sourceSeparatedTopologyPath), result.sourceSeparatedTopologyBytes),
     writeFile(path.join(root, "tools/datapack/source-inventory.json"), result.sourceInventoryBytes),
     writeFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), result.canonicalBytes),
     writeFile(path.join(root, reverificationPath), result.topologyReverificationBytes),

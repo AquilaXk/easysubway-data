@@ -119,6 +119,8 @@ const CURRENT_SOURCE_DOWNSTREAM_OUTPUTS = Object.freeze([
 function isAllowedActivationOutput(relativePath) {
   return allowedOutputPaths.has(relativePath)
     || /^tools\/datapack\/release\/capital-topology-reverification-[0-9]{8}\.json$/u
+      .test(relativePath ?? "")
+    || /^tools\/datapack\/sources\/capital-route-topology-[0-9]{8}-source-separated\.json$/u
       .test(relativePath ?? "");
 }
 
@@ -1111,11 +1113,14 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
     now: activationNow,
   });
   const topologyReverification = buildCapitalTopologyReverificationEvidence(
-    projectCapitalTopologyOwnership(baselineTopology),
+    projectCapitalTopologyOwnership(fullTopology),
     topology,
   );
+  topologyReverification.baseline.snapshotId = topologySnapshotId;
   const sourceInventoryBytes = jsonBytes(nextInventory);
   const topologyReverificationBytes = jsonBytes(topologyReverification);
+  const sourceSeparatedTopologyPath = currentTopologyPath.replace(/\.json$/u, "-source-separated.json");
+  const sourceSeparatedTopologyBytes = jsonBytes(topology);
   const capitalAdmissions = admittedCapitalLineEvidence(
     nextInventory,
     topology,
@@ -1135,9 +1140,12 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
     baseSpec,
     builderGitSha,
     sourceInventoryBytes,
-    currentTopology: fullTopology,
-    currentTopologyBytes,
-    currentTopologyPath,
+    fullTopology,
+    fullTopologyBytes: currentTopologyBytes,
+    fullTopologyPath: currentTopologyPath,
+    candidateTopology: topology,
+    candidateTopologyBytes: sourceSeparatedTopologyBytes,
+    candidateTopologyPath: sourceSeparatedTopologyPath,
     topologyReverificationBytes,
     productionScopePolicyBytes,
   });
@@ -1155,6 +1163,8 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
     sourceInventoryBytes,
     topologyReverification,
     topologyReverificationBytes,
+    sourceSeparatedTopologyPath,
+    sourceSeparatedTopologyBytes,
     canonical: nextCanonical,
     canonicalBytes,
     projectedEdgeCount: projection.edgeCount,
@@ -1232,9 +1242,12 @@ export function buildCurrentCandidateSpec({
   baseSpec,
   builderGitSha,
   sourceInventoryBytes,
-  currentTopology,
-  currentTopologyBytes,
-  currentTopologyPath,
+  fullTopology,
+  fullTopologyBytes,
+  fullTopologyPath,
+  candidateTopology,
+  candidateTopologyBytes,
+  candidateTopologyPath,
   topologyReverificationBytes,
   productionScopePolicyBytes,
 }) {
@@ -1244,18 +1257,18 @@ export function buildCurrentCandidateSpec({
     throw new Error("current candidate base spec or builder identity is invalid");
   }
   if (!Buffer.isBuffer(sourceInventoryBytes)
-    || !Buffer.isBuffer(currentTopologyBytes)
+    || !Buffer.isBuffer(fullTopologyBytes)
+    || !Buffer.isBuffer(candidateTopologyBytes)
     || !Buffer.isBuffer(topologyReverificationBytes)
     || !Buffer.isBuffer(productionScopePolicyBytes)) {
     throw new Error("current capital topology candidate identity is invalid");
   }
   const topologySnapshotId = exactCurrentTopologySnapshotIdentity({
-    snapshot: loadCapitalRouteTopologySnapshot(currentTopology),
-    snapshotBytes: currentTopologyBytes,
-    snapshotPath: currentTopologyPath,
+    snapshot: loadCapitalRouteTopologySnapshot(fullTopology),
+    snapshotBytes: fullTopologyBytes,
+    snapshotPath: fullTopologyPath,
     prefix: "capital-route-topology",
   });
-  const capitalTopology = projectCurrentCapitalTopologyOwnership(currentTopology);
   const snapshotDate = topologySnapshotId.slice(-8);
   const topologyReverificationPath = `tools/datapack/release/capital-topology-reverification-${snapshotDate}.json`;
   const spec = structuredClone(baseSpec);
@@ -1274,13 +1287,13 @@ export function buildCurrentCandidateSpec({
       sha256: sha256(sourceInventoryBytes),
     },
     capitalTopology: {
-      path: "tools/datapack/sources/capital-route-topology-20260724.json",
-      sha256: requiredSha(spec.networkEdgeEvidence?.capitalTopology?.sha256, "baseline topology sha256"),
-      snapshotId: "capital-route-topology-20260724",
+      path: fullTopologyPath,
+      sha256: sha256(fullTopologyBytes),
+      snapshotId: topologySnapshotId,
     },
     capitalTopologyCandidate: {
-      path: currentTopologyPath,
-      sha256: sha256(currentTopologyBytes),
+      path: candidateTopologyPath,
+      sha256: sha256(candidateTopologyBytes),
       snapshotId: topologySnapshotId,
     },
     capitalTopologyReverification: {
@@ -1293,10 +1306,10 @@ export function buildCurrentCandidateSpec({
       issue: 2649,
       status: "ADMITTED",
       snapshotId: topologySnapshotId,
-      contentSha256: capitalTopology.contentSha256,
-      reviewedAt: currentTopology.capturedAt,
-      reverifiedAt: currentTopology.capturedAt,
-      freshUntil: currentTopology.freshUntil,
+      contentSha256: candidateTopology.contentSha256,
+      reviewedAt: candidateTopology.capturedAt,
+      reverifiedAt: candidateTopology.capturedAt,
+      freshUntil: candidateTopology.freshUntil,
     },
   };
   return spec;
@@ -1673,10 +1686,10 @@ function validationBuildSpec(spec, temporaryRoot) {
     path: path.join(temporaryRoot, "tools/datapack/source-inventory.json"),
   });
   Object.assign(next.networkEdgeEvidence.capitalTopology, {
-    path: path.join(root, "tools/datapack/sources/capital-route-topology-20260724.json"),
+    path: path.join(root, next.networkEdgeEvidence.capitalTopology.path),
   });
   Object.assign(next.networkEdgeEvidence.capitalTopologyCandidate, {
-    path: path.join(root, next.networkEdgeEvidence.capitalTopologyCandidate.path),
+    path: path.join(temporaryRoot, next.networkEdgeEvidence.capitalTopologyCandidate.path),
   });
   Object.assign(next.networkEdgeEvidence.capitalTopologyReverification, {
     path: path.join(temporaryRoot, next.networkEdgeEvidence.capitalTopologyReverification.path),
@@ -1800,9 +1813,11 @@ export async function generateCurrentCapitalTopologyRefresh({
   }
   const topologyReverificationPath =
     `tools/datapack/release/capital-topology-reverification-${capitalPathMatch[1]}.json`;
+  const sourceSeparatedTopologyPath = capitalTopologyPath.replace(/\.json$/u, "-source-separated.json");
   const allowedDescendantPaths = [
     ...CURRENT_TOPOLOGY_REFRESH_OUTPUTS,
     topologyReverificationPath,
+    sourceSeparatedTopologyPath,
   ];
   await requireCleanBuilder(builderGitSha, { check, allowedDescendantPaths });
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "current-topology-refresh-"));
@@ -1848,6 +1863,7 @@ export async function generateCurrentCapitalTopologyRefresh({
     });
     await Promise.all([
       writeTempFile(temporaryRoot, topologyReverificationPath, primary.topologyReverificationBytes),
+      writeTempFile(temporaryRoot, primary.sourceSeparatedTopologyPath, primary.sourceSeparatedTopologyBytes),
       writeTempFile(temporaryRoot, "tools/datapack/source-inventory.json", primary.sourceInventoryBytes),
       writeTempFile(
         temporaryRoot,
@@ -1879,6 +1895,7 @@ export async function generateCurrentCapitalTopologyRefresh({
     await validatePreparedCandidate({ temporaryRoot, spec: finalSpec, buildNow });
     const outputs = [
       { relativePath: topologyReverificationPath, bytes: primary.topologyReverificationBytes },
+      { relativePath: sourceSeparatedTopologyPath, bytes: primary.sourceSeparatedTopologyBytes },
       { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[0], bytes: primary.sourceInventoryBytes },
       { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[1], bytes: primary.canonicalBytes },
       { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[2], bytes: finalSpecBytes },
@@ -1948,12 +1965,14 @@ export async function generateCurrentSourceActivation({
   }
   const topologyReverificationPath =
     `tools/datapack/release/capital-topology-reverification-${capitalPathMatch[1]}.json`;
+  const sourceSeparatedTopologyPath = capitalTopologyPath.replace(/\.json$/u, "-source-separated.json");
   await requireCleanBuilder(builderGitSha, {
     check,
     allowedDescendantPaths: [
       ...CURRENT_SOURCE_ACTIVATION_OUTPUTS,
       ...CURRENT_SOURCE_DOWNSTREAM_OUTPUTS,
       topologyReverificationPath,
+      sourceSeparatedTopologyPath,
     ],
   });
   validateBuildNow(buildNow, handoff);
@@ -1987,6 +2006,8 @@ export async function generateCurrentSourceActivation({
     const sourceInventory = parseJson(sourceInventoryBytes, "source inventory");
     const quoteBundle = parseJson(quoteBundleBytes, "official OD fare quote bundle");
     const capitalTopology = parseJson(capitalTopologyBytes, "current capital topology");
+    const candidateTopology = projectCurrentCapitalTopologyOwnership(capitalTopology);
+    const candidateTopologyBytes = jsonBytes(candidateTopology);
     const incheonTopology = parseJson(incheonTopologyBytes, "current Incheon topology");
     const officialOdFareQuotes = (quoteBundle.quotes ?? [])
       .filter(({ sourceId }) => sourceId === "seoul-metro-official-od-fares");
@@ -2025,6 +2046,7 @@ export async function generateCurrentSourceActivation({
     };
     await Promise.all([
       writeTempFile(temporaryRoot, topologyReverificationPath, primaryBytes.reverification),
+      writeTempFile(temporaryRoot, sourceSeparatedTopologyPath, candidateTopologyBytes),
       writeTempFile(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[0], primaryBytes.snapshots),
       writeTempFile(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[1], primaryBytes.inventory),
       writeTempFile(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[2], primaryBytes.input),
@@ -2108,9 +2130,12 @@ export async function generateCurrentSourceActivation({
       baseSpec: parseJson(baseSpecBytes, "candidate build spec"),
       builderGitSha,
       sourceInventoryBytes: primaryBytes.inventory,
-      currentTopology: capitalTopology,
-      currentTopologyBytes: capitalTopologyBytes,
-      currentTopologyPath: capitalTopologyPath,
+      fullTopology: capitalTopology,
+      fullTopologyBytes: capitalTopologyBytes,
+      fullTopologyPath: capitalTopologyPath,
+      candidateTopology,
+      candidateTopologyBytes,
+      candidateTopologyPath: sourceSeparatedTopologyPath,
       topologyReverificationBytes: primaryBytes.reverification,
       productionScopePolicyBytes,
     });
@@ -2131,6 +2156,7 @@ export async function generateCurrentSourceActivation({
 
     const outputs = [
       { relativePath: topologyReverificationPath, bytes: primaryBytes.reverification },
+      { relativePath: sourceSeparatedTopologyPath, bytes: candidateTopologyBytes },
       { relativePath: CURRENT_SOURCE_ACTIVATION_OUTPUTS[0], bytes: primaryBytes.snapshots },
       { relativePath: CURRENT_SOURCE_ACTIVATION_OUTPUTS[1], bytes: primaryBytes.inventory },
       { relativePath: CURRENT_SOURCE_ACTIVATION_OUTPUTS[2], bytes: primaryBytes.input },
