@@ -12,6 +12,10 @@ import { runCurrentStaticNetworkSuccessors } from "./run-current-static-network-
 import { parseSeoulRouteMapPositionsCsv } from "./collect-seoul-route-map-positions.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
+import {
+  copySyntheticCurrentPublicRouteMapRepository,
+  createStaticNetworkRegistrarPredecessorFixture,
+} from "./test-fixtures/current-public-route-map-successor.mjs";
 
 const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const repositoryRoot = path.resolve(import.meta.dirname, "../..");
@@ -60,6 +64,12 @@ async function receiptFor(input, operationRoot, now) {
     rawRetentionExpiresAt: deriveRawRetentionExpiresAt({ policy, sourceId: input.sourceId, retrievedAt: input.capturedAt }), ociNamespace: "axvym6vk8g7i", bucket: "easysubway-datapacks", objectKey,
     contentType: extension === "json" ? "application/json" : "text/csv; charset=euc-kr" };
 }
+async function registrarPredecessorFixture(t, now) {
+  const root = await mkdtemp(path.join(os.tmpdir(), "static-network-registrar-predecessor-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await createStaticNetworkRegistrarPredecessorFixture(repositoryRoot, root, { now });
+  return root;
+}
 function cloneObservations(observations) { return observations.map(({ snapshot, receipt, bytes, rawBytes }) => ({ snapshot: structuredClone(snapshot), receipt: structuredClone(receipt), bytes: Buffer.from(bytes), rawBytes: Buffer.from(rawBytes) })); }
 function replaceMigration(observations, sourceId, patch) { const entry = observations.find(({ snapshot }) => snapshot.sourceId === sourceId); entry.snapshot.projectionMigration = { ...entry.snapshot.projectionMigration, ...patch }; const normalized = JSON.parse(entry.bytes); normalized.migration = { ...normalized.migration, ...patch }; entry.bytes = Buffer.from(`${JSON.stringify(normalized)}\n`); entry.snapshot.normalizedObservationSha256 = sha(entry.bytes); }
 function swapDaejeonMembershipSequences(rawBytes) {
@@ -77,6 +87,19 @@ function swapDaejeonMembershipSequences(rawBytes) {
   assert.notEqual(first, undefined); assert.notEqual(second, undefined);
   value[first] = 0x32; value[second] = 0x31; return value;
 }
+
+test("registrar fixture reconstructs the canonical legacy predecessor slot from a current public successor", async (t) => {
+  const source = await mkdtemp(path.join(os.tmpdir(), "static-network-registrar-current-public-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "static-network-registrar-predecessor-"));
+  t.after(() => rm(source, { recursive: true, force: true }));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const { inWindow: now } = await currentTopologyAdmissionClock(repositoryRoot);
+  await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, source, { now });
+  await createStaticNetworkRegistrarPredecessorFixture(source, root, { now });
+  const candidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
+  assert.equal(candidate.sourceSnapshots[0].sourceId, "seoulmetro-cyberstation-route-map");
+  assert.equal(candidate.sourceSnapshotIds[0], "seoulmetro-cyberstation-route-map-capital-admission-20260712");
+});
 
 test("registrar commits only the exact seven-output allowlist and rolls back an interrupted write", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "static-network-registrar-"));
@@ -114,21 +137,23 @@ test("registrar rejects derivation input drift before staging any output", async
 test("registrar build output hashes the current ledger's exact seven-snapshot set in ledger order", async (t) => {
   const operationRoot = await mkdtemp(path.join(os.tmpdir(), "static-network-registrar-build-output-"));
   t.after(() => rm(operationRoot, { recursive: true, force: true }));
-  const molitBaseline = await readFile(path.join(repositoryRoot, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv"));
-  const positionCsv = await readFile(path.join(repositoryRoot, "tools/datapack/fixtures/seoul-route-map-positions-raw/data-go-15099316.csv"));
+  const { inWindow: now, expiredAt } = await currentTopologyAdmissionClock(repositoryRoot);
+  const root = await registrarPredecessorFixture(t, now);
+  const molitBaseline = await readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv"));
+  const positionCsv = await readFile(path.join(root, "tools/datapack/fixtures/seoul-route-map-positions-raw/data-go-15099316.csv"));
   const positions = parseSeoulRouteMapPositionsCsv(positionCsv).rawPositions.map(({ line, stationCode, stationName, latitude, longitude, basisDate }, index) => ({ "연번": `${index + 1}`, "호선": line, "고유역번호(외부역코드)": stationCode, "역명": stationName, "위도": `${latitude}`, "경도": `${longitude}`, "작성기준일": basisDate, "작성일자": basisDate }));
   const precisePosition = positions.find(({ "호선": line, "고유역번호(외부역코드)": stationCode }) => line === "4" && stationCode === "421");
   assert.ok(precisePosition);
   precisePosition["위도"] = "37.5708397";
   const positionEnvelope = Buffer.from(JSON.stringify({ currentCount: positions.length, data: positions, matchCount: positions.length, page: 1, perPage: 1000, totalCount: positions.length }));
-  const { inWindow: now, expiredAt } = await currentTopologyAdmissionClock(repositoryRoot); let outputs; let captured;
-  await runCurrentStaticNetworkSuccessors({ repositoryRoot, operationRoot, now, assertExactMain: async () => "0".repeat(40),
+  let outputs; let captured;
+  await runCurrentStaticNetworkSuccessors({ repositoryRoot: root, operationRoot, now, assertExactMain: async () => "0".repeat(40),
     collectImpl: (input) => collectCurrentStaticNetworkSuccessors({ ...input, serviceKey: "test-service-key", fetchImpl: async (url) => {
       if (url.href === MOLIT_URL) return new Response(molitBaseline, { headers: { "content-type": "text/csv" } });
       if (url.href.startsWith(SEOUL_POSITIONS_URL)) return new Response(positionEnvelope, { headers: { "content-type": "application/json" } });
       throw new Error("unexpected official URL");
     } }), publishImpl: (input) => receiptFor(input, operationRoot, now),
-    registerImpl: async ({ observations }) => { captured = cloneObservations(observations); outputs = await buildStaticNetworkSuccessorOutputs({ repositoryRoot, observations, now }); },
+    registerImpl: async ({ observations }) => { captured = cloneObservations(observations); outputs = await buildStaticNetworkSuccessorOutputs({ repositoryRoot: root, observations, now }); },
   });
   const nextInventory = JSON.parse(outputs[2].bytes); const candidate = JSON.parse(outputs[4].bytes); const request = JSON.parse(outputs[5].bytes); const hashes = JSON.parse(outputs[6].bytes); const nextLedger = JSON.parse(outputs[3].bytes);
   const selected = nextLedger.filter(({ snapshotId }) => candidate.sourceSnapshotIds.includes(snapshotId)); const expected = sha(JSON.stringify(selected));
@@ -147,28 +172,28 @@ test("registrar build output hashes the current ledger's exact seven-snapshot se
   assert.equal(positionSource.productionUseAllowed, true);
   assert.equal(positionSource.routeMapAdmissionEvidence.freshUntil, positionSnapshot.freshnessExpiresAt);
   await assert.rejects(buildStaticNetworkSuccessorOutputs({
-    repositoryRoot, observations: captured, now: expiredAt,
+    repositoryRoot: root, observations: captured, now: expiredAt,
   }), /topology admission snapshot is stale or future-dated/);
   const inconsistent = cloneObservations(captured); inconsistent[0].snapshot.projectionMigration = { ...inconsistent[0].snapshot.projectionMigration, replacedRawSha256: "0".repeat(64) };
-  await assert.rejects(buildStaticNetworkSuccessorOutputs({ repositoryRoot, observations: inconsistent, now }), /snapshot migration binding/);
+  await assert.rejects(buildStaticNetworkSuccessorOutputs({ repositoryRoot: root, observations: inconsistent, now }), /snapshot migration binding/);
   const alteredKind = cloneObservations(captured); replaceMigration(alteredKind, "seoul-metro-route-map-positions", { migrationKind: "OTHER" });
-  await assert.rejects(buildStaticNetworkSuccessorOutputs({ repositoryRoot, observations: alteredKind, now }), /public replacement binding/);
+  await assert.rejects(buildStaticNetworkSuccessorOutputs({ repositoryRoot: root, observations: alteredKind, now }), /public replacement binding/);
   const alteredSource = cloneObservations(captured); replaceMigration(alteredSource, "seoul-metro-route-map-positions", { sourceId: "wrong-source" });
-  await assert.rejects(buildStaticNetworkSuccessorOutputs({ repositoryRoot, observations: alteredSource, now }), /migration contract/);
+  await assert.rejects(buildStaticNetworkSuccessorOutputs({ repositoryRoot: root, observations: alteredSource, now }), /migration contract/);
   const alteredLegacy = cloneObservations(captured); replaceMigration(alteredLegacy, "molit-urban-rail-full-route", { legacyRawSha256: "0".repeat(64) });
-  await assert.rejects(buildStaticNetworkSuccessorOutputs({ repositoryRoot, observations: alteredLegacy, now }), /migration predecessor binding/);
+  await assert.rejects(buildStaticNetworkSuccessorOutputs({ repositoryRoot: root, observations: alteredLegacy, now }), /migration predecessor binding/);
   const alteredBaseline = cloneObservations(captured); replaceMigration(alteredBaseline, "molit-urban-rail-full-route", { legacySchemaFingerprint: "0".repeat(64) });
-  await assert.rejects(buildStaticNetworkSuccessorOutputs({ repositoryRoot, observations: alteredBaseline, now }), /migration predecessor binding/);
+  await assert.rejects(buildStaticNetworkSuccessorOutputs({ repositoryRoot: root, observations: alteredBaseline, now }), /migration predecessor binding/);
   const truncatedMolit = cloneObservations(captured);
   const truncatedMolitObservation = JSON.parse(truncatedMolit[1].bytes);
   truncatedMolitObservation.normalizedProjection.pop();
   truncatedMolit[1].bytes = Buffer.from(`${JSON.stringify(truncatedMolitObservation)}\n`);
-  await assert.rejects(buildStaticNetworkSuccessorOutputs({ repositoryRoot, observations: truncatedMolit, now }), /STATIC_NETWORK_SUCCESSOR_MOLIT_SCOPE/);
+  await assert.rejects(buildStaticNetworkSuccessorOutputs({ repositoryRoot: root, observations: truncatedMolit, now }), /STATIC_NETWORK_SUCCESSOR_MOLIT_SCOPE/);
   const substitutedPosition = cloneObservations(captured);
   const substitutedPositionObservation = JSON.parse(substitutedPosition[0].bytes);
   substitutedPositionObservation.normalizedProjection[0].stationName += "-대체";
   substitutedPosition[0].bytes = Buffer.from(`${JSON.stringify(substitutedPositionObservation)}\n`);
-  await assert.rejects(buildStaticNetworkSuccessorOutputs({ repositoryRoot, observations: substitutedPosition, now }), /STATIC_NETWORK_SUCCESSOR_SEOUL_POSITIONS_SCOPE/);
+  await assert.rejects(buildStaticNetworkSuccessorOutputs({ repositoryRoot: root, observations: substitutedPosition, now }), /STATIC_NETWORK_SUCCESSOR_SEOUL_POSITIONS_SCOPE/);
   const membershipDrift = cloneObservations(captured);
   const molitObservation = membershipDrift[1]; const driftedRaw = Buffer.from(molitObservation.rawBytes);
   const firstDaeguRecord = driftedRaw.indexOf(Buffer.from("03,")); const lineEnd = driftedRaw.indexOf(0x0a, firstDaeguRecord);
@@ -189,22 +214,23 @@ test("registrar build output hashes the current ledger's exact seven-snapshot se
   driftedObservation.rawSha256 = rawSha256;
   molitObservation.bytes = Buffer.from(`${JSON.stringify(driftedObservation)}\n`);
   molitObservation.snapshot.normalizedObservationSha256 = sha(molitObservation.bytes);
-  await assert.rejects(buildStaticNetworkSuccessorOutputs({ repositoryRoot, observations: membershipDrift, now }), /static network MOLIT membership admission drift/);
+  await assert.rejects(buildStaticNetworkSuccessorOutputs({ repositoryRoot: root, observations: membershipDrift, now }), /static network MOLIT membership admission drift/);
 });
 
 test("registrar atomically rebinds every dependent regional membership evidence to verified current MOLIT raw bytes", async (t) => {
   const operationRoot = await mkdtemp(path.join(os.tmpdir(), "static-network-registrar-membership-rebind-"));
   t.after(() => rm(operationRoot, { recursive: true, force: true }));
-  const baseline = await readFile(path.join(repositoryRoot, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv"));
-  const freshRaw = Buffer.concat([baseline, Buffer.from("\n")]);
   const now = (await currentTopologyAdmissionClock(repositoryRoot)).inWindow;
+  const root = await registrarPredecessorFixture(t, now);
+  const baseline = await readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv"));
+  const freshRaw = Buffer.concat([baseline, Buffer.from("\n")]);
   let outputs;
-  await runCurrentStaticNetworkSuccessors({ repositoryRoot, operationRoot, now, assertExactMain: async () => "0".repeat(40),
+  await runCurrentStaticNetworkSuccessors({ repositoryRoot: root, operationRoot, now, assertExactMain: async () => "0".repeat(40),
     collectImpl: async (input) => {
       const collection = await collectCurrentStaticNetworkSuccessors({ ...input, serviceKey: "test-service-key", fetchImpl: async (url) => {
         if (url.href === MOLIT_URL) return new Response(freshRaw, { headers: { "content-type": "text/csv" } });
         if (url.href.startsWith(SEOUL_POSITIONS_URL)) {
-          const csv = await readFile(path.join(repositoryRoot, "tools/datapack/fixtures/seoul-route-map-positions-raw/data-go-15099316.csv"));
+          const csv = await readFile(path.join(root, "tools/datapack/fixtures/seoul-route-map-positions-raw/data-go-15099316.csv"));
           const rows = parseSeoulRouteMapPositionsCsv(csv).rawPositions.map(({ line, stationCode, stationName, latitude, longitude, basisDate }, index) => ({ "연번": `${index + 1}`, "호선": line, "고유역번호(외부역코드)": stationCode, "역명": stationName, "위도": `${latitude}`, "경도": `${longitude}`, "작성기준일": basisDate, "작성일자": basisDate }));
           return new Response(JSON.stringify({ currentCount: rows.length, data: rows, matchCount: rows.length, page: 1, perPage: 1000, totalCount: rows.length }), { headers: { "content-type": "application/json" } });
         }
@@ -213,7 +239,7 @@ test("registrar atomically rebinds every dependent regional membership evidence 
       return collection;
     },
     publishImpl: (input) => receiptFor(input, operationRoot, now),
-    registerImpl: async ({ observations }) => { outputs = await buildStaticNetworkSuccessorOutputs({ repositoryRoot, observations, now }); },
+    registerImpl: async ({ observations }) => { outputs = await buildStaticNetworkSuccessorOutputs({ repositoryRoot: root, observations, now }); },
   });
   const inventory = JSON.parse(outputs[2].bytes);
   const evidence = inventory.sources.map(({ membershipAdmissionEvidence }) => membershipAdmissionEvidence).filter((value) => value?.membershipSourceId === "molit-urban-rail-full-route");
@@ -228,21 +254,22 @@ test("registrar atomically rebinds every dependent regional membership evidence 
 test("registrar rejects parseable full-route membership drift before staging seven outputs", async (t) => {
   const operationRoot = await mkdtemp(path.join(os.tmpdir(), "static-network-registrar-membership-drift-"));
   t.after(() => rm(operationRoot, { recursive: true, force: true }));
-  const baseline = await readFile(path.join(repositoryRoot, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv"));
-  const changedRaw = swapDaejeonMembershipSequences(baseline);
   const now = (await currentTopologyAdmissionClock(repositoryRoot)).inWindow;
-  await assert.rejects(runCurrentStaticNetworkSuccessors({ repositoryRoot, operationRoot, now, assertExactMain: async () => "0".repeat(40),
+  const root = await registrarPredecessorFixture(t, now);
+  const baseline = await readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv"));
+  const changedRaw = swapDaejeonMembershipSequences(baseline);
+  await assert.rejects(runCurrentStaticNetworkSuccessors({ repositoryRoot: root, operationRoot, now, assertExactMain: async () => "0".repeat(40),
     collectImpl: async (input) => collectCurrentStaticNetworkSuccessors({ ...input, serviceKey: "test-service-key", fetchImpl: async (url) => {
       if (url.href === MOLIT_URL) return new Response(changedRaw, { headers: { "content-type": "text/csv" } });
       if (url.href.startsWith(SEOUL_POSITIONS_URL)) {
-        const csv = await readFile(path.join(repositoryRoot, "tools/datapack/fixtures/seoul-route-map-positions-raw/data-go-15099316.csv"));
+        const csv = await readFile(path.join(root, "tools/datapack/fixtures/seoul-route-map-positions-raw/data-go-15099316.csv"));
         const rows = parseSeoulRouteMapPositionsCsv(csv).rawPositions.map(({ line, stationCode, stationName, latitude, longitude, basisDate }, index) => ({ "연번": `${index + 1}`, "호선": line, "고유역번호(외부역코드)": stationCode, "역명": stationName, "위도": `${latitude}`, "경도": `${longitude}`, "작성기준일": basisDate, "작성일자": basisDate }));
         return new Response(JSON.stringify({ currentCount: rows.length, data: rows, matchCount: rows.length, page: 1, perPage: 1000, totalCount: rows.length }), { headers: { "content-type": "application/json" } });
       }
       throw new Error("unexpected official URL");
     } }),
     publishImpl: (input) => receiptFor(input, operationRoot, now),
-    registerImpl: ({ observations }) => buildStaticNetworkSuccessorOutputs({ repositoryRoot, observations, now }),
+    registerImpl: ({ observations }) => buildStaticNetworkSuccessorOutputs({ repositoryRoot: root, observations, now }),
   }), /membership admission drift/);
 });
 
