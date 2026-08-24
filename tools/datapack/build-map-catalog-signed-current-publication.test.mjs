@@ -28,6 +28,12 @@ test("exact map root manifest+4 payload와 catalog manifest+sqlite를 하나의 
   assert.deepEqual(validateMapCatalogSignedCurrentPublication(descriptor, { publicKey }), descriptor);
 });
 
+test("fixed clock이 stale descriptor를 output 0으로 거부한다", async (t) => {
+  const fixture = await createFixture(t);
+  await assert.rejects(buildMapCatalogSignedCurrentPublication({ artifactRoot: fixture.root, output: fixture.output, producerGitSha: "a".repeat(40), releaseSequence: 7, signedFinalDescriptorSha256: "b".repeat(64), freshUntil: "2099-01-01T00:00:00.000Z", privateKey, publicKey, now: Date.parse("2100-01-01T00:00:00.000Z") }), /freshUntil is invalid/);
+  await assert.rejects(readFile(fixture.output), { code: "ENOENT" });
+});
+
 test("missing·extra·route/timetable/accessibility·duplicate·traversal·symlink·noncanonical·stale mismatch와 preexisting output은 output 0이다", async (t) => {
   const cases = [
     ["missing", async ({ root }) => unlink(path.join(root, "map-pack/payload/metropolitan.svg"))],
@@ -52,7 +58,7 @@ test("missing·extra·route/timetable/accessibility·duplicate·traversal·symli
   await assert.rejects(readFile(stale.output), { code: "ENOENT" });
 });
 
-async function build(fixture) { return buildMapCatalogSignedCurrentPublication({ artifactRoot: fixture.root, output: fixture.output, producerGitSha: "a".repeat(40), releaseSequence: 7, signedFinalDescriptorSha256: "b".repeat(64), freshUntil: "2099-01-01T00:00:00.000Z", privateKey, publicKey }); }
+async function build(fixture) { return buildMapCatalogSignedCurrentPublication({ artifactRoot: fixture.root, output: fixture.output, producerGitSha: "a".repeat(40), releaseSequence: 7, signedFinalDescriptorSha256: "b".repeat(64), freshUntil: "2099-01-01T00:00:00.000Z", privateKey, publicKey, now: Date.parse("2098-01-01T00:00:00.000Z") }); }
 async function createFixture(t) {
   const parent = await mkdtemp(path.join(os.tmpdir(), "map-catalog-current-")); const root = path.join(parent, "artifact"); const output = path.join(parent, "descriptor.json");
   t.after(() => rm(parent, { recursive: true, force: true }));

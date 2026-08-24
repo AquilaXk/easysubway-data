@@ -63,6 +63,8 @@ function validatePack(pack, artifactKind, expectedPaths, stationSetSha256) {
     exactKeys(entry, ["path", "sizeBytes", "sha256"], `${artifactKind} object`);
     if (!expectedPaths.includes(entry.path) || !Number.isSafeInteger(entry.sizeBytes) || entry.sizeBytes < 1 || !SHA.test(entry.sha256 ?? "")) throw new Error(`${artifactKind} object binding mismatch`);
   }
+  const manifestObject = pack.objects[0]; const manifestBytes = Buffer.from(canonicalJson(manifest));
+  if (manifestObject.path !== "manifest.json" || manifestObject.sizeBytes !== manifestBytes.length || manifestObject.sha256 !== sha256(manifestBytes)) throw new Error(`${artifactKind} manifest object binding mismatch`);
   const payload = pack.objects.filter(({ path }) => path !== "manifest.json").map(({ path, sizeBytes, sha256 }) => ({ path, sizeBytes, sha256 }));
   if (manifest.payloadSha256 !== sha256(Buffer.from(canonicalJson(payload)))) throw new Error(`${artifactKind} payload binding mismatch`);
 }

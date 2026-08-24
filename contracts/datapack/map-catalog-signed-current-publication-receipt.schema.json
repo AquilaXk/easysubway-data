@@ -21,9 +21,18 @@
   "$defs": {
     "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "gitSha": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
-    "object": { "type": "object", "additionalProperties": false, "required": ["path", "sizeBytes", "sha256"], "properties": { "path": { "type": "string", "pattern": "^(manifest\\.json|payload/(metropolitan\\.svg|stations-layout\\.json|line-styles\\.json|interchange-layout\\.json|catalog\\.sqlite))$" }, "sizeBytes": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }, "sha256": { "$ref": "#/$defs/sha256" } } },
-    "mapPack": { "type": "object", "additionalProperties": false, "required": ["manifest", "objects"], "properties": { "manifest": { "type": "object" }, "objects": { "type": "array", "minItems": 5, "maxItems": 5, "items": { "$ref": "#/$defs/object" } } } },
-    "catalogPack": { "type": "object", "additionalProperties": false, "required": ["manifest", "objects"], "properties": { "manifest": { "type": "object" }, "objects": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/$defs/object" } } } },
+    "object": { "type": "object", "additionalProperties": false, "required": ["path", "sizeBytes", "sha256"], "properties": { "path": { "type": "string" }, "sizeBytes": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }, "sha256": { "$ref": "#/$defs/sha256" } } },
+    "mapManifest": { "type": "object", "additionalProperties": false, "required": ["manifestVersion", "artifactKind", "mapPackId", "stationSetSha256", "payloadSha256"], "properties": { "manifestVersion": { "const": 1 }, "artifactKind": { "const": "map-pack" }, "mapPackId": { "type": "string", "minLength": 1 }, "stationSetSha256": { "$ref": "#/$defs/sha256" }, "payloadSha256": { "$ref": "#/$defs/sha256" } } },
+    "catalogManifest": { "type": "object", "additionalProperties": false, "required": ["manifestVersion", "artifactKind", "catalogPackId", "stationSetSha256", "payloadSha256"], "properties": { "manifestVersion": { "const": 1 }, "artifactKind": { "const": "station-catalog-pack" }, "catalogPackId": { "type": "string", "minLength": 1 }, "stationSetSha256": { "$ref": "#/$defs/sha256" }, "payloadSha256": { "$ref": "#/$defs/sha256" } } },
+    "mapManifestObject": { "allOf": [{ "$ref": "#/$defs/object" }, { "properties": { "path": { "const": "manifest.json" } } }] },
+    "mapInterchangeObject": { "allOf": [{ "$ref": "#/$defs/object" }, { "properties": { "path": { "const": "payload/interchange-layout.json" } } }] },
+    "mapStylesObject": { "allOf": [{ "$ref": "#/$defs/object" }, { "properties": { "path": { "const": "payload/line-styles.json" } } }] },
+    "mapSvgObject": { "allOf": [{ "$ref": "#/$defs/object" }, { "properties": { "path": { "const": "payload/metropolitan.svg" } } }] },
+    "mapStationsObject": { "allOf": [{ "$ref": "#/$defs/object" }, { "properties": { "path": { "const": "payload/stations-layout.json" } } }] },
+    "catalogManifestObject": { "allOf": [{ "$ref": "#/$defs/object" }, { "properties": { "path": { "const": "manifest.json" } } }] },
+    "catalogSqliteObject": { "allOf": [{ "$ref": "#/$defs/object" }, { "properties": { "path": { "const": "payload/catalog.sqlite" } } }] },
+    "mapPack": { "type": "object", "additionalProperties": false, "required": ["manifest", "objects"], "properties": { "manifest": { "$ref": "#/$defs/mapManifest" }, "objects": { "type": "array", "minItems": 5, "maxItems": 5, "prefixItems": [{ "$ref": "#/$defs/mapManifestObject" }, { "$ref": "#/$defs/mapInterchangeObject" }, { "$ref": "#/$defs/mapStylesObject" }, { "$ref": "#/$defs/mapSvgObject" }, { "$ref": "#/$defs/mapStationsObject" }], "items": false } } },
+    "catalogPack": { "type": "object", "additionalProperties": false, "required": ["manifest", "objects"], "properties": { "manifest": { "$ref": "#/$defs/catalogManifest" }, "objects": { "type": "array", "minItems": 2, "maxItems": 2, "prefixItems": [{ "$ref": "#/$defs/catalogManifestObject" }, { "$ref": "#/$defs/catalogSqliteObject" }], "items": false } } },
     "signature": { "type": "object", "additionalProperties": false, "required": ["algorithm", "value"], "properties": { "algorithm": { "const": "rsa-sha256-map-catalog-signed-current-v1" }, "value": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" } } }
   }
 }
