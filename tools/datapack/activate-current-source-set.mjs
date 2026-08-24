@@ -1021,7 +1021,7 @@ export function buildCurrentSourcePrimaryOutputs({
     snapshotPath: currentTopologyPath,
     prefix: "capital-route-topology",
   });
-  const capital = projectCapitalTopologyOwnership(fullCapital);
+  const capital = projectCurrentCapitalTopologyOwnership(fullCapital);
   validateCurrentCapitalTopologyOwnership(capital);
   const activationNow = new Date(requiredUtcInstant(validateBuildNow(buildNow, handoff), "buildNow"));
   if (Date.parse(capital.capturedAt) > activationNow.getTime()
@@ -1088,7 +1088,7 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
     snapshotPath: currentTopologyPath,
     prefix: "capital-route-topology",
   });
-  const topology = projectCapitalTopologyOwnership(fullTopology);
+  const topology = projectCurrentCapitalTopologyOwnership(fullTopology);
   validateCurrentCapitalTopologyOwnership(topology);
   const activationNow = new Date(requiredUtcInstant(buildNow, "buildNow"));
   if (activationNow < new Date(topology.capturedAt)
@@ -1194,6 +1194,14 @@ function validateCurrentCapitalTopologyOwnership(topology) {
   }
 }
 
+function projectCurrentCapitalTopologyOwnership(topology) {
+  try {
+    return projectCapitalTopologyOwnership(topology);
+  } catch {
+    throw new Error("current capital topology ownership projection is invalid");
+  }
+}
+
 function jsonBytes(value, pretty = true) {
   return Buffer.from(`${JSON.stringify(value, null, pretty ? 2 : 0)}\n`);
 }
@@ -1247,6 +1255,7 @@ export function buildCurrentCandidateSpec({
     snapshotPath: currentTopologyPath,
     prefix: "capital-route-topology",
   });
+  const capitalTopology = projectCurrentCapitalTopologyOwnership(currentTopology);
   const snapshotDate = topologySnapshotId.slice(-8);
   const topologyReverificationPath = `tools/datapack/release/capital-topology-reverification-${snapshotDate}.json`;
   const spec = structuredClone(baseSpec);
@@ -1284,7 +1293,7 @@ export function buildCurrentCandidateSpec({
       issue: 2649,
       status: "ADMITTED",
       snapshotId: topologySnapshotId,
-      contentSha256: currentTopology.contentSha256,
+      contentSha256: capitalTopology.contentSha256,
       reviewedAt: currentTopology.capturedAt,
       reverifiedAt: currentTopology.capturedAt,
       freshUntil: currentTopology.freshUntil,

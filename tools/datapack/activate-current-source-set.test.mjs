@@ -21,7 +21,7 @@ import { activateIncheonTopologyAdmission, activateStaticSourceRevalidations,
   stageValidationItxTopologyEvidence,
   validatePreparedCandidate, verifyCurrentStaticNetworkSuccessorHeads,
   verifyCurrentSeoulCanonicalMembership } from "./activate-current-source-set.mjs";
-import { normalizeStationName } from "./collect-capital-route-topology.mjs";
+import { normalizeStationName, projectCapitalTopologyOwnership } from "./collect-capital-route-topology.mjs";
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 
@@ -969,8 +969,11 @@ test("current topology admission clock은 candidate-selected static ledger와 �
 });
 
 test("topology-only refresh는 admission·canonical·candidate identity를 한 입력에서 재생성한다", async () => {
+  // This is an in-memory test fixture. The tracked Incheon observation remains
+  // stale at the current static-successor clock and must not become production
+  // success merely to exercise the topology refresh path.
   const currentIncheonTopologyPath =
-    "tools/datapack/sources/incheon-transit-station-info-20260814.json";
+    "tools/datapack/sources/incheon-transit-station-info-20260824.json";
   const currentItxAdmissionPath =
     "tools/datapack/itx-current-network-edge-admission-20260810.json";
   const [baseSpec, sourceInventory, baselineTopology, canonical,
@@ -981,7 +984,7 @@ test("topology-only refresh는 admission·canonical·candidate identity를 한 �
     readJson("tools/datapack/sources/capital-route-topology-20260724.json"),
     readJson("tools/datapack/release/capital-production-canonical-pack.json"),
     readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json")),
-    readFile(path.join(root, currentIncheonTopologyPath)),
+    readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260814.json")),
     readFile(path.join(root, currentItxAdmissionPath)),
   ]);
   const topologyAdmissions = sourceInventory.sources
@@ -996,8 +999,10 @@ test("topology-only refresh는 admission·canonical·candidate identity를 한 �
   const currentIncheonTopology = JSON.parse(historicalIncheonTopologyBytes);
   delete currentIncheonTopology.stationCodeCorrections;
   currentIncheonTopology.stationCodeDerivations = currentIncheonStationCodeDerivations();
-  const currentIncheonTopologyBytes = Buffer.from(`${JSON.stringify(currentIncheonTopology)}\n`);
   const { inWindow } = await currentTopologyAdmissionClock(root);
+  currentIncheonTopology.capturedAt = inWindow.toISOString();
+  currentIncheonTopology.freshUntil = new Date(inWindow.getTime() + 24 * 60 * 60 * 1_000).toISOString();
+  const currentIncheonTopologyBytes = Buffer.from(`${JSON.stringify(currentIncheonTopology)}\n`);
   const buildNow = new Date(Math.max(
     inWindow.getTime(),
     Date.parse(currentTopology.capturedAt),
@@ -1034,7 +1039,7 @@ test("topology-only refresh는 admission·canonical·candidate identity를 한 �
     result.spec.networkEdgeEvidence.capitalTopologyReverification.sha256,
     sha256(result.topologyReverificationBytes),
   );
-  assert.equal(result.projectedEdgeCount, currentTopology.totalEdgeCount);
+  assert.equal(result.projectedEdgeCount, projectCapitalTopologyOwnership(currentTopology).totalEdgeCount);
   assert.deepEqual(result.spec.networkEdgeEvidence.itxCurrentTopologyAdmission, {
     path: currentItxAdmissionPath,
     sha256: sha256(currentItxAdmissionBytes),
@@ -1043,7 +1048,7 @@ test("topology-only refresh는 admission·canonical·candidate identity를 한 �
     .find(({ id }) => id === "incheon-transit-station-info");
   assert.equal(
     incheon.topologyAdmissionEvidence.snapshotId,
-    "incheon-transit-station-info-20260814",
+    path.basename(currentIncheonTopologyPath, ".json"),
   );
 
   const refreshWithTopology = (topology) => buildCurrentTopologyRefreshPrimaryOutputs({

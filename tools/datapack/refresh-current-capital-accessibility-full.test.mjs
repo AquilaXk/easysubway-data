@@ -10,6 +10,7 @@ import { readStableRegularFile } from "./rebind-current-candidate-source-snapsho
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 import { activateSyntheticCurrentStaticNetworkSuccessors } from "./test-fixtures/current-public-route-map-successor.mjs";
 import { currentIncheonStationCodeDerivations } from "./collect-incheon-station-info.mjs";
+import { buildCurrentTopologyRefreshPrimaryOutputs, collectPositionSnapshotBytes } from "./activate-current-source-set.mjs";
 import { releaseRequestBindingViolations } from "./verify-release-request-binding.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
@@ -18,6 +19,11 @@ const OUTPUTS = [
   "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
 ];
 const sha = (value) => createHash("sha256").update(value).digest("hex");
+const canonical = (value) => Array.isArray(value)
+  ? `[${value.map(canonical).join(",")}]`
+  : value && typeof value === "object"
+  ? `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`
+  : JSON.stringify(value);
 
 test("activated full-capital inputs are rebuilt across the exact public static-network successor boundary", async (t) => {
   const root = await stagedRefreshRepository(t);
@@ -161,18 +167,263 @@ async function stagedRefreshRepository(t) {
     const target = path.join(root, relative); await mkdir(path.dirname(target), { recursive: true }); await cp(path.join(ROOT, relative), target);
   }
   await cp(path.join(ROOT, "tools/datapack/sources"), path.join(root, "tools/datapack/sources"), { recursive: true });
-  const incheonPath = path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260814.json");
-  const incheonSnapshot = JSON.parse(await readFile(incheonPath, "utf8"));
-  delete incheonSnapshot.stationCodeCorrections;
-  incheonSnapshot.stationCodeDerivations = currentIncheonStationCodeDerivations();
-  await writeFile(incheonPath, `${JSON.stringify(incheonSnapshot)}\n`);
   const currentCandidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
   await copyCurrentCandidateEvidenceInputs(root, currentCandidate);
-  const { inWindow: now } = await currentTopologyAdmissionClock(ROOT);
+  const { inWindow: now, candidateId } = await stageCurrentTopologyFixture(root);
+  await rebindStagedActivatedOutputCandidateIds(root, candidateId);
   await bindCurrentCandidateApprovalFixture(root);
   await refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root });
   await activateSyntheticCurrentStaticNetworkSuccessors(root, { now });
+  const finalEvidence = await stagedStaticEvidenceIdentity(root);
+  await Promise.all([
+    rebindStagedFacilityCandidateId(root, finalEvidence.candidateId, finalEvidence.sourceSetSha256),
+    rebindStagedExitCandidateId(root, finalEvidence.candidateId, finalEvidence.sourceSetSha256),
+  ]);
   return root;
+}
+
+// Staged repository 전용 bootstrap이다. 현재 capital admission과 같은 시계의
+// synthetic Incheon 입력을 exact bytes로 결속해, 과거 tracked 관측을 현재 성공으로
+// 오인하지 않고 static-successor transaction의 정상 경로만 재현한다.
+async function stageCurrentTopologyFixture(root) {
+  const [baseSpec, sourceInventory, canonical, policyBytes, incheonBytes] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json")).then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/source-inventory.json")).then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json")).then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json")),
+    readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260814.json")),
+  ]);
+  const admission = sourceInventory.sources
+    .map(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence?.currentTopologyAdmission)
+    .find(({ topologySnapshotId } = {}) => /^capital-route-topology-[0-9]{8}$/u.test(topologySnapshotId));
+  if (admission == null) throw new Error("staged current capital topology admission is missing");
+  const currentTopologyPath = `tools/datapack/sources/${admission.topologySnapshotId}.json`;
+  const currentTopologyBytes = await readFile(path.join(root, currentTopologyPath));
+  const currentTopology = JSON.parse(currentTopologyBytes);
+  const { inWindow } = await currentTopologyAdmissionClock(root);
+  const { baseSpec: currentItxBaseSpec, admissionPath: currentItxAdmissionPath, admissionBytes: currentItxAdmissionBytes } =
+    await stageCurrentItxTopologyAdmission(root, baseSpec, inWindow);
+  const currentIncheonTopology = JSON.parse(incheonBytes);
+  delete currentIncheonTopology.stationCodeCorrections;
+  currentIncheonTopology.stationCodeDerivations = currentIncheonStationCodeDerivations();
+  currentIncheonTopology.capturedAt = inWindow.toISOString();
+  currentIncheonTopology.freshUntil = new Date(inWindow.getTime() + 24 * 60 * 60 * 1_000).toISOString();
+  const currentIncheonTopologyBytes = Buffer.from(`${JSON.stringify(currentIncheonTopology)}\n`);
+  const currentIncheonTopologyPath = "tools/datapack/sources/incheon-transit-station-info-20260824.json";
+  const result = buildCurrentTopologyRefreshPrimaryOutputs({
+    baseSpec: currentItxBaseSpec,
+    builderGitSha: baseSpec.builderGitSha,
+    sourceInventory,
+    currentTopology,
+    currentTopologyBytes,
+    currentTopologyPath,
+    currentIncheonTopology,
+    currentIncheonTopologyBytes,
+    currentIncheonTopologyPath,
+    currentItxAdmissionPath,
+    currentItxAdmissionBytes,
+    baselineTopology: await readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260724.json")).then(JSON.parse),
+    canonical,
+    productionScopePolicyBytes: policyBytes,
+    buildNow: inWindow.toISOString(),
+    snapshotBytesByPath: await collectPositionSnapshotBytes(sourceInventory, root),
+  });
+  result.spec.publishedAt = inWindow.toISOString();
+  result.spec.sourceInventorySha256 = sha(JSON.stringify(result.sourceInventory));
+  const reverificationPath = result.spec.networkEdgeEvidence.capitalTopologyReverification.path;
+  await Promise.all([
+    writeFile(path.join(root, currentIncheonTopologyPath), currentIncheonTopologyBytes),
+    writeFile(path.join(root, "tools/datapack/source-inventory.json"), result.sourceInventoryBytes),
+    writeFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), result.canonicalBytes),
+    writeFile(path.join(root, reverificationPath), result.topologyReverificationBytes),
+    writeFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), `${JSON.stringify(result.spec, null, 2)}\n`),
+  ]);
+  return { inWindow, candidateId: result.spec.candidateId };
+}
+
+async function stageCurrentItxTopologyAdmission(root, baseSpec, inWindow) {
+  const contractPath = baseSpec.networkEdgeEvidence?.itxCoverageContract?.path;
+  if (typeof contractPath !== "string") throw new Error("staged ITX coverage contract path is invalid");
+  const contractBytes = await readFile(path.join(root, contractPath));
+  const contract = JSON.parse(contractBytes);
+  const reference = contract.sourceTimetableArtifact;
+  const sourceBytes = await readFile(path.join(root, reference?.artifactPath ?? ""));
+  const source = JSON.parse(sourceBytes);
+  const serviceDate = kstDate(inWindow);
+  const stagedContract = structuredClone(contract);
+  stagedContract.sourceTimetableArtifact.promotion.mode = "UNCHANGED_AUTO";
+  stagedContract.sourceTimetableArtifact.promotion.previousArtifactSha256 = reference.sha256;
+  const admission = syntheticCurrentItxTopologyAdmission({ source, previousArtifactSha256: reference.sha256, inWindow, serviceDate });
+  const admissionPath = `tools/datapack/itx-current-network-edge-admission-${serviceDate}.json`;
+  const stagedContractBytes = Buffer.from(`${JSON.stringify(stagedContract, null, 2)}\n`);
+  const admissionBytes = Buffer.from(`${JSON.stringify(admission, null, 2)}\n`);
+  await Promise.all([
+    writeFile(path.join(root, contractPath), stagedContractBytes),
+    writeFile(path.join(root, admissionPath), admissionBytes),
+  ]);
+  const nextBaseSpec = structuredClone(baseSpec);
+  nextBaseSpec.networkEdgeEvidence.itxCoverageContract.sha256 = sha(stagedContractBytes);
+  return { baseSpec: nextBaseSpec, admissionPath, admissionBytes };
+}
+
+function syntheticCurrentItxTopologyAdmission({ source, previousArtifactSha256, inWindow, serviceDate }) {
+  const tuples = [...new Map((source.stationSequences ?? []).flatMap(({ stops = [] }) =>
+    stops.slice(1).map((to, index) => [stops[index].stationId, to.stationId, "ITX_CHEONGCHUN"])
+  ).map((tuple) => [JSON.stringify(tuple), tuple])).values()]
+    .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right), "en"));
+  const stationIds = [...new Set(tuples.flatMap(([fromStationId, toStationId]) => [fromStationId, toStationId]))]
+    .sort((left, right) => left.localeCompare(right, "en"));
+  const reconstructionSummary = {
+    trainCount: source.stationSequences.length,
+    stopCount: source.stationSequences.reduce((sum, { stops = [] }) => sum + stops.length, 0),
+    conflictingTimestampCount: 0,
+    missingPairCount: 0,
+    duplicateOdCount: 0,
+  };
+  const artifact = {
+    schemaVersion: 1,
+    artifactKind: "itx-current-network-edge-admission",
+    artifactId: `itx-current-network-edge-admission-${serviceDate}`,
+    serviceId: "ITX_CHEONGCHUN",
+    sourceIssue: 2776,
+    status: "ADMITTED",
+    scheduleAdmissionStatus: "MISSING",
+    topologyMode: "UNCHANGED_AUTO_STATION_SET",
+    serviceDate,
+    observedAt: inWindow.toISOString(),
+    freshUntil: nextKstMidnight(serviceDate),
+    collectionSha256: sha(JSON.stringify(source)),
+    previousArtifactSha256,
+    stationSetHash: sha(JSON.stringify(stationIds)),
+    odMatrixHash: sha(JSON.stringify(tuples)),
+    operationEvidenceSha256: sha(JSON.stringify(source.stationSequences)),
+    stationSequenceSha256: sha(JSON.stringify(source.stationSequences)),
+    canonicalStationSetSha256: sha(JSON.stringify(stationIds)),
+    observedPairSetSha256: sha(JSON.stringify(tuples)),
+    admittedPairSetSha256: sha(JSON.stringify(tuples)),
+    observedPairChange: {
+      addedCount: 0,
+      removedCount: 0,
+      addedSha256: sha(JSON.stringify([])),
+      removedSha256: sha(JSON.stringify([])),
+    },
+    pairHashes: tuples.map((tuple) => sha(JSON.stringify(tuple))),
+    reconstructionSummary,
+    credentialRedacted: true,
+  };
+  artifact.evidenceHash = sha(JSON.stringify(artifact));
+  return artifact;
+}
+
+function kstDate(value) {
+  return new Date(value.getTime() + 9 * 60 * 60 * 1_000).toISOString().slice(0, 10).replaceAll("-", "");
+}
+
+function nextKstMidnight(serviceDate) {
+  const date = new Date(Date.UTC(Number(serviceDate.slice(0, 4)), Number(serviceDate.slice(4, 6)) - 1, Number(serviceDate.slice(6, 8))));
+  date.setUTCDate(date.getUTCDate() + 1);
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}T00:00:00+09:00`;
+}
+
+async function rebindStagedActivatedOutputCandidateIds(root, candidateId) {
+  if (typeof candidateId !== "string" || !/^capital-pilot-candidate-[0-9]{8}$/u.test(candidateId)) {
+    throw new Error("staged candidate identity is invalid");
+  }
+  const documents = await Promise.all(OUTPUTS.map(async (relative) => ({
+    relative,
+    bytes: await readFile(path.join(root, relative)),
+  })));
+  const parsed = documents.map(({ relative, bytes }) => ({ relative, value: JSON.parse(bytes) }));
+  const [station, route] = parsed.map(({ value }) => value);
+  const stationIds = [station?.candidate?.candidateId, ...(station?.evidenceRows ?? []).map(({ candidateId: value }) => value)];
+  const routeIds = [route?.candidate?.candidateId];
+  if (!Array.isArray(station?.evidenceRows) || stationIds.length !== station.evidenceRows.length + 1
+    || [...stationIds, ...routeIds].some((value) => typeof value !== "string")
+    || new Set([...stationIds, ...routeIds]).size !== 1) {
+    throw new Error("staged activated output candidate identity is invalid");
+  }
+  const [previousCandidateId] = stationIds;
+  if (previousCandidateId === candidateId) return;
+  const before = structuredClone(parsed.map(({ value }) => value));
+  station.candidate.candidateId = candidateId;
+  for (const row of station.evidenceRows) row.candidateId = candidateId;
+  route.candidate.candidateId = candidateId;
+  const restored = structuredClone(parsed.map(({ value }) => value));
+  restored[0].candidate.candidateId = previousCandidateId;
+  for (const row of restored[0].evidenceRows) row.candidateId = previousCandidateId;
+  restored[1].candidate.candidateId = previousCandidateId;
+  assert.deepEqual(restored, before, "staged candidate rebind must not change other semantics");
+  await Promise.all(parsed.map(({ relative, value }) =>
+    writeFile(path.join(root, relative), JSON.stringify(value))));
+  await rebindStagedFacilityCandidateId(root, candidateId);
+  await rebindStagedExitCandidateId(root, candidateId);
+}
+
+async function stagedStaticEvidenceIdentity(root) {
+  const [candidate, snapshots] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json")).then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/release/source-snapshots.json")).then(JSON.parse),
+  ]);
+  const selected = candidate.sourceSnapshotIds.map((snapshotId) =>
+    snapshots.find((row) => row.snapshotId === snapshotId));
+  if (selected.some((row) => row == null)) throw new Error("staged static successor ledger is incomplete");
+  const staticIndex = selected.findIndex(({ projectionMigration }) =>
+    projectionMigration?.migrationKind === "CROSS_SOURCE_CANONICAL_REPLACEMENT");
+  const molitIndex = selected.findIndex(({ sourceId }) => sourceId === "molit-urban-rail-full-route");
+  const seoulIndex = selected.findIndex(({ sourceId }) => sourceId === "seoul-metro-accessibility");
+  if (staticIndex < 0 || molitIndex < 0 || seoulIndex < 0) {
+    throw new Error("staged static successor evidence lineage is incomplete");
+  }
+  const predecessorIds = candidate.sourceSnapshotIds.map((snapshotId, index) =>
+    index === staticIndex ? selected[index].projectionMigration.replacedSnapshotId
+      : index === molitIndex ? selected[index].previousSnapshotId
+      : snapshotId);
+  const evidenceIds = new Set(predecessorIds.flatMap((snapshotId, index) => {
+    const sourceId = candidate.sourceSnapshots[index].sourceId;
+    if (sourceId === "seoul-metro-transfer-distance-duration") return [];
+    return [sourceId === "seoul-metro-accessibility" ? selected[seoulIndex].previousSnapshotId : snapshotId];
+  }));
+  const evidence = snapshots.filter(({ snapshotId }) => evidenceIds.has(snapshotId));
+  if (evidenceIds.size !== 6 || evidence.length !== 6) {
+    throw new Error("staged static successor evidence set is incomplete");
+  }
+  return { candidateId: candidate.candidateId, sourceSetSha256: sha(JSON.stringify(evidence)) };
+}
+
+async function rebindStagedFacilityCandidateId(root, candidateId, sourceSetSha256) {
+  const relative = "tools/datapack/release/current-capital-facility-source-admission.json";
+  const admission = JSON.parse(await readFile(path.join(root, relative)));
+  admission.candidate.candidateId = candidateId;
+  if (sourceSetSha256 != null) admission.candidate.sourceSnapshotSetHash = sourceSetSha256;
+  const { admissionDigest: _previousAdmissionDigest, ...payload } = admission;
+  admission.admissionDigest = sha(canonical(payload));
+  await writeFile(path.join(root, relative), `${canonical(admission)}\n`);
+}
+
+async function rebindStagedExitCandidateId(root, candidateId, sourceSetSha256) {
+  const admissionPath = "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json";
+  const receiptPath = "tools/datapack/release/current-exit-admission-v2/exit-path-admission-artifact-receipt.json";
+  const [admission, receipt] = await Promise.all([
+    readFile(path.join(root, admissionPath)).then(JSON.parse),
+    readFile(path.join(root, receiptPath)).then(JSON.parse),
+  ]);
+  admission.candidate.candidateId = candidateId;
+  if (sourceSetSha256 != null) admission.candidate.sourceSetSha256 = sourceSetSha256;
+  for (const row of admission.materializerEvidenceRows) {
+    row.candidateId = candidateId;
+    if (sourceSetSha256 != null) row.sourceSetSha256 = sourceSetSha256;
+  }
+  const { admissionDigest: _previousAdmissionDigest, ...admissionPayload } = admission;
+  admission.admissionDigest = sha(canonical(admissionPayload));
+  const admissionBytes = Buffer.from(canonical(admission));
+  receipt.admissionDigest = admission.admissionDigest;
+  receipt.admissionSha256 = sha(admissionBytes);
+  const { receiptSha256: _previousReceiptSha256, ...receiptPayload } = receipt;
+  receipt.receiptSha256 = sha(canonical(receiptPayload));
+  await Promise.all([
+    writeFile(path.join(root, admissionPath), admissionBytes),
+    writeFile(path.join(root, receiptPath), canonical(receipt)),
+  ]);
 }
 
 async function copyCurrentCandidateEvidenceInputs(root, candidate) {

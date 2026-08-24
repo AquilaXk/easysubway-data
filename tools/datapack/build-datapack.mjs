@@ -1312,7 +1312,12 @@ async function validateAndApplyNetworkEdgeProvenance(
         repositoryRoot,
       );
   const topology = loadCapitalRouteTopologySnapshot(capitalTopology.value);
-  const candidateTopology = loadCapitalRouteTopologySnapshot(capitalTopologyCandidate.value);
+  const candidateTopologyInput = loadCapitalRouteTopologySnapshot(capitalTopologyCandidate.value);
+  const candidateTopology = candidateTopologyInput.lines.some(
+    ({ lineId }) => incheonTopologyLineIds.includes(lineId),
+  )
+    ? projectCapitalTopologyOwnership(candidateTopologyInput)
+    : candidateTopologyInput;
   const incheonSource = sourceInventory.value.sources?.find(
     ({ id }) => id === "incheon-transit-station-info",
   );
@@ -1667,7 +1672,7 @@ export function admittedCapitalLineEvidence(
         || current.issue !== 2776
         || current.status !== "ADMITTED"
         || current.positionSnapshotSha256 !== sha256HexString(
-          evidence.snapshotSha256,
+          evidence.currentLayoutAdmission?.snapshotSha256 ?? evidence.snapshotSha256,
           `${source.id}.routeMapAdmissionEvidence.snapshotSha256`,
         )
         || current.reviewedAt !== requiredReviewedAt) {
