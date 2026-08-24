@@ -88,6 +88,49 @@ test("#454 full synthetic operation evidence stays PENDING and requires admissio
   assert.ok(!JSON.stringify(result).includes("ADMITTED"));
 });
 
+test("#454 preflight binds cardinality to the supplied planner rather than a runtime 48-request constant", () => {
+  const input = fixture();
+  const requestPlan = {
+    ...input.requestPlan,
+    providerScopeCount: 1,
+    stationCount: 1,
+    requestCount: 3,
+    requests: input.requestPlan.requests.slice(0, 3),
+  };
+  input.requestPlan = requestPlan;
+  input.responses = input.responses.slice(0, 3);
+
+  const unbound = buildKricNationwideExpressTimetableAdmissionContract({
+    ...input,
+    planCollection: () => requestPlan,
+    now: NOW,
+  });
+  Object.assign(input.sourceSnapshots[0], {
+    coverageCount: unbound.targetSetCount,
+    rowCount: unbound.eventCount,
+    requestPlanSha256: unbound.requestPlanSha256,
+    targetSetSha256: unbound.targetSetSha256,
+    eventSetSha256: unbound.eventSetSha256,
+    servicePatternMappingSha256: unbound.servicePatternMappingSha256,
+  });
+
+  const accepted = buildKricNationwideExpressTimetableAdmissionContract({
+    ...input,
+    planCollection: () => requestPlan,
+    now: NOW,
+  });
+  assert.equal(accepted.requestCount, 3);
+  assert.deepEqual(accepted.gaps, [{ code: "ADMISSION_EXECUTION_REQUIRED", status: "PENDING", decision: "CONTRACT_GAP" }]);
+
+  const drifted = buildKricNationwideExpressTimetableAdmissionContract({
+    ...input,
+    requestPlan: { ...requestPlan, requestCount: 2 },
+    planCollection: () => requestPlan,
+    now: NOW,
+  });
+  assert.ok(drifted.gaps.some((gap) => gap.code === "PLANNER_TARGET_OR_HASH_MISMATCH"));
+});
+
 test("#454 preflight fails closed for planner/response/event mapping/snapshot/legal OCI and lineage drift", () => {
   const scenarios = [
     ["plan hash", (input) => { input.requestPlan.requests[0].params.dayCd = "0"; }, "PLANNER_TARGET_OR_HASH_MISMATCH"],

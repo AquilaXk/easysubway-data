@@ -25,11 +25,12 @@ export function buildKricNationwideExpressTimetableAdmissionContract({
   sourceSnapshots,
   rawReceipt,
   licenseDecision,
+  planCollection = planKricNationwideTimetableCollection,
   now = new Date(),
 } = {}) {
   const gaps = [];
   const nowMillis = utcMillis(now);
-  const plan = validatePlanner({ plannerInputs, requestPlan, gaps });
+  const plan = validatePlanner({ plannerInputs, requestPlan, planCollection, gaps });
   const reconstructed = validateResponses({ plan, responses, servicePatternByExptCd, gaps });
   const snapshot = validateCurrentSnapshot({ sourceSnapshots, plan, reconstructed, nowMillis, gaps });
   const source = validateSourceInventory(sourceInventory, gaps);
@@ -48,7 +49,7 @@ export function buildKricNationwideExpressTimetableAdmissionContract({
     candidateId: CANDIDATE_ID,
     targetVersion: TARGET_VERSION,
     targetSetCount: plan?.targetSet.length ?? 0,
-    requestCount: plan?.requests.length ?? 0,
+    requestCount: plan?.requestCount ?? 0,
     eventCount: reconstructed?.events.length ?? 0,
     targetSetSha256: plan?.targetSetSha256 ?? null,
     requestPlanSha256: plan?.requestPlanSha256 ?? null,
@@ -58,14 +59,17 @@ export function buildKricNationwideExpressTimetableAdmissionContract({
   };
 }
 
-function validatePlanner({ plannerInputs, requestPlan, gaps }) {
+function validatePlanner({ plannerInputs, requestPlan, planCollection, gaps }) {
   try {
-    const expected = planKricNationwideTimetableCollection(plannerInputs);
+    const expected = planCollection(plannerInputs);
     if (expected.sourceId !== CANDIDATE_ID || expected.operation !== OPERATION || expected.endpoint !== ENDPOINT
       || expected.targetVersion !== TARGET_VERSION || expected.planOnly !== true || !sameJson(requestPlan, expected)) {
       throw new Error("plan identity");
     }
     const requests = expected.requests;
+    if (!Number.isSafeInteger(expected.requestCount) || expected.requestCount !== requests.length) {
+      throw new Error("planner request count");
+    }
     const requestKeys = new Set();
     const targets = new Map();
     for (const request of requests) {
@@ -86,11 +90,12 @@ function validatePlanner({ plannerInputs, requestPlan, gaps }) {
       ...target,
       dayCds: [...target.dayCds].sort(codepointCompare),
     })).sort(compareTarget);
-    if (requests.length !== 48 || targetSet.length !== 16 || targetSet.some(({ dayCds }) => !sameJson(dayCds, ["7", "8", "9"]))) {
+    if (targetSet.some(({ dayCds }) => !sameJson(dayCds, ["7", "8", "9"]))) {
       throw new Error("planner target set");
     }
     return {
       requests,
+      requestCount: expected.requestCount,
       requestByKey: new Map(requests.map((request) => [request.requestKey, request])),
       targetSet,
       targetSetSha256: sha256(canonicalJson(targetSet)),
