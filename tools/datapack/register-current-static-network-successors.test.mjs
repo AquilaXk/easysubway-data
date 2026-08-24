@@ -169,6 +169,7 @@ test("registrar builds five source outputs, preserves approval evidence, and lea
   const nextInventory = JSON.parse(outputs[2].bytes); const candidate = JSON.parse(outputs[4].bytes); const nextLedger = JSON.parse(outputs[3].bytes);
   const selected = nextLedger.filter(({ snapshotId }) => candidate.sourceSnapshotIds.includes(snapshotId)); const expected = sha(JSON.stringify(selected));
   assert.equal(candidate.sourceSnapshotSetHash, expected);
+  assert.equal(nextLedger.filter(({ sourceId, previousSnapshotId }) => sourceId === "seoul-metro-route-map-positions" && previousSnapshotId == null).length, 1);
   const approvalInputs = outputs[0].inputs;
   const requestBytes = approvalInputs.find(({ relative }) => relative === "tools/datapack/release/release-request.json").bytes;
   const hashBytes = approvalInputs.find(({ relative }) => relative === "tools/datapack/release/hash-evidence.json").bytes;
@@ -193,6 +194,9 @@ test("registrar builds five source outputs, preserves approval evidence, and lea
   assert.equal(positionSource.requiredForProductionPack, true);
   assert.equal(positionSource.productionUseAllowed, true);
   assert.equal(positionSource.routeMapAdmissionEvidence.freshUntil, positionSnapshot.freshnessExpiresAt);
+  assert.equal(positionSource.routeMapAdmissionEvidence.currentLayoutAdmission.snapshotSha256, positionSnapshot.normalizedObservationSha256);
+  assert.equal(positionSource.routeMapAdmissionEvidence.currentTopologyAdmission.positionSnapshotSha256, positionSnapshot.normalizedObservationSha256);
+  assert.equal(positionSource.routeMapAdmissionEvidence.currentLayoutAdmission.snapshotSha256, positionSource.routeMapAdmissionEvidence.currentTopologyAdmission.positionSnapshotSha256);
   await assert.rejects(buildStaticNetworkSuccessorOutputs({
     repositoryRoot: root, observations: captured, now: expiredAt,
   }), /topology admission snapshot is stale or future-dated/);
