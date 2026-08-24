@@ -7,7 +7,12 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { readFileSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+
+const execFileAsync = promisify(execFile);
+const repositoryRoot = path.resolve(import.meta.dirname, "../..");
 
 const SOURCE = {
   id: "seoul-metro-transfer-distance-duration",
@@ -111,4 +116,16 @@ test("transfer production schema requires evidence and types every patterned adm
     if (rule.pattern) assert.equal(rule.type, "string", name);
   }
   assert.deepEqual(item.allOf.find((rule) => rule.if?.properties?.id?.const === SOURCE.id)?.then.required, ["transferAdmissionEvidence"]);
+});
+
+test("current production source inventory and scope agree on every required source", async () => {
+  await assert.doesNotReject(execFileAsync(
+    "node",
+    [
+      "tools/datapack/validate-source-inventory.mjs",
+      "--scope",
+      "release/product-gates/production-datapack-scope.json",
+    ],
+    { cwd: repositoryRoot },
+  ));
 });
