@@ -37,6 +37,10 @@ test("descriptor와 receipt의 canonical self hash·signature·full producer/rel
   assert.equal(descriptorSchema.properties.mapPack.$ref.endsWith("#/$defs/mapPack"), true);
   assert.deepEqual(receiptSchema.$defs.mapPack.properties.objects.prefixItems.map((item) => item.$ref), ["#/$defs/mapManifestObject", "#/$defs/mapInterchangeObject", "#/$defs/mapStylesObject", "#/$defs/mapSvgObject", "#/$defs/mapStationsObject"]);
   assert.equal(receiptSchema.$defs.catalogPack.properties.objects.items, false);
+  for (const schema of [receiptSchema.$defs.mapManifest.properties.mapPackId, receiptSchema.$defs.catalogManifest.properties.catalogPackId]) {
+    assert.equal(new RegExp(schema.pattern, "u").test(" "), false);
+    assert.equal(new RegExp(schema.pattern, "u").test("current"), true);
+  }
 });
 
 function signedDescriptor() {
