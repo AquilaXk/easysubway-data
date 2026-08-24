@@ -9,7 +9,7 @@ const SOURCE_ID = "kric-subway-timetable";
 const TARGET_VERSION = "2026-07-13";
 const OPERATION = "subwayTimetableExp";
 const ENDPOINT = "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetableExp";
-const REQUIRED_EVENT_FIELDS = ["railOprIsttCd", "lnCd", "stinCd", "dayCd", "trnNo", "arvTm", "dptTm", "exptCd"];
+const REQUIRED_EVENT_STRING_FIELDS = ["railOprIsttCd", "lnCd", "stinCd", "dayCd", "trnNo", "arvTm", "dptTm"];
 const RESPONSE_SCOPE_FIELDS = ["railOprIsttCd", "lnCd", "stinCd", "dayCd"];
 
 /**
@@ -32,8 +32,8 @@ export function buildKricNationwideExpressTimetableAdmissionContract({
   const plan = validatePlanner({ plannerInputs, requestPlan, gaps });
   const reconstructed = validateResponses({ plan, responses, servicePatternByExptCd, gaps });
   const snapshot = validateCurrentSnapshot({ sourceSnapshots, plan, reconstructed, nowMillis, gaps });
-  validateSourceInventory(sourceInventory, gaps);
-  validateLicenseDecision({ licenseDecision, snapshot, gaps });
+  const source = validateSourceInventory(sourceInventory, gaps);
+  validateLicenseDecision({ licenseDecision, source, snapshot, gaps });
   validateRawReceipt({ rawReceipt, snapshot, nowMillis, gaps });
 
   if (gaps.length === 0 && plan != null && reconstructed != null && snapshot != null) {
@@ -147,8 +147,9 @@ function isSuccessfulResponse(entry, request) {
 }
 
 function absorbEvent({ entry, request, row, state }) {
-  if (!REQUIRED_EVENT_FIELDS.every((field) => typeof row?.[field] === "string")
-    || !RESPONSE_SCOPE_FIELDS.every((field) => nonBlank(row[field]))) {
+  if (!REQUIRED_EVENT_STRING_FIELDS.every((field) => typeof row?.[field] === "string")
+    || !RESPONSE_SCOPE_FIELDS.every((field) => nonBlank(row[field])) || !nonBlank(row.trnNo)
+    || !validExptCd(row.exptCd)) {
     state.eventInvalid = true;
     return;
   }
@@ -156,7 +157,7 @@ function absorbEvent({ entry, request, row, state }) {
     state.scopeInvalid = true;
     return;
   }
-  const eventKey = [entry.requestKey, row.trnNo, row.arvTm, row.dptTm, row.exptCd].join("|");
+  const eventKey = [entry.requestKey, row.trnNo, row.arvTm, row.dptTm, canonicalJson(row.exptCd)].join("|");
   if (state.eventKeys.has(eventKey)) {
     state.eventInvalid = true;
     return;
@@ -175,22 +176,22 @@ function validateServicePatterns({ servicePatternByExptCd, events }) {
   if (!Array.isArray(servicePatternByExptCd)) return null;
   const mappings = new Map();
   for (const mapping of servicePatternByExptCd) {
-    if (typeof mapping?.exptCd !== "string" || !nonBlank(mapping?.servicePattern) || mappings.has(mapping.exptCd)) return null;
+    if (!validExptCd(mapping?.exptCd) || !nonBlank(mapping?.servicePattern) || mappings.has(mapping.exptCd)) return null;
     mappings.set(mapping.exptCd, mapping.servicePattern);
   }
-  const eventCodes = [...new Set(events.map(({ exptCd }) => exptCd))].sort(codepointCompare);
+  const eventCodes = [...new Set(events.map(({ exptCd }) => exptCd))].sort(compareExptCd);
   if (mappings.size !== eventCodes.length || !eventCodes.every((exptCd) => mappings.has(exptCd))) return null;
   return [...mappings.entries()].map(([exptCd, servicePattern]) => ({ exptCd, servicePattern }))
-    .sort((left, right) => codepointCompare(left.exptCd, right.exptCd));
+    .sort((left, right) => compareExptCd(left.exptCd, right.exptCd));
 }
 
 function validateSourceInventory(sourceInventory, gaps) {
   const matches = Array.isArray(sourceInventory?.sources)
-    ? sourceInventory.sources.filter(({ id }) => id === SOURCE_ID)
+    ? sourceInventory.sources.filter((source) => source?.id === SOURCE_ID)
     : [];
   if (matches.length !== 1) {
     gaps.push(gap("SOURCE_INVENTORY_IDENTITY_MISMATCH"));
-    return;
+    return null;
   }
   const [source] = matches;
   if (source.coverageScope?.sourceDomains?.length !== 1 || source.coverageScope.sourceDomains[0] !== "schedule_timetable") {
@@ -201,6 +202,7 @@ function validateSourceInventory(sourceInventory, gaps) {
     || source.license?.redistributionAllowed !== true) {
     gaps.push(gap("SOURCE_REQUIRED_FIELDS_OR_LICENSE_INCOMPLETE"));
   }
+  return source;
 }
 
 function validateCurrentSnapshot({ sourceSnapshots, plan, reconstructed, nowMillis, gaps }) {
@@ -231,14 +233,15 @@ function validateCurrentSnapshot({ sourceSnapshots, plan, reconstructed, nowMill
   return snapshot;
 }
 
-function validateLicenseDecision({ licenseDecision, snapshot, gaps }) {
+function validateLicenseDecision({ licenseDecision, source, snapshot, gaps }) {
   const decision = licenseDecision ?? {};
   const snapshotBinding = snapshot != null && decision.sourceId === SOURCE_ID
     && decision.snapshotId === snapshot.snapshotId && decision.snapshotRawSha256 === snapshot.rawSha256;
+  const inventoryLicenseBinding = nonBlank(source?.license?.type) && decision.licenseId === source.license.type;
   const approvedRights = decision.commercialUseAllowed === true && decision.derivativeWorkAllowed === true
     && decision.redistributionAllowed === true && decision.quotaDecision === "CONFIRMED"
     && decision.productionUseAllowed === true && decision.decision === "APPROVED";
-  if (!snapshotBinding || !nonBlank(decision.licenseId) || !approvedRights) {
+  if (!snapshotBinding || !inventoryLicenseBinding || !approvedRights) {
     gaps.push(gap("LICENSE_PRODUCTION_DECISION_MISSING"));
   }
 }
@@ -259,7 +262,7 @@ function assertReceiptBinding(receipt, snapshot, nowMillis) {
   const validObject = /^[0-9a-f]{64}$/.test(receipt?.rawObjectSha256 ?? "") && Number.isInteger(receipt?.byteSize)
     && receipt.byteSize > 0 && receipt.byteSize === snapshot?.rawByteSize;
   const validRetention = storedAtMillis != null && retentionExpiresAtMillis != null
-    && retentionExpiresAtMillis > storedAtMillis && retentionExpiresAtMillis > nowMillis;
+    && storedAtMillis <= nowMillis && retentionExpiresAtMillis > storedAtMillis && retentionExpiresAtMillis > nowMillis;
   if (!validSnapshotBinding || !validObject || !validRetention) throw new Error("receipt fields");
   const uri = parseCredentialFreeObjectUri(receipt.rawObjectUri, "raw receipt URI");
   const authority = ["oci:", "", receipt.ociNamespace].join("/");
@@ -274,7 +277,17 @@ function gap(code) {
 }
 
 function pickEvent(row) {
-  return Object.fromEntries(REQUIRED_EVENT_FIELDS.map((field) => [field, row[field]]));
+  return Object.fromEntries([...REQUIRED_EVENT_STRING_FIELDS, "exptCd"].map((field) => [field, row[field]]));
+}
+
+function validExptCd(value) {
+  return value === null || nonBlank(value);
+}
+
+function compareExptCd(left, right) {
+  if (left === null) return right === null ? 0 : -1;
+  if (right === null) return 1;
+  return codepointCompare(left, right);
 }
 
 function compareTarget(left, right) {

@@ -17,7 +17,7 @@ const SEOUL_LINES = [
   ["line-472a81add377", "1"], ["line-80fc4d5350d4", "5"], ["seoul-2", "2"], ["seoul-4", "4"],
 ];
 
-function fixture() {
+function fixture({ firstExptCd = "N", servicePatternByExptCd = [{ exptCd: "N", servicePattern: "LOCAL" }] } = {}) {
   const providerScopes = [
     ...KORAIL_LINES.map(([lineId, lnCd]) => scope("korail", lineId, "KR", lnCd)),
     ...SEOUL_LINES.map(([lineId, lnCd]) => scope("seoul-metro", lineId, "S1", lnCd)),
@@ -41,10 +41,10 @@ function fixture() {
     requestKey: request.requestKey, operation: request.operation, endpoint: request.endpoint, params: structuredClone(request.params),
     response: { header: { resultCode: "00", resultMsg: "OK" }, body: { row: [{
       railOprIsttCd: request.params.railOprIsttCd, lnCd: request.params.lnCd, stinCd: request.params.stinCd, dayCd: request.params.dayCd,
-      trnNo: `train-${String(index).padStart(2, "0")}`, arvTm: "080000", dptTm: "080100", exptCd: "N",
+      trnNo: `train-${String(index).padStart(2, "0")}`, arvTm: "080000", dptTm: "080100", exptCd: index === 0 ? firstExptCd : "N",
     }] } },
   }));
-  const base = buildKricNationwideExpressTimetableAdmissionContract({ plannerInputs, requestPlan, responses, servicePatternByExptCd: [{ exptCd: "N", servicePattern: "LOCAL" }], now: NOW });
+  const base = buildKricNationwideExpressTimetableAdmissionContract({ plannerInputs, requestPlan, responses, servicePatternByExptCd, now: NOW });
   const sourceSnapshot = {
     sourceId: SOURCE_ID, snapshotId: SNAPSHOT_ID, retrievedAt: "2026-08-24T00:00:00.000Z",
     rawSha256: RAW_SHA256, schemaFingerprint: "b".repeat(64), redactedRequestFingerprint: "c".repeat(64),
@@ -54,7 +54,7 @@ function fixture() {
     previousSnapshotId: null, diffSummary: null, freshUntil: "2026-08-25T00:00:00.000Z",
   };
   return {
-    plannerInputs, requestPlan, responses, servicePatternByExptCd: [{ exptCd: "N", servicePattern: "LOCAL" }],
+    plannerInputs, requestPlan, responses, servicePatternByExptCd: structuredClone(servicePatternByExptCd),
     sourceInventory: { sources: [{
       id: SOURCE_ID, fieldsProvided: ["railOprIsttCd", "trnNo", "dayCd", "dayNm", "stinCd", "lnCd", "arvTm", "dptTm", "exptCd"],
       license: { type: "KOGL-1", commercialUseAllowed: true, derivativeWorkAllowed: true, redistributionAllowed: true },
@@ -65,7 +65,7 @@ function fixture() {
       sourceId: SOURCE_ID, snapshotId: SNAPSHOT_ID, snapshotRawSha256: RAW_SHA256, rawObjectSha256: RAW_SHA256, byteSize: 256,
       rawObjectUri: "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-subway-timetable/20260824/raw.json",
       ociNamespace: "axvym6vk8g7i", bucket: "easysubway-datapacks", objectKey: "source-raw/kric-subway-timetable/20260824/raw.json",
-      storedAt: "2026-08-24T00:00:01.000Z", rawRetentionExpiresAt: "2026-11-22T00:00:00.000Z",
+      storedAt: "2026-08-24T00:00:00.000Z", rawRetentionExpiresAt: "2026-11-22T00:00:00.000Z",
     },
     licenseDecision: {
       sourceId: SOURCE_ID, snapshotId: SNAPSHOT_ID, snapshotRawSha256: RAW_SHA256, licenseId: "KOGL-1",
@@ -95,11 +95,14 @@ test("#454 preflight fails closed for planner/response/event mapping/snapshot/le
     ["result code", (input) => { input.responses[0].response.header.resultCode = "03"; }, "RESPONSE_SET_INCOMPLETE"],
     ["missing response", (input) => { input.responses.pop(); }, "RESPONSE_SET_INCOMPLETE"],
     ["empty response rows", (input) => { input.responses[0].response.body.row = []; }, "RESPONSE_SET_INCOMPLETE"],
+    ["blank train number", (input) => { input.responses[0].response.body.row[0].trnNo = " "; }, "TRAIN_EVENT_IDENTITY_MISMATCH"],
     ["duplicate event", (input) => { input.responses[0].response.body.row.push(structuredClone(input.responses[0].response.body.row[0])); }, "TRAIN_EVENT_IDENTITY_MISMATCH"],
     ["closed expt map", (input) => { input.servicePatternByExptCd = []; }, "SERVICE_PATTERN_MAPPING_INCOMPLETE"],
     ["future snapshot", (input) => { input.sourceSnapshots[0].retrievedAt = "2026-08-25T00:00:00.000Z"; }, "SNAPSHOT_NOT_CURRENT"],
     ["license", (input) => { input.licenseDecision.redistributionAllowed = false; }, "LICENSE_PRODUCTION_DECISION_MISSING"],
+    ["license inventory binding", (input) => { input.licenseDecision.licenseId = "PUBLIC_DATA_FREE_USE"; }, "LICENSE_PRODUCTION_DECISION_MISSING"],
     ["OCI", (input) => { input.rawReceipt.rawObjectUri = "s3://wrong/raw.json"; }, "OCI_RAW_RECEIPT_MISMATCH"],
+    ["future OCI store", (input) => { input.rawReceipt.storedAt = "2026-08-24T00:00:01.000Z"; }, "OCI_RAW_RECEIPT_MISMATCH"],
     ["lineage", (input) => { input.sourceSnapshots[0].schemaFingerprint = "wrong"; }, "SOURCE_LINEAGE_OR_DIFF_INVALID"],
   ];
   for (const [label, mutate, code] of scenarios) {
@@ -110,6 +113,38 @@ test("#454 preflight fails closed for planner/response/event mapping/snapshot/le
     assert.equal(result.decision, "CONTRACT_GAP", label);
     assert.ok(result.gaps.some((gap) => gap.code === code), label);
     assert.ok(!JSON.stringify(result).includes("ADMITTED"), label);
+  }
+});
+
+test("#454 malformed source inventory fails closed as an identity mismatch", () => {
+  for (const sourceInventory of [null, {}, { sources: null }, { sources: [null] }, { sources: ["not-an-inventory-source"] }]) {
+    const result = buildKricNationwideExpressTimetableAdmissionContract({ ...fixture(), sourceInventory, now: NOW });
+    assert.equal(result.status, "PENDING");
+    assert.equal(result.decision, "CONTRACT_GAP");
+    assert.ok(result.gaps.some((gap) => gap.code === "SOURCE_INVENTORY_IDENTITY_MISMATCH"));
+  }
+});
+
+test("#454 exptCd null은 명시적인 닫힌 mapping이 있을 때만 normal-service event로 허용한다", () => {
+  const withNull = fixture({
+    firstExptCd: null,
+    servicePatternByExptCd: [{ exptCd: null, servicePattern: "LOCAL" }, { exptCd: "N", servicePattern: "LOCAL" }],
+  });
+  const admittedOnlyToExecution = buildKricNationwideExpressTimetableAdmissionContract({ ...withNull, now: NOW });
+  assert.equal(admittedOnlyToExecution.status, "PENDING");
+  assert.deepEqual(admittedOnlyToExecution.gaps, [{ code: "ADMISSION_EXECUTION_REQUIRED", status: "PENDING", decision: "CONTRACT_GAP" }]);
+
+  const scenarios = [
+    ["missing null mapping", fixture({ firstExptCd: null }), [{ exptCd: "N", servicePattern: "LOCAL" }]],
+    ["extra null mapping", fixture(), [{ exptCd: "N", servicePattern: "LOCAL" }, { exptCd: null, servicePattern: "LOCAL" }]],
+    ["duplicate null mapping", fixture({ firstExptCd: null, servicePatternByExptCd: [{ exptCd: null, servicePattern: "LOCAL" }, { exptCd: null, servicePattern: "LOCAL" }, { exptCd: "N", servicePattern: "LOCAL" }] }), null],
+  ];
+  for (const [label, input, mapping] of scenarios) {
+    if (mapping != null) input.servicePatternByExptCd = mapping;
+    const result = buildKricNationwideExpressTimetableAdmissionContract({ ...input, now: NOW });
+    assert.equal(result.status, "PENDING", label);
+    assert.equal(result.decision, "CONTRACT_GAP", label);
+    assert.ok(result.gaps.some((gap) => gap.code === "SERVICE_PATTERN_MAPPING_INCOMPLETE"), label);
   }
 });
 
