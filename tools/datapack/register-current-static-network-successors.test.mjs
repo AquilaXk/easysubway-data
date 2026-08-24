@@ -11,6 +11,7 @@ import { collectCurrentStaticNetworkSuccessors, MOLIT_URL, SEOUL_POSITIONS_URL }
 import { runCurrentStaticNetworkSuccessors } from "./run-current-static-network-successors.mjs";
 import { parseSeoulRouteMapPositionsCsv } from "./collect-seoul-route-map-positions.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
+import { releaseRequestBindingViolations } from "./verify-release-request-binding.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 import {
   copySyntheticCurrentPublicRouteMapRepository,
@@ -34,8 +35,6 @@ async function registrationOutputs(root) {
     output("tools/datapack/source-inventory.json", inputs[0].bytes, Buffer.from("inventory\n")),
     output("tools/datapack/release/source-snapshots.json", inputs[1].bytes, Buffer.from("ledger\n")),
     output("tools/datapack/release/candidate-build-spec.json", inputs[2].bytes, Buffer.from("candidate\n")),
-    output("tools/datapack/release/release-request.json", inputs[3].bytes, Buffer.from("request\n")),
-    output("tools/datapack/release/hash-evidence.json", inputs[4].bytes, Buffer.from("hash\n")),
   ];
   return outputs.map((entry) => ({ ...entry, inputs }));
 }
@@ -101,19 +100,23 @@ test("registrar fixture reconstructs the canonical legacy predecessor slot from 
   assert.equal(candidate.sourceSnapshotIds[0], "seoulmetro-cyberstation-route-map-capital-admission-20260712");
 });
 
-test("registrar commits only the exact seven-output allowlist and rolls back an interrupted write", async (t) => {
+test("registrar commits only the exact five source-output allowlist and rolls back an interrupted write", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "static-network-registrar-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await cp(path.resolve(import.meta.dirname, "../.."), root, { recursive: true, filter: (source) => !source.includes("node_modules") });
   const before = await readFile(path.join(root, "tools/datapack/source-inventory.json"));
+  const approvedRequest = await readFile(path.join(root, "tools/datapack/release/release-request.json"));
+  const approvedHashes = await readFile(path.join(root, "tools/datapack/release/hash-evidence.json"));
   const outputs = await registrationOutputs(root);
   await assert.rejects(commitStaticNetworkSuccessorOutputs({ repositoryRoot: root, outputs, failAfter: 2 }), /injected transaction failure/);
   assert.equal(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"), before.toString("utf8"));
   await commitStaticNetworkSuccessorOutputs({ repositoryRoot: root, outputs });
   assert.equal(sha(await readFile(path.join(root, outputs[0].relative))), sha(outputs[0].bytes));
+  assert.deepEqual(await readFile(path.join(root, "tools/datapack/release/release-request.json")), approvedRequest);
+  assert.deepEqual(await readFile(path.join(root, "tools/datapack/release/hash-evidence.json")), approvedHashes);
 });
 
-test("registrar rejects a recovery journal whose seven records are not the exact output allowlist", async (t) => {
+test("registrar rejects a recovery journal whose five records are not the exact output allowlist", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "static-network-recovery-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await cp(path.resolve(import.meta.dirname, "../.."), root, { recursive: true, filter: (source) => !source.includes("node_modules") });
@@ -134,7 +137,7 @@ test("registrar rejects derivation input drift before staging any output", async
   await assert.rejects(readFile(path.join(root, outputs[0].relative)), /ENOENT/);
 });
 
-test("registrar build output hashes the current ledger's exact seven-snapshot set in ledger order", async (t) => {
+test("registrar builds five source outputs, preserves approval evidence, and leaves changed candidate fail-closed", async (t) => {
   const operationRoot = await mkdtemp(path.join(os.tmpdir(), "static-network-registrar-build-output-"));
   t.after(() => rm(operationRoot, { recursive: true, force: true }));
   const { inWindow: now, expiredAt } = await currentTopologyAdmissionClock(repositoryRoot);
@@ -155,9 +158,28 @@ test("registrar build output hashes the current ledger's exact seven-snapshot se
     } }), publishImpl: (input) => receiptFor(input, operationRoot, now),
     registerImpl: async ({ observations }) => { captured = cloneObservations(observations); outputs = await buildStaticNetworkSuccessorOutputs({ repositoryRoot: root, observations, now }); },
   });
-  const nextInventory = JSON.parse(outputs[2].bytes); const candidate = JSON.parse(outputs[4].bytes); const request = JSON.parse(outputs[5].bytes); const hashes = JSON.parse(outputs[6].bytes); const nextLedger = JSON.parse(outputs[3].bytes);
+  assert.equal(outputs.length, 5);
+  assert.match(outputs[0].relative, /^tools\/datapack\/sources\/seoul-metro-route-map-positions-current-20\d{6}T\d{9}Z\.json$/u);
+  assert.match(outputs[1].relative, /^tools\/datapack\/sources\/molit-urban-rail-full-route-current-20\d{6}T\d{9}Z\.json$/u);
+  assert.deepEqual(outputs.slice(2).map(({ relative }) => relative), [
+    "tools/datapack/source-inventory.json",
+    "tools/datapack/release/source-snapshots.json",
+    "tools/datapack/release/candidate-build-spec.json",
+  ]);
+  const nextInventory = JSON.parse(outputs[2].bytes); const candidate = JSON.parse(outputs[4].bytes); const nextLedger = JSON.parse(outputs[3].bytes);
   const selected = nextLedger.filter(({ snapshotId }) => candidate.sourceSnapshotIds.includes(snapshotId)); const expected = sha(JSON.stringify(selected));
-  assert.equal(candidate.sourceSnapshotSetHash, expected); assert.equal(request.sourceSnapshotSetHash, expected); assert.equal(hashes.sourceSnapshotSetHash.value, expected);
+  assert.equal(candidate.sourceSnapshotSetHash, expected);
+  const approvalInputs = outputs[0].inputs;
+  const requestBytes = approvalInputs.find(({ relative }) => relative === "tools/datapack/release/release-request.json").bytes;
+  const hashBytes = approvalInputs.find(({ relative }) => relative === "tools/datapack/release/hash-evidence.json").bytes;
+  assert.deepEqual(requestBytes, await readFile(path.join(root, "tools/datapack/release/release-request.json")));
+  assert.deepEqual(hashBytes, await readFile(path.join(root, "tools/datapack/release/hash-evidence.json")));
+  const violations = releaseRequestBindingViolations({
+    buildSpec: candidate,
+    buildSpecSha256: sha(outputs[4].bytes),
+    releaseRequest: JSON.parse(requestBytes),
+  });
+  assert.ok(violations.some((violation) => violation.includes("buildSpecSha256")));
   assert.notDeepEqual(selected.map(({ snapshotId }) => snapshotId), candidate.sourceSnapshotIds);
   const positionSnapshot = nextLedger.find(({ sourceId }) => sourceId === "seoul-metro-route-map-positions");
   const positionObservation = JSON.parse(captured[0].bytes);
