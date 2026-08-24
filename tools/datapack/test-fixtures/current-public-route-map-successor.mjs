@@ -36,6 +36,57 @@ async function readJson(root, relative) {
   return JSON.parse(await readFile(path.join(root, relative), "utf8"));
 }
 
+function currentPublicRouteMapPredecessor(candidate, snapshots) {
+  const publicIndices = candidate?.sourceSnapshots?.map(({ sourceId }, index) => sourceId === PUBLIC_SOURCE_ID ? index : -1).filter((index) => index >= 0) ?? [];
+  const predecessorIndices = candidate?.sourceSnapshots?.map(({ sourceId }, index) => sourceId === PREDECESSOR_SOURCE_ID ? index : -1).filter((index) => index >= 0) ?? [];
+  if (!Array.isArray(candidate?.sourceSnapshotIds) || candidate.sourceSnapshotIds.length !== candidate.sourceSnapshots.length
+    || publicIndices.length + predecessorIndices.length !== 1) {
+    throw new Error("synthetic public route-map predecessor fixture is incomplete");
+  }
+  const candidateIndex = publicIndices[0] ?? predecessorIndices[0];
+  const selectedSnapshotId = candidate.sourceSnapshotIds[candidateIndex];
+  const selected = snapshots.filter(({ snapshotId }) => snapshotId === selectedSnapshotId);
+  if (selected.length !== 1 || selected[0].sourceId !== candidate.sourceSnapshots[candidateIndex].sourceId) {
+    throw new Error("synthetic public route-map predecessor fixture is incomplete");
+  }
+  if (candidate.sourceSnapshots[candidateIndex].sourceId === PREDECESSOR_SOURCE_ID) {
+    return { candidateIndex, predecessor: selected[0] };
+  }
+  const migration = selected[0].projectionMigration;
+  if (!migration || migration.schemaVersion !== 1 || migration.artifactKind !== "source-projection-migration-evidence"
+    || migration.migrationKind !== "CROSS_SOURCE_CANONICAL_REPLACEMENT" || migration.sourceId !== PUBLIC_SOURCE_ID
+    || migration.replacedSourceId !== PREDECESSOR_SOURCE_ID || migration.candidateSlotSourceId !== PREDECESSOR_SOURCE_ID
+    || typeof migration.replacedSnapshotId !== "string" || !/^[a-f0-9]{64}$/u.test(migration.replacedRawSha256 ?? "")
+    || !/^[a-f0-9]{64}$/u.test(migration.replacedSchemaFingerprint ?? "")) {
+    throw new Error("synthetic public route-map predecessor fixture is incomplete");
+  }
+  const predecessor = snapshots.filter(({ snapshotId }) => snapshotId === migration.replacedSnapshotId);
+  if (predecessor.length !== 1 || predecessor[0].sourceId !== PREDECESSOR_SOURCE_ID
+    || predecessor[0].rawSha256 !== migration.replacedRawSha256
+    || predecessor[0].schemaFingerprint !== migration.replacedSchemaFingerprint) {
+    throw new Error("synthetic public route-map predecessor fixture is incomplete");
+  }
+  return { candidateIndex, predecessor: predecessor[0] };
+}
+
+function currentPublicRouteMapProviderRecords(sourceSnapshot) {
+  const artifact = sourceSnapshot?.routeMapLayoutArtifact ?? sourceSnapshot;
+  const positions = sourceSnapshot?.positions ?? artifact?.rawPositions;
+  const basisDate = sourceSnapshot?.observedDataUpdatedAt ?? artifact?.observedDataUpdatedAt;
+  if (!Array.isArray(positions) || typeof basisDate !== "string") {
+    throw new Error("synthetic public route-map source evidence is incomplete");
+  }
+  return positions.map((position) => ({
+    line: position.line,
+    lineId: position.lineId,
+    stationCode: position.stationCode,
+    stationName: position.stationName,
+    latitude: position.latitude,
+    longitude: position.longitude,
+    basisDate,
+  }));
+}
+
 function referencedPaths(value, paths = []) {
   if (Array.isArray(value)) {
     for (const item of value) referencedPaths(item, paths);
@@ -197,11 +248,11 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     readJson(root, paths.freshness),
   ]);
   const governancePolicy = JSON.parse(governanceBytes);
-  const predecessorIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === PREDECESSOR_SOURCE_ID);
-  const predecessor = snapshots.find(({ snapshotId }) => snapshotId === candidate.sourceSnapshotIds[predecessorIndex]);
+  const predecessorBinding = currentPublicRouteMapPredecessor(candidate, snapshots);
+  const { candidateIndex: predecessorIndex, predecessor } = predecessorBinding;
   const publicSource = inventory.sources.find(({ id }) => id === PUBLIC_SOURCE_ID);
   const predecessorSource = inventory.sources.find(({ id }) => id === PREDECESSOR_SOURCE_ID);
-  if (predecessorIndex < 0 || !predecessor || !publicSource || !predecessorSource) {
+  if (!predecessor || !publicSource || !predecessorSource) {
     throw new Error("synthetic public route-map predecessor fixture is incomplete");
   }
 
@@ -220,15 +271,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     readFile(path.join(root, topologySnapshotPath)),
   ]);
   const sourceSnapshot = JSON.parse(sourceSnapshotBytes);
-  const providerRecords = sourceSnapshot.positions.map((position) => ({
-    line: position.line,
-    lineId: position.lineId,
-    stationCode: position.stationCode,
-    stationName: position.stationName,
-    latitude: position.latitude,
-    longitude: position.longitude,
-    basisDate: sourceSnapshot.observedDataUpdatedAt,
-  }));
+  const providerRecords = currentPublicRouteMapProviderRecords(sourceSnapshot);
   const rawBytes = Buffer.from(`${JSON.stringify(providerRecords)}\n`);
   const rawSha256 = sha256(rawBytes);
   const routeMapLayoutArtifact = buildSeoulRouteMapPositions({
@@ -283,6 +326,8 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     routeMapLayoutEvidence: layout,
     routeMapLayoutArtifact,
     projectionMigration: {
+      schemaVersion: 1,
+      artifactKind: "source-projection-migration-evidence",
       migrationKind: "CROSS_SOURCE_CANONICAL_REPLACEMENT",
       sourceId: PUBLIC_SOURCE_ID,
       replacedSourceId: PREDECESSOR_SOURCE_ID,

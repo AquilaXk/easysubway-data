@@ -461,6 +461,7 @@
     {"path":"tools/datapack/stage-contracts.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":118},
     {"path":"tools/datapack/stage-current-server-route-bundle-candidate.test.mjs","semanticOwner":"data302","classes":["required-pr"],"durationMs":90},
     {"path":"tools/datapack/sync-current-route-edge-policy.test.mjs","semanticOwner":"data308","classes":["required-pr"],"durationMs":47},
+    {"path":"tools/datapack/test-fixtures/current-public-route-map-successor.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":376},
     {"path":"tools/datapack/validate-datapack-ride-adjacency.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":130},
     {"path":"tools/datapack/validate-datapack-server-route-coverage.test.mjs","semanticOwner":"data302","classes":["required-pr"],"durationMs":50},
     {"path":"tools/datapack/validate-release-evidence-bundle.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":2549},
