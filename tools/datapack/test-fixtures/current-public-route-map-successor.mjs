@@ -3,7 +3,12 @@ import { cp, lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promise
 import path from "node:path";
 
 import { buildSeoulRouteMapPositions } from "../collect-seoul-route-map-positions.mjs";
+import {
+  buildCapitalTopologyReverificationEvidence,
+  projectCapitalTopologyOwnership,
+} from "../collect-capital-route-topology.mjs";
 import { currentIncheonStationCodeDerivations } from "../collect-incheon-station-info.mjs";
+import { projectCapitalTopologyIntoCanonicalFixture } from "../build-datapack.mjs";
 import { deriveFreshnessExpiresAt } from "../freshness-policy.mjs";
 import {
   CURRENT_SEOUL_PUBLIC_ROUTE_MAP_COVERAGE,
@@ -323,6 +328,8 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     ...publicSource.routeMapAdmissionEvidence,
     capturedAt,
     freshUntil: freshnessExpiresAt,
+    snapshotPath: `tools/datapack/sources/${snapshotId}.json`,
+    snapshotSha256: sha256(routeMapLayoutArtifactBytes),
     currentLayoutAdmission: {
       schemaVersion: 2,
       artifactKind: "seoul-public-route-map-layout-admission",
@@ -361,6 +368,82 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     CURRENT_SEOUL_PUBLIC_ROUTE_MAP_COVERAGE,
   ]);
   Object.assign(pack, materializedPack);
+
+  const currentTopologyAdmissions = inventory.sources
+    .map((source) => ({ source, admission: source.routeMapAdmissionEvidence?.currentTopologyAdmission }))
+    .filter(({ admission }) => admission?.topologySnapshotId != null);
+  const currentTopologyAdmission = currentTopologyAdmissions[0]?.admission;
+  const currentTopologySnapshotId = currentTopologyAdmission?.topologySnapshotId;
+  if (typeof currentTopologySnapshotId !== "string"
+    || currentTopologyAdmissions.length === 0
+    || currentTopologyAdmissions.some(({ admission }) => admission.topologySnapshotId !== currentTopologySnapshotId)) {
+    throw new Error("synthetic current topology admission fixture is incomplete");
+  }
+  const currentTopologyPath = `tools/datapack/sources/${currentTopologySnapshotId}.json`;
+  const currentTopology = JSON.parse(topologySnapshotBytes);
+  const topologyFreshnessMillis = Date.parse(currentTopology.freshUntil) - Date.parse(currentTopology.capturedAt);
+  if (!Number.isFinite(topologyFreshnessMillis) || topologyFreshnessMillis <= 0) {
+    throw new Error("synthetic current topology freshness is invalid");
+  }
+  const candidateTopologyCapturedAt = candidate.publishedAt;
+  const candidateTopology = projectCapitalTopologyOwnership({
+    ...currentTopology,
+    capturedAt: candidateTopologyCapturedAt,
+    freshUntil: new Date(Date.parse(candidateTopologyCapturedAt) + topologyFreshnessMillis).toISOString(),
+    lines: currentTopology.lines.map((line) => ({ ...line, capturedAt: candidateTopologyCapturedAt })),
+  });
+  const candidateTopologyPath = `tools/datapack/sources/${currentTopologySnapshotId}-source-separated.json`;
+  const candidateTopologyBytes = jsonBytes(candidateTopology);
+  const topologyReverificationPath = `tools/datapack/release/${currentTopologySnapshotId}-reverification.json`;
+  const topologyReverification = buildCapitalTopologyReverificationEvidence(
+    projectCapitalTopologyOwnership(currentTopology),
+    candidateTopology,
+  );
+  topologyReverification.baseline.snapshotId = currentTopologySnapshotId;
+  const topologyReverificationBytes = jsonBytes(topologyReverification);
+  const candidateTopologyAdmissions = new Map(candidateTopology.lines.map(({ lineId }) => [lineId, {
+    verifiedAt: candidateTopology.capturedAt,
+    freshUntil: candidateTopology.freshUntil,
+  }]));
+  projectCapitalTopologyIntoCanonicalFixture(
+    pack,
+    candidateTopology,
+    currentTopologySnapshotId,
+    candidateTopologyAdmissions,
+  );
+  for (const { source, admission } of currentTopologyAdmissions) {
+    Object.assign(admission, {
+      topologyContentSha256: candidateTopology.contentSha256,
+      reviewedAt: candidateTopology.capturedAt,
+      freshUntil: candidateTopology.freshUntil,
+      ...(source.id === PUBLIC_SOURCE_ID ? { positionSnapshotSha256: sha256(routeMapLayoutArtifactBytes) } : {}),
+      topologyLineages: admission.topologyLineages.map((lineage) => ({
+        ...lineage,
+        contentSha256: candidateTopology.contentSha256,
+      })),
+    });
+  }
+  Object.assign(candidate.networkEdgeEvidence.capitalTopology, {
+    path: currentTopologyPath,
+    sha256: sha256(topologySnapshotBytes),
+    snapshotId: currentTopologySnapshotId,
+  });
+  Object.assign(candidate.networkEdgeEvidence.capitalTopologyCandidate, {
+    path: candidateTopologyPath,
+    sha256: sha256(candidateTopologyBytes),
+    snapshotId: currentTopologySnapshotId,
+  });
+  Object.assign(candidate.networkEdgeEvidence.capitalTopologyReverification, {
+    path: topologyReverificationPath,
+    sha256: sha256(topologyReverificationBytes),
+  });
+  Object.assign(candidate.networkEdgeEvidence.capitalTopologyAdmission, {
+    snapshotId: currentTopologySnapshotId,
+    contentSha256: candidateTopology.contentSha256,
+    reviewedAt: candidateTopology.capturedAt,
+    reverifiedAt: candidateTopology.capturedAt,
+    freshUntil: candidateTopology.freshUntil,
+  });
   verifyCurrentCapitalPublicRouteMapDocument(pack, snapshot, "synthetic successor fixture");
 
   const incheonSource = inventory.sources.find(({ id }) => id === "incheon-transit-station-info");
@@ -413,6 +496,8 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
 
   await Promise.all([
     writeFile(path.join(root, `tools/datapack/sources/${snapshotId}.json`), routeMapLayoutArtifactBytes),
+    writeFile(path.join(root, candidateTopologyPath), candidateTopologyBytes),
+    writeFile(path.join(root, topologyReverificationPath), topologyReverificationBytes),
     writeFile(path.join(root, incheonSnapshotPath), incheonSnapshotBytes),
     writeFile(path.join(root, paths.snapshots), jsonBytes(snapshots)),
     writeFile(path.join(root, paths.inventory), inventoryBytes),
