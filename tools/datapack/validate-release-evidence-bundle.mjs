@@ -429,6 +429,10 @@ export async function validateCandidateServerRouteEvidence({
   await validateCandidateInventoryFiles(root, inventory);
   validateInventoryEvidenceEntries(inventory, eligibility, final);
   const component = await candidateComponent(componentPath);
+  if (component.gitSha !== finalValue.candidate.gitSha
+    || component.releaseSequence !== finalValue.candidate.releaseSequence) {
+    throw new Error("candidate server route component identity mismatch");
+  }
   if (component.manifestSha256 !== binding.manifestSha256
     || component.provenance.sourceSnapshotSetHash !== binding.sourceSnapshotSetHash
     || component.artifactInventorySha256 !== hashBytes(inventoryRaw)) {

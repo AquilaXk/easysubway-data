@@ -166,6 +166,8 @@ test("candidate server route evidence는 stage·inventory·component digest를 �
       .map(([path, bytes]) => ({ path, sizeBytes: bytes.length, sha256: hash(bytes) }))
       .sort((left, right) => Buffer.compare(Buffer.from(left.path), Buffer.from(right.path))),
   };
+  let componentGitSha = candidate.gitSha;
+  let componentReleaseSequence = candidate.releaseSequence;
   const writeBound = async () => {
     const inventoryBytes = Buffer.from(`${JSON.stringify(inventory, null, 2)}\n`);
     await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
@@ -174,10 +176,10 @@ test("candidate server route evidence는 stage·inventory·component digest를 �
       schemaVersion: 1,
       component: "data",
       repository: "AquilaXk/easysubway-data",
-      gitSha: "e".repeat(40),
+      gitSha: componentGitSha,
       workflowRunId: "1",
       dataVersion: "1",
-      releaseSequence: 1,
+      releaseSequence: componentReleaseSequence,
       manifestSha256,
       provenance: { sourceSnapshotSetHash },
       artifactInventorySha256: hash(inventoryBytes),
@@ -203,6 +205,16 @@ test("candidate server route evidence는 stage·inventory·component digest를 �
     await assert.rejects(command(), /candidate identity mismatch/);
     bundle.candidateServerRouteEvidence[field] = previous;
   }
+
+  componentGitSha = "f".repeat(40);
+  await writeBound();
+  await assert.rejects(command(), /candidate server route component identity mismatch/);
+  componentGitSha = candidate.gitSha;
+
+  componentReleaseSequence += 1;
+  await writeBound();
+  await assert.rejects(command(), /candidate server route component identity mismatch/);
+  componentReleaseSequence = candidate.releaseSequence;
 
   const topologyPath = path.join(routeRoot, "payload/topology.sqlite.zst");
   const topologyBytes = await readFile(topologyPath);
