@@ -7,7 +7,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { promisify } from "node:util";
-import { projectRegionalMaterializeFixture } from "./materialize-test-fixture.mjs";
+import { projectHistoricalMolitMembershipInventory, projectRegionalMaterializeFixture } from "./materialize-test-fixture.mjs";
 
 import {
   parseMolitDaejeonStationMappings,
@@ -257,7 +257,7 @@ test("materialized SQLite·provenance가 광주 membership·topology·schedule 3
 });
 
 async function inputs({ materialize = true } = {}) {
-  const [base, busanTopology, busanTimetable, busanRouteMapBytes, daejeonTopology, daejeonTimetable,
+  let [base, busanTopology, busanTimetable, busanRouteMapBytes, daejeonTopology, daejeonTimetable,
     gwangjuTopology, gwangjuTimetable, inventory, regionalMap, molitMap] = await Promise.all([
     readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
     readJson("tools/datapack/sources/busan-transportation-route-topology-20260720.json"),
@@ -271,6 +271,7 @@ async function inputs({ materialize = true } = {}) {
     readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
     readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
   ]);
+  inventory = projectHistoricalMolitMembershipInventory(inventory, molitMap, now);
   const busanTopologyFixture = materializeBusanRouteTopology({
     baseFixture: base, snapshot: busanTopology, inventory,
     canonicalStationMappings: parseCanonicalBusanStationMappings(regionalMap),
