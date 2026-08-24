@@ -626,7 +626,7 @@
         "lineIds": [
           "line-5b8d9b05e7e6"
         ],
-        "verifiedAt": "2026-08-24T04:16:37.116Z",
+        "verifiedAt": "2026-08-24T11:08:06.912Z",
         "stationCount": 35,
         "membershipSourceId": "molit-urban-rail-full-route",
         "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
@@ -824,7 +824,7 @@
         "lineIds": [
           "line-e2938a4cc492"
         ],
-        "verifiedAt": "2026-08-24T04:16:37.116Z",
+        "verifiedAt": "2026-08-24T11:08:06.912Z",
         "stationCount": 29,
         "membershipSourceId": "molit-urban-rail-full-route",
         "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
@@ -1022,7 +1022,7 @@
         "lineIds": [
           "line-0ffaa95b1b5d"
         ],
-        "verifiedAt": "2026-08-24T04:16:37.116Z",
+        "verifiedAt": "2026-08-24T11:08:06.912Z",
         "stationCount": 30,
         "membershipSourceId": "molit-urban-rail-full-route",
         "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
@@ -1455,7 +1455,7 @@
         "lineIds": [
           "line-7051a9c2525c"
         ],
-        "verifiedAt": "2026-08-24T04:16:37.116Z",
+        "verifiedAt": "2026-08-24T11:08:06.912Z",
         "stationCount": 22,
         "membershipSourceId": "molit-urban-rail-full-route",
         "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
@@ -2145,7 +2145,7 @@
         "lineIds": [
           "line-e57a361e8892"
         ],
-        "verifiedAt": "2026-08-24T04:16:37.116Z",
+        "verifiedAt": "2026-08-24T11:08:06.912Z",
         "stationCount": 20,
         "membershipSourceId": "molit-urban-rail-full-route",
         "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
@@ -6537,7 +6537,7 @@
         "issue": 1397,
         "candidateId": "molit-urban-rail-full-route",
         "sourceId": "molit-urban-rail-full-route",
-        "snapshotId": "molit-urban-rail-full-route-current-20260824T041637116Z",
+        "snapshotId": "molit-urban-rail-full-route-current-20260824T110806912Z",
         "decision": "APPROVED",
         "approvedBy": "aquilaXk10",
         "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -6641,7 +6641,7 @@
         "lineIds": [
           "line-5b8d9b05e7e6"
         ],
-        "verifiedAt": "2026-08-24T04:16:37.116Z",
+        "verifiedAt": "2026-08-24T11:08:06.912Z",
         "stationCount": 35,
         "membershipSourceId": "molit-urban-rail-full-route",
         "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
@@ -6728,7 +6728,7 @@
         "lineIds": [
           "line-e2938a4cc492"
         ],
-        "verifiedAt": "2026-08-24T04:16:37.116Z",
+        "verifiedAt": "2026-08-24T11:08:06.912Z",
         "stationCount": 29,
         "membershipSourceId": "molit-urban-rail-full-route",
         "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
@@ -6815,7 +6815,7 @@
         "lineIds": [
           "line-0ffaa95b1b5d"
         ],
-        "verifiedAt": "2026-08-24T04:16:37.116Z",
+        "verifiedAt": "2026-08-24T11:08:06.912Z",
         "stationCount": 30,
         "membershipSourceId": "molit-urban-rail-full-route",
         "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
@@ -6902,7 +6902,7 @@
         "lineIds": [
           "line-7051a9c2525c"
         ],
-        "verifiedAt": "2026-08-24T04:16:37.116Z",
+        "verifiedAt": "2026-08-24T11:08:06.912Z",
         "stationCount": 22,
         "membershipSourceId": "molit-urban-rail-full-route",
         "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
@@ -6989,7 +6989,7 @@
         "lineIds": [
           "line-e57a361e8892"
         ],
-        "verifiedAt": "2026-08-24T04:16:37.116Z",
+        "verifiedAt": "2026-08-24T11:08:06.912Z",
         "stationCount": 20,
         "membershipSourceId": "molit-urban-rail-full-route",
         "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
@@ -7593,7 +7593,7 @@
         "snapshotId": "seoul-metro-route-map-positions-20260724",
         "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-20260724.json",
         "snapshotSha256": "9632acc47f76e735d40dc3346cf7b2298c7c921b61693d1f2f1cac940162633a",
-        "capturedAt": "2026-08-24T04:16:37.116Z",
+        "capturedAt": "2026-08-24T11:08:06.912Z",
         "stationCount": 274,
         "datasetId": "15099316",
         "rawSha256": "713d6a7353748f1f29b974cd70df9b7a24b3600b6aeb60a58ed7bfa6975e02ed",
@@ -7619,7 +7619,7 @@
           "8": 18
         },
         "observedDataUpdatedAt": "2025-08-14",
-        "freshUntil": "2026-11-22T04:16:37.116Z",
+        "freshUntil": "2026-11-22T11:08:06.912Z",
         "topologySourceId": "capital-route-topology",
         "currentTopologyAdmission": {
           "schemaVersion": 1,
@@ -7628,7 +7628,7 @@
           "status": "ADMITTED",
           "topologySnapshotId": "capital-route-topology-20260823",
           "topologyContentSha256": "9418f731210bb63a6a047acf1085fd967046b9a69e3f98778fe559d7a31b3f1f",
-          "positionSnapshotSha256": "9632acc47f76e735d40dc3346cf7b2298c7c921b61693d1f2f1cac940162633a",
+          "positionSnapshotSha256": "b95a7957ed0d365eeac8026821d4d72da7432e473ea71787628311860cc0aecf",
           "reviewedAt": "2026-08-23T23:59:19.000Z",
           "freshUntil": "2026-08-24T23:59:19.000Z",
           "topologyLineages": [
@@ -7686,9 +7686,9 @@
           "schemaVersion": 2,
           "artifactKind": "seoul-public-route-map-layout-admission",
           "status": "ADMITTED",
-          "positionSnapshotId": "seoul-metro-route-map-positions-current-20260824T041637116Z",
-          "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-current-20260824T041637116Z.json",
-          "snapshotSha256": "62c2f47aa34e8cc6fab141a966043dedd48ad8e018cd69b31a26570147fd6311",
+          "positionSnapshotId": "seoul-metro-route-map-positions-current-20260824T110806912Z",
+          "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-current-20260824T110806912Z.json",
+          "snapshotSha256": "b95a7957ed0d365eeac8026821d4d72da7432e473ea71787628311860cc0aecf",
           "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
           "contentSha256": "93bb1c7dd63c131143b4a66e5d76c15c259f4878238cab88cc36e5eddab9fc2f",
           "layoutAlgorithmVersion": "seoul-public-latlon-line-order-layout-v2",
@@ -7704,7 +7704,7 @@
           "semanticInputSha256": "44d43381d962821883bec8d162cfd2cdb7e7e4544c46c76891b72dc5defab0cd",
           "semanticOutputSha256": "b3f984f2e10325f7fa8b6c357ebf7cb4c29936d21694c9d9478290af0c0d3a79",
           "outputSchemaSha256": "58b25a596700a55a301e30b68369653c1667dc2142500419fde05456ec6bcb74",
-          "layoutArtifactSha256": "caebf34bc71c93e95fad25a928af0c2b1c4f997a5afabe414727ebe255890e4e"
+          "layoutArtifactSha256": "1a12bd2b0193831086fa6f1633cf4aa7bc130827c8327b7d8f46ab2c6d3a5b41"
         }
       },
       "admissionEvidence": {
@@ -7712,7 +7712,7 @@
         "issue": 447,
         "candidateId": "seoul-metro-route-map-positions",
         "sourceId": "seoul-metro-route-map-positions",
-        "snapshotId": "seoul-metro-route-map-positions-current-20260824T041637116Z",
+        "snapshotId": "seoul-metro-route-map-positions-current-20260824T110806912Z",
         "decision": "APPROVED",
         "sampleEvidenceHash": "fb04a674e9e1ccf7491e1a20ac87cb79604edbbe31517d712fc290f919ee6398",
         "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
