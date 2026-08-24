@@ -153,6 +153,10 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
     candidate.productionScopePolicy?.path,
     ...Object.values(candidate.networkEdgeEvidence ?? {}).map((evidence) => evidence?.path),
     ...inventory.sources.map((source) => source.routeMapAdmissionEvidence?.snapshotPath),
+    ...inventory.sources.map((source) => {
+      const snapshotId = source.routeMapAdmissionEvidence?.currentTopologyAdmission?.topologySnapshotId;
+      return typeof snapshotId === "string" ? `tools/datapack/sources/${snapshotId}.json` : null;
+    }),
     ...referencedPaths(candidate),
     ...referencedPaths(itxContract),
     facilityAdmission.sourceIdentity?.snapshotPath,
