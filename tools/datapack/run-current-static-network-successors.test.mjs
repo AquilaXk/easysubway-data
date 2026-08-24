@@ -80,6 +80,7 @@ test("runner stages publisher-contract raw.json/raw.csv, publishes exactly two b
   assert.equal(registered.observations[0].snapshot.previousSnapshotId, null);
   assert.equal(registered.observations[0].snapshot.schemaFingerprint, positionProviderSchemaFingerprint);
   assert.equal(registered.observations[0].snapshot.projectionMigration.migrationKind, "CROSS_SOURCE_CANONICAL_REPLACEMENT");
+  assert.deepEqual(registered.observations.map(({ rawBytes }) => rawBytes.length), [positionsRaw.length, molitRaw.length]);
 });
 
 test("runner rejects an expired topology admission before the first immutable publication", async (t) => {

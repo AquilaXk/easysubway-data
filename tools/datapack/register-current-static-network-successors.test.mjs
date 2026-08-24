@@ -60,8 +60,23 @@ async function receiptFor(input, operationRoot, now) {
     rawRetentionExpiresAt: deriveRawRetentionExpiresAt({ policy, sourceId: input.sourceId, retrievedAt: input.capturedAt }), ociNamespace: "axvym6vk8g7i", bucket: "easysubway-datapacks", objectKey,
     contentType: extension === "json" ? "application/json" : "text/csv; charset=euc-kr" };
 }
-function cloneObservations(observations) { return observations.map(({ snapshot, receipt, bytes }) => ({ snapshot: structuredClone(snapshot), receipt: structuredClone(receipt), bytes: Buffer.from(bytes) })); }
+function cloneObservations(observations) { return observations.map(({ snapshot, receipt, bytes, rawBytes }) => ({ snapshot: structuredClone(snapshot), receipt: structuredClone(receipt), bytes: Buffer.from(bytes), rawBytes: Buffer.from(rawBytes) })); }
 function replaceMigration(observations, sourceId, patch) { const entry = observations.find(({ snapshot }) => snapshot.sourceId === sourceId); entry.snapshot.projectionMigration = { ...entry.snapshot.projectionMigration, ...patch }; const normalized = JSON.parse(entry.bytes); normalized.migration = { ...normalized.migration, ...patch }; entry.bytes = Buffer.from(`${JSON.stringify(normalized)}\n`); entry.snapshot.normalizedObservationSha256 = sha(entry.bytes); }
+function swapDaejeonMembershipSequences(rawBytes) {
+  const value = Buffer.from(rawBytes); const lines = value.toString("binary").split("\n"); let offset = 0; const targets = [];
+  for (const line of lines) {
+    const bytes = Buffer.from(line, "binary"); const decoded = new TextDecoder("euc-kr").decode(bytes);
+    if (decoded.includes("대전,대전교통공사,1호선,")) {
+      const comma = bytes.lastIndexOf(0x2c); const sequenceOffset = comma - 1;
+      if (bytes[sequenceOffset] === 0x31 || bytes[sequenceOffset] === 0x32) targets.push(offset + sequenceOffset);
+    }
+    offset += bytes.length + 1;
+  }
+  assert.equal(targets.length >= 2, true);
+  const first = targets.find((index) => value[index] === 0x31); const second = targets.find((index) => value[index] === 0x32);
+  assert.notEqual(first, undefined); assert.notEqual(second, undefined);
+  value[first] = 0x32; value[second] = 0x31; return value;
+}
 
 test("registrar commits only the exact seven-output allowlist and rolls back an interrupted write", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "static-network-registrar-"));
@@ -154,6 +169,81 @@ test("registrar build output hashes the current ledger's exact seven-snapshot se
   substitutedPositionObservation.normalizedProjection[0].stationName += "-대체";
   substitutedPosition[0].bytes = Buffer.from(`${JSON.stringify(substitutedPositionObservation)}\n`);
   await assert.rejects(buildStaticNetworkSuccessorOutputs({ repositoryRoot, observations: substitutedPosition, now }), /STATIC_NETWORK_SUCCESSOR_SEOUL_POSITIONS_SCOPE/);
+  const membershipDrift = cloneObservations(captured);
+  const molitObservation = membershipDrift[1]; const driftedRaw = Buffer.from(molitObservation.rawBytes);
+  const firstDaeguRecord = driftedRaw.indexOf(Buffer.from("03,")); const lineEnd = driftedRaw.indexOf(0x0a, firstDaeguRecord);
+  assert.ok(firstDaeguRecord >= 0 && lineEnd > firstDaeguRecord);
+  driftedRaw[driftedRaw[lineEnd - 1] === 0x0d ? lineEnd - 2 : lineEnd - 1] = 0x41;
+  const rawSha256 = sha(driftedRaw); const date = molitObservation.snapshot.retrievedAt.slice(0, 10).replaceAll("-", "");
+  const objectKey = `source-raw/${molitObservation.snapshot.sourceId}/${date}/${rawSha256}.csv`;
+  const rawObjectUri = `oci://axvym6vk8g7i/easysubway-datapacks/${objectKey}`;
+  molitObservation.rawBytes = driftedRaw;
+  molitObservation.snapshot.rawSha256 = rawSha256;
+  molitObservation.snapshot.rawObjectUri = rawObjectUri;
+  molitObservation.receipt.rawObjectSha256 = rawSha256;
+  molitObservation.receipt.byteSize = driftedRaw.length;
+  molitObservation.receipt.objectKey = objectKey;
+  molitObservation.receipt.rawObjectUri = rawObjectUri;
+  molitObservation.snapshot.rawReceipt = structuredClone(molitObservation.receipt);
+  const driftedObservation = JSON.parse(molitObservation.bytes);
+  driftedObservation.rawSha256 = rawSha256;
+  molitObservation.bytes = Buffer.from(`${JSON.stringify(driftedObservation)}\n`);
+  molitObservation.snapshot.normalizedObservationSha256 = sha(molitObservation.bytes);
+  await assert.rejects(buildStaticNetworkSuccessorOutputs({ repositoryRoot, observations: membershipDrift, now }), /static network MOLIT membership admission drift/);
+});
+
+test("registrar atomically rebinds every dependent regional membership evidence to verified current MOLIT raw bytes", async (t) => {
+  const operationRoot = await mkdtemp(path.join(os.tmpdir(), "static-network-registrar-membership-rebind-"));
+  t.after(() => rm(operationRoot, { recursive: true, force: true }));
+  const baseline = await readFile(path.join(repositoryRoot, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv"));
+  const freshRaw = Buffer.concat([baseline, Buffer.from("\n")]);
+  const now = (await currentTopologyAdmissionClock(repositoryRoot)).inWindow;
+  let outputs;
+  await runCurrentStaticNetworkSuccessors({ repositoryRoot, operationRoot, now, assertExactMain: async () => "0".repeat(40),
+    collectImpl: async (input) => {
+      const collection = await collectCurrentStaticNetworkSuccessors({ ...input, serviceKey: "test-service-key", fetchImpl: async (url) => {
+        if (url.href === MOLIT_URL) return new Response(freshRaw, { headers: { "content-type": "text/csv" } });
+        if (url.href.startsWith(SEOUL_POSITIONS_URL)) {
+          const csv = await readFile(path.join(repositoryRoot, "tools/datapack/fixtures/seoul-route-map-positions-raw/data-go-15099316.csv"));
+          const rows = parseSeoulRouteMapPositionsCsv(csv).rawPositions.map(({ line, stationCode, stationName, latitude, longitude, basisDate }, index) => ({ "연번": `${index + 1}`, "호선": line, "고유역번호(외부역코드)": stationCode, "역명": stationName, "위도": `${latitude}`, "경도": `${longitude}`, "작성기준일": basisDate, "작성일자": basisDate }));
+          return new Response(JSON.stringify({ currentCount: rows.length, data: rows, matchCount: rows.length, page: 1, perPage: 1000, totalCount: rows.length }), { headers: { "content-type": "application/json" } });
+        }
+        throw new Error("unexpected official URL");
+      } });
+      return collection;
+    },
+    publishImpl: (input) => receiptFor(input, operationRoot, now),
+    registerImpl: async ({ observations }) => { outputs = await buildStaticNetworkSuccessorOutputs({ repositoryRoot, observations, now }); },
+  });
+  const inventory = JSON.parse(outputs[2].bytes);
+  const evidence = inventory.sources.map(({ membershipAdmissionEvidence }) => membershipAdmissionEvidence).filter((value) => value?.membershipSourceId === "molit-urban-rail-full-route");
+  assert.equal(evidence.length, 10);
+  for (const value of evidence) {
+    assert.equal(value.membershipSourceRawSha256, sha(freshRaw));
+    assert.equal(value.membershipSourceSnapshotSha256, sha(freshRaw));
+    assert.equal(value.verifiedAt, now.toISOString());
+  }
+});
+
+test("registrar rejects parseable full-route membership drift before staging seven outputs", async (t) => {
+  const operationRoot = await mkdtemp(path.join(os.tmpdir(), "static-network-registrar-membership-drift-"));
+  t.after(() => rm(operationRoot, { recursive: true, force: true }));
+  const baseline = await readFile(path.join(repositoryRoot, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv"));
+  const changedRaw = swapDaejeonMembershipSequences(baseline);
+  const now = (await currentTopologyAdmissionClock(repositoryRoot)).inWindow;
+  await assert.rejects(runCurrentStaticNetworkSuccessors({ repositoryRoot, operationRoot, now, assertExactMain: async () => "0".repeat(40),
+    collectImpl: async (input) => collectCurrentStaticNetworkSuccessors({ ...input, serviceKey: "test-service-key", fetchImpl: async (url) => {
+      if (url.href === MOLIT_URL) return new Response(changedRaw, { headers: { "content-type": "text/csv" } });
+      if (url.href.startsWith(SEOUL_POSITIONS_URL)) {
+        const csv = await readFile(path.join(repositoryRoot, "tools/datapack/fixtures/seoul-route-map-positions-raw/data-go-15099316.csv"));
+        const rows = parseSeoulRouteMapPositionsCsv(csv).rawPositions.map(({ line, stationCode, stationName, latitude, longitude, basisDate }, index) => ({ "연번": `${index + 1}`, "호선": line, "고유역번호(외부역코드)": stationCode, "역명": stationName, "위도": `${latitude}`, "경도": `${longitude}`, "작성기준일": basisDate, "작성일자": basisDate }));
+        return new Response(JSON.stringify({ currentCount: rows.length, data: rows, matchCount: rows.length, page: 1, perPage: 1000, totalCount: rows.length }), { headers: { "content-type": "application/json" } });
+      }
+      throw new Error("unexpected official URL");
+    } }),
+    publishImpl: (input) => receiptFor(input, operationRoot, now),
+    registerImpl: ({ observations }) => buildStaticNetworkSuccessorOutputs({ repositoryRoot, observations, now }),
+  }), /membership admission drift/);
 });
 
 test("register API acquires the active owner lease before validating observations or reading inputs", async (t) => {

@@ -100,7 +100,7 @@ export async function runCurrentStaticNetworkSuccessors({ repositoryRoot = ROOT,
   const drafts = buildDrafts(collection, layoutSnapshot);
   for (const draft of drafts) await createExclusive(path.join(operation, `raw.${draft.extension}`), draft.rawBytes);
   const receipts = []; for (const draft of drafts) receipts.push(await publishImpl({ repositoryRoot: root, expectedMainSha, operationRoot: operation, sourceId: draft.sourceId, snapshotId: draft.observation.value.snapshotId, capturedAt: draft.observation.value.capturedAt, rawRelativePath: `raw.${draft.extension}`, now }));
-  const observations = drafts.map((draft, index) => ({ snapshot: snapshotFromDraft(draft, receipts[index]), receipt: receipts[index], bytes: draft.observation.bytes }));
+  const observations = drafts.map((draft, index) => ({ snapshot: snapshotFromDraft(draft, receipts[index]), receipt: receipts[index], bytes: draft.observation.bytes, rawBytes: draft.rawBytes }));
   await createExclusive(path.join(operation, "static-network-successors-receipt.json"), canonicalBytes({ sourceIds: TARGETS, receipts, normalizedObservationSha256: observations.map(({ bytes }) => sha(bytes)) }));
   if (await assertExactMain(root) !== expectedMainSha) throw new Error("static network repository changed before registration");
   return registerImpl({ repositoryRoot: root, observations, now });

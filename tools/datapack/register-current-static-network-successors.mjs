@@ -17,6 +17,11 @@ import {
   assertCurrentMolitFullRouteCompleteness,
   assertCurrentSeoulPositionProjectionCompleteness,
 } from "./lib/static-network-successor-completeness.mjs";
+import {
+  parseMolitDaeguStationMappings,
+  parseMolitDaejeonStationMappings,
+  parseMolitGwangjuStationMappings,
+} from "./build-molit-nationwide-fixture.mjs";
 import { assertCurrentTopologyAdmissionFreshness } from "./lib/route-map-admission-freshness.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -110,16 +115,17 @@ function routeMapProviderRows(rows) {
 }
 function assertTwoObservations(observations) {
   if (!Array.isArray(observations) || observations.length !== 2 || observations.some(({ snapshot }, index) => snapshot?.sourceId !== TARGETS[index])) throw new Error("static network observations must contain the exact two sources");
-  for (const { snapshot, receipt, bytes: snapshotBytes } of observations) {
+  for (const { snapshot, receipt, bytes: snapshotBytes, rawBytes } of observations) {
     const type = RECEIPT_TYPES[snapshot?.sourceId];
     const date = snapshot?.retrievedAt?.slice(0, 10).replaceAll("-", "");
     const objectKey = type && date ? `source-raw/${snapshot.sourceId}/${date}/${snapshot.rawSha256}.${type.extension}` : "";
-    if (!Buffer.isBuffer(snapshotBytes) || !SHA.test(snapshot?.rawSha256 ?? "") || !SHA.test(receipt?.rawObjectSha256 ?? "")
+    if (!Buffer.isBuffer(snapshotBytes) || !Buffer.isBuffer(rawBytes) || !SHA.test(snapshot?.rawSha256 ?? "") || !SHA.test(receipt?.rawObjectSha256 ?? "")
       || snapshot.rawSha256 !== receipt.rawObjectSha256 || receipt.sourceId !== snapshot.sourceId || receipt.snapshotId !== snapshot.snapshotId
       || JSON.stringify(snapshot.rawReceipt) !== JSON.stringify(receipt) || snapshot.rawRetentionExpiresAt !== receipt.rawRetentionExpiresAt
       || receipt.schemaVersion !== 1 || receipt.artifactKind !== "static-network-source-raw-object-receipt"
       || receipt.capturedAt !== snapshot.retrievedAt || receipt.ociNamespace !== "axvym6vk8g7i" || receipt.bucket !== "easysubway-datapacks"
       || receipt.objectKey !== objectKey || receipt.contentType !== type?.contentType || !Number.isSafeInteger(receipt.byteSize) || receipt.byteSize < 1
+      || rawBytes.length !== receipt.byteSize || sha(rawBytes) !== snapshot.rawSha256
       || receipt.rawObjectUri !== `oci://axvym6vk8g7i/easysubway-datapacks/${objectKey}` || receipt.rawObjectUri !== snapshot.rawObjectUri) {
       throw new Error("static network OCI receipt binding is invalid");
     }
@@ -153,6 +159,52 @@ function assertTwoObservations(observations) {
       if (!layout || !artifact || artifact.rawSha256 !== snapshot.rawSha256 || artifact.rawSha256 !== observation.rawSha256 || JSON.stringify(Object.keys(layout).sort(compareStrings)) !== JSON.stringify(keys) || !keys.filter((key) => key.endsWith("Sha256")).every((key) => SHA.test(layout[key] ?? "")) || typeof layout.layoutAlgorithmVersion !== "string" || typeof layout.aliasLedgerVersion !== "string" || typeof layout.topologySnapshotId !== "string" || layout.topologySnapshotIdentity !== `${layout.topologySnapshotId}:${layout.topologySnapshotSha256}` || layout.layoutArtifactSha256 !== sha(canonicalBytes(artifact)) || ["layoutAlgorithmVersion", "topologySnapshotId", "topologySnapshotSha256", "topologySnapshotIdentity", "lineOrderSha256", "aliasLedgerVersion", "aliasLedgerSha256", "rawPositionsSha256", "layoutPositionsSha256", "layoutTracksSha256", "semanticInputSha256", "semanticOutputSha256", "outputSchemaSha256"].some((key) => layout[key] !== artifact[key]) || JSON.stringify(providerRows) !== JSON.stringify(artifactRows) || JSON.stringify(snapshot.routeMapLayoutEvidence) !== JSON.stringify(layout) || JSON.stringify(snapshot.routeMapLayoutArtifact) !== JSON.stringify(artifact)) throw new Error("static network layout evidence binding is invalid");
     }
     if (snapshot.sourceId === TARGETS[1] && (observation.migration.migrationKind !== "LEGACY_SAMPLE_TO_FULL_CONSUMED_FIELDS" || observation.migration.legacySnapshotId !== snapshot.previousSnapshotId || observation.migration.legacyRawSha256 == null || observation.migration.legacySchemaFingerprint == null || !Array.isArray(observation.migration.legacyProviderRecordHashes) || observation.migration.fullProjectionSha256 !== snapshot.contentSha256 || observation.migration.fullProjectionSchemaFingerprint !== snapshot.schemaFingerprint || observation.migration.fullProjectionRowCount !== snapshot.rowCount || observation.migration.newSnapshotId !== snapshot.snapshotId)) throw new Error("static network MOLIT migration binding is invalid");
+  }
+}
+
+const MOLIT_MEMBERSHIP_BINDINGS = Object.freeze({
+  "line-5b8d9b05e7e6": (rawBytes) => parseMolitDaeguStationMappings(rawBytes, "1호선"),
+  "line-e2938a4cc492": (rawBytes) => parseMolitDaeguStationMappings(rawBytes, "2호선"),
+  "line-0ffaa95b1b5d": (rawBytes) => parseMolitDaeguStationMappings(rawBytes, "3호선"),
+  "line-7051a9c2525c": parseMolitDaejeonStationMappings,
+  "line-e57a361e8892": parseMolitGwangjuStationMappings,
+});
+
+function rebindMolitMembershipEvidence(inventory, snapshot, rawBytes) {
+  if (!Array.isArray(inventory?.sources) || !Buffer.isBuffer(rawBytes)
+    || sha(rawBytes) !== snapshot?.rawSha256 || rawBytes.length !== snapshot?.rawReceipt?.byteSize) {
+    throw new Error("static network MOLIT membership raw binding is invalid");
+  }
+  for (const source of inventory.sources) {
+    const evidence = source?.membershipAdmissionEvidence;
+    if (evidence?.membershipSourceId !== TARGETS[1]) continue;
+    const lineIds = evidence.lineIds;
+    if (!Array.isArray(lineIds) || lineIds.length !== 1 || typeof MOLIT_MEMBERSHIP_BINDINGS[lineIds[0]] !== "function") {
+      throw new Error("static network MOLIT membership scope is invalid");
+    }
+    const mappings = MOLIT_MEMBERSHIP_BINDINGS[lineIds[0]](rawBytes);
+    if (!Array.isArray(mappings) || mappings.length === 0 || mappings.sourceRawSha256 !== snapshot.rawSha256) {
+      throw new Error("static network MOLIT membership mapping is invalid");
+    }
+    const mappingSha256 = sha(JSON.stringify(mappings));
+    const stationCodesSha256 = lineIds[0] === "line-7051a9c2525c" || lineIds[0] === "line-e57a361e8892"
+      ? sha(JSON.stringify(mappings.map(({ stationNumber }) => stationNumber)))
+      : null;
+    if (evidence.stationCount !== mappings.length || evidence.mappingSha256 !== mappingSha256
+      || stationCodesSha256 != null && evidence.stationCodesSha256 !== stationCodesSha256) {
+      throw new Error("static network MOLIT membership admission drift is invalid");
+    }
+    source.membershipAdmissionEvidence = {
+      ...evidence,
+      verifiedAt: snapshot.retrievedAt,
+      stationCount: mappings.length,
+      membershipSourceRawSha256: snapshot.rawSha256,
+      membershipSourceSnapshotSha256: mappings.sourceRawSha256,
+      mappingSha256,
+      ...(stationCodesSha256 != null
+        ? { stationCodesSha256 }
+        : {}),
+    };
   }
 }
 function selectedInLedgerOrder(ledger, ids) { if (!Array.isArray(ids) || new Set(ids).size !== ids.length || ids.length !== CANDIDATE_SOURCE_IDS.length) throw new Error("static network selected snapshot set is invalid"); const selected = ledger.filter(({ snapshotId }) => ids.includes(snapshotId)); if (selected.length !== ids.length || ids.some((snapshotId) => ledger.filter((snapshot) => snapshot.snapshotId === snapshotId).length !== 1)) throw new Error("static network selected snapshot set is invalid"); return selected; }
@@ -212,6 +264,8 @@ export async function buildStaticNetworkSuccessorOutputs({ repositoryRoot = ROOT
       source.routeMapAdmissionEvidence = { ...source.routeMapAdmissionEvidence, capturedAt: snapshot.retrievedAt, freshUntil: snapshot.freshnessExpiresAt, currentLayoutAdmission: { schemaVersion: 2, artifactKind: "seoul-public-route-map-layout-admission", status: "ADMITTED", positionSnapshotId: snapshot.snapshotId, snapshotPath: `tools/datapack/sources/${snapshot.snapshotId}.json`, snapshotSha256: snapshot.normalizedObservationSha256, rawSha256: snapshot.rawSha256, contentSha256: snapshot.contentSha256, ...snapshot.routeMapLayoutEvidence } };
     }
   }
+  const molitObservation = observations.find(({ snapshot }) => snapshot.sourceId === TARGETS[1]);
+  rebindMolitMembershipEvidence(nextInventory, molitObservation.snapshot, molitObservation.rawBytes);
   validateLineage(nextLedger);
   const nextCandidate = structuredClone(candidate); const nowMillis = now.getTime();
   for (const { snapshot } of observations) {
