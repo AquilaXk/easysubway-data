@@ -23,6 +23,7 @@ import { activateIncheonTopologyAdmission, activateStaticSourceRevalidations,
   verifyCurrentSeoulCanonicalMembership } from "./activate-current-source-set.mjs";
 import { normalizeStationName, projectCapitalTopologyOwnership } from "./collect-capital-route-topology.mjs";
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
+import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -953,7 +954,9 @@ test("topology-only refresh는 admission·canonical·candidate identity를 한 �
   delete currentIncheonTopology.stationCodeCorrections;
   currentIncheonTopology.stationCodeDerivations = currentIncheonStationCodeDerivations();
   const currentIncheonTopologyBytes = Buffer.from(`${JSON.stringify(currentIncheonTopology)}\n`);
+  const { inWindow } = await currentTopologyAdmissionClock(root);
   const buildNow = new Date(Math.max(
+    inWindow.getTime(),
     Date.parse(currentTopology.capturedAt),
     Date.parse(currentIncheonTopology.capturedAt),
   ) + 1).toISOString();
