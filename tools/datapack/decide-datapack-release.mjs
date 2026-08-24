@@ -20,6 +20,9 @@ export function evaluateReleaseDecision({
   remoteValidationPassed,
   evaluationAt,
   refreshBeforeMillis = 0,
+  releaseEvidenceBundle = null,
+  launchDenominatorReport = null,
+  launchDenominatorReportSha256 = null,
 }) {
   const evaluatedMillis = requiredUtcInstant(evaluationAt, "evaluationAt");
   const candidateIdentity = stableManifestIdentity(candidateManifest);
@@ -71,6 +74,15 @@ export function evaluateReleaseDecision({
     || selectedManifest.releaseSequence < 1)) {
     throw new Error("final release decision requires a selected manifest sha256 and releaseSequence");
   }
+  const nationwideAttestation = selectedManifest == null
+    ? null
+    : selectNationwideAttestation({
+      outcome: scheduled.outcome,
+      selectedManifest,
+      releaseEvidenceBundle,
+      launchDenominatorReport,
+      launchDenominatorReportSha256,
+    });
 
   return {
     schemaVersion: 1,
@@ -85,8 +97,74 @@ export function evaluateReleaseDecision({
     sourceSnapshotSetHash: buildSpec?.sourceSnapshotSetHash ?? "-",
     selectedManifestSha256: selectedManifest?.sha256 ?? null,
     selectedReleaseSequence: selectedManifest?.releaseSequence ?? null,
+    ...(nationwideAttestation ?? {}),
     reasonCodes,
     evaluationAt: new Date(evaluatedMillis).toISOString(),
+  };
+}
+
+function selectNationwideAttestation({
+  outcome,
+  selectedManifest,
+  releaseEvidenceBundle,
+  launchDenominatorReport,
+  launchDenominatorReportSha256,
+}) {
+  const supplied = [releaseEvidenceBundle, launchDenominatorReport, launchDenominatorReportSha256]
+    .map((value) => value != null);
+  if (supplied.some(Boolean) && !supplied.every(Boolean)) {
+    throw new Error("release evidence bundle and launch denominator report must be supplied together");
+  }
+  if (!supplied[0]) {
+    if (outcome === "PUBLISHED_AND_VERIFIED") {
+      throw new Error("PUBLISHED_AND_VERIFIED requires exact release evidence bundle and launch denominator report");
+    }
+    return null;
+  }
+  if (!isSha256(launchDenominatorReportSha256)) {
+    throw new Error("launch denominator report sha256 must be sha256");
+  }
+  if (!releaseEvidenceBundle || typeof releaseEvidenceBundle !== "object"
+    || !launchDenominatorReport || typeof launchDenominatorReport !== "object") {
+    throw new Error("release evidence bundle and launch denominator report must be JSON objects");
+  }
+  if (releaseEvidenceBundle.manifestSha256 !== selectedManifest.sha256) {
+    throw new Error("release evidence bundle selected manifest sha256 mismatch");
+  }
+  if (releaseEvidenceBundle.releaseSequence !== selectedManifest.releaseSequence) {
+    throw new Error("release evidence bundle selected releaseSequence mismatch");
+  }
+  if (!isSha256(releaseEvidenceBundle.nationwideTargetsSha256)) {
+    throw new Error("release evidence bundle nationwide targets hash must be sha256");
+  }
+  const nationwideScope = launchDenominatorReport.scopes?.nationwideRoadmapScope;
+  if (!nationwideScope || typeof nationwideScope.id !== "string" || nationwideScope.id.length === 0
+    || !isSha256(nationwideScope.sha256)) {
+    throw new Error("launch denominator report nationwide roadmap scope is invalid");
+  }
+  if (!new Set(["GO", "NO_GO"]).has(launchDenominatorReport.decision)) {
+    throw new Error("launch denominator report decision is invalid");
+  }
+  const reportTargetsSha256 = launchDenominatorReport.evaluatorInput?.nationwide?.targetsSha256;
+  if (reportTargetsSha256 != null && releaseEvidenceBundle.nationwideTargetsSha256 !== reportTargetsSha256) {
+    throw new Error("release evidence bundle nationwide targets hash binding mismatch");
+  }
+  for (const [field, expected, label] of [
+    ["nationwideRoadmapScopeId", nationwideScope.id, "nationwide roadmap scope"],
+    ["nationwideRoadmapScopeSha256", nationwideScope.sha256, "nationwide roadmap scope"],
+    ["launchDenominatorDecision", launchDenominatorReport.decision, "launch denominator decision"],
+    ["launchDenominatorReportSha256", launchDenominatorReportSha256, "launch denominator report sha256"],
+  ]) {
+    if (releaseEvidenceBundle[field] !== expected) {
+      throw new Error(`release evidence bundle ${label} binding mismatch`);
+    }
+  }
+  return {
+    nationwideRoadmapScopeId: nationwideScope.id,
+    nationwideRoadmapScopeSha256: nationwideScope.sha256,
+    nationwideTargetsSha256: releaseEvidenceBundle.nationwideTargetsSha256,
+    launchDenominatorDecision: launchDenominatorReport.decision,
+    launchDenominatorReportSha256,
   };
 }
 
@@ -195,6 +273,8 @@ async function main(argv) {
   const buildSpecBytes = buildSpecPath ? await readFile(buildSpecPath) : null;
   const buildSpec = buildSpecBytes ? JSON.parse(buildSpecBytes.toString("utf8")) : null;
   const releaseRequest = await optionalJson(args.get("release-request"));
+  const releaseEvidenceBundleDocument = await optionalJsonDocument(args.get("release-evidence-bundle"));
+  const launchDenominatorReportDocument = await optionalJsonDocument(args.get("launch-denominator-report"));
   const freshnessPolicy = await optionalJson(args.get("freshness-policy"));
   const evaluationAt = args.get("evaluation-at") ?? new Date().toISOString();
   const strictValidationPassed = alertOnly || args.get("strict-validation-status") === "PASS";
@@ -215,6 +295,11 @@ async function main(argv) {
     refreshBeforeMillis: freshnessPolicy == null
       ? 0
       : requiredFixedDurationMillis(freshnessPolicy.scheduledPipeline?.cadence),
+    releaseEvidenceBundle: releaseEvidenceBundleDocument?.value ?? null,
+    launchDenominatorReport: launchDenominatorReportDocument?.value ?? null,
+    launchDenominatorReportSha256: launchDenominatorReportDocument == null
+      ? null
+      : sha256(launchDenominatorReportDocument.bytes),
   });
 
   const outputPath = requiredArg(args, "output");
@@ -258,14 +343,14 @@ async function requiredJsonDocument(args, name) {
   return { bytes, value: JSON.parse(bytes.toString("utf8")) };
 }
 
-async function optionalJson(file) {
-  return file ? JSON.parse(await readFile(file, "utf8")) : null;
-}
-
 async function optionalJsonDocument(file) {
   if (!file) return null;
   const bytes = await readFile(file);
   return { bytes, value: JSON.parse(bytes.toString("utf8")) };
+}
+
+async function optionalJson(file) {
+  return file ? JSON.parse(await readFile(file, "utf8")) : null;
 }
 
 function requiredArg(args, name) {

@@ -1094,6 +1094,7 @@ jobs:
             launchScopeSha256: launchReport.scopes.routingLaunchScope.sha256,
             nationwideRoadmapScopeId: launchReport.scopes.nationwideRoadmapScope.id,
             nationwideRoadmapScopeSha256: launchReport.scopes.nationwideRoadmapScope.sha256,
+            nationwideTargetsSha256: hashFile("tools/datapack/nationwide-coverage-targets.json"),
             identityLinkageMatrixSha256: launchReport.identityLinkage.matrixSha256,
             launchDenominatorDecision: launchReport.decision,
             launchDenominatorReportSha256: hashBytes(launchDenominatorReportRaw),
@@ -1110,6 +1111,7 @@ jobs:
             sqliteSha256: pack.sqliteSha256 ?? pack.sha256 ?? zeroHash,
             gzipSha256: gzipFile ? hashFile(path.join(catalogDir, gzipFile)) : zeroHash,
             manifestSha256: candidateBinding.manifestSha256,
+            releaseSequence: manifest.releaseSequence,
             coverageSummarySha256: hashFile(process.env.EASYSUBWAY_COVERAGE_GAP_REPORT),
             accessibilitySourceCoverageSha256: accessibilitySourceCoverageRaw
               ? hashBytes(accessibilitySourceCoverageRaw)
@@ -1449,6 +1451,12 @@ jobs:
           )
           if [[ -f "${EASYSUBWAY_DATAPACK_CURRENT_MANIFEST}" ]]; then
             final_decision_args+=(--current-manifest "${EASYSUBWAY_DATAPACK_CURRENT_MANIFEST}")
+          fi
+          if [[ "${publish_attempted}" == "true" ]]; then
+            final_decision_args+=(
+              --release-evidence-bundle "${EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE}"
+              --launch-denominator-report "${EASYSUBWAY_LAUNCH_DENOMINATOR_REPORT}"
+            )
           fi
           node tools/datapack/decide-datapack-release.mjs "${final_decision_args[@]}"
           EXPECTED_OUTCOME="${expected_outcome}" node -e "const d=require(process.env.EASYSUBWAY_DATAPACK_FINAL_RELEASE_DECISION); if (d.outcome !== process.env.EXPECTED_OUTCOME || d.remoteValidationPassed !== true) process.exit(1);"

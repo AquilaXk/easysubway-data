@@ -445,9 +445,11 @@ test("release evidence는 canonical launch denominator report identity와 decisi
   assert.match(evidenceStep, /verifiedAccessibilityScopeSha256:\s*launchReport\.scopes\.verifiedAccessibilityScope\.sha256/);
   assert.match(evidenceStep, /launchScopeSha256:\s*launchReport\.scopes\.routingLaunchScope\.sha256/);
   assert.match(evidenceStep, /nationwideRoadmapScopeSha256:\s*launchReport\.scopes\.nationwideRoadmapScope\.sha256/);
+  assert.match(evidenceStep, /nationwideTargetsSha256:\s*hashFile\("tools\/datapack\/nationwide-coverage-targets\.json"\)/);
   assert.match(evidenceStep, /identityLinkageMatrixSha256:\s*launchReport\.identityLinkage\.matrixSha256/);
   assert.match(evidenceStep, /launchDenominatorDecision:\s*launchReport\.decision/);
   assert.match(evidenceStep, /launchDenominatorReportSha256:\s*hashBytes\(launchDenominatorReportRaw\)/);
+  assert.match(evidenceStep, /releaseSequence:\s*manifest\.releaseSequence/);
   assert.doesNotMatch(evidenceStep, /scopeId:\s*"capital_pilot_android_v1"/);
   assert.match(yml, /--scope "\$\{EASYSUBWAY_DATAPACK_SCOPE_POLICY\}"/);
   const normalValidationStep = yml.match(
@@ -631,6 +633,9 @@ test("publish run은 remote artifact validation 뒤 최종 decision과 callback�
   assert.match(finalDecision, /REMOTE_VALIDATION_OUTCOME/);
   assert.match(finalDecision, /if \[\[ -f "\$\{EASYSUBWAY_DATAPACK_CURRENT_MANIFEST\}" \]\]; then/);
   assert.match(finalDecision, /final_decision_args\+=\(--current-manifest/);
+  assert.match(finalDecision, /--release-evidence-bundle "\$\{EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE\}"/);
+  assert.match(finalDecision, /--launch-denominator-report "\$\{EASYSUBWAY_LAUNCH_DENOMINATOR_REPORT\}"/);
+  assert.match(finalDecision, /\[\[ "\$\{publish_attempted\}" == "true" \]\]/);
   assert.match(yml, /GITHUB_STEP_SUMMARY/);
 });
 

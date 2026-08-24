@@ -238,6 +238,7 @@ function validateLaunchDenominatorReport(
   requirePass,
   candidateBinding,
   candidateArtifactRaw,
+  nationwideTargetsSha256,
 ) {
   const scopeBindings = [
     [
@@ -290,6 +291,9 @@ function validateLaunchDenominatorReport(
   ) {
     throw new Error("nationwide roadmap must remain nonblocking for v1 launch");
   }
+  if (bundle.nationwideTargetsSha256 !== nationwideTargetsSha256) {
+    throw new Error("nationwide targets sha256 must match canonical targets bytes");
+  }
   const canonicalReport = buildLaunchDenominatorReport(scope, report.evaluatorInput);
   if (!isDeepStrictEqual(report, canonicalReport)) {
     throw new Error("launch denominator report must match canonical evaluator output");
@@ -305,6 +309,10 @@ function validateLaunchDenominatorReport(
     const authoritativeReport = buildLaunchDenominatorReport(scope, authoritativeInput);
     if (!isDeepStrictEqual(report.evaluatorInput, authoritativeReport.evaluatorInput)) {
       throw new Error("launch denominator evaluator input must match current authoritative evidence");
+    }
+    const candidateManifest = JSON.parse(candidateArtifactRaw.manifestRaw);
+    if (bundle.releaseSequence !== candidateManifest.releaseSequence) {
+      throw new Error("release evidence bundle releaseSequence must match current candidate manifest");
     }
   }
   if (candidateBinding) {
@@ -366,6 +374,11 @@ async function main() {
     : null;
   const scopeRaw = await readFile(scopePath, "utf8");
   const scope = JSON.parse(scopeRaw);
+  const nationwideTargetsPath = scope.nationwideRoadmapScope?.targets;
+  if (typeof nationwideTargetsPath !== "string" || nationwideTargetsPath.length === 0) {
+    throw new Error("nationwide targets path is required by the production scope");
+  }
+  const nationwideTargetsSha256 = createHash("sha256").update(await readFile(nationwideTargetsPath)).digest("hex");
   const launchReportRaw = await readFile(launchReportPath, "utf8");
   const launchReport = JSON.parse(launchReportRaw);
   const accessibilitySourceCoverageRaw = accessibilitySourceCoveragePath
@@ -430,11 +443,13 @@ async function main() {
     requirePass,
     candidateBinding,
     candidateArtifactRaw,
+    nationwideTargetsSha256,
   );
   for (const field of [
     "verifiedAccessibilityScopeSha256",
     "launchScopeSha256",
     "nationwideRoadmapScopeSha256",
+    "nationwideTargetsSha256",
     "identityLinkageMatrixSha256",
     "launchDenominatorReportSha256",
     "buildSpecSha256",
@@ -458,6 +473,9 @@ async function main() {
     "androidEvidenceSha256",
   ]) {
     validateSha(bundle, field);
+  }
+  if (!Number.isSafeInteger(bundle.releaseSequence) || bundle.releaseSequence < 1) {
+    throw new Error("releaseSequence must be a positive safe integer");
   }
   if (!["GO", "NO_GO", "NOT_EVALUATED"].includes(bundle.accessibilitySourceCoverageDecision)) {
     throw new Error("accessibilitySourceCoverageDecision must be GO, NO_GO, or NOT_EVALUATED");
