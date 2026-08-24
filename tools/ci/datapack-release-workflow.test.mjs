@@ -72,6 +72,69 @@ test("release-candidate parity는 runtime GO와 분리되고 production publish�
   assert.match(publishValidation, /--require-pass/);
 });
 
+test("candidate-create는 생성 입력만 받고 release·provider credential 경로와 격리된다", () => {
+  const step = (name) => {
+    const start = yml.indexOf(`- name: ${name}`);
+    assert.notEqual(start, -1, `${name} 스텝을 찾지 못함`);
+    const next = yml.indexOf("\n      - name:", start + 1);
+    return yml.slice(start, next === -1 ? undefined : next);
+  };
+  assert.match(yml, /options: \[exploratory, candidate-create, release-candidate, production-publish, rollback, rollout-update\]/);
+  const mode = step("Data Pack Release / Validate release mode inputs");
+  assert.match(mode, /mode\}" == "candidate-create"/);
+  assert.match(mode, /GITHUB_EVENT_NAME\}" != "workflow_dispatch"/);
+  assert.match(mode, /target_channel\}" != "production"/);
+  assert.match(mode, /allow_gaps\}" != "false"/);
+  assert.match(mode, /repo-relative non-fixture build spec/);
+  assert.match(mode, /candidate-create forbids release and execution inputs/);
+  assert.match(mode, /release_request_id="\$\{RELEASE_REQUEST_ID_INPUT:-\}"/);
+  assert.match(mode, /mode\}" == "exploratory" && -z "\$\{release_request_id\}"/);
+  assert.doesNotMatch(mode, /candidate-create.*release-candidate|release-candidate.*candidate-create/);
+
+  const dotenv = step("Data Pack Release / Restore GitHub Actions dotenv secret");
+  assert.match(dotenv, /mode != 'release-candidate' && steps\.release-mode\.outputs\.mode != 'candidate-create'/);
+  const freshness = step("Data Pack Release / Validate source snapshot freshness");
+  assert.match(freshness, /mode == 'release-candidate'/);
+  assert.doesNotMatch(freshness, /candidate-create/);
+  const signing = step("Data Pack Release / Restore candidate signing credentials");
+  assert.match(signing, /mode == 'release-candidate'/);
+  assert.doesNotMatch(signing, /candidate-create/);
+  const fixture = step("Data Pack Release / Prepare release fixture");
+  assert.match(fixture, /release-candidate" \|\| "\$\{EASYSUBWAY_DATAPACK_RELEASE_MODE\}" == "candidate-create"/);
+  assert.doesNotMatch(fixture.match(/candidate-create[\s\S]*?(?:elif|else)/)?.[0] ?? "", /import-official-sources|apply-admin-review-overrides/);
+  const build = step("Data Pack Release / Build data packs");
+  assert.match(build, /\^\(release-candidate\|candidate-create\|production-publish\)\$/);
+  assert.match(build, /--build-spec "\$\{EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH\}"/);
+  assert.doesNotMatch(build.match(/candidate-create[\s\S]*?(?:else|fi)/)?.[0] ?? "", /--fixture "\$\{EASYSUBWAY_DATAPACK_BUILD_FIXTURE\}"/);
+  for (const name of [
+    "Data Pack Release / Validate generated data packs",
+    "Data Pack Release / Verify uploaded pack checksums before manifest publish",
+    "Data Pack Release / Stage manifest",
+  ]) {
+    const validation = step(name);
+    assert.match(validation, /release-candidate" \|\| "\$\{EASYSUBWAY_DATAPACK_RELEASE_MODE\}" == "candidate-create/);
+    assert.match(validation, /--require-production/);
+  }
+  assert.match(step("Data Pack Release / Validate generated data packs"), /manifest channel must match targetChannel/);
+  const coverage = step("Data Pack Release / Write coverage gap evidence");
+  assert.match(coverage, /\^\(release-candidate\|candidate-create\|production-publish\)\$/);
+  assert.match(coverage, /--manifest "\$\{EASYSUBWAY_DATAPACK_OUTPUT\}\/current\.json"/);
+  assert.match(coverage, /--provenance "\$\{EASYSUBWAY_DATAPACK_OUTPUT\}\/current\.provenance\.json"/);
+  assert.match(coverage, /--release-scope "\$\{EASYSUBWAY_DATAPACK_SCOPE_POLICY\}"/);
+  for (const name of [
+    "Data Pack Release / Validate remote object storage publish env",
+    "Data Pack Release / Write release evidence bundle",
+    "Data Pack Release / Validate release evidence bundle",
+    "Data Pack Release / Create manifest-last publish preflight plan",
+    "Data Pack Release / Validate object storage publish executor dry run",
+    "Data Pack Release / Download current production manifest for change detection",
+    "Data Pack Release / Decide conditional publish",
+  ]) assert.match(step(name), /mode != 'candidate-create'/, `${name}는 candidate-create에서 실행되면 안 됨`);
+  const webhook = yml.slice(yml.indexOf("  notify-slack-datapack-result:"));
+  assert.match(webhook, /if: \$\{\{ always\(\) && github\.event\.inputs\.mode != 'candidate-create' \}\}/);
+  assert.match(webhook, /SLACK_RELEASE_WEBHOOK_URL: \$\{\{ secrets\.SLACK_RELEASE_WEBHOOK_URL \}\}/);
+});
+
 function assertRouteCoveragePair(source) {
   assert.match(source, /--require-production/);
   assert.match(source, /--server-route-coverage-evidence "\$\{EASYSUBWAY_DATAPACK_ROUTE_COVERAGE_AUTHORITY\}"/);
@@ -116,7 +179,7 @@ test("route-final candidate는 authority·strict validation·signed route stage�
   const remote = yml.slice(step("Data Pack Release / Validate published remote artifact"), step("Data Pack Release / Upload remote validation artifact"));
   assert.match(remote, /--server-route-coverage-evidence "\$\{EASYSUBWAY_DATAPACK_STAGE\}\/server-route-coverage-authority\.json"/);
   assert.match(remote, /--server-route-coverage-provenance "\$\{EASYSUBWAY_DATAPACK_STAGE\}\/current\.provenance\.json"/);
-  assert.match(prepare, /elif \[\[ "\$\{EASYSUBWAY_DATAPACK_RELEASE_MODE\}" == "release-candidate" \]\]; then/);
+  assert.match(prepare, /elif \[\[ "\$\{EASYSUBWAY_DATAPACK_RELEASE_MODE\}" == "release-candidate" \|\| "\$\{EASYSUBWAY_DATAPACK_RELEASE_MODE\}" == "candidate-create" \]\]; then/);
 });
 
 test("고정된 hub 계약은 mode 해석 뒤 pointer가 아닌 release에서만 stage한다", () => {
@@ -420,7 +483,7 @@ test("coverage gap 스텝은 release 모드에서만 production provenance와 re
   // exploratory fixture는 inventory 기준으로 전량 MISSING을 기록하며 --allow-gaps로 통과해야 한다.
   assert.match(
     yml,
-    /EASYSUBWAY_DATAPACK_RELEASE_MODE\}" =~ \^\(release-candidate\|production-publish\)\$ \]\]; then\s*\n\s*coverage_args\+=\(\s*--manifest "\$\{EASYSUBWAY_DATAPACK_OUTPUT\}\/current\.json"\s*--provenance "\$\{EASYSUBWAY_DATAPACK_OUTPUT\}\/current\.provenance\.json"\s*--release-scope/,
+    /EASYSUBWAY_DATAPACK_RELEASE_MODE\}" =~ \^\(release-candidate\|candidate-create\|production-publish\)\$ \]\]; then\s*\n\s*coverage_args\+=\(\s*--manifest "\$\{EASYSUBWAY_DATAPACK_OUTPUT\}\/current\.json"\s*--provenance "\$\{EASYSUBWAY_DATAPACK_OUTPUT\}\/current\.provenance\.json"\s*--release-scope/,
   );
   // 전국 gap 산출은 유지 — nationwide-coverage-targets.json을 계속 targets로 쓴다.
   assert.match(yml, /--targets tools\/datapack\/nationwide-coverage-targets\.json/);

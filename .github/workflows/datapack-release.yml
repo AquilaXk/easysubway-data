@@ -18,7 +18,7 @@ on:
         type: choice
         required: true
         default: exploratory
-        options: [exploratory, release-candidate, production-publish, rollback, rollout-update]
+        options: [exploratory, candidate-create, release-candidate, production-publish, rollback, rollout-update]
       targetChannel:
         description: Target data pack channel
         type: choice
@@ -159,7 +159,7 @@ jobs:
           build_spec="${BUILD_SPEC_PATH_INPUT:-tools/datapack/fixtures/candidate-build-spec.json}"
           allow_gaps="${ALLOW_GAPS_INPUT:-}"
           target_channel="${TARGET_CHANNEL_INPUT:-dev}"
-          release_request_id="${RELEASE_REQUEST_ID_INPUT:-exploratory-${GITHUB_RUN_ID}}"
+          release_request_id="${RELEASE_REQUEST_ID_INPUT:-}"
           release_request_path="${RELEASE_REQUEST_PATH_INPUT:-}"
           android_evidence_path="${ANDROID_EVIDENCE_PATH_INPUT:-}"
           strict_route_regression_path="${STRICT_ROUTE_REGRESSION_PATH_INPUT:-}"
@@ -237,6 +237,23 @@ jobs:
               allow_gaps=true
             else
               allow_gaps=false
+            fi
+          fi
+          if [[ "${mode}" == "exploratory" && -z "${release_request_id}" ]]; then
+            release_request_id="exploratory-${GITHUB_RUN_ID}"
+          fi
+          if [[ "${mode}" == "candidate-create" ]]; then
+            if [[ "${GITHUB_EVENT_NAME}" != "workflow_dispatch" || "${target_channel}" != "production" || "${allow_gaps}" != "false" ]]; then
+              echo "candidate-create requires workflow_dispatch, production targetChannel, and allowGaps=false" >&2
+              exit 1
+            fi
+            if [[ "${build_spec}" == /* || "${build_spec}" == *..* || "${build_spec}" =~ (fixture|debug|demo|sample) || "${build_spec}" == tools/datapack/fixtures/* || ! -f "${build_spec}" ]]; then
+              echo "candidate-create requires a repo-relative non-fixture build spec" >&2
+              exit 1
+            fi
+            if [[ -n "${release_request_id}" || -n "${release_request_path}" || -n "${android_evidence_path}" || -n "${strict_route_regression_path}" || -n "${candidate_run_id}" || -n "${promotion_run_id}" ]]; then
+              echo "candidate-create forbids release and execution inputs" >&2
+              exit 1
             fi
           fi
           if [[ "${mode}" =~ ^(release-candidate|production-publish)$ ]]; then
@@ -380,7 +397,7 @@ jobs:
           node tools/datapack/validate-source-snapshot-freshness.mjs "${freshness_args[@]}"
 
       - name: Data Pack Release / Restore GitHub Actions dotenv secret
-        if: ${{ steps.release-mode.outputs.mode != 'release-candidate' }}
+        if: ${{ steps.release-mode.outputs.mode != 'release-candidate' && steps.release-mode.outputs.mode != 'candidate-create' }}
         env:
           EASYSUBWAY_ENV_SECRET: ${{ secrets.EASYSUBWAY_ENV }}
           EASYSUBWAY_SEOUL_TOPIS_SERVICE_KEY_SECRET: ${{ secrets.EASYSUBWAY_SEOUL_TOPIS_SERVICE_KEY }}
@@ -481,7 +498,7 @@ jobs:
 
       - name: Data Pack Release / Validate remote object storage publish env
         id: remote-publish-env
-        if: ${{ steps.release-mode.outputs.mode != 'release-candidate' }}
+        if: ${{ steps.release-mode.outputs.mode != 'release-candidate' && steps.release-mode.outputs.mode != 'candidate-create' }}
         run: |
           set -euo pipefail
           if [[ -z "${EASYSUBWAY_ENV_FILE:-}" ]]; then
@@ -659,7 +676,7 @@ jobs:
               --overrides tools/datapack/fixtures/admin-review-overrides.json \
               --output "${EASYSUBWAY_DATAPACK_REVIEWED_FIXTURE}"
             build_fixture="${EASYSUBWAY_DATAPACK_REVIEWED_FIXTURE}"
-          elif [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "release-candidate" ]]; then
+          elif [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "release-candidate" || "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "candidate-create" ]]; then
             mkdir -p "${EASYSUBWAY_DATAPACK_STAGE}"
             build_fixture="$(node -e "const fs=require('fs'); const spec=JSON.parse(fs.readFileSync(process.env.EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH, 'utf8')); process.stdout.write(spec.fixturePath);")"
             node tools/datapack/build-current-release-candidate-accessibility-input.mjs \
@@ -721,7 +738,7 @@ jobs:
         if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' }}
         run: |
           set -euo pipefail
-          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" =~ ^(release-candidate|production-publish)$ ]]; then
+          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" =~ ^(release-candidate|candidate-create|production-publish)$ ]]; then
             node tools/datapack/build-datapack.mjs \
               --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}" \
               --candidate-fixture-override "${EASYSUBWAY_DATAPACK_CANDIDATE_FIXTURE}" \
@@ -759,7 +776,7 @@ jobs:
             --manifest "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json"
             --root "${EASYSUBWAY_DATAPACK_OUTPUT}"
           )
-          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "release-candidate" ]]; then
+          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "release-candidate" || "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "candidate-create" ]]; then
             validation_args+=(
               --require-production
               --server-route-coverage-evidence "${EASYSUBWAY_DATAPACK_ROUTE_COVERAGE_AUTHORITY}"
@@ -767,7 +784,7 @@ jobs:
             )
           fi
           node "${validation_args[@]}"
-          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "release-candidate" ]]; then
+          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "release-candidate" || "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "candidate-create" ]]; then
             node -e "const manifest=require(process.env.EASYSUBWAY_DATAPACK_OUTPUT + '/current.json'); if (manifest.channel !== process.env.EASYSUBWAY_DATAPACK_TARGET_CHANNEL) throw new Error('manifest channel must match targetChannel');"
             # 이슈 #2531: 앱이 심고 나가는 수락 순번 하한 아래로는 publish하지 않는다.
             # 이 게이트가 'live >= 하한' 불변식을 지켜 하한을 심은 빌드가 현재 매니페스트를
@@ -827,7 +844,7 @@ jobs:
           # 산출·evidence 기록(은폐 금지 — nationwide/in-scope 분리 수치). --allow-gaps 금지(release 모드)는 불변이며
           # scope 내 gap은 여전히 하드 차단한다. exploratory fixture는 production provenance로 승격하지 않고
           # inventory 기준 nationwide gap을 전량 MISSING으로 기록한다.
-          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" =~ ^(release-candidate|production-publish)$ ]]; then
+          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" =~ ^(release-candidate|candidate-create|production-publish)$ ]]; then
             coverage_args+=(
               --manifest "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json"
               --provenance "${EASYSUBWAY_DATAPACK_OUTPUT}/current.provenance.json"
@@ -860,7 +877,7 @@ jobs:
             --manifest "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json"
             --root "${EASYSUBWAY_DATAPACK_STAGE}"
           )
-          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "release-candidate" ]]; then
+          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "release-candidate" || "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "candidate-create" ]]; then
             validation_args+=(
               --require-production
               --server-route-coverage-evidence "${EASYSUBWAY_DATAPACK_ROUTE_COVERAGE_AUTHORITY}"
@@ -879,7 +896,7 @@ jobs:
             --manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json"
             --root "${EASYSUBWAY_DATAPACK_STAGE}"
           )
-          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "release-candidate" ]]; then
+          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "release-candidate" || "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "candidate-create" ]]; then
             validation_args+=(
               --require-production
               --server-route-coverage-evidence "${EASYSUBWAY_DATAPACK_ROUTE_COVERAGE_AUTHORITY}"
@@ -973,7 +990,7 @@ jobs:
           } >> "${GITHUB_ENV}"
 
       - name: Data Pack Release / Write release evidence bundle
-        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' }}
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' && steps.release-mode.outputs.mode != 'candidate-create' }}
         id: evidence-bundle
         run: |
           set -euo pipefail
@@ -1139,7 +1156,7 @@ jobs:
           NODE
 
       - name: Data Pack Release / Validate release evidence bundle
-        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' }}
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'candidate-create' }}
         run: |
           set -euo pipefail
           bundle_args=(
@@ -1165,7 +1182,7 @@ jobs:
           node tools/datapack/validate-release-evidence-bundle.mjs "${bundle_args[@]}"
 
       - name: Data Pack Release / Create manifest-last publish preflight plan
-        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' }}
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'candidate-create' }}
         run: |
           set -euo pipefail
           publish_plan_args=(
@@ -1182,7 +1199,7 @@ jobs:
           test -f "${EASYSUBWAY_DATAPACK_PUBLISH_PLAN}"
 
       - name: Data Pack Release / Validate object storage publish executor dry run
-        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' }}
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'candidate-create' }}
         run: |
           set -euo pipefail
           node tools/datapack/publish-object-storage.mjs \
@@ -1191,7 +1208,7 @@ jobs:
             --dry-run
 
       - name: Data Pack Release / Download current production manifest for change detection
-        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.remote-publish-env.outputs.enabled == 'true' }}
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'candidate-create' && steps.remote-publish-env.outputs.enabled == 'true' }}
         run: |
           set -euo pipefail
           if ! http_status="$(curl -sS --connect-timeout 10 --max-time 30 \
@@ -1210,7 +1227,7 @@ jobs:
           fi
 
       - name: Data Pack Release / Decide conditional publish
-        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' }}
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'candidate-create' }}
         id: release-decision
         run: |
           set -euo pipefail
@@ -1695,7 +1712,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions: {}
     needs: data-pack-release
-    if: ${{ always() }}
+    if: ${{ always() && github.event.inputs.mode != 'candidate-create' }}
     env:
       SLACK_RELEASE_WEBHOOK_URL: ${{ secrets.SLACK_RELEASE_WEBHOOK_URL }}
     steps:
