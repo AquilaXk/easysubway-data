@@ -243,6 +243,17 @@ export async function createStaticNetworkRegistrarPredecessorFixture(sourceRoot,
     readJson(targetRoot, snapshotsPath),
   ]);
   const { candidateIndex, predecessor } = currentPublicRouteMapPredecessor(candidate, snapshots);
+  const selectedPublicRootId = candidate.sourceSnapshots[candidateIndex].sourceId === PUBLIC_SOURCE_ID
+    ? candidate.sourceSnapshotIds[candidateIndex]
+    : null;
+  const selectedPublicRoots = snapshots.filter(({ snapshotId, sourceId, previousSnapshotId }) => snapshotId === selectedPublicRootId
+    && sourceId === PUBLIC_SOURCE_ID && previousSnapshotId == null);
+  if (selectedPublicRootId != null && selectedPublicRoots.length !== 1) {
+    throw new Error("synthetic public route-map predecessor fixture is incomplete");
+  }
+  const predecessorLedger = selectedPublicRootId == null
+    ? snapshots
+    : snapshots.filter(({ snapshotId }) => snapshotId !== selectedPublicRootId);
   candidate.sourceSnapshotIds[candidateIndex] = predecessor.snapshotId;
   candidate.sourceSnapshots[candidateIndex] = {
     ...candidate.sourceSnapshots[candidateIndex],
@@ -251,10 +262,13 @@ export async function createStaticNetworkRegistrarPredecessorFixture(sourceRoot,
   };
   const selectedIds = new Set(candidate.sourceSnapshotIds);
   candidate.sourceSnapshotSetHash = sha256(JSON.stringify(
-    snapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId)),
+    predecessorLedger.filter(({ snapshotId }) => selectedIds.has(snapshotId)),
   ));
-  await writeFile(path.join(targetRoot, candidatePath), jsonBytes(candidate));
-  return { predecessorSnapshotId: predecessor.snapshotId };
+  await Promise.all([
+    writeFile(path.join(targetRoot, candidatePath), jsonBytes(candidate)),
+    writeFile(path.join(targetRoot, snapshotsPath), jsonBytes(predecessorLedger)),
+  ]);
+  return { predecessorSnapshotId: predecessor.snapshotId, removedPublicRootSnapshotId: selectedPublicRootId };
 }
 
 export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { now }) {

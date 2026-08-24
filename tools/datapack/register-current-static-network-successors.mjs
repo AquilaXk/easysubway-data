@@ -262,7 +262,31 @@ export async function buildStaticNetworkSuccessorOutputs({ repositoryRoot = ROOT
     if (snapshot.sourceId === TARGETS[0]) {
       source.requiredForProductionPack = true;
       source.productionUseAllowed = true;
-      source.routeMapAdmissionEvidence = { ...source.routeMapAdmissionEvidence, capturedAt: snapshot.retrievedAt, freshUntil: snapshot.freshnessExpiresAt, currentLayoutAdmission: { schemaVersion: 2, artifactKind: "seoul-public-route-map-layout-admission", status: "ADMITTED", positionSnapshotId: snapshot.snapshotId, snapshotPath: `tools/datapack/sources/${snapshot.snapshotId}.json`, snapshotSha256: snapshot.normalizedObservationSha256, rawSha256: snapshot.rawSha256, contentSha256: snapshot.contentSha256, ...snapshot.routeMapLayoutEvidence } };
+      const currentTopologyAdmission = {
+        ...source.routeMapAdmissionEvidence.currentTopologyAdmission,
+        positionSnapshotSha256: snapshot.normalizedObservationSha256,
+      };
+      const currentLayoutAdmission = {
+        schemaVersion: 2,
+        artifactKind: "seoul-public-route-map-layout-admission",
+        status: "ADMITTED",
+        positionSnapshotId: snapshot.snapshotId,
+        snapshotPath: `tools/datapack/sources/${snapshot.snapshotId}.json`,
+        snapshotSha256: snapshot.normalizedObservationSha256,
+        rawSha256: snapshot.rawSha256,
+        contentSha256: snapshot.contentSha256,
+        ...snapshot.routeMapLayoutEvidence,
+      };
+      if (currentLayoutAdmission.snapshotSha256 !== currentTopologyAdmission.positionSnapshotSha256) {
+        throw new Error("static network topology and layout observation binding is invalid");
+      }
+      source.routeMapAdmissionEvidence = {
+        ...source.routeMapAdmissionEvidence,
+        capturedAt: snapshot.retrievedAt,
+        freshUntil: snapshot.freshnessExpiresAt,
+        currentTopologyAdmission,
+        currentLayoutAdmission,
+      };
     }
   }
   const molitObservation = observations.find(({ snapshot }) => snapshot.sourceId === TARGETS[1]);
