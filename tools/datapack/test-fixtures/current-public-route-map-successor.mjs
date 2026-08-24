@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { cp, lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 
 import { buildSeoulRouteMapPositions } from "../collect-seoul-route-map-positions.mjs";
 import {
@@ -17,6 +18,7 @@ import {
   verifyCurrentCapitalPublicRouteMapDocument,
 } from "../materialize-seoul-route-map-positions.mjs";
 import { deriveReleaseProjection } from "../rebind-current-candidate-source-snapshots.mjs";
+import { buildSnapshotDiff } from "../source-snapshot-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
 
 const PUBLIC_SOURCE_ID = "seoul-metro-route-map-positions";
@@ -71,7 +73,7 @@ function currentPublicRouteMapPredecessor(candidate, snapshots) {
 
 function currentPublicRouteMapProviderRecords(sourceSnapshot) {
   const artifact = sourceSnapshot?.routeMapLayoutArtifact ?? sourceSnapshot;
-  const positions = sourceSnapshot?.positions ?? artifact?.rawPositions;
+  const positions = artifact?.rawPositions ?? sourceSnapshot?.positions;
   const basisDate = sourceSnapshot?.observedDataUpdatedAt ?? artifact?.observedDataUpdatedAt;
   if (!Array.isArray(positions) || typeof basisDate !== "string") {
     throw new Error("synthetic public route-map source evidence is incomplete");
@@ -215,6 +217,7 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
     candidate.productionScopePolicy?.path,
     ...Object.values(candidate.networkEdgeEvidence ?? {}).map((evidence) => evidence?.path),
     ...inventory.sources.map((source) => source.routeMapAdmissionEvidence?.snapshotPath),
+    ...inventory.sources.map((source) => source.routeMapAdmissionEvidence?.currentLayoutAdmission?.snapshotPath),
     ...inventory.sources.map((source) => {
       const snapshotId = source.routeMapAdmissionEvidence?.currentTopologyAdmission?.topologySnapshotId;
       return typeof snapshotId === "string" ? `tools/datapack/sources/${snapshotId}.json` : null;
@@ -346,13 +349,31 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     throw new Error("synthetic public route-map predecessor fixture is incomplete");
   }
 
-  const capturedAt = new Date(now.getTime() - 60_000).toISOString();
+  const nowMillis = now.getTime();
+  const requestedCapturedAtMillis = nowMillis - 60_000;
+  const predecessorRetrievedAtMillis = advancesCurrentPublicHead
+    ? Date.parse(successorPredecessor.retrievedAt)
+    : null;
+  const capturedAtMillis = advancesCurrentPublicHead
+    ? Math.max(requestedCapturedAtMillis, predecessorRetrievedAtMillis + 1)
+    : requestedCapturedAtMillis;
+  if (!Number.isFinite(nowMillis)
+    || advancesCurrentPublicHead && (!Number.isFinite(predecessorRetrievedAtMillis) || capturedAtMillis > nowMillis)) {
+    throw new Error("synthetic public route-map successor fixture has invalid capture time");
+  }
+  const capturedAt = new Date(capturedAtMillis).toISOString();
   const stamp = capturedAt.replaceAll(/[-:.]/gu, "");
-  const redactedRequestFingerprint = sha256("public-route-map-request");
+  const redactedRequestFingerprint = advancesCurrentPublicHead
+    ? successorPredecessor.redactedRequestFingerprint
+    : sha256("public-route-map-request");
   const snapshotId = `${PUBLIC_SOURCE_ID}-current-${stamp}`;
-  const sourceSnapshotPath = publicSource.routeMapAdmissionEvidence?.snapshotPath;
+  const currentLayoutAdmission = publicSource.routeMapAdmissionEvidence?.currentLayoutAdmission;
+  const sourceSnapshotPath = advancesCurrentPublicHead
+    ? currentLayoutAdmission?.snapshotPath
+    : publicSource.routeMapAdmissionEvidence?.snapshotPath;
   const topologySnapshotId = publicSource.routeMapAdmissionEvidence?.currentTopologyAdmission?.topologySnapshotId;
-  if (typeof sourceSnapshotPath !== "string" || typeof topologySnapshotId !== "string") {
+  if (typeof sourceSnapshotPath !== "string" || typeof topologySnapshotId !== "string"
+    || advancesCurrentPublicHead && currentLayoutAdmission?.positionSnapshotId !== successorPredecessor.snapshotId) {
     throw new Error("synthetic public route-map source evidence is incomplete");
   }
   const topologySnapshotPath = `tools/datapack/sources/${topologySnapshotId}.json`;
@@ -363,7 +384,14 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   const sourceSnapshot = JSON.parse(sourceSnapshotBytes);
   const providerRecords = currentPublicRouteMapProviderRecords(sourceSnapshot);
   const rawBytes = Buffer.from(`${JSON.stringify(providerRecords)}\n`);
-  const rawSha256 = sha256(rawBytes);
+  const rawSha256 = advancesCurrentPublicHead ? sourceSnapshot.rawSha256 : sha256(rawBytes);
+  const rawByteSize = advancesCurrentPublicHead ? successorPredecessor.rawReceipt?.byteSize : rawBytes.length;
+  if (advancesCurrentPublicHead && (!/^[a-f0-9]{64}$/u.test(rawSha256 ?? "")
+    || rawSha256 !== currentLayoutAdmission.rawSha256
+    || rawSha256 !== successorPredecessor.rawSha256
+    || !Number.isInteger(rawByteSize) || rawByteSize <= 0)) {
+    throw new Error("synthetic public route-map current raw evidence is incomplete");
+  }
   const routeMapLayoutArtifact = buildSeoulRouteMapPositions({
     records: providerRecords,
     topologySnapshotBytes,
@@ -373,8 +401,25 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   });
   const routeMapLayoutArtifactBytes = jsonBytes(routeMapLayoutArtifact);
   const layoutArtifactSha256 = sha256(Buffer.from(`${JSON.stringify(routeMapLayoutArtifact)}\n`));
-  const contentSha256 = sha256(Buffer.from(`${JSON.stringify(routeMapLayoutArtifact.rawPositions)}\n`));
-  const schemaFingerprint = sha256(JSON.stringify(Object.keys(routeMapLayoutArtifact.rawPositions[0]).sort((left, right) => left.localeCompare(right, "en"))));
+  const contentSha256 = advancesCurrentPublicHead
+    ? sourceSnapshot.contentSha256
+    : sha256(Buffer.from(`${JSON.stringify(routeMapLayoutArtifact.rawPositions)}\n`));
+  const schemaFingerprint = advancesCurrentPublicHead
+    ? sourceSnapshot.schemaFingerprint
+    : sha256(JSON.stringify(Object.keys(routeMapLayoutArtifact.rawPositions[0]).sort((left, right) => left.localeCompare(right, "en"))));
+  const providerRecordHashes = advancesCurrentPublicHead
+    ? sourceSnapshot.providerRecordHashes
+    : routeMapLayoutArtifact.rawPositions.map((record) => sha256(JSON.stringify(record)));
+  if (advancesCurrentPublicHead && (sourceSnapshot.snapshotId !== successorPredecessor.snapshotId
+    || contentSha256 !== currentLayoutAdmission.contentSha256
+    || contentSha256 !== successorPredecessor.contentSha256
+    || schemaFingerprint !== successorPredecessor.schemaFingerprint
+    || sourceSnapshot.rowCount !== routeMapLayoutArtifact.rawPositions.length
+    || !Array.isArray(providerRecordHashes)
+    || providerRecordHashes.length !== routeMapLayoutArtifact.rawPositions.length
+    || !isDeepStrictEqual(providerRecordHashes, successorPredecessor.providerRecordHashes))) {
+    throw new Error("synthetic public route-map current observation identity is incomplete");
+  }
   const layout = Object.fromEntries(SHA_KEYS.map((key) => [key, key === "layoutArtifactSha256"
     ? layoutArtifactSha256
     : routeMapLayoutArtifact[key]]));
@@ -406,14 +451,12 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     schemaFingerprint,
     contentSha256,
     previousSnapshotId: advancesCurrentPublicHead ? successorPredecessor.snapshotId : null,
-    diffSummary: advancesCurrentPublicHead
-      ? { status: "NO_CHANGE", rawHashChanged: false, schemaHashChanged: false, requestHashChanged: false, sourceUpdatedAtChanged: false, rowDelta: 0, coverageDelta: 0 }
-      : null,
+    diffSummary: null,
     freshnessExpiresAt,
     rawRetentionExpiresAt,
     governancePolicyVersion: governancePolicy.policyVersion,
     governancePolicySha256: sha256(governanceBytes),
-    providerRecordHashes: routeMapLayoutArtifact.rawPositions.map((record) => sha256(JSON.stringify(record))),
+    providerRecordHashes: [...providerRecordHashes],
     normalizedObservationSha256: sha256(routeMapLayoutArtifactBytes),
     routeMapLayoutEvidence: layout,
     routeMapLayoutArtifact,
@@ -440,11 +483,12 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
       bucket: "easysubway-datapacks",
       objectKey,
       contentType: "application/json",
-      byteSize: rawBytes.length,
+      byteSize: rawByteSize,
       storedAt: capturedAt,
       rawRetentionExpiresAt,
     },
   };
+  if (advancesCurrentPublicHead) snapshot.diffSummary = buildSnapshotDiff(successorPredecessor, snapshot);
   if (selectedPublicSnapshotIndex >= 0 && !advancesCurrentPublicHead) snapshots.splice(selectedPublicSnapshotIndex, 1, snapshot);
   else snapshots.push(snapshot);
 

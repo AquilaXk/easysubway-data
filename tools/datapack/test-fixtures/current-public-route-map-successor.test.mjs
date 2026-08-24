@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { validateLineage } from "../source-snapshot-policy.mjs";
+import { buildSnapshotDiff, validateLineage } from "../source-snapshot-policy.mjs";
 import {
   activateSyntheticCurrentPublicRouteMapSuccessor,
   copySyntheticCurrentPublicRouteMapRepository,
@@ -52,6 +52,81 @@ test("already-public-root fixture activation preserves one valid source lineage 
   assert.doesNotThrow(() => validateLineage(snapshots));
   assert.equal(publicSnapshots.filter(({ previousSnapshotId }) => previousSnapshotId == null).length, 1);
   assert.equal(candidate.sourceSnapshotIds[0], result.snapshotId);
+});
+
+test("advancing a current public head derives records from its admitted current layout", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-current-layout-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, root, {
+    now: new Date("2026-08-25T09:45:18.609Z"),
+    activatePublicRouteMap: false,
+  });
+
+  const [candidate, beforeSnapshots] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+  ]);
+  const publicIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) =>
+    sourceId === "seoul-metro-route-map-positions");
+  const parent = beforeSnapshots.find(({ snapshotId }) => snapshotId === candidate.sourceSnapshotIds[publicIndex]);
+  assert.notEqual(publicIndex, -1);
+  assert.ok(parent);
+
+  const result = await activateSyntheticCurrentPublicRouteMapSuccessor(root, {
+    now: new Date(Date.parse(parent.retrievedAt) + 120_000),
+    advanceCurrentPublicHead: true,
+  });
+  const afterSnapshots = JSON.parse(await readFile(
+    path.join(root, "tools/datapack/release/source-snapshots.json"),
+    "utf8",
+  ));
+  const child = afterSnapshots.find(({ snapshotId }) => snapshotId === result.snapshotId);
+
+  assert.equal(result.predecessorSnapshotId, parent.snapshotId);
+  assert.equal(child.previousSnapshotId, parent.snapshotId);
+  assert.equal(child.rawSha256, parent.rawSha256);
+  assert.equal(child.contentSha256, parent.contentSha256);
+  assert.equal(child.schemaFingerprint, parent.schemaFingerprint);
+  assert.equal(child.rowCount, parent.rowCount);
+  assert.equal(child.coverageCount, parent.coverageCount);
+  assert.deepEqual(child.providerRecordHashes, parent.providerRecordHashes);
+  assert.deepEqual(child.diffSummary, buildSnapshotDiff(parent, child));
+  assert.equal(child.diffSummary.status, "NO_CHANGE");
+});
+
+test("advancing a current public head keeps retrieval time monotonic in a one-second window", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-monotonic-time-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, root, {
+    now: new Date("2026-08-25T09:45:18.609Z"),
+    activatePublicRouteMap: false,
+  });
+
+  const [candidate, beforeSnapshots] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+  ]);
+  const publicIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) =>
+    sourceId === "seoul-metro-route-map-positions");
+  const parent = beforeSnapshots.find(({ snapshotId }) => snapshotId === candidate.sourceSnapshotIds[publicIndex]);
+  assert.notEqual(publicIndex, -1);
+  assert.ok(parent);
+  const now = new Date(Date.parse(parent.retrievedAt) + 1_000);
+
+  const result = await activateSyntheticCurrentPublicRouteMapSuccessor(root, {
+    now,
+    advanceCurrentPublicHead: true,
+  });
+  const afterSnapshots = JSON.parse(await readFile(
+    path.join(root, "tools/datapack/release/source-snapshots.json"),
+    "utf8",
+  ));
+  const child = afterSnapshots.find(({ snapshotId }) => snapshotId === result.snapshotId);
+
+  assert.equal(result.predecessorSnapshotId, parent.snapshotId);
+  assert.ok(Date.parse(child.retrievedAt) > Date.parse(parent.retrievedAt));
+  assert.ok(Date.parse(child.retrievedAt) <= now.getTime());
+  assert.doesNotThrow(() => validateLineage(afterSnapshots));
 });
 
 test("registrar fixture reconstructs the legacy predecessor with no selected public root in the ledger", async (t) => {
