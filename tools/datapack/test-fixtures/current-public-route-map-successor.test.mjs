@@ -8,6 +8,7 @@ import { validateLineage } from "../source-snapshot-policy.mjs";
 import {
   activateSyntheticCurrentPublicRouteMapSuccessor,
   copySyntheticCurrentPublicRouteMapRepository,
+  createStaticNetworkRegistrarPredecessorFixture,
 } from "./current-public-route-map-successor.mjs";
 
 const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
@@ -51,4 +52,29 @@ test("already-public-root fixture activation preserves one valid source lineage 
   assert.doesNotThrow(() => validateLineage(snapshots));
   assert.equal(publicSnapshots.filter(({ previousSnapshotId }) => previousSnapshotId == null).length, 1);
   assert.equal(candidate.sourceSnapshotIds[0], result.snapshotId);
+});
+
+test("registrar fixture reconstructs the legacy predecessor with no selected public root in the ledger", async (t) => {
+  const source = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-registrar-source-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-registrar-predecessor-"));
+  t.after(() => rm(source, { recursive: true, force: true }));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, source, {
+    now: new Date("2026-08-25T09:45:18.609Z"),
+  });
+
+  const result = await createStaticNetworkRegistrarPredecessorFixture(source, root, {
+    now: new Date("2026-08-25T09:45:18.609Z"),
+  });
+  const [candidate, snapshots] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+  ]);
+  const publicRoots = snapshots.filter(({ sourceId, previousSnapshotId }) =>
+    sourceId === "seoul-metro-route-map-positions" && previousSnapshotId == null);
+
+  assert.equal(result.removedPublicRootSnapshotId != null, true);
+  assert.equal(publicRoots.length, 0);
+  assert.equal(candidate.sourceSnapshots[0].sourceId, "seoulmetro-cyberstation-route-map");
+  assert.doesNotThrow(() => validateLineage(snapshots));
 });

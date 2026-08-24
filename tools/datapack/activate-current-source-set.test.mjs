@@ -953,7 +953,13 @@ test("topology-only refresh는 admission·canonical·candidate identity를 한 �
   delete currentIncheonTopology.stationCodeCorrections;
   currentIncheonTopology.stationCodeDerivations = currentIncheonStationCodeDerivations();
   const currentIncheonTopologyBytes = Buffer.from(`${JSON.stringify(currentIncheonTopology)}\n`);
+  const staticSourceIds = new Set(["seoul-metro-route-map-positions", "molit-urban-rail-full-route"]);
+  const staticSourceTimes = sourceInventory.sources
+    .filter(({ id }) => staticSourceIds.has(id))
+    .flatMap(({ retrievedAt, observedDataUpdatedAt }) => [Date.parse(retrievedAt), Date.parse(observedDataUpdatedAt)]);
+  assert.equal(staticSourceTimes.length, 4);
   const buildNow = new Date(Math.max(
+    ...staticSourceTimes,
     Date.parse(currentTopology.capturedAt),
     Date.parse(currentIncheonTopology.capturedAt),
   ) + 1).toISOString();

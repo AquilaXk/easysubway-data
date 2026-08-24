@@ -152,9 +152,12 @@ async function stagedRefreshRepository(t) {
     const target = path.join(root, relative); await mkdir(path.dirname(target), { recursive: true }); await cp(path.join(ROOT, relative), target);
   }
   await cp(path.join(ROOT, "tools/datapack/sources"), path.join(root, "tools/datapack/sources"), { recursive: true });
-  await activateSyntheticCurrentStaticNetworkSuccessors(root, {
-    now: new Date("2026-08-22T09:45:18.609Z"),
-  });
+  const stagedCandidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
+  if (!stagedCandidate.sourceSnapshots.some(({ sourceId }) => sourceId === "seoul-metro-route-map-positions")) {
+    await activateSyntheticCurrentStaticNetworkSuccessors(root, {
+      now: new Date("2026-08-22T09:45:18.609Z"),
+    });
+  }
   const candidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
   const facility = JSON.parse(await readFile(path.join(ROOT, "tools/datapack/release/current-capital-facility-source-admission.json"), "utf8"));
   const facilitySnapshot = facility.sourceIdentity.snapshotPath; await mkdir(path.dirname(path.join(root, facilitySnapshot)), { recursive: true }); await cp(path.join(ROOT, facilitySnapshot), path.join(root, facilitySnapshot));
