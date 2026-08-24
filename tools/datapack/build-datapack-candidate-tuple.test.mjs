@@ -50,6 +50,10 @@ test("identity drift, malformed·missing input, expired candidate는 tuple 없�
     ["missing candidate binding", (fixture) => { delete fixture.provenance.candidateBuild.candidateId; }],
     ["build snapshot extra field", (fixture) => { fixture.buildSpec.sourceSnapshots[0].extra = true; }],
     ["source identity extra field", (fixture) => { fixture.provenance.candidateBuild.sourceSnapshots[0].extra = true; }],
+    ["build snapshot id number", (fixture) => { fixture.buildSpec.sourceSnapshotIds = [1]; }],
+    ["build snapshot id embedded NUL", (fixture) => { fixture.buildSpec.sourceSnapshotIds = ["source-1\u0000other"]; }],
+    ["provenance snapshot id number", (fixture) => { fixture.provenance.candidateBuild.sourceSnapshotIds = [1]; }],
+    ["provenance snapshot id embedded NUL", (fixture) => { fixture.provenance.candidateBuild.sourceSnapshotIds = ["source-1\u0000other"]; }],
   ]) {
     const fixture = createFixture();
     try {

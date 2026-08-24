@@ -180,6 +180,27 @@ jobs:
             fi
           }
 
+          # Candidate-create도 credential을 복원하기 전에 build spec 안의 fixture
+          # 참조를 release-candidate/production-publish와 같은 기준으로 막는다.
+          assert_release_build_spec_content() {
+            BUILD_SPEC_PATH="$1" node -e '
+              const fs = require("fs");
+              const buildSpecPath = process.env.BUILD_SPEC_PATH;
+              let buildSpec;
+              try {
+                buildSpec = JSON.parse(fs.readFileSync(buildSpecPath, "utf8"));
+              } catch {
+                console.error("release build spec is not valid JSON: " + buildSpecPath);
+                process.exit(1);
+              }
+              const fixturePath = buildSpec.fixturePath;
+              if (typeof fixturePath === "string" && (/(fixture|debug|demo|sample)/i.test(fixturePath) || /(^|[\\/])fixtures([\\/]|$)/i.test(fixturePath))) {
+                console.error("release mode cannot use fixture input");
+                process.exit(1);
+              }
+            '
+          }
+
           if [[ "${GITHUB_EVENT_NAME}" == "schedule" && "${SCHEDULED_PUBLISH_ENABLED:-}" == "true" ]]; then
             mode=production-publish
             target_channel=production
@@ -255,6 +276,7 @@ jobs:
               echo "candidate-create requires a repo-relative non-fixture build spec" >&2
               exit 1
             fi
+            assert_release_build_spec_content "${build_spec}"
             if [[ -n "${release_request_id}" || -n "${release_request_path}" || -n "${android_evidence_path}" || -n "${strict_route_regression_path}" || -n "${candidate_run_id}" || -n "${promotion_run_id}" ]]; then
               echo "candidate-create forbids release and execution inputs" >&2
               exit 1
@@ -269,6 +291,7 @@ jobs:
               echo "release mode cannot use fixture input" >&2
               exit 1
             fi
+            assert_release_build_spec_content "${build_spec}"
             if [[ -n "${release_request_path}" ]]; then
               assert_release_request_path "${release_request_path}"
             fi
@@ -294,14 +317,12 @@ jobs:
             const fs = require("fs");
             const crypto = require("crypto");
             const [buildSpecPath, releaseRequestId, releaseRequestPath, targetChannel, mode, sourceGovernanceEvaluationAt] = process.argv.slice(2);
-            const marker = /(fixture|debug|demo|sample)/i;
             const sha256 = (file) => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
             const requireHash = (value, label) => {
               if (!/^[a-f0-9]{64}$/.test(String(value ?? ""))) throw new Error(`${label} must be sha256`);
             };
             const buildSpec = JSON.parse(fs.readFileSync(buildSpecPath, "utf8"));
             if (buildSpec.artifactKind !== "datapack-candidate-build-spec") throw new Error("buildSpec.artifactKind must be datapack-candidate-build-spec");
-            if (marker.test(buildSpec.fixturePath ?? "")) throw new Error("release mode cannot use fixture input");
             if (!Array.isArray(buildSpec.sourceSnapshotIds) || buildSpec.sourceSnapshotIds.length === 0) throw new Error("buildSpec.sourceSnapshotIds must not be empty");
             for (const field of ["sourceSnapshotSetHash", "approvedAliasLedgerHash", "facilityEvidenceLedgerHash", "routeEvidenceLedgerHash", "approvedOverrideSetHash", "sourceInventorySha256"]) {
               requireHash(buildSpec[field], `buildSpec.${field}`);

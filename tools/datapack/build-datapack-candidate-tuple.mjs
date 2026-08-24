@@ -30,9 +30,9 @@ function validate({ buildSpec, manifest, provenance, buildSpecSha256, manifestSh
   if (buildSpec.schemaVersion !== 1 || buildSpec.artifactKind !== "datapack-candidate-build-spec") throw new Error("build spec is not a production candidate build spec");
   const candidateId = token(buildSpec.candidateId, "buildSpec.candidateId");
   const builderGitSha = gitSha(buildSpec.builderGitSha, "buildSpec.builderGitSha");
-  if (!Array.isArray(buildSpec.sourceSnapshotIds) || buildSpec.sourceSnapshotIds.length === 0 || new Set(buildSpec.sourceSnapshotIds).size !== buildSpec.sourceSnapshotIds.length) throw new Error("buildSpec.sourceSnapshotIds must be unique and non-empty");
+  const buildSnapshotIds = snapshotIds(buildSpec.sourceSnapshotIds, "buildSpec.sourceSnapshotIds");
   const buildSnapshots = snapshots(buildSpec.sourceSnapshots, "buildSpec.sourceSnapshots");
-  if (buildSnapshots.map(({ snapshotId }) => snapshotId).join("\u0000") !== buildSpec.sourceSnapshotIds.join("\u0000")) throw new Error("buildSpec source snapshot identity mismatch");
+  if (!sameTokens(buildSnapshots.map(({ snapshotId }) => snapshotId), buildSnapshotIds)) throw new Error("buildSpec source snapshot identity mismatch");
   if (!manifest || typeof manifest !== "object" || Array.isArray(manifest) || manifest.manifestVersion !== 2) throw new Error("manifest must be production manifestVersion 2");
   const freshnessExpiresAt = utc(manifest.expiresAt, "manifest.expiresAt");
   if (Date.parse(freshnessExpiresAt) <= now) throw new Error("manifest candidate is expired");
@@ -42,7 +42,7 @@ function validate({ buildSpec, manifest, provenance, buildSpecSha256, manifestSh
   if (token(candidateBuild.candidateId, "provenance.candidateBuild.candidateId") !== candidateId) throw new Error("provenance candidate identity mismatch");
   if (gitSha(candidateBuild.builderGitSha, "provenance.candidateBuild.builderGitSha") !== builderGitSha) throw new Error("provenance builder git sha mismatch");
   if (hash(candidateBuild.buildSpecSha256, "provenance.candidateBuild.buildSpecSha256") !== buildSpecSha256) throw new Error("provenance build spec raw identity mismatch");
-  if (!Array.isArray(candidateBuild.sourceSnapshotIds) || candidateBuild.sourceSnapshotIds.join("\u0000") !== buildSpec.sourceSnapshotIds.join("\u0000")) throw new Error("provenance source snapshot ids mismatch");
+  if (!sameTokens(snapshotIds(candidateBuild.sourceSnapshotIds, "provenance.candidateBuild.sourceSnapshotIds"), buildSnapshotIds)) throw new Error("provenance source snapshot ids mismatch");
   const provenanceSnapshots = snapshots(candidateBuild.sourceSnapshots, "provenance.candidateBuild.sourceSnapshots");
   if (canonical(candidateBuild.sourceSnapshots) !== canonical(buildSpec.sourceSnapshots)) throw new Error("provenance source snapshot raw identity mismatch");
   for (const snapshot of provenanceSnapshots) if (Date.parse(snapshot.freshnessExpiresAt) < Date.parse(freshnessExpiresAt)) throw new Error("manifest expiry exceeds source freshness");
@@ -62,6 +62,17 @@ function snapshots(value, label) {
   });
   if (new Set(normalized.map(({ snapshotId }) => snapshotId)).size !== normalized.length) throw new Error(`${label} snapshot IDs must be unique`);
   return normalized;
+}
+
+function snapshotIds(value, label) {
+  if (!Array.isArray(value) || value.length === 0) throw new Error(`${label} must be unique and non-empty`);
+  const normalized = value.map((entry, index) => token(entry, `${label}[${index}]`));
+  if (new Set(normalized).size !== normalized.length) throw new Error(`${label} must be unique and non-empty`);
+  return normalized;
+}
+
+function sameTokens(actual, expected) {
+  return actual.length === expected.length && actual.every((value, index) => value === expected[index]);
 }
 
 async function atomicCreate(root, output, bytes) {

@@ -103,6 +103,16 @@ test("candidate-create는 생성 입력만 받고 release·provider credential �
   assert.match(mode, /target_channel\}" != "production"/);
   assert.match(mode, /allow_gaps\}" != "false"/);
   assert.match(mode, /repo-relative non-fixture build spec/);
+  assert.match(mode, /assert_release_build_spec_content\(\) \{/);
+  assert.match(mode, /buildSpec\.fixturePath/);
+  assert.match(mode, /\(fixture\|debug\|demo\|sample\)\/i/);
+  assert.match(mode, /fixtures/);
+  const buildSpecContentGuards = mode.match(/assert_release_build_spec_content "\$\{build_spec\}"/g) ?? [];
+  assert.equal(buildSpecContentGuards.length, 2, "candidate-create와 release mode는 같은 build spec content gate를 사용해야 한다");
+  assert.ok(
+    mode.indexOf('assert_release_build_spec_content "${build_spec}"') < yml.indexOf("Data Pack Release / Restore candidate OCI credentials"),
+    "candidate-create build spec content gate는 OCI credential 복원 전에 있어야 한다",
+  );
   assert.match(mode, /candidate-create forbids release and execution inputs/);
   assert.match(mode, /release_request_id="\$\{RELEASE_REQUEST_ID_INPUT:-\}"/);
   assert.match(mode, /mode\}" == "exploratory" && -z "\$\{release_request_id\}"/);
