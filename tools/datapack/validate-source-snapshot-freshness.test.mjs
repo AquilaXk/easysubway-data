@@ -25,7 +25,21 @@ const evaluationAt = "2026-07-15T00:00:00.000Z";
 const execFileAsync = promisify(execFile);
 
 const root = path.resolve(import.meta.dirname, "../..");
-const syntheticCurrentEvaluationAt = "2026-08-22T09:45:18.609Z";
+const syntheticCurrentEvaluationAt = await currentSyntheticEvaluationAt(root);
+
+async function currentSyntheticEvaluationAt(repositoryRoot) {
+  const [buildSpec, snapshots] = await Promise.all([
+    readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+  ]);
+  const selected = snapshots.filter(({ snapshotId, sourceId }) => buildSpec.sourceSnapshotIds.includes(snapshotId)
+    && ["molit-urban-rail-full-route", "seoul-metro-route-map-positions"].includes(sourceId));
+  const basisAt = Math.max(...selected.flatMap(({ retrievedAt, sourceUpdatedAt }) => [retrievedAt, sourceUpdatedAt])
+    .filter((value) => typeof value === "string")
+    .map((value) => Date.parse(value)));
+  if (selected.length !== 2 || !Number.isFinite(basisAt)) throw new Error("synthetic current source basis is invalid");
+  return new Date(basisAt).toISOString();
+}
 
 async function syntheticCurrentRepository(t, prefix) {
   const temp = await mkdtemp(path.join(os.tmpdir(), prefix));
@@ -715,9 +729,8 @@ test("합성 current public successor는 선택한 public head를 ephemeral snap
     .findIndex(({ sourceId }) => sourceId === "seoul-metro-route-map-positions")];
 
   const refreshedRoot = path.join(path.dirname(repositoryRoot), "refreshed-repository");
-  await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, refreshedRoot, {
-    now: new Date("2026-08-22T09:46:18.609Z"),
-  });
+  const refreshedAt = new Date(Date.parse(syntheticCurrentEvaluationAt) + 60_000).toISOString();
+  await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, refreshedRoot, { now: new Date(refreshedAt) });
 
   const [candidate, snapshots] = await Promise.all([
     readFile(path.join(refreshedRoot, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
@@ -730,7 +743,7 @@ test("합성 current public successor는 선택한 public head를 ephemeral snap
   assert.notEqual(selectedSnapshotId, beforeSnapshotId);
   assert.equal(selected.length, 1);
   assert.equal(snapshots.filter(({ sourceId }) => sourceId === "seoul-metro-route-map-positions").length, 1);
-  assert.equal(selected[0].retrievedAt, "2026-08-22T09:45:18.609Z");
+  assert.equal(selected[0].retrievedAt, syntheticCurrentEvaluationAt);
   assert.ok(Date.parse(selected[0].sourceUpdatedAt) <= Date.parse(selected[0].retrievedAt));
   assert.equal(beforeSnapshots.filter(({ sourceId }) => sourceId === "seoul-metro-route-map-positions").length, 1);
 });
