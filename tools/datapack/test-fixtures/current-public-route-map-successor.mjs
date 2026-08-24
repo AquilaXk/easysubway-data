@@ -165,6 +165,7 @@ async function regularDestination(root, relative) {
 }
 
 const SUCCESSOR_FIXTURE_PATHS = Object.freeze([
+  "tools/datapack/fixtures/seoul-route-map-positions-raw/data-go-15099316.csv",
   "tools/datapack/release/candidate-build-spec.json",
   "tools/datapack/release/release-request.json",
   "tools/datapack/release/hash-evidence.json",
@@ -172,6 +173,7 @@ const SUCCESSOR_FIXTURE_PATHS = Object.freeze([
   "tools/datapack/release/capital-production-canonical-pack.json",
   "tools/datapack/source-inventory.json",
   "tools/datapack/source-governance-policy.json",
+  "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv",
   "release/product-gates/datapack-freshness-sla.json",
   "tools/datapack/official-od-fare-admission.json",
   "tools/datapack/nationwide-coverage-targets.json",
@@ -190,7 +192,7 @@ const SUCCESSOR_FIXTURE_PATHS = Object.freeze([
 export async function copySyntheticCurrentPublicRouteMapRepository(
   sourceRoot,
   targetRoot,
-  { now, activateStaticNetwork = false },
+  { now, activateStaticNetwork = false, activatePublicRouteMap = true },
 ) {
   const [source, target] = await Promise.all([
     regularRoot(sourceRoot),
@@ -226,9 +228,33 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
     ]);
     await cp(sourceFile, destination, { force: true });
   }
+  if (!activatePublicRouteMap) return null;
   return activateStaticNetwork
     ? activateSyntheticCurrentStaticNetworkSuccessors(target, { now })
     : activateSyntheticCurrentPublicRouteMapSuccessor(target, { now });
+}
+
+export async function createStaticNetworkRegistrarPredecessorFixture(sourceRoot, targetRoot, { now }) {
+  await copySyntheticCurrentPublicRouteMapRepository(sourceRoot, targetRoot, { now, activatePublicRouteMap: false });
+  const candidatePath = "tools/datapack/release/candidate-build-spec.json";
+  const snapshotsPath = "tools/datapack/release/source-snapshots.json";
+  const [candidate, snapshots] = await Promise.all([
+    readJson(targetRoot, candidatePath),
+    readJson(targetRoot, snapshotsPath),
+  ]);
+  const { candidateIndex, predecessor } = currentPublicRouteMapPredecessor(candidate, snapshots);
+  candidate.sourceSnapshotIds[candidateIndex] = predecessor.snapshotId;
+  candidate.sourceSnapshots[candidateIndex] = {
+    ...candidate.sourceSnapshots[candidateIndex],
+    snapshotId: predecessor.snapshotId,
+    sourceId: predecessor.sourceId,
+  };
+  const selectedIds = new Set(candidate.sourceSnapshotIds);
+  candidate.sourceSnapshotSetHash = sha256(JSON.stringify(
+    snapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId)),
+  ));
+  await writeFile(path.join(targetRoot, candidatePath), jsonBytes(candidate));
+  return { predecessorSnapshotId: predecessor.snapshotId };
 }
 
 export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { now }) {
