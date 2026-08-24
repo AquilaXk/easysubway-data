@@ -119,5 +119,50 @@ test("scope hash는 exact 18 provider/operator binding에서만 재현된다", (
   const result = buildKricNationwideRouteRosterAdmissionContract({ ...input, now: NOW });
   assert.equal(result.scopeSetSha256, "563a8aaac28955b053f032ec3d9e989d9ad3006685f6d69efb6d3ff5ae6963ae");
   assert.equal(result.scopeSetSha256, ROUTE_ROSTER_ADMISSION_SCOPE_SHA256);
-  assert.ok(result.gaps.some((gap) => gap.code === "TALLY_ROSTER_PROJECTION_MISMATCH"));
+  assert.ok(result.gaps.some((gap) => gap.code === "CANONICAL_SCOPE_IDENTITY_MISMATCH"));
+});
+
+test("#509 F1: roster provider scope와 tally requirement scope는 extra·duplicate·remap 없이 canonical exact 18이어야 한다", () => {
+  const scenarios = [
+    ["provider extra", (input) => input.rosterArtifact.providerScopes.push({
+      regionId: "capital", operatorId: "unrelated", lineId: "unrelated-line", mreaWideCd: "01", lnCd: "X", railOprIsttCd: "UX",
+    })],
+    ["provider duplicate", (input) => input.rosterArtifact.providerScopes.push(structuredClone(input.rosterArtifact.providerScopes[0]))],
+    ["provider remap", (input) => { input.rosterArtifact.providerScopes[0].railOprIsttCd = "XX"; }],
+    ["tally extra", (input) => input.tally.launchRequired.requirements.push({
+      regionId: "capital", operatorId: "unrelated", lineId: "unrelated-line", sourceDomain: "station_line_membership", status: "MISSING",
+      requiredFieldCount: 3, unadmittedFields: ["line", "station_name", "station_code"],
+    })],
+    ["tally duplicate", (input) => input.tally.launchRequired.requirements.push(structuredClone(input.tally.launchRequired.requirements[0]))],
+    ["tally remap", (input) => { input.tally.launchRequired.requirements[0].operatorId = "wrong-operator"; }],
+  ];
+  for (const [label, mutate] of scenarios) {
+    const input = fixture();
+    mutate(input);
+    const result = buildKricNationwideRouteRosterAdmissionContract({ ...input, now: NOW });
+    assert.equal(result.status, "PENDING", label);
+    assert.ok(result.gaps.some((gap) => gap.code === "CANONICAL_SCOPE_IDENTITY_MISMATCH"), label);
+  }
+});
+
+test("#509 F2: source snapshot count는 canonical scope와 validated projection record count에 묶인다", () => {
+  for (const [label, mutate] of [
+    ["coverage count", (input) => { input.sourceSnapshots[0].coverageCount = 17; }],
+    ["row count", (input) => { input.sourceSnapshots[0].rowCount = input.projection.records.length - 1; }],
+  ]) {
+    const input = fixture();
+    mutate(input);
+    const result = buildKricNationwideRouteRosterAdmissionContract({ ...input, now: NOW });
+    assert.equal(result.status, "PENDING", label);
+    assert.ok(result.gaps.some((gap) => gap.code === "SNAPSHOT_PROJECTION_COUNT_MISMATCH"), label);
+  }
+});
+
+test("#509 F3: OCI retention expiry는 parse 가능하고 storedAt 및 now 양쪽보다 뒤여야 한다", () => {
+  const input = fixture();
+  input.rawReceipt.storedAt = "2026-08-24T12:00:00.000Z";
+  input.rawReceipt.rawRetentionExpiresAt = "2026-08-24T06:00:00.000Z";
+  const result = buildKricNationwideRouteRosterAdmissionContract({ ...input, now: NOW });
+  assert.equal(result.status, "PENDING");
+  assert.ok(result.gaps.some((gap) => gap.code === "OCI_RAW_RECEIPT_MISMATCH"));
 });

@@ -21,6 +21,9 @@ const EXPECTED_SCOPES = [
   regionId: "capital", operatorId, lineId, mreaWideCd: "01", lnCd, railOprIsttCd,
 }));
 const CANONICAL_SCOPES = [...EXPECTED_SCOPES].sort(compareScope);
+const CANONICAL_TALLY_SCOPES = CANONICAL_SCOPES.map(({ regionId, operatorId, lineId }) => ({
+  regionId, operatorId, lineId,
+}));
 const ROUTE_ROSTER_ADMISSION_SCOPE_SHA256 = sha256(canonicalJson(CANONICAL_SCOPES));
 
 /**
@@ -41,7 +44,9 @@ export function buildKricNationwideRouteRosterAdmissionContract({
   const gaps = [];
   const nowMillis = utcMillis(now);
   const projected = validateTallyRosterAndProjection({ tally, rosterArtifact, projection, gaps });
-  const snapshot = validateCurrentSnapshot({ sourceSnapshots, rosterArtifact, nowMillis, gaps });
+  const snapshot = validateCurrentSnapshot({
+    sourceSnapshots, rosterArtifact, projectionRecordCount: projected?.records.length ?? null, nowMillis, gaps,
+  });
   validateSourceInventory(sourceInventory, gaps);
   validateLicenseDecision({ licenseDecision, snapshot, gaps });
   validateRawReceipt({ rawReceipt, snapshot, nowMillis, gaps });
@@ -67,9 +72,13 @@ function validateTallyRosterAndProjection({ tally, rosterArtifact, projection, g
   let expected;
   try {
     if (tally?.targetVersion !== TARGET_VERSION) throw new Error("target version");
+    if (!hasCanonicalScopeIdentity(tally, rosterArtifact)) throw new Error("canonical scope identity");
     expected = projectKricStationLineMembership({ tally, rosterArtifact });
   } catch {
-    gaps.push(gap("TALLY_ROSTER_PROJECTION_MISMATCH"));
+    const code = hasCanonicalScopeIdentity(tally, rosterArtifact)
+      ? "TALLY_ROSTER_PROJECTION_MISMATCH"
+      : "CANONICAL_SCOPE_IDENTITY_MISMATCH";
+    gaps.push(gap(code));
     return null;
   }
   if (expected.sourceId !== SOURCE_ID || expected.targetVersion !== TARGET_VERSION || expected.records.length === 0
@@ -99,7 +108,7 @@ function validateSourceInventory(sourceInventory, gaps) {
   }
 }
 
-function validateCurrentSnapshot({ sourceSnapshots, rosterArtifact, nowMillis, gaps }) {
+function validateCurrentSnapshot({ sourceSnapshots, rosterArtifact, projectionRecordCount, nowMillis, gaps }) {
   const snapshots = Array.isArray(sourceSnapshots) ? sourceSnapshots : [];
   let lineage;
   try {
@@ -118,6 +127,11 @@ function validateCurrentSnapshot({ sourceSnapshots, rosterArtifact, nowMillis, g
     gaps.push(gap("SNAPSHOT_NOT_CURRENT"));
     return null;
   }
+  if (snapshot.coverageCount !== CANONICAL_SCOPES.length || !Number.isInteger(projectionRecordCount)
+    || snapshot.rowCount !== projectionRecordCount) {
+    gaps.push(gap("SNAPSHOT_PROJECTION_COUNT_MISMATCH"));
+    return null;
+  }
   return snapshot;
 }
 
@@ -133,11 +147,13 @@ function validateLicenseDecision({ licenseDecision, snapshot, gaps }) {
 
 function validateRawReceipt({ rawReceipt, snapshot, nowMillis, gaps }) {
   try {
+    const storedAtMillis = utcMillis(rawReceipt?.storedAt);
+    const retentionExpiresAtMillis = utcMillis(rawReceipt?.rawRetentionExpiresAt);
     if (snapshot == null || rawReceipt?.sourceId !== SOURCE_ID || rawReceipt.snapshotId !== snapshot.snapshotId
       || rawReceipt.snapshotRawSha256 !== snapshot.rawSha256 || rawReceipt.rawObjectSha256 !== snapshot.rawSha256
       || !/^[0-9a-f]{64}$/.test(rawReceipt.rawObjectSha256 ?? "") || !Number.isInteger(rawReceipt.byteSize)
-      || rawReceipt.byteSize <= 0 || utcMillis(rawReceipt.storedAt) == null
-      || utcMillis(rawReceipt.rawRetentionExpiresAt) == null || utcMillis(rawReceipt.rawRetentionExpiresAt) <= nowMillis) {
+      || rawReceipt.byteSize <= 0 || storedAtMillis == null || retentionExpiresAtMillis == null
+      || retentionExpiresAtMillis <= storedAtMillis || retentionExpiresAtMillis <= nowMillis) {
       throw new Error("receipt fields");
     }
     const uri = parseCredentialFreeObjectUri(rawReceipt.rawObjectUri, "raw receipt URI");
@@ -148,6 +164,39 @@ function validateRawReceipt({ rawReceipt, snapshot, nowMillis, gaps }) {
   } catch {
     gaps.push(gap("OCI_RAW_RECEIPT_MISMATCH"));
   }
+}
+
+function hasCanonicalScopeIdentity(tally, rosterArtifact) {
+  const tallyScopes = Array.isArray(tally?.launchRequired?.requirements)
+    ? tally.launchRequired.requirements
+      .filter(({ sourceDomain }) => sourceDomain === "station_line_membership")
+      .map(tallyScope)
+    : null;
+  const providerScopes = Array.isArray(rosterArtifact?.providerScopes)
+    ? rosterArtifact.providerScopes.map(providerScope)
+    : null;
+  return sameScopeSet(tallyScopes, CANONICAL_TALLY_SCOPES, compareTallyScope)
+    && sameScopeSet(providerScopes, CANONICAL_SCOPES, compareScope);
+}
+
+function tallyScope(scope) {
+  if (!["regionId", "operatorId", "lineId"].every((field) => nonBlank(scope?.[field]))) return null;
+  return { regionId: scope.regionId, operatorId: scope.operatorId, lineId: scope.lineId };
+}
+
+function providerScope(scope) {
+  if (!["regionId", "operatorId", "lineId", "mreaWideCd", "lnCd", "railOprIsttCd"]
+    .every((field) => nonBlank(scope?.[field]))) return null;
+  return {
+    regionId: scope.regionId, operatorId: scope.operatorId, lineId: scope.lineId,
+    mreaWideCd: scope.mreaWideCd, lnCd: scope.lnCd, railOprIsttCd: scope.railOprIsttCd,
+  };
+}
+
+function sameScopeSet(actual, expected, comparator) {
+  return Array.isArray(actual) && actual.every((scope) => scope != null)
+    && actual.length === expected.length
+    && sameJson([...actual].sort(comparator), expected);
 }
 
 function gap(code) {
@@ -161,6 +210,12 @@ function compareScope(left, right) {
     || codepointCompare(left.mreaWideCd, right.mreaWideCd)
     || codepointCompare(left.lnCd, right.lnCd)
     || codepointCompare(left.railOprIsttCd, right.railOprIsttCd);
+}
+
+function compareTallyScope(left, right) {
+  return codepointCompare(left.regionId, right.regionId)
+    || codepointCompare(left.operatorId, right.operatorId)
+    || codepointCompare(left.lineId, right.lineId);
 }
 
 function sameSorted(actual, expected) {
