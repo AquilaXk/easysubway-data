@@ -7,7 +7,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { promisify } from "node:util";
-import { projectRegionalMaterializeFixture } from "./materialize-test-fixture.mjs";
+import { projectHistoricalMolitMembershipInventory, projectRegionalMaterializeFixture } from "./materialize-test-fixture.mjs";
 
 import {
   parseMolitDaeguStationMappings,
@@ -41,7 +41,7 @@ const DAEGU_ACCESSIBILITY_BASELINE_SUPPORTED_COUNT = 34;
 const DAEGU_ROUTE_MAP_SUPPORTED_COUNT = DAEGU_ACCESSIBILITY_BASELINE_SUPPORTED_COUNT + 3;
 
 async function inputs() {
-  const [
+  let [
     base, busanTopology, busanTimetable, busanRouteMapBytes,
     daejeonTopology, daejeonTimetable, gwangjuTopology, gwangjuTimetable,
     inventory, regionalMap, molitMap, daeguAccessibility, daeguSnapshotBytes,
@@ -60,6 +60,7 @@ async function inputs() {
     readJson("tools/datapack/sources/daegu-transportation-accessibility-20260724.json"),
     readFile(path.join(root, "tools/datapack/sources/daegu-transportation-route-map-positions-20260724.json")),
   ]);
+  inventory = projectHistoricalMolitMembershipInventory(inventory, molitMap, new Date("2026-07-19T18:14:03.004Z"));
   const busanTopologyFixture = materializeBusanRouteTopology({
     baseFixture: base, snapshot: busanTopology, inventory,
     canonicalStationMappings: parseCanonicalBusanStationMappings(regionalMap),

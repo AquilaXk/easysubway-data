@@ -7,7 +7,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { promisify } from "node:util";
-import { projectRegionalMaterializeFixture } from "./materialize-test-fixture.mjs";
+import { projectHistoricalMolitMembershipInventory, projectRegionalMaterializeFixture } from "./materialize-test-fixture.mjs";
 
 import {
   parseMolitDaejeonStationMappings,
@@ -45,7 +45,7 @@ const GWANGJU_ROUTE_MAP_BASELINE_SUPPORTED_COUNT = 24;
 const DAEJEON_ROUTE_MAP_SUPPORTED_COUNT = GWANGJU_ROUTE_MAP_BASELINE_SUPPORTED_COUNT + 1;
 
 async function inputs() {
-  const [
+  let [
     baseFixture,
     busanTopology,
     busanTimetable,
@@ -76,6 +76,7 @@ async function inputs() {
     readFile(path.join(root, "tools/datapack/sources/gwangju-transportation-route-map-positions-20260725.json")),
     readFile(path.join(root, "tools/datapack/sources/daejeon-transportation-route-map-positions-20260725.json")),
   ]);
+  inventory = projectHistoricalMolitMembershipInventory(inventory, molitStationMapCsv, topologyNow);
   const busanTopologyFixture = materializeBusanRouteTopology({
     baseFixture,
     snapshot: busanTopology,

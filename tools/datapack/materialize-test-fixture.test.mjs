@@ -3,7 +3,10 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
-import { projectRegionalMaterializeFixture } from "./materialize-test-fixture.mjs";
+import {
+  projectHistoricalMolitMembershipInventory,
+  projectRegionalMaterializeFixture,
+} from "./materialize-test-fixture.mjs";
 
 const legacyEvidence = {
   serviceClass: "ITX_CHEONGCHUN",
@@ -125,4 +128,32 @@ test("regional projection preserves the tracked current fixture with empty evide
   assert.deepEqual(input, original);
   assert.deepEqual(projected.manifest, original.manifest);
   assert.deepEqual(projected.packs[0], original.packs[0]);
+});
+
+test("historical regional fixtures bind only their copied MOLIT bytes and clock", () => {
+  const inventory = {
+    sources: [
+      { id: "molit-urban-rail-full-route", admissionEvidence: { rawSha256: "a".repeat(64) } },
+      {
+        id: "molit-urban-rail-full-route-daejeon-membership",
+        membershipAdmissionEvidence: {
+          membershipSourceId: "molit-urban-rail-full-route",
+          membershipSourceRawSha256: "a".repeat(64),
+          membershipSourceSnapshotSha256: "a".repeat(64),
+          verifiedAt: "2026-07-20T00:00:00.000Z",
+        },
+      },
+    ],
+  };
+  const bytes = Buffer.from("historical-molit-fixture");
+  const projected = projectHistoricalMolitMembershipInventory(inventory, bytes, new Date("2026-07-21T00:00:00.000Z"));
+
+  assert.deepEqual(inventory.sources[0].admissionEvidence.rawSha256, "a".repeat(64));
+  assert.equal(projected.sources[0].admissionEvidence.rawSha256, "4a593bb61f21454312cf4598cfa96217eb8a9f5999117d9c8021b335b1926018");
+  assert.deepEqual(projected.sources[1].membershipAdmissionEvidence, {
+    membershipSourceId: "molit-urban-rail-full-route",
+    membershipSourceRawSha256: "4a593bb61f21454312cf4598cfa96217eb8a9f5999117d9c8021b335b1926018",
+    membershipSourceSnapshotSha256: "4a593bb61f21454312cf4598cfa96217eb8a9f5999117d9c8021b335b1926018",
+    verifiedAt: "2026-07-21T00:00:00.000Z",
+  });
 });

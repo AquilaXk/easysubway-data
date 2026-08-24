@@ -7,7 +7,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { promisify } from "node:util";
-import { projectRegionalMaterializeFixture } from "./materialize-test-fixture.mjs";
+import { projectHistoricalMolitMembershipInventory, projectRegionalMaterializeFixture } from "./materialize-test-fixture.mjs";
 
 import {
   parseMolitDaejeonStationMappings,
@@ -52,7 +52,7 @@ const SCHEMATIC_Y_MIN = 1620;
 const SCHEMATIC_Y_MAX = 1993;
 
 async function inputs() {
-  const [
+  let [
     baseFixture,
     busanTopology,
     busanTimetable,
@@ -87,6 +87,7 @@ async function inputs() {
     readFile(path.join(root, "tools/datapack/sources/seoul-metro-line9-23-route-map-positions-20260725.json")),
     readJson("tools/datapack/sources/capital-route-topology-20260724.json"),
   ]);
+  inventory = projectHistoricalMolitMembershipInventory(inventory, molitStationMapCsv, topologyNow);
   const busanTopologyFixture = materializeBusanRouteTopology({
     baseFixture,
     snapshot: busanTopology,

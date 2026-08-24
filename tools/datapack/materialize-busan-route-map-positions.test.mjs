@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { promisify } from "node:util";
-import { projectRegionalMaterializeFixture } from "./materialize-test-fixture.mjs";
+import { projectHistoricalMolitMembershipInventory, projectRegionalMaterializeFixture } from "./materialize-test-fixture.mjs";
 import test from "node:test";
 
 import { parseMolitDaejeonStationMappings } from "./build-molit-nationwide-fixture.mjs";
@@ -34,7 +34,7 @@ test("공식 connector 경로를 역 순서대로 연결해 노선 track을 만�
 });
 
 async function inputs() {
-  const [
+  let [
     baseFixture,
     topologySnapshot,
     timetableSnapshot,
@@ -55,6 +55,7 @@ async function inputs() {
     readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
     readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
   ]);
+  inventory = projectHistoricalMolitMembershipInventory(inventory, molitStationMapCsv, topologyNow);
   const topologyFixture = materializeBusanRouteTopology({
     baseFixture,
     snapshot: topologySnapshot,

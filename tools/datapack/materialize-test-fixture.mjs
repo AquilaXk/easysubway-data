@@ -1,4 +1,7 @@
+import { createHash } from "node:crypto";
+
 const ITX_TOKEN = /(?:^|[^A-Z0-9])ITX(?:[_-]|$)/;
+const MOLIT_SOURCE_ID = "molit-urban-rail-full-route";
 const LEGACY_ROUTE_SERVICE_ARTIFACT_EVIDENCE = Object.freeze({
   serviceClass: "ITX_CHEONGCHUN",
   timetableArtifactId: "itx-cheongchun-completeness-admission-20260714T083544292Z",
@@ -29,6 +32,44 @@ function rejectItxReference(value, path = "fixture") {
       rejectItxReference(entry, `${path}.${key}`);
     }
   }
+}
+
+/**
+ * Historical regional materializer tests consume a copied MOLIT CSV and a
+ * historical clock.  Keep that fixture self-contained: it must not inherit
+ * a newer source-only candidate's active inventory lineage.
+ */
+export function projectHistoricalMolitMembershipInventory(input, rawBytes, verifiedAt) {
+  if (!input || typeof input !== "object" || Array.isArray(input)
+    || !Array.isArray(input.sources) || !Buffer.isBuffer(rawBytes)
+    || !Number.isFinite(verifiedAt?.getTime?.())) {
+    throw new Error("historical MOLIT membership fixture is invalid");
+  }
+  const inventory = structuredClone(input);
+  const rawSources = inventory.sources.filter(({ id }) => id === MOLIT_SOURCE_ID);
+  if (rawSources.length !== 1 || !rawSources[0]?.admissionEvidence
+    || typeof rawSources[0].admissionEvidence !== "object") {
+    throw new Error("historical MOLIT membership fixture is invalid");
+  }
+  const memberships = inventory.sources.filter(({ membershipAdmissionEvidence }) =>
+    membershipAdmissionEvidence?.membershipSourceId === MOLIT_SOURCE_ID);
+  if (memberships.length === 0 || memberships.some(({ membershipAdmissionEvidence }) =>
+    !membershipAdmissionEvidence || typeof membershipAdmissionEvidence !== "object")) {
+    throw new Error("historical MOLIT membership fixture is invalid");
+  }
+
+  const rawSha256 = createHash("sha256").update(rawBytes).digest("hex");
+  const verifiedAtIso = verifiedAt.toISOString();
+  rawSources[0].admissionEvidence.rawSha256 = rawSha256;
+  for (const source of memberships) {
+    source.membershipAdmissionEvidence = {
+      ...source.membershipAdmissionEvidence,
+      membershipSourceRawSha256: rawSha256,
+      membershipSourceSnapshotSha256: rawSha256,
+      verifiedAt: verifiedAtIso,
+    };
+  }
+  return inventory;
 }
 
 /**
