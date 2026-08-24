@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import { validateLineage } from "../source-snapshot-policy.mjs";
 import {
   activateSyntheticCurrentPublicRouteMapSuccessor,
   copySyntheticCurrentPublicRouteMapRepository,
@@ -29,4 +30,25 @@ test("current public candidate slot derives its complete legacy predecessor cont
   const after = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
   assert.equal(after.sourceSnapshots[0].sourceId, "seoul-metro-route-map-positions");
   assert.equal(after.sourceSnapshotIds[0], result.snapshotId);
+});
+
+test("already-public-root fixture activation preserves one valid source lineage root", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-existing-root-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, root, {
+    now: new Date("2026-08-25T09:45:18.609Z"),
+  });
+
+  const result = await activateSyntheticCurrentPublicRouteMapSuccessor(root, {
+    now: new Date("2026-08-25T10:45:18.609Z"),
+  });
+  const [candidate, snapshots] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+  ]);
+  const publicSnapshots = snapshots.filter(({ sourceId }) => sourceId === "seoul-metro-route-map-positions");
+
+  assert.doesNotThrow(() => validateLineage(snapshots));
+  assert.equal(publicSnapshots.filter(({ previousSnapshotId }) => previousSnapshotId == null).length, 1);
+  assert.equal(candidate.sourceSnapshotIds[0], result.snapshotId);
 });

@@ -276,6 +276,16 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   const governancePolicy = JSON.parse(governanceBytes);
   const predecessorBinding = currentPublicRouteMapPredecessor(candidate, snapshots);
   const { candidateIndex: predecessorIndex, predecessor } = predecessorBinding;
+  if (candidate.sourceSnapshots[predecessorIndex].sourceId === PUBLIC_SOURCE_ID) {
+    const selected = snapshots.filter(({ snapshotId }) => snapshotId === candidate.sourceSnapshotIds[predecessorIndex]);
+    const roots = snapshots.filter(({ sourceId, previousSnapshotId }) =>
+      sourceId === PUBLIC_SOURCE_ID && previousSnapshotId == null);
+    if (selected.length !== 1 || selected[0].sourceId !== PUBLIC_SOURCE_ID
+      || roots.length !== 1 || roots[0].snapshotId !== selected[0].snapshotId) {
+      throw new Error("synthetic public route-map successor fixture has invalid public source lineage");
+    }
+    return { snapshotId: selected[0].snapshotId, predecessorSnapshotId: predecessor.snapshotId };
+  }
   const publicSource = inventory.sources.find(({ id }) => id === PUBLIC_SOURCE_ID);
   const predecessorSource = inventory.sources.find(({ id }) => id === PREDECESSOR_SOURCE_ID);
   if (!predecessor || !publicSource || !predecessorSource) {
