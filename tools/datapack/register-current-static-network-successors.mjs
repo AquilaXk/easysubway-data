@@ -28,9 +28,10 @@ const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const TARGETS = Object.freeze(["seoul-metro-route-map-positions", "molit-urban-rail-full-route"]);
 const CANDIDATE_SOURCE_IDS = Object.freeze(["seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-transfer-distance-duration"]);
 const PREVIOUS_CANDIDATE_SOURCE_IDS = Object.freeze(["seoulmetro-cyberstation-route-map", "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-transfer-distance-duration"]);
-const FIXED = Object.freeze(["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json", "tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json"]);
-const INPUTS = Object.freeze([...FIXED, "tools/datapack/source-governance-policy.json", "release/product-gates/datapack-freshness-sla.json"]);
-const OUTPUT_COUNT = TARGETS.length + FIXED.length;
+const FIXED_OUTPUTS = Object.freeze(["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json"]);
+const APPROVAL_INPUTS = Object.freeze(["tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json"]);
+const INPUTS = Object.freeze([...FIXED_OUTPUTS, ...APPROVAL_INPUTS, "tools/datapack/source-governance-policy.json", "release/product-gates/datapack-freshness-sla.json"]);
+const OUTPUT_COUNT = TARGETS.length + FIXED_OUTPUTS.length;
 const RECEIPT_TYPES = Object.freeze({
   "seoul-metro-route-map-positions": { extension: "json", contentType: "application/json" },
   "molit-urban-rail-full-route": { extension: "csv", contentType: "text/csv; charset=euc-kr" },
@@ -70,7 +71,7 @@ function outputAllowlist(outputs) {
   const snapshots = outputs.slice(0, 2).map(({ relative }) => relative);
   const inputs = outputs[0]?.inputs;
   if (!snapshots.every((relative, index) => relative === `tools/datapack/sources/${TARGETS[index]}-current-${snapshotStamp(relative)}.json` && /^20\d{6}T\d{9}Z$/u.test(snapshotStamp(relative)))
-    || JSON.stringify(outputs.slice(2).map(({ relative }) => relative)) !== JSON.stringify(FIXED)
+    || JSON.stringify(outputs.slice(2).map(({ relative }) => relative)) !== JSON.stringify(FIXED_OUTPUTS)
     || outputs.slice(0, 2).some(({ prestateBytes }) => prestateBytes !== null)
     || outputs.slice(2).some(({ prestateBytes }) => !Buffer.isBuffer(prestateBytes))
     || outputs.some(({ bytes: value }) => !Buffer.isBuffer(value))
@@ -86,7 +87,7 @@ function validateJournal(journal) {
   const names = journal.records.map(({ relative }) => relative);
   const first = names.slice(0, 2);
   if (new Set(names).size !== OUTPUT_COUNT || !first.every((relative, index) => new RegExp(`^tools/datapack/sources/${TARGETS[index]}-current-20\\d{6}T\\d{9}Z\\.json$`, "u").test(relative))
-    || JSON.stringify(names.slice(2)) !== JSON.stringify(FIXED)) throw new Error("static network recovery required");
+    || JSON.stringify(names.slice(2)) !== JSON.stringify(FIXED_OUTPUTS)) throw new Error("static network recovery required");
   for (const [index, record] of journal.records.entries()) {
     if (!record || typeof record !== "object" || Array.isArray(record)
       || JSON.stringify(Object.keys(record).sort(compareStrings)) !== JSON.stringify(["after", "afterSha256", "before", "beforeSha256", "relative"])
@@ -213,12 +214,12 @@ export async function buildStaticNetworkSuccessorOutputs({ repositoryRoot = ROOT
   const root = path.resolve(repositoryRoot); await regularDirectory(root, "repository root"); assertTwoObservations(observations);
   const read = async (relative) => bytes(target(root, relative), relative);
   const [inventoryBytes, ledgerBytes, candidateBytes, requestBytes, hashBytes, governanceBytes, freshnessBytes] = await Promise.all([
-    read(FIXED[0]), read(FIXED[1]), read(FIXED[2]), read(FIXED[3]), read(FIXED[4]),
+    read(FIXED_OUTPUTS[0]), read(FIXED_OUTPUTS[1]), read(FIXED_OUTPUTS[2]), read(APPROVAL_INPUTS[0]), read(APPROVAL_INPUTS[1]),
     read("tools/datapack/source-governance-policy.json"), read("release/product-gates/datapack-freshness-sla.json"),
   ]);
   const baseInputs = INPUTS.map((relative, index) => ({ relative, bytes: [inventoryBytes, ledgerBytes, candidateBytes, requestBytes, hashBytes, governanceBytes, freshnessBytes][index] }));
   const inventory = parse(inventoryBytes, "source inventory"); const ledger = parse(ledgerBytes, "source ledger");
-  const candidate = parse(candidateBytes, "candidate build spec"); const request = parse(requestBytes, "release request"); const hashes = parse(hashBytes, "hash evidence");
+  const candidate = parse(candidateBytes, "candidate build spec");
   const governance = parse(governanceBytes, "source governance policy"); const freshness = parse(freshnessBytes, "freshness policy");
   const topologyAdmission = inventory.sources?.find(({ id }) => id === TARGETS[0])?.routeMapAdmissionEvidence?.currentTopologyAdmission;
   if (!topologyAdmission || typeof topologyAdmission.topologySnapshotId !== "string" || !SHA.test(topologyAdmission.topologyContentSha256 ?? "")) throw new Error("static network topology admission is invalid");
@@ -284,15 +285,12 @@ export async function buildStaticNetworkSuccessorOutputs({ repositoryRoot = ROOT
   const selected = selectedInLedgerOrder(nextLedger, nextCandidate.sourceSnapshotIds); const setHash = sha(JSON.stringify(selected));
   const nextInventoryBytes = json(nextInventory); nextCandidate.sourceSnapshotSetHash = setHash; nextCandidate.sourceInventorySha256 = sha(JSON.stringify(nextInventory));
   nextCandidate.networkEdgeEvidence.sourceInventory.sha256 = sha(nextInventoryBytes);
-  const nextCandidateBytes = json(nextCandidate); const nextRequest = { ...request, buildSpecSha256: sha(nextCandidateBytes), sourceSnapshotSetHash: setHash };
-  const nextHashes = structuredClone(hashes); nextHashes.sourceSnapshotSetHash.value = setHash; nextHashes.sourceInventorySha256.value = nextCandidate.sourceInventorySha256;
-  nextHashes.sourceSnapshots.order = `release snapshot 순서: ${selected.map(({ sourceId }) => sourceId).join(" → ")}`;
-  nextHashes.perSourceEvidence = selected.map((snapshot) => ({ sourceId: snapshot.sourceId, snapshotId: snapshot.snapshotId, rawSha256: snapshot.rawSha256, adminReviewRecordHash: nextInventory.sources.find(({ id }) => id === snapshot.sourceId).admissionEvidence.adminReviewRecordHash, perSourceSnapshotSetHash: sha(JSON.stringify([snapshot])) }));
+  const nextCandidateBytes = json(nextCandidate);
   const staged = await Promise.all(observations.map(async ({ snapshot, bytes: snapshotBytes }) => {
     const relative = `tools/datapack/sources/${snapshot.snapshotId}.json`; const previous = await bytes(target(root, relative), relative, { absent: true });
     if (previous != null) throw new Error("static network snapshot immutable collision"); return { relative, bytes: snapshotBytes, prestateBytes: null };
   }));
-  return [...staged, { relative: FIXED[0], bytes: nextInventoryBytes, prestateBytes: inventoryBytes }, { relative: FIXED[1], bytes: json(nextLedger), prestateBytes: ledgerBytes }, { relative: FIXED[2], bytes: nextCandidateBytes, prestateBytes: candidateBytes }, { relative: FIXED[3], bytes: json(nextRequest), prestateBytes: requestBytes }, { relative: FIXED[4], bytes: json(nextHashes), prestateBytes: hashBytes }].map((output) => ({ ...output, inputs }));
+  return [...staged, { relative: FIXED_OUTPUTS[0], bytes: nextInventoryBytes, prestateBytes: inventoryBytes }, { relative: FIXED_OUTPUTS[1], bytes: json(nextLedger), prestateBytes: ledgerBytes }, { relative: FIXED_OUTPUTS[2], bytes: nextCandidateBytes, prestateBytes: candidateBytes }].map((output) => ({ ...output, inputs }));
 }
 
 async function expected(file, value) { const current = await bytes(file, "static network target", { absent: true }); if ((current == null) !== (value == null) || current?.equals(value) === false) throw new Error("static network registration preserves foreign replacement"); }
