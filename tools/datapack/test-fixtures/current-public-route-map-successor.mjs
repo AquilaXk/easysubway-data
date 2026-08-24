@@ -305,7 +305,8 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     ? publicSnapshots.filter(({ previousSnapshotId }) => previousSnapshotId == null).length !== 1
     : publicSnapshots.length !== 1)
     || selectedPublicSnapshotIndex < 0
-    || selectedPublicSnapshot?.sourceId !== PUBLIC_SOURCE_ID)) {
+    || selectedPublicSnapshot?.sourceId !== PUBLIC_SOURCE_ID
+    || (!advanceCurrentPublicHead && selectedPublicSnapshot.previousSnapshotId != null))) {
     throw new Error("synthetic public route-map successor fixture has invalid public source lineage");
   }
   const publicSource = inventory.sources.find(({ id }) => id === PUBLIC_SOURCE_ID);
