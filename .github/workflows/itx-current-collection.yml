@@ -28,11 +28,6 @@ jobs:
         with:
           node-version: "24.19.0"
 
-      - name: ITX current collection / Guard KST quota window
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: node tools/ci/guard-itx-current-collection-budget.mjs
-
       - name: ITX current collection / Prepare temp output
         env:
           EASYSUBWAY_ITX_COLLECTION_OUTPUT: ${{ runner.temp }}/itx-current-collection
@@ -48,7 +43,7 @@ jobs:
             --output "${{ runner.temp }}/itx-current-collection/station-catalog-pack" \
             --catalog-pack-id "itx-current-station-catalog-v1"
 
-      - name: ITX current collection / Collect ITX current timetable
+      - name: ITX current collection / Validate provider entry preflight
         env:
           DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
         run: |
@@ -63,6 +58,19 @@ jobs:
             echo "candidate and completeness paths must be absent" >&2
             exit 1
           fi
+
+      - name: ITX current collection / Guard KST quota window
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node tools/ci/guard-itx-current-collection-budget.mjs --output "${EASYSUBWAY_ITX_COLLECTION_OUTPUT}/freshness.json"
+
+      - name: ITX current collection / Collect ITX current timetable
+        env:
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+        run: |
+          set -euo pipefail
+          candidate_path="${EASYSUBWAY_ITX_COLLECTION_OUTPUT}/itx-result.json"
+          completeness_path="${EASYSUBWAY_ITX_COLLECTION_OUTPUT}/itx-completeness.json"
           node tools/datapack/run-current-itx-collection.mjs \
             --output "${candidate_path}" \
             --completeness-output "${completeness_path}" \

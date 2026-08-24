@@ -1,3 +1,5 @@
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 const EXPECTED_REPOSITORY = "AquilaXk/easysubway-data";
@@ -5,7 +7,10 @@ const EXPECTED_EVENT = "workflow_dispatch";
 const EXPECTED_REF = "refs/heads/main";
 const EXPECTED_BRANCH = "main";
 const WORKFLOW_FILE = "itx-current-collection.yml";
+const JOB_NAME = "ITX current collection";
+const COLLECTOR_STEP_NAME = "ITX current collection / Collect ITX current timetable";
 const MAX_RUNS = 100;
+const MAX_JOBS = 1;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const REQUEST_TIMEOUT_MILLIS = 10_000;
 const KST_OFFSET_MILLIS = 9 * 60 * 60 * 1000;
@@ -60,6 +65,22 @@ function validateRun(run, window) {
   return run;
 }
 
+function validateCollectorJob(job, runId) {
+  if (!job || typeof job !== "object" || Array.isArray(job)
+    || !Number.isSafeInteger(job.id) || job.id <= 0 || job.run_id !== runId
+    || job.name !== JOB_NAME || !Array.isArray(job.steps)) {
+    throw failure();
+  }
+  const steps = job.steps.filter((step) => step?.name === COLLECTOR_STEP_NAME);
+  if (steps.length !== 1) throw failure();
+  const step = steps[0];
+  if (step.status === "in_progress" && step.conclusion == null) return true;
+  if (step.status !== "completed" || typeof step.conclusion !== "string") throw failure();
+  if (step.conclusion === "skipped") return false;
+  if (["success", "failure", "cancelled", "timed_out", "action_required"].includes(step.conclusion)) return true;
+  throw failure();
+}
+
 async function readResponse(response) {
   if (!response || response.ok !== true || response.status !== 200 || typeof response.text !== "function") {
     throw failure();
@@ -76,6 +97,34 @@ async function readResponse(response) {
   } catch {
     throw failure();
   }
+}
+
+async function previousRunEnteredCollector({ runId, token, fetchImpl }) {
+  const requestUrl = new URL(
+    `https://api.github.com/repos/${EXPECTED_REPOSITORY}/actions/runs/${runId}/jobs`,
+  );
+  requestUrl.searchParams.set("per_page", String(MAX_JOBS));
+  let response;
+  try {
+    response = await fetchImpl(requestUrl.href, {
+      method: "GET",
+      redirect: "error",
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MILLIS),
+      headers: {
+        accept: "application/vnd.github+json",
+        authorization: `Bearer ${token}`,
+        "x-github-api-version": "2026-03-10",
+      },
+    });
+  } catch {
+    throw failure();
+  }
+  const body = await readResponse(response);
+  if (!body || typeof body !== "object" || Array.isArray(body)
+    || body.total_count !== MAX_JOBS || !Array.isArray(body.jobs) || body.jobs.length !== MAX_JOBS) {
+    throw failure();
+  }
+  return validateCollectorJob(body.jobs[0], runId);
 }
 
 export async function guardItxCurrentCollectionBudget({
@@ -129,7 +178,12 @@ export async function guardItxCurrentCollectionBudget({
 
   const runs = body.workflow_runs.map((run) => validateRun(run, window));
   const currentRuns = runs.filter((run) => run.id === runId);
-  if (currentRuns.length !== 1 || currentRuns[0].run_attempt !== 1 || runs.length !== 1) throw failure();
+  if (currentRuns.length !== 1 || currentRuns[0].run_attempt !== 1) throw failure();
+  for (const run of runs) {
+    if (run.id !== runId && await previousRunEnteredCollector({ runId: run.id, token, fetchImpl })) {
+      throw failure();
+    }
+  }
 
   return {
     repository: EXPECTED_REPOSITORY,
@@ -139,9 +193,49 @@ export async function guardItxCurrentCollectionBudget({
   };
 }
 
+function receiptOutput(argv) {
+  if (!Array.isArray(argv) || argv.length !== 2 || argv[0] !== "--output"
+    || typeof argv[1] !== "string" || !path.isAbsolute(argv[1]) || path.basename(argv[1]) !== "freshness.json") {
+    throw failure();
+  }
+  return argv[1];
+}
+
+async function writeFailureReceipt(output) {
+  const receipt = {
+    schemaVersion: 1,
+    artifactKind: "itx-current-collection-preflight",
+    status: "FAILED",
+    operation: "KST_PROVIDER_ENTRY_QUOTA",
+    providerCalls: 0,
+    candidateCreated: false,
+    credentialRedacted: true,
+  };
+  try {
+    await writeFile(output, `${JSON.stringify(receipt)}\n`, { flag: "wx", mode: 0o644 });
+  } catch {
+    throw failure();
+  }
+}
+
+export async function runItxCurrentCollectionBudgetGuardCli({
+  argv = process.argv.slice(2),
+  env = process.env,
+  now = new Date(),
+  fetchImpl = globalThis.fetch,
+} = {}) {
+  const output = receiptOutput(argv);
+  try {
+    return await guardItxCurrentCollectionBudget({ argv: [], env, now, fetchImpl });
+  } catch {
+    await writeFailureReceipt(output);
+    throw failure();
+  }
+}
+
 async function main() {
   try {
-    const result = await guardItxCurrentCollectionBudget({ argv: process.argv.slice(2) });
+    const result = await runItxCurrentCollectionBudgetGuardCli();
     process.stdout.write(`${JSON.stringify(result)}\n`);
   } catch {
     process.stderr.write(`${FAILURE_MESSAGE}\n`);
