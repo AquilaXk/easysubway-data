@@ -896,6 +896,17 @@ test("current canonical pack은 admitted Seoul five-record membership을 그대�
   );
 });
 
+test("current public route-map topology는 inventory admission에서 24 lines와 1,548 edges를 도출한다", async () => {
+  const inventory = await readJson("tools/datapack/source-inventory.json");
+  const publicSource = inventory.sources.find(({ id }) => id === "seoul-metro-route-map-positions");
+  const topologySnapshotId = publicSource?.routeMapAdmissionEvidence?.currentTopologyAdmission?.topologySnapshotId;
+  assert.equal(typeof topologySnapshotId, "string");
+  const topology = await readJson(`tools/datapack/sources/${topologySnapshotId}.json`);
+
+  assert.equal(topology.lines.length, 24);
+  assert.equal(topology.lines.reduce((count, line) => count + line.edgeCount, 0), 1_548);
+});
+
 test("generated current candidate spec은 expired ITX topology overlay를 재도입하지 않는다", async () => {
   const currentTopologyPath = "tools/datapack/sources/capital-route-topology-20260813.json";
   const [baseSpec, currentTopologyBytes, productionScopePolicyBytes] = await Promise.all([

@@ -276,15 +276,18 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   const governancePolicy = JSON.parse(governanceBytes);
   const predecessorBinding = currentPublicRouteMapPredecessor(candidate, snapshots);
   const { candidateIndex: predecessorIndex, predecessor } = predecessorBinding;
-  if (candidate.sourceSnapshots[predecessorIndex].sourceId === PUBLIC_SOURCE_ID) {
-    const selected = snapshots.filter(({ snapshotId }) => snapshotId === candidate.sourceSnapshotIds[predecessorIndex]);
-    const roots = snapshots.filter(({ sourceId, previousSnapshotId }) =>
-      sourceId === PUBLIC_SOURCE_ID && previousSnapshotId == null);
-    if (selected.length !== 1 || selected[0].sourceId !== PUBLIC_SOURCE_ID
-      || roots.length !== 1 || roots[0].snapshotId !== selected[0].snapshotId) {
-      throw new Error("synthetic public route-map successor fixture has invalid public source lineage");
-    }
-    return { snapshotId: selected[0].snapshotId, predecessorSnapshotId: predecessor.snapshotId };
+  const selectedPublicSnapshotId = candidate.sourceSnapshots[predecessorIndex].sourceId === PUBLIC_SOURCE_ID
+    ? candidate.sourceSnapshotIds[predecessorIndex]
+    : null;
+  const selectedPublicSnapshotIndex = selectedPublicSnapshotId == null ? -1
+    : snapshots.findIndex(({ snapshotId }) => snapshotId === selectedPublicSnapshotId);
+  const publicSnapshots = snapshots.filter(({ sourceId }) => sourceId === PUBLIC_SOURCE_ID);
+  const selectedPublicSnapshot = snapshots[selectedPublicSnapshotIndex];
+  if (selectedPublicSnapshotId != null && (publicSnapshots.length !== 1
+    || selectedPublicSnapshotIndex < 0
+    || selectedPublicSnapshot?.sourceId !== PUBLIC_SOURCE_ID
+    || selectedPublicSnapshot.previousSnapshotId !== null)) {
+    throw new Error("synthetic public route-map successor fixture has invalid public source lineage");
   }
   const publicSource = inventory.sources.find(({ id }) => id === PUBLIC_SOURCE_ID);
   const predecessorSource = inventory.sources.find(({ id }) => id === PREDECESSOR_SOURCE_ID);
@@ -389,7 +392,8 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
       rawRetentionExpiresAt,
     },
   };
-  snapshots.push(snapshot);
+  if (selectedPublicSnapshotIndex >= 0) snapshots.splice(selectedPublicSnapshotIndex, 1, snapshot);
+  else snapshots.push(snapshot);
 
   publicSource.requiredForProductionPack = true;
   publicSource.productionUseAllowed = true;

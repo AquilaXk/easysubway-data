@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash, generateKeyPairSync } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -16,7 +16,10 @@ import {
   attachPurgeAttestation,
   purgeReportSha256,
 } from "./source-raw-purge-attestation.mjs";
-import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
+import {
+  activateSyntheticCurrentPublicRouteMapSuccessor,
+  copySyntheticCurrentPublicRouteMapRepository,
+} from "./test-fixtures/current-public-route-map-successor.mjs";
 
 const evaluationAt = "2026-07-15T00:00:00.000Z";
 const execFileAsync = promisify(execFile);
@@ -700,6 +703,62 @@ test("합성 current public successor build spec은 inventory와 snapshot set에
   assert.equal(buildSpec.sourceInventorySha256, inventorySha256);
   assert.equal(selectedSnapshots.length, buildSpec.sourceSnapshotIds.length);
   assert.equal(buildSpec.sourceSnapshotSetHash, sourceSnapshotSetHash);
+});
+
+test("합성 current public successor는 선택한 public head를 ephemeral snapshot으로 교체한다", async (t) => {
+  const repositoryRoot = await syntheticCurrentRepository(t, "public-route-map-replacement-");
+  const [beforeCandidate, beforeSnapshots] = await Promise.all([
+    readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+  ]);
+  const beforeSnapshotId = beforeCandidate.sourceSnapshotIds[beforeCandidate.sourceSnapshots
+    .findIndex(({ sourceId }) => sourceId === "seoul-metro-route-map-positions")];
+
+  const refreshedRoot = path.join(path.dirname(repositoryRoot), "refreshed-repository");
+  await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, refreshedRoot, {
+    now: new Date("2026-08-22T09:46:18.609Z"),
+  });
+
+  const [candidate, snapshots] = await Promise.all([
+    readFile(path.join(refreshedRoot, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(refreshedRoot, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+  ]);
+  const publicIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === "seoul-metro-route-map-positions");
+  const selectedSnapshotId = candidate.sourceSnapshotIds[publicIndex];
+  const selected = snapshots.filter(({ snapshotId }) => snapshotId === selectedSnapshotId);
+
+  assert.notEqual(selectedSnapshotId, beforeSnapshotId);
+  assert.equal(selected.length, 1);
+  assert.equal(snapshots.filter(({ sourceId }) => sourceId === "seoul-metro-route-map-positions").length, 1);
+  assert.equal(selected[0].retrievedAt, "2026-08-22T09:45:18.609Z");
+  assert.ok(Date.parse(selected[0].sourceUpdatedAt) <= Date.parse(selected[0].retrievedAt));
+  assert.equal(beforeSnapshots.filter(({ sourceId }) => sourceId === "seoul-metro-route-map-positions").length, 1);
+});
+
+test("합성 current public successor는 public root→head history를 출력 없이 거부한다", async (t) => {
+  const repositoryRoot = await syntheticCurrentRepository(t, "public-route-map-history-reject-");
+  const snapshotPath = path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json");
+  const snapshots = await readFile(snapshotPath, "utf8").then(JSON.parse);
+  const publicSnapshot = snapshots.find(({ sourceId }) => sourceId === "seoul-metro-route-map-positions");
+  publicSnapshot.previousSnapshotId = publicSnapshot.projectionMigration.replacedSnapshotId;
+  await writeFile(snapshotPath, `${JSON.stringify(snapshots, null, 2)}\n`);
+  const outputPaths = [
+    "tools/datapack/release/candidate-build-spec.json",
+    "tools/datapack/release/source-snapshots.json",
+    "tools/datapack/source-inventory.json",
+    "tools/datapack/release/capital-production-canonical-pack.json",
+  ];
+  const before = await Promise.all(outputPaths.map((relative) => readFile(path.join(repositoryRoot, relative))));
+
+  await assert.rejects(
+    () => activateSyntheticCurrentPublicRouteMapSuccessor(repositoryRoot, {
+      now: new Date("2026-08-22T09:46:18.609Z"),
+    }),
+    /synthetic public route-map successor fixture has invalid public source lineage/,
+  );
+
+  const after = await Promise.all(outputPaths.map((relative) => readFile(path.join(repositoryRoot, relative))));
+  assert.deepEqual(after, before);
 });
 
 test("승인 allowlist 밖의 unbound snapshot은 build spec policy로 backfill할 수 없다", () => {

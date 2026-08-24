@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
-import { ARTIFACT_KIND, CAPITAL_MAP_LINE_IDS } from "./collect-capital-route-topology.mjs";
+import { ARTIFACT_KIND, CAPITAL_MAP_LINE_IDS, projectCapitalTopologyOwnership } from "./collect-capital-route-topology.mjs";
 import { admittedCapitalLineEvidence } from "./build-datapack.mjs";
 import { collectSeoulRouteMapPositions } from "./collect-seoul-route-map-positions.mjs";
 import { withCurrentCapitalTopologyAdmissions } from "./rebind-capital-route-map-admissions.mjs";
@@ -297,11 +297,14 @@ test("서울 public v2 layout observation은 exact admission과 topology bytes�
   }), /layout observation identity/);
 });
 
-test("tracked 서울 공식 position snapshot의 exact renamed-station aliases는 current 22-line admission을 완성한다", async () => {
-  const [inventory, topology] = await Promise.all([
-    readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
-    readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260813.json"), "utf8").then(JSON.parse),
-  ]);
+test("tracked 서울 공식 position snapshot의 exact renamed-station aliases는 inventory-derived current admission을 완성한다", async () => {
+  const inventory = await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse);
+  const publicSource = inventory.sources.find(({ id }) => id === "seoul-metro-route-map-positions");
+  const topologySnapshotId = publicSource?.routeMapAdmissionEvidence?.currentTopologyAdmission?.topologySnapshotId;
+  assert.equal(typeof topologySnapshotId, "string");
+  const topology = await readFile(
+    path.join(root, `tools/datapack/sources/${topologySnapshotId}.json`), "utf8",
+  ).then(JSON.parse);
   const snapshotBytesByPath = new Map();
   for (const source of inventory.sources) {
     if (source.routeMapAdmissionEvidence?.topologySourceId === "capital-route-topology"
@@ -315,19 +318,32 @@ test("tracked 서울 공식 position snapshot의 exact renamed-station aliases�
   const rebound = withCurrentCapitalTopologyAdmissions({
     inventory,
     topology,
-    topologySnapshotId: "capital-route-topology-20260813",
+    topologySnapshotId,
     reviewedAt: topology.capturedAt,
     snapshotBytesByPath,
   });
+  const currentAdmissionFreshUntil = inventory.sources
+    .map(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence?.currentTopologyAdmission?.freshUntil)
+    .filter((freshUntil) => typeof freshUntil === "string")
+    .map((freshUntil) => Date.parse(freshUntil));
+  const evaluationAt = new Date(Math.min(...currentAdmissionFreshUntil) - 1_000);
   const admissions = admittedCapitalLineEvidence(
     rebound,
     topology,
-    "capital-route-topology-20260813",
+    topologySnapshotId,
     topology.capturedAt,
-    new Date("2026-08-13T16:19:47.000Z"),
+    evaluationAt,
   );
+  const capitalOwnedTopology = projectCapitalTopologyOwnership(topology);
 
-  assert.equal(admissions.size, 22);
+  assert.equal(admissions.size, capitalOwnedTopology.lineCount);
+  assert.deepEqual([...admissions.keys()].sort(), capitalOwnedTopology.lines.map(({ lineId }) => lineId).sort());
+  assert.equal(topology.lines.length, 24);
+  assert.equal(topology.lines.reduce((count, line) => count + line.edgeCount, 0), 1_548);
+  assert.equal(capitalOwnedTopology.lineCount, 22);
+  assert.equal(capitalOwnedTopology.totalEdgeCount, 1_438);
+  assert.equal(admissions.has("line-42b5805f3b5a"), false, "Incheon2 is source-separated");
+  assert.equal(admissions.has("line-98718184f016"), false, "Incheon1 is source-separated");
   for (const lineId of [
     "line-472a81add377", "seoul-4", "line-80fc4d5350d4",
     "line-15b3b8a93259", "line-2b2d9eaa53d0",
