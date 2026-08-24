@@ -626,11 +626,11 @@
         "lineIds": [
           "line-5b8d9b05e7e6"
         ],
-        "verifiedAt": "2026-07-20T15:30:00.000Z",
+        "verifiedAt": "2026-08-24T04:16:37.116Z",
         "stationCount": 35,
         "membershipSourceId": "molit-urban-rail-full-route",
-        "membershipSourceRawSha256": "178af75ece72b2f6a58226063e05f1e1f45f50c779c7fbf2905f7df1384a9e22",
-        "membershipSourceSnapshotSha256": "3f08fb398bcb16e8ff047ec17f094a28590ec8d5aa1b8df2d6e9cec85ed0f6e7",
+        "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
+        "membershipSourceSnapshotSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
         "mappingSha256": "50810515863d5566cb968d5d07bbd35f5b2f6434436a21d43e2506da7beb3312",
         "stationCodesSha256": "2a9169367a78c7d63b99dbd3a66f95b661f54c984330564a7fa19c2ddddcb17b",
         "stationCodeSourceId": "daegu-line1-route-topology",
@@ -824,11 +824,11 @@
         "lineIds": [
           "line-e2938a4cc492"
         ],
-        "verifiedAt": "2026-07-20T15:30:00.000Z",
+        "verifiedAt": "2026-08-24T04:16:37.116Z",
         "stationCount": 29,
         "membershipSourceId": "molit-urban-rail-full-route",
-        "membershipSourceRawSha256": "178af75ece72b2f6a58226063e05f1e1f45f50c779c7fbf2905f7df1384a9e22",
-        "membershipSourceSnapshotSha256": "3f08fb398bcb16e8ff047ec17f094a28590ec8d5aa1b8df2d6e9cec85ed0f6e7",
+        "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
+        "membershipSourceSnapshotSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
         "mappingSha256": "9ce93ff604ead4a3e49ddde6d5300e17b7544fe0924994b3bf45cc791cd76129",
         "stationCodesSha256": "b89277686bb18cc3c09b22b967cf21c290fa1c34a975260f401528cd248321ca",
         "stationCodeSourceId": "daegu-line2-route-topology",
@@ -1022,11 +1022,11 @@
         "lineIds": [
           "line-0ffaa95b1b5d"
         ],
-        "verifiedAt": "2026-07-20T15:30:00.000Z",
+        "verifiedAt": "2026-08-24T04:16:37.116Z",
         "stationCount": 30,
         "membershipSourceId": "molit-urban-rail-full-route",
-        "membershipSourceRawSha256": "178af75ece72b2f6a58226063e05f1e1f45f50c779c7fbf2905f7df1384a9e22",
-        "membershipSourceSnapshotSha256": "3f08fb398bcb16e8ff047ec17f094a28590ec8d5aa1b8df2d6e9cec85ed0f6e7",
+        "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
+        "membershipSourceSnapshotSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
         "mappingSha256": "d67b2e8d505fc8202c0b2522118a2254b8a143d4df52f859b281625ddee69c0d",
         "stationCodesSha256": "ccbdac20980dd1135646a6dfdc97b0251df0df36af56de76a2fb14f1a0051afe",
         "stationCodeSourceId": "daegu-line3-route-topology",
@@ -1455,11 +1455,11 @@
         "lineIds": [
           "line-7051a9c2525c"
         ],
-        "verifiedAt": "2026-07-20T03:30:00.000Z",
+        "verifiedAt": "2026-08-24T04:16:37.116Z",
         "stationCount": 22,
         "membershipSourceId": "molit-urban-rail-full-route",
-        "membershipSourceRawSha256": "178af75ece72b2f6a58226063e05f1e1f45f50c779c7fbf2905f7df1384a9e22",
-        "membershipSourceSnapshotSha256": "3f08fb398bcb16e8ff047ec17f094a28590ec8d5aa1b8df2d6e9cec85ed0f6e7",
+        "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
+        "membershipSourceSnapshotSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
         "mappingSha256": "a73ae83fbeb294c293a22bda5a44aef0a9263596fa6ef196f0c06670e918422f",
         "stationCodesSha256": "4f9ad3bbf2efbf7dcdac8976eb18b34b4c9e5936ba7bcd1316c03dc516e1dd49",
         "stationCodeSourceId": "daejeon-station-distance-fare",
@@ -2145,11 +2145,11 @@
         "lineIds": [
           "line-e57a361e8892"
         ],
-        "verifiedAt": "2026-07-20T13:08:47.161Z",
+        "verifiedAt": "2026-08-24T04:16:37.116Z",
         "stationCount": 20,
         "membershipSourceId": "molit-urban-rail-full-route",
-        "membershipSourceRawSha256": "178af75ece72b2f6a58226063e05f1e1f45f50c779c7fbf2905f7df1384a9e22",
-        "membershipSourceSnapshotSha256": "3f08fb398bcb16e8ff047ec17f094a28590ec8d5aa1b8df2d6e9cec85ed0f6e7",
+        "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
+        "membershipSourceSnapshotSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
         "mappingSha256": "f7515bed1908e7b1aff2674f58b8425d94a8177d1fb5bed1f3fb8545cb347a03",
         "stationCodesSha256": "dc831a8f14fd33808b6e17ecbf829eb6d4c199b6c1d75c7673adaa97ad69df83",
         "stationCodeSourceId": "gwangju-transportation-route-topology",
@@ -6489,8 +6489,8 @@
       },
       "requiredForProductionPack": true,
       "updateFrequency": "annual",
-      "observedDataUpdatedAt": "2026-06-22",
-      "retrievedAt": "2026-08-14",
+      "observedDataUpdatedAt": "2026-08-24",
+      "retrievedAt": "2026-08-24",
       "license": {
         "type": "PUBLIC_DATA_FREE_USE",
         "name": "공공데이터포털 이용허락범위 제한 없음",
@@ -6537,13 +6537,13 @@
         "issue": 1397,
         "candidateId": "molit-urban-rail-full-route",
         "sourceId": "molit-urban-rail-full-route",
-        "snapshotId": "molit-urban-rail-full-route-revalidated-20260814",
+        "snapshotId": "molit-urban-rail-full-route-current-20260824T041637116Z",
         "decision": "APPROVED",
         "approvedBy": "aquilaXk10",
         "approvedAt": "2026-07-12T00:00:00+09:00",
         "sampleEvidenceHash": "7e3b5118e4df1ef31205062c38ecd548e4cd41d68ba0cecc075a58848b7c01d4",
-        "rawSha256": "178af75ece72b2f6a58226063e05f1e1f45f50c779c7fbf2905f7df1384a9e22",
-        "schemaFingerprint": "07a90f2fcca80323978aa63eff05b24e8ad431b579a1fad05f989d175114250c",
+        "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
+        "schemaFingerprint": "f8965e9b55afa5837ccda33f6b2a5a1883f01e134570517e75eaaec066a2a316",
         "sourceSnapshotSetHash": "6810d86ce484465d9e6c23e29b827228a48cd08a00fea61aa7545b88b9466a38",
         "sourceInventorySha256": "9c5f4b1ab41a9be2341fd369a7c48a852e16ff47397281d6af27d97c38706b08",
         "adminReviewRecordHash": "deb0280494956f8ff72fabc34bec250ff17a30b702ac32c6a4589f3d1e302395",
@@ -6641,11 +6641,11 @@
         "lineIds": [
           "line-5b8d9b05e7e6"
         ],
-        "verifiedAt": "2026-07-20T15:30:00.000Z",
+        "verifiedAt": "2026-08-24T04:16:37.116Z",
         "stationCount": 35,
         "membershipSourceId": "molit-urban-rail-full-route",
-        "membershipSourceRawSha256": "178af75ece72b2f6a58226063e05f1e1f45f50c779c7fbf2905f7df1384a9e22",
-        "membershipSourceSnapshotSha256": "3f08fb398bcb16e8ff047ec17f094a28590ec8d5aa1b8df2d6e9cec85ed0f6e7",
+        "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
+        "membershipSourceSnapshotSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
         "mappingSha256": "50810515863d5566cb968d5d07bbd35f5b2f6434436a21d43e2506da7beb3312",
         "stationCodesSha256": "2a9169367a78c7d63b99dbd3a66f95b661f54c984330564a7fa19c2ddddcb17b",
         "stationCodeSourceId": "daegu-line1-route-topology",
@@ -6728,11 +6728,11 @@
         "lineIds": [
           "line-e2938a4cc492"
         ],
-        "verifiedAt": "2026-07-20T15:30:00.000Z",
+        "verifiedAt": "2026-08-24T04:16:37.116Z",
         "stationCount": 29,
         "membershipSourceId": "molit-urban-rail-full-route",
-        "membershipSourceRawSha256": "178af75ece72b2f6a58226063e05f1e1f45f50c779c7fbf2905f7df1384a9e22",
-        "membershipSourceSnapshotSha256": "3f08fb398bcb16e8ff047ec17f094a28590ec8d5aa1b8df2d6e9cec85ed0f6e7",
+        "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
+        "membershipSourceSnapshotSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
         "mappingSha256": "9ce93ff604ead4a3e49ddde6d5300e17b7544fe0924994b3bf45cc791cd76129",
         "stationCodesSha256": "b89277686bb18cc3c09b22b967cf21c290fa1c34a975260f401528cd248321ca",
         "stationCodeSourceId": "daegu-line2-route-topology",
@@ -6815,11 +6815,11 @@
         "lineIds": [
           "line-0ffaa95b1b5d"
         ],
-        "verifiedAt": "2026-07-20T15:30:00.000Z",
+        "verifiedAt": "2026-08-24T04:16:37.116Z",
         "stationCount": 30,
         "membershipSourceId": "molit-urban-rail-full-route",
-        "membershipSourceRawSha256": "178af75ece72b2f6a58226063e05f1e1f45f50c779c7fbf2905f7df1384a9e22",
-        "membershipSourceSnapshotSha256": "3f08fb398bcb16e8ff047ec17f094a28590ec8d5aa1b8df2d6e9cec85ed0f6e7",
+        "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
+        "membershipSourceSnapshotSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
         "mappingSha256": "d67b2e8d505fc8202c0b2522118a2254b8a143d4df52f859b281625ddee69c0d",
         "stationCodesSha256": "ccbdac20980dd1135646a6dfdc97b0251df0df36af56de76a2fb14f1a0051afe",
         "stationCodeSourceId": "daegu-line3-route-topology",
@@ -6902,11 +6902,11 @@
         "lineIds": [
           "line-7051a9c2525c"
         ],
-        "verifiedAt": "2026-07-20T03:30:00.000Z",
+        "verifiedAt": "2026-08-24T04:16:37.116Z",
         "stationCount": 22,
         "membershipSourceId": "molit-urban-rail-full-route",
-        "membershipSourceRawSha256": "178af75ece72b2f6a58226063e05f1e1f45f50c779c7fbf2905f7df1384a9e22",
-        "membershipSourceSnapshotSha256": "3f08fb398bcb16e8ff047ec17f094a28590ec8d5aa1b8df2d6e9cec85ed0f6e7",
+        "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
+        "membershipSourceSnapshotSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
         "mappingSha256": "a73ae83fbeb294c293a22bda5a44aef0a9263596fa6ef196f0c06670e918422f",
         "stationCodesSha256": "4f9ad3bbf2efbf7dcdac8976eb18b34b4c9e5936ba7bcd1316c03dc516e1dd49",
         "stationCodeSourceId": "daejeon-station-distance-fare",
@@ -6989,11 +6989,11 @@
         "lineIds": [
           "line-e57a361e8892"
         ],
-        "verifiedAt": "2026-07-20T13:08:47.161Z",
+        "verifiedAt": "2026-08-24T04:16:37.116Z",
         "stationCount": 20,
         "membershipSourceId": "molit-urban-rail-full-route",
-        "membershipSourceRawSha256": "178af75ece72b2f6a58226063e05f1e1f45f50c779c7fbf2905f7df1384a9e22",
-        "membershipSourceSnapshotSha256": "3f08fb398bcb16e8ff047ec17f094a28590ec8d5aa1b8df2d6e9cec85ed0f6e7",
+        "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
+        "membershipSourceSnapshotSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
         "mappingSha256": "f7515bed1908e7b1aff2674f58b8425d94a8177d1fb5bed1f3fb8545cb347a03",
         "stationCodesSha256": "dc831a8f14fd33808b6e17ecbf829eb6d4c199b6c1d75c7673adaa97ad69df83",
         "stationCodeSourceId": "gwangju-transportation-route-topology",
@@ -7533,11 +7533,11 @@
           "route_map_positions"
         ]
       },
-      "requiredForProductionPack": false,
+      "requiredForProductionPack": true,
       "productionUseAllowed": true,
       "updateFrequency": "on-change",
       "observedDataUpdatedAt": "2025-08-14",
-      "retrievedAt": "2026-07-24",
+      "retrievedAt": "2026-08-24",
       "license": {
         "type": "PUBLIC_DATA_FREE_USE",
         "name": "공공데이터포털 이용허락범위 제한 없음",
@@ -7593,7 +7593,7 @@
         "snapshotId": "seoul-metro-route-map-positions-20260724",
         "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-20260724.json",
         "snapshotSha256": "9632acc47f76e735d40dc3346cf7b2298c7c921b61693d1f2f1cac940162633a",
-        "capturedAt": "2026-07-24T02:00:00.000Z",
+        "capturedAt": "2026-08-24T04:16:37.116Z",
         "stationCount": 274,
         "datasetId": "15099316",
         "rawSha256": "713d6a7353748f1f29b974cd70df9b7a24b3600b6aeb60a58ed7bfa6975e02ed",
@@ -7619,7 +7619,7 @@
           "8": 18
         },
         "observedDataUpdatedAt": "2025-08-14",
-        "freshUntil": "2027-07-24T02:00:00.000Z",
+        "freshUntil": "2026-11-22T04:16:37.116Z",
         "topologySourceId": "capital-route-topology",
         "currentTopologyAdmission": {
           "schemaVersion": 1,
@@ -7681,6 +7681,30 @@
               "lineId": "seoul-4"
             }
           ]
+        },
+        "currentLayoutAdmission": {
+          "schemaVersion": 2,
+          "artifactKind": "seoul-public-route-map-layout-admission",
+          "status": "ADMITTED",
+          "positionSnapshotId": "seoul-metro-route-map-positions-current-20260824T041637116Z",
+          "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-current-20260824T041637116Z.json",
+          "snapshotSha256": "62c2f47aa34e8cc6fab141a966043dedd48ad8e018cd69b31a26570147fd6311",
+          "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
+          "contentSha256": "93bb1c7dd63c131143b4a66e5d76c15c259f4878238cab88cc36e5eddab9fc2f",
+          "layoutAlgorithmVersion": "seoul-public-latlon-line-order-layout-v2",
+          "topologySnapshotId": "capital-route-topology-20260823",
+          "topologySnapshotSha256": "f6fb0fc3721822ceded25fb1b503f0d21585e29ae4034642067525fe7e5a3a50",
+          "topologySnapshotIdentity": "capital-route-topology-20260823:f6fb0fc3721822ceded25fb1b503f0d21585e29ae4034642067525fe7e5a3a50",
+          "lineOrderSha256": "f1a2793a0c892b3871a0bc438a7c4975ad9b580f8407ab085b50c410e7db8245",
+          "aliasLedgerVersion": "seoul-public-line-order-aliases-v1",
+          "aliasLedgerSha256": "1130148cee95b50d30e1965aec401b2b43cc5cdf92afe5b1891cbeb8c316d33f",
+          "rawPositionsSha256": "d9daca2fec5e16eb796ef3e6ac32dff13fda13bed79999a4b8c3d79002fc9f13",
+          "layoutPositionsSha256": "2c595403a453ebcfdd3cd287ebe0bd7638fa42316656ed2941745f10767abf4d",
+          "layoutTracksSha256": "69768f6dade4de858fab30e2823afbc42a9c70bba295c8e1be5f44943441f72a",
+          "semanticInputSha256": "44d43381d962821883bec8d162cfd2cdb7e7e4544c46c76891b72dc5defab0cd",
+          "semanticOutputSha256": "b3f984f2e10325f7fa8b6c357ebf7cb4c29936d21694c9d9478290af0c0d3a79",
+          "outputSchemaSha256": "58b25a596700a55a301e30b68369653c1667dc2142500419fde05456ec6bcb74",
+          "layoutArtifactSha256": "caebf34bc71c93e95fad25a928af0c2b1c4f997a5afabe414727ebe255890e4e"
         }
       },
       "admissionEvidence": {
@@ -7688,14 +7712,15 @@
         "issue": 447,
         "candidateId": "seoul-metro-route-map-positions",
         "sourceId": "seoul-metro-route-map-positions",
-        "snapshotId": "seoul-metro-route-map-positions-20260724",
+        "snapshotId": "seoul-metro-route-map-positions-current-20260824T041637116Z",
         "decision": "APPROVED",
         "sampleEvidenceHash": "fb04a674e9e1ccf7491e1a20ac87cb79604edbbe31517d712fc290f919ee6398",
-        "rawSha256": "713d6a7353748f1f29b974cd70df9b7a24b3600b6aeb60a58ed7bfa6975e02ed",
+        "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
         "sourceSnapshotSetHash": "9632acc47f76e735d40dc3346cf7b2298c7c921b61693d1f2f1cac940162633a",
         "adminReviewRecordHash": "ffff63f1182addecce58f285b2d982931dec58d6e403ecac9437a2959ed3aea1",
         "licenseEvidenceHash": "f7c7534e3fbac3b218bd91c55da7259416478cb5eaa259400576cd04e5fef0e7",
-        "productionUseNoteKo": "공식 raw 좌표는 OCI snapshot으로 보존하고, 노선도 산출물은 versioned deterministic layout으로만 생성한다."
+        "productionUseNoteKo": "공식 raw 좌표는 OCI snapshot으로 보존하고, 노선도 산출물은 versioned deterministic layout으로만 생성한다.",
+        "schemaFingerprint": "d845e5ca904a65209a633eeee7f2d767fdddf15f11c796c090ded5efdec4d9ef"
       }
     },
     {

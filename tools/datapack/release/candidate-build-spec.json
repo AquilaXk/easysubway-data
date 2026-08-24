@@ -11,7 +11,7 @@
   "networkEdgeEvidence": {
     "sourceInventory": {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "b4eacd3f2135d045440f4daedadd6314088c7fbbb1f6f38c55ebcb810b51f7ef"
+      "sha256": "a0cac870f274e04abd5319024fcc6fd22e148c04a69d90ef526263301af94d1b"
     },
     "capitalTopology": {
       "path": "tools/datapack/sources/capital-route-topology-20260724.json",
@@ -45,31 +45,31 @@
   },
   "sourceSnapshotEvidencePath": "tools/datapack/release/source-snapshots.json",
   "sourceSnapshotIds": [
-    "seoulmetro-cyberstation-route-map-capital-admission-20260712",
+    "seoul-metro-route-map-positions-current-20260824T041637116Z",
     "kric-subway-timetable-line4-pilot-20260809",
     "seoul-metro-accessibility-20260822T094318289Z",
     "kric-station-convenience-standard-20260816T015619375Z",
-    "molit-urban-rail-full-route-revalidated-20260814",
+    "molit-urban-rail-full-route-current-20260824T041637116Z",
     "seoulmetro-station-line-info-revalidated-20260814",
     "seoul-metro-transfer-distance-duration-20260815T094038817Z"
   ],
   "sourceSnapshots": [
     {
-      "snapshotId": "seoulmetro-cyberstation-route-map-capital-admission-20260712",
-      "sourceId": "seoulmetro-cyberstation-route-map",
-      "rawObjectUri": "s3://easysubway-datapack-sources/seoulmetro-cyberstation-route-map/20260712.json",
-      "rawSha256": "ce6499be2b634fad8f0cd0d2f1edf074ed0452de897f9460e3472850d4ba91ba",
-      "redactedRequestFingerprint": "65aa48cbac712c535244716d5cd8b5457ec884f810e2696071d78ad09dd93f86",
-      "schemaFingerprint": "3ef53470a34e1d44db931b0bc2b7ac333fb2640f3e297902c4ee554688ef9052",
+      "snapshotId": "seoul-metro-route-map-positions-current-20260824T041637116Z",
+      "sourceId": "seoul-metro-route-map-positions",
+      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-route-map-positions/20260824/f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074.json",
+      "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
+      "redactedRequestFingerprint": "29de1526685dc8b0730280c210f1026c5ec973c8c5668242511dd73749b0f5a8",
+      "schemaFingerprint": "d845e5ca904a65209a633eeee7f2d767fdddf15f11c796c090ded5efdec4d9ef",
       "licenseStatus": "PASS",
       "redistributionAllowed": true,
-      "adminReviewRecordHash": "4ea77265d144baa6b06e8f10152743420006f7581b24ffd68b21367341aa1b6c",
+      "adminReviewRecordHash": "ffff63f1182addecce58f285b2d982931dec58d6e403ecac9437a2959ed3aea1",
       "snapshotStatus": "LOCKED",
       "credentialRedacted": true,
-      "freshnessExpiresAt": "2027-07-12T00:00:00.000Z",
-      "rawRetentionExpiresAt": "2026-10-10T00:00:00.000Z",
+      "freshnessExpiresAt": "2026-11-22T04:16:37.116Z",
+      "rawRetentionExpiresAt": "2026-11-22T04:16:37.116Z",
       "governancePolicyVersion": "2026-07-15",
-      "governancePolicySha256": "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70"
+      "governancePolicySha256": "e6e607e0711bebafbc25843996a0d6ff1dce6e6e82b4cadb425e78ccd284d9f3"
     },
     {
       "snapshotId": "kric-subway-timetable-line4-pilot-20260809",
@@ -123,21 +123,21 @@
       "governancePolicySha256": "13f8a78c0ae0f7bfa6817005f44a92be3131e6f6708a69a4024747478203beaa"
     },
     {
-      "snapshotId": "molit-urban-rail-full-route-revalidated-20260814",
+      "snapshotId": "molit-urban-rail-full-route-current-20260824T041637116Z",
       "sourceId": "molit-urban-rail-full-route",
-      "rawObjectUri": "s3://easysubway-datapack-sources/molit-urban-rail-full-route/20260712.json",
-      "rawSha256": "3ad2a676f45d23c1f39a90dc13f3a040c92ac05a01c43b9e6bbb82bf07172268",
+      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20260824/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv",
+      "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
       "redactedRequestFingerprint": "0083ea2781e850663cc12de4ddb21e508959c6683923a724dd73cc54e0b16ba1",
-      "schemaFingerprint": "07a90f2fcca80323978aa63eff05b24e8ad431b579a1fad05f989d175114250c",
+      "schemaFingerprint": "f8965e9b55afa5837ccda33f6b2a5a1883f01e134570517e75eaaec066a2a316",
       "licenseStatus": "PASS",
       "redistributionAllowed": true,
       "adminReviewRecordHash": "deb0280494956f8ff72fabc34bec250ff17a30b702ac32c6a4589f3d1e302395",
       "snapshotStatus": "LOCKED",
       "credentialRedacted": true,
-      "freshnessExpiresAt": "2026-09-13T15:34:07.000Z",
-      "rawRetentionExpiresAt": "2026-11-12T15:34:07.000Z",
+      "freshnessExpiresAt": "2026-09-23T04:16:37.116Z",
+      "rawRetentionExpiresAt": "2026-11-22T04:16:37.116Z",
       "governancePolicyVersion": "2026-07-15",
-      "governancePolicySha256": "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70"
+      "governancePolicySha256": "e6e607e0711bebafbc25843996a0d6ff1dce6e6e82b4cadb425e78ccd284d9f3"
     },
     {
       "snapshotId": "seoulmetro-station-line-info-revalidated-20260814",
@@ -174,12 +174,12 @@
       "governancePolicySha256": "13f8a78c0ae0f7bfa6817005f44a92be3131e6f6708a69a4024747478203beaa"
     }
   ],
-  "sourceSnapshotSetHash": "38a0a9c61a7a46b31381f3d75757733fcc9a8d40dd1e53cb80cf1084411d1a9a",
+  "sourceSnapshotSetHash": "99c27f22b613456997b638e84363553ea696c1339f3c19c1b08c52433b054a25",
   "approvedAliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
   "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
   "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
   "approvedOverrideSetHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
-  "sourceInventorySha256": "219d278cc29c67c68087ce1dd10792ac9e2f4bcf085460ef7c15e0a0ca1b88f2",
+  "sourceInventorySha256": "adff9bd9b9496a82b38572d1676495bfdcf4f9d08f1d75d618e02c1aa6306dba",
   "builderGitSha": "1e25aa43b22253703c5102f477fa9a852bcd89b8",
   "builderVersion": "build-datapack.mjs@26",
   "officialOdFareEvidence": {
