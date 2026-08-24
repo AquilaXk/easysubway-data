@@ -30,9 +30,29 @@ test("exact map root manifest+4 payload와 catalog manifest+sqlite를 하나의 
 
 test("fixed injected clock은 wall clock상 과거인 fresh descriptor를 정상 생성한다", async (t) => {
   const fixture = await createFixture(t);
-  const descriptor = await buildMapCatalogSignedCurrentPublication({ artifactRoot: fixture.root, output: fixture.output, producerGitSha: "a".repeat(40), releaseSequence: 7, signedFinalDescriptorSha256: "b".repeat(64), freshUntil: "2010-01-01T00:00:00.000Z", privateKey, publicKey, now: Date.parse("2000-01-01T00:00:00.000Z") });
-  assert.equal(descriptor.freshUntil, "2010-01-01T00:00:00.000Z");
+  const descriptor = await buildMapCatalogSignedCurrentPublication({ artifactRoot: fixture.root, output: fixture.output, producerGitSha: "a".repeat(40), releaseSequence: 7, signedFinalDescriptorSha256: "b".repeat(64), freshUntil: "2010-01-01T00:00:00.123456Z", privateKey, publicKey, now: Date.parse("2000-01-01T00:00:00.000Z") });
+  assert.equal(descriptor.freshUntil, "2010-01-01T00:00:00.123456Z");
   assert.deepEqual(JSON.parse(await readFile(fixture.output, "utf8")), descriptor);
+});
+
+test("artifact를 가리키는 symlink output ancestor와 timezone 없는 freshUntil은 output 0이다", async (t) => {
+  const ancestor = await createFixture(t); const alias = path.join(path.dirname(ancestor.root), "artifact-alias");
+  await symlink(ancestor.root, alias);
+  await assert.rejects(build({ ...ancestor, output: path.join(alias, "descriptor.json") }), /outside artifact root/);
+  await assert.rejects(readFile(path.join(alias, "descriptor.json")), { code: "ENOENT" });
+  const malformed = await createFixture(t);
+  await assert.rejects(buildMapCatalogSignedCurrentPublication({ artifactRoot: malformed.root, output: malformed.output, producerGitSha: "a".repeat(40), releaseSequence: 7, signedFinalDescriptorSha256: "b".repeat(64), freshUntil: "2010-01-01T00:00:00.000", privateKey, publicKey, now: Date.parse("2000-01-01T00:00:00.000Z") }), /freshUntil is invalid/);
+  await assert.rejects(readFile(malformed.output), { code: "ENOENT" });
+  for (const freshUntil of ["2010-02-30T00:00:00.000Z", "2010-01-01T00:00:00.000+24:00"]) {
+    const invalid = await createFixture(t); await assert.rejects(buildMapCatalogSignedCurrentPublication({ artifactRoot: invalid.root, output: invalid.output, producerGitSha: "a".repeat(40), releaseSequence: 7, signedFinalDescriptorSha256: "b".repeat(64), freshUntil, privateKey, publicKey, now: Date.parse("2000-01-01T00:00:00.000Z") }), /freshUntil is invalid/); await assert.rejects(readFile(invalid.output), { code: "ENOENT" });
+  }
+});
+
+test("create 직전 output parent swap은 canonical parent 재검증으로 output 0이다", async (t) => {
+  const fixture = await createFixture(t); const outputParent = path.join(path.dirname(fixture.root), "output-parent"); const output = path.join(outputParent, "descriptor.json");
+  await mkdir(outputParent);
+  await assert.rejects(buildMapCatalogSignedCurrentPublication({ artifactRoot: fixture.root, output, producerGitSha: "a".repeat(40), releaseSequence: 7, signedFinalDescriptorSha256: "b".repeat(64), freshUntil: "2099-01-01T00:00:00.000Z", privateKey, publicKey, now: Date.parse("2098-01-01T00:00:00.000Z"), beforeCreate: async () => { await rm(outputParent, { recursive: true, force: true }); await symlink(fixture.root, outputParent); } }), /output parent changed or enters artifact root/);
+  await assert.rejects(readFile(output), { code: "ENOENT" });
 });
 
 test("missing·extra·route/timetable/accessibility·duplicate·traversal·symlink·noncanonical·stale mismatch와 preexisting output은 output 0이다", async (t) => {

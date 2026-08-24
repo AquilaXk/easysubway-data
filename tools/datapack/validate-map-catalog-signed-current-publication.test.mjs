@@ -32,6 +32,12 @@ test("descriptor와 receipt의 canonical self hash·signature·full producer/rel
   ]) { const changed = structuredClone(descriptor); mutate(changed); assert.throws(() => validateMapCatalogSignedCurrentPublication(changed, { publicKey })); }
   const resealed = resealManifestDrift(descriptor);
   assert.throws(() => validateMapCatalogSignedCurrentPublication(resealed, { publicKey }), /manifest object binding mismatch/);
+  const arrayCoercion = structuredClone(descriptor); arrayCoercion.producerGitSha = ["a".repeat(40)]; arrayCoercion.publicationReceipt.producerGitSha = ["a".repeat(40)];
+  assert.throws(() => validateMapCatalogSignedCurrentPublication(arrayCoercion, { publicKey }), /identity mismatch/);
+  const shaArray = structuredClone(descriptor); shaArray.signedFinalDescriptorSha256 = ["b".repeat(64)]; shaArray.publicationReceipt.signedFinalDescriptorSha256 = ["b".repeat(64)];
+  assert.throws(() => validateMapCatalogSignedCurrentPublication(shaArray, { publicKey }), /identity mismatch/);
+  const timezoneLess = structuredClone(descriptor); timezoneLess.freshUntil = "2099-01-01T00:00:00.000";
+  assert.throws(() => validateMapCatalogSignedCurrentPublication(timezoneLess, { publicKey }), /identity mismatch/);
   const receiptSchema = JSON.parse(readFileSync("contracts/datapack/map-catalog-signed-current-publication-receipt.schema.json", "utf8"));
   const descriptorSchema = JSON.parse(readFileSync("contracts/datapack/map-catalog-signed-current-publication.schema.json", "utf8"));
   assert.equal(descriptorSchema.properties.mapPack.$ref.endsWith("#/$defs/mapPack"), true);
