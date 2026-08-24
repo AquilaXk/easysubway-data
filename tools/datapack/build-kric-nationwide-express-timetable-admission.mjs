@@ -10,6 +10,7 @@ const TARGET_VERSION = "2026-07-13";
 const OPERATION = "subwayTimetableExp";
 const ENDPOINT = "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetableExp";
 const REQUIRED_EVENT_FIELDS = ["railOprIsttCd", "lnCd", "stinCd", "dayCd", "trnNo", "arvTm", "dptTm", "exptCd"];
+const RESPONSE_SCOPE_FIELDS = ["railOprIsttCd", "lnCd", "stinCd", "dayCd"];
 
 /**
  * Evaluates current-operation evidence for #454. It intentionally never
@@ -106,54 +107,16 @@ function validateResponses({ plan, responses, servicePatternByExptCd, gaps }) {
     gaps.push(gap("RESPONSE_SET_INCOMPLETE"));
     return null;
   }
-  const events = [];
-  const responseKeys = new Set();
-  const eventKeys = new Set();
-  let requestSetInvalid = false;
-  let scopeInvalid = false;
-  let eventInvalid = false;
-  for (const responseEntry of responses) {
-    const request = plan.requestByKey.get(responseEntry?.requestKey);
-    if (request == null || responseKeys.has(responseEntry.requestKey)) {
-      requestSetInvalid = true;
-      continue;
-    }
-    responseKeys.add(responseEntry.requestKey);
-    if (responseEntry.operation !== OPERATION || responseEntry.endpoint !== ENDPOINT || !sameJson(responseEntry.params, request.params)
-      || responseEntry?.response?.header?.resultCode !== "00" || !Array.isArray(responseEntry?.response?.body?.row)
-      || responseEntry.response.body.row.length === 0) {
-      requestSetInvalid = true;
-      continue;
-    }
-    for (const row of responseEntry.response.body.row) {
-      if (!REQUIRED_EVENT_FIELDS.every((field) => typeof row?.[field] === "string")
-        || !["railOprIsttCd", "lnCd", "stinCd", "dayCd"].every((field) => nonBlank(row[field]))) {
-        eventInvalid = true;
-        continue;
-      }
-      if (["railOprIsttCd", "lnCd", "stinCd", "dayCd"].some((field) => row[field] !== request.params[field])) {
-        scopeInvalid = true;
-        continue;
-      }
-      const eventKey = [responseEntry.requestKey, row.trnNo, row.arvTm, row.dptTm, row.exptCd].join("|");
-      if (eventKeys.has(eventKey)) {
-        eventInvalid = true;
-        continue;
-      }
-      eventKeys.add(eventKey);
-      events.push({ requestKey: responseEntry.requestKey, eventKey, ...pickEvent(row) });
-    }
-  }
-  if (responseKeys.size !== plan.requests.length) requestSetInvalid = true;
-  if (requestSetInvalid) gaps.push(gap("RESPONSE_SET_INCOMPLETE"));
-  if (scopeInvalid) gaps.push(gap("RESPONSE_REQUEST_SCOPE_MISMATCH"));
-  if (eventInvalid) gaps.push(gap("TRAIN_EVENT_IDENTITY_MISMATCH"));
-  const orderedEvents = [...events].sort((left, right) => codepointCompare(left.eventKey, right.eventKey));
+  const state = newResponseState();
+  responses.forEach((entry) => absorbResponse({ entry, plan, state }));
+  state.requestSetInvalid ||= state.responseKeys.size !== plan.requests.length;
+  appendResponseGaps(state, gaps);
+  const orderedEvents = [...state.events].sort((left, right) => codepointCompare(left.eventKey, right.eventKey));
   const servicePatternMappings = validateServicePatterns({ servicePatternByExptCd, events: orderedEvents });
   if (servicePatternMappings == null) {
     gaps.push(gap("SERVICE_PATTERN_MAPPING_INCOMPLETE"));
   }
-  if (requestSetInvalid || scopeInvalid || eventInvalid || servicePatternMappings == null) {
+  if (state.requestSetInvalid || state.scopeInvalid || state.eventInvalid || servicePatternMappings == null) {
     return null;
   }
   return {
@@ -161,6 +124,51 @@ function validateResponses({ plan, responses, servicePatternByExptCd, gaps }) {
     eventSetSha256: sha256(canonicalJson(orderedEvents)),
     servicePatternMappingSha256: sha256(canonicalJson(servicePatternMappings)),
   };
+}
+
+function newResponseState() {
+  return { events: [], responseKeys: new Set(), eventKeys: new Set(), requestSetInvalid: false, scopeInvalid: false, eventInvalid: false };
+}
+
+function absorbResponse({ entry, plan, state }) {
+  const request = plan.requestByKey.get(entry?.requestKey);
+  if (request == null || state.responseKeys.has(entry.requestKey) || !isSuccessfulResponse(entry, request)) {
+    state.requestSetInvalid = true;
+    return;
+  }
+  state.responseKeys.add(entry.requestKey);
+  entry.response.body.row.forEach((row) => absorbEvent({ entry, request, row, state }));
+}
+
+function isSuccessfulResponse(entry, request) {
+  return entry.operation === OPERATION && entry.endpoint === ENDPOINT && sameJson(entry.params, request.params)
+    && entry?.response?.header?.resultCode === "00" && Array.isArray(entry?.response?.body?.row)
+    && entry.response.body.row.length > 0;
+}
+
+function absorbEvent({ entry, request, row, state }) {
+  if (!REQUIRED_EVENT_FIELDS.every((field) => typeof row?.[field] === "string")
+    || !RESPONSE_SCOPE_FIELDS.every((field) => nonBlank(row[field]))) {
+    state.eventInvalid = true;
+    return;
+  }
+  if (RESPONSE_SCOPE_FIELDS.some((field) => row[field] !== request.params[field])) {
+    state.scopeInvalid = true;
+    return;
+  }
+  const eventKey = [entry.requestKey, row.trnNo, row.arvTm, row.dptTm, row.exptCd].join("|");
+  if (state.eventKeys.has(eventKey)) {
+    state.eventInvalid = true;
+    return;
+  }
+  state.eventKeys.add(eventKey);
+  state.events.push({ requestKey: entry.requestKey, eventKey, ...pickEvent(row) });
+}
+
+function appendResponseGaps({ requestSetInvalid, scopeInvalid, eventInvalid }, gaps) {
+  if (requestSetInvalid) gaps.push(gap("RESPONSE_SET_INCOMPLETE"));
+  if (scopeInvalid) gaps.push(gap("RESPONSE_REQUEST_SCOPE_MISMATCH"));
+  if (eventInvalid) gaps.push(gap("TRAIN_EVENT_IDENTITY_MISMATCH"));
 }
 
 function validateServicePatterns({ servicePatternByExptCd, events }) {
@@ -224,34 +232,40 @@ function validateCurrentSnapshot({ sourceSnapshots, plan, reconstructed, nowMill
 }
 
 function validateLicenseDecision({ licenseDecision, snapshot, gaps }) {
-  if (snapshot == null || licenseDecision?.sourceId !== SOURCE_ID || licenseDecision.snapshotId !== snapshot.snapshotId
-    || licenseDecision.snapshotRawSha256 !== snapshot.rawSha256 || !nonBlank(licenseDecision.licenseId)
-    || licenseDecision.commercialUseAllowed !== true || licenseDecision.derivativeWorkAllowed !== true
-    || licenseDecision.redistributionAllowed !== true || licenseDecision.quotaDecision !== "CONFIRMED"
-    || licenseDecision.productionUseAllowed !== true || licenseDecision.decision !== "APPROVED") {
+  const decision = licenseDecision ?? {};
+  const snapshotBinding = snapshot != null && decision.sourceId === SOURCE_ID
+    && decision.snapshotId === snapshot.snapshotId && decision.snapshotRawSha256 === snapshot.rawSha256;
+  const approvedRights = decision.commercialUseAllowed === true && decision.derivativeWorkAllowed === true
+    && decision.redistributionAllowed === true && decision.quotaDecision === "CONFIRMED"
+    && decision.productionUseAllowed === true && decision.decision === "APPROVED";
+  if (!snapshotBinding || !nonBlank(decision.licenseId) || !approvedRights) {
     gaps.push(gap("LICENSE_PRODUCTION_DECISION_MISSING"));
   }
 }
 
 function validateRawReceipt({ rawReceipt, snapshot, nowMillis, gaps }) {
   try {
-    const storedAtMillis = utcMillis(rawReceipt?.storedAt);
-    const retentionExpiresAtMillis = utcMillis(rawReceipt?.rawRetentionExpiresAt);
-    if (snapshot == null || rawReceipt?.sourceId !== SOURCE_ID || rawReceipt.snapshotId !== snapshot.snapshotId
-      || rawReceipt.snapshotRawSha256 !== snapshot.rawSha256 || rawReceipt.rawObjectSha256 !== snapshot.rawSha256
-      || !/^[0-9a-f]{64}$/.test(rawReceipt.rawObjectSha256 ?? "") || !Number.isInteger(rawReceipt.byteSize)
-      || rawReceipt.byteSize <= 0 || rawReceipt.byteSize !== snapshot.rawByteSize
-      || storedAtMillis == null || retentionExpiresAtMillis == null
-      || retentionExpiresAtMillis <= storedAtMillis || retentionExpiresAtMillis <= nowMillis) {
-      throw new Error("receipt fields");
-    }
-    const uri = parseCredentialFreeObjectUri(rawReceipt.rawObjectUri, "raw receipt URI");
-    if (!uri.uri.startsWith("oci://") || uri.sourceAuthority !== `oci://${rawReceipt.ociNamespace}`
-      || rawReceipt.rawObjectUri !== `oci://${rawReceipt.ociNamespace}/${rawReceipt.bucket}/${rawReceipt.objectKey}`) {
-      throw new Error("receipt OCI binding");
-    }
+    assertReceiptBinding(rawReceipt, snapshot, nowMillis);
   } catch {
     gaps.push(gap("OCI_RAW_RECEIPT_MISMATCH"));
+  }
+}
+
+function assertReceiptBinding(receipt, snapshot, nowMillis) {
+  const storedAtMillis = utcMillis(receipt?.storedAt);
+  const retentionExpiresAtMillis = utcMillis(receipt?.rawRetentionExpiresAt);
+  const validSnapshotBinding = snapshot != null && receipt?.sourceId === SOURCE_ID && receipt.snapshotId === snapshot.snapshotId
+    && receipt.snapshotRawSha256 === snapshot.rawSha256 && receipt.rawObjectSha256 === snapshot.rawSha256;
+  const validObject = /^[0-9a-f]{64}$/.test(receipt?.rawObjectSha256 ?? "") && Number.isInteger(receipt?.byteSize)
+    && receipt.byteSize > 0 && receipt.byteSize === snapshot?.rawByteSize;
+  const validRetention = storedAtMillis != null && retentionExpiresAtMillis != null
+    && retentionExpiresAtMillis > storedAtMillis && retentionExpiresAtMillis > nowMillis;
+  if (!validSnapshotBinding || !validObject || !validRetention) throw new Error("receipt fields");
+  const uri = parseCredentialFreeObjectUri(receipt.rawObjectUri, "raw receipt URI");
+  const authority = ["oci:", "", receipt.ociNamespace].join("/");
+  const expectedUri = [authority, receipt.bucket, receipt.objectKey].join("/");
+  if (!uri.uri.startsWith("oci://") || uri.sourceAuthority !== authority || receipt.rawObjectUri !== expectedUri) {
+    throw new Error("receipt OCI binding");
   }
 }
 
@@ -280,10 +294,16 @@ function sameJson(left, right) {
 
 function canonicalJson(value) {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (value != null && typeof value === "object") {
-    return `{${Object.keys(value).sort(codepointCompare).map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
-  }
-  return JSON.stringify(value);
+  return value != null && typeof value === "object" ? canonicalObject(value) : JSON.stringify(value);
+}
+
+function canonicalObject(value) {
+  const fields = Object.keys(value).sort(codepointCompare).map((key) => canonicalField(key, value[key]));
+  return `{${fields.join(",")}}`;
+}
+
+function canonicalField(key, value) {
+  return `${JSON.stringify(key)}:${canonicalJson(value)}`;
 }
 
 function sha256(value) {
