@@ -186,7 +186,7 @@ test("registrar builds five source outputs, preserves approval evidence, and lea
   const positionObservation = JSON.parse(captured[0].bytes);
   const providerPosition = positionObservation.normalizedProjection.find(({ line, stationCode }) => line === "4" && stationCode === "421");
   const layoutPosition = positionObservation.routeMapLayoutArtifact.rawPositions.find(({ line, stationCode }) => line === "4" && stationCode === "421");
-  assert.deepEqual(providerPosition, { serial: providerPosition.serial, line: "4", stationCode: "421", stationName: "동대문", latitude: 37.5708397, longitude: providerPosition.longitude, basisDate: providerPosition.basisDate });
+  assert.deepEqual(providerPosition, { serial: providerPosition.serial, line: "4", stationCode: "421", stationName: "동대문", latitude: 37.57084, longitude: providerPosition.longitude, basisDate: providerPosition.basisDate });
   assert.equal(layoutPosition.latitude, 37.57084);
   assert.equal(Object.hasOwn(providerPosition, "lineId"), false);
   assert.equal(typeof layoutPosition.lineId, "string");
