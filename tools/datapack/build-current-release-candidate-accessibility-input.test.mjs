@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -92,6 +92,11 @@ test("합성 current public successor는 1,102 metadata·2,674 route·456 author
   const stationLineInput = JSON.parse(stationLineInputBytes);
   const route = JSON.parse(routeBytes);
   assert.equal(
+    stationLineInput.candidate.sourceSetSha256,
+    buildSpec.sourceSnapshotSetHash,
+  );
+  assert.equal(route.candidate.sourceSetSha256, stationLineInput.candidate.sourceSetSha256);
+  assert.equal(
     stationLineInputBytes.toString("utf8"),
     canonicalCurrentCapitalStationLineInputJson(stationLineInput),
   );
@@ -171,33 +176,48 @@ test("authority validator는 actual edge type denominator를 재집계한다", a
   );
 });
 
-test("CLI는 canonical fixture/authority 두 파일을 만들고 output collision에는 mutation 0이다", async (context) => {
+test("CLI는 current tuple을 재생성해 canonical input/fixture/authority 네 파일을 만들고 collision에는 mutation 0이다", async (context) => {
   const directory = await mkdtemp(path.join(tmpdir(), "full-capital-authority-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
   const input = await fullInput();
   const files = {
     fixture: path.join(directory, "source.json"),
-    buildSpec: path.join(directory, "build-spec.json"),
-    station: path.join(directory, "station.json"),
-    route: path.join(directory, "route.json"),
+    buildSpec: path.join(directory, "tools/datapack/release/candidate-build-spec.json"),
+    stationOutput: path.join(directory, "station.json"),
+    routeOutput: path.join(directory, "route.json"),
     fixtureOutput: path.join(directory, "candidate.json"),
     authorityOutput: path.join(directory, "authority.json"),
   };
+  await mkdir(path.dirname(files.buildSpec), { recursive: true });
   await writeFile(files.fixture, input.sourceFixtureBytes);
   await writeFile(files.buildSpec, input.buildSpecBytes);
-  await writeFile(files.station, input.stationLineInputBytes);
-  await writeFile(files.route, input.routeBytes);
   const argv = cliArgs(files);
   await main(argv, {
     repositoryRoot: directory,
     projectFixtureImpl: async () => structuredClone(input.projectedFixture),
+    buildRefreshOutputsImpl: async () => [
+      {
+        relative: "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
+        bytes: input.stationLineInputBytes,
+      },
+      {
+        relative: "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
+        bytes: input.routeBytes,
+      },
+    ],
   });
-  const [fixtureBytes, authorityBytes, fixtureStat, authorityStat] = await Promise.all([
+  const [stationBytes, routeBytes, fixtureBytes, authorityBytes, stationStat, routeStat, fixtureStat, authorityStat] = await Promise.all([
+    readFile(files.stationOutput),
+    readFile(files.routeOutput),
     readFile(files.fixtureOutput),
     readFile(files.authorityOutput),
+    stat(files.stationOutput),
+    stat(files.routeOutput),
     stat(files.fixtureOutput),
     stat(files.authorityOutput),
   ]);
+  assert.equal(stationBytes.toString("utf8"), canonicalCurrentCapitalStationLineInputJson(input.stationLineInput));
+  assert.equal(routeBytes.toString("utf8"), canonicalCurrentCapitalRouteEdgeInputJson(input.route));
   assert.equal(
     fixtureBytes.toString("utf8"),
     canonicalCurrentReleaseCandidateFixtureJson(JSON.parse(fixtureBytes)),
@@ -206,8 +226,9 @@ test("CLI는 canonical fixture/authority 두 파일을 만들고 output collisio
     authorityBytes.toString("utf8"),
     canonicalCurrentReleaseCandidateAccessibilityAuthorityJson(JSON.parse(authorityBytes)),
   );
-  assert.equal(fixtureStat.mode & 0o777, 0o600);
-  assert.equal(authorityStat.mode & 0o777, 0o600);
+  for (const info of [stationStat, routeStat, fixtureStat, authorityStat]) {
+    assert.equal(info.mode & 0o777, 0o600);
+  }
 
   const collisionFixture = path.join(directory, "collision-candidate.json");
   const collisionAuthority = path.join(directory, "collision-authority.json");
@@ -216,6 +237,7 @@ test("CLI는 canonical fixture/authority 두 파일을 만들고 output collisio
     main(cliArgs({ ...files, fixtureOutput: collisionFixture, authorityOutput: collisionAuthority }), {
       repositoryRoot: directory,
       projectFixtureImpl: async () => structuredClone(input.projectedFixture),
+      buildRefreshOutputsImpl: async () => [],
     }),
     /output must be absent/,
   );
@@ -224,9 +246,10 @@ test("CLI는 canonical fixture/authority 두 파일을 만들고 output collisio
 
   const sameOutput = path.join(directory, "same-output.json");
   await assert.rejects(
-    main(cliArgs({ ...files, fixtureOutput: sameOutput, authorityOutput: sameOutput }), {
+    main(cliArgs({ ...files, stationOutput: sameOutput, authorityOutput: sameOutput }), {
       repositoryRoot: directory,
       projectFixtureImpl: async () => structuredClone(input.projectedFixture),
+      buildRefreshOutputsImpl: async () => [],
     }),
     /output paths must be distinct/,
   );
@@ -237,8 +260,8 @@ function cliArgs(files) {
   return [
     "--fixture", files.fixture,
     "--build-spec", files.buildSpec,
-    "--station-line-input", files.station,
-    "--route-edge-input", files.route,
+    "--station-line-output", files.stationOutput,
+    "--route-edge-output", files.routeOutput,
     "--fixture-output", files.fixtureOutput,
     "--authority-output", files.authorityOutput,
   ];

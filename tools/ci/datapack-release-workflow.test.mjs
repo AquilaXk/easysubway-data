@@ -175,8 +175,9 @@ test("route-final candidate는 authority·strict validation·signed route stage�
   assert.match(yml, /EASYSUBWAY_DATAPACK_CANDIDATE_FIXTURE=.*candidate-fixture\.json/);
   assert.match(prepare, /build-current-release-candidate-accessibility-input\.mjs/);
   assert.match(prepare, /--fixture "\$\{build_fixture\}"/);
-  assert.match(prepare, /tools\/datapack\/release\/current-capital-accessibility-full\/station-line-input\.json/);
-  assert.match(prepare, /tools\/datapack\/release\/current-capital-accessibility-full\/route-edge-input\.json/);
+  assert.match(prepare, /--station-line-output "\$\{EASYSUBWAY_DATAPACK_STATION_LINE_INPUT\}"/);
+  assert.match(prepare, /--route-edge-output "\$\{EASYSUBWAY_DATAPACK_ROUTE_EDGE_INPUT\}"/);
+  assert.doesNotMatch(prepare, /--station-line-input|--route-edge-input/);
   assert.match(prepare, /--fixture-output "\$\{EASYSUBWAY_DATAPACK_CANDIDATE_FIXTURE\}"/);
   assert.match(prepare, /--authority-output "\$\{EASYSUBWAY_DATAPACK_ROUTE_COVERAGE_AUTHORITY\}"/);
   assert.match(prepare, /build_fixture="\$\{EASYSUBWAY_DATAPACK_CANDIDATE_FIXTURE\}"/);
@@ -191,16 +192,32 @@ test("route-final candidate는 authority·strict validation·signed route stage�
   const stager = step("Data Pack Release / Stage current server route bundle candidate");
   const metadata = step("Data Pack Release / Build candidate promotion metadata");
   assert.ok(stager > step("Data Pack Release / Validate generated data packs") && stager < metadata);
-  const stagerText = yml.slice(stager, metadata);
+  const stagerText = yml.slice(stager, step("Data Pack Release / Validate accessibility source coverage"));
+  assert.match(stagerText, /mode == 'release-candidate'/);
+  assert.doesNotMatch(stagerText, /candidate-create/);
   assert.match(stagerText, /stage-current-server-route-bundle-candidate\.mjs/);
-  assert.match(stagerText, /--station-line-input tools\/datapack\/release\/current-capital-accessibility-full\/station-line-input\.json/);
-  assert.match(stagerText, /--route-edge-input tools\/datapack\/release\/current-capital-accessibility-full\/route-edge-input\.json/);
-  assert.match(stagerText, /--output "\$\{EASYSUBWAY_DATAPACK_STAGE\}\/server-route-bundle"/);
+  assert.match(stagerText, /--station-line-input "\$\{EASYSUBWAY_DATAPACK_STATION_LINE_INPUT\}"/);
+  assert.match(stagerText, /--route-edge-input "\$\{EASYSUBWAY_DATAPACK_ROUTE_EDGE_INPUT\}"/);
+  assert.match(stagerText, /--output "\$\{EASYSUBWAY_DATAPACK_STAGE\}"/);
+  assert.doesNotMatch(stagerText, /--output "\$\{EASYSUBWAY_DATAPACK_STAGE\}\/server-route-bundle"/);
+  assert.ok(stager < step("Data Pack Release / Publish OCI candidate descriptor"));
+  const evidenceBundle = yml.slice(step("Data Pack Release / Write release evidence bundle"), step("Data Pack Release / Validate release evidence bundle"));
+  assert.match(evidenceBundle, /candidateServerRouteEvidence/);
+  assert.match(evidenceBundle, /releaseMode,/);
+  assert.match(evidenceBundle, /server-route-bundle-evidence\/route-accessibility-eligibility\.json/);
+  assert.match(evidenceBundle, /server-route-bundle-evidence\/server-route-bundle-final\.json/);
+  const evidenceValidation = yml.slice(step("Data Pack Release / Validate release evidence bundle"), step("Data Pack Release / Create manifest-last publish preflight plan"));
+  assert.match(evidenceValidation, /--candidate-server-route-root "\$\{EASYSUBWAY_DATAPACK_STAGE\}"/);
+  const metadataText = yml.slice(metadata, step("Data Pack Release / Upload candidate promotion artifact"));
+  assert.match(metadataText, /--candidate-server-route-only/);
+  assert.match(metadataText, /--candidate-artifact-inventory "\$\{EASYSUBWAY_DATAPACK_STAGE\}\/data-artifact-inventory\.json"/);
+  assert.match(metadataText, /--candidate-component-manifest "\$\{EASYSUBWAY_DATAPACK_STAGE\}\/data-component-manifest\.json"/);
   const checksums = yml.slice(step("Data Pack Release / Verify uploaded pack checksums before manifest publish"), step("Data Pack Release / Stage manifest"));
   assertRouteCoveragePair(checksums);
   const stagedManifest = yml.slice(step("Data Pack Release / Stage manifest"), step("Data Pack Release / Write route graph topology evidence"));
   assertRouteCoveragePair(stagedManifest);
   const publish = yml.slice(step("Data Pack Release / Publish staged data packs to object storage"), step("Data Pack Release / Prepare no-change release identity"));
+  assert.match(publish, /--candidate-server-route-root "\$\{EASYSUBWAY_DATAPACK_STAGE\}"/);
   assert.match(publish, /--server-route-coverage-evidence "\$\{EASYSUBWAY_DATAPACK_STAGE\}\/server-route-coverage-authority\.json"/);
   assert.match(publish, /--server-route-coverage-provenance "\$\{EASYSUBWAY_DATAPACK_STAGE\}\/current\.provenance\.json"/);
   const remote = yml.slice(step("Data Pack Release / Validate published remote artifact"), step("Data Pack Release / Upload remote validation artifact"));
@@ -829,6 +846,7 @@ test("production-publish는 attested candidate를 no-rebuild로 소비한다", (
 
   const signing = step("Data Pack Release / Restore candidate signing credentials");
   assert.match(signing, /if:\s*\$\{\{ steps\.release-mode\.outputs\.mode == 'release-candidate' \}\}/);
+  assert.doesNotMatch(signing, /candidate-create/);
   const signingSecrets = [...signing.matchAll(/secrets\.([A-Z0-9_]+)/g)].map((match) => match[1]).sort();
   assert.deepEqual(signingSecrets, [
     "EASYSUBWAY_DATAPACK_SIGNING_KEY_ID",

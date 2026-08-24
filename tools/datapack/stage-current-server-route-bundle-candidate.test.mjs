@@ -1,14 +1,31 @@
 import assert from "node:assert/strict";
 import { gzipSync } from "node:zlib";
-import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { sha256 } from "./lib/manifest-validation.mjs";
+import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
+import { buildServerRouteBundleFinal } from "./lib/server-route-bundle-final.mjs";
 import { stageCurrentServerRouteBundleCandidate } from "./stage-current-server-route-bundle-candidate.mjs";
 
 const CANDIDATE = { candidateId: "capital-pilot-candidate-20260814", sourceSetSha256: "a".repeat(64) };
+const BUNDLE_CANDIDATE = {
+  repository: "AquilaXk/easysubway-data",
+  gitSha: "b".repeat(40),
+  bundleId: "capital-route-bundle-1",
+  releaseSequence: 1,
+  stationSetSha256: "c".repeat(64),
+  sourceSnapshotSetHash: CANDIDATE.sourceSetSha256,
+  signingInputSha256: "d".repeat(64),
+  signedManifestRawSha256: "e".repeat(64),
+  payloadRootSha256: "f".repeat(64),
+  componentInventorySha256: "1".repeat(64),
+  componentDigests: Object.fromEntries(["topology", "timetable", "accessibility", "fare"].map((name) => [name, "2".repeat(64)])),
+  activeFrom: "2026-08-15T00:34:07.000+09:00",
+  freshUntil: "2026-08-16T00:34:07.000+09:00",
+  keyId: "production-v1",
+};
 const SIGNED_PATHS = ["compatibility.json", "manifest.json", "manifest.signing-input.json", "payload/accessibility.sqlite.zst", "payload/fare.sqlite.zst", "payload/timetable.sqlite.zst", "payload/topology.sqlite.zst", "provenance.json"];
 
 async function fixture(root) {
@@ -29,19 +46,23 @@ async function fixture(root) {
   return { datapackRoot, buildSpecPath: path.join(root, "build.json"), stationLineInputPath: path.join(root, "station.json"), routeEdgeInputPath: path.join(root, "route.json") };
 }
 
-test("current production capital을 재검증한 뒤 signed route bundle 여덟 파일만 atomic stage한다", async (t) => {
+test("current production capital을 재검증한 뒤 signed 8파일과 eligibility/FINAL을 atomic stage한다", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "route-candidate-stage-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const input = await fixture(root);
   const calls = [];
   let sourceSqliteBytes;
+  let eligibilityBytes;
   const output = path.join(root, "candidate");
+  await mkdir(output);
+  await writeFile(path.join(output, "sentinel"), "keep");
   await stageCurrentServerRouteBundleCandidate({ ...input, repositoryGitSha: "b".repeat(40), keyId: "production-v1", output, stages: { prepare: async (prepareInput) => {
     calls.push(prepareInput);
     sourceSqliteBytes = await readFile(prepareInput.emitterInputs.sourceSqlite);
     const signed = path.join(prepareInput.output, "signed-server-route-bundle");
     await mkdir(path.join(signed, "payload"), { recursive: true });
-    await Promise.all(SIGNED_PATHS.map(async (relative) => writeFile(path.join(signed, relative), relative)));
+    await writePreparedOutputs(prepareInput.output);
+    eligibilityBytes = await readFile(path.join(prepareInput.output, "route-accessibility-eligibility.json"));
   } } });
   assert.equal(calls.length, 1);
   assert.equal(calls[0].emitterInputs.mapPackId, "capital-map-1");
@@ -52,8 +73,50 @@ test("current production capital을 재검증한 뒤 signed route bundle 여덟 
   assert.equal(calls[0].emitterInputs.activeFrom, "2026-08-15T00:34:07.000+09:00");
   assert.equal(calls[0].emitterInputs.freshUntil, "2026-08-16T00:34:07.000+09:00");
   assert.deepEqual(await inventory(path.join(output, "server-route-bundle")), SIGNED_PATHS);
-  assert.deepEqual(await inventory(output), SIGNED_PATHS.map((relative) => `server-route-bundle/${relative}`));
+  assert.deepEqual(await inventory(path.join(output, "server-route-bundle-evidence")), [
+    "server-route-bundle-evidence/route-accessibility-eligibility.json",
+    "server-route-bundle-evidence/server-route-bundle-final.json",
+  ].map((relative) => relative.replace("server-route-bundle-evidence/", "")).sort());
+  assert.equal(await readFile(path.join(output, "sentinel"), "utf8"), "keep");
+  assert.equal(await readFile(path.join(output, "server-route-bundle-evidence", "route-accessibility-eligibility.json"), "utf8"),
+    eligibilityBytes.toString("utf8"));
   assert.equal(sourceSqliteBytes.toString(), "candidate sqlite bytes");
+});
+
+test("evidence의 누락·symlink·비정준 JSON·identity drift·bound extra는 output 없이 종료한다", async (t) => {
+  const mutations = [
+    { label: "missing", mutate: async (prepared) => rm(path.join(prepared, "route-accessibility-eligibility.json")) },
+    { label: "symlink", mutate: async (prepared) => {
+      const target = path.join(prepared, "route-accessibility-eligibility.json");
+      await writeFile(path.join(prepared, "eligibility-target.json"), await readFile(target));
+      await rm(target);
+      await symlink("eligibility-target.json", target);
+    } },
+    { label: "noncanonical", mutate: async (prepared) => {
+      const target = path.join(prepared, "route-accessibility-eligibility.json");
+      await writeFile(target, `${JSON.stringify(JSON.parse(await readFile(target, "utf8")), null, 2)}\n`);
+    } },
+    { label: "identity drift", mutate: async (prepared) => {
+      const target = path.join(prepared, "bound", "server-route-bundle-final.json");
+      const value = JSON.parse(await readFile(target, "utf8"));
+      value.candidate = { ...value.candidate, sourceSnapshotSetHash: "3".repeat(64) };
+      await writeFile(target, canonicalJson(value));
+    } },
+    { label: "bound extra", mutate: async (prepared) => writeFile(path.join(prepared, "bound", "unexpected.json"), "x") },
+  ];
+  for (const { label, mutate } of mutations) {
+    const root = await mkdtemp(path.join(os.tmpdir(), "route-candidate-evidence-failure-"));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const input = await fixture(root);
+    const output = path.join(root, "candidate");
+    await mkdir(output);
+    await assert.rejects(() => stageCurrentServerRouteBundleCandidate({ ...input, repositoryGitSha: "b".repeat(40), keyId: "production-v1", output, stages: { prepare: async (prepareInput) => {
+      await writePreparedOutputs(prepareInput.output);
+      await mutate(prepareInput.output);
+    } } }));
+    await assert.rejects(() => lstat(path.join(output, "server-route-bundle")), /ENOENT/);
+    await assert.rejects(() => lstat(path.join(output, "server-route-bundle-evidence")), /ENOENT/);
+  }
 });
 
 test("tamper·wrong identity·prepare failure·output collision은 output 없이 종료한다", async (t) => {
@@ -67,8 +130,10 @@ test("tamper·wrong identity·prepare failure·output collision은 output 없이
     const input = await fixture(root);
     await mutate(input);
     const output = path.join(root, "candidate");
+    await mkdir(output);
     await assert.rejects(() => stageCurrentServerRouteBundleCandidate({ ...input, repositoryGitSha: "b".repeat(40), keyId: "production-v1", output, stages: { prepare: async () => { throw new Error("prepare failure"); } } }));
-    await assert.rejects(() => lstat(output), /ENOENT/);
+    await assert.rejects(() => lstat(path.join(output, "server-route-bundle")), /ENOENT/);
+    await assert.rejects(() => lstat(path.join(output, "server-route-bundle-evidence")), /ENOENT/);
   }
 });
 
@@ -77,18 +142,19 @@ test("wrong active pack·key와 existing output은 fail-closed이며 기존 outp
   t.after(() => rm(root, { recursive: true, force: true }));
   const input = await fixture(root);
   const output = path.join(root, "candidate");
+  await mkdir(output);
   const manifest = JSON.parse(await readFile(path.join(input.datapackRoot, "current.json"), "utf8"));
   manifest.activePack.id = "other";
   await writeFile(path.join(input.datapackRoot, "current.json"), JSON.stringify(manifest));
   await assert.rejects(() => stageCurrentServerRouteBundleCandidate({ ...input, repositoryGitSha: "b".repeat(40), keyId: "production-v1", output }), /capital@1/);
-  await assert.rejects(() => lstat(output), /ENOENT/);
+  await assert.rejects(() => lstat(path.join(output, "server-route-bundle")), /ENOENT/);
   await writeFile(path.join(input.datapackRoot, "current.json"), JSON.stringify({ ...manifest, activePack: { id: "capital", version: "1" } }));
   await assert.rejects(() => stageCurrentServerRouteBundleCandidate({ ...input, repositoryGitSha: "b".repeat(40), keyId: "wrong", output }), /key id/);
-  await assert.rejects(() => lstat(output), /ENOENT/);
-  await mkdir(output);
-  await writeFile(path.join(output, "sentinel"), "keep");
+  await assert.rejects(() => lstat(path.join(output, "server-route-bundle")), /ENOENT/);
+  await mkdir(path.join(output, "server-route-bundle"));
+  await writeFile(path.join(output, "server-route-bundle", "sentinel"), "keep");
   await assert.rejects(() => stageCurrentServerRouteBundleCandidate({ ...input, repositoryGitSha: "b".repeat(40), keyId: "production-v1", output }), /output must be absent/);
-  assert.equal(await readFile(path.join(output, "sentinel"), "utf8"), "keep");
+  assert.equal(await readFile(path.join(output, "server-route-bundle", "sentinel"), "utf8"), "keep");
 });
 
 test("prepare 중 생성된 foreign output과 conflicting source hashes는 fail-closed로 보존한다", async (t) => {
@@ -96,18 +162,19 @@ test("prepare 중 생성된 foreign output과 conflicting source hashes는 fail-
   t.after(() => rm(root, { recursive: true, force: true }));
   const input = await fixture(root);
   const output = path.join(root, "candidate");
+  await mkdir(output);
   await assert.rejects(() => stageCurrentServerRouteBundleCandidate({ ...input, repositoryGitSha: "b".repeat(40), keyId: "production-v1", output, stages: { prepare: async () => {
-    await mkdir(output);
-    await writeFile(path.join(output, "sentinel"), "foreign");
+    await mkdir(path.join(output, "server-route-bundle"));
+    await writeFile(path.join(output, "server-route-bundle", "sentinel"), "foreign");
     throw new Error("prepare failure after foreign output");
   } } }), /prepare failure/);
-  assert.equal(await readFile(path.join(output, "sentinel"), "utf8"), "foreign");
-  await rm(output, { recursive: true, force: true });
+  assert.equal(await readFile(path.join(output, "server-route-bundle", "sentinel"), "utf8"), "foreign");
+  await rm(path.join(output, "server-route-bundle"), { recursive: true, force: true });
   const buildSpec = JSON.parse(await readFile(input.buildSpecPath, "utf8"));
   buildSpec.sourceSetSha256 = "b".repeat(64);
   await writeFile(input.buildSpecPath, JSON.stringify(buildSpec));
   await assert.rejects(() => stageCurrentServerRouteBundleCandidate({ ...input, repositoryGitSha: "b".repeat(40), keyId: "production-v1", output }), /candidate identity is invalid/);
-  await assert.rejects(() => lstat(output), /ENOENT/);
+  await assert.rejects(() => lstat(path.join(output, "server-route-bundle")), /ENOENT/);
 });
 
 async function inventory(root) {
@@ -121,4 +188,32 @@ async function inventory(root) {
   }
   await walk(root);
   return entries.sort();
+}
+
+async function writePreparedOutputs(prepared) {
+  const signed = path.join(prepared, "signed-server-route-bundle");
+  await mkdir(path.join(signed, "payload"), { recursive: true });
+  await Promise.all(SIGNED_PATHS.map(async (relative) => writeFile(path.join(signed, relative), relative)));
+  const eligibilityPayload = {
+    schemaVersion: 1,
+    artifactKind: "route-accessibility-eligibility",
+    candidate: BUNDLE_CANDIDATE,
+    decision: "ELIGIBLE",
+    stationLineAccessibility: { rowCount: 1 },
+    routeEdgeEvaluation: { edgeCount: 1 },
+    blockers: [],
+  };
+  const eligibility = canonicalJson({ ...eligibilityPayload, eligibilitySha256: sha256(Buffer.from(canonicalJson(eligibilityPayload))) });
+  await writeFile(path.join(prepared, "route-accessibility-eligibility.json"), eligibility);
+  await mkdir(path.join(prepared, "bound"));
+  const evidenceSha256 = "4".repeat(64);
+  const gates = Object.fromEntries([
+    "sourceFreshness", "stationLineAccessibility", "routeEdgeEvaluation", "artifactInventory", "signature",
+  ].map((name) => [name, { state: "PASS", evidenceSha256 }]));
+  gates.routeAccessibilityEligibility = { state: "PASS", evidenceSha256: sha256(Buffer.from(eligibility)) };
+  gates.publication = { state: "UNAVAILABLE", evidenceSha256: null };
+  gates.rebuildParityPromotion = { state: "UNAVAILABLE", evidenceSha256: null };
+  await writeFile(path.join(prepared, "bound", "server-route-bundle-final.json"), canonicalJson(
+    buildServerRouteBundleFinal({ candidate: BUNDLE_CANDIDATE, gates }),
+  ));
 }

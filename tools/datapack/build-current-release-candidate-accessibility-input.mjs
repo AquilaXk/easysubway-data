@@ -12,6 +12,11 @@ import {
   canonicalRideEdgeSetSha256,
   routeEdgeSha256,
 } from "./evaluate-route-accessibility-edges.mjs";
+import { buildCurrentCapitalAccessibilityRefreshOutputs } from "./refresh-current-capital-accessibility-full.mjs";
+
+const CURRENT_BUILD_SPEC = "tools/datapack/release/candidate-build-spec.json";
+const CURRENT_STATION_INPUT = "tools/datapack/release/current-capital-accessibility-full/station-line-input.json";
+const CURRENT_ROUTE_INPUT = "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json";
 
 const CLOSED_STATES = new Set([
   "VERIFIED_PRESENT",
@@ -631,6 +636,7 @@ export async function main(
   {
     repositoryRoot = fileURLToPath(new URL("../../", import.meta.url)),
     projectFixtureImpl = defaultProjectFixture,
+    buildRefreshOutputsImpl = buildCurrentCapitalAccessibilityRefreshOutputs,
   } = {},
 ) {
   if (argv.length !== 12) throw new Error("CLI arguments mismatch");
@@ -639,21 +645,38 @@ export async function main(
     argv[(index * 2) + 1],
   ]));
   const required = [
-    "fixture", "build-spec", "station-line-input", "route-edge-input",
+    "fixture", "build-spec", "station-line-output", "route-edge-output",
     "fixture-output", "authority-output",
   ];
   if (required.some((key) => !args[key]) || Object.keys(args).length !== required.length) {
     throw new Error("CLI arguments mismatch");
   }
   const root = path.resolve(repositoryRoot);
+  const stationLineOutput = path.resolve(root, args["station-line-output"]);
+  const routeEdgeOutput = path.resolve(root, args["route-edge-output"]);
   const fixtureOutput = path.resolve(root, args["fixture-output"]);
   const authorityOutput = path.resolve(root, args["authority-output"]);
-  if (fixtureOutput === authorityOutput) throw new Error("output paths must be distinct");
-  await Promise.all([outputMustBeAbsent(fixtureOutput), outputMustBeAbsent(authorityOutput)]);
+  const outputs = [stationLineOutput, routeEdgeOutput, fixtureOutput, authorityOutput];
+  if (new Set(outputs).size !== outputs.length) throw new Error("output paths must be distinct");
+  await Promise.all(outputs.map(outputMustBeAbsent));
   const sourceFixtureBytes = await readFile(path.resolve(root, args.fixture));
   const buildSpecBytes = await readFile(path.resolve(root, args["build-spec"]));
-  const stationLineInputBytes = await readFile(path.resolve(root, args["station-line-input"]));
-  const routeBytes = await readFile(path.resolve(root, args["route-edge-input"]));
+  const canonicalBuildSpecBytes = await readFile(path.join(root, CURRENT_BUILD_SPEC));
+  if (!buildSpecBytes.equals(canonicalBuildSpecBytes)) {
+    throw new Error("current candidate build spec raw binding mismatch");
+  }
+  const refreshed = await buildRefreshOutputsImpl({ repositoryRoot: root });
+  if (!Array.isArray(refreshed) || refreshed.length !== 2) {
+    throw new Error("current candidate accessibility regeneration mismatch");
+  }
+  const refreshedByPath = new Map(refreshed.map(({ relative, bytes }) => [relative, bytes]));
+  if (refreshedByPath.size !== 2
+    || !Buffer.isBuffer(refreshedByPath.get(CURRENT_STATION_INPUT))
+    || !Buffer.isBuffer(refreshedByPath.get(CURRENT_ROUTE_INPUT))) {
+    throw new Error("current candidate accessibility regeneration mismatch");
+  }
+  const stationLineInputBytes = refreshedByPath.get(CURRENT_STATION_INPUT);
+  const routeBytes = refreshedByPath.get(CURRENT_ROUTE_INPUT);
   const sourceFixture = JSON.parse(sourceFixtureBytes.toString("utf8"));
   const buildSpec = JSON.parse(buildSpecBytes.toString("utf8"));
   const stationLineInput = JSON.parse(stationLineInputBytes.toString("utf8"));
@@ -670,6 +693,8 @@ export async function main(
     stationLineInputBytes,
   });
   await Promise.all([
+    writeFile(stationLineOutput, stationLineInputBytes, { flag: "wx", mode: 0o600 }),
+    writeFile(routeEdgeOutput, routeBytes, { flag: "wx", mode: 0o600 }),
     writeFile(fixtureOutput, canonicalCurrentReleaseCandidateFixtureJson(result.candidateFixture), { flag: "wx", mode: 0o600 }),
     writeFile(authorityOutput, canonicalCurrentReleaseCandidateAccessibilityAuthorityJson(result.authority), { flag: "wx", mode: 0o600 }),
   ]);
