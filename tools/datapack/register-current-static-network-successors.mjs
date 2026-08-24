@@ -95,6 +95,19 @@ function validateJournal(journal) {
 function projectionRecordHashes(sourceId, projection) {
   return projection.map((record) => sha(JSON.stringify(record)));
 }
+function canonicalProviderCoordinate(value) {
+  const text = String(value ?? "").trim();
+  if (!/^-?\d+(?:\.\d{1,12})?$/u.test(text)) return null;
+  const negative = text.startsWith("-"); const [whole, fraction = ""] = (negative ? text.slice(1) : text).split(".");
+  let microdegrees = Number(whole) * 1_000_000 + Number((fraction + "000000").slice(0, 6));
+  if ((fraction[6] ?? "0") >= "5") microdegrees += 1;
+  return (negative ? -microdegrees : microdegrees) / 1_000_000;
+}
+function routeMapProviderRows(rows) {
+  return rows.map(({ line, stationCode, stationName, latitude, longitude, basisDate }) => ({
+    line, stationCode, stationName, latitude: canonicalProviderCoordinate(latitude), longitude: canonicalProviderCoordinate(longitude), basisDate,
+  }));
+}
 function assertTwoObservations(observations) {
   if (!Array.isArray(observations) || observations.length !== 2 || observations.some(({ snapshot }, index) => snapshot?.sourceId !== TARGETS[index])) throw new Error("static network observations must contain the exact two sources");
   for (const { snapshot, receipt, bytes: snapshotBytes } of observations) {
@@ -136,7 +149,7 @@ function assertTwoObservations(observations) {
     if (snapshot.sourceId === TARGETS[0] && (observation.migration.migrationKind !== "CROSS_SOURCE_CANONICAL_REPLACEMENT" || observation.migration.replacedSourceId !== "seoulmetro-cyberstation-route-map" || typeof observation.migration.replacedSnapshotId !== "string" || !SHA.test(observation.migration.replacedRawSha256 ?? "") || !SHA.test(observation.migration.replacedSchemaFingerprint ?? "") || observation.migration.candidateSlotSourceId !== observation.migration.replacedSourceId)) throw new Error("static network public replacement binding is invalid");
     if (snapshot.sourceId === TARGETS[0]) {
       const layout = observation.layoutEvidence; const artifact = observation.routeMapLayoutArtifact; const keys = ["aliasLedgerSha256", "aliasLedgerVersion", "layoutAlgorithmVersion", "layoutArtifactSha256", "layoutPositionsSha256", "layoutTracksSha256", "lineOrderSha256", "outputSchemaSha256", "rawPositionsSha256", "semanticInputSha256", "semanticOutputSha256", "topologySnapshotId", "topologySnapshotIdentity", "topologySnapshotSha256"];
-      const providerRows = observation.normalizedProjection.map(({ line, stationCode, stationName, latitude, longitude, basisDate }) => ({ line, stationCode, stationName, latitude, longitude, basisDate })); const artifactRows = artifact?.rawPositions?.map(({ line, stationCode, stationName, latitude, longitude, basisDate }) => ({ line, stationCode, stationName, latitude, longitude, basisDate }));
+      const providerRows = routeMapProviderRows(observation.normalizedProjection); const artifactRows = routeMapProviderRows(artifact?.rawPositions ?? []);
       if (!layout || !artifact || artifact.rawSha256 !== snapshot.rawSha256 || artifact.rawSha256 !== observation.rawSha256 || JSON.stringify(Object.keys(layout).sort(compareStrings)) !== JSON.stringify(keys) || !keys.filter((key) => key.endsWith("Sha256")).every((key) => SHA.test(layout[key] ?? "")) || typeof layout.layoutAlgorithmVersion !== "string" || typeof layout.aliasLedgerVersion !== "string" || typeof layout.topologySnapshotId !== "string" || layout.topologySnapshotIdentity !== `${layout.topologySnapshotId}:${layout.topologySnapshotSha256}` || layout.layoutArtifactSha256 !== sha(canonicalBytes(artifact)) || ["layoutAlgorithmVersion", "topologySnapshotId", "topologySnapshotSha256", "topologySnapshotIdentity", "lineOrderSha256", "aliasLedgerVersion", "aliasLedgerSha256", "rawPositionsSha256", "layoutPositionsSha256", "layoutTracksSha256", "semanticInputSha256", "semanticOutputSha256", "outputSchemaSha256"].some((key) => layout[key] !== artifact[key]) || JSON.stringify(providerRows) !== JSON.stringify(artifactRows) || JSON.stringify(snapshot.routeMapLayoutEvidence) !== JSON.stringify(layout) || JSON.stringify(snapshot.routeMapLayoutArtifact) !== JSON.stringify(artifact)) throw new Error("static network layout evidence binding is invalid");
     }
     if (snapshot.sourceId === TARGETS[1] && (observation.migration.migrationKind !== "LEGACY_SAMPLE_TO_FULL_CONSUMED_FIELDS" || observation.migration.legacySnapshotId !== snapshot.previousSnapshotId || observation.migration.legacyRawSha256 == null || observation.migration.legacySchemaFingerprint == null || !Array.isArray(observation.migration.legacyProviderRecordHashes) || observation.migration.fullProjectionSha256 !== snapshot.contentSha256 || observation.migration.fullProjectionSchemaFingerprint !== snapshot.schemaFingerprint || observation.migration.fullProjectionRowCount !== snapshot.rowCount || observation.migration.newSnapshotId !== snapshot.snapshotId)) throw new Error("static network MOLIT migration binding is invalid");

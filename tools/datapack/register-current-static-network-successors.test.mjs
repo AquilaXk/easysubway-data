@@ -102,6 +102,9 @@ test("registrar build output hashes the current ledger's exact seven-snapshot se
   const molitBaseline = await readFile(path.join(repositoryRoot, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv"));
   const positionCsv = await readFile(path.join(repositoryRoot, "tools/datapack/fixtures/seoul-route-map-positions-raw/data-go-15099316.csv"));
   const positions = parseSeoulRouteMapPositionsCsv(positionCsv).rawPositions.map(({ line, stationCode, stationName, latitude, longitude, basisDate }, index) => ({ "연번": `${index + 1}`, "호선": line, "고유역번호(외부역코드)": stationCode, "역명": stationName, "위도": `${latitude}`, "경도": `${longitude}`, "작성기준일": basisDate, "작성일자": basisDate }));
+  const precisePosition = positions.find(({ "호선": line, "고유역번호(외부역코드)": stationCode }) => line === "4" && stationCode === "421");
+  assert.ok(precisePosition);
+  precisePosition["위도"] = "37.5708397";
   const positionEnvelope = Buffer.from(JSON.stringify({ currentCount: positions.length, data: positions, matchCount: positions.length, page: 1, perPage: 1000, totalCount: positions.length }));
   const { inWindow: now, expiredAt } = await currentTopologyAdmissionClock(repositoryRoot); let outputs; let captured;
   await runCurrentStaticNetworkSuccessors({ repositoryRoot, operationRoot, now, assertExactMain: async () => "0".repeat(40),
@@ -117,6 +120,13 @@ test("registrar build output hashes the current ledger's exact seven-snapshot se
   assert.equal(candidate.sourceSnapshotSetHash, expected); assert.equal(request.sourceSnapshotSetHash, expected); assert.equal(hashes.sourceSnapshotSetHash.value, expected);
   assert.notDeepEqual(selected.map(({ snapshotId }) => snapshotId), candidate.sourceSnapshotIds);
   const positionSnapshot = nextLedger.find(({ sourceId }) => sourceId === "seoul-metro-route-map-positions");
+  const positionObservation = JSON.parse(captured[0].bytes);
+  const providerPosition = positionObservation.normalizedProjection.find(({ line, stationCode }) => line === "4" && stationCode === "421");
+  const layoutPosition = positionObservation.routeMapLayoutArtifact.rawPositions.find(({ line, stationCode }) => line === "4" && stationCode === "421");
+  assert.deepEqual(providerPosition, { serial: providerPosition.serial, line: "4", stationCode: "421", stationName: "동대문", latitude: 37.5708397, longitude: providerPosition.longitude, basisDate: providerPosition.basisDate });
+  assert.equal(layoutPosition.latitude, 37.57084);
+  assert.equal(Object.hasOwn(providerPosition, "lineId"), false);
+  assert.equal(typeof layoutPosition.lineId, "string");
   const positionSource = nextInventory.sources.find(({ id }) => id === positionSnapshot.sourceId);
   assert.equal(positionSource.requiredForProductionPack, true);
   assert.equal(positionSource.productionUseAllowed, true);
