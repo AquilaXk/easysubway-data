@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Map and station catalog signed-current publication descriptor",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "artifactKind", "producerGitSha", "releaseSequence", "signedFinalDescriptorSha256", "stationSetSha256", "freshUntil", "mapPack", "stationCatalogPack", "publicationReceipt", "publicationReceiptSha256", "descriptorSha256", "keyId", "signature"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "artifactKind": { "const": "map-catalog-signed-current-publication" },
+    "producerGitSha": { "$ref": "#/$defs/gitSha" },
+    "releaseSequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "signedFinalDescriptorSha256": { "$ref": "#/$defs/sha256" },
+    "stationSetSha256": { "$ref": "#/$defs/sha256" },
+    "freshUntil": { "type": "string", "format": "date-time" },
+    "mapPack": { "$ref": "map-catalog-signed-current-publication-receipt.schema.json#/$defs/mapPack" },
+    "stationCatalogPack": { "$ref": "map-catalog-signed-current-publication-receipt.schema.json#/$defs/catalogPack" },
+    "publicationReceipt": { "$ref": "map-catalog-signed-current-publication-receipt.schema.json" },
+    "publicationReceiptSha256": { "$ref": "#/$defs/sha256" },
+    "descriptorSha256": { "$ref": "#/$defs/sha256" },
+    "keyId": { "type": "string", "minLength": 1 },
+    "signature": { "$ref": "#/$defs/signature" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "gitSha": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+    "pack": { "type": "object", "additionalProperties": false, "required": ["manifest", "objects"], "properties": { "manifest": { "type": "object" }, "objects": { "type": "array", "minItems": 2, "maxItems": 5, "items": { "type": "object", "additionalProperties": false, "required": ["path", "sizeBytes", "sha256"], "properties": { "path": { "type": "string" }, "sizeBytes": { "type": "integer", "minimum": 1 }, "sha256": { "$ref": "#/$defs/sha256" } } } } } },
+    "signature": { "type": "object", "additionalProperties": false, "required": ["algorithm", "value"], "properties": { "algorithm": { "const": "rsa-sha256-map-catalog-signed-current-v1" }, "value": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" } } }
+  }
+}

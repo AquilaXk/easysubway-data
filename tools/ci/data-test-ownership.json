@@ -183,6 +183,10 @@
     "data529": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/529",
       "title": "[Data][Release] candidate 생성과 cross-run attestation 분리"
+    },
+    "data535": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/535",
+      "title": "[Data][P1] map/catalog signed-current offline publication contract"
     }
   },
   "workflows": {
@@ -286,6 +290,7 @@
     {"path":"tools/datapack/build-datapack-candidate-fixture-override.test.mjs","semanticOwner":"data396","classes":["required-pr"],"durationMs":564},
     {"path":"tools/datapack/build-datapack-candidate-tuple.test.mjs","semanticOwner":"data529","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/build-candidate-oci-artifact-descriptor.test.mjs","semanticOwner":"data529","classes":["required-pr"],"durationMs":120},
+    {"path":"tools/datapack/build-map-catalog-signed-current-publication.test.mjs","semanticOwner":"data535","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/publish-candidate-oci-artifact.test.mjs","semanticOwner":"data529","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/build-datapack-current-admission.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":432},
     {"path":"tools/datapack/build-exit-path-admission.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":184},
@@ -471,6 +476,7 @@
     {"path":"tools/datapack/test-fixtures/current-public-route-map-successor.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":376},
     {"path":"tools/datapack/validate-datapack-ride-adjacency.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":130},
     {"path":"tools/datapack/validate-datapack-server-route-coverage.test.mjs","semanticOwner":"data302","classes":["required-pr"],"durationMs":50},
+    {"path":"tools/datapack/validate-map-catalog-signed-current-publication.test.mjs","semanticOwner":"data535","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/validate-release-evidence-bundle.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":2549},
     {"path":"tools/datapack/validate-remote-datapack-artifact-server-route-coverage.test.mjs","semanticOwner":"data302","classes":["required-pr"],"durationMs":42},
     {"path":"tools/datapack/validate-source-inventory-transfer.test.mjs","semanticOwner":"data350","classes":["required-pr"],"durationMs":57},
