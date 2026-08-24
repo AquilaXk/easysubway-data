@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { TextDecoder } from "node:util";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
+import { canonicalSeoulRouteMapCoordinate } from "./collect-seoul-route-map-positions.mjs";
 import {
   assertCurrentMolitFullRouteCompleteness,
   normalizeCurrentSeoulPositionCompleteness,
@@ -66,7 +67,7 @@ export function projectPositions(bytes, observedAt) {
   const records = envelope.data.map((row) => {
     if (!row || typeof row !== "object" || Array.isArray(row) || JSON.stringify(Object.keys(row).sort()) !== JSON.stringify([...POSITION_FIELDS].sort())) fail("SEOUL_POSITIONS_SCHEMA");
     const [serial, line, stationCode, stationName, latText, lonText, rowBasisDate, rowCreatedDate] = POSITION_FIELDS.map((field) => String(row[field] ?? "").trim());
-    const latitude = Number(latText); const longitude = Number(lonText); const key = `${line}:${stationCode}`;
+    const latitude = canonicalSeoulRouteMapCoordinate(latText, "latitude", `${line}:${stationCode}`); const longitude = canonicalSeoulRouteMapCoordinate(lonText, "longitude", `${line}:${stationCode}`); const key = `${line}:${stationCode}`;
     const basisMillis = Date.parse(`${rowBasisDate}T00:00:00.000Z`); const basisRoundTrip = Number.isFinite(basisMillis) && new Date(basisMillis).toISOString().slice(0, 10) === rowBasisDate;
     const createdMillis = Date.parse(`${rowCreatedDate}T00:00:00.000Z`); const createdRoundTrip = Number.isFinite(createdMillis) && new Date(createdMillis).toISOString().slice(0, 10) === rowCreatedDate;
     if (!/^\d+$/u.test(serial) || !/^[1-8]$/u.test(line) || !/^\d{3,4}$/u.test(stationCode) || stationName === "" || !Number.isFinite(latitude) || latitude < 37 || latitude > 38.2 || !Number.isFinite(longitude) || longitude < 126.5 || longitude > 127.5 || !/^\d{4}-\d{2}-\d{2}$/u.test(rowBasisDate) || !basisRoundTrip || !createdRoundTrip || (observedAt != null && (basisMillis > Date.parse(observedAt) || createdMillis > Date.parse(observedAt))) || seen.has(key)) fail("SEOUL_POSITIONS_SCHEMA");

@@ -9,7 +9,7 @@ export async function currentTopologyAdmissionClock(repositoryRoot) {
   ]);
   const admissions = inventory.sources
     .map(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence?.currentTopologyAdmission)
-    .filter((admission) => admission?.topologySnapshotId != null);
+    .filter(({ topologySnapshotId } = {}) => /^capital-route-topology-[0-9]{8}$/u.test(topologySnapshotId));
   const admission = admissions[0];
   if (admission == null
     || admissions.some(({ topologySnapshotId, reviewedAt, freshUntil }) => topologySnapshotId !== admission.topologySnapshotId

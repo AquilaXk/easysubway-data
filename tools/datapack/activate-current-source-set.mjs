@@ -1014,13 +1014,14 @@ export function buildCurrentSourcePrimaryOutputs({
     : [...staticSources.sourceSnapshots, expectedCurrentKric];
   validateLineage(nextSnapshots);
 
-  const capital = loadCapitalRouteTopologySnapshot(currentTopology);
+  const fullCapital = loadCapitalRouteTopologySnapshot(currentTopology);
   const capitalSnapshotId = exactCurrentTopologySnapshotIdentity({
-    snapshot: capital,
+    snapshot: fullCapital,
     snapshotBytes: currentTopologyBytes,
     snapshotPath: currentTopologyPath,
     prefix: "capital-route-topology",
   });
+  const capital = projectCapitalTopologyOwnership(fullCapital);
   validateCurrentCapitalTopologyOwnership(capital);
   const activationNow = new Date(requiredUtcInstant(validateBuildNow(buildNow, handoff), "buildNow"));
   if (Date.parse(capital.capturedAt) > activationNow.getTime()
@@ -1080,13 +1081,14 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
   buildNow,
   snapshotBytesByPath,
 }) {
-  const topology = loadCapitalRouteTopologySnapshot(currentTopology);
+  const fullTopology = loadCapitalRouteTopologySnapshot(currentTopology);
   const topologySnapshotId = exactCurrentTopologySnapshotIdentity({
-    snapshot: topology,
+    snapshot: fullTopology,
     snapshotBytes: currentTopologyBytes,
     snapshotPath: currentTopologyPath,
     prefix: "capital-route-topology",
   });
+  const topology = projectCapitalTopologyOwnership(fullTopology);
   validateCurrentCapitalTopologyOwnership(topology);
   const activationNow = new Date(requiredUtcInstant(buildNow, "buildNow"));
   if (activationNow < new Date(topology.capturedAt)
@@ -1133,7 +1135,7 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
     baseSpec,
     builderGitSha,
     sourceInventoryBytes,
-    currentTopology: topology,
+    currentTopology: fullTopology,
     currentTopologyBytes,
     currentTopologyPath,
     topologyReverificationBytes,
@@ -1560,12 +1562,13 @@ export async function collectPositionSnapshotBytes(sourceInventory, repositoryRo
   for (const source of sourceInventory.sources ?? []) {
     const evidence = source.routeMapAdmissionEvidence;
     if (!requiresCurrentCapitalTopologyAdmission(source)) continue;
-    if (snapshotBytesByPath.has(evidence.snapshotPath)) {
-      throw new Error(`duplicate capital position snapshot path: ${evidence.snapshotPath}`);
+    const snapshotPath = evidence.currentLayoutAdmission?.snapshotPath ?? evidence.snapshotPath;
+    if (snapshotBytesByPath.has(snapshotPath)) {
+      throw new Error(`duplicate capital position snapshot path: ${snapshotPath}`);
     }
     snapshotBytesByPath.set(
-      evidence.snapshotPath,
-      await readRegularBytes(repositoryRoot, evidence.snapshotPath, `${source.id} position snapshot`),
+      snapshotPath,
+      await readRegularBytes(repositoryRoot, snapshotPath, `${source.id} position snapshot`),
     );
   }
   if (snapshotBytesByPath.size === 0) throw new Error("capital position snapshots are missing");

@@ -21,7 +21,7 @@ import { activateIncheonTopologyAdmission, activateStaticSourceRevalidations,
   stageValidationItxTopologyEvidence,
   validatePreparedCandidate, verifyCurrentStaticNetworkSuccessorHeads,
   verifyCurrentSeoulCanonicalMembership } from "./activate-current-source-set.mjs";
-import { normalizeStationName, projectCapitalTopologyOwnership } from "./collect-capital-route-topology.mjs";
+import { normalizeStationName } from "./collect-capital-route-topology.mjs";
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 
@@ -909,13 +909,22 @@ test("current public route-map topology는 inventory admission에서 24 lines와
 });
 
 test("generated current candidate spec은 expired ITX topology overlay를 재도입하지 않는다", async () => {
-  const currentTopologyPath = "tools/datapack/sources/capital-route-topology-20260813.json";
-  const [baseSpec, currentTopologyBytes, productionScopePolicyBytes] = await Promise.all([
+  const [baseSpec, sourceInventory, productionScopePolicyBytes] = await Promise.all([
     readJson("tools/datapack/release/candidate-build-spec.json"),
-    readFile(path.join(root, currentTopologyPath)),
+    readJson("tools/datapack/source-inventory.json"),
     readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json")),
   ]);
+  const topologyAdmissions = sourceInventory.sources
+    .map(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence?.currentTopologyAdmission)
+    .filter(({ topologySnapshotId } = {}) => /^capital-route-topology-[0-9]{8}$/u.test(topologySnapshotId));
+  assert.ok(topologyAdmissions.length > 0);
+  const topologySnapshotId = topologyAdmissions[0].topologySnapshotId;
+  assert.ok(topologyAdmissions.every(({ topologySnapshotId: admittedSnapshotId }) =>
+    admittedSnapshotId === topologySnapshotId));
+  const currentTopologyPath = `tools/datapack/sources/${topologySnapshotId}.json`;
+  const currentTopologyBytes = await readFile(path.join(root, currentTopologyPath));
   const currentTopology = JSON.parse(currentTopologyBytes.toString("utf8"));
+  assert.equal(currentTopology.lines.length, 24);
 
   const next = buildCurrentCandidateSpec({
     baseSpec,
@@ -929,26 +938,60 @@ test("generated current candidate spec은 expired ITX topology overlay를 재도
   });
 
   assert.equal(Object.hasOwn(next.networkEdgeEvidence, "itxCurrentTopologyAdmission"), false);
+  assert.equal(currentTopology.lines.some(({ lineId }) => lineId === "line-42b5805f3b5a"), true);
+  assert.equal(currentTopology.lines.some(({ lineId }) => lineId === "line-98718184f016"), true);
+});
+
+test("current topology admission clock은 candidate-selected static ledger와 동일한 current admission을 소비한다", async () => {
+  const [sourceInventory, candidate, sourceSnapshots] = await Promise.all([
+    readJson("tools/datapack/source-inventory.json"),
+    readJson("tools/datapack/release/candidate-build-spec.json"),
+    readJson("tools/datapack/release/source-snapshots.json"),
+  ]);
+  const admissions = sourceInventory.sources
+    .map(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence?.currentTopologyAdmission)
+    .filter(({ topologySnapshotId } = {}) => /^capital-route-topology-[0-9]{8}$/u.test(topologySnapshotId));
+  const admission = admissions[0];
+  assert.ok(admission);
+  assert.ok(admissions.every(({ topologySnapshotId, reviewedAt, freshUntil }) =>
+    topologySnapshotId === admission.topologySnapshotId
+      && reviewedAt === admission.reviewedAt
+      && freshUntil === admission.freshUntil));
+  const staticSources = sourceSnapshots.filter(({ snapshotId, sourceId }) =>
+    candidate.sourceSnapshotIds.includes(snapshotId)
+      && ["seoul-metro-route-map-positions", "molit-urban-rail-full-route"].includes(sourceId));
+  assert.equal(staticSources.length, 2);
+  const staticBasisAt = Math.max(...staticSources.flatMap(({ retrievedAt, sourceUpdatedAt }) =>
+    [Date.parse(retrievedAt), Date.parse(sourceUpdatedAt)]));
+  const { inWindow } = await currentTopologyAdmissionClock(root);
+  assert.equal(inWindow.toISOString(), new Date(Math.max(Date.parse(admission.reviewedAt), staticBasisAt) + 1_000).toISOString());
+  await assert.doesNotReject(() => collectPositionSnapshotBytes(sourceInventory));
 });
 
 test("topology-only refresh는 admission·canonical·candidate identity를 한 입력에서 재생성한다", async () => {
-  const currentTopologyPath = "tools/datapack/sources/capital-route-topology-20260814.json";
   const currentIncheonTopologyPath =
     "tools/datapack/sources/incheon-transit-station-info-20260814.json";
   const currentItxAdmissionPath =
     "tools/datapack/itx-current-network-edge-admission-20260810.json";
-  const [baseSpec, sourceInventory, currentTopologyBytes, baselineTopology, canonical,
+  const [baseSpec, sourceInventory, baselineTopology, canonical,
     productionScopePolicyBytes, historicalIncheonTopologyBytes, currentItxAdmissionBytes] =
     await Promise.all([
     readJson("tools/datapack/release/candidate-build-spec.json"),
     readJson("tools/datapack/source-inventory.json"),
-    readFile(path.join(root, currentTopologyPath)),
     readJson("tools/datapack/sources/capital-route-topology-20260724.json"),
     readJson("tools/datapack/release/capital-production-canonical-pack.json"),
     readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json")),
     readFile(path.join(root, currentIncheonTopologyPath)),
     readFile(path.join(root, currentItxAdmissionPath)),
   ]);
+  const topologyAdmissions = sourceInventory.sources
+    .map(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence?.currentTopologyAdmission)
+    .filter(({ topologySnapshotId } = {}) => /^capital-route-topology-[0-9]{8}$/u.test(topologySnapshotId));
+  assert.ok(topologyAdmissions.length > 0);
+  const topologySnapshotId = topologyAdmissions[0].topologySnapshotId;
+  assert.ok(topologyAdmissions.every((admission) => admission.topologySnapshotId === topologySnapshotId));
+  const currentTopologyPath = `tools/datapack/sources/${topologySnapshotId}.json`;
+  const currentTopologyBytes = await readFile(path.join(root, currentTopologyPath));
   const currentTopology = JSON.parse(currentTopologyBytes);
   const currentIncheonTopology = JSON.parse(historicalIncheonTopologyBytes);
   delete currentIncheonTopology.stationCodeCorrections;
@@ -981,11 +1024,10 @@ test("topology-only refresh는 admission·canonical·candidate identity를 한 �
 
   const admissions = result.sourceInventory.sources
     .map((source) => source.routeMapAdmissionEvidence?.currentTopologyAdmission)
-    .filter(Boolean);
+    .filter(({ topologySnapshotId: admittedSnapshotId } = {}) => admittedSnapshotId === topologySnapshotId);
   assert.ok(admissions.length > 0);
-  assert.ok(admissions.every(({ topologySnapshotId }) =>
-    topologySnapshotId === "capital-route-topology-20260814"));
-  assert.equal(result.spec.candidateId, "capital-pilot-candidate-20260814");
+  assert.ok(admissions.every((admission) => admission.topologySnapshotId === topologySnapshotId));
+  assert.equal(result.spec.candidateId, `capital-pilot-candidate-${topologySnapshotId.slice(-8)}`);
   assert.equal(result.spec.networkEdgeEvidence.sourceInventory.sha256, sha256(result.sourceInventoryBytes));
   assert.equal(result.spec.networkEdgeEvidence.capitalTopologyCandidate.sha256, sha256(currentTopologyBytes));
   assert.equal(
@@ -1200,7 +1242,7 @@ test("primary source set은 current KRIC·7-source·two-topology identity를 한
     readJson("tools/datapack/sources/incheon-transit-station-info-20260724.json"),
   ]);
   const currentTopology = {
-    ...projectCapitalTopologyOwnership(fullCapitalTopology),
+    ...fullCapitalTopology,
     capturedAt: "2026-08-10T20:21:15.000Z",
     freshUntil: "2026-08-11T20:21:15.000Z",
   };

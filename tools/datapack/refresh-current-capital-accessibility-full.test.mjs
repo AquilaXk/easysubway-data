@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -9,6 +9,8 @@ import { buildCurrentCapitalAccessibilityRefreshOutputs, commitCurrentCapitalAcc
 import { readStableRegularFile } from "./rebind-current-candidate-source-snapshots.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 import { activateSyntheticCurrentStaticNetworkSuccessors } from "./test-fixtures/current-public-route-map-successor.mjs";
+import { currentIncheonStationCodeDerivations } from "./collect-incheon-station-info.mjs";
+import { releaseRequestBindingViolations } from "./verify-release-request-binding.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const OUTPUTS = [
@@ -19,6 +21,11 @@ const sha = (value) => createHash("sha256").update(value).digest("hex");
 
 test("activated full-capital inputs are rebuilt across the exact public static-network successor boundary", async (t) => {
   const root = await stagedRefreshRepository(t);
+  const approvalPaths = [
+    "tools/datapack/release/release-request.json",
+    "tools/datapack/release/hash-evidence.json",
+  ];
+  const approvalInputs = await Promise.all(approvalPaths.map((relative) => readFile(path.join(root, relative))));
   const beforeStation = JSON.parse(await readFile(path.join(root, OUTPUTS[0]), "utf8"));
   const beforeRoute = JSON.parse(await readFile(path.join(root, OUTPUTS[1]), "utf8"));
   const outputs = await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root });
@@ -34,6 +41,7 @@ test("activated full-capital inputs are rebuilt across the exact public static-n
   assert.deepEqual(route.routeEdges, beforeRoute.routeEdges);
   assert.equal(station.evidenceRows.length, 641);
   assert.equal(route.routeEdges.length, 2674);
+  assert.deepEqual(await Promise.all(approvalPaths.map((relative) => readFile(path.join(root, relative)))), approvalInputs);
 });
 
 test("atomic route-map and MOLIT successors refresh the exact two-source predecessor boundary", async (t) => {
@@ -153,25 +161,101 @@ async function stagedRefreshRepository(t) {
     const target = path.join(root, relative); await mkdir(path.dirname(target), { recursive: true }); await cp(path.join(ROOT, relative), target);
   }
   await cp(path.join(ROOT, "tools/datapack/sources"), path.join(root, "tools/datapack/sources"), { recursive: true });
+  const incheonPath = path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260814.json");
+  const incheonSnapshot = JSON.parse(await readFile(incheonPath, "utf8"));
+  delete incheonSnapshot.stationCodeCorrections;
+  incheonSnapshot.stationCodeDerivations = currentIncheonStationCodeDerivations();
+  await writeFile(incheonPath, `${JSON.stringify(incheonSnapshot)}\n`);
+  const currentCandidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
+  await copyCurrentCandidateEvidenceInputs(root, currentCandidate);
   const { inWindow: now } = await currentTopologyAdmissionClock(ROOT);
+  await bindCurrentCandidateApprovalFixture(root);
+  await refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root });
   await activateSyntheticCurrentStaticNetworkSuccessors(root, { now });
-  const candidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
-  const facility = JSON.parse(await readFile(path.join(ROOT, "tools/datapack/release/current-capital-facility-source-admission.json"), "utf8"));
-  const facilitySnapshot = facility.sourceIdentity.snapshotPath; await mkdir(path.dirname(path.join(root, facilitySnapshot)), { recursive: true }); await cp(path.join(ROOT, facilitySnapshot), path.join(root, facilitySnapshot));
-  const itx = candidate.itxTopologyEvidencePath; await mkdir(path.dirname(path.join(root, itx)), { recursive: true }); await cp(path.join(ROOT, itx), path.join(root, itx));
-  for (const relative of [candidate.networkEdgeEvidence.capitalTopology.path, candidate.networkEdgeEvidence.capitalTopologyCandidate.path, candidate.networkEdgeEvidence.capitalTopologyReverification.path, candidate.networkEdgeEvidence.itxCoverageContract.path]) {
-    const source = path.join(ROOT, relative);
-    const target = path.join(root, relative);
-    try {
-      await stat(source);
-      await mkdir(path.dirname(target), { recursive: true }); await cp(source, target);
-    } catch (error) {
-      if (error?.code !== "ENOENT") throw error;
-      const generated = await stat(target);
-      if (!generated.isFile()) throw new Error(`synthetic topology fixture input is invalid: ${relative}`);
-    }
-  }
   return root;
+}
+
+async function copyCurrentCandidateEvidenceInputs(root, candidate) {
+  const facility = JSON.parse(await readFile(path.join(ROOT, "tools/datapack/release/current-capital-facility-source-admission.json"), "utf8"));
+  const paths = [
+    facility.sourceIdentity.snapshotPath,
+    candidate.itxTopologyEvidencePath,
+    candidate.networkEdgeEvidence?.capitalTopology?.path,
+    candidate.networkEdgeEvidence?.capitalTopologyCandidate?.path,
+    candidate.networkEdgeEvidence?.capitalTopologyReverification?.path,
+    candidate.networkEdgeEvidence?.itxCoverageContract?.path,
+    candidate.networkEdgeEvidence?.itxCurrentTopologyAdmission?.path,
+  ];
+  for (const relative of paths) {
+    if (relative == null) continue;
+    if (typeof relative !== "string") throw new Error("current candidate evidence path is invalid");
+    const source = path.resolve(ROOT, relative);
+    if (relative.length === 0 || path.isAbsolute(relative)
+      || !source.startsWith(`${ROOT}${path.sep}`)) {
+      throw new Error("current candidate evidence path is unsafe");
+    }
+    const target = path.resolve(root, relative);
+    if (!target.startsWith(`${root}${path.sep}`)) {
+      throw new Error("current candidate evidence path is unsafe");
+    }
+    await mkdir(path.dirname(target), { recursive: true });
+    await cp(source, target);
+  }
+}
+
+async function bindCurrentCandidateApprovalFixture(root) {
+  const paths = {
+    candidate: "tools/datapack/release/candidate-build-spec.json",
+    request: "tools/datapack/release/release-request.json",
+    hashes: "tools/datapack/release/hash-evidence.json",
+    snapshots: "tools/datapack/release/source-snapshots.json",
+    inventory: "tools/datapack/source-inventory.json",
+    pack: "tools/datapack/release/capital-production-canonical-pack.json",
+  };
+  const [candidateBytes, requestBytes, hashesBytes, snapshotsBytes, inventoryBytes, packBytes] = await Promise.all(
+    Object.values(paths).map((relative) => readFile(path.join(root, relative))),
+  );
+  const [candidate, request, hashes, snapshots, inventory] = [candidateBytes, requestBytes, hashesBytes, snapshotsBytes, inventoryBytes]
+    .map((bytes) => JSON.parse(bytes));
+  const stale = releaseRequestBindingViolations({
+    buildSpec: candidate,
+    buildSpecSha256: sha(candidateBytes),
+    releaseRequest: request,
+  });
+  assert.ok(stale.length > 0, "tracked approval fixture must not be treated as current candidate approval");
+  const selectedIds = new Set(candidate.sourceSnapshotIds);
+  const selected = snapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
+  assert.equal(selected.length, candidate.sourceSnapshotIds.length);
+  assert.equal(sha(JSON.stringify(selected)), candidate.sourceSnapshotSetHash);
+  const nextRequest = {
+    ...request,
+    candidateId: candidate.candidateId,
+    buildSpecSha256: sha(candidateBytes),
+    sourceSnapshotSetHash: candidate.sourceSnapshotSetHash,
+    approvedLedgerHash: candidate.approvedAliasLedgerHash,
+  };
+  const nextHashes = structuredClone(hashes);
+  nextHashes.sourceSnapshotSetHash.value = candidate.sourceSnapshotSetHash;
+  nextHashes.sourceInventorySha256.value = sha(JSON.stringify(inventory));
+  nextHashes.fixturePath.sha256 = sha(packBytes);
+  nextHashes.sourceSnapshots.order = `release snapshot 순서: ${selected.map(({ sourceId }) => sourceId).join(" → ")}`;
+  nextHashes.perSourceEvidence = selected.map((snapshot) => ({
+    sourceId: snapshot.sourceId,
+    snapshotId: snapshot.snapshotId,
+    rawSha256: snapshot.rawSha256,
+    adminReviewRecordHash: inventory.sources.find(({ id }) => id === snapshot.sourceId).admissionEvidence.adminReviewRecordHash,
+    perSourceSnapshotSetHash: sha(JSON.stringify([snapshot])),
+  }));
+  const nextRequestBytes = Buffer.from(`${JSON.stringify(nextRequest, null, 2)}\n`);
+  assert.deepEqual(releaseRequestBindingViolations({
+    buildSpec: candidate,
+    buildSpecSha256: sha(candidateBytes),
+    releaseRequest: JSON.parse(nextRequestBytes),
+  }), []);
+  await Promise.all([
+    writeFile(path.join(root, paths.request), nextRequestBytes),
+    writeFile(path.join(root, paths.hashes), `${JSON.stringify(nextHashes, null, 2)}\n`),
+  ]);
 }
 
 async function expectedCurrentBytes(root) {

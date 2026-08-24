@@ -101,17 +101,9 @@ function validateJournal(journal) {
 function projectionRecordHashes(sourceId, projection) {
   return projection.map((record) => sha(JSON.stringify(record)));
 }
-function canonicalProviderCoordinate(value) {
-  const text = String(value ?? "").trim();
-  if (!/^-?\d+(?:\.\d{1,12})?$/u.test(text)) return null;
-  const negative = text.startsWith("-"); const [whole, fraction = ""] = (negative ? text.slice(1) : text).split(".");
-  let microdegrees = Number(whole) * 1_000_000 + Number((fraction + "000000").slice(0, 6));
-  if ((fraction[6] ?? "0") >= "5") microdegrees += 1;
-  return (negative ? -microdegrees : microdegrees) / 1_000_000;
-}
 function routeMapProviderRows(rows) {
   return rows.map(({ line, stationCode, stationName, latitude, longitude, basisDate }) => ({
-    line, stationCode, stationName, latitude: canonicalProviderCoordinate(latitude), longitude: canonicalProviderCoordinate(longitude), basisDate,
+    line, stationCode, stationName, latitude, longitude, basisDate,
   }));
 }
 function assertTwoObservations(observations) {
