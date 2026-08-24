@@ -281,8 +281,12 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     : null;
   const selectedPublicSnapshotIndex = selectedPublicSnapshotId == null ? -1
     : snapshots.findIndex(({ snapshotId }) => snapshotId === selectedPublicSnapshotId);
-  if (selectedPublicSnapshotId != null && (selectedPublicSnapshotIndex < 0
-    || snapshots.filter(({ snapshotId }) => snapshotId === selectedPublicSnapshotId).length !== 1)) {
+  const publicSnapshots = snapshots.filter(({ sourceId }) => sourceId === PUBLIC_SOURCE_ID);
+  const selectedPublicSnapshot = snapshots[selectedPublicSnapshotIndex];
+  if (selectedPublicSnapshotId != null && (publicSnapshots.length !== 1
+    || selectedPublicSnapshotIndex < 0
+    || selectedPublicSnapshot?.sourceId !== PUBLIC_SOURCE_ID
+    || selectedPublicSnapshot.previousSnapshotId !== null)) {
     throw new Error("synthetic public route-map successor fixture has invalid public source lineage");
   }
   const publicSource = inventory.sources.find(({ id }) => id === PUBLIC_SOURCE_ID);
