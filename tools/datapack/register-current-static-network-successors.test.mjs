@@ -65,6 +65,12 @@ test("v2 registrar stages and commits exactly five outputs while preserving rele
   const request = await readFile(path.join(root, "tools/datapack/release/release-request.json")); const hashes = await readFile(path.join(root, "tools/datapack/release/hash-evidence.json"));
   const input = await publicV2Input(root); const staged = await buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input });
   assert.equal(staged.length, 5); assert.deepEqual(staged.map(({ relative }) => relative).slice(2), ["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json"]);
+  const stagedInventory = JSON.parse(staged[2].bytes);
+  for (const sourceId of ["seoul-metro-route-map-positions", "molit-urban-rail-full-route"]) {
+    const source = stagedInventory.sources.find(({ id }) => id === sourceId);
+    assert.equal(source.requiredForProductionPack, true);
+    assert.equal(source.productionUseAllowed, true);
+  }
   const ledger = JSON.parse(staged[3].bytes);
   const positionSnapshot = ledger.find(({ snapshotId }) => snapshotId === input.producerOutput.observations[0].snapshotId);
   const supersededPosition = ledger.find(({ snapshotId }) => snapshotId === positionSnapshot.rootSupersession.supersededHeadSnapshotId);
@@ -115,6 +121,10 @@ test("v2 registrar rejects forged producer observations and stale or mismatched 
   const forged = { ...input, producerOutput: structuredClone(input.producerOutput) };
   forged.producerOutput.observations[1].contentSha256 = "0".repeat(64);
   await assert.rejects(buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...forged }), /public v2 producer output is invalid/);
+
+  const foreignReceipt = { ...input, producerOutput: structuredClone(input.producerOutput) };
+  foreignReceipt.producerOutput.observations[1].rawReceipt.ociNamespace = "foreign-namespace";
+  await assert.rejects(buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...foreignReceipt }), /public v2 observation binding is invalid/);
 
   const mismatchedInventory = JSON.parse(await readFile(inventoryPath, "utf8"));
   mismatchedInventory.sources.find(({ id }) => id === "seoul-metro-route-map-positions")

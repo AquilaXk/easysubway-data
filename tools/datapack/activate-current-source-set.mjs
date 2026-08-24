@@ -230,8 +230,10 @@ function requireCurrentV2ObservationBinding({ snapshot, sourceId, count }) {
     : sha256(Buffer.from(JSON.stringify(MOLIT_V2_FIELDS)));
   if (snapshot.projectionMigration != null
     || observation?.schemaVersion !== 2
+    || observation.artifactKind !== "public-static-network-v2-observation"
     || observation.sourceId !== sourceId
     || observation.snapshotId !== snapshot.snapshotId
+    || observation.capturedAt !== snapshot.retrievedAt
     || observation.rawSha256 !== snapshot.rawSha256
     || observation.contentSha256 !== snapshot.contentSha256
     || observation.schemaFingerprint !== snapshot.schemaFingerprint
@@ -270,6 +272,11 @@ export function verifyCurrentPublicStaticNetworkV2Heads({ sourceSnapshots, sourc
     [molit, "molit-urban-rail-full-route", CURRENT_MOLIT_FULL_ROUTE_ROW_COUNT, "csv", "text/csv; charset=euc-kr"],
   ]) verifyCurrentV2SnapshotBinding({ snapshot, sourceId, count, extension, contentType, sourceSnapshots, sourceInventory, now });
   const positionSource = requireCurrentInventoryHead(sourceInventory, positions);
+  const molitSource = requireCurrentInventoryHead(sourceInventory, molit);
+  if ([positionSource, molitSource].some(({ requiredForProductionPack, productionUseAllowed }) =>
+    requiredForProductionPack !== true || productionUseAllowed !== true)) {
+    throw new Error("current v2 production source is invalid");
+  }
   requirePublicStaticNetworkV2Admission({ positions, positionSource });
   const cyber = sourceInventory.sources.filter(({ id }) => id === "seoulmetro-cyberstation-route-map");
   if (cyber.some(({ requiredForProductionPack, productionUseAllowed }) => requiredForProductionPack === true || productionUseAllowed === true)) throw new Error("legacy route map source cannot be current production");

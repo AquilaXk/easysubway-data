@@ -361,6 +361,14 @@ function assertV2ProducerOutput(producerOutput, rawBytesBySource) {
       || observation.rawReceipt?.capturedAt !== observation.capturedAt
       || observation.rawReceipt?.contentType !== type.contentType
       || observation.projectionMigration != null || observation.migration != null) throw new Error("public v2 observation binding is invalid");
+    const date = observation.capturedAt.slice(0, 10).replaceAll("-", "");
+    const objectKey = `source-raw/${observation.sourceId}/${date}/${observation.rawSha256}.${type.extension}`;
+    if (observation.rawReceipt.ociNamespace !== "axvym6vk8g7i"
+      || observation.rawReceipt.bucket !== "easysubway-datapacks"
+      || observation.rawReceipt.objectKey !== objectKey
+      || observation.rawReceipt.rawObjectUri !== `oci://axvym6vk8g7i/easysubway-datapacks/${objectKey}`) {
+      throw new Error("public v2 observation binding is invalid");
+    }
     if (observation.sourceId === TARGETS[0]) assertCurrentSeoulPositionProjectionCompleteness(observation.normalizedProjection);
     else assertCurrentMolitFullRouteCompleteness(observation.normalizedProjection);
   }
@@ -480,8 +488,8 @@ function materializePublicV2Observation({ observation, ledger, heads, nextInvent
     || existingSnapshots.some(({ snapshotId }) => snapshotId === snapshot.snapshotId)) throw new Error("public v2 snapshot immutable collision");
   source.retrievedAt = snapshot.retrievedAt.slice(0, 10); source.observedDataUpdatedAt = snapshot.sourceUpdatedAt.slice(0, 10);
   source.admissionEvidence = { ...source.admissionEvidence, snapshotId: snapshot.snapshotId, rawSha256: snapshot.rawSha256, schemaFingerprint: snapshot.schemaFingerprint };
+  source.requiredForProductionPack = true; source.productionUseAllowed = true;
   if (observation.sourceId === TARGETS[0]) {
-    source.requiredForProductionPack = true; source.productionUseAllowed = true;
     source.routeMapAdmissionEvidence = { ...source.routeMapAdmissionEvidence, currentTopologyAdmission: { ...source.routeMapAdmissionEvidence.currentTopologyAdmission, positionSnapshotSha256: snapshot.normalizedObservationSha256 }, currentLayoutAdmission: structuredClone(currentLayoutAdmission), capturedAt: snapshot.retrievedAt, freshUntil: snapshot.freshnessExpiresAt };
     requirePublicStaticNetworkV2Admission({ positions: snapshot, positionSource: source });
   }

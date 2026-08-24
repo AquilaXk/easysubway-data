@@ -148,6 +148,7 @@ export function requirePublicStaticNetworkV2Admission({ positions, positionSourc
     || positions.normalizedObservationSha256 !== sha(bytes(observation))
     || JSON.stringify(observation.routeMapLayoutEvidence) !== JSON.stringify(layout)
     || JSON.stringify(observation.routeMapLayoutArtifact) !== JSON.stringify(artifact)
+    || layout.layoutArtifactSha256 !== sha(bytes(artifact))
     || keys.some((key) => layout[key] == null || admission[key] !== layout[key]
       || (key !== "layoutArtifactSha256" && artifact[key] !== layout[key]))
     || !keys.filter((key) => key.endsWith("Sha256")).every((key) => SHA.test(layout[key] ?? ""))

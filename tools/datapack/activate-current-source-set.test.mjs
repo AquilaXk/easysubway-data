@@ -57,7 +57,7 @@ async function currentV2HeadsFixture() {
     return { previous, snapshot, observation };
   };
   const positions = make("seoul-metro-route-map-positions", positionFile); const molit = make("molit-urban-rail-full-route", molitFile);
-  const source = (id, snapshot) => { const value = structuredClone(inventory.sources.find((item) => item.id === id)); value.admissionEvidence = { ...value.admissionEvidence, snapshotId: snapshot.snapshotId, rawSha256: snapshot.rawSha256, schemaFingerprint: snapshot.schemaFingerprint }; return value; };
+  const source = (id, snapshot) => { const value = structuredClone(inventory.sources.find((item) => item.id === id)); value.admissionEvidence = { ...value.admissionEvidence, snapshotId: snapshot.snapshotId, rawSha256: snapshot.rawSha256, schemaFingerprint: snapshot.schemaFingerprint }; value.requiredForProductionPack = true; value.productionUseAllowed = true; return value; };
   const positionSource = source(positions.snapshot.sourceId, positions.snapshot); const molitSource = source(molit.snapshot.sourceId, molit.snapshot);
   positionSource.routeMapAdmissionEvidence.currentLayoutAdmission = { schemaVersion: 2, artifactKind: "seoul-public-route-map-layout-admission", status: "ADMITTED", positionSnapshotId: positions.snapshot.snapshotId, snapshotPath: `tools/datapack/sources/${positions.snapshot.snapshotId}.json`, snapshotSha256: positions.snapshot.normalizedObservationSha256, rawSha256: positions.snapshot.rawSha256, contentSha256: positions.snapshot.contentSha256, ...positions.snapshot.routeMapLayoutEvidence };
   const historical = ledger.filter(({ sourceId }) => [
@@ -327,6 +327,24 @@ test("current activation succeeds only for two embedded schema-2 v2 heads", asyn
     sourceId === "molit-urban-rail-full-route" && publicStaticNetworkV2Observation?.schemaVersion === 2,
   ).publicStaticNetworkV2Observation;
   assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads({ ...mixed, now: CURRENT_V2_TEST_NOW }), /V2_MIXED/);
+  for (const mutate of [
+    (head) => { head.publicStaticNetworkV2Observation.artifactKind = "wrong"; },
+    (head) => { head.publicStaticNetworkV2Observation.capturedAt = "2026-08-25T12:00:00.000Z"; },
+  ]) {
+    const invalid = await currentV2HeadsFixture();
+    const molit = invalid.sourceSnapshots.find(({ sourceId, publicStaticNetworkV2Observation }) =>
+      sourceId === "molit-urban-rail-full-route" && publicStaticNetworkV2Observation?.schemaVersion === 2,
+    );
+    mutate(molit);
+    molit.normalizedObservationSha256 = sha256(Buffer.from(`${JSON.stringify(molit.publicStaticNetworkV2Observation)}\n`));
+    assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads({ ...invalid, now: CURRENT_V2_TEST_NOW }), /current v2 successor binding is invalid/);
+  }
+  for (const sourceId of ["seoul-metro-route-map-positions", "molit-urban-rail-full-route"]) {
+    const invalid = await currentV2HeadsFixture();
+    const source = invalid.sourceInventory.sources.find(({ id }) => id === sourceId);
+    source.requiredForProductionPack = false;
+    assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads({ ...invalid, now: CURRENT_V2_TEST_NOW }), /current v2 production source is invalid/);
+  }
   const corruptedLegacy = structuredClone(fixture);
   corruptedLegacy.sourceSnapshots.find(({ snapshotId }) => snapshotId === corruptedLegacy.sourceSnapshots.find(({ sourceId, rootSupersession }) => sourceId === "seoul-metro-route-map-positions" && rootSupersession != null).rootSupersession.supersededHeadSnapshotId)
     .projectionMigration.candidateSlotSourceId = "wrong-current-slot";

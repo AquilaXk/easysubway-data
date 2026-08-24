@@ -27,6 +27,10 @@ test("v2 admission fails closed when a layout binding is absent or wrong", () =>
   for (const mutate of [
     (value) => { delete value.positions.routeMapLayoutEvidence; },
     (value) => { value.positions.routeMapLayoutArtifact.layoutAlgorithmVersion = "wrong"; },
+    (value) => {
+      value.positions.routeMapLayoutArtifact.unboundPayload = "drift";
+      value.positions.publicStaticNetworkV2Observation.routeMapLayoutArtifact.unboundPayload = "drift";
+    },
     (value) => { value.positionSource.routeMapAdmissionEvidence.currentLayoutAdmission.layoutAlgorithmVersion = "wrong"; },
     (value) => { value.positions.projectionMigration = { migrationKind: "CROSS_SOURCE_CANONICAL_REPLACEMENT" }; },
   ]) { const value = valid(); mutate(value); assert.throws(() => requirePublicStaticNetworkV2Admission(value), /V2_MISSING/); }
