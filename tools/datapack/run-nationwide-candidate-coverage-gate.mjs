@@ -2515,7 +2515,7 @@ function validateDeferredCandidateRequirements(spec, inventory) {
       throw new Error(`deferred candidate requirement source must occur exactly once in source inventory: ${declaration.sourceId}`);
     }
     const source = sources[0];
-    if (source.requiredForProductionPack !== true || source.productionUseAllowed !== true) {
+    if (source.productionUseAllowed !== true) {
       throw new Error(`deferred candidate requirement source must be production-eligible: ${declaration.sourceId}`);
     }
     const scope = source.coverageScope;
@@ -2542,8 +2542,7 @@ export function assertDeferredCandidateRequirementsMatchActualSet(spec, pack, in
   const candidateSourceIds = new Set((pack.sourceInventory ?? []).map(({ id }) => id));
   const actual = new Map();
   for (const source of inventory.sources ?? []) {
-    if (source.requiredForProductionPack !== true
-      || source.productionUseAllowed !== true
+    if (source.productionUseAllowed !== true
       || !Array.isArray(source.coverageScope?.lineIds)
       || source.coverageScope.lineIds.length === 0
       || candidateSourceIds.has(source.id)) {
