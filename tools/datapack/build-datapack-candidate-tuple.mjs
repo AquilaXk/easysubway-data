@@ -74,8 +74,8 @@ function contained(root, value, label) { const target = path.resolve(required(va
 async function regularBytes(file, label) { const stat = await lstat(file); if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`${label} must be a regular file`); return readFile(file); }
 async function assertAbsent(file, label) { try { await lstat(file); } catch (error) { if (error?.code === "ENOENT") return; throw error; } throw new Error(`${label} must not already exist`); }
 function json(bytes, label) { try { const value = JSON.parse(bytes.toString("utf8")); if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(); return value; } catch { throw new Error(`${label} must contain a JSON object`); } }
-function exactKeys(value, keys, label) { if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`); const actual = Object.keys(value).sort(); const expected = [...keys].sort(); if (actual.join("\u0000") !== expected.join("\u0000")) throw new Error(`${label} fields must be exact`); }
-function canonical(value) { if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`; if (value && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`; return JSON.stringify(value); }
+function exactKeys(value, keys, label) { if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`); const actual = Object.keys(value).sort(compareUtf8); const expected = [...keys].sort(compareUtf8); if (actual.join("\u0000") !== expected.join("\u0000")) throw new Error(`${label} fields must be exact`); }
+function canonical(value) { if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`; if (value && typeof value === "object") return `{${Object.keys(value).sort(compareUtf8).map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`; return JSON.stringify(value); }
 function required(value, label) { if (typeof value !== "string" || value.trim() === "") throw new Error(`${label} is required`); return value; }
 function token(value, label) { const result = required(value, label); if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(result)) throw new Error(`${label} is invalid`); return result; }
 function hash(value, label) { const result = required(value, label); if (!/^[a-f0-9]{64}$/.test(result)) throw new Error(`${label} must be sha256`); return result; }
@@ -83,6 +83,7 @@ function utc(value, label) { const result = required(value, label); const parsed
 function instant(value, label) { const parsed = Date.parse(utc(value, label)); return parsed; }
 function gitSha(value, label) { const result = required(value, label); if (!/^[a-f0-9]{40}$/.test(result)) throw new Error(`${label} must be a full lowercase git sha`); return result; }
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+const compareUtf8 = (left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right));
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const args = process.argv.slice(2);
