@@ -173,13 +173,15 @@ test("candidate build spec release identity는 wall clock과 workflow run number
     /production accessibility evidence mismatch/,
   );
   await assert.rejects(readFile(path.join(directOutput, "current.json")), /ENOENT/);
+  const candidateStationLine = path.join(directory, "candidate-station-line-input.json");
+  const candidateRouteEdge = path.join(directory, "candidate-route-edge-input.json");
   const candidateFixture = path.join(directory, "candidate-fixture.json");
   const routeCoverageAuthority = path.join(directory, "server-route-coverage-authority.json");
   await buildAccessibilityAuthorityMain([
     "--fixture", buildSpec.fixturePath,
     "--build-spec", buildSpecPath,
-    "--station-line-input", "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
-    "--route-edge-input", "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
+    "--station-line-output", candidateStationLine,
+    "--route-edge-output", candidateRouteEdge,
     "--fixture-output", candidateFixture,
     "--authority-output", routeCoverageAuthority,
   ], { repositoryRoot: directory });
