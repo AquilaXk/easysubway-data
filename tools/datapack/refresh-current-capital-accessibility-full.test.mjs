@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -160,7 +160,16 @@ async function stagedRefreshRepository(t) {
   const facilitySnapshot = facility.sourceIdentity.snapshotPath; await mkdir(path.dirname(path.join(root, facilitySnapshot)), { recursive: true }); await cp(path.join(ROOT, facilitySnapshot), path.join(root, facilitySnapshot));
   const itx = candidate.itxTopologyEvidencePath; await mkdir(path.dirname(path.join(root, itx)), { recursive: true }); await cp(path.join(ROOT, itx), path.join(root, itx));
   for (const relative of [candidate.networkEdgeEvidence.capitalTopology.path, candidate.networkEdgeEvidence.capitalTopologyCandidate.path, candidate.networkEdgeEvidence.capitalTopologyReverification.path, candidate.networkEdgeEvidence.itxCoverageContract.path]) {
-    await mkdir(path.dirname(path.join(root, relative)), { recursive: true }); await cp(path.join(ROOT, relative), path.join(root, relative));
+    const source = path.join(ROOT, relative);
+    const target = path.join(root, relative);
+    try {
+      await stat(source);
+      await mkdir(path.dirname(target), { recursive: true }); await cp(source, target);
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+      const generated = await stat(target);
+      if (!generated.isFile()) throw new Error(`synthetic topology fixture input is invalid: ${relative}`);
+    }
   }
   return root;
 }

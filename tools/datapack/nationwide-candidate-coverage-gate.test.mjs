@@ -3497,7 +3497,7 @@ function deferredCandidateRequirementFixture() {
     inventory: {
       sources: [{
         id: sourceId,
-        requiredForProductionPack: true,
+        requiredForProductionPack: false,
         productionUseAllowed: true,
         coverageScope: {
           regionIds: ["region"], operatorIds: ["operator"], lineIds, sourceDomains: [sourceDomain],
@@ -3559,6 +3559,15 @@ test("deferred candidate requirement은 complete active intersection과 pre-vari
       present.spec, present.pack, present.inventory, present.targets,
     ),
     /must be absent from pre-variant candidate pack/,
+  );
+
+  const notAllowed = deferredCandidateRequirementFixture();
+  notAllowed.inventory.sources[0].productionUseAllowed = false;
+  assert.throws(
+    () => assertDeferredCandidateRequirementsMatchActualSet(
+      notAllowed.spec, notAllowed.pack, notAllowed.inventory, notAllowed.targets,
+    ),
+    /must exactly match actual deferred candidate requirements/,
   );
 });
 

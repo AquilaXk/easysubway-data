@@ -18228,7 +18228,7 @@ async function writeCurrentItxReleaseInputs(
   const { evidenceHash: _completenessEvidenceHash, ...completenessWithoutEvidenceHash } = completeness;
   completeness.evidenceHash = sha256(Buffer.from(JSON.stringify(completenessWithoutEvidenceHash)));
   const completenessPath = path.join(itxFixtureDirectory, "itx-completeness.json");
-  const completenessBytes = Buffer.from(`${JSON.stringify(completeness)}\n`);
+  let completenessBytes = Buffer.from(`${JSON.stringify(completeness)}\n`);
   await writeFile(completenessPath, completenessBytes);
 
   const source = JSON.parse(await readFile(
@@ -18246,7 +18246,7 @@ async function writeCurrentItxReleaseInputs(
   projectItxTopologyIntoCanonicalFixture(fixture, deriveItxTopology(source));
   mutateFixture?.(fixture);
   const sourcePath = path.join(itxFixtureDirectory, "itx-source.json");
-  const sourceBytes = Buffer.from(`${JSON.stringify(source)}\n`);
+  let sourceBytes = Buffer.from(`${JSON.stringify(source)}\n`);
   await writeFile(sourcePath, sourceBytes);
 
   const currentAdmission = JSON.parse(await readFile(
@@ -18258,7 +18258,7 @@ async function writeCurrentItxReleaseInputs(
   const { evidenceHash: _currentEvidenceHash, ...currentWithoutEvidenceHash } = currentAdmission;
   currentAdmission.evidenceHash = sha256(Buffer.from(JSON.stringify(currentWithoutEvidenceHash)));
   const currentAdmissionPath = path.join(workspace, "itx-current-admission.json");
-  const currentAdmissionBytes = Buffer.from(`${JSON.stringify(currentAdmission)}\n`);
+  let currentAdmissionBytes = Buffer.from(`${JSON.stringify(currentAdmission)}\n`);
   await writeFile(currentAdmissionPath, currentAdmissionBytes);
 
   const topologyEvidence = JSON.parse(await readFile("tools/datapack/itx-cheongchun-topology-evidence.json", "utf8"));
@@ -18289,7 +18289,7 @@ async function writeCurrentItxReleaseInputs(
     },
   });
   const contractPath = path.join(workspace, "itx-coverage-contract.json");
-  const contractBytes = Buffer.from(`${JSON.stringify(contract)}\n`);
+  let contractBytes = Buffer.from(`${JSON.stringify(contract)}\n`);
   await writeFile(contractPath, contractBytes);
 
   delete topologyEvidence.readmissions;
@@ -18297,37 +18297,145 @@ async function writeCurrentItxReleaseInputs(
   topologyEvidence.sourceArtifact.stationCatalogPackIdentity = structuredClone(currentIdentity);
   mutateTopologyEvidence?.(topologyEvidence);
   const topologyEvidencePath = path.join(workspace, "itx-topology-evidence.json");
-  const topologyEvidenceBytes = Buffer.from(`${JSON.stringify(topologyEvidence)}\n`);
+  let topologyEvidenceBytes = Buffer.from(`${JSON.stringify(topologyEvidence)}\n`);
   await writeFile(topologyEvidencePath, topologyEvidenceBytes);
 
   const fixturePath = path.join(workspace, "fixture.json");
   await writeFile(fixturePath, `${JSON.stringify(fixture)}\n`);
   const buildSpec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
-  const [baselineTopology, candidateTopology] = await Promise.all([
-    readFile(buildSpec.networkEdgeEvidence.capitalTopology.path, "utf8")
-      .then(JSON.parse),
-    readFile(buildSpec.networkEdgeEvidence.capitalTopologyCandidate.path, "utf8")
-      .then(JSON.parse),
-  ]);
+  const sourceInventory = JSON.parse(await readFile(buildSpec.networkEdgeEvidence.sourceInventory.path, "utf8"));
+  const currentInventory = structuredClone(sourceInventory);
+  const currentTopologyAdmissions = currentInventory.sources
+    .map(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence?.currentTopologyAdmission)
+    .filter((admission) => admission?.topologySnapshotId != null);
+  assert.ok(currentTopologyAdmissions.length > 0, "fixture current topology admission is required");
+  const [{ topologySnapshotId: currentTopologySnapshotId }] = currentTopologyAdmissions;
+  assert.ok(currentTopologyAdmissions.every(({ topologySnapshotId }) => topologySnapshotId === currentTopologySnapshotId),
+    "fixture current topology admissions must share one snapshot identity");
+  const baselineTopology = await readFile(
+    `tools/datapack/sources/${currentTopologySnapshotId}.json`,
+    "utf8",
+  ).then(JSON.parse);
+  const candidateTopology = projectCapitalTopologyOwnership(baselineTopology);
   const baselineTopologyPath = path.join(workspace, "capital-topology-baseline.json");
   const candidateTopologyPath = path.join(workspace, "capital-topology-candidate.json");
   const topologyReverificationPath = path.join(workspace, "capital-topology-reverification.json");
   const baselineTopologyBytes = Buffer.from(`${JSON.stringify(baselineTopology)}\n`);
   const candidateTopologyBytes = Buffer.from(`${JSON.stringify(candidateTopology)}\n`);
-  const topologyReverificationBytes = Buffer.from(`${JSON.stringify(
-    buildCapitalTopologyReverificationEvidence(
-      projectCapitalTopologyOwnership(baselineTopology),
-      candidateTopology,
-    ),
-  )}\n`);
+  const topologyReverification = buildCapitalTopologyReverificationEvidence(
+    projectCapitalTopologyOwnership(baselineTopology),
+    candidateTopology,
+  );
+  topologyReverification.baseline.snapshotId = currentTopologySnapshotId;
+  const topologyReverificationBytes = Buffer.from(`${JSON.stringify(topologyReverification)}\n`);
   const candidateTopologyAdmissions = new Map(candidateTopology.lines.map(({ lineId }) => [lineId, {
     verifiedAt: candidateTopology.capturedAt,
     freshUntil: candidateTopology.freshUntil,
   }]));
+  const capturedAtKst = new Date(Date.parse(candidateTopology.capturedAt) + 9 * 60 * 60 * 1_000);
+  const serviceDateForDayCode = (dayCode) => {
+    const targetDay = { "7": 6, "8": 1, "9": 0 }[dayCode];
+    const offset = (targetDay - capturedAtKst.getUTCDay() + 7) % 7;
+    const date = new Date(Date.UTC(
+      capturedAtKst.getUTCFullYear(),
+      capturedAtKst.getUTCMonth(),
+      capturedAtKst.getUTCDate() + offset,
+    ));
+    return date.toISOString().slice(0, 10).replaceAll("-", "");
+  };
+  const selectedServiceDatesAtTopologyClock = Object.fromEntries(
+    ["7", "8", "9"].map((dayCode) => [dayCode, serviceDateForDayCode(dayCode)]),
+  );
+  const currentServiceDate = selectedServiceDatesAtTopologyClock["8"];
+  const latestSelectedServiceDate = Object.values(selectedServiceDatesAtTopologyClock).sort().at(-1);
+  const nextServiceDateKst = new Date(Date.UTC(
+    Number(latestSelectedServiceDate.slice(0, 4)),
+    Number(latestSelectedServiceDate.slice(4, 6)) - 1,
+    Number(latestSelectedServiceDate.slice(6, 8)) + 1,
+  ));
+  const sourceFreshUntil = `${nextServiceDateKst.getUTCFullYear()}-${String(
+    nextServiceDateKst.getUTCMonth() + 1,
+  ).padStart(2, "0")}-${String(nextServiceDateKst.getUTCDate()).padStart(2, "0")}T00:00:00+09:00`;
+  const nextCurrentServiceDateKst = new Date(Date.UTC(
+    Number(currentServiceDate.slice(0, 4)),
+    Number(currentServiceDate.slice(4, 6)) - 1,
+    Number(currentServiceDate.slice(6, 8)) + 1,
+  ));
+  const currentAdmissionFreshUntil = `${nextCurrentServiceDateKst.getUTCFullYear()}-${String(
+    nextCurrentServiceDateKst.getUTCMonth() + 1,
+  ).padStart(2, "0")}-${String(nextCurrentServiceDateKst.getUTCDate()).padStart(2, "0")}T00:00:00+09:00`;
+  const sourceArtifactId = `itx-cheongchun-source-timetable-${candidateTopology.capturedAt.replace(/\D/g, "")}`;
+  completeness.observedAt = candidateTopology.capturedAt;
+  completeness.selectedServiceDates = selectedServiceDatesAtTopologyClock;
+  for (const serviceDay of completeness.serviceDays) {
+    const serviceDate = selectedServiceDatesAtTopologyClock[serviceDay.dayCd];
+    serviceDay.serviceDate = serviceDate;
+    if (serviceDay.roster != null) serviceDay.roster.serviceDate = serviceDate;
+  }
+  Object.assign(completeness.sourceTimetableArtifact, {
+    artifactId: sourceArtifactId,
+    freshUntil: sourceFreshUntil,
+  });
+  const { evidenceHash: _refreshedCompletenessEvidenceHash, ...refreshedCompletenessWithoutEvidenceHash } = completeness;
+  completeness.evidenceHash = sha256(Buffer.from(JSON.stringify(refreshedCompletenessWithoutEvidenceHash)));
+  completenessBytes = Buffer.from(`${JSON.stringify(completeness)}\n`);
+  await writeFile(completenessPath, completenessBytes);
+  Object.assign(source, {
+    artifactId: sourceArtifactId,
+    observedAt: candidateTopology.capturedAt,
+    freshUntil: sourceFreshUntil,
+    selectedServiceDates: selectedServiceDatesAtTopologyClock,
+    completenessEvidenceSha256: sha256(completenessBytes),
+  });
+  const { evidenceHash: _refreshedSourceEvidenceHash, ...refreshedSourceWithoutEvidenceHash } = source;
+  source.evidenceHash = sha256(Buffer.from(JSON.stringify(refreshedSourceWithoutEvidenceHash)));
+  sourceBytes = Buffer.from(`${JSON.stringify(source)}\n`);
+  await writeFile(sourcePath, sourceBytes);
+  Object.assign(contract.sourceTimetableArtifact, {
+    artifactId: source.artifactId,
+    sha256: sha256(sourceBytes),
+    completenessEvidenceSha256: sha256(completenessBytes),
+    freshUntil: sourceFreshUntil,
+    promotion: {
+      ...contract.sourceTimetableArtifact.promotion,
+      previousArtifactSha256: sha256(sourceBytes),
+    },
+  });
+  contract.freshness.nextReviewAt = sourceFreshUntil;
+  contractBytes = Buffer.from(`${JSON.stringify(contract)}\n`);
+  await writeFile(contractPath, contractBytes);
+  Object.assign(topologyEvidence.sourceArtifact, {
+    id: source.artifactId,
+    sha256: sha256(sourceBytes),
+    completenessEvidenceSha256: sha256(completenessBytes),
+    freshUntil: sourceFreshUntil,
+  });
+  topologyEvidenceBytes = Buffer.from(`${JSON.stringify(topologyEvidence)}\n`);
+  await writeFile(topologyEvidencePath, topologyEvidenceBytes);
+  Object.assign(currentAdmission, {
+    artifactId: `itx-current-network-edge-admission-${currentServiceDate}`,
+    serviceDate: currentServiceDate,
+    observedAt: candidateTopology.capturedAt,
+    freshUntil: currentAdmissionFreshUntil,
+    previousArtifactSha256: sha256(sourceBytes),
+  });
+  const { evidenceHash: _refreshedCurrentEvidenceHash, ...refreshedCurrentWithoutEvidenceHash } = currentAdmission;
+  currentAdmission.evidenceHash = sha256(Buffer.from(JSON.stringify(refreshedCurrentWithoutEvidenceHash)));
+  currentAdmissionBytes = Buffer.from(`${JSON.stringify(currentAdmission)}\n`);
+  await writeFile(currentAdmissionPath, currentAdmissionBytes);
+  for (const source of currentInventory.sources) {
+    const admission = source.routeMapAdmissionEvidence?.currentTopologyAdmission;
+    if (admission?.topologySnapshotId !== currentTopologySnapshotId) continue;
+    admission.topologyContentSha256 = candidateTopology.contentSha256;
+    admission.topologyLineages = admission.topologyLineages.map((lineage) => ({
+      ...lineage,
+      contentSha256: candidateTopology.contentSha256,
+    }));
+  }
   projectCapitalTopologyIntoCanonicalFixture(
     fixture,
     candidateTopology,
-    buildSpec.networkEdgeEvidence.capitalTopologyCandidate.snapshotId,
+    currentTopologySnapshotId,
     candidateTopologyAdmissions,
   );
   await writeFile(fixturePath, `${JSON.stringify(fixture)}\n`);
@@ -18339,22 +18447,28 @@ async function writeCurrentItxReleaseInputs(
   Object.assign(buildSpec.networkEdgeEvidence.capitalTopology, {
     path: baselineTopologyPath,
     sha256: sha256(baselineTopologyBytes),
+    snapshotId: currentTopologySnapshotId,
   });
   Object.assign(buildSpec.networkEdgeEvidence.capitalTopologyCandidate, {
     path: candidateTopologyPath,
     sha256: sha256(candidateTopologyBytes),
+    snapshotId: currentTopologySnapshotId,
   });
   Object.assign(buildSpec.networkEdgeEvidence.capitalTopologyReverification, {
     path: topologyReverificationPath,
     sha256: sha256(topologyReverificationBytes),
   });
-  const sourceInventory = JSON.parse(await readFile(buildSpec.networkEdgeEvidence.sourceInventory.path, "utf8"));
-  const currentInventory = structuredClone(sourceInventory);
   const incheonSource = currentInventory.sources.find(({ id }) => id === "incheon-transit-station-info");
   const incheonSnapshotPath = path.join(repositoryRoot, incheonSource.routeMapAdmissionEvidence.snapshotPath);
   const incheonSnapshot = JSON.parse(await readFile(incheonSnapshotPath, "utf8"));
   delete incheonSnapshot.stationCodeCorrections;
   incheonSnapshot.stationCodeDerivations = currentIncheonStationCodeDerivations();
+  incheonSnapshot.capturedAt = candidateTopology.capturedAt;
+  incheonSnapshot.freshUntil = candidateTopology.freshUntil;
+  Object.assign(incheonSource.topologyAdmissionEvidence, {
+    capturedAt: candidateTopology.capturedAt,
+    freshUntil: candidateTopology.freshUntil,
+  });
   const incheonSnapshotBytes = Buffer.from(`${JSON.stringify(incheonSnapshot)}\n`);
   await writeFile(incheonSnapshotPath, incheonSnapshotBytes);
   incheonSource.routeMapAdmissionEvidence.snapshotSha256 = sha256(incheonSnapshotBytes);
@@ -18389,7 +18503,10 @@ async function writeCurrentItxReleaseInputs(
   await writeFile(buildSpecPath, `${JSON.stringify(buildSpec)}\n`);
   return {
     buildSpecPath,
-    env: { ...productionEnv, EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-08-14T16:00:00.000Z" },
+    env: {
+      ...productionEnv,
+      EASYSUBWAY_DATAPACK_BUILD_NOW: new Date(Date.parse(candidateTopology.capturedAt) + 1_000).toISOString(),
+    },
     repositoryRoot,
   };
 }
@@ -18587,6 +18704,23 @@ test("official OD fare release candidate는 승인된 두 방향 quote와 proven
     assert.deepEqual(provenance.candidateBuild.officialOdFareEvidence, approvedEvidence);
   } finally {
     await rm(outputDir, { recursive: true, force: true });
+  }
+});
+
+test("production candidate는 current topology snapshot binding 불일치를 거부한다", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "capital-topology-snapshot-binding-"));
+  try {
+    const inputs = await writeCurrentItxReleaseInputs(workspace);
+    const buildSpec = JSON.parse(await readFile(inputs.buildSpecPath, "utf8"));
+    buildSpec.networkEdgeEvidence.capitalTopologyCandidate.snapshotId = "capital-route-topology-20260814";
+    await writeFile(inputs.buildSpecPath, `${JSON.stringify(buildSpec)}\n`);
+
+    await assert.rejects(
+      runCurrentItxCandidateBuild({ ...inputs, output: path.join(workspace, "output") }),
+      /capital topology edge admission does not match pinned snapshot/,
+    );
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
   }
 });
 
