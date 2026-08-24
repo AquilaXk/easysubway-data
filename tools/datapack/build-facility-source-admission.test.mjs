@@ -286,15 +286,43 @@ async function historicalFacilityFixtureInput(observedAt) {
     assert.ok(Date.parse(historicalSnapshot.capturedAt) < Date.parse(historicalObservedAt));
     assert.ok(Date.parse(historicalObservedAt) < Date.parse(historicalSnapshot.freshUntil));
   }
-  const historicalSourceIds = input.candidateBuildSpec.sourceSnapshots
-    .map(({ sourceId }) => sourceId)
-    .filter((sourceId) => sourceId !== "seoul-metro-transfer-distance-duration");
+  const historicalSourceSlots = input.candidateBuildSpec.sourceSnapshots
+    .filter(({ sourceId }) => sourceId !== "seoul-metro-transfer-distance-duration")
+    .map((projection) => {
+      const selectedHead = input.sourceSnapshots.find(({ snapshotId, sourceId }) =>
+        snapshotId === projection.snapshotId && sourceId === projection.sourceId);
+      const migration = selectedHead?.projectionMigration;
+      if (migration?.migrationKind !== "CROSS_SOURCE_CANONICAL_REPLACEMENT"
+        || migration.sourceId !== projection.sourceId) {
+        return { predecessor: null, projection, sourceId: projection.sourceId };
+      }
+      assert.equal(migration.candidateSlotSourceId, migration.replacedSourceId);
+      assert.ok(snapshotEvidenceAt(selectedHead) > Date.parse(historicalMembershipAt));
+      return {
+        predecessor: {
+          rawSha256: migration.replacedRawSha256,
+          schemaFingerprint: migration.replacedSchemaFingerprint,
+          snapshotId: migration.replacedSnapshotId,
+        },
+        projection,
+        sourceId: migration.replacedSourceId,
+      };
+    });
+  const historicalSourceIds = historicalSourceSlots.map(({ sourceId }) => sourceId);
   assert.equal(historicalSourceIds.length, 6, "historical FACILITY source count");
   assert.equal(new Set(historicalSourceIds).size, historicalSourceIds.length, "historical FACILITY source identities");
-  const historicalLedgerHeads = historicalSourceIds.map((sourceId) => {
+  const historicalLedgerHeads = historicalSourceSlots.map(({ predecessor, sourceId }) => {
     const entries = input.sourceSnapshots.filter((entry) =>
       entry.sourceId === sourceId && snapshotEvidenceAt(entry) <= Date.parse(historicalMembershipAt));
     assert.ok(entries.length > 0, `historical ${sourceId} ledger head`);
+    if (predecessor != null) {
+      const exact = entries.filter(({ rawSha256, schemaFingerprint, snapshotId }) =>
+        snapshotId === predecessor.snapshotId
+          && rawSha256 === predecessor.rawSha256
+          && schemaFingerprint === predecessor.schemaFingerprint);
+      assert.equal(exact.length, 1, `historical ${sourceId} migration predecessor`);
+      return exact[0];
+    }
     return entries.at(-1);
   });
   const historicalKricLedger = historicalLedgerHeads.find(({ sourceId }) =>
@@ -322,8 +350,8 @@ async function historicalFacilityFixtureInput(observedAt) {
   input.snapshotBytes = new Uint8Array(historicalSnapshotBytes);
   input.observedAt = historicalObservedAt;
   rebindHistoricalFacilityEvidence(input.productionInput, historicalSnapshot);
-  const currentProjectionsBySourceId = new Map(input.candidateBuildSpec.sourceSnapshots.map((projection) =>
-    [projection.sourceId, projection]));
+  const currentProjectionsBySourceId = new Map(historicalSourceSlots.map(({ projection, sourceId }) =>
+    [sourceId, projection]));
   input.candidateBuildSpec.sourceSnapshots = historicalLedgerHeads.map((entry) => {
     const projection = currentProjectionsBySourceId.get(entry.sourceId);
     assert.ok(projection, `current ${entry.sourceId} projection`);

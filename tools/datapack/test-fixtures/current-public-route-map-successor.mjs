@@ -194,6 +194,10 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
   targetRoot,
   { now, activateStaticNetwork = false, activatePublicRouteMap = true },
 ) {
+  if (activateStaticNetwork) {
+    await createStaticNetworkRegistrarPredecessorFixture(sourceRoot, targetRoot, { now });
+    return activateSyntheticCurrentStaticNetworkSuccessors(targetRoot, { now });
+  }
   const [source, target] = await Promise.all([
     regularRoot(sourceRoot),
     regularRoot(targetRoot, { create: true }),
@@ -229,9 +233,7 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
     await cp(sourceFile, destination, { force: true });
   }
   if (!activatePublicRouteMap) return null;
-  return activateStaticNetwork
-    ? activateSyntheticCurrentStaticNetworkSuccessors(target, { now })
-    : activateSyntheticCurrentPublicRouteMapSuccessor(target, { now });
+  return activateSyntheticCurrentPublicRouteMapSuccessor(target, { now });
 }
 
 export async function createStaticNetworkRegistrarPredecessorFixture(sourceRoot, targetRoot, { now }) {
@@ -243,6 +245,27 @@ export async function createStaticNetworkRegistrarPredecessorFixture(sourceRoot,
     readJson(targetRoot, snapshotsPath),
   ]);
   const { candidateIndex, predecessor } = currentPublicRouteMapPredecessor(candidate, snapshots);
+  const molitIndices = candidate.sourceSnapshots
+    .map(({ sourceId }, index) => sourceId === MOLIT_SOURCE_ID ? index : -1)
+    .filter((index) => index >= 0);
+  const molitIndex = molitIndices[0];
+  const selectedMolitSnapshotId = candidate.sourceSnapshotIds[molitIndex];
+  const selectedMolitSnapshots = snapshots.filter(({ snapshotId, sourceId }) =>
+    snapshotId === selectedMolitSnapshotId && sourceId === MOLIT_SOURCE_ID);
+  const selectedMolitSnapshot = selectedMolitSnapshots[0];
+  const molitMigration = selectedMolitSnapshot?.projectionMigration;
+  const molitPredecessors = snapshots.filter(({ snapshotId, sourceId }) =>
+    snapshotId === molitMigration?.legacySnapshotId && sourceId === MOLIT_SOURCE_ID);
+  const molitPredecessor = molitPredecessors[0];
+  if (molitIndices.length !== 1 || selectedMolitSnapshots.length !== 1
+    || molitMigration?.migrationKind !== "LEGACY_SAMPLE_TO_FULL_CONSUMED_FIELDS"
+    || molitMigration.sourceId !== MOLIT_SOURCE_ID
+    || selectedMolitSnapshot.previousSnapshotId !== molitMigration.legacySnapshotId
+    || molitPredecessors.length !== 1
+    || molitPredecessor.rawSha256 !== molitMigration.legacyRawSha256
+    || molitPredecessor.schemaFingerprint !== molitMigration.legacySchemaFingerprint) {
+    throw new Error("synthetic MOLIT predecessor fixture is incomplete");
+  }
   const selectedPublicRootId = candidate.sourceSnapshots[candidateIndex].sourceId === PUBLIC_SOURCE_ID
     ? candidate.sourceSnapshotIds[candidateIndex]
     : null;
@@ -251,15 +274,19 @@ export async function createStaticNetworkRegistrarPredecessorFixture(sourceRoot,
   if (selectedPublicRootId != null && selectedPublicRoots.length !== 1) {
     throw new Error("synthetic public route-map predecessor fixture is incomplete");
   }
-  const predecessorLedger = selectedPublicRootId == null
-    ? snapshots
-    : snapshots.filter(({ snapshotId }) => snapshotId !== selectedPublicRootId);
+  const removedSnapshotIds = new Set([selectedPublicRootId, selectedMolitSnapshotId].filter(Boolean));
+  const predecessorLedger = snapshots.filter(({ snapshotId }) => !removedSnapshotIds.has(snapshotId));
   candidate.sourceSnapshotIds[candidateIndex] = predecessor.snapshotId;
   candidate.sourceSnapshots[candidateIndex] = {
     ...candidate.sourceSnapshots[candidateIndex],
     snapshotId: predecessor.snapshotId,
     sourceId: predecessor.sourceId,
   };
+  candidate.sourceSnapshotIds[molitIndex] = molitPredecessor.snapshotId;
+  candidate.sourceSnapshots[molitIndex] = Object.fromEntries(
+    Object.keys(candidate.sourceSnapshots[molitIndex]).flatMap((key) =>
+      molitPredecessor[key] === undefined ? [] : [[key, molitPredecessor[key]]]),
+  );
   const selectedIds = new Set(candidate.sourceSnapshotIds);
   candidate.sourceSnapshotSetHash = sha256(JSON.stringify(
     predecessorLedger.filter(({ snapshotId }) => selectedIds.has(snapshotId)),
@@ -268,7 +295,11 @@ export async function createStaticNetworkRegistrarPredecessorFixture(sourceRoot,
     writeFile(path.join(targetRoot, candidatePath), jsonBytes(candidate)),
     writeFile(path.join(targetRoot, snapshotsPath), jsonBytes(predecessorLedger)),
   ]);
-  return { predecessorSnapshotId: predecessor.snapshotId, removedPublicRootSnapshotId: selectedPublicRootId };
+  return {
+    predecessorSnapshotId: predecessor.snapshotId,
+    removedMolitSnapshotId: selectedMolitSnapshotId,
+    removedPublicRootSnapshotId: selectedPublicRootId,
+  };
 }
 
 export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { now, advanceCurrentPublicHead = false }) {

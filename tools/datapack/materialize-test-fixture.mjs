@@ -145,7 +145,8 @@ export function projectHistoricalRegionalMaterializeInventory(input) {
     const matches = inventory.sources.filter(({ membershipAdmissionEvidence: evidence }) =>
       Array.isArray(evidence?.lineIds) && evidence.lineIds.length === 1 && evidence.lineIds[0] === lineId);
     if (matches.length !== 2
-      || JSON.stringify(matches.map(({ id }) => id).sort()) !== JSON.stringify([...expected.sourceIds].sort())) {
+      || JSON.stringify(matches.map(({ id }) => id).sort((left, right) => left.localeCompare(right, "en")))
+        !== JSON.stringify([...expected.sourceIds].sort((left, right) => left.localeCompare(right, "en")))) {
       throw new Error(`regional materializer ${lineId} membership inventory is incomplete`);
     }
     for (const source of matches) {
@@ -209,7 +210,8 @@ function assertMembershipAdmission(inventory, lineId, mappings) {
       && Array.isArray(evidence.lineIds) && evidence.lineIds.length === 1
       && evidence.lineIds[0] === lineId);
   if (!expected || matches.length !== 2
-    || JSON.stringify(matches.map(({ id }) => id).sort()) !== JSON.stringify([...expected.sourceIds].sort())) {
+    || JSON.stringify(matches.map(({ id }) => id).sort((left, right) => left.localeCompare(right, "en")))
+      !== JSON.stringify([...expected.sourceIds].sort((left, right) => left.localeCompare(right, "en")))) {
     throw new Error(`current MOLIT ${lineId} membership admission is incomplete`);
   }
   const mappingSha256 = sha256(JSON.stringify(mappings));
