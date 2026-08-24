@@ -26,6 +26,7 @@ test("candidate-create는 전용 OCI credential과 descriptor-last writer만 사
   assert.match(credentials, /mode == 'candidate-create'/);
   assert.match(credentials, /EASYSUBWAY_CANDIDATE_OCI_BUCKET/);
   assert.match(publish, /build-datapack-candidate-tuple\.mjs/);
+  assert.match(publish, /--root "\$\{EASYSUBWAY_DATAPACK_STAGE\}" --repo-root "\$\{GITHUB_WORKSPACE\}" --build-spec "\$\{EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH\}"/);
   assert.match(publish, /build-candidate-oci-artifact-descriptor\.mjs/);
   assert.match(publish, /publish-candidate-oci-artifact\.mjs/);
   assert.doesNotMatch(publish, /actions\/upload-artifact|publish-object-storage|catalog\/current\.json.*PUT/);

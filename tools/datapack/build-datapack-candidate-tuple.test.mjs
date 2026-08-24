@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -90,6 +90,17 @@ test("symlink input과 occupied output은 기존 파일을 보존하고 partial 
   }
 });
 
+test("build spec은 trusted repo root에서 읽고 stage manifest/provenance/output은 stage 안에 유지한다", () => {
+  const fixture = createFixture();
+  try {
+    const stage = path.join(fixture.root, "stage"); mkdirSync(stage);
+    const manifest = path.join(stage, "current.json"), provenance = path.join(stage, "current.provenance.json"), output = path.join(stage, "datapack-candidate-tuple.json");
+    renameSync(fixture.manifestPath, manifest); renameSync(fixture.provenancePath, provenance);
+    const result = spawnSync(process.execPath, [script, "--root", stage, "--repo-root", fixture.root, "--build-spec", fixture.buildSpecPath, "--manifest", manifest, "--provenance", provenance, "--output", output, "--now", "2026-08-24T00:00:00.000Z"], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr); assert.ok(readFileSync(output).length > 0);
+  } finally { fixture.cleanup(); }
+});
+
 function createFixture() {
   const root = mkdtempSync(path.join(os.tmpdir(), "datapack-candidate-tuple-"));
   const buildSpecPath = path.join(root, "build-spec.json");
@@ -109,7 +120,7 @@ function createFixture() {
 }
 
 function run(fixture) {
-  return spawnSync(process.execPath, [script, "--root", fixture.root, "--build-spec", fixture.buildSpecPath, "--manifest", fixture.manifestPath, "--provenance", fixture.provenancePath, "--output", fixture.output, "--now", "2026-08-24T00:00:00.000Z"], { encoding: "utf8" });
+  return spawnSync(process.execPath, [script, "--root", fixture.root, "--repo-root", fixture.root, "--build-spec", fixture.buildSpecPath, "--manifest", fixture.manifestPath, "--provenance", fixture.provenancePath, "--output", fixture.output, "--now", "2026-08-24T00:00:00.000Z"], { encoding: "utf8" });
 }
 
 function exists(file) { try { readFileSync(file); return true; } catch { return false; } }

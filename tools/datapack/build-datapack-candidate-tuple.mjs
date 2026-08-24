@@ -3,11 +3,12 @@ import { createHash } from "node:crypto";
 import { link, lstat, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-const names = new Set(["root", "build-spec", "manifest", "provenance", "output", "now"]);
+const names = new Set(["root", "repo-root", "build-spec", "manifest", "provenance", "output", "now"]);
 
 export async function buildDatapackCandidateTuple(input) {
   const root = await realDirectory(input.root, "--root");
-  const buildSpecPath = contained(root, input.buildSpec, "--build-spec");
+  const repoRoot = await realDirectory(input.repoRoot, "--repo-root");
+  const buildSpecPath = contained(repoRoot, input.buildSpec, "--build-spec");
   const manifestPath = contained(root, input.manifest, "--manifest");
   const provenancePath = contained(root, input.provenance, "--provenance");
   const output = contained(root, input.output, "--output");
@@ -88,5 +89,5 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   if (args.length !== names.size * 2) throw new Error("exactly the required arguments are required");
   const values = new Map();
   for (let index = 0; index < args.length; index += 2) { const key = args[index]; const value = args[index + 1]; if (!key?.startsWith("--") || value === undefined || value.startsWith("--") || !names.has(key.slice(2)) || values.has(key)) throw new Error(`invalid argument: ${key}`); values.set(key, value); }
-  await buildDatapackCandidateTuple({ root: values.get("--root"), buildSpec: values.get("--build-spec"), manifest: values.get("--manifest"), provenance: values.get("--provenance"), output: values.get("--output"), now: values.get("--now") });
+  await buildDatapackCandidateTuple({ root: values.get("--root"), repoRoot: values.get("--repo-root"), buildSpec: values.get("--build-spec"), manifest: values.get("--manifest"), provenance: values.get("--provenance"), output: values.get("--output"), now: values.get("--now") });
 }
