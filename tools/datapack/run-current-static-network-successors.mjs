@@ -9,12 +9,11 @@ import { isDeepStrictEqual } from "node:util";
 import { collectCurrentStaticNetworkSuccessors, projectMolit, projectPositions, SEOUL_POSITION_SCHEMA_FINGERPRINT } from "./collect-current-static-network-successors.mjs";
 import { buildSeoulRouteMapPositions } from "./collect-seoul-route-map-positions.mjs";
 import { publishStaticNetworkSourceRaw } from "./publish-static-network-source-raw.mjs";
-import { readStaticNetworkRegularFile, registerCurrentStaticNetworkSuccessors } from "./register-current-static-network-successors.mjs";
+import { readStaticNetworkRegularFile, registerCurrentStaticNetworkSuccessors, registerPublicStaticNetworkV2Successors } from "./register-current-static-network-successors.mjs";
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import { approvedLegacyGovernanceBinding } from "./legacy-source-governance.mjs";
 import { assertCurrentTopologyAdmissionFreshness } from "./lib/route-map-admission-freshness.mjs";
 import { buildPublicStaticNetworkV2Observations } from "./build-public-static-network-v2-observations.mjs";
-import { registerPublicStaticNetworkV2Successors } from "./register-current-static-network-successors.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const TARGETS = Object.freeze(["seoul-metro-route-map-positions", "molit-urban-rail-full-route"]);
@@ -129,4 +128,4 @@ export async function runRetiredCurrentStaticNetworkSuccessorsCli() {
   throw new Error("STATIC_NETWORK_SUCCESSORS_HISTORICAL_ONLY_RETIRED: use run-public-static-network-v2-operation.mjs");
 }
 async function main() { await runRetiredCurrentStaticNetworkSuccessorsCli(); }
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) main(process.argv.slice(2)).catch((error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) main().catch((error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });

@@ -172,7 +172,8 @@ async function freePort() {
 
 async function receiptFor(input, operationRoot, now) {
   const extension = input.sourceId === "seoul-metro-route-map-positions" ? "json" : "csv";
-  const rawBytes = await readFile(path.join(operationRoot, `raw.${extension}`)); const rawSha256 = sha(rawBytes);
+  const rawRelativePath = input.sourceId === "seoul-metro-route-map-positions" ? "positions.raw.json" : "molit.raw.csv";
+  const rawBytes = await readFile(path.join(operationRoot, rawRelativePath)); const rawSha256 = sha(rawBytes);
   const date = input.capturedAt.slice(0, 10).replaceAll("-", ""); const objectKey = `source-raw/${input.sourceId}/${date}/${rawSha256}.${extension}`;
   const policy = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/source-governance-policy.json"), "utf8"));
   return { schemaVersion: 1, artifactKind: "static-network-source-raw-object-receipt", sourceId: input.sourceId, snapshotId: input.snapshotId, capturedAt: input.capturedAt,

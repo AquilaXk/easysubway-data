@@ -16,7 +16,10 @@ function valid() {
 }
 
 test("v2 admission requires all three layout bindings", () => {
-  requirePublicStaticNetworkV2Admission(valid());
+  const { positions, positionSource } = valid();
+  const result = requirePublicStaticNetworkV2Admission({ positions, positionSource });
+  assert.equal(result.layout, positions.routeMapLayoutEvidence);
+  assert.equal(result.admission, positionSource.routeMapAdmissionEvidence.currentLayoutAdmission);
 });
 
 test("v2 admission fails closed when a layout binding is absent or wrong", () => {
@@ -35,5 +38,6 @@ test("v2 admission permits opaque historical predecessor audit only", () => {
   value.positions.normalizedObservationSha256 = createHash("sha256")
     .update(Buffer.from(`${JSON.stringify(value.positions.publicStaticNetworkV2Observation)}\n`)).digest("hex");
   value.positionSource.routeMapAdmissionEvidence.currentLayoutAdmission.snapshotSha256 = value.positions.normalizedObservationSha256;
-  requirePublicStaticNetworkV2Admission(value);
+  const result = requirePublicStaticNetworkV2Admission(value);
+  assert.equal(result.admission.positionSnapshotId, value.positions.snapshotId);
 });

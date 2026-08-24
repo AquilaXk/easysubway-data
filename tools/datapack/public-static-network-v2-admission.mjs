@@ -26,7 +26,8 @@ const LEGACY_MIGRATION_KEYS = Object.freeze([
   "replacedSnapshotId", "replacedRawSha256", "replacedSchemaFingerprint", "candidateSlotSourceId",
 ]);
 const exactKeys = (value, keys) => value != null && typeof value === "object" && !Array.isArray(value)
-  && JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...keys].sort());
+  && Object.keys(value).length === keys.length
+  && keys.every((key) => Object.hasOwn(value, key));
 
 function isCanonicalOuterSnapshot(snapshot, { now = new Date(), requireCurrentFreshness = false } = {}) {
   let retrievedAt; let sourceUpdatedAt; let freshnessExpiresAt; let rawRetentionExpiresAt;

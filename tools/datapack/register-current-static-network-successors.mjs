@@ -439,6 +439,64 @@ function v2Snapshot({ observation, previous, sourceUpdatedAt, rootSupersession =
   return snapshot;
 }
 
+function requireFirstPublicV2PositionsPredecessor({ ledger, heads, candidate, inventory, governance, governanceBytes, freshness, now }) {
+  const previous = ledger.filter(({ snapshotId }) => snapshotId === heads[TARGETS[0]]);
+  if (previous.length !== 1) throw new Error("public v2 direct predecessor is invalid");
+  if (previous[0].publicStaticNetworkV2Observation?.schemaVersion !== 2) {
+    requireLegacyV1PositionResetAuthority({
+      ledger, candidate, inventory, governance, governanceBytes, freshness, nowMillis: now.getTime(),
+      heads, previous: previous[0],
+    });
+  }
+}
+
+function materializePublicV2Observation({ observation, ledger, heads, nextInventory, governance, governanceBytes, freshness, now, currentLayoutAdmission, existingSnapshots }) {
+  const previous = ledger.filter(({ snapshotId }) => snapshotId === heads[observation.sourceId]);
+  if (previous.length !== 1 || previous[0].snapshotId === observation.snapshotId) throw new Error("public v2 direct predecessor is invalid");
+  const sourceUpdatedAt = observation.sourceId === TARGETS[0]
+    ? `${observation.routeMapLayoutArtifact.observedDataUpdatedAt}T00:00:00.000Z`
+    : observation.capturedAt;
+  const isFirstPositionV2Reset = observation.sourceId === TARGETS[0]
+    && previous[0].publicStaticNetworkV2Observation?.schemaVersion !== 2;
+  const rootSupersession = isFirstPositionV2Reset ? {
+    schemaVersion: 1,
+    artifactKind: "source-root-supersession",
+    sourceId: observation.sourceId,
+    supersededHeadSnapshotId: previous[0].snapshotId,
+    supersededHeadRawSha256: previous[0].rawSha256,
+    supersededHeadSchemaFingerprint: previous[0].schemaFingerprint,
+    reasonCode: "CANONICAL_SOURCE_CONTRACT_RESET",
+  } : null;
+  const snapshot = v2Snapshot({ observation, previous: previous[0], sourceUpdatedAt, rootSupersession });
+  const source = nextInventory.sources?.find(({ id }) => id === observation.sourceId);
+  if (!source || source.admissionEvidence?.decision !== "APPROVED") throw new Error("public v2 source admission is invalid");
+  const sourceClass = freshness.sourceClasses?.find(({ sourceIds }) => sourceIds?.includes(observation.sourceId));
+  const retention = deriveRawRetentionExpiresAt({ policy: governance, sourceId: observation.sourceId, retrievedAt: snapshot.retrievedAt });
+  if (!sourceClass || snapshot.rawReceipt.rawRetentionExpiresAt !== retention || Date.parse(snapshot.rawReceipt.storedAt) > now.getTime()) throw new Error("public v2 receipt retention is invalid");
+  snapshot.freshnessExpiresAt = deriveFreshnessExpiresAt({ policy: freshness, sourceClassId: sourceClass.id, basisAt: snapshot[sourceClass.basisField], evaluationAt: now.toISOString() });
+  snapshot.rawRetentionExpiresAt = retention; snapshot.governancePolicyVersion = governance.policyVersion; snapshot.governancePolicySha256 = sha(governanceBytes);
+  requireCanonicalPublicStaticNetworkV2OuterSnapshot({ snapshot, now, requireCurrentFreshness: true });
+  if (ledger.some(({ snapshotId }) => snapshotId === snapshot.snapshotId)
+    || existingSnapshots.some(({ snapshotId }) => snapshotId === snapshot.snapshotId)) throw new Error("public v2 snapshot immutable collision");
+  source.retrievedAt = snapshot.retrievedAt.slice(0, 10); source.observedDataUpdatedAt = snapshot.sourceUpdatedAt.slice(0, 10);
+  source.admissionEvidence = { ...source.admissionEvidence, snapshotId: snapshot.snapshotId, rawSha256: snapshot.rawSha256, schemaFingerprint: snapshot.schemaFingerprint };
+  if (observation.sourceId === TARGETS[0]) {
+    source.requiredForProductionPack = true; source.productionUseAllowed = true;
+    source.routeMapAdmissionEvidence = { ...source.routeMapAdmissionEvidence, currentTopologyAdmission: { ...source.routeMapAdmissionEvidence.currentTopologyAdmission, positionSnapshotSha256: snapshot.normalizedObservationSha256 }, currentLayoutAdmission: structuredClone(currentLayoutAdmission), capturedAt: snapshot.retrievedAt, freshUntil: snapshot.freshnessExpiresAt };
+    requirePublicStaticNetworkV2Admission({ positions: snapshot, positionSource: source });
+  }
+  return snapshot;
+}
+
+function materializePublicV2Snapshots({ producerOutput, ledger, heads, nextInventory, governance, governanceBytes, freshness, now }) {
+  const snapshots = [];
+  for (const observation of producerOutput.observations) snapshots.push(materializePublicV2Observation({
+    observation, ledger, heads, nextInventory, governance, governanceBytes, freshness, now,
+    currentLayoutAdmission: producerOutput.currentLayoutAdmission, existingSnapshots: snapshots,
+  }));
+  return snapshots;
+}
+
 export async function buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot = ROOT, producerOutput, rawBytesBySource, now = new Date() } = {}) {
   const root = path.resolve(repositoryRoot); await regularDirectory(root, "repository root");
   assertV2ProducerOutput(producerOutput, rawBytesBySource);
@@ -456,51 +514,8 @@ export async function buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoo
   if (JSON.stringify(candidate.sourceSnapshots?.map(({ sourceId }) => sourceId)) !== JSON.stringify(CANDIDATE_SOURCE_IDS)
     || JSON.stringify(candidate.sourceSnapshotIds) !== JSON.stringify(candidate.sourceSnapshots.map(({ snapshotId }) => snapshotId))) throw new Error("public v2 candidate source set is invalid");
   const heads = validateLineage(ledger).headsBySource;
-  const priorPositions = ledger.filter(({ snapshotId }) => snapshotId === heads[TARGETS[0]]);
-  if (priorPositions.length !== 1) throw new Error("public v2 direct predecessor is invalid");
-  if (priorPositions[0].publicStaticNetworkV2Observation?.schemaVersion !== 2) {
-    requireLegacyV1PositionResetAuthority({
-      ledger, candidate, inventory, governance, governanceBytes, freshness, nowMillis: now.getTime(),
-      heads, previous: priorPositions[0],
-    });
-  }
-  const nextInventory = structuredClone(inventory); const nextLedger = [...ledger]; const snapshots = [];
-  for (const observation of producerOutput.observations) {
-    const previous = ledger.filter(({ snapshotId }) => snapshotId === heads[observation.sourceId]);
-    if (previous.length !== 1 || previous[0].snapshotId === observation.snapshotId) throw new Error("public v2 direct predecessor is invalid");
-    const sourceUpdatedAt = observation.sourceId === TARGETS[0]
-      ? `${observation.routeMapLayoutArtifact.observedDataUpdatedAt}T00:00:00.000Z`
-      : observation.capturedAt;
-    const isFirstPositionV2Reset = observation.sourceId === TARGETS[0]
-      && previous[0].publicStaticNetworkV2Observation?.schemaVersion !== 2;
-    const rootSupersession = isFirstPositionV2Reset ? {
-      schemaVersion: 1,
-      artifactKind: "source-root-supersession",
-      sourceId: observation.sourceId,
-      supersededHeadSnapshotId: previous[0].snapshotId,
-      supersededHeadRawSha256: previous[0].rawSha256,
-      supersededHeadSchemaFingerprint: previous[0].schemaFingerprint,
-      reasonCode: "CANONICAL_SOURCE_CONTRACT_RESET",
-    } : null;
-    const snapshot = v2Snapshot({ observation, previous: previous[0], sourceUpdatedAt, rootSupersession });
-    const source = nextInventory.sources?.find(({ id }) => id === observation.sourceId);
-    if (!source || source.admissionEvidence?.decision !== "APPROVED") throw new Error("public v2 source admission is invalid");
-    const sourceClass = freshness.sourceClasses?.find(({ sourceIds }) => sourceIds?.includes(observation.sourceId));
-    const retention = deriveRawRetentionExpiresAt({ policy: governance, sourceId: observation.sourceId, retrievedAt: snapshot.retrievedAt });
-    if (!sourceClass || snapshot.rawReceipt.rawRetentionExpiresAt !== retention || Date.parse(snapshot.rawReceipt.storedAt) > now.getTime()) throw new Error("public v2 receipt retention is invalid");
-    snapshot.freshnessExpiresAt = deriveFreshnessExpiresAt({ policy: freshness, sourceClassId: sourceClass.id, basisAt: snapshot[sourceClass.basisField], evaluationAt: now.toISOString() });
-    snapshot.rawRetentionExpiresAt = retention; snapshot.governancePolicyVersion = governance.policyVersion; snapshot.governancePolicySha256 = sha(governanceBytes);
-    requireCanonicalPublicStaticNetworkV2OuterSnapshot({ snapshot, now, requireCurrentFreshness: true });
-    if (nextLedger.some(({ snapshotId }) => snapshotId === snapshot.snapshotId)) throw new Error("public v2 snapshot immutable collision");
-    nextLedger.push(snapshot); snapshots.push(snapshot);
-    source.retrievedAt = snapshot.retrievedAt.slice(0, 10); source.observedDataUpdatedAt = snapshot.sourceUpdatedAt.slice(0, 10);
-    source.admissionEvidence = { ...source.admissionEvidence, snapshotId: snapshot.snapshotId, rawSha256: snapshot.rawSha256, schemaFingerprint: snapshot.schemaFingerprint };
-    if (observation.sourceId === TARGETS[0]) {
-      source.requiredForProductionPack = true; source.productionUseAllowed = true;
-      source.routeMapAdmissionEvidence = { ...source.routeMapAdmissionEvidence, currentTopologyAdmission: { ...source.routeMapAdmissionEvidence.currentTopologyAdmission, positionSnapshotSha256: snapshot.normalizedObservationSha256 }, currentLayoutAdmission: structuredClone(producerOutput.currentLayoutAdmission), capturedAt: snapshot.retrievedAt, freshUntil: snapshot.freshnessExpiresAt };
-      requirePublicStaticNetworkV2Admission({ positions: snapshot, positionSource: source });
-    }
-  }
+  requireFirstPublicV2PositionsPredecessor({ ledger, heads, candidate, inventory, governance, governanceBytes, freshness, now });
+  const nextInventory = structuredClone(inventory); const snapshots = materializePublicV2Snapshots({ producerOutput, ledger, heads, nextInventory, governance, governanceBytes, freshness, now }); const nextLedger = [...ledger, ...snapshots];
   rebindMolitMembershipEvidence(nextInventory, snapshots.find(({ sourceId }) => sourceId === TARGETS[1]), rawBytesBySource[TARGETS[1]]);
   validateLineage(nextLedger);
   const nextCandidate = structuredClone(candidate); const nowMillis = now.getTime();
