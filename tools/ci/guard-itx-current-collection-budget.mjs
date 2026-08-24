@@ -10,7 +10,7 @@ const WORKFLOW_FILE = "itx-current-collection.yml";
 const JOB_NAME = "ITX current collection";
 const COLLECTOR_STEP_NAME = "ITX current collection / Collect ITX current timetable";
 const MAX_RUNS = 100;
-const MAX_JOBS = 1;
+const MAX_JOBS = 100;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const REQUEST_TIMEOUT_MILLIS = 10_000;
 const KST_OFFSET_MILLIS = 9 * 60 * 60 * 1000;
@@ -103,6 +103,7 @@ async function previousRunEnteredCollector({ runId, token, fetchImpl }) {
   const requestUrl = new URL(
     `https://api.github.com/repos/${EXPECTED_REPOSITORY}/actions/runs/${runId}/jobs`,
   );
+  requestUrl.searchParams.set("filter", "all");
   requestUrl.searchParams.set("per_page", String(MAX_JOBS));
   let response;
   try {
@@ -121,10 +122,18 @@ async function previousRunEnteredCollector({ runId, token, fetchImpl }) {
   }
   const body = await readResponse(response);
   if (!body || typeof body !== "object" || Array.isArray(body)
-    || body.total_count !== MAX_JOBS || !Array.isArray(body.jobs) || body.jobs.length !== MAX_JOBS) {
+    || !Number.isSafeInteger(body.total_count) || body.total_count < 1 || body.total_count > MAX_JOBS
+    || !Array.isArray(body.jobs) || body.jobs.length !== body.total_count) {
     throw failure();
   }
-  return validateCollectorJob(body.jobs[0], runId);
+  const jobIds = new Set();
+  let enteredCollector = false;
+  for (const job of body.jobs) {
+    if (jobIds.has(job?.id)) throw failure();
+    jobIds.add(job?.id);
+    if (validateCollectorJob(job, runId)) enteredCollector = true;
+  }
+  return enteredCollector;
 }
 
 export async function guardItxCurrentCollectionBudget({

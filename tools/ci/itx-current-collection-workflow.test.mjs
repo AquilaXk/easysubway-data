@@ -167,9 +167,9 @@ function githubResponse(body, { ok = true, status = 200 } = {}) {
   };
 }
 
-function workflowJob(runId, collectorStep) {
+function workflowJob(runId, collectorStep, jobId = runId + 10_000) {
   return {
-    id: runId + 10_000,
+    id: jobId,
     run_id: runId,
     name: "ITX current collection",
     status: "completed",
@@ -243,6 +243,39 @@ test("KST quota guard는 collector가 skipped인 same-window pre-provider failur
     }),
   });
   assert.equal(result.otherRunCount, 0);
+});
+
+test("KST quota guard는 all job attempts에서 earlier collector entry를 quota 소비로 막는다", async () => {
+  const { guardItxCurrentCollectionBudget } = await loadBudgetGuard();
+  const calls = [];
+  await assert.rejects(() => guardItxCurrentCollectionBudget({
+    env: budgetEnv(),
+    now: new Date("2026-08-12T15:15:00.000Z"),
+    async fetchImpl(url) {
+      const request = new URL(url);
+      calls.push(request);
+      if (request.pathname.endsWith("/runs")) {
+        return githubResponse({ total_count: 2, workflow_runs: [workflowRun(9000), workflowRun(9001)] });
+      }
+      assert.equal(request.pathname, "/repos/AquilaXk/easysubway-data/actions/runs/9000/jobs");
+      if (request.searchParams.get("filter") === "all") {
+        return githubResponse({
+          total_count: 2,
+          jobs: [
+            workflowJob(9000, collectorStep("completed", "failure"), 19_000),
+            workflowJob(9000, collectorStep("completed", "skipped"), 19_001),
+          ],
+        });
+      }
+      return githubResponse({
+        total_count: 1,
+        jobs: [workflowJob(9000, collectorStep("completed", "skipped"))],
+      });
+    },
+  }));
+  const jobsRequest = calls.find((request) => request.pathname.endsWith("/runs/9000/jobs"));
+  assert.ok(jobsRequest);
+  assert.equal(jobsRequest.searchParams.get("filter"), "all");
 });
 
 test("KST quota guard는 same-window prior collector actual entry만 quota 소비로 막는다", async () => {
