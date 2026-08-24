@@ -55,6 +55,7 @@ function validatePack(pack, artifactKind, expectedPaths, stationSetSha256) {
   if (!plain(manifest) || manifest.manifestVersion !== 1 || manifest.artifactKind !== artifactKind || manifest.stationSetSha256 !== stationSetSha256 || !SHA.test(manifest.payloadSha256 ?? "")) throw new Error(`${artifactKind} manifest binding mismatch`);
   const expectedIdentity = artifactKind === "map-pack" ? "mapPackId" : "catalogPackId";
   exactKeys(manifest, ["manifestVersion", "artifactKind", expectedIdentity, "stationSetSha256", "payloadSha256"], `${artifactKind} manifest`);
+  if (typeof manifest[expectedIdentity] !== "string" || manifest[expectedIdentity].trim() === "") throw new Error(`${artifactKind} manifest identity mismatch`);
   if (canonicalJson(manifest) !== canonicalJson(JSON.parse(canonicalJson(manifest)))) throw new Error(`${artifactKind} manifest is noncanonical`);
   if (!Array.isArray(pack.objects) || pack.objects.length !== expectedPaths.length) throw new Error(`${artifactKind} object inventory mismatch`);
   const paths = pack.objects.map((entry) => entry?.path);

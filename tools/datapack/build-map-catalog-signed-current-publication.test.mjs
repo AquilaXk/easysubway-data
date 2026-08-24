@@ -28,10 +28,11 @@ test("exact map root manifest+4 payload와 catalog manifest+sqlite를 하나의 
   assert.deepEqual(validateMapCatalogSignedCurrentPublication(descriptor, { publicKey }), descriptor);
 });
 
-test("fixed clock이 stale descriptor를 output 0으로 거부한다", async (t) => {
+test("fixed injected clock은 wall clock상 과거인 fresh descriptor를 정상 생성한다", async (t) => {
   const fixture = await createFixture(t);
-  await assert.rejects(buildMapCatalogSignedCurrentPublication({ artifactRoot: fixture.root, output: fixture.output, producerGitSha: "a".repeat(40), releaseSequence: 7, signedFinalDescriptorSha256: "b".repeat(64), freshUntil: "2099-01-01T00:00:00.000Z", privateKey, publicKey, now: Date.parse("2100-01-01T00:00:00.000Z") }), /freshUntil is invalid/);
-  await assert.rejects(readFile(fixture.output), { code: "ENOENT" });
+  const descriptor = await buildMapCatalogSignedCurrentPublication({ artifactRoot: fixture.root, output: fixture.output, producerGitSha: "a".repeat(40), releaseSequence: 7, signedFinalDescriptorSha256: "b".repeat(64), freshUntil: "2010-01-01T00:00:00.000Z", privateKey, publicKey, now: Date.parse("2000-01-01T00:00:00.000Z") });
+  assert.equal(descriptor.freshUntil, "2010-01-01T00:00:00.000Z");
+  assert.deepEqual(JSON.parse(await readFile(fixture.output, "utf8")), descriptor);
 });
 
 test("missing·extra·route/timetable/accessibility·duplicate·traversal·symlink·noncanonical·stale mismatch와 preexisting output은 output 0이다", async (t) => {
@@ -56,6 +57,11 @@ test("missing·extra·route/timetable/accessibility·duplicate·traversal·symli
   const stale = await createFixture(t);
   await assert.rejects(buildMapCatalogSignedCurrentPublication({ artifactRoot: stale.root, output: stale.output, producerGitSha: "a".repeat(40), releaseSequence: 7, signedFinalDescriptorSha256: "b".repeat(64), freshUntil: "2000-01-01T00:00:00.000Z", privateKey, publicKey }), /freshUntil is invalid/);
   await assert.rejects(readFile(stale.output), { code: "ENOENT" });
+  for (const [pack, identity] of [["map-pack", "mapPackId"], ["station-catalog-pack", "catalogPackId"]]) {
+    const fixture = await createFixture(t); const manifestPath = path.join(fixture.root, pack, "manifest.json"); const manifest = JSON.parse(await readFile(manifestPath, "utf8")); manifest[identity] = " "; await writeFile(manifestPath, canonicalJson(manifest));
+    await assert.rejects(build(fixture), /manifest identity mismatch/);
+    await assert.rejects(readFile(fixture.output), { code: "ENOENT" });
+  }
 });
 
 async function build(fixture) { return buildMapCatalogSignedCurrentPublication({ artifactRoot: fixture.root, output: fixture.output, producerGitSha: "a".repeat(40), releaseSequence: 7, signedFinalDescriptorSha256: "b".repeat(64), freshUntil: "2099-01-01T00:00:00.000Z", privateKey, publicKey, now: Date.parse("2098-01-01T00:00:00.000Z") }); }
