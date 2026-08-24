@@ -702,6 +702,36 @@ test("합성 current public successor build spec은 inventory와 snapshot set에
   assert.equal(buildSpec.sourceSnapshotSetHash, sourceSnapshotSetHash);
 });
 
+test("합성 current public successor는 선택한 public head를 ephemeral snapshot으로 교체한다", async (t) => {
+  const repositoryRoot = await syntheticCurrentRepository(t, "public-route-map-replacement-");
+  const [beforeCandidate, beforeSnapshots] = await Promise.all([
+    readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+  ]);
+  const beforeSnapshotId = beforeCandidate.sourceSnapshotIds[beforeCandidate.sourceSnapshots
+    .findIndex(({ sourceId }) => sourceId === "seoul-metro-route-map-positions")];
+
+  const refreshedRoot = path.join(path.dirname(repositoryRoot), "refreshed-repository");
+  await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, refreshedRoot, {
+    now: new Date("2026-08-22T09:46:18.609Z"),
+  });
+
+  const [candidate, snapshots] = await Promise.all([
+    readFile(path.join(refreshedRoot, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(refreshedRoot, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+  ]);
+  const publicIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === "seoul-metro-route-map-positions");
+  const selectedSnapshotId = candidate.sourceSnapshotIds[publicIndex];
+  const selected = snapshots.filter(({ snapshotId }) => snapshotId === selectedSnapshotId);
+
+  assert.notEqual(selectedSnapshotId, beforeSnapshotId);
+  assert.equal(selected.length, 1);
+  assert.equal(snapshots.filter(({ sourceId }) => sourceId === "seoul-metro-route-map-positions").length, 1);
+  assert.equal(selected[0].retrievedAt, "2026-08-22T09:45:18.609Z");
+  assert.ok(Date.parse(selected[0].sourceUpdatedAt) <= Date.parse(selected[0].retrievedAt));
+  assert.equal(beforeSnapshots.filter(({ sourceId }) => sourceId === "seoul-metro-route-map-positions").length, 1);
+});
+
 test("승인 allowlist 밖의 unbound snapshot은 build spec policy로 backfill할 수 없다", () => {
   const value = input();
   delete value.snapshots[0].governancePolicyVersion;
