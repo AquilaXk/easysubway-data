@@ -30,6 +30,7 @@ import { loadCapitalRouteTopologySnapshot } from "./apply-capital-route-topology
 import { addCadence } from "./freshness-policy.mjs";
 import { ROUTE_MAP_REVERIFICATION_CADENCE } from "./lib/route-map-admission-freshness.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import { requirePublicStaticNetworkV2Admission } from "./public-static-network-v2-admission.mjs";
 import {
   CURRENT_MOLIT_FULL_ROUTE_ROW_COUNT,
   CURRENT_SEOUL_PUBLIC_POSITION_COUNT,
@@ -277,6 +278,7 @@ export function verifyCurrentStaticNetworkSuccessorHeads({ sourceSnapshots, sour
     || layoutKeys.some((key) => currentLayout[key] !== layout[key])) {
     throw new Error("current public route map layout admission binding is invalid");
   }
+  requirePublicStaticNetworkV2Admission({ positions, positionSource });
   const cyber = sourceInventory.sources.filter(({ id }) => id === "seoulmetro-cyberstation-route-map");
   if (cyber.length > 1 || cyber.some(({ requiredForProductionPack, productionUseAllowed }) =>
     requiredForProductionPack === true || productionUseAllowed === true)) {

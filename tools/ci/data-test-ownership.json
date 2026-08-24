@@ -431,6 +431,7 @@
     {"path":"tools/datapack/project-canonical-route-map-provenance.test.mjs","semanticOwner":"data309","classes":["required-pr"],"durationMs":234},
     {"path":"tools/datapack/project-kric-station-line-membership.test.mjs","semanticOwner":"data455","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/project-retired-transit-lines.test.mjs","semanticOwner":"data308","classes":["required-pr"],"durationMs":42},
+    {"path":"tools/datapack/public-static-network-v2-admission.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":100},
     {"path":"tools/datapack/provider-response-capture.test.mjs","semanticOwner":"data96","classes":["required-pr"],"durationMs":62},
     {"path":"tools/datapack/publish-kric-accessibility-raw.test.mjs","semanticOwner":"data39","classes":["required-pr"],"durationMs":20},
     {"path":"tools/datapack/publish-kric-timetable-raw.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":458},

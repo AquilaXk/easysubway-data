@@ -113,7 +113,7 @@ function currentSuccessorGateFixture() {
   const positionRawSha256 = sha256("current-public-position-raw");
   const artifact = {
     rawSha256: positionRawSha256,
-    layoutAlgorithmVersion: "seoul-public-layout-v1",
+    layoutAlgorithmVersion: "seoul-public-latlon-line-order-layout-v2",
     topologySnapshotId: "capital-route-topology-20260814",
     topologySnapshotSha256: sha256("topology-snapshot"),
     topologySnapshotIdentity: "capital-route-topology-20260814:seoul-1-8",
@@ -224,6 +224,16 @@ test("current activation은 full MOLIT·public layout v2·exact OCI successor he
   const result = verifyCurrentStaticNetworkSuccessorHeads(fixture);
   assert.equal(result.molit.rowCount, 1103);
   assert.equal(result.positions.sourceId, "seoul-metro-route-map-positions");
+
+  const missingV2 = structuredClone(fixture);
+  const missingPositions = missingV2.sourceSnapshots.find(({ sourceId }) => sourceId === "seoul-metro-route-map-positions");
+  missingPositions.routeMapLayoutArtifact.layoutAlgorithmVersion = "seoul-public-layout-v1";
+  missingPositions.routeMapLayoutEvidence.layoutAlgorithmVersion = "seoul-public-layout-v1";
+  missingPositions.routeMapLayoutEvidence.layoutArtifactSha256 = sha256(Buffer.from(`${JSON.stringify(missingPositions.routeMapLayoutArtifact)}\n`));
+  const missingLayout = missingV2.sourceInventory.sources.find(({ id }) => id === "seoul-metro-route-map-positions").routeMapAdmissionEvidence.currentLayoutAdmission;
+  missingLayout.layoutAlgorithmVersion = "seoul-public-layout-v1";
+  missingLayout.layoutArtifactSha256 = missingPositions.routeMapLayoutEvidence.layoutArtifactSha256;
+  assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads(missingV2), /V2_MISSING/);
 
   const reducedMolit = structuredClone(fixture);
   const molit = reducedMolit.sourceSnapshots.find(
