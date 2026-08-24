@@ -18258,7 +18258,7 @@ async function writeCurrentItxReleaseInputs(
   const { evidenceHash: _currentEvidenceHash, ...currentWithoutEvidenceHash } = currentAdmission;
   currentAdmission.evidenceHash = sha256(Buffer.from(JSON.stringify(currentWithoutEvidenceHash)));
   const currentAdmissionPath = path.join(workspace, "itx-current-admission.json");
-  const currentAdmissionBytes = Buffer.from(`${JSON.stringify(currentAdmission)}\n`);
+  let currentAdmissionBytes = Buffer.from(`${JSON.stringify(currentAdmission)}\n`);
   await writeFile(currentAdmissionPath, currentAdmissionBytes);
 
   const topologyEvidence = JSON.parse(await readFile("tools/datapack/itx-cheongchun-topology-evidence.json", "utf8"));
@@ -18303,12 +18303,20 @@ async function writeCurrentItxReleaseInputs(
   const fixturePath = path.join(workspace, "fixture.json");
   await writeFile(fixturePath, `${JSON.stringify(fixture)}\n`);
   const buildSpec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
-  const [baselineTopology, candidateTopology] = await Promise.all([
-    readFile(buildSpec.networkEdgeEvidence.capitalTopology.path, "utf8")
-      .then(JSON.parse),
-    readFile(buildSpec.networkEdgeEvidence.capitalTopologyCandidate.path, "utf8")
-      .then(JSON.parse),
-  ]);
+  const sourceInventory = JSON.parse(await readFile(buildSpec.networkEdgeEvidence.sourceInventory.path, "utf8"));
+  const currentInventory = structuredClone(sourceInventory);
+  const currentTopologyAdmissions = currentInventory.sources
+    .map(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence?.currentTopologyAdmission)
+    .filter((admission) => admission?.topologySnapshotId != null);
+  assert.ok(currentTopologyAdmissions.length > 0, "fixture current topology admission is required");
+  const [{ topologySnapshotId: currentTopologySnapshotId }] = currentTopologyAdmissions;
+  assert.ok(currentTopologyAdmissions.every(({ topologySnapshotId }) => topologySnapshotId === currentTopologySnapshotId),
+    "fixture current topology admissions must share one snapshot identity");
+  const baselineTopology = await readFile(
+    `tools/datapack/sources/${currentTopologySnapshotId}.json`,
+    "utf8",
+  ).then(JSON.parse);
+  const candidateTopology = projectCapitalTopologyOwnership(baselineTopology);
   const baselineTopologyPath = path.join(workspace, "capital-topology-baseline.json");
   const candidateTopologyPath = path.join(workspace, "capital-topology-candidate.json");
   const topologyReverificationPath = path.join(workspace, "capital-topology-reverification.json");
@@ -18324,6 +18332,35 @@ async function writeCurrentItxReleaseInputs(
     verifiedAt: candidateTopology.capturedAt,
     freshUntil: candidateTopology.freshUntil,
   }]));
+  const capturedAtKst = new Date(Date.parse(candidateTopology.capturedAt) + 9 * 60 * 60 * 1_000);
+  const currentServiceDate = capturedAtKst.toISOString().slice(0, 10).replaceAll("-", "");
+  const nextServiceDateKst = new Date(Date.UTC(
+    capturedAtKst.getUTCFullYear(),
+    capturedAtKst.getUTCMonth(),
+    capturedAtKst.getUTCDate() + 1,
+  ));
+  const currentAdmissionFreshUntil = `${nextServiceDateKst.getUTCFullYear()}-${String(
+    nextServiceDateKst.getUTCMonth() + 1,
+  ).padStart(2, "0")}-${String(nextServiceDateKst.getUTCDate()).padStart(2, "0")}T00:00:00+09:00`;
+  Object.assign(currentAdmission, {
+    artifactId: `itx-current-network-edge-admission-${currentServiceDate}`,
+    serviceDate: currentServiceDate,
+    observedAt: candidateTopology.capturedAt,
+    freshUntil: currentAdmissionFreshUntil,
+  });
+  const { evidenceHash: _refreshedCurrentEvidenceHash, ...refreshedCurrentWithoutEvidenceHash } = currentAdmission;
+  currentAdmission.evidenceHash = sha256(Buffer.from(JSON.stringify(refreshedCurrentWithoutEvidenceHash)));
+  currentAdmissionBytes = Buffer.from(`${JSON.stringify(currentAdmission)}\n`);
+  await writeFile(currentAdmissionPath, currentAdmissionBytes);
+  for (const source of currentInventory.sources) {
+    const admission = source.routeMapAdmissionEvidence?.currentTopologyAdmission;
+    if (admission?.topologySnapshotId !== currentTopologySnapshotId) continue;
+    admission.topologyContentSha256 = candidateTopology.contentSha256;
+    admission.topologyLineages = admission.topologyLineages.map((lineage) => ({
+      ...lineage,
+      contentSha256: candidateTopology.contentSha256,
+    }));
+  }
   projectCapitalTopologyIntoCanonicalFixture(
     fixture,
     candidateTopology,
@@ -18343,18 +18380,23 @@ async function writeCurrentItxReleaseInputs(
   Object.assign(buildSpec.networkEdgeEvidence.capitalTopologyCandidate, {
     path: candidateTopologyPath,
     sha256: sha256(candidateTopologyBytes),
+    snapshotId: currentTopologySnapshotId,
   });
   Object.assign(buildSpec.networkEdgeEvidence.capitalTopologyReverification, {
     path: topologyReverificationPath,
     sha256: sha256(topologyReverificationBytes),
   });
-  const sourceInventory = JSON.parse(await readFile(buildSpec.networkEdgeEvidence.sourceInventory.path, "utf8"));
-  const currentInventory = structuredClone(sourceInventory);
   const incheonSource = currentInventory.sources.find(({ id }) => id === "incheon-transit-station-info");
   const incheonSnapshotPath = path.join(repositoryRoot, incheonSource.routeMapAdmissionEvidence.snapshotPath);
   const incheonSnapshot = JSON.parse(await readFile(incheonSnapshotPath, "utf8"));
   delete incheonSnapshot.stationCodeCorrections;
   incheonSnapshot.stationCodeDerivations = currentIncheonStationCodeDerivations();
+  incheonSnapshot.capturedAt = candidateTopology.capturedAt;
+  incheonSnapshot.freshUntil = candidateTopology.freshUntil;
+  Object.assign(incheonSource.topologyAdmissionEvidence, {
+    capturedAt: candidateTopology.capturedAt,
+    freshUntil: candidateTopology.freshUntil,
+  });
   const incheonSnapshotBytes = Buffer.from(`${JSON.stringify(incheonSnapshot)}\n`);
   await writeFile(incheonSnapshotPath, incheonSnapshotBytes);
   incheonSource.routeMapAdmissionEvidence.snapshotSha256 = sha256(incheonSnapshotBytes);
@@ -18389,7 +18431,10 @@ async function writeCurrentItxReleaseInputs(
   await writeFile(buildSpecPath, `${JSON.stringify(buildSpec)}\n`);
   return {
     buildSpecPath,
-    env: { ...productionEnv, EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-08-14T16:00:00.000Z" },
+    env: {
+      ...productionEnv,
+      EASYSUBWAY_DATAPACK_BUILD_NOW: new Date(Date.parse(candidateTopology.capturedAt) + 1_000).toISOString(),
+    },
     repositoryRoot,
   };
 }
