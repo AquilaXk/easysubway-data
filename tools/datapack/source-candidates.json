@@ -55,6 +55,7 @@
         "tools/datapack/collect-gwangju-timetable.mjs",
         "tools/datapack/collect-korail-itx-cheongchun-timetable.mjs",
         "tools/datapack/collect-nationwide-public-api-coverage.mjs",
+        "tools/datapack/collect-public-static-network-v2.mjs",
         "tools/datapack/collect-seoul-accessibility-evidence.mjs",
         "tools/datapack/collect-tago-itx-cheongchun-od.mjs",
         "tools/datapack/fetch-kasi-public-holiday-calendar.mjs",
@@ -65,6 +66,7 @@
         "tools/datapack/revalidate-current-molit-transfer-source.mjs",
         "tools/datapack/run-current-itx-collection.mjs",
         "tools/datapack/run-current-seoul-accessibility-registration.mjs",
+        "tools/datapack/run-public-static-network-v2-operation.mjs",
         "tools/datapack/validate-tago-schedule-sample.mjs"
       ]
     }
@@ -6544,8 +6546,8 @@
         "responseEnvelope": "data + currentCount + matchCount + page + perPage + totalCount",
         "responseFields": ["연번", "호선", "고유역번호(외부역코드)", "역명", "위도", "경도", "작성기준일", "작성일자"],
         "runner": {
-          "command": "node tools/datapack/run-current-static-network-successors.mjs",
-          "requiredEnv": ["DATA_GO_KR_SERVICE_KEY"],
+          "command": "node tools/datapack/run-public-static-network-v2-operation.mjs",
+          "requiredEnv": ["DATA_GO_KR_SERVICE_KEY", "EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL"],
           "arguments": ["<absolute-operation-root>"]
         },
         "secretPolicy": "env-only-redacted-output"

@@ -10,8 +10,8 @@ const NAMESPACE = "axvym6vk8g7i";
 const BUCKET = "easysubway-datapacks";
 const OCI_PAR = new RegExp(`^https://objectstorage\\.[a-z0-9][a-z0-9-]*\\.oraclecloud\\.com/p/[^/?#]+/n/${NAMESPACE}/b/${BUCKET}/o/?$`, "u");
 const SOURCE_TYPES = Object.freeze({
-  "seoul-metro-route-map-positions": { extension: "json", contentType: "application/json" },
-  "molit-urban-rail-full-route": { extension: "csv", contentType: "text/csv; charset=euc-kr" },
+  "seoul-metro-route-map-positions": { extension: "json", contentType: "application/json", rawRelativePath: "positions.raw.json" },
+  "molit-urban-rail-full-route": { extension: "csv", contentType: "text/csv; charset=euc-kr", rawRelativePath: "molit.raw.csv" },
 });
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 
@@ -20,7 +20,7 @@ export async function publishStaticNetworkSourceRaw({ repositoryRoot, expectedMa
   if (!type || !path.isAbsolute(repositoryRoot ?? "") || !path.isAbsolute(operationRoot ?? "")
     || !/^[0-9a-f]{40}$/u.test(expectedMainSha ?? "") || typeof snapshotId !== "string" || snapshotId === ""
     || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(capturedAt ?? "")
-    || typeof rawRelativePath !== "string" || path.isAbsolute(rawRelativePath) || rawRelativePath !== `raw.${type.extension}`
+    || typeof rawRelativePath !== "string" || path.isAbsolute(rawRelativePath) || rawRelativePath !== type.rawRelativePath
     || !(now instanceof Date) || Number.isNaN(now.valueOf())) throw new Error("static OCI publication arguments are invalid");
   if (!OCI_PAR.test(env?.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL?.trim() ?? "")) throw new Error("static OCI publication requires an OCI PAR URL");
   await assertExactMainPreflight({ repositoryRoot, expectedMainSha, gitRunner });
