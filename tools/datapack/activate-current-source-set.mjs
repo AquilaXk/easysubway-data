@@ -119,6 +119,8 @@ const CURRENT_SOURCE_DOWNSTREAM_OUTPUTS = Object.freeze([
 function isAllowedActivationOutput(relativePath) {
   return allowedOutputPaths.has(relativePath)
     || /^tools\/datapack\/release\/capital-topology-reverification-[0-9]{8}\.json$/u
+      .test(relativePath ?? "")
+    || /^tools\/datapack\/sources\/capital-route-topology-[0-9]{8}-source-separated\.json$/u
       .test(relativePath ?? "");
 }
 
@@ -1681,10 +1683,10 @@ function validationBuildSpec(spec, temporaryRoot) {
     path: path.join(temporaryRoot, "tools/datapack/source-inventory.json"),
   });
   Object.assign(next.networkEdgeEvidence.capitalTopology, {
-    path: path.join(root, "tools/datapack/sources/capital-route-topology-20260724.json"),
+    path: path.join(root, next.networkEdgeEvidence.capitalTopology.path),
   });
   Object.assign(next.networkEdgeEvidence.capitalTopologyCandidate, {
-    path: path.join(root, next.networkEdgeEvidence.capitalTopologyCandidate.path),
+    path: path.join(temporaryRoot, next.networkEdgeEvidence.capitalTopologyCandidate.path),
   });
   Object.assign(next.networkEdgeEvidence.capitalTopologyReverification, {
     path: path.join(temporaryRoot, next.networkEdgeEvidence.capitalTopologyReverification.path),
@@ -1960,12 +1962,14 @@ export async function generateCurrentSourceActivation({
   }
   const topologyReverificationPath =
     `tools/datapack/release/capital-topology-reverification-${capitalPathMatch[1]}.json`;
+  const sourceSeparatedTopologyPath = capitalTopologyPath.replace(/\.json$/u, "-source-separated.json");
   await requireCleanBuilder(builderGitSha, {
     check,
     allowedDescendantPaths: [
       ...CURRENT_SOURCE_ACTIVATION_OUTPUTS,
       ...CURRENT_SOURCE_DOWNSTREAM_OUTPUTS,
       topologyReverificationPath,
+      sourceSeparatedTopologyPath,
     ],
   });
   validateBuildNow(buildNow, handoff);
@@ -1999,6 +2003,8 @@ export async function generateCurrentSourceActivation({
     const sourceInventory = parseJson(sourceInventoryBytes, "source inventory");
     const quoteBundle = parseJson(quoteBundleBytes, "official OD fare quote bundle");
     const capitalTopology = parseJson(capitalTopologyBytes, "current capital topology");
+    const candidateTopology = projectCurrentCapitalTopologyOwnership(capitalTopology);
+    const candidateTopologyBytes = jsonBytes(candidateTopology);
     const incheonTopology = parseJson(incheonTopologyBytes, "current Incheon topology");
     const officialOdFareQuotes = (quoteBundle.quotes ?? [])
       .filter(({ sourceId }) => sourceId === "seoul-metro-official-od-fares");
@@ -2037,6 +2043,7 @@ export async function generateCurrentSourceActivation({
     };
     await Promise.all([
       writeTempFile(temporaryRoot, topologyReverificationPath, primaryBytes.reverification),
+      writeTempFile(temporaryRoot, sourceSeparatedTopologyPath, candidateTopologyBytes),
       writeTempFile(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[0], primaryBytes.snapshots),
       writeTempFile(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[1], primaryBytes.inventory),
       writeTempFile(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[2], primaryBytes.input),
@@ -2120,9 +2127,12 @@ export async function generateCurrentSourceActivation({
       baseSpec: parseJson(baseSpecBytes, "candidate build spec"),
       builderGitSha,
       sourceInventoryBytes: primaryBytes.inventory,
-      currentTopology: capitalTopology,
-      currentTopologyBytes: capitalTopologyBytes,
-      currentTopologyPath: capitalTopologyPath,
+      fullTopology: capitalTopology,
+      fullTopologyBytes: capitalTopologyBytes,
+      fullTopologyPath: capitalTopologyPath,
+      candidateTopology,
+      candidateTopologyBytes,
+      candidateTopologyPath: sourceSeparatedTopologyPath,
       topologyReverificationBytes: primaryBytes.reverification,
       productionScopePolicyBytes,
     });
@@ -2143,6 +2153,7 @@ export async function generateCurrentSourceActivation({
 
     const outputs = [
       { relativePath: topologyReverificationPath, bytes: primaryBytes.reverification },
+      { relativePath: sourceSeparatedTopologyPath, bytes: candidateTopologyBytes },
       { relativePath: CURRENT_SOURCE_ACTIVATION_OUTPUTS[0], bytes: primaryBytes.snapshots },
       { relativePath: CURRENT_SOURCE_ACTIVATION_OUTPUTS[1], bytes: primaryBytes.inventory },
       { relativePath: CURRENT_SOURCE_ACTIVATION_OUTPUTS[2], bytes: primaryBytes.input },

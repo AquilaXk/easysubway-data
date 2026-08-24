@@ -311,8 +311,8 @@ test("prepared current candidate 검증은 build를 수행하고 final release e
       itxTopologyEvidenceSha256: "a".repeat(64),
       networkEdgeEvidence: {
         sourceInventory: { path: "tools/datapack/source-inventory.json" },
-        capitalTopology: { path: "tools/datapack/sources/capital-route-topology-20260724.json" },
-        capitalTopologyCandidate: { path: "tools/datapack/sources/capital-route-topology-20260813.json" },
+        capitalTopology: { path: "tools/datapack/sources/capital-route-topology-20260823.json" },
+        capitalTopologyCandidate: { path: "tools/datapack/sources/capital-route-topology-20260823-source-separated.json" },
         capitalTopologyReverification: {
           path: "tools/datapack/release/capital-topology-reverification-20260813.json",
         },
@@ -321,6 +321,18 @@ test("prepared current candidate 검증은 build를 수행하고 final release e
     },
     async runNodeImpl(script, args, options) {
       calls.push({ script, args, options });
+      const staged = JSON.parse(await readFile(args[1], "utf8"));
+      assert.equal(
+        staged.networkEdgeEvidence.capitalTopology.path,
+        path.join(root, "tools/datapack/sources/capital-route-topology-20260823.json"),
+      );
+      assert.equal(
+        staged.networkEdgeEvidence.capitalTopologyCandidate.path,
+        path.join(
+          temporaryRoot,
+          "tools/datapack/sources/capital-route-topology-20260823-source-separated.json",
+        ),
+      );
     },
   });
 
@@ -1542,6 +1554,30 @@ test("activation transaction은 검증 실패에서 모든 기존 bytes를 복�
     (await readdir(path.join(repositoryRoot, "tools/datapack")))
       .filter((name) => name.startsWith(".current-source-activation")),
     [],
+  );
+});
+
+test("topology refresh는 date-bound source-separated output만 원자 commit 대상으로 허용한다", async (context) => {
+  const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "current-topology-output-"));
+  context.after(() => rm(repositoryRoot, { recursive: true, force: true }));
+  const allowedPath = "tools/datapack/sources/capital-route-topology-20260823-source-separated.json";
+  const rejectedPath = "tools/datapack/sources/unrelated-source-separated.json";
+  await mkdir(path.dirname(path.join(repositoryRoot, allowedPath)), { recursive: true });
+
+  await commitCurrentSourceActivation({
+    repositoryRoot,
+    outputs: [{ relativePath: allowedPath, bytes: Buffer.from("separated\n") }],
+    validate: async () => {},
+  });
+  assert.deepEqual(await readFile(path.join(repositoryRoot, allowedPath)), Buffer.from("separated\n"));
+
+  await assert.rejects(
+    commitCurrentSourceActivation({
+      repositoryRoot,
+      outputs: [{ relativePath: rejectedPath, bytes: Buffer.from("rejected\n") }],
+      validate: async () => {},
+    }),
+    /activation output is not allowed/,
   );
 });
 
