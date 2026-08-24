@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Data pack candidate OCI descriptor",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "artifactKind", "repository", "workflowRunId", "headSha", "artifactName", "candidateBinding", "freshnessExpiresAt", "createdAt", "expiresAt", "inventory", "component", "tuple", "objects"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "artifactKind": { "const": "datapack-candidate-oci-artifact-descriptor" },
+    "repository": { "const": "AquilaXk/easysubway-data" },
+    "workflowRunId": { "type": "string", "pattern": "^[1-9][0-9]*$" },
+    "headSha": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+    "artifactName": { "type": "string", "pattern": "^easysubway-datapack-candidate-[1-9][0-9]*$" },
+    "candidateBinding": { "type": "object", "additionalProperties": false, "required": ["candidateId", "buildSpecSha256", "manifestSha256"], "properties": { "candidateId": { "type": "string", "minLength": 1 }, "buildSpecSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "manifestSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" } } },
+    "freshnessExpiresAt": { "type": "string", "format": "date-time" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "inventory": { "$ref": "#/$defs/file" },
+    "component": { "$ref": "#/$defs/file" },
+    "tuple": { "$ref": "#/$defs/file" },
+    "objects": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/object" } }
+  },
+  "$defs": {
+    "file": { "type": "object", "additionalProperties": false, "required": ["path", "sizeBytes", "sha256"], "properties": { "path": { "type": "string", "minLength": 1 }, "sizeBytes": { "type": "integer", "minimum": 1 }, "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" } } },
+    "object": { "allOf": [{ "$ref": "#/$defs/file" }, { "type": "object", "additionalProperties": false, "required": ["path", "objectKey", "ociUri", "sizeBytes", "sha256"], "properties": { "objectKey": { "type": "string", "minLength": 1 }, "ociUri": { "type": "string", "pattern": "^oci://" } } }] }
+  }
+}

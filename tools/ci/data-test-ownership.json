@@ -285,6 +285,8 @@
     {"path":"tools/datapack/build-datapack-accessibility-freshness.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":143},
     {"path":"tools/datapack/build-datapack-candidate-fixture-override.test.mjs","semanticOwner":"data396","classes":["required-pr"],"durationMs":564},
     {"path":"tools/datapack/build-datapack-candidate-tuple.test.mjs","semanticOwner":"data529","classes":["required-pr"],"durationMs":120},
+    {"path":"tools/datapack/build-candidate-oci-artifact-descriptor.test.mjs","semanticOwner":"data529","classes":["required-pr"],"durationMs":120},
+    {"path":"tools/datapack/publish-candidate-oci-artifact.test.mjs","semanticOwner":"data529","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/build-datapack-current-admission.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":432},
     {"path":"tools/datapack/build-exit-path-admission.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":184},
     {"path":"tools/datapack/build-facility-accessibility-admission.test.mjs","semanticOwner":"data10","classes":["required-pr"],"durationMs":1000},

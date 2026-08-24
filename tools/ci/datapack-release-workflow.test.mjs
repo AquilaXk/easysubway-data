@@ -19,6 +19,18 @@ test("release workflow는 owned deterministic-release subset만 실행한다", (
   assert.doesNotMatch(step, /node\s+--test|\.test\.mjs/);
 });
 
+test("candidate-create는 전용 OCI credential과 descriptor-last writer만 사용한다", () => {
+  const credentials = yml.match(/- name: Data Pack Release \/ Restore candidate OCI credentials[\s\S]*?\n\s+- name:/)?.[0];
+  const publish = yml.match(/- name: Data Pack Release \/ Publish OCI candidate descriptor[\s\S]*?\n\s+- name:/)?.[0];
+  assert.ok(credentials); assert.ok(publish);
+  assert.match(credentials, /mode == 'candidate-create'/);
+  assert.match(credentials, /EASYSUBWAY_CANDIDATE_OCI_BUCKET/);
+  assert.match(publish, /build-datapack-candidate-tuple\.mjs/);
+  assert.match(publish, /build-candidate-oci-artifact-descriptor\.mjs/);
+  assert.match(publish, /publish-candidate-oci-artifact\.mjs/);
+  assert.doesNotMatch(publish, /actions\/upload-artifact|publish-object-storage|catalog\/current\.json.*PUT/);
+});
+
 test("route-final candidate parity는 runtime receipts를 canonical stage 밖 companion artifact로 분리한다", () => {
   const step = (name) => yml.indexOf(`- name: ${name}`);
   const coverage = yml.slice(step("Data Pack Release / Validate accessibility source coverage"), step("Data Pack Release / Write coverage gap evidence"));

@@ -496,6 +496,21 @@ jobs:
             printf '%s=%s\n' "${name}" "${!name}" >> "${GITHUB_ENV}"
           done
 
+      - name: Data Pack Release / Restore candidate OCI credentials
+        if: ${{ steps.release-mode.outputs.mode == 'candidate-create' }}
+        env:
+          EASYSUBWAY_CANDIDATE_OCI_NAMESPACE: ${{ secrets.EASYSUBWAY_CANDIDATE_OCI_NAMESPACE }}
+          EASYSUBWAY_CANDIDATE_OCI_BUCKET: ${{ secrets.EASYSUBWAY_CANDIDATE_OCI_BUCKET }}
+          EASYSUBWAY_CANDIDATE_OCI_REGION: ${{ secrets.EASYSUBWAY_CANDIDATE_OCI_REGION }}
+          EASYSUBWAY_CANDIDATE_OCI_ACCESS_KEY: ${{ secrets.EASYSUBWAY_CANDIDATE_OCI_ACCESS_KEY }}
+          EASYSUBWAY_CANDIDATE_OCI_SECRET_KEY: ${{ secrets.EASYSUBWAY_CANDIDATE_OCI_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          for name in EASYSUBWAY_CANDIDATE_OCI_NAMESPACE EASYSUBWAY_CANDIDATE_OCI_BUCKET EASYSUBWAY_CANDIDATE_OCI_REGION EASYSUBWAY_CANDIDATE_OCI_ACCESS_KEY EASYSUBWAY_CANDIDATE_OCI_SECRET_KEY; do
+            [[ -n "${!name}" && "${!name}" != *$'\n'* && "${!name}" != *$'\r'* ]] || { echo "${name} is required for candidate-create" >&2; exit 1; }
+            printf '%s=%s\n' "${name}" "${!name}" >> "${GITHUB_ENV}"
+          done
+
       - name: Data Pack Release / Validate remote object storage publish env
         id: remote-publish-env
         if: ${{ steps.release-mode.outputs.mode != 'release-candidate' && steps.release-mode.outputs.mode != 'candidate-create' }}
@@ -1664,6 +1679,19 @@ jobs:
           ];
           fs.writeFileSync(path.join(stage, "datapack-observability.txt"), `${lines.join("\n")}\n`);
           NODE
+
+      - name: Data Pack Release / Publish OCI candidate descriptor
+        if: ${{ steps.release-mode.outputs.mode == 'candidate-create' }}
+        run: |
+          set -euo pipefail
+          tuple="${EASYSUBWAY_DATAPACK_STAGE}/datapack-candidate-tuple.json"
+          inventory="${EASYSUBWAY_DATAPACK_STAGE}/data-artifact-inventory.json"
+          component="${EASYSUBWAY_DATAPACK_STAGE}/data-component-manifest.json"
+          descriptor="${RUNNER_TEMP}/datapack-candidate-oci-descriptor.json"
+          node tools/datapack/build-datapack-candidate-tuple.mjs --root "${EASYSUBWAY_DATAPACK_STAGE}" --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}" --manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json" --provenance "${EASYSUBWAY_DATAPACK_STAGE}/current.provenance.json" --output "${tuple}" --now "$(node -p 'new Date().toISOString()')"
+          node tools/datapack/build-data-component-manifest.mjs --root "${EASYSUBWAY_DATAPACK_STAGE}" --manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json" --provenance "${EASYSUBWAY_DATAPACK_STAGE}/current.provenance.json" --repository "${GITHUB_REPOSITORY}" --git-sha "${GITHUB_SHA}" --workflow-run-id "${GITHUB_RUN_ID}" --contract-version "datapack-contract-v3" --issue-ref "AquilaXk/easysubway-data#529" --inventory-output "${inventory}" --output "${component}"
+          node tools/datapack/build-candidate-oci-artifact-descriptor.mjs --root "${EASYSUBWAY_DATAPACK_STAGE}" --tuple "${tuple}" --inventory "${inventory}" --component "${component}" --repository "${GITHUB_REPOSITORY}" --workflow-run-id "${GITHUB_RUN_ID}" --head-sha "${GITHUB_SHA}" --namespace "${EASYSUBWAY_CANDIDATE_OCI_NAMESPACE}" --bucket "${EASYSUBWAY_CANDIDATE_OCI_BUCKET}" --created-at "$(node -p 'new Date().toISOString()')" --output "${descriptor}"
+          node tools/datapack/publish-candidate-oci-artifact.mjs --root "${EASYSUBWAY_DATAPACK_STAGE}" --descriptor "${descriptor}"
 
       - name: Data Pack Release / Write release decision summary
         if: ${{ always() && steps.release-decision.outputs.outcome != '' }}
