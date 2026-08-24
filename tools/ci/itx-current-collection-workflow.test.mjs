@@ -36,12 +36,15 @@ test("ITX current collection은 수동 전용 read-only workflow다", () => {
   assert.doesNotMatch(yml, /workflow_dispatch:[\s\S]*?inputs:/);
 });
 
-test("KST quota guard는 catalog와 provider보다 먼저 exact current run만 허용한다", () => {
+test("KST quota guard는 no-provider preflight 뒤 sole collector 직전에 둔다", () => {
   const yml = workflow();
   const guard = step(yml, "ITX current collection / Guard KST quota window");
   assert.match(guard, /GITHUB_TOKEN:\s*\$\{\{ github\.token \}\}/);
+  assert.match(guard, /--output "\$\{EASYSUBWAY_ITX_COLLECTION_OUTPUT\}\/freshness\.json"/);
   assert.equal((guard.match(/guard-itx-current-collection-budget\.mjs/g) ?? []).length, 1);
-  assert.ok(yml.indexOf("Guard KST quota window") < yml.indexOf("Emit station catalog pack"));
+  assert.ok(yml.indexOf("Prepare temp output") < yml.indexOf("Emit station catalog pack"));
+  assert.ok(yml.indexOf("Emit station catalog pack") < yml.indexOf("Guard KST quota window"));
+  assert.ok(yml.indexOf("Validate provider entry preflight") < yml.indexOf("Guard KST quota window"));
   assert.ok(yml.indexOf("Guard KST quota window") < yml.indexOf("Collect ITX current timetable"));
 });
 
@@ -55,14 +58,18 @@ test("tracked catalog·single-clock wrapper가 temp에서 정확한 current 수�
   assert.match(catalog, /--catalog-pack-id "itx-current-station-catalog-v1"/);
   assert.doesNotMatch(catalog, /catalog-pack-id[^\n]*\$\{\{\s*github\.run_id\s*\}\}/);
 
+  const preflight = step(yml, "ITX current collection / Validate provider entry preflight");
+  assert.match(preflight, /DATA_GO_KR_SERVICE_KEY:\s*\$\{\{ secrets\.DATA_GO_KR_SERVICE_KEY \}\}/);
+  assert.match(preflight, /must be a nonempty single line/);
+  assert.match(preflight, /candidate and completeness paths must be absent/);
+
   const collect = step(yml, "ITX current collection / Collect ITX current timetable");
   assert.match(collect, /DATA_GO_KR_SERVICE_KEY:\s*\$\{\{ secrets\.DATA_GO_KR_SERVICE_KEY \}\}/);
-  assert.match(collect, /must be a nonempty single line/);
   assert.equal((collect.match(/run-current-itx-collection\.mjs/g) ?? []).length, 1);
   for (const flag of ["--output", "--completeness-output", "--station-catalog-pack", "--freshness-output"]) {
     assert.match(collect, new RegExp(flag));
   }
-  assert.match(collect, /candidate and completeness paths must be absent/);
+  assert.doesNotMatch(collect, /must be a nonempty single line|candidate and completeness paths must be absent/);
   assert.doesNotMatch(collect, /(?:collect-korail-itx-cheongchun-timetable|day[789]-date|promote-candidate|previous-admitted|replay|canonical-pack)/);
 });
 
@@ -160,6 +167,41 @@ function githubResponse(body, { ok = true, status = 200 } = {}) {
   };
 }
 
+function workflowJob(runId, collectorStep, jobId = runId + 10_000) {
+  return {
+    id: jobId,
+    run_id: runId,
+    name: "ITX current collection",
+    status: "completed",
+    conclusion: "failure",
+    steps: [
+      { name: "ITX current collection / Guard KST quota window", status: "completed", conclusion: "failure" },
+      collectorStep,
+    ],
+  };
+}
+
+function collectorStep(status, conclusion) {
+  return {
+    name: "ITX current collection / Collect ITX current timetable",
+    status,
+    conclusion,
+  };
+}
+
+function priorRunFetch({ runs, jobsByRun = {} }) {
+  return async (url) => {
+    const request = new URL(url);
+    if (request.pathname.endsWith("/runs")) {
+      return githubResponse({ total_count: runs.length, workflow_runs: runs });
+    }
+    const match = request.pathname.match(/\/actions\/runs\/(\d+)\/jobs$/);
+    if (!match) return githubResponse({}, { ok: false, status: 404 });
+    const jobs = jobsByRun[match[1]];
+    return githubResponse({ total_count: jobs?.length ?? 0, jobs: jobs ?? [] });
+  };
+}
+
 test("KST quota guard는 fresh window의 exact current run을 API 1회로 허용한다", async () => {
   const { guardItxCurrentCollectionBudget } = await loadBudgetGuard();
   const calls = [];
@@ -190,10 +232,74 @@ test("KST quota guard는 fresh window의 exact current run을 API 1회로 허용
   assert.doesNotMatch(calls[0].url, /synthetic-github-token/);
 });
 
-test("KST quota guard는 same-window prior run과 current absent·duplicate·truncated inventory를 거부한다", async () => {
+test("KST quota guard는 collector가 skipped인 same-window pre-provider failure를 소비로 세지 않는다", async () => {
+  const { guardItxCurrentCollectionBudget } = await loadBudgetGuard();
+  const result = await guardItxCurrentCollectionBudget({
+    env: budgetEnv(),
+    now: new Date("2026-08-12T15:15:00.000Z"),
+    fetchImpl: priorRunFetch({
+      runs: [workflowRun(9000), workflowRun(9001)],
+      jobsByRun: { 9000: [workflowJob(9000, collectorStep("completed", "skipped"))] },
+    }),
+  });
+  assert.equal(result.otherRunCount, 0);
+});
+
+test("KST quota guard는 all job attempts에서 earlier collector entry를 quota 소비로 막는다", async () => {
+  const { guardItxCurrentCollectionBudget } = await loadBudgetGuard();
+  const calls = [];
+  await assert.rejects(() => guardItxCurrentCollectionBudget({
+    env: budgetEnv(),
+    now: new Date("2026-08-12T15:15:00.000Z"),
+    async fetchImpl(url) {
+      const request = new URL(url);
+      calls.push(request);
+      if (request.pathname.endsWith("/runs")) {
+        return githubResponse({ total_count: 2, workflow_runs: [workflowRun(9000), workflowRun(9001)] });
+      }
+      assert.equal(request.pathname, "/repos/AquilaXk/easysubway-data/actions/runs/9000/jobs");
+      if (request.searchParams.get("filter") === "all") {
+        return githubResponse({
+          total_count: 2,
+          jobs: [
+            workflowJob(9000, collectorStep("completed", "failure"), 19_000),
+            workflowJob(9000, collectorStep("completed", "skipped"), 19_001),
+          ],
+        });
+      }
+      return githubResponse({
+        total_count: 1,
+        jobs: [workflowJob(9000, collectorStep("completed", "skipped"))],
+      });
+    },
+  }));
+  const jobsRequest = calls.find((request) => request.pathname.endsWith("/runs/9000/jobs"));
+  assert.ok(jobsRequest);
+  assert.equal(jobsRequest.searchParams.get("filter"), "all");
+});
+
+test("KST quota guard는 same-window prior collector actual entry만 quota 소비로 막는다", async () => {
+  const { guardItxCurrentCollectionBudget } = await loadBudgetGuard();
+  for (const [status, conclusion] of [
+    ["in_progress", null],
+    ["completed", "success"],
+    ["completed", "failure"],
+    ["completed", "cancelled"],
+  ]) {
+    await assert.rejects(() => guardItxCurrentCollectionBudget({
+      env: budgetEnv(),
+      now: new Date("2026-08-12T15:15:00.000Z"),
+      fetchImpl: priorRunFetch({
+        runs: [workflowRun(9000), workflowRun(9001)],
+        jobsByRun: { 9000: [workflowJob(9000, collectorStep(status, conclusion))] },
+      }),
+    }));
+  }
+});
+
+test("KST quota guard는 current absent·duplicate·truncated run/job inventory를 fail closed한다", async () => {
   const { guardItxCurrentCollectionBudget } = await loadBudgetGuard();
   const fixtures = [
-    { total_count: 2, workflow_runs: [workflowRun(9000), workflowRun(9001)] },
     { total_count: 1, workflow_runs: [workflowRun(9000)] },
     { total_count: 2, workflow_runs: [workflowRun(9001), workflowRun(9001)] },
     { total_count: 101, workflow_runs: Array.from({ length: 100 }, (_, index) => workflowRun(index + 1)) },
@@ -215,6 +321,51 @@ test("KST quota guard는 same-window prior run과 current absent·duplicate·tru
     }));
     assert.equal(calls, 1);
   }
+
+  for (const jobs of [
+    [],
+    [workflowJob(9000, collectorStep("completed", "skipped")), workflowJob(9000, collectorStep("completed", "skipped"))],
+    [workflowJob(9000, { name: "ITX current collection / Collect ITX current timetable", status: "completed", conclusion: "unknown" })],
+  ]) {
+    await assert.rejects(() => guardItxCurrentCollectionBudget({
+      env: budgetEnv(),
+      now: new Date("2026-08-12T15:15:00.000Z"),
+      fetchImpl: priorRunFetch({
+        runs: [workflowRun(9000), workflowRun(9001)],
+        jobsByRun: { 9000: jobs },
+      }),
+    }));
+  }
+});
+
+test("KST quota guard 실패는 provider/raw/secret 없이 sanitized preflight receipt를 남긴다", async (context) => {
+  const { mkdtemp, readFile, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { runItxCurrentCollectionBudgetGuardCli } = await loadBudgetGuard();
+  const directory = await mkdtemp(path.join(tmpdir(), "itx-guard-receipt-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const output = path.join(directory, "freshness.json");
+
+  await assert.rejects(() => runItxCurrentCollectionBudgetGuardCli({
+    argv: ["--output", output],
+    env: budgetEnv(),
+    now: new Date("2026-08-12T15:15:00.000Z"),
+    fetchImpl: priorRunFetch({
+      runs: [workflowRun(9000), workflowRun(9001)],
+      jobsByRun: { 9000: [workflowJob(9000, collectorStep("completed", "failure"))] },
+    }),
+  }));
+
+  const receipt = JSON.parse(await readFile(output, "utf8"));
+  assert.deepEqual(receipt, {
+    schemaVersion: 1,
+    artifactKind: "itx-current-collection-preflight",
+    status: "FAILED",
+    operation: "KST_PROVIDER_ENTRY_QUOTA",
+    providerCalls: 0,
+    candidateCreated: false,
+    credentialRedacted: true,
+  });
 });
 
 test("KST quota guard는 rerun·wrong context와 API/schema 실패를 provider 전 sanitized 거부한다", async () => {
