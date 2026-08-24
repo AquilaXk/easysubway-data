@@ -6,7 +6,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { promisify } from "node:util";
-import { projectRegionalMaterializeFixture } from "./materialize-test-fixture.mjs";
+import {
+  loadCurrentMolitMembershipMappings,
+  projectHistoricalRegionalMaterializeInventory,
+  projectRegionalMaterializeFixture,
+} from "./materialize-test-fixture.mjs";
 import test from "node:test";
 
 import {
@@ -27,7 +31,7 @@ async function inputs() {
   const [baseFixture, snapshot, inventory, stationMapCsv] = await Promise.all([
     readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
     readJson("tools/datapack/sources/daejeon-route-topology-20260720.json"),
-    readJson("tools/datapack/source-inventory.json"),
+    readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
     readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
   ]);
   makeInheritedAccessibilityCoverageExplicitlyUnavailable(baseFixture);
@@ -217,6 +221,21 @@ test("대전 membership admission은 source scope와 두 공식 evidence의 결�
     inventory,
     canonicalStationMappings,
     now: new Date("2026-07-20T03:29:59.999Z"),
+  }), /membership evidence is future-dated/);
+});
+
+test("current MOLIT membership은 7월 topology replay 성공으로 소급되지 않는다", async () => {
+  const [baseFixture, snapshot] = await inputs();
+  const [inventory, currentMappings] = await Promise.all([
+    readJson("tools/datapack/source-inventory.json"),
+    loadCurrentMolitMembershipMappings({ repositoryRoot: root }),
+  ]);
+  assert.throws(() => materializeDaejeonRouteTopology({
+    baseFixture,
+    snapshot,
+    inventory,
+    canonicalStationMappings: currentMappings.daejeon,
+    now: evidenceNow,
   }), /membership evidence is future-dated/);
 });
 

@@ -7,7 +7,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { promisify } from "node:util";
-import { projectRegionalMaterializeFixture } from "./materialize-test-fixture.mjs";
+import { projectHistoricalRegionalMaterializeInventory, projectRegionalMaterializeFixture } from "./materialize-test-fixture.mjs";
 
 import {
   parseMolitDaejeonStationMappings,
@@ -76,7 +76,7 @@ async function inputs() {
     readJson("tools/datapack/sources/gwangju-transportation-accessibility-20260724.json"),
     readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260814.json")),
     readJson("tools/datapack/sources/incheon-transit-accessibility-20260724.json"),
-    readJson("tools/datapack/source-inventory.json"),
+    readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
     readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
     readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
   ]);

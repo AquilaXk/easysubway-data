@@ -246,7 +246,10 @@ test("additive governance successor preserves only approved non-TRANSFER prior p
   const snapshot = input.sourceSnapshots.find(({ snapshotId }) => snapshotId === expected.snapshotId);
   assert.deepEqual(deriveReleaseProjection({ snapshot, sourceInventory: input.sourceInventory, governancePolicy: input.governancePolicy, governancePolicyBytes: input.governancePolicyBytes, freshnessPolicy: input.freshnessPolicy, nowMillis: NOW.valueOf() }), expected);
   for (const mutate of [
-    (value) => { value.sourceId = "seoul-metro-transfer-distance-duration"; },
+    (value) => {
+      value.sourceId = "seoul-metro-transfer-distance-duration";
+      value.governancePolicySha256 = "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70";
+    },
     (value) => { value.governancePolicySha256 = "0".repeat(64); },
     (value) => { value.governancePolicyVersion = "2099-01-01"; },
   ]) {
