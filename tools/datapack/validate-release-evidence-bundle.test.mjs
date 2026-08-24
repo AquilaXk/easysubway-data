@@ -37,6 +37,7 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
   const hash = "a".repeat(64);
   const scopeRaw = await readFile(path.join(root, "release/product-gates/production-datapack-scope.json"), "utf8");
   const scope = JSON.parse(scopeRaw);
+  const nationwideTargetsRaw = await readFile(path.join(root, scope.nationwideRoadmapScope.targets));
   const sha256 = (raw) => createHash("sha256").update(raw).digest("hex");
   const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
   const scopeArgs = ["--scope", "release/product-gates/production-datapack-scope.json"];
@@ -215,6 +216,7 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
     launchScopeSha256: report.scopes.routingLaunchScope.sha256,
     nationwideRoadmapScopeId: report.scopes.nationwideRoadmapScope.id,
     nationwideRoadmapScopeSha256: report.scopes.nationwideRoadmapScope.sha256,
+    nationwideTargetsSha256: sha256(nationwideTargetsRaw),
     identityLinkageMatrixSha256: report.identityLinkage.matrixSha256,
     launchDenominatorDecision: report.decision,
     launchDenominatorReportSha256: createHash("sha256").update(raw).digest("hex"),
@@ -263,6 +265,22 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
   };
   bindLaunchReport(bundle, goReport, goReportRaw);
 
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  bundle.nationwideTargetsSha256 = "f".repeat(64);
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      "tools/datapack/validate-release-evidence-bundle.mjs",
+      "--bundle", bundlePath,
+      ...scopeArgs,
+      ...reportArgs,
+      ...accessibilityReportArgs,
+      ...candidateArgs,
+      "--require-pass",
+    ], { cwd: root }),
+    /nationwide targets sha256 must match canonical targets bytes/,
+  );
+  bundle.nationwideTargetsSha256 = sha256(nationwideTargetsRaw);
   await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
   await execFileAsync(
     process.execPath,

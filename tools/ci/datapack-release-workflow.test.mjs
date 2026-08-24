@@ -445,6 +445,7 @@ test("release evidence는 canonical launch denominator report identity와 decisi
   assert.match(evidenceStep, /verifiedAccessibilityScopeSha256:\s*launchReport\.scopes\.verifiedAccessibilityScope\.sha256/);
   assert.match(evidenceStep, /launchScopeSha256:\s*launchReport\.scopes\.routingLaunchScope\.sha256/);
   assert.match(evidenceStep, /nationwideRoadmapScopeSha256:\s*launchReport\.scopes\.nationwideRoadmapScope\.sha256/);
+  assert.match(evidenceStep, /nationwideTargetsSha256:\s*hashFile\("tools\/datapack\/nationwide-coverage-targets\.json"\)/);
   assert.match(evidenceStep, /identityLinkageMatrixSha256:\s*launchReport\.identityLinkage\.matrixSha256/);
   assert.match(evidenceStep, /launchDenominatorDecision:\s*launchReport\.decision/);
   assert.match(evidenceStep, /launchDenominatorReportSha256:\s*hashBytes\(launchDenominatorReportRaw\)/);

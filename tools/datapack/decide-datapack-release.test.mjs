@@ -72,6 +72,7 @@ function releaseAttestation({ manifestSha256, releaseSequence }) {
   const launchDenominatorReportSha256 = hash("9");
   const launchDenominatorReport = {
     decision: "GO",
+    evaluatorInput: { nationwide: { targetsSha256: hash("6") } },
     scopes: {
       nationwideRoadmapScope: {
         id: "nationwide-roadmap-v1",
@@ -85,6 +86,7 @@ function releaseAttestation({ manifestSha256, releaseSequence }) {
       releaseSequence,
       nationwideRoadmapScopeId: launchDenominatorReport.scopes.nationwideRoadmapScope.id,
       nationwideRoadmapScopeSha256: launchDenominatorReport.scopes.nationwideRoadmapScope.sha256,
+      nationwideTargetsSha256: launchDenominatorReport.evaluatorInput.nationwide.targetsSha256,
       launchDenominatorDecision: launchDenominatorReport.decision,
       launchDenominatorReportSha256,
     },
@@ -250,6 +252,7 @@ test("PUBLISHED_AND_VERIFIED는 선택 manifest·sequence에 결속한 전국 at
 
   assert.equal(result.nationwideRoadmapScopeId, "nationwide-roadmap-v1");
   assert.equal(result.nationwideRoadmapScopeSha256, hash("8"));
+  assert.equal(result.nationwideTargetsSha256, hash("6"));
   assert.equal(result.launchDenominatorDecision, "GO");
   assert.equal(result.launchDenominatorReportSha256, hash("9"));
 });
@@ -271,6 +274,24 @@ test("전국 attestation의 scope/report/candidate manifest/sequence drift는 de
     remoteValidationPassed: true,
     ...attestation,
   }), /nationwide roadmap scope binding mismatch/);
+
+  const targetDrift = releaseAttestation({ manifestSha256: hash("1"), releaseSequence: 11 });
+  targetDrift.launchDenominatorReport.evaluatorInput.nationwide.targetsSha256 = hash("7");
+  assert.throws(() => decide({
+    candidateManifest: changed,
+    publishAttempted: true,
+    remoteValidationPassed: true,
+    ...targetDrift,
+  }), /nationwide targets hash binding mismatch/);
+
+  const missingTarget = releaseAttestation({ manifestSha256: hash("1"), releaseSequence: 11 });
+  delete missingTarget.releaseEvidenceBundle.nationwideTargetsSha256;
+  assert.throws(() => decide({
+    candidateManifest: changed,
+    publishAttempted: true,
+    remoteValidationPassed: true,
+    ...missingTarget,
+  }), /nationwide targets hash must be sha256/);
 });
 
 test("NO_CHANGE_VALID는 candidate attestation을 current production manifest에 재사용하지 않는다", () => {
@@ -289,6 +310,7 @@ test("NO_CHANGE_VALID는 exact prior attestation만 전국 final 필드로 전�
 
   assert.equal(result.outcome, "NO_CHANGE_VALID");
   assert.equal(result.nationwideRoadmapScopeId, "nationwide-roadmap-v1");
+  assert.equal(result.nationwideTargetsSha256, hash("6"));
   assert.equal(result.launchDenominatorReportSha256, hash("9"));
 });
 

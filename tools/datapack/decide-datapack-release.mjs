@@ -134,6 +134,9 @@ function selectNationwideAttestation({
   if (releaseEvidenceBundle.releaseSequence !== selectedManifest.releaseSequence) {
     throw new Error("release evidence bundle selected releaseSequence mismatch");
   }
+  if (!isSha256(releaseEvidenceBundle.nationwideTargetsSha256)) {
+    throw new Error("release evidence bundle nationwide targets hash must be sha256");
+  }
   const nationwideScope = launchDenominatorReport.scopes?.nationwideRoadmapScope;
   if (!nationwideScope || typeof nationwideScope.id !== "string" || nationwideScope.id.length === 0
     || !isSha256(nationwideScope.sha256)) {
@@ -141,6 +144,10 @@ function selectNationwideAttestation({
   }
   if (!new Set(["GO", "NO_GO"]).has(launchDenominatorReport.decision)) {
     throw new Error("launch denominator report decision is invalid");
+  }
+  const reportTargetsSha256 = launchDenominatorReport.evaluatorInput?.nationwide?.targetsSha256;
+  if (reportTargetsSha256 != null && releaseEvidenceBundle.nationwideTargetsSha256 !== reportTargetsSha256) {
+    throw new Error("release evidence bundle nationwide targets hash binding mismatch");
   }
   for (const [field, expected, label] of [
     ["nationwideRoadmapScopeId", nationwideScope.id, "nationwide roadmap scope"],
@@ -155,6 +162,7 @@ function selectNationwideAttestation({
   return {
     nationwideRoadmapScopeId: nationwideScope.id,
     nationwideRoadmapScopeSha256: nationwideScope.sha256,
+    nationwideTargetsSha256: releaseEvidenceBundle.nationwideTargetsSha256,
     launchDenominatorDecision: launchDenominatorReport.decision,
     launchDenominatorReportSha256,
   };

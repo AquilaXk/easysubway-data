@@ -238,6 +238,7 @@ function validateLaunchDenominatorReport(
   requirePass,
   candidateBinding,
   candidateArtifactRaw,
+  nationwideTargetsSha256,
 ) {
   const scopeBindings = [
     [
@@ -289,6 +290,9 @@ function validateLaunchDenominatorReport(
     || scope.nationwideRoadmapScope?.blocksRoutingLaunch !== false
   ) {
     throw new Error("nationwide roadmap must remain nonblocking for v1 launch");
+  }
+  if (bundle.nationwideTargetsSha256 !== nationwideTargetsSha256) {
+    throw new Error("nationwide targets sha256 must match canonical targets bytes");
   }
   const canonicalReport = buildLaunchDenominatorReport(scope, report.evaluatorInput);
   if (!isDeepStrictEqual(report, canonicalReport)) {
@@ -370,6 +374,11 @@ async function main() {
     : null;
   const scopeRaw = await readFile(scopePath, "utf8");
   const scope = JSON.parse(scopeRaw);
+  const nationwideTargetsPath = scope.nationwideRoadmapScope?.targets;
+  if (typeof nationwideTargetsPath !== "string" || nationwideTargetsPath.length === 0) {
+    throw new Error("nationwide targets path is required by the production scope");
+  }
+  const nationwideTargetsSha256 = createHash("sha256").update(await readFile(nationwideTargetsPath)).digest("hex");
   const launchReportRaw = await readFile(launchReportPath, "utf8");
   const launchReport = JSON.parse(launchReportRaw);
   const accessibilitySourceCoverageRaw = accessibilitySourceCoveragePath
@@ -434,11 +443,13 @@ async function main() {
     requirePass,
     candidateBinding,
     candidateArtifactRaw,
+    nationwideTargetsSha256,
   );
   for (const field of [
     "verifiedAccessibilityScopeSha256",
     "launchScopeSha256",
     "nationwideRoadmapScopeSha256",
+    "nationwideTargetsSha256",
     "identityLinkageMatrixSha256",
     "launchDenominatorReportSha256",
     "buildSpecSha256",

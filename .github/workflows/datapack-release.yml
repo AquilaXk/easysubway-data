@@ -1094,6 +1094,7 @@ jobs:
             launchScopeSha256: launchReport.scopes.routingLaunchScope.sha256,
             nationwideRoadmapScopeId: launchReport.scopes.nationwideRoadmapScope.id,
             nationwideRoadmapScopeSha256: launchReport.scopes.nationwideRoadmapScope.sha256,
+            nationwideTargetsSha256: hashFile("tools/datapack/nationwide-coverage-targets.json"),
             identityLinkageMatrixSha256: launchReport.identityLinkage.matrixSha256,
             launchDenominatorDecision: launchReport.decision,
             launchDenominatorReportSha256: hashBytes(launchDenominatorReportRaw),
