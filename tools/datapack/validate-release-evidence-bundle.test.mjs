@@ -206,6 +206,15 @@ test("candidate server route evidence는 stage·inventory·component digest를 �
     bundle.candidateServerRouteEvidence[field] = previous;
   }
 
+  for (const invalidCandidateId of [null, 7, ""]) {
+    bundle.buildCandidateId = invalidCandidateId;
+    bundle.candidateServerRouteEvidence.candidateId = invalidCandidateId;
+    await writeBound();
+    await assert.rejects(command(), /candidate ID must be a non-empty string/);
+  }
+  bundle.buildCandidateId = "candidate-a";
+  bundle.candidateServerRouteEvidence.candidateId = "candidate-a";
+
   componentGitSha = "f".repeat(40);
   await writeBound();
   await assert.rejects(command(), /candidate server route component identity mismatch/);

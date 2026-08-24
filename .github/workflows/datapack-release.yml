@@ -1368,6 +1368,8 @@ jobs:
       - name: Data Pack Release / Publish staged data packs to object storage
         if: ${{ steps.release-mode.outputs.mode == 'production-publish' && steps.remote-publish-env.outputs.enabled == 'true' && steps.release-decision.outputs.productionWriteAllowed == 'true' && github.ref == 'refs/heads/main' }}
         id: production-publish
+        env:
+          EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: ${{ secrets.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM }}
         run: |
           set -euo pipefail
           publish_validation_args=(

@@ -844,6 +844,10 @@ test("production-publish는 attested candidate를 no-rebuild로 소비한다", (
   assert.match(publishPlan, /cmp -s "\$\{candidate_publish_plan\}" "\$\{EASYSUBWAY_DATAPACK_PUBLISH_PLAN\}"/);
   assert.match(publishPlan, /--output "\$\{candidate_publish_plan\}"/);
 
+  const productionPublish = step("Data Pack Release / Publish staged data packs to object storage");
+  assert.match(productionPublish, /EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM:\s*\$\{\{ secrets\.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM \}\}/);
+  assert.doesNotMatch(productionPublish, /SIGNING_PRIVATE_KEY|SIGNING_KEY_ID/);
+
   const signing = step("Data Pack Release / Restore candidate signing credentials");
   assert.match(signing, /if:\s*\$\{\{ steps\.release-mode\.outputs\.mode == 'release-candidate' \}\}/);
   assert.doesNotMatch(signing, /candidate-create/);

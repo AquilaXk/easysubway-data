@@ -374,6 +374,10 @@ function validateCandidateServerRouteEvidenceBinding(bundle) {
   for (const field of ["buildSpecSha256", "manifestSha256", "sourceSnapshotSetHash"]) {
     if (!SHA256.test(value[field] ?? "")) throw new Error(`candidate server route evidence ${field} must be sha256`);
   }
+  if (typeof bundle.buildCandidateId !== "string" || bundle.buildCandidateId.length === 0
+    || typeof value.candidateId !== "string" || value.candidateId.length === 0) {
+    throw new Error("candidate ID must be a non-empty string");
+  }
   if (value.candidateId !== bundle.buildCandidateId
     || value.sourceSnapshotSetHash !== bundle.sourceSnapshotSetHash
     || value.buildSpecSha256 !== bundle.buildSpecSha256
