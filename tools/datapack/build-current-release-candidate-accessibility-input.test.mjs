@@ -256,6 +256,59 @@ test("CLI는 current tuple을 재생성해 canonical input/fixture/authority 네
   await assertFileAbsent(sameOutput);
 });
 
+test("CLI는 workflow가 선택한 per-run build spec과 fixture로 accessibility input을 재생성한다", async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "per-run-capital-authority-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const input = await fullInput();
+  const buildSpec = { ...input.buildSpec, perRunEvidence: "accepted-build-spec" };
+  const buildSpecBytes = Buffer.from(canonical(buildSpec));
+  const sourceFixture = JSON.parse(input.sourceFixtureBytes);
+  const files = {
+    fixture: path.join(directory, "source.json"),
+    buildSpec: path.join(directory, "release/per-run-build-spec.json"),
+    stationOutput: path.join(directory, "station.json"),
+    routeOutput: path.join(directory, "route.json"),
+    fixtureOutput: path.join(directory, "candidate.json"),
+    authorityOutput: path.join(directory, "authority.json"),
+  };
+  const trackedBuildSpec = path.join(directory, "tools/datapack/release/candidate-build-spec.json");
+  await Promise.all([
+    mkdir(path.dirname(files.buildSpec), { recursive: true }),
+    mkdir(path.dirname(trackedBuildSpec), { recursive: true }),
+  ]);
+  await Promise.all([
+    writeFile(files.fixture, input.sourceFixtureBytes),
+    writeFile(files.buildSpec, buildSpecBytes),
+    writeFile(trackedBuildSpec, input.buildSpecBytes),
+  ]);
+
+  await main(cliArgs(files), {
+    repositoryRoot: directory,
+    projectFixtureImpl: async ({ buildSpec: selected, sourceFixture: selectedFixture }) => {
+      assert.deepEqual(selected, buildSpec);
+      assert.deepEqual(selectedFixture, sourceFixture);
+      return structuredClone(input.projectedFixture);
+    },
+    buildRefreshOutputsImpl: async ({ candidateBuildSpec, canonicalPack }) => {
+      assert.deepEqual(candidateBuildSpec, buildSpec);
+      assert.deepEqual(canonicalPack, sourceFixture);
+      return [
+        {
+          relative: "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
+          bytes: input.stationLineInputBytes,
+        },
+        {
+          relative: "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
+          bytes: input.routeBytes,
+        },
+      ];
+    },
+  });
+
+  const authority = JSON.parse(await readFile(files.authorityOutput, "utf8"));
+  assert.equal(authority.buildInput.buildSpecSha256, sha256(buildSpecBytes));
+});
+
 function cliArgs(files) {
   return [
     "--fixture", files.fixture,

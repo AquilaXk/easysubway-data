@@ -14,7 +14,6 @@ import {
 } from "./evaluate-route-accessibility-edges.mjs";
 import { buildCurrentCapitalAccessibilityRefreshOutputs } from "./refresh-current-capital-accessibility-full.mjs";
 
-const CURRENT_BUILD_SPEC = "tools/datapack/release/candidate-build-spec.json";
 const CURRENT_STATION_INPUT = "tools/datapack/release/current-capital-accessibility-full/station-line-input.json";
 const CURRENT_ROUTE_INPUT = "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json";
 
@@ -661,11 +660,13 @@ export async function main(
   await Promise.all(outputs.map(outputMustBeAbsent));
   const sourceFixtureBytes = await readFile(path.resolve(root, args.fixture));
   const buildSpecBytes = await readFile(path.resolve(root, args["build-spec"]));
-  const canonicalBuildSpecBytes = await readFile(path.join(root, CURRENT_BUILD_SPEC));
-  if (!buildSpecBytes.equals(canonicalBuildSpecBytes)) {
-    throw new Error("current candidate build spec raw binding mismatch");
-  }
-  const refreshed = await buildRefreshOutputsImpl({ repositoryRoot: root });
+  const sourceFixture = JSON.parse(sourceFixtureBytes.toString("utf8"));
+  const buildSpec = JSON.parse(buildSpecBytes.toString("utf8"));
+  const refreshed = await buildRefreshOutputsImpl({
+    repositoryRoot: root,
+    candidateBuildSpec: buildSpec,
+    canonicalPack: sourceFixture,
+  });
   if (!Array.isArray(refreshed) || refreshed.length !== 2) {
     throw new Error("current candidate accessibility regeneration mismatch");
   }
@@ -677,8 +678,6 @@ export async function main(
   }
   const stationLineInputBytes = refreshedByPath.get(CURRENT_STATION_INPUT);
   const routeBytes = refreshedByPath.get(CURRENT_ROUTE_INPUT);
-  const sourceFixture = JSON.parse(sourceFixtureBytes.toString("utf8"));
-  const buildSpec = JSON.parse(buildSpecBytes.toString("utf8"));
   const stationLineInput = JSON.parse(stationLineInputBytes.toString("utf8"));
   const route = JSON.parse(routeBytes.toString("utf8"));
   const projectedFixture = await projectFixtureImpl({ buildSpec, sourceFixture, repositoryRoot: root });

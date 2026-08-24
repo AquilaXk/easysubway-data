@@ -156,13 +156,27 @@ function assertNarrowDelta({ stationBefore, routeBefore, stationAfter, routeAfte
   if (!equalJson(stripStation(stationBefore), stripStation(stationAfter))) throw new Error("current-capital refresh evidence delta mismatch");
 }
 
-export async function buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot = ROOT } = {}) {
+export async function buildCurrentCapitalAccessibilityRefreshOutputs({
+  repositoryRoot = ROOT,
+  candidateBuildSpec = undefined,
+  canonicalPack = undefined,
+} = {}) {
   const root = path.resolve(repositoryRoot); const files = await inputFiles(root);
   const proof = buildRefreshProof({ candidateFile: files["tools/datapack/release/candidate-build-spec.json"], ledgerFile: files["tools/datapack/release/source-snapshots.json"], requestFile: files["tools/datapack/release/release-request.json"], hashesFile: files["tools/datapack/release/hash-evidence.json"], stationFile: files[OUTPUTS[0]], routeFile: files[OUTPUTS[1]] });
   const { alreadyCurrent, ...transition } = proof;
   const input = await readCurrentCapitalInputs(root, { readTransitionBoundaryImpl: async () => ({ ...transition, facilityAdmissionBytesSha256: sha(files["tools/datapack/release/current-capital-facility-source-admission.json"].bytes) }) });
-  const projected = await projectCandidateFixtureForAccessibilityAuthority({ buildSpec: input.candidateBuildSpec, sourceFixture: input.canonicalPack, repositoryRoot: root });
-  const refreshed = { ...input, canonicalPack: projected };
+  const hasOverride = candidateBuildSpec !== undefined || canonicalPack !== undefined;
+  if (hasOverride && (!candidateBuildSpec || typeof candidateBuildSpec !== "object"
+    || !canonicalPack || typeof canonicalPack !== "object")) {
+    throw new Error("current-capital refresh per-run input mismatch");
+  }
+  const selectedInput = hasOverride ? { ...input, candidateBuildSpec, canonicalPack } : input;
+  const projected = await projectCandidateFixtureForAccessibilityAuthority({
+    buildSpec: selectedInput.candidateBuildSpec,
+    sourceFixture: selectedInput.canonicalPack,
+    repositoryRoot: root,
+  });
+  const refreshed = { ...selectedInput, canonicalPack: projected };
   const stationBytes = Buffer.from(canonicalCurrentCapitalStationLineInputJson(buildCurrentCapitalStationLineInput(refreshed)));
   const routeBytes = Buffer.from(canonicalCurrentCapitalRouteEdgeInputJson(buildCurrentCapitalRouteEdgeInput(refreshed)));
   const stationAfter = parse(stationBytes, "refreshed station input"); const routeAfter = parse(routeBytes, "refreshed route input");
