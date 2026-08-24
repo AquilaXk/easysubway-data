@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
+import { projectHistoricalRegionalMaterializeInventory } from "./materialize-test-fixture.mjs";
 
 import {
   parseMolitDaejeonStationMappings,
@@ -71,7 +72,7 @@ async function inputs() {
     readJson("tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"),
     readJson("tools/datapack/sources/gwangju-transportation-cyberstation-timetable-20260720.json"),
     readJson("tools/datapack/sources/gwangju-transportation-accessibility-20260724.json"),
-    readJson("tools/datapack/source-inventory.json"),
+    readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
     readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
     readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
     readFile(path.join(root, "tools/datapack/sources/gwangju-transportation-route-map-positions-20260725.json")),

@@ -9,6 +9,7 @@ import {
   normalizeMolitProviderLineName,
   parseMolitSvgProviderIdentity,
 } from "./lib/molit-svg-provider-identity.mjs";
+import { assertCurrentMolitFullRouteCompleteness } from "./lib/static-network-successor-completeness.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { retiredLineIds } from "./project-retired-transit-lines.mjs";
 import { parseSeoulMetroLineData } from "./lib/seoulmetro-line-data-parser.mjs";
@@ -977,6 +978,65 @@ export function parseMolitDaejeonStationMappings(csvBytes) {
   });
 }
 
+function projectionRow(row) {
+  if (!row || typeof row !== "object" || Array.isArray(row)
+    || typeof row.region_code !== "string" || typeof row.region_name !== "string"
+    || typeof row.operator_name !== "string" || typeof row.line_name !== "string"
+    || !Number.isSafeInteger(row.station_sequence) || row.station_sequence < 1
+    || typeof row.station_name !== "string") {
+    throw new Error("current MOLIT normalized projection row is invalid");
+  }
+  return {
+    regionCode: row.region_code,
+    regionName: row.region_name,
+    operatorName: row.operator_name,
+    lineName: row.line_name,
+    sequence: row.station_sequence,
+    stationName: row.station_name,
+  };
+}
+
+function bindCurrentProjectionMappings(projection, sourceRawSha256, {
+  regionName, operatorName, lineName, lineId, stationCount, label, map,
+}) {
+  if (typeof sourceRawSha256 !== "string" || !/^[a-f0-9]{64}$/u.test(sourceRawSha256)) {
+    throw new Error("current MOLIT source raw hash is invalid");
+  }
+  assertCurrentMolitFullRouteCompleteness(projection);
+  const mappings = projection.map(projectionRow)
+    .filter((row) => row.regionName === regionName
+      && row.operatorName === operatorName
+      && row.lineName === lineName)
+    .sort((left, right) => left.sequence - right.sequence)
+    .map(map);
+  if (lineIdFor(regionName, lineName) !== lineId
+    || mappings.length !== stationCount
+    || mappings.some((mapping, index) => mapping.sequence != null && mapping.sequence !== index + 1)
+    || new Set(mappings.map(({ stationId }) => stationId)).size !== mappings.length) {
+    throw new Error(`current MOLIT ${label} mapping must contain ${stationCount} unique stations in sequence`);
+  }
+  return Object.defineProperty(mappings, "sourceRawSha256", {
+    value: sourceRawSha256,
+    enumerable: true,
+  });
+}
+
+export function parseCurrentMolitDaejeonStationMappings(projection, sourceRawSha256) {
+  const mappings = bindCurrentProjectionMappings(projection, sourceRawSha256, {
+    regionName: "대전", operatorName: "대전교통공사", lineName: "1호선",
+    lineId: "line-7051a9c2525c", stationCount: 22, label: "Daejeon Line 1",
+    map: (row) => ({
+      stationId: stationIdFor(row.regionName, row.stationName),
+      stationName: row.stationName,
+      stationNumber: String(100 + row.sequence),
+    }),
+  });
+  if (mappings.some((mapping, index) => mapping.stationNumber !== String(101 + index))) {
+    throw new Error("current MOLIT Daejeon Line 1 station numbering is invalid");
+  }
+  return mappings;
+}
+
 // #2138 activeLineScopes의 evidenceRef(source:molit-urban-rail-full-route) 원본에서
 // (regionId, operatorId, lineId) scope별 역명 roster를 그대로 복원한다.
 // source-inventory coverageScope의 dual-operator 주장을 기계 검증하는 회귀(#2508)가 소비한다.
@@ -1032,6 +1092,22 @@ export function parseMolitGwangjuStationMappings(csvBytes) {
   });
 }
 
+export function parseCurrentMolitGwangjuStationMappings(projection, sourceRawSha256) {
+  const mappings = bindCurrentProjectionMappings(projection, sourceRawSha256, {
+    regionName: "광주", operatorName: "광주교통공사", lineName: "1호선",
+    lineId: "line-e57a361e8892", stationCount: 20, label: "Gwangju Line 1",
+    map: (row) => ({
+      stationId: stationIdFor(row.regionName, row.stationName),
+      stationName: row.stationName,
+      stationNumber: String(99 + row.sequence),
+    }),
+  });
+  if (mappings.some((mapping, index) => mapping.stationNumber !== String(100 + index))) {
+    throw new Error("current MOLIT Gwangju Line 1 station numbering is invalid");
+  }
+  return mappings;
+}
+
 const DAEGU_MEMBERSHIP_EXPECTATIONS = {
   "1호선": { lineId: "line-5b8d9b05e7e6", stationCount: 35 },
   "2호선": { lineId: "line-e2938a4cc492", stationCount: 29 },
@@ -1064,6 +1140,20 @@ export function parseMolitDaeguStationMappings(csvBytes, lineName) {
   return Object.defineProperty(mappings, "sourceRawSha256", {
     value: sha256(csvBytes),
     enumerable: true,
+  });
+}
+
+export function parseCurrentMolitDaeguStationMappings(projection, sourceRawSha256, lineName) {
+  const expectation = DAEGU_MEMBERSHIP_EXPECTATIONS[lineName];
+  if (!expectation) throw new Error(`unknown Daegu line for current membership mapping: ${lineName}`);
+  return bindCurrentProjectionMappings(projection, sourceRawSha256, {
+    regionName: "대구", operatorName: "대구교통공사", lineName,
+    lineId: expectation.lineId, stationCount: expectation.stationCount, label: `Daegu ${lineName}`,
+    map: (row) => ({
+      stationId: stationIdFor(row.regionName, row.stationName),
+      stationName: row.stationName,
+      sequence: row.sequence,
+    }),
   });
 }
 

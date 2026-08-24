@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { projectRegionalMaterializeFixture } from "./materialize-test-fixture.mjs";
+import {
+  loadCurrentMolitMembershipMappings,
+  projectHistoricalRegionalMaterializeInventory,
+  projectRegionalMaterializeFixture,
+} from "./materialize-test-fixture.mjs";
 
 const legacyEvidence = {
   serviceClass: "ITX_CHEONGCHUN",
@@ -125,4 +130,97 @@ test("regional projection preserves the tracked current fixture with empty evide
   assert.deepEqual(input, original);
   assert.deepEqual(projected.manifest, original.manifest);
   assert.deepEqual(projected.packs[0], original.packs[0]);
+});
+
+test("current MOLIT observation binds all five regional mappings to the active ledger", async () => {
+  const mappings = await loadCurrentMolitMembershipMappings({ repositoryRoot: root });
+  assert.deepEqual([
+    mappings.daejeon.length,
+    mappings.gwangju.length,
+    mappings.daeguLine1.length,
+    mappings.daeguLine2.length,
+    mappings.daeguLine3.length,
+  ], [22, 20, 35, 29, 30]);
+  assert.ok(Object.values(mappings).every((value) =>
+    value.sourceRawSha256 === "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363"));
+});
+
+test("regional inventory projection restores only the exact historical MOLIT replay tuple", async () => {
+  const inventoryPath = path.join(root, "tools/datapack/source-inventory.json");
+  const input = JSON.parse(await readFile(inventoryPath));
+  const original = structuredClone(input);
+  const projected = projectHistoricalRegionalMaterializeInventory(input);
+  const raw = projected.sources.find(({ id }) => id === "molit-urban-rail-full-route");
+  const memberships = projected.sources.filter(({ membershipAdmissionEvidence: evidence }) =>
+    evidence?.membershipSourceId === "molit-urban-rail-full-route"
+      && Array.isArray(evidence.lineIds) && evidence.lineIds.length === 1);
+
+  assert.deepEqual(input, original);
+  assert.notEqual(projected, input);
+  assert.equal(raw.admissionEvidence.snapshotId, "molit-urban-rail-full-route-revalidated-20260814");
+  assert.equal(raw.admissionEvidence.rawSha256, "178af75ece72b2f6a58226063e05f1e1f45f50c779c7fbf2905f7df1384a9e22");
+  assert.equal(memberships.length, 10);
+  assert.ok(memberships.every(({ membershipAdmissionEvidence: evidence }) =>
+    evidence.membershipSourceRawSha256 === raw.admissionEvidence.rawSha256
+      && evidence.membershipSourceSnapshotSha256 === "3f08fb398bcb16e8ff047ec17f094a28590ec8d5aa1b8df2d6e9cec85ed0f6e7"
+      && Date.parse(evidence.verifiedAt) <= Date.parse("2026-07-20T15:30:00.000Z")));
+
+  const malformed = structuredClone(original);
+  malformed.sources.find(({ id }) => id === "molit-urban-rail-full-route-daejeon-membership")
+    .membershipAdmissionEvidence.membershipSourceSnapshotSha256 = "0".repeat(64);
+  assert.throws(
+    () => projectHistoricalRegionalMaterializeInventory(malformed),
+    /current MOLIT line-7051a9c2525c membership inventory is invalid/,
+  );
+});
+
+test("current MOLIT loader rejects denied snapshots and incomplete dual evidence", async (context) => {
+  const repositoryRoot = await mkdtemp(path.join(tmpdir(), "easysubway-current-molit-"));
+  context.after(() => rm(repositoryRoot, { recursive: true, force: true }));
+  const inventoryPath = path.join(repositoryRoot, "tools/datapack/source-inventory.json");
+  const snapshotsPath = path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json");
+  const currentInventoryPath = path.join(root, "tools/datapack/source-inventory.json");
+  const currentSnapshotsPath = path.join(root, "tools/datapack/release/source-snapshots.json");
+  const inventory = JSON.parse(await readFile(currentInventoryPath));
+  const snapshots = JSON.parse(await readFile(currentSnapshotsPath));
+  const admission = inventory.sources.find(({ id }) => id === "molit-urban-rail-full-route").admissionEvidence;
+  const observationRelative = `tools/datapack/sources/${admission.snapshotId}.json`;
+  const observationPath = path.join(repositoryRoot, observationRelative);
+  await Promise.all([
+    mkdir(path.dirname(inventoryPath), { recursive: true }),
+    mkdir(path.dirname(snapshotsPath), { recursive: true }),
+    mkdir(path.dirname(observationPath), { recursive: true }),
+  ]);
+  await Promise.all([
+    writeFile(inventoryPath, JSON.stringify(inventory)),
+    writeFile(snapshotsPath, JSON.stringify(snapshots)),
+    writeFile(observationPath, await readFile(path.join(root, observationRelative))),
+  ]);
+
+  const denied = structuredClone(inventory);
+  denied.sources.find(({ id }) => id === "molit-urban-rail-full-route").admissionEvidence.decision = "DENIED";
+  await writeFile(inventoryPath, JSON.stringify(denied));
+  await assert.rejects(
+    loadCurrentMolitMembershipMappings({ repositoryRoot }),
+    /current MOLIT inventory admission is invalid/,
+  );
+
+  const incomplete = structuredClone(inventory);
+  incomplete.sources = incomplete.sources.filter(({ id }) => id !== "molit-urban-rail-full-route-daejeon-membership");
+  await writeFile(inventoryPath, JSON.stringify(incomplete));
+  await assert.rejects(
+    loadCurrentMolitMembershipMappings({ repositoryRoot }),
+    /current MOLIT line-7051a9c2525c membership admission is incomplete/,
+  );
+
+  const failedSnapshots = structuredClone(snapshots);
+  failedSnapshots.find(({ snapshotId }) => snapshotId === admission.snapshotId).fetchStatus = "FAILED";
+  await Promise.all([
+    writeFile(inventoryPath, JSON.stringify(inventory)),
+    writeFile(snapshotsPath, JSON.stringify(failedSnapshots)),
+  ]);
+  await assert.rejects(
+    loadCurrentMolitMembershipMappings({ repositoryRoot }),
+    /current MOLIT source snapshot binding is invalid/,
+  );
 });

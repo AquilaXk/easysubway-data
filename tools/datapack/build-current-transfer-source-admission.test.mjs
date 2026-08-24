@@ -160,13 +160,23 @@ async function trackedInput() {
   const metadata = JSON.parse(metadataBytes);
   const legacyKricSnapshotId = facilityAdmission.cells[0].sourceSnapshotId;
   assert.ok(facilityAdmission.cells.every(({ sourceSnapshotId }) => sourceSnapshotId === legacyKricSnapshotId));
-  const legacySourceIds = candidateBuildSpec.sourceSnapshots
+  const historicalSourceIds = candidateBuildSpec.sourceSnapshots
     .filter(({ sourceId }) => sourceId !== "seoul-metro-transfer-distance-duration")
-    .map(({ sourceId }) => sourceId);
-  assert.equal(legacySourceIds.length, 6);
+    .map(({ snapshotId, sourceId }) => {
+      const selectedHead = sourceSnapshots.find((entry) => entry.snapshotId === snapshotId
+        && entry.sourceId === sourceId);
+      const migration = selectedHead?.projectionMigration;
+      if (migration?.migrationKind !== "CROSS_SOURCE_CANONICAL_REPLACEMENT"
+        || migration.sourceId !== sourceId) return sourceId;
+      assert.equal(migration.candidateSlotSourceId, migration.replacedSourceId);
+      return migration.replacedSourceId;
+    });
+  assert.equal(historicalSourceIds.length, 6);
+  assert.ok(historicalSourceIds.includes("seoulmetro-cyberstation-route-map"));
+  assert.equal(historicalSourceIds.includes("seoul-metro-route-map-positions"), false);
   assert.equal(legacyKricSnapshotId, "kric-station-convenience-standard-20260813T200604805Z");
   const historicalObservedAt = facilityAdmission.observedAt;
-  const selected = legacySourceIds.map((sourceId) => {
+  const selected = historicalSourceIds.map((sourceId) => {
     const candidates = sourceSnapshots.filter((entry) => entry.sourceId === sourceId
       && sourceBasisAt(entry) <= Date.parse(historicalObservedAt));
     assert.ok(candidates.length > 0, `historical source head: ${sourceId}`);

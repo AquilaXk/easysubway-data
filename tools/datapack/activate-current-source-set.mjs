@@ -1016,13 +1016,14 @@ export function buildCurrentSourcePrimaryOutputs({
     : [...staticSources.sourceSnapshots, expectedCurrentKric];
   validateLineage(nextSnapshots);
 
-  const capital = loadCapitalRouteTopologySnapshot(currentTopology);
+  const fullCapital = loadCapitalRouteTopologySnapshot(currentTopology);
   const capitalSnapshotId = exactCurrentTopologySnapshotIdentity({
-    snapshot: capital,
+    snapshot: fullCapital,
     snapshotBytes: currentTopologyBytes,
     snapshotPath: currentTopologyPath,
     prefix: "capital-route-topology",
   });
+  const capital = projectCurrentCapitalTopologyOwnership(fullCapital);
   validateCurrentCapitalTopologyOwnership(capital);
   const activationNow = new Date(requiredUtcInstant(validateBuildNow(buildNow, handoff), "buildNow"));
   if (Date.parse(capital.capturedAt) > activationNow.getTime()
@@ -1112,9 +1113,10 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
     now: activationNow,
   });
   const topologyReverification = buildCapitalTopologyReverificationEvidence(
-    projectCapitalTopologyOwnership(baselineTopology),
+    projectCapitalTopologyOwnership(fullTopology),
     topology,
   );
+  topologyReverification.baseline.snapshotId = topologySnapshotId;
   const sourceInventoryBytes = jsonBytes(nextInventory);
   const topologyReverificationBytes = jsonBytes(topologyReverification);
   const sourceSeparatedTopologyPath = currentTopologyPath.replace(/\.json$/u, "-source-separated.json");
@@ -1582,12 +1584,13 @@ export async function collectPositionSnapshotBytes(sourceInventory, repositoryRo
   for (const source of sourceInventory.sources ?? []) {
     const evidence = source.routeMapAdmissionEvidence;
     if (!requiresCurrentCapitalTopologyAdmission(source)) continue;
-    if (snapshotBytesByPath.has(evidence.snapshotPath)) {
-      throw new Error(`duplicate capital position snapshot path: ${evidence.snapshotPath}`);
+    const snapshotPath = evidence.currentLayoutAdmission?.snapshotPath ?? evidence.snapshotPath;
+    if (snapshotBytesByPath.has(snapshotPath)) {
+      throw new Error(`duplicate capital position snapshot path: ${snapshotPath}`);
     }
     snapshotBytesByPath.set(
-      evidence.snapshotPath,
-      await readRegularBytes(repositoryRoot, evidence.snapshotPath, `${source.id} position snapshot`),
+      snapshotPath,
+      await readRegularBytes(repositoryRoot, snapshotPath, `${source.id} position snapshot`),
     );
   }
   if (snapshotBytesByPath.size === 0) throw new Error("capital position snapshots are missing");

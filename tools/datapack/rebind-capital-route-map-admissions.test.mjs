@@ -309,9 +309,11 @@ test("tracked 서울 공식 position snapshot의 exact renamed-station aliases�
   for (const source of inventory.sources) {
     if (source.routeMapAdmissionEvidence?.topologySourceId === "capital-route-topology"
       || source.id === "seoul-metro-route-map-positions") {
+      const snapshotPath = source.routeMapAdmissionEvidence.currentLayoutAdmission?.snapshotPath
+        ?? source.routeMapAdmissionEvidence.snapshotPath;
       snapshotBytesByPath.set(
-        source.routeMapAdmissionEvidence.snapshotPath,
-        await readFile(path.join(root, source.routeMapAdmissionEvidence.snapshotPath)),
+        snapshotPath,
+        await readFile(path.join(root, snapshotPath)),
       );
     }
   }
