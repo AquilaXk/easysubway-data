@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { buildCandidateOciArtifactDescriptor } from "./build-candidate-oci-artifact-descriptor.mjs";
+import { readFileSync } from "node:fs";
 
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
@@ -24,6 +25,14 @@ test("stage 전량과 tuple·inventory·component를 OCI immutable object-set de
     assert.deepEqual(await readFile(fixture.output), bytes);
     assert.deepEqual(second, first);
   } finally { await fixture.cleanup(); }
+});
+
+test("descriptor object schema는 five-field closed object다", () => {
+  const schema = JSON.parse(readFileSync("contracts/release/datapack-candidate-oci-descriptor.schema.json", "utf8"));
+  const object = schema.$defs.object;
+  assert.equal(object.type, "object"); assert.equal(object.additionalProperties, false);
+  assert.deepEqual(Object.keys(object.properties).sort(), ["objectKey", "ociUri", "path", "sha256", "sizeBytes"]);
+  assert.deepEqual([...object.required].sort(), ["objectKey", "ociUri", "path", "sha256", "sizeBytes"]);
 });
 
 test("extra·symlink·traversal·identity drift·expired stage는 descriptor를 남기지 않는다", async () => {

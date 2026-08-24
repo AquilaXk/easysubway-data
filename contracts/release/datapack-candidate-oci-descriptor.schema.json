@@ -22,6 +22,6 @@
   },
   "$defs": {
     "file": { "type": "object", "additionalProperties": false, "required": ["path", "sizeBytes", "sha256"], "properties": { "path": { "type": "string", "minLength": 1 }, "sizeBytes": { "type": "integer", "minimum": 1 }, "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" } } },
-    "object": { "allOf": [{ "$ref": "#/$defs/file" }, { "type": "object", "additionalProperties": false, "required": ["path", "objectKey", "ociUri", "sizeBytes", "sha256"], "properties": { "objectKey": { "type": "string", "minLength": 1 }, "ociUri": { "type": "string", "pattern": "^oci://" } } }] }
+    "object": { "type": "object", "additionalProperties": false, "required": ["path", "objectKey", "ociUri", "sizeBytes", "sha256"], "properties": { "path": { "type": "string", "minLength": 1 }, "objectKey": { "type": "string", "minLength": 1 }, "ociUri": { "type": "string", "pattern": "^oci://" }, "sizeBytes": { "type": "integer", "minimum": 1 }, "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" } } }
   }
 }

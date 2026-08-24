@@ -243,6 +243,10 @@ jobs:
             release_request_id="exploratory-${GITHUB_RUN_ID}"
           fi
           if [[ "${mode}" == "candidate-create" ]]; then
+            if [[ "${GITHUB_RUN_ATTEMPT}" != "1" ]]; then
+              echo "candidate-create forbids rerun attempts" >&2
+              exit 1
+            fi
             if [[ "${GITHUB_EVENT_NAME}" != "workflow_dispatch" || "${target_channel}" != "production" || "${allow_gaps}" != "false" ]]; then
               echo "candidate-create requires workflow_dispatch, production targetChannel, and allowGaps=false" >&2
               exit 1
@@ -1292,7 +1296,7 @@ jobs:
             --output "${EASYSUBWAY_DATAPACK_STAGE}/data-component-manifest.json"
 
       - name: Data Pack Release / Upload candidate promotion artifact
-        if: ${{ steps.release-mode.outputs.mode == 'release-candidate' }}
+        if: ${{ steps.release-mode.outputs.mode == 'release-candidate' && steps.release-mode.outputs.mode != 'candidate-create' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: easysubway-datapack-candidate-${{ github.run_id }}
@@ -1301,7 +1305,7 @@ jobs:
           retention-days: 14
 
       - name: Data Pack Release / Upload candidate execution evidence
-        if: ${{ steps.release-mode.outputs.mode == 'release-candidate' }}
+        if: ${{ steps.release-mode.outputs.mode == 'release-candidate' && steps.release-mode.outputs.mode != 'candidate-create' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: easysubway-datapack-candidate-execution-evidence-${{ github.run_id }}
@@ -1437,7 +1441,7 @@ jobs:
           [[ "${validated}" == "true" ]]
 
       - name: Data Pack Release / Upload remote validation artifact
-        if: ${{ always() && (steps.production-publish.outputs.manifestSha256 != '' || steps.no-change-release.outputs.manifestSha256 != '') }}
+        if: ${{ always() && steps.release-mode.outputs.mode != 'candidate-create' && (steps.production-publish.outputs.manifestSha256 != '' || steps.no-change-release.outputs.manifestSha256 != '') }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: easysubway-datapack-remote-validation-${{ github.run_id }}
@@ -1525,7 +1529,7 @@ jobs:
             --verify-only
 
       - name: Data Pack Release / Upload verified release request binding
-        if: ${{ steps.release-request-binding.outcome == 'success' }}
+        if: ${{ steps.release-mode.outputs.mode != 'candidate-create' && steps.release-request-binding.outcome == 'success' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: easysubway-published-release-request-binding-${{ github.sha }}
@@ -1557,7 +1561,7 @@ jobs:
           node --env-file="${EASYSUBWAY_ENV_FILE}" tools/datapack/send-release-callback.mjs
 
       - name: Data Pack Release / Upload callback delivery evidence
-        if: ${{ always() && (steps.production-publish.outputs.manifestSha256 != '' || steps.no-change-release.outputs.manifestSha256 != '') }}
+        if: ${{ always() && steps.release-mode.outputs.mode != 'candidate-create' && (steps.production-publish.outputs.manifestSha256 != '' || steps.no-change-release.outputs.manifestSha256 != '') }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: easysubway-datapack-callback-delivery-${{ github.run_id }}
@@ -1599,7 +1603,7 @@ jobs:
             --evidence-output "${EASYSUBWAY_DATAPACK_ROLLBACK_EVIDENCE}"
 
       - name: Data Pack Release / Upload rollback rescue evidence
-        if: ${{ always() && steps.release-mode.outputs.mode == 'rollback' }}
+        if: ${{ always() && steps.release-mode.outputs.mode == 'rollback' && steps.release-mode.outputs.mode != 'candidate-create' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: easysubway-datapack-rollback-rescue-${{ github.run_id }}
@@ -1716,7 +1720,7 @@ jobs:
           NODE
 
       - name: Data Pack Release / Upload release decision artifact
-        if: ${{ always() && steps.release-mode.outputs.mode != 'release-candidate' && steps.release-decision.outputs.outcome != '' }}
+        if: ${{ always() && steps.release-mode.outputs.mode != 'release-candidate' && steps.release-mode.outputs.mode != 'candidate-create' && steps.release-decision.outputs.outcome != '' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: easysubway-datapack-release-decision-${{ github.run_id }}
@@ -1727,7 +1731,7 @@ jobs:
           retention-days: 14
 
       - name: Data Pack Release / Upload staged data packs
-        if: ${{ always() }}
+        if: ${{ always() && steps.release-mode.outputs.mode != 'candidate-create' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: easysubway-datapacks-${{ github.sha }}

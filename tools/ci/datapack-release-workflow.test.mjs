@@ -29,6 +29,10 @@ test("candidate-create는 전용 OCI credential과 descriptor-last writer만 사
   assert.match(publish, /build-candidate-oci-artifact-descriptor\.mjs/);
   assert.match(publish, /publish-candidate-oci-artifact\.mjs/);
   assert.doesNotMatch(publish, /actions\/upload-artifact|publish-object-storage|catalog\/current\.json.*PUT/);
+  assert.match(yml, /GITHUB_RUN_ATTEMPT.*!= "1"/);
+  for (const matched of yml.matchAll(/- name:.*?[\s\S]*?uses: actions\/upload-artifact@[\s\S]*?(?=\n\s+- name:|$)/g)) {
+    assert.match(matched[0], /if:.*mode != 'candidate-create'/, "candidate-create must not upload Actions artifacts");
+  }
 });
 
 test("route-final candidate parity는 runtime receipts를 canonical stage 밖 companion artifact로 분리한다", () => {
@@ -64,7 +68,7 @@ test("route-final candidate parity는 runtime receipts를 canonical stage 밖 co
   assert.match(verify, /EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE=\$\{execution_root\}\/release-evidence-bundle\.json/);
   assert.doesNotMatch(verify, /EASYSUBWAY_DATAPACK_RELEASE_DECISION=/);
   const lateDecision = yml.slice(step("Data Pack Release / Upload release decision artifact"), step("Data Pack Release / Upload staged data packs"));
-  assert.match(lateDecision, /always\(\) && steps\.release-mode\.outputs\.mode != 'release-candidate' && steps\.release-decision\.outputs\.outcome != ''/);
+  assert.match(lateDecision, /always\(\) && steps\.release-mode\.outputs\.mode != 'release-candidate' && (?:steps\.release-mode\.outputs\.mode != 'candidate-create' && )?steps\.release-decision\.outputs\.outcome != ''/);
 });
 
 test("release-candidate parity는 runtime GO와 분리되고 production publish는 GO를 유지한다", () => {
@@ -433,7 +437,7 @@ test("production request identity는 manifest 밖의 서명된 immutable binding
   assert.match(verifiedBindingArtifact,
     /Data Pack Release \/ Upload verified release request binding/);
   assert.match(verifiedBindingArtifact,
-    /if:\s*\$\{\{ steps\.release-request-binding\.outcome == 'success' \}\}/);
+    /if:\s*\$\{\{ (?:steps\.release-mode\.outputs\.mode != 'candidate-create' && )?steps\.release-request-binding\.outcome == 'success' \}\}/);
   assert.match(verifiedBindingArtifact,
     /name:\s*easysubway-published-release-request-binding-\$\{\{ github\.sha \}\}/);
   assert.match(verifiedBindingArtifact, /path:\s*\$\{\{ runner\.temp \}\}\/easysubway-datapack-stage\/catalog\/release-request-binding\.json/);
