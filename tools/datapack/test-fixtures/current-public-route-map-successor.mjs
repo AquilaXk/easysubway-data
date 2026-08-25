@@ -20,6 +20,7 @@ import {
 import { deriveReleaseProjection } from "../rebind-current-candidate-source-snapshots.mjs";
 import { buildSnapshotDiff } from "../source-snapshot-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
+import { codepointCompare } from "../../lib/codepoint-compare.mjs";
 
 const PUBLIC_SOURCE_ID = "seoul-metro-route-map-positions";
 const MOLIT_SOURCE_ID = "molit-urban-rail-full-route";
@@ -40,7 +41,7 @@ const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 const canonical = (value) => Array.isArray(value)
   ? `[${value.map(canonical).join(",")}]`
   : value && typeof value === "object"
-  ? `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`
+  ? "{" + Object.keys(value).sort(codepointCompare).map((key) => JSON.stringify(key) + ":" + canonical(value[key])).join(",") + "}"
   : JSON.stringify(value);
 
 function orderCurrentCapitalSources(document) {
@@ -310,7 +311,8 @@ async function bindSyntheticDependentAdmissionsToCurrentTransition(root) {
   const sourceSetSha256 = sha256(JSON.stringify(evidence));
   facility.candidate.candidateId = candidate.candidateId;
   facility.candidate.sourceSnapshotSetHash = sourceSetSha256;
-  const { admissionDigest: _facilityDigest, ...facilityPayload } = facility;
+  const facilityPayload = { ...facility };
+  delete facilityPayload.admissionDigest;
   facility.admissionDigest = sha256(canonical(facilityPayload));
   exit.candidate.candidateId = candidate.candidateId;
   exit.candidate.sourceSetSha256 = sourceSetSha256;
@@ -318,12 +320,14 @@ async function bindSyntheticDependentAdmissionsToCurrentTransition(root) {
     row.candidateId = candidate.candidateId;
     row.sourceSetSha256 = sourceSetSha256;
   }
-  const { admissionDigest: _exitDigest, ...exitPayload } = exit;
+  const exitPayload = { ...exit };
+  delete exitPayload.admissionDigest;
   exit.admissionDigest = sha256(canonical(exitPayload));
   const exitBytes = Buffer.from(canonical(exit));
   receipt.admissionDigest = exit.admissionDigest;
   receipt.admissionSha256 = sha256(exitBytes);
-  const { receiptSha256: _receiptDigest, ...receiptPayload } = receipt;
+  const receiptPayload = { ...receipt };
+  delete receiptPayload.receiptSha256;
   receipt.receiptSha256 = sha256(canonical(receiptPayload));
   await Promise.all([
     writeFile(path.join(root, paths.facility), Buffer.from(`${canonical(facility)}\n`)),

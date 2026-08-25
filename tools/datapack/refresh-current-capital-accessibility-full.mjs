@@ -99,12 +99,12 @@ function buildRefreshProof({ candidateFile, ledgerFile, requestFile, hashesFile,
       snapshotId === previousSeoulSnapshotId && sourceId === SEOUL).length !== 1) {
     throw new Error("current Seoul evidence predecessor mismatch");
   }
-  let transitionIdentity;
-  transitionIdentity = { kind: PUBLIC_STATIC_NETWORK_V2_SUCCESSOR };
-  const predecessorIds = candidate.sourceSnapshotIds.map((snapshotId, index) =>
-    index === positionIndex ? position.previousSnapshotId
-      : index === molitIndex ? molit.previousSnapshotId
-      : snapshotId);
+  const transitionIdentity = { kind: PUBLIC_STATIC_NETWORK_V2_SUCCESSOR };
+  const predecessorIds = candidate.sourceSnapshotIds.map((snapshotId, index) => {
+    if (index === positionIndex) return position.previousSnapshotId;
+    if (index === molitIndex) return molit.previousSnapshotId;
+    return snapshotId;
+  });
   const predecessorIdSet = new Set(predecessorIds); const predecessor = ledger.filter(({ snapshotId }) => predecessorIdSet.has(snapshotId));
   const predecessorHash = sha(JSON.stringify(predecessor));
   const evidenceIds = new Set(predecessorIds.flatMap((snapshotId, index) => {

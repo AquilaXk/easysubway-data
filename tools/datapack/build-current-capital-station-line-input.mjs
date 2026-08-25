@@ -122,9 +122,9 @@ function validateCandidate(input, stationLines) {
   const predecessorIds = new Set(publicStaticV2Refresh
     ? spec.sourceSnapshotIds.map((snapshotId, index) => {
       const sourceId = spec.sourceSnapshots[index].sourceId;
-      return sourceId === POSITIONS ? publicV2.positions.previousSnapshotId
-        : sourceId === MOLIT ? publicV2.molit.previousSnapshotId
-          : snapshotId;
+      if (sourceId === POSITIONS) return publicV2.positions.previousSnapshotId;
+      if (sourceId === MOLIT) return publicV2.molit.previousSnapshotId;
+      return snapshotId;
     })
     : spec.sourceSnapshotIds.slice(0, -1));
   const predecessorInLedgerOrder = input.sourceSnapshots.filter(({ snapshotId }) => predecessorIds.has(snapshotId));
@@ -135,8 +135,9 @@ function validateCandidate(input, stationLines) {
     const sourceId = spec.sourceSnapshots[index].sourceId;
     if (sourceId === "seoul-metro-transfer-distance-duration") return [];
     if (sourceId === "seoul-metro-accessibility") return [previousSeoulSnapshotId];
-    return [sourceId === POSITIONS ? publicV2.positions.previousSnapshotId
-      : sourceId === MOLIT ? publicV2.molit.previousSnapshotId : snapshotId];
+    if (sourceId === POSITIONS) return [publicV2.positions.previousSnapshotId];
+    if (sourceId === MOLIT) return [publicV2.molit.previousSnapshotId];
+    return [snapshotId];
   })) : predecessorIds;
   const evidenceInLedgerOrder = input.sourceSnapshots.filter(({ snapshotId }) => evidenceIds.has(snapshotId));
   if (![transition.currentCandidateBytesSha256, transition.evidenceSourceSetSha256, transition.facilityAdmissionBytesSha256].every((value) => SHA.test(value ?? ""))

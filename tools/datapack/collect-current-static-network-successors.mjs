@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { TextDecoder } from "node:util";
-import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { canonicalSeoulRouteMapCoordinate } from "./collect-seoul-route-map-positions.mjs";
 import {
   assertCurrentMolitFullRouteCompleteness,
