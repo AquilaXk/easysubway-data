@@ -61,6 +61,12 @@ const admittedTopologyInputs = new Map([
     sqliteSha256: "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
     byteSize: 359319,
   }],
+  ["f3f00e6f99862ddf1c6964d09a220169f29a85181f420f30e20428f2bee835ab", {
+    id: "capital",
+    sha256: "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
+    sqliteSha256: "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5",
+    byteSize: 1463745,
+  }],
 ]);
 
 async function trackedLegacyDocuments() {
@@ -1032,12 +1038,12 @@ test("OWNER-approved current source topology는 실제 directed stop pattern을 
     const [from, to] = key.split("->");
     return !directedPairs.has(`${to}->${from}`);
   }).length;
-  assert.equal(topology.edges.length, 84);
-  assert.equal(unpairedCount, 18);
+  assert.equal(topology.edges.length, 74);
+  assert.equal(unpairedCount, 10);
   assert.equal(topology.servedStations.length, 14);
 });
 
-test("production canonical fixture는 current source 84 directed edge를 exact 투영한다", async () => {
+test("production canonical fixture는 current source 74 directed edge를 exact 투영한다", async () => {
   const [{ source }, fixture] = await Promise.all([
     trackedLegacyDocuments(),
     readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8")
@@ -1050,11 +1056,11 @@ test("production canonical fixture는 current source 84 directed edge를 exact �
     .filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN")
     .map(({ fromNodeId, toNodeId }) => `${fromNodeId}->${toNodeId}`)
     .sort();
-  assert.equal(actual.length, 84);
+  assert.equal(actual.length, 74);
   assert.deepEqual(actual, expected);
 });
 
-test("canonical fixture projection은 current source 84 edge를 결정적으로 교체한다", async () => {
+test("canonical fixture projection은 current source 74 edge를 결정적으로 교체한다", async () => {
   const [{ source }, fixture] = await Promise.all([
     trackedLegacyDocuments(),
     readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8")
@@ -1064,7 +1070,7 @@ test("canonical fixture projection은 current source 84 edge를 결정적으로 
   const first = structuredClone(fixture);
   const second = structuredClone(fixture);
   assert.deepEqual(projectItxTopologyIntoCanonicalFixture(first, topology), {
-    edgeCount: 84,
+    edgeCount: 74,
     topologySha256: topology.sha256,
   });
   projectItxTopologyIntoCanonicalFixture(second, topology);
