@@ -107,6 +107,25 @@ test("CI는 pinned Mobile fixture workflow 계약을 owned required runner에서
   assertRequiredOwned(["tools/ci/mobile-fixture-staging-workflow.test.mjs"]);
 });
 
+test("Data contracts discovery는 current Mobile v19 fixture identity만 요구한다", () => {
+  const requiredOwnership = ownership.workflows["required-pr"];
+  const fixture = ownership.fixtures.mobile;
+  assert.deepEqual(requiredOwnership.fixtureProfiles, { mobile: "mobile-v19" });
+  assert.equal(fixture.profileCommit["mobile-v19"], ciMobileRevision);
+  assert.equal(
+    fixture.requiredFiles.find(({ path: file }) => file === "assets/datapacks/capital.sqlite.gz")
+      .profileSha256["mobile-v19"],
+    ciCapitalGzipSha256,
+  );
+  assert.deepEqual(requiredOwnership.fixtureStageContracts.mobile, [
+    'source=".external/mobile/apps/mobile"',
+    `expected_revision="${ciMobileRevision}"`,
+    `expected_sha256="${ciCapitalGzipSha256}"`,
+    "fetch-depth: 0",
+    'cp -a "${source}" apps/mobile',
+  ]);
+});
+
 test("CI는 TRANSFER topology admission과 current source revalidation contract를 owned required runner에서 실행한다", () => {
   assertRequiredOwned([
     "tools/datapack/build-transfer-topology-admission.test.mjs",

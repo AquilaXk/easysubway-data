@@ -11,7 +11,7 @@ import {
   readCurrentCapitalLiveChainOciReceipt,
   writeCurrentCapitalLiveChainOciReceipt,
 } from "./build-current-capital-live-chain-oci-receipt.mjs";
-import { buildCanonicalCurrentKricExitCollectionBundle, buildCanonicalCurrentLiveChainComposite, canonicalCurrentKricExitCollectionReceiptJson } from "./test-fixtures/current-live-chain-artifacts.mjs";
+import { buildCanonicalCurrentKricExitCollectionBundle, buildCanonicalCurrentLiveChainComposite, canonicalCurrentKricExitCollectionReceiptJson, deriveCurrentIncheonTopologyFixturePath } from "./test-fixtures/current-live-chain-artifacts.mjs";
 
 async function planFixture(root) {
   const provider = await buildCanonicalCurrentKricExitCollectionBundle();
@@ -19,6 +19,18 @@ async function planFixture(root) {
   const plan = buildCurrentCapitalLiveChainOciPlan({ mainSha: "a".repeat(40), operationId: "current-capital-560", providerCollectionBundleBytes: provider.bytes, providerCapturedAt: provider.snapshot.capturedAt, compositeBundleBytes: composite.bytes });
   return { plan, planBytes: Buffer.from(`${canonicalCurrentCapitalLiveChainOciPlanJson(plan)}\n`) };
 }
+
+test("shared provider fixture derives its Incheon topology input from current inventory", async () => {
+  const sourceInventory = JSON.parse(await readFile(path.join(import.meta.dirname, "source-inventory.json"), "utf8"));
+  const source = sourceInventory.sources.filter(({ id }) => id === "incheon-transit-station-info");
+  assert.equal(source.length, 1);
+  assert.equal(
+    deriveCurrentIncheonTopologyFixturePath(sourceInventory),
+    source[0].topologyAdmissionEvidence.snapshotPath.slice("tools/datapack/".length),
+  );
+  const provider = await buildCanonicalCurrentKricExitCollectionBundle();
+  assert.equal(provider.snapshot.capturedAt, source[0].topologyAdmissionEvidence.capturedAt);
+});
 
 test("OCI receipt closes the canonical plan and both exact OCI object identities", async (t) => {
   const directory = await mkdtemp(path.join(tmpdir(), "current-live-chain-receipt-plan-")); t.after(() => rm(directory, { recursive: true, force: true }));

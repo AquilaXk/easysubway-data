@@ -249,6 +249,7 @@ export function validateOwnership({
   requireDurations = true,
   durationClass = null,
   executionProfile = null,
+  fixtureProfiles = {},
 }) {
   const issues = [];
   if (!manifest || manifest.version !== 1) {
@@ -378,6 +379,22 @@ export function validateOwnership({
     if (!/^[a-f0-9]{40}$/.test(fixture.commit ?? '')) {
       issue(issues, 'INVALID_FIXTURE_COMMIT', fixtureName, String(fixture.commit));
     }
+    const profileCommit = fixture.profileCommit;
+    if (
+      profileCommit !== undefined &&
+      (!profileCommit || typeof profileCommit !== 'object' || Array.isArray(profileCommit))
+    ) {
+      issue(issues, 'INVALID_FIXTURE_PROFILE_COMMITS', fixtureName, String(profileCommit));
+    }
+    for (const [profileName, commit] of Object.entries(
+      profileCommit && typeof profileCommit === 'object' && !Array.isArray(profileCommit)
+        ? profileCommit
+        : {},
+    )) {
+      if (!Object.hasOwn(executionProfiles, profileName) || !/^[a-f0-9]{40}$/.test(commit)) {
+        issue(issues, 'INVALID_FIXTURE_PROFILE_COMMIT', fixtureName, `${profileName}:${commit}`);
+      }
+    }
     if (!isSafeRepositoryPath(fixture.path)) {
       issue(issues, 'INVALID_FIXTURE_PATH', fixtureName, String(fixture.path));
     }
@@ -423,12 +440,14 @@ export function validateOwnership({
         issue(issues, 'EXTERNAL_FIXTURE_MISSING', fixtureName, fixture.path);
         continue;
       }
-      if (state.headSha !== fixture.commit) {
+      const fixtureProfile = fixtureProfiles?.[fixtureName] ?? executionProfile;
+      const expectedCommit = fixture.profileCommit?.[fixtureProfile] ?? fixture.commit;
+      if (state.headSha !== expectedCommit) {
         issue(issues, 'FIXTURE_HEAD_MISMATCH', fixtureName, String(state.headSha));
       }
       for (const requiredFile of fixture.requiredFiles ?? []) {
         const actualHash = state.files?.[requiredFile.path];
-        const expectedHash = requiredFile.profileSha256?.[executionProfile] ?? requiredFile.sha256;
+        const expectedHash = requiredFile.profileSha256?.[fixtureProfile] ?? requiredFile.sha256;
         if (actualHash !== expectedHash) {
           issue(
             issues,
@@ -518,6 +537,10 @@ export function validateOwnership({
         issue(issues, 'UNKNOWN_WORKFLOW_FIXTURE', workflow.file, fixtureName);
         continue;
       }
+      const fixtureProfile = workflow.fixtureProfiles?.[fixtureName] ?? null;
+      if (fixtureProfile !== null && !Object.hasOwn(executionProfiles, fixtureProfile)) {
+        issue(issues, 'UNKNOWN_WORKFLOW_FIXTURE_PROFILE', workflow.file, `${fixtureName}:${fixtureProfile}`);
+      }
       const stageContracts = workflow.fixtureStageContracts?.[fixtureName];
       if (!Array.isArray(stageContracts) || stageContracts.length === 0) {
         issue(issues, 'WORKFLOW_FIXTURE_STAGE_CONTRACT_MISSING', workflow.file, fixtureName);
@@ -533,7 +556,7 @@ export function validateOwnership({
       }
       for (const contract of [
         `repository: ${fixture.repository}`,
-        `ref: ${fixture.commit}`,
+        `ref: ${fixture.profileCommit?.[fixtureProfile] ?? fixture.commit}`,
         `path: ${fixture.checkoutPath}`,
         'persist-credentials: false',
         ...[...uniqueStageContracts].filter((entry) => typeof entry === 'string' && entry.length > 0),
@@ -559,6 +582,22 @@ export function validateOwnership({
     )) {
       if (!(workflow.fixtures ?? []).includes(fixtureName)) {
         issue(issues, 'UNKNOWN_WORKFLOW_FIXTURE_STAGE_CONTRACT', workflow.file, fixtureName);
+      }
+    }
+    const rawFixtureProfiles = workflow.fixtureProfiles;
+    if (
+      rawFixtureProfiles !== undefined &&
+      (!rawFixtureProfiles || typeof rawFixtureProfiles !== 'object' || Array.isArray(rawFixtureProfiles))
+    ) {
+      issue(issues, 'INVALID_WORKFLOW_FIXTURE_PROFILES', workflow.file, className);
+    }
+    for (const fixtureName of Object.keys(
+      rawFixtureProfiles && typeof rawFixtureProfiles === 'object' && !Array.isArray(rawFixtureProfiles)
+        ? rawFixtureProfiles
+        : {},
+    )) {
+      if (!(workflow.fixtures ?? []).includes(fixtureName)) {
+        issue(issues, 'UNKNOWN_WORKFLOW_FIXTURE_PROFILE', workflow.file, fixtureName);
       }
     }
     if (
@@ -620,6 +659,7 @@ function repositoryInputs({
       : Array.isArray(selectedWorkflow?.fixtures)
         ? selectedWorkflow.fixtures
         : [];
+  const fixtureProfiles = selectedWorkflow?.fixtureProfiles ?? {};
   const fixtureEntries = requireFixtureStates
     ? (requiredFixtureNames ?? Object.keys(manifestFixtures))
         .filter((fixtureName) => Object.hasOwn(manifestFixtures, fixtureName))
@@ -692,6 +732,7 @@ function repositoryInputs({
     requireDurations,
     durationClass,
     executionProfile,
+    fixtureProfiles,
   };
 }
 

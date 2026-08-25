@@ -239,6 +239,10 @@ test('execution profiles bind manifest membership and fixture hashes', () => {
   const profiled = fixture();
   profiled.manifest.tests[0].executionProfile = 'mobile-v19';
   profiled.executionProfile = 'mobile-v19';
+  profiled.manifest.fixtures.mobile.profileCommit = {
+    'mobile-v19': '2'.repeat(40),
+  };
+  profiled.fixtureStates.mobile.headSha = '2'.repeat(40);
   profiled.fixtureStates.mobile.files['pubspec.yaml'] = '1'.repeat(64);
   const result = validateOwnership(profiled);
   assert.deepEqual(

@@ -7,16 +7,34 @@ import { buildCurrentExitAdmissionOciReceipt, canonicalCurrentExitAdmissionOciRe
 import { CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS, canonicalCurrentCapitalLiveChainFanInBoundaryJson } from "../build-current-capital-live-chain-boundary.mjs";
 import { buildCurrentKricExitCollectionPlan } from "../build-current-kric-exit-collection-plan.mjs";
 import { buildCurrentKricExitCollectionBundle, buildCurrentKricExitCollectionReceipt, canonicalCurrentKricExitCollectionReceiptJson } from "../build-current-kric-exit-collection-receipt.mjs";
+import { resolveStagedIncheonTopologyPath } from "../run-current-capital-live-chain.mjs";
 
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const canonical = (value) => JSON.stringify(sort(value));
-const DATAPACK_ROOT = path.resolve(import.meta.dirname, "../..");
+const DATAPACK_ROOT = path.resolve(import.meta.dirname, "../../..");
 function sort(value) { if (Array.isArray(value)) return value.map(sort); if (!value || typeof value !== "object") return value; return Object.fromEntries(Object.keys(value).sort((left, right) => left.localeCompare(right, "en")).map((key) => [key, sort(value[key])])); }
 
-export async function buildCanonicalCurrentKricExitCollectionBundle({ repositorySha = "a".repeat(40), operationId = "current-capital-560", capturedAt = "2026-08-14T16:00:00.000Z" } = {}) {
+function currentIncheonTopologyFixture(sourceInventory) {
+  const snapshotPath = resolveStagedIncheonTopologyPath(sourceInventory);
+  const prefix = "tools/datapack/";
+  if (!snapshotPath.startsWith(prefix)) throw new Error("current Incheon topology fixture path mismatch");
+  const source = sourceInventory.sources.find(({ id }) => id === "incheon-transit-station-info");
+  const capturedAt = source?.topologyAdmissionEvidence?.capturedAt;
+  if (typeof capturedAt !== "string" || Number.isNaN(Date.parse(capturedAt))) throw new Error("current Incheon topology fixture capture mismatch");
+  return { path: snapshotPath.slice(prefix.length), capturedAt };
+}
+
+export function deriveCurrentIncheonTopologyFixturePath(sourceInventory) {
+  return currentIncheonTopologyFixture(sourceInventory).path;
+}
+
+export async function buildCanonicalCurrentKricExitCollectionBundle({ repositorySha = "a".repeat(40), operationId = "current-capital-560", capturedAt = null } = {}) {
   const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
-  const paths = { canonicalPackBytes: "release/capital-production-canonical-pack.json", coverageTargetsBytes: "nationwide-coverage-targets.json", providerCodeCatalogBytes: "sources/kric-provider-code-catalog-20260228.json", routeRostersBytes: "sources/kric-nationwide-route-rosters-20260730T203926676Z.json", sourceInventoryBytes: "source-inventory.json", incheonTopologyBytes: "sources/incheon-transit-station-info-20260814.json" };
+  const paths = { canonicalPackBytes: "release/capital-production-canonical-pack.json", coverageTargetsBytes: "nationwide-coverage-targets.json", providerCodeCatalogBytes: "sources/kric-provider-code-catalog-20260228.json", routeRostersBytes: "sources/kric-nationwide-route-rosters-20260730T203926676Z.json", sourceInventoryBytes: "source-inventory.json" };
   const input = Object.fromEntries(await Promise.all(Object.entries(paths).map(async ([key, file]) => [key, await readFile(path.join(root, file))])));
+  const incheonFixture = currentIncheonTopologyFixture(JSON.parse(input.sourceInventoryBytes));
+  input.incheonTopologyBytes = await readFile(path.join(root, incheonFixture.path));
+  capturedAt ??= incheonFixture.capturedAt;
   const plan = buildCurrentKricExitCollectionPlan(input, { now: new Date(capturedAt), coverageSelector: "capital-seoul-metro-production" });
   const rows = [{ edMovePath: null, elvtSttCd: null, elvtTpCd: null, exitMvTpOrdr: "1", imgPath: null, mvContDtl: null, mvPathMgNo: "1", stMovePath: null }];
   const results = plan.queryPlan.map((query, index) => ({ queryId: query.queryId, state: index === 0 ? "ROWS_OBSERVED" : "EXPLICIT_ZERO", providerResultCode: "00", rawResponseSha256: sha256(`raw-${index}`), rawResponseByteSize: 1, providerRecordHash: sha256(canonical(index === 0 ? rows : [])), rows: index === 0 ? rows : [] }));

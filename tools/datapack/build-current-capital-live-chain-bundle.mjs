@@ -29,7 +29,7 @@ export const CURRENT_CAPITAL_LIVE_CHAIN_PROVIDER_RECEIPT_PATH = "tools/datapack/
 
 function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  if (value && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
+  if (value && typeof value === "object") return `{${Object.keys(value).sort((left, right) => left.localeCompare(right)).map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
   return JSON.stringify(value);
 }
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -43,7 +43,7 @@ function requireIdentity({ repository, repositorySha, operationId }) {
 }
 export function currentCapitalLiveChainOutputPaths({ candidate, sourceInventory, sourceSnapshotLedger }) {
   const transfer = deriveCurrentLiveChainTransferDescriptorIdentity({ candidate, sourceInventory, sourceSnapshotLedger });
-  return Object.freeze([...CURRENT_CAPITAL_LIVE_CHAIN_FIXED_OUTPUT_PATHS, transfer.relativePath].map((entry) => requireRelative(entry, "output path")).sort());
+  return Object.freeze([...CURRENT_CAPITAL_LIVE_CHAIN_FIXED_OUTPUT_PATHS, transfer.relativePath].map((entry) => requireRelative(entry, "output path")).sort((left, right) => left.localeCompare(right)));
 }
 function strictBase64(value) {
   if (typeof value !== "string" || value.length === 0 || value.length % 4 !== 0 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(value)) throw new Error("live-chain entry base64 mismatch");

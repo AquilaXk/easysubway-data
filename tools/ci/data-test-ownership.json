@@ -207,15 +207,16 @@
       "fixtures": [
         "mobile"
       ],
+      "fixtureProfiles": {
+        "mobile": "mobile-v19"
+      },
       "fixtureStageContracts": {
         "mobile": [
           "source=\".external/mobile/apps/mobile\"",
-          "expected_revision=\"39d2c4723d0ff855041c6162825930c7d12ffad3\"",
-          "expected_sha256=\"f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3\"",
+          "expected_revision=\"5b58d426258f536070137737c3f19a8dbeda44c1\"",
+          "expected_sha256=\"609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a\"",
           "fetch-depth: 0",
-          "cp -a \"${source}\" apps/mobile",
-          "rm -r -- \"${target}\"",
-          "cp -a \"${source}\" \"${target}\""
+          "cp -a \"${source}\" apps/mobile"
         ]
       },
       "contextInvocations": [
@@ -553,6 +554,9 @@
     "mobile": {
       "repository": "AquilaXk/easysubway-mobile",
       "commit": "39d2c4723d0ff855041c6162825930c7d12ffad3",
+      "profileCommit": {
+        "mobile-v19": "5b58d426258f536070137737c3f19a8dbeda44c1"
+      },
       "checkoutPath": ".external/mobile",
       "sourcePath": "apps/mobile",
       "path": "apps/mobile",
@@ -561,7 +565,7 @@
           "path": "assets/datapacks/capital.sqlite.gz",
           "sha256": "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
           "profileSha256": {
-            "mobile-v19": "28de8771a22dd5188cd4c62662faba8dcf46f6c3370386bc2f5598334acf0cc2"
+            "mobile-v19": "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a"
           }
         },
         {
@@ -570,11 +574,17 @@
         },
         {
           "path": "pubspec.yaml",
-          "sha256": "82bfad8bd6f06fd0163573fe45c08af050f8688010309bb04532c4481428ebf4"
+          "sha256": "82bfad8bd6f06fd0163573fe45c08af050f8688010309bb04532c4481428ebf4",
+          "profileSha256": {
+            "mobile-v19": "8ae9f49ab9adb7cddf6510d024da992d78eeedfb205e0245b16c6841151068ba"
+          }
         },
         {
           "path": "pubspec.lock",
-          "sha256": "e42fbcce9ba3dd351ef4918e1c15bf231b2cf72cc281583db39e35f50ca4c03f"
+          "sha256": "e42fbcce9ba3dd351ef4918e1c15bf231b2cf72cc281583db39e35f50ca4c03f",
+          "profileSha256": {
+            "mobile-v19": "d2ec63d74ffcc0305cac4b905e19de440ca7866215e85ad679408951e565c870"
+          }
         }
       ]
     }
