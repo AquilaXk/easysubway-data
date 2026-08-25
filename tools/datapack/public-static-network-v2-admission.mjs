@@ -1,6 +1,13 @@
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import {
+  CURRENT_MOLIT_FULL_ROUTE_ROW_COUNT,
+  CURRENT_SEOUL_PUBLIC_POSITION_COUNT,
+  assertCurrentMolitFullRouteCompleteness,
+  assertCurrentSeoulPositionProjectionCompleteness,
+} from "./lib/static-network-successor-completeness.mjs";
 
 const V2 = "seoul-public-latlon-line-order-layout-v2";
 const SHA = /^[a-f0-9]{64}$/u;
@@ -11,6 +18,30 @@ const CANONICAL_PROVIDERS = Object.freeze({
   "seoul-metro-route-map-positions": "공공데이터포털",
   "molit-urban-rail-full-route": "국토교통부",
 });
+const V2_SOURCE_CONFIG = Object.freeze({
+  "seoul-metro-route-map-positions": {
+    count: CURRENT_SEOUL_PUBLIC_POSITION_COUNT, extension: "json", contentType: "application/json",
+    assertCompleteness: assertCurrentSeoulPositionProjectionCompleteness,
+  },
+  "molit-urban-rail-full-route": {
+    count: CURRENT_MOLIT_FULL_ROUTE_ROW_COUNT, extension: "csv", contentType: "text/csv; charset=euc-kr",
+    assertCompleteness: assertCurrentMolitFullRouteCompleteness,
+  },
+});
+function assertNoLegacySelectedSurface(value) {
+  const visit = (current) => {
+    if (typeof current === "string") {
+      if (/(?:cyber|\.js(?:\b|$)|s3:\/\/|amazonaws\.com)/iu.test(current)) fail("MISSING");
+      return;
+    }
+    if (!current || typeof current !== "object") return;
+    for (const [key, child] of Object.entries(current)) {
+      if (["projectionMigration", "migration", "rootSupersession", "historicalPredecessorAudit"].includes(key)) fail("MISSING");
+      visit(child);
+    }
+  };
+  visit(value);
+}
 function isCanonicalOuterSnapshot(snapshot, { now = new Date(), requireCurrentFreshness = false } = {}) {
   let retrievedAt; let sourceUpdatedAt; let freshnessExpiresAt; let rawRetentionExpiresAt;
   let receiptStoredAt; let receiptCapturedAt; let nowMillis;
@@ -49,12 +80,70 @@ export function requireCanonicalPublicStaticNetworkV2OuterSnapshot({ snapshot, n
   return snapshot;
 }
 
+export function requireExactPublicStaticNetworkV2SnapshotBinding({ snapshot, source, now, requireCurrentFreshness = false } = {}) {
+  const config = V2_SOURCE_CONFIG[snapshot?.sourceId];
+  const observation = snapshot?.publicStaticNetworkV2Observation;
+  const date = snapshot?.retrievedAt?.slice(0, 10).replaceAll("-", "");
+  const objectKey = config == null || date == null
+    ? null
+    : `source-raw/${snapshot.sourceId}/${date}/${snapshot.rawSha256}.${config.extension}`;
+  const receipt = snapshot?.rawReceipt;
+  assertNoLegacySelectedSurface({ snapshot, observation, source });
+  requireCanonicalPublicStaticNetworkV2OuterSnapshot({ snapshot, now, requireCurrentFreshness });
+  if (!config
+    || observation?.schemaVersion !== 2
+    || observation.artifactKind !== "public-static-network-v2-observation"
+    || observation.sourceId !== snapshot.sourceId
+    || observation.snapshotId !== snapshot.snapshotId
+    || observation.capturedAt !== snapshot.retrievedAt
+    || observation.rawSha256 !== snapshot.rawSha256
+    || observation.contentSha256 !== snapshot.contentSha256
+    || observation.schemaFingerprint !== snapshot.schemaFingerprint
+    || observation.rowCount !== snapshot.rowCount
+    || !Array.isArray(observation.normalizedProjection)
+    || observation.rowCount !== observation.normalizedProjection.length
+    || observation.contentSha256 !== sha(bytes(observation.normalizedProjection))
+    || !Array.isArray(observation.providerRecordHashes)
+    || !isDeepStrictEqual(observation.providerRecordHashes, snapshot.providerRecordHashes)
+    || !observation.providerRecordHashes.every((hash) => SHA.test(hash))
+    || !isDeepStrictEqual(observation.providerRecordHashes, observation.normalizedProjection.map((record) => sha(JSON.stringify(record))))
+    || !isDeepStrictEqual(observation.rawReceipt, receipt)
+    || snapshot.normalizedObservationSha256 !== sha(bytes(observation))
+    || snapshot.rowCount !== config.count || snapshot.coverageCount !== config.count
+    || !Array.isArray(snapshot.providerRecordHashes) || snapshot.providerRecordHashes.length !== config.count
+    || receipt?.schemaVersion !== 1
+    || receipt.artifactKind !== "static-network-source-raw-object-receipt"
+    || receipt.sourceId !== snapshot.sourceId
+    || receipt.snapshotId !== snapshot.snapshotId
+    || receipt.capturedAt !== snapshot.retrievedAt
+    || receipt.rawObjectSha256 !== snapshot.rawSha256
+    || receipt.rawObjectUri !== snapshot.rawObjectUri
+    || receipt.ociNamespace !== "axvym6vk8g7i"
+    || receipt.bucket !== "easysubway-datapacks"
+    || receipt.objectKey !== objectKey
+    || receipt.contentType !== config.contentType
+    || !Number.isSafeInteger(receipt.byteSize) || receipt.byteSize < 1
+    || source?.id !== snapshot.sourceId
+    || source.admissionEvidence?.decision !== "APPROVED"
+    || source.admissionEvidence?.sourceId !== snapshot.sourceId
+    || source.admissionEvidence?.snapshotId !== snapshot.snapshotId
+    || source.admissionEvidence?.rawSha256 !== snapshot.rawSha256
+    || source.admissionEvidence?.schemaFingerprint !== snapshot.schemaFingerprint
+    || source.requiredForProductionPack !== true || source.productionUseAllowed !== true) fail("MISSING");
+  config.assertCompleteness(observation.normalizedProjection);
+  if (snapshot.sourceId === "seoul-metro-route-map-positions") {
+    requirePublicStaticNetworkV2Admission({ positions: snapshot, positionSource: source });
+  }
+  return { snapshot, observation, source };
+}
+
 export function requirePublicStaticNetworkV2Admission({ positions, positionSource } = {}) {
   const layout = positions?.routeMapLayoutEvidence;
   const artifact = positions?.routeMapLayoutArtifact;
   const admission = positionSource?.routeMapAdmissionEvidence?.currentLayoutAdmission;
   const observation = positions?.publicStaticNetworkV2Observation;
   const keys = ["layoutAlgorithmVersion", "topologySnapshotId", "topologySnapshotSha256", "topologySnapshotIdentity", "lineOrderSha256", "aliasLedgerVersion", "aliasLedgerSha256", "rawPositionsSha256", "layoutPositionsSha256", "layoutTracksSha256", "semanticInputSha256", "semanticOutputSha256", "outputSchemaSha256", "layoutArtifactSha256"];
+  assertNoLegacySelectedSurface({ positions, observation, positionSource });
   if (!layout || !artifact || !admission
     || layout.layoutAlgorithmVersion !== V2
     || artifact.layoutAlgorithmVersion !== V2
@@ -67,8 +156,6 @@ export function requirePublicStaticNetworkV2Admission({ positions, positionSourc
     || observation.rawSha256 !== positions.rawSha256
     || observation.contentSha256 !== positions.contentSha256
     || observation.rowCount !== positions.rowCount
-    || observation.historicalPredecessorAudit != null || positions.historicalPredecessorAudit != null
-    || positions.projectionMigration != null || observation.projectionMigration != null || observation.migration != null
     || positions.normalizedObservationSha256 !== sha(bytes(observation))
     || JSON.stringify(observation.routeMapLayoutEvidence) !== JSON.stringify(layout)
     || JSON.stringify(observation.routeMapLayoutArtifact) !== JSON.stringify(artifact)

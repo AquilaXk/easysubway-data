@@ -10,6 +10,7 @@ import { buildPublicStaticNetworkV2SuccessorOutputs, commitStaticNetworkSuccesso
 import { buildPublicStaticNetworkV2Observations } from "./build-public-static-network-v2-observations.mjs";
 import { parseSeoulRouteMapPositionsCsv } from "./collect-seoul-route-map-positions.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
+import { verifyCurrentStaticNetworkSuccessorHeads } from "./activate-current-source-set.mjs";
 
 const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const repositoryRoot = path.resolve(import.meta.dirname, "../..");
@@ -56,10 +57,13 @@ async function activatePublicV2Predecessors(root) {
     const source = inventory.sources.find(({ id }) => id === sourceId);
     const snapshot = ledger.find(({ snapshotId }) => snapshotId === source.admissionEvidence.snapshotId);
     assert.ok(source); assert.ok(snapshot);
+    const sourceFile = JSON.parse(await readFile(path.join(root, `tools/datapack/sources/${snapshot.snapshotId}.json`), "utf8"));
     const observation = {
       schemaVersion: 2, artifactKind: "public-static-network-v2-observation", sourceId,
       snapshotId: snapshot.snapshotId, capturedAt: snapshot.retrievedAt, rawSha256: snapshot.rawSha256,
-      contentSha256: snapshot.contentSha256, rowCount: snapshot.rowCount,
+      contentSha256: snapshot.contentSha256, schemaFingerprint: snapshot.schemaFingerprint,
+      rowCount: snapshot.rowCount, providerRecordHashes: structuredClone(snapshot.providerRecordHashes),
+      normalizedProjection: structuredClone(sourceFile.normalizedProjection), rawReceipt: structuredClone(snapshot.rawReceipt),
       routeMapLayoutEvidence: snapshot.routeMapLayoutEvidence,
       routeMapLayoutArtifact: snapshot.routeMapLayoutArtifact,
     };
@@ -70,7 +74,11 @@ async function activatePublicV2Predecessors(root) {
     snapshot.publicStaticNetworkV2Observation = observation;
     snapshot.normalizedObservationSha256 = sha(Buffer.from(`${JSON.stringify(observation)}\n`));
     delete snapshot.projectionMigration;
+    delete snapshot.migration;
+    delete snapshot.rootSupersession;
     delete snapshot.historicalPredecessorAudit;
+    source.requiredForProductionPack = true;
+    source.productionUseAllowed = true;
     if (sourceId === "seoul-metro-route-map-positions") {
       source.routeMapAdmissionEvidence.currentTopologyAdmission.positionSnapshotSha256 = snapshot.normalizedObservationSha256;
       source.routeMapAdmissionEvidence.currentLayoutAdmission = {
@@ -96,6 +104,16 @@ test("v2 registrar stages and commits exactly five outputs while preserving rele
   const request = await readFile(path.join(root, "tools/datapack/release/release-request.json")); const hashes = await readFile(path.join(root, "tools/datapack/release/hash-evidence.json"));
   const historicalInput = await publicV2Input(root);
   await assert.rejects(buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...historicalInput }), /public v2 active predecessor is required/);
+  await activatePublicV2Predecessors(root);
+  const partialLedger = JSON.parse(await readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8"));
+  delete partialLedger.find(({ sourceId, publicStaticNetworkV2Observation }) =>
+    sourceId === "molit-urban-rail-full-route" && publicStaticNetworkV2Observation?.schemaVersion === 2,
+  ).publicStaticNetworkV2Observation.normalizedProjection;
+  await writeFile(path.join(root, "tools/datapack/release/source-snapshots.json"), `${JSON.stringify(partialLedger, null, 2)}\n`);
+  await assert.rejects(
+    buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...(await publicV2Input(root)) }),
+    /public v2 active predecessor is required/,
+  );
   await activatePublicV2Predecessors(root);
   const input = await publicV2Input(root); const staged = await buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input });
   assert.equal(staged.length, 5); assert.deepEqual(staged.map(({ relative }) => relative).slice(2), ["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json"]);
@@ -126,6 +144,14 @@ test("v2 registrar stages and commits exactly five outputs while preserving rele
     assert.equal(snapshot.credentialRedacted, true);
     assert.match(snapshot.governancePolicySha256, /^[a-f0-9]{64}$/u);
   }
+  assert.deepEqual(
+    Object.keys(verifyCurrentStaticNetworkSuccessorHeads({
+      sourceSnapshots: ledger,
+      sourceInventory: stagedInventory,
+      now: input.now,
+    })).sort(),
+    ["molit", "positions"],
+  );
   const result = await registerPublicStaticNetworkV2Successors({ repositoryRoot: root, ...input });
   assert.equal(result.outputs.length, 5); assert.deepEqual(await readFile(path.join(root, "tools/datapack/release/release-request.json")), request); assert.deepEqual(await readFile(path.join(root, "tools/datapack/release/hash-evidence.json")), hashes);
   const nextInput = await publicV2Input(root, "2026-08-24T12:30:00.000Z");

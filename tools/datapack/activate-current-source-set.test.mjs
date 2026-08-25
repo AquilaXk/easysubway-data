@@ -246,9 +246,11 @@ function currentSuccessorGateFixture() {
   };
 }
 
-test("current activation은 legacy predecessor fixture를 수용하지 않는다", () => {
-  const fixture = currentSuccessorGateFixture();
-  assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads(fixture), /current v2 selected path is invalid/);
+test("current activation does not mistake a legacy predecessor fixture for a V2 current head", () => {
+  assert.throws(
+    () => verifyCurrentStaticNetworkSuccessorHeads(currentSuccessorGateFixture()),
+    /V2_MISSING/,
+  );
 });
 
 test("current activation succeeds only for two embedded schema-2 v2 heads", async () => {
@@ -283,13 +285,73 @@ test("current activation succeeds only for two embedded schema-2 v2 heads", asyn
   reset.sourceSnapshots.find(({ sourceId }) => sourceId === "seoul-metro-route-map-positions").rootSupersession = {
     schemaVersion: 1, artifactKind: "source-root-supersession", sourceId: "seoul-metro-route-map-positions",
   };
-  assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads({ ...reset, now: CURRENT_V2_TEST_NOW }), /current v2 successor binding is invalid/);
+  assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads({ ...reset, now: CURRENT_V2_TEST_NOW }), /(?:current v2 successor binding is invalid|SOURCE_LINEAGE_BROKEN)/);
   const cyberSnapshot = structuredClone(fixture);
   cyberSnapshot.sourceSnapshots.push({ snapshotId: "cyber", sourceId: "seoulmetro-cyberstation-route-map", previousSnapshotId: null });
-  assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads({ ...cyberSnapshot, now: CURRENT_V2_TEST_NOW }), /current v2 selected path is invalid/);
+  assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads({ ...cyberSnapshot, now: CURRENT_V2_TEST_NOW }), /SOURCE_LINEAGE_BROKEN/);
   const cyberInventory = structuredClone(fixture);
-  cyberInventory.sourceInventory.sources.push({ id: "seoulmetro-cyberstation-route-map", requiredForProductionPack: false, productionUseAllowed: false });
+  cyberInventory.sourceInventory.sources.find(({ id }) => id === "seoul-metro-route-map-positions").metadata = { diagnosticSource: "Cyberstation" };
   assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads({ ...cyberInventory, now: CURRENT_V2_TEST_NOW }), /current v2 selected path is invalid/);
+});
+
+test("current activation accepts registrar-shaped same-source V2 lineage while rejecting non-V2 and cross-source predecessors", async () => {
+  const fixture = await currentV2HeadsFixture();
+  const append = (sourceId) => {
+    const previous = fixture.sourceSnapshots.find((snapshot) => snapshot.sourceId === sourceId);
+    const capturedAt = new Date(Date.parse(previous.retrievedAt) + 1).toISOString();
+    const snapshotId = `${sourceId}-v2-successor`;
+    const receipt = { ...structuredClone(previous.rawReceipt), snapshotId, capturedAt, storedAt: capturedAt };
+    const observation = {
+      ...structuredClone(previous.publicStaticNetworkV2Observation), snapshotId, capturedAt, rawReceipt: receipt,
+    };
+    const snapshot = {
+      ...structuredClone(previous), snapshotId, retrievedAt: capturedAt, previousSnapshotId: previous.snapshotId,
+      rawReceipt: receipt, publicStaticNetworkV2Observation: observation,
+    };
+    snapshot.normalizedObservationSha256 = sha256(Buffer.from(`${JSON.stringify(observation)}\n`));
+    snapshot.diffSummary = buildSnapshotDiff(previous, snapshot);
+    fixture.sourceSnapshots.push(snapshot);
+    const source = fixture.sourceInventory.sources.find(({ id }) => id === sourceId);
+    source.admissionEvidence = { ...source.admissionEvidence, snapshotId, rawSha256: snapshot.rawSha256, schemaFingerprint: snapshot.schemaFingerprint };
+    if (sourceId === "seoul-metro-route-map-positions") {
+      source.routeMapAdmissionEvidence.currentLayoutAdmission = {
+        ...source.routeMapAdmissionEvidence.currentLayoutAdmission,
+        positionSnapshotId: snapshotId,
+        snapshotPath: `tools/datapack/sources/${snapshotId}.json`,
+        snapshotSha256: snapshot.normalizedObservationSha256,
+      };
+    }
+    return snapshot;
+  };
+  const positionHead = append("seoul-metro-route-map-positions");
+  append("molit-urban-rail-full-route");
+  assert.equal(verifyCurrentStaticNetworkSuccessorHeads({ ...fixture, now: CURRENT_V2_TEST_NOW }).positions.snapshotId, positionHead.snapshotId);
+
+  const nonV2 = structuredClone(fixture);
+  delete nonV2.sourceSnapshots.find(({ snapshotId }) => snapshotId === positionHead.previousSnapshotId).publicStaticNetworkV2Observation;
+  assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads({ ...nonV2, now: CURRENT_V2_TEST_NOW }), /current v2 successor binding is invalid/);
+
+  const crossSource = structuredClone(fixture);
+  const crossSourceHead = crossSource.sourceSnapshots.find(({ snapshotId }) => snapshotId === positionHead.snapshotId);
+  crossSourceHead.previousSnapshotId = crossSource.sourceSnapshots.find(({ sourceId }) => sourceId === "molit-urban-rail-full-route").snapshotId;
+  crossSourceHead.diffSummary = buildSnapshotDiff(
+    crossSource.sourceSnapshots.find(({ snapshotId }) => snapshotId === crossSourceHead.previousSnapshotId),
+    crossSourceHead,
+  );
+  assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads({ ...crossSource, now: CURRENT_V2_TEST_NOW }), /(?:current v2 successor binding is invalid|SOURCE_LINEAGE_BROKEN)/);
+});
+
+test("current activation rejects legacy fields on selected snapshot, observation, and matched inventory source", async () => {
+  const mutations = [
+    (fixture) => { fixture.sourceSnapshots[0].historicalPredecessorAudit = { archive: "s3://legacy" }; },
+    (fixture) => { fixture.sourceSnapshots[0].publicStaticNetworkV2Observation.audit = { nested: { migration: "Cyberstation" } }; },
+    (fixture) => { fixture.sourceInventory.sources[0].metadata = { audit: { archivedUri: "s3://legacy" } }; },
+  ];
+  for (const mutate of mutations) {
+    const fixture = await currentV2HeadsFixture();
+    mutate(fixture);
+    assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads({ ...fixture, now: CURRENT_V2_TEST_NOW }), /current v2 selected path is invalid/);
+  }
 });
 
 test("current activation exact-binds every embedded v2 observation to its outer snapshot", async () => {

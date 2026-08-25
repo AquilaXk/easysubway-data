@@ -13,7 +13,7 @@ import {
 
 const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
 
-test("current public candidate slot derives its complete legacy predecessor contract on a topology-only refresh", async (t) => {
+test("current public candidate slot derives a same-source public V2 successor on a topology-only refresh", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-predecessor-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, root, {
@@ -26,7 +26,7 @@ test("current public candidate slot derives its complete legacy predecessor cont
   const result = await activateSyntheticCurrentPublicRouteMapSuccessor(root, {
     now: new Date("2026-08-22T10:45:18.609Z"),
   });
-  assert.equal(result.predecessorSnapshotId, "seoulmetro-cyberstation-route-map-capital-admission-20260712");
+  assert.match(result.predecessorSnapshotId, /^seoul-metro-route-map-positions-current-/u);
 
   const after = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
   assert.equal(after.sourceSnapshots[0].sourceId, "seoul-metro-route-map-positions");
@@ -129,7 +129,7 @@ test("advancing a current public head keeps retrieval time monotonic in a one-se
   assert.doesNotThrow(() => validateLineage(afterSnapshots));
 });
 
-test("registrar fixture reconstructs the legacy predecessor with no selected public root in the ledger", async (t) => {
+test("registrar fixture derives a selected same-source public root", async (t) => {
   const source = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-registrar-source-"));
   const root = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-registrar-predecessor-"));
   t.after(() => rm(source, { recursive: true, force: true }));
@@ -145,11 +145,10 @@ test("registrar fixture reconstructs the legacy predecessor with no selected pub
     readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
     readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
   ]);
-  const publicRoots = snapshots.filter(({ sourceId, previousSnapshotId }) =>
-    sourceId === "seoul-metro-route-map-positions" && previousSnapshotId == null);
+  const selected = snapshots.find(({ snapshotId }) => snapshotId === candidate.sourceSnapshotIds[0]);
 
-  assert.equal(result.removedPublicRootSnapshotId != null, true);
-  assert.equal(publicRoots.length, 0);
-  assert.equal(candidate.sourceSnapshots[0].sourceId, "seoulmetro-cyberstation-route-map");
+  assert.equal(selected.snapshotId, result.currentSnapshotId);
+  assert.equal(candidate.sourceSnapshots[0].sourceId, "seoul-metro-route-map-positions");
+  assert.equal(selected.previousSnapshotId, result.predecessorSnapshotId);
   assert.doesNotThrow(() => validateLineage(snapshots));
 });

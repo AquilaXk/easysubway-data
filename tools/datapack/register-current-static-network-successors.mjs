@@ -13,6 +13,7 @@ import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
 import {
   requireCanonicalPublicStaticNetworkV2OuterSnapshot,
+  requireExactPublicStaticNetworkV2SnapshotBinding,
   requirePublicStaticNetworkV2Admission,
 } from "./public-static-network-v2-admission.mjs";
 import { buildPublicStaticNetworkV2Observations } from "./build-public-static-network-v2-observations.mjs";
@@ -286,14 +287,16 @@ function requireActivePublicV2Predecessors({ ledger, heads, inventory, now }) {
   for (const sourceId of TARGETS) {
     const previous = ledger.filter(({ snapshotId }) => snapshotId === heads[sourceId]);
     const source = inventory.sources?.find(({ id }) => id === sourceId);
-    if (previous.length !== 1 || !source
-      || previous[0].publicStaticNetworkV2Observation?.schemaVersion !== 2
-      || previous[0].publicStaticNetworkV2Observation?.sourceId !== sourceId
-      || previous[0].publicStaticNetworkV2Observation?.snapshotId !== previous[0].snapshotId) {
+    if (previous.length !== 1 || !source) {
       throw new Error("public v2 active predecessor is required");
     }
-    requireCanonicalPublicStaticNetworkV2OuterSnapshot({ snapshot: previous[0], now, requireCurrentFreshness: true });
-    if (sourceId === TARGETS[0]) requirePublicStaticNetworkV2Admission({ positions: previous[0], positionSource: source });
+    try {
+      requireExactPublicStaticNetworkV2SnapshotBinding({
+        snapshot: previous[0], source, now, requireCurrentFreshness: true,
+      });
+    } catch (error) {
+      throw new Error(`public v2 active predecessor is required for ${sourceId}: ${error.message}`);
+    }
   }
 }
 
@@ -321,6 +324,7 @@ function materializePublicV2Observation({ observation, ledger, heads, nextInvent
     source.routeMapAdmissionEvidence = { ...source.routeMapAdmissionEvidence, currentTopologyAdmission: { ...source.routeMapAdmissionEvidence.currentTopologyAdmission, positionSnapshotSha256: snapshot.normalizedObservationSha256 }, currentLayoutAdmission: structuredClone(currentLayoutAdmission), capturedAt: snapshot.retrievedAt, freshUntil: snapshot.freshnessExpiresAt };
     requirePublicStaticNetworkV2Admission({ positions: snapshot, positionSource: source });
   }
+  requireExactPublicStaticNetworkV2SnapshotBinding({ snapshot, source, now, requireCurrentFreshness: true });
   return snapshot;
 }
 

@@ -44,3 +44,14 @@ test("v2 admission rejects historical predecessor audit", () => {
   value.positionSource.routeMapAdmissionEvidence.currentLayoutAdmission.snapshotSha256 = value.positions.normalizedObservationSha256;
   assert.throws(() => requirePublicStaticNetworkV2Admission(value), /V2_MISSING/);
 });
+
+test("v2 admission rejects nested selected-surface legacy fields and URLs", () => {
+  for (const mutate of [
+    (value) => { value.positions.audit = { historicalPredecessorAudit: { archive: "oci://audit" } }; },
+    (value) => { value.positions.publicStaticNetworkV2Observation.audit = { nested: { legacyUri: "s3://legacy" } }; },
+    (value) => { value.positionSource.audit = { source: "Cyberstation" }; },
+  ]) {
+    const value = valid(); mutate(value);
+    assert.throws(() => requirePublicStaticNetworkV2Admission(value), /V2_MISSING/);
+  }
+});
