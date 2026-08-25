@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { runCurrentStaticNetworkSuccessors } from "./run-current-static-network-successors.mjs";
+import { runCurrentStaticNetworkSuccessors, runPublicStaticNetworkV2Transition, runRetiredCurrentStaticNetworkSuccessorsCli } from "./run-current-static-network-successors.mjs";
 import { projectPositions } from "./collect-current-static-network-successors.mjs";
 import { parseSeoulRouteMapPositionsCsv } from "./collect-seoul-route-map-positions.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
@@ -39,7 +39,8 @@ async function validCollection({ sourceSnapshots, observedAt }) {
 async function receiptFor(input, operationRoot, now) {
   const extension = input.sourceId === "seoul-metro-route-map-positions" ? "json" : "csv";
   const contentType = extension === "json" ? "application/json" : "text/csv; charset=euc-kr";
-  const rawBytes = await readFile(path.join(operationRoot, `raw.${extension}`));
+  const rawRelativePath = input.sourceId === "seoul-metro-route-map-positions" ? "positions.raw.json" : "molit.raw.csv";
+  const rawBytes = await readFile(path.join(operationRoot, rawRelativePath));
   const rawSha256 = sha(rawBytes); const date = input.capturedAt.slice(0, 10).replaceAll("-", "");
   const objectKey = `source-raw/${input.sourceId}/${date}/${rawSha256}.${extension}`;
   const policy = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/source-governance-policy.json"), "utf8"));
@@ -48,6 +49,10 @@ async function receiptFor(input, operationRoot, now) {
     byteSize: rawBytes.length, storedAt: now.toISOString(), rawRetentionExpiresAt: deriveRawRetentionExpiresAt({ policy, sourceId: input.sourceId, retrievedAt: input.capturedAt }),
     ociNamespace: "axvym6vk8g7i", bucket: "easysubway-datapacks", objectKey, contentType };
 }
+
+test("direct current-successors CLI is retired before any historical provider operation", async () => {
+  await assert.rejects(runRetiredCurrentStaticNetworkSuccessorsCli(), /STATIC_NETWORK_SUCCESSORS_HISTORICAL_ONLY_RETIRED/);
+});
 
 test("runner validates both official observations before the first immutable publication", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "static-network-runner-"));
@@ -65,7 +70,19 @@ test("runner validates both official observations before the first immutable pub
   assert.equal(registers, 0);
 });
 
-test("runner stages publisher-contract raw.json/raw.csv, publishes exactly two bound receipts, then registers once", async (t) => {
+test("v2 transition is input-only, builds once, exact-main fences registration, and registers once", async () => {
+  const calls = []; const positionRawBytes = Buffer.from("position"); const molitRawBytes = Buffer.from("molit");
+  const result = await runPublicStaticNetworkV2Transition({ repositoryRoot, positionRawBytes, molitRawBytes, positionReceipt: { receipt: "position" }, molitReceipt: { receipt: "molit" }, capturedAt: "2026-08-25T00:00:00.000Z",
+    assertExactMain: async () => { calls.push("main"); return "a".repeat(40); },
+    produceImpl: (input) => { calls.push(input); return { output: true }; },
+    registerImpl: async (input) => { calls.push(input); return { outputs: ["ok"] }; },
+  });
+  assert.deepEqual(result, { outputs: ["ok"] }); assert.equal(calls.filter((value) => value === "main").length, 2);
+  assert.equal(calls[1].positionRawBytes, positionRawBytes); assert.equal(calls[1].molitRawBytes, molitRawBytes);
+  assert.deepEqual(calls[3].rawBytesBySource, { "seoul-metro-route-map-positions": positionRawBytes, "molit-urban-rail-full-route": molitRawBytes });
+});
+
+test("historical helper stages exact publisher raw names, publishes exactly two bound receipts, then registers once", async (t) => {
   const operationRoot = await mkdtemp(path.join(os.tmpdir(), "static-network-runner-success-"));
   t.after(() => rm(operationRoot, { recursive: true, force: true }));
   const calls = []; let registered;
@@ -74,7 +91,7 @@ test("runner stages publisher-contract raw.json/raw.csv, publishes exactly two b
     publishImpl: async (input) => { calls.push(input); return receiptFor(input, operationRoot, now); },
     registerImpl: async (input) => { registered = input; return { outputs: [] }; },
   });
-  assert.deepEqual(calls.map(({ sourceId, rawRelativePath }) => [sourceId, rawRelativePath]), [["seoul-metro-route-map-positions", "raw.json"], ["molit-urban-rail-full-route", "raw.csv"]]);
+  assert.deepEqual(calls.map(({ sourceId, rawRelativePath }) => [sourceId, rawRelativePath]), [["seoul-metro-route-map-positions", "positions.raw.json"], ["molit-urban-rail-full-route", "molit.raw.csv"]]);
   assert.equal(calls.length, 2); assert.equal(registered.observations.length, 2);
   for (const { snapshot } of registered.observations) assert.equal(snapshot.providerRecordHashes.length, snapshot.rowCount);
   assert.equal(registered.observations[0].snapshot.previousSnapshotId, null);
