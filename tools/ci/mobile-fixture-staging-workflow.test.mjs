@@ -10,6 +10,8 @@ const ownership = JSON.parse(
   readFileSync(path.join(root, "tools/ci/data-test-ownership.json"), "utf8"),
 );
 const mobileRepository = "AquilaXk/easysubway-mobile";
+const ciMobileRevision = "5b58d426258f536070137737c3f19a8dbeda44c1";
+const ciCapitalGzipSha256 = "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a";
 const mobileRevision = "39d2c4723d0ff855041c6162825930c7d12ffad3";
 const capitalGzipSha256 = "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3";
 const indexSha256 = "ad801ec865d385e86cf4094e3c007af9cbfbe1d4a8c42bab8f9b2682b229026e";
@@ -58,12 +60,12 @@ function fixtureStep(workflow) {
   test(`${workflow}: pinned Mobile fixture는 immutable checkout을 credentials 없이 수행한다`, () => {
     const { yml, block, stage } = fixtureStep(workflow);
     assert.match(block, new RegExp(`repository:\\s*${mobileRepository}`));
-    assert.match(block, new RegExp(`ref:\\s*${mobileRevision}`));
+    assert.match(block, new RegExp(`ref:\\s*${ciMobileRevision}`));
     assert.match(block, /path:\s*\.external\/mobile/);
     assert.match(block, /persist-credentials:\s*false/);
     assert.match(block, /fetch-depth:\s*0/);
     assert.match(stage, /git -C \.external\/mobile rev-parse HEAD/);
-    assert.match(stage, new RegExp(mobileRevision));
+    assert.match(stage, new RegExp(ciMobileRevision));
     assert.ok(
       yml.indexOf("Checkout repository") < yml.indexOf("Checkout pinned Mobile fixture")
         && yml.indexOf("Checkout pinned Mobile fixture") < yml.indexOf("Stage pinned Mobile fixture"),
@@ -80,7 +82,7 @@ function fixtureStep(workflow) {
     assert.match(stage, /assets\/datapacks\/capital\.sqlite\.gz/);
     assert.match(stage, /-f "\$\{capital_gzip\}"/);
     assert.match(stage, /-L "\$\{capital_gzip\}"/);
-    assert.match(stage, new RegExp(capitalGzipSha256));
+    assert.match(stage, new RegExp(ciCapitalGzipSha256));
     assert.match(stage, /test ! -e apps\/mobile/);
     assert.match(stage, /test ! -L apps\/mobile/);
     assert.match(stage, /\[\[ "\$\{actual_sha256\}" == "\$\{expected_sha256\}" \]\]/);
@@ -134,40 +136,51 @@ test("CI는 current source-separated topology contracts를 owned required runner
   ]);
 });
 
-test("CI는 fixture stage 뒤에 #108 bundled-pack 회귀 검증을 직렬 실행한다", () => {
+test("CI는 병합된 current v19 pack을 ITX current evidence와 직접 검증한다", () => {
   const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
-  const verification = ci.match(/- name: Verify Data issue 108 bundled-pack regression[\s\S]*?\n\s+- name:/)?.[0];
-  assert.ok(verification, "#108 bundled-pack 회귀 검증 스텝을 찾지 못함");
-  assert.match(verification, /set -euo pipefail/);
+  const verification = ci.match(/- name: Verify current Mobile v19 ITX topology evidence[\s\S]*?\n\s+- name:/)?.[0];
+  assert.ok(verification, "current v19 ITX topology evidence 검증 스텝을 찾지 못함");
+  assert.match(verification, /apply-itx-topology-to-bundled-pack\.mjs/);
+  assert.match(verification, /--check/);
+  assert.match(verification, /apps\/mobile\/assets\/datapacks\/capital\.sqlite\.gz/);
   assert.match(verification, /node --test tools\/datapack\/readmit-bundled-pack-identity\.test\.mjs/);
   assert.match(verification, /node --test --test-name-pattern='bundled 공식 OD quote\|bundled 차량·출입문 힌트' tools\/datapack\/datapack-tools\.test\.mjs/);
+  assert.match(verification, /git diff --exit-code -- tools\/datapack\/itx-cheongchun-topology-evidence\.json/);
   assert.ok(
-    ci.indexOf("Stage pinned Mobile fixture") < ci.indexOf("Emit pinned Mobile station catalog artifact")
-      && ci.indexOf("Emit pinned Mobile station catalog artifact") < ci.indexOf("Migrate pinned Mobile v18 pack to v19")
-      && ci.indexOf("Migrate pinned Mobile v18 pack to v19") < ci.indexOf("Verify Data issue 108 bundled-pack regression"),
-    "#108 회귀 검증은 fixture stage→catalog artifact→v19 migration 뒤여야 함",
-  );
-  assert.ok(
-    ci.indexOf("Set up Node.js") < ci.indexOf("Emit pinned Mobile station catalog artifact"),
-    "pinned Node runtime은 station catalog generator보다 앞서야 함",
+    ci.indexOf("Stage pinned Mobile fixture") < ci.indexOf("Verify current Mobile v19 ITX topology evidence"),
+    "current v19 evidence는 immutable fixture stage 뒤에 검증해야 함",
   );
 });
 
-test("CI는 exact staged v18에서만 station catalog를 emit하고 explicit migration을 수행한다", () => {
+test("CI는 current v19 contract 검증 뒤 fixture identity가 변경되지 않았음을 다시 확인한다", () => {
   const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
-  const emit = ci.match(/- name: Emit pinned Mobile station catalog artifact[\s\S]*?\n\s+- name:/)?.[0];
-  const migrate = ci.match(/- name: Migrate pinned Mobile v18 pack to v19[\s\S]*?\n\s+- name:/)?.[0];
-  assert.ok(emit && migrate, "station catalog와 migration step을 찾지 못함");
-  assert.match(emit, /emit-station-catalog-from-bundled-pack\.mjs/);
-  assert.match(emit, /--input apps\/mobile\/assets\/datapacks\/capital\.sqlite\.gz/);
-  assert.match(emit, /--output \.external\/mobile-station-catalog/);
-  assert.match(migrate, /apply-itx-topology-to-bundled-pack\.mjs/);
-  assert.match(migrate, /--migrate-current-v18/);
-  assert.match(migrate, /--station-catalog-pack \.external\/mobile-station-catalog/);
-  const node = ci.match(/- name: Set up Node\.js[\s\S]*?\n\s+- name:/)?.[0];
-  assert.ok(node, "pinned Node setup step을 찾지 못함");
-  assert.match(node, /actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020/);
-  assert.match(node, /node-version:\s*"24\.19\.0"/);
+  const reverify = namedWorkflowStep(ci, "Re-verify current Mobile fixture for owned tests");
+  assert.match(reverify, new RegExp(ciMobileRevision));
+  assert.match(reverify, new RegExp(ciCapitalGzipSha256));
+  assert.match(reverify, /git -C \.external\/mobile rev-parse HEAD/);
+  assert.match(reverify, /sha256sum "\$\{target_capital_gzip\}"/);
+  assert.ok(
+    ci.indexOf("Verify current Mobile v19 ITX topology evidence")
+      < ci.indexOf("Re-verify current Mobile fixture for owned tests"),
+    "current artifact 검증 뒤 fixture identity를 재확인해야 함",
+  );
+});
+
+test("CI는 direct current v19 검증 안에서 #108 bundled-pack 회귀를 실행한다", () => {
+  const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+  const verification = namedWorkflowStep(ci, "Verify current Mobile v19 ITX topology evidence");
+  assert.match(verification, /set -euo pipefail/);
+  assert.match(verification, /node --test tools\/datapack\/readmit-bundled-pack-identity\.test\.mjs/);
+  assert.match(verification, /node --test --test-name-pattern='bundled 공식 OD quote\|bundled 차량·출입문 힌트' tools\/datapack\/datapack-tools\.test\.mjs/);
+  assertWorkflowStepOrder(ci, ["Stage pinned Mobile fixture", "Verify current Mobile v19 ITX topology evidence"]);
+});
+
+test("CI는 구형 v18 migration 또는 station-catalog bootstrap을 실행하지 않는다", () => {
+  const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+  assert.doesNotMatch(ci, /Migrate pinned Mobile v18 pack to v19/);
+  assert.doesNotMatch(ci, /--migrate-current-v18/);
+  assert.doesNotMatch(ci, /Emit pinned Mobile station catalog artifact/);
+  assert.doesNotMatch(ci, /emit-station-catalog-from-bundled-pack\.mjs/);
 });
 
 test("CI는 browser-dependent required tests 전에 pinned Chrome runtime을 제공한다", () => {
@@ -191,48 +204,29 @@ test("CI는 browser-dependent required tests 전에 pinned Chrome runtime을 제
   ]);
 });
 
-test("CI는 migration이 쓰는 tracked topology evidence를 #108 regression 뒤 즉시 원복한다", () => {
+test("CI는 current v19 검증을 tracked topology evidence 변경 없이 수행한다", () => {
   const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
-  const backup = ci.match(/- name: Backup tracked topology evidence[\s\S]*?\n\s+- name:/)?.[0];
-  const restore = ci.match(/- name: Restore tracked topology evidence[\s\S]*?\n\s+- name:/)?.[0];
-  assert.ok(backup && restore, "topology evidence backup/restore step을 찾지 못함");
-  assert.match(backup, /tools\/datapack\/itx-cheongchun-topology-evidence\.json/);
-  assert.match(backup, /\.external\/itx-cheongchun-topology-evidence\.json/);
-  assert.match(restore, /\.external\/itx-cheongchun-topology-evidence\.json/);
-  assert.match(restore, /tools\/datapack\/itx-cheongchun-topology-evidence\.json/);
+  const verification = namedWorkflowStep(ci, "Verify current Mobile v19 ITX topology evidence");
+  assert.match(verification, /git diff --exit-code -- tools\/datapack\/itx-cheongchun-topology-evidence\.json/);
+  assert.doesNotMatch(ci, /Backup tracked topology evidence/);
+  assert.doesNotMatch(ci, /Restore tracked topology evidence/);
   assertWorkflowStepOrder(ci, [
-    "Backup tracked topology evidence",
-    "Migrate pinned Mobile v18 pack to v19",
-    "Verify Data issue 108 bundled-pack regression",
-    "Restore tracked topology evidence",
-    "Verify and run migrated Mobile owned required tests",
+    "Verify current Mobile v19 ITX topology evidence",
+    "Re-verify current Mobile fixture for owned tests",
+    "Verify and run pristine Mobile owned required tests",
   ]);
-  assertWorkflowStepOrder(ci, ["Restore tracked topology evidence", "Lint workflows"]);
 });
 
-test("CI는 #108 derived pack을 버리고 pristine Mobile fixture를 owned runner 전에 복원한다", () => {
+test("CI는 direct current v19 fixture를 owned runner 전에 재검증한다", () => {
   const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
-  const restore = namedWorkflowStep(ci, "Restore pinned Mobile fixture for owned tests");
-  assert.match(restore, /source="\.external\/mobile\/apps\/mobile"/);
-  assert.match(restore, /target="apps\/mobile"/);
-  assert.match(restore, new RegExp(mobileRevision));
-  assert.match(restore, new RegExp(capitalGzipSha256));
-  assert.match(restore, /rm -r -- "\$\{target\}"/);
-  assert.match(restore, /cp -a "\$\{source\}" "\$\{target\}"/);
-  assert.match(restore, /find "\$\{target\}" -type l/);
-  assert.match(restore, /sha256sum "\$\{target_capital_gzip\}"/);
-  const withoutIssue108 = ci.replace(
-    "Verify Data issue 108 bundled-pack regression",
-    "Removed Data issue 108 bundled-pack regression",
-  );
-  const executionOrder = [
-    "Verify Data issue 108 bundled-pack regression",
-    "Verify and run migrated Mobile owned required tests",
-    "Restore pinned Mobile fixture for owned tests",
-    "Verify and run pristine Mobile owned required tests",
-  ];
-  assert.throws(() => assertWorkflowStepOrder(withoutIssue108, executionOrder), /단계를 찾지 못함/);
-  assertWorkflowStepOrder(ci, executionOrder);
+  const reverify = namedWorkflowStep(ci, "Re-verify current Mobile fixture for owned tests");
+  assert.match(reverify, /source="\.external\/mobile\/apps\/mobile"/);
+  assert.match(reverify, /target="apps\/mobile"/);
+  assert.match(reverify, new RegExp(ciMobileRevision));
+  assert.match(reverify, new RegExp(ciCapitalGzipSha256));
+  assert.match(reverify, /sha256sum "\$\{target_capital_gzip\}"/);
+  assert.doesNotMatch(reverify, /rm -r/);
+  assert.doesNotMatch(reverify, /cp -a/);
 });
 
 test("Data Pack Release는 deterministic-release 전에 immutable Mobile fixture를 검증하고 stage한다", () => {
