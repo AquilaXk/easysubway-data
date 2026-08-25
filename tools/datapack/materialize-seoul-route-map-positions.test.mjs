@@ -117,6 +117,7 @@ test("공식 서울 위경도 snapshot을 current canonical pack에 materialize�
   assert.equal(new Set(rows.map(({ lineId }) => lineId)).size, 8);
   assert.deepEqual([...new Set(rows.map(({ lineId }) => lineId))].sort(), [...LINE_IDS].sort());
   assert.ok(rows.every(({ labelPolygon, region, derivationKind, provenanceKind }) => labelPolygon.length === 4 && region === "수도권" && derivationKind === "GENERATED" && provenanceKind === "OFFICIAL_SOURCE"));
+  assert.deepEqual(source.coverageScope.operatorIds, [...CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS]);
   assert.deepEqual(source.coverageScope.lineIds, [...LINE_IDS]);
   assert.equal(pack.minimumTableRows.route_map_positions, pack.routeMapPositions.length);
   assert.match(pack.id, /^nationwide-seoul-route-map-[a-f0-9]{64}$/);

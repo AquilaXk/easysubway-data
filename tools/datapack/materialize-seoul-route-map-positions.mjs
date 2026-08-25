@@ -15,7 +15,7 @@ const PACK_ID = "nationwide-seoul-route-map";
 const OPERATOR_ID = "seoul-metro";
 const REGION = "수도권";
 export const CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS = Object.freeze([
-  "seoul-metro",
+  "incheon-transit", "korail", "operator-07a9e77a02b6", "seoul-metro",
 ]);
 const LINE_META = Object.freeze({
   "line-472a81add377": { nameKo: "수도권 1호선", nameEn: "Seoul Subway Line 1", color: "#052f93", line: "1" },
