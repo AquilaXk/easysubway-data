@@ -1701,13 +1701,10 @@ jobs:
           if (fs.existsSync(manifestPath)) {
             const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
             const activePack = manifest.activePack;
-            const fallbackPack = (manifest.packs ?? [])[0];
             if (activePack?.id && activePack?.version) {
               packVersion = `${activePack.id}@${activePack.version}`;
-            } else if (fallbackPack?.id && fallbackPack?.version) {
-              packVersion = `${fallbackPack.id}@${fallbackPack.version}`;
             } else {
-              packVersion = "unknown";
+              packVersion = "unselected";
             }
             const updatedAtValues = (manifest.packs ?? [])
               .flatMap((pack) => pack.sourceInventory ?? [])

@@ -19,6 +19,18 @@ test("release workflow는 owned deterministic-release subset만 실행한다", (
   assert.doesNotMatch(step, /node\s+--test|\.test\.mjs/);
 });
 
+test("observability metadata는 active pack만 식별하고 첫 pack으로 대체하지 않는다", () => {
+  const metadata = yml.match(
+    /- name: Data Pack Release \/ Write observability metadata[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(metadata, "observability metadata 스텝을 찾지 못함");
+  assert.match(metadata, /const activePack = manifest\.activePack;/);
+  assert.match(metadata, /packVersion = "unselected";/);
+  assert.match(metadata, /if \(activePack\?\.id && activePack\?\.version\) \{/);
+  assert.doesNotMatch(metadata, /fallbackPack/);
+  assert.doesNotMatch(metadata, /manifest\.packs\?\.\[0\]/);
+});
+
 test("candidate-create는 전용 OCI credential과 descriptor-last writer만 사용한다", () => {
   const credentials = yml.match(/- name: Data Pack Release \/ Restore candidate OCI credentials[\s\S]*?\n\s+- name:/)?.[0];
   const publish = yml.match(/- name: Data Pack Release \/ Publish OCI candidate descriptor[\s\S]*?\n\s+- name:/)?.[0];
