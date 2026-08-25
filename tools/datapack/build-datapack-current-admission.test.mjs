@@ -27,7 +27,10 @@ import {
 } from "./collect-capital-route-topology.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
 import { refreshCurrentCapitalAccessibilityFull } from "./refresh-current-capital-accessibility-full.mjs";
-import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
+import {
+  copySyntheticCurrentPublicRouteMapRepository,
+  nextSyntheticCurrentStaticNetworkNow,
+} from "./test-fixtures/current-public-route-map-successor.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -148,7 +151,7 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   const directory = await mkdtemp(path.join(tmpdir(), "candidate-build-release-identity-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
   await copySyntheticCurrentPublicRouteMapRepository(root, directory, {
-    now: currentNow,
+    now: await nextSyntheticCurrentStaticNetworkNow(root),
     activateStaticNetwork: true,
   });
   await installCurrentIncheonTopologyClone(directory);

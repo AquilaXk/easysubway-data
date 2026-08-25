@@ -123,16 +123,22 @@ test("public static-network v2 producer binds supplied branch order into a fresh
     baseline.currentLayoutAdmission.topologySnapshotSha256);
 });
 
-test("public static-network v2 producer permits opaque historical predecessor audit only", async () => {
+test("public static-network v2 producer rejects historical predecessor audit input", async () => {
   const value = await input();
   value.sourceInventory.sources.find(({ id }) => id === ids[0]).historicalPredecessorAudit = {
     archivedSourceId: "seoulmetro-cyberstation-route-map", archivedParser: "line-data.js", archivedUri: "s3://not-selected/archive",
   };
-  const output = buildPublicStaticNetworkV2Observations(value);
-  assert.deepEqual(output.observations[0].historicalPredecessorAudit,
-    value.sourceInventory.sources.find(({ id }) => id === ids[0]).historicalPredecessorAudit);
-  assert.notEqual(output.observations[0].historicalPredecessorAudit,
-    value.sourceInventory.sources.find(({ id }) => id === ids[0]).historicalPredecessorAudit);
-  value.sourceInventory.sources.find(({ id }) => id === ids[0]).historicalPredecessorAudit.archivedUri = "changed";
-  assert.equal(output.observations[0].historicalPredecessorAudit.archivedUri, "s3://not-selected/archive");
+  assert.throws(() => buildPublicStaticNetworkV2Observations(value), /V2_HISTORICAL_PREDECESSOR/);
+});
+
+test("public static-network v2 producer rejects v1 and five-record migration input", async () => {
+  const cases = [
+    [ids[0], "projectionMigration", { migrationKind: "CROSS_SOURCE_CANONICAL_REPLACEMENT" }],
+    [ids[1], "migration", { migrationKind: "LEGACY_SAMPLE_TO_FULL_CONSUMED_FIELDS" }],
+  ];
+  for (const [sourceId, key, migration] of cases) {
+    const value = await input();
+    value.sourceInventory.sources.find(({ id }) => id === sourceId)[key] = migration;
+    assert.throws(() => buildPublicStaticNetworkV2Observations(value), /V2_HISTORICAL_PREDECESSOR/);
+  }
 });

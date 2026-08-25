@@ -54,10 +54,7 @@ function assertNoForbiddenSelectedPath(value) {
       return;
     }
     if (!current || typeof current !== "object") return;
-    for (const [key, child] of Object.entries(current)) {
-      if (key === "historicalPredecessorAudit") continue;
-      visit(child);
-    }
+    for (const child of Object.values(current)) visit(child);
   };
   visit(value);
 }
@@ -132,7 +129,7 @@ function layoutEvidence(artifact) {
   return { ...Object.fromEntries(keys.map((key) => [key, artifact[key]])), layoutArtifactSha256: sha(canonicalBytes(artifact)) };
 }
 
-function observation({ sourceId, id, capturedAt, rawSha256, records, schemaFingerprint, receipt, layout = null, historicalPredecessorAudit }) {
+function observation({ sourceId, id, capturedAt, rawSha256, records, schemaFingerprint, receipt, layout = null }) {
   const value = {
     schemaVersion: 2,
     artifactKind: "public-static-network-v2-observation",
@@ -149,9 +146,6 @@ function observation({ sourceId, id, capturedAt, rawSha256, records, schemaFinge
       routeMapLayoutEvidence: layout.evidence,
       routeMapLayoutArtifact: layout.artifact,
     }),
-    ...(historicalPredecessorAudit == null
-      ? {}
-      : { historicalPredecessorAudit: structuredClone(historicalPredecessorAudit) }),
     rawReceipt: structuredClone(receipt),
   };
   return value;
@@ -179,6 +173,9 @@ export function buildPublicStaticNetworkV2Observations({
   const molitSource = exactlyOneSource(sourceInventory, MOLIT_SOURCE_ID);
   if (positionSource.requiredForProductionPack !== true || positionSource.productionUseAllowed !== true
     || molitSource.requiredForProductionPack !== true) fail("SOURCE_INVENTORY");
+  if ([positionSource, molitSource].some((source) => [
+    "historicalPredecessorAudit", "projectionMigration", "migration", "rootSupersession",
+  ].some((key) => Object.hasOwn(source, key)))) fail("HISTORICAL_PREDECESSOR");
   assertNoForbiddenSelectedPath(positionSource);
   assertNoForbiddenSelectedPath(molitSource);
   validateTopology({ source: positionSource, admittedTopologyBytes: topologyBytes, admittedTopologyId });
@@ -211,7 +208,6 @@ export function buildPublicStaticNetworkV2Observations({
     schemaFingerprint: SEOUL_POSITION_SCHEMA_FINGERPRINT,
     receipt: positionReceipt,
     layout: { evidence, artifact },
-    historicalPredecessorAudit: positionSource.historicalPredecessorAudit,
   });
   const molitObservation = observation({
     sourceId: MOLIT_SOURCE_ID,
@@ -221,7 +217,6 @@ export function buildPublicStaticNetworkV2Observations({
     records: molit,
     schemaFingerprint: sha(JSON.stringify(MOLIT_FIELDS)),
     receipt: molitReceipt,
-    historicalPredecessorAudit: molitSource.historicalPredecessorAudit,
   });
   const currentLayoutAdmission = {
     schemaVersion: 2,
