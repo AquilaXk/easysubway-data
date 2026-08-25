@@ -7,9 +7,8 @@ import { pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { gunzipSync, gzipSync, constants as zlibConstants } from "node:zlib";
 
-import { addCadence } from "./freshness-policy.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
-import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
+import { deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
@@ -27,6 +26,16 @@ const replacedSourceIds = new Set([
   "kric-station-elevator-movement",
   "kric-wheelchair-lift-movement",
   "seoul-metro-accessibility",
+]);
+const CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS = Object.freeze([
+  "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
+  "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
+  "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
+]);
+const CURRENT_CANDIDATE_SOURCE_IDS = Object.freeze([
+  "seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility",
+  "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info",
+  "seoul-metro-transfer-distance-duration",
 ]);
 
 class StaleAccessibilityEvidenceError extends Error {}
@@ -232,6 +241,11 @@ export function syncCanonicalFixture(canonical, reviewedPack) {
     exit.hasElevatorConnection ? { ...exit, hasElevatorConnection: false } : exit);
   const freshSources = reviewedPack.sourceInventory;
   const freshSourceIds = new Set(freshSources.map(({ id }) => id));
+  const canonicalSourceIds = pack.sourceInventory.map(({ id }) => id);
+  if (JSON.stringify(canonicalSourceIds) === JSON.stringify(CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS)
+    && JSON.stringify(freshSources.map(({ id }) => id)) !== JSON.stringify(CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS)) {
+    throw new Error("reviewed source inventory cannot replace current canonical source authority");
+  }
   pack.sourceInventory = pack.sourceInventory
     .filter(({ id }) => !replacedSourceIds.has(id) && !freshSourceIds.has(id))
     .concat(freshSources);
@@ -539,8 +553,22 @@ export function activeReleaseSnapshots(snapshots, canonical, headsBySource = val
     && headsBySource[snapshot.sourceId] === snapshot.snapshotId);
 }
 
-async function syncReleaseEvidence({ check }) {
-  const releaseRoot = path.resolve(option("--release-root", root));
+export function currentCandidateReleaseSnapshots(snapshots, canonical, headsBySource = validateLineage(snapshots).headsBySource) {
+  const capital = canonical.packs?.find(({ id }) => id === "capital");
+  const canonicalSourceIds = capital?.sourceInventory?.map(({ id }) => id);
+  if (JSON.stringify(canonicalSourceIds) !== JSON.stringify(CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS)) {
+    throw new Error("capital canonical active source identity drift");
+  }
+  return CURRENT_CANDIDATE_SOURCE_IDS.map((sourceId) => {
+    const head = headsBySource[sourceId];
+    const selected = snapshots.filter((snapshot) => snapshot.sourceId === sourceId && snapshot.snapshotId === head);
+    if (selected.length !== 1) throw new Error(`current candidate source head is missing: ${sourceId}`);
+    return selected[0];
+  });
+}
+
+export async function syncReleaseEvidence({ check, releaseRoot: explicitReleaseRoot } = {}) {
+  const releaseRoot = path.resolve(explicitReleaseRoot ?? option("--release-root", root));
   const paths = {
     spec: path.join(releaseRoot, "tools/datapack/release/candidate-build-spec.json"),
     snapshots: path.join(releaseRoot, "tools/datapack/release/source-snapshots.json"),
@@ -563,44 +591,16 @@ async function syncReleaseEvidence({ check }) {
   const freshness = JSON.parse(freshnessBytes);
   const inventoryBySource = new Map(inventory.sources.map((entry) => [entry.id, entry]));
   const canonical = JSON.parse(canonicalBytes);
-  const releaseSnapshots = activeReleaseSnapshots(snapshots, canonical);
+  const releaseSnapshots = currentCandidateReleaseSnapshots(snapshots, canonical);
   spec.sourceSnapshotIds = releaseSnapshots.map(({ snapshotId }) => snapshotId);
-  spec.sourceSnapshots = releaseSnapshots.map((snapshot) => {
-    const source = inventoryBySource.get(snapshot.sourceId);
-    const adminReviewRecordHash = source?.admissionEvidence?.adminReviewRecordHash;
-    if (!/^[0-9a-f]{64}$/.test(adminReviewRecordHash ?? "")) throw new Error(`admin review hash missing: ${snapshot.sourceId}`);
-    const sourceClass = freshness.sourceClasses.find(({ sourceIds }) => sourceIds.includes(snapshot.sourceId));
-    if (!sourceClass) throw new Error(`freshness class missing: ${snapshot.sourceId}`);
-    const basisAt = snapshot[sourceClass.basisField];
-    let freshnessExpiresAt = addCadence(
-      Date.parse(basisAt),
-      sourceClass.reverificationCadence ?? sourceClass.maximumReverificationCadence,
-    );
-    if (sourceClass.providerValidityEndField) {
-      freshnessExpiresAt = Math.min(freshnessExpiresAt, Date.parse(snapshot[sourceClass.providerValidityEndField]));
-    }
-    return {
-      snapshotId: snapshot.snapshotId,
-      sourceId: snapshot.sourceId,
-      rawObjectUri: snapshot.rawObjectUri,
-      rawSha256: snapshot.rawSha256,
-      redactedRequestFingerprint: snapshot.redactedRequestFingerprint,
-      schemaFingerprint: snapshot.schemaFingerprint,
-      licenseStatus: snapshot.licenseStatus,
-      redistributionAllowed: snapshot.redistributionAllowed,
-      adminReviewRecordHash,
-      snapshotStatus: snapshot.snapshotStatus,
-      credentialRedacted: snapshot.credentialRedacted,
-      freshnessExpiresAt: new Date(freshnessExpiresAt).toISOString(),
-      rawRetentionExpiresAt: deriveRawRetentionExpiresAt({
-        policy: governance,
-        sourceId: snapshot.sourceId,
-        retrievedAt: snapshot.retrievedAt,
-      }),
-      governancePolicyVersion: governance.policyVersion,
-      governancePolicySha256: sha256(governanceBytes),
-    };
-  });
+  spec.sourceSnapshots = releaseSnapshots.map((snapshot) => deriveReleaseProjection({
+    snapshot,
+    sourceInventory: inventory,
+    governancePolicy: governance,
+    governancePolicyBytes: governanceBytes,
+    freshnessPolicy: freshness,
+    nowMillis: Date.parse(snapshot.retrievedAt),
+  }));
   spec.sourceSnapshotSetHash = sha256(JSON.stringify(releaseSnapshots));
   spec.sourceInventorySha256 = sha256(JSON.stringify(inventory));
   spec.itxTopologyEvidenceSha256 = sha256(await readFile(path.resolve(releaseRoot, spec.itxTopologyEvidencePath)));
@@ -612,12 +612,13 @@ async function syncReleaseEvidence({ check }) {
   hashes.truthfulnessRule = "모든 값은 tracked canonical fixture·inventory·official snapshot에서 결정적으로 재산출한다. 2026-07-28 신규 KRIC standard·서울 snapshot을 소비 claim에 결속하고 route 가용성은 추론하지 않는다.";
   hashes.sourceSnapshotSetHash.value = spec.sourceSnapshotSetHash;
   hashes.sourceSnapshotSetHash.contract = `source별 head ${releaseSnapshots.length}종의 byte-ordered JSON hash와 build spec·release request가 일치해야 한다.`;
-  hashes.sourceSnapshotSetHash.reproductionCommand = "node -e \"import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto'),s=require('./tools/datapack/release/source-snapshots.json'),p=require('./tools/datapack/release/capital-production-canonical-pack.json'),a=new Set(p.packs.find(x=>x.id==='capital').sourceInventory.map(x=>x.id)),h=validateLineage(s).headsBySource,r=s.filter(n=>a.has(n.sourceId)&&h[n.sourceId]===n.snapshotId);console.log(c.createHash('sha256').update(JSON.stringify(r)).digest('hex'))})\"";
+  const candidateSnapshotSelection = "const s=require('./tools/datapack/release/source-snapshots.json'),b=require('./tools/datapack/release/candidate-build-spec.json'),i=b.sourceSnapshotIds;if(!Array.isArray(i)||new Set(i).size!==i.length)throw new Error('candidate snapshot IDs are invalid');const h=validateLineage(s).headsBySource,r=i.map(id=>{const n=s.filter(x=>x.snapshotId===id);if(n.length!==1||h[n[0].sourceId]!==id)throw new Error('candidate source snapshot mismatch: '+id);return n[0]});if(new Set(r.map(x=>x.sourceId)).size!==r.length)throw new Error('candidate source snapshots are not unique');if(!Array.isArray(b.sourceSnapshots)||b.sourceSnapshots.length!==r.length||b.sourceSnapshots.some((x,n)=>x.sourceId!==r[n].sourceId||x.snapshotId!==r[n].snapshotId))throw new Error('candidate source projection mismatch');";
+  hashes.sourceSnapshotSetHash.reproductionCommand = `node -e "import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto');${candidateSnapshotSelection}console.log(c.createHash('sha256').update(JSON.stringify(r)).digest('hex'))})"`;
   hashes.sourceInventorySha256.value = spec.sourceInventorySha256;
   hashes.fixturePath.sha256 = sha256(canonicalBytes);
   hashes.sourceSnapshots.note = "historical source snapshot lineage는 유지하고 canonical capital sourceInventory의 active source만 release snapshot으로 소비한다. retired KRIC movement 2종은 소비하지 않는다.";
   hashes.sourceSnapshots.order = `release snapshot 순서: ${releaseSnapshots.map(({ sourceId }) => sourceId).join(" → ")}`;
-  hashes.sourceSnapshots.committedVerificationCommand = "node -e \"import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto'),s=require('./tools/datapack/release/source-snapshots.json'),p=require('./tools/datapack/release/capital-production-canonical-pack.json'),a=new Set(p.packs.find(x=>x.id==='capital').sourceInventory.map(x=>x.id)),h=validateLineage(s).headsBySource,e=require('./tools/datapack/release/hash-evidence.json');for(const n of s.filter(x=>a.has(x.sourceId)&&h[x.sourceId]===x.snapshotId)){const q=e.perSourceEvidence.find(x=>x.snapshotId===n.snapshotId);if(!q||c.createHash('sha256').update(JSON.stringify([n])).digest('hex')!==q.perSourceSnapshotSetHash)throw new Error('source snapshot evidence mismatch: '+n.sourceId)}})\"";
+  hashes.sourceSnapshots.committedVerificationCommand = `node -e "import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto');${candidateSnapshotSelection}const e=require('./tools/datapack/release/hash-evidence.json'),v=e.perSourceEvidence;if(!Array.isArray(v)||v.length!==r.length)throw new Error('source snapshot evidence count mismatch');for(const [i,n] of r.entries()){const q=v[i],h=c.createHash('sha256').update(JSON.stringify([n])).digest('hex');if(!q||q.sourceId!==n.sourceId||q.snapshotId!==n.snapshotId)throw new Error('source snapshot evidence order or identity mismatch: '+n.sourceId);if(q.perSourceSnapshotSetHash!==h)throw new Error('source snapshot evidence hash mismatch: '+n.sourceId)}})"`;
   hashes.perSourceEvidence = releaseSnapshots.map((snapshot) => ({
     sourceId: snapshot.sourceId,
     snapshotId: snapshot.snapshotId,
@@ -699,6 +700,10 @@ async function main() {
     return;
   }
   const check = process.argv.includes("--check");
+  if (modes[0] === "--candidate-fixtures-only") {
+    await syncReleaseEvidence({ check });
+    return;
+  }
   const fixturePath = path.resolve(root, option("--fixture", "tools/datapack/release/capital-production-reviewed-pack.json"));
   const canonicalPath = path.resolve(root, option("--canonical-fixture", "tools/datapack/release/capital-production-canonical-pack.json"));
   const pack = JSON.parse(await readFile(fixturePath, "utf8")).packs?.find(({ id }) => id === "capital");
@@ -709,7 +714,6 @@ async function main() {
   if (check) assertCanonicalFixture(canonical, pack);
   else await writeFile(canonicalPath, `${JSON.stringify(syncCanonicalFixture(canonical, pack))}\n`);
   const releaseEvidence = await syncReleaseEvidence({ check });
-  if (modes[0] === "--candidate-fixtures-only") return;
   const packPath = path.resolve(root, option("--pack", "apps/mobile/assets/datapacks/capital.sqlite.gz"));
   const indexPath = path.resolve(root, option("--index", "apps/mobile/assets/datapacks/index.json"));
   const directory = await mkdtemp(path.join(os.tmpdir(), `accessibility-pack-${randomUUID()}-`));

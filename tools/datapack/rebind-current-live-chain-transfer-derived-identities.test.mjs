@@ -1,0 +1,132 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+
+import {
+  CURRENT_LIVE_CHAIN_TRANSFER_OUTPUTS,
+  assertCurrentLiveChainTransferIdentity,
+  commitCurrentLiveChainTransferDerivedIdentityOutputs,
+  deriveCurrentOnlyProjection,
+} from "./rebind-current-live-chain-transfer-derived-identities.mjs";
+
+const ROOT = path.resolve(import.meta.dirname, "../..");
+
+test("current live-chain TRANSFER producer declares exactly the eight bundle outputs", () => {
+  assert.deepEqual(CURRENT_LIVE_CHAIN_TRANSFER_OUTPUTS, [
+    "tools/datapack/release/current-transfer-topology-metrics.json",
+    "tools/datapack/release/current-capital-transfer-topology-applicability.json",
+    "tools/datapack/sources/seoul-metro-transfer-distance-duration-20260815T094038817Z.json",
+    "tools/datapack/source-inventory.json",
+    "tools/datapack/release/source-snapshots.json",
+    "tools/datapack/release/candidate-build-spec.json",
+    "tools/datapack/release/release-request.json",
+    "tools/datapack/release/hash-evidence.json",
+  ]);
+});
+
+test("current live-chain TRANSFER producer has no predecessor or station/transition dependency", async () => {
+  const source = await readFile(path.join(ROOT, "tools/datapack/rebind-current-live-chain-transfer-derived-identities.mjs"), "utf8");
+  for (const forbidden of [
+    "current-station-line-accessibility",
+    "current-capital-accessibility-transition",
+    "current-capital-accessibility-full",
+    "previous/", "stale/", "legacy/", "fallback",
+  ]) assert.equal(source.includes(forbidden), false, `forbidden dependency: ${forbidden}`);
+});
+
+test("current live-chain TRANSFER identity rejects a same-ID raw, URI, content, or schema drift", async () => {
+  const [candidate, inventory, snapshots, descriptor] = await Promise.all([
+    readFile(path.join(ROOT, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(ROOT, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
+    readFile(path.join(ROOT, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+    readFile(path.join(ROOT, "tools/datapack/sources/seoul-metro-transfer-distance-duration-20260815T094038817Z.json")),
+  ]);
+  const descriptorValue = JSON.parse(descriptor);
+  const row = snapshots.find(({ sourceId }) => sourceId === "seoul-metro-transfer-distance-duration");
+  const receipt = structuredClone(row.rawReceipt);
+  assert.doesNotThrow(() => assertCurrentLiveChainTransferIdentity(candidate, inventory, snapshots, descriptorValue, descriptor, receipt));
+  for (const mutate of [
+    () => { structuredClone(candidate).sourceSnapshots.find(({ sourceId }) => sourceId === "seoul-metro-transfer-distance-duration").rawObjectUri = "oci://changed/object"; },
+    () => { structuredClone(inventory).sources.find(({ id }) => id === "seoul-metro-transfer-distance-duration").transferAdmissionEvidence.contentSha256 = "0".repeat(64); },
+    () => { structuredClone(inventory).sources.find(({ id }) => id === "seoul-metro-transfer-distance-duration").transferAdmissionEvidence.schemaFingerprint = "1".repeat(64); },
+    () => { structuredClone(receipt).rawObjectUri = "oci://changed/object"; },
+  ]) {
+    const nextCandidate = structuredClone(candidate); const nextInventory = structuredClone(inventory); const nextReceipt = structuredClone(receipt);
+    const target = { candidate: nextCandidate, inventory: nextInventory, receipt: nextReceipt };
+    const text = mutate.toString();
+    if (text.includes("candidate")) target.candidate.sourceSnapshots.find(({ sourceId }) => sourceId === "seoul-metro-transfer-distance-duration").rawObjectUri = "oci://changed/object";
+    else if (text.includes("contentSha256")) target.inventory.sources.find(({ id }) => id === "seoul-metro-transfer-distance-duration").transferAdmissionEvidence.contentSha256 = "0".repeat(64);
+    else if (text.includes("schemaFingerprint")) target.inventory.sources.find(({ id }) => id === "seoul-metro-transfer-distance-duration").transferAdmissionEvidence.schemaFingerprint = "1".repeat(64);
+    else target.receipt.rawObjectUri = "oci://changed/object";
+    assert.throws(() => assertCurrentLiveChainTransferIdentity(target.candidate, target.inventory, snapshots, descriptorValue, descriptor, target.receipt), /identity is not exact/);
+  }
+});
+
+test("current-only projections preserve sealed governance without a historical binding", async () => {
+  const [candidate, inventory, snapshots, governanceBytes, freshness] = await Promise.all([
+    readFile(path.join(ROOT, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(ROOT, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
+    readFile(path.join(ROOT, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+    readFile(path.join(ROOT, "tools/datapack/source-governance-policy.json")),
+    readFile(path.join(ROOT, "release/product-gates/datapack-freshness-sla.json"), "utf8").then(JSON.parse),
+  ]);
+  const governance = JSON.parse(governanceBytes);
+  const governancePolicySha256 = createHash("sha256").update(governanceBytes).digest("hex");
+  const sealedSnapshots = snapshots.map((snapshot) => ({
+    ...snapshot,
+    governancePolicyVersion: governance.policyVersion,
+    governancePolicySha256,
+  }));
+  const sealedProjections = candidate.sourceSnapshots.map((projection) => ({
+    ...projection,
+    governancePolicyVersion: governance.policyVersion,
+    governancePolicySha256,
+  }));
+  for (const expected of sealedProjections) {
+    const snapshot = sealedSnapshots.find(({ snapshotId }) => snapshotId === expected.snapshotId);
+    assert.deepEqual(deriveCurrentOnlyProjection({ snapshot, inventory, governance, governanceBytes, freshness }), expected);
+  }
+  const noBinding = structuredClone(sealedSnapshots.find(({ sourceId }) => sourceId === "seoul-metro-transfer-distance-duration"));
+  delete noBinding.governancePolicyVersion; delete noBinding.governancePolicySha256;
+  assert.throws(() => deriveCurrentOnlyProjection({ snapshot: noBinding, inventory, governance, governanceBytes, freshness }), /unsealed governance binding/);
+});
+
+test("current live-chain TRANSFER commit rolls every output back before reporting failure", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "current-live-chain-transfer-test-"));
+  try {
+    const outputs = await Promise.all(CURRENT_LIVE_CHAIN_TRANSFER_OUTPUTS.map(async (relative, index) => {
+      const file = path.join(root, relative);
+      await mkdir(path.dirname(file), { recursive: true });
+      const prestate = Buffer.from(`before-${index}\n`);
+      await writeFile(file, prestate);
+      return { relative, prestate, bytes: Buffer.from(`after-${index}\n`) };
+    }));
+    await assert.rejects(
+      commitCurrentLiveChainTransferDerivedIdentityOutputs({ repositoryRoot: root, outputs, failAfter: 3 }),
+      /injected TRANSFER commit failure/,
+    );
+    await Promise.all(outputs.map(async ({ relative, prestate }) => {
+      assert.deepEqual(await readFile(path.join(root, relative)), prestate);
+    }));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("current live-chain TRANSFER retains recovery journal and lock when rollback fails", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "current-live-chain-transfer-recovery-test-"));
+  try {
+    const outputs = await Promise.all(CURRENT_LIVE_CHAIN_TRANSFER_OUTPUTS.map(async (relative, index) => {
+      const file = path.join(root, relative); await mkdir(path.dirname(file), { recursive: true });
+      const prestate = Buffer.from(`before-${index}\n`); await writeFile(file, prestate);
+      return { relative, prestate, bytes: Buffer.from(`after-${index}\n`) };
+    }));
+    await assert.rejects(
+      commitCurrentLiveChainTransferDerivedIdentityOutputs({ repositoryRoot: root, outputs, failAfter: 3, failRollbackAt: 2 }),
+      /injected TRANSFER rollback failure/,
+    );
+    assert.equal((await stat(path.join(root, "tools/datapack/.current-live-chain-transfer-derived-identities.json"))).isFile(), true);
+    assert.equal((await stat(path.join(root, "tools/datapack/.current-live-chain-transfer-derived-identities.lock"))).isDirectory(), true);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

@@ -18,6 +18,7 @@ import { canonicalExitPathAdmissionJson } from "./build-exit-path-admission.mjs"
 import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
 import { buildCurrentCapitalFacilitySourceAdmission } from "./build-current-capital-facility-source-admission.mjs";
 import { collectKricAccessibilitySnapshots } from "./collect-kric-accessibility-snapshots.mjs";
+import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
@@ -296,7 +297,7 @@ test("CLI는 explicit pair와 immutable collection bundle mode를 섞지 않는�
     "--collection-bundle", path.join(root, "bundle.json"),
     "--expected-bundle-sha256", "a".repeat(64),
     "--expected-repository-sha", "a".repeat(40),
-    "--expected-workflow-run-id", "123",
+    "--expected-operation-id", "current-capital-560",
     ...common,
   ], { log: () => {} }), /arguments mismatch/);
   await assert.rejects(() => main([
@@ -339,18 +340,18 @@ test("CLI bundle mode는 explicit pair와 exact output을 만들고 collision을
   ], { log: () => {} });
   await assert.rejects(() => main([
     "--collection-bundle", paths.bundle, "--expected-repository-sha", "a".repeat(40),
-    "--expected-workflow-run-id", "123", ...common, "--output-directory", paths.missingDigestOutput,
+    "--expected-operation-id", "current-capital-560", ...common, "--output-directory", paths.missingDigestOutput,
   ], { log: () => {} }), /arguments mismatch/);
   await assert.rejects(() => stat(paths.missingDigestOutput), /ENOENT/);
   await assert.rejects(() => main([
     "--collection-bundle", paths.bundle, "--expected-bundle-sha256", "b".repeat(64),
-    "--expected-repository-sha", "a".repeat(40), "--expected-workflow-run-id", "123",
+    "--expected-repository-sha", "a".repeat(40), "--expected-operation-id", "current-capital-560",
     ...common, "--output-directory", paths.wrongDigestOutput,
   ], { log: () => {} }), /expected digest mismatch/);
   await assert.rejects(() => stat(paths.wrongDigestOutput), /ENOENT/);
   await main([
     "--collection-bundle", paths.bundle, "--expected-bundle-sha256", sha256(fixture.bundle.bundleBytes), "--expected-repository-sha", "a".repeat(40),
-    "--expected-workflow-run-id", "123", ...common, "--output-directory", paths.bundleOutput,
+    "--expected-operation-id", "current-capital-560", ...common, "--output-directory", paths.bundleOutput,
   ], { log: () => {} });
   for (const file of ["exit-path-normalized-source-snapshot.json", "exit-path-source-admission.json"]) {
     const [explicit, bundled, explicitStat, bundleStat] = await Promise.all([
@@ -364,7 +365,7 @@ test("CLI bundle mode는 explicit pair와 exact output을 만들고 collision을
   await writeFile(paths.collisionOutput, "preserve");
   await assert.rejects(() => main([
     "--collection-bundle", paths.bundle, "--expected-bundle-sha256", sha256(fixture.bundle.bundleBytes), "--expected-repository-sha", "a".repeat(40),
-    "--expected-workflow-run-id", "123", ...common, "--output-directory", paths.collisionOutput,
+    "--expected-operation-id", "current-capital-560", ...common, "--output-directory", paths.collisionOutput,
   ], { log: () => {} }), /output directory must be absent/);
   assert.equal(await readFile(paths.collisionOutput, "utf8"), "preserve");
 });
@@ -385,7 +386,7 @@ async function fullBundleFixture() {
   const snapshotPayload = { schemaVersion: 1, artifactKind: "kric-exit-path-provider-snapshot", sourceId: SOURCE_ID, snapshotId: `kric-station-movement-standard-${CAPTURED_AT.replaceAll(/[-:.]/gu, "")}`, capturedAt: CAPTURED_AT, freshUntil: FRESH_UNTIL, credentialRedacted: true, collectionPlanDigest: plan.collectionPlanDigest, queryPlanSha256: plan.queryPlanSha256, coverage: { requestPlanComplete: true, queryIds: plan.queryPlan.map(({ queryId }) => queryId) }, queryPlan: plan.queryPlan, results };
   const snapshot = { ...snapshotPayload, snapshotDigest: sha256(canonicalJson(snapshotPayload)) };
   const planBytes = Buffer.from(canonicalJson(plan)); const snapshotBytes = Buffer.from(canonicalJson(snapshot));
-  const receipt = buildCurrentKricExitCollectionReceipt({ collectionPlanBytes: planBytes, providerSnapshotBytes: snapshotBytes, repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), workflowRunId: 123 });
+  const receipt = buildCurrentKricExitCollectionReceipt({ collectionPlanBytes: planBytes, providerSnapshotBytes: snapshotBytes, repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-560" });
   const bundle = buildCurrentKricExitCollectionBundle({ collectionPlanBytes: planBytes, providerSnapshotBytes: snapshotBytes, receipt });
   return { planBytes, snapshotBytes, bundleBytes: Buffer.from(canonicalJson(bundle)) };
 }
@@ -440,10 +441,29 @@ async function fullCapitalFixture() {
   const previous = productionSnapshots.find((entry) => entry.sourceId === snapshot.sourceId && entry.snapshotId === previousId);
   const ledger = { schemaVersion: 1, artifactKind: "official-source-snapshot", sourceId: snapshot.sourceId, snapshotId: snapshot.snapshotId, provider: source.provider, rawSha256, rawObjectUri: "oci://fixture/easysubway-datapacks/raw.json", rawReceipt: { sourceId: snapshot.sourceId, snapshotId: snapshot.snapshotId, snapshotRawSha256: snapshot.rawSha256, snapshotFileSha256: sha256(snapshotBytes), rawObjectSha256: rawSha256, capturedAt: snapshot.capturedAt, storedAt: snapshot.observedAt, byteSize: 1 }, contentSha256: snapshot.contentSha256, redactedRequestFingerprint: snapshot.redactedRequestFingerprint, schemaFingerprint: snapshot.schemaFingerprint, retrievedAt: snapshot.capturedAt, sourceUpdatedAt: snapshot.observedAt, rowCount: snapshot.rowCount, coverageCount: 213, freshnessExpiresAt: snapshot.freshUntil, rawRetentionExpiresAt: new Date(CURRENT_SOURCE_HEAD_AT + 90 * 24 * 60 * 60 * 1_000).toISOString(), governancePolicyVersion: "fixture", governancePolicySha256: "b".repeat(64), adminReviewRecordHash: admission.adminReviewRecordHash, previousSnapshotId: previous.snapshotId, diffSummary: {}, snapshotStatus: "LOCKED", fetchStatus: "SUCCESS", schemaStatus: "PASS", licenseStatus: "PASS", credentialRedacted: true, redistributionAllowed: true };
   ledger.diffSummary = buildSnapshotDiff(previous, ledger);
-  const governancePolicy = JSON.parse(governancePolicyBytes); const freshnessPolicy = JSON.parse(freshnessPolicyBytes); const sourceSnapshots = [...productionSnapshots, ledger];
+  const governancePolicy = JSON.parse(governancePolicyBytes); const freshnessPolicy = JSON.parse(freshnessPolicyBytes);
   ledger.governancePolicyVersion = governancePolicy.policyVersion; ledger.governancePolicySha256 = sha256(governancePolicyBytes);
-  const selected = productionSpec.sourceSnapshotIds.map((id) => id === previous.snapshotId ? ledger : productionSnapshots.find((entry) => entry.snapshotId === id));
+  const resealCurrentSnapshot = (entry) => {
+    const sourceClass = freshnessPolicy.sourceClasses.find(({ sourceIds }) => sourceIds.includes(entry.sourceId));
+    if (!sourceClass) throw new Error(`fixture freshness class missing: ${entry.sourceId}`);
+    return {
+      ...entry,
+      freshnessExpiresAt: deriveFreshnessExpiresAt({
+        policy: freshnessPolicy,
+        sourceClassId: sourceClass.id,
+        basisAt: entry[sourceClass.basisField],
+        providerValidUntil: sourceClass.providerValidityEndField ? entry[sourceClass.providerValidityEndField] : undefined,
+        evaluationAt: successorObservedAt,
+      }),
+      governancePolicyVersion: governancePolicy.policyVersion,
+      governancePolicySha256: sha256(governancePolicyBytes),
+    };
+  };
+  const selected = productionSpec.sourceSnapshotIds.map((id) => id === previous.snapshotId
+    ? ledger
+    : resealCurrentSnapshot(productionSnapshots.find((entry) => entry.snapshotId === id)));
   const selectedIds = new Set(selected.map(({ snapshotId }) => snapshotId));
+  const sourceSnapshots = [...productionSnapshots.filter(({ snapshotId }) => !selectedIds.has(snapshotId)), ...selected];
   const selectedInLedgerOrder = sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
   const projection = (entry) => deriveReleaseProjection({ snapshot: entry, sourceInventory: inventory, governancePolicy, governancePolicyBytes, freshnessPolicy, nowMillis: Date.parse(successorObservedAt) });
   const candidateBuildSpec = { ...productionSpec, candidateId: "fixture", sourceSnapshotIds: selected.map(({ snapshotId }) => snapshotId), sourceSnapshots: selected.map(projection), sourceSnapshotSetHash: sha256(JSON.stringify(selectedInLedgerOrder)), sourceInventorySha256: sha256(Buffer.from(JSON.stringify(inventory))), networkEdgeEvidence: { sourceInventory: { path: "tools/datapack/source-inventory.json", sha256: sha256(Buffer.from(JSON.stringify(inventory))) } } };

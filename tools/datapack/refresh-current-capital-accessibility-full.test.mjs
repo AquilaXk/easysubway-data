@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { buildCurrentCapitalAccessibilityRefreshOutputs, commitCurrentCapitalAccessibilityRefresh, refreshCurrentCapitalAccessibilityFull } from "./refresh-current-capital-accessibility-full.mjs";
+import { buildCurrentExitAdmissionOciReceipt, canonicalCurrentExitAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
 import { readStableRegularFile } from "./rebind-current-candidate-source-snapshots.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 import { activateSyntheticCurrentStaticNetworkSuccessors } from "./test-fixtures/current-public-route-map-successor.mjs";
@@ -263,6 +264,7 @@ async function stagedRefreshRepository(t) {
     const target = path.join(root, relative); await mkdir(path.dirname(target), { recursive: true }); await cp(path.join(ROOT, relative), target);
   }
   await cp(path.join(ROOT, "tools/datapack/sources"), path.join(root, "tools/datapack/sources"), { recursive: true });
+  await writeStagedExitOciReceipt(root);
   const currentCandidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
   await copyCurrentCandidateEvidenceInputs(root, currentCandidate);
   const { inWindow: now, candidateId, sourceSetSha256 } = await stageCurrentTopologyFixture(root);
@@ -275,6 +277,31 @@ async function stagedRefreshRepository(t) {
     rebindStagedExitCandidateId(root, finalEvidence.candidateId, finalEvidence.sourceSetSha256),
   ]);
   return root;
+}
+
+async function writeStagedExitOciReceipt(root) {
+  const normalizedPath = "tools/datapack/release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json";
+  const admissionPath = "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json";
+  const receiptPath = "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json";
+  const [normalizedBytes, admissionBytes] = await Promise.all([
+    readFile(path.join(root, normalizedPath)),
+    readFile(path.join(root, admissionPath)),
+  ]);
+  const providerCollectionBundleBytes = Buffer.from("synthetic-current-exit-provider");
+  const providerObjectSha256 = sha(providerCollectionBundleBytes);
+  const receipt = buildCurrentExitAdmissionOciReceipt({
+    repository: "AquilaXk/easysubway-data",
+    mainSha: "a".repeat(40),
+    operationId: "synthetic-current-refresh",
+    providerCapturedAt: "2026-08-01T00:00:00.000Z",
+    providerCollectionBundleBytes,
+    providerObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-station-movement-standard/20260801/${providerObjectSha256}.json`,
+    providerObjectSha256,
+    providerObjectByteSize: providerCollectionBundleBytes.length,
+    normalizedBytes,
+    admissionBytes,
+  });
+  await writeFile(path.join(root, receiptPath), canonicalCurrentExitAdmissionOciReceiptJson(receipt));
 }
 
 // Staged repository 전용 bootstrap이다. 현재 capital admission과 같은 시계의
@@ -547,7 +574,7 @@ async function rebindStagedFacilityCandidateId(root, candidateId, sourceSetSha25
 
 async function rebindStagedExitCandidateId(root, candidateId, sourceSetSha256) {
   const admissionPath = "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json";
-  const receiptPath = "tools/datapack/release/current-exit-admission-v2/exit-path-admission-artifact-receipt.json";
+  const receiptPath = "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json";
   const [admission, receipt] = await Promise.all([
     readFile(path.join(root, admissionPath)).then(JSON.parse),
     readFile(path.join(root, receiptPath)).then(JSON.parse),

@@ -10,6 +10,10 @@ import {
 } from "../collect-capital-route-topology.mjs";
 import { currentIncheonStationCodeDerivations } from "../collect-incheon-station-info.mjs";
 import { projectCapitalTopologyIntoCanonicalFixture } from "../build-datapack.mjs";
+import {
+  buildCurrentExitAdmissionOciReceipt,
+  canonicalCurrentExitAdmissionOciReceiptJson,
+} from "../build-current-exit-admission-oci-receipt.mjs";
 import { deriveFreshnessExpiresAt } from "../freshness-policy.mjs";
 import {
   CURRENT_SEOUL_PUBLIC_ROUTE_MAP_COVERAGE,
@@ -27,7 +31,7 @@ const MOLIT_SOURCE_ID = "molit-urban-rail-full-route";
 const CURRENT_CAPITAL_SOURCE_IDS = Object.freeze([
   "molit-urban-rail-full-route", "seoulmetro-station-line-info", PUBLIC_SOURCE_ID,
   "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
-  "seoul-metro-official-od-fares",
+  "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
 ]);
 const SHA_KEYS = Object.freeze([
   "layoutAlgorithmVersion", "topologySnapshotId", "topologySnapshotSha256",
@@ -194,7 +198,6 @@ const SUCCESSOR_FIXTURE_PATHS = Object.freeze([
   "tools/datapack/release/current-capital-facility-source-admission.json",
   "tools/datapack/release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json",
   "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json",
-  "tools/datapack/release/current-exit-admission-v2/exit-path-admission-artifact-receipt.json",
   "tools/datapack/release/current-transfer-topology-metrics.json",
   "tools/datapack/release/current-capital-transfer-topology-applicability.json",
   "release/product-gates/route-edge-evaluation-policy.json",
@@ -254,6 +257,7 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
     ]);
     await cp(sourceFile, destination, { force: true });
   }
+  await writeSyntheticCurrentExitOciReceipt(target);
   if (!activatePublicRouteMap) return null;
   return activateSyntheticCurrentPublicRouteMapSuccessor(target, { now });
 }
@@ -280,7 +284,7 @@ async function bindSyntheticDependentAdmissionsToCurrentTransition(root) {
     snapshots: "tools/datapack/release/source-snapshots.json",
     facility: "tools/datapack/release/current-capital-facility-source-admission.json",
     exit: "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json",
-    exitReceipt: "tools/datapack/release/current-exit-admission-v2/exit-path-admission-artifact-receipt.json",
+    exitReceipt: "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json",
   };
   const [candidate, snapshots, facility, exit, receipt] = await Promise.all([
     readJson(root, paths.candidate), readJson(root, paths.snapshots), readJson(root, paths.facility),
@@ -334,6 +338,33 @@ async function bindSyntheticDependentAdmissionsToCurrentTransition(root) {
     writeFile(path.join(root, paths.exit), exitBytes),
     writeFile(path.join(root, paths.exitReceipt), Buffer.from(canonical(receipt))),
   ]);
+}
+
+async function writeSyntheticCurrentExitOciReceipt(root) {
+  const normalizedPath = "tools/datapack/release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json";
+  const admissionPath = "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json";
+  const receiptPath = "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json";
+  const [normalizedBytes, admissionBytes] = await Promise.all([
+    readFile(path.join(root, normalizedPath)),
+    readFile(path.join(root, admissionPath)),
+  ]);
+  const providerCollectionBundleBytes = Buffer.from("synthetic-current-exit-provider");
+  const providerObjectSha256 = sha256(providerCollectionBundleBytes);
+  const receipt = buildCurrentExitAdmissionOciReceipt({
+    repository: "AquilaXk/easysubway-data",
+    mainSha: "a".repeat(40),
+    operationId: "synthetic-current-public-route-map",
+    providerCapturedAt: "2026-08-01T00:00:00.000Z",
+    providerCollectionBundleBytes,
+    providerObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-station-movement-standard/20260801/${providerObjectSha256}.json`,
+    providerObjectSha256,
+    providerObjectByteSize: providerCollectionBundleBytes.length,
+    normalizedBytes,
+    admissionBytes,
+  });
+  const target = path.join(root, receiptPath);
+  await mkdir(path.dirname(target), { recursive: true });
+  await writeFile(target, Buffer.from(canonicalCurrentExitAdmissionOciReceiptJson(receipt)));
 }
 
 export async function nextSyntheticCurrentStaticNetworkNow(root) {
@@ -594,7 +625,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   };
   const currentSourceIds = new Set(CURRENT_CAPITAL_SOURCE_IDS);
   pack.packs[0].sourceInventory = pack.packs[0].sourceInventory.filter(({ id }) => currentSourceIds.has(id));
-  pack.packs[0].routeMapPositions = pack.packs[0].routeMapPositions.filter(({ sourceId }) => sourceId === PUBLIC_SOURCE_ID);
+  pack.packs[0].routeMapPositions = [];
 
   const materializedPack = materializeSeoulRouteMapPositions({
     baseFixture: pack,
@@ -826,6 +857,8 @@ export async function activateSyntheticCurrentStaticNetworkSuccessors(root, { no
     providerRecordHashes: [...molitProjection.providerRecordHashes],
     freshnessExpiresAt,
     rawRetentionExpiresAt,
+    governancePolicyVersion: governancePolicy.policyVersion,
+    governancePolicySha256: sha256(governanceBytes),
     rawReceipt: {
       schemaVersion: 1,
       artifactKind: "static-network-source-raw-object-receipt",

@@ -13,7 +13,7 @@ export async function consumeCurrentKricExitCollectionBundle({
   collectionBundle,
   expectedBundleSha256,
   expectedRepositorySha,
-  expectedWorkflowRunId,
+  expectedOperationId,
 }) {
   const snapshot = await readRegularSnapshot(collectionBundle, "collection bundle");
   if (typeof expectedBundleSha256 !== "string" || !/^[a-f0-9]{64}$/.test(expectedBundleSha256)) {
@@ -30,8 +30,8 @@ export async function consumeCurrentKricExitCollectionBundle({
   if (typeof expectedRepositorySha !== "string" || !/^[a-f0-9]{40}$/.test(expectedRepositorySha)) {
     throw new Error("expected repository SHA mismatch");
   }
-  if (!Number.isSafeInteger(expectedWorkflowRunId) || expectedWorkflowRunId <= 0) {
-    throw new Error("expected workflow run ID mismatch");
+  if (typeof expectedOperationId !== "string" || !/^[a-z0-9][a-z0-9-]{7,127}$/u.test(expectedOperationId)) {
+    throw new Error("expected operation identity mismatch");
   }
   const collectionPlanBytes = Buffer.from(bundle.collectionPlanJson, "utf8");
   const providerSnapshotBytes = Buffer.from(bundle.providerSnapshotJson, "utf8");
@@ -41,7 +41,7 @@ export async function consumeCurrentKricExitCollectionBundle({
     throw new Error("collection receipt must be canonical JSON");
   }
   if (receipt.repository !== REPOSITORY || receipt.repositorySha !== expectedRepositorySha
-    || receipt.workflowRunId !== expectedWorkflowRunId) {
+    || receipt.operationId !== expectedOperationId) {
     throw new Error("collection receipt expected identity mismatch");
   }
   const rebuiltReceipt = buildCurrentKricExitCollectionReceipt({
@@ -49,7 +49,7 @@ export async function consumeCurrentKricExitCollectionBundle({
     providerSnapshotBytes,
     repository: receipt.repository,
     repositorySha: receipt.repositorySha,
-    workflowRunId: receipt.workflowRunId,
+    operationId: receipt.operationId,
   });
   if (canonicalCurrentKricExitCollectionReceiptJson(rebuiltReceipt)
     !== canonicalCurrentKricExitCollectionReceiptJson(receipt)) {

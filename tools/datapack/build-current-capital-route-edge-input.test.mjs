@@ -145,7 +145,7 @@ test("route CLI만 temporary fixed target에 exact two-file handoff를 원자 pu
     [input.facilityAdmission.sourceIdentity.snapshotPath]: input.facilitySnapshotBytes,
     "tools/datapack/release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json": input.exitNormalized,
     "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json": input.exitAdmission,
-    "tools/datapack/release/current-exit-admission-v2/exit-path-admission-artifact-receipt.json": input.exitReceipt,
+    "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json": input.exitReceipt,
     "tools/datapack/release/current-transfer-topology-metrics.json": input.transferMetrics,
     "tools/datapack/release/current-capital-transfer-topology-applicability.json": input.transferApplicability,
     "tools/datapack/source-inventory.json": input.sourceInventory,

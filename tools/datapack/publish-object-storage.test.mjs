@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, writeFile, rm, symlink } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, rm, symlink, access } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -8,11 +8,132 @@ import { promisify } from "node:util";
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { publishImmutableObjectPlan } from "./publish-object-storage.mjs";
+import {
+  fetchCurrentCapitalLiveChainComposite,
+  preauthenticatedObjectStorageClient,
+  publishCurrentCapitalLiveChainOciPlan,
+  publishImmutableObjectPlan,
+  requireCurrentCapitalLiveChainOciParBaseUrl,
+} from "./publish-object-storage.mjs";
+import {
+  buildCurrentCapitalLiveChainOciPlan,
+  canonicalCurrentCapitalLiveChainOciPlanJson,
+} from "./build-current-capital-live-chain-oci-plan.mjs";
+import { buildCanonicalCurrentKricExitCollectionBundle, buildCanonicalCurrentLiveChainComposite, canonicalCurrentKricExitCollectionReceiptJson } from "./test-fixtures/current-live-chain-artifacts.mjs";
 
 const execFileAsync = promisify(execFile);
 const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+const OCI_PAR = "https://objectstorage.ap-seoul-1.oraclecloud.com/p/redacted-token/n/axvym6vk8g7i/b/easysubway-datapacks/o/";
+
+async function liveChainFixture(t) {
+  const root = await mkdtemp(path.join(tmpdir(), "current-live-chain-oci-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const providerArtifact = await buildCanonicalCurrentKricExitCollectionBundle();
+  const compositeArtifact = await buildCanonicalCurrentLiveChainComposite({ root, providerReceiptBytes: Buffer.from(canonicalCurrentKricExitCollectionReceiptJson(providerArtifact.receipt)) });
+  const provider = providerArtifact.bytes;
+  const composite = compositeArtifact.bytes;
+  await writeFile(path.join(root, "current-kric-exit-collection-bundle.json"), provider);
+  await writeFile(path.join(root, "current-capital-live-chain-bundle.json"), composite);
+  const plan = buildCurrentCapitalLiveChainOciPlan({
+    mainSha: "a".repeat(40), operationId: "current-capital-560",
+    providerCollectionBundleBytes: provider,
+    providerCapturedAt: providerArtifact.snapshot.capturedAt,
+    compositeBundleBytes: composite,
+    outputPaths: compositeArtifact.outputPaths,
+  });
+  return { root, provider, composite, plan, planBytes: Buffer.from(`${canonicalCurrentCapitalLiveChainOciPlanJson(plan)}\n`) };
+}
+
+function memoryImmutableClient({ mismatch = false } = {}) {
+  const objects = new Map();
+  return {
+    objects,
+    async putObjectIfAbsent(key, bytes) {
+      if (objects.has(key)) return false;
+      objects.set(key, Buffer.from(bytes));
+      return true;
+    },
+    async readObject(key) {
+      const body = objects.get(key);
+      if (!body) return { exists: false };
+      return { exists: true, body: mismatch ? Buffer.from("wrong") : Buffer.from(body) };
+    },
+  };
+}
+
+test("current live-chain은 exact OCI PAR만 허용하며 generic/AWS 경로를 거부한다", () => {
+  for (const value of [
+    "https://objectstorage.example.com/p/secret/n/axvym6vk8g7i/b/easysubway-datapacks/o/",
+    "https://objectstorage.ap-seoul-1.oraclecloud.com/p/secret/n/wrong/b/easysubway-datapacks/o/",
+    "https://objectstorage.ap-seoul-1.oraclecloud.com/p/secret/n/axvym6vk8g7i/b/wrong/o/",
+    "https://s3.ap-seoul-1.oraclecloud.com/bucket/",
+  ]) {
+    assert.throws(() => requireCurrentCapitalLiveChainOciParBaseUrl({ EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: value }), /exact Oracle Object Storage PAR/);
+  }
+  assert.doesNotThrow(() => requireCurrentCapitalLiveChainOciParBaseUrl({ EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: OCI_PAR }));
+});
+
+test("current live-chain OCI 오류는 provider response에 반사된 PAR secret을 노출하지 않는다", async () => {
+  const secret = "reflected-par-secret";
+  const client = preauthenticatedObjectStorageClient(new URL(OCI_PAR), {
+    includeErrorBody: false,
+    requestImpl: async () => ({ statusCode: 500, headers: {}, body: Buffer.from(`request /p/${secret}/ failed`) }),
+  });
+  await assert.rejects(
+    () => client.putObjectIfAbsent("safe/object.json", Buffer.from("x"), { sha256: "a".repeat(64), sizeBytes: 1 }),
+    (error) => error instanceof Error && /HTTP 500/.test(error.message) && !error.message.includes(secret) && !error.message.includes("request /p/"),
+  );
+});
+
+test("current live-chain은 두 OCI 객체 full GET 검증 뒤에만 create-new receipt를 쓴다", async (t) => {
+  const fixture = await liveChainFixture(t);
+  const client = memoryImmutableClient();
+  const receiptPath = path.join(fixture.root, "receipt.json");
+  const receipt = await publishCurrentCapitalLiveChainOciPlan({
+    planBytes: fixture.planBytes, root: fixture.root, receiptPath,
+    env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: OCI_PAR }, client,
+  });
+  assert.equal(receipt.compositeObject.objectKey, fixture.plan.compositeObject.objectKey);
+  assert.deepEqual(client.objects.get(fixture.plan.providerObject.objectKey), fixture.provider);
+  assert.deepEqual(client.objects.get(fixture.plan.compositeObject.objectKey), fixture.composite);
+  await assert.rejects(
+    () => publishCurrentCapitalLiveChainOciPlan({ planBytes: fixture.planBytes, root: fixture.root, receiptPath, env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: OCI_PAR }, client }),
+    /EEXIST/,
+    "receipt is create-new, never overwritten",
+  );
+});
+
+test("current live-chain verification failure leaves no receipt", async (t) => {
+  const fixture = await liveChainFixture(t);
+  const receiptPath = path.join(fixture.root, "receipt.json");
+  await assert.rejects(
+    () => publishCurrentCapitalLiveChainOciPlan({
+      planBytes: fixture.planBytes, root: fixture.root, receiptPath,
+      env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: OCI_PAR }, client: memoryImmutableClient({ mismatch: true }),
+    }),
+    /immutable violation|uploaded checksum mismatch/,
+  );
+  await assert.rejects(() => access(receiptPath));
+});
+
+test("current live-chain fetch는 canonical receipt의 exact composite만 create-new으로 내려받는다", async (t) => {
+  const fixture = await liveChainFixture(t);
+  const client = memoryImmutableClient();
+  const receiptPath = path.join(fixture.root, "receipt.json");
+  await publishCurrentCapitalLiveChainOciPlan({ planBytes: fixture.planBytes, root: fixture.root, receiptPath, env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: OCI_PAR }, client });
+  const destinationPath = path.join(fixture.root, "fetched.json");
+  const result = await fetchCurrentCapitalLiveChainComposite({ planBytes: fixture.planBytes, receiptPath, destinationPath, env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: OCI_PAR }, client });
+  assert.equal(result.objectKey, fixture.plan.compositeObject.objectKey);
+  assert.deepEqual(await readFile(destinationPath), fixture.composite);
+  const preexisting = Buffer.from("must-not-be-deleted-or-replaced");
+  await writeFile(destinationPath, preexisting);
+  await assert.rejects(
+    () => fetchCurrentCapitalLiveChainComposite({ planBytes: fixture.planBytes, receiptPath, destinationPath, env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: OCI_PAR }, client }),
+    /EEXIST/,
+  );
+  assert.deepEqual(await readFile(destinationPath), preexisting, "existing destination survives create-new rejection");
+});
 
 // 메모리 객체 저장소 mock: PUT 저장, HEAD/GET 응답. Cache-Control·meta-sha256 기록.
 // preauth(opc-meta-sha256)·signed(x-amz-meta-sha256) 양쪽 메타 헤더 모두 저장하고 응답에 포함.

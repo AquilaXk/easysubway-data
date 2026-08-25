@@ -162,10 +162,11 @@ jobs:
           docker run --rm -v "${GITHUB_WORKSPACE}:/repo:ro" -w /repo \
             rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
 
-      - name: Verify current KRIC exit path source admission contracts
+      - name: Verify current capital live-chain OCI contracts
         run: |
-          node --test tools/datapack/run-current-kric-exit-path-source-admission.test.mjs
-          node --test tools/ci/kric-exit-path-source-admission-workflow.test.mjs
+          node --test tools/datapack/run-current-capital-live-chain.test.mjs
+          node --test tools/datapack/build-current-capital-live-chain-oci-receipt.test.mjs
+          node --test tools/datapack/extract-current-capital-live-chain-directory.test.mjs
 
       - name: Set up Chrome for browser-dependent required tests
         id: setup-chrome

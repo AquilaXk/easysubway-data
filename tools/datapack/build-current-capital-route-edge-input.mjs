@@ -36,11 +36,11 @@ export function canonicalCurrentCapitalRouteEdgeInputJson(value) {
   return canonicalJson(value);
 }
 
-export async function main(argv = process.argv.slice(2), { repositoryRoot = fileURLToPath(new URL("../../", import.meta.url)), log = console.log, readTransitionBoundaryImpl, projectFixtureImpl = defaultProjectFixture } = {}) {
+export async function main(argv = process.argv.slice(2), { repositoryRoot = fileURLToPath(new URL("../../", import.meta.url)), log = console.log, readTransitionBoundaryImpl, readCurrentFanInBoundaryImpl, projectFixtureImpl = defaultProjectFixture } = {}) {
   if (!Array.isArray(argv) || argv.length !== 0) throw new Error("full-capital route arguments mismatch");
   const root = path.resolve(repositoryRoot); const output = path.join(root, OUTPUT_DIRECTORY);
   await outputMustBeAbsent(output);
-  const input = await readCurrentCapitalInputs(root, { readTransitionBoundaryImpl });
+  const input = await readCurrentCapitalInputs(root, { readTransitionBoundaryImpl, readCurrentFanInBoundaryImpl });
   validateFixtureEdgeCounts(input.canonicalPack, { RIDE: 2210, ENTRY: 2, EXIT: 2 }, "raw");
   const projectedFixture = await projectFixtureImpl({
     buildSpec: input.candidateBuildSpec,

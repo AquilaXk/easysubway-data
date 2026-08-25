@@ -1,0 +1,98 @@
+#!/usr/bin/env node
+import { createHash } from "node:crypto";
+import { lstat, readFile } from "node:fs/promises";
+import path from "node:path";
+
+import { CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH, canonicalCurrentCapitalLiveChainFanInBoundaryJson, validateCurrentCapitalLiveChainFanInBoundary } from "./build-current-capital-live-chain-boundary.mjs";
+
+const REPOSITORY = "AquilaXk/easysubway-data";
+const SHA256 = /^[a-f0-9]{64}$/u;
+const SHA1 = /^[a-f0-9]{40}$/u;
+
+function canonical(value) {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (value && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
+  return JSON.stringify(value);
+}
+const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+
+function requireRelative(value, label) {
+  if (typeof value !== "string" || value === "" || path.posix.isAbsolute(value) || value.includes("\\") || value.split("/").some((part) => part === "" || part === "." || part === "..")) throw new Error(`${label} must be a safe relative path`);
+  return value;
+}
+function requireIdentity({ repository, repositorySha, operationId }) {
+  if (repository !== REPOSITORY || !SHA1.test(repositorySha ?? "") || typeof operationId !== "string" || !/^[a-z0-9][a-z0-9-]{7,127}$/u.test(operationId)) throw new Error("live-chain identity mismatch");
+}
+function requireOutputPaths(paths) {
+  if (!Array.isArray(paths) || paths.length === 0 || new Set(paths).size !== paths.length) throw new Error("live-chain output allowlist mismatch");
+  return [...paths].map((entry) => requireRelative(entry, "output path")).sort();
+}
+function strictBase64(value) {
+  if (typeof value !== "string" || value.length === 0 || value.length % 4 !== 0 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(value)) throw new Error("live-chain entry base64 mismatch");
+  const bytes = Buffer.from(value, "base64");
+  if (bytes.length === 0 || bytes.toString("base64") !== value) throw new Error("live-chain entry base64 mismatch");
+  return bytes;
+}
+async function regularBytes(root, relative) {
+  const target = path.resolve(root, relative);
+  if (!target.startsWith(`${path.resolve(root)}${path.sep}`)) throw new Error("output path escapes root");
+  const stat = await lstat(target);
+  if (!stat.isFile() || stat.isSymbolicLink()) throw new Error("live-chain output must be a regular file");
+  return readFile(target);
+}
+
+export async function buildCurrentCapitalLiveChainBundle({ root, outputDirectory, repository, repositorySha, operationId, providerReceiptRelativePath, outputPaths, boundaryBytes, boundaryRelativePath = CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH }) {
+  requireIdentity({ repository, repositorySha, operationId });
+  const allowlist = requireOutputPaths(outputPaths);
+  const receipt = requireRelative(providerReceiptRelativePath, "provider receipt path");
+  const boundary = readCanonicalBoundary(boundaryBytes, boundaryRelativePath);
+  if (!allowlist.includes(receipt)) throw new Error("provider receipt is not allowlisted");
+  const entries = await Promise.all(allowlist.map(async (relative) => {
+    const bytes = await regularBytes(outputDirectory, relative);
+    return { path: relative, sha256: sha256(bytes), bytesBase64: bytes.toString("base64") };
+  }));
+  correlateBoundaryComponents(boundary.value, entries);
+  const manifest = { schemaVersion: 1, artifactKind: "current-capital-live-chain-composite", repository, repositorySha, operationId, providerReceiptRelativePath: receipt, providerReceiptSha256: entries.find((entry) => entry.path === receipt).sha256, boundary: { path: boundary.relativePath, sha256: sha256(boundary.bytes) }, entries: entries.map(({ path: entryPath, sha256: digest }) => ({ path: entryPath, sha256: digest })) };
+  const manifestJson = `${canonical(manifest)}\n`;
+  const payload = { ...manifest, manifestSha256: sha256(Buffer.from(manifestJson)), boundaryBytesBase64: boundary.bytes.toString("base64"), entries };
+  return Buffer.from(`${canonical({ ...payload, bundleSha256: sha256(Buffer.from(canonical(payload))) })}\n`);
+}
+
+export function readCurrentCapitalLiveChainBundle(bytes, { repository, repositorySha, operationId, outputPaths }) {
+  requireIdentity({ repository, repositorySha, operationId });
+  const allowlist = requireOutputPaths(outputPaths);
+  let bundle; try { bundle = JSON.parse(Buffer.from(bytes).toString("utf8")); } catch { throw new Error("live-chain bundle must be JSON"); }
+  const required = ["schemaVersion", "artifactKind", "repository", "repositorySha", "operationId", "providerReceiptRelativePath", "providerReceiptSha256", "boundary", "boundaryBytesBase64", "entries", "manifestSha256", "bundleSha256"];
+  if (!bundle || typeof bundle !== "object" || Object.keys(bundle).length !== required.length || required.some((key) => !(key in bundle)) || bundle.schemaVersion !== 1 || bundle.artifactKind !== "current-capital-live-chain-composite") throw new Error("live-chain bundle shape mismatch");
+  if (bundle.repository !== repository || bundle.repositorySha !== repositorySha || bundle.operationId !== operationId) throw new Error("live-chain identity mismatch");
+  const receipt = requireRelative(bundle.providerReceiptRelativePath, "provider receipt path");
+  if (!SHA256.test(bundle.providerReceiptSha256 ?? "") || !SHA256.test(bundle.manifestSha256 ?? "") || !SHA256.test(bundle.bundleSha256 ?? "") || !Array.isArray(bundle.entries) || bundle.entries.length !== allowlist.length) throw new Error("live-chain bundle digest mismatch");
+  const entries = [...bundle.entries].sort((left, right) => left.path.localeCompare(right.path));
+  if (JSON.stringify(entries.map(({ path: entryPath }) => entryPath)) !== JSON.stringify(allowlist)) throw new Error("live-chain output allowlist mismatch");
+  for (const entry of entries) {
+    if (!entry || Object.keys(entry).length !== 3 || requireRelative(entry.path, "bundle entry") !== entry.path || !SHA256.test(entry.sha256 ?? "") || sha256(strictBase64(entry.bytesBase64)) !== entry.sha256) throw new Error("live-chain entry integrity mismatch");
+  }
+  const boundary = readCanonicalBoundary(strictBase64(bundle.boundaryBytesBase64), bundle.boundary?.path);
+  if (!bundle.boundary || Object.keys(bundle.boundary).length !== 2 || bundle.boundary.path !== boundary.relativePath || bundle.boundary.sha256 !== sha256(boundary.bytes)) throw new Error("live-chain boundary digest mismatch");
+  correlateBoundaryComponents(boundary.value, entries);
+  const manifest = { schemaVersion: bundle.schemaVersion, artifactKind: bundle.artifactKind, repository: bundle.repository, repositorySha: bundle.repositorySha, operationId: bundle.operationId, providerReceiptRelativePath: receipt, providerReceiptSha256: bundle.providerReceiptSha256, boundary: bundle.boundary, entries: entries.map(({ path: entryPath, sha256: digest }) => ({ path: entryPath, sha256: digest })) };
+  if (sha256(Buffer.from(`${canonical(manifest)}\n`)) !== bundle.manifestSha256 || sha256(Buffer.from(canonical({ ...manifest, manifestSha256: bundle.manifestSha256, boundaryBytesBase64: bundle.boundaryBytesBase64, entries }))) !== bundle.bundleSha256 || entries.find((entry) => entry.path === receipt)?.sha256 !== bundle.providerReceiptSha256) throw new Error("live-chain bundle identity mismatch");
+  return { ...bundle, entries };
+}
+
+function readCanonicalBoundary(bytes, relativePath) {
+  const safeRelativePath = requireRelative(relativePath, "live-chain boundary path");
+  if (safeRelativePath !== CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH || !Buffer.isBuffer(bytes)) throw new Error("live-chain boundary identity mismatch");
+  let value; try { value = JSON.parse(bytes.toString("utf8")); } catch { throw new Error("live-chain boundary must be JSON"); }
+  if (bytes.toString("utf8") !== canonicalCurrentCapitalLiveChainFanInBoundaryJson(value)) throw new Error("live-chain boundary bytes are not canonical");
+  validateCurrentCapitalLiveChainFanInBoundary(value);
+  return { bytes, relativePath: safeRelativePath, value };
+}
+
+function correlateBoundaryComponents(boundary, entries) {
+  const byPath = new Map(entries.map((entry) => [entry.path, entry]));
+  for (const [name, component] of Object.entries(boundary.components)) {
+    const entry = byPath.get(component.path);
+    if (!entry || entry.sha256 !== component.sha256) throw new Error(`live-chain boundary ${name} output binding mismatch`);
+  }
+}
