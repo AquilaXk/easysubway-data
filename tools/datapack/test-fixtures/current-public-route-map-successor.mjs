@@ -20,10 +20,15 @@ import {
 import { deriveReleaseProjection } from "../rebind-current-candidate-source-snapshots.mjs";
 import { buildSnapshotDiff } from "../source-snapshot-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
+import { codepointCompare } from "../../lib/codepoint-compare.mjs";
 
 const PUBLIC_SOURCE_ID = "seoul-metro-route-map-positions";
-const PREDECESSOR_SOURCE_ID = "seoulmetro-cyberstation-route-map";
 const MOLIT_SOURCE_ID = "molit-urban-rail-full-route";
+const CURRENT_CAPITAL_SOURCE_IDS = Object.freeze([
+  "molit-urban-rail-full-route", "seoulmetro-station-line-info", PUBLIC_SOURCE_ID,
+  "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
+  "seoul-metro-official-od-fares",
+]);
 const SHA_KEYS = Object.freeze([
   "layoutAlgorithmVersion", "topologySnapshotId", "topologySnapshotSha256",
   "topologySnapshotIdentity", "lineOrderSha256", "aliasLedgerVersion", "aliasLedgerSha256",
@@ -33,6 +38,24 @@ const SHA_KEYS = Object.freeze([
 
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
+const canonical = (value) => Array.isArray(value)
+  ? `[${value.map(canonical).join(",")}]`
+  : value && typeof value === "object"
+  ? "{" + Object.keys(value).sort(codepointCompare).map((key) => JSON.stringify(key) + ":" + canonical(value[key])).join(",") + "}"
+  : JSON.stringify(value);
+
+function orderCurrentCapitalSources(document) {
+  const capital = document?.packs?.find(({ id }) => id === "capital");
+  const entries = capital?.sourceInventory;
+  const byId = new Map(entries?.map((entry) => [entry.id, entry]));
+  if (!Array.isArray(entries)
+    || byId.size !== entries.length
+    || byId.size !== CURRENT_CAPITAL_SOURCE_IDS.length
+    || CURRENT_CAPITAL_SOURCE_IDS.some((sourceId) => !byId.has(sourceId))) {
+    throw new Error("synthetic current capital source identity is incomplete");
+  }
+  capital.sourceInventory = CURRENT_CAPITAL_SOURCE_IDS.map((sourceId) => structuredClone(byId.get(sourceId)));
+}
 
 async function readJson(root, relative) {
   return JSON.parse(await readFile(path.join(root, relative), "utf8"));
@@ -40,35 +63,22 @@ async function readJson(root, relative) {
 
 function currentPublicRouteMapPredecessor(candidate, snapshots) {
   const publicIndices = candidate?.sourceSnapshots?.map(({ sourceId }, index) => sourceId === PUBLIC_SOURCE_ID ? index : -1).filter((index) => index >= 0) ?? [];
-  const predecessorIndices = candidate?.sourceSnapshots?.map(({ sourceId }, index) => sourceId === PREDECESSOR_SOURCE_ID ? index : -1).filter((index) => index >= 0) ?? [];
   if (!Array.isArray(candidate?.sourceSnapshotIds) || candidate.sourceSnapshotIds.length !== candidate.sourceSnapshots.length
-    || publicIndices.length + predecessorIndices.length !== 1) {
+    || publicIndices.length !== 1) {
     throw new Error("synthetic public route-map predecessor fixture is incomplete");
   }
-  const candidateIndex = publicIndices[0] ?? predecessorIndices[0];
+  const candidateIndex = publicIndices[0];
   const selectedSnapshotId = candidate.sourceSnapshotIds[candidateIndex];
   const selected = snapshots.filter(({ snapshotId }) => snapshotId === selectedSnapshotId);
   if (selected.length !== 1 || selected[0].sourceId !== candidate.sourceSnapshots[candidateIndex].sourceId) {
     throw new Error("synthetic public route-map predecessor fixture is incomplete");
   }
-  if (candidate.sourceSnapshots[candidateIndex].sourceId === PREDECESSOR_SOURCE_ID) {
-    return { candidateIndex, predecessor: selected[0], selected: selected[0] };
-  }
-  const migration = selected[0].projectionMigration;
-  if (!migration || migration.schemaVersion !== 1 || migration.artifactKind !== "source-projection-migration-evidence"
-    || migration.migrationKind !== "CROSS_SOURCE_CANONICAL_REPLACEMENT" || migration.sourceId !== PUBLIC_SOURCE_ID
-    || migration.candidateSlotSourceId !== migration.replacedSourceId
-    || typeof migration.replacedSnapshotId !== "string" || !/^[a-f0-9]{64}$/u.test(migration.replacedRawSha256 ?? "")
-    || !/^[a-f0-9]{64}$/u.test(migration.replacedSchemaFingerprint ?? "")) {
-    throw new Error("synthetic public route-map predecessor fixture is incomplete");
-  }
-  const predecessor = snapshots.filter(({ snapshotId }) => snapshotId === migration.replacedSnapshotId);
-  if (predecessor.length !== 1 || predecessor[0].sourceId !== migration.replacedSourceId
-    || predecessor[0].rawSha256 !== migration.replacedRawSha256
-    || predecessor[0].schemaFingerprint !== migration.replacedSchemaFingerprint) {
-    throw new Error("synthetic public route-map predecessor fixture is incomplete");
-  }
-  return { candidateIndex, predecessor: predecessor[0], selected: selected[0] };
+  return { candidateIndex, predecessor: selected[0], selected: selected[0] };
+}
+
+function currentOnlySnapshot(snapshot) {
+  return Object.fromEntries(Object.entries(structuredClone(snapshot)).filter(([key]) =>
+    !/(?:migration|historical|supersession)/iu.test(key)));
 }
 
 function currentPublicRouteMapProviderRecords(sourceSnapshot) {
@@ -197,8 +207,14 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
   { now, activateStaticNetwork = false, activatePublicRouteMap = true },
 ) {
   if (activateStaticNetwork) {
-    await createStaticNetworkRegistrarPredecessorFixture(sourceRoot, targetRoot, { now });
-    return activateSyntheticCurrentStaticNetworkSuccessors(targetRoot, { now });
+    await copySyntheticCurrentPublicRouteMapRepository(sourceRoot, targetRoot, {
+      now,
+      activatePublicRouteMap: false,
+    });
+    await bindSyntheticActivatedOutputsToCurrentCandidate(targetRoot);
+    const result = await activateSyntheticCurrentStaticNetworkSuccessors(targetRoot, { now });
+    await bindSyntheticDependentAdmissionsToCurrentTransition(targetRoot);
+    return result;
   }
   const [source, target] = await Promise.all([
     regularRoot(sourceRoot),
@@ -222,6 +238,9 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
       const snapshotId = source.routeMapAdmissionEvidence?.currentTopologyAdmission?.topologySnapshotId;
       return typeof snapshotId === "string" ? `tools/datapack/sources/${snapshotId}.json` : null;
     }),
+    ...candidate.sourceSnapshots
+      .filter(({ sourceId }) => sourceId === MOLIT_SOURCE_ID)
+      .map(({ snapshotId }) => `tools/datapack/sources/${snapshotId}.json`),
     ...referencedPaths(candidate),
     ...referencedPaths(itxContract),
     facilityAdmission.sourceIdentity?.snapshotPath,
@@ -239,69 +258,113 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
   return activateSyntheticCurrentPublicRouteMapSuccessor(target, { now });
 }
 
+async function bindSyntheticActivatedOutputsToCurrentCandidate(root) {
+  const candidate = await readJson(root, "tools/datapack/release/candidate-build-spec.json");
+  const outputPaths = [
+    "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
+    "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
+  ];
+  const [station, route] = await Promise.all(outputPaths.map((relative) => readJson(root, relative)));
+  station.candidate.candidateId = candidate.candidateId;
+  station.candidate.sourceSetSha256 = candidate.sourceSnapshotSetHash;
+  for (const row of station.evidenceRows) row.candidateId = candidate.candidateId;
+  route.candidate.candidateId = candidate.candidateId;
+  route.candidate.sourceSetSha256 = candidate.sourceSnapshotSetHash;
+  await Promise.all(outputPaths.map((relative, index) =>
+    writeFile(path.join(root, relative), jsonBytes(index === 0 ? station : route))));
+}
+
+async function bindSyntheticDependentAdmissionsToCurrentTransition(root) {
+  const paths = {
+    candidate: "tools/datapack/release/candidate-build-spec.json",
+    snapshots: "tools/datapack/release/source-snapshots.json",
+    facility: "tools/datapack/release/current-capital-facility-source-admission.json",
+    exit: "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json",
+    exitReceipt: "tools/datapack/release/current-exit-admission-v2/exit-path-admission-artifact-receipt.json",
+  };
+  const [candidate, snapshots, facility, exit, receipt] = await Promise.all([
+    readJson(root, paths.candidate), readJson(root, paths.snapshots), readJson(root, paths.facility),
+    readJson(root, paths.exit), readJson(root, paths.exitReceipt),
+  ]);
+  const selected = candidate.sourceSnapshotIds.map((snapshotId) =>
+    snapshots.find((snapshot) => snapshot.snapshotId === snapshotId));
+  const bySource = (sourceId) => selected.find((snapshot) => snapshot?.sourceId === sourceId);
+  const positions = bySource(PUBLIC_SOURCE_ID);
+  const molit = bySource(MOLIT_SOURCE_ID);
+  const seoul = bySource("seoul-metro-accessibility");
+  if (selected.some((snapshot) => snapshot == null)
+    || [positions, molit, seoul].some((snapshot) => typeof snapshot?.previousSnapshotId !== "string")) {
+    throw new Error("synthetic dependent admission transition fixture is incomplete");
+  }
+  const evidenceIds = new Set(candidate.sourceSnapshotIds.flatMap((snapshotId, index) => {
+    const sourceId = candidate.sourceSnapshots[index].sourceId;
+    if (sourceId === "seoul-metro-transfer-distance-duration") return [];
+    if (sourceId === PUBLIC_SOURCE_ID) return [positions.previousSnapshotId];
+    if (sourceId === MOLIT_SOURCE_ID) return [molit.previousSnapshotId];
+    if (sourceId === "seoul-metro-accessibility") return [seoul.previousSnapshotId];
+    return [snapshotId];
+  }));
+  const evidence = snapshots.filter(({ snapshotId }) => evidenceIds.has(snapshotId));
+  if (evidenceIds.size !== 6 || evidence.length !== 6) {
+    throw new Error("synthetic dependent admission evidence fixture is incomplete");
+  }
+  const sourceSetSha256 = sha256(JSON.stringify(evidence));
+  facility.candidate.candidateId = candidate.candidateId;
+  facility.candidate.sourceSnapshotSetHash = sourceSetSha256;
+  const facilityPayload = { ...facility };
+  delete facilityPayload.admissionDigest;
+  facility.admissionDigest = sha256(canonical(facilityPayload));
+  exit.candidate.candidateId = candidate.candidateId;
+  exit.candidate.sourceSetSha256 = sourceSetSha256;
+  for (const row of exit.materializerEvidenceRows) {
+    row.candidateId = candidate.candidateId;
+    row.sourceSetSha256 = sourceSetSha256;
+  }
+  const exitPayload = { ...exit };
+  delete exitPayload.admissionDigest;
+  exit.admissionDigest = sha256(canonical(exitPayload));
+  const exitBytes = Buffer.from(canonical(exit));
+  receipt.admissionDigest = exit.admissionDigest;
+  receipt.admissionSha256 = sha256(exitBytes);
+  const receiptPayload = { ...receipt };
+  delete receiptPayload.receiptSha256;
+  receipt.receiptSha256 = sha256(canonical(receiptPayload));
+  await Promise.all([
+    writeFile(path.join(root, paths.facility), Buffer.from(`${canonical(facility)}\n`)),
+    writeFile(path.join(root, paths.exit), exitBytes),
+    writeFile(path.join(root, paths.exitReceipt), Buffer.from(canonical(receipt))),
+  ]);
+}
+
+export async function nextSyntheticCurrentStaticNetworkNow(root) {
+  const [candidate, snapshots] = await Promise.all([
+    readJson(root, "tools/datapack/release/candidate-build-spec.json"),
+    readJson(root, "tools/datapack/release/source-snapshots.json"),
+  ]);
+  const selected = candidate.sourceSnapshotIds.map((snapshotId) =>
+    snapshots.find((snapshot) => snapshot.snapshotId === snapshotId));
+  if (selected.some((snapshot) => snapshot == null)) {
+    throw new Error("synthetic current static-network clock fixture is incomplete");
+  }
+  const basisAt = Math.max(...selected.flatMap((snapshot) => [
+    snapshot.retrievedAt,
+    snapshot.sourceUpdatedAt,
+    snapshot.rawReceipt?.storedAt,
+  ].filter(Boolean).map(Date.parse)));
+  const freshUntil = Math.min(...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)));
+  const nowMillis = basisAt + 60_000;
+  if (!Number.isFinite(basisAt) || !Number.isFinite(freshUntil) || nowMillis >= freshUntil) {
+    throw new Error("synthetic current static-network clock fixture has no valid freshness window");
+  }
+  return new Date(nowMillis);
+}
+
 export async function createStaticNetworkRegistrarPredecessorFixture(sourceRoot, targetRoot, { now }) {
   await copySyntheticCurrentPublicRouteMapRepository(sourceRoot, targetRoot, { now, activatePublicRouteMap: false });
-  const candidatePath = "tools/datapack/release/candidate-build-spec.json";
-  const snapshotsPath = "tools/datapack/release/source-snapshots.json";
-  const [candidate, snapshots] = await Promise.all([
-    readJson(targetRoot, candidatePath),
-    readJson(targetRoot, snapshotsPath),
-  ]);
-  const { candidateIndex, predecessor } = currentPublicRouteMapPredecessor(candidate, snapshots);
-  const molitIndices = candidate.sourceSnapshots
-    .map(({ sourceId }, index) => sourceId === MOLIT_SOURCE_ID ? index : -1)
-    .filter((index) => index >= 0);
-  const molitIndex = molitIndices[0];
-  const selectedMolitSnapshotId = candidate.sourceSnapshotIds[molitIndex];
-  const selectedMolitSnapshots = snapshots.filter(({ snapshotId, sourceId }) =>
-    snapshotId === selectedMolitSnapshotId && sourceId === MOLIT_SOURCE_ID);
-  const selectedMolitSnapshot = selectedMolitSnapshots[0];
-  const molitMigration = selectedMolitSnapshot?.projectionMigration;
-  const molitPredecessors = snapshots.filter(({ snapshotId, sourceId }) =>
-    snapshotId === molitMigration?.legacySnapshotId && sourceId === MOLIT_SOURCE_ID);
-  const molitPredecessor = molitPredecessors[0];
-  if (molitIndices.length !== 1 || selectedMolitSnapshots.length !== 1
-    || molitMigration?.migrationKind !== "LEGACY_SAMPLE_TO_FULL_CONSUMED_FIELDS"
-    || molitMigration.sourceId !== MOLIT_SOURCE_ID
-    || selectedMolitSnapshot.previousSnapshotId !== molitMigration.legacySnapshotId
-    || molitPredecessors.length !== 1
-    || molitPredecessor.rawSha256 !== molitMigration.legacyRawSha256
-    || molitPredecessor.schemaFingerprint !== molitMigration.legacySchemaFingerprint) {
-    throw new Error("synthetic MOLIT predecessor fixture is incomplete");
-  }
-  const selectedPublicRootId = candidate.sourceSnapshots[candidateIndex].sourceId === PUBLIC_SOURCE_ID
-    ? candidate.sourceSnapshotIds[candidateIndex]
-    : null;
-  const selectedPublicRoots = snapshots.filter(({ snapshotId, sourceId, previousSnapshotId }) => snapshotId === selectedPublicRootId
-    && sourceId === PUBLIC_SOURCE_ID && previousSnapshotId == null);
-  if (selectedPublicRootId != null && selectedPublicRoots.length !== 1) {
-    throw new Error("synthetic public route-map predecessor fixture is incomplete");
-  }
-  const removedSnapshotIds = new Set([selectedPublicRootId, selectedMolitSnapshotId].filter(Boolean));
-  const predecessorLedger = snapshots.filter(({ snapshotId }) => !removedSnapshotIds.has(snapshotId));
-  candidate.sourceSnapshotIds[candidateIndex] = predecessor.snapshotId;
-  candidate.sourceSnapshots[candidateIndex] = {
-    ...candidate.sourceSnapshots[candidateIndex],
-    snapshotId: predecessor.snapshotId,
-    sourceId: predecessor.sourceId,
-  };
-  candidate.sourceSnapshotIds[molitIndex] = molitPredecessor.snapshotId;
-  candidate.sourceSnapshots[molitIndex] = Object.fromEntries(
-    Object.keys(candidate.sourceSnapshots[molitIndex]).flatMap((key) =>
-      molitPredecessor[key] === undefined ? [] : [[key, molitPredecessor[key]]]),
-  );
-  const selectedIds = new Set(candidate.sourceSnapshotIds);
-  candidate.sourceSnapshotSetHash = sha256(JSON.stringify(
-    predecessorLedger.filter(({ snapshotId }) => selectedIds.has(snapshotId)),
-  ));
-  await Promise.all([
-    writeFile(path.join(targetRoot, candidatePath), jsonBytes(candidate)),
-    writeFile(path.join(targetRoot, snapshotsPath), jsonBytes(predecessorLedger)),
-  ]);
+  const current = await activateSyntheticCurrentPublicRouteMapSuccessor(targetRoot, { now, advanceCurrentPublicHead: true });
   return {
-    predecessorSnapshotId: predecessor.snapshotId,
-    removedMolitSnapshotId: selectedMolitSnapshotId,
-    removedPublicRootSnapshotId: selectedPublicRootId,
+    predecessorSnapshotId: current.predecessorSnapshotId,
+    currentSnapshotId: current.snapshotId,
   };
 }
 
@@ -324,10 +387,9 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   const governancePolicy = JSON.parse(governanceBytes);
   const predecessorBinding = currentPublicRouteMapPredecessor(candidate, snapshots);
   const { candidateIndex: predecessorIndex, predecessor, selected } = predecessorBinding;
-  const successorPredecessor = advanceCurrentPublicHead && selected.sourceId === PUBLIC_SOURCE_ID
-    ? selected
-    : predecessor;
-  const advancesCurrentPublicHead = successorPredecessor.sourceId === PUBLIC_SOURCE_ID;
+  const successorPredecessor = selected;
+  const advancesCurrentPublicHead = advanceCurrentPublicHead
+    || Date.parse(successorPredecessor.retrievedAt) < now.getTime();
   const selectedPublicSnapshotId = candidate.sourceSnapshots[predecessorIndex].sourceId === PUBLIC_SOURCE_ID
     ? candidate.sourceSnapshotIds[predecessorIndex]
     : null;
@@ -335,17 +397,16 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     : snapshots.findIndex(({ snapshotId }) => snapshotId === selectedPublicSnapshotId);
   const publicSnapshots = snapshots.filter(({ sourceId }) => sourceId === PUBLIC_SOURCE_ID);
   const selectedPublicSnapshot = snapshots[selectedPublicSnapshotIndex];
-  if (selectedPublicSnapshotId != null && ((advanceCurrentPublicHead
+  if (selectedPublicSnapshotId != null && ((advancesCurrentPublicHead
     ? publicSnapshots.filter(({ previousSnapshotId }) => previousSnapshotId == null).length !== 1
     : publicSnapshots.length !== 1)
     || selectedPublicSnapshotIndex < 0
     || selectedPublicSnapshot?.sourceId !== PUBLIC_SOURCE_ID
-    || (!advanceCurrentPublicHead && selectedPublicSnapshot.previousSnapshotId != null))) {
+    || (!advancesCurrentPublicHead && selectedPublicSnapshot.previousSnapshotId != null))) {
     throw new Error("synthetic public route-map successor fixture has invalid public source lineage");
   }
   const publicSource = inventory.sources.find(({ id }) => id === PUBLIC_SOURCE_ID);
-  const predecessorSource = inventory.sources.find(({ id }) => id === PREDECESSOR_SOURCE_ID);
-  if (!predecessor || !publicSource || !predecessorSource) {
+  if (!predecessor || !publicSource) {
     throw new Error("synthetic public route-map predecessor fixture is incomplete");
   }
 
@@ -437,7 +498,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   });
   const objectKey = `source-raw/${PUBLIC_SOURCE_ID}/${capturedAt.slice(0, 10).replaceAll("-", "")}/${rawSha256}.json`;
   const snapshot = {
-    ...structuredClone(successorPredecessor),
+    ...currentOnlySnapshot(successorPredecessor),
     snapshotId,
     sourceId: PUBLIC_SOURCE_ID,
     provider: publicSource.provider,
@@ -460,17 +521,6 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     normalizedObservationSha256: sha256(routeMapLayoutArtifactBytes),
     routeMapLayoutEvidence: layout,
     routeMapLayoutArtifact,
-    projectionMigration: {
-      schemaVersion: 1,
-      artifactKind: "source-projection-migration-evidence",
-      migrationKind: "CROSS_SOURCE_CANONICAL_REPLACEMENT",
-      sourceId: PUBLIC_SOURCE_ID,
-      replacedSourceId: successorPredecessor.sourceId,
-      replacedSnapshotId: successorPredecessor.snapshotId,
-      replacedRawSha256: successorPredecessor.rawSha256,
-      replacedSchemaFingerprint: successorPredecessor.schemaFingerprint,
-      candidateSlotSourceId: successorPredecessor.sourceId,
-    },
     rawReceipt: {
       schemaVersion: 1,
       artifactKind: "static-network-source-raw-object-receipt",
@@ -488,6 +538,24 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
       rawRetentionExpiresAt,
     },
   };
+  const observation = {
+    schemaVersion: 2,
+    artifactKind: "public-static-network-v2-observation",
+    sourceId: PUBLIC_SOURCE_ID,
+    snapshotId,
+    capturedAt,
+    rawSha256,
+    contentSha256,
+    schemaFingerprint,
+    rowCount: snapshot.rowCount,
+    providerRecordHashes: [...providerRecordHashes],
+    normalizedProjection: structuredClone(routeMapLayoutArtifact.rawPositions),
+    routeMapLayoutEvidence: layout,
+    routeMapLayoutArtifact,
+    rawReceipt: structuredClone(snapshot.rawReceipt),
+  };
+  snapshot.publicStaticNetworkV2Observation = observation;
+  snapshot.normalizedObservationSha256 = sha256(Buffer.from(`${JSON.stringify(observation)}\n`));
   if (advancesCurrentPublicHead) snapshot.diffSummary = buildSnapshotDiff(successorPredecessor, snapshot);
   if (selectedPublicSnapshotIndex >= 0 && !advancesCurrentPublicHead) snapshots.splice(selectedPublicSnapshotIndex, 1, snapshot);
   else snapshots.push(snapshot);
@@ -524,8 +592,9 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
       ...layout,
     },
   };
-  predecessorSource.requiredForProductionPack = false;
-  predecessorSource.productionUseAllowed = false;
+  const currentSourceIds = new Set(CURRENT_CAPITAL_SOURCE_IDS);
+  pack.packs[0].sourceInventory = pack.packs[0].sourceInventory.filter(({ id }) => currentSourceIds.has(id));
+  pack.packs[0].routeMapPositions = pack.packs[0].routeMapPositions.filter(({ sourceId }) => sourceId === PUBLIC_SOURCE_ID);
 
   const materializedPack = materializeSeoulRouteMapPositions({
     baseFixture: pack,
@@ -538,6 +607,8 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     successorProviderRecordHashes: snapshot.providerRecordHashes,
     requireSuccessorProviderRecordHashes: true,
   });
+  publicSource.routeMapAdmissionEvidence.snapshotSha256 = snapshot.normalizedObservationSha256;
+  publicSource.routeMapAdmissionEvidence.currentLayoutAdmission.snapshotSha256 = snapshot.normalizedObservationSha256;
   const capital = materializedPack.packs[0];
   let coverageEvidence;
   try {
@@ -550,6 +621,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     CURRENT_SEOUL_PUBLIC_ROUTE_MAP_COVERAGE,
   ]);
   Object.assign(pack, materializedPack);
+  orderCurrentCapitalSources(pack);
 
   const currentTopologyAdmissions = inventory.sources
     .map((source) => ({ source, admission: source.routeMapAdmissionEvidence?.currentTopologyAdmission }))
@@ -598,7 +670,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
       topologyContentSha256: candidateTopology.contentSha256,
       reviewedAt: candidateTopology.capturedAt,
       freshUntil: candidateTopology.freshUntil,
-      ...(source.id === PUBLIC_SOURCE_ID ? { positionSnapshotSha256: sha256(routeMapLayoutArtifactBytes) } : {}),
+      ...(source.id === PUBLIC_SOURCE_ID ? { positionSnapshotSha256: snapshot.normalizedObservationSha256 } : {}),
       topologyLineages: admission.topologyLineages.map((lineage) => ({
         ...lineage,
         contentSha256: candidateTopology.contentSha256,
@@ -677,7 +749,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   }));
 
   await Promise.all([
-    writeFile(path.join(root, `tools/datapack/sources/${snapshotId}.json`), routeMapLayoutArtifactBytes),
+    writeFile(path.join(root, `tools/datapack/sources/${snapshotId}.json`), jsonBytes(observation)),
     writeFile(path.join(root, candidateTopologyPath), candidateTopologyBytes),
     writeFile(path.join(root, topologyReverificationPath), topologyReverificationBytes),
     writeFile(path.join(root, incheonSnapshotPath), incheonSnapshotBytes),
@@ -712,29 +784,82 @@ export async function activateSyntheticCurrentStaticNetworkSuccessors(root, { no
   const predecessor = snapshots.find(({ snapshotId }) => snapshotId === candidate.sourceSnapshotIds[molitIndex]);
   const source = inventory.sources.find(({ id }) => id === MOLIT_SOURCE_ID);
   if (molitIndex < 0 || !predecessor || !source) throw new Error("synthetic MOLIT successor predecessor fixture is incomplete");
-  const snapshotId = `${MOLIT_SOURCE_ID}-current-${now.toISOString().replaceAll(/[-:.]/gu, "")}`;
+  const [molitProjection, sourceClass] = await Promise.all([
+    readJson(root, `tools/datapack/sources/${predecessor.snapshotId}.json`),
+    freshnessPolicy.sourceClasses.find(({ sourceIds }) => sourceIds.includes(MOLIT_SOURCE_ID)),
+  ]);
+  if (!sourceClass
+    || molitProjection?.sourceId !== MOLIT_SOURCE_ID
+    || molitProjection.snapshotId !== predecessor.snapshotId
+    || !Array.isArray(molitProjection.normalizedProjection)
+    || !Array.isArray(molitProjection.providerRecordHashes)
+    || molitProjection.normalizedProjection.length !== predecessor.rowCount
+    || !isDeepStrictEqual(molitProjection.providerRecordHashes, predecessor.providerRecordHashes)) {
+    throw new Error("synthetic MOLIT successor projection fixture is incomplete");
+  }
+  const capturedAt = now.toISOString();
+  const contentSha256 = sha256(Buffer.from(`${JSON.stringify(molitProjection.normalizedProjection)}\n`));
+  const snapshotId = `${MOLIT_SOURCE_ID}-current-${capturedAt.replaceAll(/[-:.]/gu, "")}`;
+  const freshnessExpiresAt = deriveFreshnessExpiresAt({
+    policy: freshnessPolicy,
+    sourceClassId: sourceClass.id,
+    basisAt: capturedAt,
+    evaluationAt: capturedAt,
+  });
+  const rawRetentionExpiresAt = deriveRawRetentionExpiresAt({
+    policy: governancePolicy,
+    sourceId: MOLIT_SOURCE_ID,
+    retrievedAt: capturedAt,
+  });
+  const objectKey = `source-raw/${MOLIT_SOURCE_ID}/${capturedAt.slice(0, 10).replaceAll("-", "")}/${predecessor.rawSha256}.csv`;
   const successor = {
-    ...structuredClone(predecessor),
+    ...currentOnlySnapshot(predecessor),
     snapshotId,
-    retrievedAt: now.toISOString(),
+    retrievedAt: capturedAt,
+    sourceUpdatedAt: capturedAt,
     previousSnapshotId: predecessor.snapshotId,
-    diffSummary: { status: "NO_CHANGE", rawHashChanged: false, schemaHashChanged: false, requestHashChanged: false, sourceUpdatedAtChanged: false, rowDelta: 0, coverageDelta: 0 },
-    rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/${MOLIT_SOURCE_ID}/${now.toISOString().slice(0, 10).replaceAll("-", "")}/${predecessor.rawSha256}.csv`,
-    projectionMigration: {
+    rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/${objectKey}`,
+    contentSha256,
+    schemaFingerprint: molitProjection.schemaFingerprint,
+    rowCount: molitProjection.normalizedProjection.length,
+    coverageCount: molitProjection.normalizedProjection.length,
+    providerRecordHashes: [...molitProjection.providerRecordHashes],
+    freshnessExpiresAt,
+    rawRetentionExpiresAt,
+    rawReceipt: {
       schemaVersion: 1,
-      artifactKind: "source-projection-migration-evidence",
-      migrationKind: "LEGACY_SAMPLE_TO_FULL_CONSUMED_FIELDS",
+      artifactKind: "static-network-source-raw-object-receipt",
       sourceId: MOLIT_SOURCE_ID,
-      legacySnapshotId: predecessor.snapshotId,
-      legacyRawSha256: predecessor.rawSha256,
-      legacySchemaFingerprint: predecessor.schemaFingerprint,
-      legacyProviderRecordHashes: predecessor.providerRecordHashes,
-      fullProjectionSha256: predecessor.contentSha256 ?? sha256(JSON.stringify(predecessor.providerRecordHashes)),
-      fullProjectionSchemaFingerprint: predecessor.schemaFingerprint,
-      fullProjectionRowCount: predecessor.rowCount,
-      newSnapshotId: snapshotId,
+      snapshotId,
+      capturedAt,
+      rawObjectSha256: predecessor.rawSha256,
+      rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/${objectKey}`,
+      ociNamespace: "axvym6vk8g7i",
+      bucket: "easysubway-datapacks",
+      objectKey,
+      contentType: "text/csv; charset=euc-kr",
+      byteSize: predecessor.rawReceipt?.byteSize,
+      storedAt: capturedAt,
+      rawRetentionExpiresAt,
     },
   };
+  successor.diffSummary = buildSnapshotDiff(predecessor, successor);
+  const observation = {
+    schemaVersion: 2,
+    artifactKind: "public-static-network-v2-observation",
+    sourceId: MOLIT_SOURCE_ID,
+    snapshotId,
+    capturedAt,
+    rawSha256: successor.rawSha256,
+    contentSha256: successor.contentSha256,
+    schemaFingerprint: successor.schemaFingerprint,
+    rowCount: successor.rowCount,
+    providerRecordHashes: [...successor.providerRecordHashes],
+    normalizedProjection: structuredClone(molitProjection.normalizedProjection),
+    rawReceipt: structuredClone(successor.rawReceipt),
+  };
+  successor.publicStaticNetworkV2Observation = observation;
+  successor.normalizedObservationSha256 = sha256(Buffer.from(`${JSON.stringify(observation)}\n`));
   snapshots.push(successor);
   source.retrievedAt = now.toISOString().slice(0, 10);
   source.admissionEvidence = {

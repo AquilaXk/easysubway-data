@@ -31,7 +31,6 @@ import { addCadence } from "./freshness-policy.mjs";
 import { ROUTE_MAP_REVERIFICATION_CADENCE } from "./lib/route-map-admission-freshness.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import {
-  requireApprovedLegacyV1PublicPositionsPredecessor,
   requireCanonicalPublicStaticNetworkV2OuterSnapshot,
   requirePublicStaticNetworkV2Admission,
 } from "./public-static-network-v2-admission.mjs";
@@ -183,7 +182,10 @@ function requireCurrentInventoryHead(sourceInventory, snapshot) {
     `current successor inventory ${snapshot.sourceId}`,
   );
   const admission = source.admissionEvidence;
-  if (admission?.snapshotId !== snapshot.snapshotId
+  assertNoForbiddenV2SelectedPath(source);
+  if (admission?.sourceId !== snapshot.sourceId
+    || admission.decision !== "APPROVED"
+    || admission.snapshotId !== snapshot.snapshotId
     || admission.rawSha256 !== snapshot.rawSha256
     || admission.schemaFingerprint !== snapshot.schemaFingerprint) {
     throw new Error("current successor inventory head binding is invalid");
@@ -201,26 +203,42 @@ function assertNoForbiddenV2SelectedPath(value) {
       return;
     }
     if (!current || typeof current !== "object") return;
-    for (const [key, child] of Object.entries(current)) if (key !== "historicalPredecessorAudit") visit(child);
+    for (const [key, child] of Object.entries(current)) {
+      if (["projectionMigration", "migration", "rootSupersession", "historicalPredecessorAudit"].includes(key)) {
+        throw new Error("current v2 selected path is invalid");
+      }
+      visit(child);
+    }
   };
   visit(value);
 }
 
-function requireCurrentV2Predecessor({ snapshot, sourceId, sourceSnapshots }) {
-  const isPositionRootReset = sourceId === "seoul-metro-route-map-positions" && snapshot.rootSupersession != null;
-  const predecessorId = isPositionRootReset ? snapshot.rootSupersession?.supersededHeadSnapshotId : snapshot.previousSnapshotId;
-  const previous = requireOne(sourceSnapshots, ({ snapshotId }) => snapshotId === predecessorId, `current v2 predecessor ${sourceId}`);
-  if (snapshot.sourceId !== sourceId || previous.sourceId !== sourceId) throw new Error("current v2 successor binding is invalid");
-  if (isPositionRootReset) {
-    if (snapshot.previousSnapshotId !== null || snapshot.diffSummary !== null
-      || snapshot.rootSupersession?.reasonCode !== "CANONICAL_SOURCE_CONTRACT_RESET"
-      || previous.publicStaticNetworkV2Observation?.schemaVersion === 2) throw new Error("current v2 successor binding is invalid");
-  } else if (snapshot.previousSnapshotId !== previous.snapshotId || snapshot.rootSupersession != null
-    || (sourceId === "seoul-metro-route-map-positions"
-      && (previous.publicStaticNetworkV2Observation?.schemaVersion !== 2 || previous.projectionMigration != null))) {
+function requireCurrentV2HeadLineage({ snapshot, sourceId, sourceSnapshots }) {
+  if (snapshot.sourceId !== sourceId) {
     throw new Error("current v2 successor binding is invalid");
   }
-  return { isPositionRootReset, previous };
+  assertNoForbiddenV2SelectedPath(snapshot);
+  if (snapshot.previousSnapshotId === null) {
+    if (snapshot.diffSummary !== null) throw new Error("current v2 successor binding is invalid");
+    return;
+  }
+  if (typeof snapshot.previousSnapshotId !== "string" || snapshot.previousSnapshotId.length === 0) {
+    throw new Error("current v2 successor binding is invalid");
+  }
+  const previous = requireOne(
+    sourceSnapshots,
+    ({ snapshotId }) => snapshotId === snapshot.previousSnapshotId,
+    `current v2 predecessor ${sourceId}`,
+  );
+  const observation = previous.publicStaticNetworkV2Observation;
+  if (previous.sourceId !== sourceId
+    || observation?.schemaVersion !== 2
+    || observation.artifactKind !== "public-static-network-v2-observation"
+    || observation.sourceId !== sourceId
+    || observation.snapshotId !== previous.snapshotId
+    || !isDeepStrictEqual(snapshot.diffSummary, buildSnapshotDiff(previous, snapshot))) {
+    throw new Error("current v2 successor binding is invalid");
+  }
 }
 
 function requireCurrentV2ObservationBinding({ snapshot, sourceId, count }) {
@@ -247,14 +265,14 @@ function requireCurrentV2ObservationBinding({ snapshot, sourceId, count }) {
     || !isDeepStrictEqual(observation.providerRecordHashes, observation.normalizedProjection.map((record) => sha256(Buffer.from(JSON.stringify(record)))))
     || snapshot.normalizedObservationSha256 !== canonicalJsonSha256(observation)
     || snapshot.rowCount !== count || snapshot.coverageCount !== count
-    || !Array.isArray(snapshot.providerRecordHashes) || snapshot.providerRecordHashes.length !== count) throw new Error("current v2 successor binding is invalid");
+    || !Array.isArray(snapshot.providerRecordHashes) || snapshot.providerRecordHashes.length !== count
+    || !snapshot.providerRecordHashes.every((hash) => SHA256.test(hash))) throw new Error("current v2 successor binding is invalid");
   return observation;
 }
 
 function verifyCurrentV2SnapshotBinding({ snapshot, sourceId, count, extension, contentType, sourceSnapshots, sourceInventory, now }) {
-  const { isPositionRootReset, previous } = requireCurrentV2Predecessor({ snapshot, sourceId, sourceSnapshots });
+  requireCurrentV2HeadLineage({ snapshot, sourceId, sourceSnapshots });
   const observation = requireCurrentV2ObservationBinding({ snapshot, sourceId, count });
-  if (isPositionRootReset) requireApprovedLegacyV1PublicPositionsPredecessor({ sourceSnapshots, positions: previous, now });
   requireCanonicalPublicStaticNetworkV2OuterSnapshot({ snapshot, now, requireCurrentFreshness: true });
   if (sourceId === "seoul-metro-route-map-positions") assertCurrentSeoulPositionProjectionCompleteness(observation.normalizedProjection);
   else assertCurrentMolitFullRouteCompleteness(observation.normalizedProjection);
@@ -278,9 +296,7 @@ export function verifyCurrentPublicStaticNetworkV2Heads({ sourceSnapshots, sourc
     throw new Error("current v2 production source is invalid");
   }
   requirePublicStaticNetworkV2Admission({ positions, positionSource });
-  const cyber = sourceInventory.sources.filter(({ id }) => id === "seoulmetro-cyberstation-route-map");
-  if (cyber.some(({ requiredForProductionPack, productionUseAllowed }) => requiredForProductionPack === true || productionUseAllowed === true)) throw new Error("legacy route map source cannot be current production");
-  assertNoForbiddenV2SelectedPath({ positions, molit, positionSource });
+  assertNoForbiddenV2SelectedPath({ positions, molit, positionSource, molitSource });
   return { positions, molit };
 }
 
@@ -299,119 +315,6 @@ export function verifyCurrentStaticNetworkSuccessorHeads({ sourceSnapshots, sour
   if (!hasPositionsV2 && !hasMolitV2) throw new Error("V2_MISSING");
   if (hasPositionsV2 !== hasMolitV2) throw new Error("V2_MIXED");
   return verifyCurrentPublicStaticNetworkV2Heads({ sourceSnapshots, sourceInventory, now });
-}
-
-// Historical audit only. This function must never become a current activation
-// success path; current activation requires two schema-2 embedded observations.
-export function verifyHistoricalStaticNetworkSuccessorHeads({ sourceSnapshots, sourceInventory }) {
-  if (!Array.isArray(sourceSnapshots)
-    || sourceInventory?.schemaVersion !== 1
-    || sourceInventory.artifactKind !== "production-source-inventory"
-    || !Array.isArray(sourceInventory.sources)) {
-    throw new Error("current successor inputs are invalid");
-  }
-  const heads = validateLineage(sourceSnapshots).headsBySource;
-  const headFor = (sourceId) => requireOne(
-    sourceSnapshots,
-    ({ snapshotId }) => snapshotId === heads[sourceId],
-    `current successor head ${sourceId}`,
-  );
-  const molit = headFor("molit-urban-rail-full-route");
-  const molitPrevious = requireOne(
-    sourceSnapshots,
-    ({ snapshotId }) => snapshotId === molit.previousSnapshotId,
-    "current full route predecessor",
-  );
-  const migration = molit.projectionMigration;
-  if (molit.sourceId !== "molit-urban-rail-full-route"
-    || !Array.isArray(molit.providerRecordHashes)
-    || molit.rowCount !== CURRENT_MOLIT_FULL_ROUTE_ROW_COUNT
-    || molit.coverageCount !== molit.rowCount
-    || molit.providerRecordHashes.length !== molit.rowCount
-    || molit.providerRecordHashes.some((value) => !SHA256.test(value ?? ""))
-    || !SHA256.test(molit.contentSha256 ?? "")
-    || !SHA256.test(molit.schemaFingerprint ?? "")
-    || migration?.migrationKind !== "LEGACY_SAMPLE_TO_FULL_CONSUMED_FIELDS"
-    || migration.sourceId !== molit.sourceId
-    || migration.legacySnapshotId !== molitPrevious.snapshotId
-    || migration.legacyRawSha256 !== molitPrevious.rawSha256
-    || migration.legacySchemaFingerprint !== molitPrevious.schemaFingerprint
-    || JSON.stringify(migration.legacyProviderRecordHashes) !== JSON.stringify(molitPrevious.providerRecordHashes)
-    || migration.fullProjectionSha256 !== molit.contentSha256
-    || migration.fullProjectionSchemaFingerprint !== molit.schemaFingerprint
-    || migration.fullProjectionRowCount !== molit.rowCount
-    || migration.newSnapshotId !== molit.snapshotId) {
-    throw new Error("current full route successor binding is invalid");
-  }
-  requireCurrentSuccessorReceipt(molit, "csv", "text/csv; charset=euc-kr");
-  requireCurrentInventoryHead(sourceInventory, molit);
-
-  const positions = headFor("seoul-metro-route-map-positions");
-  const replacement = positions.projectionMigration;
-  const replaced = requireOne(
-    sourceSnapshots,
-    ({ snapshotId }) => snapshotId === replacement?.replacedSnapshotId,
-    "current public route map predecessor",
-  );
-  if (positions.sourceId !== "seoul-metro-route-map-positions"
-    || positions.previousSnapshotId !== null
-    || positions.diffSummary !== null
-    || positions.rowCount !== CURRENT_SEOUL_PUBLIC_POSITION_COUNT
-    || !Array.isArray(positions.providerRecordHashes)
-    || positions.providerRecordHashes.length !== positions.rowCount
-    || positions.providerRecordHashes.some((value) => !SHA256.test(value ?? ""))
-    || replacement?.migrationKind !== "CROSS_SOURCE_CANONICAL_REPLACEMENT"
-    || replacement.sourceId !== positions.sourceId
-    || replacement.replacedSourceId !== "seoulmetro-cyberstation-route-map"
-    || replacement.replacedSnapshotId !== replaced.snapshotId
-    || replacement.replacedRawSha256 !== replaced.rawSha256
-    || replacement.replacedSchemaFingerprint !== replaced.schemaFingerprint
-    || replacement.candidateSlotSourceId !== replacement.replacedSourceId) {
-    throw new Error("current public route map successor binding is invalid");
-  }
-  requireCurrentSuccessorReceipt(positions, "json", "application/json");
-  const positionSource = requireCurrentInventoryHead(sourceInventory, positions);
-  const layout = positions.routeMapLayoutEvidence;
-  const artifact = positions.routeMapLayoutArtifact;
-  const currentLayout = positionSource.routeMapAdmissionEvidence?.currentLayoutAdmission;
-  const layoutKeys = [
-    "layoutAlgorithmVersion", "topologySnapshotId", "topologySnapshotSha256",
-    "topologySnapshotIdentity", "lineOrderSha256", "aliasLedgerVersion", "aliasLedgerSha256",
-    "rawPositionsSha256", "layoutPositionsSha256", "layoutTracksSha256", "semanticInputSha256",
-    "semanticOutputSha256", "outputSchemaSha256", "layoutArtifactSha256",
-  ];
-  if (!layout || !artifact || artifact.rawSha256 !== positions.rawSha256
-    || layout.layoutArtifactSha256 !== canonicalJsonSha256(artifact)
-    || layoutKeys.some((key) => key !== "layoutArtifactSha256"
-      && (layout[key] == null || layout[key] !== artifact[key]))
-    || positionSource.requiredForProductionPack !== true
-    || positionSource.productionUseAllowed !== true
-    || currentLayout?.schemaVersion !== 2
-    || currentLayout.artifactKind !== "seoul-public-route-map-layout-admission"
-    || currentLayout.status !== "ADMITTED"
-    || currentLayout.positionSnapshotId !== positions.snapshotId
-    || currentLayout.snapshotPath !== `tools/datapack/sources/${positions.snapshotId}.json`
-    || currentLayout.snapshotSha256 !== positions.normalizedObservationSha256
-    || currentLayout.rawSha256 !== positions.rawSha256
-    || currentLayout.contentSha256 !== positions.contentSha256
-    || layoutKeys.some((key) => currentLayout[key] !== layout[key])) {
-    throw new Error("current public route map layout admission binding is invalid");
-  }
-  // Schema-1 records retain the narrow layout-version gate; schema-2 records
-  // are routed to the exact embedded-observation verifier first.
-  if (positions.publicStaticNetworkV2Observation != null) {
-    requirePublicStaticNetworkV2Admission({ positions, positionSource });
-  } else if (layout.layoutAlgorithmVersion !== "seoul-public-latlon-line-order-layout-v2"
-    || artifact.layoutAlgorithmVersion !== "seoul-public-latlon-line-order-layout-v2"
-    || currentLayout.layoutAlgorithmVersion !== "seoul-public-latlon-line-order-layout-v2") {
-    throw new Error("V2_MISSING");
-  }
-  const cyber = sourceInventory.sources.filter(({ id }) => id === "seoulmetro-cyberstation-route-map");
-  if (cyber.length > 1 || cyber.some(({ requiredForProductionPack, productionUseAllowed }) =>
-    requiredForProductionPack === true || productionUseAllowed === true)) {
-    throw new Error("legacy route map source cannot be current production");
-  }
-  return { molit, positions };
 }
 
 function validateHandoff(handoff, rawArtifact, rawArtifactBytes) {

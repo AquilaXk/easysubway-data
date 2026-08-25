@@ -23,7 +23,10 @@ import {
 } from "./build-current-capital-station-line-input.mjs";
 import { fixture as fullCapitalFixture } from "./build-current-capital-station-line-input.test.mjs";
 import { buildCurrentCapitalAccessibilityRefreshOutputs } from "./refresh-current-capital-accessibility-full.mjs";
-import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
+import {
+  copySyntheticCurrentPublicRouteMapRepository,
+  nextSyntheticCurrentStaticNetworkNow,
+} from "./test-fixtures/current-public-route-map-successor.mjs";
 
 test("full-capital authority는 213/639 input과 456 non-RIDE를 2,674-edge fixture에 결속한다", async () => {
   const input = await fullInput();
@@ -68,7 +71,7 @@ test("합성 current public successor는 1,102 metadata·2,674 route·456 author
   t.after(() => rm(temp, { recursive: true, force: true }));
   const repositoryRoot = path.join(temp, "repository");
   await copySyntheticCurrentPublicRouteMapRepository(sourceRoot, repositoryRoot, {
-    now: new Date("2026-08-22T09:45:18.609Z"),
+    now: await nextSyntheticCurrentStaticNetworkNow(sourceRoot),
     activateStaticNetwork: true,
   });
   const buildSpecBytes = await readFile(
