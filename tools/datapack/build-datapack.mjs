@@ -1436,7 +1436,15 @@ export function validateCapitalTopologyReverification(
   const candidateLineIds = new Set(candidateTopology.lines?.map(({ lineId }) => lineId) ?? []);
   const sourceSeparated = candidateLineIds.size === sourceSeparatedLineIds.length
     && sourceSeparatedLineIds.every((lineId) => candidateLineIds.has(lineId));
-  const baselineTopology = sourceSeparated
+  const topologyLineIds = new Set(topology.lines?.map(({ lineId }) => lineId) ?? []);
+  const sourceSeparatedBaseline = topologyLineIds.size === sourceSeparatedLineIds.length
+    && sourceSeparatedLineIds.every((lineId) => topologyLineIds.has(lineId));
+  const fullBaseline = topologyLineIds.size === CAPITAL_MAP_LINE_IDS.length
+    && CAPITAL_MAP_LINE_IDS.every((lineId) => topologyLineIds.has(lineId));
+  if (sourceSeparated && !sourceSeparatedBaseline && !fullBaseline) {
+    throw new Error("capital topology reverification baseline ownership is invalid");
+  }
+  const baselineTopology = sourceSeparated && fullBaseline
     ? projectCapitalTopologyOwnership(topology)
     : topology;
   assertExactKeys(

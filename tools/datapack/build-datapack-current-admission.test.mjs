@@ -558,6 +558,35 @@ test("source-separated reverification은 historical baseline도 동일 ownership
   ));
 });
 
+test("source-separated current reverification은 official baseline identity를 유지한다", async () => {
+  const topology = JSON.parse(await readFile(
+    path.join(root, "tools/datapack/sources/capital-route-topology-20260825.json"),
+    "utf8",
+  ));
+  const evidence = buildCapitalTopologyReverificationEvidence(topology, topology);
+  evidence.baseline.snapshotId = "capital-route-topology-20260825";
+  const admission = {
+    schemaVersion: 1,
+    artifactKind: "capital-network-edge-admission",
+    issue: 2649,
+    status: "ADMITTED",
+    snapshotId: "capital-route-topology-20260825",
+    contentSha256: topology.contentSha256,
+    reviewedAt: topology.capturedAt,
+    reverifiedAt: topology.capturedAt,
+    freshUntil: topology.freshUntil,
+  };
+
+  assert.doesNotThrow(() => validateCapitalTopologyReverification(
+    evidence,
+    topology,
+    topology,
+    admission,
+    admission.snapshotId,
+    admission.snapshotId,
+  ));
+});
+
 test("expired historical ITX admission은 current source admission으로 재사용되지 않는다", async () => {
   const admission = JSON.parse(await readFile(
     path.join(root, "tools/datapack/itx-current-network-edge-admission-20260810.json"),
