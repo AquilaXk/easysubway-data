@@ -157,6 +157,18 @@ export function deriveCurrentOnlyProjection({ snapshot, inventory, governance, g
     ...binding,
   };
 }
+export function currentLiveChainTransferPerSourceEvidence(ledgerOrderedRows, inventory) {
+  if (!Array.isArray(ledgerOrderedRows) || !Array.isArray(inventory?.sources)) throw new Error("TRANSFER per-source evidence input is invalid");
+  return ledgerOrderedRows.map((snapshot) => {
+    const source = inventory.sources.find(({ id }) => id === snapshot?.sourceId);
+    if (!source || typeof source.admissionEvidence?.adminReviewRecordHash !== "string") throw new Error("TRANSFER per-source evidence input is invalid");
+    return {
+      sourceId: snapshot.sourceId, snapshotId: snapshot.snapshotId, rawSha256: snapshot.rawSha256,
+      adminReviewRecordHash: source.admissionEvidence.adminReviewRecordHash,
+      perSourceSnapshotSetHash: sha256(JSON.stringify([snapshot])),
+    };
+  });
+}
 async function refreshCurrentOnlyReleaseEvidence(staging) {
   const [candidateBytes, snapshotsBytes, inventoryBytes, requestBytes, hashesBytes, canonicalBytes, governanceBytes, freshnessBytes] = await Promise.all([
     stable(rooted(staging, "tools/datapack/release/candidate-build-spec.json"), "staged candidate"),
@@ -184,11 +196,7 @@ async function refreshCurrentOnlyReleaseEvidence(staging) {
   hashes.sourceSnapshotSetHash.value = candidate.sourceSnapshotSetHash;
   hashes.sourceInventorySha256.value = candidate.sourceInventorySha256;
   hashes.fixturePath.sha256 = sha256(canonicalBytes);
-  hashes.perSourceEvidence = orderedRows.map((snapshot) => ({
-    sourceId: snapshot.sourceId, snapshotId: snapshot.snapshotId, rawSha256: snapshot.rawSha256,
-    adminReviewRecordHash: inventory.sources.find(({ id }) => id === snapshot.sourceId).admissionEvidence.adminReviewRecordHash,
-    perSourceSnapshotSetHash: sha256(JSON.stringify([snapshot])),
-  }));
+  hashes.perSourceEvidence = currentLiveChainTransferPerSourceEvidence(ledgerOrderedRows, inventory);
   await Promise.all([
     writeFile(rooted(staging, "tools/datapack/release/candidate-build-spec.json"), nextCandidateBytes),
     writeFile(rooted(staging, "tools/datapack/release/release-request.json"), json(request)),

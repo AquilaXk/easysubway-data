@@ -7,6 +7,7 @@ import test from "node:test";
 
 import {
   currentLiveChainTransferOutputPaths,
+  currentLiveChainTransferPerSourceEvidence,
   currentReleaseSnapshots,
   assertRebuiltCurrentLiveChainTransferCandidateIdentity,
   assertCurrentLiveChainTransferIdentity,
@@ -62,6 +63,8 @@ test("current release selection preserves candidate order while exposing rebuilt
   assert.deepEqual(result.ledgerOrderedRows.map(({ snapshotId }) => snapshotId), reversedLedger.map(({ snapshotId }) => snapshotId));
   const rebuilt = { candidateId: candidate.candidateId, sourceSnapshotIds: result.orderedRows.map(({ snapshotId }) => snapshotId), sourceSnapshotSetHash: createHash("sha256").update(JSON.stringify(result.ledgerOrderedRows)).digest("hex") };
   assert.doesNotThrow(() => assertRebuiltCurrentLiveChainTransferCandidateIdentity(candidate, rebuilt, reversedLedger));
+  const evidence = currentLiveChainTransferPerSourceEvidence(result.ledgerOrderedRows, { sources: reversedLedger.map((snapshot) => ({ id: snapshot.sourceId, admissionEvidence: { adminReviewRecordHash: `review-${snapshot.sourceId}` } })) });
+  assert.deepEqual(evidence.map(({ snapshotId }) => snapshotId), reversedLedger.map(({ snapshotId }) => snapshotId));
 });
 
 test("current live-chain TRANSFER producer has no predecessor or station/transition dependency", async () => {
