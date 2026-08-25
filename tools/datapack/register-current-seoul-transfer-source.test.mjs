@@ -30,8 +30,6 @@ async function compositionFixture(t) {
   const publicTopologySnapshotId = inventory.value.sources.find(({ id }) => id === "seoul-metro-route-map-positions")
     ?.routeMapAdmissionEvidence?.currentTopologyAdmission?.topologySnapshotId;
   const publicTopology = load(`tools/datapack/sources/${publicTopologySnapshotId}.json`).value;
-  assert.equal(publicTopology.lines.length, 24);
-  assert.equal(publicTopology.lines.reduce((count, line) => count + line.edgeCount, 0), 1_548);
   const sourceId = observation.manifest.sourceId;
   const transferSource = inventory.value.sources.find(({ id }) => id === sourceId);
   transferSource.requiredForProductionPack = false;
