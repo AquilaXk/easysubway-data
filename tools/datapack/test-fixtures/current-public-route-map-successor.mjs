@@ -6,10 +6,12 @@ import { isDeepStrictEqual } from "node:util";
 import { buildSeoulRouteMapPositions } from "../collect-seoul-route-map-positions.mjs";
 import {
   buildCapitalTopologyReverificationEvidence,
-  projectCapitalTopologyOwnership,
 } from "../collect-capital-route-topology.mjs";
 import { currentIncheonStationCodeDerivations } from "../collect-incheon-station-info.mjs";
-import { projectCapitalTopologyIntoCanonicalFixture } from "../build-datapack.mjs";
+import {
+  projectCapitalTopologyIntoCanonicalFixture,
+  validateSourceSeparatedCurrentTopology,
+} from "../build-datapack.mjs";
 import {
   buildCurrentExitAdmissionOciReceipt,
   canonicalCurrentExitAdmissionOciReceiptJson,
@@ -368,21 +370,37 @@ async function writeSyntheticCurrentExitOciReceipt(root) {
 }
 
 export async function nextSyntheticCurrentStaticNetworkNow(root) {
-  const [candidate, snapshots] = await Promise.all([
+  const [candidate, snapshots, inventory] = await Promise.all([
     readJson(root, "tools/datapack/release/candidate-build-spec.json"),
     readJson(root, "tools/datapack/release/source-snapshots.json"),
+    readJson(root, "tools/datapack/source-inventory.json"),
   ]);
   const selected = candidate.sourceSnapshotIds.map((snapshotId) =>
     snapshots.find((snapshot) => snapshot.snapshotId === snapshotId));
   if (selected.some((snapshot) => snapshot == null)) {
     throw new Error("synthetic current static-network clock fixture is incomplete");
   }
+  const capitalTopologyPath = candidate.networkEdgeEvidence?.capitalTopology?.path;
+  const incheonTopologyPath = inventory.sources
+    .find(({ id }) => id === "incheon-transit-station-info")
+    ?.routeMapAdmissionEvidence?.snapshotPath;
+  if (typeof capitalTopologyPath !== "string" || typeof incheonTopologyPath !== "string") {
+    throw new Error("synthetic current topology clock fixture is incomplete");
+  }
+  const [capitalTopology, incheonTopology] = await Promise.all([
+    readJson(root, capitalTopologyPath),
+    readJson(root, incheonTopologyPath),
+  ]);
   const basisAt = Math.max(...selected.flatMap((snapshot) => [
     snapshot.retrievedAt,
     snapshot.sourceUpdatedAt,
     snapshot.rawReceipt?.storedAt,
-  ].filter(Boolean).map(Date.parse)));
-  const freshUntil = Math.min(...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)));
+  ].filter(Boolean).map(Date.parse)), Date.parse(capitalTopology.capturedAt), Date.parse(incheonTopology.capturedAt));
+  const freshUntil = Math.min(
+    ...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)),
+    Date.parse(capitalTopology.freshUntil),
+    Date.parse(incheonTopology.freshUntil),
+  );
   const nowMillis = basisAt + 60_000;
   if (!Number.isFinite(basisAt) || !Number.isFinite(freshUntil) || nowMillis >= freshUntil) {
     throw new Error("synthetic current static-network clock fixture has no valid freshness window");
@@ -668,22 +686,31 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   candidate.publishedAt = now.toISOString();
   const currentTopologyPath = `tools/datapack/sources/${currentTopologySnapshotId}.json`;
   const currentTopology = JSON.parse(topologySnapshotBytes);
+  const currentIncheonSource = inventory.sources.find(({ id }) => id === "incheon-transit-station-info");
+  const currentIncheonTopologyPath = currentIncheonSource?.routeMapAdmissionEvidence?.snapshotPath;
+  if (typeof currentIncheonTopologyPath !== "string") {
+    throw new Error("synthetic current Incheon topology fixture is missing");
+  }
+  validateSourceSeparatedCurrentTopology({
+    capitalTopology: currentTopology,
+    incheonSnapshot: JSON.parse(await readFile(path.join(root, currentIncheonTopologyPath))),
+  });
   const topologyFreshnessMillis = Date.parse(currentTopology.freshUntil) - Date.parse(currentTopology.capturedAt);
   if (!Number.isFinite(topologyFreshnessMillis) || topologyFreshnessMillis <= 0) {
     throw new Error("synthetic current topology freshness is invalid");
   }
   const candidateTopologyCapturedAt = candidate.publishedAt;
-  const candidateTopology = projectCapitalTopologyOwnership({
+  const candidateTopology = {
     ...currentTopology,
     capturedAt: candidateTopologyCapturedAt,
     freshUntil: new Date(Date.parse(candidateTopologyCapturedAt) + topologyFreshnessMillis).toISOString(),
     lines: currentTopology.lines.map((line) => ({ ...line, capturedAt: candidateTopologyCapturedAt })),
-  });
+  };
   const candidateTopologyPath = `tools/datapack/sources/${currentTopologySnapshotId}-source-separated.json`;
   const candidateTopologyBytes = jsonBytes(candidateTopology);
   const topologyReverificationPath = `tools/datapack/release/${currentTopologySnapshotId}-reverification.json`;
   const topologyReverification = buildCapitalTopologyReverificationEvidence(
-    projectCapitalTopologyOwnership(currentTopology),
+    currentTopology,
     candidateTopology,
   );
   topologyReverification.baseline.snapshotId = currentTopologySnapshotId;
