@@ -37,16 +37,16 @@
   },
   "sourceSnapshots": {
     "note": "historical source snapshot lineage는 유지하고 canonical capital sourceInventory의 active source만 release snapshot으로 소비한다. retired KRIC movement 2종은 소비하지 않는다.",
-    "order": "release snapshot 순서: seoul-metro-route-map-positions → kric-subway-timetable → seoul-metro-accessibility → kric-station-convenience-standard → molit-urban-rail-full-route → seoulmetro-station-line-info → seoul-metro-transfer-distance-duration",
-    "committedVerificationCommand": "node -e \"import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto');const s=require('./tools/datapack/release/source-snapshots.json'),b=require('./tools/datapack/release/candidate-build-spec.json'),i=b.sourceSnapshotIds;if(!Array.isArray(i)||new Set(i).size!==i.length)throw new Error('candidate snapshot IDs are invalid');const h=validateLineage(s).headsBySource,r=i.map(id=>{const n=s.filter(x=>x.snapshotId===id);if(n.length!==1||h[n[0].sourceId]!==id)throw new Error('candidate source snapshot mismatch: '+id);return n[0]});if(new Set(r.map(x=>x.sourceId)).size!==r.length)throw new Error('candidate source snapshots are not unique');if(!Array.isArray(b.sourceSnapshots)||b.sourceSnapshots.length!==r.length||b.sourceSnapshots.some((x,n)=>x.sourceId!==r[n].sourceId||x.snapshotId!==r[n].snapshotId))throw new Error('candidate source projection mismatch');const e=require('./tools/datapack/release/hash-evidence.json'),v=e.perSourceEvidence;if(!Array.isArray(v)||v.length!==r.length)throw new Error('source snapshot evidence count mismatch');for(const [i,n] of r.entries()){const q=v[i],h=c.createHash('sha256').update(JSON.stringify([n])).digest('hex');if(!q||q.sourceId!==n.sourceId||q.snapshotId!==n.snapshotId)throw new Error('source snapshot evidence order or identity mismatch: '+n.sourceId);if(q.perSourceSnapshotSetHash!==h)throw new Error('source snapshot evidence hash mismatch: '+n.sourceId)}})\"",
+    "order": "release snapshot ledger 순서: kric-subway-timetable → seoulmetro-station-line-info → kric-station-convenience-standard → seoul-metro-transfer-distance-duration → seoul-metro-accessibility → seoul-metro-route-map-positions → molit-urban-rail-full-route",
+    "committedVerificationCommand": "node -e \"import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto');const s=require('./tools/datapack/release/source-snapshots.json'),b=require('./tools/datapack/release/candidate-build-spec.json'),i=b.sourceSnapshotIds;if(!Array.isArray(i)||new Set(i).size!==i.length)throw new Error('candidate snapshot IDs are invalid');const h=validateLineage(s).headsBySource,p=i.map(id=>{const n=s.filter(x=>x.snapshotId===id);if(n.length!==1||h[n[0].sourceId]!==id)throw new Error('candidate source snapshot mismatch: '+id);return n[0]});if(new Set(p.map(x=>x.sourceId)).size!==p.length)throw new Error('candidate source snapshots are not unique');const k=new Set(i),r=s.filter(x=>k.has(x.snapshotId));if(r.length!==p.length)throw new Error('candidate ledger selection mismatch');if(!Array.isArray(b.sourceSnapshots)||b.sourceSnapshots.length!==p.length||b.sourceSnapshots.some((x,n)=>x.sourceId!==p[n].sourceId||x.snapshotId!==p[n].snapshotId))throw new Error('candidate source projection mismatch');const e=require('./tools/datapack/release/hash-evidence.json'),v=e.perSourceEvidence;if(!Array.isArray(v)||v.length!==r.length)throw new Error('source snapshot evidence count mismatch');for(const [i,n] of r.entries()){const q=v[i],h=c.createHash('sha256').update(JSON.stringify([n])).digest('hex');if(!q||q.sourceId!==n.sourceId||q.snapshotId!==n.snapshotId)throw new Error('source snapshot evidence order or identity mismatch: '+n.sourceId);if(q.perSourceSnapshotSetHash!==h)throw new Error('source snapshot evidence hash mismatch: '+n.sourceId)}})\"",
     "timetableEvidenceCommand": "node -e \"const s=require('./tools/datapack/release/source-snapshots.json').find(n=>n.sourceId==='kric-subway-timetable'),i=require('./tools/datapack/source-inventory.json').sources.find(n=>n.id==='kric-subway-timetable').admissionEvidence,p=require('./tools/datapack/inputs/capital-pilot-production-source-input.json').scheduleProvenance;if(!(s&&i&&p&&s.snapshotId===i.snapshotId&&s.snapshotId===p.sourceSnapshotId&&s.rawSha256===i.rawSha256&&s.schemaFingerprint===i.schemaFingerprint))throw new Error('timetable snapshot evidence mismatch')\"",
     "specRowRawSha256Note": "build-spec sourceSnapshots[].rawSha256는 admissionEvidence.rawSha256(=raw 바이트 해시, fixture 주석 선례 'admission sample.rawSha256')를 기입. snapshot 객체 내부 rawSha256는 canonical(minified·key정렬) raw 해시로 값이 다르며 source-snapshots.json에 보존됨.",
     "governanceOverlayNote": "retained legacy root 5종과 timetable의 원천 identity를 유지하고 신규 접근성 snapshot 2종을 추가했다. build-spec의 freshnessExpiresAt·rawRetentionExpiresAt·governance policy binding은 현행 정책에서 파생하며 validator가 임의 연장을 차단한다."
   },
   "sourceSnapshotSetHash": {
-    "value": "6fde93ffc4c064fc44d186c404e43c75a4c6ceed0b060ad12a266d2175258bcf",
+    "value": "47ce24b6d682b0f0d5afd7380f6850fc1c87a1507153833117c0e9d060c0cdf8",
     "contract": "source별 head 7종의 byte-ordered JSON hash와 build spec·release request가 일치해야 한다.",
-    "reproductionCommand": "node -e \"import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto');const s=require('./tools/datapack/release/source-snapshots.json'),b=require('./tools/datapack/release/candidate-build-spec.json'),i=b.sourceSnapshotIds;if(!Array.isArray(i)||new Set(i).size!==i.length)throw new Error('candidate snapshot IDs are invalid');const h=validateLineage(s).headsBySource,r=i.map(id=>{const n=s.filter(x=>x.snapshotId===id);if(n.length!==1||h[n[0].sourceId]!==id)throw new Error('candidate source snapshot mismatch: '+id);return n[0]});if(new Set(r.map(x=>x.sourceId)).size!==r.length)throw new Error('candidate source snapshots are not unique');if(!Array.isArray(b.sourceSnapshots)||b.sourceSnapshots.length!==r.length||b.sourceSnapshots.some((x,n)=>x.sourceId!==r[n].sourceId||x.snapshotId!==r[n].snapshotId))throw new Error('candidate source projection mismatch');console.log(c.createHash('sha256').update(JSON.stringify(r)).digest('hex'))})\""
+    "reproductionCommand": "node -e \"import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto');const s=require('./tools/datapack/release/source-snapshots.json'),b=require('./tools/datapack/release/candidate-build-spec.json'),i=b.sourceSnapshotIds;if(!Array.isArray(i)||new Set(i).size!==i.length)throw new Error('candidate snapshot IDs are invalid');const h=validateLineage(s).headsBySource,p=i.map(id=>{const n=s.filter(x=>x.snapshotId===id);if(n.length!==1||h[n[0].sourceId]!==id)throw new Error('candidate source snapshot mismatch: '+id);return n[0]});if(new Set(p.map(x=>x.sourceId)).size!==p.length)throw new Error('candidate source snapshots are not unique');const k=new Set(i),r=s.filter(x=>k.has(x.snapshotId));if(r.length!==p.length)throw new Error('candidate ledger selection mismatch');if(!Array.isArray(b.sourceSnapshots)||b.sourceSnapshots.length!==p.length||b.sourceSnapshots.some((x,n)=>x.sourceId!==p[n].sourceId||x.snapshotId!==p[n].snapshotId))throw new Error('candidate source projection mismatch');console.log(c.createHash('sha256').update(JSON.stringify(r)).digest('hex'))})\""
   },
   "sourceInventorySha256": {
     "value": "3620428f4409311d5fa31df05ca95d37431d6a659ccfd05f11255d447fb47958",
@@ -71,39 +71,11 @@
   },
   "perSourceEvidence": [
     {
-      "sourceId": "seoul-metro-route-map-positions",
-      "snapshotId": "seoul-metro-route-map-positions-current-20260824T114822985Z",
-      "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
-      "adminReviewRecordHash": "ffff63f1182addecce58f285b2d982931dec58d6e403ecac9437a2959ed3aea1",
-      "perSourceSnapshotSetHash": "3cb49b6fae738a86e6822d46c5592acfd203ed25b209e1b676ab712c21bda7dd"
-    },
-    {
       "sourceId": "kric-subway-timetable",
       "snapshotId": "kric-subway-timetable-line4-pilot-20260809",
       "rawSha256": "d8ee1a9351ade3465a955ffabeade294eaccf65449fc1fc1998240fdba87e064",
       "adminReviewRecordHash": "d36b1f0441b02adc109f1d08263fe3f3bc063dbead7d9915bf4304619ac83db4",
       "perSourceSnapshotSetHash": "c2345aac83b263df7f827743af29672f6f601ff956f8a8d08464e5eef8b1ae0d"
-    },
-    {
-      "sourceId": "seoul-metro-accessibility",
-      "snapshotId": "seoul-metro-accessibility-20260822T094318289Z",
-      "rawSha256": "1cdbcb99b212564c049ef7a1f6d19f29c8f5639376b95af87454cc763e5e9ea6",
-      "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",
-      "perSourceSnapshotSetHash": "6bab7dde2caae028734ebeb27e646a85f300a588c2c5ca640379ccda1113ac75"
-    },
-    {
-      "sourceId": "kric-station-convenience-standard",
-      "snapshotId": "kric-station-convenience-standard-20260816T015619375Z",
-      "rawSha256": "32ef1453e5489263b3cb88e99379da91f10e20692eb1d608f696132b5a839b5e",
-      "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
-      "perSourceSnapshotSetHash": "69dea8f3bbdeff1ac84c09f524716d945febb5c43276a1e1287ad1081a022de1"
-    },
-    {
-      "sourceId": "molit-urban-rail-full-route",
-      "snapshotId": "molit-urban-rail-full-route-current-20260824T114822985Z",
-      "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-      "adminReviewRecordHash": "deb0280494956f8ff72fabc34bec250ff17a30b702ac32c6a4589f3d1e302395",
-      "perSourceSnapshotSetHash": "4997a0aa32fc7235414543555638040b3241f9ef49e211276f9fc28fb968fe89"
     },
     {
       "sourceId": "seoulmetro-station-line-info",
@@ -113,11 +85,39 @@
       "perSourceSnapshotSetHash": "fce00c4808e391fdfe7d2e994e4022cb1b907cc972e024e23f16e461fc151c7f"
     },
     {
+      "sourceId": "kric-station-convenience-standard",
+      "snapshotId": "kric-station-convenience-standard-20260816T015619375Z",
+      "rawSha256": "32ef1453e5489263b3cb88e99379da91f10e20692eb1d608f696132b5a839b5e",
+      "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
+      "perSourceSnapshotSetHash": "69dea8f3bbdeff1ac84c09f524716d945febb5c43276a1e1287ad1081a022de1"
+    },
+    {
       "sourceId": "seoul-metro-transfer-distance-duration",
       "snapshotId": "seoul-metro-transfer-distance-duration-20260815T094038817Z",
       "rawSha256": "3d872c9ac390426b5e0e26fa1916ae9d9a44b70077b632d3c85cb8e82381f7cf",
       "adminReviewRecordHash": "f1636fbd2b36b2687fc8d728290158ca934461276936036606bc03a3156d594e",
       "perSourceSnapshotSetHash": "110d209ee80f0d1fffcf888c90c1d4fc63a390ba1dfd083c698562b40abc6183"
+    },
+    {
+      "sourceId": "seoul-metro-accessibility",
+      "snapshotId": "seoul-metro-accessibility-20260822T094318289Z",
+      "rawSha256": "1cdbcb99b212564c049ef7a1f6d19f29c8f5639376b95af87454cc763e5e9ea6",
+      "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",
+      "perSourceSnapshotSetHash": "6bab7dde2caae028734ebeb27e646a85f300a588c2c5ca640379ccda1113ac75"
+    },
+    {
+      "sourceId": "seoul-metro-route-map-positions",
+      "snapshotId": "seoul-metro-route-map-positions-current-20260824T114822985Z",
+      "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
+      "adminReviewRecordHash": "ffff63f1182addecce58f285b2d982931dec58d6e403ecac9437a2959ed3aea1",
+      "perSourceSnapshotSetHash": "3cb49b6fae738a86e6822d46c5592acfd203ed25b209e1b676ab712c21bda7dd"
+    },
+    {
+      "sourceId": "molit-urban-rail-full-route",
+      "snapshotId": "molit-urban-rail-full-route-current-20260824T114822985Z",
+      "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
+      "adminReviewRecordHash": "deb0280494956f8ff72fabc34bec250ff17a30b702ac32c6a4589f3d1e302395",
+      "perSourceSnapshotSetHash": "4997a0aa32fc7235414543555638040b3241f9ef49e211276f9fc28fb968fe89"
     }
   ],
   "officialOdFareEvidence": {
