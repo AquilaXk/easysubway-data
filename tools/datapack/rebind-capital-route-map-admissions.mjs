@@ -78,6 +78,7 @@ function currentLayoutSnapshot(source, evidence) {
     || typeof admission.positionSnapshotId !== "string"
     || admission.positionSnapshotId.length === 0
     || admission.snapshotPath !== `tools/datapack/sources/${admission.positionSnapshotId}.json`
+    || !/^capital-route-topology-[0-9]{8}$/u.test(admission.topologySnapshotId ?? "")
     || CURRENT_LAYOUT_ADMISSION_FIELDS.filter((field) => field.endsWith("Sha256"))
       .some((field) => !SHA256.test(admission[field] ?? ""))) {
     throw new Error("Seoul current layout admission is invalid");
@@ -260,7 +261,20 @@ export function withCurrentCapitalTopologyAdmissions({
       throw new Error(`${source.id} position snapshot byte identity mismatch`);
     }
     const snapshot = parseSnapshot(snapshotBytes, `${source.id} position snapshot`);
-    const currentLayout = layoutAdmission == null ? null : validateCurrentLayoutObservation({ source, admission: layoutAdmission, bytes: snapshotBytes, topologyBytes });
+    const layoutTopologyBytes = layoutAdmission == null
+      ? null
+      : snapshotBytesByPath.get(
+          `tools/datapack/sources/${layoutAdmission.topologySnapshotId}.json`,
+        );
+    if (layoutAdmission != null && layoutTopologyBytes == null) {
+      throw new Error("Seoul current layout topology bytes are missing");
+    }
+    const currentLayout = layoutAdmission == null ? null : validateCurrentLayoutObservation({
+      source,
+      admission: layoutAdmission,
+      bytes: snapshotBytes,
+      topologyBytes: layoutTopologyBytes,
+    });
     const positions = currentLayout?.artifact.rawPositions ?? snapshot.positions;
     if (snapshot.sourceId !== source.id
       || !Array.isArray(positions)
@@ -377,6 +391,15 @@ async function main() {
     const snapshotPath = evidence.currentLayoutAdmission?.snapshotPath ?? evidence.snapshotPath;
     const snapshot = await regularFile(snapshotPath, `${source.id} position snapshot`);
     snapshotBytesByPath.set(snapshotPath, snapshot.bytes);
+    const layoutTopologyId = evidence.currentLayoutAdmission?.topologySnapshotId;
+    if (layoutTopologyId != null) {
+      const layoutTopologyPath = `tools/datapack/sources/${layoutTopologyId}.json`;
+      const layoutTopology = await regularFile(
+        layoutTopologyPath,
+        `${source.id} current layout topology`,
+      );
+      snapshotBytesByPath.set(layoutTopologyPath, layoutTopology.bytes);
+    }
   }
   const next = withCurrentCapitalTopologyAdmissions({
     inventory,

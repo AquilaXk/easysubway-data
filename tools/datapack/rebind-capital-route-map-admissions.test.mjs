@@ -269,12 +269,16 @@ test("서울 공식 current position admission은 다음 current topology에 exa
 
 test("서울 public v2 layout observation은 exact admission과 topology bytes에 재결속된다", async () => {
   const values = await seoulCurrentLayoutFixture();
+  const topologyPath = "tools/datapack/sources/capital-route-topology-20260814.json";
   const result = withCurrentCapitalTopologyAdmissions({
     inventory: values.inventory,
     topology: values.topology,
     topologySnapshotId: "capital-route-topology-20260814",
     reviewedAt: values.topology.capturedAt,
-    snapshotBytesByPath: new Map([[values.snapshotPath, values.snapshotBytes]]),
+    snapshotBytesByPath: new Map([
+      [values.snapshotPath, values.snapshotBytes],
+      [topologyPath, values.topologySnapshotBytes],
+    ]),
     topologySnapshotBytes: values.topologySnapshotBytes,
   });
   const evidence = result.sources[0].routeMapAdmissionEvidence;
@@ -292,7 +296,10 @@ test("서울 public v2 layout observation은 exact admission과 topology bytes�
     topology: tampered.topology,
     topologySnapshotId: "capital-route-topology-20260814",
     reviewedAt: tampered.topology.capturedAt,
-    snapshotBytesByPath: new Map([[tampered.snapshotPath, tampered.snapshotBytes]]),
+    snapshotBytesByPath: new Map([
+      [tampered.snapshotPath, tampered.snapshotBytes],
+      [topologyPath, tampered.topologySnapshotBytes],
+    ]),
     topologySnapshotBytes: tampered.topologySnapshotBytes,
   }), /layout observation identity/);
 });

@@ -25,6 +25,7 @@ import {
 import {
   admittedCapitalLineEvidence,
   projectCapitalTopologyIntoCanonicalFixture,
+  validateSourceSeparatedCurrentTopology,
 } from "./build-datapack.mjs";
 import { loadCapitalRouteTopologySnapshot } from "./apply-capital-route-topology-to-bundled-pack.mjs";
 import { addCadence } from "./freshness-policy.mjs";
@@ -1122,8 +1123,11 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
     snapshotPath: currentTopologyPath,
     prefix: "capital-route-topology",
   });
-  const topology = projectCurrentCapitalTopologyOwnership(fullTopology);
-  validateCurrentCapitalTopologyOwnership(topology);
+  validateSourceSeparatedCurrentTopology({
+    capitalTopology: fullTopology,
+    incheonSnapshot: currentIncheonTopology,
+  });
+  const topology = structuredClone(fullTopology);
   const activationNow = new Date(requiredUtcInstant(buildNow, "buildNow"));
   if (activationNow < new Date(topology.capturedAt)
     || activationNow >= new Date(topology.freshUntil)) {
@@ -1145,7 +1149,7 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
     now: activationNow,
   });
   const topologyReverification = buildCapitalTopologyReverificationEvidence(
-    projectCapitalTopologyOwnership(fullTopology),
+    topology,
     topology,
   );
   topologyReverification.baseline.snapshotId = topologySnapshotId;
@@ -1229,14 +1233,6 @@ function validateCurrentCapitalTopologyOwnership(topology) {
   if (observedLineIds.length !== expectedLineIds.length
     || new Set(observedLineIds).size !== observedLineIds.length
     || observedLineIds.some((lineId) => !expectedLineIdSet.has(lineId))) {
-    throw new Error("current capital topology ownership projection is invalid");
-  }
-}
-
-function projectCurrentCapitalTopologyOwnership(topology) {
-  try {
-    return projectCapitalTopologyOwnership(topology);
-  } catch {
     throw new Error("current capital topology ownership projection is invalid");
   }
 }
@@ -1621,6 +1617,20 @@ export async function collectPositionSnapshotBytes(sourceInventory, repositoryRo
       snapshotPath,
       await readRegularBytes(repositoryRoot, snapshotPath, `${source.id} position snapshot`),
     );
+    const layoutTopologyId = evidence.currentLayoutAdmission?.topologySnapshotId;
+    if (layoutTopologyId != null) {
+      const layoutTopologyPath = `tools/datapack/sources/${layoutTopologyId}.json`;
+      if (!snapshotBytesByPath.has(layoutTopologyPath)) {
+        snapshotBytesByPath.set(
+          layoutTopologyPath,
+          await readRegularBytes(
+            repositoryRoot,
+            layoutTopologyPath,
+            `${source.id} current layout topology`,
+          ),
+        );
+      }
+    }
   }
   if (snapshotBytesByPath.size === 0) throw new Error("capital position snapshots are missing");
   return snapshotBytesByPath;

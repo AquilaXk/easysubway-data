@@ -1093,43 +1093,29 @@ test("current topology admission clock은 candidate-selected static ledger와 �
   await assert.doesNotReject(() => collectPositionSnapshotBytes(sourceInventory));
 });
 
-test("topology-only refresh는 full source와 source-separated candidate identity를 한 입력에서 재생성한다", async () => {
-  // This is an in-memory test fixture. The tracked Incheon observation remains
-  // stale at the current static-successor clock and must not become production
-  // success merely to exercise the topology refresh path.
+test("topology-only refresh는 source-separated capital/Incheon identity를 함께 재생성한다", async () => {
   const currentIncheonTopologyPath =
-    "tools/datapack/sources/incheon-transit-station-info-20260824.json";
+    "tools/datapack/sources/incheon-transit-station-info-20260825.json";
   const currentItxTopologyEvidencePath =
     "tools/datapack/itx-cheongchun-topology-evidence.json";
   const [baseSpec, sourceInventory, baselineTopology, canonical,
-    productionScopePolicyBytes, historicalIncheonTopologyBytes, currentItxTopologyEvidenceBytes] =
+    productionScopePolicyBytes, currentIncheonTopologyBytes, currentItxTopologyEvidenceBytes] =
     await Promise.all([
     readJson("tools/datapack/release/candidate-build-spec.json"),
     readJson("tools/datapack/source-inventory.json"),
     readJson("tools/datapack/sources/capital-route-topology-20260724.json"),
     readJson("tools/datapack/release/capital-production-canonical-pack.json"),
     readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json")),
-    readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260814.json")),
+    readFile(path.join(root, currentIncheonTopologyPath)),
     readFile(path.join(root, currentItxTopologyEvidencePath)),
   ]);
-  const topologyAdmissions = sourceInventory.sources
-    .map(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence?.currentTopologyAdmission)
-    .filter(({ topologySnapshotId } = {}) => /^capital-route-topology-[0-9]{8}$/u.test(topologySnapshotId));
-  assert.ok(topologyAdmissions.length > 0);
-  const topologySnapshotId = topologyAdmissions[0].topologySnapshotId;
-  assert.ok(topologyAdmissions.every((admission) => admission.topologySnapshotId === topologySnapshotId));
-  const currentTopologyPath = `tools/datapack/sources/${topologySnapshotId}.json`;
+  const currentTopologyPath =
+    "tools/datapack/sources/capital-route-topology-20260825.json";
+  const topologySnapshotId = path.basename(currentTopologyPath, ".json");
   const currentTopologyBytes = await readFile(path.join(root, currentTopologyPath));
   const currentTopology = JSON.parse(currentTopologyBytes);
-  const currentIncheonTopology = JSON.parse(historicalIncheonTopologyBytes);
-  delete currentIncheonTopology.stationCodeCorrections;
-  currentIncheonTopology.stationCodeDerivations = currentIncheonStationCodeDerivations();
-  const { inWindow } = await currentTopologyAdmissionClock(root);
-  currentIncheonTopology.capturedAt = inWindow.toISOString();
-  currentIncheonTopology.freshUntil = new Date(inWindow.getTime() + 24 * 60 * 60 * 1_000).toISOString();
-  const currentIncheonTopologyBytes = Buffer.from(`${JSON.stringify(currentIncheonTopology)}\n`);
+  const currentIncheonTopology = JSON.parse(currentIncheonTopologyBytes);
   const buildNow = new Date(Math.max(
-    inWindow.getTime(),
     Date.parse(currentTopology.capturedAt),
     Date.parse(currentIncheonTopology.capturedAt),
   ) + 1).toISOString();
@@ -1170,7 +1156,7 @@ test("topology-only refresh는 full source와 source-separated candidate identit
     result.spec.networkEdgeEvidence.capitalTopologyReverification.sha256,
     sha256(result.topologyReverificationBytes),
   );
-  assert.equal(result.projectedEdgeCount, projectCapitalTopologyOwnership(currentTopology).totalEdgeCount);
+  assert.equal(result.projectedEdgeCount, currentTopology.totalEdgeCount);
   assert.equal(result.spec.itxTopologyEvidencePath, currentItxTopologyEvidencePath);
   assert.equal(result.spec.itxTopologyEvidenceSha256, sha256(currentItxTopologyEvidenceBytes));
   assert.equal(Object.hasOwn(result.spec.networkEdgeEvidence, "itxCurrentTopologyAdmission"), false);
@@ -1221,7 +1207,7 @@ test("topology-only refresh는 full source와 source-separated candidate identit
   ]) {
     assert.throws(
       () => refreshWithTopology(invalidTopology),
-      /current capital topology ownership projection is invalid/,
+      /capital topology ownership is invalid|topology line ownership overlap/,
     );
   }
 });
