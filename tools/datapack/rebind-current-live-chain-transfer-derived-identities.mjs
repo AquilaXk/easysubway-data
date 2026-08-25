@@ -111,17 +111,25 @@ async function stage(root) {
     return temporary;
   } catch (error) { await rm(temporary, { recursive: true, force: true }); throw error; }
 }
-function currentReleaseSnapshots(candidate, snapshots) {
+export function currentReleaseSnapshots(candidate, snapshots) {
   if (JSON.stringify(candidate.sourceSnapshots?.map(({ sourceId }) => sourceId)) !== JSON.stringify(CURRENT_SOURCE_IDS)
-    || candidate.sourceSnapshotIds?.length !== CURRENT_SOURCE_IDS.length) throw new Error("current source sequence is not exact");
-  return candidate.sourceSnapshotIds.map((snapshotId, index) => {
-    const row = snapshots.find((snapshot) => snapshot.snapshotId === snapshotId);
+    || candidate.sourceSnapshotIds?.length !== CURRENT_SOURCE_IDS.length
+    || new Set(candidate.sourceSnapshotIds).size !== candidate.sourceSnapshotIds.length
+    || !Array.isArray(snapshots) || snapshots.some((snapshot) => typeof snapshot?.snapshotId !== "string" || snapshot.snapshotId === "")
+    || new Set(snapshots.map(({ snapshotId }) => snapshotId)).size !== snapshots.length) throw new Error("current source sequence is not exact");
+  const orderedRows = candidate.sourceSnapshotIds.map((snapshotId, index) => {
+    const rows = snapshots.filter((snapshot) => snapshot.snapshotId === snapshotId);
+    const row = rows.length === 1 ? rows[0] : null;
     if (!row || row.sourceId !== CURRENT_SOURCE_IDS[index]) throw new Error("current source ledger binding is not exact");
     if (typeof row.governancePolicyVersion !== "string" || !/^[0-9a-f]{64}$/u.test(row.governancePolicySha256 ?? "")) {
       throw new Error("current source lacks sealed governance binding");
     }
     return row;
   });
+  const selectedIds = new Set(candidate.sourceSnapshotIds);
+  const ledgerOrderedRows = snapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
+  if (ledgerOrderedRows.length !== selectedIds.size) throw new Error("current source ledger binding is not exact");
+  return { orderedRows, ledgerOrderedRows };
 }
 export function deriveCurrentOnlyProjection({ snapshot, inventory, governance, governanceBytes, freshness }) {
   const source = inventory.sources?.find(({ id }) => id === snapshot.sourceId);
@@ -162,10 +170,10 @@ async function refreshCurrentOnlyReleaseEvidence(staging) {
   ]);
   const candidate = JSON.parse(candidateBytes); const snapshots = JSON.parse(snapshotsBytes); const inventory = JSON.parse(inventoryBytes);
   const request = JSON.parse(requestBytes); const hashes = JSON.parse(hashesBytes); const governance = JSON.parse(governanceBytes); const freshness = JSON.parse(freshnessBytes);
-  const releaseSnapshots = currentReleaseSnapshots(candidate, snapshots);
-  candidate.sourceSnapshots = releaseSnapshots.map((snapshot) => deriveCurrentOnlyProjection({ snapshot, inventory, governance, governanceBytes, freshness }));
-  candidate.sourceSnapshotIds = releaseSnapshots.map(({ snapshotId }) => snapshotId);
-  candidate.sourceSnapshotSetHash = sha256(JSON.stringify(releaseSnapshots));
+  const { orderedRows, ledgerOrderedRows } = currentReleaseSnapshots(candidate, snapshots);
+  candidate.sourceSnapshots = orderedRows.map((snapshot) => deriveCurrentOnlyProjection({ snapshot, inventory, governance, governanceBytes, freshness }));
+  candidate.sourceSnapshotIds = orderedRows.map(({ snapshotId }) => snapshotId);
+  candidate.sourceSnapshotSetHash = sha256(JSON.stringify(ledgerOrderedRows));
   candidate.sourceInventorySha256 = sha256(JSON.stringify(inventory));
   candidate.itxTopologyEvidenceSha256 = sha256(await stable(rooted(staging, candidate.itxTopologyEvidencePath), "staged ITX topology evidence"));
   candidate.networkEdgeEvidence.sourceInventory.sha256 = sha256(inventoryBytes);
@@ -176,7 +184,7 @@ async function refreshCurrentOnlyReleaseEvidence(staging) {
   hashes.sourceSnapshotSetHash.value = candidate.sourceSnapshotSetHash;
   hashes.sourceInventorySha256.value = candidate.sourceInventorySha256;
   hashes.fixturePath.sha256 = sha256(canonicalBytes);
-  hashes.perSourceEvidence = releaseSnapshots.map((snapshot) => ({
+  hashes.perSourceEvidence = orderedRows.map((snapshot) => ({
     sourceId: snapshot.sourceId, snapshotId: snapshot.snapshotId, rawSha256: snapshot.rawSha256,
     adminReviewRecordHash: inventory.sources.find(({ id }) => id === snapshot.sourceId).admissionEvidence.adminReviewRecordHash,
     perSourceSnapshotSetHash: sha256(JSON.stringify([snapshot])),
@@ -211,6 +219,25 @@ export function assertCurrentLiveChainTransferIdentity(candidate, inventory, sna
     throw new Error("current TRANSFER source identity is not exact");
   }
   return { row, source, admission };
+}
+
+export function assertRebuiltCurrentLiveChainTransferCandidateIdentity(previousCandidate, rebuiltCandidate, rebuiltSnapshots) {
+  if (previousCandidate?.candidateId !== rebuiltCandidate?.candidateId
+    || !Array.isArray(previousCandidate?.sourceSnapshotIds) || !Array.isArray(rebuiltCandidate?.sourceSnapshotIds)
+    || JSON.stringify(previousCandidate.sourceSnapshotIds) !== JSON.stringify(rebuiltCandidate.sourceSnapshotIds)
+    || new Set(rebuiltCandidate.sourceSnapshotIds).size !== rebuiltCandidate.sourceSnapshotIds.length
+    || !Array.isArray(rebuiltSnapshots)
+    || rebuiltSnapshots.some((snapshot) => typeof snapshot?.snapshotId !== "string" || snapshot.snapshotId === "")
+    || new Set(rebuiltSnapshots.map(({ snapshotId }) => snapshotId)).size !== rebuiltSnapshots.length) {
+    throw new Error("rebuilt TRANSFER candidate identity mismatch");
+  }
+  const selectedIds = new Set(rebuiltCandidate.sourceSnapshotIds);
+  const selected = rebuiltSnapshots.filter((snapshot) => selectedIds.has(snapshot.snapshotId));
+  if (selected.length !== selectedIds.size) throw new Error("rebuilt TRANSFER candidate identity mismatch");
+  if (rebuiltCandidate.sourceSnapshotSetHash !== sha256(JSON.stringify(selected))) {
+    throw new Error("rebuilt TRANSFER candidate identity mismatch");
+  }
+  return true;
 }
 
 export async function buildCurrentLiveChainTransferDerivedIdentityOutputs({ repositoryRoot: inputRoot = ROOT, observationDirectory, receiptPath } = {}) {
@@ -267,8 +294,8 @@ export async function buildCurrentLiveChainTransferDerivedIdentityOutputs({ repo
       relative, bytes: await stable(outputPath(staging, relative, outputPaths), `staged ${relative}`), prestate: await stable(outputPath(root, relative, outputPaths), `current ${relative}`),
     })));
     const rebuilt = JSON.parse(outputs.find(({ relative }) => relative.endsWith("candidate-build-spec.json")).bytes);
-    if (rebuilt.candidateId !== candidate.candidateId || rebuilt.sourceSnapshotSetHash !== candidate.sourceSnapshotSetHash
-      || JSON.stringify(rebuilt.sourceSnapshotIds) !== JSON.stringify(candidate.sourceSnapshotIds)) throw new Error("TRANSFER derivation changed candidate identity");
+    const rebuiltSnapshots = JSON.parse(outputs.find(({ relative }) => relative.endsWith("source-snapshots.json")).bytes);
+    assertRebuiltCurrentLiveChainTransferCandidateIdentity(candidate, rebuilt, rebuiltSnapshots);
     return outputs;
   } finally { await rm(staging, { recursive: true, force: true }); }
 }

@@ -7,6 +7,8 @@ import test from "node:test";
 
 import {
   currentLiveChainTransferOutputPaths,
+  currentReleaseSnapshots,
+  assertRebuiltCurrentLiveChainTransferCandidateIdentity,
   assertCurrentLiveChainTransferIdentity,
   commitCurrentLiveChainTransferDerivedIdentityOutputs,
   deriveCurrentOnlyProjection,
@@ -25,6 +27,41 @@ test("current live-chain TRANSFER producer derives exactly the eight bundle outp
     "tools/datapack/release/release-request.json",
     "tools/datapack/release/hash-evidence.json",
   ]);
+});
+
+test("rebuilt TRANSFER candidate keeps identity and selected IDs while deriving its snapshot-set hash from rebuilt ledger order", () => {
+  const previous = { candidateId: "capital-current", sourceSnapshotIds: ["transfer", "first"], sourceSnapshotSetHash: "stale" };
+  const snapshots = [{ snapshotId: "first", transferTopology: { revision: 1 } }, { snapshotId: "transfer", transferTopology: { revision: 2 } }];
+  const rebuilt = { candidateId: previous.candidateId, sourceSnapshotIds: [...previous.sourceSnapshotIds], sourceSnapshotSetHash: createHash("sha256").update(JSON.stringify(snapshots)).digest("hex") };
+  assert.doesNotThrow(() => assertRebuiltCurrentLiveChainTransferCandidateIdentity(previous, rebuilt, snapshots));
+  for (const mutate of [
+    () => ({ ...rebuilt, candidateId: "other" }),
+    () => ({ ...rebuilt, sourceSnapshotIds: ["first", "transfer"] }),
+    () => ({ ...rebuilt, sourceSnapshotIds: ["first", "first"] }),
+    () => ({ ...rebuilt, sourceSnapshotSetHash: previous.sourceSnapshotSetHash }),
+    () => ({ ...rebuilt, sourceSnapshotSetHash: createHash("sha256").update(JSON.stringify([...snapshots].reverse())).digest("hex") }),
+  ]) assert.throws(() => assertRebuiltCurrentLiveChainTransferCandidateIdentity(previous, mutate(), snapshots), /rebuilt TRANSFER candidate identity mismatch/);
+  assert.throws(() => assertRebuiltCurrentLiveChainTransferCandidateIdentity(previous, rebuilt, [snapshots[0]]), /rebuilt TRANSFER candidate identity mismatch/);
+  assert.throws(() => assertRebuiltCurrentLiveChainTransferCandidateIdentity(previous, rebuilt, [...snapshots, { ...snapshots[0] }]), /rebuilt TRANSFER candidate identity mismatch/);
+  const unknown = { candidateId: "capital-current", sourceSnapshotIds: ["first", "unknown"], sourceSnapshotSetHash: "stale" };
+  assert.throws(() => assertRebuiltCurrentLiveChainTransferCandidateIdentity(unknown, { ...unknown }, snapshots), /rebuilt TRANSFER candidate identity mismatch/);
+});
+
+test("current release selection preserves candidate order while exposing rebuilt ledger order solely for the set hash", async () => {
+  const [candidate, snapshots] = await Promise.all([
+    readFile(path.join(ROOT, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(ROOT, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+  ]);
+  const selected = candidate.sourceSnapshotIds.map((snapshotId) => ({
+    ...snapshots.find((snapshot) => snapshot.snapshotId === snapshotId),
+    governancePolicyVersion: "test", governancePolicySha256: "a".repeat(64),
+  }));
+  const reversedLedger = [...selected].reverse();
+  const result = currentReleaseSnapshots(candidate, reversedLedger);
+  assert.deepEqual(result.orderedRows.map(({ snapshotId }) => snapshotId), candidate.sourceSnapshotIds);
+  assert.deepEqual(result.ledgerOrderedRows.map(({ snapshotId }) => snapshotId), reversedLedger.map(({ snapshotId }) => snapshotId));
+  const rebuilt = { candidateId: candidate.candidateId, sourceSnapshotIds: result.orderedRows.map(({ snapshotId }) => snapshotId), sourceSnapshotSetHash: createHash("sha256").update(JSON.stringify(result.ledgerOrderedRows)).digest("hex") };
+  assert.doesNotThrow(() => assertRebuiltCurrentLiveChainTransferCandidateIdentity(candidate, rebuilt, reversedLedger));
 });
 
 test("current live-chain TRANSFER producer has no predecessor or station/transition dependency", async () => {
