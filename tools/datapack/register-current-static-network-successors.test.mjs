@@ -56,6 +56,10 @@ test("v2 registrar bootstraps exactly the immutable legacy pair, then supports V
   const historicalSourceBytes = await Promise.all(["seoul-metro-route-map-positions-current-20260824T114822985Z", "molit-urban-rail-full-route-current-20260824T114822985Z"].map((snapshotId) => readFile(path.join(root, `tools/datapack/sources/${snapshotId}.json`))));
   const input = await publicV2Input(root); const staged = await buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input });
   assert.equal(staged.length, 5); assert.deepEqual(staged.map(({ relative }) => relative).slice(2), ["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json"]);
+  assert.deepEqual(staged[0].inputs.slice(-2).map(({ relative }) => relative), [
+    "tools/datapack/sources/seoul-metro-route-map-positions-current-20260824T114822985Z.json",
+    "tools/datapack/sources/molit-urban-rail-full-route-current-20260824T114822985Z.json",
+  ]);
   const stagedInventory = JSON.parse(staged[2].bytes);
   for (const sourceId of ["seoul-metro-route-map-positions", "molit-urban-rail-full-route"]) {
     const source = stagedInventory.sources.find(({ id }) => id === sourceId);
@@ -83,6 +87,13 @@ test("v2 registrar bootstraps exactly the immutable legacy pair, then supports V
     assert.equal(snapshot.credentialRedacted, true);
     assert.match(snapshot.governancePolicySha256, /^[a-f0-9]{64}$/u);
   }
+  const predecessorPath = path.join(root, "tools/datapack/sources/seoul-metro-route-map-positions-current-20260824T114822985Z.json");
+  await writeFile(predecessorPath, "foreign predecessor replacement\n");
+  await assert.rejects(
+    commitStaticNetworkSuccessorOutputs({ repositoryRoot: root, outputs: staged }),
+    /static network registration preserves foreign replacement/,
+  );
+  await writeFile(predecessorPath, historicalSourceBytes[0]);
   const result = await registerPublicStaticNetworkV2Successors({ repositoryRoot: root, ...input });
   assert.equal(result.outputs.length, 5); assert.deepEqual(await readFile(path.join(root, "tools/datapack/release/release-request.json")), request); assert.deepEqual(await readFile(path.join(root, "tools/datapack/release/hash-evidence.json")), hashes);
   const committedLedger = JSON.parse(await readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8"));
@@ -131,28 +142,35 @@ test("v2 registrar rejects forged producer observations and stale or mismatched 
   await assert.rejects(buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input, now: new Date("2026-08-27T00:00:00.000Z") }), /topology admission snapshot is stale or future-dated/);
 });
 
-test("v2 registrar rejects a bootstrap candidate whose inventory binding or source slot drifts", async (t) => {
+test("v2 registrar rejects a bootstrap candidate whose raw bytes, inventory binding, or source slot drifts", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "static-network-v2-legacy-reset-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await cp(repositoryRoot, root, { recursive: true, filter: (source) => !source.includes("node_modules") });
   const input = await publicV2Input(root);
   const candidatePath = path.join(root, "tools/datapack/release/candidate-build-spec.json");
-  const candidate = JSON.parse(await readFile(candidatePath, "utf8"));
+  const candidateBytes = await readFile(candidatePath);
+  let candidate = JSON.parse(candidateBytes);
   candidate.sourceInventorySha256 = "0".repeat(64);
   await writeFile(candidatePath, `${JSON.stringify(candidate, null, 2)}\n`);
   await assert.rejects(
     buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input }),
     /public v2 bootstrap predecessor CAS is invalid/,
   );
-  candidate.sourceInventorySha256 = "372a4eae34366995ad1a3fdd56c828836ea070bd0d132dbe9fb5670548f9767f";
+  candidate = JSON.parse(candidateBytes);
+  candidate.sourceSnapshots.find(({ sourceId }) => sourceId === "kric-subway-timetable").rawSha256 = "0".repeat(64);
+  await writeFile(candidatePath, `${JSON.stringify(candidate, null, 2)}\n`);
+  await assert.rejects(
+    buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input }),
+    /public v2 bootstrap predecessor CAS is invalid/,
+  );
+  candidate = JSON.parse(candidateBytes);
   candidate.sourceSnapshots[0].sourceId = "seoulmetro-cyberstation-route-map";
   await writeFile(candidatePath, `${JSON.stringify(candidate, null, 2)}\n`);
   await assert.rejects(
     buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input }),
     /public v2 candidate source set is invalid|public v2 bootstrap predecessor CAS is invalid/,
   );
-  candidate.sourceSnapshots[0].sourceId = "seoul-metro-route-map-positions";
-  await writeFile(candidatePath, `${JSON.stringify(candidate, null, 2)}\n`);
+  await writeFile(candidatePath, candidateBytes);
   const ledgerPath = path.join(root, "tools/datapack/release/source-snapshots.json");
   const ledgerBytes = await readFile(ledgerPath);
   const ledger = JSON.parse(ledgerBytes);

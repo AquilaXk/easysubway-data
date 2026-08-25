@@ -50,6 +50,7 @@ const BOOTSTRAP_PREDECESSORS = Object.freeze({
     "seoul-metro-transfer-distance-duration-20260815T094038817Z",
   ]),
   candidateSetHash: "47ce24b6d682b0f0d5afd7380f6850fc1c87a1507153833117c0e9d060c0cdf8",
+  candidateRawSha256: "2a3cb0832291ffec65898fbe3df7a0e3a723f0118cb6b784ecdf481fcae7de89",
   inventorySemanticSha256: "372a4eae34366995ad1a3fdd56c828836ea070bd0d132dbe9fb5670548f9767f",
   inventoryRawSha256: "ce35f846e71e2a53162c449e5eaae51f1b5dbea417268053c470b4c5f0a69084",
   bySource: Object.freeze({
@@ -108,7 +109,8 @@ function outputAllowlist(outputs) {
     || outputs.slice(2).some(({ prestateBytes }) => !Buffer.isBuffer(prestateBytes))
     || outputs.some(({ bytes: value }) => !Buffer.isBuffer(value))
     || !Array.isArray(inputs) || JSON.stringify(inputs.slice(0, INPUTS.length).map(({ relative }) => relative)) !== JSON.stringify(INPUTS)
-    || inputs.length !== INPUTS.length + 1 || !new RegExp("^tools/datapack/sources/capital-route-topology-20\\d{6}\\.json$", "u").test(inputs.at(-1)?.relative ?? "")
+    || ![INPUTS.length + 1, INPUTS.length + 1 + TARGETS.length].includes(inputs.length) || !new RegExp("^tools/datapack/sources/capital-route-topology-20\\d{6}\\.json$", "u").test(inputs[INPUTS.length]?.relative ?? "")
+    || (inputs.length > INPUTS.length + 1 && JSON.stringify(inputs.slice(INPUTS.length + 1).map(({ relative }) => relative)) !== JSON.stringify(TARGETS.map((sourceId) => `tools/datapack/sources/${BOOTSTRAP_PREDECESSORS.bySource[sourceId].snapshotId}.json`)))
     || inputs.some(({ bytes: value }) => !Buffer.isBuffer(value)) || outputs.some((output) => output.inputs !== inputs)) throw new Error("static network registration output allowlist mismatch");
 }
 function snapshotStamp(relative) { return relative.match(/-current-([0-9TZ]+)\.json$/u)?.[1] ?? ""; }
@@ -313,9 +315,10 @@ function v2Snapshot({ observation, previous, sourceUpdatedAt }) {
   return snapshot;
 }
 
-async function requireExactBootstrapPredecessors({ ledger, heads, inventory, inventoryBytes, candidate, read }) {
+async function requireExactBootstrapPredecessors({ ledger, heads, inventory, inventoryBytes, candidate, candidateBytes, read }) {
   if (sha(JSON.stringify(inventory)) !== BOOTSTRAP_PREDECESSORS.inventorySemanticSha256
     || sha(inventoryBytes) !== BOOTSTRAP_PREDECESSORS.inventoryRawSha256
+    || sha(candidateBytes) !== BOOTSTRAP_PREDECESSORS.candidateRawSha256
     || candidate.sourceInventorySha256 !== BOOTSTRAP_PREDECESSORS.inventorySemanticSha256
     || candidate.networkEdgeEvidence?.sourceInventory?.sha256 !== BOOTSTRAP_PREDECESSORS.inventoryRawSha256
     || JSON.stringify(candidate.sourceSnapshotIds) !== JSON.stringify(BOOTSTRAP_PREDECESSORS.candidateSnapshotIds)
@@ -332,6 +335,7 @@ async function requireExactBootstrapPredecessors({ ledger, heads, inventory, inv
     })) {
     throw new Error("public v2 bootstrap predecessor CAS is invalid");
   }
+  const predecessorInputs = [];
   for (const sourceId of TARGETS) {
     const expected = BOOTSTRAP_PREDECESSORS.bySource[sourceId];
     const previous = ledger.filter(({ snapshotId }) => snapshotId === heads[sourceId]);
@@ -348,7 +352,8 @@ async function requireExactBootstrapPredecessors({ ledger, heads, inventory, inv
       || source.admissionEvidence?.schemaFingerprint !== expected.schemaFingerprint) {
       throw new Error("public v2 bootstrap predecessor CAS is invalid");
     }
-    const sourceBytes = await read(`tools/datapack/sources/${expected.snapshotId}.json`);
+    const relative = `tools/datapack/sources/${expected.snapshotId}.json`;
+    const sourceBytes = await read(relative);
     const sourceSnapshot = parse(sourceBytes, "public v2 bootstrap predecessor");
     if (sha(sourceBytes) !== expected.sourceFileSha256
       || sourceSnapshot.snapshotId !== expected.snapshotId || sourceSnapshot.sourceId !== sourceId
@@ -356,10 +361,12 @@ async function requireExactBootstrapPredecessors({ ledger, heads, inventory, inv
       || !isDeepStrictEqual(sourceSnapshot.migration, expected.migration)) {
       throw new Error("public v2 bootstrap predecessor CAS is invalid");
     }
+    predecessorInputs.push({ relative, bytes: sourceBytes });
   }
+  return predecessorInputs;
 }
 
-async function requireActivePublicV2Predecessors({ ledger, heads, inventory, inventoryBytes, candidate, now, read }) {
+async function requireActivePublicV2Predecessors({ ledger, heads, inventory, inventoryBytes, candidate, candidateBytes, now, read }) {
   const failures = [];
   for (const sourceId of TARGETS) {
     const previous = ledger.filter(({ snapshotId }) => snapshotId === heads[sourceId]);
@@ -371,9 +378,9 @@ async function requireActivePublicV2Predecessors({ ledger, heads, inventory, inv
       });
     } catch { failures.push(sourceId); }
   }
-  if (failures.length === 0) return;
+  if (failures.length === 0) return [];
   if (failures.length !== TARGETS.length) throw new Error("public v2 active predecessor is required");
-  await requireExactBootstrapPredecessors({ ledger, heads, inventory, inventoryBytes, candidate, read });
+  return requireExactBootstrapPredecessors({ ledger, heads, inventory, inventoryBytes, candidate, candidateBytes, read });
 }
 
 function materializePublicV2Observation({ observation, ledger, heads, nextInventory, governance, governanceBytes, freshness, now, currentLayoutAdmission, existingSnapshots }) {
@@ -430,7 +437,8 @@ export async function buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoo
   if (JSON.stringify(candidate.sourceSnapshots?.map(({ sourceId }) => sourceId)) !== JSON.stringify(CANDIDATE_SOURCE_IDS)
     || JSON.stringify(candidate.sourceSnapshotIds) !== JSON.stringify(candidate.sourceSnapshots.map(({ snapshotId }) => snapshotId))) throw new Error("public v2 candidate source set is invalid");
   const heads = validateLineage(ledger).headsBySource;
-  await requireActivePublicV2Predecessors({ ledger, heads, inventory, inventoryBytes, candidate, now, read });
+  const predecessorInputs = await requireActivePublicV2Predecessors({ ledger, heads, inventory, inventoryBytes, candidate, candidateBytes, now, read });
+  inputs.push(...predecessorInputs);
   const nextInventory = structuredClone(inventory); const snapshots = materializePublicV2Snapshots({ producerOutput, ledger, heads, nextInventory, governance, governanceBytes, freshness, now }); const nextLedger = [...ledger, ...snapshots];
   rebindMolitMembershipEvidence(nextInventory, snapshots.find(({ sourceId }) => sourceId === TARGETS[1]), rawBytesBySource[TARGETS[1]]);
   validateLineage(nextLedger);
