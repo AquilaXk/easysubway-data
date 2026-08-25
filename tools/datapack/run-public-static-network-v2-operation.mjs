@@ -8,6 +8,7 @@ import { collectPublicStaticNetworkV2 } from "./collect-public-static-network-v2
 import { projectMolit, projectPositions } from "./collect-current-static-network-successors.mjs";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { publishStaticNetworkSourceRaw } from "./publish-static-network-source-raw.mjs";
+import { assertCurrentStaticNetworkTopologyAdmission } from "./register-current-static-network-successors.mjs";
 import { runPublicStaticNetworkV2Transition } from "./run-current-static-network-successors.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -49,6 +50,7 @@ export async function runPublicStaticNetworkV2Operation({ repositoryRoot = ROOT,
   const root = await regularDirectory(repositoryRoot, "repository root"); const operation = await regularDirectory(operationRoot, "operation root");
   if (operation === root || operation.startsWith(`${root}${path.sep}`)) throw new Error("public static v2 operation root must be outside repository");
   const expectedMainSha = await assertExactMain(root);
+  await assertCurrentStaticNetworkTopologyAdmission({ repositoryRoot: root, now });
   const collected = await collectImpl({ fetchImpl, capturedAt: now.toISOString(), serviceKey: normalizedServiceKey });
   if (collected?.capturedAt !== now.toISOString() || !Buffer.isBuffer(collected.positionRawBytes) || !Buffer.isBuffer(collected.molitRawBytes)) throw new Error("public static v2 collection is invalid");
   try { projectPositions(collected.positionRawBytes, collected.capturedAt); } catch { throw new Error("PUBLIC_STATIC_NETWORK_V2_POSITIONS_SCHEMA"); }
