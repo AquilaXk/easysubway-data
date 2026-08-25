@@ -188,10 +188,10 @@ test("ITX-청춘 current source artifact는 OWNER-approved admission bytes를 �
   assert.match(reference.completenessEvidenceSha256, /^[a-f0-9]{64}$/);
   assert.deepEqual(reference.promotion, {
     mode: "CURRENT_CANDIDATE_OWNER_APPROVED",
-    previousArtifactSha256: "71b70844a0ce93f2c137610a6472e7c824434e6ef97a38bf02a414146b1de6a0",
-    previousArtifactPath: "tools/datapack/sources/itx-cheongchun-source-timetable-20260727071853886.json",
-    approvalUrl: "https://github.com/AquilaXk/easysubway/issues/2135#issuecomment-5278127592",
-    approvedArtifactSha256: "2a11bb723310744d6f3ffc084b5a5219367ae209a6c7e65289dab8a5520f9a26",
+    previousArtifactSha256: "2a11bb723310744d6f3ffc084b5a5219367ae209a6c7e65289dab8a5520f9a26",
+    previousArtifactPath: "tools/datapack/sources/itx-cheongchun-source-timetable-20260812165525800.json",
+    approvalUrl: "https://github.com/AquilaXk/easysubway-data/issues/96#issuecomment-5403832794",
+    approvedArtifactSha256: "f3f00e6f99862ddf1c6964d09a220169f29a85181f420f30e20428f2bee835ab",
   });
 
   const previousBytes = await readFile(new URL(`../../${reference.promotion.previousArtifactPath}`, import.meta.url));
@@ -236,7 +236,7 @@ test("ITX-청춘 current source artifact는 OWNER-approved admission bytes를 �
     }
   }
   assert.equal(artifact.credentialRedacted, true);
-  assert.deepEqual(artifact.selectedServiceDates, { "8": "20260813", "7": "20260822", "9": "20260816" });
+  assert.deepEqual(artifact.selectedServiceDates, { "8": "20260825", "7": "20260829", "9": "20260830" });
   for (const dayCd of ["8", "7", "9"]) {
     assert.deepEqual(
       [...new Set(artifact.stationSequences.filter((row) => row.dayCd === dayCd).map((row) => row.directionId))].sort(),
@@ -305,9 +305,9 @@ test("ITX-청춘 admission evidence는 historical 관측과 current pack identit
       artifactKind: "station-catalog-pack",
       manifestVersion: 1,
       catalogPackId: "itx-current-station-catalog-v1",
-      stationSetSha256: "18de0faea1cf3f4fd26ea6799a6b4ce7bcc319a609b435f1b1eefa6164c4bb17",
-      payloadSha256: "985ca74e86ad218b504d7f091c1a13dd3ca89d536d664271706a98a87c8a344d",
-      manifestSha256: "777c69d8b01494b0de2cb6e0d42a0c9be48481c7053d6d9cc2a46f013896a17c",
+      stationSetSha256: "d2cef87aa1eeee23a50ac94d7e784f432101e9d8936331152981dcaeb8d25dd9",
+      payloadSha256: "a7726c83e9637b0008000579ad74e329495ac0928e673bcb8ccac1deaeedc8a4",
+      manifestSha256: "0cea5ac4d07ce3a09232eb7dd53a0d2b59f423ad10ef97c8a4db233c873737b5",
     },
   });
   const korailCandidate = sourceCandidates.candidates.find(({ id }) => id === "korail-traveler-train-run-info");
