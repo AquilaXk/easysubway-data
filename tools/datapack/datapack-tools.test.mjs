@@ -18208,22 +18208,19 @@ async function writeCurrentItxReleaseInputs(
     payloadSha256: "2".repeat(64),
     manifestSha256: "3".repeat(64),
   };
-  const selectedServiceDates = { "7": "20260822", "8": "20260812", "9": "20260816" };
-  const observedAt = "2026-08-12T14:00:00.000Z";
-  const freshUntil = "2026-08-23T00:00:00+09:00";
   const itxFixtureDirectory = path.join(repositoryRoot, "tools/datapack/fixtures/current-itx");
   await mkdir(itxFixtureDirectory, { recursive: true });
   const fixture = JSON.parse(await readFile("tools/datapack/release/capital-production-canonical-pack.json", "utf8"));
   for (const pack of fixture.packs) delete pack.routeServiceArtifactEvidence;
+  const topologyEvidence = JSON.parse(await readFile("tools/datapack/itx-cheongchun-topology-evidence.json", "utf8"));
+  const sourceArtifactId = topologyEvidence.sourceArtifact?.id;
+  assert.match(sourceArtifactId, /^itx-cheongchun-source-timetable-[0-9]+$/u, "current ITX source artifact identity");
 
   const completeness = JSON.parse(await readFile(
-    "tools/datapack/sources/itx-cheongchun-source-timetable-20260727071853886-completeness-evidence.json",
+    `tools/datapack/sources/${sourceArtifactId}-completeness-evidence.json`,
     "utf8",
   ));
-  completeness.observedAt = observedAt;
-  completeness.selectedServiceDates = selectedServiceDates;
   completeness.stationCatalogPackIdentity = structuredClone(currentIdentity);
-  completeness.sourceTimetableArtifact.freshUntil = freshUntil;
   mutateCompleteness?.(completeness);
   const { evidenceHash: _completenessEvidenceHash, ...completenessWithoutEvidenceHash } = completeness;
   completeness.evidenceHash = sha256(Buffer.from(JSON.stringify(completenessWithoutEvidenceHash)));
@@ -18232,13 +18229,10 @@ async function writeCurrentItxReleaseInputs(
   await writeFile(completenessPath, completenessBytes);
 
   const source = JSON.parse(await readFile(
-    "tools/datapack/sources/itx-cheongchun-source-timetable-20260727071853886.json",
+    `tools/datapack/sources/${sourceArtifactId}.json`,
     "utf8",
   ));
   delete source.canonicalPackIdentity;
-  source.observedAt = observedAt;
-  source.freshUntil = freshUntil;
-  source.selectedServiceDates = selectedServiceDates;
   source.stationCatalogPackIdentity = structuredClone(currentIdentity);
   source.completenessEvidenceSha256 = sha256(completenessBytes);
   const { evidenceHash: _sourceEvidenceHash, ...sourceWithoutEvidenceHash } = source;
@@ -18249,19 +18243,9 @@ async function writeCurrentItxReleaseInputs(
   let sourceBytes = Buffer.from(`${JSON.stringify(source)}\n`);
   await writeFile(sourcePath, sourceBytes);
 
-  const currentAdmission = JSON.parse(await readFile(
-    "tools/datapack/itx-current-network-edge-admission-20260810.json", "utf8",
-  ));
-  Object.assign(currentAdmission, { artifactId: "itx-current-network-edge-admission-20260822",
-    serviceDate: "20260822", observedAt, freshUntil,
-    previousArtifactSha256: sha256(sourceBytes) });
-  const { evidenceHash: _currentEvidenceHash, ...currentWithoutEvidenceHash } = currentAdmission;
-  currentAdmission.evidenceHash = sha256(Buffer.from(JSON.stringify(currentWithoutEvidenceHash)));
   const currentAdmissionPath = path.join(workspace, "itx-current-admission.json");
-  let currentAdmissionBytes = Buffer.from(`${JSON.stringify(currentAdmission)}\n`);
-  await writeFile(currentAdmissionPath, currentAdmissionBytes);
+  let currentAdmissionBytes;
 
-  const topologyEvidence = JSON.parse(await readFile("tools/datapack/itx-cheongchun-topology-evidence.json", "utf8"));
   const contract = JSON.parse(await readFile("tools/datapack/itx-cheongchun-coverage-contract.json", "utf8"));
   const admission = contract.officialEvidence.korailCompletenessAdmission;
   delete admission.canonicalPackIdentity;
@@ -18278,7 +18262,7 @@ async function writeCurrentItxReleaseInputs(
     sha256: sha256(sourceBytes),
     completenessEvidencePath: path.relative(repositoryRoot, completenessPath),
     completenessEvidenceSha256: sha256(completenessBytes),
-    freshUntil,
+    freshUntil: source.freshUntil,
     policyVersion: source.policyVersion,
     promotion: {
       mode: "UNCHANGED_AUTO",
@@ -18332,46 +18316,8 @@ async function writeCurrentItxReleaseInputs(
     verifiedAt: candidateTopology.capturedAt,
     freshUntil: candidateTopology.freshUntil,
   }]));
-  const capturedAtKst = new Date(Date.parse(candidateTopology.capturedAt) + 9 * 60 * 60 * 1_000);
-  const serviceDateForDayCode = (dayCode) => {
-    const targetDay = { "7": 6, "8": 1, "9": 0 }[dayCode];
-    const offset = (targetDay - capturedAtKst.getUTCDay() + 7) % 7;
-    const date = new Date(Date.UTC(
-      capturedAtKst.getUTCFullYear(),
-      capturedAtKst.getUTCMonth(),
-      capturedAtKst.getUTCDate() + offset,
-    ));
-    return date.toISOString().slice(0, 10).replaceAll("-", "");
-  };
-  const selectedServiceDatesAtTopologyClock = Object.fromEntries(
-    ["7", "8", "9"].map((dayCode) => [dayCode, serviceDateForDayCode(dayCode)]),
-  );
-  const currentServiceDate = selectedServiceDatesAtTopologyClock["8"];
-  const latestSelectedServiceDate = Object.values(selectedServiceDatesAtTopologyClock).sort().at(-1);
-  const nextServiceDateKst = new Date(Date.UTC(
-    Number(latestSelectedServiceDate.slice(0, 4)),
-    Number(latestSelectedServiceDate.slice(4, 6)) - 1,
-    Number(latestSelectedServiceDate.slice(6, 8)) + 1,
-  ));
-  const sourceFreshUntil = `${nextServiceDateKst.getUTCFullYear()}-${String(
-    nextServiceDateKst.getUTCMonth() + 1,
-  ).padStart(2, "0")}-${String(nextServiceDateKst.getUTCDate()).padStart(2, "0")}T00:00:00+09:00`;
-  const nextCurrentServiceDateKst = new Date(Date.UTC(
-    Number(currentServiceDate.slice(0, 4)),
-    Number(currentServiceDate.slice(4, 6)) - 1,
-    Number(currentServiceDate.slice(6, 8)) + 1,
-  ));
-  const currentAdmissionFreshUntil = `${nextCurrentServiceDateKst.getUTCFullYear()}-${String(
-    nextCurrentServiceDateKst.getUTCMonth() + 1,
-  ).padStart(2, "0")}-${String(nextCurrentServiceDateKst.getUTCDate()).padStart(2, "0")}T00:00:00+09:00`;
-  const sourceArtifactId = `itx-cheongchun-source-timetable-${candidateTopology.capturedAt.replace(/\D/g, "")}`;
-  completeness.observedAt = candidateTopology.capturedAt;
-  completeness.selectedServiceDates = selectedServiceDatesAtTopologyClock;
-  for (const serviceDay of completeness.serviceDays) {
-    const serviceDate = selectedServiceDatesAtTopologyClock[serviceDay.dayCd];
-    serviceDay.serviceDate = serviceDate;
-    if (serviceDay.roster != null) serviceDay.roster.serviceDate = serviceDate;
-  }
+  const sourceObservedAt = source.observedAt;
+  const sourceFreshUntil = source.freshUntil;
   Object.assign(completeness.sourceTimetableArtifact, {
     artifactId: sourceArtifactId,
     freshUntil: sourceFreshUntil,
@@ -18382,9 +18328,8 @@ async function writeCurrentItxReleaseInputs(
   await writeFile(completenessPath, completenessBytes);
   Object.assign(source, {
     artifactId: sourceArtifactId,
-    observedAt: candidateTopology.capturedAt,
+    observedAt: sourceObservedAt,
     freshUntil: sourceFreshUntil,
-    selectedServiceDates: selectedServiceDatesAtTopologyClock,
     completenessEvidenceSha256: sha256(completenessBytes),
   });
   const { evidenceHash: _refreshedSourceEvidenceHash, ...refreshedSourceWithoutEvidenceHash } = source;
@@ -18412,15 +18357,12 @@ async function writeCurrentItxReleaseInputs(
   });
   topologyEvidenceBytes = Buffer.from(`${JSON.stringify(topologyEvidence)}\n`);
   await writeFile(topologyEvidencePath, topologyEvidenceBytes);
-  Object.assign(currentAdmission, {
-    artifactId: `itx-current-network-edge-admission-${currentServiceDate}`,
-    serviceDate: currentServiceDate,
-    observedAt: candidateTopology.capturedAt,
-    freshUntil: currentAdmissionFreshUntil,
+  const currentAdmission = syntheticCurrentItxTopologyAdmission({
+    source,
     previousArtifactSha256: sha256(sourceBytes),
+    observedAt: sourceObservedAt,
+    serviceDate: source.selectedServiceDates["8"],
   });
-  const { evidenceHash: _refreshedCurrentEvidenceHash, ...refreshedCurrentWithoutEvidenceHash } = currentAdmission;
-  currentAdmission.evidenceHash = sha256(Buffer.from(JSON.stringify(refreshedCurrentWithoutEvidenceHash)));
   currentAdmissionBytes = Buffer.from(`${JSON.stringify(currentAdmission)}\n`);
   await writeFile(currentAdmissionPath, currentAdmissionBytes);
   for (const source of currentInventory.sources) {
@@ -18505,10 +18447,65 @@ async function writeCurrentItxReleaseInputs(
     buildSpecPath,
     env: {
       ...productionEnv,
-      EASYSUBWAY_DATAPACK_BUILD_NOW: new Date(Date.parse(candidateTopology.capturedAt) + 1_000).toISOString(),
+      EASYSUBWAY_DATAPACK_BUILD_NOW: new Date(Date.parse(sourceObservedAt) + 1_000).toISOString(),
     },
     repositoryRoot,
   };
+}
+
+function syntheticCurrentItxTopologyAdmission({ source, previousArtifactSha256, observedAt, serviceDate }) {
+  const tuples = [...new Map((source.stationSequences ?? []).flatMap(({ stops = [] }) =>
+    stops.slice(1).map((to, index) => [stops[index].stationId, to.stationId, "ITX_CHEONGCHUN"])
+  ).map((tuple) => [JSON.stringify(tuple), tuple])).values()]
+    .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right), "en"));
+  const stationIds = [...new Set(tuples.flatMap(([fromStationId, toStationId]) => [fromStationId, toStationId]))]
+    .sort((left, right) => left.localeCompare(right, "en"));
+  const reconstructionSummary = {
+    trainCount: source.stationSequences.length,
+    stopCount: source.stationSequences.reduce((sum, { stops = [] }) => sum + stops.length, 0),
+    conflictingTimestampCount: 0,
+    missingPairCount: 0,
+    duplicateOdCount: 0,
+  };
+  const artifact = {
+    schemaVersion: 1,
+    artifactKind: "itx-current-network-edge-admission",
+    artifactId: `itx-current-network-edge-admission-${serviceDate}`,
+    serviceId: "ITX_CHEONGCHUN",
+    sourceIssue: 2776,
+    status: "ADMITTED",
+    scheduleAdmissionStatus: "MISSING",
+    topologyMode: "UNCHANGED_AUTO_STATION_SET",
+    serviceDate,
+    observedAt,
+    freshUntil: nextKstMidnight(serviceDate),
+    collectionSha256: sha256(Buffer.from(JSON.stringify(source))),
+    previousArtifactSha256,
+    stationSetHash: sha256(Buffer.from(JSON.stringify(stationIds))),
+    odMatrixHash: sha256(Buffer.from(JSON.stringify(tuples))),
+    operationEvidenceSha256: sha256(Buffer.from(JSON.stringify(source.stationSequences))),
+    stationSequenceSha256: sha256(Buffer.from(JSON.stringify(source.stationSequences))),
+    canonicalStationSetSha256: sha256(Buffer.from(JSON.stringify(stationIds))),
+    observedPairSetSha256: sha256(Buffer.from(JSON.stringify(tuples))),
+    admittedPairSetSha256: sha256(Buffer.from(JSON.stringify(tuples))),
+    observedPairChange: {
+      addedCount: 0,
+      removedCount: 0,
+      addedSha256: sha256(Buffer.from(JSON.stringify([]))),
+      removedSha256: sha256(Buffer.from(JSON.stringify([]))),
+    },
+    pairHashes: tuples.map((tuple) => sha256(Buffer.from(JSON.stringify(tuple)))),
+    reconstructionSummary,
+    credentialRedacted: true,
+  };
+  artifact.evidenceHash = sha256(Buffer.from(JSON.stringify(artifact)));
+  return artifact;
+}
+
+function nextKstMidnight(serviceDate) {
+  const date = new Date(Date.UTC(Number(serviceDate.slice(0, 4)), Number(serviceDate.slice(4, 6)) - 1, Number(serviceDate.slice(6, 8))));
+  date.setUTCDate(date.getUTCDate() + 1);
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}T00:00:00+09:00`;
 }
 
 async function writeTransitionFreeCandidateRoot(workspace) {
