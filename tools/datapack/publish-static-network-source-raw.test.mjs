@@ -14,10 +14,10 @@ test("publisher uses OCI immutable PUT/full GET and exact raw MIME receipts", as
   const operationRoot = await mkdtemp(path.join(os.tmpdir(), "static-network-publish-")); t.after(() => rm(operationRoot, { recursive: true, force: true }));
   const objects = new Map(); const client = { putObjectIfAbsent: async (key, value) => { if (objects.has(key)) return false; objects.set(key, Buffer.from(value)); return true; }, readObject: async (key) => objects.has(key) ? { exists: true, body: objects.get(key) } : { exists: false } };
   const gitRunner = async (args) => args[0] === "status" ? "" : HEAD;
-  await writeFile(path.join(operationRoot, "raw.json"), "{\"data\":[]}\n");
-  const positions = await publishStaticNetworkSourceRaw({ repositoryRoot: ROOT, expectedMainSha: HEAD, gitRunner, operationRoot, sourceId: "seoul-metro-route-map-positions", snapshotId: "positions-next", capturedAt: "2026-08-22T00:00:00.000Z", rawRelativePath: "raw.json", env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: PAR }, client, now: new Date("2026-08-22T00:00:01.000Z") });
-  await writeFile(path.join(operationRoot, "raw.csv"), "csv\n");
-  const csv = await publishStaticNetworkSourceRaw({ repositoryRoot: ROOT, expectedMainSha: HEAD, gitRunner, operationRoot, sourceId: "molit-urban-rail-full-route", snapshotId: "molit-next", capturedAt: "2026-08-22T00:00:00.000Z", rawRelativePath: "raw.csv", env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: PAR }, client, now: new Date("2026-08-22T00:00:01.000Z") });
+  await writeFile(path.join(operationRoot, "positions.raw.json"), "{\"data\":[]}\n");
+  const positions = await publishStaticNetworkSourceRaw({ repositoryRoot: ROOT, expectedMainSha: HEAD, gitRunner, operationRoot, sourceId: "seoul-metro-route-map-positions", snapshotId: "positions-next", capturedAt: "2026-08-22T00:00:00.000Z", rawRelativePath: "positions.raw.json", env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: PAR }, client, now: new Date("2026-08-22T00:00:01.000Z") });
+  await writeFile(path.join(operationRoot, "molit.raw.csv"), "csv\n");
+  const csv = await publishStaticNetworkSourceRaw({ repositoryRoot: ROOT, expectedMainSha: HEAD, gitRunner, operationRoot, sourceId: "molit-urban-rail-full-route", snapshotId: "molit-next", capturedAt: "2026-08-22T00:00:00.000Z", rawRelativePath: "molit.raw.csv", env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: PAR }, client, now: new Date("2026-08-22T00:00:01.000Z") });
   assert.deepEqual([positions.contentType, csv.contentType], ["application/json", "text/csv; charset=euc-kr"]);
   assert.ok([...objects.keys()].every((key) => key.startsWith("source-raw/")));
 });

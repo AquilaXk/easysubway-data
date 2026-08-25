@@ -9,10 +9,11 @@ import { isDeepStrictEqual } from "node:util";
 import { collectCurrentStaticNetworkSuccessors, projectMolit, projectPositions, SEOUL_POSITION_SCHEMA_FINGERPRINT } from "./collect-current-static-network-successors.mjs";
 import { buildSeoulRouteMapPositions } from "./collect-seoul-route-map-positions.mjs";
 import { publishStaticNetworkSourceRaw } from "./publish-static-network-source-raw.mjs";
-import { readStaticNetworkRegularFile, registerCurrentStaticNetworkSuccessors } from "./register-current-static-network-successors.mjs";
+import { readStaticNetworkRegularFile, registerCurrentStaticNetworkSuccessors, registerPublicStaticNetworkV2Successors } from "./register-current-static-network-successors.mjs";
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import { approvedLegacyGovernanceBinding } from "./legacy-source-governance.mjs";
 import { assertCurrentTopologyAdmissionFreshness } from "./lib/route-map-admission-freshness.mjs";
+import { buildPublicStaticNetworkV2Observations } from "./build-public-static-network-v2-observations.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const TARGETS = Object.freeze(["seoul-metro-route-map-positions", "molit-urban-rail-full-route"]);
@@ -23,8 +24,8 @@ const compareStrings = (left, right) => (left < right ? -1 : left > right ? 1 : 
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const canonicalBytes = (value) => Buffer.from(`${JSON.stringify(value)}\n`);
 const RECEIPT_TYPES = Object.freeze({
-  "seoul-metro-route-map-positions": { extension: "json", contentType: "application/json" },
-  "molit-urban-rail-full-route": { extension: "csv", contentType: "text/csv; charset=euc-kr" },
+  "seoul-metro-route-map-positions": { extension: "json", contentType: "application/json", rawRelativePath: "positions.raw.json" },
+  "molit-urban-rail-full-route": { extension: "csv", contentType: "text/csv; charset=euc-kr", rawRelativePath: "molit.raw.csv" },
 });
 
 async function regularRoot(value, label) { const initial = await lstat(value); if (!initial.isDirectory() || initial.isSymbolicLink()) throw new Error(`${label} must be a regular non-symlink directory`); const resolved = await realpath(value); const stat = await lstat(resolved); if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error(`${label} must be a regular non-symlink directory`); return resolved; }
@@ -100,13 +101,31 @@ export async function runCurrentStaticNetworkSuccessors({ repositoryRoot = ROOT,
   const topology = await admittedTopology(root, inventoryBytes, now);
   const layoutSnapshot = buildSeoulRouteMapPositions({ records: positions, topologySnapshotBytes: topology.bytes, topologySnapshotId: topology.snapshotId, rawSha256: collection.positions.rawSha256, now });
   const drafts = buildDrafts(collection, layoutSnapshot);
-  for (const draft of drafts) await createExclusive(path.join(operation, `raw.${draft.extension}`), draft.rawBytes);
-  const receipts = []; for (const draft of drafts) receipts.push(await publishImpl({ repositoryRoot: root, expectedMainSha, operationRoot: operation, sourceId: draft.sourceId, snapshotId: draft.observation.value.snapshotId, capturedAt: draft.observation.value.capturedAt, rawRelativePath: `raw.${draft.extension}`, now }));
+  for (const draft of drafts) await createExclusive(path.join(operation, RECEIPT_TYPES[draft.sourceId].rawRelativePath), draft.rawBytes);
+  const receipts = []; for (const draft of drafts) receipts.push(await publishImpl({ repositoryRoot: root, expectedMainSha, operationRoot: operation, sourceId: draft.sourceId, snapshotId: draft.observation.value.snapshotId, capturedAt: draft.observation.value.capturedAt, rawRelativePath: RECEIPT_TYPES[draft.sourceId].rawRelativePath, now }));
   const observations = drafts.map((draft, index) => ({ snapshot: snapshotFromDraft(draft, receipts[index]), receipt: receipts[index], bytes: draft.observation.bytes, rawBytes: draft.rawBytes }));
   await createExclusive(path.join(operation, "static-network-successors-receipt.json"), canonicalBytes({ sourceIds: TARGETS, receipts, normalizedObservationSha256: observations.map(({ bytes }) => sha(bytes)) }));
   if (await assertExactMain(root) !== expectedMainSha) throw new Error("static network repository changed before registration");
   return registerImpl({ repositoryRoot: root, observations, now });
 }
 
-async function main(argv) { if (argv.length !== 1 || !path.isAbsolute(argv[0])) throw new Error("static network runner requires an absolute operation root"); const result = await runCurrentStaticNetworkSuccessors({ operationRoot: argv[0] }); process.stdout.write(`${JSON.stringify(result)}\n`); }
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) main(process.argv.slice(2)).catch((error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });
+// Input-only successor path. Collection and OCI publication are deliberately
+// outside this transition so a supplied receipt cannot be substituted.
+export async function runPublicStaticNetworkV2Transition({ repositoryRoot = ROOT, positionRawBytes, molitRawBytes, positionReceipt, molitReceipt, capturedAt, assertExactMain = defaultExactMain, produceImpl = buildPublicStaticNetworkV2Observations, registerImpl = registerPublicStaticNetworkV2Successors } = {}) {
+  const root = await regularRoot(repositoryRoot, "repository root");
+  const expectedMainSha = await assertExactMain(root);
+  const inventoryBytes = await readFile(path.join(root, "tools/datapack/source-inventory.json"));
+  let sourceInventory; try { sourceInventory = JSON.parse(inventoryBytes); } catch { throw new Error("public v2 source inventory is invalid"); }
+  const topologyId = sourceInventory?.sources?.find(({ id }) => id === TARGETS[0])?.routeMapAdmissionEvidence?.currentTopologyAdmission?.topologySnapshotId;
+  if (typeof topologyId !== "string" || topologyId === "") throw new Error("public v2 topology admission is invalid");
+  const admittedTopologyBytes = await readStaticNetworkRegularFile(root, `tools/datapack/sources/${topologyId}.json`, "public v2 topology");
+  const producerOutput = produceImpl({ positionRawBytes, molitRawBytes, positionReceipt, molitReceipt, capturedAt, sourceInventory, admittedTopologyBytes, admittedTopologyId: topologyId });
+  if (await assertExactMain(root) !== expectedMainSha) throw new Error("public v2 repository changed before registration");
+  return registerImpl({ repositoryRoot: root, producerOutput, rawBytesBySource: { [TARGETS[0]]: Buffer.from(positionRawBytes), [TARGETS[1]]: Buffer.from(molitRawBytes) }, now: new Date(capturedAt) });
+}
+
+export async function runRetiredCurrentStaticNetworkSuccessorsCli() {
+  throw new Error("STATIC_NETWORK_SUCCESSORS_HISTORICAL_ONLY_RETIRED: use run-public-static-network-v2-operation.mjs");
+}
+async function main() { await runRetiredCurrentStaticNetworkSuccessorsCli(); }
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) main().catch((error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });
