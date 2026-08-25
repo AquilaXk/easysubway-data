@@ -183,17 +183,22 @@ test("CLI는 current tuple을 재생성해 canonical input/fixture/authority 네
   const directory = await mkdtemp(path.join(tmpdir(), "full-capital-authority-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
   const input = await fullInput();
+  const buildSpec = {
+    ...input.buildSpec,
+    fixturePath: "tools/datapack/release/capital-production-canonical-pack.json",
+  };
+  const buildSpecBytes = Buffer.from(canonical(buildSpec));
   const files = {
-    fixture: path.join(directory, "source.json"),
-    buildSpec: path.join(directory, "tools/datapack/release/candidate-build-spec.json"),
+    fixture: buildSpec.fixturePath,
+    buildSpec: "tools/datapack/release/candidate-build-spec.json",
     stationOutput: path.join(directory, "station.json"),
     routeOutput: path.join(directory, "route.json"),
     fixtureOutput: path.join(directory, "candidate.json"),
     authorityOutput: path.join(directory, "authority.json"),
   };
-  await mkdir(path.dirname(files.buildSpec), { recursive: true });
-  await writeFile(files.fixture, input.sourceFixtureBytes);
-  await writeFile(files.buildSpec, input.buildSpecBytes);
+  await mkdir(path.join(directory, path.dirname(files.buildSpec)), { recursive: true });
+  await writeFile(path.join(directory, files.fixture), input.sourceFixtureBytes);
+  await writeFile(path.join(directory, files.buildSpec), buildSpecBytes);
   const argv = cliArgs(files);
   await main(argv, {
     repositoryRoot: directory,
@@ -259,30 +264,28 @@ test("CLI는 current tuple을 재생성해 canonical input/fixture/authority 네
   await assertFileAbsent(sameOutput);
 });
 
-test("CLI는 workflow가 선택한 per-run build spec과 fixture로 accessibility input을 재생성한다", async (context) => {
+test("CLI는 tracked current candidate와 exact fixture path만 pre-approval phase로 전달한다", async (context) => {
   const directory = await mkdtemp(path.join(tmpdir(), "per-run-capital-authority-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
   const input = await fullInput();
-  const buildSpec = { ...input.buildSpec, perRunEvidence: "accepted-build-spec" };
+  const buildSpec = {
+    ...input.buildSpec,
+    fixturePath: "tools/datapack/release/capital-production-canonical-pack.json",
+  };
   const buildSpecBytes = Buffer.from(canonical(buildSpec));
   const sourceFixture = JSON.parse(input.sourceFixtureBytes);
   const files = {
-    fixture: path.join(directory, "source.json"),
-    buildSpec: path.join(directory, "release/per-run-build-spec.json"),
+    fixture: buildSpec.fixturePath,
+    buildSpec: "tools/datapack/release/candidate-build-spec.json",
     stationOutput: path.join(directory, "station.json"),
     routeOutput: path.join(directory, "route.json"),
     fixtureOutput: path.join(directory, "candidate.json"),
     authorityOutput: path.join(directory, "authority.json"),
   };
-  const trackedBuildSpec = path.join(directory, "tools/datapack/release/candidate-build-spec.json");
+  await mkdir(path.join(directory, path.dirname(files.buildSpec)), { recursive: true });
   await Promise.all([
-    mkdir(path.dirname(files.buildSpec), { recursive: true }),
-    mkdir(path.dirname(trackedBuildSpec), { recursive: true }),
-  ]);
-  await Promise.all([
-    writeFile(files.fixture, input.sourceFixtureBytes),
-    writeFile(files.buildSpec, buildSpecBytes),
-    writeFile(trackedBuildSpec, input.buildSpecBytes),
+    writeFile(path.join(directory, files.fixture), input.sourceFixtureBytes),
+    writeFile(path.join(directory, files.buildSpec), buildSpecBytes),
   ]);
 
   await main(cliArgs(files), {
@@ -292,7 +295,8 @@ test("CLI는 workflow가 선택한 per-run build spec과 fixture로 accessibilit
       assert.deepEqual(selectedFixture, sourceFixture);
       return structuredClone(input.projectedFixture);
     },
-    buildRefreshOutputsImpl: async ({ candidateBuildSpec, canonicalPack }) => {
+    buildRefreshOutputsImpl: async ({ phase, candidateBuildSpec, canonicalPack }) => {
+      assert.equal(phase, "PRE_APPROVAL_CURRENT_CANDIDATE");
       assert.deepEqual(candidateBuildSpec, buildSpec);
       assert.deepEqual(canonicalPack, sourceFixture);
       return [
@@ -310,6 +314,23 @@ test("CLI는 workflow가 선택한 per-run build spec과 fixture로 accessibilit
 
   const authority = JSON.parse(await readFile(files.authorityOutput, "utf8"));
   assert.equal(authority.buildInput.buildSpecSha256, sha256(buildSpecBytes));
+
+  await assert.rejects(
+    main(cliArgs({ ...files, fixture: "source.json" }), {
+      repositoryRoot: directory,
+      projectFixtureImpl: async () => structuredClone(input.projectedFixture),
+      buildRefreshOutputsImpl: async () => [],
+    }),
+    /fixture path mismatch/,
+  );
+  await assert.rejects(
+    main(cliArgs({ ...files, buildSpec: "release/per-run-build-spec.json" }), {
+      repositoryRoot: directory,
+      projectFixtureImpl: async () => structuredClone(input.projectedFixture),
+      buildRefreshOutputsImpl: async () => [],
+    }),
+    /build spec path mismatch/,
+  );
 });
 
 function cliArgs(files) {

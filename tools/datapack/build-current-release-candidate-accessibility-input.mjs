@@ -16,6 +16,7 @@ import { buildCurrentCapitalAccessibilityRefreshOutputs } from "./refresh-curren
 
 const CURRENT_STATION_INPUT = "tools/datapack/release/current-capital-accessibility-full/station-line-input.json";
 const CURRENT_ROUTE_INPUT = "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json";
+const CURRENT_BUILD_SPEC = "tools/datapack/release/candidate-build-spec.json";
 
 const CLOSED_STATES = new Set([
   "VERIFIED_PRESENT",
@@ -651,19 +652,27 @@ export async function main(
     throw new Error("CLI arguments mismatch");
   }
   const root = path.resolve(repositoryRoot);
+  if (args["build-spec"] !== CURRENT_BUILD_SPEC) throw new Error("current candidate build spec path mismatch");
   const stationLineOutput = path.resolve(root, args["station-line-output"]);
   const routeEdgeOutput = path.resolve(root, args["route-edge-output"]);
   const fixtureOutput = path.resolve(root, args["fixture-output"]);
   const authorityOutput = path.resolve(root, args["authority-output"]);
   const outputs = [stationLineOutput, routeEdgeOutput, fixtureOutput, authorityOutput];
   if (new Set(outputs).size !== outputs.length) throw new Error("output paths must be distinct");
-  await Promise.all(outputs.map(outputMustBeAbsent));
-  const sourceFixtureBytes = await readFile(path.resolve(root, args.fixture));
-  const buildSpecBytes = await readFile(path.resolve(root, args["build-spec"]));
-  const sourceFixture = JSON.parse(sourceFixtureBytes.toString("utf8"));
+  const buildSpecBytes = await readFile(path.resolve(root, CURRENT_BUILD_SPEC));
   const buildSpec = JSON.parse(buildSpecBytes.toString("utf8"));
+  if (typeof buildSpec.fixturePath !== "string" || buildSpec.fixturePath.length === 0
+    || args.fixture !== buildSpec.fixturePath) {
+    throw new Error("current candidate fixture path mismatch");
+  }
+  const fixturePath = path.resolve(root, buildSpec.fixturePath);
+  if (!fixturePath.startsWith(`${root}${path.sep}`)) throw new Error("current candidate fixture path mismatch");
+  const sourceFixtureBytes = await readFile(fixturePath);
+  const sourceFixture = JSON.parse(sourceFixtureBytes.toString("utf8"));
+  await Promise.all(outputs.map(outputMustBeAbsent));
   const refreshed = await buildRefreshOutputsImpl({
     repositoryRoot: root,
+    phase: "PRE_APPROVAL_CURRENT_CANDIDATE",
     candidateBuildSpec: buildSpec,
     canonicalPack: sourceFixture,
   });

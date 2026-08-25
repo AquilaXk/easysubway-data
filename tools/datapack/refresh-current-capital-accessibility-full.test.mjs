@@ -63,6 +63,75 @@ test("atomic public V2 route-map and MOLIT heads refresh the exact two-source pr
   assert.equal(route.candidate.sourceSetSha256, candidate.sourceSnapshotSetHash);
 });
 
+test("pre-approval candidate phase keeps stale approval bytes outside the candidate refresh proof", async (t) => {
+  const root = await stagedRefreshRepository(t);
+  const candidatePath = "tools/datapack/release/candidate-build-spec.json";
+  const candidateBytes = await readFile(path.join(root, candidatePath));
+  const candidate = JSON.parse(candidateBytes);
+  const fixtureBytes = await readFile(path.join(root, candidate.fixturePath));
+  const approvalPaths = [
+    "tools/datapack/release/release-request.json",
+    "tools/datapack/release/hash-evidence.json",
+  ];
+  const staleApprovalBytes = [Buffer.from("{"), Buffer.from("not-json")];
+  await Promise.all(approvalPaths.map((relative, index) =>
+    writeFile(path.join(root, relative), staleApprovalBytes[index])));
+
+  await assert.rejects(
+    buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root }),
+    /invalid JSON/,
+  );
+  const outputs = await buildCurrentCapitalAccessibilityRefreshOutputs({
+    repositoryRoot: root,
+    phase: "PRE_APPROVAL_CURRENT_CANDIDATE",
+    candidateBuildSpec: candidate,
+    canonicalPack: JSON.parse(fixtureBytes),
+  });
+
+  assert.equal(JSON.parse(outputs[0].bytes).candidate.sourceSetSha256, candidate.sourceSnapshotSetHash);
+  assert.equal(JSON.parse(outputs[1].bytes).candidate.sourceSetSha256, candidate.sourceSnapshotSetHash);
+  assert.deepEqual(
+    await Promise.all(approvalPaths.map((relative) => readFile(path.join(root, relative)))),
+    staleApprovalBytes,
+  );
+});
+
+test("pre-approval candidate phase rejects unknown, one-sided, and non-canonical overrides", async (t) => {
+  const root = await stagedRefreshRepository(t);
+  const candidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json")));
+  const canonicalPack = JSON.parse(await readFile(path.join(root, candidate.fixturePath)));
+  await assert.rejects(
+    buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root, phase: "UNKNOWN" }),
+    /phase mismatch/,
+  );
+  await assert.rejects(
+    buildCurrentCapitalAccessibilityRefreshOutputs({
+      repositoryRoot: root,
+      phase: "PRE_APPROVAL_CURRENT_CANDIDATE",
+      candidateBuildSpec: candidate,
+    }),
+    /per-run input mismatch/,
+  );
+  await assert.rejects(
+    buildCurrentCapitalAccessibilityRefreshOutputs({
+      repositoryRoot: root,
+      phase: "PRE_APPROVAL_CURRENT_CANDIDATE",
+      candidateBuildSpec: { ...candidate, candidateId: "other" },
+      canonicalPack,
+    }),
+    /candidate override mismatch/,
+  );
+  await assert.rejects(
+    buildCurrentCapitalAccessibilityRefreshOutputs({
+      repositoryRoot: root,
+      phase: "PRE_APPROVAL_CURRENT_CANDIDATE",
+      candidateBuildSpec: candidate,
+      canonicalPack: { ...canonicalPack, packs: [] },
+    }),
+    /canonical override mismatch/,
+  );
+});
+
 test("public V2 transition rejects legacy metadata, wrong-source predecessor, and selected source drift", async (t) => {
   for (const mutate of [
     async (root) => {

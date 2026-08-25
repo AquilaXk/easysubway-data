@@ -19,6 +19,9 @@ const OUTPUTS = Object.freeze([
 const JOURNAL = "tools/datapack/.current-capital-accessibility-refresh-transaction.json";
 const LOCK = "tools/datapack/.current-capital-accessibility-refresh.lock";
 const LOCK_OWNER = "owner.json";
+const CANDIDATE_BUILD_SPEC = "tools/datapack/release/candidate-build-spec.json";
+const ACTIVATED_CURRENT_OUTPUT = "ACTIVATED_CURRENT_OUTPUT";
+const PRE_APPROVAL_CURRENT_CANDIDATE = "PRE_APPROVAL_CURRENT_CANDIDATE";
 const SEOUL = "seoul-metro-accessibility";
 const TRANSFER = "seoul-metro-transfer-distance-duration";
 const MOLIT = "molit-urban-rail-full-route";
@@ -67,15 +70,19 @@ function requireCurrentPublicV2Head(selected, ledger, sourceId) {
   return { head, previousSnapshotId };
 }
 
-function buildRefreshProof({ candidateFile, ledgerFile, requestFile, hashesFile, stationFile, routeFile }) {
+function buildRefreshProof({ phase, candidateFile, ledgerFile, requestFile, hashesFile, stationFile, routeFile }) {
   const candidate = parse(candidateFile.bytes, "current candidate"); const ledger = parse(ledgerFile.bytes, "source snapshot ledger");
-  const request = parse(requestFile.bytes, "release request"); const hashes = parse(hashesFile.bytes, "hash evidence");
   const station = parse(stationFile.bytes, "activated station input"); const route = parse(routeFile.bytes, "activated route input");
   if (!Array.isArray(candidate.sourceSnapshotIds) || !Array.isArray(candidate.sourceSnapshots) || candidate.sourceSnapshotIds.length !== 7
     || candidate.sourceSnapshotIds.length !== candidate.sourceSnapshots.length
-    || candidate.sourceSnapshots.at(-1)?.sourceId !== TRANSFER
-    || candidate.sourceSnapshotSetHash !== request.sourceSnapshotSetHash
-    || candidate.sourceSnapshotSetHash !== hashes.sourceSnapshotSetHash?.value) throw new Error("current candidate/request/hash binding mismatch");
+    || candidate.sourceSnapshots.at(-1)?.sourceId !== TRANSFER) throw new Error("current candidate source-set mismatch");
+  if (phase === ACTIVATED_CURRENT_OUTPUT) {
+    const request = parse(requestFile.bytes, "release request"); const hashes = parse(hashesFile.bytes, "hash evidence");
+    if (candidate.sourceSnapshotSetHash !== request.sourceSnapshotSetHash
+      || candidate.sourceSnapshotSetHash !== hashes.sourceSnapshotSetHash?.value) {
+      throw new Error("current candidate/request/hash binding mismatch");
+    }
+  }
   const selected = candidate.sourceSnapshotIds.map((snapshotId, index) => {
     const row = requireOne(ledger, (entry) => entry?.snapshotId === snapshotId, "current candidate ledger");
     if (row.sourceId !== candidate.sourceSnapshots[index]?.sourceId) throw new Error("current candidate source identity mismatch");
@@ -132,11 +139,35 @@ function buildRefreshProof({ candidateFile, ledgerFile, requestFile, hashesFile,
   };
 }
 
-async function inputFiles(root) {
-  const files = await Promise.all([
-    "tools/datapack/release/candidate-build-spec.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json", "tools/datapack/release/current-capital-facility-source-admission.json", ...OUTPUTS,
-  ].map(async (relative) => [relative, await readStableRegularFile(target(root, relative), relative)]));
-  return Object.fromEntries(files);
+function requirePhase(phase) {
+  if (![ACTIVATED_CURRENT_OUTPUT, PRE_APPROVAL_CURRENT_CANDIDATE].includes(phase)) {
+    throw new Error("current-capital refresh phase mismatch");
+  }
+}
+
+function candidateFixturePath(candidate) {
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)
+    || typeof candidate.fixturePath !== "string" || candidate.fixturePath.length === 0) {
+    throw new Error("current-capital refresh canonical fixture path mismatch");
+  }
+  return candidate.fixturePath;
+}
+
+async function inputFiles(root, phase) {
+  const relatives = [
+    CANDIDATE_BUILD_SPEC, "tools/datapack/release/source-snapshots.json",
+    "tools/datapack/release/current-capital-facility-source-admission.json", ...OUTPUTS,
+  ];
+  if (phase === ACTIVATED_CURRENT_OUTPUT) {
+    relatives.splice(2, 0, "tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json");
+  }
+  const files = Object.fromEntries(await Promise.all(relatives.map(async (relative) =>
+    [relative, await readStableRegularFile(target(root, relative), relative)])));
+  if (phase === PRE_APPROVAL_CURRENT_CANDIDATE) {
+    const fixturePath = candidateFixturePath(parse(files[CANDIDATE_BUILD_SPEC].bytes, "current candidate"));
+    files[fixturePath] = await readStableRegularFile(target(root, fixturePath), fixturePath);
+  }
+  return files;
 }
 
 function assertNarrowDelta({ stationBefore, routeBefore, stationAfter, routeAfter }) {
@@ -148,19 +179,35 @@ function assertNarrowDelta({ stationBefore, routeBefore, stationAfter, routeAfte
 
 export async function buildCurrentCapitalAccessibilityRefreshOutputs({
   repositoryRoot = ROOT,
+  phase = ACTIVATED_CURRENT_OUTPUT,
   candidateBuildSpec = undefined,
   canonicalPack = undefined,
 } = {}) {
-  const root = path.resolve(repositoryRoot); const files = await inputFiles(root);
-  const proof = buildRefreshProof({ candidateFile: files["tools/datapack/release/candidate-build-spec.json"], ledgerFile: files["tools/datapack/release/source-snapshots.json"], requestFile: files["tools/datapack/release/release-request.json"], hashesFile: files["tools/datapack/release/hash-evidence.json"], stationFile: files[OUTPUTS[0]], routeFile: files[OUTPUTS[1]] });
+  requirePhase(phase);
+  const root = path.resolve(repositoryRoot); const files = await inputFiles(root, phase);
+  const proof = buildRefreshProof({ phase, candidateFile: files[CANDIDATE_BUILD_SPEC], ledgerFile: files["tools/datapack/release/source-snapshots.json"], requestFile: files["tools/datapack/release/release-request.json"], hashesFile: files["tools/datapack/release/hash-evidence.json"], stationFile: files[OUTPUTS[0]], routeFile: files[OUTPUTS[1]] });
   const { alreadyCurrent, ...transition } = proof;
   const input = await readCurrentCapitalInputs(root, { readTransitionBoundaryImpl: async () => ({ ...transition, facilityAdmissionBytesSha256: sha(files["tools/datapack/release/current-capital-facility-source-admission.json"].bytes) }) });
   const hasOverride = candidateBuildSpec !== undefined || canonicalPack !== undefined;
-  if (hasOverride && (!candidateBuildSpec || typeof candidateBuildSpec !== "object"
+  if (phase === ACTIVATED_CURRENT_OUTPUT && hasOverride) {
+    throw new Error("current-capital refresh activated override mismatch");
+  }
+  if (phase === PRE_APPROVAL_CURRENT_CANDIDATE && (!candidateBuildSpec || typeof candidateBuildSpec !== "object"
     || !canonicalPack || typeof canonicalPack !== "object")) {
     throw new Error("current-capital refresh per-run input mismatch");
   }
-  const selectedInput = hasOverride ? { ...input, candidateBuildSpec, canonicalPack } : input;
+  if (phase === PRE_APPROVAL_CURRENT_CANDIDATE) {
+    const trackedCandidate = parse(files[CANDIDATE_BUILD_SPEC].bytes, "current candidate");
+    const fixturePath = candidateFixturePath(trackedCandidate);
+    const trackedCanonicalPack = parse(files[fixturePath].bytes, "current canonical fixture");
+    if (!equalJson(candidateBuildSpec, trackedCandidate) || !equalJson(input.candidateBuildSpec, trackedCandidate)) {
+      throw new Error("current-capital refresh candidate override mismatch");
+    }
+    if (!equalJson(canonicalPack, trackedCanonicalPack) || !equalJson(input.canonicalPack, trackedCanonicalPack)) {
+      throw new Error("current-capital refresh canonical override mismatch");
+    }
+  }
+  const selectedInput = phase === PRE_APPROVAL_CURRENT_CANDIDATE ? { ...input, candidateBuildSpec, canonicalPack } : input;
   const projected = await projectCandidateFixtureForAccessibilityAuthority({
     buildSpec: selectedInput.candidateBuildSpec,
     sourceFixture: selectedInput.canonicalPack,
