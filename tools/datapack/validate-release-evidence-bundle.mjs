@@ -412,6 +412,8 @@ export async function validateCandidateServerRouteEvidence({
   if (eligibilityValue.schemaVersion !== 1
     || eligibilityValue.artifactKind !== "route-accessibility-eligibility"
     || eligibilityValue.decision !== "ELIGIBLE"
+    || !Array.isArray(eligibilityValue.blockers)
+    || eligibilityValue.blockers.length !== 0
     || eligibilityValue.eligibilitySha256 !== hashBytes(Buffer.from(canonicalJson(eligibilityPayload)))
     || !isDeepStrictEqual(eligibilityValue.candidate, finalValue.candidate)
     || finalValue.candidate.sourceSnapshotSetHash !== binding.sourceSnapshotSetHash

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -196,7 +196,10 @@ test("CLI는 current tuple을 재생성해 canonical input/fixture/authority 네
     fixtureOutput: path.join(directory, "candidate.json"),
     authorityOutput: path.join(directory, "authority.json"),
   };
-  await mkdir(path.join(directory, path.dirname(files.buildSpec)), { recursive: true });
+  await Promise.all([
+    mkdir(path.join(directory, path.dirname(files.buildSpec)), { recursive: true }),
+    mkdir(path.join(directory, path.dirname(files.fixture)), { recursive: true }),
+  ]);
   await writeFile(path.join(directory, files.fixture), input.sourceFixtureBytes);
   await writeFile(path.join(directory, files.buildSpec), buildSpecBytes);
   const argv = cliArgs(files);
@@ -264,25 +267,28 @@ test("CLI는 current tuple을 재생성해 canonical input/fixture/authority 네
   await assertFileAbsent(sameOutput);
 });
 
-test("CLI는 tracked current candidate와 exact fixture path만 pre-approval phase로 전달한다", async (context) => {
+test("CLI는 workflow가 검증한 repo-relative build spec과 fixture의 동일 raw bytes를 pre-approval phase로 전달한다", async (context) => {
   const directory = await mkdtemp(path.join(tmpdir(), "per-run-capital-authority-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
   const input = await fullInput();
   const buildSpec = {
     ...input.buildSpec,
-    fixturePath: "tools/datapack/release/capital-production-canonical-pack.json",
+    fixturePath: "data/capital.json",
   };
-  const buildSpecBytes = Buffer.from(canonical(buildSpec));
+  const buildSpecBytes = Buffer.from(`${canonical(buildSpec)}\n`);
   const sourceFixture = JSON.parse(input.sourceFixtureBytes);
   const files = {
-    fixture: buildSpec.fixturePath,
-    buildSpec: "tools/datapack/release/candidate-build-spec.json",
+    fixture: "./data/capital.json",
+    buildSpec: "./release/per-run-build-spec.json",
     stationOutput: path.join(directory, "station.json"),
     routeOutput: path.join(directory, "route.json"),
     fixtureOutput: path.join(directory, "candidate.json"),
     authorityOutput: path.join(directory, "authority.json"),
   };
-  await mkdir(path.join(directory, path.dirname(files.buildSpec)), { recursive: true });
+  await Promise.all([
+    mkdir(path.join(directory, path.dirname(files.buildSpec)), { recursive: true }),
+    mkdir(path.join(directory, path.dirname(files.fixture)), { recursive: true }),
+  ]);
   await Promise.all([
     writeFile(path.join(directory, files.fixture), input.sourceFixtureBytes),
     writeFile(path.join(directory, files.buildSpec), buildSpecBytes),
@@ -316,21 +322,74 @@ test("CLI는 tracked current candidate와 exact fixture path만 pre-approval pha
   assert.equal(authority.buildInput.buildSpecSha256, sha256(buildSpecBytes));
 
   await assert.rejects(
-    main(cliArgs({ ...files, fixture: "source.json" }), {
+    main(cliArgs({
+      ...files,
+      fixture: "source.json",
+      stationOutput: path.join(directory, "mismatch-station.json"),
+      routeOutput: path.join(directory, "mismatch-route.json"),
+      fixtureOutput: path.join(directory, "mismatch-candidate.json"),
+      authorityOutput: path.join(directory, "mismatch-authority.json"),
+    }), {
       repositoryRoot: directory,
       projectFixtureImpl: async () => structuredClone(input.projectedFixture),
       buildRefreshOutputsImpl: async () => [],
     }),
     /fixture path mismatch/,
   );
-  await assert.rejects(
-    main(cliArgs({ ...files, buildSpec: "release/per-run-build-spec.json" }), {
+});
+
+test("CLI는 build spec/fixture path 경계를 fail closed하고 출력 전에 중단한다", async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "candidate-input-path-boundary-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const input = await fullInput();
+  const buildSpec = { ...input.buildSpec, fixturePath: "data/capital.json" };
+  const buildSpecBytes = Buffer.from(`${canonical(buildSpec)}\n`);
+  const files = {
+    fixture: "data/capital.json",
+    buildSpec: "release/per-run-build-spec.json",
+    stationOutput: path.join(directory, "station.json"),
+    routeOutput: path.join(directory, "route.json"),
+    fixtureOutput: path.join(directory, "candidate.json"),
+    authorityOutput: path.join(directory, "authority.json"),
+  };
+  await Promise.all([
+    mkdir(path.join(directory, "release"), { recursive: true }),
+    mkdir(path.join(directory, "data"), { recursive: true }),
+  ]);
+  await Promise.all([
+    writeFile(path.join(directory, files.buildSpec), buildSpecBytes),
+    writeFile(path.join(directory, files.fixture), input.sourceFixtureBytes),
+  ]);
+  const noOutput = async (candidate) => {
+    await assert.rejects(main(cliArgs(candidate), {
       repositoryRoot: directory,
       projectFixtureImpl: async () => structuredClone(input.projectedFixture),
       buildRefreshOutputsImpl: async () => [],
-    }),
-    /build spec path mismatch/,
-  );
+    }), /path|mismatch|regular file/i);
+    await Promise.all([
+      assertFileAbsent(candidate.stationOutput),
+      assertFileAbsent(candidate.routeOutput),
+      assertFileAbsent(candidate.fixtureOutput),
+      assertFileAbsent(candidate.authorityOutput),
+    ]);
+  };
+  const candidate = (suffix, changes) => ({
+    ...files,
+    stationOutput: path.join(directory, `${suffix}-station.json`),
+    routeOutput: path.join(directory, `${suffix}-route.json`),
+    fixtureOutput: path.join(directory, `${suffix}-candidate.json`),
+    authorityOutput: path.join(directory, `${suffix}-authority.json`),
+    ...changes,
+  });
+
+  await noOutput(candidate("absolute", { buildSpec: path.join(directory, files.buildSpec) }));
+  await noOutput(candidate("parent", { buildSpec: "../release/per-run-build-spec.json" }));
+  await noOutput(candidate("fixture-like", { buildSpec: "release/debug-build-spec.json" }));
+  await noOutput(candidate("sample-fixture", { fixture: "data/sample-capital.json" }));
+  const linkedSpec = path.join(directory, "release", "linked-build-spec.json");
+  await symlink(path.join(directory, files.buildSpec), linkedSpec);
+  await noOutput(candidate("symlink", { buildSpec: "release/linked-build-spec.json" }));
+  await noOutput(candidate("fixture-mismatch", { fixture: "data/other.json" }));
 });
 
 function cliArgs(files) {

@@ -269,6 +269,56 @@ test("candidate server route evidence는 stage·inventory·component digest를 �
   await assert.rejects(command(), /component artifactInventorySha256 mismatch/);
   await writeBound();
 
+  // ELIGIBLE는 blocker가 전혀 없다는 producer 계약까지 포함한다. eligibility/final/inventory
+  // binding을 모두 재계산해도 통과해서는 안 된다.
+  const assertEligibilityBlockersRejected = async (blockers) => {
+    const blockedEligibilityPayload = { ...eligibilityPayload, blockers };
+    const blockedEligibilityBytes = Buffer.from(canonicalJson({
+      ...blockedEligibilityPayload,
+      eligibilitySha256: hash(Buffer.from(canonicalJson(blockedEligibilityPayload))),
+    }));
+    const blockedGates = structuredClone(final.gates);
+    blockedGates.routeAccessibilityEligibility.evidenceSha256 = hash(blockedEligibilityBytes);
+    const blockedFinalBytes = Buffer.from(canonicalJson(buildServerRouteBundleFinal({
+      candidate,
+      gates: blockedGates,
+    })));
+    await Promise.all([
+      writeFile(path.join(candidateRoot, eligibilityPath), blockedEligibilityBytes),
+      writeFile(path.join(candidateRoot, finalPath), blockedFinalBytes),
+    ]);
+    for (const [relative, bytes] of [
+      [eligibilityPath, blockedEligibilityBytes],
+      [finalPath, blockedFinalBytes],
+    ]) {
+      const entry = inventory.entries.find((item) => item.path === relative);
+      entry.sizeBytes = bytes.length;
+      entry.sha256 = hash(bytes);
+    }
+    bundle.candidateServerRouteEvidence.eligibility.sha256 = hash(blockedEligibilityBytes);
+    bundle.candidateServerRouteEvidence.final.sha256 = hash(blockedFinalBytes);
+    await writeBound();
+    await assert.rejects(command(), /candidate server route evidence artifact binding mismatch/);
+  };
+  await assertEligibilityBlockersRejected(["synthetic-blocker"]);
+  await assertEligibilityBlockersRejected("synthetic-blocker");
+
+  await Promise.all([
+    writeFile(path.join(candidateRoot, eligibilityPath), eligibilityBytes),
+    writeFile(path.join(candidateRoot, finalPath), finalBytes),
+  ]);
+  for (const [relative, bytes] of [
+    [eligibilityPath, eligibilityBytes],
+    [finalPath, finalBytes],
+  ]) {
+    const entry = inventory.entries.find((item) => item.path === relative);
+    entry.sizeBytes = bytes.length;
+    entry.sha256 = hash(bytes);
+  }
+  bundle.candidateServerRouteEvidence.eligibility.sha256 = hash(eligibilityBytes);
+  bundle.candidateServerRouteEvidence.final.sha256 = hash(finalBytes);
+  await writeBound();
+
   const linkedRoot = path.join(outputDir, "stage-link");
   await symlink(candidateRoot, linkedRoot);
   await assert.rejects(execFileAsync(process.execPath, [
