@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -95,6 +95,11 @@ test("합성 current public successor는 1,102 metadata·2,674 route·456 author
   const stationLineInput = JSON.parse(stationLineInputBytes);
   const route = JSON.parse(routeBytes);
   assert.equal(
+    stationLineInput.candidate.sourceSetSha256,
+    buildSpec.sourceSnapshotSetHash,
+  );
+  assert.equal(route.candidate.sourceSetSha256, stationLineInput.candidate.sourceSetSha256);
+  assert.equal(
     stationLineInputBytes.toString("utf8"),
     canonicalCurrentCapitalStationLineInputJson(stationLineInput),
   );
@@ -174,33 +179,56 @@ test("authority validator는 actual edge type denominator를 재집계한다", a
   );
 });
 
-test("CLI는 canonical fixture/authority 두 파일을 만들고 output collision에는 mutation 0이다", async (context) => {
+test("CLI는 current tuple을 재생성해 canonical input/fixture/authority 네 파일을 만들고 collision에는 mutation 0이다", async (context) => {
   const directory = await mkdtemp(path.join(tmpdir(), "full-capital-authority-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
   const input = await fullInput();
+  const buildSpec = {
+    ...input.buildSpec,
+    fixturePath: "tools/datapack/release/capital-production-canonical-pack.json",
+  };
+  const buildSpecBytes = Buffer.from(canonical(buildSpec));
   const files = {
-    fixture: path.join(directory, "source.json"),
-    buildSpec: path.join(directory, "build-spec.json"),
-    station: path.join(directory, "station.json"),
-    route: path.join(directory, "route.json"),
+    fixture: buildSpec.fixturePath,
+    buildSpec: "tools/datapack/release/candidate-build-spec.json",
+    stationOutput: path.join(directory, "station.json"),
+    routeOutput: path.join(directory, "route.json"),
     fixtureOutput: path.join(directory, "candidate.json"),
     authorityOutput: path.join(directory, "authority.json"),
   };
-  await writeFile(files.fixture, input.sourceFixtureBytes);
-  await writeFile(files.buildSpec, input.buildSpecBytes);
-  await writeFile(files.station, input.stationLineInputBytes);
-  await writeFile(files.route, input.routeBytes);
+  await Promise.all([
+    mkdir(path.join(directory, path.dirname(files.buildSpec)), { recursive: true }),
+    mkdir(path.join(directory, path.dirname(files.fixture)), { recursive: true }),
+  ]);
+  await writeFile(path.join(directory, files.fixture), input.sourceFixtureBytes);
+  await writeFile(path.join(directory, files.buildSpec), buildSpecBytes);
   const argv = cliArgs(files);
   await main(argv, {
     repositoryRoot: directory,
     projectFixtureImpl: async () => structuredClone(input.projectedFixture),
+    buildRefreshOutputsImpl: async () => [
+      {
+        relative: "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
+        bytes: input.stationLineInputBytes,
+      },
+      {
+        relative: "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
+        bytes: input.routeBytes,
+      },
+    ],
   });
-  const [fixtureBytes, authorityBytes, fixtureStat, authorityStat] = await Promise.all([
+  const [stationBytes, routeBytes, fixtureBytes, authorityBytes, stationStat, routeStat, fixtureStat, authorityStat] = await Promise.all([
+    readFile(files.stationOutput),
+    readFile(files.routeOutput),
     readFile(files.fixtureOutput),
     readFile(files.authorityOutput),
+    stat(files.stationOutput),
+    stat(files.routeOutput),
     stat(files.fixtureOutput),
     stat(files.authorityOutput),
   ]);
+  assert.equal(stationBytes.toString("utf8"), canonicalCurrentCapitalStationLineInputJson(input.stationLineInput));
+  assert.equal(routeBytes.toString("utf8"), canonicalCurrentCapitalRouteEdgeInputJson(input.route));
   assert.equal(
     fixtureBytes.toString("utf8"),
     canonicalCurrentReleaseCandidateFixtureJson(JSON.parse(fixtureBytes)),
@@ -209,8 +237,9 @@ test("CLI는 canonical fixture/authority 두 파일을 만들고 output collisio
     authorityBytes.toString("utf8"),
     canonicalCurrentReleaseCandidateAccessibilityAuthorityJson(JSON.parse(authorityBytes)),
   );
-  assert.equal(fixtureStat.mode & 0o777, 0o600);
-  assert.equal(authorityStat.mode & 0o777, 0o600);
+  for (const info of [stationStat, routeStat, fixtureStat, authorityStat]) {
+    assert.equal(info.mode & 0o777, 0o600);
+  }
 
   const collisionFixture = path.join(directory, "collision-candidate.json");
   const collisionAuthority = path.join(directory, "collision-authority.json");
@@ -219,6 +248,7 @@ test("CLI는 canonical fixture/authority 두 파일을 만들고 output collisio
     main(cliArgs({ ...files, fixtureOutput: collisionFixture, authorityOutput: collisionAuthority }), {
       repositoryRoot: directory,
       projectFixtureImpl: async () => structuredClone(input.projectedFixture),
+      buildRefreshOutputsImpl: async () => [],
     }),
     /output must be absent/,
   );
@@ -227,21 +257,147 @@ test("CLI는 canonical fixture/authority 두 파일을 만들고 output collisio
 
   const sameOutput = path.join(directory, "same-output.json");
   await assert.rejects(
-    main(cliArgs({ ...files, fixtureOutput: sameOutput, authorityOutput: sameOutput }), {
+    main(cliArgs({ ...files, stationOutput: sameOutput, authorityOutput: sameOutput }), {
       repositoryRoot: directory,
       projectFixtureImpl: async () => structuredClone(input.projectedFixture),
+      buildRefreshOutputsImpl: async () => [],
     }),
     /output paths must be distinct/,
   );
   await assertFileAbsent(sameOutput);
 });
 
+test("CLI는 workflow가 검증한 repo-relative build spec과 fixture의 동일 raw bytes를 pre-approval phase로 전달한다", async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "per-run-capital-authority-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const input = await fullInput();
+  const buildSpec = {
+    ...input.buildSpec,
+    fixturePath: "data/capital.json",
+  };
+  const buildSpecBytes = Buffer.from(`${canonical(buildSpec)}\n`);
+  const sourceFixture = JSON.parse(input.sourceFixtureBytes);
+  const files = {
+    fixture: "./data/capital.json",
+    buildSpec: "./release/per-run-build-spec.json",
+    stationOutput: path.join(directory, "station.json"),
+    routeOutput: path.join(directory, "route.json"),
+    fixtureOutput: path.join(directory, "candidate.json"),
+    authorityOutput: path.join(directory, "authority.json"),
+  };
+  await Promise.all([
+    mkdir(path.join(directory, path.dirname(files.buildSpec)), { recursive: true }),
+    mkdir(path.join(directory, path.dirname(files.fixture)), { recursive: true }),
+  ]);
+  await Promise.all([
+    writeFile(path.join(directory, files.fixture), input.sourceFixtureBytes),
+    writeFile(path.join(directory, files.buildSpec), buildSpecBytes),
+  ]);
+
+  await main(cliArgs(files), {
+    repositoryRoot: directory,
+    projectFixtureImpl: async ({ buildSpec: selected, sourceFixture: selectedFixture }) => {
+      assert.deepEqual(selected, buildSpec);
+      assert.deepEqual(selectedFixture, sourceFixture);
+      return structuredClone(input.projectedFixture);
+    },
+    buildRefreshOutputsImpl: async ({ phase, candidateBuildSpec, canonicalPack }) => {
+      assert.equal(phase, "PRE_APPROVAL_CURRENT_CANDIDATE");
+      assert.deepEqual(candidateBuildSpec, buildSpec);
+      assert.deepEqual(canonicalPack, sourceFixture);
+      return [
+        {
+          relative: "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
+          bytes: input.stationLineInputBytes,
+        },
+        {
+          relative: "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
+          bytes: input.routeBytes,
+        },
+      ];
+    },
+  });
+
+  const authority = JSON.parse(await readFile(files.authorityOutput, "utf8"));
+  assert.equal(authority.buildInput.buildSpecSha256, sha256(buildSpecBytes));
+
+  await assert.rejects(
+    main(cliArgs({
+      ...files,
+      fixture: "source.json",
+      stationOutput: path.join(directory, "mismatch-station.json"),
+      routeOutput: path.join(directory, "mismatch-route.json"),
+      fixtureOutput: path.join(directory, "mismatch-candidate.json"),
+      authorityOutput: path.join(directory, "mismatch-authority.json"),
+    }), {
+      repositoryRoot: directory,
+      projectFixtureImpl: async () => structuredClone(input.projectedFixture),
+      buildRefreshOutputsImpl: async () => [],
+    }),
+    /fixture path mismatch/,
+  );
+});
+
+test("CLI는 build spec/fixture path 경계를 fail closed하고 출력 전에 중단한다", async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "candidate-input-path-boundary-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const input = await fullInput();
+  const buildSpec = { ...input.buildSpec, fixturePath: "data/capital.json" };
+  const buildSpecBytes = Buffer.from(`${canonical(buildSpec)}\n`);
+  const files = {
+    fixture: "data/capital.json",
+    buildSpec: "release/per-run-build-spec.json",
+    stationOutput: path.join(directory, "station.json"),
+    routeOutput: path.join(directory, "route.json"),
+    fixtureOutput: path.join(directory, "candidate.json"),
+    authorityOutput: path.join(directory, "authority.json"),
+  };
+  await Promise.all([
+    mkdir(path.join(directory, "release"), { recursive: true }),
+    mkdir(path.join(directory, "data"), { recursive: true }),
+  ]);
+  await Promise.all([
+    writeFile(path.join(directory, files.buildSpec), buildSpecBytes),
+    writeFile(path.join(directory, files.fixture), input.sourceFixtureBytes),
+  ]);
+  const noOutput = async (candidate) => {
+    await assert.rejects(main(cliArgs(candidate), {
+      repositoryRoot: directory,
+      projectFixtureImpl: async () => structuredClone(input.projectedFixture),
+      buildRefreshOutputsImpl: async () => [],
+    }), /path|mismatch|regular file/i);
+    await Promise.all([
+      assertFileAbsent(candidate.stationOutput),
+      assertFileAbsent(candidate.routeOutput),
+      assertFileAbsent(candidate.fixtureOutput),
+      assertFileAbsent(candidate.authorityOutput),
+    ]);
+  };
+  const candidate = (suffix, changes) => ({
+    ...files,
+    stationOutput: path.join(directory, `${suffix}-station.json`),
+    routeOutput: path.join(directory, `${suffix}-route.json`),
+    fixtureOutput: path.join(directory, `${suffix}-candidate.json`),
+    authorityOutput: path.join(directory, `${suffix}-authority.json`),
+    ...changes,
+  });
+
+  await noOutput(candidate("absolute", { buildSpec: path.join(directory, files.buildSpec) }));
+  await noOutput(candidate("parent", { buildSpec: "../release/per-run-build-spec.json" }));
+  await noOutput(candidate("fixture-like", { buildSpec: "release/debug-build-spec.json" }));
+  await noOutput(candidate("sample-fixture", { fixture: "data/sample-capital.json" }));
+  const linkedSpec = path.join(directory, "release", "linked-build-spec.json");
+  await symlink(path.join(directory, files.buildSpec), linkedSpec);
+  await noOutput(candidate("symlink", { buildSpec: "release/linked-build-spec.json" }));
+  await noOutput(candidate("fixture-mismatch", { fixture: "data/other.json" }));
+});
+
 function cliArgs(files) {
   return [
     "--fixture", files.fixture,
     "--build-spec", files.buildSpec,
-    "--station-line-input", files.station,
-    "--route-edge-input", files.route,
+    "--station-line-output", files.stationOutput,
+    "--route-edge-output", files.routeOutput,
     "--fixture-output", files.fixtureOutput,
     "--authority-output", files.authorityOutput,
   ];

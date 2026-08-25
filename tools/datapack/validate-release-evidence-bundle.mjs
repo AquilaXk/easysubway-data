@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { lstat, readFile, readdir, realpath } from "node:fs/promises";
+import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import {
   buildLaunchDenominatorReport,
@@ -10,7 +11,15 @@ import {
   bindAuthoritativeLaunchEvidence,
   buildLaunchCandidateBinding,
 } from "./launch-candidate-binding.mjs";
-import { validateManifest } from "./lib/manifest-validation.mjs";
+import {
+  canonicalJson,
+  signingPublicKey,
+  validateArtifactComponentManifest,
+  validateManifest,
+  verifyRsaSha256Signature,
+  withoutSignature,
+} from "./lib/manifest-validation.mjs";
+import { validateServerRouteBundleFinal } from "./lib/server-route-bundle-final.mjs";
 
 const SHA256 = /^[a-f0-9]{64}$/;
 const STATUSES = new Set(["PASS", "FAIL", "BLOCKED_EXTERNAL"]);
@@ -23,6 +32,16 @@ const DEFERRABLE_STATUSES = new Set([...STATUSES, "DEFERRED"]);
 const FIELD_STATUS_SETS = new Map([
   ["headwayReportStatus", DEFERRABLE_STATUSES],
   ["routeGraphTopologyStatus", DEFERRABLE_STATUSES],
+]);
+const CANDIDATE_EVIDENCE_PATHS = Object.freeze({
+  eligibility: "server-route-bundle-evidence/route-accessibility-eligibility.json",
+  final: "server-route-bundle-evidence/server-route-bundle-final.json",
+});
+const ROUTE_COMPONENTS = Object.freeze(["accessibility", "fare", "timetable", "topology"]);
+const SIGNED_ROUTE_PATHS = Object.freeze([
+  "compatibility.json", "manifest.json", "manifest.signing-input.json",
+  ...ROUTE_COMPONENTS.map((component) => `payload/${component}.sqlite.zst`),
+  "provenance.json",
 ]);
 
 function argValue(args, name) {
@@ -343,13 +362,388 @@ function validateLaunchDenominatorReport(
   }
 }
 
+function validateCandidateServerRouteEvidenceBinding(bundle) {
+  if (bundle?.schemaVersion !== 1 || bundle?.artifactKind !== "datapack-release-evidence-bundle") {
+    throw new Error("candidate server route release evidence identity mismatch");
+  }
+  const value = bundle.candidateServerRouteEvidence;
+  if (!value || typeof value !== "object" || Array.isArray(value)
+    || !sameKeys(value, ["buildSpecSha256", "candidateId", "eligibility", "final", "manifestSha256", "sourceSnapshotSetHash"])) {
+    throw new Error("candidate server route evidence shape mismatch");
+  }
+  for (const field of ["buildSpecSha256", "manifestSha256", "sourceSnapshotSetHash"]) {
+    if (!SHA256.test(value[field] ?? "")) throw new Error(`candidate server route evidence ${field} must be sha256`);
+  }
+  if (typeof bundle.buildCandidateId !== "string" || bundle.buildCandidateId.length === 0
+    || typeof value.candidateId !== "string" || value.candidateId.length === 0) {
+    throw new Error("candidate ID must be a non-empty string");
+  }
+  if (value.candidateId !== bundle.buildCandidateId
+    || value.sourceSnapshotSetHash !== bundle.sourceSnapshotSetHash
+    || value.buildSpecSha256 !== bundle.buildSpecSha256
+    || value.manifestSha256 !== bundle.manifestSha256) {
+    throw new Error("candidate server route evidence candidate identity mismatch");
+  }
+  for (const [name, expectedPath] of Object.entries(CANDIDATE_EVIDENCE_PATHS)) {
+    const file = value[name];
+    if (!file || typeof file !== "object" || Array.isArray(file)
+      || !sameKeys(file, ["path", "sha256"])
+      || file.path !== expectedPath || !SHA256.test(file.sha256 ?? "")) {
+      throw new Error(`candidate server route evidence ${name} binding mismatch`);
+    }
+  }
+  return value;
+}
+
+export async function validateCandidateServerRouteEvidence({
+  candidateRoot,
+  binding,
+  candidateArtifactInventory,
+  candidateComponentManifest,
+}) {
+  const root = await realDirectory(candidateRoot, "candidate server route root");
+  await validateCandidateEvidenceDirectory(root);
+  const eligibility = await canonicalCandidateEvidence(root, binding.eligibility, "eligibility");
+  const final = await canonicalCandidateEvidence(root, binding.final, "FINAL");
+  const finalValue = validateServerRouteBundleFinal(final.value);
+  const eligibilityValue = eligibility.value;
+  const eligibilityPayload = { ...eligibilityValue };
+  delete eligibilityPayload.eligibilitySha256;
+  if (eligibilityValue.schemaVersion !== 1
+    || eligibilityValue.artifactKind !== "route-accessibility-eligibility"
+    || eligibilityValue.decision !== "ELIGIBLE"
+    || !Array.isArray(eligibilityValue.blockers)
+    || eligibilityValue.blockers.length !== 0
+    || eligibilityValue.eligibilitySha256 !== hashBytes(Buffer.from(canonicalJson(eligibilityPayload)))
+    || !isDeepStrictEqual(eligibilityValue.candidate, finalValue.candidate)
+    || finalValue.candidate.sourceSnapshotSetHash !== binding.sourceSnapshotSetHash
+    || finalValue.gates.routeAccessibilityEligibility.state !== "PASS"
+    || finalValue.gates.routeAccessibilityEligibility.evidenceSha256 !== binding.eligibility.sha256
+    || !SHA256.test(finalValue.candidate.signedManifestRawSha256 ?? "")
+    || !SHA256.test(finalValue.candidate.componentInventorySha256 ?? "")
+    || Object.values(finalValue.candidate.componentDigests).some((value) => !SHA256.test(value ?? ""))) {
+    throw new Error("candidate server route evidence artifact binding mismatch");
+  }
+  await validateCandidateSignedRouteBundle(root, finalValue.candidate);
+  if ((candidateArtifactInventory === undefined) !== (candidateComponentManifest === undefined)) {
+    throw new Error("candidate server route inventory and component manifest must be supplied together");
+  }
+  if (candidateArtifactInventory === undefined) return { eligibility: eligibilityValue, final: finalValue };
+  const inventoryPath = await canonicalCandidateMetadataPath(root, candidateArtifactInventory, "data-artifact-inventory.json");
+  const componentPath = await canonicalCandidateMetadataPath(root, candidateComponentManifest, "data-component-manifest.json");
+  const { inventory, inventoryRaw } = await candidateInventory(inventoryPath);
+  await validateCandidateInventoryFiles(root, inventory);
+  validateInventoryEvidenceEntries(inventory, eligibility, final);
+  const component = await candidateComponent(componentPath);
+  if (component.gitSha !== finalValue.candidate.gitSha
+    || component.releaseSequence !== finalValue.candidate.releaseSequence) {
+    throw new Error("candidate server route component identity mismatch");
+  }
+  if (component.manifestSha256 !== binding.manifestSha256
+    || component.provenance.sourceSnapshotSetHash !== binding.sourceSnapshotSetHash
+    || component.artifactInventorySha256 !== hashBytes(inventoryRaw)) {
+    throw new Error("candidate server route component artifactInventorySha256 mismatch");
+  }
+  return { eligibility: eligibilityValue, final: finalValue, inventory, component };
+}
+
+async function validateCandidateSignedRouteBundle(root, candidate) {
+  const routeRoot = path.join(root, "server-route-bundle");
+  const actualPaths = await exactRegularTree(routeRoot, "candidate signed route bundle");
+  if (!isDeepStrictEqual(actualPaths, [...SIGNED_ROUTE_PATHS].sort(compareBytes))) {
+    throw new Error("candidate signed route bundle paths mismatch");
+  }
+  const [manifest, signingInput, provenance, compatibility] = await Promise.all([
+    canonicalRouteJson(path.join(routeRoot, "manifest.json"), "signed manifest"),
+    canonicalRouteJson(path.join(routeRoot, "manifest.signing-input.json"), "manifest signing input"),
+    canonicalRouteJson(path.join(routeRoot, "provenance.json"), "route provenance"),
+    canonicalRouteJson(path.join(routeRoot, "compatibility.json"), "route compatibility"),
+  ]);
+  validateArtifactComponentManifest(manifest.value, candidate.stationSetSha256);
+  if (!verifyRsaSha256Signature(signingPublicKey(), signingInput.bytes, manifest.value.signature.value)) {
+    throw new Error("candidate signed route signature mismatch");
+  }
+  if (candidate.signedManifestRawSha256 !== hashBytes(manifest.bytes)
+    || candidate.signingInputSha256 !== hashBytes(signingInput.bytes)
+    || !Buffer.from(canonicalJson(withoutSignature(manifest.value))).equals(signingInput.bytes)) {
+    throw new Error("candidate signed route manifest raw binding mismatch");
+  }
+  for (const [field, expected] of [
+    ["bundleId", candidate.bundleId],
+    ["releaseSequence", candidate.releaseSequence],
+    ["stationSetSha256", candidate.stationSetSha256],
+    ["activeFrom", candidate.activeFrom],
+    ["freshUntil", candidate.freshUntil],
+    ["keyId", candidate.keyId],
+  ]) {
+    if (manifest.value[field] !== expected || signingInput.value[field] !== expected) {
+      throw new Error(`candidate signed route ${field} mismatch`);
+    }
+  }
+  const componentEntries = await Promise.all(ROUTE_COMPONENTS.map(async (component) => {
+    const relative = `payload/${component}.sqlite.zst`;
+    const bytes = await regularFile(path.join(routeRoot, relative), `route ${component} payload`);
+    return { path: relative, sizeBytes: bytes.length, sha256: hashBytes(bytes) };
+  }));
+  componentEntries.sort((left, right) => compareBytes(left.path, right.path));
+  const componentInventorySha256 = hashBytes(Buffer.from(canonicalJson(componentEntries)));
+  if (candidate.componentInventorySha256 !== componentInventorySha256
+    || candidate.payloadRootSha256 !== componentInventorySha256
+    || manifest.value.payloadSha256 !== componentInventorySha256
+    || signingInput.value.payloadSha256 !== componentInventorySha256) {
+    throw new Error("candidate signed route component inventory mismatch");
+  }
+  for (const entry of componentEntries) {
+    const component = path.posix.basename(entry.path, ".sqlite.zst");
+    if (candidate.componentDigests[component] !== entry.sha256
+      || manifest.value[`${component}Sha256`] !== entry.sha256
+      || signingInput.value[`${component}Sha256`] !== entry.sha256) {
+      throw new Error(`candidate signed route ${component} digest mismatch`);
+    }
+  }
+  if (provenance.value.sourceSnapshotSetHash !== candidate.sourceSnapshotSetHash
+    || manifest.value.provenanceSha256 !== hashBytes(provenance.bytes)
+    || signingInput.value.provenanceSha256 !== hashBytes(provenance.bytes)
+    || manifest.value.compatibilitySha256 !== hashBytes(compatibility.bytes)
+    || signingInput.value.compatibilitySha256 !== hashBytes(compatibility.bytes)) {
+    throw new Error("candidate signed route metadata binding mismatch");
+  }
+}
+
+async function exactRegularTree(root, label) {
+  const stat = await lstat(root);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error(`${label} must be a real directory`);
+  const paths = [];
+  async function walk(directory, prefix = "") {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+      const target = path.join(directory, entry.name);
+      if (entry.isSymbolicLink()) throw new Error(`${label} must not contain symlinks`);
+      if (entry.isDirectory()) await walk(target, relative);
+      else if (entry.isFile()) paths.push(relative);
+      else throw new Error(`${label} must contain only regular files`);
+    }
+  }
+  await walk(root);
+  return paths.sort(compareBytes);
+}
+
+async function canonicalRouteJson(target, label) {
+  const bytes = await regularFile(target, label);
+  let value;
+  try { value = JSON.parse(bytes); } catch { throw new Error(`${label} must be JSON`); }
+  if (!bytes.equals(Buffer.from(canonicalJson(value)))) throw new Error(`${label} must be canonical JSON`);
+  return { bytes, value };
+}
+
+async function canonicalCandidateMetadataPath(root, supplied, basename) {
+  const expected = path.join(root, basename);
+  const suppliedPath = path.resolve(supplied);
+  if (path.basename(suppliedPath) !== basename || await realpath(path.dirname(suppliedPath)) !== root) {
+    throw new Error(`candidate server route ${basename} path mismatch`);
+  }
+  return expected;
+}
+
+async function validateCandidateEvidenceDirectory(root) {
+  const directory = path.join(root, "server-route-bundle-evidence");
+  const stat = await lstat(directory);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) {
+    throw new Error("candidate server route evidence directory must be real");
+  }
+  const entries = await readdir(directory, { withFileTypes: true });
+  const actual = entries.map((entry) => entry.name).sort(compareBytes);
+  const expected = ["route-accessibility-eligibility.json", "server-route-bundle-final.json"];
+  if (!isDeepStrictEqual(actual, expected)) throw new Error("candidate server route evidence paths mismatch");
+  for (const entry of entries) {
+    if (!entry.isFile() || entry.isSymbolicLink()) {
+      throw new Error("candidate server route evidence paths mismatch");
+    }
+  }
+}
+
+async function canonicalCandidateEvidence(root, binding, label) {
+  const target = path.resolve(root, binding.path);
+  if (!inside(root, target)) throw new Error(`candidate server route ${label} path traversal`);
+  let stat;
+  try {
+    stat = await lstat(target);
+  } catch (error) {
+    if (error?.code === "ENOENT") throw new Error(`candidate server route ${label} is missing`);
+    throw error;
+  }
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size === 0) {
+    throw new Error(`candidate server route ${label} must be regular`);
+  }
+  const bytes = await readFile(target);
+  if (hashBytes(bytes) !== binding.sha256) throw new Error(`candidate server route ${label} sha256 mismatch`);
+  let value;
+  try {
+    value = JSON.parse(bytes);
+  } catch {
+    throw new Error(`candidate server route ${label} must be JSON`);
+  }
+  if (!bytes.equals(Buffer.from(canonicalJson(value)))) {
+    throw new Error(`candidate server route ${label} must be canonical JSON`);
+  }
+  return { bytes, value };
+}
+
+async function candidateInventory(target) {
+  const inventoryRaw = await regularFile(target, "candidate artifact inventory");
+  let inventory;
+  try {
+    inventory = JSON.parse(inventoryRaw);
+  } catch {
+    throw new Error("candidate artifact inventory must be JSON");
+  }
+  if (!inventory || typeof inventory !== "object" || Array.isArray(inventory)
+    || !sameKeys(inventory, ["artifactKind", "entries", "schemaVersion"])
+    || inventory.schemaVersion !== 1
+    || inventory.artifactKind !== "datapack-candidate-inventory"
+    || !Array.isArray(inventory.entries)) {
+    throw new Error("candidate artifact inventory mismatch");
+  }
+  const previous = new Set();
+  let lastPath = null;
+  for (const entry of inventory.entries) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)
+      || !sameKeys(entry, ["path", "sha256", "sizeBytes"])
+      || !safeInventoryPath(entry.path)
+      || !Number.isSafeInteger(entry.sizeBytes) || entry.sizeBytes <= 0
+      || !SHA256.test(entry.sha256 ?? "")
+      || previous.has(entry.path)
+      || (lastPath !== null && compareBytes(lastPath, entry.path) >= 0)) {
+      throw new Error("candidate artifact inventory entries must be unique and ordered");
+    }
+    previous.add(entry.path);
+    lastPath = entry.path;
+  }
+  return { inventory, inventoryRaw };
+}
+
+async function validateCandidateInventoryFiles(root, inventory) {
+  const excluded = new Set(["data-artifact-inventory.json", "data-component-manifest.json"]);
+  const actualPaths = (await exactRegularTree(root, "candidate stage"))
+    .filter((relative) => !excluded.has(relative));
+  const inventoryPaths = inventory.entries.map((entry) => entry.path);
+  if (!isDeepStrictEqual(actualPaths, inventoryPaths)) {
+    throw new Error("candidate artifact inventory paths mismatch");
+  }
+  for (const entry of inventory.entries) {
+    const bytes = await regularFile(path.join(root, entry.path), `candidate artifact ${entry.path}`);
+    if (entry.sizeBytes !== bytes.length || entry.sha256 !== hashBytes(bytes)) {
+      throw new Error("candidate artifact inventory file binding mismatch");
+    }
+  }
+}
+
+function validateInventoryEvidenceEntries(inventory, eligibility, final) {
+  const byPath = new Map(inventory.entries.map((entry) => [entry.path, entry]));
+  for (const [pathName, bytes] of [
+    [CANDIDATE_EVIDENCE_PATHS.eligibility, eligibility.bytes],
+    [CANDIDATE_EVIDENCE_PATHS.final, final.bytes],
+  ]) {
+    const entry = byPath.get(pathName);
+    if (!entry || entry.sizeBytes !== bytes.length || entry.sha256 !== hashBytes(bytes)) {
+      throw new Error("candidate artifact inventory evidence binding mismatch");
+    }
+  }
+}
+
+async function candidateComponent(target) {
+  const raw = await regularFile(target, "candidate component manifest");
+  let value;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    throw new Error("candidate component manifest must be JSON");
+  }
+  const expected = [
+    "artifactInventorySha256", "component", "contractVersion", "dataVersion", "gitSha", "issueRef",
+    "manifestSha256", "provenance", "releaseSequence", "repository", "schemaVersion", "workflowRunId",
+  ];
+  if (!value || typeof value !== "object" || Array.isArray(value)
+    || !sameKeys(value, expected)
+    || value.schemaVersion !== 1 || value.component !== "data"
+    || value.repository !== "AquilaXk/easysubway-data"
+    || !SHA256.test(value.manifestSha256 ?? "")
+    || !SHA256.test(value.artifactInventorySha256 ?? "")
+    || !value.provenance || typeof value.provenance !== "object" || Array.isArray(value.provenance)
+    || !sameKeys(value.provenance, ["sourceSnapshotSetHash"])
+    || !SHA256.test(value.provenance.sourceSnapshotSetHash ?? "")) {
+    throw new Error("candidate component manifest mismatch");
+  }
+  return value;
+}
+
+async function regularFile(target, label) {
+  let stat;
+  try {
+    stat = await lstat(path.resolve(target));
+  } catch (error) {
+    if (error?.code === "ENOENT") throw new Error(`${label} is missing`);
+    throw error;
+  }
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size === 0) {
+    throw new Error(`${label} must be regular`);
+  }
+  return readFile(target);
+}
+
+async function realDirectory(target, label) {
+  const resolved = path.resolve(target);
+  let inputStat;
+  try {
+    inputStat = await lstat(resolved);
+  } catch (error) {
+    if (error?.code === "ENOENT") throw new Error(`${label} is missing`);
+    throw error;
+  }
+  if (!inputStat.isDirectory() || inputStat.isSymbolicLink()) throw new Error(`${label} must be a real directory`);
+  const real = await realpath(resolved);
+  const realStat = await lstat(real);
+  if (!realStat.isDirectory() || realStat.isSymbolicLink()) throw new Error(`${label} must be a real directory`);
+  return real;
+}
+
+function inside(root, target) {
+  const relative = path.relative(root, target);
+  return relative !== "" && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
+
+function safeInventoryPath(value) {
+  return typeof value === "string"
+    && value.length > 0
+    && !value.includes("\\")
+    && !value.startsWith("/")
+    && value.split("/").every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
+}
+
+function sameKeys(value, expected) {
+  return isDeepStrictEqual(Object.keys(value).sort(compareBytes), [...expected].sort(compareBytes));
+}
+
+function hashBytes(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function compareBytes(left, right) {
+  return Buffer.compare(Buffer.from(left), Buffer.from(right));
+}
+
 async function main() {
   const args = process.argv.slice(2);
+  if (args.includes("--candidate-server-route-only")) {
+    await candidateServerRouteOnly(args);
+    return;
+  }
   const bundlePath = argValue(args, "--bundle");
   const scopePath = argValue(args, "--scope") ?? "release/product-gates/production-datapack-scope.json";
   const launchReportPath = argValue(args, "--launch-report")
     ?? "tools/datapack/reports/android-v1-launch-denominator-20260715.json";
   const accessibilitySourceCoveragePath = argValue(args, "--accessibility-source-coverage");
+  const candidateServerRouteRoot = argValue(args, "--candidate-server-route-root");
   const candidatePaths = {
     buildSpec: argValue(args, "--build-spec"),
     manifest: argValue(args, "--manifest"),
@@ -413,6 +807,24 @@ async function main() {
     if (bundle[field] !== expected) {
       throw new Error(`${field} must be ${expected}`);
     }
+  }
+  if (!["exploratory", "release-candidate", "production-publish", "rollback", "rollout-update"].includes(bundle.releaseMode)) {
+    throw new Error("releaseMode is invalid");
+  }
+  const candidateServerRouteEvidence = bundle.candidateServerRouteEvidence === undefined
+    ? null
+    : validateCandidateServerRouteEvidenceBinding(bundle);
+  if (bundle.releaseMode === "release-candidate" && candidateServerRouteEvidence === null) {
+    throw new Error("release-candidate requires candidate server route evidence");
+  }
+  if (candidateServerRouteRoot) {
+    if (candidateServerRouteEvidence === null) {
+      throw new Error("candidate server route root requires candidate server route evidence");
+    }
+    await validateCandidateServerRouteEvidence({
+      candidateRoot: candidateServerRouteRoot,
+      binding: candidateServerRouteEvidence,
+    });
   }
 
   for (const field of [
@@ -508,6 +920,47 @@ async function main() {
 
   validateRouteGraphTopologyIntegrity(bundle);
   validateRollbackRescue(bundle, requirePass, rollbackEvidenceRaw, rollbackEvidence, rollbackManifestRaw);
+}
+
+async function candidateServerRouteOnly(args) {
+  const required = new Set([
+    "--candidate-server-route-only",
+    "--bundle",
+    "--candidate-server-route-root",
+    "--candidate-artifact-inventory",
+    "--candidate-component-manifest",
+  ]);
+  const values = new Map();
+  for (let index = 0; index < args.length; index += 1) {
+    const flag = args[index];
+    if (!required.has(flag)) throw new Error("candidate server route only arguments mismatch");
+    if (flag === "--candidate-server-route-only") {
+      if (values.has(flag)) throw new Error("candidate server route only arguments mismatch");
+      values.set(flag, true);
+      continue;
+    }
+    const value = args[index + 1];
+    if (typeof value !== "string" || value.length === 0 || value.startsWith("--") || values.has(flag)) {
+      throw new Error("candidate server route only arguments mismatch");
+    }
+    values.set(flag, value);
+    index += 1;
+  }
+  if (values.size !== required.size) throw new Error("candidate server route only arguments mismatch");
+  const bundleRaw = await regularFile(values.get("--bundle"), "release evidence bundle");
+  let bundle;
+  try {
+    bundle = JSON.parse(bundleRaw);
+  } catch {
+    throw new Error("release evidence bundle must be JSON");
+  }
+  const binding = validateCandidateServerRouteEvidenceBinding(bundle);
+  await validateCandidateServerRouteEvidence({
+    candidateRoot: values.get("--candidate-server-route-root"),
+    binding,
+    candidateArtifactInventory: values.get("--candidate-artifact-inventory"),
+    candidateComponentManifest: values.get("--candidate-component-manifest"),
+  });
 }
 
 main().catch((error) => {

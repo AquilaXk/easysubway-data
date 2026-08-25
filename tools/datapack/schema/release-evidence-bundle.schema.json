@@ -7,6 +7,7 @@
   "required": [
     "schemaVersion",
     "artifactKind",
+    "releaseMode",
     "candidateId",
     "buildCandidateId",
     "candidateBuilderGitSha",
@@ -59,6 +60,7 @@
   "properties": {
     "schemaVersion": { "const": 1 },
     "artifactKind": { "const": "datapack-release-evidence-bundle" },
+    "releaseMode": { "enum": ["exploratory", "release-candidate", "production-publish", "rollback", "rollout-update"] },
     "candidateId": { "type": "string", "minLength": 1 },
     "buildCandidateId": { "type": "string", "minLength": 1 },
     "candidateBuilderGitSha": { "type": "string", "pattern": "^[a-f0-9]{7,40}$" },
@@ -96,6 +98,7 @@
     "headwayReportSha256": { "$ref": "#/$defs/sha256" },
     "strictRouteRegressionSha256": { "$ref": "#/$defs/sha256" },
     "androidEvidenceSha256": { "$ref": "#/$defs/sha256" },
+    "candidateServerRouteEvidence": { "$ref": "#/$defs/candidateServerRouteEvidence" },
     "validatorStatus": { "$ref": "#/$defs/gateStatus" },
     "coverageStatus": { "$ref": "#/$defs/gateStatus" },
     "routeMapPositionCoverageStatus": { "$ref": "#/$defs/gateStatus" },
@@ -150,6 +153,15 @@
     "createdAt": { "type": "string", "format": "date-time" },
     "workflowRunUrl": { "type": "string", "minLength": 1 }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "releaseMode": { "const": "release-candidate" } },
+        "required": ["releaseMode"]
+      },
+      "then": { "required": ["candidateServerRouteEvidence"] }
+    }
+  ],
   "$defs": {
     "sha256": {
       "type": "string",
@@ -163,6 +175,28 @@
     },
     "routeGraphGateStatus": {
       "enum": ["PASS", "FAIL", "BLOCKED_EXTERNAL", "DEFERRED"]
+    },
+    "candidateServerRouteEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidateId", "sourceSnapshotSetHash", "buildSpecSha256", "manifestSha256", "eligibility", "final"],
+      "properties": {
+        "candidateId": { "type": "string", "minLength": 1 },
+        "sourceSnapshotSetHash": { "$ref": "#/$defs/sha256" },
+        "buildSpecSha256": { "$ref": "#/$defs/sha256" },
+        "manifestSha256": { "$ref": "#/$defs/sha256" },
+        "eligibility": { "$ref": "#/$defs/candidateEvidenceFile" },
+        "final": { "$ref": "#/$defs/candidateEvidenceFile" }
+      }
+    },
+    "candidateEvidenceFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
     }
   }
 }

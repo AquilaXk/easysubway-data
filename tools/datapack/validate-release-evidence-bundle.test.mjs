@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash, createSign, generateKeyPairSync } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -15,6 +15,7 @@ import {
   buildLaunchCandidateBinding,
 } from "./launch-candidate-binding.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { buildServerRouteBundleFinal } from "./lib/server-route-bundle-final.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -27,6 +28,339 @@ process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM = publicKeyPem;
 test.after(() => {
   if (previousPublicKey === undefined) delete process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM;
   else process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM = previousPublicKey;
+});
+
+test("candidate server route evidence는 stage·inventory·component digest를 함께 묶어 검증한다", async (t) => {
+  const outputDir = path.join(tmpdir(), `easysubway-candidate-route-evidence-${Date.now()}`);
+  const candidateRoot = path.join(outputDir, "stage");
+  const evidenceRoot = path.join(candidateRoot, "server-route-bundle-evidence");
+  const routeRoot = path.join(candidateRoot, "server-route-bundle");
+  t.after(() => rm(outputDir, { recursive: true, force: true }));
+  await Promise.all([
+    mkdir(evidenceRoot, { recursive: true }),
+    mkdir(path.join(routeRoot, "payload"), { recursive: true }),
+  ]);
+  const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
+  const fixedHash = "a".repeat(64);
+  const sourceSnapshotSetHash = "b".repeat(64);
+  const buildSpecSha256 = "c".repeat(64);
+  const manifestSha256 = "d".repeat(64);
+  const payloads = Object.fromEntries(["accessibility", "fare", "timetable", "topology"]
+    .map((component) => [component, Buffer.from(`${component}-bytes`)]));
+  const componentEntries = Object.entries(payloads).map(([component, bytes]) => ({
+    path: `payload/${component}.sqlite.zst`,
+    sizeBytes: bytes.length,
+    sha256: hash(bytes),
+  })).sort((left, right) => Buffer.compare(Buffer.from(left.path), Buffer.from(right.path)));
+  const componentInventorySha256 = hash(Buffer.from(canonicalJson(componentEntries)));
+  const provenanceBytes = Buffer.from(canonicalJson({ sourceSnapshotSetHash }));
+  const compatibilityBytes = Buffer.from(canonicalJson({ schemaVersion: 1 }));
+  const signingInput = {
+    manifestVersion: 1,
+    artifactKind: "server-route-bundle",
+    bundleId: "capital-route-bundle-1",
+    releaseSequence: 1,
+    stationSetSha256: fixedHash,
+    payloadSha256: componentInventorySha256,
+    ...Object.fromEntries(Object.entries(payloads).map(([component, bytes]) => [`${component}Sha256`, hash(bytes)])),
+    provenanceSha256: hash(provenanceBytes),
+    compatibilitySha256: hash(compatibilityBytes),
+    serviceTimezone: "Asia/Seoul",
+    activeFrom: "2026-08-25T00:00:00.000+09:00",
+    freshUntil: "2026-08-26T00:00:00.000+09:00",
+    schemaCompatibility: { backendMin: 3, backendMax: 3 },
+    keyId: "production-v1",
+  };
+  const signingInputBytes = Buffer.from(canonicalJson(signingInput));
+  const signedManifestBytes = Buffer.from(canonicalJson({
+    ...signingInput,
+    signature: { algorithm: "rsa-sha256-server-route-bundle-v1", value: sign(signingInputBytes) },
+  }));
+  await Promise.all([
+    ...Object.entries(payloads).map(([component, bytes]) =>
+      writeFile(path.join(routeRoot, `payload/${component}.sqlite.zst`), bytes)),
+    writeFile(path.join(routeRoot, "compatibility.json"), compatibilityBytes),
+    writeFile(path.join(routeRoot, "manifest.json"), signedManifestBytes),
+    writeFile(path.join(routeRoot, "manifest.signing-input.json"), signingInputBytes),
+    writeFile(path.join(routeRoot, "provenance.json"), provenanceBytes),
+  ]);
+  const candidate = {
+    repository: "AquilaXk/easysubway-data",
+    gitSha: "e".repeat(40),
+    bundleId: signingInput.bundleId,
+    releaseSequence: 1,
+    stationSetSha256: fixedHash,
+    sourceSnapshotSetHash,
+    signingInputSha256: hash(signingInputBytes),
+    signedManifestRawSha256: hash(signedManifestBytes),
+    payloadRootSha256: componentInventorySha256,
+    componentInventorySha256,
+    componentDigests: Object.fromEntries(Object.entries(payloads).map(([component, bytes]) => [component, hash(bytes)])),
+    activeFrom: signingInput.activeFrom,
+    freshUntil: signingInput.freshUntil,
+    keyId: signingInput.keyId,
+  };
+  const eligibilityPayload = {
+    schemaVersion: 1,
+    artifactKind: "route-accessibility-eligibility",
+    decision: "ELIGIBLE",
+    candidate,
+    stationLineAccessibility: { rowCount: 1 },
+    routeEdgeEvaluation: { edgeCount: 1 },
+    blockers: [],
+  };
+  const eligibility = {
+    ...eligibilityPayload,
+    eligibilitySha256: hash(Buffer.from(canonicalJson(eligibilityPayload))),
+  };
+  const eligibilityBytes = Buffer.from(canonicalJson(eligibility));
+  const final = buildServerRouteBundleFinal({
+    candidate,
+    gates: Object.fromEntries([
+      "sourceFreshness", "stationLineAccessibility", "routeEdgeEvaluation", "artifactInventory",
+      "signature", "publication", "rebuildParityPromotion",
+    ].map((name) => [name, { state: "PASS", evidenceSha256: fixedHash }]).concat([
+      ["routeAccessibilityEligibility", { state: "PASS", evidenceSha256: hash(eligibilityBytes) }],
+    ])),
+  });
+  const finalBytes = Buffer.from(canonicalJson(final));
+  const eligibilityPath = "server-route-bundle-evidence/route-accessibility-eligibility.json";
+  const finalPath = "server-route-bundle-evidence/server-route-bundle-final.json";
+  await Promise.all([
+    writeFile(path.join(candidateRoot, eligibilityPath), eligibilityBytes),
+    writeFile(path.join(candidateRoot, finalPath), finalBytes),
+  ]);
+  const stagedBytes = new Map([
+    ["server-route-bundle/compatibility.json", compatibilityBytes],
+    ["server-route-bundle/manifest.json", signedManifestBytes],
+    ["server-route-bundle/manifest.signing-input.json", signingInputBytes],
+    ...Object.entries(payloads).map(([component, bytes]) => [`server-route-bundle/payload/${component}.sqlite.zst`, bytes]),
+    ["server-route-bundle/provenance.json", provenanceBytes],
+    [eligibilityPath, eligibilityBytes],
+    [finalPath, finalBytes],
+  ]);
+  const bundle = {
+    schemaVersion: 1,
+    artifactKind: "datapack-release-evidence-bundle",
+    releaseMode: "production-publish",
+    buildCandidateId: "candidate-a",
+    sourceSnapshotSetHash,
+    buildSpecSha256,
+    manifestSha256,
+    candidateServerRouteEvidence: {
+      candidateId: "candidate-a",
+      sourceSnapshotSetHash,
+      buildSpecSha256,
+      manifestSha256,
+      eligibility: { path: eligibilityPath, sha256: hash(eligibilityBytes) },
+      final: { path: finalPath, sha256: hash(finalBytes) },
+    },
+  };
+  const bundlePath = path.join(outputDir, "bundle.json");
+  const inventoryPath = path.join(candidateRoot, "data-artifact-inventory.json");
+  const componentPath = path.join(candidateRoot, "data-component-manifest.json");
+  const inventory = {
+    schemaVersion: 1,
+    artifactKind: "datapack-candidate-inventory",
+    entries: [...stagedBytes.entries()]
+      .map(([path, bytes]) => ({ path, sizeBytes: bytes.length, sha256: hash(bytes) }))
+      .sort((left, right) => Buffer.compare(Buffer.from(left.path), Buffer.from(right.path))),
+  };
+  let componentGitSha = candidate.gitSha;
+  let componentReleaseSequence = candidate.releaseSequence;
+  const writeBound = async () => {
+    const inventoryBytes = Buffer.from(`${JSON.stringify(inventory, null, 2)}\n`);
+    await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+    await writeFile(inventoryPath, inventoryBytes);
+    await writeFile(componentPath, `${JSON.stringify({
+      schemaVersion: 1,
+      component: "data",
+      repository: "AquilaXk/easysubway-data",
+      gitSha: componentGitSha,
+      workflowRunId: "1",
+      dataVersion: "1",
+      releaseSequence: componentReleaseSequence,
+      manifestSha256,
+      provenance: { sourceSnapshotSetHash },
+      artifactInventorySha256: hash(inventoryBytes),
+      contractVersion: "datapack-contract-v3",
+      issueRef: "AquilaXk/easysubway-data#530",
+    }, null, 2)}\n`);
+  };
+  const command = () => execFileAsync(process.execPath, [
+    "tools/datapack/validate-release-evidence-bundle.mjs",
+    "--candidate-server-route-only",
+    "--bundle", bundlePath,
+    "--candidate-server-route-root", candidateRoot,
+    "--candidate-artifact-inventory", inventoryPath,
+    "--candidate-component-manifest", componentPath,
+  ], { cwd: root });
+  await writeBound();
+  await command();
+
+  for (const field of ["candidateId", "sourceSnapshotSetHash", "buildSpecSha256", "manifestSha256"]) {
+    const previous = bundle.candidateServerRouteEvidence[field];
+    bundle.candidateServerRouteEvidence[field] = field === "candidateId" ? "other-candidate" : "f".repeat(64);
+    await writeBound();
+    await assert.rejects(command(), /candidate identity mismatch/);
+    bundle.candidateServerRouteEvidence[field] = previous;
+  }
+
+  for (const invalidCandidateId of [null, 7, ""]) {
+    bundle.buildCandidateId = invalidCandidateId;
+    bundle.candidateServerRouteEvidence.candidateId = invalidCandidateId;
+    await writeBound();
+    await assert.rejects(command(), /candidate ID must be a non-empty string/);
+  }
+  bundle.buildCandidateId = "candidate-a";
+  bundle.candidateServerRouteEvidence.candidateId = "candidate-a";
+
+  componentGitSha = "f".repeat(40);
+  await writeBound();
+  await assert.rejects(command(), /candidate server route component identity mismatch/);
+  componentGitSha = candidate.gitSha;
+
+  componentReleaseSequence += 1;
+  await writeBound();
+  await assert.rejects(command(), /candidate server route component identity mismatch/);
+  componentReleaseSequence = candidate.releaseSequence;
+
+  const topologyPath = path.join(routeRoot, "payload/topology.sqlite.zst");
+  const topologyBytes = await readFile(topologyPath);
+  await writeFile(topologyPath, "altered");
+  await writeBound();
+  await assert.rejects(command(), /component inventory mismatch|topology digest mismatch/);
+  await writeFile(topologyPath, topologyBytes);
+
+  inventory.entries.reverse();
+  await writeBound();
+  await assert.rejects(command(), /inventory entries must be unique and ordered/);
+  inventory.entries.reverse();
+
+  inventory.entries.push({ ...inventory.entries[0] });
+  await writeBound();
+  await assert.rejects(command(), /inventory entries must be unique and ordered/);
+  inventory.entries.pop();
+
+  const compatibilityEntry = inventory.entries.find((entry) => entry.path === "server-route-bundle/compatibility.json");
+  compatibilityEntry.sizeBytes += 1;
+  await writeBound();
+  await assert.rejects(command(), /candidate artifact inventory file binding mismatch/);
+  compatibilityEntry.sizeBytes -= 1;
+
+  await writeFile(path.join(candidateRoot, "unexpected.bin"), "unexpected");
+  await writeBound();
+  await assert.rejects(command(), /candidate artifact inventory paths mismatch/);
+  await rm(path.join(candidateRoot, "unexpected.bin"));
+
+  bundle.candidateServerRouteEvidence.final.path = "../server-route-bundle-final.json";
+  await writeBound();
+  await assert.rejects(command(), /candidate server route evidence final binding mismatch/);
+  bundle.candidateServerRouteEvidence.final.path = finalPath;
+
+  await writeFile(path.join(evidenceRoot, "unexpected.json"), "unexpected");
+  await writeBound();
+  await assert.rejects(command(), /candidate server route evidence paths mismatch/);
+  await rm(path.join(evidenceRoot, "unexpected.json"));
+
+  const component = JSON.parse(await readFile(componentPath, "utf8"));
+  component.artifactInventorySha256 = fixedHash;
+  await writeFile(componentPath, `${JSON.stringify(component, null, 2)}\n`);
+  await assert.rejects(command(), /component artifactInventorySha256 mismatch/);
+  await writeBound();
+
+  // ELIGIBLE는 blocker가 전혀 없다는 producer 계약까지 포함한다. eligibility/final/inventory
+  // binding을 모두 재계산해도 통과해서는 안 된다.
+  const assertEligibilityBlockersRejected = async (blockers) => {
+    const blockedEligibilityPayload = { ...eligibilityPayload, blockers };
+    const blockedEligibilityBytes = Buffer.from(canonicalJson({
+      ...blockedEligibilityPayload,
+      eligibilitySha256: hash(Buffer.from(canonicalJson(blockedEligibilityPayload))),
+    }));
+    const blockedGates = structuredClone(final.gates);
+    blockedGates.routeAccessibilityEligibility.evidenceSha256 = hash(blockedEligibilityBytes);
+    const blockedFinalBytes = Buffer.from(canonicalJson(buildServerRouteBundleFinal({
+      candidate,
+      gates: blockedGates,
+    })));
+    await Promise.all([
+      writeFile(path.join(candidateRoot, eligibilityPath), blockedEligibilityBytes),
+      writeFile(path.join(candidateRoot, finalPath), blockedFinalBytes),
+    ]);
+    for (const [relative, bytes] of [
+      [eligibilityPath, blockedEligibilityBytes],
+      [finalPath, blockedFinalBytes],
+    ]) {
+      const entry = inventory.entries.find((item) => item.path === relative);
+      entry.sizeBytes = bytes.length;
+      entry.sha256 = hash(bytes);
+    }
+    bundle.candidateServerRouteEvidence.eligibility.sha256 = hash(blockedEligibilityBytes);
+    bundle.candidateServerRouteEvidence.final.sha256 = hash(blockedFinalBytes);
+    await writeBound();
+    await assert.rejects(command(), /candidate server route evidence artifact binding mismatch/);
+  };
+  await assertEligibilityBlockersRejected(["synthetic-blocker"]);
+  await assertEligibilityBlockersRejected("synthetic-blocker");
+
+  await Promise.all([
+    writeFile(path.join(candidateRoot, eligibilityPath), eligibilityBytes),
+    writeFile(path.join(candidateRoot, finalPath), finalBytes),
+  ]);
+  for (const [relative, bytes] of [
+    [eligibilityPath, eligibilityBytes],
+    [finalPath, finalBytes],
+  ]) {
+    const entry = inventory.entries.find((item) => item.path === relative);
+    entry.sizeBytes = bytes.length;
+    entry.sha256 = hash(bytes);
+  }
+  bundle.candidateServerRouteEvidence.eligibility.sha256 = hash(eligibilityBytes);
+  bundle.candidateServerRouteEvidence.final.sha256 = hash(finalBytes);
+  await writeBound();
+
+  const linkedRoot = path.join(outputDir, "stage-link");
+  await symlink(candidateRoot, linkedRoot);
+  await assert.rejects(execFileAsync(process.execPath, [
+    "tools/datapack/validate-release-evidence-bundle.mjs",
+    "--candidate-server-route-only",
+    "--bundle", bundlePath,
+    "--candidate-server-route-root", linkedRoot,
+    "--candidate-artifact-inventory", inventoryPath,
+    "--candidate-component-manifest", componentPath,
+  ], { cwd: root }), /candidate server route root must be a real directory/);
+
+  const invalidManifestBytes = Buffer.from(canonicalJson({
+    ...signingInput,
+    signature: { algorithm: "rsa-sha256-server-route-bundle-v1", value: "AA" },
+  }));
+  candidate.signedManifestRawSha256 = hash(invalidManifestBytes);
+  const invalidEligibilityPayload = { ...eligibilityPayload, candidate };
+  const invalidEligibilityBytes = Buffer.from(canonicalJson({
+    ...invalidEligibilityPayload,
+    eligibilitySha256: hash(Buffer.from(canonicalJson(invalidEligibilityPayload))),
+  }));
+  const invalidGates = structuredClone(final.gates);
+  invalidGates.routeAccessibilityEligibility.evidenceSha256 = hash(invalidEligibilityBytes);
+  const invalidFinalBytes = Buffer.from(canonicalJson(buildServerRouteBundleFinal({ candidate, gates: invalidGates })));
+  await Promise.all([
+    writeFile(path.join(routeRoot, "manifest.json"), invalidManifestBytes),
+    writeFile(path.join(candidateRoot, eligibilityPath), invalidEligibilityBytes),
+    writeFile(path.join(candidateRoot, finalPath), invalidFinalBytes),
+  ]);
+  for (const [relative, bytes] of [
+    ["server-route-bundle/manifest.json", invalidManifestBytes],
+    [eligibilityPath, invalidEligibilityBytes],
+    [finalPath, invalidFinalBytes],
+  ]) {
+    const entry = inventory.entries.find((item) => item.path === relative);
+    entry.sizeBytes = bytes.length;
+    entry.sha256 = hash(bytes);
+  }
+  bundle.candidateServerRouteEvidence.eligibility.sha256 = hash(invalidEligibilityBytes);
+  bundle.candidateServerRouteEvidence.final.sha256 = hash(invalidFinalBytes);
+  await writeBound();
+  await assert.rejects(command(), /candidate signed route signature mismatch/);
 });
 
 test("release evidence bundle validator는 publish gate status와 deferred headway 예외를 검증한다", async () => {
@@ -264,6 +598,17 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
     workflowRunUrl: "https://github.com/AquilaXk/easysubway/actions/runs/1",
   };
   bindLaunchReport(bundle, goReport, goReportRaw);
+
+  const schema = JSON.parse(await readFile(path.join(root, "tools/datapack/schema/release-evidence-bundle.schema.json"), "utf8"));
+  const releaseCandidateRule = schema.allOf.find((rule) => rule.if?.properties?.releaseMode?.const === "release-candidate");
+  assert.deepEqual(releaseCandidateRule?.then?.required, ["candidateServerRouteEvidence"]);
+  bundle.releaseMode = "release-candidate";
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, [...validatorCommand, ...scopeArgs], { cwd: root }),
+    /release-candidate requires candidate server route evidence/,
+  );
+  bundle.releaseMode = "production-publish";
 
   await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
   bundle.nationwideTargetsSha256 = "f".repeat(64);
