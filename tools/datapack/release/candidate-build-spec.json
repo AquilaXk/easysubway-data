@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-candidate-build-spec",
-  "candidateId": "capital-pilot-candidate-20260814",
+  "candidateId": "capital-pilot-candidate-20260825",
   "productionScopeId": "capital_pilot_android_v1",
-  "publishedAt": "2026-08-14T15:34:07.000Z",
+  "publishedAt": "2026-08-25T15:29:26.000Z",
   "releaseSequence": 1,
   "fixturePath": "tools/datapack/release/capital-production-canonical-pack.json",
   "itxTopologyEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence.json",
@@ -11,32 +11,32 @@
   "networkEdgeEvidence": {
     "sourceInventory": {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "24dd71efb74f54689fe0d06d0e621327591dae7266ba4d541a7dc0f73d7ddefb"
+      "sha256": "8f525365be989a60136a60aaf2734d457d0a2cc12efc1b5e9714110282592200"
     },
     "capitalTopology": {
-      "path": "tools/datapack/sources/capital-route-topology-20260724.json",
-      "sha256": "1026e93ae3c6fd81bf9a6ac92b810439fc7e7e9fdd0a7c8167840cb5876d84a4",
-      "snapshotId": "capital-route-topology-20260724"
+      "path": "tools/datapack/sources/capital-route-topology-20260825.json",
+      "sha256": "44268c761c4747532a3acaca03bd76634273a5ad3b7cbf23c46c993b2166590d",
+      "snapshotId": "capital-route-topology-20260825"
     },
     "capitalTopologyCandidate": {
-      "path": "tools/datapack/sources/capital-route-topology-20260814.json",
-      "sha256": "07e1914d35c3c1d9584a22df674e81ac90537363ac1a95ae78299cc3bafa9ffc",
-      "snapshotId": "capital-route-topology-20260814"
+      "path": "tools/datapack/sources/capital-route-topology-20260825-source-separated.json",
+      "sha256": "c0dbea935cd05966a2a89f0c4adfc73ee4d55897054b83bb72b7959c4339811f",
+      "snapshotId": "capital-route-topology-20260825"
     },
     "capitalTopologyReverification": {
-      "path": "tools/datapack/release/capital-topology-reverification-20260814.json",
-      "sha256": "dd53e0c772453e7562e8791e87a8d0cadc9b54ca9fc75e89d7c5ed24aa38d7ae"
+      "path": "tools/datapack/release/capital-topology-reverification-20260825.json",
+      "sha256": "8ffe85454bd9189589e3aba6107931d0b209375ed83ed766e87fc6f195c314bf"
     },
     "capitalTopologyAdmission": {
       "schemaVersion": 1,
       "artifactKind": "capital-network-edge-admission",
       "issue": 2649,
       "status": "ADMITTED",
-      "snapshotId": "capital-route-topology-20260814",
+      "snapshotId": "capital-route-topology-20260825",
       "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
-      "reviewedAt": "2026-08-14T15:34:07.000Z",
-      "reverifiedAt": "2026-08-14T15:34:07.000Z",
-      "freshUntil": "2026-08-15T15:34:07.000Z"
+      "reviewedAt": "2026-08-25T15:23:46.070Z",
+      "reverifiedAt": "2026-08-25T15:23:46.070Z",
+      "freshUntil": "2026-08-26T15:23:46.070Z"
     },
     "itxCoverageContract": {
       "path": "tools/datapack/itx-cheongchun-coverage-contract.json",
@@ -179,8 +179,8 @@
   "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
   "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
   "approvedOverrideSetHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
-  "sourceInventorySha256": "7d7bd7519032e69decbd3400de3bb2bb3348277d4ba02a641c92ecdb8fe98648",
-  "builderGitSha": "1e25aa43b22253703c5102f477fa9a852bcd89b8",
+  "sourceInventorySha256": "3620428f4409311d5fa31df05ca95d37431d6a659ccfd05f11255d447fb47958",
+  "builderGitSha": "3a5a26b5ac81608df75f9fc3eec68ef52144e705",
   "builderVersion": "build-datapack.mjs@26",
   "officialOdFareEvidence": {
     "sourceId": "seoul-metro-official-od-fares",
