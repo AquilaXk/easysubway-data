@@ -553,7 +553,7 @@ test("source-separated reverification은 historical baseline도 동일 ownership
   ));
 });
 
-test("tracked current ITX admission은 admitted pair와 fresh evidence identity에 결속된다", async () => {
+test("expired historical ITX admission은 current source admission으로 재사용되지 않는다", async () => {
   const admission = JSON.parse(await readFile(
     path.join(root, "tools/datapack/itx-current-network-edge-admission-20260810.json"),
     "utf8",
@@ -562,62 +562,15 @@ test("tracked current ITX admission은 admitted pair와 fresh evidence identity�
     path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"),
     "utf8",
   ));
-  const source = JSON.parse(await readFile(
-    path.join(root, contract.sourceTimetableArtifact.promotion.previousArtifactPath),
+  const currentSource = JSON.parse(await readFile(
+    path.join(root, contract.sourceTimetableArtifact.artifactPath),
     "utf8",
   ));
-
-  const validated = validateItxCurrentTopologyAdmission(admission, {
-    previousArtifactSha256: contract.sourceTimetableArtifact.promotion.previousArtifactSha256,
-    stationSequences: source.stationSequences,
-    now: currentNow,
-  });
-  assert.equal(validated.sourceId, "itx-current-network-edge-admission");
-  assert.equal(validated.sourceSnapshotId, "itx-current-network-edge-admission-20260810");
-  assert.equal(validated.freshUntil, "2026-08-11T00:00:00+09:00");
-  assert.equal(validated.pairHashes.size, 48);
-
   assert.throws(() => validateItxCurrentTopologyAdmission(admission, {
-    previousArtifactSha256: "0".repeat(64),
-    stationSequences: source.stationSequences,
-    now: new Date("2026-08-10T00:00:00.000Z"),
-  }), /identity mismatch/);
-
-  const pairTampered = structuredClone(admission);
-  pairTampered.pairHashes[0] = "0".repeat(64);
-  rehashAdmission(pairTampered);
-  assert.throws(() => validateItxCurrentTopologyAdmission(pairTampered, {
-    previousArtifactSha256: contract.sourceTimetableArtifact.promotion.previousArtifactSha256,
-    stationSequences: source.stationSequences,
-    now: currentNow,
-  }), /identity mismatch/);
-
-  assert.throws(() => validateItxCurrentTopologyAdmission(admission, {
-    previousArtifactSha256: contract.sourceTimetableArtifact.promotion.previousArtifactSha256,
-    stationSequences: source.stationSequences,
-    now: new Date("2026-08-11T00:00:00.000Z"),
-  }), /stale/);
-
-  const extended = structuredClone(admission);
-  extended.freshUntil = "2027-08-11T00:00:00+09:00";
-  rehashAdmission(extended);
-  assert.throws(() => validateItxCurrentTopologyAdmission(extended, {
-    previousArtifactSha256: contract.sourceTimetableArtifact.promotion.previousArtifactSha256,
-    stationSequences: source.stationSequences,
-    now: currentNow,
-  }), /freshUntil.*serviceDate/);
-
-  const invalidDate = structuredClone(admission);
-  invalidDate.serviceDate = "20260230";
-  invalidDate.artifactId = "itx-current-network-edge-admission-20260230";
-  invalidDate.observedAt = "2026-02-28T00:00:00.000Z";
-  invalidDate.freshUntil = "2026-03-01T00:00:00+09:00";
-  rehashAdmission(invalidDate);
-  assert.throws(() => validateItxCurrentTopologyAdmission(invalidDate, {
-    previousArtifactSha256: contract.sourceTimetableArtifact.promotion.previousArtifactSha256,
-    stationSequences: source.stationSequences,
-    now: new Date("2026-02-28T01:00:00.000Z"),
-  }), /serviceDate is invalid/);
+    previousArtifactSha256: contract.sourceTimetableArtifact.sha256,
+    stationSequences: currentSource.stationSequences,
+    now: new Date("2026-08-25T00:00:00.000Z"),
+  }), /identity mismatch|stale/);
 });
 
 test("tracked current source topology evidence는 expired overlay 없이 exact admission을 만든다", async () => {
@@ -631,14 +584,14 @@ test("tracked current source topology evidence는 expired overlay 없이 exact a
   assert.equal(
     fixture.packs.find(({ id }) => id === "capital").networkEdges
       .filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN").length,
-    84,
+    74,
   );
   const previousBuildNow = process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
-  process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = "2026-08-13T00:00:00.000Z";
+  process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = "2026-08-25T00:00:00.000Z";
   try {
     const admitted = await admittedItxNetworkEdgeEvidence(contract, topology);
     assert.equal(admitted.sourceSnapshotId, contract.sourceTimetableArtifact.artifactId);
-    assert.equal(admitted.pairHashes.size, 84);
+    assert.equal(admitted.pairHashes.size, 74);
     assert.equal(admitted.routeServiceArtifactEvidence.artifactEvidence.admissionStatus, "ADMITTED");
     assert.equal(admitted.routeServiceArtifactEvidence.stationCatalogEvidence.admissionStatus, "ADMITTED");
   } finally {

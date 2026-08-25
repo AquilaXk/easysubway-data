@@ -263,9 +263,9 @@ test("ITX-청춘 admission evidence는 historical 관측과 current pack identit
     artifactId: "itx-cheongchun-completeness-admission-20260714T083544292Z",
     topologyInputPackIdentity: {
       id: "capital",
-      sha256: "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
-      sqliteSha256: "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
-      byteSize: 359319,
+      sha256: "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
+      sqliteSha256: "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5",
+      byteSize: 1463745,
     },
     selectedServiceDates: { "8": "20260715", "7": "20260718", "9": "20260719" },
     admissionStatus: "MISSING",
