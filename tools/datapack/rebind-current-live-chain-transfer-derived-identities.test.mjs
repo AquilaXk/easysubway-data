@@ -74,7 +74,7 @@ test("current live-chain TRANSFER producer has no predecessor or station/transit
   ]) assert.equal(source.includes(forbidden), false, `forbidden dependency: ${forbidden}`);
 });
 
-test("current live-chain TRANSFER identity rejects a same-ID raw, URI, content, or schema drift", async () => {
+test("current live-chain TRANSFER identity binds regenerated descriptor bytes and rejects raw, URI, content, or schema drift", async () => {
   const [candidate, inventory, snapshots, descriptor] = await Promise.all([
     readFile(path.join(ROOT, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
     readFile(path.join(ROOT, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
@@ -84,14 +84,16 @@ test("current live-chain TRANSFER identity rejects a same-ID raw, URI, content, 
   const descriptorValue = JSON.parse(descriptor);
   const row = snapshots.find(({ sourceId }) => sourceId === "seoul-metro-transfer-distance-duration");
   const receipt = structuredClone(row.rawReceipt);
-  assert.doesNotThrow(() => assertCurrentLiveChainTransferIdentity(candidate, inventory, snapshots, descriptorValue, descriptor, receipt));
+  const regeneratedInventory = structuredClone(inventory);
+  regeneratedInventory.sources.find(({ id }) => id === "seoul-metro-transfer-distance-duration").transferAdmissionEvidence.snapshotFileSha256 = createHash("sha256").update(descriptor).digest("hex");
+  assert.doesNotThrow(() => assertCurrentLiveChainTransferIdentity(candidate, regeneratedInventory, snapshots, descriptorValue, descriptor, receipt));
   for (const mutate of [
     () => { structuredClone(candidate).sourceSnapshots.find(({ sourceId }) => sourceId === "seoul-metro-transfer-distance-duration").rawObjectUri = "oci://changed/object"; },
     () => { structuredClone(inventory).sources.find(({ id }) => id === "seoul-metro-transfer-distance-duration").transferAdmissionEvidence.contentSha256 = "0".repeat(64); },
     () => { structuredClone(inventory).sources.find(({ id }) => id === "seoul-metro-transfer-distance-duration").transferAdmissionEvidence.schemaFingerprint = "1".repeat(64); },
     () => { structuredClone(receipt).rawObjectUri = "oci://changed/object"; },
   ]) {
-    const nextCandidate = structuredClone(candidate); const nextInventory = structuredClone(inventory); const nextReceipt = structuredClone(receipt);
+    const nextCandidate = structuredClone(candidate); const nextInventory = structuredClone(regeneratedInventory); const nextReceipt = structuredClone(receipt);
     const target = { candidate: nextCandidate, inventory: nextInventory, receipt: nextReceipt };
     const text = mutate.toString();
     if (text.includes("candidate")) target.candidate.sourceSnapshots.find(({ sourceId }) => sourceId === "seoul-metro-transfer-distance-duration").rawObjectUri = "oci://changed/object";

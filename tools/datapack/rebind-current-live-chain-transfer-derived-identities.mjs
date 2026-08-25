@@ -271,10 +271,12 @@ export async function buildCurrentLiveChainTransferDerivedIdentityOutputs({ repo
   if (descriptor.snapshotId !== active.row.snapshotId) throw new Error("TRANSFER derivation changed source identity");
   const descriptorPath = `tools/datapack/sources/${descriptor.snapshotId}.json`;
   if (descriptorPath !== descriptorIdentity.relativePath) throw new Error("TRANSFER descriptor output path mismatch");
+  const nextDescriptorBytes = json(descriptor);
   const nextInventory = structuredClone(inventory);
   Object.assign(nextInventory.sources.find(({ id }) => id === SOURCE).transferAdmissionEvidence, {
     metricsArtifactSha256: descriptor.transferTopology.metricsArtifactSha256,
     applicabilityArtifactSha256: descriptor.transferTopology.applicabilityArtifactSha256,
+    snapshotFileSha256: sha256(nextDescriptorBytes),
   });
   const nextSnapshots = structuredClone(snapshots);
   const nextSnapshot = nextSnapshots.find(({ snapshotId }) => snapshotId === active.row.snapshotId);
@@ -285,7 +287,7 @@ export async function buildCurrentLiveChainTransferDerivedIdentityOutputs({ repo
     await Promise.all([
       writeFile(rooted(staging, "tools/datapack/release/current-transfer-topology-metrics.json"), metricsBytes),
       writeFile(rooted(staging, "tools/datapack/release/current-capital-transfer-topology-applicability.json"), applicabilityBytes),
-      writeFile(rooted(staging, descriptorPath), json(descriptor)),
+      writeFile(rooted(staging, descriptorPath), nextDescriptorBytes),
       writeFile(rooted(staging, "tools/datapack/source-inventory.json"), json(nextInventory)),
       writeFile(rooted(staging, "tools/datapack/release/source-snapshots.json"), json(nextSnapshots)),
     ]);
