@@ -21,7 +21,7 @@ test("current FACILITY official source admission은 exact six-cell handoff를 �
 
   assert.deepEqual(input, before);
   assert.equal(result.decision, "GO");
-  assert.equal(result.candidate.candidateId, "capital-pilot-candidate-20260814");
+  assert.equal(result.candidate.candidateId, input.candidateBuildSpec.candidateId);
   assert.equal(result.queryPartition.summary.totalCount, 7);
   assert.equal(result.queryPartition.summary.partitionedQueryCount, 7);
   assert.equal(result.queryPartition.summary.joinedCount, 2);

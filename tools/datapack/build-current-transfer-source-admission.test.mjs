@@ -113,7 +113,7 @@ test("CLI는 self-bound 두 handoff를 legacy/current candidate 경계 밖에서
 
   await assert.rejects(
     main(argv, { repositoryRoot: REPOSITORY_ROOT, log: () => {} }),
-    /candidate source identity mismatch/,
+    /candidate identity mismatch/,
   );
   assert.equal(await fileExists(outputDirectory), false);
 });

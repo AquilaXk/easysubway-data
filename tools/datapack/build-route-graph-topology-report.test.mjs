@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -12,6 +13,7 @@ import { buildRouteGraphTopologyReport } from "./build-route-graph-topology-repo
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
+const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 test("route graph topology report exposes LOCAL adjacency and speed violations", () => {
   const sqlitePath = createTopologySqlite({
@@ -135,21 +137,31 @@ test("route graph topology report는 승인되지 않은 ITX 노선 경계 edge�
   ]);
 });
 
-test("route graph topology report는 #2135 admitted ITX edge set만 예외로 허용한다", async (context) => {
+test("route graph topology report는 current candidate가 pin한 ITX edge set만 예외로 허용한다", async (context) => {
   const directory = await mkdtemp(path.join(tmpdir(), "route-graph-admitted-itx-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
   const sqlitePath = path.join(directory, "capital.sqlite");
-  await writeFile(sqlitePath, gunzipSync(await readFile(
-    path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"),
-  )));
+  const candidate = JSON.parse(await readFile(
+    path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8",
+  ));
+  const evidenceBytes = await readFile(path.join(root, candidate.itxTopologyEvidencePath));
+  const evidence = JSON.parse(evidenceBytes);
+  const mobilePackBytes = await readFile(path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"));
+  assert.equal(sha256(evidenceBytes), candidate.itxTopologyEvidenceSha256);
+  assert.equal(sha256(mobilePackBytes), evidence.pack.outputSha256);
+  await writeFile(sqlitePath, gunzipSync(mobilePackBytes));
+  const database = new DatabaseSync(sqlitePath, { readOnly: true });
+  const packVersion = database.prepare("PRAGMA user_version").get().user_version;
+  database.close();
 
   const report = buildRouteGraphTopologyReport(sqlitePath, {
     id: "capital",
-    version: "18",
+    version: String(packVersion),
     artifactKind: "production",
   });
 
-  assert.equal(report.itxServiceLayerSegmentCount, 48);
+  assert.equal(report.version, String(packVersion));
+  assert.equal(report.itxServiceLayerSegmentCount, evidence.topology.edgeCount);
   assert.deepEqual(report.violations.nonAdjacentExpressRide, []);
 });
 

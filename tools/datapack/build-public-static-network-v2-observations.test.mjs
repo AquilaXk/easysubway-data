@@ -13,9 +13,16 @@ const capturedAt = "2026-08-25T00:00:00.000Z";
 const ids = Object.freeze(["seoul-metro-route-map-positions", "molit-urban-rail-full-route"]);
 
 async function input() {
-  const [inventory, topologyBytes, positionCsv, molitRawBytes] = await Promise.all([
-    readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
-    readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260823.json")),
+  const inventory = await readFile(
+    path.join(root, "tools/datapack/source-inventory.json"), "utf8",
+  ).then(JSON.parse);
+  const positionSources = inventory.sources.filter(({ id }) => id === ids[0]);
+  assert.equal(positionSources.length, 1);
+  const admittedTopologyId = positionSources[0].routeMapAdmissionEvidence
+    ?.currentTopologyAdmission?.topologySnapshotId;
+  assert.match(admittedTopologyId, /^capital-route-topology-[0-9]{8}$/u);
+  const [topologyBytes, positionCsv, molitRawBytes] = await Promise.all([
+    readFile(path.join(root, `tools/datapack/sources/${admittedTopologyId}.json`)),
     readFile(path.join(root, "tools/datapack/fixtures/seoul-route-map-positions-raw/data-go-15099316.csv")),
     readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
   ]);
@@ -40,7 +47,7 @@ async function input() {
   };
   return {
     positionRawBytes, molitRawBytes, capturedAt, admittedTopologyBytes: topologyBytes,
-    admittedTopologyId: "capital-route-topology-20260823", sourceInventory: inventory,
+    admittedTopologyId, sourceInventory: inventory,
     positionReceipt: receipt(ids[0], positionRawBytes, "json", "application/json"),
     molitReceipt: receipt(ids[1], molitRawBytes, "csv", "text/csv; charset=euc-kr"),
   };
@@ -107,6 +114,8 @@ test("public static-network v2 producer binds supplied branch order into a fresh
   const value = await input();
   const topology = JSON.parse(value.admittedTopologyBytes);
   topology.lines.find(({ lineId }) => lineId === "seoul-2").branchSequences[0].stationNames.reverse();
+  refreshTopologyIdentity(topology);
+  rebindCurrentTopologyAdmission(value.sourceInventory, topology, value.admittedTopologyId);
   value.admittedTopologyBytes = Buffer.from(JSON.stringify(topology));
   const first = buildPublicStaticNetworkV2Observations(value);
   const second = buildPublicStaticNetworkV2Observations(structuredClone(value));
@@ -122,6 +131,45 @@ test("public static-network v2 producer binds supplied branch order into a fresh
   assert.notEqual(first.currentLayoutAdmission.topologySnapshotSha256,
     baseline.currentLayoutAdmission.topologySnapshotSha256);
 });
+
+function refreshTopologyIdentity(snapshot) {
+  for (const line of snapshot.lines) {
+    line.stationCount = line.scope.length;
+    line.edgeCount = line.edges.length;
+    line.scopeSha256 = sha(JSON.stringify(line.scope));
+    line.edgesSha256 = sha(JSON.stringify(line.edges));
+    line.contentSha256 = sha(JSON.stringify({ scope: line.scope, edges: line.edges }));
+  }
+  snapshot.lineCount = snapshot.lines.length;
+  snapshot.totalEdgeCount = snapshot.lines.reduce((sum, line) => sum + line.edgeCount, 0);
+  snapshot.contentSha256 = sha(JSON.stringify({
+    lines: snapshot.lines.map(({
+      lineId, edgeCount, stationCount, contentSha256, rawSha256, datasetId,
+    }) => ({ lineId, edgeCount, stationCount, contentSha256, rawSha256, datasetId })),
+    topologyGaps: snapshot.topologyGaps,
+  }));
+  if (snapshot.admission != null) {
+    Object.assign(snapshot.admission, {
+      contentSha256: snapshot.contentSha256,
+      lineCount: snapshot.lineCount,
+      totalEdgeCount: snapshot.totalEdgeCount,
+      gapLineIds: snapshot.topologyGaps.map(({ lineId }) => lineId),
+    });
+  }
+}
+
+function rebindCurrentTopologyAdmission(inventory, topology, topologySnapshotId) {
+  const source = inventory.sources.find(({ id }) => id === ids[0]);
+  const admission = source.routeMapAdmissionEvidence.currentTopologyAdmission;
+  admission.topologySnapshotId = topologySnapshotId;
+  admission.topologyContentSha256 = topology.contentSha256;
+  admission.topologyLineages = admission.topologyLineages.map(({ lineId }) => ({
+    sourceId: "capital-route-topology",
+    snapshotId: topologySnapshotId,
+    contentSha256: topology.contentSha256,
+    lineId,
+  }));
+}
 
 test("public static-network v2 producer rejects historical predecessor audit input", async () => {
   const value = await input();
