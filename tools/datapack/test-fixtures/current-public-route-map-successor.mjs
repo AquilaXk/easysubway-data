@@ -664,6 +664,8 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     || currentTopologyAdmissions.some(({ admission }) => admission.topologySnapshotId !== currentTopologySnapshotId)) {
     throw new Error("synthetic current topology admission fixture is incomplete");
   }
+  candidate.candidateId = `capital-pilot-candidate-${currentTopologySnapshotId.slice(-8)}`;
+  candidate.publishedAt = now.toISOString();
   const currentTopologyPath = `tools/datapack/sources/${currentTopologySnapshotId}.json`;
   const currentTopology = JSON.parse(topologySnapshotBytes);
   const topologyFreshnessMillis = Date.parse(currentTopology.freshUntil) - Date.parse(currentTopology.capturedAt);
