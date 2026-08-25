@@ -241,6 +241,19 @@ async function readCurrentTopologyAdmissionInput({ root, inventory, now, read })
   return { topologyAdmission, topologyRelative, topologyBytes, topology };
 }
 
+export async function assertCurrentStaticNetworkTopologyAdmission({ repositoryRoot = ROOT, now = new Date() } = {}) {
+  const root = path.resolve(repositoryRoot);
+  await regularDirectory(root, "repository root");
+  const inventoryBytes = await bytes(target(root, FIXED_OUTPUTS[0]), "source inventory");
+  const inventory = parse(inventoryBytes, "source inventory");
+  return readCurrentTopologyAdmissionInput({
+    root,
+    inventory,
+    now,
+    read: async (relative) => bytes(target(root, relative), "static network topology"),
+  });
+}
+
 export async function buildStaticNetworkSuccessorOutputs({ repositoryRoot = ROOT, observations, now = new Date() } = {}) {
   const root = path.resolve(repositoryRoot); await regularDirectory(root, "repository root"); assertTwoObservations(observations);
   const read = async (relative) => bytes(target(root, relative), relative);
