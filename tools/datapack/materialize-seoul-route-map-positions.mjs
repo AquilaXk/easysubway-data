@@ -67,6 +67,10 @@ export function materializeSeoulRouteMapPositions({
   if (!pack || fixture.packs.length !== 1 || pack.artifactKind !== "production") {
     throw new Error("Seoul route map positions require one cumulative production pack");
   }
+  if (pack.sourceInventory?.some(({ id }) => id === "seoulmetro-cyberstation-route-map")
+    || pack.routeMapPositions?.some(({ sourceId }) => sourceId === "seoulmetro-cyberstation-route-map")) {
+    throw new Error("current public Seoul route map must not include Cyberstation input");
+  }
   if (!pack.operators.some(({ id }) => id === OPERATOR_ID)) {
     throw new Error("Seoul route map positions require seoul-metro operator pack");
   }
@@ -120,18 +124,16 @@ export function materializeSeoulRouteMapPositions({
     }
   }
 
-  const replacedSourceIndex = (pack.sourceInventory ?? []).findIndex(
-    ({ id }) => id === SOURCE_ID || id === "seoulmetro-cyberstation-route-map",
-  );
+  const replacedSourceIndex = (pack.sourceInventory ?? []).findIndex(({ id }) => id === SOURCE_ID);
   pack.sourceInventory = (pack.sourceInventory ?? []).filter(
-    ({ id }) => id !== SOURCE_ID && id !== "seoulmetro-cyberstation-route-map",
+    ({ id }) => id !== SOURCE_ID,
   );
   pack.sourceInventory.splice(
     replacedSourceIndex < 0 ? pack.sourceInventory.length : replacedSourceIndex,
     0,
     packSource(source, routeMapLayoutArtifact),
   );
-  pack.routeMapPositions = (pack.routeMapPositions ?? []).filter((row) => !replacementKeys.has(`${row.stationId}:${row.lineId}:${row.region}`) && row.sourceId !== "seoulmetro-cyberstation-route-map").concat(rows);
+  pack.routeMapPositions = (pack.routeMapPositions ?? []).filter((row) => !replacementKeys.has(`${row.stationId}:${row.lineId}:${row.region}`)).concat(rows);
   const tracks = materializeTracks(routeMapLayoutArtifact, source);
   pack.routeMapLineTracks = (pack.routeMapLineTracks ?? []).filter((row) => !(row.region === REGION && LINE_IDS.includes(row.lineId))).concat(tracks);
   pack.minimumTableRows = {

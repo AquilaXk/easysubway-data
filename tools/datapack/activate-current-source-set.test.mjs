@@ -20,7 +20,6 @@ import { activateIncheonTopologyAdmission, activateStaticSourceRevalidations,
   readBuilderBaselineBytes,
   stageValidationItxTopologyEvidence,
   validatePreparedCandidate, verifyCurrentStaticNetworkSuccessorHeads,
-  verifyHistoricalStaticNetworkSuccessorHeads,
   verifyCurrentSeoulCanonicalMembership } from "./activate-current-source-set.mjs";
 import { normalizeStationName, projectCapitalTopologyOwnership } from "./collect-capital-route-topology.mjs";
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
@@ -45,25 +44,21 @@ async function currentV2HeadsFixture() {
   ]);
   const heads = (sourceId) => ledger.filter(({ sourceId: id }) => id === sourceId).find(({ snapshotId }) => !ledger.some(({ previousSnapshotId }) => previousSnapshotId === snapshotId));
   const make = (sourceId, file) => {
-    const original = heads(sourceId); const previous = structuredClone(original);
+    const original = heads(sourceId);
     const capturedAt = new Date(Date.parse(original.retrievedAt) + 1).toISOString();
     const snapshotId = `${sourceId}-v2-current`; const receipt = { ...structuredClone(original.rawReceipt), snapshotId, capturedAt, storedAt: capturedAt };
     const observation = { schemaVersion: 2, artifactKind: "public-static-network-v2-observation", sourceId, snapshotId, capturedAt, rawSha256: original.rawSha256, contentSha256: original.contentSha256, schemaFingerprint: original.schemaFingerprint, rowCount: original.rowCount, providerRecordHashes: structuredClone(original.providerRecordHashes), normalizedProjection: structuredClone(file.normalizedProjection), ...(sourceId === "seoul-metro-route-map-positions" ? { routeMapLayoutEvidence: structuredClone(file.layoutEvidence), routeMapLayoutArtifact: structuredClone(file.routeMapLayoutArtifact) } : {}), rawReceipt: receipt };
-    const rootSupersession = sourceId === "seoul-metro-route-map-positions" ? { schemaVersion: 1, artifactKind: "source-root-supersession", sourceId, supersededHeadSnapshotId: previous.snapshotId, supersededHeadRawSha256: previous.rawSha256, supersededHeadSchemaFingerprint: previous.schemaFingerprint, reasonCode: "CANONICAL_SOURCE_CONTRACT_RESET" } : null;
-    const snapshot = { ...structuredClone(original), snapshotId, retrievedAt: capturedAt, previousSnapshotId: rootSupersession == null ? previous.snapshotId : null, diffSummary: null, rawReceipt: receipt, normalizedObservationSha256: sha256(Buffer.from(`${JSON.stringify(observation)}\n`)), publicStaticNetworkV2Observation: observation, ...(rootSupersession == null ? {} : { rootSupersession }) };
+    const snapshot = { ...structuredClone(original), snapshotId, retrievedAt: capturedAt, previousSnapshotId: null, diffSummary: null, rawReceipt: receipt, normalizedObservationSha256: sha256(Buffer.from(`${JSON.stringify(observation)}\n`)), publicStaticNetworkV2Observation: observation };
     delete snapshot.projectionMigration;
+    delete snapshot.rootSupersession;
     if (sourceId === "seoul-metro-route-map-positions") { snapshot.routeMapLayoutEvidence = observation.routeMapLayoutEvidence; snapshot.routeMapLayoutArtifact = observation.routeMapLayoutArtifact; }
-    if (rootSupersession == null) snapshot.diffSummary = buildSnapshotDiff(previous, snapshot);
-    return { previous, snapshot, observation };
+    return { snapshot, observation };
   };
   const positions = make("seoul-metro-route-map-positions", positionFile); const molit = make("molit-urban-rail-full-route", molitFile);
   const source = (id, snapshot) => { const value = structuredClone(inventory.sources.find((item) => item.id === id)); value.admissionEvidence = { ...value.admissionEvidence, snapshotId: snapshot.snapshotId, rawSha256: snapshot.rawSha256, schemaFingerprint: snapshot.schemaFingerprint }; value.requiredForProductionPack = true; value.productionUseAllowed = true; return value; };
   const positionSource = source(positions.snapshot.sourceId, positions.snapshot); const molitSource = source(molit.snapshot.sourceId, molit.snapshot);
   positionSource.routeMapAdmissionEvidence.currentLayoutAdmission = { schemaVersion: 2, artifactKind: "seoul-public-route-map-layout-admission", status: "ADMITTED", positionSnapshotId: positions.snapshot.snapshotId, snapshotPath: `tools/datapack/sources/${positions.snapshot.snapshotId}.json`, snapshotSha256: positions.snapshot.normalizedObservationSha256, rawSha256: positions.snapshot.rawSha256, contentSha256: positions.snapshot.contentSha256, ...positions.snapshot.routeMapLayoutEvidence };
-  const historical = ledger.filter(({ sourceId }) => [
-    "seoulmetro-cyberstation-route-map", "seoul-metro-route-map-positions", "molit-urban-rail-full-route",
-  ].includes(sourceId)).map((snapshot) => structuredClone(snapshot));
-  return { sourceSnapshots: [...historical, positions.snapshot, molit.snapshot], sourceInventory: { schemaVersion: 1, artifactKind: "production-source-inventory", sources: [positionSource, molitSource] } };
+  return { sourceSnapshots: [positions.snapshot, molit.snapshot], sourceInventory: { schemaVersion: 1, artifactKind: "production-source-inventory", sources: [positionSource, molitSource] } };
 }
 async function readJson(relativePath) { return JSON.parse(await readFile(path.join(root, relativePath), "utf8")); }
 
@@ -251,70 +246,9 @@ function currentSuccessorGateFixture() {
   };
 }
 
-test("current activation은 full MOLIT·public layout v2·exact OCI successor heads만 수용한다", () => {
+test("current activation은 legacy predecessor fixture를 수용하지 않는다", () => {
   const fixture = currentSuccessorGateFixture();
-  assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads(fixture), /V2_MISSING/);
-  const result = verifyHistoricalStaticNetworkSuccessorHeads(fixture);
-  assert.equal(result.molit.rowCount, 1103);
-  assert.equal(result.positions.sourceId, "seoul-metro-route-map-positions");
-
-  const missingV2 = structuredClone(fixture);
-  const missingPositions = missingV2.sourceSnapshots.find(({ sourceId }) => sourceId === "seoul-metro-route-map-positions");
-  missingPositions.routeMapLayoutArtifact.layoutAlgorithmVersion = "seoul-public-layout-v1";
-  missingPositions.routeMapLayoutEvidence.layoutAlgorithmVersion = "seoul-public-layout-v1";
-  missingPositions.routeMapLayoutEvidence.layoutArtifactSha256 = sha256(Buffer.from(`${JSON.stringify(missingPositions.routeMapLayoutArtifact)}\n`));
-  const missingLayout = missingV2.sourceInventory.sources.find(({ id }) => id === "seoul-metro-route-map-positions").routeMapAdmissionEvidence.currentLayoutAdmission;
-  missingLayout.layoutAlgorithmVersion = "seoul-public-layout-v1";
-  missingLayout.layoutArtifactSha256 = missingPositions.routeMapLayoutEvidence.layoutArtifactSha256;
-  assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads(missingV2), /V2_MISSING/);
-
-  const reducedMolit = structuredClone(fixture);
-  const molit = reducedMolit.sourceSnapshots.find(
-    ({ sourceId, previousSnapshotId }) => sourceId === "molit-urban-rail-full-route"
-      && previousSnapshotId != null,
-  );
-  const predecessor = reducedMolit.sourceSnapshots.find(
-    ({ snapshotId }) => snapshotId === molit.previousSnapshotId,
-  );
-  molit.rowCount = 1102;
-  molit.coverageCount = 1102;
-  molit.providerRecordHashes = molit.providerRecordHashes.slice(0, 1102);
-  molit.projectionMigration.fullProjectionRowCount = 1102;
-  molit.diffSummary = buildSnapshotDiff(predecessor, molit);
-  assert.throws(
-    () => verifyHistoricalStaticNetworkSuccessorHeads(reducedMolit),
-    /current full route successor binding is invalid/,
-  );
-
-  const reducedPositions = structuredClone(fixture);
-  const positions = reducedPositions.sourceSnapshots.find(
-    ({ sourceId }) => sourceId === "seoul-metro-route-map-positions",
-  );
-  positions.rowCount = 275;
-  positions.coverageCount = 275;
-  positions.providerRecordHashes.pop();
-  assert.throws(
-    () => verifyHistoricalStaticNetworkSuccessorHeads(reducedPositions),
-    /current public route map successor binding is invalid/,
-  );
-
-  const driftedLayout = structuredClone(fixture);
-  driftedLayout.sourceInventory.sources.find(
-    ({ id }) => id === "seoul-metro-route-map-positions",
-  ).routeMapAdmissionEvidence.currentLayoutAdmission.layoutArtifactSha256 = "f".repeat(64);
-  assert.throws(
-    () => verifyHistoricalStaticNetworkSuccessorHeads(driftedLayout),
-    /current public route map layout admission binding is invalid/,
-  );
-
-  const reactivatedLegacy = structuredClone(fixture);
-  reactivatedLegacy.sourceInventory.sources.find(
-    ({ id }) => id === "seoulmetro-cyberstation-route-map",
-  ).productionUseAllowed = true;
-  assert.throws(
-    () => verifyHistoricalStaticNetworkSuccessorHeads(reactivatedLegacy),
-    /legacy route map source cannot be current production/,
-  );
+  assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads(fixture), /current v2 selected path is invalid/);
 });
 
 test("current activation succeeds only for two embedded schema-2 v2 heads", async () => {
@@ -345,33 +279,17 @@ test("current activation succeeds only for two embedded schema-2 v2 heads", asyn
     source.requiredForProductionPack = false;
     assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads({ ...invalid, now: CURRENT_V2_TEST_NOW }), /current v2 production source is invalid/);
   }
-  const corruptedLegacy = structuredClone(fixture);
-  corruptedLegacy.sourceSnapshots.find(({ snapshotId }) => snapshotId === corruptedLegacy.sourceSnapshots.find(({ sourceId, rootSupersession }) => sourceId === "seoul-metro-route-map-positions" && rootSupersession != null).rootSupersession.supersededHeadSnapshotId)
-    .projectionMigration.candidateSlotSourceId = "wrong-current-slot";
-  assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads({ ...corruptedLegacy, now: CURRENT_V2_TEST_NOW }), /legacy v1 public positions predecessor is invalid/);
-  for (const corrupt of [
-    (legacy) => { legacy.snapshotStatus = "REJECTED"; },
-    (legacy) => { legacy.fetchStatus = "FAIL"; },
-    (legacy) => { legacy.rawReceipt.storedAt = "2026-08-24T11:48:22.984Z"; },
-  ]) {
-    const invalid = structuredClone(fixture);
-    const reset = invalid.sourceSnapshots.find(({ sourceId, rootSupersession }) =>
-      sourceId === "seoul-metro-route-map-positions" && rootSupersession != null,
-    );
-    corrupt(invalid.sourceSnapshots.find(({ snapshotId }) => snapshotId === reset.rootSupersession.supersededHeadSnapshotId));
-    assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads({ ...invalid, now: CURRENT_V2_TEST_NOW }), /legacy v1 public positions predecessor is invalid/);
-  }
-  const staleLegacy = structuredClone(fixture);
-  const reset = staleLegacy.sourceSnapshots.find(({ sourceId, rootSupersession }) =>
-    sourceId === "seoul-metro-route-map-positions" && rootSupersession != null,
-  );
-  const legacy = staleLegacy.sourceSnapshots.find(({ snapshotId }) =>
-    snapshotId === reset.rootSupersession.supersededHeadSnapshotId,
-  );
-  legacy.freshnessExpiresAt = "2026-08-25T11:00:00.000Z";
-  legacy.rawRetentionExpiresAt = "2026-08-25T11:00:00.000Z";
-  legacy.rawReceipt.rawRetentionExpiresAt = legacy.rawRetentionExpiresAt;
-  assert.doesNotThrow(() => verifyCurrentStaticNetworkSuccessorHeads({ ...staleLegacy, now: CURRENT_V2_TEST_NOW }));
+  const reset = structuredClone(fixture);
+  reset.sourceSnapshots.find(({ sourceId }) => sourceId === "seoul-metro-route-map-positions").rootSupersession = {
+    schemaVersion: 1, artifactKind: "source-root-supersession", sourceId: "seoul-metro-route-map-positions",
+  };
+  assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads({ ...reset, now: CURRENT_V2_TEST_NOW }), /current v2 successor binding is invalid/);
+  const cyberSnapshot = structuredClone(fixture);
+  cyberSnapshot.sourceSnapshots.push({ snapshotId: "cyber", sourceId: "seoulmetro-cyberstation-route-map", previousSnapshotId: null });
+  assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads({ ...cyberSnapshot, now: CURRENT_V2_TEST_NOW }), /current v2 selected path is invalid/);
+  const cyberInventory = structuredClone(fixture);
+  cyberInventory.sourceInventory.sources.push({ id: "seoulmetro-cyberstation-route-map", requiredForProductionPack: false, productionUseAllowed: false });
+  assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads({ ...cyberInventory, now: CURRENT_V2_TEST_NOW }), /current v2 selected path is invalid/);
 });
 
 test("current activation exact-binds every embedded v2 observation to its outer snapshot", async () => {

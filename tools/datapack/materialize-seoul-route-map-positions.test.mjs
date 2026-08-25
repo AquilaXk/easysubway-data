@@ -79,11 +79,19 @@ async function inputs() {
 }
 
 test("공식 서울 위경도 snapshot을 current canonical pack에 materialize한다", async () => {
-  const { baseFixture, seoulSnapshot, seoulSnapshotSha256, topologyBytes, inventory } = await inputs();
-  const predecessorSourceIndex = baseFixture.packs[0].sourceInventory.findIndex(
-    ({ id }) => id === "seoulmetro-cyberstation-route-map",
+  const input = await inputs();
+  assert.throws(() => materializeSeoulRouteMapPositions({
+    baseFixture: input.baseFixture, snapshot: input.seoulSnapshot, snapshotSha256: input.seoulSnapshotSha256,
+    topologySnapshotBytes: input.topologyBytes, inventory: input.inventory, now: routeMapNow,
+  }), /current public Seoul route map/);
+  const { seoulSnapshot, seoulSnapshotSha256, topologyBytes, inventory } = input;
+  const baseFixture = structuredClone(input.baseFixture);
+  baseFixture.packs[0].sourceInventory = baseFixture.packs[0].sourceInventory.filter(
+    ({ id }) => id !== "seoulmetro-cyberstation-route-map",
   );
-  assert.notEqual(predecessorSourceIndex, -1);
+  baseFixture.packs[0].routeMapPositions = baseFixture.packs[0].routeMapPositions.filter(
+    ({ sourceId }) => sourceId !== "seoulmetro-cyberstation-route-map",
+  );
 
   const fixture = materializeSeoulRouteMapPositions({
     baseFixture,
@@ -99,7 +107,7 @@ test("공식 서울 위경도 snapshot을 current canonical pack에 materialize�
 
   assert.equal(pack.routeMapPositions.filter(({ sourceId }) => sourceId === "seoulmetro-cyberstation-route-map").length, 0);
   assert.equal(pack.sourceInventory.filter(({ id }) => id === "seoulmetro-cyberstation-route-map").length, 0);
-  assert.equal(pack.sourceInventory.findIndex(({ id }) => id === SOURCE_ID), predecessorSourceIndex);
+  assert.equal(pack.sourceInventory.findIndex(({ id }) => id === SOURCE_ID), pack.sourceInventory.length - 1);
   assert.equal(rows.length, seoulSnapshot.routeMapLayoutArtifact.rawPositions.length);
   assert.equal(new Set(rows.map(({ lineId }) => lineId)).size, 8);
   assert.deepEqual([...new Set(rows.map(({ lineId }) => lineId))].sort(), [...LINE_IDS].sort());

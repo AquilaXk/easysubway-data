@@ -526,6 +526,12 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   };
   predecessorSource.requiredForProductionPack = false;
   predecessorSource.productionUseAllowed = false;
+  pack.packs[0].sourceInventory = pack.packs[0].sourceInventory.filter(
+    ({ id }) => id !== PREDECESSOR_SOURCE_ID,
+  );
+  pack.packs[0].routeMapPositions = pack.packs[0].routeMapPositions.filter(
+    ({ sourceId }) => sourceId !== PREDECESSOR_SOURCE_ID,
+  );
 
   const materializedPack = materializeSeoulRouteMapPositions({
     baseFixture: pack,
