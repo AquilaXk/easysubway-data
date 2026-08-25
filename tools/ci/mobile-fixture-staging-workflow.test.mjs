@@ -12,9 +12,9 @@ const ownership = JSON.parse(
 const mobileRepository = "AquilaXk/easysubway-mobile";
 const ciMobileRevision = "5b58d426258f536070137737c3f19a8dbeda44c1";
 const ciCapitalGzipSha256 = "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a";
-const mobileRevision = "39d2c4723d0ff855041c6162825930c7d12ffad3";
-const capitalGzipSha256 = "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3";
-const indexSha256 = "ad801ec865d385e86cf4094e3c007af9cbfbe1d4a8c42bab8f9b2682b229026e";
+const mobileRevision = ciMobileRevision;
+const capitalGzipSha256 = ciCapitalGzipSha256;
+const indexSha256 = "a39031e0e588508b1d111c830ef19441740ca15de6cad62ef9e9e8f5654468bf";
 const sourceInventorySha256 = "69cdbd88a169d77ef4941d197c5bae5a0ab26999418ce513778903abbe7d70d2";
 
 function namedWorkflowStep(yml, name) {
@@ -161,9 +161,25 @@ test("CI는 current v19 contract 검증 뒤 fixture identity가 변경되지 않
   assert.match(reverify, /sha256sum "\$\{target_capital_gzip\}"/);
   assert.ok(
     ci.indexOf("Verify current Mobile v19 ITX topology evidence")
+      < ci.indexOf("Verify and run current Mobile v19 owned required tests")
+      && ci.indexOf("Verify and run current Mobile v19 owned required tests")
       < ci.indexOf("Re-verify current Mobile fixture for owned tests"),
-    "current artifact 검증 뒤 fixture identity를 재확인해야 함",
+    "current artifact 검증과 v19 소유 테스트 뒤 fixture identity를 재확인해야 함",
   );
+});
+
+test("CI는 migration 없이 current v19 profile 소유 테스트를 실행한다", () => {
+  const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+  const runner = namedWorkflowStep(ci, "Verify and run current Mobile v19 owned required tests");
+  assert.match(
+    runner,
+    /node tools\/ci\/data-test-discovery\.mjs run --class required-pr --profile mobile-v19 --max-workers 1/,
+  );
+  assertWorkflowStepOrder(ci, [
+    "Verify current Mobile v19 ITX topology evidence",
+    "Verify and run current Mobile v19 owned required tests",
+    "Re-verify current Mobile fixture for owned tests",
+  ]);
 });
 
 test("CI는 direct current v19 검증 안에서 #108 bundled-pack 회귀를 실행한다", () => {
@@ -212,6 +228,7 @@ test("CI는 current v19 검증을 tracked topology evidence 변경 없이 수행
   assert.doesNotMatch(ci, /Restore tracked topology evidence/);
   assertWorkflowStepOrder(ci, [
     "Verify current Mobile v19 ITX topology evidence",
+    "Verify and run current Mobile v19 owned required tests",
     "Re-verify current Mobile fixture for owned tests",
     "Verify and run pristine Mobile owned required tests",
   ]);

@@ -78,6 +78,9 @@ jobs:
           node --test --test-name-pattern='bundled 공식 OD quote|bundled 차량·출입문 힌트' tools/datapack/datapack-tools.test.mjs
           git diff --exit-code -- tools/datapack/itx-cheongchun-topology-evidence.json
 
+      - name: Verify and run current Mobile v19 owned required tests
+        run: node tools/ci/data-test-discovery.mjs run --class required-pr --profile mobile-v19 --max-workers 1
+
       - name: Re-verify current Mobile fixture for owned tests
         shell: bash
         run: |
