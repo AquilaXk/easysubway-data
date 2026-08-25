@@ -22,7 +22,7 @@ const LOCK_OWNER = "owner.json";
 const SEOUL = "seoul-metro-accessibility";
 const TRANSFER = "seoul-metro-transfer-distance-duration";
 const MOLIT = "molit-urban-rail-full-route";
-const STATIC_SUCCESSOR = "STATIC_NETWORK_SUCCESSOR_REFRESH";
+const PUBLIC_STATIC_NETWORK_V2_SUCCESSOR = "PUBLIC_STATIC_NETWORK_V2_SUCCESSOR_REFRESH";
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 
 function target(root, relative) {
@@ -35,6 +35,37 @@ function parse(bytes, label) { try { return JSON.parse(bytes); } catch { throw n
 function canonical(value) { if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`; if (value && typeof value === "object") return `{${Object.keys(value).sort(codepointCompare).map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`; return JSON.stringify(value); }
 function equalJson(left, right) { return canonical(left) === canonical(right); }
 function requireOne(rows, predicate, label) { const matches = rows.filter(predicate); if (matches.length !== 1) throw new Error(`${label} mismatch`); return matches[0]; }
+function requireNoLegacyMetadata(value, label) {
+  const visit = (current) => {
+    if (Array.isArray(current)) return current.forEach(visit);
+    if (!current || typeof current !== "object") return;
+    for (const [key, child] of Object.entries(current)) {
+      if (["projectionMigration", "migration", "historicalPredecessorAudit", "rootSupersession"].includes(key)) {
+        throw new Error(`${label} legacy metadata mismatch`);
+      }
+      visit(child);
+    }
+  };
+  visit(value);
+}
+
+function requireCurrentPublicV2Head(selected, ledger, sourceId) {
+  const head = requireOne(selected, ({ sourceId: actual }) => actual === sourceId, `current ${sourceId} head`);
+  const previousSnapshotId = head?.previousSnapshotId;
+  const observation = head?.publicStaticNetworkV2Observation;
+  requireNoLegacyMetadata(head, `current ${sourceId} head`);
+  if (observation?.schemaVersion !== 2
+    || observation.artifactKind !== "public-static-network-v2-observation"
+    || observation.sourceId !== sourceId
+    || observation.snapshotId !== head.snapshotId
+    || typeof previousSnapshotId !== "string"
+    || previousSnapshotId === head.snapshotId
+    || ledger.filter(({ snapshotId, sourceId: actual }) =>
+      snapshotId === previousSnapshotId && actual === sourceId).length !== 1) {
+    throw new Error(`current ${sourceId} v2 predecessor mismatch`);
+  }
+  return { head, previousSnapshotId };
+}
 
 function buildRefreshProof({ candidateFile, ledgerFile, requestFile, hashesFile, stationFile, routeFile }) {
   const candidate = parse(candidateFile.bytes, "current candidate"); const ledger = parse(ledgerFile.bytes, "source snapshot ledger");
@@ -45,80 +76,37 @@ function buildRefreshProof({ candidateFile, ledgerFile, requestFile, hashesFile,
     || candidate.sourceSnapshots.at(-1)?.sourceId !== TRANSFER
     || candidate.sourceSnapshotSetHash !== request.sourceSnapshotSetHash
     || candidate.sourceSnapshotSetHash !== hashes.sourceSnapshotSetHash?.value) throw new Error("current candidate/request/hash binding mismatch");
-  const selected = candidate.sourceSnapshotIds.map((snapshotId) => requireOne(ledger, (row) => row?.snapshotId === snapshotId, "current candidate ledger"));
+  const selected = candidate.sourceSnapshotIds.map((snapshotId, index) => {
+    const row = requireOne(ledger, (entry) => entry?.snapshotId === snapshotId, "current candidate ledger");
+    if (row.sourceId !== candidate.sourceSnapshots[index]?.sourceId) throw new Error("current candidate source identity mismatch");
+    return row;
+  });
   const selectedIds = new Set(candidate.sourceSnapshotIds);
   const selectedLedgerOrder = ledger.filter(({ snapshotId }) => selectedIds.has(snapshotId));
   if (selectedIds.size !== 7 || selectedLedgerOrder.length !== 7 || sha(JSON.stringify(selectedLedgerOrder)) !== candidate.sourceSnapshotSetHash) throw new Error("current candidate source-set mismatch");
-  const staticSuccessors = selected.filter(({ projectionMigration }) =>
-    projectionMigration?.migrationKind === "CROSS_SOURCE_CANONICAL_REPLACEMENT");
-  let successorIndex;
-  let previousSnapshotId;
-  let molitSuccessorIndex = -1;
-  let previousMolitSnapshotId;
-  let transitionIdentity;
-  if (staticSuccessors.length === 1) {
-    const successor = staticSuccessors[0];
-    const migration = successor.projectionMigration;
-    successorIndex = selected.indexOf(successor);
-    previousSnapshotId = migration.replacedSnapshotId;
-    if (successor.sourceId !== migration.sourceId
-      || migration.candidateSlotSourceId !== migration.replacedSourceId
-      || typeof previousSnapshotId !== "string"
-      || previousSnapshotId === successor.snapshotId
-      || ledger.filter(({ snapshotId, sourceId }) =>
-        snapshotId === previousSnapshotId && sourceId === migration.replacedSourceId).length !== 1) {
-      throw new Error("current static-network predecessor mismatch");
-    }
-    const molitSuccessors = selected.filter(({ sourceId }) => sourceId === MOLIT);
-    const molitSuccessor = molitSuccessors[0];
-    const molitMigration = molitSuccessor?.projectionMigration;
-    molitSuccessorIndex = selected.indexOf(molitSuccessor);
-    previousMolitSnapshotId = molitSuccessor?.previousSnapshotId;
-    if (molitSuccessors.length !== 1
-      || molitMigration?.migrationKind !== "LEGACY_SAMPLE_TO_FULL_CONSUMED_FIELDS"
-      || molitMigration.sourceId !== MOLIT
-      || molitMigration.legacySnapshotId !== previousMolitSnapshotId
-      || typeof previousMolitSnapshotId !== "string"
-      || previousMolitSnapshotId === molitSuccessor.snapshotId
-      || ledger.filter(({ snapshotId, sourceId }) =>
-        snapshotId === previousMolitSnapshotId && sourceId === MOLIT).length !== 1) {
-      throw new Error("current static-network MOLIT predecessor mismatch");
-    }
-    transitionIdentity = {
-      kind: STATIC_SUCCESSOR,
-      successorSourceId: successor.sourceId,
-      predecessorSourceId: migration.replacedSourceId,
-    };
-  } else {
-    const seoulIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === SEOUL);
-    if (staticSuccessors.length !== 0
-      || seoulIndex < 0
-      || candidate.sourceSnapshots.filter(({ sourceId }) => sourceId === SEOUL).length !== 1
-      || candidate.sourceSnapshots.at(-1)?.sourceId !== TRANSFER) {
-      throw new Error("current successor candidate shape mismatch");
-    }
-    const currentSeoul = selected[seoulIndex];
-    successorIndex = seoulIndex;
-    previousSnapshotId = currentSeoul?.previousSnapshotId;
-    if (typeof previousSnapshotId !== "string" || previousSnapshotId === currentSeoul.snapshotId) {
-      throw new Error("current Seoul predecessor mismatch");
-    }
-    transitionIdentity = { kind: "SEOUL_ACCESSIBILITY_SUCCESSOR_REFRESH" };
+  const position = requireCurrentPublicV2Head(selected, ledger, "seoul-metro-route-map-positions");
+  const molit = requireCurrentPublicV2Head(selected, ledger, MOLIT);
+  const positionIndex = selected.indexOf(position.head);
+  const molitIndex = selected.indexOf(molit.head);
+  if (positionIndex < 0 || molitIndex < 0 || positionIndex === molitIndex) {
+    throw new Error("current public static-network selected head mismatch");
   }
-  const predecessorIds = candidate.sourceSnapshotIds.map((snapshotId, index) =>
-    index === successorIndex ? previousSnapshotId
-      : index === molitSuccessorIndex ? previousMolitSnapshotId
-      : snapshotId);
-  const predecessorIdSet = new Set(predecessorIds); const predecessor = ledger.filter(({ snapshotId }) => predecessorIdSet.has(snapshotId));
-  const predecessorHash = sha(JSON.stringify(predecessor));
-  const currentSeoul = selected.filter(({ sourceId }) => sourceId === SEOUL);
-  const previousSeoulSnapshotId = currentSeoul[0]?.previousSnapshotId;
-  if (currentSeoul.length !== 1
-    || typeof previousSeoulSnapshotId !== "string"
+  const currentSeoul = requireOne(selected, ({ sourceId }) => sourceId === SEOUL, "current Seoul head");
+  const previousSeoulSnapshotId = currentSeoul?.previousSnapshotId;
+  if (typeof previousSeoulSnapshotId !== "string"
+    || previousSeoulSnapshotId === currentSeoul.snapshotId
     || ledger.filter(({ snapshotId, sourceId }) =>
       snapshotId === previousSeoulSnapshotId && sourceId === SEOUL).length !== 1) {
     throw new Error("current Seoul evidence predecessor mismatch");
   }
+  let transitionIdentity;
+  transitionIdentity = { kind: PUBLIC_STATIC_NETWORK_V2_SUCCESSOR };
+  const predecessorIds = candidate.sourceSnapshotIds.map((snapshotId, index) =>
+    index === positionIndex ? position.previousSnapshotId
+      : index === molitIndex ? molit.previousSnapshotId
+      : snapshotId);
+  const predecessorIdSet = new Set(predecessorIds); const predecessor = ledger.filter(({ snapshotId }) => predecessorIdSet.has(snapshotId));
+  const predecessorHash = sha(JSON.stringify(predecessor));
   const evidenceIds = new Set(predecessorIds.flatMap((snapshotId, index) => {
     const sourceId = candidate.sourceSnapshots[index].sourceId;
     if (sourceId === TRANSFER) return [];
@@ -137,7 +125,9 @@ function buildRefreshProof({ candidateFile, ledgerFile, requestFile, hashesFile,
     currentCandidateBytesSha256: sha(candidateFile.bytes), currentCandidateSourceSetSha256: candidate.sourceSnapshotSetHash,
     evidenceSourceSetSha256: evidenceHash, facilityAdmissionBytesSha256: null,
     ...transitionIdentity,
-    predecessorCandidateSourceSetSha256: predecessorHash, previousSnapshotId,
+    predecessorCandidateSourceSetSha256: predecessorHash,
+    positionPreviousSnapshotId: position.previousSnapshotId,
+    molitPreviousSnapshotId: molit.previousSnapshotId,
     alreadyCurrent: activatedSourceSet === candidate.sourceSnapshotSetHash,
   };
 }
