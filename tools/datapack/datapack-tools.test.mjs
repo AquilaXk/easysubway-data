@@ -22,7 +22,6 @@ import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { routeServiceEvidenceSnapshot } from "./lib/route-service-evidence-preservation.mjs";
 import {
   buildCapitalTopologyReverificationEvidence,
-  projectCapitalTopologyOwnership,
 } from "./collect-capital-route-topology.mjs";
 import { currentIncheonStationCodeDerivations } from "./collect-incheon-station-info.mjs";
 import {
@@ -18300,14 +18299,14 @@ async function writeCurrentItxReleaseInputs(
     `tools/datapack/sources/${currentTopologySnapshotId}.json`,
     "utf8",
   ).then(JSON.parse);
-  const candidateTopology = projectCapitalTopologyOwnership(baselineTopology);
+  const candidateTopology = structuredClone(baselineTopology);
   const baselineTopologyPath = path.join(workspace, "capital-topology-baseline.json");
   const candidateTopologyPath = path.join(workspace, "capital-topology-candidate.json");
   const topologyReverificationPath = path.join(workspace, "capital-topology-reverification.json");
   const baselineTopologyBytes = Buffer.from(`${JSON.stringify(baselineTopology)}\n`);
   const candidateTopologyBytes = Buffer.from(`${JSON.stringify(candidateTopology)}\n`);
   const topologyReverification = buildCapitalTopologyReverificationEvidence(
-    projectCapitalTopologyOwnership(baselineTopology),
+    baselineTopology,
     candidateTopology,
   );
   topologyReverification.baseline.snapshotId = currentTopologySnapshotId;
@@ -18318,6 +18317,14 @@ async function writeCurrentItxReleaseInputs(
   }]));
   const sourceObservedAt = source.observedAt;
   const sourceFreshUntil = source.freshUntil;
+  const incheonSources = currentInventory.sources.filter(({ id }) => id === "incheon-transit-station-info");
+  if (incheonSources.length !== 1) throw new Error("fixture current Incheon topology admission is required");
+  const currentIncheonCapturedAt = incheonSources[0].topologyAdmissionEvidence?.capturedAt;
+  const buildNow = new Date(Math.max(...[sourceObservedAt, candidateTopology.capturedAt, currentIncheonCapturedAt].map((value) => {
+    const timestamp = typeof value === "string" ? Date.parse(value) : Number.NaN;
+    if (Number.isNaN(timestamp)) throw new Error("fixture current build clock input is invalid");
+    return timestamp;
+  })) + 1_000).toISOString();
   Object.assign(completeness.sourceTimetableArtifact, {
     artifactId: sourceArtifactId,
     freshUntil: sourceFreshUntil,
@@ -18361,7 +18368,7 @@ async function writeCurrentItxReleaseInputs(
     source,
     previousArtifactSha256: sha256(sourceBytes),
     observedAt: sourceObservedAt,
-    serviceDate: source.selectedServiceDates["8"],
+    serviceDate: currentItxAdmissionServiceDate(source),
   });
   currentAdmissionBytes = Buffer.from(`${JSON.stringify(currentAdmission)}\n`);
   await writeFile(currentAdmissionPath, currentAdmissionBytes);
@@ -18400,7 +18407,7 @@ async function writeCurrentItxReleaseInputs(
     path: topologyReverificationPath,
     sha256: sha256(topologyReverificationBytes),
   });
-  const incheonSource = currentInventory.sources.find(({ id }) => id === "incheon-transit-station-info");
+  const incheonSource = incheonSources[0];
   const incheonSnapshotPath = path.join(repositoryRoot, incheonSource.routeMapAdmissionEvidence.snapshotPath);
   const incheonSnapshot = JSON.parse(await readFile(incheonSnapshotPath, "utf8"));
   delete incheonSnapshot.stationCodeCorrections;
@@ -18447,13 +18454,31 @@ async function writeCurrentItxReleaseInputs(
     buildSpecPath,
     env: {
       ...productionEnv,
-      EASYSUBWAY_DATAPACK_BUILD_NOW: new Date(Date.parse(sourceObservedAt) + 1_000).toISOString(),
+      EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow,
     },
     repositoryRoot,
   };
 }
 
+function nextKstMidnight(serviceDate) {
+  if (typeof serviceDate !== "string" || !/^\d{8}$/u.test(serviceDate)) throw new Error("synthetic ITX admission service date mismatch");
+  const date = new Date(Date.UTC(Number(serviceDate.slice(0, 4)), Number(serviceDate.slice(4, 6)) - 1, Number(serviceDate.slice(6, 8))));
+  date.setUTCDate(date.getUTCDate() + 1);
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}T00:00:00+09:00`;
+}
+
+function currentItxAdmissionServiceDate(source) {
+  const freshUntil = source.freshUntil;
+  if (typeof freshUntil !== "string" || Number.isNaN(Date.parse(freshUntil))) throw new Error("synthetic ITX admission freshness mismatch");
+  const matchingDates = [...new Set(Object.values(source.selectedServiceDates ?? {}))]
+    .filter((serviceDate) => typeof serviceDate === "string" && /^\d{8}$/u.test(serviceDate) && nextKstMidnight(serviceDate) === freshUntil);
+  if (matchingDates.length !== 1) throw new Error("synthetic ITX admission service date mismatch");
+  return matchingDates[0];
+}
+
 function syntheticCurrentItxTopologyAdmission({ source, previousArtifactSha256, observedAt, serviceDate }) {
+  const freshUntil = source.freshUntil;
+  if (typeof freshUntil !== "string" || Number.isNaN(Date.parse(freshUntil)) || nextKstMidnight(serviceDate) !== freshUntil) throw new Error("synthetic ITX admission freshness mismatch");
   const tuples = [...new Map((source.stationSequences ?? []).flatMap(({ stops = [] }) =>
     stops.slice(1).map((to, index) => [stops[index].stationId, to.stationId, "ITX_CHEONGCHUN"])
   ).map((tuple) => [JSON.stringify(tuple), tuple])).values()]
@@ -18478,7 +18503,7 @@ function syntheticCurrentItxTopologyAdmission({ source, previousArtifactSha256, 
     topologyMode: "UNCHANGED_AUTO_STATION_SET",
     serviceDate,
     observedAt,
-    freshUntil: nextKstMidnight(serviceDate),
+    freshUntil,
     collectionSha256: sha256(Buffer.from(JSON.stringify(source))),
     previousArtifactSha256,
     stationSetHash: sha256(Buffer.from(JSON.stringify(stationIds))),
@@ -18502,20 +18527,33 @@ function syntheticCurrentItxTopologyAdmission({ source, previousArtifactSha256, 
   return artifact;
 }
 
-function nextKstMidnight(serviceDate) {
-  const date = new Date(Date.UTC(Number(serviceDate.slice(0, 4)), Number(serviceDate.slice(4, 6)) - 1, Number(serviceDate.slice(6, 8))));
-  date.setUTCDate(date.getUTCDate() + 1);
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}T00:00:00+09:00`;
-}
-
 async function writeTransitionFreeCandidateRoot(workspace) {
   const repositoryRoot = path.join(workspace, "transition-free-repository");
+  const currentBuildSpec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
+  const sourceInventoryPath = currentBuildSpec.networkEdgeEvidence?.sourceInventory?.path;
+  if (typeof sourceInventoryPath !== "string" || path.posix.isAbsolute(sourceInventoryPath)
+    || sourceInventoryPath.includes("\\") || sourceInventoryPath.split("/").some((part) => part === "" || part === "." || part === "..")) {
+    throw new Error("current candidate source inventory path mismatch");
+  }
+  const sourceInventory = JSON.parse(await readFile(sourceInventoryPath, "utf8"));
+  const incheonSources = sourceInventory.sources?.filter(({ id }) => id === "incheon-transit-station-info") ?? [];
+  if (incheonSources.length !== 1) throw new Error("current Incheon topology source mismatch");
+  const { topologyAdmissionEvidence: topology, routeMapAdmissionEvidence: routeMap } = incheonSources[0];
+  const incheonTopologyPath = topology?.snapshotPath;
+  if (typeof topology?.snapshotId !== "string" || topology.snapshotId === "" || routeMap?.snapshotId !== topology.snapshotId
+    || routeMap.snapshotPath !== incheonTopologyPath || routeMap.topologySnapshotId !== topology.snapshotId
+    || routeMap.topologyContentSha256 !== topology.contentSha256
+    || incheonTopologyPath !== `tools/datapack/sources/${topology.snapshotId}.json`
+    || path.posix.isAbsolute(incheonTopologyPath) || incheonTopologyPath.includes("\\")
+    || incheonTopologyPath.split("/").some((part) => part === "" || part === "." || part === "..")) {
+    throw new Error("current Incheon topology identity mismatch");
+  }
   const requiredFiles = [
     "tools/datapack/schema/catalog-schema.sql",
     "tools/datapack/official-od-fare-admission.json",
     "tools/datapack/nationwide-coverage-targets.json",
     "tools/datapack/release/source-snapshots.json",
-    "tools/datapack/sources/incheon-transit-station-info-20260814.json",
+    incheonTopologyPath,
     "tools/datapack/fixtures/candidate-build-spec.json",
     "tools/datapack/fixtures/catalog-fixture.json",
   ];
