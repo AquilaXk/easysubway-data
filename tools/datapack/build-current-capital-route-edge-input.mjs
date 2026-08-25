@@ -11,20 +11,20 @@ const OUTPUT_DIRECTORY = "tools/datapack/release/current-capital-accessibility-f
 const ROUTE_STATION_LINE_COUNT = 1102;
 
 export function buildCurrentCapitalRouteEdgeInput(input) {
-  validateFixtureEdgeCounts(input.canonicalPack, { RIDE: 2218, ENTRY: 2, EXIT: 2 }, "projected");
+  validateFixtureEdgeCounts(input.canonicalPack, { RIDE: 2208, ENTRY: 2, EXIT: 2 }, "projected");
   const station = buildCurrentCapitalStationLineInput(input);
   const pack = input.canonicalPack.packs.find(({ id }) => id === "capital");
   const stationLines = routeStationLines(pack, station.stationLines);
   const rides = (pack.networkEdges ?? [])
     .filter(({ edgeType }) => edgeType === "RIDE")
     .map(normalizeRide);
-  if (rides.length !== 2218 || new Set(rides.map(({ edgeId }) => edgeId)).size !== 2218) throw new Error("full-capital RIDE denominator mismatch");
+  if (rides.length !== 2208 || new Set(rides.map(({ edgeId }) => edgeId)).size !== 2208) throw new Error("full-capital RIDE denominator mismatch");
   const entries = station.stationLines.map((line) => edge({ edgeId: `edge-entry-${line.stationId}-${line.lineId}`, edgeType: "ENTRY", fromNodeId: line.stationId, toNodeId: `${line.stationId}:${line.lineId}`, durationSeconds: 90, distanceMeters: 0 }));
   const exits = station.stationLines.map((line) => edge({ edgeId: `edge-exit-${line.stationId}-${line.lineId}`, edgeType: "EXIT", fromNodeId: `${line.stationId}:${line.lineId}`, toNodeId: line.stationId, durationSeconds: 60, distanceMeters: 0 }));
   // TRANSFER runtime cost is request-owned walking pace; the source duration remains metrics-only reference evidence.
   const transfers = input.transferMetrics.metrics.map((metric) => edge({ edgeId: `edge-transfer-${metric.stationId}-${metric.fromLineId}-${metric.toLineId}`, edgeType: "IN_STATION_TRANSFER", fromNodeId: `${metric.stationId}:${metric.fromLineId}`, toNodeId: `${metric.stationId}:${metric.toLineId}`, durationSeconds: 0, distanceMeters: metric.distanceMeters }));
   const routeEdges = [...rides, ...entries, ...exits, ...transfers].sort((left, right) => compareBytes(left.edgeId, right.edgeId));
-  if (routeEdges.length !== 2674 || new Set(routeEdges.map(({ edgeId }) => edgeId)).size !== 2674 || entries.length !== 213 || exits.length !== 213 || transfers.length !== 30) throw new Error("full-capital route denominator mismatch");
+  if (routeEdges.length !== 2664 || new Set(routeEdges.map(({ edgeId }) => edgeId)).size !== 2664 || entries.length !== 213 || exits.length !== 213 || transfers.length !== 30) throw new Error("full-capital route denominator mismatch");
   validateRouteEdgeEndpoints(routeEdges, stationLines);
   const candidate = { candidateId: station.candidate.candidateId, evaluatorVersion: "1", policyVersion: input.policy.policyVersion, sourceSetSha256: station.candidate.sourceSetSha256, stationSetSha256: station.candidate.stationSetSha256, topologySha256: canonicalRideEdgeSetSha256(rides) };
   return canonicalObject({ candidate, stationLines, routeEdges });
@@ -41,13 +41,13 @@ export async function main(argv = process.argv.slice(2), { repositoryRoot = file
   const root = path.resolve(repositoryRoot); const output = path.join(root, OUTPUT_DIRECTORY);
   await outputMustBeAbsent(output);
   const input = await readCurrentCapitalInputs(root, { readTransitionBoundaryImpl, readCurrentFanInBoundaryImpl });
-  validateFixtureEdgeCounts(input.canonicalPack, { RIDE: 2210, ENTRY: 2, EXIT: 2 }, "raw");
+  validateFixtureEdgeCounts(input.canonicalPack, { RIDE: 2194, ENTRY: 2, EXIT: 2 }, "raw");
   const projectedFixture = await projectFixtureImpl({
     buildSpec: input.candidateBuildSpec,
     sourceFixture: input.canonicalPack,
     repositoryRoot: root,
   });
-  validateFixtureEdgeCounts(projectedFixture, { RIDE: 2218, ENTRY: 2, EXIT: 2 }, "projected");
+  validateFixtureEdgeCounts(projectedFixture, { RIDE: 2208, ENTRY: 2, EXIT: 2 }, "projected");
   const projectedInput = { ...input, canonicalPack: projectedFixture };
   const station = buildCurrentCapitalStationLineInput(projectedInput);
   const route = buildCurrentCapitalRouteEdgeInput(projectedInput);

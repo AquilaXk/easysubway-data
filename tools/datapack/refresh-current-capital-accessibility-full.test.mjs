@@ -47,7 +47,7 @@ test("activated full-capital inputs are rebuilt across the exact public static-n
   assert.deepEqual(route.stationLines, beforeRoute.stationLines);
   assert.deepEqual(route.routeEdges, beforeRoute.routeEdges);
   assert.equal(station.evidenceRows.length, 641);
-  assert.equal(route.routeEdges.length, 2674);
+  assert.equal(route.routeEdges.length, 2664);
   assert.deepEqual(await Promise.all(approvalPaths.map((relative) => readFile(path.join(root, relative)))), approvalInputs);
 });
 
@@ -186,7 +186,7 @@ test("predecessor-bound activated inputs are rebuilt atomically to exact current
   const [station, route] = await Promise.all(OUTPUTS.map(async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"))));
   assert.equal(station.evidenceRows.length, 641);
   assert.equal(route.stationLines.length, 1102);
-  assert.equal(route.routeEdges.length, 2674);
+  assert.equal(route.routeEdges.length, 2664);
 });
 
 test("input mutation after build is rejected before either output replacement", async (t) => {
@@ -295,7 +295,7 @@ async function writeStagedExitOciReceipt(root) {
     operationId: "synthetic-current-refresh",
     providerCapturedAt: "2026-08-01T00:00:00.000Z",
     providerCollectionBundleBytes,
-    providerObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-station-movement-standard/20260801/${providerObjectSha256}.json`,
+    providerObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/operations/current-capital-live-chain/v1/heads/${"a".repeat(40)}/operations/synthetic-current-refresh/provider-collections/20260801-${providerObjectSha256}.json`,
     providerObjectSha256,
     providerObjectByteSize: providerCollectionBundleBytes.length,
     normalizedBytes,

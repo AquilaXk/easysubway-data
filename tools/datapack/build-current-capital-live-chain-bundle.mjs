@@ -8,6 +8,25 @@ import { CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH, canonicalCurrentCapitalLiveChai
 const REPOSITORY = "AquilaXk/easysubway-data";
 const SHA256 = /^[a-f0-9]{64}$/u;
 const SHA1 = /^[a-f0-9]{40}$/u;
+export const CURRENT_CAPITAL_LIVE_CHAIN_OUTPUT_PATHS = Object.freeze([
+  "tools/datapack/release/capital-production-canonical-pack.json",
+  "tools/datapack/release/candidate-build-spec.json",
+  "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
+  "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
+  "tools/datapack/release/current-capital-facility-source-admission.json",
+  "tools/datapack/release/current-capital-transfer-topology-applicability.json",
+  "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json",
+  "tools/datapack/release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json",
+  "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json",
+  "tools/datapack/release/current-transfer-topology-metrics.json",
+  "tools/datapack/release/hash-evidence.json",
+  "tools/datapack/release/release-request.json",
+  "tools/datapack/release/source-snapshots.json",
+  "tools/datapack/source-inventory.json",
+  "tools/datapack/sources/seoul-metro-transfer-distance-duration-20260815T094038817Z.json",
+  "release/product-gates/route-edge-evaluation-policy.json",
+]);
+export const CURRENT_CAPITAL_LIVE_CHAIN_PROVIDER_RECEIPT_PATH = "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json";
 
 function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
@@ -23,10 +42,7 @@ function requireRelative(value, label) {
 function requireIdentity({ repository, repositorySha, operationId }) {
   if (repository !== REPOSITORY || !SHA1.test(repositorySha ?? "") || typeof operationId !== "string" || !/^[a-z0-9][a-z0-9-]{7,127}$/u.test(operationId)) throw new Error("live-chain identity mismatch");
 }
-function requireOutputPaths(paths) {
-  if (!Array.isArray(paths) || paths.length === 0 || new Set(paths).size !== paths.length) throw new Error("live-chain output allowlist mismatch");
-  return [...paths].map((entry) => requireRelative(entry, "output path")).sort();
-}
+function exactOutputPaths() { return [...CURRENT_CAPITAL_LIVE_CHAIN_OUTPUT_PATHS].map((entry) => requireRelative(entry, "output path")).sort(); }
 function strictBase64(value) {
   if (typeof value !== "string" || value.length === 0 || value.length % 4 !== 0 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(value)) throw new Error("live-chain entry base64 mismatch");
   const bytes = Buffer.from(value, "base64");
@@ -41,10 +57,10 @@ async function regularBytes(root, relative) {
   return readFile(target);
 }
 
-export async function buildCurrentCapitalLiveChainBundle({ root, outputDirectory, repository, repositorySha, operationId, providerReceiptRelativePath, outputPaths, boundaryBytes, boundaryRelativePath = CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH }) {
+export async function buildCurrentCapitalLiveChainBundle({ root, outputDirectory, repository, repositorySha, operationId, boundaryBytes, boundaryRelativePath = CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH }) {
   requireIdentity({ repository, repositorySha, operationId });
-  const allowlist = requireOutputPaths(outputPaths);
-  const receipt = requireRelative(providerReceiptRelativePath, "provider receipt path");
+  const allowlist = exactOutputPaths();
+  const receipt = CURRENT_CAPITAL_LIVE_CHAIN_PROVIDER_RECEIPT_PATH;
   const boundary = readCanonicalBoundary(boundaryBytes, boundaryRelativePath);
   if (!allowlist.includes(receipt)) throw new Error("provider receipt is not allowlisted");
   const entries = await Promise.all(allowlist.map(async (relative) => {
@@ -58,9 +74,9 @@ export async function buildCurrentCapitalLiveChainBundle({ root, outputDirectory
   return Buffer.from(`${canonical({ ...payload, bundleSha256: sha256(Buffer.from(canonical(payload))) })}\n`);
 }
 
-export function readCurrentCapitalLiveChainBundle(bytes, { repository, repositorySha, operationId, outputPaths }) {
+export function readCurrentCapitalLiveChainBundle(bytes, { repository, repositorySha, operationId }) {
   requireIdentity({ repository, repositorySha, operationId });
-  const allowlist = requireOutputPaths(outputPaths);
+  const allowlist = exactOutputPaths();
   let bundle; try { bundle = JSON.parse(Buffer.from(bytes).toString("utf8")); } catch { throw new Error("live-chain bundle must be JSON"); }
   const required = ["schemaVersion", "artifactKind", "repository", "repositorySha", "operationId", "providerReceiptRelativePath", "providerReceiptSha256", "boundary", "boundaryBytesBase64", "entries", "manifestSha256", "bundleSha256"];
   if (!bundle || typeof bundle !== "object" || Object.keys(bundle).length !== required.length || required.some((key) => !(key in bundle)) || bundle.schemaVersion !== 1 || bundle.artifactKind !== "current-capital-live-chain-composite") throw new Error("live-chain bundle shape mismatch");

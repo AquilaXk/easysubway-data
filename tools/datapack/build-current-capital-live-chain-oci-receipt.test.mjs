@@ -15,8 +15,8 @@ import { buildCanonicalCurrentKricExitCollectionBundle, buildCanonicalCurrentLiv
 
 async function planFixture(root) {
   const provider = await buildCanonicalCurrentKricExitCollectionBundle();
-  const composite = await buildCanonicalCurrentLiveChainComposite({ root, providerReceiptBytes: Buffer.from(canonicalCurrentKricExitCollectionReceiptJson(provider.receipt)) });
-  const plan = buildCurrentCapitalLiveChainOciPlan({ mainSha: "a".repeat(40), operationId: "current-capital-560", providerCollectionBundleBytes: provider.bytes, providerCapturedAt: provider.snapshot.capturedAt, compositeBundleBytes: composite.bytes, outputPaths: composite.outputPaths });
+  const composite = await buildCanonicalCurrentLiveChainComposite({ root, providerCollectionBundleBytes: provider.bytes });
+  const plan = buildCurrentCapitalLiveChainOciPlan({ mainSha: "a".repeat(40), operationId: "current-capital-560", providerCollectionBundleBytes: provider.bytes, providerCapturedAt: provider.snapshot.capturedAt, compositeBundleBytes: composite.bytes });
   return { plan, planBytes: Buffer.from(`${canonicalCurrentCapitalLiveChainOciPlanJson(plan)}\n`) };
 }
 

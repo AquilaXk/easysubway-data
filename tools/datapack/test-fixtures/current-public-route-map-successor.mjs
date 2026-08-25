@@ -356,7 +356,7 @@ async function writeSyntheticCurrentExitOciReceipt(root) {
     operationId: "synthetic-current-public-route-map",
     providerCapturedAt: "2026-08-01T00:00:00.000Z",
     providerCollectionBundleBytes,
-    providerObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-station-movement-standard/20260801/${providerObjectSha256}.json`,
+    providerObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/operations/current-capital-live-chain/v1/heads/${"a".repeat(40)}/operations/synthetic-current-public-route-map/provider-collections/20260801-${providerObjectSha256}.json`,
     providerObjectSha256,
     providerObjectByteSize: providerCollectionBundleBytes.length,
     normalizedBytes,

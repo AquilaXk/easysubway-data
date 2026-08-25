@@ -30,7 +30,7 @@ async function liveChainFixture(t) {
   const root = await mkdtemp(path.join(tmpdir(), "current-live-chain-oci-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const providerArtifact = await buildCanonicalCurrentKricExitCollectionBundle();
-  const compositeArtifact = await buildCanonicalCurrentLiveChainComposite({ root, providerReceiptBytes: Buffer.from(canonicalCurrentKricExitCollectionReceiptJson(providerArtifact.receipt)) });
+  const compositeArtifact = await buildCanonicalCurrentLiveChainComposite({ root, providerCollectionBundleBytes: providerArtifact.bytes });
   const provider = providerArtifact.bytes;
   const composite = compositeArtifact.bytes;
   await writeFile(path.join(root, "current-kric-exit-collection-bundle.json"), provider);
@@ -40,7 +40,6 @@ async function liveChainFixture(t) {
     providerCollectionBundleBytes: provider,
     providerCapturedAt: providerArtifact.snapshot.capturedAt,
     compositeBundleBytes: composite,
-    outputPaths: compositeArtifact.outputPaths,
   });
   return { root, provider, composite, plan, planBytes: Buffer.from(`${canonicalCurrentCapitalLiveChainOciPlanJson(plan)}\n`) };
 }
@@ -76,14 +75,17 @@ test("current live-chain은 exact OCI PAR만 허용하며 generic/AWS 경로를 
 
 test("current live-chain OCI 오류는 provider response에 반사된 PAR secret을 노출하지 않는다", async () => {
   const secret = "reflected-par-secret";
+  let observed;
   const client = preauthenticatedObjectStorageClient(new URL(OCI_PAR), {
     includeErrorBody: false,
-    requestImpl: async () => ({ statusCode: 500, headers: {}, body: Buffer.from(`request /p/${secret}/ failed`) }),
+    requestImpl: async (input) => { observed = input; return { statusCode: 500, headers: {}, body: Buffer.from(`request /p/${secret}/ failed`) }; },
   });
   await assert.rejects(
     () => client.putObjectIfAbsent("safe/object.json", Buffer.from("x"), { sha256: "a".repeat(64), sizeBytes: 1 }),
     (error) => error instanceof Error && /HTTP 500/.test(error.message) && !error.message.includes(secret) && !error.message.includes("request /p/"),
   );
+  assert.equal(observed.timeoutMs, 20_000);
+  assert.equal(observed.maxResponseBytes, 64 * 1024 * 1024);
 });
 
 test("current live-chain은 두 OCI 객체 full GET 검증 뒤에만 create-new receipt를 쓴다", async (t) => {
@@ -123,13 +125,15 @@ test("current live-chain fetch는 canonical receipt의 exact composite만 create
   const receiptPath = path.join(fixture.root, "receipt.json");
   await publishCurrentCapitalLiveChainOciPlan({ planBytes: fixture.planBytes, root: fixture.root, receiptPath, env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: OCI_PAR }, client });
   const destinationPath = path.join(fixture.root, "fetched.json");
-  const result = await fetchCurrentCapitalLiveChainComposite({ planBytes: fixture.planBytes, receiptPath, destinationPath, env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: OCI_PAR }, client });
+  const providerDestinationPath = path.join(fixture.root, "fetched-provider.json");
+  const result = await fetchCurrentCapitalLiveChainComposite({ planBytes: fixture.planBytes, receiptPath, providerDestinationPath, destinationPath, env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: OCI_PAR }, client });
   assert.equal(result.objectKey, fixture.plan.compositeObject.objectKey);
   assert.deepEqual(await readFile(destinationPath), fixture.composite);
+  assert.deepEqual(await readFile(providerDestinationPath), fixture.provider);
   const preexisting = Buffer.from("must-not-be-deleted-or-replaced");
   await writeFile(destinationPath, preexisting);
   await assert.rejects(
-    () => fetchCurrentCapitalLiveChainComposite({ planBytes: fixture.planBytes, receiptPath, destinationPath, env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: OCI_PAR }, client }),
+    () => fetchCurrentCapitalLiveChainComposite({ planBytes: fixture.planBytes, receiptPath, providerDestinationPath: path.join(fixture.root, "fetched-provider-second.json"), destinationPath, env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: OCI_PAR }, client }),
     /EEXIST/,
   );
   assert.deepEqual(await readFile(destinationPath), preexisting, "existing destination survives create-new rejection");

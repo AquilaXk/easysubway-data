@@ -14,6 +14,8 @@ import {
 
 const emptySha256 = sha256(Buffer.alloc(0));
 const CURRENT_LIVE_CHAIN_OCI_PAR = /^https:\/\/objectstorage\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.oraclecloud\.com\/p\/[^\/?#\s]+\/n\/axvym6vk8g7i\/b\/easysubway-datapacks\/o\/?$/u;
+const OCI_PAR_REQUEST_TIMEOUT_MS = 20_000;
+const OCI_PAR_MAX_RESPONSE_BYTES = 64 * 1024 * 1024;
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -236,53 +238,49 @@ export async function publishCurrentCapitalLiveChainOciPlan({
   return writeCurrentCapitalLiveChainOciReceipt({ planBytes, outputPath: receiptPath });
 }
 
-/** Fetch the sole composite object named by a canonical plan and receipt. */
+/** Fetch both OCI objects named by a canonical plan and receipt, after exact full GET verification. */
 export async function fetchCurrentCapitalLiveChainComposite({
   planBytes,
   receiptPath,
+  providerDestinationPath,
   destinationPath,
   env = process.env,
   client = null,
 } = {}) {
   const plan = parseCanonicalCurrentLiveChainPlan(planBytes);
-  if (!path.isAbsolute(receiptPath ?? "") || !path.isAbsolute(destinationPath ?? "")) {
+  if (!path.isAbsolute(receiptPath ?? "") || !path.isAbsolute(providerDestinationPath ?? "") || !path.isAbsolute(destinationPath ?? "")) {
     throw new Error("current live-chain fetch paths must be absolute");
   }
   const parBaseUrl = requireCurrentCapitalLiveChainOciParBaseUrl(env);
   const receipt = await readCurrentCapitalLiveChainOciReceipt({ planBytes, receiptPath });
-  const expected = plan.compositeObject;
-  if (receipt.compositeObject.objectKey !== expected.objectKey
-    || receipt.compositeObject.sha256 !== expected.sha256
-    || receipt.compositeObject.sizeBytes !== expected.sizeBytes) {
-    throw new Error("current live-chain OCI receipt composite binding mismatch");
+  for (const [label, expected] of [["provider", plan.providerObject], ["composite", plan.compositeObject]]) {
+    const actual = receipt[`${label}Object`];
+    if (actual.objectKey !== expected.objectKey || actual.sha256 !== expected.sha256 || actual.sizeBytes !== expected.sizeBytes) {
+      throw new Error(`current live-chain OCI receipt ${label} binding mismatch`);
+    }
   }
   const storage = client ?? preauthenticatedObjectStorageClient(parBaseUrl, { includeErrorBody: false });
+  const providerOutputPath = await safeCreateNewAbsoluteOutputPath(providerDestinationPath);
   const outputPath = await safeCreateNewAbsoluteOutputPath(destinationPath);
-  let output;
-  let created = false;
+  const provider = await storage.readObject(plan.providerObject.objectKey);
+  const composite = await storage.readObject(plan.compositeObject.objectKey);
+  if (!exactStoredObject(provider, plan.providerObject) || !exactStoredObject(composite, plan.compositeObject)) {
+    throw new Error("current live-chain OCI full GET bytes mismatch");
+  }
+  const created = [];
   let complete = false;
   try {
-    output = await open(outputPath, "wx", 0o600);
-    created = true;
-    const stored = await storage.readObject(expected.objectKey);
-    if (!exactStoredObject(stored, expected)) {
-      throw new Error("current live-chain composite OCI bytes mismatch");
-    }
-    await output.writeFile(stored.body);
-    await output.sync();
-    await output.close();
-    output = null;
-    const written = await readFile(outputPath);
-    if (written.length !== expected.sizeBytes || sha256(written) !== expected.sha256) {
-      throw new Error("current live-chain composite destination bytes mismatch");
+    for (const [target, bytes, expected] of [[providerOutputPath, provider.body, plan.providerObject], [outputPath, composite.body, plan.compositeObject]]) {
+      const output = await open(target, "wx", 0o600);
+      created.push(target);
+      try { await output.writeFile(bytes); await output.sync(); } finally { await output.close(); }
+      const written = await readFile(target);
+      if (written.length !== expected.sizeBytes || sha256(written) !== expected.sha256) throw new Error("current live-chain destination bytes mismatch");
     }
     complete = true;
-    return { objectKey: expected.objectKey, destinationPath: outputPath, sha256: expected.sha256, sizeBytes: expected.sizeBytes };
+    return { providerObjectKey: plan.providerObject.objectKey, providerDestinationPath: providerOutputPath, providerSha256: plan.providerObject.sha256, providerSizeBytes: plan.providerObject.sizeBytes, objectKey: plan.compositeObject.objectKey, destinationPath: outputPath, sha256: plan.compositeObject.sha256, sizeBytes: plan.compositeObject.sizeBytes };
   } finally {
-    if (output) await output.close().catch(() => {});
-    if (created && !complete) await unlink(outputPath).catch((error) => {
-      if (error?.code !== "ENOENT") throw error;
-    });
+    if (!complete) for (const target of created) await unlink(target).catch((error) => { if (error?.code !== "ENOENT") throw error; });
   }
 }
 
@@ -446,9 +444,10 @@ function objectStorageClient(env = process.env) {
 
 export function preauthenticatedObjectStorageClient(baseUrl, { includeErrorBody = true, requestImpl = unsignedRequest } = {}) {
   const failureSuffix = (body) => includeErrorBody ? errorBodySuffix(body) : "";
+  const boundedRequest = (options) => requestImpl({ ...options, timeoutMs: OCI_PAR_REQUEST_TIMEOUT_MS, maxResponseBytes: options.maxResponseBytes ?? OCI_PAR_MAX_RESPONSE_BYTES });
   return {
     putObject: async (key, bytes, step) => {
-      const response = await requestImpl({
+      const response = await boundedRequest({
         url: preauthObjectUrl(baseUrl, key),
         method: "PUT",
         body: bytes,
@@ -465,7 +464,7 @@ export function preauthenticatedObjectStorageClient(baseUrl, { includeErrorBody 
       }
     },
     putObjectIfAbsent: async (key, bytes, step) => {
-      const response = await requestImpl({
+      const response = await boundedRequest({
         url: preauthObjectUrl(baseUrl, key),
         method: "PUT",
         body: bytes,
@@ -485,10 +484,11 @@ export function preauthenticatedObjectStorageClient(baseUrl, { includeErrorBody 
       return true;
     },
     verifyObject: async (key, step) => {
-      const response = await requestImpl({
+      const response = await boundedRequest({
         url: preauthObjectUrl(baseUrl, key),
         method: "GET",
         body: Buffer.alloc(0),
+        maxResponseBytes: step.sizeBytes,
       });
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw new Error(`${key} GET failed with HTTP ${response.statusCode}${failureSuffix(response.body)}`);
@@ -505,7 +505,7 @@ export function preauthenticatedObjectStorageClient(baseUrl, { includeErrorBody 
       }
     },
     headObject: async (key) => {
-      const response = await requestImpl({ url: preauthObjectUrl(baseUrl, key), method: "GET", body: Buffer.alloc(0) });
+      const response = await boundedRequest({ url: preauthObjectUrl(baseUrl, key), method: "GET", body: Buffer.alloc(0) });
       if (response.statusCode === 404) return { exists: false };
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw new Error(`${key} GET failed with HTTP ${response.statusCode}${failureSuffix(response.body)}`);
@@ -513,7 +513,7 @@ export function preauthenticatedObjectStorageClient(baseUrl, { includeErrorBody 
       return { exists: true, sha256: sha256(response.body) };
     },
     readObject: async (key) => {
-      const response = await requestImpl({
+      const response = await boundedRequest({
         url: preauthObjectUrl(baseUrl, key), method: "GET", body: Buffer.alloc(0),
       });
       if (response.statusCode === 404) return { exists: false };
@@ -581,6 +581,13 @@ async function unsignedRequest(options) {
   const body = options.body ?? Buffer.alloc(0);
   return await new Promise((resolve, reject) => {
     const chunks = [];
+    let responseSize = 0;
+    let settled = false;
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
     const request = transport.request(
       options.url,
       {
@@ -588,14 +595,25 @@ async function unsignedRequest(options) {
         headers: options.headers ?? {},
       },
       (response) => {
-        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("data", (chunk) => {
+          responseSize += chunk.length;
+          if (responseSize > options.maxResponseBytes) {
+            response.destroy(new Error("OCI PAR response exceeds bounded size"));
+            return;
+          }
+          chunks.push(chunk);
+        });
+        response.on("error", fail);
         response.on("end", () => {
+          if (settled) return;
+          settled = true;
           response.body = Buffer.concat(chunks);
           resolve(response);
         });
       },
     );
-    request.on("error", reject);
+    request.setTimeout(options.timeoutMs, () => request.destroy(new Error("OCI PAR request timed out")));
+    request.on("error", fail);
     if (options.method !== "HEAD" && body.length > 0) {
       request.write(body);
     }

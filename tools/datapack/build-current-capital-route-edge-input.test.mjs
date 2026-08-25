@@ -14,10 +14,10 @@ import { canonicalRideEdgeSetSha256, evaluateRouteAccessibilityEdges } from "./e
 import { fixture } from "./build-current-capital-station-line-input.test.mjs";
 import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
 
-test("full-capital route fan-in은 2218+213+213+30 edge contract를 만든다", async () => {
+test("full-capital route fan-in은 2208+213+213+30 edge contract를 만든다", async () => {
   const input = await fixture();
   const routeOnly = addFullRouteStationLines(input);
-  input.canonicalPack.packs[0].networkEdges = [...rideEdges(2218), ...legacyEdges()];
+  input.canonicalPack.packs[0].networkEdges = [...rideEdges(2208), ...legacyEdges()];
   Object.assign(input.canonicalPack.packs[0].networkEdges[0], {
     fromNodeId: `${routeOnly[0].stationId}:${routeOnly[0].lineId}`,
     toNodeId: `${routeOnly[1].stationId}:${routeOnly[1].lineId}`,
@@ -26,15 +26,15 @@ test("full-capital route fan-in은 2218+213+213+30 edge contract를 만든다", 
   assert.deepEqual(Object.keys(result).sort(), ["candidate", "routeEdges", "stationLines"]);
   assert.equal(result.stationLines.length, 1102);
   assert.ok(result.stationLines.some(({ stationId }) => stationId === routeOnly[0].stationId));
-  assert.equal(result.routeEdges.length, 2674);
-  assert.deepEqual(Object.fromEntries(["RIDE", "ENTRY", "EXIT", "IN_STATION_TRANSFER"].map((type) => [type, result.routeEdges.filter((edge) => edge.edgeType === type).length])), { RIDE: 2218, ENTRY: 213, EXIT: 213, IN_STATION_TRANSFER: 30 });
-  assert.equal(new Set(result.routeEdges.map(({ edgeId }) => edgeId)).size, 2674);
+  assert.equal(result.routeEdges.length, 2664);
+  assert.deepEqual(Object.fromEntries(["RIDE", "ENTRY", "EXIT", "IN_STATION_TRANSFER"].map((type) => [type, result.routeEdges.filter((edge) => edge.edgeType === type).length])), { RIDE: 2208, ENTRY: 213, EXIT: 213, IN_STATION_TRANSFER: 30 });
+  assert.equal(new Set(result.routeEdges.map(({ edgeId }) => edgeId)).size, 2664);
   assert.ok(result.routeEdges.filter(({ edgeType }) => edgeType === "IN_STATION_TRANSFER").every(({ durationSeconds, distanceMeters }) => durationSeconds === 0 && distanceMeters > 0));
   const station = buildCurrentCapitalStationLineInput(input);
   const materialization = materializeStationLineAccessibility({ ...station, observedAt: "2026-08-01T01:00:00.000Z" });
   const policy = evaluatorPolicy(canonicalRideEdgeSetSha256(result.routeEdges.filter(({ edgeType }) => edgeType === "RIDE")));
   const evaluated = evaluateRouteAccessibilityEdges({ candidate: result.candidate, evaluationAt: "2026-08-01T01:00:00.000Z", stationLines: result.stationLines, routeEdges: result.routeEdges, materialization }, policy);
-  assert.equal(evaluated.denominator.edgeCount, 2674);
+  assert.equal(evaluated.denominator.edgeCount, 2664);
   const terminalExit = materialization.rows.find(({ state, domain }) => state === "UNVERIFIED_EVIDENCE_BLOCKED" && domain === "EXIT");
   assert.ok(terminalExit);
   const terminalExitEdge = result.routeEdges.find(({ edgeType, fromNodeId }) => edgeType === "EXIT" && fromNodeId === `${terminalExit.stationId}:${terminalExit.lineId}`);
@@ -48,7 +48,7 @@ test("route builder 직접 호출은 projected fixture의 non-RIDE drift를 거�
   const input = await fixture();
   addFullRouteStationLines(input);
   input.canonicalPack.packs[0].networkEdges = [
-    ...rideEdges(2218),
+    ...rideEdges(2208),
     ...legacyEdges(),
     {
       id: "unexpected-walkway",
@@ -92,7 +92,7 @@ test("accessibility-authority projector는 합성 current public successor를 �
   assert.deepEqual(edgeCounts(projected.packs[0].networkEdges), {
     ENTRY: 2,
     EXIT: 2,
-    RIDE: 2218,
+    RIDE: 2208,
   });
 });
 
@@ -139,7 +139,7 @@ test("route CLI만 temporary fixed target에 exact two-file handoff를 원자 pu
   input.candidateBuildSpec.sourceInventorySha256 = sha(canonical(input.sourceInventory));
   input.candidateBuildSpec.networkEdgeEvidence.sourceInventory.sha256 = sha(canonical(input.sourceInventory));
   addFullRouteStationLines(input);
-  input.canonicalPack.packs[0].networkEdges = [...rideEdges(2210), ...legacyEdges()];
+  input.canonicalPack.packs[0].networkEdges = [...rideEdges(2194), ...legacyEdges()];
   const entries = {
     "tools/datapack/release/current-capital-facility-source-admission.json": input.facilityAdmission,
     [input.facilityAdmission.sourceIdentity.snapshotPath]: input.facilitySnapshotBytes,
@@ -167,10 +167,10 @@ test("route CLI만 temporary fixed target에 exact two-file handoff를 원자 pu
     readTransitionBoundaryImpl: async () => input.sourceSetTransition,
     projectFixtureImpl: async ({ buildSpec, sourceFixture, repositoryRoot }) => {
       assert.equal(buildSpec.candidateId, input.candidateBuildSpec.candidateId);
-      assert.equal(sourceFixture.packs[0].networkEdges.length, 2214);
+      assert.equal(sourceFixture.packs[0].networkEdges.length, 2198);
       assert.equal(repositoryRoot, root);
       const projected = structuredClone(sourceFixture);
-      projected.packs[0].networkEdges = [...rideEdges(2218), ...legacyEdges()];
+      projected.packs[0].networkEdges = [...rideEdges(2208), ...legacyEdges()];
       return projected;
     },
   };
@@ -187,7 +187,7 @@ test("route CLI만 temporary fixed target에 exact two-file handoff를 원자 pu
   const projected = dependencies.projectFixtureImpl;
   dependencies.projectFixtureImpl = async (args) => {
     const value = await projected(args);
-    value.packs[0].networkEdges = value.packs[0].networkEdges.filter(({ id }) => id !== "ride-2217");
+    value.packs[0].networkEdges = value.packs[0].networkEdges.filter(({ id }) => id !== "ride-2207");
     return value;
   };
   await assert.rejects(main([], dependencies), /projected edge denominator mismatch/);
