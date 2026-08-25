@@ -15,7 +15,7 @@ const PACK_ID = "nationwide-seoul-route-map";
 const OPERATOR_ID = "seoul-metro";
 const REGION = "수도권";
 export const CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS = Object.freeze([
-  "incheon-transit", "korail", "operator-07a9e77a02b6", "seoul-metro",
+  "seoul-metro",
 ]);
 const LINE_META = Object.freeze({
   "line-472a81add377": { nameKo: "수도권 1호선", nameEn: "Seoul Subway Line 1", color: "#052f93", line: "1" },
@@ -140,6 +140,17 @@ export function materializeSeoulRouteMapPositions({
     ...pack.minimumTableRows,
     route_map_positions: pack.routeMapPositions.length,
     route_map_line_tracks: pack.routeMapLineTracks.length,
+  };
+  const coverageEvidence = JSON.parse(pack.metadata?.productionCoverageEvidence ?? "[]");
+  if (!Array.isArray(coverageEvidence)) {
+    throw new Error("Seoul route map production coverage evidence is invalid");
+  }
+  pack.metadata = {
+    ...pack.metadata,
+    productionCoverageEvidence: JSON.stringify([
+      ...coverageEvidence.filter(({ sourceDomain }) => sourceDomain !== "route_map_positions"),
+      CURRENT_SEOUL_PUBLIC_ROUTE_MAP_COVERAGE,
+    ]),
   };
   if (rewritePackIdentity) {
     const version = routeMapLayoutArtifact.capturedAt.slice(0, 10).replaceAll("-", "");

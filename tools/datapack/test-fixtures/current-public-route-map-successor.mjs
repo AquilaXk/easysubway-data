@@ -594,7 +594,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   };
   const currentSourceIds = new Set(CURRENT_CAPITAL_SOURCE_IDS);
   pack.packs[0].sourceInventory = pack.packs[0].sourceInventory.filter(({ id }) => currentSourceIds.has(id));
-  pack.packs[0].routeMapPositions = pack.packs[0].routeMapPositions.filter(({ sourceId }) => sourceId === PUBLIC_SOURCE_ID);
+  pack.packs[0].routeMapPositions = [];
 
   const materializedPack = materializeSeoulRouteMapPositions({
     baseFixture: pack,
