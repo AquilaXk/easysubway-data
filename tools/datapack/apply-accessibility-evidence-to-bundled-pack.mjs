@@ -632,6 +632,11 @@ export async function syncReleaseEvidence({ check, releaseRoot: explicitReleaseR
   const inventoryBySource = new Map(inventory.sources.map((entry) => [entry.id, entry]));
   const canonical = JSON.parse(canonicalBytes);
   const releaseSnapshots = currentCandidateReleaseSnapshots(snapshots, canonical);
+  const selectedSnapshotIds = new Set(releaseSnapshots.map(({ snapshotId }) => snapshotId));
+  const selectedInLedgerOrder = snapshots.filter(({ snapshotId }) => selectedSnapshotIds.has(snapshotId));
+  if (selectedSnapshotIds.size !== releaseSnapshots.length || selectedInLedgerOrder.length !== releaseSnapshots.length) {
+    throw new Error("current candidate source ledger selection mismatch");
+  }
   spec.sourceSnapshotIds = releaseSnapshots.map(({ snapshotId }) => snapshotId);
   spec.sourceSnapshots = releaseSnapshots.map((snapshot) => deriveReleaseProjection({
     snapshot,
@@ -641,7 +646,7 @@ export async function syncReleaseEvidence({ check, releaseRoot: explicitReleaseR
     freshnessPolicy: freshness,
     nowMillis: Date.parse(snapshot.retrievedAt),
   }));
-  spec.sourceSnapshotSetHash = sha256(JSON.stringify(releaseSnapshots));
+  spec.sourceSnapshotSetHash = sha256(JSON.stringify(selectedInLedgerOrder));
   spec.sourceInventorySha256 = sha256(JSON.stringify(inventory));
   spec.itxTopologyEvidenceSha256 = sha256(await readFile(path.resolve(releaseRoot, spec.itxTopologyEvidencePath)));
   spec.networkEdgeEvidence.sourceInventory.sha256 = sha256(inventoryBytes);
@@ -652,14 +657,14 @@ export async function syncReleaseEvidence({ check, releaseRoot: explicitReleaseR
   hashes.truthfulnessRule = "모든 값은 tracked canonical fixture·inventory·official snapshot에서 결정적으로 재산출한다. 2026-07-28 신규 KRIC standard·서울 snapshot을 소비 claim에 결속하고 route 가용성은 추론하지 않는다.";
   hashes.sourceSnapshotSetHash.value = spec.sourceSnapshotSetHash;
   hashes.sourceSnapshotSetHash.contract = `source별 head ${releaseSnapshots.length}종의 byte-ordered JSON hash와 build spec·release request가 일치해야 한다.`;
-  const candidateSnapshotSelection = "const s=require('./tools/datapack/release/source-snapshots.json'),b=require('./tools/datapack/release/candidate-build-spec.json'),i=b.sourceSnapshotIds;if(!Array.isArray(i)||new Set(i).size!==i.length)throw new Error('candidate snapshot IDs are invalid');const h=validateLineage(s).headsBySource,r=i.map(id=>{const n=s.filter(x=>x.snapshotId===id);if(n.length!==1||h[n[0].sourceId]!==id)throw new Error('candidate source snapshot mismatch: '+id);return n[0]});if(new Set(r.map(x=>x.sourceId)).size!==r.length)throw new Error('candidate source snapshots are not unique');if(!Array.isArray(b.sourceSnapshots)||b.sourceSnapshots.length!==r.length||b.sourceSnapshots.some((x,n)=>x.sourceId!==r[n].sourceId||x.snapshotId!==r[n].snapshotId))throw new Error('candidate source projection mismatch');";
+  const candidateSnapshotSelection = "const s=require('./tools/datapack/release/source-snapshots.json'),b=require('./tools/datapack/release/candidate-build-spec.json'),i=b.sourceSnapshotIds;if(!Array.isArray(i)||new Set(i).size!==i.length)throw new Error('candidate snapshot IDs are invalid');const h=validateLineage(s).headsBySource,p=i.map(id=>{const n=s.filter(x=>x.snapshotId===id);if(n.length!==1||h[n[0].sourceId]!==id)throw new Error('candidate source snapshot mismatch: '+id);return n[0]});if(new Set(p.map(x=>x.sourceId)).size!==p.length)throw new Error('candidate source snapshots are not unique');const k=new Set(i),r=s.filter(x=>k.has(x.snapshotId));if(r.length!==p.length)throw new Error('candidate ledger selection mismatch');if(!Array.isArray(b.sourceSnapshots)||b.sourceSnapshots.length!==p.length||b.sourceSnapshots.some((x,n)=>x.sourceId!==p[n].sourceId||x.snapshotId!==p[n].snapshotId))throw new Error('candidate source projection mismatch');";
   hashes.sourceSnapshotSetHash.reproductionCommand = `node -e "import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto');${candidateSnapshotSelection}console.log(c.createHash('sha256').update(JSON.stringify(r)).digest('hex'))})"`;
   hashes.sourceInventorySha256.value = spec.sourceInventorySha256;
   hashes.fixturePath.sha256 = sha256(canonicalBytes);
   hashes.sourceSnapshots.note = "historical source snapshot lineage는 유지하고 canonical capital sourceInventory의 active source만 release snapshot으로 소비한다. retired KRIC movement 2종은 소비하지 않는다.";
-  hashes.sourceSnapshots.order = `release snapshot 순서: ${releaseSnapshots.map(({ sourceId }) => sourceId).join(" → ")}`;
+  hashes.sourceSnapshots.order = `release snapshot ledger 순서: ${selectedInLedgerOrder.map(({ sourceId }) => sourceId).join(" → ")}`;
   hashes.sourceSnapshots.committedVerificationCommand = `node -e "import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto');${candidateSnapshotSelection}const e=require('./tools/datapack/release/hash-evidence.json'),v=e.perSourceEvidence;if(!Array.isArray(v)||v.length!==r.length)throw new Error('source snapshot evidence count mismatch');for(const [i,n] of r.entries()){const q=v[i],h=c.createHash('sha256').update(JSON.stringify([n])).digest('hex');if(!q||q.sourceId!==n.sourceId||q.snapshotId!==n.snapshotId)throw new Error('source snapshot evidence order or identity mismatch: '+n.sourceId);if(q.perSourceSnapshotSetHash!==h)throw new Error('source snapshot evidence hash mismatch: '+n.sourceId)}})"`;
-  hashes.perSourceEvidence = releaseSnapshots.map((snapshot) => ({
+  hashes.perSourceEvidence = selectedInLedgerOrder.map((snapshot) => ({
     sourceId: snapshot.sourceId,
     snapshotId: snapshot.snapshotId,
     rawSha256: snapshot.rawSha256,

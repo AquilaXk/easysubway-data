@@ -3,12 +3,12 @@ import { createHash } from "node:crypto";
 import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH, canonicalCurrentCapitalLiveChainFanInBoundaryJson, validateCurrentCapitalLiveChainFanInBoundary } from "./build-current-capital-live-chain-boundary.mjs";
+import { CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH, canonicalCurrentCapitalLiveChainFanInBoundaryJson, deriveCurrentLiveChainTransferDescriptorIdentity, validateCurrentCapitalLiveChainFanInBoundary } from "./build-current-capital-live-chain-boundary.mjs";
 
 const REPOSITORY = "AquilaXk/easysubway-data";
 const SHA256 = /^[a-f0-9]{64}$/u;
 const SHA1 = /^[a-f0-9]{40}$/u;
-export const CURRENT_CAPITAL_LIVE_CHAIN_OUTPUT_PATHS = Object.freeze([
+export const CURRENT_CAPITAL_LIVE_CHAIN_FIXED_OUTPUT_PATHS = Object.freeze([
   "tools/datapack/release/capital-production-canonical-pack.json",
   "tools/datapack/release/candidate-build-spec.json",
   "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
@@ -23,7 +23,6 @@ export const CURRENT_CAPITAL_LIVE_CHAIN_OUTPUT_PATHS = Object.freeze([
   "tools/datapack/release/release-request.json",
   "tools/datapack/release/source-snapshots.json",
   "tools/datapack/source-inventory.json",
-  "tools/datapack/sources/seoul-metro-transfer-distance-duration-20260815T094038817Z.json",
   "release/product-gates/route-edge-evaluation-policy.json",
 ]);
 export const CURRENT_CAPITAL_LIVE_CHAIN_PROVIDER_RECEIPT_PATH = "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json";
@@ -42,7 +41,10 @@ function requireRelative(value, label) {
 function requireIdentity({ repository, repositorySha, operationId }) {
   if (repository !== REPOSITORY || !SHA1.test(repositorySha ?? "") || typeof operationId !== "string" || !/^[a-z0-9][a-z0-9-]{7,127}$/u.test(operationId)) throw new Error("live-chain identity mismatch");
 }
-function exactOutputPaths() { return [...CURRENT_CAPITAL_LIVE_CHAIN_OUTPUT_PATHS].map((entry) => requireRelative(entry, "output path")).sort(); }
+export function currentCapitalLiveChainOutputPaths({ candidate, sourceInventory, sourceSnapshotLedger }) {
+  const transfer = deriveCurrentLiveChainTransferDescriptorIdentity({ candidate, sourceInventory, sourceSnapshotLedger });
+  return Object.freeze([...CURRENT_CAPITAL_LIVE_CHAIN_FIXED_OUTPUT_PATHS, transfer.relativePath].map((entry) => requireRelative(entry, "output path")).sort());
+}
 function strictBase64(value) {
   if (typeof value !== "string" || value.length === 0 || value.length % 4 !== 0 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(value)) throw new Error("live-chain entry base64 mismatch");
   const bytes = Buffer.from(value, "base64");
@@ -59,7 +61,7 @@ async function regularBytes(root, relative) {
 
 export async function buildCurrentCapitalLiveChainBundle({ root, outputDirectory, repository, repositorySha, operationId, boundaryBytes, boundaryRelativePath = CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH }) {
   requireIdentity({ repository, repositorySha, operationId });
-  const allowlist = exactOutputPaths();
+  const allowlist = await outputPathsFromDirectory(outputDirectory);
   const receipt = CURRENT_CAPITAL_LIVE_CHAIN_PROVIDER_RECEIPT_PATH;
   const boundary = readCanonicalBoundary(boundaryBytes, boundaryRelativePath);
   if (!allowlist.includes(receipt)) throw new Error("provider receipt is not allowlisted");
@@ -76,24 +78,53 @@ export async function buildCurrentCapitalLiveChainBundle({ root, outputDirectory
 
 export function readCurrentCapitalLiveChainBundle(bytes, { repository, repositorySha, operationId }) {
   requireIdentity({ repository, repositorySha, operationId });
-  const allowlist = exactOutputPaths();
   let bundle; try { bundle = JSON.parse(Buffer.from(bytes).toString("utf8")); } catch { throw new Error("live-chain bundle must be JSON"); }
   const required = ["schemaVersion", "artifactKind", "repository", "repositorySha", "operationId", "providerReceiptRelativePath", "providerReceiptSha256", "boundary", "boundaryBytesBase64", "entries", "manifestSha256", "bundleSha256"];
   if (!bundle || typeof bundle !== "object" || Object.keys(bundle).length !== required.length || required.some((key) => !(key in bundle)) || bundle.schemaVersion !== 1 || bundle.artifactKind !== "current-capital-live-chain-composite") throw new Error("live-chain bundle shape mismatch");
   if (bundle.repository !== repository || bundle.repositorySha !== repositorySha || bundle.operationId !== operationId) throw new Error("live-chain identity mismatch");
   const receipt = requireRelative(bundle.providerReceiptRelativePath, "provider receipt path");
-  if (!SHA256.test(bundle.providerReceiptSha256 ?? "") || !SHA256.test(bundle.manifestSha256 ?? "") || !SHA256.test(bundle.bundleSha256 ?? "") || !Array.isArray(bundle.entries) || bundle.entries.length !== allowlist.length) throw new Error("live-chain bundle digest mismatch");
+  if (!SHA256.test(bundle.providerReceiptSha256 ?? "") || !SHA256.test(bundle.manifestSha256 ?? "") || !SHA256.test(bundle.bundleSha256 ?? "") || !Array.isArray(bundle.entries)
+    || bundle.entries.length !== CURRENT_CAPITAL_LIVE_CHAIN_FIXED_OUTPUT_PATHS.length + 1) throw new Error("live-chain bundle digest mismatch");
   const entries = [...bundle.entries].sort((left, right) => left.path.localeCompare(right.path));
-  if (JSON.stringify(entries.map(({ path: entryPath }) => entryPath)) !== JSON.stringify(allowlist)) throw new Error("live-chain output allowlist mismatch");
   for (const entry of entries) {
     if (!entry || Object.keys(entry).length !== 3 || requireRelative(entry.path, "bundle entry") !== entry.path || !SHA256.test(entry.sha256 ?? "") || sha256(strictBase64(entry.bytesBase64)) !== entry.sha256) throw new Error("live-chain entry integrity mismatch");
   }
+  if (new Set(entries.map(({ path: entryPath }) => entryPath)).size !== entries.length) throw new Error("live-chain output allowlist mismatch");
+  const byPath = new Map(entries.map((entry) => [entry.path, entry]));
+  const allowlist = currentCapitalLiveChainOutputPaths({
+    candidate: entryJson(byPath, "tools/datapack/release/candidate-build-spec.json"),
+    sourceInventory: entryJson(byPath, "tools/datapack/source-inventory.json"),
+    sourceSnapshotLedger: entryJson(byPath, "tools/datapack/release/source-snapshots.json"),
+  });
+  if (JSON.stringify(entries.map(({ path: entryPath }) => entryPath)) !== JSON.stringify(allowlist)) throw new Error("live-chain output allowlist mismatch");
   const boundary = readCanonicalBoundary(strictBase64(bundle.boundaryBytesBase64), bundle.boundary?.path);
   if (!bundle.boundary || Object.keys(bundle.boundary).length !== 2 || bundle.boundary.path !== boundary.relativePath || bundle.boundary.sha256 !== sha256(boundary.bytes)) throw new Error("live-chain boundary digest mismatch");
   correlateBoundaryComponents(boundary.value, entries);
   const manifest = { schemaVersion: bundle.schemaVersion, artifactKind: bundle.artifactKind, repository: bundle.repository, repositorySha: bundle.repositorySha, operationId: bundle.operationId, providerReceiptRelativePath: receipt, providerReceiptSha256: bundle.providerReceiptSha256, boundary: bundle.boundary, entries: entries.map(({ path: entryPath, sha256: digest }) => ({ path: entryPath, sha256: digest })) };
   if (sha256(Buffer.from(`${canonical(manifest)}\n`)) !== bundle.manifestSha256 || sha256(Buffer.from(canonical({ ...manifest, manifestSha256: bundle.manifestSha256, boundaryBytesBase64: bundle.boundaryBytesBase64, entries }))) !== bundle.bundleSha256 || entries.find((entry) => entry.path === receipt)?.sha256 !== bundle.providerReceiptSha256) throw new Error("live-chain bundle identity mismatch");
   return { ...bundle, entries };
+}
+
+async function outputPathsFromDirectory(outputDirectory) {
+  const [candidate, sourceInventory, sourceSnapshotLedger] = await Promise.all([
+    regularJson(outputDirectory, "tools/datapack/release/candidate-build-spec.json"),
+    regularJson(outputDirectory, "tools/datapack/source-inventory.json"),
+    regularJson(outputDirectory, "tools/datapack/release/source-snapshots.json"),
+  ]);
+  return currentCapitalLiveChainOutputPaths({ candidate, sourceInventory, sourceSnapshotLedger });
+}
+
+async function regularJson(root, relative) {
+  const bytes = await regularBytes(root, relative);
+  try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); }
+  catch { throw new Error(`live-chain ${relative} must be UTF-8 JSON`); }
+}
+
+function entryJson(byPath, relative) {
+  const entry = byPath.get(relative);
+  if (!entry) throw new Error("live-chain output allowlist mismatch");
+  try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(strictBase64(entry.bytesBase64))); }
+  catch { throw new Error(`live-chain ${relative} must be UTF-8 JSON`); }
 }
 
 function readCanonicalBoundary(bytes, relativePath) {

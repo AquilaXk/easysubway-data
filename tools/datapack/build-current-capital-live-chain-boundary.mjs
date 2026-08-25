@@ -103,39 +103,60 @@ function normalizeComponents(components) {
   return normalized;
 }
 
-function validateCurrentIdentity(components, candidate, ledger) {
+export function deriveCurrentLiveChainTransferDescriptorIdentity({ candidate, sourceInventory, sourceSnapshotLedger: ledger }) {
   if (!candidate || typeof candidate.candidateId !== "string" || candidate.candidateId === "" || !Array.isArray(candidate.sourceSnapshotIds)
-    || !Array.isArray(candidate.sourceSnapshots) || candidate.sourceSnapshotIds.length !== 7 || candidate.sourceSnapshots.length !== 7
-    || !SHA256.test(candidate.sourceSnapshotSetHash ?? "") || !Array.isArray(ledger)) {
+    || !Array.isArray(candidate.sourceSnapshots) || candidate.sourceSnapshotIds.length !== candidate.sourceSnapshots.length
+    || candidate.sourceSnapshotIds.length === 0 || !SHA256.test(candidate.sourceSnapshotSetHash ?? "") || !Array.isArray(ledger)) {
     throw new Error("current live-chain candidate shape mismatch");
   }
+  const inventorySources = sourceInventory?.sources ?? [];
+  const requiredSources = inventorySources.filter(({ requiredForProductionPack }) => requiredForProductionPack === true);
+  const requiredSourceIds = new Set(requiredSources.map(({ id }) => id));
+  const candidateSourceIds = new Set(candidate.sourceSnapshots.map(({ sourceId }) => sourceId));
   const selectedIds = new Set(candidate.sourceSnapshotIds);
-  if (selectedIds.size !== 7) throw new Error("current live-chain candidate source identity mismatch");
+  if (requiredSources.length === 0 || requiredSourceIds.size !== requiredSources.length
+    || candidateSourceIds.size !== candidate.sourceSnapshots.length || selectedIds.size !== candidate.sourceSnapshotIds.length
+    || requiredSourceIds.size !== candidateSourceIds.size || [...requiredSourceIds].some((sourceId) => !candidateSourceIds.has(sourceId))) {
+    throw new Error("current live-chain candidate source identity mismatch");
+  }
   const selected = candidate.sourceSnapshotIds.map((snapshotId, index) => {
     const rows = ledger.filter((entry) => entry?.snapshotId === snapshotId);
-    if (rows.length !== 1 || rows[0].sourceId !== candidate.sourceSnapshots[index]?.sourceId) throw new Error("current live-chain candidate ledger mismatch");
+    if (rows.length !== 1 || rows[0].sourceId !== candidate.sourceSnapshots[index]?.sourceId || rows[0].snapshotId !== candidate.sourceSnapshots[index]?.snapshotId) throw new Error("current live-chain candidate ledger mismatch");
     return rows[0];
   });
   const selectedInLedgerOrder = ledger.filter((entry) => selectedIds.has(entry?.snapshotId));
-  if (selectedInLedgerOrder.length !== 7 || sha256(JSON.stringify(selectedInLedgerOrder)) !== candidate.sourceSnapshotSetHash) {
+  if (selectedInLedgerOrder.length !== selectedIds.size || sha256(JSON.stringify(selectedInLedgerOrder)) !== candidate.sourceSnapshotSetHash) {
     throw new Error("current live-chain candidate source-set mismatch");
   }
-  const transfer = selected.at(-1);
-  const transferProjection = candidate.sourceSnapshots.at(-1);
-  if (transfer?.sourceId !== "seoul-metro-transfer-distance-duration" || transfer.snapshotStatus !== "LOCKED"
-    || candidate.sourceSnapshotIds.at(-1) !== transfer.snapshotId || transferProjection?.sourceId !== transfer.sourceId || transferProjection?.snapshotId !== transfer.snapshotId) {
-    throw new Error("current live-chain transfer must be selected last and active");
+  const source = exactlyOne(requiredSources, (entry) => entry?.transferAdmissionEvidence, "current live-chain transfer source");
+  const transferIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === source.id);
+  const transfer = selected[transferIndex];
+  const transferProjection = candidate.sourceSnapshots[transferIndex];
+  if (transferIndex < 0 || transfer?.snapshotStatus !== "LOCKED" || transferProjection?.snapshotId !== transfer.snapshotId) {
+    throw new Error("current live-chain transfer must be selected and active");
   }
-  const source = exactlyOne(components.sourceInventory.value?.sources ?? [], (entry) => entry?.id === transfer.sourceId, "current live-chain transfer source");
+  const admission = source.transferAdmissionEvidence;
+  const relativePath = `tools/datapack/sources/${transfer.snapshotId}.json`;
+  if (admission?.decision !== "APPROVED" || admission.snapshotId !== transfer.snapshotId || admission.snapshotPath !== relativePath
+    || admission.rawSha256 !== transfer.rawSha256 || admission.schemaFingerprint !== transfer.schemaFingerprint
+    || admission.rawObjectUri !== transfer.rawObjectUri || transferProjection.rawSha256 !== transfer.rawSha256
+    || transferProjection.schemaFingerprint !== transfer.schemaFingerprint || transferProjection.rawObjectUri !== transfer.rawObjectUri) {
+    throw new Error("current live-chain transfer identity mismatch");
+  }
+  return { sourceId: source.id, snapshotId: transfer.snapshotId, relativePath, row: transfer, projection: transferProjection, source, sourceSetSha256: candidate.sourceSnapshotSetHash };
+}
+
+function validateCurrentIdentity(components, candidate, ledger) {
+  const identity = deriveCurrentLiveChainTransferDescriptorIdentity({
+    candidate,
+    sourceInventory: components.sourceInventory.value,
+    sourceSnapshotLedger: ledger,
+  });
+  const { row: transfer, source, sourceSetSha256 } = identity;
   const admission = source.transferAdmissionEvidence;
   const metrics = components.transferMetrics.value;
   const applicability = components.transferApplicability.value;
-  if (source.requiredForProductionPack !== true || admission?.decision !== "APPROVED" || admission.snapshotId !== transfer.snapshotId
-    || admission.snapshotPath !== `tools/datapack/sources/${transfer.snapshotId}.json`
-    || admission.rawSha256 !== transfer.rawSha256 || admission.schemaFingerprint !== transfer.schemaFingerprint
-    || admission.rawObjectUri !== transfer.rawObjectUri || transferProjection.rawSha256 !== transfer.rawSha256
-    || transferProjection.schemaFingerprint !== transfer.schemaFingerprint || transferProjection.rawObjectUri !== transfer.rawObjectUri
-    || metrics?.artifactKind !== "current-transfer-topology-metrics" || metrics.sourceIdentity?.sourceId !== transfer.sourceId || metrics.sourceIdentity?.rawSha256 !== transfer.rawSha256
+  if (metrics?.artifactKind !== "current-transfer-topology-metrics" || metrics.sourceIdentity?.sourceId !== transfer.sourceId || metrics.sourceIdentity?.rawSha256 !== transfer.rawSha256
     || applicability?.artifactKind !== "current-capital-transfer-topology-applicability-pre-candidate" || applicability.transferTopologyMetricsIdentity?.artifactSha256 !== metrics.artifactSha256
     || admission.metricsArtifactSha256 !== metrics.artifactSha256 || admission.applicabilityArtifactSha256 !== applicability.artifactSha256) {
     throw new Error("current live-chain transfer identity mismatch");
@@ -152,7 +173,7 @@ function validateCurrentIdentity(components, candidate, ledger) {
     || receipt?.normalizedSnapshotSha256 !== sha256(components.exitNormalized.bytes) || receipt?.admissionSha256 !== sha256(components.exitAdmission.bytes)) {
     throw new Error("current live-chain EXIT candidate mismatch");
   }
-  return candidate.sourceSnapshotSetHash;
+  return sourceSetSha256;
 }
 
 function rejectForbiddenMetadata(value, label) {

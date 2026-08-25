@@ -58,6 +58,19 @@ test("current live-chain consumes selected current heads while allowing ledger l
   assert.equal(boundary.evidenceSourceSetSha256, sourceSetSha256);
 });
 
+test("current live-chain derives TRANSFER identity without a candidate array-order assumption", async () => {
+  const components = fanInComponents(await fixture());
+  const candidate = components.candidateBuildSpec.value;
+  const transferIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === "seoul-metro-transfer-distance-duration");
+  const [transferId] = candidate.sourceSnapshotIds.splice(transferIndex, 1);
+  const [transferProjection] = candidate.sourceSnapshots.splice(transferIndex, 1);
+  candidate.sourceSnapshotIds.unshift(transferId);
+  candidate.sourceSnapshots.unshift(transferProjection);
+  components.candidateBuildSpec.bytes = bytes(candidate);
+
+  assert.doesNotThrow(() => buildCurrentCapitalLiveChainFanInBoundary(components));
+});
+
 test("current live-chain boundary detects source-set and byte mismatch before station-line materialization", async () => {
   const input = await fixture();
   const components = fanInComponents(input);
@@ -110,7 +123,8 @@ function fanInComponents(input) {
     exitAdmission,
     exitAdmissionOciReceipt: input.exitReceipt,
   };
-  const transfer = input.sourceSnapshots.at(-1);
+  const transferSource = input.sourceInventory.sources.find(({ transferAdmissionEvidence }) => transferAdmissionEvidence);
+  const transfer = input.sourceSnapshots.find(({ sourceId }) => sourceId === transferSource.id);
   values.transferMetrics = structuredClone(values.transferMetrics);
   values.transferMetrics.sourceIdentity.rawSha256 = transfer.rawSha256;
   const { artifactSha256: _metricsArtifactSha256, ...metricsPayload } = values.transferMetrics;
@@ -121,6 +135,11 @@ function fanInComponents(input) {
   const { artifactSha256: _applicabilityArtifactSha256, ...applicabilityPayload } = values.transferApplicability;
   values.transferApplicability.artifactSha256 = sha(`${canonical(applicabilityPayload)}\n`);
   values.sourceInventory = structuredClone(values.sourceInventory);
+  for (const { sourceId } of input.candidateBuildSpec.sourceSnapshots) {
+    if (!values.sourceInventory.sources.some(({ id }) => id === sourceId)) {
+      values.sourceInventory.sources.push({ id: sourceId, requiredForProductionPack: true });
+    }
+  }
   Object.assign(values.sourceInventory.sources[0].transferAdmissionEvidence, {
     snapshotPath: `tools/datapack/sources/${transfer.snapshotId}.json`, rawSha256: transfer.rawSha256,
     schemaFingerprint: transfer.schemaFingerprint, rawObjectUri: transfer.rawObjectUri,

@@ -6,7 +6,7 @@ import path from "node:path";
 import test from "node:test";
 
 import {
-  CURRENT_LIVE_CHAIN_TRANSFER_OUTPUTS,
+  currentLiveChainTransferOutputPaths,
   assertCurrentLiveChainTransferIdentity,
   commitCurrentLiveChainTransferDerivedIdentityOutputs,
   deriveCurrentOnlyProjection,
@@ -14,11 +14,11 @@ import {
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 
-test("current live-chain TRANSFER producer declares exactly the eight bundle outputs", () => {
-  assert.deepEqual(CURRENT_LIVE_CHAIN_TRANSFER_OUTPUTS, [
+test("current live-chain TRANSFER producer derives exactly the eight bundle outputs from the selected descriptor", () => {
+  assert.deepEqual(currentLiveChainTransferOutputPaths("tools/datapack/sources/seoul-metro-transfer-distance-duration-20991231T235959999Z.json"), [
     "tools/datapack/release/current-transfer-topology-metrics.json",
     "tools/datapack/release/current-capital-transfer-topology-applicability.json",
-    "tools/datapack/sources/seoul-metro-transfer-distance-duration-20260815T094038817Z.json",
+    "tools/datapack/sources/seoul-metro-transfer-distance-duration-20991231T235959999Z.json",
     "tools/datapack/source-inventory.json",
     "tools/datapack/release/source-snapshots.json",
     "tools/datapack/release/candidate-build-spec.json",
@@ -97,7 +97,8 @@ test("current-only projections preserve sealed governance without a historical b
 test("current live-chain TRANSFER commit rolls every output back before reporting failure", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "current-live-chain-transfer-test-"));
   try {
-    const outputs = await Promise.all(CURRENT_LIVE_CHAIN_TRANSFER_OUTPUTS.map(async (relative, index) => {
+    const outputPaths = currentLiveChainTransferOutputPaths("tools/datapack/sources/seoul-metro-transfer-distance-duration-20991231T235959999Z.json");
+    const outputs = await Promise.all(outputPaths.map(async (relative, index) => {
       const file = path.join(root, relative);
       await mkdir(path.dirname(file), { recursive: true });
       const prestate = Buffer.from(`before-${index}\n`);
@@ -117,7 +118,8 @@ test("current live-chain TRANSFER commit rolls every output back before reportin
 test("current live-chain TRANSFER retains recovery journal and lock when rollback fails", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "current-live-chain-transfer-recovery-test-"));
   try {
-    const outputs = await Promise.all(CURRENT_LIVE_CHAIN_TRANSFER_OUTPUTS.map(async (relative, index) => {
+    const outputPaths = currentLiveChainTransferOutputPaths("tools/datapack/sources/seoul-metro-transfer-distance-duration-20991231T235959999Z.json");
+    const outputs = await Promise.all(outputPaths.map(async (relative, index) => {
       const file = path.join(root, relative); await mkdir(path.dirname(file), { recursive: true });
       const prestate = Buffer.from(`before-${index}\n`); await writeFile(file, prestate);
       return { relative, prestate, bytes: Buffer.from(`after-${index}\n`) };

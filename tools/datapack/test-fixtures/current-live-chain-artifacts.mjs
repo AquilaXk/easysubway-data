@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { buildCurrentCapitalLiveChainBundle, CURRENT_CAPITAL_LIVE_CHAIN_OUTPUT_PATHS } from "../build-current-capital-live-chain-bundle.mjs";
+import { buildCurrentCapitalLiveChainBundle, currentCapitalLiveChainOutputPaths } from "../build-current-capital-live-chain-bundle.mjs";
 import { buildCurrentExitAdmissionOciReceipt, canonicalCurrentExitAdmissionOciReceiptJson } from "../build-current-exit-admission-oci-receipt.mjs";
 import { CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS, canonicalCurrentCapitalLiveChainFanInBoundaryJson } from "../build-current-capital-live-chain-boundary.mjs";
 import { buildCurrentKricExitCollectionPlan } from "../build-current-kric-exit-collection-plan.mjs";
@@ -10,6 +10,7 @@ import { buildCurrentKricExitCollectionBundle, buildCurrentKricExitCollectionRec
 
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const canonical = (value) => JSON.stringify(sort(value));
+const DATAPACK_ROOT = path.resolve(import.meta.dirname, "../..");
 function sort(value) { if (Array.isArray(value)) return value.map(sort); if (!value || typeof value !== "object") return value; return Object.fromEntries(Object.keys(value).sort((left, right) => left.localeCompare(right, "en")).map((key) => [key, sort(value[key])])); }
 
 export async function buildCanonicalCurrentKricExitCollectionBundle({ repositorySha = "a".repeat(40), operationId = "current-capital-560", capturedAt = "2026-08-14T16:00:00.000Z" } = {}) {
@@ -30,7 +31,13 @@ export async function buildCanonicalCurrentKricExitCollectionBundle({ repository
 
 export async function buildCanonicalCurrentLiveChainComposite({ root, repositorySha = "a".repeat(40), operationId = "current-capital-560", providerCollectionBundleBytes }) {
   if (!Buffer.isBuffer(providerCollectionBundleBytes) || providerCollectionBundleBytes.length === 0) throw new Error("provider collection bundle bytes are required");
-  const outputPaths = CURRENT_CAPITAL_LIVE_CHAIN_OUTPUT_PATHS;
+  const authorityPaths = ["tools/datapack/release/candidate-build-spec.json", "tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json"];
+  const authorityBytes = new Map(await Promise.all(authorityPaths.map(async (relative) => [relative, await readFile(path.join(DATAPACK_ROOT, relative))])));
+  const outputPaths = currentCapitalLiveChainOutputPaths({
+    candidate: JSON.parse(authorityBytes.get(authorityPaths[0])),
+    sourceInventory: JSON.parse(authorityBytes.get(authorityPaths[1])),
+    sourceSnapshotLedger: JSON.parse(authorityBytes.get(authorityPaths[2])),
+  });
   const provider = JSON.parse(providerCollectionBundleBytes.toString("utf8"));
   const snapshot = JSON.parse(provider.providerSnapshotJson);
   const providerCapturedAt = snapshot.capturedAt;
@@ -43,7 +50,7 @@ export async function buildCanonicalCurrentLiveChainComposite({ root, repository
   const admissionBytes = Buffer.from(`{\"admissionDigest\":\"${"a".repeat(64)}\",\"decision\":\"GO\"}\n`);
   const entryBytes = new Map();
   for (const [index, relative] of outputPaths.entries()) {
-    const bytes = relative === normalizedPath ? normalizedBytes : relative === admissionPath ? admissionBytes : Buffer.from(`{\"component\":${index}}`);
+    const bytes = relative === normalizedPath ? normalizedBytes : relative === admissionPath ? admissionBytes : authorityBytes.get(relative) ?? Buffer.from(`{\"component\":${index}}`);
     entryBytes.set(relative, bytes);
     await mkdir(path.join(root, "out", path.dirname(relative)), { recursive: true });
     await writeFile(path.join(root, "out", relative), bytes);

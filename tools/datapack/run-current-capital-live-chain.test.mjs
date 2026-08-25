@@ -4,13 +4,15 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { LIVE_CHAIN_OUTPUTS, buildCurrentCapitalLiveChainPlan, evaluateStagedRoutePolicy, parseArgs, runCurrentCapitalLiveChain } from "./run-current-capital-live-chain.mjs";
+import { buildCurrentCapitalLiveChainPlan, evaluateStagedRoutePolicy, parseArgs, resolveStagedIncheonTopologyPath, runCurrentCapitalLiveChain } from "./run-current-capital-live-chain.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 
 const planInput = {
   repositoryRoot: "/repository", repositorySha: "a".repeat(40), operationId: "current-capital-560", stagedRoot: "/runner/staged",
   transferObservationDirectory: "/retained/transfer/observation", transferReceiptPath: "/retained/transfer/receipt.json",
+  incheonTopologyRelativePath: "tools/datapack/sources/incheon-transit-station-info-20991231.json",
+  outputPaths: ["derived/current-output.json"],
 };
 
 test("live chain fixes the staged P/F/T to EXIT to full-capital order and invokes the collector exactly once", () => {
@@ -26,9 +28,30 @@ test("live chain fixes the staged P/F/T to EXIT to full-capital order and invoke
   assert.equal(plan.steps.findIndex(({ id }) => id === "assert-current-topology-freshness") + 1, plan.steps.findIndex(({ id }) => id === "collect-kric-exit"));
   assert.equal(plan.steps.some(({ script }) => /current-station-line-accessibility|current-route-edge-evaluation|refresh-current-capital-accessibility-full|rebind-current-active-transfer-derived-identities/.test(script)), false);
   assert.deepEqual(plan.steps.find(({ id }) => id === "rebind-transfer").args.slice(-4), ["--observation-directory", planInput.transferObservationDirectory, "--receipt", planInput.transferReceiptPath]);
-  assert.deepEqual(plan.outputs, LIVE_CHAIN_OUTPUTS);
+  const exitPlanArgs = plan.steps.find(({ id }) => id === "build-exit-plan").args;
+  assert.equal(exitPlanArgs[exitPlanArgs.indexOf("--incheon-topology") + 1], path.join(planInput.stagedRoot, planInput.incheonTopologyRelativePath));
+  assert.deepEqual(plan.outputs, planInput.outputPaths);
   assert.throws(() => buildCurrentCapitalLiveChainPlan({ ...planInput, repositorySha: "not-a-sha" }), /repository SHA/);
   assert.throws(() => buildCurrentCapitalLiveChainPlan({ ...planInput, transferReceiptPath: "relative.json" }), /paths must be absolute/);
+});
+
+test("Incheon topology path is derived from the current staged inventory head", () => {
+  const snapshotId = "incheon-transit-station-info-20991231";
+  const snapshotPath = `tools/datapack/sources/${snapshotId}.json`;
+  const inventory = { sources: [{
+    id: "incheon-transit-station-info",
+    membershipAdmissionEvidence: { snapshotId },
+    topologyAdmissionEvidence: { snapshotId, snapshotPath, contentSha256: "a".repeat(64) },
+    routeMapAdmissionEvidence: { snapshotId, snapshotPath, topologySnapshotId: snapshotId, topologyContentSha256: "a".repeat(64) },
+  }] };
+  assert.equal(resolveStagedIncheonTopologyPath(inventory), snapshotPath);
+  const drifted = structuredClone(inventory);
+  drifted.sources[0].routeMapAdmissionEvidence.snapshotPath = "tools/datapack/sources/incheon-transit-station-info-20260814.json";
+  assert.throws(() => resolveStagedIncheonTopologyPath(drifted), /Incheon topology identity mismatch/);
+  const escaped = structuredClone(inventory);
+  escaped.sources[0].topologyAdmissionEvidence.snapshotPath = "../outside.json";
+  escaped.sources[0].routeMapAdmissionEvidence.snapshotPath = "../outside.json";
+  assert.throws(() => resolveStagedIncheonTopologyPath(escaped), /Incheon topology identity mismatch/);
 });
 
 test("CLI accepts every exact live-chain identity and path once", () => {

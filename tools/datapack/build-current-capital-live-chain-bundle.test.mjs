@@ -1,19 +1,27 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { buildCurrentCapitalLiveChainBundle, CURRENT_CAPITAL_LIVE_CHAIN_OUTPUT_PATHS, readCurrentCapitalLiveChainBundle } from "./build-current-capital-live-chain-bundle.mjs";
+import { buildCurrentCapitalLiveChainBundle, currentCapitalLiveChainOutputPaths, readCurrentCapitalLiveChainBundle } from "./build-current-capital-live-chain-bundle.mjs";
 import { CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS, canonicalCurrentCapitalLiveChainFanInBoundaryJson } from "./build-current-capital-live-chain-boundary.mjs";
+
+const ROOT = path.resolve(import.meta.dirname, "../..");
 
 test("composite bundle embeds canonical fan-in evidence without expanding the output allowlist", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "live-chain-bundle-"));
-  const outputPaths = CURRENT_CAPITAL_LIVE_CHAIN_OUTPUT_PATHS;
+  const authorityPaths = ["tools/datapack/release/candidate-build-spec.json", "tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json"];
+  const authorityBytes = new Map(await Promise.all(authorityPaths.map(async (relative) => [relative, await readFile(path.join(ROOT, relative))])));
+  const outputPaths = currentCapitalLiveChainOutputPaths({
+    candidate: JSON.parse(authorityBytes.get(authorityPaths[0])),
+    sourceInventory: JSON.parse(authorityBytes.get(authorityPaths[1])),
+    sourceSnapshotLedger: JSON.parse(authorityBytes.get(authorityPaths[2])),
+  });
   const entryBytes = new Map();
   for (const [index, relative] of outputPaths.entries()) {
-    const bytes = Buffer.from(`{\"component\":${index}}`);
+    const bytes = authorityBytes.get(relative) ?? Buffer.from(`{\"component\":${index}}`);
     entryBytes.set(relative, bytes);
     await mkdir(path.dirname(path.join(root, "out", relative)), { recursive: true });
     await writeFile(path.join(root, "out", relative), bytes);

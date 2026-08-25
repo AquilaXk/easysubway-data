@@ -6,7 +6,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
-import { CURRENT_CAPITAL_LIVE_CHAIN_OUTPUT_PATHS, buildCurrentCapitalLiveChainBundle } from "./build-current-capital-live-chain-bundle.mjs";
+import { buildCurrentCapitalLiveChainBundle, currentCapitalLiveChainOutputPaths } from "./build-current-capital-live-chain-bundle.mjs";
 import {
   CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS,
   CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH,
@@ -29,7 +29,6 @@ import { prepareCurrentStagedPublicRouteMapInventory } from "./prepare-current-s
 
 const execFile = promisify(execFileCallback);
 const DATA_MAIN_REMOTE = "https://github.com/AquilaXk/easysubway-data.git";
-export const LIVE_CHAIN_OUTPUTS = CURRENT_CAPITAL_LIVE_CHAIN_OUTPUT_PATHS;
 const STAGED_INPUTS = Object.freeze([
   "tools/datapack/release", "tools/datapack/sources", "tools/datapack/inputs", "tools/datapack/source-inventory.json", "tools/datapack/source-governance-policy.json", "tools/datapack/source-candidates.json", "tools/datapack/official-od-fare-admission.json", "tools/datapack/nationwide-coverage-targets.json", "tools/datapack/itx-cheongchun-topology-evidence.json", "release/product-gates/datapack-freshness-sla.json", "release/product-gates/route-edge-evaluation-policy.json",
 ]);
@@ -47,21 +46,44 @@ async function requireAbsent(target, label) { try { await lstat(target); } catch
 function narrowRunnerEnv(env) { return { PATH: env.PATH ?? "", RUNNER_TEMP: env.RUNNER_TEMP ?? "" }; }
 function narrowOciEnv(env) { return { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: env.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL ?? "" }; }
 
+export function resolveStagedIncheonTopologyPath(inventory) {
+  const matches = inventory?.sources?.filter(({ id }) => id === "incheon-transit-station-info") ?? [];
+  if (matches.length !== 1) throw new Error("Incheon topology identity mismatch");
+  const source = matches[0];
+  const topology = source.topologyAdmissionEvidence;
+  const membership = source.membershipAdmissionEvidence;
+  const routeMap = source.routeMapAdmissionEvidence;
+  const snapshotPath = topology?.snapshotPath;
+  if (typeof topology?.snapshotId !== "string" || topology.snapshotId === ""
+    || membership?.snapshotId !== topology.snapshotId || routeMap?.snapshotId !== topology.snapshotId
+    || routeMap.snapshotPath !== snapshotPath || routeMap.topologySnapshotId !== topology.snapshotId
+    || routeMap.topologyContentSha256 !== topology.contentSha256
+    || snapshotPath !== `tools/datapack/sources/${topology.snapshotId}.json`
+    || path.posix.isAbsolute(snapshotPath) || snapshotPath.includes("\\")
+    || snapshotPath.split("/").some((part) => part === "" || part === "." || part === "..")) {
+    throw new Error("Incheon topology identity mismatch");
+  }
+  return snapshotPath;
+}
+
 async function assertRemoteMain({ root, repositorySha, execFileImpl }) {
   const { stdout } = await execFileImpl("git", ["ls-remote", "--exit-code", DATA_MAIN_REMOTE, "refs/heads/main"], { cwd: root });
   if (String(stdout).trimEnd() !== `${repositorySha}\trefs/heads/main`) throw new Error("exact remote main preflight failed");
 }
 
-export function buildCurrentCapitalLiveChainPlan({ repositoryRoot, repositorySha, operationId, stagedRoot, transferObservationDirectory, transferReceiptPath }) {
+export function buildCurrentCapitalLiveChainPlan({ repositoryRoot, repositorySha, operationId, stagedRoot, transferObservationDirectory, transferReceiptPath, incheonTopologyRelativePath, outputPaths }) {
   requiredSha(repositorySha); requiredOperation(operationId);
   if (![repositoryRoot, stagedRoot, transferObservationDirectory, transferReceiptPath].every((value) => path.isAbsolute(value ?? ""))) throw new Error("live-chain plan paths must be absolute");
+  if (typeof incheonTopologyRelativePath !== "string" || path.posix.isAbsolute(incheonTopologyRelativePath) || incheonTopologyRelativePath.includes("\\")
+    || incheonTopologyRelativePath.split("/").some((part) => part === "" || part === "." || part === "..")) throw new Error("Incheon topology path mismatch");
+  if (!Array.isArray(outputPaths) || outputPaths.length === 0) throw new Error("live-chain output paths mismatch");
   const at = (...parts) => path.join(stagedRoot, ...parts);
-  return { outputs: LIVE_CHAIN_OUTPUTS, steps: [
+  return { outputs: Object.freeze([...outputPaths]), steps: [
     { id: "prepare-staged-public-route-map-inventory", script: "tools/datapack/prepare-current-staged-public-route-map-inventory.mjs", args: ["--source-repository-root", repositoryRoot, "--staged-root", stagedRoot] },
     { id: "materialize-public-route-map", script: "tools/datapack/rebind-current-active-public-route-map-materialization.mjs", args: ["--repository-root", stagedRoot] },
     { id: "rebind-transfer", script: "tools/datapack/rebind-current-live-chain-transfer-derived-identities.mjs", args: ["--repository-root", stagedRoot, "--observation-directory", transferObservationDirectory, "--receipt", transferReceiptPath] },
     { id: "rebind-facility", script: "tools/datapack/rebind-current-active-facility-derived-identity.mjs", args: ["--repository-root", stagedRoot] },
-    { id: "build-exit-plan", script: "tools/datapack/build-current-kric-exit-collection-plan.mjs", args: ["--canonical-pack", at("tools/datapack/release/capital-production-canonical-pack.json"), "--coverage-targets", at("tools/datapack/nationwide-coverage-targets.json"), "--provider-code-catalog", at("tools/datapack/sources/kric-provider-code-catalog-20260228.json"), "--route-rosters", at("tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json"), "--source-inventory", at("tools/datapack/source-inventory.json"), "--incheon-topology", at("tools/datapack/sources/incheon-transit-station-info-20260814.json"), "--coverage-selector", "capital-seoul-metro-production", "--output", at("current-kric-exit-plan.json")] },
+    { id: "build-exit-plan", script: "tools/datapack/build-current-kric-exit-collection-plan.mjs", args: ["--canonical-pack", at("tools/datapack/release/capital-production-canonical-pack.json"), "--coverage-targets", at("tools/datapack/nationwide-coverage-targets.json"), "--provider-code-catalog", at("tools/datapack/sources/kric-provider-code-catalog-20260228.json"), "--route-rosters", at("tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json"), "--source-inventory", at("tools/datapack/source-inventory.json"), "--incheon-topology", at(incheonTopologyRelativePath), "--coverage-selector", "capital-seoul-metro-production", "--output", at("current-kric-exit-plan.json")] },
     { id: "assert-current-topology-freshness", module: "tools/datapack/register-current-static-network-successors.mjs", exportName: "assertCurrentStaticNetworkTopologyAdmission" },
     { id: "collect-kric-exit", script: "tools/datapack/collect-current-kric-exit-path-provider-snapshot.mjs", args: ["--collection-plan", at("current-kric-exit-plan.json"), "--source-id", "kric-station-movement-standard", "--output", at("current-kric-exit-snapshot.json"), "--request-timeout-ms", "30000", "--request-interval-ms", "250"] },
     { id: "bind-exit-collection", script: "tools/datapack/build-current-kric-exit-collection-receipt.mjs", args: ["--collection-plan", at("current-kric-exit-plan.json"), "--provider-snapshot", at("current-kric-exit-snapshot.json"), "--repository", "AquilaXk/easysubway-data", "--repository-sha", repositorySha, "--operation-id", operationId, "--output", at("current-kric-exit-collection-bundle.json")] },
@@ -148,11 +170,18 @@ export async function runCurrentCapitalLiveChain({ repositoryRoot, runnerTemp, r
     await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
     await cp(source, destination, { recursive: true, force: false, verbatimSymlinks: true, filter: (candidate) => stagedCopyAllowed(root, candidate) });
   }
-  const plan = buildCurrentCapitalLiveChainPlan({ repositoryRoot: root, repositorySha, operationId, stagedRoot, transferObservationDirectory, transferReceiptPath });
   await prepareStagedPublicRouteMapInventoryImpl({ repositoryRoot: root, stagedRoot });
   await rebindPublicRouteMapImpl({ repositoryRoot: stagedRoot });
   await rebindTransferImpl({ repositoryRoot: stagedRoot, observationDirectory: transferObservationDirectory, receiptPath: transferReceiptPath });
   await rebindFacilityImpl({ repositoryRoot: stagedRoot });
+  const [stagedCandidate, stagedInventory, stagedSnapshotLedger] = await Promise.all([
+    readFile(path.join(stagedRoot, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(stagedRoot, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
+    readFile(path.join(stagedRoot, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+  ]);
+  const incheonTopologyRelativePath = resolveStagedIncheonTopologyPath(stagedInventory);
+  const outputPaths = currentCapitalLiveChainOutputPaths({ candidate: stagedCandidate, sourceInventory: stagedInventory, sourceSnapshotLedger: stagedSnapshotLedger });
+  const plan = buildCurrentCapitalLiveChainPlan({ repositoryRoot: root, repositorySha, operationId, stagedRoot, transferObservationDirectory, transferReceiptPath, incheonTopologyRelativePath, outputPaths });
   const buildExitPlan = plan.steps.find((entry) => entry.id === "build-exit-plan");
   await execFileImpl(process.execPath, [buildExitPlan.script, ...buildExitPlan.args], { cwd: root, env: { ...narrowRunnerEnv(env), RUNNER_TEMP: stagedRoot } });
   const operationNow = clock();

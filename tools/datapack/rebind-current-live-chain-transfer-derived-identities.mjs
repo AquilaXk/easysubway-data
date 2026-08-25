@@ -10,6 +10,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { buildApplicability } from "./build-current-capital-transfer-topology-applicability.mjs";
+import { deriveCurrentLiveChainTransferDescriptorIdentity } from "./build-current-capital-live-chain-boundary.mjs";
 import { rebuildAuthenticatedTransferTopologyMetrics } from "./build-current-transfer-topology-metrics.mjs";
 import { readSeoulTransferObservationDirectory } from "./collect-current-seoul-transfer-distance-duration-snapshot.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
@@ -19,16 +20,25 @@ import { approvedGovernanceBindingTransition, deriveRawRetentionExpiresAt } from
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const SOURCE = "seoul-metro-transfer-distance-duration";
-export const CURRENT_LIVE_CHAIN_TRANSFER_OUTPUTS = Object.freeze([
+export const CURRENT_LIVE_CHAIN_TRANSFER_FIXED_OUTPUTS = Object.freeze([
   "tools/datapack/release/current-transfer-topology-metrics.json",
   "tools/datapack/release/current-capital-transfer-topology-applicability.json",
-  "tools/datapack/sources/seoul-metro-transfer-distance-duration-20260815T094038817Z.json",
   "tools/datapack/source-inventory.json",
   "tools/datapack/release/source-snapshots.json",
   "tools/datapack/release/candidate-build-spec.json",
   "tools/datapack/release/release-request.json",
   "tools/datapack/release/hash-evidence.json",
 ]);
+export function currentLiveChainTransferOutputPaths(descriptorRelativePath) {
+  if (typeof descriptorRelativePath !== "string" || !/^tools\/datapack\/sources\/seoul-metro-transfer-distance-duration-[0-9]{8}T[0-9]{9}Z\.json$/u.test(descriptorRelativePath)) {
+    throw new Error("TRANSFER descriptor output path mismatch");
+  }
+  return Object.freeze([
+    ...CURRENT_LIVE_CHAIN_TRANSFER_FIXED_OUTPUTS.slice(0, 2),
+    descriptorRelativePath,
+    ...CURRENT_LIVE_CHAIN_TRANSFER_FIXED_OUTPUTS.slice(2),
+  ]);
+}
 const STAGE_INPUTS = Object.freeze([
   "tools/datapack/release/capital-production-canonical-pack.json",
   "tools/datapack/release/candidate-build-spec.json",
@@ -60,8 +70,8 @@ function rooted(root, relative) {
   if (!result.startsWith(`${root}${path.sep}`)) throw new Error(`path escapes repository root: ${relative}`);
   return result;
 }
-function outputPath(root, relative) {
-  if (!CURRENT_LIVE_CHAIN_TRANSFER_OUTPUTS.includes(relative)) throw new Error(`TRANSFER output is not allowlisted: ${relative}`);
+function outputPath(root, relative, outputPaths) {
+  if (!outputPaths.includes(relative)) throw new Error(`TRANSFER output is not allowlisted: ${relative}`);
   return rooted(root, relative);
 }
 async function stable(file, label) {
@@ -205,7 +215,7 @@ export function assertCurrentLiveChainTransferIdentity(candidate, inventory, sna
 
 export async function buildCurrentLiveChainTransferDerivedIdentityOutputs({ repositoryRoot: inputRoot = ROOT, observationDirectory, receiptPath } = {}) {
   const root = repositoryRoot(inputRoot);
-  const [candidateBytes, inventoryBytes, snapshotsBytes, packBytes, sourceCandidatesBytes, kricBytes, receiptBytes, descriptorBytes] = await Promise.all([
+  const [candidateBytes, inventoryBytes, snapshotsBytes, packBytes, sourceCandidatesBytes, kricBytes, receiptBytes] = await Promise.all([
     stable(rooted(root, "tools/datapack/release/candidate-build-spec.json"), "candidate"),
     stable(rooted(root, "tools/datapack/source-inventory.json"), "source inventory"),
     stable(rooted(root, "tools/datapack/release/source-snapshots.json"), "source snapshots"),
@@ -213,9 +223,11 @@ export async function buildCurrentLiveChainTransferDerivedIdentityOutputs({ repo
     stable(rooted(root, "tools/datapack/source-candidates.json"), "source candidates"),
     stable(rooted(root, "tools/datapack/sources/kric-provider-code-catalog-20260228.json"), "KRIC catalog"),
     stable(receiptPath, "authenticated OCI receipt"),
-    stable(rooted(root, "tools/datapack/sources/seoul-metro-transfer-distance-duration-20260815T094038817Z.json"), "TRANSFER descriptor"),
   ]);
   const candidate = JSON.parse(candidateBytes); const inventory = JSON.parse(inventoryBytes); const snapshots = JSON.parse(snapshotsBytes);
+  const descriptorIdentity = deriveCurrentLiveChainTransferDescriptorIdentity({ candidate, sourceInventory: inventory, sourceSnapshotLedger: snapshots });
+  const outputPaths = currentLiveChainTransferOutputPaths(descriptorIdentity.relativePath);
+  const descriptorBytes = await stable(rooted(root, descriptorIdentity.relativePath), "TRANSFER descriptor");
   const receipt = validateSeoulTransferRawReceipt(JSON.parse(receiptBytes));
   const active = assertCurrentLiveChainTransferIdentity(candidate, inventory, snapshots, JSON.parse(descriptorBytes), descriptorBytes, receipt);
   const observation = await readSeoulTransferObservationDirectory(observationDirectory, { sourceCandidatesBytes });
@@ -231,7 +243,7 @@ export async function buildCurrentLiveChainTransferDerivedIdentityOutputs({ repo
   }, receipt, metrics, metricsBytes, applicability, applicabilityBytes, now: new Date(receipt.storedAt) });
   if (descriptor.snapshotId !== active.row.snapshotId) throw new Error("TRANSFER derivation changed source identity");
   const descriptorPath = `tools/datapack/sources/${descriptor.snapshotId}.json`;
-  if (!CURRENT_LIVE_CHAIN_TRANSFER_OUTPUTS.includes(descriptorPath)) throw new Error("TRANSFER descriptor output path mismatch");
+  if (descriptorPath !== descriptorIdentity.relativePath) throw new Error("TRANSFER descriptor output path mismatch");
   const nextInventory = structuredClone(inventory);
   Object.assign(nextInventory.sources.find(({ id }) => id === SOURCE).transferAdmissionEvidence, {
     metricsArtifactSha256: descriptor.transferTopology.metricsArtifactSha256,
@@ -251,8 +263,8 @@ export async function buildCurrentLiveChainTransferDerivedIdentityOutputs({ repo
       writeFile(rooted(staging, "tools/datapack/release/source-snapshots.json"), json(nextSnapshots)),
     ]);
     await refreshCurrentOnlyReleaseEvidence(staging);
-    const outputs = await Promise.all(CURRENT_LIVE_CHAIN_TRANSFER_OUTPUTS.map(async (relative) => ({
-      relative, bytes: await stable(outputPath(staging, relative), `staged ${relative}`), prestate: await stable(outputPath(root, relative), `current ${relative}`),
+    const outputs = await Promise.all(outputPaths.map(async (relative) => ({
+      relative, bytes: await stable(outputPath(staging, relative, outputPaths), `staged ${relative}`), prestate: await stable(outputPath(root, relative, outputPaths), `current ${relative}`),
     })));
     const rebuilt = JSON.parse(outputs.find(({ relative }) => relative.endsWith("candidate-build-spec.json")).bytes);
     if (rebuilt.candidateId !== candidate.candidateId || rebuilt.sourceSnapshotSetHash !== candidate.sourceSnapshotSetHash
@@ -264,8 +276,11 @@ export async function buildCurrentLiveChainTransferDerivedIdentityOutputs({ repo
 async function acquire(root) { const lock = rooted(root, LOCK); await assertParent(lock); await mkdir(lock, { mode: 0o700 }); return () => rmdir(lock); }
 export async function commitCurrentLiveChainTransferDerivedIdentityOutputs({ repositoryRoot: inputRoot = ROOT, outputs, failAfter = null, failRollbackAt = null } = {}) {
   const root = repositoryRoot(inputRoot);
-  if (!Array.isArray(outputs) || outputs.length !== CURRENT_LIVE_CHAIN_TRANSFER_OUTPUTS.length
-    || JSON.stringify(outputs.map(({ relative }) => relative)) !== JSON.stringify(CURRENT_LIVE_CHAIN_TRANSFER_OUTPUTS)) throw new Error("TRANSFER commit requires exact eight outputs");
+  if (!Array.isArray(outputs)) throw new Error("TRANSFER commit requires exact eight outputs");
+  const descriptorOutputs = outputs.filter(({ relative }) => !CURRENT_LIVE_CHAIN_TRANSFER_FIXED_OUTPUTS.includes(relative));
+  if (descriptorOutputs.length !== 1) throw new Error("TRANSFER commit requires exact eight outputs");
+  const outputPaths = currentLiveChainTransferOutputPaths(descriptorOutputs[0].relative);
+  if (JSON.stringify(outputs.map(({ relative }) => relative)) !== JSON.stringify(outputPaths)) throw new Error("TRANSFER commit requires exact eight outputs");
   const release = await acquire(root); const journal = rooted(root, JOURNAL);
   try {
     const records = outputs.map(({ relative, bytes, prestate }) => {
@@ -275,11 +290,11 @@ export async function commitCurrentLiveChainTransferDerivedIdentityOutputs({ rep
     await writeFile(journal, JSON.stringify({ schemaVersion: 1, records }), { flag: "wx", mode: 0o600 });
     let index = -1;
     try {
-      for (const record of records) { index += 1; await atomicCas(outputPath(root, record.relative), Buffer.from(record.before, "base64"), Buffer.from(record.after, "base64")); if (failAfter === index) throw new Error("injected TRANSFER commit failure"); }
+      for (const record of records) { index += 1; await atomicCas(outputPath(root, record.relative, outputPaths), Buffer.from(record.before, "base64"), Buffer.from(record.after, "base64")); if (failAfter === index) throw new Error("injected TRANSFER commit failure"); }
     } catch (error) {
       let rollbackComplete = false;
       for (let rollback = index; rollback >= 0; rollback -= 1) {
-        const record = records[rollback]; const file = outputPath(root, record.relative); const after = Buffer.from(record.after, "base64");
+        const record = records[rollback]; const file = outputPath(root, record.relative, outputPaths); const after = Buffer.from(record.after, "base64");
         if (!(await stable(file, "TRANSFER rollback")).equals(after)) throw error;
         if (failRollbackAt === rollback) throw new Error("injected TRANSFER rollback failure");
         await atomicCas(file, after, Buffer.from(record.before, "base64"));
@@ -289,7 +304,7 @@ export async function commitCurrentLiveChainTransferDerivedIdentityOutputs({ rep
       throw error;
     }
     await unlink(journal); await release();
-    return { targets: CURRENT_LIVE_CHAIN_TRANSFER_OUTPUTS, outputSha256: sha256(Buffer.concat(outputs.map(({ bytes }) => bytes))) };
+    return { targets: outputPaths, outputSha256: sha256(Buffer.concat(outputs.map(({ bytes }) => bytes))) };
   } catch (error) {
     // A journal and lock are recovery evidence when rollback ownership cannot
     // be proven.  They are intentionally retained for an explicit recovery.
@@ -298,10 +313,11 @@ export async function commitCurrentLiveChainTransferDerivedIdentityOutputs({ rep
 }
 export async function rebindCurrentLiveChainTransferDerivedIdentities(options = {}) {
   const outputs = await buildCurrentLiveChainTransferDerivedIdentityOutputs(options);
+  const outputPaths = outputs.map(({ relative }) => relative);
   if (options.check) {
     const stale = outputs.filter(({ bytes, prestate }) => !bytes.equals(prestate)).map(({ relative }) => relative);
     if (stale.length) throw new Error(`current live-chain TRANSFER output drift: ${stale.join(", ")}`);
-    return { targets: CURRENT_LIVE_CHAIN_TRANSFER_OUTPUTS, changed: false };
+    return { targets: outputPaths, changed: false };
   }
   return commitCurrentLiveChainTransferDerivedIdentityOutputs({ repositoryRoot: options.repositoryRoot, outputs, failAfter: options.failAfter });
 }
