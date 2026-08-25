@@ -11,7 +11,7 @@
   "networkEdgeEvidence": {
     "sourceInventory": {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "8f525365be989a60136a60aaf2734d457d0a2cc12efc1b5e9714110282592200"
+      "sha256": "b787e60f91c7c02a008bc68251f7501f34c8d1fa44bef43a3d6a9059b6eb55e9"
     },
     "capitalTopology": {
       "path": "tools/datapack/sources/capital-route-topology-20260825.json",
@@ -174,12 +174,12 @@
       "governancePolicySha256": "13f8a78c0ae0f7bfa6817005f44a92be3131e6f6708a69a4024747478203beaa"
     }
   ],
-  "sourceSnapshotSetHash": "47ce24b6d682b0f0d5afd7380f6850fc1c87a1507153833117c0e9d060c0cdf8",
+  "sourceSnapshotSetHash": "b0ff2050e1b3c06db2e79ddcf2b9201ff2a4e72c227b092d04359bf9923adb92",
   "approvedAliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
   "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
   "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
   "approvedOverrideSetHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
-  "sourceInventorySha256": "3620428f4409311d5fa31df05ca95d37431d6a659ccfd05f11255d447fb47958",
+  "sourceInventorySha256": "ee234a53d1aa63de230a55e62ad6a04c2bea775d2be6bd800604dec9590170ea",
   "builderGitSha": "6894f57f9d318ca09ad6e9f63860d40adcc1b021",
   "builderVersion": "build-datapack.mjs@26",
   "officialOdFareEvidence": {
