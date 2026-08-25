@@ -1,15 +1,14 @@
 #!/usr/bin/env node
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { gunzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 
-import {
-  canonicalRideEdgeSetSha256,
-  validateRouteEdgeEvaluationPolicy,
-} from "./evaluate-route-accessibility-edges.mjs";
+import { validateTrackedItxTopologyEvidence } from "./build-datapack.mjs";
+import { canonicalRideEdgeSetSha256 } from "./evaluate-route-accessibility-edges.mjs";
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
@@ -20,25 +19,36 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   }
 }
 
-export async function main(argv) {
+export async function main(argv, {
+  repositoryRoot = fileURLToPath(new URL("../../", import.meta.url)),
+} = {}) {
   const args = parseArgs(argv);
-  if (!args.manifest || !args.root || !args["route-edge-policy"]) {
-    throw new Error("usage: build-route-graph-topology-report.mjs --manifest <current.json> --root <pack-root> --route-edge-policy <policy.json> [--output <report.json>]");
+  if (!args.manifest || !args.root || !args["build-spec"]) {
+    throw new Error("usage: build-route-graph-topology-report.mjs --manifest <current.json> --root <pack-root> --build-spec <candidate-build-spec.json> [--output <report.json>]");
   }
-  const [manifestBytes, routeEdgePolicyBytes] = await Promise.all([
+  const [manifestBytes, buildSpecBytes] = await Promise.all([
     readFile(args.manifest),
-    readFile(args["route-edge-policy"]),
+    readFile(args["build-spec"]),
   ]);
   const manifest = JSON.parse(manifestBytes);
-  const admittedItxEdgeSetSha256 = admittedItxEdgeSetSha256FromPolicy(JSON.parse(routeEdgePolicyBytes));
+  const buildSpec = JSON.parse(buildSpecBytes);
   const temporaryDir = await mkdtemp(path.join(tmpdir(), "easysubway-route-graph-topology-"));
   try {
     const packs = [];
     for (const pack of manifest.packs ?? []) {
       const compressed = await readFile(localPackPathForUrl(args.root, pack));
       const sqlitePath = path.join(temporaryDir, `${pack.id}-v${pack.version}.sqlite`);
-      await writeFile(sqlitePath, gunzipSync(compressed));
-      packs.push(buildRouteGraphTopologyReport(sqlitePath, pack, { admittedItxEdgeSetSha256 }));
+      const sqliteBytes = gunzipSync(compressed);
+      await writeFile(sqlitePath, sqliteBytes);
+      const binding = await validateCurrentItxTopologyEvidencePack({
+        compressed,
+        sqliteBytes,
+        sqlitePath,
+        pack,
+        buildSpec,
+        repositoryRoot,
+      });
+      packs.push(buildRouteGraphTopologyReport(sqlitePath, pack, binding));
     }
     const report = {
       schemaVersion: 1,
@@ -203,12 +213,51 @@ export function buildRouteGraphTopologyReport(sqlitePath, pack = {}, { admittedI
   }
 }
 
-function admittedItxEdgeSetSha256FromPolicy(policy) {
-  const validatedPolicy = validateRouteEdgeEvaluationPolicy(policy);
-  if (validatedPolicy.policyVersion !== "route-edge-evaluation-v2") {
-    throw new Error("route edge policy identity mismatch");
+export async function validateCurrentItxTopologyEvidencePack({
+  compressed,
+  sqliteBytes,
+  sqlitePath,
+  pack,
+  buildSpec,
+  repositoryRoot,
+}) {
+  if (!(compressed instanceof Uint8Array) || !(sqliteBytes instanceof Uint8Array)) {
+    throw new Error("ITX topology evidence pack bytes are required");
   }
-  return validatedPolicy.rideInvariant.itxCheongchunExpress.admittedEdgeSetSha256;
+  const database = new DatabaseSync(sqlitePath, { readOnly: true });
+  try {
+    const itxEdges = database.prepare(`
+      SELECT id, from_node_id, to_node_id, edge_type, service_pattern, service_class,
+             duration_seconds, distance_meters
+      FROM network_edges
+      WHERE edge_type = 'RIDE' AND service_class = 'ITX_CHEONGCHUN'
+      ORDER BY id
+    `).all();
+    const validation = await validateTrackedItxTopologyEvidence(buildSpec, {
+      packs: [{
+        transitTrips: [],
+        networkEdges: itxEdges.map(routeEdgeFromSqliteRow),
+      }],
+    }, repositoryRoot);
+    const topologyEvidence = validation?.evidence;
+    if (pack?.id !== topologyEvidence?.pack?.id
+      || sha256(compressed) !== topologyEvidence.pack.outputSha256
+      || sha256(sqliteBytes) !== topologyEvidence.pack.outputSqliteSha256
+      || compressed.byteLength !== topologyEvidence.pack.byteSize) {
+      throw new Error("ITX topology evidence pack identity mismatch");
+    }
+    if (itxEdges.length !== topologyEvidence.topology.edgeCount
+      || itxEdges.some((edge) => String(edge.service_pattern).toUpperCase() !== "EXPRESS")) {
+      throw new Error("ITX topology evidence service layer mismatch");
+    }
+    return { admittedItxEdgeSetSha256: canonicalRideEdgeSetSha256(itxEdges.map(routeEdgeFromSqliteRow)) };
+  } finally {
+    database.close();
+  }
+}
+
+function sha256(bytes) {
+  return createHash("sha256").update(bytes).digest("hex");
 }
 
 function routeEdgeFromSqliteRow(edge) {

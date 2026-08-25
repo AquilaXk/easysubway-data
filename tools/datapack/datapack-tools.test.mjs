@@ -28,7 +28,6 @@ import {
   deriveTopology as deriveItxTopology,
   projectItxTopologyIntoCanonicalFixture,
 } from "./apply-itx-topology-to-bundled-pack.mjs";
-import { canonicalRideEdgeSetSha256 } from "./evaluate-route-accessibility-edges.mjs";
 import { SEOUL_ROUTE_MAP_SOURCE_OPERATOR_IDS } from "./materialize-seoul-route-map-positions.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -13499,34 +13498,23 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
     { cwd: root, env: productionEnv },
   );
   const routeGraphTopologyReportPath = path.join(outputDir, "route-graph-topology-report.json");
-  const routeEdgePolicy = JSON.parse(await readFile(
-    path.join(root, "release/product-gates/route-edge-evaluation-policy.json"),
-    "utf8",
-  ));
-  routeEdgePolicy.rideInvariant.itxCheongchunExpress.admittedEdgeSetSha256 =
-    canonicalRideEdgeSetSha256([]);
-  const routeEdgePolicyPath = path.join(outputDir, "route-edge-evaluation-policy.json");
-  await writeFile(routeEdgePolicyPath, `${JSON.stringify(routeEdgePolicy)}\n`);
-  await execFileAsync(
-    process.execPath,
-    [
-      "tools/datapack/build-route-graph-topology-report.mjs",
-      "--manifest",
-      path.join(packOutputDir, "current.json"),
-      "--root",
-      packOutputDir,
-      "--route-edge-policy",
-      routeEdgePolicyPath,
-      "--output",
-      routeGraphTopologyReportPath,
-    ],
-    { cwd: root },
-  );
-  const routeGraphTopologyReport = JSON.parse(await readFile(routeGraphTopologyReportPath, "utf8"));
-  assert.equal(routeGraphTopologyReport.summary.nonAdjacentExpressRideViolationCount, 0);
-  assert.deepEqual(
-    routeGraphTopologyReport.packs[0].violations.nonAdjacentExpressRide.map((violation) => violation.edgeId),
-    [],
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/build-route-graph-topology-report.mjs",
+        "--manifest",
+        path.join(packOutputDir, "current.json"),
+        "--root",
+        packOutputDir,
+        "--build-spec",
+        path.join(root, "tools/datapack/release/candidate-build-spec.json"),
+        "--output",
+        routeGraphTopologyReportPath,
+      ],
+      { cwd: root },
+    ),
+    /ITX topology evidence pack identity mismatch/,
   );
 
   // #2609 source governance 완료만으로 route availability를 추정하지 않는다. #2611 전수 평가와 #2612 strict

@@ -954,7 +954,7 @@ jobs:
           node tools/datapack/build-route-graph-topology-report.mjs \
             --manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json" \
             --root "${EASYSUBWAY_DATAPACK_STAGE}" \
-            --route-edge-policy "release/product-gates/route-edge-evaluation-policy.json" \
+            --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}" \
             --output "${EASYSUBWAY_ROUTE_GRAPH_TOPOLOGY_REPORT}"
           test -s "${EASYSUBWAY_ROUTE_GRAPH_TOPOLOGY_REPORT}"
 

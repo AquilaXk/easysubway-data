@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -8,24 +7,23 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import * as currentPlan from "./build-current-kric-exit-collection-plan.mjs";
-import { currentIncheonStationCodeDerivations } from "./collect-incheon-station-info.mjs";
 import { canonicalKricExitPathCollectionPlanJson } from "./plan-kric-exit-path-collection.mjs";
 
 const { buildCurrentKricExitCollectionPlan, main } = currentPlan;
-const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
-
 const datapackRoot = fileURLToPath(new URL(".", import.meta.url));
-const currentNow = new Date("2026-08-14T16:00:00.000Z");
+const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 const productionPaths = Object.freeze({
   canonicalPack: path.join(datapackRoot, "release/capital-production-canonical-pack.json"),
   coverageTargets: path.join(datapackRoot, "nationwide-coverage-targets.json"),
   providerCodeCatalog: path.join(datapackRoot, "sources/kric-provider-code-catalog-20260228.json"),
   routeRosters: path.join(datapackRoot, "sources/kric-nationwide-route-rosters-20260730T203926676Z.json"),
   sourceInventory: path.join(datapackRoot, "source-inventory.json"),
-  incheonTopology: path.join(datapackRoot, "sources/incheon-transit-station-info-20260814.json"),
 });
 
-const buildPlan = (input, options = {}) => buildCurrentKricExitCollectionPlan(input, { now: currentNow, ...options });
+const buildPlan = (input, options = {}) => buildCurrentKricExitCollectionPlan(input, {
+  now: new Date(admittedIncheonTopology(input).capturedAt),
+  ...options,
+});
 
 test("current production 정본에서 exact EXIT collection plan을 결정적으로 만든다", async () => {
   const input = await readProductionBytes();
@@ -146,7 +144,7 @@ test("capital Seoul Metro production selector는 canonical metadata와 실제 me
 
 test("capital selector는 비대상 Incheon freshness에 결합하지 않고 nationwide는 stale을 거부한다", async () => {
   const input = await readProductionBytes();
-  const afterIncheonExpiry = new Date("2026-08-16T00:00:00.000Z");
+  const afterIncheonExpiry = new Date(Date.parse(admittedIncheonTopology(input).freshUntil) + 1);
 
   assert.throws(
     () => buildCurrentKricExitCollectionPlan(input, { now: afterIncheonExpiry }),
@@ -340,18 +338,22 @@ test("CLI는 regular input만 한 번 읽고 existing·symlink output을 덮어�
       writeFile(incheonTopology, input.incheonTopologyBytes, { flag: "wx" }),
     ]);
     const currentCliArgs = cliArgs(output, { sourceInventory, incheonTopology });
-    await main(currentCliArgs, { now: currentNow });
+    await main(currentCliArgs, { now: new Date(admittedIncheonTopology(input).capturedAt) });
     const first = await readFile(output);
     assert.equal(first.toString("utf8"), canonicalKricExitPathCollectionPlanJson(
       buildPlan(input),
     ));
 
-    await assert.rejects(() => main(currentCliArgs, { now: currentNow }), /output must be absent/);
+    await assert.rejects(() => main(currentCliArgs, {
+      now: new Date(admittedIncheonTopology(input).capturedAt),
+    }), /output must be absent/);
     assert.deepEqual(await readFile(output), first);
 
     const symlinkOutput = path.join(directory, "symlink.json");
     await symlink(output, symlinkOutput);
-    await assert.rejects(() => main(cliArgs(symlinkOutput, { sourceInventory, incheonTopology }), { now: currentNow }), /output must be absent/);
+    await assert.rejects(() => main(cliArgs(symlinkOutput, { sourceInventory, incheonTopology }), {
+      now: new Date(admittedIncheonTopology(input).capturedAt),
+    }), /output must be absent/);
     assert.deepEqual(await readFile(output), first);
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -417,10 +419,14 @@ test("input snapshot은 O_NOFOLLOW single descriptor의 stat/read/stat에 결속
 test("preflight 실패는 output과 input bytes를 남기거나 바꾸지 않는다", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "easysubway-exit-production-failure-"));
   try {
+    const input = await readProductionBytes();
     const invalidPack = path.join(directory, "invalid-pack.json");
     const output = path.join(directory, "plan.json");
     await writeFile(invalidPack, "{}", { flag: "wx" });
-    await assert.rejects(() => main(cliArgs(output, { canonicalPack: invalidPack }), { now: currentNow }), /canonical pack/);
+    await assert.rejects(() => main(cliArgs(output, {
+      canonicalPack: invalidPack,
+      incheonTopology: admittedIncheonTopologyPath(input),
+    }), { now: new Date(admittedIncheonTopology(input).capturedAt) }), /canonical pack/);
     await assert.rejects(() => readFile(output), { code: "ENOENT" });
     assert.equal(await readFile(invalidPack, "utf8"), "{}");
   } finally {
@@ -435,40 +441,52 @@ async function readProductionBytes() {
     providerCodeCatalogBytes,
     routeRostersBytes,
     sourceInventoryBytes,
-    incheonTopologyBytes,
   ] = await Promise.all([
     readFile(productionPaths.canonicalPack),
     readFile(productionPaths.coverageTargets),
     readFile(productionPaths.providerCodeCatalog),
     readFile(productionPaths.routeRosters),
     readFile(productionPaths.sourceInventory),
-    readFile(productionPaths.incheonTopology),
   ]);
-  const incheonTopology = JSON.parse(incheonTopologyBytes);
-  delete incheonTopology.stationCodeCorrections;
-  incheonTopology.stationCodeDerivations = currentIncheonStationCodeDerivations();
-  const currentIncheonTopologyBytes = Buffer.from(`${JSON.stringify(incheonTopology)}\n`);
   const sourceInventory = JSON.parse(sourceInventoryBytes);
-  sourceInventory.sources.find(({ id }) => id === "incheon-transit-station-info")
-    .routeMapAdmissionEvidence.snapshotSha256 = sha256(currentIncheonTopologyBytes);
+  const admission = sourceInventory.sources.find(({ id }) => id === "incheon-transit-station-info")
+    ?.topologyAdmissionEvidence;
+  if (!admission?.snapshotPath) throw new Error("current Incheon topology snapshot path is missing");
+  const incheonTopologyBytes = await readFile(path.resolve(repositoryRoot, admission.snapshotPath));
   return {
     canonicalPackBytes,
     coverageTargetsBytes,
     providerCodeCatalogBytes,
     routeRostersBytes,
-    sourceInventoryBytes: Buffer.from(`${JSON.stringify(sourceInventory)}\n`),
-    incheonTopologyBytes: currentIncheonTopologyBytes,
+    sourceInventoryBytes,
+    incheonTopologyBytes,
   };
 }
 
+function admittedIncheonTopology(input) {
+  const admission = JSON.parse(input.sourceInventoryBytes).sources
+    .find(({ id }) => id === "incheon-transit-station-info")?.topologyAdmissionEvidence;
+  if (!admission?.capturedAt || !admission?.freshUntil) {
+    throw new Error("current Incheon topology admission window is missing");
+  }
+  return admission;
+}
+
+function admittedIncheonTopologyPath(input) {
+  const snapshotPath = admittedIncheonTopology(input).snapshotPath;
+  if (!snapshotPath) throw new Error("current Incheon topology snapshot path is missing");
+  return path.resolve(repositoryRoot, snapshotPath);
+}
+
 function cliArgs(output, overrides = {}) {
+  if (!overrides.incheonTopology) throw new Error("test Incheon topology path is required");
   const args = [
     "--canonical-pack", overrides.canonicalPack ?? productionPaths.canonicalPack,
     "--coverage-targets", productionPaths.coverageTargets,
     "--provider-code-catalog", productionPaths.providerCodeCatalog,
     "--route-rosters", productionPaths.routeRosters,
     "--source-inventory", overrides.sourceInventory ?? productionPaths.sourceInventory,
-    "--incheon-topology", overrides.incheonTopology ?? productionPaths.incheonTopology,
+    "--incheon-topology", overrides.incheonTopology,
   ];
   if (overrides.coverageSelector !== undefined) {
     args.push("--coverage-selector", overrides.coverageSelector);
