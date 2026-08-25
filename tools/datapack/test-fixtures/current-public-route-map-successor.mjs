@@ -27,7 +27,7 @@ const MOLIT_SOURCE_ID = "molit-urban-rail-full-route";
 const CURRENT_CAPITAL_SOURCE_IDS = Object.freeze([
   "molit-urban-rail-full-route", "seoulmetro-station-line-info", PUBLIC_SOURCE_ID,
   "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
-  "seoul-metro-official-od-fares",
+  "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
 ]);
 const SHA_KEYS = Object.freeze([
   "layoutAlgorithmVersion", "topologySnapshotId", "topologySnapshotSha256",
