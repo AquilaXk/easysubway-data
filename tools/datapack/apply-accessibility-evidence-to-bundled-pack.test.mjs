@@ -15,6 +15,7 @@ import {
   stripLegacyCoreClaims,
   syncAccessibilityEdges,
   activeReleaseSnapshots,
+  currentCandidateReleaseSnapshots,
   syncCanonicalFixture,
 } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
 
@@ -355,6 +356,51 @@ test("active canonical source inventory excludes retired movement snapshot heads
   }), [
     { sourceId: "active-source", snapshotId: "active-head" },
   ]);
+});
+
+test("current candidate consumes exact public six plus TRANSFER-last while canonical fares remain active", () => {
+  const canonicalSourceIds = [
+    "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
+    "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
+    "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
+  ];
+  const candidateSourceIds = [
+    "seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility",
+    "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info",
+    "seoul-metro-transfer-distance-duration",
+  ];
+  const snapshots = canonicalSourceIds.map((sourceId) => ({ sourceId, snapshotId: `${sourceId}-head` }));
+  const headsBySource = Object.fromEntries(snapshots.map(({ sourceId, snapshotId }) => [sourceId, snapshotId]));
+  const canonical = { packs: [{ id: "capital", sourceInventory: canonicalSourceIds.map((id) => ({ id })) }] };
+
+  assert.deepEqual(
+    currentCandidateReleaseSnapshots(snapshots, canonical, headsBySource).map(({ sourceId }) => sourceId),
+    candidateSourceIds,
+  );
+  assert.throws(
+    () => currentCandidateReleaseSnapshots(snapshots, { packs: [{ id: "capital", sourceInventory: canonicalSourceIds.slice(0, -1).map((id) => ({ id })) }] }, headsBySource),
+    /capital canonical active source identity drift/,
+  );
+  assert.throws(
+    () => currentCandidateReleaseSnapshots(snapshots.filter(({ sourceId }) => sourceId !== "seoul-metro-transfer-distance-duration"), canonical, headsBySource),
+    /current candidate source head is missing: seoul-metro-transfer-distance-duration/,
+  );
+});
+
+test("reviewed accessibility fixture cannot replace the current canonical source authority", () => {
+  const ids = [
+    "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
+    "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
+    "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
+  ];
+  const canonical = { packs: [{ id: "capital", sourceInventory: ids.map((id) => ({ id })), facilities: [], stationFacilityEvidence: [], metadata: { productionCoverageEvidence: "[]" }, minimumTableRows: {} }] };
+  assert.throws(
+    () => syncCanonicalFixture(canonical, {
+      sourceInventory: [{ id: "seoulmetro-cyberstation-route-map" }],
+      facilities: [], stationFacilityEvidence: [], metadata: { productionCoverageEvidence: "[]" },
+    }),
+    /reviewed source inventory cannot replace current canonical source authority/,
+  );
 });
 
 test("candidate-fixtures-only sync succeeds without reading mobile pack paths", async () => {

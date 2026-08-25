@@ -23,11 +23,16 @@ const ACTIVE_SOURCE_IDS_WITH_TRANSFER = Object.freeze([...ACTIVE_SOURCE_IDS, TRA
 const CAPITAL_SOURCE_IDS = Object.freeze([
   "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
   "kric-subway-timetable", "seoul-metro-accessibility", SOURCE_ID, "seoul-metro-official-od-fares",
+  TRANSFER_SOURCE_ID,
 ]);
 const CAPITAL_ACTIVE_SOURCE_IDS = Object.freeze([
   "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
-  "kric-subway-timetable", "seoul-metro-accessibility", SOURCE_ID,
+  "kric-subway-timetable", "seoul-metro-accessibility", SOURCE_ID, "seoul-metro-official-od-fares",
+  TRANSFER_SOURCE_ID,
 ]);
+const CAPITAL_RELEASE_HEAD_SOURCE_IDS = Object.freeze(CAPITAL_SOURCE_IDS.filter(
+  (sourceId) => sourceId !== "seoul-metro-official-od-fares",
+));
 const SHA256 = /^[0-9a-f]{64}$/u;
 const PROJECTION_KEYS = Object.freeze([
   "snapshotId", "sourceId", "rawObjectUri", "rawSha256", "redactedRequestFingerprint",
@@ -216,13 +221,14 @@ function validateCapitalReleaseHeads(pack, lineage, snapshots, selected) {
   const capital = pack.packs[0];
   const capitalIds = new Set(capital.sourceInventory.map(({ id }) => id));
   const byId = new Map(snapshots.map((snapshot) => [snapshot.snapshotId, snapshot]));
-  const releaseHeads = ACTIVE_SOURCE_IDS.map((sourceId) => byId.get(lineage.headsBySource[sourceId]));
+  const releaseHeads = ACTIVE_SOURCE_IDS_WITH_TRANSFER.map((sourceId) => byId.get(lineage.headsBySource[sourceId]));
   const actualCapitalHeadIds = capital.sourceInventory.map(({ id }) => id)
     .filter((sourceId) => lineage.headsBySource[sourceId] != null);
-  if (JSON.stringify(actualCapitalHeadIds) !== JSON.stringify(CAPITAL_ACTIVE_SOURCE_IDS)
-    || ACTIVE_SOURCE_IDS.some((sourceId) => !capitalIds.has(sourceId))
-    || releaseHeads.some((snapshot, index) => snapshot?.sourceId !== ACTIVE_SOURCE_IDS[index])
-    || selected.filter(({ sourceId }) => ACTIVE_SOURCE_IDS.includes(sourceId)).length !== releaseHeads.length) {
+  if (CAPITAL_ACTIVE_SOURCE_IDS.some((sourceId) => !capitalIds.has(sourceId))
+    || JSON.stringify(actualCapitalHeadIds) !== JSON.stringify(CAPITAL_RELEASE_HEAD_SOURCE_IDS)
+    || ACTIVE_SOURCE_IDS_WITH_TRANSFER.some((sourceId) => !capitalIds.has(sourceId))
+    || releaseHeads.some((snapshot, index) => snapshot?.sourceId !== ACTIVE_SOURCE_IDS_WITH_TRANSFER[index])
+    || selected.filter(({ sourceId }) => ACTIVE_SOURCE_IDS_WITH_TRANSFER.includes(sourceId)).length !== releaseHeads.length) {
     throw new Error("capital active source head identity drift");
   }
 }
