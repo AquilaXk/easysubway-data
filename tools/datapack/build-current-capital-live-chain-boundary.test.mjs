@@ -95,6 +95,15 @@ function fanInComponents(input) {
   // The station-line fixture retains the old six-source FACILITY evidence path
   // for its transition tests.  A live-chain fan-in is current-only, so its
   // FACILITY admission must bind the selected seven-source candidate instead.
+  const transferSource = input.sourceInventory.sources.find(({ transferAdmissionEvidence }) => transferAdmissionEvidence);
+  const transfer = input.sourceSnapshots.find(({ sourceId }) => sourceId === transferSource.id);
+  transfer.rawReceipt = {
+    snapshotId: transfer.snapshotId,
+    snapshotRawSha256: transfer.rawSha256,
+    rawObjectSha256: transfer.rawSha256,
+    rawObjectUri: transfer.rawObjectUri,
+  };
+  input.candidateBuildSpec.sourceSnapshotSetHash = sha(JSON.stringify(input.sourceSnapshots));
   const facilityAdmission = structuredClone(input.facilityAdmission);
   facilityAdmission.candidate.sourceSnapshotSetHash = input.candidateBuildSpec.sourceSnapshotSetHash;
   resealFacilityAdmission(facilityAdmission);
@@ -123,8 +132,6 @@ function fanInComponents(input) {
     exitAdmission,
     exitAdmissionOciReceipt: input.exitReceipt,
   };
-  const transferSource = input.sourceInventory.sources.find(({ transferAdmissionEvidence }) => transferAdmissionEvidence);
-  const transfer = input.sourceSnapshots.find(({ sourceId }) => sourceId === transferSource.id);
   values.transferMetrics = structuredClone(values.transferMetrics);
   values.transferMetrics.sourceIdentity.rawSha256 = transfer.rawSha256;
   const { artifactSha256: _metricsArtifactSha256, ...metricsPayload } = values.transferMetrics;
@@ -142,7 +149,7 @@ function fanInComponents(input) {
   }
   Object.assign(values.sourceInventory.sources[0].transferAdmissionEvidence, {
     snapshotPath: `tools/datapack/sources/${transfer.snapshotId}.json`, rawSha256: transfer.rawSha256,
-    schemaFingerprint: transfer.schemaFingerprint, rawObjectUri: transfer.rawObjectUri,
+    schemaFingerprint: transfer.schemaFingerprint,
     metricsArtifactSha256: values.transferMetrics.artifactSha256,
     applicabilityArtifactSha256: values.transferApplicability.artifactSha256,
   });

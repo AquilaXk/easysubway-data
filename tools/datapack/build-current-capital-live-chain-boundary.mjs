@@ -139,7 +139,9 @@ export function deriveCurrentLiveChainTransferDescriptorIdentity({ candidate, so
   const relativePath = `tools/datapack/sources/${transfer.snapshotId}.json`;
   if (admission?.decision !== "APPROVED" || admission.snapshotId !== transfer.snapshotId || admission.snapshotPath !== relativePath
     || admission.rawSha256 !== transfer.rawSha256 || admission.schemaFingerprint !== transfer.schemaFingerprint
-    || admission.rawObjectUri !== transfer.rawObjectUri || transferProjection.rawSha256 !== transfer.rawSha256
+    || transfer.rawReceipt?.snapshotId !== transfer.snapshotId || transfer.rawReceipt?.snapshotRawSha256 !== transfer.rawSha256
+    || transfer.rawReceipt?.rawObjectSha256 !== transfer.rawSha256 || transfer.rawReceipt?.rawObjectUri !== transfer.rawObjectUri
+    || transferProjection.rawSha256 !== transfer.rawSha256
     || transferProjection.schemaFingerprint !== transfer.schemaFingerprint || transferProjection.rawObjectUri !== transfer.rawObjectUri) {
     throw new Error("current live-chain transfer identity mismatch");
   }
