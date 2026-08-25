@@ -28,6 +28,7 @@ import {
   deriveTopology as deriveItxTopology,
   projectItxTopologyIntoCanonicalFixture,
 } from "./apply-itx-topology-to-bundled-pack.mjs";
+import { canonicalRideEdgeSetSha256 } from "./evaluate-route-accessibility-edges.mjs";
 import { SEOUL_ROUTE_MAP_SOURCE_OPERATOR_IDS } from "./materialize-seoul-route-map-positions.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -13498,6 +13499,14 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
     { cwd: root, env: productionEnv },
   );
   const routeGraphTopologyReportPath = path.join(outputDir, "route-graph-topology-report.json");
+  const routeEdgePolicy = JSON.parse(await readFile(
+    path.join(root, "release/product-gates/route-edge-evaluation-policy.json"),
+    "utf8",
+  ));
+  routeEdgePolicy.rideInvariant.itxCheongchunExpress.admittedEdgeSetSha256 =
+    canonicalRideEdgeSetSha256([]);
+  const routeEdgePolicyPath = path.join(outputDir, "route-edge-evaluation-policy.json");
+  await writeFile(routeEdgePolicyPath, `${JSON.stringify(routeEdgePolicy)}\n`);
   await execFileAsync(
     process.execPath,
     [
@@ -13506,6 +13515,8 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
       path.join(packOutputDir, "current.json"),
       "--root",
       packOutputDir,
+      "--route-edge-policy",
+      routeEdgePolicyPath,
       "--output",
       routeGraphTopologyReportPath,
     ],
