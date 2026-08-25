@@ -26,6 +26,11 @@ const CURRENT_SOURCE_HEAD_AT = await selectedSourceHeadAt();
 const NOW = new Date(CURRENT_SOURCE_HEAD_AT + 120_000);
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const jsonSha = (value) => sha(Buffer.from(JSON.stringify(value)));
+const CURRENT_CAPITAL_SOURCE_IDS = Object.freeze([
+  "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
+  "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
+  "seoul-metro-official-od-fares",
+]);
 
 test("active candidate source sequence는 public successor exact six와 TRANSFER-last seven만 허용한다", () => {
   const six = [
@@ -195,6 +200,11 @@ test("RED old candidate KRIC head cannot satisfy current FACILITY identity; GREE
   const { root, next } = await fixture();
   t.after(() => rm(root, { recursive: true, force: true }));
   const before = await readInput(root);
+  assert.deepEqual(
+    before.canonicalPack.packs[0].sourceInventory.map(({ id }) => id),
+    CURRENT_CAPITAL_SOURCE_IDS,
+    "synthetic current fixture must bind the direct public route-map source in its canonical slot",
+  );
   const old = before.candidateBuildSpec;
   const rebound = rebindCandidateSourceSnapshots(before);
   const changed = Object.keys(old).filter((key) => JSON.stringify(old[key]) !== JSON.stringify(rebound[key]));

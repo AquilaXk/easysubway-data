@@ -24,6 +24,11 @@ import { deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
 const PUBLIC_SOURCE_ID = "seoul-metro-route-map-positions";
 const PREDECESSOR_SOURCE_ID = "seoulmetro-cyberstation-route-map";
 const MOLIT_SOURCE_ID = "molit-urban-rail-full-route";
+const CURRENT_CAPITAL_SOURCE_IDS = Object.freeze([
+  "molit-urban-rail-full-route", "seoulmetro-station-line-info", PUBLIC_SOURCE_ID,
+  "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
+  "seoul-metro-official-od-fares",
+]);
 const SHA_KEYS = Object.freeze([
   "layoutAlgorithmVersion", "topologySnapshotId", "topologySnapshotSha256",
   "topologySnapshotIdentity", "lineOrderSha256", "aliasLedgerVersion", "aliasLedgerSha256",
@@ -33,6 +38,19 @@ const SHA_KEYS = Object.freeze([
 
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
+
+function orderCurrentCapitalSources(document) {
+  const capital = document?.packs?.find(({ id }) => id === "capital");
+  const entries = capital?.sourceInventory;
+  const byId = new Map(entries?.map((entry) => [entry.id, entry]));
+  if (!Array.isArray(entries)
+    || byId.size !== entries.length
+    || byId.size !== CURRENT_CAPITAL_SOURCE_IDS.length
+    || CURRENT_CAPITAL_SOURCE_IDS.some((sourceId) => !byId.has(sourceId))) {
+    throw new Error("synthetic current capital source identity is incomplete");
+  }
+  capital.sourceInventory = CURRENT_CAPITAL_SOURCE_IDS.map((sourceId) => structuredClone(byId.get(sourceId)));
+}
 
 async function readJson(root, relative) {
   return JSON.parse(await readFile(path.join(root, relative), "utf8"));
@@ -556,6 +574,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     CURRENT_SEOUL_PUBLIC_ROUTE_MAP_COVERAGE,
   ]);
   Object.assign(pack, materializedPack);
+  orderCurrentCapitalSources(pack);
 
   const currentTopologyAdmissions = inventory.sources
     .map((source) => ({ source, admission: source.routeMapAdmissionEvidence?.currentTopologyAdmission }))
