@@ -47,6 +47,14 @@ const ADMITTED_TOPOLOGY_INPUTS = new Map([
       byteSize: 359319,
     },
   ],
+  [
+    "f3f00e6f99862ddf1c6964d09a220169f29a85181f420f30e20428f2bee835ab",
+    {
+      gzipSha256: "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
+      sqliteSha256: "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5",
+      byteSize: 1463745,
+    },
+  ],
 ]);
 const ROUTE_SERVICE_ARTIFACT_EVIDENCE_COLUMNS = `
   service_class TEXT NOT NULL PRIMARY KEY,
@@ -209,7 +217,7 @@ function validateAdmittedSourceReference(contract, reference) {
 function validateCurrentApprovalIdentity(reference) {
   const promotion = reference?.promotion;
   if (promotion?.mode !== "CURRENT_CANDIDATE_OWNER_APPROVED"
-    || !/^https:\/\/github\.com\/AquilaXk\/easysubway\/issues\/2135#issuecomment-[1-9][0-9]*$/u
+    || !/^https:\/\/github\.com\/AquilaXk\/easysubway-data\/issues\/96#issuecomment-[1-9][0-9]*$/u
       .test(promotion.approvalUrl ?? "")
     || promotion.approvedArtifactSha256 !== reference.sha256) {
     throw new Error("ITX topology approval identity is invalid");

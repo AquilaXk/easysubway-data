@@ -2,12 +2,12 @@
   "schemaVersion": 1,
   "artifactKind": "server-timetable-snapshot-evidence",
   "schemaIdentity": "backend-timetable-snapshot-v1",
-  "snapshotId": "server-timetable-snapshot-cb3cbcc4a5ab6727",
-  "snapshotSha256": "cb3cbcc4a5ab6727d1097df25f33c3a8bebe3a3946ae5b4c3386955b0966d79f",
-  "snapshotSqlByteSize": 9720933,
-  "snapshotGzipSha256": "7f63ca3717d224ac9191d40d258b736d85a0c19a5c3233793fc5ac4848adc375",
-  "snapshotGzipByteSize": 348283,
-  "freshUntil": "2026-08-03T00:00:00+09:00",
+  "snapshotId": "server-timetable-snapshot-72bb9f913e53675c",
+  "snapshotSha256": "72bb9f913e53675cb15d680a3708c717d430cfdbe2ea7d1a6d13bffb7cca4fe9",
+  "snapshotSqlByteSize": 9429710,
+  "snapshotGzipSha256": "2957545137760dfb451f3fb0aaa2e8d504d7fa74dc8621fc0632eaeed5321546",
+  "snapshotGzipByteSize": 344354,
+  "freshUntil": "2026-08-31T00:00:00+09:00",
   "serviceIdentity": {
     "serviceId": "ITX_CHEONGCHUN",
     "canonicalLineId": "line-54a7b980b7c3",
@@ -15,30 +15,38 @@
     "timezone": "Asia/Seoul"
   },
   "sourceArtifact": {
-    "id": "itx-cheongchun-source-timetable-20260727071853886",
-    "sha256": "71b70844a0ce93f2c137610a6472e7c824434e6ef97a38bf02a414146b1de6a0",
-    "completenessEvidenceSha256": "fff95d7b356da15f1041def12bcd04e1b5bdcc90d94b37f49f5865b8bc0903e1"
+    "id": "itx-cheongchun-source-timetable-20260824170958799",
+    "sha256": "f3f00e6f99862ddf1c6964d09a220169f29a85181f420f30e20428f2bee835ab",
+    "completenessEvidenceSha256": "e62f37eabfb6786d8f0491d9085d70f05b90a9c6302c6fc2d98bd7baf12c223d"
+  },
+  "stationCatalogPackIdentity": {
+    "artifactKind": "station-catalog-pack",
+    "manifestVersion": 1,
+    "catalogPackId": "itx-current-station-catalog-v1",
+    "stationSetSha256": "d2cef87aa1eeee23a50ac94d7e784f432101e9d8936331152981dcaeb8d25dd9",
+    "payloadSha256": "a7726c83e9637b0008000579ad74e329495ac0928e673bcb8ccac1deaeedc8a4",
+    "manifestSha256": "0cea5ac4d07ce3a09232eb7dd53a0d2b59f423ad10ef97c8a4db233c873737b5"
   },
   "canonicalPackIdentity": {
     "id": "capital",
-    "sha256": "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
-    "sqliteSha256": "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5"
+    "sha256": "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a",
+    "sqliteSha256": "bba39f717671c82278a44d0be731801c41d90b7a92dd11a9f184e6ec0f55da98"
   },
   "canonicalPackLineage": {
-    "provenance": "tracked-readmission-chain",
-    "admittedInputSha256": "f91ccbba0dda86809355dc6b2eb686faaa6a72e88c06825be3ffe64a43139673",
-    "admittedInputSqliteSha256": "b550b351daa17c5ddc3172bc4229f06a8834a92b3d4835ceb06d2ebaf748bce7",
-    "readmissionCount": 27
+    "topologyEvidenceSha256": "9ff9810e467eb9df53fc461e380ccb368bca4cd6c52b3f84fa2b0fb7c58acd1a",
+    "topologySha256": "cf0c8fb426ee3de49183bdc640f39497523e1eecae5f000596f4ba00f3596329",
+    "topologyInputSha256": "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
+    "topologyInputSqliteSha256": "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5"
   },
   "accessibilitySource": {
-    "materializedSqlSha256": "32c164483478b2b53934815a5bcd9900f6460b1e22fb75011021b43ba2f2ada5"
+    "materializedSqlSha256": "e308dceb2bf01a57cc474e299405d8c1be4489121761eded5219f2f526792485"
   },
   "canonicalStationSet": {
     "version": "sha256:1d44e5838691cb5103a864713f50d1d867d1337477544347b31e0f3ee94dd273",
     "sha256": "1d44e5838691cb5103a864713f50d1d867d1337477544347b31e0f3ee94dd273",
     "memberCount": 18
   },
-  "sourceLineageSha256": "53159c04ea7f584d54ce6aa3cd32c19fee28cedf870f1d1b2707764845d97699",
+  "sourceLineageSha256": "b1317c8c6933425bffc53de5f08983d19b66b096ba55ed58efdbc663d45c5364",
   "servicePatternEvidence": {
     "localTripCount": 888,
     "expressTripCount": 147,
@@ -111,17 +119,17 @@
     "calendars": 5,
     "routes": 4,
     "trips": 1035,
-    "stopTimes": 34070,
+    "stopTimes": 33934,
     "subwayTrips": 895,
     "subwayStopTimes": 33062,
     "itxTrips": 140,
-    "itxStopTimes": 1008,
-    "officialFares": 3686,
+    "itxStopTimes": 872,
+    "officialFares": 2914,
     "routeServiceEvidence": 1,
     "stationPathwayNodes": 4,
     "stationPathwayEdges": 4,
     "transferRules": 0,
     "routeEdgeEvidence": 4
   },
-  "evidenceHash": "f68318bb4c9d642749cd76f7d77fdc3a4354419135f4f5cae128f1578d054b8d"
+  "evidenceHash": "01505f569a92bd844ec8f5f73e38970919fb8216802018f46d34d592cf29529c"
 }
