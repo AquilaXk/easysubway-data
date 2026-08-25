@@ -719,7 +719,7 @@ test("합성 current public successor build spec은 inventory와 snapshot set에
   assert.equal(buildSpec.sourceSnapshotSetHash, sourceSnapshotSetHash);
 });
 
-test("합성 current public successor는 선택한 public head를 ephemeral snapshot으로 교체한다", async (t) => {
+test("합성 current public successor는 public root에서 동일-source V2 head를 append한다", async (t) => {
   const repositoryRoot = await syntheticCurrentRepository(t, "public-route-map-replacement-");
   const [beforeCandidate, beforeSnapshots] = await Promise.all([
     readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
@@ -739,21 +739,29 @@ test("합성 current public successor는 선택한 public head를 ephemeral snap
   const publicIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === "seoul-metro-route-map-positions");
   const selectedSnapshotId = candidate.sourceSnapshotIds[publicIndex];
   const selected = snapshots.filter(({ snapshotId }) => snapshotId === selectedSnapshotId);
+  const publicSnapshots = snapshots.filter(({ sourceId }) => sourceId === "seoul-metro-route-map-positions");
 
   assert.notEqual(selectedSnapshotId, beforeSnapshotId);
   assert.equal(selected.length, 1);
-  assert.equal(snapshots.filter(({ sourceId }) => sourceId === "seoul-metro-route-map-positions").length, 1);
+  assert.equal(publicSnapshots.length, 2);
+  assert.equal(selected[0].previousSnapshotId, beforeSnapshotId);
+  assert.equal(publicSnapshots.filter(({ previousSnapshotId }) => previousSnapshotId == null).length, 1);
+  for (const snapshot of publicSnapshots) {
+    for (const key of ["projectionMigration", "migration", "historicalPredecessorAudit", "rootSupersession"]) {
+      assert.equal(key in snapshot, false);
+    }
+  }
   assert.equal(selected[0].retrievedAt, syntheticCurrentEvaluationAt);
   assert.ok(Date.parse(selected[0].sourceUpdatedAt) <= Date.parse(selected[0].retrievedAt));
   assert.equal(beforeSnapshots.filter(({ sourceId }) => sourceId === "seoul-metro-route-map-positions").length, 1);
 });
 
-test("합성 current public successor는 public root→head history를 출력 없이 거부한다", async (t) => {
+test("합성 current public successor는 cross-source predecessor를 출력 없이 거부한다", async (t) => {
   const repositoryRoot = await syntheticCurrentRepository(t, "public-route-map-history-reject-");
   const snapshotPath = path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json");
   const snapshots = await readFile(snapshotPath, "utf8").then(JSON.parse);
   const publicSnapshot = snapshots.find(({ sourceId }) => sourceId === "seoul-metro-route-map-positions");
-  publicSnapshot.previousSnapshotId = publicSnapshot.projectionMigration.replacedSnapshotId;
+  publicSnapshot.previousSnapshotId = snapshots.find(({ sourceId }) => sourceId === "molit-urban-rail-full-route").snapshotId;
   await writeFile(snapshotPath, `${JSON.stringify(snapshots, null, 2)}\n`);
   const outputPaths = [
     "tools/datapack/release/candidate-build-spec.json",

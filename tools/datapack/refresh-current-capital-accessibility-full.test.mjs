@@ -25,7 +25,7 @@ const canonical = (value) => Array.isArray(value)
   ? `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`
   : JSON.stringify(value);
 
-test("activated full-capital inputs are rebuilt across the exact public static-network successor boundary", async (t) => {
+test("activated full-capital inputs are rebuilt across the exact public static-network V2 successor boundary", async (t) => {
   const root = await stagedRefreshRepository(t);
   const approvalPaths = [
     "tools/datapack/release/release-request.json",
@@ -50,7 +50,7 @@ test("activated full-capital inputs are rebuilt across the exact public static-n
   assert.deepEqual(await Promise.all(approvalPaths.map((relative) => readFile(path.join(root, relative)))), approvalInputs);
 });
 
-test("atomic route-map and MOLIT successors refresh the exact two-source predecessor boundary", async (t) => {
+test("atomic public V2 route-map and MOLIT heads refresh the exact two-source predecessor boundary", async (t) => {
   const root = await stagedRefreshRepository(t);
   const beforeStation = JSON.parse(await readFile(path.join(root, OUTPUTS[0]), "utf8"));
   const candidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
@@ -61,6 +61,33 @@ test("atomic route-map and MOLIT successors refresh the exact two-source predece
   assert.notEqual(beforeStation.candidate.sourceSetSha256, candidate.sourceSnapshotSetHash);
   assert.equal(station.candidate.sourceSetSha256, candidate.sourceSnapshotSetHash);
   assert.equal(route.candidate.sourceSetSha256, candidate.sourceSnapshotSetHash);
+});
+
+test("public V2 transition rejects legacy metadata, wrong-source predecessor, and selected source drift", async (t) => {
+  for (const mutate of [
+    async (root) => {
+      const { candidate, snapshots } = await readCurrentStaticBoundary(root);
+      const positions = selectedSnapshot(candidate, snapshots, "seoul-metro-route-map-positions");
+      positions.projectionMigration = { migrationKind: "CROSS_SOURCE_CANONICAL_REPLACEMENT" };
+      await rebindCurrentStaticBoundary(root, candidate, snapshots);
+    },
+    async (root) => {
+      const { candidate, snapshots } = await readCurrentStaticBoundary(root);
+      const positions = selectedSnapshot(candidate, snapshots, "seoul-metro-route-map-positions");
+      positions.previousSnapshotId = selectedSnapshot(candidate, snapshots, "molit-urban-rail-full-route").previousSnapshotId;
+      await rebindCurrentStaticBoundary(root, candidate, snapshots);
+    },
+    async (root) => {
+      const { candidate } = await readCurrentStaticBoundary(root);
+      const positionIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === "seoul-metro-route-map-positions");
+      candidate.sourceSnapshots[positionIndex].sourceId = "molit-urban-rail-full-route";
+      await rebindCurrentStaticBoundary(root, candidate);
+    },
+  ]) {
+    const root = await stagedRefreshRepository(t);
+    await mutate(root);
+    await assert.rejects(buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root }), /legacy metadata|v2 predecessor|source identity/i);
+  }
 });
 
 test("two-file refresh transaction rolls back a partial replacement without residue", async (t) => {
@@ -169,10 +196,9 @@ async function stagedRefreshRepository(t) {
   await cp(path.join(ROOT, "tools/datapack/sources"), path.join(root, "tools/datapack/sources"), { recursive: true });
   const currentCandidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
   await copyCurrentCandidateEvidenceInputs(root, currentCandidate);
-  const { inWindow: now, candidateId } = await stageCurrentTopologyFixture(root);
-  await rebindStagedActivatedOutputCandidateIds(root, candidateId);
+  const { inWindow: now, candidateId, sourceSetSha256 } = await stageCurrentTopologyFixture(root);
+  await rebindStagedActivatedOutputCandidateIds(root, candidateId, sourceSetSha256);
   await bindCurrentCandidateApprovalFixture(root);
-  await refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root });
   await activateSyntheticCurrentStaticNetworkSuccessors(root, { now });
   const finalEvidence = await stagedStaticEvidenceIdentity(root);
   await Promise.all([
@@ -239,7 +265,7 @@ async function stageCurrentTopologyFixture(root) {
     writeFile(path.join(root, reverificationPath), result.topologyReverificationBytes),
     writeFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), `${JSON.stringify(result.spec, null, 2)}\n`),
   ]);
-  return { inWindow, candidateId: result.spec.candidateId };
+  return { inWindow, candidateId: result.spec.candidateId, sourceSetSha256: result.spec.sourceSnapshotSetHash };
 }
 
 async function stageCurrentItxTopologyAdmission(root, baseSpec, inWindow) {
@@ -326,9 +352,12 @@ function nextKstMidnight(serviceDate) {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}T00:00:00+09:00`;
 }
 
-async function rebindStagedActivatedOutputCandidateIds(root, candidateId) {
+async function rebindStagedActivatedOutputCandidateIds(root, candidateId, sourceSetSha256) {
   if (typeof candidateId !== "string" || !/^capital-pilot-candidate-[0-9]{8}$/u.test(candidateId)) {
     throw new Error("staged candidate identity is invalid");
+  }
+  if (typeof sourceSetSha256 !== "string" || !/^[a-f0-9]{64}$/u.test(sourceSetSha256)) {
+    throw new Error("staged candidate source set is invalid");
   }
   const documents = await Promise.all(OUTPUTS.map(async (relative) => ({
     relative,
@@ -344,15 +373,17 @@ async function rebindStagedActivatedOutputCandidateIds(root, candidateId) {
     throw new Error("staged activated output candidate identity is invalid");
   }
   const [previousCandidateId] = stationIds;
-  if (previousCandidateId === candidateId) return;
+  if (previousCandidateId === candidateId
+    && station.candidate.sourceSetSha256 === sourceSetSha256
+    && route.candidate.sourceSetSha256 === sourceSetSha256) return;
   const before = structuredClone(parsed.map(({ value }) => value));
-  station.candidate.candidateId = candidateId;
+  station.candidate.candidateId = candidateId; station.candidate.sourceSetSha256 = sourceSetSha256;
   for (const row of station.evidenceRows) row.candidateId = candidateId;
-  route.candidate.candidateId = candidateId;
+  route.candidate.candidateId = candidateId; route.candidate.sourceSetSha256 = sourceSetSha256;
   const restored = structuredClone(parsed.map(({ value }) => value));
-  restored[0].candidate.candidateId = previousCandidateId;
+  restored[0].candidate.candidateId = previousCandidateId; restored[0].candidate.sourceSetSha256 = before[0].candidate.sourceSetSha256;
   for (const row of restored[0].evidenceRows) row.candidateId = previousCandidateId;
-  restored[1].candidate.candidateId = previousCandidateId;
+  restored[1].candidate.candidateId = previousCandidateId; restored[1].candidate.sourceSetSha256 = before[1].candidate.sourceSetSha256;
   assert.deepEqual(restored, before, "staged candidate rebind must not change other semantics");
   await Promise.all(parsed.map(({ relative, value }) =>
     writeFile(path.join(root, relative), JSON.stringify(value))));
@@ -368,15 +399,19 @@ async function stagedStaticEvidenceIdentity(root) {
   const selected = candidate.sourceSnapshotIds.map((snapshotId) =>
     snapshots.find((row) => row.snapshotId === snapshotId));
   if (selected.some((row) => row == null)) throw new Error("staged static successor ledger is incomplete");
-  const staticIndex = selected.findIndex(({ projectionMigration }) =>
-    projectionMigration?.migrationKind === "CROSS_SOURCE_CANONICAL_REPLACEMENT");
+  const positionIndex = selected.findIndex(({ sourceId }) => sourceId === "seoul-metro-route-map-positions");
   const molitIndex = selected.findIndex(({ sourceId }) => sourceId === "molit-urban-rail-full-route");
   const seoulIndex = selected.findIndex(({ sourceId }) => sourceId === "seoul-metro-accessibility");
-  if (staticIndex < 0 || molitIndex < 0 || seoulIndex < 0) {
+  if (positionIndex < 0 || molitIndex < 0 || seoulIndex < 0
+    || [selected[positionIndex], selected[molitIndex]].some((snapshot) =>
+      snapshot?.publicStaticNetworkV2Observation?.artifactKind !== "public-static-network-v2-observation"
+      || typeof snapshot.previousSnapshotId !== "string"
+      || Object.hasOwn(snapshot, "projectionMigration")
+      || Object.hasOwn(snapshot, "migration"))) {
     throw new Error("staged static successor evidence lineage is incomplete");
   }
   const predecessorIds = candidate.sourceSnapshotIds.map((snapshotId, index) =>
-    index === staticIndex ? selected[index].projectionMigration.replacedSnapshotId
+    index === positionIndex ? selected[index].previousSnapshotId
       : index === molitIndex ? selected[index].previousSnapshotId
       : snapshotId);
   const evidenceIds = new Set(predecessorIds.flatMap((snapshotId, index) => {
@@ -389,6 +424,46 @@ async function stagedStaticEvidenceIdentity(root) {
     throw new Error("staged static successor evidence set is incomplete");
   }
   return { candidateId: candidate.candidateId, sourceSetSha256: sha(JSON.stringify(evidence)) };
+}
+
+async function readCurrentStaticBoundary(root) {
+  const [candidate, snapshots] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json")).then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/release/source-snapshots.json")).then(JSON.parse),
+  ]);
+  return { candidate, snapshots };
+}
+
+function selectedSnapshot(candidate, snapshots, sourceId) {
+  const index = candidate.sourceSnapshots.findIndex(({ sourceId: actual }) => actual === sourceId);
+  const snapshot = snapshots.find(({ snapshotId }) => snapshotId === candidate.sourceSnapshotIds[index]);
+  if (index < 0 || !snapshot) throw new Error("staged public V2 selected snapshot is incomplete");
+  return snapshot;
+}
+
+async function rebindCurrentStaticBoundary(root, candidate, snapshots) {
+  const candidatePath = "tools/datapack/release/candidate-build-spec.json";
+  const snapshotsPath = "tools/datapack/release/source-snapshots.json";
+  const requestPath = "tools/datapack/release/release-request.json";
+  const hashesPath = "tools/datapack/release/hash-evidence.json";
+  if (snapshots != null) {
+    const selectedIds = new Set(candidate.sourceSnapshotIds);
+    candidate.sourceSnapshotSetHash = sha(JSON.stringify(snapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId))));
+    await writeFile(path.join(root, snapshotsPath), `${JSON.stringify(snapshots)}\n`);
+  }
+  const candidateBytes = Buffer.from(`${JSON.stringify(candidate)}\n`);
+  const [request, hashes] = await Promise.all([
+    readFile(path.join(root, requestPath)).then(JSON.parse),
+    readFile(path.join(root, hashesPath)).then(JSON.parse),
+  ]);
+  request.buildSpecSha256 = sha(candidateBytes);
+  request.sourceSnapshotSetHash = candidate.sourceSnapshotSetHash;
+  hashes.sourceSnapshotSetHash.value = candidate.sourceSnapshotSetHash;
+  await Promise.all([
+    writeFile(path.join(root, candidatePath), candidateBytes),
+    writeFile(path.join(root, requestPath), `${JSON.stringify(request)}\n`),
+    writeFile(path.join(root, hashesPath), `${JSON.stringify(hashes)}\n`),
+  ]);
 }
 
 async function rebindStagedFacilityCandidateId(root, candidateId, sourceSetSha256) {

@@ -88,28 +88,34 @@ test("candidate inventory semantic hash와 authenticated raw-byte hash를 분리
   assert.equal(result.evidenceRows.length, 641);
 });
 
-test("Seoul direct successor refresh proof는 기존 TRANSFER append와 같은 fan-in denominator를 유지한다", async () => {
-  const input = await fixture();
-  const current = { sourceId: "seoul-metro-accessibility", snapshotId: "seoul-current", previousSnapshotId: "seoul-previous", snapshotStatus: "LOCKED" };
-  input.sourceSnapshots[2] = { sourceId: "seoul-metro-accessibility", snapshotId: "seoul-previous", snapshotStatus: "LOCKED" };
-  input.sourceSnapshots.push(current);
-  input.candidateBuildSpec.sourceSnapshotIds[2] = current.snapshotId;
-  input.candidateBuildSpec.sourceSnapshots[2] = { sourceId: current.sourceId, snapshotId: current.snapshotId };
-  const selected = input.candidateBuildSpec.sourceSnapshotIds.map((snapshotId) => input.sourceSnapshots.find((row) => row.snapshotId === snapshotId));
-  const selectedLedgerOrder = input.sourceSnapshots.filter(({ snapshotId }) => input.candidateBuildSpec.sourceSnapshotIds.includes(snapshotId));
-  const predecessor = input.sourceSnapshots.filter(({ snapshotId }) => new Set([...input.candidateBuildSpec.sourceSnapshotIds.slice(0, 2), "seoul-previous", ...input.candidateBuildSpec.sourceSnapshotIds.slice(3)]).has(snapshotId));
-  const sourceSet = sha(JSON.stringify(selectedLedgerOrder)); const evidenceSourceSet = sha(JSON.stringify(predecessor.filter(({ sourceId }) => sourceId !== "seoul-metro-transfer-distance-duration")));
-  input.candidateBuildSpec.sourceSnapshotSetHash = sourceSet;
-  input.sourceSetTransition = { currentCandidateBytesSha256: "1".repeat(64), currentCandidateSourceSetSha256: sourceSet, evidenceSourceSetSha256: evidenceSourceSet, facilityAdmissionBytesSha256: "2".repeat(64), kind: "SEOUL_ACCESSIBILITY_SUCCESSOR_REFRESH", predecessorCandidateSourceSetSha256: sha(JSON.stringify(predecessor)), previousSnapshotId: "seoul-previous" };
-  input.facilityAdmission.candidate.sourceSnapshotSetHash = evidenceSourceSet; resealFacility(input.facilityAdmission);
-  input.exitAdmission.candidate.sourceSetSha256 = evidenceSourceSet;
-  input.exitAdmission.materializerEvidenceRows = input.exitAdmission.materializerEvidenceRows.map((row) => ({ ...row, sourceSetSha256: evidenceSourceSet })); rebindExitArtifacts(input);
+test("public static-network V2 transition은 Seoul accessibility의 evidence predecessor semantics를 유지한다", async () => {
+  const input = await publicStaticV2Fixture();
+  const result = buildCurrentCapitalStationLineInput(input);
+
+  assert.equal(result.candidate.sourceSetSha256, input.sourceSetTransition.currentCandidateSourceSetSha256);
+  assert.notEqual(result.candidate.sourceSetSha256, input.sourceSetTransition.evidenceSourceSetSha256);
+  assert.equal(result.evidenceRows.length, 641);
+});
+
+test("public static-network V2 두 head는 same-source predecessor 7/evidence 6만 허용한다", async () => {
+  const input = await publicStaticV2Fixture();
 
   const result = buildCurrentCapitalStationLineInput(input);
 
-  assert.equal(result.candidate.sourceSetSha256, sourceSet);
+  assert.equal(result.candidate.sourceSetSha256, input.sourceSetTransition.currentCandidateSourceSetSha256);
   assert.equal(result.evidenceRows.length, 641);
-  assert.equal(selected.length, 7);
+  for (const mutate of [
+    (value) => { value.sourceSnapshots.find(({ snapshotId }) => snapshotId === "positions-current").projectionMigration = { migrationKind: "legacy" }; },
+    (value) => { value.sourceSnapshots.find(({ snapshotId }) => snapshotId === "molit-current").previousSnapshotId = "positions-old"; },
+    (value) => { value.candidateBuildSpec.sourceSnapshots[0].sourceId = "molit-urban-rail-full-route"; },
+  ]) {
+    const value = await publicStaticV2Fixture(); mutate(value);
+    const selectedIds = new Set(value.candidateBuildSpec.sourceSnapshotIds);
+    const selected = value.sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
+    value.candidateBuildSpec.sourceSnapshotSetHash = sha(JSON.stringify(selected));
+    value.sourceSetTransition.currentCandidateSourceSetSha256 = value.candidateBuildSpec.sourceSnapshotSetHash;
+    assert.throws(() => buildCurrentCapitalStationLineInput(value), /public v2|source identity/i);
+  }
 });
 
 test("blocked tuple·receipt·TRANSFER admission drift는 output 없이 fail-closed다", async () => {
@@ -175,6 +181,57 @@ export async function fixture() {
   const sourceInventory = { sources: [{ id: "seoul-metro-transfer-distance-duration", requiredForProductionPack: true, admissionEvidence: { adminReviewRecordHash: "d".repeat(64) }, transferAdmissionEvidence }] }; const sourceInventoryBytes = Buffer.from(canonical(sourceInventory));
   const candidateBuildSpec = { candidateId: candidate.candidateId, sourceSnapshotIds: snapshotIds, sourceSnapshots: [...sourceSnapshots.slice(0, 6).map((entry) => ({ snapshotId: entry.snapshotId, sourceId: entry.sourceId })), Object.fromEntries(["snapshotId", "sourceId", "rawObjectUri", "rawSha256", "redactedRequestFingerprint", "schemaFingerprint", "licenseStatus", "redistributionAllowed", "adminReviewRecordHash", "snapshotStatus", "credentialRedacted", "freshnessExpiresAt", "rawRetentionExpiresAt", "governancePolicyVersion", "governancePolicySha256"].map((key) => [key, sourceSnapshots.at(-1)[key]]))], sourceSnapshotSetHash: sha(JSON.stringify(sourceSnapshots)), sourceInventorySha256: sha(JSON.stringify(sourceInventory)), networkEdgeEvidence: { sourceInventory: { path: "tools/datapack/source-inventory.json", sha256: sha(sourceInventoryBytes) } } };
   return { canonicalPack: { manifest: { channel: "production", activePack: { id: "capital" } }, packs: [{ id: "capital", lines: [{ id: "seoul-2", operatorId: "seoul-metro" }, { id: "seoul-4", operatorId: "seoul-metro" }, { id: "seoul-5", operatorId: "seoul-metro" }], stationLines: lines.map((line, lineSequence) => ({ ...line, lineSequence })) }] }, candidateBuildSpec, exitAdmission, exitAdmissionBytes, exitNormalized: normalized, exitNormalizedBytes, exitReceipt, facilityAdmission, facilitySnapshotBytes: snapshotBytes, policy: { artifactKind: "route-edge-evaluation-policy", policyVersion: "route-edge-evaluation-v2", edgeDomainMap: { RIDE: { endpointTarget: "NONE" } } }, sourceInventory, sourceInventoryBytes, sourceSnapshots, sourceSetTransition: { currentCandidateBytesSha256: "1".repeat(64), currentCandidateSourceSetSha256: sourceSet, evidenceSourceSetSha256: evidenceSourceSet, facilityAdmissionBytesSha256: "2".repeat(64) }, transferMetrics: metrics, transferApplicability: applicability };
+}
+
+async function publicStaticV2Fixture() {
+  const input = await fixture();
+  const [positionsOld, molitOld, seoulOld] = input.sourceSnapshots.slice(0, 3).map((snapshot) => structuredClone(snapshot));
+  Object.assign(positionsOld, { sourceId: "seoul-metro-route-map-positions", snapshotId: "positions-old" });
+  Object.assign(molitOld, { sourceId: "molit-urban-rail-full-route", snapshotId: "molit-old" });
+  Object.assign(seoulOld, { sourceId: "seoul-metro-accessibility", snapshotId: "seoul-old" });
+  const v2Head = (previous, snapshotId) => ({
+    ...structuredClone(previous),
+    snapshotId,
+    previousSnapshotId: previous.snapshotId,
+    publicStaticNetworkV2Observation: {
+      schemaVersion: 2,
+      artifactKind: "public-static-network-v2-observation",
+      sourceId: previous.sourceId,
+      snapshotId,
+    },
+  });
+  const positionsCurrent = v2Head(positionsOld, "positions-current");
+  const molitCurrent = v2Head(molitOld, "molit-current");
+  const seoulCurrent = { ...structuredClone(seoulOld), snapshotId: "seoul-current", previousSnapshotId: seoulOld.snapshotId };
+  input.sourceSnapshots = [positionsOld, molitOld, seoulOld, ...input.sourceSnapshots.slice(3), positionsCurrent, molitCurrent, seoulCurrent];
+  input.candidateBuildSpec.sourceSnapshotIds.splice(0, 3, positionsCurrent.snapshotId, molitCurrent.snapshotId, seoulCurrent.snapshotId);
+  input.candidateBuildSpec.sourceSnapshots.splice(0, 3,
+    { sourceId: positionsCurrent.sourceId, snapshotId: positionsCurrent.snapshotId },
+    { sourceId: molitCurrent.sourceId, snapshotId: molitCurrent.snapshotId },
+    { sourceId: seoulCurrent.sourceId, snapshotId: seoulCurrent.snapshotId });
+  const selectedIds = new Set(input.candidateBuildSpec.sourceSnapshotIds);
+  const selected = input.sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
+  const predecessor = input.sourceSnapshots.filter(({ snapshotId }) => new Set([
+    positionsOld.snapshotId, molitOld.snapshotId, seoulCurrent.snapshotId,
+    ...input.candidateBuildSpec.sourceSnapshotIds.slice(3),
+  ]).has(snapshotId));
+  const evidence = input.sourceSnapshots.filter(({ snapshotId }) => new Set([
+    positionsOld.snapshotId, molitOld.snapshotId, seoulOld.snapshotId,
+    ...input.candidateBuildSpec.sourceSnapshotIds.slice(3, -1),
+  ]).has(snapshotId));
+  const sourceSet = sha(JSON.stringify(selected)); const predecessorSourceSet = sha(JSON.stringify(predecessor)); const evidenceSourceSet = sha(JSON.stringify(evidence));
+  input.candidateBuildSpec.sourceSnapshotSetHash = sourceSet;
+  input.sourceSetTransition = {
+    currentCandidateBytesSha256: "1".repeat(64), currentCandidateSourceSetSha256: sourceSet,
+    evidenceSourceSetSha256: evidenceSourceSet, facilityAdmissionBytesSha256: "2".repeat(64),
+    kind: "PUBLIC_STATIC_NETWORK_V2_SUCCESSOR_REFRESH", predecessorCandidateSourceSetSha256: predecessorSourceSet,
+    positionPreviousSnapshotId: positionsOld.snapshotId, molitPreviousSnapshotId: molitOld.snapshotId,
+  };
+  input.facilityAdmission.candidate.sourceSnapshotSetHash = evidenceSourceSet; resealFacility(input.facilityAdmission);
+  input.exitAdmission.candidate.sourceSetSha256 = evidenceSourceSet;
+  input.exitAdmission.materializerEvidenceRows = input.exitAdmission.materializerEvidenceRows.map((row) => ({ ...row, sourceSetSha256: evidenceSourceSet }));
+  rebindExitArtifacts(input);
+  return input;
 }
 
 function stationLines() { const stations = [...Array.from({ length: 198 }, (_, index) => `station-${String(index).padStart(3, "0")}`), "station-b35616704ce3"]; return stations.flatMap((stationId, index) => index < 12 ? ["seoul-2", "seoul-4"].map((lineId) => ({ stationId, lineId })) : index === 12 ? ["seoul-2", "seoul-4", "seoul-5"].map((lineId) => ({ stationId, lineId })) : [{ stationId, lineId: "seoul-2" }]).sort((a, b) => a.stationId.localeCompare(b.stationId) || a.lineId.localeCompare(b.lineId)); }

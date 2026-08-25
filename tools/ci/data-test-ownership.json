@@ -324,7 +324,6 @@
     {"path":"tools/datapack/collect-capital-route-topology.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":309},
     {"path":"tools/datapack/collect-current-kric-exit-path-provider-snapshot.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":34},
     {"path":"tools/datapack/collect-current-seoul-transfer-distance-duration-snapshot.test.mjs","semanticOwner":"data321","classes":["required-pr"],"durationMs":118},
-    {"path":"tools/datapack/collect-current-static-network-successors.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/collect-public-static-network-v2.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/collect-daegu-accessibility.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":170},
     {"path":"tools/datapack/collect-daegu-datapack-sources.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":264},
