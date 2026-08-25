@@ -10973,7 +10973,7 @@ test("전국 coverage gap report는 generated fixture manual provenance를 offic
   assert.ok(report.requirements.some((entry) => entry.missingFields.includes("line")));
 });
 
-test("v2 admission과 current 4-operator scope에 exact 결속된 generated 서울 노선도 geometry만 coverage를 충족한다", async () => {
+test("v2 admission과 current source provider scope에 exact 결속된 generated 서울 노선도 geometry만 coverage를 충족한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-generated-route-map-${Date.now()}`);
   const inventoryPath = path.join(outputDir, "source-inventory.json");
   const provenancePath = path.join(outputDir, "current.provenance.json");
@@ -11053,9 +11053,7 @@ test("v2 admission과 current 4-operator scope에 exact 결속된 generated 서�
   assert.deepEqual(routeMap.missingFields, []);
   assert.ok(routeMap.fieldCoverage.every(({ sourceIds }) => sourceIds.includes(source.id)));
 
-  source.coverageScope.operatorIds = SEOUL_ROUTE_MAP_SOURCE_OPERATOR_IDS.filter(
-    (operatorId) => operatorId !== "korail",
-  );
+  source.coverageScope.operatorIds = ["korail"];
   await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
   await execFileAsync(
     process.execPath,

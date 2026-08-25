@@ -114,6 +114,18 @@ test("공식 서울 위경도 snapshot을 current canonical pack에 materialize�
   assert.deepEqual([...new Set(rows.map(({ lineId }) => lineId))].sort(), [...LINE_IDS].sort());
   assert.ok(rows.every(({ labelPolygon, region, derivationKind, provenanceKind }) => labelPolygon.length === 4 && region === "수도권" && derivationKind === "GENERATED" && provenanceKind === "OFFICIAL_SOURCE"));
   assert.deepEqual(source.coverageScope.lineIds, [...LINE_IDS]);
+  assert.deepEqual(source.coverageScope.operatorIds, [...SEOUL_ROUTE_MAP_SOURCE_OPERATOR_IDS]);
+  const expectedSeoulScopes = LINE_IDS.map((lineId) => ({
+    regionId: "capital", operatorId: "seoul-metro", lineId,
+  })).sort((left, right) => left.lineId.localeCompare(right.lineId, "en"));
+  assert.deepEqual(
+    pack.coverageLineOperatorScopes
+      .filter(({ operatorId, lineId }) => operatorId === "seoul-metro" && LINE_IDS.includes(lineId))
+      .sort((left, right) => left.lineId.localeCompare(right.lineId, "en")),
+    expectedSeoulScopes,
+  );
+  assert.equal(fixture.coverageLineOperatorScopeSemantics, "UNION_OF_PACK_SCOPES");
+  assert.deepEqual(fixture.coverageLineOperatorScopes, pack.coverageLineOperatorScopes);
   assert.equal(pack.minimumTableRows.route_map_positions, pack.routeMapPositions.length);
   assert.match(pack.id, /^nationwide-seoul-route-map-[a-f0-9]{64}$/);
   assert.match(materializedSeoulRouteMapPackContentHash(pack, pack.version), /^[a-f0-9]{64}$/);

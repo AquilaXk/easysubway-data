@@ -71,6 +71,7 @@ export function materializeSeoulRouteMapPositions({
     throw new Error("Seoul route map positions require seoul-metro operator pack");
   }
   ensureLines(pack);
+  ensureCoverageLineOperatorScopes(fixture, pack, source);
   const layoutByKey = new Map(routeMapLayoutArtifact.layoutPositions.map((row) => [`${row.lineId}:${row.stationCode}`, row]));
   if (layoutByKey.size !== routeMapLayoutArtifact.rawPositions.length) throw new Error("Seoul route map layout position identity mismatch");
   const stations = ensureStationsAndMembership(pack, routeMapLayoutArtifact, layoutByKey);
@@ -381,6 +382,25 @@ function packSource(source, snapshot) {
     fields: [...source.fieldsProvided],
     coverageScope: structuredClone(source.coverageScope),
   };
+}
+
+function ensureCoverageLineOperatorScopes(fixture, pack, source) {
+  const sourceScopes = source.coverageScope.regionIds.flatMap((regionId) =>
+    source.coverageScope.operatorIds.flatMap((operatorId) =>
+      source.coverageScope.lineIds.map((lineId) => ({ regionId, operatorId, lineId }))));
+  const key = ({ regionId, operatorId, lineId }) => `${regionId}:${operatorId}:${lineId}`;
+  const packScopes = [...new Map(
+    [...(pack.coverageLineOperatorScopes ?? []), ...sourceScopes]
+      .map((scope) => [key(scope), scope]),
+  ).values()].sort((left, right) => key(left).localeCompare(key(right), "en"));
+  pack.coverageLineOperatorScopes = packScopes;
+
+  const union = [...new Map(
+    [...(fixture.coverageLineOperatorScopes ?? []), ...packScopes]
+      .map((scope) => [key(scope), scope]),
+  ).values()].sort((left, right) => key(left).localeCompare(key(right), "en"));
+  fixture.coverageLineOperatorScopeSemantics = "UNION_OF_PACK_SCOPES";
+  fixture.coverageLineOperatorScopes = union;
 }
 
 function ensureRequiredTransferSource(pack, inventory) {
