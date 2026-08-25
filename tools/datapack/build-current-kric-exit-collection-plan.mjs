@@ -24,7 +24,10 @@ const INPUT_KEYS = [
   "sourceInventoryBytes",
   "incheonTopologyBytes",
 ];
-const CANONICAL_PACK_KEYS = ["manifest", "migrationSourceArtifact", "packs"];
+const CANONICAL_PACK_KEYS = [
+  "coverageLineOperatorScopeSemantics", "coverageLineOperatorScopes", "manifest",
+  "migrationSourceArtifact", "packs",
+];
 const CANONICAL_MANIFEST_KEYS = ["activePack", "channel", "keyId", "manifestVersion", "ttlSeconds"];
 const CANONICAL_ACTIVE_PACK_KEYS = ["id", "version"];
 const MIGRATION_SOURCE_KEYS = ["gzipSha256", "sqliteSha256"];
@@ -197,6 +200,7 @@ function validateCanonicalPack(value) {
   if (pack?.id !== "capital" || pack.version !== "1" || pack.artifactKind !== "production" || pack.schemaVersion !== "1") {
     throw new Error("canonical pack identity mismatch");
   }
+  validateCanonicalCoverageLineOperatorScopes(value, pack);
   assertKeys(value.manifest, CANONICAL_MANIFEST_KEYS, "canonical pack manifest keys");
   if (value.manifest.manifestVersion !== 2 || value.manifest.channel !== "production"
     || !Number.isInteger(value.manifest.ttlSeconds) || value.manifest.ttlSeconds <= 0) {
@@ -217,6 +221,26 @@ function validateCanonicalPack(value) {
     if (!Array.isArray(pack[field]) || pack[field].length === 0) throw new Error(`canonical pack ${field} must be non-empty`);
   }
   return pack;
+}
+
+function validateCanonicalCoverageLineOperatorScopes(value, pack) {
+  if (value.coverageLineOperatorScopeSemantics !== "UNION_OF_PACK_SCOPES") {
+    throw new Error("canonical pack coverage line operator scope semantics mismatch");
+  }
+  const validate = (scopes, label) => {
+    if (!Array.isArray(scopes) || scopes.length === 0) throw new Error(`${label} mismatch`);
+    const keys = scopes.map((scope) => {
+      assertKeys(scope, ACTIVE_SCOPE_KEYS, `${label} keys`);
+      return ACTIVE_SCOPE_KEYS.map((key) => requiredString(scope[key], `${label} ${key}`)).join(" ");
+    });
+    if (new Set(keys).size !== keys.length) throw new Error(`${label} duplicate`);
+    return keys.sort(compareBytes);
+  };
+  const union = validate(value.coverageLineOperatorScopes, "canonical pack coverage line operator scopes");
+  const packScopes = validate(pack.coverageLineOperatorScopes, "capital pack coverage line operator scopes");
+  if (canonicalJson(union) !== canonicalJson(packScopes)) {
+    throw new Error("canonical pack coverage line operator scope union mismatch");
+  }
 }
 
 function validateCoverageTargets(value) {

@@ -285,6 +285,16 @@ test("canonical wrapper manifest와 migration source identity drift는 plan 전�
     }),
     /canonical pack migration source/,
   );
+
+  const invalidCoverageScopeUnion = JSON.parse(input.canonicalPackBytes);
+  invalidCoverageScopeUnion.coverageLineOperatorScopes.pop();
+  assert.throws(
+    () => buildPlan({
+      ...input,
+      canonicalPackBytes: Buffer.from(JSON.stringify(invalidCoverageScopeUnion)),
+    }),
+    /canonical pack coverage line operator scope union/,
+  );
 });
 
 test("canonical topology와 provider mapping drift는 plan output 전에 fail closed한다", async () => {
