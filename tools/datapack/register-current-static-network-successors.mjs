@@ -8,17 +8,14 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 
 import { deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
-import { SEOUL_POSITION_SCHEMA_FINGERPRINT } from "./collect-current-static-network-successors.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
 import {
-  requireApprovedLegacyV1PublicPositionsPredecessor,
   requireCanonicalPublicStaticNetworkV2OuterSnapshot,
   requirePublicStaticNetworkV2Admission,
 } from "./public-static-network-v2-admission.mjs";
 import { buildPublicStaticNetworkV2Observations } from "./build-public-static-network-v2-observations.mjs";
-import { validateSeoulRouteMapPositionsSnapshot } from "./collect-seoul-route-map-positions.mjs";
 import {
   assertCurrentMolitFullRouteCompleteness,
   assertCurrentSeoulPositionProjectionCompleteness,
@@ -33,7 +30,6 @@ import { assertCurrentTopologyAdmissionFreshness } from "./lib/route-map-admissi
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const TARGETS = Object.freeze(["seoul-metro-route-map-positions", "molit-urban-rail-full-route"]);
 const CANDIDATE_SOURCE_IDS = Object.freeze(["seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-transfer-distance-duration"]);
-const PREVIOUS_CANDIDATE_SOURCE_IDS = Object.freeze(["seoulmetro-cyberstation-route-map", "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-transfer-distance-duration"]);
 const FIXED_OUTPUTS = Object.freeze(["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json"]);
 const APPROVAL_INPUTS = Object.freeze(["tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json"]);
 const INPUTS = Object.freeze([...FIXED_OUTPUTS, ...APPROVAL_INPUTS, "tools/datapack/source-governance-policy.json", "release/product-gates/datapack-freshness-sla.json"]);
@@ -45,7 +41,6 @@ const RECEIPT_TYPES = Object.freeze({
 const JOURNAL = "tools/datapack/.static-network-successors-transaction.json";
 const LOCK = "tools/datapack/.static-network-successors.lock";
 const SHA = /^[a-f0-9]{64}$/u;
-const MOLIT_FIELDS = Object.freeze(["region_code", "region_name", "operator_name", "line_name", "station_sequence", "station_name"]);
 const compareStrings = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const json = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
@@ -104,63 +99,6 @@ function validateJournal(journal) {
       || (index < 2 ? before !== null : before === null)) throw new Error("static network recovery required");
   }
 }
-function projectionRecordHashes(sourceId, projection) {
-  return projection.map((record) => sha(JSON.stringify(record)));
-}
-function routeMapProviderRows(rows) {
-  return rows.map(({ line, stationCode, stationName, latitude, longitude, basisDate }) => ({
-    line, stationCode, stationName, latitude, longitude, basisDate,
-  }));
-}
-function assertTwoObservations(observations) {
-  if (!Array.isArray(observations) || observations.length !== 2 || observations.some(({ snapshot }, index) => snapshot?.sourceId !== TARGETS[index])) throw new Error("static network observations must contain the exact two sources");
-  for (const { snapshot, receipt, bytes: snapshotBytes, rawBytes } of observations) {
-    const type = RECEIPT_TYPES[snapshot?.sourceId];
-    const date = snapshot?.retrievedAt?.slice(0, 10).replaceAll("-", "");
-    const objectKey = type && date ? `source-raw/${snapshot.sourceId}/${date}/${snapshot.rawSha256}.${type.extension}` : "";
-    if (!Buffer.isBuffer(snapshotBytes) || !Buffer.isBuffer(rawBytes) || !SHA.test(snapshot?.rawSha256 ?? "") || !SHA.test(receipt?.rawObjectSha256 ?? "")
-      || snapshot.rawSha256 !== receipt.rawObjectSha256 || receipt.sourceId !== snapshot.sourceId || receipt.snapshotId !== snapshot.snapshotId
-      || JSON.stringify(snapshot.rawReceipt) !== JSON.stringify(receipt) || snapshot.rawRetentionExpiresAt !== receipt.rawRetentionExpiresAt
-      || receipt.schemaVersion !== 1 || receipt.artifactKind !== "static-network-source-raw-object-receipt"
-      || receipt.capturedAt !== snapshot.retrievedAt || receipt.ociNamespace !== "axvym6vk8g7i" || receipt.bucket !== "easysubway-datapacks"
-      || receipt.objectKey !== objectKey || receipt.contentType !== type?.contentType || !Number.isSafeInteger(receipt.byteSize) || receipt.byteSize < 1
-      || rawBytes.length !== receipt.byteSize || sha(rawBytes) !== snapshot.rawSha256
-      || receipt.rawObjectUri !== `oci://axvym6vk8g7i/easysubway-datapacks/${objectKey}` || receipt.rawObjectUri !== snapshot.rawObjectUri) {
-      throw new Error("static network OCI receipt binding is invalid");
-    }
-    const observation = parse(snapshotBytes, "static network normalized observation");
-    if (snapshot.sourceId === TARGETS[0]) assertCurrentSeoulPositionProjectionCompleteness(observation?.normalizedProjection);
-    if (snapshot.sourceId === TARGETS[1]) assertCurrentMolitFullRouteCompleteness(observation?.normalizedProjection);
-    const projectionBytes = Buffer.from(`${JSON.stringify(observation?.normalizedProjection)}\n`);
-    const providerRecordHashes = Array.isArray(observation?.normalizedProjection) ? projectionRecordHashes(snapshot.sourceId, observation.normalizedProjection) : [];
-    const expectedSchema = snapshot.sourceId === TARGETS[0]
-      ? SEOUL_POSITION_SCHEMA_FINGERPRINT
-      : sha(JSON.stringify(MOLIT_FIELDS));
-    if (observation?.schemaVersion !== 1 || observation.artifactKind !== "static-network-successor-observation"
-      || observation.sourceId !== snapshot.sourceId || observation.snapshotId !== snapshot.snapshotId
-      || observation.capturedAt !== snapshot.retrievedAt || observation.rawSha256 !== snapshot.rawSha256
-      || observation.contentSha256 !== snapshot.contentSha256 || observation.schemaFingerprint !== snapshot.schemaFingerprint
-      || observation.rowCount !== snapshot.rowCount || !Array.isArray(observation.normalizedProjection)
-      || observation.contentSha256 !== sha(projectionBytes) || observation.schemaFingerprint !== expectedSchema
-      || JSON.stringify(observation.providerRecordHashes) !== JSON.stringify(providerRecordHashes)
-      || JSON.stringify(snapshot.providerRecordHashes) !== JSON.stringify(providerRecordHashes) || providerRecordHashes.length !== snapshot.rowCount
-      || snapshot.normalizedObservationSha256 !== sha(snapshotBytes)
-      || snapshot.coverageCount !== snapshot.rowCount || (snapshot.sourceId === TARGETS[1] && snapshot.previousSnapshotId == null)
-      || (snapshot.sourceId === TARGETS[0] && (snapshot.previousSnapshotId !== null || snapshot.diffSummary !== null))) {
-      throw new Error("static network normalized observation binding is invalid");
-    }
-    if (!observation.migration || observation.migration.schemaVersion !== 1 || observation.migration.artifactKind !== "source-projection-migration-evidence" || observation.migration.sourceId !== snapshot.sourceId) throw new Error("static network migration contract is invalid");
-    if (!isDeepStrictEqual(snapshot.projectionMigration, observation.migration)) throw new Error("static network snapshot migration binding is invalid");
-    if (snapshot.sourceId === TARGETS[0] && (observation.migration.migrationKind !== "CROSS_SOURCE_CANONICAL_REPLACEMENT" || observation.migration.replacedSourceId !== "seoulmetro-cyberstation-route-map" || typeof observation.migration.replacedSnapshotId !== "string" || !SHA.test(observation.migration.replacedRawSha256 ?? "") || !SHA.test(observation.migration.replacedSchemaFingerprint ?? "") || observation.migration.candidateSlotSourceId !== observation.migration.replacedSourceId)) throw new Error("static network public replacement binding is invalid");
-    if (snapshot.sourceId === TARGETS[0]) {
-      const layout = observation.layoutEvidence; const artifact = observation.routeMapLayoutArtifact; const keys = ["aliasLedgerSha256", "aliasLedgerVersion", "layoutAlgorithmVersion", "layoutArtifactSha256", "layoutPositionsSha256", "layoutTracksSha256", "lineOrderSha256", "outputSchemaSha256", "rawPositionsSha256", "semanticInputSha256", "semanticOutputSha256", "topologySnapshotId", "topologySnapshotIdentity", "topologySnapshotSha256"];
-      const providerRows = routeMapProviderRows(observation.normalizedProjection); const artifactRows = routeMapProviderRows(artifact?.rawPositions ?? []);
-      if (!layout || !artifact || artifact.rawSha256 !== snapshot.rawSha256 || artifact.rawSha256 !== observation.rawSha256 || JSON.stringify(Object.keys(layout).sort(compareStrings)) !== JSON.stringify(keys) || !keys.filter((key) => key.endsWith("Sha256")).every((key) => SHA.test(layout[key] ?? "")) || typeof layout.layoutAlgorithmVersion !== "string" || typeof layout.aliasLedgerVersion !== "string" || typeof layout.topologySnapshotId !== "string" || layout.topologySnapshotIdentity !== `${layout.topologySnapshotId}:${layout.topologySnapshotSha256}` || layout.layoutArtifactSha256 !== sha(canonicalBytes(artifact)) || ["layoutAlgorithmVersion", "topologySnapshotId", "topologySnapshotSha256", "topologySnapshotIdentity", "lineOrderSha256", "aliasLedgerVersion", "aliasLedgerSha256", "rawPositionsSha256", "layoutPositionsSha256", "layoutTracksSha256", "semanticInputSha256", "semanticOutputSha256", "outputSchemaSha256"].some((key) => layout[key] !== artifact[key]) || JSON.stringify(providerRows) !== JSON.stringify(artifactRows) || JSON.stringify(snapshot.routeMapLayoutEvidence) !== JSON.stringify(layout) || JSON.stringify(snapshot.routeMapLayoutArtifact) !== JSON.stringify(artifact)) throw new Error("static network layout evidence binding is invalid");
-    }
-    if (snapshot.sourceId === TARGETS[1] && (observation.migration.migrationKind !== "LEGACY_SAMPLE_TO_FULL_CONSUMED_FIELDS" || observation.migration.legacySnapshotId !== snapshot.previousSnapshotId || observation.migration.legacyRawSha256 == null || observation.migration.legacySchemaFingerprint == null || !Array.isArray(observation.migration.legacyProviderRecordHashes) || observation.migration.fullProjectionSha256 !== snapshot.contentSha256 || observation.migration.fullProjectionSchemaFingerprint !== snapshot.schemaFingerprint || observation.migration.fullProjectionRowCount !== snapshot.rowCount || observation.migration.newSnapshotId !== snapshot.snapshotId)) throw new Error("static network MOLIT migration binding is invalid");
-  }
-}
-
 const MOLIT_MEMBERSHIP_BINDINGS = Object.freeze({
   "line-5b8d9b05e7e6": (rawBytes) => parseMolitDaeguStationMappings(rawBytes, "1호선"),
   "line-e2938a4cc492": (rawBytes) => parseMolitDaeguStationMappings(rawBytes, "2호선"),
@@ -200,32 +138,16 @@ function rebindMolitMembershipEvidence(inventory, snapshot, rawBytes) {
       membershipSourceRawSha256: snapshot.rawSha256,
       membershipSourceSnapshotSha256: mappings.sourceRawSha256,
       mappingSha256,
-      ...(stationCodesSha256 != null
-        ? { stationCodesSha256 }
-        : {}),
+      ...(stationCodesSha256 != null ? { stationCodesSha256 } : {}),
     };
   }
 }
-function selectedInLedgerOrder(ledger, ids) { if (!Array.isArray(ids) || new Set(ids).size !== ids.length || ids.length !== CANDIDATE_SOURCE_IDS.length) throw new Error("static network selected snapshot set is invalid"); const selected = ledger.filter(({ snapshotId }) => ids.includes(snapshotId)); if (selected.length !== ids.length || ids.some((snapshotId) => ledger.filter((snapshot) => snapshot.snapshotId === snapshotId).length !== 1)) throw new Error("static network selected snapshot set is invalid"); return selected; }
-function requireLegacyV1PositionResetAuthority({ ledger, candidate, inventory, governance, governanceBytes, freshness, nowMillis, heads, previous }) {
-  requireApprovedLegacyV1PublicPositionsPredecessor({ sourceSnapshots: ledger, positions: previous, now: new Date(nowMillis) });
-  const index = CANDIDATE_SOURCE_IDS.indexOf(TARGETS[0]);
-  const source = inventory.sources?.filter(({ id }) => id === TARGETS[0]);
-  const selected = selectedInLedgerOrder(ledger, candidate.sourceSnapshotIds);
-  const expectedProjection = deriveReleaseProjection({
-    snapshot: previous, sourceInventory: inventory, governancePolicy: governance,
-    governancePolicyBytes: Buffer.from(governanceBytes), freshnessPolicy: freshness, nowMillis,
-  });
-  if (heads[TARGETS[0]] !== previous.snapshotId
-    || source.length !== 1
-    || source[0].admissionEvidence?.snapshotId !== previous.snapshotId
-    || source[0].admissionEvidence.rawSha256 !== previous.rawSha256
-    || source[0].admissionEvidence.schemaFingerprint !== previous.schemaFingerprint
-    || candidate.sourceSnapshotIds[index] !== previous.snapshotId
-    || sha(JSON.stringify(selected)) !== candidate.sourceSnapshotSetHash
-    || !isDeepStrictEqual(candidate.sourceSnapshots[index], expectedProjection)) {
-    throw new Error("public v2 legacy reset authority is invalid");
-  }
+
+function selectedInLedgerOrder(ledger, ids) {
+  if (!Array.isArray(ids) || new Set(ids).size !== ids.length || ids.length !== CANDIDATE_SOURCE_IDS.length) throw new Error("static network selected snapshot set is invalid");
+  const selected = ledger.filter(({ snapshotId }) => ids.includes(snapshotId));
+  if (selected.length !== ids.length || ids.some((snapshotId) => ledger.filter((snapshot) => snapshot.snapshotId === snapshotId).length !== 1)) throw new Error("static network selected snapshot set is invalid");
+  return selected;
 }
 
 async function readCurrentTopologyAdmissionInput({ root, inventory, now, read }) {
@@ -252,107 +174,6 @@ export async function assertCurrentStaticNetworkTopologyAdmission({ repositoryRo
     now,
     read: async (relative) => bytes(target(root, relative), "static network topology"),
   });
-}
-
-export async function buildStaticNetworkSuccessorOutputs({ repositoryRoot = ROOT, observations, now = new Date() } = {}) {
-  const root = path.resolve(repositoryRoot); await regularDirectory(root, "repository root"); assertTwoObservations(observations);
-  const read = async (relative) => bytes(target(root, relative), relative);
-  const [inventoryBytes, ledgerBytes, candidateBytes, requestBytes, hashBytes, governanceBytes, freshnessBytes] = await Promise.all([
-    read(FIXED_OUTPUTS[0]), read(FIXED_OUTPUTS[1]), read(FIXED_OUTPUTS[2]), read(APPROVAL_INPUTS[0]), read(APPROVAL_INPUTS[1]),
-    read("tools/datapack/source-governance-policy.json"), read("release/product-gates/datapack-freshness-sla.json"),
-  ]);
-  const baseInputs = INPUTS.map((relative, index) => ({ relative, bytes: [inventoryBytes, ledgerBytes, candidateBytes, requestBytes, hashBytes, governanceBytes, freshnessBytes][index] }));
-  const inventory = parse(inventoryBytes, "source inventory"); const ledger = parse(ledgerBytes, "source ledger");
-  const candidate = parse(candidateBytes, "candidate build spec");
-  const governance = parse(governanceBytes, "source governance policy"); const freshness = parse(freshnessBytes, "freshness policy");
-  const { topologyAdmission, topologyRelative, topologyBytes } = await readCurrentTopologyAdmissionInput({ root, inventory, now, read: async (relative) => bytes(target(root, relative), "static network topology") });
-  const inputs = [...baseInputs, { relative: topologyRelative, bytes: topologyBytes }];
-  if (JSON.stringify(candidate.sourceSnapshotIds?.length === CANDIDATE_SOURCE_IDS.length ? candidate.sourceSnapshots?.map(({ sourceId }) => sourceId) : []) !== JSON.stringify(PREVIOUS_CANDIDATE_SOURCE_IDS)
-    || JSON.stringify(candidate.sourceSnapshotIds.map((snapshotId, index) => candidate.sourceSnapshots[index]?.snapshotId)) !== JSON.stringify(candidate.sourceSnapshotIds)) throw new Error("static network candidate must preserve exact ordered seven sources");
-  const heads = validateLineage(ledger).headsBySource;
-  const nextInventory = structuredClone(inventory); const nextLedger = [...ledger];
-  for (const { snapshot } of observations) {
-    const migration = snapshot.projectionMigration;
-    if (snapshot.sourceId === TARGETS[0]) {
-      validateSeoulRouteMapPositionsSnapshot(snapshot.routeMapLayoutArtifact, { topologySnapshotBytes: topologyBytes });
-      if (snapshot.routeMapLayoutEvidence.topologySnapshotId !== topologyAdmission.topologySnapshotId || snapshot.routeMapLayoutEvidence.topologySnapshotSha256 !== sha(topologyBytes) || snapshot.routeMapLayoutArtifact.topologySnapshotSha256 !== sha(topologyBytes) || snapshot.routeMapLayoutArtifact.topologySnapshotId !== topologyAdmission.topologySnapshotId) throw new Error("static network topology layout binding is invalid");
-      const replaced = ledger.filter(({ snapshotId }) => snapshotId === migration?.replacedSnapshotId);
-      if (snapshot.previousSnapshotId !== null || snapshot.diffSummary !== null || replaced.length !== 1 || replaced[0].sourceId !== migration.replacedSourceId || replaced[0].snapshotId !== heads[migration.replacedSourceId] || replaced[0].rawSha256 !== migration.replacedRawSha256 || replaced[0].schemaFingerprint !== migration.replacedSchemaFingerprint || migration.candidateSlotSourceId !== replaced[0].sourceId) throw new Error("static network public replacement predecessor binding is invalid");
-    } else {
-      if (snapshot.previousSnapshotId !== heads[snapshot.sourceId]) throw new Error("static network successor is not direct");
-      const predecessors = ledger.filter(({ snapshotId }) => snapshotId === snapshot.previousSnapshotId);
-      if (predecessors.length !== 1 || !migration || migration.legacySnapshotId !== predecessors[0].snapshotId || migration.legacyRawSha256 !== predecessors[0].rawSha256 || migration.legacySchemaFingerprint !== predecessors[0].schemaFingerprint || !isDeepStrictEqual(migration.legacyProviderRecordHashes, predecessors[0].providerRecordHashes)) throw new Error("static network migration predecessor binding is invalid");
-    }
-    if (nextLedger.some(({ snapshotId }) => snapshotId === snapshot.snapshotId)) throw new Error("static network snapshot identity already exists");
-    nextLedger.push(snapshot); const source = nextInventory.sources?.find(({ id }) => id === snapshot.sourceId);
-    if (!source || source.admissionEvidence?.decision !== "APPROVED") throw new Error("static network source admission is invalid");
-    const sourceClass = freshness.sourceClasses?.find(({ sourceIds }) => sourceIds?.includes(snapshot.sourceId));
-    const retention = deriveRawRetentionExpiresAt({ policy: governance, sourceId: snapshot.sourceId, retrievedAt: snapshot.retrievedAt });
-    if (!sourceClass || snapshot.rawReceipt?.rawRetentionExpiresAt !== retention || !Number.isFinite(Date.parse(snapshot.rawReceipt?.storedAt))
-      || Date.parse(snapshot.rawReceipt.storedAt) > now.getTime() || Date.parse(retention) <= Date.parse(snapshot.rawReceipt.storedAt)) throw new Error("static network receipt retention binding is invalid");
-    snapshot.freshnessExpiresAt = deriveFreshnessExpiresAt({ policy: freshness, sourceClassId: sourceClass.id, basisAt: snapshot[sourceClass.basisField], evaluationAt: now.toISOString() });
-    snapshot.rawRetentionExpiresAt = retention;
-    snapshot.governancePolicyVersion = governance.policyVersion;
-    snapshot.governancePolicySha256 = sha(governanceBytes);
-    if (typeof snapshot.governancePolicyVersion !== "string" || !SHA.test(snapshot.governancePolicySha256)) throw new Error("static network governance binding is invalid");
-    source.retrievedAt = snapshot.retrievedAt.slice(0, 10); source.observedDataUpdatedAt = snapshot.sourceUpdatedAt.slice(0, 10);
-    source.admissionEvidence = { ...source.admissionEvidence, snapshotId: snapshot.snapshotId, rawSha256: snapshot.rawSha256, schemaFingerprint: snapshot.schemaFingerprint };
-    if (snapshot.sourceId === TARGETS[0]) {
-      source.requiredForProductionPack = true;
-      source.productionUseAllowed = true;
-      const currentTopologyAdmission = {
-        ...source.routeMapAdmissionEvidence.currentTopologyAdmission,
-        positionSnapshotSha256: snapshot.normalizedObservationSha256,
-      };
-      const currentLayoutAdmission = {
-        schemaVersion: 2,
-        artifactKind: "seoul-public-route-map-layout-admission",
-        status: "ADMITTED",
-        positionSnapshotId: snapshot.snapshotId,
-        snapshotPath: `tools/datapack/sources/${snapshot.snapshotId}.json`,
-        snapshotSha256: snapshot.normalizedObservationSha256,
-        rawSha256: snapshot.rawSha256,
-        contentSha256: snapshot.contentSha256,
-        ...snapshot.routeMapLayoutEvidence,
-      };
-      if (currentLayoutAdmission.snapshotSha256 !== currentTopologyAdmission.positionSnapshotSha256) {
-        throw new Error("static network topology and layout observation binding is invalid");
-      }
-      source.routeMapAdmissionEvidence = {
-        ...source.routeMapAdmissionEvidence,
-        capturedAt: snapshot.retrievedAt,
-        freshUntil: snapshot.freshnessExpiresAt,
-        currentTopologyAdmission,
-        currentLayoutAdmission,
-      };
-    }
-  }
-  const molitObservation = observations.find(({ snapshot }) => snapshot.sourceId === TARGETS[1]);
-  rebindMolitMembershipEvidence(nextInventory, molitObservation.snapshot, molitObservation.rawBytes);
-  validateLineage(nextLedger);
-  const nextCandidate = structuredClone(candidate); const nowMillis = now.getTime();
-  for (const { snapshot } of observations) {
-    const previousId = snapshot.sourceId === TARGETS[0] ? snapshot.projectionMigration.replacedSnapshotId : snapshot.previousSnapshotId;
-    const expectedSourceId = snapshot.sourceId === TARGETS[0] ? snapshot.projectionMigration.candidateSlotSourceId : snapshot.sourceId;
-    const index = nextCandidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === expectedSourceId);
-    if (index < 0 || nextCandidate.sourceSnapshotIds[index] !== previousId) throw new Error("static network candidate head drift");
-    nextCandidate.sourceSnapshotIds[index] = snapshot.snapshotId;
-    nextCandidate.sourceSnapshots[index] = deriveReleaseProjection({ snapshot, sourceInventory: nextInventory, governancePolicy: governance, governancePolicyBytes: governanceBytes, freshnessPolicy: freshness, nowMillis });
-  }
-  const replacedCandidateSourceId = observations.find(({ snapshot }) => snapshot.sourceId === TARGETS[0])?.snapshot.projectionMigration.candidateSlotSourceId;
-  for (const projection of candidate.sourceSnapshots) {
-    if (!TARGETS.includes(projection.sourceId) && projection.sourceId !== replacedCandidateSourceId && JSON.stringify(nextCandidate.sourceSnapshots.find(({ sourceId }) => sourceId === projection.sourceId)) !== JSON.stringify(projection)) throw new Error("non-target candidate projection changed");
-  }
-  if (JSON.stringify(nextCandidate.sourceSnapshots.map(({ sourceId }) => sourceId)) !== JSON.stringify(CANDIDATE_SOURCE_IDS)) throw new Error("static network candidate replacement order is invalid");
-  const selected = selectedInLedgerOrder(nextLedger, nextCandidate.sourceSnapshotIds); const setHash = sha(JSON.stringify(selected));
-  const nextInventoryBytes = json(nextInventory); nextCandidate.sourceSnapshotSetHash = setHash; nextCandidate.sourceInventorySha256 = sha(JSON.stringify(nextInventory));
-  nextCandidate.networkEdgeEvidence.sourceInventory.sha256 = sha(nextInventoryBytes);
-  const nextCandidateBytes = json(nextCandidate);
-  const staged = await Promise.all(observations.map(async ({ snapshot, bytes: snapshotBytes }) => {
-    const relative = `tools/datapack/sources/${snapshot.snapshotId}.json`; const previous = await bytes(target(root, relative), relative, { absent: true });
-    if (previous != null) throw new Error("static network snapshot immutable collision"); return { relative, bytes: snapshotBytes, prestateBytes: null };
-  }));
-  return [...staged, { relative: FIXED_OUTPUTS[0], bytes: nextInventoryBytes, prestateBytes: inventoryBytes }, { relative: FIXED_OUTPUTS[1], bytes: json(nextLedger), prestateBytes: ledgerBytes }, { relative: FIXED_OUTPUTS[2], bytes: nextCandidateBytes, prestateBytes: candidateBytes }].map((output) => ({ ...output, inputs }));
 }
 
 function assertV2ProducerOutput(producerOutput, rawBytesBySource) {
@@ -419,7 +240,7 @@ function revalidateV2ProducerOutput({ producerOutput, rawBytesBySource, sourceIn
   }
 }
 
-function v2Snapshot({ observation, previous, sourceUpdatedAt, rootSupersession = null }) {
+function v2Snapshot({ observation, previous, sourceUpdatedAt }) {
   const snapshot = {
     ...structuredClone(previous),
     schemaVersion: 1,
@@ -438,7 +259,7 @@ function v2Snapshot({ observation, previous, sourceUpdatedAt, rootSupersession =
     providerRecordHashes: structuredClone(observation.providerRecordHashes),
     normalizedObservationSha256: sha(canonicalBytes(observation)),
     publicStaticNetworkV2Observation: structuredClone(observation),
-    previousSnapshotId: rootSupersession == null ? previous.snapshotId : null,
+    previousSnapshotId: previous.snapshotId,
     rawReceipt: structuredClone(observation.rawReceipt),
     snapshotStatus: "LOCKED",
     schemaStatus: "PASS",
@@ -448,26 +269,31 @@ function v2Snapshot({ observation, previous, sourceUpdatedAt, rootSupersession =
     credentialRedacted: true,
   };
   delete snapshot.projectionMigration;
+  delete snapshot.migration;
   delete snapshot.rootSupersession;
+  delete snapshot.historicalPredecessorAudit;
   delete snapshot.routeMapLayoutEvidence;
   delete snapshot.routeMapLayoutArtifact;
   if (observation.sourceId === TARGETS[0]) {
     snapshot.routeMapLayoutEvidence = structuredClone(observation.routeMapLayoutEvidence);
     snapshot.routeMapLayoutArtifact = structuredClone(observation.routeMapLayoutArtifact);
   }
-  if (rootSupersession != null) snapshot.rootSupersession = structuredClone(rootSupersession);
-  snapshot.diffSummary = rootSupersession == null ? buildSnapshotDiff(previous, snapshot) : null;
+  snapshot.diffSummary = buildSnapshotDiff(previous, snapshot);
   return snapshot;
 }
 
-function requireFirstPublicV2PositionsPredecessor({ ledger, heads, candidate, inventory, governance, governanceBytes, freshness, now }) {
-  const previous = ledger.filter(({ snapshotId }) => snapshotId === heads[TARGETS[0]]);
-  if (previous.length !== 1) throw new Error("public v2 direct predecessor is invalid");
-  if (previous[0].publicStaticNetworkV2Observation?.schemaVersion !== 2) {
-    requireLegacyV1PositionResetAuthority({
-      ledger, candidate, inventory, governance, governanceBytes, freshness, nowMillis: now.getTime(),
-      heads, previous: previous[0],
-    });
+function requireActivePublicV2Predecessors({ ledger, heads, inventory, now }) {
+  for (const sourceId of TARGETS) {
+    const previous = ledger.filter(({ snapshotId }) => snapshotId === heads[sourceId]);
+    const source = inventory.sources?.find(({ id }) => id === sourceId);
+    if (previous.length !== 1 || !source
+      || previous[0].publicStaticNetworkV2Observation?.schemaVersion !== 2
+      || previous[0].publicStaticNetworkV2Observation?.sourceId !== sourceId
+      || previous[0].publicStaticNetworkV2Observation?.snapshotId !== previous[0].snapshotId) {
+      throw new Error("public v2 active predecessor is required");
+    }
+    requireCanonicalPublicStaticNetworkV2OuterSnapshot({ snapshot: previous[0], now, requireCurrentFreshness: true });
+    if (sourceId === TARGETS[0]) requirePublicStaticNetworkV2Admission({ positions: previous[0], positionSource: source });
   }
 }
 
@@ -477,18 +303,7 @@ function materializePublicV2Observation({ observation, ledger, heads, nextInvent
   const sourceUpdatedAt = observation.sourceId === TARGETS[0]
     ? `${observation.routeMapLayoutArtifact.observedDataUpdatedAt}T00:00:00.000Z`
     : observation.capturedAt;
-  const isFirstPositionV2Reset = observation.sourceId === TARGETS[0]
-    && previous[0].publicStaticNetworkV2Observation?.schemaVersion !== 2;
-  const rootSupersession = isFirstPositionV2Reset ? {
-    schemaVersion: 1,
-    artifactKind: "source-root-supersession",
-    sourceId: observation.sourceId,
-    supersededHeadSnapshotId: previous[0].snapshotId,
-    supersededHeadRawSha256: previous[0].rawSha256,
-    supersededHeadSchemaFingerprint: previous[0].schemaFingerprint,
-    reasonCode: "CANONICAL_SOURCE_CONTRACT_RESET",
-  } : null;
-  const snapshot = v2Snapshot({ observation, previous: previous[0], sourceUpdatedAt, rootSupersession });
+  const snapshot = v2Snapshot({ observation, previous: previous[0], sourceUpdatedAt });
   const source = nextInventory.sources?.find(({ id }) => id === observation.sourceId);
   if (!source || source.admissionEvidence?.decision !== "APPROVED") throw new Error("public v2 source admission is invalid");
   const sourceClass = freshness.sourceClasses?.find(({ sourceIds }) => sourceIds?.includes(observation.sourceId));
@@ -535,15 +350,14 @@ export async function buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoo
   if (JSON.stringify(candidate.sourceSnapshots?.map(({ sourceId }) => sourceId)) !== JSON.stringify(CANDIDATE_SOURCE_IDS)
     || JSON.stringify(candidate.sourceSnapshotIds) !== JSON.stringify(candidate.sourceSnapshots.map(({ snapshotId }) => snapshotId))) throw new Error("public v2 candidate source set is invalid");
   const heads = validateLineage(ledger).headsBySource;
-  requireFirstPublicV2PositionsPredecessor({ ledger, heads, candidate, inventory, governance, governanceBytes, freshness, now });
+  requireActivePublicV2Predecessors({ ledger, heads, inventory, now });
   const nextInventory = structuredClone(inventory); const snapshots = materializePublicV2Snapshots({ producerOutput, ledger, heads, nextInventory, governance, governanceBytes, freshness, now }); const nextLedger = [...ledger, ...snapshots];
   rebindMolitMembershipEvidence(nextInventory, snapshots.find(({ sourceId }) => sourceId === TARGETS[1]), rawBytesBySource[TARGETS[1]]);
   validateLineage(nextLedger);
   const nextCandidate = structuredClone(candidate); const nowMillis = now.getTime();
   for (const snapshot of snapshots) {
     const index = nextCandidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === snapshot.sourceId);
-    const priorSnapshotId = snapshot.rootSupersession?.supersededHeadSnapshotId ?? snapshot.previousSnapshotId;
-    if (index < 0 || nextCandidate.sourceSnapshotIds[index] !== priorSnapshotId) throw new Error("public v2 candidate head drift");
+    if (index < 0 || nextCandidate.sourceSnapshotIds[index] !== snapshot.previousSnapshotId) throw new Error("public v2 candidate head drift");
     nextCandidate.sourceSnapshotIds[index] = snapshot.snapshotId;
     nextCandidate.sourceSnapshots[index] = deriveReleaseProjection({ snapshot, sourceInventory: nextInventory, governancePolicy: governance, governancePolicyBytes: governanceBytes, freshnessPolicy: freshness, nowMillis });
   }
@@ -697,11 +511,6 @@ export async function commitStaticNetworkSuccessorOutputs({ repositoryRoot = ROO
   const root = path.resolve(repositoryRoot); await regularDirectory(root, "repository root"); const release = await acquire(root, { afterStaleLockRead });
   try { await recoverPending(root); await commitUnlocked({ root, outputs, failAfter, beforeExistingPublish, afterExistingPublish }); } finally { await release(); }
 }
-export async function registerCurrentStaticNetworkSuccessors(options = {}) {
-  const root = path.resolve(options.repositoryRoot ?? ROOT); await regularDirectory(root, "repository root"); const release = await acquire(root, options);
-  try { await recoverPending(root); const outputs = await buildStaticNetworkSuccessorOutputs({ ...options, repositoryRoot: root }); await commitUnlocked({ root, outputs }); return { outputs: outputs.map(({ relative }) => relative) }; } finally { await release(); }
-}
-
 export async function registerPublicStaticNetworkV2Successors(options = {}) {
   const root = path.resolve(options.repositoryRoot ?? ROOT); await regularDirectory(root, "repository root"); const release = await acquire(root, options);
   try { await recoverPending(root); const outputs = await buildPublicStaticNetworkV2SuccessorOutputs({ ...options, repositoryRoot: root }); await commitUnlocked({ root, outputs }); return { outputs: outputs.map(({ relative }) => relative) }; } finally { await release(); }

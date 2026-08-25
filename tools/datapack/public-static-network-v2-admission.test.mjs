@@ -36,12 +36,11 @@ test("v2 admission fails closed when a layout binding is absent or wrong", () =>
   ]) { const value = valid(); mutate(value); assert.throws(() => requirePublicStaticNetworkV2Admission(value), /V2_MISSING/); }
 });
 
-test("v2 admission permits opaque historical predecessor audit only", () => {
+test("v2 admission rejects historical predecessor audit", () => {
   const value = valid();
   value.positions.publicStaticNetworkV2Observation.historicalPredecessorAudit = { archivedUri: "s3://audit-only" };
   value.positions.normalizedObservationSha256 = createHash("sha256")
     .update(Buffer.from(`${JSON.stringify(value.positions.publicStaticNetworkV2Observation)}\n`)).digest("hex");
   value.positionSource.routeMapAdmissionEvidence.currentLayoutAdmission.snapshotSha256 = value.positions.normalizedObservationSha256;
-  const result = requirePublicStaticNetworkV2Admission(value);
-  assert.equal(result.admission.positionSnapshotId, value.positions.snapshotId);
+  assert.throws(() => requirePublicStaticNetworkV2Admission(value), /V2_MISSING/);
 });
