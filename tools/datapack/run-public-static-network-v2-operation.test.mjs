@@ -1,14 +1,15 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import { runPublicStaticNetworkV2Operation } from "./run-public-static-network-v2-operation.mjs";
 import { parseSeoulRouteMapPositionsCsv } from "./collect-seoul-route-map-positions.mjs";
+import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
-const now = new Date("2026-08-25T00:00:00.000Z");
+const { inWindow: now, expiredAt } = await currentTopologyAdmissionClock(root);
 const env = { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "oci-par-fixture" };
 const positionCsv = await readFile(path.join(root, "tools/datapack/fixtures/seoul-route-map-positions-raw/data-go-15099316.csv"));
 const rows = parseSeoulRouteMapPositionsCsv(positionCsv).rawPositions.map(({ line, stationCode, stationName, latitude, longitude, basisDate }, index) => ({
@@ -20,6 +21,21 @@ const raw = {
   molitRawBytes: await readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
   capturedAt: now.toISOString(),
 };
+
+async function preflightRepository(mutateInventory = (inventory) => inventory) {
+  const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "public-static-v2-topology-"));
+  await mkdir(path.join(repositoryRoot, "tools/datapack/sources"), { recursive: true });
+  const [inventoryBytes, topologyBytes] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/source-inventory.json")),
+    readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260823.json")),
+  ]);
+  const inventory = mutateInventory(JSON.parse(inventoryBytes));
+  await Promise.all([
+    writeFile(path.join(repositoryRoot, "tools/datapack/source-inventory.json"), `${JSON.stringify(inventory)}\n`),
+    writeFile(path.join(repositoryRoot, "tools/datapack/sources/capital-route-topology-20260823.json"), topologyBytes),
+  ]);
+  return repositoryRoot;
+}
 
 test("one-shot v2 operation validates both raws before exactly two OCI publications and one transition", async (t) => {
   const operationRoot = await mkdtemp(path.join(os.tmpdir(), "public-static-v2-operation-"));
@@ -52,6 +68,30 @@ test("one-shot v2 operation never publishes after collection or raw validation f
     publishImpl: async () => { publications += 1; }, transitionImpl: async () => { transitions += 1; },
   }), /PUBLIC_STATIC_NETWORK_V2_MOLIT_SCHEMA/);
   assert.equal(publications, 0); assert.equal(transitions, 0);
+});
+
+test("one-shot v2 operation rejects stale, future-dated, or mismatched topology before collection, publication, or transition", async (t) => {
+  const mismatchedRoot = await preflightRepository((inventory) => {
+    inventory.sources.find(({ id }) => id === "seoul-metro-route-map-positions")
+      .routeMapAdmissionEvidence.currentTopologyAdmission.topologyContentSha256 = "0".repeat(64);
+    return inventory;
+  });
+  t.after(() => rm(mismatchedRoot, { recursive: true, force: true }));
+  for (const { repositoryRoot, at, expected } of [
+    { repositoryRoot: root, at: expiredAt, expected: /topology admission snapshot is stale or future-dated/ },
+    { repositoryRoot: root, at: new Date("2026-08-23T00:00:00.000Z"), expected: /topology admission snapshot is stale or future-dated/ },
+    { repositoryRoot: mismatchedRoot, at: now, expected: /static network topology identity is invalid/ },
+  ]) {
+    const operationRoot = await mkdtemp(path.join(os.tmpdir(), "public-static-v2-topology-operation-"));
+    t.after(() => rm(operationRoot, { recursive: true, force: true }));
+    let collections = 0; let publications = 0; let transitions = 0;
+    await assert.rejects(runPublicStaticNetworkV2Operation({
+      repositoryRoot, operationRoot, now: at, env, serviceKey: "test-key", assertExactMain: async () => "a".repeat(40),
+      collectImpl: async () => { collections += 1; return raw; },
+      publishImpl: async () => { publications += 1; }, transitionImpl: async () => { transitions += 1; },
+    }), expected);
+    assert.equal(collections, 0); assert.equal(publications, 0); assert.equal(transitions, 0);
+  }
 });
 
 test("one-shot v2 operation stops before transition when main changes after both publications", async (t) => {
