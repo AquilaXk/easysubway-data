@@ -34,7 +34,6 @@ process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
 const topologyNow = new Date("2026-07-19T18:14:03.004Z");
 const timetableNow = new Date("2026-07-20T13:09:00.000Z");
 const gwangjuAccessibilityNow = new Date("2026-07-24T03:00:00.000Z");
-const incheonStationNow = new Date("2026-08-14T16:00:00.000Z");
 const accessibilityNow = new Date("2026-07-24T07:00:00.000Z");
 const SOURCE_ID = "incheon-transit-accessibility";
 const OPERATOR_ID = "incheon-transit";
@@ -49,6 +48,15 @@ const INCHEON_STATION_INFO_BASELINE_SUPPORTED_COUNT = 31;
 const ACCESSIBILITY_SUPPORTED_COUNT = INCHEON_STATION_INFO_BASELINE_SUPPORTED_COUNT + 3;
 
 async function inputs() {
+  const currentInventory = await readJson("tools/datapack/source-inventory.json");
+  const incheonSources = currentInventory.sources.filter(
+    ({ id }) => id === "incheon-transit-station-info",
+  );
+  assert.equal(incheonSources.length, 1, "current Incheon source identity");
+  const incheonAdmission = incheonSources[0].topologyAdmissionEvidence;
+  assert.equal(typeof incheonAdmission?.snapshotPath, "string");
+  assert.equal(typeof incheonAdmission?.capturedAt, "string");
+  assert.ok(Number.isFinite(Date.parse(incheonAdmission.capturedAt)));
   const [
     baseFixture,
     busanTopology,
@@ -74,9 +82,9 @@ async function inputs() {
     readJson("tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"),
     readJson("tools/datapack/sources/gwangju-transportation-cyberstation-timetable-20260720.json"),
     readJson("tools/datapack/sources/gwangju-transportation-accessibility-20260724.json"),
-    readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260814.json")),
+    readFile(path.join(root, incheonAdmission.snapshotPath)),
     readJson("tools/datapack/sources/incheon-transit-accessibility-20260724.json"),
-    readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
+    Promise.resolve(projectHistoricalRegionalMaterializeInventory(currentInventory)),
     readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
     readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
   ]);
@@ -131,7 +139,7 @@ async function inputs() {
     snapshot: incheonSnapshot,
     snapshotSha256: createHash("sha256").update(incheonBytes).digest("hex"),
     inventory,
-    now: incheonStationNow,
+    now: new Date(incheonAdmission.capturedAt),
   });
   return {
     incheonFixture,

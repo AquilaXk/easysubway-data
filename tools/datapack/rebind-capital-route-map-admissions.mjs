@@ -7,7 +7,10 @@ import { pathToFileURL } from "node:url";
 import { loadCapitalRouteTopologySnapshot } from "./apply-capital-route-topology-to-bundled-pack.mjs";
 import { normalizeStationName } from "./collect-capital-route-topology.mjs";
 import { replaceFileAtomically } from "./refresh-route-map-admission-freshness.mjs";
-import { validateSeoulRouteMapPositionsSnapshot } from "./collect-seoul-route-map-positions.mjs";
+import {
+  buildSeoulRouteMapPositions,
+  validateSeoulRouteMapPositionsSnapshot,
+} from "./collect-seoul-route-map-positions.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const SHA256 = /^[a-f0-9]{64}$/u;
@@ -133,6 +136,23 @@ function validateCurrentLayoutObservation({ source, admission, bytes, topologyBy
     throw new Error("Seoul current layout artifact mismatch");
   }
   return { artifact, observation };
+}
+
+function validateCurrentLayoutDerivation({ artifact, topologyBytes, topologySnapshotId }) {
+  const regenerated = buildSeoulRouteMapPositions({
+    records: artifact.rawPositions,
+    topologySnapshotBytes: topologyBytes,
+    topologySnapshotId,
+    now: new Date(artifact.capturedAt),
+    rawSha256: artifact.rawSha256,
+  });
+  if ([
+    "layoutPositionsSha256",
+    "layoutTracksSha256",
+    "semanticOutputSha256",
+  ].some((field) => regenerated[field] !== artifact[field])) {
+    throw new Error("Seoul current topology layout derivation mismatch");
+  }
 }
 
 function topologyStationsByLine(topology) {
@@ -305,28 +325,34 @@ export function withCurrentCapitalTopologyAdmissions({
       if (!same([...currentLayout.artifact.lineIds].sort(compareStrings), [...evidence.lineIds].sort(compareStrings))) {
         throw new Error(`${source.id} position line coverage mismatch`);
       }
-    } else {
-      const observedStationsByLine = new Map();
-      const observedPositionKeys = new Set();
-      for (const position of positions) {
-        const stations = stationsByLine.get(position.lineId);
-        const stationName = canonicalStationName(position.stationName);
-        if (!evidence.lineIds.includes(position.lineId)
-          || !stations?.has(stationName)) {
-          throw new Error(`${source.id} station membership mismatch: ${position.lineId}:${position.stationName}`);
-        }
-        const positionKey = `${position.lineId}\0${stationName}`;
-        if (observedPositionKeys.has(positionKey)) {
-          throw new Error(`${source.id} duplicate position: ${position.lineId}:${position.stationName}`);
-        }
-        observedPositionKeys.add(positionKey);
-        const observed = observedStationsByLine.get(position.lineId) ?? new Set();
-        observed.add(stationName);
-        observedStationsByLine.set(position.lineId, observed);
+    }
+    const observedStationsByLine = new Map();
+    const observedPositionKeys = new Set();
+    for (const position of positions) {
+      const stations = stationsByLine.get(position.lineId);
+      const stationName = canonicalStationName(position.stationName);
+      if (!evidence.lineIds.includes(position.lineId)
+        || !stations?.has(stationName)) {
+        throw new Error(`${source.id} station membership mismatch: ${position.lineId}:${position.stationName}`);
       }
-      if (!same([...observedStationsByLine.keys()].sort(compareStrings), [...evidence.lineIds].sort(compareStrings))) {
-        throw new Error(`${source.id} position line coverage mismatch`);
+      const positionKey = `${position.lineId}\0${stationName}`;
+      if (observedPositionKeys.has(positionKey)) {
+        throw new Error(`${source.id} duplicate position: ${position.lineId}:${position.stationName}`);
       }
+      observedPositionKeys.add(positionKey);
+      const observed = observedStationsByLine.get(position.lineId) ?? new Set();
+      observed.add(stationName);
+      observedStationsByLine.set(position.lineId, observed);
+    }
+    if (!same([...observedStationsByLine.keys()].sort(compareStrings), [...evidence.lineIds].sort(compareStrings))) {
+      throw new Error(`${source.id} position line coverage mismatch`);
+    }
+    if (currentLayout != null) {
+      validateCurrentLayoutDerivation({
+        artifact: currentLayout.artifact,
+        topologyBytes,
+        topologySnapshotId,
+      });
     }
     if (binding === "current-official") evidence.topologySourceId = topology.sourceId;
     evidence.currentTopologyAdmission = {

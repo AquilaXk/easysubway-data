@@ -20,6 +20,7 @@ import {
   parseLineSource,
   parseSeohaeMerged,
   projectCapitalTopologyOwnership,
+  requireCurrentSourceSeparatedCapitalTopology,
   resolveDataGoDownloadUrl,
 } from "./collect-capital-route-topology.mjs";
 
@@ -123,14 +124,21 @@ test("capital topology 비교는 같은 edge에 변경을 보고하지 않는다
 });
 
 test("current capital topology ownership projection은 Incheon 1/2만 별도 source로 분리한다", async () => {
-  const snapshot = JSON.parse(await readFile(
-    "tools/datapack/sources/capital-route-topology-20260724.json",
-    "utf8",
-  ));
+  const inventory = JSON.parse(await readFile("tools/datapack/source-inventory.json", "utf8"));
+  const admission = inventory.sources.find(
+    ({ id }) => id === "seoul-metro-route-map-positions",
+  )?.routeMapAdmissionEvidence?.currentTopologyAdmission;
+  assert.ok(admission);
   const current = JSON.parse(await readFile(
-    "tools/datapack/sources/capital-route-topology-20260813.json",
+    `tools/datapack/sources/${admission.topologySnapshotId}.json`,
     "utf8",
   ));
+  const snapshot = structuredClone(current);
+  snapshot.lines.push(
+    topologyLine("line-42b5805f3b5a", ["인천가", "인천나"], [{ fromStationName: "인천가", toStationName: "인천나", distanceMeters: 1 }]),
+    topologyLine("line-98718184f016", ["인천다", "인천라"], [{ fromStationName: "인천다", toStationName: "인천라", distanceMeters: 1 }]),
+  );
+  refreshSnapshotIdentity(snapshot);
   const projected = projectCapitalTopologyOwnership(snapshot);
   const separated = new Set(["line-42b5805f3b5a", "line-98718184f016"]);
 
@@ -161,6 +169,29 @@ test("current capital topology ownership projection은 Incheon 1/2만 별도 sou
   const missing = structuredClone(snapshot);
   missing.lines = missing.lines.filter(({ lineId }) => lineId !== "line-42b5805f3b5a");
   assert.throws(() => projectCapitalTopologyOwnership(missing), /Incheon topology ownership input/);
+});
+
+test("current source-separated capital topology는 immutable admission identity를 그대로 요구한다", async () => {
+  const inventory = JSON.parse(await readFile("tools/datapack/source-inventory.json", "utf8"));
+  const admission = inventory.sources.find(
+    ({ id }) => id === "seoul-metro-route-map-positions",
+  )?.routeMapAdmissionEvidence?.currentTopologyAdmission;
+  assert.ok(admission);
+  const current = JSON.parse(await readFile(`tools/datapack/sources/${admission.topologySnapshotId}.json`, "utf8"));
+
+  assert.strictEqual(requireCurrentSourceSeparatedCapitalTopology(current), current);
+
+  const combined = structuredClone(current);
+  combined.lines.push(topologyLine(
+    "line-42b5805f3b5a",
+    ["인천가", "인천나"],
+    [{ fromStationName: "인천가", toStationName: "인천나", distanceMeters: 1 }],
+  ));
+  refreshSnapshotIdentity(combined);
+  assert.throws(
+    () => requireCurrentSourceSeparatedCapitalTopology(combined),
+    /topology line ownership overlap/,
+  );
 });
 
 test("capital topology 비교는 유효한 line hash에서 edge 추가 삭제 수정을 감지한다", () => {

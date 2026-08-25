@@ -27,6 +27,7 @@ import {
   FRESHNESS_MILLIS,
   normalizeStationName,
   projectCapitalTopologyOwnership,
+  requireCurrentSourceSeparatedCapitalTopology,
 } from "./collect-capital-route-topology.mjs";
 import {
   validateSourceCandidateSchema,
@@ -1313,11 +1314,7 @@ async function validateAndApplyNetworkEdgeProvenance(
       );
   const topology = loadCapitalRouteTopologySnapshot(capitalTopology.value);
   const candidateTopologyInput = loadCapitalRouteTopologySnapshot(capitalTopologyCandidate.value);
-  const candidateTopology = candidateTopologyInput.lines.some(
-    ({ lineId }) => incheonTopologyLineIds.includes(lineId),
-  )
-    ? projectCapitalTopologyOwnership(candidateTopologyInput)
-    : candidateTopologyInput;
+  const candidateTopology = requireCurrentSourceSeparatedCapitalTopology(candidateTopologyInput);
   const incheonSource = sourceInventory.value.sources?.find(
     ({ id }) => id === "incheon-transit-station-info",
   );

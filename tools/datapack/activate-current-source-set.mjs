@@ -14,13 +14,12 @@ import {
   syncCanonicalFixture,
 } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
 import { buildFixture as buildOfficialSourceFixture } from "./import-official-sources.mjs";
-import { assertNoRetiredTransitReferences, projectRetiredTransitLines } from "./project-retired-transit-lines.mjs";
-import { projectCanonicalRouteMapProvenance } from "./project-canonical-route-map-provenance.mjs";
+import { projectRetiredTransitLines } from "./project-retired-transit-lines.mjs";
 import { applySchedule } from "./apply-kric-line4-pilot-schedule.mjs";
 import {
-  CAPITAL_MAP_LINE_IDS,
   buildCapitalTopologyReverificationEvidence,
   projectCapitalTopologyOwnership,
+  requireCurrentSourceSeparatedCapitalTopology,
 } from "./collect-capital-route-topology.mjs";
 import {
   requireCurrentIncheonStationCodeDerivations,
@@ -1055,8 +1054,7 @@ export function buildCurrentSourcePrimaryOutputs({
     snapshotPath: currentTopologyPath,
     prefix: "capital-route-topology",
   });
-  const capital = projectCurrentCapitalTopologyOwnership(fullCapital);
-  validateCurrentCapitalTopologyOwnership(capital);
+  const capital = requireCurrentSourceSeparatedCapitalTopology(fullCapital);
   const activationNow = new Date(requiredUtcInstant(validateBuildNow(buildNow, handoff), "buildNow"));
   if (Date.parse(capital.capturedAt) > activationNow.getTime()
     || Date.parse(capital.freshUntil) <= activationNow.getTime()) {
@@ -1230,38 +1228,8 @@ function exactCurrentTopologySnapshotIdentity({
   return match[1];
 }
 
-function validateCurrentCapitalTopologyOwnership(topology) {
-  const expectedLineIds = CAPITAL_MAP_LINE_IDS.filter(
-    (lineId) => !["line-42b5805f3b5a", "line-98718184f016"].includes(lineId),
-  );
-  const expectedLineIdSet = new Set(expectedLineIds);
-  const observedLineIds = topology.lines.map(({ lineId }) => lineId);
-  if (observedLineIds.length !== expectedLineIds.length
-    || new Set(observedLineIds).size !== observedLineIds.length
-    || observedLineIds.some((lineId) => !expectedLineIdSet.has(lineId))) {
-    throw new Error("current capital topology ownership projection is invalid");
-  }
-}
-
 function jsonBytes(value, pretty = true) {
   return Buffer.from(`${JSON.stringify(value, null, pretty ? 2 : 0)}\n`);
-}
-
-export function projectCurrentCanonicalRouteMapProvenance({
-  canonical,
-  inactiveLineExclusions,
-  basemapManifest,
-  dorasanCsvBytes,
-  reviewedAmbiguities,
-}) {
-  const projected = projectRetiredTransitLines(canonical, inactiveLineExclusions);
-  assertNoRetiredTransitReferences(projected, inactiveLineExclusions);
-  return projectCanonicalRouteMapProvenance({
-    fixture: projected,
-    basemapManifest,
-    dorasanCsvBytes,
-    reviewedAmbiguities,
-  });
 }
 
 function requiredSha(value, label) {
@@ -2037,8 +2005,7 @@ export async function generateCurrentSourceActivation({
     const [capitalTopologyBytes, incheonTopologyBytes, rawArtifact, baselineTopologyBytes, sourceSnapshotBytes,
       sourceInventoryBytes, productionInputBytes, quoteBundleBytes, baseSpecBytes,
       canonicalBytes, productionScopePolicyBytes,
-      seoulRevalidationSnapshotBytes, seoulRevalidationEvidenceBytes,
-      basemapManifestBytes, dorasanCsvBytes, reviewedAmbiguitiesBytes] = await Promise.all([
+      seoulRevalidationSnapshotBytes, seoulRevalidationEvidenceBytes] = await Promise.all([
       readRegularBytes(root, capitalTopologyPath, "current capital topology"),
       readRegularBytes(root, incheonTopologyPath, "current Incheon topology"),
       fetchCurrentRawArtifact(temporaryRoot, handoff),
@@ -2052,18 +2019,16 @@ export async function generateCurrentSourceActivation({
       readRegularBytes(root, "tools/datapack/nationwide-coverage-targets.json", "production scope policy"),
       readRegularBytes(root, seoulRevalidationSnapshotPath, "Seoul revalidation snapshot"),
       readRegularBytes(root, seoulRevalidationEvidencePath, "Seoul revalidation evidence"),
-      readRegularBytes(root, "tools/route-map/basemap-build-manifest.json", "route-map basemap manifest"),
-      readRegularBytes(root, "tools/datapack/sources/seoul-wikimedia-svg-route-map-20260624.csv", "Dorasan route-map CSV"),
-      readRegularBytes(root, "tools/route-map/fixtures/reviewed-ambiguities.json", "reviewed route-map ambiguities"),
     ]);
     const sourceInventory = parseJson(sourceInventoryBytes, "source inventory");
     const quoteBundle = parseJson(quoteBundleBytes, "official OD fare quote bundle");
     const capitalTopology = parseJson(capitalTopologyBytes, "current capital topology");
-    const candidateTopology = projectCurrentCapitalTopologyOwnership(capitalTopology);
+    const candidateTopology = requireCurrentSourceSeparatedCapitalTopology(capitalTopology);
     const candidateTopologyBytes = jsonBytes(candidateTopology);
     const incheonTopology = parseJson(incheonTopologyBytes, "current Incheon topology");
     const officialOdFareQuotes = (quoteBundle.quotes ?? [])
       .filter(({ sourceId }) => sourceId === "seoul-metro-official-od-fares");
+    const positionSnapshotBytes = await collectPositionSnapshotBytes(sourceInventory);
     const primary = buildCurrentSourcePrimaryOutputs({
       handoff,
       rawArtifact: rawArtifact.value,
@@ -2088,7 +2053,7 @@ export async function generateCurrentSourceActivation({
       currentIncheonTopologyBytes: incheonTopologyBytes,
       currentIncheonTopologyPath: incheonTopologyPath,
       buildNow,
-      snapshotBytesByPath: await collectPositionSnapshotBytes(sourceInventory),
+      snapshotBytesByPath: positionSnapshotBytes,
     });
 
     const primaryBytes = {
@@ -2117,16 +2082,26 @@ export async function generateCurrentSourceActivation({
       ({ sourceId }) => sourceId === "seoul-metro-route-map-positions",
       "current public route map successor",
     );
+    const publicRouteMapSource = requireOne(
+      primary.sourceInventory.sources,
+      ({ id }) => id === "seoul-metro-route-map-positions",
+      "current public route map source",
+    );
+    const layoutAdmission = publicRouteMapSource.routeMapAdmissionEvidence?.currentLayoutAdmission;
+    const layoutTopologyPath = `tools/datapack/sources/${layoutAdmission?.topologySnapshotId}.json`;
+    const layoutTopologyBytes = positionSnapshotBytes.get(layoutTopologyPath);
+    if (!Buffer.isBuffer(layoutTopologyBytes)
+      || publicRouteMapSuccessor.routeMapLayoutArtifact?.topologySnapshotId !== layoutAdmission?.topologySnapshotId
+      || publicRouteMapSuccessor.routeMapLayoutArtifact?.topologySnapshotSha256 !== layoutAdmission?.topologySnapshotSha256
+      || layoutAdmission.topologySnapshotSha256 !== sha(layoutTopologyBytes)) {
+      throw new Error("current public route map layout topology identity is invalid");
+    }
     const capitalTopologySnapshotId = exactCurrentTopologySnapshotIdentity({
       snapshot: capitalTopology,
       snapshotBytes: capitalTopologyBytes,
       snapshotPath: capitalTopologyPath,
       prefix: "capital-route-topology",
     });
-    if (publicRouteMapSuccessor.routeMapLayoutArtifact?.topologySnapshotId !== capitalTopologySnapshotId
-      || publicRouteMapSuccessor.routeMapLayoutArtifact?.topologySnapshotSha256 !== sha(capitalTopologyBytes)) {
-      throw new Error("current public route map topology identity is invalid");
-    }
     const capitalAdmissions = admittedCapitalLineEvidence(
       primary.sourceInventory,
       capitalTopology,
@@ -2153,18 +2128,11 @@ export async function generateCurrentSourceActivation({
       capitalTopologySnapshotId,
       capitalAdmissions,
     );
-    const canonicalWithProjectedRouteMapProvenance = projectCurrentCanonicalRouteMapProvenance({
-      canonical,
-      inactiveLineExclusions: productionScopePolicy.inactiveLineExclusions,
-      basemapManifest: parseJson(basemapManifestBytes, "route-map basemap manifest"),
-      dorasanCsvBytes,
-      reviewedAmbiguities: parseJson(reviewedAmbiguitiesBytes, "reviewed route-map ambiguities"),
-    });
     const canonicalWithPublicRouteMap = withCurrentCapitalPublicRouteMapCoverage(materializeSeoulRouteMapPositions({
-      baseFixture: canonicalWithProjectedRouteMapProvenance,
+      baseFixture: canonical,
       snapshot: publicRouteMapSuccessor.routeMapLayoutArtifact,
       snapshotSha256: publicRouteMapSuccessor.normalizedObservationSha256,
-      topologySnapshotBytes: capitalTopologyBytes,
+      topologySnapshotBytes: layoutTopologyBytes,
       inventory: primary.sourceInventory,
       now: new Date(buildNow),
       rewritePackIdentity: false,

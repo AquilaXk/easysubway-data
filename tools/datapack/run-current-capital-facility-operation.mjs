@@ -37,7 +37,15 @@ const RELEASE_INPUTS = Object.freeze({
 const ADMISSION = "tools/datapack/release/current-capital-facility-source-admission.json";
 const JOURNAL = "journal.json";
 const REGISTRAR_RESIDUES = Object.freeze(["tools/datapack/.kric-standard-registration-transaction.json", "tools/datapack/.kric-standard-registration.lock", "tools/datapack/.candidate-source-rebind.lock"]);
-const CURRENT_SOURCE_IDS = Object.freeze(["seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info"]);
+const CURRENT_SOURCE_IDS = Object.freeze([
+  "seoul-metro-route-map-positions",
+  "kric-subway-timetable",
+  "seoul-metro-accessibility",
+  "kric-station-convenience-standard",
+  "molit-urban-rail-full-route",
+  "seoulmetro-station-line-info",
+  "seoul-metro-transfer-distance-duration",
+]);
 const JOURNAL_KEYS = new Set(["schemaVersion", "artifactKind", "operationId", "phase", "preparedAt", "expectedMainSha", "planSha256", "inputSha256", "completedStages", "collectionStartedAt", "snapshotId", "completedObservation", "collectionReconciledAt", "finalizeObservedAt", "reboundExpectedCandidateSha256", "finalizedAt"]);
 const RAW_RECEIPT_KEYS = ["schemaVersion", "artifactKind", "sourceId", "snapshotId", "snapshotRawSha256", "capturedAt", "snapshotFileSha256", "rawObjectUri", "rawObjectSha256", "byteSize", "storedAt", "rawRetentionExpiresAt"];
 
