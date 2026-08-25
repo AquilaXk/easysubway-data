@@ -39,6 +39,36 @@ const RECEIPT_TYPES = Object.freeze({
   "seoul-metro-route-map-positions": { extension: "json", contentType: "application/json" },
   "molit-urban-rail-full-route": { extension: "csv", contentType: "text/csv; charset=euc-kr" },
 });
+const BOOTSTRAP_PREDECESSORS = Object.freeze({
+  candidateSnapshotIds: Object.freeze([
+    "seoul-metro-route-map-positions-current-20260824T114822985Z",
+    "kric-subway-timetable-line4-pilot-20260809",
+    "seoul-metro-accessibility-20260822T094318289Z",
+    "kric-station-convenience-standard-20260816T015619375Z",
+    "molit-urban-rail-full-route-current-20260824T114822985Z",
+    "seoulmetro-station-line-info-revalidated-20260814",
+    "seoul-metro-transfer-distance-duration-20260815T094038817Z",
+  ]),
+  candidateSetHash: "47ce24b6d682b0f0d5afd7380f6850fc1c87a1507153833117c0e9d060c0cdf8",
+  inventorySemanticSha256: "372a4eae34366995ad1a3fdd56c828836ea070bd0d132dbe9fb5670548f9767f",
+  inventoryRawSha256: "ce35f846e71e2a53162c449e5eaae51f1b5dbea417268053c470b4c5f0a69084",
+  bySource: Object.freeze({
+    "seoul-metro-route-map-positions": Object.freeze({
+      snapshotId: "seoul-metro-route-map-positions-current-20260824T114822985Z",
+      rawSha256: "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
+      schemaFingerprint: "d845e5ca904a65209a633eeee7f2d767fdddf15f11c796c090ded5efdec4d9ef",
+      sourceFileSha256: "93568a162d17b4b6ac82b46cc7e76053d642795b5f91213d7589fd7ef72e4361",
+      migration: Object.freeze({ schemaVersion: 1, artifactKind: "source-projection-migration-evidence", migrationKind: "CROSS_SOURCE_CANONICAL_REPLACEMENT", sourceId: "seoul-metro-route-map-positions", replacedSourceId: "seoulmetro-cyberstation-route-map", replacedSnapshotId: "seoulmetro-cyberstation-route-map-capital-admission-20260712", replacedRawSha256: "ce6499be2b634fad8f0cd0d2f1edf074ed0452de897f9460e3472850d4ba91ba", replacedSchemaFingerprint: "3ef53470a34e1d44db931b0bc2b7ac333fb2640f3e297902c4ee554688ef9052", candidateSlotSourceId: "seoulmetro-cyberstation-route-map" }),
+    }),
+    "molit-urban-rail-full-route": Object.freeze({
+      snapshotId: "molit-urban-rail-full-route-current-20260824T114822985Z",
+      rawSha256: "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
+      schemaFingerprint: "f8965e9b55afa5837ccda33f6b2a5a1883f01e134570517e75eaaec066a2a316",
+      sourceFileSha256: "7cf803508cd749628f289122566ae6b0f59a8d790e5e1cca2225b14a46fdae98",
+      migration: Object.freeze({ schemaVersion: 1, artifactKind: "source-projection-migration-evidence", migrationKind: "LEGACY_SAMPLE_TO_FULL_CONSUMED_FIELDS", sourceId: "molit-urban-rail-full-route", legacySnapshotId: "molit-urban-rail-full-route-revalidated-20260814", legacyRawSha256: "3ad2a676f45d23c1f39a90dc13f3a040c92ac05a01c43b9e6bbb82bf07172268", legacySchemaFingerprint: "07a90f2fcca80323978aa63eff05b24e8ad431b579a1fad05f989d175114250c", legacyProviderRecordHashes: Object.freeze(["bd7a904db6ad00a48389f6938201fe6b562d6989a22cfb0c3a70044adecca16f", "f52908004e7391f192b050d7714b28c429706e0224b668a76a513188dce470e0", "8c850edadffc61c98cfe1d7af1eaf0ef35a6e0bf832756b22277792b1c29e8f3", "9c46ebc5740e5ba48a84a50a71235e70e022cf75ed6cd1c104c863a2a56b5b8e", "79b1206245996aefa38ab0c6adf1bed48686cca2e14afb19774a0b460c244e9a" ]), fullProjectionSha256: "f5b689252d77d83a4856a9615182d062fab247920dcddb40451d5d7db0fd51c6", fullProjectionSchemaFingerprint: "f8965e9b55afa5837ccda33f6b2a5a1883f01e134570517e75eaaec066a2a316", fullProjectionRowCount: 1103, newSnapshotId: "molit-urban-rail-full-route-current-20260824T114822985Z" }),
+    }),
+  }),
+});
 const JOURNAL = "tools/datapack/.static-network-successors-transaction.json";
 const LOCK = "tools/datapack/.static-network-successors.lock";
 const SHA = /^[a-f0-9]{64}$/u;
@@ -283,21 +313,67 @@ function v2Snapshot({ observation, previous, sourceUpdatedAt }) {
   return snapshot;
 }
 
-function requireActivePublicV2Predecessors({ ledger, heads, inventory, now }) {
+async function requireExactBootstrapPredecessors({ ledger, heads, inventory, inventoryBytes, candidate, read }) {
+  if (sha(JSON.stringify(inventory)) !== BOOTSTRAP_PREDECESSORS.inventorySemanticSha256
+    || sha(inventoryBytes) !== BOOTSTRAP_PREDECESSORS.inventoryRawSha256
+    || candidate.sourceInventorySha256 !== BOOTSTRAP_PREDECESSORS.inventorySemanticSha256
+    || candidate.networkEdgeEvidence?.sourceInventory?.sha256 !== BOOTSTRAP_PREDECESSORS.inventoryRawSha256
+    || JSON.stringify(candidate.sourceSnapshotIds) !== JSON.stringify(BOOTSTRAP_PREDECESSORS.candidateSnapshotIds)
+    || JSON.stringify(candidate.sourceSnapshots?.map(({ sourceId }) => sourceId)) !== JSON.stringify(CANDIDATE_SOURCE_IDS)
+    || JSON.stringify(candidate.sourceSnapshots?.map(({ snapshotId }) => snapshotId)) !== JSON.stringify(BOOTSTRAP_PREDECESSORS.candidateSnapshotIds)
+    || candidate.sourceSnapshotSetHash !== BOOTSTRAP_PREDECESSORS.candidateSetHash
+    || sha(JSON.stringify(selectedInLedgerOrder(ledger, candidate.sourceSnapshotIds))) !== candidate.sourceSnapshotSetHash
+    || TARGETS.some((sourceId) => {
+      const expected = BOOTSTRAP_PREDECESSORS.bySource[sourceId];
+      const projection = candidate.sourceSnapshots?.find((snapshot) => snapshot.sourceId === sourceId);
+      return projection?.snapshotId !== expected.snapshotId
+        || projection.rawSha256 !== expected.rawSha256
+        || projection.schemaFingerprint !== expected.schemaFingerprint;
+    })) {
+    throw new Error("public v2 bootstrap predecessor CAS is invalid");
+  }
+  for (const sourceId of TARGETS) {
+    const expected = BOOTSTRAP_PREDECESSORS.bySource[sourceId];
+    const previous = ledger.filter(({ snapshotId }) => snapshotId === heads[sourceId]);
+    const source = inventory.sources?.find(({ id }) => id === sourceId);
+    if (heads[sourceId] !== expected.snapshotId || previous.length !== 1 || !source
+      || previous[0].sourceId !== sourceId || previous[0].schemaVersion !== 1
+      || previous[0].publicStaticNetworkV2Observation != null
+      || previous[0].snapshotId !== expected.snapshotId || previous[0].rawSha256 !== expected.rawSha256
+      || previous[0].schemaFingerprint !== expected.schemaFingerprint
+      || previous[0].normalizedObservationSha256 !== expected.sourceFileSha256
+      || !isDeepStrictEqual(previous[0].projectionMigration, expected.migration)
+      || source.admissionEvidence?.snapshotId !== expected.snapshotId
+      || source.admissionEvidence?.rawSha256 !== expected.rawSha256
+      || source.admissionEvidence?.schemaFingerprint !== expected.schemaFingerprint) {
+      throw new Error("public v2 bootstrap predecessor CAS is invalid");
+    }
+    const sourceBytes = await read(`tools/datapack/sources/${expected.snapshotId}.json`);
+    const sourceSnapshot = parse(sourceBytes, "public v2 bootstrap predecessor");
+    if (sha(sourceBytes) !== expected.sourceFileSha256
+      || sourceSnapshot.snapshotId !== expected.snapshotId || sourceSnapshot.sourceId !== sourceId
+      || sourceSnapshot.rawSha256 !== expected.rawSha256 || sourceSnapshot.schemaFingerprint !== expected.schemaFingerprint
+      || !isDeepStrictEqual(sourceSnapshot.migration, expected.migration)) {
+      throw new Error("public v2 bootstrap predecessor CAS is invalid");
+    }
+  }
+}
+
+async function requireActivePublicV2Predecessors({ ledger, heads, inventory, inventoryBytes, candidate, now, read }) {
+  const failures = [];
   for (const sourceId of TARGETS) {
     const previous = ledger.filter(({ snapshotId }) => snapshotId === heads[sourceId]);
     const source = inventory.sources?.find(({ id }) => id === sourceId);
-    if (previous.length !== 1 || !source) {
-      throw new Error("public v2 active predecessor is required");
-    }
+    if (previous.length !== 1 || !source) { failures.push(sourceId); continue; }
     try {
       requireExactPublicStaticNetworkV2SnapshotBinding({
         snapshot: previous[0], source, now, requireCurrentFreshness: true,
       });
-    } catch (error) {
-      throw new Error(`public v2 active predecessor is required for ${sourceId}: ${error.message}`);
-    }
+    } catch { failures.push(sourceId); }
   }
+  if (failures.length === 0) return;
+  if (failures.length !== TARGETS.length) throw new Error("public v2 active predecessor is required");
+  await requireExactBootstrapPredecessors({ ledger, heads, inventory, inventoryBytes, candidate, read });
 }
 
 function materializePublicV2Observation({ observation, ledger, heads, nextInventory, governance, governanceBytes, freshness, now, currentLayoutAdmission, existingSnapshots }) {
@@ -354,7 +430,7 @@ export async function buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoo
   if (JSON.stringify(candidate.sourceSnapshots?.map(({ sourceId }) => sourceId)) !== JSON.stringify(CANDIDATE_SOURCE_IDS)
     || JSON.stringify(candidate.sourceSnapshotIds) !== JSON.stringify(candidate.sourceSnapshots.map(({ snapshotId }) => snapshotId))) throw new Error("public v2 candidate source set is invalid");
   const heads = validateLineage(ledger).headsBySource;
-  requireActivePublicV2Predecessors({ ledger, heads, inventory, now });
+  await requireActivePublicV2Predecessors({ ledger, heads, inventory, inventoryBytes, candidate, now, read });
   const nextInventory = structuredClone(inventory); const snapshots = materializePublicV2Snapshots({ producerOutput, ledger, heads, nextInventory, governance, governanceBytes, freshness, now }); const nextLedger = [...ledger, ...snapshots];
   rebindMolitMembershipEvidence(nextInventory, snapshots.find(({ sourceId }) => sourceId === TARGETS[1]), rawBytesBySource[TARGETS[1]]);
   validateLineage(nextLedger);
