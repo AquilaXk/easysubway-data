@@ -1099,12 +1099,14 @@ test("topology-only refresh는 source-separated capital/Incheon identity를 함�
   const currentItxTopologyEvidencePath =
     "tools/datapack/itx-cheongchun-topology-evidence.json";
   const [baseSpec, sourceInventory, baselineTopology, canonical,
-    productionScopePolicyBytes, currentIncheonTopologyBytes, currentItxTopologyEvidenceBytes] =
+    productionInput, productionScopePolicyBytes, currentIncheonTopologyBytes,
+    currentItxTopologyEvidenceBytes] =
     await Promise.all([
     readJson("tools/datapack/release/candidate-build-spec.json"),
     readJson("tools/datapack/source-inventory.json"),
     readJson("tools/datapack/sources/capital-route-topology-20260724.json"),
     readJson("tools/datapack/release/capital-production-canonical-pack.json"),
+    readJson("tools/datapack/inputs/capital-pilot-production-source-input.json"),
     readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json")),
     readFile(path.join(root, currentIncheonTopologyPath)),
     readFile(path.join(root, currentItxTopologyEvidencePath)),
@@ -1133,6 +1135,7 @@ test("topology-only refresh는 source-separated capital/Incheon identity를 함�
     currentItxTopologyEvidenceBytes,
     baselineTopology,
     canonical,
+    productionInput,
     productionScopePolicyBytes,
     buildNow,
     snapshotBytesByPath: await collectPositionSnapshotBytes(sourceInventory),
@@ -1160,6 +1163,20 @@ test("topology-only refresh는 source-separated capital/Incheon identity를 함�
   assert.equal(result.spec.itxTopologyEvidencePath, currentItxTopologyEvidencePath);
   assert.equal(result.spec.itxTopologyEvidenceSha256, sha256(currentItxTopologyEvidenceBytes));
   assert.equal(Object.hasOwn(result.spec.networkEdgeEvidence, "itxCurrentTopologyAdmission"), false);
+  const currentAccessibilitySnapshotBySource = new Map(
+    result.sourceInventory.sources
+      .filter(({ accessibilityAdmissionEvidence }) => accessibilityAdmissionEvidence != null)
+      .map(({ id, accessibilityAdmissionEvidence }) => [id, accessibilityAdmissionEvidence.snapshotId]),
+  );
+  const capital = result.canonical.packs.find(({ id }) => id === "capital");
+  const accessibilityRows = [
+    ...capital.facilities,
+    ...capital.stationFacilityEvidence,
+    ...capital.networkEdges.filter(({ edgeType }) => ["ENTRY", "EXIT"].includes(edgeType)),
+  ].filter(({ sourceId }) => currentAccessibilitySnapshotBySource.has(sourceId));
+  assert.ok(accessibilityRows.length > 0);
+  assert.ok(accessibilityRows.every(({ sourceId, sourceSnapshotId }) =>
+    sourceSnapshotId === currentAccessibilitySnapshotBySource.get(sourceId)));
   const incheon = result.sourceInventory.sources
     .find(({ id }) => id === "incheon-transit-station-info");
   assert.equal(
@@ -1181,6 +1198,7 @@ test("topology-only refresh는 source-separated capital/Incheon identity를 함�
     currentItxTopologyEvidenceBytes,
     baselineTopology,
     canonical,
+    productionInput,
     productionScopePolicyBytes,
     buildNow,
     snapshotBytesByPath: new Map(),
@@ -1217,12 +1235,14 @@ test("stale Incheon input은 source-separated topology materialization 전에 fa
   const incheonTopologyPath = "tools/datapack/sources/incheon-transit-station-info-20260814.json";
   const outputPath = "tools/datapack/sources/capital-route-topology-20260823-source-separated.json";
   const [baseSpec, sourceInventory, currentTopologyBytes, baselineTopology, canonical,
-    productionScopePolicyBytes, incheonBytes, currentItxTopologyEvidenceBytes] = await Promise.all([
+    productionInput, productionScopePolicyBytes, incheonBytes,
+    currentItxTopologyEvidenceBytes] = await Promise.all([
     readJson("tools/datapack/release/candidate-build-spec.json"),
     readJson("tools/datapack/source-inventory.json"),
     readFile(path.join(root, currentTopologyPath)),
     readJson("tools/datapack/sources/capital-route-topology-20260724.json"),
     readJson("tools/datapack/release/capital-production-canonical-pack.json"),
+    readJson("tools/datapack/inputs/capital-pilot-production-source-input.json"),
     readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json")),
     readFile(path.join(root, incheonTopologyPath)),
     readFile(path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json")),
@@ -1247,6 +1267,7 @@ test("stale Incheon input은 source-separated topology materialization 전에 fa
     currentItxTopologyEvidenceBytes,
     baselineTopology,
     canonical,
+    productionInput,
     productionScopePolicyBytes,
     buildNow: "2026-08-23T23:59:20.000Z",
     snapshotBytesByPath: positionSnapshotBytes,

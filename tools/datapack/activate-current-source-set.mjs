@@ -9,7 +9,11 @@ import path from "node:path";
 import { isDeepStrictEqual, promisify } from "node:util";
 
 import { isMainModule } from "../lib/is-main-module.mjs";
-import { syncCanonicalFixture } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
+import {
+  syncCanonicalAccessibilityEvidence,
+  syncCanonicalFixture,
+} from "./apply-accessibility-evidence-to-bundled-pack.mjs";
+import { buildFixture as buildOfficialSourceFixture } from "./import-official-sources.mjs";
 import { assertNoRetiredTransitReferences, projectRetiredTransitLines } from "./project-retired-transit-lines.mjs";
 import { projectCanonicalRouteMapProvenance } from "./project-canonical-route-map-provenance.mjs";
 import { applySchedule } from "./apply-kric-line4-pilot-schedule.mjs";
@@ -116,6 +120,7 @@ export const CURRENT_SOURCE_ACTIVATION_OUTPUTS = Object.freeze([
 ]);
 export const CURRENT_TOPOLOGY_REFRESH_OUTPUTS = Object.freeze([
   "tools/datapack/source-inventory.json",
+  "tools/datapack/release/capital-production-reviewed-pack.json",
   "tools/datapack/release/capital-production-canonical-pack.json",
   "tools/datapack/release/candidate-build-spec.json",
   "tools/datapack/release/release-request.json",
@@ -1112,6 +1117,7 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
   currentItxTopologyEvidenceBytes,
   baselineTopology,
   canonical,
+  productionInput,
   productionScopePolicyBytes,
   buildNow,
   snapshotBytesByPath,
@@ -1165,6 +1171,10 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
     activationNow,
   );
   const nextCanonical = structuredClone(canonical);
+  const reviewedPack = buildOfficialSourceFixture(nextInventory, productionInput);
+  const reviewedCapital = reviewedPack.packs?.find(({ id }) => id === "capital");
+  if (!reviewedCapital) throw new Error("current reviewed capital pack is missing");
+  syncCanonicalAccessibilityEvidence(nextCanonical, reviewedCapital);
   const projection = projectCapitalTopologyIntoCanonicalFixture(
     nextCanonical,
     topology,
@@ -1198,6 +1208,8 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
     topologyReverificationBytes,
     sourceSeparatedTopologyPath,
     sourceSeparatedTopologyBytes,
+    reviewedPack,
+    reviewedPackBytes: jsonBytes(reviewedPack),
     canonical: nextCanonical,
     canonicalBytes,
     projectedEdgeCount: projection.edgeCount,
@@ -1865,7 +1877,7 @@ export async function generateCurrentCapitalTopologyRefresh({
       ? readBuilderBaselineBytes(builderGitSha, relativePath)
       : readRegularBytes(root, relativePath);
     const [currentTopologyBytes, currentIncheonTopologyBytes, currentItxTopologyEvidenceBytes,
-      baselineTopologyBytes, sourceInventoryBytes,
+      baselineTopologyBytes, sourceInventoryBytes, productionInputBytes,
       baseSpecBytes, canonicalBytes, productionScopePolicyBytes, sourceSnapshotsBytes] =
       await Promise.all([
         readRegularBytes(root, capitalTopologyPath, "current capital topology"),
@@ -1873,6 +1885,7 @@ export async function generateCurrentCapitalTopologyRefresh({
         readRegularBytes(root, itxTopologyEvidencePath, "current ITX topology evidence"),
         readRegularBytes(root, "tools/datapack/sources/capital-route-topology-20260724.json"),
         readMutableInput("tools/datapack/source-inventory.json"),
+        readMutableInput("tools/datapack/inputs/capital-pilot-production-source-input.json"),
         readMutableInput("tools/datapack/release/candidate-build-spec.json"),
         readMutableInput("tools/datapack/release/capital-production-canonical-pack.json"),
         readRegularBytes(root, "tools/datapack/nationwide-coverage-targets.json"),
@@ -1896,6 +1909,7 @@ export async function generateCurrentCapitalTopologyRefresh({
       currentItxTopologyEvidenceBytes,
       baselineTopology: parseJson(baselineTopologyBytes, "baseline capital topology"),
       canonical: parseJson(canonicalBytes, "canonical pack"),
+      productionInput: parseJson(productionInputBytes, "production input"),
       productionScopePolicyBytes,
       buildNow,
       snapshotBytesByPath: await collectPositionSnapshotBytes(sourceInventory),
@@ -1904,6 +1918,11 @@ export async function generateCurrentCapitalTopologyRefresh({
       writeTempFile(temporaryRoot, topologyReverificationPath, primary.topologyReverificationBytes),
       writeTempFile(temporaryRoot, primary.sourceSeparatedTopologyPath, primary.sourceSeparatedTopologyBytes),
       writeTempFile(temporaryRoot, "tools/datapack/source-inventory.json", primary.sourceInventoryBytes),
+      writeTempFile(
+        temporaryRoot,
+        "tools/datapack/release/capital-production-reviewed-pack.json",
+        primary.reviewedPackBytes,
+      ),
       writeTempFile(
         temporaryRoot,
         "tools/datapack/release/capital-production-canonical-pack.json",
@@ -1936,10 +1955,11 @@ export async function generateCurrentCapitalTopologyRefresh({
       { relativePath: topologyReverificationPath, bytes: primary.topologyReverificationBytes },
       { relativePath: sourceSeparatedTopologyPath, bytes: primary.sourceSeparatedTopologyBytes },
       { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[0], bytes: primary.sourceInventoryBytes },
-      { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[1], bytes: primary.canonicalBytes },
-      { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[2], bytes: finalSpecBytes },
-      { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[3], bytes: releaseRequestBytes },
-      { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[4], bytes: hashEvidenceBytes },
+      { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[1], bytes: primary.reviewedPackBytes },
+      { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[2], bytes: primary.canonicalBytes },
+      { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[3], bytes: finalSpecBytes },
+      { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[4], bytes: releaseRequestBytes },
+      { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[5], bytes: hashEvidenceBytes },
     ];
     const validateOutputBytes = async () => {
       for (const output of outputs) {

@@ -293,6 +293,46 @@ export function syncCanonicalFixture(canonical, reviewedPack) {
   return canonical;
 }
 
+export function syncCanonicalAccessibilityEvidence(canonical, reviewedPack) {
+  if (!Array.isArray(reviewedPack?.sourceInventory)) {
+    throw new Error("reviewedPack.sourceInventory must be an array");
+  }
+  const pack = canonical.packs?.find(({ id }) => id === "capital");
+  if (!pack) throw new Error("canonical capital pack is missing");
+  const retainedFacilities = (pack.facilities ?? []).filter(({ stationId, type, sourceId }) =>
+    !stationIds.includes(stationId)
+      || (!facilityTypes.includes(type)
+        && !replacedSourceIds.has(sourceId)
+        && sourceId !== "kric-station-convenience-standard"));
+  pack.facilities = retainedFacilities.concat(reviewedPack.facilities ?? []);
+  const facilityIds = new Set(pack.facilities.map(({ id }) => id));
+  pack.dataQualityRecords = (pack.dataQualityRecords ?? []).filter(({ targetType, targetId }) =>
+    targetType !== "facility" || facilityIds.has(targetId));
+  pack.stationFacilityEvidence = (pack.stationFacilityEvidence ?? [])
+    .filter(({ stationId, facilityType }) =>
+      !stationIds.includes(stationId) || !facilityTypes.includes(facilityType))
+    .concat(reviewedPack.stationFacilityEvidence ?? []);
+  pack.networkEdges = (pack.networkEdges ?? [])
+    .filter((edge) => !isAccessibilityRouteEdge(edge))
+    .concat(accessibilityRouteEdges(reviewedPack))
+    .sort((left, right) => codepointCompare(left.id, right.id));
+  pack.stationExits = (pack.stationExits ?? []).map((exit) =>
+    exit.hasElevatorConnection ? { ...exit, hasElevatorConnection: false } : exit);
+  const reviewedSources = new Map(reviewedPack.sourceInventory.map((source) => [source.id, source]));
+  const accessibilitySourceIds = new Set([
+    "seoul-metro-accessibility",
+    "kric-station-convenience-standard",
+  ]);
+  if ([...accessibilitySourceIds].some((sourceId) => !reviewedSources.has(sourceId))) {
+    throw new Error("reviewed accessibility source authority is incomplete");
+  }
+  pack.sourceInventory = pack.sourceInventory.map((source) =>
+    accessibilitySourceIds.has(source.id) ? reviewedSources.get(source.id) : source);
+  pack.minimumTableRows.facilities = pack.facilities.length;
+  pack.minimumTableRows.station_facility_evidence = pack.stationFacilityEvidence.length;
+  return canonical;
+}
+
 function isAccessibilityRouteEdge(edge) {
   return edge.sourceId === accessibilityRouteSourceId && ["ENTRY", "EXIT"].includes(edge.edgeType);
 }

@@ -2,6 +2,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { isMainModule } from "../lib/is-main-module.mjs";
 
 const SUMMARY_RIDE_EDGE_PRODUCTION_POLICY = "fixture-only";
 // #1996: 게시 가능한 검증된 상태 3분류. AVAILABLE(실측 가동), UNDER_MAINTENANCE(실측 비가용),
@@ -36,7 +37,7 @@ async function main() {
   await writeFile(outputPath, `${JSON.stringify(fixture, null, 2)}\n`);
 }
 
-function buildFixture(inventory, input) {
+export function buildFixture(inventory, input) {
   validateHeader(input);
   validateInventoryHeader(inventory, input.region);
   const isProductionPack = (input.pack.artifactKind ?? "fixture") === "production";
@@ -1561,7 +1562,9 @@ function requireArg(args, name) {
   return args[name];
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
-});
+if (isMainModule(import.meta.url)) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });
+}
