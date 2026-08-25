@@ -24,15 +24,16 @@ const raw = {
 
 async function preflightRepository(mutateInventory = (inventory) => inventory) {
   const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "public-static-v2-topology-"));
-  await mkdir(path.join(repositoryRoot, "tools/datapack/sources"), { recursive: true });
-  const [inventoryBytes, topologyBytes] = await Promise.all([
-    readFile(path.join(root, "tools/datapack/source-inventory.json")),
-    readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260823.json")),
-  ]);
+  const inventoryBytes = await readFile(path.join(root, "tools/datapack/source-inventory.json"));
   const inventory = mutateInventory(JSON.parse(inventoryBytes));
+  const topologySnapshotId = inventory.sources.find(({ id }) => id === "seoul-metro-route-map-positions")
+    .routeMapAdmissionEvidence.currentTopologyAdmission.topologySnapshotId;
+  const topologyRelativePath = path.join("tools", "datapack", "sources", `${topologySnapshotId}.json`);
+  const topologyBytes = await readFile(path.join(root, topologyRelativePath));
+  await mkdir(path.dirname(path.join(repositoryRoot, topologyRelativePath)), { recursive: true });
   await Promise.all([
     writeFile(path.join(repositoryRoot, "tools/datapack/source-inventory.json"), `${JSON.stringify(inventory)}\n`),
-    writeFile(path.join(repositoryRoot, "tools/datapack/sources/capital-route-topology-20260823.json"), topologyBytes),
+    writeFile(path.join(repositoryRoot, topologyRelativePath), topologyBytes),
   ]);
   return repositoryRoot;
 }
