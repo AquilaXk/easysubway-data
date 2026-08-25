@@ -157,6 +157,11 @@ test("v1 tracked snapshot의 inventory·candidate byte identity는 compatibility
   ]);
   const source = inventory.sources.find(({ id }) => id === "seoul-metro-route-map-positions");
   const candidate = candidates.candidates.find(({ id }) => id === source.id);
+  assert.deepEqual(candidate.coverageScope, {
+    regionIds: source.coverageScope.regionIds,
+    operatorIds: source.coverageScope.operatorIds,
+    lineIds: source.coverageScope.lineIds,
+  });
   assert.equal(source.productionUseAllowed, true);
   assert.equal(source.license.redistributionAllowed, true);
   assert.equal(source.license.derivativeWorkAllowed, true);

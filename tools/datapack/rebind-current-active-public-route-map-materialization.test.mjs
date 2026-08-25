@@ -11,7 +11,6 @@ import {
   recoverCurrentActivePublicRouteMapMaterialization,
   rebindCurrentActivePublicRouteMapMaterialization,
 } from "./rebind-current-active-public-route-map-materialization.mjs";
-import { prepareCurrentStagedPublicRouteMapInventory } from "./prepare-current-staged-public-route-map-inventory.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const OUTPUTS = [
@@ -26,8 +25,6 @@ const P_INPUTS = [
   "tools/datapack/source-inventory.json",
   "tools/datapack/source-governance-policy.json",
   "release/product-gates/datapack-freshness-sla.json",
-  "tools/datapack/sources/seoul-metro-route-map-positions-current-20260824T114822985Z.json",
-  "tools/datapack/sources/capital-route-topology-20260823.json",
 ];
 
 async function preparedPStage() {
@@ -37,11 +34,18 @@ async function preparedPStage() {
     await mkdir(path.dirname(destination), { recursive: true });
     await cp(path.join(ROOT, relative), destination, { recursive: true });
   }
+  const inventory = JSON.parse(await readFile(path.join(ROOT, "tools/datapack/source-inventory.json"), "utf8"));
+  const source = inventory.sources.filter(({ id }) => id === "seoul-metro-route-map-positions");
+  assert.equal(source.length, 1);
+  const admission = source[0].routeMapAdmissionEvidence.currentLayoutAdmission;
+  for (const relative of [admission.snapshotPath, `tools/datapack/sources/${admission.topologySnapshotId}.json`]) {
+    await mkdir(path.dirname(path.join(stage, relative)), { recursive: true });
+    await cp(path.join(ROOT, relative), path.join(stage, relative), { recursive: true });
+  }
   const candidate = JSON.parse(await readFile(path.join(ROOT, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
   const itxEvidence = candidate.itxTopologyEvidencePath;
   await mkdir(path.dirname(path.join(stage, itxEvidence)), { recursive: true });
   await cp(path.join(ROOT, itxEvidence), path.join(stage, itxEvidence), { recursive: true });
-  await prepareCurrentStagedPublicRouteMapInventory({ repositoryRoot: ROOT, stagedRoot: stage });
   return stage;
 }
 
@@ -68,8 +72,12 @@ test("current public route-map materialization preserves capital identity and co
   const publicRows = pack.routeMapPositions.filter(({ sourceId }) => sourceId === "seoul-metro-route-map-positions");
   const publicTracks = pack.routeMapLineTracks.filter(({ sourceId }) => sourceId === "seoul-metro-route-map-positions");
   assert.deepEqual(document.manifest.activePack, { id: "capital", version: pack.version });
-  assert.equal(publicRows.length, 276);
-  assert.equal(publicTracks.length, 14);
+  const stagedInventory = JSON.parse(await readFile(path.join(stage, "tools/datapack/source-inventory.json"), "utf8"));
+  const observationPath = stagedInventory.sources.find(({ id }) => id === "seoul-metro-route-map-positions")
+    .routeMapAdmissionEvidence.currentLayoutAdmission.snapshotPath;
+  const observation = JSON.parse(await readFile(path.join(stage, observationPath), "utf8"));
+  assert.equal(publicRows.length, observation.routeMapLayoutArtifact.rawPositions.length);
+  assert.equal(publicTracks.length, observation.routeMapLayoutArtifact.layoutTracks.length);
   assert.equal(pack.routeMapPositions.some(({ sourceId }) => sourceId === "seoulmetro-cyberstation-route-map"), false);
   assert.equal(pack.sourceInventory.some(({ id }) => id === "seoulmetro-cyberstation-route-map"), false);
   } finally {
@@ -82,6 +90,8 @@ test("candidate ITX topology evidence path is confined to the versioned root-rel
   try {
     const candidatePath = path.join(stage, "tools/datapack/release/candidate-build-spec.json");
     const candidate = JSON.parse(await readFile(candidatePath, "utf8"));
+    assert.equal(candidate.itxTopologyEvidencePath, "tools/datapack/itx-cheongchun-topology-evidence.json");
+    await assert.doesNotReject(buildCurrentActivePublicRouteMapMaterializationOutputs({ repositoryRoot: stage }));
     candidate.itxTopologyEvidencePath = "../outside.json";
     await writeFile(candidatePath, `${JSON.stringify(candidate)}\n`);
     await assert.rejects(
@@ -97,12 +107,15 @@ test("check mode reports current materialization drift without writes", async ()
   const stage = await preparedPStage();
   try {
   const before = await Promise.all(OUTPUTS.map((relative) => readFile(path.join(stage, relative))));
+  const driftedCanonical = Buffer.concat([before[0], Buffer.from("\n")]);
+  await writeFile(path.join(stage, OUTPUTS[0]), driftedCanonical);
   await assert.rejects(
     rebindCurrentActivePublicRouteMapMaterialization({ repositoryRoot: stage, check: true }),
     /current public route-map materialization drift:/,
   );
   const after = await Promise.all(OUTPUTS.map((relative) => readFile(path.join(stage, relative))));
-  assert.deepEqual(after, before);
+  assert.deepEqual(after[0], driftedCanonical);
+  assert.deepEqual(after.slice(1), before.slice(1));
   } finally {
     await rm(stage, { recursive: true, force: true });
   }

@@ -19,7 +19,6 @@ import {
 import { deriveFreshnessExpiresAt } from "../freshness-policy.mjs";
 import {
   CURRENT_SEOUL_PUBLIC_ROUTE_MAP_COVERAGE,
-  CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS,
   materializeSeoulRouteMapPositions,
   verifyCurrentCapitalPublicRouteMapDocument,
 } from "../materialize-seoul-route-map-positions.mjs";
@@ -611,10 +610,6 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
 
   publicSource.requiredForProductionPack = true;
   publicSource.productionUseAllowed = true;
-  publicSource.coverageScope = {
-    ...publicSource.coverageScope,
-    operatorIds: [...CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS],
-  };
   publicSource.retrievedAt = capturedAt.slice(0, 10);
   publicSource.observedDataUpdatedAt = routeMapLayoutArtifact.observedDataUpdatedAt;
   publicSource.admissionEvidence = {

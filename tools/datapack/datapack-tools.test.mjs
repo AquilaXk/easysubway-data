@@ -28,7 +28,7 @@ import {
   deriveTopology as deriveItxTopology,
   projectItxTopologyIntoCanonicalFixture,
 } from "./apply-itx-topology-to-bundled-pack.mjs";
-import { CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS } from "./materialize-seoul-route-map-positions.mjs";
+import { SEOUL_ROUTE_MAP_SOURCE_OPERATOR_IDS } from "./materialize-seoul-route-map-positions.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -10995,7 +10995,7 @@ test("v2 admission과 current 4-operator scope에 exact 결속된 generated 서�
   source.id = "seoul-metro-route-map-positions";
   source.coverageScope = {
     regionIds: ["capital"],
-    operatorIds: [...CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS],
+    operatorIds: [...SEOUL_ROUTE_MAP_SOURCE_OPERATOR_IDS],
     lineIds: [
       "line-472a81add377", "seoul-2", "line-41a8c75ec9d8", "seoul-4",
       "line-80fc4d5350d4", "line-3f41718e0833", "line-15b3b8a93259", "line-2b2d9eaa53d0",
@@ -11053,7 +11053,7 @@ test("v2 admission과 current 4-operator scope에 exact 결속된 generated 서�
   assert.deepEqual(routeMap.missingFields, []);
   assert.ok(routeMap.fieldCoverage.every(({ sourceIds }) => sourceIds.includes(source.id)));
 
-  source.coverageScope.operatorIds = CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS.filter(
+  source.coverageScope.operatorIds = SEOUL_ROUTE_MAP_SOURCE_OPERATOR_IDS.filter(
     (operatorId) => operatorId !== "korail",
   );
   await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
@@ -11078,7 +11078,7 @@ test("v2 admission과 current 4-operator scope에 exact 결속된 generated 서�
       && entry.sourceDomain === "route_map_positions");
   assert.deepEqual(operatorDriftRouteMap.missingFields, ["route_map_position", "route_map_label_polygon"]);
 
-  source.coverageScope.operatorIds = [...CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS];
+  source.coverageScope.operatorIds = [...SEOUL_ROUTE_MAP_SOURCE_OPERATOR_IDS];
   await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
 
   generatedRecords[0].evidenceHash = "8".repeat(64);

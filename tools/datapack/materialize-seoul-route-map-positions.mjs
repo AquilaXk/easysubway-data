@@ -16,9 +16,7 @@ const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
 const PACK_ID = "nationwide-seoul-route-map";
 const OPERATOR_ID = "seoul-metro";
 const REGION = "수도권";
-export const CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS = Object.freeze([
-  "incheon-transit", "korail", "operator-07a9e77a02b6", "seoul-metro",
-]);
+export const SEOUL_ROUTE_MAP_SOURCE_OPERATOR_IDS = Object.freeze(["seoul-metro"]);
 const LINE_META = Object.freeze({
   "line-472a81add377": { nameKo: "수도권 1호선", nameEn: "Seoul Subway Line 1", color: "#052f93", line: "1" },
   "seoul-2": { nameKo: "수도권 2호선", nameEn: "Seoul Subway Line 2", color: "#10a643", line: "2" },
@@ -313,7 +311,7 @@ function requiredSource(inventory, snapshot, snapshotSha256, layoutArtifactSha25
     || admission.semanticInputSha256 !== snapshot.semanticInputSha256 || admission.semanticOutputSha256 !== snapshot.semanticOutputSha256
     || JSON.stringify(source.coverageScope) !== JSON.stringify({
       regionIds: ["capital"],
-      operatorIds: [...CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS],
+      operatorIds: [...SEOUL_ROUTE_MAP_SOURCE_OPERATOR_IDS],
       lineIds: [...LINE_IDS],
       sourceDomains: ["route_map_positions"],
     })

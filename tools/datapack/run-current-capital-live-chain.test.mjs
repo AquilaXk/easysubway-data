@@ -19,10 +19,9 @@ test("live chain fixes the staged P/F/T to EXIT to full-capital order and invoke
   const plan = buildCurrentCapitalLiveChainPlan(planInput);
   assert.equal(plan.steps.filter(({ id }) => id === "collect-kric-exit").length, 1);
   assert.deepEqual(plan.steps.map(({ id }) => id), [
-    "prepare-staged-public-route-map-inventory", "materialize-public-route-map", "rebind-transfer", "rebind-facility", "build-exit-plan", "assert-current-topology-freshness",
+    "materialize-public-route-map", "rebind-transfer", "rebind-facility", "build-exit-plan", "assert-current-topology-freshness",
     "collect-kric-exit", "bind-exit-collection", "admit-exit", "bind-current-fan-in", "build-full-capital", "evaluate-route-policy", "bundle",
   ]);
-  assert.equal(plan.steps.findIndex(({ id }) => id === "prepare-staged-public-route-map-inventory") + 1, plan.steps.findIndex(({ id }) => id === "materialize-public-route-map"));
   assert.equal(plan.steps.findIndex(({ id }) => id === "materialize-public-route-map") + 1, plan.steps.findIndex(({ id }) => id === "rebind-transfer"));
   assert.equal(plan.steps.findIndex(({ id }) => id === "build-exit-plan") + 1, plan.steps.findIndex(({ id }) => id === "assert-current-topology-freshness"));
   assert.equal(plan.steps.findIndex(({ id }) => id === "assert-current-topology-freshness") + 1, plan.steps.findIndex(({ id }) => id === "collect-kric-exit"));
@@ -163,7 +162,7 @@ test("current-only delivery removes legacy EXIT workflows and retains the OCI co
   ]) assert.doesNotMatch(ci, new RegExp(oldTest.replaceAll(".", "\\.")));
 });
 
-test("staged inventory preparation failure stops before the provider and OCI boundaries", async () => {
+test("public route-map materialization failure stops before the provider and OCI boundaries", async () => {
   const temporary = await mkdtemp(path.join(os.tmpdir(), "current-live-chain-preparer-"));
   const runnerTemp = path.join(temporary, "runner");
   const handoffParent = path.join(temporary, "handoff-parent");
@@ -183,9 +182,9 @@ test("staged inventory preparation failure stops before the provider and OCI bou
         if (args.join(" ") === `ls-remote --exit-code https://github.com/AquilaXk/easysubway-data.git refs/heads/main`) return { stdout: `${"a".repeat(40)}\trefs/heads/main\n` };
         throw new Error("provider execution must not start");
       },
-      prepareStagedPublicRouteMapInventoryImpl: async () => { throw new Error("staged inventory preparation failed"); },
+      rebindPublicRouteMapImpl: async () => { throw new Error("public route-map materialization failed"); },
       publishImpl: async () => { throw new Error("OCI publication must not start"); },
-    }), /staged inventory preparation failed/);
+    }), /public route-map materialization failed/);
     assert.equal(calls.length, 6);
   } finally {
     await rm(temporary, { recursive: true, force: true });
@@ -218,7 +217,6 @@ test("actual-now topology freshness failure stops before every provider and OCI 
         throw new Error("provider execution must not start");
       },
       clock: () => operationNow,
-      prepareStagedPublicRouteMapInventoryImpl: async () => {},
       rebindPublicRouteMapImpl: async () => {},
       rebindTransferImpl: async () => {},
       rebindFacilityImpl: async () => {},

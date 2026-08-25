@@ -48,7 +48,6 @@ import {
 } from "./lib/static-network-successor-completeness.mjs";
 import {
   CURRENT_SEOUL_PUBLIC_ROUTE_MAP_COVERAGE,
-  CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS,
   materializeSeoulRouteMapPositions,
   verifyCurrentCapitalPublicRouteMapDocument,
 } from "./materialize-seoul-route-map-positions.mjs";
@@ -425,11 +424,6 @@ function activateInventory(sourceInventory, handoff) {
     ({ id }) => id === "seoul-metro-route-map-positions",
     "current public route-map source",
   );
-  routeMapPositions.coverageScope = {
-    ...routeMapPositions.coverageScope,
-    operatorIds: [...CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS],
-  };
-
   const convenience = requireOne(
     next.sources,
     ({ id }) => id === "kric-station-convenience-standard",

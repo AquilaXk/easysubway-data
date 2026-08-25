@@ -6,7 +6,7 @@ import path from "node:path";
 import test from "node:test";
 
 import {
-  CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS,
+  SEOUL_ROUTE_MAP_SOURCE_OPERATOR_IDS,
   materializeSeoulRouteMapPositions,
   materializedSeoulRouteMapPackContentHash,
 } from "./materialize-seoul-route-map-positions.mjs";
@@ -58,7 +58,7 @@ async function inputs() {
   const seoulSnapshotBytes = Buffer.from(`${JSON.stringify(observation)}\n`);
   const seoulSnapshotSha256 = createHash("sha256").update(seoulSnapshotBytes).digest("hex");
   const publicSource = inventory.sources.find(({ id }) => id === SOURCE_ID);
-  publicSource.coverageScope = { regionIds: ["capital"], operatorIds: [...CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS], lineIds: [...LINE_IDS], sourceDomains: ["route_map_positions"] };
+  publicSource.coverageScope = { regionIds: ["capital"], operatorIds: [...SEOUL_ROUTE_MAP_SOURCE_OPERATOR_IDS], lineIds: [...LINE_IDS], sourceDomains: ["route_map_positions"] };
   publicSource.routeMapAdmissionEvidence = {
     ...(publicSource.routeMapAdmissionEvidence ?? {}), capturedAt: seoulSnapshot.capturedAt,
     freshUntil: "2026-10-22T02:00:00.000Z",
@@ -107,7 +107,7 @@ test("공식 서울 위경도 snapshot을 current canonical pack에 materialize�
   assert.equal(pack.sourceInventory.at(-1).id, "seoul-metro-transfer-distance-duration");
   assert.equal(
     pack.sourceInventory.findIndex(({ id }) => id === SOURCE_ID),
-    input.baseFixture.packs[0].sourceInventory.findIndex(({ id }) => id === "seoulmetro-cyberstation-route-map"),
+    input.baseFixture.packs[0].sourceInventory.findIndex(({ id }) => id === SOURCE_ID),
   );
   assert.equal(rows.length, seoulSnapshot.routeMapLayoutArtifact.rawPositions.length);
   assert.equal(new Set(rows.map(({ lineId }) => lineId)).size, 8);

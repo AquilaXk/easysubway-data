@@ -25,7 +25,6 @@ import { rebindCurrentActiveFacilityDerivedIdentity } from "./rebind-current-act
 import { rebindCurrentActivePublicRouteMapMaterialization } from "./rebind-current-active-public-route-map-materialization.mjs";
 import { rebindCurrentLiveChainTransferDerivedIdentities } from "./rebind-current-live-chain-transfer-derived-identities.mjs";
 import { assertCurrentStaticNetworkTopologyAdmission } from "./register-current-static-network-successors.mjs";
-import { prepareCurrentStagedPublicRouteMapInventory } from "./prepare-current-staged-public-route-map-inventory.mjs";
 
 const execFile = promisify(execFileCallback);
 const DATA_MAIN_REMOTE = "https://github.com/AquilaXk/easysubway-data.git";
@@ -79,7 +78,6 @@ export function buildCurrentCapitalLiveChainPlan({ repositoryRoot, repositorySha
   if (!Array.isArray(outputPaths) || outputPaths.length === 0) throw new Error("live-chain output paths mismatch");
   const at = (...parts) => path.join(stagedRoot, ...parts);
   return { outputs: Object.freeze([...outputPaths]), steps: [
-    { id: "prepare-staged-public-route-map-inventory", script: "tools/datapack/prepare-current-staged-public-route-map-inventory.mjs", args: ["--source-repository-root", repositoryRoot, "--staged-root", stagedRoot] },
     { id: "materialize-public-route-map", script: "tools/datapack/rebind-current-active-public-route-map-materialization.mjs", args: ["--repository-root", stagedRoot] },
     { id: "rebind-transfer", script: "tools/datapack/rebind-current-live-chain-transfer-derived-identities.mjs", args: ["--repository-root", stagedRoot, "--observation-directory", transferObservationDirectory, "--receipt", transferReceiptPath] },
     { id: "rebind-facility", script: "tools/datapack/rebind-current-active-facility-derived-identity.mjs", args: ["--repository-root", stagedRoot] },
@@ -145,7 +143,7 @@ export async function evaluateStagedRoutePolicy({
   return evaluationBytes;
 }
 
-export async function runCurrentCapitalLiveChain({ repositoryRoot, runnerTemp, repository, repositorySha, operationId, transferObservationDirectory, transferReceiptPath, handoffDirectory, env = process.env, execFileImpl = execFile, clock = () => new Date(), assertCurrentTopologyAdmissionImpl = assertCurrentStaticNetworkTopologyAdmission, prepareStagedPublicRouteMapInventoryImpl = prepareCurrentStagedPublicRouteMapInventory, rebindPublicRouteMapImpl = rebindCurrentActivePublicRouteMapMaterialization, rebindTransferImpl = rebindCurrentLiveChainTransferDerivedIdentities, rebindFacilityImpl = rebindCurrentActiveFacilityDerivedIdentity, publishImpl = publishCurrentCapitalLiveChainOciPlan, fetchImpl = fetchCurrentCapitalLiveChainComposite, extractImpl = extractCurrentCapitalLiveChainDirectory }) {
+export async function runCurrentCapitalLiveChain({ repositoryRoot, runnerTemp, repository, repositorySha, operationId, transferObservationDirectory, transferReceiptPath, handoffDirectory, env = process.env, execFileImpl = execFile, clock = () => new Date(), assertCurrentTopologyAdmissionImpl = assertCurrentStaticNetworkTopologyAdmission, rebindPublicRouteMapImpl = rebindCurrentActivePublicRouteMapMaterialization, rebindTransferImpl = rebindCurrentLiveChainTransferDerivedIdentities, rebindFacilityImpl = rebindCurrentActiveFacilityDerivedIdentity, publishImpl = publishCurrentCapitalLiveChainOciPlan, fetchImpl = fetchCurrentCapitalLiveChainComposite, extractImpl = extractCurrentCapitalLiveChainDirectory }) {
   if (repository !== "AquilaXk/easysubway-data") throw new Error("repository identity mismatch");
   if (![repositoryRoot, runnerTemp, transferObservationDirectory, transferReceiptPath, handoffDirectory].every((value) => path.isAbsolute(value ?? ""))) throw new Error("current live-chain paths must be absolute");
   requiredSha(repositorySha); requiredOperation(operationId);
@@ -170,7 +168,6 @@ export async function runCurrentCapitalLiveChain({ repositoryRoot, runnerTemp, r
     await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
     await cp(source, destination, { recursive: true, force: false, verbatimSymlinks: true, filter: (candidate) => stagedCopyAllowed(root, candidate) });
   }
-  await prepareStagedPublicRouteMapInventoryImpl({ repositoryRoot: root, stagedRoot });
   await rebindPublicRouteMapImpl({ repositoryRoot: stagedRoot });
   await rebindTransferImpl({ repositoryRoot: stagedRoot, observationDirectory: transferObservationDirectory, receiptPath: transferReceiptPath });
   await rebindFacilityImpl({ repositoryRoot: stagedRoot });
