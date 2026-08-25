@@ -589,14 +589,17 @@ async function writeHistoricalAdmittedSourceBundle(sourceDir, candidate) {
   };
 }
 
+const CURRENT_ITX_APPROVAL_URL = "https://github.com/AquilaXk/easysubway-data/issues/96#issuecomment-123";
+
 function ownerApproval(candidate) {
   const digest = createHash("sha256").update(sourceBytes(candidate)).digest("hex");
   return {
     approvedSha256: digest,
-    approvalUrl: "https://github.com/AquilaXk/easysubway/issues/2135#issuecomment-123",
+    approvalUrl: CURRENT_ITX_APPROVAL_URL,
     fetchImpl: async () => new Response(JSON.stringify({
       author_association: "OWNER",
-      html_url: "https://github.com/AquilaXk/easysubway/issues/2135#issuecomment-123",
+      html_url: CURRENT_ITX_APPROVAL_URL,
+      user: { login: "AquilaXk" },
       body: `/approve-itx-current artifactId=${candidate.artifactId} sha256=${digest} policy=itx-snapshot-anomaly-v1`,
       created_at: "2026-07-15T01:30:00.000Z",
     }), { status: 200, headers: { "content-type": "application/json" } }),
@@ -1484,14 +1487,15 @@ test("ITX candidate builder는 exact station catalog identity로 promotion 된�
     const promoted = await promoteItxSourceCandidate({
       candidatePath,
       approvedSha256: digest,
-      approvalUrl: "https://github.com/AquilaXk/easysubway/issues/2135#issuecomment-123",
+      approvalUrl: CURRENT_ITX_APPROVAL_URL,
       sourceOutputDir,
       coverageContractPath: contractPath,
       repositoryRoot: dir,
       now: new Date("2026-07-15T02:00:00.000Z"),
       fetchImpl: async () => new Response(JSON.stringify({
         author_association: "OWNER",
-        html_url: "https://github.com/AquilaXk/easysubway/issues/2135#issuecomment-123",
+        html_url: CURRENT_ITX_APPROVAL_URL,
+        user: { login: "AquilaXk" },
         body: `/approve-itx-current artifactId=${candidate.artifactId} sha256=${digest} policy=itx-snapshot-anomaly-v1`,
         created_at: "2026-07-15T01:30:00.000Z",
       }), { status: 200, headers: { "content-type": "application/json" } }),
@@ -1582,7 +1586,7 @@ test("ITX current candidate promotion은 exact candidate SHA와 OWNER approval �
   const candidate = sourceCandidate();
   const candidateBytes = sourceBytes(candidate);
   const digest = createHash("sha256").update(candidateBytes).digest("hex");
-  const approvalUrl = "https://github.com/AquilaXk/easysubway/issues/2135#issuecomment-123";
+  const approvalUrl = CURRENT_ITX_APPROVAL_URL;
   try {
     await writeFile(candidatePath, candidateBytes);
     await writeCandidateCompleteness(candidatePath, candidate);
@@ -1617,6 +1621,7 @@ test("ITX current candidate promotion은 exact candidate SHA와 OWNER approval �
       fetchImpl: async () => new Response(JSON.stringify({
         author_association: "OWNER",
         html_url: approvalUrl,
+        user: { login: "AquilaXk" },
         body: `/approve-itx-current artifactId=${candidate.artifactId} sha256=${digest} policy=itx-snapshot-anomaly-v1`,
         created_at: "2026-07-15T01:30:00.000Z",
       }), { status: 200, headers: { "content-type": "application/json" } }),
@@ -1759,7 +1764,7 @@ test("ITX changed current candidate도 exact OWNER approval로 immutable artifac
     const candidateBytes = sourceBytes(candidate);
     const digest = createHash("sha256").update(candidateBytes).digest("hex");
     const candidatePath = path.join(dir, "candidate.json");
-    const approvalUrl = "https://github.com/AquilaXk/easysubway/issues/2135#issuecomment-123";
+    const approvalUrl = CURRENT_ITX_APPROVAL_URL;
     await writeFile(candidatePath, candidateBytes);
     await writeCandidateCompleteness(candidatePath, candidate);
 
@@ -1774,6 +1779,7 @@ test("ITX changed current candidate도 exact OWNER approval로 immutable artifac
       fetchImpl: async () => new Response(JSON.stringify({
         author_association: "OWNER",
         html_url: approvalUrl,
+        user: { login: "AquilaXk" },
         body: `/approve-itx-current artifactId=${candidate.artifactId} sha256=${digest} policy=itx-snapshot-anomaly-v1`,
         created_at: "2026-07-15T01:30:00.000Z",
       }), { status: 200, headers: { "content-type": "application/json" } }),
@@ -1918,14 +1924,15 @@ test("ITX promotion은 동일한 immutable artifact bytes가 남은 재시도를
     const promoted = await promoteItxSourceCandidate({
       candidatePath,
       approvedSha256: digest,
-      approvalUrl: "https://github.com/AquilaXk/easysubway/issues/2135#issuecomment-123",
+      approvalUrl: CURRENT_ITX_APPROVAL_URL,
       sourceOutputDir: sourceDir,
       coverageContractPath: contractPath,
       repositoryRoot: dir,
       now: new Date("2026-07-15T02:00:00.000Z"),
       fetchImpl: async () => new Response(JSON.stringify({
         author_association: "OWNER",
-        html_url: "https://github.com/AquilaXk/easysubway/issues/2135#issuecomment-123",
+        html_url: CURRENT_ITX_APPROVAL_URL,
+        user: { login: "AquilaXk" },
         body: `/approve-itx-current artifactId=${candidate.artifactId} sha256=${digest} policy=itx-snapshot-anomaly-v1`,
         created_at: "2026-07-15T01:30:00.000Z",
       }), { status: 200, headers: { "content-type": "application/json" } }),
@@ -2167,6 +2174,52 @@ test("ITX promotion은 freshness·payload sets·current ADMITTED authority를 �
           return new Response(JSON.stringify({ ...record, html_url: `${approval.approvalUrl}-other` }));
         },
       }), /SNAPSHOT_BOOTSTRAP_APPROVAL_INVALID/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  await context.test("OWNER approval은 현재 Data #96 URL·저자·observedAt 이후 시각만 허용", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "itx-promotion-current-approval-"));
+    try {
+      const candidate = sourceCandidate();
+      const approval = ownerApproval(candidate);
+      const candidatePath = path.join(dir, "candidate.json");
+      await writeFile(candidatePath, sourceBytes(candidate));
+      await writeCandidateCompleteness(candidatePath, candidate);
+      const contractPath = await writeCoverageContract(dir, '{"schemaVersion":2}\n');
+      for (const approvalUrl of [
+        "https://github.com/AquilaXk/easysubway/issues/2135#issuecomment-123",
+        "https://github.com/AquilaXk/easysubway/pull/2139#issuecomment-123",
+        "https://github.com/AquilaXk/easysubway-data/issues/95#issuecomment-123",
+        "https://github.com/other/easysubway-data/issues/96#issuecomment-123",
+      ]) {
+        await assert.rejects(promoteItxSourceCandidate({
+          candidatePath,
+          ...approval,
+          approvalUrl,
+          sourceOutputDir: path.join(dir, "tools/datapack/sources"),
+          coverageContractPath: contractPath,
+          repositoryRoot: dir,
+          now: new Date("2026-07-15T02:00:00.000Z"),
+        }), /SNAPSHOT_BOOTSTRAP_APPROVAL_INVALID/);
+      }
+      for (const record of [
+        { ...await approval.fetchImpl().then((response) => response.json()), user: { login: "not-owner" } },
+        { ...await approval.fetchImpl().then((response) => response.json()), html_url: "https://github.com/AquilaXk/easysubway-data/issues/96#issuecomment-124" },
+        { ...await approval.fetchImpl().then((response) => response.json()), body: "/approve-itx-current forged" },
+        { ...await approval.fetchImpl().then((response) => response.json()), created_at: candidate.observedAt },
+      ]) {
+        await assert.rejects(promoteItxSourceCandidate({
+          candidatePath,
+          ...approval,
+          sourceOutputDir: path.join(dir, "tools/datapack/sources"),
+          coverageContractPath: contractPath,
+          repositoryRoot: dir,
+          now: new Date("2026-07-15T02:00:00.000Z"),
+          fetchImpl: async () => new Response(JSON.stringify(record)),
+        }), /SNAPSHOT_BOOTSTRAP_APPROVAL_INVALID/);
+      }
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -2584,14 +2637,15 @@ test("ITX promotion은 freshness·payload sets·current ADMITTED authority를 �
       await assert.rejects(promoteItxSourceCandidate({
         candidatePath,
         approvedSha256: digest,
-        approvalUrl: "https://github.com/AquilaXk/easysubway/issues/2135#issuecomment-123",
+        approvalUrl: CURRENT_ITX_APPROVAL_URL,
         sourceOutputDir: path.join(dir, "tools/datapack/sources"),
         coverageContractPath: contractPath,
         repositoryRoot: dir,
         now: new Date("2026-07-15T02:00:00.000Z"),
         fetchImpl: async () => new Response(JSON.stringify({
           author_association: "OWNER",
-          html_url: "https://github.com/AquilaXk/easysubway/issues/2135#issuecomment-123",
+          html_url: CURRENT_ITX_APPROVAL_URL,
+          user: { login: "AquilaXk" },
           body: `/approve-itx-current artifactId=${candidate.artifactId} sha256=${digest} policy=itx-snapshot-anomaly-v1`,
           created_at: "2026-07-15T01:30:00.000Z",
         }), { status: 200, headers: { "content-type": "application/json" } }),

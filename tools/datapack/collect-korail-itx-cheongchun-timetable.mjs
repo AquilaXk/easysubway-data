@@ -1195,13 +1195,13 @@ async function loadAdmittedSourceReference(contract, repositoryRoot, catalog) {
 }
 
 async function verifyOwnerApproval({ approvalUrl, expectedBody, observedAt, fetchImpl, githubToken }) {
-  const match = /^https:\/\/github\.com\/AquilaXk\/easysubway\/(issues\/2135|pull\/2139)#issuecomment-(\d+)$/.exec(approvalUrl ?? "");
+  const match = /^https:\/\/github\.com\/AquilaXk\/easysubway-data\/issues\/96#issuecomment-(\d+)$/.exec(approvalUrl ?? "");
   if (!match) throw new Error("SNAPSHOT_BOOTSTRAP_APPROVAL_INVALID");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15_000);
   let record;
   try {
-    const response = await fetchImpl(`https://api.github.com/repos/AquilaXk/easysubway/issues/comments/${match[2]}`, {
+    const response = await fetchImpl(`https://api.github.com/repos/AquilaXk/easysubway-data/issues/comments/${match[1]}`, {
       redirect: "error",
       signal: controller.signal,
       headers: {
@@ -1218,7 +1218,8 @@ async function verifyOwnerApproval({ approvalUrl, expectedBody, observedAt, fetc
   }
   const approvalAt = offsetIsoEpoch(record.created_at);
   const candidateObservedAt = offsetIsoEpoch(observedAt);
-  if (record.author_association !== "OWNER" || record.html_url !== approvalUrl || record.body !== expectedBody
+  if (record.author_association !== "OWNER" || record.user?.login !== "AquilaXk"
+    || record.html_url !== approvalUrl || record.body !== expectedBody
     || approvalAt === null || candidateObservedAt === null || approvalAt <= candidateObservedAt) {
     throw new Error("SNAPSHOT_BOOTSTRAP_APPROVAL_INVALID");
   }
