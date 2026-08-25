@@ -48,10 +48,7 @@ export function materializeSeoulRouteMapPositions({
   successorProviderRecordHashes = null,
   requireSuccessorProviderRecordHashes = false,
 } = {}) {
-  if (typeof rewritePackIdentity !== "boolean"
-    || typeof requireSuccessorProviderRecordHashes !== "boolean") {
-    throw new Error("Seoul route map pack identity rewrite mode is invalid");
-  }
+  assertRewriteMode(rewritePackIdentity, requireSuccessorProviderRecordHashes);
   const observation = snapshot;
   routeMapLayoutArtifact = observation?.routeMapLayoutArtifact ?? routeMapLayoutArtifact;
   const layoutArtifactSha256 = sha256(Buffer.from(`${JSON.stringify(routeMapLayoutArtifact)}\n`));
@@ -143,7 +140,7 @@ export function materializeSeoulRouteMapPositions({
   };
   const coverageEvidence = JSON.parse(pack.metadata?.productionCoverageEvidence ?? "[]");
   if (!Array.isArray(coverageEvidence)) {
-    throw new Error("Seoul route map production coverage evidence is invalid");
+    throw new TypeError("Seoul route map production coverage evidence is invalid");
   }
   pack.metadata = {
     ...pack.metadata,
@@ -175,6 +172,13 @@ export function materializeSeoulRouteMapPositions({
     fixture.manifest.activePack = { id: pack.id, version };
   }
   return fixture;
+}
+
+function assertRewriteMode(rewritePackIdentity, requireSuccessorProviderRecordHashes) {
+  if (typeof rewritePackIdentity !== "boolean"
+    || typeof requireSuccessorProviderRecordHashes !== "boolean") {
+    throw new TypeError("Seoul route map pack identity rewrite mode is invalid");
+  }
 }
 
 function requiredProviderRecordHashes(rawPositions, hashes, required) {

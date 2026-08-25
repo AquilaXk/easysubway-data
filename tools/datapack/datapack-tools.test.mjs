@@ -18380,6 +18380,7 @@ async function writeCurrentItxReleaseInputs(
     currentTopologySnapshotId,
     candidateTopologyAdmissions,
   );
+  bindFixtureRouteMapCoverageScopeToCanonicalLines(fixture, currentInventory);
   await writeFile(fixturePath, `${JSON.stringify(fixture)}\n`);
   await Promise.all([
     writeFile(baselineTopologyPath, baselineTopologyBytes),
@@ -18451,6 +18452,38 @@ async function writeCurrentItxReleaseInputs(
     },
     repositoryRoot,
   };
+}
+
+function bindFixtureRouteMapCoverageScopeToCanonicalLines(fixture, inventory) {
+  const [capital] = fixture?.packs?.filter(({ id }) => id === "capital") ?? [];
+  const fixtureSource = capital?.sourceInventory?.find(({ id }) => id === "seoul-metro-route-map-positions");
+  const inventorySource = inventory?.sources?.find(({ id }) => id === "seoul-metro-route-map-positions");
+  assert.ok(capital && fixtureSource && inventorySource, "current fixture requires the public route-map source");
+  const lineById = new Map((capital.lines ?? []).map((line) => [line.id, line]));
+  const lineIds = [...new Set((capital.routeMapPositions ?? [])
+    .filter(({ sourceId }) => sourceId === fixtureSource.id)
+    .map(({ lineId }) => lineId))]
+    .sort(codepointCompare);
+  assert.ok(lineIds.length > 0, "current fixture requires public route-map rows");
+  const operatorIds = [...new Set(lineIds.map((lineId) => {
+    const line = lineById.get(lineId);
+    assert.ok(line?.operatorId, `public route-map fixture line owner: ${lineId}`);
+    return line.operatorId;
+  }))].sort(codepointCompare);
+  const canonicalLineOne = lineById.get("line-472a81add377");
+  assert.ok(canonicalLineOne?.operatorId, "public route-map fixture line 1 owner");
+  assert.ok(operatorIds.includes(canonicalLineOne.operatorId),
+    "public route-map fixture scope must bind the canonical line 1 operator");
+  const coverageScope = {
+    ...fixtureSource.coverageScope,
+    lineIds,
+    operatorIds,
+  };
+  for (const source of [fixtureSource, inventorySource]) {
+    source.coverageScope = structuredClone(coverageScope);
+    assert.deepEqual(source.coverageScope, coverageScope,
+      "public route-map fixture scope must equal canonical row-line ownership");
+  }
 }
 
 function syntheticCurrentItxTopologyAdmission({ source, previousArtifactSha256, observedAt, serviceDate }) {

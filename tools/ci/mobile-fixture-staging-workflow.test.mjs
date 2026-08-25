@@ -159,12 +159,16 @@ test("CI는 current v19 contract 검증 뒤 fixture identity가 변경되지 않
   assert.match(reverify, new RegExp(ciCapitalGzipSha256));
   assert.match(reverify, /git -C \.external\/mobile rev-parse HEAD/);
   assert.match(reverify, /sha256sum "\$\{target_capital_gzip\}"/);
+  const evidenceIndex = ci.indexOf("Verify current Mobile v19 ITX topology evidence");
+  const ownedTestsIndex = ci.indexOf("Verify and run current Mobile v19 owned required tests");
+  const reverifyIndex = ci.indexOf("Re-verify current Mobile fixture for owned tests");
   assert.ok(
-    ci.indexOf("Verify current Mobile v19 ITX topology evidence")
-      < ci.indexOf("Verify and run current Mobile v19 owned required tests")
-      && ci.indexOf("Verify and run current Mobile v19 owned required tests")
-      < ci.indexOf("Re-verify current Mobile fixture for owned tests"),
-    "current artifact 검증과 v19 소유 테스트 뒤 fixture identity를 재확인해야 함",
+    evidenceIndex < ownedTestsIndex,
+    "current artifact 검증은 v19 소유 테스트보다 앞서야 함",
+  );
+  assert.ok(
+    ownedTestsIndex < reverifyIndex,
+    "fixture identity 재확인은 v19 소유 테스트 뒤에 실행해야 함",
   );
 });
 
