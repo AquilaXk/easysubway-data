@@ -25,6 +25,15 @@ function namedWorkflowStep(yml, name) {
   return yml.slice(start, next === -1 ? yml.length : next);
 }
 
+function namedJob(yml, id) {
+  const marker = `  ${id}:\n`;
+  const start = yml.indexOf(marker);
+  assert.notEqual(start, -1, `${id} job을 찾지 못함`);
+  const remainder = yml.slice(start + marker.length);
+  const next = remainder.match(/\n  [a-z][\w_]*:\n/);
+  return yml.slice(start, next == null ? yml.length : start + marker.length + next.index);
+}
+
 function assertRequiredOwned(paths) {
   for (const expectedPath of paths) {
     const entry = ownership.tests.find(({ path: testPath }) => testPath === expectedPath);
@@ -221,28 +230,44 @@ test("CI는 구형 v18 migration 또는 station-catalog bootstrap을 실행하�
 
 test("CI는 browser-dependent required tests 전에 pinned Chrome runtime을 제공한다", () => {
   const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
-  const setup = namedWorkflowStep(ci, "Set up Chrome for browser-dependent required tests");
-  const firstRunner = namedWorkflowStep(ci, "Verify and run pristine Mobile owned required tests (shard 1/2)");
-  const secondRunner = namedWorkflowStep(ci, "Verify and run pristine Mobile owned required tests (shard 2/2)");
+  const shardOne = namedJob(ci, "contracts_shard_1");
+  const shardTwo = namedJob(ci, "contracts_shard_2");
+  const contracts = namedJob(ci, "contracts");
+  const jobPairs = [
+    [shardOne, "Verify and run pristine Mobile owned required tests (shard 1/2)"],
+    [shardTwo, "Verify and run pristine Mobile owned required tests (shard 2/2)"],
+  ];
 
-  assert.match(setup, /id:\s*setup-chrome/);
-  assert.match(
-    setup,
-    /uses:\s*browser-actions\/setup-chrome@086160e580d6e8c142ad5ba29009dcde677c6321/,
-  );
-  assert.match(setup, /chrome-version:\s*"152\.0\.7977\.54"/);
-  assert.match(setup, /install-dependencies:\s*true/);
-  for (const runner of [firstRunner, secondRunner]) {
+  assert.match(shardOne, /^    name: Data contracts \(shard 1\/2\)$/m);
+  assert.match(shardTwo, /^    name: Data contracts \(shard 2\/2\)$/m);
+  assert.doesNotMatch(shardOne, /\n    needs:/);
+  assert.doesNotMatch(shardTwo, /\n    needs:/);
+  assert.match(contracts, /^    name: Data contracts$/m);
+  assert.match(contracts, /needs:\s*\[contracts_shard_1, contracts_shard_2\]/);
+  assert.match(contracts, /if:\s*\$\{\{ always\(\) \}\}/);
+  assert.match(contracts, /SHARD_1_RESULT:\s*\$\{\{ needs\.contracts_shard_1\.result \}\}/);
+  assert.match(contracts, /SHARD_2_RESULT:\s*\$\{\{ needs\.contracts_shard_2\.result \}\}/);
+  assert.match(contracts, /\[\[ "\$\{SHARD_1_RESULT\}" == "success" \]\]/);
+  assert.match(contracts, /\[\[ "\$\{SHARD_2_RESULT\}" == "success" \]\]/);
+  for (const [job, runnerName] of jobPairs) {
+    const setup = namedWorkflowStep(job, "Set up Chrome for browser-dependent required tests");
+    const runner = namedWorkflowStep(job, runnerName);
+    assert.match(setup, /id:\s*setup-chrome/);
+    assert.match(
+      setup,
+      /uses:\s*browser-actions\/setup-chrome@086160e580d6e8c142ad5ba29009dcde677c6321/,
+    );
+    assert.match(setup, /chrome-version:\s*"152\.0\.7977\.54"/);
+    assert.match(setup, /install-dependencies:\s*true/);
     assert.match(runner, /CHROME_PATH:\s*\$\{\{ steps\.setup-chrome\.outputs\.chrome-path \}\}/);
     assert.match(runner, /ROUTE_MAP_CHROME_NO_SANDBOX:\s*"1"/);
-    assert.match(runner, /--default-profile --max-workers 1 --shard-count 2 --shard-index [12]/);
+    assert.ok(
+      job.indexOf("Set up Chrome for browser-dependent required tests") < job.indexOf(runnerName),
+      "각 shard job은 자체 Chrome setup 뒤에 runner를 실행해야 함",
+    );
   }
-  assertWorkflowStepOrder(ci, [
-    "Verify current capital live-chain OCI contracts",
-    "Set up Chrome for browser-dependent required tests",
-    "Verify and run pristine Mobile owned required tests (shard 1/2)",
-    "Verify and run pristine Mobile owned required tests (shard 2/2)",
-  ]);
+  assert.match(shardOne, /--default-profile --max-workers 1 --shard-count 2 --shard-index 1/);
+  assert.match(shardTwo, /--default-profile --max-workers 1 --shard-count 2 --shard-index 2/);
 });
 
 test("CI는 current v19 검증을 tracked topology evidence 변경 없이 수행한다", () => {
