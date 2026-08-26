@@ -18801,13 +18801,23 @@ test("production candidate는 embedded Incheon topology를 투영하지 않고 �
     const inputs = await writeCurrentItxReleaseInputs(workspace);
     const buildSpec = JSON.parse(await readFile(inputs.buildSpecPath, "utf8"));
     const candidateBinding = buildSpec.networkEdgeEvidence.capitalTopologyCandidate;
-    const baselineBinding = buildSpec.networkEdgeEvidence.capitalTopology;
-    const [candidate, baseline] = await Promise.all([
-      readFile(candidateBinding.path, "utf8").then(JSON.parse),
-      readFile(baselineBinding.path, "utf8").then(JSON.parse),
-    ]);
-    const incheonLineIds = new Set(["line-42b5805f3b5a", "line-98718184f016"]);
-    const embeddedLines = baseline.lines.filter(({ lineId }) => incheonLineIds.has(lineId));
+    const candidate = JSON.parse(await readFile(candidateBinding.path, "utf8"));
+    const sourceInventory = JSON.parse(await readFile(
+      buildSpec.networkEdgeEvidence.sourceInventory.path,
+      "utf8",
+    ));
+    const incheonSource = sourceInventory.sources.find(
+      ({ id }) => id === "incheon-transit-station-info",
+    );
+    assert.ok(incheonSource?.topologyAdmissionEvidence?.snapshotPath);
+    const incheonTopology = JSON.parse(await readFile(
+      path.join(inputs.repositoryRoot, incheonSource.topologyAdmissionEvidence.snapshotPath),
+      "utf8",
+    ));
+    const embeddedLines = incheonTopology.topologyLineIds.map((lineId, index) => ({
+      ...structuredClone(candidate.lines[index]),
+      lineId,
+    }));
     assert.equal(candidate.lines.length, 22);
     assert.equal(embeddedLines.length, 2);
     candidate.lines.push(...embeddedLines);
