@@ -18310,8 +18310,10 @@ async function writeCurrentItxReleaseInputs(
   );
   assert.equal(currentTopologySources.length, 1, "fixture current topology source must exist once");
   const [currentTopologySource] = currentTopologySources;
+  const currentTopologyAuthority =
+    currentTopologySource.routeMapAdmissionEvidence?.currentTopologyAdmission;
   const { topologySnapshotId: currentTopologySnapshotId } =
-    currentTopologySource.routeMapAdmissionEvidence?.currentTopologyAdmission ?? {};
+    currentTopologyAuthority ?? {};
   assert.ok(currentTopologySnapshotId != null, "fixture current topology admission is required");
   const baselineTopologyBinding = buildSpec.networkEdgeEvidence.capitalTopology;
   const baselineTopologyBytes = await readFile(baselineTopologyBinding.path);
@@ -18325,6 +18327,26 @@ async function writeCurrentItxReleaseInputs(
     `tools/datapack/sources/${currentTopologySnapshotId}.json`,
   );
   const candidateTopology = JSON.parse(candidateTopologyBytes);
+  assert.equal(
+    candidateTopology.sourceId,
+    currentTopologySource.routeMapAdmissionEvidence.topologySourceId,
+    "fixture current topology authority source must match candidate",
+  );
+  assert.equal(
+    currentTopologyAuthority.topologyContentSha256,
+    candidateTopology.contentSha256,
+    "fixture current topology authority content must match candidate",
+  );
+  assert.equal(
+    currentTopologyAuthority.reviewedAt,
+    candidateTopology.capturedAt,
+    "fixture current topology authority review time must match candidate",
+  );
+  assert.equal(
+    currentTopologyAuthority.freshUntil,
+    candidateTopology.freshUntil,
+    "fixture current topology authority freshness must match candidate",
+  );
   const baselineTopologyPath = path.join(workspace, "capital-topology-baseline.json");
   const candidateTopologyPath = path.join(workspace, "capital-topology-candidate.json");
   const topologyReverificationPath = path.join(workspace, "capital-topology-reverification.json");
