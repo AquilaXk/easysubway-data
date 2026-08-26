@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
-import { ARTIFACT_KIND, CAPITAL_MAP_LINE_IDS, projectCapitalTopologyOwnership } from "./collect-capital-route-topology.mjs";
+import { ARTIFACT_KIND, CAPITAL_MAP_LINE_IDS } from "./collect-capital-route-topology.mjs";
 import { admittedCapitalLineEvidence } from "./build-datapack.mjs";
 import {
   buildSeoulRouteMapPositions,
@@ -414,16 +414,12 @@ test("tracked 서울 공식 position snapshot의 exact renamed-station aliases�
     topology.capturedAt,
     evaluationAt,
   );
-  const capitalOwnedTopology = projectCapitalTopologyOwnership(topology);
-
-  assert.equal(admissions.size, capitalOwnedTopology.lineCount);
-  assert.deepEqual([...admissions.keys()].sort(), capitalOwnedTopology.lines.map(({ lineId }) => lineId).sort());
-  assert.equal(topology.lines.length, 24);
-  assert.equal(topology.lines.reduce((count, line) => count + line.edgeCount, 0), 1_548);
-  assert.equal(capitalOwnedTopology.lineCount, 22);
-  assert.equal(capitalOwnedTopology.totalEdgeCount, 1_438);
-  assert.equal(admissions.has("line-42b5805f3b5a"), false, "Incheon2 is source-separated");
-  assert.equal(admissions.has("line-98718184f016"), false, "Incheon1 is source-separated");
+  assert.equal(admissions.size, topology.lines.length);
+  assert.deepEqual([...admissions.keys()].sort(), topology.lines.map(({ lineId }) => lineId).sort());
+  assert.equal(topology.lines.length, 22);
+  assert.equal(topology.lines.reduce((count, line) => count + line.edgeCount, 0), 1_438);
+  assert.equal(admissions.has("line-42b5805f3b5a"), false, "expired Incheon2 overlay is absent");
+  assert.equal(admissions.has("line-98718184f016"), false, "expired Incheon1 overlay is absent");
   for (const lineId of [
     "line-472a81add377", "seoul-4", "line-80fc4d5350d4",
     "line-15b3b8a93259", "line-2b2d9eaa53d0",
