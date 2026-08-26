@@ -232,26 +232,57 @@ test("CI는 browser-dependent required tests 전에 pinned Chrome runtime을 제
   const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
   const shardOne = namedJob(ci, "contracts_shard_1");
   const shardTwo = namedJob(ci, "contracts_shard_2");
+  const shardThree = namedJob(ci, "contracts_shard_3");
   const contracts = namedJob(ci, "contracts");
   const jobPairs = [
-    [shardOne, "Verify and run pristine Mobile owned required tests (shard 1/2)"],
-    [shardTwo, "Verify and run pristine Mobile owned required tests (shard 2/2)"],
+    [shardOne, "Verify and run pristine Mobile owned required tests (shard 1/3)"],
+    [shardTwo, "Verify and run pristine Mobile owned required tests (shard 2/3)"],
+    [shardThree, "Verify and run pristine Mobile owned required tests (shard 3/3)"],
   ];
 
-  assert.match(shardOne, /^    name: Data contracts \(shard 1\/2\)$/m);
-  assert.match(shardTwo, /^    name: Data contracts \(shard 2\/2\)$/m);
+  assert.match(shardOne, /^    name: Data contracts \(shard 1\/3\)$/m);
+  assert.match(shardTwo, /^    name: Data contracts \(shard 2\/3\)$/m);
+  assert.match(shardThree, /^    name: Data contracts \(shard 3\/3\)$/m);
   assert.doesNotMatch(shardOne, /\n    needs:/);
   assert.doesNotMatch(shardTwo, /\n    needs:/);
+  assert.doesNotMatch(shardThree, /\n    needs:/);
   assert.match(contracts, /^    name: Data contracts$/m);
-  assert.match(contracts, /needs:\s*\[contracts_shard_1, contracts_shard_2\]/);
+  assert.match(contracts, /needs:\s*\[contracts_shard_1, contracts_shard_2, contracts_shard_3\]/);
   assert.match(contracts, /if:\s*\$\{\{ always\(\) \}\}/);
   assert.match(contracts, /SHARD_1_RESULT:\s*\$\{\{ needs\.contracts_shard_1\.result \}\}/);
   assert.match(contracts, /SHARD_2_RESULT:\s*\$\{\{ needs\.contracts_shard_2\.result \}\}/);
+  assert.match(contracts, /SHARD_3_RESULT:\s*\$\{\{ needs\.contracts_shard_3\.result \}\}/);
   assert.match(contracts, /\[\[ "\$\{SHARD_1_RESULT\}" == "success" \]\]/);
   assert.match(contracts, /\[\[ "\$\{SHARD_2_RESULT\}" == "success" \]\]/);
+  assert.match(contracts, /\[\[ "\$\{SHARD_3_RESULT\}" == "success" \]\]/);
   for (const [job, runnerName] of jobPairs) {
+    const repository = namedWorkflowStep(job, "Checkout repository");
+    const fixture = namedWorkflowStep(job, "Checkout pinned Mobile fixture");
+    const stage = namedWorkflowStep(job, "Stage pinned Mobile fixture");
+    const node = namedWorkflowStep(job, "Set up Node.js");
     const setup = namedWorkflowStep(job, "Set up Chrome for browser-dependent required tests");
     const runner = namedWorkflowStep(job, runnerName);
+    assert.match(repository, /uses:\s*actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1/);
+    assert.match(repository, /ref:\s*\$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
+    assert.match(repository, /persist-credentials:\s*false/);
+    assert.match(fixture, new RegExp(`repository:\\s*${mobileRepository}`));
+    assert.match(fixture, new RegExp(`ref:\\s*${ciMobileRevision}`));
+    assert.match(fixture, /path:\s*\.external\/mobile/);
+    assert.match(fixture, /persist-credentials:\s*false/);
+    assert.match(fixture, /fetch-depth:\s*0/);
+    assert.match(stage, new RegExp(ciMobileRevision));
+    assert.match(stage, new RegExp(ciCapitalGzipSha256));
+    assert.match(stage, /\[\[ -d "\$\{source\}" && ! -L "\$\{source\}" \]\]/);
+    assert.match(stage, /\[\[ -f "\$\{capital_gzip\}" && ! -L "\$\{capital_gzip\}" \]\]/);
+    assert.match(stage, /test ! -e apps\/mobile/);
+    assert.match(stage, /test ! -L apps\/mobile/);
+    assert.match(stage, /cp -a "\$\{source\}" apps\/mobile/);
+    assert.ok(
+      stage.indexOf('[[ "${actual_sha256}" == "${expected_sha256}" ]]') < stage.indexOf("cp -a "),
+      "각 shard job은 fixture 검증 뒤에만 stage해야 함",
+    );
+    assert.match(node, /uses:\s*actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020/);
+    assert.match(node, /node-version:\s*"24\.19\.0"/);
     assert.match(setup, /id:\s*setup-chrome/);
     assert.match(
       setup,
@@ -266,8 +297,9 @@ test("CI는 browser-dependent required tests 전에 pinned Chrome runtime을 제
       "각 shard job은 자체 Chrome setup 뒤에 runner를 실행해야 함",
     );
   }
-  assert.match(shardOne, /--default-profile --max-workers 1 --shard-count 2 --shard-index 1/);
-  assert.match(shardTwo, /--default-profile --max-workers 1 --shard-count 2 --shard-index 2/);
+  assert.match(shardOne, /--default-profile --max-workers 1 --shard-count 3 --shard-index 1/);
+  assert.match(shardTwo, /--default-profile --max-workers 1 --shard-count 3 --shard-index 2/);
+  assert.match(shardThree, /--default-profile --max-workers 1 --shard-count 3 --shard-index 3/);
 });
 
 test("CI는 current v19 검증을 tracked topology evidence 변경 없이 수행한다", () => {
