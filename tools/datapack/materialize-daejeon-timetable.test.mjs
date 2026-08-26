@@ -6,7 +6,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { promisify } from "node:util";
-import { projectHistoricalRegionalMaterializeInventory, projectRegionalMaterializeFixture } from "./materialize-test-fixture.mjs";
+import {
+  materializeRegionalProductionCandidate,
+  projectHistoricalRegionalMaterializeInventory,
+  projectRegionalMaterializeFixture,
+} from "./materialize-test-fixture.mjs";
 import test from "node:test";
 
 import { parseMolitDaejeonStationMappings } from "./build-molit-nationwide-fixture.mjs";
@@ -205,6 +209,7 @@ test("production SQLite·field provenance가 대전 schedule requirement와 런�
     cwd: root,
     env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey },
   });
+  await materializeRegionalProductionCandidate({ outputDir: packOutput, privateKey });
   const manifestPath = path.join(packOutput, "current.json");
   const manifest = await readJsonAbsolute(manifestPath);
   await execFileAsync(process.execPath, [
@@ -306,6 +311,7 @@ test("병합된 부산·대전 admission과 공식 미지원 evidence를 88/270 
     cwd: root,
     env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey },
   });
+  await materializeRegionalProductionCandidate({ outputDir: packOutput, privateKey });
   const manifest = await readJsonAbsolute(path.join(packOutput, "current.json"));
   const sqlitePath = path.join(packOutput,
     new URL(manifest.packs[0].url).pathname.split("/").slice(-2).join("/")).replace(/\.gz$/, "");
