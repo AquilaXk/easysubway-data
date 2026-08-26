@@ -12,6 +12,7 @@ import {
   applyCandidateReleaseIdentity,
   candidateNetworkEdgeEvidence,
   materializeIncheonNetworkEdges,
+  projectCandidateFixtureForAccessibilityAuthority,
   validateTrackedItxTopologyEvidence,
   validateSourceSeparatedCurrentTopology,
   validateCapitalTopologyReverification,
@@ -165,6 +166,23 @@ test("candidate build spec release identity는 wall clock과 workflow run number
     /production accessibility evidence mismatch/,
   );
   await assert.rejects(readFile(path.join(directOutput, "current.json")), /ENOENT/);
+  const validationOnlyFixturePath = "validation-only-source-fixture.json";
+  const validationOnlyBuildSpecPath = "validation-only-build-spec.json";
+  const validationOnlyFixture = await projectCandidateFixtureForAccessibilityAuthority({
+    buildSpec,
+    sourceFixture: JSON.parse(await readFile(path.join(directory, buildSpec.fixturePath))),
+    repositoryRoot: directory,
+  });
+  await Promise.all([
+    writeFile(
+      path.join(directory, validationOnlyFixturePath),
+      `${JSON.stringify(validationOnlyFixture, null, 2)}\n`,
+    ),
+    writeFile(
+      path.join(directory, validationOnlyBuildSpecPath),
+      `${JSON.stringify({ ...buildSpec, fixturePath: validationOnlyFixturePath }, null, 2)}\n`,
+    ),
+  ]);
   const validationOnlyOutput = path.join(directory, "validation-only-build");
   await withEnvironment({
     EASYSUBWAY_DATAPACK_BUILD_NOW: firstBuildNow,
@@ -172,7 +190,7 @@ test("candidate build spec release identity는 wall clock과 workflow run number
     EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey,
     EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: "production-v1",
   }, () => buildDatapackMain([
-    "--build-spec", buildSpecPath,
+    "--build-spec", validationOnlyBuildSpecPath,
     "--output", validationOnlyOutput,
   ], { repositoryRoot: directory }));
   const validationOnlyManifest = JSON.parse(await readFile(
