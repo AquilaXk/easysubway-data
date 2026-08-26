@@ -11,13 +11,23 @@ export async function currentTopologyAdmissionClock(repositoryRoot) {
     .map(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence?.currentTopologyAdmission)
     .filter(({ topologySnapshotId } = {}) => /^capital-route-topology-[0-9]{8}$/u.test(topologySnapshotId));
   const admission = admissions[0];
+  const incheonAdmissions = inventory.sources
+    .filter(({ id }) => id === "incheon-transit-station-info")
+    .map(({ topologyAdmissionEvidence }) => topologyAdmissionEvidence);
+  const incheonAdmission = incheonAdmissions[0];
   if (admission == null
+    || incheonAdmission == null
+    || incheonAdmissions.length !== 1
     || admissions.some(({ topologySnapshotId, reviewedAt, freshUntil }) => topologySnapshotId !== admission.topologySnapshotId
       || reviewedAt !== admission.reviewedAt || freshUntil !== admission.freshUntil)) {
     throw new Error("current topology admission clock fixture is invalid");
   }
   const topologyCapturedAt = Date.parse(admission.reviewedAt);
-  const freshUntil = Date.parse(admission.freshUntil);
+  const incheonCapturedAt = Date.parse(incheonAdmission.capturedAt);
+  const freshUntil = Math.min(
+    Date.parse(admission.freshUntil),
+    Date.parse(incheonAdmission.freshUntil),
+  );
   const staticSources = snapshots.filter(({ snapshotId, sourceId }) => candidate.sourceSnapshotIds?.includes(snapshotId)
     && ["molit-urban-rail-full-route", "seoul-metro-route-map-positions"].includes(sourceId));
   const staticSourceBasisAt = Math.max(...staticSources.flatMap(({ retrievedAt, sourceUpdatedAt }) => [retrievedAt, sourceUpdatedAt])
@@ -26,8 +36,9 @@ export async function currentTopologyAdmissionClock(repositoryRoot) {
   if (staticSources.length !== 2 || !Number.isFinite(staticSourceBasisAt)) {
     throw new Error("current static source clock fixture is invalid");
   }
-  const inWindowAt = Math.max(topologyCapturedAt, staticSourceBasisAt) + 1_000;
-  if (!Number.isFinite(topologyCapturedAt) || !Number.isFinite(freshUntil) || inWindowAt >= freshUntil) {
+  const inWindowAt = Math.max(topologyCapturedAt, incheonCapturedAt, staticSourceBasisAt) + 1_000;
+  if (![topologyCapturedAt, incheonCapturedAt, freshUntil].every(Number.isFinite)
+    || inWindowAt >= freshUntil) {
     throw new Error("current topology admission clock fixture is invalid");
   }
   return {

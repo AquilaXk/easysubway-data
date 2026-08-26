@@ -1312,12 +1312,7 @@ async function validateAndApplyNetworkEdgeProvenance(
         repositoryRoot,
       );
   const topology = loadCapitalRouteTopologySnapshot(capitalTopology.value);
-  const candidateTopologyInput = loadCapitalRouteTopologySnapshot(capitalTopologyCandidate.value);
-  const candidateTopology = candidateTopologyInput.lines.some(
-    ({ lineId }) => incheonTopologyLineIds.includes(lineId),
-  )
-    ? projectCapitalTopologyOwnership(candidateTopologyInput)
-    : candidateTopologyInput;
+  const candidateTopology = loadCapitalRouteTopologySnapshot(capitalTopologyCandidate.value);
   const incheonSource = sourceInventory.value.sources?.find(
     ({ id }) => id === "incheon-transit-station-info",
   );
@@ -1430,15 +1425,7 @@ export function validateCapitalTopologyReverification(
   candidateSnapshotId,
   baselineSnapshotId,
 ) {
-  const sourceSeparatedLineIds = CAPITAL_MAP_LINE_IDS.filter(
-    (lineId) => !incheonTopologyLineIds.includes(lineId),
-  );
-  const candidateLineIds = new Set(candidateTopology.lines?.map(({ lineId }) => lineId) ?? []);
-  const sourceSeparated = candidateLineIds.size === sourceSeparatedLineIds.length
-    && sourceSeparatedLineIds.every((lineId) => candidateLineIds.has(lineId));
-  const baselineTopology = sourceSeparated
-    ? projectCapitalTopologyOwnership(topology)
-    : topology;
+  const baselineTopology = projectCapitalTopologyOwnership(topology);
   assertExactKeys(
     evidence,
     ["schemaVersion", "artifactKind", "sourceIssue", "admissionIssue", "baseline", "candidate", "comparison"],
