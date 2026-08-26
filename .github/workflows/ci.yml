@@ -127,8 +127,14 @@ jobs:
           chrome-version: "152.0.7977.54"
           install-dependencies: true
 
-      - name: Verify and run pristine Mobile owned required tests
+      - name: Verify and run pristine Mobile owned required tests (shard 1/2)
         env:
           CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
           ROUTE_MAP_CHROME_NO_SANDBOX: "1"
-        run: node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile
+        run: node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile --max-workers 1 --shard-count 2 --shard-index 1
+
+      - name: Verify and run pristine Mobile owned required tests (shard 2/2)
+        env:
+          CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+          ROUTE_MAP_CHROME_NO_SANDBOX: "1"
+        run: node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile --max-workers 1 --shard-count 2 --shard-index 2

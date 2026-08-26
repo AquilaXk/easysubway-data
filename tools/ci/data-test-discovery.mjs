@@ -238,6 +238,14 @@ export function buildDurationShards(entries, shardCount) {
   return shards;
 }
 
+export function selectDurationShard(entries, shardCount, shardIndex) {
+  const shards = buildDurationShards(entries, shardCount);
+  if (!Number.isInteger(shardIndex) || shardIndex < 1 || shardIndex > shardCount) {
+    throw new Error(`shard index must be between 1 and ${shardCount}`);
+  }
+  return shards[shardIndex - 1];
+}
+
 export function validateOwnership({
   manifest,
   trackedEntries,
@@ -470,7 +478,42 @@ export function validateOwnership({
     if (!jobPattern.test(source) || !source.includes(`name: ${workflow.checkName}`)) {
       issue(issues, 'WORKFLOW_JOB_MISSING', workflow.file, `${workflow.jobId}/${workflow.checkName}`);
     }
-    if (countOccurrences(source, workflow.invocation) !== 1) {
+    const rawDefaultProfileShards = workflow.defaultProfileShards;
+    const hasDefaultProfileShards = rawDefaultProfileShards !== undefined;
+    const defaultProfileShardsValid =
+      hasDefaultProfileShards &&
+      rawDefaultProfileShards !== null &&
+      typeof rawDefaultProfileShards === 'object' &&
+      !Array.isArray(rawDefaultProfileShards) &&
+      Number.isInteger(rawDefaultProfileShards.count) &&
+      rawDefaultProfileShards.count >= 2 &&
+      rawDefaultProfileShards.maxWorkers === 1;
+    if (hasDefaultProfileShards && !defaultProfileShardsValid) {
+      issue(issues, 'INVALID_DEFAULT_PROFILE_SHARDS', workflow.file, className);
+    }
+    if (defaultProfileShardsValid) {
+      if (countOccurrences(source, workflow.invocation) !== rawDefaultProfileShards.count) {
+        issue(
+          issues,
+          'DEFAULT_PROFILE_SHARD_TOTAL_INVOCATION_MISMATCH',
+          workflow.file,
+          workflow.invocation,
+        );
+      }
+      for (let shardIndex = 1; shardIndex <= rawDefaultProfileShards.count; shardIndex += 1) {
+        const invocation = `${workflow.invocation} --max-workers ${rawDefaultProfileShards.maxWorkers} --shard-count ${rawDefaultProfileShards.count} --shard-index ${shardIndex}`;
+        if (countOccurrences(source, invocation) !== 1) {
+          issue(issues, 'DEFAULT_PROFILE_SHARD_INVOCATION_MISMATCH', workflow.file, invocation);
+        }
+        const invocationStep = workflowStepContaining(source, invocation);
+        if (/continue-on-error:\s*true/.test(invocationStep)) {
+          issue(issues, 'WORKFLOW_WARNING_ONLY', workflow.file, invocation);
+        }
+        if (/^\s*if\s*:/m.test(invocationStep)) {
+          issue(issues, 'WORKFLOW_CONDITIONAL_SKIP', workflow.file, invocation);
+        }
+      }
+    } else if (!hasDefaultProfileShards && countOccurrences(source, workflow.invocation) !== 1) {
       issue(issues, 'WORKFLOW_INVOCATION_MISSING', workflow.file, workflow.invocation);
     }
     const rawContextInvocations = workflow.contextInvocations;
@@ -504,7 +547,10 @@ export function validateOwnership({
     if (/node\s+--test[\s\S]{0,500}?\.test\.mjs/.test(sourceWithoutContextInvocations)) {
       issue(issues, 'WORKFLOW_HAND_LIST', workflow.file, 'direct test file list is forbidden');
     }
-    if (/continue-on-error:\s*true/.test(workflowStepContaining(source, workflow.invocation))) {
+    if (
+      !defaultProfileShardsValid &&
+      /continue-on-error:\s*true/.test(workflowStepContaining(source, workflow.invocation))
+    ) {
       issue(issues, 'WORKFLOW_WARNING_ONLY', workflow.file, 'owned-test invocation cannot continue on error');
     }
     const rawProfileInvocations = workflow.profileInvocations;
@@ -868,11 +914,13 @@ async function runOwnedClass({
   maxWorkers,
   executionProfile,
   defaultProfile,
+  shardCount,
+  shardIndex,
 }) {
   const verification = verifyRepository({
     repoRoot,
     manifestPath,
-    requireDurations: maxWorkers > 1,
+    requireDurations: maxWorkers > 1 || shardCount !== null,
     durationClass: className,
     executionProfile,
     fixtureClass: className,
@@ -884,17 +932,19 @@ async function runOwnedClass({
     defaultProfile,
   );
   if (selected.length === 0) throw new Error(`execution class has no tests: ${className}`);
-  const shardCount = Math.min(maxWorkers, selected.length);
+  const localShardCount = Math.min(maxWorkers, selected.length);
   const shards =
-    shardCount === 1
-      ? [
-          {
-            index: 1,
-            estimatedDurationMs: null,
-            tests: selected.map(({ path }) => path).sort(compareStrings),
-          },
-        ]
-      : buildDurationShards(selected, shardCount);
+    shardCount !== null
+      ? [selectDurationShard(selected, shardCount, shardIndex)]
+      : localShardCount === 1
+        ? [
+            {
+              index: 1,
+              estimatedDurationMs: null,
+              tests: selected.map(({ path }) => path).sort(compareStrings),
+            },
+          ]
+        : buildDurationShards(selected, localShardCount);
   const results = await Promise.all(
     shards.map(async (shard) => ({
       ...shard,
@@ -909,6 +959,8 @@ async function runOwnedClass({
       executionProfile,
       inventoryDigest: verification.inventoryDigest,
       total: selected.length,
+      shardCount,
+      shardIndex,
       shards: results.map(({ index, tests, estimatedDurationMs, durationMs, ok, code, signal }) => ({
         index,
         count: tests.length,
@@ -994,6 +1046,32 @@ function optionValues(args, option) {
   return values;
 }
 
+function parseStrictPositiveInteger(value, option) {
+  if (!/^\d+$/u.test(value)) throw new Error(`${option} must be a positive integer`);
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    throw new Error(`${option} must be a positive integer`);
+  }
+  return parsed;
+}
+
+export function parseRunShardOptions(args) {
+  const shardCounts = optionValues(args, '--shard-count');
+  const shardIndexes = optionValues(args, '--shard-index');
+  if (shardCounts.length === 0 && shardIndexes.length === 0) {
+    return { shardCount: null, shardIndex: null };
+  }
+  if (shardCounts.length !== 1 || shardIndexes.length !== 1) {
+    throw new Error('--shard-count and --shard-index must be provided together exactly once');
+  }
+  const shardCount = parseStrictPositiveInteger(shardCounts[0], '--shard-count');
+  const shardIndex = parseStrictPositiveInteger(shardIndexes[0], '--shard-index');
+  if (shardIndex > shardCount) {
+    throw new Error(`shard index must be between 1 and ${shardCount}`);
+  }
+  return { shardCount, shardIndex };
+}
+
 async function main() {
   const scriptPath = fileURLToPath(import.meta.url);
   const repoRoot = resolve(dirname(scriptPath), '../..');
@@ -1039,6 +1117,7 @@ async function main() {
     return;
   }
   if (command === 'run') {
+    const { shardCount, shardIndex } = parseRunShardOptions(args);
     await runOwnedClass({
       repoRoot,
       manifestPath,
@@ -1046,6 +1125,8 @@ async function main() {
       maxWorkers,
       executionProfile,
       defaultProfile,
+      shardCount,
+      shardIndex,
     });
     return;
   }

@@ -203,6 +203,10 @@
       "jobId": "contracts",
       "checkName": "Data contracts",
       "invocation": "node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile",
+      "defaultProfileShards": {
+        "count": 2,
+        "maxWorkers": 1
+      },
       "required": true,
       "fixtures": [
         "mobile"

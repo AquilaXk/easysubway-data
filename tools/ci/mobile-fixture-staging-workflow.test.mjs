@@ -222,7 +222,8 @@ test("CI는 구형 v18 migration 또는 station-catalog bootstrap을 실행하�
 test("CI는 browser-dependent required tests 전에 pinned Chrome runtime을 제공한다", () => {
   const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
   const setup = namedWorkflowStep(ci, "Set up Chrome for browser-dependent required tests");
-  const runner = namedWorkflowStep(ci, "Verify and run pristine Mobile owned required tests");
+  const firstRunner = namedWorkflowStep(ci, "Verify and run pristine Mobile owned required tests (shard 1/2)");
+  const secondRunner = namedWorkflowStep(ci, "Verify and run pristine Mobile owned required tests (shard 2/2)");
 
   assert.match(setup, /id:\s*setup-chrome/);
   assert.match(
@@ -231,12 +232,16 @@ test("CI는 browser-dependent required tests 전에 pinned Chrome runtime을 제
   );
   assert.match(setup, /chrome-version:\s*"152\.0\.7977\.54"/);
   assert.match(setup, /install-dependencies:\s*true/);
-  assert.match(runner, /CHROME_PATH:\s*\$\{\{ steps\.setup-chrome\.outputs\.chrome-path \}\}/);
-  assert.match(runner, /ROUTE_MAP_CHROME_NO_SANDBOX:\s*"1"/);
+  for (const runner of [firstRunner, secondRunner]) {
+    assert.match(runner, /CHROME_PATH:\s*\$\{\{ steps\.setup-chrome\.outputs\.chrome-path \}\}/);
+    assert.match(runner, /ROUTE_MAP_CHROME_NO_SANDBOX:\s*"1"/);
+    assert.match(runner, /--default-profile --max-workers 1 --shard-count 2 --shard-index [12]/);
+  }
   assertWorkflowStepOrder(ci, [
     "Verify current capital live-chain OCI contracts",
     "Set up Chrome for browser-dependent required tests",
-    "Verify and run pristine Mobile owned required tests",
+    "Verify and run pristine Mobile owned required tests (shard 1/2)",
+    "Verify and run pristine Mobile owned required tests (shard 2/2)",
   ]);
 });
 
