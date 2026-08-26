@@ -28,18 +28,28 @@ import {
   nextSyntheticCurrentStaticNetworkNow,
 } from "./test-fixtures/current-public-route-map-successor.mjs";
 
-test("full-capital authority는 213/639 input과 456 non-RIDE를 2,674-edge fixture에 결속한다", async () => {
+test("full-capital authority는 213/639 input과 456 non-RIDE를 2,664-edge fixture에 결속한다", async () => {
   const input = await fullInput();
   const before = structuredClone(input.projectedFixture);
   const result = buildCurrentReleaseCandidateAccessibilityAuthority(input);
 
-  assert.equal(result.candidateFixture.packs[0].networkEdges.length, 2674);
+  assert.deepEqual(edgeCounts(JSON.parse(input.sourceFixtureBytes).packs[0].networkEdges), {
+    ENTRY: 2,
+    EXIT: 2,
+    RIDE: 2200,
+  });
+  assert.deepEqual(edgeCounts(input.projectedFixture.packs[0].networkEdges), {
+    ENTRY: 2,
+    EXIT: 2,
+    RIDE: 2208,
+  });
+  assert.equal(result.candidateFixture.packs[0].networkEdges.length, 2664);
   assert.equal(input.route.stationLines.length, 1102);
   assert.deepEqual(edgeCounts(result.candidateFixture.packs[0].networkEdges), {
     ENTRY: 213,
     EXIT: 213,
     IN_STATION_TRANSFER: 30,
-    RIDE: 2218,
+    RIDE: 2208,
   });
   assert.deepEqual(result.authority.edgeCounts, {
     ENTRY: 213,
@@ -65,7 +75,7 @@ test("full-capital authority는 213/639 input과 456 non-RIDE를 2,674-edge fixt
   assert.deepEqual(input.projectedFixture, before);
 });
 
-test("합성 current public successor는 1,102 metadata·2,674 route·456 authority를 완성한다", async (t) => {
+test("합성 current public successor는 1,102 metadata·2,664 route·456 authority를 완성한다", async (t) => {
   const sourceRoot = path.resolve(fileURLToPath(new URL("../../", import.meta.url)));
   const temp = await mkdtemp(path.join(tmpdir(), "public-route-map-authority-"));
   t.after(() => rm(temp, { recursive: true, force: true }));
@@ -107,6 +117,8 @@ test("합성 current public successor는 1,102 metadata·2,674 route·456 author
     routeBytes.toString("utf8"),
     canonicalCurrentCapitalRouteEdgeInputJson(route),
   );
+  assert.deepEqual(edgeCounts(sourceFixture.packs[0].networkEdges), { ENTRY: 2, EXIT: 2, RIDE: 2200 });
+  assert.deepEqual(edgeCounts(projectedFixture.packs[0].networkEdges), { ENTRY: 2, EXIT: 2, RIDE: 2208 });
   const result = buildCurrentReleaseCandidateAccessibilityAuthority({
     buildSpec,
     buildSpecBytes,
@@ -119,11 +131,11 @@ test("합성 current public successor는 1,102 metadata·2,674 route·456 author
   });
 
   assert.equal(route.stationLines.length, 1102);
-  assert.equal(route.routeEdges.length, 2674);
+  assert.equal(route.routeEdges.length, 2664);
   assert.equal(result.authority.edges.length, 456);
   assert.equal(result.authority.edges.flatMap(({ requiredCells }) => requiredCells)
     .filter(({ state }) => state === "UNVERIFIED_EVIDENCE_BLOCKED").length, 10);
-  assert.equal(result.candidateFixture.packs[0].networkEdges.length, 2674);
+  assert.equal(result.candidateFixture.packs[0].networkEdges.length, 2664);
 });
 
 test("unresolved·stale·candidate·route·projected RIDE drift는 output 전에 fail-closed다", async () => {
@@ -411,7 +423,7 @@ async function fullInput() {
   const source = await fullCapitalFixture();
   const routeOnly = addFullRouteStationLines(source);
   source.canonicalPack.packs[0].networkEdges = [
-    ...Array.from({ length: 2218 }, (_, index) => ({
+    ...Array.from({ length: 2208 }, (_, index) => ({
       id: `ride-${index}`,
       edgeType: "RIDE",
       fromNodeId: "station-000:seoul-2",
@@ -449,8 +461,22 @@ async function fullInput() {
     }],
   };
   const sourceFixture = structuredClone(projectedFixture);
-  sourceFixture.packs[0].networkEdges = sourceFixture.packs[0].networkEdges.filter(({ edgeType }) => edgeType !== "RIDE");
-  sourceFixture.packs[0].networkEdges.push(...projectedFixture.packs[0].networkEdges.filter(({ edgeType }) => edgeType === "RIDE").slice(0, 2210));
+  sourceFixture.packs[0].networkEdges = [
+    ...Array.from({ length: 2200 }, (_, index) => ({
+      id: `ride-${index}`,
+      edgeType: "RIDE",
+      fromNodeId: "station-000:seoul-2",
+      toNodeId: "station-001:seoul-2",
+      durationSeconds: 120,
+      distanceMeters: 1000,
+      serviceClass: "SUBWAY",
+      servicePattern: "LOCAL",
+    })),
+    legacyEdge("legacy-entry-1", "ENTRY"),
+    legacyEdge("legacy-entry-2", "ENTRY"),
+    legacyEdge("legacy-exit-1", "EXIT"),
+    legacyEdge("legacy-exit-2", "EXIT"),
+  ];
   const buildSpec = { candidateId: stationLineInput.candidate.candidateId, sourceSnapshotSetHash: stationLineInput.candidate.sourceSetSha256 };
   return {
     buildSpec,

@@ -41,8 +41,15 @@ const COUNTS = Object.freeze({
   ENTRY: 213,
   EXIT: 213,
   IN_STATION_TRANSFER: 30,
-  RIDE: 2218,
+  RIDE: 2208,
 });
+const LEGACY_COUNTS = Object.freeze({ ENTRY: 2, EXIT: 2 });
+const RAW_RIDE_PROJECTION_DELTA = 8;
+const totalCount = (counts) => Object.values(counts).reduce((total, count) => total + count, 0);
+const AUTHORITY_COUNTS = Object.freeze(Object.fromEntries(
+  Object.entries(COUNTS).filter(([type]) => type !== "RIDE"),
+));
+const RAW_RIDE_COUNT = COUNTS.RIDE - RAW_RIDE_PROJECTION_DELTA;
 
 export function buildCurrentReleaseCandidateAccessibilityAuthority(input) {
   validateInputBytes(input);
@@ -129,8 +136,10 @@ export function rebuildCurrentReleaseCandidateFixture({ projectedFixture, author
   canonicalCurrentReleaseCandidateAccessibilityAuthorityJson(authority);
   const pack = capitalPack(projectedFixture, "projected fixture");
   const counts = edgeTypeCounts(pack.networkEdges);
-  if (pack.networkEdges.length !== 2222 || counts.RIDE !== 2218
-    || counts.ENTRY !== 2 || counts.EXIT !== 2 || Object.keys(counts).length !== 3) {
+  if (pack.networkEdges.length !== COUNTS.RIDE + totalCount(LEGACY_COUNTS)
+    || counts.RIDE !== COUNTS.RIDE
+    || Object.entries(LEGACY_COUNTS).some(([type, count]) => counts[type] !== count)
+    || Object.keys(counts).length !== Object.keys(LEGACY_COUNTS).length + 1) {
     throw new Error("projected fixture legacy non-RIDE denominator mismatch");
   }
   const rides = pack.networkEdges.filter(({ edgeType }) => edgeType === "RIDE");
@@ -290,8 +299,10 @@ function capitalPack(fixture, label) {
 
 function validateSourceFixtureEdges(edges) {
   const counts = edgeTypeCounts(edges);
-  if (edges.length !== 2214 || counts.RIDE !== 2210 || counts.ENTRY !== 2
-    || counts.EXIT !== 2 || Object.keys(counts).length !== 3) {
+  if (edges.length !== RAW_RIDE_COUNT + totalCount(LEGACY_COUNTS)
+    || counts.RIDE !== RAW_RIDE_COUNT
+    || Object.entries(LEGACY_COUNTS).some(([type, count]) => counts[type] !== count)
+    || Object.keys(counts).length !== Object.keys(LEGACY_COUNTS).length + 1) {
     throw new Error("source fixture edge denominator mismatch");
   }
 }
@@ -351,7 +362,7 @@ function validateRoute(route, stationLineInput, routeStationIndex) {
 }
 
 function validateRouteEdgeShapes(routeEdges) {
-  if (!Array.isArray(routeEdges) || routeEdges.length !== 2674) {
+  if (!Array.isArray(routeEdges) || routeEdges.length !== totalCount(COUNTS)) {
     throw new Error("route edge denominator mismatch");
   }
   const ids = new Set();
@@ -437,15 +448,17 @@ function compareStationLines(left, right) {
 
 function validateProjectedFixtureEdges(edges, routeEdges) {
   const counts = edgeTypeCounts(edges);
-  if (edges.length !== 2222 || counts.RIDE !== 2218 || counts.ENTRY !== 2
-    || counts.EXIT !== 2 || Object.keys(counts).length !== 3) {
+  if (edges.length !== COUNTS.RIDE + totalCount(LEGACY_COUNTS)
+    || counts.RIDE !== COUNTS.RIDE
+    || Object.entries(LEGACY_COUNTS).some(([type, count]) => counts[type] !== count)
+    || Object.keys(counts).length !== Object.keys(LEGACY_COUNTS).length + 1) {
     throw new Error("projected fixture legacy non-RIDE denominator mismatch");
   }
   const rides = edges.filter(({ edgeType }) => edgeType === "RIDE");
   const routeRides = new Map(routeEdges
     .filter(({ edgeType }) => edgeType === "RIDE")
     .map((edge) => [edge.edgeId, edge]));
-  if (new Set(rides.map(({ id }) => id)).size !== 2218 || routeRides.size !== 2218) {
+  if (new Set(rides.map(({ id }) => id)).size !== COUNTS.RIDE || routeRides.size !== COUNTS.RIDE) {
     throw new Error("projected fixture RIDE denominator mismatch");
   }
   for (const ride of rides) {
@@ -498,7 +511,7 @@ function candidateFixtureFrom(projectedFixture, projectedRides, routeEdges) {
   pack.networkEdges = [...structuredClone(projectedRides), ...nonRide]
     .sort((left, right) => compareBytes(left.id, right.id));
   const counts = edgeTypeCounts(pack.networkEdges);
-  if (pack.networkEdges.length !== 2674
+  if (pack.networkEdges.length !== totalCount(COUNTS)
     || Object.entries(COUNTS).some(([type, count]) => counts[type] !== count)) {
     throw new Error("candidate fixture edge denominator mismatch");
   }
@@ -582,8 +595,9 @@ function requiredCell(rows, stationId, lineId, domain) {
 
 function countAuthorityEdges(edges) {
   const counts = edgeTypeCounts(edges);
-  if (edges.length !== 456 || counts.ENTRY !== 213 || counts.EXIT !== 213
-    || counts.IN_STATION_TRANSFER !== 30 || Object.keys(counts).length !== 3) {
+  if (edges.length !== totalCount(AUTHORITY_COUNTS)
+    || Object.entries(AUTHORITY_COUNTS).some(([type, count]) => counts[type] !== count)
+    || Object.keys(counts).length !== Object.keys(AUTHORITY_COUNTS).length) {
     throw new Error("authority edge denominator mismatch");
   }
   return canonicalObject({ ...counts, total: edges.length });

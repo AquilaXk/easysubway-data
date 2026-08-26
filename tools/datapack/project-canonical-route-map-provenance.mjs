@@ -113,6 +113,22 @@ function validateBusanCanonicalRows(positions) {
   }
 }
 
+function routeMapPositionSource(fixture) {
+  const capital = fixture?.packs?.filter(({ id }) => id === "capital");
+  if (capital?.length !== 1 || !Array.isArray(capital[0].sourceInventory)) {
+    throw new Error("canonical route-map fixture identity is invalid");
+  }
+  const sources = capital[0].sourceInventory.filter(({ id }) => id === "seoul-metro-route-map-positions");
+  if (sources.length !== 1) throw new Error("route-map position source identity is invalid");
+  const source = sources[0];
+  if (typeof source.url !== "string" || source.url.trim() === ""
+    || !SHA256.test(source.sourceSha256 ?? "")
+    || JSON.stringify(source.coverageScope?.sourceDomains) !== JSON.stringify(["route_map_positions"])) {
+    throw new Error("route-map position source identity is invalid");
+  }
+  return source;
+}
+
 function projectDorasanGeometry(position) {
   const oldGeometry = same({ x: position.x, y: position.y, upPath: position.upPath, labelPolygon: position.labelPolygon }, DORASAN_OLD);
   const partialGeometry = position.x === DORASAN.x && position.y === DORASAN.y
@@ -148,6 +164,7 @@ export function projectCanonicalRouteMapProvenance({
   if (capitals.length !== 1 || !Array.isArray(capitals[0].routeMapPositions)) {
     throw new Error("canonical route-map fixture identity is invalid");
   }
+  const positionSource = routeMapPositionSource(fixture);
 
   const next = structuredClone(fixture);
   const positions = next.packs.find(({ id }) => id === "capital").routeMapPositions;
@@ -161,6 +178,13 @@ export function projectCanonicalRouteMapProvenance({
       }
       projectDorasanGeometry(position);
       position.sourceSha256 = dorasanSha256;
+      continue;
+    }
+    if (position.sourceId === positionSource.id) {
+      if (position.sourceUrl !== positionSource.url) {
+        throw new Error("route-map position source identity is invalid");
+      }
+      position.sourceSha256 = positionSource.sourceSha256;
       continue;
     }
     const sourceSha256 = ownerSources.get(position.sourceUrl);

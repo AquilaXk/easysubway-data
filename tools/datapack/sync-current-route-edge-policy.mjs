@@ -5,6 +5,9 @@ import { pathToFileURL } from "node:url";
 
 import { canonicalRideEdgeSetSha256, routeEdgeSha256 } from "./evaluate-route-accessibility-edges.mjs";
 
+export const CURRENT_ROUTE_EDGE_INPUT =
+  "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json";
+
 export function syncCurrentRouteEdgePolicy(input, policy) {
   if (!input || typeof input !== "object" || !input.candidate || !Array.isArray(input.routeEdges)
     || typeof input.candidate.policyVersion !== "string" || input.candidate.policyVersion !== policy?.policyVersion) {
@@ -66,7 +69,7 @@ export async function syncCurrentRouteEdgePolicyFile({ inputPath, policyPath, ou
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   if (process.argv.length !== 2) throw new Error("sync-current-route-edge-policy accepts no arguments");
   await syncCurrentRouteEdgePolicyFile({
-    inputPath: "tools/datapack/release/current-route-edge-evaluation/route-edge-input.json",
+    inputPath: CURRENT_ROUTE_EDGE_INPUT,
     policyPath: "release/product-gates/route-edge-evaluation-policy.json",
   });
 }

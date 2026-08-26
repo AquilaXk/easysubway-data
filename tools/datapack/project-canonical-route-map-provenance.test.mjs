@@ -151,4 +151,27 @@ test("unknown source, mismatched Dorasan, 또는 Busan receipt drift는 fail clo
     stationId === BUSAN_RECEIPT.stationIds[0] && lineId === BUSAN_RECEIPT.lineId,
   ).sourceUrl = "internal:route-map/route-map-defs/svg-sources/easy-subway-daegu-v3.svg";
   assert.throws(() => projectCanonicalRouteMapProvenance(wrongBusanSource), /Busan canonical duplicate identity is invalid/);
+
+  const missingPositionSource = structuredClone(source);
+  missingPositionSource.dorasanCsvBytes = source.dorasanCsvBytes;
+  missingPositionSource.fixture.packs[0].sourceInventory = missingPositionSource.fixture.packs[0].sourceInventory
+    .filter(({ id }) => id !== "seoul-metro-route-map-positions");
+  assert.throws(() => projectCanonicalRouteMapProvenance(missingPositionSource), /route-map position source identity is invalid/);
+
+  const duplicatePositionSource = structuredClone(source);
+  duplicatePositionSource.dorasanCsvBytes = source.dorasanCsvBytes;
+  duplicatePositionSource.fixture.packs[0].sourceInventory.push(
+    structuredClone(duplicatePositionSource.fixture.packs[0].sourceInventory.find(({ id }) => id === "seoul-metro-route-map-positions")),
+  );
+  assert.throws(() => projectCanonicalRouteMapProvenance(duplicatePositionSource), /route-map position source identity is invalid/);
+
+  const invalidPositionSha = structuredClone(source);
+  invalidPositionSha.dorasanCsvBytes = source.dorasanCsvBytes;
+  invalidPositionSha.fixture.packs[0].sourceInventory.find(({ id }) => id === "seoul-metro-route-map-positions").sourceSha256 = "invalid";
+  assert.throws(() => projectCanonicalRouteMapProvenance(invalidPositionSha), /route-map position source identity is invalid/);
+
+  const positionUrlDrift = structuredClone(source);
+  positionUrlDrift.dorasanCsvBytes = source.dorasanCsvBytes;
+  positionUrlDrift.fixture.packs[0].routeMapPositions.find(({ sourceId }) => sourceId === "seoul-metro-route-map-positions").sourceUrl = "https://example.invalid/drift";
+  assert.throws(() => projectCanonicalRouteMapProvenance(positionUrlDrift), /route-map position source identity is invalid/);
 });

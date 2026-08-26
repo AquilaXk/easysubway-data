@@ -139,7 +139,7 @@ test("route CLI만 temporary fixed target에 exact two-file handoff를 원자 pu
   input.candidateBuildSpec.sourceInventorySha256 = sha(canonical(input.sourceInventory));
   input.candidateBuildSpec.networkEdgeEvidence.sourceInventory.sha256 = sha(canonical(input.sourceInventory));
   addFullRouteStationLines(input);
-  input.canonicalPack.packs[0].networkEdges = [...rideEdges(2194), ...legacyEdges()];
+  input.canonicalPack.packs[0].networkEdges = [...rideEdges(2200), ...legacyEdges()];
   const entries = {
     "tools/datapack/release/current-capital-facility-source-admission.json": input.facilityAdmission,
     [input.facilityAdmission.sourceIdentity.snapshotPath]: input.facilitySnapshotBytes,
@@ -167,7 +167,7 @@ test("route CLI만 temporary fixed target에 exact two-file handoff를 원자 pu
     readTransitionBoundaryImpl: async () => input.sourceSetTransition,
     projectFixtureImpl: async ({ buildSpec, sourceFixture, repositoryRoot }) => {
       assert.equal(buildSpec.candidateId, input.candidateBuildSpec.candidateId);
-      assert.equal(sourceFixture.packs[0].networkEdges.length, 2198);
+      assert.equal(sourceFixture.packs[0].networkEdges.length, 2204);
       assert.equal(repositoryRoot, root);
       const projected = structuredClone(sourceFixture);
       projected.packs[0].networkEdges = [...rideEdges(2208), ...legacyEdges()];
