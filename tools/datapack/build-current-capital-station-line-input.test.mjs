@@ -26,6 +26,30 @@ test("full-capital FACILITY·EXIT·TRANSFER fan-in은 213/199/641 closed input�
   assert.equal(materialization.stateSummary.UNKNOWN, 0);
 });
 
+test("FACILITY snapshot timestamp identity와 candidate freshness는 strict하게 bind한다", async () => {
+  for (const [field, mutate] of [
+    ["capturedAt", (snapshot) => rebindSnapshotClock(snapshot, "2026-08-01T00:00:00.001Z")],
+    ["observedAt", (snapshot) => rebindSnapshotClock(snapshot, "2026-08-01T00:00:00.001Z")],
+    ["freshUntil", (snapshot) => { snapshot.freshUntil = "2026-08-02T00:00:00.001Z"; }],
+  ]) {
+    const timestampDrift = await fixture();
+    const snapshot = JSON.parse(timestampDrift.facilitySnapshotBytes.toString("utf8"));
+    mutate(snapshot);
+    timestampDrift.facilitySnapshotBytes = Buffer.from(JSON.stringify(snapshot));
+    assert.throws(() => buildCurrentCapitalStationLineInput(timestampDrift), new RegExp(`FACILITY snapshot binding mismatch`, "u"), field);
+  }
+
+  const staleAtCandidate = await fixture();
+  staleAtCandidate.candidateBuildSpec.publishedAt = staleAtCandidate.facilityAdmission.sourceIdentity.freshUntil;
+  assert.throws(() => buildCurrentCapitalStationLineInput(staleAtCandidate), /FACILITY freshness mismatch/);
+});
+
+function rebindSnapshotClock(snapshot, capturedAt) {
+  snapshot.capturedAt = capturedAt;
+  snapshot.observedAt = capturedAt;
+  snapshot.snapshotId = `${snapshot.sourceId}-${capturedAt.replaceAll(/[-:.]/g, "")}`;
+}
+
 test("canonical capital pack이 전국 superset이어도 admitted 213 scope만 선택한다", async () => {
   const input = await fixture();
   const pack = input.canonicalPack.packs[0];
@@ -180,7 +204,7 @@ export async function fixture() {
   const metrics = transferMetrics(lines); const applicability = transferApplicability(lines, metrics);
   const transferAdmissionEvidence = { decision: "APPROVED", metricsArtifactSha256: metrics.artifactSha256, applicabilityArtifactSha256: applicability.artifactSha256, physicalPairCount: 15, directedMetricCount: 30, officialMetricCount: 28, derivedReciprocalMetricCount: 2, durationRole: "REFERENCE_ONLY", snapshotId: "transfer-snapshot", freshUntil: "2026-09-01T00:00:00.000Z", licenseEvidenceHash: "9".repeat(64) };
   const sourceInventory = { sources: [{ id: "seoul-metro-transfer-distance-duration", requiredForProductionPack: true, admissionEvidence: { adminReviewRecordHash: "d".repeat(64) }, transferAdmissionEvidence }] }; const sourceInventoryBytes = Buffer.from(canonical(sourceInventory));
-  const candidateBuildSpec = { candidateId: candidate.candidateId, sourceSnapshotIds: snapshotIds, sourceSnapshots: [...sourceSnapshots.slice(0, 6).map((entry) => ({ snapshotId: entry.snapshotId, sourceId: entry.sourceId })), Object.fromEntries(["snapshotId", "sourceId", "rawObjectUri", "rawSha256", "redactedRequestFingerprint", "schemaFingerprint", "licenseStatus", "redistributionAllowed", "adminReviewRecordHash", "snapshotStatus", "credentialRedacted", "freshnessExpiresAt", "rawRetentionExpiresAt", "governancePolicyVersion", "governancePolicySha256"].map((key) => [key, sourceSnapshots.at(-1)[key]]))], sourceSnapshotSetHash: sha(JSON.stringify(sourceSnapshots)), sourceInventorySha256: sha(JSON.stringify(sourceInventory)), networkEdgeEvidence: { sourceInventory: { path: "tools/datapack/source-inventory.json", sha256: sha(sourceInventoryBytes) } } };
+  const candidateBuildSpec = { candidateId: candidate.candidateId, publishedAt: "2026-08-01T00:00:00.000Z", sourceSnapshotIds: snapshotIds, sourceSnapshots: [...sourceSnapshots.slice(0, 6).map((entry) => ({ snapshotId: entry.snapshotId, sourceId: entry.sourceId })), Object.fromEntries(["snapshotId", "sourceId", "rawObjectUri", "rawSha256", "redactedRequestFingerprint", "schemaFingerprint", "licenseStatus", "redistributionAllowed", "adminReviewRecordHash", "snapshotStatus", "credentialRedacted", "freshnessExpiresAt", "rawRetentionExpiresAt", "governancePolicyVersion", "governancePolicySha256"].map((key) => [key, sourceSnapshots.at(-1)[key]]))], sourceSnapshotSetHash: sha(JSON.stringify(sourceSnapshots)), sourceInventorySha256: sha(JSON.stringify(sourceInventory)), networkEdgeEvidence: { sourceInventory: { path: "tools/datapack/source-inventory.json", sha256: sha(sourceInventoryBytes) } } };
   return { canonicalPack: { manifest: { channel: "production", activePack: { id: "capital" } }, packs: [{ id: "capital", lines: [{ id: "seoul-2", operatorId: "seoul-metro" }, { id: "seoul-4", operatorId: "seoul-metro" }, { id: "seoul-5", operatorId: "seoul-metro" }], stationLines: lines.map((line, lineSequence) => ({ ...line, lineSequence })) }] }, candidateBuildSpec, exitAdmission, exitAdmissionBytes, exitNormalized: normalized, exitNormalizedBytes, exitReceipt, facilityAdmission, facilitySnapshotBytes: snapshotBytes, policy: { artifactKind: "route-edge-evaluation-policy", policyVersion: "route-edge-evaluation-v2", edgeDomainMap: { RIDE: { endpointTarget: "NONE" } } }, sourceInventory, sourceInventoryBytes, sourceSnapshots, sourceSetTransition: { currentCandidateBytesSha256: "1".repeat(64), currentCandidateSourceSetSha256: sourceSet, evidenceSourceSetSha256: evidenceSourceSet, facilityAdmissionBytesSha256: "2".repeat(64) }, transferMetrics: metrics, transferApplicability: applicability };
 }
 

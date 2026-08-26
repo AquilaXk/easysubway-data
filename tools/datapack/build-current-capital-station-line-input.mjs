@@ -35,8 +35,8 @@ const BLOCKED = { stationId: "station-b35616704ce3", lineId: "seoul-2" };
 export function buildCurrentCapitalStationLineInput(input) {
   assertInputKeys(input);
   const stationLines = canonicalStationLines(input.canonicalPack, input.facilityAdmission);
-  const { candidate, evidenceSourceSetSha256 } = validateCandidate(input, stationLines);
-  const facility = validateFacility(input.facilityAdmission, input.facilitySnapshotBytes, stationLines, candidate, evidenceSourceSetSha256);
+  const { candidate, evidenceSourceSetSha256, candidatePublishedAt } = validateCandidate(input, stationLines);
+  const facility = validateFacility(input.facilityAdmission, input.facilitySnapshotBytes, stationLines, candidate, evidenceSourceSetSha256, candidatePublishedAt);
   const exit = validateExit(input, stationLines, candidate, evidenceSourceSetSha256);
   const transfer = validateTransfer(input, stationLines, candidate);
   validatePolicy(input.policy);
@@ -190,6 +190,7 @@ function validateCandidate(input, stationLines) {
       stationSetSha256: exitCandidate.stationSetSha256,
     }),
     evidenceSourceSetSha256: transition.evidenceSourceSetSha256,
+    candidatePublishedAt: requiredUtcMillis(spec.publishedAt, "full-capital candidate publishedAt"),
   };
 }
 
@@ -256,12 +257,13 @@ function canonicalStationLines(pack, facilityAdmission) {
   return lines;
 }
 
-function validateFacility(value, snapshotBytes, stationLines, candidate, evidenceSourceSetSha256) {
+function validateFacility(value, snapshotBytes, stationLines, candidate, evidenceSourceSetSha256, candidatePublishedAt) {
   canonicalCurrentCapitalFacilitySourceAdmissionJson(value);
   if (value.decision !== "GO" || value.candidate?.candidateId !== candidate.candidateId || value.candidate?.sourceSnapshotSetHash !== evidenceSourceSetSha256) throw new Error("full-capital FACILITY identity mismatch");
   if (!Buffer.isBuffer(snapshotBytes)) throw new Error("full-capital FACILITY snapshot bytes mismatch");
   let snapshot; try { snapshot = validateKricAccessibilitySnapshotIdentity(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(snapshotBytes))); } catch (error) { throw new Error("full-capital FACILITY snapshot identity mismatch", { cause: error }); }
-  if (sha256(snapshotBytes) !== value.sourceIdentity.snapshotFileSha256 || snapshot.snapshotId !== value.sourceIdentity.snapshotId || snapshot.sourceId !== value.sourceIdentity.sourceId || snapshot.rawSha256 !== value.sourceIdentity.rawSha256 || snapshot.contentSha256 !== value.sourceIdentity.contentSha256 || snapshot.schemaFingerprint !== value.sourceIdentity.schemaFingerprint || snapshot.redactedRequestFingerprint !== value.sourceIdentity.redactedRequestFingerprint) throw new Error("full-capital FACILITY snapshot binding mismatch");
+  if (sha256(snapshotBytes) !== value.sourceIdentity.snapshotFileSha256 || snapshot.snapshotId !== value.sourceIdentity.snapshotId || snapshot.sourceId !== value.sourceIdentity.sourceId || snapshot.rawSha256 !== value.sourceIdentity.rawSha256 || snapshot.contentSha256 !== value.sourceIdentity.contentSha256 || snapshot.schemaFingerprint !== value.sourceIdentity.schemaFingerprint || snapshot.redactedRequestFingerprint !== value.sourceIdentity.redactedRequestFingerprint || snapshot.capturedAt !== value.sourceIdentity.capturedAt || snapshot.observedAt !== value.sourceIdentity.observedAt || snapshot.freshUntil !== value.sourceIdentity.freshUntil) throw new Error("full-capital FACILITY snapshot binding mismatch");
+  if (requiredUtcMillis(value.sourceIdentity.freshUntil, "full-capital FACILITY freshUntil") <= candidatePublishedAt) throw new Error("full-capital FACILITY freshness mismatch");
   const cells = indexExact(value.cells, stationLines, "FACILITY cells");
   const blocked = cells.get(key(BLOCKED));
   if (blocked?.state !== "ADMITTED_FACILITY_UNVERIFIED_BLOCKED" || value.cells.filter(({ state }) => state === "ADMITTED_FACILITY_UNVERIFIED_BLOCKED").length !== 1) throw new Error("full-capital FACILITY blocked tuple mismatch");
@@ -449,5 +451,6 @@ function canonicalJson(value) { return JSON.stringify(canonicalObject(value)); }
 function without(value, name) { const { [name]: _ignored, ...rest } = value; return rest; }
 function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 function nonBlank(value) { return typeof value === "string" && value.trim() !== ""; }
+function requiredUtcMillis(value, label) { const millis = Date.parse(value ?? ""); if (!Number.isFinite(millis) || new Date(millis).toISOString() !== value) throw new Error(`${label} mismatch`); return millis; }
 function compareBytes(left, right) { return Buffer.compare(Buffer.from(left), Buffer.from(right)); }
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) main().catch((error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });

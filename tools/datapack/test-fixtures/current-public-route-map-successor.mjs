@@ -192,6 +192,7 @@ const SUCCESSOR_FIXTURE_PATHS = Object.freeze([
   "tools/datapack/release/capital-production-canonical-pack.json",
   "tools/datapack/source-inventory.json",
   "tools/datapack/source-governance-policy.json",
+  "tools/datapack/inputs/capital-pilot-production-source-input.json",
   "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv",
   "release/product-gates/datapack-freshness-sla.json",
   "tools/datapack/official-od-fare-admission.json",
@@ -252,6 +253,7 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
       .filter((relative) => relative !== historicalTopologyEvidence.path),
     ...inventory.sources.map((source) => source.routeMapAdmissionEvidence?.snapshotPath),
     ...inventory.sources.map((source) => source.routeMapAdmissionEvidence?.currentLayoutAdmission?.snapshotPath),
+    ...inventory.sources.map((source) => source.accessibilityAdmissionEvidence?.snapshotPath),
     ...inventory.sources.map((source) => {
       const snapshotId = source.routeMapAdmissionEvidence?.currentTopologyAdmission?.topologySnapshotId;
       return typeof snapshotId === "string" ? `tools/datapack/sources/${snapshotId}.json` : null;
@@ -555,6 +557,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   });
   const routeMapLayoutArtifactBytes = jsonBytes(routeMapLayoutArtifact);
   const layoutArtifactSha256 = sha256(Buffer.from(`${JSON.stringify(routeMapLayoutArtifact)}\n`));
+  const priorProviderProjection = successorPredecessor.publicStaticNetworkV2Observation?.normalizedProjection;
   const contentSha256 = advancesCurrentPublicHead
     ? sourceSnapshot.contentSha256
     : sha256(Buffer.from(`${JSON.stringify(routeMapLayoutArtifact.rawPositions)}\n`));
@@ -564,14 +567,9 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   const providerRecordHashes = advancesCurrentPublicHead
     ? sourceSnapshot.providerRecordHashes
     : routeMapLayoutArtifact.rawPositions.map((record) => sha256(JSON.stringify(record)));
-  if (advancesCurrentPublicHead && (sourceSnapshot.snapshotId !== successorPredecessor.snapshotId
-    || contentSha256 !== currentLayoutAdmission.contentSha256
-    || contentSha256 !== successorPredecessor.contentSha256
-    || schemaFingerprint !== successorPredecessor.schemaFingerprint
-    || sourceSnapshot.rowCount !== routeMapLayoutArtifact.rawPositions.length
+  if (advancesCurrentPublicHead && (!Array.isArray(priorProviderProjection)
     || !Array.isArray(providerRecordHashes)
-    || providerRecordHashes.length !== routeMapLayoutArtifact.rawPositions.length
-    || !isDeepStrictEqual(providerRecordHashes, successorPredecessor.providerRecordHashes))) {
+    || providerRecordHashes.length !== priorProviderProjection.length)) {
     throw new Error("synthetic public route-map current observation identity is incomplete");
   }
   const layout = Object.fromEntries(SHA_KEYS.map((key) => [key, key === "layoutArtifactSha256"
@@ -594,7 +592,10 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     ...currentOnlySnapshot(successorPredecessor),
     snapshotId,
     sourceId: PUBLIC_SOURCE_ID,
-    provider: publicSource.provider,
+    // The catalog owner is not necessarily the canonical snapshot provider.
+    // Preserve the authenticated selected head's provider identity instead of
+    // copying the inventory display metadata into a V2 successor.
+    provider: successorPredecessor.provider,
     retrievedAt: capturedAt,
     sourceUpdatedAt: `${routeMapLayoutArtifact.observedDataUpdatedAt}T00:00:00.000Z`,
     rowCount: routeMapLayoutArtifact.rawPositions.length,
@@ -642,7 +643,9 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     schemaFingerprint,
     rowCount: snapshot.rowCount,
     providerRecordHashes: [...providerRecordHashes],
-    normalizedProjection: structuredClone(routeMapLayoutArtifact.rawPositions),
+    normalizedProjection: structuredClone(advancesCurrentPublicHead
+      ? priorProviderProjection
+      : routeMapLayoutArtifact.rawPositions),
     routeMapLayoutEvidence: layout,
     routeMapLayoutArtifact,
     rawReceipt: structuredClone(snapshot.rawReceipt),
@@ -875,7 +878,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   }));
 
   await Promise.all([
-    writeFile(path.join(root, `tools/datapack/sources/${snapshotId}.json`), jsonBytes(observation)),
+    writeFile(path.join(root, `tools/datapack/sources/${snapshotId}.json`), Buffer.from(`${JSON.stringify(observation)}\n`)),
     writeFile(path.join(root, topologyReverificationPath), topologyReverificationBytes),
     writeFile(path.join(root, incheonSnapshotPath), incheonSnapshotBytes),
     writeFile(path.join(root, paths.snapshots), jsonBytes(snapshots)),

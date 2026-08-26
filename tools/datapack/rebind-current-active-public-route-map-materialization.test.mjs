@@ -1,16 +1,21 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { cp, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 
 import {
   buildCurrentActivePublicRouteMapMaterializationOutputs,
   captureCurrentActivePublicRouteMapPublishPrestate,
   commitCurrentActivePublicRouteMapMaterializationOutputs,
+  parseCurrentActivePublicRouteMapMaterializationArgs,
   recoverCurrentActivePublicRouteMapMaterialization,
   rebindCurrentActivePublicRouteMapMaterialization,
 } from "./rebind-current-active-public-route-map-materialization.mjs";
+
+const execFileAsync = promisify(execFile);
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const OUTPUTS = [
@@ -98,6 +103,28 @@ test("candidate ITX topology evidence path is confined to the versioned root-rel
       buildCurrentActivePublicRouteMapMaterializationOutputs({ repositoryRoot: stage }),
       /candidate ITX topology evidence path is invalid/,
     );
+  } finally {
+    await rm(stage, { recursive: true, force: true });
+  }
+});
+
+test("CLI는 절대 staged repository root와 check를 정확히 전달한다", async () => {
+  const stage = await preparedPStage();
+  try {
+    assert.deepEqual(
+      parseCurrentActivePublicRouteMapMaterializationArgs(["--repository-root", stage, "--check"]),
+      { repositoryRoot: stage, check: true },
+    );
+    for (const argv of [
+      ["--repository-root", "relative"], ["--repository-root"], ["--check", "--check"],
+      ["--unknown"], ["--repository-root", stage, "unexpected"],
+      ["--repository-root", ROOT, "--repository-root", stage],
+    ]) {
+      assert.throws(() => parseCurrentActivePublicRouteMapMaterializationArgs(argv), /arguments are invalid/);
+    }
+    const cli = path.join(ROOT, "tools/datapack/rebind-current-active-public-route-map-materialization.mjs");
+    await execFileAsync(process.execPath, [cli, "--repository-root", stage]);
+    await execFileAsync(process.execPath, [cli, "--check", "--repository-root", stage]);
   } finally {
     await rm(stage, { recursive: true, force: true });
   }

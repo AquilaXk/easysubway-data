@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import { buildSnapshotDiff, validateLineage } from "../source-snapshot-policy.mjs";
+import { requireExactPublicStaticNetworkV2SnapshotBinding } from "../public-static-network-v2-admission.mjs";
 import {
   activateSyntheticCurrentPublicRouteMapSuccessor,
   copySyntheticCurrentPublicRouteMapRepository,
@@ -160,7 +162,18 @@ test("advancing a current public head derives records from its admitted current 
   assert.equal(child.schemaFingerprint, parent.schemaFingerprint);
   assert.equal(child.rowCount, parent.rowCount);
   assert.equal(child.coverageCount, parent.coverageCount);
+  assert.equal(child.provider, parent.provider);
   assert.deepEqual(child.providerRecordHashes, parent.providerRecordHashes);
+  assert.deepEqual(child.publicStaticNetworkV2Observation.normalizedProjection, parent.publicStaticNetworkV2Observation.normalizedProjection);
+  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const admission = inventory.sources.find(({ id }) => id === child.sourceId)
+    .routeMapAdmissionEvidence.currentLayoutAdmission;
+  const observationBytes = await readFile(path.join(root, admission.snapshotPath));
+  assert.equal(createHash("sha256").update(observationBytes).digest("hex"), admission.snapshotSha256);
+  assert.doesNotThrow(() => requireExactPublicStaticNetworkV2SnapshotBinding({
+    snapshot: child,
+    source: inventory.sources.find(({ id }) => id === child.sourceId),
+  }));
   assert.deepEqual(child.diffSummary, buildSnapshotDiff(parent, child));
   assert.equal(child.diffSummary.status, "NO_CHANGE");
 });

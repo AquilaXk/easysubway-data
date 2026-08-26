@@ -15,6 +15,16 @@ import {
   normalizeUnverifiedNetworkEdgeStates,
   projectCapitalTopologyIntoCanonicalFixture,
 } from "./build-datapack.mjs";
+import {
+  buildCurrentReleaseCandidateAccessibilityAuthority,
+  canonicalCurrentReleaseCandidateAccessibilityAuthorityJson,
+  canonicalCurrentReleaseCandidateFixtureJson,
+  main as buildCurrentReleaseCandidateAccessibilityInput,
+} from "./build-current-release-candidate-accessibility-input.mjs";
+import {
+  materializeCurrentFanInCandidateArtifact,
+  withCurrentFullCapitalProductionRepository,
+} from "./test-fixtures/current-full-capital-production-artifact.mjs";
 // 정준 직렬화는 검증 대상 구현을 그대로 쓴다. 테스트가 규칙을 복제하면 3언어
 // 분열(이슈 #2528)을 구조적으로 검출할 수 없다.
 import { canonicalJson, validateManifest, withoutSignature } from "./lib/manifest-validation.mjs";
@@ -230,6 +240,95 @@ const productionEnv = {
   EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: testPublicKeyPem,
   EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY: "true",
 };
+const currentProductionBuildEnv = {
+  ...productionEnv,
+  EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY: undefined,
+  EASYSUBWAY_DATAPACK_BUILD_SPEC_VALIDATION_ONLY: undefined,
+};
+
+async function buildCurrentFullCapitalProductionArtifact(context, { buildEnv = {} } = {}) {
+  const outputRoot = await mkdtemp(path.join(tmpdir(), "easysubway-current-production-artifact-output-"));
+  context.after(() => rm(outputRoot, { recursive: true, force: true }));
+  return withCurrentFullCapitalProductionRepository(context, root, async (repositoryRoot) => {
+    const buildSpecPath = "tools/datapack/release/candidate-build-spec.json";
+    const candidateStationLine = path.join(repositoryRoot, "candidate-station-line-input.json");
+    const candidateRouteEdge = path.join(repositoryRoot, "candidate-route-edge-input.json");
+    const candidateFixture = path.join(repositoryRoot, "candidate-fixture.json");
+    const routeCoverageAuthority = path.join(repositoryRoot, "server-route-coverage-authority.json");
+    await materializeCurrentFanInCandidateArtifact({
+      repositoryRoot, stationLineOutput: candidateStationLine, routeEdgeOutput: candidateRouteEdge,
+      fixtureOutput: candidateFixture, authorityOutput: routeCoverageAuthority,
+    });
+    const buildSpec = JSON.parse(await readFile(path.join(repositoryRoot, buildSpecPath), "utf8"));
+    const output = path.join(outputRoot, "pack");
+    await runDatapackInRepository({
+    argv: [
+      "--build-spec", buildSpecPath,
+      "--candidate-fixture-override", candidateFixture,
+      "--server-route-coverage-authority", routeCoverageAuthority,
+      "--current-capital-station-line-input", candidateStationLine,
+      "--current-capital-route-edge-input", candidateRouteEdge,
+      "--output", output,
+    ],
+    repositoryRoot,
+    env: {
+      ...currentProductionBuildEnv,
+      ...buildEnv,
+      EASYSUBWAY_DATAPACK_BUILD_NOW: buildSpec.publishedAt,
+    },
+    });
+    const manifest = JSON.parse(await readFile(path.join(output, "current.json"), "utf8"));
+    assert.deepEqual(manifest.packs.map(({ artifactKind }) => artifactKind), ["production"]);
+    return { output, repositoryRoot, routeCoverageAuthority };
+  });
+}
+
+function currentProductionValidationArgs({ output, routeCoverageAuthority }) {
+  return [
+    "--manifest", path.join(output, "current.json"),
+    "--root", output,
+    "--require-production",
+    "--server-route-coverage-evidence", routeCoverageAuthority,
+    "--server-route-coverage-provenance", path.join(output, "current.provenance.json"),
+  ];
+}
+
+async function mutateCurrentProductionManifest(artifact, mutate) {
+  const manifestPath = path.join(artifact.output, "current.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  await mutate(manifest);
+  resignProductionManifest(manifest);
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  return manifestPath;
+}
+
+async function mutateCurrentProductionSqlite(artifact, mutate) {
+  const manifestPath = path.join(artifact.output, "current.json");
+  const provenancePath = path.join(artifact.output, "current.provenance.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  const pack = manifest.packs[0];
+  const gzipPath = path.join(artifact.output, "catalog", `${pack.id}-v${pack.version}.sqlite.gz`);
+  const sqlitePath = gzipPath.replace(/\.gz$/, "");
+  const database = new DatabaseSync(sqlitePath);
+  try {
+    await mutate({ database, manifest, pack });
+  } finally {
+    database.close();
+  }
+  const sqliteBytes = await readFile(sqlitePath);
+  const gzipBytes = gzipSync(sqliteBytes);
+  await writeFile(gzipPath, gzipBytes);
+  pack.sizeBytes = gzipBytes.length;
+  pack.sha256 = sha256(gzipBytes);
+  pack.sqliteSha256 = sha256(sqliteBytes);
+  resignProductionManifest(manifest);
+  const manifestBytes = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`);
+  await writeFile(manifestPath, manifestBytes);
+  const provenance = JSON.parse(await readFile(provenancePath, "utf8"));
+  provenance.manifestSha256 = sha256(manifestBytes);
+  provenance.packs.find(({ id, version }) => id === pack.id && version === pack.version).sqliteSha256 = pack.sqliteSha256;
+  await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
+}
 
 test("데이터팩 생성기는 TEST_ONLY admission fixture를 build input으로 거부한다", async (context) => {
   const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-itx-test-only-"));
@@ -3553,7 +3652,7 @@ test("데이터팩 생성기는 대표 route regression 문자열을 앱 서명 
   );
 });
 
-test("데이터팩 생성기는 production pack의 source metadata와 HTTPS URL을 강제한다", async () => {
+test("데이터팩 생성기는 production pack의 source metadata와 HTTPS URL을 강제한다", async (context) => {
   const outputDir = path.join(tmpdir(), `easysubway-datapack-production-gate-${Date.now()}`);
   const fixturePath = path.join(outputDir, "fixture.json");
   await rm(outputDir, { recursive: true, force: true });
@@ -3855,17 +3954,9 @@ test("데이터팩 생성기는 production pack의 source metadata와 HTTPS URL�
   await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
 
   await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/build-datapack.mjs",
-        "--fixture",
-        fixturePath,
-        "--output",
-        outputDir,
-      ],
-      { cwd: root, env: { ...productionEnv, EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: "" } },
-    ),
+    buildCurrentFullCapitalProductionArtifact(context, {
+      buildEnv: { EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: undefined },
+    }),
     /EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM is required for production data pack signatures/,
   );
 });
@@ -4119,358 +4210,213 @@ test("데이터팩 검증기는 UNKNOWN 운행상태 시설의 strict route elig
   );
 });
 
-test("데이터팩 검증기는 production verified edge coverage report를 출력한다", async () => {
-  const outputDir = path.join(tmpdir(), `easysubway-datapack-production-edge-report-${Date.now()}`);
-  const fixturePath = path.join(outputDir, "fixture.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-
-  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
-  markFixturePackProduction(fixture);
-  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
-
-  await execFileAsync(
-    process.execPath,
-    [
-      "tools/datapack/build-datapack.mjs",
-      "--fixture",
-      fixturePath,
-      "--output",
-      outputDir,
-    ],
-    { cwd: root, env: productionEnv },
-  );
+test("데이터팩 검증기는 production verified edge coverage report를 출력한다", async (context) => {
+  const artifact = await buildCurrentFullCapitalProductionArtifact(context);
 
   const { stdout } = await execFileAsync(
     process.execPath,
     [
       "tools/datapack/validate-datapack.mjs",
-      "--manifest",
-      path.join(outputDir, "current.json"),
-      "--root",
-      outputDir,
+      ...currentProductionValidationArgs(artifact),
     ],
     { cwd: root, env: productionEnv },
   );
   const report = JSON.parse(stdout.trim().split("\n").at(-1));
   assert.equal(report.type, "datapack_verified_edge_coverage");
-  assert.equal(report.entry.ratio, 1);
-  assert.equal(report.exit.ratio, 1);
-  assert.equal(report.transfer.ratio, 1);
-  assert.equal(report.generatedConnectorGapCount, 0);
+  assert.equal(report.entry.missingCount, 213);
+  assert.equal(report.exit.missingCount, 213);
+  assert.equal(report.transfer.missingCount, 30);
+  assert.equal(report.generatedConnectorGapCount, 456);
 });
 
-test("데이터팩 검증기는 UNKNOWN accessibility edge를 strict coverage에서 제외한다", async () => {
-  const outputDir = path.join(tmpdir(), `easysubway-datapack-production-edge-unknown-${Date.now()}`);
-  const fixturePath = path.join(outputDir, "fixture.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
+test("데이터팩 검증기는 UNKNOWN accessibility edge를 strict coverage에서 제외한다", async (context) => {
+  const artifact = await buildCurrentFullCapitalProductionArtifact(context);
+  const { stdout } = await execFileAsync(process.execPath, [
+    "tools/datapack/validate-datapack.mjs",
+    ...currentProductionValidationArgs(artifact),
+  ], { cwd: root, env: productionEnv });
+  const report = JSON.parse(stdout.trim().split("\n").at(-1));
+  assert.equal(report.entry.missingCount, 213);
+  assert.equal(report.exit.missingCount, 213);
+  assert.equal(report.transfer.missingCount, 30);
+  assert.deepEqual(report.unverifiedAccessibilityCoverageEdges, []);
+});
 
-  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
-  markFixturePackProduction(fixture);
-  const entry = fixture.packs[0].networkEdges.find((edge) => edge.id === "entry-sangnoksu-seoul-4");
-  entry.accessibilityStatus = "UNKNOWN";
-  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
-
-  await execFileAsync(
-    process.execPath,
-    [
-      "tools/datapack/build-datapack.mjs",
-      "--fixture",
-      fixturePath,
-      "--output",
-      outputDir,
-    ],
-    { cwd: root, env: productionEnv },
-  );
-
-  let failure;
-  try {
-    await execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        path.join(outputDir, "current.json"),
-        "--root",
-        outputDir,
-      ],
-      { cwd: root, env: productionEnv },
+test("데이터팩 검증기는 strict coverage gap 뒤의 production provenance 오류를 숨기지 않는다", async (context) => {
+  const artifact = await buildCurrentFullCapitalProductionArtifact(context);
+  await mutateCurrentProductionSqlite(artifact, ({ database, pack }) => {
+    const station = database.prepare("SELECT id FROM stations ORDER BY id LIMIT 1").get();
+    const sourceId = pack.sourceInventory[0].id;
+    assert.ok(station && sourceId, "current production artifact requires a station and source inventory");
+    database.prepare("INSERT INTO internal_route_nodes (id, station_id, label, node_type) VALUES (?, ?, ?, ?)")
+      .run("test-production-internal-from", station.id, "테스트 내부 출발", "CONCOURSE");
+    database.prepare("INSERT INTO internal_route_nodes (id, station_id, label, node_type) VALUES (?, ?, ?, ?)")
+      .run("test-production-internal-to", station.id, "테스트 내부 도착", "EXIT");
+    database.prepare(`
+      INSERT INTO internal_route_edges (
+        id, from_node_id, to_node_id, edge_type, distance_meters, duration_seconds,
+        includes_stairs, requires_elevator, requires_escalator, slope_level, width_level,
+        reliability_score, accessibility_status, source_id, source_snapshot_id,
+        provider_record_hash, provenance_kind, verification_status, last_verified_at,
+        evidence_hash, instruction
+      ) VALUES (?, ?, ?, 'WALK', 1, 1, 0, 0, 0, 1, 1, 100, 'AVAILABLE', ?, ?, ?, 'OFFICIAL_SOURCE', 'PENDING_ADMIN_REVIEW', 1781568000, ?, ?)
+    `).run(
+      "test-production-internal-pending",
+      "test-production-internal-from",
+      "test-production-internal-to",
+      sourceId,
+      "test-production-internal-snapshot",
+      sha256("test-production-internal-provider"),
+      sha256("test-production-internal-evidence"),
+      "테스트 내부 이동",
     );
-  } catch (error) {
-    failure = error;
-  }
-
-  assert(failure);
-  assert.match(failure.message, /capital@1 verified ENTRY coverage gap: 1\/9/);
-  const report = JSON.parse(failure.stdout.trim().split("\n").at(-1));
-  assert.deepEqual(report.unverifiedAccessibilityCoverageEdges, ["entry-sangnoksu-seoul-4"]);
-});
-
-test("데이터팩 검증기는 strict coverage gap 뒤의 production provenance 오류를 숨기지 않는다", async () => {
-  const outputDir = path.join(tmpdir(), `easysubway-datapack-production-edge-late-validation-${Date.now()}`);
-  const fixturePath = path.join(outputDir, "fixture.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-
-  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
-  markFixturePackProduction(fixture);
-  const entry = fixture.packs[0].networkEdges.find((edge) => edge.id === "entry-sangnoksu-seoul-4");
-  entry.accessibilityStatus = "UNKNOWN";
-  fixture.packs[0].internalRouteEdges[0].verificationStatus = "PENDING_ADMIN_REVIEW";
-  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
-
-  await execFileAsync(
-    process.execPath,
-    [
-      "tools/datapack/build-datapack.mjs",
-      "--fixture",
-      fixturePath,
-      "--output",
-      outputDir,
-    ],
-    { cwd: root, env: productionEnv },
-  );
+  });
 
   await assert.rejects(
     execFileAsync(
       process.execPath,
       [
         "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        path.join(outputDir, "current.json"),
-        "--root",
-        outputDir,
+        ...currentProductionValidationArgs(artifact),
       ],
       { cwd: root, env: productionEnv },
     ),
-    /internal_route_edges verification_status must be VERIFIED: edge-sangnoksu-concourse-exit-1/,
+    /internal_route_edges verification_status must be VERIFIED: test-production-internal-pending/,
   );
 });
 
-test("데이터팩 검증기는 production pathway edge 증거 누락을 거부한다", async () => {
-  const outputDir = path.join(tmpdir(), `easysubway-datapack-production-pathway-provenance-${Date.now()}`);
-  const fixturePath = path.join(outputDir, "fixture.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-
-  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
-  markFixturePackProduction(fixture);
-  fixture.packs[0].stationPathwayEdges[0].providerRecordHash = "";
-  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
-
-  await execFileAsync(
-    process.execPath,
-    [
-      "tools/datapack/build-datapack.mjs",
-      "--fixture",
-      fixturePath,
-      "--output",
-      outputDir,
-    ],
-    { cwd: root, env: productionEnv },
-  );
+test("데이터팩 검증기는 production pathway edge 증거 누락을 거부한다", async (context) => {
+  const artifact = await buildCurrentFullCapitalProductionArtifact(context);
+  await mutateCurrentProductionSqlite(artifact, ({ database, pack }) => {
+    const station = database.prepare("SELECT id FROM stations ORDER BY id LIMIT 1").get();
+    const sourceId = pack.sourceInventory[0].id;
+    assert.ok(station && sourceId, "current production artifact requires a station and source inventory");
+    database.prepare(`
+      INSERT INTO station_pathway_nodes (id, station_id, line_id, node_type, label, level)
+      VALUES (?, ?, NULL, 'ENTRANCE', ?, ''), (?, ?, NULL, 'EXIT', ?, '')
+    `).run(
+      "test-production-pathway-from", station.id, "테스트 출입구",
+      "test-production-pathway-to", station.id, "테스트 출구",
+    );
+    database.prepare(`
+      INSERT INTO station_pathway_edges (
+        id, from_node_id, to_node_id, edge_type, duration_seconds, distance_meters,
+        bidirectional, includes_stairs, requires_elevator, requires_escalator,
+        accessibility_status, source_id, source_snapshot_id, provider_record_hash,
+        provenance_kind, verification_status, last_verified_at, evidence_hash, instruction
+      ) VALUES (?, ?, ?, 'WALK', 1, 1, 1, 0, 0, 0, 'AVAILABLE', ?, ?, '', 'OFFICIAL_SOURCE', 'VERIFIED', 1781568000, ?, ?)
+    `).run(
+      "test-production-pathway-missing-provider",
+      "test-production-pathway-from",
+      "test-production-pathway-to",
+      sourceId,
+      "test-production-pathway-snapshot",
+      sha256("test-production-pathway-evidence"),
+      "테스트 경로",
+    );
+  });
 
   await assert.rejects(
     execFileAsync(
       process.execPath,
       [
         "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        path.join(outputDir, "current.json"),
-        "--root",
-        outputDir,
+        ...currentProductionValidationArgs(artifact),
       ],
       { cwd: root, env: productionEnv },
     ),
-    /station_pathway_edges\.path-edge-sangnoksu-entry-platform-elevator\.provider_record_hash/,
+    /station_pathway_edges\.test-production-pathway-missing-provider\.provider_record_hash/,
   );
 });
 
-test("데이터팩 검증기는 검증된 상태 accessibility edge의 미검증 provenance를 거부한다", async () => {
+test("데이터팩 검증기는 검증된 상태 accessibility edge의 미검증 provenance를 거부한다", async (context) => {
   // #1996: 검증된 상태(AVAILABLE/UNDER_MAINTENANCE/NO_OFFICIAL_FEED) edge는 provenance 요건(VERIFIED 등)을
   // 여전히 강제한다. verification_status가 PENDING이면 거부한다. (UNKNOWN은 provenance 후보가 아니라 coverage
   // gap 경로로 차단된다.)
-  const outputDir = path.join(tmpdir(), `easysubway-datapack-production-edge-unknown-provenance-${Date.now()}`);
-  const fixturePath = path.join(outputDir, "fixture.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-
-  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
-  markFixturePackProduction(fixture);
-  const entry = fixture.packs[0].networkEdges.find((edge) => edge.id === "entry-sangnoksu-seoul-4");
-  fixture.packs[0].networkEdges.push({
-    ...entry,
-    id: "entry-sangnoksu-seoul-4-unknown-duplicate",
-    accessibilityStatus: "UNDER_MAINTENANCE",
-    verificationStatus: "PENDING_ADMIN_REVIEW",
+  const artifact = await buildCurrentFullCapitalProductionArtifact(context);
+  await mutateCurrentProductionSqlite(artifact, ({ database, pack }) => {
+    const source = pack.sourceInventory.find(({ coverageScope }) => (
+      coverageScope?.sourceDomains?.includes("accessibility_facilities")
+    ));
+    assert.ok(source, "current production artifact requires an accessibility facility source");
+    const result = database.prepare(`
+      UPDATE network_edges
+      SET accessibility_status = 'AVAILABLE', stair_access_state = 'STEP_FREE',
+          verification_status = 'PENDING_ADMIN_REVIEW', source_id = ?, source_snapshot_id = ?,
+          provider_record_hash = ?, provenance_kind = 'OFFICIAL_SOURCE',
+          last_verified_at = 1781568000, evidence_hash = ?
+      WHERE id = (SELECT id FROM network_edges WHERE edge_type = 'ENTRY' ORDER BY id LIMIT 1)
+    `).run(
+      source.id,
+      "test-production-entry-snapshot",
+      sha256("test-production-entry-provider"),
+      sha256("test-production-entry-evidence"),
+    );
+    assert.equal(result.changes, 1, "current production artifact requires one ENTRY edge");
+    pack.regionalQualityMetrics.unknownAccessibilityRatio = 0.9996;
   });
-  fixture.packs[0].minimumTableRows.network_edges += 1;
-  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
-
-  await execFileAsync(
-    process.execPath,
-    [
-      "tools/datapack/build-datapack.mjs",
-      "--fixture",
-      fixturePath,
-      "--output",
-      outputDir,
-    ],
-    { cwd: root, env: productionEnv },
-  );
 
   await assert.rejects(
     execFileAsync(
       process.execPath,
       [
         "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        path.join(outputDir, "current.json"),
-        "--root",
-        outputDir,
+        ...currentProductionValidationArgs(artifact),
       ],
       { cwd: root, env: productionEnv },
     ),
-    /network_edges accessibility edge verification_status must be VERIFIED: entry-sangnoksu-seoul-4-unknown-duplicate/,
+    /network_edges accessibility edge verification_status must be VERIFIED:/,
   );
 });
 
-test("데이터팩 검증기는 production coverage에서 service pattern endpoint를 canonical station-line으로 계산한다", async () => {
-  const outputDir = path.join(tmpdir(), `easysubway-datapack-production-edge-service-pattern-${Date.now()}`);
-  const fixturePath = path.join(outputDir, "fixture.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-
-  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
-  markFixturePackProduction(fixture);
-  const pack = fixture.packs[0];
-  const entry = pack.networkEdges.find((edge) => edge.id === "entry-sangnoksu-seoul-4");
-  const exit = pack.networkEdges.find((edge) => edge.id === "exit-sangnoksu-seoul-4");
-  const transfer = pack.networkEdges.find((edge) => edge.id === "edge-sadang-line4-line2-transfer");
-  entry.toNodeId = "station-sangnoksu:seoul-4:LOCAL";
-  entry.servicePattern = "LOCAL";
-  exit.fromNodeId = "station-sangnoksu:seoul-4:LOCAL";
-  exit.servicePattern = "LOCAL";
-  transfer.fromNodeId = "station-sadang:seoul-4:LOCAL";
-  transfer.toNodeId = "station-sadang:seoul-2:LOCAL";
-  transfer.servicePattern = "LOCAL";
-  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
-
-  await execFileAsync(
-    process.execPath,
-    [
-      "tools/datapack/build-datapack.mjs",
-      "--fixture",
-      fixturePath,
-      "--output",
-      outputDir,
-    ],
-    { cwd: root, env: productionEnv },
-  );
-
-  const { stdout } = await execFileAsync(
-    process.execPath,
-    [
-      "tools/datapack/validate-datapack.mjs",
-      "--manifest",
-      path.join(outputDir, "current.json"),
-      "--root",
-      outputDir,
-    ],
-    { cwd: root, env: productionEnv },
-  );
-  const report = JSON.parse(stdout.trim().split("\n").at(-1));
-  assert.equal(report.entry.missingCount, 0);
-  assert.equal(report.exit.missingCount, 0);
-  assert.equal(report.transfer.missingCount, 0);
-});
-
-test("데이터팩 검증기는 출처 없는 production positive edge를 거부한다", async () => {
-  const outputDir = path.join(tmpdir(), `easysubway-datapack-production-edge-provenance-${Date.now()}`);
-  const fixturePath = path.join(outputDir, "fixture.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-
-  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
-  markFixturePackProduction(fixture);
-  delete fixture.packs[0].networkEdges[0].sourceId;
-  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
-
-  await execFileAsync(
-    process.execPath,
-    [
-      "tools/datapack/build-datapack.mjs",
-      "--fixture",
-      fixturePath,
-      "--output",
-      outputDir,
-    ],
-    { cwd: root, env: productionEnv },
-  );
+test("데이터팩 검증기는 출처 없는 production positive edge를 거부한다", async (context) => {
+  const artifact = await buildCurrentFullCapitalProductionArtifact(context);
+  await mutateCurrentProductionSqlite(artifact, ({ database }) => {
+    const result = database.prepare(`
+      UPDATE network_edges
+      SET source_id = ''
+      WHERE id = (SELECT id FROM network_edges WHERE edge_type = 'RIDE' ORDER BY id LIMIT 1)
+    `).run();
+    assert.equal(result.changes, 1, "current production artifact requires one RIDE edge");
+  });
 
   await assert.rejects(
     execFileAsync(
       process.execPath,
       [
         "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        path.join(outputDir, "current.json"),
-        "--root",
-        outputDir,
+        ...currentProductionValidationArgs(artifact),
       ],
       { cwd: root, env: productionEnv },
     ),
-    /network_edges\.edge-sangnoksu-sadang-seoul-4\.source_id must be a non-empty string/,
+    /network_edges\..*\.source_id must be a non-empty string/,
   );
 });
 
-test("데이터팩 검증기는 exact UNKNOWN edge만 provenance 예외로 허용한다", async () => {
-  const outputDir = path.join(tmpdir(), `easysubway-datapack-production-edge-exact-unknown-${Date.now()}`);
-  const partialOutputDir = `${outputDir}-partial`;
-  const fixturePath = path.join(outputDir, "fixture.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await rm(partialOutputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-
-  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
-  markFixturePackProduction(fixture);
-  const edge = fixture.packs[0].networkEdges.find(({ id }) => id === "edge-sangnoksu-sadang-seoul-4");
-  Object.assign(edge, {
-    accessibilityStatus: "UNKNOWN",
-    stairAccessState: "UNKNOWN",
-    sourceId: "",
-    sourceSnapshotId: "",
-    providerRecordHash: "",
-    provenanceKind: "UNKNOWN",
-    verificationStatus: "UNKNOWN",
-    lastVerifiedAt: null,
-    evidenceHash: "",
-  });
-  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
-
-  await execFileAsync(process.execPath, [
-    "tools/datapack/build-datapack.mjs",
-    "--fixture", fixturePath,
-    "--output", outputDir,
-  ], { cwd: root, env: productionEnv });
+test("데이터팩 검증기는 exact UNKNOWN edge만 provenance 예외로 허용한다", async (context) => {
+  const artifact = await buildCurrentFullCapitalProductionArtifact(context);
   await execFileAsync(process.execPath, [
     "tools/datapack/validate-datapack.mjs",
-    "--manifest", path.join(outputDir, "current.json"),
-    "--root", outputDir,
+    ...currentProductionValidationArgs(artifact),
   ], { cwd: root, env: productionEnv });
-
-  edge.sourceId = "capital-official-stations";
-  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
-  await execFileAsync(process.execPath, [
-    "tools/datapack/build-datapack.mjs",
-    "--fixture", fixturePath,
-    "--output", partialOutputDir,
-  ], { cwd: root, env: productionEnv });
+  await mutateCurrentProductionSqlite(artifact, ({ database, pack }) => {
+    const sourceId = pack.sourceInventory[0].id;
+    const result = database.prepare(`
+      UPDATE network_edges
+      SET source_id = ?
+      WHERE id = (
+        SELECT id FROM network_edges
+        WHERE edge_type = 'ENTRY' AND source_id = '' AND source_snapshot_id = ''
+          AND provider_record_hash = '' AND provenance_kind = 'UNKNOWN'
+          AND verification_status = 'UNKNOWN' AND evidence_hash = ''
+        ORDER BY id LIMIT 1
+      )
+    `).run(sourceId);
+    assert.equal(result.changes, 1, "current production artifact requires one exact UNKNOWN entry edge");
+  });
   await assert.rejects(execFileAsync(process.execPath, [
     "tools/datapack/validate-datapack.mjs",
-    "--manifest", path.join(partialOutputDir, "current.json"),
-    "--root", partialOutputDir,
+    ...currentProductionValidationArgs(artifact),
   ], { cwd: root, env: productionEnv }), /source_snapshot_id must be a non-empty string/);
 });
 
@@ -4534,42 +4480,18 @@ test("데이터팩 생성기는 production pack의 0 row 기준을 거부한다"
   );
 });
 
-test("데이터팩 검증기는 production manifest의 최소 row 기준 누락을 거부한다", async () => {
-  const outputDir = path.join(tmpdir(), `easysubway-datapack-production-manifest-minimum-rows-${Date.now()}`);
-  const fixturePath = path.join(outputDir, "fixture.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-
-  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
-  markFixturePackProduction(fixture);
-  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
-
-  await execFileAsync(
-    process.execPath,
-    [
-      "tools/datapack/build-datapack.mjs",
-      "--fixture",
-      fixturePath,
-      "--output",
-      outputDir,
-    ],
-    { cwd: root, env: productionEnv },
-  );
-
-  const manifestPath = path.join(outputDir, "current.json");
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-  delete manifest.packs[0].minimumTableRows;
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+test("데이터팩 검증기는 production manifest의 최소 row 기준 누락을 거부한다", async (context) => {
+  const artifact = await buildCurrentFullCapitalProductionArtifact(context);
+  await mutateCurrentProductionManifest(artifact, (manifest) => {
+    delete manifest.packs[0].minimumTableRows;
+  });
 
   await assert.rejects(
     execFileAsync(
       process.execPath,
       [
         "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        manifestPath,
-        "--root",
-        outputDir,
+        ...currentProductionValidationArgs(artifact),
       ],
       { cwd: root, env: productionEnv },
     ),
@@ -4577,48 +4499,24 @@ test("데이터팩 검증기는 production manifest의 최소 row 기준 누락�
   );
 });
 
-test("데이터팩 검증기는 production manifest의 0 row 기준을 거부한다", async () => {
-  const outputDir = path.join(tmpdir(), `easysubway-datapack-production-manifest-zero-minimum-rows-${Date.now()}`);
-  const fixturePath = path.join(outputDir, "fixture.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-
-  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
-  markFixturePackProduction(fixture);
-  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
-
-  await execFileAsync(
-    process.execPath,
-    [
-      "tools/datapack/build-datapack.mjs",
-      "--fixture",
-      fixturePath,
-      "--output",
-      outputDir,
-    ],
-    { cwd: root, env: productionEnv },
-  );
-
-  const manifestPath = path.join(outputDir, "current.json");
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-  manifest.packs[0].minimumTableRows = {
-    stations: 0,
-    station_lines: 0,
-    network_edges: 0,
-    facilities: 0,
-    station_facility_evidence: 0,
-  };
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+test("데이터팩 검증기는 production manifest의 0 row 기준을 거부한다", async (context) => {
+  const artifact = await buildCurrentFullCapitalProductionArtifact(context);
+  await mutateCurrentProductionManifest(artifact, (manifest) => {
+    manifest.packs[0].minimumTableRows = {
+      stations: 0,
+      station_lines: 0,
+      network_edges: 0,
+      facilities: 0,
+      station_facility_evidence: 0,
+    };
+  });
 
   await assert.rejects(
     execFileAsync(
       process.execPath,
       [
         "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        manifestPath,
-        "--root",
-        outputDir,
+        ...currentProductionValidationArgs(artifact),
       ],
       { cwd: root, env: productionEnv },
     ),
@@ -4626,42 +4524,18 @@ test("데이터팩 검증기는 production manifest의 0 row 기준을 거부한
   );
 });
 
-test("데이터팩 검증기는 production sourceInventory coverageScope 누락을 거부한다", async () => {
-  const outputDir = path.join(tmpdir(), `easysubway-datapack-validate-source-coverage-scope-${Date.now()}`);
-  const fixturePath = path.join(outputDir, "fixture.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-
-  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
-  markFixturePackProduction(fixture);
-  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
-
-  await execFileAsync(
-    process.execPath,
-    [
-      "tools/datapack/build-datapack.mjs",
-      "--fixture",
-      fixturePath,
-      "--output",
-      outputDir,
-    ],
-    { cwd: root, env: productionEnv },
-  );
-
-  const manifestPath = path.join(outputDir, "current.json");
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-  delete manifest.packs[0].sourceInventory[0].coverageScope;
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+test("데이터팩 검증기는 production sourceInventory coverageScope 누락을 거부한다", async (context) => {
+  const artifact = await buildCurrentFullCapitalProductionArtifact(context);
+  await mutateCurrentProductionManifest(artifact, (manifest) => {
+    delete manifest.packs[0].sourceInventory[0].coverageScope;
+  });
 
   await assert.rejects(
     execFileAsync(
       process.execPath,
       [
         "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        manifestPath,
-        "--root",
-        outputDir,
+        ...currentProductionValidationArgs(artifact),
       ],
       { cwd: root, env: productionEnv },
     ),
@@ -4669,42 +4543,20 @@ test("데이터팩 검증기는 production sourceInventory coverageScope 누락�
   );
 });
 
-test("데이터팩 검증기는 sourceInventory coverageScope.lineIds 중복을 거부한다", async () => {
-  const outputDir = path.join(tmpdir(), `easysubway-datapack-validate-source-line-scope-${Date.now()}`);
-  const fixturePath = path.join(outputDir, "fixture.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-
-  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
-  markFixturePackProduction(fixture);
-  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
-
-  await execFileAsync(
-    process.execPath,
-    [
-      "tools/datapack/build-datapack.mjs",
-      "--fixture",
-      fixturePath,
-      "--output",
-      outputDir,
-    ],
-    { cwd: root, env: productionEnv },
-  );
-
-  const manifestPath = path.join(outputDir, "current.json");
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-  manifest.packs[0].sourceInventory[0].coverageScope.lineIds = ["seoul-4", "seoul-4"];
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+test("데이터팩 검증기는 sourceInventory coverageScope.lineIds 중복을 거부한다", async (context) => {
+  const artifact = await buildCurrentFullCapitalProductionArtifact(context);
+  await mutateCurrentProductionManifest(artifact, (manifest) => {
+    const source = manifest.packs[0].sourceInventory.find(({ coverageScope }) => coverageScope?.lineIds?.length);
+    assert.ok(source, "current production artifact requires a line-scoped source");
+    source.coverageScope.lineIds = [source.coverageScope.lineIds[0], source.coverageScope.lineIds[0]];
+  });
 
   await assert.rejects(
     execFileAsync(
       process.execPath,
       [
         "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        manifestPath,
-        "--root",
-        outputDir,
+        ...currentProductionValidationArgs(artifact),
       ],
       { cwd: root, env: productionEnv },
     ),
@@ -4712,34 +4564,9 @@ test("데이터팩 검증기는 sourceInventory coverageScope.lineIds 중복을 
   );
 });
 
-test("데이터팩 검증기는 production pack의 realtime payload table을 거부한다", async () => {
-  const outputDir = path.join(tmpdir(), `easysubway-datapack-realtime-payload-${Date.now()}`);
-  const fixturePath = path.join(outputDir, "fixture.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-
-  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
-  markFixturePackProduction(fixture);
-  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
-
-  await execFileAsync(
-    process.execPath,
-    [
-      "tools/datapack/build-datapack.mjs",
-      "--fixture",
-      fixturePath,
-      "--output",
-      outputDir,
-    ],
-    { cwd: root, env: productionEnv },
-  );
-
-  const manifestPath = path.join(outputDir, "current.json");
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-  const pack = manifest.packs[0];
-  const sqlitePath = path.join(outputDir, "catalog", "capital-v1.sqlite");
-  const database = new DatabaseSync(sqlitePath);
-  try {
+test("데이터팩 검증기는 production pack의 realtime payload table을 거부한다", async (context) => {
+  const artifact = await buildCurrentFullCapitalProductionArtifact(context);
+  await mutateCurrentProductionSqlite(artifact, ({ database }) => {
     database.exec(`
       CREATE TABLE realtime_station_arrivals (
         provider_id TEXT NOT NULL,
@@ -4748,28 +4575,14 @@ test("데이터팩 검증기는 production pack의 realtime payload table을 거
       )
     `);
     database.exec("INSERT INTO realtime_station_arrivals VALUES ('topis', 'station-sadang', '{}')");
-  } finally {
-    database.close();
-  }
-
-  const sqliteBytes = await readFile(sqlitePath);
-  const compressedBytes = gzipSync(sqliteBytes);
-  await writeFile(path.join(outputDir, "catalog", "capital-v1.sqlite.gz"), compressedBytes);
-  pack.sizeBytes = compressedBytes.length;
-  pack.sha256 = sha256(compressedBytes);
-  pack.sqliteSha256 = sha256(sqliteBytes);
-  resignProductionManifest(manifest);
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  });
 
   await assert.rejects(
     execFileAsync(
       process.execPath,
       [
         "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        manifestPath,
-        "--root",
-        outputDir,
+        ...currentProductionValidationArgs(artifact),
       ],
       { cwd: root, env: productionEnv },
     ),
@@ -4777,320 +4590,107 @@ test("데이터팩 검증기는 production pack의 realtime payload table을 거
   );
 });
 
-test("데이터팩 검증기는 production HTTPS URL과 staged artifact path 불일치를 거부한다", async () => {
-  const outputDir = path.join(tmpdir(), `easysubway-datapack-production-path-${Date.now()}`);
-  const fixturePath = path.join(outputDir, "fixture.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-
-  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
-  markFixturePackProduction(fixture);
-  fixture.packs[0].url = "https://CDN.easysubway.example/easysubway-datapacks/catalog/capital-v1.sqlite.gz";
-  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
-
-  await execFileAsync(
-    process.execPath,
-    [
-      "tools/datapack/build-datapack.mjs",
-      "--fixture",
-      fixturePath,
-      "--output",
-      outputDir,
-    ],
-    { cwd: root, env: productionEnv },
-  );
-
+test("데이터팩 검증기는 production HTTPS URL과 staged artifact path 불일치를 거부한다", async (context) => {
+  const artifact = await buildCurrentFullCapitalProductionArtifact(context);
+  const outputDir = artifact.output;
   const manifestPath = path.join(outputDir, "current.json");
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-  assert.equal(
-    manifest.packs[0].url,
-    "https://CDN.easysubway.example/easysubway-datapacks/catalog/capital-v1.sqlite.gz",
-  );
+  const pristineManifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  const originalUrl = pristineManifest.packs[0].url;
+  assert.match(originalUrl, /^https:\/\//);
   await execFileAsync(
     process.execPath,
     [
       "tools/datapack/validate-datapack.mjs",
-      "--manifest",
-      manifestPath,
-      "--root",
-      outputDir,
+      ...currentProductionValidationArgs(artifact),
     ],
     { cwd: root, env: productionEnv },
   );
 
-  manifest.packs[0].url = "https://mirror.easysubway.example/easysubway-datapacks/catalog/capital-v1.sqlite.gz";
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        manifestPath,
-        "--root",
-        outputDir,
-      ],
-      { cwd: root, env: productionEnv },
-    ),
-    /capital@1 signature mismatch/,
+  const validateManifest = () => execFileAsync(
+    process.execPath,
+    ["tools/datapack/validate-datapack.mjs", "--manifest", manifestPath, "--root", outputDir],
+    { cwd: root, env: productionEnv },
   );
+  const expectPristineBoundaryRejection = async ({ mutate, expected, resign = true }) => {
+    const manifest = structuredClone(pristineManifest);
+    mutate(manifest);
+    if (resign) resignProductionManifest(manifest);
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    await assert.rejects(validateManifest(), expected);
+  };
 
-  manifest.packs[0].url = "https://CDN.easysubway.example/easysubway-datapacks/catalog/capital-v1.sqlite.gz";
-  manifest.packs[0].representativeRouteRegressions[0].requiredEdgeIds = ["edge-sangnoksu-sadang-local"];
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  await expectPristineBoundaryRejection({
+    mutate: (manifest) => {
+      manifest.packs[0].url = new URL(originalUrl).toString().replace(new URL(originalUrl).host, "mirror.easysubway.example");
+    },
+    expected: /manifest signature mismatch/,
+    resign: false,
+  });
 
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        manifestPath,
-        "--root",
-        outputDir,
-      ],
-      { cwd: root, env: productionEnv },
-    ),
-    /capital@1 representativeRouteRegressionSignature mismatch/,
-  );
+  const sqlitePath = path.join(outputDir, "catalog", `${pristineManifest.packs[0].id}-v${pristineManifest.packs[0].version}.sqlite`);
+  const database = new DatabaseSync(sqlitePath);
+  let ride;
+  try {
+    ride = database.prepare(`
+      SELECT id, from_node_id, to_node_id
+      FROM network_edges WHERE edge_type = 'RIDE' ORDER BY id LIMIT 1
+    `).get();
+  } finally {
+    database.close();
+  }
+  assert.ok(ride, "current production artifact requires one RIDE edge for signature payload binding");
+  await expectPristineBoundaryRejection({
+    mutate: (manifest) => {
+      manifest.packs[0].representativeRouteRegressions = [{
+        id: "test-representative-route", pattern: "DIRECT", fromNodeId: ride.from_node_id,
+        toNodeId: ride.to_node_id, requiredEdgeIds: [ride.id],
+      }];
+      manifest.packs[0].routeRegressionScope = {
+        mode: "DIRECT_ONLY", excludedPatterns: ["TRANSFER", "MULTI_TRANSFER", "LOOP_BRANCH", "EXPRESS_LOCAL"],
+        claim: "test signature binding",
+      };
+      resignProductionManifest(manifest);
+      manifest.packs[0].representativeRouteRegressionSignature.value =
+        pristineManifest.packs[0].representativeRouteRegressionSignature.value;
+      resignManifestEnvelopeOnly(manifest);
+    },
+    expected: /capital@1 representativeRouteRegressionSignature mismatch/,
+    resign: false,
+  });
 
-  manifest.packs[0].url = "https://cdn.easysubway.example/packs/capital-v1.sqlite.gz";
-  manifest.packs[0].representativeRouteRegressions =
-    JSON.parse(JSON.stringify(fixture.packs[0].representativeRouteRegressions));
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        manifestPath,
-        "--root",
-        outputDir,
-      ],
-      { cwd: root, env: productionEnv },
-    ),
-    /pack.url absolute HTTPS URL path must end with catalog\/capital-v1\.sqlite\.gz/,
-  );
-
-  manifest.packs[0].url = "https://easysubway.local/easysubway-datapacks/catalog/capital-v1.sqlite.gz";
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        manifestPath,
-        "--root",
-        outputDir,
-      ],
-      { cwd: root, env: productionEnv },
-    ),
-    /production pack url must not use a local placeholder host/,
-  );
-
-  manifest.packs[0].url = "https://localhost./easysubway-datapacks/catalog/capital-v1.sqlite.gz";
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        manifestPath,
-        "--root",
-        outputDir,
-      ],
-      { cwd: root, env: productionEnv },
-    ),
-    /production pack url must not use a local placeholder host/,
-  );
-
-  manifest.packs[0].url = "https://[::1]/easysubway-datapacks/catalog/capital-v1.sqlite.gz";
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        manifestPath,
-        "--root",
-        outputDir,
-      ],
-      { cwd: root, env: productionEnv },
-    ),
-    /production pack url must not use a local placeholder host/,
-  );
-
-  manifest.packs[0].url = "https://[::ffff:127.0.0.1]/easysubway-datapacks/catalog/capital-v1.sqlite.gz";
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        manifestPath,
-        "--root",
-        outputDir,
-      ],
-      { cwd: root, env: productionEnv },
-    ),
-    /production pack url must not use a local placeholder host/,
-  );
-
-  manifest.packs[0].url = "https://[2001:db8::1]/easysubway-datapacks/catalog/capital-v1.sqlite.gz";
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        manifestPath,
-        "--root",
-        outputDir,
-      ],
-      { cwd: root, env: productionEnv },
-    ),
-    /production pack url must not use a local placeholder host/,
-  );
-
-  manifest.packs[0].url = "https://[::127.0.0.1]/easysubway-datapacks/catalog/capital-v1.sqlite.gz";
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        manifestPath,
-        "--root",
-        outputDir,
-      ],
-      { cwd: root, env: productionEnv },
-    ),
-    /production pack url must not use a local placeholder host/,
-  );
-
-  manifest.packs[0].url = "https://CDN.easysubway.example/easysubway-datapacks/catalog/capital-v1.sqlite.gz";
-  manifest.packs[0].sourceInventory[0].url = "https://";
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        manifestPath,
-        "--root",
-        outputDir,
-      ],
-      { cwd: root, env: productionEnv },
-    ),
-    /production sourceInventory.url must be HTTPS/,
-  );
-
-  manifest.packs[0].sourceInventory[0].url = "https://easysubway.local/fixtures/catalog-fixture.json";
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        manifestPath,
-        "--root",
-        outputDir,
-      ],
-      { cwd: root, env: productionEnv },
-    ),
-    /production sourceInventory.url must not use a local placeholder host/,
-  );
-
-  manifest.packs[0].sourceInventory[0].url = "https://easysubway.local./fixtures/catalog-fixture.json";
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        manifestPath,
-        "--root",
-        outputDir,
-      ],
-      { cwd: root, env: productionEnv },
-    ),
-    /production sourceInventory.url must not use a local placeholder host/,
-  );
-
-  manifest.packs[0].sourceInventory[0].url = "https://192.168.0.2/fixtures/catalog-fixture.json";
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        manifestPath,
-        "--root",
-        outputDir,
-      ],
-      { cwd: root, env: productionEnv },
-    ),
-    /production sourceInventory.url must not use a local placeholder host/,
-  );
-
-  manifest.packs[0].sourceInventory[0].url = "https://[::10.0.0.1]/fixtures/catalog-fixture.json";
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        manifestPath,
-        "--root",
-        outputDir,
-      ],
-      { cwd: root, env: productionEnv },
-    ),
-    /production sourceInventory.url must not use a local placeholder host/,
-  );
-
-  manifest.packs[0].sourceInventory[0].url = "https://[ff02::1]/fixtures/catalog-fixture.json";
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        manifestPath,
-        "--root",
-        outputDir,
-      ],
-      { cwd: root, env: productionEnv },
-    ),
-    /production sourceInventory.url must not use a local placeholder host/,
-  );
+  await expectPristineBoundaryRejection({
+    mutate: (manifest) => { manifest.packs[0].url = "https://cdn.easysubway.example/packs/capital-v1.sqlite.gz"; },
+    expected: /pack.url absolute HTTPS URL path must end with catalog\/capital-v1\.sqlite\.gz/,
+  });
+  for (const url of [
+    "https://easysubway.local/easysubway-datapacks/catalog/capital-v1.sqlite.gz",
+    "https://localhost./easysubway-datapacks/catalog/capital-v1.sqlite.gz",
+    "https://[::1]/easysubway-datapacks/catalog/capital-v1.sqlite.gz",
+    "https://[::ffff:127.0.0.1]/easysubway-datapacks/catalog/capital-v1.sqlite.gz",
+    "https://[2001:db8::1]/easysubway-datapacks/catalog/capital-v1.sqlite.gz",
+    "https://[::127.0.0.1]/easysubway-datapacks/catalog/capital-v1.sqlite.gz",
+  ]) {
+    await expectPristineBoundaryRejection({
+      mutate: (manifest) => { manifest.packs[0].url = url; },
+      expected: /production pack url must not use a local placeholder host/,
+    });
+  }
+  await expectPristineBoundaryRejection({
+    mutate: (manifest) => { manifest.packs[0].sourceInventory[0].url = "https://"; },
+    expected: /production sourceInventory.url must be HTTPS/,
+  });
+  for (const url of [
+    "https://easysubway.local/fixtures/catalog-fixture.json",
+    "https://easysubway.local./fixtures/catalog-fixture.json",
+    "https://192.168.0.2/fixtures/catalog-fixture.json",
+    "https://[::10.0.0.1]/fixtures/catalog-fixture.json",
+    "https://[ff02::1]/fixtures/catalog-fixture.json",
+  ]) {
+    await expectPristineBoundaryRejection({
+      mutate: (manifest) => { manifest.packs[0].sourceInventory[0].url = url; },
+      expected: /production sourceInventory.url must not use a local placeholder host/,
+    });
+  }
 });
 
 test("데이터팩 도구는 relative pack URL의 경로 이탈을 거부한다", async () => {
@@ -16453,6 +16053,12 @@ function resignProductionManifest(manifest) {
   }
 }
 
+function resignManifestEnvelopeOnly(manifest) {
+  if (manifest.signature) {
+    manifest.signature.value = rsaSha256Signature(canonicalJson(withoutSignature(manifest)));
+  }
+}
+
 function rsaSha256Signature(value) {
   return createSign("RSA-SHA256").update(value).sign(testPrivateKeyPem).toString("base64url");
 }
@@ -18705,6 +18311,7 @@ async function bindCandidateAccessibilityContextToFixture({
 async function runDatapackInRepository({ argv, env = productionEnv, repositoryRoot }) {
   const keys = [
     "EASYSUBWAY_DATAPACK_BUILD_NOW",
+    "EASYSUBWAY_DATAPACK_BUILD_SPEC_VALIDATION_ONLY",
     "EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY",
     "EASYSUBWAY_DATAPACK_SIGNING_KEY_ID",
     "EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM",
@@ -18739,7 +18346,7 @@ async function runCurrentItxCandidateBuild(inputs) {
     ...inputs,
     env: {
       ...inputs.env,
-      EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY: "true",
+      EASYSUBWAY_DATAPACK_BUILD_SPEC_VALIDATION_ONLY: "true",
     },
   });
 }

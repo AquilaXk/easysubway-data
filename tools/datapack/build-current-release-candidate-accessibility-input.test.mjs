@@ -157,6 +157,22 @@ test("unresolved·stale·candidate·route·projected RIDE drift는 output 전에
     ["projected metadata missing", (value) => { value.projectedFixture.packs[0].stationLines.pop(); }, /route station-line/i],
     ["RIDE denominator", (value) => { value.projectedFixture.packs[0].networkEdges.pop(); }, /RIDE-only/i],
     ["extra non-RIDE", (value) => { value.projectedFixture.packs[0].networkEdges.push(nonRideEdge("extra", "WALKWAY")); }, /RIDE-only/i],
+    ["non-RIDE service-pattern endpoint", (value) => {
+      // Current-only authority: non-RIDE endpoints are station-line nodes, never service-pattern nodes.
+      const edge = value.route.routeEdges.find(({ edgeType }) => edgeType !== "RIDE");
+      assert.ok(edge, "current route input requires one non-RIDE edge");
+      edge.toNodeId = `${edge.toNodeId}:LOCAL`;
+      edge.edgeSha256 = sha256(Buffer.from(canonical({
+        edgeId: edge.edgeId,
+        edgeType: edge.edgeType,
+        fromNodeId: edge.fromNodeId,
+        toNodeId: edge.toNodeId,
+        durationSeconds: edge.durationSeconds,
+        distanceMeters: edge.distanceMeters,
+        servicePattern: edge.servicePattern,
+        serviceClass: edge.serviceClass,
+      })));
+    }, /endpoint mismatch|station-line/i],
   ];
   for (const [label, mutate, pattern] of cases) {
     const value = await fullInput();

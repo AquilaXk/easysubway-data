@@ -127,6 +127,7 @@ export function buildRouteGraphTopologyReport(sqlitePath, pack = {}, { admittedI
 
     addGeneratedStationTransferEdges(stationLines, routeGraphNodes, adjacency, undirected);
     for (const edge of edges) {
+      assertSupportedRouteEndpointSuffix(edge);
       const edgeType = String(edge.edge_type ?? "").toUpperCase();
       const servicePattern = String(edge.service_pattern || "LOCAL").toUpperCase();
       const serviceClass = String(edge.service_class || "SUBWAY").toUpperCase();
@@ -139,8 +140,8 @@ export function buildRouteGraphTopologyReport(sqlitePath, pack = {}, { admittedI
           violations.rideSpeed.push({ edgeId: edge.id, speedKmh });
         }
       }
-      const fromNode = stationLineNodeFromRouteNodeId(edge.from_node_id);
-      const toNode = stationLineNodeFromRouteNodeId(edge.to_node_id);
+      const fromNode = stationLineNodeFromEdgeEndpoint(edge.from_node_id, edge);
+      const toNode = stationLineNodeFromEdgeEndpoint(edge.to_node_id, edge);
       const from = stationLineByNode.get(fromNode);
       const to = stationLineByNode.get(toNode);
       if (edgeType === "RIDE" && from && to) {
@@ -233,10 +234,17 @@ export async function validateCurrentItxTopologyEvidencePack({
       WHERE edge_type = 'RIDE' AND service_class = 'ITX_CHEONGCHUN'
       ORDER BY id
     `).all();
+    const canonicalItxEdges = itxEdges.map(routeEdgeFromSqliteRow);
+    if (itxEdges.length === 0) {
+      if (pack?.id === "capital" && pack?.artifactKind === "production") {
+        throw new Error("production capital pack requires ITX topology evidence");
+      }
+      return { admittedItxEdgeSetSha256: canonicalRideEdgeSetSha256(canonicalItxEdges) };
+    }
     const validation = await validateTrackedItxTopologyEvidence(buildSpec, {
       packs: [{
         transitTrips: [],
-        networkEdges: itxEdges.map(routeEdgeFromSqliteRow),
+        networkEdges: canonicalItxEdges,
       }],
     }, repositoryRoot);
     const topologyEvidence = validation?.evidence;
@@ -250,7 +258,7 @@ export async function validateCurrentItxTopologyEvidencePack({
       || itxEdges.some((edge) => String(edge.service_pattern).toUpperCase() !== "EXPRESS")) {
       throw new Error("ITX topology evidence service layer mismatch");
     }
-    return { admittedItxEdgeSetSha256: canonicalRideEdgeSetSha256(itxEdges.map(routeEdgeFromSqliteRow)) };
+    return { admittedItxEdgeSetSha256: canonicalRideEdgeSetSha256(canonicalItxEdges) };
   } finally {
     database.close();
   }
@@ -338,9 +346,32 @@ function stationLineNodeId(stationId, lineId) {
   return `${stationId}:${lineId}`;
 }
 
-function stationLineNodeFromRouteNodeId(nodeId) {
+function stationLineNodeFromEdgeEndpoint(nodeId, edge) {
   const parts = String(nodeId ?? "").split(":");
-  return parts.length >= 2 && parts[0] && parts[1] ? stationLineNodeId(parts[0], parts[1]) : null;
+  if (parts.length === 2 && parts[0] && parts[1]) {
+    return stationLineNodeId(parts[0], parts[1]);
+  }
+  if (
+    parts.length === 3
+    && parts[0]
+    && parts[1]
+    && parts[2] === "EXPRESS"
+    && String(edge.edge_type).toUpperCase() === "RIDE"
+    && String(edge.service_class).toUpperCase() === "ITX_CHEONGCHUN"
+    && String(edge.service_pattern).toUpperCase() === "EXPRESS"
+  ) {
+    return stationLineNodeId(parts[0], parts[1]);
+  }
+  return null;
+}
+
+function assertSupportedRouteEndpointSuffix(edge) {
+  for (const nodeId of [edge.from_node_id, edge.to_node_id]) {
+    const parts = String(nodeId ?? "").split(":");
+    if (parts.length > 2 && stationLineNodeFromEdgeEndpoint(nodeId, edge) === null) {
+      throw new Error(`network edge endpoint suffix is unsupported: ${edge.id} -> ${nodeId}`);
+    }
+  }
 }
 
 function isRouteGraphEdge(edgeType) {

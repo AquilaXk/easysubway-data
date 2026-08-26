@@ -548,7 +548,7 @@ async function loadBuildInput(
   const replaysAccessibilityAuthority = candidateFixtureOverrideArg != null;
   const validationOnlyProductionFixture = hasProductionPack
     && !replaysAccessibilityAuthority
-    && process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY === "true";
+    && process.env.EASYSUBWAY_DATAPACK_BUILD_SPEC_VALIDATION_ONLY === "true";
   const validationNow = replaysAccessibilityAuthority
     ? candidateReplayNow(buildSpec)
     : candidateBuildNow();

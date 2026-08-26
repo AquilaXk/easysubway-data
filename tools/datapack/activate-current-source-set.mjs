@@ -1245,7 +1245,7 @@ function exactCurrentTopologySnapshotIdentity({
   return match[1];
 }
 
-function retainPreAuthorityRideEdges(fixture, label) {
+export function retainPreAuthorityRideEdges(fixture, label) {
   const packs = fixture?.packs?.filter(({ id }) => id === "capital") ?? [];
   const edges = packs[0]?.networkEdges;
   if (packs.length !== 1 || !Array.isArray(edges)
@@ -1840,7 +1840,7 @@ export async function validatePreparedCandidate({
     "--output", outputPath,
   ], { env: {
     EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow,
-    EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY: "true",
+    EASYSUBWAY_DATAPACK_BUILD_SPEC_VALIDATION_ONLY: "true",
   } });
 }
 

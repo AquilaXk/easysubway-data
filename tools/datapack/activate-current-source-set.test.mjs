@@ -494,7 +494,7 @@ test("prepared current candidate 검증은 build를 수행하고 final release e
   assert.equal(calls[0].script, "tools/datapack/build-datapack.mjs");
   assert.deepEqual(calls[0].args.slice(-2), ["--output", path.join(temporaryRoot, "validation/output")]);
   assert.equal(calls[0].options.env.EASYSUBWAY_DATAPACK_BUILD_NOW, "2026-08-13T16:46:31Z");
-  assert.equal(calls[0].options.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY, "true");
+  assert.equal(calls[0].options.env.EASYSUBWAY_DATAPACK_BUILD_SPEC_VALIDATION_ONLY, "true");
 });
 
 test("activation loader는 historical binding과 서울 공식 current topology position bytes를 함께 로드한다", async (t) => {

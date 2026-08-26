@@ -411,11 +411,34 @@ export async function rebindCurrentActivePublicRouteMapMaterialization({
   return { ...plan, drift };
 }
 
-async function main(argv) {
-  if (argv.length > 1 || (argv.length === 1 && argv[0] !== "--check")) {
-    throw new Error("usage: rebind-current-active-public-route-map-materialization.mjs [--check]");
+export function parseCurrentActivePublicRouteMapMaterializationArgs(argv) {
+  if (!Array.isArray(argv)) throw new Error("current public route-map materialization arguments are invalid");
+  const options = { repositoryRoot: ROOT, check: false };
+  let repositoryRootSeen = false;
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+    if (argument === "--check" && options.check === false) {
+      options.check = true;
+      continue;
+    }
+    if (argument === "--repository-root" && !repositoryRootSeen) {
+      const repositoryRoot = argv[index + 1];
+      if (typeof repositoryRoot !== "string" || !path.isAbsolute(repositoryRoot)) {
+        throw new Error("current public route-map materialization arguments are invalid");
+      }
+      options.repositoryRoot = path.resolve(repositoryRoot);
+      repositoryRootSeen = true;
+      index += 1;
+      continue;
+    }
+    throw new Error("current public route-map materialization arguments are invalid");
   }
-  await rebindCurrentActivePublicRouteMapMaterialization({ check: argv[0] === "--check" });
+  return options;
+}
+
+export async function main(argv = process.argv.slice(2)) {
+  const options = parseCurrentActivePublicRouteMapMaterializationArgs(argv);
+  return rebindCurrentActivePublicRouteMapMaterialization(options);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

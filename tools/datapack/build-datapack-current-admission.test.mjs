@@ -20,22 +20,14 @@ import {
   main as buildDatapackMain,
 } from "./build-datapack.mjs";
 import {
-  buildCurrentReleaseCandidateAccessibilityAuthority,
-  canonicalCurrentReleaseCandidateAccessibilityAuthorityJson,
-  canonicalCurrentReleaseCandidateFixtureJson,
-  main as buildAccessibilityAuthorityMain,
-} from "./build-current-release-candidate-accessibility-input.mjs";
-import { canonicalCurrentCapitalStationLineInputJson } from "./build-current-capital-station-line-input.mjs";
-import {
   buildCapitalTopologyReverificationEvidence,
   projectCapitalTopologyOwnership,
 } from "./collect-capital-route-topology.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
-import { refreshCurrentCapitalAccessibilityFull } from "./refresh-current-capital-accessibility-full.mjs";
 import {
-  copySyntheticCurrentPublicRouteMapRepository,
-  nextSyntheticCurrentStaticNetworkNow,
-} from "./test-fixtures/current-public-route-map-successor.mjs";
+  materializeCurrentFanInCandidateArtifact,
+  prepareCurrentFullCapitalProductionRepository,
+} from "./test-fixtures/current-full-capital-production-artifact.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -132,13 +124,8 @@ function networkEdgeEvidenceFixture() {
 }
 
 test("candidate build spec release identity는 wall clock과 workflow run number에 무관하다", async (context) => {
-  const directory = await mkdtemp(path.join(tmpdir(), "candidate-build-release-identity-"));
+  const directory = await prepareCurrentFullCapitalProductionRepository(root);
   context.after(() => rm(directory, { recursive: true, force: true }));
-  await copySyntheticCurrentPublicRouteMapRepository(root, directory, {
-    now: await nextSyntheticCurrentStaticNetworkNow(root),
-    activateStaticNetwork: true,
-  });
-  await refreshCurrentCapitalAccessibilityFull({ repositoryRoot: directory });
   const buildSpecPath = "tools/datapack/release/candidate-build-spec.json";
   const buildSpecBytes = await readFile(path.join(directory, buildSpecPath));
   const buildSpec = JSON.parse(buildSpecBytes);
@@ -157,6 +144,14 @@ test("candidate build spec release identity는 wall clock과 workflow run number
     privateKeyEncoding: { type: "pkcs8", format: "pem" },
     publicKeyEncoding: { type: "spki", format: "pem" },
   });
+  const candidateStationLine = path.join(directory, "candidate-station-line-input.json");
+  const candidateRouteEdge = path.join(directory, "candidate-route-edge-input.json");
+  const candidateFixture = path.join(directory, "candidate-fixture.json");
+  const routeCoverageAuthority = path.join(directory, "server-route-coverage-authority.json");
+  await materializeCurrentFanInCandidateArtifact({
+    repositoryRoot: directory, stationLineOutput: candidateStationLine, routeEdgeOutput: candidateRouteEdge,
+    fixtureOutput: candidateFixture, authorityOutput: routeCoverageAuthority,
+  });
   const directOutput = path.join(directory, "direct-build");
   await assert.rejects(
     withEnvironment({
@@ -173,7 +168,7 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   const validationOnlyOutput = path.join(directory, "validation-only-build");
   await withEnvironment({
     EASYSUBWAY_DATAPACK_BUILD_NOW: firstBuildNow,
-    EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY: "true",
+    EASYSUBWAY_DATAPACK_BUILD_SPEC_VALIDATION_ONLY: "true",
     EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey,
     EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: "production-v1",
   }, () => buildDatapackMain([
@@ -197,19 +192,6 @@ test("candidate build spec release identity는 wall clock과 workflow run number
     validationOnlyProvenance.packs.map(({ artifactKind }) => artifactKind),
     ["fixture"],
   );
-  const candidateStationLine = path.join(directory, "candidate-station-line-input.json");
-  const candidateRouteEdge = path.join(directory, "candidate-route-edge-input.json");
-  const candidateFixture = path.join(directory, "candidate-fixture.json");
-  const routeCoverageAuthority = path.join(directory, "server-route-coverage-authority.json");
-  await buildAccessibilityAuthorityMain([
-    "--fixture", buildSpec.fixturePath,
-    "--build-spec", buildSpecPath,
-    "--station-line-output", candidateStationLine,
-    "--route-edge-output", candidateRouteEdge,
-    "--fixture-output", candidateFixture,
-    "--authority-output", routeCoverageAuthority,
-  ], { repositoryRoot: directory });
-
   async function build(name, buildNow, runNumber) {
     const output = path.join(directory, name);
     await withEnvironment({
@@ -246,53 +228,6 @@ test("candidate build spec release identity는 wall clock과 workflow run number
     return;
   } catch (error) {
     if (error?.code !== "ENOENT") throw error;
-  }
-
-  const stationLineInput = await readFile(candidateStationLine, "utf8").then(JSON.parse);
-  const accessibilityFreshUntil = Math.min(
-    ...stationLineInput.evidenceRows.map(({ freshUntil }) => Date.parse(freshUntil)),
-  );
-  if (accessibilityFreshUntil <= Date.parse(buildSpec.publishedAt)) {
-    await assert.rejects(
-      build("stale-current-evidence", firstBuildNow, "404"),
-      /station-line input accessibility evidence is stale/,
-    );
-    await assert.rejects(
-      readFile(path.join(directory, "stale-current-evidence/current.json")),
-      /ENOENT/,
-    );
-    const refreshedUntil = new Date(Math.max(
-      Date.parse(buildSpec.publishedAt),
-      ...stationLineInput.evidenceRows.map(({ capturedAt }) => Date.parse(capturedAt)),
-    ) + 86_400_000).toISOString();
-    stationLineInput.evidenceRows.forEach((row) => { row.freshUntil = refreshedUntil; });
-    const stationLineInputBytes = Buffer.from(
-      canonicalCurrentCapitalStationLineInputJson(stationLineInput),
-    );
-    const [sourceFixtureBytes, routeBytes, initialCandidateFixtureBytes] = await Promise.all([
-      readFile(path.join(directory, buildSpec.fixturePath)),
-      readFile(candidateRouteEdge),
-      readFile(candidateFixture),
-    ]);
-    const sourceFixture = JSON.parse(sourceFixtureBytes);
-    const projectedFixture = JSON.parse(initialCandidateFixtureBytes);
-    projectedFixture.packs[0].networkEdges = projectedFixture.packs[0].networkEdges
-      .filter(({ edgeType }) => edgeType === "RIDE");
-    const rebuilt = buildCurrentReleaseCandidateAccessibilityAuthority({
-      buildSpec,
-      buildSpecBytes,
-      projectedFixture,
-      route: JSON.parse(routeBytes),
-      routeBytes,
-      sourceFixtureBytes,
-      stationLineInput,
-      stationLineInputBytes,
-    });
-    await Promise.all([
-      writeFile(candidateStationLine, stationLineInputBytes),
-      writeFile(candidateFixture, canonicalCurrentReleaseCandidateFixtureJson(rebuilt.candidateFixture)),
-      writeFile(routeCoverageAuthority, canonicalCurrentReleaseCandidateAccessibilityAuthorityJson(rebuilt.authority)),
-    ]);
   }
 
   const first = await build("first", firstBuildNow, "101");
@@ -398,6 +333,11 @@ test("candidate override accessibility freshness는 authority input identity와 
     stationLineInputBytes,
     validationNow: new Date("2026-08-14T15:34:07.000Z"),
   }), expected);
+  assert.throws(() => candidateOverrideAccessibilityFreshUntil({
+    authority,
+    stationLineInputBytes,
+    validationNow: new Date(expected),
+  }), /station-line input accessibility evidence is stale/);
   assert.throws(() => candidateOverrideAccessibilityFreshUntil({
     authority: {
       ...authority,

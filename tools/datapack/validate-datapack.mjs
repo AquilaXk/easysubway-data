@@ -886,8 +886,16 @@ export function validateProductionRideEdgeAdjacency(database, pack, requireProdu
     if (String(edge.service_pattern || "LOCAL").toUpperCase() === "EXPRESS") {
       continue;
     }
-    const from = stationLineByNode.get(stationLineNodeFromRouteNodeId(edge.from_node_id));
-    const to = stationLineByNode.get(stationLineNodeFromRouteNodeId(edge.to_node_id));
+    const from = stationLineByNode.get(stationLineNodeFromEdgeEndpoint(edge.from_node_id, {
+      edge_type: "RIDE",
+      service_pattern: edge.service_pattern,
+      service_class: edge.service_class,
+    }));
+    const to = stationLineByNode.get(stationLineNodeFromEdgeEndpoint(edge.to_node_id, {
+      edge_type: "RIDE",
+      service_pattern: edge.service_pattern,
+      service_class: edge.service_class,
+    }));
     if (!from || !to) {
       continue;
     }
@@ -987,8 +995,8 @@ function representativeRouteGraph(database) {
     if (routeGraphEdgeType === null) {
       continue;
     }
-    const fromEndpoint = routeEndpoint(edge.from_node_id, stationIds, stationLineNodes);
-    const toEndpoint = routeEndpoint(edge.to_node_id, stationIds, stationLineNodes);
+    const fromEndpoint = routeEndpoint(edge.from_node_id, stationIds, stationLineNodes, edge);
+    const toEndpoint = routeEndpoint(edge.to_node_id, stationIds, stationLineNodes, edge);
     if (fromEndpoint.stationLineNode === null || toEndpoint.stationLineNode === null) {
       continue;
     }
@@ -1000,6 +1008,7 @@ function representativeRouteGraph(database) {
       toRouteNodeId: edge.to_node_id,
       edgeType: routeGraphEdgeType,
       servicePattern: edge.service_pattern,
+      serviceClass: edge.service_class,
     });
     addRouteGraphEdge(
       fromEndpoint.stationLineNode,
@@ -1028,13 +1037,13 @@ function validateRequiredRouteEdgeSequence(route, graph, pack) {
     if (!edge) {
       continue;
     }
-    if (routeNodeMatches(currentRouteNodeId, edge.fromRouteNodeId, edge.servicePattern)) {
+    if (routeNodeMatches(currentRouteNodeId, edge.fromRouteNodeId)) {
       currentRouteNodeId = edge.toRouteNodeId;
       continue;
     }
     if (
       edge.edgeType === "TRANSFER" &&
-      routeNodeMatches(currentRouteNodeId, edge.toRouteNodeId, edge.servicePattern)
+      routeNodeMatches(currentRouteNodeId, edge.toRouteNodeId)
     ) {
       currentRouteNodeId = edge.fromRouteNodeId;
       continue;
@@ -1042,7 +1051,7 @@ function validateRequiredRouteEdgeSequence(route, graph, pack) {
     throw new Error(`${pack.id}@${pack.version} representativeRouteRegressions required edge not on route: ${route.id} -> ${edgeId}`);
   }
   const lastEdge = graph.routeEdges.get(route.requiredEdgeIds.at(-1));
-  if (!routeNodeMatches(route.toNodeId, currentRouteNodeId, lastEdge?.servicePattern)) {
+  if (!routeNodeMatches(route.toNodeId, currentRouteNodeId)) {
     throw new Error(`${pack.id}@${pack.version} representativeRouteRegressions required edge not on route: ${route.id} -> ${route.requiredEdgeIds.at(-1)}`);
   }
 }
@@ -1081,29 +1090,8 @@ function validateRepresentativeRoutePatternTopology(route, graph, pack) {
   }
 }
 
-function routeNodeMatches(expectedRouteNodeId, actualRouteNodeId, servicePattern) {
-  if (expectedRouteNodeId === actualRouteNodeId) {
-    return true;
-  }
-  const expectedStationLineNode = stationLineNodeFromRouteNodeId(expectedRouteNodeId);
-  const actualStationLineNode = stationLineNodeFromRouteNodeId(actualRouteNodeId);
-  if (expectedStationLineNode === null || expectedStationLineNode !== actualStationLineNode) {
-    return false;
-  }
-  const expectedSuffix = routeNodeServicePattern(expectedRouteNodeId);
-  if (expectedSuffix === null) {
-    return true;
-  }
-  const actualSuffix = routeNodeServicePattern(actualRouteNodeId) ?? String(servicePattern ?? "").toUpperCase();
-  return actualSuffix === expectedSuffix;
-}
-
-function routeNodeServicePattern(routeNodeId) {
-  const parts = routeNodeId.split(":");
-  if (parts.length <= 2) {
-    return null;
-  }
-  return parts.slice(2).join(":").toUpperCase();
+function routeNodeMatches(expectedRouteNodeId, actualRouteNodeId) {
+  return expectedRouteNodeId === actualRouteNodeId;
 }
 
 function validateNetworkEdgeStationLineEndpoints(database, pack) {
@@ -1131,14 +1119,14 @@ function validateNetworkEdgeStationLineEndpoints(database, pack) {
     return;
   }
   const edges = database
-    .prepare("SELECT id, from_node_id, to_node_id, edge_type FROM network_edges ORDER BY id")
+    .prepare("SELECT id, from_node_id, to_node_id, edge_type, service_pattern, service_class FROM network_edges ORDER BY id")
     .all();
   const explicitRouteGraphLineIds = new Set();
   const resolvedEdges = edges.map((edge) => {
     const edgeType = normalizedEdgeType(edge.edge_type);
     const endpoints = [
-      routeEndpoint(edge.from_node_id, stationIds, stationLineNodes),
-      routeEndpoint(edge.to_node_id, stationIds, stationLineNodes),
+      routeEndpoint(edge.from_node_id, stationIds, stationLineNodes, edge),
+      routeEndpoint(edge.to_node_id, stationIds, stationLineNodes, edge),
     ];
     for (const endpoint of endpoints) {
       if (!endpoint.valid) {
@@ -1224,26 +1212,39 @@ function stationLineNodeId(stationId, lineId) {
   return `${stationId}:${lineId}`;
 }
 
-function routeEndpoint(value, stationIds, stationLineNodes) {
+function routeEndpoint(value, stationIds, stationLineNodes, edge = null) {
   if (stationIds.has(value)) {
     return { valid: true, value, stationLineNode: null };
   }
-  const stationLineNode = stationLineNodeFromRouteNodeId(value);
+  const stationLineNode = stationLineNodeFromEdgeEndpoint(value, edge);
   if (stationLineNode !== null && stationLineNodes.has(stationLineNode)) {
     return { valid: true, value, stationLineNode };
   }
   return { valid: false, value, stationLineNode: null };
 }
 
-function stationLineNodeFromRouteNodeId(nodeId) {
-  const parts = nodeId.split(":");
+export function stationLineNodeFromEdgeEndpoint(nodeId, edge = null) {
+  const parts = String(nodeId ?? "").split(":");
   if (parts.length < 2 || parts[0] === "" || parts[1] === "") {
     return null;
   }
-  if (parts.length > 2 && parts.slice(2).some((part) => part === "")) {
+  if (parts.length === 2) {
+    return stationLineNodeId(parts[0], parts[1]);
+  }
+  if (
+    parts.length !== 3
+    || parts[2] !== "EXPRESS"
+    || !isItxExpressRideEdge(edge)
+  ) {
     return null;
   }
   return stationLineNodeId(parts[0], parts[1]);
+}
+
+function isItxExpressRideEdge(edge) {
+  return String(edge?.edge_type ?? "").toUpperCase() === "RIDE"
+    && String(edge?.service_class ?? "").toUpperCase() === "ITX_CHEONGCHUN"
+    && String(edge?.service_pattern ?? "").toUpperCase() === "EXPRESS";
 }
 
 function isAccessEdge(edgeType) {
@@ -2371,8 +2372,11 @@ function edgePairKey(fromNodeId, toNodeId) {
   return `${fromNodeId}->${toNodeId}`;
 }
 
-function coverageNodeId(nodeId) {
-  return stationLineNodeFromRouteNodeId(nodeId) ?? nodeId;
+export function coverageNodeId(nodeId) {
+  const parts = String(nodeId ?? "").split(":");
+  return parts.length === 2 && parts[0] && parts[1]
+    ? stationLineNodeId(parts[0], parts[1])
+    : nodeId;
 }
 
 function timestampSeconds(value) {
