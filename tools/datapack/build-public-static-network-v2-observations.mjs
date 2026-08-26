@@ -9,6 +9,7 @@ import {
   buildSeoulRouteMapPositions,
   validateSeoulRouteMapPositionsSnapshot,
 } from "./collect-seoul-route-map-positions.mjs";
+import { loadCapitalRouteTopologySnapshot } from "./apply-capital-route-topology-to-bundled-pack.mjs";
 
 const POSITION_SOURCE_ID = "seoul-metro-route-map-positions";
 const MOLIT_SOURCE_ID = "molit-urban-rail-full-route";
@@ -59,7 +60,7 @@ function assertNoForbiddenSelectedPath(value) {
   visit(value);
 }
 
-function validateTopology({ source, admittedTopologyBytes, admittedTopologyId }) {
+function validateTopology({ source, admittedTopologyBytes, admittedTopologyId, capturedAt }) {
   const admission = source.routeMapAdmissionEvidence?.currentTopologyAdmission;
   if (!admission || admission.schemaVersion !== 1
     || admission.artifactKind !== "capital-route-map-current-topology-admission"
@@ -69,11 +70,27 @@ function validateTopology({ source, admittedTopologyBytes, admittedTopologyId })
   }
   let topology;
   try { topology = JSON.parse(admittedTopologyBytes.toString("utf8")); } catch { fail("TOPOLOGY"); }
+  try {
+    loadCapitalRouteTopologySnapshot(topology);
+  } catch { fail("TOPOLOGY"); }
+  const lineIds = source.routeMapAdmissionEvidence?.lineIds;
+  const topologyCapturedAt = Date.parse(topology.capturedAt);
+  const topologyFreshUntil = Date.parse(topology.freshUntil);
+  const observationCapturedAt = Date.parse(capturedAt);
   if (topology?.sourceId !== "capital-route-topology"
     || topology.artifactKind !== "capital-route-topology-snapshot"
     || topology.official !== true || topology.fixture !== false
     || topology.contentSha256 !== admission.topologyContentSha256
+    || topology.capturedAt !== admission.reviewedAt || topology.freshUntil !== admission.freshUntil
+    || !Number.isFinite(topologyCapturedAt) || !Number.isFinite(topologyFreshUntil)
+    || topologyCapturedAt >= topologyFreshUntil
+    || topologyCapturedAt > observationCapturedAt || observationCapturedAt >= topologyFreshUntil
+    || !Array.isArray(lineIds) || new Set(lineIds).size !== lineIds.length
     || !SHA256.test(topology.contentSha256 ?? "")) fail("TOPOLOGY");
+  const lineageIds = admission.topologyLineages.map(({ lineId }) => lineId);
+  if (new Set(lineageIds).size !== lineageIds.length || lineageIds.length !== lineIds.length
+    || lineageIds.some((lineId) => !lineIds.includes(lineId))
+    || lineageIds.some((lineId) => !topology.lines.some((line) => line.lineId === lineId))) fail("TOPOLOGY");
   for (const lineage of admission.topologyLineages) {
     if (lineage?.sourceId !== "capital-route-topology" || lineage.snapshotId !== admittedTopologyId
       || lineage.contentSha256 !== topology.contentSha256 || typeof lineage.lineId !== "string") {
@@ -178,7 +195,7 @@ export function buildPublicStaticNetworkV2Observations({
   ].some((key) => Object.hasOwn(source, key)))) fail("HISTORICAL_PREDECESSOR");
   assertNoForbiddenSelectedPath(positionSource);
   assertNoForbiddenSelectedPath(molitSource);
-  validateTopology({ source: positionSource, admittedTopologyBytes: topologyBytes, admittedTopologyId });
+  validateTopology({ source: positionSource, admittedTopologyBytes: topologyBytes, admittedTopologyId, capturedAt: captured });
 
   const positions = projectPositions(positionsBytes, captured);
   const molit = validateMolitProjection(projectMolit(molitBytes));

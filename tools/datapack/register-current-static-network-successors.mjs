@@ -50,9 +50,9 @@ const BOOTSTRAP_PREDECESSORS = Object.freeze({
     "seoul-metro-transfer-distance-duration-20260815T094038817Z",
   ]),
   candidateSetHash: "47ce24b6d682b0f0d5afd7380f6850fc1c87a1507153833117c0e9d060c0cdf8",
-  candidateRawSha256: "2a3cb0832291ffec65898fbe3df7a0e3a723f0118cb6b784ecdf481fcae7de89",
-  inventorySemanticSha256: "372a4eae34366995ad1a3fdd56c828836ea070bd0d132dbe9fb5670548f9767f",
-  inventoryRawSha256: "ce35f846e71e2a53162c449e5eaae51f1b5dbea417268053c470b4c5f0a69084",
+  candidateRawSha256: "becc4cd43982693ec2ca82e1a84c03661ec73deb0f100be7be727a6a3f2220ed",
+  inventorySemanticSha256: "c2fd5a38aef4e1c62f91f6de56826252e536b2c07e8b7a7b173718744a38826c",
+  inventoryRawSha256: "8484492fc5a77af38de564874e9ee18fb2a0c5ca601ab9457d7cdea59a36d3a5",
   bySource: Object.freeze({
     "seoul-metro-route-map-positions": Object.freeze({
       snapshotId: "seoul-metro-route-map-positions-current-20260824T114822985Z",

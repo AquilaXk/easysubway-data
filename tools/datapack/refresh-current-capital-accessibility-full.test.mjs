@@ -10,7 +10,11 @@ import { readStableRegularFile } from "./rebind-current-candidate-source-snapsho
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 import { activateSyntheticCurrentStaticNetworkSuccessors } from "./test-fixtures/current-public-route-map-successor.mjs";
 import { currentIncheonStationCodeDerivations } from "./collect-incheon-station-info.mjs";
-import { buildCurrentTopologyRefreshPrimaryOutputs, collectPositionSnapshotBytes } from "./activate-current-source-set.mjs";
+import {
+  buildCurrentTopologyRefreshPrimaryOutputs,
+  collectLayoutTopologySnapshotBytes,
+  collectPositionSnapshotBytes,
+} from "./activate-current-source-set.mjs";
 import { releaseRequestBindingViolations } from "./verify-release-request-binding.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
@@ -304,7 +308,8 @@ async function stageCurrentTopologyFixture(root) {
   currentIncheonTopology.capturedAt = inWindow.toISOString();
   currentIncheonTopology.freshUntil = new Date(inWindow.getTime() + 24 * 60 * 60 * 1_000).toISOString();
   const currentIncheonTopologyBytes = Buffer.from(`${JSON.stringify(currentIncheonTopology)}\n`);
-  const currentIncheonTopologyPath = "tools/datapack/sources/incheon-transit-station-info-20260824.json";
+  const currentIncheonTopologyPath = `tools/datapack/sources/incheon-transit-station-info-${inWindow.toISOString().slice(0, 10).replaceAll("-", "")}.json`;
+  const baselineTopologyBytes = await readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260724.json"));
   const result = buildCurrentTopologyRefreshPrimaryOutputs({
     baseSpec: currentItxBaseSpec,
     builderGitSha: baseSpec.builderGitSha,
@@ -317,18 +322,19 @@ async function stageCurrentTopologyFixture(root) {
     currentIncheonTopologyPath,
     currentItxAdmissionPath,
     currentItxAdmissionBytes,
-    baselineTopology: await readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260724.json")).then(JSON.parse),
+    baselineTopology: JSON.parse(baselineTopologyBytes),
+    baselineTopologyBytes,
     canonical,
     productionScopePolicyBytes: policyBytes,
     buildNow: inWindow.toISOString(),
     snapshotBytesByPath: await collectPositionSnapshotBytes(sourceInventory, root),
+    layoutTopologySnapshotBytesById: await collectLayoutTopologySnapshotBytes(sourceInventory, root),
   });
   result.spec.publishedAt = inWindow.toISOString();
   result.spec.sourceInventorySha256 = sha(JSON.stringify(result.sourceInventory));
   const reverificationPath = result.spec.networkEdgeEvidence.capitalTopologyReverification.path;
   await Promise.all([
     writeFile(path.join(root, currentIncheonTopologyPath), currentIncheonTopologyBytes),
-    writeFile(path.join(root, result.sourceSeparatedTopologyPath), result.sourceSeparatedTopologyBytes),
     writeFile(path.join(root, "tools/datapack/source-inventory.json"), result.sourceInventoryBytes),
     writeFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), result.canonicalBytes),
     writeFile(path.join(root, reverificationPath), result.topologyReverificationBytes),
