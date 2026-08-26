@@ -204,7 +204,7 @@
       "checkName": "Data contracts",
       "invocation": "node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile",
       "defaultProfileShards": {
-        "count": 4,
+        "count": 5,
         "maxWorkers": 1
       },
       "required": true,
