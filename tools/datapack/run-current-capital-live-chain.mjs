@@ -50,7 +50,8 @@ function narrowOciEnv(env) { return { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL
 function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 function exactKeys(value, keys, label) {
   if (value == null || typeof value !== "object" || Array.isArray(value)
-    || Object.keys(value).sort().join("\\u0000") !== [...keys].sort().join("\\u0000")) {
+    || Object.keys(value).length !== keys.length
+    || !keys.every((key) => Object.hasOwn(value, key))) {
     throw new Error(`${label} keys mismatch`);
   }
 }
