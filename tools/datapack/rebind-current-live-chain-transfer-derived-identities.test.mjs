@@ -12,10 +12,22 @@ import {
   assertRebuiltCurrentLiveChainTransferCandidateIdentity,
   assertCurrentLiveChainTransferIdentity,
   commitCurrentLiveChainTransferDerivedIdentityOutputs,
+  currentLiveChainTransferStageInputs,
   deriveCurrentOnlyProjection,
 } from "./rebind-current-live-chain-transfer-derived-identities.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
+
+test("candidate-selected versioned ITX topology evidence is the only TRANSFER stage input", () => {
+  const path = "tools/datapack/itx-cheongchun-topology-evidence-20260824170958799.json";
+  const inputs = currentLiveChainTransferStageInputs({ itxTopologyEvidencePath: path }, ROOT);
+  assert.ok(inputs.includes(path));
+  assert.equal(inputs.includes("tools/datapack/itx-cheongchun-topology-evidence.json"), false);
+  assert.throws(
+    () => currentLiveChainTransferStageInputs({ itxTopologyEvidencePath: "../outside.json" }, ROOT),
+    /candidate ITX topology evidence path is not versioned exactly/,
+  );
+});
 
 test("current live-chain TRANSFER producer derives exactly the eight bundle outputs from the selected descriptor", () => {
   assert.deepEqual(currentLiveChainTransferOutputPaths("tools/datapack/sources/seoul-metro-transfer-distance-duration-20991231T235959999Z.json"), [

@@ -49,7 +49,6 @@ const STAGE_INPUTS = Object.freeze([
   "tools/datapack/source-governance-policy.json",
   "tools/datapack/source-candidates.json",
   "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
-  "tools/datapack/itx-cheongchun-topology-evidence.json",
   "release/product-gates/datapack-freshness-sla.json",
 ]);
 const JOURNAL = "tools/datapack/.current-live-chain-transfer-derived-identities.json";
@@ -69,6 +68,15 @@ function rooted(root, relative) {
   const result = path.resolve(root, relative);
   if (!result.startsWith(`${root}${path.sep}`)) throw new Error(`path escapes repository root: ${relative}`);
   return result;
+}
+export function currentLiveChainTransferStageInputs(candidate, root = ROOT) {
+  const itxTopologyEvidencePath = candidate?.itxTopologyEvidencePath;
+  if (typeof itxTopologyEvidencePath !== "string"
+    || !/^tools\/datapack\/itx-cheongchun-topology-evidence-[0-9]{17}\.json$/u.test(itxTopologyEvidencePath)) {
+    throw new Error("candidate ITX topology evidence path is not versioned exactly");
+  }
+  rooted(repositoryRoot(root), itxTopologyEvidencePath);
+  return Object.freeze([...STAGE_INPUTS, itxTopologyEvidencePath]);
 }
 function outputPath(root, relative, outputPaths) {
   if (!outputPaths.includes(relative)) throw new Error(`TRANSFER output is not allowlisted: ${relative}`);
@@ -100,10 +108,10 @@ async function atomicCas(file, expected, next) {
     await rename(temp, file);
   } finally { await unlink(temp).catch(() => {}); }
 }
-async function stage(root) {
+async function stage(root, inputs) {
   const temporary = await mkdtemp(path.join(os.tmpdir(), "current-live-chain-transfer-"));
   try {
-    for (const relative of STAGE_INPUTS) {
+    for (const relative of inputs) {
       const destination = rooted(temporary, relative);
       await mkdir(path.dirname(destination), { recursive: true });
       await writeFile(destination, await stable(rooted(root, relative), relative), { flag: "wx" });
@@ -290,7 +298,7 @@ export async function buildCurrentLiveChainTransferDerivedIdentityOutputs({ repo
   const nextSnapshot = nextSnapshots.find(({ snapshotId }) => snapshotId === active.row.snapshotId);
   nextSnapshot.transferTopology = descriptor.transferTopology;
   nextSnapshot.rawReceipt = receipt;
-  const staging = await stage(root);
+  const staging = await stage(root, currentLiveChainTransferStageInputs(candidate, root));
   try {
     await Promise.all([
       writeFile(rooted(staging, "tools/datapack/release/current-transfer-topology-metrics.json"), metricsBytes),

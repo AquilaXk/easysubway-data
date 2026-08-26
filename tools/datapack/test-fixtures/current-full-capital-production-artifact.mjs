@@ -18,10 +18,6 @@ import { deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
 import { registerKricStandardAccessibilitySnapshot } from "../register-kric-standard-accessibility-snapshot.mjs";
 import { rebindCurrentCandidateSourceSnapshots } from "../rebind-current-candidate-source-snapshots.mjs";
 import { rebindCurrentActivePublicRouteMapMaterialization } from "../rebind-current-active-public-route-map-materialization.mjs";
-import { materializeAccessibilitySourceInput } from "../materialize-accessibility-source-input.mjs";
-import { buildFixture as buildOfficialSourceFixture } from "../import-official-sources.mjs";
-import { syncCanonicalAccessibilityEvidence } from "../apply-accessibility-evidence-to-bundled-pack.mjs";
-import { retainPreAuthorityRideEdges } from "../activate-current-source-set.mjs";
 import { buildCurrentCapitalStationLineInput, canonicalCurrentCapitalStationLineInputJson, readCurrentCapitalInputs } from "../build-current-capital-station-line-input.mjs";
 import { buildCurrentCapitalRouteEdgeInput, canonicalCurrentCapitalRouteEdgeInputJson } from "../build-current-capital-route-edge-input.mjs";
 import { projectCandidateFixtureForAccessibilityAuthority } from "../build-datapack.mjs";
@@ -123,40 +119,6 @@ async function registerFreshFacilitySnapshot(repositoryRoot, now) {
     repositoryRoot,
     now: new Date(now.getTime() + 1_000),
   });
-}
-
-async function syncFreshAccessibilityEvidence(repositoryRoot) {
-  const [input, inventory, canonical] = await Promise.all([
-    json(repositoryRoot, "tools/datapack/inputs/capital-pilot-production-source-input.json"),
-    json(repositoryRoot, "tools/datapack/source-inventory.json"),
-    json(repositoryRoot, "tools/datapack/release/capital-production-canonical-pack.json"),
-  ]);
-  const snapshotsBySourceId = new Map(await Promise.all([
-    "kric-station-convenience-standard",
-    "seoul-metro-accessibility",
-  ].map(async (sourceId) => {
-    const source = inventory.sources.find(({ id }) => id === sourceId);
-    const snapshotPath = source?.accessibilityAdmissionEvidence?.snapshotPath;
-    if (typeof snapshotPath !== "string") {
-      throw new Error(`synthetic ${sourceId} accessibility snapshot missing`);
-    }
-    return [sourceId, await json(repositoryRoot, snapshotPath)];
-  })));
-  const materializedInput = materializeAccessibilitySourceInput({
-    input,
-    kricSnapshot: snapshotsBySourceId.get("kric-station-convenience-standard"),
-    seoulSnapshot: snapshotsBySourceId.get("seoul-metro-accessibility"),
-  });
-  const reviewedFixture = buildOfficialSourceFixture(inventory, materializedInput);
-  const reviewedPack = reviewedFixture.packs?.find(({ id }) => id === "capital");
-  if (!reviewedPack) throw new Error("synthetic reviewed accessibility capital pack missing");
-  syncCanonicalAccessibilityEvidence(canonical, reviewedPack);
-  retainPreAuthorityRideEdges(reviewedFixture, "synthetic reviewed pack");
-  retainPreAuthorityRideEdges(canonical, "synthetic canonical pack");
-  await writeFile(
-    path.join(repositoryRoot, "tools/datapack/release/capital-production-canonical-pack.json"),
-    `${JSON.stringify(canonical, null, 2)}\n`,
-  );
 }
 
 async function writeFreshFacilityAdmission(repositoryRoot, observedAt) {
@@ -296,7 +258,6 @@ export async function currentizeFreshFacilitySource(repositoryRoot, capturedAt) 
   await assertSelectedPublicLayoutBinding(repositoryRoot, "FACILITY registration");
   await rebindCurrentCandidateSourceSnapshots({ repositoryRoot, now: capturedAt });
   await assertSelectedPublicLayoutBinding(repositoryRoot, "candidate rebind");
-  await syncFreshAccessibilityEvidence(repositoryRoot);
   await rebindCurrentActivePublicRouteMapMaterialization({ repositoryRoot });
   await writeFreshFacilityAdmission(repositoryRoot, capturedAt);
 }

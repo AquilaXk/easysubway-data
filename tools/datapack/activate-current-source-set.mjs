@@ -11,6 +11,7 @@ import { isDeepStrictEqual, promisify } from "node:util";
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import {
+  retainPreAuthorityRideEdges,
   syncCanonicalAccessibilityEvidence,
   syncCanonicalFixture,
 } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
@@ -1243,17 +1244,6 @@ function exactCurrentTopologySnapshotIdentity({
     throw new Error(`current ${prefix} snapshot path identity mismatch`);
   }
   return match[1];
-}
-
-export function retainPreAuthorityRideEdges(fixture, label) {
-  const packs = fixture?.packs?.filter(({ id }) => id === "capital") ?? [];
-  const edges = packs[0]?.networkEdges;
-  if (packs.length !== 1 || !Array.isArray(edges)
-    || edges.some(({ edgeType }) => !["RIDE", "ENTRY", "EXIT"].includes(edgeType))) {
-    throw new Error(`current ${label} pre-authority edge contract is invalid`);
-  }
-  packs[0].networkEdges = edges.filter(({ edgeType }) => edgeType === "RIDE");
-  return fixture;
 }
 
 function validateCurrentCapitalTopologyOwnership(topology) {

@@ -48,6 +48,12 @@ import {
   validateCurrentReleaseCandidateAccessibilityAuthorityReplay,
 } from "./build-current-release-candidate-accessibility-input.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
+import { materializeAccessibilitySourceInput } from "./materialize-accessibility-source-input.mjs";
+import { buildFixture as buildOfficialSourceFixture } from "./import-official-sources.mjs";
+import {
+  retainPreAuthorityRideEdges,
+  syncCanonicalAccessibilityEvidence,
+} from "./apply-accessibility-evidence-to-bundled-pack.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const canonicalSqliteHeaderVersion = 3_053_000;
@@ -700,6 +706,57 @@ export async function projectCandidateFixtureForAccessibilityAuthority({
     validationNow,
     { includePackAccessibilityFreshness: false },
   );
+  const accessibilitySourceIds = [
+    "kric-station-convenience-standard",
+    "seoul-metro-accessibility",
+  ];
+  const [inputBytes, inventoryBytes] = await Promise.all([
+    readFile(await resolveBuildInputPath(
+      "tools/datapack/inputs/capital-pilot-production-source-input.json",
+      "capital accessibility source input",
+      repositoryRoot,
+    )),
+    readFile(await resolveBuildInputPath(
+      "tools/datapack/source-inventory.json",
+      "source inventory",
+      repositoryRoot,
+    )),
+  ]);
+  const input = JSON.parse(inputBytes);
+  const inventory = JSON.parse(inventoryBytes);
+  const snapshotsBySourceId = new Map(await Promise.all(accessibilitySourceIds.map(async (sourceId) => {
+    const inventorySources = inventory.sources?.filter(({ id }) => id === sourceId) ?? [];
+    const candidateSources = buildSpec.sourceSnapshots?.filter((row) => row.sourceId === sourceId) ?? [];
+    const evidence = inventorySources[0]?.accessibilityAdmissionEvidence;
+    const snapshotPath = evidence?.snapshotPath;
+    if (inventorySources.length !== 1 || candidateSources.length !== 1
+      || typeof snapshotPath !== "string"
+      || evidence.snapshotId !== candidateSources[0].snapshotId) {
+      throw new Error(`candidate-selected ${sourceId} accessibility snapshot missing`);
+    }
+    const snapshotBytes = await readFile(await resolveBuildInputPath(
+      snapshotPath,
+      `candidate-selected ${sourceId} accessibility snapshot`,
+      repositoryRoot,
+    ));
+    const snapshot = JSON.parse(snapshotBytes);
+    if (snapshot.snapshotId !== candidateSources[0].snapshotId) {
+      throw new Error(`candidate-selected ${sourceId} accessibility snapshot mismatch`);
+    }
+    return [sourceId, snapshot];
+  })));
+  const materializedInput = materializeAccessibilitySourceInput({
+    input,
+    kricSnapshot: snapshotsBySourceId.get("kric-station-convenience-standard"),
+    seoulSnapshot: snapshotsBySourceId.get("seoul-metro-accessibility"),
+  });
+  const reviewedFixture = buildOfficialSourceFixture(inventory, materializedInput);
+  const reviewedPack = reviewedFixture.packs?.find(({ id }) => id === "capital");
+  if (reviewedFixture.packs?.filter(({ id }) => id === "capital").length !== 1 || !reviewedPack) {
+    throw new Error("candidate-selected reviewed accessibility capital pack is invalid");
+  }
+  syncCanonicalAccessibilityEvidence(fixture, reviewedPack);
+  retainPreAuthorityRideEdges(fixture, "candidate-selected canonical pack");
   return fixture;
 }
 

@@ -222,7 +222,14 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
     });
     await bindSyntheticActivatedOutputsToCurrentCandidate(targetRoot);
     const result = await activateSyntheticCurrentStaticNetworkSuccessors(targetRoot, { now });
-    await bindSyntheticDependentAdmissionsToCurrentTransition(targetRoot);
+    const {
+      currentizeFreshFacilitySource,
+      writeFreshExitAdmissionChain,
+    } = await import("./current-full-capital-production-artifact.mjs");
+    await currentizeFreshFacilitySource(targetRoot, now);
+    await writeFreshExitAdmissionChain(targetRoot, now);
+    const transition = await bindSyntheticDependentAdmissionsToCurrentTransition(targetRoot);
+    await rebuildSyntheticCurrentAccessibilityOutputs(targetRoot, transition);
     return result;
   }
   const [source, target] = await Promise.all([
@@ -379,6 +386,44 @@ async function bindSyntheticDependentAdmissionsToCurrentTransition(root) {
     positionPreviousSnapshotId: positions.previousSnapshotId,
     molitPreviousSnapshotId: molit.previousSnapshotId,
   };
+}
+
+async function rebuildSyntheticCurrentAccessibilityOutputs(root, transition) {
+  const [{
+    buildCurrentCapitalStationLineInput,
+    canonicalCurrentCapitalStationLineInputJson,
+    readCurrentCapitalInputs,
+  }, {
+    buildCurrentCapitalRouteEdgeInput,
+    canonicalCurrentCapitalRouteEdgeInputJson,
+  }, {
+    projectCandidateFixtureForAccessibilityAuthority,
+  }] = await Promise.all([
+    import("../build-current-capital-station-line-input.mjs"),
+    import("../build-current-capital-route-edge-input.mjs"),
+    import("../build-datapack.mjs"),
+  ]);
+  const input = await readCurrentCapitalInputs(root, {
+    readTransitionBoundaryImpl: async () => transition,
+  });
+  const canonicalPack = await projectCandidateFixtureForAccessibilityAuthority({
+    buildSpec: input.candidateBuildSpec,
+    sourceFixture: input.canonicalPack,
+    repositoryRoot: root,
+  });
+  const refreshed = { ...input, canonicalPack };
+  const station = buildCurrentCapitalStationLineInput(refreshed);
+  const route = buildCurrentCapitalRouteEdgeInput(refreshed);
+  await Promise.all([
+    writeFile(
+      path.join(root, "tools/datapack/release/current-capital-accessibility-full/station-line-input.json"),
+      Buffer.from(canonicalCurrentCapitalStationLineInputJson(station)),
+    ),
+    writeFile(
+      path.join(root, "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json"),
+      Buffer.from(canonicalCurrentCapitalRouteEdgeInputJson(route)),
+    ),
+  ]);
 }
 
 async function writeSyntheticCurrentExitOciReceipt(root) {

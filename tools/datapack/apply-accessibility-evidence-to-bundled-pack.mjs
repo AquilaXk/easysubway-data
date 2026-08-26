@@ -333,6 +333,17 @@ export function syncCanonicalAccessibilityEvidence(canonical, reviewedPack) {
   return canonical;
 }
 
+export function retainPreAuthorityRideEdges(fixture, label) {
+  const packs = fixture?.packs?.filter(({ id }) => id === "capital") ?? [];
+  const edges = packs[0]?.networkEdges;
+  if (packs.length !== 1 || !Array.isArray(edges)
+    || edges.some(({ edgeType }) => !["RIDE", "ENTRY", "EXIT"].includes(edgeType))) {
+    throw new Error(`current ${label} pre-authority edge contract is invalid`);
+  }
+  packs[0].networkEdges = edges.filter(({ edgeType }) => edgeType === "RIDE");
+  return fixture;
+}
+
 function isAccessibilityRouteEdge(edge) {
   return edge.sourceId === accessibilityRouteSourceId && ["ENTRY", "EXIT"].includes(edge.edgeType);
 }
