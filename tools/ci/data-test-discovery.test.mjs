@@ -443,6 +443,10 @@ test('workflow default-profile shards require every configured serial invocation
 
   assert.doesNotThrow(() => validateOwnership(value));
 
+  const followingAggregator = structuredClone(value);
+  followingAggregator.workflowSources['.github/workflows/ci.yml'] += `  contracts-aggregate:\n    if: \${{ always() }}\n    steps:\n      - run: true\n`;
+  assert.doesNotThrow(() => validateOwnership(followingAggregator));
+
   const missing = structuredClone(value);
   missing.workflowSources['.github/workflows/ci.yml'] = missing.workflowSources[
     '.github/workflows/ci.yml'

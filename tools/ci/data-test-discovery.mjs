@@ -77,7 +77,11 @@ function workflowStepContaining(source, invocation) {
   let start = invocationLine;
   while (start > 0 && !/^\s+-\s+(?:name|run|uses):/.test(lines[start])) start -= 1;
   let end = invocationLine + 1;
-  while (end < lines.length && !/^\s+-\s+(?:name|run|uses):/.test(lines[end])) end += 1;
+  while (
+    end < lines.length
+    && !/^\s+-\s+(?:name|run|uses):/.test(lines[end])
+    && !/^  [A-Za-z0-9_-]+:\s*$/.test(lines[end])
+  ) end += 1;
   return lines.slice(start, end).join('\n');
 }
 
