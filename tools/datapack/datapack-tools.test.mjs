@@ -330,6 +330,178 @@ async function mutateCurrentProductionSqlite(artifact, mutate) {
   await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
 }
 
+function materializeCurrentAvailableEntryEvidence(database, pack, {
+  sourceSupportsAccessibility = true,
+  strictFacilityEvidence = false,
+  stationStatusProbeEvidence = false,
+  pathwayEdgeType = null,
+} = {}) {
+  const source = stationStatusProbeEvidence
+    ? pack.sourceInventory.find(({ id }) => id === "seoul-metro-accessibility")
+    : pack.sourceInventory.find(({ coverageScope }) => {
+    const domains = coverageScope?.sourceDomains ?? [];
+    return sourceSupportsAccessibility
+      ? domains.includes("accessibility_facilities")
+      : domains.includes("station_line_membership") && !domains.includes("accessibility_facilities");
+    });
+  assert.ok(source, "current production artifact requires the selected source domain");
+  const edge = database.prepare(`
+    SELECT id, to_node_id
+    FROM network_edges
+    WHERE edge_type = 'ENTRY' AND accessibility_status = 'UNKNOWN'
+    ORDER BY id
+    LIMIT 1
+  `).get();
+  assert.ok(edge, "current production artifact requires one UNKNOWN ENTRY edge");
+  const [stationId, lineId] = edge.to_node_id.split(":");
+  assert.ok(stationId && lineId, "current production ENTRY requires a canonical station-line endpoint");
+  const verifiedAt = Math.floor(Date.parse(source.updatedAt) / 1_000);
+  assert.ok(Number.isInteger(verifiedAt) && verifiedAt > 0, "current source requires updatedAt");
+  const snapshotId = `${source.id}-test-current-snapshot`;
+  const update = database.prepare(`
+    UPDATE network_edges
+    SET accessibility_status = 'AVAILABLE', stair_access_state = 'STEP_FREE',
+        includes_stairs = 0, reliability_score = 100, source_id = ?, source_snapshot_id = ?,
+        provider_record_hash = ?, provenance_kind = 'OFFICIAL_SOURCE', verification_status = 'VERIFIED',
+        last_verified_at = ?, evidence_hash = ?
+    WHERE id = ?
+  `).run(
+    source.id,
+    snapshotId,
+    sha256(`provider:${edge.id}:${source.id}`),
+    verifiedAt,
+    sha256(`evidence:${edge.id}:${source.id}:${source.updatedAt}`),
+    edge.id,
+  );
+  assert.equal(update.changes, 1, "current production artifact requires one mutable ENTRY edge");
+  if (strictFacilityEvidence) {
+    database.prepare(`
+      INSERT OR REPLACE INTO station_facility_evidence (
+        station_id, line_id, facility_type, evidence_kind, source_id, source_snapshot_id,
+        provider_record_hash, evidence_hash, provenance_kind, installation_status,
+        operational_status, status_meaning, confidence, verified_at, retrieved_at,
+        strict_route_eligible, strict_route_eligible_reason
+      ) VALUES (?, ?, 'ELEVATOR', 'EXISTS', ?, ?, ?, ?, 'OFFICIAL_SOURCE', 'INSTALLED',
+                'AVAILABLE', 'OPERATOR_CONFIRMED', 100, ?, ?, 1, 'FACILITY_OPERATION_VERIFIED')
+    `).run(
+      stationId,
+      lineId,
+      source.id,
+      snapshotId,
+      sha256(`provider:${stationId}:${lineId}:ELEVATOR:${source.id}`),
+      sha256(`evidence:${stationId}:${lineId}:ELEVATOR:${source.id}:${source.updatedAt}`),
+      verifiedAt,
+      verifiedAt,
+    );
+  }
+
+  if (stationStatusProbeEvidence) {
+    database.prepare(`
+      INSERT OR REPLACE INTO station_facility_evidence (
+        station_id, line_id, facility_type, evidence_kind, source_id, source_snapshot_id,
+        provider_record_hash, evidence_hash, provenance_kind, installation_status,
+        operational_status, status_meaning, confidence, verified_at, retrieved_at,
+        strict_route_eligible, strict_route_eligible_reason
+      ) VALUES (?, ?, 'ACCESSIBILITY_STATUS_PROBE', 'EXISTS', ?, ?, ?, ?, 'OFFICIAL_SOURCE',
+                'INSTALLED', 'AVAILABLE', 'REALTIME_OPERATION', 100, ?, ?, 0,
+                'STATUS_PROBE_NOT_ROUTE_EVIDENCE')
+    `).run(
+      stationId,
+      lineId,
+      source.id,
+      snapshotId,
+      sha256(`provider:${stationId}:${lineId}:STATUS_PROBE:${source.id}`),
+      sha256(`evidence:${stationId}:${lineId}:STATUS_PROBE:${source.id}:${source.updatedAt}`),
+      verifiedAt,
+      verifiedAt,
+    );
+  }
+
+  if (pathwayEdgeType !== null) {
+    const surfaceNodeId = `${edge.id}:surface`;
+    const platformNodeId = `${edge.id}:platform`;
+    database.prepare(`
+      INSERT INTO station_pathway_nodes (id, station_id, line_id, node_type, label)
+      VALUES (?, ?, NULL, 'ENTRANCE', '테스트 출입구'), (?, ?, ?, 'PLATFORM', '테스트 승강장')
+    `).run(surfaceNodeId, stationId, platformNodeId, stationId, lineId);
+    database.prepare(`
+      INSERT INTO station_pathway_edges (
+        id, from_node_id, to_node_id, edge_type, duration_seconds, distance_meters,
+        bidirectional, includes_stairs, reliability_score, accessibility_status,
+        source_id, source_snapshot_id, provider_record_hash, provenance_kind,
+        verification_status, last_verified_at, evidence_hash, instruction
+      ) VALUES (?, ?, ?, ?, 60, 20, 1, ?, 100, 'AVAILABLE', ?, ?, ?, 'OFFICIAL_SOURCE',
+                'VERIFIED', ?, ?, '테스트 접근성 이동 경로')
+    `).run(
+      `${edge.id}:pathway`,
+      surfaceNodeId,
+      platformNodeId,
+      pathwayEdgeType,
+      pathwayEdgeType === "STAIR" ? 1 : 0,
+      source.id,
+      snapshotId,
+      sha256(`provider:${edge.id}:pathway:${source.id}`),
+      verifiedAt,
+      sha256(`evidence:${edge.id}:pathway:${source.id}:${source.updatedAt}`),
+    );
+  }
+
+  const metricRatio = (numerator, denominator) =>
+    denominator === 0 ? 0 : Number((numerator / denominator).toFixed(4));
+  const edgeCount = database.prepare("SELECT COUNT(*) AS count FROM network_edges").get().count;
+  const unknownCount = database.prepare(`
+    SELECT COUNT(*) AS count FROM network_edges WHERE accessibility_status = 'UNKNOWN'
+  `).get().count;
+  const unknownAccessibilityRatio = metricRatio(unknownCount, edgeCount);
+  pack.regionalQualityMetrics.unknownAccessibilityRatio = unknownAccessibilityRatio;
+  pack.regionalQualityMetrics.unknownEdgeRatioByProfile = {
+    wheelchair: unknownAccessibilityRatio,
+    stroller: unknownAccessibilityRatio,
+    lowMobility: unknownAccessibilityRatio,
+  };
+  if (strictFacilityEvidence || stationStatusProbeEvidence) {
+    const evidence = database.prepare(`
+      SELECT COUNT(*) AS total,
+             SUM(CASE WHEN strict_route_eligible = 1 THEN 1 ELSE 0 END) AS strict_count,
+             SUM(CASE WHEN operational_status != '' AND UPPER(operational_status) != 'UNKNOWN' THEN 1 ELSE 0 END) AS operational_known_count,
+             SUM(CASE WHEN verified_at > 0 OR retrieved_at > 0 THEN 1 ELSE 0 END) AS fresh_count
+      FROM station_facility_evidence
+    `).get();
+    const evidenceKeyCount = database.prepare(`
+      SELECT COUNT(*) AS count FROM (
+        SELECT DISTINCT station_id, line_id, facility_type FROM station_facility_evidence
+      )
+    `).get().count;
+    const stationLineCount = database.prepare("SELECT COUNT(*) AS count FROM station_lines").get().count;
+    const facilityTypeCount = database.prepare(`
+      SELECT COUNT(*) AS count FROM (
+        SELECT facility_type AS type FROM station_facility_evidence
+        UNION
+        SELECT type FROM facilities
+      )
+    `).get().count;
+    pack.regionalQualityMetrics.requiredFacilityEvidenceCoverageRatio = metricRatio(
+      evidenceKeyCount,
+      stationLineCount * facilityTypeCount,
+    );
+    pack.regionalQualityMetrics.strictRouteEligibleFacilityRatio = metricRatio(evidence.strict_count, evidence.total);
+    pack.regionalQualityMetrics.operationalKnownRatio = metricRatio(evidence.operational_known_count, evidence.total);
+    pack.regionalQualityMetrics.freshnessValidRatio = metricRatio(evidence.fresh_count, evidence.total);
+  }
+  if (pathwayEdgeType !== null) {
+    const pathways = database.prepare(`
+      SELECT COUNT(*) AS total,
+             SUM(CASE WHEN provenance_kind IN ('FIELD_SURVEY', 'OPERATOR_CONFIRMED') THEN 1 ELSE 0 END) AS field_verified_count
+      FROM station_pathway_edges
+    `).get();
+    pack.regionalQualityMetrics.fieldVerifiedPathwayRatio = metricRatio(
+      pathways.field_verified_count,
+      pathways.total,
+    );
+  }
+  return edge.id;
+}
+
 test("데이터팩 생성기는 TEST_ONLY admission fixture를 build input으로 거부한다", async (context) => {
   const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-itx-test-only-"));
   context.after(() => rm(outputDir, { recursive: true, force: true }));
@@ -912,8 +1084,8 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
       networkEdges.find((row) => row.id === "edge-sangnoksu-sadang-seoul-4-express"),
       {
         id: "edge-sangnoksu-sadang-seoul-4-express",
-        from_node_id: "station-sangnoksu:seoul-4:EXPRESS",
-        to_node_id: "station-sadang:seoul-4:EXPRESS",
+        from_node_id: "station-sangnoksu:seoul-4",
+        to_node_id: "station-sadang:seoul-4",
         duration_seconds: 360,
         distance_meters: 18600,
         edge_type: "RIDE",
@@ -3607,8 +3779,8 @@ test("데이터팩 생성기는 대표 route regression 문자열을 앱 서명 
     ...fixture.packs[0].representativeRouteRegressions[0],
     id: " direct-local-sangnoksu-sadang ",
     pattern: " DIRECT ",
-    fromNodeId: " station-sangnoksu:seoul-4:LOCAL ",
-    toNodeId: " station-sadang:seoul-4:LOCAL ",
+    fromNodeId: " station-sangnoksu:seoul-4 ",
+    toNodeId: " station-sadang:seoul-4 ",
     requiredEdgeIds: [" edge-sangnoksu-sadang-seoul-4 "],
   };
   await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
@@ -3630,8 +3802,8 @@ test("데이터팩 생성기는 대표 route regression 문자열을 앱 서명 
   assert.deepEqual(route, {
     id: "direct-local-sangnoksu-sadang",
     pattern: "DIRECT",
-    fromNodeId: "station-sangnoksu:seoul-4:LOCAL",
-    toNodeId: "station-sadang:seoul-4:LOCAL",
+    fromNodeId: "station-sangnoksu:seoul-4",
+    toNodeId: "station-sadang:seoul-4",
     requiredEdgeIds: ["edge-sangnoksu-sadang-seoul-4"],
   });
   assert.deepEqual(manifest.packs[0].representativeRouteRegressionSignature, {
@@ -4240,6 +4412,30 @@ test("데이터팩 검증기는 UNKNOWN accessibility edge를 strict coverage에
   assert.equal(report.exit.missingCount, 213);
   assert.equal(report.transfer.missingCount, 30);
   assert.deepEqual(report.unverifiedAccessibilityCoverageEdges, []);
+});
+
+test("데이터팩 검증기는 current production RIDE의 비현실적 속도를 거부한다", async (context) => {
+  const artifact = await buildCurrentFullCapitalProductionArtifact(context);
+  await mutateCurrentProductionSqlite(artifact, ({ database }) => {
+    const result = database.prepare(`
+      UPDATE network_edges
+      SET distance_meters = 18600, duration_seconds = 420
+      WHERE id = (SELECT id FROM network_edges WHERE edge_type = 'RIDE' ORDER BY id LIMIT 1)
+    `).run();
+    assert.equal(result.changes, 1, "current production artifact requires one RIDE edge");
+  });
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        ...currentProductionValidationArgs(artifact),
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /network_edges ride speed is outside production bounds/,
+  );
 });
 
 test("데이터팩 검증기는 strict coverage gap 뒤의 production provenance 오류를 숨기지 않는다", async (context) => {
@@ -5971,8 +6167,7 @@ test("데이터팩 검증기는 대표 route regression required edge 경로 이
     (edge) => edge.id === "edge-sangnoksu-sadang-seoul-4-express",
   );
   expressEdge.fromNodeId = "station-sangnoksu:seoul-4";
-  expressEdge.toNodeId = "station-sadang:seoul-4";
-  expressEdge.servicePattern = "LOCAL";
+  expressEdge.toNodeId = "station-gangnam:seoul-2";
   await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
 
   await execFileAsync(
@@ -6156,7 +6351,7 @@ test("데이터팩 검증기는 빈 service-pattern suffix route node를 거부�
   );
 });
 
-test("데이터팩 검증기는 access edge와 service pattern station-line endpoint를 허용한다", async () => {
+test("데이터팩 검증기는 access edge와 canonical station-line endpoint를 허용한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-datapack-service-pattern-endpoints-${Date.now()}`);
   const fixturePath = path.join(outputDir, "fixture.json");
   await rm(outputDir, { recursive: true, force: true });
@@ -6167,7 +6362,7 @@ test("데이터팩 검증기는 access edge와 service pattern station-line endp
     {
       id: "entry-sangnoksu-line4-local",
       fromNodeId: "station-sangnoksu",
-      toNodeId: "station-sangnoksu:seoul-4:LOCAL",
+      toNodeId: "station-sangnoksu:seoul-4",
       durationSeconds: 90,
       distanceMeters: 20,
       edgeType: "ENTRY",
@@ -6180,8 +6375,8 @@ test("데이터팩 검증기는 access edge와 service pattern station-line endp
     },
     {
       id: "ride-sangnoksu-sadang-line4-local",
-      fromNodeId: "station-sangnoksu:seoul-4:LOCAL",
-      toNodeId: "station-sadang:seoul-4:LOCAL",
+      fromNodeId: "station-sangnoksu:seoul-4",
+      toNodeId: "station-sadang:seoul-4",
       durationSeconds: 420,
       distanceMeters: 18600,
       edgeType: "RIDE",
@@ -6194,7 +6389,7 @@ test("데이터팩 검증기는 access edge와 service pattern station-line endp
     },
     {
       id: "exit-sadang-line4-local",
-      fromNodeId: "station-sadang:seoul-4:LOCAL",
+      fromNodeId: "station-sadang:seoul-4",
       toNodeId: "station-sadang",
       durationSeconds: 60,
       distanceMeters: 15,
@@ -10995,7 +11190,7 @@ test("데이터팩 생성기는 공동 운영 노선 provenance에 공식 operat
   assert.deepEqual(pairs, ["seoul-4:korail", "seoul-4:seoul-metro"]);
 });
 
-test("데이터팩 생성기는 service pattern route node의 edge provenance scope를 canonical station-line operator로 제한한다", async () => {
+test("데이터팩 생성기는 SUBWAY EXPRESS edge provenance scope를 canonical station-line operator로 제한한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-provenance-service-pattern-scope-${Date.now()}`);
   const inputPath = path.join(outputDir, "official-source-input.json");
   const outputPath = path.join(outputDir, "catalog-fixture.json");
@@ -11023,8 +11218,15 @@ test("데이터팩 생성기는 service pattern route node의 edge provenance sc
     "seoul-metro",
     "korail",
   ];
-  pack.networkEdges[0].fromNodeId = "station-sangnoksu:seoul-4:EXPRESS";
-  pack.networkEdges[0].toNodeId = "station-sadang:seoul-4:EXPRESS";
+  assert.deepEqual({
+    servicePattern: pack.networkEdges[0].servicePattern,
+    fromNodeId: pack.networkEdges[0].fromNodeId,
+    toNodeId: pack.networkEdges[0].toNodeId,
+  }, {
+    servicePattern: "EXPRESS",
+    fromNodeId: "station-sangnoksu:seoul-4",
+    toNodeId: "station-sadang:seoul-4",
+  });
   await writeFile(outputPath, `${JSON.stringify(fixture, null, 2)}\n`);
 
   const packOutputDir = path.join(outputDir, "pack");
@@ -12417,35 +12619,17 @@ test("AVAILABLE ENTRY edge rejects missing approved movement pathway", async () 
   );
 });
 
-test("데이터팩 검증기는 AVAILABLE accessibility edge의 station-line source 우회를 거부한다", async () => {
-  const outputDir = path.join(tmpdir(), `easysubway-accessibility-edge-validator-source-${Date.now()}`);
-  const fixturePath = path.join(outputDir, "fixture.json");
-  const packOutputDir = path.join(outputDir, "pack");
-  const fixture = await importTestOnlyAccessibilityFixture(outputDir, await capitalPilotProductionSourceInput());
-  // 빌드 후 edge를 AVAILABLE로 바꾸고 source를 accessibility_facilities 미지원(역-노선)으로 우회 → validator 거부.
-  const builtEntry = fixture.packs[0].networkEdges.find((edge) => edge.id === "edge-entry-sadang-seoul-4");
-  builtEntry.accessibilityStatus = "AVAILABLE";
-  builtEntry.stairAccessState = "STEP_FREE";
-  builtEntry.verificationStatus = "VERIFIED";
-  builtEntry.sourceId = "seoulmetro-station-line-info";
-  builtEntry.sourceSnapshotId = "seoulmetro-station-line-info-snapshot-20260621";
-  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
-  await execFileAsync(
-    process.execPath,
-    ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", packOutputDir],
-    { cwd: root, env: productionEnv },
-  );
-
+test("데이터팩 검증기는 AVAILABLE accessibility edge의 station-line source 우회를 거부한다", async (context) => {
+  const artifact = await buildCurrentFullCapitalProductionArtifact(context);
+  await mutateCurrentProductionSqlite(artifact, ({ database, pack }) => {
+    materializeCurrentAvailableEntryEvidence(database, pack, { sourceSupportsAccessibility: false });
+  });
   await assert.rejects(
     execFileAsync(
       process.execPath,
       [
         "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        path.join(packOutputDir, "current.json"),
-        "--root",
-        packOutputDir,
-        "--require-production",
+        ...currentProductionValidationArgs(artifact),
       ],
       { cwd: root, env: productionEnv },
     ),
@@ -12453,37 +12637,17 @@ test("데이터팩 검증기는 AVAILABLE accessibility edge의 station-line sou
   );
 });
 
-test("데이터팩 검증기는 AVAILABLE accessibility edge의 station-line operational evidence 누락을 거부한다", async () => {
-  const outputDir = path.join(tmpdir(), `easysubway-accessibility-edge-validator-facility-${Date.now()}`);
-  const fixturePath = path.join(outputDir, "fixture.json");
-  const packOutputDir = path.join(outputDir, "pack");
-  const fixture = await importTestOnlyAccessibilityFixture(outputDir, await capitalPilotProductionSourceInput());
-  const edge = fixture.packs[0].networkEdges.find((row) => row.id === "edge-entry-sadang-seoul-4");
-  edge.accessibilityStatus = "AVAILABLE";
-  edge.stairAccessState = "STEP_FREE";
-  edge.verificationStatus = "VERIFIED";
-  edge.sourceId = TEST_PRODUCTION_ACCESSIBILITY_SOURCE;
-  edge.sourceSnapshotId = TEST_ACCESSIBILITY_SNAPSHOT_ID;
-  edge.providerRecordHash = sha256(`provider:${edge.id}:test-only-capital-accessibility-fixture`);
-  edge.evidenceHash = sha256(`evidence:${edge.id}:test-only-capital-accessibility-fixture:${TEST_ACCESSIBILITY_RETRIEVED_AT}`);
-  edge.lastVerifiedAt = TEST_ACCESSIBILITY_RETRIEVED_AT;
-  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
-  await execFileAsync(
-    process.execPath,
-    ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", packOutputDir],
-    { cwd: root, env: productionEnv },
-  );
-
+test("데이터팩 검증기는 AVAILABLE accessibility edge의 station-line operational evidence 누락을 거부한다", async (context) => {
+  const artifact = await buildCurrentFullCapitalProductionArtifact(context);
+  await mutateCurrentProductionSqlite(artifact, ({ database, pack }) => {
+    materializeCurrentAvailableEntryEvidence(database, pack);
+  });
   await assert.rejects(
     execFileAsync(
       process.execPath,
       [
         "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        path.join(packOutputDir, "current.json"),
-        "--root",
-        packOutputDir,
-        "--require-production",
+        ...currentProductionValidationArgs(artifact),
       ],
       { cwd: root, env: productionEnv },
     ),
@@ -12561,38 +12725,24 @@ test("공식 source ingest adapter는 임의 strict route reason을 거부한다
   );
 });
 
-test("station status probe가 route evidence가 아니면 production edge coverage는 fail-closed다 (#2609)", async () => {
-  const outputDir = path.join(tmpdir(), `easysubway-accessibility-verified-states-${Date.now()}`);
-  const packOutputDir = path.join(outputDir, "pack");
-  const fixture = await importTestOnlyAccessibilityFixture(outputDir, await capitalPilotProductionSourceInput());
-  const fixturePath = path.join(outputDir, "fixture.json");
-  // 서울 station status와 KRIC feed absence는 route pathway 증거가 아니므로 strict route로 승격하지 않는다.
-  const sadangEntry = fixture.packs[0].networkEdges.find((e) => e.id === "edge-entry-sadang-seoul-4");
-  const sangnoksuEntry = fixture.packs[0].networkEdges.find((e) => e.id === "edge-entry-sangnoksu-seoul-4");
-  assert.equal(sadangEntry.accessibilityStatus, "UNKNOWN");
-  assert.equal(sangnoksuEntry.accessibilityStatus, "NO_OFFICIAL_FEED");
-  assert.equal(sadangEntry.verificationStatus, "NOT_VERIFIED");
-  assert.equal(sangnoksuEntry.verificationStatus, "NOT_VERIFIED");
-  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
-  await execFileAsync(
-    process.execPath,
-    ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", packOutputDir],
-    { cwd: root, env: productionEnv },
-  );
+test("station status probe는 production strict route evidence로 승격되지 않는다 (#2609)", async (context) => {
+  const artifact = await buildCurrentFullCapitalProductionArtifact(context);
+  await mutateCurrentProductionSqlite(artifact, ({ database, pack }) => {
+    materializeCurrentAvailableEntryEvidence(database, pack, {
+      stationStatusProbeEvidence: true,
+      pathwayEdgeType: "WALK",
+    });
+  });
   await assert.rejects(
     execFileAsync(
       process.execPath,
       [
         "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        path.join(packOutputDir, "current.json"),
-        "--root",
-        packOutputDir,
-        "--require-production",
+        ...currentProductionValidationArgs(artifact),
       ],
       { cwd: root, env: productionEnv },
     ),
-    /capital@1 verified ENTRY coverage gap: 2\/2/,
+    /AVAILABLE ENTRY\/EXIT edge requires strict-eligible operational facility evidence:/,
   );
 });
 
@@ -12633,31 +12783,17 @@ test("field provenance는 materialized facility와 EXISTS evidence를 중복 집
   assert.ok(evidenceRecords.every(({ entityId }) => absenceIds.has(entityId)));
 });
 
-test("데이터팩 검증기는 AVAILABLE accessibility edge의 승인된 이동 경로 누락을 거부한다", async () => {
-  const outputDir = path.join(tmpdir(), `easysubway-accessibility-edge-validator-pathway-${Date.now()}`);
-  const fixturePath = path.join(outputDir, "fixture.json");
-  const packOutputDir = path.join(outputDir, "pack");
-  const fixture = await importTestOnlyAccessibilityFixture(outputDir, productionSourceIngestInput());
-  makeProductionSourceFixtureStrictCoverageValid(fixture);
-  fixture.packs[0].stationPathwayNodes = [];
-  fixture.packs[0].stationPathwayEdges = [];
-  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
-  await execFileAsync(
-    process.execPath,
-    ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", packOutputDir],
-    { cwd: root, env: productionEnv },
-  );
-
+test("데이터팩 검증기는 AVAILABLE accessibility edge의 승인된 이동 경로 누락을 거부한다", async (context) => {
+  const artifact = await buildCurrentFullCapitalProductionArtifact(context);
+  await mutateCurrentProductionSqlite(artifact, ({ database, pack }) => {
+    materializeCurrentAvailableEntryEvidence(database, pack, { strictFacilityEvidence: true });
+  });
   await assert.rejects(
     execFileAsync(
       process.execPath,
       [
         "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        path.join(packOutputDir, "current.json"),
-        "--root",
-        packOutputDir,
-        "--require-production",
+        ...currentProductionValidationArgs(artifact),
       ],
       { cwd: root, env: productionEnv },
     ),
@@ -12665,33 +12801,20 @@ test("데이터팩 검증기는 AVAILABLE accessibility edge의 승인된 이동
   );
 });
 
-test("데이터팩 검증기는 STAIR pathway를 승인된 접근성 이동 경로로 인정하지 않는다", async () => {
-  const outputDir = path.join(tmpdir(), `easysubway-accessibility-edge-validator-stair-${Date.now()}`);
-  const fixturePath = path.join(outputDir, "fixture.json");
-  const packOutputDir = path.join(outputDir, "pack");
-  const fixture = await importTestOnlyAccessibilityFixture(outputDir, productionSourceIngestInput());
-  makeProductionSourceFixtureStrictCoverageValid(fixture);
-  for (const edge of fixture.packs[0].stationPathwayEdges) {
-    edge.edgeType = "STAIR";
-    edge.includesStairs = false;
-  }
-  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
-  await execFileAsync(
-    process.execPath,
-    ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", packOutputDir],
-    { cwd: root, env: productionEnv },
-  );
-
+test("데이터팩 검증기는 STAIR pathway를 승인된 접근성 이동 경로로 인정하지 않는다", async (context) => {
+  const artifact = await buildCurrentFullCapitalProductionArtifact(context);
+  await mutateCurrentProductionSqlite(artifact, ({ database, pack }) => {
+    materializeCurrentAvailableEntryEvidence(database, pack, {
+      strictFacilityEvidence: true,
+      pathwayEdgeType: "STAIR",
+    });
+  });
   await assert.rejects(
     execFileAsync(
       process.execPath,
       [
         "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        path.join(packOutputDir, "current.json"),
-        "--root",
-        packOutputDir,
-        "--require-production",
+        ...currentProductionValidationArgs(artifact),
       ],
       { cwd: root, env: productionEnv },
     ),
@@ -12699,7 +12822,7 @@ test("데이터팩 검증기는 STAIR pathway를 승인된 접근성 이동 경�
   );
 });
 
-test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 평가 전까지 NO_GO다", async () => {
+test("수도권 pilot fixture는 source import를 검증하지만 production route coverage로 승격하지 않는다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-capital-pilot-production-source-${Date.now()}`);
   const inputPath = "tools/datapack/inputs/capital-pilot-production-source-input.json";
   const importedFixturePath = path.join(outputDir, "capital-pilot-production.json");
@@ -12914,65 +13037,6 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
     );
   }
 
-  const validatorBypassFixture = JSON.parse(JSON.stringify(importedFixture));
-  validatorBypassFixture.packs[0].networkEdges.push(
-    ...productionSummaryRideEdges("LOCAL").map((edge) => ({
-      id: edge.id,
-      fromNodeId:
-        edge.from.sourceStationCode === "448"
-          ? "station-sangnoksu:seoul-4:LOCAL"
-          : "station-sadang:seoul-4:LOCAL",
-      toNodeId:
-        edge.to.sourceStationCode === "433"
-          ? "station-sadang:seoul-4:LOCAL"
-          : "station-sangnoksu:seoul-4:LOCAL",
-      durationSeconds: edge.durationSeconds,
-      distanceMeters: edge.distanceMeters,
-      edgeType: edge.edgeType,
-      servicePattern: edge.servicePattern,
-      includesStairs: edge.includesStairs,
-      stairAccessState: edge.stairAccessState,
-      accessibilityStatus: edge.accessibilityStatus,
-      reliabilityScore: edge.reliabilityScore,
-      sourceId: edge.sourceId,
-      sourceSnapshotId: edge.sourceSnapshotId,
-      providerRecordHash: edge.providerRecordHash,
-      provenanceKind: edge.provenanceKind,
-      verificationStatus: edge.verificationStatus,
-      lastVerifiedAt: edge.lastVerifiedAt,
-      evidenceHash: edge.evidenceHash,
-    })),
-  );
-  const validatorBypassFixturePath = path.join(outputDir, "validator-bypass-local-ride.json");
-  const validatorBypassPackDir = path.join(outputDir, "validator-bypass-local-ride-pack");
-  await writeFile(validatorBypassFixturePath, `${JSON.stringify(validatorBypassFixture, null, 2)}\n`);
-  await execFileAsync(
-    process.execPath,
-    [
-      "tools/datapack/build-datapack.mjs",
-      "--fixture",
-      validatorBypassFixturePath,
-      "--output",
-      validatorBypassPackDir,
-    ],
-    { cwd: root, env: productionEnv },
-  );
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        path.join(validatorBypassPackDir, "current.json"),
-        "--root",
-        validatorBypassPackDir,
-        "--require-production",
-      ],
-      { cwd: root, env: productionEnv },
-    ),
-    /network_edges LOCAL RIDE edge must connect adjacent station-line sequences/,
-  );
-
   const nonAdjacentInput = {
     ...input,
     routeEdges: [...productionSummaryRideEdges("LOCAL"), ...input.routeEdges],
@@ -13059,43 +13123,6 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
     /production facility evidence missing: station-sadang:seoul-4:WHEELCHAIR_LIFT/,
   );
 
-  const unrealisticRideSpeedFixture = JSON.parse(JSON.stringify(importedFixture));
-  unrealisticRideSpeedFixture.packs[0].networkEdges.push(
-    ...productionSummaryNetworkEdges("EXPRESS").map((edge) => ({
-      ...edge,
-      durationSeconds: 420,
-    })),
-  );
-  const unrealisticRideSpeedFixturePath = path.join(outputDir, "unrealistic-ride-speed.json");
-  const unrealisticRideSpeedPackDir = path.join(outputDir, "unrealistic-ride-speed-pack");
-  await writeFile(unrealisticRideSpeedFixturePath, `${JSON.stringify(unrealisticRideSpeedFixture, null, 2)}\n`);
-  await execFileAsync(
-    process.execPath,
-    [
-      "tools/datapack/build-datapack.mjs",
-      "--fixture",
-      unrealisticRideSpeedFixturePath,
-      "--output",
-      unrealisticRideSpeedPackDir,
-    ],
-    { cwd: root, env: productionEnv },
-  );
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        path.join(unrealisticRideSpeedPackDir, "current.json"),
-        "--root",
-        unrealisticRideSpeedPackDir,
-        "--require-production",
-      ],
-      { cwd: root, env: productionEnv },
-    ),
-    /network_edges ride speed is outside production bounds/,
-  );
-
   await execFileAsync(
     process.execPath,
     [
@@ -13108,24 +13135,27 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
     { cwd: root, env: productionEnv },
   );
   const routeGraphTopologyReportPath = path.join(outputDir, "route-graph-topology-report.json");
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/build-route-graph-topology-report.mjs",
-        "--manifest",
-        path.join(packOutputDir, "current.json"),
-        "--root",
-        packOutputDir,
-        "--build-spec",
-        path.join(root, "tools/datapack/release/candidate-build-spec.json"),
-        "--output",
-        routeGraphTopologyReportPath,
-      ],
-      { cwd: root },
-    ),
-    /ITX topology evidence pack identity mismatch/,
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-route-graph-topology-report.mjs",
+      "--manifest",
+      path.join(packOutputDir, "current.json"),
+      "--root",
+      packOutputDir,
+      "--build-spec",
+      path.join(root, "tools/datapack/release/candidate-build-spec.json"),
+      "--output",
+      routeGraphTopologyReportPath,
+    ],
+    { cwd: root },
   );
+  const routeGraphTopologyReport = JSON.parse(await readFile(routeGraphTopologyReportPath, "utf8"));
+  assert.equal(routeGraphTopologyReport.artifactKind, "route-graph-topology-report");
+  assert.equal(routeGraphTopologyReport.channel, "dev");
+  assert.equal(routeGraphTopologyReport.packs[0].artifactKind, "fixture");
+  assert.equal(routeGraphTopologyReport.summary.disconnectedNodeCount, 2);
+  assert.equal(routeGraphTopologyReport.summary.unreachableDirectedPairCount, 2);
 
   // #2609 source governance 완료만으로 route availability를 추정하지 않는다. #2611 전수 평가와 #2612 strict
   // fail-closed가 닫힐 때까지 production route coverage는 명시적으로 NO_GO다.
@@ -13142,38 +13172,31 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
       ],
       { cwd: root, env: productionEnv },
     ),
-    /capital@1 verified ENTRY coverage gap: 2\/2/,
+    /capital@1 remote publish requires production artifactKind/,
   );
 
   const coverageReportPath = path.join(outputDir, "capital-pilot-coverage-summary.json");
-  await execFileAsync(
-    process.execPath,
-    [
-      "tools/datapack/report-coverage-gaps.mjs",
-      "--targets",
-      "tools/datapack/capital-pilot-coverage-targets.json",
-      "--inventory",
-      path.join(outputDir, "test-only-source-inventory.json"),
-      "--manifest",
-      path.join(packOutputDir, "current.json"),
-      "--provenance",
-      path.join(packOutputDir, "current.provenance.json"),
-      "--output",
-      coverageReportPath,
-      "--allow-gaps",
-    ],
-    { cwd: root },
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/report-coverage-gaps.mjs",
+        "--targets",
+        "tools/datapack/capital-pilot-coverage-targets.json",
+        "--inventory",
+        path.join(outputDir, "test-only-source-inventory.json"),
+        "--manifest",
+        path.join(packOutputDir, "current.json"),
+        "--provenance",
+        path.join(packOutputDir, "current.provenance.json"),
+        "--output",
+        coverageReportPath,
+        "--allow-gaps",
+      ],
+      { cwd: root },
+    ),
+    /capital@1 active field provenance pack must be production/,
   );
-  const coverageReport = JSON.parse(await readFile(coverageReportPath, "utf8"));
-  assert.equal(coverageReport.summary.coverageComplete, true);
-  assert.equal(coverageReport.summary.missingRequirements, 0);
-  assert.equal(coverageReport.summary.coverageRatio, 1);
-  const scheduleCoverage = coverageReport.requirements.find(
-    (requirement) => requirement.sourceDomain === "schedule_timetable",
-  );
-  assert.equal(scheduleCoverage.status, "covered");
-  assert.deepEqual(scheduleCoverage.sourceIds, ["kric-subway-timetable"]);
-  assert.deepEqual(scheduleCoverage.missingFields, []);
 
   const manifest = JSON.parse(await readFile(path.join(packOutputDir, "current.json"), "utf8"));
   assert.equal(manifest.manifestVersion, 2);
@@ -13182,9 +13205,9 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
   assert.deepEqual(manifest.activePack, { id: "capital", version: "1" });
   assert.equal(Number.isInteger(manifest.releaseSequence), true);
   assert.ok(Date.parse(manifest.expiresAt) > Date.parse(manifest.publishedAt));
-  assert.equal(manifest.signature.algorithm, "rsa-sha256-manifest-v2");
-  assert.equal(manifest.packs[0].artifactKind, "production");
-  assert.equal(manifest.packs[0].signature.algorithm, "rsa-sha256-pack-manifest-v2");
+  assert.equal(manifest.signature.algorithm, "sha256-manifest-v2");
+  assert.equal(manifest.packs[0].artifactKind, "fixture");
+  assert.equal(manifest.packs[0].signature.algorithm, "sha256-pack-manifest-v2");
   assert.equal(manifest.packs[0].routeRegressionScope, undefined);
   assert.deepEqual(manifest.packs[0].representativeRouteRegressions, []);
   const database = new DatabaseSync(path.join(packOutputDir, "catalog", "capital-v1.sqlite"), { readOnly: true });
@@ -13247,6 +13270,26 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
     ["calendar_date", "feed_info", "route", "service_calendar", "stop_time", "trip"],
   );
 
+  const coverageCandidateDir = path.join(outputDir, "coverage-contract-candidate");
+  await mkdir(coverageCandidateDir, { recursive: true });
+  const nationwideCoverageTargets = JSON.parse(
+    await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"),
+  );
+  const coverageInventory = completeCoverageInventory(nationwideCoverageTargets);
+  coverageInventory.sources = coverageInventory.sources.filter(
+    ({ coverageScope }) => !(
+      coverageScope.regionIds.includes("capital")
+      && coverageScope.operatorIds.includes("seoul-metro")
+      && coverageScope.lineIds?.includes("seoul-4")
+      && coverageScope.sourceDomains.includes("route_map_positions")
+    ),
+  );
+  const coverageInventoryPath = path.join(coverageCandidateDir, "source-inventory.json");
+  await writeFile(coverageInventoryPath, `${JSON.stringify(coverageInventory, null, 2)}\n`);
+  await writeCoverageCandidate(coverageCandidateDir, completeCoverageProvenance(coverageInventory));
+  const coverageCandidateManifestPath = path.join(coverageCandidateDir, "current.json");
+  const coverageCandidateProvenancePath = path.join(coverageCandidateDir, "current.provenance.json");
+
   const coverageGapReportPath = path.join(outputDir, "coverage-gap-report.json");
   await execFileAsync(
     process.execPath,
@@ -13255,11 +13298,11 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
       "--targets",
       "tools/datapack/nationwide-coverage-targets.json",
       "--inventory",
-      inventoryPath,
+      coverageInventoryPath,
       "--manifest",
-      path.join(packOutputDir, "current.json"),
+      coverageCandidateManifestPath,
       "--provenance",
-      path.join(packOutputDir, "current.provenance.json"),
+      coverageCandidateProvenancePath,
       "--output",
       coverageGapReportPath,
       "--allow-gaps",
@@ -13291,11 +13334,11 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
       "--targets",
       "tools/datapack/nationwide-coverage-targets.json",
       "--inventory",
-      path.join(outputDir, "test-only-source-inventory.json"),
+      coverageInventoryPath,
       "--manifest",
-      path.join(packOutputDir, "current.json"),
+      coverageCandidateManifestPath,
       "--provenance",
-      path.join(packOutputDir, "current.provenance.json"),
+      coverageCandidateProvenancePath,
       "--release-scope",
       "release/product-gates/production-datapack-scope.json",
       "--output",
@@ -13330,7 +13373,7 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
   // Negative 증명: 워크플로와 동일하게 provenance-backed 상태에서 scope 내 gap을 주입한다. 게시 pack의 provenance에서
   // station_line_membership OFFICIAL 레코드를 제거하면 in-scope gap이 생겨 release-scope 게이트가 exit 1로 실패한다.
   const scopeGapProvenance = JSON.parse(
-    await readFile(path.join(packOutputDir, "current.provenance.json"), "utf8"),
+    await readFile(coverageCandidateProvenancePath, "utf8"),
   );
   for (const pack of scopeGapProvenance.packs) {
     pack.records = pack.records.filter(
@@ -13348,9 +13391,9 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
         "--targets",
         "tools/datapack/nationwide-coverage-targets.json",
         "--inventory",
-        inventoryPath,
+        coverageInventoryPath,
         "--manifest",
-        path.join(packOutputDir, "current.json"),
+        coverageCandidateManifestPath,
         "--provenance",
         scopeGapProvenancePath,
         "--release-scope",
@@ -13390,11 +13433,11 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
         "--targets",
         "tools/datapack/nationwide-coverage-targets.json",
         "--inventory",
-        inventoryPath,
+        coverageInventoryPath,
         "--manifest",
-        path.join(packOutputDir, "current.json"),
+        coverageCandidateManifestPath,
         "--provenance",
-        path.join(packOutputDir, "current.provenance.json"),
+        coverageCandidateProvenancePath,
         "--release-scope",
         emptyScopePath,
         "--output",
@@ -15572,35 +15615,6 @@ function productionSummaryRideEdges(servicePattern = "EXPRESS") {
     sourceSnapshotId: `${edge.sourceId}-snapshot-20260621`,
     providerRecordHash: sha256(`provider:${edge.id}:${edge.sourceId}`),
     evidenceHash: sha256(`evidence:${edge.id}:${edge.sourceId}:${edge.lastVerifiedAt}`),
-  }));
-}
-
-function productionSummaryNetworkEdges(servicePattern = "EXPRESS") {
-  return productionSummaryRideEdges(servicePattern).map((edge) => ({
-    id: edge.id,
-    fromNodeId:
-      edge.from.sourceStationCode === "448"
-        ? "station-sangnoksu:seoul-4:LOCAL"
-        : "station-sadang:seoul-4:LOCAL",
-    toNodeId:
-      edge.to.sourceStationCode === "433"
-        ? "station-sadang:seoul-4:LOCAL"
-        : "station-sangnoksu:seoul-4:LOCAL",
-    durationSeconds: edge.durationSeconds,
-    distanceMeters: edge.distanceMeters,
-    edgeType: edge.edgeType,
-    servicePattern: edge.servicePattern,
-    includesStairs: edge.includesStairs,
-    stairAccessState: edge.stairAccessState,
-    accessibilityStatus: edge.accessibilityStatus,
-    reliabilityScore: edge.reliabilityScore,
-    sourceId: edge.sourceId,
-    sourceSnapshotId: edge.sourceSnapshotId,
-    providerRecordHash: edge.providerRecordHash,
-    provenanceKind: edge.provenanceKind,
-    verificationStatus: edge.verificationStatus,
-    lastVerifiedAt: edge.lastVerifiedAt,
-    evidenceHash: edge.evidenceHash,
   }));
 }
 
