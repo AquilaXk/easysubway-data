@@ -72,13 +72,18 @@ function outputAllowlist(outputs) {
   if (!Array.isArray(outputs) || outputs.length !== OUTPUT_COUNT) throw new Error("static network registration output count mismatch");
   const snapshots = outputs.slice(0, 2).map(({ relative }) => relative);
   const inputs = outputs[0]?.inputs;
+  const predecessorInputs = inputs?.slice(INPUTS.length + 1) ?? [];
   if (!snapshots.every((relative, index) => relative === `tools/datapack/sources/${TARGETS[index]}-current-${snapshotStamp(relative)}.json` && /^20\d{6}T\d{9}Z$/u.test(snapshotStamp(relative)))
     || JSON.stringify(outputs.slice(2).map(({ relative }) => relative)) !== JSON.stringify(FIXED_OUTPUTS)
     || outputs.slice(0, 2).some(({ prestateBytes }) => prestateBytes !== null)
     || outputs.slice(2).some(({ prestateBytes }) => !Buffer.isBuffer(prestateBytes))
     || outputs.some(({ bytes: value }) => !Buffer.isBuffer(value))
     || !Array.isArray(inputs) || JSON.stringify(inputs.slice(0, INPUTS.length).map(({ relative }) => relative)) !== JSON.stringify(INPUTS)
-    || inputs.length !== INPUTS.length + 1 || !new RegExp("^tools/datapack/sources/capital-route-topology-20\\d{6}\\.json$", "u").test(inputs[INPUTS.length]?.relative ?? "")
+    || inputs.length !== INPUTS.length + 1 + TARGETS.length
+    || !new RegExp("^tools/datapack/sources/capital-route-topology-20\\d{6}\\.json$", "u").test(inputs[INPUTS.length]?.relative ?? "")
+    || predecessorInputs.some(({ relative }, index) => !new RegExp(
+      `^tools/datapack/sources/${TARGETS[index]}-current-20\\d{6}T\\d{9}Z\\.json$`, "u",
+    ).test(relative ?? ""))
     || inputs.some(({ bytes: value }) => !Buffer.isBuffer(value)) || outputs.some((output) => output.inputs !== inputs)) throw new Error("static network registration output allowlist mismatch");
 }
 function snapshotStamp(relative) { return relative.match(/-current-([0-9TZ]+)\.json$/u)?.[1] ?? ""; }
@@ -309,7 +314,8 @@ function v2Snapshot({ observation, previous, sourceUpdatedAt }) {
   return snapshot;
 }
 
-function requireActivePublicV2Predecessors({ ledger, heads, inventory, now }) {
+async function requireActivePublicV2Predecessors({ ledger, heads, inventory, now, read }) {
+  const inputs = [];
   for (const sourceId of TARGETS) {
     const previous = ledger.filter(({ snapshotId }) => snapshotId === heads[sourceId]);
     const source = inventory.sources?.find(({ id }) => id === sourceId);
@@ -318,8 +324,19 @@ function requireActivePublicV2Predecessors({ ledger, heads, inventory, now }) {
       requireExactPublicStaticNetworkV2SnapshotBinding({
         snapshot: previous[0], source, now, requireCurrentFreshness: true,
       });
-    } catch { throw new Error("public v2 active predecessor is required"); }
+      const relative = `tools/datapack/sources/${previous[0].snapshotId}.json`;
+      const observationBytes = await read(relative);
+      if (sha(observationBytes) !== previous[0].normalizedObservationSha256
+        || !isDeepStrictEqual(
+          parse(observationBytes, "public v2 active predecessor observation"),
+          previous[0].publicStaticNetworkV2Observation,
+        )) {
+        throw new Error("bytes");
+      }
+      inputs.push({ relative, bytes: observationBytes });
+    } catch { throw new Error("public v2 active predecessor bytes are required"); }
   }
+  return inputs;
 }
 
 function materializePublicV2Observation({ observation, ledger, heads, nextInventory, governance, governanceBytes, freshness, now, currentLayoutAdmission, existingSnapshots }) {
@@ -377,7 +394,7 @@ export async function buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoo
     || JSON.stringify(candidate.sourceSnapshotIds) !== JSON.stringify(candidate.sourceSnapshots.map(({ snapshotId }) => snapshotId))) throw new Error("public v2 candidate source set is invalid");
   const heads = validateLineage(ledger).headsBySource;
   requireCurrentCandidateBinding({ candidate, ledger, heads, inventory, inventoryBytes, governance, governanceBytes, freshness, now });
-  requireActivePublicV2Predecessors({ ledger, heads, inventory, now });
+  inputs.push(...await requireActivePublicV2Predecessors({ ledger, heads, inventory, now, read }));
   const nextInventory = structuredClone(inventory); const snapshots = materializePublicV2Snapshots({ producerOutput, ledger, heads, nextInventory, governance, governanceBytes, freshness, now }); const nextLedger = [...ledger, ...snapshots];
   rebindMolitMembershipEvidence(nextInventory, snapshots.find(({ sourceId }) => sourceId === TARGETS[1]), rawBytesBySource[TARGETS[1]]);
   validateLineage(nextLedger);

@@ -13,7 +13,7 @@ import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 
 const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const repositoryRoot = path.resolve(import.meta.dirname, "../..");
-const INPUT_PATHS = [
+const STATIC_INPUT_PATHS = [
   "tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json",
   "tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json", "tools/datapack/source-governance-policy.json",
   "release/product-gates/datapack-freshness-sla.json", "tools/datapack/sources/capital-route-topology-20260825.json",
@@ -21,7 +21,14 @@ const INPUT_PATHS = [
 
 async function registrationOutputs(root) {
   const output = (relative, before, after) => ({ relative, prestateBytes: before, bytes: after });
-  const inputs = await Promise.all(INPUT_PATHS.map(async (relative) => ({ relative, bytes: await readFile(path.join(root, relative)) })));
+  const staticInputs = await Promise.all(STATIC_INPUT_PATHS.map(async (relative) => ({ relative, bytes: await readFile(path.join(root, relative)) })));
+  const candidate = JSON.parse(staticInputs[2].bytes);
+  const activeObservationPaths = ["seoul-metro-route-map-positions", "molit-urban-rail-full-route"].map((sourceId) =>
+    `tools/datapack/sources/${candidate.sourceSnapshots.find((source) => source.sourceId === sourceId).snapshotId}.json`);
+  const inputs = [...staticInputs, ...await Promise.all(activeObservationPaths.map(async (relative) => ({
+    relative,
+    bytes: await readFile(path.join(root, relative)),
+  })))];
   const outputs = [
     output("tools/datapack/sources/seoul-metro-route-map-positions-current-20260822T000000000Z.json", null, Buffer.from("positions\n")),
     output("tools/datapack/sources/molit-urban-rail-full-route-current-20260822T000000000Z.json", null, Buffer.from("molit\n")),
@@ -62,7 +69,10 @@ test("v2 registrar advances only the exact active V2 heads", async (t) => {
   ));
   const input = await publicV2Input(root); const staged = await buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input });
   assert.equal(staged.length, 5); assert.deepEqual(staged.map(({ relative }) => relative).slice(2), ["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json"]);
-  assert.equal(staged[0].inputs.length, INPUT_PATHS.length);
+  assert.equal(staged[0].inputs.length, STATIC_INPUT_PATHS.length + 2);
+  assert.deepEqual(staged[0].inputs.slice(-2).map(({ relative }) => relative), predecessorIds.map(
+    (snapshotId) => `tools/datapack/sources/${snapshotId}.json`,
+  ));
   const stagedInventory = JSON.parse(staged[2].bytes);
   for (const sourceId of ["seoul-metro-route-map-positions", "molit-urban-rail-full-route"]) {
     const source = stagedInventory.sources.find(({ id }) => id === sourceId);
@@ -123,7 +133,7 @@ test("v2 registrar advances only the exact active V2 heads", async (t) => {
     writeFile(path.join(root, "tools/datapack/release/source-snapshots.json"), `${JSON.stringify(corruptLedger, null, 2)}\n`),
     writeFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), `${JSON.stringify(corruptCandidate, null, 2)}\n`),
   ]);
-  await assert.rejects(buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...nextInput }), /public v2 active predecessor is required/);
+  await assert.rejects(buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...nextInput }), /public v2 active predecessor bytes are required/);
 });
 
 test("v2 registrar rejects forged producer observations and stale or mismatched topology CAS inputs", async (t) => {
@@ -153,6 +163,31 @@ test("v2 registrar rejects forged producer observations and stale or mismatched 
   const staleInventory = structuredClone(baselineInventory);
   await writeFile(inventoryPath, `${JSON.stringify(staleInventory, null, 2)}\n`);
   await assert.rejects(buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input, now: new Date("2026-08-27T00:00:00.000Z") }), /topology admission snapshot is stale or future-dated/);
+});
+
+test("v2 registrar requires exact active observation files instead of ledger-only fallback", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "static-network-v2-active-bytes-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await cp(repositoryRoot, root, { recursive: true, filter: (source) => !source.includes("node_modules") });
+  const input = await publicV2Input(root);
+  const candidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
+  const activePath = (sourceId) => path.join(
+    root,
+    `tools/datapack/sources/${candidate.sourceSnapshots.find((source) => source.sourceId === sourceId).snapshotId}.json`,
+  );
+  const positionPath = activePath("seoul-metro-route-map-positions");
+  const positionBytes = await readFile(positionPath);
+  await writeFile(positionPath, Buffer.concat([positionBytes, Buffer.from("\n")]));
+  await assert.rejects(
+    buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input }),
+    /public v2 active predecessor bytes are required/,
+  );
+  await writeFile(positionPath, positionBytes);
+  await rm(activePath("molit-urban-rail-full-route"));
+  await assert.rejects(
+    buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input }),
+    /public v2 active predecessor bytes are required/,
+  );
 });
 
 test("v2 registrar rejects current candidate and active-head drift without a bootstrap fallback", async (t) => {

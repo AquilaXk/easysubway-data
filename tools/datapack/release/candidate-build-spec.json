@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-candidate-build-spec",
-  "candidateId": "capital-pilot-candidate-20260814",
+  "candidateId": "capital-pilot-candidate-20260825",
   "productionScopeId": "capital_pilot_android_v1",
-  "publishedAt": "2026-08-14T15:34:07.000Z",
+  "publishedAt": "2026-08-26T03:54:09.251Z",
   "releaseSequence": 1,
   "fixturePath": "tools/datapack/release/capital-production-canonical-pack.json",
   "itxTopologyEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence-20260824170958799.json",
@@ -19,24 +19,24 @@
       "snapshotId": "capital-route-topology-20260724"
     },
     "capitalTopologyCandidate": {
-      "path": "tools/datapack/sources/capital-route-topology-20260814.json",
-      "sha256": "07e1914d35c3c1d9584a22df674e81ac90537363ac1a95ae78299cc3bafa9ffc",
-      "snapshotId": "capital-route-topology-20260814"
+      "path": "tools/datapack/sources/capital-route-topology-20260825.json",
+      "sha256": "44268c761c4747532a3acaca03bd76634273a5ad3b7cbf23c46c993b2166590d",
+      "snapshotId": "capital-route-topology-20260825"
     },
     "capitalTopologyReverification": {
-      "path": "tools/datapack/release/capital-topology-reverification-20260814.json",
-      "sha256": "dd53e0c772453e7562e8791e87a8d0cadc9b54ca9fc75e89d7c5ed24aa38d7ae"
+      "path": "tools/datapack/release/capital-topology-reverification-20260825.json",
+      "sha256": "662cd1313c1347ecb0028c5e1bb1b3b2b741a74855d7fb2184f57d621960bf0a"
     },
     "capitalTopologyAdmission": {
       "schemaVersion": 1,
       "artifactKind": "capital-network-edge-admission",
       "issue": 2649,
       "status": "ADMITTED",
-      "snapshotId": "capital-route-topology-20260814",
+      "snapshotId": "capital-route-topology-20260825",
       "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
-      "reviewedAt": "2026-08-14T15:34:07.000Z",
-      "reverifiedAt": "2026-08-14T15:34:07.000Z",
-      "freshUntil": "2026-08-15T15:34:07.000Z"
+      "reviewedAt": "2026-08-25T15:23:46.070Z",
+      "reverifiedAt": "2026-08-25T15:23:46.070Z",
+      "freshUntil": "2026-08-26T15:23:46.070Z"
     },
     "itxCoverageContract": {
       "path": "tools/datapack/itx-cheongchun-coverage-contract.json",
@@ -180,7 +180,7 @@
   "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
   "approvedOverrideSetHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
   "sourceInventorySha256": "971a6cb54c1837f215ab86680f626d9733f6f4fd6524759e8e5be319f377f189",
-  "builderGitSha": "1e25aa43b22253703c5102f477fa9a852bcd89b8",
+  "builderGitSha": "94a274f4c088561a8bb462b29c946471cce1dc4c",
   "builderVersion": "build-datapack.mjs@26",
   "officialOdFareEvidence": {
     "sourceId": "seoul-metro-official-od-fares",

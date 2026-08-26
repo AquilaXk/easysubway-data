@@ -25,7 +25,7 @@
           "licenseStatus": "redistributable",
           "redistributionAllowed": true,
           "updateFrequency": "annual",
-          "updatedAt": "2026-08-24T00:00:00.000Z",
+          "updatedAt": "2026-08-26T00:00:00.000Z",
           "fields": [
             "region",
             "operator_name",

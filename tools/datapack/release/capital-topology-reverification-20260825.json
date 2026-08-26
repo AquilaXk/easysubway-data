@@ -4,8 +4,8 @@
   "sourceIssue": 60,
   "admissionIssue": 2649,
   "baseline": {
-    "snapshotId": "capital-route-topology-20260825",
-    "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+    "snapshotId": "capital-route-topology-20260724",
+    "contentSha256": "95808e98b9dc141ddf34cfbfcb01c4c92a000db8ab1c11d9912d68b3f6ee0e67",
     "normalizedLineSetSha256": "c7e9950524d88cfb1bc8140771d510a9ad9f866e5e364165b313d5c5f0a96adb"
   },
   "candidate": {

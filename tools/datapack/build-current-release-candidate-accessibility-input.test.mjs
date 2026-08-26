@@ -23,6 +23,7 @@ import {
 } from "./build-current-capital-station-line-input.mjs";
 import { fixture as fullCapitalFixture } from "./build-current-capital-station-line-input.test.mjs";
 import { buildCurrentCapitalAccessibilityRefreshOutputs } from "./refresh-current-capital-accessibility-full.mjs";
+import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
 import {
   copySyntheticCurrentPublicRouteMapRepository,
   nextSyntheticCurrentStaticNetworkNow,
@@ -133,8 +134,17 @@ test("합성 current public successor는 1,102 metadata·2,664 route·456 author
   assert.equal(route.stationLines.length, 1102);
   assert.equal(route.routeEdges.length, 2664);
   assert.equal(result.authority.edges.length, 456);
-  assert.equal(result.authority.edges.flatMap(({ requiredCells }) => requiredCells)
-    .filter(({ state }) => state === "UNVERIFIED_EVIDENCE_BLOCKED").length, 1);
+  const authorityCells = result.authority.edges.flatMap(({ requiredCells }) => requiredCells);
+  const authorityCellKeys = new Set(authorityCells.map(({ stationId, lineId, domain }) =>
+    `${stationId}:${lineId}:${domain}`));
+  const materialization = materializeStationLineAccessibility({
+    ...stationLineInput,
+    observedAt: result.authority.buildInput.observedAt,
+  });
+  const expectedBlockedCellCount = materialization.rows.filter(({ stationId, lineId, domain, state }) =>
+    state === "UNVERIFIED_EVIDENCE_BLOCKED" && authorityCellKeys.has(`${stationId}:${lineId}:${domain}`)).length;
+  assert.ok(expectedBlockedCellCount > 0);
+  assert.equal(authorityCells.filter(({ state }) => state === "UNVERIFIED_EVIDENCE_BLOCKED").length, expectedBlockedCellCount);
   assert.equal(result.candidateFixture.packs[0].networkEdges.length, 2664);
 });
 
