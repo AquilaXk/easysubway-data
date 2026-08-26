@@ -139,8 +139,8 @@ async function seoulCurrentLayoutFixture() {
   ].map((field) => [field, artifact[field]]));
   layoutEvidence.layoutArtifactSha256 = sha256(Buffer.from(`${JSON.stringify(artifact)}\n`));
   const observation = {
-    schemaVersion: 1,
-    artifactKind: "static-network-successor-observation",
+    schemaVersion: 2,
+    artifactKind: "public-static-network-v2-observation",
     sourceId: artifact.sourceId,
     snapshotId,
     capturedAt: artifact.capturedAt,
@@ -148,7 +148,7 @@ async function seoulCurrentLayoutFixture() {
     contentSha256: sha256(Buffer.from(`${JSON.stringify(normalizedProjection)}\n`)),
     rowCount: normalizedProjection.length,
     normalizedProjection,
-    layoutEvidence,
+    routeMapLayoutEvidence: layoutEvidence,
     routeMapLayoutArtifact: artifact,
   };
   const snapshotBytes = Buffer.from(`${JSON.stringify(observation)}\n`);
@@ -299,7 +299,7 @@ test("서울 public v2 layout observation은 exact admission과 topology bytes�
     snapshotBytesByPath: new Map([[tampered.snapshotPath, tampered.snapshotBytes]]),
     topologySnapshotBytes: tampered.topologySnapshotBytes,
     layoutTopologySnapshotBytesById: new Map([["capital-route-topology-20260823", tampered.topologySnapshotBytes]]),
-  }), /layout observation identity/);
+  }), /V2_MISSING/);
 });
 
 test("immutable current layout은 historical topology bytes로 검증한 뒤 current topology에서 재물질화한다", async () => {

@@ -90,7 +90,7 @@ test("candidate ITX topology evidence path is confined to the versioned root-rel
   try {
     const candidatePath = path.join(stage, "tools/datapack/release/candidate-build-spec.json");
     const candidate = JSON.parse(await readFile(candidatePath, "utf8"));
-    assert.equal(candidate.itxTopologyEvidencePath, "tools/datapack/itx-cheongchun-topology-evidence.json");
+    assert.equal(candidate.itxTopologyEvidencePath, "tools/datapack/itx-cheongchun-topology-evidence-20260824170958799.json");
     await assert.doesNotReject(buildCurrentActivePublicRouteMapMaterializationOutputs({ repositoryRoot: stage }));
     candidate.itxTopologyEvidencePath = "../outside.json";
     await writeFile(candidatePath, `${JSON.stringify(candidate)}\n`);

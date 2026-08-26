@@ -19,6 +19,7 @@ import { assertNoRetiredTransitReferences, projectRetiredTransitLines } from "./
 import { projectCanonicalRouteMapProvenance } from "./project-canonical-route-map-provenance.mjs";
 import { applySchedule } from "./apply-kric-line4-pilot-schedule.mjs";
 import {
+  CAPITAL_MAP_LINE_IDS,
   buildCapitalTopologyReverificationEvidence,
   projectCapitalTopologyOwnership,
   requireCurrentSourceSeparatedCapitalTopology,
@@ -1345,6 +1346,9 @@ export function buildCurrentCandidateSpec({
   const snapshotDate = topologySnapshotId.slice(-8);
   const topologyReverificationPath = `tools/datapack/release/capital-topology-reverification-${snapshotDate}.json`;
   const spec = structuredClone(baseSpec);
+  if (spec.networkEdgeEvidence) {
+    delete spec.networkEdgeEvidence.itxCurrentTopologyAdmission;
+  }
   spec.candidateId = `capital-pilot-candidate-${snapshotDate}`;
   spec.builderGitSha = builderGitSha;
   spec.builderVersion = "build-datapack.mjs@26";

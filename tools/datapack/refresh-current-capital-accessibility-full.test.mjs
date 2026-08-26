@@ -9,7 +9,6 @@ import { buildCurrentCapitalAccessibilityRefreshOutputs, commitCurrentCapitalAcc
 import { buildCurrentExitAdmissionOciReceipt, canonicalCurrentExitAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
 import { readStableRegularFile } from "./rebind-current-candidate-source-snapshots.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
-import { stageSyntheticCurrentItxTopologyAdmission } from "./test-fixtures/current-itx-topology-admission.mjs";
 import { activateSyntheticCurrentStaticNetworkSuccessors } from "./test-fixtures/current-public-route-map-successor.mjs";
 import { currentIncheonStationCodeDerivations } from "./collect-incheon-station-info.mjs";
 import {
@@ -313,10 +312,11 @@ async function writeStagedExitOciReceipt(root) {
 // synthetic Incheon 입력을 exact bytes로 결속해, 과거 tracked 관측을 현재 성공으로
 // 오인하지 않고 static-successor transaction의 정상 경로만 재현한다.
 async function stageCurrentTopologyFixture(root) {
-  const [baseSpec, sourceInventory, canonical, policyBytes, incheonBytes] = await Promise.all([
+  const [baseSpec, sourceInventory, canonical, productionInput, policyBytes, incheonBytes] = await Promise.all([
     readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json")).then(JSON.parse),
     readFile(path.join(root, "tools/datapack/source-inventory.json")).then(JSON.parse),
     readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json")).then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/inputs/capital-pilot-production-source-input.json")).then(JSON.parse),
     readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json")),
     readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260814.json")),
   ]);
@@ -328,8 +328,8 @@ async function stageCurrentTopologyFixture(root) {
   const currentTopologyBytes = await readFile(path.join(root, currentTopologyPath));
   const currentTopology = JSON.parse(currentTopologyBytes);
   const { inWindow } = await currentTopologyAdmissionClock(root);
-  const { baseSpec: currentItxBaseSpec, admissionPath: currentItxAdmissionPath, admissionBytes: currentItxAdmissionBytes } =
-    await stageSyntheticCurrentItxTopologyAdmission(root, baseSpec, inWindow);
+  const currentItxTopologyEvidencePath = baseSpec.itxTopologyEvidencePath;
+  const currentItxTopologyEvidenceBytes = await readFile(path.join(root, currentItxTopologyEvidencePath));
   const currentIncheonTopology = JSON.parse(incheonBytes);
   delete currentIncheonTopology.stationCodeCorrections;
   currentIncheonTopology.stationCodeDerivations = currentIncheonStationCodeDerivations();
@@ -339,7 +339,7 @@ async function stageCurrentTopologyFixture(root) {
   const currentIncheonTopologyPath = `tools/datapack/sources/incheon-transit-station-info-${inWindow.toISOString().slice(0, 10).replaceAll("-", "")}.json`;
   const baselineTopologyBytes = await readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260724.json"));
   const result = buildCurrentTopologyRefreshPrimaryOutputs({
-    baseSpec: currentItxBaseSpec,
+    baseSpec,
     builderGitSha: baseSpec.builderGitSha,
     sourceInventory,
     currentTopology,
@@ -348,11 +348,12 @@ async function stageCurrentTopologyFixture(root) {
     currentIncheonTopology,
     currentIncheonTopologyBytes,
     currentIncheonTopologyPath,
-    currentItxAdmissionPath,
-    currentItxAdmissionBytes,
+    currentItxTopologyEvidencePath,
+    currentItxTopologyEvidenceBytes,
     baselineTopology: JSON.parse(baselineTopologyBytes),
     baselineTopologyBytes,
     canonical,
+    productionInput,
     productionScopePolicyBytes: policyBytes,
     buildNow: inWindow.toISOString(),
     snapshotBytesByPath: await collectPositionSnapshotBytes(sourceInventory, root),

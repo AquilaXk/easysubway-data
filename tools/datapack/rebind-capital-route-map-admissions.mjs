@@ -11,6 +11,7 @@ import {
   buildSeoulRouteMapPositions,
   validateSeoulRouteMapPositionsSnapshot,
 } from "./collect-seoul-route-map-positions.mjs";
+import { requirePublicStaticNetworkV2Admission } from "./public-static-network-v2-admission.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const SHA256 = /^[a-f0-9]{64}$/u;
@@ -98,8 +99,22 @@ function validateCurrentLayoutObservation({ source, admission, bytes, topologyBy
   }
   const observation = parseSnapshot(bytes, "Seoul current layout observation");
   const artifact = observation?.routeMapLayoutArtifact;
-  const layout = observation?.layoutEvidence;
   if (!artifact) throw new Error("Seoul current layout observation identity is invalid");
+  const { layout } = requirePublicStaticNetworkV2Admission({
+    positions: {
+      sourceId: observation.sourceId,
+      snapshotId: observation.snapshotId,
+      retrievedAt: observation.capturedAt,
+      rawSha256: observation.rawSha256,
+      contentSha256: observation.contentSha256,
+      rowCount: observation.rowCount,
+      normalizedObservationSha256: sha256(bytes),
+      routeMapLayoutEvidence: observation.routeMapLayoutEvidence,
+      routeMapLayoutArtifact: artifact,
+      publicStaticNetworkV2Observation: observation,
+    },
+    positionSource: source,
+  });
   validateSeoulRouteMapPositionsSnapshot(artifact, { topologySnapshotBytes: topologyBytes });
   const expectedLayout = Object.fromEntries(LAYOUT_EVIDENCE_FIELDS.map((field) => [
     field,
@@ -117,8 +132,8 @@ function validateCurrentLayoutObservation({ source, admission, bytes, topologyBy
     ...expectedLayout,
   };
   if (observation?.sourceId !== source.id
-    || observation.schemaVersion !== 1
-    || observation.artifactKind !== "static-network-successor-observation"
+    || observation.schemaVersion !== 2
+    || observation.artifactKind !== "public-static-network-v2-observation"
     || observation.snapshotId !== admission.positionSnapshotId
     || observation.capturedAt !== artifact.capturedAt
     || artifact.rawSha256 !== observation.rawSha256

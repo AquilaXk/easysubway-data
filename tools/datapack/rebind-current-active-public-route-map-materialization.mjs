@@ -11,6 +11,7 @@ import {
   materializeSeoulRouteMapPositions,
   verifyCurrentCapitalPublicRouteMapDocument,
 } from "./materialize-seoul-route-map-positions.mjs";
+import { requireExactPublicStaticNetworkV2SnapshotBinding } from "./public-static-network-v2-admission.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const SOURCE_ID = "seoul-metro-route-map-positions";
@@ -36,7 +37,7 @@ function sha256(bytes) {
 function pathFor(root, relative) {
   const permitted = OUTPUTS.includes(relative) || STAGE_INPUTS.includes(relative)
     || /^tools\/datapack\/sources\/(?:seoul-metro-route-map-positions-current-\d{8}T\d{9}Z|capital-route-topology-\d{8})\.json$/u.test(relative) || relative === JOURNAL_PATH
-    || relative === "tools/datapack/itx-cheongchun-topology-evidence.json";
+    || /^tools\/datapack\/itx-cheongchun-topology-evidence-[0-9]{17}\.json$/u.test(relative);
   if (!permitted) throw new Error(`current public route-map path is not allowlisted: ${relative}`);
   const resolved = path.resolve(root, relative);
   if (!resolved.startsWith(`${path.resolve(root)}${path.sep}`)) {
@@ -47,7 +48,7 @@ function pathFor(root, relative) {
 
 function requiredItxTopologyEvidencePath(candidate) {
   const relative = candidate?.itxTopologyEvidencePath;
-  if (relative !== "tools/datapack/itx-cheongchun-topology-evidence.json") {
+  if (!/^tools\/datapack\/itx-cheongchun-topology-evidence-[0-9]{17}\.json$/u.test(relative ?? "")) {
     throw new Error("current public route-map candidate ITX topology evidence path is invalid");
   }
   return relative;
@@ -142,30 +143,30 @@ function requiredRouteMapSource(inventory) {
     || ![admission.snapshotSha256, admission.topologySnapshotSha256].every((value) => /^[a-f0-9]{64}$/u.test(value ?? ""))) {
     throw new Error("current public route-map admission is missing");
   }
-  return { admission, observationPath, topologyPath };
+  return { source, admission, observationPath, topologyPath };
 }
 
-function requiredSuccessor(snapshots, admission, rawPositionCount) {
-  const successor = snapshots.find(({ sourceId, snapshotId }) =>
+function requiredSuccessor(snapshots, source, admission, rawPositionCount) {
+  const matches = snapshots.filter(({ sourceId, snapshotId }) =>
     sourceId === SOURCE_ID && snapshotId === admission.positionSnapshotId);
-  const migration = successor?.projectionMigration;
-  if (successor?.previousSnapshotId !== null
-    || migration?.migrationKind !== "CROSS_SOURCE_CANONICAL_REPLACEMENT"
-    || migration.sourceId !== SOURCE_ID
-    || migration.replacedSourceId !== "seoulmetro-cyberstation-route-map"
-    || !Array.isArray(successor.providerRecordHashes)
+  const successor = matches[0];
+  if (matches.length !== 1
+    || !Array.isArray(successor?.providerRecordHashes)
     || successor.providerRecordHashes.length !== rawPositionCount) {
-    throw new Error("current public route-map successor migration is invalid");
+    throw new Error("current public route-map V2 successor is invalid");
   }
+  requireExactPublicStaticNetworkV2SnapshotBinding({ snapshot: successor, source });
   return successor;
 }
 
 function assertObservation(observation, admission, successor, topologyBytes) {
   if (sha256(observation.bytes) !== admission.snapshotSha256
+    || observation.value.schemaVersion !== 2
+    || observation.value.artifactKind !== "public-static-network-v2-observation"
+    || observation.value.sourceId !== SOURCE_ID
     || observation.value.snapshotId !== admission.positionSnapshotId
-    || observation.value.migration?.migrationKind !== "CROSS_SOURCE_CANONICAL_REPLACEMENT"
-    || observation.value.migration?.replacedSourceId !== "seoulmetro-cyberstation-route-map"
-    || JSON.stringify(observation.value.layoutEvidence) !== JSON.stringify(successor.routeMapLayoutEvidence)
+    || JSON.stringify(observation.value) !== JSON.stringify(successor.publicStaticNetworkV2Observation)
+    || JSON.stringify(observation.value.routeMapLayoutEvidence) !== JSON.stringify(successor.routeMapLayoutEvidence)
     || JSON.stringify(observation.value.routeMapLayoutArtifact) !== JSON.stringify(successor.routeMapLayoutArtifact)
     || sha256(topologyBytes) !== admission.topologySnapshotSha256) {
     throw new Error("current public route-map observation binding drift");
@@ -210,7 +211,7 @@ export async function buildCurrentActivePublicRouteMapMaterializationOutputs({ r
   inputCapture.push(await readStable(itxTopologyEvidencePath, { root: repositoryRoot, parse: false }));
   input.set(itxTopologyEvidencePath, inputCapture.at(-1));
   const inventory = JSON.parse(input.get("tools/datapack/source-inventory.json").bytes);
-  const { admission, observationPath, topologyPath } = requiredRouteMapSource(inventory);
+  const { source, admission, observationPath, topologyPath } = requiredRouteMapSource(inventory);
   const dynamicInputs = await captureBytes(repositoryRoot, [observationPath, topologyPath]);
   inputCapture.push(...dynamicInputs);
   for (const entry of dynamicInputs) input.set(entry.relative, entry);
@@ -218,7 +219,7 @@ export async function buildCurrentActivePublicRouteMapMaterializationOutputs({ r
   const observation = { ...input.get(observationPath), value: JSON.parse(input.get(observationPath).bytes) };
   const artifact = observation.value?.routeMapLayoutArtifact;
   if (!Array.isArray(artifact?.rawPositions) || !Array.isArray(artifact.layoutTracks)) throw new Error("current public route-map observation identity is invalid");
-  const successor = requiredSuccessor(snapshots, admission, artifact.rawPositions.length);
+  const successor = requiredSuccessor(snapshots, source, admission, artifact.rawPositions.length);
   assertObservation(observation, admission, successor, input.get(topologyPath).bytes);
 
   const materialized = materializeSeoulRouteMapPositions({

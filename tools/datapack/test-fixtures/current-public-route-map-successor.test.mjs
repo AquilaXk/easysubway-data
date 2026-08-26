@@ -17,14 +17,14 @@ test("current public candidate slot derives a same-source public V2 successor on
   const root = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-predecessor-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, root, {
-    now: new Date("2026-08-22T09:45:18.609Z"),
+    now: new Date("2026-08-26T04:00:00.000Z"),
   });
 
   const before = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
   assert.equal(before.sourceSnapshots[0].sourceId, "seoul-metro-route-map-positions");
 
   const result = await activateSyntheticCurrentPublicRouteMapSuccessor(root, {
-    now: new Date("2026-08-22T10:45:18.609Z"),
+    now: new Date("2026-08-26T04:15:00.000Z"),
   });
   assert.match(result.predecessorSnapshotId, /^seoul-metro-route-map-positions-current-/u);
 
@@ -54,11 +54,11 @@ test("already-public-root fixture activation preserves one valid source lineage 
   const root = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-existing-root-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, root, {
-    now: new Date("2026-08-25T09:45:18.609Z"),
+    now: new Date("2026-08-26T04:00:00.000Z"),
   });
 
   const result = await activateSyntheticCurrentPublicRouteMapSuccessor(root, {
-    now: new Date("2026-08-25T10:45:18.609Z"),
+    now: new Date("2026-08-26T04:15:00.000Z"),
   });
   const [candidate, snapshots] = await Promise.all([
     readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
@@ -75,7 +75,7 @@ test("current public fixture rejects a duplicate or out-of-scope candidate linea
   const root = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-invalid-lineage-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, root, {
-    now: new Date("2026-08-25T09:45:18.609Z"),
+    now: new Date("2026-08-26T04:00:00.000Z"),
     activatePublicRouteMap: false,
   });
   const inventoryPath = path.join(root, "tools/datapack/source-inventory.json");
@@ -87,7 +87,7 @@ test("current public fixture rejects a duplicate or out-of-scope candidate linea
   await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
 
   await assert.rejects(
-    activateSyntheticCurrentPublicRouteMapSuccessor(root, { now: new Date("2026-08-25T10:45:18.609Z") }),
+    activateSyntheticCurrentPublicRouteMapSuccessor(root, { now: new Date("2026-08-26T04:15:00.000Z") }),
     /synthetic current topology admission bytes are invalid/,
   );
 });
@@ -96,7 +96,7 @@ test("advancing a current public head derives records from its admitted current 
   const root = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-current-layout-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, root, {
-    now: new Date("2026-08-25T09:45:18.609Z"),
+    now: new Date("2026-08-26T04:00:00.000Z"),
     activatePublicRouteMap: false,
   });
 
@@ -136,7 +136,7 @@ test("advancing a current public head keeps retrieval time monotonic in a one-se
   const root = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-monotonic-time-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, root, {
-    now: new Date("2026-08-25T09:45:18.609Z"),
+    now: new Date("2026-08-26T04:00:00.000Z"),
     activatePublicRouteMap: false,
   });
 
@@ -173,11 +173,11 @@ test("registrar fixture derives a selected same-source public root", async (t) =
   t.after(() => rm(source, { recursive: true, force: true }));
   t.after(() => rm(root, { recursive: true, force: true }));
   await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, source, {
-    now: new Date("2026-08-25T09:45:18.609Z"),
+    now: new Date("2026-08-26T04:00:00.000Z"),
   });
 
   const result = await createStaticNetworkRegistrarPredecessorFixture(source, root, {
-    now: new Date("2026-08-25T09:45:18.609Z"),
+    now: new Date("2026-08-26T04:00:00.000Z"),
   });
   const [candidate, snapshots] = await Promise.all([
     readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),

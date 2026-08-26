@@ -6,6 +6,7 @@ import { isDeepStrictEqual } from "node:util";
 import { buildSeoulRouteMapPositions } from "../collect-seoul-route-map-positions.mjs";
 import {
   buildCapitalTopologyReverificationEvidence,
+  projectCapitalTopologyOwnership,
 } from "../collect-capital-route-topology.mjs";
 import { currentIncheonStationCodeDerivations } from "../collect-incheon-station-info.mjs";
 import {
@@ -27,7 +28,6 @@ import { buildSnapshotDiff } from "../source-snapshot-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
 import { codepointCompare } from "../../lib/codepoint-compare.mjs";
 import { currentTopologyAdmissionClock } from "./current-topology-admission-clock.mjs";
-import { stageSyntheticCurrentKricAccessibilitySuccessors } from "./current-kric-accessibility-successor.mjs";
 
 const PUBLIC_SOURCE_ID = "seoul-metro-route-map-positions";
 const MOLIT_SOURCE_ID = "molit-urban-rail-full-route";
@@ -221,10 +221,7 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
     });
     await bindSyntheticActivatedOutputsToCurrentCandidate(targetRoot);
     const result = await activateSyntheticCurrentStaticNetworkSuccessors(targetRoot, { now });
-    await stageSyntheticCurrentKricAccessibilitySuccessors(targetRoot, { now });
-    await bindSyntheticActivatedOutputsToCurrentCandidate(targetRoot, { rewindStaticSuccessors: true });
-    const transition = await bindSyntheticDependentAdmissionsToCurrentTransition(targetRoot);
-    await rebuildSyntheticCurrentAccessibilityOutputs(targetRoot, transition);
+    await bindSyntheticDependentAdmissionsToCurrentTransition(targetRoot);
     return result;
   }
   const [source, target] = await Promise.all([
@@ -280,28 +277,9 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
   return activateSyntheticCurrentPublicRouteMapSuccessor(target, { now });
 }
 
-async function bindSyntheticActivatedOutputsToCurrentCandidate(
-  root,
-  { rewindStaticSuccessors = false } = {},
-) {
-  const [candidate, snapshots] = await Promise.all([
-    readJson(root, "tools/datapack/release/candidate-build-spec.json"),
-    readJson(root, "tools/datapack/release/source-snapshots.json"),
-  ]);
-  let sourceSetSha256 = candidate.sourceSnapshotSetHash;
-  if (rewindStaticSuccessors) {
-    const predecessorIds = new Set(candidate.sourceSnapshotIds.map((selectedId, index) => {
-      const sourceId = candidate.sourceSnapshots[index].sourceId;
-      if (![PUBLIC_SOURCE_ID, MOLIT_SOURCE_ID].includes(sourceId)) return selectedId;
-      return snapshots.find(({ snapshotId }) => snapshotId === selectedId)?.previousSnapshotId;
-    }));
-    const predecessor = snapshots.filter(({ snapshotId }) => predecessorIds.has(snapshotId));
-    if (predecessorIds.size !== candidate.sourceSnapshotIds.length
-      || predecessor.length !== predecessorIds.size) {
-      throw new Error("synthetic activated predecessor source-set is invalid");
-    }
-    sourceSetSha256 = sha256(JSON.stringify(predecessor));
-  }
+async function bindSyntheticActivatedOutputsToCurrentCandidate(root) {
+  const candidate = await readJson(root, "tools/datapack/release/candidate-build-spec.json");
+  const sourceSetSha256 = candidate.sourceSnapshotSetHash;
   const outputPaths = [
     "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
     "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
@@ -399,44 +377,6 @@ async function bindSyntheticDependentAdmissionsToCurrentTransition(root) {
     positionPreviousSnapshotId: positions.previousSnapshotId,
     molitPreviousSnapshotId: molit.previousSnapshotId,
   };
-}
-
-async function rebuildSyntheticCurrentAccessibilityOutputs(root, transition) {
-  const [{
-    buildCurrentCapitalStationLineInput,
-    canonicalCurrentCapitalStationLineInputJson,
-    readCurrentCapitalInputs,
-  }, {
-    buildCurrentCapitalRouteEdgeInput,
-    canonicalCurrentCapitalRouteEdgeInputJson,
-  }, {
-    projectCandidateFixtureForAccessibilityAuthority,
-  }] = await Promise.all([
-    import("../build-current-capital-station-line-input.mjs"),
-    import("../build-current-capital-route-edge-input.mjs"),
-    import("../build-datapack.mjs"),
-  ]);
-  const input = await readCurrentCapitalInputs(root, {
-    readTransitionBoundaryImpl: async () => transition,
-  });
-  const canonicalPack = await projectCandidateFixtureForAccessibilityAuthority({
-    buildSpec: input.candidateBuildSpec,
-    sourceFixture: input.canonicalPack,
-    repositoryRoot: root,
-  });
-  const refreshed = { ...input, canonicalPack };
-  const station = buildCurrentCapitalStationLineInput(refreshed);
-  const route = buildCurrentCapitalRouteEdgeInput(refreshed);
-  await Promise.all([
-    writeFile(
-      path.join(root, "tools/datapack/release/current-capital-accessibility-full/station-line-input.json"),
-      Buffer.from(canonicalCurrentCapitalStationLineInputJson(station)),
-    ),
-    writeFile(
-      path.join(root, "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json"),
-      Buffer.from(canonicalCurrentCapitalRouteEdgeInputJson(route)),
-    ),
-  ]);
 }
 
 async function writeSyntheticCurrentExitOciReceipt(root) {
@@ -786,8 +726,8 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     capitalTopology: currentTopology,
     incheonSnapshot: currentIncheonTopology,
   });
-  if (currentIncheonTopology.lines.length !== 2
-    || currentIncheonTopology.lines.reduce((count, line) => count + line.edgeCount, 0) !== 116) {
+  if (currentIncheonTopology.topologyLineIds.length !== 2
+    || currentIncheonTopology.edgeCount !== 116) {
     throw new Error("synthetic current Incheon topology admission bytes are invalid");
   }
   const candidateLineIds = new Set(currentTopology.lines.map(({ lineId }) => lineId));

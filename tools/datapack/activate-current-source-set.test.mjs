@@ -1080,11 +1080,15 @@ test("current public route-map topology는 inventory admission bytes에서 22 li
 });
 
 test("generated current candidate spec은 expired ITX topology overlay를 재도입하지 않는다", async () => {
-  const [baseSpec, sourceInventory, productionScopePolicyBytes] = await Promise.all([
+  const [storedBaseSpec, sourceInventory, productionScopePolicyBytes] = await Promise.all([
     readJson("tools/datapack/release/candidate-build-spec.json"),
     readJson("tools/datapack/source-inventory.json"),
     readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json")),
   ]);
+  const baseSpec = structuredClone(storedBaseSpec);
+  baseSpec.networkEdgeEvidence.itxCurrentTopologyAdmission = {
+    snapshotId: "obsolete-itx-current-topology",
+  };
   const { admission, relativePath: currentTopologyPath, bytes: currentTopologyBytes, topology: currentTopology } =
     await currentCapitalTopology(sourceInventory);
   assert.equal(currentTopology.lines.length, 22);
