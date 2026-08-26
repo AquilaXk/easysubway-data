@@ -24,6 +24,7 @@ import {
   buildCapitalTopologyReverificationEvidence,
   projectCapitalTopologyOwnership,
 } from "./collect-capital-route-topology.mjs";
+import { retainPreAuthorityRideEdges } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
 import {
   materializeCurrentFanInCandidateArtifact,
@@ -168,11 +169,17 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   await assert.rejects(readFile(path.join(directOutput, "current.json")), /ENOENT/);
   const validationOnlyFixturePath = "validation-only-source-fixture.json";
   const validationOnlyBuildSpecPath = "validation-only-build-spec.json";
+  const sourceFixture = JSON.parse(await readFile(path.join(directory, buildSpec.fixturePath)));
   const validationOnlyFixture = await projectCandidateFixtureForAccessibilityAuthority({
     buildSpec,
-    sourceFixture: JSON.parse(await readFile(path.join(directory, buildSpec.fixturePath))),
+    sourceFixture,
     repositoryRoot: directory,
   });
+  const sourcePack = retainPreAuthorityRideEdges(sourceFixture, "validation-only source").packs
+    .find(({ id }) => id === "capital");
+  const validationOnlyPack = validationOnlyFixture.packs.find(({ id }) => id === "capital");
+  validationOnlyPack.networkEdges = structuredClone(sourcePack.networkEdges);
+  validationOnlyPack.outOfStationTransferLinks = structuredClone(sourcePack.outOfStationTransferLinks);
   await Promise.all([
     writeFile(
       path.join(directory, validationOnlyFixturePath),
