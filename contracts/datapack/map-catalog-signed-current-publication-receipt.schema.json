@@ -14,7 +14,7 @@
     "freshUntil": { "type": "string", "format": "date-time" },
     "target": { "$ref": "#/$defs/target" },
     "contentDescriptor": { "$ref": "#/$defs/contentDescriptor" },
-    "objects": { "type": "array", "minItems": 7, "maxItems": 7, "items": { "$ref": "#/$defs/object" } },
+    "objects": { "type": "array", "minItems": 7, "maxItems": 7, "prefixItems": [{ "$ref": "#/$defs/mapPublicationManifestObject" }, { "$ref": "#/$defs/mapPublicationInterchangeObject" }, { "$ref": "#/$defs/mapPublicationStylesObject" }, { "$ref": "#/$defs/mapPublicationSvgObject" }, { "$ref": "#/$defs/mapPublicationStationsObject" }, { "$ref": "#/$defs/catalogPublicationManifestObject" }, { "$ref": "#/$defs/catalogPublicationSqliteObject" }], "items": false },
     "operation": { "$ref": "#/$defs/operation" },
     "receiptSha256": { "$ref": "#/$defs/sha256" },
     "keyId": { "type": "string", "minLength": 1 },
@@ -40,6 +40,13 @@
     "mapPack": { "type": "object", "additionalProperties": false, "required": ["manifest", "objects"], "properties": { "manifest": { "$ref": "#/$defs/mapManifest" }, "objects": { "type": "array", "minItems": 5, "maxItems": 5, "prefixItems": [{ "$ref": "#/$defs/mapManifestObject" }, { "$ref": "#/$defs/mapInterchangeObject" }, { "$ref": "#/$defs/mapStylesObject" }, { "$ref": "#/$defs/mapSvgObject" }, { "$ref": "#/$defs/mapStationsObject" }], "items": false } } },
     "catalogPack": { "type": "object", "additionalProperties": false, "required": ["manifest", "objects"], "properties": { "manifest": { "$ref": "#/$defs/catalogManifest" }, "objects": { "type": "array", "minItems": 2, "maxItems": 2, "prefixItems": [{ "$ref": "#/$defs/catalogManifestObject" }, { "$ref": "#/$defs/catalogSqliteObject" }], "items": false } } },
     "object": { "type": "object", "additionalProperties": false, "required": ["pack", "path", "objectKey", "sizeBytes", "sha256", "fullGet"], "properties": { "pack": { "enum": ["map-pack", "station-catalog-pack"] }, "path": { "type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$)).+" }, "objectKey": { "$ref": "#/$defs/objectKey" }, "sizeBytes": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }, "sha256": { "$ref": "#/$defs/sha256" }, "fullGet": { "$ref": "#/$defs/fullGet" } } },
+    "mapPublicationManifestObject": { "allOf": [{ "$ref": "#/$defs/object" }, { "properties": { "pack": { "const": "map-pack" }, "path": { "const": "manifest.json" } } }] },
+    "mapPublicationInterchangeObject": { "allOf": [{ "$ref": "#/$defs/object" }, { "properties": { "pack": { "const": "map-pack" }, "path": { "const": "payload/interchange-layout.json" } } }] },
+    "mapPublicationStylesObject": { "allOf": [{ "$ref": "#/$defs/object" }, { "properties": { "pack": { "const": "map-pack" }, "path": { "const": "payload/line-styles.json" } } }] },
+    "mapPublicationSvgObject": { "allOf": [{ "$ref": "#/$defs/object" }, { "properties": { "pack": { "const": "map-pack" }, "path": { "const": "payload/metropolitan.svg" } } }] },
+    "mapPublicationStationsObject": { "allOf": [{ "$ref": "#/$defs/object" }, { "properties": { "pack": { "const": "map-pack" }, "path": { "const": "payload/stations-layout.json" } } }] },
+    "catalogPublicationManifestObject": { "allOf": [{ "$ref": "#/$defs/object" }, { "properties": { "pack": { "const": "station-catalog-pack" }, "path": { "const": "manifest.json" } } }] },
+    "catalogPublicationSqliteObject": { "allOf": [{ "$ref": "#/$defs/object" }, { "properties": { "pack": { "const": "station-catalog-pack" }, "path": { "const": "payload/catalog.sqlite" } } }] },
     "operation": { "type": "object", "additionalProperties": false, "required": ["repository", "headSha", "workflowRunId", "runAttempt", "completedAt"], "properties": { "repository": { "const": "AquilaXk/easysubway-data" }, "headSha": { "$ref": "#/$defs/gitSha" }, "workflowRunId": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }, "runAttempt": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }, "completedAt": { "type": "string", "format": "date-time" } } },
     "signature": { "type": "object", "additionalProperties": false, "required": ["algorithm", "value"], "properties": { "algorithm": { "const": "rsa-sha256-map-catalog-signed-current-v1" }, "value": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" } } }
   }

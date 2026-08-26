@@ -39,6 +39,37 @@ test("receipt는 descriptor의 정확한 7개 inventory, closed OCI keys, full G
   assert.throws(() => validateMapCatalogSignedCurrentOciPublicationReceipt(futureCompletion, { descriptor, publicKey, now: Date.parse("2098-01-01T00:00:00.000Z") }), /operation identity mismatch/);
   const schema = JSON.parse(await readFile("contracts/datapack/map-catalog-signed-current-publication-receipt.schema.json", "utf8"));
   assert.deepEqual(schema.required, ["schemaVersion", "artifactKind", "producerGitSha", "releaseSequence", "signedFinalDescriptorSha256", "stationSetSha256", "freshUntil", "target", "contentDescriptor", "objects", "operation", "receiptSha256", "keyId", "signature"]);
+  assert.deepEqual(schema.properties.objects, {
+    type: "array",
+    minItems: 7,
+    maxItems: 7,
+    prefixItems: [
+      { $ref: "#/$defs/mapPublicationManifestObject" },
+      { $ref: "#/$defs/mapPublicationInterchangeObject" },
+      { $ref: "#/$defs/mapPublicationStylesObject" },
+      { $ref: "#/$defs/mapPublicationSvgObject" },
+      { $ref: "#/$defs/mapPublicationStationsObject" },
+      { $ref: "#/$defs/catalogPublicationManifestObject" },
+      { $ref: "#/$defs/catalogPublicationSqliteObject" },
+    ],
+    items: false,
+  });
+  for (const [definition, pack, objectPath] of [
+    ["mapPublicationManifestObject", "map-pack", "manifest.json"],
+    ["mapPublicationInterchangeObject", "map-pack", "payload/interchange-layout.json"],
+    ["mapPublicationStylesObject", "map-pack", "payload/line-styles.json"],
+    ["mapPublicationSvgObject", "map-pack", "payload/metropolitan.svg"],
+    ["mapPublicationStationsObject", "map-pack", "payload/stations-layout.json"],
+    ["catalogPublicationManifestObject", "station-catalog-pack", "manifest.json"],
+    ["catalogPublicationSqliteObject", "station-catalog-pack", "payload/catalog.sqlite"],
+  ]) {
+    assert.deepEqual(schema.$defs[definition], {
+      allOf: [
+        { $ref: "#/$defs/object" },
+        { properties: { pack: { const: pack }, path: { const: objectPath } } },
+      ],
+    });
+  }
   assert.equal(Object.hasOwn(schema.properties, "mapPack"), false);
   assert.equal(Object.hasOwn(schema.properties, "stationCatalogPack"), false);
 });
