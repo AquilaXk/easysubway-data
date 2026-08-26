@@ -14,7 +14,7 @@ const privateKey = keys.privateKey.export({ type: "pkcs8", format: "pem" });
 const publicKey = keys.publicKey.export({ type: "spki", format: "pem" });
 process.env.EASYSUBWAY_DATAPACK_SIGNING_KEY_ID = "map-catalog-current-v1";
 
-test("exact map root manifest+4 payload와 catalog manifest+sqlite를 하나의 signed-current receipt로 결속한다", async (t) => {
+test("exact map root manifest+4 payload와 catalog manifest+sqlite를 signed-current content descriptor로 결속한다", async (t) => {
   const fixture = await createFixture(t);
   const descriptor = await build(fixture);
   assert.equal(descriptor.producerGitSha, "a".repeat(40));
@@ -22,7 +22,8 @@ test("exact map root manifest+4 payload와 catalog manifest+sqlite를 하나의 
   assert.equal(descriptor.mapPack.objects.length, 5);
   assert.equal(descriptor.stationCatalogPack.objects.length, 2);
   assert.equal(descriptor.mapPack.manifest.stationSetSha256, descriptor.stationCatalogPack.manifest.stationSetSha256);
-  assert.equal(descriptor.publicationReceiptSha256, descriptor.publicationReceipt.receiptSha256);
+  assert.equal(Object.hasOwn(descriptor, "publicationReceipt"), false);
+  assert.equal(Object.hasOwn(descriptor, "publicationReceiptSha256"), false);
   assert.equal(descriptor.signature.algorithm, "rsa-sha256-map-catalog-signed-current-v1");
   assert.deepEqual(JSON.parse(await readFile(fixture.output, "utf8")), descriptor);
   assert.deepEqual(validateMapCatalogSignedCurrentPublication(descriptor, { publicKey }), descriptor);

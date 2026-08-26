@@ -20,8 +20,7 @@ export async function buildMapCatalogSignedCurrentPublication({ artifactRoot, ou
   const [mapPack, stationCatalogPack] = await Promise.all([readPack(root, "map-pack", MAP_PATHS), readPack(root, "station-catalog-pack", CATALOG_PATHS)]);
   if (mapPack.manifest.stationSetSha256 !== stationCatalogPack.manifest.stationSetSha256) throw new Error("station set mismatch");
   const identity = { producerGitSha: requiredSha(producerGitSha, 40, "producerGitSha"), releaseSequence: positive(releaseSequence), signedFinalDescriptorSha256: requiredSha(signedFinalDescriptorSha256, 64, "signedFinalDescriptorSha256"), stationSetSha256: mapPack.manifest.stationSetSha256, freshUntil: fresh(freshUntil, now) };
-  const receipt = sign({ schemaVersion: 1, artifactKind: "map-catalog-signed-current-publication-receipt", ...identity, mapPack, stationCatalogPack, receiptSha256: "" }, "receiptSha256", privateKey);
-  const descriptor = sign({ schemaVersion: 1, artifactKind: "map-catalog-signed-current-publication", ...identity, mapPack, stationCatalogPack, publicationReceipt: receipt, publicationReceiptSha256: receipt.receiptSha256, descriptorSha256: "" }, "descriptorSha256", privateKey);
+  const descriptor = sign({ schemaVersion: 1, artifactKind: "map-catalog-signed-current-publication", ...identity, mapPack, stationCatalogPack, descriptorSha256: "" }, "descriptorSha256", privateKey);
   validateMapCatalogSignedCurrentPublication(descriptor, { publicKey, now });
   if (beforeCreate !== undefined && typeof beforeCreate !== "function") throw new Error("beforeCreate must be a function");
   await createNew({ rawParent: path.dirname(rawOutput), parent: outputParent, target: requested, artifactRoot: root, bytes: Buffer.from(canonicalJson(descriptor)), beforeCreate });

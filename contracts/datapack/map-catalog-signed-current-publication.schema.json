@@ -3,7 +3,7 @@
   "title": "Map and station catalog signed-current publication descriptor",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "artifactKind", "producerGitSha", "releaseSequence", "signedFinalDescriptorSha256", "stationSetSha256", "freshUntil", "mapPack", "stationCatalogPack", "publicationReceipt", "publicationReceiptSha256", "descriptorSha256", "keyId", "signature"],
+  "required": ["schemaVersion", "artifactKind", "producerGitSha", "releaseSequence", "signedFinalDescriptorSha256", "stationSetSha256", "freshUntil", "mapPack", "stationCatalogPack", "descriptorSha256", "keyId", "signature"],
   "properties": {
     "schemaVersion": { "const": 1 },
     "artifactKind": { "const": "map-catalog-signed-current-publication" },
@@ -14,8 +14,6 @@
     "freshUntil": { "type": "string", "format": "date-time" },
     "mapPack": { "$ref": "map-catalog-signed-current-publication-receipt.schema.json#/$defs/mapPack" },
     "stationCatalogPack": { "$ref": "map-catalog-signed-current-publication-receipt.schema.json#/$defs/catalogPack" },
-    "publicationReceipt": { "$ref": "map-catalog-signed-current-publication-receipt.schema.json" },
-    "publicationReceiptSha256": { "$ref": "#/$defs/sha256" },
     "descriptorSha256": { "$ref": "#/$defs/sha256" },
     "keyId": { "type": "string", "minLength": 1 },
     "signature": { "$ref": "#/$defs/signature" }
