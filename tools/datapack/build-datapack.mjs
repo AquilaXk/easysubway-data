@@ -552,6 +552,9 @@ async function loadBuildInput(
   rejectTestOnlyBuildInput(sourceFixture);
   const hasProductionPack = sourceFixture.packs?.some(({ artifactKind }) => artifactKind === "production") === true;
   const replaysAccessibilityAuthority = candidateFixtureOverrideArg != null;
+  const accessibilityReplaySourceFixture = replaysAccessibilityAuthority
+    ? structuredClone(sourceFixture)
+    : null;
   const validationOnlyProductionFixture = hasProductionPack
     && !replaysAccessibilityAuthority
     && process.env.EASYSUBWAY_DATAPACK_BUILD_SPEC_VALIDATION_ONLY === "true";
@@ -580,6 +583,11 @@ async function loadBuildInput(
     : sourceFixture;
   let overrideBinding = null;
   if (candidateFixtureOverrideArg != null) {
+    const projectedFixture = await projectCandidateFixtureForAccessibilityAuthority({
+      buildSpec,
+      sourceFixture: accessibilityReplaySourceFixture,
+      repositoryRoot,
+    });
     const [candidateFixtureBytes, authorityBytes] = await Promise.all([
       readFile(await resolveBuildInputPath(
         candidateFixtureOverrideArg,
@@ -597,7 +605,7 @@ async function loadBuildInput(
       buildSpec,
       buildSpecBytes,
       candidateFixtureBytes,
-      projectedFixture: sourceFixture,
+      projectedFixture,
       sourceFixtureBytes,
     });
     fixture = transferValidatedItxStationCatalogEvidence(
@@ -619,7 +627,7 @@ async function loadBuildInput(
     ]);
     validateCurrentReleaseCandidateAccessibilityAuthorityReplay({
       authority: validated.authority,
-      projectedFixture: sourceFixture,
+      projectedFixture,
       stationLineInputBytes,
       routeEdgeInputBytes,
     });
