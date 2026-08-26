@@ -262,6 +262,7 @@ test("CI는 browser-dependent required tests 전에 pinned Chrome runtime을 제
   assert.match(contracts, /\[\[ "\$\{SHARD_3_RESULT\}" == "success" \]\]/);
   assert.match(contracts, /\[\[ "\$\{SHARD_4_RESULT\}" == "success" \]\]/);
   for (const [job, runnerName] of jobPairs) {
+    assert.match(job, /^    timeout-minutes: 30$/m);
     const repository = namedWorkflowStep(job, "Checkout repository");
     const fixture = namedWorkflowStep(job, "Checkout pinned Mobile fixture");
     const stage = namedWorkflowStep(job, "Stage pinned Mobile fixture");
