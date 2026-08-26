@@ -18,16 +18,16 @@ async function planAndSnapshot() {
   const paths = {
     canonicalPackBytes: "release/capital-production-canonical-pack.json", coverageTargetsBytes: "nationwide-coverage-targets.json",
     providerCodeCatalogBytes: "sources/kric-provider-code-catalog-20260228.json", routeRostersBytes: "sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
-    sourceInventoryBytes: "source-inventory.json", incheonTopologyBytes: "sources/incheon-transit-station-info-20260814.json",
+    sourceInventoryBytes: "source-inventory.json", incheonTopologyBytes: "sources/incheon-transit-station-info-20260825.json",
   };
   const input = Object.fromEntries(await Promise.all(Object.entries(paths).map(async ([key, file]) => [key, await readFile(path.join(root, file))])));
-  const plan = buildCurrentKricExitCollectionPlan(input, { now: new Date("2026-08-14T16:00:00.000Z"), coverageSelector: "capital-seoul-metro-production" });
+  const plan = buildCurrentKricExitCollectionPlan(input, { now: new Date("2026-08-25T16:00:00.000Z"), coverageSelector: "capital-seoul-metro-production" });
   const rows = [{ edMovePath: null, elvtSttCd: null, elvtTpCd: null, exitMvTpOrdr: "1", imgPath: null, mvContDtl: null, mvPathMgNo: "1", stMovePath: null }];
   const results = plan.queryPlan.map((query, index) => ({
     queryId: query.queryId, state: index === 0 ? "ROWS_OBSERVED" : "EXPLICIT_ZERO", providerResultCode: "00",
     rawResponseSha256: hash(`raw-${index}`), rawResponseByteSize: 1, providerRecordHash: hash(canonical(index === 0 ? rows : [])), rows: index === 0 ? rows : [],
   }));
-  const payload = { schemaVersion: 1, artifactKind: "kric-exit-path-provider-snapshot", sourceId: "kric-station-movement-standard", snapshotId: "kric-station-movement-standard-20260814T160000000Z", capturedAt: "2026-08-14T16:00:00.000Z", freshUntil: "2026-08-15T16:00:00.000Z", credentialRedacted: true, collectionPlanDigest: plan.collectionPlanDigest, queryPlanSha256: plan.queryPlanSha256, coverage: { requestPlanComplete: true, queryIds: plan.queryPlan.map(({ queryId }) => queryId) }, queryPlan: plan.queryPlan, results };
+  const payload = { schemaVersion: 1, artifactKind: "kric-exit-path-provider-snapshot", sourceId: "kric-station-movement-standard", snapshotId: "kric-station-movement-standard-20260825T160000000Z", capturedAt: "2026-08-25T16:00:00.000Z", freshUntil: "2026-08-26T16:00:00.000Z", credentialRedacted: true, collectionPlanDigest: plan.collectionPlanDigest, queryPlanSha256: plan.queryPlanSha256, coverage: { requestPlanComplete: true, queryIds: plan.queryPlan.map(({ queryId }) => queryId) }, queryPlan: plan.queryPlan, results };
   const snapshot = sort({ ...payload, snapshotDigest: hash(canonical(payload)) });
   return { plan, snapshot };
 }
@@ -89,7 +89,7 @@ test("유효하게 재해시한 mapping·time·row drift도 semantic closure에�
   const input = { collectionPlanBytes: Buffer.from(canonical(plan)), providerSnapshotBytes: Buffer.from(canonical(snapshot)), repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-560" };
   const mapped = structuredClone(plan); mapped.providerMappings[0].providerStationId = "drift"; mapped.candidate.providerMappingSha256 = hash(canonical(mapped.providerMappings)); rehashPlan(mapped);
   const rebound = rebindSnapshot(snapshot, mapped); assert.throws(() => buildCurrentKricExitCollectionReceipt({ ...input, collectionPlanBytes: Buffer.from(canonical(mapped)), providerSnapshotBytes: Buffer.from(canonical(rebound)) }), /station-line query relation mismatch/);
-  const timed = structuredClone(snapshot); timed.capturedAt = "2026-08-14T16:00:00Z"; rehashSnapshot(timed);
+  const timed = structuredClone(snapshot); timed.capturedAt = "2026-08-25T16:00:00Z"; rehashSnapshot(timed);
   assert.throws(() => buildCurrentKricExitCollectionReceipt({ ...input, providerSnapshotBytes: Buffer.from(canonical(timed)) }), /snapshot (?:ID|time) mismatch/);
   const rowDrift = structuredClone(snapshot); rowDrift.results[0].rows[0].mvPathMgNo = null; rowDrift.results[0].providerRecordHash = hash(canonical(rowDrift.results[0].rows)); rehashSnapshot(rowDrift);
   assert.throws(() => buildCurrentKricExitCollectionReceipt({ ...input, providerSnapshotBytes: Buffer.from(canonical(rowDrift)) }), /ordering identity missing/);
@@ -97,7 +97,7 @@ test("유효하게 재해시한 mapping·time·row drift도 semantic closure에�
   assert.throws(() => buildCurrentKricExitCollectionReceipt({ ...input, collectionPlanBytes: Buffer.from(canonical(stationDrift)), providerSnapshotBytes: Buffer.from(canonical(rebindSnapshot(snapshot, stationDrift)))}), /station-line query relation mismatch/);
   const edgeDrift = structuredClone(plan); edgeDrift.routeEdges[0].serviceClass = "RAIL"; edgeDrift.candidate.topologySha256 = hash(canonical(edgeDrift.routeEdges)); rehashPlan(edgeDrift);
   assert.throws(() => buildCurrentKricExitCollectionReceipt({ ...input, collectionPlanBytes: Buffer.from(canonical(edgeDrift)), providerSnapshotBytes: Buffer.from(canonical(rebindSnapshot(snapshot, edgeDrift)))}), /route edge relation mismatch/);
-  const longWindow = structuredClone(snapshot); longWindow.freshUntil = "2026-08-16T16:00:00.000Z"; rehashSnapshot(longWindow);
+  const longWindow = structuredClone(snapshot); longWindow.freshUntil = "2026-08-27T16:00:00.000Z"; rehashSnapshot(longWindow);
   assert.throws(() => buildCurrentKricExitCollectionReceipt({ ...input, providerSnapshotBytes: Buffer.from(canonical(longWindow)) }), /freshness mismatch/);
 });
 

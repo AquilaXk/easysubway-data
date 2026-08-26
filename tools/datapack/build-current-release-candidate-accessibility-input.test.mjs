@@ -134,7 +134,7 @@ test("합성 current public successor는 1,102 metadata·2,664 route·456 author
   assert.equal(route.routeEdges.length, 2664);
   assert.equal(result.authority.edges.length, 456);
   assert.equal(result.authority.edges.flatMap(({ requiredCells }) => requiredCells)
-    .filter(({ state }) => state === "UNVERIFIED_EVIDENCE_BLOCKED").length, 10);
+    .filter(({ state }) => state === "UNVERIFIED_EVIDENCE_BLOCKED").length, 1);
   assert.equal(result.candidateFixture.packs[0].networkEdges.length, 2664);
 });
 

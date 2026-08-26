@@ -9,7 +9,13 @@ import { parseSeoulRouteMapPositionsCsv } from "./collect-seoul-route-map-positi
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
-const { inWindow: now, expiredAt } = await currentTopologyAdmissionClock(root);
+const { inWindow: now } = await currentTopologyAdmissionClock(root);
+const sourceInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json")));
+const staticTopologyAdmission = sourceInventory.sources
+  .find(({ id }) => id === "seoul-metro-route-map-positions")
+  .routeMapAdmissionEvidence.currentTopologyAdmission;
+const staticTopologyExpiredAt = new Date(staticTopologyAdmission.freshUntil);
+const staticTopologyFutureAt = new Date(Date.parse(staticTopologyAdmission.reviewedAt) - 1);
 const env = { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "oci-par-fixture" };
 const positionCsv = await readFile(path.join(root, "tools/datapack/fixtures/seoul-route-map-positions-raw/data-go-15099316.csv"));
 const rows = parseSeoulRouteMapPositionsCsv(positionCsv).rawPositions.map(({ line, stationCode, stationName, latitude, longitude, basisDate }, index) => ({
@@ -79,8 +85,8 @@ test("one-shot v2 operation rejects stale, future-dated, or mismatched topology 
   });
   t.after(() => rm(mismatchedRoot, { recursive: true, force: true }));
   for (const { repositoryRoot, at, expected } of [
-    { repositoryRoot: root, at: expiredAt, expected: /topology admission snapshot is stale or future-dated/ },
-    { repositoryRoot: root, at: new Date("2026-08-23T00:00:00.000Z"), expected: /topology admission snapshot is stale or future-dated/ },
+    { repositoryRoot: root, at: staticTopologyExpiredAt, expected: /topology admission snapshot is stale or future-dated/ },
+    { repositoryRoot: root, at: staticTopologyFutureAt, expected: /topology admission snapshot is stale or future-dated/ },
     { repositoryRoot: mismatchedRoot, at: now, expected: /static network topology identity is invalid/ },
   ]) {
     const operationRoot = await mkdtemp(path.join(os.tmpdir(), "public-static-v2-topology-operation-"));

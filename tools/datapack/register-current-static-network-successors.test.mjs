@@ -10,14 +10,13 @@ import { buildPublicStaticNetworkV2SuccessorOutputs, commitStaticNetworkSuccesso
 import { buildPublicStaticNetworkV2Observations } from "./build-public-static-network-v2-observations.mjs";
 import { parseSeoulRouteMapPositionsCsv } from "./collect-seoul-route-map-positions.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
-import { verifyCurrentStaticNetworkSuccessorHeads } from "./activate-current-source-set.mjs";
 
 const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const repositoryRoot = path.resolve(import.meta.dirname, "../..");
 const INPUT_PATHS = [
   "tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json",
   "tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json", "tools/datapack/source-governance-policy.json",
-  "release/product-gates/datapack-freshness-sla.json", "tools/datapack/sources/capital-route-topology-20260814.json",
+  "release/product-gates/datapack-freshness-sla.json", "tools/datapack/sources/capital-route-topology-20260825.json",
 ];
 
 async function registrationOutputs(root) {
@@ -33,10 +32,10 @@ async function registrationOutputs(root) {
   return outputs.map((entry) => ({ ...entry, inputs }));
 }
 
-async function publicV2Input(root, capturedAt = "2026-08-24T12:00:00.000Z") {
+async function publicV2Input(root, capturedAt = "2026-08-25T15:30:00.000Z") {
   const [sourceInventory, admittedTopologyBytes, positionCsv, molitRawBytes, governance] = await Promise.all([
     readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
-    readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260823.json")),
+    readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260825.json")),
     readFile(path.join(root, "tools/datapack/fixtures/seoul-route-map-positions-raw/data-go-15099316.csv")),
     readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
     readFile(path.join(root, "tools/datapack/source-governance-policy.json"), "utf8").then(JSON.parse),
@@ -44,79 +43,23 @@ async function publicV2Input(root, capturedAt = "2026-08-24T12:00:00.000Z") {
   const rows = parseSeoulRouteMapPositionsCsv(positionCsv).rawPositions.map(({ line, stationCode, stationName, latitude, longitude, basisDate }, index) => ({ "연번": `${index + 1}`, "호선": line, "고유역번호(외부역코드)": stationCode, "역명": stationName, "위도": `${latitude}`, "경도": `${longitude}`, "작성기준일": basisDate, "작성일자": basisDate }));
   const positionRawBytes = Buffer.from(JSON.stringify({ currentCount: rows.length, data: rows, matchCount: rows.length, page: 1, perPage: 1000, totalCount: rows.length }));
   const receipt = (sourceId, rawBytes, extension, contentType) => { const rawSha256 = sha(rawBytes); const stamp = capturedAt.replaceAll(/[-:.]/gu, ""); const date = capturedAt.slice(0, 10).replaceAll("-", ""); const objectKey = `source-raw/${sourceId}/${date}/${rawSha256}.${extension}`; return { schemaVersion: 1, artifactKind: "static-network-source-raw-object-receipt", sourceId, snapshotId: `${sourceId}-current-${stamp}`, capturedAt, rawObjectSha256: rawSha256, rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/${objectKey}`, ociNamespace: "axvym6vk8g7i", bucket: "easysubway-datapacks", objectKey, contentType, byteSize: rawBytes.length, storedAt: capturedAt, rawRetentionExpiresAt: deriveRawRetentionExpiresAt({ policy: governance, sourceId, retrievedAt: capturedAt }) }; };
-  const producerOutput = buildPublicStaticNetworkV2Observations({ positionRawBytes, molitRawBytes, capturedAt, sourceInventory, admittedTopologyBytes, admittedTopologyId: "capital-route-topology-20260823", positionReceipt: receipt("seoul-metro-route-map-positions", positionRawBytes, "json", "application/json"), molitReceipt: receipt("molit-urban-rail-full-route", molitRawBytes, "csv", "text/csv; charset=euc-kr") });
+  const producerOutput = buildPublicStaticNetworkV2Observations({ positionRawBytes, molitRawBytes, capturedAt, sourceInventory, admittedTopologyBytes, admittedTopologyId: "capital-route-topology-20260825", positionReceipt: receipt("seoul-metro-route-map-positions", positionRawBytes, "json", "application/json"), molitReceipt: receipt("molit-urban-rail-full-route", molitRawBytes, "csv", "text/csv; charset=euc-kr") });
   return { producerOutput, rawBytesBySource: { "seoul-metro-route-map-positions": positionRawBytes, "molit-urban-rail-full-route": molitRawBytes }, now: new Date(capturedAt) };
 }
 
-async function activatePublicV2Predecessors(root) {
-  const inventoryPath = path.join(root, "tools/datapack/source-inventory.json");
-  const ledgerPath = path.join(root, "tools/datapack/release/source-snapshots.json");
-  const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
-  const ledger = JSON.parse(await readFile(ledgerPath, "utf8"));
-  for (const sourceId of ["seoul-metro-route-map-positions", "molit-urban-rail-full-route"]) {
-    const source = inventory.sources.find(({ id }) => id === sourceId);
-    const snapshot = ledger.find(({ snapshotId }) => snapshotId === source.admissionEvidence.snapshotId);
-    assert.ok(source); assert.ok(snapshot);
-    const sourceFile = JSON.parse(await readFile(path.join(root, `tools/datapack/sources/${snapshot.snapshotId}.json`), "utf8"));
-    const observation = {
-      schemaVersion: 2, artifactKind: "public-static-network-v2-observation", sourceId,
-      snapshotId: snapshot.snapshotId, capturedAt: snapshot.retrievedAt, rawSha256: snapshot.rawSha256,
-      contentSha256: snapshot.contentSha256, schemaFingerprint: snapshot.schemaFingerprint,
-      rowCount: snapshot.rowCount, providerRecordHashes: structuredClone(snapshot.providerRecordHashes),
-      normalizedProjection: structuredClone(sourceFile.normalizedProjection), rawReceipt: structuredClone(snapshot.rawReceipt),
-      routeMapLayoutEvidence: snapshot.routeMapLayoutEvidence,
-      routeMapLayoutArtifact: snapshot.routeMapLayoutArtifact,
-    };
-    if (sourceId === "molit-urban-rail-full-route") {
-      delete observation.routeMapLayoutEvidence;
-      delete observation.routeMapLayoutArtifact;
-    }
-    snapshot.publicStaticNetworkV2Observation = observation;
-    snapshot.normalizedObservationSha256 = sha(Buffer.from(`${JSON.stringify(observation)}\n`));
-    delete snapshot.projectionMigration;
-    delete snapshot.migration;
-    delete snapshot.rootSupersession;
-    delete snapshot.historicalPredecessorAudit;
-    source.requiredForProductionPack = true;
-    source.productionUseAllowed = true;
-    if (sourceId === "seoul-metro-route-map-positions") {
-      source.routeMapAdmissionEvidence.currentTopologyAdmission.positionSnapshotSha256 = snapshot.normalizedObservationSha256;
-      source.routeMapAdmissionEvidence.currentLayoutAdmission = {
-        schemaVersion: 2, artifactKind: "seoul-public-route-map-layout-admission", status: "ADMITTED",
-        positionSnapshotId: snapshot.snapshotId,
-        snapshotPath: `tools/datapack/sources/${snapshot.snapshotId}.json`,
-        snapshotSha256: snapshot.normalizedObservationSha256, rawSha256: snapshot.rawSha256,
-        contentSha256: snapshot.contentSha256, ...snapshot.routeMapLayoutEvidence,
-      };
-    }
-  }
-  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
-  await writeFile(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
-}
-
-test("v2 registrar stages and commits exactly five outputs while preserving release approval bytes", async (t) => {
+test("v2 registrar bootstraps exactly the immutable legacy pair, then supports V2 successors", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "static-network-v2-registrar-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await cp(repositoryRoot, root, { recursive: true, filter: (source) => !source.includes("node_modules") });
-  const inventoryPath = path.join(root, "tools/datapack/source-inventory.json"); const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
-  for (const source of inventory.sources) delete source.membershipAdmissionEvidence;
-  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
   const request = await readFile(path.join(root, "tools/datapack/release/release-request.json")); const hashes = await readFile(path.join(root, "tools/datapack/release/hash-evidence.json"));
-  const historicalInput = await publicV2Input(root);
-  await assert.rejects(buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...historicalInput }), /public v2 active predecessor is required/);
-  await activatePublicV2Predecessors(root);
-  const partialLedger = JSON.parse(await readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8"));
-  delete partialLedger.find(({ sourceId, publicStaticNetworkV2Observation }) =>
-    sourceId === "molit-urban-rail-full-route" && publicStaticNetworkV2Observation?.schemaVersion === 2,
-  ).publicStaticNetworkV2Observation.normalizedProjection;
-  await writeFile(path.join(root, "tools/datapack/release/source-snapshots.json"), `${JSON.stringify(partialLedger, null, 2)}\n`);
-  await assert.rejects(
-    buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...(await publicV2Input(root)) }),
-    /public v2 active predecessor is required/,
-  );
-  await activatePublicV2Predecessors(root);
+  const historicalLedger = JSON.parse(await readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8"));
+  const historicalSourceBytes = await Promise.all(["seoul-metro-route-map-positions-current-20260824T114822985Z", "molit-urban-rail-full-route-current-20260824T114822985Z"].map((snapshotId) => readFile(path.join(root, `tools/datapack/sources/${snapshotId}.json`))));
   const input = await publicV2Input(root); const staged = await buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input });
   assert.equal(staged.length, 5); assert.deepEqual(staged.map(({ relative }) => relative).slice(2), ["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json"]);
+  assert.deepEqual(staged[0].inputs.slice(-2).map(({ relative }) => relative), [
+    "tools/datapack/sources/seoul-metro-route-map-positions-current-20260824T114822985Z.json",
+    "tools/datapack/sources/molit-urban-rail-full-route-current-20260824T114822985Z.json",
+  ]);
   const stagedInventory = JSON.parse(staged[2].bytes);
   for (const sourceId of ["seoul-metro-route-map-positions", "molit-urban-rail-full-route"]) {
     const source = stagedInventory.sources.find(({ id }) => id === sourceId);
@@ -144,23 +87,30 @@ test("v2 registrar stages and commits exactly five outputs while preserving rele
     assert.equal(snapshot.credentialRedacted, true);
     assert.match(snapshot.governancePolicySha256, /^[a-f0-9]{64}$/u);
   }
-  assert.deepEqual(
-    Object.keys(verifyCurrentStaticNetworkSuccessorHeads({
-      sourceSnapshots: ledger,
-      sourceInventory: stagedInventory,
-      now: input.now,
-    })).sort(),
-    ["molit", "positions"],
+  const predecessorPath = path.join(root, "tools/datapack/sources/seoul-metro-route-map-positions-current-20260824T114822985Z.json");
+  await writeFile(predecessorPath, "foreign predecessor replacement\n");
+  await assert.rejects(
+    commitStaticNetworkSuccessorOutputs({ repositoryRoot: root, outputs: staged }),
+    /static network registration preserves foreign replacement/,
   );
+  await writeFile(predecessorPath, historicalSourceBytes[0]);
   const result = await registerPublicStaticNetworkV2Successors({ repositoryRoot: root, ...input });
   assert.equal(result.outputs.length, 5); assert.deepEqual(await readFile(path.join(root, "tools/datapack/release/release-request.json")), request); assert.deepEqual(await readFile(path.join(root, "tools/datapack/release/hash-evidence.json")), hashes);
-  const nextInput = await publicV2Input(root, "2026-08-24T12:30:00.000Z");
+  const committedLedger = JSON.parse(await readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8"));
+  for (const historical of historicalLedger.filter(({ sourceId }) => ["seoul-metro-route-map-positions", "molit-urban-rail-full-route"].includes(sourceId))) assert.deepEqual(committedLedger.find(({ snapshotId }) => snapshotId === historical.snapshotId), historical);
+  for (const [index, snapshotId] of ["seoul-metro-route-map-positions-current-20260824T114822985Z", "molit-urban-rail-full-route-current-20260824T114822985Z"].entries()) assert.deepEqual(await readFile(path.join(root, `tools/datapack/sources/${snapshotId}.json`)), historicalSourceBytes[index]);
+  const nextInput = await publicV2Input(root, "2026-08-25T15:45:00.000Z");
   const nextLedger = JSON.parse((await buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...nextInput }))
     .find(({ relative }) => relative === "tools/datapack/release/source-snapshots.json").bytes);
   const nextPosition = nextLedger.find(({ snapshotId }) => snapshotId === nextInput.producerOutput.observations[0].snapshotId);
   assert.equal(nextPosition.previousSnapshotId, positionSnapshot.snapshotId);
   assert.notEqual(nextPosition.diffSummary, null);
   assert.equal(nextPosition.rootSupersession, undefined);
+
+  const corruptLedger = JSON.parse(await readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8"));
+  delete corruptLedger.find(({ snapshotId }) => snapshotId === input.producerOutput.observations[0].snapshotId).publicStaticNetworkV2Observation;
+  await writeFile(path.join(root, "tools/datapack/release/source-snapshots.json"), `${JSON.stringify(corruptLedger, null, 2)}\n`);
+  await assert.rejects(buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...nextInput }), /public v2 active predecessor is required/);
 });
 
 test("v2 registrar rejects forged producer observations and stale or mismatched topology CAS inputs", async (t) => {
@@ -189,30 +139,53 @@ test("v2 registrar rejects forged producer observations and stale or mismatched 
 
   const staleInventory = structuredClone(baselineInventory);
   await writeFile(inventoryPath, `${JSON.stringify(staleInventory, null, 2)}\n`);
-  await assert.rejects(buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input, now: new Date("2026-08-25T00:00:00.000Z") }), /topology admission snapshot is stale or future-dated/);
+  await assert.rejects(buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input, now: new Date("2026-08-27T00:00:00.000Z") }), /topology admission snapshot is stale or future-dated/);
 });
 
-test("v2 registrar rejects every historical predecessor instead of resetting it", async (t) => {
+test("v2 registrar rejects a bootstrap candidate whose raw bytes, inventory binding, or source slot drifts", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "static-network-v2-legacy-reset-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await cp(repositoryRoot, root, { recursive: true, filter: (source) => !source.includes("node_modules") });
-  const inventoryPath = path.join(root, "tools/datapack/source-inventory.json");
-  const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
-  for (const source of inventory.sources) delete source.membershipAdmissionEvidence;
-  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
   const input = await publicV2Input(root);
-
+  const candidatePath = path.join(root, "tools/datapack/release/candidate-build-spec.json");
+  const candidateBytes = await readFile(candidatePath);
+  let candidate = JSON.parse(candidateBytes);
+  candidate.sourceInventorySha256 = "0".repeat(64);
+  await writeFile(candidatePath, `${JSON.stringify(candidate, null, 2)}\n`);
   await assert.rejects(
     buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input }),
-    /public v2 active predecessor is required/,
+    /public v2 bootstrap predecessor CAS is invalid/,
   );
-  const candidatePath = path.join(root, "tools/datapack/release/candidate-build-spec.json");
-  const candidate = JSON.parse(await readFile(candidatePath, "utf8"));
+  candidate = JSON.parse(candidateBytes);
+  candidate.sourceSnapshots.find(({ sourceId }) => sourceId === "kric-subway-timetable").rawSha256 = "0".repeat(64);
+  await writeFile(candidatePath, `${JSON.stringify(candidate, null, 2)}\n`);
+  await assert.rejects(
+    buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input }),
+    /public v2 bootstrap predecessor CAS is invalid/,
+  );
+  candidate = JSON.parse(candidateBytes);
   candidate.sourceSnapshots[0].sourceId = "seoulmetro-cyberstation-route-map";
   await writeFile(candidatePath, `${JSON.stringify(candidate, null, 2)}\n`);
   await assert.rejects(
     buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input }),
-    /public v2 candidate source set is invalid/,
+    /public v2 candidate source set is invalid|public v2 bootstrap predecessor CAS is invalid/,
+  );
+  await writeFile(candidatePath, candidateBytes);
+  const ledgerPath = path.join(root, "tools/datapack/release/source-snapshots.json");
+  const ledgerBytes = await readFile(ledgerPath);
+  const ledger = JSON.parse(ledgerBytes);
+  ledger.find(({ snapshotId }) => snapshotId === "kric-subway-timetable-line4-pilot-20260809").provider = "drift";
+  await writeFile(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
+  await assert.rejects(
+    buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input }),
+    /public v2 bootstrap predecessor CAS is invalid/,
+  );
+  await writeFile(ledgerPath, ledgerBytes);
+  const inventoryPath = path.join(root, "tools/datapack/source-inventory.json");
+  await writeFile(inventoryPath, `${await readFile(inventoryPath, "utf8")}\n`);
+  await assert.rejects(
+    buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input }),
+    /public v2 bootstrap predecessor CAS is invalid/,
   );
 });
 

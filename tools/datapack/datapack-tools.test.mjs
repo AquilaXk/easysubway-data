@@ -18285,28 +18285,56 @@ async function writeCurrentItxReleaseInputs(
   const buildSpec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
   const sourceInventory = JSON.parse(await readFile(buildSpec.networkEdgeEvidence.sourceInventory.path, "utf8"));
   const currentInventory = structuredClone(sourceInventory);
-  const currentTopologyAdmissions = currentInventory.sources
-    .map(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence?.currentTopologyAdmission)
-    .filter((admission) => admission?.topologySnapshotId != null);
-  assert.ok(currentTopologyAdmissions.length > 0, "fixture current topology admission is required");
-  const [{ topologySnapshotId: currentTopologySnapshotId }] = currentTopologyAdmissions;
-  assert.ok(currentTopologyAdmissions.every(({ topologySnapshotId }) => topologySnapshotId === currentTopologySnapshotId),
-    "fixture current topology admissions must share one snapshot identity");
-  const baselineTopology = await readFile(
+  const currentTopologySources = currentInventory.sources.filter(
+    ({ id }) => id === "seoul-metro-route-map-positions",
+  );
+  assert.equal(currentTopologySources.length, 1, "fixture current topology source must exist once");
+  const [currentTopologySource] = currentTopologySources;
+  const currentTopologyAuthority =
+    currentTopologySource.routeMapAdmissionEvidence?.currentTopologyAdmission;
+  const { topologySnapshotId: currentTopologySnapshotId } =
+    currentTopologyAuthority ?? {};
+  assert.ok(currentTopologySnapshotId != null, "fixture current topology admission is required");
+  const baselineTopologyBinding = buildSpec.networkEdgeEvidence.capitalTopology;
+  const baselineTopologyBytes = await readFile(baselineTopologyBinding.path);
+  assert.equal(
+    sha256(baselineTopologyBytes),
+    baselineTopologyBinding.sha256,
+    "fixture baseline topology binding must match its bytes",
+  );
+  const baselineTopology = JSON.parse(baselineTopologyBytes);
+  const candidateTopologyBytes = await readFile(
     `tools/datapack/sources/${currentTopologySnapshotId}.json`,
-    "utf8",
-  ).then(JSON.parse);
-  const candidateTopology = structuredClone(baselineTopology);
+  );
+  const candidateTopology = JSON.parse(candidateTopologyBytes);
+  assert.equal(
+    candidateTopology.sourceId,
+    currentTopologySource.routeMapAdmissionEvidence.topologySourceId,
+    "fixture current topology authority source must match candidate",
+  );
+  assert.equal(
+    currentTopologyAuthority.topologyContentSha256,
+    candidateTopology.contentSha256,
+    "fixture current topology authority content must match candidate",
+  );
+  assert.equal(
+    currentTopologyAuthority.reviewedAt,
+    candidateTopology.capturedAt,
+    "fixture current topology authority review time must match candidate",
+  );
+  assert.equal(
+    currentTopologyAuthority.freshUntil,
+    candidateTopology.freshUntil,
+    "fixture current topology authority freshness must match candidate",
+  );
   const baselineTopologyPath = path.join(workspace, "capital-topology-baseline.json");
   const candidateTopologyPath = path.join(workspace, "capital-topology-candidate.json");
   const topologyReverificationPath = path.join(workspace, "capital-topology-reverification.json");
-  const baselineTopologyBytes = Buffer.from(`${JSON.stringify(baselineTopology)}\n`);
-  const candidateTopologyBytes = Buffer.from(`${JSON.stringify(candidateTopology)}\n`);
   const topologyReverification = buildCapitalTopologyReverificationEvidence(
     baselineTopology,
     candidateTopology,
   );
-  topologyReverification.baseline.snapshotId = currentTopologySnapshotId;
+  topologyReverification.baseline.snapshotId = baselineTopologyBinding.snapshotId;
   const topologyReverificationBytes = Buffer.from(`${JSON.stringify(topologyReverification)}\n`);
   const candidateTopologyAdmissions = new Map(candidateTopology.lines.map(({ lineId }) => [lineId, {
     verifiedAt: candidateTopology.capturedAt,
@@ -18369,12 +18397,19 @@ async function writeCurrentItxReleaseInputs(
   });
   currentAdmissionBytes = Buffer.from(`${JSON.stringify(currentAdmission)}\n`);
   await writeFile(currentAdmissionPath, currentAdmissionBytes);
-  for (const source of currentInventory.sources) {
-    const admission = source.routeMapAdmissionEvidence?.currentTopologyAdmission;
-    if (admission?.topologySnapshotId !== currentTopologySnapshotId) continue;
-    admission.topologyContentSha256 = candidateTopology.contentSha256;
+  for (const source of currentInventory.sources.filter(({ routeMapAdmissionEvidence }) =>
+    routeMapAdmissionEvidence?.topologySourceId === candidateTopology.sourceId)) {
+    const admission = source.routeMapAdmissionEvidence.currentTopologyAdmission;
+    assert.ok(admission != null, `${source.id} current topology admission is required`);
+    Object.assign(admission, {
+      topologySnapshotId: currentTopologySnapshotId,
+      topologyContentSha256: candidateTopology.contentSha256,
+      reviewedAt: candidateTopology.capturedAt,
+      freshUntil: candidateTopology.freshUntil,
+    });
     admission.topologyLineages = admission.topologyLineages.map((lineage) => ({
       ...lineage,
+      snapshotId: currentTopologySnapshotId,
       contentSha256: candidateTopology.contentSha256,
     }));
   }
@@ -18393,7 +18428,7 @@ async function writeCurrentItxReleaseInputs(
   Object.assign(buildSpec.networkEdgeEvidence.capitalTopology, {
     path: baselineTopologyPath,
     sha256: sha256(baselineTopologyBytes),
-    snapshotId: currentTopologySnapshotId,
+    snapshotId: baselineTopologyBinding.snapshotId,
   });
   Object.assign(buildSpec.networkEdgeEvidence.capitalTopologyCandidate, {
     path: candidateTopologyPath,
@@ -18751,6 +18786,46 @@ test("production candidate는 current topology snapshot binding 불일치를 거
       runCurrentItxCandidateBuild({ ...inputs, output: path.join(workspace, "output") }),
       /capital topology edge admission does not match pinned snapshot/,
     );
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("production candidate는 embedded Incheon topology를 투영하지 않고 거부한다", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "capital-topology-embedded-incheon-"));
+  try {
+    const inputs = await writeCurrentItxReleaseInputs(workspace);
+    const buildSpec = JSON.parse(await readFile(inputs.buildSpecPath, "utf8"));
+    const candidateBinding = buildSpec.networkEdgeEvidence.capitalTopologyCandidate;
+    const baselineBinding = buildSpec.networkEdgeEvidence.capitalTopology;
+    const [candidate, baseline] = await Promise.all([
+      readFile(candidateBinding.path, "utf8").then(JSON.parse),
+      readFile(baselineBinding.path, "utf8").then(JSON.parse),
+    ]);
+    const incheonLineIds = new Set(["line-42b5805f3b5a", "line-98718184f016"]);
+    const embeddedLines = baseline.lines.filter(({ lineId }) => incheonLineIds.has(lineId));
+    assert.equal(candidate.lines.length, 22);
+    assert.equal(embeddedLines.length, 2);
+    candidate.lines.push(...embeddedLines);
+    candidate.lineCount = candidate.lines.length;
+    candidate.totalEdgeCount = candidate.lines.reduce((sum, { edgeCount }) => sum + edgeCount, 0);
+    candidate.contentSha256 = sha256(JSON.stringify({
+      lines: candidate.lines.map(({
+        lineId, edgeCount, stationCount, contentSha256, rawSha256, datasetId,
+      }) => ({ lineId, edgeCount, stationCount, contentSha256, rawSha256, datasetId })),
+      topologyGaps: candidate.topologyGaps,
+    }));
+    const candidateBytes = Buffer.from(`${JSON.stringify(candidate)}\n`);
+    await writeFile(candidateBinding.path, candidateBytes);
+    candidateBinding.sha256 = sha256(candidateBytes);
+    await writeFile(inputs.buildSpecPath, `${JSON.stringify(buildSpec)}\n`);
+    const output = path.join(workspace, "output");
+
+    await assert.rejects(
+      runCurrentItxCandidateBuild({ ...inputs, output }),
+      /topology line ownership overlap/,
+    );
+    await assert.rejects(readFile(path.join(output, "current.json")), { code: "ENOENT" });
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

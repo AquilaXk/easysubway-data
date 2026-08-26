@@ -19,7 +19,6 @@ import {
   validateCandidateProductionScope,
   main as buildDatapackMain,
 } from "./build-datapack.mjs";
-import { currentIncheonStationCodeDerivations } from "./collect-incheon-station-info.mjs";
 import { main as buildAccessibilityAuthorityMain } from "./build-current-release-candidate-accessibility-input.mjs";
 import {
   buildCapitalTopologyReverificationEvidence,
@@ -37,27 +36,6 @@ const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const currentNow = new Date("2026-08-10T00:00:00.000Z");
 const PUBLIC_ROUTE_MAP_SOURCE_ID = "seoul-metro-route-map-positions";
 
-async function installCurrentIncheonTopologyClone(repositoryRoot) {
-  const inventoryPath = path.join(repositoryRoot, "tools/datapack/source-inventory.json");
-  const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
-  const source = inventory.sources.find(({ id }) => id === "incheon-transit-station-info");
-  const snapshotPath = path.join(repositoryRoot, source.routeMapAdmissionEvidence.snapshotPath);
-  const snapshot = JSON.parse(await readFile(snapshotPath, "utf8"));
-  delete snapshot.stationCodeCorrections;
-  snapshot.stationCodeDerivations = currentIncheonStationCodeDerivations();
-  const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
-  source.routeMapAdmissionEvidence.snapshotSha256 = sha256(snapshotBytes);
-  const inventoryBytes = Buffer.from(`${JSON.stringify(inventory)}\n`);
-  const specPath = path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json");
-  const spec = JSON.parse(await readFile(specPath, "utf8"));
-  spec.networkEdgeEvidence.sourceInventory.sha256 = sha256(inventoryBytes);
-  spec.sourceInventorySha256 = sha256(Buffer.from(JSON.stringify(inventory)));
-  await Promise.all([
-    writeFile(snapshotPath, snapshotBytes),
-    writeFile(inventoryPath, inventoryBytes),
-    writeFile(specPath, `${JSON.stringify(spec)}\n`),
-  ]);
-}
 const PUBLIC_ROUTE_MAP_LINE_IDS = Object.freeze([
   "line-472a81add377", "seoul-2", "line-41a8c75ec9d8", "seoul-4",
   "line-80fc4d5350d4", "line-3f41718e0833", "line-15b3b8a93259", "line-2b2d9eaa53d0",
@@ -154,10 +132,19 @@ test("candidate build spec release identity는 wall clock과 workflow run number
     now: await nextSyntheticCurrentStaticNetworkNow(root),
     activateStaticNetwork: true,
   });
-  await installCurrentIncheonTopologyClone(directory);
   await refreshCurrentCapitalAccessibilityFull({ repositoryRoot: directory });
   const buildSpecPath = "tools/datapack/release/candidate-build-spec.json";
   const buildSpec = await readFile(path.join(directory, buildSpecPath), "utf8").then(JSON.parse);
+  const topologyAdmission = buildSpec.networkEdgeEvidence.capitalTopologyAdmission;
+  const firstBuildAt = Math.max(
+    Date.parse(buildSpec.publishedAt),
+    Date.parse(topologyAdmission.reverifiedAt),
+  );
+  const secondBuildAt = firstBuildAt + 1_000;
+  assert.ok(Number.isFinite(firstBuildAt));
+  assert.ok(secondBuildAt < Date.parse(topologyAdmission.freshUntil));
+  const firstBuildNow = new Date(firstBuildAt).toISOString();
+  const secondBuildNow = new Date(secondBuildAt).toISOString();
   const { privateKey } = generateKeyPairSync("rsa", {
     modulusLength: 2048,
     privateKeyEncoding: { type: "pkcs8", format: "pem" },
@@ -166,7 +153,7 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   const directOutput = path.join(directory, "direct-build");
   await assert.rejects(
     withEnvironment({
-      EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-08-14T16:00:00.000Z",
+      EASYSUBWAY_DATAPACK_BUILD_NOW: firstBuildNow,
       EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey,
       EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: "production-v1",
     }, () => buildDatapackMain([
@@ -213,7 +200,7 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   try {
     await readFile(path.join(root, "tools/datapack/release/current-capital-accessibility-transition.json"));
     await assert.rejects(
-      build("transition-blocked", "2026-08-16T05:00:00.000Z", "303"),
+      build("transition-blocked", secondBuildNow, "303"),
       /CURRENT_ACCESSIBILITY_TRANSITION_BLOCKED/,
     );
     await assert.rejects(
@@ -225,8 +212,8 @@ test("candidate build spec release identity는 wall clock과 workflow run number
     if (error?.code !== "ENOENT") throw error;
   }
 
-  const first = await build("first", "2026-08-14T16:00:00.000Z", "101");
-  const second = await build("second", "2026-08-21T00:00:00.000Z", "202");
+  const first = await build("first", firstBuildNow, "101");
+  const second = await build("second", secondBuildNow, "202");
   const manifest = JSON.parse(first.manifest);
   const provenance = JSON.parse(first.provenance);
   const snapshots = await readFile(
@@ -390,34 +377,14 @@ test("source-separated current topology는 capital과 Incheon 1/2 line ownership
 test("source-separated current topology materialization은 Incheon 1/2 exact 116 edges만 교체한다", async () => {
   const [inventory, snapshotBytes, fixture] = await Promise.all([
     readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
-    readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260814.json")),
+    readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260825.json")),
     readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8")
       .then(JSON.parse),
   ]);
-  const historicalSnapshot = JSON.parse(snapshotBytes);
-  const currentSnapshot = structuredClone(historicalSnapshot);
-  delete currentSnapshot.stationCodeCorrections;
-  currentSnapshot.stationCodeDerivations = currentIncheonStationCodeDerivations();
-  const currentSnapshotBytes = Buffer.from(`${JSON.stringify(currentSnapshot)}\n`);
-  const currentInventory = structuredClone(inventory);
-  currentInventory.sources.find(({ id }) => id === "incheon-transit-station-info")
-    .routeMapAdmissionEvidence.snapshotSha256 = sha256(currentSnapshotBytes);
-  const now = new Date("2026-08-14T16:00:00.000Z");
-  assert.doesNotThrow(() => admittedIncheonTopologyEvidence({
-    sourceInventory: inventory,
-    snapshot: historicalSnapshot,
-    snapshotBytes,
-    now,
-    requireFresh: false,
-  }));
-  assert.throws(() => admittedIncheonTopologyEvidence({
-    sourceInventory: inventory,
-    snapshot: historicalSnapshot,
-    snapshotBytes,
-    now,
-  }), /current Incheon station code derivations are required/);
-  const legacyCorrectionSnapshot = structuredClone(currentSnapshot);
-  legacyCorrectionSnapshot.stationCodeCorrections = structuredClone(historicalSnapshot.stationCodeCorrections);
+  const snapshot = JSON.parse(snapshotBytes);
+  const now = new Date("2026-08-25T16:00:00.000Z");
+  const legacyCorrectionSnapshot = structuredClone(snapshot);
+  legacyCorrectionSnapshot.stationCodeCorrections = [];
   const legacyCorrectionBytes = Buffer.from(`${JSON.stringify(legacyCorrectionSnapshot)}\n`);
   const legacyCorrectionInventory = structuredClone(inventory);
   legacyCorrectionInventory.sources.find(({ id }) => id === "incheon-transit-station-info")
@@ -428,11 +395,10 @@ test("source-separated current topology materialization은 Incheon 1/2 exact 116
     snapshotBytes: legacyCorrectionBytes,
     now,
   }), /current Incheon legacy station code corrections are forbidden/);
-  const snapshot = currentSnapshot;
   const admission = admittedIncheonTopologyEvidence({
-    sourceInventory: currentInventory,
+    sourceInventory: inventory,
     snapshot,
-    snapshotBytes: currentSnapshotBytes,
+    snapshotBytes,
     now,
   });
   const pack = structuredClone(fixture.packs[0]);
@@ -442,7 +408,7 @@ test("source-separated current topology materialization은 Incheon 1/2 exact 116
   ));
 
   assert.deepEqual(materializeIncheonNetworkEdges(pack, snapshot, admission), {
-    snapshotId: "incheon-transit-station-info-20260814",
+    snapshotId: "incheon-transit-station-info-20260825",
     edgeCount: 116,
   });
   const incheonEdges = pack.networkEdges.filter(({ fromNodeId }) => (
@@ -460,10 +426,10 @@ test("source-separated current topology materialization은 Incheon 1/2 exact 116
     )), true);
   }
   assert.throws(() => admittedIncheonTopologyEvidence({
-    sourceInventory: currentInventory,
+    sourceInventory: inventory,
     snapshot,
-    snapshotBytes: currentSnapshotBytes,
-    now: new Date("2026-08-15T15:34:07.000Z"),
+    snapshotBytes,
+    now: new Date("2026-08-26T15:23:25.299Z"),
   }), /Incheon topology admission is stale/);
 });
 
@@ -498,7 +464,7 @@ test("networkEdgeEvidence는 current source evidence와 historical topology over
   }
 });
 
-test("capital topology reverification은 historical baseline과 current admitted candidate를 독립 검증한다", async () => {
+test("capital topology reverification은 combined current candidate를 거부한다", async () => {
   const [baseline, candidate, reverification] = await Promise.all([
     readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260724.json"), "utf8").then(JSON.parse),
     readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260804.json"), "utf8").then(JSON.parse),
@@ -516,17 +482,20 @@ test("capital topology reverification은 historical baseline과 current admitted
     freshUntil: candidate.freshUntil,
   };
 
-  assert.doesNotThrow(() => validateCapitalTopologyReverification(
-    reverification,
-    baseline,
-    candidate,
-    admission,
-    admission.snapshotId,
-    "capital-route-topology-20260724",
-  ));
+  assert.throws(
+    () => validateCapitalTopologyReverification(
+      reverification,
+      baseline,
+      candidate,
+      admission,
+      admission.snapshotId,
+      "capital-route-topology-20260724",
+    ),
+    /capital topology reverification identity is invalid/,
+  );
 });
 
-test("source-separated reverification은 historical baseline도 동일 ownership으로 투영한다", async () => {
+test("direct-current reverification은 historical baseline만 동일 ownership으로 투영한다", async () => {
   const [baseline, candidate] = await Promise.all([
     readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260724.json"), "utf8")
       .then(JSON.parse),
@@ -535,6 +504,9 @@ test("source-separated reverification은 historical baseline도 동일 ownership
   ]);
   const projectedBaseline = projectCapitalTopologyOwnership(baseline);
   const projectedCandidate = projectCapitalTopologyOwnership(candidate);
+  assert.equal(baseline.lines.length, 24);
+  assert.equal(projectedBaseline.lines.length, 22);
+  assert.equal(projectedCandidate.lines.length, 22);
   const evidence = buildCapitalTopologyReverificationEvidence(projectedBaseline, projectedCandidate);
   const admission = {
     schemaVersion: 1,
