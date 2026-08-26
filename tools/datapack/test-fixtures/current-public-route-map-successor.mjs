@@ -489,8 +489,8 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   let headsBySource;
   try {
     ({ headsBySource } = validateLineage(snapshots));
-  } catch {
-    throw new Error("synthetic public route-map successor fixture has invalid public source lineage");
+  } catch (error) {
+    throw new Error(`synthetic public route-map successor fixture has invalid public source lineage: ${error.message}`);
   }
   const selectedPublicSnapshot = snapshots[selectedPublicSnapshotIndex];
   if (selectedPublicSnapshotId != null && (publicSnapshotsById.size !== publicSnapshots.length

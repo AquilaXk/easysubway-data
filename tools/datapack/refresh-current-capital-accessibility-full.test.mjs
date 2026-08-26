@@ -10,6 +10,7 @@ import { buildCurrentExitAdmissionOciReceipt, canonicalCurrentExitAdmissionOciRe
 import { readStableRegularFile } from "./rebind-current-candidate-source-snapshots.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 import { activateSyntheticCurrentStaticNetworkSuccessors } from "./test-fixtures/current-public-route-map-successor.mjs";
+import { currentizeFreshFacilitySource, writeFreshCurrentAccessibilityOutputs, writeFreshExitAdmissionChain } from "./test-fixtures/current-full-capital-production-artifact.mjs";
 import { currentIncheonStationCodeDerivations } from "./collect-incheon-station-info.mjs";
 import {
   buildCurrentTopologyRefreshPrimaryOutputs,
@@ -275,7 +276,11 @@ async function stagedRefreshRepository(t) {
   await rebindStagedActivatedOutputCandidateIds(root, candidateId, sourceSetSha256);
   await bindCurrentCandidateApprovalFixture(root);
   await activateSyntheticCurrentStaticNetworkSuccessors(root, { now });
+  await currentizeFreshFacilitySource(root, now);
+  await writeFreshExitAdmissionChain(root, now);
+  await writeFreshCurrentAccessibilityOutputs(root);
   const finalEvidence = await stagedStaticEvidenceIdentity(root);
+  await rebindStagedActivatedOutputCandidateIds(root, finalEvidence.candidateId, finalEvidence.predecessorSourceSetSha256);
   await Promise.all([
     rebindStagedFacilityCandidateId(root, finalEvidence.candidateId, finalEvidence.sourceSetSha256),
     rebindStagedExitCandidateId(root, finalEvidence.candidateId, finalEvidence.sourceSetSha256),
@@ -439,11 +444,18 @@ async function stagedStaticEvidenceIdentity(root) {
     if (sourceId === "seoul-metro-transfer-distance-duration") return [];
     return [sourceId === "seoul-metro-accessibility" ? selected[seoulIndex].previousSnapshotId : snapshotId];
   }));
+  const predecessorIdSet = new Set(predecessorIds);
+  const predecessor = snapshots.filter(({ snapshotId }) => predecessorIdSet.has(snapshotId));
   const evidence = snapshots.filter(({ snapshotId }) => evidenceIds.has(snapshotId));
-  if (evidenceIds.size !== 6 || evidence.length !== 6) {
+  if (predecessorIdSet.size !== 7 || predecessor.length !== 7
+    || evidenceIds.size !== 6 || evidence.length !== 6) {
     throw new Error("staged static successor evidence set is incomplete");
   }
-  return { candidateId: candidate.candidateId, sourceSetSha256: sha(JSON.stringify(evidence)) };
+  return {
+    candidateId: candidate.candidateId,
+    predecessorSourceSetSha256: sha(JSON.stringify(predecessor)),
+    sourceSetSha256: sha(JSON.stringify(evidence)),
+  };
 }
 
 async function readCurrentStaticBoundary(root) {

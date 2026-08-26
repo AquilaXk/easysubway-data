@@ -194,7 +194,7 @@ async function writeFreshFacilityAdmission(repositoryRoot, observedAt) {
   return admission;
 }
 
-async function writeFreshExitAdmissionChain(repositoryRoot, observedAt) {
+export async function writeFreshExitAdmissionChain(repositoryRoot, observedAt) {
   const inputPaths = {
     canonicalPackBytes: "tools/datapack/release/capital-production-canonical-pack.json",
     coverageTargetsBytes: "tools/datapack/nationwide-coverage-targets.json",
@@ -284,6 +284,23 @@ async function writeFreshAccessibilityOutputs(repositoryRoot) {
   ]);
 }
 
+export async function writeFreshCurrentAccessibilityOutputs(repositoryRoot) {
+  await writeCurrentFanIn(repositoryRoot);
+  await writeFreshAccessibilityOutputs(repositoryRoot);
+}
+
+// Rebuilds the FACILITY producer chain from the current candidate rather than
+// mutating fixture freshness or candidate identities.
+export async function currentizeFreshFacilitySource(repositoryRoot, capturedAt) {
+  await registerFreshFacilitySnapshot(repositoryRoot, capturedAt);
+  await assertSelectedPublicLayoutBinding(repositoryRoot, "FACILITY registration");
+  await rebindCurrentCandidateSourceSnapshots({ repositoryRoot, now: capturedAt });
+  await assertSelectedPublicLayoutBinding(repositoryRoot, "candidate rebind");
+  await syncFreshAccessibilityEvidence(repositoryRoot);
+  await rebindCurrentActivePublicRouteMapMaterialization({ repositoryRoot });
+  await writeFreshFacilityAdmission(repositoryRoot, capturedAt);
+}
+
 // Materializes consumer inputs from the already current fan-in.  The normal
 // PRE_APPROVAL wrapper intentionally validates a historical transition instead.
 export async function materializeCurrentFanInCandidateArtifact({
@@ -323,16 +340,9 @@ export async function prepareCurrentFullCapitalProductionRepository(sourceRoot) 
     });
     const candidate = await json(repositoryRoot, "tools/datapack/release/candidate-build-spec.json");
     const capturedAt = new Date(candidate.publishedAt);
-    await registerFreshFacilitySnapshot(repositoryRoot, capturedAt);
-    await assertSelectedPublicLayoutBinding(repositoryRoot, "FACILITY registration");
-    await rebindCurrentCandidateSourceSnapshots({ repositoryRoot, now: capturedAt });
-    await assertSelectedPublicLayoutBinding(repositoryRoot, "candidate rebind");
-    await syncFreshAccessibilityEvidence(repositoryRoot);
-    await rebindCurrentActivePublicRouteMapMaterialization({ repositoryRoot });
-    await writeFreshFacilityAdmission(repositoryRoot, capturedAt);
+    await currentizeFreshFacilitySource(repositoryRoot, capturedAt);
     await writeFreshExitAdmissionChain(repositoryRoot, capturedAt);
-    await writeCurrentFanIn(repositoryRoot);
-    await writeFreshAccessibilityOutputs(repositoryRoot);
+    await writeFreshCurrentAccessibilityOutputs(repositoryRoot);
     return repositoryRoot;
   } catch (error) {
     await rm(repositoryRoot, { recursive: true, force: true });
