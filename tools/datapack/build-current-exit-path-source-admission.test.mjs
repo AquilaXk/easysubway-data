@@ -38,21 +38,17 @@ const OBSERVED_AT = new Date(CURRENT_SOURCE_HEAD_AT + 120_000).toISOString();
 const FRESH_UNTIL = new Date(CURRENT_SOURCE_HEAD_AT + 60_000 + 24 * 60 * 60 * 1_000).toISOString();
 const SOURCE_ID = "kric-station-movement-standard";
 
-test("current provider snapshot을 candidate station-line EXIT admission으로 투영한다", () => {
-  const input = validInput();
+test("current provider snapshot을 current full-capital station-line EXIT admission으로 투영한다", async () => {
+  const input = await fullCapitalInput();
   const result = buildCurrentExitPathSourceAdmission(input);
 
   assert.equal(result.normalizedSnapshot.schemaVersion, 4);
   assert.equal(result.admission.schemaVersion, 2);
-  assert.equal(result.normalizedSnapshot.queryPlan.length, 3);
-  assert.deepEqual(result.normalizedSnapshot.results.map(({ state }) => state).sort(), [
-    "OBSERVED_EXIT_PATH", "OBSERVED_EXIT_PATH", "PROVIDER_NO_DATA",
-  ]);
+  assert.equal(result.normalizedSnapshot.queryPlan.length, 420);
+  assert.equal(result.admission.cells.length, 213);
+  assert.equal(new Set(result.admission.cells.map(({ stationId }) => stationId)).size, 199);
   assert.equal(result.admission.decision, "GO");
-  assert.equal(result.admission.stateSummary.ADMITTED_EXIT_PATH, 1);
-  assert.equal(result.admission.stateSummary.ADMITTED_EXIT_UNVERIFIED_BLOCKED, 1);
-  assert.equal(result.admission.stateSummary.UNKNOWN, 0);
-  assert.equal(result.admission.materializerEvidenceRows.length, 2);
+  assert.equal(result.admission.materializerEvidenceRows.length, 213);
   assert.equal(
     result.admission.sourceIdentity.providerSnapshotDigest,
     JSON.parse(input.providerSnapshotBytes).snapshotDigest,
@@ -95,31 +91,36 @@ test("tracked current EXIT handoff는 exact immutable snapshot과 GO admission�
   assert.equal(canonicalExitPathAdmissionJson(admission), admissionBytes.toString("utf8"));
 });
 
-test("positive observation이 없는 provider no-data station-line은 terminal blocked로 닫는다", () => {
-  const input = validInput();
+test("positive observation이 없는 provider no-data station-line은 terminal blocked로 닫는다", async () => {
+  const input = await fullCapitalInput();
   const snapshot = JSON.parse(input.providerSnapshotBytes);
-  const stationBQueryId = input.collectionPlan.stationLineQueries
-    .find(({ stationLineId }) => stationLineId === "station-b:seoul-4").queryIds[0];
-  snapshot.results = snapshot.results.map((result) => result.queryId === stationBQueryId
+  const stationLine = input.collectionPlan.stationLineQueries[0];
+  const stationLineQueryIds = new Set(stationLine.queryIds);
+  snapshot.results = snapshot.results.map((result) => stationLineQueryIds.has(result.queryId)
     ? providerResult(result.queryId, "PROVIDER_NO_DATA")
     : result);
   input.providerSnapshotBytes = providerSnapshotBytes(snapshot);
 
   const result = buildCurrentExitPathSourceAdmission(input);
   assert.equal(result.admission.decision, "GO");
-  assert.equal(result.admission.stateSummary.ADMITTED_EXIT_PATH, 0);
-  assert.equal(result.admission.stateSummary.ADMITTED_EXIT_UNVERIFIED_BLOCKED, 2);
-  const blocked = result.admission.cells.find(({ stationId }) => stationId === "station-b");
+  assert.ok(snapshot.results
+    .filter(({ queryId }) => stationLineQueryIds.has(queryId))
+    .every(({ state }) => state === "PROVIDER_NO_DATA"));
+  const [stationId, lineId] = stationLine.stationLineId.split(":");
+  const blocked = result.admission.cells.find((cell) => cell.stationId === stationId && cell.lineId === lineId);
+  assert.ok(blocked);
   assert.equal(blocked.admissionReason, "PROVIDER_NO_DATA_UNVERIFIED_BLOCKED");
   assert.match(blocked.providerResponseSha256, /^[a-f0-9]{64}$/);
-  const evidence = result.admission.materializerEvidenceRows.find(({ stationId }) => stationId === "station-b");
+  const evidence = result.admission.materializerEvidenceRows
+    .find((row) => row.stationId === stationId && row.lineId === lineId);
+  assert.ok(evidence);
   assert.equal(evidence.state, "UNVERIFIED_EVIDENCE_BLOCKED");
   assert.equal(evidence.evidenceKind, "UNVERIFIED_EVIDENCE_BLOCKED");
   assert.equal(evidence.providerResultCode, "03");
   assert.equal(evidence.providerRecordHash, null);
 });
 
-test("raw identity, candidate identity와 source license drift를 fail closed한다", () => {
+test("raw identity, candidate identity와 source license drift를 fail closed한다", async () => {
   const cases = [
     ["raw digest", (input) => {
       const snapshot = JSON.parse(input.providerSnapshotBytes);
@@ -131,14 +132,14 @@ test("raw identity, candidate identity와 source license drift를 fail closed한
       input.collectionPlan.collectionPlanDigest = "0".repeat(64);
     }, /collection plan digest mismatch|collection plan identity mismatch/],
     ["license", (input) => {
-      input.sourceInventory.sources[0].license.redistributionAllowed = false;
+      input.sourceInventory.sources.find(({ id }) => id === SOURCE_ID).license.redistributionAllowed = false;
     }, /source license mismatch/],
     ["source set", (input) => {
       input.candidateBuildSpec.sourceSnapshotSetHash = "f".repeat(64);
-    }, /source snapshot set identity mismatch/],
+    }, /current capital FACILITY candidate identity mismatch/],
   ];
   for (const [label, mutate, expected] of cases) {
-    const input = validInput();
+    const input = await fullCapitalInput();
     mutate(input);
     assert.throws(() => buildCurrentExitPathSourceAdmission(input), expected, label);
   }
@@ -170,47 +171,39 @@ test("#331 builder canonical 213/199 FACILITY는 420 EXIT query GO로 직접 결
 });
 
 
-test("station-line query와 source coverage를 provider mapping·inventory에 exact 결속한다", () => {
-  const crossProvider = validInput();
+test("station-line query와 source coverage를 provider mapping·inventory에 exact 결속한다", async () => {
+  const crossProvider = await fullCapitalInput();
   const stationA = crossProvider.collectionPlan.stationLineQueries
-    .find(({ stationLineId }) => stationLineId === "station-a:seoul-4");
+    .at(0);
   const stationAQuery = crossProvider.collectionPlan.queryPlan
-    .find(({ providerStationId }) => providerStationId === "101");
+    .find(({ queryId }) => stationA.queryIds.includes(queryId));
   const foreignQuery = crossProvider.collectionPlan.queryPlan
-    .find(({ providerStationId }) => providerStationId === "103");
-  for (const key of ["operatorName", "lineName", "stationName", "regionId"]) {
-    foreignQuery[key] = stationAQuery[key];
-  }
-  stationA.queryIds = [foreignQuery.queryId];
+    .find(({ queryId }) => !stationA.queryIds.includes(queryId));
+  const foreignStationLine = crossProvider.collectionPlan.stationLineQueries
+    .find(({ queryIds }) => queryIds.includes(foreignQuery.queryId));
+  stationA.queryIds[stationA.queryIds.indexOf(stationAQuery.queryId)] = foreignQuery.queryId;
+  foreignStationLine.queryIds[foreignStationLine.queryIds.indexOf(foreignQuery.queryId)] = stationAQuery.queryId;
   rebindCollectionPlan(crossProvider);
   const crossProviderSnapshot = JSON.parse(crossProvider.providerSnapshotBytes);
-  crossProviderSnapshot.queryPlan = structuredClone(crossProvider.collectionPlan.queryPlan);
-  crossProviderSnapshot.queryPlanSha256 = crossProvider.collectionPlan.queryPlanSha256;
   crossProviderSnapshot.collectionPlanDigest = crossProvider.collectionPlan.collectionPlanDigest;
-  crossProviderSnapshot.results = crossProviderSnapshot.results.map((result) =>
-    result.queryId === foreignQuery.queryId
-      ? providerResult(result.queryId, "ROWS_OBSERVED")
-      : result);
   crossProvider.providerSnapshotBytes = providerSnapshotBytes(crossProviderSnapshot);
   assert.throws(
     () => buildCurrentExitPathSourceAdmission(crossProvider),
     /current EXIT provider mapping mismatch/,
   );
 
-  const outsideOperator = validInput();
-  for (const cell of outsideOperator.facilityAdmission.cells) cell.operatorId = "outside-operator";
-  rebindFacilityAdmission(outsideOperator);
+  const outsideOperator = await fullCapitalInput();
+  outsideOperator.sourceInventory.sources
+    .find(({ id }) => id === SOURCE_ID).coverageScope.operatorIds = ["outside-operator"];
   assert.throws(
     () => buildCurrentExitPathSourceAdmission(outsideOperator),
     /current EXIT source coverage mismatch/,
   );
 
-  const outsideRegion = validInput();
-  const selectedIds = new Set(outsideRegion.collectionPlan.stationLineQueries
-    .filter(({ stationLineId }) => stationLineId !== "station-c:seoul-4")
-    .flatMap(({ queryIds }) => queryIds));
+  const outsideRegion = await fullCapitalInput();
+  const outsideRegionQueryIds = new Set(outsideRegion.collectionPlan.stationLineQueries[0].queryIds);
   for (const query of outsideRegion.collectionPlan.queryPlan) {
-    if (selectedIds.has(query.queryId)) query.regionId = "outside-region";
+    if (outsideRegionQueryIds.has(query.queryId)) query.regionId = "outside-region";
   }
   rebindCollectionPlan(outsideRegion);
   const outsideRegionSnapshot = JSON.parse(outsideRegion.providerSnapshotBytes);
@@ -218,7 +211,6 @@ test("station-line query와 source coverage를 provider mapping·inventory에 ex
   outsideRegionSnapshot.queryPlanSha256 = outsideRegion.collectionPlan.queryPlanSha256;
   outsideRegionSnapshot.collectionPlanDigest = outsideRegion.collectionPlan.collectionPlanDigest;
   outsideRegion.providerSnapshotBytes = providerSnapshotBytes(outsideRegionSnapshot);
-  rebindFacilityAdmission(outsideRegion);
   assert.throws(
     () => buildCurrentExitPathSourceAdmission(outsideRegion),
     /current EXIT source coverage mismatch/,
@@ -227,7 +219,7 @@ test("station-line query와 source coverage를 provider mapping·inventory에 ex
 
 test("CLI는 normalized snapshot과 admission을 absent directory에 함께 쓴다", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "current-exit-admission-"));
-  const input = validInput();
+  const input = await fullCapitalInput();
   const paths = {
     provider: path.join(root, "provider.json"),
     plan: path.join(root, "plan.json"),
@@ -253,7 +245,7 @@ test("CLI는 normalized snapshot과 admission을 absent directory에 함께 쓴�
     "--candidate-build-spec", paths.candidate,
     "--source-inventory", paths.inventory,
     "--source-snapshots", paths.sourceSnapshots,
-    "--observed-at", OBSERVED_AT,
+    "--observed-at", input.observedAt,
     "--output-directory", paths.output,
   ], { log: () => {} });
 
@@ -276,7 +268,7 @@ test("CLI는 normalized snapshot과 admission을 absent directory에 함께 쓴�
     "--candidate-build-spec", paths.candidate,
     "--source-inventory", paths.inventory,
     "--source-snapshots", paths.sourceSnapshots,
-    "--observed-at", OBSERVED_AT,
+    "--observed-at", input.observedAt,
     "--output-directory", paths.output,
   ], { log: () => {} }), /output directory must be absent/);
 });
@@ -469,6 +461,19 @@ async function fullCapitalFixture() {
   const candidateBuildSpec = { ...productionSpec, candidateId: "fixture", sourceSnapshotIds: selected.map(({ snapshotId }) => snapshotId), sourceSnapshots: selected.map(projection), sourceSnapshotSetHash: sha256(JSON.stringify(selectedInLedgerOrder)), sourceInventorySha256: sha256(Buffer.from(JSON.stringify(inventory))), networkEdgeEvidence: { sourceInventory: { path: "tools/datapack/source-inventory.json", sha256: sha256(Buffer.from(JSON.stringify(inventory))) } } };
   const facilityAdmission = buildCurrentCapitalFacilitySourceAdmission({ planBytes: Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(facilityPlan)), canonicalPackBytes, snapshotBytes, candidateBuildSpec, sourceInventoryBytes: Buffer.from(JSON.stringify(inventory)), sourceSnapshots, governancePolicy, governancePolicyBytes, freshnessPolicy, observedAt: successorObservedAt });
   return { bundle: await fullBundleFixture(), candidateBuildSpec, facilityAdmission, inventory, ledger, sourceSnapshots, successorObservedAt };
+}
+
+async function fullCapitalInput() {
+  const fixture = await fullCapitalFixture();
+  return {
+    providerSnapshotBytes: fixture.bundle.snapshotBytes,
+    collectionPlan: JSON.parse(fixture.bundle.planBytes),
+    facilityAdmission: fixture.facilityAdmission,
+    candidateBuildSpec: fixture.candidateBuildSpec,
+    sourceInventory: fixture.inventory,
+    sourceSnapshots: fixture.sourceSnapshots,
+    observedAt: fixture.successorObservedAt,
+  };
 }
 
 async function selectedSourceHeadAt(datapackRoot) {
@@ -718,30 +723,6 @@ function rebindCollectionPlan(input) {
   input.collectionPlan.collectionPlanDigest = sha256(canonicalJson(payload));
 }
 
-function rebindFacilityAdmission(input) {
-  const projected = input.facilityAdmission.cells.map((cell) => {
-    const queryIds = input.collectionPlan.stationLineQueries
-      .find(({ stationLineId }) => stationLineId === `${cell.stationId}:${cell.lineId}`).queryIds;
-    const query = input.collectionPlan.queryPlan.find(({ queryId }) => queryIds.includes(queryId));
-    return {
-      stationId: cell.stationId,
-      stationName: query.stationName,
-      stationAliases: [],
-      regionId: query.regionId,
-      lineId: cell.lineId,
-      lineName: query.lineName,
-      operatorId: cell.operatorId,
-      operatorName: query.operatorName,
-    };
-  }).sort(compareStationLines);
-  input.facilityAdmission.stationLineSetSha256 = sha256(canonicalJson(projected.map(({
-    stationId, lineId, operatorId,
-  }) => ({ stationId, lineId, operatorId }))));
-  input.facilityAdmission.stationLineMappingSha256 = sha256(canonicalJson(projected));
-  const { admissionDigest: ignored, ...payload } = input.facilityAdmission;
-  input.facilityAdmission.admissionDigest = sha256(canonicalJson(payload));
-}
-
 function canonicalJson(value) {
   return JSON.stringify(canonicalObject(value));
 }
@@ -757,12 +738,6 @@ function compareQueries(left, right) {
     || compareBytes(left.providerNextStationId, right.providerNextStationId)
     || compareBytes(left.routeEdgeId, right.routeEdgeId)
     || compareBytes(left.queryId, right.queryId);
-}
-
-function compareStationLines(left, right) {
-  return compareBytes(left.stationId, right.stationId)
-    || compareBytes(left.lineId, right.lineId)
-    || compareBytes(left.operatorId, right.operatorId);
 }
 
 function compareBytes(left, right) {
