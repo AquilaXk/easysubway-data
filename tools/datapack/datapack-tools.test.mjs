@@ -22,6 +22,7 @@ import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { routeServiceEvidenceSnapshot } from "./lib/route-service-evidence-preservation.mjs";
 import {
   buildCapitalTopologyReverificationEvidence,
+  projectCapitalTopologyOwnership,
 } from "./collect-capital-route-topology.mjs";
 import { currentIncheonStationCodeDerivations } from "./collect-incheon-station-info.mjs";
 import {
@@ -18296,13 +18297,16 @@ async function writeCurrentItxReleaseInputs(
     currentTopologyAuthority ?? {};
   assert.ok(currentTopologySnapshotId != null, "fixture current topology admission is required");
   const baselineTopologyBinding = buildSpec.networkEdgeEvidence.capitalTopology;
-  const baselineTopologyBytes = await readFile(baselineTopologyBinding.path);
+  const baselineTopologySourceBytes = await readFile(baselineTopologyBinding.path);
   assert.equal(
-    sha256(baselineTopologyBytes),
+    sha256(baselineTopologySourceBytes),
     baselineTopologyBinding.sha256,
     "fixture baseline topology binding must match its bytes",
   );
-  const baselineTopology = JSON.parse(baselineTopologyBytes);
+  const baselineTopology = projectCapitalTopologyOwnership(
+    JSON.parse(baselineTopologySourceBytes),
+  );
+  const baselineTopologyBytes = Buffer.from(`${JSON.stringify(baselineTopology)}\n`);
   const candidateTopologyBytes = await readFile(
     `tools/datapack/sources/${currentTopologySnapshotId}.json`,
   );
