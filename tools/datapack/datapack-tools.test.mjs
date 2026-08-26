@@ -18548,12 +18548,27 @@ async function writeCurrentItxReleaseInputs(
 
 async function writeTransitionFreeCandidateRoot(workspace) {
   const repositoryRoot = path.join(workspace, "transition-free-repository");
+  const currentSpec = JSON.parse(await readFile(
+    "tools/datapack/release/candidate-build-spec.json",
+    "utf8",
+  ));
+  const currentInventory = JSON.parse(await readFile(
+    currentSpec.networkEdgeEvidence.sourceInventory.path,
+    "utf8",
+  ));
+  const currentIncheonTopologyPath = currentInventory.sources.find(
+    ({ id }) => id === "incheon-transit-station-info",
+  )?.routeMapAdmissionEvidence?.snapshotPath;
+  assert.match(
+    currentIncheonTopologyPath ?? "",
+    /^tools\/datapack\/sources\/incheon-transit-station-info-[0-9]{8}\.json$/u,
+  );
   const requiredFiles = [
     "tools/datapack/schema/catalog-schema.sql",
     "tools/datapack/official-od-fare-admission.json",
     "tools/datapack/nationwide-coverage-targets.json",
     "tools/datapack/release/source-snapshots.json",
-    "tools/datapack/sources/incheon-transit-station-info-20260814.json",
+    currentIncheonTopologyPath,
     "tools/datapack/fixtures/candidate-build-spec.json",
     "tools/datapack/fixtures/catalog-fixture.json",
   ];
@@ -18754,6 +18769,46 @@ test("production candidate는 current topology snapshot binding 불일치를 거
       runCurrentItxCandidateBuild({ ...inputs, output: path.join(workspace, "output") }),
       /capital topology edge admission does not match pinned snapshot/,
     );
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("production candidate는 embedded Incheon topology를 투영하지 않고 거부한다", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "capital-topology-embedded-incheon-"));
+  try {
+    const inputs = await writeCurrentItxReleaseInputs(workspace);
+    const buildSpec = JSON.parse(await readFile(inputs.buildSpecPath, "utf8"));
+    const candidateBinding = buildSpec.networkEdgeEvidence.capitalTopologyCandidate;
+    const baselineBinding = buildSpec.networkEdgeEvidence.capitalTopology;
+    const [candidate, baseline] = await Promise.all([
+      readFile(candidateBinding.path, "utf8").then(JSON.parse),
+      readFile(baselineBinding.path, "utf8").then(JSON.parse),
+    ]);
+    const incheonLineIds = new Set(["line-42b5805f3b5a", "line-98718184f016"]);
+    const embeddedLines = baseline.lines.filter(({ lineId }) => incheonLineIds.has(lineId));
+    assert.equal(candidate.lines.length, 22);
+    assert.equal(embeddedLines.length, 2);
+    candidate.lines.push(...embeddedLines);
+    candidate.lineCount = candidate.lines.length;
+    candidate.totalEdgeCount = candidate.lines.reduce((sum, { edgeCount }) => sum + edgeCount, 0);
+    candidate.contentSha256 = sha256(JSON.stringify({
+      lines: candidate.lines.map(({
+        lineId, edgeCount, stationCount, contentSha256, rawSha256, datasetId,
+      }) => ({ lineId, edgeCount, stationCount, contentSha256, rawSha256, datasetId })),
+      topologyGaps: candidate.topologyGaps,
+    }));
+    const candidateBytes = Buffer.from(`${JSON.stringify(candidate)}\n`);
+    await writeFile(candidateBinding.path, candidateBytes);
+    candidateBinding.sha256 = sha256(candidateBytes);
+    await writeFile(inputs.buildSpecPath, `${JSON.stringify(buildSpec)}\n`);
+    const output = path.join(workspace, "output");
+
+    await assert.rejects(
+      runCurrentItxCandidateBuild({ ...inputs, output }),
+      /topology line ownership overlap/,
+    );
+    await assert.rejects(readFile(path.join(output, "current.json")), { code: "ENOENT" });
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

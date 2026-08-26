@@ -37,11 +37,14 @@ test("current public candidate slot derives a same-source public V2 successor on
     .filter(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence?.topologySourceId === "capital-route-topology")
     .map(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence.currentTopologyAdmission);
   const candidate = after.networkEdgeEvidence.capitalTopologyCandidate;
+  const topologyAdmission = after.networkEdgeEvidence.capitalTopologyAdmission;
   assert.equal(admissions.length, 16);
+  assert.ok(Date.parse(after.publishedAt) >= Date.parse(topologyAdmission.reverifiedAt));
+  assert.ok(Date.parse(after.publishedAt) < Date.parse(topologyAdmission.freshUntil));
   assert.ok(admissions.every((admission) => admission.topologySnapshotId === candidate.snapshotId
-    && admission.topologyContentSha256 === after.networkEdgeEvidence.capitalTopologyAdmission.contentSha256
-    && admission.reviewedAt === after.networkEdgeEvidence.capitalTopologyAdmission.reviewedAt
-    && admission.freshUntil === after.networkEdgeEvidence.capitalTopologyAdmission.freshUntil
+    && admission.topologyContentSha256 === topologyAdmission.contentSha256
+    && admission.reviewedAt === topologyAdmission.reviewedAt
+    && admission.freshUntil === topologyAdmission.freshUntil
     && admission.topologyLineages.every((lineage) => lineage.sourceId === "capital-route-topology"
       && lineage.snapshotId === candidate.snapshotId
       && lineage.contentSha256 === admission.topologyContentSha256)));
