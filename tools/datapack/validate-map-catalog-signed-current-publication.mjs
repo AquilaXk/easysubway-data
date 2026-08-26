@@ -22,26 +22,13 @@ export function canonicalMapCatalogSignedCurrentPublicationJson(value) {
 }
 
 export function validateMapCatalogSignedCurrentPublication(value, { publicKey = signingPublicKey(), now = Date.now() } = {}) {
-  exactKeys(value, ["schemaVersion", "artifactKind", "producerGitSha", "releaseSequence", "signedFinalDescriptorSha256", "stationSetSha256", "freshUntil", "mapPack", "stationCatalogPack", "publicationReceipt", "publicationReceiptSha256", "descriptorSha256", "keyId", "signature"], "descriptor");
+  exactKeys(value, ["schemaVersion", "artifactKind", "producerGitSha", "releaseSequence", "signedFinalDescriptorSha256", "stationSetSha256", "freshUntil", "mapPack", "stationCatalogPack", "descriptorSha256", "keyId", "signature"], "descriptor");
   if (value.schemaVersion !== 1 || value.artifactKind !== "map-catalog-signed-current-publication") throw new Error("descriptor identity mismatch");
   validateIdentity(value, "descriptor", now);
   validatePack(value.mapPack, "map-pack", MAP_PATHS, value.stationSetSha256);
   validatePack(value.stationCatalogPack, "station-catalog-pack", CATALOG_PATHS, value.stationSetSha256);
-  const receipt = validateMapCatalogSignedCurrentPublicationReceipt(value.publicationReceipt, { publicKey, now });
-  if (value.publicationReceiptSha256 !== receipt.receiptSha256 || value.producerGitSha !== receipt.producerGitSha || value.releaseSequence !== receipt.releaseSequence || value.signedFinalDescriptorSha256 !== receipt.signedFinalDescriptorSha256 || value.stationSetSha256 !== receipt.stationSetSha256 || value.freshUntil !== receipt.freshUntil || canonicalJson(value.mapPack) !== canonicalJson(receipt.mapPack) || canonicalJson(value.stationCatalogPack) !== canonicalJson(receipt.stationCatalogPack)) throw new Error("descriptor receipt binding mismatch");
   selfDigest(value, "descriptorSha256", "descriptor");
   signature(value, publicKey, "descriptor");
-  return structuredClone(value);
-}
-
-export function validateMapCatalogSignedCurrentPublicationReceipt(value, { publicKey = signingPublicKey(), now = Date.now() } = {}) {
-  exactKeys(value, ["schemaVersion", "artifactKind", "producerGitSha", "releaseSequence", "signedFinalDescriptorSha256", "stationSetSha256", "freshUntil", "mapPack", "stationCatalogPack", "receiptSha256", "keyId", "signature"], "receipt");
-  if (value.schemaVersion !== 1 || value.artifactKind !== "map-catalog-signed-current-publication-receipt") throw new Error("receipt identity mismatch");
-  validateIdentity(value, "receipt", now);
-  validatePack(value.mapPack, "map-pack", MAP_PATHS, value.stationSetSha256);
-  validatePack(value.stationCatalogPack, "station-catalog-pack", CATALOG_PATHS, value.stationSetSha256);
-  selfDigest(value, "receiptSha256", "receipt");
-  signature(value, publicKey, "receipt");
   return structuredClone(value);
 }
 
