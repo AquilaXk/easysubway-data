@@ -330,6 +330,10 @@ async function mutateCurrentProductionSqlite(artifact, mutate) {
   await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
 }
 
+function qualityRatio(numerator, denominator) {
+  return denominator === 0 ? 0 : Number((numerator / denominator).toFixed(4));
+}
+
 function materializeCurrentAvailableEntryEvidence(database, pack, {
   sourceSupportsAccessibility = true,
   strictFacilityEvidence = false,
@@ -446,13 +450,11 @@ function materializeCurrentAvailableEntryEvidence(database, pack, {
     );
   }
 
-  const metricRatio = (numerator, denominator) =>
-    denominator === 0 ? 0 : Number((numerator / denominator).toFixed(4));
   const edgeCount = database.prepare("SELECT COUNT(*) AS count FROM network_edges").get().count;
   const unknownCount = database.prepare(`
     SELECT COUNT(*) AS count FROM network_edges WHERE accessibility_status = 'UNKNOWN'
   `).get().count;
-  const unknownAccessibilityRatio = metricRatio(unknownCount, edgeCount);
+  const unknownAccessibilityRatio = qualityRatio(unknownCount, edgeCount);
   pack.regionalQualityMetrics.unknownAccessibilityRatio = unknownAccessibilityRatio;
   pack.regionalQualityMetrics.unknownEdgeRatioByProfile = {
     wheelchair: unknownAccessibilityRatio,
@@ -480,13 +482,13 @@ function materializeCurrentAvailableEntryEvidence(database, pack, {
         SELECT type FROM facilities
       )
     `).get().count;
-    pack.regionalQualityMetrics.requiredFacilityEvidenceCoverageRatio = metricRatio(
+    pack.regionalQualityMetrics.requiredFacilityEvidenceCoverageRatio = qualityRatio(
       evidenceKeyCount,
       stationLineCount * facilityTypeCount,
     );
-    pack.regionalQualityMetrics.strictRouteEligibleFacilityRatio = metricRatio(evidence.strict_count, evidence.total);
-    pack.regionalQualityMetrics.operationalKnownRatio = metricRatio(evidence.operational_known_count, evidence.total);
-    pack.regionalQualityMetrics.freshnessValidRatio = metricRatio(evidence.fresh_count, evidence.total);
+    pack.regionalQualityMetrics.strictRouteEligibleFacilityRatio = qualityRatio(evidence.strict_count, evidence.total);
+    pack.regionalQualityMetrics.operationalKnownRatio = qualityRatio(evidence.operational_known_count, evidence.total);
+    pack.regionalQualityMetrics.freshnessValidRatio = qualityRatio(evidence.fresh_count, evidence.total);
   }
   if (pathwayEdgeType !== null) {
     const pathways = database.prepare(`
@@ -494,7 +496,7 @@ function materializeCurrentAvailableEntryEvidence(database, pack, {
              SUM(CASE WHEN provenance_kind IN ('FIELD_SURVEY', 'OPERATOR_CONFIRMED') THEN 1 ELSE 0 END) AS field_verified_count
       FROM station_pathway_edges
     `).get();
-    pack.regionalQualityMetrics.fieldVerifiedPathwayRatio = metricRatio(
+    pack.regionalQualityMetrics.fieldVerifiedPathwayRatio = qualityRatio(
       pathways.field_verified_count,
       pathways.total,
     );
@@ -4299,40 +4301,24 @@ test("데이터팩 검증기는 현장·운영기관 확인 시설 AVAILABLE 근
   );
 });
 
-test("데이터팩 검증기는 근거 없는 시설 operationalStatus AVAILABLE을 거부한다", async () => {
-  const outputDir = path.join(tmpdir(), `easysubway-production-facility-operational-evidence-${Date.now()}`);
-  const fixturePath = path.join(outputDir, "catalog-fixture.json");
-  const packOutputDir = path.join(outputDir, "pack");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-
-  const fixture = await importTestOnlyAccessibilityFixture(outputDir, productionSourceIngestInput());
-  makeProductionSourceFixtureStrictCoverageValid(fixture);
-  fixture.packs[0].facilities[0].status = "UNKNOWN";
-  fixture.packs[0].facilities[0].operationalStatus = "AVAILABLE";
-  fixture.packs[0].facilities[0].statusMeaning = "OFFICIAL_SOURCE";
-  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
-
-  await execFileAsync(
-    process.execPath,
-    [
-      "tools/datapack/build-datapack.mjs",
-      "--fixture",
-      fixturePath,
-      "--output",
-      packOutputDir,
-    ],
-    { cwd: root, env: productionEnv },
-  );
+test("데이터팩 검증기는 근거 없는 시설 operationalStatus AVAILABLE을 거부한다", async (context) => {
+  const artifact = await buildCurrentFullCapitalProductionArtifact(context);
+  await mutateCurrentProductionSqlite(artifact, ({ database }) => {
+    const facility = database.prepare("SELECT id FROM facilities ORDER BY id LIMIT 1").get();
+    assert.ok(facility, "current production artifact requires one facility");
+    const update = database.prepare(`
+      UPDATE facilities
+      SET status = 'UNKNOWN', operational_status = 'AVAILABLE', status_meaning = 'OFFICIAL_SOURCE'
+      WHERE id = ?
+    `).run(facility.id);
+    assert.equal(update.changes, 1, "current production artifact requires one mutable facility");
+  });
   await assert.rejects(
     execFileAsync(
       process.execPath,
       [
         "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        path.join(packOutputDir, "current.json"),
-        "--root",
-        packOutputDir,
+        ...currentProductionValidationArgs(artifact),
       ],
       { cwd: root, env: productionEnv },
     ),
@@ -4340,41 +4326,39 @@ test("데이터팩 검증기는 근거 없는 시설 operationalStatus AVAILABLE
   );
 });
 
-test("데이터팩 검증기는 UNKNOWN 운행상태 시설의 strict route eligibility를 거부한다", async () => {
-  const outputDir = path.join(tmpdir(), `easysubway-production-facility-strict-unknown-${Date.now()}`);
-  const fixturePath = path.join(outputDir, "catalog-fixture.json");
-  const packOutputDir = path.join(outputDir, "pack");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-
-  const fixture = await importTestOnlyAccessibilityFixture(outputDir, productionSourceIngestInput());
-  makeProductionSourceFixtureStrictCoverageValid(fixture);
-  fixture.packs[0].stationFacilityEvidence[0].operationalStatus = "UNKNOWN";
-  fixture.packs[0].stationFacilityEvidence[0].statusMeaning = "STATIC_LOCATION";
-  fixture.packs[0].stationFacilityEvidence[0].strictRouteEligible = true;
-  fixture.packs[0].stationFacilityEvidence[0].strictRouteEligibleReason = "FACILITY_EXISTS_AND_PROVENANCE_VERIFIED";
-  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
-
-  await execFileAsync(
-    process.execPath,
-    [
-      "tools/datapack/build-datapack.mjs",
-      "--fixture",
-      fixturePath,
-      "--output",
-      packOutputDir,
-    ],
-    { cwd: root, env: productionEnv },
-  );
+test("데이터팩 검증기는 UNKNOWN 운행상태 시설의 strict route eligibility를 거부한다", async (context) => {
+  const artifact = await buildCurrentFullCapitalProductionArtifact(context);
+  await mutateCurrentProductionSqlite(artifact, ({ database, pack }) => {
+    const evidence = database.prepare(`
+      SELECT station_id, line_id, facility_type
+      FROM station_facility_evidence
+      WHERE evidence_kind = 'EXISTS' AND facility_type != 'ACCESSIBILITY_STATUS_PROBE'
+      ORDER BY station_id, line_id, facility_type
+      LIMIT 1
+    `).get();
+    assert.ok(evidence, "current production artifact requires one existing facility evidence row");
+    const update = database.prepare(`
+      UPDATE station_facility_evidence
+      SET operational_status = 'UNKNOWN', status_meaning = 'STATIC_LOCATION',
+          strict_route_eligible = 1, strict_route_eligible_reason = 'FACILITY_EXISTS_AND_PROVENANCE_VERIFIED'
+      WHERE station_id = ? AND line_id = ? AND facility_type = ?
+    `).run(evidence.station_id, evidence.line_id, evidence.facility_type);
+    assert.equal(update.changes, 1, "current production artifact requires one mutable evidence row");
+    const counts = database.prepare(`
+      SELECT COUNT(*) AS total,
+             SUM(CASE WHEN strict_route_eligible = 1 THEN 1 ELSE 0 END) AS strict_count,
+             SUM(CASE WHEN operational_status != '' AND UPPER(operational_status) != 'UNKNOWN' THEN 1 ELSE 0 END) AS known
+      FROM station_facility_evidence
+    `).get();
+    pack.regionalQualityMetrics.strictRouteEligibleFacilityRatio = qualityRatio(counts.strict_count, counts.total);
+    pack.regionalQualityMetrics.operationalKnownRatio = qualityRatio(counts.known, counts.total);
+  });
   await assert.rejects(
     execFileAsync(
       process.execPath,
       [
         "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        path.join(packOutputDir, "current.json"),
-        "--root",
-        packOutputDir,
+        ...currentProductionValidationArgs(artifact),
       ],
       { cwd: root, env: productionEnv },
     ),
