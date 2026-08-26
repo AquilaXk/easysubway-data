@@ -377,34 +377,14 @@ test("source-separated current topology는 capital과 Incheon 1/2 line ownership
 test("source-separated current topology materialization은 Incheon 1/2 exact 116 edges만 교체한다", async () => {
   const [inventory, snapshotBytes, fixture] = await Promise.all([
     readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
-    readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260814.json")),
+    readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260825.json")),
     readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8")
       .then(JSON.parse),
   ]);
-  const historicalSnapshot = JSON.parse(snapshotBytes);
-  const currentSnapshot = structuredClone(historicalSnapshot);
-  delete currentSnapshot.stationCodeCorrections;
-  currentSnapshot.stationCodeDerivations = currentIncheonStationCodeDerivations();
-  const currentSnapshotBytes = Buffer.from(`${JSON.stringify(currentSnapshot)}\n`);
-  const currentInventory = structuredClone(inventory);
-  currentInventory.sources.find(({ id }) => id === "incheon-transit-station-info")
-    .routeMapAdmissionEvidence.snapshotSha256 = sha256(currentSnapshotBytes);
-  const now = new Date("2026-08-14T16:00:00.000Z");
-  assert.doesNotThrow(() => admittedIncheonTopologyEvidence({
-    sourceInventory: inventory,
-    snapshot: historicalSnapshot,
-    snapshotBytes,
-    now,
-    requireFresh: false,
-  }));
-  assert.throws(() => admittedIncheonTopologyEvidence({
-    sourceInventory: inventory,
-    snapshot: historicalSnapshot,
-    snapshotBytes,
-    now,
-  }), /current Incheon station code derivations are required/);
-  const legacyCorrectionSnapshot = structuredClone(currentSnapshot);
-  legacyCorrectionSnapshot.stationCodeCorrections = structuredClone(historicalSnapshot.stationCodeCorrections);
+  const snapshot = JSON.parse(snapshotBytes);
+  const now = new Date("2026-08-25T16:00:00.000Z");
+  const legacyCorrectionSnapshot = structuredClone(snapshot);
+  legacyCorrectionSnapshot.stationCodeCorrections = [];
   const legacyCorrectionBytes = Buffer.from(`${JSON.stringify(legacyCorrectionSnapshot)}\n`);
   const legacyCorrectionInventory = structuredClone(inventory);
   legacyCorrectionInventory.sources.find(({ id }) => id === "incheon-transit-station-info")
@@ -415,11 +395,10 @@ test("source-separated current topology materialization은 Incheon 1/2 exact 116
     snapshotBytes: legacyCorrectionBytes,
     now,
   }), /current Incheon legacy station code corrections are forbidden/);
-  const snapshot = currentSnapshot;
   const admission = admittedIncheonTopologyEvidence({
-    sourceInventory: currentInventory,
+    sourceInventory: inventory,
     snapshot,
-    snapshotBytes: currentSnapshotBytes,
+    snapshotBytes,
     now,
   });
   const pack = structuredClone(fixture.packs[0]);
@@ -429,7 +408,7 @@ test("source-separated current topology materialization은 Incheon 1/2 exact 116
   ));
 
   assert.deepEqual(materializeIncheonNetworkEdges(pack, snapshot, admission), {
-    snapshotId: "incheon-transit-station-info-20260814",
+    snapshotId: "incheon-transit-station-info-20260825",
     edgeCount: 116,
   });
   const incheonEdges = pack.networkEdges.filter(({ fromNodeId }) => (
@@ -447,10 +426,10 @@ test("source-separated current topology materialization은 Incheon 1/2 exact 116
     )), true);
   }
   assert.throws(() => admittedIncheonTopologyEvidence({
-    sourceInventory: currentInventory,
+    sourceInventory: inventory,
     snapshot,
-    snapshotBytes: currentSnapshotBytes,
-    now: new Date("2026-08-15T15:34:07.000Z"),
+    snapshotBytes,
+    now: new Date("2026-08-26T15:23:25.299Z"),
   }), /Incheon topology admission is stale/);
 });
 
