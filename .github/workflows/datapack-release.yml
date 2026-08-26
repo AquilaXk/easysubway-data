@@ -76,6 +76,8 @@ jobs:
             echo "EASYSUBWAY_DATAPACK_EXECUTION_EVIDENCE_DIR=${{ runner.temp }}/easysubway-datapack-execution-evidence"
             echo "EASYSUBWAY_DATAPACK_CANDIDATE_FIXTURE=${{ runner.temp }}/easysubway-datapack-stage/candidate-fixture.json"
             echo "EASYSUBWAY_DATAPACK_ROUTE_COVERAGE_AUTHORITY=${{ runner.temp }}/easysubway-datapack-stage/server-route-coverage-authority.json"
+            echo "EASYSUBWAY_DATAPACK_STATION_LINE_INPUT=${{ runner.temp }}/current-capital-station-line-input.json"
+            echo "EASYSUBWAY_DATAPACK_ROUTE_EDGE_INPUT=${{ runner.temp }}/current-capital-route-edge-input.json"
             echo "EASYSUBWAY_DATAPACK_PUBLISH_PLAN=${{ runner.temp }}/easysubway-datapack-stage/publish-plan.json"
             echo "EASYSUBWAY_DATAPACK_IMPORTED_FIXTURE=${{ runner.temp }}/easysubway-production-source-fixture.json"
             echo "EASYSUBWAY_DATAPACK_REVIEWED_FIXTURE=${{ runner.temp }}/easysubway-reviewed-catalog-fixture.json"
@@ -495,7 +497,7 @@ jobs:
         run: |
           set -euo pipefail
           for name in EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM EASYSUBWAY_DATAPACK_SIGNING_KEY_ID; do
-            [[ -n "${!name}" ]] || { echo "${name} is required for release-candidate" >&2; exit 1; }
+            [[ -n "${!name}" ]] || { echo "${name} is required for candidate route staging" >&2; exit 1; }
           done
           while IFS= read -r line || [[ -n "${line}" ]]; do
             echo "::add-mask::${line}"
@@ -722,8 +724,8 @@ jobs:
             node tools/datapack/build-current-release-candidate-accessibility-input.mjs \
               --fixture "${build_fixture}" \
               --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}" \
-              --station-line-input tools/datapack/release/current-capital-accessibility-full/station-line-input.json \
-              --route-edge-input tools/datapack/release/current-capital-accessibility-full/route-edge-input.json \
+              --station-line-output "${EASYSUBWAY_DATAPACK_STATION_LINE_INPUT}" \
+              --route-edge-output "${EASYSUBWAY_DATAPACK_ROUTE_EDGE_INPUT}" \
               --fixture-output "${EASYSUBWAY_DATAPACK_CANDIDATE_FIXTURE}" \
               --authority-output "${EASYSUBWAY_DATAPACK_ROUTE_COVERAGE_AUTHORITY}"
             build_fixture="${EASYSUBWAY_DATAPACK_CANDIDATE_FIXTURE}"
@@ -845,11 +847,11 @@ jobs:
           node tools/datapack/stage-current-server-route-bundle-candidate.mjs \
             --datapack-root "${EASYSUBWAY_DATAPACK_OUTPUT}" \
             --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}" \
-            --station-line-input tools/datapack/release/current-capital-accessibility-full/station-line-input.json \
-            --route-edge-input tools/datapack/release/current-capital-accessibility-full/route-edge-input.json \
+            --station-line-input "${EASYSUBWAY_DATAPACK_STATION_LINE_INPUT}" \
+            --route-edge-input "${EASYSUBWAY_DATAPACK_ROUTE_EDGE_INPUT}" \
             --repository-git-sha "${GITHUB_SHA}" \
             --key-id "${EASYSUBWAY_DATAPACK_SIGNING_KEY_ID}" \
-            --output "${EASYSUBWAY_DATAPACK_STAGE}/server-route-bundle"
+            --output "${EASYSUBWAY_DATAPACK_STAGE}"
 
       - name: Data Pack Release / Validate accessibility source coverage
         if: ${{ steps.release-mode.outputs.mode == 'release-candidate' }}
@@ -1137,10 +1139,27 @@ jobs:
             Number(headwayReport.summary?.observedHeadwayGroupCount ?? 0) +
             Number(headwayReport.summary?.declaredFrequencyCount ?? 0);
           const headwayReportStatus = headwayEvidenceCount > 0 ? "PASS" : "DEFERRED";
+          const candidateServerRouteEvidence = releaseMode === "release-candidate"
+            ? {
+                candidateId: candidateBinding.buildCandidateId,
+                sourceSnapshotSetHash: buildSpec.sourceSnapshotSetHash,
+                buildSpecSha256: candidateBinding.buildSpecSha256,
+                manifestSha256: candidateBinding.manifestSha256,
+                eligibility: {
+                  path: "server-route-bundle-evidence/route-accessibility-eligibility.json",
+                  sha256: hashFile(path.join(stage, "server-route-bundle-evidence", "route-accessibility-eligibility.json")),
+                },
+                final: {
+                  path: "server-route-bundle-evidence/server-route-bundle-final.json",
+                  sha256: hashFile(path.join(stage, "server-route-bundle-evidence", "server-route-bundle-final.json")),
+                },
+              }
+            : null;
 
           const bundle = {
             schemaVersion: 1,
             artifactKind: "datapack-release-evidence-bundle",
+            releaseMode,
             candidateId: candidateBinding.packCandidateId,
             buildCandidateId: candidateBinding.buildCandidateId,
             candidateBuilderGitSha: candidateBinding.candidateBuilderGitSha,
@@ -1180,6 +1199,7 @@ jobs:
             headwayReportSha256: hashFile(process.env.EASYSUBWAY_HEADWAY_REPORT),
             strictRouteRegressionSha256: candidateBinding.serverEvidence.sha256 ?? zeroHash,
             androidEvidenceSha256: candidateBinding.mobileEvidence.sha256 ?? zeroHash,
+            ...(candidateServerRouteEvidence ? { candidateServerRouteEvidence } : {}),
             validatorStatus: "PASS",
             coverageStatus: releaseLike ? "PASS" : "BLOCKED_EXTERNAL",
             routeMapPositionCoverageStatus: "PASS",
@@ -1215,6 +1235,9 @@ jobs:
           fi
           if [[ -n "${EASYSUBWAY_ANDROID_EVIDENCE_PATH}" ]]; then
             bundle_args+=(--mobile-evidence "${EASYSUBWAY_ANDROID_EVIDENCE_PATH}")
+          fi
+          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "release-candidate" ]]; then
+            bundle_args+=(--candidate-server-route-root "${EASYSUBWAY_DATAPACK_STAGE}")
           fi
           if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "production-publish" ]]; then
             bundle_args+=(--require-pass)
@@ -1315,6 +1338,12 @@ jobs:
             --issue-ref "AquilaXk/easysubway#2705" \
             --inventory-output "${EASYSUBWAY_DATAPACK_STAGE}/data-artifact-inventory.json" \
             --output "${EASYSUBWAY_DATAPACK_STAGE}/data-component-manifest.json"
+          node tools/datapack/validate-release-evidence-bundle.mjs \
+            --candidate-server-route-only \
+            --bundle "${EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE}" \
+            --candidate-server-route-root "${EASYSUBWAY_DATAPACK_STAGE}" \
+            --candidate-artifact-inventory "${EASYSUBWAY_DATAPACK_STAGE}/data-artifact-inventory.json" \
+            --candidate-component-manifest "${EASYSUBWAY_DATAPACK_STAGE}/data-component-manifest.json"
 
       - name: Data Pack Release / Upload candidate promotion artifact
         if: ${{ steps.release-mode.outputs.mode == 'release-candidate' && steps.release-mode.outputs.mode != 'candidate-create' }}
@@ -1339,6 +1368,8 @@ jobs:
       - name: Data Pack Release / Publish staged data packs to object storage
         if: ${{ steps.release-mode.outputs.mode == 'production-publish' && steps.remote-publish-env.outputs.enabled == 'true' && steps.release-decision.outputs.productionWriteAllowed == 'true' && github.ref == 'refs/heads/main' }}
         id: production-publish
+        env:
+          EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: ${{ secrets.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM }}
         run: |
           set -euo pipefail
           publish_validation_args=(
@@ -1349,6 +1380,7 @@ jobs:
             --manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json" \
             --source-evidence "${EASYSUBWAY_DATAPACK_STAGE}/current.provenance.json" \
             --accessibility-source-coverage "${EASYSUBWAY_ACCESSIBILITY_SOURCE_COVERAGE_REPORT}" \
+            --candidate-server-route-root "${EASYSUBWAY_DATAPACK_STAGE}" \
             --require-pass
           )
           if [[ -n "${EASYSUBWAY_STRICT_ROUTE_REGRESSION_PATH}" ]]; then
@@ -1669,13 +1701,10 @@ jobs:
           if (fs.existsSync(manifestPath)) {
             const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
             const activePack = manifest.activePack;
-            const fallbackPack = (manifest.packs ?? [])[0];
             if (activePack?.id && activePack?.version) {
               packVersion = `${activePack.id}@${activePack.version}`;
-            } else if (fallbackPack?.id && fallbackPack?.version) {
-              packVersion = `${fallbackPack.id}@${fallbackPack.version}`;
             } else {
-              packVersion = "unknown";
+              packVersion = "unselected";
             }
             const updatedAtValues = (manifest.packs ?? [])
               .flatMap((pack) => pack.sourceInventory ?? [])

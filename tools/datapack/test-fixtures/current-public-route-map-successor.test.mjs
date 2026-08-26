@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -13,7 +13,7 @@ import {
 
 const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
 
-test("current public candidate slot derives its complete legacy predecessor contract on a topology-only refresh", async (t) => {
+test("current public candidate slot derives a same-source public V2 successor on a topology-only refresh", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-predecessor-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, root, {
@@ -26,11 +26,28 @@ test("current public candidate slot derives its complete legacy predecessor cont
   const result = await activateSyntheticCurrentPublicRouteMapSuccessor(root, {
     now: new Date("2026-08-22T10:45:18.609Z"),
   });
-  assert.equal(result.predecessorSnapshotId, "seoulmetro-cyberstation-route-map-capital-admission-20260712");
+  assert.match(result.predecessorSnapshotId, /^seoul-metro-route-map-positions-current-/u);
 
   const after = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
+  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
   assert.equal(after.sourceSnapshots[0].sourceId, "seoul-metro-route-map-positions");
   assert.equal(after.sourceSnapshotIds[0], result.snapshotId);
+  assert.deepEqual(after.networkEdgeEvidence.capitalTopology, before.networkEdgeEvidence.capitalTopology);
+  const admissions = inventory.sources
+    .filter(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence?.topologySourceId === "capital-route-topology")
+    .map(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence.currentTopologyAdmission);
+  const candidate = after.networkEdgeEvidence.capitalTopologyCandidate;
+  const topologyAdmission = after.networkEdgeEvidence.capitalTopologyAdmission;
+  assert.equal(admissions.length, 16);
+  assert.ok(Date.parse(after.publishedAt) >= Date.parse(topologyAdmission.reverifiedAt));
+  assert.ok(Date.parse(after.publishedAt) < Date.parse(topologyAdmission.freshUntil));
+  assert.ok(admissions.every((admission) => admission.topologySnapshotId === candidate.snapshotId
+    && admission.topologyContentSha256 === topologyAdmission.contentSha256
+    && admission.reviewedAt === topologyAdmission.reviewedAt
+    && admission.freshUntil === topologyAdmission.freshUntil
+    && admission.topologyLineages.every((lineage) => lineage.sourceId === "capital-route-topology"
+      && lineage.snapshotId === candidate.snapshotId
+      && lineage.contentSha256 === admission.topologyContentSha256)));
 });
 
 test("already-public-root fixture activation preserves one valid source lineage root", async (t) => {
@@ -52,6 +69,27 @@ test("already-public-root fixture activation preserves one valid source lineage 
   assert.doesNotThrow(() => validateLineage(snapshots));
   assert.equal(publicSnapshots.filter(({ previousSnapshotId }) => previousSnapshotId == null).length, 1);
   assert.equal(candidate.sourceSnapshotIds[0], result.snapshotId);
+});
+
+test("current public fixture rejects a duplicate or out-of-scope candidate lineage before mutation", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-invalid-lineage-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, root, {
+    now: new Date("2026-08-25T09:45:18.609Z"),
+    activatePublicRouteMap: false,
+  });
+  const inventoryPath = path.join(root, "tools/datapack/source-inventory.json");
+  const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
+  const admission = inventory.sources.find(({ routeMapAdmissionEvidence }) =>
+    routeMapAdmissionEvidence?.topologySourceId === "capital-route-topology")
+    .routeMapAdmissionEvidence.currentTopologyAdmission;
+  admission.topologyLineages.push({ ...admission.topologyLineages[0] });
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+
+  await assert.rejects(
+    activateSyntheticCurrentPublicRouteMapSuccessor(root, { now: new Date("2026-08-25T10:45:18.609Z") }),
+    /synthetic current topology admission bytes are invalid/,
+  );
 });
 
 test("advancing a current public head derives records from its admitted current layout", async (t) => {
@@ -129,7 +167,7 @@ test("advancing a current public head keeps retrieval time monotonic in a one-se
   assert.doesNotThrow(() => validateLineage(afterSnapshots));
 });
 
-test("registrar fixture reconstructs the legacy predecessor with no selected public root in the ledger", async (t) => {
+test("registrar fixture derives a selected same-source public root", async (t) => {
   const source = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-registrar-source-"));
   const root = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-registrar-predecessor-"));
   t.after(() => rm(source, { recursive: true, force: true }));
@@ -145,11 +183,10 @@ test("registrar fixture reconstructs the legacy predecessor with no selected pub
     readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
     readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
   ]);
-  const publicRoots = snapshots.filter(({ sourceId, previousSnapshotId }) =>
-    sourceId === "seoul-metro-route-map-positions" && previousSnapshotId == null);
+  const selected = snapshots.find(({ snapshotId }) => snapshotId === candidate.sourceSnapshotIds[0]);
 
-  assert.equal(result.removedPublicRootSnapshotId != null, true);
-  assert.equal(publicRoots.length, 0);
-  assert.equal(candidate.sourceSnapshots[0].sourceId, "seoulmetro-cyberstation-route-map");
+  assert.equal(selected.snapshotId, result.currentSnapshotId);
+  assert.equal(candidate.sourceSnapshots[0].sourceId, "seoul-metro-route-map-positions");
+  assert.equal(selected.previousSnapshotId, result.predecessorSnapshotId);
   assert.doesNotThrow(() => validateLineage(snapshots));
 });

@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -8,21 +7,19 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import * as currentPlan from "./build-current-kric-exit-collection-plan.mjs";
-import { currentIncheonStationCodeDerivations } from "./collect-incheon-station-info.mjs";
 import { canonicalKricExitPathCollectionPlanJson } from "./plan-kric-exit-path-collection.mjs";
 
 const { buildCurrentKricExitCollectionPlan, main } = currentPlan;
-const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 const datapackRoot = fileURLToPath(new URL(".", import.meta.url));
-const currentNow = new Date("2026-08-14T16:00:00.000Z");
+const currentNow = new Date("2026-08-26T00:00:00.000Z");
 const productionPaths = Object.freeze({
   canonicalPack: path.join(datapackRoot, "release/capital-production-canonical-pack.json"),
   coverageTargets: path.join(datapackRoot, "nationwide-coverage-targets.json"),
   providerCodeCatalog: path.join(datapackRoot, "sources/kric-provider-code-catalog-20260228.json"),
   routeRosters: path.join(datapackRoot, "sources/kric-nationwide-route-rosters-20260730T203926676Z.json"),
   sourceInventory: path.join(datapackRoot, "source-inventory.json"),
-  incheonTopology: path.join(datapackRoot, "sources/incheon-transit-station-info-20260814.json"),
+  incheonTopology: path.join(datapackRoot, "sources/incheon-transit-station-info-20260825.json"),
 });
 
 const buildPlan = (input, options = {}) => buildCurrentKricExitCollectionPlan(input, { now: currentNow, ...options });
@@ -146,7 +143,7 @@ test("capital Seoul Metro production selector는 canonical metadata와 실제 me
 
 test("capital selector는 비대상 Incheon freshness에 결합하지 않고 nationwide는 stale을 거부한다", async () => {
   const input = await readProductionBytes();
-  const afterIncheonExpiry = new Date("2026-08-16T00:00:00.000Z");
+  const afterIncheonExpiry = new Date("2026-08-26T16:00:00.000Z");
 
   assert.throws(
     () => buildCurrentKricExitCollectionPlan(input, { now: afterIncheonExpiry }),
@@ -434,20 +431,13 @@ async function readProductionBytes() {
     readFile(productionPaths.sourceInventory),
     readFile(productionPaths.incheonTopology),
   ]);
-  const incheonTopology = JSON.parse(incheonTopologyBytes);
-  delete incheonTopology.stationCodeCorrections;
-  incheonTopology.stationCodeDerivations = currentIncheonStationCodeDerivations();
-  const currentIncheonTopologyBytes = Buffer.from(`${JSON.stringify(incheonTopology)}\n`);
-  const sourceInventory = JSON.parse(sourceInventoryBytes);
-  sourceInventory.sources.find(({ id }) => id === "incheon-transit-station-info")
-    .routeMapAdmissionEvidence.snapshotSha256 = sha256(currentIncheonTopologyBytes);
   return {
     canonicalPackBytes,
     coverageTargetsBytes,
     providerCodeCatalogBytes,
     routeRostersBytes,
-    sourceInventoryBytes: Buffer.from(`${JSON.stringify(sourceInventory)}\n`),
-    incheonTopologyBytes: currentIncheonTopologyBytes,
+    sourceInventoryBytes,
+    incheonTopologyBytes,
   };
 }
 

@@ -12,7 +12,10 @@ import { buildCurrentCapitalStationLineInput, canonicalCurrentCapitalStationLine
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
 import { canonicalRideEdgeSetSha256, evaluateRouteAccessibilityEdges } from "./evaluate-route-accessibility-edges.mjs";
 import { fixture } from "./build-current-capital-station-line-input.test.mjs";
-import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
+import {
+  copySyntheticCurrentPublicRouteMapRepository,
+  nextSyntheticCurrentStaticNetworkNow,
+} from "./test-fixtures/current-public-route-map-successor.mjs";
 
 test("full-capital route fan-in은 2218+213+213+30 edge contract를 만든다", async () => {
   const input = await fixture();
@@ -72,7 +75,7 @@ test("accessibility-authority projector는 합성 current public successor를 �
   t.after(() => rm(temp, { recursive: true, force: true }));
   const repositoryRoot = path.join(temp, "repository");
   await copySyntheticCurrentPublicRouteMapRepository(sourceRoot, repositoryRoot, {
-    now: new Date("2026-08-22T09:45:18.609Z"),
+    now: await nextSyntheticCurrentStaticNetworkNow(sourceRoot),
   });
   const buildSpec = JSON.parse(await readFile(
     path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"),

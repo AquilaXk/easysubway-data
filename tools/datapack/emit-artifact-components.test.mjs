@@ -23,6 +23,7 @@ import {
 } from "./materialize-station-line-accessibility.mjs";
 import { buildCurrentCapitalAccessibilityRefreshOutputs } from "./refresh-current-capital-accessibility-full.mjs";
 import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
+import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 
 const SCRIPT = path.resolve("tools/datapack/emit-artifact-components.mjs");
 const CURRENT_SOURCE_WINDOW = await selectedSourceWindow();
@@ -43,9 +44,10 @@ after(() => {
 });
 
 async function selectedSourceWindow() {
-  const [buildSpec, sourceSnapshots] = await Promise.all([
+  const [buildSpec, sourceSnapshots, topologyClock] = await Promise.all([
     readFile("tools/datapack/release/candidate-build-spec.json", "utf8").then(JSON.parse),
     readFile("tools/datapack/release/source-snapshots.json", "utf8").then(JSON.parse),
+    currentTopologyAdmissionClock(process.cwd()),
   ]);
   const selected = buildSpec.sourceSnapshotIds.map((snapshotId) => {
     const matches = sourceSnapshots.filter((entry) => entry.snapshotId === snapshotId);
@@ -57,11 +59,15 @@ async function selectedSourceWindow() {
     entry.sourceUpdatedAt,
     entry.rawReceipt?.storedAt,
   ].filter(Boolean).map(Date.parse)));
-  const freshUntil = Math.min(...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)));
-  assert.ok(Number.isFinite(basisAt) && Number.isFinite(freshUntil) && basisAt + 1_000 < freshUntil);
+  const evaluationAt = Math.max(basisAt + 1_000, topologyClock.inWindow.getTime());
+  const freshUntil = Math.min(
+    ...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)),
+    topologyClock.expiredAt.getTime(),
+  );
+  assert.ok(Number.isFinite(basisAt) && Number.isFinite(freshUntil) && evaluationAt < freshUntil);
   return {
-    activeFrom: kstInstant(basisAt + 1_000),
-    evaluationAt: new Date(basisAt + 1_000).toISOString(),
+    activeFrom: kstInstant(evaluationAt),
+    evaluationAt: new Date(evaluationAt).toISOString(),
     freshUntil: kstInstant(freshUntil),
     sourceExpiresAt: new Date(freshUntil).toISOString(),
   };

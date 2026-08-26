@@ -7,7 +7,10 @@ import { pathToFileURL } from "node:url";
 import { loadCapitalRouteTopologySnapshot } from "./apply-capital-route-topology-to-bundled-pack.mjs";
 import { normalizeStationName } from "./collect-capital-route-topology.mjs";
 import { replaceFileAtomically } from "./refresh-route-map-admission-freshness.mjs";
-import { validateSeoulRouteMapPositionsSnapshot } from "./collect-seoul-route-map-positions.mjs";
+import {
+  buildSeoulRouteMapPositions,
+  validateSeoulRouteMapPositionsSnapshot,
+} from "./collect-seoul-route-map-positions.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const SHA256 = /^[a-f0-9]{64}$/u;
@@ -20,6 +23,10 @@ const LAYOUT_EVIDENCE_FIELDS = Object.freeze([
 const CURRENT_LAYOUT_ADMISSION_FIELDS = Object.freeze([
   "schemaVersion", "artifactKind", "status", "positionSnapshotId", "snapshotPath",
   "snapshotSha256", "rawSha256", "contentSha256", ...LAYOUT_EVIDENCE_FIELDS,
+]);
+const IMMUTABLE_LAYOUT_REVERIFICATION_FIELDS = Object.freeze([
+  "rawSha256", "layoutPositionsSha256", "layoutTracksSha256",
+  "semanticOutputSha256", "outputSchemaSha256",
 ]);
 const STATION_ALIASES = Object.freeze({
   당고개: "불암산",
@@ -86,6 +93,9 @@ function currentLayoutSnapshot(source, evidence) {
 }
 function validateCurrentLayoutObservation({ source, admission, bytes, topologyBytes }) {
   if (sha256(bytes) !== admission.snapshotSha256) throw new Error("Seoul current layout observation byte identity mismatch");
+  if (sha256(topologyBytes) !== admission.topologySnapshotSha256) {
+    throw new Error("Seoul current layout historical topology byte identity mismatch");
+  }
   const observation = parseSnapshot(bytes, "Seoul current layout observation");
   const artifact = observation?.routeMapLayoutArtifact;
   const layout = observation?.layoutEvidence;
@@ -132,6 +142,21 @@ function validateCurrentLayoutObservation({ source, admission, bytes, topologyBy
     throw new Error("Seoul current layout artifact mismatch");
   }
   return { artifact, observation };
+}
+
+function reverifyImmutableCurrentLayout({ artifact, topologyBytes, topologySnapshotId }) {
+  const rematerialized = buildSeoulRouteMapPositions({
+    records: artifact.rawPositions,
+    rawSha256: artifact.rawSha256,
+    topologySnapshotBytes: topologyBytes,
+    topologySnapshotId,
+    now: new Date(artifact.capturedAt),
+  });
+  if (!same(rematerialized.rawPositions, artifact.rawPositions)
+    || IMMUTABLE_LAYOUT_REVERIFICATION_FIELDS.some((field) => rematerialized[field] !== artifact[field])) {
+    throw new Error("Seoul current layout topology reverification drift");
+  }
+  return rematerialized;
 }
 
 function topologyStationsByLine(topology) {
@@ -225,6 +250,7 @@ export function withCurrentCapitalTopologyAdmissions({
   reviewedAt,
   snapshotBytesByPath,
   topologySnapshotBytes = null,
+  layoutTopologySnapshotBytesById = null,
 }) {
   if (inventory?.schemaVersion !== 1
     || inventory.artifactKind !== "production-source-inventory"
@@ -260,7 +286,30 @@ export function withCurrentCapitalTopologyAdmissions({
       throw new Error(`${source.id} position snapshot byte identity mismatch`);
     }
     const snapshot = parseSnapshot(snapshotBytes, `${source.id} position snapshot`);
-    const currentLayout = layoutAdmission == null ? null : validateCurrentLayoutObservation({ source, admission: layoutAdmission, bytes: snapshotBytes, topologyBytes });
+    let currentLayout = null;
+    if (layoutAdmission != null) {
+      if (topologySnapshotBytes == null) {
+        throw new Error("Seoul current layout current topology bytes are required");
+      }
+      if (!(layoutTopologySnapshotBytesById instanceof Map)) {
+        throw new Error("Seoul current layout historical topology bytes map is required");
+      }
+      const historicalTopologyBytes = layoutTopologySnapshotBytesById.get(layoutAdmission.topologySnapshotId);
+      if (historicalTopologyBytes == null) {
+        throw new Error("Seoul current layout historical topology snapshot bytes are missing");
+      }
+      currentLayout = validateCurrentLayoutObservation({
+        source,
+        admission: layoutAdmission,
+        bytes: snapshotBytes,
+        topologyBytes: Buffer.from(historicalTopologyBytes),
+      });
+      reverifyImmutableCurrentLayout({
+        artifact: currentLayout.artifact,
+        topologyBytes,
+        topologySnapshotId,
+      });
+    }
     const positions = currentLayout?.artifact.rawPositions ?? snapshot.positions;
     if (snapshot.sourceId !== source.id
       || !Array.isArray(positions)
@@ -371,12 +420,25 @@ async function main() {
   const inventory = parseSnapshot(inventoryFile.bytes, "inventory");
   const topology = parseSnapshot(topologyFile.bytes, "topology");
   const snapshotBytesByPath = new Map();
+  const layoutTopologySnapshotBytesById = new Map();
   for (const source of inventory.sources ?? []) {
     const evidence = source.routeMapAdmissionEvidence;
     if (evidence?.topologySourceId !== topology.sourceId) continue;
     const snapshotPath = evidence.currentLayoutAdmission?.snapshotPath ?? evidence.snapshotPath;
     const snapshot = await regularFile(snapshotPath, `${source.id} position snapshot`);
     snapshotBytesByPath.set(snapshotPath, snapshot.bytes);
+  }
+  for (const source of inventory.sources ?? []) {
+    const admission = source.routeMapAdmissionEvidence?.currentLayoutAdmission;
+    if (admission == null) continue;
+    if (!/^capital-route-topology-[0-9]{8}$/u.test(admission.topologySnapshotId ?? "")) {
+      throw new Error("Seoul current layout topology snapshot id is invalid");
+    }
+    const relativePath = `tools/datapack/sources/${admission.topologySnapshotId}.json`;
+    if (!layoutTopologySnapshotBytesById.has(admission.topologySnapshotId)) {
+      const topologySnapshot = await regularFile(relativePath, "Seoul current layout historical topology snapshot");
+      layoutTopologySnapshotBytesById.set(admission.topologySnapshotId, topologySnapshot.bytes);
+    }
   }
   const next = withCurrentCapitalTopologyAdmissions({
     inventory,
@@ -385,6 +447,7 @@ async function main() {
     reviewedAt: args.reviewed_at,
     snapshotBytesByPath,
     topologySnapshotBytes: topologyFile.bytes,
+    layoutTopologySnapshotBytesById,
   });
   const nextBytes = Buffer.from(`${JSON.stringify(next, null, 2)}\n`);
   if (args.check) {

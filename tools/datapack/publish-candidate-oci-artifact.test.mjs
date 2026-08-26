@@ -11,11 +11,11 @@ const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 test("payload 전량 conditional create·GET readback 뒤 descriptor를 마지막으로 저장한다", async () => {
   const fixture = await createFixture(); const calls = []; const stored = new Map();
   const client = { identity: { namespace: "namespace", bucket: "candidate-private" }, async putObjectIfAbsent(key, bytes) { calls.push(`put:${key}`); if (stored.has(key)) return false; stored.set(key, Buffer.from(bytes)); return true; }, async readObject(key) { calls.push(`get:${key}`); return stored.has(key) ? { exists: true, body: stored.get(key) } : { exists: false }; } };
-  try { const result = await publishCandidateOciArtifact({ root: fixture.root, descriptor: fixture.descriptorPath, client }); assert.equal(result.artifactId, hash(await readFile(fixture.descriptorPath))); assert.equal(calls.at(-2).startsWith("put:candidates/v1/runs/42/"), true); assert.equal(calls.at(-1).startsWith("get:candidates/v1/runs/42/"), true); assert.equal([...stored].length, 7); } finally { await fixture.cleanup(); }
+  try { const result = await publishCandidateOciArtifact({ root: fixture.root, descriptor: fixture.descriptorPath, client, now: () => Date.parse("2026-08-24T00:00:00.000Z") }); assert.equal(result.artifactId, hash(await readFile(fixture.descriptorPath))); assert.equal(calls.at(-2).startsWith("put:candidates/v1/runs/42/"), true); assert.equal(calls.at(-1).startsWith("get:candidates/v1/runs/42/"), true); assert.equal([...stored].length, 7); } finally { await fixture.cleanup(); }
 });
 test("payload readback failure는 descriptor write와 success를 만들지 않는다", async () => {
   const fixture = await createFixture(); const calls = []; const client = { identity: { namespace: "namespace", bucket: "candidate-private" }, async putObjectIfAbsent(key) { calls.push(`put:${key}`); return true; }, async readObject(key) { calls.push(`get:${key}`); return { exists: true, body: Buffer.from("wrong") }; } };
-  try { await assert.rejects(publishCandidateOciArtifact({ root: fixture.root, descriptor: fixture.descriptorPath, client })); assert.equal(calls.filter((call) => call.startsWith("put:")).length, 1); } finally { await fixture.cleanup(); }
+  try { await assert.rejects(publishCandidateOciArtifact({ root: fixture.root, descriptor: fixture.descriptorPath, client, now: () => Date.parse("2026-08-24T00:00:00.000Z") })); assert.equal(calls.filter((call) => call.startsWith("put:")).length, 1); } finally { await fixture.cleanup(); }
 });
 test("publisher는 builder 결과라도 현재 stage의 forbidden evidence·descriptor expiry drift를 PUT 전에 다시 거부한다", async () => {
   for (const mutate of [

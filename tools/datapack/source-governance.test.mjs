@@ -105,8 +105,41 @@ test("완전한 snapshot chain은 source head까지 추적한다", () => {
 test("두 번째 snapshot의 null previousSnapshotId를 거부한다", () => {
   assert.throws(
     () => validateLineage([first, { ...second, previousSnapshotId: null }]),
-    /SOURCE_LINEAGE_BROKEN/,
+    /SOURCE_(?:LINEAGE_BROKEN|DIFF_MISSING)/,
   );
+});
+
+test("immutable root supersession은 epoch chain의 마지막 head를 결정한다", () => {
+  const reset = rootSupersession(second, {
+    snapshotId: "snapshot-a-reset",
+    retrievedAt: "2026-07-03T00:00:00Z",
+    rawSha256: "d".repeat(64),
+    schemaFingerprint: "e".repeat(64),
+  });
+
+  const result = validateLineage([first, second, reset]);
+  assert.equal(result.headsBySource["source-a"], reset.snapshotId);
+  assert.deepEqual(result.chainsBySource["source-a"], [first.snapshotId, second.snapshotId, reset.snapshotId]);
+});
+
+test("root supersession은 exact prior head만 허용하고 lineage를 약화하지 않는다", () => {
+  const reset = rootSupersession(second, {
+    snapshotId: "snapshot-a-reset",
+    retrievedAt: "2026-07-03T00:00:00Z",
+  });
+  const invalid = [
+    { ...reset, previousSnapshotId: second.snapshotId },
+    { ...reset, diffSummary: buildSnapshotDiff(second, { ...reset, previousSnapshotId: second.snapshotId }) },
+    { ...reset, rootSupersession: { ...reset.rootSupersession, sourceId: "source-b" } },
+    { ...reset, rootSupersession: { ...reset.rootSupersession, supersededHeadSnapshotId: "missing" } },
+    { ...reset, rootSupersession: { ...reset.rootSupersession, supersededHeadRawSha256: "0".repeat(64) } },
+    { ...reset, rootSupersession: { ...reset.rootSupersession, reasonCode: "OTHER" } },
+    { ...reset, retrievedAt: second.retrievedAt },
+    rootSupersession(first, { snapshotId: "snapshot-a-fork", retrievedAt: "2026-07-03T00:00:00Z" }),
+  ];
+  for (const candidate of invalid) {
+    assert.throws(() => validateLineage([first, second, candidate]), /SOURCE_(?:LINEAGE_BROKEN|DIFF_MISSING)/);
+  }
 });
 
 test("root snapshot에 diff가 있으면 거부한다", () => {
@@ -739,6 +772,27 @@ function snapshot(overrides = {}) {
     diffSummary: null,
     ...overrides,
   };
+}
+
+function rootSupersession(previous, overrides = {}) {
+  return snapshot({
+    snapshotId: "snapshot-a-reset",
+    previousSnapshotId: null,
+    retrievedAt: "2026-07-03T00:00:00Z",
+    rawSha256: "d".repeat(64),
+    schemaFingerprint: "e".repeat(64),
+    diffSummary: null,
+    rootSupersession: {
+      schemaVersion: 1,
+      artifactKind: "source-root-supersession",
+      sourceId: previous.sourceId,
+      supersededHeadSnapshotId: previous.snapshotId,
+      supersededHeadRawSha256: previous.rawSha256,
+      supersededHeadSchemaFingerprint: previous.schemaFingerprint,
+      reasonCode: "CANONICAL_SOURCE_CONTRACT_RESET",
+    },
+    ...overrides,
+  });
 }
 
 function source(overrides = {}) {

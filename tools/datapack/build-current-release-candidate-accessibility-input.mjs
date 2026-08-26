@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { lstat, readFile, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, open, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -12,6 +13,11 @@ import {
   canonicalRideEdgeSetSha256,
   routeEdgeSha256,
 } from "./evaluate-route-accessibility-edges.mjs";
+import { buildCurrentCapitalAccessibilityRefreshOutputs } from "./refresh-current-capital-accessibility-full.mjs";
+
+const CURRENT_STATION_INPUT = "tools/datapack/release/current-capital-accessibility-full/station-line-input.json";
+const CURRENT_ROUTE_INPUT = "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json";
+const REJECTED_INPUT_PATH_TOKEN = /fixture|debug|demo|sample/iu;
 
 const CLOSED_STATES = new Set([
   "VERIFIED_PRESENT",
@@ -631,6 +637,7 @@ export async function main(
   {
     repositoryRoot = fileURLToPath(new URL("../../", import.meta.url)),
     projectFixtureImpl = defaultProjectFixture,
+    buildRefreshOutputsImpl = buildCurrentCapitalAccessibilityRefreshOutputs,
   } = {},
 ) {
   if (argv.length !== 12) throw new Error("CLI arguments mismatch");
@@ -639,23 +646,48 @@ export async function main(
     argv[(index * 2) + 1],
   ]));
   const required = [
-    "fixture", "build-spec", "station-line-input", "route-edge-input",
+    "fixture", "build-spec", "station-line-output", "route-edge-output",
     "fixture-output", "authority-output",
   ];
   if (required.some((key) => !args[key]) || Object.keys(args).length !== required.length) {
     throw new Error("CLI arguments mismatch");
   }
-  const root = path.resolve(repositoryRoot);
+  const root = await realRepositoryRoot(repositoryRoot);
+  const stationLineOutput = path.resolve(root, args["station-line-output"]);
+  const routeEdgeOutput = path.resolve(root, args["route-edge-output"]);
   const fixtureOutput = path.resolve(root, args["fixture-output"]);
   const authorityOutput = path.resolve(root, args["authority-output"]);
-  if (fixtureOutput === authorityOutput) throw new Error("output paths must be distinct");
-  await Promise.all([outputMustBeAbsent(fixtureOutput), outputMustBeAbsent(authorityOutput)]);
-  const sourceFixtureBytes = await readFile(path.resolve(root, args.fixture));
-  const buildSpecBytes = await readFile(path.resolve(root, args["build-spec"]));
-  const stationLineInputBytes = await readFile(path.resolve(root, args["station-line-input"]));
-  const routeBytes = await readFile(path.resolve(root, args["route-edge-input"]));
-  const sourceFixture = JSON.parse(sourceFixtureBytes.toString("utf8"));
-  const buildSpec = JSON.parse(buildSpecBytes.toString("utf8"));
+  const outputs = [stationLineOutput, routeEdgeOutput, fixtureOutput, authorityOutput];
+  if (new Set(outputs).size !== outputs.length) throw new Error("output paths must be distinct");
+  const buildSpecFile = await readAuthenticatedRegularRepoFile(root, args["build-spec"], "build spec");
+  const buildSpecBytes = buildSpecFile.bytes;
+  const buildSpec = parseInputJson(buildSpecBytes, "build spec");
+  const fixtureRelative = normalizeInputPath(args.fixture, "fixture");
+  if (typeof buildSpec.fixturePath !== "string"
+    || fixtureRelative !== normalizeInputPath(buildSpec.fixturePath, "fixture")) {
+    throw new Error("current candidate fixture path mismatch");
+  }
+  const fixtureFile = await readAuthenticatedRegularRepoFile(root, fixtureRelative, "fixture");
+  const sourceFixtureBytes = fixtureFile.bytes;
+  const sourceFixture = parseInputJson(sourceFixtureBytes, "fixture");
+  await Promise.all(outputs.map(outputMustBeAbsent));
+  const refreshed = await buildRefreshOutputsImpl({
+    repositoryRoot: root,
+    phase: "PRE_APPROVAL_CURRENT_CANDIDATE",
+    candidateBuildSpec: buildSpec,
+    canonicalPack: sourceFixture,
+  });
+  if (!Array.isArray(refreshed) || refreshed.length !== 2) {
+    throw new Error("current candidate accessibility regeneration mismatch");
+  }
+  const refreshedByPath = new Map(refreshed.map(({ relative, bytes }) => [relative, bytes]));
+  if (refreshedByPath.size !== 2
+    || !Buffer.isBuffer(refreshedByPath.get(CURRENT_STATION_INPUT))
+    || !Buffer.isBuffer(refreshedByPath.get(CURRENT_ROUTE_INPUT))) {
+    throw new Error("current candidate accessibility regeneration mismatch");
+  }
+  const stationLineInputBytes = refreshedByPath.get(CURRENT_STATION_INPUT);
+  const routeBytes = refreshedByPath.get(CURRENT_ROUTE_INPUT);
   const stationLineInput = JSON.parse(stationLineInputBytes.toString("utf8"));
   const route = JSON.parse(routeBytes.toString("utf8"));
   const projectedFixture = await projectFixtureImpl({ buildSpec, sourceFixture, repositoryRoot: root });
@@ -670,6 +702,8 @@ export async function main(
     stationLineInputBytes,
   });
   await Promise.all([
+    writeFile(stationLineOutput, stationLineInputBytes, { flag: "wx", mode: 0o600 }),
+    writeFile(routeEdgeOutput, routeBytes, { flag: "wx", mode: 0o600 }),
     writeFile(fixtureOutput, canonicalCurrentReleaseCandidateFixtureJson(result.candidateFixture), { flag: "wx", mode: 0o600 }),
     writeFile(authorityOutput, canonicalCurrentReleaseCandidateAccessibilityAuthorityJson(result.authority), { flag: "wx", mode: 0o600 }),
   ]);
@@ -680,6 +714,81 @@ async function outputMustBeAbsent(target) {
   try { await lstat(target); }
   catch (error) { if (error?.code === "ENOENT") return; throw error; }
   throw new Error("output must be absent");
+}
+
+async function realRepositoryRoot(repositoryRoot) {
+  const supplied = path.resolve(repositoryRoot);
+  const stat = await lstat(supplied);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) {
+    throw new Error("repository root must be a real directory");
+  }
+  return realpath(supplied);
+}
+
+function normalizeInputPath(value, label) {
+  if (typeof value !== "string" || value.length === 0 || path.isAbsolute(value)) {
+    throw new Error(`${label} path must be a non-empty repository-relative path`);
+  }
+  const parts = value.split(/[\\/]/u);
+  if (parts.some((part) => part === ".." || REJECTED_INPUT_PATH_TOKEN.test(part))) {
+    throw new Error(`${label} path is not an admitted production input`);
+  }
+  const normalized = path.posix.normalize(value.replaceAll("\\", "/")).replace(/^\.\//u, "");
+  if (normalized === "." || normalized.length === 0 || normalized.startsWith("../")) {
+    throw new Error(`${label} path must be a non-empty repository-relative path`);
+  }
+  return normalized;
+}
+
+async function readAuthenticatedRegularRepoFile(root, suppliedPath, label) {
+  const relative = normalizeInputPath(suppliedPath, label);
+  const target = path.resolve(root, relative);
+  const rootRelative = path.relative(root, target);
+  if (rootRelative.length === 0 || rootRelative.startsWith(`..${path.sep}`) || path.isAbsolute(rootRelative)) {
+    throw new Error(`${label} path escapes repository root`);
+  }
+  await rejectSymlinkAncestors(root, target, label);
+  const descriptor = await open(target, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const before = await descriptor.stat();
+    if (!before.isFile()) throw new Error(`${label} must be a regular file`);
+    const bytes = await descriptor.readFile();
+    const after = await descriptor.stat();
+    if (!sameFileIdentity(before, after) || bytes.length !== after.size) {
+      throw new Error(`${label} changed while being read`);
+    }
+    await rejectSymlinkAncestors(root, target, label);
+    const pathname = await lstat(target);
+    if (pathname.isSymbolicLink() || !pathname.isFile() || !sameFileIdentity(after, pathname)) {
+      throw new Error(`${label} changed while being read`);
+    }
+    return { bytes, relative };
+  } finally {
+    await descriptor.close();
+  }
+}
+
+async function rejectSymlinkAncestors(root, target, label) {
+  const relative = path.relative(root, target);
+  let current = root;
+  for (const part of relative.split(path.sep)) {
+    current = path.join(current, part);
+    const stat = await lstat(current);
+    if (stat.isSymbolicLink()) throw new Error(`${label} path must not traverse a symlink`);
+  }
+}
+
+function sameFileIdentity(left, right) {
+  return left.dev === right.dev
+    && left.ino === right.ino
+    && left.size === right.size
+    && left.mtimeMs === right.mtimeMs
+    && left.ctimeMs === right.ctimeMs;
+}
+
+function parseInputJson(bytes, label) {
+  try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); }
+  catch { throw new Error(`${label} must be UTF-8 JSON`); }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

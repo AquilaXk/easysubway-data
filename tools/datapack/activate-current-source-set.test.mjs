@@ -13,7 +13,7 @@ import { currentIncheonStationCodeDerivations } from "./collect-incheon-station-
 import { activateIncheonTopologyAdmission, activateStaticSourceRevalidations,
   buildCurrentCandidateSpec, buildCurrentSourcePrimaryOutputs,
   buildCurrentTopologyRefreshPrimaryOutputs, commitCurrentSourceActivation,
-  collectPositionSnapshotBytes, parseCurrentSourceActivationArgs,
+  collectLayoutTopologySnapshotBytes, collectPositionSnapshotBytes, parseCurrentSourceActivationArgs,
   parseCurrentTopologyRefreshArgs, requireCleanBuilder,
   CURRENT_PRODUCTION_SOURCE_IDS, CURRENT_SOURCE_INVENTORY_IDS,
   projectCurrentCanonicalRouteMapProvenance,
@@ -31,9 +31,69 @@ const TEST_GOVERNANCE_POLICY_BINDING = Object.freeze({
   governancePolicyVersion: "2026-07-15",
   governancePolicySha256: "9".repeat(64),
 });
+const CURRENT_V2_TEST_NOW = new Date("2026-08-25T12:00:00.000Z");
 
 function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
+
+async function currentV2HeadsFixture() {
+  const [ledger, inventory, positionFile, molitFile] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/sources/seoul-metro-route-map-positions-current-20260824T114822985Z.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-current-20260824T114822985Z.json"), "utf8").then(JSON.parse),
+  ]);
+  const heads = (sourceId) => ledger.filter(({ sourceId: id }) => id === sourceId).find(({ snapshotId }) => !ledger.some(({ previousSnapshotId }) => previousSnapshotId === snapshotId));
+  const make = (sourceId, file) => {
+    const original = heads(sourceId);
+    const capturedAt = new Date(Date.parse(original.retrievedAt) + 1).toISOString();
+    const snapshotId = `${sourceId}-v2-current`; const receipt = { ...structuredClone(original.rawReceipt), snapshotId, capturedAt, storedAt: capturedAt };
+    const observation = { schemaVersion: 2, artifactKind: "public-static-network-v2-observation", sourceId, snapshotId, capturedAt, rawSha256: original.rawSha256, contentSha256: original.contentSha256, schemaFingerprint: original.schemaFingerprint, rowCount: original.rowCount, providerRecordHashes: structuredClone(original.providerRecordHashes), normalizedProjection: structuredClone(file.normalizedProjection), ...(sourceId === "seoul-metro-route-map-positions" ? { routeMapLayoutEvidence: structuredClone(file.layoutEvidence), routeMapLayoutArtifact: structuredClone(file.routeMapLayoutArtifact) } : {}), rawReceipt: receipt };
+    const snapshot = { ...structuredClone(original), snapshotId, retrievedAt: capturedAt, previousSnapshotId: null, diffSummary: null, rawReceipt: receipt, normalizedObservationSha256: sha256(Buffer.from(`${JSON.stringify(observation)}\n`)), publicStaticNetworkV2Observation: observation };
+    delete snapshot.projectionMigration;
+    delete snapshot.rootSupersession;
+    if (sourceId === "seoul-metro-route-map-positions") { snapshot.routeMapLayoutEvidence = observation.routeMapLayoutEvidence; snapshot.routeMapLayoutArtifact = observation.routeMapLayoutArtifact; }
+    return { snapshot, observation };
+  };
+  const positions = make("seoul-metro-route-map-positions", positionFile); const molit = make("molit-urban-rail-full-route", molitFile);
+  const source = (id, snapshot) => { const value = structuredClone(inventory.sources.find((item) => item.id === id)); value.admissionEvidence = { ...value.admissionEvidence, snapshotId: snapshot.snapshotId, rawSha256: snapshot.rawSha256, schemaFingerprint: snapshot.schemaFingerprint }; value.requiredForProductionPack = true; value.productionUseAllowed = true; return value; };
+  const positionSource = source(positions.snapshot.sourceId, positions.snapshot); const molitSource = source(molit.snapshot.sourceId, molit.snapshot);
+  positionSource.routeMapAdmissionEvidence.currentLayoutAdmission = { schemaVersion: 2, artifactKind: "seoul-public-route-map-layout-admission", status: "ADMITTED", positionSnapshotId: positions.snapshot.snapshotId, snapshotPath: `tools/datapack/sources/${positions.snapshot.snapshotId}.json`, snapshotSha256: positions.snapshot.normalizedObservationSha256, rawSha256: positions.snapshot.rawSha256, contentSha256: positions.snapshot.contentSha256, ...positions.snapshot.routeMapLayoutEvidence };
+  return { sourceSnapshots: [positions.snapshot, molit.snapshot], sourceInventory: { schemaVersion: 1, artifactKind: "production-source-inventory", sources: [positionSource, molitSource] } };
+}
 async function readJson(relativePath) { return JSON.parse(await readFile(path.join(root, relativePath), "utf8")); }
+
+function currentCapitalTopologyAdmission(sourceInventory) {
+  const admissions = sourceInventory.sources
+    .map(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence?.currentTopologyAdmission)
+    .filter(({ topologySnapshotId } = {}) => /^capital-route-topology-[0-9]{8}$/u.test(topologySnapshotId));
+  const admission = admissions[0];
+  assert.equal(admissions.length, 16);
+  assert.ok(admission);
+  assert.ok(admissions.every(({ topologySnapshotId, topologyContentSha256, reviewedAt, freshUntil }) =>
+    topologySnapshotId === admission.topologySnapshotId
+      && topologyContentSha256 === admission.topologyContentSha256
+      && reviewedAt === admission.reviewedAt && freshUntil === admission.freshUntil));
+  return admission;
+}
+
+async function currentCapitalTopology(sourceInventory) {
+  const admission = currentCapitalTopologyAdmission(sourceInventory);
+  const relativePath = `tools/datapack/sources/${admission.topologySnapshotId}.json`;
+  const bytes = await readFile(path.join(root, relativePath));
+  const topology = JSON.parse(bytes);
+  assert.equal(topology.contentSha256, admission.topologyContentSha256);
+  return { admission, relativePath, bytes, topology };
+}
+
+async function historicalCandidateCapitalTopology(baseSpec) {
+  const evidence = baseSpec.networkEdgeEvidence?.capitalTopology;
+  assert.match(evidence?.path ?? "", /^tools\/datapack\/sources\/capital-route-topology-[0-9]{8}\.json$/u);
+  assert.match(evidence?.sha256 ?? "", /^[a-f0-9]{64}$/u);
+  assert.equal(evidence.snapshotId, path.basename(evidence.path, ".json"));
+  const bytes = await readFile(path.join(root, evidence.path));
+  assert.equal(sha256(bytes), evidence.sha256);
+  return { bytes, topology: JSON.parse(bytes) };
+}
 
 function currentSuccessorGateFixture() {
   const oldMolitHashes = Array.from({ length: 5 }, (_, index) => sha256(`old-molit:${index}`));
@@ -113,7 +173,7 @@ function currentSuccessorGateFixture() {
   const positionRawSha256 = sha256("current-public-position-raw");
   const artifact = {
     rawSha256: positionRawSha256,
-    layoutAlgorithmVersion: "seoul-public-layout-v1",
+    layoutAlgorithmVersion: "seoul-public-latlon-line-order-layout-v2",
     topologySnapshotId: "capital-route-topology-20260814",
     topologySnapshotSha256: sha256("topology-snapshot"),
     topologySnapshotIdentity: "capital-route-topology-20260814:seoul-1-8",
@@ -219,59 +279,137 @@ function currentSuccessorGateFixture() {
   };
 }
 
-test("current activation은 full MOLIT·public layout v2·exact OCI successor heads만 수용한다", () => {
-  const fixture = currentSuccessorGateFixture();
-  const result = verifyCurrentStaticNetworkSuccessorHeads(fixture);
-  assert.equal(result.molit.rowCount, 1103);
-  assert.equal(result.positions.sourceId, "seoul-metro-route-map-positions");
-
-  const reducedMolit = structuredClone(fixture);
-  const molit = reducedMolit.sourceSnapshots.find(
-    ({ sourceId, previousSnapshotId }) => sourceId === "molit-urban-rail-full-route"
-      && previousSnapshotId != null,
-  );
-  const predecessor = reducedMolit.sourceSnapshots.find(
-    ({ snapshotId }) => snapshotId === molit.previousSnapshotId,
-  );
-  molit.rowCount = 1102;
-  molit.coverageCount = 1102;
-  molit.providerRecordHashes = molit.providerRecordHashes.slice(0, 1102);
-  molit.projectionMigration.fullProjectionRowCount = 1102;
-  molit.diffSummary = buildSnapshotDiff(predecessor, molit);
+test("current activation does not mistake a legacy predecessor fixture for a V2 current head", () => {
   assert.throws(
-    () => verifyCurrentStaticNetworkSuccessorHeads(reducedMolit),
-    /current full route successor binding is invalid/,
+    () => verifyCurrentStaticNetworkSuccessorHeads(currentSuccessorGateFixture()),
+    /V2_MISSING/,
   );
+});
 
-  const reducedPositions = structuredClone(fixture);
-  const positions = reducedPositions.sourceSnapshots.find(
-    ({ sourceId }) => sourceId === "seoul-metro-route-map-positions",
-  );
-  positions.rowCount = 275;
-  positions.coverageCount = 275;
-  positions.providerRecordHashes.pop();
-  assert.throws(
-    () => verifyCurrentStaticNetworkSuccessorHeads(reducedPositions),
-    /current public route map successor binding is invalid/,
-  );
+test("current activation succeeds only for two embedded schema-2 v2 heads", async () => {
+  const fixture = await currentV2HeadsFixture();
+  const result = verifyCurrentStaticNetworkSuccessorHeads({ ...fixture, now: CURRENT_V2_TEST_NOW });
+  assert.equal(result.positions.publicStaticNetworkV2Observation.schemaVersion, 2);
+  assert.equal(result.molit.publicStaticNetworkV2Observation.schemaVersion, 2);
+  const mixed = structuredClone(fixture);
+  delete mixed.sourceSnapshots.find(({ sourceId, publicStaticNetworkV2Observation }) =>
+    sourceId === "molit-urban-rail-full-route" && publicStaticNetworkV2Observation?.schemaVersion === 2,
+  ).publicStaticNetworkV2Observation;
+  assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads({ ...mixed, now: CURRENT_V2_TEST_NOW }), /V2_MIXED/);
+  for (const mutate of [
+    (head) => { head.publicStaticNetworkV2Observation.artifactKind = "wrong"; },
+    (head) => { head.publicStaticNetworkV2Observation.capturedAt = "2026-08-25T12:00:00.000Z"; },
+  ]) {
+    const invalid = await currentV2HeadsFixture();
+    const molit = invalid.sourceSnapshots.find(({ sourceId, publicStaticNetworkV2Observation }) =>
+      sourceId === "molit-urban-rail-full-route" && publicStaticNetworkV2Observation?.schemaVersion === 2,
+    );
+    mutate(molit);
+    molit.normalizedObservationSha256 = sha256(Buffer.from(`${JSON.stringify(molit.publicStaticNetworkV2Observation)}\n`));
+    assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads({ ...invalid, now: CURRENT_V2_TEST_NOW }), /current v2 successor binding is invalid/);
+  }
+  for (const sourceId of ["seoul-metro-route-map-positions", "molit-urban-rail-full-route"]) {
+    const invalid = await currentV2HeadsFixture();
+    const source = invalid.sourceInventory.sources.find(({ id }) => id === sourceId);
+    source.requiredForProductionPack = false;
+    assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads({ ...invalid, now: CURRENT_V2_TEST_NOW }), /current v2 production source is invalid/);
+  }
+  const reset = structuredClone(fixture);
+  reset.sourceSnapshots.find(({ sourceId }) => sourceId === "seoul-metro-route-map-positions").rootSupersession = {
+    schemaVersion: 1, artifactKind: "source-root-supersession", sourceId: "seoul-metro-route-map-positions",
+  };
+  assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads({ ...reset, now: CURRENT_V2_TEST_NOW }), /(?:current v2 successor binding is invalid|SOURCE_LINEAGE_BROKEN)/);
+  const cyberSnapshot = structuredClone(fixture);
+  cyberSnapshot.sourceSnapshots.push({ snapshotId: "cyber", sourceId: "seoulmetro-cyberstation-route-map", previousSnapshotId: null });
+  assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads({ ...cyberSnapshot, now: CURRENT_V2_TEST_NOW }), /SOURCE_LINEAGE_BROKEN/);
+  const cyberInventory = structuredClone(fixture);
+  cyberInventory.sourceInventory.sources.find(({ id }) => id === "seoul-metro-route-map-positions").metadata = { diagnosticSource: "Cyberstation" };
+  assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads({ ...cyberInventory, now: CURRENT_V2_TEST_NOW }), /current v2 selected path is invalid/);
+});
 
-  const driftedLayout = structuredClone(fixture);
-  driftedLayout.sourceInventory.sources.find(
-    ({ id }) => id === "seoul-metro-route-map-positions",
-  ).routeMapAdmissionEvidence.currentLayoutAdmission.layoutArtifactSha256 = "f".repeat(64);
-  assert.throws(
-    () => verifyCurrentStaticNetworkSuccessorHeads(driftedLayout),
-    /current public route map layout admission binding is invalid/,
-  );
+test("current activation accepts registrar-shaped same-source V2 lineage while rejecting non-V2 and cross-source predecessors", async () => {
+  const fixture = await currentV2HeadsFixture();
+  const append = (sourceId) => {
+    const previous = fixture.sourceSnapshots.find((snapshot) => snapshot.sourceId === sourceId);
+    const capturedAt = new Date(Date.parse(previous.retrievedAt) + 1).toISOString();
+    const snapshotId = `${sourceId}-v2-successor`;
+    const receipt = { ...structuredClone(previous.rawReceipt), snapshotId, capturedAt, storedAt: capturedAt };
+    const observation = {
+      ...structuredClone(previous.publicStaticNetworkV2Observation), snapshotId, capturedAt, rawReceipt: receipt,
+    };
+    const snapshot = {
+      ...structuredClone(previous), snapshotId, retrievedAt: capturedAt, previousSnapshotId: previous.snapshotId,
+      rawReceipt: receipt, publicStaticNetworkV2Observation: observation,
+    };
+    snapshot.normalizedObservationSha256 = sha256(Buffer.from(`${JSON.stringify(observation)}\n`));
+    snapshot.diffSummary = buildSnapshotDiff(previous, snapshot);
+    fixture.sourceSnapshots.push(snapshot);
+    const source = fixture.sourceInventory.sources.find(({ id }) => id === sourceId);
+    source.admissionEvidence = { ...source.admissionEvidence, snapshotId, rawSha256: snapshot.rawSha256, schemaFingerprint: snapshot.schemaFingerprint };
+    if (sourceId === "seoul-metro-route-map-positions") {
+      source.routeMapAdmissionEvidence.currentLayoutAdmission = {
+        ...source.routeMapAdmissionEvidence.currentLayoutAdmission,
+        positionSnapshotId: snapshotId,
+        snapshotPath: `tools/datapack/sources/${snapshotId}.json`,
+        snapshotSha256: snapshot.normalizedObservationSha256,
+      };
+    }
+    return snapshot;
+  };
+  const positionHead = append("seoul-metro-route-map-positions");
+  append("molit-urban-rail-full-route");
+  assert.equal(verifyCurrentStaticNetworkSuccessorHeads({ ...fixture, now: CURRENT_V2_TEST_NOW }).positions.snapshotId, positionHead.snapshotId);
 
-  const reactivatedLegacy = structuredClone(fixture);
-  reactivatedLegacy.sourceInventory.sources.find(
-    ({ id }) => id === "seoulmetro-cyberstation-route-map",
-  ).productionUseAllowed = true;
-  assert.throws(
-    () => verifyCurrentStaticNetworkSuccessorHeads(reactivatedLegacy),
-    /legacy route map source cannot be current production/,
+  const nonV2 = structuredClone(fixture);
+  delete nonV2.sourceSnapshots.find(({ snapshotId }) => snapshotId === positionHead.previousSnapshotId).publicStaticNetworkV2Observation;
+  assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads({ ...nonV2, now: CURRENT_V2_TEST_NOW }), /current v2 successor binding is invalid/);
+
+  const crossSource = structuredClone(fixture);
+  const crossSourceHead = crossSource.sourceSnapshots.find(({ snapshotId }) => snapshotId === positionHead.snapshotId);
+  crossSourceHead.previousSnapshotId = crossSource.sourceSnapshots.find(({ sourceId }) => sourceId === "molit-urban-rail-full-route").snapshotId;
+  crossSourceHead.diffSummary = buildSnapshotDiff(
+    crossSource.sourceSnapshots.find(({ snapshotId }) => snapshotId === crossSourceHead.previousSnapshotId),
+    crossSourceHead,
   );
+  assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads({ ...crossSource, now: CURRENT_V2_TEST_NOW }), /(?:current v2 successor binding is invalid|SOURCE_LINEAGE_BROKEN)/);
+});
+
+test("current activation rejects legacy fields on selected snapshot, observation, and matched inventory source", async () => {
+  const mutations = [
+    (fixture) => { fixture.sourceSnapshots[0].historicalPredecessorAudit = { archive: "s3://legacy" }; },
+    (fixture) => { fixture.sourceSnapshots[0].publicStaticNetworkV2Observation.audit = { nested: { migration: "Cyberstation" } }; },
+    (fixture) => { fixture.sourceInventory.sources[0].metadata = { audit: { archivedUri: "s3://legacy" } }; },
+  ];
+  for (const mutate of mutations) {
+    const fixture = await currentV2HeadsFixture();
+    mutate(fixture);
+    assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads({ ...fixture, now: CURRENT_V2_TEST_NOW }), /current v2 selected path is invalid/);
+  }
+});
+
+test("current activation exact-binds every embedded v2 observation to its outer snapshot", async () => {
+  const mutations = [
+    (head) => { head.publicStaticNetworkV2Observation.rawSha256 = "0".repeat(64); },
+    (head) => { head.publicStaticNetworkV2Observation.contentSha256 = "0".repeat(64); },
+    (head) => { head.publicStaticNetworkV2Observation.schemaFingerprint = "0".repeat(64); },
+    (head) => { head.publicStaticNetworkV2Observation.rowCount -= 1; },
+    (head) => { head.publicStaticNetworkV2Observation.providerRecordHashes[0] = "0".repeat(64); },
+    (head) => { head.publicStaticNetworkV2Observation.rawReceipt.byteSize += 1; },
+    (head) => { head.publicStaticNetworkV2Observation.normalizedProjection[0].stationName += "-drift"; },
+    (head) => { head.snapshotStatus = "REJECTED"; },
+    (head) => { head.freshnessExpiresAt = "2026-08-25T11:00:00.000Z"; },
+    (head) => { head.rawRetentionExpiresAt = "2026-08-25T11:00:00.000Z"; head.rawReceipt.rawRetentionExpiresAt = head.rawRetentionExpiresAt; },
+  ];
+  for (const [index, mutate] of mutations.entries()) {
+    const fixture = await currentV2HeadsFixture();
+    const molit = fixture.sourceSnapshots.find(({ sourceId, publicStaticNetworkV2Observation }) =>
+      sourceId === "molit-urban-rail-full-route" && publicStaticNetworkV2Observation?.schemaVersion === 2,
+    );
+    molit.publicStaticNetworkV2Observation.rawReceipt = structuredClone(molit.publicStaticNetworkV2Observation.rawReceipt);
+    mutate(molit);
+    molit.normalizedObservationSha256 = sha256(Buffer.from(`${JSON.stringify(molit.publicStaticNetworkV2Observation)}\n`));
+    assert.throws(() => verifyCurrentStaticNetworkSuccessorHeads({ ...fixture, now: CURRENT_V2_TEST_NOW }), /current v2 successor (?:binding|canonical outer snapshot) is invalid/, `mutation ${index}`);
+  }
 });
 
 test("activation canonical projection은 retired scope 뒤 strict route-map provenance를 결속한다", async () => {
@@ -312,8 +450,8 @@ test("prepared current candidate 검증은 build를 수행하고 final release e
       itxTopologyEvidenceSha256: "a".repeat(64),
       networkEdgeEvidence: {
         sourceInventory: { path: "tools/datapack/source-inventory.json" },
-        capitalTopology: { path: "tools/datapack/sources/capital-route-topology-20260823.json" },
-        capitalTopologyCandidate: { path: "tools/datapack/sources/capital-route-topology-20260823-source-separated.json" },
+        capitalTopology: { path: "tools/datapack/sources/capital-route-topology-20260724.json" },
+        capitalTopologyCandidate: { path: "tools/datapack/sources/capital-route-topology-20260825.json" },
         capitalTopologyReverification: {
           path: "tools/datapack/release/capital-topology-reverification-20260813.json",
         },
@@ -325,14 +463,11 @@ test("prepared current candidate 검증은 build를 수행하고 final release e
       const staged = JSON.parse(await readFile(args[1], "utf8"));
       assert.equal(
         staged.networkEdgeEvidence.capitalTopology.path,
-        path.join(root, "tools/datapack/sources/capital-route-topology-20260823.json"),
+        path.join(root, "tools/datapack/sources/capital-route-topology-20260724.json"),
       );
       assert.equal(
         staged.networkEdgeEvidence.capitalTopologyCandidate.path,
-        path.join(
-          temporaryRoot,
-          "tools/datapack/sources/capital-route-topology-20260823-source-separated.json",
-        ),
+        path.join(root, "tools/datapack/sources/capital-route-topology-20260825.json"),
       );
     },
   });
@@ -909,15 +1044,14 @@ test("current canonical pack은 admitted Seoul five-record membership을 그대�
   );
 });
 
-test("current public route-map topology는 inventory admission에서 24 lines와 1,548 edges를 도출한다", async () => {
+test("current public route-map topology는 atomically rebound admission에서 22 lines와 1,438 edges를 도출한다", async () => {
   const inventory = await readJson("tools/datapack/source-inventory.json");
-  const publicSource = inventory.sources.find(({ id }) => id === "seoul-metro-route-map-positions");
-  const topologySnapshotId = publicSource?.routeMapAdmissionEvidence?.currentTopologyAdmission?.topologySnapshotId;
-  assert.equal(typeof topologySnapshotId, "string");
-  const topology = await readJson(`tools/datapack/sources/${topologySnapshotId}.json`);
+  const { topology } = await currentCapitalTopology(inventory);
 
-  assert.equal(topology.lines.length, 24);
-  assert.equal(topology.lines.reduce((count, line) => count + line.edgeCount, 0), 1_548);
+  assert.equal(topology.lines.length, 22);
+  assert.equal(topology.lines.reduce((count, line) => count + line.edgeCount, 0), 1_438);
+  assert.equal(topology.lines.some(({ lineId }) => lineId === "line-42b5805f3b5a"), false);
+  assert.equal(topology.lines.some(({ lineId }) => lineId === "line-98718184f016"), false);
 });
 
 test("generated current candidate spec은 expired ITX topology overlay를 재도입하지 않는다", async () => {
@@ -926,19 +1060,9 @@ test("generated current candidate spec은 expired ITX topology overlay를 재도
     readJson("tools/datapack/source-inventory.json"),
     readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json")),
   ]);
-  const topologyAdmissions = sourceInventory.sources
-    .map(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence?.currentTopologyAdmission)
-    .filter(({ topologySnapshotId } = {}) => /^capital-route-topology-[0-9]{8}$/u.test(topologySnapshotId));
-  assert.ok(topologyAdmissions.length > 0);
-  const topologySnapshotId = topologyAdmissions[0].topologySnapshotId;
-  assert.ok(topologyAdmissions.every(({ topologySnapshotId: admittedSnapshotId }) =>
-    admittedSnapshotId === topologySnapshotId));
-  const currentTopologyPath = `tools/datapack/sources/${topologySnapshotId}.json`;
-  const currentTopologyBytes = await readFile(path.join(root, currentTopologyPath));
-  const currentTopology = JSON.parse(currentTopologyBytes.toString("utf8"));
-  assert.equal(currentTopology.lines.length, 24);
-  const candidateTopology = projectCapitalTopologyOwnership(currentTopology);
-  const candidateTopologyBytes = Buffer.from(`${JSON.stringify(candidateTopology, null, 2)}\n`);
+  const { admission, relativePath: currentTopologyPath, bytes: currentTopologyBytes, topology: currentTopology } =
+    await currentCapitalTopology(sourceInventory);
+  assert.equal(currentTopology.lines.length, 22);
 
   const next = buildCurrentCandidateSpec({
     baseSpec,
@@ -947,16 +1071,22 @@ test("generated current candidate spec은 expired ITX topology overlay를 재도
     fullTopology: currentTopology,
     fullTopologyBytes: currentTopologyBytes,
     fullTopologyPath: currentTopologyPath,
-    candidateTopology,
-    candidateTopologyBytes,
-    candidateTopologyPath: currentTopologyPath.replace(/\.json$/u, "-source-separated.json"),
+    candidateTopology: currentTopology,
+    candidateTopologyBytes: currentTopologyBytes,
+    candidateTopologyPath: currentTopologyPath,
     topologyReverificationBytes: Buffer.from("{}"),
     productionScopePolicyBytes,
   });
 
   assert.equal(Object.hasOwn(next.networkEdgeEvidence, "itxCurrentTopologyAdmission"), false);
-  assert.equal(currentTopology.lines.some(({ lineId }) => lineId === "line-42b5805f3b5a"), true);
-  assert.equal(currentTopology.lines.some(({ lineId }) => lineId === "line-98718184f016"), true);
+  assert.deepEqual(next.networkEdgeEvidence.capitalTopology, baseSpec.networkEdgeEvidence.capitalTopology);
+  assert.deepEqual(next.networkEdgeEvidence.capitalTopologyCandidate, {
+    path: currentTopologyPath,
+    sha256: sha256(currentTopologyBytes),
+    snapshotId: admission.topologySnapshotId,
+  });
+  assert.equal(currentTopology.lines.some(({ lineId }) => lineId === "line-42b5805f3b5a"), false);
+  assert.equal(currentTopology.lines.some(({ lineId }) => lineId === "line-98718184f016"), false);
 });
 
 test("current topology admission clock은 candidate-selected static ledger와 동일한 current admission을 소비한다", async () => {
@@ -965,15 +1095,7 @@ test("current topology admission clock은 candidate-selected static ledger와 �
     readJson("tools/datapack/release/candidate-build-spec.json"),
     readJson("tools/datapack/release/source-snapshots.json"),
   ]);
-  const admissions = sourceInventory.sources
-    .map(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence?.currentTopologyAdmission)
-    .filter(({ topologySnapshotId } = {}) => /^capital-route-topology-[0-9]{8}$/u.test(topologySnapshotId));
-  const admission = admissions[0];
-  assert.ok(admission);
-  assert.ok(admissions.every(({ topologySnapshotId, reviewedAt, freshUntil }) =>
-    topologySnapshotId === admission.topologySnapshotId
-      && reviewedAt === admission.reviewedAt
-      && freshUntil === admission.freshUntil));
+  const admission = currentCapitalTopologyAdmission(sourceInventory);
   const staticSources = sourceSnapshots.filter(({ snapshotId, sourceId }) =>
     candidate.sourceSnapshotIds.includes(snapshotId)
       && ["seoul-metro-route-map-positions", "molit-urban-rail-full-route"].includes(sourceId));
@@ -989,34 +1111,31 @@ test("topology-only refresh는 full source와 source-separated candidate identit
   // This is an in-memory test fixture. The tracked Incheon observation remains
   // stale at the current static-successor clock and must not become production
   // success merely to exercise the topology refresh path.
-  const currentIncheonTopologyPath =
-    "tools/datapack/sources/incheon-transit-station-info-20260824.json";
   const currentItxAdmissionPath =
     "tools/datapack/itx-current-network-edge-admission-20260810.json";
-  const [baseSpec, sourceInventory, baselineTopology, canonical,
+  const [baseSpec, sourceInventory, canonical,
     productionScopePolicyBytes, historicalIncheonTopologyBytes, currentItxAdmissionBytes] =
     await Promise.all([
     readJson("tools/datapack/release/candidate-build-spec.json"),
     readJson("tools/datapack/source-inventory.json"),
-    readJson("tools/datapack/sources/capital-route-topology-20260724.json"),
     readJson("tools/datapack/release/capital-production-canonical-pack.json"),
     readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json")),
     readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260814.json")),
     readFile(path.join(root, currentItxAdmissionPath)),
   ]);
-  const topologyAdmissions = sourceInventory.sources
-    .map(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence?.currentTopologyAdmission)
-    .filter(({ topologySnapshotId } = {}) => /^capital-route-topology-[0-9]{8}$/u.test(topologySnapshotId));
-  assert.ok(topologyAdmissions.length > 0);
-  const topologySnapshotId = topologyAdmissions[0].topologySnapshotId;
-  assert.ok(topologyAdmissions.every((admission) => admission.topologySnapshotId === topologySnapshotId));
-  const currentTopologyPath = `tools/datapack/sources/${topologySnapshotId}.json`;
-  const currentTopologyBytes = await readFile(path.join(root, currentTopologyPath));
-  const currentTopology = JSON.parse(currentTopologyBytes);
+  const { topology: baselineTopology, bytes: baselineTopologyBytes } = await historicalCandidateCapitalTopology(baseSpec);
+  const { admission, relativePath: currentTopologyPath, bytes: currentTopologyBytes, topology: currentTopology } =
+    await currentCapitalTopology(sourceInventory);
+  const topologySnapshotId = admission.topologySnapshotId;
+  assert.equal(currentTopology.lines.length, 22);
+  assert.equal(currentTopology.lines.reduce((count, line) => count + line.edgeCount, 0), 1_438);
+  assert.equal(currentTopology.lines.some(({ lineId }) => lineId === "line-42b5805f3b5a"), false);
+  assert.equal(currentTopology.lines.some(({ lineId }) => lineId === "line-98718184f016"), false);
   const currentIncheonTopology = JSON.parse(historicalIncheonTopologyBytes);
   delete currentIncheonTopology.stationCodeCorrections;
   currentIncheonTopology.stationCodeDerivations = currentIncheonStationCodeDerivations();
   const { inWindow } = await currentTopologyAdmissionClock(root);
+  const currentIncheonTopologyPath = `tools/datapack/sources/incheon-transit-station-info-${inWindow.toISOString().slice(0, 10).replaceAll("-", "")}.json`;
   currentIncheonTopology.capturedAt = inWindow.toISOString();
   currentIncheonTopology.freshUntil = new Date(inWindow.getTime() + 24 * 60 * 60 * 1_000).toISOString();
   const currentIncheonTopologyBytes = Buffer.from(`${JSON.stringify(currentIncheonTopology)}\n`);
@@ -1025,6 +1144,7 @@ test("topology-only refresh는 full source와 source-separated candidate identit
     Date.parse(currentTopology.capturedAt),
     Date.parse(currentIncheonTopology.capturedAt),
   ) + 1).toISOString();
+  const layoutTopologySnapshotBytesById = await collectLayoutTopologySnapshotBytes(sourceInventory);
   const result = buildCurrentTopologyRefreshPrimaryOutputs({
     baseSpec,
     builderGitSha: "a".repeat(40),
@@ -1038,10 +1158,12 @@ test("topology-only refresh는 full source와 source-separated candidate identit
     currentItxAdmissionPath,
     currentItxAdmissionBytes,
     baselineTopology,
+    baselineTopologyBytes,
     canonical,
     productionScopePolicyBytes,
     buildNow,
     snapshotBytesByPath: await collectPositionSnapshotBytes(sourceInventory),
+    layoutTopologySnapshotBytesById,
   });
 
   const admissions = result.sourceInventory.sources
@@ -1051,17 +1173,16 @@ test("topology-only refresh는 full source와 source-separated candidate identit
   assert.ok(admissions.every((admission) => admission.topologySnapshotId === topologySnapshotId));
   assert.equal(result.spec.candidateId, `capital-pilot-candidate-${topologySnapshotId.slice(-8)}`);
   assert.equal(result.spec.networkEdgeEvidence.sourceInventory.sha256, sha256(result.sourceInventoryBytes));
-  assert.equal(result.spec.networkEdgeEvidence.capitalTopology.path, currentTopologyPath);
-  assert.equal(result.spec.networkEdgeEvidence.capitalTopology.sha256, sha256(currentTopologyBytes));
-  assert.equal(result.spec.networkEdgeEvidence.capitalTopologyCandidate.path,
-    currentTopologyPath.replace(/\.json$/u, "-source-separated.json"));
+  assert.deepEqual(result.spec.networkEdgeEvidence.capitalTopology,
+    baseSpec.networkEdgeEvidence.capitalTopology);
+  assert.equal(result.spec.networkEdgeEvidence.capitalTopologyCandidate.path, currentTopologyPath);
   assert.equal(result.spec.networkEdgeEvidence.capitalTopologyCandidate.sha256,
-    sha256(result.sourceSeparatedTopologyBytes));
+    sha256(currentTopologyBytes));
   assert.equal(
     result.spec.networkEdgeEvidence.capitalTopologyReverification.sha256,
     sha256(result.topologyReverificationBytes),
   );
-  assert.equal(result.projectedEdgeCount, projectCapitalTopologyOwnership(currentTopology).totalEdgeCount);
+  assert.equal(result.projectedEdgeCount, currentTopology.totalEdgeCount);
   assert.deepEqual(result.spec.networkEdgeEvidence.itxCurrentTopologyAdmission, {
     path: currentItxAdmissionPath,
     sha256: sha256(currentItxAdmissionBytes),
@@ -1086,10 +1207,12 @@ test("topology-only refresh는 full source와 source-separated candidate identit
     currentItxAdmissionPath,
     currentItxAdmissionBytes,
     baselineTopology,
+    baselineTopologyBytes,
     canonical,
     productionScopePolicyBytes,
     buildNow,
     snapshotBytesByPath: new Map(),
+    layoutTopologySnapshotBytesById,
   });
   const withLines = (lines) => {
     const topology = structuredClone(currentTopology);
@@ -1119,31 +1242,36 @@ test("topology-only refresh는 full source와 source-separated candidate identit
 });
 
 test("stale Incheon input은 source-separated topology materialization 전에 fail-closed한다", async () => {
-  const currentTopologyPath = "tools/datapack/sources/capital-route-topology-20260823.json";
   const incheonTopologyPath = "tools/datapack/sources/incheon-transit-station-info-20260814.json";
-  const outputPath = "tools/datapack/sources/capital-route-topology-20260823-source-separated.json";
-  const [baseSpec, sourceInventory, currentTopologyBytes, baselineTopology, canonical,
-    productionScopePolicyBytes, incheonBytes, currentItxAdmissionBytes] = await Promise.all([
+  const [baseSpec, sourceInventory] = await Promise.all([
     readJson("tools/datapack/release/candidate-build-spec.json"),
     readJson("tools/datapack/source-inventory.json"),
-    readFile(path.join(root, currentTopologyPath)),
-    readJson("tools/datapack/sources/capital-route-topology-20260724.json"),
+  ]);
+  const [{ topology: baselineTopology, bytes: baselineTopologyBytes }, { relativePath: currentTopologyPath, bytes: currentTopologyBytes, topology: currentTopology },
+    canonical, productionScopePolicyBytes, incheonBytes, currentItxAdmissionBytes] = await Promise.all([
+    historicalCandidateCapitalTopology(baseSpec),
+    currentCapitalTopology(sourceInventory),
     readJson("tools/datapack/release/capital-production-canonical-pack.json"),
     readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json")),
     readFile(path.join(root, incheonTopologyPath)),
     readFile(path.join(root, "tools/datapack/itx-current-network-edge-admission-20260810.json")),
   ]);
+  const outputPath = currentTopologyPath.replace(/\.json$/u, "-source-separated.json");
+  assert.equal(currentTopology.lines.some(({ lineId }) => lineId === "line-42b5805f3b5a"), false);
+  assert.equal(currentTopology.lines.some(({ lineId }) => lineId === "line-98718184f016"), false);
   const staleIncheon = JSON.parse(incheonBytes);
   delete staleIncheon.stationCodeCorrections;
   staleIncheon.stationCodeDerivations = currentIncheonStationCodeDerivations();
   const staleIncheonBytes = Buffer.from(`${JSON.stringify(staleIncheon)}\n`);
   const positionSnapshotBytes = await collectPositionSnapshotBytes(sourceInventory);
+  const layoutTopologySnapshotBytesById = await collectLayoutTopologySnapshotBytes(sourceInventory);
+  const { inWindow } = await currentTopologyAdmissionClock(root);
   await assert.rejects(readFile(path.join(root, outputPath)), { code: "ENOENT" });
   assert.throws(() => buildCurrentTopologyRefreshPrimaryOutputs({
     baseSpec,
     builderGitSha: "a".repeat(40),
     sourceInventory,
-    currentTopology: JSON.parse(currentTopologyBytes),
+    currentTopology,
     currentTopologyBytes,
     currentTopologyPath,
     currentIncheonTopology: staleIncheon,
@@ -1152,10 +1280,12 @@ test("stale Incheon input은 source-separated topology materialization 전에 fa
     currentItxAdmissionPath: "tools/datapack/itx-current-network-edge-admission-20260810.json",
     currentItxAdmissionBytes,
     baselineTopology,
+    baselineTopologyBytes,
     canonical,
     productionScopePolicyBytes,
-    buildNow: "2026-08-23T23:59:20.000Z",
+    buildNow: inWindow.toISOString(),
     snapshotBytesByPath: positionSnapshotBytes,
+    layoutTopologySnapshotBytesById,
   }), /current Incheon topology snapshot is stale/);
   await assert.rejects(readFile(path.join(root, outputPath)), { code: "ENOENT" });
 });
@@ -1305,21 +1435,27 @@ test("primary source set은 current KRIC·7-source·two-topology identity를 한
     schemaFingerprint: "44585c58909db0d14ed103ecf357291e4f337fc432e9e8938043a39097d904ff", governancePolicyVersion: "2026-07-15",
     governancePolicySha256: "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70",
   };
-  const [baselineTopology, fullCapitalTopology, incheonTopologyInput] = await Promise.all([
+  const [baselineTopology, currentTopologyBytes, incheonTopologyInput, currentAdmissionInventory] = await Promise.all([
     readJson("tools/datapack/sources/capital-route-topology-20260724.json"),
-    readJson("tools/datapack/sources/capital-route-topology-20260804.json"),
+    readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260825.json")),
     readJson("tools/datapack/sources/incheon-transit-station-info-20260724.json"),
+    readJson("tools/datapack/source-inventory.json"),
   ]);
-  const currentTopology = {
-    ...fullCapitalTopology,
-    capturedAt: "2026-08-10T20:21:15.000Z",
-    freshUntil: "2026-08-11T20:21:15.000Z",
+  const currentTopology = JSON.parse(currentTopologyBytes);
+  const baselineTopologyBytes = Buffer.from(`${JSON.stringify(baselineTopology)}\n`);
+  const baseSpec = {
+    networkEdgeEvidence: {
+      capitalTopology: {
+        path: "tools/datapack/sources/capital-route-topology-20260724.json",
+        snapshotId: "capital-route-topology-20260724",
+        sha256: sha256(baselineTopologyBytes),
+      },
+    },
   };
-  const currentTopologyBytes = Buffer.from(`${JSON.stringify(currentTopology)}\n`);
   const currentIncheonTopology = {
     ...incheonTopologyInput,
-    capturedAt: "2026-08-10T20:21:15.000Z",
-    freshUntil: "2026-08-11T20:21:15.000Z",
+    capturedAt: "2026-08-25T15:23:46.070Z",
+    freshUntil: "2026-08-26T15:23:46.070Z",
   };
   const currentIncheonTopologyBytes = Buffer.from(`${JSON.stringify(currentIncheonTopology)}\n`);
   const publicRouteMapSuccessor = {
@@ -1341,6 +1477,7 @@ test("primary source set은 current KRIC·7-source·two-topology identity를 한
       ],
     },
   };
+  let omitCapitalAdmission = false;
   const build = (sourceSnapshots) => buildCurrentSourcePrimaryOutputs({
     handoff,
     rawArtifact: { collectedAt: handoff.collectedAt },
@@ -1356,14 +1493,16 @@ test("primary source set은 current KRIC·7-source·two-topology identity를 한
       routeMapPositions: [{ sourceId: "seoulmetro-cyberstation-route-map" }],
     },
     officialOdFareQuotes,
+    baseSpec,
     baselineTopology,
+    baselineTopologyBytes,
     currentTopology,
     currentTopologyBytes,
-    currentTopologyPath: "tools/datapack/sources/capital-route-topology-20260810.json",
+    currentTopologyPath: "tools/datapack/sources/capital-route-topology-20260825.json",
     currentIncheonTopology,
     currentIncheonTopologyBytes,
-    currentIncheonTopologyPath: "tools/datapack/sources/incheon-transit-station-info-20260810.json",
-    buildNow: "2026-08-10T21:00:00.000Z",
+    currentIncheonTopologyPath: "tools/datapack/sources/incheon-transit-station-info-20260825.json",
+    buildNow: "2026-08-25T16:00:00.000Z",
     snapshotBytesByPath: new Map(),
     verifySuccessorHeadsImpl() { return { positions: publicRouteMapSuccessor }; },
     applyScheduleImpl(input) {
@@ -1382,11 +1521,18 @@ test("primary source set은 current KRIC·7-source·two-topology identity를 한
       };
     },
     rebindTopologyAdmissionsImpl({ inventory: value, topologySnapshotId }) {
-      assert.equal(topologySnapshotId, "capital-route-topology-20260810");
-      return { ...value, topologyAdmissionsRebound: true };
+      assert.equal(topologySnapshotId, "capital-route-topology-20260825");
+      const next = structuredClone(currentAdmissionInventory);
+      next.sources = next.sources.map((source) => ({
+        ...source,
+        ...value.sources.find(({ id }) => id === source.id),
+      }));
+      if (omitCapitalAdmission) next.sources = next.sources.filter(({ routeMapAdmissionEvidence }) =>
+        routeMapAdmissionEvidence?.topologySourceId !== "capital-route-topology" || false).slice(1);
+      return { ...next, topologyAdmissionsRebound: true };
     },
     activateIncheonTopologyAdmissionImpl({ sourceInventory: value, snapshotPath }) {
-      assert.equal(snapshotPath, "tools/datapack/sources/incheon-transit-station-info-20260810.json");
+      assert.equal(snapshotPath, "tools/datapack/sources/incheon-transit-station-info-20260825.json");
       return { ...value, incheonAdmissionsRebound: true };
     },
     buildTopologyReverificationImpl(baseline, current) {
@@ -1434,6 +1580,10 @@ test("primary source set은 current KRIC·7-source·two-topology identity를 한
 
   const repeated = build(result.sourceSnapshots);
   assert.deepEqual(repeated.sourceSnapshots, result.sourceSnapshots);
+
+  omitCapitalAdmission = true;
+  assert.throws(() => build(result.sourceSnapshots), /current capital topology admissions are not exactly rebound/);
+  omitCapitalAdmission = false;
 
   const drifted = structuredClone(result.sourceSnapshots);
   drifted.at(-1).rawSha256 = "f".repeat(64);
@@ -1599,28 +1749,20 @@ test("activation transaction은 검증 실패에서 모든 기존 bytes를 복�
   );
 });
 
-test("topology refresh는 date-bound source-separated output만 원자 commit 대상으로 허용한다", async (context) => {
+test("topology refresh는 obsolete source-separated topology output을 원자 commit 대상으로 허용하지 않는다", async (context) => {
   const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "current-topology-output-"));
   context.after(() => rm(repositoryRoot, { recursive: true, force: true }));
-  const allowedPath = "tools/datapack/sources/capital-route-topology-20260823-source-separated.json";
+  const obsoletePath = "tools/datapack/sources/capital-route-topology-20260823-source-separated.json";
   const rejectedPath = "tools/datapack/sources/unrelated-source-separated.json";
-  await mkdir(path.dirname(path.join(repositoryRoot, allowedPath)), { recursive: true });
+  await mkdir(path.dirname(path.join(repositoryRoot, obsoletePath)), { recursive: true });
 
-  await commitCurrentSourceActivation({
-    repositoryRoot,
-    outputs: [{ relativePath: allowedPath, bytes: Buffer.from("separated\n") }],
-    validate: async () => {},
-  });
-  assert.deepEqual(await readFile(path.join(repositoryRoot, allowedPath)), Buffer.from("separated\n"));
-
-  await assert.rejects(
-    commitCurrentSourceActivation({
+  for (const relativePath of [obsoletePath, rejectedPath]) {
+    await assert.rejects(commitCurrentSourceActivation({
       repositoryRoot,
-      outputs: [{ relativePath: rejectedPath, bytes: Buffer.from("rejected\n") }],
+      outputs: [{ relativePath, bytes: Buffer.from("rejected\n") }],
       validate: async () => {},
-    }),
-    /activation output is not allowed/,
-  );
+    }), /activation output is not allowed/);
+  }
 });
 
 test("check mode는 builder code가 같은 output-only descendant만 수용한다", async (context) => {

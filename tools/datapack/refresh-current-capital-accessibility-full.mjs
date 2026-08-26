@@ -19,10 +19,13 @@ const OUTPUTS = Object.freeze([
 const JOURNAL = "tools/datapack/.current-capital-accessibility-refresh-transaction.json";
 const LOCK = "tools/datapack/.current-capital-accessibility-refresh.lock";
 const LOCK_OWNER = "owner.json";
+const CANDIDATE_BUILD_SPEC = "tools/datapack/release/candidate-build-spec.json";
+const ACTIVATED_CURRENT_OUTPUT = "ACTIVATED_CURRENT_OUTPUT";
+const PRE_APPROVAL_CURRENT_CANDIDATE = "PRE_APPROVAL_CURRENT_CANDIDATE";
 const SEOUL = "seoul-metro-accessibility";
 const TRANSFER = "seoul-metro-transfer-distance-duration";
 const MOLIT = "molit-urban-rail-full-route";
-const STATIC_SUCCESSOR = "STATIC_NETWORK_SUCCESSOR_REFRESH";
+const PUBLIC_STATIC_NETWORK_V2_SUCCESSOR = "PUBLIC_STATIC_NETWORK_V2_SUCCESSOR_REFRESH";
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 
 function target(root, relative) {
@@ -35,90 +38,82 @@ function parse(bytes, label) { try { return JSON.parse(bytes); } catch { throw n
 function canonical(value) { if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`; if (value && typeof value === "object") return `{${Object.keys(value).sort(codepointCompare).map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`; return JSON.stringify(value); }
 function equalJson(left, right) { return canonical(left) === canonical(right); }
 function requireOne(rows, predicate, label) { const matches = rows.filter(predicate); if (matches.length !== 1) throw new Error(`${label} mismatch`); return matches[0]; }
+function requireNoLegacyMetadata(value, label) {
+  const visit = (current) => {
+    if (Array.isArray(current)) return current.forEach(visit);
+    if (!current || typeof current !== "object") return;
+    for (const [key, child] of Object.entries(current)) {
+      if (["projectionMigration", "migration", "historicalPredecessorAudit", "rootSupersession"].includes(key)) {
+        throw new Error(`${label} legacy metadata mismatch`);
+      }
+      visit(child);
+    }
+  };
+  visit(value);
+}
 
-function buildRefreshProof({ candidateFile, ledgerFile, requestFile, hashesFile, stationFile, routeFile }) {
+function requireCurrentPublicV2Head(selected, ledger, sourceId) {
+  const head = requireOne(selected, ({ sourceId: actual }) => actual === sourceId, `current ${sourceId} head`);
+  const previousSnapshotId = head?.previousSnapshotId;
+  const observation = head?.publicStaticNetworkV2Observation;
+  requireNoLegacyMetadata(head, `current ${sourceId} head`);
+  if (observation?.schemaVersion !== 2
+    || observation.artifactKind !== "public-static-network-v2-observation"
+    || observation.sourceId !== sourceId
+    || observation.snapshotId !== head.snapshotId
+    || typeof previousSnapshotId !== "string"
+    || previousSnapshotId === head.snapshotId
+    || ledger.filter(({ snapshotId, sourceId: actual }) =>
+      snapshotId === previousSnapshotId && actual === sourceId).length !== 1) {
+    throw new Error(`current ${sourceId} v2 predecessor mismatch`);
+  }
+  return { head, previousSnapshotId };
+}
+
+function buildRefreshProof({ phase, candidateFile, ledgerFile, requestFile, hashesFile, stationFile, routeFile }) {
   const candidate = parse(candidateFile.bytes, "current candidate"); const ledger = parse(ledgerFile.bytes, "source snapshot ledger");
-  const request = parse(requestFile.bytes, "release request"); const hashes = parse(hashesFile.bytes, "hash evidence");
   const station = parse(stationFile.bytes, "activated station input"); const route = parse(routeFile.bytes, "activated route input");
   if (!Array.isArray(candidate.sourceSnapshotIds) || !Array.isArray(candidate.sourceSnapshots) || candidate.sourceSnapshotIds.length !== 7
     || candidate.sourceSnapshotIds.length !== candidate.sourceSnapshots.length
-    || candidate.sourceSnapshots.at(-1)?.sourceId !== TRANSFER
-    || candidate.sourceSnapshotSetHash !== request.sourceSnapshotSetHash
-    || candidate.sourceSnapshotSetHash !== hashes.sourceSnapshotSetHash?.value) throw new Error("current candidate/request/hash binding mismatch");
-  const selected = candidate.sourceSnapshotIds.map((snapshotId) => requireOne(ledger, (row) => row?.snapshotId === snapshotId, "current candidate ledger"));
+    || candidate.sourceSnapshots.at(-1)?.sourceId !== TRANSFER) throw new Error("current candidate source-set mismatch");
+  if (phase === ACTIVATED_CURRENT_OUTPUT) {
+    const request = parse(requestFile.bytes, "release request"); const hashes = parse(hashesFile.bytes, "hash evidence");
+    if (candidate.sourceSnapshotSetHash !== request.sourceSnapshotSetHash
+      || candidate.sourceSnapshotSetHash !== hashes.sourceSnapshotSetHash?.value) {
+      throw new Error("current candidate/request/hash binding mismatch");
+    }
+  }
+  const selected = candidate.sourceSnapshotIds.map((snapshotId, index) => {
+    const row = requireOne(ledger, (entry) => entry?.snapshotId === snapshotId, "current candidate ledger");
+    if (row.sourceId !== candidate.sourceSnapshots[index]?.sourceId) throw new Error("current candidate source identity mismatch");
+    return row;
+  });
   const selectedIds = new Set(candidate.sourceSnapshotIds);
   const selectedLedgerOrder = ledger.filter(({ snapshotId }) => selectedIds.has(snapshotId));
   if (selectedIds.size !== 7 || selectedLedgerOrder.length !== 7 || sha(JSON.stringify(selectedLedgerOrder)) !== candidate.sourceSnapshotSetHash) throw new Error("current candidate source-set mismatch");
-  const staticSuccessors = selected.filter(({ projectionMigration }) =>
-    projectionMigration?.migrationKind === "CROSS_SOURCE_CANONICAL_REPLACEMENT");
-  let successorIndex;
-  let previousSnapshotId;
-  let molitSuccessorIndex = -1;
-  let previousMolitSnapshotId;
-  let transitionIdentity;
-  if (staticSuccessors.length === 1) {
-    const successor = staticSuccessors[0];
-    const migration = successor.projectionMigration;
-    successorIndex = selected.indexOf(successor);
-    previousSnapshotId = migration.replacedSnapshotId;
-    if (successor.sourceId !== migration.sourceId
-      || migration.candidateSlotSourceId !== migration.replacedSourceId
-      || typeof previousSnapshotId !== "string"
-      || previousSnapshotId === successor.snapshotId
-      || ledger.filter(({ snapshotId, sourceId }) =>
-        snapshotId === previousSnapshotId && sourceId === migration.replacedSourceId).length !== 1) {
-      throw new Error("current static-network predecessor mismatch");
-    }
-    const molitSuccessors = selected.filter(({ sourceId }) => sourceId === MOLIT);
-    const molitSuccessor = molitSuccessors[0];
-    const molitMigration = molitSuccessor?.projectionMigration;
-    molitSuccessorIndex = selected.indexOf(molitSuccessor);
-    previousMolitSnapshotId = molitSuccessor?.previousSnapshotId;
-    if (molitSuccessors.length !== 1
-      || molitMigration?.migrationKind !== "LEGACY_SAMPLE_TO_FULL_CONSUMED_FIELDS"
-      || molitMigration.sourceId !== MOLIT
-      || molitMigration.legacySnapshotId !== previousMolitSnapshotId
-      || typeof previousMolitSnapshotId !== "string"
-      || previousMolitSnapshotId === molitSuccessor.snapshotId
-      || ledger.filter(({ snapshotId, sourceId }) =>
-        snapshotId === previousMolitSnapshotId && sourceId === MOLIT).length !== 1) {
-      throw new Error("current static-network MOLIT predecessor mismatch");
-    }
-    transitionIdentity = {
-      kind: STATIC_SUCCESSOR,
-      successorSourceId: successor.sourceId,
-      predecessorSourceId: migration.replacedSourceId,
-    };
-  } else {
-    const seoulIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === SEOUL);
-    if (staticSuccessors.length !== 0
-      || seoulIndex < 0
-      || candidate.sourceSnapshots.filter(({ sourceId }) => sourceId === SEOUL).length !== 1
-      || candidate.sourceSnapshots.at(-1)?.sourceId !== TRANSFER) {
-      throw new Error("current successor candidate shape mismatch");
-    }
-    const currentSeoul = selected[seoulIndex];
-    successorIndex = seoulIndex;
-    previousSnapshotId = currentSeoul?.previousSnapshotId;
-    if (typeof previousSnapshotId !== "string" || previousSnapshotId === currentSeoul.snapshotId) {
-      throw new Error("current Seoul predecessor mismatch");
-    }
-    transitionIdentity = { kind: "SEOUL_ACCESSIBILITY_SUCCESSOR_REFRESH" };
+  const position = requireCurrentPublicV2Head(selected, ledger, "seoul-metro-route-map-positions");
+  const molit = requireCurrentPublicV2Head(selected, ledger, MOLIT);
+  const positionIndex = selected.indexOf(position.head);
+  const molitIndex = selected.indexOf(molit.head);
+  if (positionIndex < 0 || molitIndex < 0 || positionIndex === molitIndex) {
+    throw new Error("current public static-network selected head mismatch");
   }
-  const predecessorIds = candidate.sourceSnapshotIds.map((snapshotId, index) =>
-    index === successorIndex ? previousSnapshotId
-      : index === molitSuccessorIndex ? previousMolitSnapshotId
-      : snapshotId);
-  const predecessorIdSet = new Set(predecessorIds); const predecessor = ledger.filter(({ snapshotId }) => predecessorIdSet.has(snapshotId));
-  const predecessorHash = sha(JSON.stringify(predecessor));
-  const currentSeoul = selected.filter(({ sourceId }) => sourceId === SEOUL);
-  const previousSeoulSnapshotId = currentSeoul[0]?.previousSnapshotId;
-  if (currentSeoul.length !== 1
-    || typeof previousSeoulSnapshotId !== "string"
+  const currentSeoul = requireOne(selected, ({ sourceId }) => sourceId === SEOUL, "current Seoul head");
+  const previousSeoulSnapshotId = currentSeoul?.previousSnapshotId;
+  if (typeof previousSeoulSnapshotId !== "string"
+    || previousSeoulSnapshotId === currentSeoul.snapshotId
     || ledger.filter(({ snapshotId, sourceId }) =>
       snapshotId === previousSeoulSnapshotId && sourceId === SEOUL).length !== 1) {
     throw new Error("current Seoul evidence predecessor mismatch");
   }
+  const transitionIdentity = { kind: PUBLIC_STATIC_NETWORK_V2_SUCCESSOR };
+  const predecessorIds = candidate.sourceSnapshotIds.map((snapshotId, index) => {
+    if (index === positionIndex) return position.previousSnapshotId;
+    if (index === molitIndex) return molit.previousSnapshotId;
+    return snapshotId;
+  });
+  const predecessorIdSet = new Set(predecessorIds); const predecessor = ledger.filter(({ snapshotId }) => predecessorIdSet.has(snapshotId));
+  const predecessorHash = sha(JSON.stringify(predecessor));
   const evidenceIds = new Set(predecessorIds.flatMap((snapshotId, index) => {
     const sourceId = candidate.sourceSnapshots[index].sourceId;
     if (sourceId === TRANSFER) return [];
@@ -137,16 +132,42 @@ function buildRefreshProof({ candidateFile, ledgerFile, requestFile, hashesFile,
     currentCandidateBytesSha256: sha(candidateFile.bytes), currentCandidateSourceSetSha256: candidate.sourceSnapshotSetHash,
     evidenceSourceSetSha256: evidenceHash, facilityAdmissionBytesSha256: null,
     ...transitionIdentity,
-    predecessorCandidateSourceSetSha256: predecessorHash, previousSnapshotId,
+    predecessorCandidateSourceSetSha256: predecessorHash,
+    positionPreviousSnapshotId: position.previousSnapshotId,
+    molitPreviousSnapshotId: molit.previousSnapshotId,
     alreadyCurrent: activatedSourceSet === candidate.sourceSnapshotSetHash,
   };
 }
 
-async function inputFiles(root) {
-  const files = await Promise.all([
-    "tools/datapack/release/candidate-build-spec.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json", "tools/datapack/release/current-capital-facility-source-admission.json", ...OUTPUTS,
-  ].map(async (relative) => [relative, await readStableRegularFile(target(root, relative), relative)]));
-  return Object.fromEntries(files);
+function requirePhase(phase) {
+  if (![ACTIVATED_CURRENT_OUTPUT, PRE_APPROVAL_CURRENT_CANDIDATE].includes(phase)) {
+    throw new Error("current-capital refresh phase mismatch");
+  }
+}
+
+function candidateFixturePath(candidate) {
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)
+    || typeof candidate.fixturePath !== "string" || candidate.fixturePath.length === 0) {
+    throw new Error("current-capital refresh canonical fixture path mismatch");
+  }
+  return candidate.fixturePath;
+}
+
+async function inputFiles(root, phase) {
+  const relatives = [
+    CANDIDATE_BUILD_SPEC, "tools/datapack/release/source-snapshots.json",
+    "tools/datapack/release/current-capital-facility-source-admission.json", ...OUTPUTS,
+  ];
+  if (phase === ACTIVATED_CURRENT_OUTPUT) {
+    relatives.splice(2, 0, "tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json");
+  }
+  const files = Object.fromEntries(await Promise.all(relatives.map(async (relative) =>
+    [relative, await readStableRegularFile(target(root, relative), relative)])));
+  if (phase === PRE_APPROVAL_CURRENT_CANDIDATE) {
+    const fixturePath = candidateFixturePath(parse(files[CANDIDATE_BUILD_SPEC].bytes, "current candidate"));
+    files[fixturePath] = await readStableRegularFile(target(root, fixturePath), fixturePath);
+  }
+  return files;
 }
 
 function assertNarrowDelta({ stationBefore, routeBefore, stationAfter, routeAfter }) {
@@ -156,13 +177,43 @@ function assertNarrowDelta({ stationBefore, routeBefore, stationAfter, routeAfte
   if (!equalJson(stripStation(stationBefore), stripStation(stationAfter))) throw new Error("current-capital refresh evidence delta mismatch");
 }
 
-export async function buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot = ROOT } = {}) {
-  const root = path.resolve(repositoryRoot); const files = await inputFiles(root);
-  const proof = buildRefreshProof({ candidateFile: files["tools/datapack/release/candidate-build-spec.json"], ledgerFile: files["tools/datapack/release/source-snapshots.json"], requestFile: files["tools/datapack/release/release-request.json"], hashesFile: files["tools/datapack/release/hash-evidence.json"], stationFile: files[OUTPUTS[0]], routeFile: files[OUTPUTS[1]] });
+export async function buildCurrentCapitalAccessibilityRefreshOutputs({
+  repositoryRoot = ROOT,
+  phase = ACTIVATED_CURRENT_OUTPUT,
+  candidateBuildSpec = undefined,
+  canonicalPack = undefined,
+} = {}) {
+  requirePhase(phase);
+  const root = path.resolve(repositoryRoot); const files = await inputFiles(root, phase);
+  const proof = buildRefreshProof({ phase, candidateFile: files[CANDIDATE_BUILD_SPEC], ledgerFile: files["tools/datapack/release/source-snapshots.json"], requestFile: files["tools/datapack/release/release-request.json"], hashesFile: files["tools/datapack/release/hash-evidence.json"], stationFile: files[OUTPUTS[0]], routeFile: files[OUTPUTS[1]] });
   const { alreadyCurrent, ...transition } = proof;
   const input = await readCurrentCapitalInputs(root, { readTransitionBoundaryImpl: async () => ({ ...transition, facilityAdmissionBytesSha256: sha(files["tools/datapack/release/current-capital-facility-source-admission.json"].bytes) }) });
-  const projected = await projectCandidateFixtureForAccessibilityAuthority({ buildSpec: input.candidateBuildSpec, sourceFixture: input.canonicalPack, repositoryRoot: root });
-  const refreshed = { ...input, canonicalPack: projected };
+  const hasOverride = candidateBuildSpec !== undefined || canonicalPack !== undefined;
+  if (phase === ACTIVATED_CURRENT_OUTPUT && hasOverride) {
+    throw new Error("current-capital refresh activated override mismatch");
+  }
+  if (phase === PRE_APPROVAL_CURRENT_CANDIDATE && (!candidateBuildSpec || typeof candidateBuildSpec !== "object"
+    || !canonicalPack || typeof canonicalPack !== "object")) {
+    throw new Error("current-capital refresh per-run input mismatch");
+  }
+  if (phase === PRE_APPROVAL_CURRENT_CANDIDATE) {
+    const trackedCandidate = parse(files[CANDIDATE_BUILD_SPEC].bytes, "current candidate");
+    const fixturePath = candidateFixturePath(trackedCandidate);
+    const trackedCanonicalPack = parse(files[fixturePath].bytes, "current canonical fixture");
+    if (!equalJson(candidateBuildSpec, trackedCandidate) || !equalJson(input.candidateBuildSpec, trackedCandidate)) {
+      throw new Error("current-capital refresh candidate override mismatch");
+    }
+    if (!equalJson(canonicalPack, trackedCanonicalPack) || !equalJson(input.canonicalPack, trackedCanonicalPack)) {
+      throw new Error("current-capital refresh canonical override mismatch");
+    }
+  }
+  const selectedInput = phase === PRE_APPROVAL_CURRENT_CANDIDATE ? { ...input, candidateBuildSpec, canonicalPack } : input;
+  const projected = await projectCandidateFixtureForAccessibilityAuthority({
+    buildSpec: selectedInput.candidateBuildSpec,
+    sourceFixture: selectedInput.canonicalPack,
+    repositoryRoot: root,
+  });
+  const refreshed = { ...selectedInput, canonicalPack: projected };
   const stationBytes = Buffer.from(canonicalCurrentCapitalStationLineInputJson(buildCurrentCapitalStationLineInput(refreshed)));
   const routeBytes = Buffer.from(canonicalCurrentCapitalRouteEdgeInputJson(buildCurrentCapitalRouteEdgeInput(refreshed)));
   const stationAfter = parse(stationBytes, "refreshed station input"); const routeAfter = parse(routeBytes, "refreshed route input");

@@ -6,19 +6,22 @@ import { pathToFileURL } from "node:url";
 
 import { prepareCurrentServerRouteBundleFinal } from "./prepare-current-server-route-bundle-final.mjs";
 import { parseArgs, requiredArg } from "./lib/cli-args.mjs";
-import { selectEffectiveDataPack, sha256, stagedPackPath } from "./lib/manifest-validation.mjs";
+import { canonicalJson, selectEffectiveDataPack, sha256, stagedPackPath } from "./lib/manifest-validation.mjs";
+import { validateServerRouteBundleFinal } from "./lib/server-route-bundle-final.mjs";
 
 const REQUIRED_ARGS = ["datapack-root", "build-spec", "station-line-input", "route-edge-input", "repository-git-sha", "key-id", "output"];
 const SIGNED_PATHS = ["compatibility.json", "manifest.json", "manifest.signing-input.json", "payload/accessibility.sqlite.zst", "payload/fare.sqlite.zst", "payload/timetable.sqlite.zst", "payload/topology.sqlite.zst", "provenance.json"];
+const EVIDENCE_PATHS = ["route-accessibility-eligibility.json", "server-route-bundle-final.json"];
 
 export async function stageCurrentServerRouteBundleCandidate(input) {
   const datapackRoot = await directory(input.datapackRoot, "datapack root");
-  const output = path.resolve(required(input.output, "output"));
-  await absent(output);
+  const output = await directory(input.output, "output");
+  const routeOutput = path.join(output, "server-route-bundle");
+  const evidenceOutput = path.join(output, "server-route-bundle-evidence");
+  await Promise.all([absent(routeOutput), absent(evidenceOutput)]);
   if (input.keyId !== "production-v1") {
     throw new Error("key id must be production-v1");
   }
-  const outputParent = await directory(path.dirname(output), "output parent");
   const [manifest, buildSpecBytes, stationLine, route, provenanceBytes] = await Promise.all([
     jsonFile(path.join(datapackRoot, "current.json"), "current manifest"),
     regular(input.buildSpecPath, "build spec"),
@@ -57,7 +60,7 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
   const provenance = path.join(datapackRoot, "current.provenance.json");
   const publishedAt = requiredInstant(buildSpec.publishedAt, "build spec publishedAt");
   const releaseSequence = positiveInteger(buildSpec.releaseSequence, "build spec releaseSequence");
-  const temp = await mkdtemp(path.join(outputParent, ".route-candidate-"));
+  const temp = await mkdtemp(path.join(output, ".route-candidate-"));
   try {
     const sourceSqlite = path.join(temp, "source.sqlite");
     const prepared = path.join(temp, "prepared");
@@ -85,13 +88,30 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
     });
     const signed = path.join(prepared, "signed-server-route-bundle");
     await assertSignedInventory(signed);
+    const evidence = await validatedEvidence(prepared, candidate);
     const staged = path.join(temp, "stage");
     await mkdir(path.join(staged, "server-route-bundle", "payload"), { recursive: true });
     for (const relative of SIGNED_PATHS) {
       await copyFile(path.join(signed, relative), path.join(staged, "server-route-bundle", relative), 0);
     }
+    const stagedEvidence = path.join(staged, "server-route-bundle-evidence");
+    await mkdir(stagedEvidence);
+    await copyFile(evidence.eligibilityPath, path.join(stagedEvidence, EVIDENCE_PATHS[0]), 0);
+    await copyFile(evidence.finalPath, path.join(stagedEvidence, EVIDENCE_PATHS[1]), 0);
     await assertCandidateInventory(staged);
-    await rename(staged, output);
+    await Promise.all([absent(routeOutput), absent(evidenceOutput)]);
+    let routePublished = false;
+    let evidencePublished = false;
+    try {
+      await rename(path.join(staged, "server-route-bundle"), routeOutput);
+      routePublished = true;
+      await rename(path.join(staged, "server-route-bundle-evidence"), evidenceOutput);
+      evidencePublished = true;
+    } catch (error) {
+      if (evidencePublished) await rm(evidenceOutput, { recursive: true, force: true });
+      if (routePublished) await rm(routeOutput, { recursive: true, force: true });
+      throw error;
+    }
   } finally {
     await rm(temp, { recursive: true, force: true });
   }
@@ -116,7 +136,44 @@ async function assertSignedInventory(root) {
 }
 async function assertCandidateInventory(root) {
   const actual = await regularTree(root);
-  if (!same(actual, SIGNED_PATHS.map((relative) => `server-route-bundle/${relative}`))) throw new Error("candidate route bundle inventory mismatch");
+  if (!same(actual, [
+    ...SIGNED_PATHS.map((relative) => `server-route-bundle/${relative}`),
+    ...EVIDENCE_PATHS.map((relative) => `server-route-bundle-evidence/${relative}`),
+  ])) throw new Error("candidate route bundle inventory mismatch");
+}
+async function validatedEvidence(prepared, candidate) {
+  const eligibilityPath = path.join(prepared, EVIDENCE_PATHS[0]);
+  const bound = path.join(prepared, "bound");
+  if (!same(await regularTree(bound), [EVIDENCE_PATHS[1]])) {
+    throw new Error("prepared bound route evidence inventory mismatch");
+  }
+  const finalPath = path.join(bound, EVIDENCE_PATHS[1]);
+  const [eligibility, final] = await Promise.all([
+    canonicalJsonFile(eligibilityPath, "route accessibility eligibility"),
+    canonicalJsonFile(finalPath, "server route bundle FINAL"),
+  ]);
+  if (eligibility.value?.artifactKind !== "route-accessibility-eligibility") {
+    throw new Error("route accessibility eligibility artifact kind mismatch");
+  }
+  const { eligibilitySha256, ...eligibilityPayload } = eligibility.value;
+  const finalValue = validateServerRouteBundleFinal(final.value);
+  if (eligibility.value.schemaVersion !== 1
+    || eligibility.value.decision !== "ELIGIBLE"
+    || eligibilitySha256 !== sha256(Buffer.from(canonicalJson(eligibilityPayload)))
+    || canonicalJson(eligibility.value.candidate) !== canonicalJson(finalValue.candidate)
+    || finalValue.candidate.sourceSnapshotSetHash !== candidate.sourceSetSha256
+    || finalValue.gates.routeAccessibilityEligibility.state !== "PASS"
+    || finalValue.gates.routeAccessibilityEligibility.evidenceSha256 !== sha256(eligibility.bytes)) {
+    throw new Error("prepared route evidence eligibility binding mismatch");
+  }
+  return { eligibilityPath, finalPath };
+}
+async function canonicalJsonFile(target, label) {
+  const bytes = await regular(target, label);
+  let value;
+  try { value = JSON.parse(bytes.toString("utf8")); } catch { throw new Error(`${label} must be canonical JSON`); }
+  if (!bytes.equals(Buffer.from(canonicalJson(value)))) throw new Error(`${label} must be canonical JSON`);
+  return { bytes, value };
 }
 async function regularTree(root, prefix = "") {
   const stat = await lstat(root);

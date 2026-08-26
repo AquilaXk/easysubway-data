@@ -57,7 +57,7 @@ const DATA_GO_FOCUSED_TESTS = Object.freeze({
   "tools/datapack/collect-busan-route-topology.mjs": "tools/datapack/collect-busan-route-topology.test.mjs",
   "tools/datapack/collect-busan-timetable.mjs": "tools/datapack/collect-busan-timetable.test.mjs",
   "tools/datapack/collect-current-seoul-transfer-distance-duration-snapshot.mjs": "tools/datapack/collect-current-seoul-transfer-distance-duration-snapshot.test.mjs",
-  "tools/datapack/collect-current-static-network-successors.mjs": "tools/datapack/collect-current-static-network-successors.test.mjs",
+  "tools/datapack/collect-public-static-network-v2.mjs": "tools/datapack/collect-public-static-network-v2.test.mjs",
   "tools/datapack/collect-daejeon-route-topology.mjs": "tools/datapack/collect-daejeon-route-topology.test.mjs",
   "tools/datapack/collect-datago-source-candidate-evidence.mjs": "tools/datapack/collect-datago-source-candidate-evidence.test.mjs",
   "tools/datapack/collect-gwangju-timetable.mjs": "tools/datapack/collect-gwangju-timetable.test.mjs",
@@ -73,6 +73,7 @@ const DATA_GO_FOCUSED_TESTS = Object.freeze({
   "tools/datapack/revalidate-current-molit-transfer-source.mjs": "tools/datapack/revalidate-current-molit-transfer-source.test.mjs",
   "tools/datapack/run-current-itx-collection.mjs": "tools/datapack/run-current-itx-collection.test.mjs",
   "tools/datapack/run-current-seoul-accessibility-registration.mjs": "tools/datapack/run-current-seoul-accessibility-registration.test.mjs",
+  "tools/datapack/run-public-static-network-v2-operation.mjs": "tools/datapack/run-public-static-network-v2-operation.test.mjs",
   "tools/datapack/validate-tago-schedule-sample.mjs": "tools/datapack/plan-tago-schedule-collection.test.mjs",
 });
 
@@ -83,6 +84,15 @@ test("Seoul 노선별 지하철역 operation은 blank placeholders와 4호선 re
   assert.ok(candidate);
   assert.equal(candidate.evidence.sampleUrl,
     "http://openapi.seoul.go.kr:8088/[서비스키값]/json/SearchSTNBySubwayLineInfo/1/5/%20/%20/4호선");
+});
+
+test("public static-network v2는 cataloged official positions와 MOLIT만 한 one-shot runner로 수집한다", () => {
+  const positions = document.candidates.find(({ id }) => id === "seoul-metro-route-map-positions");
+  const molit = document.candidates.find(({ id }) => id === "molit-urban-rail-full-route");
+  assert.equal(positions?.operation?.runner?.command, "node tools/datapack/run-public-static-network-v2-operation.mjs");
+  assert.equal(positions?.operation?.endpoint, positions?.requestUrl);
+  assert.equal(molit?.requestUrl, molit?.evidence?.endpoint);
+  assert.doesNotMatch(JSON.stringify({ positions, molit }), /cyberstation|\.js(?:\b|$)|s3:\/\//iu);
 });
 
 test("FACILITY provider probe는 canonical identity 없이 exact tuple evidence만 만든다", async () => {
@@ -289,8 +299,8 @@ test("서울 1~8호선 위치는 공식 public API operation과 secret-redacted 
   assert.deepEqual(candidate.operation.requiredParameters, ["serviceKey", "page", "perPage", "returnType"]);
   assert.deepEqual(candidate.operation.fixedParameters, { returnType: "JSON" });
   assert.equal(candidate.operation.responseEnvelope, "data + currentCount + matchCount + page + perPage + totalCount");
-  assert.equal(candidate.operation.runner.command, "node tools/datapack/run-current-static-network-successors.mjs");
-  assert.deepEqual(candidate.operation.runner.requiredEnv, ["DATA_GO_KR_SERVICE_KEY"]);
+  assert.equal(candidate.operation.runner.command, "node tools/datapack/run-public-static-network-v2-operation.mjs");
+  assert.deepEqual(candidate.operation.runner.requiredEnv, ["DATA_GO_KR_SERVICE_KEY", "EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL"]);
   assert.deepEqual(candidate.operation.runner.arguments, ["<absolute-operation-root>"]);
   assert.equal(candidate.operation.secretPolicy, "env-only-redacted-output");
   assert.equal(candidate.serviceKeyHandling, "offline_collector_secret_only");
