@@ -1823,6 +1823,7 @@ jobs:
           OCI_MAP_CATALOG_REGION: ${{ vars.OCI_MAP_CATALOG_REGION }}
           OCI_MAP_CATALOG_COMPAT_ENDPOINT: ${{ vars.OCI_MAP_CATALOG_COMPAT_ENDPOINT }}
           OCI_MAP_CATALOG_OBJECT_PREFIX: ${{ vars.OCI_MAP_CATALOG_OBJECT_PREFIX }}
+          OCI_SERVER_ROUTE_PUBLIC_BASE_URL: ${{ vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL }}
           EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: ${{ secrets.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM }}
           EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: ${{ secrets.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM }}
           EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: ${{ secrets.EASYSUBWAY_DATAPACK_SIGNING_KEY_ID }}
@@ -1848,15 +1849,20 @@ jobs:
           import { canonicalJson, signingPublicKey, verifyRsaSha256Signature } from "./tools/datapack/lib/manifest-validation.mjs";
           import { rsaSha256Signature, signingPrivateKey } from "./tools/datapack/lib/manifest-signing.mjs";
           import { validateServerRouteBundlePublicationDescriptor } from "./tools/datapack/build-server-route-bundle-publication-descriptor.mjs";
+          import { readCredentialFreeObject } from "./tools/datapack/publish-server-route-bundle.mjs";
 
           let args;
           try { args = JSON.parse(process.env.MODE_ARGS_INPUT ?? ""); } catch { throw new Error("modeArgs must be JSON"); }
           if (!args || typeof args !== "object" || Array.isArray(args)) throw new Error("modeArgs must be an object");
-          const allowed = ["allowGaps", "buildSpecPath", "serverRouteDescriptorPath"];
+          const allowed = ["allowGaps", "buildSpecPath", "serverRouteDescriptorSha256"];
           if (canonicalJson(Object.keys(args).sort()) !== canonicalJson(allowed)) throw new Error("map-catalog-publish modeArgs keys mismatch");
           if (args.allowGaps !== "false") throw new Error("map-catalog-publish requires allowGaps=false");
           if (args.buildSpecPath !== "tools/datapack/release/candidate-build-spec.json") throw new Error("map-catalog-publish buildSpecPath mismatch");
-          for (const [label, value] of [["buildSpecPath", args.buildSpecPath], ["serverRouteDescriptorPath", args.serverRouteDescriptorPath]]) {
+          if (typeof args.serverRouteDescriptorSha256 !== "string" || !/^[a-f0-9]{64}$/.test(args.serverRouteDescriptorSha256)) throw new Error("serverRouteDescriptorSha256 must be lowercase SHA-256");
+          const serverRoutePublicBaseUrl = process.env.OCI_SERVER_ROUTE_PUBLIC_BASE_URL;
+          const serverRoutePublicBasePattern = /^https:\/\/objectstorage\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.oraclecloud\.com\/n\/[A-Za-z0-9_~-](?:[A-Za-z0-9._~-]*[A-Za-z0-9_~-])?\/b\/[A-Za-z0-9_~-](?:[A-Za-z0-9._~-]*[A-Za-z0-9_~-])?\/o$/;
+          if (typeof serverRoutePublicBaseUrl !== "string" || !serverRoutePublicBasePattern.test(serverRoutePublicBaseUrl) || new URL(serverRoutePublicBaseUrl).toString() !== serverRoutePublicBaseUrl) throw new Error("OCI_SERVER_ROUTE_PUBLIC_BASE_URL must be a canonical Oracle OCI public object base");
+          for (const [label, value] of [["buildSpecPath", args.buildSpecPath]]) {
             if (typeof value !== "string" || !value || path.isAbsolute(value) || value.split("/").some((part) => !part || part === "." || part === "..")) throw new Error(`${label} must be a repo-relative path`);
             const stat = lstatSync(value);
             if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`${label} must be a tracked non-symlink regular file`);
@@ -1864,11 +1870,15 @@ jobs:
             const currentMainBytes = execFileSync("git", ["show", `${process.env.GITHUB_SHA}:${value}`]);
             if (!readFileSync(value).equals(currentMainBytes)) throw new Error(`${label} bytes must equal GITHUB_SHA:path`);
           }
-          const bytes = readFileSync(args.serverRouteDescriptorPath);
+          const serverRouteDescriptorUrl = `${serverRoutePublicBaseUrl}/server-route-bundle-publication-descriptors/v2/${args.serverRouteDescriptorSha256}.json`;
+          const response = await readCredentialFreeObject(serverRouteDescriptorUrl, 1_048_576);
+          if (!response || response.statusCode !== 200 || !Buffer.isBuffer(response.body)) throw new Error("server route descriptor OCI GET failed");
+          const bytes = response.body;
           let raw;
           try { raw = JSON.parse(bytes); } catch { throw new Error("server route descriptor must be JSON"); }
           if (!bytes.equals(Buffer.from(canonicalJson(raw)))) throw new Error("server route descriptor must be canonical JSON");
           const descriptor = validateServerRouteBundlePublicationDescriptor(raw);
+          if (descriptor.descriptorSha256 !== args.serverRouteDescriptorSha256) throw new Error("server route descriptor SHA mismatch");
           if (descriptor.release.result !== "GO") throw new Error("server route descriptor release result must be GO");
           if (descriptor.producer.repository !== process.env.GITHUB_REPOSITORY) throw new Error("server route descriptor producer repository mismatch");
           if (descriptor.producer.gitSha === process.env.GITHUB_SHA) throw new Error("server route descriptor producer SHA must precede current main");
