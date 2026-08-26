@@ -9,6 +9,7 @@ import path from "node:path";
 import { isDeepStrictEqual, promisify } from "node:util";
 
 import { isMainModule } from "../lib/is-main-module.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { syncCanonicalFixture } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
 import { assertNoRetiredTransitReferences, projectRetiredTransitLines } from "./project-retired-transit-lines.mjs";
 import { projectCanonicalRouteMapProvenance } from "./project-canonical-route-map-provenance.mjs";
@@ -1249,8 +1250,8 @@ function assertExactCurrentCapitalTopologyAdmissions(inventory, topology, topolo
   const candidateLineIds = new Set(topology.lines.map(({ lineId }) => lineId));
   if (sources.length !== 16 || sources.some((source) => {
     const admission = source.routeMapAdmissionEvidence.currentTopologyAdmission;
-    const expectedLineIds = [...source.routeMapAdmissionEvidence.lineIds].sort();
-    const observedLineIds = admission.topologyLineages.map(({ lineId }) => lineId).sort();
+    const expectedLineIds = [...source.routeMapAdmissionEvidence.lineIds].sort(codepointCompare);
+    const observedLineIds = admission.topologyLineages.map(({ lineId }) => lineId).sort(codepointCompare);
     return admission.topologySnapshotId !== topologySnapshotId
       || admission.topologyContentSha256 !== topology.contentSha256
       || admission.reviewedAt !== topology.capturedAt
