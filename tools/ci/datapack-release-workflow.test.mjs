@@ -108,7 +108,7 @@ test("candidate-create는 생성 입력만 받고 release·provider credential �
     const next = yml.indexOf("\n      - name:", start + 1);
     return yml.slice(start, next === -1 ? undefined : next);
   };
-  assert.match(yml, /options: \[exploratory, candidate-create, release-candidate, production-publish, rollback, rollout-update\]/);
+  assert.match(yml, /options: \[exploratory, candidate-create, release-candidate, production-publish, rollback, rollout-update, map-catalog-publish\]/);
   const mode = step("Data Pack Release / Validate release mode inputs");
   assert.match(mode, /mode\}" == "candidate-create"/);
   assert.match(mode, /GITHUB_EVENT_NAME\}" != "workflow_dispatch"/);
@@ -170,7 +170,7 @@ test("candidate-create는 생성 입력만 받고 release·provider credential �
     "Data Pack Release / Decide conditional publish",
   ]) assert.match(step(name), /mode != 'candidate-create'/, `${name}는 candidate-create에서 실행되면 안 됨`);
   const webhook = yml.slice(yml.indexOf("  notify-slack-datapack-result:"));
-  assert.match(webhook, /if: \$\{\{ always\(\) && github\.event\.inputs\.mode != 'candidate-create' \}\}/);
+  assert.match(webhook, /if: \$\{\{ always\(\) && github\.event\.inputs\.mode != 'candidate-create' && github\.event\.inputs\.mode != 'map-catalog-publish' \}\}/);
   assert.match(webhook, /SLACK_RELEASE_WEBHOOK_URL: \$\{\{ secrets\.SLACK_RELEASE_WEBHOOK_URL \}\}/);
 });
 
@@ -276,6 +276,81 @@ test("workflow_dispatch 입력은 mode·targetChannel·modeArgs 3개로 통합�
   // modeArgs는 required이고 description에 복붙용 예시(buildSpecPath 포함)를 담는다.
   assert.match(yml, /modeArgs:[\s\S]*?required:\s*true/);
   assert.match(yml, /modeArgs:[\s\S]*?buildSpecPath/);
+});
+
+test("map-catalog production publication은 current main·검증된 server-route descriptor만으로 OCI에 단발 게시한다", () => {
+  const jobStart = yml.indexOf("  map-catalog-publication:");
+  assert.notEqual(jobStart, -1, "map-catalog publication 전용 job을 찾지 못함");
+  const jobEnd = yml.indexOf("\n  notify-slack-datapack-result:", jobStart);
+  const job = yml.slice(jobStart, jobEnd === -1 ? undefined : jobEnd);
+  const step = (name) => {
+    const start = job.indexOf(`- name: ${name}`);
+    assert.notEqual(start, -1, `${name} 스텝을 찾지 못함`);
+    const next = job.indexOf("\n      - name:", start + 1);
+    return { start, text: job.slice(start, next === -1 ? undefined : next) };
+  };
+
+  assert.match(yml, /options: \[exploratory, candidate-create, release-candidate, production-publish, rollback, rollout-update, map-catalog-publish\]/);
+  assert.match(yml, /data-pack-release:[\s\S]*?if: \$\{\{ github\.event\.inputs\.mode != 'map-catalog-publish' \}\}/);
+  assert.match(job, /if: \$\{\{ github\.event_name == 'workflow_dispatch' && github\.event\.inputs\.mode == 'map-catalog-publish' \}\}/);
+  assert.match(job, /environment:\s*\n\s+name: production-datapack/);
+  assert.match(job, /contents: read/);
+  assert.match(job, /TARGET_CHANNEL_INPUT.*github\.event\.inputs\.targetChannel/);
+  assert.match(job, /GITHUB_RUN_ATTEMPT.*== "1"/);
+  assert.match(job, /AquilaXk\/easysubway-data/);
+  assert.match(job, /refs\/heads\/main/);
+  assert.match(job, /fetch-depth: 0/);
+  assert.match(job, /allowGaps/);
+  assert.match(job, /buildSpecPath/);
+  assert.match(job, /serverRouteDescriptorPath/);
+  assert.match(job, /tracked non-symlink regular file/);
+  assert.match(job, /execFileSync\("git", \["ls-files", "--error-unmatch", "--", value\]/);
+  assert.match(job, /execFileSync\("git", \["show", `\$\{process\.env\.GITHUB_SHA\}:\$\{value\}`\]\)/);
+  assert.match(job, /bytes must equal GITHUB_SHA:path/);
+  assert.match(job, /unsafe for GITHUB_ENV/);
+  assert.doesNotMatch(job, /for path in "\$\{MAP_CATALOG_BUILD_SPEC_PATH\}"/);
+  assert.match(job, /validateServerRouteBundlePublicationDescriptor/);
+  assert.match(job, /descriptor\.release\.result !== "GO"/);
+  assert.match(job, /descriptor\.producer\.repository !== process\.env\.GITHUB_REPOSITORY/);
+  assert.doesNotMatch(job, /descriptor\.producer\.gitSha !== process\.env\.GITHUB_SHA/);
+  assert.match(job, /descriptor\.producer\.gitSha === process\.env\.GITHUB_SHA/);
+  assert.match(job, /execFileSync\("git", \["merge-base", "--is-ancestor", descriptor\.producer\.gitSha, process\.env\.GITHUB_SHA\]/);
+  assert.match(job, /buildSpec\.releaseSequence !== descriptor\.manifest\.releaseSequence/);
+  assert.match(job, /buildSpec\.sourceSnapshotSetHash !== descriptor\.sourceSnapshotSetHash/);
+  assert.match(job, /descriptor\.manifest\.stationSetSha256/);
+  assert.match(job, /descriptor\.manifest\.releaseSequence/);
+  assert.match(job, /descriptor\.manifest\.activeFrom/);
+  assert.match(job, /descriptor\.manifest\.freshUntil/);
+  assert.match(job, /descriptor\.manifest\.bundleId/);
+  assert.match(job, /descriptor\.manifest\.keyId/);
+  assert.match(job, /capital-map-1/);
+  assert.match(job, /capital-catalog-1/);
+  assert.match(job, /build-datapack\.mjs/);
+  assert.match(job, /gunzipSync/);
+  assert.match(job, /emit-artifact-components\.mjs/);
+  assert.match(job, /buildMapCatalogSignedCurrentPublication/);
+  assert.match(job, /mapCatalog\.stationSetSha256 !== serverRoute\.stationSetSha256/);
+
+  const preflight = step("Map catalog publication / Validate immutable inputs");
+  const build = step("Map catalog publication / Build signed current publication");
+  const currentMain = step("Map catalog publication / Recheck current main");
+  const publish = step("Map catalog publication / Publish immutable OCI objects");
+  const handoff = step("Map catalog publication / Write safe handoff");
+  assert.ok(preflight.start < build.start && build.start < currentMain.start && currentMain.start < publish.start && publish.start < handoff.start);
+  assert.match(currentMain.text, /gh api repos\/AquilaXk\/easysubway-data\/git\/ref\/heads\/main/);
+  assert.match(currentMain.text, /GITHUB_SHA/);
+  assert.match(publish.text, /OCI_MAP_CATALOG_PUBLISHER_ACCESS_KEY/);
+  assert.match(publish.text, /OCI_MAP_CATALOG_PUBLISHER_SECRET_KEY/);
+  for (const name of ["OCI_MAP_CATALOG_NAMESPACE", "OCI_MAP_CATALOG_BUCKET", "OCI_MAP_CATALOG_REGION", "OCI_MAP_CATALOG_COMPAT_ENDPOINT", "OCI_MAP_CATALOG_OBJECT_PREFIX"]) assert.match(publish.text, new RegExp(name));
+  assert.match(publish.text, /publish-map-catalog-signed-current-publication\.mjs/);
+  assert.doesNotMatch(publish.text, /AWS_|READER|CANDIDATE|PAR|dotenv|upload-artifact|download-artifact|retry|fallback/i);
+  assert.match(handoff.text, /DESCRIPTOR_SHA/);
+  assert.match(handoff.text, /DESCRIPTOR_LOCATOR/);
+  assert.match(handoff.text, /RECEIPT_SHA/);
+  assert.match(handoff.text, /RECEIPT_LOCATOR/);
+  assert.doesNotMatch(handoff.text, /upload-artifact|receipt\.json|descriptor\.json/i);
+  const slack = yml.slice(yml.indexOf("  notify-slack-datapack-result:"));
+  assert.match(slack, /mode != 'candidate-create' && github\.event\.inputs\.mode != 'map-catalog-publish'/);
 });
 
 test("modeArgs 파싱 스텝이 개별 인자를 output으로 펼친다", () => {

@@ -18,7 +18,7 @@ on:
         type: choice
         required: true
         default: exploratory
-        options: [exploratory, candidate-create, release-candidate, production-publish, rollback, rollout-update]
+        options: [exploratory, candidate-create, release-candidate, production-publish, rollback, rollout-update, map-catalog-publish]
       targetChannel:
         description: Target data pack channel
         type: choice
@@ -39,6 +39,7 @@ concurrency:
 jobs:
   data-pack-release:
     name: Data Pack Release
+    if: ${{ github.event.inputs.mode != 'map-catalog-publish' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1789,12 +1790,237 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  map-catalog-publication:
+    name: Map catalog / Immutable OCI publication
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'map-catalog-publish' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    environment:
+      name: production-datapack
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Map catalog publication / Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Map catalog publication / Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24"
+
+      - name: Map catalog publication / Validate immutable inputs
+        env:
+          MODE_INPUT: ${{ github.event.inputs.mode }}
+          TARGET_CHANNEL_INPUT: ${{ github.event.inputs.targetChannel }}
+          MODE_ARGS_INPUT: ${{ github.event.inputs.modeArgs }}
+          OCI_MAP_CATALOG_NAMESPACE: ${{ vars.OCI_MAP_CATALOG_NAMESPACE }}
+          OCI_MAP_CATALOG_BUCKET: ${{ vars.OCI_MAP_CATALOG_BUCKET }}
+          OCI_MAP_CATALOG_REGION: ${{ vars.OCI_MAP_CATALOG_REGION }}
+          OCI_MAP_CATALOG_COMPAT_ENDPOINT: ${{ vars.OCI_MAP_CATALOG_COMPAT_ENDPOINT }}
+          OCI_MAP_CATALOG_OBJECT_PREFIX: ${{ vars.OCI_MAP_CATALOG_OBJECT_PREFIX }}
+          EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: ${{ secrets.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM }}
+          EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: ${{ secrets.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM }}
+          EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: ${{ secrets.EASYSUBWAY_DATAPACK_SIGNING_KEY_ID }}
+        run: |
+          set -euo pipefail
+          [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]
+          [[ "${MODE_INPUT}" == "map-catalog-publish" ]]
+          [[ "${TARGET_CHANNEL_INPUT}" == "production" ]]
+          [[ "${GITHUB_REPOSITORY}" == "AquilaXk/easysubway-data" ]]
+          [[ "${GITHUB_REF}" == "refs/heads/main" ]]
+          [[ "${GITHUB_SHA}" =~ ^[a-f0-9]{40}$ ]]
+          [[ "${GITHUB_RUN_ATTEMPT}" == "1" ]]
+          for value in "${OCI_MAP_CATALOG_NAMESPACE}" "${OCI_MAP_CATALOG_BUCKET}" "${OCI_MAP_CATALOG_REGION}" "${OCI_MAP_CATALOG_COMPAT_ENDPOINT}" "${OCI_MAP_CATALOG_OBJECT_PREFIX}"; do
+            [[ -n "${value}" && "${value}" != *$'\n'* && "${value}" != *$'\r'* ]]
+          done
+          for value in "${EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM}" "${EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM}" "${EASYSUBWAY_DATAPACK_SIGNING_KEY_ID}"; do
+            [[ -n "${value}" ]]
+          done
+          node --input-type=module <<'NODE'
+          import { readFileSync, appendFileSync, lstatSync } from "node:fs";
+          import { execFileSync } from "node:child_process";
+          import path from "node:path";
+          import { canonicalJson, signingPublicKey, verifyRsaSha256Signature } from "./tools/datapack/lib/manifest-validation.mjs";
+          import { rsaSha256Signature, signingPrivateKey } from "./tools/datapack/lib/manifest-signing.mjs";
+          import { validateServerRouteBundlePublicationDescriptor } from "./tools/datapack/build-server-route-bundle-publication-descriptor.mjs";
+
+          let args;
+          try { args = JSON.parse(process.env.MODE_ARGS_INPUT ?? ""); } catch { throw new Error("modeArgs must be JSON"); }
+          if (!args || typeof args !== "object" || Array.isArray(args)) throw new Error("modeArgs must be an object");
+          const allowed = ["allowGaps", "buildSpecPath", "serverRouteDescriptorPath"];
+          if (canonicalJson(Object.keys(args).sort()) !== canonicalJson(allowed)) throw new Error("map-catalog-publish modeArgs keys mismatch");
+          if (args.allowGaps !== "false") throw new Error("map-catalog-publish requires allowGaps=false");
+          if (args.buildSpecPath !== "tools/datapack/release/candidate-build-spec.json") throw new Error("map-catalog-publish buildSpecPath mismatch");
+          for (const [label, value] of [["buildSpecPath", args.buildSpecPath], ["serverRouteDescriptorPath", args.serverRouteDescriptorPath]]) {
+            if (typeof value !== "string" || !value || path.isAbsolute(value) || value.split("/").some((part) => !part || part === "." || part === "..")) throw new Error(`${label} must be a repo-relative path`);
+            const stat = lstatSync(value);
+            if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`${label} must be a tracked non-symlink regular file`);
+            execFileSync("git", ["ls-files", "--error-unmatch", "--", value], { stdio: "ignore" });
+            const currentMainBytes = execFileSync("git", ["show", `${process.env.GITHUB_SHA}:${value}`]);
+            if (!readFileSync(value).equals(currentMainBytes)) throw new Error(`${label} bytes must equal GITHUB_SHA:path`);
+          }
+          const bytes = readFileSync(args.serverRouteDescriptorPath);
+          let raw;
+          try { raw = JSON.parse(bytes); } catch { throw new Error("server route descriptor must be JSON"); }
+          if (!bytes.equals(Buffer.from(canonicalJson(raw)))) throw new Error("server route descriptor must be canonical JSON");
+          const descriptor = validateServerRouteBundlePublicationDescriptor(raw);
+          if (descriptor.release.result !== "GO") throw new Error("server route descriptor release result must be GO");
+          if (descriptor.producer.repository !== process.env.GITHUB_REPOSITORY) throw new Error("server route descriptor producer repository mismatch");
+          if (descriptor.producer.gitSha === process.env.GITHUB_SHA) throw new Error("server route descriptor producer SHA must precede current main");
+          execFileSync("git", ["merge-base", "--is-ancestor", descriptor.producer.gitSha, process.env.GITHUB_SHA], { stdio: "ignore" });
+          if (Date.parse(descriptor.manifest.freshUntil) <= Date.now()) throw new Error("server route descriptor manifest is stale");
+          const buildSpec = JSON.parse(readFileSync(args.buildSpecPath));
+          if (typeof buildSpec.publishedAt !== "string" || !Number.isFinite(Date.parse(buildSpec.publishedAt))) throw new Error("build spec publishedAt is invalid");
+          if (buildSpec.releaseSequence !== descriptor.manifest.releaseSequence) throw new Error("build spec releaseSequence must equal server route descriptor manifest");
+          if (buildSpec.sourceSnapshotSetHash !== descriptor.sourceSnapshotSetHash) throw new Error("build spec sourceSnapshotSetHash must equal server route descriptor");
+          const probe = "map-catalog-publication-signing-capability-v1";
+          if (!verifyRsaSha256Signature(signingPublicKey(), probe, rsaSha256Signature(signingPrivateKey(), probe))) throw new Error("signing capability mismatch");
+          const output = process.env.GITHUB_OUTPUT;
+          const environment = process.env.GITHUB_ENV;
+          const values = {
+            MAP_CATALOG_BUILD_SPEC_PATH: args.buildSpecPath,
+            MAP_CATALOG_RELEASE_SEQUENCE: String(descriptor.manifest.releaseSequence),
+            MAP_CATALOG_SIGNED_FINAL_DESCRIPTOR_SHA256: descriptor.descriptorSha256,
+            MAP_CATALOG_STATION_SET_SHA256: descriptor.manifest.stationSetSha256,
+            MAP_CATALOG_ACTIVE_FROM: descriptor.manifest.activeFrom,
+            MAP_CATALOG_FRESH_UNTIL: descriptor.manifest.freshUntil,
+            MAP_CATALOG_BUNDLE_ID: descriptor.manifest.bundleId,
+            MAP_CATALOG_KEY_ID: descriptor.manifest.keyId,
+            MAP_CATALOG_BUILT_AT: buildSpec.publishedAt,
+          };
+          for (const [key, value] of Object.entries(values)) {
+            if (typeof value !== "string" || !value || /[\r\n]/u.test(value)) throw new Error(`${key} is unsafe for GITHUB_ENV`);
+          }
+          appendFileSync(environment, Object.entries(values).map(([key, value]) => `${key}=${value}`).join("\n") + "\n");
+          appendFileSync(output, `validated=true\n`);
+          NODE
+          test ! -e "${RUNNER_TEMP}/map-catalog-signed-current-publication.json"
+          test ! -e "${RUNNER_TEMP}/map-catalog-signed-current-publication-receipt.json"
+
+      - name: Map catalog publication / Build signed current publication
+        env:
+          EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: ${{ secrets.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM }}
+          EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: ${{ secrets.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM }}
+          EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: ${{ secrets.EASYSUBWAY_DATAPACK_SIGNING_KEY_ID }}
+        run: |
+          set -euo pipefail
+          datapack_root="${RUNNER_TEMP}/map-catalog-current-datapack"
+          artifact_root="${RUNNER_TEMP}/map-catalog-components"
+          source_sqlite="${RUNNER_TEMP}/map-catalog-current.sqlite"
+          node tools/datapack/build-datapack.mjs \
+            --build-spec "${MAP_CATALOG_BUILD_SPEC_PATH}" \
+            --output "${datapack_root}"
+          DATAPACK_ROOT="${datapack_root}" SOURCE_SQLITE="${source_sqlite}" node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from "node:fs";
+          import { gunzipSync } from "node:zlib";
+          import { selectEffectiveDataPack, sha256, stagedPackPath } from "./tools/datapack/lib/manifest-validation.mjs";
+          const root = process.env.DATAPACK_ROOT;
+          const manifest = JSON.parse(readFileSync(`${root}/current.json`, "utf8"));
+          const active = selectEffectiveDataPack(manifest);
+          if (!active || active.id !== "capital" || active.version !== "1") throw new Error("current build must select capital@1");
+          const gzip = readFileSync(`${root}/${stagedPackPath(active)}`);
+          if (active.sha256 !== sha256(gzip)) throw new Error("current active pack SHA mismatch");
+          const sqlite = gunzipSync(gzip);
+          if (active.sqliteSha256 !== sha256(sqlite)) throw new Error("current active pack gunzip SHA mismatch");
+          writeFileSync(process.env.SOURCE_SQLITE, sqlite, { flag: "wx", mode: 0o600 });
+          NODE
+          node tools/datapack/emit-artifact-components.mjs \
+            --source-sqlite "${source_sqlite}" \
+            --source-provenance "${datapack_root}/current.provenance.json" \
+            --build-spec "${MAP_CATALOG_BUILD_SPEC_PATH}" \
+            --output "${artifact_root}" \
+            --map-pack-id "capital-map-1" \
+            --catalog-pack-id "capital-catalog-1" \
+            --bundle-id "${MAP_CATALOG_BUNDLE_ID}" \
+            --release-sequence "${MAP_CATALOG_RELEASE_SEQUENCE}" \
+            --active-from "${MAP_CATALOG_ACTIVE_FROM}" \
+            --fresh-until "${MAP_CATALOG_FRESH_UNTIL}" \
+            --built-at "${MAP_CATALOG_BUILT_AT}" \
+            --key-id "${MAP_CATALOG_KEY_ID}" \
+            --evaluation-at "${MAP_CATALOG_BUILT_AT}" \
+            --station-line-input tools/datapack/release/current-capital-accessibility-full/station-line-input.json \
+            --route-edge-input tools/datapack/release/current-capital-accessibility-full/route-edge-input.json
+          ARTIFACT_ROOT="${artifact_root}" DESCRIPTOR_OUTPUT="${RUNNER_TEMP}/map-catalog-signed-current-publication.json" node --input-type=module <<'NODE'
+          import { buildMapCatalogSignedCurrentPublication } from "./tools/datapack/build-map-catalog-signed-current-publication.mjs";
+          const serverRoute = {
+            releaseSequence: Number(process.env.MAP_CATALOG_RELEASE_SEQUENCE),
+            descriptorSha256: process.env.MAP_CATALOG_SIGNED_FINAL_DESCRIPTOR_SHA256,
+            stationSetSha256: process.env.MAP_CATALOG_STATION_SET_SHA256,
+            freshUntil: process.env.MAP_CATALOG_FRESH_UNTIL,
+          };
+          const mapCatalog = await buildMapCatalogSignedCurrentPublication({
+            artifactRoot: process.env.ARTIFACT_ROOT,
+            output: process.env.DESCRIPTOR_OUTPUT,
+            producerGitSha: process.env.GITHUB_SHA,
+            releaseSequence: serverRoute.releaseSequence,
+            signedFinalDescriptorSha256: serverRoute.descriptorSha256,
+            freshUntil: serverRoute.freshUntil,
+          });
+          if (mapCatalog.stationSetSha256 !== serverRoute.stationSetSha256) throw new Error("map catalog station set must equal server route station set");
+          NODE
+
+      - name: Map catalog publication / Recheck current main
+        run: |
+          set -euo pipefail
+          remote_main="$(gh api repos/AquilaXk/easysubway-data/git/ref/heads/main --jq '.object.sha')"
+          [[ "${remote_main}" == "${GITHUB_SHA}" ]]
+
+      - name: Map catalog publication / Publish immutable OCI objects
+        env:
+          EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: ${{ secrets.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM }}
+          EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: ${{ secrets.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM }}
+          EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: ${{ secrets.EASYSUBWAY_DATAPACK_SIGNING_KEY_ID }}
+          OCI_MAP_CATALOG_PUBLISHER_ACCESS_KEY: ${{ secrets.OCI_MAP_CATALOG_PUBLISHER_ACCESS_KEY }}
+          OCI_MAP_CATALOG_PUBLISHER_SECRET_KEY: ${{ secrets.OCI_MAP_CATALOG_PUBLISHER_SECRET_KEY }}
+          OCI_MAP_CATALOG_NAMESPACE: ${{ vars.OCI_MAP_CATALOG_NAMESPACE }}
+          OCI_MAP_CATALOG_BUCKET: ${{ vars.OCI_MAP_CATALOG_BUCKET }}
+          OCI_MAP_CATALOG_REGION: ${{ vars.OCI_MAP_CATALOG_REGION }}
+          OCI_MAP_CATALOG_COMPAT_ENDPOINT: ${{ vars.OCI_MAP_CATALOG_COMPAT_ENDPOINT }}
+          OCI_MAP_CATALOG_OBJECT_PREFIX: ${{ vars.OCI_MAP_CATALOG_OBJECT_PREFIX }}
+        run: |
+          set -euo pipefail
+          handoff="${RUNNER_TEMP}/map-catalog-publication-handoff.txt"
+          test ! -e "${handoff}"
+          node tools/datapack/publish-map-catalog-signed-current-publication.mjs \
+            --artifact-root "${RUNNER_TEMP}/map-catalog-components" \
+            --descriptor "${RUNNER_TEMP}/map-catalog-signed-current-publication.json" \
+            --receipt-output "${RUNNER_TEMP}/map-catalog-signed-current-publication-receipt.json" > "${handoff}"
+          HANDOFF_PATH="${handoff}" node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const lines = readFileSync(process.env.HANDOFF_PATH, "utf8").split("\n");
+          if (lines.length !== 5 || lines[4] !== "") throw new Error("publication handoff must contain exactly four lines");
+          const expected = ["DESCRIPTOR_SHA", "DESCRIPTOR_LOCATOR", "RECEIPT_SHA", "RECEIPT_LOCATOR"];
+          for (const [index, key] of expected.entries()) {
+            const [actual, value, ...rest] = lines[index].split(" ");
+            if (actual !== key || !value || rest.length !== 0) throw new Error("publication handoff format is invalid");
+          }
+          if (!/^[a-f0-9]{64}$/.test(lines[0].slice("DESCRIPTOR_SHA ".length)) || !/^[a-f0-9]{64}$/.test(lines[2].slice("RECEIPT_SHA ".length))) throw new Error("publication handoff SHA is invalid");
+          for (const line of [lines[1], lines[3]]) if (!line.slice(line.indexOf(" ") + 1).startsWith("oci://")) throw new Error("publication handoff locator is invalid");
+          NODE
+
+      - name: Map catalog publication / Write safe handoff
+        run: |
+          set -euo pipefail
+          handoff="${RUNNER_TEMP}/map-catalog-publication-handoff.txt"
+          test -s "${handoff}"
+          while IFS=' ' read -r key value; do
+            case "${key}" in
+              DESCRIPTOR_SHA|DESCRIPTOR_LOCATOR|RECEIPT_SHA|RECEIPT_LOCATOR) printf '%s %s\n' "${key}" "${value}" >> "${GITHUB_STEP_SUMMARY}" ;;
+              *) exit 1 ;;
+            esac
+          done < "${handoff}"
+
   notify-slack-datapack-result:
     name: Slack / Data pack release result
     runs-on: ubuntu-latest
     permissions: {}
     needs: data-pack-release
-    if: ${{ always() && github.event.inputs.mode != 'candidate-create' }}
+    if: ${{ always() && github.event.inputs.mode != 'candidate-create' && github.event.inputs.mode != 'map-catalog-publish' }}
     env:
       SLACK_RELEASE_WEBHOOK_URL: ${{ secrets.SLACK_RELEASE_WEBHOOK_URL }}
     steps:
