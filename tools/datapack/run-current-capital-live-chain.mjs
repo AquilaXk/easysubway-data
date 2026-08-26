@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFile as execFileCallback } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { cp, lstat, mkdir, mkdtemp, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -37,6 +37,9 @@ const EXCLUDED_STAGED_PATHS = Object.freeze([
   "tools/datapack/release/current-capital-accessibility-full",
   "tools/datapack/release/current-capital-accessibility-transition.json",
 ]);
+const CURRENT_KRIC_EXIT_PLAN_INPUTS_PATH = "tools/datapack/release/current-kric-exit-plan-inputs.json";
+export const CURRENT_KRIC_EXIT_REQUEST_TIMEOUT_MS = 30_000;
+export const CURRENT_KRIC_EXIT_REQUEST_INTERVAL_MS = 250;
 
 function requiredSha(value) { if (!/^[a-f0-9]{40}$/.test(value ?? "")) throw new Error("repository SHA mismatch"); return value; }
 function requiredOperation(value) { if (typeof value !== "string" || !/^[a-z0-9][a-z0-9-]{7,127}$/u.test(value)) throw new Error("operation identity mismatch"); return value; }
@@ -44,6 +47,98 @@ async function requireRealDirectory(directory, label) { const stat = await lstat
 async function requireAbsent(target, label) { try { await lstat(target); } catch (error) { if (error?.code === "ENOENT") return; throw error; } throw new Error(`${label} must be absent`); }
 function narrowRunnerEnv(env) { return { PATH: env.PATH ?? "", RUNNER_TEMP: env.RUNNER_TEMP ?? "" }; }
 function narrowOciEnv(env) { return { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: env.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL ?? "" }; }
+function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
+function exactKeys(value, keys, label) {
+  if (value == null || typeof value !== "object" || Array.isArray(value)
+    || Object.keys(value).sort().join("\\u0000") !== [...keys].sort().join("\\u0000")) {
+    throw new Error(`${label} keys mismatch`);
+  }
+}
+function requiredRelativePath(value, label) {
+  if (typeof value !== "string" || value === "" || path.posix.isAbsolute(value) || path.win32.isAbsolute(value) || value.includes("\\")
+    || value.split("/").some((part) => part === "" || part === "." || part === "..")) {
+    throw new Error(`${label} path mismatch`);
+  }
+  return value;
+}
+function requiredBindingSha(value, label) {
+  if (!/^[a-f0-9]{64}$/u.test(value ?? "")) throw new Error(`${label} hash mismatch`);
+  return value;
+}
+async function readStagedRegularFile(stagedRoot, relativePath, label) {
+  const root = path.resolve(stagedRoot);
+  await requireRealDirectory(root, "staged repository root");
+  const relative = requiredRelativePath(relativePath, label);
+  let current = root;
+  for (const [index, segment] of relative.split("/").entries()) {
+    current = path.join(current, segment);
+    const stat = await lstat(current);
+    const isLast = index === relative.split("/").length - 1;
+    if (stat.isSymbolicLink() || isLast && !stat.isFile() || !isLast && !stat.isDirectory()) {
+      throw new Error(`${label} must be a real regular file`);
+    }
+  }
+  return { path: current, bytes: await readFile(current) };
+}
+
+export async function resolveCurrentKricExitPlanInputs(stagedRoot) {
+  const bindingFile = await readStagedRegularFile(stagedRoot, CURRENT_KRIC_EXIT_PLAN_INPUTS_PATH, "current KRIC exit binding");
+  let binding;
+  try { binding = JSON.parse(bindingFile.bytes.toString("utf8")); } catch { throw new Error("current KRIC exit binding JSON mismatch"); }
+  exactKeys(binding, ["schemaVersion", "artifactKind", "providerCodeCatalog", "routeRosters"], "current KRIC exit binding");
+  if (binding.schemaVersion !== 1 || binding.artifactKind !== "current-kric-exit-plan-inputs") {
+    throw new Error("current KRIC exit binding identity mismatch");
+  }
+  exactKeys(binding.providerCodeCatalog, ["candidateId", "relativePath", "sha256", "artifactKind", "sourceId"], "provider code catalog binding");
+  exactKeys(binding.routeRosters, ["candidateId", "relativePath", "sha256", "artifactKind", "sourceId", "targetVersion"], "route rosters binding");
+  const inputs = [
+    { key: "providerCodeCatalog", binding: binding.providerCodeCatalog, admissionStatus: "admitted_as_code_mapping" },
+    { key: "routeRosters", binding: binding.routeRosters, admissionStatus: "admitted_to_production_inventory" },
+  ];
+  for (const { key, binding: input, admissionStatus } of inputs) {
+    if (typeof input.candidateId !== "string" || input.candidateId === ""
+      || typeof input.artifactKind !== "string" || input.artifactKind === ""
+      || typeof input.sourceId !== "string" || input.sourceId === "") {
+      throw new Error(`${key} binding identity mismatch`);
+    }
+    requiredBindingSha(input.sha256, `${key} binding`);
+    requiredRelativePath(input.relativePath, `${key} binding`);
+    const file = await readStagedRegularFile(stagedRoot, input.relativePath, `${key} binding`);
+    if (sha256(file.bytes) !== input.sha256) throw new Error(`${key} binding hash mismatch`);
+    let source;
+    try { source = JSON.parse(file.bytes.toString("utf8")); } catch { throw new Error(`${key} source JSON mismatch`); }
+    if (source?.schemaVersion !== 1 || source.artifactKind !== input.artifactKind || source.sourceId !== input.sourceId) {
+      throw new Error(`${key} source identity mismatch`);
+    }
+    if (key === "routeRosters" && source.targetVersion !== input.targetVersion) {
+      throw new Error("route roster targetVersion mismatch");
+    }
+  }
+  const [candidatesFile, targetsFile] = await Promise.all([
+    readStagedRegularFile(stagedRoot, "tools/datapack/source-candidates.json", "source candidates"),
+    readStagedRegularFile(stagedRoot, "tools/datapack/nationwide-coverage-targets.json", "nationwide coverage targets"),
+  ]);
+  let candidates;
+  let targets;
+  try {
+    candidates = JSON.parse(candidatesFile.bytes.toString("utf8"));
+    targets = JSON.parse(targetsFile.bytes.toString("utf8"));
+  } catch { throw new Error("current KRIC exit supporting contract JSON mismatch"); }
+  for (const { key, binding: input, admissionStatus } of inputs) {
+    const matches = candidates?.candidates?.filter(({ id }) => id === input.candidateId) ?? [];
+    if (matches.length !== 1 || matches[0].admissionStatus !== admissionStatus) {
+      throw new Error(`${key} candidate identity mismatch`);
+    }
+  }
+  if (typeof binding.routeRosters.targetVersion !== "string" || binding.routeRosters.targetVersion === ""
+    || targets?.targetVersion !== binding.routeRosters.targetVersion) {
+    throw new Error("route roster targetVersion mismatch");
+  }
+  return {
+    providerCodeCatalogRelativePath: binding.providerCodeCatalog.relativePath,
+    routeRostersRelativePath: binding.routeRosters.relativePath,
+  };
+}
 
 export function resolveStagedIncheonTopologyPath(inventory) {
   const matches = inventory?.sources?.filter(({ id }) => id === "incheon-transit-station-info") ?? [];
@@ -70,20 +165,22 @@ async function assertRemoteMain({ root, repositorySha, execFileImpl }) {
   if (String(stdout).trimEnd() !== `${repositorySha}\trefs/heads/main`) throw new Error("exact remote main preflight failed");
 }
 
-export function buildCurrentCapitalLiveChainPlan({ repositoryRoot, repositorySha, operationId, stagedRoot, transferObservationDirectory, transferReceiptPath, incheonTopologyRelativePath, outputPaths }) {
+export function buildCurrentCapitalLiveChainPlan({ repositoryRoot, repositorySha, operationId, stagedRoot, transferObservationDirectory, transferReceiptPath, incheonTopologyRelativePath, providerCodeCatalogRelativePath, routeRostersRelativePath, outputPaths }) {
   requiredSha(repositorySha); requiredOperation(operationId);
   if (![repositoryRoot, stagedRoot, transferObservationDirectory, transferReceiptPath].every((value) => path.isAbsolute(value ?? ""))) throw new Error("live-chain plan paths must be absolute");
   if (typeof incheonTopologyRelativePath !== "string" || path.posix.isAbsolute(incheonTopologyRelativePath) || incheonTopologyRelativePath.includes("\\")
     || incheonTopologyRelativePath.split("/").some((part) => part === "" || part === "." || part === "..")) throw new Error("Incheon topology path mismatch");
+  requiredRelativePath(providerCodeCatalogRelativePath, "provider code catalog");
+  requiredRelativePath(routeRostersRelativePath, "route rosters");
   if (!Array.isArray(outputPaths) || outputPaths.length === 0) throw new Error("live-chain output paths mismatch");
   const at = (...parts) => path.join(stagedRoot, ...parts);
   return { outputs: Object.freeze([...outputPaths]), steps: [
     { id: "materialize-public-route-map", script: "tools/datapack/rebind-current-active-public-route-map-materialization.mjs", args: ["--repository-root", stagedRoot] },
     { id: "rebind-transfer", script: "tools/datapack/rebind-current-live-chain-transfer-derived-identities.mjs", args: ["--repository-root", stagedRoot, "--observation-directory", transferObservationDirectory, "--receipt", transferReceiptPath] },
     { id: "rebind-facility", script: "tools/datapack/rebind-current-active-facility-derived-identity.mjs", args: ["--repository-root", stagedRoot] },
-    { id: "build-exit-plan", script: "tools/datapack/build-current-kric-exit-collection-plan.mjs", args: ["--canonical-pack", at("tools/datapack/release/capital-production-canonical-pack.json"), "--coverage-targets", at("tools/datapack/nationwide-coverage-targets.json"), "--provider-code-catalog", at("tools/datapack/sources/kric-provider-code-catalog-20260228.json"), "--route-rosters", at("tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json"), "--source-inventory", at("tools/datapack/source-inventory.json"), "--incheon-topology", at(incheonTopologyRelativePath), "--coverage-selector", "capital-seoul-metro-production", "--output", at("current-kric-exit-plan.json")] },
+    { id: "build-exit-plan", script: "tools/datapack/build-current-kric-exit-collection-plan.mjs", args: ["--canonical-pack", at("tools/datapack/release/capital-production-canonical-pack.json"), "--coverage-targets", at("tools/datapack/nationwide-coverage-targets.json"), "--provider-code-catalog", at(providerCodeCatalogRelativePath), "--route-rosters", at(routeRostersRelativePath), "--source-inventory", at("tools/datapack/source-inventory.json"), "--incheon-topology", at(incheonTopologyRelativePath), "--coverage-selector", "capital-seoul-metro-production", "--output", at("current-kric-exit-plan.json")] },
     { id: "assert-current-topology-freshness", module: "tools/datapack/register-current-static-network-successors.mjs", exportName: "assertCurrentStaticNetworkTopologyAdmission" },
-    { id: "collect-kric-exit", script: "tools/datapack/collect-current-kric-exit-path-provider-snapshot.mjs", args: ["--collection-plan", at("current-kric-exit-plan.json"), "--source-id", "kric-station-movement-standard", "--output", at("current-kric-exit-snapshot.json"), "--request-timeout-ms", "30000", "--request-interval-ms", "250"] },
+    { id: "collect-kric-exit", script: "tools/datapack/collect-current-kric-exit-path-provider-snapshot.mjs", args: ["--collection-plan", at("current-kric-exit-plan.json"), "--source-id", "kric-station-movement-standard", "--output", at("current-kric-exit-snapshot.json"), "--request-timeout-ms", String(CURRENT_KRIC_EXIT_REQUEST_TIMEOUT_MS), "--request-interval-ms", String(CURRENT_KRIC_EXIT_REQUEST_INTERVAL_MS)] },
     { id: "bind-exit-collection", script: "tools/datapack/build-current-kric-exit-collection-receipt.mjs", args: ["--collection-plan", at("current-kric-exit-plan.json"), "--provider-snapshot", at("current-kric-exit-snapshot.json"), "--repository", "AquilaXk/easysubway-data", "--repository-sha", repositorySha, "--operation-id", operationId, "--output", at("current-kric-exit-collection-bundle.json")] },
     { id: "admit-exit", script: "tools/datapack/build-current-exit-path-source-admission.mjs", args: ["--provider-snapshot", at("current-kric-exit-snapshot.json"), "--collection-plan", at("current-kric-exit-plan.json"), "--facility-admission", at("tools/datapack/release/current-capital-facility-source-admission.json"), "--candidate-build-spec", at("tools/datapack/release/candidate-build-spec.json"), "--source-inventory", at("tools/datapack/source-inventory.json"), "--source-snapshots", at("tools/datapack/release/source-snapshots.json"), "--observed-at", "FROM_PROVIDER_CAPTURED_AT", "--output-directory", at("current-exit-admission")] },
     { id: "bind-current-fan-in", script: "tools/datapack/build-current-capital-live-chain-boundary.mjs", args: [] },
@@ -171,6 +268,7 @@ export async function runCurrentCapitalLiveChain({ repositoryRoot, runnerTemp, r
   await rebindPublicRouteMapImpl({ repositoryRoot: stagedRoot });
   await rebindTransferImpl({ repositoryRoot: stagedRoot, observationDirectory: transferObservationDirectory, receiptPath: transferReceiptPath });
   await rebindFacilityImpl({ repositoryRoot: stagedRoot });
+  const currentKricExitPlanInputs = await resolveCurrentKricExitPlanInputs(stagedRoot);
   const [stagedCandidate, stagedInventory, stagedSnapshotLedger] = await Promise.all([
     readFile(path.join(stagedRoot, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
     readFile(path.join(stagedRoot, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
@@ -178,7 +276,7 @@ export async function runCurrentCapitalLiveChain({ repositoryRoot, runnerTemp, r
   ]);
   const incheonTopologyRelativePath = resolveStagedIncheonTopologyPath(stagedInventory);
   const outputPaths = currentCapitalLiveChainOutputPaths({ candidate: stagedCandidate, sourceInventory: stagedInventory, sourceSnapshotLedger: stagedSnapshotLedger });
-  const plan = buildCurrentCapitalLiveChainPlan({ repositoryRoot: root, repositorySha, operationId, stagedRoot, transferObservationDirectory, transferReceiptPath, incheonTopologyRelativePath, outputPaths });
+  const plan = buildCurrentCapitalLiveChainPlan({ repositoryRoot: root, repositorySha, operationId, stagedRoot, transferObservationDirectory, transferReceiptPath, incheonTopologyRelativePath, ...currentKricExitPlanInputs, outputPaths });
   const buildExitPlan = plan.steps.find((entry) => entry.id === "build-exit-plan");
   await execFileImpl(process.execPath, [buildExitPlan.script, ...buildExitPlan.args], { cwd: root, env: { ...narrowRunnerEnv(env), RUNNER_TEMP: stagedRoot } });
   const operationNow = clock();

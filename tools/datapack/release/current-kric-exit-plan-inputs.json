@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "current-kric-exit-plan-inputs",
+  "providerCodeCatalog": {
+    "candidateId": "kric-provider-code-catalog",
+    "relativePath": "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
+    "sha256": "18ef12fce6a42f63e39f6804e62654f27c2dc199485fc5e6e49c77a02acbb837",
+    "artifactKind": "kric-provider-line-catalog",
+    "sourceId": "kric-provider-code-catalog-20260228"
+  },
+  "routeRosters": {
+    "candidateId": "kric-subway-route-info",
+    "relativePath": "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
+    "sha256": "41814696e263b29fba712b4b53c615cfe35aa55291849b80f6dd83646b262ee3",
+    "artifactKind": "kric-nationwide-route-rosters",
+    "sourceId": "kric-subway-route-info",
+    "targetVersion": "2026-07-13"
+  }
+}

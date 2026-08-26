@@ -43,6 +43,7 @@ import {
   assertLineScopeRedescriptionsMatchActualRequiredSet,
   assertInheritedRowsUnchanged,
   assertNonTransitionReasons,
+  auditedInheritedClaimRequirementKeys,
   classifyLineScopeTransition,
   inheritedRowSnapshot,
   retireInheritedLineScopes,
@@ -3381,6 +3382,26 @@ test("승계 pack line scope의 축소는 빈 candidate와 inventory여도 거�
       fixture.spec, fixture.pack, fixture.inventory, fixture.targets, fixture.inheritedPack,
     ),
     /inherited candidate pack coverageScope\.lineIds must match candidate pack and source inventory: inherited-shrink/,
+  );
+});
+
+test("snapshot 없는 inherited route-map claim은 current evidence로 승계되지 않는다", () => {
+  const coverageScope = {
+    lineIds: ["line-a"],
+    sourceDomains: ["route_map_positions"],
+    regionIds: ["region"],
+    operatorIds: ["operator"],
+  };
+  const source = { id: "snapshotless-source", coverageScope };
+
+  assert.throws(
+    () => auditedInheritedClaimRequirementKeys({
+      spec: { lineScopeRedescriptions: [] },
+      inventory: { sources: [source] },
+      targets: { activeLineScopes: [{ regionId: "region", operatorId: "operator", lineId: "line-a" }] },
+      inheritedPack: { packs: [{ sourceInventory: [structuredClone(source)] }] },
+    }),
+    /snapshotless inherited route-map claims are forbidden: snapshotless-source/,
   );
 });
 

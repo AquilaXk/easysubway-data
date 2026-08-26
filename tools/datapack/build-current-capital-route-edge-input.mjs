@@ -11,7 +11,7 @@ const OUTPUT_DIRECTORY = "tools/datapack/release/current-capital-accessibility-f
 const ROUTE_STATION_LINE_COUNT = 1102;
 
 export function buildCurrentCapitalRouteEdgeInput(input) {
-  validateFixtureEdgeCounts(input.canonicalPack, { RIDE: 2208, ENTRY: 2, EXIT: 2 }, "projected");
+  validateFixtureEdgeCounts(input.canonicalPack, { RIDE: 2208 }, "projected");
   const station = buildCurrentCapitalStationLineInput(input);
   const pack = input.canonicalPack.packs.find(({ id }) => id === "capital");
   const stationLines = routeStationLines(pack, station.stationLines);
@@ -41,13 +41,13 @@ export async function main(argv = process.argv.slice(2), { repositoryRoot = file
   const root = path.resolve(repositoryRoot); const output = path.join(root, OUTPUT_DIRECTORY);
   await outputMustBeAbsent(output);
   const input = await readCurrentCapitalInputs(root, { readTransitionBoundaryImpl, readCurrentFanInBoundaryImpl });
-  validateFixtureEdgeCounts(input.canonicalPack, { RIDE: 2200, ENTRY: 2, EXIT: 2 }, "raw");
+  validateFixtureEdgeCounts(input.canonicalPack, { RIDE: 2200 }, "raw");
   const projectedFixture = await projectFixtureImpl({
     buildSpec: input.candidateBuildSpec,
     sourceFixture: input.canonicalPack,
     repositoryRoot: root,
   });
-  validateFixtureEdgeCounts(projectedFixture, { RIDE: 2208, ENTRY: 2, EXIT: 2 }, "projected");
+  validateFixtureEdgeCounts(projectedFixture, { RIDE: 2208 }, "projected");
   const projectedInput = { ...input, canonicalPack: projectedFixture };
   const station = buildCurrentCapitalStationLineInput(projectedInput);
   const route = buildCurrentCapitalRouteEdgeInput(projectedInput);

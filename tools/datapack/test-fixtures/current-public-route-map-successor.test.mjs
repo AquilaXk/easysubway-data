@@ -71,6 +71,39 @@ test("already-public-root fixture activation preserves one valid source lineage 
   assert.equal(candidate.sourceSnapshotIds[0], result.snapshotId);
 });
 
+test("current public fixture rejects a fork outside the selected head before mutation", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-forked-lineage-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, root, {
+    now: new Date("2026-08-26T04:00:00.000Z"),
+    activatePublicRouteMap: false,
+  });
+  const [candidate, snapshots] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+  ]);
+  const selectedId = candidate.sourceSnapshotIds[candidate.sourceSnapshots.findIndex(({ sourceId }) =>
+    sourceId === "seoul-metro-route-map-positions")];
+  const selected = snapshots.find(({ snapshotId }) => snapshotId === selectedId);
+  const parent = snapshots.find(({ snapshotId }) => snapshotId === selected.previousSnapshotId);
+  assert.ok(selected);
+  assert.ok(parent);
+  const fork = structuredClone(selected);
+  fork.snapshotId = `${selected.snapshotId}-fork`;
+  fork.retrievedAt = new Date(Date.parse(selected.retrievedAt) + 1_000).toISOString();
+  fork.diffSummary = buildSnapshotDiff(parent, fork);
+  snapshots.push(fork);
+  await writeFile(
+    path.join(root, "tools/datapack/release/source-snapshots.json"),
+    `${JSON.stringify(snapshots, null, 2)}\n`,
+  );
+
+  await assert.rejects(
+    activateSyntheticCurrentPublicRouteMapSuccessor(root, { now: new Date("2026-08-26T04:15:00.000Z") }),
+    /SOURCE_LINEAGE_BROKEN: snapshot fork/,
+  );
+});
+
 test("current public fixture rejects a duplicate or out-of-scope candidate lineage before mutation", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-invalid-lineage-"));
   t.after(() => rm(root, { recursive: true, force: true }));

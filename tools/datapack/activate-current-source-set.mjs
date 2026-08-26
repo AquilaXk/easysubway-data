@@ -1182,6 +1182,8 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
   const reviewedCapital = reviewedPack.packs?.find(({ id }) => id === "capital");
   if (!reviewedCapital) throw new Error("current reviewed capital pack is missing");
   syncCanonicalAccessibilityEvidence(nextCanonical, reviewedCapital);
+  retainPreAuthorityRideEdges(reviewedPack, "reviewed pack");
+  retainPreAuthorityRideEdges(nextCanonical, "canonical pack");
   const projection = projectCapitalTopologyIntoCanonicalFixture(
     nextCanonical,
     topology,
@@ -1241,6 +1243,17 @@ function exactCurrentTopologySnapshotIdentity({
     throw new Error(`current ${prefix} snapshot path identity mismatch`);
   }
   return match[1];
+}
+
+function retainPreAuthorityRideEdges(fixture, label) {
+  const packs = fixture?.packs?.filter(({ id }) => id === "capital") ?? [];
+  const edges = packs[0]?.networkEdges;
+  if (packs.length !== 1 || !Array.isArray(edges)
+    || edges.some(({ edgeType }) => !["RIDE", "ENTRY", "EXIT"].includes(edgeType))) {
+    throw new Error(`current ${label} pre-authority edge contract is invalid`);
+  }
+  packs[0].networkEdges = edges.filter(({ edgeType }) => edgeType === "RIDE");
+  return fixture;
 }
 
 function validateCurrentCapitalTopologyOwnership(topology) {
@@ -1825,7 +1838,10 @@ export async function validatePreparedCandidate({
   await runNodeImpl("tools/datapack/build-datapack.mjs", [
     "--build-spec", validationSpecPath,
     "--output", outputPath,
-  ], { env: { EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow } });
+  ], { env: {
+    EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow,
+    EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY: "true",
+  } });
 }
 
 function validateBuildNow(buildNow, handoff) {
@@ -2214,7 +2230,7 @@ export async function generateCurrentSourceActivation({
       parseJson(await readFile(reviewedPath), "current reviewed pack"),
       productionScopePolicy.inactiveLineExclusions,
     );
-    const reviewed = reviewedBase;
+    const reviewed = retainPreAuthorityRideEdges(reviewedBase, "reviewed pack");
     const reviewedBytes = jsonBytes(reviewed);
     await writeFile(reviewedPath, reviewedBytes);
     const reviewedCapital = reviewed.packs?.find(({ id }) => id === "capital");
@@ -2223,6 +2239,7 @@ export async function generateCurrentSourceActivation({
       parseJson(canonicalBytes, "canonical pack"),
       reviewedCapital,
     );
+    retainPreAuthorityRideEdges(canonical, "canonical pack");
     projectCapitalTopologyIntoCanonicalFixture(
       canonical,
       capitalTopology,

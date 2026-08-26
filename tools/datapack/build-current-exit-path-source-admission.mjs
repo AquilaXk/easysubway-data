@@ -9,7 +9,6 @@ import {
   canonicalExitPathAdmissionJson,
 } from "./build-exit-path-admission.mjs";
 import { readRegularSnapshot } from "./build-current-kric-exit-collection-plan.mjs";
-import { canonicalFacilitySourceAdmissionJson } from "./build-facility-source-admission.mjs";
 import { canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-current-capital-facility-source-admission.mjs";
 import { canonicalKricExitPathProviderSnapshotJson } from "./collect-kric-exit-path-provider-snapshot.mjs";
 import { consumeCurrentKricExitCollectionBundle } from "./consume-current-kric-exit-collection-bundle.mjs";
@@ -334,16 +333,16 @@ function validateProviderRow(row) {
 }
 
 function validateFacilityAdmission(value, collectionPlan, candidateBuildSpec, sourceSnapshots, observedAt) {
-  if (value?.artifactKind === "current-capital-facility-source-admission") {
-    return adaptCurrentCapitalFacilityAdmission(value, collectionPlan, candidateBuildSpec, sourceSnapshots, observedAt);
-  }
-  canonicalFacilitySourceAdmissionJson(value);
-  if (value.artifactKind !== "facility-source-admission-matrix" || value.decision !== "GO"
-    || !Array.isArray(value.cells) || value.cells.length === 0
-    || !Array.isArray(value.queryPartition?.joined)) {
+  if (value?.artifactKind !== "current-capital-facility-source-admission") {
     throw new Error("facility admission identity mismatch");
   }
-  return value;
+  return adaptCurrentCapitalFacilityAdmission(
+    value,
+    collectionPlan,
+    candidateBuildSpec,
+    sourceSnapshots,
+    observedAt,
+  );
 }
 
 function adaptCurrentCapitalFacilityAdmission(value, collectionPlan, candidateBuildSpec, sourceSnapshots, observedAt) {

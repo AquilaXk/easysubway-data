@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-current-capital-facility-source-admission.mjs";
-import { canonicalCurrentStationLineInputJson } from "./build-current-station-line-accessibility.mjs";
+import { canonicalCurrentCapitalStationLineInputJson } from "./current-capital-station-line-contract.mjs";
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
 import { isActiveCandidateSourceSequence } from "./rebind-current-candidate-source-snapshots.mjs";
 
@@ -138,7 +138,7 @@ async function inspectCurrentCapitalAccessibilityTransition({ repositoryRoot, al
 }
 
 function buildTransitionPayload({ nextCandidate, previous, previousBytes, facility, facilityBytes }) {
-  if (canonicalCurrentStationLineInputJson(previous) !== previousBytes.toString("utf8")) {
+  if (canonicalCurrentCapitalStationLineInputJson(previous) !== previousBytes.toString("utf8")) {
     throw new Error("previous production station-line bytes are not canonical");
   }
   if (canonicalCurrentCapitalFacilitySourceAdmissionJson(facility) !== facilityBytes.toString("utf8")) {

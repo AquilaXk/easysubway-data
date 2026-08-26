@@ -45,7 +45,7 @@ const outDir = path.join(
   "assets/datapacks/metro_map_pack/basemap",
 );
 const dartBin = process.env.DART_BIN ?? "dart";
-const compilerVersion = "1.2.6";
+const compilerVersion = "1.3.0";
 // 바탕층 컴파일 파이프라인의 산출 의미 개정 번호(#2068 리뷰 M2, 2026-07-26).
 // compiler.version(=pubspec.lock에 잠긴 vector_graphics_compiler 패키지 버전)과
 // 분리해, "무엇을 굽는가"가 바뀔 때만 올린다.
@@ -3493,7 +3493,7 @@ function main() {
           version: compilerVersion,
         },
         // #2068 리뷰 M2(2026-07-26): compiler.version은 pubspec.lock에 잠긴
-        // **패키지 버전 그대로**를 적는 필드다(현재 1.2.6). 컴파일 의미가 바뀌었다고
+        // **패키지 버전 그대로**를 적는 필드다(현재 1.3.0). 컴파일 의미가 바뀌었다고
         // 이 값을 올리면 패키지 버전에 대한 거짓말이 되므로 올리지 않고, 산출 의미의
         // 개정은 아래 pipelineRevision으로 따로 기록한다.
         pipelineRevision: basemapPipelineRevision,

@@ -2130,12 +2130,21 @@ test("데이터팩 생성기는 일반 fixture 입력으로 production channel�
       "utf8",
     ));
     assert.equal(manifest.channel, "dev");
-    await execFileAsync(process.execPath, [
-      "tools/datapack/validate-datapack.mjs",
-      "--manifest", path.join(workspace, "validation-output/current.json"),
-      "--root", path.join(workspace, "validation-output"),
-      "--require-production",
-    ], { cwd: root, env: productionEnv });
+    assert.deepEqual(manifest.packs.map(({ artifactKind }) => artifactKind), ["fixture"]);
+    const provenance = JSON.parse(await readFile(
+      path.join(workspace, "validation-output/current.provenance.json"),
+      "utf8",
+    ));
+    assert.deepEqual(provenance.packs.map(({ artifactKind }) => artifactKind), ["fixture"]);
+    await assert.rejects(
+      execFileAsync(process.execPath, [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest", path.join(workspace, "validation-output/current.json"),
+        "--root", path.join(workspace, "validation-output"),
+        "--require-production",
+      ], { cwd: root, env: productionEnv }),
+      /production artifactKind/,
+    );
     const fixturePack = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
     fixturePack.manifest = {
       ...fixturePack.manifest,
@@ -18726,7 +18735,13 @@ async function runCandidateBuild({ buildSpecPath, output, env = productionEnv, r
 }
 
 async function runCurrentItxCandidateBuild(inputs) {
-  return runCandidateBuild(inputs);
+  return runCandidateBuild({
+    ...inputs,
+    env: {
+      ...inputs.env,
+      EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY: "true",
+    },
+  });
 }
 
 test("official OD fare release candidate는 승인된 두 방향 quote와 provenance를 SQLite에 남긴다", async () => {
@@ -18768,6 +18783,7 @@ test("official OD fare release candidate는 승인된 두 방향 quote와 proven
         || codepointCompare(left.destinationStationId, right.destinationStationId));
     assert.deepEqual(rows.map((row) => ({ ...row })), canonicalQuotes);
     const manifest = JSON.parse(await readFile(path.join(outputDir, "current.json"), "utf8"));
+    assert.equal(manifest.channel, "dev");
     assert.ok(manifest.packs[0].sourceInventory.some(
       (source) => source.id === approvedEvidence.sourceId,
     ));

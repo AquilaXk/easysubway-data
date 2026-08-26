@@ -1048,18 +1048,11 @@ function assertStoredRouteServiceEvidence(database, admissionEvidence) {
 
 function ensureVersion19(database, admissionEvidence) {
   const currentVersion = database.prepare("PRAGMA user_version").get().user_version;
-  if (currentVersion < 16 || currentVersion > CATALOG_VERSION) {
-    throw new Error(`ITX topology does not support catalog user_version ${currentVersion}`);
+  if (currentVersion !== CATALOG_VERSION) {
+    throw new Error(`ITX topology requires current catalog user_version ${CATALOG_VERSION}; found ${currentVersion}`);
   }
   const evidenceLayout = requireExactRouteServiceEvidenceLayout(database, currentVersion);
-  if (!hasColumn(database, "transit_trips", "service_class")) {
-    database.exec("ALTER TABLE transit_trips ADD COLUMN service_class TEXT NOT NULL DEFAULT 'SUBWAY'");
-  }
-  if (!hasColumn(database, "network_edges", "service_class")) {
-    database.exec("ALTER TABLE network_edges ADD COLUMN service_class TEXT NOT NULL DEFAULT 'SUBWAY'");
-  }
   ensureRouteServiceEvidenceSchemas(database, admissionEvidence, evidenceLayout);
-  database.exec(`PRAGMA user_version = ${CATALOG_VERSION}`);
 }
 
 export function applyTopology(sqlitePath, topology, admissionEvidence) {
@@ -1279,15 +1272,12 @@ async function main() {
     throw new Error("--check, --migrate-current-v18 and --project-fixture are mutually exclusive");
   }
   if (migrateCurrentV18Requested) {
-    if (stationCatalogPackPath == null) throw new Error("--migrate-current-v18 requires --station-catalog-pack");
-    await migrateCurrentV18({ packPath, indexPath, evidencePath, stationCatalogPackPath: path.resolve(root, stationCatalogPackPath) });
-    return;
+    throw new Error("--migrate-current-v18 is forbidden by the current-only datapack contract");
   }
   if (check) {
     const evidence = JSON.parse(await readFile(evidencePath, "utf8"));
-    if (evidence?.migration?.fromCatalogVersion === 18) {
-      await checkMigratedCurrentV18({ packPath, indexPath, evidencePath });
-      return;
+    if (Object.hasOwn(evidence, "migration")) {
+      throw new Error("ITX topology migration evidence is forbidden by the current-only datapack contract");
     }
   }
   const { contract, reference, source, sourceBytes } = await admittedSource(contractPath);

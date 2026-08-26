@@ -14,7 +14,10 @@ import {
   canonicalSeoulRouteMapStationName,
   collectSeoulRouteMapPositions,
 } from "./collect-seoul-route-map-positions.mjs";
-import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
+import {
+  copySyntheticCurrentPublicRouteMapRepository,
+  nextSyntheticCurrentStaticNetworkNow,
+} from "./test-fixtures/current-public-route-map-successor.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
@@ -212,7 +215,7 @@ test("current public route-map row는 canonical station membership 누락을 확
   const temporary = await mkdtemp(path.join(tmpdir(), "current-public-route-map-membership-"));
   context.after(() => rm(temporary, { recursive: true, force: true }));
   const repositoryRoot = path.join(temporary, "repository");
-  const now = new Date("2026-08-22T09:45:18.609Z");
+  const now = await nextSyntheticCurrentStaticNetworkNow(root);
   await copySyntheticCurrentPublicRouteMapRepository(root, repositoryRoot, { now });
   const [candidate, ledger, inventory, baseFixture] = await Promise.all([
     readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),

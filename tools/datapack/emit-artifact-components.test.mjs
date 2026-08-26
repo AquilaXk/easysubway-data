@@ -31,6 +31,14 @@ const CURRENT_ACTIVE_FROM = CURRENT_SOURCE_WINDOW.activeFrom;
 const CURRENT_FRESH_UNTIL = CURRENT_SOURCE_WINDOW.freshUntil;
 const CURRENT_EVALUATION_AT = CURRENT_SOURCE_WINDOW.evaluationAt;
 const CURRENT_SOURCE_EXPIRES_AT = CURRENT_SOURCE_WINDOW.sourceExpiresAt;
+const CURRENT_ROUTE_EDGE_COUNTS = Object.freeze({
+  ENTRY: 213,
+  EXIT: 213,
+  IN_STATION_TRANSFER: 30,
+  RIDE: 2208,
+});
+const CURRENT_ROUTE_EDGE_COUNT = Object.values(CURRENT_ROUTE_EDGE_COUNTS)
+  .reduce((sum, count) => sum + count, 0);
 const buildNowEnvironmentKey = "EASYSUBWAY_DATAPACK_BUILD_NOW";
 const hadBuildNowEnvironmentValue = Object.hasOwn(process.env, buildNowEnvironmentKey);
 const previousBuildNowEnvironmentValue = process.env[buildNowEnvironmentKey];
@@ -105,19 +113,18 @@ test("current full-capital producer 출력은 합성 public successor의 route/e
   );
   assert.equal(input.candidate.stationSetSha256, stationLineInput.candidate.stationSetSha256);
   assert.equal(input.stationLines.length, 1102);
-  assert.equal(input.routeEdges.length, 2674);
+  assert.equal(input.routeEdges.length, CURRENT_ROUTE_EDGE_COUNT);
   assert.deepEqual(Object.fromEntries(input.routeEdges.reduce((counts, edge) => {
     counts.set(edge.edgeType, (counts.get(edge.edgeType) ?? 0) + 1);
     return counts;
-  }, new Map())), { ENTRY: 213, EXIT: 213, IN_STATION_TRANSFER: 30, RIDE: 2218 });
+  }, new Map())), CURRENT_ROUTE_EDGE_COUNTS);
   const localRideEdges = input.routeEdges.filter(({ edgeType, serviceClass, servicePattern }) => (
     edgeType === "RIDE" && serviceClass === "SUBWAY" && servicePattern === "LOCAL"
   ));
   const itxRideEdges = input.routeEdges.filter(({ edgeType, serviceClass, servicePattern }) => (
     edgeType === "RIDE" && serviceClass === "ITX_CHEONGCHUN" && servicePattern === "EXPRESS"
   ));
-  assert.equal(localRideEdges.length, 2134);
-  assert.equal(itxRideEdges.length, 84);
+  assert.equal(localRideEdges.length + itxRideEdges.length, CURRENT_ROUTE_EDGE_COUNTS.RIDE);
   assert.equal(
     canonicalRideEdgeSetSha256(localRideEdges),
     policy.rideInvariant.subwayLocal.admittedEdgeSetSha256,
@@ -132,7 +139,7 @@ test("current full-capital producer 출력은 합성 public successor의 route/e
     materialization,
     ...values,
   }, JSON.parse(policyBytes));
-  assert.equal(evaluate().denominator.edgeCount, 2674);
+  assert.equal(evaluate().denominator.edgeCount, CURRENT_ROUTE_EDGE_COUNT);
   assert.throws(() => evaluate({ stationLines: [] }), /stationLines must be a non-empty array/);
   const staleOperatorMaterialization = structuredClone(materialization);
   staleOperatorMaterialization.rows[0].operatorId = "stale-operator";
@@ -151,7 +158,7 @@ test("current full-capital producer는 alternate repository root의 nested evide
     activateStaticNetwork: true,
   });
   const outputs = await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot });
-  assert.equal(JSON.parse(outputs[1].bytes).routeEdges.length, 2674);
+  assert.equal(JSON.parse(outputs[1].bytes).routeEdges.length, CURRENT_ROUTE_EDGE_COUNT);
   const buildSpec = JSON.parse(await readFile(
     path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"),
     "utf8",

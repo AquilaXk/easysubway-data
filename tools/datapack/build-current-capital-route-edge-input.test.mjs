@@ -20,7 +20,7 @@ import {
 test("full-capital route fan-in은 2208+213+213+30 edge contract를 만든다", async () => {
   const input = await fixture();
   const routeOnly = addFullRouteStationLines(input);
-  input.canonicalPack.packs[0].networkEdges = [...rideEdges(2208), ...legacyEdges()];
+  input.canonicalPack.packs[0].networkEdges = rideEdges(2208);
   Object.assign(input.canonicalPack.packs[0].networkEdges[0], {
     fromNodeId: `${routeOnly[0].stationId}:${routeOnly[0].lineId}`,
     toNodeId: `${routeOnly[1].stationId}:${routeOnly[1].lineId}`,
@@ -52,7 +52,6 @@ test("route builder 직접 호출은 projected fixture의 non-RIDE drift를 거�
   addFullRouteStationLines(input);
   input.canonicalPack.packs[0].networkEdges = [
     ...rideEdges(2208),
-    ...legacyEdges(),
     {
       id: "unexpected-walkway",
       edgeType: "WALKWAY",
@@ -93,8 +92,6 @@ test("accessibility-authority projector는 합성 current public successor를 �
   });
 
   assert.deepEqual(edgeCounts(projected.packs[0].networkEdges), {
-    ENTRY: 2,
-    EXIT: 2,
     RIDE: 2208,
   });
 });
@@ -142,7 +139,7 @@ test("route CLI만 temporary fixed target에 exact two-file handoff를 원자 pu
   input.candidateBuildSpec.sourceInventorySha256 = sha(canonical(input.sourceInventory));
   input.candidateBuildSpec.networkEdgeEvidence.sourceInventory.sha256 = sha(canonical(input.sourceInventory));
   addFullRouteStationLines(input);
-  input.canonicalPack.packs[0].networkEdges = [...rideEdges(2200), ...legacyEdges()];
+  input.canonicalPack.packs[0].networkEdges = rideEdges(2200);
   const entries = {
     "tools/datapack/release/current-capital-facility-source-admission.json": input.facilityAdmission,
     [input.facilityAdmission.sourceIdentity.snapshotPath]: input.facilitySnapshotBytes,
@@ -170,10 +167,10 @@ test("route CLI만 temporary fixed target에 exact two-file handoff를 원자 pu
     readTransitionBoundaryImpl: async () => input.sourceSetTransition,
     projectFixtureImpl: async ({ buildSpec, sourceFixture, repositoryRoot }) => {
       assert.equal(buildSpec.candidateId, input.candidateBuildSpec.candidateId);
-      assert.equal(sourceFixture.packs[0].networkEdges.length, 2204);
+      assert.equal(sourceFixture.packs[0].networkEdges.length, 2200);
       assert.equal(repositoryRoot, root);
       const projected = structuredClone(sourceFixture);
-      projected.packs[0].networkEdges = [...rideEdges(2208), ...legacyEdges()];
+      projected.packs[0].networkEdges = rideEdges(2208);
       return projected;
     },
   };
@@ -229,15 +226,6 @@ function rideEdges(count) {
     serviceClass: "SUBWAY",
     servicePattern: "LOCAL",
   }));
-}
-
-function legacyEdges() {
-  return [
-    { id: "legacy-entry-1", edgeType: "ENTRY", fromNodeId: "station-000", toNodeId: "station-000:seoul-2", durationSeconds: 90, distanceMeters: 0 },
-    { id: "legacy-entry-2", edgeType: "ENTRY", fromNodeId: "station-001", toNodeId: "station-001:seoul-2", durationSeconds: 90, distanceMeters: 0 },
-    { id: "legacy-exit-1", edgeType: "EXIT", fromNodeId: "station-000:seoul-2", toNodeId: "station-000", durationSeconds: 60, distanceMeters: 0 },
-    { id: "legacy-exit-2", edgeType: "EXIT", fromNodeId: "station-001:seoul-2", toNodeId: "station-001", durationSeconds: 60, distanceMeters: 0 },
-  ];
 }
 
 function edgeCounts(edges) {

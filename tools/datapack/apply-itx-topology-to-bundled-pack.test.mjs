@@ -1,17 +1,13 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { promisify } from "node:util";
-import { gunzipSync, gzipSync } from "node:zlib";
-import {
-  PINNED_MOBILE_REVISION as mobileRevision,
-  resolveImmutableMobileRepository,
-} from "./lib/immutable-mobile-test-fixture.mjs";
+import { gzipSync } from "node:zlib";
 import {
   admittedTopologySource,
   applyTopology,
@@ -26,8 +22,6 @@ import {
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
 const buildNow = "2026-07-16T00:00:00.000Z";
-const currentV18GzipSha256 = "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3";
-const currentV18SqliteSha256 = "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5";
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -399,248 +393,46 @@ function validateEvidenceCandidate(candidate, topology, gzipBytes, inputByteSize
   });
 }
 
-async function immutableCurrentV18Bytes(relativePath) {
-  const mobileRoot = await resolveImmutableMobileRepository();
-  const { stdout } = await execFileAsync("git", [
-    "-C", mobileRoot, "show", `${mobileRevision}:apps/mobile/assets/datapacks/${relativePath}`,
-  ], { encoding: "buffer", maxBuffer: 4 * 1024 * 1024 });
-  return stdout;
-}
-
-test("immutable v18 output resolver는 CI checkout을 sibling보다 우선한다", async (context) => {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "itx-mobile-resolver-"));
-  context.after(() => rm(directory, { recursive: true, force: true }));
-  const ciCheckout = path.join(directory, ".external", "mobile");
-  await mkdir(ciCheckout, { recursive: true });
-  const calls = [];
-  const resolved = await resolveImmutableMobileRepository({
-    repositoryRoot: directory,
-    runGit: async (repository, args) => {
-      calls.push([repository, args]);
-      return args.includes("--is-inside-work-tree") ? "true\n" : `${mobileRevision}\n`;
-    },
-  });
-  assert.equal(resolved, ciCheckout);
-  assert.deepEqual(calls, [
-    [ciCheckout, ["rev-parse", "--is-inside-work-tree"]],
-    [ciCheckout, ["rev-parse", "--verify", `${mobileRevision}^{commit}`]],
-  ]);
-});
-
-test("immutable v18 output은 explicit migration으로만 v19 two-domain evidence로 이행한다", async (context) => {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "itx-current-v18-output-"));
+test("--migrate-current-v18은 current-only CLI에서 거부되고 산출물을 변경하지 않는다", async (context) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "itx-current-only-migration-action-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
   const packPath = path.join(directory, "capital.sqlite.gz");
   const indexPath = path.join(directory, "index.json");
   const evidencePath = path.join(directory, "evidence.json");
-  const stationCatalogPackPath = path.join(directory, "station-catalog-pack");
-  await writeFile(packPath, await immutableCurrentV18Bytes("capital.sqlite.gz"));
-  await writeFile(indexPath, await immutableCurrentV18Bytes("index.json"));
-  await writeFile(evidencePath, await readFile(path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json")));
-  const before = await Promise.all([readFile(packPath), readFile(indexPath), readFile(evidencePath)]);
-  assert.equal(sha256(before[0]), currentV18GzipSha256);
-  assert.equal(sha256(gunzipSync(before[0])), currentV18SqliteSha256);
-  await execFileAsync(process.execPath, [
-    "tools/datapack/emit-station-catalog-from-bundled-pack.mjs", "--input", packPath,
-    "--output", stationCatalogPackPath,
-  ], { cwd: root });
-  for (const surface of ["2", "3"]) {
-    await context.test(`surface ${surface} rename failure restores every original output`, async () => {
-      const failure = path.join(directory, `failure-${surface}`);
-      await mkdir(failure);
-      const paths = {
-        pack: path.join(failure, "capital.sqlite.gz"), index: path.join(failure, "index.json"),
-        evidence: path.join(failure, "evidence.json"), catalog: path.join(failure, "station-catalog-pack"),
-      };
-      await Promise.all([writeFile(paths.pack, before[0]), writeFile(paths.index, before[1]), writeFile(paths.evidence, before[2])]);
-      await execFileAsync(process.execPath, ["tools/datapack/emit-station-catalog-from-bundled-pack.mjs", "--input", paths.pack, "--output", paths.catalog], { cwd: root });
-      await assert.rejects(execFileAsync(process.execPath, [
-        "tools/datapack/apply-itx-topology-to-bundled-pack.mjs", "--migrate-current-v18",
-        "--pack", paths.pack, "--index", paths.index, "--evidence", paths.evidence,
-        "--station-catalog-pack", paths.catalog,
-      ], { cwd: root, env: { ...process.env, EASYSUBWAY_TEST_MIGRATION_FAIL_AFTER_SURFACE: surface } }), new RegExp(`injected migration surface failure ${surface}`));
-      assert.deepEqual(await Promise.all([readFile(paths.pack), readFile(paths.index), readFile(paths.evidence)]), before);
-      assert.deepEqual((await readdir(failure)).sort(), ["capital.sqlite.gz", "evidence.json", "index.json", "station-catalog-pack"]);
-    });
-  }
-  await execFileAsync(process.execPath, [
+  const before = [Buffer.from("sentinel-pack"), Buffer.from("sentinel-index"), Buffer.from("sentinel-evidence")];
+  await Promise.all([
+    writeFile(packPath, before[0]), writeFile(indexPath, before[1]), writeFile(evidencePath, before[2]),
+  ]);
+
+  await assert.rejects(execFileAsync(process.execPath, [
     "tools/datapack/apply-itx-topology-to-bundled-pack.mjs", "--migrate-current-v18",
     "--pack", packPath, "--index", indexPath, "--evidence", evidencePath,
-    "--station-catalog-pack", stationCatalogPackPath,
-  ], { cwd: root, env: { ...process.env, EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow } });
-  await execFileAsync(process.execPath, [
+  ], { cwd: root }), /--migrate-current-v18 is forbidden by the current-only datapack contract/);
+
+  assert.deepEqual(await Promise.all([readFile(packPath), readFile(indexPath), readFile(evidencePath)]), before);
+});
+
+test("current-only check는 migration evidence를 거부하고 산출물을 변경하지 않는다", async (context) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "itx-current-only-migration-evidence-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const packPath = path.join(directory, "capital.sqlite.gz");
+  const indexPath = path.join(directory, "index.json");
+  const evidencePath = path.join(directory, "evidence.json");
+  const before = [
+    Buffer.from("sentinel-pack"),
+    Buffer.from("sentinel-index"),
+    Buffer.from(`${JSON.stringify({ migration: { fromCatalogVersion: 18 } })}\n`),
+  ];
+  await Promise.all([
+    writeFile(packPath, before[0]), writeFile(indexPath, before[1]), writeFile(evidencePath, before[2]),
+  ]);
+
+  await assert.rejects(execFileAsync(process.execPath, [
     "tools/datapack/apply-itx-topology-to-bundled-pack.mjs", "--check",
     "--pack", packPath, "--index", indexPath, "--evidence", evidencePath,
-  ], { cwd: root, env: { ...process.env, EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow } });
-  const [packBytes, indexBytes, evidenceBytes] = await Promise.all([
-    readFile(packPath), readFile(indexPath), readFile(evidencePath),
-  ]);
-  const index = JSON.parse(indexBytes);
-  const evidence = JSON.parse(evidenceBytes);
-  await writeFile(path.join(directory, "output.sqlite"), gunzipSync(packBytes));
-  const verified = new DatabaseSync(path.join(directory, "output.sqlite"), { readOnly: true });
-  try {
-    assert.equal(verified.prepare("PRAGMA user_version").get().user_version, 19);
-    assert.equal(verified.prepare("SELECT count(*) AS count FROM route_service_artifact_evidence").get().count, 1);
-    assert.equal(verified.prepare("SELECT count(*) AS count FROM route_service_station_catalog_evidence").get().count, 1);
-    assert.equal(verified.prepare("SELECT count(*) AS count FROM transit_trips WHERE service_class = 'ITX_CHEONGCHUN'").get().count, 0);
-  } finally { verified.close(); }
-  assert.deepEqual(evidence.migration, {
-    fromCatalogVersion: 18, toCatalogVersion: 19,
-    inputPack: { id: "capital", sha256: currentV18GzipSha256, sqliteSha256: currentV18SqliteSha256, byteSize: 1463745 },
-  });
-  const capital = index.packs.find(({ id }) => id === "capital");
-  assert.equal(capital.sha256, sha256(packBytes));
-  assert.equal(capital.sqliteSha256, sha256(gunzipSync(packBytes)));
-  assert.equal(capital.byteSize, packBytes.length);
-  await context.test("explicit check binds the stored artifact evidence to the pinned source artifact", async () => {
-    const check = path.join(directory, "check-source-artifact-binding");
-    await mkdir(check);
-    const sqlitePath = path.join(check, "capital.sqlite");
-    await writeFile(sqlitePath, gunzipSync(packBytes));
-    const database = new DatabaseSync(sqlitePath);
-    try {
-      database.prepare(`UPDATE route_service_artifact_evidence
-        SET timetable_artifact_id = ?, timetable_artifact_sha256 = ?, fresh_until = ?
-        WHERE service_class = 'ITX_CHEONGCHUN'`).run(
-        "forged-timetable-artifact", "f".repeat(64), "2026-08-01T00:00:00+09:00",
-      );
-      database.prepare(`UPDATE route_service_station_catalog_evidence SET fresh_until = ?
-        WHERE service_class = 'ITX_CHEONGCHUN'`).run("2026-08-01T00:00:00+09:00");
-    } finally { database.close(); }
-    const candidateSqlite = await readFile(sqlitePath);
-    const candidatePackBytes = gzipSync(candidateSqlite, { level: 9, mtime: 0 });
-    const candidateEvidence = structuredClone(evidence);
-    candidateEvidence.routeServiceEvidence.artifactEvidence.timetableArtifactId = "forged-timetable-artifact";
-    candidateEvidence.routeServiceEvidence.artifactEvidence.timetableArtifactSha256 = "f".repeat(64);
-    candidateEvidence.routeServiceEvidence.artifactEvidence.freshUntil = "2026-08-01T00:00:00+09:00";
-    candidateEvidence.routeServiceEvidence.stationCatalogEvidence.freshUntil = "2026-08-01T00:00:00+09:00";
-    candidateEvidence.pack.outputSha256 = sha256(candidatePackBytes);
-    candidateEvidence.pack.outputSqliteSha256 = sha256(candidateSqlite);
-    candidateEvidence.pack.byteSize = candidatePackBytes.length;
-    candidateEvidence.pack.byteSizeDelta = candidatePackBytes.length - candidateEvidence.pack.inputByteSize;
-    const candidateIndex = structuredClone(index);
-    Object.assign(candidateIndex.packs.find(({ id }) => id === "capital"), {
-      sha256: sha256(candidatePackBytes), sqliteSha256: sha256(candidateSqlite), byteSize: candidatePackBytes.length,
-    });
-    const candidatePack = path.join(check, "capital.sqlite.gz");
-    const candidateIndexPath = path.join(check, "index.json");
-    const candidateEvidencePath = path.join(check, "evidence.json");
-    await Promise.all([
-      writeFile(candidatePack, candidatePackBytes), writeFile(candidateIndexPath, JSON.stringify(candidateIndex)),
-      writeFile(candidateEvidencePath, JSON.stringify(candidateEvidence)),
-    ]);
-    await assert.rejects(execFileAsync(process.execPath, [
-      "tools/datapack/apply-itx-topology-to-bundled-pack.mjs", "--check",
-      "--pack", candidatePack, "--index", candidateIndexPath, "--evidence", candidateEvidencePath,
-    ], { cwd: root }), /migrated v19 evidence or index is stale/);
-  });
-  await context.test("explicit check binds the stored station catalog evidence to the pinned projection", async () => {
-    const check = path.join(directory, "check-station-catalog-binding");
-    await mkdir(check);
-    const sqlitePath = path.join(check, "capital.sqlite");
-    await writeFile(sqlitePath, gunzipSync(packBytes));
-    const database = new DatabaseSync(sqlitePath);
-    try {
-      database.prepare(`UPDATE route_service_station_catalog_evidence SET station_catalog_pack_id = ?
-        WHERE service_class = 'ITX_CHEONGCHUN'`).run("forged-station-catalog");
-    } finally { database.close(); }
-    const candidateSqlite = await readFile(sqlitePath);
-    const candidatePackBytes = gzipSync(candidateSqlite, { level: 9, mtime: 0 });
-    const candidateEvidence = structuredClone(evidence);
-    candidateEvidence.routeServiceEvidence.stationCatalogEvidence.stationCatalogPackId =
-      "forged-station-catalog";
-    candidateEvidence.pack.outputSha256 = sha256(candidatePackBytes);
-    candidateEvidence.pack.outputSqliteSha256 = sha256(candidateSqlite);
-    candidateEvidence.pack.byteSize = candidatePackBytes.length;
-    candidateEvidence.pack.byteSizeDelta = candidatePackBytes.length - candidateEvidence.pack.inputByteSize;
-    const candidateIndex = structuredClone(index);
-    Object.assign(candidateIndex.packs.find(({ id }) => id === "capital"), {
-      sha256: sha256(candidatePackBytes), sqliteSha256: sha256(candidateSqlite), byteSize: candidatePackBytes.length,
-    });
-    const candidatePack = path.join(check, "capital.sqlite.gz");
-    const candidateIndexPath = path.join(check, "index.json");
-    const candidateEvidencePath = path.join(check, "evidence.json");
-    await Promise.all([
-      writeFile(candidatePack, candidatePackBytes), writeFile(candidateIndexPath, JSON.stringify(candidateIndex)),
-      writeFile(candidateEvidencePath, JSON.stringify(candidateEvidence)),
-    ]);
-    await assert.rejects(execFileAsync(process.execPath, [
-      "tools/datapack/apply-itx-topology-to-bundled-pack.mjs", "--check",
-      "--pack", candidatePack, "--index", candidateIndexPath, "--evidence", candidateEvidencePath,
-    ], { cwd: root }), /migrated v19 evidence or index is stale/);
-  });
-  await context.test("explicit check rejects a non-capital pack identity", async () => {
-    const check = path.join(directory, "check-pack-id");
-    await mkdir(check);
-    const candidateEvidence = structuredClone(evidence);
-    candidateEvidence.pack.id = "other";
-    const candidatePack = path.join(check, "capital.sqlite.gz");
-    const candidateIndexPath = path.join(check, "index.json");
-    const candidateEvidencePath = path.join(check, "evidence.json");
-    await Promise.all([
-      writeFile(candidatePack, packBytes), writeFile(candidateIndexPath, indexBytes),
-      writeFile(candidateEvidencePath, JSON.stringify(candidateEvidence)),
-    ]);
-    await assert.rejects(execFileAsync(process.execPath, [
-      "tools/datapack/apply-itx-topology-to-bundled-pack.mjs", "--check",
-      "--pack", candidatePack, "--index", candidateIndexPath, "--evidence", candidateEvidencePath,
-    ], { cwd: root }), /migrated v19 evidence or index is stale/);
-  });
-  await context.test("explicit check rejects an oversized recompressed migration output", async () => {
-    const check = path.join(directory, "check-gzip-delta");
-    await mkdir(check);
-    const candidateSqlite = gunzipSync(packBytes);
-    const candidatePackBytes = gzipSync(candidateSqlite, { level: 0, mtime: 0 });
-    assert.ok(candidatePackBytes.length - evidence.pack.inputByteSize > 64 * 1024);
-    const candidateEvidence = structuredClone(evidence);
-    candidateEvidence.pack.outputSha256 = sha256(candidatePackBytes);
-    candidateEvidence.pack.byteSize = candidatePackBytes.length;
-    candidateEvidence.pack.byteSizeDelta = candidatePackBytes.length - candidateEvidence.pack.inputByteSize;
-    const candidateIndex = structuredClone(index);
-    Object.assign(candidateIndex.packs.find(({ id }) => id === "capital"), {
-      sha256: sha256(candidatePackBytes), byteSize: candidatePackBytes.length,
-    });
-    const candidatePack = path.join(check, "capital.sqlite.gz");
-    const candidateIndexPath = path.join(check, "index.json");
-    const candidateEvidencePath = path.join(check, "evidence.json");
-    await Promise.all([
-      writeFile(candidatePack, candidatePackBytes), writeFile(candidateIndexPath, JSON.stringify(candidateIndex)),
-      writeFile(candidateEvidencePath, JSON.stringify(candidateEvidence)),
-    ]);
-    await assert.rejects(execFileAsync(process.execPath, [
-      "tools/datapack/apply-itx-topology-to-bundled-pack.mjs", "--check",
-      "--pack", candidatePack, "--index", candidateIndexPath, "--evidence", candidateEvidencePath,
-    ], { cwd: root }), /migrated v19 evidence or index is stale/);
-  });
-  for (const [name, mutateEvidence, mutateIndex] of [
-    ["topology", (value) => { value.topology.edgeCount += 1; }],
-    ["input identity", (value) => { value.pack.inputSqliteSha256 = "0".repeat(64); }],
-    ["input byte size", (value) => { value.pack.inputByteSize -= 1; }],
-    ["byte delta", (value) => { value.pack.byteSizeDelta += 1; }],
-    ["lineage", (value) => { value.migration.toCatalogVersion = 18; }],
-    ["index sqlite", undefined, (value) => { value.packs.find(({ id }) => id === "capital").sqliteSha256 = "0".repeat(64); }],
-    ["index size", undefined, (value) => { value.packs.find(({ id }) => id === "capital").byteSize -= 1; }],
-  ]) {
-    await context.test(`explicit check rejects ${name} semantic tamper`, async () => {
-      const check = path.join(directory, `check-${name.replaceAll(" ", "-")}`);
-      await mkdir(check);
-      const candidateEvidence = JSON.parse(evidenceBytes);
-      const candidateIndex = JSON.parse(indexBytes);
-      mutateEvidence?.(candidateEvidence); mutateIndex?.(candidateIndex);
-      const candidatePack = path.join(check, "capital.sqlite.gz");
-      const candidateIndexPath = path.join(check, "index.json");
-      const candidateEvidencePath = path.join(check, "evidence.json");
-      await Promise.all([
-        writeFile(candidatePack, packBytes), writeFile(candidateIndexPath, JSON.stringify(candidateIndex)),
-        writeFile(candidateEvidencePath, JSON.stringify(candidateEvidence)),
-      ]);
-      await assert.rejects(execFileAsync(process.execPath, [
-        "tools/datapack/apply-itx-topology-to-bundled-pack.mjs", "--check",
-        "--pack", candidatePack, "--index", candidateIndexPath, "--evidence", candidateEvidencePath,
-      ], { cwd: root }), /migrated v19 evidence or index is stale/);
-    });
-  }
+  ], { cwd: root }), /ITX topology migration evidence is forbidden by the current-only datapack contract/);
+
+  assert.deepEqual(await Promise.all([readFile(packPath), readFile(indexPath), readFile(evidencePath)]), before);
 });
 
 test("custom contract는 legacy tracked source를 승인하지 않고 sentinel 산출물을 변경하지 않는다", async (context) => {
@@ -787,43 +579,20 @@ test("authenticated completeness도 exact station identity와 no-legacy를 요�
   }
 });
 
-test("v18 legacy evidence schema는 v19 two-domain admission schema로 migration한다", async (context) => {
+test("v18 legacy evidence schema는 current-only에서 mutation 없이 거부한다", async (context) => {
   const fixture = await createFixture(context, { version: 18, legacyEvidence: true });
-  applyTopology(fixture.sqlitePath, fixture.topology, admissionEvidenceFrom(fixture.contract));
-  const database = new DatabaseSync(fixture.sqlitePath, { readOnly: true });
-  try {
-    assert.equal(database.prepare(`SELECT source_issue FROM route_service_artifact_evidence
-      WHERE service_class = 'ITX_CHEONGCHUN'`).get().source_issue, 2135);
-    const columns = database.prepare("PRAGMA table_info(route_service_artifact_evidence)")
-      .all().map(({ name }) => name);
-    assert.deepEqual(columns.filter((name) => name.startsWith("canonical_pack_")), [
-      "canonical_pack_id", "canonical_pack_sha256", "canonical_pack_sqlite_sha256",
-    ]);
-    assert.equal(database.prepare(`SELECT source_issue FROM route_service_station_catalog_evidence
-      WHERE service_class = 'ITX_CHEONGCHUN'`).get().source_issue, 2649);
-  } finally { database.close(); }
+  const before = sha256(await readFile(fixture.sqlitePath));
+  assert.throws(() => applyTopology(fixture.sqlitePath, fixture.topology, admissionEvidenceFrom(fixture.contract)),
+    /requires current catalog user_version 19; found 18/);
+  assert.equal(sha256(await readFile(fixture.sqlitePath)), before);
 });
 
-test("route service evidence domain split은 v18 mixed row를 v19의 두 독립 table로 원자적으로 교체한다", async (context) => {
+test("v18 mixed evidence는 current-only에서 mutation 없이 거부한다", async (context) => {
   const fixture = await createFixture(context, { version: 18, legacyEvidence: true });
-  applyTopology(fixture.sqlitePath, fixture.topology, admissionEvidenceFrom(fixture.contract));
-  const database = new DatabaseSync(fixture.sqlitePath, { readOnly: true });
-  try {
-    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 19);
-    assert.deepEqual(database.prepare("PRAGMA table_info(route_service_artifact_evidence)")
-      .all().map(({ name }) => name), [
-      "service_class", "timetable_artifact_id", "timetable_artifact_sha256",
-      "canonical_pack_id", "canonical_pack_sha256", "canonical_pack_sqlite_sha256",
-      "admission_status", "admission_eligible", "fresh_until", "source_issue",
-    ]);
-    assert.deepEqual(database.prepare("PRAGMA table_info(route_service_station_catalog_evidence)")
-      .all().map(({ name }) => name), [
-      "service_class", "station_catalog_artifact_kind", "station_catalog_manifest_version",
-      "station_catalog_pack_id", "station_catalog_station_set_sha256",
-      "station_catalog_payload_sha256", "station_catalog_manifest_sha256",
-      "admission_status", "admission_eligible", "fresh_until", "source_issue",
-    ]);
-  } finally { database.close(); }
+  const before = sha256(await readFile(fixture.sqlitePath));
+  assert.throws(() => applyTopology(fixture.sqlitePath, fixture.topology, admissionEvidenceFrom(fixture.contract)),
+    /requires current catalog user_version 19; found 18/);
+  assert.equal(sha256(await readFile(fixture.sqlitePath)), before);
 });
 
 test("route service evidence domain split은 ready v19의 stale row도 두 domain exact tuple로 교체한다", async (context) => {
@@ -888,57 +657,19 @@ test("route service evidence domain split은 v19 one-domain count mismatch를 mu
   assert.equal(sha256(await readFile(fixture.sqlitePath)), before);
 });
 
-test("actual v16 conversion은 8개 preserved table과 index를 보존하고 idempotent하다", async (context) => {
+test("v16 catalog는 current-only에서 mutation 없이 거부한다", async (context) => {
   const fixture = await createFixture(context, { version: 16 });
-  const database = new DatabaseSync(fixture.sqlitePath);
-  const preservedTables = [
-    "official_od_fare_quotes", "service_calendar_dates", "service_calendars", "transit_feed_info",
-    "transit_frequencies", "transit_routes", "transit_stop_times", "transit_trips",
-  ];
-  const before = preservedTables.map((table) =>
-    [table, database.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()]);
-  assert.deepEqual(database.prepare(`
-    SELECT name FROM sqlite_schema WHERE type = 'index' AND name IN (
-      'idx_network_edges_from_node', 'idx_transit_trips_route_service_pattern'
-    ) ORDER BY name
-  `).all().map(({ name }) => name), [
-    "idx_network_edges_from_node", "idx_transit_trips_route_service_pattern",
-  ]);
-  database.close();
-  const evidence = admissionEvidenceFrom(fixture.contract);
-  applyTopology(fixture.sqlitePath, fixture.topology, evidence);
-  applyTopology(fixture.sqlitePath, fixture.topology, evidence);
-  const output = new DatabaseSync(fixture.sqlitePath, { readOnly: true });
-  try {
-    assert.equal(output.prepare("PRAGMA user_version").get().user_version, 19);
-    for (const [table, rows] of before) {
-      const actual = output.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all().map((row) => {
-        if (table !== "transit_trips") return row;
-        const { service_class: _serviceClass, ...legacyRow } = row;
-        return legacyRow;
-      });
-      assert.deepEqual(JSON.parse(JSON.stringify(actual)), JSON.parse(JSON.stringify(rows)));
-    }
-    assert.deepEqual(output.prepare(`
-      SELECT name FROM sqlite_schema WHERE type = 'index' AND name IN (
-        'idx_network_edges_from_node', 'idx_transit_trips_route_service_pattern'
-      ) ORDER BY name
-    `).all().map(({ name }) => name), [
-      "idx_network_edges_from_node", "idx_transit_trips_route_service_pattern",
-    ]);
-  } finally { output.close(); }
-  assertStoredTopology(fixture.sqlitePath, fixture.topology, evidence);
-  const sqliteBytes = await readFile(fixture.sqlitePath);
-  const gzipBytes = gzipSync(sqliteBytes, { level: 9, mtime: 0 });
-  const candidate = selfConsistentEvidence(fixture.contract, fixture.source, fixture.topology, gzipBytes, sqliteBytes);
-  assert.doesNotThrow(validateEvidenceCandidate(candidate, fixture.topology, gzipBytes));
+  const before = sha256(await readFile(fixture.sqlitePath));
+  assert.throws(() => applyTopology(fixture.sqlitePath, fixture.topology, admissionEvidenceFrom(fixture.contract)),
+    /requires current catalog user_version 19; found 16/);
+  assert.equal(sha256(await readFile(fixture.sqlitePath)), before);
 });
 
 test("unsupported catalog version은 fixture를 변경하지 않고 거부한다", async (context) => {
   const fixture = await createFixture(context, { version: 20 });
   const before = sha256(await readFile(fixture.sqlitePath));
   assert.throws(() => applyTopology(fixture.sqlitePath, fixture.topology, admissionEvidenceFrom(fixture.contract)),
-    /does not support catalog user_version/);
+    /requires current catalog user_version 19; found 20/);
   assert.equal(sha256(await readFile(fixture.sqlitePath)), before);
 });
 
@@ -1176,13 +907,13 @@ test("topology input gzip와 SQLite identity 변조를 각각 거부한다", asy
   });
 });
 
-test("versions 15와 20은 mutation 없이 거부한다", async (context) => {
-  for (const version of [15, 20]) {
+test("versions 15와 17과 20은 mutation 없이 거부한다", async (context) => {
+  for (const version of [15, 17, 20]) {
     await context.test(String(version), async (childContext) => {
       const fixture = await createFixture(childContext, { version });
       const before = sha256(await readFile(fixture.sqlitePath));
       assert.throws(() => applyTopology(fixture.sqlitePath, fixture.topology, admissionEvidenceFrom(fixture.contract)),
-        /does not support catalog user_version/);
+        new RegExp(`requires current catalog user_version 19; found ${version}`));
       assert.equal(sha256(await readFile(fixture.sqlitePath)), before);
     });
   }

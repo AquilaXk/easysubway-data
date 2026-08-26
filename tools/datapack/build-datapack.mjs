@@ -45,6 +45,7 @@ import {
   canonicalCurrentReleaseCandidateAccessibilityAuthorityJson,
   canonicalCurrentReleaseCandidateFixtureJson,
   rebuildCurrentReleaseCandidateFixture,
+  validateCurrentReleaseCandidateAccessibilityAuthorityReplay,
 } from "./build-current-release-candidate-accessibility-input.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
 
@@ -67,8 +68,6 @@ const productionMinimumTableRowNames = [
   "station_facility_evidence",
 ];
 const candidateBuildSpecArtifactKind = "datapack-candidate-build-spec";
-const currentFullCapitalStationLineInput =
-  "tools/datapack/release/current-capital-accessibility-full/station-line-input.json";
 const candidateBuildSpecHashFields = [
   "sourceSnapshotSetHash",
   "approvedAliasLedgerHash",
@@ -323,7 +322,7 @@ export async function main(
   const officialOdFareAdmissionBytes = await readFile(path.join(root, "tools/datapack/official-od-fare-admission.json"));
   const officialOdFareAdmissionBundle = JSON.parse(officialOdFareAdmissionBytes);
   const officialOdFareAdmissions = officialOdFareAdmissionsBySource(officialOdFareAdmissionBundle);
-  const { fixture, candidateBuild, artifactFreshUntil } = await loadBuildInput(
+  const { fixture, candidateBuild, artifactFreshUntil, outputArtifactKind } = await loadBuildInput(
     args,
     officialOdFareAdmissions,
     officialOdFareAdmissionBytes,
@@ -335,7 +334,7 @@ export async function main(
   const provenancePacks = [];
   const stagedPackFiles = [];
   for (const pack of fixture.packs) {
-    const artifactKind = pack.artifactKind ?? "fixture";
+    const artifactKind = outputArtifactKind ?? pack.artifactKind ?? "fixture";
     const packUrl = pack.url ?? `catalog/${pack.id}-v${pack.version}.sqlite.gz`;
     // requiredString은 non-empty 문자열을 강제하고, 검증·경로 파생·매니페스트는 모두 raw packUrl을
     // 대상으로 한다(추출 전 로컬 validatePackUrl과 동일 — 검증 대상과 실사용 문자열 일치).
@@ -473,14 +472,22 @@ async function loadBuildInput(
   const buildSpecArg = args["build-spec"];
   const candidateFixtureOverrideArg = args["candidate-fixture-override"];
   const routeCoverageAuthorityArg = args["server-route-coverage-authority"];
-  if ((candidateFixtureOverrideArg == null) !== (routeCoverageAuthorityArg == null)) {
-    throw new Error("--candidate-fixture-override and --server-route-coverage-authority must be provided together");
+  const stationLineInputArg = args["current-capital-station-line-input"];
+  const routeEdgeInputArg = args["current-capital-route-edge-input"];
+  const authorityArgs = [
+    candidateFixtureOverrideArg,
+    routeCoverageAuthorityArg,
+    stationLineInputArg,
+    routeEdgeInputArg,
+  ];
+  if (authorityArgs.some((value) => value != null) && authorityArgs.some((value) => value == null)) {
+    throw new Error("--candidate-fixture-override, --server-route-coverage-authority, --current-capital-station-line-input and --current-capital-route-edge-input must be provided together");
   }
   if ((fixtureArg == null) === (buildSpecArg == null)) {
     throw new Error("exactly one of --fixture or --build-spec is required");
   }
   if (fixtureArg != null) {
-    if (candidateFixtureOverrideArg != null) {
+    if (authorityArgs.some((value) => value != null)) {
       throw new Error("candidate fixture override requires --build-spec");
     }
     const fixture = JSON.parse(await readFile(path.resolve(repositoryRoot, fixtureArg), "utf8"));
@@ -519,6 +526,7 @@ async function loadBuildInput(
       fixture,
       candidateBuild: null,
       artifactFreshUntil: null,
+      outputArtifactKind: hasProductionPack ? "fixture" : null,
     };
   }
   if (args["test-only-itx-admission"] != null) {
@@ -536,7 +544,11 @@ async function loadBuildInput(
   const sourceFixtureBytes = await readFile(sourceFixturePath);
   const sourceFixture = JSON.parse(sourceFixtureBytes);
   rejectTestOnlyBuildInput(sourceFixture);
+  const hasProductionPack = sourceFixture.packs?.some(({ artifactKind }) => artifactKind === "production") === true;
   const replaysAccessibilityAuthority = candidateFixtureOverrideArg != null;
+  const validationOnlyProductionFixture = hasProductionPack
+    && !replaysAccessibilityAuthority
+    && process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY === "true";
   const validationNow = replaysAccessibilityAuthority
     ? candidateReplayNow(buildSpec)
     : candidateBuildNow();
@@ -550,8 +562,16 @@ async function loadBuildInput(
     { includePackAccessibilityFreshness: !replaysAccessibilityAuthority },
   );
   const { officialOdFareEvidence } = candidateValidation;
+  if (hasProductionPack && !replaysAccessibilityAuthority && !validationOnlyProductionFixture) {
+    throw new Error("production accessibility evidence mismatch: current full-capital authority is required");
+  }
   let { artifactFreshUntil } = candidateValidation;
-  let fixture = sourceFixture;
+  let fixture = validationOnlyProductionFixture
+    ? {
+        ...sourceFixture,
+        manifest: { ...sourceFixture.manifest, channel: "dev" },
+      }
+    : sourceFixture;
   let overrideBinding = null;
   if (candidateFixtureOverrideArg != null) {
     const [candidateFixtureBytes, authorityBytes] = await Promise.all([
@@ -579,11 +599,24 @@ async function loadBuildInput(
       validated.fixture,
     );
     overrideBinding = validated.binding;
-    const stationLineInputBytes = await readFile(await resolveBuildInputPath(
-      currentFullCapitalStationLineInput,
-      "current full-capital station-line input",
-      repositoryRoot,
-    ));
+    const [stationLineInputBytes, routeEdgeInputBytes] = await Promise.all([
+      readFile(await resolveBuildInputPath(
+        stationLineInputArg,
+        "current full-capital station-line input",
+        repositoryRoot,
+      )),
+      readFile(await resolveBuildInputPath(
+        routeEdgeInputArg,
+        "current full-capital route-edge input",
+        repositoryRoot,
+      )),
+    ]);
+    validateCurrentReleaseCandidateAccessibilityAuthorityReplay({
+      authority: validated.authority,
+      projectedFixture: sourceFixture,
+      stationLineInputBytes,
+      routeEdgeInputBytes,
+    });
     const accessibilityFreshUntil = candidateOverrideAccessibilityFreshUntil({
       authority: validated.authority,
       stationLineInputBytes,
@@ -604,6 +637,7 @@ async function loadBuildInput(
       validationNow,
     ),
     artifactFreshUntil,
+    outputArtifactKind: validationOnlyProductionFixture ? "fixture" : null,
   };
 }
 
@@ -734,6 +768,7 @@ export function validateCandidateFixtureOverride({
 export function candidateOverrideAccessibilityFreshUntil({
   authority,
   stationLineInputBytes,
+  routeEdgeInputBytes,
   validationNow,
 }) {
   if (!Buffer.isBuffer(stationLineInputBytes)) {
@@ -741,6 +776,13 @@ export function candidateOverrideAccessibilityFreshUntil({
   }
   if (!(validationNow instanceof Date) || Number.isNaN(validationNow.getTime())) {
     throw new TypeError("station-line input validation time is invalid");
+  }
+  if (routeEdgeInputBytes !== undefined && !Buffer.isBuffer(routeEdgeInputBytes)) {
+    throw new TypeError("route-edge input must be bytes");
+  }
+  if (routeEdgeInputBytes !== undefined
+    && sha256(routeEdgeInputBytes) !== authority?.buildInput?.routeEdgeInputSha256) {
+    throw new Error("route-edge input identity mismatch");
   }
   let stationLineInput;
   try {
@@ -1438,6 +1480,9 @@ export function validateCapitalTopologyReverification(
     && sourceSeparatedLineIds.every((lineId) => topologyLineIds.has(lineId));
   const fullBaseline = topologyLineIds.size === CAPITAL_MAP_LINE_IDS.length
     && CAPITAL_MAP_LINE_IDS.every((lineId) => topologyLineIds.has(lineId));
+  if (!sourceSeparated) {
+    throw new Error("capital topology reverification identity is invalid");
+  }
   if (sourceSeparated && !sourceSeparatedBaseline && !fullBaseline) {
     throw new Error("capital topology reverification baseline ownership is invalid");
   }

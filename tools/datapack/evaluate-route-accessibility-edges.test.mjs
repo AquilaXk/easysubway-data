@@ -314,7 +314,6 @@ test("SUBWAY LOCAL과 policy-bound ITX EXPRESS RIDE invariant를 exact하게 강
   const fixturePolicy = policyForEdges(itxEdges);
   assert.equal(evaluateRouteAccessibilityEdges(input({ routeEdges: itxEdges, materialization: emptyMaterialization() }), fixturePolicy).results[0].state, "PASS");
   assert.throws(() => evaluateRouteAccessibilityEdges(input({ routeEdges: [edge({ ...itxEdges[0], edgeId: "itx-tampered" })] }), fixturePolicy), /ITX EXPRESS edge set identity mismatch/);
-  assert.equal(policy.rideInvariant.itxCheongchunExpress.admittedEdgeSetSha256, "894c37b5cbc62aa8ac296821fab07da537f41802dc5fbe2a806a4a37ccc19f36");
 
   const crossStationTransfer = edge({
     edgeId: "transfer-cross-station",

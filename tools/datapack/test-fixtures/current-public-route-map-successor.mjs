@@ -24,7 +24,7 @@ import {
   verifyCurrentCapitalPublicRouteMapDocument,
 } from "../materialize-seoul-route-map-positions.mjs";
 import { deriveReleaseProjection } from "../rebind-current-candidate-source-snapshots.mjs";
-import { buildSnapshotDiff } from "../source-snapshot-policy.mjs";
+import { buildSnapshotDiff, validateLineage } from "../source-snapshot-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
 import { codepointCompare } from "../../lib/codepoint-compare.mjs";
 import { currentTopologyAdmissionClock } from "./current-topology-admission-clock.mjs";
@@ -483,13 +483,18 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   const selectedPublicSnapshotIndex = selectedPublicSnapshotId == null ? -1
     : snapshots.findIndex(({ snapshotId }) => snapshotId === selectedPublicSnapshotId);
   const publicSnapshots = snapshots.filter(({ sourceId }) => sourceId === PUBLIC_SOURCE_ID);
+  const publicSnapshotsById = new Map(publicSnapshots.map((snapshot) => [snapshot.snapshotId, snapshot]));
+  let headsBySource;
+  try {
+    ({ headsBySource } = validateLineage(snapshots));
+  } catch {
+    throw new Error("synthetic public route-map successor fixture has invalid public source lineage");
+  }
   const selectedPublicSnapshot = snapshots[selectedPublicSnapshotIndex];
-  if (selectedPublicSnapshotId != null && ((advancesCurrentPublicHead
-    ? publicSnapshots.filter(({ previousSnapshotId }) => previousSnapshotId == null).length !== 1
-    : publicSnapshots.length !== 1)
+  if (selectedPublicSnapshotId != null && (publicSnapshotsById.size !== publicSnapshots.length
     || selectedPublicSnapshotIndex < 0
     || selectedPublicSnapshot?.sourceId !== PUBLIC_SOURCE_ID
-    || (!advancesCurrentPublicHead && selectedPublicSnapshot.previousSnapshotId != null))) {
+    || headsBySource[PUBLIC_SOURCE_ID] !== selectedPublicSnapshotId)) {
     throw new Error("synthetic public route-map successor fixture has invalid public source lineage");
   }
   const publicSources = inventory.sources.filter(({ id }) => id === PUBLIC_SOURCE_ID);
@@ -645,8 +650,13 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   snapshot.publicStaticNetworkV2Observation = observation;
   snapshot.normalizedObservationSha256 = sha256(Buffer.from(`${JSON.stringify(observation)}\n`));
   if (advancesCurrentPublicHead) snapshot.diffSummary = buildSnapshotDiff(successorPredecessor, snapshot);
-  if (selectedPublicSnapshotIndex >= 0 && !advancesCurrentPublicHead) snapshots.splice(selectedPublicSnapshotIndex, 1, snapshot);
-  else snapshots.push(snapshot);
+  if (!advancesCurrentPublicHead) {
+    const firstPublicSnapshotIndex = snapshots.findIndex(({ sourceId }) => sourceId === PUBLIC_SOURCE_ID);
+    for (let index = snapshots.length - 1; index >= 0; index -= 1) {
+      if (snapshots[index].sourceId === PUBLIC_SOURCE_ID) snapshots.splice(index, 1);
+    }
+    snapshots.splice(firstPublicSnapshotIndex, 0, snapshot);
+  } else snapshots.push(snapshot);
 
   publicSource.requiredForProductionPack = true;
   publicSource.productionUseAllowed = true;
@@ -679,6 +689,14 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   const currentSourceIds = new Set(CURRENT_CAPITAL_SOURCE_IDS);
   pack.packs[0].sourceInventory = pack.packs[0].sourceInventory.filter(({ id }) => currentSourceIds.has(id));
   pack.packs[0].routeMapPositions = [];
+  if (pack.packs[0].networkEdges.some(
+    ({ edgeType }) => !["RIDE", "ENTRY", "EXIT"].includes(edgeType),
+  )) {
+    throw new Error("synthetic current pre-authority edge contract is invalid");
+  }
+  pack.packs[0].networkEdges = pack.packs[0].networkEdges.filter(
+    ({ edgeType }) => edgeType === "RIDE",
+  );
 
   const materializedPack = materializeSeoulRouteMapPositions({
     baseFixture: pack,

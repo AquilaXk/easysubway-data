@@ -1,10 +1,19 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { buildCurrentCapitalLiveChainPlan, evaluateStagedRoutePolicy, parseArgs, resolveStagedIncheonTopologyPath, runCurrentCapitalLiveChain } from "./run-current-capital-live-chain.mjs";
+import {
+  CURRENT_KRIC_EXIT_REQUEST_INTERVAL_MS,
+  CURRENT_KRIC_EXIT_REQUEST_TIMEOUT_MS,
+  buildCurrentCapitalLiveChainPlan,
+  evaluateStagedRoutePolicy,
+  parseArgs,
+  resolveCurrentKricExitPlanInputs,
+  resolveStagedIncheonTopologyPath,
+  runCurrentCapitalLiveChain,
+} from "./run-current-capital-live-chain.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 
@@ -12,6 +21,8 @@ const planInput = {
   repositoryRoot: "/repository", repositorySha: "a".repeat(40), operationId: "current-capital-560", stagedRoot: "/runner/staged",
   transferObservationDirectory: "/retained/transfer/observation", transferReceiptPath: "/retained/transfer/receipt.json",
   incheonTopologyRelativePath: "tools/datapack/sources/incheon-transit-station-info-20991231.json",
+  providerCodeCatalogRelativePath: "tools/datapack/sources/provider-code-catalog.json",
+  routeRostersRelativePath: "tools/datapack/sources/route-rosters.json",
   outputPaths: ["derived/current-output.json"],
 };
 
@@ -51,6 +62,55 @@ test("Incheon topology path is derived from the current staged inventory head", 
   escaped.sources[0].topologyAdmissionEvidence.snapshotPath = "../outside.json";
   escaped.sources[0].routeMapAdmissionEvidence.snapshotPath = "../outside.json";
   assert.throws(() => resolveStagedIncheonTopologyPath(escaped), /Incheon topology identity mismatch/);
+});
+
+test("current KRIC EXIT plan inputs are exact staged bindings and reject identity drift", async (t) => {
+  const stagedRoot = await mkdtemp(path.join(os.tmpdir(), "current-kric-exit-plan-inputs-"));
+  t.after(() => rm(stagedRoot, { recursive: true, force: true }));
+  const paths = [
+    "tools/datapack/release/current-kric-exit-plan-inputs.json",
+    "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
+    "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
+    "tools/datapack/source-candidates.json",
+    "tools/datapack/nationwide-coverage-targets.json",
+  ];
+  await Promise.all(paths.map(async (relative) => {
+    const destination = path.join(stagedRoot, relative);
+    await mkdir(path.dirname(destination), { recursive: true });
+    await cp(path.join(ROOT, relative), destination);
+  }));
+  const resolved = await resolveCurrentKricExitPlanInputs(stagedRoot);
+  assert.deepEqual(resolved, {
+    providerCodeCatalogRelativePath: "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
+    routeRostersRelativePath: "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
+  });
+  const plan = buildCurrentCapitalLiveChainPlan({ ...planInput, stagedRoot, ...resolved });
+  const exitPlanArgs = plan.steps.find(({ id }) => id === "build-exit-plan").args;
+  assert.equal(exitPlanArgs[exitPlanArgs.indexOf("--provider-code-catalog") + 1], path.join(stagedRoot, resolved.providerCodeCatalogRelativePath));
+  assert.equal(exitPlanArgs[exitPlanArgs.indexOf("--route-rosters") + 1], path.join(stagedRoot, resolved.routeRostersRelativePath));
+  const collectArgs = plan.steps.find(({ id }) => id === "collect-kric-exit").args;
+  assert.equal(collectArgs[collectArgs.indexOf("--request-timeout-ms") + 1], String(CURRENT_KRIC_EXIT_REQUEST_TIMEOUT_MS));
+  assert.equal(collectArgs[collectArgs.indexOf("--request-interval-ms") + 1], String(CURRENT_KRIC_EXIT_REQUEST_INTERVAL_MS));
+
+  const bindingPath = path.join(stagedRoot, "tools/datapack/release/current-kric-exit-plan-inputs.json");
+  const originalBinding = JSON.parse(await readFile(bindingPath, "utf8"));
+  const cases = [
+    ["hash", (value) => { value.providerCodeCatalog.sha256 = "0".repeat(64); }, /binding hash mismatch/],
+    ["path", (value) => { value.routeRosters.relativePath = "../route-rosters.json"; }, /binding path mismatch/],
+    ["candidate", (value) => { value.providerCodeCatalog.candidateId = "other"; }, /candidate identity mismatch/],
+  ];
+  for (const [, mutate, pattern] of cases) {
+    const drifted = structuredClone(originalBinding);
+    mutate(drifted);
+    await writeFile(bindingPath, `${JSON.stringify(drifted)}\n`);
+    await assert.rejects(resolveCurrentKricExitPlanInputs(stagedRoot), pattern);
+  }
+  await writeFile(bindingPath, `${JSON.stringify(originalBinding)}\n`);
+  const targetPath = path.join(stagedRoot, "tools/datapack/nationwide-coverage-targets.json");
+  const targets = JSON.parse(await readFile(targetPath, "utf8"));
+  targets.targetVersion = "2099-01-01";
+  await writeFile(targetPath, `${JSON.stringify(targets)}\n`);
+  await assert.rejects(resolveCurrentKricExitPlanInputs(stagedRoot), /route roster targetVersion mismatch/);
 });
 
 test("CLI accepts every exact live-chain identity and path once", () => {

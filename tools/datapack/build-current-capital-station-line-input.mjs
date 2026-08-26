@@ -11,6 +11,8 @@ import { canonicalExitPathAdmissionJson } from "./build-exit-path-admission.mjs"
 import { CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_KIND, verifyCurrentCapitalLiveChainFanInComponents } from "./build-current-capital-live-chain-boundary.mjs";
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
 import { readCurrentCapitalAccessibilityTransitionBoundary } from "./current-capital-accessibility-transition.mjs";
+export { canonicalCurrentCapitalStationLineInputJson } from "./current-capital-station-line-contract.mjs";
+import { canonicalCurrentCapitalStationLineInputJson } from "./current-capital-station-line-contract.mjs";
 
 const FILES = Object.freeze({
   facility: "tools/datapack/release/current-capital-facility-source-admission.json",
@@ -43,12 +45,6 @@ export function buildCurrentCapitalStationLineInput(input) {
     throw new Error("full-capital evidence denominator mismatch");
   }
   return canonicalObject({ candidate, stationLines, evidenceRows });
-}
-
-export function canonicalCurrentCapitalStationLineInputJson(value) {
-  assertKeys(value, ["candidate", "stationLines", "evidenceRows"], "full-capital station-line output");
-  if (!Array.isArray(value.stationLines) || !Array.isArray(value.evidenceRows)) throw new Error("full-capital station-line arrays are required");
-  return canonicalJson(value);
 }
 
 export async function readCurrentCapitalInputs(repositoryRoot, { readTransitionBoundaryImpl = readCurrentCapitalAccessibilityTransitionBoundary, readCurrentFanInBoundaryImpl = null } = {}) {
