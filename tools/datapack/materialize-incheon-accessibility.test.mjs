@@ -7,7 +7,11 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { promisify } from "node:util";
-import { projectHistoricalRegionalMaterializeInventory, projectRegionalMaterializeFixture } from "./materialize-test-fixture.mjs";
+import {
+  materializeRegionalProductionCandidate,
+  projectHistoricalRegionalMaterializeInventory,
+  projectRegionalMaterializeFixture,
+} from "./materialize-test-fixture.mjs";
 
 import {
   parseMolitDaejeonStationMappings,
@@ -341,6 +345,7 @@ test("materialized SQLite와 provenance가 인천 accessibility_facilities 3건�
   await execFileAsync(process.execPath, [
     "tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", packOutput,
   ], { cwd: root, env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey } });
+  await materializeRegionalProductionCandidate({ outputDir: packOutput, privateKey });
 
   const manifestPath = path.join(packOutput, "current.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));

@@ -6,7 +6,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { promisify } from "node:util";
-import { projectRegionalMaterializeFixture } from "./materialize-test-fixture.mjs";
+import {
+  materializeRegionalProductionCandidate,
+  projectRegionalMaterializeFixture,
+} from "./materialize-test-fixture.mjs";
 import test from "node:test";
 
 import {
@@ -228,6 +231,7 @@ test("materialized production SQLite와 provenance만 부산 4개 topology·memb
     cwd: root,
     env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey },
   });
+  await materializeRegionalProductionCandidate({ outputDir: packOutput, privateKey });
 
   const manifestPath = path.join(packOutput, "current.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));

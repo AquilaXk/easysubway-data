@@ -302,6 +302,14 @@ test("CI는 browser-dependent required tests 전에 pinned Chrome runtime을 제
   assert.match(shardThree, /--default-profile --max-workers 1 --shard-count 3 --shard-index 3/);
 });
 
+test("CI는 Data contracts 각 job에만 최소 contents read 권한을 둔다", () => {
+  const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+  assert.doesNotMatch(ci, /^permissions:/m);
+  for (const id of ["contracts_shard_1", "contracts_shard_2", "contracts_shard_3", "contracts"]) {
+    assert.match(namedJob(ci, id), /^    permissions:\n      contents: read$/m);
+  }
+});
+
 test("CI는 current v19 검증을 tracked topology evidence 변경 없이 수행한다", () => {
   const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
   const verification = namedWorkflowStep(ci, "Verify current Mobile v19 ITX topology evidence");

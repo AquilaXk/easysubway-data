@@ -9,12 +9,11 @@ on:
   push:
     branches: [main]
 
-permissions:
-  contents: read
-
 jobs:
   contracts_shard_1:
     name: Data contracts (shard 1/3)
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -135,6 +134,8 @@ jobs:
 
   contracts_shard_2:
     name: Data contracts (shard 2/3)
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -202,6 +203,8 @@ jobs:
 
   contracts_shard_3:
     name: Data contracts (shard 3/3)
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -269,6 +272,8 @@ jobs:
 
   contracts:
     name: Data contracts
+    permissions:
+      contents: read
     needs: [contracts_shard_1, contracts_shard_2, contracts_shard_3]
     if: ${{ always() }}
     runs-on: ubuntu-latest
