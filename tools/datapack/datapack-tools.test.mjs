@@ -18305,28 +18305,34 @@ async function writeCurrentItxReleaseInputs(
   const buildSpec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
   const sourceInventory = JSON.parse(await readFile(buildSpec.networkEdgeEvidence.sourceInventory.path, "utf8"));
   const currentInventory = structuredClone(sourceInventory);
-  const currentTopologyAdmissions = currentInventory.sources
-    .map(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence?.currentTopologyAdmission)
-    .filter((admission) => admission?.topologySnapshotId != null);
-  assert.ok(currentTopologyAdmissions.length > 0, "fixture current topology admission is required");
-  const [{ topologySnapshotId: currentTopologySnapshotId }] = currentTopologyAdmissions;
-  assert.ok(currentTopologyAdmissions.every(({ topologySnapshotId }) => topologySnapshotId === currentTopologySnapshotId),
-    "fixture current topology admissions must share one snapshot identity");
-  const baselineTopology = await readFile(
+  const currentTopologySources = currentInventory.sources.filter(
+    ({ id }) => id === "seoul-metro-route-map-positions",
+  );
+  assert.equal(currentTopologySources.length, 1, "fixture current topology source must exist once");
+  const [currentTopologySource] = currentTopologySources;
+  const { topologySnapshotId: currentTopologySnapshotId } =
+    currentTopologySource.routeMapAdmissionEvidence?.currentTopologyAdmission ?? {};
+  assert.ok(currentTopologySnapshotId != null, "fixture current topology admission is required");
+  const baselineTopologyBinding = buildSpec.networkEdgeEvidence.capitalTopology;
+  const baselineTopologyBytes = await readFile(baselineTopologyBinding.path);
+  assert.equal(
+    sha256(baselineTopologyBytes),
+    baselineTopologyBinding.sha256,
+    "fixture baseline topology binding must match its bytes",
+  );
+  const baselineTopology = JSON.parse(baselineTopologyBytes);
+  const candidateTopologyBytes = await readFile(
     `tools/datapack/sources/${currentTopologySnapshotId}.json`,
-    "utf8",
-  ).then(JSON.parse);
-  const candidateTopology = projectCapitalTopologyOwnership(baselineTopology);
+  );
+  const candidateTopology = JSON.parse(candidateTopologyBytes);
   const baselineTopologyPath = path.join(workspace, "capital-topology-baseline.json");
   const candidateTopologyPath = path.join(workspace, "capital-topology-candidate.json");
   const topologyReverificationPath = path.join(workspace, "capital-topology-reverification.json");
-  const baselineTopologyBytes = Buffer.from(`${JSON.stringify(baselineTopology)}\n`);
-  const candidateTopologyBytes = Buffer.from(`${JSON.stringify(candidateTopology)}\n`);
   const topologyReverification = buildCapitalTopologyReverificationEvidence(
     projectCapitalTopologyOwnership(baselineTopology),
     candidateTopology,
   );
-  topologyReverification.baseline.snapshotId = currentTopologySnapshotId;
+  topologyReverification.baseline.snapshotId = baselineTopologyBinding.snapshotId;
   const topologyReverificationBytes = Buffer.from(`${JSON.stringify(topologyReverification)}\n`);
   const candidateTopologyAdmissions = new Map(candidateTopology.lines.map(({ lineId }) => [lineId, {
     verifiedAt: candidateTopology.capturedAt,
@@ -18423,12 +18429,19 @@ async function writeCurrentItxReleaseInputs(
   currentAdmission.evidenceHash = sha256(Buffer.from(JSON.stringify(refreshedCurrentWithoutEvidenceHash)));
   currentAdmissionBytes = Buffer.from(`${JSON.stringify(currentAdmission)}\n`);
   await writeFile(currentAdmissionPath, currentAdmissionBytes);
-  for (const source of currentInventory.sources) {
-    const admission = source.routeMapAdmissionEvidence?.currentTopologyAdmission;
-    if (admission?.topologySnapshotId !== currentTopologySnapshotId) continue;
-    admission.topologyContentSha256 = candidateTopology.contentSha256;
+  for (const source of currentInventory.sources.filter(({ routeMapAdmissionEvidence }) =>
+    routeMapAdmissionEvidence?.topologySourceId === candidateTopology.sourceId)) {
+    const admission = source.routeMapAdmissionEvidence.currentTopologyAdmission;
+    assert.ok(admission != null, `${source.id} current topology admission is required`);
+    Object.assign(admission, {
+      topologySnapshotId: currentTopologySnapshotId,
+      topologyContentSha256: candidateTopology.contentSha256,
+      reviewedAt: candidateTopology.capturedAt,
+      freshUntil: candidateTopology.freshUntil,
+    });
     admission.topologyLineages = admission.topologyLineages.map((lineage) => ({
       ...lineage,
+      snapshotId: currentTopologySnapshotId,
       contentSha256: candidateTopology.contentSha256,
     }));
   }
@@ -18447,7 +18460,7 @@ async function writeCurrentItxReleaseInputs(
   Object.assign(buildSpec.networkEdgeEvidence.capitalTopology, {
     path: baselineTopologyPath,
     sha256: sha256(baselineTopologyBytes),
-    snapshotId: currentTopologySnapshotId,
+    snapshotId: baselineTopologyBinding.snapshotId,
   });
   Object.assign(buildSpec.networkEdgeEvidence.capitalTopologyCandidate, {
     path: candidateTopologyPath,
