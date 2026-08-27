@@ -50,6 +50,46 @@ test("420 EXIT bundle을 lossless로 읽고 exact receipt 실행 identity에 결
   }
 });
 
+test("recovered v2 bundle을 immutable source provenance와 함께 읽는다", async () => {
+  const fixture = await bundleFixture();
+  const sourceBundle = JSON.parse(fixture.bytes);
+  const sourceReceipt = JSON.parse(sourceBundle.collectionReceiptJson);
+  const recoveredReceipt = buildCurrentKricExitCollectionReceipt({
+    collectionPlanBytes: fixture.planBytes,
+    providerSnapshotBytes: fixture.snapshotBytes,
+    repository: "AquilaXk/easysubway-data",
+    repositorySha: "b".repeat(40),
+    operationId: "current-capital-561",
+    recoveredFrom: {
+      repositorySha: sourceReceipt.repositorySha,
+      operationId: sourceReceipt.operationId,
+      receiptSha256: sourceReceipt.receiptSha256,
+      bundleSha256: sourceBundle.bundleSha256,
+    },
+  });
+  const recoveredBundle = buildCurrentKricExitCollectionBundle({
+    collectionPlanBytes: fixture.planBytes,
+    providerSnapshotBytes: fixture.snapshotBytes,
+    receipt: recoveredReceipt,
+  });
+  const recoveredBytes = Buffer.from(canonical(recoveredBundle));
+  const temporary = await mkdtemp(path.join(os.tmpdir(), "exit-bundle-recovered-consumer-"));
+  try {
+    const bundlePath = path.join(temporary, "bundle.json");
+    await writeFile(bundlePath, recoveredBytes, { mode: 0o600 });
+    const consumed = await consumeCurrentKricExitCollectionBundle({
+      collectionBundle: bundlePath,
+      expectedBundleSha256: sha256(recoveredBytes),
+      expectedRepositorySha: "b".repeat(40),
+      expectedOperationId: "current-capital-561",
+    });
+    assert.equal(consumed.receipt.schemaVersion, 2);
+    assert.deepEqual(consumed.receipt.recoveredFrom, recoveredReceipt.recoveredFrom);
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
+});
+
 test("self-hash가 다시 계산된 embedded receipt substitution도 거부한다", async () => {
   const fixture = await bundleFixture();
   const temporary = await mkdtemp(path.join(os.tmpdir(), "exit-bundle-substitution-"));

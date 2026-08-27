@@ -164,6 +164,7 @@ export function rebindCandidateSourceSnapshots({
   });
   ids[oldIndex] = next.snapshotId;
   projections[oldIndex] = nextProjection;
+  candidate.publishedAt = now.toISOString();
   candidate.sourceSnapshotSetHash = sha256(JSON.stringify(selectLedgerOrderedSnapshots(sourceSnapshots, ids)));
   candidate.sourceInventorySha256 = sha256(JSON.stringify(sourceInventory));
   candidate.networkEdgeEvidence.sourceInventory.sha256 = sha256(sourceInventoryBytes);
@@ -375,7 +376,7 @@ export function appendTransferCandidateSourceSnapshot({ candidateBuildSpec, tran
 }
 
 function assertOnlyAllowedCandidateChanges(before, after, oldProjection, nextProjection) {
-  const allowed = new Set(["sourceSnapshotIds", "sourceSnapshots", "sourceSnapshotSetHash", "sourceInventorySha256", "networkEdgeEvidence"]);
+  const allowed = new Set(["publishedAt", "sourceSnapshotIds", "sourceSnapshots", "sourceSnapshotSetHash", "sourceInventorySha256", "networkEdgeEvidence"]);
   const beforeKeys = Object.keys(before);
   if (beforeKeys.length !== Object.keys(after).length || beforeKeys.some((key) => !(key in after))) {
     throw new Error("candidate top-level shape changed");

@@ -45,6 +45,27 @@ test("213/199/420 paired bytes는 결정적 immutable receipt와 exact bundle을
   const receipt = buildCurrentKricExitCollectionReceipt(input);
   assert.equal(receipt.queryCount, 420);
   assert.equal(canonicalCurrentKricExitCollectionReceiptJson(receipt), canonicalCurrentKricExitCollectionReceiptJson(buildCurrentKricExitCollectionReceipt(input)));
+  const recovered = buildCurrentKricExitCollectionReceipt({
+    ...input,
+    operationId: "current-capital-561",
+    recoveredFrom: {
+      repositorySha: "b".repeat(40), operationId: input.operationId,
+      receiptSha256: receipt.receiptSha256, bundleSha256: "c".repeat(64),
+    },
+  });
+  assert.equal(recovered.schemaVersion, 2);
+  assert.deepEqual(recovered.recoveredFrom, {
+    repositorySha: "b".repeat(40), operationId: input.operationId,
+    receiptSha256: receipt.receiptSha256, bundleSha256: "c".repeat(64),
+  });
+  assert.equal(canonicalCurrentKricExitCollectionReceiptJson(recovered), JSON.stringify(recovered));
+  assert.throws(() => buildCurrentKricExitCollectionReceipt({
+    ...input,
+    recoveredFrom: {
+      repositorySha: "b".repeat(40), operationId: input.operationId,
+      receiptSha256: receipt.receiptSha256, bundleSha256: "c".repeat(64),
+    },
+  }), /recovery provenance mismatch/);
   const temporary = await mkdtemp(path.join(tmpdir(), "exit-receipt-"));
   try {
     const planPath = path.join(temporary, "plan.json"); const snapshotPath = path.join(temporary, "snapshot.json"); const output = path.join(temporary, "bundle.json");
