@@ -11,7 +11,11 @@ import {
   sha256,
 } from "./lib/manifest-validation.mjs";
 import { validateServerRouteBundleFinal } from "./lib/server-route-bundle-final.mjs";
-import { publishImmutableObjectPlan } from "./publish-object-storage.mjs";
+import {
+  assertServerRouteOciClientIdentity,
+  createServerRouteOciClient,
+  serverRouteOciPublicBaseUrl,
+} from "./publish-server-route-bundle-publication-descriptor.mjs";
 import { inspectSignedServerRouteBundle } from "./sign-server-route-bundle.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -52,6 +56,9 @@ const CANDIDATE_KEYS = [
 ];
 
 export async function publishServerRouteBundle(input) {
+  const env = input.env ?? process.env;
+  const storage = input.client ?? createServerRouteOciClient(env);
+  assertServerRouteOciClientIdentity(storage, env);
   const repositoryRoot = await realDirectory(input.repositoryRoot ?? process.cwd(), "repository root");
   const repositoryGitSha = requiredGitSha(input.repositoryGitSha);
   await verifyRepositoryHead(repositoryRoot, repositoryGitSha);
@@ -61,6 +68,9 @@ export async function publishServerRouteBundle(input) {
   const finalBytes = await readNonEmptyRegular(finalPath, "pre-publication FINAL");
   const final = validateServerRouteBundleFinal(parseCanonicalJson(finalBytes, "pre-publication FINAL"));
   const publicBaseUrl = validatePublicBaseUrl(input.publicBaseUrl);
+  if (publicBaseUrl !== serverRouteOciPublicBaseUrl(env)) {
+    throw new Error("public base URL must equal the exact OCI server-route identity");
+  }
   const receiptPath = path.resolve(requiredRaw(input.receiptPath, "receiptPath"));
   const receiptParent = await realDirectory(path.dirname(receiptPath), "receipt parent");
   const clock = input.clock ?? Date.now;
@@ -90,10 +100,10 @@ export async function publishServerRouteBundle(input) {
   const stage = await mkdtemp(path.join(receiptParent, ".server-route-publication-"));
   try {
     await writeSnapshot(stage, snapshot);
-    await publishImmutableObjectPlan({
+    await publishStrictImmutableObjectPlan({
       plan: publicationPlan(receipt),
       root: stage,
-      client: input.client ?? null,
+      client: storage,
     });
     await verifyPublicLocator(receipt, publicRead);
     await assertInputsUnchanged({ artifactRoot, snapshot, finalPath, finalBytes });
@@ -406,6 +416,26 @@ function publicationPlan(receipt) {
       },
     ]),
   };
+}
+
+async function publishStrictImmutableObjectPlan({ plan, root, client }) {
+  const storage = client;
+  for (const step of plan.steps) {
+    if (step.type === "put-immutable-bundle-object") {
+      const bytes = await readFile(path.join(root, step.sourcePath));
+      if (bytes.length !== step.sizeBytes || sha256(bytes) !== step.sha256) {
+        throw new Error(`${step.objectKey} source checksum mismatch`);
+      }
+      if (!(await storage.putObjectIfAbsent(step.objectKey, bytes, step))) {
+        throw new Error(`${step.objectKey} conditional create conflict: immutable violation`);
+      }
+      continue;
+    }
+    const stored = await storage.readObject(step.objectKey);
+    if (!stored.exists || stored.body.length !== step.sizeBytes || sha256(stored.body) !== step.sha256) {
+      throw new Error(`${step.objectKey} uploaded checksum mismatch`);
+    }
+  }
 }
 
 async function writeSnapshot(root, snapshot) {

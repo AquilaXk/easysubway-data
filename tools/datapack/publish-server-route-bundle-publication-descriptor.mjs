@@ -11,7 +11,7 @@ import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
 const execFileAsync = promisify(execFile);
 const REPOSITORY = "AquilaXk/easysubway-data";
 
-export async function publishServerRouteBundlePublicationDescriptor({ descriptorPath, repositoryGitSha, repositoryRoot = process.cwd(), client = null, env = process.env } = {}) {
+export async function publishServerRouteBundlePublicationDescriptor({ descriptorPath, repositoryGitSha, repositoryRoot = process.cwd(), client = null, env = process.env, publicRead = null } = {}) {
   const sha = requiredSha(repositoryGitSha, "repository git sha");
   await assertDetachedCleanHead(repositoryRoot, sha);
   const storage = client ?? createServerRouteOciClient(env);
@@ -28,6 +28,14 @@ export async function publishServerRouteBundlePublicationDescriptor({ descriptor
   if (!stored?.exists || !Buffer.isBuffer(stored.body) || !stored.body.equals(bytes)
     || sha256(stored.body) !== sha256(bytes)) {
     throw new Error("descriptor OCI full GET mismatch");
+  }
+  const publicResponse = await (publicRead ?? readCredentialFreeDescriptorObject)(
+    `${serverRouteOciPublicBaseUrl(env)}/${encodeObjectKey(key)}`,
+    bytes.length,
+  );
+  if (!publicResponse || publicResponse.statusCode !== 200 || !Buffer.isBuffer(publicResponse.body) || !publicResponse.body.equals(bytes)
+    || sha256(publicResponse.body) !== sha256(bytes)) {
+    throw new Error("descriptor public full GET mismatch");
   }
   return { descriptorSha256: descriptor.descriptorSha256, objectKey: key };
 }
@@ -75,6 +83,11 @@ export function createServerRouteOciClient(env = process.env, fetchImpl = fetch)
   };
 }
 
+export function serverRouteOciPublicBaseUrl(env = process.env) {
+  const { namespace, bucket, region } = ociIdentity(env);
+  return `https://objectstorage.${region}.oraclecloud.com/n/${namespace}/b/${bucket}/o`;
+}
+
 export function assertServerRouteOciClientIdentity(client, env = process.env) {
   const expected = ociIdentity(env);
   if (!client || typeof client.putObjectIfAbsent !== "function" || typeof client.readObject !== "function"
@@ -86,6 +99,11 @@ export function assertServerRouteOciClientIdentity(client, env = process.env) {
     || Object.keys(client.identity).length !== 4) {
     throw new Error("injected client must use the exact OCI server-route identity");
   }
+}
+
+async function readCredentialFreeDescriptorObject(url, maxBytes) {
+  const { readCredentialFreeObject } = await import("./publish-server-route-bundle.mjs");
+  return readCredentialFreeObject(url, maxBytes);
 }
 
 function ociIdentity(env) {
@@ -118,6 +136,7 @@ async function regular(target, label) { const stat = await lstat(target); if (!s
 function required(value, label) { if (typeof value !== "string" || value.length === 0 || value.trim() !== value || value.includes("\0")) throw new Error(`${label} is required`); return value; }
 function requiredSha(value, label) { if (!/^[a-f0-9]{64}$/.test(value ?? "") && !/^[a-f0-9]{40}$/.test(value ?? "")) throw new Error(`${label} must be lowercase sha`); return value; }
 function segment(value) { if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(value)) throw new Error("OCI identity is invalid"); return value; }
+function encodeObjectKey(key) { return key.split("/").map(encode).join("/"); }
 function encode(value) { return encodeURIComponent(value).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`); }
 function compare(left, right) { return Buffer.compare(Buffer.from(left), Buffer.from(right)); }
 function parseArgs(argv) { if (argv.length !== 4 || argv[0] !== "--descriptor" || argv[2] !== "--repository-git-sha") throw new Error("exact CLI arguments are required"); return { descriptorPath: argv[1], repositoryGitSha: argv[3] }; }

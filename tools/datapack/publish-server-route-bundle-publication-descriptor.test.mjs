@@ -14,6 +14,7 @@ import {
   createServerRouteOciClient,
   publishServerRouteBundlePublicationDescriptor,
   publicationDescriptorKey,
+  serverRouteOciPublicBaseUrl,
 } from "./publish-server-route-bundle-publication-descriptor.mjs";
 
 const env = {
@@ -50,6 +51,10 @@ test("injected publisher client must exactly bind the OCI namespace, bucket, reg
     () => assertServerRouteOciClientIdentity(client, { ...env, OCI_SERVER_ROUTE_COMPAT_ENDPOINT: "https://other.example" }),
     /exact OCI compatibility endpoint/,
   );
+  assert.equal(
+    serverRouteOciPublicBaseUrl(env),
+    "https://objectstorage.ap-seoul-1.oraclecloud.com/n/example/b/easysubway-route/o",
+  );
 });
 
 test("OCI compatibility client uses conditional create and an authenticated full GET without provider fallback", async () => {
@@ -81,12 +86,18 @@ test("publisher entrypoint binds a detached clean producer and verifies immutabl
   const client = exactClient(async (key, bytes) => { calls.push(["put", key, bytes]); return true; }, async (key) => {
     calls.push(["get", key]); return { exists: true, body: fixture.bytes };
   });
+  const publicRead = async (url, size) => {
+    calls.push(["public", url, size]);
+    return { statusCode: 200, body: fixture.bytes };
+  };
   const result = await publishServerRouteBundlePublicationDescriptor({
-    descriptorPath: fixture.path, repositoryRoot: fixture.repo, repositoryGitSha: fixture.sha, client, env,
+    descriptorPath: fixture.path, repositoryRoot: fixture.repo, repositoryGitSha: fixture.sha, client, env, publicRead,
   });
   assert.deepEqual(result, { descriptorSha256: fixture.descriptor.descriptorSha256, objectKey: publicationDescriptorKey(fixture.descriptor.descriptorSha256) });
-  assert.equal(calls.length, 2);
-  assert.deepEqual(calls.map(([kind]) => kind), ["put", "get"]);
+  assert.equal(calls.length, 3);
+  assert.deepEqual(calls.map(([kind]) => kind), ["put", "get", "public"]);
+  assert.equal(calls[2][1], `https://objectstorage.ap-seoul-1.oraclecloud.com/n/example/b/easysubway-route/o/${result.objectKey}`);
+  assert.equal(calls[2][2], fixture.bytes.length);
 
   for (const [label, clientFor] of [
     ["create conflict", exactClient(async () => false, async () => { throw new Error("must not GET"); })],
@@ -94,13 +105,32 @@ test("publisher entrypoint binds a detached clean producer and verifies immutabl
     ["mismatched GET", exactClient(async () => true, async () => ({ exists: true, body: Buffer.from("wrong") }))],
   ]) {
     let puts = 0;
+    let publicReads = 0;
     const counted = { ...clientFor, putObjectIfAbsent: async (...args) => { puts += 1; return clientFor.putObjectIfAbsent(...args); } };
     await assert.rejects(
-      () => publishServerRouteBundlePublicationDescriptor({ descriptorPath: fixture.path, repositoryRoot: fixture.repo, repositoryGitSha: fixture.sha, client: counted, env }),
+      () => publishServerRouteBundlePublicationDescriptor({ descriptorPath: fixture.path, repositoryRoot: fixture.repo, repositoryGitSha: fixture.sha, client: counted, env, publicRead: async () => { publicReads += 1; return { statusCode: 200, body: fixture.bytes }; } }),
       label === "create conflict" ? /immutable create conflict/ : /OCI full GET mismatch/,
     );
     assert.equal(puts, 1);
+    assert.equal(publicReads, 0);
   }
+
+  const publicMismatchCalls = [];
+  await assert.rejects(
+    () => publishServerRouteBundlePublicationDescriptor({
+      descriptorPath: fixture.path,
+      repositoryRoot: fixture.repo,
+      repositoryGitSha: fixture.sha,
+      client: exactClient(
+        async (key) => { publicMismatchCalls.push(["put", key]); return true; },
+        async (key) => { publicMismatchCalls.push(["get", key]); return { exists: true, body: fixture.bytes }; },
+      ),
+      env,
+      publicRead: async (url) => { publicMismatchCalls.push(["public", url]); return { statusCode: 200, body: Buffer.from("wrong") }; },
+    }),
+    /descriptor public full GET mismatch/,
+  );
+  assert.deepEqual(publicMismatchCalls.map(([kind]) => kind), ["put", "get", "public"]);
 
   const drifted = path.join(fixture.root, "drifted.json");
   const value = structuredClone(fixture.descriptor);
