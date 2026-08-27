@@ -3,11 +3,15 @@ import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promise
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { deflateRawSync } from "node:zlib";
 
 import {
+  collectKricCurrentStationLineFile,
   collectKricNationwideTimetableFile,
   DEFAULT_MAXIMUM_BYTES,
+  KRIC_CURRENT_STATION_LINE_FILE_URL,
   KRIC_NATIONWIDE_TIMETABLE_FILE_URL,
+  parseKricCurrentStationLineWorkbook,
 } from "./collect-kric-nationwide-timetable-file.mjs";
 
 const ZIP = minimalXlsxZip();
@@ -41,6 +45,44 @@ test("#454 fixed credential-free file collector makes one HTTPS request and atom
     assert.equal((await readdir(root)).sort().join(","), path.basename(output));
     assert.ok(output.startsWith(root));
   });
+});
+
+test("#455 fixed current station-line profile requests only KRIC FILE id=1294 through the shared bounded collector", async () => {
+  assert.equal(
+    KRIC_CURRENT_STATION_LINE_FILE_URL,
+    "https://data.kric.go.kr/rips/dataset/download.file?type=filedata&id=1294&operation=1",
+  );
+  await withOutput(async ({ root }) => {
+    const output = path.join(root, "kric-current-station-line-file-test.xlsx");
+    const calls = [];
+    const receipt = await collectKricCurrentStationLineFile({
+      outputFile: output,
+      fetchImpl: async (url, init) => {
+        calls.push({ url, init });
+        return new Response(ZIP, { status: 200, headers: HEADERS });
+      },
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, KRIC_CURRENT_STATION_LINE_FILE_URL);
+    assert.equal(calls[0].init.method, "GET");
+    assert.equal(receipt.artifactKind, "kric-current-station-line-file-receipt");
+    assert.equal(receipt.sourceId, "kric-current-station-line-file");
+    assert.deepEqual(await readFile(output), ZIP);
+  });
+});
+
+test("#455 bounds ZIP entry inflation before a compressed workbook entry can expand", () => {
+  const payload = Buffer.alloc(65, 0x61);
+  const name = Buffer.from("xl/bomb.xml");
+  const compressed = deflateRawSync(payload);
+  const header = Buffer.alloc(30);
+  header.writeUInt32LE(0x04034b50, 0);
+  header.writeUInt16LE(8, 8);
+  header.writeUInt32LE(compressed.length, 18);
+  header.writeUInt32LE(payload.length, 22);
+  header.writeUInt16LE(name.length, 26);
+  const bytes = Buffer.concat([header, name, compressed, ZIP]);
+  assert.throws(() => parseKricCurrentStationLineWorkbook(bytes, { maximumInflatedBytes: 64 }), /WORKBOOK/);
 });
 
 test("#454 ignores absent or unusual Content-Disposition because the raw filename is fixed internally", async () => {

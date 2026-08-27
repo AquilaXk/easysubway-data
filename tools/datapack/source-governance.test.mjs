@@ -66,7 +66,7 @@ test("governance policy 전이는 exact current와 닫힌 predecessor chain만 �
   const legacy = "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70";
   assert.equal(transition("seoul-metro-transfer-distance-duration", currentPolicySha256).governancePolicySha256, currentPolicySha256);
   assert.equal(transition("seoul-metro-transfer-distance-duration", prior).governancePolicySha256, prior);
-  assert.equal(transition("molit-urban-rail-full-route", legacy).governancePolicySha256, legacy);
+  assert.throws(() => transition("molit-urban-rail-full-route", legacy), /governance policy binding/);
   assert.throws(() => transition("seoul-metro-transfer-distance-duration", legacy), /governance policy binding/);
   assert.throws(() => transition("molit-urban-rail-full-route", "0".repeat(64)), /governance policy binding/);
 });

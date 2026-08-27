@@ -6,10 +6,8 @@ import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
 const GOVERNANCE_POLICY_VERSION = "2026-07-15";
-const LEGACY_GOVERNANCE_POLICY_SHA256 = "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70";
 const PRIOR_GOVERNANCE_POLICY_SHA256 = "13f8a78c0ae0f7bfa6817005f44a92be3131e6f6708a69a4024747478203beaa";
 const CURRENT_GOVERNANCE_POLICY_SHA256 = "e6e607e0711bebafbc25843996a0d6ff1dce6e6e82b4cadb425e78ccd284d9f3";
-const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
 const RELEASE_PROTECTION_MAX_AGE_MS = 5 * 60 * 1_000;
 const RELEASE_PROTECTION_REASONS = new Set(["ACTIVE_RELEASE", "ROLLBACK_WINDOW"]);
 const LICENSE_STATUSES = new Set(["APPROVED", "REVIEW_REQUIRED", "BLOCKED", "EXPIRED"]);
@@ -76,7 +74,7 @@ export function deriveRawRetentionExpiresAt({ policy, sourceId, retrievedAt }) {
 }
 
 // Policy additions do not rewrite approvals already sealed under the exact
-// predecessor bytes. The two-step transition is deliberately closed.
+// predecessor bytes. The one-step transition is deliberately closed.
 export function approvedGovernanceBindingTransition({ snapshot, currentPolicyVersion, currentPolicySha256 }) {
   const binding = {
     governancePolicyVersion: snapshot?.governancePolicyVersion,
@@ -88,11 +86,6 @@ export function approvedGovernanceBindingTransition({ snapshot, currentPolicyVer
     && currentPolicySha256 === CURRENT_GOVERNANCE_POLICY_SHA256
     && binding.governancePolicyVersion === GOVERNANCE_POLICY_VERSION
     && binding.governancePolicySha256 === PRIOR_GOVERNANCE_POLICY_SHA256) return binding;
-  if (currentPolicyVersion === GOVERNANCE_POLICY_VERSION
-    && currentPolicySha256 === CURRENT_GOVERNANCE_POLICY_SHA256
-    && snapshot?.sourceId !== TRANSFER_SOURCE_ID
-    && binding.governancePolicyVersion === GOVERNANCE_POLICY_VERSION
-    && binding.governancePolicySha256 === LEGACY_GOVERNANCE_POLICY_SHA256) return binding;
   throw new Error("SOURCE_FRESHNESS_POLICY_MISSING: governance policy binding");
 }
 

@@ -111,6 +111,44 @@
       }
     },
     {
+      "id": "kric-current-station-line-file",
+      "priority": "P0",
+      "domain": "station_line_membership",
+      "coverageScope": {
+        "regionIds": ["all"],
+        "operatorIds": ["all-urban-metropolitan-rail-operators"]
+      },
+      "displayName": "전체 도시철도 역사정보",
+      "detailUrl": "https://data.kric.go.kr/rips/M_01_01/detail.do?id=1294",
+      "requestUrl": "https://data.kric.go.kr/rips/dataset/download.file?type=filedata&id=1294&operation=1",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://data.kric.go.kr/rips/dataset/download.file?type=filedata&id=1294&operation=1",
+        "auth": { "placement": "none" },
+        "requiredParameters": [],
+        "fixedParameters": { "type": "filedata", "id": "1294", "operation": "1" },
+        "responseEnvelope": "XLSX ZIP attachment",
+        "runner": {
+          "command": "node tools/datapack/collect-kric-nationwide-timetable-file.mjs",
+          "arguments": ["--profile", "current-station-line", "--output-file", "[absent-task-owned-absolute-file.xlsx]"],
+          "requiredEnv": []
+        },
+        "secretPolicy": "credential-free-output"
+      },
+      "licenseEvidenceStatus": "confirmed_unrestricted_public_data_free_use",
+      "sampleEvidenceStatus": "metadata_observed",
+      "admissionStatus": "preflight_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "retrievedAt": "2026-08-27",
+        "detailPageId": "1294",
+        "licenseEvidenceUrl": "https://data.kric.go.kr/rips/M_01_01/detail.do?id=1294",
+        "license": "unrestricted",
+        "formats": ["XLSX"],
+        "coverage": "all urban/metropolitan rail operators"
+      }
+    },
+    {
       "id": "busan-transportation-accessibility",
       "priority": "P0",
       "domain": "accessibility_facilities",
