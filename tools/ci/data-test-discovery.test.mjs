@@ -6,7 +6,9 @@ import { fileURLToPath } from 'node:url';
 import {
   buildDurationShards,
   combineDurationEvidence,
+  parseRunShardOptions,
   parseGitIndex,
+  selectDurationShard,
   selectExecutionTests,
   validateOwnership,
 } from './data-test-discovery.mjs';
@@ -239,6 +241,10 @@ test('execution profiles bind manifest membership and fixture hashes', () => {
   const profiled = fixture();
   profiled.manifest.tests[0].executionProfile = 'mobile-v19';
   profiled.executionProfile = 'mobile-v19';
+  profiled.manifest.fixtures.mobile.profileCommit = {
+    'mobile-v19': '2'.repeat(40),
+  };
+  profiled.fixtureStates.mobile.headSha = '2'.repeat(40);
   profiled.fixtureStates.mobile.files['pubspec.yaml'] = '1'.repeat(64);
   const result = validateOwnership(profiled);
   assert.deepEqual(
@@ -391,6 +397,88 @@ test('duration-based shards are deterministic and never duplicate or drop tests'
   );
   assert.deepEqual(first.map(({ estimatedDurationMs }) => estimatedDurationMs), [110, 110]);
   assert.throws(() => buildDurationShards(entries, 5), /empty shard/);
+});
+
+test('external duration shard selection is an exact disjoint union and fails closed', () => {
+  const entries = [
+    { path: 'a.test.mjs', durationMs: 100 },
+    { path: 'b.test.mjs', durationMs: 90 },
+    { path: 'c.test.mjs', durationMs: 20 },
+    { path: 'd.test.mjs', durationMs: 10 },
+  ];
+  const first = selectDurationShard(entries, 2, 1);
+  const second = selectDurationShard(entries, 2, 2);
+
+  assert.equal(first.index, 1);
+  assert.equal(second.index, 2);
+  assert.deepEqual(
+    [...first.tests, ...second.tests].sort((left, right) => left.localeCompare(right)),
+    entries.map(({ path }) => path).sort((left, right) => left.localeCompare(right)),
+  );
+  assert.equal(first.tests.filter((path) => second.tests.includes(path)).length, 0);
+  assert.throws(() => selectDurationShard(entries, 2, 0), /shard index must be between 1 and 2/);
+  assert.throws(() => selectDurationShard(entries, 2, 3), /shard index must be between 1 and 2/);
+  assert.throws(() => selectDurationShard(entries, 0, 1), /shard count must be a positive integer/);
+
+  assert.deepEqual(
+    parseRunShardOptions(['--shard-count', '2', '--shard-index', '1']),
+    { shardCount: 2, shardIndex: 1 },
+  );
+  assert.throws(() => parseRunShardOptions(['--shard-count', '2']), /must be provided together/);
+  assert.throws(() => parseRunShardOptions(['--shard-index', '1']), /must be provided together/);
+  assert.throws(
+    () => parseRunShardOptions(['--shard-count', '2', '--shard-index', '3']),
+    /shard index must be between 1 and 2/,
+  );
+});
+
+test('workflow default-profile shards require every configured serial invocation exactly once', () => {
+  const value = fixture();
+  const first = `${requiredInvocation} --max-workers 1 --shard-count 2 --shard-index 1`;
+  const second = `${requiredInvocation} --max-workers 1 --shard-count 2 --shard-index 2`;
+  value.manifest.workflows['required-pr'].defaultProfileShards = { count: 2, maxWorkers: 1 };
+  value.workflowSources['.github/workflows/ci.yml'] = value.workflowSources[
+    '.github/workflows/ci.yml'
+  ].replace(`- run: ${requiredInvocation}`, `- run: ${first}\n      - run: ${second}`);
+
+  assert.doesNotThrow(() => validateOwnership(value));
+
+  const followingAggregator = structuredClone(value);
+  followingAggregator.workflowSources['.github/workflows/ci.yml'] += `  contracts-aggregate:\n    if: \${{ always() }}\n    steps:\n      - run: true\n`;
+  assert.doesNotThrow(() => validateOwnership(followingAggregator));
+
+  const missing = structuredClone(value);
+  missing.workflowSources['.github/workflows/ci.yml'] = missing.workflowSources[
+    '.github/workflows/ci.yml'
+  ].replace(`- run: ${second}`, '');
+  assert.ok(
+    errorCodes(() => validateOwnership(missing)).includes(
+      'DEFAULT_PROFILE_SHARD_INVOCATION_MISMATCH',
+    ),
+  );
+
+  const extra = structuredClone(value);
+  extra.workflowSources['.github/workflows/ci.yml'] += `      - run: ${requiredInvocation}\n`;
+  assert.ok(
+    errorCodes(() => validateOwnership(extra)).includes(
+      'DEFAULT_PROFILE_SHARD_TOTAL_INVOCATION_MISMATCH',
+    ),
+  );
+
+  const conditional = structuredClone(value);
+  conditional.workflowSources['.github/workflows/ci.yml'] = conditional.workflowSources[
+    '.github/workflows/ci.yml'
+  ].replace(
+    `- run: ${first}`,
+    `- name: shard 1\n        if: \${{ false }}\n        run: ${first}`,
+  );
+  assert.ok(errorCodes(() => validateOwnership(conditional)).includes('WORKFLOW_CONDITIONAL_SKIP'));
+
+  const invalid = structuredClone(value);
+  invalid.manifest.workflows['required-pr'].defaultProfileShards = { count: 2, maxWorkers: 2 };
+  assert.ok(
+    errorCodes(() => validateOwnership(invalid)).includes('INVALID_DEFAULT_PROFILE_SHARDS'),
+  );
 });
 
 test('profile duration evidence combines only an exact successful disjoint union', () => {

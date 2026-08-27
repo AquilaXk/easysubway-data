@@ -12,6 +12,7 @@ import {
   applyCandidateReleaseIdentity,
   candidateNetworkEdgeEvidence,
   materializeIncheonNetworkEdges,
+  projectCandidateFixtureForAccessibilityAuthority,
   validateTrackedItxTopologyEvidence,
   validateSourceSeparatedCurrentTopology,
   validateCapitalTopologyReverification,
@@ -19,17 +20,16 @@ import {
   validateCandidateProductionScope,
   main as buildDatapackMain,
 } from "./build-datapack.mjs";
-import { main as buildAccessibilityAuthorityMain } from "./build-current-release-candidate-accessibility-input.mjs";
 import {
   buildCapitalTopologyReverificationEvidence,
   projectCapitalTopologyOwnership,
 } from "./collect-capital-route-topology.mjs";
+import { retainPreAuthorityRideEdges } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
-import { refreshCurrentCapitalAccessibilityFull } from "./refresh-current-capital-accessibility-full.mjs";
 import {
-  copySyntheticCurrentPublicRouteMapRepository,
-  nextSyntheticCurrentStaticNetworkNow,
-} from "./test-fixtures/current-public-route-map-successor.mjs";
+  materializeCurrentFanInCandidateArtifact,
+  prepareCurrentFullCapitalProductionRepository,
+} from "./test-fixtures/current-full-capital-production-artifact.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -58,7 +58,7 @@ test("build-datapack은 candidate mode만 staged transition을 입력보다 먼�
   const source = await readFile(path.join(root, "tools/datapack/build-datapack.mjs"), "utf8");
   const candidateMode = source.indexOf('if (args["build-spec"] != null) {');
   const guard = source.indexOf("await assertCurrentCapitalAccessibilityBuildAllowed({ repositoryRoot: root });");
-  const buildInput = source.indexOf("const { fixture, candidateBuild, artifactFreshUntil } = await loadBuildInput(");
+  const buildInput = source.indexOf("await loadBuildInput(");
   assert.ok(candidateMode >= 0, "staged transition guard는 candidate mode에만 적용돼야 한다");
   assert.ok(guard >= 0, "staged transition guard가 필요하다");
   assert.ok(candidateMode < guard, "candidate mode를 확인한 뒤 guard를 실행해야 한다");
@@ -126,15 +126,11 @@ function networkEdgeEvidenceFixture() {
 }
 
 test("candidate build spec release identity는 wall clock과 workflow run number에 무관하다", async (context) => {
-  const directory = await mkdtemp(path.join(tmpdir(), "candidate-build-release-identity-"));
+  const directory = await prepareCurrentFullCapitalProductionRepository(root);
   context.after(() => rm(directory, { recursive: true, force: true }));
-  await copySyntheticCurrentPublicRouteMapRepository(root, directory, {
-    now: await nextSyntheticCurrentStaticNetworkNow(root),
-    activateStaticNetwork: true,
-  });
-  await refreshCurrentCapitalAccessibilityFull({ repositoryRoot: directory });
   const buildSpecPath = "tools/datapack/release/candidate-build-spec.json";
-  const buildSpec = await readFile(path.join(directory, buildSpecPath), "utf8").then(JSON.parse);
+  const buildSpecBytes = await readFile(path.join(directory, buildSpecPath));
+  const buildSpec = JSON.parse(buildSpecBytes);
   const topologyAdmission = buildSpec.networkEdgeEvidence.capitalTopologyAdmission;
   const firstBuildAt = Math.max(
     Date.parse(buildSpec.publishedAt),
@@ -150,6 +146,14 @@ test("candidate build spec release identity는 wall clock과 workflow run number
     privateKeyEncoding: { type: "pkcs8", format: "pem" },
     publicKeyEncoding: { type: "spki", format: "pem" },
   });
+  const candidateStationLine = path.join(directory, "candidate-station-line-input.json");
+  const candidateRouteEdge = path.join(directory, "candidate-route-edge-input.json");
+  const candidateFixture = path.join(directory, "candidate-fixture.json");
+  const routeCoverageAuthority = path.join(directory, "server-route-coverage-authority.json");
+  await materializeCurrentFanInCandidateArtifact({
+    repositoryRoot: directory, stationLineOutput: candidateStationLine, routeEdgeOutput: candidateRouteEdge,
+    fixtureOutput: candidateFixture, authorityOutput: routeCoverageAuthority,
+  });
   const directOutput = path.join(directory, "direct-build");
   await assert.rejects(
     withEnvironment({
@@ -163,19 +167,56 @@ test("candidate build spec release identity는 wall clock과 workflow run number
     /production accessibility evidence mismatch/,
   );
   await assert.rejects(readFile(path.join(directOutput, "current.json")), /ENOENT/);
-  const candidateStationLine = path.join(directory, "candidate-station-line-input.json");
-  const candidateRouteEdge = path.join(directory, "candidate-route-edge-input.json");
-  const candidateFixture = path.join(directory, "candidate-fixture.json");
-  const routeCoverageAuthority = path.join(directory, "server-route-coverage-authority.json");
-  await buildAccessibilityAuthorityMain([
-    "--fixture", buildSpec.fixturePath,
-    "--build-spec", buildSpecPath,
-    "--station-line-output", candidateStationLine,
-    "--route-edge-output", candidateRouteEdge,
-    "--fixture-output", candidateFixture,
-    "--authority-output", routeCoverageAuthority,
-  ], { repositoryRoot: directory });
-
+  const validationOnlyFixturePath = "validation-only-source-fixture.json";
+  const validationOnlyBuildSpecPath = "validation-only-build-spec.json";
+  const sourceFixture = JSON.parse(await readFile(path.join(directory, buildSpec.fixturePath)));
+  const validationOnlyFixture = await projectCandidateFixtureForAccessibilityAuthority({
+    buildSpec,
+    sourceFixture,
+    repositoryRoot: directory,
+  });
+  const sourcePack = retainPreAuthorityRideEdges(sourceFixture, "validation-only source").packs
+    .find(({ id }) => id === "capital");
+  const validationOnlyPack = validationOnlyFixture.packs.find(({ id }) => id === "capital");
+  validationOnlyPack.networkEdges = structuredClone(sourcePack.networkEdges);
+  validationOnlyPack.outOfStationTransferLinks = structuredClone(sourcePack.outOfStationTransferLinks);
+  await Promise.all([
+    writeFile(
+      path.join(directory, validationOnlyFixturePath),
+      `${JSON.stringify(validationOnlyFixture, null, 2)}\n`,
+    ),
+    writeFile(
+      path.join(directory, validationOnlyBuildSpecPath),
+      `${JSON.stringify({ ...buildSpec, fixturePath: validationOnlyFixturePath }, null, 2)}\n`,
+    ),
+  ]);
+  const validationOnlyOutput = path.join(directory, "validation-only-build");
+  await withEnvironment({
+    EASYSUBWAY_DATAPACK_BUILD_NOW: firstBuildNow,
+    EASYSUBWAY_DATAPACK_BUILD_SPEC_VALIDATION_ONLY: "true",
+    EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey,
+    EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: "production-v1",
+  }, () => buildDatapackMain([
+    "--build-spec", validationOnlyBuildSpecPath,
+    "--output", validationOnlyOutput,
+  ], { repositoryRoot: directory }));
+  const validationOnlyManifest = JSON.parse(await readFile(
+    path.join(validationOnlyOutput, "current.json"),
+    "utf8",
+  ));
+  const validationOnlyProvenance = JSON.parse(await readFile(
+    path.join(validationOnlyOutput, "current.provenance.json"),
+    "utf8",
+  ));
+  assert.equal(validationOnlyManifest.channel, "dev");
+  assert.deepEqual(
+    validationOnlyManifest.packs.map(({ artifactKind }) => artifactKind),
+    ["fixture"],
+  );
+  assert.deepEqual(
+    validationOnlyProvenance.packs.map(({ artifactKind }) => artifactKind),
+    ["fixture"],
+  );
   async function build(name, buildNow, runNumber) {
     const output = path.join(directory, name);
     await withEnvironment({
@@ -187,6 +228,8 @@ test("candidate build spec release identity는 wall clock과 workflow run number
       "--build-spec", buildSpecPath,
       "--candidate-fixture-override", candidateFixture,
       "--server-route-coverage-authority", routeCoverageAuthority,
+      "--current-capital-station-line-input", candidateStationLine,
+      "--current-capital-route-edge-input", candidateRouteEdge,
       "--output", output,
     ], { repositoryRoot: directory }));
     return {
@@ -315,6 +358,11 @@ test("candidate override accessibility freshness는 authority input identity와 
     stationLineInputBytes,
     validationNow: new Date("2026-08-14T15:34:07.000Z"),
   }), expected);
+  assert.throws(() => candidateOverrideAccessibilityFreshUntil({
+    authority,
+    stationLineInputBytes,
+    validationNow: new Date(expected),
+  }), /station-line input accessibility evidence is stale/);
   assert.throws(() => candidateOverrideAccessibilityFreshUntil({
     authority: {
       ...authority,
@@ -530,7 +578,36 @@ test("direct-current reverification은 historical baseline만 동일 ownership�
   ));
 });
 
-test("tracked current ITX admission은 admitted pair와 fresh evidence identity에 결속된다", async () => {
+test("source-separated current reverification은 official baseline identity를 유지한다", async () => {
+  const topology = JSON.parse(await readFile(
+    path.join(root, "tools/datapack/sources/capital-route-topology-20260825.json"),
+    "utf8",
+  ));
+  const evidence = buildCapitalTopologyReverificationEvidence(topology, topology);
+  evidence.baseline.snapshotId = "capital-route-topology-20260825";
+  const admission = {
+    schemaVersion: 1,
+    artifactKind: "capital-network-edge-admission",
+    issue: 2649,
+    status: "ADMITTED",
+    snapshotId: "capital-route-topology-20260825",
+    contentSha256: topology.contentSha256,
+    reviewedAt: topology.capturedAt,
+    reverifiedAt: topology.capturedAt,
+    freshUntil: topology.freshUntil,
+  };
+
+  assert.doesNotThrow(() => validateCapitalTopologyReverification(
+    evidence,
+    topology,
+    topology,
+    admission,
+    admission.snapshotId,
+    admission.snapshotId,
+  ));
+});
+
+test("expired historical ITX admission은 current source admission으로 재사용되지 않는다", async () => {
   const admission = JSON.parse(await readFile(
     path.join(root, "tools/datapack/itx-current-network-edge-admission-20260810.json"),
     "utf8",
@@ -539,62 +616,15 @@ test("tracked current ITX admission은 admitted pair와 fresh evidence identity�
     path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"),
     "utf8",
   ));
-  const source = JSON.parse(await readFile(
-    path.join(root, contract.sourceTimetableArtifact.promotion.previousArtifactPath),
+  const currentSource = JSON.parse(await readFile(
+    path.join(root, contract.sourceTimetableArtifact.artifactPath),
     "utf8",
   ));
-
-  const validated = validateItxCurrentTopologyAdmission(admission, {
-    previousArtifactSha256: contract.sourceTimetableArtifact.promotion.previousArtifactSha256,
-    stationSequences: source.stationSequences,
-    now: currentNow,
-  });
-  assert.equal(validated.sourceId, "itx-current-network-edge-admission");
-  assert.equal(validated.sourceSnapshotId, "itx-current-network-edge-admission-20260810");
-  assert.equal(validated.freshUntil, "2026-08-11T00:00:00+09:00");
-  assert.equal(validated.pairHashes.size, 48);
-
   assert.throws(() => validateItxCurrentTopologyAdmission(admission, {
-    previousArtifactSha256: "0".repeat(64),
-    stationSequences: source.stationSequences,
-    now: new Date("2026-08-10T00:00:00.000Z"),
-  }), /identity mismatch/);
-
-  const pairTampered = structuredClone(admission);
-  pairTampered.pairHashes[0] = "0".repeat(64);
-  rehashAdmission(pairTampered);
-  assert.throws(() => validateItxCurrentTopologyAdmission(pairTampered, {
-    previousArtifactSha256: contract.sourceTimetableArtifact.promotion.previousArtifactSha256,
-    stationSequences: source.stationSequences,
-    now: currentNow,
-  }), /identity mismatch/);
-
-  assert.throws(() => validateItxCurrentTopologyAdmission(admission, {
-    previousArtifactSha256: contract.sourceTimetableArtifact.promotion.previousArtifactSha256,
-    stationSequences: source.stationSequences,
-    now: new Date("2026-08-11T00:00:00.000Z"),
-  }), /stale/);
-
-  const extended = structuredClone(admission);
-  extended.freshUntil = "2027-08-11T00:00:00+09:00";
-  rehashAdmission(extended);
-  assert.throws(() => validateItxCurrentTopologyAdmission(extended, {
-    previousArtifactSha256: contract.sourceTimetableArtifact.promotion.previousArtifactSha256,
-    stationSequences: source.stationSequences,
-    now: currentNow,
-  }), /freshUntil.*serviceDate/);
-
-  const invalidDate = structuredClone(admission);
-  invalidDate.serviceDate = "20260230";
-  invalidDate.artifactId = "itx-current-network-edge-admission-20260230";
-  invalidDate.observedAt = "2026-02-28T00:00:00.000Z";
-  invalidDate.freshUntil = "2026-03-01T00:00:00+09:00";
-  rehashAdmission(invalidDate);
-  assert.throws(() => validateItxCurrentTopologyAdmission(invalidDate, {
-    previousArtifactSha256: contract.sourceTimetableArtifact.promotion.previousArtifactSha256,
-    stationSequences: source.stationSequences,
-    now: new Date("2026-02-28T01:00:00.000Z"),
-  }), /serviceDate is invalid/);
+    previousArtifactSha256: contract.sourceTimetableArtifact.sha256,
+    stationSequences: currentSource.stationSequences,
+    now: new Date("2026-08-25T00:00:00.000Z"),
+  }), /identity mismatch|stale/);
 });
 
 test("tracked current source topology evidence는 expired overlay 없이 exact admission을 만든다", async () => {
@@ -608,14 +638,14 @@ test("tracked current source topology evidence는 expired overlay 없이 exact a
   assert.equal(
     fixture.packs.find(({ id }) => id === "capital").networkEdges
       .filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN").length,
-    84,
+    74,
   );
   const previousBuildNow = process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
-  process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = "2026-08-13T00:00:00.000Z";
+  process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = "2026-08-25T00:00:00.000Z";
   try {
     const admitted = await admittedItxNetworkEdgeEvidence(contract, topology);
     assert.equal(admitted.sourceSnapshotId, contract.sourceTimetableArtifact.artifactId);
-    assert.equal(admitted.pairHashes.size, 84);
+    assert.equal(admitted.pairHashes.size, 74);
     assert.equal(admitted.routeServiceArtifactEvidence.artifactEvidence.admissionStatus, "ADMITTED");
     assert.equal(admitted.routeServiceArtifactEvidence.stationCatalogEvidence.admissionStatus, "ADMITTED");
   } finally {

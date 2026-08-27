@@ -3,11 +3,12 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { gunzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 
-const ADMITTED_ITX_EDGE_SET_SHA256 = "da771d5264efd198989b6e1c589c130620274f7c7d99c423909f3a1c5acf2b2f";
+import { validateTrackedItxTopologyEvidence } from "./build-datapack.mjs";
+import { canonicalRideEdgeSetSha256 } from "./evaluate-route-accessibility-edges.mjs";
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
@@ -18,20 +19,36 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   }
 }
 
-export async function main(argv) {
+export async function main(argv, {
+  repositoryRoot = fileURLToPath(new URL("../../", import.meta.url)),
+} = {}) {
   const args = parseArgs(argv);
-  if (!args.manifest || !args.root) {
-    throw new Error("usage: build-route-graph-topology-report.mjs --manifest <current.json> --root <pack-root> [--output <report.json>]");
+  if (!args.manifest || !args.root || !args["build-spec"]) {
+    throw new Error("usage: build-route-graph-topology-report.mjs --manifest <current.json> --root <pack-root> --build-spec <candidate-build-spec.json> [--output <report.json>]");
   }
-  const manifest = JSON.parse(await readFile(args.manifest, "utf8"));
+  const [manifestBytes, buildSpecBytes] = await Promise.all([
+    readFile(args.manifest),
+    readFile(args["build-spec"]),
+  ]);
+  const manifest = JSON.parse(manifestBytes);
+  const buildSpec = JSON.parse(buildSpecBytes);
   const temporaryDir = await mkdtemp(path.join(tmpdir(), "easysubway-route-graph-topology-"));
   try {
     const packs = [];
     for (const pack of manifest.packs ?? []) {
       const compressed = await readFile(localPackPathForUrl(args.root, pack));
       const sqlitePath = path.join(temporaryDir, `${pack.id}-v${pack.version}.sqlite`);
-      await writeFile(sqlitePath, gunzipSync(compressed));
-      packs.push(buildRouteGraphTopologyReport(sqlitePath, pack));
+      const sqliteBytes = gunzipSync(compressed);
+      await writeFile(sqlitePath, sqliteBytes);
+      const binding = await validateCurrentItxTopologyEvidencePack({
+        compressed,
+        sqliteBytes,
+        sqlitePath,
+        pack,
+        buildSpec,
+        repositoryRoot,
+      });
+      packs.push(buildRouteGraphTopologyReport(sqlitePath, pack, binding));
     }
     const report = {
       schemaVersion: 1,
@@ -62,7 +79,8 @@ export async function main(argv) {
   }
 }
 
-export function buildRouteGraphTopologyReport(sqlitePath, pack = {}) {
+export function buildRouteGraphTopologyReport(sqlitePath, pack = {}, { admittedItxEdgeSetSha256 } = {}) {
+  assertLowercaseSha256(admittedItxEdgeSetSha256, "admitted ITX edge set");
   const database = new DatabaseSync(sqlitePath, { readOnly: true });
   try {
     const stationLines = database.prepare("SELECT station_id, line_id, line_sequence FROM station_lines ORDER BY line_id, line_sequence, station_id").all();
@@ -97,14 +115,19 @@ export function buildRouteGraphTopologyReport(sqlitePath, pack = {}) {
     const rideCountsByServicePattern = {};
     const rideCountsByServiceClass = {};
     const itxEdges = edges
-      .filter((edge) => String(edge.service_class).toUpperCase() === "ITX_CHEONGCHUN")
+      .filter((edge) => (
+        String(edge.edge_type).toUpperCase() === "RIDE"
+        && String(edge.service_class).toUpperCase() === "ITX_CHEONGCHUN"
+      ))
       .map((edge) => ({ ...edge }));
-    const admittedItxEdgeIds = hashJson(itxEdges) === ADMITTED_ITX_EDGE_SET_SHA256
-      ? new Set(itxEdges.map(({ id }) => id))
-      : new Set();
+    if (canonicalRideEdgeSetSha256(itxEdges.map(routeEdgeFromSqliteRow)) !== admittedItxEdgeSetSha256) {
+      throw new Error("ITX edge set identity mismatch");
+    }
+    const admittedItxEdgeIds = new Set(itxEdges.map(({ id }) => id));
 
     addGeneratedStationTransferEdges(stationLines, routeGraphNodes, adjacency, undirected);
     for (const edge of edges) {
+      assertSupportedRouteEndpointSuffix(edge);
       const edgeType = String(edge.edge_type ?? "").toUpperCase();
       const servicePattern = String(edge.service_pattern || "LOCAL").toUpperCase();
       const serviceClass = String(edge.service_class || "SUBWAY").toUpperCase();
@@ -117,19 +140,19 @@ export function buildRouteGraphTopologyReport(sqlitePath, pack = {}) {
           violations.rideSpeed.push({ edgeId: edge.id, speedKmh });
         }
       }
-      const fromNode = stationLineNodeFromRouteNodeId(edge.from_node_id);
-      const toNode = stationLineNodeFromRouteNodeId(edge.to_node_id);
+      const fromNode = stationLineNodeFromEdgeEndpoint(edge.from_node_id, edge);
+      const toNode = stationLineNodeFromEdgeEndpoint(edge.to_node_id, edge);
       const from = stationLineByNode.get(fromNode);
       const to = stationLineByNode.get(toNode);
       if (edgeType === "RIDE" && from && to) {
-        const isItxExpress = serviceClass === "ITX_CHEONGCHUN"
-          && servicePattern === "EXPRESS";
+        const isItx = serviceClass === "ITX_CHEONGCHUN";
+        const isItxExpress = isItx && servicePattern === "EXPRESS";
         const isAdmittedItxEdge = isItxExpress && admittedItxEdgeIds.has(edge.id);
         const invalidAdjacency = from.line_id !== to.line_id
           || Math.abs(from.line_sequence - to.line_sequence) !== 1;
         if (
-          (isItxExpress && !isAdmittedItxEdge)
-          || (!isItxExpress && invalidAdjacency)
+          (isItx && !isAdmittedItxEdge)
+          || (!isItx && invalidAdjacency)
         ) {
           const violation = {
             edgeId: edge.id,
@@ -191,8 +214,77 @@ export function buildRouteGraphTopologyReport(sqlitePath, pack = {}) {
   }
 }
 
-function hashJson(value) {
-  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+export async function validateCurrentItxTopologyEvidencePack({
+  compressed,
+  sqliteBytes,
+  sqlitePath,
+  pack,
+  buildSpec,
+  repositoryRoot,
+}) {
+  if (!(compressed instanceof Uint8Array) || !(sqliteBytes instanceof Uint8Array)) {
+    throw new Error("ITX topology evidence pack bytes are required");
+  }
+  const database = new DatabaseSync(sqlitePath, { readOnly: true });
+  try {
+    const itxEdges = database.prepare(`
+      SELECT id, from_node_id, to_node_id, edge_type, service_pattern, service_class,
+             duration_seconds, distance_meters
+      FROM network_edges
+      WHERE edge_type = 'RIDE' AND service_class = 'ITX_CHEONGCHUN'
+      ORDER BY id
+    `).all();
+    const canonicalItxEdges = itxEdges.map(routeEdgeFromSqliteRow);
+    if (itxEdges.length === 0) {
+      if (pack?.id === "capital" && pack?.artifactKind === "production") {
+        throw new Error("production capital pack requires ITX topology evidence");
+      }
+      return { admittedItxEdgeSetSha256: canonicalRideEdgeSetSha256(canonicalItxEdges) };
+    }
+    const validation = await validateTrackedItxTopologyEvidence(buildSpec, {
+      packs: [{
+        transitTrips: [],
+        networkEdges: canonicalItxEdges,
+      }],
+    }, repositoryRoot);
+    const topologyEvidence = validation?.evidence;
+    if (pack?.id !== topologyEvidence?.pack?.id
+      || sha256(compressed) !== topologyEvidence.pack.outputSha256
+      || sha256(sqliteBytes) !== topologyEvidence.pack.outputSqliteSha256
+      || compressed.byteLength !== topologyEvidence.pack.byteSize) {
+      throw new Error("ITX topology evidence pack identity mismatch");
+    }
+    if (itxEdges.length !== topologyEvidence.topology.edgeCount
+      || itxEdges.some((edge) => String(edge.service_pattern).toUpperCase() !== "EXPRESS")) {
+      throw new Error("ITX topology evidence service layer mismatch");
+    }
+    return { admittedItxEdgeSetSha256: canonicalRideEdgeSetSha256(canonicalItxEdges) };
+  } finally {
+    database.close();
+  }
+}
+
+function sha256(bytes) {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+function routeEdgeFromSqliteRow(edge) {
+  return {
+    edgeId: edge.id,
+    fromNodeId: edge.from_node_id,
+    toNodeId: edge.to_node_id,
+    edgeType: edge.edge_type,
+    servicePattern: edge.service_pattern,
+    serviceClass: edge.service_class,
+    durationSeconds: edge.duration_seconds,
+    distanceMeters: edge.distance_meters,
+  };
+}
+
+function assertLowercaseSha256(value, label) {
+  if (typeof value !== "string" || !/^[0-9a-f]{64}$/u.test(value)) {
+    throw new Error(`${label} must be a lowercase sha256`);
+  }
 }
 
 function connectedLineNodes(stationLines) {
@@ -254,9 +346,32 @@ function stationLineNodeId(stationId, lineId) {
   return `${stationId}:${lineId}`;
 }
 
-function stationLineNodeFromRouteNodeId(nodeId) {
+function stationLineNodeFromEdgeEndpoint(nodeId, edge) {
   const parts = String(nodeId ?? "").split(":");
-  return parts.length >= 2 && parts[0] && parts[1] ? stationLineNodeId(parts[0], parts[1]) : null;
+  if (parts.length === 2 && parts[0] && parts[1]) {
+    return stationLineNodeId(parts[0], parts[1]);
+  }
+  if (
+    parts.length === 3
+    && parts[0]
+    && parts[1]
+    && parts[2] === "EXPRESS"
+    && String(edge.edge_type).toUpperCase() === "RIDE"
+    && String(edge.service_class).toUpperCase() === "ITX_CHEONGCHUN"
+    && String(edge.service_pattern).toUpperCase() === "EXPRESS"
+  ) {
+    return stationLineNodeId(parts[0], parts[1]);
+  }
+  return null;
+}
+
+function assertSupportedRouteEndpointSuffix(edge) {
+  for (const nodeId of [edge.from_node_id, edge.to_node_id]) {
+    const parts = String(nodeId ?? "").split(":");
+    if (parts.length > 2 && stationLineNodeFromEdgeEndpoint(nodeId, edge) === null) {
+      throw new Error(`network edge endpoint suffix is unsupported: ${edge.id} -> ${nodeId}`);
+    }
+  }
 }
 
 function isRouteGraphEdge(edgeType) {

@@ -13,7 +13,7 @@ import {
 test("candidate fixture override는 original/projected/authority identity를 exact 결속한다", () => {
   const value = overrideFixture();
   const result = buildDatapack.validateCandidateFixtureOverride(value);
-  assert.equal(result.fixture.packs[0].networkEdges.length, 2674);
+  assert.equal(result.fixture.packs[0].networkEdges.length, 2664);
   assert.deepEqual(result.binding, {
     sourceFixtureSha256: sha(value.sourceFixtureBytes),
     candidateFixtureSha256: sha(value.candidateFixtureBytes),
@@ -41,9 +41,23 @@ test("candidate fixture override는 ITX route-service evidence binding을 보존
   assert.strictEqual(evidenceStore.get(replacementPack), evidence);
 });
 
+test("candidate fixture override는 authority와 다른 route-edge bytes를 출력 전에 거부한다", () => {
+  const { authority } = overrideFixture();
+  assert.throws(
+    () => buildDatapack.candidateOverrideAccessibilityFreshUntil({
+      authority,
+      stationLineInputBytes: Buffer.from("{}"),
+      routeEdgeInputBytes: Buffer.from("different-route-edge-input"),
+      validationNow: new Date("2026-08-16T00:00:00.000Z"),
+    }),
+    /route-edge input identity mismatch/,
+  );
+});
+
 test("단독 override·noncanonical·hash·projection drift는 build input 선택 전에 거부된다", async () => {
   const source = await readFile(new URL("./build-datapack.mjs", import.meta.url), "utf8");
-  assert.match(source, /--candidate-fixture-override and --server-route-coverage-authority must be provided together/);
+  assert.match(source, /--candidate-fixture-override, --server-route-coverage-authority, --current-capital-station-line-input and --current-capital-route-edge-input must be provided together/);
+  assert.match(source, /route-edge input identity mismatch/);
   assert.match(source, /candidate fixture override requires --build-spec/);
   for (const [label, mutate, pattern] of [
     ["noncanonical", (value) => { value.candidateFixtureBytes = Buffer.concat([value.candidateFixtureBytes, Buffer.from("\n")]); }, /canonical/i],
@@ -70,11 +84,7 @@ function overrideFixture() {
       id: "capital",
       version: "1",
       networkEdges: [
-        ...Array.from({ length: 2218 }, (_, index) => ride(index)),
-        legacy("entry-a", "ENTRY"),
-        legacy("entry-b", "ENTRY"),
-        legacy("exit-a", "EXIT"),
-        legacy("exit-b", "EXIT"),
+        ...Array.from({ length: 2208 }, (_, index) => ride(index)),
       ],
     }],
   };

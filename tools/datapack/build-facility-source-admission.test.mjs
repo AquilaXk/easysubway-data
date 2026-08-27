@@ -10,6 +10,7 @@ import {
   canonicalFacilitySourceAdmissionJson,
   loadCurrentFacilitySourceAdmissionInput,
 } from "./build-facility-source-admission.mjs";
+import { validateLineage } from "./source-snapshot-policy.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const FRESH_AT = await selectedSourceEvaluationAt();
@@ -21,7 +22,7 @@ test("current FACILITY official source admission은 exact six-cell handoff를 �
 
   assert.deepEqual(input, before);
   assert.equal(result.decision, "GO");
-  assert.equal(result.candidate.candidateId, "capital-pilot-candidate-20260814");
+  assert.equal(result.candidate.candidateId, input.candidateBuildSpec.candidateId);
   assert.equal(result.queryPartition.summary.totalCount, 7);
   assert.equal(result.queryPartition.summary.partitionedQueryCount, 7);
   assert.equal(result.queryPartition.summary.joinedCount, 2);
@@ -286,18 +287,35 @@ async function historicalFacilityFixtureInput(observedAt) {
     assert.ok(Date.parse(historicalSnapshot.capturedAt) < Date.parse(historicalObservedAt));
     assert.ok(Date.parse(historicalObservedAt) < Date.parse(historicalSnapshot.freshUntil));
   }
+  const lineage = validateLineage(input.sourceSnapshots);
+  const snapshotsById = new Map(input.sourceSnapshots.map((snapshot) => [snapshot.snapshotId, snapshot]));
   const historicalSourceSlots = input.candidateBuildSpec.sourceSnapshots
     .filter(({ sourceId }) => sourceId !== "seoul-metro-transfer-distance-duration")
     .map((projection) => {
       const selectedHead = input.sourceSnapshots.find(({ snapshotId, sourceId }) =>
         snapshotId === projection.snapshotId && sourceId === projection.sourceId);
-      const migration = selectedHead?.projectionMigration;
-      if (migration?.migrationKind !== "CROSS_SOURCE_CANONICAL_REPLACEMENT"
-        || migration.sourceId !== projection.sourceId) {
+      assert.ok(selectedHead, `selected ${projection.sourceId} ledger head`);
+      assert.equal(lineage.headsBySource[projection.sourceId], selectedHead.snapshotId);
+      const sourceChain = lineage.chainsBySource[projection.sourceId];
+      const selectedIndex = sourceChain.indexOf(selectedHead.snapshotId);
+      assert.ok(selectedIndex >= 0, `selected ${projection.sourceId} lineage member`);
+      const selectedChain = sourceChain.slice(0, selectedIndex + 1).map((snapshotId) => snapshotsById.get(snapshotId));
+      const markers = selectedChain.filter(({ projectionMigration }) =>
+        projectionMigration?.migrationKind === "CROSS_SOURCE_CANONICAL_REPLACEMENT");
+      if (projection.sourceId !== "seoul-metro-route-map-positions") {
+        assert.equal(markers.length, 0, `unexpected ${projection.sourceId} canonical replacement marker`);
         return { predecessor: null, projection, sourceId: projection.sourceId };
       }
+      assert.equal(selectedHead.projectionMigration, undefined);
+      assert.equal(markers.length, 1, `selected ${projection.sourceId} canonical replacement marker`);
+      const selectedMarker = markers[0];
+      const migration = selectedMarker.projectionMigration;
+      assert.equal(migration.schemaVersion, 1);
+      assert.equal(migration.artifactKind, "source-projection-migration-evidence");
+      assert.equal(migration.sourceId, projection.sourceId);
+      assert.equal(migration.replacedSourceId, "seoulmetro-cyberstation-route-map");
       assert.equal(migration.candidateSlotSourceId, migration.replacedSourceId);
-      assert.ok(snapshotEvidenceAt(selectedHead) > Date.parse(historicalMembershipAt));
+      assert.ok(snapshotEvidenceAt(selectedMarker) > Date.parse(historicalMembershipAt));
       return {
         predecessor: {
           rawSha256: migration.replacedRawSha256,

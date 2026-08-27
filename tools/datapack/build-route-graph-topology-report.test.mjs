@@ -1,17 +1,54 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
-import { buildRouteGraphTopologyReport } from "./build-route-graph-topology-report.mjs";
+import {
+  buildRouteGraphTopologyReport,
+  main,
+  validateCurrentItxTopologyEvidencePack,
+} from "./build-route-graph-topology-report.mjs";
+import { canonicalRideEdgeSetSha256 } from "./evaluate-route-accessibility-edges.mjs";
 
-const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
+const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+const topologyEvidencePath = path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json");
+const currentTopologyEvidence = JSON.parse(await readFile(topologyEvidencePath, "utf8"));
+const currentBuildSpec = JSON.parse(await readFile(
+  path.join(root, "tools/datapack/release/candidate-build-spec.json"),
+  "utf8",
+));
+const emptyItxEdgeSetSha256 = canonicalRideEdgeSetSha256([]);
+
+function buildReport(sqlitePath, pack, admittedItxHash = emptyItxEdgeSetSha256) {
+  return buildRouteGraphTopologyReport(sqlitePath, pack, { admittedItxEdgeSetSha256: admittedItxHash });
+}
+
+function itxAdmissionHash(rows) {
+  return canonicalRideEdgeSetSha256(rows.map(([
+    edgeId,
+    fromNodeId,
+    toNodeId,
+    edgeType,
+    servicePattern,
+    durationSeconds,
+    distanceMeters,
+    serviceClass,
+  ]) => ({
+    edgeId,
+    fromNodeId,
+    toNodeId,
+    edgeType,
+    servicePattern,
+    serviceClass,
+    durationSeconds,
+    distanceMeters,
+  })));
+}
 
 test("route graph topology report exposes LOCAL adjacency and speed violations", () => {
   const sqlitePath = createTopologySqlite({
@@ -21,13 +58,13 @@ test("route graph topology report exposes LOCAL adjacency and speed violations",
       ["station-c", "line-4", 5],
     ],
     edges: [
-      ["edge-a-b-local", "station-a:line-4:LOCAL", "station-b:line-4:LOCAL", "RIDE", "LOCAL", 120, 1000],
-      ["edge-a-c-local", "station-a:line-4:LOCAL", "station-c:line-4:LOCAL", "RIDE", "LOCAL", 30, 5000],
-      ["edge-c-a-express", "station-c:line-4:EXPRESS", "station-a:line-4:EXPRESS", "RIDE", "EXPRESS", 600, 5000],
+      ["edge-a-b-local", "station-a:line-4", "station-b:line-4", "RIDE", "LOCAL", 120, 1000],
+      ["edge-a-c-local", "station-a:line-4", "station-c:line-4", "RIDE", "LOCAL", 30, 5000],
+      ["edge-c-a-express", "station-c:line-4", "station-a:line-4", "RIDE", "EXPRESS", 600, 5000],
     ],
   });
 
-  const report = buildRouteGraphTopologyReport(sqlitePath, {
+  const report = buildReport(sqlitePath, {
     id: "capital",
     version: "1",
     artifactKind: "production",
@@ -67,14 +104,14 @@ test("route graph topology report seeds implicit same-station transfers", () => 
       ["station-c", "line-4", 21],
     ],
     edges: [
-      ["edge-a-b-line2", "station-a:line-2:LOCAL", "station-b:line-2:LOCAL", "RIDE", "LOCAL", 120, 1000],
-      ["edge-b-a-line2", "station-b:line-2:LOCAL", "station-a:line-2:LOCAL", "RIDE", "LOCAL", 120, 1000],
-      ["edge-a-c-line4", "station-a:line-4:LOCAL", "station-c:line-4:LOCAL", "RIDE", "LOCAL", 120, 1000],
-      ["edge-c-a-line4", "station-c:line-4:LOCAL", "station-a:line-4:LOCAL", "RIDE", "LOCAL", 120, 1000],
+      ["edge-a-b-line2", "station-a:line-2", "station-b:line-2", "RIDE", "LOCAL", 120, 1000],
+      ["edge-b-a-line2", "station-b:line-2", "station-a:line-2", "RIDE", "LOCAL", 120, 1000],
+      ["edge-a-c-line4", "station-a:line-4", "station-c:line-4", "RIDE", "LOCAL", 120, 1000],
+      ["edge-c-a-line4", "station-c:line-4", "station-a:line-4", "RIDE", "LOCAL", 120, 1000],
     ],
   });
 
-  const report = buildRouteGraphTopologyReport(sqlitePath, {
+  const report = buildReport(sqlitePath, {
     id: "capital",
     version: "1",
     artifactKind: "production",
@@ -85,25 +122,43 @@ test("route graph topology report seeds implicit same-station transfers", () => 
 });
 
 test("route graph topology report는 ITX service layer row를 별도 집계한다", () => {
+  const itxEdges = [
+    ["edge-a-b-itx", "station-a:line-k2:EXPRESS", "station-b:line-k2:EXPRESS", "RIDE", "EXPRESS", 300, 6000, "ITX_CHEONGCHUN"],
+  ];
   const sqlitePath = createTopologySqlite({
     stationLines: [
       ["station-a", "line-k2", 1],
       ["station-b", "line-k2", 2],
     ],
-    edges: [
-      ["edge-a-b-itx", "station-a:line-k2:EXPRESS", "station-b:line-k2:EXPRESS", "RIDE", "EXPRESS", 300, 6000, "ITX_CHEONGCHUN"],
-    ],
+    edges: itxEdges,
   });
 
-  const report = buildRouteGraphTopologyReport(sqlitePath, {
+  const report = buildReport(sqlitePath, {
     id: "capital",
     version: "1",
     artifactKind: "fixture",
-  });
+  }, itxAdmissionHash(itxEdges));
 
   assert.deepEqual(report.rideCountsByServiceClass, { ITX_CHEONGCHUN: 1 });
   assert.equal(report.itxServiceLayerSegmentCount, 1);
-  assert.equal(report.violations.nonAdjacentExpressRide.length, 1);
+  assert.equal(report.violations.nonAdjacentExpressRide.length, 0);
+});
+
+test("route graph topology report는 ITX EXPRESS가 아닌 종점 suffix를 거부한다", () => {
+  const sqlitePath = createTopologySqlite({
+    stationLines: [
+      ["station-a", "line-1", 1],
+      ["station-b", "line-1", 2],
+    ],
+    edges: [
+      ["edge-a-b-local", "station-a:line-1:LOCAL", "station-b:line-1:LOCAL", "RIDE", "LOCAL", 120, 1000],
+    ],
+  });
+
+  assert.throws(
+    () => buildReport(sqlitePath, { id: "capital", version: "1", artifactKind: "fixture" }),
+    /network edge endpoint suffix is unsupported: edge-a-b-local/,
+  );
 });
 
 test("route graph topology report는 승인되지 않은 ITX 노선 경계 edge를 거부한다", () => {
@@ -117,43 +172,213 @@ test("route graph topology report는 승인되지 않은 ITX 노선 경계 edge�
     ],
   });
 
-  const report = buildRouteGraphTopologyReport(sqlitePath, {
+  assert.throws(
+    () => buildReport(sqlitePath, {
+      id: "capital",
+      version: "1",
+      artifactKind: "fixture",
+    }, sha256("mismatched current ITX admission")),
+    /ITX edge set identity mismatch/,
+  );
+});
+
+test("route graph topology report는 명시적이고 유효한 ITX admission hash만 받는다", () => {
+  const sqlitePath = createTopologySqlite({
+    stationLines: [
+      ["station-a", "line-k1", 10],
+      ["station-b", "line-k2", 20],
+    ],
+    edges: [
+      ["edge-a-b-itx", "station-a:line-k1:EXPRESS", "station-b:line-k2:EXPRESS", "RIDE", "EXPRESS", 0, 0, "ITX_CHEONGCHUN"],
+    ],
+  });
+  const pack = { id: "capital", version: "1", artifactKind: "fixture" };
+
+  assert.throws(
+    () => buildRouteGraphTopologyReport(sqlitePath, pack),
+    /admitted ITX edge set must be a lowercase sha256/,
+  );
+  assert.throws(
+    () => buildRouteGraphTopologyReport(sqlitePath, pack, { admittedItxEdgeSetSha256: "A".repeat(64) }),
+    /admitted ITX edge set must be a lowercase sha256/,
+  );
+  assert.throws(
+    () => buildReport(sqlitePath, pack, sha256("mismatched ITX admission")),
+    /ITX edge set identity mismatch/,
+  );
+});
+
+test("route graph topology report는 인접한 ITX LOCAL edge도 승인하지 않는다", () => {
+  const itxEdges = [
+    ["edge-a-b-itx-local", "station-a:line-k1", "station-b:line-k1", "RIDE", "LOCAL", 120, 1000, "ITX_CHEONGCHUN"],
+  ];
+  const sqlitePath = createTopologySqlite({
+    stationLines: [
+      ["station-a", "line-k1", 10],
+      ["station-b", "line-k1", 11],
+    ],
+    edges: itxEdges,
+  });
+
+  const report = buildReport(sqlitePath, {
     id: "capital",
     version: "1",
     artifactKind: "fixture",
-  });
+  }, itxAdmissionHash(itxEdges));
 
-  assert.equal(report.itxServiceLayerSegmentCount, 1);
-  assert.deepEqual(report.violations.nonAdjacentExpressRide, [
-    {
-      edgeId: "edge-a-b-itx",
-      fromNode: "station-a:line-k1",
-      toNode: "station-b:line-k2",
-      fromLineSequence: 10,
-      toLineSequence: 20,
-    },
+  assert.deepEqual(report.violations.localRideAdjacency.map(({ edgeId }) => edgeId), [
+    "edge-a-b-itx-local",
   ]);
 });
 
-test("route graph topology report는 #2135 admitted ITX edge set만 예외로 허용한다", async (context) => {
+test("route graph topology report는 canonical ITX edge가 전부 누락되면 실패한다", () => {
+  const sqlitePath = createTopologySqlite({
+    stationLines: [
+      ["station-a", "line-1", 1],
+      ["station-b", "line-1", 2],
+    ],
+    edges: [
+      ["edge-a-b-local", "station-a:line-1", "station-b:line-1", "RIDE", "LOCAL", 120, 1000],
+    ],
+  });
+
+  assert.throws(
+    () => buildReport(sqlitePath, {
+      id: "capital",
+      version: "1",
+      artifactKind: "production",
+    }, sha256("missing current ITX admission")),
+    /ITX edge set identity mismatch/,
+  );
+});
+
+test("route graph topology report는 regional production pack의 ITX RIDE가 없으면 canonical empty admission만 반환한다", async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "route-graph-no-itx-"));
+  const sqlitePath = createTopologySqlite({
+    stationLines: [
+      ["station-a", "line-1", 1],
+      ["station-b", "line-1", 2],
+    ],
+    edges: [
+      ["edge-a-b-local", "station-a:line-1", "station-b:line-1", "RIDE", "LOCAL", 120, 1000],
+    ],
+  });
+  context.after(() => Promise.all([
+    rm(directory, { recursive: true, force: true }),
+    rm(sqlitePath, { force: true }),
+  ]));
+  const sqliteBytes = await readFile(sqlitePath);
+  await mkdir(path.join(directory, "catalog"), { recursive: true });
+  await writeFile(path.join(directory, "catalog", "regional-v1.sqlite.gz"), gzipSync(sqliteBytes));
+  const manifestPath = path.join(directory, "current.json");
+  const buildSpecPath = path.join(directory, "candidate-build-spec.json");
+  const outputPath = path.join(directory, "route-graph-topology-report.json");
+  await writeFile(manifestPath, `${JSON.stringify({
+    manifestVersion: 2,
+    channel: "production",
+    packs: [{
+      id: "regional",
+      version: "1",
+      artifactKind: "production",
+      url: "catalog/regional-v1.sqlite.gz",
+    }],
+  })}\n`);
+  await writeFile(buildSpecPath, "{}\n");
+
+  const report = await main([
+    "--manifest", manifestPath,
+    "--root", directory,
+    "--build-spec", buildSpecPath,
+    "--output", outputPath,
+  ], { repositoryRoot: directory });
+
+  assert.equal(report.summary.packCount, 1);
+  assert.equal(report.packs[0].itxServiceLayerSegmentCount, 0);
+});
+
+test("route graph topology report는 production capital pack의 zero ITX를 fail-closed한다", async (context) => {
+  const sqlitePath = createTopologySqlite({
+    stationLines: [["station-a", "line-1", 1], ["station-b", "line-1", 2]],
+    edges: [["edge-a-b-local", "station-a:line-1", "station-b:line-1", "RIDE", "LOCAL", 120, 1000]],
+  });
+  context.after(() => rm(sqlitePath, { force: true }));
+  const sqliteBytes = await readFile(sqlitePath);
+  await assert.rejects(
+    validateCurrentItxTopologyEvidencePack({
+      compressed: gzipSync(sqliteBytes), sqliteBytes, sqlitePath,
+      pack: { id: "capital", version: "1", artifactKind: "production" }, buildSpec: {}, repositoryRoot: root,
+    }),
+    /production capital pack requires ITX topology evidence/,
+  );
+});
+
+test("route graph topology report는 ITX RIDE가 있으면 evidence 없는 build spec을 fail-closed한다", async (context) => {
+  const sqlitePath = createTopologySqlite({
+    stationLines: [
+      ["station-a", "line-k2", 1],
+      ["station-b", "line-k2", 2],
+    ],
+    edges: [
+      ["edge-a-b-itx", "station-a:line-k2:EXPRESS", "station-b:line-k2:EXPRESS", "RIDE", "EXPRESS", 300, 6000, "ITX_CHEONGCHUN"],
+    ],
+  });
+  context.after(() => rm(sqlitePath, { force: true }));
+  const sqliteBytes = await readFile(sqlitePath);
+
+  await assert.rejects(
+    validateCurrentItxTopologyEvidencePack({
+      compressed: gzipSync(sqliteBytes),
+      sqliteBytes,
+      sqlitePath,
+      pack: { id: "capital", version: "1" },
+      buildSpec: {},
+      repositoryRoot: root,
+    }),
+    /ITX topology evidence|build spec|buildSpec/i,
+  );
+});
+
+test("route graph topology report는 current evidence가 pin한 v19 ITX pack만 허용한다", async (context) => {
   const directory = await mkdtemp(path.join(tmpdir(), "route-graph-admitted-itx-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
   const sqlitePath = path.join(directory, "capital.sqlite");
-  await writeFile(sqlitePath, gunzipSync(await readFile(
-    path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"),
-  )));
+  const candidate = JSON.parse(await readFile(
+    path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8",
+  ));
+  const evidenceBytes = await readFile(path.join(root, candidate.itxTopologyEvidencePath));
+  const evidence = JSON.parse(evidenceBytes);
+  const mobilePackBytes = await readFile(path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"));
+  assert.equal(sha256(evidenceBytes), candidate.itxTopologyEvidenceSha256);
+  assert.equal(sha256(mobilePackBytes), evidence.pack.outputSha256);
+  await writeFile(sqlitePath, gunzipSync(mobilePackBytes));
+  const database = new DatabaseSync(sqlitePath, { readOnly: true });
+  const packVersion = database.prepare("PRAGMA user_version").get().user_version;
+  database.close();
 
+  const binding = await validateCurrentItxTopologyEvidencePack({
+    compressed: mobilePackBytes,
+    sqliteBytes: gunzipSync(mobilePackBytes),
+    sqlitePath,
+    pack: { id: "capital", version: "1" },
+    buildSpec: candidate,
+    repositoryRoot: root,
+  });
   const report = buildRouteGraphTopologyReport(sqlitePath, {
     id: "capital",
-    version: "18",
+    version: String(packVersion),
     artifactKind: "production",
-  });
+  }, binding);
 
-  assert.equal(report.itxServiceLayerSegmentCount, 48);
+  assert.equal(report.version, String(packVersion));
+  assert.equal(report.itxServiceLayerSegmentCount, evidence.topology.edgeCount);
   assert.deepEqual(report.violations.nonAdjacentExpressRide, []);
 });
 
 test("route graph topology report는 SUBWAY 연결성을 ITX edge로 보완하지 않는다", () => {
+  const itxEdges = [
+    ["itx-b-c", "station-b:line-k2:EXPRESS", "station-c:line-k2:EXPRESS", "RIDE", "EXPRESS", 120, 1000, "ITX_CHEONGCHUN"],
+    ["itx-c-b", "station-c:line-k2:EXPRESS", "station-b:line-k2:EXPRESS", "RIDE", "EXPRESS", 120, 1000, "ITX_CHEONGCHUN"],
+  ];
   const sqlitePath = createTopologySqlite({
     stationLines: [
       ["station-a", "line-k2", 1],
@@ -161,18 +386,17 @@ test("route graph topology report는 SUBWAY 연결성을 ITX edge로 보완하�
       ["station-c", "line-k2", 3],
     ],
     edges: [
-      ["subway-a-b", "station-a:line-k2:LOCAL", "station-b:line-k2:LOCAL", "RIDE", "LOCAL", 120, 1000],
-      ["subway-b-a", "station-b:line-k2:LOCAL", "station-a:line-k2:LOCAL", "RIDE", "LOCAL", 120, 1000],
-      ["itx-b-c", "station-b:line-k2:EXPRESS", "station-c:line-k2:EXPRESS", "RIDE", "EXPRESS", 120, 1000, "ITX_CHEONGCHUN"],
-      ["itx-c-b", "station-c:line-k2:EXPRESS", "station-b:line-k2:EXPRESS", "RIDE", "EXPRESS", 120, 1000, "ITX_CHEONGCHUN"],
+      ["subway-a-b", "station-a:line-k2", "station-b:line-k2", "RIDE", "LOCAL", 120, 1000],
+      ["subway-b-a", "station-b:line-k2", "station-a:line-k2", "RIDE", "LOCAL", 120, 1000],
+      ...itxEdges,
     ],
   });
 
-  const report = buildRouteGraphTopologyReport(sqlitePath, {
+  const report = buildReport(sqlitePath, {
     id: "capital",
     version: "1",
     artifactKind: "fixture",
-  });
+  }, itxAdmissionHash(itxEdges));
 
   assert.deepEqual(report.violations.disconnectedNodes, ["station-c:line-k2"]);
   assert.equal(report.violations.unreachableDirectedPairs.length, 4);
@@ -187,12 +411,24 @@ test("route graph topology report CLI writes artifact json", async () => {
       ["station-b", "line-4", 2],
     ],
     edges: [
-      ["edge-a-b-local", "station-a:line-4:LOCAL", "station-b:line-4:LOCAL", "RIDE", "LOCAL", 120, 1000],
-      ["edge-b-a-local", "station-b:line-4:LOCAL", "station-a:line-4:LOCAL", "RIDE", "LOCAL", 120, 1000],
+      ["edge-a-b-local", "station-a:line-4", "station-b:line-4", "RIDE", "LOCAL", 120, 1000],
+      ["edge-b-a-local", "station-b:line-4", "station-a:line-4", "RIDE", "LOCAL", 120, 1000],
+      ...Array.from({ length: currentTopologyEvidence.topology.edgeCount }, (_, index) => [
+        `itx-${index}`,
+        "station-a:line-4",
+        "station-b:line-4",
+        "RIDE",
+        "EXPRESS",
+        120,
+        1000,
+        "ITX_CHEONGCHUN",
+      ]),
     ],
+    userVersion: 19,
   });
   const sqliteBytes = await readFile(sqlitePath);
-  await writeFile(path.join(dir, "catalog", "capital-v1.sqlite.gz"), gzipSync(sqliteBytes));
+  const gzipBytes = gzipSync(sqliteBytes);
+  await writeFile(path.join(dir, "catalog", "capital-v1.sqlite.gz"), gzipBytes);
   const manifestPath = path.join(dir, "current.json");
   await writeFile(
     manifestPath,
@@ -211,16 +447,50 @@ test("route graph topology report CLI writes artifact json", async () => {
     })}\n`,
   );
   const outputPath = path.join(dir, "route-graph-topology-report.json");
+  const fixtureEvidencePath = path.join(dir, "itx-topology-evidence.json");
+  const buildSpecPath = path.join(dir, "candidate-build-spec.json");
+  const fixtureEvidence = fixtureTopologyEvidence({
+    gzip: gzipBytes,
+    sqlite: sqliteBytes,
+    edgeCount: currentTopologyEvidence.topology.edgeCount,
+  });
+  const fixtureEvidenceBytes = Buffer.from(`${JSON.stringify(fixtureEvidence)}\n`);
+  await writeFile(fixtureEvidencePath, fixtureEvidenceBytes);
+  const fixtureBuildSpec = {
+    ...currentBuildSpec,
+    itxTopologyEvidencePath: "itx-topology-evidence.json",
+    itxTopologyEvidenceSha256: sha256(fixtureEvidenceBytes),
+  };
+  await writeFile(buildSpecPath, `${JSON.stringify(fixtureBuildSpec)}\n`);
+  const malformedEvidence = structuredClone(fixtureEvidence);
+  malformedEvidence.topology.edgeCount = -1;
+  await writeFile(fixtureEvidencePath, `${JSON.stringify(malformedEvidence)}\n`);
 
-  await execFileAsync(process.execPath, [
-    "tools/datapack/build-route-graph-topology-report.mjs",
+  await assert.rejects(
+    main([
+      "--manifest",
+      manifestPath,
+      "--root",
+      dir,
+      "--build-spec",
+      buildSpecPath,
+      "--output",
+      outputPath,
+    ], { repositoryRoot: dir }),
+    /buildSpec\.itxTopologyEvidenceSha256 must match tracked evidence bytes/,
+  );
+
+  await writeFile(fixtureEvidencePath, fixtureEvidenceBytes);
+  await main([
     "--manifest",
     manifestPath,
     "--root",
     dir,
+    "--build-spec",
+    buildSpecPath,
     "--output",
     outputPath,
-  ], { cwd: root });
+  ], { repositoryRoot: dir });
 
   const report = JSON.parse(await readFile(outputPath, "utf8"));
   assert.equal(report.artifactKind, "route-graph-topology-report");
@@ -231,7 +501,17 @@ test("route graph topology report CLI writes artifact json", async () => {
   assert.equal(report.summary.unreachableDirectedPairCount, 0);
 });
 
-function createTopologySqlite({ stationLines, edges }) {
+function fixtureTopologyEvidence({ gzip, sqlite, edgeCount }) {
+  const evidence = structuredClone(currentTopologyEvidence);
+  evidence.topology.edgeCount = edgeCount;
+  evidence.pack.outputSha256 = sha256(gzip);
+  evidence.pack.outputSqliteSha256 = sha256(sqlite);
+  evidence.pack.byteSize = gzip.byteLength;
+  evidence.pack.byteSizeDelta = gzip.byteLength - evidence.pack.inputByteSize;
+  return evidence;
+}
+
+function createTopologySqlite({ stationLines, edges, userVersion = 0 }) {
   const sqlitePath = path.join(tmpdir(), `route-graph-topology-${Date.now()}-${Math.random()}.sqlite`);
   const database = new DatabaseSync(sqlitePath);
   try {
@@ -251,6 +531,7 @@ function createTopologySqlite({ stationLines, edges }) {
         duration_seconds INTEGER NOT NULL,
         distance_meters INTEGER NOT NULL
       );
+      PRAGMA user_version = ${userVersion};
     `);
     const insertStationLine = database.prepare("INSERT INTO station_lines VALUES (?, ?, ?)");
     const insertEdge = database.prepare(`

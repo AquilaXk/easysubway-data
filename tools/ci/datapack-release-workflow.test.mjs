@@ -198,6 +198,8 @@ test("route-final candidate는 authority·strict validation·signed route stage�
   assert.match(build, /--build-spec "\$\{EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH\}"/);
   assert.match(build, /--candidate-fixture-override "\$\{EASYSUBWAY_DATAPACK_CANDIDATE_FIXTURE\}"/);
   assert.match(build, /--server-route-coverage-authority "\$\{EASYSUBWAY_DATAPACK_ROUTE_COVERAGE_AUTHORITY\}"/);
+  assert.match(build, /--current-capital-station-line-input "\$\{EASYSUBWAY_DATAPACK_STATION_LINE_INPUT\}"/);
+  assert.match(build, /--current-capital-route-edge-input "\$\{EASYSUBWAY_DATAPACK_ROUTE_EDGE_INPUT\}"/);
   assert.doesNotMatch(prepare, /writeFile|cp .*candidate-build-spec|EASYSUBWAY_DATAPACK_EPHEMERAL_BUILD_SPEC/);
   const validate = yml.slice(step("Data Pack Release / Validate generated data packs"), step("Data Pack Release / Validate accessibility source coverage"));
   assertRouteCoveragePair(validate);

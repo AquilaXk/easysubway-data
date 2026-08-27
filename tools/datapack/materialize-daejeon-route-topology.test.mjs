@@ -8,6 +8,7 @@ import { DatabaseSync } from "node:sqlite";
 import { promisify } from "node:util";
 import {
   loadCurrentMolitMembershipMappings,
+  materializeRegionalProductionCandidate,
   projectHistoricalRegionalMaterializeInventory,
   projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
@@ -295,9 +296,15 @@ test("materialized production SQLite와 field provenance만 대전 1호선 membe
     cwd: root,
     env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey },
   });
+  await materializeRegionalProductionCandidate({ outputDir: packOutput, privateKey });
 
   const manifestPath = path.join(packOutput, "current.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  const candidateUrl = new URL(manifest.packs[0].url);
+  assert.equal(manifest.channel, "candidate");
+  assert.equal(candidateUrl.hostname, "regional-fixture.invalid");
+  assert.equal(candidateUrl.pathname,
+    `/catalog/${manifest.packs[0].id}-v${manifest.packs[0].version}.sqlite.gz`);
   await execFileAsync(process.execPath, [
     "tools/datapack/validate-datapack.mjs",
     "--manifest", manifestPath,
@@ -398,6 +405,7 @@ test("부산과 대전 topology를 하나의 nationwide production pack으로 �
     cwd: root,
     env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey },
   });
+  await materializeRegionalProductionCandidate({ outputDir: packOutput, privateKey });
   await execFileAsync(process.execPath, [
     "tools/datapack/validate-datapack.mjs",
     "--manifest", path.join(packOutput, "current.json"),
@@ -454,6 +462,7 @@ test("접근성 coverage는 같은 운영기관의 scope 밖 지역 station-line
     cwd: root,
     env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey },
   });
+  await materializeRegionalProductionCandidate({ outputDir: packOutput, privateKey });
   await execFileAsync(process.execPath, [
     "tools/datapack/validate-datapack.mjs",
     "--manifest", path.join(packOutput, "current.json"),
@@ -494,6 +503,7 @@ test("명시된 접근성 coverage scope의 station-line evidence 누락을 거�
     cwd: root,
     env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey },
   });
+  await materializeRegionalProductionCandidate({ outputDir: packOutput, privateKey });
   await assert.rejects(execFileAsync(process.execPath, [
     "tools/datapack/validate-datapack.mjs",
     "--manifest", path.join(packOutput, "current.json"),
@@ -534,6 +544,7 @@ test("접근성 source가 있는 production pack은 접근성 coverage metadata 
     cwd: root,
     env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey },
   });
+  await materializeRegionalProductionCandidate({ outputDir: packOutput, privateKey });
   await assert.rejects(execFileAsync(process.execPath, [
     "tools/datapack/validate-datapack.mjs",
     "--manifest", path.join(packOutput, "current.json"),

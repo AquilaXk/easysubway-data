@@ -19,7 +19,7 @@ const RESULT_KEYS = ["queryId", "state", "providerResultCode", "rawResponseSha25
 const ROW_KEYS = ["edMovePath", "elvtSttCd", "elvtTpCd", "exitMvTpOrdr", "imgPath", "mvContDtl", "mvPathMgNo", "stMovePath"];
 const SNAPSHOT_KEYS = ["schemaVersion", "artifactKind", "sourceId", "snapshotId", "capturedAt", "freshUntil", "credentialRedacted", "collectionPlanDigest", "queryPlanSha256", "coverage", "queryPlan", "results", "snapshotDigest"];
 
-export function buildCurrentKricExitCollectionReceipt({ collectionPlanBytes, providerSnapshotBytes, repository, repositorySha, workflowRunId }) {
+export function buildCurrentKricExitCollectionReceipt({ collectionPlanBytes, providerSnapshotBytes, repository, repositorySha, operationId }) {
   const planBytes = bytes(collectionPlanBytes, "collection plan");
   const snapshotBytes = bytes(providerSnapshotBytes, "provider snapshot");
   const plan = parseCanonicalPlan(planBytes);
@@ -27,13 +27,13 @@ export function buildCurrentKricExitCollectionReceipt({ collectionPlanBytes, pro
   validateSemanticPair(plan, snapshot);
   if (repository !== "AquilaXk/easysubway-data") throw new Error("repository identity mismatch");
   if (!/^[a-f0-9]{40}$/.test(repositorySha ?? "")) throw new Error("repository SHA mismatch");
-  if (!Number.isSafeInteger(workflowRunId) || workflowRunId <= 0) throw new Error("workflow run ID mismatch");
+  if (typeof operationId !== "string" || !/^[a-z0-9][a-z0-9-]{7,127}$/u.test(operationId)) throw new Error("operation identity mismatch");
   const payload = canonicalObject({
     schemaVersion: 1,
     artifactKind: "kric-exit-path-collection-receipt",
     repository,
     repositorySha,
-    workflowRunId,
+    operationId,
     coverageSelector: SELECTOR,
     sourceId: SOURCE_ID,
     providerMappingCount: 213,
@@ -52,14 +52,14 @@ export function buildCurrentKricExitCollectionReceipt({ collectionPlanBytes, pro
 
 export function canonicalCurrentKricExitCollectionReceiptJson(receipt) {
   assertKeys(receipt, [
-    "schemaVersion", "artifactKind", "repository", "repositorySha", "workflowRunId", "coverageSelector", "sourceId",
+    "schemaVersion", "artifactKind", "repository", "repositorySha", "operationId", "coverageSelector", "sourceId",
     "providerMappingCount", "stationLineQueryCount", "stationCount", "routeEdgeCount", "queryCount",
     "collectionPlanSha256", "providerSnapshotSha256", "collectionPlanDigest", "queryPlanSha256", "providerSnapshotDigest", "receiptSha256",
   ], "collection receipt keys");
   const { receiptSha256, ...payload } = receipt;
   if (receipt.schemaVersion !== 1 || receipt.artifactKind !== "kric-exit-path-collection-receipt"
     || receipt.repository !== "AquilaXk/easysubway-data" || !/^[a-f0-9]{40}$/.test(receipt.repositorySha)
-    || !Number.isSafeInteger(receipt.workflowRunId) || receipt.workflowRunId <= 0
+    || typeof receipt.operationId !== "string" || !/^[a-z0-9][a-z0-9-]{7,127}$/u.test(receipt.operationId)
     || receipt.coverageSelector !== SELECTOR || receipt.sourceId !== SOURCE_ID
     || !Number.isSafeInteger(receipt.providerMappingCount) || receipt.providerMappingCount !== 213
     || !Number.isSafeInteger(receipt.stationLineQueryCount) || receipt.stationLineQueryCount !== 213
@@ -129,7 +129,7 @@ export async function main(argv, { env = process.env, log = console.log } = {}) 
   ]);
   const receipt = buildCurrentKricExitCollectionReceipt({
     collectionPlanBytes: plan.bytes, providerSnapshotBytes: snapshot.bytes,
-    repository: args.repository, repositorySha: args.repositorySha, workflowRunId: args.workflowRunId,
+    repository: args.repository, repositorySha: args.repositorySha, operationId: args.operationId,
   });
   await assertUnchanged(plan);
   await assertUnchanged(snapshot);
@@ -297,7 +297,7 @@ async function publishBundle({ output, bytes: bundleBytes }) {
 
 function parseArgs(argv) {
   const paths = new Set(["collection-plan", "provider-snapshot", "output"]);
-  const allowed = new Set([...paths, "repository", "repository-sha", "workflow-run-id"]);
+  const allowed = new Set([...paths, "repository", "repository-sha", "operation-id"]);
   if (!Array.isArray(argv) || argv.length !== 12) throw new Error("collection receipt arguments mismatch");
   const values = {};
   for (let index = 0; index < argv.length; index += 2) {
@@ -306,8 +306,8 @@ function parseArgs(argv) {
     values[key] = paths.has(key) ? absolute(value, `--${key}`) : value;
   }
   if ([...allowed].some((key) => values[key] === undefined)) throw new Error("collection receipt arguments mismatch");
-  if (!/^[1-9]\d*$/.test(values["workflow-run-id"]) || !Number.isSafeInteger(Number(values["workflow-run-id"]))) throw new Error("workflow run ID mismatch");
-  return { collectionPlan: values["collection-plan"], providerSnapshot: values["provider-snapshot"], output: values.output, repository: values.repository, repositorySha: values["repository-sha"], workflowRunId: Number(values["workflow-run-id"]) };
+  if (!/^[a-z0-9][a-z0-9-]{7,127}$/u.test(values["operation-id"])) throw new Error("operation identity mismatch");
+  return { collectionPlan: values["collection-plan"], providerSnapshot: values["provider-snapshot"], output: values.output, repository: values.repository, repositorySha: values["repository-sha"], operationId: values["operation-id"] };
 }
 
 function parseJson(input, label) { try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(input)); } catch { throw new Error(`${label} must be strict UTF-8 JSON`); } }

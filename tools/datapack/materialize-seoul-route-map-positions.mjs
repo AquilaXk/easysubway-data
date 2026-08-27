@@ -11,12 +11,12 @@ import {
 import { assertRouteMapAdmissionFreshness } from "./lib/route-map-admission-freshness.mjs";
 
 const SOURCE_ID = "seoul-metro-route-map-positions";
+const RETIRED_SOURCE_ID = "seoulmetro-cyberstation-route-map";
+const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
 const PACK_ID = "nationwide-seoul-route-map";
 const OPERATOR_ID = "seoul-metro";
 const REGION = "수도권";
-export const CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS = Object.freeze([
-  "incheon-transit", "korail", "operator-07a9e77a02b6", "seoul-metro",
-]);
+export const SEOUL_ROUTE_MAP_SOURCE_OPERATOR_IDS = Object.freeze(["seoul-metro"]);
 const LINE_META = Object.freeze({
   "line-472a81add377": { nameKo: "수도권 1호선", nameEn: "Seoul Subway Line 1", color: "#052f93", line: "1" },
   "seoul-2": { nameKo: "수도권 2호선", nameEn: "Seoul Subway Line 2", color: "#10a643", line: "2" },
@@ -67,14 +67,11 @@ export function materializeSeoulRouteMapPositions({
   if (!pack || fixture.packs.length !== 1 || pack.artifactKind !== "production") {
     throw new Error("Seoul route map positions require one cumulative production pack");
   }
-  if (pack.sourceInventory?.some(({ id }) => id === "seoulmetro-cyberstation-route-map")
-    || pack.routeMapPositions?.some(({ sourceId }) => sourceId === "seoulmetro-cyberstation-route-map")) {
-    throw new Error("current public Seoul route map must not include Cyberstation input");
-  }
   if (!pack.operators.some(({ id }) => id === OPERATOR_ID)) {
     throw new Error("Seoul route map positions require seoul-metro operator pack");
   }
   ensureLines(pack);
+  ensureCoverageLineOperatorScopes(fixture, pack, source);
   const layoutByKey = new Map(routeMapLayoutArtifact.layoutPositions.map((row) => [`${row.lineId}:${row.stationCode}`, row]));
   if (layoutByKey.size !== routeMapLayoutArtifact.rawPositions.length) throw new Error("Seoul route map layout position identity mismatch");
   const stations = ensureStationsAndMembership(pack, routeMapLayoutArtifact, layoutByKey);
@@ -124,22 +121,35 @@ export function materializeSeoulRouteMapPositions({
     }
   }
 
-  const replacedSourceIndex = (pack.sourceInventory ?? []).findIndex(({ id }) => id === SOURCE_ID);
+  const replacedSourceIndex = (pack.sourceInventory ?? []).findIndex(({ id }) => id === SOURCE_ID || id === RETIRED_SOURCE_ID);
   pack.sourceInventory = (pack.sourceInventory ?? []).filter(
-    ({ id }) => id !== SOURCE_ID,
+    ({ id }) => id !== SOURCE_ID && id !== RETIRED_SOURCE_ID,
   );
   pack.sourceInventory.splice(
     replacedSourceIndex < 0 ? pack.sourceInventory.length : replacedSourceIndex,
     0,
     packSource(source, routeMapLayoutArtifact),
   );
-  pack.routeMapPositions = (pack.routeMapPositions ?? []).filter((row) => !replacementKeys.has(`${row.stationId}:${row.lineId}:${row.region}`)).concat(rows);
+  ensureRequiredTransferSource(pack, inventory);
+  pack.routeMapPositions = (pack.routeMapPositions ?? []).filter((row) =>
+    row.sourceId !== RETIRED_SOURCE_ID && !replacementKeys.has(`${row.stationId}:${row.lineId}:${row.region}`)).concat(rows);
   const tracks = materializeTracks(routeMapLayoutArtifact, source);
   pack.routeMapLineTracks = (pack.routeMapLineTracks ?? []).filter((row) => !(row.region === REGION && LINE_IDS.includes(row.lineId))).concat(tracks);
   pack.minimumTableRows = {
     ...pack.minimumTableRows,
     route_map_positions: pack.routeMapPositions.length,
     route_map_line_tracks: pack.routeMapLineTracks.length,
+  };
+  const coverageEvidence = JSON.parse(pack.metadata?.productionCoverageEvidence ?? "[]");
+  if (!Array.isArray(coverageEvidence)) {
+    throw new Error("Seoul route map production coverage evidence is invalid");
+  }
+  pack.metadata = {
+    ...pack.metadata,
+    productionCoverageEvidence: JSON.stringify([
+      ...coverageEvidence.filter(({ sourceDomain }) => sourceDomain !== "route_map_positions"),
+      CURRENT_SEOUL_PUBLIC_ROUTE_MAP_COVERAGE,
+    ]),
   };
   if (rewritePackIdentity) {
     const version = routeMapLayoutArtifact.capturedAt.slice(0, 10).replaceAll("-", "");
@@ -225,10 +235,10 @@ export function verifyCurrentCapitalPublicRouteMapDocument(document, successor, 
     || routeMapCoverage.length !== 1
     || JSON.stringify(routeMapCoverage[0]) !== JSON.stringify(CURRENT_SEOUL_PUBLIC_ROUTE_MAP_COVERAGE)
     || coverageEvidence?.some(({ sourceIds }) =>
-      Array.isArray(sourceIds) && sourceIds.includes("seoulmetro-cyberstation-route-map")) !== false
-    || pack.routeMapPositions.some(({ sourceId }) => sourceId === "seoulmetro-cyberstation-route-map")
+      Array.isArray(sourceIds) && sourceIds.includes(RETIRED_SOURCE_ID)) !== false
+    || pack.routeMapPositions.some(({ sourceId }) => sourceId === RETIRED_SOURCE_ID)
     || pack.sourceInventory?.filter(({ id }) => id === SOURCE_ID).length !== 1
-    || pack.sourceInventory?.some(({ id }) => id === "seoulmetro-cyberstation-route-map")) {
+    || pack.sourceInventory?.some(({ id }) => id === RETIRED_SOURCE_ID)) {
     throw new Error(`${label} must contain the complete current public Seoul route map`);
   }
 
@@ -302,7 +312,7 @@ function requiredSource(inventory, snapshot, snapshotSha256, layoutArtifactSha25
     || admission.semanticInputSha256 !== snapshot.semanticInputSha256 || admission.semanticOutputSha256 !== snapshot.semanticOutputSha256
     || JSON.stringify(source.coverageScope) !== JSON.stringify({
       regionIds: ["capital"],
-      operatorIds: [...CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS],
+      operatorIds: [...SEOUL_ROUTE_MAP_SOURCE_OPERATOR_IDS],
       lineIds: [...LINE_IDS],
       sourceDomains: ["route_map_positions"],
     })
@@ -372,6 +382,53 @@ function packSource(source, snapshot) {
     fields: [...source.fieldsProvided],
     coverageScope: structuredClone(source.coverageScope),
   };
+}
+
+function ensureCoverageLineOperatorScopes(fixture, pack, source) {
+  const sourceScopes = source.coverageScope.regionIds.flatMap((regionId) =>
+    source.coverageScope.operatorIds.flatMap((operatorId) =>
+      source.coverageScope.lineIds.map((lineId) => ({ regionId, operatorId, lineId }))));
+  const key = ({ regionId, operatorId, lineId }) => `${regionId}:${operatorId}:${lineId}`;
+  const packScopes = [...new Map(
+    [...(pack.coverageLineOperatorScopes ?? []), ...sourceScopes]
+      .map((scope) => [key(scope), scope]),
+  ).values()].sort((left, right) => key(left).localeCompare(key(right), "en"));
+  pack.coverageLineOperatorScopes = packScopes;
+
+  const union = [...new Map(
+    [...(fixture.coverageLineOperatorScopes ?? []), ...packScopes]
+      .map((scope) => [key(scope), scope]),
+  ).values()].sort((left, right) => key(left).localeCompare(key(right), "en"));
+  fixture.coverageLineOperatorScopeSemantics = "UNION_OF_PACK_SCOPES";
+  fixture.coverageLineOperatorScopes = union;
+}
+
+function ensureRequiredTransferSource(pack, inventory) {
+  const source = inventory?.sources?.find(({ id }) => id === TRANSFER_SOURCE_ID);
+  const admission = source?.transferAdmissionEvidence;
+  if (source?.requiredForProductionPack !== true || source.capabilities?.transfer?.productionUseAllowed !== true
+    || source.license?.type !== "PUBLIC_DATA_FREE_USE" || source.license.redistributionAllowed !== true
+    || !Array.isArray(source.fieldsProvided) || admission?.decision !== "APPROVED"
+    || admission.productionUseAllowed !== true || !/^[a-f0-9]{64}$/u.test(admission.rawSha256 ?? "")
+    || typeof admission.capturedAt !== "string") {
+    throw new Error("current capital transfer source inventory evidence is incomplete");
+  }
+  const transfer = {
+    id: source.id,
+    owner: source.owner,
+    url: source.datasetUrl,
+    sourceSha256: admission.rawSha256,
+    license: source.license.name,
+    licenseStatus: "redistributable",
+    redistributionAllowed: true,
+    updateFrequency: source.updateFrequency,
+    updatedAt: admission.capturedAt,
+    fields: [...source.fieldsProvided],
+    coverageScope: structuredClone(source.coverageScope),
+  };
+  const index = pack.sourceInventory.findIndex(({ id }) => id === TRANSFER_SOURCE_ID);
+  if (index < 0) pack.sourceInventory.push(transfer);
+  else pack.sourceInventory.splice(index, 1, transfer);
 }
 
 function normalizeStationName(value) {

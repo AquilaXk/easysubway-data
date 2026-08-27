@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+
+import { canonicalJson, sha256 as manifestSha256, withoutSignature } from "./lib/manifest-validation.mjs";
+import { rsaSha256Signature } from "./lib/manifest-signing.mjs";
 
 import {
   parseCurrentMolitDaeguStationMappings,
@@ -122,6 +125,58 @@ export function projectRegionalMaterializeFixture(input) {
   }
   rejectItxReference(fixture, "fixture");
   return fixture;
+}
+
+/**
+ * The regional materializers start with a canonical production-shaped pack,
+ * but `build-datapack --fixture` deliberately labels its output as a fixture.
+ * Coverage negative tests need to exercise the production validators after
+ * their own mutation, so promote only that disposable output to a signed
+ * candidate.  The `.invalid` host makes the test artifact non-publishable
+ * while preserving the production URL and staged-path contracts.
+ */
+export async function materializeRegionalProductionCandidate({ outputDir, privateKey }) {
+  const manifestPath = path.join(outputDir, "current.json");
+  const provenancePath = path.join(outputDir, "current.provenance.json");
+  const [manifestBytes, provenanceBytes] = await Promise.all([
+    readFile(manifestPath),
+    readFile(provenancePath),
+  ]);
+  const manifest = JSON.parse(manifestBytes);
+  const provenance = JSON.parse(provenanceBytes);
+  if (manifest.manifestVersion !== 2 || manifest.packs?.length !== 1
+    || provenance.packs?.length !== 1 || manifest.packs[0].artifactKind !== "fixture"
+    || provenance.packs[0].artifactKind !== "fixture") {
+    throw new Error("regional fixture output is not an isolated fixture pack");
+  }
+
+  const [pack] = manifest.packs;
+  const candidateUrl = `https://regional-fixture.invalid/catalog/${pack.id}-v${pack.version}.sqlite.gz`;
+  pack.artifactKind = "production";
+  pack.url = candidateUrl;
+  const packPayload = `${pack.id}:${pack.version}:${pack.sha256}:${pack.sqliteSha256}:${pack.sizeBytes}:${new URL(candidateUrl).toString()}`;
+  pack.signature = {
+    algorithm: "rsa-sha256-pack-manifest-v2",
+    value: rsaSha256Signature(privateKey, packPayload),
+  };
+  const routePayload = `${pack.id}:${pack.version}:${pack.sha256}:${pack.sqliteSha256}:${pack.sizeBytes}:${JSON.stringify(pack.representativeRouteRegressions)}:${new URL(candidateUrl).toString()}`;
+  pack.representativeRouteRegressionSignature = {
+    algorithm: "rsa-sha256-route-regression-v1",
+    value: rsaSha256Signature(privateKey, routePayload),
+  };
+  manifest.channel = "candidate";
+  manifest.keyId = "production-v1";
+  manifest.signature = {
+    algorithm: "rsa-sha256-manifest-v2",
+    value: rsaSha256Signature(privateKey, canonicalJson(withoutSignature(manifest))),
+  };
+  const manifestJson = `${JSON.stringify(manifest, null, 2)}\n`;
+  provenance.packs[0].artifactKind = "production";
+  provenance.manifestSha256 = manifestSha256(Buffer.from(manifestJson));
+  await Promise.all([
+    writeFile(manifestPath, manifestJson),
+    writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`),
+  ]);
 }
 
 /**

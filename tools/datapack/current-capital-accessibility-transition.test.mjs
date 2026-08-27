@@ -5,7 +5,6 @@ import path from "node:path";
 import test from "node:test";
 
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
-import { buildCurrentSourceRouteEdgeInput } from "./build-current-route-edge-input.mjs";
 import {
   assertCurrentCapitalAccessibilityBuildAllowed,
   buildCurrentCapitalAccessibilityTransition,
@@ -36,9 +35,15 @@ test("pending full fan-in marker를 exact current identities에 결속하고 rou
     () => assertCurrentCapitalAccessibilityBuildAllowed({ repositoryRoot: fixture.root }),
     /CURRENT_ACCESSIBILITY_TRANSITION_BLOCKED/,
   );
-  await assert.rejects(
-    () => buildCurrentSourceRouteEdgeInput({ repositoryRoot: fixture.root }),
-    /CURRENT_ACCESSIBILITY_TRANSITION_BLOCKED/,
+  const malformedPrevious = structuredClone(fixture.input.previous);
+  malformedPrevious.candidate.unexpected = true;
+  assert.throws(
+    () => buildCurrentCapitalAccessibilityTransition({
+      ...fixture.input,
+      previous: malformedPrevious,
+      previousBytes: Buffer.from(canonicalJson(malformedPrevious)),
+    }),
+    /full-capital station-line candidate keys mismatch/,
   );
 
   const drifted = JSON.parse(bytes);

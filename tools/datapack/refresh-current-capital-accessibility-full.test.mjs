@@ -6,10 +6,11 @@ import path from "node:path";
 import test from "node:test";
 
 import { buildCurrentCapitalAccessibilityRefreshOutputs, commitCurrentCapitalAccessibilityRefresh, refreshCurrentCapitalAccessibilityFull } from "./refresh-current-capital-accessibility-full.mjs";
+import { buildCurrentExitAdmissionOciReceipt, canonicalCurrentExitAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
 import { readStableRegularFile } from "./rebind-current-candidate-source-snapshots.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
-import { stageSyntheticCurrentItxTopologyAdmission } from "./test-fixtures/current-itx-topology-admission.mjs";
 import { activateSyntheticCurrentStaticNetworkSuccessors } from "./test-fixtures/current-public-route-map-successor.mjs";
+import { currentizeFreshFacilitySource, writeFreshCurrentAccessibilityOutputs, writeFreshExitAdmissionChain } from "./test-fixtures/current-full-capital-production-artifact.mjs";
 import { currentIncheonStationCodeDerivations } from "./collect-incheon-station-info.mjs";
 import {
   buildCurrentTopologyRefreshPrimaryOutputs,
@@ -51,7 +52,7 @@ test("activated full-capital inputs are rebuilt across the exact public static-n
   assert.deepEqual(route.stationLines, beforeRoute.stationLines);
   assert.deepEqual(route.routeEdges, beforeRoute.routeEdges);
   assert.equal(station.evidenceRows.length, 641);
-  assert.equal(route.routeEdges.length, 2674);
+  assert.equal(route.routeEdges.length, 2664);
   assert.deepEqual(await Promise.all(approvalPaths.map((relative) => readFile(path.join(root, relative)))), approvalInputs);
 });
 
@@ -190,7 +191,7 @@ test("predecessor-bound activated inputs are rebuilt atomically to exact current
   const [station, route] = await Promise.all(OUTPUTS.map(async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"))));
   assert.equal(station.evidenceRows.length, 641);
   assert.equal(route.stationLines.length, 1102);
-  assert.equal(route.routeEdges.length, 2674);
+  assert.equal(route.routeEdges.length, 2664);
 });
 
 test("input mutation after build is rejected before either output replacement", async (t) => {
@@ -268,13 +269,21 @@ async function stagedRefreshRepository(t) {
     const target = path.join(root, relative); await mkdir(path.dirname(target), { recursive: true }); await cp(path.join(ROOT, relative), target);
   }
   await cp(path.join(ROOT, "tools/datapack/sources"), path.join(root, "tools/datapack/sources"), { recursive: true });
+  await writeStagedExitOciReceipt(root);
   const currentCandidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
   await copyCurrentCandidateEvidenceInputs(root, currentCandidate);
   const { inWindow: now, candidateId, sourceSetSha256 } = await stageCurrentTopologyFixture(root);
   await rebindStagedActivatedOutputCandidateIds(root, candidateId, sourceSetSha256);
   await bindCurrentCandidateApprovalFixture(root);
   await activateSyntheticCurrentStaticNetworkSuccessors(root, { now });
+  const canonicalPackPath = path.join(root, "tools/datapack/release/capital-production-canonical-pack.json");
+  const canonicalPackBytesBeforeFacilityCurrentization = await readFile(canonicalPackPath);
+  await currentizeFreshFacilitySource(root, now);
+  assert.equal((await readFile(canonicalPackPath)).equals(canonicalPackBytesBeforeFacilityCurrentization), true);
+  await writeFreshExitAdmissionChain(root, now);
+  await writeFreshCurrentAccessibilityOutputs(root);
   const finalEvidence = await stagedStaticEvidenceIdentity(root);
+  await rebindStagedActivatedOutputCandidateIds(root, finalEvidence.candidateId, finalEvidence.predecessorSourceSetSha256);
   await Promise.all([
     rebindStagedFacilityCandidateId(root, finalEvidence.candidateId, finalEvidence.sourceSetSha256),
     rebindStagedExitCandidateId(root, finalEvidence.candidateId, finalEvidence.sourceSetSha256),
@@ -282,14 +291,40 @@ async function stagedRefreshRepository(t) {
   return root;
 }
 
+async function writeStagedExitOciReceipt(root) {
+  const normalizedPath = "tools/datapack/release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json";
+  const admissionPath = "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json";
+  const receiptPath = "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json";
+  const [normalizedBytes, admissionBytes] = await Promise.all([
+    readFile(path.join(root, normalizedPath)),
+    readFile(path.join(root, admissionPath)),
+  ]);
+  const providerCollectionBundleBytes = Buffer.from("synthetic-current-exit-provider");
+  const providerObjectSha256 = sha(providerCollectionBundleBytes);
+  const receipt = buildCurrentExitAdmissionOciReceipt({
+    repository: "AquilaXk/easysubway-data",
+    mainSha: "a".repeat(40),
+    operationId: "synthetic-current-refresh",
+    providerCapturedAt: "2026-08-01T00:00:00.000Z",
+    providerCollectionBundleBytes,
+    providerObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/operations/current-capital-live-chain/v1/heads/${"a".repeat(40)}/operations/synthetic-current-refresh/provider-collections/20260801-${providerObjectSha256}.json`,
+    providerObjectSha256,
+    providerObjectByteSize: providerCollectionBundleBytes.length,
+    normalizedBytes,
+    admissionBytes,
+  });
+  await writeFile(path.join(root, receiptPath), canonicalCurrentExitAdmissionOciReceiptJson(receipt));
+}
+
 // Staged repository 전용 bootstrap이다. 현재 capital admission과 같은 시계의
 // synthetic Incheon 입력을 exact bytes로 결속해, 과거 tracked 관측을 현재 성공으로
 // 오인하지 않고 static-successor transaction의 정상 경로만 재현한다.
 async function stageCurrentTopologyFixture(root) {
-  const [baseSpec, sourceInventory, canonical, policyBytes, incheonBytes] = await Promise.all([
+  const [baseSpec, sourceInventory, canonical, productionInput, policyBytes, incheonBytes] = await Promise.all([
     readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json")).then(JSON.parse),
     readFile(path.join(root, "tools/datapack/source-inventory.json")).then(JSON.parse),
     readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json")).then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/inputs/capital-pilot-production-source-input.json")).then(JSON.parse),
     readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json")),
     readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260814.json")),
   ]);
@@ -301,8 +336,8 @@ async function stageCurrentTopologyFixture(root) {
   const currentTopologyBytes = await readFile(path.join(root, currentTopologyPath));
   const currentTopology = JSON.parse(currentTopologyBytes);
   const { inWindow } = await currentTopologyAdmissionClock(root);
-  const { baseSpec: currentItxBaseSpec, admissionPath: currentItxAdmissionPath, admissionBytes: currentItxAdmissionBytes } =
-    await stageSyntheticCurrentItxTopologyAdmission(root, baseSpec, inWindow);
+  const currentItxTopologyEvidencePath = baseSpec.itxTopologyEvidencePath;
+  const currentItxTopologyEvidenceBytes = await readFile(path.join(root, currentItxTopologyEvidencePath));
   const currentIncheonTopology = JSON.parse(incheonBytes);
   delete currentIncheonTopology.stationCodeCorrections;
   currentIncheonTopology.stationCodeDerivations = currentIncheonStationCodeDerivations();
@@ -312,7 +347,7 @@ async function stageCurrentTopologyFixture(root) {
   const currentIncheonTopologyPath = `tools/datapack/sources/incheon-transit-station-info-${inWindow.toISOString().slice(0, 10).replaceAll("-", "")}.json`;
   const baselineTopologyBytes = await readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260724.json"));
   const result = buildCurrentTopologyRefreshPrimaryOutputs({
-    baseSpec: currentItxBaseSpec,
+    baseSpec,
     builderGitSha: baseSpec.builderGitSha,
     sourceInventory,
     currentTopology,
@@ -321,11 +356,12 @@ async function stageCurrentTopologyFixture(root) {
     currentIncheonTopology,
     currentIncheonTopologyBytes,
     currentIncheonTopologyPath,
-    currentItxAdmissionPath,
-    currentItxAdmissionBytes,
+    currentItxTopologyEvidencePath,
+    currentItxTopologyEvidenceBytes,
     baselineTopology: JSON.parse(baselineTopologyBytes),
     baselineTopologyBytes,
     canonical,
+    productionInput,
     productionScopePolicyBytes: policyBytes,
     buildNow: inWindow.toISOString(),
     snapshotBytesByPath: await collectPositionSnapshotBytes(sourceInventory, root),
@@ -411,11 +447,18 @@ async function stagedStaticEvidenceIdentity(root) {
     if (sourceId === "seoul-metro-transfer-distance-duration") return [];
     return [sourceId === "seoul-metro-accessibility" ? selected[seoulIndex].previousSnapshotId : snapshotId];
   }));
+  const predecessorIdSet = new Set(predecessorIds);
+  const predecessor = snapshots.filter(({ snapshotId }) => predecessorIdSet.has(snapshotId));
   const evidence = snapshots.filter(({ snapshotId }) => evidenceIds.has(snapshotId));
-  if (evidenceIds.size !== 6 || evidence.length !== 6) {
+  if (predecessorIdSet.size !== 7 || predecessor.length !== 7
+    || evidenceIds.size !== 6 || evidence.length !== 6) {
     throw new Error("staged static successor evidence set is incomplete");
   }
-  return { candidateId: candidate.candidateId, sourceSetSha256: sha(JSON.stringify(evidence)) };
+  return {
+    candidateId: candidate.candidateId,
+    predecessorSourceSetSha256: sha(JSON.stringify(predecessor)),
+    sourceSetSha256: sha(JSON.stringify(evidence)),
+  };
 }
 
 async function readCurrentStaticBoundary(root) {
@@ -470,7 +513,7 @@ async function rebindStagedFacilityCandidateId(root, candidateId, sourceSetSha25
 
 async function rebindStagedExitCandidateId(root, candidateId, sourceSetSha256) {
   const admissionPath = "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json";
-  const receiptPath = "tools/datapack/release/current-exit-admission-v2/exit-path-admission-artifact-receipt.json";
+  const receiptPath = "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json";
   const [admission, receipt] = await Promise.all([
     readFile(path.join(root, admissionPath)).then(JSON.parse),
     readFile(path.join(root, receiptPath)).then(JSON.parse),

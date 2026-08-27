@@ -10,7 +10,12 @@ import { isDeepStrictEqual, promisify } from "node:util";
 
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
-import { syncCanonicalFixture } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
+import {
+  retainPreAuthorityRideEdges,
+  syncCanonicalAccessibilityEvidence,
+  syncCanonicalFixture,
+} from "./apply-accessibility-evidence-to-bundled-pack.mjs";
+import { buildFixture as buildOfficialSourceFixture } from "./import-official-sources.mjs";
 import { assertNoRetiredTransitReferences, projectRetiredTransitLines } from "./project-retired-transit-lines.mjs";
 import { projectCanonicalRouteMapProvenance } from "./project-canonical-route-map-provenance.mjs";
 import { applySchedule } from "./apply-kric-line4-pilot-schedule.mjs";
@@ -18,6 +23,7 @@ import {
   CAPITAL_MAP_LINE_IDS,
   buildCapitalTopologyReverificationEvidence,
   projectCapitalTopologyOwnership,
+  requireCurrentSourceSeparatedCapitalTopology,
 } from "./collect-capital-route-topology.mjs";
 import {
   requireCurrentIncheonStationCodeDerivations,
@@ -26,6 +32,7 @@ import {
 import {
   admittedCapitalLineEvidence,
   projectCapitalTopologyIntoCanonicalFixture,
+  validateSourceSeparatedCurrentTopology,
 } from "./build-datapack.mjs";
 import { loadCapitalRouteTopologySnapshot } from "./apply-capital-route-topology-to-bundled-pack.mjs";
 import { addCadence } from "./freshness-policy.mjs";
@@ -44,7 +51,6 @@ import {
 } from "./lib/static-network-successor-completeness.mjs";
 import {
   CURRENT_SEOUL_PUBLIC_ROUTE_MAP_COVERAGE,
-  CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS,
   materializeSeoulRouteMapPositions,
   verifyCurrentCapitalPublicRouteMapDocument,
 } from "./materialize-seoul-route-map-positions.mjs";
@@ -116,6 +122,7 @@ export const CURRENT_SOURCE_ACTIVATION_OUTPUTS = Object.freeze([
 ]);
 export const CURRENT_TOPOLOGY_REFRESH_OUTPUTS = Object.freeze([
   "tools/datapack/source-inventory.json",
+  "tools/datapack/release/capital-production-reviewed-pack.json",
   "tools/datapack/release/capital-production-canonical-pack.json",
   "tools/datapack/release/candidate-build-spec.json",
   "tools/datapack/release/release-request.json",
@@ -418,11 +425,6 @@ function activateInventory(sourceInventory, handoff) {
     ({ id }) => id === "seoul-metro-route-map-positions",
     "current public route-map source",
   );
-  routeMapPositions.coverageScope = {
-    ...routeMapPositions.coverageScope,
-    operatorIds: [...CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS],
-  };
-
   const convenience = requireOne(
     next.sources,
     ({ id }) => id === "kric-station-convenience-standard",
@@ -1057,8 +1059,12 @@ export function buildCurrentSourcePrimaryOutputs({
     snapshotPath: currentTopologyPath,
     prefix: "capital-route-topology",
   });
-  const capital = fullCapital;
+  const capital = requireCurrentSourceSeparatedCapitalTopology(fullCapital);
   validateCurrentCapitalTopologyOwnership(capital);
+  validateSourceSeparatedCurrentTopology({
+    capitalTopology: capital,
+    incheonSnapshot: currentIncheonTopology,
+  });
   const activationNow = new Date(requiredUtcInstant(validateBuildNow(buildNow, handoff), "buildNow"));
   if (Date.parse(capital.capturedAt) > activationNow.getTime()
     || Date.parse(capital.freshUntil) <= activationNow.getTime()) {
@@ -1110,11 +1116,12 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
   currentIncheonTopology,
   currentIncheonTopologyBytes,
   currentIncheonTopologyPath,
-  currentItxAdmissionPath,
-  currentItxAdmissionBytes,
+  currentItxTopologyEvidencePath,
+  currentItxTopologyEvidenceBytes,
   baselineTopology,
   baselineTopologyBytes,
   canonical,
+  productionInput,
   productionScopePolicyBytes,
   buildNow,
   snapshotBytesByPath,
@@ -1127,8 +1134,12 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
     snapshotPath: currentTopologyPath,
     prefix: "capital-route-topology",
   });
-  const topology = fullTopology;
+  const topology = requireCurrentSourceSeparatedCapitalTopology(fullTopology);
   validateCurrentCapitalTopologyOwnership(topology);
+  validateSourceSeparatedCurrentTopology({
+    capitalTopology: topology,
+    incheonSnapshot: currentIncheonTopology,
+  });
   const activationNow = new Date(requiredUtcInstant(buildNow, "buildNow"));
   if (activationNow < new Date(topology.capturedAt)
     || activationNow >= new Date(topology.freshUntil)) {
@@ -1168,6 +1179,12 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
     activationNow,
   );
   const nextCanonical = structuredClone(canonical);
+  const reviewedPack = buildOfficialSourceFixture(nextInventory, productionInput);
+  const reviewedCapital = reviewedPack.packs?.find(({ id }) => id === "capital");
+  if (!reviewedCapital) throw new Error("current reviewed capital pack is missing");
+  syncCanonicalAccessibilityEvidence(nextCanonical, reviewedCapital);
+  retainPreAuthorityRideEdges(reviewedPack, "reviewed pack");
+  retainPreAuthorityRideEdges(nextCanonical, "canonical pack");
   const projection = projectCapitalTopologyIntoCanonicalFixture(
     nextCanonical,
     topology,
@@ -1188,15 +1205,12 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
     topologyReverificationBytes,
     productionScopePolicyBytes,
   });
-  if (!/^tools\/datapack\/itx-current-network-edge-admission-[0-9]{8}\.json$/u
-    .test(currentItxAdmissionPath ?? "")
-    || !Buffer.isBuffer(currentItxAdmissionBytes)) {
-    throw new Error("current ITX topology admission input is invalid");
+  spec.publishedAt = activationNow.toISOString();
+  if (currentItxTopologyEvidencePath !== requiredItxTopologyEvidencePath(baseSpec)
+    || !Buffer.isBuffer(currentItxTopologyEvidenceBytes)
+    || sha256(currentItxTopologyEvidenceBytes) !== baseSpec.itxTopologyEvidenceSha256) {
+    throw new Error("current ITX topology evidence input is invalid");
   }
-  spec.networkEdgeEvidence.itxCurrentTopologyAdmission = {
-    path: currentItxAdmissionPath,
-    sha256: sha256(currentItxAdmissionBytes),
-  };
   return {
     sourceInventory: nextInventory,
     sourceInventoryBytes,
@@ -1204,6 +1218,8 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
     topologyReverificationBytes,
     sourceSeparatedTopologyPath,
     sourceSeparatedTopologyBytes,
+    reviewedPack,
+    reviewedPackBytes: jsonBytes(reviewedPack),
     canonical: nextCanonical,
     canonicalBytes,
     projectedEdgeCount: projection.edgeCount,
@@ -1285,26 +1301,8 @@ function historicalCapitalTopologyOwnershipBaseline({ baseSpec, baselineTopology
   }
   return projectCapitalTopologyOwnership(baselineTopology);
 }
-
 function jsonBytes(value, pretty = true) {
   return Buffer.from(`${JSON.stringify(value, null, pretty ? 2 : 0)}\n`);
-}
-
-export function projectCurrentCanonicalRouteMapProvenance({
-  canonical,
-  inactiveLineExclusions,
-  basemapManifest,
-  dorasanCsvBytes,
-  reviewedAmbiguities,
-}) {
-  const projected = projectRetiredTransitLines(canonical, inactiveLineExclusions);
-  assertNoRetiredTransitReferences(projected, inactiveLineExclusions);
-  return projectCanonicalRouteMapProvenance({
-    fixture: projected,
-    basemapManifest,
-    dorasanCsvBytes,
-    reviewedAmbiguities,
-  });
 }
 
 function requiredSha(value, label) {
@@ -1351,6 +1349,9 @@ export function buildCurrentCandidateSpec({
   const snapshotDate = topologySnapshotId.slice(-8);
   const topologyReverificationPath = `tools/datapack/release/capital-topology-reverification-${snapshotDate}.json`;
   const spec = structuredClone(baseSpec);
+  if (spec.networkEdgeEvidence) {
+    delete spec.networkEdgeEvidence.itxCurrentTopologyAdmission;
+  }
   spec.candidateId = `capital-pilot-candidate-${snapshotDate}`;
   spec.builderGitSha = builderGitSha;
   spec.builderVersion = "build-datapack.mjs@26";
@@ -1666,6 +1667,20 @@ export async function collectPositionSnapshotBytes(sourceInventory, repositoryRo
       snapshotPath,
       await readRegularBytes(repositoryRoot, snapshotPath, `${source.id} position snapshot`),
     );
+    const layoutTopologyId = evidence.currentLayoutAdmission?.topologySnapshotId;
+    if (layoutTopologyId != null) {
+      const layoutTopologyPath = `tools/datapack/sources/${layoutTopologyId}.json`;
+      if (!snapshotBytesByPath.has(layoutTopologyPath)) {
+        snapshotBytesByPath.set(
+          layoutTopologyPath,
+          await readRegularBytes(
+            repositoryRoot,
+            layoutTopologyPath,
+            `${source.id} current layout topology`,
+          ),
+        );
+      }
+    }
   }
   if (snapshotBytesByPath.size === 0) throw new Error("capital position snapshots are missing");
   return snapshotBytesByPath;
@@ -1813,7 +1828,10 @@ export async function validatePreparedCandidate({
   await runNodeImpl("tools/datapack/build-datapack.mjs", [
     "--build-spec", validationSpecPath,
     "--output", outputPath,
-  ], { env: { EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow } });
+  ], { env: {
+    EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow,
+    EASYSUBWAY_DATAPACK_BUILD_SPEC_VALIDATION_ONLY: "true",
+  } });
 }
 
 function validateBuildNow(buildNow, handoff) {
@@ -1891,7 +1909,7 @@ export async function readBuilderBaselineBytes(
 export async function generateCurrentCapitalTopologyRefresh({
   capitalTopologyPath,
   incheonTopologyPath,
-  itxCurrentAdmissionPath,
+  itxTopologyEvidencePath,
   builderGitSha,
   buildNow,
   check = false,
@@ -1905,9 +1923,9 @@ export async function generateCurrentCapitalTopologyRefresh({
     .test(incheonTopologyPath ?? "")) {
     throw new Error("current Incheon topology input must be a tracked source snapshot path");
   }
-  if (!/^tools\/datapack\/itx-current-network-edge-admission-[0-9]{8}\.json$/u
-    .test(itxCurrentAdmissionPath ?? "")) {
-    throw new Error("current ITX topology admission must be a tracked artifact path");
+  if (!/^tools\/datapack\/itx-cheongchun-topology-evidence(?:-[0-9]{17})?\.json$/u
+    .test(itxTopologyEvidencePath ?? "")) {
+    throw new Error("current ITX topology evidence must be a tracked artifact path");
   }
   const topologyReverificationPath =
     `tools/datapack/release/capital-topology-reverification-${capitalPathMatch[1]}.json`;
@@ -1921,15 +1939,16 @@ export async function generateCurrentCapitalTopologyRefresh({
     const readMutableInput = (relativePath) => check
       ? readBuilderBaselineBytes(builderGitSha, relativePath)
       : readRegularBytes(root, relativePath);
-    const [currentTopologyBytes, currentIncheonTopologyBytes, currentItxAdmissionBytes,
-      baselineTopologyBytes, sourceInventoryBytes,
+    const [currentTopologyBytes, currentIncheonTopologyBytes, currentItxTopologyEvidenceBytes,
+      baselineTopologyBytes, sourceInventoryBytes, productionInputBytes,
       baseSpecBytes, canonicalBytes, productionScopePolicyBytes, sourceSnapshotsBytes] =
       await Promise.all([
         readRegularBytes(root, capitalTopologyPath, "current capital topology"),
         readRegularBytes(root, incheonTopologyPath, "current Incheon topology"),
-        readRegularBytes(root, itxCurrentAdmissionPath, "current ITX topology admission"),
+        readRegularBytes(root, itxTopologyEvidencePath, "current ITX topology evidence"),
         readRegularBytes(root, "tools/datapack/sources/capital-route-topology-20260724.json"),
         readMutableInput("tools/datapack/source-inventory.json"),
+        readMutableInput("tools/datapack/inputs/capital-pilot-production-source-input.json"),
         readMutableInput("tools/datapack/release/candidate-build-spec.json"),
         readMutableInput("tools/datapack/release/capital-production-canonical-pack.json"),
         readRegularBytes(root, "tools/datapack/nationwide-coverage-targets.json"),
@@ -1950,11 +1969,12 @@ export async function generateCurrentCapitalTopologyRefresh({
       ),
       currentIncheonTopologyBytes,
       currentIncheonTopologyPath: incheonTopologyPath,
-      currentItxAdmissionPath: itxCurrentAdmissionPath,
-      currentItxAdmissionBytes,
+      currentItxTopologyEvidencePath: itxTopologyEvidencePath,
+      currentItxTopologyEvidenceBytes,
       baselineTopology: parseJson(baselineTopologyBytes, "baseline capital topology"),
       baselineTopologyBytes,
       canonical: parseJson(canonicalBytes, "canonical pack"),
+      productionInput: parseJson(productionInputBytes, "production input"),
       productionScopePolicyBytes,
       buildNow,
       snapshotBytesByPath: await collectPositionSnapshotBytes(sourceInventory),
@@ -1963,6 +1983,11 @@ export async function generateCurrentCapitalTopologyRefresh({
     await Promise.all([
       writeTempFile(temporaryRoot, topologyReverificationPath, primary.topologyReverificationBytes),
       writeTempFile(temporaryRoot, "tools/datapack/source-inventory.json", primary.sourceInventoryBytes),
+      writeTempFile(
+        temporaryRoot,
+        "tools/datapack/release/capital-production-reviewed-pack.json",
+        primary.reviewedPackBytes,
+      ),
       writeTempFile(
         temporaryRoot,
         "tools/datapack/release/capital-production-canonical-pack.json",
@@ -1994,10 +2019,11 @@ export async function generateCurrentCapitalTopologyRefresh({
     const outputs = [
       { relativePath: topologyReverificationPath, bytes: primary.topologyReverificationBytes },
       { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[0], bytes: primary.sourceInventoryBytes },
-      { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[1], bytes: primary.canonicalBytes },
-      { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[2], bytes: finalSpecBytes },
-      { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[3], bytes: releaseRequestBytes },
-      { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[4], bytes: hashEvidenceBytes },
+      { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[1], bytes: primary.reviewedPackBytes },
+      { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[2], bytes: primary.canonicalBytes },
+      { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[3], bytes: finalSpecBytes },
+      { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[4], bytes: releaseRequestBytes },
+      { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[5], bytes: hashEvidenceBytes },
     ];
     const validateOutputBytes = async () => {
       for (const output of outputs) {
@@ -2079,8 +2105,7 @@ export async function generateCurrentSourceActivation({
     const [capitalTopologyBytes, incheonTopologyBytes, rawArtifact, baselineTopologyBytes, sourceSnapshotBytes,
       sourceInventoryBytes, productionInputBytes, quoteBundleBytes, baseSpecBytes,
       canonicalBytes, productionScopePolicyBytes,
-      seoulRevalidationSnapshotBytes, seoulRevalidationEvidenceBytes,
-      basemapManifestBytes, dorasanCsvBytes, reviewedAmbiguitiesBytes] = await Promise.all([
+      seoulRevalidationSnapshotBytes, seoulRevalidationEvidenceBytes] = await Promise.all([
       readRegularBytes(root, capitalTopologyPath, "current capital topology"),
       readRegularBytes(root, incheonTopologyPath, "current Incheon topology"),
       fetchCurrentRawArtifact(temporaryRoot, handoff),
@@ -2094,19 +2119,21 @@ export async function generateCurrentSourceActivation({
       readRegularBytes(root, "tools/datapack/nationwide-coverage-targets.json", "production scope policy"),
       readRegularBytes(root, seoulRevalidationSnapshotPath, "Seoul revalidation snapshot"),
       readRegularBytes(root, seoulRevalidationEvidencePath, "Seoul revalidation evidence"),
-      readRegularBytes(root, "tools/route-map/basemap-build-manifest.json", "route-map basemap manifest"),
-      readRegularBytes(root, "tools/datapack/sources/seoul-wikimedia-svg-route-map-20260624.csv", "Dorasan route-map CSV"),
-      readRegularBytes(root, "tools/route-map/fixtures/reviewed-ambiguities.json", "reviewed route-map ambiguities"),
     ]);
     const sourceInventory = parseJson(sourceInventoryBytes, "source inventory");
     const quoteBundle = parseJson(quoteBundleBytes, "official OD fare quote bundle");
     const capitalTopology = parseJson(capitalTopologyBytes, "current capital topology");
-    const candidateTopology = capitalTopology;
+    const candidateTopology = requireCurrentSourceSeparatedCapitalTopology(capitalTopology);
     validateCurrentCapitalTopologyOwnership(candidateTopology);
     const candidateTopologyBytes = capitalTopologyBytes;
     const incheonTopology = parseJson(incheonTopologyBytes, "current Incheon topology");
+    validateSourceSeparatedCurrentTopology({
+      capitalTopology: candidateTopology,
+      incheonSnapshot: incheonTopology,
+    });
     const officialOdFareQuotes = (quoteBundle.quotes ?? [])
       .filter(({ sourceId }) => sourceId === "seoul-metro-official-od-fares");
+    const positionSnapshotBytes = await collectPositionSnapshotBytes(sourceInventory);
     const primary = buildCurrentSourcePrimaryOutputs({
       handoff,
       rawArtifact: rawArtifact.value,
@@ -2133,7 +2160,7 @@ export async function generateCurrentSourceActivation({
       currentIncheonTopologyBytes: incheonTopologyBytes,
       currentIncheonTopologyPath: incheonTopologyPath,
       buildNow,
-      snapshotBytesByPath: await collectPositionSnapshotBytes(sourceInventory),
+      snapshotBytesByPath: positionSnapshotBytes,
       layoutTopologySnapshotBytesById: await collectLayoutTopologySnapshotBytes(sourceInventory),
     });
 
@@ -2162,16 +2189,26 @@ export async function generateCurrentSourceActivation({
       ({ sourceId }) => sourceId === "seoul-metro-route-map-positions",
       "current public route map successor",
     );
+    const publicRouteMapSource = requireOne(
+      primary.sourceInventory.sources,
+      ({ id }) => id === "seoul-metro-route-map-positions",
+      "current public route map source",
+    );
+    const layoutAdmission = publicRouteMapSource.routeMapAdmissionEvidence?.currentLayoutAdmission;
+    const layoutTopologyPath = `tools/datapack/sources/${layoutAdmission?.topologySnapshotId}.json`;
+    const layoutTopologyBytes = positionSnapshotBytes.get(layoutTopologyPath);
+    if (!Buffer.isBuffer(layoutTopologyBytes)
+      || publicRouteMapSuccessor.routeMapLayoutArtifact?.topologySnapshotId !== layoutAdmission?.topologySnapshotId
+      || publicRouteMapSuccessor.routeMapLayoutArtifact?.topologySnapshotSha256 !== layoutAdmission?.topologySnapshotSha256
+      || layoutAdmission.topologySnapshotSha256 !== sha(layoutTopologyBytes)) {
+      throw new Error("current public route map layout topology identity is invalid");
+    }
     const capitalTopologySnapshotId = exactCurrentTopologySnapshotIdentity({
       snapshot: capitalTopology,
       snapshotBytes: capitalTopologyBytes,
       snapshotPath: capitalTopologyPath,
       prefix: "capital-route-topology",
     });
-    if (publicRouteMapSuccessor.routeMapLayoutArtifact?.topologySnapshotId !== capitalTopologySnapshotId
-      || publicRouteMapSuccessor.routeMapLayoutArtifact?.topologySnapshotSha256 !== sha(capitalTopologyBytes)) {
-      throw new Error("current public route map topology identity is invalid");
-    }
     const capitalAdmissions = admittedCapitalLineEvidence(
       primary.sourceInventory,
       capitalTopology,
@@ -2183,7 +2220,7 @@ export async function generateCurrentSourceActivation({
       parseJson(await readFile(reviewedPath), "current reviewed pack"),
       productionScopePolicy.inactiveLineExclusions,
     );
-    const reviewed = reviewedBase;
+    const reviewed = retainPreAuthorityRideEdges(reviewedBase, "reviewed pack");
     const reviewedBytes = jsonBytes(reviewed);
     await writeFile(reviewedPath, reviewedBytes);
     const reviewedCapital = reviewed.packs?.find(({ id }) => id === "capital");
@@ -2192,24 +2229,18 @@ export async function generateCurrentSourceActivation({
       parseJson(canonicalBytes, "canonical pack"),
       reviewedCapital,
     );
+    retainPreAuthorityRideEdges(canonical, "canonical pack");
     projectCapitalTopologyIntoCanonicalFixture(
       canonical,
       capitalTopology,
       capitalTopologySnapshotId,
       capitalAdmissions,
     );
-    const canonicalWithProjectedRouteMapProvenance = projectCurrentCanonicalRouteMapProvenance({
-      canonical,
-      inactiveLineExclusions: productionScopePolicy.inactiveLineExclusions,
-      basemapManifest: parseJson(basemapManifestBytes, "route-map basemap manifest"),
-      dorasanCsvBytes,
-      reviewedAmbiguities: parseJson(reviewedAmbiguitiesBytes, "reviewed route-map ambiguities"),
-    });
     const canonicalWithPublicRouteMap = withCurrentCapitalPublicRouteMapCoverage(materializeSeoulRouteMapPositions({
-      baseFixture: canonicalWithProjectedRouteMapProvenance,
+      baseFixture: canonical,
       snapshot: publicRouteMapSuccessor.routeMapLayoutArtifact,
       snapshotSha256: publicRouteMapSuccessor.normalizedObservationSha256,
-      topologySnapshotBytes: capitalTopologyBytes,
+      topologySnapshotBytes: layoutTopologyBytes,
       inventory: primary.sourceInventory,
       now: new Date(buildNow),
       rewritePackIdentity: false,
@@ -2328,7 +2359,7 @@ export function parseCurrentTopologyRefreshArgs(argv) {
       args.check = true;
       continue;
     }
-    if (!["--capital-topology", "--incheon-topology", "--itx-current-admission", "--builder-git-sha", "--build-now"].includes(flag)) {
+    if (!["--capital-topology", "--incheon-topology", "--itx-topology-evidence", "--builder-git-sha", "--build-now"].includes(flag)) {
       throw new Error(`unknown topology refresh argument: ${flag ?? ""}`);
     }
     const value = argv[index + 1];
@@ -2338,7 +2369,7 @@ export function parseCurrentTopologyRefreshArgs(argv) {
     args[key] = value;
     index += 1;
   }
-  for (const key of ["capital_topology", "incheon_topology", "itx_current_admission", "builder_git_sha", "build_now"]) {
+  for (const key of ["capital_topology", "incheon_topology", "itx_topology_evidence", "builder_git_sha", "build_now"]) {
     if (!args[key]) throw new Error(`--${key.replaceAll("_", "-")} is required`);
   }
   return args;
@@ -2354,7 +2385,7 @@ async function main() {
     ? await generateCurrentCapitalTopologyRefresh({
         capitalTopologyPath: args.capital_topology,
         incheonTopologyPath: args.incheon_topology,
-        itxCurrentAdmissionPath: args.itx_current_admission,
+        itxTopologyEvidencePath: args.itx_topology_evidence,
         builderGitSha: args.builder_git_sha,
         buildNow: args.build_now,
         check: args.check,

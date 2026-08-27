@@ -47,6 +47,14 @@ const ADMITTED_TOPOLOGY_INPUTS = new Map([
       byteSize: 359319,
     },
   ],
+  [
+    "f3f00e6f99862ddf1c6964d09a220169f29a85181f420f30e20428f2bee835ab",
+    {
+      gzipSha256: "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
+      sqliteSha256: "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5",
+      byteSize: 1463745,
+    },
+  ],
 ]);
 const ROUTE_SERVICE_ARTIFACT_EVIDENCE_COLUMNS = `
   service_class TEXT NOT NULL PRIMARY KEY,
@@ -209,7 +217,7 @@ function validateAdmittedSourceReference(contract, reference) {
 function validateCurrentApprovalIdentity(reference) {
   const promotion = reference?.promotion;
   if (promotion?.mode !== "CURRENT_CANDIDATE_OWNER_APPROVED"
-    || !/^https:\/\/github\.com\/AquilaXk\/easysubway\/issues\/2135#issuecomment-[1-9][0-9]*$/u
+    || !/^https:\/\/github\.com\/AquilaXk\/easysubway-data\/issues\/96#issuecomment-[1-9][0-9]*$/u
       .test(promotion.approvalUrl ?? "")
     || promotion.approvedArtifactSha256 !== reference.sha256) {
     throw new Error("ITX topology approval identity is invalid");
@@ -1040,18 +1048,11 @@ function assertStoredRouteServiceEvidence(database, admissionEvidence) {
 
 function ensureVersion19(database, admissionEvidence) {
   const currentVersion = database.prepare("PRAGMA user_version").get().user_version;
-  if (currentVersion < 16 || currentVersion > CATALOG_VERSION) {
-    throw new Error(`ITX topology does not support catalog user_version ${currentVersion}`);
+  if (currentVersion !== CATALOG_VERSION) {
+    throw new Error(`ITX topology requires current catalog user_version ${CATALOG_VERSION}; found ${currentVersion}`);
   }
   const evidenceLayout = requireExactRouteServiceEvidenceLayout(database, currentVersion);
-  if (!hasColumn(database, "transit_trips", "service_class")) {
-    database.exec("ALTER TABLE transit_trips ADD COLUMN service_class TEXT NOT NULL DEFAULT 'SUBWAY'");
-  }
-  if (!hasColumn(database, "network_edges", "service_class")) {
-    database.exec("ALTER TABLE network_edges ADD COLUMN service_class TEXT NOT NULL DEFAULT 'SUBWAY'");
-  }
   ensureRouteServiceEvidenceSchemas(database, admissionEvidence, evidenceLayout);
-  database.exec(`PRAGMA user_version = ${CATALOG_VERSION}`);
 }
 
 export function applyTopology(sqlitePath, topology, admissionEvidence) {
@@ -1271,15 +1272,12 @@ async function main() {
     throw new Error("--check, --migrate-current-v18 and --project-fixture are mutually exclusive");
   }
   if (migrateCurrentV18Requested) {
-    if (stationCatalogPackPath == null) throw new Error("--migrate-current-v18 requires --station-catalog-pack");
-    await migrateCurrentV18({ packPath, indexPath, evidencePath, stationCatalogPackPath: path.resolve(root, stationCatalogPackPath) });
-    return;
+    throw new Error("--migrate-current-v18 is forbidden by the current-only datapack contract");
   }
   if (check) {
     const evidence = JSON.parse(await readFile(evidencePath, "utf8"));
-    if (evidence?.migration?.fromCatalogVersion === 18) {
-      await checkMigratedCurrentV18({ packPath, indexPath, evidencePath });
-      return;
+    if (Object.hasOwn(evidence, "migration")) {
+      throw new Error("ITX topology migration evidence is forbidden by the current-only datapack contract");
     }
   }
   const { contract, reference, source, sourceBytes } = await admittedSource(contractPath);

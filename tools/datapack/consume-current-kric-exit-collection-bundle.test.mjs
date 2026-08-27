@@ -28,22 +28,22 @@ test("420 EXIT bundle을 lossless로 읽고 exact receipt 실행 identity에 결
     const bundlePath = path.join(temporary, "bundle.json");
     await writeFile(bundlePath, fixture.bytes, { mode: 0o600 });
     const consumed = await consumeCurrentKricExitCollectionBundle({
-      collectionBundle: bundlePath, expectedBundleSha256: sha256(fixture.bytes), expectedRepositorySha: "a".repeat(40), expectedWorkflowRunId: 123,
+      collectionBundle: bundlePath, expectedBundleSha256: sha256(fixture.bytes), expectedRepositorySha: "a".repeat(40), expectedOperationId: "current-capital-560",
     });
     assert.deepEqual(consumed.collectionPlanBytes, fixture.planBytes);
     assert.deepEqual(consumed.providerSnapshotBytes, fixture.snapshotBytes);
-    assert.equal(consumed.receipt.workflowRunId, 123);
+    assert.equal(consumed.receipt.operationId, "current-capital-560");
     await assert.rejects(() => consumeCurrentKricExitCollectionBundle({
-      collectionBundle: bundlePath, expectedRepositorySha: "a".repeat(40), expectedWorkflowRunId: 123,
+      collectionBundle: bundlePath, expectedRepositorySha: "a".repeat(40), expectedOperationId: "current-capital-560",
     }), /expected bundle SHA mismatch/);
     await assert.rejects(() => consumeCurrentKricExitCollectionBundle({
-      collectionBundle: bundlePath, expectedBundleSha256: "b".repeat(64), expectedRepositorySha: "a".repeat(40), expectedWorkflowRunId: 123,
+      collectionBundle: bundlePath, expectedBundleSha256: "b".repeat(64), expectedRepositorySha: "a".repeat(40), expectedOperationId: "current-capital-560",
     }), /expected digest mismatch/);
     await assert.rejects(() => consumeCurrentKricExitCollectionBundle({
-      collectionBundle: bundlePath, expectedBundleSha256: sha256(fixture.bytes), expectedRepositorySha: "b".repeat(40), expectedWorkflowRunId: 123,
+      collectionBundle: bundlePath, expectedBundleSha256: sha256(fixture.bytes), expectedRepositorySha: "b".repeat(40), expectedOperationId: "current-capital-560",
     }), /expected identity mismatch/);
     await assert.rejects(() => consumeCurrentKricExitCollectionBundle({
-      collectionBundle: bundlePath, expectedBundleSha256: sha256(fixture.bytes), expectedRepositorySha: "a".repeat(40), expectedWorkflowRunId: 124,
+      collectionBundle: bundlePath, expectedBundleSha256: sha256(fixture.bytes), expectedRepositorySha: "a".repeat(40), expectedOperationId: "current-capital-561",
     }), /expected identity mismatch/);
   } finally {
     await rm(temporary, { recursive: true, force: true });
@@ -56,7 +56,7 @@ test("self-hash가 다시 계산된 embedded receipt substitution도 거부한�
   try {
     const substituted = JSON.parse(fixture.bytes);
     const receipt = JSON.parse(substituted.collectionReceiptJson);
-    receipt.workflowRunId = 124;
+    receipt.operationId = "current-capital-561";
     const payload = { ...receipt }; delete payload.receiptSha256;
     receipt.receiptSha256 = sha256(canonical(payload));
     substituted.collectionReceiptJson = canonical(receipt);
@@ -65,7 +65,7 @@ test("self-hash가 다시 계산된 embedded receipt substitution도 거부한�
     const bundlePath = path.join(temporary, "bundle.json");
     await writeFile(bundlePath, canonical(substituted), { mode: 0o600 });
     await assert.rejects(() => consumeCurrentKricExitCollectionBundle({
-      collectionBundle: bundlePath, expectedBundleSha256: sha256(fixture.bytes), expectedRepositorySha: "a".repeat(40), expectedWorkflowRunId: 123,
+      collectionBundle: bundlePath, expectedBundleSha256: sha256(fixture.bytes), expectedRepositorySha: "a".repeat(40), expectedOperationId: "current-capital-560",
     }), /expected digest mismatch/);
   } finally {
     await rm(temporary, { recursive: true, force: true });
@@ -93,7 +93,7 @@ test("snapshot semantic drift를 receipt와 bundle까지 재해시해도 produce
     const bundlePath = path.join(temporary, "bundle.json");
     await writeFile(bundlePath, canonical(substituted), { mode: 0o600 });
     await assert.rejects(() => consumeCurrentKricExitCollectionBundle({
-      collectionBundle: bundlePath, expectedBundleSha256: sha256(fixture.bytes), expectedRepositorySha: "a".repeat(40), expectedWorkflowRunId: 123,
+      collectionBundle: bundlePath, expectedBundleSha256: sha256(fixture.bytes), expectedRepositorySha: "a".repeat(40), expectedOperationId: "current-capital-560",
     }), /expected digest mismatch/);
   } finally {
     await rm(temporary, { recursive: true, force: true });
@@ -135,7 +135,7 @@ async function bundleFixture() {
   const snapshotBytes = Buffer.from(canonical(snapshot));
   const receipt = buildCurrentKricExitCollectionReceipt({
     collectionPlanBytes: planBytes, providerSnapshotBytes: snapshotBytes,
-    repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), workflowRunId: 123,
+    repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-560",
   });
   const bundle = buildCurrentKricExitCollectionBundle({ collectionPlanBytes: planBytes, providerSnapshotBytes: snapshotBytes, receipt });
   return { planBytes, snapshotBytes, bytes: Buffer.from(canonical(bundle)) };

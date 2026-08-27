@@ -6,7 +6,7 @@ import path from "node:path";
 import test from "node:test";
 
 import {
-  CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS,
+  SEOUL_ROUTE_MAP_SOURCE_OPERATOR_IDS,
   materializeSeoulRouteMapPositions,
   materializedSeoulRouteMapPackContentHash,
 } from "./materialize-seoul-route-map-positions.mjs";
@@ -14,7 +14,10 @@ import {
   canonicalSeoulRouteMapStationName,
   collectSeoulRouteMapPositions,
 } from "./collect-seoul-route-map-positions.mjs";
-import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
+import {
+  copySyntheticCurrentPublicRouteMapRepository,
+  nextSyntheticCurrentStaticNetworkNow,
+} from "./test-fixtures/current-public-route-map-successor.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
@@ -58,7 +61,7 @@ async function inputs() {
   const seoulSnapshotBytes = Buffer.from(`${JSON.stringify(observation)}\n`);
   const seoulSnapshotSha256 = createHash("sha256").update(seoulSnapshotBytes).digest("hex");
   const publicSource = inventory.sources.find(({ id }) => id === SOURCE_ID);
-  publicSource.coverageScope = { regionIds: ["capital"], operatorIds: [...CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS], lineIds: [...LINE_IDS], sourceDomains: ["route_map_positions"] };
+  publicSource.coverageScope = { regionIds: ["capital"], operatorIds: [...SEOUL_ROUTE_MAP_SOURCE_OPERATOR_IDS], lineIds: [...LINE_IDS], sourceDomains: ["route_map_positions"] };
   publicSource.routeMapAdmissionEvidence = {
     ...(publicSource.routeMapAdmissionEvidence ?? {}), capturedAt: seoulSnapshot.capturedAt,
     freshUntil: "2026-10-22T02:00:00.000Z",
@@ -80,18 +83,14 @@ async function inputs() {
 
 test("공식 서울 위경도 snapshot을 current canonical pack에 materialize한다", async () => {
   const input = await inputs();
-  assert.throws(() => materializeSeoulRouteMapPositions({
+  const materializedFromCurrentCanonical = materializeSeoulRouteMapPositions({
     baseFixture: input.baseFixture, snapshot: input.seoulSnapshot, snapshotSha256: input.seoulSnapshotSha256,
     topologySnapshotBytes: input.topologyBytes, inventory: input.inventory, now: routeMapNow,
-  }), /current public Seoul route map/);
+  });
+  assert.equal(materializedFromCurrentCanonical.packs[0].routeMapPositions
+    .filter(({ sourceId }) => sourceId === SOURCE_ID).length, 276);
   const { seoulSnapshot, seoulSnapshotSha256, topologyBytes, inventory } = input;
   const baseFixture = structuredClone(input.baseFixture);
-  baseFixture.packs[0].sourceInventory = baseFixture.packs[0].sourceInventory.filter(
-    ({ id }) => id !== "seoulmetro-cyberstation-route-map",
-  );
-  baseFixture.packs[0].routeMapPositions = baseFixture.packs[0].routeMapPositions.filter(
-    ({ sourceId }) => sourceId !== "seoulmetro-cyberstation-route-map",
-  );
 
   const fixture = materializeSeoulRouteMapPositions({
     baseFixture,
@@ -107,12 +106,29 @@ test("공식 서울 위경도 snapshot을 current canonical pack에 materialize�
 
   assert.equal(pack.routeMapPositions.filter(({ sourceId }) => sourceId === "seoulmetro-cyberstation-route-map").length, 0);
   assert.equal(pack.sourceInventory.filter(({ id }) => id === "seoulmetro-cyberstation-route-map").length, 0);
-  assert.equal(pack.sourceInventory.findIndex(({ id }) => id === SOURCE_ID), pack.sourceInventory.length - 1);
+  assert.equal(pack.sourceInventory.filter(({ id }) => id === "seoul-metro-transfer-distance-duration").length, 1);
+  assert.equal(pack.sourceInventory.at(-1).id, "seoul-metro-transfer-distance-duration");
+  assert.equal(
+    pack.sourceInventory.findIndex(({ id }) => id === SOURCE_ID),
+    input.baseFixture.packs[0].sourceInventory.findIndex(({ id }) => id === SOURCE_ID),
+  );
   assert.equal(rows.length, seoulSnapshot.routeMapLayoutArtifact.rawPositions.length);
   assert.equal(new Set(rows.map(({ lineId }) => lineId)).size, 8);
   assert.deepEqual([...new Set(rows.map(({ lineId }) => lineId))].sort(), [...LINE_IDS].sort());
   assert.ok(rows.every(({ labelPolygon, region, derivationKind, provenanceKind }) => labelPolygon.length === 4 && region === "수도권" && derivationKind === "GENERATED" && provenanceKind === "OFFICIAL_SOURCE"));
   assert.deepEqual(source.coverageScope.lineIds, [...LINE_IDS]);
+  assert.deepEqual(source.coverageScope.operatorIds, [...SEOUL_ROUTE_MAP_SOURCE_OPERATOR_IDS]);
+  const expectedSeoulScopes = LINE_IDS.map((lineId) => ({
+    regionId: "capital", operatorId: "seoul-metro", lineId,
+  })).sort((left, right) => left.lineId.localeCompare(right.lineId, "en"));
+  assert.deepEqual(
+    pack.coverageLineOperatorScopes
+      .filter(({ operatorId, lineId }) => operatorId === "seoul-metro" && LINE_IDS.includes(lineId))
+      .sort((left, right) => left.lineId.localeCompare(right.lineId, "en")),
+    expectedSeoulScopes,
+  );
+  assert.equal(fixture.coverageLineOperatorScopeSemantics, "UNION_OF_PACK_SCOPES");
+  assert.deepEqual(fixture.coverageLineOperatorScopes, pack.coverageLineOperatorScopes);
   assert.equal(pack.minimumTableRows.route_map_positions, pack.routeMapPositions.length);
   assert.match(pack.id, /^nationwide-seoul-route-map-[a-f0-9]{64}$/);
   assert.match(materializedSeoulRouteMapPackContentHash(pack, pack.version), /^[a-f0-9]{64}$/);
@@ -199,7 +215,7 @@ test("current public route-map row는 canonical station membership 누락을 확
   const temporary = await mkdtemp(path.join(tmpdir(), "current-public-route-map-membership-"));
   context.after(() => rm(temporary, { recursive: true, force: true }));
   const repositoryRoot = path.join(temporary, "repository");
-  const now = new Date("2026-08-22T09:45:18.609Z");
+  const now = await nextSyntheticCurrentStaticNetworkNow(root);
   await copySyntheticCurrentPublicRouteMapRepository(root, repositoryRoot, { now });
   const [candidate, ledger, inventory, baseFixture] = await Promise.all([
     readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),

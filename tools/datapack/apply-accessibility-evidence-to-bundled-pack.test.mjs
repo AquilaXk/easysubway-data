@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -15,8 +16,11 @@ import {
   stripLegacyCoreClaims,
   syncAccessibilityEdges,
   activeReleaseSnapshots,
+  currentCandidateReleaseSnapshots,
+  syncReleaseEvidence,
   syncCanonicalFixture,
 } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
+import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -357,6 +361,51 @@ test("active canonical source inventory excludes retired movement snapshot heads
   ]);
 });
 
+test("current candidate consumes exact public six plus TRANSFER-last while canonical fares remain active", () => {
+  const canonicalSourceIds = [
+    "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
+    "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
+    "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
+  ];
+  const candidateSourceIds = [
+    "seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility",
+    "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info",
+    "seoul-metro-transfer-distance-duration",
+  ];
+  const snapshots = canonicalSourceIds.map((sourceId) => ({ sourceId, snapshotId: `${sourceId}-head` }));
+  const headsBySource = Object.fromEntries(snapshots.map(({ sourceId, snapshotId }) => [sourceId, snapshotId]));
+  const canonical = { packs: [{ id: "capital", sourceInventory: canonicalSourceIds.map((id) => ({ id })) }] };
+
+  assert.deepEqual(
+    currentCandidateReleaseSnapshots(snapshots, canonical, headsBySource).map(({ sourceId }) => sourceId),
+    candidateSourceIds,
+  );
+  assert.throws(
+    () => currentCandidateReleaseSnapshots(snapshots, { packs: [{ id: "capital", sourceInventory: canonicalSourceIds.slice(0, -1).map((id) => ({ id })) }] }, headsBySource),
+    /capital canonical active source identity drift/,
+  );
+  assert.throws(
+    () => currentCandidateReleaseSnapshots(snapshots.filter(({ sourceId }) => sourceId !== "seoul-metro-transfer-distance-duration"), canonical, headsBySource),
+    /current candidate source head is missing: seoul-metro-transfer-distance-duration/,
+  );
+});
+
+test("reviewed accessibility fixture cannot replace the current canonical source authority", () => {
+  const ids = [
+    "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
+    "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
+    "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
+  ];
+  const canonical = { packs: [{ id: "capital", sourceInventory: ids.map((id) => ({ id })), facilities: [], stationFacilityEvidence: [], metadata: { productionCoverageEvidence: "[]" }, minimumTableRows: {} }] };
+  assert.throws(
+    () => syncCanonicalFixture(canonical, {
+      sourceInventory: [{ id: "seoulmetro-cyberstation-route-map" }],
+      facilities: [], stationFacilityEvidence: [], metadata: { productionCoverageEvidence: "[]" },
+    }),
+    /reviewed source inventory cannot replace current canonical source authority/,
+  );
+});
+
 test("candidate-fixtures-only sync succeeds without reading mobile pack paths", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "easysubway-candidate-fixtures-"));
   const repository = path.resolve(import.meta.dirname, "../..");
@@ -372,25 +421,10 @@ test("candidate-fixtures-only sync succeeds without reading mobile pack paths", 
     path.resolve(repository, topologyEvidencePath).startsWith(`${repository}${path.sep}`),
     true,
   );
-  const files = [
-    candidateBuildSpecPath,
-    "tools/datapack/release/source-snapshots.json",
-    "tools/datapack/source-inventory.json",
-    "tools/datapack/release/release-request.json",
-    "tools/datapack/release/hash-evidence.json",
-    "tools/datapack/release/capital-production-canonical-pack.json",
-    "tools/datapack/source-governance-policy.json",
-    "release/product-gates/datapack-freshness-sla.json",
-    "tools/datapack/release/capital-production-reviewed-pack.json",
-    "tools/datapack/itx-cheongchun-topology-evidence.json",
-    topologyEvidencePath,
-  ];
   try {
-    for (const relativePath of files) {
-      const target = path.join(directory, relativePath);
-      await mkdir(path.dirname(target), { recursive: true });
-      await writeFile(target, await readFile(path.join(repository, relativePath)));
-    }
+    await copySyntheticCurrentPublicRouteMapRepository(repository, directory, {
+      now: new Date("2026-08-24T12:00:00.000Z"),
+    });
     await execFileAsync(process.execPath, [
       "tools/datapack/apply-accessibility-evidence-to-bundled-pack.mjs",
       "--candidate-fixtures-only",
@@ -407,6 +441,66 @@ test("candidate-fixtures-only sync succeeds without reading mobile pack paths", 
     assert.equal(syncedRequest.candidateId, syncedSpec.candidateId);
     await assert.rejects(readFile(path.join(directory, "missing.sqlite.gz")), { code: "ENOENT" });
     await assert.rejects(readFile(path.join(directory, "missing-index.json")), { code: "ENOENT" });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("generated hash-evidence commands use and enforce the exact candidate snapshot set", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "easysubway-hash-evidence-command-"));
+  const repository = path.resolve(import.meta.dirname, "../..");
+  try {
+    await copySyntheticCurrentPublicRouteMapRepository(repository, directory, {
+      now: new Date("2026-08-24T12:00:00.000Z"),
+    });
+    await mkdir(path.join(directory, "tools/datapack/lib"), { recursive: true });
+    await Promise.all([
+      "tools/datapack/source-snapshot-policy.mjs",
+      "tools/datapack/legacy-source-governance.mjs",
+      "tools/datapack/lib/utc-instant.mjs",
+    ].map(async (relativePath) => writeFile(
+      path.join(directory, relativePath),
+      await readFile(path.join(repository, relativePath)),
+    )));
+    await syncReleaseEvidence({ releaseRoot: directory });
+    const [spec, hashes, sourceSnapshotLedger] = await Promise.all([
+      readFile(path.join(directory, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+      readFile(path.join(directory, "tools/datapack/release/hash-evidence.json"), "utf8").then(JSON.parse),
+      readFile(path.join(directory, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+    ]);
+    const selectedIds = new Set(spec.sourceSnapshotIds);
+    const selectedInLedgerOrder = sourceSnapshotLedger.filter(({ snapshotId }) => selectedIds.has(snapshotId));
+    assert.equal(spec.sourceSnapshotSetHash, createHash("sha256").update(JSON.stringify(selectedInLedgerOrder)).digest("hex"));
+    const reproduction = await execFileAsync(hashes.sourceSnapshotSetHash.reproductionCommand.split(" ")[0], [
+      "-e", hashes.sourceSnapshotSetHash.reproductionCommand.match(/-e "(.*)"$/)[1],
+    ], { cwd: directory });
+    assert.equal(reproduction.stdout.trim(), spec.sourceSnapshotSetHash);
+    await execFileAsync("node", ["-e", hashes.sourceSnapshots.committedVerificationCommand.match(/-e "(.*)"$/)[1]], { cwd: directory });
+
+    const extraEvidence = structuredClone(hashes);
+    extraEvidence.perSourceEvidence.push({ ...extraEvidence.perSourceEvidence[0] });
+    await writeFile(path.join(directory, "tools/datapack/release/hash-evidence.json"), `${JSON.stringify(extraEvidence)}\n`);
+    await assert.rejects(
+      execFileAsync("node", ["-e", hashes.sourceSnapshots.committedVerificationCommand.match(/-e "(.*)"$/)[1]], { cwd: directory }),
+      /source snapshot evidence count mismatch/,
+    );
+
+    const reorderedEvidence = structuredClone(hashes);
+    reorderedEvidence.perSourceEvidence.reverse();
+    await writeFile(path.join(directory, "tools/datapack/release/hash-evidence.json"), `${JSON.stringify(reorderedEvidence)}\n`);
+    await assert.rejects(
+      execFileAsync("node", ["-e", hashes.sourceSnapshots.committedVerificationCommand.match(/-e "(.*)"$/)[1]], { cwd: directory }),
+      /source snapshot evidence order or identity mismatch/,
+    );
+
+    await writeFile(path.join(directory, "tools/datapack/release/hash-evidence.json"), `${JSON.stringify(hashes)}\n`);
+    const missingCandidate = structuredClone(spec);
+    missingCandidate.sourceSnapshotIds.pop();
+    await writeFile(path.join(directory, "tools/datapack/release/candidate-build-spec.json"), `${JSON.stringify(missingCandidate)}\n`);
+    await assert.rejects(
+      execFileAsync("node", ["-e", hashes.sourceSnapshots.committedVerificationCommand.match(/-e "(.*)"$/)[1]], { cwd: directory }),
+      /candidate source projection mismatch/,
+    );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

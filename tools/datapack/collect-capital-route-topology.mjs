@@ -627,6 +627,49 @@ const SOURCE_SEPARATED_INCHEON_LINE_IDS = Object.freeze([
   "line-98718184f016",
 ]);
 
+/**
+ * Require the current capital topology admission to already be source-separated.
+ * This is an identity gate: it never projects or repairs the admitted bytes.
+ */
+export function requireCurrentSourceSeparatedCapitalTopology(snapshot) {
+  if (snapshot?.schemaVersion !== 1
+    || snapshot.artifactKind !== ARTIFACT_KIND
+    || snapshot.sourceId !== SOURCE_ID
+    || !Array.isArray(snapshot.lines)
+    || !Array.isArray(snapshot.topologyGaps)) {
+    throw new Error("current capital topology ownership failure");
+  }
+  const lineIds = snapshot.lines.map(({ lineId }) => lineId);
+  if (lineIds.some((lineId) => SOURCE_SEPARATED_INCHEON_LINE_IDS.includes(lineId))) {
+    throw new Error("topology line ownership overlap");
+  }
+  const expectedLineIds = CAPITAL_MAP_LINE_IDS.filter(
+    (lineId) => !SOURCE_SEPARATED_INCHEON_LINE_IDS.includes(lineId),
+  );
+  const expectedLineIdSet = new Set(expectedLineIds);
+  if (lineIds.length !== expectedLineIds.length
+    || new Set(lineIds).size !== lineIds.length
+    || lineIds.some((lineId) => !expectedLineIdSet.has(lineId))
+    || snapshot.topologyGaps.some(({ lineId }) => SOURCE_SEPARATED_INCHEON_LINE_IDS.includes(lineId))) {
+    throw new Error("current capital topology ownership failure");
+  }
+  try {
+    for (const line of snapshot.lines) verifiedLineTopologyIdentity(line, "current ownership");
+    const totalEdgeCount = snapshot.lines.reduce((sum, { edgeCount }) => sum + edgeCount, 0);
+    const contentSha256 = sha256(JSON.stringify(
+      topologyContentPayload(snapshot.lines, snapshot.topologyGaps),
+    ));
+    if (snapshot.lineCount !== snapshot.lines.length
+      || snapshot.totalEdgeCount !== totalEdgeCount
+      || snapshot.contentSha256 !== contentSha256) {
+      throw new Error("identity mismatch");
+    }
+  } catch {
+    throw new Error("current capital topology ownership failure");
+  }
+  return snapshot;
+}
+
 export function projectCapitalTopologyOwnership(snapshot) {
   if (snapshot?.schemaVersion !== 1
     || snapshot.artifactKind !== ARTIFACT_KIND

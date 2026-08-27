@@ -37,7 +37,7 @@ import { signServerRouteBundle } from "./sign-server-route-bundle.mjs";
 const CURRENT_SOURCE_WINDOW = await selectedSourceWindow();
 const FRESH_AT = CURRENT_SOURCE_WINDOW.evaluationAt;
 const STALE_AT = CURRENT_SOURCE_WINDOW.staleAt;
-const CANDIDATE_ID = "capital-pilot-candidate-20260814";
+const CANDIDATE_ID = (await readJson("tools/datapack/release/candidate-build-spec.json")).candidateId;
 const BUNDLE_ID = "capital-route-bundle-1";
 const STATION_SET_SHA256 = "1".repeat(64);
 const SCOPED_STATION_SET_SHA256 = sha256(Buffer.from(canonicalJson(["station-a", "station-b"])));

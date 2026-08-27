@@ -15,24 +15,12 @@
 // - issue 번호와 note 서술의 내용은 검증하지 않는다. 형식과 존재만 강제한다.
 // - renamedAt은 형식과 상한(snapshot capturedAt)만 본다. 개명 사실 자체는 crossCheck로 확인한다.
 //
-// lineIds claim의 admission 모델은 두 가지다.
-// - collector snapshot 모델: routeMapAdmissionEvidence.snapshotPath가 가리키는 admitted snapshot으로
-//   역 집합을 실측한다. containment 판정의 정본이며 claim이 감사 대상 scope를 만든다.
-// - candidate 게이트 line-scope 재기술 모델(#2510 B0, #2514): 승계 팩에 이미 있는 provenance 행을
-//   (operator, line) line-scope로 재기술해 candidate 게이트 requirement를 SUPPORTED로 전이시킨 claim이다.
-//   저장소에 admitted snapshot 파일이 없어 역 집합을 실측할 수 없으므로 이 claim은 containment 근거가
-//   되지 못하고 감사 대상 scope도 만들지 못한다. 근거 없는 claim이 감사를 침묵시키지 못하도록
-//   ① candidate pack spec의 재기술 등재(lineIds 동형), ② 그 spec 바이트에 결속된 게이트 evidence의
-//   SUPPORTED 실증, ③ 같은 scope가 실제 containment 감사 대상으로 남아 있음을 모두 요구한다.
-//   ③은 snapshot 커버 여부가 아니라 auditableScopeKeys가 확정한 감사 집합으로 판정한다. scope가
-//   activeLineScopes에서 빠지거나 roster가 없으면 감사가 사라지는데 커버 여부만 보면 그대로 통과한다.
-//   ③이 없으면 재기술 등재만으로 containment 감사를 끌 수 있으므로 fail-closed의 핵심이다.
+// lineIds claim은 routeMapAdmissionEvidence.snapshotPath가 가리키는 admitted snapshot으로만
+// 역 집합을 실측한다. snapshot 없는 과거 pack 승계·candidate 재기술은 current 성공 근거가 아니다.
 
 import { createHash } from "node:crypto";
 
 export const ROUTE_MAP_DOMAIN = "route_map_positions";
-
-const CANDIDATE_GATE_EVIDENCE_KIND = "nationwide-candidate-coverage-gate-evidence";
 
 const ALIAS_REASON_CODES = Object.freeze([
   "OFFICIAL_LINE_ORDINAL_SUFFIX",
@@ -154,163 +142,6 @@ function claimsRouteMapLineScope(source) {
   return Boolean(scope?.sourceDomains?.includes(ROUTE_MAP_DOMAIN)) && (scope.lineIds ?? []).length > 0;
 }
 
-function sameStringSet(left, right) {
-  const leftSet = new Set(Array.isArray(left) ? left : []);
-  const rightSet = new Set(Array.isArray(right) ? right : []);
-  return leftSet.size === rightSet.size && [...leftSet].every((value) => rightSet.has(value));
-}
-
-// spec·승계 reviewed pack 바이트를 직접 해시해 parse 결과와 결속한다 — 호출자가 서로 다른 문서와 해시를
-// 넘길 수 없다.
-function readCandidateLineScopeAdmission({ specPath, specBytes, inheritedPackPath, inheritedPackBytes, evidence } = {}) {
-  if (!isNonEmptyString(specPath) || !specBytes || !isNonEmptyString(inheritedPackPath) || !inheritedPackBytes) {
-    return null;
-  }
-  let spec;
-  let inheritedPack;
-  try {
-    spec = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(specBytes));
-    inheritedPack = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(inheritedPackBytes));
-  } catch {
-    return null;
-  }
-  return {
-    specPath,
-    specSha256: sha256(specBytes),
-    spec,
-    inheritedPackPath,
-    inheritedPackSha256: sha256(inheritedPackBytes),
-    inheritedPack,
-    evidence,
-  };
-}
-
-// evidence가 이 spec·승계 pack 바이트를 입력으로 기록했을 때만 SUPPORTED 실증을 근거로 인정한다.
-function candidateEvidenceBindsInputs(admission) {
-  const declaredSpec = admission.evidence?.inputs?.spec;
-  const declaredInheritedPack = admission.evidence?.inputs?.inheritedPack;
-  return admission.evidence?.artifactKind === CANDIDATE_GATE_EVIDENCE_KIND
-    && declaredSpec?.path === admission.specPath
-    && declaredSpec.sha256 === admission.specSha256
-    && declaredInheritedPack?.path === admission.inheritedPackPath
-    && declaredInheritedPack.sha256 === admission.inheritedPackSha256;
-}
-
-// 재기술 claim 하나의 근거 결속. 성립하면 등재된 재기술 항목을 돌려준다.
-function boundCandidateRedescription({ source, admission, push }) {
-  const redescription = (admission?.spec?.lineScopeRedescriptions ?? [])
-    .find((entry) => entry?.sourceId === source.id && entry.sourceDomain === ROUTE_MAP_DOMAIN);
-  if (!redescription) {
-    return null;
-  }
-  if (!sameStringSet(redescription.lineIds, source.coverageScope.lineIds)) {
-    push("SOURCE_CANDIDATE_LINE_SCOPE_MISMATCH", "candidate spec 재기술 lineIds가 coverageScope.lineIds와 다르다");
-    return null;
-  }
-  if (!candidateEvidenceBindsInputs(admission)) {
-    push("SOURCE_CANDIDATE_EVIDENCE_INPUT_UNBOUND", "candidate 게이트 evidence가 이 spec·승계 pack 바이트를 입력으로 기록하지 않았다");
-    return null;
-  }
-  return redescription;
-}
-
-function inheritedReviewedPackSource({ source, admission, push }) {
-  if (!admission || !candidateEvidenceBindsInputs(admission)) {
-    push("SOURCE_INHERITED_EVIDENCE_UNBOUND", "candidate 게이트 evidence가 exact spec·승계 reviewed pack 입력에 결속되지 않았다");
-    return null;
-  }
-  if ((admission.spec.lineScopeRedescriptions ?? []).some((entry) => entry?.sourceId === source.id)) {
-    push("SOURCE_INHERITED_REDESCRIPTION_PRESENT", "승계 line-scope claim source가 candidate 재기술에도 등재됐다");
-    return null;
-  }
-  const matches = (admission.inheritedPack.packs ?? [])
-    .flatMap((pack) => pack?.sourceInventory ?? [])
-    .filter(({ id }) => id === source.id);
-  if (matches.length === 0) {
-    const baselineClaimsSource = (admission.evidence?.variants?.baseline?.pilotRequirements ?? [])
-      .some((entry) => entry?.sourceIds?.includes(source.id));
-    push(
-      baselineClaimsSource ? "SOURCE_INHERITED_SOURCE_INVALID" : "SOURCE_SNAPSHOT_PATH_MISSING",
-      baselineClaimsSource
-        ? "승계 reviewed pack에 baseline claimant sourceId가 정확히 하나여야 한다"
-        : "lineIds claim에 admitted snapshot, candidate 재기술 또는 inherited reviewed-pack source가 없다",
-    );
-    return null;
-  }
-  if (matches.length !== 1) {
-    push("SOURCE_INHERITED_SOURCE_INVALID", "승계 reviewed pack에 같은 sourceId가 정확히 하나여야 한다");
-    return null;
-  }
-  const inheritedScope = matches[0].coverageScope;
-  const activeScope = source.coverageScope;
-  if (!["regionIds", "operatorIds", "lineIds", "sourceDomains"].every(
-    (key) => sameStringSet(inheritedScope?.[key], activeScope?.[key]),
-  )) {
-    push("SOURCE_INHERITED_SCOPE_MISMATCH", "승계 reviewed pack source coverageScope가 active source와 다르다");
-    return null;
-  }
-  return matches[0];
-}
-
-function requirementEvidence(variant, requirementKey) {
-  return (variant?.pilotRequirements ?? []).find((entry) => entry?.requirementKey === requirementKey);
-}
-
-function validateInheritedScope({ key, source, admission, auditedScopeKeys, push }) {
-  const requirementKey = `${key}:${ROUTE_MAP_DOMAIN}`;
-  const baseline = requirementEvidence(admission.evidence?.variants?.baseline, requirementKey);
-  const lineScoped = requirementEvidence(admission.evidence?.variants?.lineScoped, requirementKey);
-  const baselineSupported = admission.evidence?.variants?.baseline?.supportedRequirementKeys ?? [];
-  const lineScopedSupported = admission.evidence?.variants?.lineScoped?.supportedRequirementKeys ?? [];
-  if (!baselineSupported.includes(requirementKey) || baseline?.status !== "SUPPORTED" || !baseline.sourceIds?.includes(source.id)) {
-    push("SOURCE_INHERITED_BASELINE_UNSUPPORTED", `${requirementKey}가 baseline에서 claimant source로 SUPPORTED여야 한다`);
-    return;
-  }
-  if (!lineScopedSupported.includes(requirementKey) || lineScoped?.status !== "SUPPORTED" || !lineScoped.sourceIds?.includes(source.id)) {
-    push("SOURCE_INHERITED_LINE_SCOPED_UNSUPPORTED", `${requirementKey}가 lineScoped에서 claimant source를 유지한 SUPPORTED여야 한다`);
-    return;
-  }
-  if (!auditedScopeKeys.has(key)) {
-    push("SOURCE_INHERITED_SCOPE_UNAUDITED", `${key}가 containment 감사 대상 scope가 아니어서 판정할 수 없다`);
-  }
-}
-
-function validateCandidateScope({ key, redescription, supported, auditedScopeKeys, push }) {
-  const requirementKey = `${key}:${ROUTE_MAP_DOMAIN}`;
-  if (!(redescription.requirementKeys ?? []).includes(requirementKey) || !supported.has(requirementKey)) {
-    push("SOURCE_CANDIDATE_SCOPE_NOT_SUPPORTED", `candidate 게이트가 ${requirementKey}를 SUPPORTED로 실증하지 않았다`);
-    return;
-  }
-  // 같은 scope가 containment 감사 대상으로 남아 있지 않으면 이 claim만으로는 판정할 근거가 없다.
-  if (!auditedScopeKeys.has(key)) {
-    push("SOURCE_CANDIDATE_SCOPE_UNAUDITED", `${key}가 containment 감사 대상 scope가 아니어서 판정할 수 없다`);
-  }
-}
-
-// snapshot 없는 lineIds claim은 candidate 게이트 재기술 근거가 전부 성립할 때만 위반이 아니다.
-// 재기술 claim 자체는 역 집합을 싣지 않으므로 감사 대상 scope를 만들지 않는다.
-function validateCandidateLineScopeClaims({ sources, admission, auditedScopeKeys, violations }) {
-  for (const source of sources) {
-    const push = (kind, message) => violations.push({ kind, sourceId: source.id, message: `${source.id}: ${message}` });
-    const hasCandidateRedescription = (admission?.spec?.lineScopeRedescriptions ?? [])
-      .some((entry) => entry?.sourceId === source.id && entry.sourceDomain === ROUTE_MAP_DOMAIN);
-    if (hasCandidateRedescription) {
-      const redescription = boundCandidateRedescription({ source, admission, push });
-      if (!redescription) continue;
-      const supported = new Set(admission.evidence.variants?.lineScoped?.supportedRequirementKeys ?? []);
-      for (const { key } of claimedScopes(source.coverageScope)) {
-        validateCandidateScope({ key, redescription, supported, auditedScopeKeys, push });
-      }
-      continue;
-    }
-    const inheritedSource = inheritedReviewedPackSource({ source, admission, push });
-    if (!inheritedSource) continue;
-    for (const { key } of claimedScopes(source.coverageScope)) {
-      validateInheritedScope({ key, source: inheritedSource, admission, auditedScopeKeys, push });
-    }
-  }
-}
-
 // snapshotId → 등재 경로. topology snapshot 파일명은 snapshotId를 그대로 쓴다.
 function lineageTopologyPaths(admissionEvidence, lineId) {
   return (admissionEvidence.topologyLineages ?? [])
@@ -377,7 +208,6 @@ function collectScopeCoverage({ inventory, snapshotsByPath, violations }) {
   const coverageByScope = new Map();
   const officialUrlsByScope = new Map();
   const claims = [];
-  const candidateClaimants = [];
   const topologySources = topologySourcesBySnapshotId(inventory);
   for (const source of inventory.sources ?? []) {
     if (!claimsRouteMapLineScope(source)) {
@@ -385,7 +215,11 @@ function collectScopeCoverage({ inventory, snapshotsByPath, violations }) {
     }
     const snapshotPath = source.routeMapAdmissionEvidence?.snapshotPath;
     if (!isNonEmptyString(snapshotPath)) {
-      candidateClaimants.push(source);
+      violations.push({
+        kind: "SOURCE_SNAPSHOT_PATH_MISSING",
+        sourceId: source.id,
+        message: `${source.id}: lineIds claim에 admitted snapshot 경로가 없다`,
+      });
       continue;
     }
     const snapshot = snapshotsByPath.get(snapshotPath);
@@ -433,7 +267,7 @@ function collectScopeCoverage({ inventory, snapshotsByPath, violations }) {
       coverageByScope.set(key, coverage);
     }
   }
-  return { coverageByScope, officialUrlsByScope, claims, candidateClaimants };
+  return { coverageByScope, officialUrlsByScope, claims };
 }
 
 // scope가 topology lineage를 등재했으면 그 snapshot만, 없으면 inventory에 등재된
@@ -1032,24 +866,16 @@ export function auditRouteMapCoverageScopes({
   snapshotsByPath,
   topologiesByPath = new Map(),
   rawSourcesByPath = new Map(),
-  candidateLineScopeAdmission = {},
 }) {
   const violations = [];
   const activeScopeKeys = new Set((targets.activeLineScopes ?? []).map(scopeKey));
-  const { coverageByScope, officialUrlsByScope, claims, candidateClaimants } = collectScopeCoverage({
+  const { coverageByScope, officialUrlsByScope, claims } = collectScopeCoverage({
     inventory,
     snapshotsByPath,
     violations,
   });
   const auditedScopeKeys = auditableScopeKeys({ claims, activeScopeKeys, rosters, violations });
   const auditedScopeKeySet = new Set(auditedScopeKeys);
-  // 재기술 claim의 ③은 실제 감사 집합이 확정된 뒤에만 판정할 수 있다.
-  validateCandidateLineScopeClaims({
-    sources: candidateClaimants,
-    admission: readCandidateLineScopeAdmission(candidateLineScopeAdmission),
-    auditedScopeKeys: auditedScopeKeySet,
-    violations,
-  });
   const shared = {
     auditedScopeKeys: auditedScopeKeySet,
     coverageByScope,

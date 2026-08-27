@@ -29,7 +29,7 @@ const jsonSha = (value) => sha(Buffer.from(JSON.stringify(value)));
 const CURRENT_CAPITAL_SOURCE_IDS = Object.freeze([
   "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
   "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
-  "seoul-metro-official-od-fares",
+  "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
 ]);
 
 test("active candidate source sequence는 public successor exact six와 TRANSFER-last seven만 허용한다", () => {
@@ -196,14 +196,20 @@ async function readInput(root) {
   };
 }
 
-test("RED old candidate KRIC head cannot satisfy current FACILITY identity; GREEN rebind changes only closed fields", async (t) => {
+test("current canonical pack binds public positions and TRANSFER, never CyberStation or S3", async (t) => {
   const { root, next } = await fixture();
   t.after(() => rm(root, { recursive: true, force: true }));
   const before = await readInput(root);
+  const capital = before.canonicalPack.packs[0];
+  assert.deepEqual(capital.sourceInventory.map(({ id }) => id), CURRENT_CAPITAL_SOURCE_IDS);
+  assert.equal(capital.sourceInventory.some(({ id, url }) => id === "seoulmetro-cyberstation-route-map" || /amazonaws\.com|s3:/u.test(url ?? "")), false);
   assert.deepEqual(
-    before.canonicalPack.packs[0].sourceInventory.map(({ id }) => id),
-    CURRENT_CAPITAL_SOURCE_IDS,
-    "synthetic current fixture must bind the direct public route-map source in its canonical slot",
+    JSON.parse(capital.metadata.productionCoverageEvidence).find(({ sourceDomain }) => sourceDomain === "route_map_positions")?.sourceIds,
+    ["seoul-metro-route-map-positions"],
+  );
+  assert.deepEqual(
+    JSON.parse(capital.metadata.productionCoverageEvidence).find(({ sourceDomain }) => sourceDomain === "transfer_walk_duration")?.sourceIds,
+    ["seoul-metro-transfer-distance-duration"],
   );
   const old = before.candidateBuildSpec;
   const rebound = rebindCandidateSourceSnapshots(before);

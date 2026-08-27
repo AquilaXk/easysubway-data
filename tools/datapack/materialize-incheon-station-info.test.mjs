@@ -7,7 +7,11 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { promisify } from "node:util";
-import { projectHistoricalRegionalMaterializeInventory, projectRegionalMaterializeFixture } from "./materialize-test-fixture.mjs";
+import {
+  materializeRegionalProductionCandidate,
+  projectHistoricalRegionalMaterializeInventory,
+  projectRegionalMaterializeFixture,
+} from "./materialize-test-fixture.mjs";
 
 import {
   parseMolitDaejeonStationMappings,
@@ -33,7 +37,6 @@ process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
 const topologyNow = new Date("2026-07-19T18:14:03.004Z");
 const timetableNow = new Date("2026-07-20T13:09:00.000Z");
 const accessibilityNow = new Date("2026-07-24T03:00:00.000Z");
-const incheonNow = new Date("2026-08-25T16:00:00.000Z");
 const SOURCE_ID = "incheon-transit-station-info";
 const OPERATOR_ID = "incheon-transit";
 const LINE1 = "line-98718184f016";
@@ -44,6 +47,12 @@ const GWANGJU_ACCESSIBILITY_BASELINE_SUPPORTED_COUNT = 23;
 const INCHEON_SUPPORTED_COUNT = GWANGJU_ACCESSIBILITY_BASELINE_SUPPORTED_COUNT + 8;
 
 async function inputs() {
+  const currentInventory = await readJson("tools/datapack/source-inventory.json");
+  const matches = currentInventory.sources.filter(({ id }) => id === SOURCE_ID);
+  if (matches.length !== 1) throw new Error("current Incheon source identity is invalid");
+  const admission = matches[0].topologyAdmissionEvidence;
+  if (admission?.snapshotPath !== `tools/datapack/sources/${admission?.snapshotId}.json`
+    || !Number.isFinite(Date.parse(admission?.capturedAt))) throw new Error("current Incheon topology admission is invalid");
   const [
     baseFixture,
     busanTopology,
@@ -68,8 +77,8 @@ async function inputs() {
     readJson("tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"),
     readJson("tools/datapack/sources/gwangju-transportation-cyberstation-timetable-20260720.json"),
     readJson("tools/datapack/sources/gwangju-transportation-accessibility-20260724.json"),
-    readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260825.json")),
-    readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
+    readFile(path.join(root, admission.snapshotPath)),
+    Promise.resolve(projectHistoricalRegionalMaterializeInventory(currentInventory)),
     readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
     readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
   ]);
@@ -124,11 +133,13 @@ async function inputs() {
     incheonSnapshot,
     incheonBytes,
     inventory,
+    incheonNow: new Date(incheonSnapshot.capturedAt),
+    incheonVersion: incheonSnapshot.capturedAt.slice(0, 10).replaceAll("-", ""),
   };
 }
 
 test("인천 station-info를 membership·topology·route_map으로 materialize한다", async () => {
-  const { accessibilityFixture, incheonSnapshot, incheonBytes, inventory } = await inputs();
+  const { accessibilityFixture, incheonSnapshot, incheonBytes, inventory, incheonNow, incheonVersion } = await inputs();
   const fixture = materializeIncheonStationInfo({
     baseFixture: accessibilityFixture,
     snapshot: incheonSnapshot,
@@ -198,14 +209,14 @@ test("인천 station-info를 membership·topology·route_map으로 materialize�
   assert.ok(pack.coverageLineOperatorScopes?.some((scope) => (
     scope.operatorId === OPERATOR_ID && scope.lineId === LINE7
   )));
-  assert.equal(pack.version, "20260825");
+  assert.equal(pack.version, incheonVersion);
   assert.match(pack.id, /^nationwide-incheon-station-info-[a-f0-9]{64}$/);
   assert.match(materializedIncheonPackContentHash(pack, pack.version), /^[a-f0-9]{64}$/);
-  assert.deepEqual(fixture.manifest.activePack, { id: pack.id, version: "20260825" });
+  assert.deepEqual(fixture.manifest.activePack, { id: pack.id, version: incheonVersion });
 });
 
 test("인천 station-info materialize는 freshness·hash·중복을 fail closed한다", async () => {
-  const { accessibilityFixture, incheonSnapshot, incheonBytes, inventory } = await inputs();
+  const { accessibilityFixture, incheonSnapshot, incheonBytes, inventory, incheonNow } = await inputs();
   const snapshotSha256 = createHash("sha256").update(incheonBytes).digest("hex");
 
   assert.throws(() => materializeIncheonStationInfo({
@@ -259,7 +270,7 @@ test("materialized SQLite와 provenance가 인천 1·2호선 6 + 7호선 members
   const fixturePath = path.join(outputDir, "fixture.json");
   const packOutput = path.join(outputDir, "pack");
   const reportPath = path.join(outputDir, "coverage.json");
-  const { accessibilityFixture, incheonSnapshot, incheonBytes, inventory } = await inputs();
+  const { accessibilityFixture, incheonSnapshot, incheonBytes, inventory, incheonNow } = await inputs();
   const fixture = materializeIncheonStationInfo({
     baseFixture: accessibilityFixture,
     snapshot: incheonSnapshot,
@@ -278,6 +289,7 @@ test("materialized SQLite와 provenance가 인천 1·2호선 6 + 7호선 members
   await execFileAsync(process.execPath, [
     "tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", packOutput,
   ], { cwd: root, env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey } });
+  await materializeRegionalProductionCandidate({ outputDir: packOutput, privateKey });
 
   const manifestPath = path.join(packOutput, "current.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));

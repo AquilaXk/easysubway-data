@@ -32,6 +32,19 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function currentSeoulAccessibilitySnapshot(snapshots, reviewedPack) {
+  const snapshotIds = new Set(reviewedPack.packs.flatMap(
+    ({ networkEdges = [] }) => networkEdges
+      .filter(({ sourceId }) => sourceId === "seoul-metro-accessibility")
+      .map(({ sourceSnapshotId }) => sourceSnapshotId),
+  ));
+  const matches = snapshots.filter(({ sourceId, snapshotId }) => (
+    sourceId === "seoul-metro-accessibility" && snapshotIds.has(snapshotId)
+  ));
+  assert.equal(matches.length, 1, "current Seoul accessibility source snapshot identity");
+  return matches[0];
+}
+
 function testStationId(station) {
   if (station.stinCd === "433") return "station-sadang";
   if (station.stinCd === "448") return "station-sangnoksu";
@@ -279,7 +292,13 @@ test("#2135 ADMITTED source와 subway seed를 deterministic complete server snap
   assert.equal((first.sql.match(/INSERT INTO station_pathway_edges/g) ?? []).length, 4);
   assert.equal((first.sql.match(/INSERT INTO transfer_rules/g) ?? []).length, 0);
   assert.equal((first.sql.match(/INSERT INTO route_edge_evidence/g) ?? []).length, 4);
-  assert.match(first.sql, /'edge-entry-sadang-seoul-4', 'ENTRY', 'seoul-metro-accessibility', 'seoul-metro-accessibility-20260813T213842955Z', 'OFFICIAL_SOURCE', 'UNKNOWN'/);
+  const currentAccessibility = currentSeoulAccessibilitySnapshot(
+    JSON.parse(value.sourceSnapshotsBytes),
+    JSON.parse(value.reviewedPackBytes),
+  );
+  assert.ok(first.sql.includes(
+    `'edge-entry-sadang-seoul-4', 'ENTRY', 'seoul-metro-accessibility', '${currentAccessibility.snapshotId}', 'OFFICIAL_SOURCE', 'UNKNOWN'`,
+  ));
   assert.doesNotMatch(first.sql, /route_edge_evidence[^;]+'NOT_VERIFIED'/);
   assert.match(first.sql, /'ITX_CHEONGCHUN'/);
   assert.match(first.sql, /, 2135\);/);
@@ -320,13 +339,11 @@ test("접근성 source snapshot의 lineage와 governance 값을 그대로 materi
   const value = await inputs();
   const reviewedPack = JSON.parse(value.reviewedPackBytes);
   const snapshots = JSON.parse(value.sourceSnapshotsBytes);
-  const parent = snapshots.find(
-    ({ snapshotId }) => snapshotId === "seoul-metro-accessibility-20260813T213842955Z",
-  );
+  const parent = currentSeoulAccessibilitySnapshot(snapshots, reviewedPack);
   const child = {
     ...parent,
-    snapshotId: "seoul-metro-accessibility-20260814T213842955Z",
-    retrievedAt: "2026-08-14T21:38:42.955Z",
+    snapshotId: `${parent.snapshotId}-lineage-child`,
+    retrievedAt: new Date(Date.parse(parent.retrievedAt) + 1).toISOString(),
     sourceUpdatedAt: null,
     rowCount: 9,
     coverageCount: 2,
@@ -429,8 +446,9 @@ test("접근성 source snapshot의 정책 값이 boolean이 아니면 materializ
 
   for (const field of ["redistributionAllowed", "credentialRedacted"]) {
     const snapshots = JSON.parse(value.sourceSnapshotsBytes);
-    const snapshot = snapshots.find(
-      ({ snapshotId }) => snapshotId === "seoul-metro-accessibility-capital-admission-20260712",
+    const snapshot = currentSeoulAccessibilitySnapshot(
+      snapshots,
+      JSON.parse(value.reviewedPackBytes),
     );
     snapshot[field] = "false";
 
@@ -448,8 +466,9 @@ test("접근성 source snapshot의 정책 값이 boolean이 아니면 materializ
 test("접근성 source와 edge의 숫자 값이 유효한 정수가 아니면 materialization을 거부한다", async () => {
   const value = await inputs();
   const snapshots = JSON.parse(value.sourceSnapshotsBytes);
-  const snapshot = snapshots.find(
-    ({ snapshotId }) => snapshotId === "seoul-metro-accessibility-capital-admission-20260712",
+  const snapshot = currentSeoulAccessibilitySnapshot(
+    snapshots,
+    JSON.parse(value.reviewedPackBytes),
   );
   snapshot.rowCount = "1";
   assert.throws(

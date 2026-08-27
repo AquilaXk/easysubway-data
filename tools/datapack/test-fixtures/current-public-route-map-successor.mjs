@@ -9,28 +9,32 @@ import {
   projectCapitalTopologyOwnership,
 } from "../collect-capital-route-topology.mjs";
 import { currentIncheonStationCodeDerivations } from "../collect-incheon-station-info.mjs";
-import { projectCapitalTopologyIntoCanonicalFixture } from "../build-datapack.mjs";
+import {
+  projectCapitalTopologyIntoCanonicalFixture,
+  validateSourceSeparatedCurrentTopology,
+} from "../build-datapack.mjs";
+import {
+  buildCurrentExitAdmissionOciReceipt,
+  canonicalCurrentExitAdmissionOciReceiptJson,
+} from "../build-current-exit-admission-oci-receipt.mjs";
 import { deriveFreshnessExpiresAt } from "../freshness-policy.mjs";
 import {
   CURRENT_SEOUL_PUBLIC_ROUTE_MAP_COVERAGE,
-  CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS,
   materializeSeoulRouteMapPositions,
   verifyCurrentCapitalPublicRouteMapDocument,
 } from "../materialize-seoul-route-map-positions.mjs";
 import { deriveReleaseProjection } from "../rebind-current-candidate-source-snapshots.mjs";
-import { buildSnapshotDiff } from "../source-snapshot-policy.mjs";
+import { buildSnapshotDiff, validateLineage } from "../source-snapshot-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
 import { codepointCompare } from "../../lib/codepoint-compare.mjs";
 import { currentTopologyAdmissionClock } from "./current-topology-admission-clock.mjs";
-import { stageSyntheticCurrentItxTopologyAdmission } from "./current-itx-topology-admission.mjs";
-import { stageSyntheticCurrentKricAccessibilitySuccessors } from "./current-kric-accessibility-successor.mjs";
 
 const PUBLIC_SOURCE_ID = "seoul-metro-route-map-positions";
 const MOLIT_SOURCE_ID = "molit-urban-rail-full-route";
 const CURRENT_CAPITAL_SOURCE_IDS = Object.freeze([
   "molit-urban-rail-full-route", "seoulmetro-station-line-info", PUBLIC_SOURCE_ID,
   "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
-  "seoul-metro-official-od-fares",
+  "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
 ]);
 const SHA_KEYS = Object.freeze([
   "layoutAlgorithmVersion", "topologySnapshotId", "topologySnapshotSha256",
@@ -188,6 +192,7 @@ const SUCCESSOR_FIXTURE_PATHS = Object.freeze([
   "tools/datapack/release/capital-production-canonical-pack.json",
   "tools/datapack/source-inventory.json",
   "tools/datapack/source-governance-policy.json",
+  "tools/datapack/inputs/capital-pilot-production-source-input.json",
   "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv",
   "release/product-gates/datapack-freshness-sla.json",
   "tools/datapack/official-od-fare-admission.json",
@@ -197,7 +202,6 @@ const SUCCESSOR_FIXTURE_PATHS = Object.freeze([
   "tools/datapack/release/current-capital-facility-source-admission.json",
   "tools/datapack/release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json",
   "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json",
-  "tools/datapack/release/current-exit-admission-v2/exit-path-admission-artifact-receipt.json",
   "tools/datapack/release/current-transfer-topology-metrics.json",
   "tools/datapack/release/current-capital-transfer-topology-applicability.json",
   "release/product-gates/route-edge-evaluation-policy.json",
@@ -218,8 +222,12 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
     });
     await bindSyntheticActivatedOutputsToCurrentCandidate(targetRoot);
     const result = await activateSyntheticCurrentStaticNetworkSuccessors(targetRoot, { now });
-    await stageSyntheticCurrentKricAccessibilitySuccessors(targetRoot, { now });
-    await bindSyntheticActivatedOutputsToCurrentCandidate(targetRoot, { rewindStaticSuccessors: true });
+    const {
+      currentizeFreshFacilitySource,
+      writeFreshExitAdmissionChain,
+    } = await import("./current-full-capital-production-artifact.mjs");
+    await currentizeFreshFacilitySource(targetRoot, now);
+    await writeFreshExitAdmissionChain(targetRoot, now);
     const transition = await bindSyntheticDependentAdmissionsToCurrentTransition(targetRoot);
     await rebuildSyntheticCurrentAccessibilityOutputs(targetRoot, transition);
     return result;
@@ -252,6 +260,7 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
       .filter((relative) => relative !== historicalTopologyEvidence.path),
     ...inventory.sources.map((source) => source.routeMapAdmissionEvidence?.snapshotPath),
     ...inventory.sources.map((source) => source.routeMapAdmissionEvidence?.currentLayoutAdmission?.snapshotPath),
+    ...inventory.sources.map((source) => source.accessibilityAdmissionEvidence?.snapshotPath),
     ...inventory.sources.map((source) => {
       const snapshotId = source.routeMapAdmissionEvidence?.currentTopologyAdmission?.topologySnapshotId;
       return typeof snapshotId === "string" ? `tools/datapack/sources/${snapshotId}.json` : null;
@@ -272,42 +281,14 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
     ]);
     await cp(sourceFile, destination, { force: true });
   }
-  const stagedCandidate = await readJson(target, "tools/datapack/release/candidate-build-spec.json");
-  const { baseSpec: currentItxCandidate } = await stageSyntheticCurrentItxTopologyAdmission(
-    target,
-    stagedCandidate,
-    now,
-  );
-  await writeFile(
-    path.join(target, "tools/datapack/release/candidate-build-spec.json"),
-    jsonBytes(currentItxCandidate),
-  );
+  await writeSyntheticCurrentExitOciReceipt(target);
   if (!activatePublicRouteMap) return null;
   return activateSyntheticCurrentPublicRouteMapSuccessor(target, { now });
 }
 
-async function bindSyntheticActivatedOutputsToCurrentCandidate(
-  root,
-  { rewindStaticSuccessors = false } = {},
-) {
-  const [candidate, snapshots] = await Promise.all([
-    readJson(root, "tools/datapack/release/candidate-build-spec.json"),
-    readJson(root, "tools/datapack/release/source-snapshots.json"),
-  ]);
-  let sourceSetSha256 = candidate.sourceSnapshotSetHash;
-  if (rewindStaticSuccessors) {
-    const predecessorIds = new Set(candidate.sourceSnapshotIds.map((selectedId, index) => {
-      const sourceId = candidate.sourceSnapshots[index].sourceId;
-      if (![PUBLIC_SOURCE_ID, MOLIT_SOURCE_ID].includes(sourceId)) return selectedId;
-      return snapshots.find(({ snapshotId }) => snapshotId === selectedId)?.previousSnapshotId;
-    }));
-    const predecessor = snapshots.filter(({ snapshotId }) => predecessorIds.has(snapshotId));
-    if (predecessorIds.size !== candidate.sourceSnapshotIds.length
-      || predecessor.length !== predecessorIds.size) {
-      throw new Error("synthetic activated predecessor source-set is invalid");
-    }
-    sourceSetSha256 = sha256(JSON.stringify(predecessor));
-  }
+async function bindSyntheticActivatedOutputsToCurrentCandidate(root) {
+  const candidate = await readJson(root, "tools/datapack/release/candidate-build-spec.json");
+  const sourceSetSha256 = candidate.sourceSnapshotSetHash;
   const outputPaths = [
     "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
     "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
@@ -328,7 +309,7 @@ async function bindSyntheticDependentAdmissionsToCurrentTransition(root) {
     snapshots: "tools/datapack/release/source-snapshots.json",
     facility: "tools/datapack/release/current-capital-facility-source-admission.json",
     exit: "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json",
-    exitReceipt: "tools/datapack/release/current-exit-admission-v2/exit-path-admission-artifact-receipt.json",
+    exitReceipt: "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json",
   };
   const [candidate, snapshots, facility, exit, receipt] = await Promise.all([
     readJson(root, paths.candidate), readJson(root, paths.snapshots), readJson(root, paths.facility),
@@ -445,6 +426,33 @@ async function rebuildSyntheticCurrentAccessibilityOutputs(root, transition) {
   ]);
 }
 
+async function writeSyntheticCurrentExitOciReceipt(root) {
+  const normalizedPath = "tools/datapack/release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json";
+  const admissionPath = "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json";
+  const receiptPath = "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json";
+  const [normalizedBytes, admissionBytes] = await Promise.all([
+    readFile(path.join(root, normalizedPath)),
+    readFile(path.join(root, admissionPath)),
+  ]);
+  const providerCollectionBundleBytes = Buffer.from("synthetic-current-exit-provider");
+  const providerObjectSha256 = sha256(providerCollectionBundleBytes);
+  const receipt = buildCurrentExitAdmissionOciReceipt({
+    repository: "AquilaXk/easysubway-data",
+    mainSha: "a".repeat(40),
+    operationId: "synthetic-current-public-route-map",
+    providerCapturedAt: "2026-08-01T00:00:00.000Z",
+    providerCollectionBundleBytes,
+    providerObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/operations/current-capital-live-chain/v1/heads/${"a".repeat(40)}/operations/synthetic-current-public-route-map/provider-collections/20260801-${providerObjectSha256}.json`,
+    providerObjectSha256,
+    providerObjectByteSize: providerCollectionBundleBytes.length,
+    normalizedBytes,
+    admissionBytes,
+  });
+  const target = path.join(root, receiptPath);
+  await mkdir(path.dirname(target), { recursive: true });
+  await writeFile(target, Buffer.from(canonicalCurrentExitAdmissionOciReceiptJson(receipt)));
+}
+
 export async function nextSyntheticCurrentStaticNetworkNow(root) {
   const [candidate, snapshots, topologyClock] = await Promise.all([
     readJson(root, "tools/datapack/release/candidate-build-spec.json"),
@@ -522,13 +530,18 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   const selectedPublicSnapshotIndex = selectedPublicSnapshotId == null ? -1
     : snapshots.findIndex(({ snapshotId }) => snapshotId === selectedPublicSnapshotId);
   const publicSnapshots = snapshots.filter(({ sourceId }) => sourceId === PUBLIC_SOURCE_ID);
+  const publicSnapshotsById = new Map(publicSnapshots.map((snapshot) => [snapshot.snapshotId, snapshot]));
+  let headsBySource;
+  try {
+    ({ headsBySource } = validateLineage(snapshots));
+  } catch (error) {
+    throw new Error(`synthetic public route-map successor fixture has invalid public source lineage: ${error.message}`);
+  }
   const selectedPublicSnapshot = snapshots[selectedPublicSnapshotIndex];
-  if (selectedPublicSnapshotId != null && ((advancesCurrentPublicHead
-    ? publicSnapshots.filter(({ previousSnapshotId }) => previousSnapshotId == null).length !== 1
-    : publicSnapshots.length !== 1)
+  if (selectedPublicSnapshotId != null && (publicSnapshotsById.size !== publicSnapshots.length
     || selectedPublicSnapshotIndex < 0
     || selectedPublicSnapshot?.sourceId !== PUBLIC_SOURCE_ID
-    || (!advancesCurrentPublicHead && selectedPublicSnapshot.previousSnapshotId != null))) {
+    || headsBySource[PUBLIC_SOURCE_ID] !== selectedPublicSnapshotId)) {
     throw new Error("synthetic public route-map successor fixture has invalid public source lineage");
   }
   const publicSources = inventory.sources.filter(({ id }) => id === PUBLIC_SOURCE_ID);
@@ -589,6 +602,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   });
   const routeMapLayoutArtifactBytes = jsonBytes(routeMapLayoutArtifact);
   const layoutArtifactSha256 = sha256(Buffer.from(`${JSON.stringify(routeMapLayoutArtifact)}\n`));
+  const priorProviderProjection = successorPredecessor.publicStaticNetworkV2Observation?.normalizedProjection;
   const contentSha256 = advancesCurrentPublicHead
     ? sourceSnapshot.contentSha256
     : sha256(Buffer.from(`${JSON.stringify(routeMapLayoutArtifact.rawPositions)}\n`));
@@ -598,14 +612,9 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   const providerRecordHashes = advancesCurrentPublicHead
     ? sourceSnapshot.providerRecordHashes
     : routeMapLayoutArtifact.rawPositions.map((record) => sha256(JSON.stringify(record)));
-  if (advancesCurrentPublicHead && (sourceSnapshot.snapshotId !== successorPredecessor.snapshotId
-    || contentSha256 !== currentLayoutAdmission.contentSha256
-    || contentSha256 !== successorPredecessor.contentSha256
-    || schemaFingerprint !== successorPredecessor.schemaFingerprint
-    || sourceSnapshot.rowCount !== routeMapLayoutArtifact.rawPositions.length
+  if (advancesCurrentPublicHead && (!Array.isArray(priorProviderProjection)
     || !Array.isArray(providerRecordHashes)
-    || providerRecordHashes.length !== routeMapLayoutArtifact.rawPositions.length
-    || !isDeepStrictEqual(providerRecordHashes, successorPredecessor.providerRecordHashes))) {
+    || providerRecordHashes.length !== priorProviderProjection.length)) {
     throw new Error("synthetic public route-map current observation identity is incomplete");
   }
   const layout = Object.fromEntries(SHA_KEYS.map((key) => [key, key === "layoutArtifactSha256"
@@ -628,7 +637,10 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     ...currentOnlySnapshot(successorPredecessor),
     snapshotId,
     sourceId: PUBLIC_SOURCE_ID,
-    provider: publicSource.provider,
+    // The catalog owner is not necessarily the canonical snapshot provider.
+    // Preserve the authenticated selected head's provider identity instead of
+    // copying the inventory display metadata into a V2 successor.
+    provider: successorPredecessor.provider,
     retrievedAt: capturedAt,
     sourceUpdatedAt: `${routeMapLayoutArtifact.observedDataUpdatedAt}T00:00:00.000Z`,
     rowCount: routeMapLayoutArtifact.rawPositions.length,
@@ -676,7 +688,9 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     schemaFingerprint,
     rowCount: snapshot.rowCount,
     providerRecordHashes: [...providerRecordHashes],
-    normalizedProjection: structuredClone(routeMapLayoutArtifact.rawPositions),
+    normalizedProjection: structuredClone(advancesCurrentPublicHead
+      ? priorProviderProjection
+      : routeMapLayoutArtifact.rawPositions),
     routeMapLayoutEvidence: layout,
     routeMapLayoutArtifact,
     rawReceipt: structuredClone(snapshot.rawReceipt),
@@ -684,15 +698,16 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   snapshot.publicStaticNetworkV2Observation = observation;
   snapshot.normalizedObservationSha256 = sha256(Buffer.from(`${JSON.stringify(observation)}\n`));
   if (advancesCurrentPublicHead) snapshot.diffSummary = buildSnapshotDiff(successorPredecessor, snapshot);
-  if (selectedPublicSnapshotIndex >= 0 && !advancesCurrentPublicHead) snapshots.splice(selectedPublicSnapshotIndex, 1, snapshot);
-  else snapshots.push(snapshot);
+  if (!advancesCurrentPublicHead) {
+    const firstPublicSnapshotIndex = snapshots.findIndex(({ sourceId }) => sourceId === PUBLIC_SOURCE_ID);
+    for (let index = snapshots.length - 1; index >= 0; index -= 1) {
+      if (snapshots[index].sourceId === PUBLIC_SOURCE_ID) snapshots.splice(index, 1);
+    }
+    snapshots.splice(firstPublicSnapshotIndex, 0, snapshot);
+  } else snapshots.push(snapshot);
 
   publicSource.requiredForProductionPack = true;
   publicSource.productionUseAllowed = true;
-  publicSource.coverageScope = {
-    ...publicSource.coverageScope,
-    operatorIds: [...CURRENT_SEOUL_PUBLIC_ROUTE_MAP_OPERATOR_IDS],
-  };
   publicSource.retrievedAt = capturedAt.slice(0, 10);
   publicSource.observedDataUpdatedAt = routeMapLayoutArtifact.observedDataUpdatedAt;
   publicSource.admissionEvidence = {
@@ -721,7 +736,15 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   };
   const currentSourceIds = new Set(CURRENT_CAPITAL_SOURCE_IDS);
   pack.packs[0].sourceInventory = pack.packs[0].sourceInventory.filter(({ id }) => currentSourceIds.has(id));
-  pack.packs[0].routeMapPositions = pack.packs[0].routeMapPositions.filter(({ sourceId }) => sourceId === PUBLIC_SOURCE_ID);
+  pack.packs[0].routeMapPositions = [];
+  if (pack.packs[0].networkEdges.some(
+    ({ edgeType }) => !["RIDE", "ENTRY", "EXIT"].includes(edgeType),
+  )) {
+    throw new Error("synthetic current pre-authority edge contract is invalid");
+  }
+  pack.packs[0].networkEdges = pack.packs[0].networkEdges.filter(
+    ({ edgeType }) => edgeType === "RIDE",
+  );
 
   const materializedPack = materializeSeoulRouteMapPositions({
     baseFixture: pack,
@@ -755,8 +778,24 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   if (typeof currentTopologySnapshotId !== "string") {
     throw new Error("synthetic current topology admission fixture is incomplete");
   }
+  candidate.candidateId = `capital-pilot-candidate-${currentTopologySnapshotId.slice(-8)}`;
+  candidate.publishedAt = now.toISOString();
   const currentTopologyPath = `tools/datapack/sources/${currentTopologySnapshotId}.json`;
   const currentTopology = JSON.parse(topologySnapshotBytes);
+  const currentIncheonSource = inventory.sources.find(({ id }) => id === "incheon-transit-station-info");
+  const currentIncheonTopologyPath = currentIncheonSource?.topologyAdmissionEvidence?.snapshotPath;
+  if (typeof currentIncheonTopologyPath !== "string") {
+    throw new Error("synthetic current Incheon topology fixture is missing");
+  }
+  const currentIncheonTopology = JSON.parse(await readFile(path.join(root, currentIncheonTopologyPath)));
+  validateSourceSeparatedCurrentTopology({
+    capitalTopology: currentTopology,
+    incheonSnapshot: currentIncheonTopology,
+  });
+  if (currentIncheonTopology.topologyLineIds.length !== 2
+    || currentIncheonTopology.edgeCount !== 116) {
+    throw new Error("synthetic current Incheon topology admission bytes are invalid");
+  }
   const candidateLineIds = new Set(currentTopology.lines.map(({ lineId }) => lineId));
   const currentTopologyAdmissions = inventory.sources
     .map((source) => ({ source, evidence: source.routeMapAdmissionEvidence,
@@ -862,7 +901,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   candidate.sourceInventorySha256 = sha256(JSON.stringify(inventory));
   candidate.networkEdgeEvidence.sourceInventory.sha256 = sha256(inventoryBytes);
   const candidateBytes = jsonBytes(candidate);
-  const packBytes = jsonBytes(pack);
+  const packBytes = Buffer.from(`${JSON.stringify(pack)}\n`);
   Object.assign(request, {
     candidateId: candidate.candidateId,
     buildSpecSha256: sha256(candidateBytes),
@@ -884,7 +923,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   }));
 
   await Promise.all([
-    writeFile(path.join(root, `tools/datapack/sources/${snapshotId}.json`), jsonBytes(observation)),
+    writeFile(path.join(root, `tools/datapack/sources/${snapshotId}.json`), Buffer.from(`${JSON.stringify(observation)}\n`)),
     writeFile(path.join(root, topologyReverificationPath), topologyReverificationBytes),
     writeFile(path.join(root, incheonSnapshotPath), incheonSnapshotBytes),
     writeFile(path.join(root, paths.snapshots), jsonBytes(snapshots)),
@@ -960,6 +999,8 @@ export async function activateSyntheticCurrentStaticNetworkSuccessors(root, { no
     providerRecordHashes: [...molitProjection.providerRecordHashes],
     freshnessExpiresAt,
     rawRetentionExpiresAt,
+    governancePolicyVersion: governancePolicy.policyVersion,
+    governancePolicySha256: sha256(governanceBytes),
     rawReceipt: {
       schemaVersion: 1,
       artifactKind: "static-network-source-raw-object-receipt",

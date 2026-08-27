@@ -653,7 +653,7 @@ test("build manifest가 source·normalized·vec hash와 viewBox를 결합한다"
   // #2068 리뷰 M2: compiler.version은 pubspec.lock에 잠긴 **패키지 버전**이어야
   // 한다(하드코딩 상수와 lock 양쪽을 대조해 드리프트를 막는다). 산출 의미의 개정은
   // 별도 pipelineRevision이 기록한다.
-  assert.equal(manifest.compiler.version, "1.2.6");
+  assert.equal(manifest.compiler.version, "1.3.0");
   const lockedCompilerVersion = readFileSync(
     path.join(root, "apps/mobile/pubspec.lock"),
     "utf8",

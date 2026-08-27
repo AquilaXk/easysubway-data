@@ -95,6 +95,99 @@ export function resolveTrackedEndpoint(document) {
   return url.href;
 }
 
+// Rebuild the private manifest and observation only from a previously locked
+// canonical raw snapshot.  This intentionally has no provider, OCI, or output
+// side effect: the caller supplies bytes obtained through its separately
+// authorized immutable-object read and the receipt that already binds them.
+export async function reconstructSeoulTransferObservationFromRawSnapshot({ rawBytes, receipt, candidatesDocument } = {}) {
+  if (!Buffer.isBuffer(rawBytes)) throw new Error("transfer raw snapshot bytes are required");
+  const document = candidatesDocument ?? JSON.parse(await readFile(CANDIDATES_PATH, "utf8"));
+  const endpoint = resolveTrackedEndpoint(document);
+  validateReconstructionReceipt(receipt, rawBytes);
+  let rawSnapshot;
+  try { rawSnapshot = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(rawBytes)); } catch { throw new Error("transfer raw snapshot must be strict UTF-8 JSON"); }
+  if (!rawBytes.equals(canonicalBytes(rawSnapshot))) throw new Error("transfer raw snapshot must use canonical bytes");
+  if (rawSnapshot?.artifactKind !== "seoul-transfer-distance-duration-raw-snapshot" || rawSnapshot.sourceId !== SOURCE_ID || !Array.isArray(rawSnapshot.pages) || rawSnapshot.pages.length !== 2) {
+    throw new Error("transfer raw snapshot identity mismatch");
+  }
+  const rows = reconstructRows(rawSnapshot);
+  const capturedAt = receipt.capturedAt;
+  const manifest = {
+    artifactKind: "seoul-transfer-distance-duration-snapshot-manifest",
+    sourceId: SOURCE_ID,
+    endpointSha256: sha256(endpoint),
+    capturedAt,
+    freshnessDate: "2025-12-31",
+    rowCount: rows.length,
+    rawSha256: sha256(rawBytes),
+    contentSha256: sha256(canonicalBytes(rows)),
+    schemaSha256: sha256(canonicalBytes({ fields: REQUIRED_FIELDS })),
+    credentialRedacted: true,
+  };
+  const observation = {
+    artifactKind: "seoul-transfer-distance-duration-observation",
+    sourceId: SOURCE_ID,
+    capturedAt,
+    rowCount: rows.length,
+    rawSha256: manifest.rawSha256,
+    contentSha256: manifest.contentSha256,
+    rows,
+    credentialRedacted: true,
+  };
+  const manifestBytes = canonicalBytes(manifest);
+  const observationBytes = canonicalBytes(observation);
+  if (sha256(manifestBytes) !== receipt.manifestSha256 || sha256(observationBytes) !== receipt.observationSha256) {
+    throw new Error("transfer reconstruction receipt identity mismatch");
+  }
+  validateSeoulTransferObservationFiles({ manifest, observation, rawSnapshot, manifestBytes, observationBytes, rawBytes });
+  return { manifest, observation, rawSnapshot, manifestBytes, observationBytes, rawBytes };
+}
+
+export async function writeReconstructedSeoulTransferObservation({ output, runnerTemp, reconstruction } = {}) {
+  const outputDirectory = requiredAbsolutePath(output, "output");
+  const tempDirectory = requiredAbsolutePath(runnerTemp, "RUNNER_TEMP");
+  if (!reconstruction || !Buffer.isBuffer(reconstruction.manifestBytes) || !Buffer.isBuffer(reconstruction.observationBytes) || !Buffer.isBuffer(reconstruction.rawBytes)) {
+    throw new Error("transfer reconstruction bytes are required");
+  }
+  validateSeoulTransferObservationFiles(reconstruction);
+  await assertTaskOwnedOutput(outputDirectory, tempDirectory);
+  await publishAtomicDirectory(outputDirectory, tempDirectory, {
+    "manifest.json": reconstruction.manifestBytes,
+    "observation.json": reconstruction.observationBytes,
+    "raw-snapshot.json": reconstruction.rawBytes,
+  });
+}
+
+function validateReconstructionReceipt(receipt, rawBytes) {
+  if (receipt?.sourceId !== SOURCE_ID || typeof receipt.snapshotId !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(receipt.capturedAt ?? "")
+    || Number.isNaN(Date.parse(receipt.capturedAt)) || !Number.isSafeInteger(receipt.byteSize) || receipt.byteSize !== rawBytes.length
+    || !/^[0-9a-f]{64}$/u.test(receipt.snapshotRawSha256 ?? "") || !/^[0-9a-f]{64}$/u.test(receipt.rawObjectSha256 ?? "")
+    || !/^[0-9a-f]{64}$/u.test(receipt.manifestSha256 ?? "") || !/^[0-9a-f]{64}$/u.test(receipt.observationSha256 ?? "")
+    || receipt.snapshotRawSha256 !== sha256(rawBytes) || receipt.rawObjectSha256 !== sha256(rawBytes)) {
+    throw new Error("transfer reconstruction receipt mismatch");
+  }
+}
+
+function reconstructRows(rawSnapshot) {
+  const rows = [];
+  for (const [index, page] of rawSnapshot.pages.entries()) {
+    if (!Number.isInteger(page?.page) || page.page !== index + 1 || page.perPage !== PER_PAGE || typeof page.base64 !== "string"
+      || Buffer.from(page.base64, "base64").toString("base64") !== page.base64 || page.sha256 !== sha256(Buffer.from(page.base64, "base64"))) {
+      throw new Error("transfer raw page identity mismatch");
+    }
+    let envelope;
+    try { envelope = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(page.base64, "base64"))); } catch { throw new Error("transfer raw page encoding mismatch"); }
+    validateEnvelope(envelope, { expectedCurrent: index === 0 ? PER_PAGE : EXPECTED_ROW_COUNT - PER_PAGE, page: index + 1, totalCount: EXPECTED_ROW_COUNT });
+    rows.push(...envelope.data.map(normalizeRow));
+  }
+  const serials = new Set(rows.map((row) => row["연번"]));
+  if (rows.length !== EXPECTED_ROW_COUNT || serials.size !== EXPECTED_ROW_COUNT || [...serials].some((serial) => serial < 1 || serial > EXPECTED_ROW_COUNT)
+    || [...serials].sort((left, right) => left - right).some((serial, index) => serial !== index + 1)) {
+    throw new Error("transfer raw snapshot rows mismatch");
+  }
+  return rows.sort((left, right) => codepointCompare(REQUIRED_FIELDS.map((field) => left[field]).join("\u0000"), REQUIRED_FIELDS.map((field) => right[field]).join("\u0000")));
+}
+
 async function collectAllPages({ endpoint, fetchImpl, rawServiceKey, requestTimeoutMs, serviceKey }) {
   if (!Number.isInteger(requestTimeoutMs) || requestTimeoutMs < 0 || requestTimeoutMs > REQUEST_TIMEOUT_MS) {
     throw new Error("request timeout must be a bounded integer");

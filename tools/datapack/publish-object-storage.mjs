@@ -6,8 +6,16 @@ import https from "node:https";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { canonicalCurrentCapitalLiveChainOciPlanJson } from "./build-current-capital-live-chain-oci-plan.mjs";
+import {
+  readCurrentCapitalLiveChainOciReceipt,
+  writeCurrentCapitalLiveChainOciReceipt,
+} from "./build-current-capital-live-chain-oci-receipt.mjs";
 
 const emptySha256 = sha256(Buffer.alloc(0));
+const CURRENT_LIVE_CHAIN_OCI_PAR = /^https:\/\/objectstorage\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.oraclecloud\.com\/p\/[^\/?#\s]+\/n\/axvym6vk8g7i\/b\/easysubway-datapacks\/o\/?$/u;
+const OCI_PAR_REQUEST_TIMEOUT_MS = 20_000;
+const OCI_PAR_MAX_RESPONSE_BYTES = 64 * 1024 * 1024;
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -16,6 +24,20 @@ async function main() {
   const dryRun = args.has("dry-run");
   const verifyOnly = args.has("verify-only");
   const plan = JSON.parse(await readFile(planPath, "utf8"));
+  if (plan?.artifactKind === "current-capital-live-chain-oci-plan") {
+    if (JSON.stringify(plan) !== canonicalCurrentCapitalLiveChainOciPlanJson(plan)) {
+      throw new Error("current live-chain OCI plan must be canonical JSON");
+    }
+    if (dryRun) return;
+    if (verifyOnly) throw new Error("current live-chain OCI plan requires exact immutable publish and readback");
+    const receiptPath = path.resolve(requireArg(args, "receipt"));
+    await publishCurrentCapitalLiveChainOciPlan({
+      planBytes: await readFile(planPath),
+      root,
+      receiptPath,
+    });
+    return;
+  }
   validatePlan(plan);
 
   const client = dryRun ? null : objectStorageClient();
@@ -151,6 +173,114 @@ async function main() {
     }
 
     throw new Error(`unsupported publish step: ${step.type}`);
+  }
+}
+
+/**
+ * The live-chain is OCI-PAR-only.  Unlike the generic publisher it never
+ * selects the legacy signed/AWS-compatible client, even when those variables
+ * happen to be present in the process environment.
+ */
+export function requireCurrentCapitalLiveChainOciParBaseUrl(env = process.env) {
+  const value = env?.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL;
+  if (typeof value !== "string" || !CURRENT_LIVE_CHAIN_OCI_PAR.test(value.trim())) {
+    throw new Error("current live-chain OCI publication requires the exact Oracle Object Storage PAR base URL");
+  }
+  return new URL(value.trim());
+}
+
+function parseCanonicalCurrentLiveChainPlan(planBytes) {
+  if (!Buffer.isBuffer(planBytes) || planBytes.length === 0) {
+    throw new Error("current live-chain OCI plan bytes mismatch");
+  }
+  let plan;
+  try {
+    plan = JSON.parse(planBytes.toString("utf8"));
+  } catch {
+    throw new Error("current live-chain OCI plan JSON mismatch");
+  }
+  if (!planBytes.equals(Buffer.from(`${canonicalCurrentCapitalLiveChainOciPlanJson(plan)}\n`))) {
+    throw new Error("current live-chain OCI plan must be canonical bytes");
+  }
+  return plan;
+}
+
+/** Publish both immutable objects, fully read them back, then create the receipt. */
+export async function publishCurrentCapitalLiveChainOciPlan({
+  planBytes,
+  root,
+  receiptPath,
+  env = process.env,
+  client = null,
+} = {}) {
+  const plan = parseCanonicalCurrentLiveChainPlan(planBytes);
+  if (!path.isAbsolute(root ?? "") || !path.isAbsolute(receiptPath ?? "")) {
+    throw new Error("current live-chain publication paths must be absolute");
+  }
+  // Validate even for an injected client: tests cannot accidentally mask an
+  // AWS/generic endpoint fallback that production would reject.
+  const parBaseUrl = requireCurrentCapitalLiveChainOciParBaseUrl(env);
+  const storage = client ?? preauthenticatedObjectStorageClient(parBaseUrl, { includeErrorBody: false });
+  const resolvedRoot = path.resolve(root);
+  validateImmutableObjectPlan(plan.publishPlan);
+
+  for (const step of plan.publishPlan.steps) {
+    if (step.type === "put-immutable-bundle-object") {
+      await putImmutableObject(storage, resolvedRoot, step);
+    } else if (step.type === "verify-immutable-bundle-object") {
+      await verifyImmutableObject(storage, step);
+    } else {
+      throw new Error(`unsupported current live-chain OCI step: ${step.type}`);
+    }
+  }
+  // Receipt creation is deliberately last: a failed PUT/readback must leave
+  // no success-shaped receipt behind.
+  return writeCurrentCapitalLiveChainOciReceipt({ planBytes, outputPath: receiptPath });
+}
+
+/** Fetch both OCI objects named by a canonical plan and receipt, after exact full GET verification. */
+export async function fetchCurrentCapitalLiveChainComposite({
+  planBytes,
+  receiptPath,
+  providerDestinationPath,
+  destinationPath,
+  env = process.env,
+  client = null,
+} = {}) {
+  const plan = parseCanonicalCurrentLiveChainPlan(planBytes);
+  if (!path.isAbsolute(receiptPath ?? "") || !path.isAbsolute(providerDestinationPath ?? "") || !path.isAbsolute(destinationPath ?? "")) {
+    throw new Error("current live-chain fetch paths must be absolute");
+  }
+  const parBaseUrl = requireCurrentCapitalLiveChainOciParBaseUrl(env);
+  const receipt = await readCurrentCapitalLiveChainOciReceipt({ planBytes, receiptPath });
+  for (const [label, expected] of [["provider", plan.providerObject], ["composite", plan.compositeObject]]) {
+    const actual = receipt[`${label}Object`];
+    if (actual.objectKey !== expected.objectKey || actual.sha256 !== expected.sha256 || actual.sizeBytes !== expected.sizeBytes) {
+      throw new Error(`current live-chain OCI receipt ${label} binding mismatch`);
+    }
+  }
+  const storage = client ?? preauthenticatedObjectStorageClient(parBaseUrl, { includeErrorBody: false });
+  const providerOutputPath = await safeCreateNewAbsoluteOutputPath(providerDestinationPath);
+  const outputPath = await safeCreateNewAbsoluteOutputPath(destinationPath);
+  const provider = await storage.readObject(plan.providerObject.objectKey);
+  const composite = await storage.readObject(plan.compositeObject.objectKey);
+  if (!exactStoredObject(provider, plan.providerObject) || !exactStoredObject(composite, plan.compositeObject)) {
+    throw new Error("current live-chain OCI full GET bytes mismatch");
+  }
+  const created = [];
+  let complete = false;
+  try {
+    for (const [target, bytes, expected] of [[providerOutputPath, provider.body, plan.providerObject], [outputPath, composite.body, plan.compositeObject]]) {
+      const output = await open(target, "wx", 0o600);
+      created.push(target);
+      try { await output.writeFile(bytes); await output.sync(); } finally { await output.close(); }
+      const written = await readFile(target);
+      if (written.length !== expected.sizeBytes || sha256(written) !== expected.sha256) throw new Error("current live-chain destination bytes mismatch");
+    }
+    complete = true;
+    return { providerObjectKey: plan.providerObject.objectKey, providerDestinationPath: providerOutputPath, providerSha256: plan.providerObject.sha256, providerSizeBytes: plan.providerObject.sizeBytes, objectKey: plan.compositeObject.objectKey, destinationPath: outputPath, sha256: plan.compositeObject.sha256, sizeBytes: plan.compositeObject.sizeBytes };
+  } finally {
+    if (!complete) for (const target of created) await unlink(target).catch((error) => { if (error?.code !== "ENOENT") throw error; });
   }
 }
 
@@ -312,10 +442,12 @@ function objectStorageClient(env = process.env) {
   };
 }
 
-function preauthenticatedObjectStorageClient(baseUrl) {
+export function preauthenticatedObjectStorageClient(baseUrl, { includeErrorBody = true, requestImpl = unsignedRequest } = {}) {
+  const failureSuffix = (body) => includeErrorBody ? errorBodySuffix(body) : "";
+  const boundedRequest = (options) => requestImpl({ ...options, timeoutMs: OCI_PAR_REQUEST_TIMEOUT_MS, maxResponseBytes: options.maxResponseBytes ?? OCI_PAR_MAX_RESPONSE_BYTES });
   return {
     putObject: async (key, bytes, step) => {
-      const response = await unsignedRequest({
+      const response = await boundedRequest({
         url: preauthObjectUrl(baseUrl, key),
         method: "PUT",
         body: bytes,
@@ -328,11 +460,11 @@ function preauthenticatedObjectStorageClient(baseUrl) {
         },
       });
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw new Error(`${key} PUT failed with HTTP ${response.statusCode}${errorBodySuffix(response.body)}`);
+        throw new Error(`${key} PUT failed with HTTP ${response.statusCode}${failureSuffix(response.body)}`);
       }
     },
     putObjectIfAbsent: async (key, bytes, step) => {
-      const response = await unsignedRequest({
+      const response = await boundedRequest({
         url: preauthObjectUrl(baseUrl, key),
         method: "PUT",
         body: bytes,
@@ -347,18 +479,19 @@ function preauthenticatedObjectStorageClient(baseUrl) {
       });
       if (response.statusCode === 412) return false;
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw new Error(`${key} conditional PUT failed with HTTP ${response.statusCode}${errorBodySuffix(response.body)}`);
+        throw new Error(`${key} conditional PUT failed with HTTP ${response.statusCode}${failureSuffix(response.body)}`);
       }
       return true;
     },
     verifyObject: async (key, step) => {
-      const response = await unsignedRequest({
+      const response = await boundedRequest({
         url: preauthObjectUrl(baseUrl, key),
         method: "GET",
         body: Buffer.alloc(0),
+        maxResponseBytes: step.sizeBytes,
       });
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw new Error(`${key} GET failed with HTTP ${response.statusCode}${errorBodySuffix(response.body)}`);
+        throw new Error(`${key} GET failed with HTTP ${response.statusCode}${failureSuffix(response.body)}`);
       }
       if (response.body.length !== step.sizeBytes) {
         throw new Error(`${key} uploaded size mismatch`);
@@ -372,20 +505,20 @@ function preauthenticatedObjectStorageClient(baseUrl) {
       }
     },
     headObject: async (key) => {
-      const response = await unsignedRequest({ url: preauthObjectUrl(baseUrl, key), method: "GET", body: Buffer.alloc(0) });
+      const response = await boundedRequest({ url: preauthObjectUrl(baseUrl, key), method: "GET", body: Buffer.alloc(0) });
       if (response.statusCode === 404) return { exists: false };
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw new Error(`${key} GET failed with HTTP ${response.statusCode}${errorBodySuffix(response.body)}`);
+        throw new Error(`${key} GET failed with HTTP ${response.statusCode}${failureSuffix(response.body)}`);
       }
       return { exists: true, sha256: sha256(response.body) };
     },
     readObject: async (key) => {
-      const response = await unsignedRequest({
+      const response = await boundedRequest({
         url: preauthObjectUrl(baseUrl, key), method: "GET", body: Buffer.alloc(0),
       });
       if (response.statusCode === 404) return { exists: false };
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw new Error(`${key} GET failed with HTTP ${response.statusCode}${errorBodySuffix(response.body)}`);
+        throw new Error(`${key} GET failed with HTTP ${response.statusCode}${failureSuffix(response.body)}`);
       }
       return { exists: true, body: response.body };
     },
@@ -448,6 +581,13 @@ async function unsignedRequest(options) {
   const body = options.body ?? Buffer.alloc(0);
   return await new Promise((resolve, reject) => {
     const chunks = [];
+    let responseSize = 0;
+    let settled = false;
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
     const request = transport.request(
       options.url,
       {
@@ -455,14 +595,25 @@ async function unsignedRequest(options) {
         headers: options.headers ?? {},
       },
       (response) => {
-        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("data", (chunk) => {
+          responseSize += chunk.length;
+          if (responseSize > options.maxResponseBytes) {
+            response.destroy(new Error("OCI PAR response exceeds bounded size"));
+            return;
+          }
+          chunks.push(chunk);
+        });
+        response.on("error", fail);
         response.on("end", () => {
+          if (settled) return;
+          settled = true;
           response.body = Buffer.concat(chunks);
           resolve(response);
         });
       },
     );
-    request.on("error", reject);
+    request.setTimeout(options.timeoutMs, () => request.destroy(new Error("OCI PAR request timed out")));
+    request.on("error", fail);
     if (options.method !== "HEAD" && body.length > 0) {
       request.write(body);
     }
@@ -592,6 +743,16 @@ async function safeCreateNewOutputPath(root, destinationPath) {
     if (!stat.isDirectory()) throw new Error(`${destinationPath} parent must be a directory`);
   }
   return path.join(root, destinationPath);
+}
+
+async function safeCreateNewAbsoluteOutputPath(destinationPath) {
+  const output = path.resolve(destinationPath);
+  const parent = path.dirname(output);
+  const stat = await lstat(parent);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) {
+    throw new Error("current live-chain fetch destination parent must be a real directory");
+  }
+  return output;
 }
 
 function validatePlan(plan) {

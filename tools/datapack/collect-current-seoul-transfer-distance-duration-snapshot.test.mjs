@@ -7,7 +7,8 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import test from "node:test";
 
-import { collectCurrentSeoulTransferDistanceDurationSnapshot } from "./collect-current-seoul-transfer-distance-duration-snapshot.mjs";
+import { collectCurrentSeoulTransferDistanceDurationSnapshot, reconstructSeoulTransferObservationFromRawSnapshot } from "./collect-current-seoul-transfer-distance-duration-snapshot.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const SERVICE_KEY = "test/key+with-symbol";
 const CAPTURED_AT = new Date("2026-08-15T00:00:00.000Z");
@@ -105,6 +106,41 @@ test("145-row ODCloud 페이지를 완전 수집해 credential-free immutable sn
     for (const name of await readdir(output)) assert.equal((await stat(path.join(output, name))).mode & 0o777, 0o600);
     assert.doesNotMatch(await readFile(path.join(output, "manifest.json"), "utf8"), /serviceKey|test%2Fkey|test\/key/u);
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("locked canonical raw bytes는 receipt-bound manifest/observation으로만 결정론적 복원하고 drift에서 fail closed한다", async () => {
+  const capturedAt = "2026-08-15T09:40:38.817Z";
+  const rawSnapshot = {
+    artifactKind: "seoul-transfer-distance-duration-raw-snapshot",
+    sourceId: "seoul-metro-transfer-distance-duration",
+    pages: [1, 2].map((page) => {
+      const bytes = Buffer.from(JSON.stringify(pagePayload(page, 100)));
+      return { page, perPage: 100, sha256: sha256(bytes), base64: bytes.toString("base64") };
+    }),
+  };
+  const rawBytes = canonicalBytes(rawSnapshot);
+  const rowsByCanonicalOrder = rawSnapshot.pages.flatMap((page) => JSON.parse(Buffer.from(page.base64, "base64")).data)
+    .sort((left, right) => codepointCompare(["연번", "호선", "환승역명", "환승노선", "환승거리", "환승소요시간"].map((field) => left[field]).join("\u0000"), ["연번", "호선", "환승역명", "환승노선", "환승거리", "환승소요시간"].map((field) => right[field]).join("\u0000")));
+  const manifest = {
+    artifactKind: "seoul-transfer-distance-duration-snapshot-manifest", sourceId: "seoul-metro-transfer-distance-duration",
+    endpointSha256: sha256("https://api.odcloud.kr/api/15044419/v1/uddi:7008c675-928f-41d6-9a01-b3541f78466b"), capturedAt,
+    freshnessDate: "2025-12-31", rowCount: 145, rawSha256: sha256(rawBytes), contentSha256: sha256(canonicalBytes(rowsByCanonicalOrder)),
+    schemaSha256: sha256(canonicalBytes({ fields: ["연번", "호선", "환승역명", "환승노선", "환승거리", "환승소요시간"] })), credentialRedacted: true,
+  };
+  const observation = {
+    artifactKind: "seoul-transfer-distance-duration-observation", sourceId: manifest.sourceId, capturedAt, rowCount: 145,
+    rawSha256: manifest.rawSha256, contentSha256: manifest.contentSha256, rows: rowsByCanonicalOrder, credentialRedacted: true,
+  };
+  const receipt = {
+    sourceId: manifest.sourceId, snapshotId: "seoul-metro-transfer-distance-duration-20260815T094038817Z", capturedAt,
+    snapshotRawSha256: manifest.rawSha256, rawObjectSha256: manifest.rawSha256, byteSize: rawBytes.length,
+    manifestSha256: sha256(canonicalBytes(manifest)), observationSha256: sha256(canonicalBytes(observation)),
+  };
+  const reconstructed = await reconstructSeoulTransferObservationFromRawSnapshot({ rawBytes, receipt, candidatesDocument: transferCandidatesDocument() });
+  assert.deepEqual(reconstructed.manifest, manifest);
+  assert.deepEqual(reconstructed.observation, observation);
+  await assert.rejects(() => reconstructSeoulTransferObservationFromRawSnapshot({ rawBytes, receipt: { ...receipt, manifestSha256: "0".repeat(64) }, candidatesDocument: transferCandidatesDocument() }), /receipt identity mismatch/);
+  await assert.rejects(() => reconstructSeoulTransferObservationFromRawSnapshot({ rawBytes: Buffer.from(`${rawBytes.subarray(0, -1)} `), receipt, candidatesDocument: transferCandidatesDocument() }), /receipt mismatch/);
 });
 
 test("partial/duplicate/page-total drift, provider failure, malformed schema, timeout 및 output collision은 output 없이 fail closed한다", async () => {
@@ -212,6 +248,10 @@ function rows(page, perPage) {
   });
 }
 function pagePayload(page, perPage) { const data = rows(page, perPage); return { currentCount: data.length, data, matchCount: 145, page, perPage, totalCount: 145 }; }
+function transferCandidatesDocument() {
+  const endpoint = "https://api.odcloud.kr/api/15044419/v1/uddi:7008c675-928f-41d6-9a01-b3541f78466b";
+  return { candidates: [{ id: "seoul-metro-transfer-distance-duration", requestUrl: endpoint, operation: { endpoint, method: "GET", auth: { env: "DATA_GO_KR_SERVICE_KEY", parameter: "serviceKey", placement: "query", valueEncoding: "url-search-params-once", loadPolicy: "process-env-no-shell-parsing" }, requiredParameters: ["serviceKey", "page", "perPage", "returnType"] }, evidence: { endpoint, outputFields: ["연번", "호선", "환승역명", "환승노선", "환승거리", "환승소요시간"], coverageLimitations: ["145개 환승역(2025-12-31 기준) 커버"] } }] };
+}
 function jsonResponse(value) { return new Response(JSON.stringify(value), { status: 200, headers: { "content-type": "application/json" } }); }
 function canonicalBytes(value) { return Buffer.from(`${JSON.stringify(value)}\n`, "utf8"); }
 function sha256(value) { return createHash("sha256").update(value).digest("hex"); }

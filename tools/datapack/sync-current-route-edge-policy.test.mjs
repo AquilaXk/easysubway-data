@@ -4,7 +4,19 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { syncCurrentRouteEdgePolicy, syncCurrentRouteEdgePolicyFile } from "./sync-current-route-edge-policy.mjs";
+import {
+  CURRENT_ROUTE_EDGE_INPUT,
+  syncCurrentRouteEdgePolicy,
+  syncCurrentRouteEdgePolicyFile,
+} from "./sync-current-route-edge-policy.mjs";
+
+test("policy CLI는 current full-capital route output만 소비한다", () => {
+  assert.equal(
+    CURRENT_ROUTE_EDGE_INPUT,
+    "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
+  );
+  assert.equal(CURRENT_ROUTE_EDGE_INPUT.includes("current-route-edge-evaluation"), false);
+});
 
 test("current route edge policy는 exact RIDE partition digest만 동기화한다", async () => {
   const raw = (edgeId, serviceClass, servicePattern) => ({ edgeId, edgeType: "RIDE", fromNodeId: `${edgeId}:a`, toNodeId: `${edgeId}:b`, durationSeconds: 1, distanceMeters: 1, serviceClass, servicePattern });

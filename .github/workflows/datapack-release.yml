@@ -786,6 +786,8 @@ jobs:
               --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}" \
               --candidate-fixture-override "${EASYSUBWAY_DATAPACK_CANDIDATE_FIXTURE}" \
               --server-route-coverage-authority "${EASYSUBWAY_DATAPACK_ROUTE_COVERAGE_AUTHORITY}" \
+              --current-capital-station-line-input "${EASYSUBWAY_DATAPACK_STATION_LINE_INPUT}" \
+              --current-capital-route-edge-input "${EASYSUBWAY_DATAPACK_ROUTE_EDGE_INPUT}" \
               --output "${EASYSUBWAY_DATAPACK_OUTPUT}"
           else
             node tools/datapack/build-datapack.mjs \
@@ -955,6 +957,7 @@ jobs:
           node tools/datapack/build-route-graph-topology-report.mjs \
             --manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json" \
             --root "${EASYSUBWAY_DATAPACK_STAGE}" \
+            --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}" \
             --output "${EASYSUBWAY_ROUTE_GRAPH_TOPOLOGY_REPORT}"
           test -s "${EASYSUBWAY_ROUTE_GRAPH_TOPOLOGY_REPORT}"
 

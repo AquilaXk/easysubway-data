@@ -120,10 +120,6 @@ async function bindReleaseRequestToCandidate(root) {
   const candidatePath = path.join(root, "tools/datapack/release/candidate-build-spec.json");
   const requestPath = path.join(root, "tools/datapack/release/release-request.json");
   const candidate = JSON.parse(await readFile(candidatePath, "utf8"));
-  candidate.sourceSnapshots = candidate.sourceSnapshots.filter(
-    ({ sourceId }) => sourceId !== "seoul-metro-transfer-distance-duration",
-  );
-  candidate.sourceSnapshotIds = candidate.sourceSnapshots.map(({ snapshotId }) => snapshotId);
   const selectedSnapshotIds = new Set(candidate.sourceSnapshotIds);
   const snapshots = JSON.parse(await readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8"));
   candidate.sourceSnapshotSetHash = sha(JSON.stringify(

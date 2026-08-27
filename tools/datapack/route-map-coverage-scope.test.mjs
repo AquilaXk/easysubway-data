@@ -5,7 +5,6 @@ import path from "node:path";
 import test from "node:test";
 
 import { parseMolitLineOperatorRosters } from "./build-molit-nationwide-fixture.mjs";
-import { auditedInheritedClaimRequirementKeys } from "./run-nationwide-candidate-coverage-gate.mjs";
 import { ROUTE_MAP_DOMAIN, auditRouteMapCoverageScopes } from "./route-map-coverage-scope.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
@@ -16,13 +15,6 @@ const GWANGJU_SNAPSHOT_PATH = "tools/datapack/sources/gwangju-transportation-rou
 const UI_SNAPSHOT_PATH = "tools/datapack/sources/kric-ui-sinseol-route-map-positions-20260725.json";
 const DAEGU_SNAPSHOT_PATH = "tools/datapack/sources/daegu-transportation-route-map-positions-20260724.json";
 const CAPITAL_TOPOLOGY_PATH = "tools/datapack/sources/capital-route-topology-20260724.json";
-const CANDIDATE_SPEC_PATH = "tools/datapack/nationwide-candidate-pack-spec.json";
-const CANDIDATE_EVIDENCE_PATH = "tools/datapack/reports/nationwide-candidate-coverage-gate.json";
-const INHERITED_REVIEWED_PACK_PATH = "tools/datapack/release/capital-production-reviewed-pack.json";
-// reviewed pack의 historical predecessor audit 행이다. 현재 inventory에서는 active line-scope를
-// claim하지 않으며, 아래 synthetic fixture만 과거 claim의 재활성화를 fail-closed로 검증한다.
-const CANDIDATE_REDESCRIBED_SOURCE_ID = "seoulmetro-cyberstation-route-map";
-const CANDIDATE_REDESCRIBED_SCOPE_KEY = "capital:seoul-metro:seoul-4";
 
 // #2499·#2508에서 배선한 dual-operator containment는 전 scope 감사의 부분집합으로 유지한다.
 const DUAL_OPERATOR_SCOPE_KEYS = Object.freeze([
@@ -80,14 +72,11 @@ async function readJson(relativePath) {
 }
 
 async function loadAuditInputs() {
-  const [inventory, targets, exemptions, molitCsvBytes, candidateSpecBytes, candidateEvidence, inheritedPackBytes] = await Promise.all([
+  const [inventory, targets, exemptions, molitCsvBytes] = await Promise.all([
     readJson("tools/datapack/source-inventory.json"),
     readJson("tools/datapack/nationwide-coverage-targets.json"),
     readJson(EXEMPTIONS_PATH),
     readFile(path.join(root, MOLIT_ROSTER_PATH)),
-    readFile(path.join(root, CANDIDATE_SPEC_PATH)),
-    readJson(CANDIDATE_EVIDENCE_PATH),
-    readFile(path.join(root, INHERITED_REVIEWED_PACK_PATH)),
   ]);
   const snapshotsByPath = new Map();
   for (const source of inventory.sources) {
@@ -118,13 +107,6 @@ async function loadAuditInputs() {
     snapshotsByPath,
     topologiesByPath,
     rawSourcesByPath,
-    candidateLineScopeAdmission: {
-      specPath: CANDIDATE_SPEC_PATH,
-      specBytes: candidateSpecBytes,
-      inheritedPackPath: INHERITED_REVIEWED_PACK_PATH,
-      inheritedPackBytes,
-      evidence: candidateEvidence,
-    },
   };
 }
 
@@ -786,308 +768,14 @@ test("MOLIT roster가 없는 scope는 감사에서 제외되고 위반으로 남
   );
 });
 
-// 이 축을 때리려면 대상 소스에 admitted snapshot 경로도, candidate 재기술 근거도 없어야 한다. 재기술이
-// 남아 있는 소스에서 경로만 지우면 판정이 재기술 근거 쪽 축(SOURCE_CANDIDATE_SCOPE_UNAUDITED)으로 넘어가
-// 이 분기를 덮지 못한다(#2595에서 대전 소스가 재기술 대상이 되면서 실제로 그렇게 갈렸다). #2595 B3에서
-// lineIds를 claim한 route_map_positions 소스가 전부 재기술 대상이 됐으므로 이제는 inventory와 spec 두
-// 정본에서 함께 지운다 — 어느 한쪽만 지우면 다른 축으로 갈린다는 사실 자체가 이 회귀의 전제다.
 test("lineIds를 claim한 route_map_positions 소스는 admitted snapshot 경로가 있어야 한다 (#2516)", async () => {
   const inputs = await loadAuditInputs();
   const sourceId = "kric-seohae-route-map-positions";
   const inventory = structuredClone(inputs.inventory);
   delete inventory.sources.find(({ id }) => id === sourceId).routeMapAdmissionEvidence.snapshotPath;
-  const spec = JSON.parse(inputs.candidateLineScopeAdmission.specBytes.toString("utf8"));
-  spec.lineScopeRedescriptions = spec.lineScopeRedescriptions.filter((entry) => entry.sourceId !== sourceId);
-  // spec 바이트를 바꾸면 evidence 결속 해시도 함께 옮겨야 한다. 그러지 않으면 이 소스가 아니라 다른
-  // 다른 snapshotless source가 입력 결속 축에서 먼저 걸리지 않도록 spec 해시도 함께 맞춘다.
-  const specBytes = Buffer.from(JSON.stringify(spec));
-  const evidence = structuredClone(inputs.candidateLineScopeAdmission.evidence);
-  evidence.inputs.spec.sha256 = createHash("sha256").update(specBytes).digest("hex");
 
-  const result = auditRouteMapCoverageScopes({
-    ...inputs,
-    inventory,
-    candidateLineScopeAdmission: { ...inputs.candidateLineScopeAdmission, specBytes, evidence },
-  });
+  const result = auditRouteMapCoverageScopes({ ...inputs, inventory });
 
   assert.deepEqual(violationKinds(result), ["SOURCE_SNAPSHOT_PATH_MISSING"]);
   assert.equal(result.auditedScopeKeys.includes("capital:korail:line-051552e50435"), false);
-});
-
-test("historical inherited line-scope claim fixture는 exact reviewed pack과 baseline support에 결속된다", async (context) => {
-  const inputs = await loadAuditInputs();
-  const claimant = inputs.inventory.sources.find(({ id }) => id === CANDIDATE_REDESCRIBED_SOURCE_ID);
-  // 현재 inventory의 historical 행은 active line scope를 claim하지 않는다. 아래는 reviewed-pack의 과거
-  // 행이 다시 활성 claim으로 들어올 때 필요한 exact evidence를 독립적으로 고정하는 synthetic fixture다.
-  assert.equal(claimant.coverageScope.lineIds, undefined);
-  claimant.coverageScope.lineIds = ["seoul-4"];
-  const requirementKey = `${CANDIDATE_REDESCRIBED_SCOPE_KEY}:${ROUTE_MAP_DOMAIN}`;
-  for (const variant of ["baseline", "lineScoped"]) {
-    const requirement = inputs.candidateLineScopeAdmission.evidence.variants[variant].pilotRequirements
-      .find(({ requirementKey: key }) => key === requirementKey);
-    requirement.status = "SUPPORTED";
-    requirement.sourceIds = [claimant.id];
-    requirement.missingFields = [];
-    requirement.supportingRecordCountByField = {
-      route_map_position: 2,
-      route_map_label_polygon: 2,
-    };
-    inputs.candidateLineScopeAdmission.evidence.variants[variant].supportedRequirementKeys.push(requirementKey);
-    inputs.candidateLineScopeAdmission.evidence.variants[variant].supportedRequirementKeys.sort();
-  }
-  inputs.candidateLineScopeAdmission.evidence.inputs.spec.sha256 = sha256(
-    inputs.candidateLineScopeAdmission.specBytes,
-  );
-  inputs.candidateLineScopeAdmission.evidence.inputs.inheritedPack.sha256 = sha256(
-    inputs.candidateLineScopeAdmission.inheritedPackBytes,
-  );
-  const boundAdmission = ({ specBytes = inputs.candidateLineScopeAdmission.specBytes, inheritedPackBytes = inputs.candidateLineScopeAdmission.inheritedPackBytes, evidence = inputs.candidateLineScopeAdmission.evidence } = {}) => {
-    const boundEvidence = structuredClone(evidence);
-    boundEvidence.inputs.spec.sha256 = sha256(specBytes);
-    boundEvidence.inputs.inheritedPack.sha256 = sha256(inheritedPackBytes);
-    return {
-      ...inputs.candidateLineScopeAdmission,
-      specBytes,
-      inheritedPackBytes,
-      evidence: boundEvidence,
-    };
-  };
-
-  await context.test("exact pack·baseline·lineScoped 근거와 독립 containment가 모두 있으면 통과한다", () => {
-    const result = auditRouteMapCoverageScopes(inputs);
-    assert.deepEqual(violationKinds(result), []);
-    assert.ok(result.auditedScopeKeys.includes(CANDIDATE_REDESCRIBED_SCOPE_KEY));
-  });
-
-  await context.test("snapshotless inherited claimant key는 candidate 상세 evidence 대상에 포함된다", () => {
-    const source = structuredClone(claimant);
-    source.id = "synthetic-inherited-route-map";
-    const spec = { lineScopeRedescriptions: [] };
-    const inventory = { sources: [source] };
-    const targets = {
-      activeLineScopes: [{ regionId: "capital", operatorId: "seoul-metro", lineId: "seoul-4" }],
-    };
-    const inheritedPack = {
-      packs: [{ sourceInventory: [structuredClone(source)] }],
-    };
-    assert.deepEqual(
-      auditedInheritedClaimRequirementKeys({ spec, inventory, targets, inheritedPack }),
-      [`${CANDIDATE_REDESCRIBED_SCOPE_KEY}:${ROUTE_MAP_DOMAIN}`],
-    );
-
-    const unrelatedDomainSpec = {
-      lineScopeRedescriptions: [{ sourceId: source.id, sourceDomain: "schedule_timetable" }],
-    };
-    assert.deepEqual(
-      auditedInheritedClaimRequirementKeys({
-        spec: unrelatedDomainSpec,
-        inventory,
-        targets,
-        inheritedPack,
-      }),
-      [`${CANDIDATE_REDESCRIBED_SCOPE_KEY}:${ROUTE_MAP_DOMAIN}`],
-    );
-  });
-
-  await context.test("입력 결속·pack source·scope drift는 fail closed한다", () => {
-    const specHashDriftEvidence = structuredClone(inputs.candidateLineScopeAdmission.evidence);
-    specHashDriftEvidence.inputs.spec.sha256 = "0".repeat(64);
-    assert.deepEqual(
-      violationKinds(auditRouteMapCoverageScopes({
-        ...inputs,
-        candidateLineScopeAdmission: { ...inputs.candidateLineScopeAdmission, evidence: specHashDriftEvidence },
-      })),
-      ["SOURCE_INHERITED_EVIDENCE_UNBOUND"],
-    );
-
-    const specPathDriftEvidence = structuredClone(inputs.candidateLineScopeAdmission.evidence);
-    specPathDriftEvidence.inputs.spec.path = "tools/datapack/other-spec.json";
-    assert.deepEqual(
-      violationKinds(auditRouteMapCoverageScopes({
-        ...inputs,
-        candidateLineScopeAdmission: { ...inputs.candidateLineScopeAdmission, evidence: specPathDriftEvidence },
-      })),
-      ["SOURCE_INHERITED_EVIDENCE_UNBOUND"],
-    );
-
-    const unboundEvidence = structuredClone(inputs.candidateLineScopeAdmission.evidence);
-    unboundEvidence.inputs.inheritedPack.sha256 = "0".repeat(64);
-    assert.deepEqual(
-      violationKinds(auditRouteMapCoverageScopes({
-        ...inputs,
-        candidateLineScopeAdmission: { ...inputs.candidateLineScopeAdmission, evidence: unboundEvidence },
-      })),
-      ["SOURCE_INHERITED_EVIDENCE_UNBOUND"],
-    );
-
-    const inheritedPackBytesDrift = Buffer.concat([
-      inputs.candidateLineScopeAdmission.inheritedPackBytes,
-      Buffer.from("\n"),
-    ]);
-    assert.deepEqual(
-      violationKinds(auditRouteMapCoverageScopes({
-        ...inputs,
-        candidateLineScopeAdmission: {
-          ...inputs.candidateLineScopeAdmission,
-          inheritedPackBytes: inheritedPackBytesDrift,
-        },
-      })),
-      ["SOURCE_INHERITED_EVIDENCE_UNBOUND"],
-    );
-
-    const pathDriftEvidence = structuredClone(inputs.candidateLineScopeAdmission.evidence);
-    pathDriftEvidence.inputs.inheritedPack.path = "tools/datapack/release/other.json";
-    assert.deepEqual(
-      violationKinds(auditRouteMapCoverageScopes({
-        ...inputs,
-        candidateLineScopeAdmission: { ...inputs.candidateLineScopeAdmission, evidence: pathDriftEvidence },
-      })),
-      ["SOURCE_INHERITED_EVIDENCE_UNBOUND"],
-    );
-
-    assert.deepEqual(
-      violationKinds(auditRouteMapCoverageScopes({
-        ...inputs,
-        candidateLineScopeAdmission: {
-          ...inputs.candidateLineScopeAdmission,
-          inheritedPackBytes: Buffer.from("{"),
-        },
-      })),
-      ["SOURCE_INHERITED_EVIDENCE_UNBOUND"],
-    );
-
-    const pack = JSON.parse(inputs.candidateLineScopeAdmission.inheritedPackBytes.toString("utf8"));
-    pack.packs[0].sourceInventory = pack.packs[0].sourceInventory.filter(({ id }) => id !== claimant.id);
-    const missingSourceBytes = Buffer.from(JSON.stringify(pack));
-    assert.deepEqual(
-      violationKinds(auditRouteMapCoverageScopes({
-        ...inputs,
-        candidateLineScopeAdmission: boundAdmission({ inheritedPackBytes: missingSourceBytes }),
-      })),
-      ["SOURCE_INHERITED_SOURCE_INVALID"],
-    );
-
-    const duplicatePack = JSON.parse(inputs.candidateLineScopeAdmission.inheritedPackBytes.toString("utf8"));
-    duplicatePack.packs[0].sourceInventory.push(structuredClone(
-      duplicatePack.packs[0].sourceInventory.find(({ id }) => id === claimant.id),
-    ));
-    const duplicateSourceBytes = Buffer.from(JSON.stringify(duplicatePack));
-    assert.deepEqual(
-      violationKinds(auditRouteMapCoverageScopes({
-        ...inputs,
-        candidateLineScopeAdmission: boundAdmission({ inheritedPackBytes: duplicateSourceBytes }),
-      })),
-      ["SOURCE_INHERITED_SOURCE_INVALID"],
-    );
-
-    for (const [scopeKey, driftedValue] of [
-      ["regionIds", ["other-region"]],
-      ["operatorIds", ["other-operator"]],
-      ["lineIds", ["seoul-2"]],
-      ["sourceDomains", ["other-domain"]],
-    ]) {
-      const driftedPack = JSON.parse(inputs.candidateLineScopeAdmission.inheritedPackBytes.toString("utf8"));
-      driftedPack.packs[0].sourceInventory.find(({ id }) => id === claimant.id).coverageScope[scopeKey] = driftedValue;
-      const driftedScopeBytes = Buffer.from(JSON.stringify(driftedPack));
-      assert.deepEqual(
-        violationKinds(auditRouteMapCoverageScopes({
-          ...inputs,
-          candidateLineScopeAdmission: boundAdmission({ inheritedPackBytes: driftedScopeBytes }),
-        })),
-        ["SOURCE_INHERITED_SCOPE_MISMATCH"],
-        scopeKey,
-      );
-    }
-  });
-
-  await context.test("baseline·lineScoped status/source와 independent containment를 유지해야 한다", () => {
-    const requirementKey = `${CANDIDATE_REDESCRIBED_SCOPE_KEY}:${ROUTE_MAP_DOMAIN}`;
-    const baselineMissing = structuredClone(inputs.candidateLineScopeAdmission.evidence);
-    baselineMissing.variants.baseline.supportedRequirementKeys = baselineMissing.variants.baseline.supportedRequirementKeys
-      .filter((key) => key !== requirementKey);
-    assert.deepEqual(
-      violationKinds(auditRouteMapCoverageScopes({
-        ...inputs,
-        candidateLineScopeAdmission: boundAdmission({ evidence: baselineMissing }),
-      })),
-      ["SOURCE_INHERITED_BASELINE_UNSUPPORTED"],
-    );
-
-    const baselineSourceMissing = structuredClone(inputs.candidateLineScopeAdmission.evidence);
-    baselineSourceMissing.variants.baseline.pilotRequirements.find(
-      ({ requirementKey: key }) => key === requirementKey,
-    ).sourceIds = [];
-    assert.deepEqual(
-      violationKinds(auditRouteMapCoverageScopes({
-        ...inputs,
-        candidateLineScopeAdmission: boundAdmission({ evidence: baselineSourceMissing }),
-      })),
-      ["SOURCE_INHERITED_BASELINE_UNSUPPORTED"],
-    );
-
-    const baselineStatusMissing = structuredClone(inputs.candidateLineScopeAdmission.evidence);
-    baselineStatusMissing.variants.baseline.pilotRequirements.find(
-      ({ requirementKey: key }) => key === requirementKey,
-    ).status = "MISSING";
-    assert.deepEqual(
-      violationKinds(auditRouteMapCoverageScopes({
-        ...inputs,
-        candidateLineScopeAdmission: boundAdmission({ evidence: baselineStatusMissing }),
-      })),
-      ["SOURCE_INHERITED_BASELINE_UNSUPPORTED"],
-    );
-
-    const lineScopedSourceMissing = structuredClone(inputs.candidateLineScopeAdmission.evidence);
-    lineScopedSourceMissing.variants.lineScoped.pilotRequirements.find(
-      ({ requirementKey: key }) => key === requirementKey,
-    ).sourceIds = ["seoul-metro-route-map-positions"];
-    assert.deepEqual(
-      violationKinds(auditRouteMapCoverageScopes({
-        ...inputs,
-        candidateLineScopeAdmission: boundAdmission({ evidence: lineScopedSourceMissing }),
-      })),
-      ["SOURCE_INHERITED_LINE_SCOPED_UNSUPPORTED"],
-    );
-
-    const lineScopedStatusMissing = structuredClone(inputs.candidateLineScopeAdmission.evidence);
-    lineScopedStatusMissing.variants.lineScoped.pilotRequirements.find(
-      ({ requirementKey: key }) => key === requirementKey,
-    ).status = "MISSING";
-    assert.deepEqual(
-      violationKinds(auditRouteMapCoverageScopes({
-        ...inputs,
-        candidateLineScopeAdmission: boundAdmission({ evidence: lineScopedStatusMissing }),
-      })),
-      ["SOURCE_INHERITED_LINE_SCOPED_UNSUPPORTED"],
-    );
-
-    const inventory = structuredClone(inputs.inventory);
-    inventory.sources.find(({ id }) => id === "seoul-metro-route-map-positions").coverageScope.lineIds = [];
-    const result = auditRouteMapCoverageScopes({ ...inputs, inventory });
-    assert.ok(violationKinds(result).includes("SOURCE_INHERITED_SCOPE_UNAUDITED"));
-    assert.equal(result.auditedScopeKeys.includes(CANDIDATE_REDESCRIBED_SCOPE_KEY), false);
-
-    const targets = structuredClone(inputs.targets);
-    targets.activeLineScopes = targets.activeLineScopes
-      .filter((scope) => scopeKeyOf(scope) !== CANDIDATE_REDESCRIBED_SCOPE_KEY);
-    const inactiveResult = auditRouteMapCoverageScopes({ ...inputs, targets });
-    assert.ok(violationKinds(inactiveResult).includes("SOURCE_INHERITED_SCOPE_UNAUDITED"));
-    assert.equal(inactiveResult.auditedScopeKeys.includes(CANDIDATE_REDESCRIBED_SCOPE_KEY), false);
-  });
-
-  await context.test("candidate redescription path도 같은 bound inputs에서 유지된다", () => {
-    const spec = JSON.parse(inputs.candidateLineScopeAdmission.specBytes.toString("utf8"));
-    spec.lineScopeRedescriptions.push({
-      sourceId: claimant.id,
-      sourceDomain: ROUTE_MAP_DOMAIN,
-      lineIds: [...claimant.coverageScope.lineIds],
-      requirementKeys: [`${CANDIDATE_REDESCRIBED_SCOPE_KEY}:${ROUTE_MAP_DOMAIN}`],
-    });
-    const specBytes = Buffer.from(JSON.stringify(spec));
-    const result = auditRouteMapCoverageScopes({
-      ...inputs,
-      candidateLineScopeAdmission: boundAdmission({ specBytes }),
-    });
-    assert.deepEqual(violationKinds(result), []);
-  });
 });

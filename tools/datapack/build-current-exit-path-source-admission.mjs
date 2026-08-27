@@ -9,7 +9,6 @@ import {
   canonicalExitPathAdmissionJson,
 } from "./build-exit-path-admission.mjs";
 import { readRegularSnapshot } from "./build-current-kric-exit-collection-plan.mjs";
-import { canonicalFacilitySourceAdmissionJson } from "./build-facility-source-admission.mjs";
 import { canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-current-capital-facility-source-admission.mjs";
 import { canonicalKricExitPathProviderSnapshotJson } from "./collect-kric-exit-path-provider-snapshot.mjs";
 import { consumeCurrentKricExitCollectionBundle } from "./consume-current-kric-exit-collection-bundle.mjs";
@@ -155,7 +154,7 @@ export async function main(argv, { log = console.log } = {}) {
         collectionBundle: args.collectionBundle,
         expectedBundleSha256: args.expectedBundleSha256,
         expectedRepositorySha: args.expectedRepositorySha,
-        expectedWorkflowRunId: args.expectedWorkflowRunId,
+        expectedOperationId: args.expectedOperationId,
       })
       : Promise.all([
         readRegularSnapshot(args.providerSnapshot, "provider snapshot"),
@@ -334,16 +333,16 @@ function validateProviderRow(row) {
 }
 
 function validateFacilityAdmission(value, collectionPlan, candidateBuildSpec, sourceSnapshots, observedAt) {
-  if (value?.artifactKind === "current-capital-facility-source-admission") {
-    return adaptCurrentCapitalFacilityAdmission(value, collectionPlan, candidateBuildSpec, sourceSnapshots, observedAt);
-  }
-  canonicalFacilitySourceAdmissionJson(value);
-  if (value.artifactKind !== "facility-source-admission-matrix" || value.decision !== "GO"
-    || !Array.isArray(value.cells) || value.cells.length === 0
-    || !Array.isArray(value.queryPartition?.joined)) {
+  if (value?.artifactKind !== "current-capital-facility-source-admission") {
     throw new Error("facility admission identity mismatch");
   }
-  return value;
+  return adaptCurrentCapitalFacilityAdmission(
+    value,
+    collectionPlan,
+    candidateBuildSpec,
+    sourceSnapshots,
+    observedAt,
+  );
 }
 
 function adaptCurrentCapitalFacilityAdmission(value, collectionPlan, candidateBuildSpec, sourceSnapshots, observedAt) {
@@ -643,7 +642,7 @@ function parseArgs(argv) {
   const bundlePathFlags = new Set(["collection-bundle"]);
   const allowed = new Set([
     ...commonPathFlags, ...explicitPathFlags, ...bundlePathFlags,
-    "observed-at", "expected-bundle-sha256", "expected-repository-sha", "expected-workflow-run-id",
+    "observed-at", "expected-bundle-sha256", "expected-repository-sha", "expected-operation-id",
   ]);
   if (!Array.isArray(argv) || argv.length % 2 !== 0) throw new Error("current EXIT admission arguments mismatch");
   const values = {};
@@ -663,8 +662,8 @@ function parseArgs(argv) {
   const explicit = [...explicitPathFlags].filter((flag) => values[flag] !== undefined).length;
   const bundle = values["collection-bundle"] !== undefined;
   if ((explicit !== 2 && !bundle) || (explicit !== 0 && bundle)
-    || (bundle && (values["expected-bundle-sha256"] === undefined || values["expected-repository-sha"] === undefined || values["expected-workflow-run-id"] === undefined))
-    || (!bundle && (values["expected-bundle-sha256"] !== undefined || values["expected-repository-sha"] !== undefined || values["expected-workflow-run-id"] !== undefined))) {
+    || (bundle && (values["expected-bundle-sha256"] === undefined || values["expected-repository-sha"] === undefined || values["expected-operation-id"] === undefined))
+    || (!bundle && (values["expected-bundle-sha256"] !== undefined || values["expected-repository-sha"] !== undefined || values["expected-operation-id"] !== undefined))) {
     throw new Error("current EXIT admission arguments mismatch");
   }
   requiredUtcInstant(values["observed-at"], "--observed-at");
@@ -675,8 +674,8 @@ function parseArgs(argv) {
     if (!/^[a-f0-9]{40}$/.test(values["expected-repository-sha"])) {
       throw new Error("expected repository SHA mismatch");
     }
-    if (!/^[1-9][0-9]*$/.test(values["expected-workflow-run-id"])) {
-      throw new Error("expected workflow run ID mismatch");
+    if (!/^[a-z0-9][a-z0-9-]{7,127}$/u.test(values["expected-operation-id"])) {
+      throw new Error("expected operation identity mismatch");
     }
   }
   return {
@@ -691,7 +690,7 @@ function parseArgs(argv) {
     collectionBundle: values["collection-bundle"],
     expectedBundleSha256: values["expected-bundle-sha256"],
     expectedRepositorySha: values["expected-repository-sha"],
-    expectedWorkflowRunId: bundle ? Number(values["expected-workflow-run-id"]) : undefined,
+    expectedOperationId: values["expected-operation-id"],
   };
 }
 

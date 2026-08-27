@@ -6,16 +6,19 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-current-capital-facility-source-admission.mjs";
-import { canonicalCurrentExitAdmissionArtifactReceiptJson } from "./build-current-exit-admission-artifact-receipt.mjs";
+import { canonicalCurrentExitAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
 import { canonicalExitPathAdmissionJson } from "./build-exit-path-admission.mjs";
+import { CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_KIND, verifyCurrentCapitalLiveChainFanInComponents } from "./build-current-capital-live-chain-boundary.mjs";
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
 import { readCurrentCapitalAccessibilityTransitionBoundary } from "./current-capital-accessibility-transition.mjs";
+export { canonicalCurrentCapitalStationLineInputJson } from "./current-capital-station-line-contract.mjs";
+import { canonicalCurrentCapitalStationLineInputJson } from "./current-capital-station-line-contract.mjs";
 
 const FILES = Object.freeze({
   facility: "tools/datapack/release/current-capital-facility-source-admission.json",
   exitNormalized: "tools/datapack/release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json",
   exitAdmission: "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json",
-  exitReceipt: "tools/datapack/release/current-exit-admission-v2/exit-path-admission-artifact-receipt.json",
+  exitReceipt: "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json",
   transferMetrics: "tools/datapack/release/current-transfer-topology-metrics.json",
   transferApplicability: "tools/datapack/release/current-capital-transfer-topology-applicability.json",
   inventory: "tools/datapack/source-inventory.json",
@@ -30,10 +33,10 @@ const POSITIONS = "seoul-metro-route-map-positions";
 const BLOCKED = { stationId: "station-b35616704ce3", lineId: "seoul-2" };
 
 export function buildCurrentCapitalStationLineInput(input) {
-  assertKeys(input, ["canonicalPack", "candidateBuildSpec", "exitAdmission", "exitAdmissionBytes", "exitNormalized", "exitNormalizedBytes", "exitReceipt", "facilityAdmission", "facilitySnapshotBytes", "policy", "sourceInventory", "sourceInventoryBytes", "sourceSetTransition", "sourceSnapshots", "transferApplicability", "transferMetrics"], "full-capital input");
+  assertInputKeys(input);
   const stationLines = canonicalStationLines(input.canonicalPack, input.facilityAdmission);
-  const { candidate, evidenceSourceSetSha256 } = validateCandidate(input, stationLines);
-  const facility = validateFacility(input.facilityAdmission, input.facilitySnapshotBytes, stationLines, candidate, evidenceSourceSetSha256);
+  const { candidate, evidenceSourceSetSha256, candidatePublishedAt } = validateCandidate(input, stationLines);
+  const facility = validateFacility(input.facilityAdmission, input.facilitySnapshotBytes, stationLines, candidate, evidenceSourceSetSha256, candidatePublishedAt);
   const exit = validateExit(input, stationLines, candidate, evidenceSourceSetSha256);
   const transfer = validateTransfer(input, stationLines, candidate);
   validatePolicy(input.policy);
@@ -44,20 +47,17 @@ export function buildCurrentCapitalStationLineInput(input) {
   return canonicalObject({ candidate, stationLines, evidenceRows });
 }
 
-export function canonicalCurrentCapitalStationLineInputJson(value) {
-  assertKeys(value, ["candidate", "stationLines", "evidenceRows"], "full-capital station-line output");
-  if (!Array.isArray(value.stationLines) || !Array.isArray(value.evidenceRows)) throw new Error("full-capital station-line arrays are required");
-  return canonicalJson(value);
-}
-
-export async function readCurrentCapitalInputs(repositoryRoot, { readTransitionBoundaryImpl = readCurrentCapitalAccessibilityTransitionBoundary } = {}) {
+export async function readCurrentCapitalInputs(repositoryRoot, { readTransitionBoundaryImpl = readCurrentCapitalAccessibilityTransitionBoundary, readCurrentFanInBoundaryImpl = null } = {}) {
   const root = path.resolve(repositoryRoot);
-  const [entries, sourceSetTransition] = await Promise.all([
+  const [entries, currentFanIn] = await Promise.all([
     Promise.all(Object.entries(FILES).map(async ([key, relative]) => [key, await readJson(root, relative)])),
-    readTransitionBoundaryImpl({ repositoryRoot: root }),
+    readCurrentFanInBoundaryImpl ? readCurrentFanInBoundaryImpl({ repositoryRoot: root }) : Promise.resolve(null),
   ]);
   const values = Object.fromEntries(entries);
-  if (sourceSetTransition.currentCandidateBytesSha256 !== sha256(values.candidate.bytes)
+  const sourceSetTransition = currentFanIn?.boundary ?? await readTransitionBoundaryImpl({ repositoryRoot: root });
+  if (currentFanIn) {
+    if (!currentFanIn.components || sourceSetTransition.kind !== CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_KIND) throw new Error("full-capital current fan-in reader mismatch");
+  } else if (sourceSetTransition.currentCandidateBytesSha256 !== sha256(values.candidate.bytes)
     || sourceSetTransition.facilityAdmissionBytesSha256 !== sha256(values.facility.bytes)) {
     throw new Error("full-capital transition input snapshot mismatch");
   }
@@ -79,6 +79,7 @@ export async function readCurrentCapitalInputs(repositoryRoot, { readTransitionB
     sourceInventory: values.inventory.value,
     sourceInventoryBytes: values.inventory.bytes,
     sourceSetTransition,
+    ...(currentFanIn ? { currentFanInComponents: currentFanIn.components } : {}),
     sourceSnapshots: values.snapshots.value,
     transferApplicability: values.transferApplicability.value,
     transferMetrics: values.transferMetrics.value,
@@ -98,8 +99,13 @@ function validateCandidate(input, stationLines) {
   const spec = input.candidateBuildSpec;
   const exitCandidate = input.exitAdmission?.candidate;
   const transition = input.sourceSetTransition;
+  const currentFanIn = transition?.kind === CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_KIND;
   const publicStaticV2Refresh = transition?.kind === "PUBLIC_STATIC_NETWORK_V2_SUCCESSOR_REFRESH";
-  assertKeys(transition, publicStaticV2Refresh
+  if (currentFanIn) {
+    verifyCurrentCapitalLiveChainFanInComponents(transition, input.currentFanInComponents);
+    verifyCurrentFanInInputProjection(input);
+  }
+  else assertKeys(transition, publicStaticV2Refresh
     ? ["currentCandidateBytesSha256", "currentCandidateSourceSetSha256", "evidenceSourceSetSha256", "facilityAdmissionBytesSha256", "kind", "molitPreviousSnapshotId", "positionPreviousSnapshotId", "predecessorCandidateSourceSetSha256"]
     : ["currentCandidateBytesSha256", "currentCandidateSourceSetSha256", "evidenceSourceSetSha256", "facilityAdmissionBytesSha256"], "full-capital source-set transition");
   if (typeof spec?.candidateId !== "string" || spec.candidateId === "" || !Array.isArray(spec.sourceSnapshots) || !Array.isArray(spec.sourceSnapshotIds)
@@ -119,7 +125,7 @@ function validateCandidate(input, stationLines) {
     positions: requireCurrentPublicV2Head(selected, input.sourceSnapshots, POSITIONS, transition.positionPreviousSnapshotId),
     molit: requireCurrentPublicV2Head(selected, input.sourceSnapshots, MOLIT, transition.molitPreviousSnapshotId),
   } : null;
-  const predecessorIds = new Set(publicStaticV2Refresh
+  const predecessorIds = new Set(currentFanIn ? [] : publicStaticV2Refresh
     ? spec.sourceSnapshotIds.map((snapshotId, index) => {
       const sourceId = spec.sourceSnapshots[index].sourceId;
       if (sourceId === POSITIONS) return publicV2.positions.previousSnapshotId;
@@ -131,7 +137,7 @@ function validateCandidate(input, stationLines) {
   const currentSeoulRows = publicStaticV2Refresh ? selected.filter(({ sourceId }) =>
     sourceId === "seoul-metro-accessibility") : [];
   const previousSeoulSnapshotId = currentSeoulRows[0]?.previousSnapshotId;
-  const evidenceIds = publicStaticV2Refresh ? new Set(spec.sourceSnapshotIds.flatMap((snapshotId, index) => {
+  const evidenceIds = currentFanIn ? new Set(spec.sourceSnapshotIds) : publicStaticV2Refresh ? new Set(spec.sourceSnapshotIds.flatMap((snapshotId, index) => {
     const sourceId = spec.sourceSnapshots[index].sourceId;
     if (sourceId === "seoul-metro-transfer-distance-duration") return [];
     if (sourceId === "seoul-metro-accessibility") return [previousSeoulSnapshotId];
@@ -140,10 +146,15 @@ function validateCandidate(input, stationLines) {
     return [snapshotId];
   })) : predecessorIds;
   const evidenceInLedgerOrder = input.sourceSnapshots.filter(({ snapshotId }) => evidenceIds.has(snapshotId));
-  if (![transition.currentCandidateBytesSha256, transition.evidenceSourceSetSha256, transition.facilityAdmissionBytesSha256].every((value) => SHA.test(value ?? ""))
-    || transition.currentCandidateSourceSetSha256 !== spec.sourceSnapshotSetHash
-    || transition.evidenceSourceSetSha256 === spec.sourceSnapshotSetHash
-    || (publicStaticV2Refresh
+  if (currentFanIn
+    ? transition.currentCandidateSourceSetSha256 !== spec.sourceSnapshotSetHash
+      || transition.evidenceSourceSetSha256 !== spec.sourceSnapshotSetHash
+      || evidenceIds.size !== 7 || evidenceInLedgerOrder.length !== 7
+      || sha256(JSON.stringify(evidenceInLedgerOrder)) !== spec.sourceSnapshotSetHash
+    : ![transition.currentCandidateBytesSha256, transition.evidenceSourceSetSha256, transition.facilityAdmissionBytesSha256].every((value) => SHA.test(value ?? ""))
+      || transition.currentCandidateSourceSetSha256 !== spec.sourceSnapshotSetHash
+      || transition.evidenceSourceSetSha256 === spec.sourceSnapshotSetHash
+      || (publicStaticV2Refresh
       ? !SHA.test(transition.predecessorCandidateSourceSetSha256 ?? "")
         || !nonBlank(transition.positionPreviousSnapshotId)
         || !nonBlank(transition.molitPreviousSnapshotId)
@@ -179,6 +190,7 @@ function validateCandidate(input, stationLines) {
       stationSetSha256: exitCandidate.stationSetSha256,
     }),
     evidenceSourceSetSha256: transition.evidenceSourceSetSha256,
+    candidatePublishedAt: requiredUtcMillis(spec.publishedAt, "full-capital candidate publishedAt"),
   };
 }
 
@@ -245,12 +257,13 @@ function canonicalStationLines(pack, facilityAdmission) {
   return lines;
 }
 
-function validateFacility(value, snapshotBytes, stationLines, candidate, evidenceSourceSetSha256) {
+function validateFacility(value, snapshotBytes, stationLines, candidate, evidenceSourceSetSha256, candidatePublishedAt) {
   canonicalCurrentCapitalFacilitySourceAdmissionJson(value);
   if (value.decision !== "GO" || value.candidate?.candidateId !== candidate.candidateId || value.candidate?.sourceSnapshotSetHash !== evidenceSourceSetSha256) throw new Error("full-capital FACILITY identity mismatch");
   if (!Buffer.isBuffer(snapshotBytes)) throw new Error("full-capital FACILITY snapshot bytes mismatch");
   let snapshot; try { snapshot = validateKricAccessibilitySnapshotIdentity(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(snapshotBytes))); } catch (error) { throw new Error("full-capital FACILITY snapshot identity mismatch", { cause: error }); }
-  if (sha256(snapshotBytes) !== value.sourceIdentity.snapshotFileSha256 || snapshot.snapshotId !== value.sourceIdentity.snapshotId || snapshot.sourceId !== value.sourceIdentity.sourceId || snapshot.rawSha256 !== value.sourceIdentity.rawSha256 || snapshot.contentSha256 !== value.sourceIdentity.contentSha256 || snapshot.schemaFingerprint !== value.sourceIdentity.schemaFingerprint || snapshot.redactedRequestFingerprint !== value.sourceIdentity.redactedRequestFingerprint) throw new Error("full-capital FACILITY snapshot binding mismatch");
+  if (sha256(snapshotBytes) !== value.sourceIdentity.snapshotFileSha256 || snapshot.snapshotId !== value.sourceIdentity.snapshotId || snapshot.sourceId !== value.sourceIdentity.sourceId || snapshot.rawSha256 !== value.sourceIdentity.rawSha256 || snapshot.contentSha256 !== value.sourceIdentity.contentSha256 || snapshot.schemaFingerprint !== value.sourceIdentity.schemaFingerprint || snapshot.redactedRequestFingerprint !== value.sourceIdentity.redactedRequestFingerprint || snapshot.capturedAt !== value.sourceIdentity.capturedAt || snapshot.observedAt !== value.sourceIdentity.observedAt || snapshot.freshUntil !== value.sourceIdentity.freshUntil) throw new Error("full-capital FACILITY snapshot binding mismatch");
+  if (requiredUtcMillis(value.sourceIdentity.freshUntil, "full-capital FACILITY freshUntil") <= candidatePublishedAt) throw new Error("full-capital FACILITY freshness mismatch");
   const cells = indexExact(value.cells, stationLines, "FACILITY cells");
   const blocked = cells.get(key(BLOCKED));
   if (blocked?.state !== "ADMITTED_FACILITY_UNVERIFIED_BLOCKED" || value.cells.filter(({ state }) => state === "ADMITTED_FACILITY_UNVERIFIED_BLOCKED").length !== 1) throw new Error("full-capital FACILITY blocked tuple mismatch");
@@ -272,7 +285,7 @@ function validateFacility(value, snapshotBytes, stationLines, candidate, evidenc
 
 function validateExit(input, stationLines, candidate, evidenceSourceSetSha256) {
   const receipt = input.exitReceipt;
-  if (canonicalCurrentExitAdmissionArtifactReceiptJson(receipt) !== canonicalJson(receipt)
+  if (canonicalCurrentExitAdmissionOciReceiptJson(receipt) !== canonicalJson(receipt)
     || sha256(input.exitNormalizedBytes) !== receipt.normalizedSnapshotSha256 || sha256(input.exitAdmissionBytes) !== receipt.admissionSha256) throw new Error("full-capital EXIT receipt binding mismatch");
   if (canonicalExitPathAdmissionJson(input.exitAdmission) !== input.exitAdmissionBytes.toString("utf8") || input.exitAdmission.admissionDigest !== receipt.admissionDigest || input.exitAdmission.schemaVersion !== 2 || input.exitAdmission.decision !== "GO") throw new Error("full-capital EXIT admission binding mismatch");
   const normalized = input.exitNormalized;
@@ -384,6 +397,27 @@ function terminalEvidence(line, facilityType, query, source, candidate) {
 }
 
 function validatePolicy(policy) { if (policy?.artifactKind !== "route-edge-evaluation-policy" || policy.policyVersion !== "route-edge-evaluation-v2" || policy.edgeDomainMap?.RIDE?.endpointTarget !== "NONE") throw new Error("full-capital route policy mismatch"); }
+function assertInputKeys(input) {
+  const base = ["canonicalPack", "candidateBuildSpec", "exitAdmission", "exitAdmissionBytes", "exitNormalized", "exitNormalizedBytes", "exitReceipt", "facilityAdmission", "facilitySnapshotBytes", "policy", "sourceInventory", "sourceInventoryBytes", "sourceSetTransition", "sourceSnapshots", "transferApplicability", "transferMetrics"];
+  const currentFanIn = input?.sourceSetTransition?.kind === CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_KIND;
+  assertKeys(input, currentFanIn ? [...base, "currentFanInComponents"] : base, "full-capital input");
+}
+function verifyCurrentFanInInputProjection(input) {
+  const expected = {
+    candidateBuildSpec: input.candidateBuildSpec,
+    facilityAdmission: input.facilityAdmission,
+    transferMetrics: input.transferMetrics,
+    transferApplicability: input.transferApplicability,
+    sourceInventory: input.sourceInventory,
+    sourceSnapshotLedger: input.sourceSnapshots,
+    exitNormalized: input.exitNormalized,
+    exitAdmission: input.exitAdmission,
+    exitAdmissionOciReceipt: input.exitReceipt,
+  };
+  for (const [name, value] of Object.entries(expected)) {
+    if (canonicalJson(value) !== canonicalJson(input.currentFanInComponents?.[name]?.value)) throw new Error(`full-capital current fan-in ${name} projection mismatch`);
+  }
+}
 function indexExact(rows, stationLines, label) { if (!Array.isArray(rows) || rows.length !== 213) throw new Error(`${label} denominator mismatch`); const map = new Map(rows.map((row) => [key(row), row])); if (map.size !== 213 || stationLines.some((line) => !map.has(key(line)))) throw new Error(`${label} mapping mismatch`); return map; }
 async function readJson(root, relative) { return readStable(path.join(root, relative), relative); }
 async function readStable(file, label) {
@@ -417,5 +451,6 @@ function canonicalJson(value) { return JSON.stringify(canonicalObject(value)); }
 function without(value, name) { const { [name]: _ignored, ...rest } = value; return rest; }
 function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 function nonBlank(value) { return typeof value === "string" && value.trim() !== ""; }
+function requiredUtcMillis(value, label) { const millis = Date.parse(value ?? ""); if (!Number.isFinite(millis) || new Date(millis).toISOString() !== value) throw new Error(`${label} mismatch`); return millis; }
 function compareBytes(left, right) { return Buffer.compare(Buffer.from(left), Buffer.from(right)); }
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) main().catch((error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });

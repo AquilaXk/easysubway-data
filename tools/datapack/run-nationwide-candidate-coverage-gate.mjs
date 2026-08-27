@@ -1713,13 +1713,18 @@ function activeRouteMapRequirementKeys(scope, activeScopeKeys) {
 
 export function auditedInheritedClaimRequirementKeys({ spec, inventory, targets, inheritedPack }) {
   const redescribedSourceIds = routeMapRedescriptionSourceIds(spec);
+  const snapshotlessClaimants = snapshotlessRouteMapClaimants(inventory, redescribedSourceIds);
+  if (snapshotlessClaimants.length > 0) {
+    throw new Error(`snapshotless inherited route-map claims are forbidden: ${snapshotlessClaimants
+      .map(({ id }) => id).sort(codepointCompare).join(", ")}`);
+  }
   const activeScopeKeys = new Set((targets.activeLineScopes ?? []).map(
     ({ regionId, operatorId, lineId }) => `${regionId}:${operatorId}:${lineId}`,
   ));
   const inheritedSources = (inheritedPack.packs ?? [])
     .flatMap((pack) => pack?.sourceInventory ?? []);
   const keys = new Set();
-  for (const source of snapshotlessRouteMapClaimants(inventory, redescribedSourceIds)) {
+  for (const source of snapshotlessClaimants) {
     exactInheritedRouteMapSource(source, inheritedSources);
     for (const key of activeRouteMapRequirementKeys(source.coverageScope, activeScopeKeys)) {
       keys.add(key);

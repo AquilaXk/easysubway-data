@@ -15,7 +15,6 @@ import {
 
 const root = path.resolve(import.meta.dirname, "../..");
 const FIXTURE_CSV = path.join(root, "tools/datapack/fixtures/seoul-route-map-positions-raw/data-go-15099316.csv");
-const SNAPSHOT_PATH = path.join(root, "tools/datapack/sources/seoul-metro-route-map-positions-20260724.json");
 const TOPOLOGY_PATH = path.join(root, "tools/datapack/sources/capital-route-topology-20260814.json");
 const capturedAt = "2026-07-24T02:00:00.000Z";
 
@@ -24,7 +23,7 @@ async function loadTopology() {
 }
 async function loadTopologyBytes() { return readFile(TOPOLOGY_PATH); }
 
-test("서울 공식 FILE CSV의 276 raw/layout을 primary로 보존하고 legacy 진단을 격리한다", async () => {
+test("서울 공식 FILE CSV의 276 raw/layout만 current snapshot으로 보존한다", async () => {
   const [csvBytes, topologySnapshot, topologySnapshotBytes] = await Promise.all([readFile(FIXTURE_CSV), loadTopology(), loadTopologyBytes()]);
   const snapshot = collectSeoulRouteMapPositions({
     csvBytes,
@@ -45,19 +44,9 @@ test("서울 공식 FILE CSV의 276 raw/layout을 primary로 보존하고 legacy
   assert.deepEqual(snapshot.lineStationCounts, {
     "1": 10, "2": 51, "3": 34, "4": 26, "5": 56, "6": 39, "7": 42, "8": 18,
   });
-  assert.deepEqual(
-    snapshot.legacyDiagnostic.quarantinedPositions.map(({ stationCode, stationName, reasonCode, latitude, longitude }) => ({
-      stationCode, stationName, reasonCode, latitude, longitude,
-    })),
-    [
-      { stationCode: "2515", stationName: "마곡", reasonCode: "OFFICIAL_DUPLICATE_LATLON", latitude: 37.562182, longitude: 126.82693 },
-      { stationCode: "2516", stationName: "발산", reasonCode: "OFFICIAL_DUPLICATE_LATLON", latitude: 37.562182, longitude: 126.82693 },
-    ],
-  );
+  assert.equal(Object.hasOwn(snapshot, "legacyDiagnostic"), false);
   assert.equal("positions" in snapshot, false);
   assert.equal("quarantinedPositions" in snapshot, false);
-  assert.equal(snapshot.legacyDiagnostic.stationCount, 274);
-  assert.equal(snapshot.legacyDiagnostic.quarantinedCount, 2);
   assert.deepEqual(snapshot.lineIds, [
     "line-472a81add377", "seoul-2", "line-41a8c75ec9d8", "seoul-4",
     "line-80fc4d5350d4", "line-3f41718e0833", "line-15b3b8a93259", "line-2b2d9eaa53d0",
@@ -65,7 +54,6 @@ test("서울 공식 FILE CSV의 276 raw/layout을 primary로 보존하고 legacy
   assert.equal(snapshot.credentialRequired, false);
   assert.equal(snapshot.credentialRedacted, true);
   assert.equal(snapshot.rawSha256, createHash("sha256").update(csvBytes).digest("hex"));
-  assert.equal(snapshot.legacyDiagnostic.positionsSha256, createHash("sha256").update(JSON.stringify(snapshot.legacyDiagnostic.positions)).digest("hex"));
   assert.match(snapshot.rawPositionsSha256, /^[a-f0-9]{64}$/);
   assert.equal(snapshot.layoutAlgorithmVersion, "seoul-public-latlon-line-order-layout-v2");
   assert.equal(snapshot.topologySnapshotId, "capital-route-topology-20260814");
@@ -85,12 +73,17 @@ test("서울 공식 FILE CSV의 276 raw/layout을 primary로 보존하고 legacy
   assert.equal(magok.canvasOrigin, "DERIVED_SHARED_COORDINATE_SPREAD");
   assert.equal(balsan.canvasOrigin, "DERIVED_SHARED_COORDINATE_SPREAD");
   assert.notDeepEqual([magok.canvasX, magok.canvasY], [balsan.canvasX, balsan.canvasY]);
-  const sadang = snapshot.legacyDiagnostic.positions.filter(({ stationName }) => stationName === "사당");
+  const sadang = snapshot.layoutPositions.filter(({ stationName }) => stationName === "사당");
   assert.deepEqual(sadang.map(({ lineId, stationId }) => ({ lineId, stationId })), [
     { lineId: "seoul-2", stationId: "station-sadang" },
     { lineId: "seoul-4", stationId: "station-sadang" },
   ]);
   assert.equal(validateSeoulRouteMapPositionsSnapshot(snapshot, { topologySnapshotBytes }), snapshot);
+  const legacySurface = { ...snapshot, legacyDiagnostic: {} };
+  assert.throws(
+    () => validateSeoulRouteMapPositionsSnapshot(legacySurface, { topologySnapshotBytes }),
+    /invalid Seoul route map positions snapshot/,
+  );
   assert.throws(() => validateSeoulRouteMapPositionsSnapshot(snapshot), /invalid/);
   assert.throws(() => validateSeoulRouteMapPositionsSnapshot(snapshot, { topologySnapshotBytes: Buffer.concat([topologySnapshotBytes, Buffer.from(" ")]) }), /invalid/);
   const rawKeys = new Set(snapshot.rawPositions.map(({ lineId, stationCode }) => `${lineId}:${stationCode}`));
@@ -119,7 +112,7 @@ test("행 수는 동적으로 반영하지만 malformed·미지원 호선·날�
   });
   assert.equal(collisionChanged.rawStationCount, 276);
   assert.equal(collisionChanged.stationCount, 276);
-  assert.equal(collisionChanged.legacyDiagnostic.quarantinedCount, 0);
+  assert.equal(Object.hasOwn(collisionChanged, "legacyDiagnostic"), false);
   const withLine9 = `${lines[0]}\n999,9,9999,가짜,37.5,127.0,1974-01-01,2025-08-14\n`;
   assert.throws(
     () => parseSeoulRouteMapPositionsCsv(Buffer.from(withLine9, "utf8")),
@@ -149,21 +142,28 @@ test("snapshot hash나 좌표가 바뀌면 admission을 거부한다", async () 
   assert.throws(() => validateSeoulRouteMapPositionsSnapshot(tampered, { topologySnapshotBytes: Buffer.from(JSON.stringify(topologySnapshot)) }), /invalid Seoul route map positions snapshot/);
 });
 
-test("v1 tracked snapshot의 inventory·candidate byte identity는 compatibility smoke로 유지한다", async () => {
-  const [snapshotBytes, inventory, candidates] = await Promise.all([
-    readFile(SNAPSHOT_PATH),
+test("active V2 observation의 inventory·candidate byte identity를 검증한다", async () => {
+  const [inventory, candidates] = await Promise.all([
     readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
     readFile(path.join(root, "tools/datapack/source-candidates.json"), "utf8").then(JSON.parse),
   ]);
   const source = inventory.sources.find(({ id }) => id === "seoul-metro-route-map-positions");
   const candidate = candidates.candidates.find(({ id }) => id === source.id);
+  const currentAdmission = source.routeMapAdmissionEvidence.currentLayoutAdmission;
+  const snapshotBytes = await readFile(path.join(root, currentAdmission.snapshotPath));
+  const observation = JSON.parse(snapshotBytes);
+  assert.deepEqual(candidate.coverageScope, {
+    regionIds: source.coverageScope.regionIds,
+    operatorIds: source.coverageScope.operatorIds,
+    lineIds: source.coverageScope.lineIds,
+  });
   assert.equal(source.productionUseAllowed, true);
   assert.equal(source.license.redistributionAllowed, true);
   assert.equal(source.license.derivativeWorkAllowed, true);
   assert.equal(source.license.evidenceUrl, "https://www.data.go.kr/data/15099316/fileData.do");
   assert.equal(source.routeMapAdmissionEvidence.admissionKind, "official-file-latlon");
   assert.equal(
-    source.routeMapAdmissionEvidence.snapshotSha256,
+    currentAdmission.snapshotSha256,
     createHash("sha256").update(snapshotBytes).digest("hex"),
   );
   assert.equal(candidate.admissionStatus, "production_route_map_positions_materialized");
@@ -171,8 +171,10 @@ test("v1 tracked snapshot의 inventory·candidate byte identity는 compatibility
   assert.deepEqual(candidate.operation.responseFields, ["연번", "호선", "고유역번호(외부역코드)", "역명", "위도", "경도", "작성기준일", "작성일자"]);
   assert.deepEqual(candidate.evidence.outputFields, candidate.operation.responseFields);
   assert.equal(candidate.evidence.coverageAssessment.requirementCount, 8);
-  assert.equal(JSON.parse(snapshotBytes).stationCount, 274);
-  assert.equal(JSON.parse(snapshotBytes).rawStationCount, 276);
+  assert.equal(observation.schemaVersion, 2);
+  assert.equal(observation.artifactKind, "public-static-network-v2-observation");
+  assert.equal(observation.rowCount, 276);
+  assert.equal(observation.normalizedProjection.length, 276);
 });
 
 test("서로 다른 역명이 동일 좌표를 쓰면 snapshot validation이 fail-closed 한다", async () => {

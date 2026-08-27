@@ -35,7 +35,7 @@ async function planAndSnapshot() {
 test("213/199/420 paired bytes는 결정적 immutable receipt와 exact bundle을 만든다", async () => {
   const { plan, snapshot } = await planAndSnapshot();
   const planBytes = Buffer.from(canonical(plan)); const snapshotBytes = Buffer.from(canonical(snapshot));
-  const input = { collectionPlanBytes: planBytes, providerSnapshotBytes: snapshotBytes, repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), workflowRunId: 123 };
+  const input = { collectionPlanBytes: planBytes, providerSnapshotBytes: snapshotBytes, repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-560" };
   const receipt = buildCurrentKricExitCollectionReceipt(input);
   assert.equal(receipt.queryCount, 420);
   assert.equal(canonicalCurrentKricExitCollectionReceiptJson(receipt), canonicalCurrentKricExitCollectionReceiptJson(buildCurrentKricExitCollectionReceipt(input)));
@@ -43,7 +43,7 @@ test("213/199/420 paired bytes는 결정적 immutable receipt와 exact bundle을
   try {
     const planPath = path.join(temporary, "plan.json"); const snapshotPath = path.join(temporary, "snapshot.json"); const output = path.join(temporary, "bundle.json");
     await writeFile(planPath, planBytes, { mode: 0o600 }); await writeFile(snapshotPath, snapshotBytes, { mode: 0o600 });
-    await main(["--collection-plan", planPath, "--provider-snapshot", snapshotPath, "--repository", "AquilaXk/easysubway-data", "--repository-sha", "a".repeat(40), "--workflow-run-id", "123", "--output", output], { env: { RUNNER_TEMP: temporary }, log() {} });
+    await main(["--collection-plan", planPath, "--provider-snapshot", snapshotPath, "--repository", "AquilaXk/easysubway-data", "--repository-sha", "a".repeat(40), "--operation-id", "current-capital-560", "--output", output], { env: { RUNNER_TEMP: temporary }, log() {} });
     const bundle = JSON.parse(await readFile(output, "utf8"));
     assert.equal((await lstat(output)).mode & 0o777, 0o600);
     assert.equal(canonicalCurrentKricExitCollectionBundleJson(bundle), JSON.stringify(bundle));
@@ -56,7 +56,7 @@ test("existing output collision is preserved and no bundle is substituted", asyn
   try {
     const planPath = path.join(temporary, "plan.json"); const snapshotPath = path.join(temporary, "snapshot.json"); const output = path.join(temporary, "bundle.json");
     await writeFile(planPath, canonical(plan)); await writeFile(snapshotPath, canonical(snapshot)); await writeFile(output, "preserve");
-    await assert.rejects(main(["--collection-plan", planPath, "--provider-snapshot", snapshotPath, "--repository", "AquilaXk/easysubway-data", "--repository-sha", "a".repeat(40), "--workflow-run-id", "1", "--output", output], { env: { RUNNER_TEMP: temporary }, log() {} }), /output must be absent/);
+    await assert.rejects(main(["--collection-plan", planPath, "--provider-snapshot", snapshotPath, "--repository", "AquilaXk/easysubway-data", "--repository-sha", "a".repeat(40), "--operation-id", "current-capital-560", "--output", output], { env: { RUNNER_TEMP: temporary }, log() {} }), /output must be absent/);
     assert.equal((await readFile(output, "utf8")), "preserve");
   } finally { await rm(temporary, { recursive: true, force: true }); }
 });
@@ -68,7 +68,7 @@ test("foreign symlink and directory output collisions are preserved", async () =
     for (const kind of ["symlink", "directory"]) {
       const output = path.join(temporary, `bundle-${kind}.json`);
       if (kind === "symlink") await symlink(planPath, output); else await mkdir(output);
-      await assert.rejects(main(["--collection-plan", planPath, "--provider-snapshot", snapshotPath, "--repository", "AquilaXk/easysubway-data", "--repository-sha", "a".repeat(40), "--workflow-run-id", "1", "--output", output], { env: { RUNNER_TEMP: temporary }, log() {} }), /output must be absent/);
+      await assert.rejects(main(["--collection-plan", planPath, "--provider-snapshot", snapshotPath, "--repository", "AquilaXk/easysubway-data", "--repository-sha", "a".repeat(40), "--operation-id", "current-capital-560", "--output", output], { env: { RUNNER_TEMP: temporary }, log() {} }), /output must be absent/);
       assert.ok(await lstat(output));
     }
   } finally { await rm(temporary, { recursive: true, force: true }); }
@@ -76,7 +76,7 @@ test("foreign symlink and directory output collisions are preserved", async () =
 
 test("plan/snapshot drift와 result coverage drift는 receipt 전에 fail closed한다", async () => {
   const { plan, snapshot } = await planAndSnapshot();
-  const input = { collectionPlanBytes: Buffer.from(canonical(plan)), providerSnapshotBytes: Buffer.from(canonical(snapshot)), repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), workflowRunId: 1 };
+  const input = { collectionPlanBytes: Buffer.from(canonical(plan)), providerSnapshotBytes: Buffer.from(canonical(snapshot)), repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-560" };
   const drift = structuredClone(snapshot); drift.coverage.queryIds.reverse();
   assert.throws(() => buildCurrentKricExitCollectionReceipt({ ...input, providerSnapshotBytes: Buffer.from(canonical(drift)) }), /snapshot digest mismatch|coverage mismatch/);
   const substituted = structuredClone(snapshot); substituted.results.pop(); substituted.snapshotDigest = hash(canonical(Object.fromEntries(Object.entries(substituted).filter(([key]) => key !== "snapshotDigest"))));
@@ -86,7 +86,7 @@ test("plan/snapshot drift와 result coverage drift는 receipt 전에 fail closed
 
 test("유효하게 재해시한 mapping·time·row drift도 semantic closure에서 거부한다", async () => {
   const { plan, snapshot } = await planAndSnapshot();
-  const input = { collectionPlanBytes: Buffer.from(canonical(plan)), providerSnapshotBytes: Buffer.from(canonical(snapshot)), repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), workflowRunId: 1 };
+  const input = { collectionPlanBytes: Buffer.from(canonical(plan)), providerSnapshotBytes: Buffer.from(canonical(snapshot)), repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-560" };
   const mapped = structuredClone(plan); mapped.providerMappings[0].providerStationId = "drift"; mapped.candidate.providerMappingSha256 = hash(canonical(mapped.providerMappings)); rehashPlan(mapped);
   const rebound = rebindSnapshot(snapshot, mapped); assert.throws(() => buildCurrentKricExitCollectionReceipt({ ...input, collectionPlanBytes: Buffer.from(canonical(mapped)), providerSnapshotBytes: Buffer.from(canonical(rebound)) }), /station-line query relation mismatch/);
   const timed = structuredClone(snapshot); timed.capturedAt = "2026-08-25T16:00:00Z"; rehashSnapshot(timed);
@@ -103,13 +103,13 @@ test("유효하게 재해시한 mapping·time·row drift도 semantic closure에�
 
 test("bundle은 cross-collection receipt, cross-line label, scalar coercion을 재해시해도 거부한다", async () => {
   const { plan, snapshot } = await planAndSnapshot(); const planBytes = Buffer.from(canonical(plan)); const snapshotBytes = Buffer.from(canonical(snapshot));
-  const receipt = buildCurrentKricExitCollectionReceipt({ collectionPlanBytes: planBytes, providerSnapshotBytes: snapshotBytes, repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), workflowRunId: 1 });
+  const receipt = buildCurrentKricExitCollectionReceipt({ collectionPlanBytes: planBytes, providerSnapshotBytes: snapshotBytes, repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-560" });
   const alternatePlan = structuredClone(plan); alternatePlan.candidate.candidateId = "other-collection"; rehashPlan(alternatePlan);
   const alternateSnapshot = rebindSnapshotPlan(snapshot, alternatePlan);
   assert.throws(() => buildCurrentKricExitCollectionBundle({ collectionPlanBytes: Buffer.from(canonical(alternatePlan)), providerSnapshotBytes: Buffer.from(canonical(alternateSnapshot)), receipt }), /receipt binding mismatch/);
   const swapped = structuredClone(plan); const other = swapped.queryPlan.findIndex((query) => query.lineName !== swapped.queryPlan[0].lineName); [swapped.queryPlan[0].lineName, swapped.queryPlan[other].lineName] = [swapped.queryPlan[other].lineName, swapped.queryPlan[0].lineName]; swapped.queryPlanSha256 = hash(canonical(swapped.queryPlan)); rehashPlan(swapped);
   const swappedSnapshot = rebindSnapshotPlan(snapshot, swapped);
-  assert.throws(() => buildCurrentKricExitCollectionReceipt({ collectionPlanBytes: Buffer.from(canonical(swapped)), providerSnapshotBytes: Buffer.from(canonical(swappedSnapshot)), repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), workflowRunId: 1 }), /line identity mismatch/);
+  assert.throws(() => buildCurrentKricExitCollectionReceipt({ collectionPlanBytes: Buffer.from(canonical(swapped)), providerSnapshotBytes: Buffer.from(canonical(swappedSnapshot)), repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-560" }), /line identity mismatch/);
   const coerced = structuredClone(receipt); coerced.queryCount = "420"; rehashReceipt(coerced);
   assert.throws(() => buildCurrentKricExitCollectionBundle({ collectionPlanBytes: planBytes, providerSnapshotBytes: snapshotBytes, receipt: coerced }), /receipt identity mismatch/);
 });

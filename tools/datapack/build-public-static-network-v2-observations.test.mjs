@@ -68,6 +68,7 @@ test("public static-network v2 producer emits byte-stable official observations 
   assert.deepEqual(first.observations.map(({ sourceId }) => sourceId), ids);
   assert.equal(first.observations[0].schemaVersion, 2);
   assert.equal(first.observations[0].rowCount, 276);
+  assert.equal(Object.hasOwn(first.observations[0].routeMapLayoutArtifact, "legacyDiagnostic"), false);
   assert.equal(first.observations[1].rowCount, 1103);
   assert.equal(first.observations[1].schemaFingerprint,
     sha(JSON.stringify(["region_code", "region_name", "operator_name", "line_name", "station_sequence", "station_name"])));

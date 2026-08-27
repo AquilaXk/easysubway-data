@@ -36,7 +36,7 @@ const TERMINAL_FACILITY_REASON = "시설 존재·부재가 검증되지 않아 �
 const TERMINAL_EXIT_REASON = "출구 이동경로가 검증되지 않아 경로를 차단했습니다.";
 
 export function evaluateRouteAccessibilityEdges(input, policy) {
-  const validatedPolicy = validatePolicy(policy);
+  const validatedPolicy = validateRouteEdgeEvaluationPolicy(policy);
   assertKeys(input, INPUT_KEYS, "input keys");
   const candidate = validateCandidate(input.candidate, validatedPolicy);
   const evaluationAtMillis = requiredUtcInstant(input.evaluationAt, "evaluationAt");
@@ -102,7 +102,7 @@ export function canonicalRideEdgeSetSha256(edges) {
   return sha256(JSON.stringify(rows));
 }
 
-function validatePolicy(policy) {
+export function validateRouteEdgeEvaluationPolicy(policy) {
   assertKeys(
     policy,
     ["schemaVersion", "artifactKind", "policyVersion", "states", "unresolvedStatePrecedence", "edgeDomainMap", "rideInvariant"],

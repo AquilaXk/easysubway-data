@@ -188,6 +188,10 @@
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/530",
       "title": "[Data][Release Blocker][P0] current candidate accessibility evidence binding"
     },
+    "data560": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/560",
+      "title": "[Data][Release Blocker][P0] exact-main current capital live chain OCI handoff"
+    },
     "data535": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/535",
       "title": "[Data][P1] map/catalog signed-current offline publication contract"
@@ -199,26 +203,32 @@
       "jobId": "contracts",
       "checkName": "Data contracts",
       "invocation": "node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile",
+      "defaultProfileShards": {
+        "count": 5,
+        "maxWorkers": 1
+      },
       "required": true,
       "fixtures": [
         "mobile"
       ],
+      "fixtureProfiles": {
+        "mobile": "mobile-v19"
+      },
       "fixtureStageContracts": {
         "mobile": [
           "source=\".external/mobile/apps/mobile\"",
-          "expected_revision=\"39d2c4723d0ff855041c6162825930c7d12ffad3\"",
-          "expected_sha256=\"f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3\"",
+          "expected_revision=\"5b58d426258f536070137737c3f19a8dbeda44c1\"",
+          "expected_sha256=\"609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a\"",
           "fetch-depth: 0",
-          "cp -a \"${source}\" apps/mobile",
-          "rm -r -- \"${target}\"",
-          "cp -a \"${source}\" \"${target}\""
+          "cp -a \"${source}\" apps/mobile"
         ]
       },
       "contextInvocations": [
         "node --test tools/datapack/readmit-bundled-pack-identity.test.mjs",
         "node --test --test-name-pattern='bundled 공식 OD quote|bundled 차량·출입문 힌트' tools/datapack/datapack-tools.test.mjs",
-        "node --test tools/datapack/run-current-kric-exit-path-source-admission.test.mjs",
-        "node --test tools/ci/kric-exit-path-source-admission-workflow.test.mjs"
+        "node --test tools/datapack/run-current-capital-live-chain.test.mjs",
+        "node --test tools/datapack/build-current-capital-live-chain-oci-receipt.test.mjs",
+        "node --test tools/datapack/extract-current-capital-live-chain-directory.test.mjs"
       ],
       "profileInvocations": [
         "node tools/ci/data-test-discovery.mjs run --class required-pr --profile mobile-v19 --max-workers 1"
@@ -254,9 +264,6 @@
     {"path":"tools/ci/itx-current-collection-offline-replay-workflow.test.mjs","semanticOwner":"data96","classes":["required-pr"],"durationMs":37},
     {"path":"tools/ci/itx-current-collection-workflow.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":130},
     {"path":"tools/ci/itx-current-replay-admission-candidate-workflow.test.mjs","semanticOwner":"data96","classes":["required-pr"],"durationMs":41},
-    {"path":"tools/ci/kric-exit-path-provider-snapshot-workflow.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":42},
-    {"path":"tools/ci/kric-exit-path-source-admission-workflow.test.mjs","semanticOwner":"data336","classes":["required-pr"],"durationMs":40},
-    {"path":"tools/ci/kric-exit-timeout-diagnostic-workflow.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":39},
     {"path":"tools/ci/mobile-fixture-staging-workflow.test.mjs","semanticOwner":"data25","classes":["required-pr"],"durationMs":122},
     {"path":"tools/ci/public-sensitivity-owner-receipt-caller.test.mjs","semanticOwner":"data118","classes":["required-pr"],"durationMs":125},
     {"path":"tools/ci/require-workflow-artifact.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":478},
@@ -277,10 +284,14 @@
     {"path":"tools/datapack/build-callback-reconciliation-evidence.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":209},
     {"path":"tools/datapack/build-current-capital-facility-collection-plan.test.mjs","semanticOwner":"data319","classes":["required-pr"],"durationMs":245},
     {"path":"tools/datapack/build-current-capital-facility-source-admission.test.mjs","semanticOwner":"data325","classes":["required-pr"],"durationMs":409},
+    {"path":"tools/datapack/build-current-capital-live-chain-boundary.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":180},
+    {"path":"tools/datapack/build-current-capital-live-chain-bundle.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":100},
+    {"path":"tools/datapack/build-current-capital-live-chain-oci-plan.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":100},
+    {"path":"tools/datapack/build-current-capital-live-chain-oci-receipt.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":100},
     {"path":"tools/datapack/build-current-capital-route-edge-input.test.mjs","semanticOwner":"data365","classes":["required-pr"],"durationMs":851},
     {"path":"tools/datapack/build-current-capital-station-line-input.test.mjs","semanticOwner":"data365","classes":["required-pr"],"durationMs":399},
     {"path":"tools/datapack/build-current-capital-transfer-topology-applicability.test.mjs","semanticOwner":"data349","classes":["required-pr"],"durationMs":164},
-    {"path":"tools/datapack/build-current-exit-admission-artifact-receipt.test.mjs","semanticOwner":"data340","classes":["required-pr"],"durationMs":1319},
+    {"path":"tools/datapack/build-current-exit-admission-oci-receipt.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":100},
     {"path":"tools/datapack/build-current-exit-path-source-admission.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":93},
     {"path":"tools/datapack/build-current-kric-exit-collection-plan.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":1350},
     {"path":"tools/datapack/build-current-kric-exit-collection-receipt.test.mjs","semanticOwner":"data326","classes":["required-pr"],"durationMs":1032},
@@ -330,6 +341,7 @@
     {"path":"tools/datapack/collect-capital-route-topology.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":309},
     {"path":"tools/datapack/collect-current-kric-exit-path-provider-snapshot.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":34},
     {"path":"tools/datapack/collect-current-seoul-transfer-distance-duration-snapshot.test.mjs","semanticOwner":"data321","classes":["required-pr"],"durationMs":118},
+    {"path":"tools/datapack/extract-current-capital-live-chain-directory.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":180},
     {"path":"tools/datapack/collect-public-static-network-v2.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/collect-daegu-accessibility.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":170},
     {"path":"tools/datapack/collect-daegu-datapack-sources.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":264},
@@ -451,7 +463,11 @@
     {"path":"tools/datapack/purge-expired-source-raw.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":3184},
     {"path":"tools/datapack/readmit-bundled-pack-identity.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":7711},
     {"path":"tools/datapack/rebind-capital-route-map-admissions.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":170},
+    {"path":"tools/datapack/rebind-current-active-facility-derived-identity.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":900},
+    {"path":"tools/datapack/rebind-current-active-public-route-map-materialization.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":900},
     {"path":"tools/datapack/rebind-current-candidate-source-snapshots.test.mjs","semanticOwner":"data329","classes":["required-pr"],"durationMs":696},
+    {"path":"tools/datapack/rebind-current-live-chain-transfer-derived-identities.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":900},
+    {"path":"tools/datapack/recover-current-live-chain-transfer-observation.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":300},
     {"path":"tools/datapack/reconstruct-transit-trips.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":131},
     {"path":"tools/datapack/refresh-current-capital-accessibility-full.test.mjs","semanticOwner":"data446","classes":["required-pr"],"durationMs":900},
     {"path":"tools/datapack/refresh-route-map-admission-freshness.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":142},
@@ -467,8 +483,8 @@
     {"path":"tools/datapack/route-map-coverage-scope.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":1470},
     {"path":"tools/datapack/run-callback-backend-outage-rehearsal.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":117},
     {"path":"tools/datapack/run-current-capital-facility-operation.test.mjs","semanticOwner":"data335","classes":["required-pr"],"durationMs":965},
+    {"path":"tools/datapack/run-current-capital-live-chain.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":100},
     {"path":"tools/datapack/run-current-itx-collection.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":219},
-    {"path":"tools/datapack/run-current-kric-exit-path-source-admission.test.mjs","semanticOwner":"data336","classes":["required-pr"],"durationMs":57},
     {"path":"tools/datapack/run-current-seoul-accessibility-registration.test.mjs","semanticOwner":"data446","classes":["required-pr"],"durationMs":75},
     {"path":"tools/datapack/run-current-seoul-transfer-registration.test.mjs","semanticOwner":"data364","classes":["required-pr"],"durationMs":613},
     {"path":"tools/datapack/run-current-static-network-successors.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":120},
@@ -485,6 +501,7 @@
     {"path":"tools/datapack/sync-current-route-edge-policy.test.mjs","semanticOwner":"data308","classes":["required-pr"],"durationMs":47},
     {"path":"tools/datapack/test-fixtures/current-public-route-map-successor.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":376},
     {"path":"tools/datapack/validate-datapack-ride-adjacency.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":130},
+    {"path":"tools/datapack/validate-datapack.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":900},
     {"path":"tools/datapack/validate-datapack-server-route-coverage.test.mjs","semanticOwner":"data302","classes":["required-pr"],"durationMs":50},
     {"path":"tools/datapack/validate-map-catalog-signed-current-oci-publication-receipt.test.mjs","semanticOwner":"data535","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/validate-map-catalog-signed-current-publication.test.mjs","semanticOwner":"data535","classes":["required-pr"],"durationMs":120},
@@ -547,6 +564,9 @@
     "mobile": {
       "repository": "AquilaXk/easysubway-mobile",
       "commit": "39d2c4723d0ff855041c6162825930c7d12ffad3",
+      "profileCommit": {
+        "mobile-v19": "5b58d426258f536070137737c3f19a8dbeda44c1"
+      },
       "checkoutPath": ".external/mobile",
       "sourcePath": "apps/mobile",
       "path": "apps/mobile",
@@ -555,7 +575,7 @@
           "path": "assets/datapacks/capital.sqlite.gz",
           "sha256": "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
           "profileSha256": {
-            "mobile-v19": "28de8771a22dd5188cd4c62662faba8dcf46f6c3370386bc2f5598334acf0cc2"
+            "mobile-v19": "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a"
           }
         },
         {
@@ -564,11 +584,17 @@
         },
         {
           "path": "pubspec.yaml",
-          "sha256": "82bfad8bd6f06fd0163573fe45c08af050f8688010309bb04532c4481428ebf4"
+          "sha256": "82bfad8bd6f06fd0163573fe45c08af050f8688010309bb04532c4481428ebf4",
+          "profileSha256": {
+            "mobile-v19": "8ae9f49ab9adb7cddf6510d024da992d78eeedfb205e0245b16c6841151068ba"
+          }
         },
         {
           "path": "pubspec.lock",
-          "sha256": "e42fbcce9ba3dd351ef4918e1c15bf231b2cf72cc281583db39e35f50ca4c03f"
+          "sha256": "e42fbcce9ba3dd351ef4918e1c15bf231b2cf72cc281583db39e35f50ca4c03f",
+          "profileSha256": {
+            "mobile-v19": "d2ec63d74ffcc0305cac4b905e19de440ca7866215e85ad679408951e565c870"
+          }
         }
       ]
     }

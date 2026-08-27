@@ -792,8 +792,8 @@
         },
         {
           "id": "edge-sangnoksu-sadang-seoul-4-express",
-          "fromNodeId": "station-sangnoksu:seoul-4:EXPRESS",
-          "toNodeId": "station-sadang:seoul-4:EXPRESS",
+          "fromNodeId": "station-sangnoksu:seoul-4",
+          "toNodeId": "station-sadang:seoul-4",
           "durationSeconds": 360,
           "distanceMeters": 18600,
           "edgeType": "RIDE",
@@ -806,8 +806,8 @@
         },
         {
           "id": "edge-sadang-sangnoksu-seoul-4-express",
-          "fromNodeId": "station-sadang:seoul-4:EXPRESS",
-          "toNodeId": "station-sangnoksu:seoul-4:EXPRESS",
+          "fromNodeId": "station-sadang:seoul-4",
+          "toNodeId": "station-sangnoksu:seoul-4",
           "durationSeconds": 360,
           "distanceMeters": 18600,
           "edgeType": "RIDE",
@@ -1158,8 +1158,8 @@
         {
           "id": "direct-local-sangnoksu-sadang",
           "pattern": "DIRECT",
-          "fromNodeId": "station-sangnoksu:seoul-4:LOCAL",
-          "toNodeId": "station-sadang:seoul-4:LOCAL",
+          "fromNodeId": "station-sangnoksu:seoul-4",
+          "toNodeId": "station-sadang:seoul-4",
           "requiredEdgeIds": [
             "edge-sangnoksu-sadang-seoul-4"
           ]
@@ -1202,8 +1202,8 @@
         {
           "id": "express-sangnoksu-sadang",
           "pattern": "EXPRESS_LOCAL",
-          "fromNodeId": "station-sangnoksu:seoul-4:EXPRESS",
-          "toNodeId": "station-sadang:seoul-4:EXPRESS",
+          "fromNodeId": "station-sangnoksu:seoul-4",
+          "toNodeId": "station-sadang:seoul-4",
           "requiredEdgeIds": [
             "edge-sangnoksu-sadang-seoul-4-express"
           ]
