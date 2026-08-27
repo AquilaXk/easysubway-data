@@ -78,6 +78,57 @@ test("producer-neutral FACILITY admission emits the exact 213/199/639 closed mat
   assert.throws(() => canonicalCurrentCapitalFacilitySourceAdmissionJson(pathDrift));
 });
 
+test("current seven-source candidate evaluates projections at its published clock, not the active FACILITY clock", async () => {
+  const files = Object.fromEntries(await Promise.all([
+    "tools/datapack/release/capital-production-canonical-pack.json",
+    "tools/datapack/nationwide-coverage-targets.json",
+    "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
+    "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
+    "tools/datapack/source-inventory.json",
+    "tools/datapack/release/candidate-build-spec.json",
+    "tools/datapack/release/source-snapshots.json",
+    "tools/datapack/source-governance-policy.json",
+    "release/product-gates/datapack-freshness-sla.json",
+  ].map(async (relative) => [relative, await readFile(path.join(REPOSITORY_ROOT, relative))])));
+  const candidateBuildSpec = JSON.parse(files["tools/datapack/release/candidate-build-spec.json"]);
+  const sourceInventory = JSON.parse(files["tools/datapack/source-inventory.json"]);
+  const active = sourceInventory.sources.find(({ id }) => id === "kric-station-convenience-standard").accessibilityAdmissionEvidence;
+  const plan = buildCurrentCapitalFacilityCollectionPlan({
+    canonicalPackBytes: files["tools/datapack/release/capital-production-canonical-pack.json"],
+    coverageTargetsBytes: files["tools/datapack/nationwide-coverage-targets.json"],
+    providerCodeCatalogBytes: files["tools/datapack/sources/kric-provider-code-catalog-20260228.json"],
+    routeRostersBytes: files["tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json"],
+    sourceInventoryBytes: files["tools/datapack/source-inventory.json"],
+  });
+  const values = {
+    observedAt: active.observedAt,
+    candidateEvaluationAt: candidateBuildSpec.publishedAt,
+    planBytes: Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(plan)),
+    canonicalPackBytes: files["tools/datapack/release/capital-production-canonical-pack.json"],
+    snapshotBytes: await readFile(path.join(REPOSITORY_ROOT, active.snapshotPath)),
+    candidateBuildSpec,
+    sourceInventoryBytes: files["tools/datapack/source-inventory.json"],
+    sourceSnapshots: JSON.parse(files["tools/datapack/release/source-snapshots.json"]),
+    governancePolicy: JSON.parse(files["tools/datapack/source-governance-policy.json"]),
+    governancePolicyBytes: files["tools/datapack/source-governance-policy.json"],
+    freshnessPolicy: JSON.parse(files["release/product-gates/datapack-freshness-sla.json"]),
+  };
+  assert.equal(buildCurrentCapitalFacilitySourceAdmission(values).decision, "GO");
+  const unapprovedGovernance = structuredClone(values);
+  const selectedKricId = unapprovedGovernance.candidateBuildSpec.sourceSnapshotIds.find((snapshotId) => snapshotId.startsWith("kric-station-convenience-standard-"));
+  unapprovedGovernance.sourceSnapshots.find(({ snapshotId }) => snapshotId === selectedKricId).governancePolicySha256 = "0".repeat(64);
+  assert.throws(() => buildCurrentCapitalFacilitySourceAdmission(unapprovedGovernance), /governance policy binding/u);
+  assert.throws(() => buildCurrentCapitalFacilitySourceAdmission({ ...values, candidateEvaluationAt: "2026-08-26T03:54:09.250Z" }), /candidate evaluation clock mismatch/u);
+  const beforeBasis = structuredClone(values);
+  beforeBasis.candidateBuildSpec.publishedAt = beforeBasis.observedAt;
+  beforeBasis.candidateEvaluationAt = beforeBasis.observedAt;
+  assert.throws(() => buildCurrentCapitalFacilitySourceAdmission(beforeBasis), /candidate evaluation precedes selected basis/u);
+  const receiptAfterPublication = structuredClone(values);
+  receiptAfterPublication.sourceSnapshots.find(({ snapshotId }) => snapshotId === selectedKricId).rawReceipt.storedAt = "2026-08-26T03:54:09.252Z";
+  receiptAfterPublication.candidateBuildSpec.sourceSnapshotSetHash = selectedLedgerHash(receiptAfterPublication.sourceSnapshots, receiptAfterPublication.candidateBuildSpec.sourceSnapshotIds);
+  assert.throws(() => buildCurrentCapitalFacilitySourceAdmission(receiptAfterPublication), /KRIC source time or governance mismatch/u);
+});
+
 test("exact terminal 03은 one blocked cell과 세 blocked denominator rows로 admission GO를 만든다", async () => {
   const values = await fixture({ mixed: true });
   const admission = buildCurrentCapitalFacilitySourceAdmission(values);
@@ -195,14 +246,24 @@ test("producer-neutral FACILITY admission preserves the approved prior governanc
   assert.ok(kricLedger);
   const priorBinding = priorKric.sourceSnapshots.find(({ sourceId, governancePolicySha256 }) =>
     sourceId === "kric-station-convenience-standard"
-    && governancePolicySha256 !== kricProjection.governancePolicySha256);
+    && governancePolicySha256 === "13f8a78c0ae0f7bfa6817005f44a92be3131e6f6708a69a4024747478203beaa");
   assert.ok(priorBinding);
   for (const target of [kricLedger, kricProjection]) {
     target.governancePolicyVersion = priorBinding.governancePolicyVersion;
     target.governancePolicySha256 = priorBinding.governancePolicySha256;
   }
   priorKric.candidateBuildSpec.sourceSnapshotSetHash = selectedLedgerHash(priorKric.sourceSnapshots, priorKric.candidateBuildSpec.sourceSnapshotIds);
-  assert.throws(() => buildCurrentCapitalFacilitySourceAdmission(priorKric), /KRIC current governance binding mismatch/u);
+  assert.equal(buildCurrentCapitalFacilitySourceAdmission(priorKric).decision, "GO");
+
+  const legacyKric = structuredClone(values);
+  const legacyProjection = legacyKric.candidateBuildSpec.sourceSnapshots[kricIndex];
+  const legacyLedger = legacyKric.sourceSnapshots.find(({ snapshotId }) => snapshotId === legacyProjection.snapshotId);
+  for (const target of [legacyLedger, legacyProjection]) {
+    target.governancePolicyVersion = "2026-07-15";
+    target.governancePolicySha256 = "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70";
+  }
+  legacyKric.candidateBuildSpec.sourceSnapshotSetHash = selectedLedgerHash(legacyKric.sourceSnapshots, legacyKric.candidateBuildSpec.sourceSnapshotIds);
+  assert.throws(() => buildCurrentCapitalFacilitySourceAdmission(legacyKric), /KRIC current governance binding mismatch/u);
 });
 
 test("producer-neutral FACILITY admission normalizes byte inputs before binding checks", async () => {
@@ -318,13 +379,14 @@ async function fixture({ mixed = false } = {}) {
     artifactKind: "datapack-candidate-build-spec",
     candidateId: "fixture",
     productionScopeId: "capital_pilot_android_v1",
+    publishedAt: observedAt,
     sourceSnapshotIds: productionSpec.sourceSnapshotIds.map((snapshotId) => snapshotId === previousKric.snapshotId ? ledger.snapshotId : snapshotId),
     sourceSnapshots: productionSpec.sourceSnapshotIds.map((snapshotId) => snapshotId === previousKric.snapshotId ? ledger : productionSnapshots.find((entry) => entry.snapshotId === snapshotId)).map((entry) => deriveReleaseProjection({ snapshot: entry, sourceInventory, governancePolicy, governancePolicyBytes: files["source-governance-policy.json"], freshnessPolicy: freshnessSla, nowMillis: Date.parse(observedAt) })),
     sourceSnapshotSetHash: selectedLedgerHash(sourceSnapshots, productionSpec.sourceSnapshotIds.map((snapshotId) => snapshotId === previousKric.snapshotId ? ledger.snapshotId : snapshotId)),
     sourceInventorySha256: sha256(JSON.stringify(sourceInventory)),
     networkEdgeEvidence: { sourceInventory: { path: "tools/datapack/source-inventory.json", sha256: sha256(sourceInventoryBytes) } },
   };
-  return { planBytes, canonicalPackBytes: files["release/capital-production-canonical-pack.json"], snapshotBytes, sourceInventoryBytes, sourceSnapshots, governancePolicy, governancePolicyBytes: files["source-governance-policy.json"], freshnessPolicy: freshnessSla, candidateBuildSpec, observedAt };
+  return { planBytes, canonicalPackBytes: files["release/capital-production-canonical-pack.json"], snapshotBytes, sourceInventoryBytes, sourceSnapshots, governancePolicy, governancePolicyBytes: files["source-governance-policy.json"], freshnessPolicy: freshnessSla, candidateBuildSpec, observedAt, candidateEvaluationAt: observedAt };
 }
 
 async function selectedSourceHeadAt(datapackRoot) {

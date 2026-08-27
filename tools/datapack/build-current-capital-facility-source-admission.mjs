@@ -2,7 +2,7 @@ import { canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-curre
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
 import { deriveReleaseProjection, isActiveCandidateSourceSequence } from "./rebind-current-candidate-source-snapshots.mjs";
-import { validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
+import { approvedGovernanceBindingTransition, isApprovedCurrentOrPriorGovernanceBinding, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 
@@ -42,6 +42,7 @@ export function buildCurrentCapitalFacilitySourceAdmission(input) {
     snapshot,
     snapshotBytes,
     observedAtMillis,
+    candidateEvaluationAt: input?.candidateEvaluationAt,
   });
   const queries = validateQueryCoverage(snapshot, mappings);
   const denominatorRows = [];
@@ -140,7 +141,7 @@ export function validateCurrentCapitalFacilityPlanAndCanonicalPack({ plan, planB
   return mappings;
 }
 
-function validateSourceContext({ candidateBuildSpec, sourceInventoryBytes, sourceSnapshots, governancePolicy, governancePolicyBytes, freshnessPolicy, snapshot, snapshotBytes, observedAtMillis }) {
+function validateSourceContext({ candidateBuildSpec, sourceInventoryBytes, sourceSnapshots, governancePolicy, governancePolicyBytes, freshnessPolicy, snapshot, snapshotBytes, observedAtMillis, candidateEvaluationAt }) {
   if (candidateBuildSpec?.schemaVersion !== 1 || candidateBuildSpec.artifactKind !== "datapack-candidate-build-spec"
     || !Array.isArray(candidateBuildSpec.sourceSnapshotIds) || !Array.isArray(candidateBuildSpec.sourceSnapshots)
     || candidateBuildSpec.sourceSnapshotIds.length !== candidateBuildSpec.sourceSnapshots.length
@@ -157,6 +158,7 @@ function validateSourceContext({ candidateBuildSpec, sourceInventoryBytes, sourc
     throw new Error("source registries must be arrays");
   }
   validateSourceGovernancePolicy({ policy: governancePolicy, inventory: sourceInventory, freshnessPolicy });
+  const candidateEvaluationAtMillis = validateCandidateEvaluationClock({ candidateBuildSpec, candidateEvaluationAt });
   validateCandidateInventoryBinding({ candidateBuildSpec, sourceInventory, sourceInventoryBytes: normalizedSourceInventoryBytes });
   const headsBySource = validateLineage(sourceSnapshots).headsBySource;
   const candidateSourceIds = candidateBuildSpec.sourceSnapshots.map(({ sourceId }) => sourceId);
@@ -170,7 +172,8 @@ function validateSourceContext({ candidateBuildSpec, sourceInventoryBytes, sourc
       throw new Error("candidate source snapshot membership mismatch");
     }
     assertExactKeys(projection, PROJECTION_KEYS, "candidate source snapshot projection");
-    const expected = deriveCandidateProjection({ ledger, sourceInventory, governancePolicy, governancePolicyBytes: normalizedGovernancePolicyBytes, freshnessPolicy, observedAtMillis });
+    assertCandidateEvaluationAfterSelectedBasis({ ledger, freshnessPolicy, candidateEvaluationAtMillis });
+    const expected = deriveCandidateProjection({ ledger, sourceInventory, governancePolicy, governancePolicyBytes: normalizedGovernancePolicyBytes, freshnessPolicy, candidateEvaluationAtMillis });
     for (const key of PROJECTION_KEYS) {
       if (projection?.[key] !== expected[key]) throw new Error("candidate source snapshot projection mismatch");
     }
@@ -205,7 +208,18 @@ function validateSourceContext({ candidateBuildSpec, sourceInventoryBytes, sourc
   }
   const ledger = exactlyOne(sourceSnapshots, (entry) => entry?.sourceId === SOURCE_ID && entry.snapshotId === snapshot.snapshotId, "KRIC source snapshot ledger");
   const member = exactlyOne(candidateBuildSpec.sourceSnapshots, (entry) => entry?.sourceId === SOURCE_ID && entry.snapshotId === snapshot.snapshotId, "KRIC candidate membership");
-  const currentGovernancePolicySha256 = sha256(normalizedGovernancePolicyBytes);
+  const approvedGovernanceBinding = approvedGovernanceBindingTransition({
+    snapshot: ledger,
+    currentPolicyVersion: governancePolicy.policyVersion,
+    currentPolicySha256: sha256(normalizedGovernancePolicyBytes),
+  });
+  if (!isApprovedCurrentOrPriorGovernanceBinding({
+    binding: approvedGovernanceBinding,
+    currentPolicyVersion: governancePolicy.policyVersion,
+    currentPolicySha256: sha256(normalizedGovernancePolicyBytes),
+  })) {
+    throw new Error("KRIC current governance binding mismatch");
+  }
   if (candidateBuildSpec.sourceSnapshotIds.filter((id) => id === snapshot.snapshotId).length !== 1
     || !["LOCKED", "SUCCESS", "PASS", "PASS"].every((expected, index) => [ledger.snapshotStatus, ledger.fetchStatus, ledger.schemaStatus, ledger.licenseStatus][index] === expected)
     || ledger.credentialRedacted !== true || ledger.redistributionAllowed !== true
@@ -214,17 +228,15 @@ function validateSourceContext({ candidateBuildSpec, sourceInventoryBytes, sourc
     || ledger.contentSha256 !== snapshot.contentSha256 || ledger.schemaFingerprint !== snapshot.schemaFingerprint
     || ledger.redactedRequestFingerprint !== snapshot.redactedRequestFingerprint
     || ledger.adminReviewRecordHash !== admission.adminReviewRecordHash
-    || ledger.governancePolicyVersion !== governancePolicy.policyVersion
-    || ledger.governancePolicySha256 !== currentGovernancePolicySha256
-    || member.governancePolicyVersion !== governancePolicy.policyVersion
-    || member.governancePolicySha256 !== currentGovernancePolicySha256
+    || ledger.governancePolicyVersion !== approvedGovernanceBinding.governancePolicyVersion
+    || ledger.governancePolicySha256 !== approvedGovernanceBinding.governancePolicySha256
     || ledger.retrievedAt !== snapshot.capturedAt || ledger.sourceUpdatedAt !== snapshot.observedAt
     || typeof ledger.previousSnapshotId !== "string" || ledger.previousSnapshotId === ""
     || !ledger.diffSummary || typeof ledger.diffSummary !== "object" || Array.isArray(ledger.diffSummary)
     || !sha(ledger.rawSha256)) {
     throw new Error("KRIC current governance binding mismatch");
   }
-  const expectedMember = deriveCandidateProjection({ ledger, sourceInventory, governancePolicy, governancePolicyBytes: normalizedGovernancePolicyBytes, freshnessPolicy, observedAtMillis });
+  const expectedMember = deriveCandidateProjection({ ledger, sourceInventory, governancePolicy, governancePolicyBytes: normalizedGovernancePolicyBytes, freshnessPolicy, candidateEvaluationAtMillis });
   for (const key of PROJECTION_KEYS) {
     if (member[key] !== expectedMember[key]) throw new Error("KRIC candidate membership mismatch");
   }
@@ -241,7 +253,7 @@ function validateSourceContext({ candidateBuildSpec, sourceInventoryBytes, sourc
   const freshUntil = requiredUtcInstant(snapshot.freshUntil, "KRIC freshUntil");
   const ledgerFreshUntil = requiredUtcInstant(ledger.freshnessExpiresAt, "KRIC ledger freshness");
   const storedAt = requiredUtcInstant(receipt.storedAt, "KRIC receipt storedAt");
-  if (capturedAt > observedAt || capturedAt > storedAt || storedAt > observedAtMillis
+  if (capturedAt > observedAt || capturedAt > storedAt || storedAt > candidateEvaluationAtMillis
     || observedAt > observedAtMillis || freshUntil <= observedAtMillis
     || ledgerFreshUntil <= observedAtMillis || requiredUtcInstant(ledger.rawRetentionExpiresAt, "KRIC raw retention") <= observedAtMillis
     || typeof ledger.rawObjectUri !== "string" || ledger.rawObjectUri.trim() === ""
@@ -280,14 +292,32 @@ function validateCandidateInventoryBinding({ candidateBuildSpec, sourceInventory
   }
 }
 
-function deriveCandidateProjection({ ledger, sourceInventory, governancePolicy, governancePolicyBytes, freshnessPolicy, observedAtMillis }) {
+function validateCandidateEvaluationClock({ candidateBuildSpec, candidateEvaluationAt }) {
+  const publishedAtMillis = requiredUtcInstant(candidateBuildSpec.publishedAt, "candidate build spec publishedAt");
+  const evaluationAtMillis = requiredUtcInstant(candidateEvaluationAt, "candidate evaluationAt");
+  const publishedAt = new Date(publishedAtMillis).toISOString();
+  if (candidateBuildSpec.publishedAt !== publishedAt || candidateEvaluationAt !== publishedAt) {
+    throw new Error("candidate evaluation clock mismatch");
+  }
+  return evaluationAtMillis;
+}
+
+function assertCandidateEvaluationAfterSelectedBasis({ ledger, freshnessPolicy, candidateEvaluationAtMillis }) {
+  const sourceClass = freshnessPolicy.sourceClasses?.find(({ sourceIds }) => sourceIds?.includes(ledger.sourceId));
+  const basisAtMillis = requiredUtcInstant(ledger?.[sourceClass?.basisField], "selected source basisAt");
+  if (candidateEvaluationAtMillis < basisAtMillis) {
+    throw new Error("candidate evaluation precedes selected basis");
+  }
+}
+
+function deriveCandidateProjection({ ledger, sourceInventory, governancePolicy, governancePolicyBytes, freshnessPolicy, candidateEvaluationAtMillis }) {
   return deriveReleaseProjection({
     snapshot: ledger,
     sourceInventory,
     governancePolicy,
     governancePolicyBytes,
     freshnessPolicy,
-    nowMillis: observedAtMillis,
+    nowMillis: candidateEvaluationAtMillis,
   });
 }
 
