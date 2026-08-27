@@ -19,6 +19,9 @@ import { canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-curr
 import { buildCurrentExitAdmissionOciReceipt, canonicalCurrentExitAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
 import { buildCurrentKricExitCollectionBundle, buildCurrentKricExitCollectionReceipt, canonicalCurrentKricExitCollectionBundleJson } from "./build-current-kric-exit-collection-receipt.mjs";
 import { readRegularSnapshot } from "./build-current-kric-exit-collection-plan.mjs";
+import { canonicalKricExitPathProviderSnapshotJson } from "./collect-kric-exit-path-provider-snapshot.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { canonicalKricExitPathCollectionPlanJson } from "./plan-kric-exit-path-collection.mjs";
 import { main as buildCurrentCapitalRouteEdgeInput } from "./build-current-capital-route-edge-input.mjs";
 import { canonicalRouteEdgeEvaluationJson, evaluateRouteAccessibilityEdges } from "./evaluate-route-accessibility-edges.mjs";
 import { extractCurrentCapitalLiveChainDirectory } from "./extract-current-capital-live-chain-directory.mjs";
@@ -41,6 +44,7 @@ const EXCLUDED_STAGED_PATHS = Object.freeze([
   "tools/datapack/release/current-capital-accessibility-transition.json",
 ]);
 const CURRENT_KRIC_EXIT_PLAN_INPUTS_PATH = "tools/datapack/release/current-kric-exit-plan-inputs.json";
+const RETAINED_EXIT_PLAN_MISMATCH = "retained EXIT bundle plan is not provider-equivalent to the current plan";
 export const CURRENT_KRIC_EXIT_REQUEST_TIMEOUT_MS = 30_000;
 export const CURRENT_KRIC_EXIT_REQUEST_INTERVAL_MS = 250;
 
@@ -208,6 +212,29 @@ export async function assertCurrentCapitalFacilityAdmission({ stagedRoot, now })
   return admission;
 }
 
+function providerEquivalentCurrentPlan(embeddedPlanBytes, currentPlanBytes) {
+  let embeddedPlan;
+  let currentPlan;
+  try {
+    embeddedPlan = JSON.parse(embeddedPlanBytes.toString("utf8"));
+    currentPlan = JSON.parse(currentPlanBytes.toString("utf8"));
+    if (!embeddedPlanBytes.equals(Buffer.from(canonicalKricExitPathCollectionPlanJson(embeddedPlan)))
+      || !currentPlanBytes.equals(Buffer.from(canonicalKricExitPathCollectionPlanJson(currentPlan)))) {
+      throw new Error("collection plan bytes are not canonical");
+    }
+  } catch (error) { throw new Error(RETAINED_EXIT_PLAN_MISMATCH, { cause: error }); }
+  const normalizedPlan = (plan) => {
+    const normalized = structuredClone(plan);
+    delete normalized.collectionPlanDigest;
+    delete normalized.candidate.candidateId;
+    return canonicalJson(normalized);
+  };
+  if (normalizedPlan(embeddedPlan) !== normalizedPlan(currentPlan)) {
+    throw new Error(RETAINED_EXIT_PLAN_MISMATCH);
+  }
+  return currentPlan;
+}
+
 export async function recoverCurrentKricExitCollection({ retainedExitBundle, expectedRetainedExitBundleSha256, currentPlanBytes, repository, repositorySha, operationId, operationNow, root, execFileImpl }) {
   if (!path.isAbsolute(retainedExitBundle ?? "")) throw new Error("retained EXIT bundle must be absolute");
   if (!/^[a-f0-9]{64}$/u.test(expectedRetainedExitBundleSha256 ?? "")) throw new Error("retained EXIT bundle expected digest mismatch");
@@ -223,14 +250,25 @@ export async function recoverCurrentKricExitCollection({ retainedExitBundle, exp
   try { canonicalBundle = canonicalCurrentKricExitCollectionBundleJson(bundle); } catch { throw new Error("retained EXIT bundle is invalid"); }
   if (!retained.bytes.equals(Buffer.from(canonicalBundle))) throw new Error("retained EXIT bundle bytes are not canonical");
   const embeddedPlanBytes = Buffer.from(bundle.collectionPlanJson);
-  if (!Buffer.from(currentPlanBytes).equals(embeddedPlanBytes)) throw new Error("retained EXIT bundle plan is not the current plan");
-  const snapshotBytes = Buffer.from(bundle.providerSnapshotJson);
+  const currentPlanBuffer = Buffer.from(currentPlanBytes);
+  const currentPlan = providerEquivalentCurrentPlan(embeddedPlanBytes, currentPlanBuffer);
+  let snapshotBytes = Buffer.from(bundle.providerSnapshotJson);
   let snapshot;
   let sourceReceipt;
   try {
     snapshot = JSON.parse(snapshotBytes.toString("utf8"));
     sourceReceipt = JSON.parse(bundle.collectionReceiptJson);
   } catch { throw new Error("retained EXIT bundle embedded JSON mismatch"); }
+  const snapshotPayload = { ...snapshot };
+  delete snapshotPayload.snapshotDigest;
+  const reboundSnapshotPayload = { ...snapshotPayload, collectionPlanDigest: currentPlan.collectionPlanDigest };
+  snapshot = {
+    ...reboundSnapshotPayload,
+    snapshotDigest: sha256(Buffer.from(canonicalJson(reboundSnapshotPayload))),
+  };
+  try { snapshotBytes = Buffer.from(canonicalKricExitPathProviderSnapshotJson(snapshot)); } catch {
+    throw new Error("retained EXIT bundle snapshot rebound is invalid");
+  }
   if (Date.parse(snapshot.capturedAt) > operationNow.valueOf()) throw new Error("retained EXIT bundle snapshot was not previously captured");
   if (Date.parse(snapshot.freshUntil) <= operationNow.valueOf()) throw new Error("retained EXIT bundle snapshot is stale");
   if (sourceReceipt.schemaVersion !== 1 || sourceReceipt.repository !== repository
@@ -239,7 +277,7 @@ export async function recoverCurrentKricExitCollection({ retainedExitBundle, exp
   }
   await execFileImpl("git", ["merge-base", "--is-ancestor", sourceReceipt.repositorySha, repositorySha], { cwd: root });
   const receipt = buildCurrentKricExitCollectionReceipt({
-    collectionPlanBytes: embeddedPlanBytes,
+    collectionPlanBytes: currentPlanBuffer,
     providerSnapshotBytes: snapshotBytes,
     repository,
     repositorySha,
@@ -252,7 +290,7 @@ export async function recoverCurrentKricExitCollection({ retainedExitBundle, exp
     },
   });
   const recoveredBundle = buildCurrentKricExitCollectionBundle({
-    collectionPlanBytes: embeddedPlanBytes, providerSnapshotBytes: snapshotBytes, receipt,
+    collectionPlanBytes: currentPlanBuffer, providerSnapshotBytes: snapshotBytes, receipt,
   });
   return {
     snapshotBytes,
