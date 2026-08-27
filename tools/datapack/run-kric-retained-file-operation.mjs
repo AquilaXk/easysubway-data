@@ -8,7 +8,7 @@ import { isMainModule } from "../lib/is-main-module.mjs";
 import { buildKricCurrentStationLineObservation } from "./build-kric-current-station-line-observation.mjs";
 import { buildKricNationwideTimetableObservation } from "./build-kric-nationwide-timetable-observation.mjs";
 import { buildKricRetainedFilePendingHandoff } from "./build-kric-retained-file-pending-handoff.mjs";
-import { createCandidateOciClient } from "./publish-candidate-oci-artifact.mjs";
+import { objectStorageClient } from "./publish-object-storage.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const GIT_SHA = /^[a-f0-9]{40}$/u;
@@ -78,7 +78,7 @@ export async function runKricRetainedFileOperation({
   ];
   if (!bundleBytes.equals(jsonBytes(bundle))) fail("BUNDLE");
 
-  const storage = publisher ?? defaultPublisher(env);
+  const storage = publisher ?? createKricRetainedFilePublisher(env);
   await mkdir(operation, { mode: 0o700 });
   const journalPath = path.join(operation, "journal.json");
   const receiptPath = path.join(operation, "publication-receipt.json");
@@ -125,7 +125,11 @@ async function putAndVerify(publisher, object, onCreated) {
   if (created !== true) fail("COLLISION");
   onCreated(objectIdentity(object));
   let body;
-  try { body = await publisher.fullGet(object.key); } catch { fail("FULL_GET"); }
+  try {
+    body = await publisher.fullGet(object.key, object.bytes.byteLength);
+  } catch {
+    fail("FULL_GET");
+  }
   if (!(body instanceof Uint8Array) || body.byteLength !== object.bytes.byteLength || sha256(body) !== object.sha256) fail("FULL_GET");
   return canonical({ kind: object.kind, objectKey: object.key, sizeBytes: object.bytes.length, sha256: object.sha256, fullGet: { sizeBytes: body.byteLength, sha256: sha256(body) } });
 }
@@ -157,7 +161,19 @@ function requiredSha(value, label) { if (typeof value !== "string" || !GIT_SHA.t
 function inside(root, target) { return path.relative(root, target) !== "" && !path.relative(root, target).startsWith(`..${path.sep}`) && path.relative(root, target) !== ".."; }
 async function assertMain(check, repositoryRoot, expectedMainSha) { const actual = await check({ repositoryRoot, expectedMainSha }); if (actual !== undefined && actual !== expectedMainSha) fail("MAIN_SHA"); }
 async function defaultExactMain({ repositoryRoot, expectedMainSha }) { const { execFile } = await import("node:child_process"); const { promisify } = await import("node:util"); const run = promisify(execFile); const [{ stdout: head }, { stdout: upstream }, { stdout: status }] = await Promise.all([run("git", ["rev-parse", "HEAD"], { cwd: repositoryRoot }), run("git", ["rev-parse", "origin/main"], { cwd: repositoryRoot }), run("git", ["status", "--porcelain=v1", "--untracked-files=all"], { cwd: repositoryRoot })]); if (status !== "" || head.trim() !== upstream.trim() || head.trim() !== expectedMainSha) fail("EXACT_MAIN"); return head.trim(); }
-function defaultPublisher(env) { const required = ["EASYSUBWAY_CANDIDATE_OCI_NAMESPACE", "EASYSUBWAY_CANDIDATE_OCI_BUCKET", "EASYSUBWAY_CANDIDATE_OCI_REGION", "EASYSUBWAY_CANDIDATE_OCI_ACCESS_KEY", "EASYSUBWAY_CANDIDATE_OCI_SECRET_KEY"]; if (!env || required.some((key) => typeof env[key] !== "string" || env[key] === "")) fail("OCI_ENV"); const client = createCandidateOciClient(env); return { putObjectIfAbsent: (key, bytes) => client.putObjectIfAbsent(key, bytes), async fullGet(key) { const result = await client.readObject(key); if (!result.exists) throw new Error("OCI full GET failed"); return result.body; } }; }
+export function createKricRetainedFilePublisher(env, createClient = objectStorageClient) {
+  let client;
+  try { client = createClient(env); } catch { fail("OCI_ENV"); }
+  if (!client || typeof client.putObjectIfAbsent !== "function" || typeof client.readObject !== "function") fail("OCI_ENV");
+  return {
+    putObjectIfAbsent: (key, bytes) => client.putObjectIfAbsent(key, bytes, { sha256: sha256(bytes), sizeBytes: bytes.length }),
+    async fullGet(key, maxResponseBytes) {
+      const result = await client.readObject(key, { maxResponseBytes });
+      if (!result.exists) throw new Error("OCI full GET failed");
+      return result.body;
+    },
+  };
+}
 
 export function parseKricRetainedFileOperationArgs(argv) {
   const names = ["operation-root", "timetable-input", "timetable-receipt", "station-line-input", "station-line-receipt", "expected-main-sha", "operation-id"];
