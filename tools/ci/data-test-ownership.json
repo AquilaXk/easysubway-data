@@ -493,6 +493,7 @@
     {"path":"tools/datapack/run-current-seoul-accessibility-registration.test.mjs","semanticOwner":"data446","classes":["required-pr"],"durationMs":75},
     {"path":"tools/datapack/run-current-seoul-transfer-registration.test.mjs","semanticOwner":"data364","classes":["required-pr"],"durationMs":613},
     {"path":"tools/datapack/run-current-static-network-successors.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":120},
+    {"path":"tools/datapack/run-kric-retained-file-operation.test.mjs","semanticOwner":"data454","classes":["required-pr"],"durationMs":250},
     {"path":"tools/datapack/run-public-static-network-v2-operation.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/send-release-callback.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":505},
     {"path":"tools/datapack/server-route-bundle-build-contract.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":171},

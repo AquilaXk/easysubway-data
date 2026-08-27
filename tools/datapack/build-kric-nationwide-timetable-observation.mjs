@@ -30,12 +30,14 @@ const fail = (code) => { throw new Error(`KRIC_NATIONWIDE_TIMETABLE_OBSERVATION_
 // This producer is deliberately source-native evidence. It never derives a
 // timetable, topology, route order, or product identifier from these cells.
 export async function buildKricNationwideTimetableObservation({
-  inputFile, receipt, maximumInputBytes = MAXIMUM_INPUT_BYTES,
+  inputFile, workbookBytes, receipt, maximumInputBytes = MAXIMUM_INPUT_BYTES,
   maximumInflatedBytes = MAXIMUM_INFLATED_BYTES, maximumRows = MAXIMUM_ROWS,
   maximumCells = MAXIMUM_CELLS, maximumRowBytes = MAXIMUM_ROW_BYTES,
 } = {}) {
   const limits = validateLimits({ maximumInputBytes, maximumInflatedBytes, maximumRows, maximumCells, maximumRowBytes });
-  const source = await openRegularWorkbook(inputFile, limits.maximumInputBytes);
+  const source = workbookBytes === undefined
+    ? await openRegularWorkbook(inputFile, limits.maximumInputBytes)
+    : requireWorkbookBytes(inputFile, workbookBytes, limits.maximumInputBytes);
   const verifiedReceipt = validateReceipt(receipt, source);
   const entries = parseZipEntries(source.bytes, limits.maximumInflatedBytes);
   const workbook = await readEntryText(source.bytes, "xl/workbook.xml", entries, 1_024 * 1_024);
@@ -61,6 +63,13 @@ export async function buildKricNationwideTimetableObservation({
     recordsSha256: sha256(Buffer.from(`${JSON.stringify(state.records)}\n`)),
     gaps: Object.freeze({ stopSequence: "ABSENT", timeGrammar: "UNADMITTED" }),
   });
+}
+
+function requireWorkbookBytes(inputFile, value, maximumInputBytes) {
+  if (typeof inputFile !== "string" || !path.isAbsolute(inputFile) || !(value instanceof Uint8Array)
+    || value.byteLength <= 0 || value.byteLength > maximumInputBytes) fail("INPUT");
+  const bytes = Buffer.from(value);
+  return Object.freeze({ inputFile: path.resolve(inputFile), byteLength: bytes.length, sha256: sha256(bytes), bytes });
 }
 
 async function openRegularWorkbook(inputFile, maximumInputBytes) {
