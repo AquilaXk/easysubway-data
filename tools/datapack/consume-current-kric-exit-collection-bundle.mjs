@@ -50,6 +50,7 @@ export async function consumeCurrentKricExitCollectionBundle({
     repository: receipt.repository,
     repositorySha: receipt.repositorySha,
     operationId: receipt.operationId,
+    recoveredFrom: receipt.recoveredFrom,
   });
   if (canonicalCurrentKricExitCollectionReceiptJson(rebuiltReceipt)
     !== canonicalCurrentKricExitCollectionReceiptJson(receipt)) {
