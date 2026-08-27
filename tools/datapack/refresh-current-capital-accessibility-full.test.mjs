@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -10,7 +10,7 @@ import { buildCurrentExitAdmissionOciReceipt, canonicalCurrentExitAdmissionOciRe
 import { readStableRegularFile } from "./rebind-current-candidate-source-snapshots.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 import { activateSyntheticCurrentStaticNetworkSuccessors, nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
-import { currentizeFreshFacilitySource, writeFreshCurrentAccessibilityOutputs, writeFreshExitAdmissionChain } from "./test-fixtures/current-full-capital-production-artifact.mjs";
+import { currentizeFreshFacilitySource, prepareCurrentFullCapitalProductionRepository, writeFreshCurrentAccessibilityOutputs, writeFreshExitAdmissionChain } from "./test-fixtures/current-full-capital-production-artifact.mjs";
 import { currentIncheonStationCodeDerivations } from "./collect-incheon-station-info.mjs";
 import {
   buildCurrentTopologyRefreshPrimaryOutputs,
@@ -248,6 +248,29 @@ test("active, malformed, and foreign refresh leases remain fail-closed", async (
     await assert.rejects(refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root }), /current-capital refresh lock/, fixture.name);
     assert.deepEqual(await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative)))), before, fixture.name);
   }
+});
+
+test("already-current activated outputs preserve exact bytes through the current live-chain fan-in", async (t) => {
+  const root = await prepareCurrentFullCapitalProductionRepository(ROOT);
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const before = await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative))));
+
+  const outputs = await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root });
+  assert.deepEqual(outputs.map(({ bytes }) => bytes), before);
+
+  await refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root });
+  assert.deepEqual(await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative)))), before);
+});
+
+test("already-current activated outputs without a valid current fan-in fail closed", async (t) => {
+  const root = await prepareCurrentFullCapitalProductionRepository(ROOT);
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await unlink(path.join(root, "tools/datapack/release/current-capital-live-chain-fan-in.json"));
+
+  await assert.rejects(
+    buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root }),
+    /current-capital-live-chain-fan-in\.json must be a regular non-symlink file/,
+  );
 });
 
 test("already-current canonical corruption fails closed instead of being returned or rewritten", async (t) => {
