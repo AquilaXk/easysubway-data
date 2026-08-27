@@ -214,7 +214,7 @@ test("current canonical pack binds public positions and TRANSFER, never CyberSta
   const old = before.candidateBuildSpec;
   const rebound = rebindCandidateSourceSnapshots(before);
   const changed = Object.keys(old).filter((key) => JSON.stringify(old[key]) !== JSON.stringify(rebound[key]));
-  assert.deepEqual(changed.sort((left, right) => left.localeCompare(right, "en")), ["networkEdgeEvidence", "sourceInventorySha256", "sourceSnapshotIds", "sourceSnapshots", "sourceSnapshotSetHash"]);
+  assert.deepEqual(changed.sort((left, right) => left.localeCompare(right, "en")), ["networkEdgeEvidence", "publishedAt", "sourceInventorySha256", "sourceSnapshotIds", "sourceSnapshots", "sourceSnapshotSetHash"]);
   const kric = rebound.sourceSnapshots.find(({ sourceId }) => sourceId === "kric-station-convenience-standard");
   assert.equal(kric.snapshotId, next.snapshotId);
   assert.equal(rebound.sourceSnapshotIds.includes(next.snapshotId), true);
@@ -226,7 +226,9 @@ test("current canonical pack binds public positions and TRANSFER, never CyberSta
   assert.equal(rebound.networkEdgeEvidence.sourceInventory.sha256, sha(before.sourceInventoryBytes));
   assert.notEqual(rebound.sourceInventorySha256, rebound.networkEdgeEvidence.sourceInventory.sha256);
   assert.equal(rebound.candidateId, old.candidateId);
-  assert.equal(rebound.publishedAt, old.publishedAt);
+  assert.equal(rebound.publishedAt, NOW.toISOString());
+  assert.ok(Date.parse(rebound.publishedAt) > Date.parse(next.retrievedAt));
+  assert.notEqual(rebound.publishedAt, old.publishedAt);
 });
 
 test("six-source candidate appends TRANSFER last without changing its six projections", async (t) => {

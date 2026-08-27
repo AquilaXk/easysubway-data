@@ -19,7 +19,7 @@ const RESULT_KEYS = ["queryId", "state", "providerResultCode", "rawResponseSha25
 const ROW_KEYS = ["edMovePath", "elvtSttCd", "elvtTpCd", "exitMvTpOrdr", "imgPath", "mvContDtl", "mvPathMgNo", "stMovePath"];
 const SNAPSHOT_KEYS = ["schemaVersion", "artifactKind", "sourceId", "snapshotId", "capturedAt", "freshUntil", "credentialRedacted", "collectionPlanDigest", "queryPlanSha256", "coverage", "queryPlan", "results", "snapshotDigest"];
 
-export function buildCurrentKricExitCollectionReceipt({ collectionPlanBytes, providerSnapshotBytes, repository, repositorySha, operationId }) {
+export function buildCurrentKricExitCollectionReceipt({ collectionPlanBytes, providerSnapshotBytes, repository, repositorySha, operationId, recoveredFrom = undefined }) {
   const planBytes = bytes(collectionPlanBytes, "collection plan");
   const snapshotBytes = bytes(providerSnapshotBytes, "provider snapshot");
   const plan = parseCanonicalPlan(planBytes);
@@ -28,8 +28,9 @@ export function buildCurrentKricExitCollectionReceipt({ collectionPlanBytes, pro
   if (repository !== "AquilaXk/easysubway-data") throw new Error("repository identity mismatch");
   if (!/^[a-f0-9]{40}$/.test(repositorySha ?? "")) throw new Error("repository SHA mismatch");
   if (typeof operationId !== "string" || !/^[a-z0-9][a-z0-9-]{7,127}$/u.test(operationId)) throw new Error("operation identity mismatch");
+  const recovery = recoveredFrom === undefined ? undefined : validateRecoveredFrom(recoveredFrom, operationId);
   const payload = canonicalObject({
-    schemaVersion: 1,
+    schemaVersion: recovery === undefined ? 1 : 2,
     artifactKind: "kric-exit-path-collection-receipt",
     repository,
     repositorySha,
@@ -46,18 +47,21 @@ export function buildCurrentKricExitCollectionReceipt({ collectionPlanBytes, pro
     collectionPlanDigest: plan.collectionPlanDigest,
     queryPlanSha256: plan.queryPlanSha256,
     providerSnapshotDigest: snapshot.snapshotDigest,
+    ...(recovery === undefined ? {} : { recoveredFrom: recovery }),
   });
   return canonicalObject({ ...payload, receiptSha256: sha256(canonicalJson(payload)) });
 }
 
 export function canonicalCurrentKricExitCollectionReceiptJson(receipt) {
-  assertKeys(receipt, [
+  const commonKeys = [
     "schemaVersion", "artifactKind", "repository", "repositorySha", "operationId", "coverageSelector", "sourceId",
     "providerMappingCount", "stationLineQueryCount", "stationCount", "routeEdgeCount", "queryCount",
     "collectionPlanSha256", "providerSnapshotSha256", "collectionPlanDigest", "queryPlanSha256", "providerSnapshotDigest", "receiptSha256",
-  ], "collection receipt keys");
+  ];
+  if (receipt?.schemaVersion !== 1 && receipt?.schemaVersion !== 2) throw new Error("collection receipt identity mismatch");
+  assertKeys(receipt, receipt.schemaVersion === 1 ? commonKeys : [...commonKeys, "recoveredFrom"], "collection receipt keys");
   const { receiptSha256, ...payload } = receipt;
-  if (receipt.schemaVersion !== 1 || receipt.artifactKind !== "kric-exit-path-collection-receipt"
+  if (receipt.artifactKind !== "kric-exit-path-collection-receipt"
     || receipt.repository !== "AquilaXk/easysubway-data" || !/^[a-f0-9]{40}$/.test(receipt.repositorySha)
     || typeof receipt.operationId !== "string" || !/^[a-z0-9][a-z0-9-]{7,127}$/u.test(receipt.operationId)
     || receipt.coverageSelector !== SELECTOR || receipt.sourceId !== SOURCE_ID
@@ -68,9 +72,22 @@ export function canonicalCurrentKricExitCollectionReceiptJson(receipt) {
     || !Number.isSafeInteger(receipt.queryCount) || receipt.queryCount !== 420) {
     throw new Error("collection receipt identity mismatch");
   }
+  if (receipt.schemaVersion === 2) validateRecoveredFrom(receipt.recoveredFrom, receipt.operationId);
   for (const key of ["collectionPlanSha256", "providerSnapshotSha256", "collectionPlanDigest", "queryPlanSha256", "providerSnapshotDigest", "receiptSha256"]) assertSha256(receipt[key], key);
   if (sha256(canonicalJson(payload)) !== receiptSha256) throw new Error("collection receipt digest mismatch");
   return canonicalJson(receipt);
+}
+
+function validateRecoveredFrom(value, operationId) {
+  assertKeys(value, ["repositorySha", "operationId", "receiptSha256", "bundleSha256"], "recovery provenance keys");
+  if (!/^[a-f0-9]{40}$/u.test(value.repositorySha ?? "")
+    || typeof value.operationId !== "string" || !/^[a-z0-9][a-z0-9-]{7,127}$/u.test(value.operationId)
+    || value.operationId === operationId
+    || !/^[a-f0-9]{64}$/u.test(value.receiptSha256 ?? "")
+    || !/^[a-f0-9]{64}$/u.test(value.bundleSha256 ?? "")) {
+    throw new Error("recovery provenance mismatch");
+  }
+  return canonicalObject(value);
 }
 
 export function buildCurrentKricExitCollectionBundle({ collectionPlanBytes, providerSnapshotBytes, receipt }) {
