@@ -1,27 +1,17 @@
 #!/usr/bin/env node
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
-import { emitStationCatalogFromBundledPack } from "./emit-station-catalog-from-bundled-pack.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const CATALOG_VERSION = 19;
 const MAX_GZIP_DELTA_BYTES = 64 * 1024;
-const CURRENT_V18_STATION_CATALOG_PACK_ID =
-  "capital-station-catalog-d85742f14cbf97c526a6b94dd55bbf863e1d1346-v1";
-const CURRENT_V18_MIGRATION_INPUT = Object.freeze({
-  id: "capital",
-  sha256: "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
-  sqliteSha256: "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5",
-  byteSize: 1463745,
-});
-
 const ADMITTED_TOPOLOGY_INPUTS = new Map([
   [
     "e3c4f942a02712904d44d642627eb909523d55189efce96296a0d2b96e3ea4ad",
@@ -434,229 +424,6 @@ export function validateTopologyEvidence({
     throw new Error("ITX topology evidence or bundled pack index is stale");
   }
   return { inputSqliteBytes };
-}
-
-function validateCurrentV18MigrationInput({ reference, topology, evidence, index, inputGzipBytes }) {
-  const inputSqliteBytes = gunzipSync(inputGzipBytes);
-  const pack = index?.packs?.find(({ id }) => id === "capital");
-  if (sha256(inputGzipBytes) !== CURRENT_V18_MIGRATION_INPUT.sha256
-    || sha256(inputSqliteBytes) !== CURRENT_V18_MIGRATION_INPUT.sqliteSha256
-    || inputGzipBytes.length !== CURRENT_V18_MIGRATION_INPUT.byteSize
-    || !hasExactKeys(evidence, ["schemaVersion", "artifactKind", "serviceId", "sourceIssue", "sourceArtifact", "topology", "pack", "readmissions"])
-    || evidence.schemaVersion !== 1
-    || evidence.artifactKind !== "itx-cheongchun-mobile-topology-evidence"
-    || evidence.serviceId !== "ITX_CHEONGCHUN" || evidence.sourceIssue !== 2135
-    || !hasExactKeys(evidence.sourceArtifact, ["id", "sha256", "completenessEvidenceSha256", "freshUntil"])
-    || evidence.sourceArtifact.id !== reference.id
-    || evidence.sourceArtifact.sha256 !== reference.sha256
-    || evidence.sourceArtifact.completenessEvidenceSha256 !== reference.completenessEvidenceSha256
-    || evidence.sourceArtifact.freshUntil !== reference.freshUntil
-    || !hasExactKeys(evidence.topology, [
-      "stationMembershipCount", "servedStationCount", "edgeCount", "directions",
-      "connectedComponentCount", "isolatedServedStationCount", "sha256",
-      "durationSecondsEmbedded", "fareEmbedded",
-    ])
-    || evidence.topology.stationMembershipCount !== topology.stations.length
-    || evidence.topology.servedStationCount !== topology.servedStations.length
-    || evidence.topology.edgeCount !== topology.edges.length
-    || evidence.topology.sha256 !== topology.sha256
-    || JSON.stringify(evidence.topology.directions) !== JSON.stringify(["up", "down"])
-    || evidence.topology.connectedComponentCount !== 1 || evidence.topology.isolatedServedStationCount !== 0
-    || evidence.topology.durationSecondsEmbedded !== false || evidence.topology.fareEmbedded !== false
-    || !Array.isArray(evidence.readmissions)
-    || JSON.stringify(evidence.pack) !== JSON.stringify({
-      id: "capital", inputSha256: "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
-      inputSqliteSha256: "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
-      inputByteSize: 359319, outputSha256: CURRENT_V18_MIGRATION_INPUT.sha256,
-      outputSqliteSha256: CURRENT_V18_MIGRATION_INPUT.sqliteSha256,
-      byteSize: CURRENT_V18_MIGRATION_INPUT.byteSize, byteSizeDelta: 1104426,
-    })
-    || pack?.sha256 !== CURRENT_V18_MIGRATION_INPUT.sha256
-    || pack?.sqliteSha256 !== CURRENT_V18_MIGRATION_INPUT.sqliteSha256
-    || pack?.byteSize !== CURRENT_V18_MIGRATION_INPUT.byteSize) {
-    throw new Error("ITX topology current v18 migration input is not exact");
-  }
-  return { inputSqliteBytes };
-}
-
-function assertStoredV18Topology(sqlitePath, topology) {
-  const database = new DatabaseSync(sqlitePath, { readOnly: true });
-  try {
-    const columns = database.prepare("PRAGMA table_info(route_service_artifact_evidence)").all()
-      .map(({ name, type, notnull, pk }) => [name, type, notnull, pk]);
-    const exactV18 = JSON.stringify(columns) === JSON.stringify(ROUTE_SERVICE_ARTIFACT_EVIDENCE_LAYOUT)
-      && !tableExists(database, "route_service_station_catalog_evidence")
-      && normalizedSql(database.prepare("SELECT sql FROM sqlite_schema WHERE type='table' AND name='route_service_artifact_evidence'").get().sql)
-        .includes(normalizedSql("CHECK (admission_status IN ('MISSING', 'ADMITTED'))"));
-    if (database.prepare("PRAGMA user_version").get().user_version !== 18 || !exactV18) {
-      throw new Error("ITX topology current v18 schema is not exact");
-    }
-    const edges = database.prepare(`
-      SELECT id, from_node_id AS fromNodeId, to_node_id AS toNodeId,
-             duration_seconds AS durationSeconds, distance_meters AS distanceMeters,
-             edge_type AS edgeType, service_pattern AS servicePattern, service_class AS serviceClass
-      FROM network_edges WHERE service_class = 'ITX_CHEONGCHUN' ORDER BY id
-    `).all().map((row) => ({ ...row }));
-    const itxTrips = database.prepare(`SELECT count(*) AS count FROM transit_trips
-      WHERE service_class = 'ITX_CHEONGCHUN'`).get().count;
-    if (JSON.stringify(edges) !== JSON.stringify(topology.edges) || itxTrips !== 0) {
-      throw new Error("ITX topology current v18 topology is stale");
-    }
-  } finally { database.close(); }
-}
-
-async function currentV18MigrationContext(evidence) {
-  const sourceArtifact = evidence?.sourceArtifact;
-  const artifactId = "itx-cheongchun-source-timetable-20260719230524758";
-  const artifactSha256 = "e2894d7ce6decb08fc9fec982394e77151799c34d099b83948481080e56d780e";
-  if (!hasExactKeys(sourceArtifact, ["id", "sha256", "completenessEvidenceSha256", "freshUntil"])
-    || sourceArtifact.id !== artifactId || sourceArtifact.sha256 !== artifactSha256
-    || sourceArtifact.completenessEvidenceSha256 !== "b4a6f90490f2f6b56f396e9cc59e053d1ba02f3d3fe9cf5993b871bfc2d68201"
-    || sourceArtifact.freshUntil !== "2026-07-27T00:00:00+09:00") {
-    throw new Error("ITX topology current v18 source evidence is not exact");
-  }
-  const sourceBytes = await readFile(repositoryPath(`tools/datapack/sources/${artifactId}.json`));
-  if (sha256(sourceBytes) !== artifactSha256) {
-    throw new Error("ITX topology current v18 source artifact is not exact");
-  }
-  const source = JSON.parse(sourceBytes);
-  return { sourceArtifact, topology: deriveTopology(source) };
-}
-
-function migrationAdmissionEvidence(sqlitePath, stationCatalogIdentity) {
-  const database = new DatabaseSync(sqlitePath, { readOnly: true });
-  try {
-    const row = database.prepare(`
-      SELECT timetable_artifact_id AS timetableArtifactId,
-             timetable_artifact_sha256 AS timetableArtifactSha256,
-             canonical_pack_id AS canonicalPackId, canonical_pack_sha256 AS canonicalPackSha256,
-             canonical_pack_sqlite_sha256 AS canonicalPackSqliteSha256,
-             admission_status AS admissionStatus, admission_eligible AS admissionEligible,
-             fresh_until AS freshUntil, source_issue AS sourceIssue
-      FROM route_service_artifact_evidence WHERE service_class = 'ITX_CHEONGCHUN'
-    `).get();
-    if (row == null || row.admissionStatus !== "ADMITTED" || row.admissionEligible !== 1
-      || row.sourceIssue !== 2135 || typeof row.freshUntil !== "string"
-      || ![row.timetableArtifactSha256, row.canonicalPackSha256, row.canonicalPackSqliteSha256].every((value) => /^[a-f0-9]{64}$/.test(value ?? ""))) {
-      throw new Error("ITX topology current v18 evidence row is not exact");
-    }
-    return {
-      artifactEvidence: {
-        serviceClass: "ITX_CHEONGCHUN", timetableArtifactId: row.timetableArtifactId,
-        timetableArtifactSha256: row.timetableArtifactSha256, canonicalPackId: row.canonicalPackId,
-        canonicalPackSha256: row.canonicalPackSha256,
-        canonicalPackSqliteSha256: row.canonicalPackSqliteSha256,
-        admissionStatus: row.admissionStatus, admissionEligible: row.admissionEligible,
-        freshUntil: row.freshUntil, sourceIssue: row.sourceIssue,
-      },
-      stationCatalogEvidence: {
-        serviceClass: "ITX_CHEONGCHUN", stationCatalogArtifactKind: stationCatalogIdentity.artifactKind,
-        stationCatalogManifestVersion: stationCatalogIdentity.manifestVersion,
-        stationCatalogPackId: stationCatalogIdentity.catalogPackId,
-        stationCatalogStationSetSha256: stationCatalogIdentity.stationSetSha256,
-        stationCatalogPayloadSha256: stationCatalogIdentity.payloadSha256,
-        stationCatalogManifestSha256: stationCatalogIdentity.manifestSha256,
-        admissionStatus: row.admissionStatus, admissionEligible: row.admissionEligible,
-        freshUntil: row.freshUntil, sourceIssue: 2649,
-      },
-    };
-  } finally { database.close(); }
-}
-
-function migrationEvidence({ sourceArtifact, topology, admissionEvidence, inputGzipBytes, inputSqliteBytes, outputGzipBytes, outputSqliteBytes }) {
-  return {
-    schemaVersion: 1,
-    artifactKind: "itx-cheongchun-mobile-topology-evidence",
-    serviceId: "ITX_CHEONGCHUN",
-    sourceIssue: 2135,
-    sourceArtifact,
-    topology: {
-      stationMembershipCount: topology.stations.length, servedStationCount: topology.servedStations.length,
-      edgeCount: topology.edges.length, directions: ["up", "down"], connectedComponentCount: 1,
-      isolatedServedStationCount: 0, sha256: topology.sha256, durationSecondsEmbedded: false,
-      fareEmbedded: false,
-    },
-    migration: { fromCatalogVersion: 18, toCatalogVersion: 19, inputPack: CURRENT_V18_MIGRATION_INPUT },
-    routeServiceEvidence: admissionEvidence,
-    pack: {
-      id: "capital", inputSha256: sha256(inputGzipBytes), inputSqliteSha256: sha256(inputSqliteBytes),
-      inputByteSize: inputGzipBytes.length, outputSha256: sha256(outputGzipBytes),
-      outputSqliteSha256: sha256(outputSqliteBytes), byteSize: outputGzipBytes.length,
-      byteSizeDelta: outputGzipBytes.length - inputGzipBytes.length,
-    },
-  };
-}
-
-async function writeMigrationOutputs(outputs) {
-  const suffix = `.migration-${randomUUID()}.tmp`;
-  const staged = await Promise.all(outputs.map(async ({ file, bytes }) => ({
-    file, bytes, original: await readFile(file), temporary: `${file}${suffix}`,
-    backup: `${file}${suffix}.backup`,
-  })));
-  let committed = 0;
-  try {
-    await Promise.all(staged.map(({ temporary, bytes }) => writeFile(temporary, bytes)));
-    for (const entry of staged) {
-      await rename(entry.file, entry.backup);
-      await rename(entry.temporary, entry.file);
-      committed += 1;
-      if (process.env.EASYSUBWAY_TEST_MIGRATION_FAIL_AFTER_SURFACE === String(committed)) {
-        throw new Error(`injected migration surface failure ${committed}`);
-      }
-    }
-    await Promise.all(staged.map(({ backup }) => rm(backup, { force: true })));
-  } catch (error) {
-    await Promise.all(staged.map(async ({ file, backup, original }) => {
-      const backupExists = await lstat(backup).then(() => true).catch(() => false);
-      if (backupExists) {
-        await rename(backup, file);
-      } else if (committed > 0) {
-        await writeFile(file, original);
-      }
-    }));
-    throw error;
-  } finally {
-    await Promise.all(staged.map(({ temporary }) => rm(temporary, { force: true })));
-  }
-}
-
-async function verifiedCurrentV18StationCatalog(packPath, artifactPath) {
-  const manifestPath = path.join(artifactPath, "manifest.json");
-  const payloadPath = path.join(artifactPath, "payload", "catalog.sqlite");
-  const artifact = await lstat(artifactPath).catch(() => undefined);
-  const manifestStat = await lstat(manifestPath).catch(() => undefined);
-  const payloadStat = await lstat(payloadPath).catch(() => undefined);
-  if (!artifact?.isDirectory() || artifact.isSymbolicLink() || !manifestStat?.isFile()
-    || manifestStat.isSymbolicLink() || !payloadStat?.isFile() || payloadStat.isSymbolicLink()) {
-    throw new Error("ITX topology station catalog artifact is not a regular artifact");
-  }
-  const actual = await Promise.all([manifestPath, payloadPath].map(async (file) => {
-    const value = await readFile(file); return { file, value };
-  }));
-  const manifest = JSON.parse(actual[0].value);
-  if (!hasExactKeys(manifest, ["manifestVersion", "artifactKind", "catalogPackId", "stationSetSha256", "payloadSha256"])
-    || manifest.manifestVersion !== 1 || manifest.artifactKind !== "station-catalog-pack"
-    || manifest.catalogPackId !== CURRENT_V18_STATION_CATALOG_PACK_ID
-    || ![manifest.stationSetSha256, manifest.payloadSha256].every((value) => /^[a-f0-9]{64}$/.test(value ?? ""))) {
-    throw new Error("ITX topology station catalog manifest is not exact");
-  }
-  const directory = await mkdtemp(path.join(os.tmpdir(), `itx-current-v18-station-catalog-${randomUUID()}-`));
-  try {
-    const expected = path.join(directory, "expected");
-    await emitStationCatalogFromBundledPack({ input: packPath, output: expected });
-    const [expectedManifest, expectedPayload] = await Promise.all([
-      readFile(path.join(expected, "manifest.json")), readFile(path.join(expected, "payload", "catalog.sqlite")),
-    ]);
-    if (!actual[0].value.equals(expectedManifest) || !actual[1].value.equals(expectedPayload)) {
-      throw new Error("ITX topology station catalog artifact does not equal the exact v18 projection");
-    }
-    const decoded = JSON.parse(actual[0].value);
-    return {
-      artifactKind: decoded.artifactKind, manifestVersion: decoded.manifestVersion,
-      catalogPackId: decoded.catalogPackId, stationSetSha256: decoded.stationSetSha256,
-      payloadSha256: decoded.payloadSha256, manifestSha256: sha256(actual[0].value),
-    };
-  } finally { await rm(directory, { recursive: true, force: true }); }
 }
 
 function routeServiceEvidence(contract, reference, source, canonicalPackIdentity) {
@@ -1161,110 +928,11 @@ export function assertStoredTopology(sqlitePath, topology, admissionEvidence) {
   }
 }
 
-async function migrateCurrentV18({ packPath, indexPath, evidencePath, stationCatalogPackPath }) {
-  const [inputGzipBytes, indexBytes, evidenceBytes] = await Promise.all([
-    readFile(packPath), readFile(indexPath), readFile(evidencePath),
-  ]);
-  const index = JSON.parse(indexBytes);
-  const legacyEvidence = JSON.parse(evidenceBytes);
-  const { topology, sourceArtifact } = await currentV18MigrationContext(legacyEvidence);
-  const { inputSqliteBytes } = validateCurrentV18MigrationInput({
-    reference: legacyEvidence.sourceArtifact, topology, evidence: legacyEvidence, index, inputGzipBytes,
-  });
-  const stationCatalogIdentity = await verifiedCurrentV18StationCatalog(packPath, stationCatalogPackPath);
-  const directory = await mkdtemp(path.join(os.tmpdir(), `itx-current-v18-migration-${randomUUID()}-`));
-  try {
-    const sqlitePath = path.join(directory, "capital.sqlite");
-    await writeFile(sqlitePath, inputSqliteBytes);
-    assertStoredV18Topology(sqlitePath, topology);
-    const admissionEvidence = migrationAdmissionEvidence(sqlitePath, stationCatalogIdentity);
-    applyTopology(sqlitePath, topology, admissionEvidence);
-    assertStoredTopology(sqlitePath, topology, admissionEvidence);
-    const outputSqliteBytes = await readFile(sqlitePath);
-    const outputGzipBytes = gzipSync(outputSqliteBytes, { level: 9, mtime: 0 });
-    if (outputGzipBytes.length - inputGzipBytes.length > MAX_GZIP_DELTA_BYTES) {
-      throw new Error("ITX topology exceeds the 64 KiB compressed size budget");
-    }
-    const migratedIndex = structuredClone(index);
-    const migratedPack = migratedIndex.packs.find(({ id }) => id === "capital");
-    Object.assign(migratedPack, {
-      sha256: sha256(outputGzipBytes), sqliteSha256: sha256(outputSqliteBytes), byteSize: outputGzipBytes.length,
-    });
-    const migratedEvidence = migrationEvidence({
-      sourceArtifact, topology, admissionEvidence, inputGzipBytes, inputSqliteBytes,
-      outputGzipBytes, outputSqliteBytes,
-    });
-    const outputPath = path.join(directory, "output.sqlite");
-    await writeFile(outputPath, outputSqliteBytes);
-    assertStoredTopology(outputPath, topology, admissionEvidence);
-    await writeMigrationOutputs([
-      { file: packPath, bytes: outputGzipBytes },
-      { file: indexPath, bytes: `${JSON.stringify(migratedIndex, null, 2)}\n` },
-      { file: evidencePath, bytes: `${JSON.stringify(migratedEvidence, null, 2)}\n` },
-    ]);
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
-}
-
-async function checkMigratedCurrentV18({ packPath, indexPath, evidencePath }) {
-  const [packBytes, indexBytes, evidenceBytes] = await Promise.all([readFile(packPath), readFile(indexPath), readFile(evidencePath)]);
-  const evidence = JSON.parse(evidenceBytes);
-  const index = JSON.parse(indexBytes);
-  const { topology } = await currentV18MigrationContext(evidence);
-  if (!hasExactKeys(evidence, ["schemaVersion", "artifactKind", "serviceId", "sourceIssue", "sourceArtifact", "topology", "migration", "routeServiceEvidence", "pack"])
-    || evidence.schemaVersion !== 1 || evidence.artifactKind !== "itx-cheongchun-mobile-topology-evidence"
-    || evidence.serviceId !== "ITX_CHEONGCHUN" || evidence.sourceIssue !== 2135
-    || !hasExactKeys(evidence.migration, ["fromCatalogVersion", "toCatalogVersion", "inputPack"])
-    || evidence.migration.fromCatalogVersion !== 18 || evidence.migration.toCatalogVersion !== 19
-    || JSON.stringify(evidence.migration.inputPack) !== JSON.stringify(CURRENT_V18_MIGRATION_INPUT)
-    || !hasExactKeys(evidence.pack, [
-      "id", "inputSha256", "inputSqliteSha256", "inputByteSize", "outputSha256",
-      "outputSqliteSha256", "byteSize", "byteSizeDelta",
-    ])
-    || evidence.pack.id !== "capital"
-    || evidence.pack?.outputSha256 !== sha256(packBytes)
-    || evidence.pack?.outputSqliteSha256 !== sha256(gunzipSync(packBytes))
-    || evidence.pack?.byteSize !== packBytes.length
-    || evidence.pack?.inputSha256 !== CURRENT_V18_MIGRATION_INPUT.sha256
-    || evidence.pack?.inputSqliteSha256 !== CURRENT_V18_MIGRATION_INPUT.sqliteSha256
-    || evidence.pack?.inputByteSize !== CURRENT_V18_MIGRATION_INPUT.byteSize
-    || evidence.pack?.byteSizeDelta !== packBytes.length - CURRENT_V18_MIGRATION_INPUT.byteSize
-    || evidence.pack.byteSizeDelta > MAX_GZIP_DELTA_BYTES
-    || evidence.routeServiceEvidence?.artifactEvidence?.timetableArtifactId !== evidence.sourceArtifact.id
-    || evidence.routeServiceEvidence?.artifactEvidence?.timetableArtifactSha256 !== evidence.sourceArtifact.sha256
-    || evidence.routeServiceEvidence?.artifactEvidence?.freshUntil !== evidence.sourceArtifact.freshUntil
-    || evidence.routeServiceEvidence?.stationCatalogEvidence?.stationCatalogPackId
-      !== CURRENT_V18_STATION_CATALOG_PACK_ID
-    || evidence.topology?.stationMembershipCount !== topology.stations.length
-    || evidence.topology?.servedStationCount !== topology.servedStations.length
-    || evidence.topology?.edgeCount !== topology.edges.length
-    || evidence.topology?.sha256 !== topology.sha256
-    || JSON.stringify(evidence.topology?.directions) !== JSON.stringify(["up", "down"])
-    || evidence.topology?.connectedComponentCount !== 1
-    || evidence.topology?.isolatedServedStationCount !== 0
-    || evidence.topology?.durationSecondsEmbedded !== false
-    || evidence.topology?.fareEmbedded !== false
-    || index.packs?.find(({ id }) => id === "capital")?.sha256 !== sha256(packBytes)
-    || index.packs?.find(({ id }) => id === "capital")?.sqliteSha256 !== sha256(gunzipSync(packBytes))
-    || index.packs?.find(({ id }) => id === "capital")?.byteSize !== packBytes.length) {
-    throw new Error("ITX topology migrated v19 evidence or index is stale");
-  }
-  validateRouteServiceEvidence(evidence.routeServiceEvidence);
-  const directory = await mkdtemp(path.join(os.tmpdir(), `itx-current-v18-check-${randomUUID()}-`));
-  try {
-    const sqlitePath = path.join(directory, "capital.sqlite");
-    await writeFile(sqlitePath, gunzipSync(packBytes));
-    assertStoredTopology(sqlitePath, topology, evidence.routeServiceEvidence);
-  } finally { await rm(directory, { recursive: true, force: true }); }
-}
-
 async function main() {
   const packPath = path.resolve(root, option("--pack", "apps/mobile/assets/datapacks/capital.sqlite.gz"));
   const indexPath = path.resolve(root, option("--index", "apps/mobile/assets/datapacks/index.json"));
   const contractPath = path.resolve(root, option("--contract", "tools/datapack/itx-cheongchun-coverage-contract.json"));
   const evidencePath = path.resolve(root, option("--evidence", "tools/datapack/itx-cheongchun-topology-evidence.json"));
-  const stationCatalogPackPath = option("--station-catalog-pack", null);
   const fixtureProjectionPath = option("--project-fixture", null);
   const check = process.argv.includes("--check");
   const migrateCurrentV18Requested = process.argv.includes("--migrate-current-v18");
