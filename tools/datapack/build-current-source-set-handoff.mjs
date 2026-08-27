@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, open, writeFile } from "node:fs/promises";
+import { gunzipSync } from "node:zlib";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -23,8 +24,27 @@ const REPOSITORY = "AquilaXk/easysubway-data";
 const SHA1 = /^[a-f0-9]{40}$/u;
 const SHA256 = /^[a-f0-9]{64}$/u;
 const OPERATION = /^[a-z0-9][a-z0-9-]{7,127}$/u;
+const RETAINED_SOURCE_REPOSITORY_SHA = "befa78d0bd1dec8ce609bd1800b099d569e96734";
+const RETAINED_PRODUCTION_INPUT_SHA256 = "8553d59adeea4fd90b94119fbf46ff39b28210edb9543a94fff864b5b54ba402";
+const RETAINED_REVIEWED_PACK_SHA256 = "bdea781b533bb4e75cab12e6ba5a48d3fd753c2e9d8ba3325ac30b69b54e8341";
+const RETAINED_OWNERSHIP_SHA256 = "629663ff845920813f9c939f3521ae154bbcb25f8f71c2a03e6014ddc8a2edb8";
 const COMPONENT_NAMES = Object.freeze(Object.keys(CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS));
 const RELEASE_REQUEST_COMPONENT_PATH = "tools/datapack/release/release-request.json";
+const PROTECTED_COMPONENT_NAMES = Object.freeze([
+  "candidate-build-spec", "source-snapshots", "source-inventory",
+  "capital-pilot-production-source-input", "capital-production-canonical-pack",
+  "capital-production-reviewed-pack", "release-request", "hash-evidence",
+]);
+const PROTECTED_COMPONENT_PATHS = Object.freeze({
+  "candidate-build-spec": CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS.candidateBuildSpec,
+  "source-snapshots": CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS.sourceSnapshotLedger,
+  "source-inventory": CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS.sourceInventory,
+  "capital-pilot-production-source-input": "tools/datapack/inputs/capital-pilot-production-source-input.json",
+  "capital-production-canonical-pack": "tools/datapack/release/capital-production-canonical-pack.json",
+  "capital-production-reviewed-pack": "tools/datapack/release/capital-production-reviewed-pack.json",
+  "release-request": RELEASE_REQUEST_COMPONENT_PATH,
+  "hash-evidence": "tools/datapack/release/hash-evidence.json",
+});
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 function compareBytes(left, right) {
@@ -64,6 +84,26 @@ function strictEntryBytes(entry, label) {
   const bytes = Buffer.from(entry.bytesBase64, "base64");
   if (bytes.length === 0 || bytes.toString("base64") !== entry.bytesBase64 || sha256(bytes) !== entry.sha256) throw new Error(`${label} entry mismatch`);
   return bytes;
+}
+function embeddedBytes(pathValue, bytes, label) {
+  if (typeof pathValue !== "string" || (!pathValue.startsWith("tools/") && !pathValue.startsWith("apps/")) || !Buffer.isBuffer(bytes) || bytes.length === 0) throw new Error(`${label} bytes mismatch`);
+  return { bytesBase64: bytes.toString("base64"), path: pathValue, sha256: sha256(bytes) };
+}
+function readEmbeddedBytes(entry, label) {
+  assertKeys(entry, ["bytesBase64", "path", "sha256"], label);
+  return strictEntryBytes(entry, label);
+}
+function verifiedBytes(bytes, label) {
+  if (!Buffer.isBuffer(bytes) || bytes.length === 0) throw new Error(`${label} bytes mismatch`);
+  return { bytesBase64: bytes.toString("base64"), sha256: sha256(bytes) };
+}
+function readVerifiedBytes(entry, label) {
+  assertKeys(entry, ["bytesBase64", "sha256"], label);
+  return strictEntryBytes(entry, label);
+}
+function parseJsonBytes(bytes, label) {
+  try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); }
+  catch { throw new Error(`${label} JSON mismatch`); }
 }
 function parseComponent(entry, label) {
   const bytes = strictEntryBytes(entry, label);
@@ -140,12 +180,75 @@ function verifyEmbeddedExitReceipt({ components, externalReceipt, sourceReposito
   return exitReceipt;
 }
 
-export function buildCurrentSourceSetHandoff({ compositeReceiptBytes, compositeBytes, expectedApprovalId, releaseRequestBytes, sourceRepositorySha, producerSha, operationId }) {
+function validateRetainedSourceInputs({ sourceRepositorySha, productionInputBytes, reviewedPackBytes, ownershipBytes }) {
+  if (sourceRepositorySha !== RETAINED_SOURCE_REPOSITORY_SHA
+    || sha256(productionInputBytes) !== RETAINED_PRODUCTION_INPUT_SHA256
+    || sha256(reviewedPackBytes) !== RETAINED_REVIEWED_PACK_SHA256
+    || sha256(ownershipBytes) !== RETAINED_OWNERSHIP_SHA256) {
+    throw new Error("retained source input identity mismatch");
+  }
+}
+
+function protectedOutputs({ entries, components, releaseRequest, productionInputBytes, reviewedPackBytes }) {
+  const compositeBytesFor = (relative, label) => strictEntryBytes(entries.get(relative), label);
+  const source = {
+    "candidate-build-spec": components.candidateBuildSpec.bytes,
+    "source-snapshots": compositeBytesFor(PROTECTED_COMPONENT_PATHS["source-snapshots"], "source snapshots"),
+    "source-inventory": components.sourceInventory.bytes,
+    "capital-production-canonical-pack": compositeBytesFor(PROTECTED_COMPONENT_PATHS["capital-production-canonical-pack"], "canonical pack"),
+    "release-request": releaseRequest.bytes,
+    "hash-evidence": compositeBytesFor(PROTECTED_COMPONENT_PATHS["hash-evidence"], "hash evidence"),
+    "capital-pilot-production-source-input": productionInputBytes,
+    "capital-production-reviewed-pack": reviewedPackBytes,
+  };
+  return PROTECTED_COMPONENT_NAMES.map((name) => embeddedBytes(PROTECTED_COMPONENT_PATHS[name], source[name], `protected ${name}`));
+}
+function validateProductionInputs({ productionInputBytes, reviewedPackBytes, candidate }) {
+  const input = parseJsonBytes(productionInputBytes, "production source input");
+  const reviewed = parseJsonBytes(reviewedPackBytes, "reviewed production pack");
+  if (!input || typeof input !== "object" || !reviewed || typeof reviewed !== "object"
+    || !Array.isArray(reviewed.packs) || reviewed.packs.length !== 1
+    || reviewed.manifest?.channel !== "production" || reviewed.packs[0]?.artifactKind !== "production") {
+    throw new Error("production input identity mismatch");
+  }
+  const snapshotIds = new Set(candidate.sourceSnapshots.map(({ snapshotId }) => snapshotId));
+  const reviewedPackIdentity = Object.fromEntries(Object.keys(input.pack ?? {}).map((key) => [key, reviewed.packs[0]?.[key]]));
+  if (canonical(input.pack) !== canonical(reviewedPackIdentity) || canonical(input.manifest) !== canonical(reviewed.manifest)
+    || !Array.isArray(input.sourceIds) || input.sourceIds.length === 0) throw new Error("production input pack mismatch");
+  const reviewedSourceIds = new Set(reviewed.packs[0].sourceInventory.map(({ id }) => id));
+  if (input.sourceIds.some((id) => typeof id !== "string" || !reviewedSourceIds.has(id))) throw new Error("production input source mismatch");
+  for (const value of Object.values(input)) {
+    if (value && typeof value === "object" && typeof value.sourceSnapshotId === "string" && !snapshotIds.has(value.sourceSnapshotId)) {
+      throw new Error("production input source identity mismatch");
+    }
+  }
+}
+function validateItxEvidence({ itxTopologyEvidenceBytes, coverageContractBytes, mobilePackBytes, ownershipBytes, mobileProfile, candidate }) {
+  const topology = parseJsonBytes(itxTopologyEvidenceBytes, "ITX topology evidence");
+  const coverage = parseJsonBytes(coverageContractBytes, "ITX coverage contract");
+  const ownership = parseJsonBytes(ownershipBytes, "data test ownership");
+  if (topology.artifactKind !== "itx-cheongchun-mobile-topology-evidence" || coverage.artifactKind !== "itx-cheongchun-coverage-contract"
+    || sha256(itxTopologyEvidenceBytes) !== candidate.itxTopologyEvidenceSha256
+    || sha256(coverageContractBytes) !== candidate.networkEdgeEvidence?.itxCoverageContract?.sha256
+    || mobileProfile !== "mobile-v19" || !ownership.executionProfiles?.[mobileProfile]) throw new Error("ITX handoff identity mismatch");
+  const fixture = ownership.fixtures?.mobile;
+  const revision = fixture?.profileCommit?.[mobileProfile];
+  const file = fixture?.requiredFiles?.find((entry) => entry?.path === "assets/datapacks/capital.sqlite.gz");
+  const gzipSha256 = file?.profileSha256?.[mobileProfile];
+  if (fixture?.repository !== "AquilaXk/easysubway-mobile" || !SHA1.test(revision ?? "") || !SHA256.test(gzipSha256 ?? "") || sha256(mobilePackBytes) !== gzipSha256) throw new Error("mobile pack ownership mismatch");
+  let sqlite;
+  try { sqlite = gunzipSync(mobilePackBytes); } catch { throw new Error("mobile pack gzip mismatch"); }
+  if (sqlite.length < 64 || sqlite.subarray(0, 16).toString("ascii") !== "SQLite format 3\u0000" || sqlite.readUInt32BE(60) !== 19
+    || topology.pack?.outputSqliteSha256 !== sha256(sqlite)) throw new Error("mobile pack SQLite mismatch");
+  return { coverage, ownership, revision, gzipSha256, sqliteSha256: sha256(sqlite), topology };
+}
+
+export function buildCurrentSourceSetHandoff({ compositeReceiptBytes, compositeBytes, expectedApprovalId, releaseRequestBytes, productionInputBytes, reviewedPackBytes, itxTopologyEvidenceBytes, itxTopologyEvidencePath, coverageContractBytes, coverageContractPath, ownershipBytes, mobilePackBytes, mobileProfile, sourceRepositorySha, producerSha, operationId }) {
   requireIdentity({ sourceRepositorySha, producerSha, operationId });
   const receipt = parseCanonical(compositeReceiptBytes, canonicalCurrentCapitalLiveChainOciReceiptJson, "composite receipt");
   validateExternalReceipt({ receipt, compositeBytes, sourceRepositorySha, operationId });
   const bundle = readCurrentCapitalLiveChainBundle(compositeBytes, { repository: REPOSITORY, repositorySha: sourceRepositorySha, operationId });
-  const { boundary, boundaryBytes, components, releaseRequest: compositeReleaseRequest } = readVerifiedComponents(bundle);
+  const { boundary, boundaryBytes, components, entries, releaseRequest: compositeReleaseRequest } = readVerifiedComponents(bundle);
   verifyEmbeddedExitReceipt({ components, externalReceipt: receipt, sourceRepositorySha, operationId });
 
   const candidate = components.candidateBuildSpec.value;
@@ -156,6 +259,10 @@ export function buildCurrentSourceSetHandoff({ compositeReceiptBytes, compositeB
     candidate,
     expectedApprovalId,
   });
+  validateRetainedSourceInputs({ sourceRepositorySha, productionInputBytes, reviewedPackBytes, ownershipBytes });
+  validateProductionInputs({ productionInputBytes, reviewedPackBytes, candidate });
+  const mobile = validateItxEvidence({ itxTopologyEvidenceBytes, coverageContractBytes, ownershipBytes, mobilePackBytes, mobileProfile, candidate });
+  const outputs = protectedOutputs({ entries, components, releaseRequest: compositeReleaseRequest, productionInputBytes, reviewedPackBytes });
   const facility = components.facilityAdmission.value;
   const transferMetrics = components.transferMetrics.value;
   const transferApplicability = components.transferApplicability.value;
@@ -178,6 +285,10 @@ export function buildCurrentSourceSetHandoff({ compositeReceiptBytes, compositeB
       providerObject: receipt.providerObject,
       receiptIdentitySha256: receipt.receiptSha256,
       receiptSha256: sha256(compositeReceiptBytes),
+    },
+    verifiedInputs: {
+      composite: verifiedBytes(compositeBytes, "composite"),
+      compositeReceipt: verifiedBytes(compositeReceiptBytes, "composite receipt"),
     },
     evidence: {
       exit: {
@@ -211,6 +322,7 @@ export function buildCurrentSourceSetHandoff({ compositeReceiptBytes, compositeB
       sourceSetSha256: boundary.currentCandidateSourceSetSha256,
     },
     operationId,
+    protectedOutputs: outputs,
     producerSha,
     repository: REPOSITORY,
     releaseRequest: {
@@ -218,8 +330,20 @@ export function buildCurrentSourceSetHandoff({ compositeReceiptBytes, compositeB
       candidateId: releaseRequest.candidateId,
       sha256: sha256(releaseRequestBytes),
     },
-    schemaVersion: 1,
+    schemaVersion: 2,
     sourceRepositorySha,
+    itx: {
+      coverageContract: embeddedBytes(candidate.networkEdgeEvidence.itxCoverageContract.path, coverageContractBytes, "ITX coverage contract"),
+      topologyEvidence: embeddedBytes(candidate.itxTopologyEvidencePath, itxTopologyEvidenceBytes, "ITX topology evidence"),
+    },
+    mobile: {
+      gzip: embeddedBytes("apps/mobile/assets/datapacks/capital.sqlite.gz", mobilePackBytes, "mobile pack"),
+      gzipSha256: mobile.gzipSha256,
+      profile: mobileProfile,
+      repositoryRevision: mobile.revision,
+      sqliteSha256: mobile.sqliteSha256,
+    },
+    ownership: embeddedBytes("tools/ci/data-test-ownership.json", ownershipBytes, "data test ownership"),
   });
   validateHandoffPayload(payload, { sourceRepositorySha, producerSha, operationId });
   return Buffer.from(`${canonical({ ...payload, handoffSha256: sha256(Buffer.from(canonical(payload))) })}\n`);
@@ -231,7 +355,7 @@ export function readCurrentSourceSetHandoff(bytes, { sourceRepositorySha, produc
   let handoff;
   try { handoff = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); }
   catch { throw new Error("source-set handoff JSON mismatch"); }
-  assertKeys(handoff, ["artifactKind", "candidate", "composite", "evidence", "fanIn", "handoffSha256", "operationId", "producerSha", "repository", "releaseRequest", "schemaVersion", "sourceRepositorySha"], "source-set handoff");
+  assertKeys(handoff, ["artifactKind", "candidate", "composite", "evidence", "fanIn", "handoffSha256", "itx", "mobile", "operationId", "ownership", "producerSha", "protectedOutputs", "repository", "releaseRequest", "schemaVersion", "sourceRepositorySha", "verifiedInputs"], "source-set handoff");
   const { handoffSha256, ...payload } = handoff;
   if (!SHA256.test(handoffSha256 ?? "") || sha256(Buffer.from(canonical(payload))) !== handoffSha256) throw new Error("source-set handoff hash mismatch");
   validateHandoffPayload(payload, { sourceRepositorySha, producerSha, operationId });
@@ -240,8 +364,8 @@ export function readCurrentSourceSetHandoff(bytes, { sourceRepositorySha, produc
 }
 
 function validateHandoffPayload(payload, { sourceRepositorySha, producerSha, operationId }) {
-  assertKeys(payload, ["artifactKind", "candidate", "composite", "evidence", "fanIn", "operationId", "producerSha", "repository", "releaseRequest", "schemaVersion", "sourceRepositorySha"], "source-set handoff payload");
-  if (payload.schemaVersion !== 1 || payload.artifactKind !== "current-source-set-handoff" || payload.repository !== REPOSITORY
+  assertKeys(payload, ["artifactKind", "candidate", "composite", "evidence", "fanIn", "itx", "mobile", "operationId", "ownership", "producerSha", "protectedOutputs", "repository", "releaseRequest", "schemaVersion", "sourceRepositorySha", "verifiedInputs"], "source-set handoff payload");
+  if (payload.schemaVersion !== 2 || payload.artifactKind !== "current-source-set-handoff" || payload.repository !== REPOSITORY
     || payload.sourceRepositorySha !== sourceRepositorySha || payload.producerSha !== producerSha || payload.operationId !== operationId) throw new Error("source-set handoff identity mismatch");
   assertKeys(payload.releaseRequest, ["approvalId", "candidateId", "sha256"], "source-set release request");
   if (requiredString(payload.releaseRequest.approvalId, "release request approval ID") !== payload.releaseRequest.approvalId
@@ -285,6 +409,119 @@ function validateHandoffPayload(payload, { sourceRepositorySha, producerSha, ope
   }
   if (sourceIds.size !== payload.candidate.sourceSnapshots.length || snapshotIds.size !== payload.candidate.sourceSnapshots.length) throw new Error("source-set candidate source mismatch");
   validateEvidence(payload.evidence, payload);
+  validateEmbeddedHandoff(payload);
+}
+
+function validateEmbeddedHandoff(payload) {
+  assertKeys(payload.verifiedInputs, ["composite", "compositeReceipt"], "verified inputs");
+  const compositeReceiptBytes = readVerifiedBytes(payload.verifiedInputs.compositeReceipt, "embedded composite receipt");
+  const compositeBytes = readVerifiedBytes(payload.verifiedInputs.composite, "embedded composite");
+  const receipt = parseCanonical(compositeReceiptBytes, canonicalCurrentCapitalLiveChainOciReceiptJson, "embedded composite receipt");
+  validateExternalReceipt({ receipt, compositeBytes, sourceRepositorySha: payload.sourceRepositorySha, operationId: payload.operationId });
+  const bundle = readCurrentCapitalLiveChainBundle(compositeBytes, { repository: REPOSITORY, repositorySha: payload.sourceRepositorySha, operationId: payload.operationId });
+  const composite = readVerifiedComponents(bundle);
+  verifyEmbeddedExitReceipt({ components: composite.components, externalReceipt: receipt, sourceRepositorySha: payload.sourceRepositorySha, operationId: payload.operationId });
+  const candidate = composite.components.candidateBuildSpec.value;
+  const releaseRequest = composite.releaseRequest.value;
+  const facility = composite.components.facilityAdmission.value;
+  const transferMetrics = composite.components.transferMetrics.value;
+  const transferApplicability = composite.components.transferApplicability.value;
+  const exitAdmission = composite.components.exitAdmission.value;
+  const expectedComposite = {
+    bundleSha256: bundle.bundleSha256,
+    manifestSha256: bundle.manifestSha256,
+    object: receipt.compositeObject,
+    planSha256: receipt.planSha256,
+    providerObject: receipt.providerObject,
+    receiptIdentitySha256: receipt.receiptSha256,
+    receiptSha256: sha256(compositeReceiptBytes),
+  };
+  const expectedFanIn = {
+    components: composite.boundary.components,
+    kind: composite.boundary.kind,
+    path: bundle.boundary.path,
+    sha256: sha256(composite.boundaryBytes),
+    sourceSetSha256: composite.boundary.currentCandidateSourceSetSha256,
+  };
+  const expectedCandidate = {
+    candidateId: candidate.candidateId,
+    sourceSnapshotSetHash: candidate.sourceSnapshotSetHash,
+    sourceSnapshots: candidate.sourceSnapshots.map(({ sourceId, snapshotId }) => ({ snapshotId, sourceId })),
+  };
+  const expectedReleaseRequest = {
+    approvalId: releaseRequest.approvalId,
+    candidateId: releaseRequest.candidateId,
+    sha256: sha256(composite.releaseRequest.bytes),
+  };
+  const expectedEvidence = {
+    exit: {
+      admissionReceiptSha256: composite.boundary.components.exitAdmissionOciReceipt.sha256,
+      admissionSha256: composite.boundary.components.exitAdmission.sha256,
+      candidateId: exitAdmission.candidate?.candidateId,
+      normalizedSha256: composite.boundary.components.exitNormalized.sha256,
+      snapshotId: exitAdmission.sourceIdentity?.snapshotId,
+      sourceId: exitAdmission.sourceIdentity?.sourceId,
+      sourceSnapshotSetHash: exitAdmission.candidate?.sourceSetSha256,
+    },
+    facility: {
+      admissionSha256: composite.boundary.components.facilityAdmission.sha256,
+      candidateId: facility.candidate?.candidateId,
+      sourceSnapshotSetHash: facility.candidate?.sourceSnapshotSetHash,
+    },
+    transfer: {
+      applicabilityArtifactSha256: transferApplicability.artifactSha256,
+      applicabilitySha256: composite.boundary.components.transferApplicability.sha256,
+      metricsArtifactSha256: transferMetrics.artifactSha256,
+      metricsSha256: composite.boundary.components.transferMetrics.sha256,
+      rawSha256: transferMetrics.sourceIdentity?.rawSha256,
+      sourceId: transferMetrics.sourceIdentity?.sourceId,
+    },
+  };
+  if (canonical(payload.composite) !== canonical(expectedComposite)
+    || canonical(payload.fanIn) !== canonical(expectedFanIn)
+    || canonical(payload.candidate) !== canonical(expectedCandidate)
+    || canonical(payload.releaseRequest) !== canonical(expectedReleaseRequest)
+    || canonical(payload.evidence) !== canonical(expectedEvidence)) {
+    throw new Error("embedded composite projection mismatch");
+  }
+  if (!Array.isArray(payload.protectedOutputs) || payload.protectedOutputs.length !== PROTECTED_COMPONENT_NAMES.length) throw new Error("protected outputs mismatch");
+  const byPath = new Map(payload.protectedOutputs.map((entry) => [entry.path, entry]));
+  if (byPath.size !== PROTECTED_COMPONENT_NAMES.length) throw new Error("protected outputs duplicate path");
+  for (const name of PROTECTED_COMPONENT_NAMES) {
+    const entry = byPath.get(PROTECTED_COMPONENT_PATHS[name]);
+    if (!entry) throw new Error("protected outputs path mismatch");
+    readEmbeddedBytes(entry, `protected ${name}`);
+  }
+  for (const name of PROTECTED_COMPONENT_NAMES.filter((name) => !["capital-pilot-production-source-input", "capital-production-reviewed-pack"].includes(name))) {
+    const outputBytes = readEmbeddedBytes(byPath.get(PROTECTED_COMPONENT_PATHS[name]), `protected ${name}`);
+    const compositeEntry = composite.entries.get(PROTECTED_COMPONENT_PATHS[name]);
+    if (!compositeEntry || !outputBytes.equals(strictEntryBytes(compositeEntry, `embedded composite ${name}`))) throw new Error(`protected ${name} composite mismatch`);
+  }
+  const candidateBytes = readEmbeddedBytes(byPath.get(PROTECTED_COMPONENT_PATHS["candidate-build-spec"]), "protected candidate");
+  const protectedCandidate = parseJsonBytes(candidateBytes, "protected candidate");
+  if (protectedCandidate.candidateId !== payload.candidate.candidateId || protectedCandidate.sourceSnapshotSetHash !== payload.candidate.sourceSnapshotSetHash) throw new Error("protected candidate identity mismatch");
+  const requestBytes = readEmbeddedBytes(byPath.get(PROTECTED_COMPONENT_PATHS["release-request"]), "protected release request");
+  if (sha256(requestBytes) !== payload.releaseRequest.sha256 || !requestBytes.equals(composite.releaseRequest.bytes)) throw new Error("protected release request mismatch");
+  const productionInputBytes = readEmbeddedBytes(byPath.get(PROTECTED_COMPONENT_PATHS["capital-pilot-production-source-input"]), "protected production input");
+  const reviewedPackBytes = readEmbeddedBytes(byPath.get(PROTECTED_COMPONENT_PATHS["capital-production-reviewed-pack"]), "protected reviewed pack");
+  assertKeys(payload.itx, ["coverageContract", "topologyEvidence"], "ITX handoff");
+  if (payload.itx.topologyEvidence?.path !== candidate.itxTopologyEvidencePath
+    || payload.itx.coverageContract?.path !== candidate.networkEdgeEvidence?.itxCoverageContract?.path) throw new Error("ITX handoff identity mismatch");
+  assertKeys(payload.mobile, ["gzip", "gzipSha256", "profile", "repositoryRevision", "sqliteSha256"], "mobile handoff");
+  if (payload.ownership?.path !== "tools/ci/data-test-ownership.json" || payload.mobile.gzip?.path !== "apps/mobile/assets/datapacks/capital.sqlite.gz") throw new Error("mobile handoff path mismatch");
+  const ownershipBytes = readEmbeddedBytes(payload.ownership, "ownership handoff");
+  validateRetainedSourceInputs({ sourceRepositorySha: payload.sourceRepositorySha, productionInputBytes, reviewedPackBytes, ownershipBytes });
+  validateProductionInputs({ productionInputBytes, reviewedPackBytes, candidate: protectedCandidate });
+  const mobilePackBytes = readEmbeddedBytes(payload.mobile.gzip, "mobile gzip handoff");
+  const mobile = validateItxEvidence({
+    itxTopologyEvidenceBytes: readEmbeddedBytes(payload.itx.topologyEvidence, "ITX topology handoff"),
+    coverageContractBytes: readEmbeddedBytes(payload.itx.coverageContract, "ITX coverage handoff"),
+    ownershipBytes,
+    mobilePackBytes,
+    mobileProfile: payload.mobile.profile,
+    candidate: protectedCandidate,
+  });
+  if (payload.mobile.repositoryRevision !== mobile.revision || payload.mobile.gzipSha256 !== mobile.gzipSha256 || payload.mobile.sqliteSha256 !== mobile.sqliteSha256) throw new Error("mobile handoff identity mismatch");
 }
 
 function validateHandoffObject(object, repositorySha, operationId, segment, label) {
@@ -314,13 +551,14 @@ function validateEvidence(evidence, payload) {
 }
 
 export function parseArgs(args) {
-  if (args.length !== 16 || args[0] !== "--composite-receipt" || args[2] !== "--composite" || args[4] !== "--release-request" || args[6] !== "--expected-approval-id"
-    || args[8] !== "--source-repository-sha" || args[10] !== "--producer-sha" || args[12] !== "--operation-id" || args[14] !== "--output"
-    || !path.isAbsolute(args[1]) || !path.isAbsolute(args[3]) || !path.isAbsolute(args[5]) || args[7].length === 0 || !path.isAbsolute(args[15])) {
+  if (args.length !== 30 || args[0] !== "--composite-receipt" || args[2] !== "--composite" || args[4] !== "--release-request" || args[6] !== "--production-input" || args[8] !== "--reviewed-pack"
+    || args[10] !== "--itx-topology-evidence" || args[12] !== "--coverage-contract" || args[14] !== "--ownership" || args[16] !== "--mobile-pack" || args[18] !== "--mobile-profile"
+    || args[20] !== "--expected-approval-id" || args[22] !== "--source-repository-sha" || args[24] !== "--producer-sha" || args[26] !== "--operation-id" || args[28] !== "--output"
+    || ![1, 3, 5, 7, 9, 11, 13, 15, 17, 29].every((index) => path.isAbsolute(args[index])) || args[19] !== "mobile-v19" || args[21].length === 0) {
     throw new Error("current source-set handoff arguments mismatch");
   }
-  requireIdentity({ sourceRepositorySha: args[9], producerSha: args[11], operationId: args[13] });
-  return { compositeReceiptPath: args[1], compositePath: args[3], releaseRequestPath: args[5], expectedApprovalId: args[7], sourceRepositorySha: args[9], producerSha: args[11], operationId: args[13], outputPath: args[15] };
+  requireIdentity({ sourceRepositorySha: args[23], producerSha: args[25], operationId: args[27] });
+  return { compositeReceiptPath: args[1], compositePath: args[3], releaseRequestPath: args[5], productionInputPath: args[7], reviewedPackPath: args[9], itxTopologyEvidencePath: args[11], coverageContractPath: args[13], ownershipPath: args[15], mobilePackPath: args[17], mobileProfile: args[19], expectedApprovalId: args[21], sourceRepositorySha: args[23], producerSha: args[25], operationId: args[27], outputPath: args[29] };
 }
 
 async function readStableBytes(filePath, label) {
@@ -349,11 +587,17 @@ async function writeImmutable(outputPath, bytes) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const input = parseArgs(process.argv.slice(2));
-  const [compositeReceiptBytes, compositeBytes, releaseRequestBytes] = await Promise.all([
+  const [compositeReceiptBytes, compositeBytes, releaseRequestBytes, productionInputBytes, reviewedPackBytes, itxTopologyEvidenceBytes, coverageContractBytes, ownershipBytes, mobilePackBytes] = await Promise.all([
     readStableBytes(input.compositeReceiptPath, "composite receipt"),
     readStableBytes(input.compositePath, "composite"),
     readStableBytes(input.releaseRequestPath, "release request"),
+    readStableBytes(input.productionInputPath, "production input"),
+    readStableBytes(input.reviewedPackPath, "reviewed pack"),
+    readStableBytes(input.itxTopologyEvidencePath, "ITX topology evidence"),
+    readStableBytes(input.coverageContractPath, "ITX coverage contract"),
+    readStableBytes(input.ownershipPath, "data test ownership"),
+    readStableBytes(input.mobilePackPath, "mobile pack"),
   ]);
-  const output = buildCurrentSourceSetHandoff({ ...input, compositeReceiptBytes, compositeBytes, releaseRequestBytes });
+  const output = buildCurrentSourceSetHandoff({ ...input, compositeReceiptBytes, compositeBytes, releaseRequestBytes, productionInputBytes, reviewedPackBytes, itxTopologyEvidenceBytes, coverageContractBytes, ownershipBytes, mobilePackBytes });
   await writeImmutable(input.outputPath, output);
 }

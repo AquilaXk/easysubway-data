@@ -53,7 +53,7 @@ function rehashHandoff(handoff) {
 }
 
 async function canonicalInputFixture(root) {
-  const repositorySha = "d".repeat(40);
+  const repositorySha = "befa78d0bd1dec8ce609bd1800b099d569e96734";
   const producerSha = "e".repeat(40);
   const operationId = "current-source-set-28";
   const provider = await buildCanonicalCurrentKricExitCollectionBundle({ repositorySha, operationId });
@@ -135,7 +135,17 @@ async function canonicalInputFixture(root) {
   const compositeReceiptBytes = Buffer.from(`${canonicalCurrentCapitalLiveChainOciReceiptJson(receipt, { planBytes })}\n`);
   const releaseRequestPath = path.join(ROOT, "tools/datapack/release/release-request.json");
   const releaseRequestBytes = await readFile(releaseRequestPath);
-  return { boundary, candidate, compositeBytes, compositeReceiptBytes, expectedApprovalId: JSON.parse(releaseRequestBytes).approvalId, operationId, producerSha, releaseRequestBytes, releaseRequestPath, sourceRepositorySha: repositorySha };
+  const productionInputPath = path.join(ROOT, "tools/datapack/inputs/capital-pilot-production-source-input.json");
+  const reviewedPackPath = path.join(ROOT, "tools/datapack/release/capital-production-reviewed-pack.json");
+  const itxTopologyEvidencePath = path.join(ROOT, candidate.itxTopologyEvidencePath);
+  const coverageContractPath = path.join(ROOT, candidate.networkEdgeEvidence.itxCoverageContract.path);
+  const ownershipPath = path.join(ROOT, "tools/ci/data-test-ownership.json");
+  const mobileFixtureRoot = process.env.EASYSUBWAY_MOBILE_FIXTURE_ROOT ?? path.join(ROOT, ".external/mobile");
+  const mobilePackPath = path.join(mobileFixtureRoot, "apps/mobile/assets/datapacks/capital.sqlite.gz");
+  const [productionInputBytes, reviewedPackBytes, itxTopologyEvidenceBytes, coverageContractBytes, ownershipBytes, mobilePackBytes] = await Promise.all([
+    readFile(productionInputPath), readFile(reviewedPackPath), readFile(itxTopologyEvidencePath), readFile(coverageContractPath), readFile(ownershipPath), readFile(mobilePackPath),
+  ]);
+  return { boundary, candidate, compositeBytes, compositeReceiptBytes, coverageContractBytes, coverageContractPath, expectedApprovalId: JSON.parse(releaseRequestBytes).approvalId, itxTopologyEvidenceBytes, itxTopologyEvidencePath, mobilePackBytes, mobilePackPath, mobileProfile: "mobile-v19", operationId, ownershipBytes, ownershipPath, producerSha, productionInputBytes, productionInputPath, releaseRequestBytes, releaseRequestPath, reviewedPackBytes, reviewedPackPath, sourceRepositorySha: repositorySha };
 }
 
 test("current source-set handoff binds the exact verified live-chain and fails closed on drift", async (t) => {
@@ -145,6 +155,7 @@ test("current source-set handoff binds the exact verified live-chain and fails c
   const handoffBytes = buildCurrentSourceSetHandoff(input);
   const handoff = readCurrentSourceSetHandoff(handoffBytes, input);
 
+  assert.equal(handoff.schemaVersion, 2);
   assert.equal(handoff.repository, REPOSITORY);
   assert.equal(handoff.producerSha, input.producerSha);
   assert.equal(handoff.sourceRepositorySha, input.sourceRepositorySha);
@@ -160,6 +171,31 @@ test("current source-set handoff binds the exact verified live-chain and fails c
     candidateId: handoff.candidate.candidateId,
     sha256: sha256(input.releaseRequestBytes),
   });
+  const protectedBytes = new Map(handoff.protectedOutputs.map((entry) => [entry.path, Buffer.from(entry.bytesBase64, "base64")]));
+  assert.deepEqual([...protectedBytes.keys()].sort(), [
+    "tools/datapack/inputs/capital-pilot-production-source-input.json",
+    "tools/datapack/release/candidate-build-spec.json",
+    "tools/datapack/release/capital-production-canonical-pack.json",
+    "tools/datapack/release/capital-production-reviewed-pack.json",
+    "tools/datapack/release/hash-evidence.json",
+    "tools/datapack/release/release-request.json",
+    "tools/datapack/release/source-snapshots.json",
+    "tools/datapack/source-inventory.json",
+  ]);
+  assert.deepEqual(protectedBytes.get("tools/datapack/inputs/capital-pilot-production-source-input.json"), input.productionInputBytes);
+  assert.deepEqual(protectedBytes.get("tools/datapack/release/capital-production-reviewed-pack.json"), input.reviewedPackBytes);
+  assert.deepEqual(Buffer.from(handoff.itx.topologyEvidence.bytesBase64, "base64"), input.itxTopologyEvidenceBytes);
+  assert.deepEqual(Buffer.from(handoff.itx.coverageContract.bytesBase64, "base64"), input.coverageContractBytes);
+  assert.equal(handoff.itx.topologyEvidence.path, input.candidate.itxTopologyEvidencePath);
+  assert.equal(handoff.itx.coverageContract.path, input.candidate.networkEdgeEvidence.itxCoverageContract.path);
+  assert.deepEqual(Buffer.from(handoff.verifiedInputs.compositeReceipt.bytesBase64, "base64"), input.compositeReceiptBytes);
+  assert.deepEqual(Buffer.from(handoff.verifiedInputs.composite.bytesBase64, "base64"), input.compositeBytes);
+  assert.equal(handoff.mobile.profile, "mobile-v19");
+  assert.equal(handoff.mobile.gzipSha256, sha256(input.mobilePackBytes));
+  assert.equal(handoff.mobile.repositoryRevision, JSON.parse(input.ownershipBytes).fixtures.mobile.profileCommit["mobile-v19"]);
+  assert.deepEqual(Buffer.from(handoff.mobile.gzip.bytesBase64, "base64"), input.mobilePackBytes);
+  assert.deepEqual(Buffer.from(handoff.ownership.bytesBase64, "base64"), input.ownershipBytes);
+  assert.equal(input.mobilePackPath, path.join(process.env.EASYSUBWAY_MOBILE_FIXTURE_ROOT ?? path.join(ROOT, ".external/mobile"), "apps/mobile/assets/datapacks/capital.sqlite.gz"));
 
   const receiptPath = path.join(temporary, "receipt.json");
   const compositePath = path.join(temporary, "composite.json");
@@ -171,6 +207,13 @@ test("current source-set handoff binds the exact verified live-chain and fails c
     "--composite-receipt", receiptPath,
     "--composite", compositePath,
     "--release-request", input.releaseRequestPath,
+    "--production-input", input.productionInputPath,
+    "--reviewed-pack", input.reviewedPackPath,
+    "--itx-topology-evidence", input.itxTopologyEvidencePath,
+    "--coverage-contract", input.coverageContractPath,
+    "--ownership", input.ownershipPath,
+    "--mobile-pack", input.mobilePackPath,
+    "--mobile-profile", input.mobileProfile,
     "--expected-approval-id", input.expectedApprovalId,
     "--source-repository-sha", input.sourceRepositorySha,
     "--producer-sha", input.producerSha,
@@ -192,6 +235,13 @@ test("current source-set handoff binds the exact verified live-chain and fails c
     "--composite-receipt", rejectedReceipt,
     "--composite", compositePath,
     "--release-request", input.releaseRequestPath,
+    "--production-input", input.productionInputPath,
+    "--reviewed-pack", input.reviewedPackPath,
+    "--itx-topology-evidence", input.itxTopologyEvidencePath,
+    "--coverage-contract", input.coverageContractPath,
+    "--ownership", input.ownershipPath,
+    "--mobile-pack", input.mobilePackPath,
+    "--mobile-profile", input.mobileProfile,
     "--expected-approval-id", input.expectedApprovalId,
     "--source-repository-sha", input.sourceRepositorySha,
     "--producer-sha", input.producerSha,
@@ -223,6 +273,13 @@ test("current source-set handoff binds the exact verified live-chain and fails c
       "--composite-receipt", receiptPath,
       "--composite", compositePath,
       "--release-request", driftedRequestPath,
+      "--production-input", input.productionInputPath,
+      "--reviewed-pack", input.reviewedPackPath,
+      "--itx-topology-evidence", input.itxTopologyEvidencePath,
+      "--coverage-contract", input.coverageContractPath,
+      "--ownership", input.ownershipPath,
+      "--mobile-pack", input.mobilePackPath,
+      "--mobile-profile", input.mobileProfile,
       "--expected-approval-id", input.expectedApprovalId,
       "--source-repository-sha", input.sourceRepositorySha,
       "--producer-sha", input.producerSha,
@@ -243,6 +300,13 @@ test("current source-set handoff binds the exact verified live-chain and fails c
     "--composite-receipt", receiptPath,
     "--composite", compositePath,
     "--release-request", input.releaseRequestPath,
+    "--production-input", input.productionInputPath,
+    "--reviewed-pack", input.reviewedPackPath,
+    "--itx-topology-evidence", input.itxTopologyEvidencePath,
+    "--coverage-contract", input.coverageContractPath,
+    "--ownership", input.ownershipPath,
+    "--mobile-pack", input.mobilePackPath,
+    "--mobile-profile", input.mobileProfile,
     "--expected-approval-id", "release-request-other",
     "--source-repository-sha", input.sourceRepositorySha,
     "--producer-sha", input.producerSha,
@@ -267,6 +331,13 @@ test("current source-set handoff binds the exact verified live-chain and fails c
     "--composite-receipt", receiptPath,
     "--composite", compositePath,
     "--release-request", scopeDriftPath,
+    "--production-input", input.productionInputPath,
+    "--reviewed-pack", input.reviewedPackPath,
+    "--itx-topology-evidence", input.itxTopologyEvidencePath,
+    "--coverage-contract", input.coverageContractPath,
+    "--ownership", input.ownershipPath,
+    "--mobile-pack", input.mobilePackPath,
+    "--mobile-profile", input.mobileProfile,
     "--expected-approval-id", input.expectedApprovalId,
     "--source-repository-sha", input.sourceRepositorySha,
     "--producer-sha", input.producerSha,
@@ -284,5 +355,60 @@ test("current source-set handoff binds the exact verified live-chain and fails c
     () => readCurrentSourceSetHandoff(Buffer.from(`${canonical(tamperedFanIn)}\n`), input),
     /fan-in/,
   );
+
+  const tamperedProjection = rehashHandoff({
+    ...handoff,
+    composite: { ...handoff.composite, planSha256: "0".repeat(64) },
+  });
+  assert.throws(
+    () => readCurrentSourceSetHandoff(Buffer.from(`${canonical(tamperedProjection)}\n`), input),
+    /embedded composite projection mismatch/,
+  );
+
+  const tamperedProtected = rehashHandoff({
+    ...handoff,
+    protectedOutputs: handoff.protectedOutputs.map((entry) => entry.path === "tools/datapack/release/hash-evidence.json"
+      ? { ...entry, sha256: "0".repeat(64) } : entry),
+  });
+  assert.throws(
+    () => readCurrentSourceSetHandoff(Buffer.from(`${canonical(tamperedProtected)}\n`), input),
+    /protected hash-evidence entry mismatch/,
+  );
+  const tamperedItxPath = rehashHandoff({
+    ...handoff,
+    itx: { ...handoff.itx, topologyEvidence: { ...handoff.itx.topologyEvidence, path: "tools/datapack/itx-cheongchun-topology-evidence.json" } },
+  });
+  assert.throws(
+    () => readCurrentSourceSetHandoff(Buffer.from(`${canonical(tamperedItxPath)}\n`), input),
+    /ITX handoff identity mismatch/,
+  );
+
+  for (const [label, key, inputKey, protectedPath] of [
+    ["production input", "productionInputBytes", "productionInputBytes", "tools/datapack/inputs/capital-pilot-production-source-input.json"],
+    ["reviewed pack", "reviewedPackBytes", "reviewedPackBytes", "tools/datapack/release/capital-production-reviewed-pack.json"],
+    ["ownership", "ownershipBytes", "ownershipBytes", "tools/ci/data-test-ownership.json"],
+  ]) {
+    const driftedBytes = Buffer.from(input[inputKey]);
+    driftedBytes[0] ^= 1;
+    assert.throws(
+      () => buildCurrentSourceSetHandoff({ ...input, [key]: driftedBytes }),
+      /retained source input identity mismatch/,
+      label,
+    );
+    const tamperedRetained = rehashHandoff({
+      ...handoff,
+      ...(protectedPath === "tools/ci/data-test-ownership.json" ? {
+        ownership: { ...handoff.ownership, bytesBase64: driftedBytes.toString("base64"), sha256: sha256(driftedBytes) },
+      } : {
+        protectedOutputs: handoff.protectedOutputs.map((entry) => entry.path === protectedPath
+          ? { ...entry, bytesBase64: driftedBytes.toString("base64"), sha256: sha256(driftedBytes) } : entry),
+      }),
+    });
+    assert.throws(
+      () => readCurrentSourceSetHandoff(Buffer.from(`${canonical(tamperedRetained)}\n`), input),
+      /retained source input identity mismatch/,
+      label,
+    );
+  }
 
 });
