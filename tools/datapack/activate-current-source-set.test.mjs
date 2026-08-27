@@ -1216,11 +1216,7 @@ test("topology-only refresh는 current capital/Incheon admission identity를 함
   assert.equal(result.spec.itxTopologyEvidencePath, currentItxTopologyEvidencePath);
   assert.equal(result.spec.itxTopologyEvidenceSha256, sha256(currentItxTopologyEvidenceBytes));
   assert.equal(Object.hasOwn(result.spec.networkEdgeEvidence, "itxCurrentTopologyAdmission"), false);
-  const currentAccessibilitySnapshotBySource = new Map(
-    result.sourceInventory.sources
-      .filter(({ accessibilityAdmissionEvidence }) => accessibilityAdmissionEvidence != null)
-      .map(({ id, accessibilityAdmissionEvidence }) => [id, accessibilityAdmissionEvidence.snapshotId]),
-  );
+  const previousCapital = canonical.packs.find(({ id }) => id === "capital");
   const capital = result.canonical.packs.find(({ id }) => id === "capital");
   const reviewedCapital = result.reviewedPack.packs.find(({ id }) => id === "capital");
   assert.equal(reviewedCapital.networkEdges.length, 4);
@@ -1230,14 +1226,15 @@ test("topology-only refresh는 current capital/Incheon admission identity를 함
   assert.ok(capital.networkEdges.every(({ edgeType }) => edgeType === "RIDE"));
   assert.equal(capital.networkEdges.filter(({ edgeType }) =>
     ["ENTRY", "EXIT"].includes(edgeType)).length, 0);
-  const accessibilityRows = [
-    ...capital.facilities,
-    ...capital.stationFacilityEvidence,
-    ...capital.networkEdges.filter(({ edgeType }) => ["ENTRY", "EXIT"].includes(edgeType)),
-  ].filter(({ sourceId }) => currentAccessibilitySnapshotBySource.has(sourceId));
-  assert.ok(accessibilityRows.length > 0);
-  assert.ok(accessibilityRows.every(({ sourceId, sourceSnapshotId }) =>
-    sourceSnapshotId === currentAccessibilitySnapshotBySource.get(sourceId)));
+  const accessibilityRows = (pack) => [
+    ...pack.facilities,
+    ...pack.stationFacilityEvidence,
+    ...pack.networkEdges.filter(({ edgeType }) => ["ENTRY", "EXIT"].includes(edgeType)),
+  ];
+  const previousAccessibilityRows = accessibilityRows(previousCapital);
+  const refreshedAccessibilityRows = accessibilityRows(capital);
+  assert.ok(previousAccessibilityRows.length > 0);
+  assert.deepEqual(refreshedAccessibilityRows, previousAccessibilityRows);
   assert.equal(result.sourceSeparatedTopologyPath, currentTopologyPath);
   assert.deepEqual(result.sourceSeparatedTopologyBytes, currentTopologyBytes);
   const incheon = result.sourceInventory.sources

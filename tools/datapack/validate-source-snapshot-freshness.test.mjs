@@ -19,27 +19,14 @@ import {
 import {
   activateSyntheticCurrentPublicRouteMapSuccessor,
   copySyntheticCurrentPublicRouteMapRepository,
+  nextSyntheticCurrentStaticNetworkNow,
 } from "./test-fixtures/current-public-route-map-successor.mjs";
 
 const evaluationAt = "2026-07-15T00:00:00.000Z";
 const execFileAsync = promisify(execFile);
 
 const root = path.resolve(import.meta.dirname, "../..");
-const syntheticCurrentEvaluationAt = await currentSyntheticEvaluationAt(root);
-
-async function currentSyntheticEvaluationAt(repositoryRoot) {
-  const [buildSpec, snapshots] = await Promise.all([
-    readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
-    readFile(path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
-  ]);
-  const selected = snapshots.filter(({ snapshotId, sourceId }) => buildSpec.sourceSnapshotIds.includes(snapshotId)
-    && ["molit-urban-rail-full-route", "seoul-metro-route-map-positions"].includes(sourceId));
-  const basisAt = Math.max(...selected.flatMap(({ retrievedAt, sourceUpdatedAt }) => [retrievedAt, sourceUpdatedAt])
-    .filter((value) => typeof value === "string")
-    .map((value) => Date.parse(value)));
-  if (selected.length !== 2 || !Number.isFinite(basisAt)) throw new Error("synthetic current source basis is invalid");
-  return new Date(basisAt).toISOString();
-}
+const syntheticCurrentEvaluationAt = (await nextSyntheticCurrentStaticNetworkNow(root)).toISOString();
 
 async function syntheticCurrentRepository(t, prefix) {
   const temp = await mkdtemp(path.join(os.tmpdir(), prefix));
