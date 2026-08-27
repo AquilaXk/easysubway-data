@@ -24,6 +24,7 @@ const SHA1 = /^[a-f0-9]{40}$/u;
 const SHA256 = /^[a-f0-9]{64}$/u;
 const OPERATION = /^[a-z0-9][a-z0-9-]{7,127}$/u;
 const COMPONENT_NAMES = Object.freeze(Object.keys(CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS));
+const RELEASE_REQUEST_COMPONENT_PATH = "tools/datapack/release/release-request.json";
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 function compareBytes(left, right) {
@@ -76,8 +77,11 @@ function parseReleaseRequest(bytes) {
   try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); }
   catch { throw new Error("release request JSON mismatch"); }
 }
-function verifyReleaseRequest({ releaseRequestBytes, candidateBytes, candidate, expectedApprovalId }) {
+function verifyReleaseRequest({ compositeReleaseRequestBytes, releaseRequestBytes, candidateBytes, candidate, expectedApprovalId }) {
   if (typeof expectedApprovalId !== "string" || expectedApprovalId.length === 0) throw new Error("expected approval ID mismatch");
+  if (!Buffer.isBuffer(releaseRequestBytes) || !releaseRequestBytes.equals(compositeReleaseRequestBytes)) {
+    throw new Error("release request bytes mismatch");
+  }
   const releaseRequest = parseReleaseRequest(releaseRequestBytes);
   const violations = releaseRequestBindingViolations({
     buildSpec: candidate,
@@ -117,8 +121,9 @@ function readVerifiedComponents(bundle) {
     const relative = CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS[name];
     return [name, parseComponent(entries.get(relative), `source-set ${name}`)];
   }));
+  const releaseRequest = parseComponent(entries.get(RELEASE_REQUEST_COMPONENT_PATH), "source-set release request");
   verifyCurrentCapitalLiveChainFanInComponents(boundary, components);
-  return { boundary, boundaryBytes, components, entries };
+  return { boundary, boundaryBytes, components, entries, releaseRequest };
 }
 function verifyEmbeddedExitReceipt({ components, externalReceipt, sourceRepositorySha, operationId }) {
   const receiptBytes = components.exitAdmissionOciReceipt.bytes;
@@ -140,11 +145,12 @@ export function buildCurrentSourceSetHandoff({ compositeReceiptBytes, compositeB
   const receipt = parseCanonical(compositeReceiptBytes, canonicalCurrentCapitalLiveChainOciReceiptJson, "composite receipt");
   validateExternalReceipt({ receipt, compositeBytes, sourceRepositorySha, operationId });
   const bundle = readCurrentCapitalLiveChainBundle(compositeBytes, { repository: REPOSITORY, repositorySha: sourceRepositorySha, operationId });
-  const { boundary, boundaryBytes, components } = readVerifiedComponents(bundle);
+  const { boundary, boundaryBytes, components, releaseRequest: compositeReleaseRequest } = readVerifiedComponents(bundle);
   verifyEmbeddedExitReceipt({ components, externalReceipt: receipt, sourceRepositorySha, operationId });
 
   const candidate = components.candidateBuildSpec.value;
   const releaseRequest = verifyReleaseRequest({
+    compositeReleaseRequestBytes: compositeReleaseRequest.bytes,
     releaseRequestBytes,
     candidateBytes: components.candidateBuildSpec.bytes,
     candidate,

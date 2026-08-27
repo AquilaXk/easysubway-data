@@ -212,7 +212,7 @@ test("current source-set handoff binds the exact verified live-chain and fails c
     const driftedReleaseRequestBytes = Buffer.from(JSON.stringify(releaseRequest));
     assert.throws(
       () => buildCurrentSourceSetHandoff({ ...input, releaseRequestBytes: driftedReleaseRequestBytes }),
-      /release request binding mismatch/,
+      /release request bytes mismatch/,
       label,
     );
     const driftedRequestPath = path.join(temporary, `${fileName}.json`);
@@ -251,6 +251,30 @@ test("current source-set handoff binds the exact verified live-chain and fails c
   ], { encoding: "utf8" });
   assert.notEqual(wrongApproval.status, 0);
   await assert.rejects(stat(wrongApprovalOutputPath), { code: "ENOENT" });
+
+  const scopeDrift = JSON.parse(input.releaseRequestBytes);
+  scopeDrift.scopeId = "different-scope";
+  const scopeDriftBytes = Buffer.from(JSON.stringify(scopeDrift));
+  assert.throws(
+    () => buildCurrentSourceSetHandoff({ ...input, releaseRequestBytes: scopeDriftBytes }),
+    /release request bytes mismatch/,
+  );
+  const scopeDriftPath = path.join(temporary, "scope-drift.json");
+  const scopeDriftOutputPath = path.join(temporary, "scope-drift-handoff.json");
+  await writeFile(scopeDriftPath, scopeDriftBytes);
+  const scopeDriftResult = spawnSync(process.execPath, [
+    path.join(ROOT, "tools/datapack/build-current-source-set-handoff.mjs"),
+    "--composite-receipt", receiptPath,
+    "--composite", compositePath,
+    "--release-request", scopeDriftPath,
+    "--expected-approval-id", input.expectedApprovalId,
+    "--source-repository-sha", input.sourceRepositorySha,
+    "--producer-sha", input.producerSha,
+    "--operation-id", input.operationId,
+    "--output", scopeDriftOutputPath,
+  ], { encoding: "utf8" });
+  assert.notEqual(scopeDriftResult.status, 0);
+  await assert.rejects(stat(scopeDriftOutputPath), { code: "ENOENT" });
 
   const tamperedFanIn = rehashHandoff({
     ...handoff,
