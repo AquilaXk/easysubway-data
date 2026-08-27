@@ -368,6 +368,7 @@
     {"path":"tools/datapack/collect-kric-code-catalog.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":191},
     {"path":"tools/datapack/collect-kric-exit-path-provider-snapshot.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":267},
     {"path":"tools/datapack/collect-kric-line4-timetables.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":182},
+    {"path":"tools/datapack/collect-kric-nationwide-timetable-file.test.mjs","semanticOwner":"data454","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/collect-kric-nationwide-route-rosters.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":137},
     {"path":"tools/datapack/collect-kric-route-roster.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":158},
     {"path":"tools/datapack/collect-kric-source-candidate-evidence.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":1661},
