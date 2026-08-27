@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { lstat, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
+import { link, lstat, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -13,18 +13,18 @@ const XLSX_CONTENT_TYPE = /^(?:application\/vnd\.openxmlformats-officedocument\.
 const XLSX_SIGNATURE = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
 
 export async function collectKricNationwideTimetableFile({
-  outputDirectory, fetchImpl = fetch, maximumBytes = DEFAULT_MAXIMUM_BYTES, now = new Date(),
+  outputFile, fetchImpl = fetch, maximumBytes = DEFAULT_MAXIMUM_BYTES, now = new Date(), beforePublish = async () => {},
 } = {}) {
   const maximum = positiveSafeInteger(maximumBytes, "maximumBytes");
-  const output = requiredTaskOutputDirectory(outputDirectory);
+  const output = requiredTaskOutputFile(outputFile);
   const parent = path.dirname(output);
-  await assertRegularDirectory(parent, "output parent");
+  const parentIdentity = await assertRegularDirectory(parent, "output parent");
   await assertAbsent(output);
 
   let response;
   try {
     response = await fetchImpl(KRIC_NATIONWIDE_TIMETABLE_FILE_URL, {
-      method: "GET", redirect: "error", signal: AbortSignal.timeout(30_000),
+      method: "GET", redirect: "error", signal: AbortSignal.timeout(30_000), headers: { "accept-encoding": "identity" },
     });
   } catch {
     fail("TRANSPORT");
@@ -38,12 +38,12 @@ export async function collectKricNationwideTimetableFile({
     artifactKind: "kric-nationwide-timetable-file-receipt",
     sourceId: SOURCE_ID,
     capturedAt: canonicalInstant(now),
-    rawFile: "nationwide-timetable.xlsx",
+    rawFile: path.basename(output),
     byteLength: bytes.length,
     sha256: createHash("sha256").update(bytes).digest("hex"),
     credentialRedacted: true,
   });
-  await publishAtomically({ bytes, output, parent, receipt });
+  await publishAtomically({ beforePublish, bytes, output, parent, parentIdentity });
   return receipt;
 }
 
@@ -60,7 +60,10 @@ function validateResponse(response, maximumBytes) {
   if (value === null || value === "") return null;
   if (!/^[1-9]\d*$/u.test(value)) fail("PARTIAL");
   const length = Number(value);
-  if (!Number.isSafeInteger(length) || length > maximumBytes) fail("BODY");
+  if (!Number.isSafeInteger(length)) fail("BODY");
+  const contentEncoding = (headers?.get("content-encoding") ?? "").trim().toLowerCase();
+  if (contentEncoding !== "" && contentEncoding !== "identity") return null;
+  if (length > maximumBytes) fail("BODY");
   return length;
 }
 
@@ -135,33 +138,30 @@ function hasRequiredXlsxEntries(bytes) {
   return offset === eocd && parsedEntryCount === entryCount && names.has("[Content_Types].xml") && names.has("xl/workbook.xml");
 }
 
-async function publishAtomically({ bytes, output, parent, receipt }) {
-  let staging;
+async function publishAtomically({ beforePublish, bytes, output, parent, parentIdentity }) {
+  let stagingFile;
+  let stagingDirectory;
   try {
-    staging = await mkdtemp(path.join(parent, ".kric-nationwide-timetable-file-"));
-    await writeFile(path.join(staging, "nationwide-timetable.xlsx"), bytes, { flag: "wx", mode: 0o600 });
-    await writeFile(path.join(staging, "receipt.json"), `${JSON.stringify(receipt)}\n`, { flag: "wx", mode: 0o600 });
-    await outputRemainAbsent(output);
-    await rename(staging, output);
-    staging = undefined;
+    stagingDirectory = await mkdtemp(path.join(parent, ".kric-nationwide-timetable-file-"));
+    stagingFile = path.join(stagingDirectory, "nationwide-timetable.xlsx");
+    await writeFile(stagingFile, bytes, { flag: "wx", mode: 0o600 });
+    await beforePublish();
+    await assertSameRegularDirectory(parent, "output parent", parentIdentity);
+    await link(stagingFile, output);
+    stagingFile = undefined;
   } catch {
     fail("OUTPUT");
   } finally {
-    if (staging !== undefined) {
-      try { await rm(staging, { force: true, recursive: true }); } catch { /* output error is already stable */ }
+    if (stagingDirectory !== undefined) {
+      try { await rm(stagingDirectory, { force: true, recursive: true }); } catch { /* output error is already stable */ }
     }
   }
 }
 
-async function outputRemainAbsent(value) {
-  try { await lstat(value); } catch (error) { if (error?.code === "ENOENT") return; throw error; }
-  throw new Error("output appeared during publish");
-}
-
-function requiredTaskOutputDirectory(value) {
+function requiredTaskOutputFile(value) {
   if (typeof value !== "string" || !path.isAbsolute(value)) fail("OUTPUT");
   const output = path.resolve(value);
-  if (!path.basename(output).startsWith(OUTPUT_PREFIX)) fail("OUTPUT");
+  if (!path.basename(output).startsWith(OUTPUT_PREFIX) || path.extname(output) !== ".xlsx") fail("OUTPUT");
   return output;
 }
 
@@ -169,6 +169,14 @@ async function assertRegularDirectory(value, label) {
   let entry;
   try { entry = await lstat(value); } catch { fail("OUTPUT"); }
   if (!entry.isDirectory() || entry.isSymbolicLink()) throw new Error(`KRIC_TIMETABLE_FILE_${label.toUpperCase().replaceAll(" ", "_")}_INVALID`);
+  const target = await stat(value);
+  if (!target.isDirectory() || target.dev !== entry.dev || target.ino !== entry.ino) fail("OUTPUT");
+  return { dev: target.dev, ino: target.ino };
+}
+
+async function assertSameRegularDirectory(value, label, expected) {
+  const actual = await assertRegularDirectory(value, label);
+  if (actual.dev !== expected.dev || actual.ino !== expected.ino) fail("OUTPUT");
 }
 
 async function assertAbsent(value) {
@@ -189,8 +197,8 @@ function positiveSafeInteger(value, label) {
 function fail(code) { throw new Error(`KRIC_TIMETABLE_FILE_${code}`); }
 
 function parseArgs(argv) {
-  if (!Array.isArray(argv) || argv.length !== 2 || argv[0] !== "--output-dir") fail("ARGUMENT");
-  return { outputDirectory: argv[1] };
+  if (!Array.isArray(argv) || argv.length !== 2 || argv[0] !== "--output-file") fail("ARGUMENT");
+  return { outputFile: argv[1] };
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {

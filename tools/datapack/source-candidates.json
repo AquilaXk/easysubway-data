@@ -91,7 +91,7 @@
         "responseEnvelope": "XLSX ZIP attachment",
         "runner": {
           "command": "node tools/datapack/collect-kric-nationwide-timetable-file.mjs",
-          "arguments": ["--output-dir", "[absent-task-owned-absolute-directory]"],
+          "arguments": ["--output-file", "[absent-task-owned-absolute-file.xlsx]"],
           "requiredEnv": []
         },
         "secretPolicy": "credential-free-output"
