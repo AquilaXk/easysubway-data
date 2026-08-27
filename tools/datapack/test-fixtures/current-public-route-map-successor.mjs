@@ -226,8 +226,9 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
       currentizeFreshFacilitySource,
       writeFreshExitAdmissionChain,
     } = await import("./current-full-capital-production-artifact.mjs");
-    await currentizeFreshFacilitySource(targetRoot, now);
-    await writeFreshExitAdmissionChain(targetRoot, now);
+    const facilityNow = await nextSyntheticCurrentStaticNetworkNow(targetRoot);
+    await currentizeFreshFacilitySource(targetRoot, facilityNow);
+    await writeFreshExitAdmissionChain(targetRoot, facilityNow);
     const transition = await bindSyntheticDependentAdmissionsToCurrentTransition(targetRoot);
     await rebuildSyntheticCurrentAccessibilityOutputs(targetRoot, transition);
     return result;
