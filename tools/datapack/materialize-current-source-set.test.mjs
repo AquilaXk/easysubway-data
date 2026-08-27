@@ -96,6 +96,15 @@ test("materializes only the verified protected output set", async (t) => {
     outputRoot: path.join(sharedParent, "output"), sourceRepositorySha: input.sourceRepositorySha,
     producerSha: input.producerSha, operationId: input.operationId,
   }), { name: "CurrentSourceSetMaterializationError", code: "OUTPUT_INVALID" });
+  const replaceableContainer = path.join(temporary, "replaceable-container");
+  const replaceableParent = path.join(replaceableContainer, "private-parent");
+  await mkdir(replaceableParent, { recursive: true, mode: 0o700 });
+  await chmod(replaceableContainer, 0o777);
+  await assert.rejects(materializeCurrentSourceSet({
+    handoffPath, expectedHandoffSha256: sha256(handoffBytes),
+    outputRoot: path.join(replaceableParent, "output"), sourceRepositorySha: input.sourceRepositorySha,
+    producerSha: input.producerSha, operationId: input.operationId,
+  }), { name: "CurrentSourceSetMaterializationError", code: "OUTPUT_INVALID" });
   await assert.rejects(materializeCurrentSourceSet({
     handoffPath, expectedHandoffSha256: sha256(handoffBytes),
     outputRoot: `${temporary}/nested/../noncanonical-output`, sourceRepositorySha: input.sourceRepositorySha,

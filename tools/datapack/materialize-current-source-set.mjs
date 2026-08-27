@@ -102,6 +102,20 @@ async function assertOutputParent(parent, expectedIdentity) {
   return { dev: stat.dev, ino: stat.ino };
 }
 
+async function assertTrustedOutputAncestry(parent) {
+  const owner = typeof process.getuid === "function" ? process.getuid() : undefined;
+  for (let current = path.dirname(parent);; current = path.dirname(current)) {
+    let stat;
+    try { stat = await lstat(current); }
+    catch (error) { fail("OUTPUT_INVALID", "current source-set output ancestry is missing", { cause: error }); }
+    if (!stat.isDirectory() || stat.isSymbolicLink() || (stat.uid !== 0 && stat.uid !== owner)
+      || ((stat.mode & 0o022) !== 0 && (stat.mode & 0o1000) === 0)) {
+      fail("OUTPUT_INVALID", "current source-set output ancestry is replaceable");
+    }
+    if (current === path.dirname(current)) return;
+  }
+}
+
 function validatedOutputs(handoff) {
   if (!Array.isArray(handoff.protectedOutputs) || handoff.protectedOutputs.length !== PROTECTED_PATHS.length) {
     fail("HANDOFF_INVALID", "current source-set protected output count mismatch");
@@ -199,6 +213,7 @@ export async function materializeCurrentSourceSet({ handoffPath, expectedHandoff
   try { resolvedParent = await realpath(parent); }
   catch (error) { fail("OUTPUT_INVALID", "current source-set output parent cannot be resolved", { cause: error }); }
   if (resolvedParent !== parent) fail("OUTPUT_INVALID", "current source-set output parent must use its canonical path");
+  await assertTrustedOutputAncestry(parent);
   await assertAbsentOutputRoot(outputRoot);
   let handoffBytes;
   try { handoffBytes = await readStableRegularFile(handoffPath, "handoff"); }
