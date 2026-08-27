@@ -120,8 +120,14 @@ test("current seven-source candidate evaluates projections at its published cloc
   assert.throws(() => buildCurrentCapitalFacilitySourceAdmission(unapprovedGovernance), /governance policy binding/u);
   assert.throws(() => buildCurrentCapitalFacilitySourceAdmission({ ...values, candidateEvaluationAt: "2026-08-26T03:54:09.250Z" }), /candidate evaluation clock mismatch/u);
   const beforeBasis = structuredClone(values);
-  beforeBasis.candidateBuildSpec.publishedAt = beforeBasis.observedAt;
-  beforeBasis.candidateEvaluationAt = beforeBasis.observedAt;
+  const timetableIndex = beforeBasis.candidateBuildSpec.sourceSnapshots.findIndex(({ sourceId }) => sourceId === "kric-subway-timetable");
+  const futureTimetable = beforeBasis.sourceSnapshots.find(({ snapshotId }) =>
+    snapshotId === beforeBasis.candidateBuildSpec.sourceSnapshotIds[timetableIndex]);
+  futureTimetable.serviceEffectiveAt = new Date(Date.parse(beforeBasis.candidateEvaluationAt) + 1).toISOString();
+  beforeBasis.candidateBuildSpec.sourceSnapshotSetHash = selectedLedgerHash(
+    beforeBasis.sourceSnapshots,
+    beforeBasis.candidateBuildSpec.sourceSnapshotIds,
+  );
   assert.throws(() => buildCurrentCapitalFacilitySourceAdmission(beforeBasis), /candidate evaluation precedes selected basis/u);
   const receiptAfterPublication = structuredClone(values);
   receiptAfterPublication.sourceSnapshots.find(({ snapshotId }) => snapshotId === selectedKricId).rawReceipt.storedAt = new Date(Date.parse(candidateBuildSpec.publishedAt) + 1).toISOString();
