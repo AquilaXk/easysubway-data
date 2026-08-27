@@ -180,7 +180,7 @@
   "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
   "approvedOverrideSetHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
   "sourceInventorySha256": "65adbbddcc828df15e4824ec6d2c03e04e36f8f61eb101112696ade0c7bbc149",
-  "builderGitSha": "9d45d44c1f91a5079d4548f75e321337d1a943fe",
+  "builderGitSha": "6bf999f03d5386e3147669f6e3ef20ff9a842b74",
   "builderVersion": "build-datapack.mjs@26",
   "officialOdFareEvidence": {
     "sourceId": "seoul-metro-official-od-fares",
