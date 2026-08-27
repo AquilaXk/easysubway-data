@@ -197,14 +197,15 @@ async function parseWorksheet({ bytes, entry, entries, sharedStrings, styleCount
     if (/<mergeCell\b|<f\b/iu.test(unsafe)) fail(/<mergeCell\b/iu.test(unsafe) ? "MERGED" : "FORMULA");
     state.unsafeTail = unsafe.slice(-32);
     state.carry += chunk;
-    if (Buffer.byteLength(state.carry) > limits.maximumRowBytes + 32 * 1024) fail("BOUND");
     let end;
     while ((end = state.carry.indexOf("</row>")) >= 0) {
       const rowXml = state.carry.slice(0, end + 6); state.carry = state.carry.slice(end + 6);
       const rowStart = rowXml.indexOf("<row");
       if (rowStart < 0) continue;
+      const rowSource = rowXml.slice(rowStart);
+      if (Buffer.byteLength(rowSource) > limits.maximumRowBytes) fail("BOUND");
       if (state.rows >= limits.maximumRows) fail("BOUND");
-      const row = parseRow(rowXml.slice(rowStart), sharedStrings, styleCount, state, limits.maximumCells);
+      const row = parseRow(rowSource, sharedStrings, styleCount, state, limits.maximumCells);
       state.rows += 1;
       if (state.header === null) {
         if (row.sourceRowNumber !== 1 || row.values.slice(13).some((cell) => cell.value !== "")) fail("HEADER");
@@ -213,6 +214,7 @@ async function parseWorksheet({ bytes, entry, entries, sharedStrings, styleCount
       }
       addRecord(row, state);
     }
+    if (Buffer.byteLength(state.carry) > limits.maximumRowBytes + 32 * 1024) fail("BOUND");
   });
   if (state.carry.trim() !== "" && /<row\b/iu.test(state.carry)) fail("WORKSHEET");
   return state;

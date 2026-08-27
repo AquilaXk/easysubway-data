@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, stat, truncate, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -14,6 +14,7 @@ test("parses the closed tracked operation CLI", () => {
   const argv = ["--operation-root", "/private/op", "--timetable-input", "/private/timetable.xlsx", "--timetable-receipt", "/private/timetable.json", "--station-line-input", "/private/stations.xlsx", "--station-line-receipt", "/private/stations.json", "--expected-main-sha", MAIN, "--operation-id", "kric-retained-454-455"];
   assert.equal(parseKricRetainedFileOperationArgs(argv)["expected-main-sha"], MAIN);
   assert.throws(() => parseKricRetainedFileOperationArgs([...argv, "--operation-id", "duplicate"]), /ARGUMENTS/);
+  assert.throws(() => parseKricRetainedFileOperationArgs(["xxoperation-root", ...argv.slice(1)]), /ARGUMENTS/);
   assert.equal(sanitizedOperationError(new Error("/private/secret/path")), "KRIC_RETAINED_FILE_OPERATION_FAILED");
 });
 
@@ -47,6 +48,18 @@ test("rejects malformed retained inputs before any publisher call", async () => 
     await writeFile(value.timetableReceiptPath, "{}", { mode: 0o600 });
     let calls = 0;
     await assert.rejects(run(value, { async putObjectIfAbsent() { calls += 1; }, async fullGet() { calls += 1; } }), /RECEIPT/);
+    assert.equal(calls, 0);
+  } finally { await cleanup(value); }
+});
+
+test("rejects oversized retained input before allocation or publisher use", async () => {
+  const value = await fixture();
+  try {
+    await truncate(value.timetableInputPath, 128 * 1024 * 1024 + 1);
+    let calls = 0;
+    await assert.rejects(run(value, {
+      async putObjectIfAbsent() { calls += 1; }, async fullGet() { calls += 1; },
+    }), /TIMETABLE_INPUT/);
     assert.equal(calls, 0);
   } finally { await cleanup(value); }
 });

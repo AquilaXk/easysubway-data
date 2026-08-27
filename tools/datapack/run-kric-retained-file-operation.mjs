@@ -12,6 +12,8 @@ import { createCandidateOciClient } from "./publish-candidate-oci-artifact.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const GIT_SHA = /^[a-f0-9]{40}$/u;
+const MAXIMUM_WORKBOOK_BYTES = 128 * 1024 * 1024;
+const MAXIMUM_RECEIPT_BYTES = 64 * 1024;
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const canonical = (value) => Array.isArray(value) ? value.map(canonical) : !value || typeof value !== "object" ? value : Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
 const jsonBytes = (value) => Buffer.from(`${JSON.stringify(canonical(value))}\n`);
@@ -36,8 +38,8 @@ export async function runKricRetainedFileOperation({
   const physicalRoot = await physicalPath(root, "REPOSITORY");
   const physicalOperation = path.join(await physicalPath(path.dirname(operation), "OPERATION_ROOT"), path.basename(operation));
   if (inside(physicalRoot, physicalOperation) || physicalOperation === physicalRoot) fail("OPERATION_ROOT");
-  const timetableFile = await readPrivateExternalFile(timetableInputPath, physicalRoot, "TIMETABLE_INPUT");
-  const stationLineFile = await readPrivateExternalFile(stationLineInputPath, physicalRoot, "STATION_LINE_INPUT");
+  const timetableFile = await readPrivateExternalFile(timetableInputPath, physicalRoot, "TIMETABLE_INPUT", MAXIMUM_WORKBOOK_BYTES);
+  const stationLineFile = await readPrivateExternalFile(stationLineInputPath, physicalRoot, "STATION_LINE_INPUT", MAXIMUM_WORKBOOK_BYTES);
   const timetableReceipt = await readStrictReceipt(timetableReceiptPath, physicalRoot, "TIMETABLE_RECEIPT");
   const stationLineReceipt = await readStrictReceipt(stationLineReceiptPath, physicalRoot, "STATION_LINE_RECEIPT");
 
@@ -127,7 +129,7 @@ async function putAndVerify(publisher, object, onCreated) {
   if (!(body instanceof Uint8Array) || body.byteLength !== object.bytes.byteLength || sha256(body) !== object.sha256) fail("FULL_GET");
   return canonical({ kind: object.kind, objectKey: object.key, sizeBytes: object.bytes.length, sha256: object.sha256, fullGet: { sizeBytes: body.byteLength, sha256: sha256(body) } });
 }
-async function readPrivateExternalFile(input, root, label) {
+async function readPrivateExternalFile(input, root, label, maximumBytes) {
   const value = requiredAbsolute(input, label); const physical = await physicalPath(value, label);
   if (inside(root, physical) || physical === root) fail(label);
   let stat; try { stat = await lstat(value); } catch { fail(label); }
@@ -136,13 +138,13 @@ async function readPrivateExternalFile(input, root, label) {
   try {
     handle = await open(value, constants.O_RDONLY | constants.O_NOFOLLOW); const current = await handle.stat();
     if (!current.isFile() || current.dev !== stat.dev || current.ino !== stat.ino
-      || (current.mode & 0o777) !== 0o600 || current.size < 1) fail(label);
+      || (current.mode & 0o777) !== 0o600 || current.size < 1 || current.size > maximumBytes) fail(label);
     const bytes = Buffer.alloc(current.size); const read = await handle.read(bytes, 0, bytes.length, 0);
     if (read.bytesRead !== bytes.length) fail(label); return { path: value, bytes };
   } finally { await handle?.close(); }
 }
 async function readStrictReceipt(input, root, label) {
-  const file = await readPrivateExternalFile(input, root, label); let value;
+  const file = await readPrivateExternalFile(input, root, label, MAXIMUM_RECEIPT_BYTES); let value;
   try { value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(file.bytes)); } catch { fail(label); }
   if (!value || typeof value !== "object" || Array.isArray(value)) fail(label);
   return value;
@@ -162,7 +164,9 @@ export function parseKricRetainedFileOperationArgs(argv) {
   if (argv.length !== names.length * 2) fail("ARGUMENTS");
   const args = {};
   for (let index = 0; index < argv.length; index += 2) {
-    const name = argv[index]?.slice(2); const value = argv[index + 1];
+    const option = argv[index];
+    if (typeof option !== "string" || !option.startsWith("--")) fail("ARGUMENTS");
+    const name = option.slice(2); const value = argv[index + 1];
     if (!names.includes(name) || name in args || typeof value !== "string" || value.startsWith("--")) fail("ARGUMENTS");
     args[name] = value;
   }

@@ -109,6 +109,16 @@ test("#454 preserves duplicate source rows and blank time cells without admissio
   } finally { await rm(value.root, { recursive: true, force: true }); }
 });
 
+test("#454 drains complete stored rows before bounding residual XML", async () => {
+  const value = await fixture({ rows: Array.from({ length: 200 }, requiredRow) });
+  try {
+    const result = await buildKricNationwideTimetableObservation({
+      ...value, maximumRowBytes: 2 * 1024,
+    });
+    assert.equal(result.rowCount, 200);
+  } finally { await rm(value.root, { recursive: true, force: true }); }
+});
+
 function requiredRow() { return ["T1", "R", "노선", "A", "B", "일반", "평일", "역A", "08:00", "", "", "", ""]; }
 
 function workbook({ rows = [requiredRow()], header = HEADER, sheetName = "표준데이터 운행(전체)", merged = false, extraSheet = false } = {}) {
