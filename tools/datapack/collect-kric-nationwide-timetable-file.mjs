@@ -212,7 +212,7 @@ function xlsxEntries(bytes, maximumInflatedBytes) {
     let value;
     try {
       const remaining = maximumInflatedBytes - inflatedBytes;
-      value = method === 0 ? Buffer.from(compressed) : method === 8 ? inflateRawSync(compressed, { maxOutputLength: remaining }) : null;
+      value = inflateXlsxEntry(compressed, method, remaining);
     } catch { value = null; }
     if (value == null || value.length > maximumInflatedBytes - inflatedBytes || entries.has(name)) fail("WORKBOOK");
     entries.set(name, value);
@@ -220,6 +220,12 @@ function xlsxEntries(bytes, maximumInflatedBytes) {
     offset = end;
   }
   return entries;
+}
+
+function inflateXlsxEntry(compressed, method, maximumOutputLength) {
+  if (method === 0) return Buffer.from(compressed);
+  if (method === 8) return inflateRawSync(compressed, { maxOutputLength: maximumOutputLength });
+  return null;
 }
 
 function xlsxSharedStrings(xml) {
@@ -246,24 +252,39 @@ function xlsxRows(xml, strings) {
   let cellCount = 0;
   for (const [, body] of xml.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/gi)) {
     if (rows.length >= MAX_STATION_LINE_ROWS) fail("WORKSHEET");
-    const row = Array(MAX_STATION_LINE_COLUMNS).fill("");
-    const populatedColumns = new Set();
-    for (const [, raw, value] of body.matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>/gi)) {
-      if (cellCount >= MAX_STATION_LINE_CELLS) fail("WORKSHEET");
-      const attributes = xmlAttributes(raw);
-      const column = xlsxColumn(attributes.r);
-      if (column >= MAX_STATION_LINE_COLUMNS || populatedColumns.has(column)) fail("WORKSHEET");
-      const inline = [...value.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/gi)].map(([, text]) => decodeXml(text)).join("");
-      const rawValue = /<v\b[^>]*>([\s\S]*?)<\/v>/i.exec(value)?.[1] ?? "";
-      const cell = attributes.t === "inlineStr" ? inline : attributes.t === "s" ? strings[Number(rawValue)] : decodeXml(rawValue);
-      if (cell == null) fail("WORKBOOK");
-      populatedColumns.add(column);
-      row[column] = cell;
-      cellCount += 1;
-    }
-    rows.push(row);
+    const parsed = xlsxRow(body, strings, cellCount);
+    rows.push(parsed.row);
+    cellCount = parsed.cellCount;
   }
   return rows;
+}
+
+function xlsxRow(body, strings, initialCellCount) {
+  const row = new Array(MAX_STATION_LINE_COLUMNS).fill("");
+  const populatedColumns = new Set();
+  let cellCount = initialCellCount;
+  for (const [, raw, value] of body.matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>/gi)) {
+    if (cellCount >= MAX_STATION_LINE_CELLS) fail("WORKSHEET");
+    const attributes = xmlAttributes(raw);
+    const column = xlsxColumn(attributes.r);
+    if (column >= MAX_STATION_LINE_COLUMNS || populatedColumns.has(column)) fail("WORKSHEET");
+    const cell = xlsxCell(attributes.t, value, strings);
+    if (cell == null) fail("WORKBOOK");
+    populatedColumns.add(column);
+    row[column] = cell;
+    cellCount += 1;
+  }
+  return { row, cellCount };
+}
+
+function xlsxCell(type, value, strings) {
+  const rawValue = /<v\b[^>]*>([\s\S]*?)<\/v>/i.exec(value)?.[1] ?? "";
+  if (type === "inlineStr") {
+    return [...value.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/gi)]
+      .map(([, text]) => decodeXml(text)).join("");
+  }
+  if (type === "s") return strings[Number(rawValue)];
+  return decodeXml(rawValue);
 }
 
 function xlsxColumn(reference) {
@@ -361,8 +382,11 @@ function parseArgs(argv) {
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const args = parseArgs(process.argv.slice(2));
   const collect = args.profile === "current-station-line" ? collectKricCurrentStationLineFile : collectKricNationwideTimetableFile;
-  collect({ outputFile: args.outputFile }).then(
-    (receipt) => process.stdout.write(`${JSON.stringify(receipt)}\n`),
-    (error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; },
-  );
+  try {
+    const receipt = await collect({ outputFile: args.outputFile });
+    process.stdout.write(`${JSON.stringify(receipt)}\n`);
+  } catch (error) {
+    process.stderr.write(`${error.message}\n`);
+    process.exitCode = 1;
+  }
 }

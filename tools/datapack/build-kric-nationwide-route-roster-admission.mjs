@@ -49,9 +49,19 @@ function sameJson(left, right) {
 function canonicalJson(value) {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (value != null && typeof value === "object") {
-    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+    const properties = Object.keys(value).sort(compareCanonicalJsonKeys)
+      .map((key) => canonicalJsonProperty(key, value[key])).join(",");
+    return `{${properties}}`;
   }
   return JSON.stringify(value);
+}
+
+function compareCanonicalJsonKeys(left, right) {
+  return left.localeCompare(right, "en");
+}
+
+function canonicalJsonProperty(key, value) {
+  return `${JSON.stringify(key)}:${canonicalJson(value)}`;
 }
 
 function sha256(value) {
