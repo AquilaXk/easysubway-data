@@ -10,6 +10,7 @@ import {
   buildCurrentCapitalLiveChainPlan,
   evaluateStagedRoutePolicy,
   parseArgs,
+  resolveCurrentLiveChainCandidateStageInputs,
   resolveCurrentKricExitPlanInputs,
   resolveStagedIncheonTopologyPath,
   runCurrentCapitalLiveChain,
@@ -249,6 +250,61 @@ test("public route-map materialization failure stops before the provider and OCI
   } finally {
     await rm(temporary, { recursive: true, force: true });
   }
+});
+
+test("candidate-selected versioned ITX topology evidence is staged before every provider or OCI effect", async () => {
+  const temporary = await mkdtemp(path.join(os.tmpdir(), "current-live-chain-itx-stage-"));
+  const runnerTemp = path.join(temporary, "runner");
+  const handoffParent = path.join(temporary, "handoff-parent");
+  const handoffDirectory = path.join(handoffParent, "handoff");
+  const selectedPath = "tools/datapack/itx-cheongchun-topology-evidence-20260824170958799.json";
+  const coveragePath = "tools/datapack/itx-cheongchun-coverage-contract.json";
+  let providerCount = 0;
+  let publicationCount = 0;
+  try {
+    await mkdir(runnerTemp); await mkdir(handoffParent);
+    await assert.rejects(runCurrentCapitalLiveChain({
+      repositoryRoot: ROOT, runnerTemp, repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-560",
+      transferObservationDirectory: "/retained/transfer/observation", transferReceiptPath: "/retained/transfer/receipt.json", handoffDirectory,
+      env: { PATH: process.env.PATH, KRIC_SERVICE_KEY: "test-key", EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/test/n/axvym6vk8g7i/b/easysubway-datapacks/o/" },
+      execFileImpl: async (command, args) => {
+        if (args.join(" ") === "remote get-url origin") return { stdout: "https://github.com/AquilaXk/easysubway-data.git\n" };
+        if (args.join(" ") === "rev-parse HEAD" || args.join(" ") === "rev-parse origin/main") return { stdout: `${"a".repeat(40)}\n` };
+        if (args.join(" ") === "branch --show-current") return { stdout: "main\n" };
+        if (args.join(" ") === "status --porcelain=v1 --untracked-files=all") return { stdout: "" };
+        if (args.join(" ") === `ls-remote --exit-code https://github.com/AquilaXk/easysubway-data.git refs/heads/main`) return { stdout: `${"a".repeat(40)}\trefs/heads/main\n` };
+        if (command === process.execPath && args[0] === "tools/datapack/collect-current-kric-exit-path-provider-snapshot.mjs") providerCount += 1;
+        throw new Error("provider execution must not start");
+      },
+      rebindPublicRouteMapImpl: async () => {},
+      rebindTransferImpl: async ({ repositoryRoot }) => {
+        await stat(path.join(repositoryRoot, selectedPath));
+        await stat(path.join(repositoryRoot, coveragePath));
+        await assert.rejects(stat(path.join(repositoryRoot, "tools/datapack/itx-cheongchun-topology-evidence.json")), { code: "ENOENT" });
+        throw new Error("staged candidate ITX evidence verified");
+      },
+      publishImpl: async () => { publicationCount += 1; },
+    }), /staged candidate ITX evidence verified/);
+    assert.equal(providerCount, 0);
+    assert.equal(publicationCount, 0);
+    await assert.rejects(stat(handoffDirectory), { code: "ENOENT" });
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
+});
+
+test("candidate-pinned ITX network evidence rejects path escape and digest drift before staging", async () => {
+  const candidate = JSON.parse(await readFile(path.join(ROOT, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
+  const expected = [candidate.itxTopologyEvidencePath, candidate.networkEdgeEvidence.itxCoverageContract.path].sort();
+  assert.deepEqual([...await resolveCurrentLiveChainCandidateStageInputs(candidate, ROOT)].sort(), expected);
+
+  const escaped = structuredClone(candidate);
+  escaped.networkEdgeEvidence.itxCoverageContract.path = "../itx-cheongchun-coverage-contract.json";
+  await assert.rejects(resolveCurrentLiveChainCandidateStageInputs(escaped, ROOT), /ITX coverage contract path mismatch/);
+
+  const drifted = structuredClone(candidate);
+  drifted.networkEdgeEvidence.itxCoverageContract.sha256 = "0".repeat(64);
+  await assert.rejects(resolveCurrentLiveChainCandidateStageInputs(drifted, ROOT), /ITX coverage contract hash mismatch/);
 });
 
 test("actual-now topology freshness failure stops before every provider and OCI side effect", async () => {
