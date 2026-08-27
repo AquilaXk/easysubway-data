@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, mkdir, open, realpath, rename, rm, rmdir, writeFile } from "node:fs/promises";
+import { link, lstat, mkdir, open, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -153,28 +153,80 @@ function resultFor(handoff, handoffSha256) {
   };
 }
 
+async function readOutputLock(lockPath) {
+  let handle;
+  try { handle = await open(lockPath, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK); }
+  catch (error) { fail("OUTPUT_BUSY", "current source-set output lock is not recoverable", { cause: error }); }
+  try {
+    const before = await handle.stat();
+    const bytes = await handle.readFile();
+    const after = await handle.stat();
+    const bound = await lstat(lockPath).catch(() => undefined);
+    const owner = typeof process.getuid === "function" ? process.getuid() : undefined;
+    let value;
+    try { value = JSON.parse(bytes); } catch { value = undefined; }
+    if (!before.isFile() || before.uid !== owner || (before.mode & 0o077) !== 0
+      || before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size
+      || before.mtimeMs !== after.mtimeMs || before.dev !== bound?.dev || before.ino !== bound?.ino
+      || bound?.isSymbolicLink() || Object.keys(value ?? {}).join(",") !== "pid"
+      || !Number.isSafeInteger(value.pid) || value.pid <= 0) {
+      fail("OUTPUT_BUSY", "current source-set output lock is not recoverable");
+    }
+    return { identity: { dev: before.dev, ino: before.ino }, pid: value.pid };
+  } finally { await handle.close(); }
+}
+
+function processIsAlive(pid) {
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return error?.code !== "ESRCH"; }
+}
+
+async function removeOutputLock({ identity, lockPath }) {
+  const current = await lstat(lockPath).catch(() => undefined);
+  if (current?.isFile() && !current.isSymbolicLink()
+    && current.dev === identity.dev && current.ino === identity.ino) {
+    await unlink(lockPath).catch(() => undefined);
+  }
+}
+
 async function acquireOutputLock(parent, outputRoot) {
   const lockPath = path.join(parent, `.${path.basename(outputRoot)}.current-source-set-lock`);
-  try { await mkdir(lockPath, { mode: 0o700 }); }
-  catch (error) {
-    if (error?.code === "EEXIST") fail("OUTPUT_BUSY", "current source-set output is already being materialized");
-    fail("OUTPUT_WRITE_FAILED", "current source-set output lock failed", { cause: error });
+  const candidatePath = `${lockPath}.${randomUUID()}`;
+  let candidateIdentity;
+  try {
+    await writeFile(candidatePath, `${JSON.stringify({ pid: process.pid })}\n`, { flag: "wx", mode: 0o600 });
+    const candidate = await lstat(candidatePath);
+    candidateIdentity = { dev: candidate.dev, ino: candidate.ino };
+    try { await link(candidatePath, lockPath); }
+    catch (error) {
+      if (error?.code !== "EEXIST") fail("OUTPUT_WRITE_FAILED", "current source-set output lock failed", { cause: error });
+      const existing = await readOutputLock(lockPath);
+      if (processIsAlive(existing.pid)) fail("OUTPUT_BUSY", "current source-set output is already being materialized");
+      await removeOutputLock({ identity: existing.identity, lockPath });
+      try { await link(candidatePath, lockPath); }
+      catch (retryError) {
+        if (retryError?.code === "EEXIST") fail("OUTPUT_BUSY", "current source-set output is already being materialized");
+        fail("OUTPUT_WRITE_FAILED", "current source-set output lock failed", { cause: retryError });
+      }
+    }
+    const acquired = await lstat(lockPath);
+    if (!acquired.isFile() || acquired.isSymbolicLink()
+      || acquired.dev !== candidateIdentity.dev || acquired.ino !== candidateIdentity.ino) {
+      fail("OUTPUT_BUSY", "current source-set output lock changed");
+    }
+    return { identity: candidateIdentity, lockPath };
+  } finally {
+    await unlink(candidatePath).catch(() => undefined);
   }
-  return { identity: await assertOutputParent(lockPath), lockPath };
 }
 
-async function releaseOutputLock({ identity, lockPath }) {
-  const current = await lstat(lockPath).catch(() => undefined);
-  if (current?.isDirectory() && !current.isSymbolicLink()
-    && current.dev === identity.dev && current.ino === identity.ino) {
-    await rmdir(lockPath).catch(() => undefined);
-  }
-}
+const releaseOutputLock = removeOutputLock;
 
-async function materializeAtomically({ parent, parentIdentity, outputRoot, entries }) {
+async function materializeAtomically({ parent, parentIdentity, outputRoot, entries, verifyPublishedOutput }) {
   const staging = path.join(parent, `.${path.basename(outputRoot)}.current-source-set-staging-${randomUUID()}`);
   const lock = await acquireOutputLock(parent, outputRoot);
   let stagingCreated = false;
+  let publishedIdentity;
   try {
     await mkdir(staging, { mode: 0o700 });
     stagingCreated = true;
@@ -188,12 +240,20 @@ async function materializeAtomically({ parent, parentIdentity, outputRoot, entri
     await assertAbsentOutputRoot(outputRoot);
     await rename(staging, outputRoot);
     stagingCreated = false;
-    const outputIdentity = await assertOutputParent(outputRoot);
+    publishedIdentity = stagingIdentity;
+    const outputIdentity = await verifyPublishedOutput(outputRoot);
     if (outputIdentity.dev !== stagingIdentity.dev || outputIdentity.ino !== stagingIdentity.ino) {
       fail("OUTPUT_WRITE_FAILED", "current source-set published output identity mismatch");
     }
   } catch (error) {
     if (stagingCreated) await rm(staging, { recursive: true, force: true });
+    if (publishedIdentity) {
+      const current = await lstat(outputRoot).catch(() => undefined);
+      if (current?.isDirectory() && !current.isSymbolicLink()
+        && current.dev === publishedIdentity.dev && current.ino === publishedIdentity.ino) {
+        await rm(outputRoot, { recursive: true, force: true });
+      }
+    }
     if (error instanceof CurrentSourceSetMaterializationError) throw error;
     fail("OUTPUT_WRITE_FAILED", "current source-set output materialization failed", { cause: error });
   } finally {
@@ -201,7 +261,10 @@ async function materializeAtomically({ parent, parentIdentity, outputRoot, entri
   }
 }
 
-export async function materializeCurrentSourceSet({ handoffPath, expectedHandoffSha256, sourceRepositorySha, producerSha, operationId, outputRoot }) {
+export async function materializeCurrentSourceSet(
+  { handoffPath, expectedHandoffSha256, sourceRepositorySha, producerSha, operationId, outputRoot },
+  { verifyPublishedOutput = assertOutputParent } = {},
+) {
   requireAbsolute(handoffPath, "handoff");
   requireAbsolute(outputRoot, "output root");
   requireIdentity({ sourceRepositorySha, producerSha, operationId });
@@ -227,7 +290,7 @@ export async function materializeCurrentSourceSet({ handoffPath, expectedHandoff
   try { handoff = readCurrentSourceSetHandoff(handoffBytes, { sourceRepositorySha, producerSha, operationId }); }
   catch (error) { fail("HANDOFF_INVALID", "current source-set handoff validation failed", { cause: error }); }
   const entries = validatedOutputs(handoff);
-  await materializeAtomically({ parent, parentIdentity, outputRoot, entries });
+  await materializeAtomically({ parent, parentIdentity, outputRoot, entries, verifyPublishedOutput });
   return resultFor(handoff, handoffSha256);
 }
 

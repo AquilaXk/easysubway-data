@@ -120,12 +120,32 @@ test("materializes only the verified protected output set", async (t) => {
     producerSha: input.producerSha, operationId: input.operationId,
   }), { name: "CurrentSourceSetMaterializationError", code: "OUTPUT_INVALID" });
   const lockedRoot = path.join(temporary, "locked-output");
-  await mkdir(path.join(temporary, ".locked-output.current-source-set-lock"), { mode: 0o700 });
+  await writeFile(path.join(temporary, ".locked-output.current-source-set-lock"),
+    `${JSON.stringify({ pid: process.pid })}\n`, { mode: 0o600 });
   await assert.rejects(materializeCurrentSourceSet({
     handoffPath, expectedHandoffSha256: sha256(handoffBytes), outputRoot: lockedRoot,
     sourceRepositorySha: input.sourceRepositorySha, producerSha: input.producerSha,
     operationId: input.operationId,
   }), { name: "CurrentSourceSetMaterializationError", code: "OUTPUT_BUSY" });
+  const staleRoot = path.join(temporary, "stale-output");
+  const staleLock = path.join(temporary, ".stale-output.current-source-set-lock");
+  await writeFile(staleLock, `${JSON.stringify({ pid: 99999999 })}\n`, { mode: 0o600 });
+  const staleResult = await materializeCurrentSourceSet({
+    handoffPath, expectedHandoffSha256: sha256(handoffBytes), outputRoot: staleRoot,
+    sourceRepositorySha: input.sourceRepositorySha, producerSha: input.producerSha,
+    operationId: input.operationId,
+  });
+  assert.equal(staleResult.count, 8);
+  await assert.rejects(lstat(staleLock), { code: "ENOENT" });
+  const rollbackRoot = path.join(temporary, "rollback-output");
+  await assert.rejects(materializeCurrentSourceSet({
+    handoffPath, expectedHandoffSha256: sha256(handoffBytes), outputRoot: rollbackRoot,
+    sourceRepositorySha: input.sourceRepositorySha, producerSha: input.producerSha,
+    operationId: input.operationId,
+  }, { verifyPublishedOutput: async () => { throw new Error("injected post-rename failure"); } }), {
+    name: "CurrentSourceSetMaterializationError", code: "OUTPUT_WRITE_FAILED",
+  });
+  await assert.rejects(lstat(rollbackRoot), { code: "ENOENT" });
   const existingDirectory = path.join(temporary, "existing-directory");
   await mkdir(existingDirectory);
   await assert.rejects(materializeCurrentSourceSet({
