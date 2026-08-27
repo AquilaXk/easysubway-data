@@ -901,7 +901,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   candidate.sourceInventorySha256 = sha256(JSON.stringify(inventory));
   candidate.networkEdgeEvidence.sourceInventory.sha256 = sha256(inventoryBytes);
   const candidateBytes = jsonBytes(candidate);
-  const packBytes = jsonBytes(pack);
+  const packBytes = Buffer.from(`${JSON.stringify(pack)}\n`);
   Object.assign(request, {
     candidateId: candidate.candidateId,
     buildSpecSha256: sha256(candidateBytes),

@@ -279,7 +279,7 @@ async function stagedRefreshRepository(t) {
   const canonicalPackPath = path.join(root, "tools/datapack/release/capital-production-canonical-pack.json");
   const canonicalPackBytesBeforeFacilityCurrentization = await readFile(canonicalPackPath);
   await currentizeFreshFacilitySource(root, now);
-  assert.deepEqual(await readFile(canonicalPackPath), canonicalPackBytesBeforeFacilityCurrentization);
+  assert.equal((await readFile(canonicalPackPath)).equals(canonicalPackBytesBeforeFacilityCurrentization), true);
   await writeFreshExitAdmissionChain(root, now);
   await writeFreshCurrentAccessibilityOutputs(root);
   const finalEvidence = await stagedStaticEvidenceIdentity(root);
