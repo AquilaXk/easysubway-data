@@ -332,7 +332,7 @@ function validateImmutableObjectPlan(plan) {
   }
 }
 
-function objectStorageClient(env = process.env) {
+export function objectStorageClient(env = process.env) {
   const preauthBaseUrl = env?.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL?.trim();
   if (preauthBaseUrl) {
     return preauthenticatedObjectStorageClient(new URL(preauthBaseUrl));
