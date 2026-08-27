@@ -125,7 +125,11 @@ async function putAndVerify(publisher, object, onCreated) {
   if (created !== true) fail("COLLISION");
   onCreated(objectIdentity(object));
   let body;
-  try { body = await publisher.fullGet(object.key); } catch { fail("FULL_GET"); }
+  try {
+    body = await publisher.fullGet(object.key, object.bytes.byteLength);
+  } catch {
+    fail("FULL_GET");
+  }
   if (!(body instanceof Uint8Array) || body.byteLength !== object.bytes.byteLength || sha256(body) !== object.sha256) fail("FULL_GET");
   return canonical({ kind: object.kind, objectKey: object.key, sizeBytes: object.bytes.length, sha256: object.sha256, fullGet: { sizeBytes: body.byteLength, sha256: sha256(body) } });
 }
@@ -163,7 +167,11 @@ export function createKricRetainedFilePublisher(env, createClient = objectStorag
   if (!client || typeof client.putObjectIfAbsent !== "function" || typeof client.readObject !== "function") fail("OCI_ENV");
   return {
     putObjectIfAbsent: (key, bytes) => client.putObjectIfAbsent(key, bytes, { sha256: sha256(bytes), sizeBytes: bytes.length }),
-    async fullGet(key) { const result = await client.readObject(key); if (!result.exists) throw new Error("OCI full GET failed"); return result.body; },
+    async fullGet(key, maxResponseBytes) {
+      const result = await client.readObject(key, { maxResponseBytes });
+      if (!result.exists) throw new Error("OCI full GET failed");
+      return result.body;
+    },
   };
 }
 

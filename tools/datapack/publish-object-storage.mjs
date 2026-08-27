@@ -512,9 +512,10 @@ export function preauthenticatedObjectStorageClient(baseUrl, { includeErrorBody 
       }
       return { exists: true, sha256: sha256(response.body) };
     },
-    readObject: async (key) => {
+    readObject: async (key, { maxResponseBytes } = {}) => {
       const response = await boundedRequest({
         url: preauthObjectUrl(baseUrl, key), method: "GET", body: Buffer.alloc(0),
+        maxResponseBytes,
       });
       if (response.statusCode === 404) return { exists: false };
       if (response.statusCode < 200 || response.statusCode >= 300) {

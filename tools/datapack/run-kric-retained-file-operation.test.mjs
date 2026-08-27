@@ -27,18 +27,21 @@ test("uses the current source-publication OCI contract and rejects candidate-onl
     EASYSUBWAY_OBJECT_STORAGE_SECRET_KEY: "secret",
   };
   const body = Buffer.from("retained");
+  const expectedSize = 64 * 1024 * 1024 + 1;
   let receivedEnv;
   let receivedStep;
+  let receivedReadOptions;
   const publisher = createKricRetainedFilePublisher(env, (value) => {
     receivedEnv = value;
     return {
       async putObjectIfAbsent(_key, _bytes, step) { receivedStep = step; return true; },
-      async readObject() { return { exists: true, body }; },
+      async readObject(_key, options) { receivedReadOptions = options; return { exists: true, body }; },
     };
   });
   assert.equal(await publisher.putObjectIfAbsent("source-raw/example", body), true);
   assert.deepEqual(receivedStep, { sha256: sha(body), sizeBytes: body.length });
-  assert.deepEqual(await publisher.fullGet("source-raw/example"), body);
+  assert.deepEqual(await publisher.fullGet("source-raw/example", expectedSize), body);
+  assert.deepEqual(receivedReadOptions, { maxResponseBytes: expectedSize });
   assert.strictEqual(receivedEnv, env);
   assert.throws(() => createKricRetainedFilePublisher({
     EASYSUBWAY_CANDIDATE_OCI_NAMESPACE: "namespace",
