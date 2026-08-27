@@ -6,16 +6,18 @@ import test from "node:test";
 
 import { buildPublicStaticNetworkV2Observations } from "./build-public-static-network-v2-observations.mjs";
 import { parseSeoulRouteMapPositionsCsv } from "./collect-seoul-route-map-positions.mjs";
+import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const ids = Object.freeze(["seoul-metro-route-map-positions", "molit-urban-rail-full-route"]);
 
 async function input() {
-  const [inventory, positionCsv, molitRawBytes] = await Promise.all([
+  const [inventory, positionCsv, molitRawBytes, governance] = await Promise.all([
     readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
     readFile(path.join(root, "tools/datapack/fixtures/seoul-route-map-positions-raw/data-go-15099316.csv")),
     readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
+    readFile(path.join(root, "tools/datapack/source-governance-policy.json"), "utf8").then(JSON.parse),
   ]);
   const publicSources = inventory.sources.filter(({ id }) => id === ids[0]);
   const publicSource = publicSources[0];
@@ -46,11 +48,11 @@ async function input() {
   }));
   const receipt = (sourceId, rawBytes, extension, contentType) => {
     const snapshotId = `${sourceId}-current-${capturedAt.replaceAll(/[-:.]/gu, "")}`;
-    const rawSha256 = sha(rawBytes); const objectKey = `source-raw/${sourceId}/20260825/${rawSha256}.${extension}`;
+    const rawSha256 = sha(rawBytes); const date = capturedAt.slice(0, 10).replaceAll("-", ""); const objectKey = `source-raw/${sourceId}/${date}/${rawSha256}.${extension}`;
     return { schemaVersion: 1, artifactKind: "static-network-source-raw-object-receipt", sourceId, snapshotId, capturedAt,
       rawObjectSha256: rawSha256, rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/${objectKey}`,
       ociNamespace: "axvym6vk8g7i", bucket: "easysubway-datapacks", objectKey, contentType, byteSize: rawBytes.length,
-      storedAt: capturedAt, rawRetentionExpiresAt: "2026-11-23T00:00:00.000Z" };
+      storedAt: capturedAt, rawRetentionExpiresAt: deriveRawRetentionExpiresAt({ policy: governance, sourceId, retrievedAt: capturedAt }) };
   };
   return {
     positionRawBytes, molitRawBytes, capturedAt, admittedTopologyBytes: topologyBytes,
