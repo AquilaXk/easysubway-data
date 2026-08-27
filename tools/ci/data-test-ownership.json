@@ -402,7 +402,7 @@
     {"path":"tools/datapack/itx-cheongchun-coverage-contract.test.mjs","semanticOwner":"data38","classes":["required-pr","deterministic-release"],"durationMs":183},
     {"path":"tools/datapack/itx-cheongchun-service-layer.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":726},
     {"path":"tools/datapack/launch-candidate-binding.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":118},
-    {"path":"tools/datapack/materialize-current-source-set.test.mjs","semanticOwner":"data96","classes":["required-pr"],"durationMs":2941},
+    {"path":"tools/datapack/materialize-current-source-set.test.mjs","semanticOwner":"data96","classes":["required-pr"],"durationMs":3183},
     {"path":"tools/datapack/lib/datapack-manifest-schema.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":131},
     {"path":"tools/datapack/lib/map-catalog-oci-publisher.test.mjs","semanticOwner":"data535","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/lib/molit-svg-provider-identity.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":107},

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -88,6 +88,21 @@ test("materializes only the verified protected output set", async (t) => {
     outputRoot: path.join(temporary, "fifo-output"), sourceRepositorySha: input.sourceRepositorySha,
     producerSha: input.producerSha, operationId: input.operationId,
   }), { name: "CurrentSourceSetMaterializationError", code: "INPUT_INVALID" });
+  const sharedParent = path.join(temporary, "shared-parent");
+  await mkdir(sharedParent);
+  await chmod(sharedParent, 0o755);
+  await assert.rejects(materializeCurrentSourceSet({
+    handoffPath, expectedHandoffSha256: sha256(handoffBytes),
+    outputRoot: path.join(sharedParent, "output"), sourceRepositorySha: input.sourceRepositorySha,
+    producerSha: input.producerSha, operationId: input.operationId,
+  }), { name: "CurrentSourceSetMaterializationError", code: "OUTPUT_INVALID" });
+  const lockedRoot = path.join(temporary, "locked-output");
+  await mkdir(path.join(temporary, ".locked-output.current-source-set-lock"), { mode: 0o700 });
+  await assert.rejects(materializeCurrentSourceSet({
+    handoffPath, expectedHandoffSha256: sha256(handoffBytes), outputRoot: lockedRoot,
+    sourceRepositorySha: input.sourceRepositorySha, producerSha: input.producerSha,
+    operationId: input.operationId,
+  }), { name: "CurrentSourceSetMaterializationError", code: "OUTPUT_BUSY" });
   const existingDirectory = path.join(temporary, "existing-directory");
   await mkdir(existingDirectory);
   await assert.rejects(materializeCurrentSourceSet({

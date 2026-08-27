@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, mkdir, open, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, rename, rm, rmdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -92,7 +92,10 @@ async function assertOutputParent(parent, expectedIdentity) {
   let stat;
   try { stat = await lstat(parent); }
   catch (error) { fail("OUTPUT_INVALID", "current source-set output parent missing", { cause: error }); }
-  if (!stat.isDirectory() || stat.isSymbolicLink()) fail("OUTPUT_INVALID", "current source-set output parent mismatch");
+  const owner = typeof process.getuid === "function" ? process.getuid() : undefined;
+  if (!stat.isDirectory() || stat.isSymbolicLink() || stat.uid !== owner || (stat.mode & 0o077) !== 0) {
+    fail("OUTPUT_INVALID", "current source-set output parent must be an owner-private directory");
+  }
   if (expectedIdentity && (stat.dev !== expectedIdentity.dev || stat.ino !== expectedIdentity.ino)) {
     fail("OUTPUT_INVALID", "current source-set output parent changed");
   }
@@ -136,10 +139,28 @@ function resultFor(handoff, handoffSha256) {
   };
 }
 
+async function acquireOutputLock(parent, outputRoot) {
+  const lockPath = path.join(parent, `.${path.basename(outputRoot)}.current-source-set-lock`);
+  try { await mkdir(lockPath, { mode: 0o700 }); }
+  catch (error) {
+    if (error?.code === "EEXIST") fail("OUTPUT_BUSY", "current source-set output is already being materialized");
+    fail("OUTPUT_WRITE_FAILED", "current source-set output lock failed", { cause: error });
+  }
+  return { identity: await assertOutputParent(lockPath), lockPath };
+}
+
+async function releaseOutputLock({ identity, lockPath }) {
+  const current = await lstat(lockPath).catch(() => undefined);
+  if (current?.isDirectory() && !current.isSymbolicLink()
+    && current.dev === identity.dev && current.ino === identity.ino) {
+    await rmdir(lockPath).catch(() => undefined);
+  }
+}
+
 async function materializeAtomically({ parent, parentIdentity, outputRoot, entries }) {
   const staging = path.join(parent, `.${path.basename(outputRoot)}.current-source-set-staging-${randomUUID()}`);
+  const lock = await acquireOutputLock(parent, outputRoot);
   let stagingCreated = false;
-  let outputIdentity;
   try {
     await mkdir(staging, { mode: 0o700 });
     stagingCreated = true;
@@ -148,28 +169,21 @@ async function materializeAtomically({ parent, parentIdentity, outputRoot, entri
       await mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
       await writeFile(target, entries.get(relative), { flag: "wx", mode: 0o600 });
     }
+    const stagingIdentity = await assertOutputParent(staging);
     await assertOutputParent(parent, parentIdentity);
     await assertAbsentOutputRoot(outputRoot);
-    try { await mkdir(outputRoot, { mode: 0o700 }); }
-    catch (error) {
-      if (error?.code === "EEXIST") fail("OUTPUT_EXISTS", "current source-set output root already exists");
-      throw error;
-    }
-    outputIdentity = await assertOutputParent(outputRoot);
-    await rename(path.join(staging, "tools"), path.join(outputRoot, "tools"));
-    await rm(staging, { recursive: true });
+    await rename(staging, outputRoot);
     stagingCreated = false;
-  } catch (error) {
-    if (outputIdentity) {
-      const current = await lstat(outputRoot).catch(() => undefined);
-      if (current?.isDirectory() && !current.isSymbolicLink()
-        && current.dev === outputIdentity.dev && current.ino === outputIdentity.ino) {
-        await rm(outputRoot, { recursive: true, force: true });
-      }
+    const outputIdentity = await assertOutputParent(outputRoot);
+    if (outputIdentity.dev !== stagingIdentity.dev || outputIdentity.ino !== stagingIdentity.ino) {
+      fail("OUTPUT_WRITE_FAILED", "current source-set published output identity mismatch");
     }
+  } catch (error) {
     if (stagingCreated) await rm(staging, { recursive: true, force: true });
     if (error instanceof CurrentSourceSetMaterializationError) throw error;
     fail("OUTPUT_WRITE_FAILED", "current source-set output materialization failed", { cause: error });
+  } finally {
+    await releaseOutputLock(lock);
   }
 }
 
