@@ -16,16 +16,30 @@ const repositoryRoot = path.resolve(import.meta.dirname, "../..");
 const STATIC_INPUT_PATHS = [
   "tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json",
   "tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json", "tools/datapack/source-governance-policy.json",
-  "release/product-gates/datapack-freshness-sla.json", "tools/datapack/sources/capital-route-topology-20260825.json",
+  "release/product-gates/datapack-freshness-sla.json",
 ];
+
+function currentCapitalTopologyAdmission(sourceInventory) {
+  const admission = sourceInventory.sources.find(({ id }) => id === "seoul-metro-route-map-positions")
+    ?.routeMapAdmissionEvidence?.currentTopologyAdmission;
+  if (!admission?.topologySnapshotId || !admission?.reviewedAt || !admission?.freshUntil) {
+    throw new Error("current capital topology admission is missing");
+  }
+  return admission;
+}
 
 async function registrationOutputs(root) {
   const output = (relative, before, after) => ({ relative, prestateBytes: before, bytes: after });
   const staticInputs = await Promise.all(STATIC_INPUT_PATHS.map(async (relative) => ({ relative, bytes: await readFile(path.join(root, relative)) })));
   const candidate = JSON.parse(staticInputs[2].bytes);
+  const topologyAdmission = currentCapitalTopologyAdmission(JSON.parse(staticInputs[0].bytes));
+  const topologyInput = {
+    relative: `tools/datapack/sources/${topologyAdmission.topologySnapshotId}.json`,
+    bytes: await readFile(path.join(root, "tools/datapack/sources", `${topologyAdmission.topologySnapshotId}.json`)),
+  };
   const activeObservationPaths = ["seoul-metro-route-map-positions", "molit-urban-rail-full-route"].map((sourceId) =>
     `tools/datapack/sources/${candidate.sourceSnapshots.find((source) => source.sourceId === sourceId).snapshotId}.json`);
-  const inputs = [...staticInputs, ...await Promise.all(activeObservationPaths.map(async (relative) => ({
+  const inputs = [...staticInputs, topologyInput, ...await Promise.all(activeObservationPaths.map(async (relative) => ({
     relative,
     bytes: await readFile(path.join(root, relative)),
   })))];
@@ -39,19 +53,25 @@ async function registrationOutputs(root) {
   return outputs.map((entry) => ({ ...entry, inputs }));
 }
 
-async function publicV2Input(root, capturedAt = "2026-08-26T04:00:00.000Z") {
-  const [sourceInventory, admittedTopologyBytes, positionCsv, molitRawBytes, governance] = await Promise.all([
+async function publicV2Input(root, capturedAt) {
+  const [sourceInventory, positionCsv, molitRawBytes, governance] = await Promise.all([
     readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
-    readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260825.json")),
     readFile(path.join(root, "tools/datapack/fixtures/seoul-route-map-positions-raw/data-go-15099316.csv")),
     readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
     readFile(path.join(root, "tools/datapack/source-governance-policy.json"), "utf8").then(JSON.parse),
   ]);
+  const topologyAdmission = currentCapitalTopologyAdmission(sourceInventory);
+  const admittedTopologyBytes = await readFile(path.join(
+    root,
+    "tools/datapack/sources",
+    `${topologyAdmission.topologySnapshotId}.json`,
+  ));
+  const effectiveCapturedAt = capturedAt ?? topologyAdmission.reviewedAt;
   const rows = parseSeoulRouteMapPositionsCsv(positionCsv).rawPositions.map(({ line, stationCode, stationName, latitude, longitude, basisDate }, index) => ({ "연번": `${index + 1}`, "호선": line, "고유역번호(외부역코드)": stationCode, "역명": stationName, "위도": `${latitude}`, "경도": `${longitude}`, "작성기준일": basisDate, "작성일자": basisDate }));
   const positionRawBytes = Buffer.from(JSON.stringify({ currentCount: rows.length, data: rows, matchCount: rows.length, page: 1, perPage: 1000, totalCount: rows.length }));
-  const receipt = (sourceId, rawBytes, extension, contentType) => { const rawSha256 = sha(rawBytes); const stamp = capturedAt.replaceAll(/[-:.]/gu, ""); const date = capturedAt.slice(0, 10).replaceAll("-", ""); const objectKey = `source-raw/${sourceId}/${date}/${rawSha256}.${extension}`; return { schemaVersion: 1, artifactKind: "static-network-source-raw-object-receipt", sourceId, snapshotId: `${sourceId}-current-${stamp}`, capturedAt, rawObjectSha256: rawSha256, rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/${objectKey}`, ociNamespace: "axvym6vk8g7i", bucket: "easysubway-datapacks", objectKey, contentType, byteSize: rawBytes.length, storedAt: capturedAt, rawRetentionExpiresAt: deriveRawRetentionExpiresAt({ policy: governance, sourceId, retrievedAt: capturedAt }) }; };
-  const producerOutput = buildPublicStaticNetworkV2Observations({ positionRawBytes, molitRawBytes, capturedAt, sourceInventory, admittedTopologyBytes, admittedTopologyId: "capital-route-topology-20260825", positionReceipt: receipt("seoul-metro-route-map-positions", positionRawBytes, "json", "application/json"), molitReceipt: receipt("molit-urban-rail-full-route", molitRawBytes, "csv", "text/csv; charset=euc-kr") });
-  return { producerOutput, rawBytesBySource: { "seoul-metro-route-map-positions": positionRawBytes, "molit-urban-rail-full-route": molitRawBytes }, now: new Date(capturedAt) };
+  const receipt = (sourceId, rawBytes, extension, contentType) => { const rawSha256 = sha(rawBytes); const stamp = effectiveCapturedAt.replaceAll(/[-:.]/gu, ""); const date = effectiveCapturedAt.slice(0, 10).replaceAll("-", ""); const objectKey = `source-raw/${sourceId}/${date}/${rawSha256}.${extension}`; return { schemaVersion: 1, artifactKind: "static-network-source-raw-object-receipt", sourceId, snapshotId: `${sourceId}-current-${stamp}`, capturedAt: effectiveCapturedAt, rawObjectSha256: rawSha256, rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/${objectKey}`, ociNamespace: "axvym6vk8g7i", bucket: "easysubway-datapacks", objectKey, contentType, byteSize: rawBytes.length, storedAt: effectiveCapturedAt, rawRetentionExpiresAt: deriveRawRetentionExpiresAt({ policy: governance, sourceId, retrievedAt: effectiveCapturedAt }) }; };
+  const producerOutput = buildPublicStaticNetworkV2Observations({ positionRawBytes, molitRawBytes, capturedAt: effectiveCapturedAt, sourceInventory, admittedTopologyBytes, admittedTopologyId: topologyAdmission.topologySnapshotId, positionReceipt: receipt("seoul-metro-route-map-positions", positionRawBytes, "json", "application/json"), molitReceipt: receipt("molit-urban-rail-full-route", molitRawBytes, "csv", "text/csv; charset=euc-kr") });
+  return { producerOutput, rawBytesBySource: { "seoul-metro-route-map-positions": positionRawBytes, "molit-urban-rail-full-route": molitRawBytes }, now: new Date(effectiveCapturedAt), topologyAdmission };
 }
 
 test("v2 registrar advances only the exact active V2 heads", async (t) => {
@@ -69,7 +89,7 @@ test("v2 registrar advances only the exact active V2 heads", async (t) => {
   ));
   const input = await publicV2Input(root); const staged = await buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input });
   assert.equal(staged.length, 5); assert.deepEqual(staged.map(({ relative }) => relative).slice(2), ["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json"]);
-  assert.equal(staged[0].inputs.length, STATIC_INPUT_PATHS.length + 2);
+  assert.equal(staged[0].inputs.length, STATIC_INPUT_PATHS.length + 3);
   assert.deepEqual(staged[0].inputs.slice(-2).map(({ relative }) => relative), predecessorIds.map(
     (snapshotId) => `tools/datapack/sources/${snapshotId}.json`,
   ));
@@ -116,7 +136,7 @@ test("v2 registrar advances only the exact active V2 heads", async (t) => {
   const committedLedger = JSON.parse(await readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8"));
   for (const predecessor of predecessorLedger) assert.deepEqual(committedLedger.find(({ snapshotId }) => snapshotId === predecessor.snapshotId), predecessor);
   for (const [index, snapshotId] of predecessorIds.entries()) assert.deepEqual(await readFile(path.join(root, `tools/datapack/sources/${snapshotId}.json`)), predecessorSourceBytes[index]);
-  const nextInput = await publicV2Input(root, "2026-08-26T04:15:00.000Z");
+  const nextInput = await publicV2Input(root, new Date(input.now.getTime() + 15 * 60 * 1_000).toISOString());
   const nextLedger = JSON.parse((await buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...nextInput }))
     .find(({ relative }) => relative === "tools/datapack/release/source-snapshots.json").bytes);
   const nextPosition = nextLedger.find(({ snapshotId }) => snapshotId === nextInput.producerOutput.observations[0].snapshotId);
@@ -162,7 +182,7 @@ test("v2 registrar rejects forged producer observations and stale or mismatched 
 
   const staleInventory = structuredClone(baselineInventory);
   await writeFile(inventoryPath, `${JSON.stringify(staleInventory, null, 2)}\n`);
-  await assert.rejects(buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input, now: new Date("2026-08-27T00:00:00.000Z") }), /topology admission snapshot is stale or future-dated/);
+  await assert.rejects(buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input, now: new Date(Date.parse(input.topologyAdmission.freshUntil) + 1) }), /topology admission snapshot is stale or future-dated/);
 });
 
 test("v2 registrar requires exact active observation files instead of ledger-only fallback", async (t) => {

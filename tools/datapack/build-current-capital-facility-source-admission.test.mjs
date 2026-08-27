@@ -124,7 +124,7 @@ test("current seven-source candidate evaluates projections at its published cloc
   beforeBasis.candidateEvaluationAt = beforeBasis.observedAt;
   assert.throws(() => buildCurrentCapitalFacilitySourceAdmission(beforeBasis), /candidate evaluation precedes selected basis/u);
   const receiptAfterPublication = structuredClone(values);
-  receiptAfterPublication.sourceSnapshots.find(({ snapshotId }) => snapshotId === selectedKricId).rawReceipt.storedAt = "2026-08-26T03:54:09.252Z";
+  receiptAfterPublication.sourceSnapshots.find(({ snapshotId }) => snapshotId === selectedKricId).rawReceipt.storedAt = new Date(Date.parse(candidateBuildSpec.publishedAt) + 1).toISOString();
   receiptAfterPublication.candidateBuildSpec.sourceSnapshotSetHash = selectedLedgerHash(receiptAfterPublication.sourceSnapshots, receiptAfterPublication.candidateBuildSpec.sourceSnapshotIds);
   assert.throws(() => buildCurrentCapitalFacilitySourceAdmission(receiptAfterPublication), /KRIC source time or governance mismatch/u);
 });

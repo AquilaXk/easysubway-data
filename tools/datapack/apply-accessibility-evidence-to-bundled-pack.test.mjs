@@ -463,11 +463,15 @@ test("generated hash-evidence commands use and enforce the exact candidate snaps
       await readFile(path.join(repository, relativePath)),
     )));
     await syncReleaseEvidence({ releaseRoot: directory });
-    const [spec, hashes, sourceSnapshotLedger] = await Promise.all([
+    const [spec, request, hashes, sourceSnapshotLedger] = await Promise.all([
       readFile(path.join(directory, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+      readFile(path.join(directory, "tools/datapack/release/release-request.json"), "utf8").then(JSON.parse),
       readFile(path.join(directory, "tools/datapack/release/hash-evidence.json"), "utf8").then(JSON.parse),
       readFile(path.join(directory, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
     ]);
+    assert.equal(hashes.builderGitSha, spec.builderGitSha);
+    assert.equal(hashes.identifiers.candidateId.value, spec.candidateId);
+    assert.equal(request.candidateId, spec.candidateId);
     const selectedIds = new Set(spec.sourceSnapshotIds);
     const selectedInLedgerOrder = sourceSnapshotLedger.filter(({ snapshotId }) => selectedIds.has(snapshotId));
     assert.equal(spec.sourceSnapshotSetHash, createHash("sha256").update(JSON.stringify(selectedInLedgerOrder)).digest("hex"));

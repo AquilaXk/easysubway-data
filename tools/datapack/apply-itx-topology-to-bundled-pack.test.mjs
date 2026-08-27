@@ -819,11 +819,14 @@ test("canonical fixture topology projection은 resultant network edge floor를 �
   ]);
   const topology = deriveTopology(source);
   const pack = fixture.packs.find(({ id }) => id === "capital");
+  const retainedNetworkEdgeCount = pack.networkEdges
+    .filter(({ serviceClass }) => serviceClass !== "ITX_CHEONGCHUN").length;
+  const expectedNetworkEdgeFloor = retainedNetworkEdgeCount + topology.edges.length;
 
   assert.equal(topology.edges.length, 48);
   projectItxTopologyIntoCanonicalFixture(fixture, topology);
-  assert.equal(pack.networkEdges.length, 2178);
-  assert.equal(pack.minimumTableRows.network_edges, 2178);
+  assert.equal(pack.networkEdges.length, expectedNetworkEdgeFloor);
+  assert.equal(pack.minimumTableRows.network_edges, expectedNetworkEdgeFloor);
 });
 
 test("assertStoredTopology는 foreign-key 손상을 거부한다", async (context) => {
