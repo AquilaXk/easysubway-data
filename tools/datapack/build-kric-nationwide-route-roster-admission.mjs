@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { projectKricStationLineMembership } from "./project-kric-station-line-membership.mjs";
 const SOURCE_ID = "kric-current-station-line-file";
 const RECEIPT_KIND = "kric-current-station-line-file-receipt";
@@ -57,7 +58,7 @@ function canonicalJson(value) {
 }
 
 function compareCanonicalJsonKeys(left, right) {
-  return left.localeCompare(right, "en");
+  return codepointCompare(left, right);
 }
 
 function canonicalJsonProperty(key, value) {
