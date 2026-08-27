@@ -77,8 +77,7 @@
       "domain": "schedule_timetable",
       "coverageScope": {
         "regionIds": ["all"],
-        "operatorIds": ["all-urban-metropolitan-rail-operators"],
-        "lineIds": []
+        "operatorIds": ["all-urban-metropolitan-rail-operators"]
       },
       "displayName": "전체_도시철도운행정보_20260630",
       "detailUrl": "https://data.kric.go.kr/rips/M_01_01/detail.do?id=900",
