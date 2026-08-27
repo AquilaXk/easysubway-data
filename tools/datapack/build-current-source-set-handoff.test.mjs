@@ -133,7 +133,9 @@ async function canonicalInputFixture(root) {
   const planBytes = Buffer.from(`${canonicalCurrentCapitalLiveChainOciPlanJson(plan)}\n`);
   const receipt = buildCurrentCapitalLiveChainOciReceipt({ planBytes });
   const compositeReceiptBytes = Buffer.from(`${canonicalCurrentCapitalLiveChainOciReceiptJson(receipt, { planBytes })}\n`);
-  return { boundary, candidate, compositeBytes, compositeReceiptBytes, operationId, producerSha, sourceRepositorySha: repositorySha };
+  const releaseRequestPath = path.join(ROOT, "tools/datapack/release/release-request.json");
+  const releaseRequestBytes = await readFile(releaseRequestPath);
+  return { boundary, candidate, compositeBytes, compositeReceiptBytes, expectedApprovalId: JSON.parse(releaseRequestBytes).approvalId, operationId, producerSha, releaseRequestBytes, releaseRequestPath, sourceRepositorySha: repositorySha };
 }
 
 test("current source-set handoff binds the exact verified live-chain and fails closed on drift", async (t) => {
@@ -153,6 +155,11 @@ test("current source-set handoff binds the exact verified live-chain and fails c
   assert.deepEqual(handoff.candidate.sourceSnapshots, input.candidate.sourceSnapshots.map(({ sourceId, snapshotId }) => ({ sourceId, snapshotId })));
   assert.equal(handoff.evidence.facility.sourceSnapshotSetHash, handoff.candidate.sourceSnapshotSetHash);
   assert.equal(handoff.evidence.exit.sourceSnapshotSetHash, handoff.candidate.sourceSnapshotSetHash);
+  assert.deepEqual(handoff.releaseRequest, {
+    approvalId: JSON.parse(input.releaseRequestBytes).approvalId,
+    candidateId: handoff.candidate.candidateId,
+    sha256: sha256(input.releaseRequestBytes),
+  });
 
   const receiptPath = path.join(temporary, "receipt.json");
   const compositePath = path.join(temporary, "composite.json");
@@ -163,6 +170,8 @@ test("current source-set handoff binds the exact verified live-chain and fails c
     path.join(ROOT, "tools/datapack/build-current-source-set-handoff.mjs"),
     "--composite-receipt", receiptPath,
     "--composite", compositePath,
+    "--release-request", input.releaseRequestPath,
+    "--expected-approval-id", input.expectedApprovalId,
     "--source-repository-sha", input.sourceRepositorySha,
     "--producer-sha", input.producerSha,
     "--operation-id", input.operationId,
@@ -182,6 +191,8 @@ test("current source-set handoff binds the exact verified live-chain and fails c
     path.join(ROOT, "tools/datapack/build-current-source-set-handoff.mjs"),
     "--composite-receipt", rejectedReceipt,
     "--composite", compositePath,
+    "--release-request", input.releaseRequestPath,
+    "--expected-approval-id", input.expectedApprovalId,
     "--source-repository-sha", input.sourceRepositorySha,
     "--producer-sha", input.producerSha,
     "--operation-id", input.operationId,
@@ -189,6 +200,57 @@ test("current source-set handoff binds the exact verified live-chain and fails c
   ], { encoding: "utf8" });
   assert.notEqual(rejected.status, 0);
   await assert.rejects(stat(rejectedOutput), { code: "ENOENT" });
+
+  for (const [label, fileName, mutate] of [
+    ["candidate ID", "candidate-id", (request) => { request.candidateId = "different-candidate"; }],
+    ["source-set hash", "source-set-hash", (request) => { request.sourceSnapshotSetHash = "0".repeat(64); }],
+    ["build-spec SHA", "build-spec-sha", (request) => { request.buildSpecSha256 = "0".repeat(64); }],
+    ["approved ledger hash", "approved-ledger-hash", (request) => { request.approvedLedgerHash = "0".repeat(64); }],
+  ]) {
+    const releaseRequest = JSON.parse(input.releaseRequestBytes);
+    mutate(releaseRequest);
+    const driftedReleaseRequestBytes = Buffer.from(JSON.stringify(releaseRequest));
+    assert.throws(
+      () => buildCurrentSourceSetHandoff({ ...input, releaseRequestBytes: driftedReleaseRequestBytes }),
+      /release request binding mismatch/,
+      label,
+    );
+    const driftedRequestPath = path.join(temporary, `${fileName}.json`);
+    const driftedOutputPath = path.join(temporary, `${fileName}-handoff.json`);
+    await writeFile(driftedRequestPath, driftedReleaseRequestBytes);
+    const result = spawnSync(process.execPath, [
+      path.join(ROOT, "tools/datapack/build-current-source-set-handoff.mjs"),
+      "--composite-receipt", receiptPath,
+      "--composite", compositePath,
+      "--release-request", driftedRequestPath,
+      "--expected-approval-id", input.expectedApprovalId,
+      "--source-repository-sha", input.sourceRepositorySha,
+      "--producer-sha", input.producerSha,
+      "--operation-id", input.operationId,
+      "--output", driftedOutputPath,
+    ], { encoding: "utf8" });
+    assert.notEqual(result.status, 0, label);
+    await assert.rejects(stat(driftedOutputPath), { code: "ENOENT" }, label);
+  }
+
+  const wrongApprovalOutputPath = path.join(temporary, "wrong-approval-handoff.json");
+  assert.throws(
+    () => buildCurrentSourceSetHandoff({ ...input, expectedApprovalId: "release-request-other" }),
+    /release request binding mismatch/,
+  );
+  const wrongApproval = spawnSync(process.execPath, [
+    path.join(ROOT, "tools/datapack/build-current-source-set-handoff.mjs"),
+    "--composite-receipt", receiptPath,
+    "--composite", compositePath,
+    "--release-request", input.releaseRequestPath,
+    "--expected-approval-id", "release-request-other",
+    "--source-repository-sha", input.sourceRepositorySha,
+    "--producer-sha", input.producerSha,
+    "--operation-id", input.operationId,
+    "--output", wrongApprovalOutputPath,
+  ], { encoding: "utf8" });
+  assert.notEqual(wrongApproval.status, 0);
+  await assert.rejects(stat(wrongApprovalOutputPath), { code: "ENOENT" });
 
   const tamperedFanIn = rehashHandoff({
     ...handoff,

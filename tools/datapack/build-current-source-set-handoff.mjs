@@ -17,6 +17,7 @@ import {
 import { OCI_BUCKET, OCI_NAMESPACE } from "./build-current-capital-live-chain-oci-plan.mjs";
 import { canonicalCurrentCapitalLiveChainOciReceiptJson } from "./build-current-capital-live-chain-oci-receipt.mjs";
 import { canonicalCurrentExitAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
+import { releaseRequestBindingViolations } from "./verify-release-request-binding.mjs";
 
 const REPOSITORY = "AquilaXk/easysubway-data";
 const SHA1 = /^[a-f0-9]{40}$/u;
@@ -70,6 +71,23 @@ function parseComponent(entry, label) {
   catch { throw new Error(`${label} must be UTF-8 JSON`); }
   return { bytes, value };
 }
+function parseReleaseRequest(bytes) {
+  if (!Buffer.isBuffer(bytes) || bytes.length === 0) throw new Error("release request bytes mismatch");
+  try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); }
+  catch { throw new Error("release request JSON mismatch"); }
+}
+function verifyReleaseRequest({ releaseRequestBytes, candidateBytes, candidate, expectedApprovalId }) {
+  if (typeof expectedApprovalId !== "string" || expectedApprovalId.length === 0) throw new Error("expected approval ID mismatch");
+  const releaseRequest = parseReleaseRequest(releaseRequestBytes);
+  const violations = releaseRequestBindingViolations({
+    buildSpec: candidate,
+    buildSpecSha256: sha256(candidateBytes),
+    releaseRequest,
+    expectedApprovalId,
+  });
+  if (violations.length > 0) throw new Error(`release request binding mismatch: ${violations.join("; ")}`);
+  return releaseRequest;
+}
 function expectedObjectUri(objectKey) {
   return `oci://${OCI_NAMESPACE}/${OCI_BUCKET}/${objectKey}`;
 }
@@ -117,7 +135,7 @@ function verifyEmbeddedExitReceipt({ components, externalReceipt, sourceReposito
   return exitReceipt;
 }
 
-export function buildCurrentSourceSetHandoff({ compositeReceiptBytes, compositeBytes, sourceRepositorySha, producerSha, operationId }) {
+export function buildCurrentSourceSetHandoff({ compositeReceiptBytes, compositeBytes, expectedApprovalId, releaseRequestBytes, sourceRepositorySha, producerSha, operationId }) {
   requireIdentity({ sourceRepositorySha, producerSha, operationId });
   const receipt = parseCanonical(compositeReceiptBytes, canonicalCurrentCapitalLiveChainOciReceiptJson, "composite receipt");
   validateExternalReceipt({ receipt, compositeBytes, sourceRepositorySha, operationId });
@@ -126,6 +144,12 @@ export function buildCurrentSourceSetHandoff({ compositeReceiptBytes, compositeB
   verifyEmbeddedExitReceipt({ components, externalReceipt: receipt, sourceRepositorySha, operationId });
 
   const candidate = components.candidateBuildSpec.value;
+  const releaseRequest = verifyReleaseRequest({
+    releaseRequestBytes,
+    candidateBytes: components.candidateBuildSpec.bytes,
+    candidate,
+    expectedApprovalId,
+  });
   const facility = components.facilityAdmission.value;
   const transferMetrics = components.transferMetrics.value;
   const transferApplicability = components.transferApplicability.value;
@@ -183,6 +207,11 @@ export function buildCurrentSourceSetHandoff({ compositeReceiptBytes, compositeB
     operationId,
     producerSha,
     repository: REPOSITORY,
+    releaseRequest: {
+      approvalId: releaseRequest.approvalId,
+      candidateId: releaseRequest.candidateId,
+      sha256: sha256(releaseRequestBytes),
+    },
     schemaVersion: 1,
     sourceRepositorySha,
   });
@@ -196,7 +225,7 @@ export function readCurrentSourceSetHandoff(bytes, { sourceRepositorySha, produc
   let handoff;
   try { handoff = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); }
   catch { throw new Error("source-set handoff JSON mismatch"); }
-  assertKeys(handoff, ["artifactKind", "candidate", "composite", "evidence", "fanIn", "handoffSha256", "operationId", "producerSha", "repository", "schemaVersion", "sourceRepositorySha"], "source-set handoff");
+  assertKeys(handoff, ["artifactKind", "candidate", "composite", "evidence", "fanIn", "handoffSha256", "operationId", "producerSha", "repository", "releaseRequest", "schemaVersion", "sourceRepositorySha"], "source-set handoff");
   const { handoffSha256, ...payload } = handoff;
   if (!SHA256.test(handoffSha256 ?? "") || sha256(Buffer.from(canonical(payload))) !== handoffSha256) throw new Error("source-set handoff hash mismatch");
   validateHandoffPayload(payload, { sourceRepositorySha, producerSha, operationId });
@@ -205,9 +234,13 @@ export function readCurrentSourceSetHandoff(bytes, { sourceRepositorySha, produc
 }
 
 function validateHandoffPayload(payload, { sourceRepositorySha, producerSha, operationId }) {
-  assertKeys(payload, ["artifactKind", "candidate", "composite", "evidence", "fanIn", "operationId", "producerSha", "repository", "schemaVersion", "sourceRepositorySha"], "source-set handoff payload");
+  assertKeys(payload, ["artifactKind", "candidate", "composite", "evidence", "fanIn", "operationId", "producerSha", "repository", "releaseRequest", "schemaVersion", "sourceRepositorySha"], "source-set handoff payload");
   if (payload.schemaVersion !== 1 || payload.artifactKind !== "current-source-set-handoff" || payload.repository !== REPOSITORY
     || payload.sourceRepositorySha !== sourceRepositorySha || payload.producerSha !== producerSha || payload.operationId !== operationId) throw new Error("source-set handoff identity mismatch");
+  assertKeys(payload.releaseRequest, ["approvalId", "candidateId", "sha256"], "source-set release request");
+  if (requiredString(payload.releaseRequest.approvalId, "release request approval ID") !== payload.releaseRequest.approvalId
+    || payload.releaseRequest.candidateId !== payload.candidate.candidateId
+    || !SHA256.test(payload.releaseRequest.sha256 ?? "")) throw new Error("source-set release request mismatch");
   assertKeys(payload.composite, ["bundleSha256", "manifestSha256", "object", "planSha256", "providerObject", "receiptIdentitySha256", "receiptSha256"], "source-set composite");
   for (const digest of [payload.composite.bundleSha256, payload.composite.manifestSha256, payload.composite.planSha256, payload.composite.receiptIdentitySha256, payload.composite.receiptSha256]) {
     if (!SHA256.test(digest ?? "")) throw new Error("source-set composite digest mismatch");
@@ -275,13 +308,13 @@ function validateEvidence(evidence, payload) {
 }
 
 export function parseArgs(args) {
-  if (args.length !== 12 || args[0] !== "--composite-receipt" || args[2] !== "--composite" || args[4] !== "--source-repository-sha"
-    || args[6] !== "--producer-sha" || args[8] !== "--operation-id" || args[10] !== "--output"
-    || !path.isAbsolute(args[1]) || !path.isAbsolute(args[3]) || !path.isAbsolute(args[11])) {
+  if (args.length !== 16 || args[0] !== "--composite-receipt" || args[2] !== "--composite" || args[4] !== "--release-request" || args[6] !== "--expected-approval-id"
+    || args[8] !== "--source-repository-sha" || args[10] !== "--producer-sha" || args[12] !== "--operation-id" || args[14] !== "--output"
+    || !path.isAbsolute(args[1]) || !path.isAbsolute(args[3]) || !path.isAbsolute(args[5]) || args[7].length === 0 || !path.isAbsolute(args[15])) {
     throw new Error("current source-set handoff arguments mismatch");
   }
-  requireIdentity({ sourceRepositorySha: args[5], producerSha: args[7], operationId: args[9] });
-  return { compositeReceiptPath: args[1], compositePath: args[3], sourceRepositorySha: args[5], producerSha: args[7], operationId: args[9], outputPath: args[11] };
+  requireIdentity({ sourceRepositorySha: args[9], producerSha: args[11], operationId: args[13] });
+  return { compositeReceiptPath: args[1], compositePath: args[3], releaseRequestPath: args[5], expectedApprovalId: args[7], sourceRepositorySha: args[9], producerSha: args[11], operationId: args[13], outputPath: args[15] };
 }
 
 async function readStableBytes(filePath, label) {
@@ -310,10 +343,11 @@ async function writeImmutable(outputPath, bytes) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const input = parseArgs(process.argv.slice(2));
-  const [compositeReceiptBytes, compositeBytes] = await Promise.all([
+  const [compositeReceiptBytes, compositeBytes, releaseRequestBytes] = await Promise.all([
     readStableBytes(input.compositeReceiptPath, "composite receipt"),
     readStableBytes(input.compositePath, "composite"),
+    readStableBytes(input.releaseRequestPath, "release request"),
   ]);
-  const output = buildCurrentSourceSetHandoff({ ...input, compositeReceiptBytes, compositeBytes });
+  const output = buildCurrentSourceSetHandoff({ ...input, compositeReceiptBytes, compositeBytes, releaseRequestBytes });
   await writeImmutable(input.outputPath, output);
 }
