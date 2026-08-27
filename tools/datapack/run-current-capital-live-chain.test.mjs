@@ -16,6 +16,7 @@ import {
   resolveCurrentKricExitPlanInputs,
   resolveStagedIncheonTopologyPath,
   recoverCurrentKricExitCollection,
+  resolveCurrentExitDerivationAt,
   runCurrentCapitalLiveChain,
 } from "./run-current-capital-live-chain.mjs";
 import { buildCurrentKricExitCollectionBundle, buildCurrentKricExitCollectionReceipt, canonicalCurrentKricExitCollectionBundleJson } from "./build-current-kric-exit-collection-receipt.mjs";
@@ -133,7 +134,10 @@ test("CLI accepts every exact live-chain identity and path once", () => {
   assert.throws(() => parseArgs([...argv.slice(0, -2), "--handoff-directory", "relative"]), /paths must be absolute/);
   assert.throws(() => parseArgs([...argv.slice(0, -2), "--repository-root", "/other"]), /arguments mismatch/);
   assert.throws(() => parseArgs(argv.filter((value) => value !== "--operation-id" && value !== "current-capital-560")), /arguments mismatch/);
-  assert.equal(parseArgs([...argv, "--retained-exit-bundle", "/retained/current-kric-exit.json"])["retained-exit-bundle"], "/retained/current-kric-exit.json");
+  const retainedArgs = [...argv, "--retained-exit-bundle", "/retained/current-kric-exit.json", "--retained-exit-bundle-sha256", "d".repeat(64)];
+  assert.equal(parseArgs(retainedArgs)["retained-exit-bundle"], "/retained/current-kric-exit.json");
+  assert.throws(() => parseArgs([...argv, "--retained-exit-bundle", "/retained/current-kric-exit.json"]), /arguments mismatch/);
+  assert.throws(() => parseArgs([...argv, "--retained-exit-bundle-sha256", "d".repeat(64)]), /arguments mismatch/);
 });
 
 test("current FACILITY admission is canonical and fresh at the actual operation clock", async (t) => {
@@ -150,6 +154,9 @@ test("current FACILITY admission is canonical and fresh at the actual operation 
   await assert.rejects(assertCurrentCapitalFacilityAdmission({
     stagedRoot, now: new Date(admission.sourceIdentity.freshUntil),
   }), /facility admission is stale/);
+  await assert.rejects(assertCurrentCapitalFacilityAdmission({
+    stagedRoot, now: new Date(Date.parse(admission.observedAt) - 1),
+  }), /facility admission is from the future/);
 });
 
 async function retainedExitBundleFixture() {
@@ -193,12 +200,13 @@ test("retained EXIT recovery rebuilds v2 provenance from an exact current plan w
   const temporary = await mkdtemp(path.join(os.tmpdir(), "current-live-chain-recovery-"));
   t.after(() => rm(temporary, { recursive: true, force: true }));
   const retained = await retainedExitBundleFixture();
+  const retainedSha256 = sha(retained.bytes);
   const bundlePath = path.join(temporary, "retained-exit-bundle.json");
   await writeFile(bundlePath, retained.bytes, { mode: 0o600 });
   const operationNow = new Date(retained.snapshot.capturedAt);
   const calls = [];
   const recovered = await recoverCurrentKricExitCollection({
-    retainedExitBundle: bundlePath, currentPlanBytes: retained.planBytes,
+    retainedExitBundle: bundlePath, expectedRetainedExitBundleSha256: retainedSha256, currentPlanBytes: retained.planBytes,
     repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-561",
     operationNow, root: ROOT,
     execFileImpl: async (command, args) => { calls.push([command, args]); return { stdout: "" }; },
@@ -213,35 +221,47 @@ test("retained EXIT recovery rebuilds v2 provenance from an exact current plan w
     receiptSha256: JSON.parse(JSON.parse(retained.bytes).collectionReceiptJson).receiptSha256,
     bundleSha256: JSON.parse(retained.bytes).bundleSha256,
   });
+  assert.equal(resolveCurrentExitDerivationAt({
+    retainedExitBundle: bundlePath, providerCapturedAt: retained.snapshot.capturedAt,
+    operationNow: new Date("2026-08-27T10:20:00.000Z"),
+  }), "2026-08-27T10:20:00.000Z");
+  assert.equal(resolveCurrentExitDerivationAt({
+    retainedExitBundle: undefined, providerCapturedAt: retained.snapshot.capturedAt, operationNow,
+  }), retained.snapshot.capturedAt);
   await assert.rejects(recoverCurrentKricExitCollection({
-    retainedExitBundle: bundlePath, currentPlanBytes: Buffer.from("different"),
+    retainedExitBundle: bundlePath, expectedRetainedExitBundleSha256: "0".repeat(64), currentPlanBytes: retained.planBytes,
+    repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-561",
+    operationNow, root: ROOT, execFileImpl: async () => { throw new Error("ancestry must not run"); },
+  }), /expected digest mismatch/);
+  await assert.rejects(recoverCurrentKricExitCollection({
+    retainedExitBundle: bundlePath, expectedRetainedExitBundleSha256: retainedSha256, currentPlanBytes: Buffer.from("different"),
     repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-561",
     operationNow, root: ROOT, execFileImpl: async () => { throw new Error("ancestry must not run"); },
   }), /not the current plan/);
   await assert.rejects(recoverCurrentKricExitCollection({
-    retainedExitBundle: bundlePath, currentPlanBytes: retained.planBytes,
+    retainedExitBundle: bundlePath, expectedRetainedExitBundleSha256: retainedSha256, currentPlanBytes: retained.planBytes,
     repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-561",
     operationNow: new Date(Date.parse(retained.snapshot.capturedAt) - 1), root: ROOT,
     execFileImpl: async () => { throw new Error("ancestry must not run"); },
   }), /was not previously captured/);
   await assert.rejects(recoverCurrentKricExitCollection({
-    retainedExitBundle: bundlePath, currentPlanBytes: retained.planBytes,
+    retainedExitBundle: bundlePath, expectedRetainedExitBundleSha256: retainedSha256, currentPlanBytes: retained.planBytes,
     repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-561",
     operationNow: new Date(retained.snapshot.freshUntil), root: ROOT,
     execFileImpl: async () => { throw new Error("ancestry must not run"); },
   }), /snapshot is stale/);
   await assert.rejects(recoverCurrentKricExitCollection({
-    retainedExitBundle: bundlePath, currentPlanBytes: retained.planBytes,
+    retainedExitBundle: bundlePath, expectedRetainedExitBundleSha256: retainedSha256, currentPlanBytes: retained.planBytes,
     repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-560",
     operationNow, root: ROOT, execFileImpl: async () => { throw new Error("ancestry must not run"); },
   }), /source identity mismatch/);
   await assert.rejects(recoverCurrentKricExitCollection({
-    retainedExitBundle: bundlePath, currentPlanBytes: retained.planBytes,
+    retainedExitBundle: bundlePath, expectedRetainedExitBundleSha256: retainedSha256, currentPlanBytes: retained.planBytes,
     repository: "AquilaXk/easysubway-data", repositorySha: "b".repeat(40), operationId: "current-capital-561",
     operationNow, root: ROOT, execFileImpl: async () => { throw new Error("ancestry must not run"); },
   }), /source identity mismatch/);
   await assert.rejects(recoverCurrentKricExitCollection({
-    retainedExitBundle: bundlePath, currentPlanBytes: retained.planBytes,
+    retainedExitBundle: bundlePath, expectedRetainedExitBundleSha256: retainedSha256, currentPlanBytes: retained.planBytes,
     repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-561",
     operationNow, root: ROOT,
     execFileImpl: async () => { throw new Error("source SHA is not an ancestor"); },

@@ -198,17 +198,25 @@ export async function assertCurrentCapitalFacilityAdmission({ stagedRoot, now })
   let canonical;
   try { canonical = canonicalCurrentCapitalFacilitySourceAdmissionJson(admission); } catch { throw new Error("current capital facility admission is invalid"); }
   if (!file.bytes.equals(Buffer.from(canonical))) throw new Error("current capital facility admission bytes are not canonical");
+  if ([admission.observedAt, admission.sourceIdentity.capturedAt, admission.sourceIdentity.observedAt]
+    .some((value) => Date.parse(value) > now.valueOf())) {
+    throw new Error("current capital facility admission is from the future");
+  }
   if (Date.parse(admission.sourceIdentity.freshUntil) <= now.valueOf()) {
     throw new Error("current capital facility admission is stale");
   }
   return admission;
 }
 
-export async function recoverCurrentKricExitCollection({ retainedExitBundle, currentPlanBytes, repository, repositorySha, operationId, operationNow, root, execFileImpl }) {
+export async function recoverCurrentKricExitCollection({ retainedExitBundle, expectedRetainedExitBundleSha256, currentPlanBytes, repository, repositorySha, operationId, operationNow, root, execFileImpl }) {
   if (!path.isAbsolute(retainedExitBundle ?? "")) throw new Error("retained EXIT bundle must be absolute");
+  if (!/^[a-f0-9]{64}$/u.test(expectedRetainedExitBundleSha256 ?? "")) throw new Error("retained EXIT bundle expected digest mismatch");
   if (!(currentPlanBytes instanceof Uint8Array) || currentPlanBytes.byteLength === 0) throw new Error("current EXIT plan bytes are invalid");
   if (!(operationNow instanceof Date) || Number.isNaN(operationNow.valueOf())) throw new Error("current live-chain operation clock mismatch");
   const retained = await readRegularSnapshot(retainedExitBundle, "retained EXIT bundle");
+  if (createHash("sha256").update(retained.bytes).digest("hex") !== expectedRetainedExitBundleSha256) {
+    throw new Error("retained EXIT bundle expected digest mismatch");
+  }
   let bundle;
   try { bundle = JSON.parse(retained.bytes.toString("utf8")); } catch { throw new Error("retained EXIT bundle JSON mismatch"); }
   let canonicalBundle;
@@ -251,6 +259,12 @@ export async function recoverCurrentKricExitCollection({ retainedExitBundle, cur
     snapshot,
     collectionBundleBytes: Buffer.from(canonicalCurrentKricExitCollectionBundleJson(recoveredBundle)),
   };
+}
+
+export function resolveCurrentExitDerivationAt({ retainedExitBundle, providerCapturedAt, operationNow }) {
+  if (retainedExitBundle === undefined) return providerCapturedAt;
+  if (!(operationNow instanceof Date) || Number.isNaN(operationNow.valueOf())) throw new Error("current live-chain operation clock mismatch");
+  return operationNow.toISOString();
 }
 
 async function assertRemoteMain({ root, repositorySha, execFileImpl }) {
@@ -333,7 +347,7 @@ export async function evaluateStagedRoutePolicy({
   return evaluationBytes;
 }
 
-export async function runCurrentCapitalLiveChain({ repositoryRoot, runnerTemp, repository, repositorySha, operationId, transferObservationDirectory, transferReceiptPath, handoffDirectory, retainedExitBundle = undefined, env = process.env, execFileImpl = execFile, clock = () => new Date(), assertCurrentTopologyAdmissionImpl = assertCurrentStaticNetworkTopologyAdmission, assertCurrentFacilityAdmissionImpl = assertCurrentCapitalFacilityAdmission, rebindPublicRouteMapImpl = rebindCurrentActivePublicRouteMapMaterialization, rebindTransferImpl = rebindCurrentLiveChainTransferDerivedIdentities, rebindFacilityImpl = rebindCurrentActiveFacilityDerivedIdentity, publishImpl = publishCurrentCapitalLiveChainOciPlan, fetchImpl = fetchCurrentCapitalLiveChainComposite, extractImpl = extractCurrentCapitalLiveChainDirectory }) {
+export async function runCurrentCapitalLiveChain({ repositoryRoot, runnerTemp, repository, repositorySha, operationId, transferObservationDirectory, transferReceiptPath, handoffDirectory, retainedExitBundle = undefined, retainedExitBundleSha256 = undefined, env = process.env, execFileImpl = execFile, clock = () => new Date(), assertCurrentTopologyAdmissionImpl = assertCurrentStaticNetworkTopologyAdmission, assertCurrentFacilityAdmissionImpl = assertCurrentCapitalFacilityAdmission, rebindPublicRouteMapImpl = rebindCurrentActivePublicRouteMapMaterialization, rebindTransferImpl = rebindCurrentLiveChainTransferDerivedIdentities, rebindFacilityImpl = rebindCurrentActiveFacilityDerivedIdentity, publishImpl = publishCurrentCapitalLiveChainOciPlan, fetchImpl = fetchCurrentCapitalLiveChainComposite, extractImpl = extractCurrentCapitalLiveChainDirectory }) {
   if (repository !== "AquilaXk/easysubway-data") throw new Error("repository identity mismatch");
   if (![repositoryRoot, runnerTemp, transferObservationDirectory, transferReceiptPath, handoffDirectory].every((value) => path.isAbsolute(value ?? ""))) throw new Error("current live-chain paths must be absolute");
   requiredSha(repositorySha); requiredOperation(operationId);
@@ -341,7 +355,8 @@ export async function runCurrentCapitalLiveChain({ repositoryRoot, runnerTemp, r
   await requireRealDirectory(path.resolve(runnerTemp), "runner temp");
   await requireRealDirectory(path.dirname(path.resolve(handoffDirectory)), "handoff parent");
   await requireAbsent(path.resolve(handoffDirectory), "handoff directory");
-  if (retainedExitBundle !== undefined && !path.isAbsolute(retainedExitBundle)) throw new Error("retained EXIT bundle must be absolute");
+  if ((retainedExitBundle === undefined) !== (retainedExitBundleSha256 === undefined)) throw new Error("retained EXIT bundle arguments must be paired");
+  if (retainedExitBundle !== undefined && (!path.isAbsolute(retainedExitBundle) || !/^[a-f0-9]{64}$/u.test(retainedExitBundleSha256))) throw new Error("retained EXIT bundle identity mismatch");
   if (retainedExitBundle === undefined && (typeof env.KRIC_SERVICE_KEY !== "string" || env.KRIC_SERVICE_KEY === "")) throw new Error("KRIC service key is required");
   requireCurrentCapitalLiveChainOciParBaseUrl(env);
   const [{ stdout: origin }, { stdout: head }, { stdout: main }, { stdout: branch }, { stdout: dirty }] = await Promise.all([
@@ -396,7 +411,8 @@ export async function runCurrentCapitalLiveChain({ repositoryRoot, runnerTemp, r
     collectionBundleBytes = await readFile(path.join(stagedRoot, "current-kric-exit-collection-bundle.json"));
   } else {
     const recovered = await recoverCurrentKricExitCollection({
-      retainedExitBundle, currentPlanBytes: currentPlan.bytes, repository, repositorySha, operationId,
+      retainedExitBundle, expectedRetainedExitBundleSha256: retainedExitBundleSha256,
+      currentPlanBytes: currentPlan.bytes, repository, repositorySha, operationId,
       operationNow, root, execFileImpl,
     });
     snapshotBytes = recovered.snapshotBytes;
@@ -405,8 +421,9 @@ export async function runCurrentCapitalLiveChain({ repositoryRoot, runnerTemp, r
     await writeFile(path.join(stagedRoot, "current-kric-exit-snapshot.json"), snapshotBytes, { flag: "wx", mode: 0o600 });
     await writeFile(path.join(stagedRoot, "current-kric-exit-collection-bundle.json"), collectionBundleBytes, { flag: "wx", mode: 0o600 });
   }
+  const derivationAt = resolveCurrentExitDerivationAt({ retainedExitBundle, providerCapturedAt: snapshot.capturedAt, operationNow });
   const admissionStep = plan.steps.find((entry) => entry.id === "admit-exit");
-  const admissionArgs = admissionStep.args.map((value) => value === "FROM_PROVIDER_CAPTURED_AT" ? snapshot.capturedAt : value);
+  const admissionArgs = admissionStep.args.map((value) => value === "FROM_PROVIDER_CAPTURED_AT" ? derivationAt : value);
   await execFileImpl(process.execPath, [admissionStep.script, ...admissionArgs], { cwd: root, env: { ...narrowRunnerEnv(env), RUNNER_TEMP: stagedRoot } });
   await replaceStagedFile({ from: path.join(stagedRoot, "current-exit-admission", "exit-path-normalized-source-snapshot.json"), to: path.join(stagedRoot, "tools/datapack/release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json") });
   await replaceStagedFile({ from: path.join(stagedRoot, "current-exit-admission", "exit-path-source-admission.json"), to: path.join(stagedRoot, "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json") });
@@ -421,7 +438,7 @@ export async function runCurrentCapitalLiveChain({ repositoryRoot, runnerTemp, r
     readCurrentFanInBoundaryImpl: readCurrentCapitalLiveChainFanInBoundary,
     log: () => {},
   });
-  await evaluateStagedRoutePolicy({ stagedRoot, evaluationAt: snapshot.capturedAt });
+  await evaluateStagedRoutePolicy({ stagedRoot, evaluationAt: derivationAt });
   const bundle = await buildCurrentCapitalLiveChainBundle({ root, outputDirectory: stagedRoot, repository, repositorySha, operationId, boundaryBytes });
   await writeFile(path.join(stagedRoot, "current-capital-live-chain-bundle.json"), bundle, { flag: "wx", mode: 0o600 });
   const ociPlan = buildCurrentCapitalLiveChainOciPlan({ mainSha: repositorySha, operationId, providerCollectionBundleBytes: collectionBundleBytes, providerCapturedAt: snapshot.capturedAt, compositeBundleBytes: bundle });
@@ -443,7 +460,7 @@ export async function runCurrentCapitalLiveChain({ repositoryRoot, runnerTemp, r
 
 export function parseArgs(argv) {
   const required = new Set(["repository-root", "runner-temp", "repository", "repository-sha", "operation-id", "transfer-observation-directory", "transfer-receipt", "handoff-directory"]);
-  const allowed = new Set([...required, "retained-exit-bundle"]);
+  const allowed = new Set([...required, "retained-exit-bundle", "retained-exit-bundle-sha256"]);
   if (!Array.isArray(argv) || (argv.length !== required.size * 2 && argv.length !== allowed.size * 2)) throw new Error("current live-chain arguments mismatch");
   const values = {};
   for (let index = 0; index < argv.length; index += 2) {
@@ -453,6 +470,10 @@ export function parseArgs(argv) {
   }
   if (["repository-root", "runner-temp", "transfer-observation-directory", "transfer-receipt", "handoff-directory", "retained-exit-bundle"].some((flag) => values[flag] !== undefined && !path.isAbsolute(values[flag]))) throw new Error("current live-chain paths must be absolute");
   if ([...required].some((flag) => values[flag] === undefined)) throw new Error("current live-chain arguments mismatch");
+  if ((values["retained-exit-bundle"] === undefined) !== (values["retained-exit-bundle-sha256"] === undefined)
+    || (values["retained-exit-bundle-sha256"] !== undefined && !/^[a-f0-9]{64}$/u.test(values["retained-exit-bundle-sha256"]))) {
+    throw new Error("retained EXIT bundle arguments mismatch");
+  }
   return values;
 }
 
@@ -462,7 +483,7 @@ export async function main(argv = process.argv.slice(2), dependencies = {}) {
     repositoryRoot: args["repository-root"], runnerTemp: args["runner-temp"], repository: args.repository,
     repositorySha: args["repository-sha"], operationId: args["operation-id"],
     transferObservationDirectory: args["transfer-observation-directory"], transferReceiptPath: args["transfer-receipt"],
-    handoffDirectory: args["handoff-directory"], retainedExitBundle: args["retained-exit-bundle"], ...dependencies,
+    handoffDirectory: args["handoff-directory"], retainedExitBundle: args["retained-exit-bundle"], retainedExitBundleSha256: args["retained-exit-bundle-sha256"], ...dependencies,
   });
   (dependencies.log ?? console.log)(JSON.stringify({ result: "PASS", repositorySha: args["repository-sha"], operationId: args["operation-id"], bundleSha256: result.bundleSha256, providerCollectionBundleSha256: result.providerCollectionBundleSha256, handoffDirectory: result.handoffDirectory }));
   return result;
