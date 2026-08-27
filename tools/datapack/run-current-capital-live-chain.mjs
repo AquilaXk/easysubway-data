@@ -23,13 +23,13 @@ import { materializeStationLineAccessibility } from "./materialize-station-line-
 import { fetchCurrentCapitalLiveChainComposite, publishCurrentCapitalLiveChainOciPlan, requireCurrentCapitalLiveChainOciParBaseUrl } from "./publish-object-storage.mjs";
 import { rebindCurrentActiveFacilityDerivedIdentity } from "./rebind-current-active-facility-derived-identity.mjs";
 import { rebindCurrentActivePublicRouteMapMaterialization } from "./rebind-current-active-public-route-map-materialization.mjs";
-import { rebindCurrentLiveChainTransferDerivedIdentities } from "./rebind-current-live-chain-transfer-derived-identities.mjs";
+import { currentLiveChainTransferStageInputs, rebindCurrentLiveChainTransferDerivedIdentities } from "./rebind-current-live-chain-transfer-derived-identities.mjs";
 import { assertCurrentStaticNetworkTopologyAdmission } from "./register-current-static-network-successors.mjs";
 
 const execFile = promisify(execFileCallback);
 const DATA_MAIN_REMOTE = "https://github.com/AquilaXk/easysubway-data.git";
 const STAGED_INPUTS = Object.freeze([
-  "tools/datapack/release", "tools/datapack/sources", "tools/datapack/inputs", "tools/datapack/source-inventory.json", "tools/datapack/source-governance-policy.json", "tools/datapack/source-candidates.json", "tools/datapack/official-od-fare-admission.json", "tools/datapack/nationwide-coverage-targets.json", "tools/datapack/itx-cheongchun-topology-evidence.json", "release/product-gates/datapack-freshness-sla.json", "release/product-gates/route-edge-evaluation-policy.json",
+  "tools/datapack/release", "tools/datapack/sources", "tools/datapack/inputs", "tools/datapack/source-inventory.json", "tools/datapack/source-governance-policy.json", "tools/datapack/source-candidates.json", "tools/datapack/official-od-fare-admission.json", "tools/datapack/nationwide-coverage-targets.json", "release/product-gates/datapack-freshness-sla.json", "release/product-gates/route-edge-evaluation-policy.json",
 ]);
 const EXCLUDED_STAGED_PATHS = Object.freeze([
   "tools/datapack/release/current-station-line-accessibility",
@@ -161,6 +161,28 @@ export function resolveStagedIncheonTopologyPath(inventory) {
   return snapshotPath;
 }
 
+export async function resolveCurrentLiveChainCandidateStageInputs(candidate, repositoryRoot) {
+  const topologyPath = candidate?.itxTopologyEvidencePath;
+  if (typeof topologyPath !== "string"
+    || !/^tools\/datapack\/itx-cheongchun-topology-evidence-[0-9]{17}\.json$/u.test(topologyPath)) {
+    throw new Error("candidate ITX topology evidence path is not versioned exactly");
+  }
+  requiredBindingSha(candidate?.itxTopologyEvidenceSha256, "candidate ITX topology evidence");
+  const coverage = candidate?.networkEdgeEvidence?.itxCoverageContract;
+  let coveragePath;
+  try { coveragePath = requiredRelativePath(coverage?.path, "ITX coverage contract"); } catch { throw new Error("ITX coverage contract path mismatch"); }
+  try { requiredBindingSha(coverage?.sha256, "ITX coverage contract"); } catch { throw new Error("ITX coverage contract hash mismatch"); }
+  const [topology, coverageFile] = await Promise.all([
+    readStagedRegularFile(repositoryRoot, topologyPath, "candidate ITX topology evidence"),
+    readStagedRegularFile(repositoryRoot, coveragePath, "ITX coverage contract"),
+  ]);
+  if (sha256(topology.bytes) !== candidate.itxTopologyEvidenceSha256) {
+    throw new Error("candidate ITX topology evidence hash mismatch");
+  }
+  if (sha256(coverageFile.bytes) !== coverage.sha256) throw new Error("ITX coverage contract hash mismatch");
+  return Object.freeze([topologyPath, coveragePath]);
+}
+
 async function assertRemoteMain({ root, repositorySha, execFileImpl }) {
   const { stdout } = await execFileImpl("git", ["ls-remote", "--exit-code", DATA_MAIN_REMOTE, "refs/heads/main"], { cwd: root });
   if (String(stdout).trimEnd() !== `${repositorySha}\trefs/heads/main`) throw new Error("exact remote main preflight failed");
@@ -260,8 +282,12 @@ export async function runCurrentCapitalLiveChain({ repositoryRoot, runnerTemp, r
   ]);
   if (!new Set([DATA_MAIN_REMOTE, "git@github.com:AquilaXk/easysubway-data.git"]).has(origin.trim()) || head.trim() !== repositorySha || main.trim() !== repositorySha || branch.trim() !== "main" || dirty !== "") throw new Error("exact clean main preflight failed");
   await assertRemoteMain({ root, repositorySha, execFileImpl });
+  let currentCandidate;
+  try { currentCandidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8")); } catch { throw new Error("current candidate JSON mismatch"); }
+  const transferStageInputs = currentLiveChainTransferStageInputs(currentCandidate, root);
+  const candidateStageInputs = await resolveCurrentLiveChainCandidateStageInputs(currentCandidate, root);
   const stagedRoot = await mkdtemp(path.join(path.resolve(runnerTemp), "current-capital-live-chain-"));
-  for (const relative of STAGED_INPUTS) {
+  for (const relative of new Set([...STAGED_INPUTS, ...transferStageInputs, ...candidateStageInputs])) {
     const source = path.join(root, relative); const destination = path.join(stagedRoot, relative);
     await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
     await cp(source, destination, { recursive: true, force: false, verbatimSymlinks: true, filter: (candidate) => stagedCopyAllowed(root, candidate) });

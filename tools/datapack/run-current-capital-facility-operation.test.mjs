@@ -234,7 +234,8 @@ async function admissionFor({ root, operationRoot, snapshot }) {
   const [planBytes, canonicalPackBytes, snapshotBytes, candidateBytes, inventoryBytes, snapshotsBytes, governanceBytes, freshnessBytes] = await Promise.all([
     read(path.relative(root, path.join(operationRoot, "plan.json"))), read("tools/datapack/release/capital-production-canonical-pack.json"), read(`tools/datapack/sources/${snapshot.snapshotId}.json`), read("tools/datapack/release/candidate-build-spec.json"), read("tools/datapack/source-inventory.json"), read("tools/datapack/release/source-snapshots.json"), read("tools/datapack/source-governance-policy.json"), read("release/product-gates/datapack-freshness-sla.json"),
   ]);
-  return buildCurrentCapitalFacilitySourceAdmission({ observedAt: NOW.toISOString(), planBytes, canonicalPackBytes, snapshotBytes, candidateBuildSpec: JSON.parse(candidateBytes), sourceInventoryBytes: inventoryBytes, sourceSnapshots: JSON.parse(snapshotsBytes), governancePolicy: JSON.parse(governanceBytes), governancePolicyBytes: governanceBytes, freshnessPolicy: JSON.parse(freshnessBytes) });
+  const candidateBuildSpec = JSON.parse(candidateBytes);
+  return buildCurrentCapitalFacilitySourceAdmission({ observedAt: NOW.toISOString(), candidateEvaluationAt: candidateBuildSpec.publishedAt, planBytes, canonicalPackBytes, snapshotBytes, candidateBuildSpec, sourceInventoryBytes: inventoryBytes, sourceSnapshots: JSON.parse(snapshotsBytes), governancePolicy: JSON.parse(governanceBytes), governancePolicyBytes: governanceBytes, freshnessPolicy: JSON.parse(freshnessBytes) });
 }
 
 test("collect records failure after COLLECTION_STARTED and never resumes a provider call", async (t) => {
@@ -590,16 +591,20 @@ test("finalize crash-resume reconciles exact effects without replay and admits t
       const journalPath = path.join(fixture.operationRoot, "journal.json"); const journal = JSON.parse(await readFile(journalPath, "utf8")); journal.finalizeObservedAt = NOW.toISOString(); await writeJson(journalPath, journal);
     }
     const calls = { publish: 0, register: 0, rebind: 0 };
+    const admissionInputs = [];
     await main(["--phase", "finalize", "--operation-root", fixture.operationRoot], {
       repositoryRoot: fixture.root, now: NOW, env: {}, execFileImpl: exactMainExec,
       publishImpl: async () => { calls.publish += 1; throw new Error("published receipt must reconcile before replay"); },
       registerImpl: async ({ snapshotTargetPath }) => { calls.register += 1; await mkdir(path.dirname(snapshotTargetPath), { recursive: true }); await writeFile(snapshotTargetPath, fixture.snapshotBytes); },
       rebindImpl: async ({ repositoryRoot, now }) => { calls.rebind += 1; return rebindCurrentCandidateSourceSnapshots({ repositoryRoot, now }); },
+      buildAdmissionImpl: (input) => { admissionInputs.push(input); return buildCurrentCapitalFacilitySourceAdmission(input); },
     });
     assert.deepEqual(calls, { publish: 0, ...expected });
     const admission = JSON.parse(await readFile(path.join(fixture.root, "tools/datapack/release/current-capital-facility-source-admission.json"), "utf8"));
     assert.equal(admission.sourceIdentity.snapshotId, fixture.snapshot.snapshotId, stage);
     assert.equal(admission.candidate.sourceSnapshotSetHash, JSON.parse(await readFile(path.join(fixture.root, "tools/datapack/release/candidate-build-spec.json"), "utf8")).sourceSnapshotSetHash, stage);
+    assert.equal(admissionInputs.length, 1, stage);
+    assert.equal(admissionInputs[0].candidateEvaluationAt, admissionInputs[0].candidateBuildSpec.publishedAt, stage);
     assert.equal(JSON.parse(await readFile(path.join(fixture.operationRoot, "journal.json"), "utf8")).phase, "FINALIZED", stage);
   }
 });

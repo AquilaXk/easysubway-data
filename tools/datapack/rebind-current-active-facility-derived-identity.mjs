@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
 import { buildCurrentCapitalFacilitySourceAdmission, canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-current-capital-facility-source-admission.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { verifyCurrentCapitalPublicRouteMapDocument } from "./materialize-seoul-route-map-positions.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
 
@@ -17,6 +18,11 @@ const SOURCE = "kric-station-convenience-standard";
 const POSITION = "seoul-metro-route-map-positions";
 const JOURNAL = "tools/datapack/.active-facility-derived-identity-rebind.json";
 const LOCK = "tools/datapack/.active-facility-derived-identity-rebind.lock";
+const PROTECTED_SEMANTIC_FIELDS = [
+  "sourceIdentity", "stationLineProviderMappingSha256", "denominatorRows",
+  "denominatorStateSummary", "cells", "cellStateSummary",
+  "materializerEvidenceRows", "decision",
+];
 const sha = (v) => createHash("sha256").update(v).digest("hex");
 
 function rootOf(value) { if (typeof value !== "string" || !path.isAbsolute(value)) throw new Error("repository root must be absolute"); return path.resolve(value); }
@@ -57,11 +63,20 @@ export function activeFacilitySnapshotObservedAt(snapshotBytes) {
 export function validateFacilityDerivedIdentityRebind(previous, next, previousBytes, nextBytes) {
   if (!(previousBytes instanceof Uint8Array) || !(nextBytes instanceof Uint8Array)) throw new Error("FACILITY rebind bytes missing");
   if (Buffer.from(previousBytes).equals(Buffer.from(nextBytes))) return;
-  const candidateIdMatches = previous.candidate?.candidateId === next.candidate?.candidateId;
+  const candidateIdChanged = previous.candidate?.candidateId !== next.candidate?.candidateId;
   const sourceSetChanged = previous.candidate?.sourceSnapshotSetHash !== next.candidate?.sourceSnapshotSetHash;
+  const observedAtChanged = previous.observedAt !== next.observedAt;
   const digestChanged = previous.admissionDigest !== next.admissionDigest;
-  if (!sourceSetChanged && !digestChanged) throw new Error("FACILITY same-state derived identity drift");
-  if (!candidateIdMatches || !sourceSetChanged || !digestChanged) throw new Error("FACILITY derived identity rebind mismatch");
+  if (!candidateIdChanged && !sourceSetChanged && !observedAtChanged) throw new Error("FACILITY same-state derived identity drift");
+  if (!digestChanged) throw new Error("FACILITY derived identity rebind mismatch");
+}
+
+export function validateFacilityProtectedSemanticIdentity(previous, next) {
+  for (const key of PROTECTED_SEMANTIC_FIELDS) {
+    if (canonicalJson(previous[key]) !== canonicalJson(next[key])) {
+      throw new Error("FACILITY semantic identity changed during rebind");
+    }
+  }
 }
 
 export async function buildCurrentActiveFacilityDerivedIdentityOutput({ repositoryRoot = ROOT } = {}) {
@@ -75,11 +90,11 @@ export async function buildCurrentActiveFacilityDerivedIdentityOutput({ reposito
   if (!active?.snapshotPath || active.snapshotId !== candidate.value.sourceSnapshots.find(({ sourceId }) => sourceId === SOURCE)?.snapshotId) throw new Error("active FACILITY snapshot proof mismatch");
   const snapshotBytes = await stable(path.join(root, active.snapshotPath), "active FACILITY snapshot");
   const plan = buildCurrentCapitalFacilityCollectionPlan({ canonicalPackBytes: pack.bytes, coverageTargetsBytes: coverage.bytes, providerCodeCatalogBytes: catalog.bytes, routeRostersBytes: rosters.bytes, sourceInventoryBytes: inventory.bytes });
-  const next = buildCurrentCapitalFacilitySourceAdmission({ observedAt: activeFacilitySnapshotObservedAt(snapshotBytes), planBytes: Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(plan)), canonicalPackBytes: pack.bytes, snapshotBytes, candidateBuildSpec: candidate.value, sourceInventoryBytes: inventory.bytes, sourceSnapshots: snapshots.value, governancePolicy: governance.value, governancePolicyBytes: governance.bytes, freshnessPolicy: freshness.value });
+  const next = buildCurrentCapitalFacilitySourceAdmission({ observedAt: activeFacilitySnapshotObservedAt(snapshotBytes), candidateEvaluationAt: candidate.value.publishedAt, planBytes: Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(plan)), canonicalPackBytes: pack.bytes, snapshotBytes, candidateBuildSpec: candidate.value, sourceInventoryBytes: inventory.bytes, sourceSnapshots: snapshots.value, governancePolicy: governance.value, governancePolicyBytes: governance.bytes, freshnessPolicy: freshness.value });
   const bytes = Buffer.from(canonicalCurrentCapitalFacilitySourceAdmissionJson(next));
   const old = previous.value;
   if (canonicalCurrentCapitalFacilitySourceAdmissionJson(old) !== previous.bytes.toString("utf8")) throw new Error("active FACILITY admission bytes are not canonical");
-  for (const key of ["sourceIdentity", "stationLineProviderMappingSha256", "denominatorRows", "denominatorStateSummary", "cells", "cellStateSummary", "materializerEvidenceRows", "decision"]) if (JSON.stringify(old[key]) !== JSON.stringify(next[key])) throw new Error("FACILITY semantic identity changed during rebind");
+  validateFacilityProtectedSemanticIdentity(old, next);
   validateFacilityDerivedIdentityRebind(old, next, previous.bytes, bytes);
   return { relative: OUTPUT, bytes, prestate: previous.bytes };
 }
