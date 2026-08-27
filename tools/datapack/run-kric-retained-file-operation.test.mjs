@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { parseKricRetainedFileOperationArgs, runKricRetainedFileOperation, sanitizedOperationError } from "./run-kric-retained-file-operation.mjs";
+import { createKricRetainedFilePublisher, parseKricRetainedFileOperationArgs, runKricRetainedFileOperation, sanitizedOperationError } from "./run-kric-retained-file-operation.mjs";
 
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const MAIN = "a".repeat(40);
@@ -16,6 +16,40 @@ test("parses the closed tracked operation CLI", () => {
   assert.throws(() => parseKricRetainedFileOperationArgs([...argv, "--operation-id", "duplicate"]), /ARGUMENTS/);
   assert.throws(() => parseKricRetainedFileOperationArgs(["xxoperation-root", ...argv.slice(1)]), /ARGUMENTS/);
   assert.equal(sanitizedOperationError(new Error("/private/secret/path")), "KRIC_RETAINED_FILE_OPERATION_FAILED");
+});
+
+test("uses the current source-publication OCI contract and rejects candidate-only credentials", async () => {
+  const env = {
+    EASYSUBWAY_OBJECT_STORAGE_ENDPOINT: "https://object.example",
+    EASYSUBWAY_DATAPACK_BUCKET: "easysubway-datapacks",
+    EASYSUBWAY_OBJECT_STORAGE_REGION: "ap-seoul-1",
+    EASYSUBWAY_OBJECT_STORAGE_ACCESS_KEY: "access",
+    EASYSUBWAY_OBJECT_STORAGE_SECRET_KEY: "secret",
+  };
+  const body = Buffer.from("retained");
+  const expectedSize = 64 * 1024 * 1024 + 1;
+  let receivedEnv;
+  let receivedStep;
+  let receivedReadOptions;
+  const publisher = createKricRetainedFilePublisher(env, (value) => {
+    receivedEnv = value;
+    return {
+      async putObjectIfAbsent(_key, _bytes, step) { receivedStep = step; return true; },
+      async readObject(_key, options) { receivedReadOptions = options; return { exists: true, body }; },
+    };
+  });
+  assert.equal(await publisher.putObjectIfAbsent("source-raw/example", body), true);
+  assert.deepEqual(receivedStep, { sha256: sha(body), sizeBytes: body.length });
+  assert.deepEqual(await publisher.fullGet("source-raw/example", expectedSize), body);
+  assert.deepEqual(receivedReadOptions, { maxResponseBytes: expectedSize });
+  assert.strictEqual(receivedEnv, env);
+  assert.throws(() => createKricRetainedFilePublisher({
+    EASYSUBWAY_CANDIDATE_OCI_NAMESPACE: "namespace",
+    EASYSUBWAY_CANDIDATE_OCI_BUCKET: "bucket",
+    EASYSUBWAY_CANDIDATE_OCI_REGION: "region",
+    EASYSUBWAY_CANDIDATE_OCI_ACCESS_KEY: "access",
+    EASYSUBWAY_CANDIDATE_OCI_SECRET_KEY: "secret",
+  }), /KRIC_RETAINED_FILE_OPERATION_OCI_ENV/);
 });
 
 test("publishes the fixed retained-file sequence and writes a pending receipt last", async () => {
