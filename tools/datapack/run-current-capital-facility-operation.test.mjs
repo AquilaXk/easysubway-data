@@ -284,6 +284,19 @@ test("missing OCI PAR preflight stops before COLLECTION_STARTED and provider cal
   assert.equal(calls, 0); assert.equal(JSON.parse(await readFile(path.join(root, "journal.json"), "utf8")).phase, "PREPARED");
 });
 
+test("missing target admission binding stops collection before the provider call", async (t) => {
+  const operationRoot = path.join(await mkdtemp(path.join(tmpdir(), "facility-operation-")), "operation");
+  const repositoryRoot = await currentReleaseFixture(t);
+  await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec });
+  const journalPath = path.join(operationRoot, "journal.json");
+  const journal = JSON.parse(await readFile(journalPath, "utf8"));
+  delete journal.priorAdmissionSha256;
+  await writeJson(journalPath, journal);
+  let calls = 0;
+  await assert.rejects(collectCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot, serviceKey: "test", execFileImpl: exactMainExec, collectImpl: async () => { calls += 1; } }), /prepared prior admission SHA/);
+  assert.equal(calls, 0);
+});
+
 test("stale prepared main stops before provider call", async (t) => {
   const temporaryRoot = await mkdtemp(path.join(tmpdir(), "facility-operation-")); const operationRoot = path.join(temporaryRoot, "operation");
   t.after(() => rm(temporaryRoot, { recursive: true, force: true }));
@@ -361,6 +374,19 @@ test("published observation recovery adopts exact bytes into a clean prepared ro
   for (const file of ["observation.json", `${source.snapshot.snapshotId}.json`, `${source.snapshot.snapshotId}.raw.json`]) {
     assert.deepEqual(await readFile(path.join(targetRoot, "observation", file)), await readFile(path.join(source.operationRoot, "observation", file)));
   }
+
+  const unboundTarget = path.join(targetParent, "unbound-target");
+  await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: unboundTarget, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
+  const unboundJournalPath = path.join(unboundTarget, "journal.json");
+  const unboundJournal = JSON.parse(await readFile(unboundJournalPath, "utf8"));
+  delete unboundJournal.priorAdmissionSha256;
+  await writeJson(unboundJournalPath, unboundJournal);
+  let durableCopies = 0;
+  await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({
+    repositoryRoot, operationRoot: unboundTarget, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW,
+    durableCreateImpl: async () => { durableCopies += 1; },
+  }), /prepared prior admission SHA/);
+  assert.equal(durableCopies, 0);
 
   async function preparedRoot(name) {
     const root = path.join(targetParent, name);
@@ -642,6 +668,19 @@ test("finalize atomically replaces the prepared stale admission without provider
     registerImpl: async () => { calls.register += 1; },
     rebindImpl: async () => { calls.rebind += 1; },
   };
+  delete journal.priorAdmissionSha256;
+  await writeJson(journalPath, journal);
+  await assert.rejects(main(["--phase", "finalize", "--operation-root", fixture.operationRoot], dependencies), /prepared prior admission SHA/);
+  assert.deepEqual(calls, { publish: 0, register: 0, rebind: 0 });
+  journal.priorAdmissionSha256 = sha(staleAdmissionBytes);
+  await writeJson(journalPath, journal);
+
+  const sharedLock = path.join(fixture.root, "tools/datapack/.active-facility-derived-identity-rebind.lock");
+  await mkdir(sharedLock, { mode: 0o700 });
+  await assert.rejects(main(["--phase", "finalize", "--operation-root", fixture.operationRoot], dependencies), /admission replacement is already in progress/);
+  assert.deepEqual(await readFile(target), staleAdmissionBytes);
+  await rm(sharedLock, { recursive: true, force: true });
+
   await writeFile(target, "{}\n");
   await assert.rejects(
     main(["--phase", "finalize", "--operation-root", fixture.operationRoot], dependencies),
