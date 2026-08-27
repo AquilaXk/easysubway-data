@@ -4,6 +4,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 
 const KRIC_SOURCE_ID = "kric-station-convenience-standard";
@@ -344,7 +345,13 @@ async function main(argv) {
   const [input, kricSnapshot, seoulSnapshot] = await Promise.all([
     readJson(args.input), readJson(args["kric-snapshot"]), readJson(args["seoul-snapshot"]),
   ]);
-  const output = materializeAccessibilitySourceInput({ input, kricSnapshot, seoulSnapshot });
+  const validatedKricSnapshot = validateKricAccessibilitySnapshotIdentity(kricSnapshot);
+  const output = materializeAccessibilitySourceInput({ input, kricSnapshot: validatedKricSnapshot, seoulSnapshot });
+  output.kricStandardAccessibilitySnapshot = {
+    snapshotId: validatedKricSnapshot.snapshotId,
+    contentSha256: validatedKricSnapshot.contentSha256,
+    freshUntil: validatedKricSnapshot.freshUntil,
+  };
   await writeFile(args.output, `${JSON.stringify(output, null, 2)}\n`);
 }
 

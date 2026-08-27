@@ -9,7 +9,7 @@ import { buildCurrentCapitalAccessibilityRefreshOutputs, commitCurrentCapitalAcc
 import { buildCurrentExitAdmissionOciReceipt, canonicalCurrentExitAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
 import { readStableRegularFile } from "./rebind-current-candidate-source-snapshots.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
-import { activateSyntheticCurrentStaticNetworkSuccessors } from "./test-fixtures/current-public-route-map-successor.mjs";
+import { activateSyntheticCurrentStaticNetworkSuccessors, nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
 import { currentizeFreshFacilitySource, writeFreshCurrentAccessibilityOutputs, writeFreshExitAdmissionChain } from "./test-fixtures/current-full-capital-production-artifact.mjs";
 import { currentIncheonStationCodeDerivations } from "./collect-incheon-station-info.mjs";
 import {
@@ -276,11 +276,12 @@ async function stagedRefreshRepository(t) {
   await rebindStagedActivatedOutputCandidateIds(root, candidateId, sourceSetSha256);
   await bindCurrentCandidateApprovalFixture(root);
   await activateSyntheticCurrentStaticNetworkSuccessors(root, { now });
+  const facilityNow = await nextSyntheticCurrentStaticNetworkNow(root);
   const canonicalPackPath = path.join(root, "tools/datapack/release/capital-production-canonical-pack.json");
   const canonicalPackBytesBeforeFacilityCurrentization = await readFile(canonicalPackPath);
-  await currentizeFreshFacilitySource(root, now);
+  await currentizeFreshFacilitySource(root, facilityNow);
   assert.equal((await readFile(canonicalPackPath)).equals(canonicalPackBytesBeforeFacilityCurrentization), true);
-  await writeFreshExitAdmissionChain(root, now);
+  await writeFreshExitAdmissionChain(root, facilityNow);
   await writeFreshCurrentAccessibilityOutputs(root);
   const finalEvidence = await stagedStaticEvidenceIdentity(root);
   await rebindStagedActivatedOutputCandidateIds(root, finalEvidence.candidateId, finalEvidence.predecessorSourceSetSha256);

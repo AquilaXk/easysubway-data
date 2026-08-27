@@ -101,9 +101,12 @@ test("current full-capital producer 출력은 합성 public successor의 route/e
   const policy = JSON.parse(policyBytes);
   const stationLineInput = JSON.parse(stationOutput.bytes);
   const input = JSON.parse(routeOutput.bytes);
+  const observedAt = new Date(Math.max(
+    ...stationLineInput.evidenceRows.map(({ capturedAt }) => Date.parse(capturedAt)),
+  )).toISOString();
   const materialization = materializeStationLineAccessibility({
     ...stationLineInput,
-    observedAt: CURRENT_EVALUATION_AT,
+    observedAt,
   });
   assert.equal(canonicalCurrentCapitalRouteEdgeInputJson(input), routeOutput.bytes.toString("utf8"));
 
@@ -135,7 +138,7 @@ test("current full-capital producer 출력은 합성 public successor의 route/e
   );
   const evaluate = (values = {}) => evaluateRouteAccessibilityEdges({
     ...input,
-    evaluationAt: CURRENT_EVALUATION_AT,
+    evaluationAt: observedAt,
     materialization,
     ...values,
   }, JSON.parse(policyBytes));

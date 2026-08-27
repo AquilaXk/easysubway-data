@@ -226,8 +226,9 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
       currentizeFreshFacilitySource,
       writeFreshExitAdmissionChain,
     } = await import("./current-full-capital-production-artifact.mjs");
-    await currentizeFreshFacilitySource(targetRoot, now);
-    await writeFreshExitAdmissionChain(targetRoot, now);
+    const facilityNow = await nextSyntheticCurrentStaticNetworkNow(targetRoot);
+    await currentizeFreshFacilitySource(targetRoot, facilityNow);
+    await writeFreshExitAdmissionChain(targetRoot, facilityNow);
     const transition = await bindSyntheticDependentAdmissionsToCurrentTransition(targetRoot);
     await rebuildSyntheticCurrentAccessibilityOutputs(targetRoot, transition);
     return result;
@@ -473,8 +474,13 @@ export async function nextSyntheticCurrentStaticNetworkNow(root) {
     ...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)),
     topologyClock.expiredAt.getTime(),
   );
-  const nowMillis = Math.max(basisAt + 60_000, topologyClock.inWindow.getTime());
-  if (!Number.isFinite(basisAt) || !Number.isFinite(freshUntil) || nowMillis >= freshUntil) {
+  const candidatePublishedAt = Date.parse(candidate.publishedAt);
+  const nowMillis = Math.max(
+    Math.max(basisAt, candidatePublishedAt) + 60_000,
+    topologyClock.inWindow.getTime(),
+  );
+  if (!Number.isFinite(basisAt) || !Number.isFinite(candidatePublishedAt)
+    || !Number.isFinite(freshUntil) || nowMillis >= freshUntil) {
     throw new Error("synthetic current static-network clock fixture has no valid freshness window");
   }
   return new Date(nowMillis);

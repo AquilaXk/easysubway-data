@@ -10,6 +10,7 @@ import { buildPublicStaticNetworkV2SuccessorOutputs, commitStaticNetworkSuccesso
 import { buildPublicStaticNetworkV2Observations } from "./build-public-static-network-v2-observations.mjs";
 import { parseSeoulRouteMapPositionsCsv } from "./collect-seoul-route-map-positions.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
+import { nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
 
 const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const repositoryRoot = path.resolve(import.meta.dirname, "../..");
@@ -66,7 +67,7 @@ async function publicV2Input(root, capturedAt) {
     "tools/datapack/sources",
     `${topologyAdmission.topologySnapshotId}.json`,
   ));
-  const effectiveCapturedAt = capturedAt ?? topologyAdmission.reviewedAt;
+  const effectiveCapturedAt = capturedAt ?? (await nextSyntheticCurrentStaticNetworkNow(root)).toISOString();
   const rows = parseSeoulRouteMapPositionsCsv(positionCsv).rawPositions.map(({ line, stationCode, stationName, latitude, longitude, basisDate }, index) => ({ "연번": `${index + 1}`, "호선": line, "고유역번호(외부역코드)": stationCode, "역명": stationName, "위도": `${latitude}`, "경도": `${longitude}`, "작성기준일": basisDate, "작성일자": basisDate }));
   const positionRawBytes = Buffer.from(JSON.stringify({ currentCount: rows.length, data: rows, matchCount: rows.length, page: 1, perPage: 1000, totalCount: rows.length }));
   const receipt = (sourceId, rawBytes, extension, contentType) => { const rawSha256 = sha(rawBytes); const stamp = effectiveCapturedAt.replaceAll(/[-:.]/gu, ""); const date = effectiveCapturedAt.slice(0, 10).replaceAll("-", ""); const objectKey = `source-raw/${sourceId}/${date}/${rawSha256}.${extension}`; return { schemaVersion: 1, artifactKind: "static-network-source-raw-object-receipt", sourceId, snapshotId: `${sourceId}-current-${stamp}`, capturedAt: effectiveCapturedAt, rawObjectSha256: rawSha256, rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/${objectKey}`, ociNamespace: "axvym6vk8g7i", bucket: "easysubway-datapacks", objectKey, contentType, byteSize: rawBytes.length, storedAt: effectiveCapturedAt, rawRetentionExpiresAt: deriveRawRetentionExpiresAt({ policy: governance, sourceId, retrievedAt: effectiveCapturedAt }) }; };

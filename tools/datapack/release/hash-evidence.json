@@ -37,19 +37,19 @@
   },
   "sourceSnapshots": {
     "note": "historical source snapshot lineage는 유지하고 canonical capital sourceInventory의 active source만 release snapshot으로 소비한다. retired KRIC movement 2종은 소비하지 않는다.",
-    "order": "release snapshot ledger 순서: kric-subway-timetable → seoulmetro-station-line-info → kric-station-convenience-standard → seoul-metro-transfer-distance-duration → seoul-metro-accessibility → seoul-metro-route-map-positions → molit-urban-rail-full-route",
+    "order": "release snapshot ledger 순서: kric-subway-timetable → seoulmetro-station-line-info → seoul-metro-transfer-distance-duration → seoul-metro-accessibility → seoul-metro-route-map-positions → molit-urban-rail-full-route → kric-station-convenience-standard",
     "committedVerificationCommand": "node -e \"import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto');const s=require('./tools/datapack/release/source-snapshots.json'),b=require('./tools/datapack/release/candidate-build-spec.json'),i=b.sourceSnapshotIds;if(!Array.isArray(i)||new Set(i).size!==i.length)throw new Error('candidate snapshot IDs are invalid');const h=validateLineage(s).headsBySource,p=i.map(id=>{const n=s.filter(x=>x.snapshotId===id);if(n.length!==1||h[n[0].sourceId]!==id)throw new Error('candidate source snapshot mismatch: '+id);return n[0]});if(new Set(p.map(x=>x.sourceId)).size!==p.length)throw new Error('candidate source snapshots are not unique');const k=new Set(i),r=s.filter(x=>k.has(x.snapshotId));if(r.length!==p.length)throw new Error('candidate ledger selection mismatch');if(!Array.isArray(b.sourceSnapshots)||b.sourceSnapshots.length!==p.length||b.sourceSnapshots.some((x,n)=>x.sourceId!==p[n].sourceId||x.snapshotId!==p[n].snapshotId))throw new Error('candidate source projection mismatch');const e=require('./tools/datapack/release/hash-evidence.json'),v=e.perSourceEvidence;if(!Array.isArray(v)||v.length!==r.length)throw new Error('source snapshot evidence count mismatch');for(const [i,n] of r.entries()){const q=v[i],h=c.createHash('sha256').update(JSON.stringify([n])).digest('hex');if(!q||q.sourceId!==n.sourceId||q.snapshotId!==n.snapshotId)throw new Error('source snapshot evidence order or identity mismatch: '+n.sourceId);if(q.perSourceSnapshotSetHash!==h)throw new Error('source snapshot evidence hash mismatch: '+n.sourceId)}})\"",
     "timetableEvidenceCommand": "node -e \"const s=require('./tools/datapack/release/source-snapshots.json').find(n=>n.sourceId==='kric-subway-timetable'),i=require('./tools/datapack/source-inventory.json').sources.find(n=>n.id==='kric-subway-timetable').admissionEvidence,p=require('./tools/datapack/inputs/capital-pilot-production-source-input.json').scheduleProvenance;if(!(s&&i&&p&&s.snapshotId===i.snapshotId&&s.snapshotId===p.sourceSnapshotId&&s.rawSha256===i.rawSha256&&s.schemaFingerprint===i.schemaFingerprint))throw new Error('timetable snapshot evidence mismatch')\"",
     "specRowRawSha256Note": "build-spec sourceSnapshots[].rawSha256는 admissionEvidence.rawSha256(=raw 바이트 해시, fixture 주석 선례 'admission sample.rawSha256')를 기입. snapshot 객체 내부 rawSha256는 canonical(minified·key정렬) raw 해시로 값이 다르며 source-snapshots.json에 보존됨.",
     "governanceOverlayNote": "retained legacy root 5종과 timetable의 원천 identity를 유지하고 신규 접근성 snapshot 2종을 추가했다. build-spec의 freshnessExpiresAt·rawRetentionExpiresAt·governance policy binding은 현행 정책에서 파생하며 validator가 임의 연장을 차단한다."
   },
   "sourceSnapshotSetHash": {
-    "value": "cfc4eb7ecb73a029f15a359286ec79405da044725d682f8449ebac0c247ae6df",
+    "value": "acc549168fe6b8d22a962af2e40566cf03cf906c32cbfd7e01ba46cb48e2449e",
     "contract": "source별 head 7종의 byte-ordered JSON hash와 build spec·release request가 일치해야 한다.",
     "reproductionCommand": "node -e \"import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto');const s=require('./tools/datapack/release/source-snapshots.json'),b=require('./tools/datapack/release/candidate-build-spec.json'),i=b.sourceSnapshotIds;if(!Array.isArray(i)||new Set(i).size!==i.length)throw new Error('candidate snapshot IDs are invalid');const h=validateLineage(s).headsBySource,p=i.map(id=>{const n=s.filter(x=>x.snapshotId===id);if(n.length!==1||h[n[0].sourceId]!==id)throw new Error('candidate source snapshot mismatch: '+id);return n[0]});if(new Set(p.map(x=>x.sourceId)).size!==p.length)throw new Error('candidate source snapshots are not unique');const k=new Set(i),r=s.filter(x=>k.has(x.snapshotId));if(r.length!==p.length)throw new Error('candidate ledger selection mismatch');if(!Array.isArray(b.sourceSnapshots)||b.sourceSnapshots.length!==p.length||b.sourceSnapshots.some((x,n)=>x.sourceId!==p[n].sourceId||x.snapshotId!==p[n].snapshotId))throw new Error('candidate source projection mismatch');console.log(c.createHash('sha256').update(JSON.stringify(r)).digest('hex'))})\""
   },
   "sourceInventorySha256": {
-    "value": "4108826535a9eb705b9096b5f17a30fd8fe0d069a8db28f116f9dda3c2ad67f5",
+    "value": "cf2ca800f1235ab69cce15444c74421111ed0d9aace740759540ebb26a3ba457",
     "contract": "run-source-admission-pipeline.mjs의 공식 sha256(JSON.stringify(admittedInventory)) 계약. 현행 브랜치의 tools/datapack/source-inventory.json이 최종 admitted inventory이며 워크플로 빌드가 실제로 소비하는 인벤토리와 동일 파일.",
     "reproductionCommand": "node -e \"const c=require('crypto'),fs=require('fs');console.log(c.createHash('sha256').update(JSON.stringify(JSON.parse(fs.readFileSync('tools/datapack/source-inventory.json','utf8')))).digest('hex'))\""
   },
@@ -85,13 +85,6 @@
       "perSourceSnapshotSetHash": "fce00c4808e391fdfe7d2e994e4022cb1b907cc972e024e23f16e461fc151c7f"
     },
     {
-      "sourceId": "kric-station-convenience-standard",
-      "snapshotId": "kric-station-convenience-standard-20260816T015619375Z",
-      "rawSha256": "32ef1453e5489263b3cb88e99379da91f10e20692eb1d608f696132b5a839b5e",
-      "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
-      "perSourceSnapshotSetHash": "69dea8f3bbdeff1ac84c09f524716d945febb5c43276a1e1287ad1081a022de1"
-    },
-    {
       "sourceId": "seoul-metro-transfer-distance-duration",
       "snapshotId": "seoul-metro-transfer-distance-duration-20260815T094038817Z",
       "rawSha256": "3d872c9ac390426b5e0e26fa1916ae9d9a44b70077b632d3c85cb8e82381f7cf",
@@ -118,6 +111,13 @@
       "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
       "adminReviewRecordHash": "deb0280494956f8ff72fabc34bec250ff17a30b702ac32c6a4589f3d1e302395",
       "perSourceSnapshotSetHash": "6531acd02adaea0f4bc11ab4e03b119f1d6f028e50132812a9169b33f87b3024"
+    },
+    {
+      "sourceId": "kric-station-convenience-standard",
+      "snapshotId": "kric-station-convenience-standard-20260827T101034357Z",
+      "rawSha256": "1dab7f2dc3109d83d32a090b49f10f2b40e34bc3ccf74ec52d60efa3e6918433",
+      "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
+      "perSourceSnapshotSetHash": "59c6874ee036d18dd70acfa6adadaf5266ebe609a39c014c6fe1a4c57c2909d1"
     }
   ],
   "officialOdFareEvidence": {
