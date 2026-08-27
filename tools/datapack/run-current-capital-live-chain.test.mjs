@@ -221,6 +221,34 @@ test("retained EXIT recovery rebuilds v2 provenance from an exact current plan w
     receiptSha256: JSON.parse(JSON.parse(retained.bytes).collectionReceiptJson).receiptSha256,
     bundleSha256: JSON.parse(retained.bytes).bundleSha256,
   });
+  const identityOnlyCurrentPlan = JSON.parse(retained.planBytes);
+  identityOnlyCurrentPlan.candidate.candidateId = `${identityOnlyCurrentPlan.candidate.candidateId}-current`;
+  const { collectionPlanDigest: previousPlanDigest, ...identityOnlyPayload } = identityOnlyCurrentPlan;
+  identityOnlyCurrentPlan.collectionPlanDigest = sha(canonical(identityOnlyPayload));
+  const identityOnlyCurrentPlanBytes = Buffer.from(canonical(identityOnlyCurrentPlan));
+  const identityOnlyRecovered = await recoverCurrentKricExitCollection({
+    retainedExitBundle: bundlePath, expectedRetainedExitBundleSha256: retainedSha256,
+    currentPlanBytes: identityOnlyCurrentPlanBytes,
+    repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-562",
+    operationNow, root: ROOT, execFileImpl: async () => ({ stdout: "" }),
+  });
+  const identityOnlyBundle = JSON.parse(identityOnlyRecovered.collectionBundleBytes);
+  const identityOnlySnapshot = JSON.parse(identityOnlyBundle.providerSnapshotJson);
+  assert.equal(identityOnlyBundle.collectionPlanJson, identityOnlyCurrentPlanBytes.toString("utf8"));
+  assert.equal(identityOnlySnapshot.collectionPlanDigest, identityOnlyCurrentPlan.collectionPlanDigest);
+  assert.notEqual(identityOnlySnapshot.collectionPlanDigest, previousPlanDigest);
+  assert.notEqual(identityOnlySnapshot.snapshotDigest, retained.snapshot.snapshotDigest);
+  assert.deepEqual(identityOnlySnapshot.results, retained.snapshot.results);
+  const driftedCurrentPlan = structuredClone(identityOnlyCurrentPlan);
+  driftedCurrentPlan.candidate.stationSetSha256 = "c".repeat(64);
+  delete driftedCurrentPlan.collectionPlanDigest;
+  driftedCurrentPlan.collectionPlanDigest = sha(canonical(driftedCurrentPlan));
+  await assert.rejects(recoverCurrentKricExitCollection({
+    retainedExitBundle: bundlePath, expectedRetainedExitBundleSha256: retainedSha256,
+    currentPlanBytes: Buffer.from(canonical(driftedCurrentPlan)),
+    repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-563",
+    operationNow, root: ROOT, execFileImpl: async () => ({ stdout: "" }),
+  }), /not provider-equivalent to the current plan/);
   assert.equal(resolveCurrentExitDerivationAt({
     retainedExitBundle: bundlePath, providerCapturedAt: retained.snapshot.capturedAt,
     operationNow: new Date("2026-08-27T10:20:00.000Z"),
@@ -237,7 +265,7 @@ test("retained EXIT recovery rebuilds v2 provenance from an exact current plan w
     retainedExitBundle: bundlePath, expectedRetainedExitBundleSha256: retainedSha256, currentPlanBytes: Buffer.from("different"),
     repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-561",
     operationNow, root: ROOT, execFileImpl: async () => { throw new Error("ancestry must not run"); },
-  }), /not the current plan/);
+  }), /not provider-equivalent to the current plan/);
   await assert.rejects(recoverCurrentKricExitCollection({
     retainedExitBundle: bundlePath, expectedRetainedExitBundleSha256: retainedSha256, currentPlanBytes: retained.planBytes,
     repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-561",
