@@ -1,168 +1,57 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  ROUTE_ROSTER_ADMISSION_SCOPE_SHA256,
-  buildKricNationwideRouteRosterAdmissionContract,
-} from "./build-kric-nationwide-route-roster-admission.mjs";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+
+import { buildKricNationwideRouteRosterAdmissionContract } from "./build-kric-nationwide-route-roster-admission.mjs";
 import { projectKricStationLineMembership } from "./project-kric-station-line-membership.mjs";
 
-const SOURCE_ID = "kric-subway-route-info";
-const SNAPSHOT_ID = "kric-subway-route-info-20260824T000000000Z";
-const RAW_SHA256 = "a".repeat(64);
-const NOW = new Date("2026-08-24T00:00:00.000Z");
-const SCOPES = [
-  ["korail", "line-051552e50435", "WS", "KR"], ["korail", "line-41a8c75ec9d8", "3", "KR"],
-  ["korail", "line-472a81add377", "1", "KR"], ["korail", "line-54a7b980b7c3", "K2", "KR"],
-  ["korail", "line-558d0bd8312d", "K1", "KR"], ["korail", "line-6e39be0cb6e2", "K4", "KR"],
-  ["korail", "line-e4939a4b4713", "K5", "KR"], ["korail", "seoul-4", "4", "KR"],
-  ["operator-c361f9fc17e9", "line-2b2d9eaa53d0", "8", "NU"], ["operator-c361f9fc17e9", "seoul-4", "4", "NU"],
-  ["seoul-metro", "line-15b3b8a93259", "7", "S1"], ["seoul-metro", "line-2b2d9eaa53d0", "8", "S1"],
-  ["seoul-metro", "line-3f41718e0833", "6", "S1"], ["seoul-metro", "line-41a8c75ec9d8", "3", "S1"],
-  ["seoul-metro", "line-472a81add377", "1", "S1"], ["seoul-metro", "line-80fc4d5350d4", "5", "S1"],
-  ["seoul-metro", "seoul-2", "2", "S1"], ["seoul-metro", "seoul-4", "4", "S1"],
-].map(([operatorId, lineId, lnCd, railOprIsttCd]) => ({
-  regionId: "capital", operatorId, lineId, mreaWideCd: "01", lnCd, railOprIsttCd,
-}));
+const HEADER = ["철도운영기관명", "운영노선", "역 종류", "역 번호", "역명(한글)", "역명(영어)", "역명(로마자)", "역명(일본어)", "역명(중국어간체)", "역명(중국어번체)", "역명(부역명)", "환승역 여부", "환승노선명", "유실물 취급여부", "안전발판 유무", "스크린도어 설치유무", "승강장 연결여부", "승강장 유형", "역 위치(경도)", "역 위치(위도)", "역 주소(지번주소)", "역 주소(도로명 주소)", "역사 전화번호", "신설일자", "폐지일자", "상행거리", "하행거리", "데이터 기준일자", "참고사항"];
+const DENOMINATOR = JSON.parse(await readFile(new URL("./sources/molit-urban-rail-full-route-current-20260826T035408251Z.json", import.meta.url), "utf8"));
 
 function fixture() {
-  const tally = {
-    targetVersion: "2026-07-13",
-    launchRequired: { requirements: SCOPES.map(({ operatorId, lineId }) => ({
-      regionId: "capital", operatorId, lineId, sourceDomain: "station_line_membership", status: "MISSING",
-      requiredFieldCount: 3, unadmittedFields: ["line", "station_name", "station_code"],
-    })) },
-  };
-  const rosters = [...new Map(SCOPES.map((scope) => [`${scope.mreaWideCd}:${scope.lnCd}`, scope])).entries()]
-    .map(([key]) => {
-      const [mreaWideCd, lnCd] = key.split(":");
-      return {
-        schemaVersion: 1, artifactKind: "kric-route-roster", sourceId: SOURCE_ID, mreaWideCd, lnCd, resultCode: "00",
-        stations: SCOPES.filter((scope) => scope.mreaWideCd === mreaWideCd && scope.lnCd === lnCd).map((scope) => ({
-          railOprIsttCd: scope.railOprIsttCd, mreaWideCd, lnCd, stinCd: `${scope.railOprIsttCd}-01`, stinNm: `${scope.railOprIsttCd} 역`, stinConsOrdr: 1,
-        })),
-      };
-    });
-  const rosterArtifact = {
-    schemaVersion: 1, artifactKind: "kric-nationwide-route-rosters", sourceId: SOURCE_ID,
-    targetVersion: tally.targetVersion, credentialRedacted: true, capturedAt: "2026-08-24T00:00:00.000Z",
-    snapshotId: SNAPSHOT_ID, providerScopes: structuredClone(SCOPES), rosters,
-  };
-  const projection = projectKricStationLineMembership({ tally, rosterArtifact });
-  const sourceSnapshot = {
-    sourceId: SOURCE_ID, snapshotId: SNAPSHOT_ID, retrievedAt: "2026-08-24T00:00:00.000Z",
-    rawSha256: RAW_SHA256, schemaFingerprint: "b".repeat(64), redactedRequestFingerprint: "c".repeat(64),
-    sourceUpdatedAt: "2026-08-24T00:00:00.000Z", rowCount: projection.records.length, coverageCount: 18,
-    previousSnapshotId: null, diffSummary: null, freshUntil: "2026-08-25T00:00:00.000Z",
-  };
-  return {
-    tally, rosterArtifact, projection,
-    sourceInventory: { sources: [{
-      id: SOURCE_ID, productionUseAllowed: true,
-      fieldsProvided: ["line", "station_name", "station_code"],
-      coverageScope: { sourceDomains: ["station_line_membership"] },
-    }] },
-    sourceSnapshots: [sourceSnapshot],
-    rawReceipt: {
-      sourceId: SOURCE_ID, snapshotId: SNAPSHOT_ID, snapshotRawSha256: RAW_SHA256,
-      rawObjectUri: "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-subway-route-info/20260824/raw.json",
-      rawObjectSha256: RAW_SHA256, ociNamespace: "axvym6vk8g7i", bucket: "easysubway-datapacks",
-      objectKey: "source-raw/kric-subway-route-info/20260824/raw.json", byteSize: 128,
-      storedAt: "2026-08-24T00:00:01.000Z", rawRetentionExpiresAt: "2026-11-22T00:00:00.000Z",
-    },
-    licenseDecision: {
-      sourceId: SOURCE_ID, snapshotId: SNAPSHOT_ID, snapshotRawSha256: RAW_SHA256,
-      licenseId: "KOGL-1", commercialUseAllowed: true, derivativeWorkAllowed: true,
-      redistributionAllowed: true, quotaDecision: "CONFIRMED", productionUseAllowed: true, decision: "APPROVED",
-    },
-  };
+  const workbookBytes = workbook();
+  const denominator = structuredClone(DENOMINATOR);
+  const projection = projectKricStationLineMembership({ workbookBytes, denominator });
+  return { workbookBytes, denominator, projection, receipt: { schemaVersion: 1, artifactKind: "kric-current-station-line-file-receipt", sourceId: "kric-current-station-line-file", capturedAt: "2026-08-27T00:00:00.000Z", rawFile: "kric-current-station-line-file-test.xlsx", byteLength: workbookBytes.length, sha256: createHash("sha256").update(workbookBytes).digest("hex"), credentialRedacted: true } };
 }
 
-test("#455 exact 18 scope current-admission preflight는 모든 합성 증거가 있어도 승격 없이 PENDING만 반환한다", () => {
-  const result = buildKricNationwideRouteRosterAdmissionContract({ ...fixture(), now: NOW });
-
+test("#455 exact workbook/receipt/projection binding returns deterministic PENDING without an OCI or release success", () => {
+  const input = fixture();
+  const result = buildKricNationwideRouteRosterAdmissionContract(input);
   assert.equal(result.status, "PENDING");
   assert.equal(result.decision, "CONTRACT_GAP");
-  assert.equal(result.sourceId, SOURCE_ID);
-  assert.equal(result.scopeCount, 18);
-  assert.equal(result.scopeSetSha256, ROUTE_ROSTER_ADMISSION_SCOPE_SHA256);
-  assert.equal(result.gaps.length, 1);
-  assert.equal(result.gaps[0].code, "ADMISSION_EXECUTION_REQUIRED");
-  assert.ok(!JSON.stringify(result).includes("ADMITTED"));
+  assert.equal(result.sourceId, "kric-current-station-line-file");
+  assert.deepEqual(result.gaps, [{ code: "CROSSWALK_NOT_ADMITTED", status: "PENDING", decision: "CONTRACT_GAP" }]);
+  assert.notEqual(result.status, "GO");
+  assert.ok(!Object.hasOwn(result, "oci"));
 });
 
-test("#455 preflight는 source/scope/projection/current snapshot/legal OCI lineage drift를 모두 deterministic CONTRACT_GAP으로 유지한다", () => {
-  const scenarios = [
-    ["source identity", (input) => { input.sourceInventory.sources[0].id = "wrong"; }, "SOURCE_INVENTORY_IDENTITY_MISMATCH"],
-    ["required field", (input) => { input.sourceInventory.sources[0].fieldsProvided.pop(); }, "SOURCE_REQUIRED_FIELDS_INCOMPLETE"],
-    ["result code", (input) => { input.rosterArtifact.rosters[0].resultCode = "03"; }, "TALLY_ROSTER_PROJECTION_MISMATCH"],
-    ["projection binding", (input) => { input.projection.records[0].station_code = "drift"; }, "PROJECTION_TALLY_BINDING_MISMATCH"],
-    ["future snapshot", (input) => { input.sourceSnapshots[0].retrievedAt = "2026-08-25T00:00:00.000Z"; }, "SNAPSHOT_NOT_CURRENT"],
-    ["license decision", (input) => { input.licenseDecision.redistributionAllowed = false; }, "LICENSE_PRODUCTION_DECISION_MISSING"],
-    ["OCI receipt", (input) => { input.rawReceipt.rawObjectUri = "s3://wrong/raw.json"; }, "OCI_RAW_RECEIPT_MISMATCH"],
-    ["lineage diff", (input) => { input.sourceSnapshots[0].schemaFingerprint = "not-a-hash"; }, "SOURCE_LINEAGE_OR_DIFF_INVALID"],
-  ];
-  for (const [label, mutate, code] of scenarios) {
-    const input = fixture();
-    mutate(input);
-    const result = buildKricNationwideRouteRosterAdmissionContract({ ...input, now: NOW });
-    assert.equal(result.status, "PENDING", label);
-    assert.equal(result.decision, "CONTRACT_GAP", label);
-    assert.ok(result.gaps.some((gap) => gap.code === code), label);
-    assert.ok(!JSON.stringify(result).includes("ADMITTED"), label);
-  }
-});
-
-test("scope hash는 exact 18 provider/operator binding에서만 재현된다", () => {
+test("#455 rejects altered bytes, malformed receipts, and projections", () => {
   const input = fixture();
-  input.tally.launchRequired.requirements[0].lineId = "wrong-line";
-  const result = buildKricNationwideRouteRosterAdmissionContract({ ...input, now: NOW });
-  assert.equal(result.scopeSetSha256, "563a8aaac28955b053f032ec3d9e989d9ad3006685f6d69efb6d3ff5ae6963ae");
-  assert.equal(result.scopeSetSha256, ROUTE_ROSTER_ADMISSION_SCOPE_SHA256);
-  assert.ok(result.gaps.some((gap) => gap.code === "CANONICAL_SCOPE_IDENTITY_MISMATCH"));
+  assert.throws(() => buildKricNationwideRouteRosterAdmissionContract({ ...input, receipt: { ...input.receipt, sha256: "0".repeat(64) } }), /RECEIPT_MISMATCH/);
+  for (const receipt of [
+    { ...input.receipt, schemaVersion: 2 },
+    { ...input.receipt, capturedAt: "2026-08-27T00:00:00Z" },
+    { ...input.receipt, rawFile: "foreign.xlsx" },
+    { ...input.receipt, credentialRedacted: false },
+  ]) assert.throws(() => buildKricNationwideRouteRosterAdmissionContract({ ...input, receipt }), /RECEIPT_MISMATCH/);
+  assert.throws(() => buildKricNationwideRouteRosterAdmissionContract({ ...input, projection: { ...input.projection, records: [] } }), /PROJECTION_MISMATCH/);
 });
 
-test("#509 F1: roster provider scope와 tally requirement scope는 extra·duplicate·remap 없이 canonical exact 18이어야 한다", () => {
-  const scenarios = [
-    ["provider extra", (input) => input.rosterArtifact.providerScopes.push({
-      regionId: "capital", operatorId: "unrelated", lineId: "unrelated-line", mreaWideCd: "01", lnCd: "X", railOprIsttCd: "UX",
-    })],
-    ["provider duplicate", (input) => input.rosterArtifact.providerScopes.push(structuredClone(input.rosterArtifact.providerScopes[0]))],
-    ["provider remap", (input) => { input.rosterArtifact.providerScopes[0].railOprIsttCd = "XX"; }],
-    ["tally extra", (input) => input.tally.launchRequired.requirements.push({
-      regionId: "capital", operatorId: "unrelated", lineId: "unrelated-line", sourceDomain: "station_line_membership", status: "MISSING",
-      requiredFieldCount: 3, unadmittedFields: ["line", "station_name", "station_code"],
-    })],
-    ["tally duplicate", (input) => input.tally.launchRequired.requirements.push(structuredClone(input.tally.launchRequired.requirements[0]))],
-    ["tally remap", (input) => { input.tally.launchRequired.requirements[0].operatorId = "wrong-operator"; }],
-  ];
-  for (const [label, mutate] of scenarios) {
-    const input = fixture();
-    mutate(input);
-    const result = buildKricNationwideRouteRosterAdmissionContract({ ...input, now: NOW });
-    assert.equal(result.status, "PENDING", label);
-    assert.ok(result.gaps.some((gap) => gap.code === "CANONICAL_SCOPE_IDENTITY_MISMATCH"), label);
-  }
+test("#455 keeps legacy API/18-scope/id32/OCI shapes as explicit rejection regressions", () => {
+  assert.throws(() => buildKricNationwideRouteRosterAdmissionContract({ tally: { targetVersion: "2026-07-13" }, rosterArtifact: {}, sourceInventory: {}, sourceSnapshots: [], rawReceipt: {}, licenseDecision: {} }), /DENOMINATOR_IDENTITY/);
+  const input = fixture(); input.denominator.rowCount = 22;
+  assert.throws(() => buildKricNationwideRouteRosterAdmissionContract(input), /DENOMINATOR_IDENTITY/);
 });
 
-test("#509 F2: source snapshot count는 canonical scope와 validated projection record count에 묶인다", () => {
-  for (const [label, mutate] of [
-    ["coverage count", (input) => { input.sourceSnapshots[0].coverageCount = 17; }],
-    ["row count", (input) => { input.sourceSnapshots[0].rowCount = input.projection.records.length - 1; }],
-  ]) {
-    const input = fixture();
-    mutate(input);
-    const result = buildKricNationwideRouteRosterAdmissionContract({ ...input, now: NOW });
-    assert.equal(result.status, "PENDING", label);
-    assert.ok(result.gaps.some((gap) => gap.code === "SNAPSHOT_PROJECTION_COUNT_MISMATCH"), label);
-  }
-});
+function workbook() {
+  const cells = (values, row) => values.map((value, index) => `<c r="${column(index)}${row}" t="inlineStr"><is><t>${value}</t></is></c>`).join("");
+  const rows = DENOMINATOR.normalizedProjection.map(({ operator_name, line_name, station_name }, index) => { const values = Array(29).fill(""); [values[0], values[1], values[3], values[4]] = [operator_name, line_name, `code-${index + 1}`, station_name]; return `<row r="${index + 2}">${cells(values, index + 2)}</row>`; }).join("");
+  return zip({ "[Content_Types].xml": "<Types/>", "xl/workbook.xml": "<workbook xmlns:r=\"r\"><sheets><sheet name=\"1.역사정보\" r:id=\"rId1\"/></sheets></workbook>", "xl/_rels/workbook.xml.rels": "<Relationships><Relationship Id=\"rId1\" Target=\"worksheets/sheet1.xml\"/></Relationships>", "xl/worksheets/sheet1.xml": `<worksheet><sheetData><row r="1">${cells(HEADER, 1)}</row>${rows}</sheetData></worksheet>` });
+}
 
-test("#509 F3: OCI retention expiry는 parse 가능하고 storedAt 및 now 양쪽보다 뒤여야 한다", () => {
-  const input = fixture();
-  input.rawReceipt.storedAt = "2026-08-24T12:00:00.000Z";
-  input.rawReceipt.rawRetentionExpiresAt = "2026-08-24T06:00:00.000Z";
-  const result = buildKricNationwideRouteRosterAdmissionContract({ ...input, now: NOW });
-  assert.equal(result.status, "PENDING");
-  assert.ok(result.gaps.some((gap) => gap.code === "OCI_RAW_RECEIPT_MISMATCH"));
-});
+function zip(entries) { let offset = 0; const locals = Object.entries(entries).map(([name, text]) => { const filename = Buffer.from(name); const content = Buffer.from(text); const header = Buffer.alloc(30); header.writeUInt32LE(0x04034b50, 0); header.writeUInt16LE(filename.length, 26); header.writeUInt32LE(content.length, 18); const entry = Buffer.concat([header, filename, content]); const value = { filename, content, offset, entry }; offset += entry.length; return value; }); const central = Buffer.concat(locals.map(({ filename, content, offset: localOffset }) => { const header = Buffer.alloc(46); header.writeUInt32LE(0x02014b50, 0); header.writeUInt16LE(20, 4); header.writeUInt16LE(20, 6); header.writeUInt16LE(filename.length, 28); header.writeUInt32LE(content.length, 20); header.writeUInt32LE(content.length, 24); header.writeUInt32LE(localOffset, 42); return Buffer.concat([header, filename]); })); const eocd = Buffer.alloc(22); eocd.writeUInt32LE(0x06054b50, 0); eocd.writeUInt16LE(locals.length, 8); eocd.writeUInt16LE(locals.length, 10); eocd.writeUInt32LE(central.length, 12); eocd.writeUInt32LE(offset, 16); return Buffer.concat([...locals.map(({ entry }) => entry), central, eocd]); }
+
+function column(index) { let value = index + 1; let result = ""; while (value > 0) { value -= 1; result = String.fromCodePoint(65 + (value % 26)) + result; value = Math.floor(value / 26); } return result; }
