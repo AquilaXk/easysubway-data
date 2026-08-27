@@ -722,6 +722,8 @@ test("합성 current public successor는 public root에서 동일-source V2 head
   ]);
   const beforeSnapshotId = beforeCandidate.sourceSnapshotIds[beforeCandidate.sourceSnapshots
     .findIndex(({ sourceId }) => sourceId === "seoul-metro-route-map-positions")];
+  const beforePublicSnapshots = beforeSnapshots
+    .filter(({ sourceId }) => sourceId === "seoul-metro-route-map-positions");
 
   const refreshedRoot = path.join(path.dirname(repositoryRoot), "refreshed-repository");
   const refreshedAt = new Date(Date.parse(syntheticCurrentEvaluationAt) + 60_000).toISOString();
@@ -735,20 +737,27 @@ test("합성 current public successor는 public root에서 동일-source V2 head
   const selectedSnapshotId = candidate.sourceSnapshotIds[publicIndex];
   const selected = snapshots.filter(({ snapshotId }) => snapshotId === selectedSnapshotId);
   const publicSnapshots = snapshots.filter(({ sourceId }) => sourceId === "seoul-metro-route-map-positions");
+  const beforePublicSnapshotIds = new Set(beforePublicSnapshots.map(({ snapshotId }) => snapshotId));
+  const appendedPublicSnapshots = publicSnapshots
+    .filter(({ snapshotId }) => !beforePublicSnapshotIds.has(snapshotId));
 
   assert.notEqual(selectedSnapshotId, beforeSnapshotId);
   assert.equal(selected.length, 1);
-  assert.equal(publicSnapshots.length, 2);
+  assert.equal(publicSnapshots.length, beforePublicSnapshots.length + 1);
+  assert.deepEqual(appendedPublicSnapshots.map(({ snapshotId }) => snapshotId), [selectedSnapshotId]);
   assert.equal(selected[0].previousSnapshotId, beforeSnapshotId);
-  assert.equal(publicSnapshots.filter(({ previousSnapshotId }) => previousSnapshotId == null).length, 1);
-  for (const snapshot of publicSnapshots) {
+  assert.equal(
+    publicSnapshots.filter(({ previousSnapshotId }) => previousSnapshotId == null).length,
+    beforePublicSnapshots.filter(({ previousSnapshotId }) => previousSnapshotId == null).length,
+  );
+  for (const snapshot of appendedPublicSnapshots) {
     for (const key of ["projectionMigration", "migration", "historicalPredecessorAudit", "rootSupersession"]) {
       assert.equal(key in snapshot, false);
     }
   }
   assert.equal(selected[0].retrievedAt, syntheticCurrentEvaluationAt);
   assert.ok(Date.parse(selected[0].sourceUpdatedAt) <= Date.parse(selected[0].retrievedAt));
-  assert.equal(beforeSnapshots.filter(({ sourceId }) => sourceId === "seoul-metro-route-map-positions").length, 1);
+  assert.equal(beforePublicSnapshots.filter(({ snapshotId }) => snapshotId === beforeSnapshotId).length, 1);
 });
 
 test("합성 current public successor는 cross-source predecessor를 출력 없이 거부한다", async (t) => {
