@@ -78,6 +78,9 @@ test("current production capital을 재검증한 뒤 signed 8파일과 eligibili
     "server-route-bundle-evidence/server-route-bundle-final.json",
   ].map((relative) => relative.replace("server-route-bundle-evidence/", "")).sort());
   assert.equal(await readFile(path.join(output, "sentinel"), "utf8"), "keep");
+  for (const [source, staged] of [[input.buildSpecPath, "build-spec.json"], [input.stationLineInputPath, "station-line-input.json"], [input.routeEdgeInputPath, "route-edge-input.json"]]) {
+    assert.deepEqual(await readFile(path.join(output, "server-route-bundle-inputs", staged)), await readFile(source));
+  }
   assert.equal(await readFile(path.join(output, "server-route-bundle-evidence", "route-accessibility-eligibility.json"), "utf8"),
     eligibilityBytes.toString("utf8"));
   assert.equal(sourceSqliteBytes.toString(), "candidate sqlite bytes");
@@ -175,6 +178,33 @@ test("prepare 중 생성된 foreign output과 conflicting source hashes는 fail-
   await writeFile(input.buildSpecPath, JSON.stringify(buildSpec));
   await assert.rejects(() => stageCurrentServerRouteBundleCandidate({ ...input, repositoryGitSha: "b".repeat(40), keyId: "production-v1", output }), /candidate identity is invalid/);
   await assert.rejects(() => lstat(path.join(output, "server-route-bundle")), /ENOENT/);
+});
+
+test("third publish rename failure rolls back the exact three candidate outputs", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "route-candidate-stage-rename-failure-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const input = await fixture(root);
+  const output = path.join(root, "candidate");
+  await mkdir(output);
+  let calls = 0;
+  await assert.rejects(() => stageCurrentServerRouteBundleCandidate({
+    ...input,
+    repositoryGitSha: "b".repeat(40),
+    keyId: "production-v1",
+    output,
+    stages: {
+      prepare: async ({ output: prepared }) => writePreparedOutputs(prepared),
+      rename: async (source, destination) => {
+        calls += 1;
+        await (await import("node:fs/promises")).rename(source, destination);
+        if (calls === 3) throw new Error("injected third rename failure");
+      },
+    },
+  }), /injected third rename failure/);
+  assert.equal(calls, 3);
+  for (const name of ["server-route-bundle", "server-route-bundle-evidence", "server-route-bundle-inputs"]) {
+    await assert.rejects(() => lstat(path.join(output, name)), /ENOENT/);
+  }
 });
 
 async function inventory(root) {
