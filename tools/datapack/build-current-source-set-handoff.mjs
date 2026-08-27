@@ -10,6 +10,7 @@ import {
   CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS,
   CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_KIND,
   CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH,
+  canonicalCurrentCapitalLiveChainFanInBoundaryJson,
   validateCurrentCapitalLiveChainFanInBoundary,
   verifyCurrentCapitalLiveChainFanInComponents,
 } from "./build-current-capital-live-chain-boundary.mjs";
@@ -224,6 +225,15 @@ function validateHandoffPayload(payload, { sourceRepositorySha, producerSha, ope
     kind: payload.fanIn.kind,
     schemaVersion: 1,
   });
+  const reconstructedFanInBytes = Buffer.from(canonicalCurrentCapitalLiveChainFanInBoundaryJson({
+    artifactKind: "current-capital-live-chain-fan-in",
+    components: payload.fanIn.components,
+    currentCandidateSourceSetSha256: payload.fanIn.sourceSetSha256,
+    evidenceSourceSetSha256: payload.fanIn.sourceSetSha256,
+    kind: payload.fanIn.kind,
+    schemaVersion: 1,
+  }));
+  if (payload.fanIn.sha256 !== sha256(reconstructedFanInBytes)) throw new Error("source-set fan-in sha256 mismatch");
   assertKeys(payload.candidate, ["candidateId", "sourceSnapshotSetHash", "sourceSnapshots"], "source-set candidate");
   if (requiredString(payload.candidate.candidateId, "candidate ID") !== payload.candidate.candidateId
     || !SHA256.test(payload.candidate.sourceSnapshotSetHash ?? "") || payload.candidate.sourceSnapshotSetHash !== payload.fanIn.sourceSetSha256

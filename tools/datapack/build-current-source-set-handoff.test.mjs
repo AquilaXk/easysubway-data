@@ -36,6 +36,21 @@ import { buildCanonicalCurrentKricExitCollectionBundle } from "./test-fixtures/c
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const REPOSITORY = "AquilaXk/easysubway-data";
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+function canonicalObject(value) {
+  if (Array.isArray(value)) return value.map(canonicalObject);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalObject(value[key])]));
+}
+function canonical(value) {
+  return JSON.stringify(canonicalObject(value));
+}
+function rehashHandoff(handoff) {
+  const { handoffSha256: _handoffSha256, ...payload } = handoff;
+  return {
+    ...payload,
+    handoffSha256: sha256(Buffer.from(canonical(payload))),
+  };
+}
 
 async function canonicalInputFixture(root) {
   const repositorySha = "d".repeat(40);
@@ -174,4 +189,14 @@ test("current source-set handoff binds the exact verified live-chain and fails c
   ], { encoding: "utf8" });
   assert.notEqual(rejected.status, 0);
   await assert.rejects(stat(rejectedOutput), { code: "ENOENT" });
+
+  const tamperedFanIn = rehashHandoff({
+    ...handoff,
+    fanIn: { ...handoff.fanIn, sha256: "0".repeat(64) },
+  });
+  assert.throws(
+    () => readCurrentSourceSetHandoff(Buffer.from(`${canonical(tamperedFanIn)}\n`), input),
+    /fan-in/,
+  );
+
 });
