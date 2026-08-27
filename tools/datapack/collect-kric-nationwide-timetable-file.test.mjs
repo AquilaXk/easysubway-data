@@ -4,12 +4,13 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { collectKricNationwideTimetableFile, KRIC_NATIONWIDE_TIMETABLE_FILE_URL } from "./collect-kric-nationwide-timetable-file.mjs";
+import {
+  collectKricNationwideTimetableFile,
+  DEFAULT_MAXIMUM_BYTES,
+  KRIC_NATIONWIDE_TIMETABLE_FILE_URL,
+} from "./collect-kric-nationwide-timetable-file.mjs";
 
-const ZIP = Buffer.concat([
-  Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(26),
-  Buffer.from([0x50, 0x4b, 0x05, 0x06]), Buffer.alloc(18),
-]);
+const ZIP = minimalXlsxZip();
 const HEADERS = {
   "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   "content-disposition": "attachment; filename=urban-timetable.xlsx",
@@ -67,6 +68,34 @@ test("#454 accepts KRIC application/octet-stream only with the same XLSX MIME an
   });
 });
 
+test("#454 bounds streamed bytes before buffering and requires the XLSX central-directory entries", async () => {
+  assert.equal(DEFAULT_MAXIMUM_BYTES, 128 * 1024 * 1024);
+  await withOutput(async ({ output }) => {
+    let bodyRead = false;
+    await assert.rejects(collectKricNationwideTimetableFile({
+      outputDirectory: output,
+      maximumBytes: ZIP.length - 1,
+      fetchImpl: async () => ({ status: 200, ok: true, redirected: false, url: "", headers: new Headers({ ...HEADERS }), body: { getReader: () => { bodyRead = true; } } }),
+    }), /BODY/);
+    assert.equal(bodyRead, false);
+  });
+  await withOutput(async ({ output }) => {
+    let cancelled = false;
+    await assert.rejects(collectKricNationwideTimetableFile({
+      outputDirectory: output,
+      maximumBytes: ZIP.length - 1,
+      fetchImpl: async () => streamResponse(ZIP, { "content-type": HEADERS["content-type"] }, () => { cancelled = true; }),
+    }), /BODY/);
+    assert.equal(cancelled, true);
+  });
+  await withOutput(async ({ output }) => {
+    await assert.rejects(collectKricNationwideTimetableFile({
+      outputDirectory: output,
+      fetchImpl: async () => new Response(minimalXlsxZip(["arbitrary.xml"]), { status: 200, headers: { ...HEADERS, "content-length": `${minimalXlsxZip(["arbitrary.xml"]).length}` } }),
+    }), /BODY/);
+  });
+});
+
 test("#454 rejects redirects, non-XLSX/partial bodies, and an existing output without retries or provider-body output", async () => {
   const cases = [
     { label: "redirect", response: new Response(ZIP, { status: 200, headers: HEADERS }), mutate: (value) => Object.defineProperty(value, "redirected", { value: true }), error: /REDIRECT/ },
@@ -89,7 +118,56 @@ test("#454 rejects redirects, non-XLSX/partial bodies, and an existing output wi
     await assert.rejects(collectKricNationwideTimetableFile({ outputDirectory: output, fetchImpl: async () => { calls += 1; } }), /OUTPUT_EXISTS/);
     assert.equal(calls, 0);
   });
+  await withOutput(async ({ output }) => {
+    await assert.rejects(collectKricNationwideTimetableFile({
+      outputDirectory: output,
+      fetchImpl: async () => {
+        await mkdir(output);
+        return new Response(ZIP, { status: 200, headers: HEADERS });
+      },
+    }), /KRIC_TIMETABLE_FILE_OUTPUT/);
+  });
 });
+
+function streamResponse(bytes, headers, onCancel) {
+  const stream = new ReadableStream({
+    start(controller) { controller.enqueue(bytes); },
+    cancel() { onCancel(); },
+  });
+  return { status: 200, ok: true, redirected: false, url: "", headers: new Headers(headers), body: stream };
+}
+
+function minimalXlsxZip(names = ["[Content_Types].xml", "xl/workbook.xml"]) {
+  let offset = 0;
+  const locals = names.map((name) => {
+    const filename = Buffer.from(name);
+    const header = Buffer.alloc(30);
+    header.writeUInt32LE(0x04034b50, 0);
+    header.writeUInt16LE(20, 4);
+    header.writeUInt16LE(filename.length, 26);
+    const entry = Buffer.concat([header, filename]);
+    const value = { filename, offset, entry };
+    offset += entry.length;
+    return value;
+  });
+  const central = locals.map(({ filename, offset: localOffset }) => {
+    const header = Buffer.alloc(46);
+    header.writeUInt32LE(0x02014b50, 0);
+    header.writeUInt16LE(20, 4);
+    header.writeUInt16LE(20, 6);
+    header.writeUInt16LE(filename.length, 28);
+    header.writeUInt32LE(localOffset, 42);
+    return Buffer.concat([header, filename]);
+  });
+  const centralBytes = Buffer.concat(central);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(names.length, 8);
+  eocd.writeUInt16LE(names.length, 10);
+  eocd.writeUInt32LE(centralBytes.length, 12);
+  eocd.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals.map(({ entry }) => entry), centralBytes, eocd]);
+}
 
 async function withOutput(run) {
   const root = await mkdtemp(path.join(os.tmpdir(), "kric-file-test-"));

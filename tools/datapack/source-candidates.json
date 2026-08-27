@@ -88,6 +88,7 @@
         "endpoint": "https://data.kric.go.kr/rips/dataset/download.file?type=filedata&id=900&operation=1",
         "auth": { "placement": "none" },
         "requiredParameters": [],
+        "fixedParameters": { "type": "filedata", "id": "900", "operation": "1" },
         "responseEnvelope": "XLSX ZIP attachment",
         "runner": {
           "command": "node tools/datapack/collect-kric-nationwide-timetable-file.mjs",
