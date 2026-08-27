@@ -64,7 +64,6 @@ test("build-datapack은 candidate mode만 staged transition을 입력보다 먼�
   assert.ok(candidateMode < guard, "candidate mode를 확인한 뒤 guard를 실행해야 한다");
   assert.ok(guard < buildInput, "staged transition guard는 candidate 입력보다 먼저 실행돼야 한다");
 });
-
 test("retired production transit unprojected fixture는 candidate admission에서 거부된다", async () => {
   const [fixture, policyBytes] = await Promise.all([
     readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8").then(JSON.parse),
@@ -691,131 +690,27 @@ test("tracked current source admission은 review-required approval identity muta
   }
 });
 
-test("historical migrated v19 ITX evidence는 구조를 유지하지만 current source로 승격되지 않는다", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "build-current-migrated-itx-"));
-  const evidencePath = path.join(directory, "itx-topology-evidence.json");
-  const stationIdentity = {
-    artifactKind: "station-catalog-pack",
-    manifestVersion: 1,
-    catalogPackId: "capital-station-catalog-d85742f14cbf97c526a6b94dd55bbf863e1d1346-v1",
-    stationSetSha256: "18de0faea1cf3f4fd26ea6799a6b4ce7bcc319a609b435f1b1eefa6164c4bb17",
-    payloadSha256: "3f7cfe2ae30133239665e8b0cb7c2cb7030d59c3fcf6a2574491f070a880ce89",
-    manifestSha256: "73b626004f9de99f1431604dbbda41893ee7b37c39957cbfd980864207a7029f",
-  };
-  const evidence = {
-    schemaVersion: 1,
-    artifactKind: "itx-cheongchun-mobile-topology-evidence",
-    serviceId: "ITX_CHEONGCHUN",
-    sourceIssue: 2135,
-    sourceArtifact: {
-      id: "itx-cheongchun-source-timetable-20260719230524758",
-      sha256: "e2894d7ce6decb08fc9fec982394e77151799c34d099b83948481080e56d780e",
-      completenessEvidenceSha256: "4".repeat(64),
-      freshUntil: "2026-07-27T00:00:00+09:00",
-    },
-    topology: {
-      stationMembershipCount: 18,
-      servedStationCount: 14,
-      edgeCount: 48,
-      directions: ["up", "down"],
-      connectedComponentCount: 1,
-      isolatedServedStationCount: 0,
-      sha256: "5".repeat(64),
-      durationSecondsEmbedded: false,
-      fareEmbedded: false,
-    },
-    migration: {
-      fromCatalogVersion: 18,
-      toCatalogVersion: 19,
-      inputPack: {
-        id: "capital",
-        sha256: "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
-        sqliteSha256: "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5",
-        byteSize: 1463745,
-      },
-    },
-    routeServiceEvidence: {
-      artifactEvidence: {
-        serviceClass: "ITX_CHEONGCHUN",
-        timetableArtifactId: "itx-cheongchun-source-timetable-20260719230524758",
-        timetableArtifactSha256: "e2894d7ce6decb08fc9fec982394e77151799c34d099b83948481080e56d780e",
-        canonicalPackId: "capital",
-        canonicalPackSha256: "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
-        canonicalPackSqliteSha256: "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
-        admissionStatus: "ADMITTED",
-        admissionEligible: 1,
-        freshUntil: "2026-07-27T00:00:00+09:00",
-        sourceIssue: 2135,
-      },
-      stationCatalogEvidence: {
-        serviceClass: "ITX_CHEONGCHUN",
-        stationCatalogArtifactKind: stationIdentity.artifactKind,
-        stationCatalogManifestVersion: stationIdentity.manifestVersion,
-        stationCatalogPackId: stationIdentity.catalogPackId,
-        stationCatalogStationSetSha256: stationIdentity.stationSetSha256,
-        stationCatalogPayloadSha256: stationIdentity.payloadSha256,
-        stationCatalogManifestSha256: stationIdentity.manifestSha256,
-        admissionStatus: "ADMITTED",
-        admissionEligible: 1,
-        freshUntil: "2026-07-27T00:00:00+09:00",
-        sourceIssue: 2649,
-      },
-    },
-    pack: {
-      id: "capital",
-      inputSha256: "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
-      inputSqliteSha256: "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5",
-      inputByteSize: 1463745,
-      outputSha256: "6".repeat(64),
-      outputSqliteSha256: "7".repeat(64),
-      byteSize: 393974,
-      byteSizeDelta: -1069771,
-    },
-  };
-  const fixture = {
-    packs: [{
-      transitTrips: [],
-      networkEdges: [{ serviceClass: "ITX_CHEONGCHUN" }],
-    }],
-  };
-  try {
-    const evidenceBytes = Buffer.from(`${JSON.stringify(evidence, null, 2)}\n`);
-    await writeFile(evidencePath, evidenceBytes);
-    const validated = await validateTrackedItxTopologyEvidence({
-      itxTopologyEvidencePath: evidencePath,
-      itxTopologyEvidenceSha256: sha256(evidenceBytes),
-    }, fixture);
-    assert.equal(validated.migratedCurrentV18, true);
-    assert.deepEqual(validated.stationCatalogPackIdentity, stationIdentity);
-    const [contract, currentAdmission] = await Promise.all([
-      readFile(path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8")
-        .then(JSON.parse),
-      readFile(path.join(root, "tools/datapack/itx-current-network-edge-admission-20260810.json"), "utf8")
-        .then(JSON.parse),
-    ]);
-    const previousBuildNow = process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
-    process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = currentNow.toISOString();
-    try {
-      await assert.rejects(
-        admittedItxNetworkEdgeEvidence(contract, validated, currentAdmission),
-        /ITX network edge topology is not admitted/,
-      );
-    } finally {
-      if (previousBuildNow == null) delete process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
-      else process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = previousBuildNow;
-    }
-    const forged = structuredClone(evidence);
-    forged.migration.inputPack.sha256 = "0".repeat(64);
-    const forgedBytes = Buffer.from(`${JSON.stringify(forged, null, 2)}\n`);
-    await writeFile(evidencePath, forgedBytes);
+test("tracked topology admission은 legacy migration evidence를 거부한다", async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "build-current-legacy-itx-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const [buildSpec, fixture, evidence] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json"), "utf8").then(JSON.parse),
+  ]);
+  for (const field of ["migration", "routeServiceEvidence"]) {
+    const candidate = structuredClone(evidence);
+    candidate[field] = {};
+    const bytes = Buffer.from(`${JSON.stringify(candidate)}\n`);
+    const evidencePath = path.join(directory, `${field}.json`);
+    await writeFile(evidencePath, bytes);
     await assert.rejects(
       validateTrackedItxTopologyEvidence({
-        itxTopologyEvidencePath: evidencePath,
-        itxTopologyEvidenceSha256: sha256(forgedBytes),
-      }, fixture),
-      /migration input pack identity mismatch/,
+        ...buildSpec,
+        itxTopologyEvidencePath: path.basename(evidencePath),
+        itxTopologyEvidenceSha256: sha256(bytes),
+      }, fixture, directory),
+      /migration evidence is forbidden by the current-only datapack contract/,
     );
-  } finally {
-    await rm(directory, { recursive: true, force: true });
   }
 });

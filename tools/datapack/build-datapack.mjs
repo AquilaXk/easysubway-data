@@ -88,13 +88,6 @@ const incheonTopologyLineIds = Object.freeze([
   "line-42b5805f3b5a",
   "line-98718184f016",
 ]);
-const currentV18MigrationInputPack = Object.freeze({
-  id: "capital",
-  sha256: "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
-  sqliteSha256: "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5",
-  byteSize: 1463745,
-});
-const currentV18CanonicalTopologyInputByteSize = 359319;
 
 export function validateSourceSeparatedCurrentTopology({ capitalTopology, incheonSnapshot }) {
   const capital = loadCapitalRouteTopologySnapshot(capitalTopology);
@@ -2316,14 +2309,10 @@ export async function admittedItxNetworkEdgeEvidence(
         "ITX coverage contract topologyInputPackIdentity",
       );
   const topologyEvidenceInputPackIdentity = topologyAdmission.topologyInputPackIdentity;
-  const topologyInputMatches = topologyAdmission.migratedCurrentV18
-    ? contractTopologyInputPackIdentity.id === topologyEvidenceInputPackIdentity.id
-      && contractTopologyInputPackIdentity.sha256 === topologyEvidenceInputPackIdentity.sha256
-      && contractTopologyInputPackIdentity.sqliteSha256 === topologyEvidenceInputPackIdentity.sqliteSha256
-    : sameTopologyInputPackIdentity(
-        contractTopologyInputPackIdentity,
-        topologyEvidenceInputPackIdentity,
-      );
+  const topologyInputMatches = sameTopologyInputPackIdentity(
+    contractTopologyInputPackIdentity,
+    topologyEvidenceInputPackIdentity,
+  );
   if (!topologyInputMatches) {
     throw new Error("ITX topology input pack identity does not match coverage contract admission");
   }
@@ -2500,30 +2489,13 @@ export async function validateTrackedItxTopologyEvidence(buildSpec, fixture, rep
     throw new Error("buildSpec.itxTopologyEvidenceSha256 must match tracked evidence bytes");
   }
   const evidence = JSON.parse(evidenceBytes);
-  const migratedCurrentV18 = Object.hasOwn(evidence, "migration")
-    || Object.hasOwn(evidence, "routeServiceEvidence");
-  assertExactKeys(evidence, migratedCurrentV18
-    ? [
-        "schemaVersion",
-        "artifactKind",
-        "serviceId",
-        "sourceIssue",
-        "sourceArtifact",
-        "topology",
-        "migration",
-        "routeServiceEvidence",
-        "pack",
-      ]
-    : [
-        "schemaVersion",
-        "artifactKind",
-        "serviceId",
-        "sourceIssue",
-        "stationCatalogPackIdentity",
-        "sourceArtifact",
-        "topology",
-        "pack",
-      ], "ITX topology evidence");
+  if (Object.hasOwn(evidence, "migration") || Object.hasOwn(evidence, "routeServiceEvidence")) {
+    throw new Error("ITX topology migration evidence is forbidden by the current-only datapack contract");
+  }
+  assertExactKeys(evidence, [
+    "schemaVersion", "artifactKind", "serviceId", "sourceIssue", "stationCatalogPackIdentity",
+    "sourceArtifact", "topology", "pack",
+  ], "ITX topology evidence");
   if (evidence?.artifactKind !== "itx-cheongchun-mobile-topology-evidence"
     || evidence.serviceId !== "ITX_CHEONGCHUN"
     || evidence.sourceIssue !== 2135) {
@@ -2533,15 +2505,9 @@ export async function validateTrackedItxTopologyEvidence(buildSpec, fixture, rep
   if (!sourceArtifact || typeof sourceArtifact !== "object" || Array.isArray(sourceArtifact)) {
     throw new Error("ITX topology evidence must contain its source artifact");
   }
-  assertExactKeys(sourceArtifact, migratedCurrentV18
-    ? ["id", "sha256", "completenessEvidenceSha256", "freshUntil"]
-    : [
-        "id",
-        "sha256",
-        "completenessEvidenceSha256",
-        "freshUntil",
-        "stationCatalogPackIdentity",
-      ], "ITX topology evidence.sourceArtifact");
+  assertExactKeys(sourceArtifact, [
+    "id", "sha256", "completenessEvidenceSha256", "freshUntil", "stationCatalogPackIdentity",
+  ], "ITX topology evidence.sourceArtifact");
   requiredString(sourceArtifact.id, "ITX topology evidence.sourceArtifact.id");
   sha256HexString(sourceArtifact.sha256, "ITX topology evidence.sourceArtifact.sha256");
   sha256HexString(
@@ -2558,95 +2524,23 @@ export async function validateTrackedItxTopologyEvidence(buildSpec, fixture, rep
     "id", "inputSha256", "inputSqliteSha256", "inputByteSize", "outputSha256",
     "outputSqliteSha256", "byteSize", "byteSizeDelta",
   ], "ITX topology evidence.pack");
-  let stationCatalogPackIdentity;
-  let topologyInputPackIdentity;
-  if (migratedCurrentV18) {
-    const migration = evidence.migration;
-    assertExactKeys(
-      migration,
-      ["fromCatalogVersion", "toCatalogVersion", "inputPack"],
-      "ITX topology evidence.migration",
-    );
-    const migrationInputPack = requiredTopologyInputPackIdentity(
-      migration.inputPack,
-      "ITX topology evidence.migration.inputPack",
-    );
-    if (migration.fromCatalogVersion !== 18
-      || migration.toCatalogVersion !== 19
-      || !sameTopologyInputPackIdentity(migrationInputPack, currentV18MigrationInputPack)) {
-      throw new Error("ITX topology evidence migration input pack identity mismatch");
-    }
-    const routeServiceEvidence = evidence.routeServiceEvidence;
-    assertExactKeys(
-      routeServiceEvidence,
-      ["artifactEvidence", "stationCatalogEvidence"],
-      "ITX topology evidence.routeServiceEvidence",
-    );
-    const artifactEvidence = routeServiceEvidence.artifactEvidence;
-    const stationCatalogEvidence = routeServiceEvidence.stationCatalogEvidence;
-    assertExactKeys(artifactEvidence, [
-      "serviceClass", "timetableArtifactId", "timetableArtifactSha256", "canonicalPackId",
-      "canonicalPackSha256", "canonicalPackSqliteSha256", "admissionStatus", "admissionEligible",
-      "freshUntil", "sourceIssue",
-    ], "ITX topology evidence.routeServiceEvidence.artifactEvidence");
-    assertExactKeys(stationCatalogEvidence, [
-      "serviceClass", "stationCatalogArtifactKind", "stationCatalogManifestVersion",
-      "stationCatalogPackId", "stationCatalogStationSetSha256", "stationCatalogPayloadSha256",
-      "stationCatalogManifestSha256", "admissionStatus", "admissionEligible", "freshUntil",
-      "sourceIssue",
-    ], "ITX topology evidence.routeServiceEvidence.stationCatalogEvidence");
-    if (artifactEvidence.serviceClass !== "ITX_CHEONGCHUN"
-      || artifactEvidence.timetableArtifactId !== sourceArtifact.id
-      || artifactEvidence.timetableArtifactSha256 !== sourceArtifact.sha256
-      || artifactEvidence.admissionStatus !== "ADMITTED"
-      || artifactEvidence.admissionEligible !== 1
-      || artifactEvidence.freshUntil !== sourceArtifact.freshUntil
-      || artifactEvidence.sourceIssue !== 2135
-      || stationCatalogEvidence.serviceClass !== "ITX_CHEONGCHUN"
-      || stationCatalogEvidence.admissionStatus !== "ADMITTED"
-      || stationCatalogEvidence.admissionEligible !== 1
-      || stationCatalogEvidence.freshUntil !== sourceArtifact.freshUntil
-      || stationCatalogEvidence.sourceIssue !== 2649) {
-      throw new Error("ITX topology evidence route service domains are invalid");
-    }
-    topologyInputPackIdentity = {
-      id: requiredString(
-        artifactEvidence.canonicalPackId,
-        "ITX topology evidence.routeServiceEvidence.artifactEvidence.canonicalPackId",
-      ),
-      sha256: sha256HexString(
-        artifactEvidence.canonicalPackSha256,
-        "ITX topology evidence.routeServiceEvidence.artifactEvidence.canonicalPackSha256",
-      ),
-      sqliteSha256: sha256HexString(
-        artifactEvidence.canonicalPackSqliteSha256,
-        "ITX topology evidence.routeServiceEvidence.artifactEvidence.canonicalPackSqliteSha256",
-      ),
-      byteSize: currentV18CanonicalTopologyInputByteSize,
-    };
-    stationCatalogPackIdentity = requiredStationCatalogPackIdentity({
-      artifactKind: stationCatalogEvidence.stationCatalogArtifactKind,
-      manifestVersion: stationCatalogEvidence.stationCatalogManifestVersion,
-      catalogPackId: stationCatalogEvidence.stationCatalogPackId,
-      stationSetSha256: stationCatalogEvidence.stationCatalogStationSetSha256,
-      payloadSha256: stationCatalogEvidence.stationCatalogPayloadSha256,
-      manifestSha256: stationCatalogEvidence.stationCatalogManifestSha256,
-    }, "ITX topology evidence route service station catalog identity");
-  } else {
-    stationCatalogPackIdentity = requiredStationCatalogPackIdentity(
-      evidence.stationCatalogPackIdentity,
-      "ITX topology evidence.stationCatalogPackIdentity",
-    );
-    if (!sameStationCatalogPackIdentity(
-      stationCatalogPackIdentity,
-      requiredStationCatalogPackIdentity(
-        sourceArtifact.stationCatalogPackIdentity,
-        "ITX topology evidence.sourceArtifact.stationCatalogPackIdentity",
-      ),
-    )) {
-      throw new Error("ITX topology evidence station catalog identity mismatch");
-    }
+  const stationCatalogPackIdentity = requiredStationCatalogPackIdentity(
+    evidence.stationCatalogPackIdentity,
+    "ITX topology evidence.stationCatalogPackIdentity",
+  );
+  if (!sameStationCatalogPackIdentity(
+    stationCatalogPackIdentity,
+    requiredStationCatalogPackIdentity(
+      sourceArtifact.stationCatalogPackIdentity,
+      "ITX topology evidence.sourceArtifact.stationCatalogPackIdentity",
+    ),
+  )) {
+    throw new Error("ITX topology evidence station catalog identity mismatch");
   }
+  const topologyInputPackIdentity = requiredTopologyInputPackIdentity({
+    id: evidence.pack.id, sha256: evidence.pack.inputSha256,
+    sqliteSha256: evidence.pack.inputSqliteSha256, byteSize: evidence.pack.inputByteSize,
+  }, "ITX topology evidence input pack identity");
   for (const pack of packs) {
     const edges = (pack.networkEdges ?? [])
       .filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN")
@@ -2675,29 +2569,10 @@ export async function validateTrackedItxTopologyEvidence(buildSpec, fixture, rep
     || pack.byteSizeDelta !== pack.byteSize - pack.inputByteSize) {
     throw new Error("ITX topology evidence pack identity is invalid");
   }
-  if (migratedCurrentV18) {
-    const packInputIdentity = requiredTopologyInputPackIdentity({
-      id: pack.id,
-      sha256: pack.inputSha256,
-      sqliteSha256: pack.inputSqliteSha256,
-      byteSize: pack.inputByteSize,
-    }, "ITX topology evidence pack input identity");
-    if (!sameTopologyInputPackIdentity(packInputIdentity, currentV18MigrationInputPack)) {
-      throw new Error("ITX topology evidence migration input pack identity mismatch");
-    }
-  } else {
-    topologyInputPackIdentity = requiredTopologyInputPackIdentity({
-      id: pack.id,
-      sha256: pack.inputSha256,
-      sqliteSha256: pack.inputSqliteSha256,
-      byteSize: pack.inputByteSize,
-    }, "ITX topology evidence input pack identity");
-  }
   return {
     evidence,
     stationCatalogPackIdentity,
     topologyInputPackIdentity,
-    migratedCurrentV18,
   };
 }
 
