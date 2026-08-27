@@ -59,9 +59,11 @@ export function parseArgs(args) {
 }
 
 async function readStableRegularFile(filePath, label) {
-  if (!Number.isInteger(constants.O_NOFOLLOW)) fail("INPUT_INVALID", `${label} cannot enforce O_NOFOLLOW`);
+  if (!Number.isInteger(constants.O_NOFOLLOW) || !Number.isInteger(constants.O_NONBLOCK)) {
+    fail("INPUT_INVALID", `${label} cannot enforce safe open flags`);
+  }
   let handle;
-  try { handle = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW); }
+  try { handle = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK); }
   catch (error) { fail("INPUT_INVALID", `${label} must be a regular non-symlink file`, { cause: error }); }
   try {
     const before = await handle.stat();

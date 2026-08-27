@@ -80,6 +80,14 @@ test("materializes only the verified protected output set", async (t) => {
   const duplicate = JSON.parse(handoffBytes);
   duplicate.protectedOutputs[1].path = duplicate.protectedOutputs[0].path;
   await reject("duplicate", rehash(duplicate));
+  const fifoPath = path.join(temporary, "handoff.fifo");
+  const fifo = spawnSync("mkfifo", [fifoPath], { encoding: "utf8" });
+  assert.equal(fifo.status, 0, fifo.stderr);
+  await assert.rejects(materializeCurrentSourceSet({
+    handoffPath: fifoPath, expectedHandoffSha256: sha256(handoffBytes),
+    outputRoot: path.join(temporary, "fifo-output"), sourceRepositorySha: input.sourceRepositorySha,
+    producerSha: input.producerSha, operationId: input.operationId,
+  }), { name: "CurrentSourceSetMaterializationError", code: "INPUT_INVALID" });
   const existingRoot = path.join(temporary, "existing-output");
   await writeFile(existingRoot, "preserve");
   await assert.rejects(materializeCurrentSourceSet({
