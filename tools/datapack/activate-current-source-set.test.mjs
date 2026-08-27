@@ -1223,8 +1223,13 @@ test("topology-only refresh는 current capital/Incheon admission identity를 함
   );
   const capital = result.canonical.packs.find(({ id }) => id === "capital");
   const reviewedCapital = result.reviewedPack.packs.find(({ id }) => id === "capital");
-  assert.deepEqual(reviewedCapital.networkEdges, []);
+  assert.equal(reviewedCapital.networkEdges.length, 4);
+  assert.ok(reviewedCapital.networkEdges.every(({ edgeType }) =>
+    ["ENTRY", "EXIT"].includes(edgeType)));
+  assert.equal(reviewedCapital.minimumTableRows.network_edges, 4);
   assert.ok(capital.networkEdges.every(({ edgeType }) => edgeType === "RIDE"));
+  assert.equal(capital.networkEdges.filter(({ edgeType }) =>
+    ["ENTRY", "EXIT"].includes(edgeType)).length, 0);
   const accessibilityRows = [
     ...capital.facilities,
     ...capital.stationFacilityEvidence,

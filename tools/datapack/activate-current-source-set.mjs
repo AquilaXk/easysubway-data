@@ -1183,7 +1183,6 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
   const reviewedCapital = reviewedPack.packs?.find(({ id }) => id === "capital");
   if (!reviewedCapital) throw new Error("current reviewed capital pack is missing");
   syncCanonicalAccessibilityEvidence(nextCanonical, reviewedCapital);
-  retainPreAuthorityRideEdges(reviewedPack, "reviewed pack");
   retainPreAuthorityRideEdges(nextCanonical, "canonical pack");
   const projection = projectCapitalTopologyIntoCanonicalFixture(
     nextCanonical,
