@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, mkdir, open, rename, rm, rmdir, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, realpath, rename, rm, rmdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -192,8 +192,13 @@ export async function materializeCurrentSourceSet({ handoffPath, expectedHandoff
   requireAbsolute(outputRoot, "output root");
   requireIdentity({ sourceRepositorySha, producerSha, operationId });
   if (!SHA256.test(expectedHandoffSha256 ?? "")) fail("ARGUMENT_INVALID", "expected handoff SHA-256 mismatch");
+  if (path.resolve(outputRoot) !== outputRoot) fail("OUTPUT_INVALID", "current source-set output root must be canonical");
   const parent = path.dirname(outputRoot);
   const parentIdentity = await assertOutputParent(parent);
+  let resolvedParent;
+  try { resolvedParent = await realpath(parent); }
+  catch (error) { fail("OUTPUT_INVALID", "current source-set output parent cannot be resolved", { cause: error }); }
+  if (resolvedParent !== parent) fail("OUTPUT_INVALID", "current source-set output parent must use its canonical path");
   await assertAbsentOutputRoot(outputRoot);
   let handoffBytes;
   try { handoffBytes = await readStableRegularFile(handoffPath, "handoff"); }

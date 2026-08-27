@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { chmod, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -22,7 +22,7 @@ function rehash(value) {
 }
 
 test("materializes only the verified protected output set", async (t) => {
-  const temporary = await mkdtemp(path.join(os.tmpdir(), "current-source-set-materialize-"));
+  const temporary = await realpath(await mkdtemp(path.join(os.tmpdir(), "current-source-set-materialize-")));
   t.after(() => rm(temporary, { recursive: true, force: true }));
   const input = await canonicalCurrentSourceSetHandoffInput(temporary);
   const handoffBytes = buildCurrentSourceSetHandoff(input);
@@ -94,6 +94,20 @@ test("materializes only the verified protected output set", async (t) => {
   await assert.rejects(materializeCurrentSourceSet({
     handoffPath, expectedHandoffSha256: sha256(handoffBytes),
     outputRoot: path.join(sharedParent, "output"), sourceRepositorySha: input.sourceRepositorySha,
+    producerSha: input.producerSha, operationId: input.operationId,
+  }), { name: "CurrentSourceSetMaterializationError", code: "OUTPUT_INVALID" });
+  await assert.rejects(materializeCurrentSourceSet({
+    handoffPath, expectedHandoffSha256: sha256(handoffBytes),
+    outputRoot: `${temporary}/nested/../noncanonical-output`, sourceRepositorySha: input.sourceRepositorySha,
+    producerSha: input.producerSha, operationId: input.operationId,
+  }), { name: "CurrentSourceSetMaterializationError", code: "OUTPUT_INVALID" });
+  const realParent = path.join(temporary, "real-parent");
+  const linkedParent = path.join(temporary, "linked-parent");
+  await mkdir(path.join(realParent, "child"), { recursive: true, mode: 0o700 });
+  await symlink(realParent, linkedParent);
+  await assert.rejects(materializeCurrentSourceSet({
+    handoffPath, expectedHandoffSha256: sha256(handoffBytes),
+    outputRoot: path.join(linkedParent, "child", "output"), sourceRepositorySha: input.sourceRepositorySha,
     producerSha: input.producerSha, operationId: input.operationId,
   }), { name: "CurrentSourceSetMaterializationError", code: "OUTPUT_INVALID" });
   const lockedRoot = path.join(temporary, "locked-output");
