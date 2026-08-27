@@ -423,14 +423,20 @@ test("source-separated current topology는 capital과 Incheon 1/2 line ownership
 });
 
 test("source-separated current topology materialization은 Incheon 1/2 exact 116 edges만 교체한다", async () => {
-  const [inventory, snapshotBytes, fixture] = await Promise.all([
-    readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
-    readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260825.json")),
+  const inventory = await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse);
+  const incheonAdmission = inventory.sources.find(({ id }) => id === "incheon-transit-station-info")
+    ?.topologyAdmissionEvidence;
+  if (!incheonAdmission?.snapshotPath || !incheonAdmission?.snapshotId
+    || !incheonAdmission?.capturedAt || !incheonAdmission?.freshUntil) {
+    throw new Error("current Incheon topology admission is missing");
+  }
+  const [snapshotBytes, fixture] = await Promise.all([
+    readFile(path.join(root, incheonAdmission.snapshotPath)),
     readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8")
       .then(JSON.parse),
   ]);
   const snapshot = JSON.parse(snapshotBytes);
-  const now = new Date("2026-08-25T16:00:00.000Z");
+  const now = new Date(incheonAdmission.capturedAt);
   const legacyCorrectionSnapshot = structuredClone(snapshot);
   legacyCorrectionSnapshot.stationCodeCorrections = [];
   const legacyCorrectionBytes = Buffer.from(`${JSON.stringify(legacyCorrectionSnapshot)}\n`);
@@ -456,7 +462,7 @@ test("source-separated current topology materialization은 Incheon 1/2 exact 116
   ));
 
   assert.deepEqual(materializeIncheonNetworkEdges(pack, snapshot, admission), {
-    snapshotId: "incheon-transit-station-info-20260825",
+    snapshotId: incheonAdmission.snapshotId,
     edgeCount: 116,
   });
   const incheonEdges = pack.networkEdges.filter(({ fromNodeId }) => (
@@ -477,7 +483,7 @@ test("source-separated current topology materialization은 Incheon 1/2 exact 116
     sourceInventory: inventory,
     snapshot,
     snapshotBytes,
-    now: new Date("2026-08-26T15:23:25.299Z"),
+    now: new Date(Date.parse(incheonAdmission.freshUntil) + 1),
   }), /Incheon topology admission is stale/);
 });
 

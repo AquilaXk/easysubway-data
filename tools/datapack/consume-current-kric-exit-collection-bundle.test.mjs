@@ -108,13 +108,18 @@ async function bundleFixture() {
     providerCodeCatalogBytes: "sources/kric-provider-code-catalog-20260228.json",
     routeRostersBytes: "sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
     sourceInventoryBytes: "source-inventory.json",
-    incheonTopologyBytes: "sources/incheon-transit-station-info-20260825.json",
   };
   const input = Object.fromEntries(await Promise.all(Object.entries(paths).map(async ([key, file]) => [
     key, await readFile(path.join(root, file)),
   ])));
+  const incheonAdmission = JSON.parse(input.sourceInventoryBytes).sources
+    .find(({ id }) => id === "incheon-transit-station-info")?.topologyAdmissionEvidence;
+  if (!incheonAdmission?.snapshotPath || !incheonAdmission?.capturedAt || !incheonAdmission?.freshUntil) {
+    throw new Error("current Incheon topology admission is missing");
+  }
+  input.incheonTopologyBytes = await readFile(path.resolve(root, "../..", incheonAdmission.snapshotPath));
   const plan = buildCurrentKricExitCollectionPlan(input, {
-    now: new Date("2026-08-25T16:00:00.000Z"), coverageSelector: "capital-seoul-metro-production",
+    now: new Date(incheonAdmission.capturedAt), coverageSelector: "capital-seoul-metro-production",
   });
   const rows = [{ edMovePath: null, elvtSttCd: null, elvtTpCd: null, exitMvTpOrdr: "1", imgPath: null, mvContDtl: null, mvPathMgNo: "1", stMovePath: null }];
   const results = plan.queryPlan.map((query, index) => ({
@@ -124,8 +129,9 @@ async function bundleFixture() {
   }));
   const snapshotPayload = {
     schemaVersion: 1, artifactKind: "kric-exit-path-provider-snapshot", sourceId: "kric-station-movement-standard",
-    snapshotId: "kric-station-movement-standard-20260825T160000000Z", capturedAt: "2026-08-25T16:00:00.000Z",
-    freshUntil: "2026-08-26T16:00:00.000Z", credentialRedacted: true,
+    snapshotId: `kric-station-movement-standard-${incheonAdmission.capturedAt.replaceAll(/[-:.]/gu, "")}`,
+    capturedAt: incheonAdmission.capturedAt, freshUntil: incheonAdmission.freshUntil,
+    credentialRedacted: true,
     collectionPlanDigest: plan.collectionPlanDigest, queryPlanSha256: plan.queryPlanSha256,
     coverage: { requestPlanComplete: true, queryIds: plan.queryPlan.map(({ queryId }) => queryId) },
     queryPlan: plan.queryPlan, results,
