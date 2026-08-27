@@ -345,6 +345,17 @@ async function main(argv) {
     readJson(args.input), readJson(args["kric-snapshot"]), readJson(args["seoul-snapshot"]),
   ]);
   const output = materializeAccessibilitySourceInput({ input, kricSnapshot, seoulSnapshot });
+  if (typeof kricSnapshot.snapshotId !== "string" || kricSnapshot.snapshotId === ""
+    || !/^[a-f0-9]{64}$/u.test(kricSnapshot.contentSha256 ?? "")
+    || !Number.isFinite(Date.parse(kricSnapshot.freshUntil ?? ""))
+    || new Date(kricSnapshot.freshUntil).toISOString() !== kricSnapshot.freshUntil) {
+    throw new Error("KRIC accessibility snapshot metadata is invalid");
+  }
+  output.kricStandardAccessibilitySnapshot = {
+    snapshotId: kricSnapshot.snapshotId,
+    contentSha256: kricSnapshot.contentSha256,
+    freshUntil: kricSnapshot.freshUntil,
+  };
   await writeFile(args.output, `${JSON.stringify(output, null, 2)}\n`);
 }
 

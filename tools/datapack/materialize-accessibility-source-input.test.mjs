@@ -361,7 +361,7 @@ test("station과 edge identity는 line까지 일치해야 하고 결측 line은 
   }), /station line number missing: station-a/);
 });
 
-test("CLI는 알 수 없는 option을 거부한다", async (t) => {
+test("CLI는 알 수 없는 option을 거부하고 current KRIC snapshot metadata를 결속한다", async (t) => {
   const directory = await mkdtemp(path.join(tmpdir(), "easysubway-accessibility-cli-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const inputPath = path.join(directory, "input.json");
@@ -373,7 +373,13 @@ test("CLI는 알 수 없는 option을 거부한다", async (t) => {
       sourceIds: [], stationMappings: [], stationLineRows: [], routeEdges: [],
       supportedV1Scope: { includedStationIds: [] }, minimumProductionCoverage: { facilities: 0 }, coverageEvidence: [],
     })),
-    writeFile(kricPath, JSON.stringify({ sourceId: "kric-station-convenience-standard", queries: [] })),
+    writeFile(kricPath, JSON.stringify({
+      sourceId: "kric-station-convenience-standard",
+      snapshotId: "kric-current",
+      contentSha256: "a".repeat(64),
+      freshUntil: "2026-08-28T00:00:00.000Z",
+      queries: [],
+    })),
     writeFile(seoulPath, JSON.stringify({ sourceId: "seoul-metro-accessibility", stations: [] })),
   ]);
 
@@ -386,4 +392,29 @@ test("CLI는 알 수 없는 option을 거부한다", async (t) => {
     "--unexpected", "value",
   ], { cwd: path.resolve(import.meta.dirname, "../..") }), /unknown argument: --unexpected/);
   await assert.rejects(readFile(outputPath), /ENOENT/);
+
+  await execFileAsync(process.execPath, [
+    "tools/datapack/materialize-accessibility-source-input.mjs",
+    "--input", inputPath,
+    "--kric-snapshot", kricPath,
+    "--seoul-snapshot", seoulPath,
+    "--output", outputPath,
+  ], { cwd: path.resolve(import.meta.dirname, "../..") });
+  assert.deepEqual(JSON.parse(await readFile(outputPath)), {
+    sourceIds: ["kric-station-convenience-standard", "seoul-metro-accessibility"],
+    stationMappings: [],
+    stationLineRows: [],
+    routeEdges: [],
+    supportedV1Scope: { includedStationIds: [] },
+    minimumProductionCoverage: { facilities: 0 },
+    coverageEvidence: [],
+    movementPathCandidates: [],
+    facilityRows: [],
+    accessibilityStatusEvidence: [],
+    kricStandardAccessibilitySnapshot: {
+      snapshotId: "kric-current",
+      contentSha256: "a".repeat(64),
+      freshUntil: "2026-08-28T00:00:00.000Z",
+    },
+  });
 });
