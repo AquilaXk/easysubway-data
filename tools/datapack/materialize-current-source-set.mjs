@@ -139,6 +139,7 @@ function resultFor(handoff, handoffSha256) {
 async function materializeAtomically({ parent, parentIdentity, outputRoot, entries }) {
   const staging = path.join(parent, `.${path.basename(outputRoot)}.current-source-set-staging-${randomUUID()}`);
   let stagingCreated = false;
+  let outputIdentity;
   try {
     await mkdir(staging, { mode: 0o700 });
     stagingCreated = true;
@@ -149,8 +150,23 @@ async function materializeAtomically({ parent, parentIdentity, outputRoot, entri
     }
     await assertOutputParent(parent, parentIdentity);
     await assertAbsentOutputRoot(outputRoot);
-    await rename(staging, outputRoot);
+    try { await mkdir(outputRoot, { mode: 0o700 }); }
+    catch (error) {
+      if (error?.code === "EEXIST") fail("OUTPUT_EXISTS", "current source-set output root already exists");
+      throw error;
+    }
+    outputIdentity = await assertOutputParent(outputRoot);
+    await rename(path.join(staging, "tools"), path.join(outputRoot, "tools"));
+    await rm(staging, { recursive: true });
+    stagingCreated = false;
   } catch (error) {
+    if (outputIdentity) {
+      const current = await lstat(outputRoot).catch(() => undefined);
+      if (current?.isDirectory() && !current.isSymbolicLink()
+        && current.dev === outputIdentity.dev && current.ino === outputIdentity.ino) {
+        await rm(outputRoot, { recursive: true, force: true });
+      }
+    }
     if (stagingCreated) await rm(staging, { recursive: true, force: true });
     if (error instanceof CurrentSourceSetMaterializationError) throw error;
     fail("OUTPUT_WRITE_FAILED", "current source-set output materialization failed", { cause: error });
