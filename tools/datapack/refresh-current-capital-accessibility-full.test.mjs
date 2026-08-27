@@ -217,14 +217,16 @@ test("PREPARED residue with already-current output bytes recovers under the refr
 
 test("a demonstrably dead refresh owner lease permits PREPARED and COMMITTED journal recovery", async (t) => {
   for (const state of ["PREPARED", "COMMITTED"]) {
-    const root = state === "PREPARED"
-      ? await stagedRefreshRepository(t)
-      : await prepareCurrentFullCapitalProductionRepository(ROOT);
-    if (state === "COMMITTED") t.after(() => rm(root, { recursive: true, force: true }));
+    const root = await stagedRefreshRepository(t);
     const expected = await expectedCurrentBytes(root);
-    const before = state === "PREPARED"
-      ? await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative))))
-      : await predecessorLikeOutputBytes(root, expected);
+    const before = await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative))));
+    const [candidate, facility, exit] = await Promise.all([
+      readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json")).then(JSON.parse),
+      readFile(path.join(root, "tools/datapack/release/current-capital-facility-source-admission.json")).then(JSON.parse),
+      readFile(path.join(root, "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json")).then(JSON.parse),
+    ]);
+    assert.notEqual(facility.candidate.sourceSnapshotSetHash, candidate.sourceSnapshotSetHash, `${state} FACILITY transition binding`);
+    assert.notEqual(exit.candidate.sourceSetSha256, candidate.sourceSnapshotSetHash, `${state} EXIT transition binding`);
     const records = OUTPUTS.map((relative, index) => ({ relative, before: before[index].toString("base64"), beforeSha256: sha(before[index]), after: expected[index].toString("base64"), afterSha256: sha(expected[index]) }));
     if (state === "PREPARED") for (const [index, relative] of OUTPUTS.entries()) await writeFile(path.join(root, relative), expected[index]);
     if (state === "COMMITTED") for (const [index, relative] of OUTPUTS.entries()) await writeFile(path.join(root, relative), before[index]);
@@ -280,12 +282,25 @@ test("already-current activated outputs without a valid current fan-in fail clos
 });
 
 test("already-current canonical corruption fails closed instead of being returned or rewritten", async (t) => {
-  const root = await prepareCurrentFullCapitalProductionRepository(ROOT);
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await stagedRefreshRepository(t);
+  await refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root });
   const stationPath = path.join(root, OUTPUTS[0]); const station = JSON.parse(await readFile(stationPath, "utf8"));
   station.evidenceRows[0].evidenceReason = "corrupt";
   await writeFile(stationPath, JSON.stringify(station));
-  await assert.rejects(refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root }), /current output bytes mismatch/);
+  await assert.rejects(refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root }), /current-capital refresh evidence delta mismatch/);
+});
+
+test("current output headers with a one-sided producer boundary fail closed", async (t) => {
+  const root = await stagedRefreshRepository(t);
+  const expected = await expectedCurrentBytes(root);
+  await Promise.all(OUTPUTS.map((relative, index) => writeFile(path.join(root, relative), expected[index])));
+  const candidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json")));
+  await rebindStagedFacilityCandidateId(root, candidate.candidateId, candidate.sourceSnapshotSetHash);
+
+  await assert.rejects(
+    buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root }),
+    /activated producer boundary mismatch/,
+  );
 });
 
 async function stagedRefreshRepository(t) {
@@ -653,23 +668,6 @@ async function bindCurrentCandidateApprovalFixture(root) {
 async function expectedCurrentBytes(root) {
   return (await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root }))
     .map(({ bytes }) => bytes);
-}
-
-async function predecessorLikeOutputBytes(root, expected) {
-  const [candidate, ledger] = await Promise.all([
-    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json")).then(JSON.parse),
-    readFile(path.join(root, "tools/datapack/release/source-snapshots.json")).then(JSON.parse),
-  ]);
-  const predecessorIds = candidate.sourceSnapshots.map(({ sourceId, snapshotId }) =>
-    ["seoul-metro-route-map-positions", "molit-urban-rail-full-route"].includes(sourceId)
-      ? ledger.find((row) => row.snapshotId === snapshotId)?.previousSnapshotId
-      : snapshotId);
-  const predecessorSourceSetSha256 = sha(JSON.stringify(ledger.filter(({ snapshotId }) =>
-    predecessorIds.includes(snapshotId))));
-  const [station, route] = expected.map((bytes) => JSON.parse(bytes));
-  station.candidate.sourceSetSha256 = predecessorSourceSetSha256;
-  route.candidate.sourceSetSha256 = predecessorSourceSetSha256;
-  return [Buffer.from(JSON.stringify(station)), Buffer.from(JSON.stringify(route))];
 }
 
 async function writeRefreshLease(root, lease) {
