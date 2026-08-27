@@ -3,7 +3,7 @@
   "artifactKind": "production-source-candidates",
   "source": "tools/datapack/source-candidates.json",
   "retrievedAt": "2026-06-22",
-  "updatedAt": "2026-08-04",
+  "updatedAt": "2026-08-27",
   "providers": {
     "kric": {
       "credential": {
@@ -71,6 +71,45 @@
     }
   ],
   "candidates": [
+    {
+      "id": "kric-nationwide-timetable-file",
+      "priority": "P0",
+      "domain": "schedule_timetable",
+      "coverageScope": {
+        "regionIds": ["all"],
+        "operatorIds": ["all-urban-metropolitan-rail-operators"],
+        "lineIds": []
+      },
+      "displayName": "전체_도시철도운행정보_20260630",
+      "detailUrl": "https://data.kric.go.kr/rips/M_01_01/detail.do?id=900",
+      "requestUrl": "https://data.kric.go.kr/rips/dataset/download.file?type=filedata&id=900&operation=1",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://data.kric.go.kr/rips/dataset/download.file?type=filedata&id=900&operation=1",
+        "auth": { "placement": "none" },
+        "requiredParameters": [],
+        "responseEnvelope": "XLSX ZIP attachment",
+        "runner": {
+          "command": "node tools/datapack/collect-kric-nationwide-timetable-file.mjs",
+          "arguments": ["--output-dir", "[absent-task-owned-absolute-directory]"],
+          "requiredEnv": []
+        },
+        "secretPolicy": "credential-free-output"
+      },
+      "licenseEvidenceStatus": "confirmed_unrestricted_public_data_free_use",
+      "sampleEvidenceStatus": "metadata_observed",
+      "admissionStatus": "preflight_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "retrievedAt": "2026-08-27",
+        "detailPageId": "900",
+        "licenseEvidenceUrl": "https://www.data.go.kr/data/15013206/standard.do",
+        "license": "unrestricted",
+        "formats": ["XLSX"],
+        "modifiedAt": "2026-07-06",
+        "coverage": "all urban/metropolitan rail operators"
+      }
+    },
     {
       "id": "busan-transportation-accessibility",
       "priority": "P0",
