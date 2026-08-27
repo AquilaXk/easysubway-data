@@ -161,6 +161,28 @@ export function resolveStagedIncheonTopologyPath(inventory) {
   return snapshotPath;
 }
 
+export async function resolveCurrentLiveChainCandidateStageInputs(candidate, repositoryRoot) {
+  const topologyPath = candidate?.itxTopologyEvidencePath;
+  if (typeof topologyPath !== "string"
+    || !/^tools\/datapack\/itx-cheongchun-topology-evidence-[0-9]{17}\.json$/u.test(topologyPath)) {
+    throw new Error("candidate ITX topology evidence path is not versioned exactly");
+  }
+  requiredBindingSha(candidate?.itxTopologyEvidenceSha256, "candidate ITX topology evidence");
+  const coverage = candidate?.networkEdgeEvidence?.itxCoverageContract;
+  let coveragePath;
+  try { coveragePath = requiredRelativePath(coverage?.path, "ITX coverage contract"); } catch { throw new Error("ITX coverage contract path mismatch"); }
+  try { requiredBindingSha(coverage?.sha256, "ITX coverage contract"); } catch { throw new Error("ITX coverage contract hash mismatch"); }
+  const [topology, coverageFile] = await Promise.all([
+    readStagedRegularFile(repositoryRoot, topologyPath, "candidate ITX topology evidence"),
+    readStagedRegularFile(repositoryRoot, coveragePath, "ITX coverage contract"),
+  ]);
+  if (sha256(topology.bytes) !== candidate.itxTopologyEvidenceSha256) {
+    throw new Error("candidate ITX topology evidence hash mismatch");
+  }
+  if (sha256(coverageFile.bytes) !== coverage.sha256) throw new Error("ITX coverage contract hash mismatch");
+  return Object.freeze([topologyPath, coveragePath]);
+}
+
 async function assertRemoteMain({ root, repositorySha, execFileImpl }) {
   const { stdout } = await execFileImpl("git", ["ls-remote", "--exit-code", DATA_MAIN_REMOTE, "refs/heads/main"], { cwd: root });
   if (String(stdout).trimEnd() !== `${repositorySha}\trefs/heads/main`) throw new Error("exact remote main preflight failed");
@@ -263,8 +285,9 @@ export async function runCurrentCapitalLiveChain({ repositoryRoot, runnerTemp, r
   let currentCandidate;
   try { currentCandidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8")); } catch { throw new Error("current candidate JSON mismatch"); }
   const transferStageInputs = currentLiveChainTransferStageInputs(currentCandidate, root);
+  const candidateStageInputs = await resolveCurrentLiveChainCandidateStageInputs(currentCandidate, root);
   const stagedRoot = await mkdtemp(path.join(path.resolve(runnerTemp), "current-capital-live-chain-"));
-  for (const relative of new Set([...STAGED_INPUTS, ...transferStageInputs])) {
+  for (const relative of new Set([...STAGED_INPUTS, ...transferStageInputs, ...candidateStageInputs])) {
     const source = path.join(root, relative); const destination = path.join(stagedRoot, relative);
     await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
     await cp(source, destination, { recursive: true, force: false, verbatimSymlinks: true, filter: (candidate) => stagedCopyAllowed(root, candidate) });
