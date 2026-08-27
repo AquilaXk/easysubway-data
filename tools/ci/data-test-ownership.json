@@ -463,6 +463,7 @@
     {"path":"tools/datapack/publish-object-storage.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":1336},
     {"path":"tools/datapack/publish-seoul-accessibility-raw.test.mjs","semanticOwner":"data251","classes":["required-pr"],"durationMs":51},
     {"path":"tools/datapack/publish-seoul-transfer-raw.test.mjs","semanticOwner":"data350","classes":["required-pr"],"durationMs":103},
+    {"path":"tools/datapack/publish-server-route-bundle-publication-descriptor.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":940},
     {"path":"tools/datapack/publish-server-route-bundle.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":940},
     {"path":"tools/datapack/publish-static-network-source-raw.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/purge-expired-source-raw.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":3184},
