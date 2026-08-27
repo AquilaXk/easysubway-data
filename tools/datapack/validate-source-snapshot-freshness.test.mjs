@@ -28,6 +28,14 @@ const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
 const syntheticCurrentEvaluationAt = (await nextSyntheticCurrentStaticNetworkNow(root)).toISOString();
 
+test("합성 current static-network clock은 candidate publishedAt 이후다", async () => {
+  const candidate = JSON.parse(await readFile(
+    path.join(root, "tools/datapack/release/candidate-build-spec.json"),
+    "utf8",
+  ));
+  assert.ok(Date.parse(syntheticCurrentEvaluationAt) > Date.parse(candidate.publishedAt));
+});
+
 async function syntheticCurrentRepository(t, prefix) {
   const temp = await mkdtemp(path.join(os.tmpdir(), prefix));
   t.after(() => rm(temp, { recursive: true, force: true }));

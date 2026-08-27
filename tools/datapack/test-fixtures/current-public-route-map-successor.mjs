@@ -474,8 +474,13 @@ export async function nextSyntheticCurrentStaticNetworkNow(root) {
     ...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)),
     topologyClock.expiredAt.getTime(),
   );
-  const nowMillis = Math.max(basisAt + 60_000, topologyClock.inWindow.getTime());
-  if (!Number.isFinite(basisAt) || !Number.isFinite(freshUntil) || nowMillis >= freshUntil) {
+  const candidatePublishedAt = Date.parse(candidate.publishedAt);
+  const nowMillis = Math.max(
+    Math.max(basisAt, candidatePublishedAt) + 60_000,
+    topologyClock.inWindow.getTime(),
+  );
+  if (!Number.isFinite(basisAt) || !Number.isFinite(candidatePublishedAt)
+    || !Number.isFinite(freshUntil) || nowMillis >= freshUntil) {
     throw new Error("synthetic current static-network clock fixture has no valid freshness window");
   }
   return new Date(nowMillis);

@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
+import { collectKricAccessibilitySnapshots } from "./collect-kric-accessibility-snapshots.mjs";
 import { materializeAccessibilitySourceInput } from "./materialize-accessibility-source-input.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
@@ -368,18 +369,34 @@ test("CLI는 알 수 없는 option을 거부하고 current KRIC snapshot metadat
   const kricPath = path.join(directory, "kric.json");
   const seoulPath = path.join(directory, "seoul.json");
   const outputPath = path.join(directory, "output.json");
+  const [kricSnapshot] = await collectKricAccessibilitySnapshots({
+    roster: [{
+      stationId: "station-a", lineId: "line-1", railOprIsttCd: "S1", lnCd: "1", stinCd: "101",
+      canonicalMappings: [{ artifactId: "bundled-capital", stationId: "station-a", lineId: "line-1" }],
+    }],
+    serviceKey: "unused",
+    now: new Date("2026-08-27T00:00:00.000Z"),
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ header: { resultCode: "00", resultMsg: "redacted" }, body: [] }),
+    }),
+  });
   await Promise.all([
     writeFile(inputPath, JSON.stringify({
-      sourceIds: [], stationMappings: [], stationLineRows: [], routeEdges: [],
+      sourceIds: [],
+      stationMappings: [{
+        sourceId: "molit-urban-rail-full-route", sourceStationCode: "MOLIT-L-1",
+        lineId: "line-1", stationId: "station-a",
+      }],
+      stationLineRows: [{
+        sourceId: "molit-urban-rail-full-route", sourceStationCode: "MOLIT-L-1",
+        stationCode: "1", lineId: "line-1", stationNameKo: "가",
+      }],
+      routeEdges: [],
       supportedV1Scope: { includedStationIds: [] }, minimumProductionCoverage: { facilities: 0 }, coverageEvidence: [],
     })),
-    writeFile(kricPath, JSON.stringify({
-      sourceId: "kric-station-convenience-standard",
-      snapshotId: "kric-current",
-      contentSha256: "a".repeat(64),
-      freshUntil: "2026-08-28T00:00:00.000Z",
-      queries: [],
-    })),
+    writeFile(kricPath, JSON.stringify(kricSnapshot)),
     writeFile(seoulPath, JSON.stringify({ sourceId: "seoul-metro-accessibility", stations: [] })),
   ]);
 
@@ -393,6 +410,18 @@ test("CLI는 알 수 없는 option을 거부하고 current KRIC snapshot metadat
   ], { cwd: path.resolve(import.meta.dirname, "../..") }), /unknown argument: --unexpected/);
   await assert.rejects(readFile(outputPath), /ENOENT/);
 
+  await writeFile(kricPath, JSON.stringify({ ...kricSnapshot, contentSha256: "a".repeat(64) }));
+  await assert.rejects(execFileAsync(process.execPath, [
+    "tools/datapack/materialize-accessibility-source-input.mjs",
+    "--input", inputPath,
+    "--kric-snapshot", kricPath,
+    "--seoul-snapshot", seoulPath,
+    "--output", outputPath,
+  ], { cwd: path.resolve(import.meta.dirname, "../..") }), /KRIC accessibility snapshot identity is invalid/);
+  await assert.rejects(readFile(outputPath), /ENOENT/);
+
+  await writeFile(kricPath, JSON.stringify(kricSnapshot));
+
   await execFileAsync(process.execPath, [
     "tools/datapack/materialize-accessibility-source-input.mjs",
     "--input", inputPath,
@@ -400,21 +429,10 @@ test("CLI는 알 수 없는 option을 거부하고 current KRIC snapshot metadat
     "--seoul-snapshot", seoulPath,
     "--output", outputPath,
   ], { cwd: path.resolve(import.meta.dirname, "../..") });
-  assert.deepEqual(JSON.parse(await readFile(outputPath)), {
-    sourceIds: ["kric-station-convenience-standard", "seoul-metro-accessibility"],
-    stationMappings: [],
-    stationLineRows: [],
-    routeEdges: [],
-    supportedV1Scope: { includedStationIds: [] },
-    minimumProductionCoverage: { facilities: 0 },
-    coverageEvidence: [],
-    movementPathCandidates: [],
-    facilityRows: [],
-    accessibilityStatusEvidence: [],
-    kricStandardAccessibilitySnapshot: {
-      snapshotId: "kric-current",
-      contentSha256: "a".repeat(64),
-      freshUntil: "2026-08-28T00:00:00.000Z",
-    },
+  const materialized = JSON.parse(await readFile(outputPath));
+  assert.deepEqual(materialized.kricStandardAccessibilitySnapshot, {
+    snapshotId: kricSnapshot.snapshotId,
+    contentSha256: kricSnapshot.contentSha256,
+    freshUntil: "2026-08-28T00:00:00.000Z",
   });
 });
