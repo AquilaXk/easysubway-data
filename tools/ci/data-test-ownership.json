@@ -298,6 +298,7 @@
     {"path":"tools/datapack/build-current-release-candidate-accessibility-input.test.mjs","semanticOwner":"data530","classes":["required-pr"],"durationMs":47},
     {"path":"tools/datapack/build-current-station-line-accessibility.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":72},
     {"path":"tools/datapack/build-current-strict-route-regression-report.test.mjs","semanticOwner":"data309","classes":["required-pr"],"durationMs":43},
+    {"path":"tools/datapack/build-current-source-set-handoff.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":1100},
     {"path":"tools/datapack/build-current-transfer-source-admission.test.mjs","semanticOwner":"data27","classes":["required-pr"],"durationMs":568},
     {"path":"tools/datapack/build-current-transfer-topology-metrics.test.mjs","semanticOwner":"data339","classes":["required-pr"],"durationMs":96},
     {"path":"tools/datapack/build-data-component-manifest.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":896},
