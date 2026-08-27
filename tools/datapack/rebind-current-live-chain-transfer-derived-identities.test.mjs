@@ -99,16 +99,19 @@ test("current live-chain TRANSFER identity binds regenerated descriptor bytes an
   const descriptorValue = JSON.parse(descriptor);
   const row = snapshots.find(({ sourceId }) => sourceId === "seoul-metro-transfer-distance-duration");
   const receipt = structuredClone(row.rawReceipt);
-  const regeneratedInventory = structuredClone(inventory);
-  regeneratedInventory.sources.find(({ id }) => id === "seoul-metro-transfer-distance-duration").transferAdmissionEvidence.snapshotFileSha256 = createHash("sha256").update(descriptor).digest("hex");
-  assert.doesNotThrow(() => assertCurrentLiveChainTransferIdentity(candidate, regeneratedInventory, snapshots, descriptorValue, descriptor, receipt));
+  const trackedTransfer = inventory.sources.find(({ id }) => id === "seoul-metro-transfer-distance-duration");
+  assert.equal(
+    trackedTransfer.transferAdmissionEvidence.snapshotFileSha256,
+    createHash("sha256").update(descriptor).digest("hex"),
+  );
+  assert.doesNotThrow(() => assertCurrentLiveChainTransferIdentity(candidate, inventory, snapshots, descriptorValue, descriptor, receipt));
   for (const mutate of [
     () => { structuredClone(candidate).sourceSnapshots.find(({ sourceId }) => sourceId === "seoul-metro-transfer-distance-duration").rawObjectUri = "oci://changed/object"; },
     () => { structuredClone(inventory).sources.find(({ id }) => id === "seoul-metro-transfer-distance-duration").transferAdmissionEvidence.contentSha256 = "0".repeat(64); },
     () => { structuredClone(inventory).sources.find(({ id }) => id === "seoul-metro-transfer-distance-duration").transferAdmissionEvidence.schemaFingerprint = "1".repeat(64); },
     () => { structuredClone(receipt).rawObjectUri = "oci://changed/object"; },
   ]) {
-    const nextCandidate = structuredClone(candidate); const nextInventory = structuredClone(regeneratedInventory); const nextReceipt = structuredClone(receipt);
+    const nextCandidate = structuredClone(candidate); const nextInventory = structuredClone(inventory); const nextReceipt = structuredClone(receipt);
     const target = { candidate: nextCandidate, inventory: nextInventory, receipt: nextReceipt };
     const text = mutate.toString();
     if (text.includes("candidate")) target.candidate.sourceSnapshots.find(({ sourceId }) => sourceId === "seoul-metro-transfer-distance-duration").rawObjectUri = "oci://changed/object";
