@@ -15,7 +15,7 @@ const GIT_SHA = /^[a-f0-9]{40}$/u;
 const MAXIMUM_WORKBOOK_BYTES = 128 * 1024 * 1024;
 const MAXIMUM_RECEIPT_BYTES = 64 * 1024;
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
-const canonical = (value) => Array.isArray(value) ? value.map(canonical) : !value || typeof value !== "object" ? value : Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+const canonical = (value) => Array.isArray(value) ? value.map(canonical) : !value || typeof value !== "object" ? value : Object.fromEntries(Object.keys(value).sort((left, right) => left.localeCompare(right)).map((key) => [key, canonical(value[key])]));
 const jsonBytes = (value) => Buffer.from(`${JSON.stringify(canonical(value))}\n`);
 const fail = (code) => { throw new Error(`KRIC_RETAINED_FILE_OPERATION_${code}`); };
 
