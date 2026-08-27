@@ -428,7 +428,6 @@ test("activation은 current public route-map admission의 scoped 1–8 authority
   assert.equal(source.coverageScope.operatorIds[0], "seoul-metro");
   assert.equal(layout.status, "ADMITTED");
   assert.equal(topology.status, "ADMITTED");
-  assert.equal(layout.topologySnapshotId, topology.topologySnapshotId);
   assert.equal(topology.positionSnapshotSha256, layout.snapshotSha256);
   const [positionSnapshotBytes, layoutTopologyBytes] = await Promise.all([
     readFile(path.join(root, layout.snapshotPath)),
@@ -436,10 +435,12 @@ test("activation은 current public route-map admission의 scoped 1–8 authority
   ]);
   assert.equal(sha256(positionSnapshotBytes), layout.snapshotSha256);
   assert.equal(sha256(layoutTopologyBytes), layout.topologySnapshotSha256);
+  const layoutTopology = JSON.parse(layoutTopologyBytes);
   const positionSnapshot = JSON.parse(positionSnapshotBytes);
   assert.equal(positionSnapshot.routeMapLayoutArtifact.topologySnapshotId, layout.topologySnapshotId);
   assert.equal(positionSnapshot.routeMapLayoutArtifact.topologySnapshotSha256, layout.topologySnapshotSha256);
   const admittedTopology = await readJson(`tools/datapack/sources/${topology.topologySnapshotId}.json`);
+  assert.equal(layoutTopology.contentSha256, topology.topologyContentSha256);
   assert.equal(admittedTopology.contentSha256, topology.topologyContentSha256);
   const admittedLineIds = new Set(admittedTopology.lines.map(({ lineId }) => lineId));
   const scopedLineIds = topology.topologyLineages.map(({ lineId }) => lineId);
@@ -1161,8 +1162,10 @@ test("topology-only refresh는 current capital/Incheon admission identity를 함
   const currentIncheonTopology = JSON.parse(currentIncheonTopologyBytes);
   assert.equal(currentIncheonTopology.topologyLineIds.length, 2);
   assert.equal(currentIncheonTopology.edgeCount, 116);
-  assert.equal(topologySnapshotId.slice(-8), "20260825");
-  assert.equal(path.basename(currentIncheonTopologyPath, ".json").slice(-8), "20260825");
+  const capitalSnapshotDate = currentTopology.capturedAt.slice(0, 10).replaceAll("-", "");
+  const incheonSnapshotDate = currentIncheonTopology.capturedAt.slice(0, 10).replaceAll("-", "");
+  assert.equal(topologySnapshotId.slice(-8), capitalSnapshotDate);
+  assert.equal(path.basename(currentIncheonTopologyPath, ".json").slice(-8), incheonSnapshotDate);
   const currentItxTopologyEvidencePath = baseSpec.itxTopologyEvidencePath;
   const currentItxTopologyEvidenceBytes = await readFile(path.join(root, currentItxTopologyEvidencePath));
   const buildNow = new Date(Math.max(
@@ -1309,6 +1312,11 @@ test("stale Incheon input은 current topology materialization 전에 fail-closed
   assert.equal(currentTopology.lines.some(({ lineId }) => lineId === "line-42b5805f3b5a"), false);
   assert.equal(currentTopology.lines.some(({ lineId }) => lineId === "line-98718184f016"), false);
   const staleIncheon = JSON.parse(incheonBytes);
+  const buildNow = new Date(Date.parse(currentTopology.capturedAt) + 1_000).toISOString();
+  assert.ok(Date.parse(buildNow) < Date.parse(currentTopology.freshUntil));
+  staleIncheon.capturedAt = new Date(Date.parse(buildNow) - 24 * 60 * 60 * 1_000).toISOString();
+  staleIncheon.freshUntil = buildNow;
+  const staleIncheonTopologyPath = `tools/datapack/sources/incheon-transit-station-info-${staleIncheon.capturedAt.slice(0, 10).replaceAll("-", "")}.json`;
   const staleIncheonBytes = Buffer.from(`${JSON.stringify(staleIncheon)}\n`);
   const positionSnapshotBytes = await collectPositionSnapshotBytes(sourceInventory);
   const layoutTopologySnapshotBytesById = await collectLayoutTopologySnapshotBytes(sourceInventory);
@@ -1321,7 +1329,7 @@ test("stale Incheon input은 current topology materialization 전에 fail-closed
     currentTopologyPath,
     currentIncheonTopology: staleIncheon,
     currentIncheonTopologyBytes: staleIncheonBytes,
-    currentIncheonTopologyPath: incheonTopologyPath,
+    currentIncheonTopologyPath: staleIncheonTopologyPath,
     currentItxTopologyEvidencePath,
     currentItxTopologyEvidenceBytes,
     baselineTopology,
@@ -1329,7 +1337,7 @@ test("stale Incheon input은 current topology materialization 전에 fail-closed
     canonical,
     productionInput,
     productionScopePolicyBytes,
-    buildNow: staleIncheon.freshUntil,
+    buildNow,
     snapshotBytesByPath: positionSnapshotBytes,
     layoutTopologySnapshotBytesById,
   }), /current Incheon topology snapshot is stale/);
@@ -1483,8 +1491,10 @@ test("primary source set은 current KRIC·7-source·two-topology identity를 한
   const currentIncheonTopologyPath = currentIncheonSource.topologyAdmissionEvidence.snapshotPath;
   const currentIncheonTopologyBytes = await readFile(path.join(root, currentIncheonTopologyPath));
   const currentIncheonTopology = JSON.parse(currentIncheonTopologyBytes);
-  assert.equal(currentCapitalAdmission.topologySnapshotId.slice(-8), "20260825");
-  assert.equal(path.basename(currentIncheonTopologyPath, ".json").slice(-8), "20260825");
+  const capitalSnapshotDate = currentTopology.capturedAt.slice(0, 10).replaceAll("-", "");
+  const incheonSnapshotDate = currentIncheonTopology.capturedAt.slice(0, 10).replaceAll("-", "");
+  assert.equal(currentCapitalAdmission.topologySnapshotId.slice(-8), capitalSnapshotDate);
+  assert.equal(path.basename(currentIncheonTopologyPath, ".json").slice(-8), incheonSnapshotDate);
   const activationMillis = Math.max(
     Date.parse(currentTopology.capturedAt),
     Date.parse(currentIncheonTopology.capturedAt),
