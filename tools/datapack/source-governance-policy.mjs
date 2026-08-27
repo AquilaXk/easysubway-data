@@ -96,6 +96,15 @@ export function approvedGovernanceBindingTransition({ snapshot, currentPolicyVer
   throw new Error("SOURCE_FRESHNESS_POLICY_MISSING: governance policy binding");
 }
 
+export function isApprovedCurrentOrPriorGovernanceBinding({ binding, currentPolicyVersion, currentPolicySha256 }) {
+  if (binding?.governancePolicyVersion === currentPolicyVersion
+    && binding.governancePolicySha256 === currentPolicySha256) return true;
+  return currentPolicyVersion === GOVERNANCE_POLICY_VERSION
+    && currentPolicySha256 === CURRENT_GOVERNANCE_POLICY_SHA256
+    && binding?.governancePolicyVersion === GOVERNANCE_POLICY_VERSION
+    && binding.governancePolicySha256 === PRIOR_GOVERNANCE_POLICY_SHA256;
+}
+
 export function evaluateSourceGovernance({
   source,
   snapshot,

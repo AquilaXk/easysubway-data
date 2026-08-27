@@ -61,7 +61,7 @@ test("current route-map proof는 two-hop same-source current head에서 유일�
   }
 });
 
-test("FACILITY rebind clock는 active snapshot observedAt만 사용한다", () => {
+test("FACILITY rebind source clock는 active snapshot observedAt만 사용한다", () => {
   assert.equal(activeFacilitySnapshotObservedAt(Buffer.from(JSON.stringify({
     capturedAt: "2026-08-16T01:56:19.375Z",
     observedAt: "2026-08-16T01:56:19.375Z",

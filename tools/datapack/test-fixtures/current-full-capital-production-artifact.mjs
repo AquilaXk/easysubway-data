@@ -142,9 +142,10 @@ async function writeFreshFacilityAdmission(repositoryRoot, observedAt) {
   const active = inventory.sources.find(({ id }) => id === FACILITY_OPERATION.sourceId)?.accessibilityAdmissionEvidence;
   if (!active?.snapshotPath) throw new Error("synthetic FACILITY admission snapshot missing");
   const snapshotBytes = await readFile(path.join(repositoryRoot, active.snapshotPath));
+  const candidateBuildSpec = JSON.parse(values[paths[5]]);
   const admission = buildCurrentCapitalFacilitySourceAdmission({
     observedAt: observedAt.toISOString(), planBytes: Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(plan)),
-    canonicalPackBytes: values[paths[0]], snapshotBytes, candidateBuildSpec: JSON.parse(values[paths[5]]),
+    candidateEvaluationAt: candidateBuildSpec.publishedAt, canonicalPackBytes: values[paths[0]], snapshotBytes, candidateBuildSpec,
     sourceInventoryBytes: values[paths[4]], sourceSnapshots: JSON.parse(values[paths[6]]),
     governancePolicy: JSON.parse(values[paths[7]]), governancePolicyBytes: values[paths[7]],
     freshnessPolicy: JSON.parse(values[paths[8]]),
