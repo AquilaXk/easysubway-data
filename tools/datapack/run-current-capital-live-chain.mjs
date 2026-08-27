@@ -44,6 +44,7 @@ const EXCLUDED_STAGED_PATHS = Object.freeze([
   "tools/datapack/release/current-capital-accessibility-transition.json",
 ]);
 const CURRENT_KRIC_EXIT_PLAN_INPUTS_PATH = "tools/datapack/release/current-kric-exit-plan-inputs.json";
+const RETAINED_EXIT_PLAN_MISMATCH = "retained EXIT bundle plan is not provider-equivalent to the current plan";
 export const CURRENT_KRIC_EXIT_REQUEST_TIMEOUT_MS = 30_000;
 export const CURRENT_KRIC_EXIT_REQUEST_INTERVAL_MS = 250;
 
@@ -211,6 +212,29 @@ export async function assertCurrentCapitalFacilityAdmission({ stagedRoot, now })
   return admission;
 }
 
+function providerEquivalentCurrentPlan(embeddedPlanBytes, currentPlanBytes) {
+  let embeddedPlan;
+  let currentPlan;
+  try {
+    embeddedPlan = JSON.parse(embeddedPlanBytes.toString("utf8"));
+    currentPlan = JSON.parse(currentPlanBytes.toString("utf8"));
+    if (!embeddedPlanBytes.equals(Buffer.from(canonicalKricExitPathCollectionPlanJson(embeddedPlan)))
+      || !currentPlanBytes.equals(Buffer.from(canonicalKricExitPathCollectionPlanJson(currentPlan)))) {
+      throw new Error("collection plan bytes are not canonical");
+    }
+  } catch (error) { throw new Error(RETAINED_EXIT_PLAN_MISMATCH, { cause: error }); }
+  const normalizedPlan = (plan) => {
+    const normalized = structuredClone(plan);
+    delete normalized.collectionPlanDigest;
+    delete normalized.candidate.candidateId;
+    return canonicalJson(normalized);
+  };
+  if (normalizedPlan(embeddedPlan) !== normalizedPlan(currentPlan)) {
+    throw new Error(RETAINED_EXIT_PLAN_MISMATCH);
+  }
+  return currentPlan;
+}
+
 export async function recoverCurrentKricExitCollection({ retainedExitBundle, expectedRetainedExitBundleSha256, currentPlanBytes, repository, repositorySha, operationId, operationNow, root, execFileImpl }) {
   if (!path.isAbsolute(retainedExitBundle ?? "")) throw new Error("retained EXIT bundle must be absolute");
   if (!/^[a-f0-9]{64}$/u.test(expectedRetainedExitBundleSha256 ?? "")) throw new Error("retained EXIT bundle expected digest mismatch");
@@ -227,23 +251,7 @@ export async function recoverCurrentKricExitCollection({ retainedExitBundle, exp
   if (!retained.bytes.equals(Buffer.from(canonicalBundle))) throw new Error("retained EXIT bundle bytes are not canonical");
   const embeddedPlanBytes = Buffer.from(bundle.collectionPlanJson);
   const currentPlanBuffer = Buffer.from(currentPlanBytes);
-  let embeddedPlan;
-  let currentPlan;
-  try {
-    embeddedPlan = JSON.parse(embeddedPlanBytes.toString("utf8"));
-    currentPlan = JSON.parse(currentPlanBuffer.toString("utf8"));
-    if (!embeddedPlanBytes.equals(Buffer.from(canonicalKricExitPathCollectionPlanJson(embeddedPlan)))
-      || !currentPlanBuffer.equals(Buffer.from(canonicalKricExitPathCollectionPlanJson(currentPlan)))) throw new Error();
-  } catch { throw new Error("retained EXIT bundle plan is not provider-equivalent to the current plan"); }
-  const normalizedPlan = (plan) => {
-    const normalized = structuredClone(plan);
-    delete normalized.collectionPlanDigest;
-    delete normalized.candidate.candidateId;
-    return canonicalJson(normalized);
-  };
-  if (normalizedPlan(embeddedPlan) !== normalizedPlan(currentPlan)) {
-    throw new Error("retained EXIT bundle plan is not provider-equivalent to the current plan");
-  }
+  const currentPlan = providerEquivalentCurrentPlan(embeddedPlanBytes, currentPlanBuffer);
   let snapshotBytes = Buffer.from(bundle.providerSnapshotJson);
   let snapshot;
   let sourceReceipt;
