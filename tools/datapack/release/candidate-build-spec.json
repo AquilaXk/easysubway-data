@@ -3,7 +3,7 @@
   "artifactKind": "datapack-candidate-build-spec",
   "candidateId": "capital-pilot-candidate-20260828",
   "productionScopeId": "capital_pilot_android_v1",
-  "publishedAt": "2026-08-28T12:41:56.000Z",
+  "publishedAt": "2026-08-28T14:18:23.340Z",
   "releaseSequence": 1,
   "fixturePath": "tools/datapack/release/capital-production-canonical-pack.json",
   "itxTopologyEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence-20260824170958799.json",
@@ -11,7 +11,7 @@
   "networkEdgeEvidence": {
     "sourceInventory": {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "df5edda4258721280316570209ee6b70879b0f7427be68b837bc888ca8032c31"
+      "sha256": "842cc65d6f1bdec4a9ed7915b1883d36a0e97cf5b569153ab42e82bac8a33c7d"
     },
     "capitalTopology": {
       "path": "tools/datapack/sources/capital-route-topology-20260724.json",
@@ -65,7 +65,7 @@
     "seoul-metro-route-map-positions-current-20260826T035408251Z",
     "kric-subway-timetable-line4-pilot-20260809",
     "seoul-metro-accessibility-20260822T094318289Z",
-    "kric-station-convenience-standard-20260827T101034357Z",
+    "kric-station-convenience-standard-20260828T141640087Z",
     "molit-urban-rail-full-route-current-20260826T035408251Z",
     "seoulmetro-station-line-info-revalidated-20260814",
     "seoul-metro-transfer-distance-duration-20260815T094038817Z"
@@ -123,10 +123,10 @@
       "governancePolicySha256": "13f8a78c0ae0f7bfa6817005f44a92be3131e6f6708a69a4024747478203beaa"
     },
     {
-      "snapshotId": "kric-station-convenience-standard-20260827T101034357Z",
+      "snapshotId": "kric-station-convenience-standard-20260828T141640087Z",
       "sourceId": "kric-station-convenience-standard",
-      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-station-convenience-standard/20260827/1dab7f2dc3109d83d32a090b49f10f2b40e34bc3ccf74ec52d60efa3e6918433.json",
-      "rawSha256": "1dab7f2dc3109d83d32a090b49f10f2b40e34bc3ccf74ec52d60efa3e6918433",
+      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-station-convenience-standard/20260828/6b7173a23b33d43e4a62413b903da3fac0329dd30af4b8dcc70bfd2959ffba03.json",
+      "rawSha256": "6b7173a23b33d43e4a62413b903da3fac0329dd30af4b8dcc70bfd2959ffba03",
       "redactedRequestFingerprint": "6bfc760d8afac637c2cb39784a2b6b7c68c7e6fa81c15270a405dd8dfca86a49",
       "schemaFingerprint": "6cf45df8488510187063c4b7396ca9628295d6961becdcf1de87f2ae521e8591",
       "licenseStatus": "PASS",
@@ -134,8 +134,8 @@
       "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
       "snapshotStatus": "LOCKED",
       "credentialRedacted": true,
-      "freshnessExpiresAt": "2026-11-25T10:10:34.357Z",
-      "rawRetentionExpiresAt": "2026-11-25T10:10:34.357Z",
+      "freshnessExpiresAt": "2026-11-26T14:16:40.087Z",
+      "rawRetentionExpiresAt": "2026-11-26T14:16:40.087Z",
       "governancePolicyVersion": "2026-07-15",
       "governancePolicySha256": "e6e607e0711bebafbc25843996a0d6ff1dce6e6e82b4cadb425e78ccd284d9f3"
     },
@@ -191,13 +191,13 @@
       "governancePolicySha256": "13f8a78c0ae0f7bfa6817005f44a92be3131e6f6708a69a4024747478203beaa"
     }
   ],
-  "sourceSnapshotSetHash": "32db3b4398ba8153ca398de001ca4050290af639168aa64065d5a9d028c74515",
+  "sourceSnapshotSetHash": "c280fd45592fdf4eb2f9b0a6fbfda22f1cf4a08ef9d54dde0fdb1a4b8ac893cf",
   "approvedAliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
   "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
   "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
   "approvedOverrideSetHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
-  "sourceInventorySha256": "484b0b7cf8b81432b65cf5acab150072401f49dd676de25a94e68f4f79f49fec",
-  "builderGitSha": "e6e2a53111cd4d2032dfd70a4de8f7b57e4832f5",
+  "sourceInventorySha256": "80a99f8680d96624774de8a6a7ce37dca046a978a75e561dbe67a43d31bb9d54",
+  "builderGitSha": "d06c30ae1a1b4574621a68faa65f3ba8da1a5362",
   "builderVersion": "build-datapack.mjs@26",
   "officialOdFareEvidence": {
     "sourceId": "seoul-metro-official-od-fares",
