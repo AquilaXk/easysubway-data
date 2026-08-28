@@ -37,6 +37,12 @@ const CURRENT_CANDIDATE_SOURCE_IDS = Object.freeze([
   "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info",
   "seoul-metro-transfer-distance-duration",
 ]);
+const CANONICAL_PROVENANCE_PROPERTIES = Object.freeze([
+  "stations", "stationLines", "stationExits", "stationCarDoorHints", "networkEdges",
+  "routeMapPositions", "routeMapLineTracks", "facilities", "stationFacilityEvidence",
+  "serviceCalendars", "serviceCalendarDates", "transitRoutes", "transitTrips",
+  "transitStopTimes", "officialOdFareQuotes",
+]);
 
 class StaleAccessibilityEvidenceError extends Error {}
 
@@ -604,10 +610,25 @@ export function activeReleaseSnapshots(snapshots, canonical, headsBySource = val
     && headsBySource[snapshot.sourceId] === snapshot.snapshotId);
 }
 
+function canonicalProvenanceSourceIds(capital) {
+  return new Set(CANONICAL_PROVENANCE_PROPERTIES.flatMap((property) =>
+    (capital[property] ?? []).map(({ sourceId }) => sourceId)
+      .filter((sourceId) => typeof sourceId === "string" && sourceId.length > 0)));
+}
+
 export function currentCandidateReleaseSnapshots(snapshots, canonical, headsBySource = validateLineage(snapshots).headsBySource) {
   const capital = canonical.packs?.find(({ id }) => id === "capital");
   const canonicalSourceIds = capital?.sourceInventory?.map(({ id }) => id);
-  if (JSON.stringify(canonicalSourceIds) !== JSON.stringify(CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS)) {
+  const canonicalTail = Array.isArray(canonicalSourceIds)
+    ? canonicalSourceIds.slice(CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS.length) : [];
+  const canonicalProvenanceIds = capital ? canonicalProvenanceSourceIds(capital) : new Set();
+  if (!Array.isArray(canonicalSourceIds)
+    || JSON.stringify(canonicalSourceIds.slice(0, CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS.length))
+      !== JSON.stringify(CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS)
+    || new Set(canonicalTail).size !== canonicalTail.length
+    || canonicalTail.some((sourceId) => CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS.includes(sourceId)
+      || CURRENT_CANDIDATE_SOURCE_IDS.includes(sourceId)
+      || !canonicalProvenanceIds.has(sourceId))) {
     throw new Error("capital canonical active source identity drift");
   }
   return CURRENT_CANDIDATE_SOURCE_IDS.map((sourceId) => {
