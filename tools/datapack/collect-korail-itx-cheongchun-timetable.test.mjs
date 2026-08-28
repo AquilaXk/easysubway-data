@@ -2855,7 +2855,7 @@ test("ITX CLI는 station catalog runtime mismatch를 artifact 오류로 감싸�
   } finally {
     Object.defineProperty(process.versions, "sqlite", descriptor);
   }
-  await assert.rejects(result, /STATION_CATALOG_RUNTIME_UNSUPPORTED/);
+  await assert.rejects(result, /STATION_CATALOG_RUNTIME_UNSUPPORTED: requires Node 24\.19\.0 \/ SQLite 3\.53\.4, received Node 24\.19\.0 \/ SQLite 0\.0\.0/);
   assert.equal(invoked, false);
 });
 

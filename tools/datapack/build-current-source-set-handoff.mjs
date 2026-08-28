@@ -18,6 +18,7 @@ import {
 import { OCI_BUCKET, OCI_NAMESPACE } from "./build-current-capital-live-chain-oci-plan.mjs";
 import { canonicalCurrentCapitalLiveChainOciReceiptJson } from "./build-current-capital-live-chain-oci-receipt.mjs";
 import { canonicalCurrentExitAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
+import { buildFixture } from "./import-official-sources.mjs";
 import { releaseRequestBindingViolations } from "./verify-release-request-binding.mjs";
 
 const REPOSITORY = "AquilaXk/easysubway-data";
@@ -26,7 +27,6 @@ const SHA256 = /^[a-f0-9]{64}$/u;
 const OPERATION = /^[a-z0-9][a-z0-9-]{7,127}$/u;
 const RETAINED_SOURCE_REPOSITORY_SHA = "befa78d0bd1dec8ce609bd1800b099d569e96734";
 const RETAINED_PRODUCTION_INPUT_SHA256 = "8553d59adeea4fd90b94119fbf46ff39b28210edb9543a94fff864b5b54ba402";
-const RETAINED_REVIEWED_PACK_SHA256 = "bdea781b533bb4e75cab12e6ba5a48d3fd753c2e9d8ba3325ac30b69b54e8341";
 const RETAINED_OWNERSHIP_SHA256 = "629663ff845920813f9c939f3521ae154bbcb25f8f71c2a03e6014ddc8a2edb8";
 const COMPONENT_NAMES = Object.freeze(Object.keys(CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS));
 const RELEASE_REQUEST_COMPONENT_PATH = "tools/datapack/release/release-request.json";
@@ -180,10 +180,9 @@ function verifyEmbeddedExitReceipt({ components, externalReceipt, sourceReposito
   return exitReceipt;
 }
 
-function validateRetainedSourceInputs({ sourceRepositorySha, productionInputBytes, reviewedPackBytes, ownershipBytes }) {
+function validateRetainedSourceInputs({ sourceRepositorySha, productionInputBytes, ownershipBytes }) {
   if (sourceRepositorySha !== RETAINED_SOURCE_REPOSITORY_SHA
     || sha256(productionInputBytes) !== RETAINED_PRODUCTION_INPUT_SHA256
-    || sha256(reviewedPackBytes) !== RETAINED_REVIEWED_PACK_SHA256
     || sha256(ownershipBytes) !== RETAINED_OWNERSHIP_SHA256) {
     throw new Error("retained source input identity mismatch");
   }
@@ -203,8 +202,18 @@ function protectedOutputs({ entries, components, releaseRequest, productionInput
   };
   return PROTECTED_COMPONENT_NAMES.map((name) => embeddedBytes(PROTECTED_COMPONENT_PATHS[name], source[name], `protected ${name}`));
 }
-function validateProductionInputs({ productionInputBytes, reviewedPackBytes, candidate }) {
+function validateProductionInputs({ productionInputBytes, reviewedPackBytes, sourceInventoryBytes, candidate }) {
   const input = parseJsonBytes(productionInputBytes, "production source input");
+  const sourceInventory = parseJsonBytes(sourceInventoryBytes, "production source inventory");
+  let expectedReviewedPackBytes;
+  try {
+    expectedReviewedPackBytes = Buffer.from(`${JSON.stringify(buildFixture(sourceInventory, input), null, 2)}\n`);
+  } catch {
+    throw new Error("production reviewed pack derivation mismatch");
+  }
+  if (!Buffer.isBuffer(reviewedPackBytes) || !reviewedPackBytes.equals(expectedReviewedPackBytes)) {
+    throw new Error("production reviewed pack derivation mismatch");
+  }
   const reviewed = parseJsonBytes(reviewedPackBytes, "reviewed production pack");
   if (!input || typeof input !== "object" || !reviewed || typeof reviewed !== "object"
     || !Array.isArray(reviewed.packs) || reviewed.packs.length !== 1
@@ -259,8 +268,8 @@ export function buildCurrentSourceSetHandoff({ compositeReceiptBytes, compositeB
     candidate,
     expectedApprovalId,
   });
-  validateRetainedSourceInputs({ sourceRepositorySha, productionInputBytes, reviewedPackBytes, ownershipBytes });
-  validateProductionInputs({ productionInputBytes, reviewedPackBytes, candidate });
+  validateRetainedSourceInputs({ sourceRepositorySha, productionInputBytes, ownershipBytes });
+  validateProductionInputs({ productionInputBytes, reviewedPackBytes, sourceInventoryBytes: components.sourceInventory.bytes, candidate });
   const mobile = validateItxEvidence({ itxTopologyEvidenceBytes, coverageContractBytes, ownershipBytes, mobilePackBytes, mobileProfile, candidate });
   const outputs = protectedOutputs({ entries, components, releaseRequest: compositeReleaseRequest, productionInputBytes, reviewedPackBytes });
   const facility = components.facilityAdmission.value;
@@ -510,8 +519,8 @@ function validateEmbeddedHandoff(payload) {
   assertKeys(payload.mobile, ["gzip", "gzipSha256", "profile", "repositoryRevision", "sqliteSha256"], "mobile handoff");
   if (payload.ownership?.path !== "tools/ci/data-test-ownership.json" || payload.mobile.gzip?.path !== "apps/mobile/assets/datapacks/capital.sqlite.gz") throw new Error("mobile handoff path mismatch");
   const ownershipBytes = readEmbeddedBytes(payload.ownership, "ownership handoff");
-  validateRetainedSourceInputs({ sourceRepositorySha: payload.sourceRepositorySha, productionInputBytes, reviewedPackBytes, ownershipBytes });
-  validateProductionInputs({ productionInputBytes, reviewedPackBytes, candidate: protectedCandidate });
+  validateRetainedSourceInputs({ sourceRepositorySha: payload.sourceRepositorySha, productionInputBytes, ownershipBytes });
+  validateProductionInputs({ productionInputBytes, reviewedPackBytes, sourceInventoryBytes: composite.components.sourceInventory.bytes, candidate: protectedCandidate });
   const mobilePackBytes = readEmbeddedBytes(payload.mobile.gzip, "mobile gzip handoff");
   const mobile = validateItxEvidence({
     itxTopologyEvidenceBytes: readEmbeddedBytes(payload.itx.topologyEvidence, "ITX topology handoff"),

@@ -22,7 +22,7 @@ const LINE_ID = "line-54a7b980b7c3";
 const CAPITAL_APPROACH_LINE_ID = "line-6e39be0cb6e2";
 const TOPOLOGY_EVIDENCE_PATH = "tools/datapack/itx-cheongchun-topology-evidence.json";
 const STATION_CATALOG_NODE_VERSION = "24.19.0";
-const STATION_CATALOG_SQLITE_VERSION = "3.53.3";
+const STATION_CATALOG_SQLITE_VERSION = "3.53.4";
 const PASSENGER_STOP_NAMES = new Set(["시발", "여객승하차", "종착"].map(normalize));
 const ITX_CORRIDOR_MATRIX = Object.freeze([
   ["station-8aa315864466", "용산", CAPITAL_APPROACH_LINE_ID, 28, 1], ["station-c0679b9a6cf8", "옥수", CAPITAL_APPROACH_LINE_ID, 32, 2], ["station-e5cf592cf355", "왕십리", CAPITAL_APPROACH_LINE_ID, 34, 3],
@@ -820,7 +820,7 @@ function openStationCatalogPack(stationCatalogPackPath) {
         || Object.entries(TABLE_XINFO).some(([table, expected]) => JSON.stringify(db.prepare(`PRAGMA table_xinfo(${table})`).all().map(({ name, type, notnull, dflt_value, pk }) => [name, type, notnull, dflt_value, pk])) !== JSON.stringify(expected))
         || db.prepare("PRAGMA integrity_check").get().integrity_check !== "ok"
         || db.prepare("PRAGMA foreign_key_check").all().length
-        || payloadBytes.readUInt32BE(96) !== 3053003
+        || payloadBytes.readUInt32BE(96) !== 3053004
         || db.prepare("PRAGMA page_size").get().page_size !== 4096
         || db.prepare("PRAGMA auto_vacuum").get().auto_vacuum !== 0
         || db.prepare("PRAGMA encoding").get().encoding !== "UTF-8"

@@ -9,12 +9,14 @@ import { canonicalJson, validateArtifactComponentManifest } from "./lib/manifest
 
 const INPUT = "tools/datapack/release/capital-production-canonical-pack.json";
 const NODE_VERSION = "24.19.0";
-const SQLITE_VERSION = "3.53.3";
+const SQLITE_VERSION = "3.53.4";
+const PROVENANCE_KEYS = ["sourceId", "sourceSnapshotId", "providerRecordHash", "evidenceHash", "derivationKind", "lastVerifiedAt"];
+const PROVENANCE_IDENTITY_KEYS = PROVENANCE_KEYS.slice(0, -1);
 const TABLES = {
-  stations: { source: "stations", keys: ["id", "nameKo", "nameEn", "nameSub", "normalizedName", "region"], allowed: ["id", "nameKo", "nameEn", "nameSub", "normalizedName", "region", "latitude", "longitude", "dataQualityLevel", "dataSourceType", "lastVerifiedAt"], target: ["id", "name_ko", "name_en", "name_sub", "normalized_name", "region"] },
+  stations: { source: "stations", keys: ["id", "nameKo", "nameEn", "nameSub", "normalizedName", "region"], allowed: ["id", "nameKo", "nameEn", "nameSub", "normalizedName", "region", "latitude", "longitude", "dataQualityLevel", "dataSourceType", ...PROVENANCE_KEYS], target: ["id", "name_ko", "name_en", "name_sub", "normalized_name", "region"] },
   station_aliases: { source: "stationAliases", keys: ["stationId", "alias", "normalizedAlias"], allowed: ["stationId", "alias", "normalizedAlias"], target: ["station_id", "alias", "normalized_alias"] },
   lines: { source: "lines", keys: ["id", "nameKo", "nameEn"], allowed: ["id", "operatorId", "nameKo", "nameEn", "color"], target: ["id", "name_ko", "name_en"] },
-  station_lines: { source: "stationLines", keys: ["stationId", "lineId", "stationCode", "lineSequence"], allowed: ["stationId", "lineId", "stationCode", "lineSequence", "platformInfo"], target: ["station_id", "line_id", "station_code", "line_sequence"] },
+  station_lines: { source: "stationLines", keys: ["stationId", "lineId", "stationCode", "lineSequence"], allowed: ["stationId", "lineId", "stationCode", "lineSequence", "platformInfo", ...PROVENANCE_KEYS], target: ["station_id", "line_id", "station_code", "line_sequence"] },
 };
 
 export async function emitStationCatalogPack(input) {
@@ -65,7 +67,10 @@ function projection(pack) {
   for (const [target, contract] of Object.entries(TABLES)) {
     const source = pack[contract.source];
     if (!Array.isArray(source) || (target !== "station_aliases" && source.length === 0)) throw new Error(`${contract.source} must not be empty`);
-    result[target] = source.map((row) => projectRow(row, contract.keys, contract.allowed, contract.target));
+    result[target] = source.map((row) => {
+      validateProvenance(row, target);
+      return projectRow(target === "stations" && !Object.hasOwn(row, "nameSub") ? { ...row, nameSub: "" } : row, contract.keys, contract.allowed, contract.target);
+    });
   }
   validateTypes(result);
   validateRows(result);
@@ -76,6 +81,31 @@ function projectRow(row, sourceKeys, allowedKeys, targetKeys) {
   if (!row || typeof row !== "object" || Array.isArray(row) || sourceKeys.some((key) => !(key in row)) || Object.keys(row).some((key) => !allowedKeys.includes(key))) throw new Error("projection row keys are required");
   const selected = Object.fromEntries(sourceKeys.map((key, index) => [targetKeys[index], row[key]]));
   return selected;
+}
+
+function validateProvenance(row, target) {
+  if (target !== "stations" && target !== "station_lines") return;
+  const present = PROVENANCE_IDENTITY_KEYS.filter((key) => Object.hasOwn(row ?? {}, key));
+  if (present.length === 0) {
+    if (target === "station_lines" && Object.hasOwn(row, "lastVerifiedAt")) {
+      throw new Error("provenance keys are all-or-nothing");
+    }
+    return;
+  }
+  if (present.length !== PROVENANCE_IDENTITY_KEYS.length || !Object.hasOwn(row, "lastVerifiedAt")) {
+    throw new Error("provenance keys are all-or-nothing");
+  }
+  if (!raw(row.sourceId, "provenance sourceId") || !raw(row.sourceSnapshotId, "provenance sourceSnapshotId")
+    || !/^[a-f0-9]{64}$/u.test(row.providerRecordHash) || !/^[a-f0-9]{64}$/u.test(row.evidenceHash)
+    || row.derivationKind !== "OFFICIAL" || !canonicalUtc(row.lastVerifiedAt)) {
+    throw new Error("provenance values are invalid");
+  }
+}
+
+function canonicalUtc(value) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(value)) return false;
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.valueOf()) && parsed.toISOString() === value;
 }
 
 function validateTypes(rows) {
