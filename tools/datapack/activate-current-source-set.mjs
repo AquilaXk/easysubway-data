@@ -1147,7 +1147,9 @@ function replaceIncheonCanonicalSlice(canonical, projected, { topologySnapshot, 
   pack.networkEdges = [...retainedNetworkEdges, ...expectedIncheonEdges];
   const positionScope = new Set(projectedPack.routeMapPositions.filter(({ sourceId }) =>
     sourceId === "incheon-transit-station-info").map(({ stationId, lineId }) => `${stationId}:${lineId}`));
-  replace("routeMapPositions", ({ stationId, lineId }) => positionScope.has(`${stationId}:${lineId}`),
+  replace("routeMapPositions", ({ sourceId, stationId, lineId }) => (
+    sourceId === "incheon-transit-station-info" || positionScope.has(`${stationId}:${lineId}`)
+  ),
     ({ stationId, lineId }) => `${stationId}:${lineId}`);
   replace("facilities", ({ id }) => id.startsWith("facility-incheon-"), ({ id }) => id);
   replace("stationFacilityEvidence", ({ sourceId }) => sourceId === "incheon-transit-accessibility",
