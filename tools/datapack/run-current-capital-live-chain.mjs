@@ -331,7 +331,7 @@ export function buildCurrentCapitalLiveChainPlan({ repositoryRoot, repositorySha
     { id: "admit-exit", script: "tools/datapack/build-current-exit-path-source-admission.mjs", args: ["--provider-snapshot", at("current-kric-exit-snapshot.json"), "--collection-plan", at("current-kric-exit-plan.json"), "--facility-admission", at("tools/datapack/release/current-capital-facility-source-admission.json"), "--candidate-build-spec", at("tools/datapack/release/candidate-build-spec.json"), "--source-inventory", at("tools/datapack/source-inventory.json"), "--source-snapshots", at("tools/datapack/release/source-snapshots.json"), "--observed-at", "FROM_PROVIDER_CAPTURED_AT", "--output-directory", at("current-exit-admission")] },
     { id: "bind-current-fan-in", script: "tools/datapack/build-current-capital-live-chain-boundary.mjs", args: [] },
     { id: "build-full-capital", script: "tools/datapack/build-current-capital-route-edge-input.mjs", args: [] },
-    { id: "evaluate-route-policy", script: "tools/datapack/evaluate-route-accessibility-edges.mjs", args: ["--input", at("tools/datapack/release/current-capital-accessibility-full/route-edge-input.json"), "--output", at("release/product-gates/route-edge-evaluation-policy.json")] },
+    { id: "evaluate-route-policy", script: "tools/datapack/evaluate-route-accessibility-edges.mjs", args: ["--input", at("tools/datapack/release/current-capital-accessibility-full/route-edge-input.json"), "--output", at("tools/datapack/release/current-capital-accessibility-full/route-edge-evaluation.json")] },
     { id: "bundle", script: "tools/datapack/build-current-capital-live-chain-bundle.mjs", args: [] },
   ] };
 }
@@ -368,9 +368,10 @@ export async function evaluateStagedRoutePolicy({
 }) {
   const routeEdgeInputPath = path.join(stagedRoot, "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json");
   const stationLineInputPath = path.join(stagedRoot, "tools/datapack/release/current-capital-accessibility-full/station-line-input.json");
-  const outputPath = path.join(stagedRoot, "release/product-gates/route-edge-evaluation-policy.json");
+  const policyPath = path.join(stagedRoot, "release/product-gates/route-edge-evaluation-policy.json");
+  const outputPath = path.join(stagedRoot, "tools/datapack/release/current-capital-accessibility-full/route-edge-evaluation.json");
   const [routeEdgeInputBytes, stationLineInputBytes, policyBytes] = await Promise.all([
-    readFile(routeEdgeInputPath), readFile(stationLineInputPath), readFile(outputPath),
+    readFile(routeEdgeInputPath), readFile(stationLineInputPath), readFile(policyPath),
   ]);
   const routeEdgeInput = JSON.parse(routeEdgeInputBytes.toString("utf8"));
   const stationLineInput = JSON.parse(stationLineInputBytes.toString("utf8"));
@@ -380,6 +381,7 @@ export async function evaluateStagedRoutePolicy({
     JSON.parse(policyBytes.toString("utf8")),
   );
   const evaluationBytes = Buffer.from(canonicalRouteEdgeEvaluationJsonImpl(evaluation));
+  await mkdir(path.dirname(outputPath), { recursive: true, mode: 0o700 });
   const temporaryPath = path.join(path.dirname(outputPath), `.${path.basename(outputPath)}.${randomUUID()}.tmp`);
   await writeFile(temporaryPath, evaluationBytes, { flag: "wx", mode: 0o600 });
   await rename(temporaryPath, outputPath);
