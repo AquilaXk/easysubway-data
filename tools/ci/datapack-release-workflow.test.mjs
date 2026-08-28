@@ -402,7 +402,10 @@ test("production-publish injects dedicated callback secrets into the temporary d
     /- name: Data Pack Release \/ Inject production callback secrets[\s\S]*?\n\s+- name:/,
   )?.[0];
   assert.ok(step, "production callback secret injection step was not found");
-  assert.match(step, /if:\s*\$\{\{ steps\.release-mode\.outputs\.mode == 'production-publish' \}\}/);
+  assert.match(
+    step,
+    /if:\s*\$\{\{ steps\.release-mode\.outputs\.mode == 'production-publish' && github\.ref == 'refs\/heads\/main' \}\}/,
+  );
   for (const key of ["EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN", "EASYSUBWAY_DATAPACK_CALLBACK_HMAC_KEY"]) {
     assert.match(step, new RegExp(`${key}:\\s*\\$\\{\\{ secrets\\.${key} \\}\\}`));
   }

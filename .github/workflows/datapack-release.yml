@@ -490,7 +490,7 @@ jobs:
           echo "EASYSUBWAY_ENV_FILE=${env_file}" >> "${GITHUB_ENV}"
 
       - name: Data Pack Release / Inject production callback secrets
-        if: ${{ steps.release-mode.outputs.mode == 'production-publish' }}
+        if: ${{ steps.release-mode.outputs.mode == 'production-publish' && github.ref == 'refs/heads/main' }}
         env:
           EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN: ${{ secrets.EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN }}
           EASYSUBWAY_DATAPACK_CALLBACK_HMAC_KEY: ${{ secrets.EASYSUBWAY_DATAPACK_CALLBACK_HMAC_KEY }}
