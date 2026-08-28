@@ -467,6 +467,14 @@ test("release evidence mismatch·stale·mutation은 FINAL output 전에 fail clo
         await writeFile(releaseEvidence.promotionRequestPath, "changed");
       },
     }), /promotionRequestPath changed during FINAL build/],
+    ["candidate-execution-evidence-changed-during-build", async ({ releaseEvidence }) => ({
+      beforeReleaseOutput: async () => {
+        await writeFile(
+          path.join(releaseEvidence.candidateExecutionEvidenceRoot, "release-decision.json"),
+          "changed",
+        );
+      },
+    }), /candidateReleaseDecisionPath changed during FINAL build/],
     ["eligibility-changed-during-build", async ({ releaseEvidence }) => ({
       beforeReleaseOutput: async () => {
         await writeFile(releaseEvidence.eligibilityReportPath, "changed");

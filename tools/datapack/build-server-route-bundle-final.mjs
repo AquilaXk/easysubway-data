@@ -32,7 +32,7 @@ import { GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL } from "./emit-artifact-comp
 import { parseArgs, requiredArg } from "./lib/cli-args.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { validatePublicationReceipt } from "./publish-server-route-bundle.mjs";
-import { readCandidateExecutionEvidence, validateRequest } from "../release/validate-promotion-request.mjs";
+import { validateRequest } from "../release/validate-promotion-request.mjs";
 import { validateSourceSnapshotFreshness } from "./validate-source-snapshot-freshness.mjs";
 
 const KEYLESS_ARTIFACT_ROOT_FILES = ["compatibility.json", "manifest.signing-input.json", "payload", "provenance.json"];
@@ -222,14 +222,21 @@ async function closeReleaseFinal(prePublicationFinal, releaseEvidence, publicati
   const paths = Object.fromEntries(RELEASE_EVIDENCE_KEYS
     .filter((key) => key.endsWith("Path"))
     .map((key) => [key, path.resolve(requiredRaw(releaseEvidence[key], key))]));
-  if (new Set(Object.values(paths)).size !== Object.values(paths).length) {
+  const executionEvidence = await snapshotCandidateExecutionEvidence(
+    requiredRaw(releaseEvidence.candidateExecutionEvidenceRoot, "candidateExecutionEvidenceRoot"),
+  );
+  const allPaths = [...Object.values(paths), ...executionEvidence.files.map((file) => file.target)];
+  if (new Set(allPaths).size !== allPaths.length) {
     throw new Error("release evidence paths must be distinct");
   }
-  const files = await Promise.all(Object.entries(paths).map(async ([key, target]) => ({
+  const files = [
+    ...await Promise.all(Object.entries(paths).map(async ([key, target]) => ({
     key,
     target,
     bytes: await readNonEmptyRegular(target, key),
-  })));
+    }))),
+    ...executionEvidence.files,
+  ];
   const bytes = Object.fromEntries(files.map((entry) => [entry.key, entry.bytes]));
   const publicationReceipt = validatePublicationReceipt(parseCanonicalJson(
     bytes.publicationReceiptPath,
@@ -243,9 +250,6 @@ async function closeReleaseFinal(prePublicationFinal, releaseEvidence, publicati
   const compatibilityEvidence = parseCanonicalOrFormattedJson(
     bytes.compatibilityEvidencePath,
     "compatibility evidence",
-  );
-  const executionEvidence = await readCandidateExecutionEvidence(
-    requiredRaw(releaseEvidence.candidateExecutionEvidenceRoot, "candidateExecutionEvidenceRoot"),
   );
   validateRequest({
     request: promotionRequest,
@@ -332,6 +336,36 @@ async function assertEvidenceFilesUnchanged(files) {
     const current = await readNonEmptyRegular(file.target, file.key);
     if (!current.equals(file.bytes)) throw new Error(`${file.key} changed during FINAL build`);
   }
+}
+
+async function snapshotCandidateExecutionEvidence(root) {
+  const target = await realDirectory(root, "candidate execution evidence");
+  await assertDirectoryEntries(
+    target,
+    ["release-decision.json", "release-evidence-bundle.json"],
+    "candidate execution evidence file set",
+  );
+  const files = await Promise.all([
+    ["candidateReleaseDecisionPath", "release-decision.json", "candidate execution evidence/release-decision.json"],
+    ["candidateReleaseEvidenceBundlePath", "release-evidence-bundle.json", "candidate execution evidence/release-evidence-bundle.json"],
+  ].map(async ([key, name, label]) => {
+    const file = path.join(target, name);
+    return { key, target: file, bytes: await readNonEmptyRegular(file, label) };
+  }));
+  const bytes = Object.fromEntries(files.map((file) => [file.key, file.bytes]));
+  return {
+    files,
+    releaseDecision: parseCanonicalOrFormattedJson(
+      bytes.candidateReleaseDecisionPath,
+      "candidate execution evidence/release-decision.json",
+    ),
+    releaseDecisionBytes: bytes.candidateReleaseDecisionPath,
+    releaseEvidenceBundle: parseCanonicalOrFormattedJson(
+      bytes.candidateReleaseEvidenceBundlePath,
+      "candidate execution evidence/release-evidence-bundle.json",
+    ),
+    releaseEvidenceBundleBytes: bytes.candidateReleaseEvidenceBundlePath,
+  };
 }
 
 function assertReleaseCandidateFresh(freshUntil, now) {

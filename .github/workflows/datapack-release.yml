@@ -1575,6 +1575,7 @@ jobs:
           route_inputs="${EASYSUBWAY_DATAPACK_STAGE}/server-route-bundle-inputs"
           route_evidence="${EASYSUBWAY_DATAPACK_STAGE}/server-route-bundle-evidence"
           promotion_root="${RUNNER_TEMP}/downloaded-promotion"
+          execution_root="$(dirname "${EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE}")"
           publication_receipt="${RUNNER_TEMP}/server-route-bundle-publication-receipt.json"
           release_final="${RUNNER_TEMP}/server-route-bundle-final.json"
           descriptor="${RUNNER_TEMP}/server-route-bundle-publication-descriptor.json"
@@ -1599,7 +1600,7 @@ jobs:
             --promotion-request "${promotion_root}/promotion-request.json" \
             --promotion-workflow-run-id "${EASYSUBWAY_DATAPACK_PROMOTION_RUN_ID}" \
             --publication-receipt "${publication_receipt}" \
-            --rebuild-parity-evidence "${promotion_root}/rebuild-parity-evidence.json" \
+            --candidate-execution-evidence-root "${execution_root}" \
             --output "${release_final}"
           node tools/datapack/build-server-route-bundle-publication-descriptor.mjs \
             --artifact-root "${route_root}" \

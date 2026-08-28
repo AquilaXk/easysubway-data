@@ -421,6 +421,8 @@ test("production-publish는 current-head server route bundle을 OCI에 immutable
   assert.match(publish, /publish-server-route-bundle\.mjs/);
   assert.match(publish, /build-server-route-bundle-final\.mjs/);
   assert.match(publish, /--eligibility-report "\$\{route_evidence\}\/route-accessibility-eligibility\.json"/);
+  assert.match(publish, /--candidate-execution-evidence-root "\$\{execution_root\}"/);
+  assert.doesNotMatch(publish, /--rebuild-parity-evidence/);
   assert.doesNotMatch(publish, /--route-accessibility-eligibility/);
   assert.match(publish, /build-server-route-bundle-publication-descriptor\.mjs/);
   assert.match(publish, /publish-server-route-bundle-publication-descriptor\.mjs/);
