@@ -1550,7 +1550,7 @@ async function validateAndApplyNetworkEdgeProvenance(
     [lineNumber, pinned.value]));
   const incheonTimetableAdmission = admittedIncheonTimetableEvidence({
     inventory: sourceInventory.value,
-    topologySnapshot: incheonTopology.value,
+    topologySnapshot: { ...incheonTopology.value, snapshotId: incheonAdmission.snapshotId },
     timetableSnapshots: incheonTimetableSnapshots,
     now,
   });
