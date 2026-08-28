@@ -4,7 +4,7 @@
   "candidateId": "capital-pilot-candidate-20260828",
   "productionScopeId": "capital_pilot_android_v1",
   "publishedAt": "2026-08-28T14:18:23.340Z",
-  "releaseSequence": 1,
+  "releaseSequence": 115,
   "fixturePath": "tools/datapack/release/capital-production-canonical-pack.json",
   "itxTopologyEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence-20260824170958799.json",
   "itxTopologyEvidenceSha256": "9ff9810e467eb9df53fc461e380ccb368bca4cd6c52b3f84fa2b0fb7c58acd1a",
