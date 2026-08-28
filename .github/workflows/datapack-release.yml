@@ -1611,6 +1611,12 @@ jobs:
           node tools/datapack/publish-server-route-bundle-publication-descriptor.mjs \
             --descriptor "${descriptor}" \
             --repository-git-sha "${GITHUB_SHA}"
+          staged_descriptor="${EASYSUBWAY_DATAPACK_STAGE}/server-route-bundle-publication-descriptor.json"
+          cp -- "${descriptor}" "${staged_descriptor}"
+          cmp -s -- "${descriptor}" "${staged_descriptor}"
+          mapfile -d '' -t staged_descriptors < <(find "${EASYSUBWAY_DATAPACK_STAGE}" -type f -name 'server-route-bundle-publication-descriptor.json' -print0)
+          [[ "${#staged_descriptors[@]}" -eq 1 ]]
+          [[ "${staged_descriptors[0]}" == "${staged_descriptor}" ]]
 
       - name: Data Pack Release / Publish finalized release request binding
         if: ${{ !cancelled() && steps.remote-validation.outcome == 'success' && steps.final-release-decision.outcome == 'success' && (steps.final-release-decision.outputs.outcome == 'PUBLISHED_AND_VERIFIED' || steps.final-release-decision.outputs.outcome == 'NO_CHANGE_VALID') }}
