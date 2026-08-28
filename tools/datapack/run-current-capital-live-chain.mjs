@@ -42,6 +42,7 @@ const EXCLUDED_STAGED_PATHS = Object.freeze([
   "tools/datapack/release/current-route-edge-evaluation",
   "tools/datapack/release/current-capital-accessibility-full",
   "tools/datapack/release/current-capital-accessibility-transition.json",
+  CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH,
 ]);
 const CURRENT_KRIC_EXIT_PLAN_INPUTS_PATH = "tools/datapack/release/current-kric-exit-plan-inputs.json";
 const RETAINED_EXIT_PLAN_MISMATCH = "retained EXIT bundle plan is not provider-equivalent to the current plan";

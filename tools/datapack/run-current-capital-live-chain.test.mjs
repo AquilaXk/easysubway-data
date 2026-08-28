@@ -421,6 +421,37 @@ test("public route-map materialization failure stops before the provider and OCI
   }
 });
 
+test("tracked live-chain fan-in is not copied into create-new staging output", async () => {
+  const temporary = await mkdtemp(path.join(os.tmpdir(), "current-live-chain-fan-in-staging-"));
+  const runnerTemp = path.join(temporary, "runner");
+  const handoffParent = path.join(temporary, "handoff-parent");
+  const fanInPath = "tools/datapack/release/current-capital-live-chain-fan-in.json";
+  try {
+    await mkdir(runnerTemp); await mkdir(handoffParent);
+    await stat(path.join(ROOT, fanInPath));
+    await assert.rejects(runCurrentCapitalLiveChain({
+      repositoryRoot: ROOT, runnerTemp, repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-560",
+      transferObservationDirectory: "/retained/transfer/observation", transferReceiptPath: "/retained/transfer/receipt.json", handoffDirectory: path.join(handoffParent, "handoff"),
+      env: { PATH: process.env.PATH, KRIC_SERVICE_KEY: "test-key", EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/test/n/axvym6vk8g7i/b/easysubway-datapacks/o/" },
+      execFileImpl: async (_command, args) => {
+        if (args.join(" ") === "remote get-url origin") return { stdout: "https://github.com/AquilaXk/easysubway-data.git\n" };
+        if (args.join(" ") === "rev-parse HEAD" || args.join(" ") === "rev-parse origin/main") return { stdout: `${"a".repeat(40)}\n` };
+        if (args.join(" ") === "branch --show-current") return { stdout: "main\n" };
+        if (args.join(" ") === "status --porcelain=v1 --untracked-files=all") return { stdout: "" };
+        if (args.join(" ") === `ls-remote --exit-code https://github.com/AquilaXk/easysubway-data.git refs/heads/main`) return { stdout: `${"a".repeat(40)}\trefs/heads/main\n` };
+        throw new Error("provider execution must not start");
+      },
+      rebindPublicRouteMapImpl: async ({ repositoryRoot }) => {
+        await assert.rejects(stat(path.join(repositoryRoot, fanInPath)), { code: "ENOENT" });
+        throw new Error("fan-in staging exclusion verified");
+      },
+      publishImpl: async () => { throw new Error("OCI publication must not start"); },
+    }), /fan-in staging exclusion verified/);
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
+});
+
 test("candidate-selected versioned ITX topology evidence is staged before every provider or OCI effect", async () => {
   const temporary = await mkdtemp(path.join(os.tmpdir(), "current-live-chain-itx-stage-"));
   const runnerTemp = path.join(temporary, "runner");
