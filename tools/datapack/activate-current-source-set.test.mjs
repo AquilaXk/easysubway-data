@@ -9,8 +9,7 @@ import test from "node:test";
 
 import { syncCanonicalFixture } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
 import { projectCapitalTopologyIntoCanonicalFixture } from "./build-datapack.mjs";
-import { currentIncheonStationCodeDerivations } from "./collect-incheon-station-info.mjs";
-import { activateIncheonTopologyAdmission, activateStaticSourceRevalidations,
+import { requireCurrentIncheonTopologyAdmission, activateStaticSourceRevalidations,
   buildCurrentCandidateSpec, buildCurrentSourcePrimaryOutputs,
   buildCurrentTopologyRefreshPrimaryOutputs, commitCurrentSourceActivation,
   collectLayoutTopologySnapshotBytes, collectPositionSnapshotBytes, parseCurrentSourceActivationArgs,
@@ -682,6 +681,9 @@ test("activation CLI는 Data-owned capital/Incheon snapshot paths만 수용한�
   assert.deepEqual(parseCurrentTopologyRefreshArgs([
     "--capital-topology", "tools/datapack/sources/capital-route-topology-20260814.json",
     "--incheon-topology", "tools/datapack/sources/incheon-transit-station-info-20260814.json",
+    "--incheon-accessibility", "tools/datapack/sources/incheon-transit-accessibility-20260814.json",
+    "--incheon-line1-timetable", "tools/datapack/sources/incheon-line1-train-timetable-20260814.json",
+    "--incheon-line2-timetable", "tools/datapack/sources/incheon-line2-train-timetable-20260814.json",
     "--itx-topology-evidence", "tools/datapack/itx-cheongchun-topology-evidence.json",
     "--builder-git-sha", "b".repeat(40),
     "--build-now", "2026-08-23T14:53:48.203Z",
@@ -690,6 +692,9 @@ test("activation CLI는 Data-owned capital/Incheon snapshot paths만 수용한�
     check: true,
     capital_topology: "tools/datapack/sources/capital-route-topology-20260814.json",
     incheon_topology: "tools/datapack/sources/incheon-transit-station-info-20260814.json",
+    incheon_accessibility: "tools/datapack/sources/incheon-transit-accessibility-20260814.json",
+    incheon_line1_timetable: "tools/datapack/sources/incheon-line1-train-timetable-20260814.json",
+    incheon_line2_timetable: "tools/datapack/sources/incheon-line2-train-timetable-20260814.json",
     itx_topology_evidence: "tools/datapack/itx-cheongchun-topology-evidence.json",
     builder_git_sha: "b".repeat(40),
     build_now: "2026-08-23T14:53:48.203Z",
@@ -736,23 +741,22 @@ test("prepared candidate validation은 spec-selected current ITX evidence bytes�
   }), /ITX topology evidence path is invalid/);
 });
 
-test("current Incheon topology admission은 exact snapshot bytes와 fresh source identity에 결속된다", async () => {
-  const snapshotPath = "tools/datapack/sources/incheon-transit-station-info-20260813.json";
-  const [sourceInventory, historicalSnapshotBytes] = await Promise.all([
+test("current Incheon topology admission validates exact already-admitted identity", async () => {
+  const [sourceInventory, snapshotPath] = await Promise.all([
     readJson("tools/datapack/source-inventory.json"),
-    readFile(path.join(root, snapshotPath)),
+    readJson("tools/datapack/source-inventory.json").then((inventory) => inventory.sources
+      .find(({ id }) => id === "incheon-transit-station-info").topologyAdmissionEvidence.snapshotPath),
   ]);
+  const historicalSnapshotBytes = await readFile(path.join(root, snapshotPath));
   const historicalSnapshot = JSON.parse(historicalSnapshotBytes);
   const snapshot = structuredClone(historicalSnapshot);
-  delete snapshot.stationCodeCorrections;
-  snapshot.stationCodeDerivations = currentIncheonStationCodeDerivations();
   const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
-  const activated = activateIncheonTopologyAdmission({
+  const activated = requireCurrentIncheonTopologyAdmission({
     sourceInventory,
     snapshot,
     snapshotBytes,
     snapshotPath,
-    now: new Date("2026-08-14T00:00:00.000Z"),
+    now: new Date(Date.parse(snapshot.capturedAt) + 1),
   });
   const source = activated.sources.find(({ id }) => id === "incheon-transit-station-info");
   const accessibility = activated.sources.find(({ id }) => id === "incheon-transit-accessibility")
@@ -764,25 +768,25 @@ test("current Incheon topology admission은 exact snapshot bytes와 fresh source
 
   assert.equal(source.requiredForProductionPack, false);
   assert.equal(source.productionUseAllowed, true);
-  assert.equal(source.topologyAdmissionEvidence.snapshotId, "incheon-transit-station-info-20260813");
-  assert.equal(source.topologyAdmissionEvidence.freshUntil, "2026-08-14T15:06:46.000Z");
+  assert.equal(source.topologyAdmissionEvidence.snapshotId, path.basename(snapshotPath, ".json"));
+  assert.equal(source.topologyAdmissionEvidence.freshUntil, snapshot.freshUntil);
   assert.equal(source.topologyAdmissionEvidence.contentSha256, snapshot.contentSha256);
   assert.equal(source.membershipAdmissionEvidence.membershipSourceSnapshotSha256, snapshot.scopeSha256);
   assert.equal(source.routeMapAdmissionEvidence.snapshotSha256, sha256(snapshotBytes));
   assert.equal(source.routeMapAdmissionEvidence.positionsSha256, snapshot.positionsSha256);
   assert.equal(source.routeMapAdmissionEvidence.freshUntil, "2027-08-13T15:06:46.000Z");
-  assert.equal(accessibility.topologySnapshotId, "incheon-transit-station-info-20260813");
+  assert.equal(accessibility.topologySnapshotId, path.basename(snapshotPath, ".json"));
   assert.deepEqual(
     [...accessibility.topologyLineages, ...accessibility.membershipLineages]
       .map(({ snapshotId }) => snapshotId),
-    Array(3).fill("incheon-transit-station-info-20260813"),
+    Array(3).fill(path.basename(snapshotPath, ".json")),
   );
   assert.deepEqual(
     scheduleTopologySnapshotIds,
-    Array(2).fill("incheon-transit-station-info-20260813"),
+    Array(2).fill(path.basename(snapshotPath, ".json")),
   );
 
-  assert.throws(() => activateIncheonTopologyAdmission({
+  assert.throws(() => requireCurrentIncheonTopologyAdmission({
     sourceInventory,
     snapshot: historicalSnapshot,
     snapshotBytes: historicalSnapshotBytes,
@@ -792,7 +796,7 @@ test("current Incheon topology admission은 exact snapshot bytes와 fresh source
 
   const legacyCorrection = structuredClone(snapshot);
   legacyCorrection.stationCodeCorrections = structuredClone(historicalSnapshot.stationCodeCorrections);
-  assert.throws(() => activateIncheonTopologyAdmission({
+  assert.throws(() => requireCurrentIncheonTopologyAdmission({
     sourceInventory,
     snapshot: legacyCorrection,
     snapshotBytes: Buffer.from(`${JSON.stringify(legacyCorrection)}\n`),
@@ -802,7 +806,7 @@ test("current Incheon topology admission은 exact snapshot bytes와 fresh source
 
   const oldDerivation = structuredClone(snapshot);
   oldDerivation.stationCodeDerivations[1].basis = "LEGACY_CORRECTION";
-  assert.throws(() => activateIncheonTopologyAdmission({
+  assert.throws(() => requireCurrentIncheonTopologyAdmission({
     sourceInventory,
     snapshot: oldDerivation,
     snapshotBytes: Buffer.from(`${JSON.stringify(oldDerivation)}\n`),
@@ -819,7 +823,7 @@ test("current Incheon topology admission은 exact snapshot bytes와 fresh source
     positions: changedEdges.positions,
   }));
   const changedEdgeBytes = Buffer.from(`${JSON.stringify(changedEdges)}\n`);
-  assert.throws(() => activateIncheonTopologyAdmission({
+  assert.throws(() => requireCurrentIncheonTopologyAdmission({
     sourceInventory,
     snapshot: changedEdges,
     snapshotBytes: changedEdgeBytes,
@@ -827,14 +831,14 @@ test("current Incheon topology admission은 exact snapshot bytes와 fresh source
     now: new Date("2026-08-14T00:00:00.000Z"),
   }), /content changed; re-admission required/);
 
-  assert.throws(() => activateIncheonTopologyAdmission({
+  assert.throws(() => requireCurrentIncheonTopologyAdmission({
     sourceInventory,
     snapshot,
     snapshotBytes: Buffer.concat([snapshotBytes, Buffer.from(" ")]),
     snapshotPath,
     now: new Date("2026-08-14T00:00:00.000Z"),
   }), /snapshot byte identity mismatch/);
-  assert.throws(() => activateIncheonTopologyAdmission({
+  assert.throws(() => requireCurrentIncheonTopologyAdmission({
     sourceInventory,
     snapshot,
     snapshotBytes,
@@ -1138,7 +1142,7 @@ test("current topology admission clock은 candidate-selected static ledger와 �
   await assert.doesNotReject(() => collectPositionSnapshotBytes(sourceInventory));
 });
 
-test("topology-only refresh는 current capital/Incheon admission identity를 함께 재생성한다", async () => {
+test("topology-only refresh projects fresh Incheon inputs without relabelling prior evidence", async () => {
   const [baseSpec, sourceInventory, canonical, productionInput, productionScopePolicyBytes] =
     await Promise.all([
     readJson("tools/datapack/release/candidate-build-spec.json"),
@@ -1148,18 +1152,31 @@ test("topology-only refresh는 current capital/Incheon admission identity를 함
     readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json")),
   ]);
   const { topology: baselineTopology, bytes: baselineTopologyBytes } = await historicalCandidateCapitalTopology(baseSpec);
-  const { admission, relativePath: currentTopologyPath, bytes: currentTopologyBytes, topology: currentTopology } =
-    await currentCapitalTopology(sourceInventory);
-  const topologySnapshotId = admission.topologySnapshotId;
+  const currentTopologyPath = "tools/datapack/sources/capital-route-topology-20260828.json";
+  const currentTopologyBytes = await readFile(path.join(root, currentTopologyPath));
+  const currentTopology = JSON.parse(currentTopologyBytes);
+  const topologySnapshotId = path.basename(currentTopologyPath, ".json");
   assert.equal(currentTopology.lines.length, 22);
   assert.equal(currentTopology.lines.reduce((count, line) => count + line.edgeCount, 0), 1_438);
   assert.equal(currentTopology.lines.some(({ lineId }) => lineId === "line-42b5805f3b5a"), false);
   assert.equal(currentTopology.lines.some(({ lineId }) => lineId === "line-98718184f016"), false);
-  const incheonSource = sourceInventory.sources.find(({ id }) => id === "incheon-transit-station-info");
-  assert.ok(incheonSource?.topologyAdmissionEvidence?.snapshotPath);
-  const currentIncheonTopologyPath = incheonSource.topologyAdmissionEvidence.snapshotPath;
-  const currentIncheonTopologyBytes = await readFile(path.join(root, currentIncheonTopologyPath));
+  const currentIncheonTopologyPath = "tools/datapack/sources/incheon-transit-station-info-20260828.json";
+  const currentIncheonAccessibilityPath = "tools/datapack/sources/incheon-transit-accessibility-20260828.json";
+  const currentIncheonTimetablePaths = {
+    1: "tools/datapack/sources/incheon-line1-train-timetable-20260828.json",
+    2: "tools/datapack/sources/incheon-line2-train-timetable-20260828.json",
+  };
+  const [currentIncheonTopologyBytes, currentIncheonAccessibilityBytes,
+    line1TimetableBytes, line2TimetableBytes] = await Promise.all([
+    readFile(path.join(root, currentIncheonTopologyPath)),
+    readFile(path.join(root, currentIncheonAccessibilityPath)),
+    readFile(path.join(root, currentIncheonTimetablePaths[1])),
+    readFile(path.join(root, currentIncheonTimetablePaths[2])),
+  ]);
   const currentIncheonTopology = JSON.parse(currentIncheonTopologyBytes);
+  const currentIncheonAccessibility = JSON.parse(currentIncheonAccessibilityBytes);
+  const currentIncheonTimetables = { 1: JSON.parse(line1TimetableBytes), 2: JSON.parse(line2TimetableBytes) };
+  const currentIncheonTimetableBytes = { 1: line1TimetableBytes, 2: line2TimetableBytes };
   assert.equal(currentIncheonTopology.topologyLineIds.length, 2);
   assert.equal(currentIncheonTopology.edgeCount, 116);
   const capitalSnapshotDate = currentTopology.capturedAt.slice(0, 10).replaceAll("-", "");
@@ -1171,8 +1188,12 @@ test("topology-only refresh는 current capital/Incheon admission identity를 함
   const buildNow = new Date(Math.max(
     Date.parse(currentTopology.capturedAt),
     Date.parse(currentIncheonTopology.capturedAt),
+    Date.parse(currentIncheonAccessibility.capturedAt),
+    Date.parse(currentIncheonTimetables[1].capturedAt),
+    Date.parse(currentIncheonTimetables[2].capturedAt),
   ) + 1).toISOString();
   const layoutTopologySnapshotBytesById = await collectLayoutTopologySnapshotBytes(sourceInventory);
+  const snapshotBytesByPath = await collectPositionSnapshotBytes(sourceInventory);
   const result = buildCurrentTopologyRefreshPrimaryOutputs({
     baseSpec,
     builderGitSha: "a".repeat(40),
@@ -1183,6 +1204,12 @@ test("topology-only refresh는 current capital/Incheon admission identity를 함
     currentIncheonTopology,
     currentIncheonTopologyBytes,
     currentIncheonTopologyPath,
+    currentIncheonAccessibility,
+    currentIncheonAccessibilityBytes,
+    currentIncheonAccessibilityPath,
+    currentIncheonTimetables,
+    currentIncheonTimetableBytes,
+    currentIncheonTimetablePaths,
     currentItxTopologyEvidencePath,
     currentItxTopologyEvidenceBytes,
     baselineTopology,
@@ -1191,7 +1218,7 @@ test("topology-only refresh는 current capital/Incheon admission identity를 함
     productionInput,
     productionScopePolicyBytes,
     buildNow,
-    snapshotBytesByPath: await collectPositionSnapshotBytes(sourceInventory),
+    snapshotBytesByPath,
     layoutTopologySnapshotBytesById,
   });
 
@@ -1222,6 +1249,7 @@ test("topology-only refresh는 current capital/Incheon admission identity를 함
       .map(({ id, accessibilityAdmissionEvidence }) => [id, accessibilityAdmissionEvidence.snapshotId]),
   );
   const capital = result.canonical.packs.find(({ id }) => id === "capital");
+  const previousCapital = canonical.packs.find(({ id }) => id === "capital");
   const reviewedCapital = result.reviewedPack.packs.find(({ id }) => id === "capital");
   assert.equal(reviewedCapital.networkEdges.length, 4);
   assert.ok(reviewedCapital.networkEdges.every(({ edgeType }) =>
@@ -1246,6 +1274,72 @@ test("topology-only refresh는 current capital/Incheon admission identity를 함
     incheon.topologyAdmissionEvidence.snapshotId,
     path.basename(currentIncheonTopologyPath, ".json"),
   );
+  assert.doesNotThrow(() => requireCurrentIncheonTopologyAdmission({
+    sourceInventory: result.sourceInventory,
+    snapshot: currentIncheonTopology,
+    snapshotBytes: currentIncheonTopologyBytes,
+    snapshotPath: currentIncheonTopologyPath,
+    now: new Date(buildNow),
+  }));
+  const mismatchedInventory = structuredClone(result.sourceInventory);
+  mismatchedInventory.sources.find(({ id }) => id === "incheon-transit-accessibility")
+    .accessibilityAdmissionEvidence.topologySnapshotId = "incheon-transit-station-info-20260827";
+  assert.throws(() => requireCurrentIncheonTopologyAdmission({
+    sourceInventory: mismatchedInventory,
+    snapshot: currentIncheonTopology,
+    snapshotBytes: currentIncheonTopologyBytes,
+    snapshotPath: currentIncheonTopologyPath,
+    now: new Date(buildNow),
+  }), /current Incheon accessibility lineage contract is invalid/);
+  assert.equal(result.sourceInventory.sources.find(({ id }) => id === "incheon-transit-accessibility")
+    .accessibilityAdmissionEvidence.snapshotId, "incheon-transit-accessibility-20260828");
+  assert.equal(capital.stations.find(({ id }) => id === "station-b1a5f63faf69").nameKo, "서해구청");
+  assert.equal(capital.lines.filter(({ id }) => id === "line-15b3b8a93259").length, 1);
+  assert.equal(capital.transitTrips.filter(({ id }) => id.startsWith("trip-incheon-")).length, 1_414);
+  assert.equal(reviewedCapital.stations.some(({ id }) => id === "station-b1a5f63faf69"), false);
+  assert.deepEqual(
+    { id: capital.id, version: capital.version, url: capital.url, manifest: capital.manifest },
+    { id: previousCapital.id, version: previousCapital.version,
+      url: previousCapital.url, manifest: previousCapital.manifest },
+  );
+  assert.equal(capital.stationAliases.filter(({ stationId, alias }) => (
+    stationId === "station-b1a5f63faf69" && alias === "서구청"
+  )).length, 1);
+  assert.equal(
+    result.sourceInventory.sources.find(({ id }) => id === "incheon-transit-accessibility")
+      .observedDataUpdatedAt,
+    sourceInventory.sources.find(({ id }) => id === "incheon-transit-accessibility")
+      .observedDataUpdatedAt,
+  );
+  const stationLineKeys = capital.stationLines.map(({ stationId, lineId }) => `${stationId}:${lineId}`);
+  assert.equal(new Set(stationLineKeys).size, stationLineKeys.length);
+  const currentI210 = currentIncheonTopology.scope.find(({ stationId }) => stationId === "station-b1a5f63faf69");
+  assert.ok(currentI210);
+  assert.deepEqual(capital.stationLines.filter(({ stationId, lineId }) => (
+    stationId === currentI210.stationId && lineId === currentI210.lineId
+  )).map(({ stationCode }) => stationCode), [currentI210.stationCode]);
+  const freshLine7StationIds = new Set(currentIncheonTopology.scope
+    .filter(({ lineId }) => lineId === "line-15b3b8a93259")
+    .map(({ stationId }) => stationId));
+  const retainedSharedLine7 = (pack) => pack.stationLines.filter(({ stationId, lineId }) => (
+    lineId === "line-15b3b8a93259" && !freshLine7StationIds.has(stationId)
+  ));
+  assert.deepEqual(retainedSharedLine7(capital), retainedSharedLine7(previousCapital));
+
+  const boundaryAccessibility = structuredClone(currentIncheonAccessibility);
+  boundaryAccessibility.capturedAt = "2026-08-28T15:01:00.000Z";
+  boundaryAccessibility.freshUntil = "2026-08-29T15:01:00.000Z";
+  assert.doesNotThrow(() => buildCurrentTopologyRefreshPrimaryOutputs({
+    baseSpec, builderGitSha: "a".repeat(40), sourceInventory, currentTopology,
+    currentTopologyBytes, currentTopologyPath, currentIncheonTopology, currentIncheonTopologyBytes,
+    currentIncheonTopologyPath, currentIncheonAccessibility: boundaryAccessibility,
+    currentIncheonAccessibilityBytes: Buffer.from(`${JSON.stringify(boundaryAccessibility)}\n`),
+    currentIncheonAccessibilityPath: "tools/datapack/sources/incheon-transit-accessibility-20260829.json",
+    currentIncheonTimetables, currentIncheonTimetableBytes, currentIncheonTimetablePaths,
+    currentItxTopologyEvidencePath, currentItxTopologyEvidenceBytes, baselineTopology,
+    baselineTopologyBytes, canonical, productionInput, productionScopePolicyBytes,
+    buildNow: "2026-08-28T15:01:00.001Z", snapshotBytesByPath, layoutTopologySnapshotBytesById,
+  }));
 
   const refreshWithTopology = (topology) => buildCurrentTopologyRefreshPrimaryOutputs({
     baseSpec,
@@ -1257,6 +1351,12 @@ test("topology-only refresh는 current capital/Incheon admission identity를 함
     currentIncheonTopology,
     currentIncheonTopologyBytes,
     currentIncheonTopologyPath,
+    currentIncheonAccessibility,
+    currentIncheonAccessibilityBytes,
+    currentIncheonAccessibilityPath,
+    currentIncheonTimetables,
+    currentIncheonTimetableBytes,
+    currentIncheonTimetablePaths,
     currentItxTopologyEvidencePath,
     currentItxTopologyEvidenceBytes,
     baselineTopology,
@@ -1265,7 +1365,7 @@ test("topology-only refresh는 current capital/Incheon admission identity를 함
     productionInput,
     productionScopePolicyBytes,
     buildNow,
-    snapshotBytesByPath: new Map(),
+    snapshotBytesByPath,
     layoutTopologySnapshotBytesById,
   });
   const withLines = (lines) => {
@@ -1293,6 +1393,22 @@ test("topology-only refresh는 current capital/Incheon admission identity를 함
       /current capital topology ownership failure|topology line ownership overlap/,
     );
   }
+  const mismatchedTimetables = structuredClone(currentIncheonTimetables);
+  mismatchedTimetables[1].topologyContentSha256 = "0".repeat(64);
+  const mismatchedTimetableBytes = {
+    ...currentIncheonTimetableBytes,
+    1: Buffer.from(`${JSON.stringify(mismatchedTimetables[1])}\n`),
+  };
+  assert.throws(() => buildCurrentTopologyRefreshPrimaryOutputs({
+    baseSpec, builderGitSha: "a".repeat(40), sourceInventory, currentTopology,
+    currentTopologyBytes, currentTopologyPath, currentIncheonTopology, currentIncheonTopologyBytes,
+    currentIncheonTopologyPath, currentIncheonAccessibility, currentIncheonAccessibilityBytes,
+    currentIncheonAccessibilityPath, currentIncheonTimetables: mismatchedTimetables,
+    currentIncheonTimetableBytes: mismatchedTimetableBytes, currentIncheonTimetablePaths, currentItxTopologyEvidencePath,
+    currentItxTopologyEvidenceBytes, baselineTopology, baselineTopologyBytes, canonical,
+    productionInput, productionScopePolicyBytes, buildNow,
+    snapshotBytesByPath, layoutTopologySnapshotBytesById,
+  }), /current Incheon dependent snapshot lineage mismatch/);
 });
 
 test("stale Incheon input은 current topology materialization 전에 fail-closed한다", async () => {
@@ -1308,10 +1424,13 @@ test("stale Incheon input은 current topology materialization 전에 fail-closed
     readJson("tools/datapack/inputs/capital-pilot-production-source-input.json"),
     readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json")),
   ]);
-  const incheonSource = sourceInventory.sources.find(({ id }) => id === "incheon-transit-station-info");
-  assert.ok(incheonSource?.topologyAdmissionEvidence?.snapshotPath);
-  const incheonTopologyPath = incheonSource.topologyAdmissionEvidence.snapshotPath;
-  const incheonBytes = await readFile(path.join(root, incheonTopologyPath));
+  const incheonTopologyPath = "tools/datapack/sources/incheon-transit-station-info-20260828.json";
+  const [incheonBytes, currentIncheonAccessibilityBytes, line1TimetableBytes, line2TimetableBytes] = await Promise.all([
+    readFile(path.join(root, incheonTopologyPath)),
+    readFile(path.join(root, "tools/datapack/sources/incheon-transit-accessibility-20260828.json")),
+    readFile(path.join(root, "tools/datapack/sources/incheon-line1-train-timetable-20260828.json")),
+    readFile(path.join(root, "tools/datapack/sources/incheon-line2-train-timetable-20260828.json")),
+  ]);
   const currentItxTopologyEvidencePath = baseSpec.itxTopologyEvidencePath;
   const currentItxTopologyEvidenceBytes = await readFile(path.join(root, currentItxTopologyEvidencePath));
   assert.equal(currentTopology.lines.some(({ lineId }) => lineId === "line-42b5805f3b5a"), false);
@@ -1335,6 +1454,15 @@ test("stale Incheon input은 current topology materialization 전에 fail-closed
     currentIncheonTopology: staleIncheon,
     currentIncheonTopologyBytes: staleIncheonBytes,
     currentIncheonTopologyPath: staleIncheonTopologyPath,
+    currentIncheonAccessibility: JSON.parse(currentIncheonAccessibilityBytes),
+    currentIncheonAccessibilityBytes,
+    currentIncheonAccessibilityPath: "tools/datapack/sources/incheon-transit-accessibility-20260828.json",
+    currentIncheonTimetables: { 1: JSON.parse(line1TimetableBytes), 2: JSON.parse(line2TimetableBytes) },
+    currentIncheonTimetableBytes: { 1: line1TimetableBytes, 2: line2TimetableBytes },
+    currentIncheonTimetablePaths: {
+      1: "tools/datapack/sources/incheon-line1-train-timetable-20260828.json",
+      2: "tools/datapack/sources/incheon-line2-train-timetable-20260828.json",
+    },
     currentItxTopologyEvidencePath,
     currentItxTopologyEvidenceBytes,
     baselineTopology,
@@ -1583,9 +1711,9 @@ test("primary source set은 current KRIC·7-source·two-topology identity를 한
       }
       return { ...value, topologyAdmissionsRebound: true };
     },
-    activateIncheonTopologyAdmissionImpl({ sourceInventory: value, snapshotPath }) {
+    requireCurrentIncheonTopologyAdmissionImpl({ sourceInventory: value, snapshotPath }) {
       assert.equal(snapshotPath, currentIncheonTopologyPath);
-      return { ...value, incheonAdmissionsRebound: true };
+      return value;
     },
     buildTopologyReverificationImpl(baseline, current) {
       assert.equal(baseline.lines.some(({ lineId }) => lineId === "line-98718184f016"), false);
@@ -1612,7 +1740,7 @@ test("primary source set은 current KRIC·7-source·two-topology identity를 한
   assert.equal(convenience.requiredForProductionPack, true);
   assert.equal(convenience.productionUseAllowed, true);
   assert.equal(result.sourceInventory.topologyAdmissionsRebound, true);
-  assert.equal(result.sourceInventory.incheonAdmissionsRebound, true);
+  assert.equal(result.sourceInventory.incheonAdmissionsRebound, undefined);
   assert.equal(CURRENT_SOURCE_INVENTORY_IDS.includes("seoul-metro-route-map-positions"), true);
   assert.equal(CURRENT_PRODUCTION_SOURCE_IDS.includes("seoul-metro-route-map-positions"), false);
   assert.deepEqual(result.productionInput.sourceIds, [...CURRENT_PRODUCTION_SOURCE_IDS]);
