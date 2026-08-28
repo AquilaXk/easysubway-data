@@ -595,6 +595,7 @@ jobs:
           IFS=$'\t' read -r candidate_id candidate_conclusion candidate_repository candidate_head_repository candidate_event candidate_head_sha candidate_path_raw <<< "${candidate_metadata}"
           candidate_path="${candidate_path_raw%@*}"
           [[ "${candidate_id}" == "${CANDIDATE_RUN_ID}" && "${candidate_conclusion}" == "success" && "${candidate_repository}" == "${GITHUB_REPOSITORY}" && "${candidate_head_repository}" == "${GITHUB_REPOSITORY}" && "${candidate_event}" == "workflow_dispatch" && "${candidate_head_sha}" =~ ^[a-f0-9]{40}$ && "${candidate_path}" == ".github/workflows/datapack-release.yml" ]]
+          [[ "${candidate_head_sha}" == "${GITHUB_SHA}" ]]
           promotion_metadata="$(GH_TOKEN="${EASYSUBWAY_HUB_ARTIFACT_READ_TOKEN}" gh api "repos/${EASYSUBWAY_HUB_REPOSITORY}/actions/runs/${PROMOTION_RUN_ID}" --jq '[.id, .conclusion, .repository.full_name, .head_repository.full_name, .event, .head_branch, .head_sha, .path] | @tsv')"
           IFS=$'\t' read -r promotion_id promotion_conclusion promotion_repository promotion_head_repository promotion_event promotion_ref promotion_head_sha promotion_path_raw <<< "${promotion_metadata}"
           promotion_path="${promotion_path_raw%@*}"
@@ -1553,6 +1554,60 @@ jobs:
           fi
           node tools/datapack/decide-datapack-release.mjs "${final_decision_args[@]}"
           EXPECTED_OUTCOME="${expected_outcome}" node -e "const d=require(process.env.EASYSUBWAY_DATAPACK_FINAL_RELEASE_DECISION); if (d.outcome !== process.env.EXPECTED_OUTCOME || d.remoteValidationPassed !== true) process.exit(1);"
+
+      - name: Data Pack Release / Publish current server route bundle and descriptor
+        if: ${{ !cancelled() && steps.production-publish.outputs.manifestSha256 != '' && steps.final-release-decision.outcome == 'success' && steps.final-release-decision.outputs.outcome == 'PUBLISHED_AND_VERIFIED' }}
+        env:
+          OCI_SERVER_ROUTE_NAMESPACE: ${{ vars.OCI_SERVER_ROUTE_NAMESPACE }}
+          OCI_SERVER_ROUTE_BUCKET: ${{ vars.OCI_SERVER_ROUTE_BUCKET }}
+          OCI_SERVER_ROUTE_REGION: ${{ vars.OCI_SERVER_ROUTE_REGION }}
+          OCI_SERVER_ROUTE_COMPAT_ENDPOINT: ${{ vars.OCI_SERVER_ROUTE_COMPAT_ENDPOINT }}
+          OCI_SERVER_ROUTE_PUBLIC_BASE_URL: ${{ vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL }}
+          OCI_SERVER_ROUTE_PUBLISHER_ACCESS_KEY: ${{ secrets.OCI_SERVER_ROUTE_PUBLISHER_ACCESS_KEY }}
+          OCI_SERVER_ROUTE_PUBLISHER_SECRET_KEY: ${{ secrets.OCI_SERVER_ROUTE_PUBLISHER_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "${CANDIDATE_HEAD_SHA}" == "${GITHUB_SHA}" ]]
+          route_root="${EASYSUBWAY_DATAPACK_STAGE}/server-route-bundle"
+          route_inputs="${EASYSUBWAY_DATAPACK_STAGE}/server-route-bundle-inputs"
+          route_evidence="${EASYSUBWAY_DATAPACK_STAGE}/server-route-bundle-evidence"
+          promotion_root="${RUNNER_TEMP}/downloaded-promotion"
+          publication_receipt="${RUNNER_TEMP}/server-route-bundle-publication-receipt.json"
+          release_final="${RUNNER_TEMP}/server-route-bundle-final.json"
+          descriptor="${RUNNER_TEMP}/server-route-bundle-publication-descriptor.json"
+          evaluation_at="$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).publishedAt)' "${route_inputs}/build-spec.json")"
+          node tools/datapack/publish-server-route-bundle.mjs \
+            --artifact-root "${route_root}" \
+            --final "${route_evidence}/server-route-bundle-final.json" \
+            --receipt "${publication_receipt}" \
+            --repository-git-sha "${GITHUB_SHA}" \
+            --public-base-url "${OCI_SERVER_ROUTE_PUBLIC_BASE_URL}"
+          node tools/datapack/build-server-route-bundle-final.mjs \
+            --artifact-root "${route_root}" \
+            --station-line-input "${route_inputs}/station-line-input.json" \
+            --route-edge-input "${route_inputs}/route-edge-input.json" \
+            --repository-git-sha "${GITHUB_SHA}" \
+            --evaluation-at "${evaluation_at}" \
+            --eligibility-report "${route_evidence}/route-accessibility-eligibility.json" \
+            --approval-evidence "${promotion_root}/promotion-approvals.json" \
+            --compatibility-evidence "${promotion_root}/compatibility-evidence.json" \
+            --promotion-component "${EASYSUBWAY_DATAPACK_STAGE}/data-component-manifest.json" \
+            --promotion-inventory "${EASYSUBWAY_DATAPACK_STAGE}/data-artifact-inventory.json" \
+            --promotion-request "${promotion_root}/promotion-request.json" \
+            --promotion-workflow-run-id "${EASYSUBWAY_DATAPACK_PROMOTION_RUN_ID}" \
+            --publication-receipt "${publication_receipt}" \
+            --rebuild-parity-evidence "${promotion_root}/rebuild-parity-evidence.json" \
+            --output "${release_final}"
+          node tools/datapack/build-server-route-bundle-publication-descriptor.mjs \
+            --artifact-root "${route_root}" \
+            --final "${release_final}" \
+            --publication-receipt "${publication_receipt}" \
+            --promotion-request "${promotion_root}/promotion-request.json" \
+            --repository-git-sha "${GITHUB_SHA}" \
+            --output "${descriptor}"
+          node tools/datapack/publish-server-route-bundle-publication-descriptor.mjs \
+            --descriptor "${descriptor}" \
+            --repository-git-sha "${GITHUB_SHA}"
 
       - name: Data Pack Release / Publish finalized release request binding
         if: ${{ !cancelled() && steps.remote-validation.outcome == 'success' && steps.final-release-decision.outcome == 'success' && (steps.final-release-decision.outputs.outcome == 'PUBLISHED_AND_VERIFIED' || steps.final-release-decision.outputs.outcome == 'NO_CHANGE_VALID') }}
