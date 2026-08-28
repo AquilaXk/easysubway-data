@@ -130,6 +130,18 @@ function networkEdgeEvidenceFixture() {
       path: "capital-topology-reverification.json",
       sha256: "5".repeat(64),
     },
+    incheonTimetables: {
+      line1: {
+        path: "tools/datapack/sources/incheon-line1-train-timetable-20260810.json",
+        sha256: "8".repeat(64),
+        snapshotId: "incheon-line1-train-timetable-20260810",
+      },
+      line2: {
+        path: "tools/datapack/sources/incheon-line2-train-timetable-20260810.json",
+        sha256: "9".repeat(64),
+        snapshotId: "incheon-line2-train-timetable-20260810",
+      },
+    },
     itxCoverageContract: { path: "itx-coverage.json", sha256: "6".repeat(64) },
   };
 }
@@ -715,6 +727,16 @@ test("networkEdgeEvidence는 current source evidence와 historical topology over
     assert.equal(
       candidateNetworkEdgeEvidence(current).itxCurrentTopologyAdmissionSha256,
       "7".repeat(64),
+    );
+    assert.deepEqual(candidateNetworkEdgeEvidence(current).incheonTimetableSnapshotIds, {
+      line1: "incheon-line1-train-timetable-20260810",
+      line2: "incheon-line2-train-timetable-20260810",
+    });
+    const missingTimetable = structuredClone(current);
+    delete missingTimetable.incheonTimetables.line2;
+    assert.throws(
+      () => candidateNetworkEdgeEvidence(missingTimetable),
+      /incheonTimetables.*line2|exact keys/,
     );
     assert.throws(
       () => candidateNetworkEdgeEvidence({ ...current, unknown: true }),
