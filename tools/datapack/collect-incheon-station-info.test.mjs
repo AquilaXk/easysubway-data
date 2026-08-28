@@ -219,6 +219,39 @@ test("인천 station-info collector는 schema·좌표·중복 분기를 fail clo
   assert.throws(() => parseIncheonStationInfoCsv(withGap), /official line code sequence/);
 });
 
+test("인천 station-info collector는 공식 FILE의 단일 데이터기준일자를 동적으로 보존하고 drift를 fail closed한다", async () => {
+  const csvBytes = await loadCsv();
+  const text = new TextDecoder("utf-8").decode(csvBytes);
+  const updatedDate = "2026-06-30";
+  const updatedBytes = Buffer.from(text.replaceAll("2025-06-30", updatedDate), "utf8");
+
+  const updated = collectIncheonStationInfo({
+    csvBytes: updatedBytes,
+    now: new Date("2026-07-24T06:00:00.000Z"),
+  });
+  assert.equal(updated.observedDataUpdatedAt, updatedDate);
+
+  const mixedDates = Buffer.from(text.replace("2025-06-30", updatedDate), "utf8");
+  assert.throws(
+    () => collectIncheonStationInfo({
+      csvBytes: mixedDates,
+      now: new Date("2026-07-24T06:00:00.000Z"),
+    }),
+    /data date mismatch/,
+  );
+
+  assert.throws(
+    () => collectIncheonStationInfo({
+      csvBytes: updatedBytes,
+      now: new Date("2026-06-29T23:59:59.000Z"),
+    }),
+    /invalid Incheon station info snapshot/,
+  );
+
+  const invalidDate = Buffer.from(text.replaceAll("2025-06-30", "2026-06-31"), "utf8");
+  assert.throws(() => parseIncheonStationInfoCsv(invalidDate), /invalid data date/);
+});
+
 test("인천 station-info collector CLI가 snapshot 파일을 기록한다", async (context) => {
   const { mkdtemp, rm } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");

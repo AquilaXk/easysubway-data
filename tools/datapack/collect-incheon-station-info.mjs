@@ -34,7 +34,6 @@ const OPERATOR_ID = "incheon-transit";
 const OPERATOR_NAME = "인천교통공사";
 const REGION = "수도권";
 const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
-const OBSERVED_DATA_UPDATED_AT = "2025-06-30";
 const LINE1 = "line-98718184f016";
 const LINE2 = "line-42b5805f3b5a";
 const LINE7 = "line-15b3b8a93259";
@@ -289,6 +288,7 @@ export function parseIncheonStationInfoCsv(csvBytes) {
 
   const indexes = Object.fromEntries(HEADERS.map((name, index) => [name, index]));
   const rawRows = [];
+  let observedDataUpdatedAt;
   let admittedLine7Count = 0;
   for (const [rowIndex, row] of table.slice(1).entries()) {
     if (row.length !== header.length) {
@@ -314,8 +314,13 @@ export function parseIncheonStationInfoCsv(csvBytes) {
       || latitude < 37.2 || latitude > 37.8 || longitude < 126.4 || longitude > 127.0) {
       throw new Error(`Incheon station info invalid coordinates: ${stationName}`);
     }
-    if (dataDate !== OBSERVED_DATA_UPDATED_AT) {
-      throw new Error(`Incheon station info unexpected data date: ${dataDate}`);
+    if (!isStrictDataDate(dataDate)) {
+      throw new Error(`Incheon station info invalid data date: ${dataDate}`);
+    }
+    if (observedDataUpdatedAt === undefined) {
+      observedDataUpdatedAt = dataDate;
+    } else if (dataDate !== observedDataUpdatedAt) {
+      throw new Error(`Incheon station info data date mismatch: ${dataDate}`);
     }
     if (line.lineId === LINE7) admittedLine7Count += 1;
     rawRows.push({
@@ -410,6 +415,7 @@ export function parseIncheonStationInfoCsv(csvBytes) {
   return {
     excludedLine7Count: EXPECTED_EXCLUDED_LINE7_COUNT,
     admittedLine7Count,
+    observedDataUpdatedAt,
     scope,
     edges,
     positions,
@@ -432,7 +438,7 @@ export function collectIncheonStationInfo({ csvBytes, now = new Date() } = {}) {
     endpoint: DETAIL_URL,
     capturedAt: capturedAt.toISOString(),
     freshUntil: new Date(capturedAt.getTime() + FRESHNESS_MILLIS).toISOString(),
-    observedDataUpdatedAt: OBSERVED_DATA_UPDATED_AT,
+    observedDataUpdatedAt: parsed.observedDataUpdatedAt,
     official: true,
     fixture: false,
     credentialRequired: false,
@@ -476,7 +482,7 @@ export function validateIncheonStationInfoSnapshot(snapshot) {
     || snapshot.sourceId !== SOURCE_ID || snapshot.datasetId !== DATASET_ID
     || snapshot.detailUrl !== DETAIL_URL || snapshot.official !== true || snapshot.fixture !== false
     || snapshot.credentialRequired !== false || snapshot.credentialRedacted !== true
-    || snapshot.observedDataUpdatedAt !== OBSERVED_DATA_UPDATED_AT
+    || !isStrictDataDate(snapshot.observedDataUpdatedAt)
     || snapshot.rawRowCount !== EXPECTED_RAW_ROW_COUNT
     || snapshot.admittedRowCount !== EXPECTED_ADMITTED_ROW_COUNT
     || snapshot.excludedLine7Count !== EXPECTED_EXCLUDED_LINE7_COUNT
@@ -505,6 +511,7 @@ export function validateIncheonStationInfoSnapshot(snapshot) {
     || !/^[a-f0-9]{64}$/.test(snapshot.rawSha256 ?? "")
     || Number.isNaN(Date.parse(snapshot.capturedAt))
     || Number.isNaN(Date.parse(snapshot.freshUntil))
+    || dataDateStartUtc(snapshot.observedDataUpdatedAt) > Date.parse(snapshot.capturedAt)
     || Date.parse(snapshot.freshUntil) !== Date.parse(snapshot.capturedAt) + FRESHNESS_MILLIS) {
     throw new Error("invalid Incheon station info snapshot");
   }
@@ -699,6 +706,16 @@ function validDate(value, label) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) throw new Error(`${label} is invalid`);
   return date;
+}
+
+function isStrictDataDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value ?? "")) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function dataDateStartUtc(value) {
+  return Date.parse(`${value}T00:00:00.000Z`);
 }
 
 function sha256(value) {
