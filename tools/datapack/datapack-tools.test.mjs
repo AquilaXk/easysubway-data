@@ -11,10 +11,13 @@ import { promisify } from "node:util";
 import test from "node:test";
 import { sortJson } from "./run-source-admission-pipeline.mjs";
 import {
+  admittedIncheonTopologyEvidence,
+  admittedPinnedIncheonAccessibilityEvidence,
   main as buildDatapack,
   normalizeUnverifiedNetworkEdgeStates,
   projectCapitalTopologyIntoCanonicalFixture,
 } from "./build-datapack.mjs";
+import { validateProductionIncheonAccessibilityFixture } from "./materialize-incheon-accessibility.mjs";
 import {
   buildCurrentReleaseCandidateAccessibilityAuthority,
   canonicalCurrentReleaseCandidateAccessibilityAuthorityJson,
@@ -34,7 +37,6 @@ import {
   buildCapitalTopologyReverificationEvidence,
   projectCapitalTopologyOwnership,
 } from "./collect-capital-route-topology.mjs";
-import { currentIncheonStationCodeDerivations } from "./collect-incheon-station-info.mjs";
 import {
   deriveTopology as deriveItxTopology,
   projectItxTopologyIntoCanonicalFixture,
@@ -17982,7 +17984,18 @@ async function writeCurrentItxReleaseInputs(
   const incheonSources = currentInventory.sources.filter(({ id }) => id === "incheon-transit-station-info");
   if (incheonSources.length !== 1) throw new Error("fixture current Incheon topology admission is required");
   const currentIncheonCapturedAt = incheonSources[0].topologyAdmissionEvidence?.capturedAt;
-  const buildNow = new Date(Math.max(...[sourceObservedAt, candidateTopology.capturedAt, currentIncheonCapturedAt].map((value) => {
+  const incheonAccessibilitySources = currentInventory.sources.filter(
+    ({ id }) => id === "incheon-transit-accessibility",
+  );
+  if (incheonAccessibilitySources.length !== 1) throw new Error("fixture pinned Incheon accessibility admission is required");
+  const currentIncheonAccessibilityCapturedAt =
+    incheonAccessibilitySources[0].accessibilityAdmissionEvidence?.capturedAt;
+  const buildNow = new Date(Math.max(...[
+    sourceObservedAt,
+    candidateTopology.capturedAt,
+    currentIncheonCapturedAt,
+    currentIncheonAccessibilityCapturedAt,
+  ].map((value) => {
     const timestamp = typeof value === "string" ? Date.parse(value) : Number.NaN;
     if (Number.isNaN(timestamp)) throw new Error("fixture current build clock input is invalid");
     return timestamp;
@@ -18078,19 +18091,39 @@ async function writeCurrentItxReleaseInputs(
   });
   const incheonSource = incheonSources[0];
   const incheonSnapshotPath = path.join(repositoryRoot, incheonSource.routeMapAdmissionEvidence.snapshotPath);
-  const incheonSnapshot = JSON.parse(await readFile(incheonSnapshotPath, "utf8"));
-  delete incheonSnapshot.stationCodeCorrections;
-  incheonSnapshot.stationCodeDerivations = currentIncheonStationCodeDerivations();
-  incheonSnapshot.capturedAt = candidateTopology.capturedAt;
-  incheonSnapshot.freshUntil = candidateTopology.freshUntil;
-  Object.assign(incheonSource.topologyAdmissionEvidence, {
-    capturedAt: candidateTopology.capturedAt,
-    freshUntil: candidateTopology.freshUntil,
-  });
-  const incheonSnapshotBytes = Buffer.from(`${JSON.stringify(incheonSnapshot)}\n`);
-  await writeFile(incheonSnapshotPath, incheonSnapshotBytes);
-  incheonSource.routeMapAdmissionEvidence.snapshotSha256 = sha256(incheonSnapshotBytes);
+  const incheonSnapshotBytes = await readFile(incheonSnapshotPath);
+  const incheonSnapshot = JSON.parse(incheonSnapshotBytes);
   mutateCurrentSourceContext?.({ buildSpec, currentInventory });
+  const now = new Date(buildNow);
+  const incheonTopologyAdmission = admittedIncheonTopologyEvidence({
+    sourceInventory: currentInventory,
+    snapshot: incheonSnapshot,
+    snapshotBytes: incheonSnapshotBytes,
+    now,
+  });
+  const incheonAccessibilityBinding = buildSpec.networkEdgeEvidence.incheonAccessibility;
+  assert.ok(incheonAccessibilityBinding != null, "fixture pinned Incheon accessibility evidence is required");
+  const incheonAccessibilityPath = incheonAccessibilityBinding.path;
+  assert.equal(typeof incheonAccessibilityPath, "string", "fixture pinned Incheon accessibility path");
+  const incheonAccessibilityBytes = await readFile(incheonAccessibilityPath);
+  assert.equal(
+    sha256(incheonAccessibilityBytes),
+    incheonAccessibilityBinding.sha256,
+    "fixture pinned Incheon accessibility binding must match its bytes",
+  );
+  const stagedIncheonAccessibilityPath = path.join(repositoryRoot, incheonAccessibilityPath);
+  await mkdir(path.dirname(stagedIncheonAccessibilityPath), { recursive: true });
+  await writeFile(stagedIncheonAccessibilityPath, incheonAccessibilityBytes);
+  const incheonAccessibilityAdmission = await admittedPinnedIncheonAccessibilityEvidence(
+    incheonAccessibilityBinding,
+    {
+      sourceInventory: currentInventory,
+      topologySnapshot: incheonSnapshot,
+      repositoryRoot,
+      now,
+    },
+  );
+  validateProductionIncheonAccessibilityFixture(fixture.packs, incheonAccessibilityAdmission);
   await bindCandidateAccessibilityContextToFixture({
     fixture,
     buildSpec,
@@ -18264,6 +18297,21 @@ async function bindCandidateAccessibilityContextToFixture({
     assert.equal(snapshotIds.size, 1, `${sourceId} fixture must use one accessibility snapshot`);
     const [snapshotId] = snapshotIds;
     const source = inventorySources.get(sourceId);
+    const incheonAccessibility = buildSpec.networkEdgeEvidence?.incheonAccessibility;
+    if (sourceId === "incheon-transit-accessibility"
+      && snapshotId === incheonAccessibility?.snapshotId) {
+      assert.equal(
+        buildSpec.sourceSnapshots.some((projection) => projection.sourceId === sourceId),
+        false,
+        `${sourceId} fixture explicit pin must not have a ledger projection`,
+      );
+      assert.equal(
+        buildSpec.sourceSnapshotIds.includes(snapshotId),
+        false,
+        `${sourceId} fixture explicit pin must not have a ledger snapshot id`,
+      );
+      continue;
+    }
     const snapshotMatches = ledger.filter(
       (snapshot) => snapshot.sourceId === sourceId && snapshot.snapshotId === snapshotId,
     );
@@ -18322,6 +18370,13 @@ async function bindCandidateAccessibilityContextToFixture({
 
   const selectedIds = new Set(buildSpec.sourceSnapshotIds);
   const selectedLedger = ledger.filter(({ snapshotId }) => selectedIds.has(snapshotId));
+  const incheonAccessibility = buildSpec.networkEdgeEvidence?.incheonAccessibility;
+  assert.equal(
+    selectedLedger.some(({ sourceId, snapshotId }) => sourceId === "incheon-transit-accessibility"
+      || snapshotId === incheonAccessibility?.snapshotId),
+    false,
+    "fixture selected ledger must not contain the explicit Incheon accessibility pin",
+  );
   assert.equal(selectedLedger.length, selectedIds.size, "fixture candidate source-set must be ledger-complete");
   buildSpec.sourceSnapshotSetHash = sha256(JSON.stringify(selectedLedger));
 }
