@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
   "issue": 1996,
-  "builderGitSha": "ef0c8fc70afad70b1f7608b14259d7ef018b992e",
+  "builderGitSha": "687e782239e128274cc52db560512835044adcb6",
   "builderVersion": "build-datapack.mjs@26",
   "productionScopeId": "capital_pilot_android_v1",
   "truthfulnessRule": "모든 값은 tracked canonical fixture·inventory·official snapshot에서 결정적으로 재산출한다. 2026-07-28 신규 KRIC standard·서울 snapshot을 소비 claim에 결속하고 route 가용성은 추론하지 않는다.",
@@ -49,19 +49,19 @@
     "reproductionCommand": "node -e \"import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto');const s=require('./tools/datapack/release/source-snapshots.json'),b=require('./tools/datapack/release/candidate-build-spec.json'),i=b.sourceSnapshotIds;if(!Array.isArray(i)||new Set(i).size!==i.length)throw new Error('candidate snapshot IDs are invalid');const h=validateLineage(s).headsBySource,p=i.map(id=>{const n=s.filter(x=>x.snapshotId===id);if(n.length!==1||h[n[0].sourceId]!==id)throw new Error('candidate source snapshot mismatch: '+id);return n[0]});if(new Set(p.map(x=>x.sourceId)).size!==p.length)throw new Error('candidate source snapshots are not unique');const k=new Set(i),r=s.filter(x=>k.has(x.snapshotId));if(r.length!==p.length)throw new Error('candidate ledger selection mismatch');if(!Array.isArray(b.sourceSnapshots)||b.sourceSnapshots.length!==p.length||b.sourceSnapshots.some((x,n)=>x.sourceId!==p[n].sourceId||x.snapshotId!==p[n].snapshotId))throw new Error('candidate source projection mismatch');console.log(c.createHash('sha256').update(JSON.stringify(r)).digest('hex'))})\""
   },
   "sourceInventorySha256": {
-    "value": "665ca50723d711362a9920a56f02ded014b36b8183523dab5950c7e1bd84b1c6",
+    "value": "a398bce1a61914f4bc0c8395b3520adad33968b94352245cc26b87207a211c10",
     "contract": "run-source-admission-pipeline.mjs의 공식 sha256(JSON.stringify(admittedInventory)) 계약. 현행 브랜치의 tools/datapack/source-inventory.json이 최종 admitted inventory이며 워크플로 빌드가 실제로 소비하는 인벤토리와 동일 파일.",
     "reproductionCommand": "node -e \"const c=require('crypto'),fs=require('fs');console.log(c.createHash('sha256').update(JSON.stringify(JSON.parse(fs.readFileSync('tools/datapack/source-inventory.json','utf8')))).digest('hex'))\""
   },
   "fixturePath": {
     "value": "tools/datapack/release/capital-production-canonical-pack.json",
-    "sha256": "d692e0ae1be693074f4dd3967db77e1b5720ccd5ce908670e0d8af1452612f1e",
+    "sha256": "70e82a230e1b02fe9066574f98f3115cc2bdfdd35b1a096b89efacd66c1a67e9",
     "contract": "#2648에서 배포 중인 capital SQLite 전체를 lossless fixture로 고정하고, 2c72677b builder가 전체 ITX readmission chain과 최종 output identity를 검증한다.",
     "reproductionCommand": "shasum -a 256 tools/datapack/release/capital-production-canonical-pack.json"
   },
   "identifiers": {
     "candidateId": {
-      "value": "capital-pilot-candidate-20260827",
+      "value": "capital-pilot-candidate-20260828",
       "note": "파일 기반 경로는 backend candidate 행을 우회하므로 리포에 고정 명명 계약 없음. fixture 선례(capital-pilot-candidate-fixture)+snapshot 날짜 관례로 명명. release-request.candidateId와 동일(자체 정합)."
     },
     "approvalId": {
