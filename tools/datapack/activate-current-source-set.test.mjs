@@ -10,6 +10,10 @@ import test from "node:test";
 import { syncCanonicalFixture } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
 import { admittedIncheonTopologyEvidence, projectCapitalTopologyIntoCanonicalFixture,
   projectIncheonNetworkEdges, validateProductionIncheonNetworkEdgeFixture } from "./build-datapack.mjs";
+import {
+  admittedIncheonAccessibilityEvidence,
+  validateProductionIncheonAccessibilityFixture,
+} from "./materialize-incheon-accessibility.mjs";
 import { requireCurrentIncheonTopologyAdmission, activateStaticSourceRevalidations,
   buildCurrentCandidateSpec, buildCurrentSourcePrimaryOutputs,
   buildCurrentTopologyRefreshPrimaryOutputs, commitCurrentSourceActivation,
@@ -1096,6 +1100,11 @@ test("generated current candidate spec은 expired ITX topology overlay를 재도
   baseSpec.networkEdgeEvidence.itxCurrentTopologyAdmission = {
     snapshotId: "obsolete-itx-current-topology",
   };
+  baseSpec.networkEdgeEvidence.incheonAccessibility = {
+    path: "tools/datapack/sources/incheon-transit-accessibility-20260828.json",
+    sha256: "0".repeat(64),
+    snapshotId: "incheon-transit-accessibility-20260828",
+  };
   const { admission, relativePath: currentTopologyPath, bytes: currentTopologyBytes, topology: currentTopology } =
     await currentCapitalTopology(sourceInventory);
   assert.equal(currentTopology.lines.length, 22);
@@ -1115,6 +1124,7 @@ test("generated current candidate spec은 expired ITX topology overlay를 재도
   });
 
   assert.equal(Object.hasOwn(next.networkEdgeEvidence, "itxCurrentTopologyAdmission"), false);
+  assert.equal(Object.hasOwn(next.networkEdgeEvidence, "incheonAccessibility"), false);
   assert.deepEqual(next.networkEdgeEvidence.capitalTopology, baseSpec.networkEdgeEvidence.capitalTopology);
   assert.deepEqual(next.networkEdgeEvidence.capitalTopologyCandidate, {
     path: currentTopologyPath,
@@ -1236,6 +1246,14 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
   assert.equal(result.spec.networkEdgeEvidence.capitalTopologyCandidate.path, currentTopologyPath);
   assert.equal(result.spec.networkEdgeEvidence.capitalTopologyCandidate.sha256,
     sha256(currentTopologyBytes));
+  const incheonAccessibilityAdmission = result.sourceInventory.sources
+    .find(({ id }) => id === "incheon-transit-accessibility")
+    .accessibilityAdmissionEvidence;
+  assert.deepEqual(result.spec.networkEdgeEvidence.incheonAccessibility, {
+    path: currentIncheonAccessibilityPath,
+    sha256: sha256(currentIncheonAccessibilityBytes),
+    snapshotId: incheonAccessibilityAdmission.snapshotId,
+  });
   assert.equal(
     result.spec.networkEdgeEvidence.capitalTopologyReverification.sha256,
     sha256(result.topologyReverificationBytes),
@@ -1252,6 +1270,26 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
   const capital = result.canonical.packs.find(({ id }) => id === "capital");
   const previousCapital = canonical.packs.find(({ id }) => id === "capital");
   const reviewedCapital = result.reviewedPack.packs.find(({ id }) => id === "capital");
+  const incheonFacilities = capital.facilities.filter(({ sourceId }) =>
+    sourceId === "incheon-transit-accessibility");
+  const incheonFacilityEvidence = capital.stationFacilityEvidence.filter(({ sourceId }) =>
+    sourceId === "incheon-transit-accessibility");
+  assert.equal(incheonFacilities.length, incheonAccessibilityAdmission.facilityCount);
+  assert.equal(incheonFacilityEvidence.length, incheonAccessibilityAdmission.facilityCount);
+  assert.equal(new Set(incheonFacilities.map(({ id }) => id)).size,
+    incheonAccessibilityAdmission.facilityCount);
+  assert.equal(new Set(incheonFacilityEvidence.map(({ stationId, lineId, facilityType }) =>
+    `${stationId}:${lineId}:${facilityType}`)).size, incheonAccessibilityAdmission.facilityCount);
+  assert.ok([...incheonFacilities, ...incheonFacilityEvidence].every((row) =>
+    row.sourceSnapshotId === incheonAccessibilityAdmission.snapshotId
+      && row.evidenceHash === incheonAccessibilityAdmission.rowsSha256));
+  assert.doesNotThrow(() => validateProductionIncheonAccessibilityFixture([capital],
+    admittedIncheonAccessibilityEvidence({
+      sourceInventory: result.sourceInventory,
+      snapshot: currentIncheonAccessibility,
+      topologySnapshot: currentIncheonTopology,
+      now: new Date(buildNow),
+    })));
   assert.deepEqual(
     capital.sourceInventory.map(({ id }) => id),
     previousCapital.sourceInventory.map(({ id }) => id),

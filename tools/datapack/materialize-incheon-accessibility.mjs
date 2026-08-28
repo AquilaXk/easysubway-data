@@ -59,8 +59,13 @@ export function materializeIncheonAccessibility({
   inventory,
   now = new Date(),
 } = {}) {
-  const rows = validateSnapshot(accessibilitySnapshot);
-  const source = requiredSource(inventory, accessibilitySnapshot, topologySnapshot, now);
+  const admission = admittedIncheonAccessibilityEvidence({
+    sourceInventory: inventory,
+    snapshot: accessibilitySnapshot,
+    topologySnapshot,
+    now,
+  });
+  const { rows, source } = admission;
   const fixture = structuredClone(baseFixture);
   const pack = fixture.packs?.[0];
   if (!pack || fixture.packs.length !== 1 || pack.artifactKind !== "production") {
@@ -79,7 +84,7 @@ export function materializeIncheonAccessibility({
   validateTopologyLineage(inventory, source.accessibilityAdmissionEvidence, topologySnapshot);
   const stations = canonicalStations(pack, topologySnapshot);
 
-  const snapshotId = source.accessibilityAdmissionEvidence.snapshotId;
+  const snapshotId = admission.snapshotId;
   const facilities = [];
   const evidence = [];
   for (const row of rows) {
@@ -183,6 +188,133 @@ export function materializeIncheonAccessibility({
   return fixture;
 }
 
+export function admittedIncheonAccessibilityEvidence({
+  sourceInventory,
+  snapshot,
+  topologySnapshot,
+  now = new Date(),
+} = {}) {
+  const rows = validateSnapshot(snapshot);
+  const source = requiredSource(sourceInventory, snapshot, topologySnapshot, now);
+  const evidence = source.accessibilityAdmissionEvidence;
+  const topologyMembership = exactTopologyMembership(rows, topologySnapshot);
+  const fixtureIdentities = expectedFixtureIdentities(rows, topologyMembership);
+  if (fixtureIdentities.facilities.length !== evidence.facilityCount
+    || fixtureIdentities.evidence.length !== evidence.facilityCount) {
+    throw new Error("Incheon accessibility admission fixture counts are invalid");
+  }
+  return {
+    source: structuredClone(source),
+    rows: structuredClone(rows),
+    topologyMembership,
+    fixtureIdentities,
+    snapshotId: evidence.snapshotId,
+    snapshotPath: evidence.snapshotPath,
+    evidenceHash: evidence.rowsSha256,
+    freshUntil: evidence.freshUntil,
+    facilityCount: evidence.facilityCount,
+  };
+}
+
+export function validateProductionIncheonAccessibilityFixture(packs, admission) {
+  if (!Array.isArray(packs) || admission?.source?.id !== SOURCE_ID
+    || !Number.isSafeInteger(admission.facilityCount) || admission.facilityCount <= 0
+    || !/^incheon-transit-accessibility-\d{8}$/u.test(admission.snapshotId ?? "")
+    || !/^[a-f0-9]{64}$/u.test(admission.evidenceHash ?? "")) {
+    throw new TypeError("Incheon accessibility production admission is invalid");
+  }
+  const expected = expectedFixtureIdentities(admission.rows, admission.topologyMembership);
+  if (expected.facilities.length !== admission.facilityCount
+    || expected.evidence.length !== admission.facilityCount
+    || JSON.stringify(admission.fixtureIdentities) !== JSON.stringify(expected)) {
+    throw new Error("Incheon accessibility production admission identity is invalid");
+  }
+  const facilities = packs.flatMap((pack) => pack?.facilities ?? [])
+    .filter(({ sourceId }) => sourceId === SOURCE_ID);
+  const evidence = packs.flatMap((pack) => pack?.stationFacilityEvidence ?? [])
+    .filter(({ sourceId }) => sourceId === SOURCE_ID);
+  const expectedFacilities = new Map(expected.facilities.map((row) => [row.id, row]));
+  const expectedEvidence = new Set(expected.evidence.map(evidenceIdentity));
+  const facilityIds = new Set(facilities.map(({ id }) => id));
+  const evidenceIds = new Set(evidence.map(evidenceIdentity));
+  if (facilities.length !== admission.facilityCount
+    || evidence.length !== admission.facilityCount
+    || facilityIds.size !== admission.facilityCount
+    || evidenceIds.size !== admission.facilityCount
+    || facilities.some((row) => typeof row.id !== "string"
+      || row.sourceSnapshotId !== admission.snapshotId
+      || row.evidenceHash !== admission.evidenceHash
+      || !sameFacilityIdentity(row, expectedFacilities.get(row.id)))
+    || evidence.some((row) => typeof row.stationId !== "string"
+      || typeof row.lineId !== "string"
+      || typeof row.facilityType !== "string"
+      || row.sourceSnapshotId !== admission.snapshotId
+      || row.evidenceHash !== admission.evidenceHash
+      || !expectedEvidence.has(evidenceIdentity(row)))) {
+    throw new Error("production Incheon accessibility fixture does not match pinned admission");
+  }
+  return admission.freshUntil;
+}
+
+function exactTopologyMembership(rows, topologySnapshot) {
+  const topology = validateIncheonStationInfoSnapshot(topologySnapshot);
+  const membership = topology.scope
+    .filter(({ lineId }) => LINE_IDS.includes(lineId))
+    .map(({ stationId, lineId, stationCode }) => ({ stationId, lineId, stationCode }));
+  const bySourceKey = new Map(membership.map((row) => [membershipIdentity(row), row]));
+  const sourceKeys = new Set(rows.map(membershipIdentity));
+  if (membership.length !== rows.length
+    || bySourceKey.size !== rows.length
+    || sourceKeys.size !== rows.length
+    || [...sourceKeys].some((key) => !bySourceKey.has(key))) {
+    throw new Error("Incheon accessibility topology membership identity mismatch");
+  }
+  return structuredClone(membership);
+}
+
+function expectedFixtureIdentities(rows, topologyMembership) {
+  if (!Array.isArray(rows) || !Array.isArray(topologyMembership)) {
+    throw new TypeError("Incheon accessibility fixture identity inputs are invalid");
+  }
+  const membershipBySourceKey = new Map(topologyMembership.map((row) => [membershipIdentity(row), row]));
+  const facilities = [];
+  const evidence = [];
+  for (const row of rows) {
+    const member = membershipBySourceKey.get(membershipIdentity(row));
+    if (!member) throw new Error("Incheon accessibility fixture membership is missing");
+    for (const { type, slug } of FACILITY_TYPES) {
+      facilities.push({
+        id: `facility-incheon-${member.stationCode}-${slug}`,
+        stationId: member.stationId,
+        lineId: member.lineId,
+        type,
+      });
+      evidence.push({ stationId: member.stationId, lineId: member.lineId, facilityType: type });
+    }
+  }
+  const facilityIds = new Set(facilities.map(({ id }) => id));
+  const evidenceIds = new Set(evidence.map(evidenceIdentity));
+  if (facilityIds.size !== facilities.length || evidenceIds.size !== evidence.length) {
+    throw new Error("Incheon accessibility fixture identities are not unique");
+  }
+  return { facilities, evidence };
+}
+
+function membershipIdentity({ lineId, stationCode }) {
+  return `${lineId}:${stationCode}`;
+}
+
+function evidenceIdentity({ stationId, lineId, facilityType }) {
+  return `${stationId}:${lineId}:${facilityType}`;
+}
+
+function sameFacilityIdentity(actual, expected) {
+  return expected != null
+    && actual.stationId === expected.stationId
+    && actual.lineId === expected.lineId
+    && actual.type === expected.type;
+}
+
 export function materializedIncheonAccessibilityPackContentHash(pack, version) {
   const content = { ...pack };
   delete content.id;
@@ -240,7 +372,8 @@ function requiredSource(inventory, snapshot, topologySnapshot, now) {
   const evidence = source?.accessibilityAdmissionEvidence;
   const topologySnapshotId = inventory?.sources?.find(({ id }) => id === TOPOLOGY_SOURCE_ID)
     ?.topologyAdmissionEvidence?.snapshotId;
-  if (source?.productionUseAllowed !== true || source.license?.redistributionAllowed !== true
+  if (source?.requiredForProductionPack !== false || source.productionUseAllowed !== true
+    || source.license?.redistributionAllowed !== true
     || source.license?.type !== "PUBLIC_DATA_FREE_USE"
     || source.capabilities?.facility?.productionUseAllowed !== true
     || source.capabilities?.facility?.status !== "SUPPORTED"

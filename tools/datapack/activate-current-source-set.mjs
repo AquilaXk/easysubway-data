@@ -31,7 +31,10 @@ import {
   validateIncheonStationInfoSnapshot,
 } from "./collect-incheon-station-info.mjs";
 import { materializeIncheonStationInfo } from "./materialize-incheon-station-info.mjs";
-import { materializeIncheonAccessibility } from "./materialize-incheon-accessibility.mjs";
+import {
+  admittedIncheonAccessibilityEvidence,
+  materializeIncheonAccessibility,
+} from "./materialize-incheon-accessibility.mjs";
 import { materializeIncheonTimetable } from "./materialize-incheon-timetable.mjs";
 import {
   admittedCapitalLineEvidence,
@@ -1490,6 +1493,15 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
     snapshotBytes: currentIncheonTopologyBytes,
     now: activationNow,
   });
+  const incheonAccessibilityAdmission = admittedIncheonAccessibilityEvidence({
+    sourceInventory: nextInventory,
+    snapshot: currentIncheonAccessibility,
+    topologySnapshot: currentIncheonTopology,
+    now: activationNow,
+  });
+  if (incheonAccessibilityAdmission.snapshotPath !== currentIncheonAccessibilityPath) {
+    throw new Error("current Incheon accessibility snapshot path does not match admission");
+  }
   assertExactCurrentCapitalTopologyAdmissions(nextInventory, topology, topologySnapshotId);
   const topologyReverification = buildCapitalTopologyReverificationEvidence(
     historicalCapitalTopologyOwnershipBaseline({ baseSpec, baselineTopology, baselineTopologyBytes }),
@@ -1560,6 +1572,9 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
     candidateTopologyPath: currentTopologyPath,
     topologyReverificationBytes,
     productionScopePolicyBytes,
+    incheonAccessibilityPath: currentIncheonAccessibilityPath,
+    incheonAccessibilityBytes: currentIncheonAccessibilityBytes,
+    incheonAccessibilitySnapshotId: incheonAccessibilityAdmission.snapshotId,
   });
   spec.publishedAt = activationNow.toISOString();
   if (currentItxTopologyEvidencePath !== requiredItxTopologyEvidencePath(baseSpec)
@@ -1678,17 +1693,26 @@ export function buildCurrentCandidateSpec({
   candidateTopologyPath,
   topologyReverificationBytes,
   productionScopePolicyBytes,
+  incheonAccessibilityPath,
+  incheonAccessibilityBytes,
+  incheonAccessibilitySnapshotId,
 }) {
   if (!baseSpec || baseSpec.schemaVersion !== 1
     || baseSpec.artifactKind !== "datapack-candidate-build-spec"
     || !/^[0-9a-f]{40}$/u.test(builderGitSha ?? "")) {
     throw new Error("current candidate base spec or builder identity is invalid");
   }
+  const hasIncheonAccessibilityPin = [
+    incheonAccessibilityPath,
+    incheonAccessibilityBytes,
+    incheonAccessibilitySnapshotId,
+  ].some((value) => value !== undefined);
   if (!Buffer.isBuffer(sourceInventoryBytes)
     || !Buffer.isBuffer(fullTopologyBytes)
     || !Buffer.isBuffer(candidateTopologyBytes)
     || !Buffer.isBuffer(topologyReverificationBytes)
-    || !Buffer.isBuffer(productionScopePolicyBytes)) {
+    || !Buffer.isBuffer(productionScopePolicyBytes)
+    || (hasIncheonAccessibilityPin && !Buffer.isBuffer(incheonAccessibilityBytes))) {
     throw new Error("current capital topology candidate identity is invalid");
   }
   const topologySnapshotId = exactCurrentTopologySnapshotIdentity({
@@ -1704,9 +1728,15 @@ export function buildCurrentCandidateSpec({
   }
   const snapshotDate = topologySnapshotId.slice(-8);
   const topologyReverificationPath = `tools/datapack/release/capital-topology-reverification-${snapshotDate}.json`;
+  if (hasIncheonAccessibilityPin && (typeof incheonAccessibilityPath !== "string"
+    || !/^incheon-transit-accessibility-\d{8}$/u.test(incheonAccessibilitySnapshotId ?? "")
+    || incheonAccessibilityPath !== `tools/datapack/sources/${incheonAccessibilitySnapshotId}.json`)) {
+    throw new Error("current Incheon accessibility candidate identity is invalid");
+  }
   const spec = structuredClone(baseSpec);
   if (spec.networkEdgeEvidence) {
     delete spec.networkEdgeEvidence.itxCurrentTopologyAdmission;
+    delete spec.networkEdgeEvidence.incheonAccessibility;
   }
   spec.candidateId = `capital-pilot-candidate-${snapshotDate}`;
   spec.builderGitSha = builderGitSha;
@@ -1742,6 +1772,11 @@ export function buildCurrentCandidateSpec({
       reverifiedAt: candidateTopology.capturedAt,
       freshUntil: candidateTopology.freshUntil,
     },
+    ...(hasIncheonAccessibilityPin ? { incheonAccessibility: {
+      path: incheonAccessibilityPath,
+      sha256: sha256(incheonAccessibilityBytes),
+      snapshotId: incheonAccessibilitySnapshotId,
+    } } : {}),
   };
   return spec;
 }
