@@ -1140,9 +1140,7 @@ function replaceIncheonCanonicalSlice(canonical, projected, {
     : binding.id === "incheon-transit-accessibility"
       ? binding.source?.accessibilityAdmissionEvidence?.snapshotId
       : binding.source?.scheduleAdmissionEvidence?.snapshotId;
-  const sourceCapturedAt = (binding) => binding.id === "incheon-transit-station-info"
-    ? binding.snapshot?.capturedAt
-    : binding.snapshot?.capturedAt;
+  const sourceCapturedAt = (binding) => binding.snapshot?.capturedAt;
   const expectedProjectedSource = (binding) => ({
     id: binding.id,
     owner: binding.source?.owner,
