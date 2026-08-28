@@ -4,6 +4,8 @@ import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH, canonicalCurrentCapitalLiveChainFanInBoundaryJson, deriveCurrentLiveChainTransferDescriptorIdentity, validateCurrentCapitalLiveChainFanInBoundary } from "./build-current-capital-live-chain-boundary.mjs";
+import { canonicalCurrentExitAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
+import { canonicalExitPathAdmissionJson } from "./build-exit-path-admission.mjs";
 import { canonicalRouteEdgeEvaluationJson, evaluateRouteAccessibilityEdges } from "./evaluate-route-accessibility-edges.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
 
@@ -80,7 +82,7 @@ export async function buildCurrentCapitalLiveChainBundle({ root, outputDirectory
     return { path: relative, sha256: sha256(bytes), bytesBase64: bytes.toString("base64") };
   }));
   correlateBoundaryComponents(boundary.value, entries);
-  validateRouteEdgeEvaluationEntries(new Map(entries.map((entry) => [entry.path, entry])));
+  validateRouteEdgeEvaluationEntries(new Map(entries.map((entry) => [entry.path, entry])), { repository, repositorySha, operationId });
   const manifest = { schemaVersion: 1, artifactKind: "current-capital-live-chain-composite", repository, repositorySha, operationId, providerReceiptRelativePath: receipt, providerReceiptSha256: entries.find((entry) => entry.path === receipt).sha256, boundary: { path: boundary.relativePath, sha256: sha256(boundary.bytes) }, entries: entries.map(({ path: entryPath, sha256: digest }) => ({ path: entryPath, sha256: digest })) };
   const manifestJson = `${canonical(manifest)}\n`;
   const payload = { ...manifest, manifestSha256: sha256(Buffer.from(manifestJson)), boundaryBytesBase64: boundary.bytes.toString("base64"), entries };
@@ -111,7 +113,7 @@ export function readCurrentCapitalLiveChainBundle(bytes, { repository, repositor
   const boundary = readCanonicalBoundary(strictBase64(bundle.boundaryBytesBase64), bundle.boundary?.path);
   if (!bundle.boundary || Object.keys(bundle.boundary).length !== 2 || bundle.boundary.path !== boundary.relativePath || bundle.boundary.sha256 !== sha256(boundary.bytes)) throw new Error("live-chain boundary digest mismatch");
   correlateBoundaryComponents(boundary.value, entries);
-  validateRouteEdgeEvaluationEntries(byPath);
+  validateRouteEdgeEvaluationEntries(byPath, { repository, repositorySha, operationId });
   const manifest = { schemaVersion: bundle.schemaVersion, artifactKind: bundle.artifactKind, repository: bundle.repository, repositorySha: bundle.repositorySha, operationId: bundle.operationId, providerReceiptRelativePath: receipt, providerReceiptSha256: bundle.providerReceiptSha256, boundary: bundle.boundary, entries: entries.map(({ path: entryPath, sha256: digest }) => ({ path: entryPath, sha256: digest })) };
   if (sha256(Buffer.from(`${canonical(manifest)}\n`)) !== bundle.manifestSha256 || sha256(Buffer.from(canonical({ ...manifest, manifestSha256: bundle.manifestSha256, boundaryBytesBase64: bundle.boundaryBytesBase64, entries }))) !== bundle.bundleSha256 || entries.find((entry) => entry.path === receipt)?.sha256 !== bundle.providerReceiptSha256) throw new Error("live-chain bundle identity mismatch");
   return { ...bundle, entries };
@@ -143,11 +145,35 @@ function entryBytes(byPath, relative) {
   return strictBase64(entry.bytesBase64);
 }
 
-function validateRouteEdgeEvaluationEntries(byPath) {
+function validateRouteEdgeEvaluationEntries(byPath, { repository, repositorySha, operationId }) {
+  const candidateBuildSpec = entryJson(byPath, "tools/datapack/release/candidate-build-spec.json");
   const routeEdgeInput = entryJson(byPath, "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json");
   const stationLineInput = entryJson(byPath, "tools/datapack/release/current-capital-accessibility-full/station-line-input.json");
   const policy = entryJson(byPath, "release/product-gates/route-edge-evaluation-policy.json");
   const evaluation = entryJson(byPath, "tools/datapack/release/current-capital-accessibility-full/route-edge-evaluation.json");
+  const admissionBytes = entryBytes(byPath, "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json");
+  const receiptBytes = entryBytes(byPath, CURRENT_CAPITAL_LIVE_CHAIN_PROVIDER_RECEIPT_PATH);
+  const admission = entryJson(byPath, "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json");
+  const receipt = entryJson(byPath, CURRENT_CAPITAL_LIVE_CHAIN_PROVIDER_RECEIPT_PATH);
+  if (admissionBytes.toString("utf8") !== canonicalExitPathAdmissionJson(admission)
+    || receiptBytes.toString("utf8") !== `${canonicalCurrentExitAdmissionOciReceiptJson(receipt)}\n`) {
+    throw new Error("live-chain EXIT bytes are not canonical");
+  }
+  if (admission.decision !== "GO" || receipt.admissionSha256 !== sha256(admissionBytes)
+    || receipt.admissionDigest !== admission.admissionDigest
+    || receipt.repository !== repository || receipt.mainSha !== repositorySha || receipt.operationId !== operationId) {
+    throw new Error("live-chain EXIT identity mismatch");
+  }
+  const candidates = [candidateBuildSpec, routeEdgeInput.candidate, stationLineInput.candidate, admission.candidate];
+  if (candidates.some(({ candidateId }) => candidateId !== candidateBuildSpec.candidateId)
+    || candidates.slice(1).some(({ sourceSetSha256 }) => sourceSetSha256 !== candidateBuildSpec.sourceSnapshotSetHash)
+    || candidates.slice(1).some(({ stationSetSha256 }) => stationSetSha256 !== routeEdgeInput.candidate.stationSetSha256)
+    || stationLineInput.candidate.mappingContractVersion !== admission.candidate.mappingContractVersion
+    || stationLineInput.candidate.materializerVersion !== admission.candidate.materializerVersion
+    || routeEdgeInput.candidate.policyVersion !== policy.policyVersion
+    || evaluation.evaluationAt !== admission.sourceIdentity?.approvedAt) {
+    throw new Error("live-chain route evaluation identity mismatch");
+  }
   const materialization = materializeStationLineAccessibility({ ...stationLineInput, observedAt: evaluation.evaluationAt });
   const expected = Buffer.from(canonicalRouteEdgeEvaluationJson(evaluateRouteAccessibilityEdges(
     { ...routeEdgeInput, evaluationAt: evaluation.evaluationAt, materialization }, policy,
