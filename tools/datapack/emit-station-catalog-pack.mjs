@@ -9,7 +9,7 @@ import { canonicalJson, validateArtifactComponentManifest } from "./lib/manifest
 
 const INPUT = "tools/datapack/release/capital-production-canonical-pack.json";
 const NODE_VERSION = "24.19.0";
-const SQLITE_VERSION = "3.53.4";
+const SQLITE_VERSION = "3.53.3";
 const PROVENANCE_KEYS = ["sourceId", "sourceSnapshotId", "providerRecordHash", "evidenceHash", "derivationKind", "lastVerifiedAt"];
 const PROVENANCE_IDENTITY_KEYS = PROVENANCE_KEYS.slice(0, -1);
 const TABLES = {

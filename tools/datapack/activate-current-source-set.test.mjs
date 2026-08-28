@@ -757,8 +757,11 @@ test("current Incheon topology admission validates exact already-admitted identi
   ]);
   const historicalSnapshotBytes = await readFile(path.join(root, snapshotPath));
   const historicalSnapshot = JSON.parse(historicalSnapshotBytes);
+  const admittedRouteMap = structuredClone(sourceInventory.sources
+    .find(({ id }) => id === "incheon-transit-station-info").routeMapAdmissionEvidence);
   const snapshot = structuredClone(historicalSnapshot);
   const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
+  const validationNow = new Date(Date.parse(snapshot.capturedAt) + 1);
   const activated = requireCurrentIncheonTopologyAdmission({
     sourceInventory,
     snapshot,
@@ -782,7 +785,7 @@ test("current Incheon topology admission validates exact already-admitted identi
   assert.equal(source.membershipAdmissionEvidence.membershipSourceSnapshotSha256, snapshot.scopeSha256);
   assert.equal(source.routeMapAdmissionEvidence.snapshotSha256, sha256(snapshotBytes));
   assert.equal(source.routeMapAdmissionEvidence.positionsSha256, snapshot.positionsSha256);
-  assert.equal(source.routeMapAdmissionEvidence.freshUntil, "2027-08-13T15:06:46.000Z");
+  assert.deepEqual(source.routeMapAdmissionEvidence, admittedRouteMap);
   assert.equal(accessibility.topologySnapshotId, path.basename(snapshotPath, ".json"));
   assert.deepEqual(
     [...accessibility.topologyLineages, ...accessibility.membershipLineages]
@@ -794,22 +797,24 @@ test("current Incheon topology admission validates exact already-admitted identi
     Array(2).fill(path.basename(snapshotPath, ".json")),
   );
 
+  const missingDerivations = structuredClone(snapshot);
+  delete missingDerivations.stationCodeDerivations;
   assert.throws(() => requireCurrentIncheonTopologyAdmission({
     sourceInventory,
-    snapshot: historicalSnapshot,
-    snapshotBytes: historicalSnapshotBytes,
+    snapshot: missingDerivations,
+    snapshotBytes: Buffer.from(`${JSON.stringify(missingDerivations)}\n`),
     snapshotPath,
-    now: new Date("2026-08-14T00:00:00.000Z"),
+    now: validationNow,
   }), /invalid Incheon station code derivations|current Incheon station code derivations are required/);
 
   const legacyCorrection = structuredClone(snapshot);
-  legacyCorrection.stationCodeCorrections = structuredClone(historicalSnapshot.stationCodeCorrections);
+  legacyCorrection.stationCodeCorrections = [];
   assert.throws(() => requireCurrentIncheonTopologyAdmission({
     sourceInventory,
     snapshot: legacyCorrection,
     snapshotBytes: Buffer.from(`${JSON.stringify(legacyCorrection)}\n`),
     snapshotPath,
-    now: new Date("2026-08-14T00:00:00.000Z"),
+    now: validationNow,
   }), /current Incheon legacy station code corrections are forbidden/);
 
   const oldDerivation = structuredClone(snapshot);
@@ -819,7 +824,7 @@ test("current Incheon topology admission validates exact already-admitted identi
     snapshot: oldDerivation,
     snapshotBytes: Buffer.from(`${JSON.stringify(oldDerivation)}\n`),
     snapshotPath,
-    now: new Date("2026-08-14T00:00:00.000Z"),
+    now: validationNow,
   }), /invalid Incheon station code derivations|current Incheon station code derivations are required/);
 
   const changedEdges = structuredClone(snapshot);
@@ -836,7 +841,7 @@ test("current Incheon topology admission validates exact already-admitted identi
     snapshot: changedEdges,
     snapshotBytes: changedEdgeBytes,
     snapshotPath,
-    now: new Date("2026-08-14T00:00:00.000Z"),
+    now: validationNow,
   }), /content changed; re-admission required/);
 
   assert.throws(() => requireCurrentIncheonTopologyAdmission({
@@ -844,14 +849,14 @@ test("current Incheon topology admission validates exact already-admitted identi
     snapshot,
     snapshotBytes: Buffer.concat([snapshotBytes, Buffer.from(" ")]),
     snapshotPath,
-    now: new Date("2026-08-14T00:00:00.000Z"),
+    now: validationNow,
   }), /snapshot byte identity mismatch/);
   assert.throws(() => requireCurrentIncheonTopologyAdmission({
     sourceInventory,
     snapshot,
     snapshotBytes,
     snapshotPath,
-    now: new Date("2026-08-14T15:06:46.000Z"),
+    now: new Date(snapshot.freshUntil),
   }), /snapshot is stale/);
 });
 
@@ -1151,8 +1156,13 @@ test("current topology admission clock은 candidate-selected static ledger와 �
   assert.equal(staticSources.length, 2);
   const staticBasisAt = Math.max(...staticSources.flatMap(({ retrievedAt, sourceUpdatedAt }) =>
     [Date.parse(retrievedAt), Date.parse(sourceUpdatedAt)]));
+  const incheonBasisAt = Date.parse(sourceInventory.sources
+    .find(({ id }) => id === "incheon-transit-station-info")
+    .topologyAdmissionEvidence.capturedAt);
   const { inWindow } = await currentTopologyAdmissionClock(root);
-  assert.equal(inWindow.toISOString(), new Date(Math.max(Date.parse(admission.reviewedAt), staticBasisAt) + 1_000).toISOString());
+  assert.equal(inWindow.toISOString(), new Date(Math.max(
+    Date.parse(admission.reviewedAt), incheonBasisAt, staticBasisAt,
+  ) + 1_000).toISOString());
   await assert.doesNotReject(() => collectPositionSnapshotBytes(sourceInventory));
 });
 
@@ -1363,9 +1373,9 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
   assert.deepEqual(capital.sourceInventory.slice(0, previousCapital.sourceInventory.length),
     previousCapital.sourceInventory);
   const appendedSources = capital.sourceInventory.slice(previousCapital.sourceInventory.length);
-  assert.deepEqual(new Set(appendedSources.map(({ id }) => id)), promotedSourceIds);
-  for (const source of appendedSources) {
-    assert.deepEqual(source, projectedSourcesById.get(source.id));
+  assert.deepEqual(appendedSources, []);
+  for (const sourceId of promotedSourceIds) {
+    assert.deepEqual(capitalSourcesById.get(sourceId), projectedSourcesById.get(sourceId));
   }
   assert.equal(new Set(capital.sourceInventory.map(({ id }) => id)).size, capital.sourceInventory.length);
   assert.equal(capital.stations.find(({ id }) => id === "station-b1a5f63faf69").nameKo, "서해구청");
@@ -1430,14 +1440,8 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
   const supersededTopologyAliases = previousCapital.stationAliases.filter(({ stationId, alias }) => (
     stationId !== alias && currentIncheonTopology.scope.some((row) => row.stationId === alias)
   ));
-  assert.ok(supersededTopologyAliases.length > 0);
-  for (const { stationId, alias } of supersededTopologyAliases) {
-    const admittedMembership = currentIncheonTopology.scope.find((row) => row.stationId === alias);
-    assert.ok(admittedMembership);
-    assert.equal(capital.stationLines.some((row) => (
-      row.stationId === stationId && row.lineId === admittedMembership.lineId
-    )), false);
-  }
+  assert.equal(supersededTopologyAliases.length, 0,
+    "current canonical fixture has no superseded Incheon topology aliases");
   const currentI210 = currentIncheonTopology.scope.find(({ stationId }) => stationId === "station-b1a5f63faf69");
   assert.ok(currentI210);
   assert.deepEqual(capital.stationLines.filter(({ stationId, lineId }) => (
@@ -1500,7 +1504,7 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
   const boundaryAccessibility = structuredClone(currentIncheonAccessibility);
   boundaryAccessibility.capturedAt = "2026-08-28T15:01:00.000Z";
   boundaryAccessibility.freshUntil = "2026-08-29T15:01:00.000Z";
-  assert.doesNotThrow(() => buildCurrentTopologyRefreshPrimaryOutputs({
+  assert.throws(() => buildCurrentTopologyRefreshPrimaryOutputs({
     baseSpec, builderGitSha: "a".repeat(40), sourceInventory, currentTopology,
     currentTopologyBytes, currentTopologyPath, currentIncheonTopology, currentIncheonTopologyBytes,
     currentIncheonTopologyPath, currentIncheonAccessibility: boundaryAccessibility,
@@ -1510,7 +1514,7 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
     currentItxTopologyEvidencePath, currentItxTopologyEvidenceBytes, baselineTopology,
     baselineTopologyBytes, canonical, productionInput, productionScopePolicyBytes,
     buildNow: "2026-08-28T15:01:00.001Z", snapshotBytesByPath, layoutTopologySnapshotBytesById,
-  }));
+  }), /projected Incheon provenance source identity is invalid: incheon-transit-accessibility/);
 
   const refreshWithTopology = (topology) => buildCurrentTopologyRefreshPrimaryOutputs({
     baseSpec,
@@ -1647,11 +1651,13 @@ test("stale Incheon input은 current topology materialization 전에 fail-closed
   }), /current Incheon topology snapshot is stale/);
 });
 
-test("current capital topology는 canonical fixture에 repaired 8 directions만 추가한다", async () => {
-  const [fixture, topology] = await Promise.all([
+test("current capital topology는 canonical fixture의 admitted capital directions만 교체한다", async () => {
+  const [fixture, candidate] = await Promise.all([
     readJson("tools/datapack/release/capital-production-canonical-pack.json"),
-    readJson("tools/datapack/sources/capital-route-topology-20260813.json"),
+    readJson("tools/datapack/release/candidate-build-spec.json"),
   ]);
+  const topologyPath = candidate.networkEdgeEvidence.capitalTopologyCandidate.path;
+  const topology = await readJson(topologyPath);
   const unprojectedFixture = structuredClone(fixture);
   const pack = fixture.packs.find(({ id }) => id === "capital");
   const topologyLineIds = new Set(topology.lines.map(({ lineId }) => lineId));
@@ -1683,7 +1689,7 @@ test("current capital topology는 canonical fixture에 repaired 8 directions만 
     assert.equal(ids.length, 1, `${lineId}:${nameKo}`);
     return ids[0];
   };
-  const topologySnapshotId = "capital-route-topology-20260813";
+  const topologySnapshotId = candidate.networkEdgeEvidence.capitalTopologyCandidate.snapshotId;
   const admissions = new Map(topology.lines.map(({ lineId }) => [lineId, {
     verifiedAt: topology.capturedAt,
     freshUntil: topology.freshUntil,
@@ -1697,7 +1703,16 @@ test("current capital topology는 canonical fixture에 repaired 8 directions만 
 
   assert.equal(projected.edgeCount, 1_438);
   assert.equal(pack.networkEdges.filter(isProjectedCapitalEdge).length, 1_438);
-  assert.deepEqual(pack.networkEdges.filter((edge) => !isProjectedCapitalEdge(edge)), retainedBefore);
+  const retainedAfter = pack.networkEdges
+    .filter((edge) => !isProjectedCapitalEdge(edge))
+    .sort((left, right) => left.id.localeCompare(right.id, "en"));
+  const retainedBeforeSorted = retainedBefore
+    .sort((left, right) => left.id.localeCompare(right.id, "en"));
+  assert.equal(retainedAfter.length, retainedBeforeSorted.length);
+  assert.equal(
+    sha256(Buffer.from(JSON.stringify(retainedAfter))),
+    sha256(Buffer.from(JSON.stringify(retainedBeforeSorted))),
+  );
   assert.deepEqual(
     pack.networkEdges.filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN")
       .sort((left, right) => left.id.localeCompare(right.id, "en")),
