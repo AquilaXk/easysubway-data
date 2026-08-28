@@ -46,7 +46,14 @@ export function currentCapitalLiveChainOutputPaths({ candidate, sourceInventory,
   return Object.freeze([...CURRENT_CAPITAL_LIVE_CHAIN_FIXED_OUTPUT_PATHS, transfer.relativePath].map((entry) => requireRelative(entry, "output path")).sort((left, right) => left.localeCompare(right)));
 }
 function strictBase64(value) {
-  if (typeof value !== "string" || value.length === 0 || value.length % 4 !== 0 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(value)) throw new Error("live-chain entry base64 mismatch");
+  if (typeof value !== "string" || value.length === 0 || value.length % 4 !== 0) throw new Error("live-chain entry base64 mismatch");
+  const paddingLength = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0;
+  const contentLength = value.length - paddingLength;
+  if ((paddingLength === 0 ? value.includes("=") : value.indexOf("=") !== contentLength)) throw new Error("live-chain entry base64 mismatch");
+  for (let index = 0; index < contentLength; index += 1) {
+    const code = value.charCodeAt(index);
+    if (!((code >= 65 && code <= 90) || (code >= 97 && code <= 122) || (code >= 48 && code <= 57) || code === 43 || code === 47)) throw new Error("live-chain entry base64 mismatch");
+  }
   const bytes = Buffer.from(value, "base64");
   if (bytes.length === 0 || bytes.toString("base64") !== value) throw new Error("live-chain entry base64 mismatch");
   return bytes;
