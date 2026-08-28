@@ -11,6 +11,7 @@ import {
   appendTransferCandidateSourceSnapshot,
   deriveReleaseProjection,
   isActiveCandidateSourceSequence,
+  requireCurrentCanonicalSourceRoster,
   rebindCandidateSourceSnapshots,
   rebindCurrentCandidateSourceSnapshots,
 } from "./rebind-current-candidate-source-snapshots.mjs";
@@ -26,7 +27,7 @@ const CURRENT_SOURCE_HEAD_AT = await selectedSourceHeadAt();
 const NOW = new Date(CURRENT_SOURCE_HEAD_AT + 120_000);
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const jsonSha = (value) => sha(Buffer.from(JSON.stringify(value)));
-const CURRENT_CAPITAL_SOURCE_IDS = Object.freeze([
+const CURRENT_CAPITAL_BASE_SOURCE_IDS = Object.freeze([
   "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
   "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
   "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
@@ -201,7 +202,10 @@ test("current canonical pack binds public positions and TRANSFER, never CyberSta
   t.after(() => rm(root, { recursive: true, force: true }));
   const before = await readInput(root);
   const capital = before.canonicalPack.packs[0];
-  assert.deepEqual(capital.sourceInventory.map(({ id }) => id), CURRENT_CAPITAL_SOURCE_IDS);
+  const capitalSourceIds = requireCurrentCanonicalSourceRoster(capital);
+  assert.deepEqual(capitalSourceIds.slice(0, CURRENT_CAPITAL_BASE_SOURCE_IDS.length), CURRENT_CAPITAL_BASE_SOURCE_IDS);
+  assert.ok(capitalSourceIds.length > CURRENT_CAPITAL_BASE_SOURCE_IDS.length);
+  assert.deepEqual(capitalSourceIds, capital.sourceInventory.map(({ id }) => id));
   assert.equal(capital.sourceInventory.some(({ id, url }) => id === "seoulmetro-cyberstation-route-map" || /amazonaws\.com|s3:/u.test(url ?? "")), false);
   assert.deepEqual(
     JSON.parse(capital.metadata.productionCoverageEvidence).find(({ sourceDomain }) => sourceDomain === "route_map_positions")?.sourceIds,
@@ -221,6 +225,10 @@ test("current canonical pack binds public positions and TRANSFER, never CyberSta
   assert.equal(kric.snapshotId, next.snapshotId);
   assert.equal(rebound.sourceSnapshotIds.includes(next.snapshotId), true);
   assert.equal(rebound.sourceSnapshotIds.includes("kric-station-convenience-standard-20260813T200604805Z"), false);
+  assert.equal(
+    rebound.sourceSnapshots.some(({ sourceId }) => capitalSourceIds.slice(CURRENT_CAPITAL_BASE_SOURCE_IDS.length).includes(sourceId)),
+    false,
+  );
   assert.notEqual(rebound.sourceSnapshotSetHash, old.sourceSnapshotSetHash);
   const selectedIds = new Set(rebound.sourceSnapshotIds);
   assert.equal(rebound.sourceSnapshotSetHash, sha(JSON.stringify(before.sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId)))));
@@ -442,6 +450,20 @@ test("head, source identity, receipt, governance and inventory binding drifts fa
     },
     (input) => { input.canonicalPack.packs[0].sourceInventory.pop(); },
     (input) => { input.canonicalPack.packs[0].sourceInventory.push({ id: "retired-maglev-source" }); },
+    (input) => {
+      const sourceInventory = input.canonicalPack.packs[0].sourceInventory;
+      sourceInventory.push(structuredClone(sourceInventory.at(-1)));
+    },
+    (input) => { input.canonicalPack.packs[0].sourceInventory.push({ id: "unreferenced-regional-source" }); },
+    (input) => {
+      const pack = input.canonicalPack.packs[0];
+      pack.sourceInventory.push({ id: "incomplete-provenance-source" });
+      pack.stations.push({ sourceId: "incomplete-provenance-source" });
+    },
+    (input) => {
+      const sourceInventory = input.canonicalPack.packs[0].sourceInventory;
+      [sourceInventory[0], sourceInventory[1]] = [sourceInventory[1], sourceInventory[0]];
+    },
     (input) => {
       const retired = structuredClone(input.sourceSnapshots[0]);
       retired.snapshotId = "seoul-metro-official-od-fares-retired-head";

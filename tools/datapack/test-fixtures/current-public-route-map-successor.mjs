@@ -23,18 +23,16 @@ import {
   materializeSeoulRouteMapPositions,
   verifyCurrentCapitalPublicRouteMapDocument,
 } from "../materialize-seoul-route-map-positions.mjs";
-import { deriveReleaseProjection } from "../rebind-current-candidate-source-snapshots.mjs";
+import {
+  deriveReleaseProjection,
+  requireCurrentCanonicalSourceRoster,
+} from "../rebind-current-candidate-source-snapshots.mjs";
 import { buildSnapshotDiff, validateLineage } from "../source-snapshot-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
 import { currentTopologyAdmissionClock } from "./current-topology-admission-clock.mjs";
 
 const PUBLIC_SOURCE_ID = "seoul-metro-route-map-positions";
 const MOLIT_SOURCE_ID = "molit-urban-rail-full-route";
-const CURRENT_CAPITAL_SOURCE_IDS = Object.freeze([
-  "molit-urban-rail-full-route", "seoulmetro-station-line-info", PUBLIC_SOURCE_ID,
-  "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
-  "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
-]);
 const SHA_KEYS = Object.freeze([
   "layoutAlgorithmVersion", "topologySnapshotId", "topologySnapshotSha256",
   "topologySnapshotIdentity", "lineOrderSha256", "aliasLedgerVersion", "aliasLedgerSha256",
@@ -47,14 +45,9 @@ const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 function orderCurrentCapitalSources(document) {
   const capital = document?.packs?.find(({ id }) => id === "capital");
   const entries = capital?.sourceInventory;
-  const byId = new Map(entries?.map((entry) => [entry.id, entry]));
-  if (!Array.isArray(entries)
-    || byId.size !== entries.length
-    || byId.size !== CURRENT_CAPITAL_SOURCE_IDS.length
-    || CURRENT_CAPITAL_SOURCE_IDS.some((sourceId) => !byId.has(sourceId))) {
-    throw new Error("synthetic current capital source identity is incomplete");
-  }
-  capital.sourceInventory = CURRENT_CAPITAL_SOURCE_IDS.map((sourceId) => structuredClone(byId.get(sourceId)));
+  const sourceIds = requireCurrentCanonicalSourceRoster(capital);
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  capital.sourceInventory = sourceIds.map((sourceId) => structuredClone(byId.get(sourceId)));
 }
 
 async function readJson(root, relative) {
@@ -610,8 +603,6 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
       ...layout,
     },
   };
-  const currentSourceIds = new Set(CURRENT_CAPITAL_SOURCE_IDS);
-  pack.packs[0].sourceInventory = pack.packs[0].sourceInventory.filter(({ id }) => currentSourceIds.has(id));
   pack.packs[0].routeMapPositions = [];
   if (pack.packs[0].networkEdges.some(
     ({ edgeType }) => !["RIDE", "ENTRY", "EXIT"].includes(edgeType),

@@ -22,7 +22,15 @@ test("current public candidate slot derives a same-source public V2 successor on
     now: new Date("2026-08-26T04:00:00.000Z"),
   });
 
-  const before = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
+  const [before, sourceCanonical, fixtureCanonical] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(repositoryRoot, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8").then(JSON.parse),
+  ]);
+  assert.deepEqual(
+    fixtureCanonical.packs[0].sourceInventory.map(({ id }) => id),
+    sourceCanonical.packs[0].sourceInventory.map(({ id }) => id),
+  );
   assert.equal(before.sourceSnapshots[0].sourceId, "seoul-metro-route-map-positions");
 
   const result = await activateSyntheticCurrentPublicRouteMapSuccessor(root, {
