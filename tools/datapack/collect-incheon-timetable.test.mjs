@@ -172,7 +172,7 @@ test("인천 timetable collector CLI는 topology basename pin과 absolute output
       "--topology-snapshot", wrongTopology,
       "--output-dir", directory,
       "--captured-at", "2026-07-24T08:00:00.000Z",
-    ]), /topology snapshot path must be/);
+    ]), /invalid Incheon topology snapshot/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

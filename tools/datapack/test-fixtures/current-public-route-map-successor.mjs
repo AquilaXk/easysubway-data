@@ -27,6 +27,7 @@ import {
   deriveReleaseProjection,
   requireCurrentCanonicalSourceRoster,
 } from "../rebind-current-candidate-source-snapshots.mjs";
+import { syncCurrentRouteEdgePolicyFile } from "../sync-current-route-edge-policy.mjs";
 import { buildSnapshotDiff, validateLineage } from "../source-snapshot-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
 import { currentTopologyAdmissionClock } from "./current-topology-admission-clock.mjs";
@@ -217,6 +218,10 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
     await currentizeFreshFacilitySource(targetRoot, facilityNow);
     await writeFreshExitAdmissionChain(targetRoot, facilityNow);
     await writeFreshCurrentAccessibilityOutputs(targetRoot);
+    await syncCurrentRouteEdgePolicyFile({
+      inputPath: path.join(targetRoot, "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json"),
+      policyPath: path.join(targetRoot, "release/product-gates/route-edge-evaluation-policy.json"),
+    });
     return result;
   }
   const [source, target] = await Promise.all([

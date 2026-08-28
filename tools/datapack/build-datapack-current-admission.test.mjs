@@ -547,7 +547,12 @@ test("source-separated current topology materialization은 Incheon 1/2 exact 116
   assert.equal(stationInfoSource.sourceSha256, snapshot.rawSha256);
   assert.equal(stationInfoSource.updatedAt, snapshot.capturedAt);
   assert.deepEqual(stationInfoSource.coverageScope, admission.source.coverageScope);
-  pack.sourceInventory.push(stationInfoSource);
+  const existingStationInfoSource = pack.sourceInventory.find(({ id }) => id === stationInfoSource.id);
+  if (existingStationInfoSource == null) {
+    pack.sourceInventory.push(stationInfoSource);
+  } else {
+    assert.deepEqual(existingStationInfoSource, stationInfoSource);
+  }
   const incheonLineIds = new Set(["line-42b5805f3b5a", "line-98718184f016"]);
   const unrelatedBefore = pack.networkEdges.filter(({ fromNodeId }) => (
     !incheonLineIds.has(fromNodeId.split(":").at(-1))
