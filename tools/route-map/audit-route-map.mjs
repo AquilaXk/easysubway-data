@@ -13,7 +13,7 @@ const severityRank = new Map([
 ]);
 
 function usage() {
-  return `Usage: node tools/route-map/audit-route-map.mjs --fixture <catalog-fixture.json> [--line-tracks tracks.json]... [--reviewed-ambiguities reviewed.json] [--reviewed-line-tracks reviewed.json] [--require-label-polygons] [--fail-on BLOCKER,HIGH] [--pretty]
+  return `Usage: node tools/route-map/audit-route-map.mjs --fixture <catalog-fixture.json> [--line-tracks tracks.json]... [--reviewed-ambiguities reviewed.json] [--reviewed-line-tracks reviewed.json] [--route-map-coverage-scope-exemptions exemptions.json] [--require-label-polygons] [--fail-on BLOCKER,HIGH] [--pretty]
 
 Audits routeMapPositions against stationLines so production route-map coordinate
 coverage can be checked before rebuilding datapacks.`;
@@ -24,6 +24,7 @@ function parseArgs(argv) {
     fixture: null,
     reviewedAmbiguities: null,
     reviewedLineTracks: null,
+    routeMapCoverageScopeExemptions: null,
     requireLabelPolygons: false,
     lineTracks: [],
     failOn: [],
@@ -43,6 +44,9 @@ function parseArgs(argv) {
         break;
       case "--reviewed-line-tracks":
         options.reviewedLineTracks = argv[++index];
+        break;
+      case "--route-map-coverage-scope-exemptions":
+        options.routeMapCoverageScopeExemptions = argv[++index];
         break;
       case "--require-label-polygons":
         options.requireLabelPolygons = true;
@@ -115,6 +119,48 @@ function normalizedStationLabel(value) {
     .replace(/\[[^\]]*\]/gu, "")
     .replace(/[·ㆍ･.\s]/gu, "")
     .replace(/역$/u, "");
+}
+
+function stationDisplayName(station) {
+  const nameKo = normalizedText(station?.nameKo);
+  const nameSub = normalizedText(station?.nameSub);
+  return nameSub ? `${nameKo}(${nameSub})` : nameKo;
+}
+
+function scopeParts(scopeKey) {
+  const [regionId, operatorId, lineId, ...extra] = normalizedText(scopeKey).split(":");
+  return extra.length === 0 && regionId && operatorId && lineId
+    ? { regionId, operatorId, lineId }
+    : null;
+}
+
+function approvedRouteLabelRenameFor({ pack, position, station, renames }) {
+  const sourceLabel = normalizedText(position.sourceLabel);
+  const rosterName = normalizedText(stationDisplayName(station));
+  const sourceMatches = (pack.sourceInventory ?? []).filter(
+    (source) => source?.id === position.sourceId,
+  );
+  if (sourceMatches.length !== 1) {
+    return null;
+  }
+  const source = sourceMatches[0];
+  const sourceScope = source?.coverageScope;
+  const matches = renames.filter((alias) => {
+    const scope = scopeParts(alias?.scopeKey);
+    return alias?.reasonCode === "OFFICIAL_RENAME"
+      && scope != null
+      && scope.regionId === pack.id
+      && scope.lineId === position.lineId
+      && normalizedText(alias.snapshotStationName) === sourceLabel
+      && normalizedText(alias.rosterStationName) === rosterName
+      && (sourceScope?.sourceDomains ?? []).includes("route_map_positions")
+      && (sourceScope.regionIds ?? []).includes(scope.regionId)
+      && (sourceScope.operatorIds ?? []).includes(scope.operatorId)
+      && (sourceScope.lineIds ?? []).includes(scope.lineId)
+      && source.sourceSha256 === position.sourceSha256
+      && source.url === position.sourceUrl;
+  });
+  return matches.length === 1 ? matches[0] : null;
 }
 
 function addFinding(findings, finding) {
@@ -758,21 +804,40 @@ function auditPack(pack, reviewedAmbiguities, options = {}) {
 
     const sourceLabel = normalizedText(position.sourceLabel);
     if (sourceLabel !== "") {
-      const stationName = stationsById.get(normalizedText(position.stationId))?.nameKo;
+      const station = stationsById.get(normalizedText(position.stationId));
+      const stationName = station?.nameKo;
       if (
         normalizedStationLabel(sourceLabel) !==
         normalizedStationLabel(stationName)
       ) {
-        addFinding(findings, {
-          severity: "HIGH",
-          code: "ROUTE_MAP_SOURCE_LABEL_MISMATCH",
-          packId: pack.id,
-          region: position.region,
-          lineId: position.lineId,
-          stationId: position.stationId,
-          message:
-            "routeMapPositions sourceLabel does not match the station name.",
+        const approvedRename = approvedRouteLabelRenameFor({
+          pack,
+          position,
+          station,
+          renames: options.routeMapCoverageScopeExemptions ?? [],
         });
+        if (approvedRename) {
+          addFinding(findings, {
+            severity: "INFO",
+            code: "APPROVED_ROUTE_MAP_SOURCE_LABEL_RENAME",
+            packId: pack.id,
+            region: position.region,
+            lineId: position.lineId,
+            stationId: position.stationId,
+            message: `routeMapPositions sourceLabel is an approved OFFICIAL_RENAME (${approvedRename.snapshotStationName} → ${approvedRename.rosterStationName}).`,
+          });
+        } else {
+          addFinding(findings, {
+            severity: "HIGH",
+            code: "ROUTE_MAP_SOURCE_LABEL_MISMATCH",
+            packId: pack.id,
+            region: position.region,
+            lineId: position.lineId,
+            stationId: position.stationId,
+            message:
+              "routeMapPositions sourceLabel does not match the station name.",
+          });
+        }
       }
     }
 
@@ -1126,6 +1191,15 @@ async function main() {
         JSON.parse(await readFile(options.reviewedLineTracks, "utf8")),
       )
     : new Map();
+  const routeMapCoverageScopeExemptions = options.routeMapCoverageScopeExemptions
+    ? JSON.parse(await readFile(options.routeMapCoverageScopeExemptions, "utf8"))
+        .approvedStationNameAliases
+    : [];
+  if (!Array.isArray(routeMapCoverageScopeExemptions)) {
+    throw new Error(
+      "route map coverage scope exemptions must contain approvedStationNameAliases array",
+    );
+  }
   const lineTracksDocs = await Promise.all(
     options.lineTracks.map(async (file) => JSON.parse(await readFile(file, "utf8"))),
   );
@@ -1133,6 +1207,7 @@ async function main() {
     requireLabelPolygons: options.requireLabelPolygons,
     lineTracks: lineTracksDocs,
     reviewedLineTracks,
+    routeMapCoverageScopeExemptions,
   });
   console.log(JSON.stringify(report, null, options.pretty ? 2 : 0));
 

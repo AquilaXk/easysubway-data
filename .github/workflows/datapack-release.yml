@@ -783,6 +783,7 @@ jobs:
           node tools/route-map/audit-route-map.mjs \
             --fixture "${EASYSUBWAY_DATAPACK_BUILD_FIXTURE}" \
             --reviewed-ambiguities tools/route-map/fixtures/reviewed-ambiguities.json \
+            --route-map-coverage-scope-exemptions tools/datapack/route-map-coverage-scope-exemptions.json \
             --fail-on BLOCKER,HIGH \
             --pretty > "${EASYSUBWAY_ROUTE_MAP_AUDIT_REPORT}"
           test -s "${EASYSUBWAY_ROUTE_MAP_AUDIT_REPORT}"
