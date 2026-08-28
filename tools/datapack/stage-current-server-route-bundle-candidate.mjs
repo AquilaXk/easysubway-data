@@ -8,6 +8,7 @@ import { prepareCurrentServerRouteBundleFinal } from "./prepare-current-server-r
 import { parseArgs, requiredArg } from "./lib/cli-args.mjs";
 import { canonicalJson, selectEffectiveDataPack, sha256, stagedPackPath } from "./lib/manifest-validation.mjs";
 import { validateServerRouteBundleFinal } from "./lib/server-route-bundle-final.mjs";
+import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 
 const REQUIRED_ARGS = ["datapack-root", "build-spec", "station-line-input", "route-edge-input", "repository-git-sha", "key-id", "output"];
 const SIGNED_PATHS = ["compatibility.json", "manifest.json", "manifest.signing-input.json", "payload/accessibility.sqlite.zst", "payload/fare.sqlite.zst", "payload/timetable.sqlite.zst", "payload/topology.sqlite.zst", "provenance.json"];
@@ -48,6 +49,11 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
   if (!active || active.id !== "capital" || active.version !== "1" || active.artifactKind !== "production") {
     throw new Error("current manifest must select production capital@1");
   }
+  const publishedAt = new Date(requiredUtcInstant(buildSpec.publishedAt, "build spec publishedAt"));
+  const expiresAt = new Date(requiredUtcInstant(manifest.expiresAt, "current manifest expiresAt"));
+  if (publishedAt.getTime() >= expiresAt.getTime()) {
+    throw new Error("current manifest expiresAt must be after build spec publishedAt");
+  }
   const candidate = candidateIdentity(buildSpec, "build spec");
   const provenanceCandidate = candidateIdentity(provenanceValue?.candidateBuild, "current provenance");
   if (provenanceCandidate.candidateId !== candidate.candidateId
@@ -71,7 +77,6 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
     throw new Error("active production pack sqlite identity mismatch");
   }
   const provenance = path.join(datapackRoot, "current.provenance.json");
-  const publishedAt = requiredInstant(buildSpec.publishedAt, "build spec publishedAt");
   const releaseSequence = positiveInteger(buildSpec.releaseSequence, "build spec releaseSequence");
   const temp = await mkdtemp(path.join(output, ".route-candidate-"));
   try {
@@ -101,7 +106,7 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
         bundleId: "capital-route-bundle-1",
         releaseSequence,
         activeFrom: kstInstant(publishedAt),
-        freshUntil: kstInstant(new Date(publishedAt.getTime() + 24 * 60 * 60 * 1000)),
+        freshUntil: kstInstant(expiresAt),
         builtAt: buildSpec.publishedAt,
         keyId: input.keyId,
       },
@@ -286,13 +291,6 @@ function positiveInteger(value, label) {
     throw new Error(`${label} must be positive`);
   }
   return value;
-}
-function requiredInstant(value, label) {
-  const parsed = new Date(value);
-  if (typeof value !== "string" || Number.isNaN(parsed.getTime()) || !value.endsWith("Z")) {
-    throw new Error(`${label} must be UTC instant`);
-  }
-  return parsed;
 }
 function kstInstant(value) { return new Date(value.getTime() + 9 * 60 * 60 * 1000).toISOString().replace("Z", "+09:00"); }
 

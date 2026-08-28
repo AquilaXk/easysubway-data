@@ -37,7 +37,7 @@ async function fixture(root) {
   const buildSpecBytes = Buffer.from(JSON.stringify(buildSpec));
   await writeFile(path.join(datapackRoot, "catalog", "capital-v1.sqlite.gz"), compressed);
   await Promise.all([
-    writeFile(path.join(datapackRoot, "current.json"), JSON.stringify({ activePack: { id: "capital", version: "1" }, packs: [{ id: "capital", version: "1", artifactKind: "production", sizeBytes: compressed.length, sha256: sha256(compressed), sqliteSha256: sha256(sqlite) }] })),
+    writeFile(path.join(datapackRoot, "current.json"), JSON.stringify({ activePack: { id: "capital", version: "1" }, expiresAt: "2026-08-15T03:47:35.000Z", packs: [{ id: "capital", version: "1", artifactKind: "production", sizeBytes: compressed.length, sha256: sha256(compressed), sqliteSha256: sha256(sqlite) }] })),
     writeFile(path.join(datapackRoot, "current.provenance.json"), JSON.stringify({ candidateBuild: { ...CANDIDATE, sourceSnapshotSetHash: CANDIDATE.sourceSetSha256, buildSpecSha256: sha256(buildSpecBytes) } })),
     writeFile(path.join(root, "build.json"), buildSpecBytes),
     writeFile(path.join(root, "station.json"), JSON.stringify({ candidate: CANDIDATE })),
@@ -71,7 +71,7 @@ test("current production capital을 재검증한 뒤 signed 8파일과 eligibili
   assert.equal(calls[0].emitterInputs.releaseSequence, 1);
   assert.equal(calls[0].evaluationAt, "2026-08-14T15:34:07.000Z");
   assert.equal(calls[0].emitterInputs.activeFrom, "2026-08-15T00:34:07.000+09:00");
-  assert.equal(calls[0].emitterInputs.freshUntil, "2026-08-16T00:34:07.000+09:00");
+  assert.equal(calls[0].emitterInputs.freshUntil, "2026-08-15T12:47:35.000+09:00");
   assert.deepEqual(await inventory(path.join(output, "server-route-bundle")), SIGNED_PATHS);
   assert.deepEqual(await inventory(path.join(output, "server-route-bundle-evidence")), [
     "server-route-bundle-evidence/route-accessibility-eligibility.json",
@@ -84,6 +84,31 @@ test("current production capital을 재검증한 뒤 signed 8파일과 eligibili
   assert.equal(await readFile(path.join(output, "server-route-bundle-evidence", "route-accessibility-eligibility.json"), "utf8"),
     eligibilityBytes.toString("utf8"));
   assert.equal(sourceSqliteBytes.toString(), "candidate sqlite bytes");
+});
+
+test("current manifest expiry가 build publishedAt과 같으면 prepare 전에 fail-closed 한다", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "route-candidate-expiry-window-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const input = await fixture(root);
+  const output = path.join(root, "candidate");
+  await mkdir(output);
+  const manifestPath = path.join(input.datapackRoot, "current.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  manifest.expiresAt = "2026-08-14T15:34:07.000Z";
+  await writeFile(manifestPath, JSON.stringify(manifest));
+  let prepared = false;
+  await assert.rejects(
+    () => stageCurrentServerRouteBundleCandidate({
+      ...input,
+      repositoryGitSha: "b".repeat(40),
+      keyId: "production-v1",
+      output,
+      stages: { prepare: async () => { prepared = true; } },
+    }),
+    /current manifest expiresAt must be after build spec publishedAt/,
+  );
+  assert.equal(prepared, false);
+  await assert.rejects(() => lstat(path.join(output, "server-route-bundle")), /ENOENT/);
 });
 
 test("prepare 동안 원본 canonical input이 교체돼도 최초 검증 bytes만 stage한다", async (t) => {
