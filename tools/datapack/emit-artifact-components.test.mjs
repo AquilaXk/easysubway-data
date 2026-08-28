@@ -221,6 +221,9 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   await writeFile(routePolicyPath, `${JSON.stringify(routePolicy, null, 2)}\n`);
   const run = (name, values = {}) => emitArtifactComponents({ repositoryRoot: fixtureRoot, sourceSqlite: source, sourceProvenance: path.join(temp, "current.provenance.json"), buildSpec: "tools/datapack/release/candidate-build-spec.json", output: path.join(temp, name), mapPackId: "map-v1", catalogPackId: "catalog-v1", bundleId: "bundle-v1", releaseSequence: "1", activeFrom: CURRENT_ACTIVE_FROM, freshUntil: CURRENT_FRESH_UNTIL, builtAt: CURRENT_EVALUATION_AT, keyId: "test-key", evaluationAt: CURRENT_EVALUATION_AT, stationLineInput, routeEdgeInput, ...values });
   const applySourceSql = (sql) => { const mutation = new DatabaseSync(source); mutation.exec(sql); mutation.close(); };
+  await writeFile(path.join(fixtureRoot, "tools/datapack/release/candidate-build-spec.json"), "{\"tampered\":true}");
+  await run("snapshotted", { buildSpecSnapshotBytes: spec });
+  await writeFile(path.join(fixtureRoot, "tools/datapack/release/candidate-build-spec.json"), spec);
   await run("one"); await run("two"); await run("three");
   const paths = await emittedPaths(path.join(temp, "one"));
   assert.deepEqual(paths, ["map-pack/manifest.json", "map-pack/payload/interchange-layout.json", "map-pack/payload/line-styles.json", "map-pack/payload/metropolitan.svg", "map-pack/payload/stations-layout.json", "server-route-bundle/compatibility.json", "server-route-bundle/manifest.signing-input.json", "server-route-bundle/payload/accessibility.sqlite.zst", "server-route-bundle/payload/fare.sqlite.zst", "server-route-bundle/payload/timetable.sqlite.zst", "server-route-bundle/payload/topology.sqlite.zst", "server-route-bundle/provenance.json", "station-catalog-pack/manifest.json", "station-catalog-pack/payload/catalog.sqlite"]);

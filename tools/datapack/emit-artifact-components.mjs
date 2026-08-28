@@ -66,8 +66,13 @@ export async function emitArtifactComponents(input) {
   requireObject(input.routeEdgeInput, "--route-edge-input");
   if (Date.parse(ids.activeFrom) >= Date.parse(ids.freshUntil)) throw new Error("--active-from must be before --fresh-until");
 
+  const buildSpecSnapshotBytes = input.buildSpecSnapshotBytes;
+  if (buildSpecSnapshotBytes !== undefined && !Buffer.isBuffer(buildSpecSnapshotBytes)) {
+    throw new Error("build spec snapshot bytes must be a Buffer");
+  }
   const [buildSpecBytes, layoutBytes, contractBytes, sourceSchemaBytes, routeEdgePolicyBytes] = await Promise.all([
-    readFile(path.join(root, buildSpecPath)), readFile(path.join(root, "contracts/datapack/artifact-component-table-layout.json")),
+    buildSpecSnapshotBytes === undefined ? readFile(path.join(root, buildSpecPath)) : buildSpecSnapshotBytes,
+    readFile(path.join(root, "contracts/datapack/artifact-component-table-layout.json")),
     readFile(path.join(root, "contracts/datapack/server-route-bundle-build-contract.json")), readFile(path.join(root, "tools/datapack/schema/catalog-schema.sql")),
     readFile(path.join(root, "release/product-gates/route-edge-evaluation-policy.json")),
   ]);

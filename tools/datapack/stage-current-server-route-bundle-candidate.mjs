@@ -94,7 +94,8 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
       emitterInputs: {
         sourceSqlite,
         sourceProvenance: provenance,
-        buildSpec: canonicalInputPaths.buildSpecPath,
+        buildSpec: "tools/datapack/release/candidate-build-spec.json",
+        buildSpecSnapshotBytes: canonicalInputBytes.buildSpecPath,
         mapPackId: "capital-map-1",
         catalogPackId: "capital-catalog-1",
         bundleId: "capital-route-bundle-1",
