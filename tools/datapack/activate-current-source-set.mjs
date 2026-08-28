@@ -11,6 +11,7 @@ import { isDeepStrictEqual, promisify } from "node:util";
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import {
+  overlayReviewedSourcesOnCanonicalRoster,
   retainPreAuthorityRideEdges,
   syncCanonicalAccessibilityEvidence,
   syncCanonicalFixture,
@@ -2685,9 +2686,10 @@ export async function generateCurrentSourceActivation({
     await writeFile(reviewedPath, reviewedBytes);
     const reviewedCapital = reviewed.packs?.find(({ id }) => id === "capital");
     if (!reviewedCapital) throw new Error("current reviewed capital pack is missing");
+    const canonicalFixture = parseJson(canonicalBytes, "canonical pack");
     const canonical = syncCanonicalFixture(
-      parseJson(canonicalBytes, "canonical pack"),
-      reviewedCapital,
+      canonicalFixture,
+      overlayReviewedSourcesOnCanonicalRoster(canonicalFixture, reviewedCapital),
     );
     retainPreAuthorityRideEdges(canonical, "canonical pack");
     projectCapitalTopologyIntoCanonicalFixture(

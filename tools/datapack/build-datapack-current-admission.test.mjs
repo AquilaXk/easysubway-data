@@ -394,7 +394,7 @@ test("source-separated current topology는 capital과 Incheon 1/2 line ownership
   const [capital, incheon] = await Promise.all([
     readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260724.json"), "utf8")
       .then(JSON.parse),
-    readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260724.json"), "utf8")
+    readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260828.json"), "utf8")
       .then(JSON.parse),
   ]);
   const projectedCapital = projectCapitalTopologyOwnership(capital);

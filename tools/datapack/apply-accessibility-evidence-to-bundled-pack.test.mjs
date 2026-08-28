@@ -17,6 +17,7 @@ import {
   syncAccessibilityEdges,
   activeReleaseSnapshots,
   currentCandidateReleaseSnapshots,
+  overlayReviewedSourcesOnCanonicalRoster,
   syncReleaseEvidence,
   syncCanonicalFixture,
 } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
@@ -403,20 +404,51 @@ test("current candidate selects its signed ledger from canonical provenance inve
   );
 });
 
-test("reviewed accessibility fixture cannot replace the current canonical source authority", () => {
+test("reviewed accessibility fixture must preserve the complete current canonical source authority", () => {
   const ids = [
     "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
     "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
-    "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
+    "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration", "regional-source",
   ];
-  const canonical = { packs: [{ id: "capital", sourceInventory: ids.map((id) => ({ id })), facilities: [], stationFacilityEvidence: [], metadata: { productionCoverageEvidence: "[]" }, minimumTableRows: {} }] };
-  assert.throws(
-    () => syncCanonicalFixture(canonical, {
-      sourceInventory: [{ id: "seoulmetro-cyberstation-route-map" }],
-      facilities: [], stationFacilityEvidence: [], metadata: { productionCoverageEvidence: "[]" },
-    }),
-    /reviewed source inventory cannot replace current canonical source authority/,
-  );
+  const canonical = () => ({ packs: [{
+    id: "capital", sourceInventory: ids.map((id) => ({ id })), stations: [{ sourceId: "regional-source" }],
+    facilities: [], stationFacilityEvidence: [], metadata: { productionCoverageEvidence: "[]" }, minimumTableRows: {},
+  }] });
+  const reviewed = (sourceInventory) => ({
+    sourceInventory, facilities: [], stationFacilityEvidence: [], metadata: { productionCoverageEvidence: "[]" },
+  });
+  for (const sourceInventory of [
+    ids.slice(0, -1).map((id) => ({ id })),
+    [ids[1], ids[0], ...ids.slice(2)].map((id) => ({ id })),
+    [...ids, ids.at(-1)].map((id) => ({ id })),
+    [...ids, "unknown-source"].map((id) => ({ id })),
+  ]) {
+    assert.throws(
+      () => syncCanonicalFixture(canonical(), reviewed(sourceInventory)),
+      /reviewed source inventory cannot replace current canonical source authority/,
+    );
+  }
+  assert.doesNotThrow(() => syncCanonicalFixture(
+    canonical(),
+    reviewed(ids.map((id) => ({ id }))),
+  ));
+  const overlaid = overlayReviewedSourcesOnCanonicalRoster(canonical(), reviewed([
+    { id: ids[0], refreshed: true },
+    { id: ids[3], refreshed: true },
+  ]));
+  assert.deepEqual(overlaid.sourceInventory.map(({ id }) => id), ids);
+  assert.equal(overlaid.sourceInventory[0].refreshed, true);
+  assert.equal(overlaid.sourceInventory[3].refreshed, true);
+  assert.equal(overlaid.sourceInventory.at(-1).refreshed, undefined);
+  for (const sourceInventory of [
+    [{ id: ids[0] }, { id: ids[0] }],
+    [{ id: "unknown-source" }],
+  ]) {
+    assert.throws(
+      () => overlayReviewedSourcesOnCanonicalRoster(canonical(), reviewed(sourceInventory)),
+      /reviewed source inventory contains (duplicate or invalid|unknown canonical) source ID/,
+    );
+  }
 });
 
 test("candidate-fixtures-only sync succeeds without reading mobile pack paths", async () => {

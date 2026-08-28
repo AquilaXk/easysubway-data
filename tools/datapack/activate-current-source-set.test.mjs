@@ -7,7 +7,10 @@ import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 
-import { syncCanonicalFixture } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
+import {
+  overlayReviewedSourcesOnCanonicalRoster,
+  syncCanonicalFixture,
+} from "./apply-accessibility-evidence-to-bundled-pack.mjs";
 import { admittedIncheonTopologyEvidence, projectCapitalTopologyIntoCanonicalFixture,
   projectIncheonNetworkEdges, validateProductionIncheonNetworkEdgeFixture } from "./build-datapack.mjs";
 import {
@@ -2001,10 +2004,19 @@ test("pre-materialization current input은 route-map partial claim 없이 exact 
   );
   const canonicalCapital = canonical.packs.find(({ id }) => id === "capital");
   assert.ok(canonicalCapital);
-  const currentAuthorityReviewedPack = {
-    ...reviewedPack,
-    sourceInventory: structuredClone(canonicalCapital.sourceInventory),
-  };
+  const currentAuthorityReviewedPack = overlayReviewedSourcesOnCanonicalRoster(canonical, reviewedPack);
+  assert.deepEqual(
+    currentAuthorityReviewedPack.sourceInventory.map(({ id }) => id),
+    canonicalCapital.sourceInventory.map(({ id }) => id),
+  );
+  assert.deepEqual(
+    currentAuthorityReviewedPack.sourceInventory.find(({ id }) => id === fareSourceId),
+    reviewedPack.sourceInventory.find(({ id }) => id === fareSourceId),
+  );
+  assert.equal(
+    currentAuthorityReviewedPack.sourceInventory.at(-1).id,
+    canonicalCapital.sourceInventory.at(-1).id,
+  );
   const syncedCanonical = syncCanonicalFixture(canonical, currentAuthorityReviewedPack);
   const syncedCapital = syncedCanonical.packs.find(({ id }) => id === "capital");
   assert.equal(syncedCapital.sourceInventory.some(({ id }) => id === fareSourceId), true);
