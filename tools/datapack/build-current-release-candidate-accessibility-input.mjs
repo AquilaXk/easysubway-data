@@ -14,7 +14,10 @@ import {
   routeEdgeSha256,
 } from "./evaluate-route-accessibility-edges.mjs";
 import { canonicalCurrentCapitalRouteEdgeInputJson } from "./build-current-capital-route-edge-input.mjs";
-import { canonicalCurrentCapitalStationLineInputJson } from "./current-capital-station-line-contract.mjs";
+import {
+  canonicalCurrentCapitalStationLineInputJson,
+  deriveCurrentReleaseCandidateObservedAt,
+} from "./current-capital-station-line-contract.mjs";
 import { buildCurrentCapitalAccessibilityRefreshOutputs } from "./refresh-current-capital-accessibility-full.mjs";
 
 const CURRENT_STATION_INPUT = "tools/datapack/release/current-capital-accessibility-full/station-line-input.json";
@@ -71,7 +74,7 @@ export function buildCurrentReleaseCandidateAccessibilityAuthority(input) {
   const routeEdges = validateRoute(route, stationLineInput, routeStationIndex);
   validateRideFixtureEdges(sourcePack.networkEdges, routeEdges, "source fixture");
   const projectedRides = validateProjectedFixtureEdges(projectedPack.networkEdges, routeEdges);
-  const observedAt = deriveObservedAt(stationLineInput.evidenceRows);
+  const observedAt = deriveCurrentReleaseCandidateObservedAt(stationLineInput.evidenceRows);
   const materialization = materializeStationLineAccessibility({ ...stationLineInput, observedAt });
   validateMaterialization(materialization);
 
@@ -177,7 +180,7 @@ export function validateCurrentReleaseCandidateAccessibilityAuthorityReplay({
   const routeEdges = validateRoute(route, stationLineInput, routeStationIndex);
   const projectedPack = capitalPack(projectedFixture, "projected fixture");
   validateProjectedFixtureEdges(projectedPack.networkEdges, routeEdges);
-  const observedAt = deriveObservedAt(stationLineInput.evidenceRows);
+  const observedAt = deriveCurrentReleaseCandidateObservedAt(stationLineInput.evidenceRows);
   const materialization = materializeStationLineAccessibility({ ...stationLineInput, observedAt });
   validateMaterialization(materialization);
   if (authority.buildInput.observedAt !== observedAt
@@ -552,24 +555,6 @@ function compareStationLines(left, right) {
 
 function validateProjectedFixtureEdges(edges, routeEdges) {
   return validateRideFixtureEdges(edges, routeEdges, "projected fixture");
-}
-
-function deriveObservedAt(evidenceRows) {
-  const captured = evidenceRows.map(({ capturedAt, freshUntil }) => {
-    const capturedMillis = Date.parse(capturedAt);
-    const freshMillis = Date.parse(freshUntil);
-    if (!Number.isFinite(capturedMillis) || !Number.isFinite(freshMillis)
-      || freshMillis <= capturedMillis) {
-      throw new Error("evidence freshness mismatch");
-    }
-    return { capturedMillis, freshMillis };
-  });
-  const observedMillis = Math.max(...captured.map(({ capturedMillis }) => capturedMillis));
-  if (!Number.isFinite(observedMillis)
-    || captured.some(({ freshMillis }) => freshMillis <= observedMillis)) {
-    throw new Error("evidence is stale at full-capital observation time");
-  }
-  return new Date(observedMillis).toISOString();
 }
 
 function validateMaterialization(value) {

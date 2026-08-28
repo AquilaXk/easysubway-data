@@ -16,6 +16,24 @@ export function canonicalCurrentCapitalStationLineInputJson(value) {
   return canonicalJson(value);
 }
 
+export function deriveCurrentReleaseCandidateObservedAt(evidenceRows) {
+  const captured = evidenceRows.map(({ capturedAt, freshUntil }) => {
+    const capturedMillis = Date.parse(capturedAt);
+    const freshMillis = Date.parse(freshUntil);
+    if (!Number.isFinite(capturedMillis) || !Number.isFinite(freshMillis)
+      || freshMillis <= capturedMillis) {
+      throw new Error("evidence freshness mismatch");
+    }
+    return { capturedMillis, freshMillis };
+  });
+  const observedMillis = Math.max(...captured.map(({ capturedMillis }) => capturedMillis));
+  if (!Number.isFinite(observedMillis)
+    || captured.some(({ freshMillis }) => freshMillis <= observedMillis)) {
+    throw new Error("evidence is stale at full-capital observation time");
+  }
+  return new Date(observedMillis).toISOString();
+}
+
 function assertKeys(value, keys, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)
     || canonicalJson(Object.keys(value).sort(compareBytes))

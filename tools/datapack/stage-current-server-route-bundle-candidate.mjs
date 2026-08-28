@@ -5,6 +5,7 @@ import { gunzipSync } from "node:zlib";
 import { pathToFileURL } from "node:url";
 
 import { prepareCurrentServerRouteBundleFinal } from "./prepare-current-server-route-bundle-final.mjs";
+import { deriveCurrentReleaseCandidateObservedAt } from "./current-capital-station-line-contract.mjs";
 import { parseArgs, requiredArg } from "./lib/cli-args.mjs";
 import { canonicalJson, selectEffectiveDataPack, sha256, stagedPackPath } from "./lib/manifest-validation.mjs";
 import { validateServerRouteBundleFinal } from "./lib/server-route-bundle-final.mjs";
@@ -79,6 +80,7 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
   const provenance = path.join(datapackRoot, "current.provenance.json");
   const releaseSequence = positiveInteger(buildSpec.releaseSequence, "build spec releaseSequence");
   const stagedFreshUntil = kstInstant(expiresAt);
+  const evaluationAt = deriveCurrentReleaseCandidateObservedAt(stationLine.evidenceRows);
   const temp = await mkdtemp(path.join(output, ".route-candidate-"));
   try {
     const sourceSqlite = path.join(temp, "source.sqlite");
@@ -94,7 +96,7 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
     await prepare({
       output: prepared,
       repositoryGitSha: requiredSha(input.repositoryGitSha, "repository git sha"),
-      evaluationAt: buildSpec.publishedAt,
+      evaluationAt,
       stationLineInputPath: canonicalInputPaths.stationLineInputPath,
       routeEdgeInputPath: canonicalInputPaths.routeEdgeInputPath,
       emitterInputs: {
