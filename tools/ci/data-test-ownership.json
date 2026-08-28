@@ -398,6 +398,7 @@
     {"path":"tools/datapack/freshness-policy.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":111},
     {"path":"tools/datapack/import-car-door-hints.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":119},
     {"path":"tools/datapack/import-transfer-baseline.test.mjs","semanticOwner":"data27","classes":["required-pr"],"durationMs":138},
+    {"path":"tools/datapack/inject-production-callback-secrets.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":500},
     {"path":"tools/datapack/inspect-itx-current-collection-evidence.test.mjs","semanticOwner":"data96","classes":["required-pr"],"durationMs":2779},
     {"path":"tools/datapack/itx-cheongchun-coverage-contract.test.mjs","semanticOwner":"data38","classes":["required-pr","deterministic-release"],"durationMs":183},
     {"path":"tools/datapack/itx-cheongchun-service-layer.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":726},

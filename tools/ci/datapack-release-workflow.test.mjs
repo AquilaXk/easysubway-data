@@ -397,6 +397,34 @@ test("production-publish는 파일 전용 release request 입력과 !cancelled()
   assert.doesNotMatch(yml, /steps\.evidence-bundle\.outputs\.manifestSha256/);
 });
 
+test("production-publish injects dedicated callback secrets into the temporary dotenv before OCI publication", () => {
+  const step = yml.match(
+    /- name: Data Pack Release \/ Inject production callback secrets[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(step, "production callback secret injection step was not found");
+  assert.match(
+    step,
+    /if:\s*\$\{\{ steps\.release-mode\.outputs\.mode == 'production-publish' && github\.ref == 'refs\/heads\/main' \}\}/,
+  );
+  for (const key of ["EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN", "EASYSUBWAY_DATAPACK_CALLBACK_HMAC_KEY"]) {
+    assert.match(step, new RegExp(`${key}:\\s*\\$\\{\\{ secrets\\.${key} \\}\\}`));
+  }
+  assert.match(step, /node tools\/datapack\/inject-production-callback-secrets\.mjs/);
+  assert.doesNotMatch(step, /EASYSUBWAY_ENV_SECRET|EASYSUBWAY_ENV_FILE|--env-file/);
+  assert.ok(
+    yml.indexOf("Data Pack Release / Restore GitHub Actions dotenv secret")
+      < yml.indexOf("Data Pack Release / Inject production callback secrets"),
+    "callback secrets must follow dotenv restoration",
+  );
+  assert.ok(
+    yml.indexOf("Data Pack Release / Inject production callback secrets")
+      < yml.indexOf("Data Pack Release / Publish staged data packs to object storage"),
+    "callback secrets must be injected before OCI publication",
+  );
+  const tokenUses = yml.match(/EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN/g) ?? [];
+  assert.equal(tokenUses.length, 3, "token must be injected exactly once and remain available to rollback approval only");
+});
+
 test("production-publish는 current-head server route bundle을 OCI에 immutable publish한 뒤 GO FINAL descriptor를 마지막에 게시한다", () => {
   const step = (name) => {
     const value = yml.match(new RegExp(`- name: ${name}[\\s\\S]*?\\n\\s+- name:`))?.[0];
@@ -520,9 +548,9 @@ test("production-publish의 release request 입력은 리포 파일 전용이고
     "스케줄 분기의 경로 가드는 파일 존재 확인보다 앞서야 한다",
   );
 
-  // EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN은 rollback approval 조회 하나에만 남는다(별도 아티팩트).
+  // Dedicated token은 production callback dotenv 주입과 rollback approval 조회에만 남는다.
   const tokenUses = yml.match(/EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN/g) ?? [];
-  assert.equal(tokenUses.length, 1, "workflow token은 rollback approval 조회에만 남아야 한다");
+  assert.equal(tokenUses.length, 3, "workflow token은 production injection과 rollback approval에만 남아야 한다");
   const rollbackApprovalStep = yml.match(
     /- name: Data Pack Release \/ Fetch rollback approval[\s\S]*?\n\s+- name:/,
   )?.[0];
