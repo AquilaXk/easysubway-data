@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { buildCurrentCapitalRouteEdgeInput, canonicalCurrentCapitalRouteEdgeInputJson } from "./build-current-capital-route-edge-input.mjs";
 import { buildCurrentCapitalStationLineInput, canonicalCurrentCapitalStationLineInputJson, readCurrentCapitalInputs } from "./build-current-capital-station-line-input.mjs";
+import { CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH, readCurrentCapitalLiveChainFanInBoundary } from "./build-current-capital-live-chain-boundary.mjs";
 import { projectCandidateFixtureForAccessibilityAuthority } from "./build-datapack.mjs";
 import { atomicReplace, readStableRegularFile } from "./rebind-current-candidate-source-snapshots.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
@@ -70,7 +71,7 @@ function requireCurrentPublicV2Head(selected, ledger, sourceId) {
   return { head, previousSnapshotId };
 }
 
-function buildRefreshProof({ phase, candidateFile, ledgerFile, requestFile, hashesFile, stationFile, routeFile }) {
+function buildRefreshProof({ phase, candidateFile, ledgerFile, requestFile, hashesFile, facilityFile, exitFile, stationFile, routeFile }) {
   const candidate = parse(candidateFile.bytes, "current candidate"); const ledger = parse(ledgerFile.bytes, "source snapshot ledger");
   const station = parse(stationFile.bytes, "activated station input"); const route = parse(routeFile.bytes, "activated route input");
   if (!Array.isArray(candidate.sourceSnapshotIds) || !Array.isArray(candidate.sourceSnapshots) || candidate.sourceSnapshotIds.length !== 7
@@ -122,6 +123,26 @@ function buildRefreshProof({ phase, candidateFile, ledgerFile, requestFile, hash
   const evidence = ledger.filter(({ snapshotId }) => evidenceIds.has(snapshotId));
   const evidenceHash = sha(JSON.stringify(evidence));
   const activatedSourceSet = station.candidate?.sourceSetSha256;
+  if (phase === ACTIVATED_CURRENT_OUTPUT) {
+    const facility = parse(facilityFile.bytes, "FACILITY admission");
+    const exit = parse(exitFile.bytes, "EXIT admission");
+    const outputsCurrent = activatedSourceSet === candidate.sourceSnapshotSetHash
+      && activatedSourceSet === route.candidate?.sourceSetSha256
+      && station.candidate?.candidateId === candidate.candidateId
+      && route.candidate?.candidateId === candidate.candidateId;
+    const facilityCurrent = facility.candidate?.candidateId === candidate.candidateId
+      && facility.candidate?.sourceSnapshotSetHash === candidate.sourceSnapshotSetHash;
+    const exitCurrent = exit.candidate?.candidateId === candidate.candidateId
+      && exit.candidate?.sourceSetSha256 === candidate.sourceSnapshotSetHash;
+    if (outputsCurrent && facilityCurrent && exitCurrent) return { alreadyCurrent: true };
+    const facilityTransition = facility.candidate?.candidateId === candidate.candidateId
+      && facility.candidate?.sourceSnapshotSetHash === evidenceHash;
+    const exitTransition = exit.candidate?.candidateId === candidate.candidateId
+      && exit.candidate?.sourceSetSha256 === evidenceHash;
+    if (!facilityTransition || !exitTransition) {
+      throw new Error("activated producer boundary mismatch");
+    }
+  }
   if (predecessorIdSet.size !== 7 || predecessor.length !== 7
     || evidenceIds.size !== 6 || evidence.length !== 6
     || activatedSourceSet !== route.candidate?.sourceSetSha256 || ![predecessorHash, candidate.sourceSnapshotSetHash].includes(activatedSourceSet)
@@ -135,7 +156,6 @@ function buildRefreshProof({ phase, candidateFile, ledgerFile, requestFile, hash
     predecessorCandidateSourceSetSha256: predecessorHash,
     positionPreviousSnapshotId: position.previousSnapshotId,
     molitPreviousSnapshotId: molit.previousSnapshotId,
-    alreadyCurrent: activatedSourceSet === candidate.sourceSnapshotSetHash,
   };
 }
 
@@ -156,10 +176,11 @@ function candidateFixturePath(candidate) {
 async function inputFiles(root, phase) {
   const relatives = [
     CANDIDATE_BUILD_SPEC, "tools/datapack/release/source-snapshots.json",
-    "tools/datapack/release/current-capital-facility-source-admission.json", ...OUTPUTS,
+    "tools/datapack/release/current-capital-facility-source-admission.json",
+    "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json", ...OUTPUTS,
   ];
   if (phase === ACTIVATED_CURRENT_OUTPUT) {
-    relatives.splice(2, 0, "tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json");
+    relatives.splice(2, 0, "tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json", CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH);
   }
   const files = Object.fromEntries(await Promise.all(relatives.map(async (relative) =>
     [relative, await readStableRegularFile(target(root, relative), relative)])));
@@ -185,9 +206,11 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
 } = {}) {
   requirePhase(phase);
   const root = path.resolve(repositoryRoot); const files = await inputFiles(root, phase);
-  const proof = buildRefreshProof({ phase, candidateFile: files[CANDIDATE_BUILD_SPEC], ledgerFile: files["tools/datapack/release/source-snapshots.json"], requestFile: files["tools/datapack/release/release-request.json"], hashesFile: files["tools/datapack/release/hash-evidence.json"], stationFile: files[OUTPUTS[0]], routeFile: files[OUTPUTS[1]] });
+  const proof = buildRefreshProof({ phase, candidateFile: files[CANDIDATE_BUILD_SPEC], ledgerFile: files["tools/datapack/release/source-snapshots.json"], requestFile: files["tools/datapack/release/release-request.json"], hashesFile: files["tools/datapack/release/hash-evidence.json"], facilityFile: files["tools/datapack/release/current-capital-facility-source-admission.json"], exitFile: files["tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json"], stationFile: files[OUTPUTS[0]], routeFile: files[OUTPUTS[1]] });
   const { alreadyCurrent, ...transition } = proof;
-  const input = await readCurrentCapitalInputs(root, { readTransitionBoundaryImpl: async () => ({ ...transition, facilityAdmissionBytesSha256: sha(files["tools/datapack/release/current-capital-facility-source-admission.json"].bytes) }) });
+  const input = await readCurrentCapitalInputs(root, alreadyCurrent
+    ? { readCurrentFanInBoundaryImpl: readCurrentCapitalLiveChainFanInBoundary }
+    : { readTransitionBoundaryImpl: async () => ({ ...transition, facilityAdmissionBytesSha256: sha(files["tools/datapack/release/current-capital-facility-source-admission.json"].bytes) }) });
   const hasOverride = candidateBuildSpec !== undefined || canonicalPack !== undefined;
   if (phase === ACTIVATED_CURRENT_OUTPUT && hasOverride) {
     throw new Error("current-capital refresh activated override mismatch");

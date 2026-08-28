@@ -26,7 +26,6 @@ import {
 import { deriveReleaseProjection } from "../rebind-current-candidate-source-snapshots.mjs";
 import { buildSnapshotDiff, validateLineage } from "../source-snapshot-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
-import { codepointCompare } from "../../lib/codepoint-compare.mjs";
 import { currentTopologyAdmissionClock } from "./current-topology-admission-clock.mjs";
 
 const PUBLIC_SOURCE_ID = "seoul-metro-route-map-positions";
@@ -45,12 +44,6 @@ const SHA_KEYS = Object.freeze([
 
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
-const canonical = (value) => Array.isArray(value)
-  ? `[${value.map(canonical).join(",")}]`
-  : value && typeof value === "object"
-  ? "{" + Object.keys(value).sort(codepointCompare).map((key) => JSON.stringify(key) + ":" + canonical(value[key])).join(",") + "}"
-  : JSON.stringify(value);
-
 function orderCurrentCapitalSources(document) {
   const capital = document?.packs?.find(({ id }) => id === "capital");
   const entries = capital?.sourceInventory;
@@ -225,12 +218,12 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
     const {
       currentizeFreshFacilitySource,
       writeFreshExitAdmissionChain,
+      writeFreshCurrentAccessibilityOutputs,
     } = await import("./current-full-capital-production-artifact.mjs");
     const facilityNow = await nextSyntheticCurrentStaticNetworkNow(targetRoot);
     await currentizeFreshFacilitySource(targetRoot, facilityNow);
     await writeFreshExitAdmissionChain(targetRoot, facilityNow);
-    const transition = await bindSyntheticDependentAdmissionsToCurrentTransition(targetRoot);
-    await rebuildSyntheticCurrentAccessibilityOutputs(targetRoot, transition);
+    await writeFreshCurrentAccessibilityOutputs(targetRoot);
     return result;
   }
   const [source, target] = await Promise.all([
@@ -302,129 +295,6 @@ async function bindSyntheticActivatedOutputsToCurrentCandidate(root) {
   route.candidate.sourceSetSha256 = sourceSetSha256;
   await Promise.all(outputPaths.map((relative, index) =>
     writeFile(path.join(root, relative), jsonBytes(index === 0 ? station : route))));
-}
-
-async function bindSyntheticDependentAdmissionsToCurrentTransition(root) {
-  const paths = {
-    candidate: "tools/datapack/release/candidate-build-spec.json",
-    snapshots: "tools/datapack/release/source-snapshots.json",
-    facility: "tools/datapack/release/current-capital-facility-source-admission.json",
-    exit: "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json",
-    exitReceipt: "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json",
-  };
-  const [candidate, snapshots, facility, exit, receipt] = await Promise.all([
-    readJson(root, paths.candidate), readJson(root, paths.snapshots), readJson(root, paths.facility),
-    readJson(root, paths.exit), readJson(root, paths.exitReceipt),
-  ]);
-  const selected = candidate.sourceSnapshotIds.map((snapshotId) =>
-    snapshots.find((snapshot) => snapshot.snapshotId === snapshotId));
-  const bySource = (sourceId) => selected.find((snapshot) => snapshot?.sourceId === sourceId);
-  const positions = bySource(PUBLIC_SOURCE_ID);
-  const molit = bySource(MOLIT_SOURCE_ID);
-  const seoul = bySource("seoul-metro-accessibility");
-  if (selected.some((snapshot) => snapshot == null)
-    || [positions, molit, seoul].some((snapshot) => typeof snapshot?.previousSnapshotId !== "string")) {
-    throw new Error("synthetic dependent admission transition fixture is incomplete");
-  }
-  const evidenceIds = new Set(candidate.sourceSnapshotIds.flatMap((snapshotId, index) => {
-    const sourceId = candidate.sourceSnapshots[index].sourceId;
-    if (sourceId === "seoul-metro-transfer-distance-duration") return [];
-    if (sourceId === PUBLIC_SOURCE_ID) return [positions.previousSnapshotId];
-    if (sourceId === MOLIT_SOURCE_ID) return [molit.previousSnapshotId];
-    if (sourceId === "seoul-metro-accessibility") return [seoul.previousSnapshotId];
-    return [snapshotId];
-  }));
-  const evidence = snapshots.filter(({ snapshotId }) => evidenceIds.has(snapshotId));
-  if (evidenceIds.size !== 6 || evidence.length !== 6) {
-    throw new Error("synthetic dependent admission evidence fixture is incomplete");
-  }
-  const sourceSetSha256 = sha256(JSON.stringify(evidence));
-  const predecessorIds = new Set(candidate.sourceSnapshotIds.map((snapshotId, index) => {
-    const sourceId = candidate.sourceSnapshots[index].sourceId;
-    if (sourceId === PUBLIC_SOURCE_ID) return positions.previousSnapshotId;
-    if (sourceId === MOLIT_SOURCE_ID) return molit.previousSnapshotId;
-    return snapshotId;
-  }));
-  const predecessor = snapshots.filter(({ snapshotId }) => predecessorIds.has(snapshotId));
-  if (predecessorIds.size !== 7 || predecessor.length !== 7) {
-    throw new Error("synthetic dependent admission predecessor fixture is incomplete");
-  }
-  const predecessorSourceSetSha256 = sha256(JSON.stringify(predecessor));
-  facility.candidate.candidateId = candidate.candidateId;
-  facility.candidate.sourceSnapshotSetHash = sourceSetSha256;
-  const facilityPayload = { ...facility };
-  delete facilityPayload.admissionDigest;
-  facility.admissionDigest = sha256(canonical(facilityPayload));
-  exit.candidate.candidateId = candidate.candidateId;
-  exit.candidate.sourceSetSha256 = sourceSetSha256;
-  for (const row of exit.materializerEvidenceRows) {
-    row.candidateId = candidate.candidateId;
-    row.sourceSetSha256 = sourceSetSha256;
-  }
-  const exitPayload = { ...exit };
-  delete exitPayload.admissionDigest;
-  exit.admissionDigest = sha256(canonical(exitPayload));
-  const exitBytes = Buffer.from(canonical(exit));
-  receipt.admissionDigest = exit.admissionDigest;
-  receipt.admissionSha256 = sha256(exitBytes);
-  const receiptPayload = { ...receipt };
-  delete receiptPayload.receiptSha256;
-  receipt.receiptSha256 = sha256(canonical(receiptPayload));
-  const facilityBytes = Buffer.from(`${canonical(facility)}\n`);
-  await Promise.all([
-    writeFile(path.join(root, paths.facility), facilityBytes),
-    writeFile(path.join(root, paths.exit), exitBytes),
-    writeFile(path.join(root, paths.exitReceipt), Buffer.from(canonical(receipt))),
-  ]);
-  const candidateBytes = await readFile(path.join(root, paths.candidate));
-  return {
-    kind: "PUBLIC_STATIC_NETWORK_V2_SUCCESSOR_REFRESH",
-    currentCandidateBytesSha256: sha256(candidateBytes),
-    currentCandidateSourceSetSha256: candidate.sourceSnapshotSetHash,
-    evidenceSourceSetSha256: sourceSetSha256,
-    facilityAdmissionBytesSha256: sha256(facilityBytes),
-    predecessorCandidateSourceSetSha256: predecessorSourceSetSha256,
-    positionPreviousSnapshotId: positions.previousSnapshotId,
-    molitPreviousSnapshotId: molit.previousSnapshotId,
-  };
-}
-
-async function rebuildSyntheticCurrentAccessibilityOutputs(root, transition) {
-  const [{
-    buildCurrentCapitalStationLineInput,
-    canonicalCurrentCapitalStationLineInputJson,
-    readCurrentCapitalInputs,
-  }, {
-    buildCurrentCapitalRouteEdgeInput,
-    canonicalCurrentCapitalRouteEdgeInputJson,
-  }, {
-    projectCandidateFixtureForAccessibilityAuthority,
-  }] = await Promise.all([
-    import("../build-current-capital-station-line-input.mjs"),
-    import("../build-current-capital-route-edge-input.mjs"),
-    import("../build-datapack.mjs"),
-  ]);
-  const input = await readCurrentCapitalInputs(root, {
-    readTransitionBoundaryImpl: async () => transition,
-  });
-  const canonicalPack = await projectCandidateFixtureForAccessibilityAuthority({
-    buildSpec: input.candidateBuildSpec,
-    sourceFixture: input.canonicalPack,
-    repositoryRoot: root,
-  });
-  const refreshed = { ...input, canonicalPack };
-  const station = buildCurrentCapitalStationLineInput(refreshed);
-  const route = buildCurrentCapitalRouteEdgeInput(refreshed);
-  await Promise.all([
-    writeFile(
-      path.join(root, "tools/datapack/release/current-capital-accessibility-full/station-line-input.json"),
-      Buffer.from(canonicalCurrentCapitalStationLineInputJson(station)),
-    ),
-    writeFile(
-      path.join(root, "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json"),
-      Buffer.from(canonicalCurrentCapitalRouteEdgeInputJson(route)),
-    ),
-  ]);
 }
 
 async function writeSyntheticCurrentExitOciReceipt(root) {

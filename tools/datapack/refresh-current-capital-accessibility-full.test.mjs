@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -10,7 +10,7 @@ import { buildCurrentExitAdmissionOciReceipt, canonicalCurrentExitAdmissionOciRe
 import { readStableRegularFile } from "./rebind-current-candidate-source-snapshots.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 import { activateSyntheticCurrentStaticNetworkSuccessors, nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
-import { currentizeFreshFacilitySource, writeFreshCurrentAccessibilityOutputs, writeFreshExitAdmissionChain } from "./test-fixtures/current-full-capital-production-artifact.mjs";
+import { currentizeFreshFacilitySource, prepareCurrentFullCapitalProductionRepository, writeFreshCurrentAccessibilityOutputs, writeFreshExitAdmissionChain } from "./test-fixtures/current-full-capital-production-artifact.mjs";
 import { currentIncheonStationCodeDerivations } from "./collect-incheon-station-info.mjs";
 import {
   buildCurrentTopologyRefreshPrimaryOutputs,
@@ -218,10 +218,18 @@ test("PREPARED residue with already-current output bytes recovers under the refr
 test("a demonstrably dead refresh owner lease permits PREPARED and COMMITTED journal recovery", async (t) => {
   for (const state of ["PREPARED", "COMMITTED"]) {
     const root = await stagedRefreshRepository(t);
-    const before = await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative))));
     const expected = await expectedCurrentBytes(root);
+    const before = await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative))));
+    const [candidate, facility, exit] = await Promise.all([
+      readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json")).then(JSON.parse),
+      readFile(path.join(root, "tools/datapack/release/current-capital-facility-source-admission.json")).then(JSON.parse),
+      readFile(path.join(root, "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json")).then(JSON.parse),
+    ]);
+    assert.notEqual(facility.candidate.sourceSnapshotSetHash, candidate.sourceSnapshotSetHash, `${state} FACILITY transition binding`);
+    assert.notEqual(exit.candidate.sourceSetSha256, candidate.sourceSnapshotSetHash, `${state} EXIT transition binding`);
     const records = OUTPUTS.map((relative, index) => ({ relative, before: before[index].toString("base64"), beforeSha256: sha(before[index]), after: expected[index].toString("base64"), afterSha256: sha(expected[index]) }));
     if (state === "PREPARED") for (const [index, relative] of OUTPUTS.entries()) await writeFile(path.join(root, relative), expected[index]);
+    if (state === "COMMITTED") for (const [index, relative] of OUTPUTS.entries()) await writeFile(path.join(root, relative), before[index]);
     await writeFile(path.join(root, "tools/datapack/.current-capital-accessibility-refresh-transaction.json"), JSON.stringify({ schemaVersion: 1, state, records }));
     await writeRefreshLease(root, { schemaVersion: 1, token: "00000000-0000-4000-8000-000000000001", pid: 999999 });
 
@@ -250,13 +258,49 @@ test("active, malformed, and foreign refresh leases remain fail-closed", async (
   }
 });
 
+test("already-current activated outputs preserve exact bytes through the current live-chain fan-in", async (t) => {
+  const root = await prepareCurrentFullCapitalProductionRepository(ROOT);
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const before = await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative))));
+
+  const outputs = await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root });
+  assert.deepEqual(outputs.map(({ bytes }) => bytes), before);
+
+  await refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root });
+  assert.deepEqual(await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative)))), before);
+});
+
+test("already-current activated outputs without a valid current fan-in fail closed", async (t) => {
+  const root = await prepareCurrentFullCapitalProductionRepository(ROOT);
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await unlink(path.join(root, "tools/datapack/release/current-capital-live-chain-fan-in.json"));
+
+  await assert.rejects(
+    buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root }),
+    /current-capital-live-chain-fan-in\.json must be a regular non-symlink file/,
+  );
+});
+
 test("already-current canonical corruption fails closed instead of being returned or rewritten", async (t) => {
   const root = await stagedRefreshRepository(t);
   await refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root });
   const stationPath = path.join(root, OUTPUTS[0]); const station = JSON.parse(await readFile(stationPath, "utf8"));
   station.evidenceRows[0].evidenceReason = "corrupt";
   await writeFile(stationPath, JSON.stringify(station));
-  await assert.rejects(refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root }), /current output bytes mismatch/);
+  await assert.rejects(refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root }), /current-capital refresh evidence delta mismatch/);
+});
+
+test("current output headers with a one-sided producer boundary fail closed", async (t) => {
+  const root = await stagedRefreshRepository(t);
+  const expected = await expectedCurrentBytes(root);
+  await Promise.all(OUTPUTS.map((relative, index) => writeFile(path.join(root, relative), expected[index])));
+  const candidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json")));
+  await rebindStagedFacilityCandidateId(root, candidate.candidateId, candidate.sourceSnapshotSetHash);
+
+  await assert.rejects(
+    buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root }),
+    /activated producer boundary mismatch/,
+  );
 });
 
 async function stagedRefreshRepository(t) {
