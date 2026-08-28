@@ -17,6 +17,7 @@ import {
   syncAccessibilityEdges,
   activeReleaseSnapshots,
   currentCandidateReleaseSnapshots,
+  overlayReviewedSourcesOnCanonicalRoster,
   syncReleaseEvidence,
   syncCanonicalFixture,
 } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
@@ -361,11 +362,12 @@ test("active canonical source inventory excludes retired movement snapshot heads
   ]);
 });
 
-test("current candidate consumes exact public six plus TRANSFER-last while canonical fares remain active", () => {
+test("current candidate selects its signed ledger from canonical provenance inventory", () => {
   const canonicalSourceIds = [
     "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
     "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
     "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
+    "incheon-transit-station-info",
   ];
   const candidateSourceIds = [
     "seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility",
@@ -374,36 +376,79 @@ test("current candidate consumes exact public six plus TRANSFER-last while canon
   ];
   const snapshots = canonicalSourceIds.map((sourceId) => ({ sourceId, snapshotId: `${sourceId}-head` }));
   const headsBySource = Object.fromEntries(snapshots.map(({ sourceId, snapshotId }) => [sourceId, snapshotId]));
-  const canonical = { packs: [{ id: "capital", sourceInventory: canonicalSourceIds.map((id) => ({ id })) }] };
+  const canonical = { packs: [{
+    id: "capital",
+    sourceInventory: canonicalSourceIds.map((id) => ({ id })),
+    stationExits: [{ sourceId: "incheon-transit-station-info" }],
+  }] };
 
   assert.deepEqual(
     currentCandidateReleaseSnapshots(snapshots, canonical, headsBySource).map(({ sourceId }) => sourceId),
     candidateSourceIds,
   );
-  assert.throws(
-    () => currentCandidateReleaseSnapshots(snapshots, { packs: [{ id: "capital", sourceInventory: canonicalSourceIds.slice(0, -1).map((id) => ({ id })) }] }, headsBySource),
-    /capital canonical active source identity drift/,
-  );
+  for (const invalidCanonical of [
+    { ...canonical.packs[0], sourceInventory: canonicalSourceIds.filter((_, index) => index !== 2).map((id) => ({ id })) },
+    { ...canonical.packs[0], sourceInventory: [canonicalSourceIds[1], canonicalSourceIds[0], ...canonicalSourceIds.slice(2)].map((id) => ({ id })) },
+    { ...canonical.packs[0], sourceInventory: [...canonicalSourceIds, "incheon-transit-station-info"].map((id) => ({ id })) },
+    { ...canonical.packs[0], sourceInventory: [...canonicalSourceIds, "unknown-provenance-source"].map((id) => ({ id })) },
+    { ...canonical.packs[0], sourceInventory: [...canonicalSourceIds, "seoul-metro-route-map-positions"].map((id) => ({ id })) },
+  ]) {
+    assert.throws(
+      () => currentCandidateReleaseSnapshots(snapshots, { packs: [invalidCanonical] }, headsBySource),
+      /capital canonical active source identity drift/,
+    );
+  }
   assert.throws(
     () => currentCandidateReleaseSnapshots(snapshots.filter(({ sourceId }) => sourceId !== "seoul-metro-transfer-distance-duration"), canonical, headsBySource),
     /current candidate source head is missing: seoul-metro-transfer-distance-duration/,
   );
 });
 
-test("reviewed accessibility fixture cannot replace the current canonical source authority", () => {
+test("reviewed accessibility fixture must preserve the complete current canonical source authority", () => {
   const ids = [
     "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
     "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
-    "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
+    "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration", "regional-source",
   ];
-  const canonical = { packs: [{ id: "capital", sourceInventory: ids.map((id) => ({ id })), facilities: [], stationFacilityEvidence: [], metadata: { productionCoverageEvidence: "[]" }, minimumTableRows: {} }] };
-  assert.throws(
-    () => syncCanonicalFixture(canonical, {
-      sourceInventory: [{ id: "seoulmetro-cyberstation-route-map" }],
-      facilities: [], stationFacilityEvidence: [], metadata: { productionCoverageEvidence: "[]" },
-    }),
-    /reviewed source inventory cannot replace current canonical source authority/,
-  );
+  const canonical = () => ({ packs: [{
+    id: "capital", sourceInventory: ids.map((id) => ({ id })), stations: [{ sourceId: "regional-source" }],
+    facilities: [], stationFacilityEvidence: [], metadata: { productionCoverageEvidence: "[]" }, minimumTableRows: {},
+  }] });
+  const reviewed = (sourceInventory) => ({
+    sourceInventory, facilities: [], stationFacilityEvidence: [], metadata: { productionCoverageEvidence: "[]" },
+  });
+  for (const sourceInventory of [
+    ids.slice(0, -1).map((id) => ({ id })),
+    [ids[1], ids[0], ...ids.slice(2)].map((id) => ({ id })),
+    [...ids, ids.at(-1)].map((id) => ({ id })),
+    [...ids, "unknown-source"].map((id) => ({ id })),
+  ]) {
+    assert.throws(
+      () => syncCanonicalFixture(canonical(), reviewed(sourceInventory)),
+      /reviewed source inventory cannot replace current canonical source authority/,
+    );
+  }
+  assert.doesNotThrow(() => syncCanonicalFixture(
+    canonical(),
+    reviewed(ids.map((id) => ({ id }))),
+  ));
+  const overlaid = overlayReviewedSourcesOnCanonicalRoster(canonical(), reviewed([
+    { id: ids[0], refreshed: true },
+    { id: ids[3], refreshed: true },
+  ]));
+  assert.deepEqual(overlaid.sourceInventory.map(({ id }) => id), ids);
+  assert.equal(overlaid.sourceInventory[0].refreshed, true);
+  assert.equal(overlaid.sourceInventory[3].refreshed, true);
+  assert.equal(overlaid.sourceInventory.at(-1).refreshed, undefined);
+  for (const sourceInventory of [
+    [{ id: ids[0] }, { id: ids[0] }],
+    [{ id: "unknown-source" }],
+  ]) {
+    assert.throws(
+      () => overlayReviewedSourcesOnCanonicalRoster(canonical(), reviewed(sourceInventory)),
+      /reviewed source inventory contains (duplicate or invalid|unknown canonical) source ID/,
+    );
+  }
 });
 
 test("candidate-fixtures-only sync succeeds without reading mobile pack paths", async () => {

@@ -33,6 +33,12 @@ const CAPITAL_ACTIVE_SOURCE_IDS = Object.freeze([
 const CAPITAL_RELEASE_HEAD_SOURCE_IDS = Object.freeze(CAPITAL_SOURCE_IDS.filter(
   (sourceId) => sourceId !== "seoul-metro-official-od-fares",
 ));
+const CANONICAL_PROVENANCE_PROPERTIES = Object.freeze([
+  "stations", "stationLines", "stationExits", "stationCarDoorHints", "networkEdges",
+  "routeMapPositions", "routeMapLineTracks", "facilities", "stationFacilityEvidence",
+  "serviceCalendars", "serviceCalendarDates", "transitRoutes", "transitTrips",
+  "transitStopTimes", "officialOdFareQuotes",
+]);
 const SHA256 = /^[0-9a-f]{64}$/u;
 const PROJECTION_KEYS = Object.freeze([
   "snapshotId", "sourceId", "rawObjectUri", "rawSha256", "redactedRequestFingerprint",
@@ -73,6 +79,30 @@ export function isActiveCandidateSourceSequence(sourceIds) {
   return Array.isArray(sourceIds)
     && [ACTIVE_SOURCE_IDS, ACTIVE_SOURCE_IDS_WITH_TRANSFER]
       .some((expected) => JSON.stringify(sourceIds) === JSON.stringify(expected));
+}
+
+export function requireCurrentCanonicalSourceRoster(capital) {
+  const entries = capital?.sourceInventory;
+  const sourceIds = Array.isArray(entries) ? entries.map((entry) => entry?.id) : null;
+  const suffix = sourceIds?.slice(CAPITAL_SOURCE_IDS.length);
+  const provenanceRows = CANONICAL_PROVENANCE_PROPERTIES.flatMap((property) => capital?.[property] ?? []);
+  const rosterBackedProvenanceSourceIds = new Set(provenanceRows
+    .filter(({ sourceId, sourceSnapshotId, providerRecordHash, evidenceHash }) =>
+      typeof sourceId === "string" && sourceId.length > 0
+      && typeof sourceSnapshotId === "string" && sourceSnapshotId.length > 0
+      && SHA256.test(providerRecordHash ?? "") && SHA256.test(evidenceHash ?? ""))
+    .map(({ sourceId }) => sourceId));
+  if (!Array.isArray(sourceIds)
+    || JSON.stringify(sourceIds.slice(0, CAPITAL_SOURCE_IDS.length))
+      !== JSON.stringify(CAPITAL_SOURCE_IDS)
+    || sourceIds.some((sourceId) => typeof sourceId !== "string" || sourceId.length === 0)
+    || new Set(sourceIds).size !== sourceIds.length
+    || suffix.some((sourceId) => CAPITAL_SOURCE_IDS.includes(sourceId)
+      || !rosterBackedProvenanceSourceIds.has(sourceId))
+    || [...rosterBackedProvenanceSourceIds].some((sourceId) => !sourceIds.includes(sourceId))) {
+    throw new Error("capital canonical source identity drift");
+  }
+  return sourceIds;
 }
 
 export function rebindCandidateSourceSnapshots({
@@ -209,9 +239,7 @@ function validateCapitalPack(pack, sourceInventory) {
     || new Set(membership.map(({ stationId }) => stationId)).size !== 199) {
     throw new Error("capital canonical 213 station-line scope mismatch");
   }
-  if (JSON.stringify((capital.sourceInventory ?? []).map(({ id }) => id)) !== JSON.stringify(CAPITAL_SOURCE_IDS)) {
-    throw new Error("capital canonical source identity drift");
-  }
+  requireCurrentCanonicalSourceRoster(capital);
   const inventoryIds = new Set((sourceInventory?.sources ?? []).map(({ id }) => id));
   if (ACTIVE_SOURCE_IDS.some((sourceId) => !inventoryIds.has(sourceId))) {
     throw new Error("current source inventory does not cover candidate sources");
@@ -220,10 +248,11 @@ function validateCapitalPack(pack, sourceInventory) {
 
 function validateCapitalReleaseHeads(pack, lineage, snapshots, selected) {
   const capital = pack.packs[0];
-  const capitalIds = new Set(capital.sourceInventory.map(({ id }) => id));
+  const capitalSourceIds = requireCurrentCanonicalSourceRoster(capital);
+  const capitalIds = new Set(capitalSourceIds);
   const byId = new Map(snapshots.map((snapshot) => [snapshot.snapshotId, snapshot]));
   const releaseHeads = ACTIVE_SOURCE_IDS_WITH_TRANSFER.map((sourceId) => byId.get(lineage.headsBySource[sourceId]));
-  const actualCapitalHeadIds = capital.sourceInventory.map(({ id }) => id)
+  const actualCapitalHeadIds = capitalSourceIds.slice(0, CAPITAL_SOURCE_IDS.length)
     .filter((sourceId) => lineage.headsBySource[sourceId] != null);
   if (CAPITAL_ACTIVE_SOURCE_IDS.some((sourceId) => !capitalIds.has(sourceId))
     || JSON.stringify(actualCapitalHeadIds) !== JSON.stringify(CAPITAL_RELEASE_HEAD_SOURCE_IDS)

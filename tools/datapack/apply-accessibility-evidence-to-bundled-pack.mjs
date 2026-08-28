@@ -37,6 +37,12 @@ const CURRENT_CANDIDATE_SOURCE_IDS = Object.freeze([
   "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info",
   "seoul-metro-transfer-distance-duration",
 ]);
+const CANONICAL_PROVENANCE_PROPERTIES = Object.freeze([
+  "stations", "stationLines", "stationExits", "stationCarDoorHints", "networkEdges",
+  "routeMapPositions", "routeMapLineTracks", "facilities", "stationFacilityEvidence",
+  "serviceCalendars", "serviceCalendarDates", "transitRoutes", "transitTrips",
+  "transitStopTimes", "officialOdFareQuotes",
+]);
 
 class StaleAccessibilityEvidenceError extends Error {}
 
@@ -214,6 +220,50 @@ export function applyEvidenceIfStale(sqlitePath, pack) {
   }
 }
 
+function currentCanonicalSourceRoster(capital) {
+  const sources = capital?.sourceInventory;
+  if (!Array.isArray(sources)) return null;
+  const sourceIds = sources.map(({ id }) => id);
+  const suffix = sourceIds.slice(CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS.length);
+  const provenanceSourceIds = canonicalProvenanceSourceIds(capital);
+  if (JSON.stringify(sourceIds.slice(0, CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS.length))
+      !== JSON.stringify(CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS)
+    || sourceIds.some((sourceId) => typeof sourceId !== "string" || sourceId.length === 0)
+    || new Set(sourceIds).size !== sourceIds.length
+    || suffix.some((sourceId) => CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS.includes(sourceId)
+      || !provenanceSourceIds.has(sourceId))) {
+    return null;
+  }
+  return sourceIds;
+}
+
+export function overlayReviewedSourcesOnCanonicalRoster(canonical, reviewedPack) {
+  if (!Array.isArray(reviewedPack?.sourceInventory)) {
+    throw new Error("reviewedPack.sourceInventory must be an array");
+  }
+  const pack = canonical.packs?.find(({ id }) => id === "capital");
+  if (!pack) throw new Error("canonical capital pack is missing");
+  const canonicalSourceIds = currentCanonicalSourceRoster(pack);
+  if (!canonicalSourceIds) throw new Error("canonical current source roster is invalid");
+  const canonicalSources = new Map(pack.sourceInventory.map((source) => [source.id, source]));
+  const reviewedSources = new Map();
+  for (const source of reviewedPack.sourceInventory) {
+    if (!source || typeof source.id !== "string" || source.id.length === 0
+      || reviewedSources.has(source.id)) {
+      throw new Error("reviewed source inventory contains duplicate or invalid source ID");
+    }
+    if (!canonicalSources.has(source.id)) {
+      throw new Error("reviewed source inventory contains unknown canonical source ID");
+    }
+    reviewedSources.set(source.id, source);
+  }
+  return {
+    ...reviewedPack,
+    sourceInventory: canonicalSourceIds.map((sourceId) =>
+      reviewedSources.get(sourceId) ?? canonicalSources.get(sourceId)),
+  };
+}
+
 export function syncCanonicalFixture(canonical, reviewedPack) {
   if (!Array.isArray(reviewedPack?.sourceInventory)) throw new Error("reviewedPack.sourceInventory must be an array");
   if (typeof reviewedPack.metadata?.productionCoverageEvidence !== "string") {
@@ -241,9 +291,9 @@ export function syncCanonicalFixture(canonical, reviewedPack) {
     exit.hasElevatorConnection ? { ...exit, hasElevatorConnection: false } : exit);
   const freshSources = reviewedPack.sourceInventory;
   const freshSourceIds = new Set(freshSources.map(({ id }) => id));
-  const canonicalSourceIds = pack.sourceInventory.map(({ id }) => id);
-  if (JSON.stringify(canonicalSourceIds) === JSON.stringify(CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS)
-    && JSON.stringify(freshSources.map(({ id }) => id)) !== JSON.stringify(CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS)) {
+  const canonicalSourceIds = currentCanonicalSourceRoster(pack);
+  if (canonicalSourceIds
+    && JSON.stringify(freshSources.map(({ id }) => id)) !== JSON.stringify(canonicalSourceIds)) {
     throw new Error("reviewed source inventory cannot replace current canonical source authority");
   }
   pack.sourceInventory = pack.sourceInventory
@@ -604,10 +654,25 @@ export function activeReleaseSnapshots(snapshots, canonical, headsBySource = val
     && headsBySource[snapshot.sourceId] === snapshot.snapshotId);
 }
 
+function canonicalProvenanceSourceIds(capital) {
+  return new Set(CANONICAL_PROVENANCE_PROPERTIES.flatMap((property) =>
+    (capital[property] ?? []).map(({ sourceId }) => sourceId)
+      .filter((sourceId) => typeof sourceId === "string" && sourceId.length > 0)));
+}
+
 export function currentCandidateReleaseSnapshots(snapshots, canonical, headsBySource = validateLineage(snapshots).headsBySource) {
   const capital = canonical.packs?.find(({ id }) => id === "capital");
   const canonicalSourceIds = capital?.sourceInventory?.map(({ id }) => id);
-  if (JSON.stringify(canonicalSourceIds) !== JSON.stringify(CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS)) {
+  const canonicalTail = Array.isArray(canonicalSourceIds)
+    ? canonicalSourceIds.slice(CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS.length) : [];
+  const canonicalProvenanceIds = capital ? canonicalProvenanceSourceIds(capital) : new Set();
+  if (!Array.isArray(canonicalSourceIds)
+    || JSON.stringify(canonicalSourceIds.slice(0, CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS.length))
+      !== JSON.stringify(CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS)
+    || new Set(canonicalTail).size !== canonicalTail.length
+    || canonicalTail.some((sourceId) => CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS.includes(sourceId)
+      || CURRENT_CANDIDATE_SOURCE_IDS.includes(sourceId)
+      || !canonicalProvenanceIds.has(sourceId))) {
     throw new Error("capital canonical active source identity drift");
   }
   return CURRENT_CANDIDATE_SOURCE_IDS.map((sourceId) => {

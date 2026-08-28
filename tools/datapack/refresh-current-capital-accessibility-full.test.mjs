@@ -11,7 +11,6 @@ import { readStableRegularFile } from "./rebind-current-candidate-source-snapsho
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 import { activateSyntheticCurrentStaticNetworkSuccessors, nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
 import { currentizeFreshFacilitySource, prepareCurrentFullCapitalProductionRepository, writeFreshCurrentAccessibilityOutputs, writeFreshExitAdmissionChain } from "./test-fixtures/current-full-capital-production-artifact.mjs";
-import { currentIncheonStationCodeDerivations } from "./collect-incheon-station-info.mjs";
 import {
   buildCurrentTopologyRefreshPrimaryOutputs,
   collectLayoutTopologySnapshotBytes,
@@ -400,17 +399,15 @@ async function writeStagedExitOciReceipt(root) {
   await writeFile(path.join(root, receiptPath), canonicalCurrentExitAdmissionOciReceiptJson(receipt));
 }
 
-// Staged repository 전용 bootstrap이다. 현재 capital admission과 같은 시계의
-// synthetic Incheon 입력을 exact bytes로 결속해, 과거 tracked 관측을 현재 성공으로
-// 오인하지 않고 static-successor transaction의 정상 경로만 재현한다.
+// Staged repository 전용 bootstrap이다. inventory가 선언한 현재 Incheon producer
+// snapshots의 exact bytes만 사용해 static-successor transaction을 재현한다.
 async function stageCurrentTopologyFixture(root) {
-  const [baseSpec, sourceInventory, canonical, productionInput, policyBytes, incheonBytes] = await Promise.all([
+  const [baseSpec, sourceInventory, canonical, productionInput, policyBytes] = await Promise.all([
     readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json")).then(JSON.parse),
     readFile(path.join(root, "tools/datapack/source-inventory.json")).then(JSON.parse),
     readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json")).then(JSON.parse),
     readFile(path.join(root, "tools/datapack/inputs/capital-pilot-production-source-input.json")).then(JSON.parse),
     readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json")),
-    readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260814.json")),
   ]);
   const admission = sourceInventory.sources
     .map(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence?.currentTopologyAdmission)
@@ -422,13 +419,36 @@ async function stageCurrentTopologyFixture(root) {
   const { inWindow } = await currentTopologyAdmissionClock(root);
   const currentItxTopologyEvidencePath = baseSpec.itxTopologyEvidencePath;
   const currentItxTopologyEvidenceBytes = await readFile(path.join(root, currentItxTopologyEvidencePath));
-  const currentIncheonTopology = JSON.parse(incheonBytes);
-  delete currentIncheonTopology.stationCodeCorrections;
-  currentIncheonTopology.stationCodeDerivations = currentIncheonStationCodeDerivations();
-  currentIncheonTopology.capturedAt = inWindow.toISOString();
-  currentIncheonTopology.freshUntil = new Date(inWindow.getTime() + 24 * 60 * 60 * 1_000).toISOString();
-  const currentIncheonTopologyBytes = Buffer.from(`${JSON.stringify(currentIncheonTopology)}\n`);
-  const currentIncheonTopologyPath = `tools/datapack/sources/incheon-transit-station-info-${inWindow.toISOString().slice(0, 10).replaceAll("-", "")}.json`;
+  const currentIncheonTopology = await admittedIncheonSnapshot(
+    root, sourceInventory, "incheon-transit-station-info", "topologyAdmissionEvidence",
+  );
+  const currentIncheonAccessibility = await admittedIncheonSnapshot(
+    root, sourceInventory, "incheon-transit-accessibility", "accessibilityAdmissionEvidence",
+  );
+  const currentIncheonLine1Timetable = await admittedIncheonSnapshot(
+    root, sourceInventory, "incheon-line1-train-timetable", "scheduleAdmissionEvidence",
+  );
+  const currentIncheonLine2Timetable = await admittedIncheonSnapshot(
+    root, sourceInventory, "incheon-line2-train-timetable", "scheduleAdmissionEvidence",
+  );
+  const exactCurrentSnapshots = [
+    currentTopology,
+    currentIncheonTopology.value,
+    currentIncheonAccessibility.value,
+    currentIncheonLine1Timetable.value,
+    currentIncheonLine2Timetable.value,
+  ];
+  const capturedAt = exactCurrentSnapshots.map(({ capturedAt: value }) => Date.parse(value));
+  const freshUntil = exactCurrentSnapshots.map(({ freshUntil: value }) => Date.parse(value));
+  assert.ok(
+    capturedAt.every(Number.isFinite) && freshUntil.every(Number.isFinite),
+    "staged exact current snapshots must have finite validity bounds",
+  );
+  const buildNow = new Date(Math.max(inWindow.getTime(), ...capturedAt) + 1);
+  assert.ok(
+    freshUntil.every((value) => buildNow.getTime() < value),
+    "staged exact current snapshots must share a validity window",
+  );
   const baselineTopologyBytes = await readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260724.json"));
   const result = buildCurrentTopologyRefreshPrimaryOutputs({
     baseSpec,
@@ -437,9 +457,24 @@ async function stageCurrentTopologyFixture(root) {
     currentTopology,
     currentTopologyBytes,
     currentTopologyPath,
-    currentIncheonTopology,
-    currentIncheonTopologyBytes,
-    currentIncheonTopologyPath,
+    currentIncheonTopology: currentIncheonTopology.value,
+    currentIncheonTopologyBytes: currentIncheonTopology.bytes,
+    currentIncheonTopologyPath: currentIncheonTopology.snapshotPath,
+    currentIncheonAccessibility: currentIncheonAccessibility.value,
+    currentIncheonAccessibilityBytes: currentIncheonAccessibility.bytes,
+    currentIncheonAccessibilityPath: currentIncheonAccessibility.snapshotPath,
+    currentIncheonTimetables: {
+      1: currentIncheonLine1Timetable.value,
+      2: currentIncheonLine2Timetable.value,
+    },
+    currentIncheonTimetableBytes: {
+      1: currentIncheonLine1Timetable.bytes,
+      2: currentIncheonLine2Timetable.bytes,
+    },
+    currentIncheonTimetablePaths: {
+      1: currentIncheonLine1Timetable.snapshotPath,
+      2: currentIncheonLine2Timetable.snapshotPath,
+    },
     currentItxTopologyEvidencePath,
     currentItxTopologyEvidenceBytes,
     baselineTopology: JSON.parse(baselineTopologyBytes),
@@ -447,21 +482,37 @@ async function stageCurrentTopologyFixture(root) {
     canonical,
     productionInput,
     productionScopePolicyBytes: policyBytes,
-    buildNow: inWindow.toISOString(),
+    buildNow: buildNow.toISOString(),
     snapshotBytesByPath: await collectPositionSnapshotBytes(sourceInventory, root),
     layoutTopologySnapshotBytesById: await collectLayoutTopologySnapshotBytes(sourceInventory, root),
   });
-  result.spec.publishedAt = inWindow.toISOString();
+  result.spec.publishedAt = buildNow.toISOString();
   result.spec.sourceInventorySha256 = sha(JSON.stringify(result.sourceInventory));
   const reverificationPath = result.spec.networkEdgeEvidence.capitalTopologyReverification.path;
   await Promise.all([
-    writeFile(path.join(root, currentIncheonTopologyPath), currentIncheonTopologyBytes),
     writeFile(path.join(root, "tools/datapack/source-inventory.json"), result.sourceInventoryBytes),
     writeFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), result.canonicalBytes),
     writeFile(path.join(root, reverificationPath), result.topologyReverificationBytes),
     writeFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), `${JSON.stringify(result.spec, null, 2)}\n`),
   ]);
-  return { inWindow, candidateId: result.spec.candidateId, sourceSetSha256: result.spec.sourceSnapshotSetHash };
+  return { inWindow: buildNow, candidateId: result.spec.candidateId, sourceSetSha256: result.spec.sourceSnapshotSetHash };
+}
+
+async function admittedIncheonSnapshot(root, sourceInventory, sourceId, admissionField) {
+  assert.ok(Array.isArray(sourceInventory?.sources), "staged source inventory must contain sources");
+  const sources = sourceInventory.sources.filter(({ id }) => id === sourceId);
+  assert.equal(sources.length, 1, `staged ${sourceId} source must be unique`);
+  const admission = sources[0][admissionField];
+  assert.ok(admission && typeof admission === "object", `staged ${sourceId} admission must be present`);
+  const { snapshotPath } = admission;
+  assert.equal(typeof snapshotPath, "string", `staged ${sourceId} admission path must be present`);
+  assert.ok(snapshotPath.startsWith("tools/datapack/sources/"), `staged ${sourceId} admission path must be tracked`);
+  const absolute = path.resolve(root, snapshotPath);
+  assert.ok(absolute.startsWith(`${path.resolve(root, "tools/datapack/sources")}${path.sep}`), `staged ${sourceId} admission path must be contained`);
+  const bytes = await readFile(absolute);
+  const value = JSON.parse(bytes);
+  assert.equal(bytes.equals(Buffer.from(`${JSON.stringify(value)}\n`)), true, `staged ${sourceId} snapshot bytes must be exact`);
+  return { snapshotPath, bytes, value };
 }
 
 async function rebindStagedActivatedOutputCandidateIds(root, candidateId, sourceSetSha256) {

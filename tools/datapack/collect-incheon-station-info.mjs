@@ -34,7 +34,6 @@ const OPERATOR_ID = "incheon-transit";
 const OPERATOR_NAME = "인천교통공사";
 const REGION = "수도권";
 const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
-const OBSERVED_DATA_UPDATED_AT = "2025-06-30";
 const LINE1 = "line-98718184f016";
 const LINE2 = "line-42b5805f3b5a";
 const LINE7 = "line-15b3b8a93259";
@@ -102,6 +101,19 @@ const HEADERS = Object.freeze([
   "환승노선번호", "환승노선명", "역위도", "역경도", "운영기관명", "역사도로명주소",
   "역사전화번호", "데이터기준일자",
 ]);
+// This is the sole current official I210 rename. It retains the original
+// station/line identity; every other line/name/code change remains rejected.
+export const I210_SEOHAE_GU_OFFICE_RENAME = Object.freeze({
+  lineId: LINE2,
+  rawStationCode: "3210",
+  stationCode: "3210",
+  stationId: "station-b1a5f63faf69",
+  previousNameKo: "서구청",
+  currentNameKo: "서해구청",
+  currentNameEn: "Seohae-gu Office",
+  renamedAt: "2026-06-12",
+  officialNoticeUrl: "https://www.incheon.go.kr/IC010307/view?curPage=14&gosigbn=N&sno=66730",
+});
 const OFFICIAL_LINE_SEQUENCES = Object.freeze({
   [LINE1]: Object.freeze({
     internalFirstStationCode: 3107,
@@ -122,7 +134,9 @@ const OFFICIAL_LINE_SEQUENCES = Object.freeze({
     rows: Object.freeze([
       ["3201", "검단오류"], ["3202", "왕길"], ["3203", "검단사거리"], ["3204", "마전"],
       ["3205", "완정"], ["3206", "독정"], ["3207", "검암"], ["3208", "검바위"],
-      ["3209", "아시아드경기장"], ["3210", "서구청"], ["3211", "가정(루원시티)"],
+      ["3209", "아시아드경기장"],
+      [I210_SEOHAE_GU_OFFICE_RENAME.stationCode, I210_SEOHAE_GU_OFFICE_RENAME.currentNameKo],
+      ["3211", "가정(루원시티)"],
       ["3212", "가정중앙시장"], ["3213", "석남(거북시장)"], ["3214", "서부여성회관"],
       ["3215", "인천가좌"], ["3216", "가재울"], ["3217", "주안국가산단"], ["3218", "주안"],
       ["3219", "시민공원"], ["3220", "석바위시장"], ["3221", "인천시청"],
@@ -180,7 +194,10 @@ const KNOWN_STATION_IDS = Object.freeze({
   독정: "station-a74ee2ce84eb",
   주안: "station-aba7d8fea4fd",
   인천가좌: "station-acf32c565bf0",
-  서구청: "station-b1a5f63faf69",
+  [I210_SEOHAE_GU_OFFICE_RENAME.currentNameKo]: I210_SEOHAE_GU_OFFICE_RENAME.stationId,
+  // Historical snapshots remain readable; current collection accepts only the
+  // official sequence above.
+  [I210_SEOHAE_GU_OFFICE_RENAME.previousNameKo]: I210_SEOHAE_GU_OFFICE_RENAME.stationId,
   검단오류: "station-b8b7c93b0203",
   석천사거리: "station-be0bc5f41d9b",
   만수: "station-d2b72ca2c3cb",
@@ -289,6 +306,7 @@ export function parseIncheonStationInfoCsv(csvBytes) {
 
   const indexes = Object.fromEntries(HEADERS.map((name, index) => [name, index]));
   const rawRows = [];
+  let observedDataUpdatedAt;
   let admittedLine7Count = 0;
   for (const [rowIndex, row] of table.slice(1).entries()) {
     if (row.length !== header.length) {
@@ -314,8 +332,13 @@ export function parseIncheonStationInfoCsv(csvBytes) {
       || latitude < 37.2 || latitude > 37.8 || longitude < 126.4 || longitude > 127.0) {
       throw new Error(`Incheon station info invalid coordinates: ${stationName}`);
     }
-    if (dataDate !== OBSERVED_DATA_UPDATED_AT) {
-      throw new Error(`Incheon station info unexpected data date: ${dataDate}`);
+    if (!isStrictDataDate(dataDate)) {
+      throw new Error(`Incheon station info invalid data date: ${dataDate}`);
+    }
+    if (observedDataUpdatedAt === undefined) {
+      observedDataUpdatedAt = dataDate;
+    } else if (dataDate !== observedDataUpdatedAt) {
+      throw new Error(`Incheon station info data date mismatch: ${dataDate}`);
     }
     if (line.lineId === LINE7) admittedLine7Count += 1;
     rawRows.push({
@@ -410,6 +433,7 @@ export function parseIncheonStationInfoCsv(csvBytes) {
   return {
     excludedLine7Count: EXPECTED_EXCLUDED_LINE7_COUNT,
     admittedLine7Count,
+    observedDataUpdatedAt,
     scope,
     edges,
     positions,
@@ -432,7 +456,7 @@ export function collectIncheonStationInfo({ csvBytes, now = new Date() } = {}) {
     endpoint: DETAIL_URL,
     capturedAt: capturedAt.toISOString(),
     freshUntil: new Date(capturedAt.getTime() + FRESHNESS_MILLIS).toISOString(),
-    observedDataUpdatedAt: OBSERVED_DATA_UPDATED_AT,
+    observedDataUpdatedAt: parsed.observedDataUpdatedAt,
     official: true,
     fixture: false,
     credentialRequired: false,
@@ -476,7 +500,7 @@ export function validateIncheonStationInfoSnapshot(snapshot) {
     || snapshot.sourceId !== SOURCE_ID || snapshot.datasetId !== DATASET_ID
     || snapshot.detailUrl !== DETAIL_URL || snapshot.official !== true || snapshot.fixture !== false
     || snapshot.credentialRequired !== false || snapshot.credentialRedacted !== true
-    || snapshot.observedDataUpdatedAt !== OBSERVED_DATA_UPDATED_AT
+    || !isStrictDataDate(snapshot.observedDataUpdatedAt)
     || snapshot.rawRowCount !== EXPECTED_RAW_ROW_COUNT
     || snapshot.admittedRowCount !== EXPECTED_ADMITTED_ROW_COUNT
     || snapshot.excludedLine7Count !== EXPECTED_EXCLUDED_LINE7_COUNT
@@ -505,10 +529,12 @@ export function validateIncheonStationInfoSnapshot(snapshot) {
     || !/^[a-f0-9]{64}$/.test(snapshot.rawSha256 ?? "")
     || Number.isNaN(Date.parse(snapshot.capturedAt))
     || Number.isNaN(Date.parse(snapshot.freshUntil))
+    || dataDateStartUtc(snapshot.observedDataUpdatedAt) > Date.parse(snapshot.capturedAt)
     || Date.parse(snapshot.freshUntil) !== Date.parse(snapshot.capturedAt) + FRESHNESS_MILLIS) {
     throw new Error("invalid Incheon station info snapshot");
   }
   const membershipKeys = new Set();
+  const membershipByKey = new Map();
   for (const station of snapshot.scope) {
     const key = `${station.lineId}:${station.stationCode}`;
     if (membershipKeys.has(key) || station.stationId !== stationIdFor(station.stationName, station.lineId)
@@ -517,6 +543,7 @@ export function validateIncheonStationInfoSnapshot(snapshot) {
       throw new Error(`invalid Incheon station scope row: ${key}`);
     }
     membershipKeys.add(key);
+    membershipByKey.set(key, station);
   }
   for (const [lineId, expected] of Object.entries(EXPECTED_LINE_STATION_COUNTS)) {
     const lineScope = snapshot.scope.filter((station) => station.lineId === lineId);
@@ -530,7 +557,11 @@ export function validateIncheonStationInfoSnapshot(snapshot) {
     for (let index = 0; index < lineScope.length; index += 1) {
       const station = lineScope[index];
       const [, stationName] = official.rows[index];
-      if (station.stationName !== stationName
+      const historicalI210 = lineId === I210_SEOHAE_GU_OFFICE_RENAME.lineId
+        && station.stationCode === I210_SEOHAE_GU_OFFICE_RENAME.stationCode
+        && station.stationName === I210_SEOHAE_GU_OFFICE_RENAME.previousNameKo
+        && station.stationId === I210_SEOHAE_GU_OFFICE_RENAME.stationId;
+      if ((station.stationName !== stationName && !historicalI210)
         || station.stationCode !== String(official.internalFirstStationCode + index)
         || station.lineSequence !== index + 1) {
         throw new Error(`invalid Incheon official line sequence: ${lineId}`);
@@ -556,9 +587,12 @@ export function validateIncheonStationInfoSnapshot(snapshot) {
   for (const position of snapshot.positions) {
     const key = `${position.lineId}:${position.stationCode}`;
     const projected = projectLatLon(position.latitude, position.longitude);
+    const membership = membershipByKey.get(key);
     if (positionKeys.has(key) || position.x !== projected.x || position.y !== projected.y
+      || position.stationId !== membership?.stationId
+      || position.stationName !== membership?.stationName
       || !Array.isArray(position.labelPolygon) || position.labelPolygon.length !== 4) {
-      throw new Error(`invalid Incheon route map position: ${key}`);
+      throw new Error(`invalid Incheon route map position identity: ${key}`);
     }
     positionKeys.add(key);
   }
@@ -578,6 +612,16 @@ export function requireCurrentIncheonStationCodeDerivations(snapshot) {
   }
   if (snapshot.stationCodeCorrections !== undefined) {
     throw new Error("current Incheon legacy station code corrections are forbidden");
+  }
+  const i210 = snapshot.scope?.filter((station) => (
+    station.lineId === I210_SEOHAE_GU_OFFICE_RENAME.lineId
+      && station.stationCode === I210_SEOHAE_GU_OFFICE_RENAME.stationCode
+  ));
+  if (i210?.length !== 1
+    || i210[0].stationName !== I210_SEOHAE_GU_OFFICE_RENAME.currentNameKo
+    || i210[0].nameEn !== I210_SEOHAE_GU_OFFICE_RENAME.currentNameEn
+    || i210[0].stationId !== I210_SEOHAE_GU_OFFICE_RENAME.stationId) {
+    throw new Error("current Incheon I210 official rename is required");
   }
   return snapshot;
 }
@@ -600,7 +644,15 @@ function deriveInternalStationCodes(lineId, rows) {
   return orderedRows.map((row, index) => {
     const [, expectedStationName] = official.rows[index];
     if (row.stationName !== expectedStationName) {
-      throw new Error(`Incheon station info official line identity drift: ${lineId}`);
+      throw new Error(
+        `Incheon station info official line identity drift: ${lineId} expected ${expectedStationName} at ${row.rawStationCode}, got ${row.stationName}`,
+      );
+    }
+    if (lineId === I210_SEOHAE_GU_OFFICE_RENAME.lineId
+      && row.rawStationCode === I210_SEOHAE_GU_OFFICE_RENAME.rawStationCode
+      && (row.nameEn !== I210_SEOHAE_GU_OFFICE_RENAME.currentNameEn
+        || stationIdFor(row.stationName, lineId) !== I210_SEOHAE_GU_OFFICE_RENAME.stationId)) {
+      throw new Error("Incheon I210 official rename identity drift");
     }
     return {
       ...row,
@@ -699,6 +751,16 @@ function validDate(value, label) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) throw new Error(`${label} is invalid`);
   return date;
+}
+
+function isStrictDataDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value ?? "")) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function dataDateStartUtc(value) {
+  return Date.parse(`${value}T00:00:00.000Z`);
 }
 
 function sha256(value) {

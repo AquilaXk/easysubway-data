@@ -125,6 +125,22 @@
         "crossCheck": "PACK_TOPOLOGY_ADOPTED_NAME",
         "packTopologyPath": "tools/datapack/sources/capital-route-topology-20260724.json"
       }
+    },
+    {
+      "scopeKey": "capital:incheon-transit:line-42b5805f3b5a",
+      "snapshotStationName": "서해구청",
+      "rosterStationName": "서구청",
+      "reasonCode": "OFFICIAL_RENAME",
+      "evidence": {
+        "issue": 600,
+        "stationCode": "3210",
+        "stationId": "station-b1a5f63faf69",
+        "renamedAt": "2026-06-12",
+        "officialUrl": "https://www.incheon.go.kr/IC010307/view?curPage=14&gosigbn=N&sno=66730",
+        "crossCheck": "ADMITTED_OFFICIAL_RENAME",
+        "packTopologyPath": "tools/datapack/sources/incheon-transit-station-info-20260828.json",
+        "note": "Incheon Metropolitan City Notice 2026-156 renamed Seo-gu Office to Seohae-gu Office on 2026-06-12; the current station FILE is data.go.kr dataset 15083751."
+      }
     }
   ],
   "documentedCoverageGaps": [

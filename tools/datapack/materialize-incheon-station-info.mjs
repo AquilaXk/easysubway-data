@@ -5,6 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
+  I210_SEOHAE_GU_OFFICE_RENAME,
   validateIncheonStationInfoSnapshot,
 } from "./collect-incheon-station-info.mjs";
 import { assertRouteMapAdmissionFreshness } from "./lib/route-map-admission-freshness.mjs";
@@ -73,7 +74,7 @@ export function materializeIncheonStationInfo({
   }
 
   const snapshotId = source.topologyAdmissionEvidence.snapshotId;
-  pack.sourceInventory.push(packSource(source, snapshot));
+  pack.sourceInventory.push(incheonStationInfoPackSource(source, snapshot));
   pack.operators.push({ id: OPERATOR_ID, nameKo: "인천교통공사", nameEn: "" });
   pack.lines.push(...OWNED_LINE_IDS.map((lineId) => ({
     id: lineId,
@@ -212,7 +213,15 @@ export function materializeIncheonStationInfo({
   for (const station of stationsById.values()) {
     const existing = packStationsById.get(station.id);
     if (!existing) {
+      if (station.id === I210_SEOHAE_GU_OFFICE_RENAME.stationId) {
+        applyI210SeohaeGuOfficeRename(pack, null, station);
+        continue;
+      }
       pack.stations.push(station);
+      continue;
+    }
+    if (station.id === I210_SEOHAE_GU_OFFICE_RENAME.stationId) {
+      applyI210SeohaeGuOfficeRename(pack, existing, station);
       continue;
     }
     if (existing.nameKo.normalize("NFKC") !== station.nameKo.normalize("NFKC")) {
@@ -243,6 +252,42 @@ export function materializeIncheonStationInfo({
   pack.url = `https://objectstorage.ap-seoul-1.oraclecloud.com/n/axvym6vk8g7i/b/easysubway-datapacks/o/catalog/${pack.id}-v${version}.sqlite.gz`;
   fixture.manifest.activePack = { id: pack.id, version };
   return fixture;
+}
+
+function applyI210SeohaeGuOfficeRename(pack, existing, station) {
+  const mapping = I210_SEOHAE_GU_OFFICE_RENAME;
+  if (station.nameKo !== mapping.currentNameKo
+    || station.nameEn !== mapping.currentNameEn
+    || station.normalizedName !== mapping.currentNameKo.normalize("NFKC")
+    || (existing != null
+      && (existing.nameKo !== mapping.previousNameKo || existing.id !== mapping.stationId))) {
+    throw new Error("Incheon I210 rename identity conflict");
+  }
+  if (pack.stationAliases !== undefined && !Array.isArray(pack.stationAliases)) {
+    throw new Error("Incheon I210 station aliases are invalid");
+  }
+  const aliases = pack.stationAliases ?? [];
+  const alias = {
+    stationId: mapping.stationId,
+    alias: mapping.previousNameKo,
+    normalizedAlias: mapping.previousNameKo.normalize("NFKC"),
+  };
+  const sameAlias = aliases.filter(({ alias: value, normalizedAlias }) => (
+    value === alias.alias || normalizedAlias === alias.normalizedAlias
+  ));
+  if (sameAlias.some((value) => value.stationId !== alias.stationId
+    || value.alias !== alias.alias || value.normalizedAlias !== alias.normalizedAlias)
+    || sameAlias.length > 1) {
+    throw new Error("Incheon I210 rename alias conflict");
+  }
+  if (sameAlias.length === 0) aliases.push(alias);
+  pack.stationAliases = aliases;
+  if (existing == null) pack.stations.push(station);
+  else {
+    existing.nameKo = station.nameKo;
+    existing.nameEn = station.nameEn;
+    existing.normalizedName = station.normalizedName;
+  }
 }
 
 export function materializedIncheonPackContentHash(pack, version) {
@@ -405,7 +450,7 @@ function requiredSource(inventory, snapshot, snapshotSha256, now) {
   return source;
 }
 
-function packSource(source, snapshot) {
+export function incheonStationInfoPackSource(source, snapshot) {
   return {
     id: source.id,
     owner: source.owner,

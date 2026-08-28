@@ -287,16 +287,33 @@ test("current source-set handoff binds the exact verified live-chain and fails c
     /ITX handoff identity mismatch/,
   );
 
-  for (const [label, key, inputKey, protectedPath] of [
-    ["production input", "productionInputBytes", "productionInputBytes", "tools/datapack/inputs/capital-pilot-production-source-input.json"],
-    ["reviewed pack", "reviewedPackBytes", "reviewedPackBytes", "tools/datapack/release/capital-production-reviewed-pack.json"],
-    ["ownership", "ownershipBytes", "ownershipBytes", "tools/ci/data-test-ownership.json"],
+  const reviewedPackDrift = JSON.parse(input.reviewedPackBytes);
+  reviewedPackDrift.packs[0].stations[0].nameKo = `${reviewedPackDrift.packs[0].stations[0].nameKo} drift`;
+  const reviewedPackDriftBytes = Buffer.from(`${JSON.stringify(reviewedPackDrift, null, 2)}\n`);
+  assert.throws(
+    () => buildCurrentSourceSetHandoff({ ...input, reviewedPackBytes: reviewedPackDriftBytes }),
+    /production reviewed pack derivation mismatch/,
+  );
+  const driftedReviewedHandoff = rehashHandoff({
+    ...handoff,
+    protectedOutputs: handoff.protectedOutputs.map((entry) => entry.path === "tools/datapack/release/capital-production-reviewed-pack.json"
+      ? { ...entry, bytesBase64: reviewedPackDriftBytes.toString("base64"), sha256: sha256(reviewedPackDriftBytes) } : entry),
+  });
+  assert.throws(
+    () => readCurrentSourceSetHandoff(Buffer.from(`${canonical(driftedReviewedHandoff)}\n`), input),
+    /production reviewed pack derivation mismatch/,
+  );
+
+  for (const [label, key, inputKey, protectedPath, expected] of [
+    ["production input", "productionInputBytes", "productionInputBytes", "tools/datapack/inputs/capital-pilot-production-source-input.json", /retained source input identity mismatch/],
+    ["reviewed pack", "reviewedPackBytes", "reviewedPackBytes", "tools/datapack/release/capital-production-reviewed-pack.json", /production reviewed pack derivation mismatch/],
+    ["ownership", "ownershipBytes", "ownershipBytes", "tools/ci/data-test-ownership.json", /retained source input identity mismatch/],
   ]) {
     const driftedBytes = Buffer.from(input[inputKey]);
     driftedBytes[0] ^= 1;
     assert.throws(
       () => buildCurrentSourceSetHandoff({ ...input, [key]: driftedBytes }),
-      /retained source input identity mismatch/,
+      expected,
       label,
     );
     const tamperedRetained = rehashHandoff({
@@ -310,7 +327,7 @@ test("current source-set handoff binds the exact verified live-chain and fails c
     });
     assert.throws(
       () => readCurrentSourceSetHandoff(Buffer.from(`${canonical(tamperedRetained)}\n`), input),
-      /retained source input identity mismatch/,
+      expected,
       label,
     );
   }

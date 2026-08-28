@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import { usesLocalPlaceholderHost } from "./production-url-policy.mjs";
 import { requiredCredentialFreeObjectUri } from "./source-snapshot-policy.mjs";
 import {
@@ -39,6 +40,7 @@ import {
   requireCurrentIncheonStationCodeDerivations,
   validateIncheonStationInfoSnapshot,
 } from "./collect-incheon-station-info.mjs";
+import { incheonStationInfoPackSource } from "./materialize-incheon-station-info.mjs";
 import { assertNoRetiredTransitReferences } from "./project-retired-transit-lines.mjs";
 import { assertCurrentCapitalAccessibilityBuildAllowed } from "./current-capital-accessibility-transition.mjs";
 import {
@@ -54,6 +56,14 @@ import {
   retainPreAuthorityRideEdges,
   syncCanonicalAccessibilityEvidence,
 } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
+import {
+  admittedIncheonAccessibilityEvidence,
+  validateProductionIncheonAccessibilityFixture,
+} from "./materialize-incheon-accessibility.mjs";
+import {
+  admittedIncheonTimetableEvidence,
+  validateProductionIncheonTimetableFixture,
+} from "./materialize-incheon-timetable.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const canonicalSqliteHeaderVersion = 3_053_000;
@@ -215,7 +225,49 @@ function incheonStationAliasMap(pack, stationLineKeys) {
   };
 }
 
-export function materializeIncheonNetworkEdges(pack, snapshot, admission) {
+function hasNetworkEdgeFixtureProvenance(edge) {
+  return [edge.sourceId, edge.sourceSnapshotId, edge.providerRecordHash,
+    edge.evidenceHash, edge.lastFieldVerifiedAt, edge.lastVerifiedAt, edge.verifiedAt].some(Boolean)
+    || edge.fieldProvenance !== undefined
+    || ![undefined, "UNKNOWN"].includes(edge.provenanceKind)
+    || ![undefined, "UNKNOWN"].includes(edge.verificationStatus);
+}
+
+export function validateProductionIncheonNetworkEdgeFixture(pack, expectedIncheonEdges) {
+  if (!Array.isArray(pack?.networkEdges) || !Array.isArray(expectedIncheonEdges)) {
+    throw new TypeError("production Incheon network edge fixture inputs are invalid");
+  }
+  const expectedById = new Map(expectedIncheonEdges.map((edge) => [edge.id, edge]));
+  if (expectedById.size !== expectedIncheonEdges.length) {
+    throw new Error("production Incheon network edge expectation is invalid");
+  }
+  const incheonTopologyLineIds = new Set(expectedIncheonEdges.map(({ fromNodeId }) =>
+    fromNodeId.split(":").at(-1)));
+  const actualTopologyEdges = pack.networkEdges.filter((edge) => {
+    const fromLineId = String(edge.fromNodeId ?? "").split(":").at(-1);
+    const toLineId = String(edge.toNodeId ?? "").split(":").at(-1);
+    return edge.edgeType === "RIDE"
+      && edge.servicePattern === "LOCAL"
+      && (edge.serviceClass ?? "SUBWAY") === "SUBWAY"
+      && fromLineId === toLineId
+      && incheonTopologyLineIds.has(fromLineId);
+  });
+  const actualIncheonEdges = pack.networkEdges.filter(({ id }) => expectedById.has(id));
+  if (actualTopologyEdges.length !== expectedIncheonEdges.length
+    || actualTopologyEdges.some(({ id }) => !expectedById.has(id))
+    || actualIncheonEdges.length !== expectedIncheonEdges.length
+    || new Set(actualIncheonEdges.map(({ id }) => id)).size !== actualIncheonEdges.length
+    || actualIncheonEdges.some((edge) => !isDeepStrictEqual(edge, expectedById.get(edge.id)))) {
+    throw new Error("production Incheon network edge fixture does not match pinned admission");
+  }
+  if (pack.networkEdges.some((edge) => !isReviewedAccessibilityEdge(edge, pack)
+    && hasNetworkEdgeFixtureProvenance(edge)
+    && !expectedById.has(edge.id))) {
+    throw new Error("production network edge fixture must not contain provenance");
+  }
+}
+
+export function projectIncheonNetworkEdges(pack, snapshot, admission) {
   const incheon = validateIncheonStationInfoSnapshot(snapshot);
   if (typeof admission?.snapshotId !== "string"
     || admission.contentSha256 !== incheon.contentSha256
@@ -225,13 +277,11 @@ export function materializeIncheonNetworkEdges(pack, snapshot, admission) {
     || admission.freshUntil !== incheon.freshUntil) {
     throw new Error("Incheon topology admission does not match snapshot");
   }
-  if (!Array.isArray(pack?.stationLines) || !Array.isArray(pack.networkEdges)
-    || !Array.isArray(pack.sourceInventory)) {
-    throw new TypeError("Incheon topology requires pack stationLines, networkEdges and sourceInventory");
+  if (!Array.isArray(pack?.stationLines)) {
+    throw new TypeError("Incheon topology requires pack stationLines");
   }
   const stationLineKeys = new Set(pack.stationLines.map(({ stationId, lineId }) => `${stationId}:${lineId}`));
   const resolveStationId = incheonStationAliasMap(pack, stationLineKeys);
-  const lineIds = new Set(incheonTopologyLineIds);
   const generated = incheon.edges.map((sourceEdge) => {
     const fromStationId = resolveStationId(sourceEdge.fromStationId, sourceEdge.lineId);
     const toStationId = resolveStationId(sourceEdge.toStationId, sourceEdge.lineId);
@@ -266,6 +316,16 @@ export function materializeIncheonNetworkEdges(pack, snapshot, admission) {
   if (generated.length !== 116 || new Set(generated.map(({ id }) => id)).size !== 116) {
     throw new Error("Incheon topology generated edge set is invalid");
   }
+  return generated;
+}
+
+export function materializeIncheonNetworkEdges(pack, snapshot, admission) {
+  if (!Array.isArray(pack?.networkEdges) || !Array.isArray(pack.sourceInventory)) {
+    throw new TypeError("Incheon topology requires pack networkEdges and sourceInventory");
+  }
+  const incheon = validateIncheonStationInfoSnapshot(snapshot);
+  const generated = projectIncheonNetworkEdges(pack, snapshot, admission);
+  const lineIds = new Set(incheonTopologyLineIds);
   const retained = pack.networkEdges.filter((edge) => {
     const fromLineId = String(edge.fromNodeId ?? "").split(":").at(-1);
     const toLineId = String(edge.toNodeId ?? "").split(":").at(-1);
@@ -282,23 +342,7 @@ export function materializeIncheonNetworkEdges(pack, snapshot, admission) {
   pack.networkEdges = [...retained, ...generated];
 
   const source = admission.source;
-  const packSource = {
-    id: source.id,
-    owner: source.owner,
-    url: source.datasetUrl,
-    license: source.license.name,
-    licenseStatus: "redistributable",
-    redistributionAllowed: true,
-    updateFrequency: source.updateFrequency,
-    updatedAt: incheon.capturedAt,
-    fields: [...source.fieldsProvided],
-    coverageScope: {
-      regionIds: ["capital"],
-      operatorIds: ["incheon-transit"],
-      lineIds: [...incheonTopologyLineIds],
-      sourceDomains: ["route_graph_topology"],
-    },
-  };
+  const packSource = incheonStationInfoPackSource(source, incheon);
   const existingSources = pack.sourceInventory.filter(({ id }) => id === source.id);
   if (existingSources.length === 0) pack.sourceInventory.push(packSource);
   else if (existingSources.length !== 1 || JSON.stringify(existingSources[0]) !== JSON.stringify(packSource)) {
@@ -1129,6 +1173,31 @@ export async function applyCandidateNetworkEdgeProjection(
   });
 }
 
+export async function admittedPinnedIncheonAccessibilityEvidence(reference, {
+  sourceInventory,
+  topologySnapshot,
+  repositoryRoot = root,
+  now = candidateBuildNow(),
+} = {}) {
+  const pinned = await readPinnedBuildJson(
+    reference,
+    "buildSpec.networkEdgeEvidence.incheonAccessibility",
+    ["path", "sha256", "snapshotId"],
+    repositoryRoot,
+  );
+  const admission = admittedIncheonAccessibilityEvidence({
+    sourceInventory,
+    snapshot: pinned.value,
+    topologySnapshot,
+    now,
+  });
+  if (pinned.pinned.snapshotId !== admission.snapshotId
+    || pinned.pinned.path !== admission.snapshotPath) {
+    throw new Error("pinned Incheon accessibility admission identity mismatch");
+  }
+  return admission;
+}
+
 async function applyCandidateNetworkEdgeProjectionInternal(
   buildSpec,
   fixture,
@@ -1227,9 +1296,12 @@ const currentNetworkEdgeEvidenceKeys = Object.freeze([
 ]);
 
 function exactNetworkEdgeEvidenceKeys(evidence) {
-  return evidence?.itxCurrentTopologyAdmission == null
-    ? currentNetworkEdgeEvidenceKeys
-    : [...currentNetworkEdgeEvidenceKeys, "itxCurrentTopologyAdmission"];
+  return [
+    ...currentNetworkEdgeEvidenceKeys,
+    ...(evidence?.itxCurrentTopologyAdmission == null ? [] : ["itxCurrentTopologyAdmission"]),
+    ...(evidence?.incheonAccessibility == null ? [] : ["incheonAccessibility"]),
+    ...(evidence?.incheonTimetables == null ? [] : ["incheonTimetables"]),
+  ];
 }
 
 export function candidateNetworkEdgeEvidence(evidence, validationNow = candidateBuildNow()) {
@@ -1263,6 +1335,21 @@ export function candidateNetworkEdgeEvidence(evidence, validationNow = candidate
         evidence.itxCurrentTopologyAdmission,
         "buildSpec.networkEdgeEvidence.itxCurrentTopologyAdmission",
       );
+  const incheonAccessibility = evidence.incheonAccessibility == null
+    ? null
+    : pinnedBuildInput(
+        evidence.incheonAccessibility,
+        "buildSpec.networkEdgeEvidence.incheonAccessibility",
+        ["path", "sha256", "snapshotId"],
+      );
+  if (!evidence?.incheonTimetables || typeof evidence.incheonTimetables !== "object") {
+    throw new Error("production build requires pinned Incheon timetable evidence");
+  }
+  assertExactKeys(evidence.incheonTimetables, ["line1", "line2"],
+    "buildSpec.networkEdgeEvidence.incheonTimetables");
+  const incheonTimetables = Object.fromEntries([1, 2].map((lineNumber) => [`line${lineNumber}`,
+    pinnedBuildInput(evidence.incheonTimetables[`line${lineNumber}`],
+      `buildSpec.networkEdgeEvidence.incheonTimetables.line${lineNumber}`, ["path", "sha256", "snapshotId"])]));
   return {
     sourceInventorySha256: sourceInventory.sha256,
     capitalTopologySnapshotId: capitalTopology.snapshotId,
@@ -1278,6 +1365,15 @@ export function candidateNetworkEdgeEvidence(evidence, validationNow = candidate
     ...(itxCurrentTopologyAdmission == null
       ? {}
       : { itxCurrentTopologyAdmissionSha256: itxCurrentTopologyAdmission.sha256 }),
+    ...(incheonAccessibility == null
+      ? {}
+      : {
+          incheonAccessibilitySnapshotId: incheonAccessibility.snapshotId,
+          incheonAccessibilitySha256: incheonAccessibility.sha256,
+        }),
+    incheonTimetableSnapshotIds: Object.fromEntries([1, 2].map((lineNumber) => [
+      `line${lineNumber}`, incheonTimetables[`line${lineNumber}`].snapshotId,
+    ])),
   };
 }
 
@@ -1436,6 +1532,34 @@ async function validateAndApplyNetworkEdgeProvenance(
     snapshotBytes: incheonTopology.bytes,
     now,
   });
+  const incheonAccessibilityAdmission = evidence.incheonAccessibility == null
+    ? null
+    : await admittedPinnedIncheonAccessibilityEvidence(evidence.incheonAccessibility, {
+        sourceInventory: sourceInventory.value,
+        topologySnapshot: incheonTopology.value,
+        repositoryRoot,
+        now,
+      });
+  const incheonTimetablePins = await Promise.all([1, 2].map(async (lineNumber) => {
+    const pinned = await readPinnedBuildJson(evidence.incheonTimetables[`line${lineNumber}`],
+      `buildSpec.networkEdgeEvidence.incheonTimetables.line${lineNumber}`,
+      ["path", "sha256", "snapshotId"], repositoryRoot);
+    return [lineNumber, pinned];
+  }));
+  const incheonTimetableSnapshots = Object.fromEntries(incheonTimetablePins.map(([lineNumber, pinned]) =>
+    [lineNumber, pinned.value]));
+  const incheonTimetableAdmission = admittedIncheonTimetableEvidence({
+    inventory: sourceInventory.value,
+    topologySnapshot: { ...incheonTopology.value, snapshotId: incheonAdmission.snapshotId },
+    timetableSnapshots: incheonTimetableSnapshots,
+    now,
+  });
+  for (const [lineNumber, pinned] of incheonTimetablePins) {
+    const admitted = incheonTimetableAdmission.lines.find(({ config }) => config.lineNumber === lineNumber);
+    if (pinned.pinned.snapshotId !== admitted.source.scheduleAdmissionEvidence.snapshotId) {
+      throw new Error("pinned Incheon timetable admission identity mismatch");
+    }
+  }
   validateSourceSeparatedCurrentTopology({
     capitalTopology: candidateTopology,
     incheonSnapshot: incheonTopology.value,
@@ -1477,14 +1601,25 @@ async function validateAndApplyNetworkEdgeProvenance(
   );
   const productionPacks = fixture.packs?.filter(({ artifactKind }) => artifactKind === "production") ?? [];
   if (productionPacks.length === 0) throw new Error("network edge evidence requires a production pack");
+  const hasIncheonAccessibilityRows = productionPacks.some((pack) => [
+    ...(pack.facilities ?? []),
+    ...(pack.stationFacilityEvidence ?? []),
+  ].some(({ sourceId }) => sourceId === "incheon-transit-accessibility"));
+  if (hasIncheonAccessibilityRows && incheonAccessibilityAdmission == null) {
+    throw new Error("production build requires pinned Incheon accessibility evidence");
+  }
+  if (incheonAccessibilityAdmission != null) {
+    validateProductionIncheonAccessibilityFixture(productionPacks, incheonAccessibilityAdmission);
+  }
+  validateProductionIncheonTimetableFixture(productionPacks, incheonTimetableAdmission);
   for (const pack of productionPacks) {
-    const hasFixtureProvenance = (edge) => [edge.sourceId, edge.sourceSnapshotId, edge.providerRecordHash,
-      edge.evidenceHash, edge.lastFieldVerifiedAt, edge.lastVerifiedAt, edge.verifiedAt].some(Boolean)
-      || edge.fieldProvenance !== undefined
-      || ![undefined, "UNKNOWN"].includes(edge.provenanceKind)
-      || ![undefined, "UNKNOWN"].includes(edge.verificationStatus);
-    if ((pack.networkEdges ?? []).some((edge) => !isReviewedAccessibilityEdge(edge, pack) && hasFixtureProvenance(edge))
-      || (pack.outOfStationTransferLinks ?? []).some(hasFixtureProvenance)) {
+    const expectedIncheonEdges = projectIncheonNetworkEdges(
+      pack,
+      incheonTopology.value,
+      incheonAdmission,
+    );
+    validateProductionIncheonNetworkEdgeFixture(pack, expectedIncheonEdges);
+    if ((pack.outOfStationTransferLinks ?? []).some(hasNetworkEdgeFixtureProvenance)) {
       throw new Error("production network edge fixture must not contain provenance");
     }
     materializeCapitalTopologySource(pack, candidateTopology, capitalAdmissions);
@@ -1514,6 +1649,9 @@ async function validateAndApplyNetworkEdgeProvenance(
       sourceInventory.value,
       buildSpec.sourceSnapshots,
       now,
+      { admittedNonLedgerAccessibility: incheonAccessibilityAdmission == null
+        ? new Map()
+        : new Map([[incheonAccessibilityAdmission.source.id, incheonAccessibilityAdmission]]) },
     )));
   }
   return new Date(Math.min(...freshnessMillis)).toISOString();
@@ -1673,9 +1811,13 @@ export function productionAccessibilityFreshUntil(
   inventory,
   sourceSnapshots,
   now = candidateBuildNow(),
+  { admittedNonLedgerAccessibility = new Map() } = {},
 ) {
   if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
     throw new TypeError("production accessibility validation time is invalid");
+  }
+  if (!(admittedNonLedgerAccessibility instanceof Map)) {
+    throw new TypeError("production non-ledger accessibility admissions are invalid");
   }
   const sources = new Map(inventory.sources.map((source) => [source.id, source]));
   const snapshots = new Map(sourceSnapshots.map((snapshot) => [snapshot.sourceId, snapshot]));
@@ -1690,14 +1832,32 @@ export function productionAccessibilityFreshUntil(
       throw new Error(`production accessibility evidence mismatch: ${row.sourceId}`);
     }
     const snapshot = snapshots.get(row.sourceId);
-    if (snapshot?.snapshotId !== row.sourceSnapshotId
-      || !Number.isFinite(Date.parse(snapshot.freshnessExpiresAt))) {
+    if (snapshot != null) {
+      if (snapshot.snapshotId !== row.sourceSnapshotId
+        || !Number.isFinite(Date.parse(snapshot.freshnessExpiresAt))) {
+        throw new Error(`production accessibility snapshot mismatch: ${row.sourceId}`);
+      }
+      if (Date.parse(snapshot.freshnessExpiresAt) <= now.getTime()) {
+        throw new Error(`production accessibility snapshot is stale: ${row.sourceId}`);
+      }
+      return Date.parse(snapshot.freshnessExpiresAt);
+    }
+    const admission = admittedNonLedgerAccessibility.get(row.sourceId);
+    if (admission?.source?.id !== row.sourceId
+      || !isDeepStrictEqual(admission.source, sources.get(row.sourceId))
+      || admission.source.requiredForProductionPack !== false
+      || admission.source.productionUseAllowed !== true
+      || admission.source.license?.redistributionAllowed !== true
+      || admission.snapshotId !== row.sourceSnapshotId
+      || admission.evidenceHash !== row.evidenceHash
+      || admission.freshUntil !== evidence.freshUntil
+      || !Number.isFinite(Date.parse(admission.freshUntil))) {
       throw new Error(`production accessibility snapshot mismatch: ${row.sourceId}`);
     }
-    if (Date.parse(snapshot.freshnessExpiresAt) <= now.getTime()) {
+    if (Date.parse(admission.freshUntil) <= now.getTime()) {
       throw new Error(`production accessibility snapshot is stale: ${row.sourceId}`);
     }
-    return Date.parse(snapshot.freshnessExpiresAt);
+    return Date.parse(admission.freshUntil);
   });
   if (expires.length === 0) throw new Error("production accessibility evidence is missing");
   return new Date(Math.min(...expires)).toISOString();
@@ -4380,7 +4540,19 @@ function insertRows(database, table, columns, rows, mapRow) {
     `INSERT INTO ${table} (${columns.join(", ")}) VALUES (${columns.map(() => "?").join(", ")})`,
   );
   for (const row of rows ?? []) {
-    statement.run(...mapRow(row));
+    const values = mapRow(row);
+    try {
+      statement.run(...values);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("FOREIGN KEY constraint failed")) {
+        const rowIdentity = sha256(Buffer.from(canonicalJson({
+          table,
+          values: Object.fromEntries(columns.map((column, index) => [column, values[index]])),
+        })));
+        throw new Error(`SQLite foreign-key insert failed: ${table} row_sha256=${rowIdentity}: ${error.message}`);
+      }
+      throw error;
+    }
   }
 }
 

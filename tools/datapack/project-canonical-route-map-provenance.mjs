@@ -113,20 +113,29 @@ function validateBusanCanonicalRows(positions) {
   }
 }
 
-function routeMapPositionSource(fixture) {
+function routeMapPositionSources(fixture, ownerSources) {
   const capital = fixture?.packs?.filter(({ id }) => id === "capital");
   if (capital?.length !== 1 || !Array.isArray(capital[0].sourceInventory)) {
     throw new Error("canonical route-map fixture identity is invalid");
   }
-  const sources = capital[0].sourceInventory.filter(({ id }) => id === "seoul-metro-route-map-positions");
-  if (sources.length !== 1) throw new Error("route-map position source identity is invalid");
-  const source = sources[0];
-  if (typeof source.url !== "string" || source.url.trim() === ""
-    || !SHA256.test(source.sourceSha256 ?? "")
-    || JSON.stringify(source.coverageScope?.sourceDomains) !== JSON.stringify(["route_map_positions"])) {
+  const seoulSources = capital[0].sourceInventory.filter(({ id }) => id === "seoul-metro-route-map-positions");
+  if (seoulSources.length !== 1
+    || JSON.stringify(seoulSources[0].coverageScope?.sourceDomains) !== JSON.stringify(["route_map_positions"])) {
     throw new Error("route-map position source identity is invalid");
   }
-  return source;
+  const sourcesById = new Map();
+  for (const source of capital[0].sourceInventory) {
+    if (!source.coverageScope?.sourceDomains?.includes("route_map_positions")) continue;
+    if (typeof source.id !== "string" || source.id.trim() === ""
+      || typeof source.url !== "string" || source.url.trim() === ""
+      || !SHA256.test(source.sourceSha256 ?? "")
+      || ownerSources.has(source.url)
+      || sourcesById.has(source.id)) {
+      throw new Error("route-map position source identity is invalid");
+    }
+    sourcesById.set(source.id, source);
+  }
+  return sourcesById;
 }
 
 function projectDorasanGeometry(position) {
@@ -164,7 +173,7 @@ export function projectCanonicalRouteMapProvenance({
   if (capitals.length !== 1 || !Array.isArray(capitals[0].routeMapPositions)) {
     throw new Error("canonical route-map fixture identity is invalid");
   }
-  const positionSource = routeMapPositionSource(fixture);
+  const positionSources = routeMapPositionSources(fixture, ownerSources);
 
   const next = structuredClone(fixture);
   const positions = next.packs.find(({ id }) => id === "capital").routeMapPositions;
@@ -180,7 +189,8 @@ export function projectCanonicalRouteMapProvenance({
       position.sourceSha256 = dorasanSha256;
       continue;
     }
-    if (position.sourceId === positionSource.id) {
+    const positionSource = positionSources.get(position.sourceId);
+    if (positionSource) {
       if (position.sourceUrl !== positionSource.url) {
         throw new Error("route-map position source identity is invalid");
       }

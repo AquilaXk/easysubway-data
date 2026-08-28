@@ -9,7 +9,10 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { decodeOfficialCsv } from "./collect-daegu-datapack-sources.mjs";
-import { validateIncheonStationInfoSnapshot } from "./collect-incheon-station-info.mjs";
+import {
+  I210_SEOHAE_GU_OFFICE_RENAME,
+  validateIncheonStationInfoSnapshot,
+} from "./collect-incheon-station-info.mjs";
 
 const ELEVATOR_DATASET_ID = "15083478";
 const ESCALATOR_DATASET_ID = "15010199";
@@ -25,8 +28,6 @@ const WHEELCHAIR_DETAIL_URL = `https://www.data.go.kr/data/${WHEELCHAIR_DATASET_
 const SOURCE_ID = "incheon-transit-accessibility";
 const ARTIFACT_KIND = "incheon-accessibility-snapshot";
 const TOPOLOGY_SOURCE_ID = "incheon-transit-station-info";
-const TOPOLOGY_SNAPSHOT_ID = "incheon-transit-station-info-20260724";
-const TOPOLOGY_CONTENT_SHA256 = "710878689282ba967697cd9411940b657a51eee5499106ed884d5bd9111501a8";
 const LINE1 = "line-98718184f016";
 const LINE2 = "line-42b5805f3b5a";
 const LINE7 = "line-15b3b8a93259";
@@ -67,6 +68,7 @@ const NON_STATION_FACILITY_NAMES = Object.freeze(new Set([
 ]));
 const STATION_NAME_ALIASES = Object.freeze({
   문학: "문학경기장",
+  [I210_SEOHAE_GU_OFFICE_RENAME.previousNameKo]: I210_SEOHAE_GU_OFFICE_RENAME.currentNameKo,
 });
 
 export function normalizedIncheonStationName(name) {
@@ -91,7 +93,7 @@ export function parseIncheonAccessibilityCsv({
   if (!(wheelchairBytes instanceof Uint8Array) || wheelchairBytes.byteLength === 0) {
     throw new Error("Incheon wheelchair CSV bytes are required");
   }
-  const scope = validateTopologySnapshot(topologySnapshot);
+  const { scope } = validateTopologySnapshot(topologySnapshot);
   const scopeByKey = new Map(scope.map((station) => [
     `${station.lineId}:${normalizedIncheonStationName(station.stationName)}`,
     station,
@@ -190,10 +192,11 @@ export function collectIncheonAccessibility({
     topologySnapshot,
   });
   const scope = rows.map(({ stationCode, stationName, lineId }) => ({ stationCode, stationName, lineId }));
+  const { snapshotId, contentSha256 } = validateTopologySnapshot(topologySnapshot);
   const lineageFor = (lineId) => ({
     sourceId: TOPOLOGY_SOURCE_ID,
-    snapshotId: TOPOLOGY_SNAPSHOT_ID,
-    contentSha256: topologySnapshot.contentSha256,
+    snapshotId,
+    contentSha256,
     lineId,
   });
   // topology edges are admitted for 1·2 only; line-15 is membership-backed.
@@ -321,17 +324,19 @@ function countFacilityRows({
 
 function validateTopologySnapshot(topologySnapshot) {
   validateIncheonStationInfoSnapshot(topologySnapshot);
+  const capturedDate = topologySnapshot.capturedAt?.slice(0, 10).replaceAll("-", "");
+  const snapshotId = `${TOPOLOGY_SOURCE_ID}-${capturedDate}`;
   const topologyScope = (topologySnapshot.scope ?? [])
     .filter((station) => LINE_IDS.includes(station.lineId));
   if (topologySnapshot.sourceId !== TOPOLOGY_SOURCE_ID
-    || topologySnapshot.snapshotId !== TOPOLOGY_SNAPSHOT_ID
-    || topologySnapshot.contentSha256 !== TOPOLOGY_CONTENT_SHA256
+    || !/^\d{8}$/u.test(capturedDate ?? "")
+    || topologySnapshot.snapshotId !== snapshotId
     || JSON.stringify(topologySnapshot.topologyLineIds) !== JSON.stringify([...TOPOLOGY_LINE_IDS])
     || JSON.stringify(topologySnapshot.lineIds) !== JSON.stringify([...LINE_IDS])
     || topologyScope.length !== EXPECTED_STATION_COUNT) {
     throw new Error("invalid Incheon topology snapshot");
   }
-  return topologyScope;
+  return { scope: topologyScope, snapshotId, contentSha256: topologySnapshot.contentSha256 };
 }
 
 function parseCsv(text) {
@@ -401,8 +406,8 @@ export async function runIncheonAccessibilityCollector(argv) {
   const args = parseArgs(argv);
   const topologyPath = args["topology-snapshot"];
   const topologySnapshotId = path.basename(topologyPath, ".json");
-  if (topologySnapshotId !== TOPOLOGY_SNAPSHOT_ID) {
-    throw new Error(`Incheon topology snapshot path must be ${TOPOLOGY_SNAPSHOT_ID}.json`);
+  if (!/^incheon-transit-station-info-\d{8}$/u.test(topologySnapshotId)) {
+    throw new Error("Incheon topology snapshot path is invalid");
   }
   const [elevatorBytes, escalatorBytes, wheelchairBytes, topologySnapshot] = await Promise.all([
     readFile(args["elevator-input"]),

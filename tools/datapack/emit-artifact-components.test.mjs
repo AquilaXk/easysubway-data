@@ -67,12 +67,18 @@ async function selectedSourceWindow() {
     entry.sourceUpdatedAt,
     entry.rawReceipt?.storedAt,
   ].filter(Boolean).map(Date.parse)));
-  const evaluationAt = Math.max(basisAt + 1_000, topologyClock.inWindow.getTime());
+  const candidatePublishedAt = Date.parse(buildSpec.publishedAt);
+  const evaluationAt = Math.max(
+    basisAt + 1_000,
+    candidatePublishedAt,
+    topologyClock.inWindow.getTime(),
+  );
   const freshUntil = Math.min(
     ...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)),
     topologyClock.expiredAt.getTime(),
   );
-  assert.ok(Number.isFinite(basisAt) && Number.isFinite(freshUntil) && evaluationAt < freshUntil);
+  assert.ok(Number.isFinite(basisAt) && Number.isFinite(candidatePublishedAt)
+    && Number.isFinite(freshUntil) && evaluationAt < freshUntil);
   return {
     activeFrom: kstInstant(evaluationAt),
     evaluationAt: new Date(evaluationAt).toISOString(),

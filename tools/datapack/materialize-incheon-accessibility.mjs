@@ -3,12 +3,12 @@ import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 
 import { validateIncheonStationInfoSnapshot } from "./collect-incheon-station-info.mjs";
 
 const SOURCE_ID = "incheon-transit-accessibility";
 const TOPOLOGY_SOURCE_ID = "incheon-transit-station-info";
-const CAPTURED_TOPOLOGY_SNAPSHOT_ID = "incheon-transit-station-info-20260724";
 const OPERATOR_ID = "incheon-transit";
 const PACK_ID = "nationwide-incheon-accessibility";
 const LINE1 = "line-98718184f016";
@@ -60,8 +60,13 @@ export function materializeIncheonAccessibility({
   inventory,
   now = new Date(),
 } = {}) {
-  const rows = validateSnapshot(accessibilitySnapshot);
-  const source = requiredSource(inventory, accessibilitySnapshot, topologySnapshot, now);
+  const admission = admittedIncheonAccessibilityEvidence({
+    sourceInventory: inventory,
+    snapshot: accessibilitySnapshot,
+    topologySnapshot,
+    now,
+  });
+  const { rows, source } = admission;
   const fixture = structuredClone(baseFixture);
   const pack = fixture.packs?.[0];
   if (!pack || fixture.packs.length !== 1 || pack.artifactKind !== "production") {
@@ -80,7 +85,7 @@ export function materializeIncheonAccessibility({
   validateTopologyLineage(inventory, source.accessibilityAdmissionEvidence, topologySnapshot);
   const stations = canonicalStations(pack, topologySnapshot);
 
-  const snapshotId = source.accessibilityAdmissionEvidence.snapshotId;
+  const snapshotId = admission.snapshotId;
   const facilities = [];
   const evidence = [];
   for (const row of rows) {
@@ -184,6 +189,192 @@ export function materializeIncheonAccessibility({
   return fixture;
 }
 
+export function admittedIncheonAccessibilityEvidence({
+  sourceInventory,
+  snapshot,
+  topologySnapshot,
+  now = new Date(),
+} = {}) {
+  const rows = validateSnapshot(snapshot);
+  const source = requiredSource(sourceInventory, snapshot, topologySnapshot, now);
+  const evidence = source.accessibilityAdmissionEvidence;
+  const topologyMembership = exactTopologyMembership(rows, topologySnapshot);
+  const fixtureIdentities = expectedFixtureIdentities(rows, topologyMembership);
+  const fixtureRows = expectedFixtureRows(rows, topologyMembership, {
+    snapshotId: evidence.snapshotId,
+    evidenceHash: evidence.rowsSha256,
+    capturedAt: evidence.capturedAt,
+  });
+  if (fixtureIdentities.facilities.length !== evidence.facilityCount
+    || fixtureIdentities.evidence.length !== evidence.facilityCount) {
+    throw new Error("Incheon accessibility admission fixture counts are invalid");
+  }
+  return {
+    source: structuredClone(source),
+    rows: structuredClone(rows),
+    topologyMembership,
+    fixtureIdentities,
+    fixtureRows,
+    snapshotId: evidence.snapshotId,
+    snapshotPath: evidence.snapshotPath,
+    evidenceHash: evidence.rowsSha256,
+    capturedAt: evidence.capturedAt,
+    freshUntil: evidence.freshUntil,
+    facilityCount: evidence.facilityCount,
+  };
+}
+
+export function validateProductionIncheonAccessibilityFixture(packs, admission) {
+  if (!Array.isArray(packs) || admission?.source?.id !== SOURCE_ID
+    || !Number.isSafeInteger(admission.facilityCount) || admission.facilityCount <= 0
+    || !/^incheon-transit-accessibility-\d{8}$/u.test(admission.snapshotId ?? "")
+    || !/^[a-f0-9]{64}$/u.test(admission.evidenceHash ?? "")) {
+    throw new TypeError("Incheon accessibility production admission is invalid");
+  }
+  const expected = expectedFixtureRows(admission.rows, admission.topologyMembership, admission);
+  const identities = expectedFixtureIdentities(admission.rows, admission.topologyMembership);
+  if (expected.facilities.length !== admission.facilityCount
+    || expected.evidence.length !== admission.facilityCount
+    || JSON.stringify(admission.fixtureIdentities) !== JSON.stringify(identities)
+    || JSON.stringify(admission.fixtureRows) !== JSON.stringify(expected)) {
+    throw new Error("Incheon accessibility production admission identity is invalid");
+  }
+  const facilities = packs.flatMap((pack) => pack?.facilities ?? [])
+    .filter(({ sourceId }) => sourceId === SOURCE_ID);
+  const evidence = packs.flatMap((pack) => pack?.stationFacilityEvidence ?? [])
+    .filter(({ sourceId }) => sourceId === SOURCE_ID);
+  const expectedFacilities = new Map(expected.facilities.map((row) => [row.id, row]));
+  const expectedEvidence = new Map(expected.evidence.map((row) => [evidenceIdentity(row), row]));
+  const facilityIds = new Set(facilities.map(({ id }) => id));
+  const evidenceIds = new Set(evidence.map(evidenceIdentity));
+  if (facilities.length !== admission.facilityCount
+    || evidence.length !== admission.facilityCount
+    || facilityIds.size !== admission.facilityCount
+    || evidenceIds.size !== admission.facilityCount
+    || facilities.some((row) => typeof row.id !== "string"
+      || !isDeepStrictEqual(row, expectedFacilities.get(row.id)))
+    || evidence.some((row) => typeof row.stationId !== "string"
+      || typeof row.lineId !== "string"
+      || typeof row.facilityType !== "string"
+      || !isDeepStrictEqual(row, expectedEvidence.get(evidenceIdentity(row))))) {
+    throw new Error("production Incheon accessibility fixture does not match pinned admission");
+  }
+  return admission.freshUntil;
+}
+
+function exactTopologyMembership(rows, topologySnapshot) {
+  const topology = validateIncheonStationInfoSnapshot(topologySnapshot);
+  const membership = topology.scope
+    .filter(({ lineId }) => LINE_IDS.includes(lineId))
+    .map(({ stationId, lineId, stationCode }) => ({ stationId, lineId, stationCode }));
+  const bySourceKey = new Map(membership.map((row) => [membershipIdentity(row), row]));
+  const sourceKeys = new Set(rows.map(membershipIdentity));
+  if (membership.length !== rows.length
+    || bySourceKey.size !== rows.length
+    || sourceKeys.size !== rows.length
+    || [...sourceKeys].some((key) => !bySourceKey.has(key))) {
+    throw new Error("Incheon accessibility topology membership identity mismatch");
+  }
+  return structuredClone(membership);
+}
+
+function expectedFixtureIdentities(rows, topologyMembership) {
+  if (!Array.isArray(rows) || !Array.isArray(topologyMembership)) {
+    throw new TypeError("Incheon accessibility fixture identity inputs are invalid");
+  }
+  const membershipBySourceKey = new Map(topologyMembership.map((row) => [membershipIdentity(row), row]));
+  const facilities = [];
+  const evidence = [];
+  for (const row of rows) {
+    const member = membershipBySourceKey.get(membershipIdentity(row));
+    if (!member) throw new Error("Incheon accessibility fixture membership is missing");
+    for (const { type, slug } of FACILITY_TYPES) {
+      facilities.push({
+        id: `facility-incheon-${member.stationCode}-${slug}`,
+        stationId: member.stationId,
+        lineId: member.lineId,
+        type,
+      });
+      evidence.push({ stationId: member.stationId, lineId: member.lineId, facilityType: type });
+    }
+  }
+  const facilityIds = new Set(facilities.map(({ id }) => id));
+  const evidenceIds = new Set(evidence.map(evidenceIdentity));
+  if (facilityIds.size !== facilities.length || evidenceIds.size !== evidence.length) {
+    throw new Error("Incheon accessibility fixture identities are not unique");
+  }
+  return { facilities, evidence };
+}
+
+function expectedFixtureRows(rows, topologyMembership, admission) {
+  const identities = expectedFixtureIdentities(rows, topologyMembership);
+  const members = new Map(topologyMembership.map((row) => [membershipIdentity(row), row]));
+  const facilities = [];
+  const evidence = [];
+  for (const row of rows) {
+    const member = members.get(membershipIdentity(row));
+    for (const facilityType of FACILITY_TYPES) {
+      const count = facilityType.countOf(row);
+      const exists = count > 0;
+      const providerRecordHash = sha256(JSON.stringify({
+        stationCode: row.stationCode,
+        lineId: row.lineId,
+        type: facilityType.type,
+        count,
+        elevator: row.elevator,
+        escalator: row.escalator,
+        wheelchair_lift: row.wheelchair_lift,
+      }));
+      const stationName = row.stationName;
+      const id = `facility-incheon-${member.stationCode}-${facilityType.slug}`;
+      facilities.push({
+        id, stationId: member.stationId, lineId: member.lineId, exitId: null,
+        type: facilityType.type, name: `${stationName}역 ${facilityType.labelKo} 설치 정보`,
+        status: "UNKNOWN", floorFrom: "", floorTo: "",
+        description: exists
+          ? `인천교통공사 역사별 장애인 편의시설 현황 기준 ${facilityType.labelKo} ${count}대 설치 정보이며 실시간 운행 상태가 아닙니다.`
+          : `인천교통공사 역사별 장애인 편의시설 현황 기준 ${facilityType.labelKo} 미설치(count=0) 기록이며 실시간 운행 상태가 아닙니다.`,
+        sourceId: SOURCE_ID, sourceSnapshotId: admission.snapshotId, providerFacilityRef: `incheon-accessibility-${row.stationCode}-${facilityType.slug}`,
+        providerRecordHash, provenanceKind: "OFFICIAL_SOURCE", statusMeaning: "STATIC_LOCATION",
+        operationalStatus: "UNKNOWN", installationStatus: exists ? "INSTALLED" : "NOT_INSTALLED",
+        verifiedAt: admission.capturedAt, retrievedAt: admission.capturedAt,
+        evidenceHash: admission.evidenceHash, confidence: 80, derivationKind: "OFFICIAL",
+        lastVerifiedAt: admission.capturedAt,
+      });
+      evidence.push({
+        stationId: member.stationId, lineId: member.lineId, facilityType: facilityType.type,
+        evidenceKind: exists ? "EXISTS" : "NOT_EXISTS", sourceId: SOURCE_ID,
+        sourceSnapshotId: admission.snapshotId, providerRecordHash, evidenceHash: admission.evidenceHash,
+        provenanceKind: "OFFICIAL_SOURCE", installationStatus: exists ? "INSTALLED" : "NOT_INSTALLED",
+        operationalStatus: "UNKNOWN", statusMeaning: "STATIC_LOCATION", confidence: 80,
+        verifiedAt: admission.capturedAt, retrievedAt: admission.capturedAt,
+        strictRouteEligible: false,
+        strictRouteEligibleReason: exists ? "OPERATION_STATUS_UNKNOWN" : "FACILITY_NOT_INSTALLED",
+      });
+    }
+  }
+  if (JSON.stringify(identities) !== JSON.stringify({
+    facilities: facilities.map(({ id, stationId, lineId, type }) => ({ id, stationId, lineId, type })),
+    evidence: evidence.map(({ stationId, lineId, facilityType }) => ({ stationId, lineId, facilityType })),
+  })) throw new Error("Incheon accessibility fixture identities are invalid");
+  return { facilities, evidence };
+}
+
+function membershipIdentity({ lineId, stationCode }) {
+  return `${lineId}:${stationCode}`;
+}
+
+function evidenceIdentity({ stationId, lineId, facilityType }) {
+  return `${stationId}:${lineId}:${facilityType}`;
+}
+
+function sameFacilityIdentity(actual, expected) {
+  return expected != null
+    && actual.stationId === expected.stationId
+    && actual.lineId === expected.lineId
+    && actual.type === expected.type;
+}
+
 export function materializedIncheonAccessibilityPackContentHash(pack, version) {
   const content = { ...pack };
   delete content.id;
@@ -241,7 +432,8 @@ function requiredSource(inventory, snapshot, topologySnapshot, now) {
   const evidence = source?.accessibilityAdmissionEvidence;
   const topologySnapshotId = inventory?.sources?.find(({ id }) => id === TOPOLOGY_SOURCE_ID)
     ?.topologyAdmissionEvidence?.snapshotId;
-  if (source?.productionUseAllowed !== true || source.license?.redistributionAllowed !== true
+  if (source?.requiredForProductionPack !== false || source.productionUseAllowed !== true
+    || source.license?.redistributionAllowed !== true
     || source.license?.type !== "PUBLIC_DATA_FREE_USE"
     || source.capabilities?.facility?.productionUseAllowed !== true
     || source.capabilities?.facility?.status !== "SUPPORTED"
@@ -290,10 +482,11 @@ function requiredSource(inventory, snapshot, topologySnapshot, now) {
 }
 
 function validateCapturedSnapshotLineage(snapshot, topologySnapshot) {
+  const topologySnapshotId = activeTopologySnapshotId(topologySnapshot);
   const lineages = [...snapshot.topologyLineages, ...snapshot.membershipLineages];
   if (lineages.some((lineage) => (
       lineage.sourceId !== TOPOLOGY_SOURCE_ID
-        || lineage.snapshotId !== CAPTURED_TOPOLOGY_SNAPSHOT_ID
+        || lineage.snapshotId !== topologySnapshotId
         || lineage.contentSha256 !== topologySnapshot.contentSha256
         || !LINE_IDS.includes(lineage.lineId)
   ))) {

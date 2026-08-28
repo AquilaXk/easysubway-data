@@ -41,6 +41,31 @@ test("composite bundle embeds canonical fan-in evidence without expanding the ou
   await assert.rejects(() => buildCurrentCapitalLiveChainBundle({ ...options, outputDirectory: path.join(root, "missing") }), /ENOENT/);
 });
 
+test("composite bundle reads a valid large source snapshot ledger", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "live-chain-large-ledger-"));
+  const authorityPaths = ["tools/datapack/release/candidate-build-spec.json", "tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json"];
+  const authorityBytes = new Map(await Promise.all(authorityPaths.map(async (relative) => [relative, await readFile(path.join(ROOT, relative))])));
+  const outputPaths = currentCapitalLiveChainOutputPaths({
+    candidate: JSON.parse(authorityBytes.get(authorityPaths[0])),
+    sourceInventory: JSON.parse(authorityBytes.get(authorityPaths[1])),
+    sourceSnapshotLedger: JSON.parse(authorityBytes.get(authorityPaths[2])),
+  });
+  const entryBytes = new Map();
+  for (const [index, relative] of outputPaths.entries()) {
+    const bytes = authorityBytes.get(relative) ?? Buffer.from(`{\"component\":${index}}`);
+    const payload = relative === "tools/datapack/release/source-snapshots.json"
+      ? Buffer.concat([bytes, Buffer.alloc(2_066_759, 0x20)])
+      : bytes;
+    entryBytes.set(relative, payload);
+    await mkdir(path.dirname(path.join(root, "out", relative)), { recursive: true });
+    await writeFile(path.join(root, "out", relative), payload);
+  }
+  const repositorySha = sha256(Buffer.from("large-source-snapshot-ledger-regression")).slice(0, 40);
+  const options = { root, outputDirectory: path.join(root, "out"), repository: "AquilaXk/easysubway-data", repositorySha, operationId: "current-capital-large-ledger", boundaryBytes: boundaryFor(entryBytes) };
+  const bundle = readCurrentCapitalLiveChainBundle(await buildCurrentCapitalLiveChainBundle(options), omit(options, "root", "outputDirectory", "boundaryBytes"));
+  assert.ok(bundle.entries.find((entry) => entry.path === "tools/datapack/release/source-snapshots.json").bytesBase64.length > 2_700_000);
+});
+
 function boundaryFor(entryBytes, overrides = {}) {
   const components = Object.fromEntries(Object.entries(CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS).map(([name, relative]) => [name, { path: relative, sha256: overrides[name] ?? sha256(entryBytes.get(relative)) }]));
   return Buffer.from(canonicalCurrentCapitalLiveChainFanInBoundaryJson({ artifactKind: "current-capital-live-chain-fan-in", components, currentCandidateSourceSetSha256: "a".repeat(64), evidenceSourceSetSha256: "a".repeat(64), kind: "CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN", schemaVersion: 1 }));

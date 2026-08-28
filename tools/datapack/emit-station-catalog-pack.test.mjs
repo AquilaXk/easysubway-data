@@ -85,9 +85,37 @@ test("projection row의 누락·unknown·dangling 값은 output 없이 fail clos
   const run = (output) => emitStationCatalogPack({ repositoryRoot: root, output: path.join(temp, output), catalogPackId: "catalog" });
   await write(fixture);
   await run("valid");
+  const fixtureWithoutNameSub = structuredClone(fixture);
+  delete fixtureWithoutNameSub.packs[0].stations[0].nameSub;
+  await write(fixtureWithoutNameSub);
+  await run("missing-name-sub");
+  const missingNameSubDb = new DatabaseSync(path.join(temp, "missing-name-sub/payload/catalog.sqlite"), { readOnly: true });
+  assert.equal(missingNameSubDb.prepare("SELECT name_sub FROM stations WHERE id = 's'").get().name_sub, "");
+  missingNameSubDb.close();
+  const provenance = {
+    sourceId: "incheon-transit-station-info",
+    sourceSnapshotId: "incheon-transit-station-info-20260828",
+    providerRecordHash: "a".repeat(64),
+    evidenceHash: "b".repeat(64),
+    derivationKind: "OFFICIAL",
+    lastVerifiedAt: "2026-08-28T04:30:44.000Z",
+  };
+  const fixtureWithProvenance = structuredClone(fixture);
+  Object.assign(fixtureWithProvenance.packs[0].stations[0], provenance);
+  Object.assign(fixtureWithProvenance.packs[0].stationLines[0], provenance);
+  await write(fixtureWithProvenance);
+  await run("valid-provenance");
+  assert.deepEqual(
+    await readFile(path.join(temp, "valid/payload/catalog.sqlite")),
+    await readFile(path.join(temp, "valid-provenance/payload/catalog.sqlite")),
+  );
   for (const [name, mutate, message] of [
     ["missing", (value) => delete value.packs[0].stations[0].region, /projection row keys/],
     ["unknown", (value) => { value.packs[0].stationAliases = [{ stationId: "s", alias: "별칭", normalizedAlias: "별칭", extra: true }]; }, /projection row keys/],
+    ["invalid-name-sub", (value) => { value.packs[0].stations[0].nameSub = 1; }, /projection row types/],
+    ["station-partial-provenance", (value) => { value.packs[0].stations[0].sourceId = provenance.sourceId; }, /provenance keys/],
+    ["station-line-standalone-last-verified", (value) => { value.packs[0].stationLines[0].lastVerifiedAt = provenance.lastVerifiedAt; }, /provenance keys/],
+    ["station-line-invalid-provenance", (value) => { Object.assign(value.packs[0].stationLines[0], { ...provenance, evidenceHash: "B".repeat(64) }); }, /provenance values/],
     ["dangling", (value) => { value.packs[0].stationLines[0].stationId = "missing"; }, /foreign key mismatch/],
     ["duplicate-station", (value) => value.packs[0].stations.push({ ...value.packs[0].stations[0] }), /stations duplicate key/],
     ["duplicate-line", (value) => value.packs[0].lines.push({ ...value.packs[0].lines[0] }), /lines duplicate key/],
@@ -135,6 +163,6 @@ function expectedRows(pack, table) {
     ...pack.stationAliases.map((alias) => ({ station_id: alias.stationId, token: alias.alias, normalized_token: alias.normalizedAlias, source_kind: "STATION_ALIAS" })),
   ], ["station_id", "source_kind", "normalized_token", "token"]);
   const [source, fields, order] = mappings[table];
-  return sortRows(pack[source].map((row) => Object.fromEntries(fields.map(([from, to]) => [to, row[from]]))), order);
+  return sortRows(pack[source].map((row) => Object.fromEntries(fields.map(([from, to]) => [to, from === "nameSub" ? row[from] ?? "" : row[from]]))), order);
 }
 function sortRows(rows, fields) { return [...rows].sort((left, right) => { for (const field of fields) { const result = Buffer.compare(Buffer.from(String(left[field])), Buffer.from(String(right[field]))); if (result) return result; } return 0; }); }

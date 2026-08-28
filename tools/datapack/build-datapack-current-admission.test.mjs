@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -8,22 +8,32 @@ import test from "node:test";
 
 import {
   admittedIncheonTopologyEvidence,
+  admittedPinnedIncheonAccessibilityEvidence,
   admittedItxNetworkEdgeEvidence,
   applyCandidateReleaseIdentity,
   candidateNetworkEdgeEvidence,
   materializeIncheonNetworkEdges,
+  projectIncheonNetworkEdges,
   projectCandidateFixtureForAccessibilityAuthority,
   validateTrackedItxTopologyEvidence,
+  validateProductionIncheonNetworkEdgeFixture,
   validateSourceSeparatedCurrentTopology,
   validateCapitalTopologyReverification,
   validateItxCurrentTopologyAdmission,
   validateCandidateProductionScope,
+  productionAccessibilityFreshUntil,
   main as buildDatapackMain,
 } from "./build-datapack.mjs";
+import {
+  admittedIncheonAccessibilityEvidence,
+  validateProductionIncheonAccessibilityFixture,
+} from "./materialize-incheon-accessibility.mjs";
+import { incheonStationInfoPackSource } from "./materialize-incheon-station-info.mjs";
 import {
   buildCapitalTopologyReverificationEvidence,
   projectCapitalTopologyOwnership,
 } from "./collect-capital-route-topology.mjs";
+import { activateCurrentIncheonSourceAdmissions } from "./activate-current-source-set.mjs";
 import { retainPreAuthorityRideEdges } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
 import {
@@ -119,6 +129,18 @@ function networkEdgeEvidenceFixture() {
     capitalTopologyReverification: {
       path: "capital-topology-reverification.json",
       sha256: "5".repeat(64),
+    },
+    incheonTimetables: {
+      line1: {
+        path: "tools/datapack/sources/incheon-line1-train-timetable-20260810.json",
+        sha256: "8".repeat(64),
+        snapshotId: "incheon-line1-train-timetable-20260810",
+      },
+      line2: {
+        path: "tools/datapack/sources/incheon-line2-train-timetable-20260810.json",
+        sha256: "9".repeat(64),
+        snapshotId: "incheon-line2-train-timetable-20260810",
+      },
     },
     itxCoverageContract: { path: "itx-coverage.json", sha256: "6".repeat(64) },
   };
@@ -384,7 +406,7 @@ test("source-separated current topology는 capital과 Incheon 1/2 line ownership
   const [capital, incheon] = await Promise.all([
     readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260724.json"), "utf8")
       .then(JSON.parse),
-    readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260724.json"), "utf8")
+    readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260828.json"), "utf8")
       .then(JSON.parse),
   ]);
   const projectedCapital = projectCapitalTopologyOwnership(capital);
@@ -423,38 +445,126 @@ test("source-separated current topology는 capital과 Incheon 1/2 line ownership
 
 test("source-separated current topology materialization은 Incheon 1/2 exact 116 edges만 교체한다", async () => {
   const inventory = await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse);
-  const incheonAdmission = inventory.sources.find(({ id }) => id === "incheon-transit-station-info")
-    ?.topologyAdmissionEvidence;
-  if (!incheonAdmission?.snapshotPath || !incheonAdmission?.snapshotId
-    || !incheonAdmission?.capturedAt || !incheonAdmission?.freshUntil) {
+  const sourceDir = path.join(root, "tools/datapack/sources");
+  const topologySnapshotName = (await readdir(sourceDir))
+    .filter((name) => /^incheon-transit-station-info-[0-9]{8}\.json$/u.test(name))
+    .sort()
+    .at(-1);
+  if (topologySnapshotName == null) {
     throw new Error("current Incheon topology admission is missing");
   }
-  const [snapshotBytes, fixture] = await Promise.all([
-    readFile(path.join(root, incheonAdmission.snapshotPath)),
+  const topologySnapshotPath = `tools/datapack/sources/${topologySnapshotName}`;
+  const snapshotBytes = await readFile(path.join(root, topologySnapshotPath));
+  const snapshot = JSON.parse(snapshotBytes);
+  const dateParts = Object.fromEntries(new Intl.DateTimeFormat("en", {
+    timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date(snapshot.capturedAt)).map(({ type, value }) => [type, value]));
+  const compactDate = `${dateParts.year}${dateParts.month}${dateParts.day}`;
+  const accessibilitySnapshotPath = `tools/datapack/sources/incheon-transit-accessibility-${compactDate}.json`;
+  const timetableSnapshotPaths = {
+    1: `tools/datapack/sources/incheon-line1-train-timetable-${compactDate}.json`,
+    2: `tools/datapack/sources/incheon-line2-train-timetable-${compactDate}.json`,
+  };
+  const [accessibilityBytes, line1TimetableBytes, line2TimetableBytes, fixture] = await Promise.all([
+    readFile(path.join(root, accessibilitySnapshotPath)),
+    readFile(path.join(root, timetableSnapshotPaths[1])),
+    readFile(path.join(root, timetableSnapshotPaths[2])),
     readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8")
       .then(JSON.parse),
   ]);
-  const snapshot = JSON.parse(snapshotBytes);
-  const now = new Date(incheonAdmission.capturedAt);
+  const accessibilitySnapshot = JSON.parse(accessibilityBytes);
+  const timetableSnapshots = {
+    1: JSON.parse(line1TimetableBytes),
+    2: JSON.parse(line2TimetableBytes),
+  };
+  const now = new Date(Math.max(
+    Date.parse(snapshot.capturedAt),
+    Date.parse(accessibilitySnapshot.capturedAt),
+    ...Object.values(timetableSnapshots).map(({ capturedAt }) => Date.parse(capturedAt)),
+  ) + 1);
+  const currentInventory = activateCurrentIncheonSourceAdmissions({
+    sourceInventory: inventory,
+    topologySnapshot: snapshot,
+    topologySnapshotBytes: snapshotBytes,
+    topologySnapshotPath,
+    accessibilitySnapshot,
+    accessibilitySnapshotBytes: accessibilityBytes,
+    accessibilitySnapshotPath,
+    timetableSnapshots,
+    timetableSnapshotBytes: { 1: line1TimetableBytes, 2: line2TimetableBytes },
+    timetableSnapshotPaths,
+    now: now.toISOString(),
+  });
+  const incheonAdmission = currentInventory.sources.find(({ id }) => id === "incheon-transit-station-info")
+    ?.topologyAdmissionEvidence;
+  if (!incheonAdmission?.snapshotId || !incheonAdmission?.freshUntil) {
+    throw new Error("current Incheon topology admission is missing");
+  }
   const legacyCorrectionSnapshot = structuredClone(snapshot);
   legacyCorrectionSnapshot.stationCodeCorrections = [];
   const legacyCorrectionBytes = Buffer.from(`${JSON.stringify(legacyCorrectionSnapshot)}\n`);
-  const legacyCorrectionInventory = structuredClone(inventory);
-  legacyCorrectionInventory.sources.find(({ id }) => id === "incheon-transit-station-info")
-    .routeMapAdmissionEvidence.snapshotSha256 = sha256(legacyCorrectionBytes);
   assert.throws(() => admittedIncheonTopologyEvidence({
-    sourceInventory: legacyCorrectionInventory,
+    sourceInventory: currentInventory,
     snapshot: legacyCorrectionSnapshot,
     snapshotBytes: legacyCorrectionBytes,
     now,
   }), /current Incheon legacy station code corrections are forbidden/);
   const admission = admittedIncheonTopologyEvidence({
-    sourceInventory: inventory,
+    sourceInventory: currentInventory,
     snapshot,
     snapshotBytes,
     now,
   });
+  const accessibilityAdmission = admittedIncheonAccessibilityEvidence({
+    sourceInventory: currentInventory,
+    snapshot: accessibilitySnapshot,
+    topologySnapshot: snapshot,
+    now,
+  });
+  assert.equal(accessibilityAdmission.snapshotId,
+    currentInventory.sources.find(({ id }) => id === "incheon-transit-accessibility")
+      .accessibilityAdmissionEvidence.snapshotId);
+  assert.equal(accessibilityAdmission.freshUntil, accessibilitySnapshot.freshUntil);
+  const accessibilityPin = {
+    path: accessibilitySnapshotPath,
+    sha256: sha256(accessibilityBytes),
+    snapshotId: accessibilityAdmission.snapshotId,
+  };
+  assert.deepEqual(await admittedPinnedIncheonAccessibilityEvidence(accessibilityPin, {
+    sourceInventory: currentInventory,
+    topologySnapshot: snapshot,
+    repositoryRoot: root,
+    now,
+  }), accessibilityAdmission);
+  await assert.rejects(admittedPinnedIncheonAccessibilityEvidence({
+    ...accessibilityPin,
+    sha256: "0".repeat(64),
+  }, {
+    sourceInventory: currentInventory,
+    topologySnapshot: snapshot,
+    repositoryRoot: root,
+    now,
+  }), /sha256 must match tracked input bytes/);
+  await assert.rejects(admittedPinnedIncheonAccessibilityEvidence({
+    ...accessibilityPin,
+    snapshotId: "incheon-transit-accessibility-20260827",
+  }, {
+    sourceInventory: currentInventory,
+    topologySnapshot: snapshot,
+    repositoryRoot: root,
+    now,
+  }), /pinned Incheon accessibility admission identity mismatch/);
   const pack = structuredClone(fixture.packs[0]);
+  const stationInfoSource = incheonStationInfoPackSource(admission.source, snapshot);
+  assert.equal(stationInfoSource.sourceSha256, snapshot.rawSha256);
+  assert.equal(stationInfoSource.updatedAt, snapshot.capturedAt);
+  assert.deepEqual(stationInfoSource.coverageScope, admission.source.coverageScope);
+  const existingStationInfoSource = pack.sourceInventory.find(({ id }) => id === stationInfoSource.id);
+  if (existingStationInfoSource == null) {
+    pack.sourceInventory.push(stationInfoSource);
+  } else {
+    assert.deepEqual(existingStationInfoSource, stationInfoSource);
+  }
   const incheonLineIds = new Set(["line-42b5805f3b5a", "line-98718184f016"]);
   const unrelatedBefore = pack.networkEdges.filter(({ fromNodeId }) => (
     !incheonLineIds.has(fromNodeId.split(":").at(-1))
@@ -462,13 +572,73 @@ test("source-separated current topology materialization은 Incheon 1/2 exact 116
 
   assert.deepEqual(materializeIncheonNetworkEdges(pack, snapshot, admission), {
     snapshotId: incheonAdmission.snapshotId,
-    edgeCount: 116,
+    edgeCount: snapshot.edgeCount,
   });
+  assert.deepEqual(pack.sourceInventory.find(({ id }) => id === stationInfoSource.id), stationInfoSource);
+  assert.deepEqual(materializeIncheonNetworkEdges(pack, snapshot, admission), {
+    snapshotId: incheonAdmission.snapshotId,
+    edgeCount: snapshot.edgeCount,
+  });
+  assert.deepEqual(pack.sourceInventory.find(({ id }) => id === stationInfoSource.id), stationInfoSource);
+  const sourceShaDrift = structuredClone(pack);
+  sourceShaDrift.sourceInventory.find(({ id }) => id === stationInfoSource.id).sourceSha256 = "0".repeat(64);
+  assert.throws(
+    () => materializeIncheonNetworkEdges(sourceShaDrift, snapshot, admission),
+    /Incheon topology pack source inventory mismatch/,
+  );
+  const coverageDrift = structuredClone(pack);
+  coverageDrift.sourceInventory.find(({ id }) => id === stationInfoSource.id).coverageScope.lineIds.pop();
+  assert.throws(
+    () => materializeIncheonNetworkEdges(coverageDrift, snapshot, admission),
+    /Incheon topology pack source inventory mismatch/,
+  );
+  const duplicateSource = structuredClone(pack);
+  duplicateSource.sourceInventory.push(structuredClone(stationInfoSource));
+  assert.throws(
+    () => materializeIncheonNetworkEdges(duplicateSource, snapshot, admission),
+    /Incheon topology pack source inventory mismatch/,
+  );
   const incheonEdges = pack.networkEdges.filter(({ fromNodeId }) => (
     incheonLineIds.has(fromNodeId.split(":").at(-1))
   ));
-  assert.equal(incheonEdges.length, 116);
+  assert.equal(incheonEdges.length, snapshot.edgeCount);
   assert.equal(incheonEdges.every(({ sourceId }) => sourceId === "incheon-transit-station-info"), true);
+  assert.deepEqual(incheonEdges, projectIncheonNetworkEdges(pack, snapshot, admission));
+  assert.doesNotThrow(() => validateProductionIncheonNetworkEdgeFixture(pack, incheonEdges));
+  assert.throws(() => validateProductionIncheonNetworkEdgeFixture({
+    ...pack,
+    networkEdges: pack.networkEdges.filter(({ id }) => id !== incheonEdges[0].id),
+  }, incheonEdges), /does not match pinned admission/);
+  const driftedIncheonEdge = { ...incheonEdges[0], evidenceHash: "0".repeat(64) };
+  assert.throws(() => validateProductionIncheonNetworkEdgeFixture({
+    ...pack,
+    networkEdges: pack.networkEdges.map((edge) => edge.id === driftedIncheonEdge.id
+      ? driftedIncheonEdge
+      : edge),
+  }, incheonEdges), /does not match pinned admission/);
+  const wrongIdIncheonEdge = { ...incheonEdges[0], id: `${incheonEdges[0].id}-wrong` };
+  assert.throws(() => validateProductionIncheonNetworkEdgeFixture({
+    ...pack,
+    networkEdges: pack.networkEdges.map((edge) => edge.id === incheonEdges[0].id
+      ? wrongIdIncheonEdge
+      : edge),
+  }, incheonEdges), /does not match pinned admission/);
+  const missingProvenanceEdge = { ...incheonEdges[0] };
+  delete missingProvenanceEdge.evidenceHash;
+  assert.throws(() => validateProductionIncheonNetworkEdgeFixture({
+    ...pack,
+    networkEdges: pack.networkEdges.map((edge) => edge.id === missingProvenanceEdge.id
+      ? missingProvenanceEdge
+      : edge),
+  }, incheonEdges), /does not match pinned admission/);
+  assert.throws(() => validateProductionIncheonNetworkEdgeFixture({
+    ...pack,
+    networkEdges: [...pack.networkEdges, {
+      id: "edge-unrelated-provenance",
+      edgeType: "TRANSFER",
+      sourceId: "unrelated-provenance-source",
+    }],
+  }, incheonEdges), /production network edge fixture must not contain provenance/);
   assert.deepEqual(
     pack.networkEdges.filter(({ fromNodeId }) => !incheonLineIds.has(fromNodeId.split(":").at(-1))),
     unrelatedBefore,
@@ -479,11 +649,62 @@ test("source-separated current topology materialization은 Incheon 1/2 exact 116
     )), true);
   }
   assert.throws(() => admittedIncheonTopologyEvidence({
-    sourceInventory: inventory,
+    sourceInventory: currentInventory,
     snapshot,
     snapshotBytes,
     now: new Date(Date.parse(incheonAdmission.freshUntil) + 1),
   }), /Incheon topology admission is stale/);
+
+  const accessibilityFixture = {
+    facilities: structuredClone(accessibilityAdmission.fixtureRows.facilities),
+    stationFacilityEvidence: structuredClone(accessibilityAdmission.fixtureRows.evidence),
+  };
+  assert.doesNotThrow(() => validateProductionIncheonAccessibilityFixture(
+    [accessibilityFixture], accessibilityAdmission,
+  ));
+  assert.equal(productionAccessibilityFreshUntil(
+    [accessibilityFixture],
+    currentInventory,
+    [],
+    now,
+    { admittedNonLedgerAccessibility: new Map([[accessibilityAdmission.source.id, accessibilityAdmission]]) },
+  ), accessibilityAdmission.freshUntil);
+  assert.throws(() => productionAccessibilityFreshUntil(
+    [accessibilityFixture], currentInventory, [], now,
+  ), /production accessibility snapshot mismatch: incheon-transit-accessibility/);
+  const wrongEvidenceFixture = structuredClone(accessibilityFixture);
+  wrongEvidenceFixture.facilities[0].evidenceHash = "0".repeat(64);
+  assert.throws(() => validateProductionIncheonAccessibilityFixture(
+    [wrongEvidenceFixture], accessibilityAdmission,
+  ), /does not match pinned admission/);
+  const wrongSemanticFixture = structuredClone(accessibilityFixture);
+  wrongSemanticFixture.stationFacilityEvidence[0].strictRouteEligible = true;
+  assert.throws(() => validateProductionIncheonAccessibilityFixture(
+    [wrongSemanticFixture], accessibilityAdmission,
+  ), /does not match pinned admission/);
+  const missingFacilityFixture = structuredClone(accessibilityFixture);
+  missingFacilityFixture.facilities.pop();
+  assert.throws(() => validateProductionIncheonAccessibilityFixture(
+    [missingFacilityFixture], accessibilityAdmission,
+  ), /does not match pinned admission/);
+  const wrongIdentityFixture = structuredClone(accessibilityFixture);
+  wrongIdentityFixture.facilities[0].id = `${wrongIdentityFixture.facilities[0].id}-wrong`;
+  assert.throws(() => validateProductionIncheonAccessibilityFixture(
+    [wrongIdentityFixture], accessibilityAdmission,
+  ), /does not match pinned admission/);
+  const unrelatedFixture = structuredClone(accessibilityFixture);
+  const ledgerOnlySource = currentInventory.sources.find(({ id }) =>
+    id === "kric-station-convenience-standard");
+  unrelatedFixture.facilities[0] = {
+    ...unrelatedFixture.facilities[0],
+    sourceId: ledgerOnlySource.id,
+    sourceSnapshotId: ledgerOnlySource.accessibilityAdmissionEvidence.snapshotId,
+    evidenceHash: ledgerOnlySource.accessibilityAdmissionEvidence.rowsSha256,
+  };
+  assert.throws(() => productionAccessibilityFreshUntil(
+    [unrelatedFixture], currentInventory, [], now,
+    { admittedNonLedgerAccessibility: new Map([[accessibilityAdmission.source.id, accessibilityAdmission]]) },
+  ), /production accessibility snapshot mismatch: kric-station-convenience-standard/);
 });
 
 test("networkEdgeEvidence는 current source evidence와 historical topology overlay를 구분한다", () => {
@@ -506,6 +727,16 @@ test("networkEdgeEvidence는 current source evidence와 historical topology over
     assert.equal(
       candidateNetworkEdgeEvidence(current).itxCurrentTopologyAdmissionSha256,
       "7".repeat(64),
+    );
+    assert.deepEqual(candidateNetworkEdgeEvidence(current).incheonTimetableSnapshotIds, {
+      line1: "incheon-line1-train-timetable-20260810",
+      line2: "incheon-line2-train-timetable-20260810",
+    });
+    const missingTimetable = structuredClone(current);
+    delete missingTimetable.incheonTimetables.line2;
+    assert.throws(
+      () => candidateNetworkEdgeEvidence(missingTimetable),
+      /incheonTimetables.*line2|exact keys/,
     );
     assert.throws(
       () => candidateNetworkEdgeEvidence({ ...current, unknown: true }),

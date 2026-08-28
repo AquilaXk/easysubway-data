@@ -37,7 +37,7 @@ test("full-capital authority는 213/639 input과 456 non-RIDE를 2,664-edge fixt
   const result = buildCurrentReleaseCandidateAccessibilityAuthority(input);
 
   assert.deepEqual(edgeCounts(JSON.parse(input.sourceFixtureBytes).packs[0].networkEdges), {
-    RIDE: 2200,
+    RIDE: 2208,
   });
   assert.deepEqual(edgeCounts(input.projectedFixture.packs[0].networkEdges), {
     RIDE: 2208,
@@ -116,7 +116,7 @@ test("합성 current public successor는 1,102 metadata·2,664 route·456 author
     routeBytes.toString("utf8"),
     canonicalCurrentCapitalRouteEdgeInputJson(route),
   );
-  assert.deepEqual(edgeCounts(sourceFixture.packs[0].networkEdges), { RIDE: 2200 });
+  assert.deepEqual(edgeCounts(sourceFixture.packs[0].networkEdges), { RIDE: 2208 });
   assert.deepEqual(edgeCounts(projectedFixture.packs[0].networkEdges), { RIDE: 2208 });
   const result = buildCurrentReleaseCandidateAccessibilityAuthority({
     buildSpec,
@@ -152,11 +152,48 @@ test("unresolved·stale·candidate·route·projected RIDE drift는 output 전에
     ["stale", (value) => { value.stationLineInput.evidenceRows[0].freshUntil = "2026-08-01T00:00:00.000Z"; }, /fresh|stale/i],
     ["candidate", (value) => { value.route.candidate.sourceSetSha256 = "0".repeat(64); }, /candidate/i],
     ["route hash", (value) => { value.route.routeEdges[0].edgeSha256 = "0".repeat(64); }, /hash/i],
+    ["route RIDE empty ID", (value) => {
+      const ride = value.route.routeEdges.find(({ edgeType }) => edgeType === "RIDE");
+      assert.ok(ride, "current route input requires one RIDE edge");
+      ride.edgeId = "";
+      rebindRouteEdge(value.route, ride);
+      value.route.candidate.topologySha256 = canonicalRideEdgeSetSha256(
+        value.route.routeEdges.filter(({ edgeType }) => edgeType === "RIDE"),
+      );
+    }, /route edge identifier mismatch/i],
     ["route metadata missing", (value) => { value.route.stationLines.pop(); }, /route station-line/i],
     ["route metadata operator", (value) => { value.route.stationLines[0].operatorId = "drift"; }, /route station-line/i],
     ["projected metadata missing", (value) => { value.projectedFixture.packs[0].stationLines.pop(); }, /route station-line/i],
-    ["RIDE denominator", (value) => { value.projectedFixture.packs[0].networkEdges.pop(); }, /RIDE-only/i],
-    ["extra non-RIDE", (value) => { value.projectedFixture.packs[0].networkEdges.push(nonRideEdge("extra", "WALKWAY")); }, /RIDE-only/i],
+    ["source RIDE missing", (value) => {
+      const source = JSON.parse(value.sourceFixtureBytes);
+      source.packs[0].networkEdges.pop();
+      value.sourceFixtureBytes = Buffer.from(canonical(source));
+    }, /source fixture RIDE denominator/i],
+    ["source RIDE extra", (value) => {
+      const source = JSON.parse(value.sourceFixtureBytes);
+      source.packs[0].networkEdges.push(structuredClone(source.packs[0].networkEdges[0]));
+      value.sourceFixtureBytes = Buffer.from(canonical(source));
+    }, /source fixture RIDE denominator/i],
+    ["source non-RIDE", (value) => {
+      const source = JSON.parse(value.sourceFixtureBytes);
+      source.packs[0].networkEdges.push(nonRideEdge("extra", "WALKWAY"));
+      value.sourceFixtureBytes = Buffer.from(canonical(source));
+    }, /source fixture must be RIDE-only/i],
+    ["source RIDE field drift", (value) => {
+      const source = JSON.parse(value.sourceFixtureBytes);
+      source.packs[0].networkEdges[0].durationSeconds += 1;
+      value.sourceFixtureBytes = Buffer.from(canonical(source));
+    }, /source fixture RIDE mismatch/i],
+    ["source RIDE empty ID", (value) => {
+      const source = JSON.parse(value.sourceFixtureBytes);
+      source.packs[0].networkEdges[0].id = "";
+      value.sourceFixtureBytes = Buffer.from(canonical(source));
+    }, /source fixture RIDE identifier mismatch/i],
+    ["projected RIDE missing", (value) => { value.projectedFixture.packs[0].networkEdges.pop(); }, /projected fixture RIDE denominator/i],
+    ["projected extra non-RIDE", (value) => { value.projectedFixture.packs[0].networkEdges.push(nonRideEdge("extra", "WALKWAY")); }, /projected fixture must be RIDE-only/i],
+    ["projected RIDE field drift", (value) => {
+      value.projectedFixture.packs[0].networkEdges[0].durationSeconds += 1;
+    }, /projected fixture RIDE mismatch/i],
     ["non-RIDE service-pattern endpoint", (value) => {
       // Current-only authority: non-RIDE endpoints are station-line nodes, never service-pattern nodes.
       const edge = value.route.routeEdges.find(({ edgeType }) => edgeType !== "RIDE");
@@ -555,18 +592,6 @@ async function fullInput() {
     }],
   };
   const sourceFixture = structuredClone(projectedFixture);
-  sourceFixture.packs[0].networkEdges = [
-    ...Array.from({ length: 2200 }, (_, index) => ({
-      id: `ride-${index}`,
-      edgeType: "RIDE",
-      fromNodeId: "station-000:seoul-2",
-      toNodeId: "station-001:seoul-2",
-      durationSeconds: 120,
-      distanceMeters: 1000,
-      serviceClass: "SUBWAY",
-      servicePattern: "LOCAL",
-    })),
-  ];
   const buildSpec = { candidateId: stationLineInput.candidate.candidateId, sourceSnapshotSetHash: stationLineInput.candidate.sourceSetSha256 };
   return {
     buildSpec,
@@ -636,6 +661,19 @@ function rebindBytes(value) {
   value.buildSpecBytes = Buffer.from(canonical(value.buildSpec));
   value.routeBytes = Buffer.from(canonical(value.route));
   value.stationLineInputBytes = Buffer.from(canonical(value.stationLineInput));
+}
+
+function rebindRouteEdge(route, edge) {
+  edge.edgeSha256 = sha256(Buffer.from(canonical({
+    edgeId: edge.edgeId,
+    edgeType: edge.edgeType,
+    fromNodeId: edge.fromNodeId,
+    toNodeId: edge.toNodeId,
+    durationSeconds: edge.durationSeconds,
+    distanceMeters: edge.distanceMeters,
+    servicePattern: edge.servicePattern,
+    serviceClass: edge.serviceClass,
+  })));
 }
 
 function resealAuthority(authority) {

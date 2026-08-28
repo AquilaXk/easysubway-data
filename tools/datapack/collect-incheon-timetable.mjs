@@ -14,11 +14,12 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { decodeOfficialCsv } from "./collect-daegu-datapack-sources.mjs";
-import { validateIncheonStationInfoSnapshot } from "./collect-incheon-station-info.mjs";
+import {
+  I210_SEOHAE_GU_OFFICE_RENAME,
+  validateIncheonStationInfoSnapshot,
+} from "./collect-incheon-station-info.mjs";
 
 const TOPOLOGY_SOURCE_ID = "incheon-transit-station-info";
-const TOPOLOGY_SNAPSHOT_ID = "incheon-transit-station-info-20260724";
-const TOPOLOGY_CONTENT_SHA256 = "710878689282ba967697cd9411940b657a51eee5499106ed884d5bd9111501a8";
 const ARTIFACT_KIND = "incheon-train-timetable-snapshot";
 const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
 const DAY_CODES = Object.freeze(["WEEK", "HOLI"]);
@@ -35,6 +36,7 @@ const STATION_NAME_ALIASES = Object.freeze({
   석바위: "석바위시장",
   가정중앙: "가정중앙시장",
   아시아드: "아시아드경기장",
+  [I210_SEOHAE_GU_OFFICE_RENAME.previousNameKo]: I210_SEOHAE_GU_OFFICE_RENAME.currentNameKo,
 });
 
 export const INCHEON_TIMETABLE_LINES = Object.freeze([
@@ -87,7 +89,7 @@ export function parseIncheonTrainTimetable(files, topologySnapshot, {
   const config = INCHEON_TIMETABLE_LINES.find((line) => line.lineNumber === lineNumber);
   if (!config) throw new Error(`unknown Incheon timetable line: ${lineNumber}`);
   const captured = validDate(capturedAt);
-  const scope = validateTopologyForLine(topologySnapshot, config);
+  const { scope, snapshotId, contentSha256 } = validateTopologyForLine(topologySnapshot, config);
   const seqByNorm = new Map(scope.map((station) => [
     normalizedIncheonTimetableStationName(station.stationName),
     station,
@@ -180,12 +182,12 @@ export function parseIncheonTrainTimetable(files, topologySnapshot, {
       evidenceUrl: `https://www.data.go.kr/data/${config.datasets.WEEK.up}/fileData.do`,
     },
     topologySourceId: TOPOLOGY_SOURCE_ID,
-    topologySnapshotId: TOPOLOGY_SNAPSHOT_ID,
-    topologyContentSha256: TOPOLOGY_CONTENT_SHA256,
+    topologySnapshotId: snapshotId,
+    topologyContentSha256: contentSha256,
     topologyLineages: [{
       sourceId: TOPOLOGY_SOURCE_ID,
-      snapshotId: TOPOLOGY_SNAPSHOT_ID,
-      contentSha256: TOPOLOGY_CONTENT_SHA256,
+      snapshotId,
+      contentSha256,
       lineId: config.lineId,
     }],
     trips,
@@ -352,9 +354,11 @@ function parseTimetableFile(bytes, {
 
 function validateTopologyForLine(topologySnapshot, config) {
   validateIncheonStationInfoSnapshot(topologySnapshot);
+  const capturedDate = topologySnapshot.capturedAt?.slice(0, 10).replaceAll("-", "");
+  const snapshotId = `${TOPOLOGY_SOURCE_ID}-${capturedDate}`;
   if (topologySnapshot.sourceId !== TOPOLOGY_SOURCE_ID
-    || topologySnapshot.snapshotId !== TOPOLOGY_SNAPSHOT_ID
-    || topologySnapshot.contentSha256 !== TOPOLOGY_CONTENT_SHA256) {
+    || !/^\d{8}$/u.test(capturedDate ?? "")
+    || topologySnapshot.snapshotId !== snapshotId) {
     throw new Error("invalid Incheon topology snapshot");
   }
   const scope = topologySnapshot.scope.filter((station) => station.lineId === config.lineId)
@@ -362,7 +366,7 @@ function validateTopologyForLine(topologySnapshot, config) {
   if (scope.length !== config.stationCount) {
     throw new Error(`Incheon line ${config.lineNumber} topology station count mismatch`);
   }
-  return scope;
+  return { scope, snapshotId, contentSha256: topologySnapshot.contentSha256 };
 }
 
 function parseCsv(text) {
@@ -392,6 +396,13 @@ function validDate(value) {
   return date;
 }
 
+function compactSeoulDate(value) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en", {
+    timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date(value)).map(({ type, value: part }) => [type, part]));
+  return `${parts.year}${parts.month}${parts.day}`;
+}
+
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -419,16 +430,20 @@ function parseArgs(argv) {
 
 export async function runIncheonTimetableCollector(argv) {
   const args = parseArgs(argv);
-  const stamp = args["date-stamp"] ?? "20260724";
+  const stamp = args["date-stamp"];
   const topologyPath = args["topology-snapshot"];
   const topologySnapshotId = path.basename(topologyPath, ".json");
-  if (topologySnapshotId !== TOPOLOGY_SNAPSHOT_ID) {
-    throw new Error(`Incheon topology snapshot path must be ${TOPOLOGY_SNAPSHOT_ID}.json`);
+  if (!/^incheon-transit-station-info-\d{8}$/u.test(topologySnapshotId)) {
+    throw new Error("Incheon topology snapshot path is invalid");
   }
   const topologySnapshot = {
     ...JSON.parse(await readFile(topologyPath, "utf8")),
     snapshotId: topologySnapshotId,
   };
+  const derivedStamp = compactSeoulDate(args["captured-at"]);
+  if (stamp != null && stamp !== derivedStamp) {
+    throw new Error("--date-stamp must match captured-at Asia/Seoul date");
+  }
   const lines = args.line
     ? INCHEON_TIMETABLE_LINES.filter((line) => String(line.lineNumber) === String(args.line))
     : INCHEON_TIMETABLE_LINES;
@@ -451,7 +466,7 @@ export async function runIncheonTimetableCollector(argv) {
       lineNumber: config.lineNumber,
       now: new Date(args["captured-at"]),
     });
-    const outputPath = path.join(args["output-dir"], `${config.sourceId}-${stamp}.json`);
+    const outputPath = path.join(args["output-dir"], `${config.sourceId}-${stamp ?? derivedStamp}.json`);
     await writeFile(outputPath, `${JSON.stringify(snapshot)}\n`);
     outputs.push(outputPath);
     console.log(
