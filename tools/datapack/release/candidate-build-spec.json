@@ -3,7 +3,7 @@
   "artifactKind": "datapack-candidate-build-spec",
   "candidateId": "capital-pilot-candidate-20260828",
   "productionScopeId": "capital_pilot_android_v1",
-  "publishedAt": "2026-08-28T12:39:02.000Z",
+  "publishedAt": "2026-08-28T12:41:56.000Z",
   "releaseSequence": 1,
   "fixturePath": "tools/datapack/release/capital-production-canonical-pack.json",
   "itxTopologyEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence-20260824170958799.json",
@@ -42,11 +42,6 @@
       "path": "tools/datapack/itx-cheongchun-coverage-contract.json",
       "sha256": "97400bd534278ec9d16dd5eeacde5a2c1a4b5d4de195ad0615cde8b605519f13"
     },
-    "incheonAccessibility": {
-      "path": "tools/datapack/sources/incheon-transit-accessibility-20260828.json",
-      "sha256": "1919be286404a006ec3c6131c2ee0185fa604b5d9270b5ee4ea8b3bad6182ad0",
-      "snapshotId": "incheon-transit-accessibility-20260828"
-    },
     "incheonTimetables": {
       "line1": {
         "path": "tools/datapack/sources/incheon-line1-train-timetable-20260828.json",
@@ -58,6 +53,11 @@
         "sha256": "99a12f7e3d4f9d926882dd9fa5b092f3c40ff85e2d2c53a4750413f579a33f95",
         "snapshotId": "incheon-line2-train-timetable-20260828"
       }
+    },
+    "incheonAccessibility": {
+      "path": "tools/datapack/sources/incheon-transit-accessibility-20260828.json",
+      "sha256": "1919be286404a006ec3c6131c2ee0185fa604b5d9270b5ee4ea8b3bad6182ad0",
+      "snapshotId": "incheon-transit-accessibility-20260828"
     }
   },
   "sourceSnapshotEvidencePath": "tools/datapack/release/source-snapshots.json",
@@ -197,7 +197,7 @@
   "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
   "approvedOverrideSetHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
   "sourceInventorySha256": "484b0b7cf8b81432b65cf5acab150072401f49dd676de25a94e68f4f79f49fec",
-  "builderGitSha": "d1d36ca0d10c56ca453cf19f365cad6983a61327",
+  "builderGitSha": "e6e2a53111cd4d2032dfd70a4de8f7b57e4832f5",
   "builderVersion": "build-datapack.mjs@26",
   "officialOdFareEvidence": {
     "sourceId": "seoul-metro-official-od-fares",
