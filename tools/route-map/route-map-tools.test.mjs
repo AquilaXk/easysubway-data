@@ -2151,6 +2151,98 @@ test("route map position audit reports source label mismatch as high", async () 
   }
 });
 
+test("route map position audit accepts only an exact official rename", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-rename-"));
+  try {
+    const fixturePath = path.join(tmp, "official-rename-fixture.json");
+    const sourceSha256 = "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074";
+    const sourceUrl = "https://www.data.go.kr/data/15099316/fileData.do";
+    const fixture = {
+      packs: [{
+        id: "capital",
+        sourceInventory: [{
+          id: "seoul-metro-route-map-positions",
+          sourceSha256,
+          url: sourceUrl,
+          coverageScope: {
+            sourceDomains: ["route_map_positions"],
+            regionIds: ["capital"],
+            operatorIds: ["seoul-metro"],
+            lineIds: ["seoul-4"],
+          },
+        }],
+        stations: [{ id: "station-bulam", nameKo: "불암산", nameSub: "당고개" }],
+        stationLines: [{ stationId: "station-bulam", lineId: "seoul-4" }],
+        routeMapPositions: [{
+          stationId: "station-bulam",
+          lineId: "seoul-4",
+          region: "수도권",
+          x: 1,
+          y: 1,
+          sourceId: "seoul-metro-route-map-positions",
+          sourceName: "official coordinates",
+          sourceUrl,
+          sourceSha256,
+          sourceLabel: "당고개",
+          licenseStatus: "redistributable",
+          reviewedAt: "2026-08-26T03:54:08.251Z",
+        }],
+      }],
+    };
+    await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
+    const args = [
+      "tools/route-map/audit-route-map.mjs",
+      "--fixture",
+      fixturePath,
+      "--route-map-coverage-scope-exemptions",
+      "tools/datapack/route-map-coverage-scope-exemptions.json",
+      "--fail-on",
+      "BLOCKER,HIGH",
+    ];
+
+    const { stdout } = await execFileAsync(process.execPath, args, {
+      cwd: root,
+      maxBuffer: 1024 * 1024,
+    });
+    const accepted = JSON.parse(stdout);
+    assert.equal(accepted.summary.findingsBySeverity.HIGH, 0);
+    assert.ok(accepted.findings.some((finding) =>
+      finding.code === "APPROVED_ROUTE_MAP_SOURCE_LABEL_RENAME" &&
+      finding.severity === "INFO",
+    ));
+
+    fixture.packs[0].routeMapPositions[0].sourceUrl = "https://example.test/wrong-source";
+    await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
+    await assert.rejects(execFileAsync(process.execPath, args, {
+      cwd: root,
+      maxBuffer: 1024 * 1024,
+    }), (error) => {
+      const rejected = JSON.parse(error.stdout);
+      assert.equal(rejected.summary.findingsBySeverity.HIGH, 1);
+      assert.equal(rejected.findings[0].code, "ROUTE_MAP_SOURCE_LABEL_MISMATCH");
+      return true;
+    });
+
+    fixture.packs[0].routeMapPositions[0].sourceUrl = sourceUrl;
+    fixture.packs[0].sourceInventory.push({
+      ...fixture.packs[0].sourceInventory[0],
+      url: "https://example.test/duplicate-source",
+    });
+    await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
+    await assert.rejects(execFileAsync(process.execPath, args, {
+      cwd: root,
+      maxBuffer: 1024 * 1024,
+    }), (error) => {
+      const rejected = JSON.parse(error.stdout);
+      assert.equal(rejected.summary.findingsBySeverity.HIGH, 1);
+      assert.equal(rejected.findings[0].code, "ROUTE_MAP_SOURCE_LABEL_MISMATCH");
+      return true;
+    });
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
 test("MOLIT nationwide fixture builder emits route map source hashes", async () => {
   const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-source-sha-"));
   try {
