@@ -41,7 +41,7 @@ export async function main(argv = process.argv.slice(2), { repositoryRoot = file
   const root = path.resolve(repositoryRoot); const output = path.join(root, OUTPUT_DIRECTORY);
   await outputMustBeAbsent(output);
   const input = await readCurrentCapitalInputs(root, { readTransitionBoundaryImpl, readCurrentFanInBoundaryImpl });
-  validateFixtureEdgeCounts(input.canonicalPack, { RIDE: 2200 }, "raw");
+  validateFixtureEdgeCounts(input.canonicalPack, { RIDE: 2208 }, "raw");
   const projectedFixture = await projectFixtureImpl({
     buildSpec: input.candidateBuildSpec,
     sourceFixture: input.canonicalPack,
