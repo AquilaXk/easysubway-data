@@ -35,7 +35,9 @@ import { materializeIncheonAccessibility } from "./materialize-incheon-accessibi
 import { materializeIncheonTimetable } from "./materialize-incheon-timetable.mjs";
 import {
   admittedCapitalLineEvidence,
+  admittedIncheonTopologyEvidence,
   projectCapitalTopologyIntoCanonicalFixture,
+  projectIncheonNetworkEdges,
   validateSourceSeparatedCurrentTopology,
 } from "./build-datapack.mjs";
 import { loadCapitalRouteTopologySnapshot } from "./apply-capital-route-topology-to-bundled-pack.mjs";
@@ -916,7 +918,7 @@ function requireCurrentIncheonSnapshotBytes(snapshot, snapshotBytes, snapshotPat
   return expectedId;
 }
 
-function activateCurrentIncheonSourceAdmissions({
+export function activateCurrentIncheonSourceAdmissions({
   sourceInventory,
   topologySnapshot,
   topologySnapshotBytes,
@@ -1072,7 +1074,7 @@ function activateCurrentIncheonSourceAdmissions({
   return next;
 }
 
-function replaceIncheonCanonicalSlice(canonical, projected) {
+function replaceIncheonCanonicalSlice(canonical, projected, { topologySnapshot, topologyAdmission }) {
   const next = structuredClone(canonical);
   const pack = requireOne(next.packs ?? [], ({ id }) => id === "capital", "canonical capital pack");
   const projectedPack = requireOne(
@@ -1102,7 +1104,25 @@ function replaceIncheonCanonicalSlice(canonical, projected) {
     sourceId === "incheon-transit-station-info").map(({ stationId, lineId }) => `${stationId}:${lineId}`));
   replace("stationLines", ({ stationId, lineId }) => topologyScope.has(`${stationId}:${lineId}`),
     ({ stationId, lineId }) => `${stationId}:${lineId}`);
-  replace("networkEdges", ({ id }) => id.startsWith("edge-incheon-"), ({ id }) => id);
+  const expectedIncheonEdges = projectIncheonNetworkEdges(pack, topologySnapshot, topologyAdmission);
+  const expectedIncheonEdgeIds = new Set(expectedIncheonEdges.map(({ id }) => id));
+  const incheonTopologyLineIds = new Set(expectedIncheonEdges.map(({ fromNodeId }) =>
+    fromNodeId.split(":").at(-1)));
+  const ownsIncheonTopologyEdge = (edge) => {
+    const fromLineId = String(edge.fromNodeId ?? "").split(":").at(-1);
+    const toLineId = String(edge.toNodeId ?? "").split(":").at(-1);
+    return edge.edgeType === "RIDE"
+      && edge.servicePattern === "LOCAL"
+      && (edge.serviceClass ?? "SUBWAY") === "SUBWAY"
+      && fromLineId === toLineId
+      && incheonTopologyLineIds.has(fromLineId);
+  };
+  const retainedNetworkEdges = pack.networkEdges.filter((edge) => !ownsIncheonTopologyEdge(edge));
+  if (new Set(retainedNetworkEdges.map(({ id }) => id)).size !== retainedNetworkEdges.length
+    || retainedNetworkEdges.some(({ id }) => expectedIncheonEdgeIds.has(id))) {
+    throw new Error("Incheon canonical networkEdges replacement identity is invalid");
+  }
+  pack.networkEdges = [...retainedNetworkEdges, ...expectedIncheonEdges];
   const positionScope = new Set(projectedPack.routeMapPositions.filter(({ sourceId }) =>
     sourceId === "incheon-transit-station-info").map(({ stationId, lineId }) => `${stationId}:${lineId}`));
   replace("routeMapPositions", ({ stationId, lineId }) => positionScope.has(`${stationId}:${lineId}`),
@@ -1437,6 +1457,12 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
     timetableSnapshotPaths: currentIncheonTimetablePaths,
     now: buildNow,
   });
+  const incheonTopologyAdmission = admittedIncheonTopologyEvidence({
+    sourceInventory: nextInventory,
+    snapshot: currentIncheonTopology,
+    snapshotBytes: currentIncheonTopologyBytes,
+    now: activationNow,
+  });
   assertExactCurrentCapitalTopologyAdmissions(nextInventory, topology, topologySnapshotId);
   const topologyReverification = buildCapitalTopologyReverificationEvidence(
     historicalCapitalTopologyOwnershipBaseline({ baseSpec, baselineTopology, baselineTopologyBytes }),
@@ -1490,7 +1516,10 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
     inventory: nextInventory,
     now: activationNow,
   });
-  const canonicalWithIncheon = replaceIncheonCanonicalSlice(nextCanonical, incheonProjection);
+  const canonicalWithIncheon = replaceIncheonCanonicalSlice(nextCanonical, incheonProjection, {
+    topologySnapshot: currentIncheonTopology,
+    topologyAdmission: incheonTopologyAdmission,
+  });
   const canonicalBytes = jsonBytes(canonicalWithIncheon, false);
   const spec = buildCurrentCandidateSpec({
     baseSpec,

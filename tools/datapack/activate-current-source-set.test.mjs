@@ -8,7 +8,8 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { syncCanonicalFixture } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
-import { projectCapitalTopologyIntoCanonicalFixture } from "./build-datapack.mjs";
+import { admittedIncheonTopologyEvidence, projectCapitalTopologyIntoCanonicalFixture,
+  projectIncheonNetworkEdges, validateProductionIncheonNetworkEdgeFixture } from "./build-datapack.mjs";
 import { requireCurrentIncheonTopologyAdmission, activateStaticSourceRevalidations,
   buildCurrentCandidateSpec, buildCurrentSourcePrimaryOutputs,
   buildCurrentTopologyRefreshPrimaryOutputs, commitCurrentSourceActivation,
@@ -1351,6 +1352,52 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
     lineId === "line-15b3b8a93259" && !freshLine7StationIds.has(stationId)
   ));
   assert.deepEqual(retainedSharedLine7(capital), retainedSharedLine7(previousCapital));
+  const incheonAdmission = admittedIncheonTopologyEvidence({
+    sourceInventory: result.sourceInventory,
+    snapshot: currentIncheonTopology,
+    snapshotBytes: currentIncheonTopologyBytes,
+    now: new Date(buildNow),
+  });
+  const expectedIncheonEdges = projectIncheonNetworkEdges(capital, currentIncheonTopology, incheonAdmission);
+  const expectedIncheonEdgeIds = new Set(expectedIncheonEdges.map(({ id }) => id));
+  assert.deepEqual(
+    capital.networkEdges.filter(({ id }) => expectedIncheonEdgeIds.has(id)),
+    expectedIncheonEdges,
+  );
+  assert.doesNotThrow(() => validateProductionIncheonNetworkEdgeFixture(capital, expectedIncheonEdges));
+  assert.throws(() => validateProductionIncheonNetworkEdgeFixture({
+    ...capital,
+    networkEdges: capital.networkEdges.filter(({ id }) => id !== expectedIncheonEdges[0].id),
+  }, expectedIncheonEdges), /does not match pinned admission/);
+  const driftedIncheonEdge = { ...expectedIncheonEdges[0], evidenceHash: "0".repeat(64) };
+  assert.throws(() => validateProductionIncheonNetworkEdgeFixture({
+    ...capital,
+    networkEdges: capital.networkEdges.map((edge) => edge.id === driftedIncheonEdge.id
+      ? driftedIncheonEdge
+      : edge),
+  }, expectedIncheonEdges), /does not match pinned admission/);
+  const wrongIdIncheonEdge = { ...expectedIncheonEdges[0], id: `${expectedIncheonEdges[0].id}-wrong` };
+  assert.throws(() => validateProductionIncheonNetworkEdgeFixture({
+    ...capital,
+    networkEdges: capital.networkEdges.map((edge) => edge.id === expectedIncheonEdges[0].id
+      ? wrongIdIncheonEdge
+      : edge),
+  }, expectedIncheonEdges), /does not match pinned admission/);
+  const incheonTopologyLineIds = new Set(expectedIncheonEdges.map(({ fromNodeId }) =>
+    fromNodeId.split(":").at(-1)));
+  const isIncheonTopologyEdge = (edge) => {
+    const fromLineId = String(edge.fromNodeId ?? "").split(":").at(-1);
+    const toLineId = String(edge.toNodeId ?? "").split(":").at(-1);
+    return edge.edgeType === "RIDE"
+      && edge.servicePattern === "LOCAL"
+      && (edge.serviceClass ?? "SUBWAY") === "SUBWAY"
+      && fromLineId === toLineId
+      && incheonTopologyLineIds.has(fromLineId);
+  };
+  assert.deepEqual(
+    capital.networkEdges.filter((edge) => !isIncheonTopologyEdge(edge)),
+    previousCapital.networkEdges.filter((edge) => !isIncheonTopologyEdge(edge)),
+  );
 
   const boundaryAccessibility = structuredClone(currentIncheonAccessibility);
   boundaryAccessibility.capturedAt = "2026-08-28T15:01:00.000Z";

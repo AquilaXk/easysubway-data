@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import { usesLocalPlaceholderHost } from "./production-url-policy.mjs";
 import { requiredCredentialFreeObjectUri } from "./source-snapshot-policy.mjs";
 import {
@@ -215,7 +216,49 @@ function incheonStationAliasMap(pack, stationLineKeys) {
   };
 }
 
-export function materializeIncheonNetworkEdges(pack, snapshot, admission) {
+function hasNetworkEdgeFixtureProvenance(edge) {
+  return [edge.sourceId, edge.sourceSnapshotId, edge.providerRecordHash,
+    edge.evidenceHash, edge.lastFieldVerifiedAt, edge.lastVerifiedAt, edge.verifiedAt].some(Boolean)
+    || edge.fieldProvenance !== undefined
+    || ![undefined, "UNKNOWN"].includes(edge.provenanceKind)
+    || ![undefined, "UNKNOWN"].includes(edge.verificationStatus);
+}
+
+export function validateProductionIncheonNetworkEdgeFixture(pack, expectedIncheonEdges) {
+  if (!Array.isArray(pack?.networkEdges) || !Array.isArray(expectedIncheonEdges)) {
+    throw new TypeError("production Incheon network edge fixture inputs are invalid");
+  }
+  const expectedById = new Map(expectedIncheonEdges.map((edge) => [edge.id, edge]));
+  if (expectedById.size !== expectedIncheonEdges.length) {
+    throw new Error("production Incheon network edge expectation is invalid");
+  }
+  const incheonTopologyLineIds = new Set(expectedIncheonEdges.map(({ fromNodeId }) =>
+    fromNodeId.split(":").at(-1)));
+  const actualTopologyEdges = pack.networkEdges.filter((edge) => {
+    const fromLineId = String(edge.fromNodeId ?? "").split(":").at(-1);
+    const toLineId = String(edge.toNodeId ?? "").split(":").at(-1);
+    return edge.edgeType === "RIDE"
+      && edge.servicePattern === "LOCAL"
+      && (edge.serviceClass ?? "SUBWAY") === "SUBWAY"
+      && fromLineId === toLineId
+      && incheonTopologyLineIds.has(fromLineId);
+  });
+  const actualIncheonEdges = pack.networkEdges.filter(({ id }) => expectedById.has(id));
+  if (actualTopologyEdges.length !== expectedIncheonEdges.length
+    || actualTopologyEdges.some(({ id }) => !expectedById.has(id))
+    || actualIncheonEdges.length !== expectedIncheonEdges.length
+    || new Set(actualIncheonEdges.map(({ id }) => id)).size !== actualIncheonEdges.length
+    || actualIncheonEdges.some((edge) => !isDeepStrictEqual(edge, expectedById.get(edge.id)))) {
+    throw new Error("production Incheon network edge fixture does not match pinned admission");
+  }
+  if (pack.networkEdges.some((edge) => !isReviewedAccessibilityEdge(edge, pack)
+    && hasNetworkEdgeFixtureProvenance(edge)
+    && !expectedById.has(edge.id))) {
+    throw new Error("production network edge fixture must not contain provenance");
+  }
+}
+
+export function projectIncheonNetworkEdges(pack, snapshot, admission) {
   const incheon = validateIncheonStationInfoSnapshot(snapshot);
   if (typeof admission?.snapshotId !== "string"
     || admission.contentSha256 !== incheon.contentSha256
@@ -225,13 +268,11 @@ export function materializeIncheonNetworkEdges(pack, snapshot, admission) {
     || admission.freshUntil !== incheon.freshUntil) {
     throw new Error("Incheon topology admission does not match snapshot");
   }
-  if (!Array.isArray(pack?.stationLines) || !Array.isArray(pack.networkEdges)
-    || !Array.isArray(pack.sourceInventory)) {
-    throw new TypeError("Incheon topology requires pack stationLines, networkEdges and sourceInventory");
+  if (!Array.isArray(pack?.stationLines)) {
+    throw new TypeError("Incheon topology requires pack stationLines");
   }
   const stationLineKeys = new Set(pack.stationLines.map(({ stationId, lineId }) => `${stationId}:${lineId}`));
   const resolveStationId = incheonStationAliasMap(pack, stationLineKeys);
-  const lineIds = new Set(incheonTopologyLineIds);
   const generated = incheon.edges.map((sourceEdge) => {
     const fromStationId = resolveStationId(sourceEdge.fromStationId, sourceEdge.lineId);
     const toStationId = resolveStationId(sourceEdge.toStationId, sourceEdge.lineId);
@@ -266,6 +307,16 @@ export function materializeIncheonNetworkEdges(pack, snapshot, admission) {
   if (generated.length !== 116 || new Set(generated.map(({ id }) => id)).size !== 116) {
     throw new Error("Incheon topology generated edge set is invalid");
   }
+  return generated;
+}
+
+export function materializeIncheonNetworkEdges(pack, snapshot, admission) {
+  if (!Array.isArray(pack?.networkEdges) || !Array.isArray(pack.sourceInventory)) {
+    throw new TypeError("Incheon topology requires pack networkEdges and sourceInventory");
+  }
+  const incheon = validateIncheonStationInfoSnapshot(snapshot);
+  const generated = projectIncheonNetworkEdges(pack, snapshot, admission);
+  const lineIds = new Set(incheonTopologyLineIds);
   const retained = pack.networkEdges.filter((edge) => {
     const fromLineId = String(edge.fromNodeId ?? "").split(":").at(-1);
     const toLineId = String(edge.toNodeId ?? "").split(":").at(-1);
@@ -1478,13 +1529,13 @@ async function validateAndApplyNetworkEdgeProvenance(
   const productionPacks = fixture.packs?.filter(({ artifactKind }) => artifactKind === "production") ?? [];
   if (productionPacks.length === 0) throw new Error("network edge evidence requires a production pack");
   for (const pack of productionPacks) {
-    const hasFixtureProvenance = (edge) => [edge.sourceId, edge.sourceSnapshotId, edge.providerRecordHash,
-      edge.evidenceHash, edge.lastFieldVerifiedAt, edge.lastVerifiedAt, edge.verifiedAt].some(Boolean)
-      || edge.fieldProvenance !== undefined
-      || ![undefined, "UNKNOWN"].includes(edge.provenanceKind)
-      || ![undefined, "UNKNOWN"].includes(edge.verificationStatus);
-    if ((pack.networkEdges ?? []).some((edge) => !isReviewedAccessibilityEdge(edge, pack) && hasFixtureProvenance(edge))
-      || (pack.outOfStationTransferLinks ?? []).some(hasFixtureProvenance)) {
+    const expectedIncheonEdges = projectIncheonNetworkEdges(
+      pack,
+      incheonTopology.value,
+      incheonAdmission,
+    );
+    validateProductionIncheonNetworkEdgeFixture(pack, expectedIncheonEdges);
+    if ((pack.outOfStationTransferLinks ?? []).some(hasNetworkEdgeFixtureProvenance)) {
       throw new Error("production network edge fixture must not contain provenance");
     }
     materializeCapitalTopologySource(pack, candidateTopology, capitalAdmissions);
