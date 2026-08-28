@@ -77,6 +77,43 @@ test("인천 timetable collector는 1·2호선 WEEK/HOLI 상·하선 FILE을 tri
   }
 });
 
+test("인천 timetable collector는 supplied current topology identity에 lineage를 결속한다", async () => {
+  const topologySnapshot = await loadTopology();
+  Object.assign(topologySnapshot.scope.find(({ lineId, stationCode }) => (
+    lineId === "line-42b5805f3b5a" && stationCode === "3210"
+  )), { stationName: "서해구청", nameEn: "Seohae-gu Office" });
+  topologySnapshot.positions.find(({ lineId, stationCode }) => (
+    lineId === "line-42b5805f3b5a" && stationCode === "3210"
+  )).stationName = "서해구청";
+  Object.assign(topologySnapshot, {
+    capturedAt: "2026-08-28T03:47:35.000Z",
+    freshUntil: "2026-08-29T03:47:35.000Z",
+    snapshotId: "incheon-transit-station-info-20260828",
+    scopeSha256: createHash("sha256").update(JSON.stringify(topologySnapshot.scope)).digest("hex"),
+    positionsSha256: createHash("sha256").update(JSON.stringify(topologySnapshot.positions)).digest("hex"),
+    contentSha256: createHash("sha256").update(JSON.stringify({
+      scope: topologySnapshot.scope,
+      edges: topologySnapshot.edges,
+      positions: topologySnapshot.positions,
+    })).digest("hex"),
+  });
+  const config = INCHEON_TIMETABLE_LINES[1];
+  const snapshot = collectIncheonTimetableLine({
+    files: await loadFiles(config),
+    topologySnapshot,
+    lineNumber: config.lineNumber,
+    now: new Date("2026-08-28T04:00:00.000Z"),
+  });
+  assert.equal(snapshot.topologySnapshotId, topologySnapshot.snapshotId);
+  assert.equal(snapshot.topologyContentSha256, topologySnapshot.contentSha256);
+  assert.deepEqual(snapshot.topologyLineages, [{
+    sourceId: "incheon-transit-station-info",
+    snapshotId: topologySnapshot.snapshotId,
+    contentSha256: topologySnapshot.contentSha256,
+    lineId: config.lineId,
+  }]);
+});
+
 test("인천 timetable 역명 정규화는 축약·괄호·역 접미를 topology 정본에 맞춘다", () => {
   assert.equal(normalizedIncheonTimetableStationName("문학"), "문학경기장");
   assert.equal(normalizedIncheonTimetableStationName("주안국가"), "주안국가산단");

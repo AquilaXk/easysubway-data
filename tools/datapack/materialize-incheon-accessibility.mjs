@@ -8,7 +8,6 @@ import { validateIncheonStationInfoSnapshot } from "./collect-incheon-station-in
 
 const SOURCE_ID = "incheon-transit-accessibility";
 const TOPOLOGY_SOURCE_ID = "incheon-transit-station-info";
-const CAPTURED_TOPOLOGY_SNAPSHOT_ID = "incheon-transit-station-info-20260724";
 const OPERATOR_ID = "incheon-transit";
 const PACK_ID = "nationwide-incheon-accessibility";
 const LINE1 = "line-98718184f016";
@@ -290,10 +289,11 @@ function requiredSource(inventory, snapshot, topologySnapshot, now) {
 }
 
 function validateCapturedSnapshotLineage(snapshot, topologySnapshot) {
+  const topologySnapshotId = activeTopologySnapshotId(topologySnapshot);
   const lineages = [...snapshot.topologyLineages, ...snapshot.membershipLineages];
   if (lineages.some((lineage) => (
       lineage.sourceId !== TOPOLOGY_SOURCE_ID
-        || lineage.snapshotId !== CAPTURED_TOPOLOGY_SNAPSHOT_ID
+        || lineage.snapshotId !== topologySnapshotId
         || lineage.contentSha256 !== topologySnapshot.contentSha256
         || !LINE_IDS.includes(lineage.lineId)
   ))) {

@@ -252,6 +252,53 @@ test("인천 station-info collector는 공식 FILE의 단일 데이터기준일�
   assert.throws(() => parseIncheonStationInfoCsv(invalidDate), /invalid data date/);
 });
 
+test("I210 Seohae-gu Office official rename admission accepts only the exact tuple", async () => {
+  const text = new TextDecoder("utf-8").decode(await loadCsv());
+  const current = Buffer.from(text.replace(
+    "3210,서구청,S2802,인천지하철 2호선,Seo-gu Office",
+    "3210,서해구청,S2802,인천지하철 2호선,Seohae-gu Office",
+  ), "utf8");
+  const snapshot = collectIncheonStationInfo({
+    csvBytes: current,
+    now: new Date("2026-08-28T04:00:00.000Z"),
+  });
+  const i210 = snapshot.scope.find(({ lineId, stationCode }) => (
+    lineId === LINE2 && stationCode === "3210"
+  ));
+  assert.deepEqual(i210 && {
+    stationId: i210.stationId,
+    stationName: i210.stationName,
+    nameEn: i210.nameEn,
+  }, {
+    stationId: "station-b1a5f63faf69",
+    stationName: "서해구청",
+    nameEn: "Seohae-gu Office",
+  });
+  assert.throws(() => collectIncheonStationInfo({
+    csvBytes: Buffer.from(new TextDecoder().decode(current).replace("Seohae-gu Office", "Wrong Office"), "utf8"),
+    now: new Date("2026-08-28T04:00:00.000Z"),
+  }), /I210 official rename identity drift/);
+  assert.throws(() => collectIncheonStationInfo({
+    csvBytes: Buffer.from(new TextDecoder().decode(current).replace("3210,서해구청", "3210,다른역"), "utf8"),
+    now: new Date("2026-08-28T04:00:00.000Z"),
+  }), /official line identity drift/);
+  const mismatchedPosition = structuredClone(snapshot);
+  mismatchedPosition.positions.find(({ lineId, stationCode }) => (
+    lineId === LINE2 && stationCode === "3210"
+  )).stationName = "서구청";
+  mismatchedPosition.positionsSha256 = createHash("sha256")
+    .update(JSON.stringify(mismatchedPosition.positions)).digest("hex");
+  mismatchedPosition.contentSha256 = createHash("sha256").update(JSON.stringify({
+    scope: mismatchedPosition.scope,
+    edges: mismatchedPosition.edges,
+    positions: mismatchedPosition.positions,
+  })).digest("hex");
+  assert.throws(
+    () => validateIncheonStationInfoSnapshot(mismatchedPosition),
+    /route map position identity/,
+  );
+});
+
 test("인천 station-info collector CLI가 snapshot 파일을 기록한다", async (context) => {
   const { mkdtemp, rm } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");

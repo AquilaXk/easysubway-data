@@ -186,6 +186,39 @@ test("인천 accessibility collector는 엘리베이터·에스컬레이터·휠
   assert.doesNotMatch(JSON.stringify(snapshot), /serviceKey/i);
 });
 
+test("인천 accessibility collector는 supplied current topology identity에 lineage를 결속한다", async () => {
+  const inputs = await loadInputs();
+  const topologySnapshot = structuredClone(inputs.topologySnapshot);
+  Object.assign(topologySnapshot.scope.find(({ lineId, stationCode }) => (
+    lineId === LINE2 && stationCode === "3210"
+  )), { stationName: "서해구청", nameEn: "Seohae-gu Office" });
+  topologySnapshot.positions.find(({ lineId, stationCode }) => (
+    lineId === LINE2 && stationCode === "3210"
+  )).stationName = "서해구청";
+  Object.assign(topologySnapshot, {
+    capturedAt: "2026-08-28T03:47:35.000Z",
+    freshUntil: "2026-08-29T03:47:35.000Z",
+    snapshotId: "incheon-transit-station-info-20260828",
+    scopeSha256: createHash("sha256").update(JSON.stringify(topologySnapshot.scope)).digest("hex"),
+    positionsSha256: createHash("sha256").update(JSON.stringify(topologySnapshot.positions)).digest("hex"),
+    contentSha256: createHash("sha256").update(JSON.stringify({
+      scope: topologySnapshot.scope,
+      edges: topologySnapshot.edges,
+      positions: topologySnapshot.positions,
+    })).digest("hex"),
+  });
+  const snapshot = collectIncheonAccessibility({
+    ...inputs,
+    topologySnapshot,
+    now: new Date("2026-08-28T04:00:00.000Z"),
+  });
+  assert.ok(
+    [...snapshot.topologyLineages, ...snapshot.membershipLineages]
+      .every(({ snapshotId, contentSha256 }) => snapshotId === topologySnapshot.snapshotId
+        && contentSha256 === topologySnapshot.contentSha256),
+  );
+});
+
 test("인천 accessibility collector는 schema·join·count 변조를 fail closed한다", async () => {
   const inputs = await loadInputs();
 

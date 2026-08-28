@@ -264,6 +264,60 @@ test("인천 station-info materialize는 freshness·hash·중복을 fail closed�
   }), /already exists/);
 });
 
+test("I210 Seohae-gu Office official rename preserves one stable station and one alias", async () => {
+  const { accessibilityFixture, incheonSnapshot, inventory, incheonNow } = await inputs();
+  const snapshot = structuredClone(incheonSnapshot);
+  const scope = snapshot.scope.find(({ lineId, stationCode }) => lineId === LINE2 && stationCode === "3210");
+  const position = snapshot.positions.find(({ lineId, stationCode }) => lineId === LINE2 && stationCode === "3210");
+  assert.ok(scope && position);
+  scope.stationName = "서해구청";
+  scope.nameEn = "Seohae-gu Office";
+  position.stationName = "서해구청";
+  snapshot.scopeSha256 = createHash("sha256").update(JSON.stringify(snapshot.scope)).digest("hex");
+  snapshot.positionsSha256 = createHash("sha256").update(JSON.stringify(snapshot.positions)).digest("hex");
+  snapshot.contentSha256 = createHash("sha256").update(JSON.stringify({
+    scope: snapshot.scope, edges: snapshot.edges, positions: snapshot.positions,
+  })).digest("hex");
+  const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
+  const nextInventory = structuredClone(inventory);
+  const source = nextInventory.sources.find(({ id }) => id === SOURCE_ID);
+  source.topologyAdmissionEvidence.contentSha256 = snapshot.contentSha256;
+  source.membershipAdmissionEvidence.membershipSourceSnapshotSha256 = snapshot.scopeSha256;
+  source.membershipAdmissionEvidence.mappingSha256 = createHash("sha256").update(JSON.stringify(snapshot.scope.map((station) => ({
+    stationId: station.stationId, lineId: station.lineId, stationCode: station.stationCode,
+    stationName: station.stationName,
+  })))).digest("hex");
+  source.membershipAdmissionEvidence.stationCodeContentSha256 = snapshot.contentSha256;
+  source.routeMapAdmissionEvidence.snapshotSha256 = createHash("sha256").update(snapshotBytes).digest("hex");
+  source.routeMapAdmissionEvidence.positionsSha256 = snapshot.positionsSha256;
+  source.routeMapAdmissionEvidence.topologyContentSha256 = snapshot.contentSha256;
+  const fixture = materializeIncheonStationInfo({
+    baseFixture: accessibilityFixture,
+    snapshot,
+    snapshotSha256: createHash("sha256").update(snapshotBytes).digest("hex"),
+    inventory: nextInventory,
+    now: incheonNow,
+  });
+  const pack = fixture.packs[0];
+  assert.deepEqual(pack.stations.find(({ id }) => id === "station-b1a5f63faf69") && {
+    nameKo: pack.stations.find(({ id }) => id === "station-b1a5f63faf69").nameKo,
+    nameEn: pack.stations.find(({ id }) => id === "station-b1a5f63faf69").nameEn,
+    normalizedName: pack.stations.find(({ id }) => id === "station-b1a5f63faf69").normalizedName,
+  }, { nameKo: "서해구청", nameEn: "Seohae-gu Office", normalizedName: "서해구청" });
+  assert.deepEqual(pack.stationAliases.filter(({ alias }) => alias === "서구청"), [{
+    stationId: "station-b1a5f63faf69", alias: "서구청", normalizedAlias: "서구청",
+  }]);
+  const conflicting = structuredClone(accessibilityFixture);
+  conflicting.packs[0].stationAliases = [{
+    stationId: "station-other", alias: "서구청", normalizedAlias: "서구청",
+  }];
+  assert.throws(() => materializeIncheonStationInfo({
+    baseFixture: conflicting, snapshot,
+    snapshotSha256: createHash("sha256").update(snapshotBytes).digest("hex"),
+    inventory: nextInventory, now: incheonNow,
+  }), /I210 rename alias conflict/);
+});
+
 test("materialized SQLite와 provenance가 인천 1·2호선 6 + 7호선 membership/positions 2 requirements를 SUPPORTED로 만든다", async (context) => {
   const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-incheon-station-info-pack-"));
   context.after(() => rm(outputDir, { recursive: true, force: true }));
