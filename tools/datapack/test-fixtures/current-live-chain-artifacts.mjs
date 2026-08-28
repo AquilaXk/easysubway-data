@@ -42,10 +42,7 @@ export async function buildCanonicalCurrentKricExitCollectionBundle({ repository
   const input = Object.fromEntries(await Promise.all(Object.entries(paths).map(async ([key, file]) => [key, await readFile(path.join(root, file))])));
   const incheonFixture = currentIncheonTopologyFixture(JSON.parse(input.sourceInventoryBytes));
   input.incheonTopologyBytes = await readFile(path.join(root, incheonFixture.path));
-  if (capturedAt == null) {
-    const candidate = JSON.parse(await readFile(path.join(root, "release/candidate-build-spec.json")));
-    capturedAt = new Date(Math.max(Date.parse(incheonFixture.capturedAt), Date.parse(candidate.publishedAt))).toISOString();
-  }
+  capturedAt ??= incheonFixture.capturedAt;
   const plan = buildCurrentKricExitCollectionPlan(input, { now: new Date(capturedAt), coverageSelector: "capital-seoul-metro-production" });
   const rows = [{ edMovePath: null, elvtSttCd: null, elvtTpCd: null, exitMvTpOrdr: "1", imgPath: null, mvContDtl: null, mvPathMgNo: "1", stMovePath: null }];
   const results = plan.queryPlan.map((query, index) => ({ queryId: query.queryId, state: index === 0 ? "ROWS_OBSERVED" : "EXPLICIT_ZERO", providerResultCode: "00", rawResponseSha256: sha256(`raw-${index}`), rawResponseByteSize: 1, providerRecordHash: sha256(canonical(index === 0 ? rows : [])), rows: index === 0 ? rows : [] }));
@@ -127,7 +124,10 @@ export async function buildCanonicalCurrentLiveChainArtifacts({ authorityBytes, 
   const exit = buildCurrentExitPathSourceAdmission({
     providerSnapshotBytes: Buffer.from(provider.providerSnapshotJson), collectionPlan: JSON.parse(provider.collectionPlanJson),
     facilityAdmission: facility, candidateBuildSpec: candidate, sourceInventory, sourceSnapshots,
-    observedAt: JSON.parse(provider.providerSnapshotJson).capturedAt,
+    observedAt: new Date(Math.max(
+      Date.parse(JSON.parse(provider.providerSnapshotJson).capturedAt),
+      Date.parse(candidate.publishedAt),
+    )).toISOString(),
   });
   const normalizedPath = CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS.exitNormalized;
   const admissionPath = CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS.exitAdmission;
