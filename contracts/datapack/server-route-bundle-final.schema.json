@@ -48,7 +48,7 @@
       "additionalProperties": false,
       "required": [
         "sourceFreshness", "stationLineAccessibility", "routeEdgeEvaluation", "routeAccessibilityEligibility", "artifactInventory",
-        "signature", "publication", "rebuildParityPromotion"
+        "signature", "publication", "promotionAuthorization"
       ],
       "properties": {
         "sourceFreshness": {
@@ -121,12 +121,12 @@
           },
           "allOf": [{ "$ref": "#/$defs/gateEvidenceBinding" }]
         },
-        "rebuildParityPromotion": {
+        "promotionAuthorization": {
           "type": "object",
           "additionalProperties": false,
           "required": ["state", "evidenceSha256"],
           "properties": {
-            "state": { "enum": ["PASS", "UNAVAILABLE", "PARTIAL", "IDENTITY_MISMATCH"] },
+            "state": { "enum": ["PASS", "UNAVAILABLE", "IDENTITY_MISMATCH"] },
             "evidenceSha256": { "$ref": "#/$defs/nullableSha256" }
           },
           "allOf": [{ "$ref": "#/$defs/gateEvidenceBinding" }]
@@ -148,7 +148,7 @@
           "routeAccessibilityEligibility:UNAVAILABLE", "routeAccessibilityEligibility:INELIGIBLE", "routeAccessibilityEligibility:IDENTITY_MISMATCH",
           "artifactInventory:PARTIAL", "artifactInventory:IDENTITY_MISMATCH", "signature:UNAVAILABLE",
           "signature:IDENTITY_MISMATCH", "publication:UNAVAILABLE", "publication:IDENTITY_MISMATCH",
-          "rebuildParityPromotion:UNAVAILABLE", "rebuildParityPromotion:PARTIAL", "rebuildParityPromotion:IDENTITY_MISMATCH"
+          "promotionAuthorization:UNAVAILABLE", "promotionAuthorization:IDENTITY_MISMATCH"
         ]
       }
     },

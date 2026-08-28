@@ -31,7 +31,6 @@
     "checksumFlag": 1,
     "dictionary": null,
     "runtimeIdentityFields": ["node", "zstd"],
-    "rebuildCount": 3,
     "reproducibilityScope": "same-input-contract-runtime"
   },
   "metadata": {

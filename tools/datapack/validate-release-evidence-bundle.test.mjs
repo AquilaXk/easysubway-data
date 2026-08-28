@@ -118,7 +118,7 @@ test("candidate server route evidence는 stage·inventory·component digest를 �
     candidate,
     gates: Object.fromEntries([
       "sourceFreshness", "stationLineAccessibility", "routeEdgeEvaluation", "artifactInventory",
-      "signature", "publication", "rebuildParityPromotion",
+      "signature", "publication", "promotionAuthorization",
     ].map((name) => [name, { state: "PASS", evidenceSha256: fixedHash }]).concat([
       ["routeAccessibilityEligibility", { state: "PASS", evidenceSha256: hash(eligibilityBytes) }],
     ])),

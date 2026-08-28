@@ -32,7 +32,7 @@ import { GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL } from "./emit-artifact-comp
 import { parseArgs, requiredArg } from "./lib/cli-args.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { validatePublicationReceipt } from "./publish-server-route-bundle.mjs";
-import { validateRequest } from "../release/validate-promotion-request.mjs";
+import { readCandidateExecutionEvidence, validateRequest } from "../release/validate-promotion-request.mjs";
 import { validateSourceSnapshotFreshness } from "./validate-source-snapshot-freshness.mjs";
 
 const KEYLESS_ARTIFACT_ROOT_FILES = ["compatibility.json", "manifest.signing-input.json", "payload", "provenance.json"];
@@ -52,11 +52,11 @@ const BASE_CLI_KEYS = [
 const ELIGIBILITY_CLI_KEY = "eligibility-report";
 const RELEASE_CLI_KEYS = [
   "approval-evidence", "compatibility-evidence", "promotion-component", "promotion-inventory",
-  "promotion-request", "promotion-workflow-run-id", "publication-receipt", "rebuild-parity-evidence",
+  "promotion-request", "promotion-workflow-run-id", "publication-receipt", "candidate-execution-evidence-root",
 ];
 const RELEASE_EVIDENCE_KEYS = [
   "approvalEvidencePath", "compatibilityEvidencePath", "promotionComponentPath", "promotionInventoryPath",
-  "promotionRequestPath", "promotionWorkflowRunId", "publicationReceiptPath", "rebuildParityEvidencePath",
+  "promotionRequestPath", "promotionWorkflowRunId", "publicationReceiptPath", "candidateExecutionEvidenceRoot",
 ];
 const RECEIPT_CANDIDATE_KEYS = [
   "bundleId", "releaseSequence", "stationSetSha256", "sourceSnapshotSetHash", "signingInputSha256",
@@ -169,7 +169,7 @@ export async function buildServerRouteBundleFinalEvidence(input) {
         ? { state: "UNAVAILABLE", evidenceSha256: null }
         : { state: "PASS", evidenceSha256: artifact.signedManifestRawSha256 },
       publication: { state: "UNAVAILABLE", evidenceSha256: null },
-      rebuildParityPromotion: { state: "UNAVAILABLE", evidenceSha256: null },
+      promotionAuthorization: { state: "UNAVAILABLE", evidenceSha256: null },
     },
   });
   const release = input.releaseEvidence === undefined
@@ -212,8 +212,8 @@ export async function buildServerRouteBundleFinalEvidence(input) {
 async function closeReleaseFinal(prePublicationFinal, releaseEvidence, publicationObjects, sourceFreshness) {
   if (prePublicationFinal.result !== "NO_GO"
     || canonicalJson(prePublicationFinal.blockers) !== canonicalJson([
+      "promotionAuthorization:UNAVAILABLE",
       "publication:UNAVAILABLE",
-      "rebuildParityPromotion:UNAVAILABLE",
     ])) {
     throw new Error("pre-publication FINAL is not release eligible");
   }
@@ -244,9 +244,8 @@ async function closeReleaseFinal(prePublicationFinal, releaseEvidence, publicati
     bytes.compatibilityEvidencePath,
     "compatibility evidence",
   );
-  const rebuildParityEvidence = parseCanonicalOrFormattedJson(
-    bytes.rebuildParityEvidencePath,
-    "rebuild parity evidence",
+  const executionEvidence = await readCandidateExecutionEvidence(
+    requiredRaw(releaseEvidence.candidateExecutionEvidenceRoot, "candidateExecutionEvidenceRoot"),
   );
   validateRequest({
     request: promotionRequest,
@@ -255,8 +254,7 @@ async function closeReleaseFinal(prePublicationFinal, releaseEvidence, publicati
     inventoryBytes: bytes.promotionInventoryPath,
     compatibility: compatibilityEvidence,
     compatibilityBytes: bytes.compatibilityEvidencePath,
-    rebuildParity: rebuildParityEvidence,
-    rebuildParityBytes: bytes.rebuildParityEvidencePath,
+    ...executionEvidence,
     approvalBytes: bytes.approvalEvidencePath,
     workflowRunId: requiredRaw(releaseEvidence.promotionWorkflowRunId, "promotionWorkflowRunId"),
   });
@@ -268,7 +266,7 @@ async function closeReleaseFinal(prePublicationFinal, releaseEvidence, publicati
       gates: {
         ...prePublicationFinal.gates,
         publication: { state: "PASS", evidenceSha256: sha256(bytes.publicationReceiptPath) },
-        rebuildParityPromotion: { state: "PASS", evidenceSha256: sha256(bytes.promotionRequestPath) },
+        promotionAuthorization: { state: "PASS", evidenceSha256: sha256(bytes.promotionRequestPath) },
       },
     }),
     files,
@@ -873,7 +871,7 @@ async function main(argv) {
         promotionRequestPath: requiredArg(args, "promotion-request"),
         promotionWorkflowRunId: requiredArg(args, "promotion-workflow-run-id"),
         publicationReceiptPath: requiredArg(args, "publication-receipt"),
-        rebuildParityEvidencePath: requiredArg(args, "rebuild-parity-evidence"),
+        candidateExecutionEvidenceRoot: requiredArg(args, "candidate-execution-evidence-root"),
       },
     } : {}),
   });

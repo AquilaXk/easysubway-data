@@ -17,7 +17,7 @@ test("정본 build contract의 parsed object와 폐쇄 schema가 일치한다", 
   assert.deepEqual(schema.const, contract);
   assert.equal(
     sha256(Buffer.from(canonicalJson(contract), "utf8")),
-    "61c0a525b6f3ce18787fdccadf816baa1a71929c5a49458ca2203c0520dacd8f",
+    "8b67bc83a9e7e45a04361b1e021965f790673fdb5ebc611a70764d7a38e9a106",
   );
   assert.deepEqual(Object.keys(contract), [
     "schemaVersion", "artifactKind", "manifestLifecycle", "capitalMapInput", "compressionProfile", "metadata",
@@ -54,7 +54,6 @@ test("정본 build contract의 parsed object와 폐쇄 schema가 일치한다", 
     checksumFlag: 1,
     dictionary: null,
     runtimeIdentityFields: ["node", "zstd"],
-    rebuildCount: 3,
     reproducibilityScope: "same-input-contract-runtime",
   });
   assert.deepEqual(Object.keys(contract.metadata), ["serialization", "provenance", "compatibility"]);
@@ -120,7 +119,7 @@ test("capital basemap과 source schema는 raw path와 sha256으로 결속된다"
     new RegExp(`^PRAGMA user_version = ${sourceSchema.sqliteUserVersion};$`, "m"));
 });
 
-test("Node 24 Zstd fixed profile은 same runtime에서 roundtrip과 세 번 byte identity를 보장한다", () => {
+test("Node 24 Zstd fixed profile은 same runtime에서 roundtrip을 보장한다", () => {
   assert.equal(Number.parseInt(process.versions.node.split(".", 1)[0], 10), contract.compressionProfile.requiredNodeMajor);
   assert.match(process.versions.node, /^(?!\s).+\S$/);
   assert.match(process.versions.zstd, /^(?!\s).+\S$/);
@@ -131,10 +130,8 @@ test("Node 24 Zstd fixed profile은 same runtime에서 roundtrip과 세 번 byte
     },
   };
   const input = Buffer.from("server-route-bundle-v1\\n수도권", "utf8");
-  const outputs = Array.from({ length: contract.compressionProfile.rebuildCount }, () => zstdCompressSync(input, options));
-  assert.deepEqual(zstdDecompressSync(outputs[0]), input);
-  assert.deepEqual(outputs[0], outputs[1]);
-  assert.deepEqual(outputs[1], outputs[2]);
+  const output = zstdCompressSync(input, options);
+  assert.deepEqual(zstdDecompressSync(output), input);
 });
 
 function validateBuildContract(value) {

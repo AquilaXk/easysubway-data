@@ -493,7 +493,7 @@ async function createFixture(t, options = {}) {
       artifactInventory: pass("7".repeat(64)),
       signature: pass(manifestSha256),
       publication: { state: "UNAVAILABLE", evidenceSha256: null },
-      rebuildParityPromotion: { state: "UNAVAILABLE", evidenceSha256: null },
+      promotionAuthorization: { state: "UNAVAILABLE", evidenceSha256: null },
     },
   });
   const receiptPayload = {
@@ -550,7 +550,7 @@ async function createFixture(t, options = {}) {
       artifactInventory: pass("7".repeat(64)),
       signature: pass(manifestSha256),
       publication: pass(sha256(receiptBytes)),
-      rebuildParityPromotion: pass(sha256(promotionRequestBytes)),
+      promotionAuthorization: pass(sha256(promotionRequestBytes)),
     },
   });
   const finalBytes = Buffer.from(canonicalServerRouteBundleFinalJson(final));

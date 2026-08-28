@@ -181,7 +181,7 @@ test("embedded #8/#9 evidence와 current keyless bytes를 deterministic NO_GO FI
     artifactInventory: { state: "PASS", evidenceSha256: await fileSha(path.join(firstOutput, "artifact-inventory.json")) },
     publication: { state: "UNAVAILABLE", evidenceSha256: null },
     routeAccessibilityEligibility: { state: "UNAVAILABLE", evidenceSha256: null },
-    rebuildParityPromotion: { state: "UNAVAILABLE", evidenceSha256: null },
+    promotionAuthorization: { state: "UNAVAILABLE", evidenceSha256: null },
     routeEdgeEvaluation: { state: "PASS", evidenceSha256: await fileSha(path.join(firstOutput, "route-edge-evaluation.json")) },
     signature: { state: "UNAVAILABLE", evidenceSha256: null },
     sourceFreshness: { state: "PASS", evidenceSha256: await fileSha(path.join(firstOutput, "source-freshness.json")) },
@@ -189,8 +189,8 @@ test("embedded #8/#9 evidence와 current keyless bytes를 deterministic NO_GO FI
   });
   assert.equal(final.result, "NO_GO");
   assert.deepEqual(final.blockers, [
+    "promotionAuthorization:UNAVAILABLE",
     "publication:UNAVAILABLE",
-    "rebuildParityPromotion:UNAVAILABLE",
     "routeAccessibilityEligibility:UNAVAILABLE",
     "signature:UNAVAILABLE",
   ]);
@@ -280,7 +280,7 @@ test("current-key signed manifest는 signature gate만 닫고 publication·parit
   const final = await readJson(path.join(output, "server-route-bundle-final.json"));
   assert.equal(final.candidate.signedManifestRawSha256, manifestSha256);
   assert.deepEqual(final.gates.signature, { state: "PASS", evidenceSha256: manifestSha256 });
-  assert.deepEqual(final.blockers, ["publication:UNAVAILABLE", "rebuildParityPromotion:UNAVAILABLE", "routeAccessibilityEligibility:UNAVAILABLE"]);
+  assert.deepEqual(final.blockers, ["promotionAuthorization:UNAVAILABLE", "publication:UNAVAILABLE", "routeAccessibilityEligibility:UNAVAILABLE"]);
   assert.equal(final.result, "NO_GO");
   const inventory = await readJson(path.join(output, "artifact-inventory.json"));
   assert.equal(inventory.signedManifestRawSha256, manifestSha256);
@@ -301,7 +301,7 @@ test("current-key signed manifest는 signature gate만 닫고 publication·parit
   await assert.rejects(() => readFile(rejectedOutput), /ENOENT/);
 });
 
-test("publication receipt와 three-run promotion을 동일 candidate FINAL GO로 결속한다", async (t) => {
+test("publication receipt와 single-candidate promotion을 동일 FINAL GO로 결속한다", async (t) => {
   const fixture = await createFixture(t);
   installSigningEnvironment(t);
   const signedRoot = path.join(fixture.temp, "signed-release-bundle");
@@ -322,8 +322,8 @@ test("publication receipt와 three-run promotion을 동일 candidate FINAL GO로
   );
   assert.equal(prePublicationFinal.result, "NO_GO");
   assert.deepEqual(prePublicationFinal.blockers, [
+    "promotionAuthorization:UNAVAILABLE",
     "publication:UNAVAILABLE",
-    "rebuildParityPromotion:UNAVAILABLE",
   ]);
 
   const releaseEvidence = {
@@ -340,7 +340,7 @@ test("publication receipt와 three-run promotion을 동일 candidate FINAL GO로
     state: "PASS",
     evidenceSha256: await fileSha(releaseEvidence.publicationReceiptPath),
   });
-  assert.deepEqual(final.gates.rebuildParityPromotion, {
+  assert.deepEqual(final.gates.promotionAuthorization, {
     state: "PASS",
     evidenceSha256: await fileSha(releaseEvidence.promotionRequestPath),
   });
@@ -657,7 +657,7 @@ test("standalone CLI release mode는 exact evidence set만 받아 GO를 생성�
     "--promotion-component", releaseEvidence.promotionComponentPath,
     "--promotion-inventory", releaseEvidence.promotionInventoryPath,
     "--compatibility-evidence", releaseEvidence.compatibilityEvidencePath,
-    "--rebuild-parity-evidence", releaseEvidence.rebuildParityEvidencePath,
+    "--candidate-execution-evidence-root", releaseEvidence.candidateExecutionEvidenceRoot,
     "--approval-evidence", releaseEvidence.approvalEvidencePath,
     "--promotion-workflow-run-id", releaseEvidence.promotionWorkflowRunId,
   ];
@@ -1113,20 +1113,7 @@ async function createReleaseEvidence(fixture, prePublicationFinal) {
     candidate: structuredClone(component),
   };
   const compatibilityBytes = Buffer.from(canonicalJson(compatibility));
-  const rebuildParity = {
-    schemaVersion: 1,
-    artifactKind: "datapack-rebuild-parity-evidence",
-    selectedCandidateWorkflowRunId: component.workflowRunId,
-    candidates: [
-      structuredClone(component),
-      { ...component, workflowRunId: "234" },
-      { ...component, workflowRunId: "345" },
-    ],
-    artifactInventorySha256: component.artifactInventorySha256,
-    contractVersion: "datapack-rebuild-parity-v1",
-    issueRef: component.issueRef,
-  };
-  const rebuildParityBytes = Buffer.from(canonicalJson(rebuildParity));
+  const executionEvidence = await createCandidateExecutionEvidence(fixture.temp, component);
   const approval = [{
     state: "approved",
     environments: [{ name: "datapack-promotion" }],
@@ -1139,7 +1126,7 @@ async function createReleaseEvidence(fixture, prePublicationFinal) {
     artifactKind: "datapack-promotion-request",
     candidate: structuredClone(component),
     compatibilityEvidenceSha256: sha256(compatibilityBytes),
-    rebuildParityEvidenceSha256: sha256(rebuildParityBytes),
+    candidateExecutionEvidence: executionEvidence.hashes,
     requestedBy: "AquilaXk",
     approval: {
       workflowRunId: promotionWorkflowRunId,
@@ -1147,7 +1134,7 @@ async function createReleaseEvidence(fixture, prePublicationFinal) {
       reviewer: "AquilaXk",
       approvalEvidenceSha256: sha256(approvalBytes),
     },
-    contractVersion: "datapack-promotion-v1",
+    contractVersion: "datapack-promotion-v2",
     issueRef: component.issueRef,
   };
 
@@ -1156,7 +1143,7 @@ async function createReleaseEvidence(fixture, prePublicationFinal) {
     promotionComponentPath: path.join(fixture.temp, "promotion-component.json"),
     promotionInventoryPath: path.join(fixture.temp, "promotion-inventory.json"),
     compatibilityEvidencePath: path.join(fixture.temp, "compatibility-evidence.json"),
-    rebuildParityEvidencePath: path.join(fixture.temp, "rebuild-parity-evidence.json"),
+    candidateExecutionEvidenceRoot: executionEvidence.root,
     approvalEvidencePath: path.join(fixture.temp, "promotion-approvals.json"),
   };
   for (const [target, bytes] of [
@@ -1164,7 +1151,6 @@ async function createReleaseEvidence(fixture, prePublicationFinal) {
     [paths.promotionComponentPath, Buffer.from(canonicalJson(component))],
     [paths.promotionInventoryPath, inventoryBytes],
     [paths.compatibilityEvidencePath, compatibilityBytes],
-    [paths.rebuildParityEvidencePath, rebuildParityBytes],
     [paths.approvalEvidencePath, approvalBytes],
   ]) await writeFile(target, bytes);
   return { publicationReceiptPath, promotionWorkflowRunId, ...paths };
@@ -1217,27 +1203,16 @@ async function rewritePromotionEvidence(releaseEvidence, mutate) {
     candidate: structuredClone(component),
   };
   const compatibilityBytes = Buffer.from(canonicalJson(compatibility));
-  const rebuildParity = {
-    schemaVersion: 1,
-    artifactKind: "datapack-rebuild-parity-evidence",
-    selectedCandidateWorkflowRunId: component.workflowRunId,
-    candidates: [
-      structuredClone(component),
-      { ...component, workflowRunId: "234" },
-      { ...component, workflowRunId: "345" },
-    ],
-    artifactInventorySha256: component.artifactInventorySha256,
-    contractVersion: "datapack-rebuild-parity-v1",
-    issueRef: component.issueRef,
-  };
-  const rebuildParityBytes = Buffer.from(canonicalJson(rebuildParity));
+  const executionEvidence = await createCandidateExecutionEvidence(
+    path.dirname(releaseEvidence.candidateExecutionEvidenceRoot), component,
+  );
   const approvalBytes = await readFile(releaseEvidence.approvalEvidencePath);
   const request = {
     schemaVersion: 1,
     artifactKind: "datapack-promotion-request",
     candidate: structuredClone(component),
     compatibilityEvidenceSha256: sha256(compatibilityBytes),
-    rebuildParityEvidenceSha256: sha256(rebuildParityBytes),
+    candidateExecutionEvidence: executionEvidence.hashes,
     requestedBy: "AquilaXk",
     approval: {
       workflowRunId: releaseEvidence.promotionWorkflowRunId,
@@ -1245,7 +1220,7 @@ async function rewritePromotionEvidence(releaseEvidence, mutate) {
       reviewer: "AquilaXk",
       approvalEvidenceSha256: sha256(approvalBytes),
     },
-    contractVersion: "datapack-promotion-v1",
+    contractVersion: "datapack-promotion-v2",
     issueRef: component.issueRef,
   };
   for (const [target, bytes] of [
@@ -1253,8 +1228,27 @@ async function rewritePromotionEvidence(releaseEvidence, mutate) {
     [releaseEvidence.promotionComponentPath, Buffer.from(canonicalJson(component))],
     [releaseEvidence.promotionInventoryPath, inventoryBytes],
     [releaseEvidence.compatibilityEvidencePath, compatibilityBytes],
-    [releaseEvidence.rebuildParityEvidencePath, rebuildParityBytes],
   ]) await writeFile(target, bytes);
+}
+
+async function createCandidateExecutionEvidence(rootParent, component) {
+  const root = path.join(rootParent, "candidate-execution-evidence");
+  await mkdir(root, { recursive: true });
+  const bundle = {
+    schemaVersion: 1, artifactKind: "datapack-release-evidence-bundle", releaseMode: "release-candidate",
+    candidateId: "capital@1", buildCandidateId: "candidate-1", candidateBuilderGitSha: "9".repeat(40),
+    builderGitSha: component.gitSha, buildSpecSha256: "8".repeat(64), manifestSha256: component.manifestSha256,
+    releaseSequence: component.releaseSequence, sourceSnapshotSetHash: component.provenance.sourceSnapshotSetHash,
+    validatorStatus: "PASS", manifestSignatureStatus: "PASS", createdAt: "2026-08-28T00:00:00.000Z",
+    workflowRunUrl: `https://github.com/AquilaXk/easysubway-data/actions/runs/${component.workflowRunId}`,
+    candidateServerRouteEvidence: { candidateId: "candidate-1", sourceSnapshotSetHash: component.provenance.sourceSnapshotSetHash, buildSpecSha256: "8".repeat(64), manifestSha256: component.manifestSha256, eligibility: { path: "server-route-bundle-evidence/route-accessibility-eligibility.json", sha256: "7".repeat(64) }, final: { path: "server-route-bundle-evidence/server-route-bundle-final.json", sha256: "6".repeat(64) } },
+  };
+  const decision = { schemaVersion: 1, artifactKind: "datapack-release-decision", outcome: "CHANGE_BLOCKED", productionWriteAllowed: false, materialChange: true, approvalValid: false, strictValidationPassed: true, publishRequired: true, publishAttempted: false, remoteValidationPassed: false, sourceSnapshotSetHash: component.provenance.sourceSnapshotSetHash, selectedManifestSha256: null, selectedReleaseSequence: null, reasonCodes: ["MATERIAL_CHANGE_UNAPPROVED"], evaluationAt: "2026-08-28T00:00:00.000Z" };
+  const bundleBytes = Buffer.from(canonicalJson(bundle));
+  const decisionBytes = Buffer.from(canonicalJson(decision));
+  await writeFile(path.join(root, "release-evidence-bundle.json"), bundleBytes);
+  await writeFile(path.join(root, "release-decision.json"), decisionBytes);
+  return { root, hashes: { releaseEvidenceBundleSha256: sha256(bundleBytes), releaseDecisionSha256: sha256(decisionBytes) } };
 }
 
 async function build(fixture, output, evaluationAt, releaseEvidence = undefined, extraInput = {}) {
