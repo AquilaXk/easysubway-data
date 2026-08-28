@@ -489,6 +489,15 @@ jobs:
           chmod 600 "${env_file}"
           echo "EASYSUBWAY_ENV_FILE=${env_file}" >> "${GITHUB_ENV}"
 
+      - name: Data Pack Release / Inject production callback secrets
+        if: ${{ steps.release-mode.outputs.mode == 'production-publish' }}
+        env:
+          EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN: ${{ secrets.EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN }}
+          EASYSUBWAY_DATAPACK_CALLBACK_HMAC_KEY: ${{ secrets.EASYSUBWAY_DATAPACK_CALLBACK_HMAC_KEY }}
+        run: |
+          set -euo pipefail
+          node tools/datapack/inject-production-callback-secrets.mjs
+
       - name: Data Pack Release / Restore candidate signing credentials
         if: ${{ steps.release-mode.outputs.mode == 'release-candidate' }}
         env:
