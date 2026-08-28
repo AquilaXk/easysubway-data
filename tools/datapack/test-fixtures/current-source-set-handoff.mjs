@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -6,45 +5,30 @@ import { buildCurrentCapitalLiveChainBundle, currentCapitalLiveChainOutputPaths 
 import { CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS, buildCurrentCapitalLiveChainFanInBoundary, canonicalCurrentCapitalLiveChainFanInBoundaryJson } from "../build-current-capital-live-chain-boundary.mjs";
 import { buildCurrentCapitalLiveChainOciPlan, canonicalCurrentCapitalLiveChainOciPlanJson } from "../build-current-capital-live-chain-oci-plan.mjs";
 import { buildCurrentCapitalLiveChainOciReceipt, canonicalCurrentCapitalLiveChainOciReceiptJson } from "../build-current-capital-live-chain-oci-receipt.mjs";
-import { buildCurrentExitAdmissionOciReceipt, canonicalCurrentExitAdmissionOciReceiptJson } from "../build-current-exit-admission-oci-receipt.mjs";
-import { buildCanonicalCurrentKricExitCollectionBundle } from "./current-live-chain-artifacts.mjs";
+import { buildCanonicalCurrentKricExitCollectionBundle, buildCanonicalCurrentLiveChainArtifacts } from "./current-live-chain-artifacts.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../../..");
 const REPOSITORY = "AquilaXk/easysubway-data";
-const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 export async function canonicalCurrentSourceSetHandoffInput(root) {
   const repositorySha = "befa78d0bd1dec8ce609bd1800b099d569e96734";
   const producerSha = "e".repeat(40);
   const operationId = "current-source-set-28";
   const provider = await buildCanonicalCurrentKricExitCollectionBundle({ repositorySha, operationId });
-  const providerSha256 = sha256(provider.bytes);
-  const day = provider.snapshot.capturedAt.slice(0, 10).replaceAll("-", "");
-  const providerObjectKey = `operations/current-capital-live-chain/v1/heads/${repositorySha}/operations/${operationId}/provider-collections/${day}-${providerSha256}.json`;
   const candidatePath = CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS.candidateBuildSpec;
-  const facilityPath = CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS.facilityAdmission;
-  const normalizedPath = CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS.exitNormalized;
-  const admissionPath = CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS.exitAdmission;
-  const exitReceiptPath = CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS.exitAdmissionOciReceipt;
-  const [candidateBytes, facilityInputBytes, normalizedBytes, admissionInputBytes] = await Promise.all([
-    readFile(path.join(ROOT, candidatePath)), readFile(path.join(ROOT, facilityPath)),
-    readFile(path.join(ROOT, normalizedPath)), readFile(path.join(ROOT, admissionPath)),
-  ]);
-  const candidateValue = JSON.parse(candidateBytes);
-  const facilityValue = JSON.parse(facilityInputBytes);
-  facilityValue.candidate = { candidateId: candidateValue.candidateId, sourceSnapshotSetHash: candidateValue.sourceSnapshotSetHash };
-  const admissionValue = JSON.parse(admissionInputBytes);
-  admissionValue.candidate.candidateId = candidateValue.candidateId;
-  admissionValue.candidate.sourceSetSha256 = candidateValue.sourceSnapshotSetHash;
-  const facilityBytes = Buffer.from(`${JSON.stringify(facilityValue)}\n`);
-  const admissionBytes = Buffer.from(`${JSON.stringify(admissionValue)}\n`);
-  const exitReceipt = buildCurrentExitAdmissionOciReceipt({
-    repository: REPOSITORY, mainSha: repositorySha, operationId, providerCapturedAt: provider.snapshot.capturedAt,
-    providerCollectionBundleBytes: provider.bytes, providerObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/${providerObjectKey}`,
-    providerObjectSha256: providerSha256, providerObjectByteSize: provider.bytes.length, normalizedBytes, admissionBytes,
+  const artifacts = await buildCanonicalCurrentLiveChainArtifacts({
+    authorityBytes: new Map(await Promise.all([
+      candidatePath,
+      "tools/datapack/source-inventory.json",
+      "tools/datapack/release/source-snapshots.json",
+    ].map(async (relative) => [relative, await readFile(path.join(ROOT, relative))]))),
+    providerCollectionBundleBytes: provider.bytes,
+    repositorySha,
+    operationId,
   });
-  const exitReceiptBytes = Buffer.from(`${canonicalCurrentExitAdmissionOciReceiptJson(exitReceipt)}\n`);
-  const overrides = new Map([[facilityPath, facilityBytes], [admissionPath, admissionBytes], [exitReceiptPath, exitReceiptBytes]]);
+  const candidateBytes = await readFile(path.join(ROOT, candidatePath));
+  const candidateValue = JSON.parse(candidateBytes);
+  const overrides = artifacts;
   const componentBytes = {};
   for (const [name, relative] of Object.entries(CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS)) {
     componentBytes[name] = overrides.get(relative) ?? await readFile(path.join(ROOT, relative));

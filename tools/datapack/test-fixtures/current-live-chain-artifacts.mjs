@@ -3,10 +3,18 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { buildCurrentCapitalLiveChainBundle, currentCapitalLiveChainOutputPaths } from "../build-current-capital-live-chain-bundle.mjs";
+import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacilityCollectionPlanJson } from "../build-current-capital-facility-collection-plan.mjs";
+import { buildCurrentCapitalFacilitySourceAdmission, canonicalCurrentCapitalFacilitySourceAdmissionJson } from "../build-current-capital-facility-source-admission.mjs";
+import { buildCurrentCapitalRouteEdgeInput, canonicalCurrentCapitalRouteEdgeInputJson } from "../build-current-capital-route-edge-input.mjs";
+import { buildCurrentCapitalStationLineInput, canonicalCurrentCapitalStationLineInputJson } from "../build-current-capital-station-line-input.mjs";
 import { buildCurrentExitAdmissionOciReceipt, canonicalCurrentExitAdmissionOciReceiptJson } from "../build-current-exit-admission-oci-receipt.mjs";
+import { canonicalExitPathAdmissionJson } from "../build-exit-path-admission.mjs";
 import { CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS, canonicalCurrentCapitalLiveChainFanInBoundaryJson } from "../build-current-capital-live-chain-boundary.mjs";
+import { buildCurrentExitPathSourceAdmission } from "../build-current-exit-path-source-admission.mjs";
 import { buildCurrentKricExitCollectionPlan } from "../build-current-kric-exit-collection-plan.mjs";
 import { buildCurrentKricExitCollectionBundle, buildCurrentKricExitCollectionReceipt, canonicalCurrentKricExitCollectionReceiptJson } from "../build-current-kric-exit-collection-receipt.mjs";
+import { canonicalRouteEdgeEvaluationJson, evaluateRouteAccessibilityEdges } from "../evaluate-route-accessibility-edges.mjs";
+import { materializeStationLineAccessibility } from "../materialize-station-line-accessibility.mjs";
 import { resolveStagedIncheonTopologyPath } from "../run-current-capital-live-chain.mjs";
 
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
@@ -34,7 +42,10 @@ export async function buildCanonicalCurrentKricExitCollectionBundle({ repository
   const input = Object.fromEntries(await Promise.all(Object.entries(paths).map(async ([key, file]) => [key, await readFile(path.join(root, file))])));
   const incheonFixture = currentIncheonTopologyFixture(JSON.parse(input.sourceInventoryBytes));
   input.incheonTopologyBytes = await readFile(path.join(root, incheonFixture.path));
-  capturedAt ??= incheonFixture.capturedAt;
+  if (capturedAt == null) {
+    const candidate = JSON.parse(await readFile(path.join(root, "release/candidate-build-spec.json")));
+    capturedAt = new Date(Math.max(Date.parse(incheonFixture.capturedAt), Date.parse(candidate.publishedAt))).toISOString();
+  }
   const plan = buildCurrentKricExitCollectionPlan(input, { now: new Date(capturedAt), coverageSelector: "capital-seoul-metro-production" });
   const rows = [{ edMovePath: null, elvtSttCd: null, elvtTpCd: null, exitMvTpOrdr: "1", imgPath: null, mvContDtl: null, mvPathMgNo: "1", stMovePath: null }];
   const results = plan.queryPlan.map((query, index) => ({ queryId: query.queryId, state: index === 0 ? "ROWS_OBSERVED" : "EXPLICIT_ZERO", providerResultCode: "00", rawResponseSha256: sha256(`raw-${index}`), rawResponseByteSize: 1, providerRecordHash: sha256(canonical(index === 0 ? rows : [])), rows: index === 0 ? rows : [] }));
@@ -61,25 +72,114 @@ export async function buildCanonicalCurrentLiveChainComposite({ root, repository
   const providerCapturedAt = snapshot.capturedAt;
   const providerSha = sha256(providerCollectionBundleBytes);
   const providerObjectUri = `oci://axvym6vk8g7i/easysubway-datapacks/operations/current-capital-live-chain/v1/heads/${repositorySha}/operations/${operationId}/provider-collections/${providerCapturedAt.slice(0, 10).replaceAll("-", "")}-${providerSha}.json`;
-  const normalizedPath = "tools/datapack/release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json";
-  const admissionPath = "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json";
+  const artifacts = await buildCanonicalCurrentLiveChainArtifacts({ authorityBytes, providerCollectionBundleBytes, repositorySha, operationId });
   const exitReceiptPath = "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json";
-  const normalizedBytes = Buffer.from("{\"normalized\":true}\n");
-  const admissionBytes = Buffer.from(`{\"admissionDigest\":\"${"a".repeat(64)}\",\"decision\":\"GO\"}\n`);
+  const normalizedBytes = artifacts.get(CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS.exitNormalized);
+  const admissionBytes = artifacts.get(CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS.exitAdmission);
   const entryBytes = new Map();
-  for (const [index, relative] of outputPaths.entries()) {
-    const bytes = relative === normalizedPath ? normalizedBytes : relative === admissionPath ? admissionBytes : authorityBytes.get(relative) ?? Buffer.from(`{\"component\":${index}}`);
+  for (const relative of outputPaths) {
+    const bytes = artifacts.get(relative) ?? authorityBytes.get(relative) ?? await readFile(path.join(DATAPACK_ROOT, relative));
     entryBytes.set(relative, bytes);
     await mkdir(path.join(root, "out", path.dirname(relative)), { recursive: true });
     await writeFile(path.join(root, "out", relative), bytes);
   }
-  const exitReceipt = buildCurrentExitAdmissionOciReceipt({ repository: "AquilaXk/easysubway-data", mainSha: repositorySha, operationId, providerCapturedAt, providerCollectionBundleBytes, providerObjectUri, providerObjectSha256: providerSha, providerObjectByteSize: providerCollectionBundleBytes.length, normalizedBytes, admissionBytes });
-  entryBytes.set(exitReceiptPath, Buffer.from(`${canonicalCurrentExitAdmissionOciReceiptJson(exitReceipt)}\n`));
+  entryBytes.set(exitReceiptPath, artifacts.get(exitReceiptPath));
   await writeFile(path.join(root, "out", exitReceiptPath), entryBytes.get(exitReceiptPath));
   const components = Object.fromEntries(Object.entries(CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS).map(([name, relative]) => [name, { path: relative, sha256: sha256(entryBytes.get(relative)) }]));
   const boundaryBytes = Buffer.from(canonicalCurrentCapitalLiveChainFanInBoundaryJson({ artifactKind: "current-capital-live-chain-fan-in", components, currentCandidateSourceSetSha256: "a".repeat(64), evidenceSourceSetSha256: "a".repeat(64), kind: "CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN", schemaVersion: 1 }));
   const bytes = await buildCurrentCapitalLiveChainBundle({ root, outputDirectory: path.join(root, "out"), repository: "AquilaXk/easysubway-data", repositorySha, operationId, boundaryBytes });
   return { bytes, outputPaths };
+}
+
+export async function buildCanonicalCurrentLiveChainArtifacts({ authorityBytes, providerCollectionBundleBytes, repositorySha, operationId }) {
+  const readAuthority = (relative) => authorityBytes.get(relative) ?? readFile(path.join(DATAPACK_ROOT, relative));
+  const [candidateBytes, inventoryBytes, snapshotsBytes, canonicalPackBytes, coverageTargetsBytes,
+    providerCodeCatalogBytes, routeRostersBytes, governancePolicyBytes, freshnessPolicyBytes,
+    transferMetricsBytes, transferApplicabilityBytes, policyBytes] = await Promise.all([
+    readAuthority("tools/datapack/release/candidate-build-spec.json"),
+    readAuthority("tools/datapack/source-inventory.json"),
+    readAuthority("tools/datapack/release/source-snapshots.json"),
+    readAuthority("tools/datapack/release/capital-production-canonical-pack.json"),
+    readAuthority("tools/datapack/nationwide-coverage-targets.json"),
+    readAuthority("tools/datapack/sources/kric-provider-code-catalog-20260228.json"),
+    readAuthority("tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json"),
+    readAuthority("tools/datapack/source-governance-policy.json"),
+    readAuthority("release/product-gates/datapack-freshness-sla.json"),
+    readAuthority("tools/datapack/release/current-transfer-topology-metrics.json"),
+    readAuthority("tools/datapack/release/current-capital-transfer-topology-applicability.json"),
+    readAuthority("release/product-gates/route-edge-evaluation-policy.json"),
+  ]);
+  const candidate = JSON.parse(candidateBytes);
+  const sourceInventory = JSON.parse(inventoryBytes);
+  const sourceSnapshots = JSON.parse(snapshotsBytes);
+  const facilityPlan = buildCurrentCapitalFacilityCollectionPlan({
+    canonicalPackBytes, coverageTargetsBytes, providerCodeCatalogBytes, routeRostersBytes, sourceInventoryBytes: inventoryBytes,
+  });
+  const facilitySource = sourceInventory.sources.find(({ id }) => id === "kric-station-convenience-standard");
+  const facilitySnapshotBytes = await readAuthority(facilitySource.accessibilityAdmissionEvidence.snapshotPath);
+  const facility = buildCurrentCapitalFacilitySourceAdmission({
+    planBytes: Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(facilityPlan)), canonicalPackBytes,
+    snapshotBytes: facilitySnapshotBytes, candidateBuildSpec: candidate, candidateEvaluationAt: candidate.publishedAt,
+    sourceInventoryBytes: inventoryBytes, sourceSnapshots, governancePolicy: JSON.parse(governancePolicyBytes),
+    governancePolicyBytes, freshnessPolicy: JSON.parse(freshnessPolicyBytes), observedAt: candidate.publishedAt,
+  });
+  const provider = JSON.parse(providerCollectionBundleBytes.toString("utf8"));
+  const exit = buildCurrentExitPathSourceAdmission({
+    providerSnapshotBytes: Buffer.from(provider.providerSnapshotJson), collectionPlan: JSON.parse(provider.collectionPlanJson),
+    facilityAdmission: facility, candidateBuildSpec: candidate, sourceInventory, sourceSnapshots,
+    observedAt: JSON.parse(provider.providerSnapshotJson).capturedAt,
+  });
+  const normalizedPath = CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS.exitNormalized;
+  const admissionPath = CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS.exitAdmission;
+  const facilityPath = CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS.facilityAdmission;
+  const artifacts = new Map([
+    [facilityPath, Buffer.from(canonicalCurrentCapitalFacilitySourceAdmissionJson(facility))],
+    [normalizedPath, Buffer.from(JSON.stringify(exit.normalizedSnapshot))],
+    [admissionPath, Buffer.from(canonicalExitPathAdmissionJson(exit.admission))],
+  ]);
+  const providerSha = sha256(providerCollectionBundleBytes);
+  const providerCapturedAt = JSON.parse(provider.providerSnapshotJson).capturedAt;
+  const providerObjectUri = `oci://axvym6vk8g7i/easysubway-datapacks/operations/current-capital-live-chain/v1/heads/${repositorySha}/operations/${operationId}/provider-collections/${providerCapturedAt.slice(0, 10).replaceAll("-", "")}-${providerSha}.json`;
+  artifacts.set(CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS.exitAdmissionOciReceipt, Buffer.from(`${canonicalCurrentExitAdmissionOciReceiptJson(buildCurrentExitAdmissionOciReceipt({
+    repository: "AquilaXk/easysubway-data", mainSha: repositorySha, operationId, providerCapturedAt,
+    providerCollectionBundleBytes, providerObjectUri, providerObjectSha256: providerSha,
+    providerObjectByteSize: providerCollectionBundleBytes.length,
+    normalizedBytes: artifacts.get(normalizedPath), admissionBytes: artifacts.get(admissionPath),
+  }))}\n`));
+  const components = Object.fromEntries(await Promise.all(Object.entries(CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS).map(async ([name, relative]) => {
+    const bytes = artifacts.get(relative) ?? await readAuthority(relative);
+    return [name, { bytes, value: JSON.parse(bytes.toString("utf8")) }];
+  })));
+  const boundary = JSON.parse(canonicalCurrentCapitalLiveChainFanInBoundaryJson({
+    artifactKind: "current-capital-live-chain-fan-in",
+    components: Object.fromEntries(Object.entries(components).map(([name, component]) => [name, { path: CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS[name], sha256: sha256(component.bytes) }])),
+    currentCandidateSourceSetSha256: candidate.sourceSnapshotSetHash,
+    evidenceSourceSetSha256: candidate.sourceSnapshotSetHash,
+    kind: "CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN", schemaVersion: 1,
+  }));
+  const station = buildCurrentCapitalStationLineInput({
+    canonicalPack: JSON.parse(canonicalPackBytes), candidateBuildSpec: candidate, exitAdmission: exit.admission,
+    exitAdmissionBytes: artifacts.get(admissionPath), exitNormalized: exit.normalizedSnapshot,
+    exitNormalizedBytes: artifacts.get(normalizedPath), exitReceipt: components.exitAdmissionOciReceipt.value,
+    facilityAdmission: facility, facilitySnapshotBytes, policy: JSON.parse(policyBytes), sourceInventory,
+    sourceInventoryBytes: inventoryBytes, sourceSetTransition: boundary, currentFanInComponents: components,
+    sourceSnapshots, transferApplicability: JSON.parse(transferApplicabilityBytes), transferMetrics: JSON.parse(transferMetricsBytes),
+  });
+  const route = buildCurrentCapitalRouteEdgeInput({
+    canonicalPack: JSON.parse(canonicalPackBytes), candidateBuildSpec: candidate, exitAdmission: exit.admission,
+    exitAdmissionBytes: artifacts.get(admissionPath), exitNormalized: exit.normalizedSnapshot,
+    exitNormalizedBytes: artifacts.get(normalizedPath), exitReceipt: components.exitAdmissionOciReceipt.value,
+    facilityAdmission: facility, facilitySnapshotBytes, policy: JSON.parse(policyBytes), sourceInventory,
+    sourceInventoryBytes: inventoryBytes, sourceSetTransition: boundary, currentFanInComponents: components,
+    sourceSnapshots, transferApplicability: JSON.parse(transferApplicabilityBytes), transferMetrics: JSON.parse(transferMetricsBytes),
+  });
+  const evaluationAt = exit.admission.sourceIdentity.approvedAt;
+  const materialization = materializeStationLineAccessibility({ ...station, observedAt: evaluationAt });
+  const evaluation = evaluateRouteAccessibilityEdges({ ...route, evaluationAt, materialization }, JSON.parse(policyBytes));
+  artifacts.set("tools/datapack/release/current-capital-accessibility-full/station-line-input.json", Buffer.from(canonicalCurrentCapitalStationLineInputJson(station)));
+  artifacts.set("tools/datapack/release/current-capital-accessibility-full/route-edge-input.json", Buffer.from(canonicalCurrentCapitalRouteEdgeInputJson(route)));
+  artifacts.set("tools/datapack/release/current-capital-accessibility-full/route-edge-evaluation.json", Buffer.from(canonicalRouteEdgeEvaluationJson(evaluation)));
+  return artifacts;
 }
 
 export { canonicalCurrentKricExitCollectionReceiptJson };
