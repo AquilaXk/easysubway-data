@@ -1248,6 +1248,26 @@ test("데이터팩 생성기는 transit_feed_info feed_end_date를 적재하고 
   }
 });
 
+test("데이터팩 생성기는 foreign-key insert 실패를 table과 row identity로 진단한다", async () => {
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-foreign-key-diagnostic-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  fixture.packs[0].stationAliases[0].stationId = "missing-station";
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", outputDir],
+      { cwd: root, env: productionEnv },
+    ),
+    /SQLite foreign-key insert failed: station_aliases row_sha256=[0-9a-f]{64}: FOREIGN KEY constraint failed/,
+  );
+});
+
 test("데이터팩 검증기는 fare zone이 일부 station-line에만 매핑되면 거부한다", async () => {
   const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
   const outputDir = path.join(tmpdir(), `easysubway-datapack-fare-zone-missing-${Date.now()}`);

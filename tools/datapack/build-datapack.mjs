@@ -4518,7 +4518,19 @@ function insertRows(database, table, columns, rows, mapRow) {
     `INSERT INTO ${table} (${columns.join(", ")}) VALUES (${columns.map(() => "?").join(", ")})`,
   );
   for (const row of rows ?? []) {
-    statement.run(...mapRow(row));
+    const values = mapRow(row);
+    try {
+      statement.run(...values);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("FOREIGN KEY constraint failed")) {
+        const rowIdentity = sha256(Buffer.from(canonicalJson({
+          table,
+          values: Object.fromEntries(columns.map((column, index) => [column, values[index]])),
+        })));
+        throw new Error(`SQLite foreign-key insert failed: ${table} row_sha256=${rowIdentity}: ${error.message}`);
+      }
+      throw error;
+    }
   }
 }
 
