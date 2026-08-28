@@ -18114,6 +18114,38 @@ async function writeCurrentItxReleaseInputs(
   const stagedIncheonAccessibilityPath = path.join(repositoryRoot, incheonAccessibilityPath);
   await mkdir(path.dirname(stagedIncheonAccessibilityPath), { recursive: true });
   await writeFile(stagedIncheonAccessibilityPath, incheonAccessibilityBytes);
+  const incheonTimetables = buildSpec.networkEdgeEvidence.incheonTimetables;
+  assert.deepEqual(
+    Object.keys(incheonTimetables ?? {}).toSorted(),
+    ["line1", "line2"],
+    "fixture pinned Incheon timetable evidence must have exact line keys",
+  );
+  for (const lineId of ["line1", "line2"]) {
+    const timetableBinding = incheonTimetables[lineId];
+    assert.deepEqual(
+      Object.keys(timetableBinding ?? {}).toSorted(),
+      ["path", "sha256", "snapshotId"],
+      `fixture pinned Incheon ${lineId} timetable binding keys`,
+    );
+    const timetablePath = timetableBinding.path;
+    assert.equal(typeof timetablePath, "string", `fixture pinned Incheon ${lineId} timetable path`);
+    assert.equal(path.posix.isAbsolute(timetablePath), false, `fixture pinned Incheon ${lineId} timetable path must be relative`);
+    assert.equal(timetablePath.includes("\\\\"), false, `fixture pinned Incheon ${lineId} timetable path separator`);
+    assert.equal(
+      timetablePath.split("/").some((part) => part === "" || part === "." || part === ".."),
+      false,
+      `fixture pinned Incheon ${lineId} timetable path segments`,
+    );
+    const timetableBytes = await readFile(timetablePath);
+    assert.equal(
+      sha256(timetableBytes),
+      timetableBinding.sha256,
+      `fixture pinned Incheon ${lineId} timetable binding must match its bytes`,
+    );
+    const stagedTimetablePath = path.join(repositoryRoot, timetablePath);
+    await mkdir(path.dirname(stagedTimetablePath), { recursive: true });
+    await writeFile(stagedTimetablePath, timetableBytes);
+  }
   const incheonAccessibilityAdmission = await admittedPinnedIncheonAccessibilityEvidence(
     incheonAccessibilityBinding,
     {
