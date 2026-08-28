@@ -1251,6 +1251,14 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
   const capital = result.canonical.packs.find(({ id }) => id === "capital");
   const previousCapital = canonical.packs.find(({ id }) => id === "capital");
   const reviewedCapital = result.reviewedPack.packs.find(({ id }) => id === "capital");
+  assert.deepEqual(
+    capital.sourceInventory.map(({ id }) => id),
+    previousCapital.sourceInventory.map(({ id }) => id),
+  );
+  assert.ok(capital.sourceInventory.every(({ id }) => ![
+    "incheon-transit-station-info", "incheon-transit-accessibility",
+    "incheon-line1-train-timetable", "incheon-line2-train-timetable",
+  ].includes(id)));
   assert.equal(reviewedCapital.networkEdges.length, 4);
   assert.ok(reviewedCapital.networkEdges.every(({ edgeType }) =>
     ["ENTRY", "EXIT"].includes(edgeType)));
@@ -1293,6 +1301,24 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
   }), /current Incheon accessibility lineage contract is invalid/);
   assert.equal(result.sourceInventory.sources.find(({ id }) => id === "incheon-transit-accessibility")
     .accessibilityAdmissionEvidence.snapshotId, "incheon-transit-accessibility-20260828");
+  const currentIncheonSnapshotIds = new Map([
+    ["incheon-transit-station-info", path.basename(currentIncheonTopologyPath, ".json")],
+    ["incheon-transit-accessibility", path.basename(currentIncheonAccessibilityPath, ".json")],
+    ["incheon-line1-train-timetable", path.basename(currentIncheonTimetablePaths[1], ".json")],
+    ["incheon-line2-train-timetable", path.basename(currentIncheonTimetablePaths[2], ".json")],
+  ]);
+  const currentIncheonAdmissions = new Map(result.sourceInventory.sources
+    .filter(({ id }) => currentIncheonSnapshotIds.has(id))
+    .map((source) => [source.id, source.topologyAdmissionEvidence?.snapshotId
+      ?? source.accessibilityAdmissionEvidence?.snapshotId
+      ?? source.scheduleAdmissionEvidence?.snapshotId]));
+  assert.deepEqual(currentIncheonAdmissions, currentIncheonSnapshotIds);
+  const currentIncheonRows = Object.values(capital)
+    .flatMap((value) => Array.isArray(value) ? value : [])
+    .filter(({ sourceId }) => currentIncheonSnapshotIds.has(sourceId));
+  assert.ok(currentIncheonRows.length > 0);
+  assert.ok(currentIncheonRows.every(({ sourceId, sourceSnapshotId }) =>
+    sourceSnapshotId === currentIncheonSnapshotIds.get(sourceId)));
   assert.equal(capital.stations.find(({ id }) => id === "station-b1a5f63faf69").nameKo, "서해구청");
   assert.equal(capital.lines.filter(({ id }) => id === "line-15b3b8a93259").length, 1);
   assert.equal(capital.transitTrips.filter(({ id }) => id.startsWith("trip-incheon-")).length, 1_414);

@@ -1096,10 +1096,6 @@ function replaceIncheonCanonicalSlice(canonical, projected) {
     }
     pack[property] = [...retained, ...owned];
   };
-  replace("sourceInventory", ({ id }) => [
-    "incheon-transit-station-info", "incheon-transit-accessibility",
-    "incheon-line1-train-timetable", "incheon-line2-train-timetable",
-  ].includes(id), ({ id }) => id);
   replace("operators", ({ id }) => id === "incheon-transit", ({ id }) => id);
   replace("lines", ({ id }) => ["line-98718184f016", "line-42b5805f3b5a"].includes(id), ({ id }) => id);
   const topologyScope = new Set(projectedPack.stationLines.filter(({ sourceId }) =>
