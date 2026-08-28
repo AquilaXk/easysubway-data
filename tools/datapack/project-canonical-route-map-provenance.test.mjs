@@ -42,9 +42,17 @@ test("canonical route-map provenance는 tracked five-region source와 Dorasan CS
   const projected = projectCanonicalRouteMapProvenance(source);
   const capital = projected.packs.find(({ id }) => id === "capital");
   const dorasan = capital.routeMapPositions.find((row) => row.stationId === DORASAN.stationId && row.lineId === DORASAN.lineId);
+  const incheonSource = source.fixture.packs.find(({ id }) => id === "capital").sourceInventory
+    .find(({ id }) => id === "incheon-transit-station-info");
+  assert.ok(incheonSource);
+  const incheonPosition = capital.routeMapPositions.find(({ sourceId }) => sourceId === incheonSource.id);
 
   assert.equal(capital.routeMapPositions.length, 1102);
   assert.ok(capital.routeMapPositions.every(({ sourceSha256 }) => SHA256.test(sourceSha256)));
+  assert.deepEqual(
+    { sourceId: incheonPosition.sourceId, sourceUrl: incheonPosition.sourceUrl, sourceSha256: incheonPosition.sourceSha256 },
+    { sourceId: incheonSource.id, sourceUrl: incheonSource.url, sourceSha256: incheonSource.sourceSha256 },
+  );
   assert.deepEqual(
     { x: dorasan.x, y: dorasan.y, upPath: dorasan.upPath, labelPolygon: dorasan.labelPolygon, sourceSha256: dorasan.sourceSha256 },
     {
@@ -174,4 +182,31 @@ test("unknown source, mismatched Dorasan, 또는 Busan receipt drift는 fail clo
   positionUrlDrift.dorasanCsvBytes = source.dorasanCsvBytes;
   positionUrlDrift.fixture.packs[0].routeMapPositions.find(({ sourceId }) => sourceId === "seoul-metro-route-map-positions").sourceUrl = "https://example.invalid/drift";
   assert.throws(() => projectCanonicalRouteMapProvenance(positionUrlDrift), /route-map position source identity is invalid/);
+
+  const incheonPositionUrlDrift = structuredClone(source);
+  incheonPositionUrlDrift.dorasanCsvBytes = source.dorasanCsvBytes;
+  const incheonSource = incheonPositionUrlDrift.fixture.packs[0].sourceInventory
+    .find(({ id }) => id === "incheon-transit-station-info");
+  incheonPositionUrlDrift.fixture.packs[0].routeMapPositions
+    .find(({ sourceId }) => sourceId === incheonSource.id).sourceUrl = "https://example.invalid/drift";
+  assert.throws(() => projectCanonicalRouteMapProvenance(incheonPositionUrlDrift), /route-map position source identity is invalid/);
+
+  const duplicateIncheonPositionSource = structuredClone(source);
+  duplicateIncheonPositionSource.dorasanCsvBytes = source.dorasanCsvBytes;
+  duplicateIncheonPositionSource.fixture.packs[0].sourceInventory.push(
+    structuredClone(duplicateIncheonPositionSource.fixture.packs[0].sourceInventory
+      .find(({ id }) => id === "incheon-transit-station-info")),
+  );
+  assert.throws(() => projectCanonicalRouteMapProvenance(duplicateIncheonPositionSource), /route-map position source identity is invalid/);
+
+  const ownerSourceCollision = structuredClone(source);
+  ownerSourceCollision.dorasanCsvBytes = source.dorasanCsvBytes;
+  ownerSourceCollision.fixture.packs[0].sourceInventory.push({
+    ...structuredClone(ownerSourceCollision.fixture.packs[0].sourceInventory
+      .find(({ id }) => id === "incheon-transit-station-info")),
+    id: "owner-self-drawn-sma-schematic",
+    url: "internal:route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg",
+    sourceSha256: "0".repeat(64),
+  });
+  assert.throws(() => projectCanonicalRouteMapProvenance(ownerSourceCollision), /route-map position source identity is invalid/);
 });

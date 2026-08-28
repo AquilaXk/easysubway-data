@@ -8,6 +8,8 @@ const PROVIDER_LINE_NAME_ALIASES = new Map([
   ["용인에버라인", "에버라인"],
   ["우이신설경전철", "우이신설"],
   ["의정부경전철", "의정부"],
+  ["인천 1호선", "인천1호선"],
+  ["인천 2호선", "인천2호선"],
 ]);
 
 export function parseMolitSvgProviderIdentity(svgFileName, providerLabel) {

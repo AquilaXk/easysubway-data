@@ -106,8 +106,10 @@ test("공식 서울 위경도 snapshot을 current canonical pack에 materialize�
 
   assert.equal(pack.routeMapPositions.filter(({ sourceId }) => sourceId === "seoulmetro-cyberstation-route-map").length, 0);
   assert.equal(pack.sourceInventory.filter(({ id }) => id === "seoulmetro-cyberstation-route-map").length, 0);
-  assert.equal(pack.sourceInventory.filter(({ id }) => id === "seoul-metro-transfer-distance-duration").length, 1);
-  assert.equal(pack.sourceInventory.at(-1).id, "seoul-metro-transfer-distance-duration");
+  assert.deepEqual(
+    pack.sourceInventory.find(({ id }) => id === "seoul-metro-transfer-distance-duration"),
+    input.baseFixture.packs[0].sourceInventory.find(({ id }) => id === "seoul-metro-transfer-distance-duration"),
+  );
   assert.equal(
     pack.sourceInventory.findIndex(({ id }) => id === SOURCE_ID),
     input.baseFixture.packs[0].sourceInventory.findIndex(({ id }) => id === SOURCE_ID),
