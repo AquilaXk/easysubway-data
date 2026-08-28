@@ -123,7 +123,7 @@ function buildRefreshProof({ phase, candidateFile, ledgerFile, requestFile, hash
   const evidence = ledger.filter(({ snapshotId }) => evidenceIds.has(snapshotId));
   const evidenceHash = sha(JSON.stringify(evidence));
   const activatedSourceSet = station.candidate?.sourceSetSha256;
-  if (phase === ACTIVATED_CURRENT_OUTPUT) {
+  if (phase === ACTIVATED_CURRENT_OUTPUT || phase === PRE_APPROVAL_CURRENT_CANDIDATE) {
     const facility = parse(facilityFile.bytes, "FACILITY admission");
     const exit = parse(exitFile.bytes, "EXIT admission");
     const outputsCurrent = activatedSourceSet === candidate.sourceSnapshotSetHash

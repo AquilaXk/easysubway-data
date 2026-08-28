@@ -270,6 +270,23 @@ test("already-current activated outputs preserve exact bytes through the current
   assert.deepEqual(await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative)))), before);
 });
 
+test("pre-approval uses the validated current live-chain fan-in for the current production fixture", async (t) => {
+  const root = await prepareCurrentFullCapitalProductionRepository(ROOT);
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const candidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json")));
+  const canonicalPack = JSON.parse(await readFile(path.join(root, candidate.fixturePath)));
+  const before = await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative))));
+
+  const outputs = await buildCurrentCapitalAccessibilityRefreshOutputs({
+    repositoryRoot: root,
+    phase: "PRE_APPROVAL_CURRENT_CANDIDATE",
+    candidateBuildSpec: candidate,
+    canonicalPack,
+  });
+
+  assert.deepEqual(outputs.map(({ bytes }) => bytes), before);
+});
+
 test("already-current activated outputs without a valid current fan-in fail closed", async (t) => {
   const root = await prepareCurrentFullCapitalProductionRepository(ROOT);
   t.after(() => rm(root, { recursive: true, force: true }));
