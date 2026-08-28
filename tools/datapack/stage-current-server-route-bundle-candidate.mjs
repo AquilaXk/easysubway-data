@@ -78,6 +78,7 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
   }
   const provenance = path.join(datapackRoot, "current.provenance.json");
   const releaseSequence = positiveInteger(buildSpec.releaseSequence, "build spec releaseSequence");
+  const stagedFreshUntil = kstInstant(expiresAt);
   const temp = await mkdtemp(path.join(output, ".route-candidate-"));
   try {
     const sourceSqlite = path.join(temp, "source.sqlite");
@@ -106,14 +107,14 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
         bundleId: "capital-route-bundle-1",
         releaseSequence,
         activeFrom: kstInstant(publishedAt),
-        freshUntil: kstInstant(expiresAt),
+        freshUntil: stagedFreshUntil,
         builtAt: buildSpec.publishedAt,
         keyId: input.keyId,
       },
     });
     const signed = path.join(prepared, "signed-server-route-bundle");
     await assertSignedInventory(signed);
-    const evidence = await validatedEvidence(prepared, candidate);
+    const evidence = await validatedEvidence(prepared, candidate, stagedFreshUntil);
     const staged = path.join(temp, "stage");
     await mkdir(path.join(staged, "server-route-bundle", "payload"), { recursive: true });
     for (const relative of SIGNED_PATHS) {
@@ -181,7 +182,7 @@ async function assertCandidateInventory(root) {
     ...CANONICAL_INPUT_PATHS.map(([relative]) => `server-route-bundle-inputs/${relative}`),
   ])) throw new Error("candidate route bundle inventory mismatch");
 }
-async function validatedEvidence(prepared, candidate) {
+async function validatedEvidence(prepared, candidate, freshUntil) {
   const eligibilityPath = path.join(prepared, EVIDENCE_PATHS[0]);
   const bound = path.join(prepared, "bound");
   if (!same(await regularTree(bound), [EVIDENCE_PATHS[1]])) {
@@ -197,6 +198,9 @@ async function validatedEvidence(prepared, candidate) {
   }
   const { eligibilitySha256, ...eligibilityPayload } = eligibility.value;
   const finalValue = validateServerRouteBundleFinal(final.value);
+  if (finalValue.candidate.freshUntil !== freshUntil) {
+    throw new Error("prepared route evidence freshUntil mismatch");
+  }
   if (eligibility.value.schemaVersion !== 1
     || eligibility.value.decision !== "ELIGIBLE"
     || eligibilitySha256 !== sha256(Buffer.from(canonicalJson(eligibilityPayload)))

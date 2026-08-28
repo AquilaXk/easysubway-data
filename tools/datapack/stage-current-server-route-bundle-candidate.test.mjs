@@ -23,7 +23,7 @@ const BUNDLE_CANDIDATE = {
   componentInventorySha256: "1".repeat(64),
   componentDigests: Object.fromEntries(["topology", "timetable", "accessibility", "fare"].map((name) => [name, "2".repeat(64)])),
   activeFrom: "2026-08-15T00:34:07.000+09:00",
-  freshUntil: "2026-08-16T00:34:07.000+09:00",
+  freshUntil: "2026-08-15T12:47:35.000+09:00",
   keyId: "production-v1",
 };
 const SIGNED_PATHS = ["compatibility.json", "manifest.json", "manifest.signing-input.json", "payload/accessibility.sqlite.zst", "payload/fare.sqlite.zst", "payload/timetable.sqlite.zst", "payload/topology.sqlite.zst", "provenance.json"];
@@ -109,6 +109,30 @@ test("current manifest expiry가 build publishedAt과 같으면 prepare 전에 f
   );
   assert.equal(prepared, false);
   await assert.rejects(() => lstat(path.join(output, "server-route-bundle")), /ENOENT/);
+});
+
+test("prepared FINAL candidate freshUntil이 verified current manifest expiry와 다르면 publish하지 않는다", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "route-candidate-prepared-expiry-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const input = await fixture(root);
+  const output = path.join(root, "candidate");
+  await mkdir(output);
+  await assert.rejects(
+    () => stageCurrentServerRouteBundleCandidate({
+      ...input,
+      repositoryGitSha: "b".repeat(40),
+      keyId: "production-v1",
+      output,
+      stages: { prepare: async ({ output: prepared }) => writePreparedOutputs(prepared, {
+        ...BUNDLE_CANDIDATE,
+        freshUntil: "2026-08-15T12:47:36.000+09:00",
+      }) },
+    }),
+    /prepared route evidence freshUntil mismatch/,
+  );
+  for (const name of ["server-route-bundle", "server-route-bundle-evidence", "server-route-bundle-inputs"]) {
+    await assert.rejects(() => lstat(path.join(output, name)), /ENOENT/);
+  }
 });
 
 test("prepare 동안 원본 canonical input이 교체돼도 최초 검증 bytes만 stage한다", async (t) => {
@@ -289,14 +313,14 @@ async function inventory(root) {
   return entries.sort();
 }
 
-async function writePreparedOutputs(prepared) {
+async function writePreparedOutputs(prepared, candidate = BUNDLE_CANDIDATE) {
   const signed = path.join(prepared, "signed-server-route-bundle");
   await mkdir(path.join(signed, "payload"), { recursive: true });
   await Promise.all(SIGNED_PATHS.map(async (relative) => writeFile(path.join(signed, relative), relative)));
   const eligibilityPayload = {
     schemaVersion: 1,
     artifactKind: "route-accessibility-eligibility",
-    candidate: BUNDLE_CANDIDATE,
+    candidate,
     decision: "ELIGIBLE",
     stationLineAccessibility: { rowCount: 1 },
     routeEdgeEvaluation: { edgeCount: 1 },
@@ -313,6 +337,6 @@ async function writePreparedOutputs(prepared) {
   gates.publication = { state: "UNAVAILABLE", evidenceSha256: null };
   gates.promotionAuthorization = { state: "UNAVAILABLE", evidenceSha256: null };
   await writeFile(path.join(prepared, "bound", "server-route-bundle-final.json"), canonicalJson(
-    buildServerRouteBundleFinal({ candidate: BUNDLE_CANDIDATE, gates }),
+    buildServerRouteBundleFinal({ candidate, gates }),
   ));
 }
