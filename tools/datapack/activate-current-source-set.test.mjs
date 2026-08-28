@@ -1290,14 +1290,6 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
       topologySnapshot: currentIncheonTopology,
       now: new Date(buildNow),
     })));
-  assert.deepEqual(
-    capital.sourceInventory.map(({ id }) => id),
-    previousCapital.sourceInventory.map(({ id }) => id),
-  );
-  assert.ok(capital.sourceInventory.every(({ id }) => ![
-    "incheon-transit-station-info", "incheon-transit-accessibility",
-    "incheon-line1-train-timetable", "incheon-line2-train-timetable",
-  ].includes(id)));
   assert.equal(reviewedCapital.networkEdges.length, 4);
   assert.ok(reviewedCapital.networkEdges.every(({ edgeType }) =>
     ["ENTRY", "EXIT"].includes(edgeType)));
@@ -1358,6 +1350,21 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
   assert.ok(currentIncheonRows.length > 0);
   assert.ok(currentIncheonRows.every(({ sourceId, sourceSnapshotId }) =>
     sourceSnapshotId === currentIncheonSnapshotIds.get(sourceId)));
+  const promotedSourceIds = new Set(currentIncheonRows.map(({ sourceId }) => sourceId));
+  const projectedIncheonCapital = result.incheonProjection.packs.find(({ id }) =>
+    /^nationwide-incheon-schedule-[a-f0-9]{64}$/u.test(id));
+  assert.ok(projectedIncheonCapital);
+  const projectedSourcesById = new Map(projectedIncheonCapital.sourceInventory.map((source) => [source.id, source]));
+  const capitalSourcesById = new Map(capital.sourceInventory.map((source) => [source.id, source]));
+  assert.ok([...promotedSourceIds].every((id) => capitalSourcesById.has(id)));
+  assert.deepEqual(capital.sourceInventory.slice(0, previousCapital.sourceInventory.length),
+    previousCapital.sourceInventory);
+  const appendedSources = capital.sourceInventory.slice(previousCapital.sourceInventory.length);
+  assert.deepEqual(new Set(appendedSources.map(({ id }) => id)), promotedSourceIds);
+  for (const source of appendedSources) {
+    assert.deepEqual(source, projectedSourcesById.get(source.id));
+  }
+  assert.equal(new Set(capital.sourceInventory.map(({ id }) => id)).size, capital.sourceInventory.length);
   assert.equal(capital.stations.find(({ id }) => id === "station-b1a5f63faf69").nameKo, "서해구청");
   assert.equal(capital.lines.filter(({ id }) => id === "line-15b3b8a93259").length, 1);
   assert.equal(capital.transitTrips.filter(({ id }) => id.startsWith("trip-incheon-")).length, 1_414);

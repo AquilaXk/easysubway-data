@@ -1086,6 +1086,7 @@ function replaceIncheonCanonicalSlice(canonical, projected, { topologySnapshot, 
     "projected Incheon pack",
   );
   const before = structuredClone(pack);
+  const promotedRows = [];
   const replace = (property, owns, key) => {
     const owned = projectedPack[property].filter(owns);
     const retained = pack[property].filter((row) => !owns(row));
@@ -1100,6 +1101,7 @@ function replaceIncheonCanonicalSlice(canonical, projected, { topologySnapshot, 
       throw new Error(`Incheon canonical ${property} replacement identity is invalid`);
     }
     pack[property] = [...retained, ...owned];
+    promotedRows.push(...owned);
   };
   replace("operators", ({ id }) => id === "incheon-transit", ({ id }) => id);
   replace("lines", ({ id }) => ["line-98718184f016", "line-42b5805f3b5a"].includes(id), ({ id }) => id);
@@ -1124,6 +1126,7 @@ function replaceIncheonCanonicalSlice(canonical, projected, { topologySnapshot, 
     if (!canonicalStationsById.has(stationId)) {
       pack.stations.push(projectedStation);
       canonicalStationsById.set(stationId, projectedStation);
+      promotedRows.push(projectedStation);
     }
   }
   const expectedIncheonEdges = projectIncheonNetworkEdges(pack, topologySnapshot, topologyAdmission);
@@ -1145,6 +1148,7 @@ function replaceIncheonCanonicalSlice(canonical, projected, { topologySnapshot, 
     throw new Error("Incheon canonical networkEdges replacement identity is invalid");
   }
   pack.networkEdges = [...retainedNetworkEdges, ...expectedIncheonEdges];
+  promotedRows.push(...expectedIncheonEdges);
   replace("routeMapPositions", ({ lineId }) => topologyOwnedLineIds.has(lineId),
     ({ stationId, lineId }) => `${stationId}:${lineId}`);
   replace("facilities", ({ id }) => id.startsWith("facility-incheon-"), ({ id }) => id);
@@ -1174,6 +1178,7 @@ function replaceIncheonCanonicalSlice(canonical, projected, { topologySnapshot, 
   ));
   const projectedAlias = requireOne(projectedPack.stationAliases ?? [], ({ stationId, alias }) =>
     stationId === mapping.stationId && alias === mapping.previousNameKo, "projected I210 alias");
+  promotedRows.push(projectedI210, projectedAlias);
   const withoutOldAlias = aliases.filter(({ stationId, alias }) => (
     stationId !== mapping.stationId || alias !== mapping.previousNameKo
   ));
@@ -1213,6 +1218,39 @@ function replaceIncheonCanonicalSlice(canonical, projected, { topologySnapshot, 
     ))) {
       throw new Error("Incheon canonical station complement changed");
     }
+  }
+  if (!Array.isArray(pack.sourceInventory) || !Array.isArray(projectedPack.sourceInventory)) {
+    throw new Error("Incheon canonical source inventory is invalid");
+  }
+  const sourceIdOf = ({ sourceId } = {}) => {
+    if (sourceId == null) return null;
+    if (typeof sourceId !== "string" || sourceId.trim() === "") {
+      throw new Error("promoted Incheon provenance source identity is invalid");
+    }
+    return sourceId;
+  };
+  const requiredSourceIds = new Set(promotedRows.map(sourceIdOf).filter(Boolean));
+  const existingSourceIds = pack.sourceInventory.map(({ id }) => id);
+  const projectedSourcesById = new Map(projectedPack.sourceInventory.map((source) => [source.id, source]));
+  if (new Set(existingSourceIds).size !== existingSourceIds.length
+    || projectedSourcesById.size !== projectedPack.sourceInventory.length) {
+    throw new Error("Incheon canonical source inventory identity is invalid");
+  }
+  const appendedSources = [...requiredSourceIds].filter((id) => !existingSourceIds.includes(id)).map((id) => {
+    const source = projectedSourcesById.get(id);
+    if (!source) throw new Error(`projected Incheon provenance source is missing: ${id}`);
+    return source;
+  });
+  for (const id of requiredSourceIds) {
+    const existing = pack.sourceInventory.find((source) => source.id === id);
+    const projectedSource = projectedSourcesById.get(id);
+    if (!projectedSource || (existing && !isDeepStrictEqual(existing, projectedSource))) {
+      throw new Error(`projected Incheon provenance source identity is invalid: ${id}`);
+    }
+  }
+  pack.sourceInventory = [...pack.sourceInventory, ...appendedSources];
+  if (new Set(pack.sourceInventory.map(({ id }) => id)).size !== pack.sourceInventory.length) {
+    throw new Error("Incheon canonical source inventory replacement is invalid");
   }
   for (const property of ["facilities", "stationFacilityEvidence", "networkEdges", "routeMapPositions",
     "serviceCalendars", "serviceCalendarDates", "transitRoutes", "transitTrips", "transitStopTimes"]) {
@@ -1589,6 +1627,7 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
     sourceSeparatedTopologyBytes,
     reviewedPack,
     reviewedPackBytes: jsonBytes(reviewedPack),
+    incheonProjection,
     canonical: canonicalWithIncheon,
     canonicalBytes,
     projectedEdgeCount: projection.edgeCount,
