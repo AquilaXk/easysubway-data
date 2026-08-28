@@ -74,7 +74,7 @@ export function materializeIncheonStationInfo({
   }
 
   const snapshotId = source.topologyAdmissionEvidence.snapshotId;
-  pack.sourceInventory.push(packSource(source, snapshot));
+  pack.sourceInventory.push(incheonStationInfoPackSource(source, snapshot));
   pack.operators.push({ id: OPERATOR_ID, nameKo: "인천교통공사", nameEn: "" });
   pack.lines.push(...OWNED_LINE_IDS.map((lineId) => ({
     id: lineId,
@@ -450,7 +450,7 @@ function requiredSource(inventory, snapshot, snapshotSha256, now) {
   return source;
 }
 
-function packSource(source, snapshot) {
+export function incheonStationInfoPackSource(source, snapshot) {
   return {
     id: source.id,
     owner: source.owner,

@@ -40,6 +40,7 @@ import {
   requireCurrentIncheonStationCodeDerivations,
   validateIncheonStationInfoSnapshot,
 } from "./collect-incheon-station-info.mjs";
+import { incheonStationInfoPackSource } from "./materialize-incheon-station-info.mjs";
 import { assertNoRetiredTransitReferences } from "./project-retired-transit-lines.mjs";
 import { assertCurrentCapitalAccessibilityBuildAllowed } from "./current-capital-accessibility-transition.mjs";
 import {
@@ -337,23 +338,7 @@ export function materializeIncheonNetworkEdges(pack, snapshot, admission) {
   pack.networkEdges = [...retained, ...generated];
 
   const source = admission.source;
-  const packSource = {
-    id: source.id,
-    owner: source.owner,
-    url: source.datasetUrl,
-    license: source.license.name,
-    licenseStatus: "redistributable",
-    redistributionAllowed: true,
-    updateFrequency: source.updateFrequency,
-    updatedAt: incheon.capturedAt,
-    fields: [...source.fieldsProvided],
-    coverageScope: {
-      regionIds: ["capital"],
-      operatorIds: ["incheon-transit"],
-      lineIds: [...incheonTopologyLineIds],
-      sourceDomains: ["route_graph_topology"],
-    },
-  };
+  const packSource = incheonStationInfoPackSource(source, incheon);
   const existingSources = pack.sourceInventory.filter(({ id }) => id === source.id);
   if (existingSources.length === 0) pack.sourceInventory.push(packSource);
   else if (existingSources.length !== 1 || JSON.stringify(existingSources[0]) !== JSON.stringify(packSource)) {

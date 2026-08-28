@@ -28,6 +28,7 @@ import {
   admittedIncheonAccessibilityEvidence,
   validateProductionIncheonAccessibilityFixture,
 } from "./materialize-incheon-accessibility.mjs";
+import { incheonStationInfoPackSource } from "./materialize-incheon-station-info.mjs";
 import {
   buildCapitalTopologyReverificationEvidence,
   projectCapitalTopologyOwnership,
@@ -542,6 +543,11 @@ test("source-separated current topology materialization은 Incheon 1/2 exact 116
     now,
   }), /pinned Incheon accessibility admission identity mismatch/);
   const pack = structuredClone(fixture.packs[0]);
+  const stationInfoSource = incheonStationInfoPackSource(admission.source, snapshot);
+  assert.equal(stationInfoSource.sourceSha256, snapshot.rawSha256);
+  assert.equal(stationInfoSource.updatedAt, snapshot.capturedAt);
+  assert.deepEqual(stationInfoSource.coverageScope, admission.source.coverageScope);
+  pack.sourceInventory.push(stationInfoSource);
   const incheonLineIds = new Set(["line-42b5805f3b5a", "line-98718184f016"]);
   const unrelatedBefore = pack.networkEdges.filter(({ fromNodeId }) => (
     !incheonLineIds.has(fromNodeId.split(":").at(-1))
@@ -551,6 +557,30 @@ test("source-separated current topology materialization은 Incheon 1/2 exact 116
     snapshotId: incheonAdmission.snapshotId,
     edgeCount: snapshot.edgeCount,
   });
+  assert.deepEqual(pack.sourceInventory.find(({ id }) => id === stationInfoSource.id), stationInfoSource);
+  assert.deepEqual(materializeIncheonNetworkEdges(pack, snapshot, admission), {
+    snapshotId: incheonAdmission.snapshotId,
+    edgeCount: snapshot.edgeCount,
+  });
+  assert.deepEqual(pack.sourceInventory.find(({ id }) => id === stationInfoSource.id), stationInfoSource);
+  const sourceShaDrift = structuredClone(pack);
+  sourceShaDrift.sourceInventory.find(({ id }) => id === stationInfoSource.id).sourceSha256 = "0".repeat(64);
+  assert.throws(
+    () => materializeIncheonNetworkEdges(sourceShaDrift, snapshot, admission),
+    /Incheon topology pack source inventory mismatch/,
+  );
+  const coverageDrift = structuredClone(pack);
+  coverageDrift.sourceInventory.find(({ id }) => id === stationInfoSource.id).coverageScope.lineIds.pop();
+  assert.throws(
+    () => materializeIncheonNetworkEdges(coverageDrift, snapshot, admission),
+    /Incheon topology pack source inventory mismatch/,
+  );
+  const duplicateSource = structuredClone(pack);
+  duplicateSource.sourceInventory.push(structuredClone(stationInfoSource));
+  assert.throws(
+    () => materializeIncheonNetworkEdges(duplicateSource, snapshot, admission),
+    /Incheon topology pack source inventory mismatch/,
+  );
   const incheonEdges = pack.networkEdges.filter(({ fromNodeId }) => (
     incheonLineIds.has(fromNodeId.split(":").at(-1))
   ));
