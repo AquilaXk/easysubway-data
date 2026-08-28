@@ -18,20 +18,83 @@ import {
 } from "./collect-incheon-station-info.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
-const CSV_PATH = path.join(root, "tools/datapack/fixtures/incheon-station-info-raw/data-go-15083751.csv");
 const LINE1 = "line-98718184f016";
 const LINE2 = "line-42b5805f3b5a";
 const LINE7 = "line-15b3b8a93259";
+const CSV_HEADERS = Object.freeze([
+  "역번호", "역사명", "노선번호", "노선명", "영문역사명", "한자역사명", "환승역구분",
+  "환승노선번호", "환승노선명", "역위도", "역경도", "운영기관명", "역사도로명주소",
+  "역사전화번호", "데이터기준일자",
+]);
+const CSV_LINE_NAMES = Object.freeze({
+  [LINE1]: "인천지하철 1호선",
+  [LINE2]: "인천지하철 2호선",
+  [LINE7]: "7호선",
+});
 
-async function loadCsv() {
-  return readFile(CSV_PATH);
+async function loadCurrentStationSnapshot() {
+  const inventory = JSON.parse(await readFile(path.join(
+    root,
+    "tools/datapack/source-inventory.json",
+  )));
+  const stationInfo = inventory.sources.filter(({ id }) => id === "incheon-transit-station-info");
+  assert.equal(stationInfo.length, 1, "current Incheon station-info source identity");
+  const admission = stationInfo[0].topologyAdmissionEvidence;
+  assert.equal(typeof admission?.snapshotPath, "string");
+  const snapshot = JSON.parse(await readFile(path.join(root, admission.snapshotPath)));
+  assert.equal(validateIncheonStationInfoSnapshot(snapshot), snapshot);
+  assert.equal(requireCurrentIncheonStationCodeDerivations(snapshot), snapshot);
+  assert.equal(typeof snapshot.observedDataUpdatedAt, "string");
+  return snapshot;
+}
+
+function csvCell(value) {
+  const text = String(value ?? "");
+  return /[",\n\r]/u.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+function synthesizeCurrentCsv(snapshot) {
+  const rawCodes = new Map(snapshot.stationCodeDerivations.map((derivation) => [
+    `${derivation.lineId}:${derivation.internalStationCode}:${derivation.stationName}`,
+    derivation.rawStationCode,
+  ]));
+  const rows = snapshot.scope.map((station) => {
+    const lineName = CSV_LINE_NAMES[station.lineId];
+    assert.ok(lineName, `current line name: ${station.lineId}`);
+    const rawStationCode = rawCodes.get(
+      `${station.lineId}:${station.stationCode}:${station.stationName}`,
+    ) ?? station.stationCode;
+    return [
+      rawStationCode,
+      station.stationName,
+      station.lineId,
+      lineName,
+      station.nameEn,
+      "",
+      "",
+      "",
+      "",
+      station.latitude,
+      station.longitude,
+      "인천교통공사",
+      "",
+      "",
+      snapshot.observedDataUpdatedAt,
+    ].map(csvCell).join(",");
+  });
+  return Buffer.from(`${CSV_HEADERS.join(",")}\n${rows.join("\n")}\n`, "utf8");
+}
+
+async function loadCurrentCsv() {
+  return synthesizeCurrentCsv(await loadCurrentStationSnapshot());
 }
 
 test("인천 station-info collector는 1·2·7호선 71역 membership/positions와 1·2호선 116 edge를 정규화한다", async () => {
-  const csvBytes = await loadCsv();
+  const currentSnapshot = await loadCurrentStationSnapshot();
+  const csvBytes = await loadCurrentCsv();
   const snapshot = collectIncheonStationInfo({
     csvBytes,
-    now: new Date("2026-07-24T06:00:00.000Z"),
+    now: new Date(currentSnapshot.capturedAt),
   });
 
   assert.equal(snapshot.schemaVersion, 1);
@@ -58,14 +121,25 @@ test("인천 station-info collector는 1·2·7호선 71역 membership/positions�
   assert.equal(snapshot.fixture, false);
   assert.equal(snapshot.credentialRequired, false);
   assert.equal(snapshot.credentialRedacted, true);
-  assert.equal(snapshot.capturedAt, "2026-07-24T06:00:00.000Z");
-  assert.equal(snapshot.freshUntil, "2026-07-25T06:00:00.000Z");
-  assert.equal(snapshot.observedDataUpdatedAt, "2025-06-30");
+  for (const field of [
+    "capturedAt", "freshUntil", "observedDataUpdatedAt",
+  ]) assert.equal(snapshot[field], currentSnapshot[field], `current ${field}`);
   assert.equal(snapshot.rawSha256, createHash("sha256").update(csvBytes).digest("hex"));
-  assert.equal(snapshot.scopeSha256, "b6c0040233f0d967b40edde161521c8e48d6767427246d94047b5b33536be154");
-  assert.equal(snapshot.edgesSha256, "97cabc36da6171490b7d3b7b87848200aa0aca0cd70a598027d6f07c46929af5");
-  assert.equal(snapshot.positionsSha256, "3d56d04c75db75e676516c8d3e819f67e94e8759309345505f8d451b526086bc");
-  assert.equal(snapshot.contentSha256, "710878689282ba967697cd9411940b657a51eee5499106ed884d5bd9111501a8");
+  assert.notEqual(snapshot.rawSha256, currentSnapshot.rawSha256, "fixture CSV is not the official attachment");
+  assert.equal(snapshot.scopeSha256, createHash("sha256").update(JSON.stringify(snapshot.scope)).digest("hex"));
+  assert.equal(snapshot.edgesSha256, createHash("sha256").update(JSON.stringify(snapshot.edges)).digest("hex"));
+  assert.equal(snapshot.positionsSha256, createHash("sha256").update(JSON.stringify(snapshot.positions)).digest("hex"));
+  assert.equal(snapshot.contentSha256, createHash("sha256").update(JSON.stringify({
+    scope: snapshot.scope, edges: snapshot.edges, positions: snapshot.positions,
+  })).digest("hex"));
+  assert.deepEqual(snapshot.scope, currentSnapshot.scope);
+  assert.deepEqual(snapshot.edges, currentSnapshot.edges);
+  assert.deepEqual(snapshot.positions, currentSnapshot.positions);
+  assert.deepEqual(snapshot.stationCodeDerivations, currentSnapshot.stationCodeDerivations);
+  assert.equal(snapshot.scopeSha256, currentSnapshot.scopeSha256);
+  assert.equal(snapshot.edgesSha256, currentSnapshot.edgesSha256);
+  assert.equal(snapshot.positionsSha256, currentSnapshot.positionsSha256);
+  assert.equal(snapshot.contentSha256, currentSnapshot.contentSha256);
   const line1 = snapshot.scope.filter(({ lineId }) => lineId === LINE1);
   const line2 = snapshot.scope.filter(({ lineId }) => lineId === LINE2);
   const line7 = snapshot.scope.filter(({ lineId }) => lineId === LINE7);
@@ -150,7 +224,7 @@ test("인천 station-info collector는 1·2·7호선 71역 membership/positions�
   ];
   const reordered = collectIncheonStationInfo({
     csvBytes: Buffer.from(officialRows.join("\n"), "utf8"),
-    now: new Date("2026-07-24T06:00:00.000Z"),
+    now: new Date(currentSnapshot.capturedAt),
   });
   assert.deepEqual(reordered.scope, snapshot.scope);
   assert.deepEqual(reordered.edges, snapshot.edges);
@@ -160,6 +234,7 @@ test("인천 station-info collector는 1·2·7호선 71역 membership/positions�
 });
 
 test("인천 station-info generic validator는 historical snapshot을 읽되 current derivation을 요구하지 않는다", async () => {
+  const currentSnapshot = await loadCurrentStationSnapshot();
   const historical = JSON.parse(await readFile(path.join(
     root,
     "tools/datapack/sources/incheon-transit-station-info-20260813.json",
@@ -170,13 +245,13 @@ test("인천 station-info generic validator는 historical snapshot을 읽되 cur
     /current Incheon station code derivations are required/,
   );
   assert.deepEqual(currentIncheonStationCodeDerivations(), collectIncheonStationInfo({
-    csvBytes: await loadCsv(),
-    now: new Date("2026-07-24T06:00:00.000Z"),
+    csvBytes: await loadCurrentCsv(),
+    now: new Date(currentSnapshot.capturedAt),
   }).stationCodeDerivations);
 });
 
 test("인천 station-info collector는 schema·좌표·중복 분기를 fail closed한다", async () => {
-  const csvBytes = await loadCsv();
+  const csvBytes = await loadCurrentCsv();
 
   assert.throws(() => parseIncheonStationInfoCsv(new Uint8Array()), /CSV bytes/);
 
@@ -220,22 +295,32 @@ test("인천 station-info collector는 schema·좌표·중복 분기를 fail clo
 });
 
 test("인천 station-info collector는 공식 FILE의 단일 데이터기준일자를 동적으로 보존하고 drift를 fail closed한다", async () => {
-  const csvBytes = await loadCsv();
+  const currentSnapshot = await loadCurrentStationSnapshot();
+  const csvBytes = await loadCurrentCsv();
   const text = new TextDecoder("utf-8").decode(csvBytes);
-  const updatedDate = "2026-06-30";
-  const updatedBytes = Buffer.from(text.replaceAll("2025-06-30", updatedDate), "utf8");
+  const updatedDate = new Date(
+    Date.parse(`${currentSnapshot.observedDataUpdatedAt}T00:00:00.000Z`) - 24 * 60 * 60 * 1_000,
+  ).toISOString().slice(0, 10);
+  assert.ok(Date.parse(`${updatedDate}T00:00:00.000Z`) < Date.parse(currentSnapshot.capturedAt));
+  const updatedBytes = Buffer.from(
+    text.replaceAll(currentSnapshot.observedDataUpdatedAt, updatedDate),
+    "utf8",
+  );
 
   const updated = collectIncheonStationInfo({
     csvBytes: updatedBytes,
-    now: new Date("2026-07-24T06:00:00.000Z"),
+    now: new Date(currentSnapshot.capturedAt),
   });
   assert.equal(updated.observedDataUpdatedAt, updatedDate);
 
-  const mixedDates = Buffer.from(text.replace("2025-06-30", updatedDate), "utf8");
+  const mixedDates = Buffer.from(
+    text.replace(currentSnapshot.observedDataUpdatedAt, updatedDate),
+    "utf8",
+  );
   assert.throws(
     () => collectIncheonStationInfo({
       csvBytes: mixedDates,
-      now: new Date("2026-07-24T06:00:00.000Z"),
+      now: new Date(currentSnapshot.capturedAt),
     }),
     /data date mismatch/,
   );
@@ -243,24 +328,24 @@ test("인천 station-info collector는 공식 FILE의 단일 데이터기준일�
   assert.throws(
     () => collectIncheonStationInfo({
       csvBytes: updatedBytes,
-      now: new Date("2026-06-29T23:59:59.000Z"),
+      now: new Date("2026-06-28T23:59:59.000Z"),
     }),
     /invalid Incheon station info snapshot/,
   );
 
-  const invalidDate = Buffer.from(text.replaceAll("2025-06-30", "2026-06-31"), "utf8");
+  const invalidDate = Buffer.from(
+    text.replaceAll(currentSnapshot.observedDataUpdatedAt, "2026-06-31"),
+    "utf8",
+  );
   assert.throws(() => parseIncheonStationInfoCsv(invalidDate), /invalid data date/);
 });
 
 test("I210 Seohae-gu Office official rename admission accepts only the exact tuple", async () => {
-  const text = new TextDecoder("utf-8").decode(await loadCsv());
-  const current = Buffer.from(text.replace(
-    "3210,서구청,S2802,인천지하철 2호선,Seo-gu Office",
-    "3210,서해구청,S2802,인천지하철 2호선,Seohae-gu Office",
-  ), "utf8");
+  const currentSnapshot = await loadCurrentStationSnapshot();
+  const current = await loadCurrentCsv();
   const snapshot = collectIncheonStationInfo({
     csvBytes: current,
-    now: new Date("2026-08-28T04:00:00.000Z"),
+    now: new Date(currentSnapshot.capturedAt),
   });
   const i210 = snapshot.scope.find(({ lineId, stationCode }) => (
     lineId === LINE2 && stationCode === "3210"
@@ -276,11 +361,11 @@ test("I210 Seohae-gu Office official rename admission accepts only the exact tup
   });
   assert.throws(() => collectIncheonStationInfo({
     csvBytes: Buffer.from(new TextDecoder().decode(current).replace("Seohae-gu Office", "Wrong Office"), "utf8"),
-    now: new Date("2026-08-28T04:00:00.000Z"),
+    now: new Date(currentSnapshot.capturedAt),
   }), /I210 official rename identity drift/);
   assert.throws(() => collectIncheonStationInfo({
     csvBytes: Buffer.from(new TextDecoder().decode(current).replace("3210,서해구청", "3210,다른역"), "utf8"),
-    now: new Date("2026-08-28T04:00:00.000Z"),
+    now: new Date(currentSnapshot.capturedAt),
   }), /official line identity drift/);
   const mismatchedPosition = structuredClone(snapshot);
   mismatchedPosition.positions.find(({ lineId, stationCode }) => (
@@ -300,15 +385,18 @@ test("I210 Seohae-gu Office official rename admission accepts only the exact tup
 });
 
 test("인천 station-info collector CLI가 snapshot 파일을 기록한다", async (context) => {
-  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { mkdtemp, rm, writeFile } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
   const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-incheon-collect-"));
   context.after(() => rm(outputDir, { recursive: true, force: true }));
   const output = path.join(outputDir, "snapshot.json");
+  const input = path.join(outputDir, "current.csv");
+  const currentSnapshot = await loadCurrentStationSnapshot();
+  await writeFile(input, await loadCurrentCsv());
   const snapshot = await runIncheonStationInfoCollector([
-    "--input", CSV_PATH,
+    "--input", input,
     "--output", output,
-    "--captured-at", "2026-07-24T06:00:00.000Z",
+    "--captured-at", currentSnapshot.capturedAt,
   ]);
   const written = JSON.parse(await readFile(output, "utf8"));
   assert.equal(written.contentSha256, snapshot.contentSha256);
@@ -322,7 +410,8 @@ test("current Incheon public attachment는 bounded download와 strict EUC-KR dec
   const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-incheon-current-"));
   context.after(() => rm(outputDir, { recursive: true, force: true }));
   const output = path.join(outputDir, "snapshot.json");
-  const csvBytes = await loadCsv();
+  const currentSnapshot = await loadCurrentStationSnapshot();
+  const csvBytes = await loadCurrentCsv();
   const requests = [];
   const detailUrl = "https://www.data.go.kr/data/15083751/fileData.do";
   const downloadUrl = "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003700002&fileDetailSn=1&insertDataPrcus=N";
@@ -338,11 +427,14 @@ test("current Incheon public attachment는 bounded download와 strict EUC-KR dec
   const snapshot = await runIncheonStationInfoCollector([
     "--download",
     "--output", output,
-    "--captured-at", "2026-08-11T01:02:03.000Z",
+    "--captured-at", currentSnapshot.capturedAt,
   ], { fetchImpl });
   assert.deepEqual(requests, [detailUrl, downloadUrl]);
-  assert.equal(snapshot.capturedAt, "2026-08-11T01:02:03.000Z");
-  assert.equal(snapshot.freshUntil, "2026-08-12T01:02:03.000Z");
+  assert.equal(snapshot.capturedAt, currentSnapshot.capturedAt);
+  assert.equal(
+    snapshot.freshUntil,
+    new Date(Date.parse(currentSnapshot.capturedAt) + 24 * 60 * 60 * 1_000).toISOString(),
+  );
   assert.equal(decodeIncheonStationInfoCsv(Buffer.from([0xb0, 0xa1])), "가");
 
   const original = await readFile(output);
@@ -350,7 +442,7 @@ test("current Incheon public attachment는 bounded download와 strict EUC-KR dec
     () => runIncheonStationInfoCollector([
       "--download",
       "--output", output,
-      "--captured-at", "2026-08-11T01:02:03.000Z",
+      "--captured-at", currentSnapshot.capturedAt,
     ], { fetchImpl }),
     /output.*exists|EEXIST/,
   );

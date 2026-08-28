@@ -38,7 +38,6 @@ process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
 const topologyNow = new Date("2026-07-19T18:14:03.004Z");
 const timetableNow = new Date("2026-07-20T13:09:00.000Z");
 const gwangjuAccessibilityNow = new Date("2026-07-24T03:00:00.000Z");
-const accessibilityNow = new Date("2026-07-24T07:00:00.000Z");
 const SOURCE_ID = "incheon-transit-accessibility";
 const OPERATOR_ID = "incheon-transit";
 const LINE1 = "line-98718184f016";
@@ -58,9 +57,17 @@ async function inputs({ materializeIncheon = true } = {}) {
   );
   assert.equal(incheonSources.length, 1, "current Incheon source identity");
   const incheonAdmission = incheonSources[0].topologyAdmissionEvidence;
+  const accessibilitySources = currentInventory.sources.filter(
+    ({ id }) => id === SOURCE_ID,
+  );
+  assert.equal(accessibilitySources.length, 1, "current Incheon accessibility source identity");
+  const accessibilityAdmission = accessibilitySources[0].accessibilityAdmissionEvidence;
   assert.equal(typeof incheonAdmission?.snapshotPath, "string");
   assert.equal(typeof incheonAdmission?.capturedAt, "string");
   assert.ok(Number.isFinite(Date.parse(incheonAdmission.capturedAt)));
+  assert.equal(typeof accessibilityAdmission?.snapshotPath, "string");
+  assert.equal(typeof accessibilityAdmission?.capturedAt, "string");
+  assert.ok(Number.isFinite(Date.parse(accessibilityAdmission.capturedAt)));
   const [
     baseFixture,
     busanTopology,
@@ -87,7 +94,7 @@ async function inputs({ materializeIncheon = true } = {}) {
     readJson("tools/datapack/sources/gwangju-transportation-cyberstation-timetable-20260720.json"),
     readJson("tools/datapack/sources/gwangju-transportation-accessibility-20260724.json"),
     readFile(path.join(root, incheonAdmission.snapshotPath)),
-    readJson("tools/datapack/sources/incheon-transit-accessibility-20260724.json"),
+    readJson(accessibilityAdmission.snapshotPath),
     Promise.resolve(projectHistoricalRegionalMaterializeInventory(currentInventory)),
     readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
     readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
@@ -152,6 +159,8 @@ async function inputs({ materializeIncheon = true } = {}) {
     incheonFixture,
     topologySnapshot: incheonSnapshot,
     accessibilitySnapshot,
+    accessibilityAdmission,
+    accessibilityNow: new Date(accessibilityAdmission.capturedAt),
     inventory,
   };
 }
@@ -224,7 +233,10 @@ function rebindSuppliedTopologyInventory(inventory, snapshot) {
 }
 
 test("인천 공식 71 membership 편의시설을 facility·evidence 213건으로 materialize한다", async () => {
-  const { incheonFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
+  const {
+    incheonFixture, topologySnapshot, accessibilitySnapshot, accessibilityAdmission,
+    accessibilityNow, inventory,
+  } = await inputs();
   const fixture = materializeIncheonAccessibility({
     baseFixture: incheonFixture,
     accessibilitySnapshot,
@@ -276,19 +288,23 @@ test("인천 공식 71 membership 편의시설을 facility·evidence 213건으�
   assert.equal(pack.minimumTableRows.station_facility_evidence, pack.stationFacilityEvidence.length);
   assert.match(pack.id, /^nationwide-incheon-accessibility-[a-f0-9]{64}$/);
   assert.match(materializedIncheonAccessibilityPackContentHash(pack, pack.version), /^[a-f0-9]{64}$/);
-  assert.equal(pack.version, "20260724");
-  assert.deepEqual(fixture.manifest.activePack, { id: pack.id, version: "20260724" });
+  const version = accessibilityAdmission.snapshotId.replace(`${SOURCE_ID}-`, "");
+  assert.equal(pack.version, version);
+  assert.deepEqual(fixture.manifest.activePack, { id: pack.id, version });
 });
 
 test("인천 accessibility admission은 freshness·hash·scope·중복을 fail closed한다", async () => {
-  const { incheonFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
+  const {
+    incheonFixture, topologySnapshot, accessibilitySnapshot, accessibilityAdmission,
+    accessibilityNow, inventory,
+  } = await inputs();
 
   assert.throws(() => materializeIncheonAccessibility({
     baseFixture: incheonFixture,
     accessibilitySnapshot,
     topologySnapshot,
     inventory,
-    now: new Date("2026-07-25T07:00:00.000Z"),
+    now: new Date(accessibilityAdmission.freshUntil),
   }), /freshness/);
 
   const badHash = structuredClone(accessibilitySnapshot);
@@ -413,18 +429,22 @@ test("인천 accessibility materializer는 supplied current topology rename line
     accessibilitySnapshot,
     topologySnapshot,
     inventory,
-    now: accessibilityNow,
+    now: values.accessibilityNow,
   });
   assert.equal(admitted.packs[0].facilities.filter(({ sourceId }) => sourceId === SOURCE_ID).length, 213);
 
+  const predecessorTopology = await readJson(
+    "tools/datapack/sources/incheon-transit-station-info-20260813.json",
+  );
+  assert.notEqual(predecessorTopology.contentSha256, topologySnapshot.contentSha256);
   const predecessor = structuredClone(accessibilitySnapshot);
-  predecessor.topologyLineages[0].contentSha256 = values.topologySnapshot.contentSha256;
+  predecessor.topologyLineages[0].contentSha256 = predecessorTopology.contentSha256;
   assert.throws(() => materializeIncheonAccessibility({
     baseFixture: incheonFixture,
     accessibilitySnapshot: predecessor,
     topologySnapshot,
     inventory,
-    now: accessibilityNow,
+    now: values.accessibilityNow,
   }), /captured topology lineage/);
 });
 
@@ -434,7 +454,10 @@ test("materialized SQLite와 provenance가 인천 accessibility_facilities 3건�
   const fixturePath = path.join(outputDir, "fixture.json");
   const packOutput = path.join(outputDir, "pack");
   const reportPath = path.join(outputDir, "coverage.json");
-  const { incheonFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
+  const {
+    incheonFixture, topologySnapshot, accessibilitySnapshot, accessibilityAdmission,
+    accessibilityNow, inventory,
+  } = await inputs();
   const fixture = materializeIncheonAccessibility({
     baseFixture: incheonFixture,
     accessibilitySnapshot,
@@ -485,7 +508,7 @@ test("materialized SQLite와 provenance가 인천 accessibility_facilities 3건�
       [LINE2, LINE1, LINE7].sort(),
     );
     assert.ok(fieldRecords.every((record) => (
-      record.sourceSnapshotId === "incheon-transit-accessibility-20260724"
+      record.sourceSnapshotId === accessibilityAdmission.snapshotId
         && record.evidenceHash === accessibilitySnapshot.rowsSha256
         && /^[a-f0-9]{64}$/.test(record.providerRecordHash)
         && record.derivationKind === "OFFICIAL"
