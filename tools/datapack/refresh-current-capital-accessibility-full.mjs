@@ -123,7 +123,7 @@ function buildRefreshProof({ phase, candidateFile, ledgerFile, requestFile, hash
   const evidence = ledger.filter(({ snapshotId }) => evidenceIds.has(snapshotId));
   const evidenceHash = sha(JSON.stringify(evidence));
   const activatedSourceSet = station.candidate?.sourceSetSha256;
-  if (phase === ACTIVATED_CURRENT_OUTPUT) {
+  if (phase === ACTIVATED_CURRENT_OUTPUT || phase === PRE_APPROVAL_CURRENT_CANDIDATE) {
     const facility = parse(facilityFile.bytes, "FACILITY admission");
     const exit = parse(exitFile.bytes, "EXIT admission");
     const outputsCurrent = activatedSourceSet === candidate.sourceSnapshotSetHash
@@ -208,6 +208,12 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
   const root = path.resolve(repositoryRoot); const files = await inputFiles(root, phase);
   const proof = buildRefreshProof({ phase, candidateFile: files[CANDIDATE_BUILD_SPEC], ledgerFile: files["tools/datapack/release/source-snapshots.json"], requestFile: files["tools/datapack/release/release-request.json"], hashesFile: files["tools/datapack/release/hash-evidence.json"], facilityFile: files["tools/datapack/release/current-capital-facility-source-admission.json"], exitFile: files["tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json"], stationFile: files[OUTPUTS[0]], routeFile: files[OUTPUTS[1]] });
   const { alreadyCurrent, ...transition } = proof;
+  if (alreadyCurrent && files[CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH] === undefined) {
+    files[CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH] = await readStableRegularFile(
+      target(root, CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH),
+      CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH,
+    );
+  }
   const input = await readCurrentCapitalInputs(root, alreadyCurrent
     ? { readCurrentFanInBoundaryImpl: readCurrentCapitalLiveChainFanInBoundary }
     : { readTransitionBoundaryImpl: async () => ({ ...transition, facilityAdmissionBytesSha256: sha(files["tools/datapack/release/current-capital-facility-source-admission.json"].bytes) }) });
