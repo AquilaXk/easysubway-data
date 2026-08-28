@@ -853,6 +853,13 @@ export function requireCurrentIncheonTopologyAdmission({
   const stationCodesSha256 = sha256(Buffer.from(JSON.stringify(
     incheon.scope.map(({ stationCode }) => stationCode),
   )));
+  const expectedRouteMapTopologyLineages = incheon.topologyLineIds.map((lineId) => ({
+    sourceId: incheon.sourceId,
+    snapshotId,
+    contentSha256: incheon.contentSha256,
+    lineId,
+  }));
+  const expectedOfficialRenameEvidence = currentIncheonOfficialRenameEvidence();
   if (topology.contentSha256 !== incheon.contentSha256) {
     throw new Error("current Incheon topology content changed; re-admission required");
   }
@@ -895,10 +902,25 @@ export function requireCurrentIncheonTopologyAdmission({
     || routeMap.snapshotSha256 !== sha256(snapshotBytes) || routeMap.capturedAt !== incheon.capturedAt
     || routeMap.stationCount !== incheon.positionCount || routeMap.rawSha256 !== incheon.rawSha256
     || routeMap.positionsSha256 !== incheon.positionsSha256
-    || routeMap.topologySnapshotId !== snapshotId || routeMap.topologyContentSha256 !== incheon.contentSha256) {
+    || routeMap.topologySnapshotId !== snapshotId || routeMap.topologyContentSha256 !== incheon.contentSha256
+    || JSON.stringify(routeMap.topologyLineages) !== JSON.stringify(expectedRouteMapTopologyLineages)
+    || JSON.stringify(routeMap.officialRenameEvidence) !== JSON.stringify(expectedOfficialRenameEvidence)) {
     throw new Error("current Incheon topology inventory admission is not exact");
   }
   return sourceInventory;
+}
+
+function currentIncheonOfficialRenameEvidence() {
+  const rename = I210_SEOHAE_GU_OFFICE_RENAME;
+  return [{
+    lineId: rename.lineId,
+    stationCode: rename.stationCode,
+    stationId: rename.stationId,
+    previousNameKo: rename.previousNameKo,
+    currentNameKo: rename.currentNameKo,
+    renamedAt: rename.renamedAt,
+    officialNoticeUrl: rename.officialNoticeUrl,
+  }];
 }
 
 function seoulCompactDate(value) {
@@ -1001,6 +1023,13 @@ export function activateCurrentIncheonSourceAdmissions({
   if (!topologyAdmission || !membershipAdmission || !routeMapAdmission) {
     throw new Error("current Incheon topology source contract is invalid");
   }
+  const routeMapTopologyLineages = topology.topologyLineIds.map((lineId) => ({
+    sourceId: topology.sourceId,
+    snapshotId: topologySnapshotId,
+    contentSha256: topology.contentSha256,
+    lineId,
+  }));
+  const officialRenameEvidence = currentIncheonOfficialRenameEvidence();
   topologySource.observedDataUpdatedAt = topology.observedDataUpdatedAt;
   topologySource.retrievedAt = topology.capturedAt.slice(0, 10);
   Object.assign(topologyAdmission, {
@@ -1036,6 +1065,8 @@ export function activateCurrentIncheonSourceAdmissions({
     observedDataUpdatedAt: topology.observedDataUpdatedAt,
     topologySourceId: topology.sourceId, topologySnapshotId,
     topologyContentSha256: topology.contentSha256,
+    topologyLineages: routeMapTopologyLineages,
+    officialRenameEvidence,
     freshUntil: new Date(addCadence(requiredUtcInstant(topology.capturedAt,
       "current Incheon topology capturedAt"), ROUTE_MAP_REVERIFICATION_CADENCE)).toISOString(),
   });

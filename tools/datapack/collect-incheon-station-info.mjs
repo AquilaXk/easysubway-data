@@ -111,6 +111,8 @@ export const I210_SEOHAE_GU_OFFICE_RENAME = Object.freeze({
   previousNameKo: "서구청",
   currentNameKo: "서해구청",
   currentNameEn: "Seohae-gu Office",
+  renamedAt: "2026-06-12",
+  officialNoticeUrl: "https://www.incheon.go.kr/IC010307/view?curPage=14&gosigbn=N&sno=66730",
 });
 const OFFICIAL_LINE_SEQUENCES = Object.freeze({
   [LINE1]: Object.freeze({

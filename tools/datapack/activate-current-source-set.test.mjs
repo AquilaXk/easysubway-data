@@ -1326,6 +1326,23 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
     incheon.topologyAdmissionEvidence.snapshotId,
     path.basename(currentIncheonTopologyPath, ".json"),
   );
+  const expectedRouteMapTopologyLineages = currentIncheonTopology.topologyLineIds.map((lineId) => ({
+    sourceId: currentIncheonTopology.sourceId,
+    snapshotId: path.basename(currentIncheonTopologyPath, ".json"),
+    contentSha256: currentIncheonTopology.contentSha256,
+    lineId,
+  }));
+  assert.deepEqual(incheon.routeMapAdmissionEvidence.topologyLineages,
+    expectedRouteMapTopologyLineages);
+  assert.deepEqual(incheon.routeMapAdmissionEvidence.officialRenameEvidence, [{
+    lineId: "line-42b5805f3b5a",
+    stationCode: "3210",
+    stationId: "station-b1a5f63faf69",
+    previousNameKo: "서구청",
+    currentNameKo: "서해구청",
+    renamedAt: "2026-06-12",
+    officialNoticeUrl: "https://www.incheon.go.kr/IC010307/view?curPage=14&gosigbn=N&sno=66730",
+  }]);
   assert.doesNotThrow(() => requireCurrentIncheonTopologyAdmission({
     sourceInventory: result.sourceInventory,
     snapshot: currentIncheonTopology,
@@ -1343,6 +1360,26 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
     snapshotPath: currentIncheonTopologyPath,
     now: new Date(buildNow),
   }), /current Incheon accessibility lineage contract is invalid/);
+  const mismatchedRouteMapLineage = structuredClone(result.sourceInventory);
+  mismatchedRouteMapLineage.sources.find(({ id }) => id === "incheon-transit-station-info")
+    .routeMapAdmissionEvidence.topologyLineages[0].lineId = "line-15b3b8a93259";
+  assert.throws(() => requireCurrentIncheonTopologyAdmission({
+    sourceInventory: mismatchedRouteMapLineage,
+    snapshot: currentIncheonTopology,
+    snapshotBytes: currentIncheonTopologyBytes,
+    snapshotPath: currentIncheonTopologyPath,
+    now: new Date(buildNow),
+  }), /current Incheon topology inventory admission is not exact/);
+  const mismatchedOfficialRename = structuredClone(result.sourceInventory);
+  mismatchedOfficialRename.sources.find(({ id }) => id === "incheon-transit-station-info")
+    .routeMapAdmissionEvidence.officialRenameEvidence[0].officialNoticeUrl = "https://example.com/";
+  assert.throws(() => requireCurrentIncheonTopologyAdmission({
+    sourceInventory: mismatchedOfficialRename,
+    snapshot: currentIncheonTopology,
+    snapshotBytes: currentIncheonTopologyBytes,
+    snapshotPath: currentIncheonTopologyPath,
+    now: new Date(buildNow),
+  }), /current Incheon topology inventory admission is not exact/);
   assert.equal(result.sourceInventory.sources.find(({ id }) => id === "incheon-transit-accessibility")
     .accessibilityAdmissionEvidence.snapshotId, "incheon-transit-accessibility-20260828");
   const currentIncheonSnapshotIds = new Map([
