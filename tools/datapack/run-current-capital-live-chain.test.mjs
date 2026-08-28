@@ -21,8 +21,6 @@ import {
 } from "./run-current-capital-live-chain.mjs";
 import { buildCurrentKricExitCollectionBundle, buildCurrentKricExitCollectionReceipt, canonicalCurrentKricExitCollectionBundleJson } from "./build-current-kric-exit-collection-receipt.mjs";
 import { buildCurrentKricExitCollectionPlan } from "./build-current-kric-exit-collection-plan.mjs";
-import { canonicalRideEdgeSetSha256, routeEdgeSha256 } from "./evaluate-route-accessibility-edges.mjs";
-import { CURRENT_ROUTE_EDGE_INPUT, syncCurrentRouteEdgePolicyFile } from "./sync-current-route-edge-policy.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const sha = (value) => createHash("sha256").update(value).digest("hex");
@@ -43,7 +41,7 @@ test("live chain fixes the staged P/F/T to EXIT to full-capital order and invoke
   assert.equal(plan.steps.filter(({ id }) => id === "collect-kric-exit").length, 1);
   assert.deepEqual(plan.steps.map(({ id }) => id), [
     "materialize-public-route-map", "rebind-transfer", "rebind-facility", "build-exit-plan", "assert-current-topology-freshness",
-    "collect-kric-exit", "bind-exit-collection", "admit-exit", "bind-current-fan-in", "build-full-capital", "sync-route-policy", "evaluate-route-policy", "bundle",
+    "collect-kric-exit", "bind-exit-collection", "admit-exit", "bind-current-fan-in", "build-full-capital", "evaluate-route-policy", "bundle",
   ]);
   assert.equal(plan.steps.findIndex(({ id }) => id === "materialize-public-route-map") + 1, plan.steps.findIndex(({ id }) => id === "rebind-transfer"));
   assert.equal(plan.steps.findIndex(({ id }) => id === "build-exit-plan") + 1, plan.steps.findIndex(({ id }) => id === "assert-current-topology-freshness"));
@@ -327,22 +325,14 @@ test("stale 또는 malformed remote main은 provider/OCI boundary 전에 중단�
 
 test("route policy evaluation uses the freshly built staged input and replaces stale staged policy output", async () => {
   const temporary = await mkdtemp(path.join(os.tmpdir(), "current-live-chain-route-policy-"));
-  const routeEdgeInputPath = path.join(temporary, CURRENT_ROUTE_EDGE_INPUT);
+  const routeEdgeInputPath = path.join(temporary, "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json");
   const stationLineInputPath = path.join(temporary, "tools/datapack/release/current-capital-accessibility-full/station-line-input.json");
   const outputPath = path.join(temporary, "release/product-gates/route-edge-evaluation-policy.json");
-  const rawRouteEdge = { edgeId: "built-route-edge", edgeType: "RIDE", fromNodeId: "a", toNodeId: "b", durationSeconds: 1, distanceMeters: 1, serviceClass: "SUBWAY", servicePattern: "LOCAL" };
-  const builtRouteEdge = { ...rawRouteEdge, edgeSha256: routeEdgeSha256(rawRouteEdge) };
-  const builtRouteEdgeInput = { candidate: { policyVersion: "route-edge-evaluation-v2" }, stationLines: ["built-station-line"], routeEdges: [builtRouteEdge] };
+  const builtRouteEdgeInput = { candidate: "built-current-input", stationLines: ["built-station-line"], routeEdges: ["built-route-edge"] };
   const builtStationLineInput = { candidate: "built-current-materialization", stationLines: ["materialized-station-line"], evidenceRows: ["built-evidence"] };
   const evaluationAt = "2026-08-25T00:00:00.000Z";
   const materialization = { materializationDigest: "derived-from-staged-station-line-input" };
-  const stagedPolicy = {
-    policyVersion: "route-edge-evaluation-v2",
-    rideInvariant: {
-      subwayLocal: { admittedEdgeSetSha256: "a".repeat(64) },
-      itxCheongchunExpress: { admittedEdgeSetSha256: "b".repeat(64) },
-    },
-  };
+  const stagedPolicy = { policyVersion: "route-edge-evaluation-v2" };
   const evaluation = { evaluationDigest: "fresh-current-evaluation" };
   try {
     await mkdir(path.dirname(routeEdgeInputPath), { recursive: true });
@@ -350,7 +340,6 @@ test("route policy evaluation uses the freshly built staged input and replaces s
     await writeFile(routeEdgeInputPath, JSON.stringify(builtRouteEdgeInput));
     await writeFile(stationLineInputPath, JSON.stringify(builtStationLineInput));
     await writeFile(outputPath, JSON.stringify(stagedPolicy));
-    await syncCurrentRouteEdgePolicyFile({ inputPath: routeEdgeInputPath, policyPath: outputPath });
     const bytes = await evaluateStagedRoutePolicy({
       stagedRoot: temporary,
       evaluationAt,
@@ -361,9 +350,7 @@ test("route policy evaluation uses the freshly built staged input and replaces s
       evaluateRouteAccessibilityEdgesImpl: (input, policy) => {
         assert.deepEqual(Object.keys(input), ["candidate", "stationLines", "routeEdges", "evaluationAt", "materialization"]);
         assert.deepEqual(input, { ...builtRouteEdgeInput, evaluationAt, materialization });
-        assert.equal(policy.rideInvariant.subwayLocal.admittedEdgeSetSha256, canonicalRideEdgeSetSha256([builtRouteEdge]));
-        assert.equal(policy.rideInvariant.itxCheongchunExpress.admittedEdgeSetSha256, canonicalRideEdgeSetSha256([]));
-        assert.notDeepEqual(policy, stagedPolicy);
+        assert.deepEqual(policy, stagedPolicy);
         return evaluation;
       },
       canonicalRouteEdgeEvaluationJsonImpl: (value) => {

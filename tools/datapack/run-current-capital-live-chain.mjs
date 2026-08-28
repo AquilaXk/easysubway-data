@@ -31,7 +31,6 @@ import { rebindCurrentActiveFacilityDerivedIdentity } from "./rebind-current-act
 import { rebindCurrentActivePublicRouteMapMaterialization } from "./rebind-current-active-public-route-map-materialization.mjs";
 import { currentLiveChainTransferStageInputs, rebindCurrentLiveChainTransferDerivedIdentities } from "./rebind-current-live-chain-transfer-derived-identities.mjs";
 import { assertCurrentStaticNetworkTopologyAdmission } from "./register-current-static-network-successors.mjs";
-import { CURRENT_ROUTE_EDGE_INPUT, syncCurrentRouteEdgePolicyFile } from "./sync-current-route-edge-policy.mjs";
 
 const execFile = promisify(execFileCallback);
 const DATA_MAIN_REMOTE = "https://github.com/AquilaXk/easysubway-data.git";
@@ -332,7 +331,6 @@ export function buildCurrentCapitalLiveChainPlan({ repositoryRoot, repositorySha
     { id: "admit-exit", script: "tools/datapack/build-current-exit-path-source-admission.mjs", args: ["--provider-snapshot", at("current-kric-exit-snapshot.json"), "--collection-plan", at("current-kric-exit-plan.json"), "--facility-admission", at("tools/datapack/release/current-capital-facility-source-admission.json"), "--candidate-build-spec", at("tools/datapack/release/candidate-build-spec.json"), "--source-inventory", at("tools/datapack/source-inventory.json"), "--source-snapshots", at("tools/datapack/release/source-snapshots.json"), "--observed-at", "FROM_PROVIDER_CAPTURED_AT", "--output-directory", at("current-exit-admission")] },
     { id: "bind-current-fan-in", script: "tools/datapack/build-current-capital-live-chain-boundary.mjs", args: [] },
     { id: "build-full-capital", script: "tools/datapack/build-current-capital-route-edge-input.mjs", args: [] },
-    { id: "sync-route-policy", script: "tools/datapack/sync-current-route-edge-policy.mjs", args: [] },
     { id: "evaluate-route-policy", script: "tools/datapack/evaluate-route-accessibility-edges.mjs", args: ["--input", at("tools/datapack/release/current-capital-accessibility-full/route-edge-input.json"), "--output", at("release/product-gates/route-edge-evaluation-policy.json")] },
     { id: "bundle", script: "tools/datapack/build-current-capital-live-chain-bundle.mjs", args: [] },
   ] };
@@ -478,10 +476,6 @@ export async function runCurrentCapitalLiveChain({ repositoryRoot, runnerTemp, r
     repositoryRoot: stagedRoot,
     readCurrentFanInBoundaryImpl: readCurrentCapitalLiveChainFanInBoundary,
     log: () => {},
-  });
-  await syncCurrentRouteEdgePolicyFile({
-    inputPath: path.join(stagedRoot, CURRENT_ROUTE_EDGE_INPUT),
-    policyPath: path.join(stagedRoot, "release/product-gates/route-edge-evaluation-policy.json"),
   });
   await evaluateStagedRoutePolicy({ stagedRoot, evaluationAt: derivationAt });
   const bundle = await buildCurrentCapitalLiveChainBundle({ root, outputDirectory: stagedRoot, repository, repositorySha, operationId, boundaryBytes });
