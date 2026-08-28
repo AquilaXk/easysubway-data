@@ -427,6 +427,14 @@ test("production-publish는 current-head server route bundle을 OCI에 immutable
   assert.ok(publish.indexOf("publish-server-route-bundle.mjs") < publish.indexOf("build-server-route-bundle-final.mjs"));
   assert.ok(publish.indexOf("build-server-route-bundle-final.mjs") < publish.indexOf("build-server-route-bundle-publication-descriptor.mjs"));
   assert.ok(publish.indexOf("build-server-route-bundle-publication-descriptor.mjs") < publish.indexOf("publish-server-route-bundle-publication-descriptor.mjs"));
+  assert.match(publish, /staged_descriptor="\$\{EASYSUBWAY_DATAPACK_STAGE\}\/server-route-bundle-publication-descriptor\.json"/);
+  assert.match(publish, /cp -- "\$\{descriptor\}" "\$\{staged_descriptor\}"/);
+  assert.match(publish, /cmp -s -- "\$\{descriptor\}" "\$\{staged_descriptor\}"/);
+  assert.match(publish, /mapfile -d '' -t staged_descriptors < <\(find "\$\{EASYSUBWAY_DATAPACK_STAGE\}" -type f -name 'server-route-bundle-publication-descriptor\.json' -print0\)/);
+  assert.match(publish, /\[\[ "\$\{#staged_descriptors\[@\]\}" -eq 1 \]\]/);
+  assert.match(publish, /\[\[ "\$\{staged_descriptors\[0\]\}" == "\$\{staged_descriptor\}" \]\]/);
+  assert.ok(publish.indexOf("publish-server-route-bundle-publication-descriptor.mjs") < publish.indexOf('cp -- "${descriptor}" "${staged_descriptor}"'));
+  assert.ok(yml.indexOf('cp -- "${descriptor}" "${staged_descriptor}"') < yml.indexOf("Data Pack Release / Upload staged data packs"));
   assert.doesNotMatch(publish, /AWS_|fallback|retry|upload-artifact|download-artifact/i);
 });
 
