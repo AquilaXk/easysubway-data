@@ -208,6 +208,12 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
   const root = path.resolve(repositoryRoot); const files = await inputFiles(root, phase);
   const proof = buildRefreshProof({ phase, candidateFile: files[CANDIDATE_BUILD_SPEC], ledgerFile: files["tools/datapack/release/source-snapshots.json"], requestFile: files["tools/datapack/release/release-request.json"], hashesFile: files["tools/datapack/release/hash-evidence.json"], facilityFile: files["tools/datapack/release/current-capital-facility-source-admission.json"], exitFile: files["tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json"], stationFile: files[OUTPUTS[0]], routeFile: files[OUTPUTS[1]] });
   const { alreadyCurrent, ...transition } = proof;
+  if (alreadyCurrent && files[CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH] === undefined) {
+    files[CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH] = await readStableRegularFile(
+      target(root, CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH),
+      CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH,
+    );
+  }
   const input = await readCurrentCapitalInputs(root, alreadyCurrent
     ? { readCurrentFanInBoundaryImpl: readCurrentCapitalLiveChainFanInBoundary }
     : { readTransitionBoundaryImpl: async () => ({ ...transition, facilityAdmissionBytesSha256: sha(files["tools/datapack/release/current-capital-facility-source-admission.json"].bytes) }) });
