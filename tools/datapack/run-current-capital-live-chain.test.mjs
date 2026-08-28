@@ -50,6 +50,8 @@ test("live chain fixes the staged P/F/T to EXIT to full-capital order and invoke
   assert.deepEqual(plan.steps.find(({ id }) => id === "rebind-transfer").args.slice(-4), ["--observation-directory", planInput.transferObservationDirectory, "--receipt", planInput.transferReceiptPath]);
   const exitPlanArgs = plan.steps.find(({ id }) => id === "build-exit-plan").args;
   assert.equal(exitPlanArgs[exitPlanArgs.indexOf("--incheon-topology") + 1], path.join(planInput.stagedRoot, planInput.incheonTopologyRelativePath));
+  const evaluationArgs = plan.steps.find(({ id }) => id === "evaluate-route-policy").args;
+  assert.equal(evaluationArgs[evaluationArgs.indexOf("--output") + 1], path.join(planInput.stagedRoot, "tools/datapack/release/current-capital-accessibility-full/route-edge-evaluation.json"));
   assert.deepEqual(plan.outputs, planInput.outputPaths);
   assert.throws(() => buildCurrentCapitalLiveChainPlan({ ...planInput, repositorySha: "not-a-sha" }), /repository SHA/);
   assert.throws(() => buildCurrentCapitalLiveChainPlan({ ...planInput, transferReceiptPath: "relative.json" }), /paths must be absolute/);
@@ -323,11 +325,12 @@ test("stale 또는 malformed remote main은 provider/OCI boundary 전에 중단�
   }
 });
 
-test("route policy evaluation uses the freshly built staged input and replaces stale staged policy output", async () => {
+test("route policy evaluation preserves policy bytes and writes a separate staged evaluation", async () => {
   const temporary = await mkdtemp(path.join(os.tmpdir(), "current-live-chain-route-policy-"));
   const routeEdgeInputPath = path.join(temporary, "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json");
   const stationLineInputPath = path.join(temporary, "tools/datapack/release/current-capital-accessibility-full/station-line-input.json");
-  const outputPath = path.join(temporary, "release/product-gates/route-edge-evaluation-policy.json");
+  const policyPath = path.join(temporary, "release/product-gates/route-edge-evaluation-policy.json");
+  const outputPath = path.join(temporary, "tools/datapack/release/current-capital-accessibility-full/route-edge-evaluation.json");
   const builtRouteEdgeInput = { candidate: "built-current-input", stationLines: ["built-station-line"], routeEdges: ["built-route-edge"] };
   const builtStationLineInput = { candidate: "built-current-materialization", stationLines: ["materialized-station-line"], evidenceRows: ["built-evidence"] };
   const evaluationAt = "2026-08-25T00:00:00.000Z";
@@ -336,10 +339,10 @@ test("route policy evaluation uses the freshly built staged input and replaces s
   const evaluation = { evaluationDigest: "fresh-current-evaluation" };
   try {
     await mkdir(path.dirname(routeEdgeInputPath), { recursive: true });
-    await mkdir(path.dirname(outputPath), { recursive: true });
+    await mkdir(path.dirname(policyPath), { recursive: true });
     await writeFile(routeEdgeInputPath, JSON.stringify(builtRouteEdgeInput));
     await writeFile(stationLineInputPath, JSON.stringify(builtStationLineInput));
-    await writeFile(outputPath, JSON.stringify(stagedPolicy));
+    await writeFile(policyPath, JSON.stringify(stagedPolicy));
     const bytes = await evaluateStagedRoutePolicy({
       stagedRoot: temporary,
       evaluationAt,
@@ -360,7 +363,7 @@ test("route policy evaluation uses the freshly built staged input and replaces s
     });
     assert.equal(bytes.toString("utf8"), '{"evaluationDigest":"fresh-current-evaluation"}');
     assert.equal(await readFile(outputPath, "utf8"), '{"evaluationDigest":"fresh-current-evaluation"}');
-    assert.notEqual(await readFile(outputPath, "utf8"), JSON.stringify(stagedPolicy));
+    assert.equal(await readFile(policyPath, "utf8"), JSON.stringify(stagedPolicy));
   } finally {
     await rm(temporary, { recursive: true, force: true });
   }
