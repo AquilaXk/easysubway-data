@@ -3,7 +3,7 @@
   "artifactKind": "datapack-candidate-build-spec",
   "candidateId": "capital-pilot-candidate-20260828",
   "productionScopeId": "capital_pilot_android_v1",
-  "publishedAt": "2026-08-28T14:16:40.087Z",
+  "publishedAt": "2026-08-28T14:18:23.340Z",
   "releaseSequence": 1,
   "fixturePath": "tools/datapack/release/capital-production-canonical-pack.json",
   "itxTopologyEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence-20260824170958799.json",
@@ -197,7 +197,7 @@
   "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
   "approvedOverrideSetHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
   "sourceInventorySha256": "74092a78ba25bba2ef5d652b12242e1b67616ef09f425a7ef589d5e02f658291",
-  "builderGitSha": "59627a609571a1287b91368baf541ef3fc084997",
+  "builderGitSha": "d06c30ae1a1b4574621a68faa65f3ba8da1a5362",
   "builderVersion": "build-datapack.mjs@26",
   "officialOdFareEvidence": {
     "sourceId": "seoul-metro-official-od-fares",
