@@ -45,12 +45,10 @@ const COUNTS = Object.freeze({
   IN_STATION_TRANSFER: 30,
   RIDE: 2208,
 });
-const RAW_RIDE_PROJECTION_DELTA = 8;
 const totalCount = (counts) => Object.values(counts).reduce((total, count) => total + count, 0);
 const AUTHORITY_COUNTS = Object.freeze(Object.fromEntries(
   Object.entries(COUNTS).filter(([type]) => type !== "RIDE"),
 ));
-const RAW_RIDE_COUNT = COUNTS.RIDE - RAW_RIDE_PROJECTION_DELTA;
 
 export function buildCurrentReleaseCandidateAccessibilityAuthority(input) {
   validateInputBytes(input);
@@ -64,7 +62,6 @@ export function buildCurrentReleaseCandidateAccessibilityAuthority(input) {
   const route = parseBoundJson(input.routeBytes, input.route, "route-edge input");
   const sourcePack = capitalPack(sourceFixture, "source fixture");
   const projectedPack = capitalPack(input.projectedFixture, "projected fixture");
-  validateSourceFixtureEdges(sourcePack.networkEdges);
   const routeStationIndex = validateCandidateIdentity(
     buildSpec,
     stationLineInput,
@@ -72,6 +69,7 @@ export function buildCurrentReleaseCandidateAccessibilityAuthority(input) {
     projectedPack,
   );
   const routeEdges = validateRoute(route, stationLineInput, routeStationIndex);
+  validateRideFixtureEdges(sourcePack.networkEdges, routeEdges, "source fixture");
   const projectedRides = validateProjectedFixtureEdges(projectedPack.networkEdges, routeEdges);
   const observedAt = deriveObservedAt(stationLineInput.evidenceRows);
   const materialization = materializeStationLineAccessibility({ ...stationLineInput, observedAt });
@@ -336,13 +334,32 @@ function capitalPack(fixture, label) {
   return packs[0];
 }
 
-function validateSourceFixtureEdges(edges) {
+function validateRideFixtureEdges(edges, routeEdges, label) {
   const counts = edgeTypeCounts(edges);
-  if (edges.length !== RAW_RIDE_COUNT
-    || counts.RIDE !== RAW_RIDE_COUNT
-    || Object.keys(counts).length !== 1) {
-    throw new Error("source fixture edge denominator mismatch");
+  if (counts.RIDE !== edges.length || Object.keys(counts).length !== 1) {
+    throw new Error(`${label} must be RIDE-only`);
   }
+  if (edges.some(({ id }) => typeof id !== "string" || id.length === 0)) {
+    throw new Error(`${label} RIDE identifier mismatch`);
+  }
+  const rides = new Map(edges.map((edge) => [edge.id, edge]));
+  const routeRides = new Map(routeEdges
+    .filter(({ edgeType }) => edgeType === "RIDE")
+    .map((edge) => [edge.edgeId, edge]));
+  if (rides.size !== edges.length || rides.size !== routeRides.size) {
+    throw new Error(`${label} RIDE denominator mismatch`);
+  }
+  for (const [id, ride] of rides) {
+    const route = routeRides.get(id);
+    if (!route || ride.edgeType !== route.edgeType || ride.fromNodeId !== route.fromNodeId
+      || ride.toNodeId !== route.toNodeId || ride.durationSeconds !== route.durationSeconds
+      || ride.distanceMeters !== route.distanceMeters
+      || (ride.servicePattern ?? "") !== route.servicePattern
+      || (ride.serviceClass ?? "SUBWAY") !== route.serviceClass) {
+      throw new Error(`${label} RIDE mismatch`);
+    }
+  }
+  return [...rides.values()];
 }
 
 function validateCandidateIdentity(buildSpec, stationLineInput, route, projectedPack) {
@@ -452,6 +469,9 @@ function validateRouteEdgeShapes(routeEdges) {
   const ids = new Set();
   for (const edge of routeEdges) {
     exact(edge, ROUTE_EDGE_KEYS, "route edge");
+    if (typeof edge.edgeId !== "string" || edge.edgeId.length === 0) {
+      throw new Error("route edge identifier mismatch");
+    }
     const payload = Object.fromEntries(ROUTE_EDGE_KEYS
       .filter((key) => key !== "edgeSha256")
       .map((key) => [key, edge[key]]));
@@ -531,30 +551,7 @@ function compareStationLines(left, right) {
 }
 
 function validateProjectedFixtureEdges(edges, routeEdges) {
-  const counts = edgeTypeCounts(edges);
-  if (edges.length !== COUNTS.RIDE
-    || counts.RIDE !== COUNTS.RIDE
-    || Object.keys(counts).length !== 1) {
-    throw new Error("projected fixture must be RIDE-only");
-  }
-  const rides = edges.filter(({ edgeType }) => edgeType === "RIDE");
-  const routeRides = new Map(routeEdges
-    .filter(({ edgeType }) => edgeType === "RIDE")
-    .map((edge) => [edge.edgeId, edge]));
-  if (new Set(rides.map(({ id }) => id)).size !== COUNTS.RIDE || routeRides.size !== COUNTS.RIDE) {
-    throw new Error("projected fixture RIDE denominator mismatch");
-  }
-  for (const ride of rides) {
-    const route = routeRides.get(ride.id);
-    if (!route || ride.edgeType !== route.edgeType || ride.fromNodeId !== route.fromNodeId
-      || ride.toNodeId !== route.toNodeId || ride.durationSeconds !== route.durationSeconds
-      || ride.distanceMeters !== route.distanceMeters
-      || (ride.servicePattern ?? "") !== route.servicePattern
-      || (ride.serviceClass ?? "SUBWAY") !== route.serviceClass) {
-      throw new Error("projected fixture RIDE mismatch");
-    }
-  }
-  return rides;
+  return validateRideFixtureEdges(edges, routeEdges, "projected fixture");
 }
 
 function deriveObservedAt(evidenceRows) {
