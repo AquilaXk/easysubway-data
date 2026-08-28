@@ -86,6 +86,44 @@ test("current production capital을 재검증한 뒤 signed 8파일과 eligibili
   assert.equal(sourceSqliteBytes.toString(), "candidate sqlite bytes");
 });
 
+test("prepare 동안 원본 canonical input이 교체돼도 최초 검증 bytes만 stage한다", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "route-candidate-input-snapshot-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const input = await fixture(root);
+  const originals = new Map(await Promise.all([
+    [input.buildSpecPath, "build-spec.json"],
+    [input.stationLineInputPath, "station-line-input.json"],
+    [input.routeEdgeInputPath, "route-edge-input.json"],
+  ].map(async ([source, staged]) => [staged, await readFile(source)])));
+  const output = path.join(root, "candidate");
+  await mkdir(output);
+  await stageCurrentServerRouteBundleCandidate({
+    ...input,
+    repositoryGitSha: "b".repeat(40),
+    keyId: "production-v1",
+    output,
+    stages: {
+      prepare: async (prepareInput) => {
+        assert.notEqual(prepareInput.emitterInputs.buildSpec, input.buildSpecPath);
+        assert.notEqual(prepareInput.stationLineInputPath, input.stationLineInputPath);
+        assert.notEqual(prepareInput.routeEdgeInputPath, input.routeEdgeInputPath);
+        assert.deepEqual(await readFile(prepareInput.emitterInputs.buildSpec), originals.get("build-spec.json"));
+        assert.deepEqual(await readFile(prepareInput.stationLineInputPath), originals.get("station-line-input.json"));
+        assert.deepEqual(await readFile(prepareInput.routeEdgeInputPath), originals.get("route-edge-input.json"));
+        await Promise.all([
+          writeFile(input.buildSpecPath, JSON.stringify({ tampered: true })),
+          writeFile(input.stationLineInputPath, JSON.stringify({ tampered: true })),
+          writeFile(input.routeEdgeInputPath, JSON.stringify({ tampered: true })),
+        ]);
+        await writePreparedOutputs(prepareInput.output);
+      },
+    },
+  });
+  for (const [staged, bytes] of originals) {
+    assert.deepEqual(await readFile(path.join(output, "server-route-bundle-inputs", staged)), bytes);
+  }
+});
+
 test("evidence의 누락·symlink·비정준 JSON·identity drift·bound extra는 output 없이 종료한다", async (t) => {
   const mutations = [
     { label: "missing", mutate: async (prepared) => rm(path.join(prepared, "route-accessibility-eligibility.json")) },

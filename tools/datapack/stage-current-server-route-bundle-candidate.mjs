@@ -28,15 +28,22 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
   if (input.keyId !== "production-v1") {
     throw new Error("key id must be production-v1");
   }
-  const [manifest, buildSpecBytes, stationLine, route, provenanceBytes] = await Promise.all([
+  const [manifest, buildSpecBytes, stationLineBytes, routeBytes, provenanceBytes] = await Promise.all([
     jsonFile(path.join(datapackRoot, "current.json"), "current manifest"),
     regular(input.buildSpecPath, "build spec"),
-    jsonFile(input.stationLineInputPath, "station-line input"),
-    jsonFile(input.routeEdgeInputPath, "route-edge input"),
+    regular(input.stationLineInputPath, "station-line input"),
+    regular(input.routeEdgeInputPath, "route-edge input"),
     regular(path.join(datapackRoot, "current.provenance.json"), "current provenance"),
   ]);
   const buildSpec = JSON.parse(buildSpecBytes.toString("utf8"));
+  const stationLine = JSON.parse(stationLineBytes.toString("utf8"));
+  const route = JSON.parse(routeBytes.toString("utf8"));
   const provenanceValue = JSON.parse(provenanceBytes.toString("utf8"));
+  const canonicalInputBytes = {
+    buildSpecPath: buildSpecBytes,
+    stationLineInputPath: stationLineBytes,
+    routeEdgeInputPath: routeBytes,
+  };
   const active = selectEffectiveDataPack(manifest);
   if (!active || active.id !== "capital" || active.version !== "1" || active.artifactKind !== "production") {
     throw new Error("current manifest must select production capital@1");
@@ -71,17 +78,23 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
     const sourceSqlite = path.join(temp, "source.sqlite");
     const prepared = path.join(temp, "prepared");
     await writeFile(sourceSqlite, sqlite, { flag: "wx", mode: 0o600 });
+    const canonicalInputPaths = {};
+    for (const [target, field] of CANONICAL_INPUT_PATHS) {
+      const snapshotPath = path.join(temp, target);
+      await writeFile(snapshotPath, canonicalInputBytes[field], { flag: "wx", mode: 0o600 });
+      canonicalInputPaths[field] = snapshotPath;
+    }
     const prepare = input.stages?.prepare ?? prepareCurrentServerRouteBundleFinal;
     await prepare({
       output: prepared,
       repositoryGitSha: requiredSha(input.repositoryGitSha, "repository git sha"),
       evaluationAt: buildSpec.publishedAt,
-      stationLineInputPath: path.resolve(input.stationLineInputPath),
-      routeEdgeInputPath: path.resolve(input.routeEdgeInputPath),
+      stationLineInputPath: canonicalInputPaths.stationLineInputPath,
+      routeEdgeInputPath: canonicalInputPaths.routeEdgeInputPath,
       emitterInputs: {
         sourceSqlite,
         sourceProvenance: provenance,
-        buildSpec: path.resolve(input.buildSpecPath),
+        buildSpec: canonicalInputPaths.buildSpecPath,
         mapPackId: "capital-map-1",
         catalogPackId: "capital-catalog-1",
         bundleId: "capital-route-bundle-1",
@@ -107,7 +120,7 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
     const stagedInputs = path.join(staged, "server-route-bundle-inputs");
     await mkdir(stagedInputs);
     for (const [target, field] of CANONICAL_INPUT_PATHS) {
-      await copyFile(input[field], path.join(stagedInputs, target), 0);
+      await copyFile(canonicalInputPaths[field], path.join(stagedInputs, target), 0);
     }
     await assertCandidateInventory(staged);
     await Promise.all([absent(routeOutput), absent(evidenceOutput), absent(inputsOutput)]);

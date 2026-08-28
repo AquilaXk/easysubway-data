@@ -1558,6 +1558,8 @@ jobs:
       - name: Data Pack Release / Publish current server route bundle and descriptor
         if: ${{ !cancelled() && steps.production-publish.outputs.manifestSha256 != '' && steps.final-release-decision.outcome == 'success' && steps.final-release-decision.outputs.outcome == 'PUBLISHED_AND_VERIFIED' }}
         env:
+          EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: ${{ secrets.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM }}
+          EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: ${{ secrets.EASYSUBWAY_DATAPACK_SIGNING_KEY_ID }}
           OCI_SERVER_ROUTE_NAMESPACE: ${{ vars.OCI_SERVER_ROUTE_NAMESPACE }}
           OCI_SERVER_ROUTE_BUCKET: ${{ vars.OCI_SERVER_ROUTE_BUCKET }}
           OCI_SERVER_ROUTE_REGION: ${{ vars.OCI_SERVER_ROUTE_REGION }}
@@ -1568,6 +1570,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ "${CANDIDATE_HEAD_SHA}" == "${GITHUB_SHA}" ]]
+          git checkout --detach "${GITHUB_SHA}"
           route_root="${EASYSUBWAY_DATAPACK_STAGE}/server-route-bundle"
           route_inputs="${EASYSUBWAY_DATAPACK_STAGE}/server-route-bundle-inputs"
           route_evidence="${EASYSUBWAY_DATAPACK_STAGE}/server-route-bundle-evidence"
