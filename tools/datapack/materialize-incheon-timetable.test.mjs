@@ -39,8 +39,6 @@ process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
 const topologyNow = new Date("2026-07-19T18:14:03.004Z");
 const timetableNow = new Date("2026-07-20T13:09:00.000Z");
 const gwangjuAccessibilityNow = new Date("2026-07-24T03:00:00.000Z");
-const accessibilityNow = new Date("2026-07-24T07:00:00.000Z");
-const incheonTimetableNow = new Date("2026-07-24T08:00:00.000Z");
 const OPERATOR_ID = "incheon-transit";
 const LINE1 = "line-98718184f016";
 const LINE2 = "line-42b5805f3b5a";
@@ -56,6 +54,31 @@ async function inputs({ materializeIncheon = true } = {}) {
   const admission = matches[0].topologyAdmissionEvidence;
   if (admission?.snapshotPath !== `tools/datapack/sources/${admission?.snapshotId}.json`
     || !Number.isFinite(Date.parse(admission?.capturedAt))) throw new Error("current Incheon topology admission is invalid");
+  const accessibilityMatches = currentInventory.sources.filter(({ id }) => id === "incheon-transit-accessibility");
+  if (accessibilityMatches.length !== 1) throw new Error("current Incheon accessibility source identity is invalid");
+  const accessibilityAdmission = accessibilityMatches[0].accessibilityAdmissionEvidence;
+  if (accessibilityAdmission?.snapshotPath
+      !== `tools/datapack/sources/${accessibilityAdmission?.snapshotId}.json`
+    || !Number.isFinite(Date.parse(accessibilityAdmission?.capturedAt))) {
+    throw new Error("current Incheon accessibility admission is invalid");
+  }
+  const timetableAdmissions = [1, 2].map((lineNumber) => {
+    const sourceId = `incheon-line${lineNumber}-train-timetable`;
+    const sourceMatches = currentInventory.sources.filter(({ id }) => id === sourceId);
+    if (sourceMatches.length !== 1) {
+      throw new Error(`current Incheon line ${lineNumber} timetable source identity is invalid`);
+    }
+    const evidence = sourceMatches[0].scheduleAdmissionEvidence;
+    if (evidence?.snapshotPath !== `tools/datapack/sources/${evidence?.snapshotId}.json`
+      || !Number.isFinite(Date.parse(evidence?.capturedAt))) {
+      throw new Error(`current Incheon line ${lineNumber} timetable admission is invalid`);
+    }
+    return evidence;
+  });
+  const timetableVersion = timetableAdmissions[0].snapshotId.slice(-8);
+  if (timetableAdmissions.some(({ snapshotId }) => !snapshotId.endsWith(timetableVersion))) {
+    throw new Error("current Incheon timetable versions do not match");
+  }
   const [
     baseFixture,
     busanTopology,
@@ -84,9 +107,9 @@ async function inputs({ materializeIncheon = true } = {}) {
     readJson("tools/datapack/sources/gwangju-transportation-cyberstation-timetable-20260720.json"),
     readJson("tools/datapack/sources/gwangju-transportation-accessibility-20260724.json"),
     readFile(path.join(root, admission.snapshotPath)),
-    readJson("tools/datapack/sources/incheon-transit-accessibility-20260724.json"),
-    readJson("tools/datapack/sources/incheon-line1-train-timetable-20260724.json"),
-    readJson("tools/datapack/sources/incheon-line2-train-timetable-20260724.json"),
+    readJson(accessibilityAdmission.snapshotPath),
+    readJson(timetableAdmissions[0].snapshotPath),
+    readJson(timetableAdmissions[1].snapshotPath),
     Promise.resolve(projectHistoricalRegionalMaterializeInventory(currentInventory)),
     readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
     readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
@@ -152,14 +175,17 @@ async function inputs({ materializeIncheon = true } = {}) {
       accessibilitySnapshot,
       topologySnapshot: { ...incheonSnapshot, snapshotId: admission.snapshotId },
       inventory,
-      now: accessibilityNow,
+      now: new Date(accessibilitySnapshot.capturedAt),
     })
     : null;
   return {
     regionalFixture: gwangjuAccessibilityFixture,
     accessibilityFixture,
+    accessibilitySnapshot,
     topologySnapshot: { ...incheonSnapshot, snapshotId: admission.snapshotId },
     timetableSnapshots: { 1: line1Timetable, 2: line2Timetable },
+    timetableNow: new Date(Math.max(...timetableAdmissions.map(({ capturedAt }) => Date.parse(capturedAt)))),
+    timetableVersion,
     inventory,
   };
 }
@@ -238,7 +264,7 @@ test("인천 1·2호선 공식 timetable을 1414 trip·40898 stop_time·WEEK/HOL
     topologySnapshot: values.topologySnapshot,
     timetableSnapshots: values.timetableSnapshots,
     inventory: values.inventory,
-    now: incheonTimetableNow,
+    now: values.timetableNow,
   });
   const pack = fixture.packs[0];
   const trips = pack.transitTrips.filter(({ id }) => id.startsWith("trip-incheon-"));
@@ -247,8 +273,8 @@ test("인천 1·2호선 공식 timetable을 1414 trip·40898 stop_time·WEEK/HOL
   const routes = pack.transitRoutes.filter(({ id }) => id.startsWith("route-incheon-"));
 
   assert.match(pack.id, /^nationwide-incheon-schedule-[a-f0-9]{64}$/);
-  assert.equal(pack.version, "20260724");
-  assert.deepEqual(fixture.manifest.activePack, { id: pack.id, version: "20260724" });
+  assert.equal(pack.version, values.timetableVersion);
+  assert.deepEqual(fixture.manifest.activePack, { id: pack.id, version: values.timetableVersion });
   assert.equal(trips.length, 1_414);
   assert.equal(stopTimes.length, 40_898);
   assert.equal(calendars.length, 4);
@@ -288,7 +314,7 @@ test("인천 timetable materializer는 snapshot·inventory·freshness·topology 
     topologySnapshot: values.topologySnapshot,
     timetableSnapshots: values.timetableSnapshots,
     inventory: values.inventory,
-    now: new Date("2026-07-25T08:00:00.000Z"),
+    now: new Date(Date.parse(values.timetableSnapshots[1].freshUntil) + 1),
   }), /freshness/);
 
   const badHash = structuredClone(values.timetableSnapshots);
@@ -298,7 +324,7 @@ test("인천 timetable materializer는 snapshot·inventory·freshness·topology 
     topologySnapshot: values.topologySnapshot,
     timetableSnapshots: badHash,
     inventory: values.inventory,
-    now: incheonTimetableNow,
+    now: values.timetableNow,
   }), /timetable snapshot/);
 
   const mismatchedInventory = structuredClone(values.inventory);
@@ -309,7 +335,7 @@ test("인천 timetable materializer는 snapshot·inventory·freshness·topology 
     topologySnapshot: values.topologySnapshot,
     timetableSnapshots: values.timetableSnapshots,
     inventory: mismatchedInventory,
-    now: incheonTimetableNow,
+    now: values.timetableNow,
   }), /inventory evidence/);
 
   const badLineage = structuredClone(values.inventory);
@@ -320,7 +346,7 @@ test("인천 timetable materializer는 snapshot·inventory·freshness·topology 
     topologySnapshot: values.topologySnapshot,
     timetableSnapshots: values.timetableSnapshots,
     inventory: badLineage,
-    now: incheonTimetableNow,
+    now: values.timetableNow,
   }), /inventory evidence|topology lineage/);
 
   const badActiveTopology = {
@@ -332,7 +358,7 @@ test("인천 timetable materializer는 snapshot·inventory·freshness·topology 
     topologySnapshot: badActiveTopology,
     timetableSnapshots: values.timetableSnapshots,
     inventory: values.inventory,
-    now: incheonTimetableNow,
+    now: values.timetableNow,
   }), /active topology identity/);
 
   const admitted = materializeIncheonTimetable({
@@ -340,14 +366,14 @@ test("인천 timetable materializer는 snapshot·inventory·freshness·topology 
     topologySnapshot: values.topologySnapshot,
     timetableSnapshots: values.timetableSnapshots,
     inventory: values.inventory,
-    now: incheonTimetableNow,
+    now: values.timetableNow,
   });
   assert.throws(() => materializeIncheonTimetable({
     baseFixture: admitted,
     topologySnapshot: values.topologySnapshot,
     timetableSnapshots: values.timetableSnapshots,
     inventory: values.inventory,
-    now: incheonTimetableNow,
+    now: values.timetableNow,
   }), /already exists/);
 });
 
@@ -363,7 +389,7 @@ test("인천 timetable materializer는 supplied current topology rename lineage�
     inventory,
     now: new Date("2026-08-28T04:00:00.000Z"),
   });
-  const accessibilitySnapshot = structuredClone(await readJson("tools/datapack/sources/incheon-transit-accessibility-20260724.json"));
+  const accessibilitySnapshot = structuredClone(values.accessibilitySnapshot);
   for (const lineage of [...accessibilitySnapshot.topologyLineages, ...accessibilitySnapshot.membershipLineages]) {
     lineage.snapshotId = topologySnapshot.snapshotId;
     lineage.contentSha256 = topologySnapshot.contentSha256;
@@ -373,7 +399,7 @@ test("인천 timetable materializer는 supplied current topology rename lineage�
     accessibilitySnapshot,
     topologySnapshot,
     inventory,
-    now: accessibilityNow,
+    now: new Date(accessibilitySnapshot.capturedAt),
   });
   const timetableSnapshots = structuredClone(values.timetableSnapshots);
   for (const snapshot of Object.values(timetableSnapshots)) {
@@ -387,18 +413,21 @@ test("인천 timetable materializer는 supplied current topology rename lineage�
     topologySnapshot,
     timetableSnapshots,
     inventory,
-    now: incheonTimetableNow,
+    now: values.timetableNow,
   });
   assert.equal(admitted.packs[0].transitTrips.filter(({ id }) => id.startsWith("trip-incheon-")).length, 1_414);
 
   const predecessor = structuredClone(timetableSnapshots);
-  predecessor[2].topologyLineages[0].snapshotId = values.topologySnapshot.snapshotId;
+  predecessor[2].topologyLineages[0].snapshotId = topologySnapshot.snapshotId.replace(
+    /\d$/u,
+    (digit) => digit === "0" ? "1" : "0",
+  );
   assert.throws(() => materializeIncheonTimetable({
     baseFixture: accessibilityFixture,
     topologySnapshot,
     timetableSnapshots: predecessor,
     inventory,
-    now: incheonTimetableNow,
+    now: values.timetableNow,
   }), /invalid Incheon line 2 timetable snapshot/);
 });
 
@@ -414,7 +443,7 @@ test("materialized SQLite와 provenance가 인천 schedule_timetable 2건을 SUP
     topologySnapshot: values.topologySnapshot,
     timetableSnapshots: values.timetableSnapshots,
     inventory: values.inventory,
-    now: incheonTimetableNow,
+    now: values.timetableNow,
   });
   await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
   await mkdir(packOutput, { recursive: true });
