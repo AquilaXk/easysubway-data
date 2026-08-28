@@ -21,6 +21,7 @@ import {
   readCredentialFreeObject,
   validatePublicationReceipt,
 } from "./publish-server-route-bundle.mjs";
+import { serverRouteOciPublicBaseUrl } from "./publish-server-route-bundle-publication-descriptor.mjs";
 import { signServerRouteBundle } from "./sign-server-route-bundle.mjs";
 
 const REPOSITORY_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
@@ -37,7 +38,19 @@ const SIGNED_PATHS = [
   ...COMPONENTS.map((component) => `payload/${component}.sqlite.zst`),
   "provenance.json",
 ].sort(bytewise);
-const PUBLIC_BASE_URL = "https://objectstorage.ap-seoul-1.oraclecloud.com/n/example/b/easysubway/o";
+const OCI_ENV = {
+  OCI_SERVER_ROUTE_NAMESPACE: "example",
+  OCI_SERVER_ROUTE_BUCKET: "easysubway",
+  OCI_SERVER_ROUTE_REGION: "ap-seoul-1",
+  OCI_SERVER_ROUTE_COMPAT_ENDPOINT: "https://example.compat.objectstorage.ap-seoul-1.oraclecloud.com",
+};
+const OCI_IDENTITY = {
+  namespace: OCI_ENV.OCI_SERVER_ROUTE_NAMESPACE,
+  bucket: OCI_ENV.OCI_SERVER_ROUTE_BUCKET,
+  region: OCI_ENV.OCI_SERVER_ROUTE_REGION,
+  endpoint: OCI_ENV.OCI_SERVER_ROUTE_COMPAT_ENDPOINT,
+};
+const PUBLIC_BASE_URL = serverRouteOciPublicBaseUrl(OCI_ENV);
 const PUBLIC_BASE_URL_PATTERN = "^https://objectstorage\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.oraclecloud\\.com/n/[A-Za-z0-9_~-](?:[A-Za-z0-9._~-]*[A-Za-z0-9_~-])?/b/[A-Za-z0-9_~-](?:[A-Za-z0-9._~-]*[A-Za-z0-9_~-])?/o$";
 const PUBLICATION_NOW = Date.parse("2026-08-10T00:00:00.000Z");
 const keyPair = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -98,6 +111,7 @@ test("signed server-route-bundle은 OCI immutable tree 검증 뒤에만 closed r
     publicBaseUrl: PUBLIC_BASE_URL,
     receiptPath: fixture.receiptPath,
     client,
+    env: OCI_ENV,
     publicRead: client.readPublicObject,
     now: PUBLICATION_NOW,
     clock: () => PUBLICATION_NOW,
@@ -168,20 +182,27 @@ test("signed server-route-bundle은 OCI immutable tree 검증 뒤에만 closed r
   assert.deepEqual(client.publicReads, receipt.objects.map((entry) => `${PUBLIC_BASE_URL}/${entry.objectKey}`));
 
   const firstReceiptBytes = await readFile(fixture.receiptPath);
-  const repeated = await publishServerRouteBundle({
-    repositoryRoot: REPOSITORY_ROOT,
-    repositoryGitSha: REPOSITORY_GIT_SHA,
-    artifactRoot: fixture.signedRoot,
-    finalPath: fixture.finalPath,
-    publicBaseUrl: PUBLIC_BASE_URL,
-    receiptPath: fixture.receiptPath,
-    client,
-    publicRead: client.readPublicObject,
-    now: PUBLICATION_NOW,
-    clock: () => PUBLICATION_NOW,
-  });
-  assert.deepEqual(repeated, receipt);
+  const readsBeforeConflict = client.reads.length;
+  const publicReadsBeforeConflict = client.publicReads.length;
+  await assert.rejects(
+    () => publishServerRouteBundle({
+      repositoryRoot: REPOSITORY_ROOT,
+      repositoryGitSha: REPOSITORY_GIT_SHA,
+      artifactRoot: fixture.signedRoot,
+      finalPath: fixture.finalPath,
+      publicBaseUrl: PUBLIC_BASE_URL,
+      receiptPath: fixture.receiptPath,
+      client,
+      env: OCI_ENV,
+      publicRead: client.readPublicObject,
+      now: PUBLICATION_NOW,
+      clock: () => PUBLICATION_NOW,
+    }),
+    /conditional create conflict/,
+  );
   assert.deepEqual(await readFile(fixture.receiptPath), firstReceiptBytes);
+  assert.equal(client.reads.length, readsBeforeConflict, "conditional create conflict must not read existing objects");
+  assert.equal(client.publicReads.length, publicReadsBeforeConflict, "conditional create conflict must not read the public locator");
 });
 
 test("pre-publication gate·identity·remote collision 실패는 request 전 또는 receipt 없이 fail closed한다", async (t) => {
@@ -317,6 +338,19 @@ test("public locator와 signed tree는 closed URL·file-set 계약을 강제한�
     });
   }
 
+  await t.test("different OCI route identity rejects before the first PUT", async (t) => {
+    const fixture = await createFixture(t);
+    const client = memoryObjectStorageClient();
+    await assert.rejects(
+      () => publishFixture(fixture, client, {
+        publicBaseUrl: "https://objectstorage.ap-seoul-1.oraclecloud.com/n/example/b/other/o",
+      }),
+      /exact OCI server-route identity/,
+    );
+    assert.equal(client.requests, 0);
+    await assertMissing(fixture.receiptPath);
+  });
+
   await t.test("extra signed file", async (t) => {
     const fixture = await createFixture(t);
     await writeFile(path.join(fixture.signedRoot, "extra.json"), "{}");
@@ -451,6 +485,7 @@ function publishFixture(fixture, client, overrides = {}) {
     publicBaseUrl: PUBLIC_BASE_URL,
     receiptPath: fixture.receiptPath,
     client,
+    env: OCI_ENV,
     publicRead: client.readPublicObject,
     now: PUBLICATION_NOW,
     clock: () => overrides.now ?? PUBLICATION_NOW,
@@ -470,6 +505,7 @@ function memoryObjectStorageClient(options = {}) {
     if (options.failAfterRequest === requests) throw new Error("injected remote failure");
   }
   return {
+    identity: OCI_IDENTITY,
     objects,
     puts,
     reads,

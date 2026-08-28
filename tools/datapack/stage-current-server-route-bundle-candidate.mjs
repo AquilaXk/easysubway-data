@@ -12,25 +12,38 @@ import { validateServerRouteBundleFinal } from "./lib/server-route-bundle-final.
 const REQUIRED_ARGS = ["datapack-root", "build-spec", "station-line-input", "route-edge-input", "repository-git-sha", "key-id", "output"];
 const SIGNED_PATHS = ["compatibility.json", "manifest.json", "manifest.signing-input.json", "payload/accessibility.sqlite.zst", "payload/fare.sqlite.zst", "payload/timetable.sqlite.zst", "payload/topology.sqlite.zst", "provenance.json"];
 const EVIDENCE_PATHS = ["route-accessibility-eligibility.json", "server-route-bundle-final.json"];
+const CANONICAL_INPUT_PATHS = [
+  ["build-spec.json", "buildSpecPath"],
+  ["station-line-input.json", "stationLineInputPath"],
+  ["route-edge-input.json", "routeEdgeInputPath"],
+];
 
 export async function stageCurrentServerRouteBundleCandidate(input) {
   const datapackRoot = await directory(input.datapackRoot, "datapack root");
   const output = await directory(input.output, "output");
   const routeOutput = path.join(output, "server-route-bundle");
   const evidenceOutput = path.join(output, "server-route-bundle-evidence");
-  await Promise.all([absent(routeOutput), absent(evidenceOutput)]);
+  const inputsOutput = path.join(output, "server-route-bundle-inputs");
+  await Promise.all([absent(routeOutput), absent(evidenceOutput), absent(inputsOutput)]);
   if (input.keyId !== "production-v1") {
     throw new Error("key id must be production-v1");
   }
-  const [manifest, buildSpecBytes, stationLine, route, provenanceBytes] = await Promise.all([
+  const [manifest, buildSpecBytes, stationLineBytes, routeBytes, provenanceBytes] = await Promise.all([
     jsonFile(path.join(datapackRoot, "current.json"), "current manifest"),
     regular(input.buildSpecPath, "build spec"),
-    jsonFile(input.stationLineInputPath, "station-line input"),
-    jsonFile(input.routeEdgeInputPath, "route-edge input"),
+    regular(input.stationLineInputPath, "station-line input"),
+    regular(input.routeEdgeInputPath, "route-edge input"),
     regular(path.join(datapackRoot, "current.provenance.json"), "current provenance"),
   ]);
   const buildSpec = JSON.parse(buildSpecBytes.toString("utf8"));
+  const stationLine = JSON.parse(stationLineBytes.toString("utf8"));
+  const route = JSON.parse(routeBytes.toString("utf8"));
   const provenanceValue = JSON.parse(provenanceBytes.toString("utf8"));
+  const canonicalInputBytes = {
+    buildSpecPath: buildSpecBytes,
+    stationLineInputPath: stationLineBytes,
+    routeEdgeInputPath: routeBytes,
+  };
   const active = selectEffectiveDataPack(manifest);
   if (!active || active.id !== "capital" || active.version !== "1" || active.artifactKind !== "production") {
     throw new Error("current manifest must select production capital@1");
@@ -65,17 +78,23 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
     const sourceSqlite = path.join(temp, "source.sqlite");
     const prepared = path.join(temp, "prepared");
     await writeFile(sourceSqlite, sqlite, { flag: "wx", mode: 0o600 });
+    const canonicalInputPaths = {};
+    for (const [target, field] of CANONICAL_INPUT_PATHS) {
+      const snapshotPath = path.join(temp, target);
+      await writeFile(snapshotPath, canonicalInputBytes[field], { flag: "wx", mode: 0o600 });
+      canonicalInputPaths[field] = snapshotPath;
+    }
     const prepare = input.stages?.prepare ?? prepareCurrentServerRouteBundleFinal;
     await prepare({
       output: prepared,
       repositoryGitSha: requiredSha(input.repositoryGitSha, "repository git sha"),
       evaluationAt: buildSpec.publishedAt,
-      stationLineInputPath: path.resolve(input.stationLineInputPath),
-      routeEdgeInputPath: path.resolve(input.routeEdgeInputPath),
+      stationLineInputPath: canonicalInputPaths.stationLineInputPath,
+      routeEdgeInputPath: canonicalInputPaths.routeEdgeInputPath,
       emitterInputs: {
         sourceSqlite,
         sourceProvenance: provenance,
-        buildSpec: path.resolve(input.buildSpecPath),
+        buildSpec: canonicalInputPaths.buildSpecPath,
         mapPackId: "capital-map-1",
         catalogPackId: "capital-catalog-1",
         bundleId: "capital-route-bundle-1",
@@ -98,16 +117,30 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
     await mkdir(stagedEvidence);
     await copyFile(evidence.eligibilityPath, path.join(stagedEvidence, EVIDENCE_PATHS[0]), 0);
     await copyFile(evidence.finalPath, path.join(stagedEvidence, EVIDENCE_PATHS[1]), 0);
+    const stagedInputs = path.join(staged, "server-route-bundle-inputs");
+    await mkdir(stagedInputs);
+    for (const [target, field] of CANONICAL_INPUT_PATHS) {
+      await copyFile(canonicalInputPaths[field], path.join(stagedInputs, target), 0);
+    }
     await assertCandidateInventory(staged);
-    await Promise.all([absent(routeOutput), absent(evidenceOutput)]);
+    await Promise.all([absent(routeOutput), absent(evidenceOutput), absent(inputsOutput)]);
+    const move = input.stages?.rename ?? rename;
+    if (typeof move !== "function") throw new Error("rename stage must be a function");
     let routePublished = false;
     let evidencePublished = false;
+    let inputsPublished = false;
     try {
-      await rename(path.join(staged, "server-route-bundle"), routeOutput);
+      await move(path.join(staged, "server-route-bundle"), routeOutput);
       routePublished = true;
-      await rename(path.join(staged, "server-route-bundle-evidence"), evidenceOutput);
+      await move(path.join(staged, "server-route-bundle-evidence"), evidenceOutput);
       evidencePublished = true;
+      await move(path.join(staged, "server-route-bundle-inputs"), inputsOutput);
+      inputsPublished = true;
     } catch (error) {
+      if (!inputsPublished && await published(path.join(staged, "server-route-bundle-inputs"), inputsOutput)) {
+        inputsPublished = true;
+      }
+      if (inputsPublished) await rm(inputsOutput, { recursive: true, force: true });
       if (evidencePublished) await rm(evidenceOutput, { recursive: true, force: true });
       if (routePublished) await rm(routeOutput, { recursive: true, force: true });
       throw error;
@@ -139,6 +172,7 @@ async function assertCandidateInventory(root) {
   if (!same(actual, [
     ...SIGNED_PATHS.map((relative) => `server-route-bundle/${relative}`),
     ...EVIDENCE_PATHS.map((relative) => `server-route-bundle-evidence/${relative}`),
+    ...CANONICAL_INPUT_PATHS.map(([relative]) => `server-route-bundle-inputs/${relative}`),
   ])) throw new Error("candidate route bundle inventory mismatch");
 }
 async function validatedEvidence(prepared, candidate) {
@@ -218,6 +252,21 @@ async function absent(target) {
     throw error;
   }
   throw new Error("output must be absent");
+}
+async function published(source, destination) {
+  try {
+    await lstat(source);
+    return false;
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  try {
+    await lstat(destination);
+    return true;
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
 }
 function required(value, label) {
   if (typeof value !== "string" || value.length === 0) {

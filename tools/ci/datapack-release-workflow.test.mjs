@@ -397,6 +397,39 @@ test("production-publish는 파일 전용 release request 입력과 !cancelled()
   assert.doesNotMatch(yml, /steps\.evidence-bundle\.outputs\.manifestSha256/);
 });
 
+test("production-publish는 current-head server route bundle을 OCI에 immutable publish한 뒤 GO FINAL descriptor를 마지막에 게시한다", () => {
+  const step = (name) => {
+    const value = yml.match(new RegExp(`- name: ${name}[\\s\\S]*?\\n\\s+- name:`))?.[0];
+    assert.ok(value, `${name} 스텝을 찾지 못함`);
+    return value;
+  };
+  const candidate = step("Data Pack Release / Validate production candidate and promotion runs");
+  const publish = step("Data Pack Release / Publish current server route bundle and descriptor");
+  const production = step("Data Pack Release / Publish staged data packs to object storage");
+  const decision = step("Data Pack Release / Finalize production decision");
+  assert.ok(yml.indexOf("Data Pack Release / Validate production candidate and promotion runs") < yml.indexOf("Data Pack Release / Publish staged data packs to object storage"));
+  assert.match(candidate, /\[\[ "\$\{candidate_head_sha\}" == "\$\{GITHUB_SHA\}" \]\]/);
+  assert.ok(yml.indexOf("Data Pack Release / Publish staged data packs to object storage") < yml.indexOf("Data Pack Release / Finalize production decision"));
+  assert.ok(yml.indexOf("Data Pack Release / Finalize production decision") < yml.indexOf("Data Pack Release / Publish current server route bundle and descriptor"));
+  assert.match(publish, /steps\.final-release-decision\.outputs\.outcome == 'PUBLISHED_AND_VERIFIED'/);
+  assert.match(publish, /CANDIDATE_HEAD_SHA.*GITHUB_SHA/);
+  assert.match(publish, /\[\[ "\$\{CANDIDATE_HEAD_SHA\}" == "\$\{GITHUB_SHA\}" \]\]/);
+  assert.match(publish, /git checkout --detach "\$\{GITHUB_SHA\}"/);
+  assert.ok(publish.indexOf('git checkout --detach "${GITHUB_SHA}"') < publish.indexOf("publish-server-route-bundle.mjs"));
+  for (const name of ["EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM", "EASYSUBWAY_DATAPACK_SIGNING_KEY_ID"]) assert.match(publish, new RegExp(name));
+  for (const name of ["OCI_SERVER_ROUTE_NAMESPACE", "OCI_SERVER_ROUTE_BUCKET", "OCI_SERVER_ROUTE_REGION", "OCI_SERVER_ROUTE_COMPAT_ENDPOINT", "OCI_SERVER_ROUTE_PUBLIC_BASE_URL", "OCI_SERVER_ROUTE_PUBLISHER_ACCESS_KEY", "OCI_SERVER_ROUTE_PUBLISHER_SECRET_KEY"]) assert.match(publish, new RegExp(name));
+  assert.match(publish, /publish-server-route-bundle\.mjs/);
+  assert.match(publish, /build-server-route-bundle-final\.mjs/);
+  assert.match(publish, /--eligibility-report "\$\{route_evidence\}\/route-accessibility-eligibility\.json"/);
+  assert.doesNotMatch(publish, /--route-accessibility-eligibility/);
+  assert.match(publish, /build-server-route-bundle-publication-descriptor\.mjs/);
+  assert.match(publish, /publish-server-route-bundle-publication-descriptor\.mjs/);
+  assert.ok(publish.indexOf("publish-server-route-bundle.mjs") < publish.indexOf("build-server-route-bundle-final.mjs"));
+  assert.ok(publish.indexOf("build-server-route-bundle-final.mjs") < publish.indexOf("build-server-route-bundle-publication-descriptor.mjs"));
+  assert.ok(publish.indexOf("build-server-route-bundle-publication-descriptor.mjs") < publish.indexOf("publish-server-route-bundle-publication-descriptor.mjs"));
+  assert.doesNotMatch(publish, /AWS_|fallback|retry|upload-artifact|download-artifact/i);
+});
+
 test("production-publish는 pack 빌드 전에 release request ↔ build spec 결속을 확인한다", () => {
   const verifyStep = yml.match(
     /- name: Data Pack Release \/ Verify release request binding[\s\S]*?\n\s+- name:/,
