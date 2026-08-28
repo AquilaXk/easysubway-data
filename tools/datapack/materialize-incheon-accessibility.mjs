@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 
 import { validateIncheonStationInfoSnapshot } from "./collect-incheon-station-info.mjs";
 
@@ -199,6 +200,11 @@ export function admittedIncheonAccessibilityEvidence({
   const evidence = source.accessibilityAdmissionEvidence;
   const topologyMembership = exactTopologyMembership(rows, topologySnapshot);
   const fixtureIdentities = expectedFixtureIdentities(rows, topologyMembership);
+  const fixtureRows = expectedFixtureRows(rows, topologyMembership, {
+    snapshotId: evidence.snapshotId,
+    evidenceHash: evidence.rowsSha256,
+    capturedAt: evidence.capturedAt,
+  });
   if (fixtureIdentities.facilities.length !== evidence.facilityCount
     || fixtureIdentities.evidence.length !== evidence.facilityCount) {
     throw new Error("Incheon accessibility admission fixture counts are invalid");
@@ -208,9 +214,11 @@ export function admittedIncheonAccessibilityEvidence({
     rows: structuredClone(rows),
     topologyMembership,
     fixtureIdentities,
+    fixtureRows,
     snapshotId: evidence.snapshotId,
     snapshotPath: evidence.snapshotPath,
     evidenceHash: evidence.rowsSha256,
+    capturedAt: evidence.capturedAt,
     freshUntil: evidence.freshUntil,
     facilityCount: evidence.facilityCount,
   };
@@ -223,10 +231,12 @@ export function validateProductionIncheonAccessibilityFixture(packs, admission) 
     || !/^[a-f0-9]{64}$/u.test(admission.evidenceHash ?? "")) {
     throw new TypeError("Incheon accessibility production admission is invalid");
   }
-  const expected = expectedFixtureIdentities(admission.rows, admission.topologyMembership);
+  const expected = expectedFixtureRows(admission.rows, admission.topologyMembership, admission);
+  const identities = expectedFixtureIdentities(admission.rows, admission.topologyMembership);
   if (expected.facilities.length !== admission.facilityCount
     || expected.evidence.length !== admission.facilityCount
-    || JSON.stringify(admission.fixtureIdentities) !== JSON.stringify(expected)) {
+    || JSON.stringify(admission.fixtureIdentities) !== JSON.stringify(identities)
+    || JSON.stringify(admission.fixtureRows) !== JSON.stringify(expected)) {
     throw new Error("Incheon accessibility production admission identity is invalid");
   }
   const facilities = packs.flatMap((pack) => pack?.facilities ?? [])
@@ -234,7 +244,7 @@ export function validateProductionIncheonAccessibilityFixture(packs, admission) 
   const evidence = packs.flatMap((pack) => pack?.stationFacilityEvidence ?? [])
     .filter(({ sourceId }) => sourceId === SOURCE_ID);
   const expectedFacilities = new Map(expected.facilities.map((row) => [row.id, row]));
-  const expectedEvidence = new Set(expected.evidence.map(evidenceIdentity));
+  const expectedEvidence = new Map(expected.evidence.map((row) => [evidenceIdentity(row), row]));
   const facilityIds = new Set(facilities.map(({ id }) => id));
   const evidenceIds = new Set(evidence.map(evidenceIdentity));
   if (facilities.length !== admission.facilityCount
@@ -242,15 +252,11 @@ export function validateProductionIncheonAccessibilityFixture(packs, admission) 
     || facilityIds.size !== admission.facilityCount
     || evidenceIds.size !== admission.facilityCount
     || facilities.some((row) => typeof row.id !== "string"
-      || row.sourceSnapshotId !== admission.snapshotId
-      || row.evidenceHash !== admission.evidenceHash
-      || !sameFacilityIdentity(row, expectedFacilities.get(row.id)))
+      || !isDeepStrictEqual(row, expectedFacilities.get(row.id)))
     || evidence.some((row) => typeof row.stationId !== "string"
       || typeof row.lineId !== "string"
       || typeof row.facilityType !== "string"
-      || row.sourceSnapshotId !== admission.snapshotId
-      || row.evidenceHash !== admission.evidenceHash
-      || !expectedEvidence.has(evidenceIdentity(row)))) {
+      || !isDeepStrictEqual(row, expectedEvidence.get(evidenceIdentity(row))))) {
     throw new Error("production Incheon accessibility fixture does not match pinned admission");
   }
   return admission.freshUntil;
@@ -297,6 +303,60 @@ function expectedFixtureIdentities(rows, topologyMembership) {
   if (facilityIds.size !== facilities.length || evidenceIds.size !== evidence.length) {
     throw new Error("Incheon accessibility fixture identities are not unique");
   }
+  return { facilities, evidence };
+}
+
+function expectedFixtureRows(rows, topologyMembership, admission) {
+  const identities = expectedFixtureIdentities(rows, topologyMembership);
+  const members = new Map(topologyMembership.map((row) => [membershipIdentity(row), row]));
+  const facilities = [];
+  const evidence = [];
+  for (const row of rows) {
+    const member = members.get(membershipIdentity(row));
+    for (const facilityType of FACILITY_TYPES) {
+      const count = facilityType.countOf(row);
+      const exists = count > 0;
+      const providerRecordHash = sha256(JSON.stringify({
+        stationCode: row.stationCode,
+        lineId: row.lineId,
+        type: facilityType.type,
+        count,
+        elevator: row.elevator,
+        escalator: row.escalator,
+        wheelchair_lift: row.wheelchair_lift,
+      }));
+      const stationName = row.stationName;
+      const id = `facility-incheon-${member.stationCode}-${facilityType.slug}`;
+      facilities.push({
+        id, stationId: member.stationId, lineId: member.lineId, exitId: null,
+        type: facilityType.type, name: `${stationName}역 ${facilityType.labelKo} 설치 정보`,
+        status: "UNKNOWN", floorFrom: "", floorTo: "",
+        description: exists
+          ? `인천교통공사 역사별 장애인 편의시설 현황 기준 ${facilityType.labelKo} ${count}대 설치 정보이며 실시간 운행 상태가 아닙니다.`
+          : `인천교통공사 역사별 장애인 편의시설 현황 기준 ${facilityType.labelKo} 미설치(count=0) 기록이며 실시간 운행 상태가 아닙니다.`,
+        sourceId: SOURCE_ID, sourceSnapshotId: admission.snapshotId, providerFacilityRef: `incheon-accessibility-${row.stationCode}-${facilityType.slug}`,
+        providerRecordHash, provenanceKind: "OFFICIAL_SOURCE", statusMeaning: "STATIC_LOCATION",
+        operationalStatus: "UNKNOWN", installationStatus: exists ? "INSTALLED" : "NOT_INSTALLED",
+        verifiedAt: admission.capturedAt, retrievedAt: admission.capturedAt,
+        evidenceHash: admission.evidenceHash, confidence: 80, derivationKind: "OFFICIAL",
+        lastVerifiedAt: admission.capturedAt,
+      });
+      evidence.push({
+        stationId: member.stationId, lineId: member.lineId, facilityType: facilityType.type,
+        evidenceKind: exists ? "EXISTS" : "NOT_EXISTS", sourceId: SOURCE_ID,
+        sourceSnapshotId: admission.snapshotId, providerRecordHash, evidenceHash: admission.evidenceHash,
+        provenanceKind: "OFFICIAL_SOURCE", installationStatus: exists ? "INSTALLED" : "NOT_INSTALLED",
+        operationalStatus: "UNKNOWN", statusMeaning: "STATIC_LOCATION", confidence: 80,
+        verifiedAt: admission.capturedAt, retrievedAt: admission.capturedAt,
+        strictRouteEligible: false,
+        strictRouteEligibleReason: exists ? "OPERATION_STATUS_UNKNOWN" : "FACILITY_NOT_INSTALLED",
+      });
+    }
+  }
+  if (JSON.stringify(identities) !== JSON.stringify({
+    facilities: facilities.map(({ id, stationId, lineId, type }) => ({ id, stationId, lineId, type })),
+    evidence: evidence.map(({ stationId, lineId, facilityType }) => ({ stationId, lineId, facilityType })),
+  })) throw new Error("Incheon accessibility fixture identities are invalid");
   return { facilities, evidence };
 }
 

@@ -60,6 +60,10 @@ import {
   admittedIncheonAccessibilityEvidence,
   validateProductionIncheonAccessibilityFixture,
 } from "./materialize-incheon-accessibility.mjs";
+import {
+  admittedIncheonTimetableEvidence,
+  validateProductionIncheonTimetableFixture,
+} from "./materialize-incheon-timetable.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const canonicalSqliteHeaderVersion = 3_053_000;
@@ -1296,6 +1300,7 @@ function exactNetworkEdgeEvidenceKeys(evidence) {
     ...currentNetworkEdgeEvidenceKeys,
     ...(evidence?.itxCurrentTopologyAdmission == null ? [] : ["itxCurrentTopologyAdmission"]),
     ...(evidence?.incheonAccessibility == null ? [] : ["incheonAccessibility"]),
+    ...(evidence?.incheonTimetables == null ? [] : ["incheonTimetables"]),
   ];
 }
 
@@ -1337,6 +1342,14 @@ export function candidateNetworkEdgeEvidence(evidence, validationNow = candidate
         "buildSpec.networkEdgeEvidence.incheonAccessibility",
         ["path", "sha256", "snapshotId"],
       );
+  if (!evidence?.incheonTimetables || typeof evidence.incheonTimetables !== "object") {
+    throw new Error("production build requires pinned Incheon timetable evidence");
+  }
+  assertExactKeys(evidence.incheonTimetables, ["line1", "line2"],
+    "buildSpec.networkEdgeEvidence.incheonTimetables");
+  const incheonTimetables = Object.fromEntries([1, 2].map((lineNumber) => [`line${lineNumber}`,
+    pinnedBuildInput(evidence.incheonTimetables[`line${lineNumber}`],
+      `buildSpec.networkEdgeEvidence.incheonTimetables.line${lineNumber}`, ["path", "sha256", "snapshotId"])]));
   return {
     sourceInventorySha256: sourceInventory.sha256,
     capitalTopologySnapshotId: capitalTopology.snapshotId,
@@ -1358,6 +1371,9 @@ export function candidateNetworkEdgeEvidence(evidence, validationNow = candidate
           incheonAccessibilitySnapshotId: incheonAccessibility.snapshotId,
           incheonAccessibilitySha256: incheonAccessibility.sha256,
         }),
+    incheonTimetableSnapshotIds: Object.fromEntries([1, 2].map((lineNumber) => [
+      `line${lineNumber}`, incheonTimetables[`line${lineNumber}`].snapshotId,
+    ])),
   };
 }
 
@@ -1524,6 +1540,26 @@ async function validateAndApplyNetworkEdgeProvenance(
         repositoryRoot,
         now,
       });
+  const incheonTimetablePins = await Promise.all([1, 2].map(async (lineNumber) => {
+    const pinned = await readPinnedBuildJson(evidence.incheonTimetables[`line${lineNumber}`],
+      `buildSpec.networkEdgeEvidence.incheonTimetables.line${lineNumber}`,
+      ["path", "sha256", "snapshotId"], repositoryRoot);
+    return [lineNumber, pinned];
+  }));
+  const incheonTimetableSnapshots = Object.fromEntries(incheonTimetablePins.map(([lineNumber, pinned]) =>
+    [lineNumber, pinned.value]));
+  const incheonTimetableAdmission = admittedIncheonTimetableEvidence({
+    inventory: sourceInventory.value,
+    topologySnapshot: incheonTopology.value,
+    timetableSnapshots: incheonTimetableSnapshots,
+    now,
+  });
+  for (const [lineNumber, pinned] of incheonTimetablePins) {
+    const admitted = incheonTimetableAdmission.lines.find(({ config }) => config.lineNumber === lineNumber);
+    if (pinned.pinned.snapshotId !== admitted.source.scheduleAdmissionEvidence.snapshotId) {
+      throw new Error("pinned Incheon timetable admission identity mismatch");
+    }
+  }
   validateSourceSeparatedCurrentTopology({
     capitalTopology: candidateTopology,
     incheonSnapshot: incheonTopology.value,
@@ -1575,6 +1611,7 @@ async function validateAndApplyNetworkEdgeProvenance(
   if (incheonAccessibilityAdmission != null) {
     validateProductionIncheonAccessibilityFixture(productionPacks, incheonAccessibilityAdmission);
   }
+  validateProductionIncheonTimetableFixture(productionPacks, incheonTimetableAdmission);
   for (const pack of productionPacks) {
     const expectedIncheonEdges = projectIncheonNetworkEdges(
       pack,

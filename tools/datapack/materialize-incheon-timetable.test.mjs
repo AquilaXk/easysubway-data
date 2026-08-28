@@ -29,8 +29,10 @@ import { materializeGwangjuTimetable } from "./materialize-gwangju-timetable.mjs
 import { materializeIncheonAccessibility } from "./materialize-incheon-accessibility.mjs";
 import { materializeIncheonStationInfo } from "./materialize-incheon-station-info.mjs";
 import {
+  admittedIncheonTimetableEvidence,
   materializeIncheonTimetable,
   materializedIncheonTimetablePackContentHash,
+  validateProductionIncheonTimetableFixture,
 } from "./materialize-incheon-timetable.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -301,6 +303,21 @@ test("인천 1·2호선 공식 timetable을 1414 trip·40898 stop_time·WEEK/HOL
   assert.ok(pack.lines.some(({ id }) => id === LINE7));
   assert.ok(!pack.sourceInventory.some(({ id }) => id.includes("line7-train-timetable")));
   assert.match(materializedIncheonTimetablePackContentHash(pack, pack.version), /^[a-f0-9]{64}$/);
+
+  const admission = admittedIncheonTimetableEvidence({
+    inventory: values.inventory,
+    topologySnapshot: values.topologySnapshot,
+    timetableSnapshots: values.timetableSnapshots,
+    now: values.timetableNow,
+  });
+  assert.doesNotThrow(() => validateProductionIncheonTimetableFixture([pack], admission));
+  const semanticDrift = structuredClone(pack);
+  semanticDrift.transitStopTimes.find(({ sourceId }) => sourceId === "incheon-line1-train-timetable")
+    .providerRecordHash = "0".repeat(64);
+  assert.throws(
+    () => validateProductionIncheonTimetableFixture([semanticDrift], admission),
+    /does not match pinned admission/,
+  );
 
   const maxArrival = Math.max(...stopTimes.map(({ arrivalSeconds }) => arrivalSeconds));
   assert.ok(maxArrival > 86_400, `expected a post-midnight trip, got max ${maxArrival}`);

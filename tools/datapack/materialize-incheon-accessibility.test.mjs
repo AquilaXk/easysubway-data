@@ -27,8 +27,10 @@ import { materializeDaejeonTimetable } from "./materialize-daejeon-timetable.mjs
 import { materializeGwangjuAccessibility } from "./materialize-gwangju-accessibility.mjs";
 import { materializeGwangjuTimetable } from "./materialize-gwangju-timetable.mjs";
 import {
+  admittedIncheonAccessibilityEvidence,
   materializeIncheonAccessibility,
   materializedIncheonAccessibilityPackContentHash,
+  validateProductionIncheonAccessibilityFixture,
 } from "./materialize-incheon-accessibility.mjs";
 import { materializeIncheonStationInfo } from "./materialize-incheon-station-info.mjs";
 
@@ -248,6 +250,12 @@ test("인천 공식 71 membership 편의시설을 facility·evidence 213건으�
   const facilities = pack.facilities.filter(({ sourceId }) => sourceId === SOURCE_ID);
   const evidence = pack.stationFacilityEvidence.filter(({ sourceId }) => sourceId === SOURCE_ID);
   const source = pack.sourceInventory.find(({ id }) => id === SOURCE_ID);
+  const admission = admittedIncheonAccessibilityEvidence({
+    sourceInventory: inventory,
+    snapshot: accessibilitySnapshot,
+    topologySnapshot,
+    now: accessibilityNow,
+  });
 
   assert.equal(facilities.length, 213);
   assert.equal(evidence.length, 213);
@@ -291,6 +299,14 @@ test("인천 공식 71 membership 편의시설을 facility·evidence 213건으�
   const version = accessibilityAdmission.snapshotId.replace(`${SOURCE_ID}-`, "");
   assert.equal(pack.version, version);
   assert.deepEqual(fixture.manifest.activePack, { id: pack.id, version });
+  assert.doesNotThrow(() => validateProductionIncheonAccessibilityFixture([pack], admission));
+  const semanticDrift = structuredClone(pack);
+  semanticDrift.stationFacilityEvidence.find(({ sourceId }) => sourceId === SOURCE_ID)
+    .strictRouteEligible = true;
+  assert.throws(
+    () => validateProductionIncheonAccessibilityFixture([semanticDrift], admission),
+    /does not match pinned admission/,
+  );
 });
 
 test("인천 accessibility admission은 freshness·hash·scope·중복을 fail closed한다", async () => {

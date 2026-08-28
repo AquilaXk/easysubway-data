@@ -9,6 +9,7 @@ import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 
 import { INCHEON_TIMETABLE_LINES } from "./collect-incheon-timetable.mjs";
 import { validateIncheonStationInfoSnapshot } from "./collect-incheon-station-info.mjs";
@@ -126,6 +127,52 @@ export function materializeIncheonTimetable({
   pack.url = `https://objectstorage.ap-seoul-1.oraclecloud.com/n/axvym6vk8g7i/b/easysubway-datapacks/o/catalog/${pack.id}-v${version}.sqlite.gz`;
   fixture.manifest.activePack = { id: pack.id, version };
   return fixture;
+}
+
+export function admittedIncheonTimetableEvidence({ inventory, topologySnapshot, timetableSnapshots, now } = {}) {
+  validateIncheonStationInfoSnapshot(topologySnapshot);
+  const lines = INCHEON_TIMETABLE_LINES.map((config) => {
+    const snapshot = timetableSnapshots?.[config.lineNumber];
+    validateTimetableSnapshot(snapshot, config, topologySnapshot);
+    return { config, snapshot, source: requiredSource(inventory, config, snapshot, topologySnapshot, now) };
+  });
+  return { lines, topologySnapshot: structuredClone(topologySnapshot), inventory: structuredClone(inventory) };
+}
+
+export function validateProductionIncheonTimetableFixture(packs, admission) {
+  if (!Array.isArray(packs) || !Array.isArray(admission?.lines) || admission.lines.length !== 2) {
+    throw new TypeError("Incheon timetable production admission is invalid");
+  }
+  const fixture = { manifest: { activePack: null }, packs: structuredClone(packs) };
+  const productionPacks = fixture.packs.filter(({ artifactKind }) => artifactKind === "production");
+  if (productionPacks.length !== 1) throw new Error("production Incheon timetable pack is not exact");
+  const [pack] = productionPacks;
+  const sourceIds = new Set(admission.lines.map(({ source }) => source.id));
+  pack.sourceInventory = pack.sourceInventory.filter(({ id }) => !sourceIds.has(id));
+  for (const property of ["serviceCalendars", "serviceCalendarDates", "transitRoutes", "transitTrips", "transitStopTimes"]) {
+    pack[property] = pack[property].filter((row) => !sourceIds.has(row.sourceId));
+  }
+  const replayed = materializeIncheonTimetable({
+    baseFixture: fixture,
+    topologySnapshot: admission.topologySnapshot,
+    timetableSnapshots: Object.fromEntries(admission.lines.map(({ config, snapshot }) => [config.lineNumber, snapshot])),
+    inventory: admission.inventory,
+    now: new Date(Math.max(...admission.lines.map(({ snapshot }) => Date.parse(snapshot.capturedAt))) + 1),
+  }).packs[0];
+  for (const property of ["sourceInventory", "serviceCalendars", "serviceCalendarDates", "transitRoutes", "transitTrips", "transitStopTimes"]) {
+    const actual = packs.flatMap((item) => item[property] ?? []).filter((row) =>
+      property === "sourceInventory" ? sourceIds.has(row.id) : sourceIds.has(row.sourceId));
+    const expected = replayed[property].filter((row) =>
+      property === "sourceInventory" ? sourceIds.has(row.id) : sourceIds.has(row.sourceId));
+    if (!isDeepStrictEqual(actual, expected)) throw new Error("production Incheon timetable fixture does not match pinned admission");
+  }
+  for (const field of ["service_calendars", "service_calendar_dates", "transit_routes", "transit_trips",
+    "transit_stop_times"]) {
+    if (pack.minimumTableRows?.[field] !== replayed.minimumTableRows?.[field]) {
+      throw new Error("production Incheon timetable fixture does not match pinned admission");
+    }
+  }
+  return admission;
 }
 
 export function materializedIncheonTimetablePackContentHash(pack, version) {

@@ -644,25 +644,8 @@ test("source-separated current topology materialization은 Incheon 1/2 exact 116
   }), /Incheon topology admission is stale/);
 
   const accessibilityFixture = {
-    facilities: accessibilityAdmission.fixtureIdentities.facilities.map(({ id, stationId, lineId, type }) => ({
-      id,
-      stationId,
-      lineId,
-      type,
-      sourceId: "incheon-transit-accessibility",
-      sourceSnapshotId: accessibilityAdmission.snapshotId,
-      evidenceHash: accessibilityAdmission.evidenceHash,
-    })),
-    stationFacilityEvidence: accessibilityAdmission.fixtureIdentities.evidence.map(({
-      stationId, lineId, facilityType,
-    }) => ({
-      stationId,
-      lineId,
-      facilityType,
-      sourceId: "incheon-transit-accessibility",
-      sourceSnapshotId: accessibilityAdmission.snapshotId,
-      evidenceHash: accessibilityAdmission.evidenceHash,
-    })),
+    facilities: structuredClone(accessibilityAdmission.fixtureRows.facilities),
+    stationFacilityEvidence: structuredClone(accessibilityAdmission.fixtureRows.evidence),
   };
   assert.doesNotThrow(() => validateProductionIncheonAccessibilityFixture(
     [accessibilityFixture], accessibilityAdmission,
@@ -681,6 +664,11 @@ test("source-separated current topology materialization은 Incheon 1/2 exact 116
   wrongEvidenceFixture.facilities[0].evidenceHash = "0".repeat(64);
   assert.throws(() => validateProductionIncheonAccessibilityFixture(
     [wrongEvidenceFixture], accessibilityAdmission,
+  ), /does not match pinned admission/);
+  const wrongSemanticFixture = structuredClone(accessibilityFixture);
+  wrongSemanticFixture.stationFacilityEvidence[0].strictRouteEligible = true;
+  assert.throws(() => validateProductionIncheonAccessibilityFixture(
+    [wrongSemanticFixture], accessibilityAdmission,
   ), /does not match pinned admission/);
   const missingFacilityFixture = structuredClone(accessibilityFixture);
   missingFacilityFixture.facilities.pop();
