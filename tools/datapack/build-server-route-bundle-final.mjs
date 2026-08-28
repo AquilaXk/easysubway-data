@@ -52,11 +52,11 @@ const BASE_CLI_KEYS = [
 const ELIGIBILITY_CLI_KEY = "eligibility-report";
 const RELEASE_CLI_KEYS = [
   "approval-evidence", "compatibility-evidence", "promotion-component", "promotion-inventory",
-  "promotion-request", "promotion-workflow-run-id", "publication-receipt", "rebuild-parity-evidence",
+  "promotion-request", "promotion-workflow-run-id", "publication-receipt", "candidate-execution-evidence-root",
 ];
 const RELEASE_EVIDENCE_KEYS = [
   "approvalEvidencePath", "compatibilityEvidencePath", "promotionComponentPath", "promotionInventoryPath",
-  "promotionRequestPath", "promotionWorkflowRunId", "publicationReceiptPath", "rebuildParityEvidencePath",
+  "promotionRequestPath", "promotionWorkflowRunId", "publicationReceiptPath", "candidateExecutionEvidenceRoot",
 ];
 const RECEIPT_CANDIDATE_KEYS = [
   "bundleId", "releaseSequence", "stationSetSha256", "sourceSnapshotSetHash", "signingInputSha256",
@@ -169,7 +169,7 @@ export async function buildServerRouteBundleFinalEvidence(input) {
         ? { state: "UNAVAILABLE", evidenceSha256: null }
         : { state: "PASS", evidenceSha256: artifact.signedManifestRawSha256 },
       publication: { state: "UNAVAILABLE", evidenceSha256: null },
-      rebuildParityPromotion: { state: "UNAVAILABLE", evidenceSha256: null },
+      promotionAuthorization: { state: "UNAVAILABLE", evidenceSha256: null },
     },
   });
   const release = input.releaseEvidence === undefined
@@ -212,8 +212,8 @@ export async function buildServerRouteBundleFinalEvidence(input) {
 async function closeReleaseFinal(prePublicationFinal, releaseEvidence, publicationObjects, sourceFreshness) {
   if (prePublicationFinal.result !== "NO_GO"
     || canonicalJson(prePublicationFinal.blockers) !== canonicalJson([
+      "promotionAuthorization:UNAVAILABLE",
       "publication:UNAVAILABLE",
-      "rebuildParityPromotion:UNAVAILABLE",
     ])) {
     throw new Error("pre-publication FINAL is not release eligible");
   }
@@ -222,14 +222,21 @@ async function closeReleaseFinal(prePublicationFinal, releaseEvidence, publicati
   const paths = Object.fromEntries(RELEASE_EVIDENCE_KEYS
     .filter((key) => key.endsWith("Path"))
     .map((key) => [key, path.resolve(requiredRaw(releaseEvidence[key], key))]));
-  if (new Set(Object.values(paths)).size !== Object.values(paths).length) {
+  const executionEvidence = await snapshotCandidateExecutionEvidence(
+    requiredRaw(releaseEvidence.candidateExecutionEvidenceRoot, "candidateExecutionEvidenceRoot"),
+  );
+  const allPaths = [...Object.values(paths), ...executionEvidence.files.map((file) => file.target)];
+  if (new Set(allPaths).size !== allPaths.length) {
     throw new Error("release evidence paths must be distinct");
   }
-  const files = await Promise.all(Object.entries(paths).map(async ([key, target]) => ({
+  const files = [
+    ...await Promise.all(Object.entries(paths).map(async ([key, target]) => ({
     key,
     target,
     bytes: await readNonEmptyRegular(target, key),
-  })));
+    }))),
+    ...executionEvidence.files,
+  ];
   const bytes = Object.fromEntries(files.map((entry) => [entry.key, entry.bytes]));
   const publicationReceipt = validatePublicationReceipt(parseCanonicalJson(
     bytes.publicationReceiptPath,
@@ -244,10 +251,6 @@ async function closeReleaseFinal(prePublicationFinal, releaseEvidence, publicati
     bytes.compatibilityEvidencePath,
     "compatibility evidence",
   );
-  const rebuildParityEvidence = parseCanonicalOrFormattedJson(
-    bytes.rebuildParityEvidencePath,
-    "rebuild parity evidence",
-  );
   validateRequest({
     request: promotionRequest,
     component: promotionComponent,
@@ -255,8 +258,7 @@ async function closeReleaseFinal(prePublicationFinal, releaseEvidence, publicati
     inventoryBytes: bytes.promotionInventoryPath,
     compatibility: compatibilityEvidence,
     compatibilityBytes: bytes.compatibilityEvidencePath,
-    rebuildParity: rebuildParityEvidence,
-    rebuildParityBytes: bytes.rebuildParityEvidencePath,
+    ...executionEvidence,
     approvalBytes: bytes.approvalEvidencePath,
     workflowRunId: requiredRaw(releaseEvidence.promotionWorkflowRunId, "promotionWorkflowRunId"),
   });
@@ -268,7 +270,7 @@ async function closeReleaseFinal(prePublicationFinal, releaseEvidence, publicati
       gates: {
         ...prePublicationFinal.gates,
         publication: { state: "PASS", evidenceSha256: sha256(bytes.publicationReceiptPath) },
-        rebuildParityPromotion: { state: "PASS", evidenceSha256: sha256(bytes.promotionRequestPath) },
+        promotionAuthorization: { state: "PASS", evidenceSha256: sha256(bytes.promotionRequestPath) },
       },
     }),
     files,
@@ -334,6 +336,36 @@ async function assertEvidenceFilesUnchanged(files) {
     const current = await readNonEmptyRegular(file.target, file.key);
     if (!current.equals(file.bytes)) throw new Error(`${file.key} changed during FINAL build`);
   }
+}
+
+async function snapshotCandidateExecutionEvidence(root) {
+  const target = await realDirectory(root, "candidate execution evidence");
+  await assertDirectoryEntries(
+    target,
+    ["release-decision.json", "release-evidence-bundle.json"],
+    "candidate execution evidence file set",
+  );
+  const files = await Promise.all([
+    ["candidateReleaseDecisionPath", "release-decision.json", "candidate execution evidence/release-decision.json"],
+    ["candidateReleaseEvidenceBundlePath", "release-evidence-bundle.json", "candidate execution evidence/release-evidence-bundle.json"],
+  ].map(async ([key, name, label]) => {
+    const file = path.join(target, name);
+    return { key, target: file, bytes: await readNonEmptyRegular(file, label) };
+  }));
+  const bytes = Object.fromEntries(files.map((file) => [file.key, file.bytes]));
+  return {
+    files,
+    releaseDecision: parseCanonicalOrFormattedJson(
+      bytes.candidateReleaseDecisionPath,
+      "candidate execution evidence/release-decision.json",
+    ),
+    releaseDecisionBytes: bytes.candidateReleaseDecisionPath,
+    releaseEvidenceBundle: parseCanonicalOrFormattedJson(
+      bytes.candidateReleaseEvidenceBundlePath,
+      "candidate execution evidence/release-evidence-bundle.json",
+    ),
+    releaseEvidenceBundleBytes: bytes.candidateReleaseEvidenceBundlePath,
+  };
 }
 
 function assertReleaseCandidateFresh(freshUntil, now) {
@@ -873,7 +905,7 @@ async function main(argv) {
         promotionRequestPath: requiredArg(args, "promotion-request"),
         promotionWorkflowRunId: requiredArg(args, "promotion-workflow-run-id"),
         publicationReceiptPath: requiredArg(args, "publication-receipt"),
-        rebuildParityEvidencePath: requiredArg(args, "rebuild-parity-evidence"),
+        candidateExecutionEvidenceRoot: requiredArg(args, "candidate-execution-evidence-root"),
       },
     } : {}),
   });

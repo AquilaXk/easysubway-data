@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -12,7 +12,8 @@ const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 test("raw evidence와 서로 다른 candidate/promotion run identity를 검증한다", () => {
   const fixture = createFixture();
   try {
-    assert.equal(run(fixture).status, 0);
+    const valid = run(fixture);
+    assert.equal(valid.status, 0, valid.stderr);
     fixture.request.candidate.dataVersion = "other";
     writeFileSync(fixture.requestPath, JSON.stringify(fixture.request));
     assert.notEqual(run(fixture).status, 0);
@@ -21,22 +22,22 @@ test("raw evidence와 서로 다른 candidate/promotion run identity를 검증�
   }
 });
 
-test("세 번의 data candidate raw parity evidence를 현재 candidate에 정확히 결속한다", () => {
+test("candidate execution evidence를 현재 candidate run/head/manifest/source identity에 결속한다", () => {
   const fixture = createFixture();
   try {
-    assert.equal(run(fixture).status, 0);
+    const valid = run(fixture);
+    assert.equal(valid.status, 0, valid.stderr);
     for (const mutate of [
-      (value) => { value.candidates.reverse(); },
-      (value) => { value.candidates[1].workflowRunId = value.candidates[0].workflowRunId; },
-      (value) => { value.candidates[1].gitSha = "f".repeat(40); },
-      (value) => { value.selectedCandidateWorkflowRunId = "999"; },
-      (value) => { value.artifactInventorySha256 = "e".repeat(64); },
-      (value) => { value.issueRef = "AquilaXk/easysubway-data#54"; },
+      (value) => { value.builderGitSha = "f".repeat(40); },
+      (value) => { value.workflowRunUrl = "https://github.com/AquilaXk/easysubway-data/actions/runs/999"; },
+      (value) => { value.manifestSha256 = "f".repeat(64); },
+      (value) => { value.candidateServerRouteEvidence.buildSpecSha256 = "f".repeat(64); },
     ]) {
       const broken = createFixture();
       try {
-        mutate(broken.parity);
-        replaceParity(broken, broken.parity);
+        const bundle = JSON.parse(readFileSync(broken.releaseEvidenceBundlePath, "utf8"));
+        mutate(bundle);
+        writeFileSync(broken.releaseEvidenceBundlePath, JSON.stringify(bundle));
         assert.notEqual(run(broken).status, 0);
       } finally {
         broken.cleanup();
@@ -51,7 +52,7 @@ test("request key, evidence hash, approval run/reviewer mismatch를 거부한다
   for (const mutate of [
     (fixture) => { fixture.request.extra = true; writeRequest(fixture); },
     (fixture) => writeFileSync(fixture.compatibilityPath, "changed"),
-    (fixture) => writeFileSync(fixture.parityPath, "changed"),
+    (fixture) => writeFileSync(fixture.executionEvidenceRoot + "/release-decision.json", "changed"),
     (fixture) => { fixture.workflowRunId = "789"; },
     (fixture) => { fixture.request.approval.reviewer = "other"; writeRequest(fixture); },
     (fixture) => writeFileSync(fixture.approvalPath, JSON.stringify([approvedReview(), approvedReview()])),
@@ -97,9 +98,13 @@ function createFixture() {
   const compatibility = compatibilityValue(component);
   const compatibilityBytes = Buffer.from(JSON.stringify(compatibility));
   const approvalBytes = Buffer.from(JSON.stringify([approvedReview()]));
-  const parity = parityValue(component);
-  const parityBytes = Buffer.from(JSON.stringify(parity));
-  const request = requestValue(component, compatibilityBytes, approvalBytes, parityBytes);
+  const executionEvidenceRoot = path.join(root, "candidate-execution-evidence");
+  mkdirSync(executionEvidenceRoot);
+  const releaseEvidenceBundleBytes = Buffer.from(JSON.stringify(releaseEvidenceBundleValue(component)));
+  const releaseDecisionBytes = Buffer.from(JSON.stringify(releaseDecisionValue(component)));
+  const releaseEvidenceBundlePath = file(executionEvidenceRoot, "release-evidence-bundle.json", releaseEvidenceBundleBytes);
+  file(executionEvidenceRoot, "release-decision.json", releaseDecisionBytes);
+  const request = requestValue(component, compatibilityBytes, approvalBytes, releaseEvidenceBundleBytes, releaseDecisionBytes);
   return {
     root,
     request,
@@ -110,8 +115,8 @@ function createFixture() {
     compatibility,
     compatibilityPath: file(root, "compatibility.json", compatibilityBytes),
     approvalPath: file(root, "approval.json", approvalBytes),
-    parity,
-    parityPath: file(root, "parity.json", parityBytes),
+    executionEvidenceRoot,
+    releaseEvidenceBundlePath,
     workflowRunId: "456",
     cleanup: () => rmSync(root, { recursive: true, force: true }),
   };
@@ -137,20 +142,16 @@ function replaceCompatibility(fixture, value) {
   writeRequest(fixture);
 }
 
-function replaceParity(fixture, value) {
-  const bytes = Buffer.from(JSON.stringify(value));
-  writeFileSync(fixture.parityPath, bytes);
-  fixture.request.rebuildParityEvidenceSha256 = sha256(bytes);
-  writeRequest(fixture);
-}
-
-function requestValue(component, compatibilityBytes, approvalBytes, parityBytes) {
+function requestValue(component, compatibilityBytes, approvalBytes, releaseEvidenceBundleBytes, releaseDecisionBytes) {
   return {
     schemaVersion: 1,
     artifactKind: "datapack-promotion-request",
     candidate: structuredClone(component),
     compatibilityEvidenceSha256: sha256(compatibilityBytes),
-    rebuildParityEvidenceSha256: sha256(parityBytes),
+    candidateExecutionEvidence: {
+      releaseEvidenceBundleSha256: sha256(releaseEvidenceBundleBytes),
+      releaseDecisionSha256: sha256(releaseDecisionBytes),
+    },
     requestedBy: "AquilaXk",
     approval: {
       workflowRunId: "456",
@@ -158,25 +159,25 @@ function requestValue(component, compatibilityBytes, approvalBytes, parityBytes)
       reviewer: "AquilaXk",
       approvalEvidenceSha256: sha256(approvalBytes),
     },
-    contractVersion: "datapack-promotion-v1",
+    contractVersion: "datapack-promotion-v2",
     issueRef: "AquilaXk/easysubway#2705",
   };
 }
 
-function parityValue(component) {
+function releaseEvidenceBundleValue(component) {
   return {
-    schemaVersion: 1,
-    artifactKind: "datapack-rebuild-parity-evidence",
-    selectedCandidateWorkflowRunId: component.workflowRunId,
-    candidates: [
-      structuredClone(component),
-      { ...component, workflowRunId: "234" },
-      { ...component, workflowRunId: "345" },
-    ],
-    artifactInventorySha256: component.artifactInventorySha256,
-    contractVersion: "datapack-rebuild-parity-v1",
-    issueRef: "AquilaXk/easysubway#2705",
+    schemaVersion: 1, artifactKind: "datapack-release-evidence-bundle", releaseMode: "release-candidate",
+    candidateId: "capital@1", buildCandidateId: "candidate-1", candidateBuilderGitSha: "9".repeat(40),
+    builderGitSha: component.gitSha, buildSpecSha256: "8".repeat(64), manifestSha256: component.manifestSha256,
+    releaseSequence: component.releaseSequence, sourceSnapshotSetHash: component.provenance.sourceSnapshotSetHash,
+    validatorStatus: "PASS", manifestSignatureStatus: "PASS", createdAt: "2026-08-28T00:00:00.000Z",
+    workflowRunUrl: `https://github.com/AquilaXk/easysubway-data/actions/runs/${component.workflowRunId}`,
+    candidateServerRouteEvidence: { candidateId: "candidate-1", sourceSnapshotSetHash: component.provenance.sourceSnapshotSetHash, buildSpecSha256: "8".repeat(64), manifestSha256: component.manifestSha256, eligibility: { path: "server-route-bundle-evidence/route-accessibility-eligibility.json", sha256: "7".repeat(64) }, final: { path: "server-route-bundle-evidence/server-route-bundle-final.json", sha256: "6".repeat(64) } },
   };
+}
+
+function releaseDecisionValue(component) {
+  return { schemaVersion: 1, artifactKind: "datapack-release-decision", outcome: "CHANGE_BLOCKED", productionWriteAllowed: false, materialChange: true, approvalValid: false, strictValidationPassed: true, publishRequired: true, publishAttempted: false, remoteValidationPassed: false, sourceSnapshotSetHash: component.provenance.sourceSnapshotSetHash, selectedManifestSha256: null, selectedReleaseSequence: null, reasonCodes: ["MATERIAL_CHANGE_UNAPPROVED"], evaluationAt: "2026-08-28T00:00:00.000Z" };
 }
 
 function inventoryValue(entries = [entry("artifact.bin")]) {
@@ -230,7 +231,7 @@ function run(fixture) {
     "--component", fixture.componentPath,
     "--inventory", fixture.inventoryPath,
     "--compatibility-evidence", fixture.compatibilityPath,
-    "--rebuild-parity-evidence", fixture.parityPath,
+    "--candidate-execution-evidence-root", fixture.executionEvidenceRoot,
     "--approval-evidence", fixture.approvalPath,
     "--workflow-run-id", fixture.workflowRunId,
   ], { encoding: "utf8" });

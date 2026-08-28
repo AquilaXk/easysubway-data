@@ -174,7 +174,7 @@ async function prepareServerRouteBundlePublication(input) {
   if (final.gates.publication.evidenceSha256 !== receiptRawSha256) {
     throw new Error("publication receipt raw digest mismatch");
   }
-  if (final.gates.rebuildParityPromotion.evidenceSha256 !== promotionEvidenceSha256) {
+  if (final.gates.promotionAuthorization.evidenceSha256 !== promotionEvidenceSha256) {
     throw new Error("promotion request raw digest mismatch");
   }
 
@@ -299,7 +299,7 @@ function assertPrePublicationFinalIdentity(final, receipt) {
     gates: {
       ...final.gates,
       publication: { state: "UNAVAILABLE", evidenceSha256: null },
-      rebuildParityPromotion: { state: "UNAVAILABLE", evidenceSha256: null },
+      promotionAuthorization: { state: "UNAVAILABLE", evidenceSha256: null },
     },
   });
   if (receipt.candidate.prePublicationFinalSha256 !== prePublicationFinal.finalSha256) {

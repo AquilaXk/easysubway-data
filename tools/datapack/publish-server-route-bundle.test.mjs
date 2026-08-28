@@ -451,7 +451,7 @@ async function createFixture(t, options = {}) {
       artifactInventory: gate("PASS", "4"),
       signature: { state: "PASS", evidenceSha256: signedManifestRawSha256 },
       publication: { state: "UNAVAILABLE", evidenceSha256: null },
-      rebuildParityPromotion: { state: "UNAVAILABLE", evidenceSha256: null },
+      promotionAuthorization: { state: "UNAVAILABLE", evidenceSha256: null },
     },
   });
   await writeFile(finalPath, canonicalServerRouteBundleFinalJson(final));

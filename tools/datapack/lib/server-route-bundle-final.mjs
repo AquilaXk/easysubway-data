@@ -18,7 +18,7 @@ const GATE_NAMES = [
   "artifactInventory",
   "signature",
   "publication",
-  "rebuildParityPromotion",
+  "promotionAuthorization",
 ];
 const GATE_STATES = {
   sourceFreshness: ["PASS", "UNAVAILABLE", "STALE", "PARTIAL", "IDENTITY_MISMATCH"],
@@ -28,7 +28,7 @@ const GATE_STATES = {
   artifactInventory: ["PASS", "UNAVAILABLE", "MISSING", "PARTIAL", "IDENTITY_MISMATCH"],
   signature: ["PASS", "UNAVAILABLE", "IDENTITY_MISMATCH"],
   publication: ["PASS", "UNAVAILABLE", "IDENTITY_MISMATCH"],
-  rebuildParityPromotion: ["PASS", "UNAVAILABLE", "PARTIAL", "IDENTITY_MISMATCH"],
+  promotionAuthorization: ["PASS", "UNAVAILABLE", "IDENTITY_MISMATCH"],
 };
 const GO_REQUIRED_CANDIDATE_SHA_FIELDS = [
   "signedManifestRawSha256", "payloadRootSha256", "componentInventorySha256",

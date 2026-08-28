@@ -280,7 +280,7 @@ async function writePreparedOutputs(prepared) {
   ].map((name) => [name, { state: "PASS", evidenceSha256 }]));
   gates.routeAccessibilityEligibility = { state: "PASS", evidenceSha256: sha256(Buffer.from(eligibility)) };
   gates.publication = { state: "UNAVAILABLE", evidenceSha256: null };
-  gates.rebuildParityPromotion = { state: "UNAVAILABLE", evidenceSha256: null };
+  gates.promotionAuthorization = { state: "UNAVAILABLE", evidenceSha256: null };
   await writeFile(path.join(prepared, "bound", "server-route-bundle-final.json"), canonicalJson(
     buildServerRouteBundleFinal({ candidate: BUNDLE_CANDIDATE, gates }),
   ));

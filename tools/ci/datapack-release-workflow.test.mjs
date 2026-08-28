@@ -421,6 +421,8 @@ test("production-publish는 current-head server route bundle을 OCI에 immutable
   assert.match(publish, /publish-server-route-bundle\.mjs/);
   assert.match(publish, /build-server-route-bundle-final\.mjs/);
   assert.match(publish, /--eligibility-report "\$\{route_evidence\}\/route-accessibility-eligibility\.json"/);
+  assert.match(publish, /--candidate-execution-evidence-root "\$\{execution_root\}"/);
+  assert.doesNotMatch(publish, /--rebuild-parity-evidence/);
   assert.doesNotMatch(publish, /--route-accessibility-eligibility/);
   assert.match(publish, /build-server-route-bundle-publication-descriptor\.mjs/);
   assert.match(publish, /publish-server-route-bundle-publication-descriptor\.mjs/);
@@ -969,9 +971,8 @@ test("production-publish는 attested candidate를 no-rebuild로 소비한다", (
   const verify = step("Data Pack Release / Verify attested promotion and candidate bytes");
   assert.match(verify, /gh attestation verify[\s\S]*?--repo "\$\{EASYSUBWAY_HUB_REPOSITORY\}"[\s\S]*?--signer-workflow "AquilaXk\/easysubway\/\.github\/workflows\/datapack-promotion\.yml"[\s\S]*?--source-ref refs\/heads\/main[\s\S]*?--deny-self-hosted-runners/);
   assert.match(verify, /validate-promotion-request\.mjs/);
-  assert.match(verify, /promotion_entries.*== 4/);
-  assert.match(verify, /rebuild-parity-evidence\.json/);
-  assert.match(verify, /--rebuild-parity-evidence "\$\{promotion_root\}\/rebuild-parity-evidence\.json"/);
+  assert.match(verify, /promotion_entries.*== 3/);
+  assert.doesNotMatch(verify, /rebuild-parity-evidence/);
   assert.match(verify, /--workflow-run-id "\$\{EASYSUBWAY_DATAPACK_PROMOTION_RUN_ID\}"/);
   assert.match(verify, /build-data-component-manifest\.mjs/);
   assert.match(verify, /candidate_issue_ref=/);

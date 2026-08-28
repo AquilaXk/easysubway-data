@@ -18,7 +18,7 @@ const GATES = [
   "artifactInventory",
   "signature",
   "publication",
-  "rebuildParityPromotion",
+  "promotionAuthorization",
 ];
 const GATE_STATES = {
   sourceFreshness: ["PASS", "UNAVAILABLE", "STALE", "PARTIAL", "IDENTITY_MISMATCH"],
@@ -28,7 +28,7 @@ const GATE_STATES = {
   artifactInventory: ["PASS", "UNAVAILABLE", "MISSING", "PARTIAL", "IDENTITY_MISMATCH"],
   signature: ["PASS", "UNAVAILABLE", "IDENTITY_MISMATCH"],
   publication: ["PASS", "UNAVAILABLE", "IDENTITY_MISMATCH"],
-  rebuildParityPromotion: ["PASS", "UNAVAILABLE", "PARTIAL", "IDENTITY_MISMATCH"],
+  promotionAuthorization: ["PASS", "UNAVAILABLE", "IDENTITY_MISMATCH"],
 };
 
 function passingInput() {
@@ -96,7 +96,7 @@ test("각 unresolved gate는 deterministic NO_GO blocker가 되고 UNAVAILABLE�
     ["artifactInventory", "PARTIAL"],
     ["signature", "UNAVAILABLE"],
     ["publication", "UNAVAILABLE"],
-    ["rebuildParityPromotion", "PARTIAL"],
+    ["promotionAuthorization", "IDENTITY_MISMATCH"],
   ];
   for (const [gate, state] of cases) {
     await context.test(`${gate}:${state}`, () => {

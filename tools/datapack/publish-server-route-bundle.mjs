@@ -29,7 +29,7 @@ const PASS_GATES = [
   "artifactInventory",
   "signature",
 ];
-const UNAVAILABLE_GATES = ["publication", "rebuildParityPromotion"];
+const UNAVAILABLE_GATES = ["publication", "promotionAuthorization"];
 const RECEIPT_KEYS = [
   "schemaVersion",
   "artifactKind",
@@ -215,8 +215,8 @@ function validatePrePublicationFinal({ final, artifact, snapshot, repositoryGitS
     }
   }
   if (canonicalJson(final.blockers) !== canonicalJson([
+    "promotionAuthorization:UNAVAILABLE",
     "publication:UNAVAILABLE",
-    "rebuildParityPromotion:UNAVAILABLE",
   ])) {
     throw new Error("pre-publication FINAL blockers mismatch");
   }
