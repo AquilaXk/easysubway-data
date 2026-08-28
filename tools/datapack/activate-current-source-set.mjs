@@ -1100,10 +1100,29 @@ function replaceIncheonCanonicalSlice(canonical, projected, { topologySnapshot, 
   };
   replace("operators", ({ id }) => id === "incheon-transit", ({ id }) => id);
   replace("lines", ({ id }) => ["line-98718184f016", "line-42b5805f3b5a"].includes(id), ({ id }) => id);
-  const topologyScope = new Set(projectedPack.stationLines.filter(({ sourceId }) =>
-    sourceId === "incheon-transit-station-info").map(({ stationId, lineId }) => `${stationId}:${lineId}`));
-  replace("stationLines", ({ stationId, lineId }) => topologyScope.has(`${stationId}:${lineId}`),
+  const topologyOwnedLineIds = new Set(topologySnapshot.topologyLineIds);
+  const topologyStationLines = projectedPack.stationLines.filter(({ sourceId, lineId }) => (
+    sourceId === "incheon-transit-station-info" && topologyOwnedLineIds.has(lineId)
+  ));
+  const topologyScope = new Set(topologyStationLines.map(({ stationId, lineId }) => `${stationId}:${lineId}`));
+  if (topologyOwnedLineIds.size === 0 || topologyScope.size !== topologyStationLines.length) {
+    throw new Error("Incheon canonical topology stationLines identity is invalid");
+  }
+  replace("stationLines", ({ lineId }) => topologyOwnedLineIds.has(lineId),
     ({ stationId, lineId }) => `${stationId}:${lineId}`);
+  const topologyStationIds = new Set([...topologyScope].map((scope) => scope.split(":")[0]));
+  const canonicalStationsById = new Map(pack.stations.map((station) => [station.id, station]));
+  if (canonicalStationsById.size !== pack.stations.length) {
+    throw new Error("Incheon canonical station identity is invalid");
+  }
+  for (const stationId of topologyStationIds) {
+    const projectedStation = requireOne(projectedPack.stations, ({ id }) => id === stationId,
+      "projected Incheon topology station");
+    if (!canonicalStationsById.has(stationId)) {
+      pack.stations.push(projectedStation);
+      canonicalStationsById.set(stationId, projectedStation);
+    }
+  }
   const expectedIncheonEdges = projectIncheonNetworkEdges(pack, topologySnapshot, topologyAdmission);
   const expectedIncheonEdgeIds = new Set(expectedIncheonEdges.map(({ id }) => id));
   const incheonTopologyLineIds = new Set(expectedIncheonEdges.map(({ fromNodeId }) =>
@@ -1149,7 +1168,9 @@ function replaceIncheonCanonicalSlice(canonical, projected, { topologySnapshot, 
   canonicalI210.nameKo = projectedI210.nameKo;
   canonicalI210.nameEn = projectedI210.nameEn;
   canonicalI210.normalizedName = projectedI210.normalizedName;
-  const aliases = pack.stationAliases ?? [];
+  const aliases = (pack.stationAliases ?? []).filter(({ stationId, alias }) => (
+    !topologyStationIds.has(alias) || stationId === alias
+  ));
   const projectedAlias = requireOne(projectedPack.stationAliases ?? [], ({ stationId, alias }) =>
     stationId === mapping.stationId && alias === mapping.previousNameKo, "projected I210 alias");
   const withoutOldAlias = aliases.filter(({ stationId, alias }) => (
@@ -1177,13 +1198,19 @@ function replaceIncheonCanonicalSlice(canonical, projected, { topologySnapshot, 
   if (next.coverageLineOperatorScopeSemantics !== "UNION_OF_PACK_SCOPES") {
     throw new Error("Incheon canonical coverage scope semantics are invalid");
   }
-  for (const property of ["stations", "stationAliases"]) {
-    if (property === "stations") {
-      const beforeById = new Map(before.stations.map((row) => [row.id, row]));
-      if (pack.stations.some((row) => row.id !== mapping.stationId
-        && !isDeepStrictEqual(row, beforeById.get(row.id)))) {
-        throw new Error("Incheon canonical station complement changed");
-      }
+  {
+    const beforeById = new Map(before.stations.map((row) => [row.id, row]));
+    if (pack.stations.some((row) => (
+      beforeById.has(row.id)
+      && row.id !== mapping.stationId
+      && !isDeepStrictEqual(row, beforeById.get(row.id))
+    )) || pack.stations.some((row) => (
+      !beforeById.has(row.id)
+      && (!topologyStationIds.has(row.id)
+        || !isDeepStrictEqual(row, requireOne(projectedPack.stations,
+          ({ id }) => id === row.id, "projected appended Incheon topology station")))
+    ))) {
+      throw new Error("Incheon canonical station complement changed");
     }
   }
   for (const property of ["facilities", "stationFacilityEvidence", "networkEdges", "routeMapPositions",

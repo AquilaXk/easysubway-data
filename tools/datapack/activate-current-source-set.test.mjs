@@ -1340,6 +1340,45 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
   );
   const stationLineKeys = capital.stationLines.map(({ stationId, lineId }) => `${stationId}:${lineId}`);
   assert.equal(new Set(stationLineKeys).size, stationLineKeys.length);
+  const topologyOwnedLineIds = new Set(currentIncheonTopology.topologyLineIds);
+  const membershipRow = ({ stationId, lineId, stationCode, lineSequence, platformInfo }) => ({
+    stationId, lineId, stationCode, lineSequence, platformInfo,
+  });
+  const sortMembershipRows = (rows) => rows.map(membershipRow).sort((left, right) => (
+    `${left.lineId}:${left.stationId}`.localeCompare(`${right.lineId}:${right.stationId}`, "en")
+  ));
+  const admittedTopologyMemberships = currentIncheonTopology.scope
+    .filter(({ lineId }) => topologyOwnedLineIds.has(lineId))
+    .map((row) => ({ ...row, platformInfo: "" }));
+  assert.deepEqual(
+    sortMembershipRows(capital.stationLines.filter(({ lineId }) => topologyOwnedLineIds.has(lineId))),
+    sortMembershipRows(admittedTopologyMemberships),
+  );
+  const capitalStationIds = new Set(capital.stations.map(({ id }) => id));
+  assert.ok(capital.stationLines.every(({ stationId }) => capitalStationIds.has(stationId)));
+  const seoknamRows = currentIncheonTopology.scope.filter(({ stationName }) =>
+    stationName === "석남(거북시장)");
+  assert.equal(seoknamRows.length, 2);
+  assert.equal(new Set(seoknamRows.map(({ stationId }) => stationId)).size, seoknamRows.length);
+  assert.equal(new Set(seoknamRows.map(({ lineId }) => lineId)).size, seoknamRows.length);
+  for (const { stationId, lineId } of seoknamRows) {
+    assert.ok(capitalStationIds.has(stationId));
+    assert.ok(capital.stationLines.some((row) => row.stationId === stationId && row.lineId === lineId));
+    assert.equal(capital.stationAliases.some((row) => (
+      row.alias === stationId && row.stationId !== stationId
+    )), false);
+  }
+  const supersededTopologyAliases = previousCapital.stationAliases.filter(({ stationId, alias }) => (
+    stationId !== alias && currentIncheonTopology.scope.some((row) => row.stationId === alias)
+  ));
+  assert.ok(supersededTopologyAliases.length > 0);
+  for (const { stationId, alias } of supersededTopologyAliases) {
+    const admittedMembership = currentIncheonTopology.scope.find((row) => row.stationId === alias);
+    assert.ok(admittedMembership);
+    assert.equal(capital.stationLines.some((row) => (
+      row.stationId === stationId && row.lineId === admittedMembership.lineId
+    )), false);
+  }
   const currentI210 = currentIncheonTopology.scope.find(({ stationId }) => stationId === "station-b1a5f63faf69");
   assert.ok(currentI210);
   assert.deepEqual(capital.stationLines.filter(({ stationId, lineId }) => (
