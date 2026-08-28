@@ -8,6 +8,7 @@ import { prepareCurrentServerRouteBundleFinal } from "./prepare-current-server-r
 import { parseArgs, requiredArg } from "./lib/cli-args.mjs";
 import { canonicalJson, selectEffectiveDataPack, sha256, stagedPackPath } from "./lib/manifest-validation.mjs";
 import { validateServerRouteBundleFinal } from "./lib/server-route-bundle-final.mjs";
+import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 
 const REQUIRED_ARGS = ["datapack-root", "build-spec", "station-line-input", "route-edge-input", "repository-git-sha", "key-id", "output"];
 const SIGNED_PATHS = ["compatibility.json", "manifest.json", "manifest.signing-input.json", "payload/accessibility.sqlite.zst", "payload/fare.sqlite.zst", "payload/timetable.sqlite.zst", "payload/topology.sqlite.zst", "provenance.json"];
@@ -48,6 +49,11 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
   if (!active || active.id !== "capital" || active.version !== "1" || active.artifactKind !== "production") {
     throw new Error("current manifest must select production capital@1");
   }
+  const publishedAt = new Date(requiredUtcInstant(buildSpec.publishedAt, "build spec publishedAt"));
+  const expiresAt = new Date(requiredUtcInstant(manifest.expiresAt, "current manifest expiresAt"));
+  if (publishedAt.getTime() >= expiresAt.getTime()) {
+    throw new Error("current manifest expiresAt must be after build spec publishedAt");
+  }
   const candidate = candidateIdentity(buildSpec, "build spec");
   const provenanceCandidate = candidateIdentity(provenanceValue?.candidateBuild, "current provenance");
   if (provenanceCandidate.candidateId !== candidate.candidateId
@@ -71,8 +77,8 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
     throw new Error("active production pack sqlite identity mismatch");
   }
   const provenance = path.join(datapackRoot, "current.provenance.json");
-  const publishedAt = requiredInstant(buildSpec.publishedAt, "build spec publishedAt");
   const releaseSequence = positiveInteger(buildSpec.releaseSequence, "build spec releaseSequence");
+  const stagedFreshUntil = kstInstant(expiresAt);
   const temp = await mkdtemp(path.join(output, ".route-candidate-"));
   try {
     const sourceSqlite = path.join(temp, "source.sqlite");
@@ -101,14 +107,14 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
         bundleId: "capital-route-bundle-1",
         releaseSequence,
         activeFrom: kstInstant(publishedAt),
-        freshUntil: kstInstant(new Date(publishedAt.getTime() + 24 * 60 * 60 * 1000)),
+        freshUntil: stagedFreshUntil,
         builtAt: buildSpec.publishedAt,
         keyId: input.keyId,
       },
     });
     const signed = path.join(prepared, "signed-server-route-bundle");
     await assertSignedInventory(signed);
-    const evidence = await validatedEvidence(prepared, candidate);
+    const evidence = await validatedEvidence(prepared, candidate, stagedFreshUntil);
     const staged = path.join(temp, "stage");
     await mkdir(path.join(staged, "server-route-bundle", "payload"), { recursive: true });
     for (const relative of SIGNED_PATHS) {
@@ -176,7 +182,7 @@ async function assertCandidateInventory(root) {
     ...CANONICAL_INPUT_PATHS.map(([relative]) => `server-route-bundle-inputs/${relative}`),
   ])) throw new Error("candidate route bundle inventory mismatch");
 }
-async function validatedEvidence(prepared, candidate) {
+async function validatedEvidence(prepared, candidate, freshUntil) {
   const eligibilityPath = path.join(prepared, EVIDENCE_PATHS[0]);
   const bound = path.join(prepared, "bound");
   if (!same(await regularTree(bound), [EVIDENCE_PATHS[1]])) {
@@ -192,6 +198,9 @@ async function validatedEvidence(prepared, candidate) {
   }
   const { eligibilitySha256, ...eligibilityPayload } = eligibility.value;
   const finalValue = validateServerRouteBundleFinal(final.value);
+  if (finalValue.candidate.freshUntil !== freshUntil) {
+    throw new Error("prepared route evidence freshUntil mismatch");
+  }
   if (eligibility.value.schemaVersion !== 1
     || eligibility.value.decision !== "ELIGIBLE"
     || eligibilitySha256 !== sha256(Buffer.from(canonicalJson(eligibilityPayload)))
@@ -286,13 +295,6 @@ function positiveInteger(value, label) {
     throw new Error(`${label} must be positive`);
   }
   return value;
-}
-function requiredInstant(value, label) {
-  const parsed = new Date(value);
-  if (typeof value !== "string" || Number.isNaN(parsed.getTime()) || !value.endsWith("Z")) {
-    throw new Error(`${label} must be UTC instant`);
-  }
-  return parsed;
 }
 function kstInstant(value) { return new Date(value.getTime() + 9 * 60 * 60 * 1000).toISOString().replace("Z", "+09:00"); }
 
