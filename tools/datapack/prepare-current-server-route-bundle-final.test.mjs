@@ -33,6 +33,7 @@ test("current FINAL preparation은 emitted topology identity와 closed stage ord
   assert.equal(parsed.repositoryGitSha, "a".repeat(40));
   assert.equal(parsed.emitterInputs.evaluationAt, undefined);
   assert.throws(() => parsePrepareCurrentServerRouteBundleFinalArgs([...argv, "--extra", "x"]), /CLI arguments mismatch/);
+  const buildSpecSnapshotBytes = Buffer.from("{\"candidateId\":\"candidate\"}");
   let eligibilityInputBytes;
   const stages = Object.fromEntries(["emit", "sign", "final", "eligibility"].map((name) => [name, async (input) => {
     calls.push([name, input]);
@@ -64,7 +65,11 @@ test("current FINAL preparation은 emitted topology identity와 closed stage ord
     evaluationAt: "2026-08-14T00:00:00.000Z",
     stationLineInputPath,
     routeEdgeInputPath,
-    emitterInputs: { evaluationAt: "2026-08-13T00:00:00.000Z" },
+    emitterInputs: {
+      evaluationAt: "2026-08-13T00:00:00.000Z",
+      buildSpec: "tools/datapack/release/candidate-build-spec.json",
+      buildSpecSnapshotBytes,
+    },
     stages,
   });
   assert.deepEqual(calls.map(([name]) => name), ["emit", "sign", "final", "eligibility", "final"]);
@@ -73,6 +78,9 @@ test("current FINAL preparation은 emitted topology identity와 closed stage ord
   assert.equal(calls[3][1].prepublicationRoot, calls[2][1].output);
   assert.equal(calls[4][1].eligibilityReportPath, calls[3][1].output);
   assert.equal(calls[0][1].evaluationAt, "2026-08-14T00:00:00.000Z");
+  assert.equal(calls[0][1].buildSpec, "tools/datapack/release/candidate-build-spec.json");
+  assert.equal(Buffer.isBuffer(calls[0][1].buildSpecSnapshotBytes), true);
+  assert.strictEqual(calls[0][1].buildSpecSnapshotBytes, buildSpecSnapshotBytes);
   const expectedRouteInput = {
     candidate: { candidateId: "candidate", topologySha256: TOPOLOGY_SHA256 },
   };

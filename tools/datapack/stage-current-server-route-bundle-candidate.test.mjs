@@ -104,10 +104,16 @@ test("prepare 동안 원본 canonical input이 교체돼도 최초 검증 bytes�
     output,
     stages: {
       prepare: async (prepareInput) => {
-        assert.notEqual(prepareInput.emitterInputs.buildSpec, input.buildSpecPath);
+        assert.equal(
+          prepareInput.emitterInputs.buildSpec,
+          "tools/datapack/release/candidate-build-spec.json",
+        );
+        assert.deepEqual(
+          prepareInput.emitterInputs.buildSpecSnapshotBytes,
+          originals.get("build-spec.json"),
+        );
         assert.notEqual(prepareInput.stationLineInputPath, input.stationLineInputPath);
         assert.notEqual(prepareInput.routeEdgeInputPath, input.routeEdgeInputPath);
-        assert.deepEqual(await readFile(prepareInput.emitterInputs.buildSpec), originals.get("build-spec.json"));
         assert.deepEqual(await readFile(prepareInput.stationLineInputPath), originals.get("station-line-input.json"));
         assert.deepEqual(await readFile(prepareInput.routeEdgeInputPath), originals.get("route-edge-input.json"));
         await Promise.all([
