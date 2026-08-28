@@ -152,6 +152,25 @@ export function validateProductionIncheonTimetableFixture(packs, admission) {
   for (const property of ["serviceCalendars", "serviceCalendarDates", "transitRoutes", "transitTrips", "transitStopTimes"]) {
     pack[property] = pack[property].filter((row) => !sourceIds.has(row.sourceId));
   }
+  const replayStationById = new Map(pack.stations.map((station) => [station.id, station]));
+  for (const config of INCHEON_TIMETABLE_LINES) {
+    for (const station of admission.topologySnapshot.scope.filter(({ lineId }) => lineId === config.lineId)) {
+      const stationLines = pack.stationLines.filter(({ lineId, stationCode }) =>
+        lineId === config.lineId && stationCode === station.stationCode);
+      if (stationLines.length !== 1
+        || stationLines[0].stationId !== station.stationId
+        || stationLines[0].sourceId !== TOPOLOGY_SOURCE_ID
+        || stationLines[0].sourceSnapshotId !== admission.topologySnapshot.snapshotId) {
+        throw new Error("production Incheon timetable topology membership does not match pinned admission");
+      }
+      const replayStation = replayStationById.get(station.stationId);
+      if (!replayStation) {
+        throw new Error("production Incheon timetable topology station is missing");
+      }
+      replayStation.nameKo = station.stationName;
+      replayStation.normalizedName = station.stationName.normalize("NFKC");
+    }
+  }
   const replayed = materializeIncheonTimetable({
     baseFixture: fixture,
     topologySnapshot: admission.topologySnapshot,
