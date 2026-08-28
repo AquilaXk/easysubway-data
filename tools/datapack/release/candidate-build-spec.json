@@ -11,7 +11,7 @@
   "networkEdgeEvidence": {
     "sourceInventory": {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "27f8129c1b376dbac35ccb995a5b8b29d3b17d277c0c9b3a6070cc9c171f3fda"
+      "sha256": "df5edda4258721280316570209ee6b70879b0f7427be68b837bc888ca8032c31"
     },
     "capitalTopology": {
       "path": "tools/datapack/sources/capital-route-topology-20260724.json",
@@ -184,8 +184,8 @@
   "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
   "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
   "approvedOverrideSetHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
-  "sourceInventorySha256": "a985dc3b01682efe80f77b32df6f2ff1974d3a9d62515ad1bd6ff50ba76d0e85",
-  "builderGitSha": "d0f01d090734d6a82eb757101d8fbb38d18bacc6",
+  "sourceInventorySha256": "484b0b7cf8b81432b65cf5acab150072401f49dd676de25a94e68f4f79f49fec",
+  "builderGitSha": "30040acaa0e2a866ce704568828e22fbfe3a798c",
   "builderVersion": "build-datapack.mjs@26",
   "officialOdFareEvidence": {
     "sourceId": "seoul-metro-official-od-fares",
