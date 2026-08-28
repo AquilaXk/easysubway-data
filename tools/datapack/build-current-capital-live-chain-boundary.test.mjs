@@ -2,9 +2,15 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 
-import { buildCurrentCapitalLiveChainFanInBoundary, canonicalCurrentCapitalLiveChainFanInBoundaryJson, verifyCurrentCapitalLiveChainFanInComponents } from "./build-current-capital-live-chain-boundary.mjs";
+import { buildCurrentCapitalLiveChainFanInBoundary, canonicalCurrentCapitalLiveChainFanInBoundaryJson, readCurrentCapitalLiveChainFanInBoundary, verifyCurrentCapitalLiveChainFanInComponents } from "./build-current-capital-live-chain-boundary.mjs";
 import { buildCurrentCapitalStationLineInput } from "./build-current-capital-station-line-input.mjs";
 import { fixture } from "./build-current-capital-station-line-input.test.mjs";
+
+test("tracked current live-chain fan-in binds the repository component bytes", async () => {
+  await assert.doesNotReject(readCurrentCapitalLiveChainFanInBoundary({
+    repositoryRoot: new URL("../../", import.meta.url).pathname,
+  }));
+});
 
 test("current live-chain fan-in binds all current component bytes and bypasses no predecessor reconstruction", async () => {
   const input = await fixture();
