@@ -1378,16 +1378,18 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
   );
   const stationLineKeys = capital.stationLines.map(({ stationId, lineId }) => `${stationId}:${lineId}`);
   assert.equal(new Set(stationLineKeys).size, stationLineKeys.length);
+  const topologyOwnedLineIds = new Set(currentIncheonTopology.topologyLineIds);
   const currentIncheonRouteMapPositionKeys = currentIncheonTopology.positions
+    .filter(({ lineId }) => topologyOwnedLineIds.has(lineId))
     .map(({ stationId, lineId }) => `${stationId}:${lineId}`)
     .sort();
   const materializedIncheonRouteMapPositionKeys = capital.routeMapPositions
-    .filter(({ sourceId }) => sourceId === "incheon-transit-station-info")
+    .filter(({ lineId }) => topologyOwnedLineIds.has(lineId))
     .map(({ stationId, lineId }) => `${stationId}:${lineId}`)
     .sort();
   assert.deepEqual(materializedIncheonRouteMapPositionKeys, currentIncheonRouteMapPositionKeys);
-  assert.ok(materializedIncheonRouteMapPositionKeys.every((key) => stationLineKeys.includes(key)));
-  const topologyOwnedLineIds = new Set(currentIncheonTopology.topologyLineIds);
+  assert.ok(capital.routeMapPositions.every(({ stationId, lineId }) =>
+    stationLineKeys.includes(`${stationId}:${lineId}`)));
   const membershipRow = ({ stationId, lineId, stationCode, lineSequence, platformInfo }) => ({
     stationId, lineId, stationCode, lineSequence, platformInfo,
   });
