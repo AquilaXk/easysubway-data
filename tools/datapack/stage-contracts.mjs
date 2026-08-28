@@ -4,7 +4,7 @@ import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/9dce859b13fc5ba3e5e7278318c34dc1895b5683/contracts/bundles/data-contracts-v1.0.0.json";
+const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/3c6c99da4e00ccd5f04ae25da6fc32ac417fd3e6/contracts/bundles/data-contracts-v1.0.0.json";
 const annualOfficialFileSourceIds = [
   "molit-railway-transfer-movement",
   "seoul-metro-transfer-distance-duration",
@@ -19,6 +19,7 @@ const productionRequiredSourceIds = [
   "molit-urban-rail-full-route",
   "seoulmetro-station-line-info",
   "seoul-metro-accessibility",
+  "seoul-metro-route-map-positions",
   "kric-station-convenience-standard",
   "kric-subway-timetable",
   "seoul-metro-transfer-distance-duration",

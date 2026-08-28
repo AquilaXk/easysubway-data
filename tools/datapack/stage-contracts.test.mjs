@@ -7,8 +7,8 @@ import test from "node:test";
 
 import { stageContracts } from "./stage-contracts.mjs";
 
-const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/9dce859b13fc5ba3e5e7278318c34dc1895b5683/contracts/bundles/data-contracts-v1.0.0.json";
-const bundleSha256 = "164ded8b52c5aedc3645a793172f803a6d677ae6f182001f38b58cf45ff9d55c";
+const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/3c6c99da4e00ccd5f04ae25da6fc32ac417fd3e6/contracts/bundles/data-contracts-v1.0.0.json";
+const bundleSha256 = "1468d294e6c3ac7a87c63a1f945cedac3eb90bc470bffefcc8c6d9e6ef399b2e";
 const annualOfficialFileSourceIds = [
   "molit-railway-transfer-movement",
   "seoul-metro-transfer-distance-duration",
@@ -23,6 +23,7 @@ const productionRequiredSourceIds = [
   "molit-urban-rail-full-route",
   "seoulmetro-station-line-info",
   "seoul-metro-accessibility",
+  "seoul-metro-route-map-positions",
   "kric-station-convenience-standard",
   "kric-subway-timetable",
   "seoul-metro-transfer-distance-duration",
@@ -160,6 +161,25 @@ test("고정된 hub bundle만 build/contracts에 원문 그대로 stage한다", 
     writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
     await assert.rejects(
       stageContracts({ root, fetchBundle: async () => invalidProductionScopeBytes }),
+      /production requiredSourceIds/,
+    );
+
+    const missingRouteMapPositionResources = structuredClone(resources);
+    missingRouteMapPositionResources["datapack/production-datapack-scope.json"] = `${JSON.stringify({
+      productionSourceSet: {
+        requiredSourceIds: productionRequiredSourceIds.filter((sourceId) =>
+          sourceId !== "seoul-metro-route-map-positions"),
+      },
+    })}\n`;
+    const missingRouteMapPositionBytes = Buffer.from(`${JSON.stringify({
+      schemaVersion: 1,
+      bundleVersion: "1.0.0",
+      resources: missingRouteMapPositionResources,
+    }, null, 2)}\n`);
+    lock.sha256 = createHash("sha256").update(missingRouteMapPositionBytes).digest("hex");
+    writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
+    await assert.rejects(
+      stageContracts({ root, fetchBundle: async () => missingRouteMapPositionBytes }),
       /production requiredSourceIds/,
     );
   } finally {
