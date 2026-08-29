@@ -7,6 +7,7 @@ import { emitArtifactComponents } from "./emit-artifact-components.mjs";
 import { signServerRouteBundle } from "./sign-server-route-bundle.mjs";
 import { buildServerRouteBundleFinalEvidence } from "./build-server-route-bundle-final.mjs";
 import { buildRouteAccessibilityEligibility } from "./build-route-accessibility-eligibility.mjs";
+import { canonicalRideEdgeSetSha256 } from "./evaluate-route-accessibility-edges.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { parseArgs, requiredArg } from "./lib/cli-args.mjs";
 
@@ -18,6 +19,7 @@ export async function prepareCurrentServerRouteBundleFinal(input) {
   const parent = await realDirectory(path.dirname(output), "output parent");
   const stationLine = await canonicalInput(input.stationLineInputPath, "station-line input");
   const routeEdge = await canonicalInput(input.routeEdgeInputPath, "route-edge input");
+  const routeEdgeSeed = routeEdgeSeedForEmission(routeEdge.value);
   const evaluationAt = required(input.evaluationAt, "evaluation at");
   const stages = { emit: emitArtifactComponents, sign: signServerRouteBundle, final: buildServerRouteBundleFinalEvidence, eligibility: buildRouteAccessibilityEligibility, ...input.stages };
   for (const name of ["emit", "sign", "final", "eligibility"]) {
@@ -33,7 +35,7 @@ export async function prepareCurrentServerRouteBundleFinal(input) {
   try {
     await mkdir(inputRoot);
     await writeFile(stationLineInputPath, stationLine.bytes, { flag: "wx", mode: 0o600 });
-    await stages.emit({ ...input.emitterInputs, repositoryRoot: input.repositoryRoot ?? process.cwd(), stationLineInput: stationLine.value, routeEdgeInput: routeEdge.value, evaluationAt, output: paths.components });
+    await stages.emit({ ...input.emitterInputs, repositoryRoot: input.repositoryRoot ?? process.cwd(), stationLineInput: stationLine.value, routeEdgeInput: routeEdgeSeed, evaluationAt, output: paths.components });
     const routeEdgeInput = await bindEmittedTopology(
       routeEdge.value,
       path.join(paths.components, "server-route-bundle", "manifest.signing-input.json"),
@@ -69,10 +71,28 @@ async function bindEmittedTopology(routeEdgeInput, manifestPath) {
   if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
     throw new Error("route-edge seed candidate is required");
   }
-  if (Object.hasOwn(candidate, "topologySha256")) {
-    throw new Error("route-edge seed must not prebind topology identity");
-  }
   return { ...routeEdgeInput, candidate: { ...candidate, topologySha256 } };
+}
+
+function routeEdgeSeedForEmission(routeEdgeInput) {
+  const candidate = routeEdgeInput?.candidate;
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+    throw new Error("route-edge producer candidate is required");
+  }
+  const expectedKeys = ["candidateId", "evaluatorVersion", "policyVersion", "sourceSetSha256", "stationSetSha256", "topologySha256"];
+  const candidateKeys = Object.keys(candidate);
+  candidateKeys.sort(bytewise);
+  expectedKeys.sort(bytewise);
+  if (canonicalJson(candidateKeys) !== canonicalJson(expectedKeys)) {
+    throw new Error("route-edge producer candidate keys mismatch");
+  }
+  const { topologySha256, ...seedCandidate } = candidate;
+  const producerTopologySha256 = requiredSha256(topologySha256, "route-edge producer topology sha256");
+  const rides = routeEdgeInput.routeEdges?.filter(({ edgeType }) => edgeType === "RIDE");
+  if (producerTopologySha256 !== canonicalRideEdgeSetSha256(rides)) {
+    throw new Error("route-edge producer topology identity mismatch");
+  }
+  return { ...routeEdgeInput, candidate: seedCandidate };
 }
 
 async function canonicalInput(target, label) {
