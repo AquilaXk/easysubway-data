@@ -1204,14 +1204,19 @@ function replaceIncheonCanonicalSlice(canonical, projected, {
   replace("operators", ({ id }) => id === "incheon-transit", ({ id }) => id);
   replace("lines", ({ id }) => ["line-98718184f016", "line-42b5805f3b5a"].includes(id), ({ id }) => id);
   const topologyOwnedLineIds = new Set(topologySnapshot.topologyLineIds);
-  const topologyStationLines = projectedPack.stationLines.filter(({ sourceId, lineId }) => (
-    sourceId === "incheon-transit-station-info" && topologyOwnedLineIds.has(lineId)
+  const topologyScope = new Set(topologySnapshot.scope.map(({ stationId, lineId }) => `${stationId}:${lineId}`));
+  const topologyStationLines = projectedPack.stationLines.filter(({ sourceId, stationId, lineId }) => (
+    sourceId === "incheon-transit-station-info" && topologyScope.has(`${stationId}:${lineId}`)
   ));
-  const topologyScope = new Set(topologyStationLines.map(({ stationId, lineId }) => `${stationId}:${lineId}`));
-  if (topologyOwnedLineIds.size === 0 || topologyScope.size !== topologyStationLines.length) {
+  const projectedTopologyScope = new Set(topologyStationLines.map(({ stationId, lineId }) => `${stationId}:${lineId}`));
+  if (topologyOwnedLineIds.size === 0 || topologyScope.size === 0
+    || projectedTopologyScope.size !== topologyStationLines.length
+    || !isDeepStrictEqual([...projectedTopologyScope].sort(), [...topologyScope].sort())) {
     throw new Error("Incheon canonical topology stationLines identity is invalid");
   }
-  replace("stationLines", ({ lineId }) => topologyOwnedLineIds.has(lineId),
+  replace("stationLines", ({ stationId, lineId }) => (
+    topologyOwnedLineIds.has(lineId) || topologyScope.has(`${stationId}:${lineId}`)
+  ),
     ({ stationId, lineId }) => `${stationId}:${lineId}`);
   const topologyStationIds = new Set([...topologyScope].map((scope) => scope.split(":")[0]));
   const canonicalStationsById = new Map(pack.stations.map((station) => [station.id, station]));
@@ -1358,7 +1363,9 @@ function replaceIncheonCanonicalSlice(canonical, projected, {
   }
   const ownedBySource = new Map([
     ["incheon-transit-station-info", new Map([
-      ["stationLines", ({ lineId }) => topologyOwnedLineIds.has(lineId)],
+      ["stationLines", ({ stationId, lineId }) => (
+        topologyOwnedLineIds.has(lineId) || topologyScope.has(`${stationId}:${lineId}`)
+      )],
       ["networkEdges", ownsIncheonTopologyEdge],
       ["routeMapPositions", ({ lineId }) => topologyOwnedLineIds.has(lineId)],
     ])],

@@ -1598,10 +1598,13 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
     `${left.lineId}:${left.stationId}`.localeCompare(`${right.lineId}:${right.stationId}`, "en")
   ));
   const admittedTopologyMemberships = currentIncheonTopology.scope
-    .filter(({ lineId }) => topologyOwnedLineIds.has(lineId))
     .map((row) => ({ ...row, platformInfo: "" }));
+  const admittedTopologyMembershipKeys = new Set(admittedTopologyMemberships
+    .map(({ stationId, lineId }) => `${stationId}:${lineId}`));
   assert.deepEqual(
-    sortMembershipRows(capital.stationLines.filter(({ lineId }) => topologyOwnedLineIds.has(lineId))),
+    sortMembershipRows(capital.stationLines.filter(({ stationId, lineId }) => (
+      topologyOwnedLineIds.has(lineId) || admittedTopologyMembershipKeys.has(`${stationId}:${lineId}`)
+    ))),
     sortMembershipRows(admittedTopologyMemberships),
   );
   const capitalStationIds = new Set(capital.stations.map(({ id }) => id));
@@ -1628,13 +1631,10 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
   assert.deepEqual(capital.stationLines.filter(({ stationId, lineId }) => (
     stationId === currentI210.stationId && lineId === currentI210.lineId
   )).map(({ stationCode }) => stationCode), [currentI210.stationCode]);
-  const freshLine7StationIds = new Set(currentIncheonTopology.scope
-    .filter(({ lineId }) => lineId === "line-15b3b8a93259")
-    .map(({ stationId }) => stationId));
-  const retainedSharedLine7 = (pack) => pack.stationLines.filter(({ stationId, lineId }) => (
-    lineId === "line-15b3b8a93259" && !freshLine7StationIds.has(stationId)
+  const retainedSharedMemberships = (pack) => pack.stationLines.filter(({ stationId, lineId }) => (
+    !topologyOwnedLineIds.has(lineId) && !admittedTopologyMembershipKeys.has(`${stationId}:${lineId}`)
   ));
-  assert.deepEqual(retainedSharedLine7(capital), retainedSharedLine7(previousCapital));
+  assert.deepEqual(retainedSharedMemberships(capital), retainedSharedMemberships(previousCapital));
   const incheonAdmission = admittedIncheonTopologyEvidence({
     sourceInventory: result.sourceInventory,
     snapshot: currentIncheonTopology,
@@ -1730,7 +1730,6 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
     /^nationwide-incheon-schedule-[a-f0-9]{64}$/u.test(id));
   assert.ok(boundaryProjectedCapital);
   const boundaryTopologyStationIds = new Set(currentIncheonTopology.scope
-    .filter(({ lineId }) => topologyOwnedLineIds.has(lineId))
     .map(({ stationId }) => stationId));
   const previousBoundaryStationsById = new Map(previousCapital.stations.map((station) => [station.id, station]));
   const boundaryProjectedStationsById = new Map(boundaryProjectedCapital.stations
