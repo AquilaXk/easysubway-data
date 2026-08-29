@@ -90,7 +90,6 @@ function lineageFor(sources, heads, publishedAt, childOwner, dispositionStatus) 
     ? "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED" : "CONTRACT_GAP";
   const centralHeads = sources.map(({ id }) => heads.get(id)).filter(Boolean);
   const allCentral = centralHeads.length === sources.length && sources.length > 0;
-  const evidence = sources.flatMap(admittedEvidence);
   const licenses = sources.filter(({ license, licenseReview }) => license || licenseReview)
     .map(({ id, license, licenseReview }) => ({ sourceId: id, license: license ?? null, licenseReview: licenseReview ?? null }));
   const fresh = sources.map((source) => ({
@@ -104,8 +103,6 @@ function lineageFor(sources, heads, publishedAt, childOwner, dispositionStatus) 
   }));
   const freshEnough = fresh.length > 0 && fresh.every((ref) => isStrictlyAfter(ref.currentHead?.freshnessExpiresAt, publishedAt)
     || ref.admissionEvidence.some(({ freshUntil }) => isStrictlyAfter(freshUntil, publishedAt)));
-  const inventoryArtifacts = evidence.filter(({ snapshotId, snapshotPath, rawSha256 }) => snapshotId && snapshotPath && rawSha256)
-    .map(({ kind, snapshotId, snapshotPath, rawSha256 }) => ({ kind, snapshotId, snapshotPath, rawSha256 }));
   const runtime = sources.map(firstRuntimeEvidence).filter(Boolean);
   return {
     licenseLineage: sources.length > 0 && licenses.length === sources.length ? evidenced(licenses) : pending(pendingReason, childOwner),
@@ -113,10 +110,10 @@ function lineageFor(sources, heads, publishedAt, childOwner, dispositionStatus) 
     admissionLineage: sources.length > 0 && sources.every((source) => source.productionUseAllowed === true
       && admittedEvidence(source).some(({ decision }) => decision === "APPROVED"))
       ? evidenced(sources.map(({ id, productionUseAllowed }) => ({ sourceId: id, productionUseAllowed, admissions: admittedEvidence(sources.find((source) => source.id === id)) })))
-      : pending(pendingReason, childOwner),
+      : pending("PRODUCTION_ADMISSION_REQUIRED", childOwner),
     artifactLineage: allCentral
       ? evidenced(centralHeads.map(({ sourceId, snapshotId, rawSha256, rawObjectUri }) => ({ sourceId, snapshotId, rawSha256, rawObjectUri })).sort((left, right) => compare(left.sourceId, right.sourceId)))
-      : sources.length > 0 && inventoryArtifacts.length === sources.length ? evidenced(inventoryArtifacts) : pending(pendingReason, childOwner),
+      : pending(pendingReason, childOwner),
     runtimeLineage: sources.length > 0 && runtime.length === sources.length ? evidenced(runtime) : pending("RUNTIME_LINEAGE_REQUIRED", childOwner),
   };
 }
@@ -168,6 +165,12 @@ export function buildNationwideRequirementOwnershipLedger(inputs) {
   if (seen.size !== targetPks.size) throw new Error("ownership PK set drift");
   const launchRows = rows.filter(({ releaseTier }) => releaseTier === "LAUNCH_REQUIRED");
   const count = (status) => launchRows.filter((row) => row.disposition.status === status).length;
+  const terminalLaunchRow = (row) => row.disposition.status === "INVENTORY_ADMITTED"
+    || row.disposition.status === "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE";
+  const completeAdmittedLineage = (row) => row.disposition.status !== "INVENTORY_ADMITTED"
+    || AXES.every((axis) => row.lineage[axis].state === "EVIDENCED");
+  const nationwideEligibility = launchRows.every((row) => terminalLaunchRow(row) && completeAdmittedLineage(row))
+    ? "GO" : "NO_GO";
   return {
     schemaVersion: 1, artifactKind: "nationwide-requirement-ownership-ledger", issue: 449,
     targetVersion: targets.targetVersion,
@@ -184,7 +187,7 @@ export function buildNationwideRequirementOwnershipLedger(inputs) {
         missingCount: count("MISSING"), terminalCount: count("INVENTORY_ADMITTED") + count("EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE"),
       },
       enhancement: { totalCount: rows.length - launchRows.length, blocking: false },
-      duplicatePkCount: 0, unownedPkCount: 0, nationwideEligibility: "NO_GO",
+      duplicatePkCount: 0, unownedPkCount: 0, nationwideEligibility,
     },
     rows,
   };

@@ -111,22 +111,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "accessibilityAdmissionEvidence",
-              "snapshotId": "busan-transportation-accessibility-20260724",
-              "snapshotPath": "tools/datapack/sources/busan-transportation-accessibility-20260724.json",
-              "rawSha256": "1922b80c4919a62900d1c65eea57ccbdcedd23ca23b2f652923ab234f177f898"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 478,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -182,7 +179,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -250,7 +247,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -333,22 +330,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "topologyAdmissionEvidence",
-              "snapshotId": "busan-transportation-route-topology-20260720",
-              "snapshotPath": "tools/datapack/sources/busan-transportation-route-topology-20260720.json",
-              "rawSha256": "1314c1ca4bad29ca7b25e8887519ae89a503e649b67b15d53e9232940898eebd"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 457,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -429,22 +423,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 506,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "routeMapAdmissionEvidence",
-              "snapshotId": "busan-transportation-route-map-positions-20260720",
-              "snapshotPath": "tools/datapack/sources/busan-transportation-route-map-positions-20260720.json",
-              "rawSha256": "bcb19874de43bd8d2de526e1d3f468285c7950725a17a6d5dc6ec820576b4028"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 506,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -515,22 +506,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "scheduleAdmissionEvidence",
-              "snapshotId": "busan-transportation-timetable-20260720",
-              "snapshotPath": "tools/datapack/sources/busan-transportation-timetable-20260720.json",
-              "rawSha256": "8269d5ba02ea03824220da02b5d807d8bce5eeba9bbc8e520d4a4e5938e03a95"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 454,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -601,22 +589,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "topologyAdmissionEvidence",
-              "snapshotId": "busan-transportation-route-topology-20260720",
-              "snapshotPath": "tools/datapack/sources/busan-transportation-route-topology-20260720.json",
-              "rawSha256": "1314c1ca4bad29ca7b25e8887519ae89a503e649b67b15d53e9232940898eebd"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 455,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -687,22 +672,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "accessibilityAdmissionEvidence",
-              "snapshotId": "busan-transportation-accessibility-20260724",
-              "snapshotPath": "tools/datapack/sources/busan-transportation-accessibility-20260724.json",
-              "rawSha256": "1922b80c4919a62900d1c65eea57ccbdcedd23ca23b2f652923ab234f177f898"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 478,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -758,7 +740,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -826,7 +808,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -909,22 +891,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "topologyAdmissionEvidence",
-              "snapshotId": "busan-transportation-route-topology-20260720",
-              "snapshotPath": "tools/datapack/sources/busan-transportation-route-topology-20260720.json",
-              "rawSha256": "1314c1ca4bad29ca7b25e8887519ae89a503e649b67b15d53e9232940898eebd"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 457,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -1005,22 +984,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 506,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "routeMapAdmissionEvidence",
-              "snapshotId": "busan-transportation-route-map-positions-20260720",
-              "snapshotPath": "tools/datapack/sources/busan-transportation-route-map-positions-20260720.json",
-              "rawSha256": "bcb19874de43bd8d2de526e1d3f468285c7950725a17a6d5dc6ec820576b4028"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 506,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -1091,22 +1067,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "scheduleAdmissionEvidence",
-              "snapshotId": "busan-transportation-timetable-20260720",
-              "snapshotPath": "tools/datapack/sources/busan-transportation-timetable-20260720.json",
-              "rawSha256": "8269d5ba02ea03824220da02b5d807d8bce5eeba9bbc8e520d4a4e5938e03a95"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 454,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -1177,22 +1150,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "topologyAdmissionEvidence",
-              "snapshotId": "busan-transportation-route-topology-20260720",
-              "snapshotPath": "tools/datapack/sources/busan-transportation-route-topology-20260720.json",
-              "rawSha256": "1314c1ca4bad29ca7b25e8887519ae89a503e649b67b15d53e9232940898eebd"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 455,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -1263,22 +1233,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "accessibilityAdmissionEvidence",
-              "snapshotId": "busan-transportation-accessibility-20260724",
-              "snapshotPath": "tools/datapack/sources/busan-transportation-accessibility-20260724.json",
-              "rawSha256": "1922b80c4919a62900d1c65eea57ccbdcedd23ca23b2f652923ab234f177f898"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 478,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -1334,7 +1301,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -1402,7 +1369,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -1485,22 +1452,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "topologyAdmissionEvidence",
-              "snapshotId": "busan-transportation-route-topology-20260720",
-              "snapshotPath": "tools/datapack/sources/busan-transportation-route-topology-20260720.json",
-              "rawSha256": "1314c1ca4bad29ca7b25e8887519ae89a503e649b67b15d53e9232940898eebd"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 457,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -1581,22 +1545,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 506,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "routeMapAdmissionEvidence",
-              "snapshotId": "busan-transportation-route-map-positions-20260720",
-              "snapshotPath": "tools/datapack/sources/busan-transportation-route-map-positions-20260720.json",
-              "rawSha256": "bcb19874de43bd8d2de526e1d3f468285c7950725a17a6d5dc6ec820576b4028"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 506,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -1667,22 +1628,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "scheduleAdmissionEvidence",
-              "snapshotId": "busan-transportation-timetable-20260720",
-              "snapshotPath": "tools/datapack/sources/busan-transportation-timetable-20260720.json",
-              "rawSha256": "8269d5ba02ea03824220da02b5d807d8bce5eeba9bbc8e520d4a4e5938e03a95"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 454,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -1753,22 +1711,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "topologyAdmissionEvidence",
-              "snapshotId": "busan-transportation-route-topology-20260720",
-              "snapshotPath": "tools/datapack/sources/busan-transportation-route-topology-20260720.json",
-              "rawSha256": "1314c1ca4bad29ca7b25e8887519ae89a503e649b67b15d53e9232940898eebd"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 455,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -1839,22 +1794,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "accessibilityAdmissionEvidence",
-              "snapshotId": "busan-transportation-accessibility-20260724",
-              "snapshotPath": "tools/datapack/sources/busan-transportation-accessibility-20260724.json",
-              "rawSha256": "1922b80c4919a62900d1c65eea57ccbdcedd23ca23b2f652923ab234f177f898"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 478,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -1910,7 +1862,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -1978,7 +1930,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -2061,22 +2013,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "topologyAdmissionEvidence",
-              "snapshotId": "busan-transportation-route-topology-20260720",
-              "snapshotPath": "tools/datapack/sources/busan-transportation-route-topology-20260720.json",
-              "rawSha256": "1314c1ca4bad29ca7b25e8887519ae89a503e649b67b15d53e9232940898eebd"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 457,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -2157,22 +2106,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 506,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "routeMapAdmissionEvidence",
-              "snapshotId": "busan-transportation-route-map-positions-20260720",
-              "snapshotPath": "tools/datapack/sources/busan-transportation-route-map-positions-20260720.json",
-              "rawSha256": "bcb19874de43bd8d2de526e1d3f468285c7950725a17a6d5dc6ec820576b4028"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 506,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -2243,22 +2189,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "scheduleAdmissionEvidence",
-              "snapshotId": "busan-transportation-timetable-20260720",
-              "snapshotPath": "tools/datapack/sources/busan-transportation-timetable-20260720.json",
-              "rawSha256": "8269d5ba02ea03824220da02b5d807d8bce5eeba9bbc8e520d4a4e5938e03a95"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 454,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -2329,22 +2272,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "topologyAdmissionEvidence",
-              "snapshotId": "busan-transportation-route-topology-20260720",
-              "snapshotPath": "tools/datapack/sources/busan-transportation-route-topology-20260720.json",
-              "rawSha256": "1314c1ca4bad29ca7b25e8887519ae89a503e649b67b15d53e9232940898eebd"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 455,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -2400,7 +2340,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -2468,7 +2408,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -2536,7 +2476,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -2604,7 +2544,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
@@ -2672,7 +2612,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 506,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"
@@ -2740,7 +2680,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -2808,7 +2748,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -2876,7 +2816,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -2944,7 +2884,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -3012,7 +2952,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -3080,7 +3020,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
@@ -3148,7 +3088,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 506,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"
@@ -3216,7 +3156,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -3284,7 +3224,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -3377,22 +3317,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 622,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/622"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "accessibilityAdmissionEvidence",
-              "snapshotId": "incheon-transit-accessibility-20260828",
-              "snapshotPath": "tools/datapack/sources/incheon-transit-accessibility-20260828.json",
-              "rawSha256": "3f29b437f2c6f4145dea67535839684223f8458d610b241580ed0a6a499ba67c"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 622,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/622"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -3448,7 +3385,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -3516,7 +3453,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -3619,7 +3556,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
@@ -3722,7 +3659,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
@@ -3790,7 +3727,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 459,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/459"
@@ -3893,7 +3830,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -3986,22 +3923,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 622,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/622"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "accessibilityAdmissionEvidence",
-              "snapshotId": "incheon-transit-accessibility-20260828",
-              "snapshotPath": "tools/datapack/sources/incheon-transit-accessibility-20260828.json",
-              "rawSha256": "3f29b437f2c6f4145dea67535839684223f8458d610b241580ed0a6a499ba67c"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 622,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/622"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -4057,7 +3991,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -4125,7 +4059,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -4228,7 +4162,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
@@ -4331,7 +4265,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
@@ -4424,22 +4358,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 459,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/459"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "scheduleAdmissionEvidence",
-              "snapshotId": "incheon-line2-train-timetable-20260828",
-              "snapshotPath": "tools/datapack/sources/incheon-line2-train-timetable-20260828.json",
-              "rawSha256": "c5eb85973de66e59751df32d178d82798013e91fc5a2f7fa1af15cb1ef5f4805"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 459,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/459"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -4530,7 +4461,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -4623,22 +4554,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 622,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/622"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "accessibilityAdmissionEvidence",
-              "snapshotId": "incheon-transit-accessibility-20260828",
-              "snapshotPath": "tools/datapack/sources/incheon-transit-accessibility-20260828.json",
-              "rawSha256": "3f29b437f2c6f4145dea67535839684223f8458d610b241580ed0a6a499ba67c"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 622,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/622"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -4694,7 +4622,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -4762,7 +4690,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -4865,7 +4793,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
@@ -4968,7 +4896,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
@@ -5061,22 +4989,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 459,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/459"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "scheduleAdmissionEvidence",
-              "snapshotId": "incheon-line1-train-timetable-20260828",
-              "snapshotPath": "tools/datapack/sources/incheon-line1-train-timetable-20260828.json",
-              "rawSha256": "f46f46df99669a59eca52ebcce44edae74d18d5d3857382b63fe4cff6d8ec39e"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 459,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/459"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -5167,7 +5092,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -5235,7 +5160,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -5303,7 +5228,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -5371,7 +5296,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -5439,7 +5364,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
@@ -5532,22 +5457,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "routeMapAdmissionEvidence",
-              "snapshotId": "kric-seohae-route-map-positions-20260725",
-              "snapshotPath": "tools/datapack/sources/kric-seohae-route-map-positions-20260725.json",
-              "rawSha256": "98b5c19fbc46b0d5c7b9873d9650333aad54231bc28e2014504811837486b194"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 458,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -5603,7 +5525,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -5671,7 +5593,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -5739,7 +5661,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -5807,7 +5729,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -5875,7 +5797,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -5943,7 +5865,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
@@ -6011,7 +5933,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
@@ -6079,7 +6001,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -6147,7 +6069,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -6215,7 +6137,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -6283,7 +6205,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -6351,7 +6273,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -6419,7 +6341,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
@@ -6487,7 +6409,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
@@ -6555,7 +6477,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -6623,7 +6545,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -6691,7 +6613,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -6759,7 +6681,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -6827,7 +6749,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -6895,7 +6817,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
@@ -6988,22 +6910,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "routeMapAdmissionEvidence",
-              "snapshotId": "kric-gyeongchun-route-map-positions-20260725",
-              "snapshotPath": "tools/datapack/sources/kric-gyeongchun-route-map-positions-20260725.json",
-              "rawSha256": "b41d276479134953c888500d97394b75771d5e89e628d936e2f4070695f84b48"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 458,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -7059,7 +6978,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -7127,7 +7046,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -7195,7 +7114,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -7263,7 +7182,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -7331,7 +7250,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -7399,7 +7318,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
@@ -7492,22 +7411,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "routeMapAdmissionEvidence",
-              "snapshotId": "kric-suin-bundang-route-map-positions-20260725",
-              "snapshotPath": "tools/datapack/sources/kric-suin-bundang-route-map-positions-20260725.json",
-              "rawSha256": "715122eba0b24dc5a52e65e47c6832f0bff68572cd8adf7c34f0c03a398d05bc"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 458,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -7563,7 +7479,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -7631,7 +7547,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -7699,7 +7615,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -7767,7 +7683,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -7835,7 +7751,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -7903,7 +7819,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
@@ -7996,22 +7912,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "routeMapAdmissionEvidence",
-              "snapshotId": "kric-gyeongui-jungang-route-map-positions-20260725",
-              "snapshotPath": "tools/datapack/sources/kric-gyeongui-jungang-route-map-positions-20260725.json",
-              "rawSha256": "da29b9f9a5a109e0b1c50a4a59dbf480f46f080268630db5171a17e91982eb08"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 458,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -8067,7 +7980,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -8135,7 +8048,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -8203,7 +8116,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -8271,7 +8184,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -8339,7 +8252,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -8407,7 +8320,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
@@ -8500,22 +8413,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "routeMapAdmissionEvidence",
-              "snapshotId": "kric-gyeonggang-route-map-positions-20260725",
-              "snapshotPath": "tools/datapack/sources/kric-gyeonggang-route-map-positions-20260725.json",
-              "rawSha256": "4744c6dc298db3a5f34e7bc91a1ad182daba6676b314a07094ad8da0b1e5c7df"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 458,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -8571,7 +8481,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -8639,7 +8549,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -8707,7 +8617,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -8775,7 +8685,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -8843,7 +8753,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -8911,7 +8821,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
@@ -8979,7 +8889,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
@@ -9047,7 +8957,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -9115,7 +9025,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -9183,7 +9093,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -9251,7 +9161,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -9319,7 +9229,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -9387,7 +9297,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
@@ -9455,7 +9365,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
@@ -9523,7 +9433,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -9591,7 +9501,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -9659,7 +9569,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -9727,7 +9637,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -9795,7 +9705,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -9863,7 +9773,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
@@ -9956,22 +9866,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "routeMapAdmissionEvidence",
-              "snapshotId": "kric-sillim-route-map-positions-20260725",
-              "snapshotPath": "tools/datapack/sources/kric-sillim-route-map-positions-20260725.json",
-              "rawSha256": "cea37a7e668eca50d6fbeda97b8c7e0d9bcf6b763046b005238e5143a02cac77"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 458,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -10027,7 +9934,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -10095,7 +10002,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -10163,7 +10070,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -10231,7 +10138,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -10299,7 +10206,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -10367,7 +10274,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
@@ -10460,22 +10367,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "routeMapAdmissionEvidence",
-              "snapshotId": "kric-shinbundang-route-map-positions-20260725",
-              "snapshotPath": "tools/datapack/sources/kric-shinbundang-route-map-positions-20260725.json",
-              "rawSha256": "3be638e4c7e6272263abdf2803cd16b9c351bd027356cb10f348574ce4d1dea6"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 458,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -10531,7 +10435,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -10599,7 +10503,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -10667,7 +10571,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -10735,7 +10639,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -10803,7 +10707,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -10871,7 +10775,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
@@ -10964,22 +10868,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "routeMapAdmissionEvidence",
-              "snapshotId": "kric-uijeongbu-route-map-positions-20260725",
-              "snapshotPath": "tools/datapack/sources/kric-uijeongbu-route-map-positions-20260725.json",
-              "rawSha256": "3899909d0729d62358d3248f909f4ae1c584283bf361821826cc510bfbb3419e"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 458,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -11035,7 +10936,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -11103,7 +11004,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -11171,7 +11072,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -11239,7 +11140,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -11307,7 +11208,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -11375,7 +11276,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
@@ -11468,22 +11369,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "routeMapAdmissionEvidence",
-              "snapshotId": "kric-gimpo-goldline-route-map-positions-20260725",
-              "snapshotPath": "tools/datapack/sources/kric-gimpo-goldline-route-map-positions-20260725.json",
-              "rawSha256": "4008595334630331f68e0fe4aebe3ed5ed8d1cd102ad9b14ea6e0c604fab578d"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 458,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -11539,7 +11437,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -11607,7 +11505,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -11675,7 +11573,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -11743,7 +11641,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -11811,7 +11709,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -11879,7 +11777,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
@@ -11972,22 +11870,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "routeMapAdmissionEvidence",
-              "snapshotId": "kric-seohae-route-map-positions-20260725",
-              "snapshotPath": "tools/datapack/sources/kric-seohae-route-map-positions-20260725.json",
-              "rawSha256": "98b5c19fbc46b0d5c7b9873d9650333aad54231bc28e2014504811837486b194"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 458,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -12043,7 +11938,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -12111,7 +12006,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -12179,7 +12074,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -12247,7 +12142,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -12315,7 +12210,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -12383,7 +12278,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
@@ -12476,22 +12371,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "routeMapAdmissionEvidence",
-              "snapshotId": "kric-ui-sinseol-route-map-positions-20260725",
-              "snapshotPath": "tools/datapack/sources/kric-ui-sinseol-route-map-positions-20260725.json",
-              "rawSha256": "fe2d8d0b24d16561c8fbbafe1b2b8bf1bb67bb24ca0c200bae222f502fefe055"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 458,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -12547,7 +12439,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -12615,7 +12507,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -12683,7 +12575,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -12751,7 +12643,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -12819,7 +12711,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -12887,7 +12779,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
@@ -12980,22 +12872,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "routeMapAdmissionEvidence",
-              "snapshotId": "kric-gtx-a-route-map-positions-20260725",
-              "snapshotPath": "tools/datapack/sources/kric-gtx-a-route-map-positions-20260725.json",
-              "rawSha256": "ce9589f0f7c62cabc8f8249c3640b56a8ef817b776faaabc2c53d9624faa35ff"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 458,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -13051,7 +12940,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -13119,7 +13008,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -13187,7 +13076,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -13255,7 +13144,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -13323,7 +13212,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -13391,7 +13280,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
@@ -13484,22 +13373,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "routeMapAdmissionEvidence",
-              "snapshotId": "kric-airport-railroad-route-map-positions-20260725",
-              "snapshotPath": "tools/datapack/sources/kric-airport-railroad-route-map-positions-20260725.json",
-              "rawSha256": "ac220febb295b517a4a0f759283c97984894207e7a8b657463ab72c83a62f787"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 458,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -13555,7 +13441,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -13623,7 +13509,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -13691,7 +13577,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -13759,7 +13645,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -13827,7 +13713,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -13895,7 +13781,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
@@ -14021,28 +13907,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "routeMapAdmissionEvidence",
-              "snapshotId": "kric-seoul-metro-line9-1-route-map-positions-20260725",
-              "snapshotPath": "tools/datapack/sources/kric-seoul-metro-line9-1-route-map-positions-20260725.json",
-              "rawSha256": "94dc9303e292472e63b8630781a17cdd58423c04dfe4488214e0d84b6a935fe6"
-            },
-            {
-              "kind": "routeMapAdmissionEvidence",
-              "snapshotId": "seoul-metro-line9-23-route-map-positions-20260725",
-              "snapshotPath": "tools/datapack/sources/seoul-metro-line9-23-route-map-positions-20260725.json",
-              "rawSha256": "6a8b48ff370e9a364986ec10670fa934033ec88d569b3dc2f7f2b7b1e5acd683"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 458,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -14098,7 +13975,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -14166,7 +14043,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -14234,7 +14111,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -14302,7 +14179,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -14370,7 +14247,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -14438,7 +14315,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
@@ -14531,22 +14408,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "routeMapAdmissionEvidence",
-              "snapshotId": "kric-gtx-a-route-map-positions-20260725",
-              "snapshotPath": "tools/datapack/sources/kric-gtx-a-route-map-positions-20260725.json",
-              "rawSha256": "ce9589f0f7c62cabc8f8249c3640b56a8ef817b776faaabc2c53d9624faa35ff"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 458,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -14602,7 +14476,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -14670,7 +14544,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -14738,7 +14612,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -14806,7 +14680,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -14874,7 +14748,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -14942,7 +14816,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
@@ -15035,22 +14909,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "routeMapAdmissionEvidence",
-              "snapshotId": "kric-everline-route-map-positions-20260725",
-              "snapshotPath": "tools/datapack/sources/kric-everline-route-map-positions-20260725.json",
-              "rawSha256": "2160020177352775418c863ebd9846ab5cc0df08c1da0f4b435dbf599b214187"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 458,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -15106,7 +14977,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -15174,7 +15045,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -15242,7 +15113,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -15310,7 +15181,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -15378,7 +15249,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -15446,7 +15317,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
@@ -15514,7 +15385,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
@@ -15582,7 +15453,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -15650,7 +15521,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -15718,7 +15589,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -15786,7 +15657,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -15854,7 +15725,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -15922,7 +15793,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
@@ -15990,7 +15861,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
@@ -16058,7 +15929,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -16126,7 +15997,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -16194,7 +16065,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -16262,7 +16133,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -16330,7 +16201,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -16398,7 +16269,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 456,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
@@ -16466,7 +16337,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
@@ -16534,7 +16405,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -16602,7 +16473,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -16670,7 +16541,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -16738,7 +16609,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -16806,7 +16677,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -16874,7 +16745,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 456,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
@@ -16942,7 +16813,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
@@ -17010,7 +16881,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -17078,7 +16949,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -17146,7 +17017,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -17214,7 +17085,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -17282,7 +17153,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -17350,7 +17221,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 456,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
@@ -17418,7 +17289,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
@@ -17486,7 +17357,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -17554,7 +17425,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -17622,7 +17493,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -17690,7 +17561,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -17758,7 +17629,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -17826,7 +17697,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 456,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
@@ -17894,7 +17765,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
@@ -17962,7 +17833,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -18030,7 +17901,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -18098,7 +17969,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -18166,7 +18037,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -18234,7 +18105,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -18302,7 +18173,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 456,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
@@ -18370,7 +18241,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
@@ -18438,7 +18309,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -18506,7 +18377,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -18574,7 +18445,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -18642,7 +18513,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -18710,7 +18581,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -18778,7 +18649,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 456,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
@@ -18846,7 +18717,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
@@ -18914,7 +18785,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -18982,7 +18853,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -19050,7 +18921,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -19118,7 +18989,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -19186,7 +19057,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -19254,7 +19125,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 456,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
@@ -19322,7 +19193,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
@@ -19390,7 +19261,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -19458,7 +19329,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -19526,7 +19397,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -19594,7 +19465,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -19662,7 +19533,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -19730,7 +19601,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 456,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
@@ -19798,7 +19669,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
@@ -19866,7 +19737,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -19934,7 +19805,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -20017,22 +19888,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "accessibilityAdmissionEvidence",
-              "snapshotId": "daegu-transportation-accessibility-20260724",
-              "snapshotPath": "tools/datapack/sources/daegu-transportation-accessibility-20260724.json",
-              "rawSha256": "940357c7f65336510fee7b9472e1c8577189c64558504b0a20c889b78d9a14e9"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 478,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -20088,7 +19956,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -20156,7 +20024,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -20239,22 +20107,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "topologyAdmissionEvidence",
-              "snapshotId": "daegu-line3-route-topology-20260721",
-              "snapshotPath": "tools/datapack/sources/daegu-line3-route-topology-20260721.json",
-              "rawSha256": "844329649f860449b84e34e2af3841a16387fd39c9b313593bfc850f479eddf7"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 457,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -20335,22 +20200,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "routeMapAdmissionEvidence",
-              "snapshotId": "daegu-transportation-route-map-positions-20260724",
-              "snapshotPath": "tools/datapack/sources/daegu-transportation-route-map-positions-20260724.json",
-              "rawSha256": "ff79e8ec13d5ebf22cae7afa0908263ff27349afe68a210de243f0f17db0676e"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 458,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -20421,22 +20283,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "scheduleAdmissionEvidence",
-              "snapshotId": "daegu-line3-train-timetable-20260721",
-              "snapshotPath": "tools/datapack/sources/daegu-line3-train-timetable-20260721.json",
-              "rawSha256": "4d80acce97c2c474a2279561b1fc9662762f81e237b2dd02fb481fb2f30b2f61"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 454,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -20527,7 +20386,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -20610,22 +20469,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "accessibilityAdmissionEvidence",
-              "snapshotId": "daegu-transportation-accessibility-20260724",
-              "snapshotPath": "tools/datapack/sources/daegu-transportation-accessibility-20260724.json",
-              "rawSha256": "940357c7f65336510fee7b9472e1c8577189c64558504b0a20c889b78d9a14e9"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 478,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -20681,7 +20537,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -20749,7 +20605,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -20832,22 +20688,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "topologyAdmissionEvidence",
-              "snapshotId": "daegu-line1-route-topology-20260721",
-              "snapshotPath": "tools/datapack/sources/daegu-line1-route-topology-20260721.json",
-              "rawSha256": "29398e8792899bc614c8e6563b0f4eaf1fec5182668b89d29045409395aae5c5"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 457,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -20928,22 +20781,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "routeMapAdmissionEvidence",
-              "snapshotId": "daegu-transportation-route-map-positions-20260724",
-              "snapshotPath": "tools/datapack/sources/daegu-transportation-route-map-positions-20260724.json",
-              "rawSha256": "ff79e8ec13d5ebf22cae7afa0908263ff27349afe68a210de243f0f17db0676e"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 458,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -21014,22 +20864,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "scheduleAdmissionEvidence",
-              "snapshotId": "daegu-line1-train-timetable-20260721",
-              "snapshotPath": "tools/datapack/sources/daegu-line1-train-timetable-20260721.json",
-              "rawSha256": "98fcb58f09a9e4f57d25ec853de05f9911a0ba01e0d184e57fe9b209d2d8c671"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 454,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -21120,7 +20967,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -21203,22 +21050,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "accessibilityAdmissionEvidence",
-              "snapshotId": "daegu-transportation-accessibility-20260724",
-              "snapshotPath": "tools/datapack/sources/daegu-transportation-accessibility-20260724.json",
-              "rawSha256": "940357c7f65336510fee7b9472e1c8577189c64558504b0a20c889b78d9a14e9"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 478,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -21274,7 +21118,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -21342,7 +21186,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -21425,22 +21269,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "topologyAdmissionEvidence",
-              "snapshotId": "daegu-line2-route-topology-20260721",
-              "snapshotPath": "tools/datapack/sources/daegu-line2-route-topology-20260721.json",
-              "rawSha256": "80ea59d739c3a327e1242c67ae9b400f4d393b8acd202ec4a26e9e737f1123c0"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 457,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -21521,22 +21362,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "routeMapAdmissionEvidence",
-              "snapshotId": "daegu-transportation-route-map-positions-20260724",
-              "snapshotPath": "tools/datapack/sources/daegu-transportation-route-map-positions-20260724.json",
-              "rawSha256": "ff79e8ec13d5ebf22cae7afa0908263ff27349afe68a210de243f0f17db0676e"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 458,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -21607,22 +21445,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "scheduleAdmissionEvidence",
-              "snapshotId": "daegu-line2-train-timetable-20260721",
-              "snapshotPath": "tools/datapack/sources/daegu-line2-train-timetable-20260721.json",
-              "rawSha256": "1639bc648e4fbe02cfadc007a6c9c89801494bcc34eaefe28dd3aa5639080fcc"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 454,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -21713,7 +21548,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -21781,7 +21616,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
@@ -21849,7 +21684,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -21917,7 +21752,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -21985,7 +21820,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
@@ -22053,7 +21888,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
@@ -22121,7 +21956,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
@@ -22189,7 +22024,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -22272,22 +22107,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "accessibilityAdmissionEvidence",
-              "snapshotId": "daejeon-transportation-accessibility-20260724",
-              "snapshotPath": "tools/datapack/sources/daejeon-transportation-accessibility-20260724.json",
-              "rawSha256": "410d713213e5923454df9367d8ba3527b4c3aedf8e5182085057e5a268bcec0e"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 478,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -22343,7 +22175,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -22411,7 +22243,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -22494,22 +22326,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "topologyAdmissionEvidence",
-              "snapshotId": "daejeon-station-distance-fare-topology-20260720",
-              "snapshotPath": "tools/datapack/sources/daejeon-route-topology-20260720.json",
-              "rawSha256": "7d064dd28ff74cc43c91030307b55edb801caa2eff28ef09c69d2461c262d1d1"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 457,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -22590,22 +22419,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "routeMapAdmissionEvidence",
-              "snapshotId": "daejeon-transportation-route-map-positions-20260725",
-              "snapshotPath": "tools/datapack/sources/daejeon-transportation-route-map-positions-20260725.json",
-              "rawSha256": "cdf1d84a7e5c898b2aacd622783ba8ba9af35c40bee0561dc97d55ce8e063f94"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 458,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -22676,22 +22502,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 454,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "scheduleAdmissionEvidence",
-              "snapshotId": "daejeon-train-timetable-20260720",
-              "snapshotPath": "tools/datapack/sources/daejeon-train-timetable-20260720.json",
-              "rawSha256": "af47a698e7770e8fc709bb3dfa05b525f836b57b37cb9b716d6ca768e6723dbd"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 454,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -22782,7 +22605,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"
@@ -22865,22 +22688,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 478,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "accessibilityAdmissionEvidence",
-              "snapshotId": "gwangju-transportation-accessibility-20260724",
-              "snapshotPath": "tools/datapack/sources/gwangju-transportation-accessibility-20260724.json",
-              "rawSha256": "3b2d88b3b20be4dfc5130def9122921b82498801ce19955b624bb95dd893f482"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 478,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/478"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -22936,7 +22756,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 453,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/453"
@@ -23004,7 +22824,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 452,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/452"
@@ -23087,22 +22907,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "topologyAdmissionEvidence",
-              "snapshotId": "gwangju-transportation-route-topology-20260720",
-              "snapshotPath": "tools/datapack/sources/gwangju-transportation-route-topology-20260720.json",
-              "rawSha256": "15e4a6835dff21997d29707b0554580560fd770388156b2ac169508cdfd6636a"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 457,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -23183,22 +23000,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 458,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "routeMapAdmissionEvidence",
-              "snapshotId": "gwangju-transportation-route-map-positions-20260725",
-              "snapshotPath": "tools/datapack/sources/gwangju-transportation-route-map-positions-20260725.json",
-              "rawSha256": "ca322fe16d180edf9fd98bc01414919dacc8c0b4ecd038ebfd1a7b4184d0b176"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 458,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/458"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -23269,22 +23083,19 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 504,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/504"
           }
         },
         "artifactLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "kind": "scheduleAdmissionEvidence",
-              "snapshotId": "gwangju-transportation-cyberstation-timetable-20260720",
-              "snapshotPath": "tools/datapack/sources/gwangju-transportation-cyberstation-timetable-20260720.json",
-              "rawSha256": "852b75f79ca7cccf8dfefc65ee4fe226f833e6cd2e52f5e721efdfac2efdc31a"
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 504,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/504"
+          }
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -23375,7 +23186,7 @@
         },
         "admissionLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "PRODUCTION_ADMISSION_REQUIRED",
           "owner": {
             "issue": 455,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455"

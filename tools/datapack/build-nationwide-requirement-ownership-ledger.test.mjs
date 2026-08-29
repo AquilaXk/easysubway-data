@@ -52,6 +52,7 @@ test("#449 derives the exact current PK set with one owner and honest NO_GO", as
   assert.equal(inventoryOnly.lineage.licenseLineage.state, "EVIDENCED");
   assert.equal(inventoryOnly.lineage.freshnessLineage.state, "PENDING");
   assert.equal(inventoryOnly.lineage.admissionLineage.state, "PENDING");
+  assert.equal(inventoryOnly.lineage.admissionLineage.reason, "PRODUCTION_ADMISSION_REQUIRED");
   assert.equal(inventoryOnly.lineage.runtimeLineage.state, "PENDING");
 
   const incheonAccessibility = ledger.rows.find(({ operatorId, sourceDomain }) =>
@@ -118,4 +119,64 @@ test("#449 keeps expired and decision-less Busan accessibility lineage pending",
   const row = ledger.rows.find(({ disposition }) => disposition.admittedSourceIds.includes(busan.id));
   assert.equal(row.lineage.freshnessLineage.state, "PENDING");
   assert.equal(row.lineage.admissionLineage.state, "PENDING");
+  assert.equal(row.lineage.admissionLineage.reason, "PRODUCTION_ADMISSION_REQUIRED");
+});
+
+test("#449 keeps inventory-only artifact references pending without a current candidate head", async () => {
+  const input = await inputs();
+  const bound = structuredClone(input);
+  const requirement = bound.tally.launchRequired.requirements.find(({ status }) => status === "INVENTORY_ADMITTED");
+  const firstSource = bound.inventory.sources.find(({ id }) => id === requirement.admittedSourceIds[0]);
+  const secondSource = structuredClone(firstSource);
+  secondSource.id = `${firstSource.id}-second-admitted-source`;
+  firstSource.admissionEvidence = {
+    decision: "APPROVED", snapshotId: "first-artifact-a", snapshotPath: "oci://first/a", rawSha256: "a".repeat(64),
+  };
+  firstSource.reviewAdmissionEvidence = {
+    decision: "APPROVED", snapshotId: "first-artifact-b", snapshotPath: "oci://first/b", rawSha256: "b".repeat(64),
+  };
+  secondSource.admissionEvidence = { decision: "APPROVED" };
+  bound.inventory.sources.push(secondSource);
+  requirement.admittedSourceIds = [firstSource.id, secondSource.id];
+
+  const ledger = buildNationwideRequirementOwnershipLedger(bound);
+  const row = ledger.rows.find(({ pk }) => pk === [requirement.regionId, requirement.operatorId, requirement.lineId, requirement.sourceDomain].join(":"));
+  assert.equal(row.lineage.artifactLineage.state, "PENDING");
+});
+
+test("#449 derives GO only from terminal launch rows with complete admitted lineage", async () => {
+  const input = await inputs();
+  const bound = structuredClone(input);
+  const admittedIds = [...new Set(bound.tally.launchRequired.requirements
+    .filter(({ status }) => status === "INVENTORY_ADMITTED")
+    .flatMap(({ admittedSourceIds }) => admittedSourceIds))];
+  const snapshotTemplate = bound.sourceSnapshots[0];
+  const headTemplate = bound.candidateBuildSpec.sourceSnapshots[0];
+  bound.sourceSnapshots = [];
+  bound.candidateBuildSpec.sourceSnapshots = [];
+  bound.candidateBuildSpec.sourceSnapshotIds = [];
+  for (const sourceId of admittedIds) {
+    const source = bound.inventory.sources.find(({ id }) => id === sourceId);
+    source.productionUseAllowed = true;
+    source.admissionEvidence = {
+      decision: "APPROVED", freshUntil: "2099-01-01T00:00:00.000Z",
+      snapshotId: `synthetic-${sourceId}`, snapshotPath: `oci://synthetic/${sourceId}`, rawSha256: "c".repeat(64),
+    };
+    source.runtimeLineageEvidence = { operationId: `synthetic-${sourceId}` };
+    const snapshotId = `synthetic-head-${sourceId}`;
+    const rawSha256 = `${"d".repeat(63)}${admittedIds.indexOf(sourceId).toString(16)}`;
+    const rawObjectUri = `oci://synthetic/head/${sourceId}`;
+    bound.sourceSnapshots.push({ ...snapshotTemplate, snapshotId, sourceId, rawSha256, rawObjectUri });
+    bound.candidateBuildSpec.sourceSnapshotIds.push(snapshotId);
+    bound.candidateBuildSpec.sourceSnapshots.push({ ...headTemplate, snapshotId, sourceId, rawSha256, rawObjectUri, freshnessExpiresAt: "2099-01-01T00:00:00.000Z" });
+  }
+  for (const row of bound.tally.launchRequired.requirements) {
+    if (row.status !== "INVENTORY_ADMITTED") {
+      row.status = "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE";
+      row.admittedSourceIds = [];
+    }
+  }
+
+  const ledger = buildNationwideRequirementOwnershipLedger(bound);
+  assert.equal(ledger.summary.nationwideEligibility, "GO");
 });
