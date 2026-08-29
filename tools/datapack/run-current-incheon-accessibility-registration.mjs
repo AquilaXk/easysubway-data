@@ -32,6 +32,7 @@ const GIT_SHA = /^[a-f0-9]{40}$/u;
 const SNAPSHOT_ID = /^incheon-transit-accessibility-20\d{6}T\d{9}Z$/u;
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
+const textCompare = (left, right) => String(left).localeCompare(String(right));
 
 function parse(bytes, label) { try { return JSON.parse(bytes.toString("utf8")); } catch { throw new Error(`${label} is invalid JSON`); } }
 function instant(value, label) { if (typeof value !== "string" || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/u.test(value) || new Date(value).toISOString() !== value) throw new Error(`${label} is invalid`); return value; }
@@ -73,8 +74,8 @@ async function assertOperationRoot(repositoryRoot, operationRoot, { create = fal
   await regularDirectory(root, "operation root"); return root;
 }
 async function assertOperationInventory(root, journal) {
-  const names = (await readdir(root)).sort(); const bare = [JOURNAL, OBSERVATION]; const bases = [bare, [...bare, ".incheon-accessibility-registration.lock"]];
-  const expected = bases.flatMap((base) => journal.phase === "PREPARED" ? [base.sort()] : journal.phase === "PUBLISHING" ? [base, [...base, RECEIPT]].map((value) => value.sort()) : [[...base, RECEIPT].sort()]);
+  const names = (await readdir(root)).sort(textCompare); const bare = [JOURNAL, OBSERVATION]; const bases = [bare, [...bare, ".incheon-accessibility-registration.lock"]];
+  const expected = bases.flatMap((base) => journal.phase === "PREPARED" ? [base.sort(textCompare)] : journal.phase === "PUBLISHING" ? [base, [...base, RECEIPT]].map((value) => value.sort(textCompare)) : [[...base, RECEIPT].sort(textCompare)]);
   if (!expected.some((value) => JSON.stringify(value) === JSON.stringify(names))) throw new Error("operation inventory is invalid");
 }
 function sourceInputs(repositoryRoot, inventory) {
@@ -139,8 +140,8 @@ async function recoverOperationJournalTemporary(root, journal) {
 }
 async function writeJournal(root, current, next) { const bytes = jsonBytes(next); await atomicReplace(operationPath(root, JOURNAL), bytes, current == null ? null : jsonBytes(current)); return next; }
 async function validateObservation(root, journal) {
-  const directory = operationPath(root, OBSERVATION); await regularDirectory(directory, "operation observation"); const names = (await readdir(directory)).sort(); const manifestBytes = await regularBytes(path.join(directory, "observation.json"), "observation manifest"); const manifest = parse(manifestBytes, "observation manifest");
-  if (manifest?.sourceId !== SOURCE || manifest.snapshotId !== journal.snapshotId || manifest.snapshotRawSha256 !== journal.admissionRawSha256 || manifest.capturedAt !== journal.capturedAt || !Array.isArray(names) || JSON.stringify(names) !== JSON.stringify(["observation.json", manifest.snapshotFile, manifest.rawArtifactFile].sort())) throw new Error("prepared Incheon observation drifted");
+  const directory = operationPath(root, OBSERVATION); await regularDirectory(directory, "operation observation"); const names = (await readdir(directory)).sort(textCompare); const manifestBytes = await regularBytes(path.join(directory, "observation.json"), "observation manifest"); const manifest = parse(manifestBytes, "observation manifest");
+  if (manifest?.sourceId !== SOURCE || manifest.snapshotId !== journal.snapshotId || manifest.snapshotRawSha256 !== journal.admissionRawSha256 || manifest.capturedAt !== journal.capturedAt || !Array.isArray(names) || JSON.stringify(names) !== JSON.stringify(["observation.json", manifest.snapshotFile, manifest.rawArtifactFile].sort(textCompare))) throw new Error("prepared Incheon observation drifted");
   const current = await Promise.all(names.map(async (name) => { const bytes = await regularBytes(path.join(directory, name), "operation observation"); return { relativePath: name, sha256: hash(bytes), byteLength: bytes.length }; }));
   if (JSON.stringify(current) !== JSON.stringify(journal.observation)) throw new Error("prepared Incheon observation bytes drifted");
   return directory;
@@ -156,7 +157,7 @@ export async function prepareCurrentIncheonAccessibilityRegistration({ repositor
   try {
     const { values, inputs } = await sealPrepareInputs(repository); const observation = operationPath(operation, OBSERVATION);
     await collector(["--elevator-input", path.join(repository, inputs[2].relativePath), "--escalator-input", path.join(repository, inputs[3].relativePath), "--wheelchair-input", path.join(repository, inputs[4].relativePath), "--topology-snapshot", path.join(repository, values.topologyPath), "--observation-output", observation, "--captured-at", values.capturedAt]);
-    const names = (await readdir(observation)).sort(); const observationBindings = await Promise.all(names.map(async (name) => { const bytes = await regularBytes(path.join(observation, name), "operation observation"); return { relativePath: name, sha256: hash(bytes), byteLength: bytes.length }; }));
+    const names = (await readdir(observation)).sort(textCompare); const observationBindings = await Promise.all(names.map(async (name) => { const bytes = await regularBytes(path.join(observation, name), "operation observation"); return { relativePath: name, sha256: hash(bytes), byteLength: bytes.length }; }));
     const journal = { schemaVersion: 1, phase: "PREPARED", repositoryRoot: repository, operationRoot: operation, expectedMainSha, preparedAt: now.toISOString(), snapshotId: values.admission.snapshotId, admissionRawSha256: values.admission.rawSha256, capturedAt: values.capturedAt, inputs, observation: observationBindings };
     await writeJournal(operation, null, journal); await assertOperationInventory(operation, journal); return journal;
   } catch (error) { await unlink(operationPath(operation, JOURNAL)).catch(() => {}); throw error; } finally { await release(); }

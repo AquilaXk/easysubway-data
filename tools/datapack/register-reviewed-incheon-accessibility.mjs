@@ -18,6 +18,7 @@ import { assertProjectionEqual, deriveReleaseProjection, isActiveCandidateSource
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const SOURCE = "incheon-transit-accessibility";
 const SHA = /^[a-f0-9]{64}$/u;
+const textCompare = (left, right) => String(left).localeCompare(String(right));
 const JOURNAL = "tools/datapack/.incheon-accessibility-registration-transaction.json";
 const LOCK = "tools/datapack/.incheon-accessibility-registration.lock";
 const FIXED = ["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json", "tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json"];
@@ -48,8 +49,8 @@ async function readObservation(observationRoot, receiptPath, freshness, topology
   const root = path.resolve(observationRoot); const stat = await lstat(root);
   if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("observation directory is unsafe");
   const manifest = parse(await read(path.join(root, "observation.json"), "observation manifest"), "observation manifest");
-  const names = await readdir(root); const expected = ["observation.json", manifest?.snapshotFile, manifest?.rawArtifactFile].sort();
-  if (!manifest || manifest.schemaVersion !== 1 || manifest.artifactKind !== "incheon-accessibility-observation" || manifest.sourceId !== SOURCE || typeof manifest.snapshotId !== "string" || manifest.snapshotFile !== `${manifest.snapshotId}.json` || manifest.rawArtifactFile !== `${manifest.snapshotId}.raw.json` || JSON.stringify(names.sort()) !== JSON.stringify(expected)) throw new Error("Incheon accessibility observation inventory is invalid");
+  const names = await readdir(root); const expected = ["observation.json", manifest?.snapshotFile, manifest?.rawArtifactFile].sort(textCompare);
+  if (!manifest || manifest.schemaVersion !== 1 || manifest.artifactKind !== "incheon-accessibility-observation" || manifest.sourceId !== SOURCE || typeof manifest.snapshotId !== "string" || manifest.snapshotFile !== `${manifest.snapshotId}.json` || manifest.rawArtifactFile !== `${manifest.snapshotId}.raw.json` || JSON.stringify(names.sort(textCompare)) !== JSON.stringify(expected)) throw new Error("Incheon accessibility observation inventory is invalid");
   const snapshotBytes = await read(path.join(root, manifest.snapshotFile), "observation snapshot"); const rawArtifactBytes = await read(path.join(root, manifest.rawArtifactFile), "observation raw artifact");
   const snapshot = parse(snapshotBytes, "observation snapshot"); const rawArtifact = parse(rawArtifactBytes, "observation raw artifact");
   if (manifest.snapshotFileSha256 !== hash(snapshotBytes) || manifest.rawObjectSha256 !== hash(rawArtifactBytes) || manifest.rawObjectByteSize !== rawArtifactBytes.length || manifest.snapshotId !== snapshot.snapshotId || manifest.snapshotRawSha256 !== snapshot.rawSha256 || manifest.capturedAt !== snapshot.capturedAt) throw new Error("Incheon accessibility observation identity is invalid");
@@ -162,10 +163,10 @@ async function atomicWrite(file, value, before) {
 function journalRecords(outputs) { return outputs.map(({ relative, prestateBytes, bytes: after }) => ({ relative, before: prestateBytes?.toString("base64") ?? null, beforeSha256: prestateBytes == null ? null : hash(prestateBytes), after: after.toString("base64"), afterSha256: hash(after) })); }
 function parseJournal(value) {
   const journal = parse(value, "Incheon registration journal");
-  if (JSON.stringify(Object.keys(journal ?? {}).sort()) !== JSON.stringify(["records", "state"]) || !["PREPARED", "COMMITTED"].includes(journal.state) || !Array.isArray(journal.records) || journal.records.length !== 6) throw new Error("Incheon registration recovery required");
+  if (JSON.stringify(Object.keys(journal ?? {}).sort(textCompare)) !== JSON.stringify(["records", "state"]) || !["PREPARED", "COMMITTED"].includes(journal.state) || !Array.isArray(journal.records) || journal.records.length !== 6) throw new Error("Incheon registration recovery required");
   outputAllowlist(journal.records.map((record) => ({ relative: record.relative, bytes: Buffer.alloc(0), prestateBytes: record.before == null ? null : Buffer.alloc(0) })));
   for (const record of journal.records) {
-    if (JSON.stringify(Object.keys(record).sort()) !== JSON.stringify(["after", "afterSha256", "before", "beforeSha256", "relative"].sort()) || !SHA.test(record.afterSha256 ?? "") || (record.before == null) !== (record.beforeSha256 == null) || record.beforeSha256 != null && !SHA.test(record.beforeSha256)) throw new Error("Incheon registration recovery required");
+    if (JSON.stringify(Object.keys(record).sort(textCompare)) !== JSON.stringify(["after", "afterSha256", "before", "beforeSha256", "relative"].sort(textCompare)) || !SHA.test(record.afterSha256 ?? "") || (record.before == null) !== (record.beforeSha256 == null) || record.beforeSha256 != null && !SHA.test(record.beforeSha256)) throw new Error("Incheon registration recovery required");
     const after = Buffer.from(record.after, "base64"); const before = record.before == null ? null : Buffer.from(record.before, "base64");
     if (after.toString("base64") !== record.after || hash(after) !== record.afterSha256 || before != null && (before.toString("base64") !== record.before || hash(before) !== record.beforeSha256)) throw new Error("Incheon registration recovery required");
   }
