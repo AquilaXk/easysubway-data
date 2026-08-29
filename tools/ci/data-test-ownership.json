@@ -199,6 +199,10 @@
     "data535": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/535",
       "title": "[Data][P1] map/catalog signed-current offline publication contract"
+    },
+    "data622": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/622",
+      "title": "Add generic Incheon accessibility admission"
     }
   },
   "workflows": {
@@ -273,6 +277,7 @@
     {"path":"tools/ci/require-workflow-artifact.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":478},
     {"path":"tools/ci/sync-datapack-release-check-secrets.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":119},
     {"path":"tools/datapack/activate-current-source-set.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":389},
+    {"path":"tools/datapack/admit-reviewed-incheon-accessibility.test.mjs","semanticOwner":"data622","classes":["required-pr"],"durationMs":484},
     {"path":"tools/datapack/admit-reviewed-kric-candidates.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":167},
     {"path":"tools/datapack/apply-accessibility-evidence-to-bundled-pack.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":320},
     {"path":"tools/datapack/apply-capital-line1-topology-to-bundled-pack.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":536},
@@ -464,6 +469,7 @@
     {"path":"tools/datapack/project-retired-transit-lines.test.mjs","semanticOwner":"data308","classes":["required-pr"],"durationMs":42},
     {"path":"tools/datapack/public-static-network-v2-admission.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":100},
     {"path":"tools/datapack/provider-response-capture.test.mjs","semanticOwner":"data96","classes":["required-pr"],"durationMs":62},
+    {"path":"tools/datapack/publish-incheon-accessibility-raw.test.mjs","semanticOwner":"data622","classes":["required-pr"],"durationMs":458},
     {"path":"tools/datapack/publish-kric-accessibility-raw.test.mjs","semanticOwner":"data39","classes":["required-pr"],"durationMs":20},
     {"path":"tools/datapack/publish-kric-timetable-raw.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":458},
     {"path":"tools/datapack/publish-object-storage.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":1336},
