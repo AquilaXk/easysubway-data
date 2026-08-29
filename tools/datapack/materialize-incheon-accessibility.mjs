@@ -587,6 +587,7 @@ function topologyMembershipHash(rows) {
 function validateRegisteredTopologyBinding(snapshot, topologySnapshot, registration, topologyMode) {
   const binding = registration?.capturedTopology;
   const topology = validateIncheonStationInfoSnapshot(topologySnapshot);
+  const topologySnapshotId = activeTopologySnapshotId(topology);
   const lineages = [...snapshot.topologyLineages, ...snapshot.membershipLineages];
   if (binding?.sourceId !== TOPOLOGY_SOURCE_ID
     || !/^incheon-transit-station-info-\d{8}$/u.test(binding.snapshotId ?? "")
@@ -598,7 +599,9 @@ function validateRegisteredTopologyBinding(snapshot, topologySnapshot, registrat
     || lineages.some((lineage) => lineage.sourceId !== binding.sourceId
       || lineage.snapshotId !== binding.snapshotId
       || lineage.contentSha256 !== binding.contentSha256)
-    || (topologyMode === "exact-current" && binding.snapshotId !== activeTopologySnapshotId(topology))) {
+    || (topologyMode === "exact-current" && binding.snapshotId !== topologySnapshotId)
+    || (topologyMode === "registered-topology-successor"
+      && topologySnapshotId.localeCompare(binding.snapshotId) < 0)) {
     throw new Error("Incheon accessibility registered topology binding mismatch");
   }
 }
