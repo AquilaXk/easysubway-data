@@ -20,7 +20,7 @@
     },
     {
       "id": "static_accessibility_facility",
-      "sourceIds": ["kric-station-convenience-standard", "kric-station-elevator", "kric-station-elevator-movement", "kric-station-escalator", "kric-wheelchair-lift-location", "kric-wheelchair-lift-movement", "seoul-metro-accessibility"],
+      "sourceIds": ["incheon-transit-accessibility", "kric-station-convenience-standard", "kric-station-elevator", "kric-station-elevator-movement", "kric-station-escalator", "kric-wheelchair-lift-location", "kric-wheelchair-lift-movement", "seoul-metro-accessibility"],
       "examples": ["KRIC elevator", "KRIC escalator", "KRIC wheelchair lift"],
       "basisField": "retrievedAt",
       "reverificationCadence": "P90D",

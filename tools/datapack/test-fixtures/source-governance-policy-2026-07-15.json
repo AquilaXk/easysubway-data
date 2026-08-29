@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-source-governance-policy",
-  "policyVersion": "2026-08-29",
+  "policyVersion": "2026-07-15",
   "retentionClasses": [
     {
       "id": "standard-90d",
@@ -41,27 +41,6 @@
     }
   ],
   "sources": [
-    {
-      "sourceId": "incheon-transit-accessibility",
-      "sourceClassId": "static_accessibility_facility",
-      "retentionClassId": "standard-90d",
-      "ownerRole": "datapack-source-owner",
-      "stewardRole": "datapack-data-steward",
-      "approvalRole": "datapack-release-approver",
-      "escalationHours": 4,
-      "alertRoute": "github:area-datapack",
-      "licenseReview": {
-        "status": "APPROVED",
-        "termsHash": "16d4e5ffd5eacf0514a6f08ea69b21589c1f5f38a3d9dd48c677b4c81e66ac71",
-        "reviewedAt": "2026-08-29T04:49:49.000Z",
-        "nextReviewAt": "2027-08-29T04:49:49.000Z",
-        "termsUrl": "https://www.data.go.kr/data/15083478/fileData.do",
-        "reviewedProvider": "인천교통공사",
-        "reviewedDatasetUrl": "https://www.data.go.kr/data/15083478/fileData.do",
-        "redistributionScopes": ["DERIVED_DATAPACK"],
-        "approvedByRole": "datapack-release-approver"
-      }
-    },
     {
       "sourceId": "kric-train-operation-organ",
       "sourceClassId": "static_network_metadata",
@@ -273,29 +252,8 @@
       }
     },
     {
-      "sourceId": "seoul-metro-route-map-positions",
-      "sourceClassId": "route_map_positions",
-      "retentionClassId": "standard-90d",
-      "ownerRole": "datapack-source-owner",
-      "stewardRole": "datapack-data-steward",
-      "approvalRole": "datapack-release-approver",
-      "escalationHours": 4,
-      "alertRoute": "github:area-datapack",
-      "licenseReview": {
-        "status": "APPROVED",
-        "termsHash": "f7c7534e3fbac3b218bd91c55da7259416478cb5eaa259400576cd04e5fef0e7",
-        "reviewedAt": "2026-08-14T15:34:07.000Z",
-        "nextReviewAt": "2027-08-14T15:34:07.000Z",
-        "termsUrl": "https://www.data.go.kr/data/15099316/fileData.do",
-        "reviewedProvider": "서울교통공사",
-        "reviewedDatasetUrl": "https://www.data.go.kr/data/15099316/fileData.do",
-        "redistributionScopes": ["DERIVED_DATAPACK"],
-        "approvedByRole": "datapack-release-approver"
-      }
-    },
-    {
       "sourceId": "seoulmetro-cyberstation-route-map",
-      "sourceClassId": "route_map_asset_historical",
+      "sourceClassId": "route_map_asset",
       "retentionClassId": "standard-90d",
       "ownerRole": "datapack-source-owner",
       "stewardRole": "datapack-data-steward",
@@ -310,27 +268,6 @@
         "termsUrl": "https://www.seoulmetro.co.kr/kr/cyberStation.do",
         "reviewedProvider": "서울교통공사",
         "reviewedDatasetUrl": "https://www.seoulmetro.co.kr/kr/cyberStation.do",
-        "redistributionScopes": ["DERIVED_DATAPACK"],
-        "approvedByRole": "datapack-release-approver"
-      }
-    },
-    {
-      "sourceId": "seoul-metro-transfer-distance-duration",
-      "sourceClassId": "annual_official_file",
-      "retentionClassId": "standard-90d",
-      "ownerRole": "datapack-source-owner",
-      "stewardRole": "datapack-data-steward",
-      "approvalRole": "datapack-release-approver",
-      "escalationHours": 4,
-      "alertRoute": "github:area-datapack",
-      "licenseReview": {
-        "status": "APPROVED",
-        "termsHash": "c64b8a890c1576368566e89b5a70fdbaa88292f1b87fd44462d9a0a2bd33b4b0",
-        "reviewedAt": "2026-07-12T15:00:00Z",
-        "nextReviewAt": "2027-07-12T15:00:00Z",
-        "termsUrl": "https://www.data.go.kr/data/15044419/fileData.do",
-        "reviewedProvider": "서울교통공사",
-        "reviewedDatasetUrl": "https://www.data.go.kr/data/15044419/fileData.do",
         "redistributionScopes": ["DERIVED_DATAPACK"],
         "approvedByRole": "datapack-release-approver"
       }

@@ -203,6 +203,7 @@ function purgeReport(
   entries,
   completedAt = "2026-10-10T00:00:01.000Z",
   evaluatedAt = "2026-10-10T00:00:00.000Z",
+  policyBinding,
 ) {
   const body = {
     schemaVersion: 1,
@@ -219,25 +220,29 @@ function purgeReport(
     failed: [],
     reasonCodes: [],
   };
-  return attestPurgeReport(body);
+  return attestPurgeReport(body, purgeJournal(body), policyBinding);
 }
 
-function attestPurgeReport(report, journalText = purgeJournal(report)) {
+function attestPurgeReport(
+  report,
+  journalText = purgeJournal(report),
+  policyBinding = { policyVersion: "2026-07-15", policySha256: "d".repeat(64) },
+) {
   report.auditJournalSha256 = sha256(journalText);
   report.auditJournalRecordCount = journalText.trimEnd().split("\n").length;
   attachPurgeAttestation(report, {
     privateKey: purgeKeys.privateKey,
     ledgerText: purgeLedgerText,
     snapshotText: purgeSnapshotText,
-    policyBindings: [{ policyVersion: "2026-07-15", policySha256: "d".repeat(64) }],
+    policyBindings: [policyBinding],
   });
   report.reportSha256 = purgeReportSha256(report);
   purgeAttestations.set(report, {
     journalText,
     ledgerText: purgeLedgerText,
     snapshotText: purgeSnapshotText,
-    governancePolicyVersion: "2026-07-15",
-    governancePolicySha256: "d".repeat(64),
+    governancePolicyVersion: policyBinding.policyVersion,
+    governancePolicySha256: policyBinding.policySha256,
     publicKeyText: purgePublicKeyText,
     trustedPublicKeySha256: purgePublicKeySha256,
   });
@@ -454,73 +459,49 @@ test("PASS purge report의 검증된 protection을 snapshot governance 입력으
   });
 });
 
-test("freshness validator는 hash-bound purge report를 retention 완료 근거로 소비한다", () => {
+test("freshness validator는 hash-bound purge report를 retention 완료 근거로 소비한다", async () => {
+  const [governancePolicyText, trackedInventory, trackedFreshnessPolicy] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/source-governance-policy.json"), "utf8"),
+    readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "release/product-gates/datapack-freshness-sla.json"), "utf8").then(JSON.parse),
+  ]);
+  const governancePolicy = JSON.parse(governancePolicyText);
+  const policyBinding = {
+    policyVersion: governancePolicy.policyVersion,
+    policySha256: sha256(governancePolicyText),
+  };
+  const sourceId = "seoulmetro-cyberstation-route-map";
+  const governedSourceIds = new Set(governancePolicy.sources.map((source) => source.sourceId));
   const value = input({
+    sourceId,
     freshnessExpiresAt: "2027-07-12T00:00:00Z",
+    governancePolicyVersion: policyBinding.policyVersion,
+    governancePolicySha256: policyBinding.policySha256,
   });
-  value.buildSpec.sourceSnapshots[0].freshnessExpiresAt = value.snapshots[0].freshnessExpiresAt;
-  value.policy.sourceClasses[0].reverificationCadence = "P1Y";
+  value.buildSpec.sourceSnapshots[0] = {
+    ...value.buildSpec.sourceSnapshots[0],
+    sourceId,
+    freshnessExpiresAt: value.snapshots[0].freshnessExpiresAt,
+    governancePolicyVersion: policyBinding.policyVersion,
+    governancePolicySha256: policyBinding.policySha256,
+  };
+  value.buildSpec.sourceSnapshotSetHash = sha256(JSON.stringify(value.snapshots));
+  value.policy = trackedFreshnessPolicy;
   value.evaluationAt = "2026-10-11T00:00:00Z";
   value.inventory = {
-    sources: [{
-      id: "source-a",
-      provider: "provider-a",
-      datasetUrl: "https://example.invalid/source-a",
-      requiredForProductionPack: true,
-      license: { redistributionAllowed: true },
-      admissionEvidence: { licenseEvidenceHash: "e".repeat(64) },
-    }],
+    ...trackedInventory,
+    sources: trackedInventory.sources
+      .filter((source) => governedSourceIds.has(source.id))
+      .map((source) => ({ ...source, requiredForProductionPack: source.id === sourceId })),
   };
   bindInventory(value);
-  value.governancePolicy = {
-    schemaVersion: 1,
-    artifactKind: "datapack-source-governance-policy",
-    policyVersion: "2026-07-15",
-    retentionClasses: [{ id: "standard-90d", retentionDays: 90 }],
-    reasonCodeEscalations: [{
-      reasonCodes: [
-        "SOURCE_LINEAGE_BROKEN",
-        "SOURCE_DIFF_MISSING",
-        "SOURCE_FRESHNESS_POLICY_MISSING",
-        "SOURCE_SNAPSHOT_EXPIRED",
-        "RAW_RETENTION_OVERDUE",
-        "LEGAL_HOLD_INVALID",
-        "LICENSE_REVIEW_REQUIRED",
-        "REDISTRIBUTION_NOT_APPROVED",
-        "SOURCE_GOVERNANCE_OWNER_MISSING",
-      ],
-      responsibleRole: "datapack-source-owner",
-      alertRoute: "github:area-datapack",
-      escalationHours: 4,
-    }],
-    sources: [{
-      sourceId: "source-a",
-      sourceClassId: "static_network_metadata",
-      retentionClassId: "standard-90d",
-      ownerRole: "datapack-source-owner",
-      stewardRole: "datapack-data-steward",
-      approvalRole: "datapack-release-approver",
-      escalationHours: 4,
-      alertRoute: "github:area-datapack",
-      licenseReview: {
-        status: "APPROVED",
-        termsHash: "e".repeat(64),
-        reviewedAt: "2026-07-01T00:00:00Z",
-        nextReviewAt: "2027-07-01T00:00:00Z",
-        termsUrl: "https://example.invalid/source-a",
-        reviewedProvider: "provider-a",
-        reviewedDatasetUrl: "https://example.invalid/source-a",
-        redistributionScopes: ["DERIVED_DATAPACK"],
-        approvedByRole: "datapack-release-approver",
-      },
-    }],
-  };
-  value.governancePolicySha256 = "d".repeat(64);
+  value.governancePolicy = governancePolicy;
+  value.governancePolicySha256 = policyBinding.policySha256;
   bindPurgeReport(value, purgeReport([{
     sourceId: value.snapshots[0].sourceId,
     snapshotId: value.snapshots[0].snapshotId,
     rawSha256: value.snapshots[0].rawSha256,
-  }]));
+  }], undefined, undefined, policyBinding));
 
   const result = validateSourceSnapshotFreshness(value);
 
@@ -530,6 +511,7 @@ test("freshness validator는 hash-bound purge report를 retention 완료 근거�
     [],
     "2026-10-11T00:00:01.000Z",
     value.evaluationAt,
+    policyBinding,
   );
   freshProtectionReport.protected = [{
     sourceId: value.snapshots[0].sourceId,
@@ -538,11 +520,11 @@ test("freshness validator는 hash-bound purge report를 retention 완료 근거�
     protectedBy: ["ACTIVE_RELEASE"],
     legalHold: null,
   }];
-  bindPurgeReport(value, attestPurgeReport(freshProtectionReport));
+  bindPurgeReport(value, attestPurgeReport(freshProtectionReport, undefined, policyBinding));
 
   assert.equal(validateSourceSnapshotFreshness(value).governanceResults[0].decision, "GO");
 
-  const staleProtectionReport = purgeReport([]);
+  const staleProtectionReport = purgeReport([], undefined, undefined, policyBinding);
   staleProtectionReport.protected = [{
     sourceId: value.snapshots[0].sourceId,
     snapshotId: value.snapshots[0].snapshotId,
@@ -550,7 +532,7 @@ test("freshness validator는 hash-bound purge report를 retention 완료 근거�
     protectedBy: ["ACTIVE_RELEASE"],
     legalHold: null,
   }];
-  bindPurgeReport(value, attestPurgeReport(staleProtectionReport));
+  bindPurgeReport(value, attestPurgeReport(staleProtectionReport, undefined, policyBinding));
 
   assert.throws(
     () => validateSourceSnapshotFreshness(value),
@@ -561,6 +543,7 @@ test("freshness validator는 hash-bound purge report를 retention 완료 근거�
     [],
     "2026-10-11T00:00:01.000Z",
     value.evaluationAt,
+    policyBinding,
   );
   mismatchedProtectionReport.protected = [{
     sourceId: value.snapshots[0].sourceId,
@@ -569,7 +552,7 @@ test("freshness validator는 hash-bound purge report를 retention 완료 근거�
     protectedBy: ["ACTIVE_RELEASE"],
     legalHold: null,
   }];
-  bindPurgeReport(value, attestPurgeReport(mismatchedProtectionReport));
+  bindPurgeReport(value, attestPurgeReport(mismatchedProtectionReport, undefined, policyBinding));
 
   assert.throws(
     () => validateSourceSnapshotFreshness(value),

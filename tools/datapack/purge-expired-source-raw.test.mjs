@@ -553,13 +553,13 @@ test("legacy snapshot은 저장된 retention expiry가 ledger와 같은 경우�
 
 test("exact-hash 승인 legacy snapshot은 결속된 policy로 파생한 retention expiry를 적용한다", async () => {
   const [snapshot] = JSON.parse(await readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8"));
-  const policyText = await readFile(path.join(root, "tools/datapack/source-governance-policy.json"), "utf8");
-  const policy = JSON.parse(policyText);
   const legacyBinding = approvedLegacyGovernanceBinding(snapshot);
-  const legacyPolicy = {
-    ...policy,
-    sources: policy.sources.filter(({ sourceId }) => sourceId !== "seoul-metro-transfer-distance-duration"),
-  };
+  const legacyPolicyText = await readFile(
+    path.join(root, "tools/datapack/test-fixtures/source-governance-policy-2026-07-15.json"),
+    "utf8",
+  );
+  assert.equal(createHash("sha256").update(legacyPolicyText).digest("hex"), legacyBinding.governancePolicySha256);
+  const legacyPolicy = JSON.parse(legacyPolicyText);
   const rawRetentionExpiresAt = "2026-10-10T00:00:00.000Z";
   const objectKey = new URL(snapshot.rawObjectUri).pathname.slice(1);
   const ledger = {
@@ -607,7 +607,7 @@ test("exact-hash 승인 legacy snapshot은 결속된 policy로 파생한 retenti
     sourceAuthority: "s3://easysubway-datapack-sources",
   }), /snapshot evidence mismatch/);
 
-  const unapprovedPolicy = { ...policy, policyVersion: "2026-07-16" };
+  const unapprovedPolicy = { ...legacyPolicy, policyVersion: "2026-07-16" };
   const unapprovedPolicyText = `${JSON.stringify(unapprovedPolicy, null, 2)}\n`;
   const unapprovedLedger = structuredClone(ledger);
   unapprovedLedger.entries[0].governancePolicyVersion = unapprovedPolicy.policyVersion;

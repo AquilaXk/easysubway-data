@@ -2458,6 +2458,35 @@
             "lineId": "line-15b3b8a93259"
           }
         ]
+      },
+      "admissionEvidence": {
+        "artifactKind": "source-admission-pipeline-evidence-summary",
+        "issue": 622,
+        "candidateId": "incheon-transit-accessibility",
+        "sourceId": "incheon-transit-accessibility",
+        "snapshotId": "incheon-transit-accessibility-20260828T043356000Z",
+        "decision": "APPROVED",
+        "approvedBy": "AquilaXk",
+        "approvedAt": "2026-08-29T04:49:49.000Z",
+        "sampleEvidenceHash": "95017fce6e5ba984e1d43281891d57e6d2e49347939c118e1c36e5c67c905bd3",
+        "rawSha256": "3f29b437f2c6f4145dea67535839684223f8458d610b241580ed0a6a499ba67c",
+        "schemaFingerprint": "a4772b125dbc6882b456b94ebfdea99afd8c2666c91cce06abd2bac4a7159ca2",
+        "sourceSnapshotSetHash": "7aedb7294bc8626adb609b25a7fabeb60ed1927ed705726d59a838a8473fcad1",
+        "adminReviewRecordHash": "3c705c2f2d65bd171d2cd4125266c63d0c3dee506cd76405e727573955f580f4",
+        "licenseEvidenceHash": "16d4e5ffd5eacf0514a6f08ea69b21589c1f5f38a3d9dd48c677b4c81e66ac71",
+        "aliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
+        "operatorMappingLedgerHash": "35875abc304e8aaa49cfab7b3c389cc45abde3dda82834634c80ea0f863704cf",
+        "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
+        "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
+        "overrideHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
+        "admissionDurationSeconds": 0,
+        "quotaEvidence": {
+          "defaultDailyLimit": "unlimited",
+          "portal": "data.go.kr",
+          "productionUseAllowed": true,
+          "unlockStatus": "not_required"
+        },
+        "sourceInventorySha256": "805c5da1d02ab8ad266a30fee667295a31db95f1b3a22efe84c16ff2fa566bba"
       }
     },
     {

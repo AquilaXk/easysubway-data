@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
@@ -9,6 +10,8 @@ import {
   normalizedIncheonStationName,
   parseIncheonAccessibilityCsv,
   runIncheonAccessibilityCollector,
+  validateIncheonAccessibilityRawCollection,
+  validateIncheonAccessibilitySnapshotIdentity,
 } from "./collect-incheon-accessibility.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
@@ -20,7 +23,7 @@ const LINE2 = "line-42b5805f3b5a";
 const LINE7 = "line-15b3b8a93259";
 
 async function loadInputs() {
-  const [elevatorBytes, escalatorBytes, wheelchairBytes, topologySnapshot] = await Promise.all([
+  const [elevatorBytes, escalatorBytes, wheelchairBytes, topologySnapshot, freshnessPolicy] = await Promise.all([
     readFile(ELEVATOR_CSV),
     readFile(ESCALATOR_CSV),
     readFile(WHEELCHAIR_CSV),
@@ -30,8 +33,9 @@ async function loadInputs() {
         ...snapshot,
         snapshotId: snapshot.snapshotId ?? "incheon-transit-station-info-20260724",
       })),
+    readFile(path.join(root, "release/product-gates/datapack-freshness-sla.json"), "utf8").then(JSON.parse),
   ]);
-  return { elevatorBytes, escalatorBytes, wheelchairBytes, topologySnapshot };
+  return { elevatorBytes, escalatorBytes, wheelchairBytes, topologySnapshot, freshnessPolicy };
 }
 
 test("인천 accessibility collector는 엘리베이터·에스컬레이터·휠체어리프트 CSV를 topology 71 membership에 join한다", async () => {
@@ -74,7 +78,42 @@ test("인천 accessibility collector는 엘리베이터·에스컬레이터·휠
   assert.equal(snapshot.credentialRequired, false);
   assert.equal(snapshot.credentialRedacted, true);
   assert.equal(snapshot.capturedAt, "2026-07-24T07:00:00.000Z");
-  assert.equal(snapshot.freshUntil, "2026-07-25T07:00:00.000Z");
+  assert.equal(snapshot.freshUntil, "2026-10-22T07:00:00.000Z");
+  assert.equal(snapshot.observedAt, snapshot.capturedAt);
+  assert.equal(snapshot.contentSha256, snapshot.rowsSha256);
+  assert.equal(snapshot.absenceEvidenceMode, "EXHAUSTIVE_LIST");
+  assert.equal(snapshot.claimBindings.length, 426);
+  for (const binding of snapshot.claimBindings) {
+    const installed = binding.count > 0;
+    assert.equal(binding.evidenceKind, installed ? "EXISTS" : "NOT_EXISTS");
+    assert.equal(binding.absenceEvidenceMode, installed ? null : "EXHAUSTIVE_LIST");
+    assert.equal(binding.installationStatus, installed ? "INSTALLED" : "NOT_INSTALLED");
+    assert.equal(binding.strictRouteEligible, false);
+    assert.equal(binding.strictRouteEligibleReason, installed ? "OPERATION_STATUS_UNKNOWN" : "FACILITY_NOT_INSTALLED");
+  }
+  const zeroCount = snapshot.claimBindings.find(({ count }) => count === 0);
+  const installed = snapshot.claimBindings.find(({ count }) => count > 0);
+  assert.deepEqual(
+    { evidenceKind: zeroCount.evidenceKind, absenceEvidenceMode: zeroCount.absenceEvidenceMode, installationStatus: zeroCount.installationStatus, strictRouteEligibleReason: zeroCount.strictRouteEligibleReason },
+    { evidenceKind: "NOT_EXISTS", absenceEvidenceMode: "EXHAUSTIVE_LIST", installationStatus: "NOT_INSTALLED", strictRouteEligibleReason: "FACILITY_NOT_INSTALLED" },
+  );
+  assert.deepEqual(
+    { evidenceKind: installed.evidenceKind, absenceEvidenceMode: installed.absenceEvidenceMode, installationStatus: installed.installationStatus, strictRouteEligibleReason: installed.strictRouteEligibleReason },
+    { evidenceKind: "EXISTS", absenceEvidenceMode: null, installationStatus: "INSTALLED", strictRouteEligibleReason: "OPERATION_STATUS_UNKNOWN" },
+  );
+  const transferFacilityBindings = snapshot.claimBindings.filter(({ lineId }) => lineId === "")
+    .reduce((groups, binding) => {
+      const key = `${binding.stationId}:${binding.facilityType}`;
+      groups.set(key, [...(groups.get(key) ?? []), binding]);
+      return groups;
+    }, new Map());
+  const duplicatedTransfers = [...transferFacilityBindings.values()].filter((bindings) => bindings.length === 2);
+  assert.equal(duplicatedTransfers.length, 6);
+  for (const bindings of duplicatedTransfers) {
+    assert.equal(new Set(bindings.map(({ sourceLineId }) => sourceLineId)).size, 2);
+    assert.equal(new Set(bindings.map(({ stationCode }) => stationCode)).size, 2);
+    assert.equal(new Set(bindings.map(({ providerRecordHash }) => providerRecordHash)).size, 2);
+  }
   assert.equal(
     snapshot.elevatorRawSha256,
     createHash("sha256").update(inputs.elevatorBytes).digest("hex"),
@@ -277,7 +316,74 @@ test("인천 accessibility collector CLI는 absolute output 경로를 강제한�
     "--elevator-input", ELEVATOR_CSV,
     "--escalator-input", ESCALATOR_CSV,
     "--wheelchair-input", WHEELCHAIR_CSV,
-    "--topology-snapshot", path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260724.json"),
+    "--topology-snapshot", path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260828.json"),
     "--output", "relative.json",
   ]), /usage: collect-incheon-accessibility/);
+});
+
+test("인천 accessibility observation output은 정확한 3 CSV raw identity를 create-once으로 결속한다", async (t) => {
+  const outputRoot = await mkdtemp(path.join(os.tmpdir(), "incheon-accessibility-observation-"));
+  const output = path.join(outputRoot, "observation");
+  t.after(() => rm(outputRoot, { recursive: true, force: true }));
+  await runIncheonAccessibilityCollector([
+    "--elevator-input", ELEVATOR_CSV, "--escalator-input", ESCALATOR_CSV, "--wheelchair-input", WHEELCHAIR_CSV,
+    "--topology-snapshot", path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260828.json"),
+    "--observation-output", output, "--captured-at", "2026-08-28T04:33:56.000Z",
+  ]);
+  const manifest = JSON.parse(await readFile(path.join(output, "observation.json"), "utf8"));
+  const snapshot = validateIncheonAccessibilitySnapshotIdentity(JSON.parse(await readFile(path.join(output, manifest.snapshotFile), "utf8")));
+  const raw = validateIncheonAccessibilityRawCollection(JSON.parse(await readFile(path.join(output, manifest.rawArtifactFile), "utf8")), snapshot);
+  assert.equal(snapshot.rawSha256, "3f29b437f2c6f4145dea67535839684223f8458d610b241580ed0a6a499ba67c");
+  assert.deepEqual(raw.payloads.map(({ datasetId, fileName }) => [datasetId, fileName]), [
+    ["15083478", "data-go-15083478.csv"], ["15010199", "data-go-15010199.csv"], ["15146049", "data-go-15146049.csv"],
+  ]);
+  await assert.rejects(runIncheonAccessibilityCollector([
+    "--elevator-input", ELEVATOR_CSV, "--escalator-input", ESCALATOR_CSV, "--wheelchair-input", WHEELCHAIR_CSV,
+    "--topology-snapshot", path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260828.json"),
+    "--observation-output", output, "--captured-at", "2026-08-28T04:33:56.000Z",
+  ]), /observation output already exists/);
+  raw.payloads[0].bodyBase64 = Buffer.from("mutated").toString("base64");
+  assert.throws(() => validateIncheonAccessibilityRawCollection(raw, snapshot), /identity mismatch/);
+  const tamperedBinding = structuredClone(snapshot);
+  tamperedBinding.claimBindings[0].sourceLineId = "wrong";
+  tamperedBinding.claimBindingsSha256 = createHash("sha256").update(JSON.stringify(tamperedBinding.claimBindings)).digest("hex");
+  assert.throws(() => validateIncheonAccessibilitySnapshotIdentity(tamperedBinding), /identity is invalid/);
+  const tamperedTopology = structuredClone(JSON.parse(await readFile(path.join(output, manifest.rawArtifactFile), "utf8")));
+  tamperedTopology.topologySnapshot.extra = true;
+  assert.throws(() => validateIncheonAccessibilityRawCollection(tamperedTopology, snapshot), /unexpected fields|topology mismatch/);
+  const tamperedFreshness = structuredClone(JSON.parse(await readFile(path.join(output, manifest.rawArtifactFile), "utf8")));
+  tamperedFreshness.freshnessPolicy.sourceClasses[0].reverificationCadence = "P1D";
+  assert.throws(() => validateIncheonAccessibilityRawCollection(tamperedFreshness, snapshot), /freshness policy mismatch/);
+  assert.equal(manifest.credentialRedacted, true);
+});
+
+test("인천 accessibility observation output은 동시 collector에서 정확히 한 번만 생성된다", async (t) => {
+  const outputRoot = await mkdtemp(path.join(os.tmpdir(), "incheon-accessibility-observation-concurrent-"));
+  const output = path.join(outputRoot, "observation");
+  const topologyPath = path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260828.json");
+  const args = [
+    "--elevator-input", ELEVATOR_CSV, "--escalator-input", ESCALATOR_CSV, "--wheelchair-input", WHEELCHAIR_CSV,
+    "--topology-snapshot", topologyPath, "--observation-output", output,
+    "--captured-at", "2026-08-28T04:33:56.000Z",
+  ];
+  t.after(() => rm(outputRoot, { recursive: true, force: true }));
+  const results = await Promise.allSettled([runIncheonAccessibilityCollector(args), runIncheonAccessibilityCollector(args)]);
+  assert.equal(results.filter(({ status }) => status === "fulfilled").length, 1);
+  const rejected = results.find(({ status }) => status === "rejected");
+  assert.ok(rejected);
+  assert.match(rejected.reason.message, /observation output already exists/);
+  const manifest = JSON.parse(await readFile(path.join(output, "observation.json"), "utf8"));
+  const topologySnapshot = {
+    ...JSON.parse(await readFile(topologyPath, "utf8")),
+    snapshotId: "incheon-transit-station-info-20260828",
+  };
+  const snapshot = validateIncheonAccessibilitySnapshotIdentity(
+    JSON.parse(await readFile(path.join(output, manifest.snapshotFile), "utf8")),
+    undefined,
+    topologySnapshot,
+  );
+  validateIncheonAccessibilityRawCollection(
+    JSON.parse(await readFile(path.join(output, manifest.rawArtifactFile), "utf8")),
+    snapshot,
+  );
 });

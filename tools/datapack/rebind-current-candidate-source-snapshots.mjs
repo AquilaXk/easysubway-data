@@ -20,6 +20,9 @@ const ACTIVE_SOURCE_IDS = Object.freeze([
   SOURCE_ID, "molit-urban-rail-full-route", "seoulmetro-station-line-info",
 ]);
 const ACTIVE_SOURCE_IDS_WITH_TRANSFER = Object.freeze([...ACTIVE_SOURCE_IDS, TRANSFER_SOURCE_ID]);
+const INCHEON_SOURCE_ID = "incheon-transit-accessibility";
+const ACTIVE_SOURCE_IDS_WITH_INCHEON = Object.freeze([...ACTIVE_SOURCE_IDS, INCHEON_SOURCE_ID]);
+const ACTIVE_SOURCE_IDS_WITH_INCHEON_AND_TRANSFER = Object.freeze([...ACTIVE_SOURCE_IDS_WITH_INCHEON, TRANSFER_SOURCE_ID]);
 const CAPITAL_SOURCE_IDS = Object.freeze([
   "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
   "kric-subway-timetable", "seoul-metro-accessibility", SOURCE_ID, "seoul-metro-official-od-fares",
@@ -77,7 +80,7 @@ function sameIdentity(left, right) { return left.dev === right.dev && left.ino =
 
 export function isActiveCandidateSourceSequence(sourceIds) {
   return Array.isArray(sourceIds)
-    && [ACTIVE_SOURCE_IDS, ACTIVE_SOURCE_IDS_WITH_TRANSFER]
+    && [ACTIVE_SOURCE_IDS, ACTIVE_SOURCE_IDS_WITH_TRANSFER, ACTIVE_SOURCE_IDS_WITH_INCHEON, ACTIVE_SOURCE_IDS_WITH_INCHEON_AND_TRANSFER]
       .some((expected) => JSON.stringify(sourceIds) === JSON.stringify(expected));
 }
 

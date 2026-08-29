@@ -33,17 +33,23 @@ const CURRENT_CAPITAL_BASE_SOURCE_IDS = Object.freeze([
   "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
 ]);
 
-test("active candidate source sequence는 public successor exact six와 TRANSFER-last seven만 허용한다", () => {
+test("active candidate source sequence는 exact public successor, Incheon, and TRANSFER-last variants만 허용한다", () => {
   const six = [
     "seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility",
     "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info",
   ];
   const seven = [...six, "seoul-metro-transfer-distance-duration"];
+  const sevenWithIncheon = [...six, "incheon-transit-accessibility"];
+  const eightWithIncheon = [...sevenWithIncheon, "seoul-metro-transfer-distance-duration"];
   assert.equal(isActiveCandidateSourceSequence(six), true);
   assert.equal(isActiveCandidateSourceSequence(seven), true);
+  assert.equal(isActiveCandidateSourceSequence(sevenWithIncheon), true);
+  assert.equal(isActiveCandidateSourceSequence(eightWithIncheon), true);
   assert.equal(isActiveCandidateSourceSequence([...seven].reverse()), false);
   assert.equal(isActiveCandidateSourceSequence([...six, "other-source"]), false);
   assert.equal(isActiveCandidateSourceSequence([...six, six.at(-1)]), false);
+  assert.equal(isActiveCandidateSourceSequence([...six, "seoul-metro-transfer-distance-duration", "incheon-transit-accessibility"]), false);
+  assert.equal(isActiveCandidateSourceSequence([...sevenWithIncheon, "incheon-transit-accessibility"]), false);
   assert.equal(isActiveCandidateSourceSequence([
     "seoulmetro-cyberstation-route-map", ...six.slice(1),
   ]), false);
@@ -116,6 +122,7 @@ async function fixture() {
   next.redactedRequestFingerprint = snapshot.redactedRequestFingerprint;
   next.schemaFingerprint = snapshot.schemaFingerprint;
   next.contentSha256 = snapshot.contentSha256;
+  next.governancePolicyVersion = governancePolicy.policyVersion;
   next.governancePolicySha256 = sha(governanceBytes);
   next.freshnessExpiresAt = deriveFreshnessExpiresAt({ policy: freshnessPolicy, sourceClassId: "static_accessibility_facility", basisAt: snapshot.capturedAt, evaluationAt: NOW.toISOString() });
   next.rawRetentionExpiresAt = deriveRawRetentionExpiresAt({ policy: governancePolicy, sourceId: next.sourceId, retrievedAt: snapshot.capturedAt });
@@ -281,7 +288,7 @@ test("additive governance successor preserves only approved non-TRANSFER prior p
     (value) => { value.governancePolicyVersion = "2099-01-01"; },
   ]) {
     const invalid = structuredClone(snapshot); mutate(invalid);
-    assert.throws(() => approvedGovernanceBindingTransition({ snapshot: invalid, currentPolicyVersion: "2026-07-15", currentPolicySha256: sha(input.governancePolicyBytes) }), /governance policy binding/);
+    assert.throws(() => approvedGovernanceBindingTransition({ snapshot: invalid, currentPolicyVersion: input.governancePolicy.policyVersion, currentPolicySha256: sha(input.governancePolicyBytes) }), /governance policy binding/);
   }
 });
 
