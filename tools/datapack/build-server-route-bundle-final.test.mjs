@@ -533,6 +533,13 @@ test("artifact와 candidate identity mismatch는 output 전에 fail closed한다
     ["station-identity", async (fixture) => {
       fixture.stationLineInput.candidate.stationSetSha256 = "f".repeat(64);
     }, /station set identity mismatch/],
+    ["route-station-scope", async (fixture) => {
+      fixture.routeEdgeInput.candidate.stationSetSha256 = "f".repeat(64);
+    }, /route-edge station-line candidate station set identity mismatch/],
+    ["both-station-route-scope", async (fixture) => {
+      fixture.stationLineInput.candidate.stationSetSha256 = "f".repeat(64);
+      fixture.routeEdgeInput.candidate.stationSetSha256 = "f".repeat(64);
+    }, /station-line scoped station set identity mismatch/],
     ["source-identity", async (fixture) => {
       fixture.routeEdgeInput.candidate.sourceSetSha256 = "f".repeat(64);
     }, /source set identity mismatch/],
@@ -810,6 +817,7 @@ async function createArtifact(
   const materialization = materializeStationLineAccessibility({ ...stationLineInput, observedAt: evaluationAt });
   const evaluation = evaluateRouteAccessibilityEdges({
     ...routeEdgeInput,
+    candidate: { ...routeEdgeInput.candidate, stationSetSha256: STATION_SET_SHA256 },
     evaluationAt,
     materialization,
   }, routePolicy);
@@ -982,7 +990,7 @@ function evidence(candidate, line, domain, state, evidenceKind, evidenceReason) 
 function completeRouteEdgeInput(sourceSetSha256, topologySha256) {
   const candidate = {
     candidateId: CANDIDATE_ID,
-    stationSetSha256: STATION_SET_SHA256,
+    stationSetSha256: SCOPED_STATION_SET_SHA256,
     sourceSetSha256,
     topologySha256,
     policyVersion: "route-edge-evaluation-v2",

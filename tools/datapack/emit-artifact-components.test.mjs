@@ -214,6 +214,7 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   const routeEdgeInput = completeRouteEdgeInput(
     buildSpec.sourceSnapshotSetHash,
     buildSpec.candidateId,
+    stationLineInput.candidate.stationSetSha256,
   );
   routePolicy.rideInvariant.subwayLocal.admittedEdgeSetSha256 = canonicalRideEdgeSetSha256(
     routeEdgeInput.routeEdges.filter(({ edgeType, serviceClass, servicePattern }) => edgeType === "RIDE" && serviceClass === "SUBWAY" && servicePattern === "LOCAL"),
@@ -274,6 +275,14 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
     /station-line candidate identity mismatch/,
   );
   assert.equal(await exists(path.join(temp, "station-line-candidate-mismatch")), false);
+
+  const routeStationSetMismatch = structuredClone(routeEdgeInput);
+  routeStationSetMismatch.candidate.stationSetSha256 = "f".repeat(64);
+  await assert.rejects(
+    () => run("route-station-set-mismatch", { routeEdgeInput: routeStationSetMismatch }),
+    /route-edge station-line candidate station set identity mismatch/,
+  );
+  assert.equal(await exists(path.join(temp, "route-station-set-mismatch")), false);
 
   applySourceSql("INSERT INTO lines(id,operator_id,name_ko,name_en,color) VALUES('l2','o1','2호선','Line 2','#654321'); INSERT INTO station_lines(station_id,line_id,line_sequence) VALUES('s1','l2',1)");
   await writeBindings(temp, source, current, spec);
@@ -340,6 +349,7 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   assert.equal(catalog.prepare("SELECT count(*) AS count FROM pragma_table_info('lines') WHERE name IN ('operator_id','color')").get().count, 0);
   catalog.close();
   const signingInput = JSON.parse(await readFile(path.join(temp, "one", "server-route-bundle/manifest.signing-input.json"), "utf8"));
+  assert.notEqual(signingInput.stationSetSha256, routeEdgeInput.candidate.stationSetSha256);
   assert.equal(signingInput.payloadSha256, await payloadDigest(path.join(temp, "one", "server-route-bundle")));
   const buildContract = JSON.parse(await readFile(path.join(fixtureRoot, "contracts/datapack/server-route-bundle-build-contract.json"), "utf8"));
   for (const metadata of ["provenance", "compatibility"]) {
@@ -371,7 +381,11 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
       const materialization = materializeStationLineAccessibility({ ...stationLineInput, observedAt: CURRENT_EVALUATION_AT });
       const evaluation = evaluateRouteAccessibilityEdges({
         ...routeEdgeInput,
-        candidate: { ...routeEdgeInput.candidate, topologySha256: signingInput.topologySha256 },
+        candidate: {
+          ...routeEdgeInput.candidate,
+          stationSetSha256: signingInput.stationSetSha256,
+          topologySha256: signingInput.topologySha256,
+        },
         evaluationAt: CURRENT_EVALUATION_AT,
         materialization,
       }, routePolicy);
@@ -543,7 +557,7 @@ function completeStationLineInput(sourceSetSha256, candidateId) {
   const exitTerminal = { ...candidate, stationId: "station-b35616704ce3", lineId: "seoul-2", operatorId: "seoul-metro", domain: "EXIT", state: "UNVERIFIED_EVIDENCE_BLOCKED", sourceId: "kric-station-movement-standard", sourceSnapshotId: "fixture-exit-snapshot", evidenceRawSha256: "d".repeat(64), providerRecordHash: null, capturedAt, freshUntil, provenanceId: "fixture-provenance", licenseId: "fixture-license", mappingContractVersion: candidate.mappingContractVersion, materializerVersion: candidate.materializerVersion, evidenceKind: "UNVERIFIED_EVIDENCE_BLOCKED", evidenceReason: "출구 이동경로가 검증되지 않아 경로를 차단했습니다.", terminalPolicy: "PROVIDER_NO_DATA_RESULT_03_BLOCKED", providerResultCode: "03", strictRouteEligible: false, strictRouteEligibleReason: "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED", statusMeaning: "PROVIDER_NO_DATA_NOT_ABSENCE", confidence: 0, providerResponseSha256: "9".repeat(64), evidenceHash: hash(Buffer.from(canonicalJson({ sourceSnapshotId: "fixture-exit-snapshot", stationId: "station-b35616704ce3", lineId: "seoul-2", operatorId: "seoul-metro", domain: "EXIT", terminalPolicy: "PROVIDER_NO_DATA_RESULT_03_BLOCKED", providerResponseSha256: "9".repeat(64) }))) };
   return { candidate, stationLines, evidenceRows: [...evidenceRows, ...terminal, exitTerminal] };
 }
-function completeRouteEdgeInput(sourceSetSha256, candidateId) {
+function completeRouteEdgeInput(sourceSetSha256, candidateId, stationSetSha256) {
   const rawEdges = [
     { edgeId: "entry-s1", edgeType: "ENTRY", fromNodeId: "s1", toNodeId: "s1:l1", durationSeconds: 0, distanceMeters: 0, servicePattern: "", serviceClass: "SUBWAY" },
     { edgeId: "exit-s1", edgeType: "EXIT", fromNodeId: "s1:l1", toNodeId: "s1", durationSeconds: 0, distanceMeters: 0, servicePattern: "", serviceClass: "SUBWAY" },
@@ -554,7 +568,7 @@ function completeRouteEdgeInput(sourceSetSha256, candidateId) {
   return {
     candidate: {
       candidateId,
-      stationSetSha256: hash(Buffer.from(canonicalJson(["s1", "s2", "station-b35616704ce3"]))),
+      stationSetSha256,
       sourceSetSha256,
       policyVersion: "route-edge-evaluation-v2",
       evaluatorVersion: "1",

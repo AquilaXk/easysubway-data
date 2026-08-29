@@ -105,7 +105,12 @@ export async function buildServerRouteBundleFinalEvidence(input) {
     ...stationLineInput,
     observedAt: evaluationAt,
   });
-  const routeEdgeInput = validateRouteEdgeInput(input.routeEdgeInput, artifact, candidateId);
+  const routeEdgeInput = validateRouteEdgeInput(
+    input.routeEdgeInput,
+    artifact,
+    candidateId,
+    stationLineInput.candidate.stationSetSha256,
+  );
   const evaluation = evaluateRouteAccessibilityEdges({
     ...routeEdgeInput,
     evaluationAt,
@@ -647,20 +652,31 @@ function evaluateSourceFreshness({ fixed, artifact, evaluationAt }) {
 
 function validateStationLineInput(value, artifact, candidateId) {
   assertKeys(value, ["candidate", "stationLines", "evidenceRows"], "station-line input keys");
-  assertCandidateBinding(value.candidate, artifact, false, candidateId);
   if (!Array.isArray(value.stationLines) || !Array.isArray(value.evidenceRows)) {
     throw new Error("station-line arrays are required");
+  }
+  assertCandidateBinding(value.candidate, artifact, false, candidateId);
+  if (value.candidate.stationSetSha256 !== scopedStationSetSha256(value.stationLines)) {
+    throw new Error("station-line scoped station set identity mismatch");
   }
   return value;
 }
 
-function validateRouteEdgeInput(value, artifact, candidateId) {
+function validateRouteEdgeInput(value, artifact, candidateId, stationSetSha256) {
   assertKeys(value, ["candidate", "stationLines", "routeEdges"], "route-edge input keys");
-  assertCandidateBinding(value.candidate, artifact, true, candidateId);
   if (!Array.isArray(value.stationLines) || !Array.isArray(value.routeEdges)) {
     throw new Error("route-edge arrays are required");
   }
-  return value;
+  assertCandidateBinding(value.candidate, artifact, false, candidateId);
+  if (value.candidate.stationSetSha256 !== stationSetSha256) {
+    throw new Error("route-edge station-line candidate station set identity mismatch");
+  }
+  const evaluationCandidate = {
+    ...value.candidate,
+    stationSetSha256: artifact.manifest.stationSetSha256,
+  };
+  assertCandidateBinding(evaluationCandidate, artifact, true, candidateId);
+  return { ...value, candidate: evaluationCandidate };
 }
 
 function assertCandidateBinding(candidate, artifact, requireTopology, expectedCandidateId) {
@@ -673,6 +689,14 @@ function assertCandidateBinding(candidate, artifact, requireTopology, expectedCa
   if (requireTopology && candidate.topologySha256 !== artifact.manifest.topologySha256) {
     throw new Error("topology identity mismatch");
   }
+}
+
+function scopedStationSetSha256(stationLines) {
+  const stationIds = stationLines.map((line) => line?.stationId);
+  if (stationIds.some((stationId) => typeof stationId !== "string" || stationId === "")) {
+    throw new Error("station-line scoped station set identity mismatch");
+  }
+  return sha256(Buffer.from(canonicalJson([...new Set(stationIds)].sort(bytewise))));
 }
 
 function stationLineGateState(summary) {
