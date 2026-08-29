@@ -68,11 +68,12 @@ export async function publishAccessibilityRawObservation({
     throw new Error("raw object verification time precedes snapshot capture");
   }
   // The generic publisher otherwise selects a signed-storage client when this exact process env is absent.
-  requireOciParBaseUrl(client == null ? process.env : env);
+  requireOciParBaseUrl(env);
   try {
     await publishImmutableObjectPlan({
       root,
       client,
+      env,
       plan: {
         steps: [
           { type: "put-immutable-bundle-object", objectKey, sourcePath: manifest.rawArtifactFile, sha256: rawObjectSha256, sizeBytes: rawArtifactBytes.length },
