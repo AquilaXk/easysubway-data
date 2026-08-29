@@ -747,9 +747,11 @@ export async function syncReleaseEvidence({ check, releaseRoot: explicitReleaseR
   const nextSpecBytes = Buffer.from(`${JSON.stringify(spec, null, 2)}\n`);
   request.candidateId = spec.candidateId;
   request.buildSpecSha256 = sha256(nextSpecBytes);
+  request.approvalId = `release-request-${spec.candidateId}-${request.buildSpecSha256}`;
   request.sourceSnapshotSetHash = spec.sourceSnapshotSetHash;
   hashes.builderGitSha = spec.builderGitSha;
   hashes.identifiers.candidateId.value = spec.candidateId;
+  hashes.identifiers.approvalId.value = request.approvalId;
   hashes.truthfulnessRule = "모든 값은 tracked canonical fixture·inventory·official snapshot에서 결정적으로 재산출한다. 2026-07-28 신규 KRIC standard·서울 snapshot을 소비 claim에 결속하고 route 가용성은 추론하지 않는다.";
   hashes.sourceSnapshotSetHash.value = spec.sourceSnapshotSetHash;
   hashes.sourceSnapshotSetHash.contract = `source별 head ${releaseSnapshots.length}종의 byte-ordered JSON hash와 build spec·release request가 일치해야 한다.`;

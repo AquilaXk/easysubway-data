@@ -543,6 +543,40 @@ test("generated hash-evidence commands use and enforce the exact candidate snaps
     assert.equal(hashes.builderGitSha, spec.builderGitSha);
     assert.equal(hashes.identifiers.candidateId.value, spec.candidateId);
     assert.equal(request.candidateId, spec.candidateId);
+    assert.equal(request.buildSpecSha256, createHash("sha256").update(await readFile(path.join(directory, "tools/datapack/release/candidate-build-spec.json"))).digest("hex"));
+    assert.equal(request.approvalId, `release-request-${spec.candidateId}-${request.buildSpecSha256}`);
+    assert.equal(hashes.identifiers.approvalId.value, request.approvalId);
+
+    const initialApprovalId = request.approvalId;
+    await writeFile(
+      path.join(directory, "tools/datapack/release/candidate-build-spec.json"),
+      `${JSON.stringify({ ...spec, candidateId: `${spec.candidateId}-successor` })}\n`,
+    );
+    await syncReleaseEvidence({ releaseRoot: directory });
+    let candidateChangedSpec = JSON.parse(await readFile(path.join(directory, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
+    let candidateChangedRequest = JSON.parse(await readFile(path.join(directory, "tools/datapack/release/release-request.json"), "utf8"));
+    let candidateChangedHashes = JSON.parse(await readFile(path.join(directory, "tools/datapack/release/hash-evidence.json"), "utf8"));
+    assert.equal(candidateChangedRequest.approvalId, `release-request-${candidateChangedSpec.candidateId}-${candidateChangedRequest.buildSpecSha256}`);
+    assert.equal(candidateChangedHashes.identifiers.approvalId.value, candidateChangedRequest.approvalId);
+    assert.notEqual(candidateChangedRequest.approvalId, initialApprovalId);
+
+    await writeFile(
+      path.join(directory, "tools/datapack/release/candidate-build-spec.json"),
+      `${JSON.stringify({ ...candidateChangedSpec, scopeId: `${candidateChangedSpec.scopeId}-successor` })}\n`,
+    );
+    await syncReleaseEvidence({ releaseRoot: directory });
+    candidateChangedSpec = JSON.parse(await readFile(path.join(directory, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
+    candidateChangedRequest = JSON.parse(await readFile(path.join(directory, "tools/datapack/release/release-request.json"), "utf8"));
+    candidateChangedHashes = JSON.parse(await readFile(path.join(directory, "tools/datapack/release/hash-evidence.json"), "utf8"));
+    assert.equal(candidateChangedRequest.approvalId, `release-request-${candidateChangedSpec.candidateId}-${candidateChangedRequest.buildSpecSha256}`);
+    assert.equal(candidateChangedHashes.identifiers.approvalId.value, candidateChangedRequest.approvalId);
+    assert.notEqual(candidateChangedRequest.approvalId, initialApprovalId);
+
+    await writeFile(
+      path.join(directory, "tools/datapack/release/release-request.json"),
+      `${JSON.stringify({ ...candidateChangedRequest, approvalId: "release-request-stale" })}\n`,
+    );
+    await assert.rejects(syncReleaseEvidence({ check: true, releaseRoot: directory }), /release request is stale/);
     const selectedIds = new Set(spec.sourceSnapshotIds);
     const selectedInLedgerOrder = sourceSnapshotLedger.filter(({ snapshotId }) => selectedIds.has(snapshotId));
     assert.equal(spec.sourceSnapshotSetHash, createHash("sha256").update(JSON.stringify(selectedInLedgerOrder)).digest("hex"));
