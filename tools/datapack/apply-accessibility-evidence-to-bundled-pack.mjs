@@ -660,7 +660,21 @@ function canonicalProvenanceSourceIds(capital) {
       .filter((sourceId) => typeof sourceId === "string" && sourceId.length > 0)));
 }
 
-export function currentCandidateReleaseSnapshots(snapshots, canonical, headsBySource = validateLineage(snapshots).headsBySource) {
+function registeredCanonicalTailSourceIds(canonicalTail, snapshots, headsBySource, sourceInventory) {
+  const inventoryBySource = new Map((sourceInventory ?? []).map((entry) => [entry.id, entry]));
+  return canonicalTail.filter((sourceId) => {
+    const head = headsBySource[sourceId];
+    const snapshot = snapshots.find((entry) => entry.sourceId === sourceId && entry.snapshotId === head);
+    const registration = inventoryBySource.get(sourceId)?.registrationEvidence;
+    return snapshot && registration?.sourceId === sourceId
+      && registration.snapshotId === snapshot.snapshotId
+      && registration.rawObjectUri === snapshot.rawObjectUri
+      && registration.rawObjectSha256 === snapshot.rawSha256
+      && registration.contentSha256 === snapshot.contentSha256;
+  });
+}
+
+export function currentCandidateReleaseSnapshots(snapshots, canonical, headsBySource = validateLineage(snapshots).headsBySource, sourceInventory = []) {
   const capital = canonical.packs?.find(({ id }) => id === "capital");
   const canonicalSourceIds = capital?.sourceInventory?.map(({ id }) => id);
   const canonicalTail = Array.isArray(canonicalSourceIds)
@@ -675,7 +689,11 @@ export function currentCandidateReleaseSnapshots(snapshots, canonical, headsBySo
       || !canonicalProvenanceIds.has(sourceId))) {
     throw new Error("capital canonical active source identity drift");
   }
-  return CURRENT_CANDIDATE_SOURCE_IDS.map((sourceId) => {
+  const candidateSourceIds = [
+    ...CURRENT_CANDIDATE_SOURCE_IDS,
+    ...registeredCanonicalTailSourceIds(canonicalTail, snapshots, headsBySource, sourceInventory),
+  ];
+  return candidateSourceIds.map((sourceId) => {
     const head = headsBySource[sourceId];
     const selected = snapshots.filter((snapshot) => snapshot.sourceId === sourceId && snapshot.snapshotId === head);
     if (selected.length !== 1) throw new Error(`current candidate source head is missing: ${sourceId}`);
@@ -707,7 +725,7 @@ export async function syncReleaseEvidence({ check, releaseRoot: explicitReleaseR
   const freshness = JSON.parse(freshnessBytes);
   const inventoryBySource = new Map(inventory.sources.map((entry) => [entry.id, entry]));
   const canonical = JSON.parse(canonicalBytes);
-  const releaseSnapshots = currentCandidateReleaseSnapshots(snapshots, canonical);
+  const releaseSnapshots = currentCandidateReleaseSnapshots(snapshots, canonical, undefined, inventory.sources);
   const selectedSnapshotIds = new Set(releaseSnapshots.map(({ snapshotId }) => snapshotId));
   const selectedInLedgerOrder = snapshots.filter(({ snapshotId }) => selectedSnapshotIds.has(snapshotId));
   if (selectedSnapshotIds.size !== releaseSnapshots.length || selectedInLedgerOrder.length !== releaseSnapshots.length) {
