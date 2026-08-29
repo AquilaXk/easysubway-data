@@ -352,6 +352,7 @@ test("인천 accessibility observation output은 동시 collector에서 정확�
   const results = await Promise.allSettled([runIncheonAccessibilityCollector(args), runIncheonAccessibilityCollector(args)]);
   assert.equal(results.filter(({ status }) => status === "fulfilled").length, 1);
   const rejected = results.find(({ status }) => status === "rejected");
+  assert.ok(rejected);
   assert.match(rejected.reason.message, /observation output already exists/);
   const manifest = JSON.parse(await readFile(path.join(output, "observation.json"), "utf8"));
   const topologySnapshot = {
