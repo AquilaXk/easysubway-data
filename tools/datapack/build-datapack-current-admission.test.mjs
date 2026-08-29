@@ -669,7 +669,7 @@ test("source-separated current topology materialization은 Incheon 1/2 exact 116
     currentInventory,
     [],
     now,
-    { admittedNonLedgerAccessibility: new Map([[accessibilityAdmission.source.id, accessibilityAdmission]]) },
+    { admittedAccessibilityEvidence: new Map([[accessibilityAdmission.source.id, accessibilityAdmission]]) },
   ), accessibilityAdmission.freshUntil);
   assert.throws(() => productionAccessibilityFreshUntil(
     [accessibilityFixture], currentInventory, [], now,
@@ -705,7 +705,7 @@ test("source-separated current topology materialization은 Incheon 1/2 exact 116
   };
   assert.throws(() => productionAccessibilityFreshUntil(
     [unrelatedFixture], currentInventory, [], now,
-    { admittedNonLedgerAccessibility: new Map([[accessibilityAdmission.source.id, accessibilityAdmission]]) },
+    { admittedAccessibilityEvidence: new Map([[accessibilityAdmission.source.id, accessibilityAdmission]]) },
   ), /production accessibility snapshot mismatch: kric-station-convenience-standard/);
 });
 
@@ -761,7 +761,7 @@ test("registered Incheon accessibility projection binds the current candidate an
     sourceInventory,
     buildSpec.sourceSnapshots,
     registeredNow,
-    { admittedNonLedgerAccessibility: new Map([[
+    { admittedAccessibilityEvidence: new Map([[
       registered.admission.source.id,
       registered.admission,
     ]]) },

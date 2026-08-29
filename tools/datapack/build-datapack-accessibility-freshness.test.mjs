@@ -96,6 +96,6 @@ test("registered Incheon accessibility freshness uses the generic candidate proj
     snapshotStatus: "LOCKED",
     freshnessExpiresAt: "2026-08-28T00:00:00.000Z",
   }], new Date("2026-07-28T00:00:00.000Z"), {
-    admittedNonLedgerAccessibility: new Map([[sourceId, admission]]),
+    admittedAccessibilityEvidence: new Map([[sourceId, admission]]),
   }), "2026-08-28T00:00:00.000Z");
 });

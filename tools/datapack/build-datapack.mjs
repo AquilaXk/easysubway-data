@@ -1770,7 +1770,7 @@ async function validateAndApplyNetworkEdgeProvenance(
       sourceInventory.value,
       buildSpec.sourceSnapshots,
       now,
-      { admittedNonLedgerAccessibility: new Map([[
+      { admittedAccessibilityEvidence: new Map([[
         incheonAccessibilityAdmission.source.id,
         incheonAccessibilityAdmission,
       ]]) },
@@ -1933,13 +1933,13 @@ export function productionAccessibilityFreshUntil(
   inventory,
   sourceSnapshots,
   now = candidateBuildNow(),
-  { admittedNonLedgerAccessibility = new Map() } = {},
+  { admittedAccessibilityEvidence = new Map() } = {},
 ) {
   if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
     throw new TypeError("production accessibility validation time is invalid");
   }
-  if (!(admittedNonLedgerAccessibility instanceof Map)) {
-    throw new TypeError("production non-ledger accessibility admissions are invalid");
+  if (!(admittedAccessibilityEvidence instanceof Map)) {
+    throw new TypeError("production accessibility evidence admissions are invalid");
   }
   const sources = new Map(inventory.sources.map((source) => [source.id, source]));
   const snapshots = new Map(sourceSnapshots.map((snapshot) => [snapshot.sourceId, snapshot]));
@@ -1950,7 +1950,7 @@ export function productionAccessibilityFreshUntil(
   ]).filter(({ sourceId }) => sourceId);
   const expires = rows.map((row) => {
     if (row.sourceId === incheonAccessibilitySourceId) {
-      const admission = admittedNonLedgerAccessibility.get(row.sourceId);
+      const admission = admittedAccessibilityEvidence.get(row.sourceId);
       const source = sources.get(row.sourceId);
       const registration = admission?.source?.registrationEvidence;
       const projection = snapshots.get(row.sourceId);
@@ -1999,7 +1999,7 @@ export function productionAccessibilityFreshUntil(
       }
       return Date.parse(snapshot.freshnessExpiresAt);
     }
-    const admission = admittedNonLedgerAccessibility.get(row.sourceId);
+    const admission = admittedAccessibilityEvidence.get(row.sourceId);
     if (admission?.source?.id !== row.sourceId
       || !isDeepStrictEqual(admission.source, sources.get(row.sourceId))
       || admission.source.requiredForProductionPack !== false
