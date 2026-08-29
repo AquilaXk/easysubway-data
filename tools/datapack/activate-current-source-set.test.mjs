@@ -1991,6 +1991,12 @@ test("primary source set은 current KRIC·7-source·two-topology identity를 한
   const currentIncheonTopologyPath = currentIncheonSource.topologyAdmissionEvidence.snapshotPath;
   const currentIncheonTopologyBytes = await readFile(path.join(root, currentIncheonTopologyPath));
   const currentIncheonTopology = JSON.parse(currentIncheonTopologyBytes);
+  const currentIncheonAccessibilitySource = currentInventory.sources
+    .find(({ id }) => id === "incheon-transit-accessibility");
+  const currentIncheonAccessibilityPath = `tools/datapack/sources/${currentIncheonAccessibilitySource
+    .registrationEvidence.snapshotId}.json`;
+  const currentIncheonAccessibilityBytes = await readFile(path.join(root, currentIncheonAccessibilityPath));
+  const currentIncheonAccessibility = JSON.parse(currentIncheonAccessibilityBytes);
   const capitalSnapshotDate = currentTopology.capturedAt.slice(0, 10).replaceAll("-", "");
   const incheonSnapshotDate = currentIncheonTopology.capturedAt.slice(0, 10).replaceAll("-", "");
   assert.equal(currentCapitalAdmission.topologySnapshotId.slice(-8), capitalSnapshotDate);
@@ -2049,6 +2055,9 @@ test("primary source set은 current KRIC·7-source·two-topology identity를 한
     currentIncheonTopology,
     currentIncheonTopologyBytes,
     currentIncheonTopologyPath,
+    currentIncheonAccessibility,
+    currentIncheonAccessibilityBytes,
+    currentIncheonAccessibilityPath,
     buildNow,
     snapshotBytesByPath: new Map(),
     verifySuccessorHeadsImpl() { return { positions: publicRouteMapSuccessor }; },
@@ -2078,8 +2087,14 @@ test("primary source set은 current KRIC·7-source·two-topology identity를 한
       }
       return { ...value, topologyAdmissionsRebound: true };
     },
-    requireCurrentIncheonTopologyAdmissionImpl({ sourceInventory: value, snapshotPath }) {
+    requireCurrentIncheonTopologyAdmissionImpl({
+      sourceInventory: value, snapshotPath, accessibilitySnapshot,
+      accessibilitySnapshotBytes, accessibilitySnapshotPath,
+    }) {
       assert.equal(snapshotPath, currentIncheonTopologyPath);
+      assert.strictEqual(accessibilitySnapshot, currentIncheonAccessibility);
+      assert.strictEqual(accessibilitySnapshotBytes, currentIncheonAccessibilityBytes);
+      assert.equal(accessibilitySnapshotPath, currentIncheonAccessibilityPath);
       return value;
     },
     buildTopologyReverificationImpl(baseline, current) {

@@ -340,6 +340,18 @@ test("receipt-bound Incheon accessibility admits only an exact semantic topology
     .topologyAdmissionEvidence.contentSha256 = "0".repeat(64);
   assert.throws(() => admit({ sourceInventory: contentMismatchInventory }), /topology lineage/);
 
+  const olderTopology = structuredClone(values.topologySnapshot);
+  const olderCapturedAt = new Date(Date.parse(olderTopology.capturedAt) - 24 * 60 * 60 * 1000);
+  olderTopology.capturedAt = olderCapturedAt.toISOString();
+  olderTopology.freshUntil = new Date(olderCapturedAt.getTime() + 24 * 60 * 60 * 1000).toISOString();
+  olderTopology.snapshotId = `incheon-transit-station-info-${olderTopology.capturedAt
+    .slice(0, 10).replaceAll("-", "")}`;
+  const olderInventory = rebindSuppliedTopologyInventory(values.inventory, olderTopology);
+  assert.throws(() => admit({
+    sourceInventory: olderInventory,
+    topology: olderTopology,
+  }), /registered topology binding mismatch/);
+
   const claimMismatch = structuredClone(values.accessibilitySnapshot);
   claimMismatch.claimTopology[0].stationCode = "0000";
   const claimMismatchBytes = Buffer.from(`${JSON.stringify(claimMismatch, null, 2)}\n`);
