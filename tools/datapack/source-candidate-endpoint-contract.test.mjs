@@ -95,6 +95,23 @@ test("public static-network v2는 cataloged official positions와 MOLIT만 한 o
   assert.doesNotMatch(JSON.stringify({ positions, molit }), /cyberstation|\.js(?:\b|$)|s3:\/\//iu);
 });
 
+test("Incheon accessibility catalog keeps the current deterministic collector boundary", () => {
+  const candidate = document.candidates.find(({ id }) => id === "incheon-transit-accessibility");
+  const runner = candidate?.operation?.runner;
+  assert.deepEqual(runner, {
+    command: "node tools/datapack/collect-incheon-accessibility.mjs",
+    arguments: [
+      "--elevator-input", "tools/datapack/fixtures/incheon-accessibility-raw/data-go-15083478.csv",
+      "--escalator-input", "tools/datapack/fixtures/incheon-accessibility-raw/data-go-15010199.csv",
+      "--wheelchair-input", "tools/datapack/fixtures/incheon-accessibility-raw/data-go-15146049.csv",
+      "--topology-snapshot", "tools/datapack/sources/incheon-transit-station-info-20260828.json",
+      "--observation-output", "<absolute-operation-owned-observation-directory>",
+    ],
+    requiredEnv: [],
+  });
+  assert.doesNotMatch(JSON.stringify(runner), /s3:|\/tmp\/|captured-at|2026-07/u);
+});
+
 test("FACILITY provider probe는 canonical identity 없이 exact tuple evidence만 만든다", async () => {
   const tuple = { railOprIsttCd: "GX", lnCd: "A", stinCd: "X101", stationName: "운정중앙" };
   const evidence = await collectKricAccessibilityProviderTupleEvidence({

@@ -10,6 +10,7 @@ import { runIncheonAccessibilityCollector } from "./collect-incheon-accessibilit
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const sha = (value) => createHash("sha256").update(value).digest("hex");
+const noLease = async () => async () => {};
 const fixed = ["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json", "tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json", "tools/datapack/source-candidates.json", "tools/datapack/source-governance-policy.json", "release/product-gates/datapack-freshness-sla.json", "tools/datapack/sources/incheon-transit-station-info-20260828.json"];
 async function fixture(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), "incheon-register-")); t.after(() => rm(root, { recursive: true, force: true }));
@@ -26,7 +27,7 @@ async function fixture(t) {
 test("registers exactly six reviewed outputs and preserves atomic prestate", async (t) => {
   const value = await fixture(t); const before = await Promise.all(fixed.slice(0, 5).map((relative) => readFile(path.join(value.root, relative))));
   const outputs = await buildReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot: value.root, observationRoot: value.observationRoot, receiptPath: value.receiptPath, now: value.now });
-  assert.equal(outputs.length, 6); assert.deepEqual(outputs.slice(1).map(({ relative }) => relative), fixed.slice(0, 5)); await assert.rejects(commitReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot: value.root, outputs, failAfter: 2 }), /injected/); assert.deepEqual(await Promise.all(fixed.slice(0, 5).map((relative) => readFile(path.join(value.root, relative)))), before);
+  assert.equal(outputs.length, 6); assert.deepEqual(outputs.slice(1).map(({ relative }) => relative), fixed.slice(0, 5)); await assert.rejects(commitReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot: value.root, outputs, failAfter: 2, acquireLease: noLease }), /injected/); assert.deepEqual(await Promise.all(fixed.slice(0, 5).map((relative) => readFile(path.join(value.root, relative)))), before);
   const inventory = JSON.parse(outputs[1].bytes); const source = inventory.sources.find(({ id }) => id === "incheon-transit-accessibility");
   const originalSource = JSON.parse(before[0]).sources.find(({ id }) => id === "incheon-transit-accessibility");
   const ledger = JSON.parse(outputs[2].bytes); const registered = ledger.at(-1);
@@ -39,7 +40,7 @@ test("registers exactly six reviewed outputs and preserves atomic prestate", asy
   assert.equal(Object.hasOwn(candidate.networkEdgeEvidence, "incheonAccessibility"), false); assert.equal(candidate.publishedAt, "2026-08-28T04:50:00.000Z");
   const selectedLedgerOrder = ledger.filter(({ snapshotId }) => candidate.sourceSnapshotIds.includes(snapshotId));
   assert.equal(candidate.sourceSnapshotSetHash, sha(JSON.stringify(selectedLedgerOrder))); assert.equal(request.buildSpecSha256, sha(outputs[3].bytes)); assert.deepEqual(evidence.perSourceEvidence.map(({ sourceId }) => sourceId), selectedLedgerOrder.map(({ sourceId }) => sourceId)); assert.equal(evidence.perSourceEvidence.length, 8); assert.equal(evidence.sourceSnapshots.order.includes("incheon-transit-accessibility"), true); assert.match(evidence.sourceSnapshots.specRowRawSha256Note, /OCI object hash/);
-  await commitReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot: value.root, outputs }); assert.equal(JSON.parse(await readFile(path.join(value.root, outputs[0].relative))).sourceId, "incheon-transit-accessibility");
+  await commitReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot: value.root, outputs, acquireLease: noLease }); assert.equal(JSON.parse(await readFile(path.join(value.root, outputs[0].relative))).sourceId, "incheon-transit-accessibility");
 });
 test("rejects receipt raw, captured-at, URI, and admitted-topology mutations before commit", async (t) => {
   for (const [field, replacement, expected] of [["rawObjectSha256", "0".repeat(64), /receipt/], ["capturedAt", "2026-08-28T04:33:57.000Z", /receipt/], ["rawObjectUri", "s3://legacy", /receipt/]]) {
@@ -56,13 +57,13 @@ test("recovers a committed journal and preserves a foreign prepared replacement"
   const records = outputs.map(({ relative, prestateBytes, bytes }) => ({ relative, before: prestateBytes?.toString("base64") ?? null, beforeSha256: prestateBytes == null ? null : sha(prestateBytes), after: bytes.toString("base64"), afterSha256: sha(bytes) }));
   await writeFile(path.join(value.root, "tools/datapack/.incheon-accessibility-registration-transaction.json"), `${JSON.stringify({ state: "COMMITTED", records })}\n`);
   await writeFile(path.join(value.root, outputs[1].relative), outputs[1].bytes);
-  await assert.rejects(commitReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot: value.root, outputs }), /foreign replacement/);
+  await assert.rejects(commitReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot: value.root, outputs, acquireLease: noLease }), /foreign replacement/);
   for (const output of outputs) assert.deepEqual(await readFile(path.join(value.root, output.relative)), output.bytes);
 
   const foreign = await fixture(t); const foreignOutputs = await buildReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot: foreign.root, observationRoot: foreign.observationRoot, receiptPath: foreign.receiptPath, now: foreign.now });
   const foreignRecords = foreignOutputs.map(({ relative, prestateBytes, bytes }) => ({ relative, before: prestateBytes?.toString("base64") ?? null, beforeSha256: prestateBytes == null ? null : sha(prestateBytes), after: bytes.toString("base64"), afterSha256: sha(bytes) }));
   await writeFile(path.join(foreign.root, "tools/datapack/.incheon-accessibility-registration-transaction.json"), `${JSON.stringify({ state: "PREPARED", records: foreignRecords })}\n`);
   const foreignTarget = path.join(foreign.root, foreignOutputs[1].relative); await writeFile(foreignTarget, "foreign\n");
-  await assert.rejects(commitReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot: foreign.root, outputs: foreignOutputs }), /foreign replacement/);
+  await assert.rejects(commitReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot: foreign.root, outputs: foreignOutputs, acquireLease: noLease }), /foreign replacement/);
   assert.deepEqual(await readFile(foreignTarget), Buffer.from("foreign\n"));
 });

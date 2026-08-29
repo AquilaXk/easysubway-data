@@ -153,11 +153,12 @@ async function currentBytes(file) { return read(file, "Incheon registration targ
 async function expected(file, value) { const current = await currentBytes(file); if ((current == null) !== (value == null) || current != null && !current.equals(value)) throw new Error("Incheon registration preserves foreign replacement"); }
 function displacedPath(file) { return path.join(path.dirname(file), `.${path.basename(file)}.incheon-accessibility.before`); }
 function retiredPath(file) { return path.join(path.dirname(file), `.${path.basename(file)}.incheon-accessibility.retired`); }
+function temporaryPath(file) { return path.join(path.dirname(file), `.${path.basename(file)}.incheon-accessibility.write.tmp`); }
 async function restoreMovedFile(moved, file) { try { await link(moved, file); } catch (error) { if (error?.code === "EEXIST") return false; throw error; } await unlink(moved); await syncParent(file); return true; }
 async function removeExpected(file, value) { await expected(file, value); const retired = retiredPath(file); if (await currentBytes(retired)) throw new Error("Incheon registration recovery required"); await rename(file, retired); try { await expected(retired, value); await unlink(retired); await syncParent(file); } catch (error) { await restoreMovedFile(retired, file).catch(() => {}); throw error; } }
 async function discardExpected(file, value) { await expected(file, value); await unlink(file); await syncParent(file); }
 async function atomicWrite(file, value, before) {
-  await safeParent(file); await expected(file, before); const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${randomUUID()}.tmp`);
+  await safeParent(file); await expected(file, before); const temporary = temporaryPath(file); if (await currentBytes(temporary)) throw new Error("Incheon registration recovery required");
   try {
     const handle = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600); try { await handle.writeFile(value); await handle.sync(); } finally { await handle.close(); }
     await expected(file, before); if (before === null) await link(temporary, file); else {
@@ -181,7 +182,7 @@ function parseJournal(value) {
 }
 async function recover(root, journal, journalBytes, journalFile = target(root, JOURNAL)) {
   for (const record of journal.records) {
-    const file = target(root, record.relative); const before = record.before == null ? null : Buffer.from(record.before, "base64"); const after = Buffer.from(record.after, "base64"); let current = await currentBytes(file); const displaced = before == null ? null : displacedPath(file); const displacedBytes = displaced == null ? null : await currentBytes(displaced); const retired = await currentBytes(retiredPath(file));
+    const file = target(root, record.relative); const before = record.before == null ? null : Buffer.from(record.before, "base64"); const after = Buffer.from(record.after, "base64"); const temporary = await currentBytes(temporaryPath(file)); if (temporary != null) { if (!(temporary.equals(after) || before != null && temporary.equals(before))) throw new Error("Incheon registration preserves foreign replacement"); await unlink(temporaryPath(file)); await syncParent(file); } let current = await currentBytes(file); const displaced = before == null ? null : displacedPath(file); const displacedBytes = displaced == null ? null : await currentBytes(displaced); const retired = await currentBytes(retiredPath(file));
     if (displacedBytes != null && !displacedBytes.equals(before)) throw new Error("Incheon registration preserves foreign replacement");
     if (journal.state === "COMMITTED") {
       if (retired != null) throw new Error("Incheon registration recovery required");
@@ -211,14 +212,22 @@ async function closeLease(server) { if (server?.listening) await new Promise((re
 function lockValue(server) { const address = server.address(); if (!address || typeof address === "string" || address.address !== "127.0.0.1" || !Number.isInteger(address.port) || address.port < 1) throw new Error("Incheon registration lock residue exists"); return bytes({ schemaVersion: 1, host: "127.0.0.1", port: address.port, pid: process.pid, token: randomUUID() }); }
 function parseLock(value) { const lock = parse(value, "Incheon registration lock"); if (JSON.stringify(Object.keys(lock)) !== JSON.stringify(["schemaVersion", "host", "port", "pid", "token"]) || lock.schemaVersion !== 1 || lock.host !== "127.0.0.1" || !Number.isInteger(lock.port) || lock.port < 1 || lock.port > 65535 || !Number.isInteger(lock.pid) || lock.pid < 1 || !/^[a-f0-9-]{36}$/u.test(lock.token ?? "")) throw new Error("Incheon registration lock residue exists"); return lock; }
 async function acquire(root, { afterStaleLockRead = async () => {} } = {}) { const lock = target(root, LOCK); let server = await lease(); let mine = lockValue(server); try { await atomicWrite(lock, mine, null); } catch (error) { await closeLease(server); server = null; if (!/preserves foreign replacement/u.test(error?.message ?? "")) throw error; const stale = await currentBytes(lock); const parsed = parseLock(stale); await afterStaleLockRead(); try { server = await lease(parsed.port); } catch (cause) { throw new Error("Incheon registration lock residue exists", { cause }); } mine = lockValue(server); try { await atomicWrite(lock, mine, stale); } catch (cause) { await closeLease(server); throw new Error("Incheon registration lock residue exists", { cause }); } } return async () => { try { await removeExpected(lock, mine); } finally { await closeLease(server); } }; }
-export async function commitReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot = ROOT, outputs, failAfter = null, beforeCommittedRecovery = async () => {}, afterStaleLockRead = async () => {} } = {}) {
-  const root = path.resolve(repositoryRoot); await regularDirectory(root, "repository root"); outputAllowlist(outputs); const release = await acquire(root, { afterStaleLockRead }); const journalFile = target(root, JOURNAL);
+export async function commitReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot = ROOT, outputs, failAfter = null, beforeCommittedRecovery = async () => {}, afterStaleLockRead = async () => {}, acquireLease = acquire } = {}) {
+  const root = path.resolve(repositoryRoot); await regularDirectory(root, "repository root"); outputAllowlist(outputs); const release = await acquireLease(root, { afterStaleLockRead }); const journalFile = target(root, JOURNAL);
   try {
     await recoverPending(root); for (const input of outputs[0].inputs ?? []) await expected(target(root, input.relative), input.bytes); for (const output of outputs) await expected(target(root, output.relative), output.prestateBytes);
     const records = journalRecords(outputs); const prepared = bytes({ state: "PREPARED", records }); await atomicWrite(journalFile, prepared, null);
     for (const [index, record] of records.entries()) { const before = record.before == null ? null : Buffer.from(record.before, "base64"); await atomicWrite(target(root, record.relative), Buffer.from(record.after, "base64"), before); if (index === failAfter) throw new Error("injected transaction failure"); }
     const committed = bytes({ state: "COMMITTED", records }); await atomicWrite(journalFile, committed, prepared); await beforeCommittedRecovery({ root, records }); await recover(root, { state: "COMMITTED", records }, committed); return { targets: records.map(({ relative }) => relative) };
   } catch (error) { await recoverPending(root); throw error; } finally { await release(); }
+}
+// This is intentionally limited to the registrar's own durable transaction.
+// The operation runner uses it after a process interruption; it cannot create
+// outputs or change an already sealed registration plan.
+export async function recoverPendingReviewedIncheonAccessibilityRegistration({ repositoryRoot = ROOT, afterStaleLockRead = async () => {} } = {}) {
+  const root = path.resolve(repositoryRoot); await regularDirectory(root, "repository root");
+  const release = await acquire(root, { afterStaleLockRead });
+  try { await recoverPending(root); } finally { await release(); }
 }
 export async function registerReviewedIncheonAccessibility(options = {}) { const outputs = await buildReviewedIncheonAccessibilityRegistrationOutputs(options); await commitReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot: options.repositoryRoot, outputs }); return { outputs: outputs.map(({ relative }) => relative) }; }
 async function main(argv) { if (argv.length !== 4 || argv[0] !== "--observation" || argv[2] !== "--receipt") throw new Error("usage: --observation <absolute-directory> --receipt <absolute>"); const result = await registerReviewedIncheonAccessibility({ observationRoot: argv[1], receiptPath: argv[3] }); process.stdout.write(`${JSON.stringify({ status: "PASS", outputs: result.outputs})}\n`); }

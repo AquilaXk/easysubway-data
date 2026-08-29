@@ -1944,11 +1944,9 @@
             "--wheelchair-input",
             "tools/datapack/fixtures/incheon-accessibility-raw/data-go-15146049.csv",
             "--topology-snapshot",
-            "tools/datapack/sources/incheon-transit-station-info-20260724.json",
-            "--output",
-            "/tmp/easysubway-incheon-accessibility.json",
-            "--captured-at",
-            "2026-07-24T07:00:00.000Z"
+            "tools/datapack/sources/incheon-transit-station-info-20260828.json",
+            "--observation-output",
+            "<absolute-operation-owned-observation-directory>"
           ],
           "requiredEnv": []
         },
