@@ -362,28 +362,50 @@ test("active canonical source inventory excludes retired movement snapshot heads
   ]);
 });
 
-test("current candidate selects its signed ledger from canonical provenance inventory", () => {
+test("current candidate selects fixed and registered canonical provenance heads", () => {
   const canonicalSourceIds = [
     "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
     "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
     "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
-    "incheon-transit-station-info",
+    "incheon-transit-station-info", "incheon-transit-accessibility",
   ];
   const candidateSourceIds = [
     "seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility",
     "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info",
-    "seoul-metro-transfer-distance-duration",
+    "seoul-metro-transfer-distance-duration", "incheon-transit-station-info",
   ];
-  const snapshots = canonicalSourceIds.map((sourceId) => ({ sourceId, snapshotId: `${sourceId}-head` }));
+  const snapshots = canonicalSourceIds
+    .filter((sourceId) => sourceId !== "incheon-transit-accessibility")
+    .map((sourceId) => ({
+      sourceId,
+      snapshotId: `${sourceId}-head`,
+      rawObjectUri: `oci://source/${sourceId}`,
+      rawSha256: `${sourceId}-raw`,
+      contentSha256: `${sourceId}-content`,
+    }));
   const headsBySource = Object.fromEntries(snapshots.map(({ sourceId, snapshotId }) => [sourceId, snapshotId]));
   const canonical = { packs: [{
     id: "capital",
     sourceInventory: canonicalSourceIds.map((id) => ({ id })),
-    stationExits: [{ sourceId: "incheon-transit-station-info" }],
+    stationExits: [
+      { sourceId: "incheon-transit-station-info" },
+      { sourceId: "incheon-transit-accessibility" },
+    ],
   }] };
+  const registered = snapshots.find(({ sourceId }) => sourceId === "incheon-transit-station-info");
+  const sourceInventory = [{
+    id: registered.sourceId,
+    registrationEvidence: {
+      sourceId: registered.sourceId,
+      snapshotId: registered.snapshotId,
+      rawObjectUri: registered.rawObjectUri,
+      rawObjectSha256: registered.rawSha256,
+      contentSha256: registered.contentSha256,
+    },
+  }];
 
   assert.deepEqual(
-    currentCandidateReleaseSnapshots(snapshots, canonical, headsBySource).map(({ sourceId }) => sourceId),
+    currentCandidateReleaseSnapshots(snapshots, canonical, headsBySource, sourceInventory).map(({ sourceId }) => sourceId),
     candidateSourceIds,
   );
   for (const invalidCanonical of [
@@ -394,13 +416,17 @@ test("current candidate selects its signed ledger from canonical provenance inve
     { ...canonical.packs[0], sourceInventory: [...canonicalSourceIds, "seoul-metro-route-map-positions"].map((id) => ({ id })) },
   ]) {
     assert.throws(
-      () => currentCandidateReleaseSnapshots(snapshots, { packs: [invalidCanonical] }, headsBySource),
+      () => currentCandidateReleaseSnapshots(snapshots, { packs: [invalidCanonical] }, headsBySource, sourceInventory),
       /capital canonical active source identity drift/,
     );
   }
   assert.throws(
-    () => currentCandidateReleaseSnapshots(snapshots.filter(({ sourceId }) => sourceId !== "seoul-metro-transfer-distance-duration"), canonical, headsBySource),
+    () => currentCandidateReleaseSnapshots(snapshots.filter(({ sourceId }) => sourceId !== "seoul-metro-transfer-distance-duration"), canonical, headsBySource, sourceInventory),
     /current candidate source head is missing: seoul-metro-transfer-distance-duration/,
+  );
+  assert.throws(
+    () => currentCandidateReleaseSnapshots([...snapshots, registered], canonical, headsBySource, sourceInventory),
+    /current candidate source head is missing: incheon-transit-station-info/,
   );
 });
 
