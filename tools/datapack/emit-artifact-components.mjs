@@ -293,9 +293,11 @@ function buildGeneratedEvidence(input) {
   assertKeys(routeEdgeSeed, ["candidate", "stationLines", "routeEdges"], "route-edge seed input keys");
   const candidateSeed = requireObject(routeEdgeSeed.candidate, "route-edge seed candidate");
   assertKeys(candidateSeed, ROUTE_EDGE_SEED_CANDIDATE_KEYS, "route-edge seed candidate keys");
+  if (candidateSeed.stationSetSha256 !== input.stationLineInput.candidate.stationSetSha256) {
+    throw new Error("route-edge station-line candidate station set identity mismatch");
+  }
   for (const [field, expected, label] of [
     ["candidateId", input.candidateId, "candidate"],
-    ["stationSetSha256", input.stationSetSha256, "station set"],
     ["sourceSetSha256", input.sourceSetSha256, "source set"],
   ]) {
     if (candidateSeed[field] !== expected) throw new Error(`route-edge seed ${label} identity mismatch`);
@@ -316,7 +318,11 @@ function buildGeneratedEvidence(input) {
   }
   const evaluation = evaluateRouteAccessibilityEdges({
     ...routeEdgeSeed,
-    candidate: { ...candidateSeed, topologySha256: input.topologySha256 },
+    candidate: {
+      ...candidateSeed,
+      stationSetSha256: input.stationSetSha256,
+      topologySha256: input.topologySha256,
+    },
     evaluationAt: input.evaluationAt,
     materialization,
   }, input.routeEdgePolicy);
@@ -371,6 +377,14 @@ function assertStationLineCandidate(candidate, input) {
     ["sourceSetSha256", input.sourceSetSha256, "source set"],
   ]) {
     if (candidate[field] !== expected) throw new Error(`station-line ${label} identity mismatch`);
+  }
+  const stationIds = input.stationLineInput.stationLines?.map((line) => line?.stationId);
+  if (!Array.isArray(stationIds) || stationIds.some((stationId) => typeof stationId !== "string" || stationId === "")) {
+    throw new Error("station-line candidate station set identity mismatch");
+  }
+  const stationSetSha256 = sha(Buffer.from(canonicalJson([...new Set(stationIds)].sort(bytes))));
+  if (candidate.stationSetSha256 !== stationSetSha256) {
+    throw new Error("station-line candidate station set identity mismatch");
   }
 }
 
