@@ -27,6 +27,12 @@ const BUNDLE_CANDIDATE = {
   keyId: "production-v1",
 };
 const SIGNED_PATHS = ["compatibility.json", "manifest.json", "manifest.signing-input.json", "payload/accessibility.sqlite.zst", "payload/fare.sqlite.zst", "payload/timetable.sqlite.zst", "payload/topology.sqlite.zst", "provenance.json"];
+const BOUND_SUPPORT = [
+  ["artifact-inventory.json", "artifactInventory"],
+  ["route-edge-evaluation.json", "routeEdgeEvaluation"],
+  ["source-freshness.json", "sourceFreshness"],
+  ["station-line-accessibility.json", "stationLineAccessibility"],
+];
 
 async function fixture(root) {
   const datapackRoot = path.join(root, "datapack");
@@ -258,6 +264,8 @@ test("evidence의 누락·symlink·비정준 JSON·identity drift·bound extra�
       value.candidate = { ...value.candidate, sourceSnapshotSetHash: "3".repeat(64) };
       await writeFile(target, canonicalJson(value));
     } },
+    { label: "bound support missing", mutate: async (prepared) => rm(path.join(prepared, "bound", "source-freshness.json")) },
+    { label: "bound support drift", mutate: async (prepared) => writeFile(path.join(prepared, "bound", "route-edge-evaluation.json"), "drift") },
     { label: "bound extra", mutate: async (prepared) => writeFile(path.join(prepared, "bound", "unexpected.json"), "x") },
   ];
   for (const { label, mutate } of mutations) {
@@ -389,10 +397,12 @@ async function writePreparedOutputs(prepared, candidate = BUNDLE_CANDIDATE) {
   const eligibility = canonicalJson({ ...eligibilityPayload, eligibilitySha256: sha256(Buffer.from(canonicalJson(eligibilityPayload))) });
   await writeFile(path.join(prepared, "route-accessibility-eligibility.json"), eligibility);
   await mkdir(path.join(prepared, "bound"));
-  const evidenceSha256 = "4".repeat(64);
+  const boundSupport = Object.fromEntries(BOUND_SUPPORT.map(([file, gate]) => [gate, canonicalJson({ artifactKind: gate })]));
+  await Promise.all(BOUND_SUPPORT.map(([file, gate]) => writeFile(path.join(prepared, "bound", file), boundSupport[gate])));
   const gates = Object.fromEntries([
-    "sourceFreshness", "stationLineAccessibility", "routeEdgeEvaluation", "artifactInventory", "signature",
-  ].map((name) => [name, { state: "PASS", evidenceSha256 }]));
+    ...BOUND_SUPPORT.map(([, gate]) => [gate, { state: "PASS", evidenceSha256: sha256(Buffer.from(boundSupport[gate])) }]),
+    ["signature", { state: "PASS", evidenceSha256: "4".repeat(64) }],
+  ]);
   gates.routeAccessibilityEligibility = { state: "PASS", evidenceSha256: sha256(Buffer.from(eligibility)) };
   gates.publication = { state: "UNAVAILABLE", evidenceSha256: null };
   gates.promotionAuthorization = { state: "UNAVAILABLE", evidenceSha256: null };
