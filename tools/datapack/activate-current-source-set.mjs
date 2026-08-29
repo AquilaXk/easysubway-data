@@ -1227,6 +1227,25 @@ function replaceIncheonCanonicalSlice(canonical, projected, {
       promotedRows.push(projectedStation);
     }
   }
+  for (const stationId of topologyStationIds) {
+    const projectedStation = requireOne(projectedPack.stations, ({ id }) => id === stationId,
+      "projected Incheon topology station");
+    const canonicalStation = requireOne(pack.stations, ({ id }) => id === stationId,
+      "canonical Incheon topology station");
+    if (typeof projectedStation.nameKo !== "string" || typeof projectedStation.nameEn !== "string"
+      || projectedStation.normalizedName !== projectedStation.nameKo.normalize("NFKC")) {
+      throw new Error("projected Incheon topology station identity is invalid");
+    }
+    if (canonicalStation.sourceId === "incheon-transit-station-info") {
+      const stationIndex = pack.stations.indexOf(canonicalStation);
+      pack.stations[stationIndex] = structuredClone(projectedStation);
+      canonicalStationsById.set(stationId, pack.stations[stationIndex]);
+      continue;
+    }
+    canonicalStation.nameKo = projectedStation.nameKo;
+    canonicalStation.nameEn = projectedStation.nameEn;
+    canonicalStation.normalizedName = projectedStation.normalizedName;
+  }
   const expectedIncheonEdges = projectIncheonNetworkEdges(pack, topologySnapshot, topologyAdmission);
   const expectedIncheonEdgeIds = new Set(expectedIncheonEdges.map(({ id }) => id));
   const incheonTopologyLineIds = new Set(expectedIncheonEdges.map(({ fromNodeId }) =>
@@ -1304,10 +1323,21 @@ function replaceIncheonCanonicalSlice(canonical, projected, {
   }
   {
     const beforeById = new Map(before.stations.map((row) => [row.id, row]));
+    const projectedStationsById = new Map(projectedPack.stations.map((row) => [row.id, row]));
     if (pack.stations.some((row) => (
       beforeById.has(row.id)
-      && row.id !== mapping.stationId
-      && !isDeepStrictEqual(row, beforeById.get(row.id))
+      && !isDeepStrictEqual(row, {
+        ...beforeById.get(row.id),
+        ...(topologyStationIds.has(row.id) ? {
+          ...(beforeById.get(row.id).sourceId === "incheon-transit-station-info"
+            ? projectedStationsById.get(row.id)
+            : {
+              nameKo: projectedStationsById.get(row.id)?.nameKo,
+              nameEn: projectedStationsById.get(row.id)?.nameEn,
+              normalizedName: projectedStationsById.get(row.id)?.normalizedName,
+            }),
+        } : {}),
+      })
     )) || pack.stations.some((row) => (
       !beforeById.has(row.id)
       && (!topologyStationIds.has(row.id)

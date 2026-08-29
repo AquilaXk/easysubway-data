@@ -1226,7 +1226,9 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
     readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json")),
   ]);
   const { topology: baselineTopology, bytes: baselineTopologyBytes } = await historicalCandidateCapitalTopology(baseSpec);
-  const currentTopologyPath = "tools/datapack/sources/capital-route-topology-20260828.json";
+  const capitalTopologyCandidate = baseSpec.networkEdgeEvidence?.capitalTopologyCandidate;
+  assert.ok(capitalTopologyCandidate?.path);
+  const currentTopologyPath = capitalTopologyCandidate.path;
   const currentTopologyBytes = await readFile(path.join(root, currentTopologyPath));
   const currentTopology = JSON.parse(currentTopologyBytes);
   const topologySnapshotId = path.basename(currentTopologyPath, ".json");
@@ -1234,13 +1236,20 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
   assert.equal(currentTopology.lines.reduce((count, line) => count + line.edgeCount, 0), 1_438);
   assert.equal(currentTopology.lines.some(({ lineId }) => lineId === "line-42b5805f3b5a"), false);
   assert.equal(currentTopology.lines.some(({ lineId }) => lineId === "line-98718184f016"), false);
-  const currentIncheonTopologyPath = "tools/datapack/sources/incheon-transit-station-info-20260828.json";
+  const incheonTopologySource = sourceInventory.sources
+    .find(({ id }) => id === "incheon-transit-station-info");
+  assert.ok(incheonTopologySource?.topologyAdmissionEvidence?.snapshotPath);
+  const currentIncheonTopologyPath = incheonTopologySource.topologyAdmissionEvidence.snapshotPath;
   const currentIncheonAccessibilityPath = `tools/datapack/sources/${sourceInventory.sources
     .find(({ id }) => id === "incheon-transit-accessibility").registrationEvidence.snapshotId}.json`;
+  const incheonTimetableSource = (lineNumber) => sourceInventory.sources
+    .find(({ id }) => id === `incheon-line${lineNumber}-train-timetable`);
   const currentIncheonTimetablePaths = {
-    1: "tools/datapack/sources/incheon-line1-train-timetable-20260828.json",
-    2: "tools/datapack/sources/incheon-line2-train-timetable-20260828.json",
+    1: incheonTimetableSource(1)?.scheduleAdmissionEvidence?.snapshotPath,
+    2: incheonTimetableSource(2)?.scheduleAdmissionEvidence?.snapshotPath,
   };
+  assert.ok(currentIncheonTimetablePaths[1]);
+  assert.ok(currentIncheonTimetablePaths[2]);
   const [currentIncheonTopologyBytes, currentIncheonAccessibilityBytes,
     line1TimetableBytes, line2TimetableBytes] = await Promise.all([
     readFile(path.join(root, currentIncheonTopologyPath)),
@@ -1513,6 +1522,43 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
   for (const sourceId of promotedSourceIds) {
     assert.deepEqual(capitalSourcesById.get(sourceId), projectedSourcesById.get(sourceId));
   }
+  const topologyOwnedLineIds = new Set(currentIncheonTopology.topologyLineIds);
+  const identityRefreshStation = currentIncheonTopology.scope.find(({ stationId }) => (
+    previousCapital.stationLines.filter((row) => row.stationId === stationId)
+      .every(({ lineId }) => topologyOwnedLineIds.has(lineId))
+  ));
+  assert.ok(identityRefreshStation);
+  const driftedIdentityCanonical = structuredClone(canonical);
+  const driftedIdentityStation = driftedIdentityCanonical.packs.find(({ id }) => id === "capital")
+    .stations.find(({ id }) => id === identityRefreshStation.stationId);
+  assert.ok(driftedIdentityStation);
+  driftedIdentityStation.nameKo = `${driftedIdentityStation.nameKo} drift`;
+  driftedIdentityStation.nameEn = "drift";
+  driftedIdentityStation.normalizedName = driftedIdentityStation.nameKo.normalize("NFKC");
+  const identityRefresh = buildCurrentTopologyRefreshPrimaryOutputs({
+    baseSpec, builderGitSha: "a".repeat(40), sourceInventory, currentTopology,
+    currentTopologyBytes, currentTopologyPath, currentIncheonTopology, currentIncheonTopologyBytes,
+    currentIncheonTopologyPath, currentIncheonAccessibility, currentIncheonAccessibilityBytes,
+    currentIncheonAccessibilityPath, currentIncheonTimetables, currentIncheonTimetableBytes,
+    currentIncheonTimetablePaths, currentItxTopologyEvidencePath, currentItxTopologyEvidenceBytes,
+    baselineTopology, baselineTopologyBytes, canonical: driftedIdentityCanonical, productionInput,
+    productionScopePolicyBytes, buildNow, snapshotBytesByPath, layoutTopologySnapshotBytesById,
+  });
+  const identityRefreshCapital = identityRefresh.canonical.packs.find(({ id }) => id === "capital");
+  const identityRefreshProjected = identityRefresh.incheonProjection.packs.find(({ id }) =>
+    /^nationwide-incheon-schedule-[a-f0-9]{64}$/u.test(id));
+  const refreshedIdentityStation = identityRefreshCapital.stations
+    .find(({ id }) => id === identityRefreshStation.stationId);
+  const projectedIdentityStation = identityRefreshProjected.stations
+    .find(({ id }) => id === identityRefreshStation.stationId);
+  if (driftedIdentityStation.sourceId === "incheon-transit-station-info") {
+    assert.deepEqual(refreshedIdentityStation, projectedIdentityStation);
+  } else {
+    assert.deepEqual(
+      (({ nameKo, nameEn, normalizedName }) => ({ nameKo, nameEn, normalizedName }))(refreshedIdentityStation),
+      (({ nameKo, nameEn, normalizedName }) => ({ nameKo, nameEn, normalizedName }))(projectedIdentityStation),
+    );
+  }
   assert.equal(new Set(capital.sourceInventory.map(({ id }) => id)).size, capital.sourceInventory.length);
   assert.equal(capital.stations.find(({ id }) => id === "station-b1a5f63faf69").nameKo, "서해구청");
   assert.equal(capital.lines.filter(({ id }) => id === "line-15b3b8a93259").length, 1);
@@ -1534,7 +1580,6 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
   );
   const stationLineKeys = capital.stationLines.map(({ stationId, lineId }) => `${stationId}:${lineId}`);
   assert.equal(new Set(stationLineKeys).size, stationLineKeys.length);
-  const topologyOwnedLineIds = new Set(currentIncheonTopology.topologyLineIds);
   const currentIncheonRouteMapPositionKeys = currentIncheonTopology.positions
     .filter(({ lineId }) => topologyOwnedLineIds.has(lineId))
     .map(({ stationId, lineId }) => `${stationId}:${lineId}`)
@@ -1681,7 +1726,40 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
     boundaryCapital.sourceInventory.filter(({ id }) => !boundarySourceIds.includes(id)),
     previousCapital.sourceInventory.filter(({ id }) => !boundarySourceIds.includes(id)),
   );
-  assert.deepEqual(boundaryCapital.stations, previousCapital.stations);
+  const boundaryProjectedCapital = boundaryResult.incheonProjection.packs.find(({ id }) =>
+    /^nationwide-incheon-schedule-[a-f0-9]{64}$/u.test(id));
+  assert.ok(boundaryProjectedCapital);
+  const boundaryTopologyStationIds = new Set(currentIncheonTopology.scope
+    .filter(({ lineId }) => topologyOwnedLineIds.has(lineId))
+    .map(({ stationId }) => stationId));
+  const previousBoundaryStationsById = new Map(previousCapital.stations.map((station) => [station.id, station]));
+  const boundaryProjectedStationsById = new Map(boundaryProjectedCapital.stations
+    .map((station) => [station.id, station]));
+  const appendedBoundaryStations = boundaryCapital.stations.filter(({ id }) => !previousBoundaryStationsById.has(id));
+  assert.deepEqual(boundaryCapital.stations.map(({ id }) => id), [
+    ...previousCapital.stations.map(({ id }) => id),
+    ...appendedBoundaryStations.map(({ id }) => id),
+  ]);
+  assert.ok(appendedBoundaryStations.every(({ id }) => boundaryTopologyStationIds.has(id)));
+  for (const station of boundaryCapital.stations) {
+    const previousStation = previousBoundaryStationsById.get(station.id);
+    const projectedStation = boundaryProjectedStationsById.get(station.id);
+    if (previousStation === undefined) {
+      assert.deepEqual(station, projectedStation);
+    } else if (boundaryTopologyStationIds.has(station.id)
+      && previousStation.sourceId === "incheon-transit-station-info") {
+      assert.deepEqual(station, projectedStation);
+    } else if (boundaryTopologyStationIds.has(station.id)) {
+      assert.deepEqual(station, {
+        ...previousStation,
+        nameKo: projectedStation.nameKo,
+        nameEn: projectedStation.nameEn,
+        normalizedName: projectedStation.normalizedName,
+      });
+    } else {
+      assert.deepEqual(station, previousStation);
+    }
+  }
   const immutableDriftInventory = structuredClone(sourceInventory);
   immutableDriftInventory.sources.find(({ id }) => id === "incheon-transit-accessibility").owner = "drift";
   assert.throws(() => refreshWithBoundaryAccessibility({ inventory: immutableDriftInventory }),
