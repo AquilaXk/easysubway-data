@@ -18,6 +18,7 @@ import {
   buildGovernanceSummary,
   deriveRawRetentionExpiresAt,
   evaluateSourceGovernance,
+  isApprovedCurrentOrPriorGovernanceBinding,
   validateSourceGovernancePolicy,
 } from "./source-governance-policy.mjs";
 
@@ -52,23 +53,30 @@ test("서울 공공 노선도 위치는 90일 보존·독립 freshness class를 
   );
 });
 
-test("governance policy 전이는 exact current와 닫힌 predecessor chain만 허용한다", async () => {
-  const currentPolicySha256 = createHash("sha256").update(await readFile(
+test("governance policy transition preserves each exact epoch and its closed predecessor chain", async () => {
+  const admissionPolicySha256 = createHash("sha256").update(await readFile(
     path.join(root, "tools/datapack/source-governance-policy.json"),
   )).digest("hex");
-  const currentPolicyVersion = "2026-07-15";
-  const transition = (sourceId, governancePolicySha256) => approvedGovernanceBindingTransition({
-    snapshot: { sourceId, governancePolicyVersion: currentPolicyVersion, governancePolicySha256 },
-    currentPolicyVersion,
-    currentPolicySha256,
+  assert.equal(admissionPolicySha256, "b4656dca1fdb660da495d0269ff91c7d31469045fd1db66a1534e3feffeeba33");
+  const oldEpoch = { version: "2026-07-15", sha256: "e6e607e0711bebafbc25843996a0d6ff1dce6e6e82b4cadb425e78ccd284d9f3" };
+  const admissionEpoch = { version: "2026-08-29", sha256: admissionPolicySha256 };
+  const transition = ({ sourceId, governancePolicyVersion = "2026-07-15", governancePolicySha256, epoch }) => approvedGovernanceBindingTransition({
+    snapshot: { sourceId, governancePolicyVersion, governancePolicySha256 },
+    currentPolicyVersion: epoch.version,
+    currentPolicySha256: epoch.sha256,
   });
   const prior = "13f8a78c0ae0f7bfa6817005f44a92be3131e6f6708a69a4024747478203beaa";
   const legacy = "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70";
-  assert.equal(transition("seoul-metro-transfer-distance-duration", currentPolicySha256).governancePolicySha256, currentPolicySha256);
-  assert.equal(transition("seoul-metro-transfer-distance-duration", prior).governancePolicySha256, prior);
-  assert.equal(transition("molit-urban-rail-full-route", legacy).governancePolicySha256, legacy);
-  assert.throws(() => transition("seoul-metro-transfer-distance-duration", legacy), /governance policy binding/);
-  assert.throws(() => transition("molit-urban-rail-full-route", "0".repeat(64)), /governance policy binding/);
+  for (const [epoch, predecessors] of [[oldEpoch, [prior, legacy]], [admissionEpoch, [oldEpoch.sha256, prior, legacy]]]) {
+    assert.equal(transition({ sourceId: "seoul-metro-transfer-distance-duration", governancePolicyVersion: epoch.version, governancePolicySha256: epoch.sha256, epoch }).governancePolicySha256, epoch.sha256);
+    for (const predecessor of predecessors) assert.equal(transition({ sourceId: "molit-urban-rail-full-route", governancePolicySha256: predecessor, epoch }).governancePolicySha256, predecessor);
+    assert.throws(() => transition({ sourceId: "seoul-metro-transfer-distance-duration", governancePolicySha256: legacy, epoch }), /governance policy binding/);
+  }
+  assert.equal(isApprovedCurrentOrPriorGovernanceBinding({ binding: { governancePolicyVersion: "2026-07-15", governancePolicySha256: prior }, currentPolicyVersion: oldEpoch.version, currentPolicySha256: oldEpoch.sha256 }), true);
+  assert.equal(isApprovedCurrentOrPriorGovernanceBinding({ binding: { governancePolicyVersion: "2026-07-15", governancePolicySha256: oldEpoch.sha256 }, currentPolicyVersion: admissionEpoch.version, currentPolicySha256: admissionEpoch.sha256 }), true);
+  assert.equal(isApprovedCurrentOrPriorGovernanceBinding({ binding: { governancePolicyVersion: "2026-07-15", governancePolicySha256: prior }, currentPolicyVersion: admissionEpoch.version, currentPolicySha256: admissionEpoch.sha256 }), false);
+  assert.throws(() => transition({ sourceId: "molit-urban-rail-full-route", governancePolicySha256: "0".repeat(64), epoch: admissionEpoch }), /governance policy binding/);
+  assert.throws(() => transition({ sourceId: "molit-urban-rail-full-route", governancePolicySha256: admissionEpoch.sha256, epoch: { version: "2099-01-01", sha256: admissionEpoch.sha256 } }), /governance policy binding/);
 });
 
 test("snapshot object URI는 dot-segment를 거부하고 Unicode·공백 key를 보존한다", () => {
@@ -303,7 +311,7 @@ test("snapshot producer는 previous snapshot에서 diff를 직접 생성한다",
     assert.equal(produced.diffSummary.rowDelta, 1);
     assert.equal(produced.diffSummary.coverageDelta, 1);
     assert.equal(produced.rawRetentionExpiresAt, "2026-09-29T03:00:00.000Z");
-    assert.equal(produced.governancePolicyVersion, "2026-07-15");
+    assert.equal(produced.governancePolicyVersion, "2026-08-29");
     assert.match(produced.governancePolicySha256, /^[0-9a-f]{64}$/);
 
     await assert.rejects(

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-source-governance-policy",
-  "policyVersion": "2026-07-15",
+  "policyVersion": "2026-08-29",
   "retentionClasses": [
     {
       "id": "standard-90d",
@@ -41,6 +41,27 @@
     }
   ],
   "sources": [
+    {
+      "sourceId": "incheon-transit-accessibility",
+      "sourceClassId": "static_accessibility_facility",
+      "retentionClassId": "standard-90d",
+      "ownerRole": "datapack-source-owner",
+      "stewardRole": "datapack-data-steward",
+      "approvalRole": "datapack-release-approver",
+      "escalationHours": 4,
+      "alertRoute": "github:area-datapack",
+      "licenseReview": {
+        "status": "APPROVED",
+        "termsHash": "16d4e5ffd5eacf0514a6f08ea69b21589c1f5f38a3d9dd48c677b4c81e66ac71",
+        "reviewedAt": "2026-08-29T04:49:49.000Z",
+        "nextReviewAt": "2027-08-29T04:49:49.000Z",
+        "termsUrl": "https://www.data.go.kr/data/15083478/fileData.do",
+        "reviewedProvider": "인천교통공사",
+        "reviewedDatasetUrl": "https://www.data.go.kr/data/15083478/fileData.do",
+        "redistributionScopes": ["DERIVED_DATAPACK"],
+        "approvedByRole": "datapack-release-approver"
+      }
+    },
     {
       "sourceId": "kric-train-operation-organ",
       "sourceClassId": "static_network_metadata",

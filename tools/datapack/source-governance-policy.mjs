@@ -5,10 +5,12 @@ import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
-const GOVERNANCE_POLICY_VERSION = "2026-07-15";
 const LEGACY_GOVERNANCE_POLICY_SHA256 = "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70";
 const PRIOR_GOVERNANCE_POLICY_SHA256 = "13f8a78c0ae0f7bfa6817005f44a92be3131e6f6708a69a4024747478203beaa";
 const CURRENT_GOVERNANCE_POLICY_SHA256 = "e6e607e0711bebafbc25843996a0d6ff1dce6e6e82b4cadb425e78ccd284d9f3";
+const CURRENT_GOVERNANCE_POLICY_VERSION = "2026-07-15";
+const ADMISSION_GOVERNANCE_POLICY_VERSION = "2026-08-29";
+const ADMISSION_GOVERNANCE_POLICY_SHA256 = "b4656dca1fdb660da495d0269ff91c7d31469045fd1db66a1534e3feffeeba33";
 const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
 const RELEASE_PROTECTION_MAX_AGE_MS = 5 * 60 * 1_000;
 const RELEASE_PROTECTION_REASONS = new Set(["ACTIVE_RELEASE", "ROLLBACK_WINDOW"]);
@@ -76,33 +78,47 @@ export function deriveRawRetentionExpiresAt({ policy, sourceId, retrievedAt }) {
 }
 
 // Policy additions do not rewrite approvals already sealed under the exact
-// predecessor bytes. The two-step transition is deliberately closed.
+// predecessor bytes. Epochs are closed so arbitrary version/hash pairs never
+// become a substitute for the recorded governance lineage.
+const GOVERNANCE_EPOCHS = [
+  {
+    version: CURRENT_GOVERNANCE_POLICY_VERSION,
+    sha256: CURRENT_GOVERNANCE_POLICY_SHA256,
+    predecessorSha256: [PRIOR_GOVERNANCE_POLICY_SHA256, LEGACY_GOVERNANCE_POLICY_SHA256],
+    currentOrPriorSha256: [PRIOR_GOVERNANCE_POLICY_SHA256],
+  },
+  {
+    version: ADMISSION_GOVERNANCE_POLICY_VERSION,
+    sha256: ADMISSION_GOVERNANCE_POLICY_SHA256,
+    predecessorSha256: [CURRENT_GOVERNANCE_POLICY_SHA256, PRIOR_GOVERNANCE_POLICY_SHA256, LEGACY_GOVERNANCE_POLICY_SHA256],
+    currentOrPriorSha256: [CURRENT_GOVERNANCE_POLICY_SHA256],
+  },
+];
+
+function governanceEpoch(currentPolicyVersion, currentPolicySha256) {
+  return GOVERNANCE_EPOCHS.find((epoch) => epoch.version === currentPolicyVersion && epoch.sha256 === currentPolicySha256) ?? null;
+}
+
 export function approvedGovernanceBindingTransition({ snapshot, currentPolicyVersion, currentPolicySha256 }) {
+  const epoch = governanceEpoch(currentPolicyVersion, currentPolicySha256);
+  if (!epoch) throw new Error("SOURCE_FRESHNESS_POLICY_MISSING: governance policy binding");
   const binding = {
     governancePolicyVersion: snapshot?.governancePolicyVersion,
     governancePolicySha256: snapshot?.governancePolicySha256,
   };
-  if (binding.governancePolicyVersion === currentPolicyVersion
-    && binding.governancePolicySha256 === currentPolicySha256) return binding;
-  if (currentPolicyVersion === GOVERNANCE_POLICY_VERSION
-    && currentPolicySha256 === CURRENT_GOVERNANCE_POLICY_SHA256
-    && binding.governancePolicyVersion === GOVERNANCE_POLICY_VERSION
-    && binding.governancePolicySha256 === PRIOR_GOVERNANCE_POLICY_SHA256) return binding;
-  if (currentPolicyVersion === GOVERNANCE_POLICY_VERSION
-    && currentPolicySha256 === CURRENT_GOVERNANCE_POLICY_SHA256
-    && snapshot?.sourceId !== TRANSFER_SOURCE_ID
-    && binding.governancePolicyVersion === GOVERNANCE_POLICY_VERSION
-    && binding.governancePolicySha256 === LEGACY_GOVERNANCE_POLICY_SHA256) return binding;
+  if (binding.governancePolicyVersion === epoch.version && binding.governancePolicySha256 === epoch.sha256) return binding;
+  if (binding.governancePolicyVersion === CURRENT_GOVERNANCE_POLICY_VERSION
+    && epoch.predecessorSha256.includes(binding.governancePolicySha256)
+    && (binding.governancePolicySha256 !== LEGACY_GOVERNANCE_POLICY_SHA256 || snapshot?.sourceId !== TRANSFER_SOURCE_ID)) return binding;
   throw new Error("SOURCE_FRESHNESS_POLICY_MISSING: governance policy binding");
 }
 
 export function isApprovedCurrentOrPriorGovernanceBinding({ binding, currentPolicyVersion, currentPolicySha256 }) {
-  if (binding?.governancePolicyVersion === currentPolicyVersion
-    && binding.governancePolicySha256 === currentPolicySha256) return true;
-  return currentPolicyVersion === GOVERNANCE_POLICY_VERSION
-    && currentPolicySha256 === CURRENT_GOVERNANCE_POLICY_SHA256
-    && binding?.governancePolicyVersion === GOVERNANCE_POLICY_VERSION
-    && binding.governancePolicySha256 === PRIOR_GOVERNANCE_POLICY_SHA256;
+  const epoch = governanceEpoch(currentPolicyVersion, currentPolicySha256);
+  if (!epoch) return false;
+  if (binding?.governancePolicyVersion === epoch.version && binding.governancePolicySha256 === epoch.sha256) return true;
+  return binding?.governancePolicyVersion === CURRENT_GOVERNANCE_POLICY_VERSION
+    && epoch.currentOrPriorSha256.includes(binding.governancePolicySha256);
 }
 
 export function evaluateSourceGovernance({

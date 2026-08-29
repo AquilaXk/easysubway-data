@@ -116,6 +116,7 @@ async function fixture() {
   next.redactedRequestFingerprint = snapshot.redactedRequestFingerprint;
   next.schemaFingerprint = snapshot.schemaFingerprint;
   next.contentSha256 = snapshot.contentSha256;
+  next.governancePolicyVersion = governancePolicy.policyVersion;
   next.governancePolicySha256 = sha(governanceBytes);
   next.freshnessExpiresAt = deriveFreshnessExpiresAt({ policy: freshnessPolicy, sourceClassId: "static_accessibility_facility", basisAt: snapshot.capturedAt, evaluationAt: NOW.toISOString() });
   next.rawRetentionExpiresAt = deriveRawRetentionExpiresAt({ policy: governancePolicy, sourceId: next.sourceId, retrievedAt: snapshot.capturedAt });
@@ -281,7 +282,7 @@ test("additive governance successor preserves only approved non-TRANSFER prior p
     (value) => { value.governancePolicyVersion = "2099-01-01"; },
   ]) {
     const invalid = structuredClone(snapshot); mutate(invalid);
-    assert.throws(() => approvedGovernanceBindingTransition({ snapshot: invalid, currentPolicyVersion: "2026-07-15", currentPolicySha256: sha(input.governancePolicyBytes) }), /governance policy binding/);
+    assert.throws(() => approvedGovernanceBindingTransition({ snapshot: invalid, currentPolicyVersion: input.governancePolicy.policyVersion, currentPolicySha256: sha(input.governancePolicyBytes) }), /governance policy binding/);
   }
 });
 

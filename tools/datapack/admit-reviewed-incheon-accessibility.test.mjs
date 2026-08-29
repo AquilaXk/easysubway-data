@@ -55,18 +55,20 @@ async function input() {
   const adminReview = {
     schemaVersion: 1, artifactKind: "source-admission-admin-review", candidateId: source.id, sourceId: source.id,
     snapshotId: snapshot.snapshotId, sampleEvidenceHash: snapshot.rowsSha256, decision: "APPROVED", approvedBy: "AquilaXk",
-    approvedAt: "2026-08-29T03:41:13.000Z", licenseEvidenceHash,
+    approvedAt: "2026-08-29T04:49:49.000Z", licenseEvidenceHash,
     aliasLedgerHash: first.admissionEvidence.aliasLedgerHash, operatorMappingLedgerHash: first.admissionEvidence.operatorMappingLedgerHash,
     facilityEvidenceLedgerHash: first.admissionEvidence.facilityEvidenceLedgerHash, routeEvidenceLedgerHash: first.admissionEvidence.routeEvidenceLedgerHash,
-    overrideHash: first.admissionEvidence.overrideHash, quotaEvidence: { defaultDailyLimit: "unlimited", portal: "data.go.kr", productionUseAllowed: true, unlockStatus: "not_required" }, productionSource: structuredClone(source),
+    overrideHash: first.admissionEvidence.overrideHash, quotaEvidence: { defaultDailyLimit: "unlimited", portal: "data.go.kr", productionUseAllowed: true, unlockStatus: "not_required" }, productionSource: { ...structuredClone(source), admissionEvidence: { quotaEvidence: structuredClone(source.admissionEvidence.quotaEvidence) } },
   };
   const ownerDecision = {
     schemaVersion: 1, artifactKind: "source-admission-owner-decision", policyVersion: policy.policyVersion, issue: 622,
     candidateId: source.id, sourceId: source.id, snapshotId: snapshot.snapshotId, decision: "APPROVED", approvedBy: "AquilaXk",
     approvedAt: adminReview.approvedAt, productionUseAllowed: true,
-    policyEntry: { sourceId: source.id, sourceClassId: "static_accessibility_facility", retentionClassId: "standard-90d", ownerRole: "datapack-source-owner", stewardRole: "datapack-data-steward", approvalRole: "datapack-release-approver", escalationHours: 4, alertRoute: "github:area-datapack", licenseReview: { status: "APPROVED", termsHash: licenseEvidenceHash, reviewedAt: "2026-08-29T03:41:13.000Z", nextReviewAt: "2027-08-29T03:41:13.000Z", termsUrl: source.datasetUrl, reviewedProvider: source.provider, reviewedDatasetUrl: source.datasetUrl, redistributionScopes: ["DERIVED_DATAPACK"], approvedByRole: "datapack-release-approver" } },
+    policyEntry: { sourceId: source.id, sourceClassId: "static_accessibility_facility", retentionClassId: "standard-90d", ownerRole: "datapack-source-owner", stewardRole: "datapack-data-steward", approvalRole: "datapack-release-approver", escalationHours: 4, alertRoute: "github:area-datapack", licenseReview: { status: "APPROVED", termsHash: licenseEvidenceHash, reviewedAt: "2026-08-29T04:49:49.000Z", nextReviewAt: "2027-08-29T04:49:49.000Z", termsUrl: source.datasetUrl, reviewedProvider: source.provider, reviewedDatasetUrl: source.datasetUrl, redistributionScopes: ["DERIVED_DATAPACK"], approvedByRole: "datapack-release-approver" } },
   };
-  return { ownerDecision, adminReview, snapshot, topologySnapshot, inventory, inventoryBytes, candidates, policy, freshnessPolicy, candidateBuildSpec, candidateBuildSpecBytes, releaseRequest, releaseRequestBytes, hashEvidence, hashEvidenceBytes };
+  const result = { ownerDecision, adminReview, snapshot, topologySnapshot, inventory, inventoryBytes, candidates, policy, freshnessPolicy, candidateBuildSpec, candidateBuildSpecBytes, releaseRequest, releaseRequestBytes, hashEvidence, hashEvidenceBytes };
+  rebind(result, { inventory: true });
+  return result;
 }
 
 function rebind(value, { inventory = false, buildSpec = false, releaseRequest = false, hashEvidence = false } = {}) {
@@ -82,17 +84,27 @@ function rebind(value, { inventory = false, buildSpec = false, releaseRequest = 
   if (hashEvidence) value.hashEvidenceBytes = Buffer.from(JSON.stringify(value.hashEvidence));
 }
 
-test("producer admits a canonical collected snapshot and preserves staged inventory validity", async () => {
+test("producer admits a canonical official snapshot without mutating candidate input", async () => {
   const value = await input();
+  const candidatesBefore = structuredClone(value.candidates);
   const result = produceAdmission(value);
   assert.equal(result.inventory.sources.find(({ id }) => id === value.ownerDecision.sourceId).requiredForProductionPack, false);
   assert.match(result.adminReviewRecordHash, /^[a-f0-9]{64}$/u);
-  const candidate = result.candidates.candidates.find(({ id }) => id === value.ownerDecision.candidateId);
-  assert.equal("evidenceArtifact" in candidate.evidence, false);
-  assert.equal("liveValidation" in candidate.evidence, false);
-  assert.equal("coverageAssessment" in candidate.evidence, false);
-  assert.equal("nextAction" in candidate, false);
+  assert.equal("candidates" in result, false);
+  assert.deepEqual(value.candidates, candidatesBefore);
   validateSourceGovernancePolicy({ policy: result.policy, inventory: result.inventory, freshnessPolicy: value.freshnessPolicy });
+});
+
+test("producer rejects a self-consistent substituted approval through sealed authority identity", async () => {
+  const value = await input();
+  const approvedAt = "2026-08-30T04:49:49.000Z";
+  for (const record of [value.ownerDecision, value.adminReview]) {
+    record.approvedBy = "substituted-approver";
+    record.approvedAt = approvedAt;
+  }
+  value.ownerDecision.policyEntry.licenseReview.reviewedAt = approvedAt;
+  value.ownerDecision.policyEntry.licenseReview.nextReviewAt = "2027-08-30T04:49:49.000Z";
+  assert.throws(() => produceAdmission(value), /owner decision authority identity mismatch/);
 });
 
 test("producer rejects tampered component, claim, topology, license, freshness, shared hashes, quota and self-hash inputs", async () => {
@@ -115,6 +127,7 @@ test("producer rejects tampered component, claim, topology, license, freshness, 
     ["admin consensus", (x) => { x.adminReview.aliasLedgerHash = "0".repeat(64); }],
     ["cohort", (x) => { for (const source of x.inventory.sources.filter(({ admissionEvidence }) => admissionEvidence?.decision === "APPROVED")) source.admissionEvidence.aliasLedgerHash = null; rebind(x, { inventory: true }); }],
     ["quota", (x) => { x.adminReview.quotaEvidence.productionUseAllowed = false; }],
+    ["official snapshot", (x) => { x.snapshot.official = false; }],
     ["self hash", (x) => { x.snapshot.rowsSha256 = "0".repeat(64); }],
   ];
   for (const [label, mutate] of mutations) {

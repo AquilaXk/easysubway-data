@@ -259,7 +259,7 @@ test("producer-neutral FACILITY admission preserves the approved prior governanc
     target.governancePolicySha256 = priorBinding.governancePolicySha256;
   }
   priorKric.candidateBuildSpec.sourceSnapshotSetHash = selectedLedgerHash(priorKric.sourceSnapshots, priorKric.candidateBuildSpec.sourceSnapshotIds);
-  assert.equal(buildCurrentCapitalFacilitySourceAdmission(priorKric).decision, "GO");
+  assert.throws(() => buildCurrentCapitalFacilitySourceAdmission(priorKric), /KRIC current governance binding mismatch/u);
 
   const legacyKric = structuredClone(values);
   const legacyProjection = legacyKric.candidateBuildSpec.sourceSnapshots[kricIndex];
