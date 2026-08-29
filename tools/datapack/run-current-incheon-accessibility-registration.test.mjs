@@ -24,6 +24,12 @@ async function fixture(t) {
   const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "incheon-runner-repository-")); const operationRoot = path.join(await mkdtemp(path.join(os.tmpdir(), "incheon-runner-operation-parent-")), "operation");
   t.after(() => Promise.all([rm(repositoryRoot, { recursive: true, force: true }), rm(path.dirname(operationRoot), { recursive: true, force: true })]));
   for (const relative of fixturePaths) { await mkdir(path.dirname(path.join(repositoryRoot, relative)), { recursive: true }); await cp(path.join(ROOT, relative), path.join(repositoryRoot, relative)); }
+  const inventoryPath = path.join(repositoryRoot, fixturePaths[0]);
+  const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
+  const source = inventory.sources.find(({ id }) => id === "incheon-transit-accessibility");
+  source.requiredForProductionPack = false;
+  delete source.registrationEvidence;
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
   const exactMain = async () => {}; const lease = async () => async () => {}; const prepared = await prepareCurrentIncheonAccessibilityRegistration({ repositoryRoot, operationRoot, expectedMainSha: SHA, assertExactMain: exactMain, acquireLease: lease, now: new Date("2026-08-28T04:34:00.000Z") });
   const fixed = [
     `tools/datapack/sources/${prepared.snapshotId}.json`,
