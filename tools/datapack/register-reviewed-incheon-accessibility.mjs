@@ -1,0 +1,225 @@
+#!/usr/bin/env node
+// Registers one reviewed Incheon facility snapshot.  This is deliberately a
+// registry transaction: it neither collects data nor talks to OCI.
+import { createHash, randomUUID } from "node:crypto";
+import { constants } from "node:fs";
+import { lstat, link, open, readdir, rename, unlink } from "node:fs/promises";
+import { createServer } from "node:net";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+import { validateIncheonAccessibilityRawCollection, validateIncheonAccessibilitySnapshotIdentity } from "./collect-incheon-accessibility.mjs";
+import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
+import { deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
+import { validateLineage } from "./source-snapshot-policy.mjs";
+import { assertProjectionEqual, deriveReleaseProjection, isActiveCandidateSourceSequence } from "./rebind-current-candidate-source-snapshots.mjs";
+
+const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
+const SOURCE = "incheon-transit-accessibility";
+const SHA = /^[a-f0-9]{64}$/u;
+const JOURNAL = "tools/datapack/.incheon-accessibility-registration-transaction.json";
+const LOCK = "tools/datapack/.incheon-accessibility-registration.lock";
+const FIXED = ["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json", "tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json"];
+const hash = (value) => createHash("sha256").update(value).digest("hex");
+const bytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
+function parse(value, label) { try { return JSON.parse(value.toString("utf8")); } catch { throw new Error(`${label} is invalid JSON`); } }
+function target(root, relative) { if (typeof relative !== "string" || path.isAbsolute(relative)) throw new Error("registration path is invalid"); const value = path.resolve(root, relative); if (!value.startsWith(`${root}${path.sep}`)) throw new Error("registration path escapes repository"); return value; }
+async function regularDirectory(directory, label) { const stat = await lstat(directory); if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error(`${label} must be a regular directory`); }
+async function read(targetPath, label, absent = false) {
+  try {
+    await regularDirectory(path.dirname(targetPath), `${label} parent`);
+    const handle = await open(targetPath, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try { const before = await handle.stat(); if (!before.isFile()) throw new Error(`${label} must be a regular file`); const value = await handle.readFile(); const after = await handle.stat(); if (before.ino !== after.ino || before.size !== after.size || value.length !== after.size) throw new Error(`${label} changed during read`); return value; } finally { await handle.close(); }
+  } catch (error) { if (absent && error?.code === "ENOENT") return null; throw error; }
+}
+function instant(value, label) { const time = Date.parse(value); if (!Number.isFinite(time) || new Date(time).toISOString() !== value) throw new Error(`${label} is invalid`); return time; }
+function one(rows, predicate, label) { const found = rows.filter(predicate); if (found.length !== 1) throw new Error(`${label} must have exactly one match`); return found[0]; }
+function outputAllowlist(outputs) { if (!Array.isArray(outputs) || outputs.length !== 6) throw new Error("Incheon registration must stage exactly six outputs"); const [snapshot, ...fixed] = outputs; if (!/^tools\/datapack\/sources\/incheon-transit-accessibility-20\d{6}T\d{9}Z\.json$/u.test(snapshot?.relative ?? "") || snapshot.prestateBytes !== null || JSON.stringify(fixed.map(({ relative }) => relative)) !== JSON.stringify(FIXED) || fixed.some(({ prestateBytes }) => !Buffer.isBuffer(prestateBytes))) throw new Error("Incheon registration output allowlist mismatch"); }
+function validateReceipt(receipt, snapshot, snapshotBytes, rawArtifactBytes, governance, now) {
+  const keys = ["schemaVersion", "artifactKind", "sourceId", "snapshotId", "snapshotRawSha256", "capturedAt", "snapshotFileSha256", "rawObjectUri", "rawObjectSha256", "byteSize", "storedAt", "rawRetentionExpiresAt"];
+  const objectKey = `source-raw/${SOURCE}/${snapshot.capturedAt.slice(0, 10).replaceAll("-", "")}/${hash(rawArtifactBytes)}.json`;
+  if (!receipt || JSON.stringify(Object.keys(receipt)) !== JSON.stringify(keys) || receipt.schemaVersion !== 1 || receipt.artifactKind !== "incheon-accessibility-raw-object-receipt" || receipt.sourceId !== SOURCE || receipt.snapshotId !== snapshot.snapshotId || receipt.snapshotRawSha256 !== snapshot.rawSha256 || receipt.capturedAt !== snapshot.capturedAt || receipt.snapshotFileSha256 !== hash(snapshotBytes) || receipt.rawObjectSha256 !== hash(rawArtifactBytes) || receipt.byteSize !== rawArtifactBytes.length || receipt.rawObjectUri !== `oci://axvym6vk8g7i/easysubway-datapacks/${objectKey}`) throw new Error("OCI receipt binding is invalid");
+  const stored = instant(receipt.storedAt, "receipt storedAt"); if (stored < instant(snapshot.capturedAt, "snapshot capturedAt") || stored > now.getTime()) throw new Error("OCI receipt storage time is invalid");
+  if (receipt.rawRetentionExpiresAt !== deriveRawRetentionExpiresAt({ policy: governance, sourceId: SOURCE, retrievedAt: snapshot.capturedAt })) throw new Error("OCI receipt retention is invalid");
+}
+async function readObservation(observationRoot, receiptPath, freshness, topology, topologySnapshotId) {
+  if (!path.isAbsolute(observationRoot ?? "") || !path.isAbsolute(receiptPath ?? "")) throw new Error("absolute observation directory and receipt are required");
+  const root = path.resolve(observationRoot); const stat = await lstat(root);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("observation directory is unsafe");
+  const manifest = parse(await read(path.join(root, "observation.json"), "observation manifest"), "observation manifest");
+  const names = await readdir(root); const expected = ["observation.json", manifest?.snapshotFile, manifest?.rawArtifactFile].sort();
+  if (!manifest || manifest.schemaVersion !== 1 || manifest.artifactKind !== "incheon-accessibility-observation" || manifest.sourceId !== SOURCE || typeof manifest.snapshotId !== "string" || manifest.snapshotFile !== `${manifest.snapshotId}.json` || manifest.rawArtifactFile !== `${manifest.snapshotId}.raw.json` || JSON.stringify(names.sort()) !== JSON.stringify(expected)) throw new Error("Incheon accessibility observation inventory is invalid");
+  const snapshotBytes = await read(path.join(root, manifest.snapshotFile), "observation snapshot"); const rawArtifactBytes = await read(path.join(root, manifest.rawArtifactFile), "observation raw artifact");
+  const snapshot = parse(snapshotBytes, "observation snapshot"); const rawArtifact = parse(rawArtifactBytes, "observation raw artifact");
+  if (manifest.snapshotFileSha256 !== hash(snapshotBytes) || manifest.rawObjectSha256 !== hash(rawArtifactBytes) || manifest.rawObjectByteSize !== rawArtifactBytes.length || manifest.snapshotId !== snapshot.snapshotId || manifest.snapshotRawSha256 !== snapshot.rawSha256 || manifest.capturedAt !== snapshot.capturedAt) throw new Error("Incheon accessibility observation identity is invalid");
+  if (rawArtifact.topologySnapshot?.sourceId !== topology.sourceId || rawArtifact.topologySnapshotId !== topologySnapshotId || rawArtifact.topologyContentSha256 !== topology.contentSha256) throw new Error("Incheon accessibility observation topology is not the admitted topology");
+  validateIncheonAccessibilitySnapshotIdentity(snapshot, freshness, topology);
+  validateIncheonAccessibilityRawCollection(rawArtifact, snapshot, freshness);
+  return { snapshot, snapshotBytes, rawArtifact, rawArtifactBytes, receipt: parse(await read(receiptPath, "OCI receipt"), "OCI receipt") };
+}
+function ledgerReceipt(receipt) { return { schemaVersion: receipt.schemaVersion, artifactKind: receipt.artifactKind, sourceId: receipt.sourceId, snapshotId: receipt.snapshotId, snapshotRawSha256: receipt.snapshotRawSha256, capturedAt: receipt.capturedAt, snapshotFileSha256: receipt.snapshotFileSha256, rawObjectUri: receipt.rawObjectUri, rawObjectSha256: receipt.rawObjectSha256, byteSize: receipt.byteSize, storedAt: receipt.storedAt, rawRetentionExpiresAt: receipt.rawRetentionExpiresAt }; }
+function ledgerOrderedSnapshots(ledger, ids) {
+  const selectedIds = new Set(ids); const selected = ledger.filter(({ snapshotId }) => selectedIds.has(snapshotId));
+  if (selectedIds.size !== ids.length || selected.length !== ids.length) throw new Error("candidate source snapshots are incomplete");
+  return selected;
+}
+function operationFingerprint(rawArtifact) {
+  return hash(JSON.stringify({ sourceId: rawArtifact.sourceId, datasetIds: rawArtifact.payloads.map(({ datasetId }) => datasetId), requests: rawArtifact.payloads.map(({ detailUrl, fileName }) => ({ detailUrl, fileName })), topologySnapshotId: rawArtifact.topologySnapshotId, topologyContentSha256: rawArtifact.topologyContentSha256, freshnessPolicy: rawArtifact.freshnessPolicy }));
+}
+function validateCurrentRelease({ inventory, inventoryBytes, ledger, candidate, candidateBytes, request, evidence, governance, governanceBytes, freshness }) {
+  const lineage = validateLineage(ledger); const ids = candidate?.sourceSnapshotIds; const projections = candidate?.sourceSnapshots;
+  if (candidate?.schemaVersion !== 1 || candidate.artifactKind !== "datapack-candidate-build-spec" || !Array.isArray(ids) || !Array.isArray(projections) || ids.length !== 7 || projections.length !== ids.length || !isActiveCandidateSourceSequence(projections.map(({ sourceId }) => sourceId)) || new Set(ids).size !== ids.length || new Set(projections.map(({ sourceId }) => sourceId)).size !== ids.length || ids.some((id, index) => projections[index]?.snapshotId !== id) || projections.some(({ sourceId }) => sourceId === SOURCE)) throw new Error("candidate is not the current seven-source prestate");
+  const selected = ids.map((snapshotId) => { const snapshot = ledger.find((row) => row.snapshotId === snapshotId); if (!snapshot || lineage.headsBySource[snapshot.sourceId] !== snapshotId) throw new Error("candidate source is not the active ledger head"); return snapshot; });
+  const expectedSet = ledgerOrderedSnapshots(ledger, ids);
+  if (candidate.sourceSnapshotSetHash !== hash(JSON.stringify(expectedSet)) || candidate.sourceInventorySha256 !== hash(JSON.stringify(inventory)) || candidate.networkEdgeEvidence?.sourceInventory?.path !== FIXED[0] || candidate.networkEdgeEvidence.sourceInventory.sha256 !== hash(inventoryBytes)) throw new Error("candidate prestate binding is invalid");
+  for (const [index, snapshot] of selected.entries()) {
+    const projection = deriveReleaseProjection({ snapshot, sourceInventory: inventory, governancePolicy: governance, governancePolicyBytes: governanceBytes, freshnessPolicy: freshness, nowMillis: instant(candidate.publishedAt, "candidate publishedAt") });
+    try { assertProjectionEqual(projections[index], projection, "candidate projection prestate"); } catch { throw new Error("candidate projection prestate is invalid"); }
+  }
+  if (request?.schemaVersion !== 1 || request.artifactKind !== "datapack-release-request" || request.candidateId !== candidate.candidateId || request.scopeId !== candidate.productionScopeId || request.targetChannel !== "production" || typeof request.requestedBy !== "string" || request.requestedBy === "" || typeof request.approvedBy !== "string" || request.approvedBy === "" || request.requestedBy === request.approvedBy || typeof request.approvalId !== "string" || request.approvalId === "" || request.approvedLedgerHash !== candidate.approvedAliasLedgerHash || request.sourceSnapshotSetHash !== candidate.sourceSnapshotSetHash || request.buildSpecSha256 !== hash(candidateBytes) || evidence?.schemaVersion !== 1 || evidence.artifactKind !== "datapack-build-spec-hash-evidence" || evidence.productionScopeId !== candidate.productionScopeId || evidence?.ledgerHashes?.approvedAliasLedgerHash?.value !== candidate.approvedAliasLedgerHash || evidence?.sourceSnapshotSetHash?.value !== candidate.sourceSnapshotSetHash || evidence?.sourceInventorySha256?.value !== candidate.sourceInventorySha256 || evidence?.identifiers?.candidateId?.value !== candidate.candidateId || evidence?.identifiers?.approvalId?.value !== request.approvalId || !Array.isArray(evidence?.perSourceEvidence) || evidence.perSourceEvidence.length !== selected.length) throw new Error("release prestate binding is invalid");
+  for (const [index, snapshot] of expectedSet.entries()) { const row = evidence.perSourceEvidence[index]; const source = one(inventory.sources, ({ id }) => id === snapshot.sourceId, "release source"); if (row?.sourceId !== snapshot.sourceId || row.snapshotId !== snapshot.snapshotId || row.rawSha256 !== snapshot.rawSha256 || row.adminReviewRecordHash !== source.admissionEvidence?.adminReviewRecordHash || row.perSourceSnapshotSetHash !== hash(JSON.stringify([snapshot]))) throw new Error("hash evidence prestate is invalid"); }
+  return { lineage, selected };
+}
+function build({ snapshot, snapshotBytes, rawArtifact, rawArtifactBytes, receipt, inventory, inventoryBytes, ledger, governance, governanceBytes, freshness, candidate, candidateBytes, request, evidence, now, topology, topologySnapshotId }) {
+  validateIncheonAccessibilitySnapshotIdentity(snapshot, freshness, topology);
+  validateSourceGovernancePolicy({ policy: governance, inventory, freshnessPolicy: freshness });
+  const source = one(inventory.sources ?? [], ({ id }) => id === SOURCE, "Incheon source");
+  const policy = one(governance.sources ?? [], ({ sourceId }) => sourceId === SOURCE, "Incheon governance source");
+  if (source.requiredForProductionPack !== false || source.productionUseAllowed !== true || source.capabilities?.facility?.productionUseAllowed !== true || source.license?.redistributionAllowed !== true || source.admissionEvidence?.decision !== "APPROVED" || source.admissionEvidence?.issue !== 622 || source.admissionEvidence?.snapshotId !== snapshot.snapshotId || source.admissionEvidence?.adminReviewRecordHash !== "3c705c2f2d65bd171d2cd4125266c63d0c3dee506cd76405e727573955f580f4" || source.admissionEvidence?.licenseEvidenceHash !== "16d4e5ffd5eacf0514a6f08ea69b21589c1f5f38a3d9dd48c677b4c81e66ac71") throw new Error("Incheon reviewed source is not receipt-pending production admission");
+  validateReceipt(receipt, snapshot, snapshotBytes, rawArtifactBytes, governance, now);
+  const fresh = deriveFreshnessExpiresAt({ policy: freshness, sourceClassId: policy.sourceClassId, basisAt: snapshot.capturedAt, evaluationAt: now.toISOString() });
+  if (instant(fresh, "freshness") <= now.getTime() || instant(snapshot.freshUntil, "snapshot freshness") <= now.getTime()) throw new Error("Incheon snapshot is stale");
+  const { lineage } = validateCurrentRelease({ inventory, inventoryBytes, ledger, candidate, candidateBytes, request, evidence, governance, governanceBytes, freshness });
+  if (lineage.headsBySource[SOURCE] != null || ledger.some(({ sourceId }) => sourceId === SOURCE)) throw new Error("Incheon ledger head already exists");
+  const next = { schemaVersion: 1, artifactKind: "official-source-snapshot", snapshotId: snapshot.snapshotId, sourceId: SOURCE, provider: source.provider, retrievedAt: snapshot.capturedAt, sourceUpdatedAt: snapshot.observedAt, rowCount: snapshot.rowCount, coverageCount: snapshot.stationCount, rawSha256: receipt.rawObjectSha256, rawObjectUri: receipt.rawObjectUri, rawReceipt: ledgerReceipt(receipt), contentSha256: snapshot.contentSha256, redactedRequestFingerprint: operationFingerprint(rawArtifact), schemaFingerprint: snapshot.schemaFingerprint, snapshotStatus: "LOCKED", schemaStatus: "PASS", licenseStatus: "PASS", fetchStatus: "SUCCESS", redistributionAllowed: true, credentialRedacted: true, previousSnapshotId: null, freshnessExpiresAt: fresh, rawRetentionExpiresAt: receipt.rawRetentionExpiresAt, providerRecordHashes: snapshot.rows.map((row) => hash(JSON.stringify(row))), claimBindingsSha256: snapshot.claimBindingsSha256, adminReviewRecordHash: source.admissionEvidence.adminReviewRecordHash, governancePolicyVersion: governance.policyVersion, governancePolicySha256: hash(governanceBytes) };
+  const nextLedger = [...ledger, next]; validateLineage(nextLedger);
+  const nextInventory = structuredClone(inventory); const nextSource = one(nextInventory.sources, ({ id }) => id === SOURCE, "Incheon source");
+  nextSource.requiredForProductionPack = true;
+  nextSource.retrievedAt = snapshot.capturedAt.slice(0, 10); nextSource.observedDataUpdatedAt = snapshot.observedAt.slice(0, 10);
+  const topologyLineages = snapshot.topologyLineages; const membershipLineages = snapshot.membershipLineages;
+  const topologyLineage = topologyLineages?.[0];
+  if (!topologyLineage || !topologyLineages.every((lineage) => lineage.sourceId === topologyLineage.sourceId && lineage.snapshotId === topologyLineage.snapshotId && lineage.contentSha256 === topologyLineage.contentSha256) || !membershipLineages?.every((lineage) => lineage.sourceId === topologyLineage.sourceId && lineage.snapshotId === topologyLineage.snapshotId && lineage.contentSha256 === topologyLineage.contentSha256) || topologyLineage.sourceId !== topology.sourceId || topologyLineage.snapshotId !== topologySnapshotId || topologyLineage.contentSha256 !== topology.contentSha256) throw new Error("Incheon snapshot topology evidence is invalid");
+  nextSource.accessibilityAdmissionEvidence = {
+    issue: 622, decision: "APPROVED", productionUseAllowed: true,
+    licenseEvidenceHash: nextSource.admissionEvidence.licenseEvidenceHash,
+    snapshotId: snapshot.snapshotId, snapshotPath: `tools/datapack/sources/${snapshot.snapshotId}.json`,
+    capturedAt: snapshot.capturedAt, observedAt: snapshot.observedAt, freshUntil: snapshot.freshUntil,
+    stationCount: snapshot.stationCount, rowCount: snapshot.rowCount, facilityCount: snapshot.stationCount * 3,
+    rawSha256: snapshot.rawSha256, rowsSha256: snapshot.rowsSha256, contentSha256: snapshot.contentSha256,
+    schemaFingerprint: snapshot.schemaFingerprint, snapshotFileSha256: hash(snapshotBytes), datasetIds: [...snapshot.datasetIds],
+    absenceEvidenceMode: snapshot.absenceEvidenceMode,
+    topologySourceId: topologyLineage.sourceId, topologySnapshotId: topologyLineage.snapshotId,
+    topologyContentSha256: topologyLineage.contentSha256, topologyLineages, membershipLineages,
+  };
+  const nextInventoryBytes = bytes(nextInventory); const nextCandidate = structuredClone(candidate);
+  if (nextCandidate.sourceSnapshotIds.includes(snapshot.snapshotId) || nextCandidate.sourceSnapshots.some(({ sourceId }) => sourceId === SOURCE)) throw new Error("candidate has incompatible Incheon source state");
+  const projection = deriveReleaseProjection({ snapshot: next, sourceInventory: nextInventory, governancePolicy: governance, governancePolicyBytes: governanceBytes, freshnessPolicy: freshness, nowMillis: now.getTime() });
+  const transferIndex = nextCandidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === "seoul-metro-transfer-distance-duration");
+  if (transferIndex !== nextCandidate.sourceSnapshots.length - 1) throw new Error("candidate transfer ordering is invalid");
+  nextCandidate.sourceSnapshotIds.splice(transferIndex, 0, next.snapshotId); nextCandidate.sourceSnapshots.splice(transferIndex, 0, projection);
+  const selected = ledgerOrderedSnapshots(nextLedger, nextCandidate.sourceSnapshotIds);
+  nextCandidate.sourceSnapshotSetHash = hash(JSON.stringify(selected)); nextCandidate.sourceInventorySha256 = hash(JSON.stringify(nextInventory)); nextCandidate.publishedAt = now.toISOString();
+  if (nextCandidate.networkEdgeEvidence?.sourceInventory) nextCandidate.networkEdgeEvidence.sourceInventory.sha256 = hash(nextInventoryBytes);
+  delete nextCandidate.networkEdgeEvidence?.incheonAccessibility;
+  const nextCandidateBytes = bytes(nextCandidate); const nextRequest = { ...request, buildSpecSha256: hash(nextCandidateBytes), sourceSnapshotSetHash: nextCandidate.sourceSnapshotSetHash };
+  const nextEvidence = structuredClone(evidence); if (!nextEvidence.sourceSnapshotSetHash || !nextEvidence.sourceInventorySha256) throw new Error("hash evidence is incompatible"); nextEvidence.sourceSnapshotSetHash.value = nextCandidate.sourceSnapshotSetHash; nextEvidence.sourceInventorySha256.value = nextCandidate.sourceInventorySha256; nextEvidence.perSourceEvidence = selected.map((item) => ({ sourceId: item.sourceId, snapshotId: item.snapshotId, rawSha256: item.rawSha256, adminReviewRecordHash: one(nextInventory.sources, ({ id }) => id === item.sourceId, "release source").admissionEvidence.adminReviewRecordHash, perSourceSnapshotSetHash: hash(JSON.stringify([item])) }));
+  nextEvidence.sourceSnapshotSetHash.contract = `source별 head ${selected.length}종의 byte-ordered JSON hash와 build spec·release request가 일치해야 한다.`;
+  nextEvidence.sourceSnapshots.order = `release snapshot ledger 순서: ${selected.map(({ sourceId }) => sourceId).join(" → ")}`;
+  nextEvidence.sourceSnapshots.note = "historical source snapshot lineage는 유지하고 canonical capital sourceInventory의 active source만 release snapshot으로 소비한다.";
+  nextEvidence.sourceSnapshots.specRowRawSha256Note = "build-spec projections use the selected official ledger rawSha256 (the OCI object hash); observation snapshot internal composite/canonical hashes remain separately bound in the tracked snapshot and admission evidence.";
+  return [
+    { relative: `tools/datapack/sources/${snapshot.snapshotId}.json`, bytes: snapshotBytes, prestateBytes: null },
+    { relative: FIXED[0], bytes: nextInventoryBytes, prestateBytes: null }, { relative: FIXED[1], bytes: bytes(nextLedger), prestateBytes: null }, { relative: FIXED[2], bytes: nextCandidateBytes, prestateBytes: null }, { relative: FIXED[3], bytes: bytes(nextRequest), prestateBytes: null }, { relative: FIXED[4], bytes: bytes(nextEvidence), prestateBytes: null },
+  ];
+}
+export async function buildReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot = ROOT, observationRoot, receiptPath, now = new Date() } = {}) {
+  const root = path.resolve(repositoryRoot); await regularDirectory(root, "repository root");
+  const [inventoryBytes, governanceBytes, ledgerBytes, candidateBytes, requestBytes, evidenceBytes, freshnessBytes] = await Promise.all([FIXED[0], "tools/datapack/source-governance-policy.json", FIXED[1], FIXED[2], FIXED[3], FIXED[4], "release/product-gates/datapack-freshness-sla.json"].map((relative) => read(target(root, relative), relative)));
+  const inventory = parse(inventoryBytes, "source inventory"); const admitted = one(inventory.sources ?? [], ({ id }) => id === SOURCE, "Incheon source");
+  const topologyAdmission = admitted.accessibilityAdmissionEvidence;
+  if (topologyAdmission?.topologySourceId !== "incheon-transit-station-info" || typeof topologyAdmission.topologySnapshotId !== "string" || !SHA.test(topologyAdmission.topologyContentSha256 ?? "")) throw new Error("Incheon admitted topology is invalid");
+  const topologyRelative = `tools/datapack/sources/${topologyAdmission.topologySnapshotId}.json`;
+  const topologyBytes = await read(target(root, topologyRelative), "current Incheon topology"); const topology = parse(topologyBytes, "current Incheon topology");
+  if (topology.contentSha256 !== topologyAdmission.topologyContentSha256) throw new Error("Incheon admitted topology content is invalid");
+  const freshness = parse(freshnessBytes, "freshness"); const observation = await readObservation(observationRoot, receiptPath, freshness, topology, topologyAdmission.topologySnapshotId);
+  validateIncheonAccessibilitySnapshotIdentity(observation.snapshot, freshness, topology);
+  const inputs = [[FIXED[0], inventoryBytes], ["tools/datapack/source-governance-policy.json", governanceBytes], [FIXED[1], ledgerBytes], [FIXED[2], candidateBytes], [FIXED[3], requestBytes], [FIXED[4], evidenceBytes], ["release/product-gates/datapack-freshness-sla.json", freshnessBytes], [topologyRelative, topologyBytes]].map(([relative, value]) => ({ relative, bytes: value }));
+  const outputs = build({ snapshot: observation.snapshot, snapshotBytes: observation.snapshotBytes, rawArtifact: observation.rawArtifact, rawArtifactBytes: observation.rawArtifactBytes, receipt: observation.receipt, inventory, inventoryBytes, ledger: parse(ledgerBytes, "ledger"), governance: parse(governanceBytes, "source governance policy"), governanceBytes, freshness, candidate: parse(candidateBytes, "candidate"), candidateBytes, request: parse(requestBytes, "release request"), evidence: parse(evidenceBytes, "hash evidence"), now, topology, topologySnapshotId: topologyAdmission.topologySnapshotId }).map((output) => ({ ...output, inputs }));
+  outputs[1].prestateBytes = await read(target(root, FIXED[0]), FIXED[0]); for (let i = 2; i < outputs.length; i += 1) outputs[i].prestateBytes = await read(target(root, outputs[i].relative), outputs[i].relative); outputAllowlist(outputs); return outputs;
+}
+async function safeParent(file) { await regularDirectory(path.dirname(file), "Incheon registration target parent"); }
+async function syncParent(file) { const directory = await open(path.dirname(file), constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW); try { await directory.sync(); } finally { await directory.close(); } }
+async function currentBytes(file) { return read(file, "Incheon registration target", true); }
+async function expected(file, value) { const current = await currentBytes(file); if ((current == null) !== (value == null) || current != null && !current.equals(value)) throw new Error("Incheon registration preserves foreign replacement"); }
+function displacedPath(file) { return path.join(path.dirname(file), `.${path.basename(file)}.incheon-accessibility.before`); }
+function retiredPath(file) { return path.join(path.dirname(file), `.${path.basename(file)}.incheon-accessibility.retired`); }
+async function restoreMovedFile(moved, file) { try { await link(moved, file); } catch (error) { if (error?.code === "EEXIST") return false; throw error; } await unlink(moved); await syncParent(file); return true; }
+async function removeExpected(file, value) { await expected(file, value); const retired = retiredPath(file); if (await currentBytes(retired)) throw new Error("Incheon registration recovery required"); await rename(file, retired); try { await expected(retired, value); await unlink(retired); await syncParent(file); } catch (error) { await restoreMovedFile(retired, file).catch(() => {}); throw error; } }
+async function discardExpected(file, value) { await expected(file, value); await unlink(file); await syncParent(file); }
+async function atomicWrite(file, value, before) {
+  await safeParent(file); await expected(file, before); const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${randomUUID()}.tmp`);
+  try {
+    const handle = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600); try { await handle.writeFile(value); await handle.sync(); } finally { await handle.close(); }
+    await expected(file, before); if (before === null) await link(temporary, file); else {
+      const displaced = displacedPath(file); if (await currentBytes(displaced)) throw new Error("Incheon registration recovery required"); await rename(file, displaced);
+      try { await expected(displaced, before); await link(temporary, file); await syncParent(file); await expected(file, value); await unlink(displaced); await syncParent(file); } catch (error) { await restoreMovedFile(displaced, file).catch(() => {}); throw error; }
+    }
+    await syncParent(file); await expected(file, value);
+  } finally { await unlink(temporary).catch(() => {}); }
+}
+function journalRecords(outputs) { return outputs.map(({ relative, prestateBytes, bytes: after }) => ({ relative, before: prestateBytes?.toString("base64") ?? null, beforeSha256: prestateBytes == null ? null : hash(prestateBytes), after: after.toString("base64"), afterSha256: hash(after) })); }
+function parseJournal(value) {
+  const journal = parse(value, "Incheon registration journal");
+  if (JSON.stringify(Object.keys(journal ?? {}).sort()) !== JSON.stringify(["records", "state"]) || !["PREPARED", "COMMITTED"].includes(journal.state) || !Array.isArray(journal.records) || journal.records.length !== 6) throw new Error("Incheon registration recovery required");
+  outputAllowlist(journal.records.map((record) => ({ relative: record.relative, bytes: Buffer.alloc(0), prestateBytes: record.before == null ? null : Buffer.alloc(0) })));
+  for (const record of journal.records) {
+    if (JSON.stringify(Object.keys(record).sort()) !== JSON.stringify(["after", "afterSha256", "before", "beforeSha256", "relative"].sort()) || !SHA.test(record.afterSha256 ?? "") || (record.before == null) !== (record.beforeSha256 == null) || record.beforeSha256 != null && !SHA.test(record.beforeSha256)) throw new Error("Incheon registration recovery required");
+    const after = Buffer.from(record.after, "base64"); const before = record.before == null ? null : Buffer.from(record.before, "base64");
+    if (after.toString("base64") !== record.after || hash(after) !== record.afterSha256 || before != null && (before.toString("base64") !== record.before || hash(before) !== record.beforeSha256)) throw new Error("Incheon registration recovery required");
+  }
+  return journal;
+}
+async function recover(root, journal, journalBytes, journalFile = target(root, JOURNAL)) {
+  for (const record of journal.records) {
+    const file = target(root, record.relative); const before = record.before == null ? null : Buffer.from(record.before, "base64"); const after = Buffer.from(record.after, "base64"); let current = await currentBytes(file); const displaced = before == null ? null : displacedPath(file); const displacedBytes = displaced == null ? null : await currentBytes(displaced); const retired = await currentBytes(retiredPath(file));
+    if (displacedBytes != null && !displacedBytes.equals(before)) throw new Error("Incheon registration preserves foreign replacement");
+    if (journal.state === "COMMITTED") {
+      if (retired != null) throw new Error("Incheon registration recovery required");
+      if (current?.equals(after)) { if (displacedBytes != null) { await unlink(displaced); await syncParent(displaced); } continue; }
+      if (current == null && displacedBytes?.equals(before)) { await restoreMovedFile(displaced, file); current = before; }
+      if ((current == null) !== (before == null) || current != null && !current.equals(before)) throw new Error("Incheon registration preserves foreign replacement");
+      await atomicWrite(file, after, before);
+    } else {
+      if (retired != null) {
+        if (!retired.equals(after) || current != null) throw new Error("Incheon registration preserves foreign replacement");
+        if (before === null) { await discardExpected(retiredPath(file), after); continue; }
+        if (displacedBytes?.equals(before)) { await restoreMovedFile(displaced, file); await discardExpected(retiredPath(file), after); continue; }
+        throw new Error("Incheon registration recovery required");
+      }
+      if (current == null && displacedBytes?.equals(before)) { await restoreMovedFile(displaced, file); continue; }
+      if (current?.equals(after) && displacedBytes?.equals(before)) { await removeExpected(file, after); await restoreMovedFile(displaced, file); continue; }
+      if ((before == null && current == null) || (before != null && current?.equals(before))) { if (displacedBytes != null) await unlink(displaced); continue; }
+      if (!current?.equals(after)) throw new Error("Incheon registration preserves foreign replacement");
+      if (before == null) await removeExpected(file, after); else await atomicWrite(file, before, after);
+    }
+  }
+  await removeExpected(journalFile, journalBytes);
+}
+async function recoverPending(root) { const journalFile = target(root, JOURNAL); const raw = await currentBytes(journalFile); if (raw == null) return; const journal = parseJournal(raw); await recover(root, journal, raw, journalFile); }
+async function lease(port = 0) { const server = createServer(); await new Promise((resolve, reject) => { const ready = () => { server.off("error", fail); resolve(); }; const fail = (error) => { server.off("listening", ready); reject(error); }; server.once("listening", ready); server.once("error", fail); server.listen({ host: "127.0.0.1", port, exclusive: true }); }); return server; }
+async function closeLease(server) { if (server?.listening) await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())); }
+function lockValue(server) { const address = server.address(); if (!address || typeof address === "string" || address.address !== "127.0.0.1" || !Number.isInteger(address.port) || address.port < 1) throw new Error("Incheon registration lock residue exists"); return bytes({ schemaVersion: 1, host: "127.0.0.1", port: address.port, pid: process.pid, token: randomUUID() }); }
+function parseLock(value) { const lock = parse(value, "Incheon registration lock"); if (JSON.stringify(Object.keys(lock)) !== JSON.stringify(["schemaVersion", "host", "port", "pid", "token"]) || lock.schemaVersion !== 1 || lock.host !== "127.0.0.1" || !Number.isInteger(lock.port) || lock.port < 1 || lock.port > 65535 || !Number.isInteger(lock.pid) || lock.pid < 1 || !/^[a-f0-9-]{36}$/u.test(lock.token ?? "")) throw new Error("Incheon registration lock residue exists"); return lock; }
+async function acquire(root, { afterStaleLockRead = async () => {} } = {}) { const lock = target(root, LOCK); let server = await lease(); let mine = lockValue(server); try { await atomicWrite(lock, mine, null); } catch (error) { await closeLease(server); server = null; if (!/preserves foreign replacement/u.test(error?.message ?? "")) throw error; const stale = await currentBytes(lock); const parsed = parseLock(stale); await afterStaleLockRead(); try { server = await lease(parsed.port); } catch (cause) { throw new Error("Incheon registration lock residue exists", { cause }); } mine = lockValue(server); try { await atomicWrite(lock, mine, stale); } catch (cause) { await closeLease(server); throw new Error("Incheon registration lock residue exists", { cause }); } } return async () => { try { await removeExpected(lock, mine); } finally { await closeLease(server); } }; }
+export async function commitReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot = ROOT, outputs, failAfter = null, beforeCommittedRecovery = async () => {}, afterStaleLockRead = async () => {} } = {}) {
+  const root = path.resolve(repositoryRoot); await regularDirectory(root, "repository root"); outputAllowlist(outputs); const release = await acquire(root, { afterStaleLockRead }); const journalFile = target(root, JOURNAL);
+  try {
+    await recoverPending(root); for (const input of outputs[0].inputs ?? []) await expected(target(root, input.relative), input.bytes); for (const output of outputs) await expected(target(root, output.relative), output.prestateBytes);
+    const records = journalRecords(outputs); const prepared = bytes({ state: "PREPARED", records }); await atomicWrite(journalFile, prepared, null);
+    for (const [index, record] of records.entries()) { const before = record.before == null ? null : Buffer.from(record.before, "base64"); await atomicWrite(target(root, record.relative), Buffer.from(record.after, "base64"), before); if (index === failAfter) throw new Error("injected transaction failure"); }
+    const committed = bytes({ state: "COMMITTED", records }); await atomicWrite(journalFile, committed, prepared); await beforeCommittedRecovery({ root, records }); await recover(root, { state: "COMMITTED", records }, committed); return { targets: records.map(({ relative }) => relative) };
+  } catch (error) { await recoverPending(root); throw error; } finally { await release(); }
+}
+export async function registerReviewedIncheonAccessibility(options = {}) { const outputs = await buildReviewedIncheonAccessibilityRegistrationOutputs(options); await commitReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot: options.repositoryRoot, outputs }); return { outputs: outputs.map(({ relative }) => relative) }; }
+async function main(argv) { if (argv.length !== 4 || argv[0] !== "--observation" || argv[2] !== "--receipt") throw new Error("usage: --observation <absolute-directory> --receipt <absolute>"); const result = await registerReviewedIncheonAccessibility({ observationRoot: argv[1], receiptPath: argv[3] }); process.stdout.write(`${JSON.stringify({ status: "PASS", outputs: result.outputs})}\n`); }
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main(process.argv.slice(2)).catch((error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });

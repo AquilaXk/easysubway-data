@@ -278,6 +278,7 @@
     {"path":"tools/ci/sync-datapack-release-check-secrets.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":119},
     {"path":"tools/datapack/activate-current-source-set.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":389},
     {"path":"tools/datapack/admit-reviewed-incheon-accessibility.test.mjs","semanticOwner":"data622","classes":["required-pr"],"durationMs":484},
+    {"path":"tools/datapack/register-reviewed-incheon-accessibility.test.mjs","semanticOwner":"data622","classes":["required-pr"],"durationMs":520},
     {"path":"tools/datapack/admit-reviewed-kric-candidates.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":167},
     {"path":"tools/datapack/apply-accessibility-evidence-to-bundled-pack.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":320},
     {"path":"tools/datapack/apply-capital-line1-topology-to-bundled-pack.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":536},
