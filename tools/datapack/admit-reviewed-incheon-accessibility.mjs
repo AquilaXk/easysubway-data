@@ -23,7 +23,85 @@ const exactKeys = (value, fields, label) => {
   if (!same(Object.keys(value).sort(compareStrings), [...fields].sort(compareStrings))) throw new Error(`${label} has unknown or missing fields`);
 };
 
-export function produceAdmission({ ownerDecision, adminReview, snapshot, topologySnapshot, inventory, candidates, policy, freshnessPolicy }) {
+const canonicalInventoryPath = "tools/datapack/source-inventory.json";
+const candidateAnchorFields = [
+  ["aliasLedgerHash", "approvedAliasLedgerHash"],
+  ["facilityEvidenceLedgerHash", "facilityEvidenceLedgerHash"],
+  ["routeEvidenceLedgerHash", "routeEvidenceLedgerHash"],
+  ["overrideHash", "approvedOverrideSetHash"],
+];
+const admissionHashFields = ["aliasLedgerHash", "operatorMappingLedgerHash", "facilityEvidenceLedgerHash", "routeEvidenceLedgerHash", "overrideHash"];
+const bytes = (value, label) => {
+  if (!(typeof value === "string" || Buffer.isBuffer(value))) throw new Error(`${label} bytes are required`);
+  return value;
+};
+const parsedBytesMatch = (value, raw, label) => {
+  try { if (!same(value, JSON.parse(raw.toString()))) throw new Error(`${label} bytes mismatch`); }
+  catch (error) { if (error.message === `${label} bytes mismatch`) throw error; throw new Error(`${label} bytes are invalid`); }
+};
+
+export function produceAdmission({ ownerDecision, adminReview, snapshot, topologySnapshot, inventory, inventoryBytes, candidates, policy, freshnessPolicy, candidateBuildSpec, candidateBuildSpecBytes, releaseRequest, releaseRequestBytes, hashEvidence, hashEvidenceBytes }) {
+  object(candidateBuildSpec, "candidate build spec"); object(releaseRequest, "release request"); object(hashEvidence, "hash evidence");
+  const buildSpecBytes = bytes(candidateBuildSpecBytes, "candidate build spec"); const requestBytes = bytes(releaseRequestBytes, "release request"); const evidenceBytes = bytes(hashEvidenceBytes, "hash evidence"); const sourceInventoryBytes = bytes(inventoryBytes, "inventory");
+  parsedBytesMatch(candidateBuildSpec, buildSpecBytes, "candidate build spec"); parsedBytesMatch(releaseRequest, requestBytes, "release request"); parsedBytesMatch(hashEvidence, evidenceBytes, "hash evidence"); parsedBytesMatch(inventory, sourceInventoryBytes, "inventory");
+  const sourceInventoryEvidence = object(object(candidateBuildSpec.networkEdgeEvidence, "candidate build spec network edge evidence").sourceInventory, "candidate build spec source inventory evidence");
+  const evidenceIdentifiers = object(hashEvidence.identifiers, "hash evidence identifiers");
+  const evidenceSnapshotSet = object(hashEvidence.sourceSnapshotSetHash, "hash evidence source snapshot set");
+  const evidenceInventory = object(hashEvidence.sourceInventorySha256, "hash evidence source inventory");
+  const evidenceLedgers = object(hashEvidence.ledgerHashes, "hash evidence ledgers");
+  if (candidateBuildSpec.schemaVersion !== 1 || candidateBuildSpec.artifactKind !== "datapack-candidate-build-spec"
+    || releaseRequest.schemaVersion !== 1 || releaseRequest.artifactKind !== "datapack-release-request"
+    || hashEvidence.schemaVersion !== 1 || hashEvidence.artifactKind !== "datapack-build-spec-hash-evidence") throw new Error("canonical release artifact schema mismatch");
+  if (!isHash(releaseRequest.buildSpecSha256) || sha(buildSpecBytes) !== releaseRequest.buildSpecSha256) throw new Error("release request build spec binding mismatch");
+  if (candidateBuildSpec.candidateId !== releaseRequest.candidateId || candidateBuildSpec.candidateId !== evidenceIdentifiers.candidateId?.value
+    || candidateBuildSpec.productionScopeId !== releaseRequest.scopeId || candidateBuildSpec.productionScopeId !== hashEvidence.productionScopeId
+    || candidateBuildSpec.sourceSnapshotSetHash !== releaseRequest.sourceSnapshotSetHash || candidateBuildSpec.sourceSnapshotSetHash !== evidenceSnapshotSet.value
+    || candidateBuildSpec.builderGitSha !== hashEvidence.builderGitSha || candidateBuildSpec.builderVersion !== hashEvidence.builderVersion) throw new Error("canonical candidate identity mismatch");
+  if (typeof releaseRequest.approvalId !== "string" || releaseRequest.approvalId.length === 0
+    || releaseRequest.approvalId !== evidenceIdentifiers.approvalId?.value
+    || !releaseRequest.approvalId.startsWith(`release-request-${candidateBuildSpec.candidateId}-`)) throw new Error("release approval binding mismatch");
+  if (releaseRequest.approvedLedgerHash !== candidateBuildSpec.approvedAliasLedgerHash || releaseRequest.approvedLedgerHash !== evidenceLedgers.approvedAliasLedgerHash?.value) throw new Error("approved ledger binding mismatch");
+  for (const [admissionField, buildSpecField] of candidateAnchorFields) {
+    const expected = candidateBuildSpec[buildSpecField]; const evidenceField = buildSpecField === "approvedOverrideSetHash" ? "approvedOverrideSetHash" : buildSpecField;
+    if (!isHash(expected) || evidenceLedgers[evidenceField]?.value !== expected) throw new Error(`candidate ${admissionField} anchor mismatch`);
+  }
+  if (sha(JSON.stringify(inventory)) !== candidateBuildSpec.sourceInventorySha256 || candidateBuildSpec.sourceInventorySha256 !== evidenceInventory.value) throw new Error("parsed inventory binding mismatch");
+  if (sourceInventoryEvidence.path !== canonicalInventoryPath || !isHash(sourceInventoryEvidence.sha256) || sha(sourceInventoryBytes) !== sourceInventoryEvidence.sha256) throw new Error("inventory byte binding mismatch");
+  if (!Array.isArray(candidateBuildSpec.sourceSnapshotIds) || !Array.isArray(candidateBuildSpec.sourceSnapshots)
+    || candidateBuildSpec.sourceSnapshotIds.length === 0 || candidateBuildSpec.sourceSnapshotIds.length !== candidateBuildSpec.sourceSnapshots.length
+    || candidateBuildSpec.sourceSnapshotIds.some((id) => typeof id !== "string" || id.length === 0)
+    || new Set(candidateBuildSpec.sourceSnapshotIds).size !== candidateBuildSpec.sourceSnapshotIds.length) throw new Error("candidate source snapshots are invalid");
+  const selectedSourceIds = candidateBuildSpec.sourceSnapshots.map((entry, index) => {
+    object(entry, `candidate source snapshot ${index}`);
+    if (entry.snapshotId !== candidateBuildSpec.sourceSnapshotIds[index] || typeof entry.sourceId !== "string" || entry.sourceId.length === 0) throw new Error("candidate source snapshot identity mismatch");
+    return entry.sourceId;
+  });
+  if (new Set(selectedSourceIds).size !== selectedSourceIds.length) throw new Error("candidate source IDs are not unique");
+  const inventorySources = object(inventory, "inventory").sources;
+  if (!Array.isArray(inventorySources) || new Set(inventorySources.map(({ id }) => id)).size !== inventorySources.length) throw new Error("inventory source identities are invalid");
+  const selectedSources = selectedSourceIds.map((sourceId) => {
+    const source = inventorySources.find(({ id }) => id === sourceId);
+    if (!source) throw new Error("candidate selected source is missing from inventory");
+    return source;
+  });
+  const perSourceEvidence = hashEvidence.perSourceEvidence;
+  if (!Array.isArray(perSourceEvidence) || perSourceEvidence.length !== selectedSources.length) throw new Error("candidate per-source evidence is incomplete");
+  for (let index = 0; index < selectedSources.length; index += 1) {
+    const source = selectedSources[index]; const projection = candidateBuildSpec.sourceSnapshots[index]; const reviewHash = source.admissionEvidence?.adminReviewRecordHash;
+    if (!isHash(reviewHash) || projection.adminReviewRecordHash !== reviewHash) throw new Error("candidate projection review binding mismatch");
+    const records = perSourceEvidence.filter(({ sourceId }) => sourceId === source.id);
+    if (records.length !== 1 || records[0]?.snapshotId !== projection.snapshotId || records[0].adminReviewRecordHash !== reviewHash) throw new Error("candidate per-source review evidence mismatch");
+    const anchorMatches = candidateAnchorFields.filter(([field, buildSpecField]) => source.admissionEvidence?.[field] === candidateBuildSpec[buildSpecField]).length;
+    if (admissionHashFields.every((field) => isHash(source.admissionEvidence?.[field])) && anchorMatches > 0 && anchorMatches < candidateAnchorFields.length) throw new Error("candidate selected source anchor drift");
+  }
+  const cohort = selectedSources.filter((source) => source.admissionEvidence?.decision === "APPROVED" && admissionHashFields.every((field) => isHash(source.admissionEvidence?.[field]))
+    && candidateAnchorFields.every(([admissionField, buildSpecField]) => source.admissionEvidence[admissionField] === candidateBuildSpec[buildSpecField]));
+  if (cohort.length === 0) throw new Error("candidate admission cohort is empty");
+  for (const field of admissionHashFields) {
+    const values = cohort.map((source) => source.admissionEvidence[field]);
+    if (new Set(values).size !== 1 || !isHash(values[0])) throw new Error(`candidate admission cohort ${field} consensus mismatch`);
+    if ((field !== "operatorMappingLedgerHash" && values[0] !== candidateBuildSpec[candidateAnchorFields.find(([name]) => name === field)?.[1]])) throw new Error(`candidate admission cohort ${field} anchor mismatch`);
+  }
   object(ownerDecision, "owner decision");
   exactKeys(ownerDecision, ["schemaVersion", "artifactKind", "policyVersion", "issue", "candidateId", "sourceId", "snapshotId", "decision", "approvedBy", "approvedAt", "productionUseAllowed", "policyEntry"], "owner decision");
   if (ownerDecision.schemaVersion !== 1 || ownerDecision.artifactKind !== "source-admission-owner-decision" || ownerDecision.policyVersion !== policy.policyVersion) throw new Error("owner decision identity mismatch");
@@ -34,21 +112,19 @@ export function produceAdmission({ ownerDecision, adminReview, snapshot, topolog
   if (ownerDecision.decision !== "APPROVED" || ownerDecision.productionUseAllowed !== true) throw new Error("owner decision is not production approved");
   validateIncheonAccessibilitySnapshotIdentity(snapshot, freshnessPolicy, topologySnapshot);
   const candidate = object(candidates, "candidates").candidates?.find(({ id }) => id === ownerDecision.candidateId);
-  const current = object(inventory, "inventory").sources?.find(({ id }) => id === ownerDecision.sourceId);
+  const current = inventorySources.find(({ id }) => id === ownerDecision.sourceId);
   if (!candidate || !current) throw new Error("candidate or source missing");
   if (snapshot.sourceId !== ownerDecision.sourceId || snapshot.snapshotId !== ownerDecision.snapshotId) throw new Error("snapshot identity mismatch");
   if (adminReview.sampleEvidenceHash !== snapshot.rowsSha256 || !isHash(snapshot.rawSha256) || !isHash(snapshot.schemaFingerprint)) throw new Error("snapshot evidence mismatch");
   const source = object(adminReview.productionSource, "production source");
   for (const field of ["id", "provider", "datasetUrl", "coverage", "coverageScope", "fieldsProvided", "capabilities", "license"]) if (!same(source[field], current[field])) throw new Error(`production source ${field} mismatch`);
   validateQuotaEvidence(adminReview.quotaEvidence, "admin review quota");
-  if (!same(adminReview.quotaEvidence, source.admissionEvidence?.quotaEvidence)) throw new Error("production source quota mismatch");
+  if (adminReview.quotaEvidence.productionUseAllowed !== true) throw new Error("admin review quota is not production approved");
+  if (source.admissionEvidence?.quotaEvidence && !same(adminReview.quotaEvidence, source.admissionEvidence.quotaEvidence)) throw new Error("production source quota mismatch");
   if (adminReview.licenseEvidenceHash !== sha(JSON.stringify(sortJson(current.license)))) throw new Error("admin review license mismatch");
-  const admitted = inventory.sources.filter((item) => item.id !== ownerDecision.sourceId && item.admissionEvidence?.decision === "APPROVED");
-  for (const field of ["aliasLedgerHash", "operatorMappingLedgerHash", "facilityEvidenceLedgerHash", "routeEvidenceLedgerHash", "overrideHash"]) {
-    const values = admitted.map((item) => item.admissionEvidence?.[field]);
-    if (values.length === 0 || values.some((value) => !isHash(value))
-      || new Set(values).size !== 1 || !isHash(adminReview[field])
-      || adminReview[field] !== values[0]) throw new Error(`admin review ${field} consensus mismatch`);
+  for (const field of admissionHashFields) {
+    const value = cohort[0].admissionEvidence[field];
+    if (!isHash(adminReview[field]) || adminReview[field] !== value) throw new Error(`admin review ${field} consensus mismatch`);
   }
   const policyEntry = object(ownerDecision.policyEntry, "policy entry");
   exactKeys(policyEntry, ["sourceId", "sourceClassId", "retentionClassId", "ownerRole", "stewardRole", "approvalRole", "escalationHours", "alertRoute", "licenseReview"], "policy entry");
@@ -71,9 +147,13 @@ export function produceAdmission({ ownerDecision, adminReview, snapshot, topolog
 
 async function main() {
   const argv = process.argv.slice(2); const names = ["--owner-decision", "--admin-review", "--snapshot", "--topology-snapshot", "--inventory", "--candidates", "--policy", "--output-directory"]; if (argv.length !== names.length * 2 || new Set(argv.filter((_, i) => i % 2 === 0)).size !== names.length || argv.filter((_, i) => i % 2 === 0).some((name) => !names.includes(name))) throw new Error("invalid arguments"); const file = (name) => { const index = argv.indexOf(name); if (index < 0 || !argv[index + 1]) throw new Error(`${name} is required`); return path.resolve(root, argv[index + 1]); };
-  const [ownerDecision, adminReview, snapshot, topologySnapshot, inventory, candidates, policy] = await Promise.all(["--owner-decision", "--admin-review", "--snapshot", "--topology-snapshot", "--inventory", "--candidates", "--policy"].map(async (name) => JSON.parse(await readFile(file(name), "utf8"))));
+  const inventoryPath = file("--inventory"); if (inventoryPath !== path.join(root, canonicalInventoryPath)) throw new Error("inventory path must be canonical");
+  const [ownerDecision, adminReview, snapshot, topologySnapshot, inventoryBytes, candidates, policy, candidateBuildSpecBytes, releaseRequestBytes, hashEvidenceBytes] = await Promise.all(["--owner-decision", "--admin-review", "--snapshot", "--topology-snapshot", "--inventory", "--candidates", "--policy"].map((name) => readFile(file(name))).concat([
+    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json")), readFile(path.join(root, "tools/datapack/release/release-request.json")), readFile(path.join(root, "tools/datapack/release/hash-evidence.json")),
+  ]));
+  const [parsedOwnerDecision, parsedAdminReview, parsedSnapshot, parsedTopologySnapshot, parsedInventory, parsedCandidates, parsedPolicy, candidateBuildSpec, releaseRequest, hashEvidence] = [ownerDecision, adminReview, snapshot, topologySnapshot, inventoryBytes, candidates, policy, candidateBuildSpecBytes, releaseRequestBytes, hashEvidenceBytes].map((value) => JSON.parse(value));
   const freshnessPolicy = JSON.parse(await readFile(path.join(root, "release/product-gates/datapack-freshness-sla.json"), "utf8"));
-  const result = produceAdmission({ ownerDecision, adminReview, snapshot, topologySnapshot, inventory, candidates, policy, freshnessPolicy });
+  const result = produceAdmission({ ownerDecision: parsedOwnerDecision, adminReview: parsedAdminReview, snapshot: parsedSnapshot, topologySnapshot: parsedTopologySnapshot, inventory: parsedInventory, inventoryBytes, candidates: parsedCandidates, policy: parsedPolicy, freshnessPolicy, candidateBuildSpec, candidateBuildSpecBytes, releaseRequest, releaseRequestBytes, hashEvidence, hashEvidenceBytes });
   const output = file("--output-directory"); const parent = path.dirname(output);
   let parentStat;
   try { parentStat = await lstat(parent); } catch (error) {
