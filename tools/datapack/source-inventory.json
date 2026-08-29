@@ -2369,10 +2369,10 @@
           "accessibility_facilities"
         ]
       },
-      "requiredForProductionPack": false,
+      "requiredForProductionPack": true,
       "productionUseAllowed": true,
       "updateFrequency": "daily admission refresh",
-      "observedDataUpdatedAt": "2026-07-24",
+      "observedDataUpdatedAt": "2026-08-28",
       "retrievedAt": "2026-08-28",
       "license": {
         "type": "PUBLIC_DATA_FREE_USE",
@@ -2415,50 +2415,6 @@
           "unsupportedNotes": "설치 대수 정적 정보이며 실시간 운행 상태가 아니다. 비역사 시설(환기구·대피) 행은 skip한다. CSV에 없는 시설은 공식 미게재로 count=0이다. 7호선(line-15) wheelchair CSV 행은 0건이다"
         }
       },
-      "accessibilityAdmissionEvidence": {
-        "issue": 2492,
-        "materializer": "tools/datapack/materialize-incheon-accessibility.mjs",
-        "verificationTest": "tools/datapack/materialize-incheon-accessibility.test.mjs",
-        "snapshotId": "incheon-transit-accessibility-20260828",
-        "snapshotPath": "tools/datapack/sources/incheon-transit-accessibility-20260828.json",
-        "capturedAt": "2026-08-28T04:33:56.000Z",
-        "freshUntil": "2026-08-29T04:33:56.000Z",
-        "stationCount": 71,
-        "rowCount": 71,
-        "facilityCount": 213,
-        "rawSha256": "3f29b437f2c6f4145dea67535839684223f8458d610b241580ed0a6a499ba67c",
-        "rowsSha256": "95017fce6e5ba984e1d43281891d57e6d2e49347939c118e1c36e5c67c905bd3",
-        "datasetIds": [
-          "15083478",
-          "15010199",
-          "15146049"
-        ],
-        "topologySourceId": "incheon-transit-station-info",
-        "topologySnapshotId": "incheon-transit-station-info-20260828",
-        "topologyContentSha256": "9b0ac6b9f7130620c8efb0b2e8ef35bbaed070b69c02d24a192ea09f57c37e6a",
-        "topologyLineages": [
-          {
-            "sourceId": "incheon-transit-station-info",
-            "snapshotId": "incheon-transit-station-info-20260828",
-            "contentSha256": "9b0ac6b9f7130620c8efb0b2e8ef35bbaed070b69c02d24a192ea09f57c37e6a",
-            "lineId": "line-42b5805f3b5a"
-          },
-          {
-            "sourceId": "incheon-transit-station-info",
-            "snapshotId": "incheon-transit-station-info-20260828",
-            "contentSha256": "9b0ac6b9f7130620c8efb0b2e8ef35bbaed070b69c02d24a192ea09f57c37e6a",
-            "lineId": "line-98718184f016"
-          }
-        ],
-        "membershipLineages": [
-          {
-            "sourceId": "incheon-transit-station-info",
-            "snapshotId": "incheon-transit-station-info-20260828",
-            "contentSha256": "9b0ac6b9f7130620c8efb0b2e8ef35bbaed070b69c02d24a192ea09f57c37e6a",
-            "lineId": "line-15b3b8a93259"
-          }
-        ]
-      },
       "admissionEvidence": {
         "artifactKind": "source-admission-pipeline-evidence-summary",
         "issue": 622,
@@ -2487,6 +2443,30 @@
           "unlockStatus": "not_required"
         },
         "sourceInventorySha256": "805c5da1d02ab8ad266a30fee667295a31db95f1b3a22efe84c16ff2fa566bba"
+      },
+      "registrationEvidence": {
+        "artifactKind": "source-registration-evidence",
+        "sourceId": "incheon-transit-accessibility",
+        "snapshotId": "incheon-transit-accessibility-20260828T043356000Z",
+        "capturedAt": "2026-08-28T04:33:56.000Z",
+        "snapshotFileSha256": "e057ac1dc959d116053c300cc5eab7e2e125979c4fd0155403e15e532b7d0a8b",
+        "snapshotRawSha256": "3f29b437f2c6f4145dea67535839684223f8458d610b241580ed0a6a499ba67c",
+        "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/incheon-transit-accessibility/20260828/ccfac4c6c454fe2c2b81373a33909e4bd34cc9ff6b0186276a28226a2262610f.json",
+        "rawObjectSha256": "ccfac4c6c454fe2c2b81373a33909e4bd34cc9ff6b0186276a28226a2262610f",
+        "contentSha256": "95017fce6e5ba984e1d43281891d57e6d2e49347939c118e1c36e5c67c905bd3",
+        "normalizedSchemaFingerprint": "793a13f30d59d005223245f2c7211351c3fbcc54708fc9cf895d39723c413a19",
+        "claimBindingsSha256": "4db2f809148010d34fc89de0902e5709e7c19fefde29d03cf2b4504da43c5045",
+        "capturedTopology": {
+          "sourceId": "incheon-transit-station-info",
+          "snapshotId": "incheon-transit-station-info-20260828",
+          "contentSha256": "9b0ac6b9f7130620c8efb0b2e8ef35bbaed070b69c02d24a192ea09f57c37e6a",
+          "claimTopologySha256": "63e040f2bc7fb43b383e523be4f84a705c1f68ad6d9b07bd117a22c3ae5d9924"
+        },
+        "rowCount": 71,
+        "coverageCount": 71,
+        "claimBindingCount": 426,
+        "adminReviewRecordHash": "3c705c2f2d65bd171d2cd4125266c63d0c3dee506cd76405e727573955f580f4",
+        "registeredAt": "2026-08-29T09:57:42.200Z"
       }
     },
     {

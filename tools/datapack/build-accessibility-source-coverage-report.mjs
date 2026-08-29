@@ -135,6 +135,7 @@ export function buildAccessibilitySourceCoverageReport({
         artifacts,
         validClaims,
         sources,
+        snapshotsByIdentity,
         molitTransferSnapshot,
         providerCodeCatalog,
       })
@@ -154,7 +155,7 @@ export function buildAccessibilitySourceCoverageReport({
 }
 
 export function buildStationDomainSourceGate({
-  artifacts, validClaims, sources, molitTransferSnapshot, providerCodeCatalog,
+  artifacts, validClaims, sources, snapshotsByIdentity, molitTransferSnapshot, providerCodeCatalog,
 }) {
   if (artifacts.some((artifact) => !Array.isArray(artifact.stationLines) || artifact.stationLines.length === 0)) {
     throw new Error("station domain gate requires station-lines for every artifact");
@@ -169,7 +170,7 @@ export function buildStationDomainSourceGate({
     throw new Error("MOLIT transfer snapshot row count mismatch");
   }
 
-  const evaluated = collectEvaluatedStationDomains(artifacts, validClaims, sources);
+  const evaluated = collectEvaluatedStationDomains(artifacts, validClaims, sources, snapshotsByIdentity);
   const matrix = buildStationDomainMatrix(artifacts, stationLines, evaluated);
   const transferTuplePartition = partitionMolitTransferTuples({
     artifacts,
@@ -198,7 +199,7 @@ export function buildStationDomainSourceGate({
   return { matrix, transferTuplePartition, decision };
 }
 
-function collectEvaluatedStationDomains(artifacts, validClaims, sources) {
+function collectEvaluatedStationDomains(artifacts, validClaims, sources, snapshotsByIdentity) {
   const evaluated = new Map();
   for (const artifact of artifacts) {
     const stationLineByKey = new Map((artifact.stationLines ?? []).map((row) => [
@@ -212,7 +213,12 @@ function collectEvaluatedStationDomains(artifacts, validClaims, sources) {
         : undefined;
       const source = sources.get(claim.sourceId);
       if (!stationLine || !validClaims.has(claim)
-        || !sourceCoversStationDomain(source, stationLine, domain)) continue;
+        || !sourceCoversStationDomain(
+          source,
+          stationLine,
+          domain,
+          snapshotsByIdentity.get(`${claim.sourceId}\0${claim.sourceSnapshotId}`),
+        )) continue;
       const key = `${artifact.artifactId}\0${stationLine.operatorId}\0${domain}`;
       const entry = evaluated.get(key) ?? { stationLines: new Set(), sourceIds: new Set() };
       entry.stationLines.add(`${claim.stationId}\0${claim.lineId}`);
@@ -223,14 +229,17 @@ function collectEvaluatedStationDomains(artifacts, validClaims, sources) {
   return evaluated;
 }
 
-function sourceCoversStationDomain(source, stationLine, domain) {
+function sourceCoversStationDomain(source, stationLine, domain, snapshot) {
   const sourceDomain = {
     FACILITY: "accessibility_facilities",
     EXIT: "indoor_movement_paths",
     TRANSFER: "indoor_movement_paths",
   }[domain];
   const scope = source?.coverageScope;
-  return ABSENCE_EVIDENCE_MODES.has(source?.accessibilityAdmissionEvidence?.absenceEvidenceMode)
+  const absenceEvidenceMode = source?.registrationEvidence
+    ? snapshot?.absenceEvidenceMode
+    : source?.accessibilityAdmissionEvidence?.absenceEvidenceMode;
+  return ABSENCE_EVIDENCE_MODES.has(absenceEvidenceMode)
     && scope?.regionIds?.includes(stationLine.regionId)
     && scope?.operatorIds?.includes(stationLine.operatorId)
     && (!scope.lineIds || scope.lineIds.includes(stationLine.lineId))
@@ -525,14 +534,22 @@ export async function loadSelectableAccessibilityArtifacts({
 
 export async function loadAccessibilityAdmissionSnapshots({ sources, referencedSourceIds, repositoryRoot }) {
   return Promise.all(sources.filter(({ id }) => referencedSourceIds.has(id)).map(async (source) => {
-    const evidence = source.accessibilityAdmissionEvidence;
-    if (!evidence?.snapshotPath) return { sourceId: source.id };
-    const bytes = await readFile(path.resolve(repositoryRoot, evidence.snapshotPath));
+    const reference = source.accessibilityAdmissionEvidence?.snapshotPath
+      ? source.accessibilityAdmissionEvidence
+      : source.registrationEvidence?.snapshotId && source.registrationEvidence?.snapshotFileSha256
+        ? {
+            snapshotId: source.registrationEvidence.snapshotId,
+            snapshotPath: `tools/datapack/sources/${source.registrationEvidence.snapshotId}.json`,
+            snapshotFileSha256: source.registrationEvidence.snapshotFileSha256,
+          }
+        : undefined;
+    if (!reference) return { sourceId: source.id };
+    const bytes = await readFile(path.resolve(repositoryRoot, reference.snapshotPath));
     const snapshot = JSON.parse(bytes);
     return {
       ...snapshot,
       sourceId: snapshot.sourceId,
-      snapshotPath: evidence.snapshotPath,
+      snapshotPath: reference.snapshotPath,
       snapshotFileSha256: digest(bytes),
     };
   }));
@@ -724,7 +741,8 @@ function readAccessibilityArtifact(sqlitePath, artifactId, sqliteSha256) {
         : `SELECT id, from_node_id, to_node_id, edge_type, accessibility_status,
                   '' AS source_id, '' AS source_snapshot_id, '' AS provider_record_hash,
                   '' AS evidence_hash
-           FROM network_edges WHERE edge_type <> 'RIDE' ORDER BY id`).all().map(routeEdgeClaim)
+           FROM network_edges WHERE edge_type <> 'RIDE' ORDER BY id`).all()
+        .map(routeEdgeClaim).filter(Boolean)
       : [];
     const internalEdgeClaims = tableExists(database, "internal_route_edges")
       ? database.prepare(tableHasColumns(database, "internal_route_edges", ["source_id", "source_snapshot_id", "provider_record_hash", "evidence_hash"])
@@ -811,6 +829,10 @@ function readAccessibilityArtifact(sqlitePath, artifactId, sqliteSha256) {
 }
 
 function routeEdgeClaim(row) {
+  if (typeof row.accessibility_status !== "string" || row.accessibility_status.trim() === "") {
+    throw new Error(`network edge ${row.id ?? "<unknown>"} has invalid accessibility status`);
+  }
+  if (row.accessibility_status === "UNKNOWN") return undefined;
   const nodeId = [row.from_node_id, row.to_node_id].find((value) => String(value).includes(":"))
     ?? row.from_node_id;
   return {
@@ -868,26 +890,33 @@ function digest(bytes) {
 
 function validateSource(source, snapshotsByIdentity, policiesByIdentity, evaluatedMillis, violations) {
   const evidence = source.accessibilityAdmissionEvidence;
+  const registration = source.registrationEvidence;
   if (source.productionUseAllowed !== true
     || source.license?.redistributionAllowed !== true
     || typeof source.license?.attribution !== "string"
     || source.license.attribution.trim() === "") {
     violations.license.push(`${source.id}:LICENSE_NOT_REDISTRIBUTABLE`);
   }
-  if (!evidence) {
+  if (!evidence && !registration) {
     violations.snapshot.push(`${source.id}:SNAPSHOT_IDENTITY_MISSING`);
     return;
   }
-  if (!sha256(evidence.licenseEvidenceHash)
-    || evidence.licenseEvidenceHash !== source.admissionEvidence?.licenseEvidenceHash) {
+  if (evidence && (!sha256(evidence.licenseEvidenceHash)
+    || evidence.licenseEvidenceHash !== source.admissionEvidence?.licenseEvidenceHash)) {
     violations.license.push(`${source.id}:LICENSE_EVIDENCE_MISMATCH`);
   }
-  if (evidence.decision !== "APPROVED" || evidence.productionUseAllowed !== true) {
+  if (evidence && (evidence.decision !== "APPROVED" || evidence.productionUseAllowed !== true)) {
     violations.provenance.push(`${source.id}:ACCESSIBILITY_ADMISSION_NOT_APPROVED`);
   }
-  const capturedMillis = Date.parse(evidence.capturedAt);
-  const observedMillis = Date.parse(evidence.observedAt);
-  const freshUntilMillis = Date.parse(evidence.freshUntil);
+  if (registration && (source.admissionEvidence?.decision !== "APPROVED"
+    || source.admissionEvidence?.adminReviewRecordHash !== registration.adminReviewRecordHash)) {
+    violations.provenance.push(`${source.id}:REGISTERED_ACCESSIBILITY_ADMISSION_NOT_APPROVED`);
+  }
+  const snapshotId = evidence?.snapshotId ?? registration?.snapshotId;
+  const snapshot = snapshotsByIdentity.get(`${source.id}\0${snapshotId}`);
+  const capturedMillis = Date.parse(snapshot?.capturedAt ?? evidence?.capturedAt);
+  const observedMillis = Date.parse(snapshot?.observedAt ?? evidence?.observedAt);
+  const freshUntilMillis = Date.parse(snapshot?.freshUntil ?? evidence?.freshUntil);
   if (!Number.isFinite(capturedMillis)
     || !Number.isFinite(observedMillis)
     || !Number.isFinite(freshUntilMillis)
@@ -895,8 +924,7 @@ function validateSource(source, snapshotsByIdentity, policiesByIdentity, evaluat
     || observedMillis > evaluatedMillis) {
     violations.freshness.push(`${source.id}:SNAPSHOT_TIME_INVALID`);
   }
-  const snapshot = snapshotsByIdentity.get(`${source.id}\0${evidence.snapshotId}`);
-  if (!snapshot || [
+  if (evidence && (!snapshot || [
     "snapshotPath",
     "capturedAt",
     "observedAt",
@@ -908,15 +936,41 @@ function validateSource(source, snapshotsByIdentity, policiesByIdentity, evaluat
     "absenceEvidenceMode",
   ].some((key) => snapshot[key] !== evidence[key])
     || !sha256(evidence.rawSha256)
-    || !sha256(evidence.contentSha256)) {
+    || !sha256(evidence.contentSha256))) {
     violations.snapshot.push(`${source.id}:SNAPSHOT_IDENTITY_MISMATCH`);
   }
-  const policy = policiesByIdentity.get(`${source.id}\0${evidence.snapshotId}`);
+  if (registration && (!snapshot
+    || registration.sourceId !== source.id
+    || registration.snapshotId !== snapshot.snapshotId
+    || registration.snapshotFileSha256 !== snapshot.snapshotFileSha256
+    || registration.snapshotRawSha256 !== snapshot.rawSha256
+    || registration.contentSha256 !== snapshot.contentSha256
+    || registration.normalizedSchemaFingerprint !== snapshot.schemaFingerprint
+    || registration.claimBindingsSha256 !== snapshot.claimBindingsSha256
+    || registration.rowCount !== snapshot.rowCount
+    || registration.coverageCount !== snapshot.stationCount
+    || registration.claimBindingCount !== snapshot.claimBindings?.length
+    || !sha256(registration.rawObjectSha256)
+    || !sha256(registration.adminReviewRecordHash))) {
+    violations.snapshot.push(`${source.id}:REGISTERED_SNAPSHOT_IDENTITY_MISMATCH`);
+  }
+  const policy = policiesByIdentity.get(`${source.id}\0${snapshotId}`);
   if (!policy
     || policy.snapshotStatus !== "LOCKED"
     || policy.fetchStatus !== "SUCCESS"
     || policy.schemaStatus !== "PASS"
-    || policy.licenseStatus !== "PASS") {
+    || policy.licenseStatus !== "PASS"
+    || policy.redistributionAllowed !== true
+    || policy.credentialRedacted !== true
+    || (registration && (policy.rawObjectUri !== registration.rawObjectUri
+      || policy.rawSha256 !== registration.rawObjectSha256
+      || policy.contentSha256 !== registration.contentSha256
+      || policy.schemaFingerprint !== registration.normalizedSchemaFingerprint
+      || policy.claimBindingsSha256 !== registration.claimBindingsSha256
+      || policy.adminReviewRecordHash !== registration.adminReviewRecordHash
+      || policy.rawReceipt?.snapshotFileSha256 !== registration.snapshotFileSha256
+      || policy.rawReceipt?.snapshotRawSha256 !== registration.snapshotRawSha256
+      || policy.freshnessExpiresAt !== snapshot?.freshUntil))) {
     violations.snapshot.push(`${source.id}:SNAPSHOT_POLICY_MISMATCH`);
   } else if (!Number.isFinite(Date.parse(policy.freshnessExpiresAt))
     || evaluatedMillis >= Date.parse(policy.freshnessExpiresAt)) {
@@ -928,9 +982,10 @@ function validateClaim(artifact, claim, sources, snapshotsByIdentity, violations
   const claimId = `${artifact.artifactId}:${claim.stationId}|${claim.lineId ?? ""}|${claim.facilityType}|${claim.domain}`;
   const source = sources.get(claim.sourceId);
   const evidence = source?.accessibilityAdmissionEvidence;
+  const expectedSnapshotId = evidence?.snapshotId ?? source?.registrationEvidence?.snapshotId;
   const provenanceMissing = !source
     || !claim.sourceId
-    || claim.sourceSnapshotId !== evidence?.snapshotId
+    || claim.sourceSnapshotId !== expectedSnapshotId
     || !sha256(claim.providerRecordHash)
     || !sha256(claim.evidenceHash);
   let valid = true;
@@ -949,11 +1004,17 @@ function validateClaim(artifact, claim, sources, snapshotsByIdentity, violations
     valid = false;
   }
   if (claim.evidenceKind === "NOT_EXISTS"
-    && !ABSENCE_EVIDENCE_MODES.has(evidence?.absenceEvidenceMode)) {
+    && !ABSENCE_EVIDENCE_MODES.has(source?.registrationEvidence
+      ? snapshotForClaim(snapshotsByIdentity, claim)?.absenceEvidenceMode
+      : evidence?.absenceEvidenceMode)) {
     violations.absenceEvidence.push(`${claimId}:ABSENCE_EVIDENCE_MISSING`);
     valid = false;
   }
   return valid;
+}
+
+function snapshotForClaim(snapshotsByIdentity, claim) {
+  return snapshotsByIdentity.get(`${claim.sourceId}\0${claim.sourceSnapshotId}`);
 }
 
 function claimMatchesSnapshot(snapshot, claim) {

@@ -55,3 +55,47 @@ test("accessibility freshness reports missing admission without a TypeError", ()
     facilities: [{ sourceId: "missing", sourceSnapshotId: undefined }],
   }], { sources: [] }, []), /production accessibility evidence mismatch: missing/);
 });
+
+test("registered Incheon accessibility freshness uses the generic candidate projection", () => {
+  const sourceId = "incheon-transit-accessibility";
+  const snapshotId = "incheon-transit-accessibility-20260828T043356000Z";
+  const evidenceHash = "a".repeat(64);
+  const schemaFingerprint = "b".repeat(64);
+  const claimBindingsSha256 = "c".repeat(64);
+  const adminReviewRecordHash = "d".repeat(64);
+  const rawSha256 = "e".repeat(64);
+  const source = {
+    id: sourceId,
+    requiredForProductionPack: true,
+    productionUseAllowed: true,
+    license: { redistributionAllowed: true },
+    admissionEvidence: { sampleEvidenceHash: evidenceHash, adminReviewRecordHash },
+    registrationEvidence: {
+      sourceId,
+      snapshotId,
+      rawObjectUri: "oci://example/incheon.json",
+      rawObjectSha256: rawSha256,
+      normalizedSchemaFingerprint: schemaFingerprint,
+      claimBindingsSha256,
+      adminReviewRecordHash,
+    },
+  };
+  const admission = { source, snapshotId, evidenceHash };
+  assert.equal(productionAccessibilityFreshUntil([{
+    facilities: [{ sourceId, sourceSnapshotId: snapshotId, evidenceHash }],
+  }], { sources: [source] }, [{
+    sourceId,
+    snapshotId,
+    rawObjectUri: "oci://example/incheon.json",
+    rawSha256,
+    schemaFingerprint,
+    adminReviewRecordHash,
+    licenseStatus: "PASS",
+    redistributionAllowed: true,
+    credentialRedacted: true,
+    snapshotStatus: "LOCKED",
+    freshnessExpiresAt: "2026-08-28T00:00:00.000Z",
+  }], new Date("2026-07-28T00:00:00.000Z"), {
+    admittedNonLedgerAccessibility: new Map([[sourceId, admission]]),
+  }), "2026-08-28T00:00:00.000Z");
+});
