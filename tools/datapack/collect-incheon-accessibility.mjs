@@ -29,6 +29,7 @@ const ESCALATOR_DETAIL_URL = `https://www.data.go.kr/data/${ESCALATOR_DATASET_ID
 const WHEELCHAIR_DETAIL_URL = `https://www.data.go.kr/data/${WHEELCHAIR_DATASET_ID}/fileData.do`;
 const SOURCE_ID = "incheon-transit-accessibility";
 const ARTIFACT_KIND = "incheon-accessibility-snapshot";
+const compareStrings = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 const TOPOLOGY_SOURCE_ID = "incheon-transit-station-info";
 const LINE1 = "line-98718184f016";
 const LINE2 = "line-42b5805f3b5a";
@@ -320,8 +321,8 @@ function deriveClaimBindings(rows, topologyScope) {
 }
 
 function canonicalTopologySnapshot(snapshot) {
-  const providerKeys = Object.keys(snapshot).filter((key) => key !== "snapshotId").sort();
-  if (JSON.stringify(providerKeys) !== JSON.stringify([...TOPOLOGY_SNAPSHOT_KEYS].sort())) throw new Error("Incheon topology snapshot has unexpected fields");
+  const providerKeys = Object.keys(snapshot).filter((key) => key !== "snapshotId").sort(compareStrings);
+  if (JSON.stringify(providerKeys) !== JSON.stringify([...TOPOLOGY_SNAPSHOT_KEYS].sort(compareStrings))) throw new Error("Incheon topology snapshot has unexpected fields");
   const canonical = Object.fromEntries(TOPOLOGY_SNAPSHOT_KEYS.map((key) => [key, canonicalTopologyValue(key, snapshot[key])]));
   const capturedDate = canonical.capturedAt?.slice(0, 10).replaceAll("-", "");
   if (!/^\d{8}$/u.test(capturedDate ?? "")) throw new Error("Incheon topology snapshot capturedAt is invalid");
@@ -333,7 +334,7 @@ function canonicalTopologySnapshot(snapshot) {
 
 function exactObject(value, keys, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)
-    || JSON.stringify(Object.keys(value).sort()) !== JSON.stringify([...keys].sort())) {
+    || JSON.stringify(Object.keys(value).sort(compareStrings)) !== JSON.stringify([...keys].sort(compareStrings))) {
     throw new Error(`Incheon topology ${label} has unexpected fields`);
   }
   return Object.fromEntries(keys.map((key) => [key, value[key]]));

@@ -13,13 +13,14 @@ import { validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 const root = path.resolve(import.meta.dirname, "../..");
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const isHash = (value) => typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
+const compareStrings = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 const same = (left, right) => JSON.stringify(sortJson(left)) === JSON.stringify(sortJson(right));
 const object = (value, label) => {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
   return value;
 };
 const exactKeys = (value, fields, label) => {
-  if (!same(Object.keys(value).sort(), [...fields].sort())) throw new Error(`${label} has unknown or missing fields`);
+  if (!same(Object.keys(value).sort(compareStrings), [...fields].sort(compareStrings))) throw new Error(`${label} has unknown or missing fields`);
 };
 
 export function produceAdmission({ ownerDecision, adminReview, snapshot, topologySnapshot, inventory, candidates, policy, freshnessPolicy }) {
