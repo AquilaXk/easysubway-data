@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -20,12 +20,7 @@ async function fixture(t) {
     "--topology-snapshot", path.join(ROOT, "tools/datapack/sources/incheon-transit-station-info-20260828.json"),
     "--observation-output", observationRoot, "--captured-at", "2026-08-28T04:33:56.000Z",
   ]);
-  const repositoryRoot = path.join(root, "repository"); await mkdir(path.join(repositoryRoot, "tools/datapack"), { recursive: true });
-  await cp(path.join(ROOT, "tools/datapack/source-governance-policy.json"), path.join(repositoryRoot, "tools/datapack/source-governance-policy.json"));
-  const governancePath = path.join(repositoryRoot, "tools/datapack/source-governance-policy.json"); const governance = JSON.parse(await readFile(governancePath, "utf8"));
-  governance.sources.push({ sourceId: "incheon-transit-accessibility", sourceClassId: "static_network_metadata", retentionClassId: "standard-90d", ownerRole: "datapack-source-owner", stewardRole: "datapack-data-steward", approvalRole: "datapack-release-approver", escalationHours: 4, alertRoute: "github:area-datapack", licenseReview: { status: "APPROVED", termsHash: "0".repeat(64), reviewedAt: "2026-08-01T00:00:00Z", nextReviewAt: "2027-08-01T00:00:00Z", termsUrl: "https://www.data.go.kr/data/15083478/fileData.do", reviewedProvider: "인천교통공사", reviewedDatasetUrl: "https://www.data.go.kr/data/15083478/fileData.do", redistributionScopes: ["DERIVED_DATAPACK"], approvedByRole: "datapack-release-approver" } });
-  await writeFile(governancePath, `${JSON.stringify(governance)}\n`);
-  return { root, observationRoot, repositoryRoot, receiptPath: path.join(root, "receipt.json") };
+  return { root, observationRoot, receiptPath: path.join(root, "receipt.json") };
 }
 function client() {
   const calls = []; let bytes = null;
