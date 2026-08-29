@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
   "issue": 1996,
-  "builderGitSha": "dc5f1aee3835f524f754186112da075942e4bceb",
+  "builderGitSha": "f825febd2b4d754f0e8249ce41f5f18bb03185e8",
   "builderVersion": "build-datapack.mjs@26",
   "productionScopeId": "capital_pilot_android_v1",
   "truthfulnessRule": "모든 값은 tracked canonical fixture·inventory·official snapshot에서 결정적으로 재산출한다. 2026-07-28 신규 KRIC standard·서울 snapshot을 소비 claim에 결속하고 route 가용성은 추론하지 않는다.",
@@ -55,7 +55,7 @@
   },
   "fixturePath": {
     "value": "tools/datapack/release/capital-production-canonical-pack.json",
-    "sha256": "4842ef60acdcb6614d0e21c1c9abdc5b8bb8ab8865f07923e361ad4f71c0c4c3",
+    "sha256": "4381e77c6d9cd216c6201d8ee4260d459e792e2dc4d05bb12fc92eabefd4d6a4",
     "contract": "#2648에서 배포 중인 capital SQLite 전체를 lossless fixture로 고정하고, 2c72677b builder가 전체 ITX readmission chain과 최종 output identity를 검증한다.",
     "reproductionCommand": "shasum -a 256 tools/datapack/release/capital-production-canonical-pack.json"
   },
