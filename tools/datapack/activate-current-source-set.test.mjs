@@ -1637,20 +1637,18 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
     previousCapital.networkEdges.filter((edge) => !isIncheonTopologyEdge(edge)),
   );
 
-  const boundaryAccessibility = structuredClone(currentIncheonAccessibility);
-  boundaryAccessibility.capturedAt = "2026-08-28T15:01:00.000Z";
-  boundaryAccessibility.freshUntil = "2026-08-29T15:01:00.000Z";
+  const boundaryAccessibility = currentIncheonAccessibility;
   const refreshWithBoundaryAccessibility = ({ inventory = sourceInventory, fixture = canonical } = {}) =>
     buildCurrentTopologyRefreshPrimaryOutputs({
     baseSpec, builderGitSha: "a".repeat(40), sourceInventory: inventory, currentTopology,
     currentTopologyBytes, currentTopologyPath, currentIncheonTopology, currentIncheonTopologyBytes,
     currentIncheonTopologyPath, currentIncheonAccessibility: boundaryAccessibility,
-    currentIncheonAccessibilityBytes: Buffer.from(`${JSON.stringify(boundaryAccessibility)}\n`),
-    currentIncheonAccessibilityPath: "tools/datapack/sources/incheon-transit-accessibility-20260829.json",
+    currentIncheonAccessibilityBytes,
+    currentIncheonAccessibilityPath,
     currentIncheonTimetables, currentIncheonTimetableBytes, currentIncheonTimetablePaths,
     currentItxTopologyEvidencePath, currentItxTopologyEvidenceBytes, baselineTopology,
     baselineTopologyBytes, canonical: fixture, productionInput, productionScopePolicyBytes,
-    buildNow: "2026-08-28T15:01:00.001Z", snapshotBytesByPath, layoutTopologySnapshotBytesById,
+    buildNow, snapshotBytesByPath, layoutTopologySnapshotBytesById,
   });
   const boundaryResult = refreshWithBoundaryAccessibility();
   const boundaryCapital = boundaryResult.canonical.packs.find(({ id }) => id === "capital");
@@ -1693,9 +1691,9 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
     .stationFacilityEvidence.find(({ sourceId }) => sourceId === "incheon-transit-accessibility")
     .sourceSnapshotId = "incheon-transit-accessibility-20260827";
   assert.throws(() => refreshWithBoundaryAccessibility({ fixture: partialOldProvenance }),
-    /old successor snapshot is not exact: incheon-transit-accessibility/);
+    /successor replay rows are invalid: incheon-transit-accessibility/);
 
-  const refreshWithTopology = (topology) => buildCurrentTopologyRefreshPrimaryOutputs({
+  const refreshWithTopology = (topology, fixture = canonical) => buildCurrentTopologyRefreshPrimaryOutputs({
     baseSpec,
     builderGitSha: "a".repeat(40),
     sourceInventory,
@@ -1715,13 +1713,29 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
     currentItxTopologyEvidenceBytes,
     baselineTopology,
     baselineTopologyBytes,
-    canonical,
+    canonical: fixture,
     productionInput,
     productionScopePolicyBytes,
     buildNow,
     snapshotBytesByPath,
     layoutTopologySnapshotBytesById,
   });
+  const registeredReplayCanonical = structuredClone(result.canonical);
+  const registeredReplayCapital = registeredReplayCanonical.packs.find(({ id }) => id === "capital");
+  for (const property of ["facilities", "stationFacilityEvidence"]) {
+    for (const row of registeredReplayCapital[property]) {
+      if (row.sourceId === "incheon-transit-accessibility") {
+        row.sourceSnapshotId = "incheon-transit-accessibility-20260828";
+      }
+    }
+  }
+  const registeredReplay = refreshWithTopology(currentTopology, registeredReplayCanonical);
+  const registeredReplayCapitalResult = registeredReplay.canonical.packs.find(({ id }) => id === "capital");
+  const registeredSnapshotId = currentIncheonAccessibility.snapshotId;
+  assert.ok(["facilities", "stationFacilityEvidence"].every((property) =>
+    registeredReplayCapitalResult[property]
+      .filter(({ sourceId }) => sourceId === "incheon-transit-accessibility")
+      .every(({ sourceSnapshotId }) => sourceSnapshotId === registeredSnapshotId)));
   const withLines = (lines) => {
     const topology = structuredClone(currentTopology);
     topology.lines = lines;

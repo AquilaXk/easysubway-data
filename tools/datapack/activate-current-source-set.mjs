@@ -1151,6 +1151,14 @@ function replaceIncheonCanonicalSlice(canonical, projected, {
       ? binding.snapshot?.snapshotId
       : binding.source?.scheduleAdmissionEvidence?.snapshotId;
   const sourceCapturedAt = (binding) => binding.snapshot?.capturedAt;
+  const allowedReplaySnapshotIds = (binding) => {
+    const exactSnapshotId = sourceSnapshotId(binding);
+    if (binding.id !== "incheon-transit-accessibility") return new Set([exactSnapshotId]);
+    const registeredSnapshot = /^incheon-transit-accessibility-(\d{8})T\d{9}Z$/u
+      .exec(exactSnapshotId);
+    if (registeredSnapshot == null) return new Set([exactSnapshotId]);
+    return new Set([exactSnapshotId, `${binding.id}-${registeredSnapshot[1]}`]);
+  };
   const expectedProjectedSource = (binding) => ({
     id: binding.id,
     owner: binding.source?.owner,
@@ -1365,7 +1373,8 @@ function replaceIncheonCanonicalSlice(canonical, projected, {
     if (existing) {
       const isReplay = isDeepStrictEqual(existing, expectedSource);
       if (isReplay) {
-        if (oldRows.some(({ row }) => row.sourceSnapshotId !== sourceSnapshotId(binding))) {
+        const allowedSnapshotIds = allowedReplaySnapshotIds(binding);
+        if (oldRows.some(({ row }) => !allowedSnapshotIds.has(row.sourceSnapshotId))) {
           throw new Error(`Incheon canonical successor replay rows are invalid: ${id}`);
         }
         continue;
