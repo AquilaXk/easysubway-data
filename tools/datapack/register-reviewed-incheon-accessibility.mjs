@@ -91,7 +91,13 @@ function build({ snapshot, snapshotBytes, rawArtifact, rawArtifactBytes, receipt
   validateReceipt(receipt, snapshot, snapshotBytes, rawArtifactBytes, governance, now);
   const fresh = deriveFreshnessExpiresAt({ policy: freshness, sourceClassId: policy.sourceClassId, basisAt: snapshot.capturedAt, evaluationAt: now.toISOString() });
   if (instant(fresh, "freshness") <= now.getTime() || instant(snapshot.freshUntil, "snapshot freshness") <= now.getTime()) throw new Error("Incheon snapshot is stale");
-  const { lineage } = validateCurrentRelease({ inventory, inventoryBytes, ledger, candidate, candidateBytes, request, evidence, governance, governanceBytes, freshness });
+  const { lineage, selected: currentSnapshots } = validateCurrentRelease({ inventory, inventoryBytes, ledger, candidate, candidateBytes, request, evidence, governance, governanceBytes, freshness });
+  const nowMillis = now.getTime();
+  if (nowMillis < instant(candidate.publishedAt, "candidate publishedAt")
+    || currentSnapshots.some((current) => nowMillis < instant(current.retrievedAt, "current snapshot retrievedAt")
+      || (current.rawReceipt?.storedAt != null && nowMillis < instant(current.rawReceipt.storedAt, "current snapshot receipt storedAt")))) {
+    throw new Error("registration time precedes current release evidence");
+  }
   if (lineage.headsBySource[SOURCE] != null || ledger.some(({ sourceId }) => sourceId === SOURCE)) throw new Error("Incheon ledger head already exists");
   const next = { schemaVersion: 1, artifactKind: "official-source-snapshot", snapshotId: snapshot.snapshotId, sourceId: SOURCE, provider: source.provider, retrievedAt: snapshot.capturedAt, sourceUpdatedAt: snapshot.observedAt, rowCount: snapshot.rowCount, coverageCount: snapshot.stationCount, rawSha256: receipt.rawObjectSha256, rawObjectUri: receipt.rawObjectUri, rawReceipt: ledgerReceipt(receipt), contentSha256: snapshot.contentSha256, redactedRequestFingerprint: operationFingerprint(rawArtifact), schemaFingerprint: snapshot.schemaFingerprint, snapshotStatus: "LOCKED", schemaStatus: "PASS", licenseStatus: "PASS", fetchStatus: "SUCCESS", redistributionAllowed: true, credentialRedacted: true, previousSnapshotId: null, freshnessExpiresAt: fresh, rawRetentionExpiresAt: receipt.rawRetentionExpiresAt, providerRecordHashes: snapshot.rows.map((row) => hash(JSON.stringify(row))), claimBindingsSha256: snapshot.claimBindingsSha256, adminReviewRecordHash: source.admissionEvidence.adminReviewRecordHash, governancePolicyVersion: governance.policyVersion, governancePolicySha256: hash(governanceBytes) };
   const nextLedger = [...ledger, next]; validateLineage(nextLedger);
@@ -109,6 +115,7 @@ function build({ snapshot, snapshotBytes, rawArtifact, rawArtifactBytes, receipt
   if (transferIndex !== -1 && transferIndex !== nextCandidate.sourceSnapshots.length - 1) throw new Error("candidate transfer ordering is invalid");
   const insertionIndex = transferIndex === -1 ? nextCandidate.sourceSnapshots.length : transferIndex;
   nextCandidate.sourceSnapshotIds.splice(insertionIndex, 0, next.snapshotId); nextCandidate.sourceSnapshots.splice(insertionIndex, 0, projection);
+  if (!isActiveCandidateSourceSequence(nextCandidate.sourceSnapshots.map(({ sourceId }) => sourceId))) throw new Error("candidate Incheon sequence is invalid");
   const selected = ledgerOrderedSnapshots(nextLedger, nextCandidate.sourceSnapshotIds);
   nextCandidate.sourceSnapshotSetHash = hash(JSON.stringify(selected)); nextCandidate.sourceInventorySha256 = hash(JSON.stringify(nextInventory)); nextCandidate.publishedAt = now.toISOString();
   if (nextCandidate.networkEdgeEvidence?.sourceInventory) nextCandidate.networkEdgeEvidence.sourceInventory.sha256 = hash(nextInventoryBytes);

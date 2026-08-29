@@ -309,8 +309,9 @@ function deriveClaimBindings(rows, topologyScope) {
         installationStatus: installed ? "INSTALLED" : "NOT_INSTALLED", strictRouteEligible: false,
         strictRouteEligibleReason: installed ? "OPERATION_STATUS_UNKNOWN" : "FACILITY_NOT_INSTALLED",
       };
-      bindings.push({ stationId: member.stationId, lineId: "", sourceLineId: member.lineId, stationCode: member.stationCode, facilityType, providerRecordHash: common.providerRecordHash, evidenceHash: sha256(JSON.stringify(rows)) });
-      bindings.push({ stationId: member.stationId, lineId: member.lineId, sourceLineId: member.lineId, stationCode: member.stationCode, facilityType, providerRecordHash: common.providerRecordHash, evidenceHash: sha256(JSON.stringify(rows)) });
+      const evidenceHash = sha256(JSON.stringify(rows));
+      bindings.push({ ...common, lineId: "", sourceLineId: member.lineId, evidenceHash });
+      bindings.push({ ...common, lineId: member.lineId, sourceLineId: member.lineId, evidenceHash });
     }
   }
   if (bindings.length !== EXPECTED_STATION_COUNT * CLAIM_TYPES.length * 2

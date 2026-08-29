@@ -33,17 +33,23 @@ const CURRENT_CAPITAL_BASE_SOURCE_IDS = Object.freeze([
   "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
 ]);
 
-test("active candidate source sequence는 public successor exact six와 TRANSFER-last seven만 허용한다", () => {
+test("active candidate source sequence는 exact public successor, Incheon, and TRANSFER-last variants만 허용한다", () => {
   const six = [
     "seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility",
     "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info",
   ];
   const seven = [...six, "seoul-metro-transfer-distance-duration"];
+  const sevenWithIncheon = [...six, "incheon-transit-accessibility"];
+  const eightWithIncheon = [...sevenWithIncheon, "seoul-metro-transfer-distance-duration"];
   assert.equal(isActiveCandidateSourceSequence(six), true);
   assert.equal(isActiveCandidateSourceSequence(seven), true);
+  assert.equal(isActiveCandidateSourceSequence(sevenWithIncheon), true);
+  assert.equal(isActiveCandidateSourceSequence(eightWithIncheon), true);
   assert.equal(isActiveCandidateSourceSequence([...seven].reverse()), false);
   assert.equal(isActiveCandidateSourceSequence([...six, "other-source"]), false);
   assert.equal(isActiveCandidateSourceSequence([...six, six.at(-1)]), false);
+  assert.equal(isActiveCandidateSourceSequence([...six, "seoul-metro-transfer-distance-duration", "incheon-transit-accessibility"]), false);
+  assert.equal(isActiveCandidateSourceSequence([...sevenWithIncheon, "incheon-transit-accessibility"]), false);
   assert.equal(isActiveCandidateSourceSequence([
     "seoulmetro-cyberstation-route-map", ...six.slice(1),
   ]), false);

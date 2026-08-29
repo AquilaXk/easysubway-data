@@ -22,7 +22,14 @@ async function fixture(t) {
   const manifest = JSON.parse(await readFile(path.join(observationRoot, "observation.json"), "utf8")); const snapshot = JSON.parse(await readFile(path.join(observationRoot, manifest.snapshotFile), "utf8")); const rawBytes = await readFile(path.join(observationRoot, manifest.rawArtifactFile));
   assert.equal(snapshot.snapshotId, source.admissionEvidence.snapshotId); assert.equal(snapshot.rawSha256, source.admissionEvidence.rawSha256);
   const receiptPath = path.join(root, "receipt.json"); const receipt = { schemaVersion: 1, artifactKind: "incheon-accessibility-raw-object-receipt", sourceId: source.id, snapshotId: snapshot.snapshotId, snapshotRawSha256: snapshot.rawSha256, capturedAt, snapshotFileSha256: manifest.snapshotFileSha256, rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/${source.id}/${capturedAt.slice(0, 10).replaceAll("-", "")}/${sha(rawBytes)}.json`, rawObjectSha256: sha(rawBytes), byteSize: rawBytes.length, storedAt: "2026-08-28T04:40:00.000Z", rawRetentionExpiresAt: "2026-11-26T04:33:56.000Z" }; await writeFile(receiptPath, JSON.stringify(receipt));
-  return { root, observationRoot, receiptPath, now: new Date("2026-08-28T04:50:00.000Z") };
+  const candidate = JSON.parse(await readFile(path.join(root, fixed[2]), "utf8"));
+  const ledger = JSON.parse(await readFile(path.join(root, fixed[1]), "utf8"));
+  const selected = ledger.filter(({ snapshotId }) => candidate.sourceSnapshotIds.includes(snapshotId));
+  const latestInput = Math.max(
+    Date.parse(candidate.publishedAt),
+    ...selected.flatMap(({ retrievedAt, rawReceipt }) => [Date.parse(retrievedAt), ...(rawReceipt?.storedAt == null ? [] : [Date.parse(rawReceipt.storedAt)])]),
+  );
+  return { root, observationRoot, receiptPath, now: new Date(latestInput + 1) };
 }
 async function removeTransferPrestate(root) {
   const candidatePath = path.join(root, fixed[2]);
@@ -70,7 +77,7 @@ test("registers exactly six reviewed outputs and preserves atomic prestate", asy
   assert.deepEqual(registered.previousSnapshotId, null); assert.deepEqual(registered.providerRecordHashes, registeredSnapshot.rows.map((row) => sha(JSON.stringify(row)))); assert.equal(registered.claimBindingsSha256, registeredSnapshot.claimBindingsSha256); assert.equal(registeredSnapshot.claimBindings.length, 426);
   assert.notEqual(registered.redactedRequestFingerprint, registered.rawSha256); assert.deepEqual(Object.keys(registered.rawReceipt), ["schemaVersion", "artifactKind", "sourceId", "snapshotId", "snapshotRawSha256", "capturedAt", "snapshotFileSha256", "rawObjectUri", "rawObjectSha256", "byteSize", "storedAt", "rawRetentionExpiresAt"]); assert.equal(registered.rawReceipt.capturedAt, "2026-08-28T04:33:56.000Z"); assert.equal(registered.adminReviewRecordHash, source.admissionEvidence.adminReviewRecordHash);
   assert.deepEqual(candidate.sourceSnapshots.map(({ sourceId }) => sourceId), ["seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info", "incheon-transit-accessibility", "seoul-metro-transfer-distance-duration"]);
-  assert.equal(Object.hasOwn(candidate.networkEdgeEvidence, "incheonAccessibility"), false); assert.equal(candidate.publishedAt, "2026-08-28T04:50:00.000Z");
+  assert.equal(Object.hasOwn(candidate.networkEdgeEvidence, "incheonAccessibility"), false); assert.equal(candidate.publishedAt, value.now.toISOString());
   const selectedLedgerOrder = ledger.filter(({ snapshotId }) => candidate.sourceSnapshotIds.includes(snapshotId));
   assert.equal(candidate.sourceSnapshotSetHash, sha(JSON.stringify(selectedLedgerOrder))); assert.equal(request.buildSpecSha256, sha(outputs[3].bytes)); assert.deepEqual(evidence.perSourceEvidence.map(({ sourceId }) => sourceId), selectedLedgerOrder.map(({ sourceId }) => sourceId)); assert.equal(evidence.perSourceEvidence.length, 8); assert.equal(evidence.sourceSnapshots.order.includes("incheon-transit-accessibility"), true); assert.match(evidence.sourceSnapshots.specRowRawSha256Note, /OCI object hash/);
   await commitReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot: value.root, outputs, acquireLease: noLease }); assert.equal(JSON.parse(await readFile(path.join(value.root, outputs[0].relative))).sourceId, "incheon-transit-accessibility");
@@ -86,6 +93,8 @@ test("rejects receipt raw, captured-at, URI, and admitted-topology mutations bef
   const licenseDrift = await fixture(t); const inventoryPath = path.join(licenseDrift.root, fixed[0]); const inventory = JSON.parse(await readFile(inventoryPath, "utf8")); inventory.sources.find(({ id }) => id === "incheon-transit-accessibility").admissionEvidence.licenseEvidenceHash = "0".repeat(64); await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`); await assert.rejects(buildReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot: licenseDrift.root, observationRoot: licenseDrift.observationRoot, receiptPath: licenseDrift.receiptPath, now: licenseDrift.now }), /receipt-pending production admission/);
 
   const unauthorized = await fixture(t); const requestPath = path.join(unauthorized.root, fixed[3]); const request = JSON.parse(await readFile(requestPath, "utf8")); request.approvedLedgerHash = "0".repeat(64); await writeFile(requestPath, `${JSON.stringify(request)}\n`); await assert.rejects(buildReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot: unauthorized.root, observationRoot: unauthorized.observationRoot, receiptPath: unauthorized.receiptPath, now: unauthorized.now }), /release prestate/);
+
+  const nonMonotonic = await fixture(t); const nonMonotonicCandidate = JSON.parse(await readFile(path.join(nonMonotonic.root, fixed[2]), "utf8")); await assert.rejects(buildReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot: nonMonotonic.root, observationRoot: nonMonotonic.observationRoot, receiptPath: nonMonotonic.receiptPath, now: new Date(Date.parse(nonMonotonicCandidate.publishedAt) - 1) }), /registration time/);
 });
 test("recovers a committed journal and preserves a foreign prepared replacement", async (t) => {
   const value = await fixture(t); const outputs = await buildReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot: value.root, observationRoot: value.observationRoot, receiptPath: value.receiptPath, now: value.now });

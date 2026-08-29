@@ -83,6 +83,24 @@ test("인천 accessibility collector는 엘리베이터·에스컬레이터·휠
   assert.equal(snapshot.contentSha256, snapshot.rowsSha256);
   assert.equal(snapshot.absenceEvidenceMode, "EXHAUSTIVE_LIST");
   assert.equal(snapshot.claimBindings.length, 426);
+  for (const binding of snapshot.claimBindings) {
+    const installed = binding.count > 0;
+    assert.equal(binding.evidenceKind, installed ? "EXISTS" : "NOT_EXISTS");
+    assert.equal(binding.absenceEvidenceMode, installed ? null : "EXHAUSTIVE_LIST");
+    assert.equal(binding.installationStatus, installed ? "INSTALLED" : "NOT_INSTALLED");
+    assert.equal(binding.strictRouteEligible, false);
+    assert.equal(binding.strictRouteEligibleReason, installed ? "OPERATION_STATUS_UNKNOWN" : "FACILITY_NOT_INSTALLED");
+  }
+  const zeroCount = snapshot.claimBindings.find(({ count }) => count === 0);
+  const installed = snapshot.claimBindings.find(({ count }) => count > 0);
+  assert.deepEqual(
+    { evidenceKind: zeroCount.evidenceKind, absenceEvidenceMode: zeroCount.absenceEvidenceMode, installationStatus: zeroCount.installationStatus, strictRouteEligibleReason: zeroCount.strictRouteEligibleReason },
+    { evidenceKind: "NOT_EXISTS", absenceEvidenceMode: "EXHAUSTIVE_LIST", installationStatus: "NOT_INSTALLED", strictRouteEligibleReason: "FACILITY_NOT_INSTALLED" },
+  );
+  assert.deepEqual(
+    { evidenceKind: installed.evidenceKind, absenceEvidenceMode: installed.absenceEvidenceMode, installationStatus: installed.installationStatus, strictRouteEligibleReason: installed.strictRouteEligibleReason },
+    { evidenceKind: "EXISTS", absenceEvidenceMode: null, installationStatus: "INSTALLED", strictRouteEligibleReason: "OPERATION_STATUS_UNKNOWN" },
+  );
   const transferFacilityBindings = snapshot.claimBindings.filter(({ lineId }) => lineId === "")
     .reduce((groups, binding) => {
       const key = `${binding.stationId}:${binding.facilityType}`;
