@@ -80,15 +80,18 @@ function routeEdgeSeedForEmission(routeEdgeInput) {
     throw new Error("route-edge producer candidate is required");
   }
   const expectedKeys = ["candidateId", "evaluatorVersion", "policyVersion", "sourceSetSha256", "stationSetSha256", "topologySha256"];
-  if (canonicalJson(Object.keys(candidate).sort(bytewise)) !== canonicalJson(expectedKeys.sort(bytewise))) {
+  const candidateKeys = Object.keys(candidate);
+  candidateKeys.sort(bytewise);
+  expectedKeys.sort(bytewise);
+  if (canonicalJson(candidateKeys) !== canonicalJson(expectedKeys)) {
     throw new Error("route-edge producer candidate keys mismatch");
   }
-  const topologySha256 = requiredSha256(candidate.topologySha256, "route-edge producer topology sha256");
+  const { topologySha256, ...seedCandidate } = candidate;
+  const producerTopologySha256 = requiredSha256(topologySha256, "route-edge producer topology sha256");
   const rides = routeEdgeInput.routeEdges?.filter(({ edgeType }) => edgeType === "RIDE");
-  if (topologySha256 !== canonicalRideEdgeSetSha256(rides)) {
+  if (producerTopologySha256 !== canonicalRideEdgeSetSha256(rides)) {
     throw new Error("route-edge producer topology identity mismatch");
   }
-  const { topologySha256: _topologySha256, ...seedCandidate } = candidate;
   return { ...routeEdgeInput, candidate: seedCandidate };
 }
 
