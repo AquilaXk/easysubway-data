@@ -50,8 +50,14 @@ test("#449 derives the exact current PK set with one owner and honest NO_GO", as
     .includes("busan-transportation-accessibility"));
   assert.equal(inventoryOnly.officialSourceFamily.state, "EVIDENCED");
   assert.equal(inventoryOnly.lineage.licenseLineage.state, "EVIDENCED");
-  assert.equal(inventoryOnly.lineage.admissionLineage.state, "EVIDENCED");
+  assert.equal(inventoryOnly.lineage.freshnessLineage.state, "PENDING");
+  assert.equal(inventoryOnly.lineage.admissionLineage.state, "PENDING");
   assert.equal(inventoryOnly.lineage.runtimeLineage.state, "PENDING");
+
+  const incheonAccessibility = ledger.rows.find(({ operatorId, sourceDomain }) =>
+    operatorId === "incheon-transit" && sourceDomain === "accessibility_facilities");
+  assert.equal(incheonAccessibility.childOwner.issue, 622);
+  assert.equal(inventoryOnly.childOwner.issue, 478);
 });
 
 test("#449 rejects unsafe inventory scope, owner, and current-head drift", async () => {
@@ -89,4 +95,27 @@ test("#449 candidate selection is artifact evidence, not completion of every lin
   assert.equal(row.lineage.artifactLineage.state, "EVIDENCED");
   assert.equal(row.lineage.runtimeLineage.state, "PENDING");
   assert.notEqual(Object.values(row.lineage).every(({ state }) => state === "EVIDENCED"), true);
+});
+
+test("#449 keeps expired and decision-less Busan accessibility lineage pending", async () => {
+  const input = await inputs();
+  const bound = structuredClone(input);
+  const busan = bound.inventory.sources.find(({ id }) => id === "busan-transportation-accessibility");
+  const templateHead = bound.candidateBuildSpec.sourceSnapshots[0];
+  const templateSnapshot = bound.sourceSnapshots.find(({ snapshotId }) => snapshotId === templateHead.snapshotId);
+  const snapshotId = "busan-transportation-accessibility-expired";
+  const expiredHead = {
+    ...templateHead,
+    snapshotId,
+    sourceId: busan.id,
+    freshnessExpiresAt: bound.candidateBuildSpec.publishedAt,
+  };
+  bound.sourceSnapshots.push({ ...templateSnapshot, snapshotId, sourceId: busan.id });
+  bound.candidateBuildSpec.sourceSnapshotIds.push(snapshotId);
+  bound.candidateBuildSpec.sourceSnapshots.push(expiredHead);
+
+  const ledger = buildNationwideRequirementOwnershipLedger(bound);
+  const row = ledger.rows.find(({ disposition }) => disposition.admittedSourceIds.includes(busan.id));
+  assert.equal(row.lineage.freshnessLineage.state, "PENDING");
+  assert.equal(row.lineage.admissionLineage.state, "PENDING");
 });

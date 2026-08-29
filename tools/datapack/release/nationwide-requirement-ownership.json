@@ -14,6 +14,7 @@
     {"issue": 456, "operatorId": "seoul-metro", "sourceDomain": "route_graph_topology"},
     {"issue": 455, "sourceDomain": "station_line_membership"},
     {"issue": 454, "sourceDomain": "schedule_timetable"},
+    {"issue": 622, "operatorId": "incheon-transit", "sourceDomain": "accessibility_facilities"},
     {"issue": 478, "sourceDomain": "accessibility_facilities"},
     {"issue": 452, "sourceDomain": "realtime_arrivals"},
     {"issue": 453, "sourceDomain": "demand_reference"},

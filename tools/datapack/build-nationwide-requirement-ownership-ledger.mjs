@@ -69,8 +69,8 @@ function currentHeads(sourceSnapshots, candidateBuildSpec) {
 function pending(reason, childOwner) { return { state: "PENDING", reason, owner: childOwner }; }
 
 function admittedEvidence(source) {
-  return Object.entries(source).filter(([key, value]) => key.endsWith("AdmissionEvidence")
-    && value && typeof value === "object").map(([kind, value]) => ({ kind, ...value }));
+  return Object.entries(source).filter(([key, value]) => (key === "admissionEvidence" || key.endsWith("AdmissionEvidence"))
+    && value && typeof value === "object" && !Array.isArray(value)).map(([kind, value]) => ({ kind, ...value }));
 }
 
 function evidenced(refs) { return { state: "EVIDENCED", refs }; }
@@ -79,7 +79,13 @@ function firstRuntimeEvidence(source) {
   return source.runtimeLineageEvidence ?? source.runtimeEvidence ?? null;
 }
 
-function lineageFor(sources, heads, childOwner, dispositionStatus) {
+function isStrictlyAfter(value, publishedAt) {
+  const timestamp = Date.parse(value);
+  const cutoff = Date.parse(publishedAt);
+  return Number.isFinite(timestamp) && Number.isFinite(cutoff) && timestamp > cutoff;
+}
+
+function lineageFor(sources, heads, publishedAt, childOwner, dispositionStatus) {
   const pendingReason = dispositionStatus === "INVENTORY_ADMITTED"
     ? "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED" : "CONTRACT_GAP";
   const centralHeads = sources.map(({ id }) => heads.get(id)).filter(Boolean);
@@ -96,16 +102,16 @@ function lineageFor(sources, heads, childOwner, dispositionStatus) {
       freshnessExpiresAt: heads.get(source.id).freshnessExpiresAt ?? null,
     } : null,
   }));
-  const freshEnough = fresh.length > 0 && fresh.every((ref) => (ref.observedDataUpdatedAt || ref.retrievedAt)
-    && (ref.admissionEvidence.some(({ capturedAt, freshUntil }) => capturedAt || freshUntil)
-      || ref.currentHead?.freshnessExpiresAt));
+  const freshEnough = fresh.length > 0 && fresh.every((ref) => isStrictlyAfter(ref.currentHead?.freshnessExpiresAt, publishedAt)
+    || ref.admissionEvidence.some(({ freshUntil }) => isStrictlyAfter(freshUntil, publishedAt)));
   const inventoryArtifacts = evidence.filter(({ snapshotId, snapshotPath, rawSha256 }) => snapshotId && snapshotPath && rawSha256)
     .map(({ kind, snapshotId, snapshotPath, rawSha256 }) => ({ kind, snapshotId, snapshotPath, rawSha256 }));
   const runtime = sources.map(firstRuntimeEvidence).filter(Boolean);
   return {
     licenseLineage: sources.length > 0 && licenses.length === sources.length ? evidenced(licenses) : pending(pendingReason, childOwner),
     freshnessLineage: freshEnough ? evidenced(fresh) : pending(pendingReason, childOwner),
-    admissionLineage: sources.length > 0 && evidence.length > 0 && sources.every(({ productionUseAllowed }) => productionUseAllowed === true)
+    admissionLineage: sources.length > 0 && sources.every((source) => source.productionUseAllowed === true
+      && admittedEvidence(source).some(({ decision }) => decision === "APPROVED"))
       ? evidenced(sources.map(({ id, productionUseAllowed }) => ({ sourceId: id, productionUseAllowed, admissions: admittedEvidence(sources.find((source) => source.id === id)) })))
       : pending(pendingReason, childOwner),
     artifactLineage: allCentral
@@ -156,7 +162,7 @@ export function buildNationwideRequirementOwnershipLedger(inputs) {
       childOwner,
       officialSourceFamily: officialSources.length === admittedSources.length && admittedSources.length > 0
         ? evidenced(officialSources) : pending(pendingReason, childOwner),
-      lineage: lineageFor(admittedSources, heads, childOwner, tallyRow.status),
+      lineage: lineageFor(admittedSources, heads, candidateBuildSpec.publishedAt, childOwner, tallyRow.status),
     };
   }).sort((left, right) => compare(left.pk, right.pk));
   if (seen.size !== targetPks.size) throw new Error("ownership PK set drift");
