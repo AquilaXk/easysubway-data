@@ -14,6 +14,13 @@ import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 const REQUIRED_ARGS = ["datapack-root", "build-spec", "station-line-input", "route-edge-input", "repository-git-sha", "key-id", "output"];
 const SIGNED_PATHS = ["compatibility.json", "manifest.json", "manifest.signing-input.json", "payload/accessibility.sqlite.zst", "payload/fare.sqlite.zst", "payload/timetable.sqlite.zst", "payload/topology.sqlite.zst", "provenance.json"];
 const EVIDENCE_PATHS = ["route-accessibility-eligibility.json", "server-route-bundle-final.json"];
+const BOUND_SUPPORT = [
+  ["artifact-inventory.json", "artifactInventory"],
+  ["route-edge-evaluation.json", "routeEdgeEvaluation"],
+  ["source-freshness.json", "sourceFreshness"],
+  ["station-line-accessibility.json", "stationLineAccessibility"],
+];
+const BOUND_EVIDENCE_PATHS = [...BOUND_SUPPORT.map(([file]) => file), EVIDENCE_PATHS[1]];
 const CANONICAL_INPUT_PATHS = [
   ["build-spec.json", "buildSpecPath"],
   ["station-line-input.json", "stationLineInputPath"],
@@ -190,19 +197,26 @@ async function assertCandidateInventory(root) {
 async function validatedEvidence(prepared, candidate, freshUntil) {
   const eligibilityPath = path.join(prepared, EVIDENCE_PATHS[0]);
   const bound = path.join(prepared, "bound");
-  if (!same(await regularTree(bound), [EVIDENCE_PATHS[1]])) {
+  if (!same(await regularTree(bound), BOUND_EVIDENCE_PATHS)) {
     throw new Error("prepared bound route evidence inventory mismatch");
   }
   const finalPath = path.join(bound, EVIDENCE_PATHS[1]);
-  const [eligibility, final] = await Promise.all([
+  const [eligibility, final, ...support] = await Promise.all([
     canonicalJsonFile(eligibilityPath, "route accessibility eligibility"),
     canonicalJsonFile(finalPath, "server route bundle FINAL"),
+    ...BOUND_SUPPORT.map(([file]) => regular(path.join(bound, file), `bound ${file}`)),
   ]);
   if (eligibility.value?.artifactKind !== "route-accessibility-eligibility") {
     throw new Error("route accessibility eligibility artifact kind mismatch");
   }
   const { eligibilitySha256, ...eligibilityPayload } = eligibility.value;
   const finalValue = validateServerRouteBundleFinal(final.value);
+  for (const [index, [, gate]] of BOUND_SUPPORT.entries()) {
+    const bytes = support[index];
+    if (finalValue.gates[gate].state !== "PASS" || finalValue.gates[gate].evidenceSha256 !== sha256(bytes)) {
+      throw new Error("prepared bound route evidence binding mismatch");
+    }
+  }
   if (finalValue.candidate.freshUntil !== freshUntil) {
     throw new Error("prepared route evidence freshUntil mismatch");
   }
