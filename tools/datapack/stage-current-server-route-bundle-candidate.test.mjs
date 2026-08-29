@@ -119,6 +119,38 @@ test("full-capital observation time에 stale인 frozen evidence는 prepare 전�
   }
 });
 
+test("current manifest expiry와 같은 frozen observation time은 prepare 전에 fail-closed 한다", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "route-candidate-observation-window-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const input = await fixture(root);
+  const output = path.join(root, "candidate");
+  await mkdir(output);
+  const stationLine = JSON.parse(await readFile(input.stationLineInputPath, "utf8"));
+  for (const evidence of stationLine.evidenceRows) {
+    evidence.freshUntil = "2026-08-15T04:47:35.000Z";
+  }
+  stationLine.evidenceRows[1].capturedAt = "2026-08-15T03:47:35.000Z";
+  await writeFile(input.stationLineInputPath, JSON.stringify(stationLine));
+  let prepared = false;
+  await assert.rejects(
+    () => stageCurrentServerRouteBundleCandidate({
+      ...input,
+      repositoryGitSha: "b".repeat(40),
+      keyId: "production-v1",
+      output,
+      stages: { prepare: async ({ output: preparedOutput }) => {
+        prepared = true;
+        await writePreparedOutputs(preparedOutput);
+      } },
+    }),
+    /current manifest expiresAt must be after evidence observation time/,
+  );
+  assert.equal(prepared, false);
+  for (const name of ["server-route-bundle", "server-route-bundle-evidence", "server-route-bundle-inputs"]) {
+    await assert.rejects(() => lstat(path.join(output, name)), /ENOENT/);
+  }
+});
+
 test("current manifest expiry가 build publishedAt과 같으면 prepare 전에 fail-closed 한다", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "route-candidate-expiry-window-"));
   t.after(() => rm(root, { recursive: true, force: true }));

@@ -81,6 +81,9 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
   const releaseSequence = positiveInteger(buildSpec.releaseSequence, "build spec releaseSequence");
   const stagedFreshUntil = kstInstant(expiresAt);
   const evaluationAt = deriveCurrentReleaseCandidateObservedAt(stationLine.evidenceRows);
+  if (new Date(evaluationAt).getTime() >= expiresAt.getTime()) {
+    throw new Error("current manifest expiresAt must be after evidence observation time");
+  }
   const temp = await mkdtemp(path.join(output, ".route-candidate-"));
   try {
     const sourceSqlite = path.join(temp, "source.sqlite");
