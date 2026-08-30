@@ -247,9 +247,8 @@ function rebindSuppliedTopologyInventory(inventory, snapshot) {
     topologySnapshotId: snapshot.snapshotId,
     topologyContentSha256: snapshot.contentSha256,
   });
-  for (const sourceId of ["incheon-transit-accessibility", "incheon-line1-train-timetable", "incheon-line2-train-timetable"]) {
-    const evidence = next.sources.find(({ id }) => id === sourceId)[sourceId === "incheon-transit-accessibility"
-      ? "accessibilityAdmissionEvidence" : "scheduleAdmissionEvidence"];
+  for (const sourceId of ["incheon-line1-train-timetable", "incheon-line2-train-timetable"]) {
+    const evidence = next.sources.find(({ id }) => id === sourceId).scheduleAdmissionEvidence;
     evidence.topologySnapshotId = snapshot.snapshotId;
     evidence.topologyContentSha256 = snapshot.contentSha256;
     if (evidence.topologyLineages) evidence.topologyLineages = evidence.topologyLineages.map((lineage) => ({
