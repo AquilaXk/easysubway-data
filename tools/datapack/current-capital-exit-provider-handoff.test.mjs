@@ -14,6 +14,7 @@ import {
   bindCurrentCapitalExitProviderRelease,
   buildCurrentCapitalExitProviderCandidateHandoff,
   buildCurrentCapitalExitProviderSourceHandoffFromLiveChain,
+  canonicalCurrentCapitalExitProviderReleaseBindingJson,
   canonicalCurrentCapitalExitProviderSourceHandoffJson,
   recoverCurrentCapitalExitProviderCandidate,
 } from "./current-capital-exit-provider-handoff.mjs";
@@ -61,7 +62,7 @@ test("candidate reuses the already-published OCI pair without another PUT", asyn
   const consumed = await recoverCurrentCapitalExitProviderCandidate({
     sourceReceiptBytes: handoff.sourceReceiptBytes, ociPlanBytes: handoff.planBytes, externalReceiptBytes: handoff.externalReceiptBytes,
     targetPlanBytes, candidateOperationId: "current-capital-633", operationNow,
-    preflight: { origin: "https://github.com/AquilaXk/easysubway-data.git", branch: "feat/633", clean: true, headSha: "b".repeat(40), upstream: "origin/feat/633", remoteHeadSha: "b".repeat(40) }, reboundOutputPath: reboundPath,
+    preflight: { origin: "git@github.com:AquilaXk/easysubway-data.git", branch: "feat/633", clean: true, headSha: "b".repeat(40), upstream: "origin/feat/633", remoteHeadSha: "b".repeat(40) }, reboundOutputPath: reboundPath,
     client: store, isAncestor: async (from, to) => from === "a".repeat(40) && to === "b".repeat(40),
   });
   assert.equal(consumed.providerCalls, 0);
@@ -73,7 +74,7 @@ test("candidate reuses the already-published OCI pair without another PUT", asyn
   ].map((entryPath) => [entryPath, Buffer.from(entryPath)]));
   const trackedInventory = Object.entries(tracked).map(([entryPath, bytes]) => ({ path: entryPath, sha256: sha(bytes), sizeBytes: bytes.length }));
   const binding = await bindCurrentCapitalExitProviderRelease({
-    candidateReceiptBytes: Buffer.from(`${canonical(JSON.parse(JSON.stringify(consumed.candidateReceipt)))}\n`), reboundBundleBytes: consumed.reboundBundleBytes, preflight: { origin: "https://github.com/AquilaXk/easysubway-data.git", branch: "main", clean: true, headSha: "c".repeat(40), originMainSha: "c".repeat(40), remoteMainSha: "c".repeat(40) }, operationNow,
+    candidateReceiptBytes: Buffer.from(`${canonical(JSON.parse(JSON.stringify(consumed.candidateReceipt)))}\n`), reboundBundleBytes: consumed.reboundBundleBytes, preflight: { origin: "git@github.com:AquilaXk/easysubway-data.git", branch: "main", clean: true, headSha: "c".repeat(40), originMainSha: "c".repeat(40), remoteMainSha: "c".repeat(40) }, operationNow,
     trackedOutputInventory: trackedInventory, trackedOutputs: tracked, isAncestor: async (from, to) => from === "b".repeat(40) && to === "c".repeat(40),
   });
   assert.equal(binding.releaseMainSha, "c".repeat(40)); assert.equal(store.puts, 0); assert.equal(store.gets, 2);
@@ -107,6 +108,13 @@ test("candidate and release binding reject wrong remote identity, stale evidence
   await assert.rejects(bind({ isAncestor: async () => false }), /not an ancestor/);
   await assert.rejects(bind({ inventory: inventory.slice(1) }), /inventory contract/);
   await assert.rejects(bind({ reboundBundleBytes: fixture.bytes }), /rebound bundle drift/);
+  const binding = await bind();
+  for (const inventory of [binding.trackedOutputInventory.slice(1), [{ ...binding.trackedOutputInventory[0], path: "tools/datapack/release/current-exit-admission-v2/substituted.json" }, ...binding.trackedOutputInventory.slice(1)]]) {
+    const selfHashed = { ...binding, trackedOutputInventory: inventory };
+    const { receiptSha256, ...payload } = selfHashed;
+    selfHashed.receiptSha256 = sha(Buffer.from(canonical(payload)));
+    assert.throws(() => canonicalCurrentCapitalExitProviderReleaseBindingJson(selfHashed), /inventory contract/);
+  }
   const reboundRaw = JSON.parse(consumed.reboundBundleBytes); const reboundReceipt = JSON.parse(reboundRaw.collectionReceiptJson);
   const wrongReceipt = buildCurrentKricExitCollectionReceipt({ collectionPlanBytes: Buffer.from(reboundRaw.collectionPlanJson), providerSnapshotBytes: Buffer.from(reboundRaw.providerSnapshotJson), repository: "AquilaXk/easysubway-data", repositorySha: "d".repeat(40), operationId: "current-capital-633", recoveredFrom: reboundReceipt.recoveredFrom });
   const wrongBundle = buildCurrentKricExitCollectionBundle({ collectionPlanBytes: Buffer.from(reboundRaw.collectionPlanJson), providerSnapshotBytes: Buffer.from(reboundRaw.providerSnapshotJson), receipt: wrongReceipt });
