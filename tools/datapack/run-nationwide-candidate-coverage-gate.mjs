@@ -1090,26 +1090,33 @@ async function materializeIncheonTimetableInclusion(fixture, inclusion, { readTr
   });
 }
 
+// 인천 교통약자 편의시설 편입 어댑터(#2595). 대구·부산·대전·광주 편의시설과 같이 정본에 바이트 축이 없어
+// (rawSha256·rowsSha256이 snapshot 내용에서 파생된다) 경로 결속이 유일한 정체성 축이다.
 async function materializeIncheonAccessibilityInclusion(fixture, inclusion, { readTracked, inventory }) {
   assertDeclaredLinesMatchAdmissionScope(inclusion, inventory, INCHEON_ACCESSIBILITY_SOURCE_ID);
   // 노선 번호 정본은 이 지역의 노선을 세우는 역사정보 materializer가 갖는다 — 두 편입의 admission
   // coverageScope.lineIds가 같은 세 노선이라(위 대조가 그것을 강제한다) 같은 표를 대조 상대로 쓴다.
   assertDeclaredLineNumbers(inclusion, INCHEON_STATION_LINES);
-  assertRegisteredSnapshotPath(inventory, INCHEON_ACCESSIBILITY_SOURCE_ID, inclusion.snapshotPath);
+  assertAdmissionSnapshotPath(
+    inventory,
+    INCHEON_ACCESSIBILITY_SOURCE_ID,
+    "accessibilityAdmissionEvidence",
+    inclusion.snapshotPath,
+  );
   const topologySnapshot = await incheonTopologySnapshot(
     inclusion,
     readTracked,
     inventory,
     "topologySnapshotPath",
   );
-  const accessibilitySnapshotBytes = await readTracked(inclusion.snapshotPath, "snapshotPath");
   return materializeIncheonAccessibility({
     baseFixture: fixture,
-    accessibilitySnapshot: parseJsonBytes(accessibilitySnapshotBytes, inclusion.snapshotPath),
-    accessibilitySnapshotBytes,
+    accessibilitySnapshot: parseJsonBytes(
+      await readTracked(inclusion.snapshotPath, "snapshotPath"),
+      inclusion.snapshotPath,
+    ),
     topologySnapshot,
     inventory,
-    topologyMode: "registered-topology-successor",
     now: new Date(inclusion.materializedAt),
   });
 }
@@ -1139,19 +1146,6 @@ function assertAdmissionSnapshotPath(inventory, sourceId, evidenceKey, snapshotP
     throw new Error(
       `pack data inclusion snapshotPath must match the ${sourceId} admission evidence snapshotPath: `
         + `expected ${declared}, got ${snapshotPath}`,
-    );
-  }
-}
-
-function assertRegisteredSnapshotPath(inventory, sourceId, snapshotPath) {
-  const registration = inventory?.sources?.find(({ id }) => id === sourceId)?.registrationEvidence;
-  const expected = typeof registration?.snapshotId === "string"
-    ? `tools/datapack/sources/${registration.snapshotId}.json`
-    : null;
-  if (expected == null || expected !== snapshotPath) {
-    throw new Error(
-      `pack data inclusion snapshotPath must match the ${sourceId} registered snapshot: `
-        + `expected ${expected}, got ${snapshotPath}`,
     );
   }
 }

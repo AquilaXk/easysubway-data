@@ -362,50 +362,28 @@ test("active canonical source inventory excludes retired movement snapshot heads
   ]);
 });
 
-test("current candidate selects fixed and registered canonical provenance heads", () => {
+test("current candidate selects its signed ledger from canonical provenance inventory", () => {
   const canonicalSourceIds = [
     "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
     "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
     "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
-    "incheon-transit-station-info", "incheon-transit-accessibility",
+    "incheon-transit-station-info",
   ];
   const candidateSourceIds = [
     "seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility",
     "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info",
-    "incheon-transit-station-info", "seoul-metro-transfer-distance-duration",
+    "seoul-metro-transfer-distance-duration",
   ];
-  const snapshots = canonicalSourceIds
-    .filter((sourceId) => sourceId !== "incheon-transit-accessibility")
-    .map((sourceId) => ({
-      sourceId,
-      snapshotId: `${sourceId}-head`,
-      rawObjectUri: `oci://source/${sourceId}`,
-      rawSha256: `${sourceId}-raw`,
-      contentSha256: `${sourceId}-content`,
-    }));
+  const snapshots = canonicalSourceIds.map((sourceId) => ({ sourceId, snapshotId: `${sourceId}-head` }));
   const headsBySource = Object.fromEntries(snapshots.map(({ sourceId, snapshotId }) => [sourceId, snapshotId]));
   const canonical = { packs: [{
     id: "capital",
     sourceInventory: canonicalSourceIds.map((id) => ({ id })),
-    stationExits: [
-      { sourceId: "incheon-transit-station-info" },
-      { sourceId: "incheon-transit-accessibility" },
-    ],
+    stationExits: [{ sourceId: "incheon-transit-station-info" }],
   }] };
-  const registered = snapshots.find(({ sourceId }) => sourceId === "incheon-transit-station-info");
-  const sourceInventory = [{
-    id: registered.sourceId,
-    registrationEvidence: {
-      sourceId: registered.sourceId,
-      snapshotId: registered.snapshotId,
-      rawObjectUri: registered.rawObjectUri,
-      rawObjectSha256: registered.rawSha256,
-      contentSha256: registered.contentSha256,
-    },
-  }];
 
   assert.deepEqual(
-    currentCandidateReleaseSnapshots(snapshots, canonical, headsBySource, sourceInventory).map(({ sourceId }) => sourceId),
+    currentCandidateReleaseSnapshots(snapshots, canonical, headsBySource).map(({ sourceId }) => sourceId),
     candidateSourceIds,
   );
   for (const invalidCanonical of [
@@ -416,17 +394,13 @@ test("current candidate selects fixed and registered canonical provenance heads"
     { ...canonical.packs[0], sourceInventory: [...canonicalSourceIds, "seoul-metro-route-map-positions"].map((id) => ({ id })) },
   ]) {
     assert.throws(
-      () => currentCandidateReleaseSnapshots(snapshots, { packs: [invalidCanonical] }, headsBySource, sourceInventory),
+      () => currentCandidateReleaseSnapshots(snapshots, { packs: [invalidCanonical] }, headsBySource),
       /capital canonical active source identity drift/,
     );
   }
   assert.throws(
-    () => currentCandidateReleaseSnapshots(snapshots.filter(({ sourceId }) => sourceId !== "seoul-metro-transfer-distance-duration"), canonical, headsBySource, sourceInventory),
+    () => currentCandidateReleaseSnapshots(snapshots.filter(({ sourceId }) => sourceId !== "seoul-metro-transfer-distance-duration"), canonical, headsBySource),
     /current candidate source head is missing: seoul-metro-transfer-distance-duration/,
-  );
-  assert.throws(
-    () => currentCandidateReleaseSnapshots([...snapshots, registered], canonical, headsBySource, sourceInventory),
-    /current candidate source head is missing: incheon-transit-station-info/,
   );
 });
 
@@ -543,40 +517,6 @@ test("generated hash-evidence commands use and enforce the exact candidate snaps
     assert.equal(hashes.builderGitSha, spec.builderGitSha);
     assert.equal(hashes.identifiers.candidateId.value, spec.candidateId);
     assert.equal(request.candidateId, spec.candidateId);
-    assert.equal(request.buildSpecSha256, createHash("sha256").update(await readFile(path.join(directory, "tools/datapack/release/candidate-build-spec.json"))).digest("hex"));
-    assert.equal(request.approvalId, `release-request-${spec.candidateId}-${request.buildSpecSha256}`);
-    assert.equal(hashes.identifiers.approvalId.value, request.approvalId);
-
-    const initialApprovalId = request.approvalId;
-    await writeFile(
-      path.join(directory, "tools/datapack/release/candidate-build-spec.json"),
-      `${JSON.stringify({ ...spec, candidateId: `${spec.candidateId}-successor` })}\n`,
-    );
-    await syncReleaseEvidence({ releaseRoot: directory });
-    let candidateChangedSpec = JSON.parse(await readFile(path.join(directory, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
-    let candidateChangedRequest = JSON.parse(await readFile(path.join(directory, "tools/datapack/release/release-request.json"), "utf8"));
-    let candidateChangedHashes = JSON.parse(await readFile(path.join(directory, "tools/datapack/release/hash-evidence.json"), "utf8"));
-    assert.equal(candidateChangedRequest.approvalId, `release-request-${candidateChangedSpec.candidateId}-${candidateChangedRequest.buildSpecSha256}`);
-    assert.equal(candidateChangedHashes.identifiers.approvalId.value, candidateChangedRequest.approvalId);
-    assert.notEqual(candidateChangedRequest.approvalId, initialApprovalId);
-
-    await writeFile(
-      path.join(directory, "tools/datapack/release/candidate-build-spec.json"),
-      `${JSON.stringify({ ...candidateChangedSpec, scopeId: `${candidateChangedSpec.scopeId}-successor` })}\n`,
-    );
-    await syncReleaseEvidence({ releaseRoot: directory });
-    candidateChangedSpec = JSON.parse(await readFile(path.join(directory, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
-    candidateChangedRequest = JSON.parse(await readFile(path.join(directory, "tools/datapack/release/release-request.json"), "utf8"));
-    candidateChangedHashes = JSON.parse(await readFile(path.join(directory, "tools/datapack/release/hash-evidence.json"), "utf8"));
-    assert.equal(candidateChangedRequest.approvalId, `release-request-${candidateChangedSpec.candidateId}-${candidateChangedRequest.buildSpecSha256}`);
-    assert.equal(candidateChangedHashes.identifiers.approvalId.value, candidateChangedRequest.approvalId);
-    assert.notEqual(candidateChangedRequest.approvalId, initialApprovalId);
-
-    await writeFile(
-      path.join(directory, "tools/datapack/release/release-request.json"),
-      `${JSON.stringify({ ...candidateChangedRequest, approvalId: "release-request-stale" })}\n`,
-    );
-    await assert.rejects(syncReleaseEvidence({ check: true, releaseRoot: directory }), /release request is stale/);
     const selectedIds = new Set(spec.sourceSnapshotIds);
     const selectedInLedgerOrder = sourceSnapshotLedger.filter(({ snapshotId }) => selectedIds.has(snapshotId));
     assert.equal(spec.sourceSnapshotSetHash, createHash("sha256").update(JSON.stringify(selectedInLedgerOrder)).digest("hex"));

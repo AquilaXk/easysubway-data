@@ -58,10 +58,10 @@ async function inputs({ materializeIncheon = true } = {}) {
     || !Number.isFinite(Date.parse(admission?.capturedAt))) throw new Error("current Incheon topology admission is invalid");
   const accessibilityMatches = currentInventory.sources.filter(({ id }) => id === "incheon-transit-accessibility");
   if (accessibilityMatches.length !== 1) throw new Error("current Incheon accessibility source identity is invalid");
-  const accessibilityAdmission = accessibilityMatches[0].admissionEvidence;
-  const accessibilityRegistration = accessibilityMatches[0].registrationEvidence;
-  if (accessibilityAdmission?.snapshotId !== accessibilityRegistration?.snapshotId
-    || typeof accessibilityRegistration?.snapshotFileSha256 !== "string") {
+  const accessibilityAdmission = accessibilityMatches[0].accessibilityAdmissionEvidence;
+  if (accessibilityAdmission?.snapshotPath
+      !== `tools/datapack/sources/${accessibilityAdmission?.snapshotId}.json`
+    || !Number.isFinite(Date.parse(accessibilityAdmission?.capturedAt))) {
     throw new Error("current Incheon accessibility admission is invalid");
   }
   const timetableAdmissions = [1, 2].map((lineNumber) => {
@@ -92,7 +92,7 @@ async function inputs({ materializeIncheon = true } = {}) {
     gwangjuTimetable,
     gwangjuAccessibilitySnapshot,
     incheonBytes,
-    accessibilityBytes,
+    accessibilitySnapshot,
     line1Timetable,
     line2Timetable,
     inventory,
@@ -109,7 +109,7 @@ async function inputs({ materializeIncheon = true } = {}) {
     readJson("tools/datapack/sources/gwangju-transportation-cyberstation-timetable-20260720.json"),
     readJson("tools/datapack/sources/gwangju-transportation-accessibility-20260724.json"),
     readFile(path.join(root, admission.snapshotPath)),
-    readFile(path.join(root, `tools/datapack/sources/${accessibilityAdmission.snapshotId}.json`)),
+    readJson(accessibilityAdmission.snapshotPath),
     readJson(timetableAdmissions[0].snapshotPath),
     readJson(timetableAdmissions[1].snapshotPath),
     Promise.resolve(projectHistoricalRegionalMaterializeInventory(currentInventory)),
@@ -162,7 +162,6 @@ async function inputs({ materializeIncheon = true } = {}) {
     now: gwangjuAccessibilityNow,
   });
   const incheonSnapshot = JSON.parse(incheonBytes.toString("utf8"));
-  const accessibilitySnapshot = JSON.parse(accessibilityBytes.toString("utf8"));
   const incheonFixture = materializeIncheon
     ? materializeIncheonStationInfo({
       baseFixture: gwangjuAccessibilityFixture,
@@ -176,7 +175,6 @@ async function inputs({ materializeIncheon = true } = {}) {
     ? materializeIncheonAccessibility({
       baseFixture: incheonFixture,
       accessibilitySnapshot,
-      accessibilitySnapshotBytes: accessibilityBytes,
       topologySnapshot: { ...incheonSnapshot, snapshotId: admission.snapshotId },
       inventory,
       now: new Date(accessibilitySnapshot.capturedAt),
@@ -186,7 +184,6 @@ async function inputs({ materializeIncheon = true } = {}) {
     regionalFixture: gwangjuAccessibilityFixture,
     accessibilityFixture,
     accessibilitySnapshot,
-    accessibilityBytes,
     topologySnapshot: { ...incheonSnapshot, snapshotId: admission.snapshotId },
     timetableSnapshots: { 1: line1Timetable, 2: line2Timetable },
     timetableNow: new Date(Math.max(...timetableAdmissions.map(({ capturedAt }) => Date.parse(capturedAt)))),
@@ -247,8 +244,9 @@ function rebindSuppliedTopologyInventory(inventory, snapshot) {
     topologySnapshotId: snapshot.snapshotId,
     topologyContentSha256: snapshot.contentSha256,
   });
-  for (const sourceId of ["incheon-line1-train-timetable", "incheon-line2-train-timetable"]) {
-    const evidence = next.sources.find(({ id }) => id === sourceId).scheduleAdmissionEvidence;
+  for (const sourceId of ["incheon-transit-accessibility", "incheon-line1-train-timetable", "incheon-line2-train-timetable"]) {
+    const evidence = next.sources.find(({ id }) => id === sourceId)[sourceId === "incheon-transit-accessibility"
+      ? "accessibilityAdmissionEvidence" : "scheduleAdmissionEvidence"];
     evidence.topologySnapshotId = snapshot.snapshotId;
     evidence.topologyContentSha256 = snapshot.contentSha256;
     if (evidence.topologyLineages) evidence.topologyLineages = evidence.topologyLineages.map((lineage) => ({
@@ -413,13 +411,9 @@ test("인천 timetable materializer는 supplied current topology rename lineage�
     lineage.snapshotId = topologySnapshot.snapshotId;
     lineage.contentSha256 = topologySnapshot.contentSha256;
   }
-  const accessibilitySnapshotBytes = Buffer.from(`${JSON.stringify(accessibilitySnapshot, null, 2)}\n`);
-  inventory.sources.find(({ id }) => id === "incheon-transit-accessibility")
-    .registrationEvidence.snapshotFileSha256 = createHash("sha256").update(accessibilitySnapshotBytes).digest("hex");
   const accessibilityFixture = materializeIncheonAccessibility({
     baseFixture: incheonFixture,
     accessibilitySnapshot,
-    accessibilitySnapshotBytes,
     topologySnapshot,
     inventory,
     now: new Date(accessibilitySnapshot.capturedAt),

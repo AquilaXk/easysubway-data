@@ -38,54 +38,6 @@ test("selectable artifact의 모든 claim이 fresh official snapshot에 결속�
   assert.deepEqual(report.violations, emptyViolations());
 });
 
-test("registered accessibility source binds admission, tracked bytes, and ledger policy without legacy evidence", () => {
-  const input = validInput();
-  const source = input.inventory.sources[0];
-  const snapshot = input.snapshots[0];
-  const policy = input.sourceSnapshotPolicies[0];
-  const rawObjectSha256 = hash("registered-oci-object");
-  const adminReviewRecordHash = hash("registered-review");
-  source.admissionEvidence = { decision: "APPROVED", adminReviewRecordHash };
-  source.registrationEvidence = {
-    sourceId: source.id,
-    snapshotId: snapshot.snapshotId,
-    snapshotFileSha256: snapshot.snapshotFileSha256,
-    snapshotRawSha256: snapshot.rawSha256,
-    rawObjectUri: "oci://fixture/registered-accessibility.json",
-    rawObjectSha256,
-    contentSha256: snapshot.contentSha256,
-    normalizedSchemaFingerprint: snapshot.schemaFingerprint,
-    claimBindingsSha256: hash(JSON.stringify(snapshot.claimBindings)),
-    rowCount: 2,
-    coverageCount: 2,
-    claimBindingCount: snapshot.claimBindings.length,
-    adminReviewRecordHash,
-  };
-  snapshot.rowCount = 2;
-  snapshot.stationCount = 2;
-  snapshot.claimBindingsSha256 = source.registrationEvidence.claimBindingsSha256;
-  delete source.accessibilityAdmissionEvidence;
-  Object.assign(policy, {
-    rawObjectUri: source.registrationEvidence.rawObjectUri,
-    rawSha256: rawObjectSha256,
-    contentSha256: snapshot.contentSha256,
-    schemaFingerprint: snapshot.schemaFingerprint,
-    claimBindingsSha256: snapshot.claimBindingsSha256,
-    adminReviewRecordHash,
-    redistributionAllowed: true,
-    credentialRedacted: true,
-    freshnessExpiresAt: snapshot.freshUntil,
-    rawReceipt: {
-      snapshotFileSha256: snapshot.snapshotFileSha256,
-      snapshotRawSha256: snapshot.rawSha256,
-    },
-  });
-
-  assert.equal(buildAccessibilitySourceCoverageReport(input).decision, "GO");
-  source.registrationEvidence.rawObjectSha256 = "0".repeat(64);
-  assert.equal(buildAccessibilitySourceCoverageReport(input).decision, "NO_GO");
-});
-
 test("미승인 source는 provider-domain matrix에서도 BLOCKED다", () => {
   const input = validInput();
   input.inventory.sources[0].accessibilityAdmissionEvidence.decision = "PENDING";
@@ -535,7 +487,7 @@ test("remote manifest URL과 bundled index가 같은 gzip SQLite를 가리키면
     "official-accessibility", "official-accessibility-20260728", hash("edge-record"), hash("edge-evidence"),
   );
   database.prepare("INSERT INTO network_edges VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
-    "edge-without-provenance", "station-a", "station-a:line-a", "EXIT", "AVAILABLE", "UNKNOWN",
+    "edge-without-provenance", "station-a", "station-a:line-a", "EXIT", "UNKNOWN", "UNKNOWN",
     "", "", "", "",
   );
   database.prepare("INSERT INTO internal_route_edges VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
@@ -586,23 +538,6 @@ test("remote manifest URL과 bundled index가 같은 gzip SQLite를 가리키면
     bundledRoot: directory,
   });
 
-  const networkEdgeClaims = artifacts[0].claims.filter(({ domain }) => domain === "NETWORK_EDGE");
-  assert.deepEqual(networkEdgeClaims.map(({ claimId }) => claimId), [
-    "edge-without-provenance",
-    "internal-edge-without-provenance",
-    "broken-path-edge",
-    "path-edge-a",
-    "outside-transfer-a",
-  ]);
-  assert.equal(networkEdgeClaims.some(({ claimId }) => claimId === "edge-entry-a"), false);
-  const report = buildAccessibilitySourceCoverageReport({
-    ...validInput(),
-    artifacts: [artifacts[0]],
-  });
-  assert.ok(report.violations.provenance.includes(
-    "bundled-capital:station-a|line-a|EXIT|NETWORK_EDGE:PROVENANCE_MISSING",
-  ));
-
   assert.deepEqual(artifacts, [{
     artifactId: "bundled-capital",
     sqliteSha256: hashBytes(sqliteBytes),
@@ -650,6 +585,17 @@ test("remote manifest URL과 bundled index가 같은 gzip SQLite를 가리키면
       sourceSnapshotId: "fixture-capital-catalog-20260619",
       providerRecordHash: "",
       evidenceHash: "",
+    }, {
+      claimId: "edge-entry-a",
+      stationId: "station-a",
+      lineId: "line-a",
+      facilityType: "ENTRY",
+      domain: "NETWORK_EDGE",
+      evidenceKind: "EXISTS",
+      sourceId: "official-accessibility",
+      sourceSnapshotId: "official-accessibility-20260728",
+      providerRecordHash: hash("edge-record"),
+      evidenceHash: hash("edge-evidence"),
     }, {
       claimId: "edge-without-provenance",
       stationId: "station-a",
@@ -1006,8 +952,6 @@ function validInput() {
       fetchStatus: "SUCCESS",
       schemaStatus: "PASS",
       licenseStatus: "PASS",
-      redistributionAllowed: true,
-      credentialRedacted: true,
       freshnessExpiresAt: "2026-10-26T23:00:00.000Z",
     }],
   };

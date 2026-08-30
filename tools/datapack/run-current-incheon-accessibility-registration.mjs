@@ -81,30 +81,11 @@ async function assertOperationInventory(root, journal) {
 function sourceInputs(repositoryRoot, inventory) {
   const source = inventory?.sources?.filter(({ id }) => id === SOURCE);
   if (source?.length !== 1 || source[0].requiredForProductionPack !== false || source[0].productionUseAllowed !== true) throw new Error("approved Incheon admission is not receipt-pending");
-  const admission = source[0].admissionEvidence;
-  const topologySources = inventory?.sources?.filter(({ id }) => id === "incheon-transit-station-info");
-  const topologyAdmission = topologySources?.[0]?.topologyAdmissionEvidence;
-  if (!admission || admission.issue !== 622 || admission.decision !== "APPROVED"
-    || typeof admission.snapshotId !== "string" || !SHA.test(admission.rawSha256 ?? "")
-    || topologySources?.length !== 1
-    || typeof topologyAdmission?.snapshotId !== "string"
-    || topologyAdmission.snapshotPath !== `tools/datapack/sources/${topologyAdmission.snapshotId}.json`
-    || !SHA.test(topologyAdmission.contentSha256 ?? "")) {
-    throw new Error("approved Incheon admission identity is invalid");
-  }
+  const admission = source[0].admissionEvidence; const topology = source[0].accessibilityAdmissionEvidence;
+  if (!admission || admission.issue !== 622 || admission.decision !== "APPROVED" || typeof admission.snapshotId !== "string" || !SHA.test(admission.rawSha256 ?? "") || !topology || topology.topologySourceId !== "incheon-transit-station-info" || typeof topology.topologySnapshotId !== "string" || !SHA.test(topology.topologyContentSha256 ?? "")) throw new Error("approved Incheon admission identity is invalid");
   const token = admission.snapshotId.match(/(\d{8}T\d{9}Z)$/u)?.[1]; if (!token) throw new Error("approved Incheon snapshot identity is invalid");
   const capturedAt = token.replace(/^(\d{4})(\d\d)(\d\d)T(\d\d)(\d\d)(\d\d)(\d{3})Z$/u, "$1-$2-$3T$4:$5:$6.$7Z");
-  return {
-    source,
-    admission,
-    topology: {
-      topologySourceId: topologySources[0].id,
-      topologySnapshotId: topologyAdmission.snapshotId,
-      topologyContentSha256: topologyAdmission.contentSha256,
-    },
-    capturedAt,
-    topologyPath: topologyAdmission.snapshotPath,
-  };
+  return { source, admission, topology, capturedAt, topologyPath: `tools/datapack/sources/${topology.topologySnapshotId}.json` };
 }
 async function sealPrepareInputs(repositoryRoot) {
   const inventoryPath = path.join(repositoryRoot, "tools/datapack/source-inventory.json"); const inventoryBytes = await regularBytes(inventoryPath, "source inventory"); const values = sourceInputs(repositoryRoot, parse(inventoryBytes, "source inventory"));
