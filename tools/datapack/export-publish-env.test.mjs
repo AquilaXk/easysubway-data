@@ -67,6 +67,12 @@ for (const [name, overrides] of Object.entries({
   "rejects a bucket that does not bind the public object URL": {
     EASYSUBWAY_DATAPACK_BUCKET: "other-bucket",
   },
+  "rejects a blank access key": {
+    EASYSUBWAY_OBJECT_STORAGE_ACCESS_KEY: "",
+  },
+  "rejects a blank secret key": {
+    EASYSUBWAY_OBJECT_STORAGE_SECRET_KEY: "",
+  },
 })) {
   test(`strict OCI S3-compatible export ${name}`, async () => {
     const result = await run(overrides);
