@@ -620,14 +620,14 @@
           "path": "pubspec.yaml",
           "sha256": "82bfad8bd6f06fd0163573fe45c08af050f8688010309bb04532c4481428ebf4",
           "profileSha256": {
-            "mobile-v19": "8ae9f49ab9adb7cddf6510d024da992d78eeedfb205e0245b16c6841151068ba"
+            "mobile-v19": "d19166efa08e5148e9a51d06b8694b9b302e4a6daa1b0586f28a8dac08a1a093"
           }
         },
         {
           "path": "pubspec.lock",
           "sha256": "e42fbcce9ba3dd351ef4918e1c15bf231b2cf72cc281583db39e35f50ca4c03f",
           "profileSha256": {
-            "mobile-v19": "d2ec63d74ffcc0305cac4b905e19de440ca7866215e85ad679408951e565c870"
+            "mobile-v19": "1cd555c1c5cff59e9ccc5b1b5f356734de5d41ed3db420b731c541e41f875b10"
           }
         }
       ]
