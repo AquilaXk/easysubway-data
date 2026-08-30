@@ -67,7 +67,7 @@ test("rejects an EXIT OCI receipt that is not bound to the starting admission by
   );
 });
 
-test("applies exact EXIT identity bytes in an isolated repository", async (t) => {
+test("applies exact EXIT identity bytes idempotently in an isolated repository", async (t) => {
   const repositoryRoot = await temporaryRepository(t);
   const beforeAdmission = await readFile(path.join(repositoryRoot, `${EXIT_DIRECTORY}/exit-path-source-admission.json`));
   const beforeReceipt = await readFile(path.join(repositoryRoot, `${EXIT_DIRECTORY}/exit-path-admission-oci-receipt.json`));
@@ -81,8 +81,8 @@ test("applies exact EXIT identity bytes in an isolated repository", async (t) =>
   assert.equal(committed, true);
   assert.deepEqual(applied.admission.bytes, expected.admissionBytes);
   assert.deepEqual(applied.receipt.bytes, expected.receiptBytes);
-  assert.notDeepEqual(applied.admission.bytes, beforeAdmission);
-  assert.notDeepEqual(applied.receipt.bytes, beforeReceipt);
+  assert.deepEqual(applied.admission.bytes, expected.admissionBytes);
+  assert.deepEqual(applied.receipt.bytes, expected.receiptBytes);
 });
 
 test("rolls back exact originals when a post-replacement failure is injected", async (t) => {
