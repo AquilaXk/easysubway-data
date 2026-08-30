@@ -18525,7 +18525,12 @@ test("official OD fare release candidate는 승인된 두 방향 quote와 proven
   try {
     const inputs = await writeCurrentItxReleaseInputs(outputDir);
     await runCurrentItxCandidateBuild({ ...inputs, output: outputDir });
-    const database = new DatabaseSync(path.join(outputDir, "catalog/capital-v1.sqlite"));
+    const manifest = JSON.parse(await readFile(path.join(outputDir, "current.json"), "utf8"));
+    assert.equal(manifest.packs.length, 1, "candidate manifest must contain exactly one pack");
+    const [pack] = manifest.packs;
+    const database = new DatabaseSync(
+      path.join(outputDir, new URL(pack.url).pathname.split("/").slice(-2).join("/")).replace(/\.gz$/, ""),
+    );
     let rows;
     try {
       rows = database.prepare(`SELECT origin_station_id AS originStationId,
@@ -18549,7 +18554,6 @@ test("official OD fare release candidate는 승인된 두 방향 quote와 proven
       codepointCompare(left.originStationId, right.originStationId)
         || codepointCompare(left.destinationStationId, right.destinationStationId));
     assert.deepEqual(rows.map((row) => ({ ...row })), canonicalQuotes);
-    const manifest = JSON.parse(await readFile(path.join(outputDir, "current.json"), "utf8"));
     assert.equal(manifest.channel, "dev");
     assert.ok(manifest.packs[0].sourceInventory.some(
       (source) => source.id === approvedEvidence.sourceId,
