@@ -372,7 +372,7 @@ test("current candidate selects fixed and registered canonical provenance heads"
   const candidateSourceIds = [
     "seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility",
     "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info",
-    "seoul-metro-transfer-distance-duration", "incheon-transit-station-info",
+    "incheon-transit-station-info", "seoul-metro-transfer-distance-duration",
   ];
   const snapshots = canonicalSourceIds
     .filter((sourceId) => sourceId !== "incheon-transit-accessibility")

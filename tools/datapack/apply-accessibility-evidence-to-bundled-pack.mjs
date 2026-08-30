@@ -689,9 +689,11 @@ export function currentCandidateReleaseSnapshots(snapshots, canonical, headsBySo
       || !canonicalProvenanceIds.has(sourceId))) {
     throw new Error("capital canonical active source identity drift");
   }
+  const terminalSourceId = CURRENT_CANDIDATE_SOURCE_IDS.at(-1);
   const candidateSourceIds = [
-    ...CURRENT_CANDIDATE_SOURCE_IDS,
+    ...CURRENT_CANDIDATE_SOURCE_IDS.slice(0, -1),
     ...registeredCanonicalTailSourceIds(canonicalTail, snapshots, headsBySource, sourceInventory),
+    terminalSourceId,
   ];
   return candidateSourceIds.map((sourceId) => {
     const head = headsBySource[sourceId];
