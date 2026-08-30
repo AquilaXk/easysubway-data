@@ -64,6 +64,7 @@ test("인천 timetable collector는 1·2호선 WEEK/HOLI 상·하선 FILE을 tri
     assert.equal(snapshot.topologyContentSha256, topologySnapshot.contentSha256);
     assert.equal(snapshot.tripsSha256, createHash("sha256").update(JSON.stringify(snapshot.trips)).digest("hex"));
     assert.equal(snapshot.rowsSha256, snapshot.tripsSha256);
+    assert.equal(Object.hasOwn(snapshot, "downloadProvenance"), false);
     assert.equal(
       snapshot.contentSha256,
       createHash("sha256").update(JSON.stringify({
@@ -112,6 +113,83 @@ test("인천 timetable collector는 supplied current topology identity에 lineag
     contentSha256: topologySnapshot.contentSha256,
     lineId: config.lineId,
   }]);
+});
+
+test("인천 timetable collector download mode는 official detail에서 정확히 8개 CSV를 받아 current parser에 전달한다", async () => {
+  const topologyPath = path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260724.json");
+  const outputDirectory = await mkdtemp(path.join(tmpdir(), "easysubway-incheon-timetable-download-"));
+  const calls = [];
+  const datasetIds = INCHEON_TIMETABLE_LINES.flatMap(({ datasets }) => [
+    datasets.WEEK.up,
+    datasets.WEEK.dn,
+    datasets.HOLI.up,
+    datasets.HOLI.dn,
+  ]);
+  try {
+    const outputs = await runIncheonTimetableCollector([
+      "--download",
+      "--topology-snapshot", topologyPath,
+      "--output-dir", outputDirectory,
+    ], {
+      now: NOW,
+      fetchImpl: async (input, init) => {
+        const url = new URL(input);
+        calls.push({ url: url.toString(), headers: init?.headers });
+        const datasetId = /^\/data\/(\d+)\/fileData\.do$/u.exec(url.pathname)?.[1];
+        if (datasetId) {
+          return new Response(
+            `<a href="/cmm/cmm/fileDownload.do?atchFileId=FILE_${datasetId}&amp;fileDetailSn=1">CSV</a>`,
+          );
+        }
+        const fileId = /^FILE_(\d+)$/u.exec(url.searchParams.get("atchFileId") ?? "")?.[1];
+        if (url.origin === "https://www.data.go.kr"
+          && url.pathname === "/cmm/cmm/fileDownload.do"
+          && fileId
+          && url.searchParams.get("fileDetailSn") === "1") {
+          return new Response(await readFile(path.join(RAW_DIR, `data-go-${fileId}.csv`)));
+        }
+        assert.fail(`unexpected request: ${url}`);
+      },
+    });
+    assert.equal(outputs.length, 2);
+    assert.deepEqual(calls.filter(({ url }) => new URL(url).pathname.endsWith("/fileData.do"))
+      .map(({ url }) => url), datasetIds.map((datasetId) => `https://www.data.go.kr/data/${datasetId}/fileData.do`));
+    assert.equal(calls.length, datasetIds.length * 2);
+    for (const { url, headers } of calls) {
+      assert.equal(headers["User-Agent"], "easysubway-datapack-collector/1.0");
+      if (new URL(url).pathname === "/cmm/cmm/fileDownload.do") {
+        const datasetId = /^FILE_(\d+)$/u.exec(new URL(url).searchParams.get("atchFileId"))?.[1];
+        assert.equal(headers.Referer, `https://www.data.go.kr/data/${datasetId}/fileData.do`);
+      }
+    }
+    const snapshots = await Promise.all(outputs.map(async (output) => JSON.parse(await readFile(output, "utf8"))));
+    assert.deepEqual(snapshots.map(({ tripCount, stopTimeCount }) => ({ tripCount, stopTimeCount })), [
+      { tripCount: 574, stopTimeCount: 18_392 },
+      { tripCount: 840, stopTimeCount: 22_506 },
+    ]);
+    for (const [index, snapshot] of snapshots.entries()) {
+      const config = INCHEON_TIMETABLE_LINES[index];
+      const expectedProvenance = [];
+      for (const dayCode of ["WEEK", "HOLI"]) {
+        for (const direction of ["up", "dn"]) {
+          const datasetId = config.datasets[dayCode][direction];
+          const bytes = await readFile(path.join(RAW_DIR, `data-go-${datasetId}.csv`));
+          expectedProvenance.push({
+            dayCode,
+            direction,
+            datasetId,
+            detailUrl: `https://www.data.go.kr/data/${datasetId}/fileData.do`,
+            downloadUrl: `https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_${datasetId}&fileDetailSn=1`,
+            rawSha256: createHash("sha256").update(bytes).digest("hex"),
+          });
+        }
+      }
+      assert.equal(snapshot.capturedAt, NOW.toISOString());
+      assert.deepEqual(snapshot.downloadProvenance, expectedProvenance);
+    }
+  } finally {
+    await rm(outputDirectory, { recursive: true, force: true });
+  }
 });
 
 test("인천 timetable 역명 정규화는 축약·괄호·역 접미를 topology 정본에 맞춘다", () => {
