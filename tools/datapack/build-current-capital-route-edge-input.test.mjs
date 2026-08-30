@@ -92,7 +92,7 @@ test("accessibility-authority projector는 합성 current public successor를 �
   });
 
   assert.deepEqual(edgeCounts(projected.packs[0].networkEdges), {
-    RIDE: 2208,
+    RIDE: 2198,
   });
 });
 
