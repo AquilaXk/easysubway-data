@@ -13,6 +13,11 @@ import { buildCurrentKricExitCollectionBundle, buildCurrentKricExitCollectionRec
 import { buildCurrentExitPathSourceAdmission } from "../build-current-exit-path-source-admission.mjs";
 import { canonicalExitPathAdmissionJson } from "../build-exit-path-admission.mjs";
 import { buildCurrentExitAdmissionOciReceipt, canonicalCurrentExitAdmissionOciReceiptJson } from "../build-current-exit-admission-oci-receipt.mjs";
+import {
+  buildCurrentCapitalAccessibilityTransition,
+  canonicalCurrentCapitalAccessibilityTransitionJson,
+} from "../current-capital-accessibility-transition.mjs";
+import { buildReboundCurrentExitAdmissionIdentities } from "../rebind-current-exit-admission-identities.mjs";
 import { buildCurrentCapitalLiveChainFanInBoundary, canonicalCurrentCapitalLiveChainFanInBoundaryJson, CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS } from "../build-current-capital-live-chain-boundary.mjs";
 import { deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
 import { registerKricStandardAccessibilitySnapshot } from "../register-kric-standard-accessibility-snapshot.mjs";
@@ -211,7 +216,38 @@ export async function writeFreshExitAdmissionChain(repositoryRoot, observedAt) {
   await Promise.all([
     writeFile(path.join(repositoryRoot, output, "exit-path-normalized-source-snapshot.json"), normalizedBytes),
     writeFile(path.join(repositoryRoot, output, "exit-path-source-admission.json"), admissionBytes),
-    writeFile(path.join(repositoryRoot, output, "exit-path-admission-oci-receipt.json"), canonicalCurrentExitAdmissionOciReceiptJson(ociReceipt)),
+    writeFile(path.join(repositoryRoot, output, "exit-path-admission-oci-receipt.json"), `${canonicalCurrentExitAdmissionOciReceiptJson(ociReceipt)}\n`),
+  ]);
+}
+
+async function rebindFreshExitAdmissionForCurrentTransition(repositoryRoot, previousBytes) {
+  const paths = {
+    candidate: "tools/datapack/release/candidate-build-spec.json",
+    facility: "tools/datapack/release/current-capital-facility-source-admission.json",
+    ledger: "tools/datapack/release/source-snapshots.json",
+    inventory: "tools/datapack/source-inventory.json",
+    normalized: "tools/datapack/release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json",
+    admission: "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json",
+    receipt: "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json",
+  };
+  const bytes = Object.fromEntries(await Promise.all(Object.entries(paths).map(async ([key, relative]) =>
+    [key, await readFile(path.join(repositoryRoot, relative))])));
+  const transition = buildCurrentCapitalAccessibilityTransition({
+    candidate: JSON.parse(bytes.candidate), candidateBytes: bytes.candidate,
+    previous: JSON.parse(previousBytes), previousBytes,
+    facilityAdmission: JSON.parse(bytes.facility), facilityBytes: bytes.facility,
+    ledger: JSON.parse(bytes.ledger), ledgerBytes: bytes.ledger,
+    inventory: JSON.parse(bytes.inventory), inventoryBytes: bytes.inventory,
+  });
+  const rebound = buildReboundCurrentExitAdmissionIdentities({
+    transitionBytes: Buffer.from(canonicalCurrentCapitalAccessibilityTransitionJson(transition)),
+    normalizedBytes: bytes.normalized,
+    admissionBytes: bytes.admission,
+    receiptBytes: bytes.receipt,
+  });
+  await Promise.all([
+    writeFile(path.join(repositoryRoot, paths.admission), rebound.admissionBytes),
+    writeFile(path.join(repositoryRoot, paths.receipt), rebound.receiptBytes),
   ]);
 }
 
@@ -302,8 +338,10 @@ export async function prepareCurrentFullCapitalProductionRepository(sourceRoot) 
     });
     const candidate = await json(repositoryRoot, "tools/datapack/release/candidate-build-spec.json");
     const capturedAt = new Date(candidate.publishedAt);
+    const previousBytes = await readFile(path.join(sourceRoot, "tools/datapack/release/current-station-line-accessibility/station-line-input.json"));
     await currentizeFreshFacilitySource(repositoryRoot, capturedAt);
     await writeFreshExitAdmissionChain(repositoryRoot, capturedAt);
+    await rebindFreshExitAdmissionForCurrentTransition(repositoryRoot, previousBytes);
     await writeFreshCurrentAccessibilityOutputs(repositoryRoot);
     return repositoryRoot;
   } catch (error) {

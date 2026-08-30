@@ -154,6 +154,25 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   const buildSpecPath = "tools/datapack/release/candidate-build-spec.json";
   const buildSpecBytes = await readFile(path.join(directory, buildSpecPath));
   const buildSpec = JSON.parse(buildSpecBytes);
+  const [ledger, exitAdmissionBytes, exitReceiptBytes] = await Promise.all([
+    readFile(path.join(directory, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+    readFile(path.join(directory, "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json")),
+    readFile(path.join(directory, "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json"), "utf8").then(JSON.parse),
+  ]);
+  const predecessorIds = new Set(buildSpec.sourceSnapshotIds.slice(0, -1));
+  const predecessorSourceSetSha256 = sha256(Buffer.from(JSON.stringify(
+    ledger.filter(({ snapshotId }) => predecessorIds.has(snapshotId)),
+  )));
+  const exitAdmission = JSON.parse(exitAdmissionBytes);
+  assert.equal(exitAdmission.candidate.candidateId, buildSpec.candidateId);
+  assert.equal(exitAdmission.candidate.sourceSetSha256, predecessorSourceSetSha256);
+  assert.notEqual(exitAdmission.candidate.sourceSetSha256, buildSpec.sourceSnapshotSetHash);
+  for (const row of [...exitAdmission.cells, ...exitAdmission.materializerEvidenceRows]) {
+    assert.equal(row.candidateId, buildSpec.candidateId);
+    assert.equal(row.sourceSetSha256, predecessorSourceSetSha256);
+  }
+  assert.equal(exitReceiptBytes.admissionSha256, sha256(exitAdmissionBytes));
+  assert.equal(exitReceiptBytes.admissionDigest, exitAdmission.admissionDigest);
   const topologyAdmission = buildSpec.networkEdgeEvidence.capitalTopologyAdmission;
   const firstBuildAt = Math.max(
     Date.parse(buildSpec.publishedAt),
