@@ -80,15 +80,16 @@ test("admitted target missing·duplicate·operator drift는 superset selection �
   }
 });
 
-test("candidate source set은 selected append-only ledger 순서 hash를 검증한다", async () => {
+test("candidate order ends in TRANSFER even when exact ledger order does not", async () => {
   const input = await fixture();
-  input.sourceSnapshots = [input.sourceSnapshots[1], input.sourceSnapshots[0], ...input.sourceSnapshots.slice(2)];
+  input.sourceSnapshots = [input.sourceSnapshots.at(-1), ...input.sourceSnapshots.slice(0, -1)];
   const sourceSet = sha(JSON.stringify(input.sourceSnapshots));
-  const evidenceSourceSet = sha(JSON.stringify(input.sourceSnapshots.slice(0, -1)));
+  const predecessorIds = new Set(input.candidateBuildSpec.sourceSnapshotIds.slice(0, -1));
+  const evidenceSourceSet = sha(JSON.stringify(input.sourceSnapshots.filter(({ snapshotId }) => predecessorIds.has(snapshotId))));
   input.candidateBuildSpec.sourceSnapshotSetHash = sourceSet;
   input.sourceSetTransition.currentCandidateSourceSetSha256 = sourceSet;
   input.sourceSetTransition.evidenceSourceSetSha256 = evidenceSourceSet;
-  input.facilityAdmission.candidate.sourceSnapshotSetHash = evidenceSourceSet;
+  input.facilityAdmission.candidate.sourceSnapshotSetHash = sourceSet;
   resealFacility(input.facilityAdmission);
   input.exitAdmission.candidate.sourceSetSha256 = evidenceSourceSet;
   input.exitAdmission.materializerEvidenceRows = input.exitAdmission.materializerEvidenceRows.map((row) => ({ ...row, sourceSetSha256: evidenceSourceSet }));
@@ -97,6 +98,8 @@ test("candidate source set은 selected append-only ledger 순서 hash를 검증�
   const result = buildCurrentCapitalStationLineInput(input);
 
   assert.equal(result.candidate.sourceSetSha256, sourceSet);
+  assert.equal(input.candidateBuildSpec.sourceSnapshots.at(-1).sourceId, "seoul-metro-transfer-distance-duration");
+  assert.notEqual(input.sourceSnapshots.at(-1).sourceId, "seoul-metro-transfer-distance-duration");
   assert.equal(result.stationLines.length, 213);
   assert.equal(result.evidenceRows.length, 641);
 });
@@ -221,7 +224,7 @@ export async function fixture() {
   const evidenceCandidate = { ...candidate, sourceSetSha256: evidenceSourceSet };
   const snapshot = await facilitySnapshot(lines); const snapshotBytes = Buffer.from(JSON.stringify(snapshot));
   const sourceIdentity = { sourceId: snapshot.sourceId, snapshotId: snapshot.snapshotId, snapshotPath: `tools/datapack/sources/${snapshot.snapshotId}.json`, rawSha256: snapshot.rawSha256, redactedRequestFingerprint: snapshot.redactedRequestFingerprint, contentSha256: snapshot.contentSha256, schemaFingerprint: snapshot.schemaFingerprint, snapshotFileSha256: sha(snapshotBytes), capturedAt: snapshot.capturedAt, observedAt: snapshot.observedAt, freshUntil: snapshot.freshUntil, rawObjectUri: "oci://fixture/facility", rawObjectSha256: "7".repeat(64), credentialRedacted: true, licenseEvidenceHash: "8".repeat(64) };
-  const facilityAdmission = facility(lines, evidenceSourceSet, sourceIdentity);
+  const facilityAdmission = facility(lines, sourceSet, sourceIdentity);
   const normalized = { schemaVersion: 4, artifactKind: "exit-path-normalized-source-snapshot", sourceId: "kric-station-movement-standard", snapshotId: "exit-snapshot", queryPlan: Array.from({ length: 420 }, (_, index) => index < 213 ? ({ queryId: `query-${index}`, stationName: `역${index}`, lineName: "2호선", operatorName: "서울교통공사", regionId: "capital" }) : ({ queryId: `query-${index}` })), results: Array.from({ length: 420 }, (_, index) => ({ queryId: `query-${index}`, providerResponseSha256: index === 0 ? "9".repeat(64) : "8".repeat(64) })) };
   const exitAdmission = exit(lines, evidenceCandidate); exitAdmission.queryPartition = { joined: lines.map((line, index) => ({ stationLineId: `${line.stationId}:${line.lineId}`, queryId: `query-${index}` })) }; const mapping = lines.map((line, index) => ({ stationId: line.stationId, stationName: `역${index}`, stationAliases: [], regionId: "capital", lineId: line.lineId, lineName: "2호선", operatorId: "seoul-metro", operatorName: "서울교통공사" })).sort((a, b) => a.stationId.localeCompare(b.stationId) || a.lineId.localeCompare(b.lineId)); exitAdmission.stationLineMappingSha256 = sha(canonical(mapping)); resealFacility(exitAdmission); const exitNormalizedBytes = Buffer.from(canonical(normalized)); const exitAdmissionBytes = Buffer.from(canonical(exitAdmission));
   const exitReceipt = receipt(exitNormalizedBytes, exitAdmissionBytes, exitAdmission.admissionDigest);

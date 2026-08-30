@@ -11,7 +11,6 @@ import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
 import {
   CURRENT_FULL_CANDIDATE_SOURCE_IDS,
   CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS,
-  isActiveCandidateSourceSequence,
 } from "./rebind-current-candidate-source-snapshots.mjs";
 
 const FILES = Object.freeze({
@@ -24,8 +23,14 @@ const FILES = Object.freeze({
 });
 const SHA = /^[a-f0-9]{64}$/u;
 const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
+const PROJECTION_KEYS = Object.freeze([
+  "snapshotId", "sourceId", "rawObjectUri", "rawSha256", "redactedRequestFingerprint",
+  "schemaFingerprint", "licenseStatus", "redistributionAllowed", "adminReviewRecordHash",
+  "snapshotStatus", "credentialRedacted", "freshnessExpiresAt", "rawRetentionExpiresAt",
+  "governancePolicyVersion", "governancePolicySha256",
+]);
 const TOP_LEVEL_KEYS = Object.freeze([
-  "schemaVersion", "artifactKind", "state", "nextCandidate", "previousProduction",
+  "schemaVersion", "artifactKind", "state", "nextCandidate", "previousCandidate", "previousProduction",
   "facilityAdmission", "pendingPrerequisites", "transitionSha256",
 ]);
 
@@ -33,18 +38,30 @@ export function buildCurrentCapitalAccessibilityTransition(input) {
   const candidateBytes = requiredBytes(input?.candidateBytes, "candidate build spec");
   const previousBytes = requiredBytes(input?.previousBytes, "previous production station-line input");
   const facilityBytes = requiredBytes(input?.facilityBytes, "current FACILITY admission");
+  const ledgerBytes = requiredBytes(input?.ledgerBytes, "source snapshot ledger");
+  const inventoryBytes = requiredBytes(input?.inventoryBytes, "source inventory");
   const candidate = bindParsed(input?.candidate, candidateBytes, "candidate build spec");
   const previous = bindParsed(input?.previous, previousBytes, "previous production station-line input");
   const facility = bindParsed(input?.facilityAdmission, facilityBytes, "current FACILITY admission");
+  const ledger = bindParsed(input?.ledger, ledgerBytes, "source snapshot ledger");
+  const inventory = bindParsed(input?.inventory, inventoryBytes, "source inventory");
   assertExactTransitionCandidate(candidate);
   const candidateId = requiredString(candidate.candidateId, "candidateId");
   const nextSourceSet = requiredSha(candidate.sourceSnapshotSetHash, "candidate source snapshot set");
+  const predecessor = derivePreviousCandidate({ candidate, inventory, inventoryBytes, ledger });
+  const predecessorBytes = candidateBytesFor(predecessor);
   return finalizeTransitionPayload(buildTransitionPayload({
     nextCandidate: {
       path: FILES.candidate,
       sha256: sha256(candidateBytes),
       candidateId,
       sourceSnapshotSetHash: nextSourceSet,
+    },
+    previousCandidate: {
+      canonicalCandidate: predecessor,
+      sha256: sha256(predecessorBytes),
+      candidateId: predecessor.candidateId,
+      sourceSnapshotSetHash: predecessor.sourceSnapshotSetHash,
     },
     previous,
     previousBytes,
@@ -82,10 +99,12 @@ async function inspectCurrentCapitalAccessibilityTransition({ repositoryRoot, al
     if (error?.code === "ENOENT" && allowMissing) return null;
     throw error;
   }
-  const [candidateBytes, previousBytes, facilityBytes] = await Promise.all([
+  const [candidateBytes, previousBytes, facilityBytes, ledgerBytes, inventoryBytes] = await Promise.all([
     readStableRegular(path.join(root, FILES.candidate), "candidate build spec"),
     readStableRegular(path.join(root, FILES.previous), "previous production station-line input"),
     readStableRegular(path.join(root, FILES.facility), "current FACILITY admission"),
+    readStableRegular(path.join(root, FILES.snapshots), "source snapshot ledger"),
+    readStableRegular(path.join(root, FILES.inventory), "source inventory"),
   ]);
   const parsed = parse(transition, "current accessibility transition");
   if (canonicalCurrentCapitalAccessibilityTransitionJson(parsed) !== transition.toString("utf8")) {
@@ -94,7 +113,7 @@ async function inspectCurrentCapitalAccessibilityTransition({ repositoryRoot, al
   const candidate = parse(candidateBytes, "candidate build spec");
   const previous = parse(previousBytes, "previous production station-line input");
   const facility = parse(facilityBytes, "current FACILITY admission");
-  if (candidate.sourceSnapshotSetHash === parsed.nextCandidate.sourceSnapshotSetHash) {
+  try {
     const rebuilt = buildCurrentCapitalAccessibilityTransition({
       candidate,
       candidateBytes,
@@ -102,47 +121,26 @@ async function inspectCurrentCapitalAccessibilityTransition({ repositoryRoot, al
       previousBytes,
       facilityAdmission: facility,
       facilityBytes,
+      ledger: parse(ledgerBytes, "source snapshot ledger"),
+      ledgerBytes,
+      inventory: parse(inventoryBytes, "source inventory"),
+      inventoryBytes,
     });
     if (canonicalJson(parsed) !== canonicalJson(rebuilt)) {
-      throw new Error("transition candidate binding mismatch");
+      throw new Error("stored transition mismatch");
     }
-  } else {
-    try {
-      const [ledgerBytes, inventoryBytes] = await Promise.all([
-        readStableRegular(path.join(root, FILES.snapshots), "source snapshot ledger"),
-        readStableRegular(path.join(root, FILES.inventory), "source inventory"),
-      ]);
-      const rebuilt = finalizeTransitionPayload(buildTransitionPayload({
-        nextCandidate: parsed.nextCandidate,
-        previous,
-        previousBytes,
-        facility,
-        facilityBytes,
-      }));
-      if (canonicalJson(parsed) !== canonicalJson(rebuilt)) {
-        throw new Error("stored transition mismatch");
-      }
-      assertExactTransferAppend({
-        candidate,
-        inventory: parse(inventoryBytes, "source inventory"),
-        inventoryBytes,
-        ledger: parse(ledgerBytes, "source snapshot ledger"),
-        storedCandidateSha256: parsed.nextCandidate.sha256,
-        storedSourceSetHash: parsed.nextCandidate.sourceSnapshotSetHash,
-      });
-    } catch {
-      throw new Error("transition candidate binding mismatch");
-    }
+  } catch {
+    throw new Error("transition candidate binding mismatch");
   }
   return {
     currentCandidateBytesSha256: sha256(candidateBytes),
     currentCandidateSourceSetSha256: requiredSha(candidate.sourceSnapshotSetHash, "current candidate source snapshot set"),
     facilityAdmissionBytesSha256: sha256(facilityBytes),
-    evidenceSourceSetSha256: requiredSha(parsed.nextCandidate.sourceSnapshotSetHash, "transition evidence source snapshot set"),
+    evidenceSourceSetSha256: requiredSha(parsed.previousCandidate.sourceSnapshotSetHash, "transition evidence source snapshot set"),
   };
 }
 
-function buildTransitionPayload({ nextCandidate, previous, previousBytes, facility, facilityBytes }) {
+function buildTransitionPayload({ nextCandidate, previousCandidate, previous, previousBytes, facility, facilityBytes }) {
   if (canonicalCurrentCapitalStationLineInputJson(previous) !== previousBytes.toString("utf8")) {
     throw new Error("previous production station-line bytes are not canonical");
   }
@@ -162,6 +160,7 @@ function buildTransitionPayload({ nextCandidate, previous, previousBytes, facili
     artifactKind: "current-capital-accessibility-transition",
     state: "PENDING_FULL_FAN_IN",
     nextCandidate,
+    previousCandidate,
     previousProduction: {
       path: FILES.previous,
       sha256: sha256(previousBytes),
@@ -188,7 +187,8 @@ function assertExactTransitionCandidate(candidate) {
   if (candidate?.schemaVersion !== 1 || candidate.artifactKind !== "datapack-candidate-build-spec"
     || !Array.isArray(candidate.sourceSnapshotIds) || !Array.isArray(candidate.sourceSnapshots)
     || candidate.sourceSnapshotIds.length !== candidate.sourceSnapshots.length
-    || !isActiveCandidateSourceSequence(sourceIds)) {
+    || candidate.sourceSnapshotIds.length !== CURRENT_FULL_CANDIDATE_SOURCE_IDS.length
+    || JSON.stringify(sourceIds) !== JSON.stringify(CURRENT_FULL_CANDIDATE_SOURCE_IDS)) {
     throw new Error("transition candidate source-set mismatch");
   }
   if (new Set(candidate.sourceSnapshotIds).size !== candidate.sourceSnapshotIds.length
@@ -215,21 +215,37 @@ function assertFacilityBinding(facility, candidateId, sourceSnapshotSetHash) {
   }
 }
 
-function assertExactTransferAppend({ candidate, inventory, inventoryBytes, ledger, storedCandidateSha256, storedSourceSetHash }) {
-  if (candidate?.schemaVersion !== 1 || candidate.artifactKind !== "datapack-candidate-build-spec"
-    || !Array.isArray(candidate.sourceSnapshotIds) || !Array.isArray(candidate.sourceSnapshots)
-    || candidate.sourceSnapshotIds.length !== CURRENT_FULL_CANDIDATE_SOURCE_IDS.length
-    || candidate.sourceSnapshots.length !== CURRENT_FULL_CANDIDATE_SOURCE_IDS.length
-    || candidate.sourceSnapshotIds.length !== candidate.sourceSnapshots.length
-    || !Array.isArray(ledger)
-    || JSON.stringify(candidate.sourceSnapshots.map(({ sourceId }) => sourceId))
-      !== JSON.stringify(CURRENT_FULL_CANDIDATE_SOURCE_IDS)) {
-    throw new Error("transition append shape mismatch");
-  }
+function derivePreviousCandidate({ candidate, inventory, inventoryBytes, ledger }) {
+  assertExactTransitionCandidate(candidate);
+  if (!Array.isArray(ledger)) throw new Error("transition append ledger mismatch");
   const selectedIds = new Set(candidate.sourceSnapshotIds);
-  if (selectedIds.size !== CURRENT_FULL_CANDIDATE_SOURCE_IDS.length || candidate.sourceSnapshots.some((projection, index) =>
-    projection?.snapshotId !== candidate.sourceSnapshotIds[index])) {
+  if (selectedIds.size !== CURRENT_FULL_CANDIDATE_SOURCE_IDS.length) {
     throw new Error("transition append projection mismatch");
+  }
+  for (const [index, snapshotId] of candidate.sourceSnapshotIds.entries()) {
+    const matches = ledger.filter((entry) => entry?.snapshotId === snapshotId);
+    const projection = candidate.sourceSnapshots[index];
+    const sources = inventory?.sources?.filter(({ id }) => id === projection.sourceId) ?? [];
+    const expected = matches.length === 1 && sources.length === 1
+      ? Object.fromEntries(PROJECTION_KEYS.map((key) => [
+        key,
+        key === "adminReviewRecordHash"
+          ? sources[0].admissionEvidence?.adminReviewRecordHash
+          : matches[0][key],
+      ]))
+      : null;
+    if (matches.length !== 1 || matches[0].sourceId !== projection.sourceId
+      || sources.length !== 1 || canonicalJson(projection) !== canonicalJson(expected)) {
+      throw new Error("transition append ledger mismatch");
+    }
+  }
+  const selected = ledger.filter(({ snapshotId }) => selectedIds.has(snapshotId));
+  const predecessorIds = new Set(candidate.sourceSnapshotIds.slice(0, -1));
+  const predecessorLedger = ledger.filter(({ snapshotId }) => predecessorIds.has(snapshotId));
+  if (selected.length !== CURRENT_FULL_CANDIDATE_SOURCE_IDS.length
+    || predecessorLedger.length !== CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS.length
+    || sha256(Buffer.from(JSON.stringify(selected))) !== candidate.sourceSnapshotSetHash) {
+    throw new Error("transition append source-set mismatch");
   }
   const predecessorInventory = reverseTransferInventoryActivation({
     candidate,
@@ -240,33 +256,23 @@ function assertExactTransferAppend({ candidate, inventory, inventoryBytes, ledge
   const predecessor = structuredClone(candidate);
   predecessor.sourceSnapshotIds = candidate.sourceSnapshotIds.slice(0, -1);
   predecessor.sourceSnapshots = candidate.sourceSnapshots.slice(0, -1);
-  predecessor.sourceSnapshotSetHash = storedSourceSetHash;
+  predecessor.sourceSnapshotSetHash = sha256(Buffer.from(JSON.stringify(predecessorLedger)));
   predecessor.sourceInventorySha256 = predecessorInventory.semanticSha256;
   predecessor.networkEdgeEvidence.sourceInventory.sha256 = predecessorInventory.bytesSha256;
-  if (sha256(Buffer.from(`${JSON.stringify(predecessor, null, 2)}\n`)) !== storedCandidateSha256) {
-    throw new Error("transition append predecessor mismatch");
-  }
-  for (const [index, snapshotId] of candidate.sourceSnapshotIds.entries()) {
-    const matches = ledger.filter((entry) => entry?.snapshotId === snapshotId);
-    if (matches.length !== 1 || matches[0].sourceId !== candidate.sourceSnapshots[index].sourceId) {
-      throw new Error("transition append ledger mismatch");
-    }
-  }
-  const selected = ledger.filter(({ snapshotId }) => selectedIds.has(snapshotId));
-  const prefixIds = new Set(candidate.sourceSnapshotIds.slice(0, -1));
-  const prefix = ledger.filter(({ snapshotId }) => prefixIds.has(snapshotId));
-  const appendedProjection = candidate.sourceSnapshots.at(-1);
-  const appendedLedger = selected.at(-1);
-  const projectionKeys = Object.keys(candidate.sourceSnapshots[0]);
-  if (selected.length !== CURRENT_FULL_CANDIDATE_SOURCE_IDS.length
-    || prefix.length !== CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS.length
-    || sha256(Buffer.from(JSON.stringify(selected))) !== candidate.sourceSnapshotSetHash
-    || sha256(Buffer.from(JSON.stringify(prefix))) !== storedSourceSetHash
-    || appendedLedger?.sourceId !== TRANSFER_SOURCE_ID
-    || JSON.stringify(Object.keys(appendedProjection)) !== JSON.stringify(projectionKeys)
-    || projectionKeys.some((key) => !Object.hasOwn(appendedLedger, key) || appendedProjection[key] !== appendedLedger[key])) {
-    throw new Error("transition append source-set mismatch");
-  }
+  predecessor.candidateId = derivePreviousCandidateId(candidate.candidateId, predecessor.sourceSnapshotSetHash, predecessor.sourceSnapshotIds);
+  return predecessor;
+}
+
+function derivePreviousCandidateId(nextCandidateId, sourceSnapshotSetHash, sourceSnapshotIds) {
+  return `capital-accessibility-predecessor-${sha256(Buffer.from(canonicalJson({
+    nextCandidateId: requiredString(nextCandidateId, "next candidateId"),
+    sourceSnapshotSetHash: requiredSha(sourceSnapshotSetHash, "predecessor source snapshot set"),
+    sourceSnapshotIds,
+  })))}`;
+}
+
+function candidateBytesFor(candidate) {
+  return Buffer.from(canonicalJson(candidate));
 }
 
 function reverseTransferInventoryActivation({ candidate, inventory, inventoryBytes, transferSnapshotId }) {
@@ -306,10 +312,12 @@ export async function main(argv = process.argv.slice(2), {
 } = {}) {
   if (!Array.isArray(argv) || argv.length !== 0) throw new Error("current accessibility transition arguments mismatch");
   const root = path.resolve(repositoryRoot);
-  const [candidateBytes, previousBytes, facilityBytes] = await Promise.all([
+  const [candidateBytes, previousBytes, facilityBytes, ledgerBytes, inventoryBytes] = await Promise.all([
     readStableRegular(path.join(root, FILES.candidate), "candidate build spec"),
     readStableRegular(path.join(root, FILES.previous), "previous production station-line input"),
     readStableRegular(path.join(root, FILES.facility), "current FACILITY admission"),
+    readStableRegular(path.join(root, FILES.snapshots), "source snapshot ledger"),
+    readStableRegular(path.join(root, FILES.inventory), "source inventory"),
   ]);
   const result = buildCurrentCapitalAccessibilityTransition({
     candidate: parse(candidateBytes, "candidate build spec"),
@@ -318,11 +326,17 @@ export async function main(argv = process.argv.slice(2), {
     previousBytes,
     facilityAdmission: parse(facilityBytes, "current FACILITY admission"),
     facilityBytes,
+    ledger: parse(ledgerBytes, "source snapshot ledger"),
+    ledgerBytes,
+    inventory: parse(inventoryBytes, "source inventory"),
+    inventoryBytes,
   });
   const boundInputs = [
     { target: path.join(root, FILES.candidate), label: "candidate build spec", bytes: candidateBytes },
     { target: path.join(root, FILES.previous), label: "previous production station-line input", bytes: previousBytes },
     { target: path.join(root, FILES.facility), label: "current FACILITY admission", bytes: facilityBytes },
+    { target: path.join(root, FILES.snapshots), label: "source snapshot ledger", bytes: ledgerBytes },
+    { target: path.join(root, FILES.inventory), label: "source inventory", bytes: inventoryBytes },
   ];
   await beforePublish();
   await publish(
@@ -340,18 +354,25 @@ function validateTransition(value) {
     throw new Error("current accessibility transition schema mismatch");
   }
   assertKeys(value.nextCandidate, ["path", "sha256", "candidateId", "sourceSnapshotSetHash"], "transition next candidate");
+  assertKeys(value.previousCandidate, ["canonicalCandidate", "sha256", "candidateId", "sourceSnapshotSetHash"], "transition previous candidate");
   assertKeys(value.previousProduction, ["path", "sha256", "candidateId", "sourceSnapshotSetHash"], "transition previous production");
   assertKeys(value.facilityAdmission, ["path", "sha256", "admissionDigest", "snapshotId"], "transition FACILITY admission");
   assertKeys(value.pendingPrerequisites, ["exitAdmissionDirectory", "transferSourceId", "fullCapitalInputDirectory", "authorityEdgeCount"], "transition prerequisites");
   const nextCandidateId = requiredString(value.nextCandidate.candidateId, "transition next candidateId");
-  const previousCandidateId = requiredString(value.previousProduction.candidateId, "transition previous candidateId");
-  if (previousCandidateId === nextCandidateId) {
+  const previousCandidateId = requiredString(value.previousCandidate.candidateId, "transition previous candidateId");
+  const previousProductionCandidateId = requiredString(value.previousProduction.candidateId, "transition previous production candidateId");
+  assertEmbeddedPreviousCandidate(value.previousCandidate.canonicalCandidate);
+  if (previousCandidateId === nextCandidateId || previousProductionCandidateId === nextCandidateId) {
     throw new Error("transition candidate identity mismatch");
   }
   if (value.nextCandidate.path !== FILES.candidate || value.previousProduction.path !== FILES.previous || value.facilityAdmission.path !== FILES.facility
-    || ![value.nextCandidate.sha256, value.nextCandidate.sourceSnapshotSetHash, value.previousProduction.sha256, value.previousProduction.sourceSnapshotSetHash,
+    || ![value.nextCandidate.sha256, value.nextCandidate.sourceSnapshotSetHash, value.previousCandidate.sha256, value.previousCandidate.sourceSnapshotSetHash, value.previousProduction.sha256, value.previousProduction.sourceSnapshotSetHash,
       value.facilityAdmission.sha256, value.facilityAdmission.admissionDigest, value.transitionSha256].every((entry) => SHA.test(entry ?? ""))
     || !requiredString(value.facilityAdmission.snapshotId, "transition FACILITY snapshotId")
+    || value.previousCandidate.sourceSnapshotSetHash === value.nextCandidate.sourceSnapshotSetHash
+    || value.previousCandidate.canonicalCandidate?.candidateId !== previousCandidateId
+    || value.previousCandidate.canonicalCandidate?.sourceSnapshotSetHash !== value.previousCandidate.sourceSnapshotSetHash
+    || sha256(candidateBytesFor(value.previousCandidate.canonicalCandidate)) !== value.previousCandidate.sha256
     || value.previousProduction.sourceSnapshotSetHash === value.nextCandidate.sourceSnapshotSetHash
     || value.pendingPrerequisites.exitAdmissionDirectory !== "tools/datapack/release/current-exit-admission-v2"
     || value.pendingPrerequisites.transferSourceId !== "seoul-metro-transfer-distance-duration"
@@ -361,6 +382,20 @@ function validateTransition(value) {
   }
   const { transitionSha256, ...payload } = value;
   if (sha256(Buffer.from(canonicalJson(payload))) !== transitionSha256) throw new Error("current accessibility transition self-hash mismatch");
+}
+
+function assertEmbeddedPreviousCandidate(candidate) {
+  if (candidate?.schemaVersion !== 1 || candidate.artifactKind !== "datapack-candidate-build-spec"
+    || !Array.isArray(candidate.sourceSnapshotIds) || !Array.isArray(candidate.sourceSnapshots)
+    || candidate.sourceSnapshotIds.length !== CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS.length
+    || candidate.sourceSnapshots.length !== CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS.length
+    || new Set(candidate.sourceSnapshotIds).size !== CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS.length
+    || JSON.stringify(candidate.sourceSnapshots.map(({ sourceId }) => sourceId)) !== JSON.stringify(CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS)
+    || candidate.sourceSnapshots.some((projection, index) => projection?.snapshotId !== candidate.sourceSnapshotIds[index])
+    || !SHA.test(candidate.sourceSnapshotSetHash ?? "")
+    || !requiredString(candidate.candidateId, "embedded previous candidateId")) {
+    throw new Error("transition previous candidate shape mismatch");
+  }
 }
 
 async function readStableRegular(target, label) {

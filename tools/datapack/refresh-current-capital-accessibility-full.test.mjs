@@ -5,12 +5,13 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { buildCurrentCapitalAccessibilityRefreshOutputs, commitCurrentCapitalAccessibilityRefresh, refreshCurrentCapitalAccessibilityFull } from "./refresh-current-capital-accessibility-full.mjs";
+import { buildCurrentCapitalAccessibilityRefreshOutputs, refreshCurrentCapitalAccessibilityFull } from "./refresh-current-capital-accessibility-full.mjs";
 import { buildCurrentExitAdmissionOciReceipt, canonicalCurrentExitAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
-import { readStableRegularFile } from "./rebind-current-candidate-source-snapshots.mjs";
+import { buildReboundCurrentExitAdmissionIdentities } from "./rebind-current-exit-admission-identities.mjs";
+import { main as publishCurrentCapitalAccessibilityTransition } from "./current-capital-accessibility-transition.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 import { activateSyntheticCurrentStaticNetworkSuccessors, nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
-import { currentizeFreshFacilitySource, prepareCurrentFullCapitalProductionRepository, writeFreshCurrentAccessibilityOutputs, writeFreshExitAdmissionChain } from "./test-fixtures/current-full-capital-production-artifact.mjs";
+import { currentizeFreshFacilitySource, writeFreshCurrentAccessibilityOutputs, writeFreshExitAdmissionChain } from "./test-fixtures/current-full-capital-production-artifact.mjs";
 import {
   buildCurrentTopologyRefreshPrimaryOutputs,
   collectLayoutTopologySnapshotBytes,
@@ -23,6 +24,9 @@ const OUTPUTS = [
   "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
   "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
 ];
+const FAN_IN_OUTPUT = "tools/datapack/release/current-capital-live-chain-fan-in.json";
+const TRANSACTION_OUTPUTS = [...OUTPUTS, FAN_IN_OUTPUT];
+const TRANSITION = "tools/datapack/release/current-capital-accessibility-transition.json";
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const CURRENT_CAPITAL_SOURCE_ROSTER = Object.freeze([
   "seoul-metro-route-map-positions",
@@ -175,22 +179,59 @@ test("public V2 transition rejects legacy metadata, wrong-source predecessor, an
   }
 });
 
-test("two-file refresh transaction rolls back a partial replacement without residue", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "current-capital-refresh-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
-  const paths = [
-    "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
-    "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
-  ];
-  for (const [index, relative] of paths.entries()) {
-    const target = path.join(root, relative); await mkdir(path.dirname(target), { recursive: true }); await writeFile(target, `before-${index}`);
+test("pending v2 marker accepts FACILITY next-eight and EXIT previous-seven before full fan-in", async (t) => {
+  const root = await actualPendingMarkerRepository(t);
+  const [marker, facility, exit, beforeStation, beforeRoute] = await Promise.all([
+    readFile(path.join(root, TRANSITION)).then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/release/current-capital-facility-source-admission.json")).then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json")).then(JSON.parse),
+    readFile(path.join(root, OUTPUTS[0])).then(JSON.parse),
+    readFile(path.join(root, OUTPUTS[1])).then(JSON.parse),
+  ]);
+  assert.equal(facility.candidate.candidateId, marker.nextCandidate.candidateId);
+  assert.equal(facility.candidate.sourceSnapshotSetHash, marker.nextCandidate.sourceSnapshotSetHash);
+  assert.equal(exit.candidate.candidateId, marker.nextCandidate.candidateId);
+  assert.equal(exit.candidate.sourceSetSha256, marker.previousCandidate.sourceSnapshotSetHash);
+  assert.notEqual(beforeStation.candidate.candidateId, marker.nextCandidate.candidateId);
+  assert.notEqual(beforeRoute.candidate.candidateId, marker.nextCandidate.candidateId);
+  assert.equal(beforeStation.candidate.sourceSetSha256, marker.previousCandidate.sourceSnapshotSetHash);
+  assert.equal(beforeRoute.candidate.sourceSetSha256, marker.previousCandidate.sourceSnapshotSetHash);
+  assert.ok(beforeStation.evidenceRows.every((row) => row.candidateId === marker.previousCandidate.candidateId));
+  assert.ok(beforeStation.evidenceRows.every((row) => row.sourceSetSha256 === marker.previousCandidate.sourceSnapshotSetHash));
+
+  const outputs = await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root });
+  for (const { bytes } of outputs) {
+    const output = JSON.parse(bytes);
+    assert.equal(output.candidate.candidateId, marker.nextCandidate.candidateId);
+    assert.equal(output.candidate.sourceSetSha256, marker.nextCandidate.sourceSnapshotSetHash);
   }
-  const outputs = await Promise.all(paths.map(async (relative, index) => {
-    const target = path.join(root, relative); return { relative, prestate: await readStableRegularFile(target, "refresh fixture"), bytes: Buffer.from(`after-${index}`) };
-  }));
-  await assert.rejects(commitCurrentCapitalAccessibilityRefresh({ repositoryRoot: root, outputs, failAfter: 0 }), /injected refresh failure/);
-  assert.deepEqual(await Promise.all(paths.map((relative) => readFile(path.join(root, relative), "utf8"))), ["before-0", "before-1"]);
-  await assert.rejects(readFile(path.join(root, "tools/datapack/.current-capital-accessibility-refresh-transaction.json")), { code: "ENOENT" });
+  const [stationAfter, routeAfter] = outputs.map(({ bytes }) => JSON.parse(bytes));
+  assert.deepEqual(stationAfter.stationLines, beforeStation.stationLines);
+  assert.deepEqual(routeAfter.stationLines, beforeRoute.stationLines);
+  assert.deepEqual(routeAfter.routeEdges, beforeRoute.routeEdges);
+  assert.ok(stationAfter.evidenceRows.every((row) => row.candidateId === marker.nextCandidate.candidateId));
+  assert.ok(stationAfter.evidenceRows.every((row) => row.sourceSetSha256 === marker.nextCandidate.sourceSnapshotSetHash));
+  assert.deepEqual(
+    stationAfter.evidenceRows.map(({ candidateId: _candidateId, sourceSetSha256: _sourceSetSha256, ...row }) => row),
+    beforeStation.evidenceRows.map(({ candidateId: _candidateId, sourceSetSha256: _sourceSetSha256, ...row }) => row),
+  );
+
+  const routePath = path.join(root, OUTPUTS[1]);
+  const mutatedRoute = structuredClone(beforeRoute);
+  mutatedRoute.stationLines[0].lineSequence = mutatedRoute.stationLines[0].lineSequence + 1;
+  await writeFile(routePath, JSON.stringify(mutatedRoute));
+  await assert.rejects(buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root }), /topology delta mismatch/);
+  await writeFile(routePath, JSON.stringify(beforeRoute));
+
+  const stationPath = path.join(root, OUTPUTS[0]);
+  const mutatedStation = structuredClone(beforeStation);
+  const facilityEvidence = mutatedStation.evidenceRows.find((row) => row.domain === "FACILITY");
+  facilityEvidence.capturedAt = facilityEvidence.capturedAt === "2026-08-30T00:00:00.000Z"
+    ? "2026-08-30T00:00:00.001Z"
+    : "2026-08-30T00:00:00.000Z";
+  await writeFile(stationPath, JSON.stringify(mutatedStation));
+  await assert.rejects(buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root }), /evidence delta mismatch/);
+  await writeFile(stationPath, JSON.stringify(beforeStation));
 });
 
 test("predecessor-bound activated inputs are rebuilt atomically to exact current bytes", async (t) => {
@@ -198,6 +239,7 @@ test("predecessor-bound activated inputs are rebuilt atomically to exact current
   const expected = await expectedCurrentBytes(root);
   await refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root });
   assert.deepEqual(await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative)))), expected);
+  await assert.rejects(readFile(path.join(root, TRANSITION)), { code: "ENOENT" });
   const [station, route] = await Promise.all(OUTPUTS.map(async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"))));
   assert.equal(station.evidenceRows.length, 641);
   assert.equal(route.stationLines.length, 1102);
@@ -214,40 +256,26 @@ test("input mutation after build is rejected before either output replacement", 
   assert.deepEqual(await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative)))), before);
 });
 
-test("PREPARED residue with already-current output bytes recovers under the refresh lock", async (t) => {
-  const root = await stagedRefreshRepository(t);
-  const before = await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative))));
-  const expected = await expectedCurrentBytes(root);
-  const records = OUTPUTS.map((relative, index) => ({ relative, before: before[index].toString("base64"), beforeSha256: sha(before[index]), after: expected[index].toString("base64"), afterSha256: sha(expected[index]) }));
-  for (const [index, relative] of OUTPUTS.entries()) await writeFile(path.join(root, relative), expected[index]);
-  await writeFile(path.join(root, "tools/datapack/.current-capital-accessibility-refresh-transaction.json"), JSON.stringify({ schemaVersion: 1, state: "PREPARED", records }));
-  await refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root });
-  assert.deepEqual(await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative)))), expected);
+test("PREPARED residue restores the exact marker after a partial deletion", async (t) => {
+  const fixture = await transactionRecoveryFixture(t, "PREPARED");
+  await assert.rejects(refreshCurrentCapitalAccessibilityFull({ repositoryRoot: fixture.root }));
+  assert.deepEqual(await Promise.all(TRANSACTION_OUTPUTS.map((relative) => readFile(path.join(fixture.root, relative)))), fixture.before);
+  assert.deepEqual(await readFile(path.join(fixture.root, TRANSITION)), fixture.marker);
+  await assert.rejects(readFile(path.join(fixture.root, "tools/datapack/.current-capital-accessibility-refresh-transaction.json")), { code: "ENOENT" });
 });
 
 test("a demonstrably dead refresh owner lease permits PREPARED and COMMITTED journal recovery", async (t) => {
   for (const state of ["PREPARED", "COMMITTED"]) {
-    const root = await stagedRefreshRepository(t);
-    const expected = await expectedCurrentBytes(root);
-    const before = await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative))));
-    const [candidate, facility, exit] = await Promise.all([
-      readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json")).then(JSON.parse),
-      readFile(path.join(root, "tools/datapack/release/current-capital-facility-source-admission.json")).then(JSON.parse),
-      readFile(path.join(root, "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json")).then(JSON.parse),
-    ]);
-    assert.notEqual(facility.candidate.sourceSnapshotSetHash, candidate.sourceSnapshotSetHash, `${state} FACILITY transition binding`);
-    assert.notEqual(exit.candidate.sourceSetSha256, candidate.sourceSnapshotSetHash, `${state} EXIT transition binding`);
-    const records = OUTPUTS.map((relative, index) => ({ relative, before: before[index].toString("base64"), beforeSha256: sha(before[index]), after: expected[index].toString("base64"), afterSha256: sha(expected[index]) }));
-    if (state === "PREPARED") for (const [index, relative] of OUTPUTS.entries()) await writeFile(path.join(root, relative), expected[index]);
-    if (state === "COMMITTED") for (const [index, relative] of OUTPUTS.entries()) await writeFile(path.join(root, relative), before[index]);
-    await writeFile(path.join(root, "tools/datapack/.current-capital-accessibility-refresh-transaction.json"), JSON.stringify({ schemaVersion: 1, state, records }));
-    await writeRefreshLease(root, { schemaVersion: 1, token: "00000000-0000-4000-8000-000000000001", pid: 999999 });
+    const fixture = await transactionRecoveryFixture(t, state);
+    await writeRefreshLease(fixture.root, { schemaVersion: 1, token: "00000000-0000-4000-8000-000000000001", pid: 999999 });
 
-    await refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root });
+    await assert.rejects(refreshCurrentCapitalAccessibilityFull({ repositoryRoot: fixture.root }));
 
-    assert.deepEqual(await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative)))), expected, state);
-    await assert.rejects(readFile(path.join(root, "tools/datapack/.current-capital-accessibility-refresh-transaction.json")), { code: "ENOENT" }, state);
-    await assert.rejects(readFile(path.join(root, "tools/datapack/.current-capital-accessibility-refresh.lock/owner.json")), { code: "ENOENT" }, state);
+    assert.deepEqual(await Promise.all(TRANSACTION_OUTPUTS.map((relative) => readFile(path.join(fixture.root, relative)))), state === "PREPARED" ? fixture.before : fixture.after, state);
+    if (state === "PREPARED") assert.deepEqual(await readFile(path.join(fixture.root, TRANSITION)), fixture.marker, state);
+    else await assert.rejects(readFile(path.join(fixture.root, TRANSITION)), { code: "ENOENT" }, state);
+    await assert.rejects(readFile(path.join(fixture.root, "tools/datapack/.current-capital-accessibility-refresh-transaction.json")), { code: "ENOENT" }, state);
+    await assert.rejects(readFile(path.join(fixture.root, "tools/datapack/.current-capital-accessibility-refresh.lock/owner.json")), { code: "ENOENT" }, state);
   }
 });
 
@@ -269,20 +297,20 @@ test("active, malformed, and foreign refresh leases remain fail-closed", async (
 });
 
 test("already-current activated outputs preserve exact bytes through the current live-chain fan-in", async (t) => {
-  const root = await prepareCurrentFullCapitalProductionRepository(ROOT);
-  t.after(() => rm(root, { recursive: true, force: true }));
-  const before = await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative))));
+  const root = await stagedRefreshRepository(t);
+  await refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root });
+  const before = await Promise.all(TRANSACTION_OUTPUTS.map((relative) => readFile(path.join(root, relative))));
 
   const outputs = await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root });
-  assert.deepEqual(outputs.map(({ bytes }) => bytes), before);
+  assert.deepEqual(outputs.map(({ bytes }) => bytes), before.slice(0, 2));
 
   await refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root });
-  assert.deepEqual(await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative)))), before);
+  assert.deepEqual(await Promise.all(TRANSACTION_OUTPUTS.map((relative) => readFile(path.join(root, relative)))), before);
 });
 
 test("pre-approval uses the validated current live-chain fan-in for the current production fixture", async (t) => {
-  const root = await prepareCurrentFullCapitalProductionRepository(ROOT);
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await stagedRefreshRepository(t);
+  await refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root });
   const candidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json")));
   const canonicalPack = JSON.parse(await readFile(path.join(root, candidate.fixturePath)));
   const before = await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative))));
@@ -297,31 +325,25 @@ test("pre-approval uses the validated current live-chain fan-in for the current 
   assert.deepEqual(outputs.map(({ bytes }) => bytes), before);
 });
 
-test("pre-approval rejects a current live-chain fan-in replacement before commit", async (t) => {
-  const root = await prepareCurrentFullCapitalProductionRepository(ROOT);
-  t.after(() => rm(root, { recursive: true, force: true }));
+test("pre-approval remains a non-marker phase", async (t) => {
+  const root = await stagedRefreshRepository(t);
+  await refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root });
+  await assert.rejects(readFile(path.join(root, TRANSITION)), { code: "ENOENT" });
   const candidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json")));
   const canonicalPack = JSON.parse(await readFile(path.join(root, candidate.fixturePath)));
+  const before = await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative))));
   const outputs = await buildCurrentCapitalAccessibilityRefreshOutputs({
     repositoryRoot: root,
     phase: "PRE_APPROVAL_CURRENT_CANDIDATE",
     candidateBuildSpec: candidate,
     canonicalPack,
   });
-
-  await assert.rejects(commitCurrentCapitalAccessibilityRefresh({
-    repositoryRoot: root,
-    outputs,
-    beforeCommit: async () => writeFile(
-      path.join(root, "tools/datapack/release/current-capital-live-chain-fan-in.json"),
-      "{}",
-    ),
-  }), /input changed during refresh/);
+  assert.deepEqual(outputs.map(({ bytes }) => bytes), before);
 });
 
 test("already-current activated outputs without a valid current fan-in fail closed", async (t) => {
-  const root = await prepareCurrentFullCapitalProductionRepository(ROOT);
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await stagedRefreshRepository(t);
+  await refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root });
   await unlink(path.join(root, "tools/datapack/release/current-capital-live-chain-fan-in.json"));
 
   await assert.rejects(
@@ -333,10 +355,13 @@ test("already-current activated outputs without a valid current fan-in fail clos
 test("already-current canonical corruption fails closed instead of being returned or rewritten", async (t) => {
   const root = await stagedRefreshRepository(t);
   await refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root });
+  const terminalBytes = await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative))));
+  const terminalOutputs = await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root });
+  assert.deepEqual(terminalOutputs.map(({ bytes }) => bytes), terminalBytes);
   const stationPath = path.join(root, OUTPUTS[0]); const station = JSON.parse(await readFile(stationPath, "utf8"));
   station.evidenceRows[0].evidenceReason = "corrupt";
   await writeFile(stationPath, JSON.stringify(station));
-  await assert.rejects(refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root }), /current-capital refresh evidence delta mismatch/);
+  await assert.rejects(refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root }), /current-capital refresh current output bytes mismatch/);
 });
 
 test("current output headers with a one-sided producer boundary fail closed", async (t) => {
@@ -353,36 +378,83 @@ test("current output headers with a one-sided producer boundary fail closed", as
 });
 
 async function stagedRefreshRepository(t) {
-  const root = await mkdtemp(path.join(os.tmpdir(), "current-capital-refresh-staged-"));
+  return actualPendingMarkerRepository(t);
+}
+
+async function actualPendingMarkerRepository(t) {
+  const root = await mkdtemp(path.join(os.tmpdir(), "current-capital-refresh-marker-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   for (const relative of ["tools/datapack/release", "tools/datapack/inputs", "release/product-gates"]) {
     await cp(path.join(ROOT, relative), path.join(root, relative), { recursive: true });
   }
-  for (const relative of ["tools/datapack/source-inventory.json", "tools/datapack/source-governance-policy.json", "tools/datapack/official-od-fare-admission.json", "tools/datapack/nationwide-coverage-targets.json"]) {
-    const target = path.join(root, relative); await mkdir(path.dirname(target), { recursive: true }); await cp(path.join(ROOT, relative), target);
+  for (const relative of [
+    "tools/datapack/source-inventory.json", "tools/datapack/source-governance-policy.json",
+    "tools/datapack/official-od-fare-admission.json", "tools/datapack/nationwide-coverage-targets.json",
+  ]) {
+    const destination = path.join(root, relative); await mkdir(path.dirname(destination), { recursive: true });
+    await cp(path.join(ROOT, relative), destination);
   }
   await cp(path.join(ROOT, "tools/datapack/sources"), path.join(root, "tools/datapack/sources"), { recursive: true });
-  await writeStagedExitOciReceipt(root);
-  const currentCandidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
-  await copyCurrentCandidateEvidenceInputs(root, currentCandidate);
-  const { inWindow: now, candidateId, sourceSetSha256 } = await stageCurrentTopologyFixture(root);
-  await rebindStagedActivatedOutputCandidateIds(root, candidateId, sourceSetSha256);
-  await bindCurrentCandidateApprovalFixture(root);
-  await activateSyntheticCurrentStaticNetworkSuccessors(root, { now });
-  const facilityNow = await nextSyntheticCurrentStaticNetworkNow(root);
-  const canonicalPackPath = path.join(root, "tools/datapack/release/capital-production-canonical-pack.json");
-  const canonicalPackBytesBeforeFacilityCurrentization = await readFile(canonicalPackPath);
-  await currentizeFreshFacilitySource(root, facilityNow);
-  assert.equal((await readFile(canonicalPackPath)).equals(canonicalPackBytesBeforeFacilityCurrentization), true);
-  await writeFreshExitAdmissionChain(root, facilityNow);
-  await writeFreshCurrentAccessibilityOutputs(root);
-  const finalEvidence = await stagedStaticEvidenceIdentity(root);
-  await rebindStagedActivatedOutputCandidateIds(root, finalEvidence.candidateId, finalEvidence.predecessorSourceSetSha256);
+  await copyCurrentCandidateEvidenceInputs(
+    root,
+    JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"))),
+  );
+  await publishCurrentCapitalAccessibilityTransition([], { repositoryRoot: root, log: () => {} });
+  const marker = JSON.parse(await readFile(path.join(root, TRANSITION), "utf8"));
+  await rebindStagedActivatedOutputCandidateIds(
+    root,
+    marker.previousCandidate.candidateId,
+    marker.previousCandidate.sourceSnapshotSetHash,
+    { rebindAdmissions: false },
+  );
+  const paths = {
+    transition: TRANSITION,
+    normalized: "tools/datapack/release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json",
+    admission: "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json",
+    receipt: "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json",
+  };
+  const bytes = Object.fromEntries(await Promise.all(Object.entries(paths).map(async ([key, relative]) =>
+    [key, await readFile(path.join(root, relative))])));
+  const rebound = buildReboundCurrentExitAdmissionIdentities({
+    transitionBytes: bytes.transition,
+    normalizedBytes: bytes.normalized,
+    admissionBytes: bytes.admission,
+    receiptBytes: bytes.receipt,
+  });
   await Promise.all([
-    rebindStagedFacilityCandidateId(root, finalEvidence.candidateId, finalEvidence.sourceSetSha256),
-    rebindStagedExitCandidateId(root, finalEvidence.candidateId, finalEvidence.sourceSetSha256),
+    writeFile(path.join(root, paths.admission), rebound.admissionBytes),
+    writeFile(path.join(root, paths.receipt), rebound.receiptBytes),
   ]);
   return root;
+}
+
+function refreshRecords(before, after, marker) {
+  return [
+    ...TRANSACTION_OUTPUTS.map((relative, index) => ({
+      operation: "replace", relative, before: before[index].toString("base64"), beforeSha256: sha(before[index]),
+      after: after[index].toString("base64"), afterSha256: sha(after[index]),
+    })),
+    { operation: "delete", relative: TRANSITION, before: marker.toString("base64"), beforeSha256: sha(marker) },
+  ];
+}
+
+async function transactionRecoveryFixture(t, state) {
+  const root = await mkdtemp(path.join(os.tmpdir(), "current-capital-refresh-recovery-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const before = TRANSACTION_OUTPUTS.map((_, index) => Buffer.from(`before-${index}`));
+  const after = TRANSACTION_OUTPUTS.map((_, index) => Buffer.from(`after-${index}`));
+  const marker = Buffer.from("marker-before");
+  for (const [index, relative] of TRANSACTION_OUTPUTS.entries()) {
+    const output = path.join(root, relative); await mkdir(path.dirname(output), { recursive: true });
+    await writeFile(output, state === "PREPARED" ? after[index] : before[index]);
+  }
+  const markerPath = path.join(root, TRANSITION); await mkdir(path.dirname(markerPath), { recursive: true });
+  if (state === "COMMITTED") await writeFile(markerPath, marker);
+  await writeFile(
+    path.join(root, "tools/datapack/.current-capital-accessibility-refresh-transaction.json"),
+    JSON.stringify({ schemaVersion: 2, state, records: refreshRecords(before, after, marker) }),
+  );
+  return { root, before, after, marker };
 }
 
 async function writeStagedExitOciReceipt(root) {
@@ -541,8 +613,8 @@ async function admittedIncheonSnapshot(root, sourceInventory, sourceId, admissio
   return { snapshotPath, bytes, value };
 }
 
-async function rebindStagedActivatedOutputCandidateIds(root, candidateId, sourceSetSha256) {
-  if (typeof candidateId !== "string" || !/^capital-pilot-candidate-[0-9]{8}$/u.test(candidateId)) {
+async function rebindStagedActivatedOutputCandidateIds(root, candidateId, sourceSetSha256, { rebindAdmissions = true } = {}) {
+  if (typeof candidateId !== "string" || !/^(?:capital-pilot-candidate-[0-9]{8}|capital-accessibility-predecessor-[a-f0-9]{64})$/u.test(candidateId)) {
     throw new Error("staged candidate identity is invalid");
   }
   if (typeof sourceSetSha256 !== "string" || !/^[a-f0-9]{64}$/u.test(sourceSetSha256)) {
@@ -555,10 +627,11 @@ async function rebindStagedActivatedOutputCandidateIds(root, candidateId, source
   const parsed = documents.map(({ relative, bytes }) => ({ relative, value: JSON.parse(bytes) }));
   const [station, route] = parsed.map(({ value }) => value);
   const stationIds = [station?.candidate?.candidateId, ...(station?.evidenceRows ?? []).map(({ candidateId: value }) => value)];
+  const stationSourceSets = [station?.candidate?.sourceSetSha256, ...(station?.evidenceRows ?? []).map(({ sourceSetSha256: value }) => value)];
   const routeIds = [route?.candidate?.candidateId];
   if (!Array.isArray(station?.evidenceRows) || stationIds.length !== station.evidenceRows.length + 1
-    || [...stationIds, ...routeIds].some((value) => typeof value !== "string")
-    || new Set([...stationIds, ...routeIds]).size !== 1) {
+    || [...stationIds, ...stationSourceSets, ...routeIds, route?.candidate?.sourceSetSha256].some((value) => typeof value !== "string")
+    || new Set([...stationIds, ...routeIds]).size !== 1 || new Set([...stationSourceSets, route.candidate.sourceSetSha256]).size !== 1) {
     throw new Error("staged activated output candidate identity is invalid");
   }
   const [previousCandidateId] = stationIds;
@@ -567,17 +640,19 @@ async function rebindStagedActivatedOutputCandidateIds(root, candidateId, source
     && route.candidate.sourceSetSha256 === sourceSetSha256) return;
   const before = structuredClone(parsed.map(({ value }) => value));
   station.candidate.candidateId = candidateId; station.candidate.sourceSetSha256 = sourceSetSha256;
-  for (const row of station.evidenceRows) row.candidateId = candidateId;
+  for (const row of station.evidenceRows) { row.candidateId = candidateId; row.sourceSetSha256 = sourceSetSha256; }
   route.candidate.candidateId = candidateId; route.candidate.sourceSetSha256 = sourceSetSha256;
   const restored = structuredClone(parsed.map(({ value }) => value));
   restored[0].candidate.candidateId = previousCandidateId; restored[0].candidate.sourceSetSha256 = before[0].candidate.sourceSetSha256;
-  for (const row of restored[0].evidenceRows) row.candidateId = previousCandidateId;
+  for (const row of restored[0].evidenceRows) { row.candidateId = previousCandidateId; row.sourceSetSha256 = before[0].candidate.sourceSetSha256; }
   restored[1].candidate.candidateId = previousCandidateId; restored[1].candidate.sourceSetSha256 = before[1].candidate.sourceSetSha256;
   assert.deepEqual(restored, before, "staged candidate rebind must not change other semantics");
   await Promise.all(parsed.map(({ relative, value }) =>
     writeFile(path.join(root, relative), JSON.stringify(value))));
-  await rebindStagedFacilityCandidateId(root, candidateId);
-  await rebindStagedExitCandidateId(root, candidateId);
+  if (rebindAdmissions) {
+    await rebindStagedFacilityCandidateId(root, candidateId);
+    await rebindStagedExitCandidateId(root, candidateId);
+  }
 }
 
 async function stagedStaticEvidenceIdentity(root) {

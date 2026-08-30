@@ -18144,7 +18144,21 @@ async function writeCurrentItxReleaseInputs(
   const incheonSnapshotPath = path.join(repositoryRoot, incheonSource.routeMapAdmissionEvidence.snapshotPath);
   const incheonSnapshotBytes = await readFile(incheonSnapshotPath);
   const incheonSnapshot = JSON.parse(incheonSnapshotBytes);
-  mutateCurrentSourceContext?.({ buildSpec, currentInventory });
+  const currentLedgerPath = path.join(
+    repositoryRoot,
+    "tools/datapack/release/source-snapshots.json",
+  );
+  const currentLedger = JSON.parse(await readFile(currentLedgerPath, "utf8"));
+  mutateCurrentSourceContext?.({ buildSpec, currentInventory, currentLedger });
+  await writeFile(currentLedgerPath, `${JSON.stringify(currentLedger)}\n`);
+  const selectedSnapshotIds = new Set(buildSpec.sourceSnapshotIds);
+  const selectedLedger = currentLedger.filter(({ snapshotId }) => selectedSnapshotIds.has(snapshotId));
+  assert.equal(
+    selectedLedger.length,
+    selectedSnapshotIds.size,
+    "fixture candidate source-set must be ledger-complete before strict Incheon validation",
+  );
+  buildSpec.sourceSnapshotSetHash = sha256(JSON.stringify(selectedLedger));
   const now = new Date(buildNow);
   const incheonTopologyAdmission = admittedIncheonTopologyEvidence({
     sourceInventory: currentInventory,
@@ -18637,7 +18651,7 @@ test("staged accessibility successor에서도 official OD fare release candidate
   try {
     const successorSnapshotId = "kric-station-convenience-standard-test-successor";
     const inputs = await writeCurrentItxReleaseInputs(workspace, {
-      mutateCurrentSourceContext: ({ buildSpec, currentInventory }) => {
+      mutateCurrentSourceContext: ({ buildSpec, currentInventory, currentLedger }) => {
         const source = currentInventory.sources.find(({ id }) => id === "kric-station-convenience-standard");
         assert.ok(source?.accessibilityAdmissionEvidence);
         source.accessibilityAdmissionEvidence.snapshotId = successorSnapshotId;
@@ -18649,6 +18663,11 @@ test("staged accessibility successor에서도 official OD fare release candidate
         buildSpec.sourceSnapshotIds = buildSpec.sourceSnapshotIds.map(
           (snapshotId) => snapshotId === previousSnapshotId ? successorSnapshotId : snapshotId,
         );
+        const ledgerRow = currentLedger.find(({ sourceId, snapshotId }) =>
+          sourceId === source.id && snapshotId === previousSnapshotId,
+        );
+        assert.ok(ledgerRow, "fixture current KRIC snapshot must exist in the ledger");
+        currentLedger.push({ ...structuredClone(ledgerRow), snapshotId: successorSnapshotId });
       },
     });
     await runCurrentItxCandidateBuild({ ...inputs, output: path.join(workspace, "output") });
