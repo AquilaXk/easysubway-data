@@ -1,0 +1,128 @@
+name: KRIC Current Facility Refresh
+
+on:
+  schedule:
+    - cron: "17 */2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: kric-current-facility-refresh-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: KRIC current facility refresh
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    environment: datapack-release-check
+    timeout-minutes: 45
+    steps:
+      - name: KRIC current facility refresh / Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: KRIC current facility refresh / Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
+
+      - name: KRIC current facility refresh / Prepare operation paths
+        run: |
+          set -euo pipefail
+          operation_root="${RUNNER_TEMP}/kric-current-facility-refresh/${GITHUB_RUN_ID}"
+          mkdir -p "$(dirname "${operation_root}")"
+          printf 'KRIC_REFRESH_OPERATION_ROOT=%s\n' "${operation_root}" >> "${GITHUB_ENV}"
+          printf 'KRIC_REFRESH_DECISION=%s\n' "${RUNNER_TEMP}/kric-current-facility-refresh/decision.json" >> "${GITHUB_ENV}"
+
+      - name: KRIC current facility refresh / Read due state
+        id: decision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          prs="${RUNNER_TEMP}/kric-current-facility-refresh/open-prs.json"
+          gh pr list --state open --limit 100 --json number,headRefName,url > "${prs}"
+          node tools/ci/decide-current-kric-facility-refresh.mjs \
+            --inventory tools/datapack/source-inventory.json \
+            --policy release/product-gates/datapack-freshness-sla.json \
+            --prs "${prs}" \
+            --output "${KRIC_REFRESH_DECISION}" \
+            --github-output "${GITHUB_OUTPUT}"
+
+      - name: KRIC current facility refresh / Validate provider configuration
+        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
+        env:
+          KRIC_SERVICE_KEY: ${{ secrets.KRIC_SERVICE_KEY }}
+          EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${KRIC_SERVICE_KEY:-}" || "${KRIC_SERVICE_KEY}" == *$'\n'* || "${KRIC_SERVICE_KEY}" == *$'\r'* ]]; then
+            echo "KRIC_SERVICE_KEY must be a nonempty single line" >&2
+            exit 1
+          fi
+          if [[ -z "${EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL:-}" || "${EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL}" == *$'\n'* || "${EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL}" == *$'\r'* ]]; then
+            echo "EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL must be a nonempty single line" >&2
+            exit 1
+          fi
+
+      - name: KRIC current facility refresh / Collect and bind current snapshot
+        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
+        env:
+          KRIC_SERVICE_KEY: ${{ secrets.KRIC_SERVICE_KEY }}
+          EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
+        run: |
+          set -euo pipefail
+          main_sha="$(git rev-parse HEAD)"
+          node tools/datapack/run-current-capital-facility-operation.mjs prepare --operation-root "${KRIC_REFRESH_OPERATION_ROOT}" --expected-main-sha "${main_sha}"
+          node tools/datapack/run-current-capital-facility-operation.mjs collect --operation-root "${KRIC_REFRESH_OPERATION_ROOT}"
+          node tools/datapack/run-current-capital-facility-operation.mjs finalize --operation-root "${KRIC_REFRESH_OPERATION_ROOT}"
+          cp "${KRIC_REFRESH_OPERATION_ROOT}/receipt.json" "${KRIC_REFRESH_OPERATION_ROOT}/raw-receipt.json"
+
+      - name: KRIC current facility refresh / Create draft pull request
+        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch="automation/629-kric-facility-refresh-${GITHUB_RUN_ID}"
+          git switch -c "${branch}"
+          changed="$(git diff --name-only --diff-filter=ACMR)"
+          if [[ -z "${changed}" ]]; then
+            echo "KRIC refresh produced no tracked update" >&2
+            exit 1
+          fi
+          unexpected="$(printf '%s\n' "${changed}" | grep -Ev \
+            'tools/datapack/(release/candidate-build-spec\.json|release/current-capital-facility-source-admission\.json|release/source-snapshots\.json|source-inventory\.json|sources/[^/]+\.json)' || true)"
+          if [[ -n "${unexpected}" ]]; then
+            echo "KRIC refresh changed an unsupported path" >&2
+            exit 1
+          fi
+          git add tools/datapack/release/candidate-build-spec.json \
+            tools/datapack/release/current-capital-facility-source-admission.json \
+            tools/datapack/release/source-snapshots.json \
+            tools/datapack/source-inventory.json tools/datapack/sources
+          git diff --cached --quiet && exit 1
+          git commit -m "Refresh KRIC facility snapshot"
+          gh auth setup-git
+          git push origin "${branch}"
+          gh pr create --draft --base main --head "${branch}" \
+            --title "Refresh KRIC facility snapshot" \
+            --body "Refresh the due KRIC facility snapshot through the current OCI operation.\n\nRefs #629, #39, #29"
+
+      - name: KRIC current facility refresh / Upload sanitized evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: kric-current-facility-refresh-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/kric-current-facility-refresh/decision.json
+            ${{ runner.temp }}/kric-current-facility-refresh/${{ github.run_id }}/journal.json
+            ${{ runner.temp }}/kric-current-facility-refresh/${{ github.run_id }}/raw-receipt.json
+          if-no-files-found: ignore
+          retention-days: 14
