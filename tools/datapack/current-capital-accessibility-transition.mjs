@@ -20,6 +20,7 @@ const FILES = Object.freeze({
   inventory: "tools/datapack/source-inventory.json",
   snapshots: "tools/datapack/release/source-snapshots.json",
   transition: "tools/datapack/release/current-capital-accessibility-transition.json",
+  successor: "tools/datapack/release/current-capital-accessibility-transition-successor.json",
 });
 const SHA = /^[a-f0-9]{64}$/u;
 const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
@@ -32,6 +33,12 @@ const PROJECTION_KEYS = Object.freeze([
 const TOP_LEVEL_KEYS = Object.freeze([
   "schemaVersion", "artifactKind", "state", "nextCandidate", "previousCandidate", "previousProduction",
   "facilityAdmission", "pendingPrerequisites", "transitionSha256",
+]);
+const SUCCESSOR_TOP_LEVEL_KEYS = Object.freeze([
+  "schemaVersion", "artifactKind", "state", "supersededTransition", "previousFacilityAdmission",
+  "previousFacilityAdmissionBase64",
+  "nextCandidate", "previousCandidate", "previousProduction", "facilityAdmission",
+  "pendingPrerequisites", "transitionSha256", "successorSha256",
 ]);
 
 export function buildCurrentCapitalAccessibilityTransition(input) {
@@ -75,12 +82,90 @@ export function canonicalCurrentCapitalAccessibilityTransitionJson(value) {
   return `${canonicalJson(value)}\n`;
 }
 
+// A successor never rewrites the protected base marker.  It is an independently
+// create-once evidence object for the one permitted current-source replacement.
+export function buildCurrentCapitalAccessibilityTransitionSuccessor({ baseTransitionBytes, previousFacilityBytes, currentTransition } = {}) {
+  const baseBytes = requiredBytes(baseTransitionBytes, "base accessibility transition");
+  const facilityBytes = requiredBytes(previousFacilityBytes, "pre-rebind FACILITY admission");
+  const base = parse(baseBytes, "base accessibility transition");
+  const previousFacility = parse(facilityBytes, "pre-rebind FACILITY admission");
+  if (canonicalCurrentCapitalAccessibilityTransitionJson(base) !== baseBytes.toString("utf8")) {
+    throw new Error("base accessibility transition is not canonical");
+  }
+  if (canonicalCurrentCapitalFacilitySourceAdmissionJson(previousFacility) !== facilityBytes.toString("utf8")) {
+    throw new Error("pre-rebind FACILITY admission bytes are not canonical");
+  }
+  // Reuse the full v2 transition validator rather than accepting a partial
+  // replacement payload.
+  canonicalCurrentCapitalAccessibilityTransitionJson(currentTransition);
+  if (base.previousCandidate.candidateId !== currentTransition.previousCandidate.candidateId
+    || base.previousCandidate.sourceSnapshotSetHash !== currentTransition.previousCandidate.sourceSnapshotSetHash
+    || base.previousProduction.candidateId !== currentTransition.previousProduction.candidateId
+    || base.previousProduction.sourceSnapshotSetHash !== currentTransition.previousProduction.sourceSnapshotSetHash
+    || base.nextCandidate.sourceSnapshotSetHash === currentTransition.nextCandidate.sourceSnapshotSetHash
+    || currentTransition.previousCandidate.candidateId === currentTransition.nextCandidate.candidateId
+    || currentTransition.previousCandidate.sourceSnapshotSetHash === currentTransition.nextCandidate.sourceSnapshotSetHash) {
+    throw new Error("successor transition boundary mismatch");
+  }
+  if (base.facilityAdmission.sha256 !== sha256(facilityBytes)
+    || base.facilityAdmission.admissionDigest !== previousFacility.admissionDigest
+    || base.facilityAdmission.snapshotId !== previousFacility.sourceIdentity?.snapshotId) {
+    throw new Error("successor pre-rebind FACILITY binding mismatch");
+  }
+  const payload = {
+    schemaVersion: 2,
+    artifactKind: "current-capital-accessibility-transition-successor",
+    state: "PENDING_FULL_FAN_IN",
+    supersededTransition: {
+      path: FILES.transition,
+      sha256: sha256(baseBytes),
+      transitionSha256: base.transitionSha256,
+    },
+    previousFacilityAdmission: {
+      path: FILES.facility,
+      sha256: sha256(facilityBytes),
+      admissionDigest: requiredSha(previousFacility.admissionDigest, "pre-rebind FACILITY admission digest"),
+      snapshotId: requiredString(previousFacility.sourceIdentity?.snapshotId, "pre-rebind FACILITY snapshotId"),
+    },
+    previousFacilityAdmissionBase64: facilityBytes.toString("base64"),
+    nextCandidate: currentTransition.nextCandidate,
+    previousCandidate: currentTransition.previousCandidate,
+    previousProduction: currentTransition.previousProduction,
+    facilityAdmission: currentTransition.facilityAdmission,
+    pendingPrerequisites: currentTransition.pendingPrerequisites,
+    transitionSha256: currentTransition.transitionSha256,
+  };
+  return { ...payload, successorSha256: sha256(Buffer.from(canonicalJson(payload))) };
+}
+
+export function canonicalCurrentCapitalAccessibilityTransitionSuccessorJson(value) {
+  validateSuccessorTransition(value);
+  return `${canonicalJson(value)}\n`;
+}
+
+export function canonicalEffectiveCurrentCapitalAccessibilityTransitionJson(value) {
+  if (value?.artifactKind === "current-capital-accessibility-transition-successor") {
+    return canonicalCurrentCapitalAccessibilityTransitionSuccessorJson(value);
+  }
+  return canonicalCurrentCapitalAccessibilityTransitionJson(value);
+}
+
 export async function readCurrentCapitalAccessibilityTransitionBoundary({ repositoryRoot }) {
   const boundary = await inspectCurrentCapitalAccessibilityTransition({ repositoryRoot, allowMissing: false });
   if (boundary.currentCandidateSourceSetSha256 === boundary.evidenceSourceSetSha256) {
     throw new Error("full fan-in transition append required");
   }
   return boundary;
+}
+
+export async function readEffectiveCurrentCapitalAccessibilityTransition({ repositoryRoot }) {
+  const root = path.resolve(repositoryRoot ?? fileURLToPath(new URL("../../", import.meta.url)));
+  const baseBytes = await readStableRegular(path.join(root, FILES.transition), "current accessibility transition");
+  let successorBytes;
+  try { successorBytes = await readStableRegular(path.join(root, FILES.successor), "current accessibility transition successor"); }
+  catch (error) { if (error?.code !== "ENOENT") throw error; }
+  const boundary = await inspectCurrentCapitalAccessibilityTransition({ repositoryRoot: root, allowMissing: false });
+  return { ...boundary, baseBytes, transitionBytes: successorBytes ?? baseBytes };
 }
 
 export async function assertCurrentCapitalAccessibilityBuildAllowed({ repositoryRoot }) {
@@ -99,6 +184,9 @@ async function inspectCurrentCapitalAccessibilityTransition({ repositoryRoot, al
     if (error?.code === "ENOENT" && allowMissing) return null;
     throw error;
   }
+  let successorBytes;
+  try { successorBytes = await readStableRegular(path.join(root, FILES.successor), "current accessibility transition successor"); }
+  catch (error) { if (error?.code !== "ENOENT") throw error; }
   const [candidateBytes, previousBytes, facilityBytes, ledgerBytes, inventoryBytes] = await Promise.all([
     readStableRegular(path.join(root, FILES.candidate), "candidate build spec"),
     readStableRegular(path.join(root, FILES.previous), "previous production station-line input"),
@@ -106,8 +194,8 @@ async function inspectCurrentCapitalAccessibilityTransition({ repositoryRoot, al
     readStableRegular(path.join(root, FILES.snapshots), "source snapshot ledger"),
     readStableRegular(path.join(root, FILES.inventory), "source inventory"),
   ]);
-  const parsed = parse(transition, "current accessibility transition");
-  if (canonicalCurrentCapitalAccessibilityTransitionJson(parsed) !== transition.toString("utf8")) {
+  const base = parse(transition, "current accessibility transition");
+  if (canonicalCurrentCapitalAccessibilityTransitionJson(base) !== transition.toString("utf8")) {
     throw new Error("transition candidate binding mismatch");
   }
   const candidate = parse(candidateBytes, "candidate build spec");
@@ -126,7 +214,16 @@ async function inspectCurrentCapitalAccessibilityTransition({ repositoryRoot, al
       inventory: parse(inventoryBytes, "source inventory"),
       inventoryBytes,
     });
-    if (canonicalJson(parsed) !== canonicalJson(rebuilt)) {
+    const effective = successorBytes ? parse(successorBytes, "current accessibility transition successor") : base;
+    if (successorBytes) {
+      if (canonicalCurrentCapitalAccessibilityTransitionSuccessorJson(effective) !== successorBytes.toString("utf8")) throw new Error("successor transition binding mismatch");
+      const expected = buildCurrentCapitalAccessibilityTransitionSuccessor({
+        baseTransitionBytes: transition,
+        previousFacilityBytes: Buffer.from(effective.previousFacilityAdmissionBase64, "base64"),
+        currentTransition: rebuilt,
+      });
+      if (canonicalJson(effective) !== canonicalJson(expected)) throw new Error("stored successor transition mismatch");
+    } else if (canonicalJson(base) !== canonicalJson(rebuilt)) {
       throw new Error("stored transition mismatch");
     }
   } catch {
@@ -136,7 +233,7 @@ async function inspectCurrentCapitalAccessibilityTransition({ repositoryRoot, al
     currentCandidateBytesSha256: sha256(candidateBytes),
     currentCandidateSourceSetSha256: requiredSha(candidate.sourceSnapshotSetHash, "current candidate source snapshot set"),
     facilityAdmissionBytesSha256: sha256(facilityBytes),
-    evidenceSourceSetSha256: requiredSha(parsed.previousCandidate.sourceSnapshotSetHash, "transition evidence source snapshot set"),
+    evidenceSourceSetSha256: requiredSha((successorBytes ? parse(successorBytes, "current accessibility transition successor") : base).previousCandidate.sourceSnapshotSetHash, "transition evidence source snapshot set"),
   };
 }
 
@@ -382,6 +479,52 @@ function validateTransition(value) {
   }
   const { transitionSha256, ...payload } = value;
   if (sha256(Buffer.from(canonicalJson(payload))) !== transitionSha256) throw new Error("current accessibility transition self-hash mismatch");
+}
+
+function validateSuccessorTransition(value) {
+  assertKeys(value, SUCCESSOR_TOP_LEVEL_KEYS, "current accessibility transition successor");
+  if (value.schemaVersion !== 2 || value.artifactKind !== "current-capital-accessibility-transition-successor"
+    || value.state !== "PENDING_FULL_FAN_IN") {
+    throw new Error("current accessibility transition successor schema mismatch");
+  }
+  assertKeys(value.supersededTransition, ["path", "sha256", "transitionSha256"], "successor base transition");
+  assertKeys(value.previousFacilityAdmission, ["path", "sha256", "admissionDigest", "snapshotId"], "successor previous FACILITY admission");
+  const transition = {
+    schemaVersion: value.schemaVersion,
+    artifactKind: "current-capital-accessibility-transition",
+    state: value.state,
+    nextCandidate: value.nextCandidate,
+    previousCandidate: value.previousCandidate,
+    previousProduction: value.previousProduction,
+    facilityAdmission: value.facilityAdmission,
+    pendingPrerequisites: value.pendingPrerequisites,
+    transitionSha256: value.transitionSha256,
+  };
+  validateTransition(transition);
+  if (value.supersededTransition.path !== FILES.transition
+    || ![value.supersededTransition.sha256, value.supersededTransition.transitionSha256,
+      value.previousFacilityAdmission.sha256, value.previousFacilityAdmission.admissionDigest,
+      value.successorSha256].every((entry) => SHA.test(entry ?? ""))
+    || value.previousFacilityAdmission.path !== FILES.facility
+    || !requiredString(value.previousFacilityAdmission.snapshotId, "successor previous FACILITY snapshotId")) {
+    throw new Error("current accessibility transition successor identity mismatch");
+  }
+  if (typeof value.previousFacilityAdmissionBase64 !== "string") {
+    throw new Error("current accessibility transition successor pre-rebind FACILITY bytes mismatch");
+  }
+  const previousBytes = Buffer.from(value.previousFacilityAdmissionBase64, "base64");
+  const previous = parse(previousBytes, "successor pre-rebind FACILITY admission");
+  if (!previousBytes.length || previousBytes.toString("base64") !== value.previousFacilityAdmissionBase64
+    || canonicalCurrentCapitalFacilitySourceAdmissionJson(previous) !== previousBytes.toString("utf8")
+    || value.previousFacilityAdmission.sha256 !== sha256(previousBytes)
+    || value.previousFacilityAdmission.admissionDigest !== previous.admissionDigest
+    || value.previousFacilityAdmission.snapshotId !== previous.sourceIdentity?.snapshotId) {
+    throw new Error("current accessibility transition successor pre-rebind FACILITY bytes mismatch");
+  }
+  const { successorSha256, ...payload } = value;
+  if (sha256(Buffer.from(canonicalJson(payload))) !== successorSha256) {
+    throw new Error("current accessibility transition successor self-hash mismatch");
+  }
 }
 
 function assertEmbeddedPreviousCandidate(candidate) {

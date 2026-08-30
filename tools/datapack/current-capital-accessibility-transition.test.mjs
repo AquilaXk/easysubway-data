@@ -8,7 +8,9 @@ import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
 import {
   assertCurrentCapitalAccessibilityBuildAllowed,
   buildCurrentCapitalAccessibilityTransition,
+  buildCurrentCapitalAccessibilityTransitionSuccessor,
   canonicalCurrentCapitalAccessibilityTransitionJson,
+  canonicalCurrentCapitalAccessibilityTransitionSuccessorJson,
   main,
   readCurrentCapitalAccessibilityTransitionBoundary,
 } from "./current-capital-accessibility-transition.mjs";
@@ -94,6 +96,35 @@ test("pending full fan-in marker를 exact current identities에 결속하고 rou
   await assert.rejects(
     () => assertCurrentCapitalAccessibilityBuildAllowed({ repositoryRoot: fixture.root }),
     /transition candidate binding mismatch/,
+  );
+});
+
+test("successor는 immutable base marker와 pre-rebind FACILITY bytes를 함께 결속한다", async (t) => {
+  const fixture = await createFixture(t);
+  const base = buildCurrentCapitalAccessibilityTransition(fixture.input);
+  const baseBytes = Buffer.from(canonicalCurrentCapitalAccessibilityTransitionJson(base));
+  const current = structuredClone(base);
+  current.nextCandidate = { ...current.nextCandidate, sourceSnapshotSetHash: "e".repeat(64) };
+  current.facilityAdmission = { ...current.facilityAdmission, sha256: "f".repeat(64), admissionDigest: "a".repeat(64) };
+  const { transitionSha256: _ignored, ...currentPayload } = current;
+  current.transitionSha256 = sha256(Buffer.from(canonicalJson(currentPayload)));
+  const successor = buildCurrentCapitalAccessibilityTransitionSuccessor({
+    baseTransitionBytes: baseBytes,
+    previousFacilityBytes: fixture.input.facilityBytes,
+    currentTransition: current,
+  });
+  const bytes = canonicalCurrentCapitalAccessibilityTransitionSuccessorJson(successor);
+  const parsed = JSON.parse(bytes);
+  assert.equal(parsed.artifactKind, "current-capital-accessibility-transition-successor");
+  assert.equal(parsed.supersededTransition.sha256, sha256(baseBytes));
+  assert.equal(parsed.previousFacilityAdmission.sha256, sha256(fixture.input.facilityBytes));
+  assert.equal(Buffer.from(parsed.previousFacilityAdmissionBase64, "base64").toString("utf8"), fixture.input.facilityBytes.toString("utf8"));
+  assert.equal(parsed.successorSha256, sha256(Buffer.from(canonicalJson(Object.fromEntries(Object.entries(parsed).filter(([key]) => key !== "successorSha256"))))));
+
+  parsed.previousFacilityAdmissionBase64 = Buffer.from("{}").toString("base64");
+  assert.throws(
+    () => canonicalCurrentCapitalAccessibilityTransitionSuccessorJson(parsed),
+    /capital FACILITY admission output keys mismatch/,
   );
 });
 

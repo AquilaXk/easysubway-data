@@ -8,7 +8,7 @@ import test from "node:test";
 import { buildCurrentCapitalAccessibilityRefreshOutputs, refreshCurrentCapitalAccessibilityFull } from "./refresh-current-capital-accessibility-full.mjs";
 import { buildCurrentExitAdmissionOciReceipt, canonicalCurrentExitAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
 import { buildReboundCurrentExitAdmissionIdentities } from "./rebind-current-exit-admission-identities.mjs";
-import { main as publishCurrentCapitalAccessibilityTransition } from "./current-capital-accessibility-transition.mjs";
+import { rebindCurrentActiveFacilityDerivedIdentity } from "./rebind-current-active-facility-derived-identity.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 import { activateSyntheticCurrentStaticNetworkSuccessors, nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
 import { currentizeFreshFacilitySource, writeFreshCurrentAccessibilityOutputs, writeFreshExitAdmissionChain } from "./test-fixtures/current-full-capital-production-artifact.mjs";
@@ -27,6 +27,7 @@ const OUTPUTS = [
 const FAN_IN_OUTPUT = "tools/datapack/release/current-capital-live-chain-fan-in.json";
 const TRANSACTION_OUTPUTS = [...OUTPUTS, FAN_IN_OUTPUT];
 const TRANSITION = "tools/datapack/release/current-capital-accessibility-transition.json";
+const SUCCESSOR = "tools/datapack/release/current-capital-accessibility-transition-successor.json";
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const CURRENT_CAPITAL_SOURCE_ROSTER = Object.freeze([
   "seoul-metro-route-map-positions",
@@ -181,13 +182,15 @@ test("public V2 transition rejects legacy metadata, wrong-source predecessor, an
 
 test("pending v2 marker accepts FACILITY next-eight and EXIT previous-seven before full fan-in", async (t) => {
   const root = await actualPendingMarkerRepository(t);
-  const [marker, facility, exit, beforeStation, beforeRoute] = await Promise.all([
-    readFile(path.join(root, TRANSITION)).then(JSON.parse),
+  const [baseBytes, marker, facility, exit, beforeStation, beforeRoute] = await Promise.all([
+    readFile(path.join(root, TRANSITION)),
+    readFile(path.join(root, SUCCESSOR)).then(JSON.parse),
     readFile(path.join(root, "tools/datapack/release/current-capital-facility-source-admission.json")).then(JSON.parse),
     readFile(path.join(root, "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json")).then(JSON.parse),
     readFile(path.join(root, OUTPUTS[0])).then(JSON.parse),
     readFile(path.join(root, OUTPUTS[1])).then(JSON.parse),
   ]);
+  assert.equal(marker.supersededTransition.sha256, sha(baseBytes));
   assert.equal(facility.candidate.candidateId, marker.nextCandidate.candidateId);
   assert.equal(facility.candidate.sourceSnapshotSetHash, marker.nextCandidate.sourceSnapshotSetHash);
   assert.equal(exit.candidate.candidateId, marker.nextCandidate.candidateId);
@@ -240,6 +243,7 @@ test("predecessor-bound activated inputs are rebuilt atomically to exact current
   await refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root });
   assert.deepEqual(await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative)))), expected);
   await assert.rejects(readFile(path.join(root, TRANSITION)), { code: "ENOENT" });
+  await assert.rejects(readFile(path.join(root, SUCCESSOR)), { code: "ENOENT" });
   const [station, route] = await Promise.all(OUTPUTS.map(async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"))));
   assert.equal(station.evidenceRows.length, 641);
   assert.equal(route.stationLines.length, 1102);
@@ -261,6 +265,7 @@ test("PREPARED residue restores the exact marker after a partial deletion", asyn
   await assert.rejects(refreshCurrentCapitalAccessibilityFull({ repositoryRoot: fixture.root }));
   assert.deepEqual(await Promise.all(TRANSACTION_OUTPUTS.map((relative) => readFile(path.join(fixture.root, relative)))), fixture.before);
   assert.deepEqual(await readFile(path.join(fixture.root, TRANSITION)), fixture.marker);
+  assert.deepEqual(await readFile(path.join(fixture.root, SUCCESSOR)), fixture.successor);
   await assert.rejects(readFile(path.join(fixture.root, "tools/datapack/.current-capital-accessibility-refresh-transaction.json")), { code: "ENOENT" });
 });
 
@@ -272,8 +277,13 @@ test("a demonstrably dead refresh owner lease permits PREPARED and COMMITTED jou
     await assert.rejects(refreshCurrentCapitalAccessibilityFull({ repositoryRoot: fixture.root }));
 
     assert.deepEqual(await Promise.all(TRANSACTION_OUTPUTS.map((relative) => readFile(path.join(fixture.root, relative)))), state === "PREPARED" ? fixture.before : fixture.after, state);
-    if (state === "PREPARED") assert.deepEqual(await readFile(path.join(fixture.root, TRANSITION)), fixture.marker, state);
-    else await assert.rejects(readFile(path.join(fixture.root, TRANSITION)), { code: "ENOENT" }, state);
+    if (state === "PREPARED") {
+      assert.deepEqual(await readFile(path.join(fixture.root, TRANSITION)), fixture.marker, state);
+      assert.deepEqual(await readFile(path.join(fixture.root, SUCCESSOR)), fixture.successor, state);
+    } else {
+      await assert.rejects(readFile(path.join(fixture.root, TRANSITION)), { code: "ENOENT" }, state);
+      await assert.rejects(readFile(path.join(fixture.root, SUCCESSOR)), { code: "ENOENT" }, state);
+    }
     await assert.rejects(readFile(path.join(fixture.root, "tools/datapack/.current-capital-accessibility-refresh-transaction.json")), { code: "ENOENT" }, state);
     await assert.rejects(readFile(path.join(fixture.root, "tools/datapack/.current-capital-accessibility-refresh.lock/owner.json")), { code: "ENOENT" }, state);
   }
@@ -329,6 +339,7 @@ test("pre-approval remains a non-marker phase", async (t) => {
   const root = await stagedRefreshRepository(t);
   await refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root });
   await assert.rejects(readFile(path.join(root, TRANSITION)), { code: "ENOENT" });
+  await assert.rejects(readFile(path.join(root, SUCCESSOR)), { code: "ENOENT" });
   const candidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json")));
   const canonicalPack = JSON.parse(await readFile(path.join(root, candidate.fixturePath)));
   const before = await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative))));
@@ -399,16 +410,10 @@ async function actualPendingMarkerRepository(t) {
     root,
     JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"))),
   );
-  await publishCurrentCapitalAccessibilityTransition([], { repositoryRoot: root, log: () => {} });
-  const marker = JSON.parse(await readFile(path.join(root, TRANSITION), "utf8"));
-  await rebindStagedActivatedOutputCandidateIds(
-    root,
-    marker.previousCandidate.candidateId,
-    marker.previousCandidate.sourceSnapshotSetHash,
-    { rebindAdmissions: false },
-  );
+  await rebindCurrentActiveFacilityDerivedIdentity({ repositoryRoot: root });
+  const marker = JSON.parse(await readFile(path.join(root, SUCCESSOR), "utf8"));
   const paths = {
-    transition: TRANSITION,
+    transition: SUCCESSOR,
     normalized: "tools/datapack/release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json",
     admission: "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json",
     receipt: "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json",
@@ -425,16 +430,24 @@ async function actualPendingMarkerRepository(t) {
     writeFile(path.join(root, paths.admission), rebound.admissionBytes),
     writeFile(path.join(root, paths.receipt), rebound.receiptBytes),
   ]);
+  await writeFreshCurrentAccessibilityOutputs(root);
+  await rebindStagedActivatedOutputCandidateIds(
+    root,
+    marker.previousCandidate.candidateId,
+    marker.previousCandidate.sourceSnapshotSetHash,
+    { rebindAdmissions: false },
+  );
   return root;
 }
 
-function refreshRecords(before, after, marker) {
+function refreshRecords(before, after, marker, successor) {
   return [
     ...TRANSACTION_OUTPUTS.map((relative, index) => ({
       operation: "replace", relative, before: before[index].toString("base64"), beforeSha256: sha(before[index]),
       after: after[index].toString("base64"), afterSha256: sha(after[index]),
     })),
     { operation: "delete", relative: TRANSITION, before: marker.toString("base64"), beforeSha256: sha(marker) },
+    { operation: "delete", relative: SUCCESSOR, before: successor.toString("base64"), beforeSha256: sha(successor) },
   ];
 }
 
@@ -444,17 +457,22 @@ async function transactionRecoveryFixture(t, state) {
   const before = TRANSACTION_OUTPUTS.map((_, index) => Buffer.from(`before-${index}`));
   const after = TRANSACTION_OUTPUTS.map((_, index) => Buffer.from(`after-${index}`));
   const marker = Buffer.from("marker-before");
+  const successor = Buffer.from("successor-before");
   for (const [index, relative] of TRANSACTION_OUTPUTS.entries()) {
     const output = path.join(root, relative); await mkdir(path.dirname(output), { recursive: true });
     await writeFile(output, state === "PREPARED" ? after[index] : before[index]);
   }
   const markerPath = path.join(root, TRANSITION); await mkdir(path.dirname(markerPath), { recursive: true });
-  if (state === "COMMITTED") await writeFile(markerPath, marker);
+  const successorPath = path.join(root, SUCCESSOR);
+  if (state === "COMMITTED") await Promise.all([
+    writeFile(markerPath, marker),
+    writeFile(successorPath, successor),
+  ]);
   await writeFile(
     path.join(root, "tools/datapack/.current-capital-accessibility-refresh-transaction.json"),
-    JSON.stringify({ schemaVersion: 2, state, records: refreshRecords(before, after, marker) }),
+    JSON.stringify({ schemaVersion: 2, state, records: refreshRecords(before, after, marker, successor) }),
   );
-  return { root, before, after, marker };
+  return { root, before, after, marker, successor };
 }
 
 async function writeStagedExitOciReceipt(root) {

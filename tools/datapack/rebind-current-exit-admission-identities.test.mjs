@@ -7,9 +7,9 @@ import test from "node:test";
 import { canonicalCurrentExitAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
 import { canonicalExitPathAdmissionJson } from "./build-exit-path-admission.mjs";
 import {
-  buildCurrentCapitalAccessibilityTransition,
-  canonicalCurrentCapitalAccessibilityTransitionJson,
-} from "./current-capital-accessibility-transition.mjs";
+  buildCurrentActiveFacilityDerivedIdentitySuccessorTransaction,
+  rebindCurrentActiveFacilityDerivedIdentity,
+} from "./rebind-current-active-facility-derived-identity.mjs";
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
 import {
   buildReboundCurrentExitAdmissionIdentities,
@@ -180,44 +180,31 @@ test("rejects transition dependency replacement before durable journal creation"
 
 async function bytes(relative) { return readFile(path.join(ROOT, relative)); }
 async function currentTransitionBytes(repositoryRoot = ROOT) {
-  const read = async (relative) => readFile(path.join(repositoryRoot, relative));
-  const [candidateBytes, previousBytes, facilityBytes, ledgerBytes, inventoryBytes] = await Promise.all([
-    read("tools/datapack/release/candidate-build-spec.json"),
-    read("tools/datapack/release/current-station-line-accessibility/station-line-input.json"),
-    read("tools/datapack/release/current-capital-facility-source-admission.json"),
-    read("tools/datapack/release/source-snapshots.json"),
-    read("tools/datapack/source-inventory.json"),
-  ]);
-  return Buffer.from(canonicalCurrentCapitalAccessibilityTransitionJson(
-    buildCurrentCapitalAccessibilityTransition({
-      candidate: JSON.parse(candidateBytes), candidateBytes,
-      previous: JSON.parse(previousBytes), previousBytes,
-      facilityAdmission: JSON.parse(facilityBytes), facilityBytes,
-      ledger: JSON.parse(ledgerBytes), ledgerBytes,
-      inventory: JSON.parse(inventoryBytes), inventoryBytes,
-    }),
-  ));
+  const successorPath = path.join(
+    repositoryRoot,
+    "tools/datapack/release/current-capital-accessibility-transition-successor.json",
+  );
+  try { return await readFile(successorPath); }
+  catch (error) { if (error?.code !== "ENOENT") throw error; }
+  const transaction = await buildCurrentActiveFacilityDerivedIdentitySuccessorTransaction({ repositoryRoot });
+  return transaction.successor.bytes;
 }
 async function temporaryRepository(t) {
   const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "easysubway-exit-rebind-"));
   t.after(() => rm(repositoryRoot, { recursive: true, force: true }));
-  const files = [
-    "tools/datapack/release/candidate-build-spec.json",
-    "tools/datapack/release/current-station-line-accessibility/station-line-input.json",
-    "tools/datapack/release/current-capital-facility-source-admission.json",
+  for (const relative of ["tools/datapack/release", "tools/datapack/sources", "release/product-gates"]) {
+    await cp(path.join(ROOT, relative), path.join(repositoryRoot, relative), { recursive: true });
+  }
+  for (const relative of [
+    "tools/datapack/nationwide-coverage-targets.json",
     "tools/datapack/source-inventory.json",
-    "tools/datapack/release/source-snapshots.json",
-    `${EXIT_DIRECTORY}/exit-path-normalized-source-snapshot.json`,
-    `${EXIT_DIRECTORY}/exit-path-source-admission.json`,
-    `${EXIT_DIRECTORY}/exit-path-admission-oci-receipt.json`,
-  ];
-  await Promise.all(files.map(async (relative) => {
+    "tools/datapack/source-governance-policy.json",
+  ]) {
     const destination = path.join(repositoryRoot, relative);
     await mkdir(path.dirname(destination), { recursive: true });
-    await cp(path.join(ROOT, relative), destination, { recursive: false, force: false });
-  }));
-  const transitionPath = path.join(repositoryRoot, "tools/datapack/release/current-capital-accessibility-transition.json");
-  await writeFile(transitionPath, await currentTransitionBytes(repositoryRoot));
+    await cp(path.join(ROOT, relative), destination);
+  }
+  await rebindCurrentActiveFacilityDerivedIdentity({ repositoryRoot });
   return repositoryRoot;
 }
 function stripAdmission(value) {

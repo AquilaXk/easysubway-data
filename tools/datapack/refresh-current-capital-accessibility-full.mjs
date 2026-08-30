@@ -14,7 +14,7 @@ import {
   CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH,
   readCurrentCapitalLiveChainFanInBoundary,
 } from "./build-current-capital-live-chain-boundary.mjs";
-import { readCurrentCapitalAccessibilityTransitionBoundary } from "./current-capital-accessibility-transition.mjs";
+import { readCurrentCapitalAccessibilityTransitionBoundary, readEffectiveCurrentCapitalAccessibilityTransition } from "./current-capital-accessibility-transition.mjs";
 import { projectCandidateFixtureForAccessibilityAuthority } from "./build-datapack.mjs";
 import { atomicReplace, readStableRegularFile } from "./rebind-current-candidate-source-snapshots.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
@@ -31,6 +31,7 @@ const LOCK = "tools/datapack/.current-capital-accessibility-refresh.lock";
 const LOCK_OWNER = "owner.json";
 const CANDIDATE_BUILD_SPEC = "tools/datapack/release/candidate-build-spec.json";
 const TRANSITION = "tools/datapack/release/current-capital-accessibility-transition.json";
+const SUCCESSOR = "tools/datapack/release/current-capital-accessibility-transition-successor.json";
 const ACTIVATED_CURRENT_OUTPUT = "ACTIVATED_CURRENT_OUTPUT";
 const PRE_APPROVAL_CURRENT_CANDIDATE = "PRE_APPROVAL_CURRENT_CANDIDATE";
 const SEOUL = "seoul-metro-accessibility";
@@ -218,6 +219,7 @@ async function inputFiles(root, phase) {
     } catch (error) {
       if (error?.code !== "ENOENT" && error?.cause?.code !== "ENOENT") throw error;
     }
+    if (files[TRANSITION]) files[SUCCESSOR] = await readStableRegularFile(target(root, SUCCESSOR), SUCCESSOR);
   }
   if (phase === PRE_APPROVAL_CURRENT_CANDIDATE) {
     const fixturePath = candidateFixturePath(parse(files[CANDIDATE_BUILD_SPEC].bytes, "current candidate"));
@@ -289,15 +291,18 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
 } = {}) {
   requirePhase(phase);
   const root = path.resolve(repositoryRoot); const files = await inputFiles(root, phase);
-  const marker = files[TRANSITION];
+  const marker = files[TRANSITION]; const effectiveMarker = files[SUCCESSOR];
   const proof = marker ? { alreadyCurrent: false } : buildRefreshProof({ phase, candidateFile: files[CANDIDATE_BUILD_SPEC], ledgerFile: files["tools/datapack/release/source-snapshots.json"], requestFile: files["tools/datapack/release/release-request.json"], hashesFile: files["tools/datapack/release/hash-evidence.json"], facilityFile: files["tools/datapack/release/current-capital-facility-source-admission.json"], exitFile: files["tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json"], stationFile: files[OUTPUTS[0]], routeFile: files[OUTPUTS[1]] });
   const { alreadyCurrent, ...transition } = proof;
   if (marker) {
     await readCurrentCapitalAccessibilityTransitionBoundary({ repositoryRoot: root });
+    await readEffectiveCurrentCapitalAccessibilityTransition({ repositoryRoot: root });
     const currentMarker = await readStableRegularFile(target(root, TRANSITION), TRANSITION);
     if (!currentMarker.bytes.equals(marker.bytes)) throw new Error("current-capital refresh transition marker changed during validation");
+    const currentSuccessor = await readStableRegularFile(target(root, SUCCESSOR), SUCCESSOR);
+    if (!currentSuccessor.bytes.equals(files[SUCCESSOR].bytes)) throw new Error("current-capital refresh transition successor changed during validation");
     assertPendingMarkerProducerBoundary({
-      marker: parse(marker.bytes, "current-capital refresh transition marker"),
+      marker: parse(effectiveMarker.bytes, "current-capital refresh transition marker"),
       facility: parse(files["tools/datapack/release/current-capital-facility-source-admission.json"].bytes, "FACILITY admission"),
       exit: parse(files["tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json"].bytes, "EXIT admission"),
     });
@@ -349,16 +354,16 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
 }
 
 function validateJournal(value) {
-  if (!value || value.schemaVersion !== 2 || !["PREPARED", "COMMITTED"].includes(value.state) || !Array.isArray(value.records) || value.records.length !== 4
-    || JSON.stringify(value.records.map(({ relative }) => relative)) !== JSON.stringify([...TRANSACTION_OUTPUTS, TRANSITION])) throw new Error("current-capital refresh recovery required");
+  const deletionPaths = value?.records?.slice(TRANSACTION_OUTPUTS.length).map(({ relative }) => relative);
+  if (!value || value.schemaVersion !== 2 || !["PREPARED", "COMMITTED"].includes(value.state) || !Array.isArray(value.records)
+    || deletionPaths?.length !== 2
+    || JSON.stringify(value.records.slice(0, TRANSACTION_OUTPUTS.length).map(({ relative }) => relative)) !== JSON.stringify(TRANSACTION_OUTPUTS)
+    || JSON.stringify(deletionPaths) !== JSON.stringify([TRANSITION, SUCCESSOR])) throw new Error("current-capital refresh recovery required");
   for (const record of value.records.slice(0, 3)) {
     if (record.operation !== "replace" || typeof record.before !== "string" || typeof record.after !== "string"
       || sha(Buffer.from(record.before, "base64")) !== record.beforeSha256 || sha(Buffer.from(record.after, "base64")) !== record.afterSha256) throw new Error("current-capital refresh recovery required");
   }
-  const marker = value.records[3];
-  if (marker.operation !== "delete" || typeof marker.before !== "string" || sha(Buffer.from(marker.before, "base64")) !== marker.beforeSha256) {
-    throw new Error("current-capital refresh recovery required");
-  }
+  for (const marker of value.records.slice(TRANSACTION_OUTPUTS.length)) if (marker.operation !== "delete" || typeof marker.before !== "string" || sha(Buffer.from(marker.before, "base64")) !== marker.beforeSha256) throw new Error("current-capital refresh recovery required");
 }
 async function writeNewJournal(file, bytes) {
   const parent = path.dirname(file); const info = await lstat(parent);
@@ -480,7 +485,7 @@ async function assertInputsStable(inputs) {
     if (!current.bytes.equals(snapshot.bytes)) throw new Error("current-capital refresh input changed during refresh");
   }
 }
-async function commitUnlocked({ root, outputs, marker, failAfter = null, beforeCommit = async () => {} }) {
+async function commitUnlocked({ root, outputs, marker, successor, failAfter = null, beforeCommit = async () => {} }) {
   await beforeCommit(); await assertInputsStable(outputs.flatMap(({ inputs = [] }) => inputs));
   let prepared = false;
   try {
@@ -490,9 +495,12 @@ async function commitUnlocked({ root, outputs, marker, failAfter = null, beforeC
     }
     const currentMarker = await readStableRegularFile(target(root, TRANSITION), TRANSITION);
     if (!currentMarker.bytes.equals(marker.bytes)) throw new Error("current-capital refresh preserves foreign replacement");
+    const currentSuccessor = await readStableRegularFile(target(root, SUCCESSOR), SUCCESSOR);
+    if (!currentSuccessor.bytes.equals(successor.bytes)) throw new Error("current-capital refresh preserves foreign replacement");
     const records = [
       ...outputs.map(({ relative, bytes, prestate }) => ({ operation: "replace", relative, before: prestate.bytes.toString("base64"), beforeSha256: sha(prestate.bytes), after: bytes.toString("base64"), afterSha256: sha(bytes) })),
       { operation: "delete", relative: TRANSITION, before: marker.bytes.toString("base64"), beforeSha256: sha(marker.bytes) },
+      { operation: "delete", relative: SUCCESSOR, before: successor.bytes.toString("base64"), beforeSha256: sha(successor.bytes) },
     ];
     const journalPath = target(root, JOURNAL); await writeNewJournal(journalPath, Buffer.from(JSON.stringify({ schemaVersion: 2, state: "PREPARED", records }))); prepared = true;
     for (const [index, output] of outputs.entries()) { await atomicReplace(target(root, output.relative), output.bytes, { original: output.prestate }); if (failAfter === index) throw new Error("injected refresh failure"); }
@@ -501,23 +509,25 @@ async function commitUnlocked({ root, outputs, marker, failAfter = null, beforeC
       if (!current.bytes.equals(output.bytes)) throw new Error("current-capital refresh final byte mismatch");
     }
     await deleteExpectedFile(target(root, TRANSITION), marker.bytes); if (failAfter === outputs.length) throw new Error("injected refresh failure");
+    await deleteExpectedFile(target(root, SUCCESSOR), successor.bytes);
     const journal = await readStableRegularFile(journalPath, "current-capital refresh journal"); await atomicReplace(journalPath, Buffer.from(JSON.stringify({ schemaVersion: 2, state: "COMMITTED", records })), { original: journal });
     await recover(root); prepared = false;
     for (const output of outputs) {
       const current = await readStableRegularFile(target(root, output.relative), "current-capital refresh final target");
       if (!current.bytes.equals(output.bytes)) throw new Error("current-capital refresh final byte mismatch");
     }
-    if (await readOptionalStable(target(root, TRANSITION), TRANSITION)) throw new Error("current-capital refresh final marker mismatch");
+    if (await readOptionalStable(target(root, TRANSITION), TRANSITION) || await readOptionalStable(target(root, SUCCESSOR), SUCCESSOR)) throw new Error("current-capital refresh final marker mismatch");
   } catch (error) { if (prepared) await recover(root); throw error; }
 }
-async function commitCurrentCapitalAccessibilityRefresh({ repositoryRoot = ROOT, outputs, marker, failAfter = null, beforeCommit = async () => {} } = {}) {
+async function commitCurrentCapitalAccessibilityRefresh({ repositoryRoot = ROOT, outputs, marker, successor, failAfter = null, beforeCommit = async () => {} } = {}) {
   const root = path.resolve(repositoryRoot);
   if (!Array.isArray(outputs) || JSON.stringify(outputs.map(({ relative }) => relative)) !== JSON.stringify(TRANSACTION_OUTPUTS) || outputs.some(({ bytes, prestate }) => !Buffer.isBuffer(bytes) || !prestate?.bytes)) throw new Error("current-capital refresh output allowlist mismatch");
   if (!marker?.bytes || !Buffer.isBuffer(marker.bytes)) throw new Error("current-capital refresh transition marker is required");
+  if (!successor?.bytes || !Buffer.isBuffer(successor.bytes)) throw new Error("current-capital refresh transition successor is required");
   const release = await acquireLock(root);
   try {
     await recover(root);
-    await commitUnlocked({ root, outputs, marker, failAfter, beforeCommit });
+    await commitUnlocked({ root, outputs, marker, successor, failAfter, beforeCommit });
   } finally { await release(); }
 }
 export async function refreshCurrentCapitalAccessibilityFull({ repositoryRoot = ROOT, beforeCommit = async () => {} } = {}) {
@@ -530,7 +540,9 @@ export async function refreshCurrentCapitalAccessibilityFull({ repositoryRoot = 
     const transactionOutputs = [...outputs, outputs[0].fanIn];
     if (!transactionOutputs.every(({ bytes, prestate }) => bytes.equals(prestate.bytes)) || marker) {
       if (!marker) throw new Error("current-capital refresh transition marker is required");
-      await commitUnlocked({ root, outputs: transactionOutputs, marker, beforeCommit });
+      const successor = outputs[0]?.inputs?.find(({ target: inputTarget }) => inputTarget === target(root, SUCCESSOR));
+      if (!successor) throw new Error("current-capital refresh transition successor is required");
+      await commitUnlocked({ root, outputs: transactionOutputs, marker, successor, beforeCommit });
     }
     return { outputs: TRANSACTION_OUTPUTS };
   } finally { await release(); }

@@ -7,7 +7,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { canonicalCurrentExitAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
 import { canonicalExitPathAdmissionJson } from "./build-exit-path-admission.mjs";
 import {
-  canonicalCurrentCapitalAccessibilityTransitionJson,
+  canonicalEffectiveCurrentCapitalAccessibilityTransitionJson,
+  readEffectiveCurrentCapitalAccessibilityTransition,
   readCurrentCapitalAccessibilityTransitionBoundary,
 } from "./current-capital-accessibility-transition.mjs";
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
@@ -18,12 +19,14 @@ import {
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const TRANSITION = "tools/datapack/release/current-capital-accessibility-transition.json";
+const SUCCESSOR = "tools/datapack/release/current-capital-accessibility-transition-successor.json";
 const EXIT_DIRECTORY = "tools/datapack/release/current-exit-admission-v2";
 const EXIT_NORMALIZED = `${EXIT_DIRECTORY}/exit-path-normalized-source-snapshot.json`;
 const EXIT_ADMISSION = `${EXIT_DIRECTORY}/exit-path-source-admission.json`;
 const EXIT_RECEIPT = `${EXIT_DIRECTORY}/exit-path-admission-oci-receipt.json`;
 const BOUNDARY_INPUTS = Object.freeze({
   transition: TRANSITION,
+  successor: SUCCESSOR,
   candidate: "tools/datapack/release/candidate-build-spec.json",
   previous: "tools/datapack/release/current-station-line-accessibility/station-line-input.json",
   facility: "tools/datapack/release/current-capital-facility-source-admission.json",
@@ -34,7 +37,7 @@ const JOURNAL = `${EXIT_DIRECTORY}/.exit-admission-identity-rebind.journal.json`
 const LOCK = `${EXIT_DIRECTORY}/.exit-admission-identity-rebind.lock`;
 
 export function buildReboundCurrentExitAdmissionIdentities({ transitionBytes, normalizedBytes, admissionBytes, receiptBytes } = {}) {
-  const transition = parseCanonical(transitionBytes, canonicalCurrentCapitalAccessibilityTransitionJson, "current accessibility transition");
+  const transition = parseCanonical(transitionBytes, canonicalEffectiveCurrentCapitalAccessibilityTransitionJson, "current accessibility transition");
   const normalized = parse(normalizedBytes, "starting EXIT normalized snapshot");
   if (canonicalJson(normalized) !== text(normalizedBytes, "starting EXIT normalized snapshot")) {
     throw new Error("starting EXIT normalized snapshot is not canonical");
@@ -84,7 +87,7 @@ export async function buildReboundCurrentExitAdmissionIdentitiesFromRepository({
     readStableRegularFile(path.join(root, EXIT_RECEIPT), "EXIT OCI receipt"),
   ]);
   return buildReboundCurrentExitAdmissionIdentities({
-    transitionBytes: boundaryInput.transition.bytes,
+    transitionBytes: boundaryInput.effectiveTransitionBytes,
     normalizedBytes: normalizedBytes.bytes,
     admissionBytes: admissionBytes.bytes,
     receiptBytes: receiptBytes.bytes,
@@ -118,7 +121,7 @@ export async function applyReboundCurrentExitAdmissionIdentities({
     [key, await readStableRegularFile(target, label)]));
   const input = Object.fromEntries(entries);
   const result = buildReboundCurrentExitAdmissionIdentities({
-    transitionBytes: boundaryInput.transition.bytes,
+    transitionBytes: boundaryInput.effectiveTransitionBytes,
     normalizedBytes: input.normalized.bytes,
     admissionBytes: input.admission.bytes,
     receiptBytes: input.receipt.bytes,
@@ -235,7 +238,10 @@ async function captureValidatedBoundary(root) {
   const input = Object.fromEntries(await Promise.all(Object.entries(BOUNDARY_INPUTS).map(async ([key, relative]) =>
     [key, await readStableRegularFile(path.join(root, relative), `transition ${key}`)])));
   await readCurrentCapitalAccessibilityTransitionBoundary({ repositoryRoot: root });
+  const effective = await readEffectiveCurrentCapitalAccessibilityTransition({ repositoryRoot: root });
+  if (!effective.transitionBytes.equals(input.successor.bytes)) throw new Error("verified transition successor changed during EXIT identity rebind");
   await Promise.all(Object.values(input).map(assertUnchanged));
+  Object.defineProperty(input, "effectiveTransitionBytes", { value: effective.transitionBytes, enumerable: false });
   return input;
 }
 
