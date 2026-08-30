@@ -117,8 +117,10 @@ test("Incheon timetable catalog runs the credential-free official data.go.kr dow
     const candidate = document.candidates.find((entry) => entry.id === id);
     const runner = candidate?.operation?.runner;
     assert.equal(runner?.command, "node tools/datapack/collect-incheon-timetable.mjs");
-    assert.equal(runner?.arguments?.[0], "--download");
+    assert.ok(runner?.arguments?.includes("--download"));
     assert.ok(!runner?.arguments?.includes("--input-dir"));
+    assert.ok(!runner?.arguments?.includes("--captured-at"));
+    assert.doesNotMatch(JSON.stringify(runner), /current-provider-capture-iso/);
     assert.doesNotMatch(JSON.stringify(runner), /fixtures|\/tmp\/|2026-07/);
     assert.deepEqual(runner?.requiredEnv, []);
   }

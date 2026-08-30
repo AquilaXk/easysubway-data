@@ -1716,8 +1716,6 @@
             "<tracked-current-incheon-topology-snapshot>",
             "--output-dir",
             "<absolute-operation-owned-output-directory>",
-            "--captured-at",
-            "<current-provider-capture-iso>",
             "--line",
             "1"
           ],
@@ -1824,8 +1822,6 @@
             "<tracked-current-incheon-topology-snapshot>",
             "--output-dir",
             "<absolute-operation-owned-output-directory>",
-            "--captured-at",
-            "<current-provider-capture-iso>",
             "--line",
             "2"
           ],
