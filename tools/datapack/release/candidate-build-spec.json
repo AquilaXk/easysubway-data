@@ -6,7 +6,7 @@
   "publishedAt": "2026-08-30T17:40:02.000Z",
   "releaseSequence": 115,
   "fixturePath": "tools/datapack/release/capital-production-canonical-pack.json",
-  "itxTopologyEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence.json",
+  "itxTopologyEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence-20260830151508786.json",
   "itxTopologyEvidenceSha256": "50e2f03b2975c26d488b4f0a23c9a0f5cad7e91a56eb9b7b4977fbbba611745d",
   "networkEdgeEvidence": {
     "sourceInventory": {
@@ -210,7 +210,7 @@
   "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
   "approvedOverrideSetHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
   "sourceInventorySha256": "100f6c67097fc98afbfd4f5762260a737d6ecf458a31404e8f519fcfc6c05959",
-  "builderGitSha": "53b84812edd85a690422fd67d9287f95ac105e8c",
+  "builderGitSha": "7474c915262f70a2b4028a9dd415b863c3154358",
   "builderVersion": "build-datapack.mjs@26",
   "officialOdFareEvidence": {
     "sourceId": "seoul-metro-official-od-fares",

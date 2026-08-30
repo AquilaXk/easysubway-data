@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
   "issue": 1996,
-  "builderGitSha": "53b84812edd85a690422fd67d9287f95ac105e8c",
+  "builderGitSha": "7474c915262f70a2b4028a9dd415b863c3154358",
   "builderVersion": "build-datapack.mjs@26",
   "productionScopeId": "capital_pilot_android_v1",
   "truthfulnessRule": "모든 값은 tracked canonical fixture·inventory·official snapshot에서 결정적으로 재산출한다. 2026-07-28 신규 KRIC standard·서울 snapshot을 소비 claim에 결속하고 route 가용성은 추론하지 않는다.",
@@ -65,7 +65,7 @@
       "note": "파일 기반 경로는 backend candidate 행을 우회하므로 리포에 고정 명명 계약 없음. fixture 선례(capital-pilot-candidate-fixture)+snapshot 날짜 관례로 명명. release-request.candidateId와 동일(자체 정합)."
     },
     "approvalId": {
-      "value": "release-request-capital-pilot-candidate-20260830-e6a33bbf475451bf9b2b37b648a91b1920ebb8df5ef347a7c69071214eed51e4",
+      "value": "release-request-capital-pilot-candidate-20260830-dad3b9e171863a990d8846ac69f150c52b2f45e6745a0a5f1f0ef25e9d2d95da",
       "note": "Recorded release authorization ID; mirrored in release-request and must match dispatch. Exact build-spec identity is bound separately by release-request.buildSpecSha256."
     }
   },
