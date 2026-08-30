@@ -1195,7 +1195,7 @@ async function loadAdmittedSourceReference(contract, repositoryRoot, catalog) {
 }
 
 async function verifyOwnerApproval({ approvalUrl, expectedBody, observedAt, fetchImpl, githubToken }) {
-  const match = /^https:\/\/github\.com\/AquilaXk\/easysubway-data\/issues\/96#issuecomment-(\d+)$/.exec(approvalUrl ?? "");
+  const match = /^https:\/\/github\.com\/AquilaXk\/easysubway-data\/issues\/(?:96|636)#issuecomment-(\d+)$/.exec(approvalUrl ?? "");
   if (!match) throw new Error("SNAPSHOT_BOOTSTRAP_APPROVAL_INVALID");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15_000);

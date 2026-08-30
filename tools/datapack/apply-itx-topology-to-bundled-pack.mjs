@@ -207,7 +207,7 @@ function validateAdmittedSourceReference(contract, reference) {
 function validateCurrentApprovalIdentity(reference) {
   const promotion = reference?.promotion;
   if (promotion?.mode !== "CURRENT_CANDIDATE_OWNER_APPROVED"
-    || !/^https:\/\/github\.com\/AquilaXk\/easysubway-data\/issues\/96#issuecomment-[1-9][0-9]*$/u
+    || !/^https:\/\/github\.com\/AquilaXk\/easysubway-data\/issues\/(?:96|636)#issuecomment-[1-9][0-9]*$/u
       .test(promotion.approvalUrl ?? "")
     || promotion.approvedArtifactSha256 !== reference.sha256) {
     throw new Error("ITX topology approval identity is invalid");

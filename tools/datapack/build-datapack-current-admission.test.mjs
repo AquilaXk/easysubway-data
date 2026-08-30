@@ -1014,6 +1014,8 @@ test("tracked current source topology evidence는 expired overlay 없이 exact a
   ]);
   assert.equal(Object.hasOwn(buildSpec.networkEdgeEvidence, "itxCurrentTopologyAdmission"), false);
   const topology = await validateTrackedItxTopologyEvidence(buildSpec, fixture);
+  contract.sourceTimetableArtifact.promotion.approvalUrl =
+    "https://github.com/AquilaXk/easysubway-data/issues/636#issuecomment-123";
   assert.equal(
     fixture.packs.find(({ id }) => id === "capital").networkEdges
       .filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN").length,

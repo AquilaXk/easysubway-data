@@ -721,6 +721,8 @@ test("current source static admission은 exact topology input tuple을 반환한
 test("OWNER-approved current source는 exact static topology input에 결속된다", async () => {
   const { contract, reference, source, completeness, sourceBytes, completenessBytes } =
     await trackedLegacyDocuments();
+  reference.promotion.approvalUrl =
+    "https://github.com/AquilaXk/easysubway-data/issues/636#issuecomment-123";
   withBuildNow(() => assert.doesNotThrow(() => validateAdmittedSourceDocuments(
     contract,
     reference,
