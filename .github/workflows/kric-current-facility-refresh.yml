@@ -130,6 +130,8 @@ jobs:
           set -euo pipefail
           branch="automation/629-kric-facility-refresh-${GITHUB_RUN_ID}"
           main_sha="$(git rev-parse HEAD)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "${branch}"
           git commit --allow-empty -m "Claim KRIC facility refresh"
           gh auth setup-git
