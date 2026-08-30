@@ -289,6 +289,7 @@
     {"path":"tools/datapack/admit-reviewed-kric-candidates.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":167},
     {"path":"tools/datapack/apply-accessibility-evidence-to-bundled-pack.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":320},
     {"path":"tools/datapack/apply-capital-line1-topology-to-bundled-pack.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":536},
+    {"path":"tools/datapack/export-publish-env.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":228},
     {"path":"tools/datapack/apply-capital-route-topology-to-bundled-pack.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":1111},
     {"path":"tools/datapack/apply-itx-topology-to-bundled-pack.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":8406},
     {"path":"tools/datapack/apply-kric-line4-pilot-schedule.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":111},
