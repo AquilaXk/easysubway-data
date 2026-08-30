@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync } from "node:crypto";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -445,26 +445,23 @@ test("source-separated current topology는 capital과 Incheon 1/2 line ownership
 
 test("source-separated current topology materialization은 Incheon 1/2 exact 116 edges만 교체한다", async () => {
   const inventory = await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse);
-  const sourceDir = path.join(root, "tools/datapack/sources");
-  const topologySnapshotName = (await readdir(sourceDir))
-    .filter((name) => /^incheon-transit-station-info-[0-9]{8}\.json$/u.test(name))
-    .sort()
-    .at(-1);
-  if (topologySnapshotName == null) {
-    throw new Error("current Incheon topology admission is missing");
+  const source = (id) => inventory.sources.find((entry) => entry.id === id);
+  const topologySnapshotPath = source("incheon-transit-station-info")
+    ?.topologyAdmissionEvidence?.snapshotPath;
+  const accessibilitySnapshotPath = source("incheon-transit-accessibility")
+    ?.accessibilityAdmissionEvidence?.snapshotPath;
+  const timetableSnapshotPaths = {
+    1: source("incheon-line1-train-timetable")?.scheduleAdmissionEvidence?.snapshotPath,
+    2: source("incheon-line2-train-timetable")?.scheduleAdmissionEvidence?.snapshotPath,
+  };
+  if (!/^tools\/datapack\/sources\/incheon-transit-station-info-[0-9]{8}\.json$/u.test(topologySnapshotPath ?? "")
+    || !/^tools\/datapack\/sources\/incheon-transit-accessibility-[0-9]{8}\.json$/u.test(accessibilitySnapshotPath ?? "")
+    || Object.values(timetableSnapshotPaths).some((snapshotPath) =>
+      !/^tools\/datapack\/sources\/incheon-line[12]-train-timetable-[0-9]{8}\.json$/u.test(snapshotPath ?? ""))) {
+    throw new Error("current Incheon source admission paths are missing");
   }
-  const topologySnapshotPath = `tools/datapack/sources/${topologySnapshotName}`;
   const snapshotBytes = await readFile(path.join(root, topologySnapshotPath));
   const snapshot = JSON.parse(snapshotBytes);
-  const dateParts = Object.fromEntries(new Intl.DateTimeFormat("en", {
-    timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
-  }).formatToParts(new Date(snapshot.capturedAt)).map(({ type, value }) => [type, value]));
-  const compactDate = `${dateParts.year}${dateParts.month}${dateParts.day}`;
-  const accessibilitySnapshotPath = `tools/datapack/sources/incheon-transit-accessibility-${compactDate}.json`;
-  const timetableSnapshotPaths = {
-    1: `tools/datapack/sources/incheon-line1-train-timetable-${compactDate}.json`,
-    2: `tools/datapack/sources/incheon-line2-train-timetable-${compactDate}.json`,
-  };
   const [accessibilityBytes, line1TimetableBytes, line2TimetableBytes, fixture] = await Promise.all([
     readFile(path.join(root, accessibilitySnapshotPath)),
     readFile(path.join(root, timetableSnapshotPaths[1])),
