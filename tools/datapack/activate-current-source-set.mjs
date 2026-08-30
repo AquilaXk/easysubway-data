@@ -2544,9 +2544,12 @@ export async function stageValidationItxTopologyEvidence({
   spec,
   temporaryRoot,
   repositoryRoot = root,
+  topologyEvidenceBytes = null,
 }) {
   const relativePath = requiredItxTopologyEvidencePath(spec);
-  const bytes = await readRegularBytes(repositoryRoot, relativePath, "ITX topology evidence");
+  const bytes = topologyEvidenceBytes == null
+    ? await readRegularBytes(repositoryRoot, relativePath, "ITX topology evidence")
+    : Buffer.from(topologyEvidenceBytes);
   if (sha256(bytes) !== spec.itxTopologyEvidenceSha256) {
     throw new Error("ITX topology evidence identity mismatch");
   }
@@ -2557,7 +2560,7 @@ export async function stageValidationItxTopologyEvidence({
 async function prepareReleaseEvidenceRoot(temporaryRoot, spec, {
   repositoryRoot = root,
   readMutableInput = (relativePath) => readRegularBytes(repositoryRoot, relativePath),
-  itxEvidenceRepositoryRoot = repositoryRoot,
+  topologyEvidenceBytes = null,
 } = {}) {
   for (const relativePath of [
     "tools/datapack/release/release-request.json",
@@ -2578,7 +2581,8 @@ async function prepareReleaseEvidenceRoot(temporaryRoot, spec, {
   await stageValidationItxTopologyEvidence({
     spec,
     temporaryRoot,
-    repositoryRoot: itxEvidenceRepositoryRoot,
+    repositoryRoot,
+    topologyEvidenceBytes,
   });
 }
 
@@ -2875,15 +2879,10 @@ export async function generateCurrentCapitalTopologyRefresh({
         "tools/datapack/release/source-snapshots.json",
         sourceSnapshotsBytes,
       ),
-      ...(approvedItxBootstrap ? [writeTempFile(
-        temporaryRoot,
-        selectedItxTopologyEvidencePath,
-        currentItxTopologyEvidenceBytes,
-      )] : []),
     ]);
     await prepareReleaseEvidenceRoot(temporaryRoot, primary.spec, {
       readMutableInput,
-      itxEvidenceRepositoryRoot: approvedItxBootstrap ? temporaryRoot : root,
+      topologyEvidenceBytes: approvedItxBootstrap ? currentItxTopologyEvidenceBytes : null,
     });
     await runNode("tools/datapack/apply-accessibility-evidence-to-bundled-pack.mjs", [
       "--release-evidence-only",

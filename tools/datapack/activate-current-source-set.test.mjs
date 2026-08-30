@@ -814,6 +814,16 @@ test("prepared candidate validationÏùÄ spec-selected current ITX evidence bytesÎ
     /ENOENT/,
   );
 
+  const generatedRoot = path.join(workspace, "generated-validation");
+  await mkdir(generatedRoot, { recursive: true });
+  assert.equal(await stageValidationItxTopologyEvidence({
+    spec,
+    repositoryRoot: path.join(workspace, "repository-without-generated-evidence"),
+    temporaryRoot: generatedRoot,
+    topologyEvidenceBytes: evidenceBytes,
+  }), evidencePath);
+  assert.deepEqual(await readFile(path.join(generatedRoot, evidencePath)), evidenceBytes);
+
   await assert.rejects(stageValidationItxTopologyEvidence({
     spec: { ...spec, itxTopologyEvidenceSha256: "f".repeat(64) },
     repositoryRoot,
