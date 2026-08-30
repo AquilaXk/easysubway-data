@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-candidate-build-spec",
-  "candidateId": "capital-pilot-candidate-20260829",
+  "candidateId": "capital-pilot-candidate-20260830",
   "productionScopeId": "capital_pilot_android_v1",
-  "publishedAt": "2026-08-30T02:53:23.815Z",
+  "publishedAt": "2026-08-30T17:40:02.000Z",
   "releaseSequence": 115,
   "fixturePath": "tools/datapack/release/capital-production-canonical-pack.json",
-  "itxTopologyEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence-20260824170958799.json",
-  "itxTopologyEvidenceSha256": "9ff9810e467eb9df53fc461e380ccb368bca4cd6c52b3f84fa2b0fb7c58acd1a",
+  "itxTopologyEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence.json",
+  "itxTopologyEvidenceSha256": "50e2f03b2975c26d488b4f0a23c9a0f5cad7e91a56eb9b7b4977fbbba611745d",
   "networkEdgeEvidence": {
     "sourceInventory": {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "93b5857e6e096a59c99ea6bb256e73e277305c8104fdac52aa79cc26d2bc64da"
+      "sha256": "a0c58e548c132bfd8c0295fc17e7607a4fa0b438e9eda49ee7c3b00d13d411e2"
     },
     "capitalTopology": {
       "path": "tools/datapack/sources/capital-route-topology-20260724.json",
@@ -19,39 +19,39 @@
       "snapshotId": "capital-route-topology-20260724"
     },
     "capitalTopologyCandidate": {
-      "path": "tools/datapack/sources/capital-route-topology-20260829.json",
-      "sha256": "dd98350d763e4cc6a4aff8688e68d2312dc5c17f880714bed32126caeebf29ea",
-      "snapshotId": "capital-route-topology-20260829"
+      "path": "tools/datapack/sources/capital-route-topology-20260830.json",
+      "sha256": "683388f107bec297b3f1cd49ab3e0c711e6c03439401dafcf8effce2c661f532",
+      "snapshotId": "capital-route-topology-20260830"
     },
     "capitalTopologyReverification": {
-      "path": "tools/datapack/release/capital-topology-reverification-20260829.json",
-      "sha256": "ca75bb24bc0d6e9aeb4670f3da96c5b7a9e6d49dc76e66d68ff84020b1e2fbb4"
+      "path": "tools/datapack/release/capital-topology-reverification-20260830.json",
+      "sha256": "04931407aa7401de0b29c0a5a507d7fde0e736429a9ca4b3a26f327374e31a3a"
     },
     "capitalTopologyAdmission": {
       "schemaVersion": 1,
       "artifactKind": "capital-network-edge-admission",
       "issue": 2649,
       "status": "ADMITTED",
-      "snapshotId": "capital-route-topology-20260829",
+      "snapshotId": "capital-route-topology-20260830",
       "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
-      "reviewedAt": "2026-08-29T11:27:55.687Z",
-      "reverifiedAt": "2026-08-29T11:27:55.687Z",
-      "freshUntil": "2026-08-30T11:27:55.687Z"
+      "reviewedAt": "2026-08-30T12:36:31.000Z",
+      "reverifiedAt": "2026-08-30T12:36:31.000Z",
+      "freshUntil": "2026-08-31T12:36:31.000Z"
     },
     "itxCoverageContract": {
       "path": "tools/datapack/itx-cheongchun-coverage-contract.json",
-      "sha256": "97400bd534278ec9d16dd5eeacde5a2c1a4b5d4de195ad0615cde8b605519f13"
+      "sha256": "a5d64bbabd8d4ef5f88a3f06c6eb1a3ebc2c682e62e42b899d8b8e689bb26d8c"
     },
     "incheonTimetables": {
       "line1": {
-        "path": "tools/datapack/sources/incheon-line1-train-timetable-20260829.json",
-        "sha256": "e64498d240014b0ebffea2ef46461b6a41e288b0639d9ae11bd97bfd5d04e6bc",
-        "snapshotId": "incheon-line1-train-timetable-20260829"
+        "path": "tools/datapack/sources/incheon-line1-train-timetable-20260830.json",
+        "sha256": "135bb9e9ee67670cf77dec8c8bfe5dd8febff6812517ef1e6364c1de5ac7bad4",
+        "snapshotId": "incheon-line1-train-timetable-20260830"
       },
       "line2": {
-        "path": "tools/datapack/sources/incheon-line2-train-timetable-20260829.json",
-        "sha256": "8fcda05dd5a6a0358b5930eb9796a6d6e4880115221da970cafec3723f00bdb3",
-        "snapshotId": "incheon-line2-train-timetable-20260829"
+        "path": "tools/datapack/sources/incheon-line2-train-timetable-20260830.json",
+        "sha256": "2f54bc709fe7fb1e51626e5485b69735be3a129b59b5524f93020bbb12ae4fca",
+        "snapshotId": "incheon-line2-train-timetable-20260830"
       }
     }
   },
@@ -209,8 +209,8 @@
   "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
   "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
   "approvedOverrideSetHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
-  "sourceInventorySha256": "9f73874aceb2d86b8723f965380af6fe559235be140f273e1f4e66380031cb2d",
-  "builderGitSha": "f77a0f637ad9c46ee0d507a9941bda3c30b75d9e",
+  "sourceInventorySha256": "100f6c67097fc98afbfd4f5762260a737d6ecf458a31404e8f519fcfc6c05959",
+  "builderGitSha": "53b84812edd85a690422fd67d9287f95ac105e8c",
   "builderVersion": "build-datapack.mjs@26",
   "officialOdFareEvidence": {
     "sourceId": "seoul-metro-official-od-fares",
