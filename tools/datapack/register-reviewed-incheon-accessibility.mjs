@@ -14,7 +14,13 @@ import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { sortJson } from "./lib/ledger-admission-cli.mjs";
 import { deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
-import { assertProjectionEqual, deriveReleaseProjection, isActiveCandidateSourceSequence } from "./rebind-current-candidate-source-snapshots.mjs";
+import {
+  assertProjectionEqual,
+  CURRENT_FULL_CANDIDATE_SOURCE_IDS,
+  CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS,
+  deriveReleaseProjection,
+  isActiveCandidateSourceSequence,
+} from "./rebind-current-candidate-source-snapshots.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const SOURCE = "incheon-transit-accessibility";
@@ -24,6 +30,10 @@ const JOURNAL = "tools/datapack/.incheon-accessibility-registration-transaction.
 const LOCK = "tools/datapack/.incheon-accessibility-registration.lock";
 const FIXED = ["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json", "tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json"];
 const REBIND_FIXED = [FIXED[0], FIXED[2], FIXED[3], FIXED[4]];
+const PRE_REGISTRATION_SOURCE_SEQUENCES = Object.freeze([
+  CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS.filter((sourceId) => sourceId !== SOURCE),
+  CURRENT_FULL_CANDIDATE_SOURCE_IDS.filter((sourceId) => sourceId !== SOURCE),
+]);
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 const bytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 function parse(value, label) { try { return JSON.parse(value.toString("utf8")); } catch { throw new Error(`${label} is invalid JSON`); } }
@@ -76,9 +86,13 @@ function ledgerOrderedSnapshots(ledger, ids) {
 function operationFingerprint(rawArtifact) {
   return hash(JSON.stringify({ sourceId: rawArtifact.sourceId, datasetIds: rawArtifact.payloads.map(({ datasetId }) => datasetId), requests: rawArtifact.payloads.map(({ detailUrl, fileName }) => ({ detailUrl, fileName })), topologySnapshotId: rawArtifact.topologySnapshotId, topologyContentSha256: rawArtifact.topologyContentSha256, freshnessPolicy: rawArtifact.freshnessPolicy }));
 }
+function isIncheonRegistrationPrestateSourceSequence(sourceIds) {
+  return Array.isArray(sourceIds) && PRE_REGISTRATION_SOURCE_SEQUENCES
+    .some((expected) => JSON.stringify(sourceIds) === JSON.stringify(expected));
+}
 function validateCurrentRelease({ inventory, inventoryBytes, ledger, candidate, candidateBytes, request, evidence, governance, governanceBytes, freshness }) {
   const lineage = validateLineage(ledger); const ids = candidate?.sourceSnapshotIds; const projections = candidate?.sourceSnapshots;
-  if (candidate?.schemaVersion !== 1 || candidate.artifactKind !== "datapack-candidate-build-spec" || !Array.isArray(ids) || !Array.isArray(projections) || ids.length === 0 || projections.length !== ids.length || !isActiveCandidateSourceSequence(projections.map(({ sourceId }) => sourceId)) || new Set(ids).size !== ids.length || new Set(projections.map(({ sourceId }) => sourceId)).size !== ids.length || ids.some((id, index) => projections[index]?.snapshotId !== id) || projections.some(({ sourceId }) => sourceId === SOURCE)) throw new Error("candidate prestate is invalid");
+  if (candidate?.schemaVersion !== 1 || candidate.artifactKind !== "datapack-candidate-build-spec" || !Array.isArray(ids) || !Array.isArray(projections) || ids.length === 0 || projections.length !== ids.length || !isIncheonRegistrationPrestateSourceSequence(projections.map(({ sourceId }) => sourceId)) || new Set(ids).size !== ids.length || new Set(projections.map(({ sourceId }) => sourceId)).size !== ids.length || ids.some((id, index) => projections[index]?.snapshotId !== id) || projections.some(({ sourceId }) => sourceId === SOURCE)) throw new Error("candidate prestate is invalid");
   const selected = ids.map((snapshotId) => { const snapshot = ledger.find((row) => row.snapshotId === snapshotId); if (!snapshot || lineage.headsBySource[snapshot.sourceId] !== snapshotId) throw new Error("candidate source is not the active ledger head"); return snapshot; });
   const expectedSet = ledgerOrderedSnapshots(ledger, ids);
   if (candidate.sourceSnapshotSetHash !== hash(JSON.stringify(expectedSet)) || candidate.sourceInventorySha256 !== hash(JSON.stringify(inventory)) || candidate.networkEdgeEvidence?.sourceInventory?.path !== FIXED[0] || candidate.networkEdgeEvidence.sourceInventory.sha256 !== hash(inventoryBytes)) throw new Error("candidate prestate binding is invalid");
