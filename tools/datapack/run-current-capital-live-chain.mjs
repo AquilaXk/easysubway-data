@@ -25,6 +25,13 @@ import { canonicalKricExitPathCollectionPlanJson } from "./plan-kric-exit-path-c
 import { main as buildCurrentCapitalRouteEdgeInput } from "./build-current-capital-route-edge-input.mjs";
 import { canonicalRouteEdgeEvaluationJson, evaluateRouteAccessibilityEdges } from "./evaluate-route-accessibility-edges.mjs";
 import { extractCurrentCapitalLiveChainDirectory } from "./extract-current-capital-live-chain-directory.mjs";
+import {
+  buildCurrentCapitalExitProviderSourceHandoffFromLiveChain,
+  canonicalCurrentCapitalExitProviderSourceHandoffJson,
+  CURRENT_CAPITAL_EXIT_PROVIDER_OCI_PLAN,
+  CURRENT_CAPITAL_EXIT_PROVIDER_OCI_RECEIPT,
+  CURRENT_CAPITAL_EXIT_PROVIDER_SOURCE_RECEIPT,
+} from "./current-capital-exit-provider-handoff.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
 import { fetchCurrentCapitalLiveChainComposite, publishCurrentCapitalLiveChainOciPlan, requireCurrentCapitalLiveChainOciParBaseUrl } from "./publish-object-storage.mjs";
 import { rebindCurrentActiveFacilityDerivedIdentity } from "./rebind-current-active-facility-derived-identity.mjs";
@@ -236,20 +243,22 @@ function providerEquivalentCurrentPlan(embeddedPlanBytes, currentPlanBytes) {
   return currentPlan;
 }
 
-export async function recoverCurrentKricExitCollection({ retainedExitBundle, expectedRetainedExitBundleSha256, currentPlanBytes, repository, repositorySha, operationId, operationNow, root, execFileImpl }) {
-  if (!path.isAbsolute(retainedExitBundle ?? "")) throw new Error("retained EXIT bundle must be absolute");
+export async function recoverCurrentKricExitCollectionBytes({ retainedExitBundleBytes, expectedRetainedExitBundleSha256, currentPlanBytes, repository, repositorySha, operationId, operationNow, isAncestor }) {
   if (!/^[a-f0-9]{64}$/u.test(expectedRetainedExitBundleSha256 ?? "")) throw new Error("retained EXIT bundle expected digest mismatch");
   if (!(currentPlanBytes instanceof Uint8Array) || currentPlanBytes.byteLength === 0) throw new Error("current EXIT plan bytes are invalid");
   if (!(operationNow instanceof Date) || Number.isNaN(operationNow.valueOf())) throw new Error("current live-chain operation clock mismatch");
-  const retained = await readRegularSnapshot(retainedExitBundle, "retained EXIT bundle");
-  if (createHash("sha256").update(retained.bytes).digest("hex") !== expectedRetainedExitBundleSha256) {
+  if (!(retainedExitBundleBytes instanceof Uint8Array) || retainedExitBundleBytes.byteLength === 0 || typeof isAncestor !== "function") {
+    throw new Error("retained EXIT bundle input mismatch");
+  }
+  const retainedBytes = Buffer.from(retainedExitBundleBytes);
+  if (createHash("sha256").update(retainedBytes).digest("hex") !== expectedRetainedExitBundleSha256) {
     throw new Error("retained EXIT bundle expected digest mismatch");
   }
   let bundle;
-  try { bundle = JSON.parse(retained.bytes.toString("utf8")); } catch { throw new Error("retained EXIT bundle JSON mismatch"); }
+  try { bundle = JSON.parse(retainedBytes.toString("utf8")); } catch { throw new Error("retained EXIT bundle JSON mismatch"); }
   let canonicalBundle;
   try { canonicalBundle = canonicalCurrentKricExitCollectionBundleJson(bundle); } catch { throw new Error("retained EXIT bundle is invalid"); }
-  if (!retained.bytes.equals(Buffer.from(canonicalBundle))) throw new Error("retained EXIT bundle bytes are not canonical");
+  if (!retainedBytes.equals(Buffer.from(canonicalBundle))) throw new Error("retained EXIT bundle bytes are not canonical");
   const embeddedPlanBytes = Buffer.from(bundle.collectionPlanJson);
   const currentPlanBuffer = Buffer.from(currentPlanBytes);
   const currentPlan = providerEquivalentCurrentPlan(embeddedPlanBytes, currentPlanBuffer);
@@ -276,7 +285,9 @@ export async function recoverCurrentKricExitCollection({ retainedExitBundle, exp
     || sourceReceipt.repositorySha === repositorySha || sourceReceipt.operationId === operationId) {
     throw new Error("retained EXIT bundle source identity mismatch");
   }
-  await execFileImpl("git", ["merge-base", "--is-ancestor", sourceReceipt.repositorySha, repositorySha], { cwd: root });
+  if (!await isAncestor(sourceReceipt.repositorySha, repositorySha)) {
+    throw new Error("retained EXIT bundle source is not an ancestor of the candidate head");
+  }
   const receipt = buildCurrentKricExitCollectionReceipt({
     collectionPlanBytes: currentPlanBuffer,
     providerSnapshotBytes: snapshotBytes,
@@ -298,6 +309,16 @@ export async function recoverCurrentKricExitCollection({ retainedExitBundle, exp
     snapshot,
     collectionBundleBytes: Buffer.from(canonicalCurrentKricExitCollectionBundleJson(recoveredBundle)),
   };
+}
+
+export async function recoverCurrentKricExitCollection({ retainedExitBundle, expectedRetainedExitBundleSha256, currentPlanBytes, repository, repositorySha, operationId, operationNow, root, execFileImpl }) {
+  if (!path.isAbsolute(retainedExitBundle ?? "")) throw new Error("retained EXIT bundle must be absolute");
+  const retained = await readRegularSnapshot(retainedExitBundle, "retained EXIT bundle");
+  return recoverCurrentKricExitCollectionBytes({
+    retainedExitBundleBytes: retained.bytes, expectedRetainedExitBundleSha256, currentPlanBytes,
+    repository, repositorySha, operationId, operationNow,
+    isAncestor: (from, to) => execFileImpl("git", ["merge-base", "--is-ancestor", from, to], { cwd: root }),
+  });
 }
 
 export function resolveCurrentExitDerivationAt({ retainedExitBundle, providerCapturedAt, operationNow }) {
@@ -496,7 +517,15 @@ export async function runCurrentCapitalLiveChain({ repositoryRoot, runnerTemp, r
   const fetchedProviderCollectionBundleBytes = await readFile(fetchedProviderCollectionPath);
   const fetchedBundleBytes = await readFile(fetchedBundlePath);
   await extractImpl({ ociPlanBytes, externalReceiptBytes, fetchedProviderCollectionBundleBytes, fetchedBundleBytes, destinationDirectory: handoffDirectory, repository, repositorySha, operationId });
-  return { stagedRoot, handoffDirectory: path.resolve(handoffDirectory), plan, bundleSha256: JSON.parse(bundle).bundleSha256, providerCollectionBundleSha256: providerObject.sha256, ociPlan };
+  const sourceHandoff = buildCurrentCapitalExitProviderSourceHandoffFromLiveChain({
+    ociPlanBytes, externalReceiptBytes, fetchedProviderCollectionBundleBytes, fetchedCompositeBundleBytes: fetchedBundleBytes,
+    repository, repositorySha, operationId,
+  });
+  const handoffRoot = path.resolve(handoffDirectory);
+  await writeFile(path.join(handoffRoot, CURRENT_CAPITAL_EXIT_PROVIDER_OCI_PLAN), ociPlanBytes, { flag: "wx", mode: 0o600 });
+  await writeFile(path.join(handoffRoot, CURRENT_CAPITAL_EXIT_PROVIDER_OCI_RECEIPT), externalReceiptBytes, { flag: "wx", mode: 0o600 });
+  await writeFile(path.join(handoffRoot, CURRENT_CAPITAL_EXIT_PROVIDER_SOURCE_RECEIPT), `${canonicalCurrentCapitalExitProviderSourceHandoffJson(sourceHandoff)}\n`, { flag: "wx", mode: 0o600 });
+  return { stagedRoot, handoffDirectory: handoffRoot, plan, bundleSha256: JSON.parse(bundle).bundleSha256, providerCollectionBundleSha256: providerObject.sha256, sourceHandoff, ociPlan };
 }
 
 export function parseArgs(argv) {

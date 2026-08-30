@@ -207,6 +207,10 @@
     "data629": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/629",
       "title": "Refresh due KRIC facility snapshots through OCI"
+    },
+    "data633": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/633",
+      "title": "Split the live-chain handoff into candidate and release phases"
     }
   },
   "workflows": {
@@ -306,6 +310,7 @@
     {"path":"tools/datapack/build-current-capital-live-chain-bundle.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":100},
     {"path":"tools/datapack/build-current-capital-live-chain-oci-plan.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":100},
     {"path":"tools/datapack/build-current-capital-live-chain-oci-receipt.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":100},
+    {"path":"tools/datapack/current-capital-exit-provider-handoff.test.mjs","semanticOwner":"data633","classes":["required-pr"],"durationMs":1500},
     {"path":"tools/datapack/build-current-capital-route-edge-input.test.mjs","semanticOwner":"data365","classes":["required-pr"],"durationMs":851},
     {"path":"tools/datapack/build-current-capital-station-line-input.test.mjs","semanticOwner":"data365","classes":["required-pr"],"durationMs":399},
     {"path":"tools/datapack/build-current-capital-transfer-topology-applicability.test.mjs","semanticOwner":"data349","classes":["required-pr"],"durationMs":164},
