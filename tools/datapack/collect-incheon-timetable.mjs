@@ -86,6 +86,7 @@ export function normalizedIncheonTimetableStationName(name) {
 export function parseIncheonTrainTimetable(files, topologySnapshot, {
   lineNumber,
   capturedAt,
+  downloadProvenance,
 } = {}) {
   const config = INCHEON_TIMETABLE_LINES.find((line) => line.lineNumber === lineNumber);
   if (!config) throw new Error(`unknown Incheon timetable line: ${lineNumber}`);
@@ -145,6 +146,9 @@ export function parseIncheonTrainTimetable(files, topologySnapshot, {
   const rawParts = DAY_CODES.flatMap((dayCode) => DIRECTIONS.map((direction) => files[`${dayCode}:${direction}`]));
   const rawSha256 = sha256(Buffer.concat(rawParts.map((bytes) => Buffer.from(bytes))));
   const datasetIds = DAY_CODES.flatMap((dayCode) => DIRECTIONS.map((direction) => config.datasets[dayCode][direction]));
+  const verifiedDownloadProvenance = downloadProvenance == null
+    ? undefined
+    : verifyDownloadProvenance(downloadProvenance, config, rawHashes);
   return {
     schemaVersion: 1,
     artifactKind: ARTIFACT_KIND,
@@ -205,6 +209,7 @@ export function parseIncheonTrainTimetable(files, topologySnapshot, {
       Buffer.from(files["WEEK:dn"]), Buffer.from(files["HOLI:dn"]),
     ])),
     rawSha256,
+    ...(verifiedDownloadProvenance == null ? {} : { downloadProvenance: verifiedDownloadProvenance }),
     contentSha256: sha256(JSON.stringify({
       tripsSha256,
       stopTimeCount,
@@ -218,11 +223,38 @@ export function collectIncheonTimetableLine({
   topologySnapshot,
   lineNumber,
   now = new Date(),
+  downloadProvenance,
 }) {
   return parseIncheonTrainTimetable(files, topologySnapshot, {
     lineNumber,
     capturedAt: now,
+    downloadProvenance,
   });
+}
+
+function verifyDownloadProvenance(entries, config, rawHashes) {
+  if (!Array.isArray(entries) || entries.length !== DAY_CODES.length * DIRECTIONS.length) {
+    throw new Error(`Incheon line ${config.lineNumber} download provenance is invalid`);
+  }
+  return DAY_CODES.flatMap((dayCode) => DIRECTIONS.map((direction) => {
+    const index = DAY_CODES.indexOf(dayCode) * DIRECTIONS.length + DIRECTIONS.indexOf(direction);
+    const entry = entries[index];
+    const datasetId = config.datasets[dayCode][direction];
+    const detailUrl = `https://www.data.go.kr/data/${datasetId}/fileData.do`;
+    let downloadUrl;
+    try {
+      downloadUrl = new URL(entry?.downloadUrl);
+    } catch {
+      throw new Error(`Incheon line ${config.lineNumber} download provenance is invalid`);
+    }
+    if (entry?.dayCode !== dayCode || entry?.direction !== direction || entry?.datasetId !== datasetId
+      || entry?.detailUrl !== detailUrl || entry?.rawSha256 !== rawHashes[`${dayCode}:${direction}`]
+      || downloadUrl.origin !== "https://www.data.go.kr"
+      || downloadUrl.pathname !== "/cmm/cmm/fileDownload.do") {
+      throw new Error(`Incheon line ${config.lineNumber} download provenance is invalid`);
+    }
+    return { dayCode, direction, datasetId, detailUrl, downloadUrl: downloadUrl.toString(), rawSha256: entry.rawSha256 };
+  }));
 }
 
 function parseTimetableFile(bytes, {
@@ -429,7 +461,8 @@ function parseArgs(argv) {
     index += 2;
   }
   if (Boolean(args["input-dir"]) === Boolean(args.download)
-    || !args["topology-snapshot"] || !args["output-dir"] || !args["captured-at"]
+    || (!args.download && !args["captured-at"]) || (args.download && args["captured-at"])
+    || !args["topology-snapshot"] || !args["output-dir"]
     || !path.isAbsolute(args["output-dir"])) {
     throw new Error(usage());
   }
@@ -437,13 +470,15 @@ function parseArgs(argv) {
 }
 
 function usage() {
-  return "usage: collect-incheon-timetable.mjs (--input-dir <dir> | --download) "
-    + "--topology-snapshot <json> --output-dir <abs-dir> --captured-at <iso> "
+  return "usage: collect-incheon-timetable.mjs "
+    + "(--input-dir <dir> --captured-at <iso> | --download) "
+    + "--topology-snapshot <json> --output-dir <abs-dir> "
     + "[--date-stamp YYYYMMDD] [--line 1|2]";
 }
 
-export async function runIncheonTimetableCollector(argv, { fetchImpl = fetch } = {}) {
+export async function runIncheonTimetableCollector(argv, { fetchImpl = fetch, now = new Date() } = {}) {
   const args = parseArgs(argv);
+  const capturedAt = args["captured-at"] ?? validDate(now).toISOString();
   const stamp = args["date-stamp"];
   const topologyPath = args["topology-snapshot"];
   const topologySnapshotId = path.basename(topologyPath, ".json");
@@ -454,7 +489,7 @@ export async function runIncheonTimetableCollector(argv, { fetchImpl = fetch } =
     ...JSON.parse(await readFile(topologyPath, "utf8")),
     snapshotId: topologySnapshotId,
   };
-  const derivedStamp = compactSeoulDate(args["captured-at"]);
+  const derivedStamp = compactSeoulDate(capturedAt);
   if (stamp != null && stamp !== derivedStamp) {
     throw new Error("--date-stamp must match captured-at Asia/Seoul date");
   }
@@ -466,19 +501,34 @@ export async function runIncheonTimetableCollector(argv, { fetchImpl = fetch } =
   const outputs = [];
   for (const config of lines) {
     const files = {};
+    const downloadProvenance = [];
     for (const dayCode of DAY_CODES) {
       for (const direction of DIRECTIONS) {
         const datasetId = config.datasets[dayCode][direction];
-        files[`${dayCode}:${direction}`] = args.download
-          ? await downloadDataGoTimetableCsv(fetchImpl, datasetId)
-          : await readFile(path.join(args["input-dir"], `data-go-${datasetId}.csv`));
+        if (args.download) {
+          const downloaded = await downloadDataGoTimetableCsv(fetchImpl, datasetId);
+          files[`${dayCode}:${direction}`] = downloaded.bytes;
+          downloadProvenance.push({
+            dayCode,
+            direction,
+            datasetId,
+            detailUrl: downloaded.detailUrl,
+            downloadUrl: downloaded.downloadUrl,
+            rawSha256: sha256(downloaded.bytes),
+          });
+        } else {
+          files[`${dayCode}:${direction}`] = await readFile(
+            path.join(args["input-dir"], `data-go-${datasetId}.csv`),
+          );
+        }
       }
     }
     const snapshot = collectIncheonTimetableLine({
       files,
       topologySnapshot,
       lineNumber: config.lineNumber,
-      now: new Date(args["captured-at"]),
+      now: new Date(capturedAt),
+      downloadProvenance: args.download ? downloadProvenance : undefined,
     });
     const outputPath = path.join(args["output-dir"], `${config.sourceId}-${stamp ?? derivedStamp}.json`);
     await writeFile(outputPath, `${JSON.stringify(snapshot)}\n`);
@@ -505,7 +555,11 @@ async function downloadDataGoTimetableCsv(fetchImpl, datasetId) {
     },
   });
   if (!fileResponse.ok) throw new Error(`Incheon ${datasetId} CSV HTTP ${fileResponse.status}`);
-  return Buffer.from(await fileResponse.arrayBuffer());
+  return {
+    bytes: Buffer.from(await fileResponse.arrayBuffer()),
+    detailUrl,
+    downloadUrl,
+  };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

@@ -64,6 +64,7 @@ test("인천 timetable collector는 1·2호선 WEEK/HOLI 상·하선 FILE을 tri
     assert.equal(snapshot.topologyContentSha256, topologySnapshot.contentSha256);
     assert.equal(snapshot.tripsSha256, createHash("sha256").update(JSON.stringify(snapshot.trips)).digest("hex"));
     assert.equal(snapshot.rowsSha256, snapshot.tripsSha256);
+    assert.equal(Object.hasOwn(snapshot, "downloadProvenance"), false);
     assert.equal(
       snapshot.contentSha256,
       createHash("sha256").update(JSON.stringify({
@@ -129,8 +130,8 @@ test("인천 timetable collector download mode는 official detail에서 정확�
       "--download",
       "--topology-snapshot", topologyPath,
       "--output-dir", outputDirectory,
-      "--captured-at", "2026-07-24T08:00:00.000Z",
     ], {
+      now: NOW,
       fetchImpl: async (input, init) => {
         const url = new URL(input);
         calls.push({ url: url.toString(), headers: init?.headers });
@@ -166,6 +167,26 @@ test("인천 timetable collector download mode는 official detail에서 정확�
       { tripCount: 574, stopTimeCount: 18_392 },
       { tripCount: 840, stopTimeCount: 22_506 },
     ]);
+    for (const [index, snapshot] of snapshots.entries()) {
+      const config = INCHEON_TIMETABLE_LINES[index];
+      const expectedProvenance = [];
+      for (const dayCode of ["WEEK", "HOLI"]) {
+        for (const direction of ["up", "dn"]) {
+          const datasetId = config.datasets[dayCode][direction];
+          const bytes = await readFile(path.join(RAW_DIR, `data-go-${datasetId}.csv`));
+          expectedProvenance.push({
+            dayCode,
+            direction,
+            datasetId,
+            detailUrl: `https://www.data.go.kr/data/${datasetId}/fileData.do`,
+            downloadUrl: `https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_${datasetId}&fileDetailSn=1`,
+            rawSha256: createHash("sha256").update(bytes).digest("hex"),
+          });
+        }
+      }
+      assert.equal(snapshot.capturedAt, NOW.toISOString());
+      assert.deepEqual(snapshot.downloadProvenance, expectedProvenance);
+    }
   } finally {
     await rm(outputDirectory, { recursive: true, force: true });
   }
