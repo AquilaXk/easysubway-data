@@ -2089,6 +2089,15 @@ export function buildCurrentCandidateSpec({
   return spec;
 }
 
+export function deriveApprovedItxTopologyEvidencePath(reference) {
+  const artifactMatch = /^itx-cheongchun-source-timetable-([0-9]{17})$/u
+    .exec(reference?.artifactId ?? "");
+  if (artifactMatch == null) {
+    throw new Error("approved ITX source artifact identity is invalid");
+  }
+  return `tools/datapack/itx-cheongchun-topology-evidence-${artifactMatch[1]}.json`;
+}
+
 export async function bindApprovedItxCurrentSourceSpec({
   baseSpec,
   coverageContractBytes,
@@ -2101,6 +2110,9 @@ export async function bindApprovedItxCurrentSourceSpec({
   const activationNow = new Date(requiredUtcInstant(buildNow, "approved ITX bootstrap buildNow"));
   const contract = parseJson(coverageContractBytes, "approved ITX coverage contract");
   const reference = contract?.sourceTimetableArtifact;
+  if (topologyEvidencePath !== deriveApprovedItxTopologyEvidencePath(reference)) {
+    throw new Error("approved ITX topology evidence path is invalid");
+  }
   const { source, completeness } = parseAuthenticatedAdmittedSourceDocuments(
     reference,
     sourceBytes,
@@ -2125,8 +2137,7 @@ export async function bindApprovedItxCurrentSourceSpec({
   }
   const contractInput = contract?.officialEvidence?.korailCompletenessAdmission
     ?.topologyInputPackIdentity;
-  if (topologyEvidencePath !== "tools/datapack/itx-cheongchun-topology-evidence.json"
-    || !Buffer.isBuffer(topologyEvidenceBytes)
+  if (!Buffer.isBuffer(topologyEvidenceBytes)
     || evidence?.schemaVersion !== 1
     || evidence?.artifactKind !== "itx-cheongchun-mobile-topology-evidence"
     || evidence?.serviceId !== "ITX_CHEONGCHUN"
@@ -2546,6 +2557,7 @@ export async function stageValidationItxTopologyEvidence({
 async function prepareReleaseEvidenceRoot(temporaryRoot, spec, {
   repositoryRoot = root,
   readMutableInput = (relativePath) => readRegularBytes(repositoryRoot, relativePath),
+  itxEvidenceRepositoryRoot = repositoryRoot,
 } = {}) {
   for (const relativePath of [
     "tools/datapack/release/release-request.json",
@@ -2563,7 +2575,11 @@ async function prepareReleaseEvidenceRoot(temporaryRoot, spec, {
       await readRegularBytes(repositoryRoot, relativePath),
     );
   }
-  await stageValidationItxTopologyEvidence({ spec, temporaryRoot, repositoryRoot });
+  await stageValidationItxTopologyEvidence({
+    spec,
+    temporaryRoot,
+    repositoryRoot: itxEvidenceRepositoryRoot,
+  });
 }
 
 function validationBuildSpec(spec, temporaryRoot) {
@@ -2720,11 +2736,31 @@ export async function generateCurrentCapitalTopologyRefresh({
     .test(itxTopologyEvidencePath ?? "")) {
     throw new Error("current ITX topology evidence must be a tracked artifact path");
   }
+  let approvedItxCoverageContractBytes = null;
+  let approvedItxCoverageReference = null;
+  let selectedItxTopologyEvidencePath = itxTopologyEvidencePath;
+  if (approvedItxBootstrap) {
+    if (itxTopologyEvidencePath !== "tools/datapack/itx-cheongchun-topology-evidence.json") {
+      throw new Error("approved ITX bootstrap input must be the tracked source evidence path");
+    }
+    approvedItxCoverageContractBytes = await readRegularBytes(
+      root,
+      "tools/datapack/itx-cheongchun-coverage-contract.json",
+      "approved ITX coverage contract",
+    );
+    approvedItxCoverageReference = parseJson(
+      approvedItxCoverageContractBytes,
+      "approved ITX coverage contract",
+    )?.sourceTimetableArtifact;
+    selectedItxTopologyEvidencePath =
+      deriveApprovedItxTopologyEvidencePath(approvedItxCoverageReference);
+  }
   const topologyReverificationPath =
     `tools/datapack/release/capital-topology-reverification-${capitalPathMatch[1]}.json`;
   const allowedDescendantPaths = [
     ...CURRENT_TOPOLOGY_REFRESH_OUTPUTS,
     topologyReverificationPath,
+    ...(approvedItxBootstrap ? [selectedItxTopologyEvidencePath] : []),
   ];
   await requireCleanBuilder(builderGitSha, { check, allowedDescendantPaths });
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "current-topology-refresh-"));
@@ -2756,24 +2792,21 @@ export async function generateCurrentCapitalTopologyRefresh({
     let baseSpec = parseJson(baseSpecBytes, "candidate build spec");
     let approvedItxTopology = null;
     if (approvedItxBootstrap) {
-      const coverageContractBytes = await readRegularBytes(
-        root,
-        "tools/datapack/itx-cheongchun-coverage-contract.json",
-        "approved ITX coverage contract",
-      );
-      const coverageContract = parseJson(coverageContractBytes, "approved ITX coverage contract");
-      const reference = coverageContract?.sourceTimetableArtifact;
       const [sourceBytes, completenessBytes] = await Promise.all([
-        readRegularBytes(root, reference?.artifactPath, "approved ITX source"),
-        readRegularBytes(root, reference?.completenessEvidencePath, "approved ITX completeness evidence"),
+        readRegularBytes(root, approvedItxCoverageReference?.artifactPath, "approved ITX source"),
+        readRegularBytes(
+          root,
+          approvedItxCoverageReference?.completenessEvidencePath,
+          "approved ITX completeness evidence",
+        ),
       ]);
       baseSpec = await bindApprovedItxCurrentSourceSpec({
         baseSpec,
-        coverageContractBytes,
+        coverageContractBytes: approvedItxCoverageContractBytes,
         sourceBytes,
         completenessBytes,
         topologyEvidenceBytes: currentItxTopologyEvidenceBytes,
-        topologyEvidencePath: itxTopologyEvidencePath,
+        topologyEvidencePath: selectedItxTopologyEvidencePath,
         buildNow,
       });
       approvedItxTopology = deriveTopology(parseJson(sourceBytes, "approved ITX source"));
@@ -2807,7 +2840,7 @@ export async function generateCurrentCapitalTopologyRefresh({
         1: incheonLine1TimetablePath,
         2: incheonLine2TimetablePath,
       },
-      currentItxTopologyEvidencePath: itxTopologyEvidencePath,
+      currentItxTopologyEvidencePath: selectedItxTopologyEvidencePath,
       currentItxTopologyEvidenceBytes,
       approvedItxTopology,
       baselineTopology: parseJson(baselineTopologyBytes, "baseline capital topology"),
@@ -2842,8 +2875,16 @@ export async function generateCurrentCapitalTopologyRefresh({
         "tools/datapack/release/source-snapshots.json",
         sourceSnapshotsBytes,
       ),
+      ...(approvedItxBootstrap ? [writeTempFile(
+        temporaryRoot,
+        selectedItxTopologyEvidencePath,
+        currentItxTopologyEvidenceBytes,
+      )] : []),
     ]);
-    await prepareReleaseEvidenceRoot(temporaryRoot, primary.spec, { readMutableInput });
+    await prepareReleaseEvidenceRoot(temporaryRoot, primary.spec, {
+      readMutableInput,
+      itxEvidenceRepositoryRoot: approvedItxBootstrap ? temporaryRoot : root,
+    });
     await runNode("tools/datapack/apply-accessibility-evidence-to-bundled-pack.mjs", [
       "--release-evidence-only",
       "--release-root", temporaryRoot,
@@ -2863,6 +2904,10 @@ export async function generateCurrentCapitalTopologyRefresh({
       { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[3], bytes: finalSpecBytes },
       { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[4], bytes: releaseRequestBytes },
       { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[5], bytes: hashEvidenceBytes },
+      ...(approvedItxBootstrap ? [{
+        relativePath: selectedItxTopologyEvidencePath,
+        bytes: currentItxTopologyEvidenceBytes,
+      }] : []),
     ];
     const validateOutputBytes = async () => {
       for (const output of outputs) {

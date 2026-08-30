@@ -22,6 +22,7 @@ import { requireCurrentIncheonTopologyAdmission, activateStaticSourceRevalidatio
   buildCurrentCandidateSpec, buildCurrentSourcePrimaryOutputs,
   buildCurrentTopologyRefreshPrimaryOutputs, commitCurrentSourceActivation,
   collectLayoutTopologySnapshotBytes, collectPositionSnapshotBytes, parseCurrentSourceActivationArgs,
+  deriveApprovedItxTopologyEvidencePath,
   parseApprovedItxBootstrapArgs, parseCurrentTopologyRefreshArgs, requireCleanBuilder,
   CURRENT_PRODUCTION_SOURCE_IDS, CURRENT_SOURCE_INVENTORY_IDS,
   readBuilderBaselineBytes,
@@ -728,17 +729,26 @@ test("approved ITX bootstrap은 exact full-source identity만 candidate에 결�
     readFile(path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json")),
   ]);
   const buildNow = "2026-08-30T15:15:08.787Z";
+  const topologyEvidencePath = deriveApprovedItxTopologyEvidencePath(reference);
+  assert.equal(
+    topologyEvidencePath,
+    "tools/datapack/itx-cheongchun-topology-evidence-20260830151508786.json",
+  );
+  assert.throws(() => deriveApprovedItxTopologyEvidencePath({
+    artifactId: "itx-cheongchun-source-timetable-invalid",
+  }), /approved ITX source artifact identity is invalid/);
   const bound = await bindApprovedItxCurrentSourceSpec({
     baseSpec,
     coverageContractBytes,
     sourceBytes,
     completenessBytes,
     topologyEvidenceBytes,
-    topologyEvidencePath: "tools/datapack/itx-cheongchun-topology-evidence.json",
+    topologyEvidencePath,
     buildNow,
   });
 
   assert.equal(bound.itxTopologyEvidenceSha256, sha256(topologyEvidenceBytes));
+  assert.equal(bound.itxTopologyEvidencePath, topologyEvidencePath);
   assert.equal(bound.networkEdgeEvidence.itxCoverageContract.sha256,
     sha256(coverageContractBytes));
   assert.equal(Object.hasOwn(bound.networkEdgeEvidence, "itxCurrentTopologyAdmission"), false);
@@ -756,6 +766,16 @@ test("approved ITX bootstrap은 exact full-source identity만 candidate에 결�
     "--itx-current-admission", "tools/datapack/itx-current-network-edge-admission-20260830.json",
   ]), /unknown approved ITX bootstrap argument/);
 
+  await assert.rejects(bindApprovedItxCurrentSourceSpec({
+    baseSpec,
+    coverageContractBytes,
+    sourceBytes,
+    completenessBytes,
+    topologyEvidenceBytes,
+    topologyEvidencePath: "tools/datapack/itx-cheongchun-topology-evidence.json",
+    buildNow,
+  }), /approved ITX topology evidence path is invalid/);
+
   const tamperedEvidence = Buffer.from(topologyEvidenceBytes);
   tamperedEvidence[tamperedEvidence.length - 2] ^= 1;
   await assert.rejects(bindApprovedItxCurrentSourceSpec({
@@ -764,7 +784,7 @@ test("approved ITX bootstrap은 exact full-source identity만 candidate에 결�
     sourceBytes,
     completenessBytes,
     topologyEvidenceBytes: tamperedEvidence,
-    topologyEvidencePath: "tools/datapack/itx-cheongchun-topology-evidence.json",
+    topologyEvidencePath,
     buildNow,
   }), /approved ITX topology evidence is invalid/);
 });
