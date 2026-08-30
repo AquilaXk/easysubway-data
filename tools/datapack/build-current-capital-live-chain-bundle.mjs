@@ -82,7 +82,10 @@ export async function buildCurrentCapitalLiveChainBundle({ root, outputDirectory
     return { path: relative, sha256: sha256(bytes), bytesBase64: bytes.toString("base64") };
   }));
   correlateBoundaryComponents(boundary.value, entries);
-  validateRouteEdgeEvaluationEntries(new Map(entries.map((entry) => [entry.path, entry])), { repository, repositorySha, operationId });
+  validateRouteEdgeEvaluationEntries(
+    new Map(entries.map((entry) => [entry.path, entry])),
+    { repository, repositorySha, operationId, boundary: boundary.value },
+  );
   const manifest = { schemaVersion: 1, artifactKind: "current-capital-live-chain-composite", repository, repositorySha, operationId, providerReceiptRelativePath: receipt, providerReceiptSha256: entries.find((entry) => entry.path === receipt).sha256, boundary: { path: boundary.relativePath, sha256: sha256(boundary.bytes) }, entries: entries.map(({ path: entryPath, sha256: digest }) => ({ path: entryPath, sha256: digest })) };
   const manifestJson = `${canonical(manifest)}\n`;
   const payload = { ...manifest, manifestSha256: sha256(Buffer.from(manifestJson)), boundaryBytesBase64: boundary.bytes.toString("base64"), entries };
@@ -113,7 +116,7 @@ export function readCurrentCapitalLiveChainBundle(bytes, { repository, repositor
   const boundary = readCanonicalBoundary(strictBase64(bundle.boundaryBytesBase64), bundle.boundary?.path);
   if (!bundle.boundary || Object.keys(bundle.boundary).length !== 2 || bundle.boundary.path !== boundary.relativePath || bundle.boundary.sha256 !== sha256(boundary.bytes)) throw new Error("live-chain boundary digest mismatch");
   correlateBoundaryComponents(boundary.value, entries);
-  validateRouteEdgeEvaluationEntries(byPath, { repository, repositorySha, operationId });
+  validateRouteEdgeEvaluationEntries(byPath, { repository, repositorySha, operationId, boundary: boundary.value });
   const manifest = { schemaVersion: bundle.schemaVersion, artifactKind: bundle.artifactKind, repository: bundle.repository, repositorySha: bundle.repositorySha, operationId: bundle.operationId, providerReceiptRelativePath: receipt, providerReceiptSha256: bundle.providerReceiptSha256, boundary: bundle.boundary, entries: entries.map(({ path: entryPath, sha256: digest }) => ({ path: entryPath, sha256: digest })) };
   if (sha256(Buffer.from(`${canonical(manifest)}\n`)) !== bundle.manifestSha256 || sha256(Buffer.from(canonical({ ...manifest, manifestSha256: bundle.manifestSha256, boundaryBytesBase64: bundle.boundaryBytesBase64, entries }))) !== bundle.bundleSha256 || entries.find((entry) => entry.path === receipt)?.sha256 !== bundle.providerReceiptSha256) throw new Error("live-chain bundle identity mismatch");
   return { ...bundle, entries };
@@ -145,7 +148,7 @@ function entryBytes(byPath, relative) {
   return strictBase64(entry.bytesBase64);
 }
 
-function validateRouteEdgeEvaluationEntries(byPath, { repository, repositorySha, operationId }) {
+function validateRouteEdgeEvaluationEntries(byPath, { repository, repositorySha, operationId, boundary }) {
   const candidateBuildSpec = entryJson(byPath, "tools/datapack/release/candidate-build-spec.json");
   const routeEdgeInput = entryJson(byPath, "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json");
   const stationLineInput = entryJson(byPath, "tools/datapack/release/current-capital-accessibility-full/station-line-input.json");
@@ -164,10 +167,14 @@ function validateRouteEdgeEvaluationEntries(byPath, { repository, repositorySha,
     || receipt.repository !== repository || receipt.mainSha !== repositorySha || receipt.operationId !== operationId) {
     throw new Error("live-chain EXIT identity mismatch");
   }
-  const candidates = [candidateBuildSpec, routeEdgeInput.candidate, stationLineInput.candidate, admission.candidate];
-  if (candidates.some(({ candidateId }) => candidateId !== candidateBuildSpec.candidateId)
-    || candidates.slice(1).some(({ sourceSetSha256 }) => sourceSetSha256 !== candidateBuildSpec.sourceSnapshotSetHash)
-    || candidates.slice(1).some(({ stationSetSha256 }) => stationSetSha256 !== routeEdgeInput.candidate.stationSetSha256)
+  const currentCandidates = [routeEdgeInput.candidate, stationLineInput.candidate];
+  if (boundary.currentCandidateSourceSetSha256 !== candidateBuildSpec.sourceSnapshotSetHash
+    || boundary.evidenceSourceSetSha256 === boundary.currentCandidateSourceSetSha256
+    || currentCandidates.some(({ candidateId }) => candidateId !== candidateBuildSpec.candidateId)
+    || currentCandidates.some(({ sourceSetSha256 }) => sourceSetSha256 !== boundary.currentCandidateSourceSetSha256)
+    || admission.candidate?.candidateId !== candidateBuildSpec.candidateId
+    || admission.candidate?.sourceSetSha256 !== boundary.evidenceSourceSetSha256
+    || [...currentCandidates, admission.candidate].some(({ stationSetSha256 }) => stationSetSha256 !== routeEdgeInput.candidate.stationSetSha256)
     || stationLineInput.candidate.mappingContractVersion !== admission.candidate.mappingContractVersion
     || stationLineInput.candidate.materializerVersion !== admission.candidate.materializerVersion
     || routeEdgeInput.candidate.policyVersion !== policy.policyVersion
