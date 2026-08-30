@@ -12,10 +12,10 @@ import {
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const SHA = "a".repeat(40);
 const OCI_ENV = { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/approved/n/axvym6vk8g7i/b/easysubway-datapacks/o/" };
-const fixturePaths = [
-  "tools/datapack/source-inventory.json",
-  "tools/datapack/sources/incheon-transit-station-info-20260828.json",
-  "tools/datapack/fixtures/incheon-accessibility-raw/data-go-15083478.csv",
+const INVENTORY_PATH = "tools/datapack/source-inventory.json";
+const RAW_INPUT_PATH = "tools/datapack/fixtures/incheon-accessibility-raw/data-go-15083478.csv";
+const fixtureInputPaths = [
+  RAW_INPUT_PATH,
   "tools/datapack/fixtures/incheon-accessibility-raw/data-go-15010199.csv",
   "tools/datapack/fixtures/incheon-accessibility-raw/data-go-15146049.csv",
 ];
@@ -23,9 +23,15 @@ const fixturePaths = [
 async function fixture(t) {
   const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "incheon-runner-repository-")); const operationRoot = path.join(await mkdtemp(path.join(os.tmpdir(), "incheon-runner-operation-parent-")), "operation");
   t.after(() => Promise.all([rm(repositoryRoot, { recursive: true, force: true }), rm(path.dirname(operationRoot), { recursive: true, force: true })]));
+  const inventory = JSON.parse(await readFile(path.join(ROOT, INVENTORY_PATH), "utf8"));
+  const topologySnapshotPaths = inventory.sources
+    .filter(({ id }) => id === "incheon-transit-station-info")
+    .map(({ topologyAdmissionEvidence }) => topologyAdmissionEvidence?.snapshotPath)
+    .filter((relative) => typeof relative === "string");
+  assert.equal(topologySnapshotPaths.length, 1);
+  const fixturePaths = [INVENTORY_PATH, ...topologySnapshotPaths, ...fixtureInputPaths];
   for (const relative of fixturePaths) { await mkdir(path.dirname(path.join(repositoryRoot, relative)), { recursive: true }); await cp(path.join(ROOT, relative), path.join(repositoryRoot, relative)); }
-  const inventoryPath = path.join(repositoryRoot, fixturePaths[0]);
-  const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
+  const inventoryPath = path.join(repositoryRoot, INVENTORY_PATH);
   const source = inventory.sources.find(({ id }) => id === "incheon-transit-accessibility");
   source.requiredForProductionPack = false;
   delete source.registrationEvidence;
@@ -73,7 +79,7 @@ test("REGISTERING recovery reaches FINALIZED without publishing", async (t) => {
 });
 
 test("input drift fails before publisher invocation", async (t) => {
-  const values = await fixture(t); const input = path.join(values.repositoryRoot, fixturePaths[2]); await writeFile(input, `${await readFile(input, "utf8")}drift\n`); let calls = 0;
+  const values = await fixture(t); const input = path.join(values.repositoryRoot, RAW_INPUT_PATH); await writeFile(input, `${await readFile(input, "utf8")}drift\n`); let calls = 0;
   await assert.rejects(finalize(values, { publisher: async () => { calls += 1; } }), /inputs drifted/); assert.equal(calls, 0);
 });
 

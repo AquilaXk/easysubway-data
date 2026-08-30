@@ -15,7 +15,7 @@ import {
 
 const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
 
-test("current public fixture copies registered source evidence snapshots", async (t) => {
+test("current public fixture copies registered and topology-admission source evidence snapshots", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-registered-source-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, root, {
@@ -27,12 +27,14 @@ test("current public fixture copies registered source evidence snapshots", async
     path.join(repositoryRoot, "tools/datapack/source-inventory.json"),
     "utf8",
   ));
-  const snapshotIds = inventory.sources
-    .map(({ registrationEvidence }) => registrationEvidence?.snapshotId)
-    .filter((snapshotId) => typeof snapshotId === "string");
-  assert.ok(snapshotIds.length > 0);
-  for (const snapshotId of snapshotIds) {
-    const relative = `tools/datapack/sources/${snapshotId}.json`;
+  const snapshotPaths = inventory.sources.flatMap((source) => [
+    typeof source.registrationEvidence?.snapshotId === "string"
+      ? `tools/datapack/sources/${source.registrationEvidence.snapshotId}.json`
+      : null,
+    source.topologyAdmissionEvidence?.snapshotPath,
+  ]).filter((relative) => typeof relative === "string");
+  assert.ok(snapshotPaths.length > 0);
+  for (const relative of snapshotPaths) {
     assert.deepEqual(
       await readFile(path.join(root, relative)),
       await readFile(path.join(repositoryRoot, relative)),

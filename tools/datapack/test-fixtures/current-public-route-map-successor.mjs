@@ -253,6 +253,7 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
     ...inventory.sources.map((source) => source.routeMapAdmissionEvidence?.snapshotPath),
     ...inventory.sources.map((source) => source.routeMapAdmissionEvidence?.currentLayoutAdmission?.snapshotPath),
     ...inventory.sources.map((source) => source.accessibilityAdmissionEvidence?.snapshotPath),
+    ...inventory.sources.map((source) => source.topologyAdmissionEvidence?.snapshotPath),
     ...inventory.sources.map((source) => {
       const snapshotId = source.registrationEvidence?.snapshotId;
       return typeof snapshotId === "string" ? `tools/datapack/sources/${snapshotId}.json` : null;
