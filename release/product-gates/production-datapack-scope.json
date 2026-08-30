@@ -172,6 +172,7 @@
       "seoul-metro-route-map-positions",
       "kric-station-convenience-standard",
       "kric-subway-timetable",
+      "incheon-transit-accessibility",
       "seoul-metro-transfer-distance-duration"
     ],
     "optionalAccessibilitySourceIds": [
