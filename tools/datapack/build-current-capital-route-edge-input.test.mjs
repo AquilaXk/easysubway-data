@@ -131,7 +131,7 @@ test("route CLI만 temporary fixed target에 exact two-file handoff를 원자 pu
   input.exitAdmission.candidate.sourceSetSha256 = evidenceSourceSet;
   input.exitAdmission.materializerEvidenceRows = input.exitAdmission.materializerEvidenceRows.map((row) => ({ ...row, sourceSetSha256: evidenceSourceSet }));
   resealAdmission(input.exitAdmission);
-  input.facilityAdmission.candidate.sourceSnapshotSetHash = evidenceSourceSet;
+  input.facilityAdmission.candidate.sourceSnapshotSetHash = sourceSet;
   resealFacility(input.facilityAdmission);
   input.exitReceipt.admissionDigest = input.exitAdmission.admissionDigest;
   input.exitReceipt.admissionSha256 = sha(canonical(input.exitAdmission));
