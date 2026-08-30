@@ -15,6 +15,31 @@ import {
 
 const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
 
+test("current public fixture copies registered source evidence snapshots", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-registered-source-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, root, {
+    now: new Date("2026-08-26T04:00:00.000Z"),
+    activatePublicRouteMap: false,
+  });
+
+  const inventory = JSON.parse(await readFile(
+    path.join(repositoryRoot, "tools/datapack/source-inventory.json"),
+    "utf8",
+  ));
+  const snapshotIds = inventory.sources
+    .map(({ registrationEvidence }) => registrationEvidence?.snapshotId)
+    .filter((snapshotId) => typeof snapshotId === "string");
+  assert.ok(snapshotIds.length > 0);
+  for (const snapshotId of snapshotIds) {
+    const relative = `tools/datapack/sources/${snapshotId}.json`;
+    assert.deepEqual(
+      await readFile(path.join(root, relative)),
+      await readFile(path.join(repositoryRoot, relative)),
+    );
+  }
+});
+
 test("current public candidate slot derives a same-source public V2 successor on a topology-only refresh", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-predecessor-"));
   t.after(() => rm(root, { recursive: true, force: true }));
