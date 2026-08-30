@@ -237,8 +237,8 @@
       "fixtureStageContracts": {
         "mobile": [
           "source=\".external/mobile/apps/mobile\"",
-          "expected_revision=\"5b58d426258f536070137737c3f19a8dbeda44c1\"",
-          "expected_sha256=\"609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a\"",
+          "expected_revision=\"4d133ad853fa6ef4e024a37a1409b5eaadd1cc69\"",
+          "expected_sha256=\"905e77589971bd53d6ecaab9dbfd211ab56f86de883425747bf1d93d31ebae4f\"",
           "fetch-depth: 0",
           "cp -a \"${source}\" apps/mobile"
         ]
@@ -604,7 +604,7 @@
       "repository": "AquilaXk/easysubway-mobile",
       "commit": "39d2c4723d0ff855041c6162825930c7d12ffad3",
       "profileCommit": {
-        "mobile-v19": "5b58d426258f536070137737c3f19a8dbeda44c1"
+        "mobile-v19": "4d133ad853fa6ef4e024a37a1409b5eaadd1cc69"
       },
       "checkoutPath": ".external/mobile",
       "sourcePath": "apps/mobile",
@@ -614,7 +614,7 @@
           "path": "assets/datapacks/capital.sqlite.gz",
           "sha256": "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
           "profileSha256": {
-            "mobile-v19": "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a"
+            "mobile-v19": "905e77589971bd53d6ecaab9dbfd211ab56f86de883425747bf1d93d31ebae4f"
           }
         },
         {
