@@ -589,7 +589,7 @@ async function writeHistoricalAdmittedSourceBundle(sourceDir, candidate) {
   };
 }
 
-const CURRENT_ITX_APPROVAL_URL = "https://github.com/AquilaXk/easysubway-data/issues/96#issuecomment-123";
+const CURRENT_ITX_APPROVAL_URL = "https://github.com/AquilaXk/easysubway-data/issues/636#issuecomment-123";
 
 function ownerApproval(candidate) {
   const digest = createHash("sha256").update(sourceBytes(candidate)).digest("hex");
@@ -2179,7 +2179,7 @@ test("ITX promotion은 freshness·payload sets·current ADMITTED authority를 �
     }
   });
 
-  await context.test("OWNER approval은 현재 Data #96 URL·저자·observedAt 이후 시각만 허용", async () => {
+  await context.test("OWNER approval은 Data issue URL·저자·observedAt 이후 시각만 허용", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "itx-promotion-current-approval-"));
     try {
       const candidate = sourceCandidate();
@@ -2192,7 +2192,7 @@ test("ITX promotion은 freshness·payload sets·current ADMITTED authority를 �
         "https://github.com/AquilaXk/easysubway/issues/2135#issuecomment-123",
         "https://github.com/AquilaXk/easysubway/pull/2139#issuecomment-123",
         "https://github.com/AquilaXk/easysubway-data/issues/95#issuecomment-123",
-        "https://github.com/other/easysubway-data/issues/96#issuecomment-123",
+        "https://github.com/other/easysubway-data/issues/636#issuecomment-123",
       ]) {
         await assert.rejects(promoteItxSourceCandidate({
           candidatePath,
@@ -2206,7 +2206,7 @@ test("ITX promotion은 freshness·payload sets·current ADMITTED authority를 �
       }
       for (const record of [
         { ...await approval.fetchImpl().then((response) => response.json()), user: { login: "not-owner" } },
-        { ...await approval.fetchImpl().then((response) => response.json()), html_url: "https://github.com/AquilaXk/easysubway-data/issues/96#issuecomment-124" },
+        { ...await approval.fetchImpl().then((response) => response.json()), html_url: "https://github.com/AquilaXk/easysubway-data/issues/636#issuecomment-124" },
         { ...await approval.fetchImpl().then((response) => response.json()), body: "/approve-itx-current forged" },
         { ...await approval.fetchImpl().then((response) => response.json()), created_at: candidate.observedAt },
       ]) {
