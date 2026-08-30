@@ -23,6 +23,15 @@ const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
 const buildNow = "2026-07-16T00:00:00.000Z";
 
+const OWNER_APPROVED_CURRENT_TOPOLOGY = Object.freeze({
+  artifactSha256: "7bff64ecf229a31e64817bd3315a95bc965c20cbe0aa88d788e59b9fd6d5789e",
+  topologySha256: "3c7f03504ed3c0acc2fafd43ba69f6f7503f33e70190e769bb9a1357f3d575e0",
+  stationMembershipCount: 18,
+  servedStationCount: 14,
+  edgeCount: 64,
+  unpairedEdgeCount: 8,
+});
+
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -770,19 +779,22 @@ test("OWNER-approved current source는 approval URL·approved SHA·mode를 exact
 });
 
 test("OWNER-approved current source topology는 실제 directed stop pattern을 보존한다", async () => {
-  const { source } = await trackedLegacyDocuments();
+  const { reference, source } = await trackedLegacyDocuments();
   const topology = deriveTopology(source);
   const directedPairs = new Set(topology.edges.map(({ fromNodeId, toNodeId }) => `${fromNodeId}->${toNodeId}`));
   const unpairedCount = [...directedPairs].filter((key) => {
     const [from, to] = key.split("->");
     return !directedPairs.has(`${to}->${from}`);
   }).length;
-  assert.equal(topology.edges.length, 74);
-  assert.equal(unpairedCount, 10);
-  assert.equal(topology.servedStations.length, 14);
+  assert.equal(reference.sha256, OWNER_APPROVED_CURRENT_TOPOLOGY.artifactSha256);
+  assert.equal(topology.sha256, OWNER_APPROVED_CURRENT_TOPOLOGY.topologySha256);
+  assert.equal(topology.stations.length, OWNER_APPROVED_CURRENT_TOPOLOGY.stationMembershipCount);
+  assert.equal(topology.edges.length, OWNER_APPROVED_CURRENT_TOPOLOGY.edgeCount);
+  assert.equal(unpairedCount, OWNER_APPROVED_CURRENT_TOPOLOGY.unpairedEdgeCount);
+  assert.equal(topology.servedStations.length, OWNER_APPROVED_CURRENT_TOPOLOGY.servedStationCount);
 });
 
-test("production canonical fixture는 current source 74 directed edge를 exact 투영한다", async () => {
+test("production canonical fixture는 OWNER-approved current directed edge를 exact 투영한다", async () => {
   const [{ source }, fixture] = await Promise.all([
     trackedLegacyDocuments(),
     readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8")
@@ -795,11 +807,11 @@ test("production canonical fixture는 current source 74 directed edge를 exact �
     .filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN")
     .map(({ fromNodeId, toNodeId }) => `${fromNodeId}->${toNodeId}`)
     .sort();
-  assert.equal(actual.length, 74);
+  assert.equal(actual.length, OWNER_APPROVED_CURRENT_TOPOLOGY.edgeCount);
   assert.deepEqual(actual, expected);
 });
 
-test("canonical fixture projection은 current source 74 edge를 결정적으로 교체한다", async () => {
+test("canonical fixture projection은 OWNER-approved current edge를 결정적으로 교체한다", async () => {
   const [{ source }, fixture] = await Promise.all([
     trackedLegacyDocuments(),
     readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8")
@@ -809,7 +821,7 @@ test("canonical fixture projection은 current source 74 edge를 결정적으로 
   const first = structuredClone(fixture);
   const second = structuredClone(fixture);
   assert.deepEqual(projectItxTopologyIntoCanonicalFixture(first, topology), {
-    edgeCount: 74,
+    edgeCount: OWNER_APPROVED_CURRENT_TOPOLOGY.edgeCount,
     topologySha256: topology.sha256,
   });
   projectItxTopologyIntoCanonicalFixture(second, topology);
