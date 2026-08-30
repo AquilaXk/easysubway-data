@@ -18,6 +18,7 @@ import {
   I210_SEOHAE_GU_OFFICE_RENAME,
   validateIncheonStationInfoSnapshot,
 } from "./collect-incheon-station-info.mjs";
+import { resolveDataGoDownloadUrl } from "./collect-capital-route-topology.mjs";
 
 const TOPOLOGY_SOURCE_ID = "incheon-transit-station-info";
 const ARTIFACT_KIND = "incheon-train-timetable-snapshot";
@@ -409,26 +410,39 @@ function sha256(value) {
 
 function parseArgs(argv) {
   const args = {};
-  for (let index = 0; index < argv.length; index += 2) {
+  for (let index = 0; index < argv.length;) {
     if (!argv[index]?.startsWith("--")) {
-      throw new Error(
-        "usage: collect-incheon-timetable.mjs --input-dir <dir> --topology-snapshot <json> "
-        + "--output-dir <abs-dir> --captured-at <iso> [--date-stamp YYYYMMDD] [--line 1|2]",
-      );
+      throw new Error(usage());
     }
-    args[argv[index].slice(2)] = argv[index + 1];
+    const key = argv[index].slice(2);
+    if (key === "download") {
+      if (args.download) throw new Error(usage());
+      args.download = true;
+      index += 1;
+      continue;
+    }
+    if (!["input-dir", "topology-snapshot", "output-dir", "captured-at", "date-stamp", "line"].includes(key)
+      || args[key] != null || !argv[index + 1] || argv[index + 1].startsWith("--")) {
+      throw new Error(usage());
+    }
+    args[key] = argv[index + 1];
+    index += 2;
   }
-  if (!args["input-dir"] || !args["topology-snapshot"] || !args["output-dir"] || !args["captured-at"]
+  if (Boolean(args["input-dir"]) === Boolean(args.download)
+    || !args["topology-snapshot"] || !args["output-dir"] || !args["captured-at"]
     || !path.isAbsolute(args["output-dir"])) {
-    throw new Error(
-      "usage: collect-incheon-timetable.mjs --input-dir <dir> --topology-snapshot <json> "
-      + "--output-dir <abs-dir> --captured-at <iso> [--date-stamp YYYYMMDD] [--line 1|2]",
-    );
+    throw new Error(usage());
   }
   return args;
 }
 
-export async function runIncheonTimetableCollector(argv) {
+function usage() {
+  return "usage: collect-incheon-timetable.mjs (--input-dir <dir> | --download) "
+    + "--topology-snapshot <json> --output-dir <abs-dir> --captured-at <iso> "
+    + "[--date-stamp YYYYMMDD] [--line 1|2]";
+}
+
+export async function runIncheonTimetableCollector(argv, { fetchImpl = fetch } = {}) {
   const args = parseArgs(argv);
   const stamp = args["date-stamp"];
   const topologyPath = args["topology-snapshot"];
@@ -455,9 +469,9 @@ export async function runIncheonTimetableCollector(argv) {
     for (const dayCode of DAY_CODES) {
       for (const direction of DIRECTIONS) {
         const datasetId = config.datasets[dayCode][direction];
-        files[`${dayCode}:${direction}`] = await readFile(
-          path.join(args["input-dir"], `data-go-${datasetId}.csv`),
-        );
+        files[`${dayCode}:${direction}`] = args.download
+          ? await downloadDataGoTimetableCsv(fetchImpl, datasetId)
+          : await readFile(path.join(args["input-dir"], `data-go-${datasetId}.csv`));
       }
     }
     const snapshot = collectIncheonTimetableLine({
@@ -475,6 +489,23 @@ export async function runIncheonTimetableCollector(argv) {
     );
   }
   return outputs;
+}
+
+async function downloadDataGoTimetableCsv(fetchImpl, datasetId) {
+  const detailUrl = `https://www.data.go.kr/data/${datasetId}/fileData.do`;
+  const detailResponse = await fetchImpl(detailUrl, {
+    headers: { "User-Agent": "easysubway-datapack-collector/1.0" },
+  });
+  if (!detailResponse.ok) throw new Error(`Incheon ${datasetId} detail HTTP ${detailResponse.status}`);
+  const downloadUrl = resolveDataGoDownloadUrl(await detailResponse.text(), detailUrl);
+  const fileResponse = await fetchImpl(downloadUrl, {
+    headers: {
+      "User-Agent": "easysubway-datapack-collector/1.0",
+      Referer: detailUrl,
+    },
+  });
+  if (!fileResponse.ok) throw new Error(`Incheon ${datasetId} CSV HTTP ${fileResponse.status}`);
+  return Buffer.from(await fileResponse.arrayBuffer());
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

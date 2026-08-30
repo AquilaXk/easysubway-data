@@ -1711,14 +1711,13 @@
         "runner": {
           "command": "node tools/datapack/collect-incheon-timetable.mjs",
           "arguments": [
-            "--input-dir",
-            "tools/datapack/fixtures/incheon-timetable-raw",
+            "--download",
             "--topology-snapshot",
-            "tools/datapack/sources/incheon-transit-station-info-20260724.json",
+            "<tracked-current-incheon-topology-snapshot>",
             "--output-dir",
-            "/tmp/easysubway-incheon-timetable",
+            "<absolute-operation-owned-output-directory>",
             "--captured-at",
-            "2026-07-24T08:00:00.000Z",
+            "<current-provider-capture-iso>",
             "--line",
             "1"
           ],
@@ -1820,14 +1819,13 @@
         "runner": {
           "command": "node tools/datapack/collect-incheon-timetable.mjs",
           "arguments": [
-            "--input-dir",
-            "tools/datapack/fixtures/incheon-timetable-raw",
+            "--download",
             "--topology-snapshot",
-            "tools/datapack/sources/incheon-transit-station-info-20260724.json",
+            "<tracked-current-incheon-topology-snapshot>",
             "--output-dir",
-            "/tmp/easysubway-incheon-timetable",
+            "<absolute-operation-owned-output-directory>",
             "--captured-at",
-            "2026-07-24T08:00:00.000Z",
+            "<current-provider-capture-iso>",
             "--line",
             "2"
           ],

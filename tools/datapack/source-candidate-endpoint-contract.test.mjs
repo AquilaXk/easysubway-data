@@ -112,6 +112,18 @@ test("Incheon accessibility catalog keeps the current deterministic collector bo
   assert.doesNotMatch(JSON.stringify(runner), /s3:|\/tmp\/|captured-at|2026-07/u);
 });
 
+test("Incheon timetable catalog runs the credential-free official data.go.kr download mode", () => {
+  for (const id of ["incheon-line1-train-timetable", "incheon-line2-train-timetable"]) {
+    const candidate = document.candidates.find((entry) => entry.id === id);
+    const runner = candidate?.operation?.runner;
+    assert.equal(runner?.command, "node tools/datapack/collect-incheon-timetable.mjs");
+    assert.equal(runner?.arguments?.[0], "--download");
+    assert.ok(!runner?.arguments?.includes("--input-dir"));
+    assert.doesNotMatch(JSON.stringify(runner), /fixtures|\/tmp\/|2026-07/);
+    assert.deepEqual(runner?.requiredEnv, []);
+  }
+});
+
 test("FACILITY provider probe는 canonical identity 없이 exact tuple evidence만 만든다", async () => {
   const tuple = { railOprIsttCd: "GX", lnCd: "A", stinCd: "X101", stationName: "운정중앙" };
   const evidence = await collectKricAccessibilityProviderTupleEvidence({
