@@ -321,9 +321,23 @@ export async function recoverPublishedCurrentCapitalFacilityOperation({ reposito
   targetAdmissionBinding(targetJournal);
   const sourceJournal = parseJournal(await regularBytes(sourceJournalPath, "source operation journal"));
   if (targetJournal.phase !== "PREPARED" || Object.keys(targetJournal.completedStages ?? {}).length !== 0) throw new Error("published recovery target must be PREPARED");
-  if (sourceJournal.phase !== "FINALIZE_STARTED") throw new Error("published recovery source must be FINALIZE_STARTED");
+  if (!["FINALIZE_STARTED", "FINALIZED"].includes(sourceJournal.phase)) throw new Error("published recovery source must be FINALIZE_STARTED or FINALIZED");
   const sourcePublished = sourceJournal.completedStages?.published;
   if (!sourcePublished || Object.keys(sourcePublished).length !== 2 || !/^[0-9a-f]{64}$/.test(sourcePublished.receiptSha256 ?? "") || typeof sourcePublished.snapshotId !== "string") throw new Error("published recovery source stage is invalid");
+  const sourceFinalized = sourceJournal.phase === "FINALIZED";
+  const sourceFinalizedStages = sourceJournal.completedStages;
+  if (sourceFinalized) {
+    if (Object.keys(sourceFinalizedStages).length !== 4 || !["published", "registered", "rebound", "admitted"].every((stage) => Object.hasOwn(sourceFinalizedStages, stage))) throw new Error("published recovery finalized source stages are invalid");
+    const registered = sourceFinalizedStages.registered;
+    const rebound = sourceFinalizedStages.rebound;
+    const admitted = sourceFinalizedStages.admitted;
+    if (!registered || Object.keys(registered).length !== 1 || !/^[0-9a-f]{64}$/.test(registered.snapshotSha256 ?? "")
+      || !rebound || Object.keys(rebound).length !== 1 || !/^[0-9a-f]{64}$/.test(rebound.candidateSha256 ?? "")
+      || !admitted || Object.keys(admitted).length !== 1 || !/^[0-9a-f]{64}$/.test(admitted.admissionSha256 ?? "")
+      || sourceJournal.snapshotId !== sourcePublished.snapshotId
+      || sourceJournal.reboundExpectedCandidateSha256 !== rebound.candidateSha256) throw new Error("published recovery finalized source stages are invalid");
+    requiredUtcInstant(sourceJournal.finalizedAt, "source finalizedAt");
+  }
   const sourceExpectedMainSha = requireText(sourceJournal.expectedMainSha, "source expected main SHA");
   const targetExpectedMainSha = requireText(targetJournal.expectedMainSha, "target expected main SHA");
   if (!/^[0-9a-f]{40}$/.test(sourceExpectedMainSha) || !/^[0-9a-f]{40}$/.test(targetExpectedMainSha)) throw new Error("published recovery main identity is invalid");
@@ -344,14 +358,19 @@ export async function recoverPublishedCurrentCapitalFacilityOperation({ reposito
   const observation = await readCompletedObservation(path.join(sourceRoot, "observation"));
   assertObservationBinding(sourceJournal, observation);
   if (sourcePublished.snapshotId !== observation.snapshot.snapshotId) throw new Error("published recovery source stage is invalid");
+  if (sourceFinalized && sourceFinalizedStages.registered.snapshotSha256 !== hash(observation.snapshotBytes)) throw new Error("published recovery finalized source stages are invalid");
   const recoveryNowMillis = requiredUtcInstant(now.toISOString(), "published recovery now");
   if (requiredUtcInstant(observation.snapshot.freshUntil, "published recovery freshUntil") <= recoveryNowMillis) throw new Error("published recovery observation is stale");
   const receiptBytes = await regularBytes(path.join(sourceRoot, "receipt.json"), "source raw receipt");
   if (hash(receiptBytes) !== sourcePublished.receiptSha256) throw new Error("published recovery receipt identity mismatch");
   const receipt = parse(receiptBytes, "source raw receipt");
   await assertClosedRawReceipt({ root: repository, receipt, observation, now });
-  const collectionStartedAt = new Date(requiredUtcInstant(sourceJournal.collectionStartedAt, "source collectionStartedAt")).toISOString();
-  const finalizeObservedAt = new Date(requiredUtcInstant(sourceJournal.finalizeObservedAt, "source finalizeObservedAt")).toISOString();
+  const collectionStartedAtMillis = requiredUtcInstant(sourceJournal.collectionStartedAt, "source collectionStartedAt");
+  const finalizeObservedAtMillis = requiredUtcInstant(sourceJournal.finalizeObservedAt, "source finalizeObservedAt");
+  if (sourceFinalized && requiredUtcInstant(sourceJournal.finalizedAt, "source finalizedAt") < finalizeObservedAtMillis) throw new Error("published recovery finalized source timestamps are invalid");
+  if (finalizeObservedAtMillis < collectionStartedAtMillis) throw new Error("published recovery source timestamps are invalid");
+  const collectionStartedAt = new Date(collectionStartedAtMillis).toISOString();
+  const finalizeObservedAt = new Date(finalizeObservedAtMillis).toISOString();
 
   const targetObservationRoot = path.join(targetRoot, "observation");
   const targetReceiptPath = path.join(targetRoot, "receipt.json");

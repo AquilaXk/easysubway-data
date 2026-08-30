@@ -159,9 +159,9 @@ jobs:
         run: |
           set -euo pipefail
           main_sha="$(git rev-parse HEAD)"
-          node tools/datapack/run-current-capital-facility-operation.mjs prepare --operation-root "${KRIC_REFRESH_OPERATION_ROOT}" --expected-main-sha "${main_sha}"
-          node tools/datapack/run-current-capital-facility-operation.mjs collect --operation-root "${KRIC_REFRESH_OPERATION_ROOT}"
-          node tools/datapack/run-current-capital-facility-operation.mjs finalize --operation-root "${KRIC_REFRESH_OPERATION_ROOT}"
+          node tools/datapack/run-current-capital-facility-operation.mjs --phase prepare --operation-root "${KRIC_REFRESH_OPERATION_ROOT}" --expected-main-sha "${main_sha}"
+          node tools/datapack/run-current-capital-facility-operation.mjs --phase collect --operation-root "${KRIC_REFRESH_OPERATION_ROOT}"
+          node tools/datapack/run-current-capital-facility-operation.mjs --phase finalize --operation-root "${KRIC_REFRESH_OPERATION_ROOT}"
           cp "${KRIC_REFRESH_OPERATION_ROOT}/receipt.json" "${KRIC_REFRESH_OPERATION_ROOT}/raw-receipt.json"
 
       - name: KRIC current facility refresh / Finalize claimed refresh branch
