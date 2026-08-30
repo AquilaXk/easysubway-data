@@ -199,6 +199,7 @@ export async function collectSeoulAccessibility({
   source = "accessibility",
   fetchImpl = fetch,
   requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+  requestAttempts = source === "facility-location" ? 1 : 2,
   retainRawResponses = false,
 }) {
   if (!Object.hasOwn(SOURCES, source)) throw new Error(`${INVALID_RESPONSE}: source`);
@@ -215,7 +216,10 @@ export async function collectSeoulAccessibility({
   const rawPages = [];
   const rawResponses = [];
   const rowIdentities = new Set();
-  const requestAttempts = source === "facility-location" ? 1 : 2;
+  if (!Number.isSafeInteger(requestAttempts) || ![1, 2].includes(requestAttempts)
+    || (source === "facility-location" && requestAttempts !== 1)) {
+    throw new Error(`${INVALID_RESPONSE}: requestAttempts`);
+  }
   let receivedCount = 0;
   let pageNo = 1;
   let totalCount;
@@ -304,6 +308,7 @@ export async function collectSeoulAccessibilityObservation({
   serviceKey,
   fetchImpl = fetch,
   requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+  requestAttempts = 2,
   retrievedAt = new Date().toISOString(),
   previousSnapshot = null,
 } = {}) {
@@ -313,6 +318,7 @@ export async function collectSeoulAccessibilityObservation({
     source: "accessibility",
     fetchImpl,
     requestTimeoutMs,
+    requestAttempts,
     retainRawResponses: true,
   });
   const snapshot = validateSeoulAccessibilitySnapshotIdentity(buildAccessibilitySnapshot(

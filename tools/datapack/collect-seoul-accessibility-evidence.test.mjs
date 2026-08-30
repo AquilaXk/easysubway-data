@@ -102,6 +102,23 @@ test("facility-location collector does not retry HTTP 5xx responses", async () =
   assert.equal(calls, 1);
 });
 
+test("scheduled Seoul accessibility collection accepts an explicit single-attempt contract", async () => {
+  let calls = 0;
+  await assert.rejects(
+    collectSeoulAccessibility({
+      endpoint: "https://apis.data.go.kr/example",
+      serviceKey: "secret",
+      requestAttempts: 1,
+      fetchImpl: async () => {
+        calls += 1;
+        throw new Error("provider unavailable");
+      },
+    }),
+    /Seoul accessibility API request failed/,
+  );
+  assert.equal(calls, 1);
+});
+
 test("collector aborts stalled provider requests after the configured timeout", async () => {
   let observedAbortSignal = false;
   await assert.rejects(
