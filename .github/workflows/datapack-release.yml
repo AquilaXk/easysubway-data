@@ -557,10 +557,15 @@ jobs:
             echo "enabled=false" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
-          node tools/datapack/export-publish-env.mjs \
-            --env-file "${EASYSUBWAY_ENV_FILE}" \
-            --github-env "${GITHUB_ENV}" \
+          publish_env_args=(
+            --env-file "${EASYSUBWAY_ENV_FILE}"
+            --github-env "${GITHUB_ENV}"
             --github-output "${GITHUB_OUTPUT}"
+          )
+          if [[ "${{ steps.release-mode.outputs.mode }}" == "production-publish" ]]; then
+            publish_env_args+=(--require-oci-s3-compat)
+          fi
+          node tools/datapack/export-publish-env.mjs "${publish_env_args[@]}"
 
       # release request ↔ build spec 결속을 pack 빌드 전에 fail-closed로 확인한다.
       # decide-datapack-release의 validApproval도 같은 술어를 보지만 그 시점은 빌드 이후이고
