@@ -153,5 +153,6 @@ test("old-main claim remains inactive while current-main incomplete claim fails 
 test("preflight blocks every possible UTC or KST identity during the job window", async () => {
   const { currentCapitalTopologyPreflight } = await load();
   assert.deepEqual(currentCapitalTopologyPreflight({ now: new Date("2026-08-30T14:59:00.000Z"), existingPaths: ["tools/datapack/sources/incheon-line1-train-timetable-20260831.json"] }).state, "WAIT_IMMUTABLE_IDENTITY");
+  assert.deepEqual(currentCapitalTopologyPreflight({ now: new Date("2026-08-30T14:59:00.000Z"), existingPaths: ["tools/datapack/itx-current-network-edge-admission-20260831.json"] }).state, "WAIT_IMMUTABLE_IDENTITY");
   assert.equal(currentCapitalTopologyPreflight({ now: new Date("2026-08-30T14:00:00.000Z"), existingPaths: [] }).state, "CLEAR");
 });
