@@ -3,7 +3,7 @@
   "artifactKind": "datapack-candidate-build-spec",
   "candidateId": "capital-pilot-candidate-20260829",
   "productionScopeId": "capital_pilot_android_v1",
-  "publishedAt": "2026-08-29T12:03:46.000Z",
+  "publishedAt": "2026-08-30T01:35:26.000Z",
   "releaseSequence": 115,
   "fixturePath": "tools/datapack/release/capital-production-canonical-pack.json",
   "itxTopologyEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence-20260824170958799.json",
@@ -63,8 +63,8 @@
     "kric-station-convenience-standard-20260828T141640087Z",
     "molit-urban-rail-full-route-current-20260826T035408251Z",
     "seoulmetro-station-line-info-revalidated-20260814",
-    "seoul-metro-transfer-distance-duration-20260815T094038817Z",
-    "incheon-transit-accessibility-20260828T043356000Z"
+    "incheon-transit-accessibility-20260828T043356000Z",
+    "seoul-metro-transfer-distance-duration-20260815T094038817Z"
   ],
   "sourceSnapshots": [
     {
@@ -170,23 +170,6 @@
       "governancePolicySha256": "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70"
     },
     {
-      "snapshotId": "seoul-metro-transfer-distance-duration-20260815T094038817Z",
-      "sourceId": "seoul-metro-transfer-distance-duration",
-      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-transfer-distance-duration/20260815/3d872c9ac390426b5e0e26fa1916ae9d9a44b70077b632d3c85cb8e82381f7cf.json",
-      "rawSha256": "3d872c9ac390426b5e0e26fa1916ae9d9a44b70077b632d3c85cb8e82381f7cf",
-      "redactedRequestFingerprint": "74038fe545e46d6f43affe51f4cfbf924b21e8cf73d9327bcc7cd05dc29f5a5e",
-      "schemaFingerprint": "18cb8d6e4775fcb5d02ca80e03255dbb4021dabfbe95edd054e32923f767117e",
-      "licenseStatus": "PASS",
-      "redistributionAllowed": true,
-      "adminReviewRecordHash": "f1636fbd2b36b2687fc8d728290158ca934461276936036606bc03a3156d594e",
-      "snapshotStatus": "LOCKED",
-      "credentialRedacted": true,
-      "freshnessExpiresAt": "2027-08-15T09:40:38.817Z",
-      "rawRetentionExpiresAt": "2026-11-13T09:40:38.817Z",
-      "governancePolicyVersion": "2026-07-15",
-      "governancePolicySha256": "13f8a78c0ae0f7bfa6817005f44a92be3131e6f6708a69a4024747478203beaa"
-    },
-    {
       "snapshotId": "incheon-transit-accessibility-20260828T043356000Z",
       "sourceId": "incheon-transit-accessibility",
       "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/incheon-transit-accessibility/20260828/ccfac4c6c454fe2c2b81373a33909e4bd34cc9ff6b0186276a28226a2262610f.json",
@@ -202,6 +185,23 @@
       "rawRetentionExpiresAt": "2026-11-26T04:33:56.000Z",
       "governancePolicyVersion": "2026-08-29",
       "governancePolicySha256": "b4656dca1fdb660da495d0269ff91c7d31469045fd1db66a1534e3feffeeba33"
+    },
+    {
+      "snapshotId": "seoul-metro-transfer-distance-duration-20260815T094038817Z",
+      "sourceId": "seoul-metro-transfer-distance-duration",
+      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-transfer-distance-duration/20260815/3d872c9ac390426b5e0e26fa1916ae9d9a44b70077b632d3c85cb8e82381f7cf.json",
+      "rawSha256": "3d872c9ac390426b5e0e26fa1916ae9d9a44b70077b632d3c85cb8e82381f7cf",
+      "redactedRequestFingerprint": "74038fe545e46d6f43affe51f4cfbf924b21e8cf73d9327bcc7cd05dc29f5a5e",
+      "schemaFingerprint": "18cb8d6e4775fcb5d02ca80e03255dbb4021dabfbe95edd054e32923f767117e",
+      "licenseStatus": "PASS",
+      "redistributionAllowed": true,
+      "adminReviewRecordHash": "f1636fbd2b36b2687fc8d728290158ca934461276936036606bc03a3156d594e",
+      "snapshotStatus": "LOCKED",
+      "credentialRedacted": true,
+      "freshnessExpiresAt": "2027-08-15T09:40:38.817Z",
+      "rawRetentionExpiresAt": "2026-11-13T09:40:38.817Z",
+      "governancePolicyVersion": "2026-07-15",
+      "governancePolicySha256": "13f8a78c0ae0f7bfa6817005f44a92be3131e6f6708a69a4024747478203beaa"
     }
   ],
   "sourceSnapshotSetHash": "9e55b5e6c77b2911862238bad0b8a2a35d3c44e6c7f18b6f36600fa83b1787bc",
@@ -210,7 +210,7 @@
   "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
   "approvedOverrideSetHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
   "sourceInventorySha256": "60c896dc5f6f101c3100e4ba46276ecdff367fb03044847a0b8c0f4e75ca9b14",
-  "builderGitSha": "6c30de7a5c2f08cb71fca9f66b1c63cb0fd0d3a6",
+  "builderGitSha": "f77a0f637ad9c46ee0d507a9941bda3c30b75d9e",
   "builderVersion": "build-datapack.mjs@26",
   "officialOdFareEvidence": {
     "sourceId": "seoul-metro-official-od-fares",
