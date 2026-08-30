@@ -207,6 +207,10 @@
     "data629": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/629",
       "title": "Refresh due KRIC facility snapshots through OCI"
+    },
+    "data633": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/633",
+      "title": "Split the live-chain handoff into candidate and release phases"
     }
   },
   "workflows": {
@@ -289,6 +293,7 @@
     {"path":"tools/datapack/admit-reviewed-kric-candidates.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":167},
     {"path":"tools/datapack/apply-accessibility-evidence-to-bundled-pack.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":320},
     {"path":"tools/datapack/apply-capital-line1-topology-to-bundled-pack.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":536},
+    {"path":"tools/datapack/export-publish-env.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":228},
     {"path":"tools/datapack/apply-capital-route-topology-to-bundled-pack.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":1111},
     {"path":"tools/datapack/apply-itx-topology-to-bundled-pack.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":8406},
     {"path":"tools/datapack/apply-kric-line4-pilot-schedule.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":111},
@@ -305,6 +310,7 @@
     {"path":"tools/datapack/build-current-capital-live-chain-bundle.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":100},
     {"path":"tools/datapack/build-current-capital-live-chain-oci-plan.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":100},
     {"path":"tools/datapack/build-current-capital-live-chain-oci-receipt.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":100},
+    {"path":"tools/datapack/current-capital-exit-provider-handoff.test.mjs","semanticOwner":"data633","classes":["required-pr"],"durationMs":1500},
     {"path":"tools/datapack/build-current-capital-route-edge-input.test.mjs","semanticOwner":"data365","classes":["required-pr"],"durationMs":851},
     {"path":"tools/datapack/build-current-capital-station-line-input.test.mjs","semanticOwner":"data365","classes":["required-pr"],"durationMs":399},
     {"path":"tools/datapack/build-current-capital-transfer-topology-applicability.test.mjs","semanticOwner":"data349","classes":["required-pr"],"durationMs":164},

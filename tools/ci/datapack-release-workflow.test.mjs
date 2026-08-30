@@ -1036,6 +1036,7 @@ test("production-publish는 attested candidate를 no-rebuild로 소비한다", (
   assert.match(dotenv, /mode != 'release-candidate'/);
   const remotePublish = step("Data Pack Release / Validate remote object storage publish env");
   assert.match(remotePublish, /mode != 'release-candidate'/);
+  assert.match(remotePublish, /production-publish.*--require-oci-s3-compat/s);
 
   for (const name of [
     "Data Pack Release / Prepare release fixture",

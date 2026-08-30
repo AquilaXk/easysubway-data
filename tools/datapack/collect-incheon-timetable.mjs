@@ -146,6 +146,9 @@ export function parseIncheonTrainTimetable(files, topologySnapshot, {
   const rawParts = DAY_CODES.flatMap((dayCode) => DIRECTIONS.map((direction) => files[`${dayCode}:${direction}`]));
   const rawSha256 = sha256(Buffer.concat(rawParts.map((bytes) => Buffer.from(bytes))));
   const datasetIds = DAY_CODES.flatMap((dayCode) => DIRECTIONS.map((direction) => config.datasets[dayCode][direction]));
+  const verifiedDownloadProvenance = downloadProvenance == null
+    ? undefined
+    : verifyDownloadProvenance(downloadProvenance, config, rawHashes);
   return {
     schemaVersion: 1,
     artifactKind: ARTIFACT_KIND,
@@ -206,7 +209,7 @@ export function parseIncheonTrainTimetable(files, topologySnapshot, {
       Buffer.from(files["WEEK:dn"]), Buffer.from(files["HOLI:dn"]),
     ])),
     rawSha256,
-    ...(downloadProvenance == null ? {} : { downloadProvenance: validateDownloadProvenance(downloadProvenance, config, rawHashes) }),
+    ...(verifiedDownloadProvenance == null ? {} : { downloadProvenance: verifiedDownloadProvenance }),
     contentSha256: sha256(JSON.stringify({
       tripsSha256,
       stopTimeCount,
@@ -220,14 +223,16 @@ export function collectIncheonTimetableLine({
   topologySnapshot,
   lineNumber,
   now = new Date(),
+  downloadProvenance,
 }) {
   return parseIncheonTrainTimetable(files, topologySnapshot, {
     lineNumber,
     capturedAt: now,
+    downloadProvenance,
   });
 }
 
-function validateDownloadProvenance(provenance, config, rawHashes) {
+function verifyDownloadProvenance(provenance, config, rawHashes) {
   const expected = DAY_CODES.flatMap((dayCode) => DIRECTIONS.map((direction) => ({
     dayCode,
     direction,
@@ -537,7 +542,9 @@ export async function runIncheonTimetableCollector(argv, { fetchImpl = fetch, no
     collected.push({ config, files, downloadProvenance });
   }
   // A download capture is only true after every selected official FILE body exists.
-  const capturedAt = args.download ? validDate(now()) : validDate(args["captured-at"]);
+  const capturedAt = args.download
+    ? validDate(typeof now === "function" ? now() : now)
+    : validDate(args["captured-at"]);
   const derivedStamp = compactSeoulDate(capturedAt);
   if (stamp != null && stamp !== derivedStamp) {
     throw new Error("--date-stamp must match captured-at Asia/Seoul date");

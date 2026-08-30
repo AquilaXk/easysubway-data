@@ -26,6 +26,7 @@ async function main() {
   const githubEnv = requireArg(args, "github-env");
   const githubOutput = requireArg(args, "github-output");
   const allowInvalidDisabled = args.has("allow-invalid-disabled");
+  const requireOciS3Compat = args.has("require-oci-s3-compat");
   const env = parseDotenv(await readFile(envFile, "utf8"));
 
   if (env.EASYSUBWAY_DATAPACK_REMOTE_PUBLISH_ENABLED !== "true") {
@@ -35,7 +36,9 @@ async function main() {
 
   try {
     requireHttpsPublicUrl(env.EASYSUBWAY_DATA_PACK_BASE_URL, "EASYSUBWAY_DATA_PACK_BASE_URL");
-    if (env.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL) {
+    if (requireOciS3Compat) {
+      requireOciS3CompatPublishEnvironment(env);
+    } else if (env.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL) {
       requireHttpsPublicUrl(
         env.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL,
         "EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL",
@@ -164,12 +167,55 @@ function requireSafeSegment(value, name) {
   }
 }
 
+function requireOciS3CompatPublishEnvironment(env) {
+  if (
+    env.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL !== undefined
+    && env.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL !== ""
+  ) {
+    throw new Error("EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL must be empty for OCI S3-compatible publish");
+  }
+
+  requireNonEmpty(env.EASYSUBWAY_OBJECT_STORAGE_ACCESS_KEY, "EASYSUBWAY_OBJECT_STORAGE_ACCESS_KEY");
+  requireNonEmpty(env.EASYSUBWAY_OBJECT_STORAGE_SECRET_KEY, "EASYSUBWAY_OBJECT_STORAGE_SECRET_KEY");
+
+  const tuple = parseCanonicalOciPublicTuple(env.EASYSUBWAY_DATA_PACK_BASE_URL);
+  requireNonEmpty(env.EASYSUBWAY_OBJECT_STORAGE_REGION, "EASYSUBWAY_OBJECT_STORAGE_REGION");
+  requireSafeSegment(env.EASYSUBWAY_OBJECT_STORAGE_REGION, "EASYSUBWAY_OBJECT_STORAGE_REGION");
+  requireSafeSegment(env.EASYSUBWAY_DATAPACK_BUCKET, "EASYSUBWAY_DATAPACK_BUCKET");
+  if (env.EASYSUBWAY_OBJECT_STORAGE_REGION !== tuple.region) {
+    throw new Error("EASYSUBWAY_OBJECT_STORAGE_REGION must match the canonical OCI public URL");
+  }
+  if (env.EASYSUBWAY_DATAPACK_BUCKET !== tuple.bucket) {
+    throw new Error("EASYSUBWAY_DATAPACK_BUCKET must match the canonical OCI public URL");
+  }
+
+  const expectedEndpoint = `https://${tuple.namespace}.compat.objectstorage.${tuple.region}.oraclecloud.com`;
+  if (env.EASYSUBWAY_OBJECT_STORAGE_ENDPOINT !== expectedEndpoint) {
+    throw new Error("EASYSUBWAY_OBJECT_STORAGE_ENDPOINT must be the canonical OCI S3-compatible root endpoint");
+  }
+}
+
+function parseCanonicalOciPublicTuple(value) {
+  requireNonEmpty(value, "EASYSUBWAY_DATA_PACK_BASE_URL");
+  const match = value.match(
+    /^https:\/\/objectstorage\.([a-z0-9-]+)\.oraclecloud\.com\/n\/([A-Za-z0-9._-]+)\/b\/([A-Za-z0-9._-]+)\/o$/,
+  );
+  if (!match) {
+    throw new Error("EASYSUBWAY_DATA_PACK_BASE_URL must be a canonical OCI public object root URL");
+  }
+  const [, region, namespace, bucket] = match;
+  requireSafeSegment(region, "OCI public URL region");
+  requireSafeSegment(namespace, "OCI public URL namespace");
+  requireSafeSegment(bucket, "OCI public URL bucket");
+  return { region, namespace, bucket };
+}
+
 function parseArgs(argv) {
   const args = new Map();
   for (let index = 0; index < argv.length; index += 1) {
     const key = argv[index];
-    if (key === "--allow-invalid-disabled") {
-      args.set("allow-invalid-disabled", true);
+    if (key === "--allow-invalid-disabled" || key === "--require-oci-s3-compat") {
+      args.set(key.slice(2), true);
       continue;
     }
     const value = argv[index + 1];

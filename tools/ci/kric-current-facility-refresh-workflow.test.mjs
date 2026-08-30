@@ -29,12 +29,16 @@ test("KRIC refresh workflow has one scheduled, fail-closed, PR-only path", () =>
   assert.match(yml, /RECOVER_CLAIM/);
   assert.match(yml, /steps\.decision\.outputs\.state == 'DUE'/);
   assert.match(yml, /steps\.decision\.outputs\.state == 'EXPIRED'/);
-  assert.match(yml, /run-current-capital-facility-operation\.mjs prepare[\s\S]*run-current-capital-facility-operation\.mjs collect[\s\S]*run-current-capital-facility-operation\.mjs finalize/);
-  assert.equal((yml.match(/run-current-capital-facility-operation\.mjs (?:prepare|collect|finalize)/g) ?? []).length, 3);
+  assert.match(yml, /run-current-capital-facility-operation\.mjs --phase prepare --operation-root "\$\{KRIC_REFRESH_OPERATION_ROOT\}" --expected-main-sha "\$\{KRIC_REFRESH_MAIN_SHA\}"/);
+  assert.match(yml, /run-current-capital-facility-operation\.mjs --phase collect --operation-root "\$\{KRIC_REFRESH_OPERATION_ROOT\}"/);
+  assert.match(yml, /run-current-capital-facility-operation\.mjs --phase finalize --operation-root "\$\{KRIC_REFRESH_OPERATION_ROOT\}"/);
+  assert.equal((yml.match(/run-current-capital-facility-operation\.mjs --phase (?:prepare|collect|finalize)/g) ?? []).length, 3);
   assert.match(yml, /KRIC_SERVICE_KEY.*nonempty single line/);
   assert.match(yml, /EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL.*nonempty single line/);
   assert.match(yml, /automation\/629-kric-facility-refresh-\$\{GITHUB_RUN_ID\}/);
-  assert.match(yml, /git commit --allow-empty -m "Claim KRIC facility refresh"[\s\S]*git push origin "\$\{branch\}"[\s\S]*Validate provider configuration/);
+  assert.match(yml, /main_sha="\$\(git rev-parse HEAD\)"[\s\S]*git commit --allow-empty -m "Claim KRIC facility refresh"[\s\S]*git push origin "\$\{branch\}"[\s\S]*git switch --detach "\$\{main_sha\}"[\s\S]*KRIC_REFRESH_MAIN_SHA/);
+  assert.match(yml, /\[\[ "\$\(git rev-parse HEAD\)" == "\$\{KRIC_REFRESH_MAIN_SHA\}" \]\][\s\S]*run-current-capital-facility-operation\.mjs --phase prepare/);
+  assert.match(yml, /git switch "\$\{KRIC_REFRESH_BRANCH\}"[\s\S]*\[\[ "\$\(git rev-parse HEAD\^\)" == "\$\{KRIC_REFRESH_MAIN_SHA\}" \]\][\s\S]*deleted="\$\(git diff --name-only --diff-filter=D\)"/);
   assert.match(yml, /git rev-list --count HEAD\.\."origin\/\$\{branch\}"[\s\S]*git rev-parse "origin\/\$\{branch\}\^\^"[\s\S]*git log -1 --format=%s "origin\/\$\{branch\}"/);
   assert.match(yml, /git diff --name-only --diff-filter=ACMR "origin\/\$\{branch\}\^" "origin\/\$\{branch\}"/);
   assert.equal(

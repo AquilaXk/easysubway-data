@@ -238,6 +238,31 @@ async function publishedRecoveryFixture(t) {
   return { source, sourceReceipt, receiptBytes, journal, journalPath };
 }
 
+async function finalizedPublishedRecoveryFixture(t) {
+  const source = await finalizeFixture(t);
+  const sourceReceipt = receipt(source);
+  const receiptBytes = Buffer.from(`${JSON.stringify(sourceReceipt, null, 2)}\n`);
+  await writeFile(path.join(source.operationRoot, "receipt.json"), receiptBytes);
+  const beforeFinalizeJournalPath = path.join(source.operationRoot, "journal.json");
+  const beforeFinalizeJournal = JSON.parse(await readFile(beforeFinalizeJournalPath, "utf8"));
+  await writeJson(beforeFinalizeJournalPath, { ...beforeFinalizeJournal, collectionStartedAt: source.snapshot.capturedAt });
+  await main(["--phase", "finalize", "--operation-root", source.operationRoot], {
+    repositoryRoot: source.root,
+    now: NOW,
+    env: {},
+    execFileImpl: exactMainExec,
+    registerImpl: async ({ snapshotTargetPath }) => {
+      await mkdir(path.dirname(snapshotTargetPath), { recursive: true });
+      await writeFile(snapshotTargetPath, source.snapshotBytes);
+    },
+    rebindImpl: ({ repositoryRoot, now }) => rebindCurrentCandidateSourceSnapshots({ repositoryRoot, now }),
+  });
+  const journalPath = path.join(source.operationRoot, "journal.json");
+  const journal = JSON.parse(await readFile(journalPath, "utf8"));
+  assert.equal(journal.phase, "FINALIZED");
+  return { source, sourceReceipt, receiptBytes, journal, journalPath };
+}
+
 async function admissionFor({ root, operationRoot, snapshot }) {
   const read = (relative) => readFile(path.join(root, relative));
   const [planBytes, canonicalPackBytes, snapshotBytes, candidateBytes, inventoryBytes, snapshotsBytes, governanceBytes, freshnessBytes] = await Promise.all([
@@ -368,7 +393,7 @@ test("CLI parser keeps collect and finalize one-shot boundaries explicit", () =>
 });
 
 test("published observation recovery adopts exact bytes into a clean prepared root without replay", async (t) => {
-  const { source, sourceReceipt, receiptBytes: sourceReceiptBytes, journal: sourceJournal, journalPath: sourceJournalPath } = await publishedRecoveryFixture(t);
+  const { source, sourceReceipt, receiptBytes: sourceReceiptBytes, journal: sourceJournal } = await publishedRecoveryFixture(t);
   const repositoryRoot = await currentReleaseFixture(t);
   const sourcePlanPath = path.join(source.operationRoot, "plan.json");
   const sourcePlanBytes = await readFile(sourcePlanPath);
@@ -429,12 +454,6 @@ test("published observation recovery adopts exact bytes into a clean prepared ro
   await assertPreparedWithoutRecovery(rejectedRoot);
   await writeFile(path.join(source.operationRoot, "receipt.json"), sourceReceiptBytes);
 
-  const wrongPhaseRoot = await preparedRoot("rejected-phase");
-  await writeJson(sourceJournalPath, { ...sourceJournal, phase: "FINALIZED" });
-  await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: wrongPhaseRoot, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW }), /source must be FINALIZE_STARTED/u);
-  await assertPreparedWithoutRecovery(wrongPhaseRoot);
-  await writeJson(sourceJournalPath, sourceJournal);
-
   const planDriftRoot = await preparedRoot("rejected-plan");
   await writeFile(sourcePlanPath, Buffer.concat([sourcePlanBytes, Buffer.from("\n")]));
   await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: planDriftRoot, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW }), /operation plan identity mismatch/u);
@@ -457,6 +476,25 @@ test("published observation recovery adopts exact bytes into a clean prepared ro
 
   await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: targetRoot, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW }), /target must be PREPARED/u);
   await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: source.operationRoot, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW }), /roots must differ/u);
+});
+
+test("published recovery accepts a complete finalized source journal without replay", async (t) => {
+  const { source, receiptBytes, journal } = await finalizedPublishedRecoveryFixture(t);
+  const repositoryRoot = await currentReleaseFixture(t);
+  const parent = await mkdtemp(path.join(tmpdir(), "facility-finalized-recovery-"));
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  const operationRoot = path.join(parent, "operation");
+  await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
+
+  const result = await recoverPublishedCurrentCapitalFacilityOperation({
+    repositoryRoot, operationRoot, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW,
+  });
+
+  assert.deepEqual(result, { snapshotId: source.snapshot.snapshotId, status: "RECOVERED_PUBLISHED" });
+  const targetJournal = JSON.parse(await readFile(path.join(operationRoot, "journal.json"), "utf8"));
+  assert.equal(targetJournal.phase, "FINALIZE_STARTED");
+  assert.deepEqual(targetJournal.completedStages, { published: journal.completedStages.published });
+  assert.deepEqual(await readFile(path.join(operationRoot, "receipt.json")), receiptBytes);
 });
 
 test("published recovery runs current release preflight and rejects an expired observation before target mutation", async (t) => {
