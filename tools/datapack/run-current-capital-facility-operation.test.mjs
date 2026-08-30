@@ -322,6 +322,28 @@ test("missing KRIC_SERVICE_KEY leaves PREPARED before any claim", async (t) => {
   assert.equal(JSON.parse(await readFile(path.join(operationRoot, "journal.json"), "utf8")).phase, "PREPARED");
 });
 
+test("current release preflight requires the exact eight-source roster before a provider call", async (t) => {
+  const temporaryRoot = await mkdtemp(path.join(tmpdir(), "facility-eight-source-preflight-"));
+  const operationRoot = path.join(temporaryRoot, "operation");
+  t.after(() => rm(temporaryRoot, { recursive: true, force: true }));
+  const repositoryRoot = await currentReleaseFixture(t);
+  await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec });
+  const candidatePath = path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json");
+  const candidate = JSON.parse(await readFile(candidatePath, "utf8"));
+  const incheonIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === "incheon-transit-accessibility");
+  assert.equal(incheonIndex, 6);
+  candidate.sourceSnapshots.splice(incheonIndex, 1);
+  candidate.sourceSnapshotIds.splice(incheonIndex, 1);
+  await writeJson(candidatePath, candidate);
+  await bindReleaseRequestToCandidate(repositoryRoot);
+  let providerCalls = 0;
+  await assert.rejects(collectCurrentCapitalFacilityOperation({
+    repositoryRoot, operationRoot, serviceKey: "test", env: OCI_ENV, execFileImpl: exactMainExec,
+    collectImpl: async () => { providerCalls += 1; },
+  }), /candidate source ledger\/freshness binding mismatch/);
+  assert.equal(providerCalls, 0);
+});
+
 test("expired or license-drift governance stops before provider call", async (t) => {
   const repositoryRoot = await mkdtemp(path.join(tmpdir(), "facility-preflight-repository-")); const operationRoot = await mkdtemp(path.join(tmpdir(), "facility-preflight-operation-"));
   t.after(() => Promise.all([rm(repositoryRoot, { recursive: true, force: true }), rm(operationRoot, { recursive: true, force: true })]));

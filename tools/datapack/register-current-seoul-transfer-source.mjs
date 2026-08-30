@@ -4,7 +4,7 @@ import { link, lstat, mkdir, open, readFile, rename, rmdir, rm, unlink } from "n
 import path from "node:path";
 
 import { registerSeoulTransferSourceSnapshot, TRANSFER_REGISTRATION_PATHS } from "./register-seoul-transfer-source-snapshot.mjs";
-import { appendTransferCandidateSourceSnapshot, assertProjectionEqual, deriveReleaseProjection, readStableRegularFile } from "./rebind-current-candidate-source-snapshots.mjs";
+import { appendTransferCandidateSourceSnapshot, assertProjectionEqual, CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS, deriveReleaseProjection, readStableRegularFile } from "./rebind-current-candidate-source-snapshots.mjs";
 import { assertExactMainPreflight, validateSeoulTransferRawReceipt } from "./publish-seoul-transfer-raw.mjs";
 import { readSeoulTransferObservationDirectory } from "./collect-current-seoul-transfer-distance-duration-snapshot.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
@@ -32,10 +32,6 @@ const KRIC_CATALOG_PATH = "tools/datapack/sources/kric-provider-code-catalog-202
 const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 const canonicalBytes = (value) => Buffer.from(`${canonicalJson(value)}\n`);
 const without = (value, key) => { const copy = { ...value }; delete copy[key]; return copy; };
-const SIX_SOURCE_IDS = Object.freeze([
-  "seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility",
-  "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info",
-]);
 
 function requiredRoot(value) { if (typeof value !== "string" || !path.isAbsolute(value)) throw new Error("repositoryRoot is required"); return path.resolve(value); }
 function target(root, relative) { if (typeof relative !== "string" || path.isAbsolute(relative)) throw new Error("transaction target is invalid"); const resolved = path.resolve(root, relative); if (!resolved.startsWith(`${root}${path.sep}`)) throw new Error("transaction target escapes repository"); return resolved; }
@@ -225,13 +221,13 @@ function validateTransferGovernance({ inventory, governancePolicy, governancePol
 }
 
 function validatePreTransferCandidate({ candidate, ledger, inventory, inventoryInputBytes, governancePolicy, governancePolicyBytes, freshnessPolicy, approvedAt }) {
-  if (!Buffer.isBuffer(inventoryInputBytes) || JSON.stringify(candidate?.sourceSnapshots?.map(({ sourceId }) => sourceId)) !== JSON.stringify(SIX_SOURCE_IDS)
-    || candidate.sourceSnapshotIds?.length !== 6 || candidate.sourceSnapshots.some((projection, index) => projection.snapshotId !== candidate.sourceSnapshotIds[index])) throw new Error("transfer pre-candidate source order mismatch");
+  if (!Buffer.isBuffer(inventoryInputBytes) || JSON.stringify(candidate?.sourceSnapshots?.map(({ sourceId }) => sourceId)) !== JSON.stringify(CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS)
+    || candidate.sourceSnapshotIds?.length !== CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS.length || candidate.sourceSnapshots.some((projection, index) => projection.snapshotId !== candidate.sourceSnapshotIds[index])) throw new Error("transfer pre-candidate source order mismatch");
   const lineage = validateLineage(ledger);
   const selected = candidate.sourceSnapshotIds.map((snapshotId) => ledger.find((row) => row.snapshotId === snapshotId));
   const selectedIds = new Set(candidate.sourceSnapshotIds);
   const selectedInLedgerOrder = ledger.filter(({ snapshotId }) => selectedIds.has(snapshotId));
-  if (selected.some((row) => !row) || selected.some((row, index) => row.sourceId !== SIX_SOURCE_IDS[index] || lineage.headsBySource[row.sourceId] !== row.snapshotId)
+  if (selected.some((row) => !row) || selected.some((row, index) => row.sourceId !== CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS[index] || lineage.headsBySource[row.sourceId] !== row.snapshotId)
     || selectedIds.size !== selected.length || selectedInLedgerOrder.length !== selected.length
     || candidate.sourceSnapshotSetHash !== sha(Buffer.from(JSON.stringify(selectedInLedgerOrder))) || candidate.sourceInventorySha256 !== sha(Buffer.from(JSON.stringify(inventory)))
     || candidate.networkEdgeEvidence?.sourceInventory?.path !== "tools/datapack/source-inventory.json" || candidate.networkEdgeEvidence.sourceInventory.sha256 !== sha(inventoryInputBytes)) throw new Error("transfer pre-candidate ledger or inventory binding mismatch");
@@ -256,7 +252,7 @@ export function buildTransferRegistrationOutputs({ observation, receipt, metrics
   );
   const snapshot = registerSeoulTransferSourceSnapshot({ observation, receipt, metrics, metricsBytes, applicability, applicabilityBytes, now: new Date(approvedAt) });
   const source = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
-  if (!source || source.requiredForProductionPack !== false || candidate?.sourceSnapshots?.length !== 6
+  if (!source || source.requiredForProductionPack !== false || candidate?.sourceSnapshots?.length !== CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS.length
     || scope?.productionSourceSet?.requiredSourceIds?.includes(SOURCE_ID)) throw new Error("transfer registration pre-operation state mismatch");
   const snapshotRelative = `tools/datapack/sources/${snapshot.snapshotId}.json`;
   const snapshotBytes = jsonBytes(snapshot);

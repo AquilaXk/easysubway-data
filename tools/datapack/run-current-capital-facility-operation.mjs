@@ -44,6 +44,7 @@ const CURRENT_SOURCE_IDS = Object.freeze([
   "kric-station-convenience-standard",
   "molit-urban-rail-full-route",
   "seoulmetro-station-line-info",
+  "incheon-transit-accessibility",
   "seoul-metro-transfer-distance-duration",
 ]);
 const JOURNAL_KEYS = new Set(["schemaVersion", "artifactKind", "operationId", "phase", "preparedAt", "expectedMainSha", "planSha256", "inputSha256", "priorAdmissionSha256", "completedStages", "collectionStartedAt", "snapshotId", "completedObservation", "collectionReconciledAt", "finalizeObservedAt", "reboundExpectedCandidateSha256", "finalizedAt"]);

@@ -24,6 +24,17 @@ const OUTPUTS = [
   "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
 ];
 const sha = (value) => createHash("sha256").update(value).digest("hex");
+const CURRENT_CAPITAL_SOURCE_ROSTER = Object.freeze([
+  "seoul-metro-route-map-positions",
+  "kric-subway-timetable",
+  "seoul-metro-accessibility",
+  "kric-station-convenience-standard",
+  "molit-urban-rail-full-route",
+  "seoulmetro-station-line-info",
+  "incheon-transit-accessibility",
+  "seoul-metro-transfer-distance-duration",
+]);
+const PREDECESSOR_SOURCE_ROSTER = Object.freeze(CURRENT_CAPITAL_SOURCE_ROSTER.slice(0, -1));
 const canonical = (value) => Array.isArray(value)
   ? `[${value.map(canonical).join(",")}]`
   : value && typeof value === "object"
@@ -160,7 +171,7 @@ test("public V2 transition rejects legacy metadata, wrong-source predecessor, an
   ]) {
     const root = await stagedRefreshRepository(t);
     await mutate(root);
-    await assert.rejects(buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root }), /legacy metadata|v2 predecessor|source identity/i);
+    await assert.rejects(buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root }), /legacy metadata|v2 predecessor|source identity|source-set/i);
   }
 });
 
@@ -423,7 +434,7 @@ async function stageCurrentTopologyFixture(root) {
     root, sourceInventory, "incheon-transit-station-info", "topologyAdmissionEvidence",
   );
   const currentIncheonAccessibility = await admittedIncheonSnapshot(
-    root, sourceInventory, "incheon-transit-accessibility", "accessibilityAdmissionEvidence",
+    root, sourceInventory, "incheon-transit-accessibility", "admissionEvidence",
   );
   const currentIncheonLine1Timetable = await admittedIncheonSnapshot(
     root, sourceInventory, "incheon-line1-train-timetable", "scheduleAdmissionEvidence",
@@ -504,14 +515,29 @@ async function admittedIncheonSnapshot(root, sourceInventory, sourceId, admissio
   assert.equal(sources.length, 1, `staged ${sourceId} source must be unique`);
   const admission = sources[0][admissionField];
   assert.ok(admission && typeof admission === "object", `staged ${sourceId} admission must be present`);
-  const { snapshotPath } = admission;
+  const snapshotPath = admission.snapshotPath ?? (
+    sourceId === "incheon-transit-accessibility"
+      && admissionField === "admissionEvidence"
+      && admission.decision === "APPROVED"
+      && admission.sourceId === sourceId
+      && typeof admission.snapshotId === "string"
+      ? `tools/datapack/sources/${admission.snapshotId}.json`
+      : undefined
+  );
   assert.equal(typeof snapshotPath, "string", `staged ${sourceId} admission path must be present`);
   assert.ok(snapshotPath.startsWith("tools/datapack/sources/"), `staged ${sourceId} admission path must be tracked`);
   const absolute = path.resolve(root, snapshotPath);
   assert.ok(absolute.startsWith(`${path.resolve(root, "tools/datapack/sources")}${path.sep}`), `staged ${sourceId} admission path must be contained`);
   const bytes = await readFile(absolute);
   const value = JSON.parse(bytes);
-  assert.equal(bytes.equals(Buffer.from(`${JSON.stringify(value)}\n`)), true, `staged ${sourceId} snapshot bytes must be exact`);
+  const registeredSnapshotSha256 = sources[0].registrationEvidence?.snapshotFileSha256;
+  assert.equal(
+    sourceId === "incheon-transit-accessibility" && admissionField === "admissionEvidence"
+      ? sha(bytes) === registeredSnapshotSha256
+      : bytes.equals(Buffer.from(`${JSON.stringify(value)}\n`)),
+    true,
+    `staged ${sourceId} snapshot bytes must be exact`,
+  );
   return { snapshotPath, bytes, value };
 }
 
@@ -562,6 +588,11 @@ async function stagedStaticEvidenceIdentity(root) {
   const selected = candidate.sourceSnapshotIds.map((snapshotId) =>
     snapshots.find((row) => row.snapshotId === snapshotId));
   if (selected.some((row) => row == null)) throw new Error("staged static successor ledger is incomplete");
+  if (selected.length !== CURRENT_CAPITAL_SOURCE_ROSTER.length
+    || candidate.sourceSnapshots.length !== CURRENT_CAPITAL_SOURCE_ROSTER.length
+    || !candidate.sourceSnapshots.every(({ sourceId }, index) => sourceId === CURRENT_CAPITAL_SOURCE_ROSTER[index])) {
+    throw new Error("staged static successor roster is incomplete");
+  }
   const positionIndex = selected.findIndex(({ sourceId }) => sourceId === "seoul-metro-route-map-positions");
   const molitIndex = selected.findIndex(({ sourceId }) => sourceId === "molit-urban-rail-full-route");
   const seoulIndex = selected.findIndex(({ sourceId }) => sourceId === "seoul-metro-accessibility");
@@ -573,20 +604,19 @@ async function stagedStaticEvidenceIdentity(root) {
       || Object.hasOwn(snapshot, "migration"))) {
     throw new Error("staged static successor evidence lineage is incomplete");
   }
-  const predecessorIds = candidate.sourceSnapshotIds.map((snapshotId, index) =>
+  const predecessorIds = candidate.sourceSnapshotIds.slice(0, -1).map((snapshotId, index) =>
     index === positionIndex ? selected[index].previousSnapshotId
       : index === molitIndex ? selected[index].previousSnapshotId
       : snapshotId);
   const evidenceIds = new Set(predecessorIds.flatMap((snapshotId, index) => {
     const sourceId = candidate.sourceSnapshots[index].sourceId;
-    if (sourceId === "seoul-metro-transfer-distance-duration") return [];
     return [sourceId === "seoul-metro-accessibility" ? selected[seoulIndex].previousSnapshotId : snapshotId];
   }));
   const predecessorIdSet = new Set(predecessorIds);
   const predecessor = snapshots.filter(({ snapshotId }) => predecessorIdSet.has(snapshotId));
   const evidence = snapshots.filter(({ snapshotId }) => evidenceIds.has(snapshotId));
-  if (predecessorIdSet.size !== 7 || predecessor.length !== 7
-    || evidenceIds.size !== 6 || evidence.length !== 6) {
+  if (predecessorIdSet.size !== PREDECESSOR_SOURCE_ROSTER.length || predecessor.length !== PREDECESSOR_SOURCE_ROSTER.length
+    || evidenceIds.size !== PREDECESSOR_SOURCE_ROSTER.length || evidence.length !== PREDECESSOR_SOURCE_ROSTER.length) {
     throw new Error("staged static successor evidence set is incomplete");
   }
   return {

@@ -17,6 +17,7 @@ const ROOT = path.resolve(import.meta.dirname, "../..");
 const BASE_SOURCE_IDS = Object.freeze([
   "seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility",
   "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info",
+  "incheon-transit-accessibility",
 ]);
 const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
 const INVENTORY_PATH = "tools/datapack/source-inventory.json";
@@ -25,7 +26,10 @@ test("pending full fan-in marker를 exact current identities에 결속하고 rou
   const fixture = await createFixture(t);
   const transition = buildCurrentCapitalAccessibilityTransition(fixture.input);
   const bytes = canonicalCurrentCapitalAccessibilityTransitionJson(transition);
+  assert.equal(transition.schemaVersion, 2);
   assert.equal(transition.state, "PENDING_FULL_FAN_IN");
+  assert.equal(transition.previousProduction.candidateId, fixture.input.previous.candidate.candidateId);
+  assert.notEqual(transition.nextCandidate.candidateId, transition.previousProduction.candidateId);
   assert.equal(transition.previousProduction.sourceSnapshotSetHash, fixture.previousSourceSet);
   assert.equal(transition.nextCandidate.sourceSnapshotSetHash, fixture.baseSourceSet);
   assert.equal(transition.pendingPrerequisites.authorityEdgeCount, 456);
@@ -46,6 +50,25 @@ test("pending full fan-in marker를 exact current identities에 결속하고 rou
     /full-capital station-line candidate keys mismatch/,
   );
 
+  const legacy = JSON.parse(bytes);
+  legacy.schemaVersion = 1;
+  delete legacy.previousProduction.candidateId;
+  delete legacy.transitionSha256;
+  legacy.transitionSha256 = sha256(Buffer.from(canonicalJson(legacy)));
+  assert.throws(
+    () => canonicalCurrentCapitalAccessibilityTransitionJson(legacy),
+    /current accessibility transition schema mismatch|transition previous production keys mismatch/,
+  );
+
+  const equalCandidateIds = JSON.parse(bytes);
+  equalCandidateIds.previousProduction.candidateId = equalCandidateIds.nextCandidate.candidateId;
+  delete equalCandidateIds.transitionSha256;
+  equalCandidateIds.transitionSha256 = sha256(Buffer.from(canonicalJson(equalCandidateIds)));
+  assert.throws(
+    () => canonicalCurrentCapitalAccessibilityTransitionJson(equalCandidateIds),
+    /candidate.*identity|candidateId/i,
+  );
+
   const drifted = JSON.parse(bytes);
   drifted.nextCandidate.sourceSnapshotSetHash = "8".repeat(64);
   delete drifted.transitionSha256;
@@ -57,7 +80,7 @@ test("pending full fan-in marker를 exact current identities에 결속하고 rou
   );
 });
 
-test("exact TRANSFER-last append는 six-source marker를 인증한 뒤에도 build를 차단한다", async (t) => {
+test("exact TRANSFER-last append는 seven-source marker를 인증한 뒤에도 build를 차단한다", async (t) => {
   const fixture = await createFixture(t);
   const transitionPath = path.join(fixture.root, "tools/datapack/release/current-capital-accessibility-transition.json");
   const candidatePath = path.join(fixture.root, "tools/datapack/release/candidate-build-spec.json");
@@ -220,7 +243,7 @@ async function createFixture(t) {
   const candidate = {
     schemaVersion: 1,
     artifactKind: "datapack-candidate-build-spec",
-    candidateId: previous.candidate.candidateId,
+    candidateId: "staged-next-candidate",
     networkEdgeEvidence: {
       sourceInventory: { path: INVENTORY_PATH, sha256: sha256(sourceInventoryBytes) },
     },

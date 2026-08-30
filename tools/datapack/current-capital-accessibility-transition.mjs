@@ -8,7 +8,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-current-capital-facility-source-admission.mjs";
 import { canonicalCurrentCapitalStationLineInputJson } from "./current-capital-station-line-contract.mjs";
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
-import { isActiveCandidateSourceSequence } from "./rebind-current-candidate-source-snapshots.mjs";
+import {
+  CURRENT_FULL_CANDIDATE_SOURCE_IDS,
+  CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS,
+  isActiveCandidateSourceSequence,
+} from "./rebind-current-candidate-source-snapshots.mjs";
 
 const FILES = Object.freeze({
   candidate: "tools/datapack/release/candidate-build-spec.json",
@@ -32,6 +36,7 @@ export function buildCurrentCapitalAccessibilityTransition(input) {
   const candidate = bindParsed(input?.candidate, candidateBytes, "candidate build spec");
   const previous = bindParsed(input?.previous, previousBytes, "previous production station-line input");
   const facility = bindParsed(input?.facilityAdmission, facilityBytes, "current FACILITY admission");
+  assertExactTransitionCandidate(candidate);
   const candidateId = requiredString(candidate.candidateId, "candidateId");
   const nextSourceSet = requiredSha(candidate.sourceSnapshotSetHash, "candidate source snapshot set");
   return finalizeTransitionPayload(buildTransitionPayload({
@@ -145,20 +150,22 @@ function buildTransitionPayload({ nextCandidate, previous, previousBytes, facili
     throw new Error("current FACILITY admission bytes are not canonical");
   }
   const candidateId = requiredString(nextCandidate.candidateId, "candidateId");
+  const previousCandidateId = requiredString(previous.candidate?.candidateId, "previous production candidateId");
   const nextSourceSet = requiredSha(nextCandidate.sourceSnapshotSetHash, "candidate source snapshot set");
   const previousSourceSet = requiredSha(previous.candidate?.sourceSetSha256, "previous production source snapshot set");
-  if (previous.candidate?.candidateId !== candidateId || previousSourceSet === nextSourceSet) {
+  if (previousCandidateId === candidateId || previousSourceSet === nextSourceSet) {
     throw new Error("transition source-set boundary mismatch");
   }
   assertFacilityBinding(facility, candidateId, nextSourceSet);
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     artifactKind: "current-capital-accessibility-transition",
     state: "PENDING_FULL_FAN_IN",
     nextCandidate,
     previousProduction: {
       path: FILES.previous,
       sha256: sha256(previousBytes),
+      candidateId: previousCandidateId,
       sourceSnapshotSetHash: previousSourceSet,
     },
     facilityAdmission: {
@@ -174,6 +181,21 @@ function buildTransitionPayload({ nextCandidate, previous, previousBytes, facili
       authorityEdgeCount: 456,
     },
   };
+}
+
+function assertExactTransitionCandidate(candidate) {
+  const sourceIds = candidate?.sourceSnapshots?.map(({ sourceId }) => sourceId);
+  if (candidate?.schemaVersion !== 1 || candidate.artifactKind !== "datapack-candidate-build-spec"
+    || !Array.isArray(candidate.sourceSnapshotIds) || !Array.isArray(candidate.sourceSnapshots)
+    || candidate.sourceSnapshotIds.length !== candidate.sourceSnapshots.length
+    || !isActiveCandidateSourceSequence(sourceIds)) {
+    throw new Error("transition candidate source-set mismatch");
+  }
+  if (new Set(candidate.sourceSnapshotIds).size !== candidate.sourceSnapshotIds.length
+    || candidate.sourceSnapshots.some((projection, index) =>
+      projection?.snapshotId !== candidate.sourceSnapshotIds[index])) {
+    throw new Error("transition candidate projection mismatch");
+  }
 }
 
 function finalizeTransitionPayload(payload) {
@@ -196,13 +218,16 @@ function assertFacilityBinding(facility, candidateId, sourceSnapshotSetHash) {
 function assertExactTransferAppend({ candidate, inventory, inventoryBytes, ledger, storedCandidateSha256, storedSourceSetHash }) {
   if (candidate?.schemaVersion !== 1 || candidate.artifactKind !== "datapack-candidate-build-spec"
     || !Array.isArray(candidate.sourceSnapshotIds) || !Array.isArray(candidate.sourceSnapshots)
-    || candidate.sourceSnapshotIds.length !== 7 || candidate.sourceSnapshots.length !== 7
+    || candidate.sourceSnapshotIds.length !== CURRENT_FULL_CANDIDATE_SOURCE_IDS.length
+    || candidate.sourceSnapshots.length !== CURRENT_FULL_CANDIDATE_SOURCE_IDS.length
     || candidate.sourceSnapshotIds.length !== candidate.sourceSnapshots.length
-    || !Array.isArray(ledger) || !isActiveCandidateSourceSequence(candidate.sourceSnapshots.map(({ sourceId }) => sourceId))) {
+    || !Array.isArray(ledger)
+    || JSON.stringify(candidate.sourceSnapshots.map(({ sourceId }) => sourceId))
+      !== JSON.stringify(CURRENT_FULL_CANDIDATE_SOURCE_IDS)) {
     throw new Error("transition append shape mismatch");
   }
   const selectedIds = new Set(candidate.sourceSnapshotIds);
-  if (selectedIds.size !== 7 || candidate.sourceSnapshots.some((projection, index) =>
+  if (selectedIds.size !== CURRENT_FULL_CANDIDATE_SOURCE_IDS.length || candidate.sourceSnapshots.some((projection, index) =>
     projection?.snapshotId !== candidate.sourceSnapshotIds[index])) {
     throw new Error("transition append projection mismatch");
   }
@@ -233,7 +258,8 @@ function assertExactTransferAppend({ candidate, inventory, inventoryBytes, ledge
   const appendedProjection = candidate.sourceSnapshots.at(-1);
   const appendedLedger = selected.at(-1);
   const projectionKeys = Object.keys(candidate.sourceSnapshots[0]);
-  if (selected.length !== 7 || prefix.length !== 6
+  if (selected.length !== CURRENT_FULL_CANDIDATE_SOURCE_IDS.length
+    || prefix.length !== CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS.length
     || sha256(Buffer.from(JSON.stringify(selected))) !== candidate.sourceSnapshotSetHash
     || sha256(Buffer.from(JSON.stringify(prefix))) !== storedSourceSetHash
     || appendedLedger?.sourceId !== TRANSFER_SOURCE_ID
@@ -310,17 +336,21 @@ export async function main(argv = process.argv.slice(2), {
 
 function validateTransition(value) {
   assertKeys(value, TOP_LEVEL_KEYS, "current accessibility transition");
-  if (value.schemaVersion !== 1 || value.artifactKind !== "current-capital-accessibility-transition" || value.state !== "PENDING_FULL_FAN_IN") {
+  if (value.schemaVersion !== 2 || value.artifactKind !== "current-capital-accessibility-transition" || value.state !== "PENDING_FULL_FAN_IN") {
     throw new Error("current accessibility transition schema mismatch");
   }
   assertKeys(value.nextCandidate, ["path", "sha256", "candidateId", "sourceSnapshotSetHash"], "transition next candidate");
-  assertKeys(value.previousProduction, ["path", "sha256", "sourceSnapshotSetHash"], "transition previous production");
+  assertKeys(value.previousProduction, ["path", "sha256", "candidateId", "sourceSnapshotSetHash"], "transition previous production");
   assertKeys(value.facilityAdmission, ["path", "sha256", "admissionDigest", "snapshotId"], "transition FACILITY admission");
   assertKeys(value.pendingPrerequisites, ["exitAdmissionDirectory", "transferSourceId", "fullCapitalInputDirectory", "authorityEdgeCount"], "transition prerequisites");
+  const nextCandidateId = requiredString(value.nextCandidate.candidateId, "transition next candidateId");
+  const previousCandidateId = requiredString(value.previousProduction.candidateId, "transition previous candidateId");
+  if (previousCandidateId === nextCandidateId) {
+    throw new Error("transition candidate identity mismatch");
+  }
   if (value.nextCandidate.path !== FILES.candidate || value.previousProduction.path !== FILES.previous || value.facilityAdmission.path !== FILES.facility
     || ![value.nextCandidate.sha256, value.nextCandidate.sourceSnapshotSetHash, value.previousProduction.sha256, value.previousProduction.sourceSnapshotSetHash,
       value.facilityAdmission.sha256, value.facilityAdmission.admissionDigest, value.transitionSha256].every((entry) => SHA.test(entry ?? ""))
-    || !requiredString(value.nextCandidate.candidateId, "transition candidateId")
     || !requiredString(value.facilityAdmission.snapshotId, "transition FACILITY snapshotId")
     || value.previousProduction.sourceSnapshotSetHash === value.nextCandidate.sourceSnapshotSetHash
     || value.pendingPrerequisites.exitAdmissionDirectory !== "tools/datapack/release/current-exit-admission-v2"

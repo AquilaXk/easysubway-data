@@ -154,6 +154,58 @@
               "transfer": { "type": "object" }
             }
           },
+          "registrationEvidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "artifactKind",
+              "sourceId",
+              "snapshotId",
+              "capturedAt",
+              "snapshotFileSha256",
+              "snapshotRawSha256",
+              "rawObjectUri",
+              "rawObjectSha256",
+              "contentSha256",
+              "normalizedSchemaFingerprint",
+              "claimBindingsSha256",
+              "capturedTopology",
+              "rowCount",
+              "coverageCount",
+              "claimBindingCount",
+              "adminReviewRecordHash",
+              "registeredAt"
+            ],
+            "properties": {
+              "artifactKind": { "const": "source-registration-evidence" },
+              "sourceId": { "type": "string", "minLength": 1 },
+              "snapshotId": { "type": "string", "minLength": 1 },
+              "capturedAt": { "type": "string", "format": "date-time" },
+              "snapshotFileSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "snapshotRawSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "rawObjectUri": { "type": "string", "pattern": "^oci://" },
+              "rawObjectSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "contentSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "normalizedSchemaFingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "claimBindingsSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "capturedTopology": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["sourceId", "snapshotId", "contentSha256", "claimTopologySha256"],
+                "properties": {
+                  "sourceId": { "const": "incheon-transit-station-info" },
+                  "snapshotId": { "type": "string", "pattern": "^incheon-transit-station-info-[0-9]{8}$" },
+                  "contentSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                  "claimTopologySha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+                }
+              },
+              "rowCount": { "type": "integer", "minimum": 1 },
+              "coverageCount": { "type": "integer", "minimum": 1 },
+              "claimBindingCount": { "type": "integer", "minimum": 1 },
+              "adminReviewRecordHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "registeredAt": { "type": "string", "format": "date-time" }
+            }
+          },
           "admissionEvidence": {
             "type": "object",
             "description": "승격 단계별 sanitized evidence를 보존하는 승인 필드 envelope이며 licenseEvidenceHash만 공통 필수다.",

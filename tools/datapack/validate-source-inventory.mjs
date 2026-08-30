@@ -138,6 +138,9 @@ function validateSource(source, label) {
   validateLicense(source.license, id);
   validateCoverageScope(source.coverageScope, source, id);
   validateCapabilities(source.capabilities, source, id);
+  if (source.registrationEvidence != null) {
+    validateRegistrationEvidence(source.registrationEvidence, id);
+  }
   if (id === "seoul-metro-transfer-distance-duration" && source.requiredForProductionPack === true) {
     validateTransferAdmissionEvidence(source);
   }
@@ -149,6 +152,27 @@ function validateSource(source, label) {
     assertString(field, `${id}.fieldsProvided[]`);
   }
   validateOfficialOdFareReferences(source, id);
+}
+
+function validateRegistrationEvidence(evidence, sourceId) {
+  const exact = ["artifactKind", "sourceId", "snapshotId", "capturedAt", "snapshotFileSha256", "snapshotRawSha256", "rawObjectUri", "rawObjectSha256", "contentSha256", "normalizedSchemaFingerprint", "claimBindingsSha256", "capturedTopology", "rowCount", "coverageCount", "claimBindingCount", "adminReviewRecordHash", "registeredAt"];
+  if (!evidence || typeof evidence !== "object" || Array.isArray(evidence) || Object.keys(evidence).length !== exact.length || exact.some((key) => !Object.hasOwn(evidence, key)) || evidence.artifactKind !== "source-registration-evidence" || evidence.sourceId !== sourceId || typeof evidence.snapshotId !== "string" || evidence.snapshotId === "" || !Number.isInteger(evidence.rowCount) || !Number.isInteger(evidence.coverageCount) || !Number.isInteger(evidence.claimBindingCount) || evidence.rowCount < 1 || evidence.coverageCount < 1 || evidence.claimBindingCount < 1 || typeof evidence.rawObjectUri !== "string" || !evidence.rawObjectUri.startsWith("oci://")) {
+    throw new Error(`${sourceId} registration evidence contract mismatch`);
+  }
+  for (const key of ["snapshotFileSha256", "snapshotRawSha256", "rawObjectSha256", "contentSha256", "normalizedSchemaFingerprint", "claimBindingsSha256", "adminReviewRecordHash"]) assertSha256(evidence[key], `${sourceId}.registrationEvidence.${key}`);
+  canonicalUtcInstant(evidence.capturedAt, `${sourceId}.registrationEvidence.capturedAt`);
+  const topology = evidence.capturedTopology;
+  const topologyKeys = ["sourceId", "snapshotId", "contentSha256", "claimTopologySha256"];
+  if (!topology || typeof topology !== "object" || Array.isArray(topology)
+    || Object.keys(topology).length !== topologyKeys.length
+    || topologyKeys.some((key) => !Object.hasOwn(topology, key))
+    || topology.sourceId !== "incheon-transit-station-info"
+    || !/^incheon-transit-station-info-\d{8}$/u.test(topology.snapshotId ?? "")) {
+    throw new Error(`${sourceId} registration topology evidence contract mismatch`);
+  }
+  assertSha256(topology.contentSha256, `${sourceId}.registrationEvidence.capturedTopology.contentSha256`);
+  assertSha256(topology.claimTopologySha256, `${sourceId}.registrationEvidence.capturedTopology.claimTopologySha256`);
+  canonicalUtcInstant(evidence.registeredAt, `${sourceId}.registrationEvidence.registeredAt`);
 }
 
 export function validateTransferAdmissionEvidence(source) {

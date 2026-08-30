@@ -15,14 +15,17 @@ import { approvedLegacyGovernanceBinding } from "./legacy-source-governance.mjs"
 
 const SOURCE_ID = "kric-station-convenience-standard";
 const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
-const ACTIVE_SOURCE_IDS = Object.freeze([
+const FIXED_CANDIDATE_SOURCE_IDS = Object.freeze([
   "seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility",
   SOURCE_ID, "molit-urban-rail-full-route", "seoulmetro-station-line-info",
 ]);
-const ACTIVE_SOURCE_IDS_WITH_TRANSFER = Object.freeze([...ACTIVE_SOURCE_IDS, TRANSFER_SOURCE_ID]);
 const INCHEON_SOURCE_ID = "incheon-transit-accessibility";
-const ACTIVE_SOURCE_IDS_WITH_INCHEON = Object.freeze([...ACTIVE_SOURCE_IDS, INCHEON_SOURCE_ID]);
-const ACTIVE_SOURCE_IDS_WITH_INCHEON_AND_TRANSFER = Object.freeze([...ACTIVE_SOURCE_IDS_WITH_INCHEON, TRANSFER_SOURCE_ID]);
+export const CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS = Object.freeze([
+  ...FIXED_CANDIDATE_SOURCE_IDS, INCHEON_SOURCE_ID,
+]);
+export const CURRENT_FULL_CANDIDATE_SOURCE_IDS = Object.freeze([
+  ...CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS, TRANSFER_SOURCE_ID,
+]);
 const CAPITAL_SOURCE_IDS = Object.freeze([
   "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
   "kric-subway-timetable", "seoul-metro-accessibility", SOURCE_ID, "seoul-metro-official-od-fares",
@@ -80,7 +83,7 @@ function sameIdentity(left, right) { return left.dev === right.dev && left.ino =
 
 export function isActiveCandidateSourceSequence(sourceIds) {
   return Array.isArray(sourceIds)
-    && [ACTIVE_SOURCE_IDS, ACTIVE_SOURCE_IDS_WITH_TRANSFER, ACTIVE_SOURCE_IDS_WITH_INCHEON, ACTIVE_SOURCE_IDS_WITH_INCHEON_AND_TRANSFER]
+    && [CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS, CURRENT_FULL_CANDIDATE_SOURCE_IDS]
       .some((expected) => JSON.stringify(sourceIds) === JSON.stringify(expected));
 }
 
@@ -244,7 +247,7 @@ function validateCapitalPack(pack, sourceInventory) {
   }
   requireCurrentCanonicalSourceRoster(capital);
   const inventoryIds = new Set((sourceInventory?.sources ?? []).map(({ id }) => id));
-  if (ACTIVE_SOURCE_IDS.some((sourceId) => !inventoryIds.has(sourceId))) {
+  if (CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS.some((sourceId) => !inventoryIds.has(sourceId))) {
     throw new Error("current source inventory does not cover candidate sources");
   }
 }
@@ -254,14 +257,14 @@ function validateCapitalReleaseHeads(pack, lineage, snapshots, selected) {
   const capitalSourceIds = requireCurrentCanonicalSourceRoster(capital);
   const capitalIds = new Set(capitalSourceIds);
   const byId = new Map(snapshots.map((snapshot) => [snapshot.snapshotId, snapshot]));
-  const releaseHeads = ACTIVE_SOURCE_IDS_WITH_TRANSFER.map((sourceId) => byId.get(lineage.headsBySource[sourceId]));
+  const releaseHeads = CURRENT_FULL_CANDIDATE_SOURCE_IDS.map((sourceId) => byId.get(lineage.headsBySource[sourceId]));
   const actualCapitalHeadIds = capitalSourceIds.slice(0, CAPITAL_SOURCE_IDS.length)
     .filter((sourceId) => lineage.headsBySource[sourceId] != null);
   if (CAPITAL_ACTIVE_SOURCE_IDS.some((sourceId) => !capitalIds.has(sourceId))
     || JSON.stringify(actualCapitalHeadIds) !== JSON.stringify(CAPITAL_RELEASE_HEAD_SOURCE_IDS)
-    || ACTIVE_SOURCE_IDS_WITH_TRANSFER.some((sourceId) => !capitalIds.has(sourceId))
-    || releaseHeads.some((snapshot, index) => snapshot?.sourceId !== ACTIVE_SOURCE_IDS_WITH_TRANSFER[index])
-    || selected.filter(({ sourceId }) => ACTIVE_SOURCE_IDS_WITH_TRANSFER.includes(sourceId)).length !== releaseHeads.length) {
+    || CURRENT_FULL_CANDIDATE_SOURCE_IDS.some((sourceId) => !capitalIds.has(sourceId))
+    || releaseHeads.some((snapshot, index) => snapshot?.sourceId !== CURRENT_FULL_CANDIDATE_SOURCE_IDS[index])
+    || selected.filter(({ sourceId }) => CURRENT_FULL_CANDIDATE_SOURCE_IDS.includes(sourceId)).length !== releaseHeads.length) {
     throw new Error("capital active source head identity drift");
   }
 }
@@ -385,14 +388,14 @@ export function assertProjectionEqual(projection, expected, label) {
   }
 }
 
-// #350 registration is the only operation allowed to grow the source set.  It
-// leaves the six authenticated projections untouched and always appends TRANSFER.
+// #350 registration is the only operation allowed to grow the source set. It
+// preserves the current seven-source predecessor and appends terminal TRANSFER.
 export function appendTransferCandidateSourceSnapshot({ candidateBuildSpec, transferSnapshot, transferProjection }) {
   const ids = candidateBuildSpec?.sourceSnapshotIds;
   const projections = candidateBuildSpec?.sourceSnapshots;
   if (!Array.isArray(ids) || !Array.isArray(projections)
-    || JSON.stringify(projections.map(({ sourceId }) => sourceId)) !== JSON.stringify(ACTIVE_SOURCE_IDS)
-    || ids.length !== ACTIVE_SOURCE_IDS.length || projections.some((row, index) => row.snapshotId !== ids[index])
+    || JSON.stringify(projections.map(({ sourceId }) => sourceId)) !== JSON.stringify(CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS)
+    || ids.length !== CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS.length || projections.some((row, index) => row.snapshotId !== ids[index])
     || transferSnapshot?.sourceId !== TRANSFER_SOURCE_ID || typeof transferSnapshot.snapshotId !== "string"
     || transferProjection?.sourceId !== TRANSFER_SOURCE_ID || transferProjection.snapshotId !== transferSnapshot.snapshotId) {
     throw new Error("candidate transfer append identity mismatch");
@@ -400,8 +403,8 @@ export function appendTransferCandidateSourceSnapshot({ candidateBuildSpec, tran
   const candidate = structuredClone(candidateBuildSpec);
   candidate.sourceSnapshotIds.push(transferSnapshot.snapshotId);
   candidate.sourceSnapshots.push(structuredClone(transferProjection));
-  if (JSON.stringify(candidate.sourceSnapshots.slice(0, ACTIVE_SOURCE_IDS.length)) !== JSON.stringify(projections)
-    || JSON.stringify(candidate.sourceSnapshots.map(({ sourceId }) => sourceId)) !== JSON.stringify(ACTIVE_SOURCE_IDS_WITH_TRANSFER)) {
+  if (JSON.stringify(candidate.sourceSnapshots.slice(0, CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS.length)) !== JSON.stringify(projections)
+    || JSON.stringify(candidate.sourceSnapshots.map(({ sourceId }) => sourceId)) !== JSON.stringify(CURRENT_FULL_CANDIDATE_SOURCE_IDS)) {
     throw new Error("candidate transfer append projection drift");
   }
   return candidate;

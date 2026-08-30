@@ -27,6 +27,17 @@ const SEOUL = "seoul-metro-accessibility";
 const TRANSFER = "seoul-metro-transfer-distance-duration";
 const MOLIT = "molit-urban-rail-full-route";
 const PUBLIC_STATIC_NETWORK_V2_SUCCESSOR = "PUBLIC_STATIC_NETWORK_V2_SUCCESSOR_REFRESH";
+const CURRENT_CAPITAL_SOURCE_ROSTER = Object.freeze([
+  "seoul-metro-route-map-positions",
+  "kric-subway-timetable",
+  SEOUL,
+  "kric-station-convenience-standard",
+  MOLIT,
+  "seoulmetro-station-line-info",
+  "incheon-transit-accessibility",
+  TRANSFER,
+]);
+const PREDECESSOR_SOURCE_ROSTER = Object.freeze(CURRENT_CAPITAL_SOURCE_ROSTER.slice(0, -1));
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 
 function target(root, relative) {
@@ -74,9 +85,9 @@ function requireCurrentPublicV2Head(selected, ledger, sourceId) {
 function buildRefreshProof({ phase, candidateFile, ledgerFile, requestFile, hashesFile, facilityFile, exitFile, stationFile, routeFile }) {
   const candidate = parse(candidateFile.bytes, "current candidate"); const ledger = parse(ledgerFile.bytes, "source snapshot ledger");
   const station = parse(stationFile.bytes, "activated station input"); const route = parse(routeFile.bytes, "activated route input");
-  if (!Array.isArray(candidate.sourceSnapshotIds) || !Array.isArray(candidate.sourceSnapshots) || candidate.sourceSnapshotIds.length !== 7
+  if (!Array.isArray(candidate.sourceSnapshotIds) || !Array.isArray(candidate.sourceSnapshots) || candidate.sourceSnapshotIds.length !== CURRENT_CAPITAL_SOURCE_ROSTER.length
     || candidate.sourceSnapshotIds.length !== candidate.sourceSnapshots.length
-    || candidate.sourceSnapshots.at(-1)?.sourceId !== TRANSFER) throw new Error("current candidate source-set mismatch");
+    || candidate.sourceSnapshots.some(({ sourceId }, index) => sourceId !== CURRENT_CAPITAL_SOURCE_ROSTER[index])) throw new Error("current candidate source-set mismatch");
   if (phase === ACTIVATED_CURRENT_OUTPUT) {
     const request = parse(requestFile.bytes, "release request"); const hashes = parse(hashesFile.bytes, "hash evidence");
     if (candidate.sourceSnapshotSetHash !== request.sourceSnapshotSetHash
@@ -91,7 +102,7 @@ function buildRefreshProof({ phase, candidateFile, ledgerFile, requestFile, hash
   });
   const selectedIds = new Set(candidate.sourceSnapshotIds);
   const selectedLedgerOrder = ledger.filter(({ snapshotId }) => selectedIds.has(snapshotId));
-  if (selectedIds.size !== 7 || selectedLedgerOrder.length !== 7 || sha(JSON.stringify(selectedLedgerOrder)) !== candidate.sourceSnapshotSetHash) throw new Error("current candidate source-set mismatch");
+  if (selectedIds.size !== CURRENT_CAPITAL_SOURCE_ROSTER.length || selectedLedgerOrder.length !== CURRENT_CAPITAL_SOURCE_ROSTER.length || sha(JSON.stringify(selectedLedgerOrder)) !== candidate.sourceSnapshotSetHash) throw new Error("current candidate source-set mismatch");
   const position = requireCurrentPublicV2Head(selected, ledger, "seoul-metro-route-map-positions");
   const molit = requireCurrentPublicV2Head(selected, ledger, MOLIT);
   const positionIndex = selected.indexOf(position.head);
@@ -108,7 +119,7 @@ function buildRefreshProof({ phase, candidateFile, ledgerFile, requestFile, hash
     throw new Error("current Seoul evidence predecessor mismatch");
   }
   const transitionIdentity = { kind: PUBLIC_STATIC_NETWORK_V2_SUCCESSOR };
-  const predecessorIds = candidate.sourceSnapshotIds.map((snapshotId, index) => {
+  const predecessorIds = candidate.sourceSnapshotIds.slice(0, -1).map((snapshotId, index) => {
     if (index === positionIndex) return position.previousSnapshotId;
     if (index === molitIndex) return molit.previousSnapshotId;
     return snapshotId;
@@ -117,7 +128,6 @@ function buildRefreshProof({ phase, candidateFile, ledgerFile, requestFile, hash
   const predecessorHash = sha(JSON.stringify(predecessor));
   const evidenceIds = new Set(predecessorIds.flatMap((snapshotId, index) => {
     const sourceId = candidate.sourceSnapshots[index].sourceId;
-    if (sourceId === TRANSFER) return [];
     return [sourceId === SEOUL ? previousSeoulSnapshotId : snapshotId];
   }));
   const evidence = ledger.filter(({ snapshotId }) => evidenceIds.has(snapshotId));
@@ -143,8 +153,8 @@ function buildRefreshProof({ phase, candidateFile, ledgerFile, requestFile, hash
       throw new Error("activated producer boundary mismatch");
     }
   }
-  if (predecessorIdSet.size !== 7 || predecessor.length !== 7
-    || evidenceIds.size !== 6 || evidence.length !== 6
+  if (predecessorIdSet.size !== PREDECESSOR_SOURCE_ROSTER.length || predecessor.length !== PREDECESSOR_SOURCE_ROSTER.length
+    || evidenceIds.size !== PREDECESSOR_SOURCE_ROSTER.length || evidence.length !== PREDECESSOR_SOURCE_ROSTER.length
     || activatedSourceSet !== route.candidate?.sourceSetSha256 || ![predecessorHash, candidate.sourceSnapshotSetHash].includes(activatedSourceSet)
     || station.candidate?.candidateId !== candidate.candidateId || route.candidate?.candidateId !== candidate.candidateId) {
     throw new Error("activated predecessor source-set mismatch");
