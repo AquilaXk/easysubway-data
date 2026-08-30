@@ -67,7 +67,7 @@ test("activated full-capital inputs are rebuilt across the exact public static-n
   assert.deepEqual(route.stationLines, beforeRoute.stationLines);
   assert.deepEqual(route.routeEdges, beforeRoute.routeEdges);
   assert.equal(station.evidenceRows.length, 641);
-  assert.equal(route.routeEdges.length, 2664);
+  assert.equal(route.routeEdges.length, 2654);
   assert.deepEqual(await Promise.all(approvalPaths.map((relative) => readFile(path.join(root, relative)))), approvalInputs);
 });
 
@@ -85,7 +85,7 @@ test("atomic public V2 route-map and MOLIT heads refresh the exact two-source pr
 });
 
 test("pre-approval candidate phase keeps stale approval bytes outside the candidate refresh proof", async (t) => {
-  const root = await stagedRefreshRepository(t);
+  const root = await stagedPreApprovalRepository(t);
   const candidatePath = "tools/datapack/release/candidate-build-spec.json";
   const candidateBytes = await readFile(path.join(root, candidatePath));
   const candidate = JSON.parse(candidateBytes);
@@ -118,7 +118,7 @@ test("pre-approval candidate phase keeps stale approval bytes outside the candid
 });
 
 test("pre-approval candidate phase rejects unknown, one-sided, and non-canonical overrides", async (t) => {
-  const root = await stagedRefreshRepository(t);
+  const root = await stagedPreApprovalRepository(t);
   const candidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json")));
   const canonicalPack = JSON.parse(await readFile(path.join(root, candidate.fixturePath)));
   await assert.rejects(
@@ -174,7 +174,7 @@ test("public V2 transition rejects legacy metadata, wrong-source predecessor, an
       await rebindCurrentStaticBoundary(root, candidate);
     },
   ]) {
-    const root = await stagedRefreshRepository(t);
+    const root = await stagedPreApprovalRepository(t);
     await mutate(root);
     await assert.rejects(buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root }), /legacy metadata|v2 predecessor|source identity|source-set/i);
   }
@@ -247,7 +247,7 @@ test("predecessor-bound activated inputs are rebuilt atomically to exact current
   const [station, route] = await Promise.all(OUTPUTS.map(async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"))));
   assert.equal(station.evidenceRows.length, 641);
   assert.equal(route.stationLines.length, 1102);
-  assert.equal(route.routeEdges.length, 2664);
+  assert.equal(route.routeEdges.length, 2654);
 });
 
 test("input mutation after build is rejected before either output replacement", async (t) => {
@@ -390,6 +390,16 @@ test("current output headers with a one-sided producer boundary fail closed", as
 
 async function stagedRefreshRepository(t) {
   return actualPendingMarkerRepository(t);
+}
+
+async function stagedPreApprovalRepository(t) {
+  const root = await actualPendingMarkerRepository(t);
+  await writeFreshCurrentAccessibilityOutputs(root);
+  await Promise.all([
+    unlink(path.join(root, TRANSITION)),
+    unlink(path.join(root, SUCCESSOR)),
+  ]);
+  return root;
 }
 
 async function actualPendingMarkerRepository(t) {

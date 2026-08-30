@@ -13,7 +13,7 @@ import {
 test("candidate fixture override는 original/projected/authority identity를 exact 결속한다", () => {
   const value = overrideFixture();
   const result = buildDatapack.validateCandidateFixtureOverride(value);
-  assert.equal(result.fixture.packs[0].networkEdges.length, 2664);
+  assert.equal(result.fixture.packs[0].networkEdges.length, 2654);
   assert.deepEqual(result.binding, {
     sourceFixtureSha256: sha(value.sourceFixtureBytes),
     candidateFixtureSha256: sha(value.candidateFixtureBytes),
@@ -84,7 +84,7 @@ function overrideFixture() {
       id: "capital",
       version: "1",
       networkEdges: [
-        ...Array.from({ length: 2208 }, (_, index) => ride(index)),
+        ...Array.from({ length: 2198 }, (_, index) => ride(index)),
       ],
     }],
   };
