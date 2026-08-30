@@ -101,12 +101,12 @@ jobs:
               exit 1
             }
           done
-          grep -Eq '^tools/datapack/sources/[^/]+\\.json$' <<< "${changed}" || {
+          grep -Eq '^tools/datapack/sources/[^/]+\.json$' <<< "${changed}" || {
             echo "KRIC refresh claim is incomplete" >&2
             exit 1
           }
-          unexpected="$(printf '%s\\n' "${changed}" | grep -Ev \
-            'tools/datapack/(release/candidate-build-spec\\.json|release/current-capital-facility-source-admission\\.json|release/source-snapshots\\.json|source-inventory\\.json|sources/[^/]+\\.json)' || true)"
+          unexpected="$(printf '%s\n' "${changed}" | grep -Ev \
+            'tools/datapack/(release/candidate-build-spec\.json|release/current-capital-facility-source-admission\.json|release/source-snapshots\.json|source-inventory\.json|sources/[^/]+\.json)' || true)"
           if [[ -n "${unexpected}" ]]; then
             echo "KRIC refresh claim changed an unsupported path" >&2
             exit 1
@@ -133,7 +133,7 @@ jobs:
           git commit --allow-empty -m "Claim KRIC facility refresh"
           gh auth setup-git
           git push origin "${branch}"
-          printf 'KRIC_REFRESH_BRANCH=%s\\n' "${branch}" >> "${GITHUB_ENV}"
+          printf 'KRIC_REFRESH_BRANCH=%s\n' "${branch}" >> "${GITHUB_ENV}"
 
       - name: KRIC current facility refresh / Validate provider configuration
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
@@ -190,7 +190,7 @@ jobs:
               exit 1
             }
           done
-          grep -Eq '^tools/datapack/sources/[^/]+\\.json$' <<< "${changed}" || {
+          grep -Eq '^tools/datapack/sources/[^/]+\.json$' <<< "${changed}" || {
             echo "KRIC refresh produced an incomplete output" >&2
             exit 1
           }

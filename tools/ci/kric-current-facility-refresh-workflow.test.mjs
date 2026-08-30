@@ -37,6 +37,19 @@ test("KRIC refresh workflow has one scheduled, fail-closed, PR-only path", () =>
   assert.match(yml, /git commit --allow-empty -m "Claim KRIC facility refresh"[\s\S]*git push origin "\$\{branch\}"[\s\S]*Validate provider configuration/);
   assert.match(yml, /git rev-list --count HEAD\.\."origin\/\$\{branch\}"[\s\S]*git rev-parse "origin\/\$\{branch\}\^\^"[\s\S]*git log -1 --format=%s "origin\/\$\{branch\}"/);
   assert.match(yml, /git diff --name-only --diff-filter=ACMR "origin\/\$\{branch\}\^" "origin\/\$\{branch\}"/);
+  assert.equal(
+    (yml.match(/grep -Eq '\^tools\/datapack\/sources\/\[\^\/\]\+\\\.json\$'/g) ?? []).length,
+    2,
+  );
+  assert.equal(
+    (yml.match(/printf '%s\\n' "\$\{changed\}"/g) ?? []).length,
+    2,
+  );
+  assert.equal(
+    (yml.match(/printf 'KRIC_REFRESH_BRANCH=%s\\n'/g) ?? []).length,
+    1,
+  );
+  assert.doesNotMatch(yml, /\\\\\.json|%s\\\\n/);
   assert.match(yml, /git diff --name-only --diff-filter=D[\s\S]*KRIC refresh removed a tracked input/);
   assert.match(yml, /gh pr list --repo "\$\{GITHUB_REPOSITORY\}" --state all --base main --head "\$\{branch\}"/);
   assert.match(yml, /--draft/);
