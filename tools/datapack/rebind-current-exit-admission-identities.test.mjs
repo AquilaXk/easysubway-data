@@ -6,6 +6,10 @@ import test from "node:test";
 
 import { canonicalCurrentExitAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
 import { canonicalExitPathAdmissionJson } from "./build-exit-path-admission.mjs";
+import {
+  buildCurrentCapitalAccessibilityTransition,
+  canonicalCurrentCapitalAccessibilityTransitionJson,
+} from "./current-capital-accessibility-transition.mjs";
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
 import {
   buildReboundCurrentExitAdmissionIdentities,
@@ -16,8 +20,9 @@ import {
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const EXIT_DIRECTORY = "tools/datapack/release/current-exit-admission-v2";
 
-test("rebinds only EXIT candidate identities to the canonical v2 transition boundary", async () => {
-  const transitionBytes = await bytes("tools/datapack/release/current-capital-accessibility-transition.json");
+test("rebinds only EXIT candidate identities to the canonical v2 transition boundary", async (t) => {
+  const repositoryRoot = await temporaryRepository(t);
+  const transitionBytes = await currentTransitionBytes();
   const normalizedBytes = await bytes(`${EXIT_DIRECTORY}/exit-path-normalized-source-snapshot.json`);
   const admissionBytes = await bytes(`${EXIT_DIRECTORY}/exit-path-source-admission.json`);
   const receiptBytes = await bytes(`${EXIT_DIRECTORY}/exit-path-admission-oci-receipt.json`);
@@ -44,12 +49,12 @@ test("rebinds only EXIT candidate identities to the canonical v2 transition boun
   assert.equal(canonicalJson(stripAdmission(beforeAdmission)), canonicalJson(stripAdmission(afterAdmission)));
   assert.equal(canonicalJson(stripReceipt(beforeReceipt)), canonicalJson(stripReceipt(afterReceipt)));
 
-  const fromRepository = await buildReboundCurrentExitAdmissionIdentitiesFromRepository({ repositoryRoot: ROOT });
+  const fromRepository = await buildReboundCurrentExitAdmissionIdentitiesFromRepository({ repositoryRoot });
   assert.deepEqual(fromRepository, result);
 });
 
 test("rejects an EXIT OCI receipt that is not bound to the starting admission bytes", async () => {
-  const transitionBytes = await bytes("tools/datapack/release/current-capital-accessibility-transition.json");
+  const transitionBytes = await currentTransitionBytes();
   const normalizedBytes = await bytes(`${EXIT_DIRECTORY}/exit-path-normalized-source-snapshot.json`);
   const admissionBytes = await bytes(`${EXIT_DIRECTORY}/exit-path-source-admission.json`);
   const receipt = JSON.parse(await bytes(`${EXIT_DIRECTORY}/exit-path-admission-oci-receipt.json`));
@@ -174,6 +179,25 @@ test("rejects transition dependency replacement before durable journal creation"
 });
 
 async function bytes(relative) { return readFile(path.join(ROOT, relative)); }
+async function currentTransitionBytes(repositoryRoot = ROOT) {
+  const read = async (relative) => readFile(path.join(repositoryRoot, relative));
+  const [candidateBytes, previousBytes, facilityBytes, ledgerBytes, inventoryBytes] = await Promise.all([
+    read("tools/datapack/release/candidate-build-spec.json"),
+    read("tools/datapack/release/current-station-line-accessibility/station-line-input.json"),
+    read("tools/datapack/release/current-capital-facility-source-admission.json"),
+    read("tools/datapack/release/source-snapshots.json"),
+    read("tools/datapack/source-inventory.json"),
+  ]);
+  return Buffer.from(canonicalCurrentCapitalAccessibilityTransitionJson(
+    buildCurrentCapitalAccessibilityTransition({
+      candidate: JSON.parse(candidateBytes), candidateBytes,
+      previous: JSON.parse(previousBytes), previousBytes,
+      facilityAdmission: JSON.parse(facilityBytes), facilityBytes,
+      ledger: JSON.parse(ledgerBytes), ledgerBytes,
+      inventory: JSON.parse(inventoryBytes), inventoryBytes,
+    }),
+  ));
+}
 async function temporaryRepository(t) {
   const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "easysubway-exit-rebind-"));
   t.after(() => rm(repositoryRoot, { recursive: true, force: true }));
@@ -183,7 +207,6 @@ async function temporaryRepository(t) {
     "tools/datapack/release/current-capital-facility-source-admission.json",
     "tools/datapack/source-inventory.json",
     "tools/datapack/release/source-snapshots.json",
-    "tools/datapack/release/current-capital-accessibility-transition.json",
     `${EXIT_DIRECTORY}/exit-path-normalized-source-snapshot.json`,
     `${EXIT_DIRECTORY}/exit-path-source-admission.json`,
     `${EXIT_DIRECTORY}/exit-path-admission-oci-receipt.json`,
@@ -193,6 +216,8 @@ async function temporaryRepository(t) {
     await mkdir(path.dirname(destination), { recursive: true });
     await cp(path.join(ROOT, relative), destination, { recursive: false, force: false });
   }));
+  const transitionPath = path.join(repositoryRoot, "tools/datapack/release/current-capital-accessibility-transition.json");
+  await writeFile(transitionPath, await currentTransitionBytes(repositoryRoot));
   return repositoryRoot;
 }
 function stripAdmission(value) {
