@@ -20,6 +20,7 @@ import {
   admittedTopologySource,
   deriveTopology,
   parseAuthenticatedAdmittedSourceDocuments,
+  projectItxTopologyIntoCanonicalFixture,
   validateAdmittedSourceDocuments,
 } from "./apply-itx-topology-to-bundled-pack.mjs";
 import { buildFixture as buildOfficialSourceFixture } from "./import-official-sources.mjs";
@@ -1701,6 +1702,7 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
   currentIncheonTimetablePaths,
   currentItxTopologyEvidencePath,
   currentItxTopologyEvidenceBytes,
+  approvedItxTopology = null,
   baselineTopology,
   baselineTopologyBytes,
   canonical,
@@ -1849,6 +1851,9 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
     topologyAdmission: incheonTopologyAdmission,
     sourceSuccessors: incheonSourceSuccessors,
   });
+  if (approvedItxTopology != null) {
+    projectItxTopologyIntoCanonicalFixture(canonicalWithIncheon, approvedItxTopology);
+  }
   const canonicalBytes = jsonBytes(canonicalWithIncheon, false);
   const spec = buildCurrentCandidateSpec({
     baseSpec,
@@ -2749,6 +2754,7 @@ export async function generateCurrentCapitalTopologyRefresh({
     await requireCleanBuilder(builderGitSha, { check, allowedDescendantPaths });
     const sourceInventory = parseJson(sourceInventoryBytes, "source inventory");
     let baseSpec = parseJson(baseSpecBytes, "candidate build spec");
+    let approvedItxTopology = null;
     if (approvedItxBootstrap) {
       const coverageContractBytes = await readRegularBytes(
         root,
@@ -2770,6 +2776,7 @@ export async function generateCurrentCapitalTopologyRefresh({
         topologyEvidencePath: itxTopologyEvidencePath,
         buildNow,
       });
+      approvedItxTopology = deriveTopology(parseJson(sourceBytes, "approved ITX source"));
     }
     const primary = buildCurrentTopologyRefreshPrimaryOutputs({
       baseSpec,
@@ -2802,6 +2809,7 @@ export async function generateCurrentCapitalTopologyRefresh({
       },
       currentItxTopologyEvidencePath: itxTopologyEvidencePath,
       currentItxTopologyEvidenceBytes,
+      approvedItxTopology,
       baselineTopology: parseJson(baselineTopologyBytes, "baseline capital topology"),
       baselineTopologyBytes,
       canonical: parseJson(canonicalBytes, "canonical pack"),
