@@ -47,13 +47,93 @@ jobs:
         run: |
           set -euo pipefail
           prs="${RUNNER_TEMP}/kric-current-facility-refresh/open-prs.json"
-          gh pr list --state open --limit 100 --json number,headRefName,url > "${prs}"
+          claims="${RUNNER_TEMP}/kric-current-facility-refresh/claims.txt"
+          gh pr list --repo "${GITHUB_REPOSITORY}" --state all --limit 1000 \
+            --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > "${prs}"
+          git ls-remote --heads origin \
+            "refs/heads/automation/629-kric-facility-refresh-*" > "${claims}"
           node tools/ci/decide-current-kric-facility-refresh.mjs \
             --inventory tools/datapack/source-inventory.json \
             --policy release/product-gates/datapack-freshness-sla.json \
             --prs "${prs}" \
+            --claims "${claims}" \
+            --repository "${GITHUB_REPOSITORY}" \
             --output "${KRIC_REFRESH_DECISION}" \
             --github-output "${GITHUB_OUTPUT}"
+
+      - name: KRIC current facility refresh / Recover completed claimed refresh
+        if: ${{ steps.decision.outputs.state == 'RECOVER_CLAIM' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch="${{ steps.decision.outputs.branch }}"
+          git fetch --no-tags origin "refs/heads/${branch}:refs/remotes/origin/${branch}"
+          [[ "$(git rev-list --count HEAD.."origin/${branch}")" == "2" ]] || {
+            echo "KRIC refresh claim does not have exactly one claim and one output commit" >&2
+            exit 1
+          }
+          [[ "$(git rev-parse "origin/${branch}^^")" == "$(git rev-parse HEAD)" ]] || {
+            echo "KRIC refresh claim is not based on the current main" >&2
+            exit 1
+          }
+          [[ "$(git log -1 --format=%s "origin/${branch}")" == "Refresh KRIC facility snapshot" ]] || {
+            echo "KRIC refresh claim has no completed output commit" >&2
+            exit 1
+          }
+          deleted="$(git diff --name-only --diff-filter=D "origin/${branch}^" "origin/${branch}")"
+          [[ -z "${deleted}" ]] || {
+            echo "KRIC refresh claim removed a tracked input" >&2
+            exit 1
+          }
+          changed="$(git diff --name-only --diff-filter=ACMR "origin/${branch}^" "origin/${branch}")"
+          if [[ -z "${changed}" ]]; then
+            echo "KRIC refresh claim is incomplete" >&2
+            exit 1
+          fi
+          for required in \
+            tools/datapack/release/candidate-build-spec.json \
+            tools/datapack/release/current-capital-facility-source-admission.json \
+            tools/datapack/release/source-snapshots.json \
+            tools/datapack/source-inventory.json; do
+            grep -Fqx "${required}" <<< "${changed}" || {
+              echo "KRIC refresh claim is incomplete" >&2
+              exit 1
+            }
+          done
+          grep -Eq '^tools/datapack/sources/[^/]+\\.json$' <<< "${changed}" || {
+            echo "KRIC refresh claim is incomplete" >&2
+            exit 1
+          }
+          unexpected="$(printf '%s\\n' "${changed}" | grep -Ev \
+            'tools/datapack/(release/candidate-build-spec\\.json|release/current-capital-facility-source-admission\\.json|release/source-snapshots\\.json|source-inventory\\.json|sources/[^/]+\\.json)' || true)"
+          if [[ -n "${unexpected}" ]]; then
+            echo "KRIC refresh claim changed an unsupported path" >&2
+            exit 1
+          fi
+          existing="${RUNNER_TEMP}/kric-current-facility-refresh/claim-prs.json"
+          gh pr list --repo "${GITHUB_REPOSITORY}" --state all --base main --head "${branch}" \
+            --limit 100 --json number,state,headRefName,baseRefName,headRepository,isCrossRepository > "${existing}"
+          [[ "$(tr -d '[:space:]' < "${existing}")" == "[]" ]] || {
+            echo "KRIC refresh claim already has a pull request" >&2
+            exit 1
+          }
+          gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${branch}" \
+            --title "Refresh KRIC facility snapshot" \
+            --body "Refresh the due KRIC facility snapshot through the current OCI operation.\n\nRefs #629, #39, #29"
+
+      - name: KRIC current facility refresh / Create durable claim
+        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch="automation/629-kric-facility-refresh-${GITHUB_RUN_ID}"
+          git switch -c "${branch}"
+          git commit --allow-empty -m "Claim KRIC facility refresh"
+          gh auth setup-git
+          git push origin "${branch}"
+          printf 'KRIC_REFRESH_BRANCH=%s\\n' "${branch}" >> "${GITHUB_ENV}"
 
       - name: KRIC current facility refresh / Validate provider configuration
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
@@ -84,19 +164,36 @@ jobs:
           node tools/datapack/run-current-capital-facility-operation.mjs finalize --operation-root "${KRIC_REFRESH_OPERATION_ROOT}"
           cp "${KRIC_REFRESH_OPERATION_ROOT}/receipt.json" "${KRIC_REFRESH_OPERATION_ROOT}/raw-receipt.json"
 
-      - name: KRIC current facility refresh / Create draft pull request
+      - name: KRIC current facility refresh / Finalize claimed refresh branch
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          branch="automation/629-kric-facility-refresh-${GITHUB_RUN_ID}"
-          git switch -c "${branch}"
+          deleted="$(git diff --name-only --diff-filter=D)"
+          [[ -z "${deleted}" ]] || {
+            echo "KRIC refresh removed a tracked input" >&2
+            exit 1
+          }
           changed="$(git diff --name-only --diff-filter=ACMR)"
           if [[ -z "${changed}" ]]; then
             echo "KRIC refresh produced no tracked update" >&2
             exit 1
           fi
+          for required in \
+            tools/datapack/release/candidate-build-spec.json \
+            tools/datapack/release/current-capital-facility-source-admission.json \
+            tools/datapack/release/source-snapshots.json \
+            tools/datapack/source-inventory.json; do
+            grep -Fqx "${required}" <<< "${changed}" || {
+              echo "KRIC refresh produced an incomplete output" >&2
+              exit 1
+            }
+          done
+          grep -Eq '^tools/datapack/sources/[^/]+\\.json$' <<< "${changed}" || {
+            echo "KRIC refresh produced an incomplete output" >&2
+            exit 1
+          }
           unexpected="$(printf '%s\n' "${changed}" | grep -Ev \
             'tools/datapack/(release/candidate-build-spec\.json|release/current-capital-facility-source-admission\.json|release/source-snapshots\.json|source-inventory\.json|sources/[^/]+\.json)' || true)"
           if [[ -n "${unexpected}" ]]; then
@@ -109,9 +206,15 @@ jobs:
             tools/datapack/source-inventory.json tools/datapack/sources
           git diff --cached --quiet && exit 1
           git commit -m "Refresh KRIC facility snapshot"
-          gh auth setup-git
-          git push origin "${branch}"
-          gh pr create --draft --base main --head "${branch}" \
+          git push origin "${KRIC_REFRESH_BRANCH}"
+
+      - name: KRIC current facility refresh / Create draft pull request
+        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${KRIC_REFRESH_BRANCH}" \
             --title "Refresh KRIC facility snapshot" \
             --body "Refresh the due KRIC facility snapshot through the current OCI operation.\n\nRefs #629, #39, #29"
 
