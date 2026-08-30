@@ -120,6 +120,25 @@ test("candidate-selected ITX freshness participates in the earliest due decision
   })).state, "DUE");
 });
 
+test("candidate-selected ITX freshness accepts an explicit timezone offset", async () => {
+  const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
+  const candidate = JSON.parse(await readFile(input.candidatePath, "utf8"));
+  const evidencePath = path.join(input.repositoryRoot, candidate.itxTopologyEvidencePath);
+  const evidenceBytes = Buffer.from(`${JSON.stringify({
+    schemaVersion: 1,
+    artifactKind: "itx-cheongchun-mobile-topology-evidence",
+    sourceArtifact: { freshUntil: "2026-08-31T01:00:00+09:00" },
+  })}\n`);
+  await writeFile(evidencePath, evidenceBytes);
+  candidate.itxTopologyEvidenceSha256 = sha256(evidenceBytes);
+  await writeFile(input.candidatePath, JSON.stringify(candidate));
+
+  assert.equal((await decideCurrentCapitalTopologyRefresh({
+    ...input,
+    now: new Date("2026-08-30T05:59:59.999Z"),
+  })).state, "NOT_DUE");
+});
+
 test("only a same-repository main-base claim can own this automation", async () => {
   const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
   const branch = "automation/636-current-topology-refresh-7";

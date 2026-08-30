@@ -136,18 +136,25 @@ jobs:
           printf 'TOPOLOGY_STATION_SNAPSHOT=%s/incheon-transit-station-info-%s.json\n' "${TOPOLOGY_OPERATION_ROOT}" "${station_stamp}" >> "${GITHUB_ENV}"
           node tools/datapack/collect-incheon-timetable.mjs --download --topology-snapshot "${TOPOLOGY_OPERATION_ROOT}/incheon-transit-station-info-${station_stamp}.json" --output-dir "${TOPOLOGY_OPERATION_ROOT}/timetables"
 
-      - name: Collect current ITX timetable once
+      - name: Prepare current ITX collection
         if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
         env:
           DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          [[ "$(git rev-parse HEAD)" == "${TOPOLOGY_MAIN_SHA}" ]] || { echo "ITX collector is not running from its claimed main" >&2; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "${TOPOLOGY_MAIN_SHA}" ]] || { echo "ITX preflight is not running from its claimed main" >&2; exit 1; }
           [[ -n "${DATA_GO_KR_SERVICE_KEY:-}" && "${DATA_GO_KR_SERVICE_KEY}" != *$'\n'* && "${DATA_GO_KR_SERVICE_KEY}" != *$'\r'* ]] || { echo "DATA_GO_KR_SERVICE_KEY must be a nonempty single line" >&2; exit 1; }
           node tools/datapack/emit-station-catalog-pack.mjs --output "${TOPOLOGY_OPERATION_ROOT}/station-catalog-pack" --catalog-pack-id "itx-current-station-catalog-v1"
-          node tools/ci/guard-itx-current-collection-budget.mjs --output "${TOPOLOGY_OPERATION_ROOT}/itx-freshness.json"
-          node tools/datapack/run-current-itx-collection.mjs --output "${TOPOLOGY_OPERATION_ROOT}/itx-result.json" --completeness-output "${TOPOLOGY_OPERATION_ROOT}/itx-completeness.json" --station-catalog-pack "${TOPOLOGY_OPERATION_ROOT}/station-catalog-pack" --freshness-output "${TOPOLOGY_OPERATION_ROOT}/itx-freshness.json"
+          node tools/ci/guard-itx-current-collection-budget.mjs --output "${TOPOLOGY_OPERATION_ROOT}/freshness.json"
+      - name: Collect current ITX timetable once
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        env:
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "${TOPOLOGY_MAIN_SHA}" ]] || { echo "ITX collector is not running from its claimed main" >&2; exit 1; }
+          node tools/datapack/run-current-itx-collection.mjs --output "${TOPOLOGY_OPERATION_ROOT}/itx-result.json" --completeness-output "${TOPOLOGY_OPERATION_ROOT}/itx-completeness.json" --station-catalog-pack "${TOPOLOGY_OPERATION_ROOT}/station-catalog-pack" --freshness-output "${TOPOLOGY_OPERATION_ROOT}/freshness.json"
           node tools/datapack/build-itx-current-topology-admission.mjs --collection "${TOPOLOGY_OPERATION_ROOT}/itx-completeness.json" --coverage-contract tools/datapack/itx-cheongchun-coverage-contract.json --output "${TOPOLOGY_OPERATION_ROOT}/itx-current-admission.json"
           printf 'TOPOLOGY_BUILD_NOW=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" >> "${GITHUB_ENV}"
       - name: Derive immutable input identities from collector output
@@ -211,6 +218,8 @@ jobs:
           [[ -f "${TOPOLOGY_INCHEON_ACCESSIBILITY_PATH}" && -f "${TOPOLOGY_ITX_EVIDENCE_PATH}" && ! -e "${TOPOLOGY_REVERIFICATION_PATH}" ]] || { echo "topology activation dependency or target is invalid" >&2; exit 1; }
       - name: Activate current topology inputs exactly once
         if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           node tools/datapack/activate-current-source-set.mjs --topology-only --capital-topology "${TOPOLOGY_CAPITAL_PATH}" --incheon-topology "${TOPOLOGY_INCHEON_PATH}" --incheon-accessibility "${TOPOLOGY_INCHEON_ACCESSIBILITY_PATH}" --incheon-line1-timetable "${TOPOLOGY_LINE1_PATH}" --incheon-line2-timetable "${TOPOLOGY_LINE2_PATH}" --itx-topology-evidence "${TOPOLOGY_ITX_EVIDENCE_PATH}" --itx-current-admission "${TOPOLOGY_ITX_ADMISSION_PATH}" --builder-git-sha "${TOPOLOGY_BUILDER_SHA}" --build-now "${TOPOLOGY_BUILD_NOW}"

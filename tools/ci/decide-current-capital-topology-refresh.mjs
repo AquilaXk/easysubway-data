@@ -12,7 +12,21 @@ const INCHEON = new Map([["incheon-transit-station-info", "topologyAdmissionEvid
 
 function object(value, label) { if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} is invalid`); return value; }
 function json(bytes, label) { try { return JSON.parse(bytes); } catch { throw new Error(`${label} is invalid JSON`); } }
-function instant(value, label) { if (typeof value !== "string" || new Date(value).toISOString() !== value) throw new Error(`${label} is invalid`); return Date.parse(value); }
+function instant(value, label) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{3}))?(Z|[+-]\d{2}:\d{2})$/u.exec(value ?? "");
+  const parts = match?.slice(1, 8).map((part) => Number(part ?? 0));
+  const offset = match?.[8];
+  const offsetParts = offset && offset !== "Z" ? offset.slice(1).split(":").map(Number) : [0, 0];
+  const parsed = Date.parse(value);
+  const local = parts ? new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], parts[3], parts[4], parts[5], parts[6])) : null;
+  if (!match || !Number.isFinite(parsed) || offsetParts[0] > 23 || offsetParts[1] > 59
+    || local.getUTCFullYear() !== parts[0] || local.getUTCMonth() + 1 !== parts[1]
+    || local.getUTCDate() !== parts[2] || local.getUTCHours() !== parts[3]
+    || local.getUTCMinutes() !== parts[4] || local.getUTCSeconds() !== parts[5]) {
+    throw new Error(`${label} is invalid`);
+  }
+  return parsed;
+}
 function duration(value) { const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/u.exec(value ?? ""); if (!match || match.slice(1).every((item) => item === undefined)) throw new Error("freshness alert threshold is invalid"); const milliseconds = (Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0)) * 1000; if (milliseconds < 1) throw new Error("freshness alert threshold is invalid"); return milliseconds; }
 function currentExpiry(inventory, itxExpiry) { const sources = object(inventory, "source inventory").sources; if (!Array.isArray(sources)) throw new Error("source inventory is invalid"); const capital = sources.filter((source) => requiresCurrentCapitalTopologyAdmission(object(source, "source inventory source"))); if (capital.length !== 16 || new Set(capital.map(({ id }) => id)).size !== 16) throw new Error("capital current topology admissions must contain exactly sixteen unique sources"); const expiry = capital.map((source) => instant(source.routeMapAdmissionEvidence?.currentTopologyAdmission?.freshUntil, `${source.id} current topology freshUntil`)); for (const [id, evidence] of INCHEON) { const matches = sources.filter((source) => source.id === id); if (matches.length !== 1) throw new Error(`${id} source identity is invalid`); expiry.push(instant(matches[0][evidence]?.freshUntil, `${id} freshUntil`)); } expiry.push(itxExpiry); return Math.min(...expiry); }
 
