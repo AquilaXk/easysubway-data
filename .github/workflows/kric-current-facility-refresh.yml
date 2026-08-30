@@ -129,11 +129,14 @@ jobs:
         run: |
           set -euo pipefail
           branch="automation/629-kric-facility-refresh-${GITHUB_RUN_ID}"
+          main_sha="$(git rev-parse HEAD)"
           git switch -c "${branch}"
           git commit --allow-empty -m "Claim KRIC facility refresh"
           gh auth setup-git
           git push origin "${branch}"
+          git switch --detach "${main_sha}"
           printf 'KRIC_REFRESH_BRANCH=%s\n' "${branch}" >> "${GITHUB_ENV}"
+          printf 'KRIC_REFRESH_MAIN_SHA=%s\n' "${main_sha}" >> "${GITHUB_ENV}"
 
       - name: KRIC current facility refresh / Validate provider configuration
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
@@ -158,8 +161,11 @@ jobs:
           EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
         run: |
           set -euo pipefail
-          main_sha="$(git rev-parse HEAD)"
-          node tools/datapack/run-current-capital-facility-operation.mjs --phase prepare --operation-root "${KRIC_REFRESH_OPERATION_ROOT}" --expected-main-sha "${main_sha}"
+          [[ "$(git rev-parse HEAD)" == "${KRIC_REFRESH_MAIN_SHA}" ]] || {
+            echo "KRIC refresh operation is not running from its claimed main" >&2
+            exit 1
+          }
+          node tools/datapack/run-current-capital-facility-operation.mjs --phase prepare --operation-root "${KRIC_REFRESH_OPERATION_ROOT}" --expected-main-sha "${KRIC_REFRESH_MAIN_SHA}"
           node tools/datapack/run-current-capital-facility-operation.mjs --phase collect --operation-root "${KRIC_REFRESH_OPERATION_ROOT}"
           node tools/datapack/run-current-capital-facility-operation.mjs --phase finalize --operation-root "${KRIC_REFRESH_OPERATION_ROOT}"
           cp "${KRIC_REFRESH_OPERATION_ROOT}/receipt.json" "${KRIC_REFRESH_OPERATION_ROOT}/raw-receipt.json"
@@ -170,6 +176,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          git switch "${KRIC_REFRESH_BRANCH}"
+          [[ "$(git rev-parse HEAD^)" == "${KRIC_REFRESH_MAIN_SHA}" ]] || {
+            echo "KRIC refresh claim is not based on its operation main" >&2
+            exit 1
+          }
           deleted="$(git diff --name-only --diff-filter=D)"
           [[ -z "${deleted}" ]] || {
             echo "KRIC refresh removed a tracked input" >&2
