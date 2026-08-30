@@ -18015,11 +18015,37 @@ async function writeCurrentItxReleaseInputs(
     throw new Error("fixture registered Incheon accessibility snapshot identity is invalid");
   }
   const currentIncheonAccessibilityCapturedAt = incheonAccessibilitySourceSnapshot.capturedAt;
+  const incheonTimetableSourceIds = [
+    "incheon-line1-train-timetable",
+    "incheon-line2-train-timetable",
+  ];
+  const incheonTimetableSources = currentInventory.sources.filter(
+    ({ id }) => incheonTimetableSourceIds.includes(id),
+  );
+  assert.equal(
+    incheonTimetableSources.length,
+    incheonTimetableSourceIds.length,
+    "fixture current Incheon timetable sources must exist exactly once",
+  );
+  assert.deepEqual(
+    incheonTimetableSources.map(({ id }) => id).toSorted(),
+    incheonTimetableSourceIds,
+    "fixture current Incheon timetable source IDs must match",
+  );
+  const currentIncheonTimetableCapturedAts = incheonTimetableSources.map((source) => {
+    const capturedAt = source.scheduleAdmissionEvidence?.capturedAt;
+    const timestamp = typeof capturedAt === "string" ? Date.parse(capturedAt) : Number.NaN;
+    if (Number.isNaN(timestamp)) {
+      throw new Error(`fixture current ${source.id} timetable admission capture time is invalid`);
+    }
+    return capturedAt;
+  });
   const buildNow = new Date(Math.max(...[
     sourceObservedAt,
     candidateTopology.capturedAt,
     currentIncheonCapturedAt,
     currentIncheonAccessibilityCapturedAt,
+    ...currentIncheonTimetableCapturedAts,
   ].map((value) => {
     const timestamp = typeof value === "string" ? Date.parse(value) : Number.NaN;
     if (Number.isNaN(timestamp)) throw new Error("fixture current build clock input is invalid");
