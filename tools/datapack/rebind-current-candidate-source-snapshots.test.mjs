@@ -9,6 +9,8 @@ import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import {
   atomicReplace,
   appendTransferCandidateSourceSnapshot,
+  CURRENT_FULL_CANDIDATE_SOURCE_IDS,
+  CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS,
   deriveReleaseProjection,
   isActiveCandidateSourceSequence,
   requireCurrentCanonicalSourceRoster,
@@ -33,23 +35,24 @@ const CURRENT_CAPITAL_BASE_SOURCE_IDS = Object.freeze([
   "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
 ]);
 
-test("active candidate source sequence는 exact public successor, Incheon, and TRANSFER-last variants만 허용한다", () => {
+test("active candidate source sequence accepts only current Incheon predecessor and TRANSFER terminal rosters", () => {
   const six = [
     "seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility",
     "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info",
   ];
-  const seven = [...six, "seoul-metro-transfer-distance-duration"];
-  const sevenWithIncheon = [...six, "incheon-transit-accessibility"];
-  const eightWithIncheon = [...sevenWithIncheon, "seoul-metro-transfer-distance-duration"];
-  assert.equal(isActiveCandidateSourceSequence(six), true);
-  assert.equal(isActiveCandidateSourceSequence(seven), true);
-  assert.equal(isActiveCandidateSourceSequence(sevenWithIncheon), true);
-  assert.equal(isActiveCandidateSourceSequence(eightWithIncheon), true);
-  assert.equal(isActiveCandidateSourceSequence([...seven].reverse()), false);
+  const currentPreTransfer = [...six, "incheon-transit-accessibility"];
+  const currentFull = [...currentPreTransfer, "seoul-metro-transfer-distance-duration"];
+  assert.deepEqual(CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS, currentPreTransfer);
+  assert.deepEqual(CURRENT_FULL_CANDIDATE_SOURCE_IDS, currentFull);
+  assert.equal(isActiveCandidateSourceSequence(six), false);
+  assert.equal(isActiveCandidateSourceSequence([...six, "seoul-metro-transfer-distance-duration"]), false);
+  assert.equal(isActiveCandidateSourceSequence(currentPreTransfer), true);
+  assert.equal(isActiveCandidateSourceSequence(currentFull), true);
+  assert.equal(isActiveCandidateSourceSequence([...currentFull].reverse()), false);
   assert.equal(isActiveCandidateSourceSequence([...six, "other-source"]), false);
   assert.equal(isActiveCandidateSourceSequence([...six, six.at(-1)]), false);
   assert.equal(isActiveCandidateSourceSequence([...six, "seoul-metro-transfer-distance-duration", "incheon-transit-accessibility"]), false);
-  assert.equal(isActiveCandidateSourceSequence([...sevenWithIncheon, "incheon-transit-accessibility"]), false);
+  assert.equal(isActiveCandidateSourceSequence([...currentPreTransfer, "incheon-transit-accessibility"]), false);
   assert.equal(isActiveCandidateSourceSequence([
     "seoulmetro-cyberstation-route-map", ...six.slice(1),
   ]), false);
@@ -247,30 +250,31 @@ test("current canonical pack binds public positions and TRANSFER, never CyberSta
   assert.ok(Date.parse(rebound.publishedAt) > Date.parse(next.retrievedAt));
 });
 
-test("six-source candidate appends TRANSFER last without changing its six projections", async (t) => {
+test("current seven-source candidate appends TRANSFER as the eighth exact source", async (t) => {
   const { root } = await fixture();
   t.after(() => rm(root, { recursive: true, force: true }));
   const input = await readInput(root);
-  const sixSourceCandidate = structuredClone(input.candidateBuildSpec);
-  sixSourceCandidate.sourceSnapshots = sixSourceCandidate.sourceSnapshots.filter(
+  const preTransferCandidate = structuredClone(input.candidateBuildSpec);
+  preTransferCandidate.sourceSnapshots = preTransferCandidate.sourceSnapshots.filter(
     ({ sourceId }) => sourceId !== "seoul-metro-transfer-distance-duration",
   );
-  sixSourceCandidate.sourceSnapshotIds = sixSourceCandidate.sourceSnapshots.map(({ snapshotId }) => snapshotId);
-  const selectedSnapshotIds = new Set(sixSourceCandidate.sourceSnapshotIds);
-  sixSourceCandidate.sourceSnapshotSetHash = sha(JSON.stringify(
+  preTransferCandidate.sourceSnapshotIds = preTransferCandidate.sourceSnapshots.map(({ snapshotId }) => snapshotId);
+  const selectedSnapshotIds = new Set(preTransferCandidate.sourceSnapshotIds);
+  preTransferCandidate.sourceSnapshotSetHash = sha(JSON.stringify(
     input.sourceSnapshots.filter(({ snapshotId }) => selectedSnapshotIds.has(snapshotId)),
   ));
   const projection = {
-    ...sixSourceCandidate.sourceSnapshots[0],
+    ...preTransferCandidate.sourceSnapshots[0],
     sourceId: "seoul-metro-transfer-distance-duration",
     snapshotId: "seoul-metro-transfer-distance-duration-20260712T150000000Z",
   };
   const rebound = appendTransferCandidateSourceSnapshot({
-    candidateBuildSpec: sixSourceCandidate,
+    candidateBuildSpec: preTransferCandidate,
     transferSnapshot: { sourceId: projection.sourceId, snapshotId: projection.snapshotId },
     transferProjection: projection,
   });
-  assert.deepEqual(rebound.sourceSnapshots.slice(0, 6), sixSourceCandidate.sourceSnapshots);
+  assert.deepEqual(rebound.sourceSnapshots.map(({ sourceId }) => sourceId), CURRENT_FULL_CANDIDATE_SOURCE_IDS);
+  assert.deepEqual(rebound.sourceSnapshots.slice(0, 7), preTransferCandidate.sourceSnapshots);
   assert.equal(rebound.sourceSnapshots.at(-1).sourceId, "seoul-metro-transfer-distance-duration");
 });
 
