@@ -18,10 +18,11 @@ import {
   validateProductionIncheonAccessibilityFixture,
 } from "./materialize-incheon-accessibility.mjs";
 import { requireCurrentIncheonTopologyAdmission, activateStaticSourceRevalidations,
+  bindApprovedItxCurrentSourceSpec,
   buildCurrentCandidateSpec, buildCurrentSourcePrimaryOutputs,
   buildCurrentTopologyRefreshPrimaryOutputs, commitCurrentSourceActivation,
   collectLayoutTopologySnapshotBytes, collectPositionSnapshotBytes, parseCurrentSourceActivationArgs,
-  parseCurrentTopologyRefreshArgs, requireCleanBuilder,
+  parseApprovedItxBootstrapArgs, parseCurrentTopologyRefreshArgs, requireCleanBuilder,
   CURRENT_PRODUCTION_SOURCE_IDS, CURRENT_SOURCE_INVENTORY_IDS,
   readBuilderBaselineBytes,
   stageValidationItxTopologyEvidence,
@@ -712,6 +713,60 @@ test("activation CLI는 Data-owned capital/Incheon snapshot paths만 수용한�
   assert.throws(() => parseCurrentTopologyRefreshArgs([
     "--itx-current-admission", "tools/datapack/itx-current-network-edge-admission-20260823.json",
   ]), /unknown topology refresh argument/);
+});
+
+test("approved ITX bootstrap은 exact full-source identity만 candidate에 결속한다", async () => {
+  const coverageContractBytes = await readFile(
+    path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"),
+  );
+  const coverageContract = JSON.parse(coverageContractBytes);
+  const reference = coverageContract.sourceTimetableArtifact;
+  const [baseSpec, sourceBytes, completenessBytes, topologyEvidenceBytes] = await Promise.all([
+    readJson("tools/datapack/release/candidate-build-spec.json"),
+    readFile(path.join(root, reference.artifactPath)),
+    readFile(path.join(root, reference.completenessEvidencePath)),
+    readFile(path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json")),
+  ]);
+  const buildNow = "2026-08-30T15:15:08.787Z";
+  const bound = await bindApprovedItxCurrentSourceSpec({
+    baseSpec,
+    coverageContractBytes,
+    sourceBytes,
+    completenessBytes,
+    topologyEvidenceBytes,
+    topologyEvidencePath: "tools/datapack/itx-cheongchun-topology-evidence.json",
+    buildNow,
+  });
+
+  assert.equal(bound.itxTopologyEvidenceSha256, sha256(topologyEvidenceBytes));
+  assert.equal(bound.networkEdgeEvidence.itxCoverageContract.sha256,
+    sha256(coverageContractBytes));
+  assert.equal(Object.hasOwn(bound.networkEdgeEvidence, "itxCurrentTopologyAdmission"), false);
+  assert.deepEqual(parseApprovedItxBootstrapArgs([
+    "--capital-topology", "tools/datapack/sources/capital-route-topology-20260830.json",
+    "--incheon-topology", "tools/datapack/sources/incheon-transit-station-info-20260830.json",
+    "--incheon-accessibility", "tools/datapack/sources/incheon-transit-accessibility-20260830T123631000Z.json",
+    "--incheon-line1-timetable", "tools/datapack/sources/incheon-line1-train-timetable-20260830.json",
+    "--incheon-line2-timetable", "tools/datapack/sources/incheon-line2-train-timetable-20260830.json",
+    "--itx-topology-evidence", "tools/datapack/itx-cheongchun-topology-evidence.json",
+    "--builder-git-sha", "c".repeat(40),
+    "--build-now", buildNow,
+  ]).approved_itx_bootstrap, true);
+  assert.throws(() => parseApprovedItxBootstrapArgs([
+    "--itx-current-admission", "tools/datapack/itx-current-network-edge-admission-20260830.json",
+  ]), /unknown approved ITX bootstrap argument/);
+
+  const tamperedEvidence = Buffer.from(topologyEvidenceBytes);
+  tamperedEvidence[tamperedEvidence.length - 2] ^= 1;
+  await assert.rejects(bindApprovedItxCurrentSourceSpec({
+    baseSpec,
+    coverageContractBytes,
+    sourceBytes,
+    completenessBytes,
+    topologyEvidenceBytes: tamperedEvidence,
+    topologyEvidencePath: "tools/datapack/itx-cheongchun-topology-evidence.json",
+    buildNow,
+  }), /approved ITX topology evidence is invalid/);
 });
 
 test("prepared candidate validation은 spec-selected current ITX evidence bytes만 stage한다", async (context) => {

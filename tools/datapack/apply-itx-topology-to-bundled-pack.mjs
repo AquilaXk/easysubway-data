@@ -237,6 +237,7 @@ export function validateAdmittedSourceDocuments(
   completeness,
   sourceSha256,
   completenessSha256,
+  buildNow = candidateBuildNow(),
 ) {
   validateAdmittedSourceReference(contract, reference);
   if (sourceSha256 !== reference.sha256
@@ -244,7 +245,8 @@ export function validateAdmittedSourceDocuments(
     throw new Error("ITX topology source bytes do not match the coverage contract");
   }
   const freshUntilMillis = Date.parse(reference.freshUntil);
-  if (!Number.isFinite(freshUntilMillis) || freshUntilMillis <= candidateBuildNow().getTime()) {
+  if (!(buildNow instanceof Date) || Number.isNaN(buildNow.getTime())
+    || !Number.isFinite(freshUntilMillis) || freshUntilMillis <= buildNow.getTime()) {
     throw new Error("ITX topology source artifact is expired");
   }
   const admission = contract?.officialEvidence?.korailCompletenessAdmission;

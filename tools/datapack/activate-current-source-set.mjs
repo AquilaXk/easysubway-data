@@ -16,6 +16,12 @@ import {
   syncCanonicalAccessibilityEvidence,
   syncCanonicalFixture,
 } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
+import {
+  admittedTopologySource,
+  deriveTopology,
+  parseAuthenticatedAdmittedSourceDocuments,
+  validateAdmittedSourceDocuments,
+} from "./apply-itx-topology-to-bundled-pack.mjs";
 import { buildFixture as buildOfficialSourceFixture } from "./import-official-sources.mjs";
 import { assertNoRetiredTransitReferences, projectRetiredTransitLines } from "./project-retired-transit-lines.mjs";
 import { projectCanonicalRouteMapProvenance } from "./project-canonical-route-map-provenance.mjs";
@@ -2078,6 +2084,88 @@ export function buildCurrentCandidateSpec({
   return spec;
 }
 
+export async function bindApprovedItxCurrentSourceSpec({
+  baseSpec,
+  coverageContractBytes,
+  sourceBytes,
+  completenessBytes,
+  topologyEvidenceBytes,
+  topologyEvidencePath,
+  buildNow,
+}) {
+  const activationNow = new Date(requiredUtcInstant(buildNow, "approved ITX bootstrap buildNow"));
+  const contract = parseJson(coverageContractBytes, "approved ITX coverage contract");
+  const reference = contract?.sourceTimetableArtifact;
+  const { source, completeness } = parseAuthenticatedAdmittedSourceDocuments(
+    reference,
+    sourceBytes,
+    completenessBytes,
+  );
+  validateAdmittedSourceDocuments(
+    contract,
+    reference,
+    source,
+    completeness,
+    sha256(sourceBytes),
+    sha256(completenessBytes),
+    activationNow,
+  );
+  const admittedInput = await admittedTopologySource(reference, source);
+  const topology = deriveTopology(source);
+  let evidence;
+  try {
+    evidence = JSON.parse(topologyEvidenceBytes?.toString("utf8"));
+  } catch {
+    throw new Error("approved ITX topology evidence is invalid");
+  }
+  const contractInput = contract?.officialEvidence?.korailCompletenessAdmission
+    ?.topologyInputPackIdentity;
+  if (topologyEvidencePath !== "tools/datapack/itx-cheongchun-topology-evidence.json"
+    || !Buffer.isBuffer(topologyEvidenceBytes)
+    || evidence?.schemaVersion !== 1
+    || evidence?.artifactKind !== "itx-cheongchun-mobile-topology-evidence"
+    || evidence?.serviceId !== "ITX_CHEONGCHUN"
+    || evidence?.sourceIssue !== 2135
+    || evidence?.sourceArtifact?.id !== reference.artifactId
+    || evidence?.sourceArtifact?.sha256 !== reference.sha256
+    || evidence?.sourceArtifact?.completenessEvidenceSha256
+      !== reference.completenessEvidenceSha256
+    || evidence?.sourceArtifact?.freshUntil !== reference.freshUntil
+    || JSON.stringify(evidence?.sourceArtifact?.stationCatalogPackIdentity)
+      !== JSON.stringify(source.stationCatalogPackIdentity)
+    || evidence?.topology?.stationMembershipCount !== topology.stations.length
+    || evidence?.topology?.servedStationCount !== topology.servedStations.length
+    || evidence?.topology?.edgeCount !== topology.edges.length
+    || evidence?.topology?.sha256 !== topology.sha256
+    || evidence?.pack?.id !== "capital"
+    || evidence?.pack?.inputSha256 !== admittedInput.gzipSha256
+    || evidence?.pack?.inputSqliteSha256 !== admittedInput.sqliteSha256
+    || evidence?.pack?.inputByteSize !== admittedInput.byteSize
+    || contractInput?.sha256 !== admittedInput.gzipSha256
+    || contractInput?.sqliteSha256 !== admittedInput.sqliteSha256
+    || contractInput?.byteSize !== admittedInput.byteSize
+    || !SHA256.test(evidence?.pack?.outputSha256 ?? "")
+    || !SHA256.test(evidence?.pack?.outputSqliteSha256 ?? "")
+    || !Number.isSafeInteger(evidence?.pack?.byteSize)
+    || evidence.pack.byteSize <= 0) {
+    throw new Error("approved ITX topology evidence is invalid");
+  }
+  if (baseSpec?.schemaVersion !== 1
+    || baseSpec?.artifactKind !== "datapack-candidate-build-spec"
+    || baseSpec.networkEdgeEvidence == null) {
+    throw new Error("approved ITX bootstrap base spec is invalid");
+  }
+  const next = structuredClone(baseSpec);
+  next.itxTopologyEvidencePath = topologyEvidencePath;
+  next.itxTopologyEvidenceSha256 = sha256(topologyEvidenceBytes);
+  next.networkEdgeEvidence.itxCoverageContract = {
+    path: "tools/datapack/itx-cheongchun-coverage-contract.json",
+    sha256: sha256(coverageContractBytes),
+  };
+  delete next.networkEdgeEvidence.itxCurrentTopologyAdmission;
+  return next;
+}
+
 async function readRegularBytes(repositoryRoot, relativePath, label = relativePath) {
   const absolutePath = contained(repositoryRoot, relativePath);
   const metadata = await lstat(absolutePath);
@@ -2604,6 +2692,7 @@ export async function generateCurrentCapitalTopologyRefresh({
   builderGitSha,
   buildNow,
   check = false,
+  approvedItxBootstrap = false,
 }) {
   const capitalPathMatch = /^tools\/datapack\/sources\/capital-route-topology-([0-9]{8})\.json$/u
     .exec(capitalTopologyPath ?? "");
@@ -2659,9 +2748,31 @@ export async function generateCurrentCapitalTopologyRefresh({
       ]);
     await requireCleanBuilder(builderGitSha, { check, allowedDescendantPaths });
     const sourceInventory = parseJson(sourceInventoryBytes, "source inventory");
-    const baseSpec = parseJson(baseSpecBytes, "candidate build spec");
+    let baseSpec = parseJson(baseSpecBytes, "candidate build spec");
+    if (approvedItxBootstrap) {
+      const coverageContractBytes = await readRegularBytes(
+        root,
+        "tools/datapack/itx-cheongchun-coverage-contract.json",
+        "approved ITX coverage contract",
+      );
+      const coverageContract = parseJson(coverageContractBytes, "approved ITX coverage contract");
+      const reference = coverageContract?.sourceTimetableArtifact;
+      const [sourceBytes, completenessBytes] = await Promise.all([
+        readRegularBytes(root, reference?.artifactPath, "approved ITX source"),
+        readRegularBytes(root, reference?.completenessEvidencePath, "approved ITX completeness evidence"),
+      ]);
+      baseSpec = await bindApprovedItxCurrentSourceSpec({
+        baseSpec,
+        coverageContractBytes,
+        sourceBytes,
+        completenessBytes,
+        topologyEvidenceBytes: currentItxTopologyEvidenceBytes,
+        topologyEvidencePath: itxTopologyEvidencePath,
+        buildNow,
+      });
+    }
     const primary = buildCurrentTopologyRefreshPrimaryOutputs({
-      baseSpec: parseJson(baseSpecBytes, "candidate build spec"),
+      baseSpec,
       builderGitSha,
       sourceInventory,
       currentTopology: parseJson(currentTopologyBytes, "current capital topology"),
@@ -2771,6 +2882,13 @@ export async function generateCurrentCapitalTopologyRefresh({
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });
   }
+}
+
+export async function generateApprovedItxCurrentSourceBootstrap(options) {
+  return generateCurrentCapitalTopologyRefresh({
+    ...options,
+    approvedItxBootstrap: true,
+  });
 }
 
 export async function generateCurrentSourceActivation({
@@ -3122,24 +3240,61 @@ export function parseCurrentTopologyRefreshArgs(argv) {
   return args;
 }
 
+export function parseApprovedItxBootstrapArgs(argv) {
+  const args = { approved_itx_bootstrap: true, check: false };
+  for (let index = 0; index < argv.length; index += 1) {
+    const flag = argv[index];
+    if (flag === "--check") {
+      args.check = true;
+      continue;
+    }
+    if (!["--capital-topology", "--incheon-topology", "--incheon-accessibility",
+      "--incheon-line1-timetable", "--incheon-line2-timetable", "--itx-topology-evidence",
+      "--builder-git-sha", "--build-now"].includes(flag)) {
+      throw new Error(`unknown approved ITX bootstrap argument: ${flag ?? ""}`);
+    }
+    const value = argv[index + 1];
+    if (!value || value.startsWith("--")) throw new Error(`${flag} requires a value`);
+    const key = flag.slice(2).replaceAll("-", "_");
+    if (args[key] != null) throw new Error(`duplicate approved ITX bootstrap argument: ${flag}`);
+    args[key] = value;
+    index += 1;
+  }
+  for (const key of ["capital_topology", "incheon_topology", "incheon_accessibility",
+    "incheon_line1_timetable", "incheon_line2_timetable", "itx_topology_evidence",
+    "builder_git_sha", "build_now"]) {
+    if (!args[key]) throw new Error(`--${key.replaceAll("_", "-")} is required`);
+  }
+  return args;
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   const topologyOnly = argv.includes("--topology-only");
-  const args = topologyOnly
-    ? parseCurrentTopologyRefreshArgs(argv.filter((value) => value !== "--topology-only"))
-    : parseCurrentSourceActivationArgs(argv);
-  const result = topologyOnly
-    ? await generateCurrentCapitalTopologyRefresh({
-        capitalTopologyPath: args.capital_topology,
-        incheonTopologyPath: args.incheon_topology,
-        incheonAccessibilityPath: args.incheon_accessibility,
-        incheonLine1TimetablePath: args.incheon_line1_timetable,
-        incheonLine2TimetablePath: args.incheon_line2_timetable,
-        itxTopologyEvidencePath: args.itx_topology_evidence,
-        builderGitSha: args.builder_git_sha,
-        buildNow: args.build_now,
-        check: args.check,
-      })
+  const approvedItxBootstrap = argv.includes("--approved-itx-bootstrap");
+  if (topologyOnly && approvedItxBootstrap) {
+    throw new Error("topology-only and approved ITX bootstrap modes are mutually exclusive");
+  }
+  const args = approvedItxBootstrap
+    ? parseApprovedItxBootstrapArgs(argv.filter((value) => value !== "--approved-itx-bootstrap"))
+    : topologyOnly
+      ? parseCurrentTopologyRefreshArgs(argv.filter((value) => value !== "--topology-only"))
+      : parseCurrentSourceActivationArgs(argv);
+  const currentTopologyOptions = {
+    capitalTopologyPath: args.capital_topology,
+    incheonTopologyPath: args.incheon_topology,
+    incheonAccessibilityPath: args.incheon_accessibility,
+    incheonLine1TimetablePath: args.incheon_line1_timetable,
+    incheonLine2TimetablePath: args.incheon_line2_timetable,
+    itxTopologyEvidencePath: args.itx_topology_evidence,
+    builderGitSha: args.builder_git_sha,
+    buildNow: args.build_now,
+    check: args.check,
+  };
+  const result = approvedItxBootstrap
+    ? await generateApprovedItxCurrentSourceBootstrap(currentTopologyOptions)
+    : topologyOnly
+      ? await generateCurrentCapitalTopologyRefresh(currentTopologyOptions)
     : await generateCurrentSourceActivation({
         capitalTopologyPath: args.capital_topology,
         incheonTopologyPath: args.incheon_topology,
