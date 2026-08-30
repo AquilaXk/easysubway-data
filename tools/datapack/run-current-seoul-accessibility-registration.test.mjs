@@ -36,8 +36,8 @@ function dependencies(events, { collectError = null, publishError = null, regist
   return {
     validateLineage(snapshots) { events.push(["validate-lineage", snapshots]); return { headsBySource: { [SOURCE_ID]: HEAD } }; },
     validateSnapshotIdentity(snapshot) { events.push(["validate-snapshot", snapshot]); return snapshot; },
-    async collect({ serviceKey, previousSnapshot }) {
-      events.push(["collect", serviceKey, previousSnapshot]); if (collectError) throw collectError;
+    async collect({ serviceKey, previousSnapshot, requestAttempts }) {
+      events.push(["collect", serviceKey, previousSnapshot, requestAttempts]); if (collectError) throw collectError;
       return { snapshot: { snapshotId: SNAPSHOT_ID, sourceId: SOURCE_ID }, rawArtifact: {} };
     },
     async observationRoot(name) { events.push(["root", name]); return "/private/tmp/easysubway-seoul-accessibility-operation"; },
@@ -58,6 +58,15 @@ test("runner validates the current head bytes and orders collector, publisher, a
   assert.equal(events[5][1].receiptPath, values.receiptPath);
   assert.equal(events[6][1].snapshotPath, `/private/tmp/easysubway-seoul-accessibility-operation/${SNAPSHOT_ID}.json`);
   assert.deepEqual(result, { status: "PASS", snapshotId: SNAPSHOT_ID, outputs: outputsFor() });
+});
+
+test("runner passes the scheduled single-attempt contract only when requested", async (t) => {
+  const values = await fixture(t); const events = [];
+  await runCurrentSeoulAccessibilityRegistration({ ...options(values, dependencies(events)), requestAttempts: 1 });
+  assert.equal(events[2][3], 1);
+  const direct = await fixture(t); const directEvents = [];
+  await runCurrentSeoulAccessibilityRegistration(options(direct, dependencies(directEvents)));
+  assert.equal(directEvents[2][3], 2);
 });
 
 test("malformed DATA_GO_KR_SERVICE_KEY stops every delegate before the current head read", async (t) => {
