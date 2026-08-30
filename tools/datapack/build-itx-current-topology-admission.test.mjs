@@ -112,6 +112,24 @@ test("current weekday OD pair가 previous admission과 exact 같으면 topology-
   assert.match(result.evidenceHash, /^[a-f0-9]{64}$/);
 });
 
+test("열차별 up/down sequence가 여러 개여도 exact directional pair set을 검증한다", () => {
+  const values = fixture();
+  for (const sequences of [
+    values.collection.serviceDays[0].roster.stationSequences,
+    values.previousSource.stationSequences,
+  ]) {
+    sequences.push(
+      sequence("up", ["station-a", "station-b", "station-c"]),
+      sequence("down", ["station-c", "station-b", "station-a"]),
+    );
+  }
+
+  const result = build(values);
+  assert.equal(result.pairHashes.length, 4);
+  assert.equal(result.observedPairChange.addedCount, 0);
+  assert.equal(result.observedPairChange.removedCount, 0);
+});
+
 test("current weekday canonical station set이 previous admission과 다르면 topology admission을 만들지 않는다", () => {
   const values = fixture();
   values.collection.serviceDays[0].roster.stationSequences[0].stops[1].stationId = "station-x";
@@ -128,12 +146,13 @@ test("reconstruction train·stop count가 누락되거나 0이면 admission을 �
   assert.throws(() => build(zero), /stopCount/);
 });
 
-test("current weekday는 up/down sequence를 정확히 하나씩만 허용한다", () => {
+test("current weekday는 up/down 방향 집합을 정확히 요구한다", () => {
   const values = fixture();
-  values.collection.serviceDays[0].roster.stationSequences.push(
-    structuredClone(values.collection.serviceDays[0].roster.stationSequences[1]),
-  );
-  assert.throws(() => build(values), /must contain exactly one up and one down station sequence/);
+  values.collection.serviceDays[0].roster.stationSequences =
+    values.collection.serviceDays[0].roster.stationSequences.filter(
+      ({ directionId }) => directionId === "up",
+    );
+  assert.throws(() => build(values), /authenticated up\/down|exact up\/down directions/);
 });
 
 test("station set이 같고 pair가 다르면 previous pair를 유지한 admission에 drift를 명시한다", () => {

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -7,6 +8,7 @@ import test from "node:test";
 const modulePath = new URL("./decide-current-capital-topology-refresh.mjs", import.meta.url);
 const repo = "AquilaXk/easysubway-data";
 const sha = "0123456789abcdef0123456789abcdef01234567";
+const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const currentTopologyAdmission = {
   schemaVersion: 1,
   artifactKind: "capital-route-map-current-topology-admission",
@@ -49,6 +51,14 @@ async function fixture() {
   const dir = await mkdtemp(path.join(os.tmpdir(), "topology-refresh-decision-"));
   const inventoryPath = path.join(dir, "inventory.json"); const policyPath = path.join(dir, "policy.json");
   const prsPath = path.join(dir, "prs.json"); const claimsPath = path.join(dir, "claims.txt");
+  const candidatePath = path.join(dir, "candidate.json");
+  const itxEvidencePath =
+    "tools/datapack/itx-cheongchun-topology-evidence-20260830151000000.json";
+  const itxEvidenceBytes = Buffer.from(`${JSON.stringify({
+    schemaVersion: 1,
+    artifactKind: "itx-cheongchun-mobile-topology-evidence",
+    sourceArtifact: { freshUntil: "2026-08-30T16:00:00.000Z" },
+  })}\n`);
   await writeFile(inventoryPath, JSON.stringify({ sources: [
     ...capitalAdmissions(),
     { id: "incheon-transit-station-info", topologyAdmissionEvidence: { freshUntil: "2026-08-30T13:00:00.000Z" } },
@@ -57,7 +67,17 @@ async function fixture() {
   ] }));
   await writeFile(policyPath, JSON.stringify({ monitoring: { alertBeforePackExpiry: "PT6H" } }));
   await writeFile(prsPath, "[]"); await writeFile(claimsPath, "[]");
-  return { inventoryPath, policyPath, prsPath, claimsPath, repository: repo, currentMainSha: sha };
+  await mkdir(path.dirname(path.join(dir, itxEvidencePath)), { recursive: true });
+  await writeFile(path.join(dir, itxEvidencePath), itxEvidenceBytes);
+  await writeFile(candidatePath, JSON.stringify({
+    itxTopologyEvidencePath: itxEvidencePath,
+    itxTopologyEvidenceSha256: sha256(itxEvidenceBytes),
+    networkEdgeEvidence: {},
+  }));
+  return {
+    inventoryPath, policyPath, prsPath, claimsPath, candidatePath,
+    repositoryRoot: dir, repository: repo, currentMainSha: sha,
+  };
 }
 
 test("earliest canonical current topology expiry determines NOT_DUE, DUE, and EXPIRED", async () => {
@@ -79,6 +99,25 @@ test("requires exactly sixteen distinct admitted capital sources and all three I
   duplicate.sources[1].id = duplicate.sources[0].id;
   await writeFile(restored.inventoryPath, JSON.stringify(duplicate));
   await assert.rejects(() => decideCurrentCapitalTopologyRefresh(restored), /capital current topology admissions/);
+});
+
+test("candidate-selected ITX freshness participates in the earliest due decision", async () => {
+  const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
+  const candidate = JSON.parse(await readFile(input.candidatePath, "utf8"));
+  const evidencePath = path.join(input.repositoryRoot, candidate.itxTopologyEvidencePath);
+  const evidenceBytes = Buffer.from(`${JSON.stringify({
+    schemaVersion: 1,
+    artifactKind: "itx-cheongchun-mobile-topology-evidence",
+    sourceArtifact: { freshUntil: "2026-08-30T10:00:00.000Z" },
+  })}\n`);
+  await writeFile(evidencePath, evidenceBytes);
+  candidate.itxTopologyEvidenceSha256 = sha256(evidenceBytes);
+  await writeFile(input.candidatePath, JSON.stringify(candidate));
+
+  assert.equal((await decideCurrentCapitalTopologyRefresh({
+    ...input,
+    now: new Date("2026-08-30T04:00:00.000Z"),
+  })).state, "DUE");
 });
 
 test("only a same-repository main-base claim can own this automation", async () => {
