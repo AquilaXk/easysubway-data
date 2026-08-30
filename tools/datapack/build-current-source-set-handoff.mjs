@@ -325,10 +325,11 @@ export function buildCurrentSourceSetHandoff({ compositeReceiptBytes, compositeB
     },
     fanIn: {
       components: boundary.components,
+      currentCandidateSourceSetSha256: boundary.currentCandidateSourceSetSha256,
+      evidenceSourceSetSha256: boundary.evidenceSourceSetSha256,
       kind: boundary.kind,
       path: bundle.boundary.path,
       sha256: sha256(boundaryBytes),
-      sourceSetSha256: boundary.currentCandidateSourceSetSha256,
     },
     operationId,
     protectedOutputs: outputs,
@@ -339,7 +340,7 @@ export function buildCurrentSourceSetHandoff({ compositeReceiptBytes, compositeB
       candidateId: releaseRequest.candidateId,
       sha256: sha256(releaseRequestBytes),
     },
-    schemaVersion: 2,
+    schemaVersion: 3,
     sourceRepositorySha,
     itx: {
       coverageContract: embeddedBytes(candidate.networkEdgeEvidence.itxCoverageContract.path, coverageContractBytes, "ITX coverage contract"),
@@ -374,7 +375,7 @@ export function readCurrentSourceSetHandoff(bytes, { sourceRepositorySha, produc
 
 function validateHandoffPayload(payload, { sourceRepositorySha, producerSha, operationId }) {
   assertKeys(payload, ["artifactKind", "candidate", "composite", "evidence", "fanIn", "itx", "mobile", "operationId", "ownership", "producerSha", "protectedOutputs", "repository", "releaseRequest", "schemaVersion", "sourceRepositorySha", "verifiedInputs"], "source-set handoff payload");
-  if (payload.schemaVersion !== 2 || payload.artifactKind !== "current-source-set-handoff" || payload.repository !== REPOSITORY
+  if (payload.schemaVersion !== 3 || payload.artifactKind !== "current-source-set-handoff" || payload.repository !== REPOSITORY
     || payload.sourceRepositorySha !== sourceRepositorySha || payload.producerSha !== producerSha || payload.operationId !== operationId) throw new Error("source-set handoff identity mismatch");
   assertKeys(payload.releaseRequest, ["approvalId", "candidateId", "sha256"], "source-set release request");
   if (requiredString(payload.releaseRequest.approvalId, "release request approval ID") !== payload.releaseRequest.approvalId
@@ -386,29 +387,31 @@ function validateHandoffPayload(payload, { sourceRepositorySha, producerSha, ope
   }
   validateHandoffObject(payload.composite.object, sourceRepositorySha, operationId, "bundles", "source-set composite object");
   validateHandoffObject(payload.composite.providerObject, sourceRepositorySha, operationId, "provider-collections", "source-set provider object");
-  assertKeys(payload.fanIn, ["components", "kind", "path", "sha256", "sourceSetSha256"], "source-set fan-in");
+  assertKeys(payload.fanIn, ["components", "currentCandidateSourceSetSha256", "evidenceSourceSetSha256", "kind", "path", "sha256"], "source-set fan-in");
   if (payload.fanIn.kind !== CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_KIND || payload.fanIn.path !== CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH
-    || !SHA256.test(payload.fanIn.sha256 ?? "") || !SHA256.test(payload.fanIn.sourceSetSha256 ?? "")) throw new Error("source-set fan-in digest mismatch");
+    || !SHA256.test(payload.fanIn.sha256 ?? "") || !SHA256.test(payload.fanIn.currentCandidateSourceSetSha256 ?? "")
+    || !SHA256.test(payload.fanIn.evidenceSourceSetSha256 ?? "")
+    || payload.fanIn.currentCandidateSourceSetSha256 === payload.fanIn.evidenceSourceSetSha256) throw new Error("source-set fan-in digest mismatch");
   validateCurrentCapitalLiveChainFanInBoundary({
     artifactKind: "current-capital-live-chain-fan-in",
     components: payload.fanIn.components,
-    currentCandidateSourceSetSha256: payload.fanIn.sourceSetSha256,
-    evidenceSourceSetSha256: payload.fanIn.sourceSetSha256,
+    currentCandidateSourceSetSha256: payload.fanIn.currentCandidateSourceSetSha256,
+    evidenceSourceSetSha256: payload.fanIn.evidenceSourceSetSha256,
     kind: payload.fanIn.kind,
-    schemaVersion: 1,
+    schemaVersion: 2,
   });
   const reconstructedFanInBytes = Buffer.from(canonicalCurrentCapitalLiveChainFanInBoundaryJson({
     artifactKind: "current-capital-live-chain-fan-in",
     components: payload.fanIn.components,
-    currentCandidateSourceSetSha256: payload.fanIn.sourceSetSha256,
-    evidenceSourceSetSha256: payload.fanIn.sourceSetSha256,
+    currentCandidateSourceSetSha256: payload.fanIn.currentCandidateSourceSetSha256,
+    evidenceSourceSetSha256: payload.fanIn.evidenceSourceSetSha256,
     kind: payload.fanIn.kind,
-    schemaVersion: 1,
+    schemaVersion: 2,
   }));
   if (payload.fanIn.sha256 !== sha256(reconstructedFanInBytes)) throw new Error("source-set fan-in sha256 mismatch");
   assertKeys(payload.candidate, ["candidateId", "sourceSnapshotSetHash", "sourceSnapshots"], "source-set candidate");
   if (requiredString(payload.candidate.candidateId, "candidate ID") !== payload.candidate.candidateId
-    || !SHA256.test(payload.candidate.sourceSnapshotSetHash ?? "") || payload.candidate.sourceSnapshotSetHash !== payload.fanIn.sourceSetSha256
+    || !SHA256.test(payload.candidate.sourceSnapshotSetHash ?? "") || payload.candidate.sourceSnapshotSetHash !== payload.fanIn.currentCandidateSourceSetSha256
     || !Array.isArray(payload.candidate.sourceSnapshots) || payload.candidate.sourceSnapshots.length === 0) throw new Error("source-set candidate mismatch");
   const sourceIds = new Set(); const snapshotIds = new Set();
   for (const source of payload.candidate.sourceSnapshots) {
@@ -447,10 +450,11 @@ function validateEmbeddedHandoff(payload) {
   };
   const expectedFanIn = {
     components: composite.boundary.components,
+    currentCandidateSourceSetSha256: composite.boundary.currentCandidateSourceSetSha256,
+    evidenceSourceSetSha256: composite.boundary.evidenceSourceSetSha256,
     kind: composite.boundary.kind,
     path: bundle.boundary.path,
     sha256: sha256(composite.boundaryBytes),
-    sourceSetSha256: composite.boundary.currentCandidateSourceSetSha256,
   };
   const expectedCandidate = {
     candidateId: candidate.candidateId,
@@ -555,7 +559,7 @@ function validateEvidence(evidence, payload) {
   assertKeys(evidence.exit, ["admissionReceiptSha256", "admissionSha256", "candidateId", "normalizedSha256", "snapshotId", "sourceId", "sourceSnapshotSetHash"], "source-set EXIT evidence");
   if (evidence.exit.admissionReceiptSha256 !== payload.fanIn.components.exitAdmissionOciReceipt.sha256
     || evidence.exit.admissionSha256 !== payload.fanIn.components.exitAdmission.sha256 || evidence.exit.normalizedSha256 !== payload.fanIn.components.exitNormalized.sha256
-    || evidence.exit.candidateId !== payload.candidate.candidateId || evidence.exit.sourceSnapshotSetHash !== payload.candidate.sourceSnapshotSetHash
+    || evidence.exit.candidateId !== payload.candidate.candidateId || evidence.exit.sourceSnapshotSetHash !== payload.fanIn.evidenceSourceSetSha256
     || typeof evidence.exit.sourceId !== "string" || evidence.exit.sourceId === "" || typeof evidence.exit.snapshotId !== "string" || evidence.exit.snapshotId === "") throw new Error("source-set EXIT evidence mismatch");
 }
 
