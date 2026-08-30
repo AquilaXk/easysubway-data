@@ -2318,13 +2318,21 @@ async function acquireActivationLock(repositoryRoot) {
   };
 }
 
-function validateOutputs(outputs) {
+function validateOutputs(outputs, approvedItxTopologyEvidencePath = null) {
   if (!Array.isArray(outputs) || outputs.length === 0) {
     throw new Error("activation outputs are required");
   }
+  if (approvedItxTopologyEvidencePath != null
+    && !/^tools\/datapack\/itx-cheongchun-topology-evidence-[0-9]{17}\.json$/u
+      .test(approvedItxTopologyEvidencePath)) {
+    throw new Error("approved ITX topology evidence output path is invalid");
+  }
   const seen = new Set();
   return outputs.map((output) => {
-    if (!output || !isAllowedActivationOutput(output.relativePath) || seen.has(output.relativePath)) {
+    if (!output
+      || (!isAllowedActivationOutput(output.relativePath)
+        && output.relativePath !== approvedItxTopologyEvidencePath)
+      || seen.has(output.relativePath)) {
       throw new Error(`activation output is not allowed or is duplicated: ${output?.relativePath ?? ""}`);
     }
     if (!Buffer.isBuffer(output.bytes)) {
@@ -2360,13 +2368,14 @@ async function stageOutputs(repositoryRoot, transactionDirectory, outputs) {
   return records;
 }
 
-function validateJournal(journal, outputCount) {
+function validateJournal(journal, outputCount, approvedItxTopologyEvidencePath = null) {
   if (!journal || journal.schemaVersion !== 1 || journal.state !== "PREPARED"
     || !Array.isArray(journal.records) || journal.records.length !== outputCount) {
     throw new Error("current source activation journal is invalid");
   }
   for (const record of journal.records) {
-    if (!isAllowedActivationOutput(record.relativePath)
+    if ((!isAllowedActivationOutput(record.relativePath)
+      && record.relativePath !== approvedItxTopologyEvidencePath)
       || typeof record.existed !== "boolean"
       || !SHA256.test(record.expectedSha256 ?? "")
       || (record.existed && (!SHA256.test(record.originalSha256 ?? "") || typeof record.backupPath !== "string"))
@@ -2398,9 +2407,10 @@ export async function commitCurrentSourceActivation({
   outputs,
   validate,
   replace = replaceAtomically,
+  approvedItxTopologyEvidencePath = null,
 }) {
   const root = path.resolve(repositoryRoot);
-  const checkedOutputs = validateOutputs(outputs);
+  const checkedOutputs = validateOutputs(outputs, approvedItxTopologyEvidencePath);
   if (typeof validate !== "function") throw new TypeError("activation validation callback is required");
   const releaseLock = await acquireActivationLock(root);
   const journalPath = path.join(root, "tools/datapack/.current-source-activation-transaction.json");
@@ -2417,7 +2427,7 @@ export async function commitCurrentSourceActivation({
       transactionDirectory: path.relative(root, transactionDirectory),
       records,
     };
-    validateJournal(journal, checkedOutputs.length);
+    validateJournal(journal, checkedOutputs.length, approvedItxTopologyEvidencePath);
     await writeDurably(journalPath, Buffer.from(`${JSON.stringify(journal)}\n`));
     await syncDirectory(path.dirname(journalPath));
     for (const output of checkedOutputs) {
@@ -2922,6 +2932,9 @@ export async function generateCurrentCapitalTopologyRefresh({
         repositoryRoot: root,
         outputs,
         validate: validateOutputBytes,
+        approvedItxTopologyEvidencePath: approvedItxBootstrap
+          ? selectedItxTopologyEvidencePath
+          : null,
       });
     }
     return {

@@ -2524,6 +2524,35 @@ test("topology refresh는 obsolete source-separated topology output을 원자 co
   }
 });
 
+test("approved ITX bootstrap transaction은 exact derived evidence path만 원자 commit한다", async (context) => {
+  const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "approved-itx-transaction-"));
+  context.after(() => rm(repositoryRoot, { recursive: true, force: true }));
+  const relativePath =
+    "tools/datapack/itx-cheongchun-topology-evidence-20260830151508786.json";
+  const bytes = Buffer.from("approved evidence\n");
+  await mkdir(path.join(repositoryRoot, "tools/datapack"), { recursive: true });
+
+  await commitCurrentSourceActivation({
+    repositoryRoot,
+    outputs: [{ relativePath, bytes }],
+    approvedItxTopologyEvidencePath: relativePath,
+    validate: async () => {
+      assert.deepEqual(await readFile(path.join(repositoryRoot, relativePath)), bytes);
+    },
+  });
+  assert.deepEqual(await readFile(path.join(repositoryRoot, relativePath)), bytes);
+
+  await assert.rejects(commitCurrentSourceActivation({
+    repositoryRoot,
+    outputs: [{
+      relativePath: "tools/datapack/itx-cheongchun-topology-evidence.json",
+      bytes,
+    }],
+    approvedItxTopologyEvidencePath: relativePath,
+    validate: async () => {},
+  }), /activation output is not allowed/);
+});
+
 test("check mode는 builder code가 같은 output-only descendant만 수용한다", async (context) => {
   const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "current-source-builder-"));
   context.after(() => rm(repositoryRoot, { recursive: true, force: true }));
