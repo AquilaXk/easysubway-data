@@ -1211,7 +1211,10 @@ function replaceIncheonCanonicalSlice(canonical, projected, {
   const projectedTopologyScope = new Set(topologyStationLines.map(({ stationId, lineId }) => `${stationId}:${lineId}`));
   if (topologyOwnedLineIds.size === 0 || topologyScope.size === 0
     || projectedTopologyScope.size !== topologyStationLines.length
-    || !isDeepStrictEqual([...projectedTopologyScope].sort(), [...topologyScope].sort())) {
+    || !isDeepStrictEqual(
+      [...projectedTopologyScope].sort(codepointCompare),
+      [...topologyScope].sort(codepointCompare),
+    )) {
     throw new Error("Incheon canonical topology stationLines identity is invalid");
   }
   replace("stationLines", ({ stationId, lineId }) => (
