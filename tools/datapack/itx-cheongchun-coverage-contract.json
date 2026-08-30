@@ -263,9 +263,9 @@
       "artifactId": "itx-cheongchun-completeness-admission-20260714T083544292Z",
       "topologyInputPackIdentity": {
         "id": "capital",
-        "sha256": "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
-        "sqliteSha256": "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5",
-        "byteSize": 1463745
+        "sha256": "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a",
+        "sqliteSha256": "bba39f717671c82278a44d0be731801c41d90b7a92dd11a9f184e6ec0f55da98",
+        "byteSize": 388623
       },
       "selectedServiceDates": {
         "7": "20260718",
@@ -324,9 +324,9 @@
         "artifactKind": "station-catalog-pack",
         "manifestVersion": 1,
         "catalogPackId": "itx-current-station-catalog-v1",
-        "stationSetSha256": "d2cef87aa1eeee23a50ac94d7e784f432101e9d8936331152981dcaeb8d25dd9",
-        "payloadSha256": "a7726c83e9637b0008000579ad74e329495ac0928e673bcb8ccac1deaeedc8a4",
-        "manifestSha256": "0cea5ac4d07ce3a09232eb7dd53a0d2b59f423ad10ef97c8a4db233c873737b5"
+        "stationSetSha256": "bcbbb7f738a7ca2f581ac571574d88499a988d038cdc71ba79ef1936d60e9b6c",
+        "payloadSha256": "d916d16b77af9fae81ce26d4cabb299a6a4e15ea7be9cd2d9c1130f95803e788",
+        "manifestSha256": "d7c569ed24ff7e35a0edd57e7aab5234fdf4b170c48ece4d7c06aa5824d5828d"
       }
     }
   },
@@ -348,7 +348,7 @@
   },
   "freshness": {
     "status": "MISSING",
-    "nextReviewAt": "2026-08-31T00:00:00+09:00",
+    "nextReviewAt": "2026-09-07T00:00:00+09:00",
     "eventTrigger": "Korail station row 시각 값 제공 또는 다른 공식 station-level timetable 발견"
   },
   "claimGate": {
@@ -365,20 +365,20 @@
   "sourceTimetableArtifact": {
     "status": "ADMITTED",
     "admissionEligible": true,
-    "artifactId": "itx-cheongchun-source-timetable-20260824170958799",
-    "artifactPath": "tools/datapack/sources/itx-cheongchun-source-timetable-20260824170958799.json",
-    "sha256": "f3f00e6f99862ddf1c6964d09a220169f29a85181f420f30e20428f2bee835ab",
-    "completenessEvidencePath": "tools/datapack/sources/itx-cheongchun-source-timetable-20260824170958799-completeness-evidence.json",
-    "completenessEvidenceSha256": "e62f37eabfb6786d8f0491d9085d70f05b90a9c6302c6fc2d98bd7baf12c223d",
+    "artifactId": "itx-cheongchun-source-timetable-20260830151508786",
+    "artifactPath": "tools/datapack/sources/itx-cheongchun-source-timetable-20260830151508786.json",
+    "sha256": "7bff64ecf229a31e64817bd3315a95bc965c20cbe0aa88d788e59b9fd6d5789e",
+    "completenessEvidencePath": "tools/datapack/sources/itx-cheongchun-source-timetable-20260830151508786-completeness-evidence.json",
+    "completenessEvidenceSha256": "8de0421d34e50a57c91d1ed0304bfb78608a357d9184675c1a56e413ed98b12a",
     "schemaVersion": 1,
-    "freshUntil": "2026-08-31T00:00:00+09:00",
+    "freshUntil": "2026-09-07T00:00:00+09:00",
     "policyVersion": "itx-snapshot-anomaly-v1",
     "promotion": {
       "mode": "CURRENT_CANDIDATE_OWNER_APPROVED",
-      "previousArtifactSha256": "2a11bb723310744d6f3ffc084b5a5219367ae209a6c7e65289dab8a5520f9a26",
-      "previousArtifactPath": "tools/datapack/sources/itx-cheongchun-source-timetable-20260812165525800.json",
-      "approvalUrl": "https://github.com/AquilaXk/easysubway-data/issues/96#issuecomment-5403832794",
-      "approvedArtifactSha256": "f3f00e6f99862ddf1c6964d09a220169f29a85181f420f30e20428f2bee835ab"
+      "previousArtifactSha256": "f3f00e6f99862ddf1c6964d09a220169f29a85181f420f30e20428f2bee835ab",
+      "previousArtifactPath": "tools/datapack/sources/itx-cheongchun-source-timetable-20260824170958799.json",
+      "approvalUrl": "https://github.com/AquilaXk/easysubway-data/issues/636#issuecomment-5469639706",
+      "approvedArtifactSha256": "7bff64ecf229a31e64817bd3315a95bc965c20cbe0aa88d788e59b9fd6d5789e"
     }
   }
 }

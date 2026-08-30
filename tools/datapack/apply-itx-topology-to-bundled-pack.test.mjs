@@ -62,6 +62,12 @@ const admittedTopologyInputs = new Map([
     sqliteSha256: "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5",
     byteSize: 1463745,
   }],
+  ["7bff64ecf229a31e64817bd3315a95bc965c20cbe0aa88d788e59b9fd6d5789e", {
+    id: "capital",
+    sha256: "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a",
+    sqliteSha256: "bba39f717671c82278a44d0be731801c41d90b7a92dd11a9f184e6ec0f55da98",
+    byteSize: 388623,
+  }],
 ]);
 
 async function trackedLegacyDocuments() {
