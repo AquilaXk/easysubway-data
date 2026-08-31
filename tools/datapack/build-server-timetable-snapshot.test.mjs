@@ -393,7 +393,9 @@ test("접근성 source snapshot의 lineage와 governance 값을 그대로 materi
   }
   const parentStatement = result.sql.split("\n")
     .find((line) => line.includes(`SELECT '${parent.snapshotId}'`));
-  assert.match(parentStatement, /, '2026-07-15', '[a-f0-9]{64}' WHERE/);
+  assert.match(parentStatement, new RegExp(
+    `, '${parent.governancePolicyVersion}', '${parent.governancePolicySha256}' WHERE`,
+  ));
 });
 
 test("접근성 evidence identity는 실제 materialization 입력에만 결합한다", async () => {
