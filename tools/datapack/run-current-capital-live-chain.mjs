@@ -14,6 +14,7 @@ import {
   canonicalCurrentCapitalLiveChainFanInBoundaryJson,
   readCurrentCapitalLiveChainFanInBoundary,
 } from "./build-current-capital-live-chain-boundary.mjs";
+import { buildCurrentCapitalLiveChainProviderObject } from "./build-current-capital-live-chain-oci-plan.mjs";
 import { buildCurrentKricExitProviderOciPlan, canonicalCurrentKricExitProviderOciPlanJson } from "./build-current-kric-exit-provider-oci-plan.mjs";
 import { canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-current-capital-facility-source-admission.mjs";
 import { buildCurrentExitAdmissionOciReceipt, buildCurrentExitReboundAdmissionOciReceipt, canonicalCurrentExitAdmissionOciReceiptJson, canonicalCurrentExitReboundAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
@@ -764,6 +765,8 @@ export async function runCurrentCapitalExitOnlyProducer({ repositoryRoot, runner
     "tools/datapack/release/current-capital-facility-source-admission.json",
     "tools/datapack/release/source-snapshots.json",
     "tools/datapack/source-inventory.json",
+    "tools/datapack/release/release-request.json",
+    "tools/datapack/release/hash-evidence.json",
   ]);
   const actualFacilityPaths = String(facilityPaths).split("\n").filter(Boolean);
   if (!requiredFacilityPaths.isSubsetOf(new Set(actualFacilityPaths))

@@ -21,7 +21,8 @@ function canonical(value) {
 }
 
 function exactKeys(value, keys, label) {
-  if (!value || typeof value !== "object" || Array.isArray(value) || canonical(Object.keys(value).sort()) !== canonical([...keys].sort())) throw new Error(`${label} mismatch`);
+  const compare = (left, right) => left.localeCompare(right, "en");
+  if (!value || typeof value !== "object" || Array.isArray(value) || canonical(Object.keys(value).sort(compare)) !== canonical([...keys].sort(compare))) throw new Error(`${label} mismatch`);
 }
 
 function parseProviderBundle(bytes) {

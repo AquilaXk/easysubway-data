@@ -6,8 +6,9 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
+  actions: read
+  contents: read
+  pull-requests: read
 
 concurrency:
   group: kric-exit-full-capital-refresh-${{ github.workflow }}-${{ github.ref }}
@@ -17,6 +18,10 @@ jobs:
   source:
     name: Produce immutable EXIT source
     if: ${{ github.ref == 'refs/heads/main' }}
+    permissions:
+      actions: read
+      contents: write
+      pull-requests: read
     runs-on: ubuntu-latest
     environment: datapack-release-check
     timeout-minutes: 45
@@ -27,6 +32,7 @@ jobs:
       exit_branch: ${{ steps.source-outputs.outputs.exit_branch }}
       producer_run_id: ${{ steps.source-outputs.outputs.producer_run_id }}
       main_sha: ${{ steps.source-outputs.outputs.main_sha }}
+      claim_sha: ${{ steps.source-outputs.outputs.claim_sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -78,8 +84,10 @@ jobs:
           [[ "${head_sha}" =~ ^[a-f0-9]{40}$ ]] || { echo "FACILITY head is invalid" >&2; exit 1; }
           git fetch --no-tags origin "refs/heads/${branch}:refs/remotes/origin/${branch}"
           [[ "$(git rev-parse "origin/${branch}")" == "${head_sha}" ]] || { echo "FACILITY remote head changed" >&2; exit 1; }
-          printf 'EXIT_REFRESH_FACILITY_BRANCH=%s\n' "${branch}" >> "${GITHUB_ENV}"
-          printf 'EXIT_REFRESH_FACILITY_HEAD_SHA=%s\n' "${head_sha}" >> "${GITHUB_ENV}"
+          {
+            printf 'EXIT_REFRESH_FACILITY_BRANCH=%s\n' "${branch}"
+            printf 'EXIT_REFRESH_FACILITY_HEAD_SHA=%s\n' "${head_sha}"
+          } >> "${GITHUB_ENV}"
 
       - name: Create durable claim before provider access
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
@@ -93,13 +101,17 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "${branch}"
           git commit --allow-empty -m "Claim KRIC EXIT full-capital refresh"
+          claim_sha="$(git rev-parse HEAD)"
           gh auth setup-git
           git push origin "${branch}"
           git switch main
           [[ "$(git rev-parse HEAD)" == "${main_sha}" ]] || { echo "EXIT producer is not on claimed main" >&2; exit 1; }
-          printf 'EXIT_REFRESH_BRANCH=%s\n' "${branch}" >> "${GITHUB_ENV}"
-          printf 'EXIT_REFRESH_MAIN_SHA=%s\n' "${main_sha}" >> "${GITHUB_ENV}"
-          printf 'EXIT_REFRESH_PRODUCER_RUN_ID=%s\n' "${GITHUB_RUN_ID}" >> "${GITHUB_ENV}"
+          {
+            printf 'EXIT_REFRESH_BRANCH=%s\n' "${branch}"
+            printf 'EXIT_REFRESH_MAIN_SHA=%s\n' "${main_sha}"
+            printf 'EXIT_REFRESH_CLAIM_SHA=%s\n' "${claim_sha}"
+            printf 'EXIT_REFRESH_PRODUCER_RUN_ID=%s\n' "${GITHUB_RUN_ID}"
+          } >> "${GITHUB_ENV}"
 
       - name: Validate provider and OCI configuration
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
@@ -119,6 +131,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$(git branch --show-current)" == "main" && "$(git rev-parse HEAD)" == "${EXIT_REFRESH_MAIN_SHA}" ]] || { echo "EXIT producer is not on exact main" >&2; exit 1; }
+          # shellcheck disable=SC2016
           node --input-type=module -e '
             import { runCurrentCapitalExitOnlyProducer } from "./tools/datapack/run-current-capital-live-chain.mjs";
             await runCurrentCapitalExitOnlyProducer({
@@ -154,9 +167,11 @@ jobs:
           producer_run_id="${branch##*-}"
           [[ "${producer_run_id}" =~ ^[0-9]+$ ]] || { echo "EXIT claim run identity is invalid" >&2; exit 1; }
           git fetch --no-tags origin "refs/heads/${branch}:refs/remotes/origin/${branch}"
+          claim_sha="$(git rev-parse "origin/${branch}")"
           producer_main_sha="$(git rev-parse "origin/${branch}^")"
           run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${producer_run_id}")"
           jobs_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${producer_run_id}/jobs?filter=all&per_page=100")"
+          # shellcheck disable=SC2016
           RUN_JSON="${run_json}" JOBS_JSON="${jobs_json}" PRODUCER_RUN_ID="${producer_run_id}" EXIT_REFRESH_MAIN_SHA="${producer_main_sha}" node --input-type=module -e '
             const run = JSON.parse(process.env.RUN_JSON);
             const jobs = JSON.parse(process.env.JOBS_JSON)?.jobs?.filter((job) => job?.name === "Produce immutable EXIT source") ?? [];
@@ -167,6 +182,7 @@ jobs:
           gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${producer_run_id}/artifacts?name=${artifact_name}&per_page=100" > "${artifacts}"
           node tools/ci/require-workflow-artifact.mjs "${artifacts}" "${artifact_name}" "${producer_run_id}" "${producer_main_sha}"
           gh run download "${producer_run_id}" --repo "${GITHUB_REPOSITORY}" --name "${artifact_name}" --dir "${EXIT_REFRESH_OPERATION_ROOT}/source-handoff"
+          # shellcheck disable=SC2016
           EXIT_REFRESH_SOURCE_HANDOFF="${EXIT_REFRESH_OPERATION_ROOT}/source-handoff" node --input-type=module -e '
             import { lstat, readFile, readdir } from "node:fs/promises";
             import path from "node:path";
@@ -182,21 +198,27 @@ jobs:
             const value = JSON.parse(handoffBytes); const plan = JSON.parse(planBytes); const receipt = JSON.parse(receiptBytes);
             if (!handoffBytes.equals(Buffer.from(`${canonicalCurrentCapitalExitProviderSourceHandoffJson(value)}\n`)) || !planBytes.equals(Buffer.from(`${canonicalCurrentKricExitProviderOciPlanJson(plan)}\n`)) || !receiptBytes.equals(Buffer.from(`${canonicalCurrentKricExitProviderOciReceiptJson(receipt, { planBytes })}\n`)) || value.sourceProviderOciPlanSha256 !== createHash("sha256").update(planBytes).digest("hex") || value.sourceProviderOciReceiptSha256 !== createHash("sha256").update(receiptBytes).digest("hex") || plan.mainSha !== value.sourceMainSha || plan.operationId !== value.sourceOperationId || receipt.mainSha !== value.sourceMainSha || receipt.operationId !== value.sourceOperationId) throw new Error("producer artifact cross-digest mismatch");
           '
-          printf 'EXIT_REFRESH_MAIN_SHA=%s\n' "${producer_main_sha}" >> "${GITHUB_ENV}"
-          printf 'EXIT_REFRESH_BRANCH=%s\n' "${branch}" >> "${GITHUB_ENV}"
-          printf 'EXIT_REFRESH_PRODUCER_RUN_ID=%s\n' "${producer_run_id}" >> "${GITHUB_ENV}"
+          {
+            printf 'EXIT_REFRESH_MAIN_SHA=%s\n' "${producer_main_sha}"
+            printf 'EXIT_REFRESH_BRANCH=%s\n' "${branch}"
+            printf 'EXIT_REFRESH_CLAIM_SHA=%s\n' "${claim_sha}"
+            printf 'EXIT_REFRESH_PRODUCER_RUN_ID=%s\n' "${producer_run_id}"
+          } >> "${GITHUB_ENV}"
 
       - name: Export immutable source identity
         id: source-outputs
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'RECOVER_CLAIM' }}
         run: |
           set -euo pipefail
-          printf 'state=%s\n' "${{ steps.decision.outputs.state }}" >> "${GITHUB_OUTPUT}"
-          printf 'facility_branch=%s\n' "${EXIT_REFRESH_FACILITY_BRANCH}" >> "${GITHUB_OUTPUT}"
-          printf 'facility_head_sha=%s\n' "${EXIT_REFRESH_FACILITY_HEAD_SHA}" >> "${GITHUB_OUTPUT}"
-          printf 'exit_branch=%s\n' "${EXIT_REFRESH_BRANCH}" >> "${GITHUB_OUTPUT}"
-          printf 'producer_run_id=%s\n' "${EXIT_REFRESH_PRODUCER_RUN_ID}" >> "${GITHUB_OUTPUT}"
-          printf 'main_sha=%s\n' "${EXIT_REFRESH_MAIN_SHA}" >> "${GITHUB_OUTPUT}"
+          {
+            printf 'state=%s\n' "${{ steps.decision.outputs.state }}"
+            printf 'facility_branch=%s\n' "${EXIT_REFRESH_FACILITY_BRANCH}"
+            printf 'facility_head_sha=%s\n' "${EXIT_REFRESH_FACILITY_HEAD_SHA}"
+            printf 'exit_branch=%s\n' "${EXIT_REFRESH_BRANCH}"
+            printf 'producer_run_id=%s\n' "${EXIT_REFRESH_PRODUCER_RUN_ID}"
+            printf 'main_sha=%s\n' "${EXIT_REFRESH_MAIN_SHA}"
+            printf 'claim_sha=%s\n' "${EXIT_REFRESH_CLAIM_SHA}"
+          } >> "${GITHUB_OUTPUT}"
 
       - name: Upload refresh decision
         if: ${{ always() }}
@@ -211,6 +233,9 @@ jobs:
     name: Commit verified EXIT terminal candidate
     needs: source
     if: ${{ needs.source.outputs.state == 'DUE' || needs.source.outputs.state == 'EXPIRED' || needs.source.outputs.state == 'RECOVER_CLAIM' }}
+    permissions:
+      actions: read
+      contents: write
     runs-on: ubuntu-latest
     environment: datapack-release-check
     timeout-minutes: 30
@@ -229,12 +254,15 @@ jobs:
           set -euo pipefail
           operation_root="${RUNNER_TEMP}/kric-exit-full-capital-refresh/${GITHUB_RUN_ID}"
           mkdir -p "${operation_root}"
-          printf 'EXIT_REFRESH_OPERATION_ROOT=%s\n' "${operation_root}" >> "${GITHUB_ENV}"
-          printf 'EXIT_REFRESH_FACILITY_BRANCH=%s\n' "${{ needs.source.outputs.facility_branch }}" >> "${GITHUB_ENV}"
-          printf 'EXIT_REFRESH_FACILITY_HEAD_SHA=%s\n' "${{ needs.source.outputs.facility_head_sha }}" >> "${GITHUB_ENV}"
-          printf 'EXIT_REFRESH_BRANCH=%s\n' "${{ needs.source.outputs.exit_branch }}" >> "${GITHUB_ENV}"
-          printf 'EXIT_REFRESH_PRODUCER_RUN_ID=%s\n' "${{ needs.source.outputs.producer_run_id }}" >> "${GITHUB_ENV}"
-          printf 'EXIT_REFRESH_MAIN_SHA=%s\n' "${{ needs.source.outputs.main_sha }}" >> "${GITHUB_ENV}"
+          {
+            printf 'EXIT_REFRESH_OPERATION_ROOT=%s\n' "${operation_root}"
+            printf 'EXIT_REFRESH_FACILITY_BRANCH=%s\n' "${{ needs.source.outputs.facility_branch }}"
+            printf 'EXIT_REFRESH_FACILITY_HEAD_SHA=%s\n' "${{ needs.source.outputs.facility_head_sha }}"
+            printf 'EXIT_REFRESH_BRANCH=%s\n' "${{ needs.source.outputs.exit_branch }}"
+            printf 'EXIT_REFRESH_PRODUCER_RUN_ID=%s\n' "${{ needs.source.outputs.producer_run_id }}"
+            printf 'EXIT_REFRESH_MAIN_SHA=%s\n' "${{ needs.source.outputs.main_sha }}"
+            printf 'EXIT_REFRESH_CLAIM_SHA=%s\n' "${{ needs.source.outputs.claim_sha }}"
+          } >> "${GITHUB_ENV}"
 
       - name: Download immutable EXIT source handoff
         env:
@@ -258,6 +286,7 @@ jobs:
           node "${GITHUB_WORKSPACE}/tools/datapack/recover-current-live-chain-transfer-observation.mjs" \
             --repository-root "${transfer_source_root}" \
             --recovery-root "${EXIT_REFRESH_OPERATION_ROOT}/transfer"
+          # shellcheck disable=SC2016
           node --input-type=module -e '
             import { execFile } from "node:child_process";
             import { readFile, writeFile } from "node:fs/promises";
@@ -267,7 +296,7 @@ jobs:
             const handoff = `${process.env.EXIT_REFRESH_OPERATION_ROOT}/source-handoff`;
             const result = await runCurrentCapitalExitTerminalConsumer({
               repositoryRoot: process.env.GITHUB_WORKSPACE, runnerTemp: process.env.RUNNER_TEMP, repository: process.env.GITHUB_REPOSITORY,
-              candidateOperationId: `kric-exit-full-capital-refresh-${process.env.EXIT_REFRESH_PRODUCER_RUN_ID}`,
+              candidateOperationId: `kric-exit-full-capital-terminal-${process.env.GITHUB_RUN_ID}`,
               operationNow: new Date(), sourceReceiptBytes: await readFile(`${handoff}/current-capital-exit-provider-source-handoff.json`),
               providerOciPlanBytes: await readFile(`${handoff}/current-kric-exit-provider-oci-plan.json`), providerOciReceiptBytes: await readFile(`${handoff}/current-kric-exit-provider-oci-receipt.json`),
               transferObservationDirectory: `${process.env.EXIT_REFRESH_OPERATION_ROOT}/transfer/observation`, transferReceiptPath: `${process.env.EXIT_REFRESH_OPERATION_ROOT}/transfer/receipt.json`,
@@ -282,7 +311,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # shellcheck disable=SC2016
           staged_root="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.env.EXIT_REFRESH_OPERATION_ROOT + "/terminal-result.json", "utf8")).stagedRoot)')"
+          # shellcheck disable=SC2016
           mapfile -t outputs < <(EXIT_REFRESH_STAGED_ROOT="${staged_root}" node --input-type=module -e '
             import { readFile } from "node:fs/promises";
             import { currentCapitalLiveChainOutputPaths } from "./tools/datapack/build-current-capital-live-chain-bundle.mjs";
@@ -313,7 +344,22 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Refresh KRIC EXIT full-capital snapshot"
+          gh auth setup-git
           git push origin "${EXIT_REFRESH_FACILITY_BRANCH}"
+
+      - name: Retire completed durable claim
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "${EXIT_REFRESH_BRANCH}" =~ ^automation/6-kric-exit-full-capital-refresh-[0-9]+$ ]] || { echo "EXIT claim branch is invalid" >&2; exit 1; }
+          [[ "${EXIT_REFRESH_CLAIM_SHA}" =~ ^[a-f0-9]{40}$ ]] || { echo "EXIT claim SHA is invalid" >&2; exit 1; }
+          remote_claim="$(git ls-remote --heads origin "refs/heads/${EXIT_REFRESH_BRANCH}")"
+          IFS=$'\t' read -r remote_claim_sha remote_claim_ref <<< "${remote_claim}"
+          [[ "${remote_claim_sha}" == "${EXIT_REFRESH_CLAIM_SHA}" ]] || { echo "EXIT claim SHA changed" >&2; exit 1; }
+          [[ "${remote_claim_ref}" == "refs/heads/${EXIT_REFRESH_BRANCH}" ]] || { echo "EXIT claim ref changed" >&2; exit 1; }
+          gh auth setup-git
+          git push origin --delete "${EXIT_REFRESH_BRANCH}"
 
       - name: Remove disposable transfer worktree
         if: ${{ always() }}

@@ -12,6 +12,9 @@ test("EXIT refresh keeps exact-main OCI producer, immutable recovery, and select
   const yml = readFileSync(workflowPath, "utf8");
   assert.match(yml, /cron: "41 \*\/2 \* \* \*"/);
   assert.match(yml, /github\.ref == 'refs\/heads\/main'/);
+  assert.match(yml, /permissions:\n  actions: read\n  contents: read\n  pull-requests: read/);
+  assert.match(yml, /source:\n    name: Produce immutable EXIT source[\s\S]*?permissions:\n      actions: read\n      contents: write\n      pull-requests: read/);
+  assert.match(yml, /terminal:\n    name: Commit verified EXIT terminal candidate[\s\S]*?permissions:\n      actions: read\n      contents: write/);
   assert.match(yml, /decide-current-kric-exit-full-capital-refresh\.mjs/);
   assert.match(yml, /--json number,state,isDraft,headRefName,headRefOid,baseRefName,headRepository,isCrossRepository,files/);
   assert.match(yml, /runCurrentCapitalExitOnlyProducer/);
@@ -35,6 +38,7 @@ test("EXIT refresh keeps exact-main OCI producer, immutable recovery, and select
   assert.match(yml, /git worktree add --detach "\$\{transfer_source_root\}" "\$\{EXIT_REFRESH_FACILITY_HEAD_SHA\}"/);
   assert.match(yml, /git worktree remove --force "\$\{transfer_source_root\}"/);
   assert.match(yml, /runCurrentCapitalExitTerminalConsumer/);
+  assert.match(yml, /candidateOperationId: `kric-exit-full-capital-terminal-\$\{process\.env\.GITHUB_RUN_ID\}`/);
   assert.match(yml, /git fetch --no-tags origin "refs\/heads\/\$\{EXIT_REFRESH_FACILITY_BRANCH\}:refs\/remotes\/origin\/\$\{EXIT_REFRESH_FACILITY_BRANCH\}"/);
   assert.match(yml, /git switch --track -c "\$\{EXIT_REFRESH_FACILITY_BRANCH\}" "origin\/\$\{EXIT_REFRESH_FACILITY_BRANCH\}"/);
   assert.match(yml, /currentCapitalLiveChainOutputPaths/);
@@ -43,6 +47,11 @@ test("EXIT refresh keeps exact-main OCI producer, immutable recovery, and select
   assert.match(yml, /current-capital-accessibility-transition-successor\.json/);
   assert.match(yml, /git rm -- "\$\{markers\[@\]\}"/);
   assert.match(yml, /git commit -m "Refresh KRIC EXIT full-capital snapshot"/);
+  const terminalPush = yml.indexOf('git push origin "${EXIT_REFRESH_FACILITY_BRANCH}"');
+  assert.ok(terminalPush > yml.lastIndexOf("gh auth setup-git", terminalPush));
+  assert.match(yml, /\[\[ "\$\{remote_claim_sha\}" == "\$\{EXIT_REFRESH_CLAIM_SHA\}" \]\]/);
+  assert.match(yml, /git push origin --delete "\$\{EXIT_REFRESH_BRANCH\}"/);
+  assert.ok(yml.indexOf('git push origin --delete "${EXIT_REFRESH_BRANCH}"') > terminalPush);
   assert.doesNotMatch(yml, /gh pr create/);
   assert.doesNotMatch(yml, /aws|s3:|fallback|previous|stale|composite|legacy|automerge|approval|gh pr merge|git merge|git push origin main/i);
 });

@@ -76,6 +76,64 @@ test("EXIT-only producer refuses provider access without a validated same-reposi
   }), /validated same-repository FACILITY pull request is required/);
 });
 
+test("EXIT-only producer requires every fixed FACILITY release artifact", async () => {
+  const temporary = await mkdtemp(path.join(os.tmpdir(), "current-exit-producer-facility-paths-"));
+  const runnerTemp = path.join(temporary, "runner");
+  const handoffParent = path.join(temporary, "handoff-parent");
+  const required = [
+    "tools/datapack/release/candidate-build-spec.json",
+    "tools/datapack/release/current-capital-facility-source-admission.json",
+    "tools/datapack/release/source-snapshots.json",
+    "tools/datapack/source-inventory.json",
+    "tools/datapack/release/release-request.json",
+    "tools/datapack/release/hash-evidence.json",
+    "tools/datapack/sources/kric-station-convenience-standard-fixture.json",
+  ];
+  let reachedPlanning = false;
+  try {
+    await mkdir(runnerTemp); await mkdir(handoffParent);
+    await assert.rejects(runCurrentCapitalExitOnlyProducer({
+      repositoryRoot: ROOT,
+      runnerTemp,
+      handoffDirectory: path.join(handoffParent, "handoff"),
+      repository: "AquilaXk/easysubway-data",
+      repositorySha: "a".repeat(40),
+      operationId: "current-capital-647",
+      facilityPullRequest: {
+        repository: "AquilaXk/easysubway-data",
+        branch: "automation/629-kric-facility-refresh-123",
+        headSha: "b".repeat(40),
+      },
+      env: {
+        PATH: process.env.PATH,
+        KRIC_SERVICE_KEY: "test-key",
+        EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/test/n/axvym6vk8g7i/b/easysubway-datapacks/o/",
+      },
+      execFileImpl: async (_command, args) => {
+        const command = args.join(" ");
+        if (command === "remote get-url origin") return { stdout: "https://github.com/AquilaXk/easysubway-data.git\n" };
+        if (command === "rev-parse HEAD" || command === "rev-parse origin/main") return { stdout: `${"a".repeat(40)}\n` };
+        if (command === "branch --show-current") return { stdout: "main\n" };
+        if (command === "status --porcelain=v1 --untracked-files=all") return { stdout: "" };
+        if (command === "ls-remote --exit-code https://github.com/AquilaXk/easysubway-data.git refs/heads/main") return { stdout: `${"a".repeat(40)}\trefs/heads/main\n` };
+        if (command === "rev-parse refs/remotes/origin/automation/629-kric-facility-refresh-123") return { stdout: `${"b".repeat(40)}\n` };
+        if (command === `merge-base --is-ancestor ${"a".repeat(40)} ${"b".repeat(40)}`) return { stdout: "" };
+        if (command === `diff --name-only ${"a".repeat(40)} ${"b".repeat(40)}`) return { stdout: `${required.join("\n")}\n` };
+        if (args[0] === "tools/datapack/build-current-kric-exit-collection-plan.mjs") {
+          reachedPlanning = true;
+          throw new Error("producer planning reached");
+        }
+        throw new Error(`provider boundary must not start: ${command}`);
+      },
+      assertCurrentTopologyAdmissionImpl: async () => { throw new Error("producer planning reached"); },
+      publishImpl: async () => { throw new Error("OCI publication must not start"); },
+    }), /producer planning reached/);
+    assert.equal(reachedPlanning, true);
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
+});
+
 function terminalGitPreflight(command, args) {
   if (command !== "git") throw new Error("only terminal child scripts may execute outside git preflight");
   const key = args.join(" ");
