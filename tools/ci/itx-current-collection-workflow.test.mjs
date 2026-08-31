@@ -193,7 +193,8 @@ function priorRunFetch({ runs, jobsByRun = {} }) {
   return async (url) => {
     const request = new URL(url);
     if (request.pathname.endsWith("/runs")) {
-      return githubResponse({ total_count: runs.length, workflow_runs: runs });
+      const selected = request.pathname.includes("/itx-current-collection.yml/") ? runs : [];
+      return githubResponse({ total_count: selected.length, workflow_runs: selected });
     }
     const match = request.pathname.match(/\/actions\/runs\/(\d+)\/jobs$/);
     if (!match) return githubResponse({}, { ok: false, status: 404 });
@@ -202,7 +203,7 @@ function priorRunFetch({ runs, jobsByRun = {} }) {
   };
 }
 
-test("KST quota guard는 fresh window의 exact current run을 API 1회로 허용한다", async () => {
+test("KST quota guard는 fresh window의 exact current run과 자동 refresh ledger를 함께 확인한다", async () => {
   const { guardItxCurrentCollectionBudget } = await loadBudgetGuard();
   const calls = [];
   const result = await guardItxCurrentCollectionBudget({
@@ -210,7 +211,10 @@ test("KST quota guard는 fresh window의 exact current run을 API 1회로 허용
     now: new Date("2026-08-12T15:15:00.000Z"),
     async fetchImpl(url, options) {
       calls.push({ url, options });
-      return githubResponse({ total_count: 1, workflow_runs: [workflowRun(9001)] });
+      const request = new URL(url);
+      const runs = request.pathname.includes("/itx-current-collection.yml/")
+        ? [workflowRun(9001)] : [];
+      return githubResponse({ total_count: runs.length, workflow_runs: runs });
     },
   });
 
@@ -220,7 +224,7 @@ test("KST quota guard는 fresh window의 exact current run을 API 1회로 허용
     quotaWindow: "2026-08-13",
     otherRunCount: 0,
   });
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 3);
   const requestUrl = new URL(calls[0].url);
   assert.equal(requestUrl.origin, "https://api.github.com");
   assert.equal(requestUrl.pathname, "/repos/AquilaXk/easysubway-data/actions/workflows/itx-current-collection.yml/runs");
@@ -230,6 +234,28 @@ test("KST quota guard는 fresh window의 exact current run을 API 1회로 허용
   assert.equal(requestUrl.searchParams.get("created"), "2026-08-12T15:00:00.000Z..2026-08-13T14:59:59.999Z");
   assert.equal(calls[0].options.headers.authorization, "Bearer synthetic-github-token-that-must-not-leak");
   assert.doesNotMatch(calls[0].url, /synthetic-github-token/);
+});
+
+test("KST quota guard는 scheduled topology refresh의 exact current run을 허용한다", async () => {
+  const { guardItxCurrentCollectionBudget } = await loadBudgetGuard();
+  const result = await guardItxCurrentCollectionBudget({
+    env: budgetEnv({ GITHUB_EVENT_NAME: "schedule" }),
+    now: new Date("2026-08-12T15:15:00.000Z"),
+    async fetchImpl(url) {
+      const request = new URL(url);
+      const selected = request.pathname.includes("/current-capital-topology-refresh.yml/")
+        && request.searchParams.get("event") === "schedule"
+        ? [{
+            ...workflowRun(9001),
+            event: "schedule",
+            path: ".github/workflows/current-capital-topology-refresh.yml",
+          }]
+        : [];
+      return githubResponse({ total_count: selected.length, workflow_runs: selected });
+    },
+  });
+  assert.equal(result.runId, 9001);
+  assert.equal(result.otherRunCount, 0);
 });
 
 test("KST quota guard는 collector가 skipped인 same-window pre-provider failure를 소비로 세지 않는다", async () => {
@@ -255,7 +281,9 @@ test("KST quota guard는 all job attempts에서 earlier collector entry를 quota
       const request = new URL(url);
       calls.push(request);
       if (request.pathname.endsWith("/runs")) {
-        return githubResponse({ total_count: 2, workflow_runs: [workflowRun(9000), workflowRun(9001)] });
+        const runs = request.pathname.includes("/itx-current-collection.yml/")
+          ? [workflowRun(9000), workflowRun(9001)] : [];
+        return githubResponse({ total_count: runs.length, workflow_runs: runs });
       }
       assert.equal(request.pathname, "/repos/AquilaXk/easysubway-data/actions/runs/9000/jobs");
       if (request.searchParams.get("filter") === "all") {
@@ -300,16 +328,16 @@ test("KST quota guard는 same-window prior collector actual entry만 quota 소�
 test("KST quota guard는 current absent·duplicate·truncated run/job inventory를 fail closed한다", async () => {
   const { guardItxCurrentCollectionBudget } = await loadBudgetGuard();
   const fixtures = [
-    { total_count: 1, workflow_runs: [workflowRun(9000)] },
-    { total_count: 2, workflow_runs: [workflowRun(9001), workflowRun(9001)] },
-    { total_count: 101, workflow_runs: Array.from({ length: 100 }, (_, index) => workflowRun(index + 1)) },
-    {
+    [{ total_count: 1, workflow_runs: [workflowRun(9000)] }, 2],
+    [{ total_count: 2, workflow_runs: [workflowRun(9001), workflowRun(9001)] }, 2],
+    [{ total_count: 101, workflow_runs: Array.from({ length: 100 }, (_, index) => workflowRun(index + 1)) }, 1],
+    [{
       total_count: 1,
       workflow_runs: [{ ...workflowRun(9001), path: ".github/workflows/itx-current-collection.yml@main" }],
-    },
+    }, 1],
   ];
 
-  for (const body of fixtures) {
+  for (const [body, expectedCalls] of fixtures) {
     let calls = 0;
     await assert.rejects(() => guardItxCurrentCollectionBudget({
       env: budgetEnv(),
@@ -319,7 +347,7 @@ test("KST quota guard는 current absent·duplicate·truncated run/job inventory�
         return githubResponse(body);
       },
     }));
-    assert.equal(calls, 1);
+    assert.equal(calls, expectedCalls);
   }
 
   for (const jobs of [

@@ -2512,12 +2512,6 @@ export async function admittedItxNetworkEdgeEvidence(
     throw new TypeError("ITX network edge validation time is invalid");
   }
   const reference = contract?.sourceTimetableArtifact;
-  const expectedPromotionMode = currentAdmission == null
-    ? "CURRENT_CANDIDATE_OWNER_APPROVED"
-    : "UNCHANGED_AUTO";
-  const expectedTopologySourceSha256 = currentAdmission == null
-    ? reference?.sha256
-    : reference?.promotion?.previousArtifactSha256;
   if (contract?.schemaVersion !== 2
     || contract.artifactKind !== "itx-cheongchun-coverage-contract"
     || contract.serviceId !== "ITX_CHEONGCHUN"
@@ -2526,11 +2520,11 @@ export async function admittedItxNetworkEdgeEvidence(
     || reference?.schemaVersion !== 1
     || reference?.status !== "ADMITTED"
     || reference.admissionEligible !== true
-    || reference.promotion?.mode !== expectedPromotionMode
-    || topologyAdmission?.evidence?.sourceArtifact?.sha256 !== expectedTopologySourceSha256) {
+    || reference.promotion?.mode !== "CURRENT_CANDIDATE_OWNER_APPROVED"
+    || topologyAdmission?.evidence?.sourceArtifact?.sha256 !== reference?.sha256) {
     throw new Error("ITX network edge topology is not admitted for #2649");
   }
-  if (currentAdmission == null) validateCurrentItxApprovalIdentity(reference);
+  validateCurrentItxApprovalIdentity(reference);
   if (contract.coverageStates?.schedule_timetable !== "MISSING"
     || contract.claimGate?.currentStatus !== "NO_GO"
     || contract.claimGate?.supportClaimAllowed !== false) {

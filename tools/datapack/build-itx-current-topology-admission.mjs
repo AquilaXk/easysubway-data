@@ -32,8 +32,8 @@ function compareStrings(left, right) {
 }
 
 function pairTuples(stationSequences, label) {
-  if (!Array.isArray(stationSequences) || stationSequences.length !== 2) {
-    throw new Error(`${label} must contain exactly one up and one down station sequence`);
+  if (!Array.isArray(stationSequences) || stationSequences.length < 2) {
+    throw new Error(`${label} must contain authenticated up/down station sequences`);
   }
   const directions = [...new Set(stationSequences.map(({ directionId }) => directionId))].sort(compareStrings);
   if (!same(directions, ["down", "up"])) {

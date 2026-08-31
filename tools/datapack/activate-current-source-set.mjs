@@ -1702,6 +1702,8 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
   currentIncheonTimetablePaths,
   currentItxTopologyEvidencePath,
   currentItxTopologyEvidenceBytes,
+  currentItxAdmissionPath,
+  currentItxAdmissionBytes,
   approvedItxTopology = null,
   baselineTopology,
   baselineTopologyBytes,
@@ -1875,6 +1877,8 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
     incheonTimetableSnapshotIds: Object.fromEntries([1, 2].map((lineNumber) => [lineNumber,
       requireOne(nextInventory.sources, ({ id }) => id === `incheon-line${lineNumber}-train-timetable`,
         `admitted Incheon line ${lineNumber} timetable source`).scheduleAdmissionEvidence.snapshotId])),
+    itxCurrentAdmissionPath: currentItxAdmissionPath,
+    itxCurrentAdmissionBytes: currentItxAdmissionBytes,
   });
   spec.publishedAt = activationNow.toISOString();
   if (currentItxTopologyEvidencePath !== requiredItxTopologyEvidencePath(baseSpec)
@@ -2000,6 +2004,8 @@ export function buildCurrentCandidateSpec({
   incheonTimetablePaths,
   incheonTimetableBytes,
   incheonTimetableSnapshotIds,
+  itxCurrentAdmissionPath,
+  itxCurrentAdmissionBytes,
 }) {
   if (!baseSpec || baseSpec.schemaVersion !== 1
     || baseSpec.artifactKind !== "datapack-candidate-build-spec"
@@ -2038,6 +2044,14 @@ export function buildCurrentCandidateSpec({
     && incheonTimetablePaths[lineNumber]
       === `tools/datapack/sources/${incheonTimetableSnapshotIds[lineNumber]}.json`)) {
     throw new Error("current Incheon timetable candidate identity is invalid");
+  }
+  const hasItxCurrentAdmission = itxCurrentAdmissionPath != null
+    || itxCurrentAdmissionBytes != null;
+  if (hasItxCurrentAdmission
+    && (!/^tools\/datapack\/itx-current-network-edge-admission-[0-9]{8}\.json$/u
+      .test(itxCurrentAdmissionPath ?? "")
+      || !Buffer.isBuffer(itxCurrentAdmissionBytes))) {
+    throw new Error("current ITX topology admission identity is invalid");
   }
   const spec = structuredClone(baseSpec);
   if (spec.networkEdgeEvidence) {
@@ -2085,6 +2099,12 @@ export function buildCurrentCandidateSpec({
       sha256: sha256(incheonTimetableBytes[lineNumber]),
       snapshotId: incheonTimetableSnapshotIds[lineNumber],
     }])),
+    ...(hasItxCurrentAdmission ? {
+      itxCurrentTopologyAdmission: {
+        path: itxCurrentAdmissionPath,
+        sha256: sha256(itxCurrentAdmissionBytes),
+      },
+    } : {}),
   };
   return spec;
 }
@@ -2724,6 +2744,7 @@ export async function generateCurrentCapitalTopologyRefresh({
   incheonLine1TimetablePath,
   incheonLine2TimetablePath,
   itxTopologyEvidencePath,
+  itxCurrentAdmissionPath,
   builderGitSha,
   buildNow,
   check = false,
@@ -2749,6 +2770,10 @@ export async function generateCurrentCapitalTopologyRefresh({
   if (!/^tools\/datapack\/itx-cheongchun-topology-evidence(?:-[0-9]{17})?\.json$/u
     .test(itxTopologyEvidencePath ?? "")) {
     throw new Error("current ITX topology evidence must be a tracked artifact path");
+  }
+  if (!/^tools\/datapack\/itx-current-network-edge-admission-[0-9]{8}\.json$/u
+    .test(itxCurrentAdmissionPath ?? "")) {
+    throw new Error("current ITX topology admission must be a tracked artifact path");
   }
   let approvedItxCoverageContractBytes = null;
   let approvedItxCoverageReference = null;
@@ -2784,6 +2809,7 @@ export async function generateCurrentCapitalTopologyRefresh({
       : readRegularBytes(root, relativePath);
     const [currentTopologyBytes, currentIncheonTopologyBytes, currentIncheonAccessibilityBytes,
       currentIncheonLine1TimetableBytes, currentIncheonLine2TimetableBytes, currentItxTopologyEvidenceBytes,
+      currentItxAdmissionBytes,
       baselineTopologyBytes, sourceInventoryBytes, productionInputBytes,
       baseSpecBytes, canonicalBytes, productionScopePolicyBytes, sourceSnapshotsBytes] =
       await Promise.all([
@@ -2793,6 +2819,7 @@ export async function generateCurrentCapitalTopologyRefresh({
         readRegularBytes(root, incheonLine1TimetablePath, "current Incheon line 1 timetable"),
         readRegularBytes(root, incheonLine2TimetablePath, "current Incheon line 2 timetable"),
         readRegularBytes(root, itxTopologyEvidencePath, "current ITX topology evidence"),
+        readRegularBytes(root, itxCurrentAdmissionPath, "current ITX topology admission"),
         readRegularBytes(root, "tools/datapack/sources/capital-route-topology-20260724.json"),
         readMutableInput("tools/datapack/source-inventory.json"),
         readMutableInput("tools/datapack/inputs/capital-pilot-production-source-input.json"),
@@ -2856,6 +2883,8 @@ export async function generateCurrentCapitalTopologyRefresh({
       },
       currentItxTopologyEvidencePath: selectedItxTopologyEvidencePath,
       currentItxTopologyEvidenceBytes,
+      currentItxAdmissionPath: itxCurrentAdmissionPath,
+      currentItxAdmissionBytes,
       approvedItxTopology,
       baselineTopology: parseJson(baselineTopologyBytes, "baseline capital topology"),
       baselineTopologyBytes,
@@ -3287,6 +3316,7 @@ export function parseCurrentTopologyRefreshArgs(argv) {
     }
     if (!["--capital-topology", "--incheon-topology", "--incheon-accessibility",
       "--incheon-line1-timetable", "--incheon-line2-timetable", "--itx-topology-evidence",
+      "--itx-current-admission",
       "--builder-git-sha", "--build-now"].includes(flag)) {
       throw new Error(`unknown topology refresh argument: ${flag ?? ""}`);
     }
@@ -3299,6 +3329,7 @@ export function parseCurrentTopologyRefreshArgs(argv) {
   }
   for (const key of ["capital_topology", "incheon_topology", "incheon_accessibility",
     "incheon_line1_timetable", "incheon_line2_timetable", "itx_topology_evidence",
+    "itx_current_admission",
     "builder_git_sha", "build_now"]) {
     if (!args[key]) throw new Error(`--${key.replaceAll("_", "-")} is required`);
   }
@@ -3352,6 +3383,7 @@ async function main() {
     incheonLine1TimetablePath: args.incheon_line1_timetable,
     incheonLine2TimetablePath: args.incheon_line2_timetable,
     itxTopologyEvidencePath: args.itx_topology_evidence,
+    itxCurrentAdmissionPath: args.itx_current_admission,
     builderGitSha: args.builder_git_sha,
     buildNow: args.build_now,
     check: args.check,

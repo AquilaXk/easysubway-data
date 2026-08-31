@@ -18,6 +18,7 @@ import {
   validateAdmittedSourceDocuments,
   validateTopologyEvidence,
 } from "./apply-itx-topology-to-bundled-pack.mjs";
+import { buildItxCurrentTopologyAdmission } from "./build-itx-current-topology-admission.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -142,15 +143,83 @@ function rebindAdmissionDocuments(documents) {
   return documents;
 }
 
-function withBuildNow(callback) {
+function withBuildNow(callback, value = buildNow) {
   const previous = process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
-  process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = buildNow;
+  process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = value;
   try {
     return callback();
   } finally {
     if (previous == null) delete process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
     else process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = previous;
   }
+}
+
+function currentTopologyAdmission(documents) {
+  const stationSequences = documents.source.stationSequences
+    .filter(({ dayCd }) => dayCd === "8")
+    .map(({ directionId, stops }) => ({ directionId, stops }));
+  const reconstructionSummary = {
+    trainCount: stationSequences.length,
+    stopCount: stationSequences.reduce((count, { stops }) => count + stops.length, 0),
+    conflictingTimestampCount: 0,
+    missingPairCount: 0,
+    duplicateOdCount: 0,
+  };
+  const serviceDate = "20260831";
+  const collection = {
+    schemaVersion: 2,
+    artifactKind: "korail-itx-cheongchun-completeness-evidence",
+    serviceId: "ITX_CHEONGCHUN",
+    observedAt: "2026-08-30T15:10:00.000Z",
+    validationStatus: "MISSING",
+    admissionStatus: "MISSING",
+    credentialRedacted: true,
+    selectedServiceDates: { "8": serviceDate, "7": "20260905", "9": "20260906" },
+    serviceDays: [{
+      dayCd: "8",
+      serviceDate,
+      status: "SUPPORTED",
+      expectedOdCount: 306,
+      completedOdCount: 306,
+      failedOdCount: 0,
+      stationSetHash: sha256(JSON.stringify(stationSequences.flatMap(({ stops }) => stops))),
+      odMatrixHash: sha256(JSON.stringify(stationSequences)),
+      reconstructionSummary,
+      roster: {
+        schemaVersion: 2,
+        artifactKind: "tago-itx-cheongchun-roster-evidence",
+        serviceDate,
+        kricServiceDayCode: "8",
+        expectedOdCount: 306,
+        completedOdCount: 306,
+        failedOdCount: 0,
+        reconstructionSummary,
+        operations: [{
+          operation: "GetStrtpntAlocFndTrainInfo",
+          providerResultCode: "00",
+          schemaStatus: "EXPECTED",
+          requestCount: 306,
+          pageCount: 306,
+          totalCount: stationSequences.length,
+          rawResponseSha256: "8".repeat(64),
+        }],
+        stationSequences,
+      },
+    }, ...["7", "9"].map((dayCd) => ({
+      dayCd,
+      serviceDate: dayCd === "7" ? "20260905" : "20260906",
+      status: "MISSING",
+      failureStage: "OD_MATERIALIZATION",
+      failureReasonCode: "OD_MATRIX_INCOMPLETE",
+    }))],
+  };
+  const collectionBytes = Buffer.from(`${JSON.stringify(collection, null, 2)}\n`);
+  return buildItxCurrentTopologyAdmission({
+    collection,
+    collectionSha256: sha256(collectionBytes),
+    previousSource: documents.source,
+    previousSha256: documents.reference.sha256,
+  });
 }
 
 function admissionEvidenceFrom(contract) {
@@ -565,6 +634,54 @@ test("admission document와 station/topology input identity는 exact binding을 
   invalidStationSource.stationCatalogPackIdentity.extra = true;
   await assert.rejects(admittedTopologySource(reference, invalidStationSource),
     /station catalog identity is invalid/);
+});
+
+test("expired schedule source는 fresh semantic topology-only admission으로만 계승한다", async () => {
+  const documents = await admittedDocuments();
+  const expiredFreshUntil = "2026-08-30T15:00:00.000Z";
+  documents.reference.freshUntil = expiredFreshUntil;
+  documents.source.freshUntil = expiredFreshUntil;
+  documents.completeness.sourceTimetableArtifact.freshUntil = expiredFreshUntil;
+  rebindAdmissionDocuments(documents);
+  const currentAdmission = currentTopologyAdmission(documents);
+  const validationNow = "2026-08-30T16:00:00.000Z";
+  assert.ok(Date.parse(documents.reference.freshUntil) <= Date.parse(validationNow));
+
+  const projection = withBuildNow(() => validateAdmittedSourceDocuments(
+    documents.contract,
+    documents.reference,
+    documents.source,
+    documents.completeness,
+    sha256(documents.sourceBytes),
+    sha256(documents.completenessBytes),
+    { currentAdmission, buildNow: new Date(validationNow) },
+  ), validationNow);
+  assert.equal(projection.sourceSnapshotId, currentAdmission.artifactId);
+  assert.equal(projection.freshUntil, currentAdmission.freshUntil);
+
+  const tampered = structuredClone(currentAdmission);
+  tampered.observedPairSetSha256 = "0".repeat(64);
+  withBuildNow(() => assert.throws(() => validateAdmittedSourceDocuments(
+    documents.contract,
+    documents.reference,
+    documents.source,
+    documents.completeness,
+    sha256(documents.sourceBytes),
+    sha256(documents.completenessBytes),
+    { currentAdmission: tampered, buildNow: new Date(validationNow) },
+  ), /identity mismatch/), validationNow);
+
+  const unapprovedReference = structuredClone(documents.reference);
+  unapprovedReference.promotion.approvalUrl = null;
+  assert.throws(() => validateAdmittedSourceDocuments(
+    documents.contract,
+    unapprovedReference,
+    documents.source,
+    documents.completeness,
+    sha256(documents.sourceBytes),
+    sha256(documents.completenessBytes),
+    { currentAdmission, buildNow: new Date(validationNow) },
+  ), /approval identity is invalid/);
 });
 
 test("authenticated completeness도 exact station identity와 no-legacy를 요구한다", async (context) => {

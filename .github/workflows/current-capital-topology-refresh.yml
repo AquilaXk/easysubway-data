@@ -1,0 +1,252 @@
+name: Current Capital Topology Refresh
+
+on:
+  schedule:
+    - cron: "47 */2 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: current-capital-topology-refresh-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Current topology refresh
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    environment: itx-current-collection
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
+      - name: Prepare current topology refresh paths
+        run: |
+          set -euo pipefail
+          operation_root="${RUNNER_TEMP}/current-capital-topology-refresh/${GITHUB_RUN_ID}"
+          mkdir -p "${operation_root}"
+          printf 'TOPOLOGY_OPERATION_ROOT=%s\n' "${operation_root}" >> "${GITHUB_ENV}"
+          printf 'TOPOLOGY_DECISION=%s\n' "${RUNNER_TEMP}/current-capital-topology-refresh/decision.json" >> "${GITHUB_ENV}"
+      - name: Decide whether current topology refresh is due
+        id: decision
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLAIMS_PATH: ${{ runner.temp }}/current-capital-topology-refresh/claims.json
+        run: |
+          set -euo pipefail
+          state_root="${RUNNER_TEMP}/current-capital-topology-refresh"
+          gh pr list --repo "${GITHUB_REPOSITORY}" --state all --limit 1000 --json state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > "${state_root}/prs.json"
+          main_sha="$(git rev-parse HEAD)"
+          git ls-remote --heads origin "refs/heads/automation/636-current-topology-refresh-*" > "${state_root}/claim-refs.txt"
+          : > "${state_root}/claims.json"
+          while IFS=$'\t' read -r head_sha ref; do
+            [[ -z "${head_sha}" ]] && continue
+            git fetch --no-tags origin "${ref}"
+            merge_base="$(git merge-base "${main_sha}" "${head_sha}")"
+            commit_count="$(git rev-list --count "${merge_base}..${head_sha}")"
+            subjects="$(git log --format=%s --reverse "${merge_base}..${head_sha}")"
+            node --input-type=module -e 'import { appendFile } from "node:fs/promises"; const [headSha, ref, mergeBaseSha, commitCount, subjects] = process.argv.slice(1); await appendFile(process.env.CLAIMS_PATH, JSON.stringify({ headSha, ref, mergeBaseSha, commitCount: Number(commitCount), subjects: subjects ? subjects.split("\n") : [] }) + "\n");' "${head_sha}" "${ref}" "${merge_base}" "${commit_count}" "${subjects}"
+          done < "${state_root}/claim-refs.txt"
+          node --input-type=module -e 'import { readFile, writeFile } from "node:fs/promises"; const claims = (await readFile(process.env.CLAIMS_PATH, "utf8")).split("\n").filter(Boolean).map(JSON.parse); await writeFile(process.env.CLAIMS_PATH, JSON.stringify(claims) + "\n", { flag: "w" });'
+          node tools/ci/decide-current-capital-topology-refresh.mjs --inventory tools/datapack/source-inventory.json --candidate tools/datapack/release/candidate-build-spec.json --policy release/product-gates/datapack-freshness-sla.json --prs "${state_root}/prs.json" --claims "${state_root}/claims.json" --repository "${GITHUB_REPOSITORY}" --current-main-sha "${main_sha}" --output "${TOPOLOGY_DECISION}" --github-output "${GITHUB_OUTPUT}"
+      - name: Preflight immutable current topology identities
+        id: preflight
+        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
+        run: |
+          set -euo pipefail
+          git ls-tree -r --name-only HEAD > "${TOPOLOGY_OPERATION_ROOT}/existing-paths.txt"
+          node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { currentCapitalTopologyPreflight } from "./tools/ci/decide-current-capital-topology-refresh.mjs"; const existingPaths = (await readFile(process.env.PATHS, "utf8")).split("\n").filter(Boolean); const result = currentCapitalTopologyPreflight({ existingPaths }); process.stdout.write("state=" + result.state + "\n");' >> "${GITHUB_OUTPUT}"
+        env:
+          PATHS: ${{ runner.temp }}/current-capital-topology-refresh/${{ github.run_id }}/existing-paths.txt
+      - name: Recover a completed claimed refresh
+        if: ${{ steps.decision.outputs.state == 'RECOVER_CLAIM' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch="${{ steps.decision.outputs.branch }}"
+          git fetch --no-tags origin "refs/heads/${branch}:refs/remotes/origin/${branch}"
+          [[ "$(git rev-list --count HEAD.."origin/${branch}")" == "3" ]] || { echo "topology claim must have exactly three commits" >&2; exit 1; }
+          [[ "$(git rev-parse "origin/${branch}^^^")" == "$(git rev-parse HEAD)" ]] || { echo "topology claim is not based on current main" >&2; exit 1; }
+          [[ "$(git log -1 --format=%s "origin/${branch}^^")" == "Claim current topology refresh" ]] || { echo "topology claim subject is invalid" >&2; exit 1; }
+          [[ "$(git log -1 --format=%s "origin/${branch}^")" == "Register current topology inputs" ]] || { echo "topology input subject is invalid" >&2; exit 1; }
+          [[ "$(git log -1 --format=%s "origin/${branch}")" == "Activate current topology inputs" ]] || { echo "topology activation subject is invalid" >&2; exit 1; }
+          deleted="$(git diff --name-only --diff-filter=D HEAD "origin/${branch}")"
+          [[ -z "${deleted}" ]] || { echo "topology claim deleted a tracked path" >&2; exit 1; }
+          mapfile -t changed_paths < <(git diff --name-only --diff-filter=ACMR HEAD "origin/${branch}")
+          [[ "${#changed_paths[@]}" == "12" ]] || { echo "topology claim must change exactly twelve paths" >&2; exit 1; }
+          required_outputs=(tools/datapack/source-inventory.json tools/datapack/release/capital-production-reviewed-pack.json tools/datapack/release/capital-production-canonical-pack.json tools/datapack/release/candidate-build-spec.json tools/datapack/release/release-request.json tools/datapack/release/hash-evidence.json)
+          for required in "${required_outputs[@]}"; do
+            printf '%s\n' "${changed_paths[@]}" | grep -Fqx "${required}" || { echo "topology claim is missing a required activation output" >&2; exit 1; }
+          done
+          for pattern in '^tools/datapack/sources/capital-route-topology-[0-9]{8}\.json$' '^tools/datapack/sources/incheon-transit-station-info-[0-9]{8}\.json$' '^tools/datapack/sources/incheon-line1-train-timetable-[0-9]{8}\.json$' '^tools/datapack/sources/incheon-line2-train-timetable-[0-9]{8}\.json$' '^tools/datapack/itx-current-network-edge-admission-[0-9]{8}\.json$' '^tools/datapack/release/capital-topology-reverification-[0-9]{8}\.json$'; do
+            [[ "$(printf '%s\n' "${changed_paths[@]}" | grep -Ec "${pattern}")" == "1" ]] || { echo "topology claim input or reverification identity is invalid" >&2; exit 1; }
+          done
+          unexpected="$(printf '%s\n' "${changed_paths[@]}" | grep -Ev '^(tools/datapack/source-inventory\.json|tools/datapack/itx-current-network-edge-admission-[0-9]{8}\.json|tools/datapack/release/(capital-production-reviewed-pack\.json|capital-production-canonical-pack\.json|candidate-build-spec\.json|release-request\.json|hash-evidence\.json|capital-topology-reverification-[0-9]{8}\.json)|tools/datapack/sources/(capital-route-topology|incheon-transit-station-info|incheon-line1-train-timetable|incheon-line2-train-timetable)-[0-9]{8}\.json)$' || true)"
+          [[ -z "${unexpected}" ]] || { echo "topology claim changed an unsupported path" >&2; exit 1; }
+          existing="${RUNNER_TEMP}/current-capital-topology-refresh/claim-prs.json"
+          gh pr list --repo "${GITHUB_REPOSITORY}" --state all --base main --head "${branch}" --limit 100 --json state,headRefName,baseRefName,headRepository,isCrossRepository > "${existing}"
+          [[ "$(tr -d '[:space:]' < "${existing}")" == "[]" ]] || { echo "topology claim already has a pull request" >&2; exit 1; }
+          gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${branch}" --title "Refresh current capital topology inputs" --body "Refresh due current capital and Incheon topology inputs.\n\nRefs #636, #625"
+      - name: Create durable claim before provider access
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.preflight.outputs.state == 'CLEAR' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch="automation/636-current-topology-refresh-${GITHUB_RUN_ID}"
+          main_sha="$(git rev-parse HEAD)"
+          git switch -c "${branch}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "Claim current topology refresh"
+          gh auth setup-git
+          git push origin "${branch}"
+          git switch --detach "${main_sha}"
+          printf 'TOPOLOGY_BRANCH=%s\n' "${branch}" >> "${GITHUB_ENV}"
+          printf 'TOPOLOGY_MAIN_SHA=%s\n' "${main_sha}" >> "${GITHUB_ENV}"
+      - name: Recheck immutable identities after claim
+        id: claimed-preflight
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.preflight.outputs.state == 'CLEAR' }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          [[ "$(git rev-parse origin/main)" == "${TOPOLOGY_MAIN_SHA}" ]] || { echo "main changed after topology claim" >&2; exit 1; }
+          git ls-tree -r --name-only "${TOPOLOGY_MAIN_SHA}" > "${TOPOLOGY_OPERATION_ROOT}/existing-paths.txt"
+          node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { currentCapitalTopologyPreflight } from "./tools/ci/decide-current-capital-topology-refresh.mjs"; const existingPaths = (await readFile(process.env.PATHS, "utf8")).split("\n").filter(Boolean); const result = currentCapitalTopologyPreflight({ existingPaths }); process.stdout.write("state=" + result.state + "\n");' >> "${GITHUB_OUTPUT}"
+        env:
+          PATHS: ${{ runner.temp }}/current-capital-topology-refresh/${{ github.run_id }}/existing-paths.txt
+      - name: Collect each official current topology input once
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "${TOPOLOGY_MAIN_SHA}" ]] || { echo "topology collector is not running from its claimed main" >&2; exit 1; }
+          node tools/datapack/collect-capital-route-topology.mjs --download --output "${TOPOLOGY_OPERATION_ROOT}/capital-route-topology.json"
+          node tools/datapack/collect-incheon-station-info.mjs --download --output "${TOPOLOGY_OPERATION_ROOT}/incheon-transit-station-info.json"
+          station_stamp="$(node --input-type=module -e 'import { readFile, rename } from "node:fs/promises"; const root = process.env.TOPOLOGY_OPERATION_ROOT; const source = root + "/incheon-transit-station-info.json"; const snapshot = JSON.parse(await readFile(source, "utf8")); const capturedAt = snapshot.capturedAt; if (snapshot.sourceId !== "incheon-transit-station-info" || typeof capturedAt !== "string" || new Date(capturedAt).toISOString() !== capturedAt) throw new Error("station collector identity is invalid"); const stamp = capturedAt.slice(0, 10).replaceAll("-", ""); await rename(source, root + "/incheon-transit-station-info-" + stamp + ".json"); process.stdout.write(stamp);')"
+          printf 'TOPOLOGY_STATION_SNAPSHOT=%s/incheon-transit-station-info-%s.json\n' "${TOPOLOGY_OPERATION_ROOT}" "${station_stamp}" >> "${GITHUB_ENV}"
+          node tools/datapack/collect-incheon-timetable.mjs --download --topology-snapshot "${TOPOLOGY_OPERATION_ROOT}/incheon-transit-station-info-${station_stamp}.json" --output-dir "${TOPOLOGY_OPERATION_ROOT}/timetables"
+
+      - name: Prepare current ITX collection
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        env:
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "${TOPOLOGY_MAIN_SHA}" ]] || { echo "ITX preflight is not running from its claimed main" >&2; exit 1; }
+          [[ -n "${DATA_GO_KR_SERVICE_KEY:-}" && "${DATA_GO_KR_SERVICE_KEY}" != *$'\n'* && "${DATA_GO_KR_SERVICE_KEY}" != *$'\r'* ]] || { echo "DATA_GO_KR_SERVICE_KEY must be a nonempty single line" >&2; exit 1; }
+          node tools/datapack/emit-station-catalog-pack.mjs --output "${TOPOLOGY_OPERATION_ROOT}/station-catalog-pack" --catalog-pack-id "itx-current-station-catalog-v1"
+          node tools/ci/guard-itx-current-collection-budget.mjs --output "${TOPOLOGY_OPERATION_ROOT}/freshness.json"
+      - name: Collect current ITX timetable once
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        env:
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "${TOPOLOGY_MAIN_SHA}" ]] || { echo "ITX collector is not running from its claimed main" >&2; exit 1; }
+          node tools/datapack/run-current-itx-collection.mjs --output "${TOPOLOGY_OPERATION_ROOT}/itx-result.json" --completeness-output "${TOPOLOGY_OPERATION_ROOT}/itx-completeness.json" --station-catalog-pack "${TOPOLOGY_OPERATION_ROOT}/station-catalog-pack" --freshness-output "${TOPOLOGY_OPERATION_ROOT}/freshness.json"
+          node tools/datapack/build-itx-current-topology-admission.mjs --collection "${TOPOLOGY_OPERATION_ROOT}/itx-completeness.json" --coverage-contract tools/datapack/itx-cheongchun-coverage-contract.json --output "${TOPOLOGY_OPERATION_ROOT}/itx-current-admission.json"
+          printf 'TOPOLOGY_BUILD_NOW=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" >> "${GITHUB_ENV}"
+      - name: Derive immutable input identities from collector output
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        run: |
+          set -euo pipefail
+          node --input-type=module -e '
+            import { readFile, readdir } from "node:fs/promises";
+            const root = process.env.TOPOLOGY_OPERATION_ROOT;
+            const read = async (name) => JSON.parse(await readFile(root + "/" + name, "utf8"));
+            const utc = (value) => { if (typeof value !== "string" || new Date(value).toISOString() !== value) throw new Error("collector capturedAt is invalid"); return value.slice(0, 10).replaceAll("-", ""); };
+            const seoul = (value) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(value)).filter(({ type }) => type !== "literal").map(({ value: part }) => part).join("");
+            const capital = await read("capital-route-topology.json"); const incheon = JSON.parse(await readFile(process.env.TOPOLOGY_STATION_SNAPSHOT, "utf8")); const itxAdmission = await read("itx-current-admission.json");
+            if (capital.sourceId !== "capital-route-topology" || incheon.sourceId !== "incheon-transit-station-info") throw new Error("collector source identity is invalid");
+            if (itxAdmission.artifactKind !== "itx-current-network-edge-admission" || itxAdmission.artifactId !== "itx-current-network-edge-admission-" + itxAdmission.serviceDate || !/^[0-9]{8}$/u.test(itxAdmission.serviceDate)) throw new Error("ITX admission identity is invalid");
+            const timetableFiles = await readdir(root + "/timetables"); if (timetableFiles.length !== 2) throw new Error("collector timetable output count is invalid");
+            const timetables = await Promise.all(timetableFiles.map(async (file) => [file, await read("timetables/" + file)]));
+            const line1 = timetables.find(([, snapshot]) => snapshot.sourceId === "incheon-line1-train-timetable"); const line2 = timetables.find(([, snapshot]) => snapshot.sourceId === "incheon-line2-train-timetable");
+            if (!line1 || !line2 || !/^incheon-line1-train-timetable-[0-9]{8}\.json$/u.test(line1[0]) || !/^incheon-line2-train-timetable-[0-9]{8}\.json$/u.test(line2[0])) throw new Error("collector timetable output identity is invalid");
+            const line1Snapshot = line1[1]; const line2Snapshot = line2[1]; utc(line1Snapshot.capturedAt); utc(line2Snapshot.capturedAt);
+            if (line1[0] !== "incheon-line1-train-timetable-" + seoul(line1Snapshot.capturedAt) + ".json" || line2[0] !== "incheon-line2-train-timetable-" + seoul(line2Snapshot.capturedAt) + ".json") throw new Error("collector timetable path identity is invalid");
+            const values = [
+              ["TOPOLOGY_CAPITAL_PATH", "tools/datapack/sources/capital-route-topology-" + utc(capital.capturedAt) + ".json", root + "/capital-route-topology.json"],
+              ["TOPOLOGY_INCHEON_PATH", "tools/datapack/sources/incheon-transit-station-info-" + utc(incheon.capturedAt) + ".json", process.env.TOPOLOGY_STATION_SNAPSHOT],
+              ["TOPOLOGY_LINE1_PATH", "tools/datapack/sources/incheon-line1-train-timetable-" + seoul(line1Snapshot.capturedAt) + ".json", root + "/timetables/" + line1[0]],
+              ["TOPOLOGY_LINE2_PATH", "tools/datapack/sources/incheon-line2-train-timetable-" + seoul(line2Snapshot.capturedAt) + ".json", root + "/timetables/" + line2[0]],
+              ["TOPOLOGY_ITX_ADMISSION_PATH", "tools/datapack/" + itxAdmission.artifactId + ".json", root + "/itx-current-admission.json"],
+              ["TOPOLOGY_REVERIFICATION_PATH", "tools/datapack/release/capital-topology-reverification-" + utc(capital.capturedAt) + ".json", ""],
+            ];
+            for (const [key, target, source] of values) { process.stdout.write(key + "=" + target + "\\n"); if (source) process.stdout.write(key + "_SOURCE=" + source + "\\n"); }
+          ' >> "${GITHUB_ENV}"
+      - name: Commit exactly five immutable current topology inputs
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        run: |
+          set -euo pipefail
+          git switch "${TOPOLOGY_BRANCH}"
+          [[ "$(git rev-parse HEAD^)" == "${TOPOLOGY_MAIN_SHA}" ]] || { echo "topology claim is not based on its operation main" >&2; exit 1; }
+          for key in TOPOLOGY_CAPITAL_PATH TOPOLOGY_INCHEON_PATH TOPOLOGY_LINE1_PATH TOPOLOGY_LINE2_PATH TOPOLOGY_ITX_ADMISSION_PATH; do
+            target="${!key}"; source_key="${key}_SOURCE"; source="${!source_key}"
+            [[ ! -e "${target}" ]] || { echo "topology target already exists" >&2; exit 1; }
+            cp "${source}" "${target}"
+          done
+          git add "${TOPOLOGY_CAPITAL_PATH}" "${TOPOLOGY_INCHEON_PATH}" "${TOPOLOGY_LINE1_PATH}" "${TOPOLOGY_LINE2_PATH}" "${TOPOLOGY_ITX_ADMISSION_PATH}"
+          mapfile -t input_paths < <(git diff --cached --name-only)
+          [[ "${#input_paths[@]}" == "5" ]] || { echo "topology collection must change exactly five paths" >&2; exit 1; }
+          for required in "${TOPOLOGY_CAPITAL_PATH}" "${TOPOLOGY_INCHEON_PATH}" "${TOPOLOGY_LINE1_PATH}" "${TOPOLOGY_LINE2_PATH}" "${TOPOLOGY_ITX_ADMISSION_PATH}"; do printf '%s\n' "${input_paths[@]}" | grep -Fqx "${required}" || exit 1; done
+          [[ -z "$(git diff --name-only)" && -z "$(git ls-files --others --exclude-standard)" ]] || { echo "topology collection changed an unsupported path" >&2; exit 1; }
+          git commit -m "Register current topology inputs"
+          printf 'TOPOLOGY_BUILDER_SHA=%s\n' "$(git rev-parse HEAD)" >> "${GITHUB_ENV}"
+      - name: Derive current activation dependencies
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        run: |
+          set -euo pipefail
+          node --input-type=module -e '
+            import { readFile } from "node:fs/promises";
+            const inventory = JSON.parse(await readFile("tools/datapack/source-inventory.json", "utf8")); const source = inventory.sources?.filter(({ id }) => id === "incheon-transit-accessibility");
+            if (source?.length !== 1 || typeof source[0].registrationEvidence?.snapshotId !== "string" || !/^incheon-transit-accessibility-[0-9]{8}T[0-9]{9}Z$/u.test(source[0].registrationEvidence.snapshotId)) throw new Error("Incheon accessibility registration identity is invalid");
+            const spec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8")); if (typeof spec.itxTopologyEvidencePath !== "string" || !/^tools\/datapack\/itx-cheongchun-topology-evidence-[0-9]+\.json$/u.test(spec.itxTopologyEvidencePath)) throw new Error("ITX topology evidence identity is invalid");
+            process.stdout.write("TOPOLOGY_INCHEON_ACCESSIBILITY_PATH=tools/datapack/sources/" + source[0].registrationEvidence.snapshotId + ".json\\nTOPOLOGY_ITX_EVIDENCE_PATH=" + spec.itxTopologyEvidencePath + "\\n");
+          ' >> "${GITHUB_ENV}"
+          [[ -f "${TOPOLOGY_INCHEON_ACCESSIBILITY_PATH}" && -f "${TOPOLOGY_ITX_EVIDENCE_PATH}" && ! -e "${TOPOLOGY_REVERIFICATION_PATH}" ]] || { echo "topology activation dependency or target is invalid" >&2; exit 1; }
+      - name: Activate current topology inputs exactly once
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          node tools/datapack/activate-current-source-set.mjs --topology-only --capital-topology "${TOPOLOGY_CAPITAL_PATH}" --incheon-topology "${TOPOLOGY_INCHEON_PATH}" --incheon-accessibility "${TOPOLOGY_INCHEON_ACCESSIBILITY_PATH}" --incheon-line1-timetable "${TOPOLOGY_LINE1_PATH}" --incheon-line2-timetable "${TOPOLOGY_LINE2_PATH}" --itx-topology-evidence "${TOPOLOGY_ITX_EVIDENCE_PATH}" --itx-current-admission "${TOPOLOGY_ITX_ADMISSION_PATH}" --builder-git-sha "${TOPOLOGY_BUILDER_SHA}" --build-now "${TOPOLOGY_BUILD_NOW}"
+          git add tools/datapack/source-inventory.json tools/datapack/release/capital-production-reviewed-pack.json tools/datapack/release/capital-production-canonical-pack.json tools/datapack/release/candidate-build-spec.json tools/datapack/release/release-request.json tools/datapack/release/hash-evidence.json "${TOPOLOGY_REVERIFICATION_PATH}"
+          mapfile -t activation_paths < <(git diff --cached --name-only)
+          [[ "${#activation_paths[@]}" == "7" ]] || { echo "topology activation must change exactly seven activation paths" >&2; exit 1; }
+          for required in tools/datapack/source-inventory.json tools/datapack/release/capital-production-reviewed-pack.json tools/datapack/release/capital-production-canonical-pack.json tools/datapack/release/candidate-build-spec.json tools/datapack/release/release-request.json tools/datapack/release/hash-evidence.json "${TOPOLOGY_REVERIFICATION_PATH}"; do printf '%s\n' "${activation_paths[@]}" | grep -Fqx "${required}" || exit 1; done
+          [[ -z "$(git diff --name-only)" && -z "$(git ls-files --others --exclude-standard)" ]] || { echo "topology activation changed an unsupported path" >&2; exit 1; }
+          git commit -m "Activate current topology inputs"
+          git push origin "${TOPOLOGY_BRANCH}"
+      - name: Verify current topology activation exactly once
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        run: |
+          set -euo pipefail
+          node tools/datapack/activate-current-source-set.mjs --topology-only --check --capital-topology "${TOPOLOGY_CAPITAL_PATH}" --incheon-topology "${TOPOLOGY_INCHEON_PATH}" --incheon-accessibility "${TOPOLOGY_INCHEON_ACCESSIBILITY_PATH}" --incheon-line1-timetable "${TOPOLOGY_LINE1_PATH}" --incheon-line2-timetable "${TOPOLOGY_LINE2_PATH}" --itx-topology-evidence "${TOPOLOGY_ITX_EVIDENCE_PATH}" --itx-current-admission "${TOPOLOGY_ITX_ADMISSION_PATH}" --builder-git-sha "${TOPOLOGY_BUILDER_SHA}" --build-now "${TOPOLOGY_BUILD_NOW}"
+      - name: Create draft pull request
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${TOPOLOGY_BRANCH}" --title "Refresh current capital topology inputs" --body "Refresh due current capital and Incheon topology inputs.\n\nRefs #636, #625"
+      - name: Upload sanitized decision metadata
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: current-capital-topology-refresh-${{ github.run_id }}
+          path: ${{ runner.temp }}/current-capital-topology-refresh/decision.json
+          if-no-files-found: ignore
+          retention-days: 14

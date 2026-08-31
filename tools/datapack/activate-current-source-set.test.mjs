@@ -697,6 +697,7 @@ test("activation CLI는 Data-owned capital/Incheon snapshot paths만 수용한�
     "--incheon-line1-timetable", "tools/datapack/sources/incheon-line1-train-timetable-20260814.json",
     "--incheon-line2-timetable", "tools/datapack/sources/incheon-line2-train-timetable-20260814.json",
     "--itx-topology-evidence", "tools/datapack/itx-cheongchun-topology-evidence.json",
+    "--itx-current-admission", "tools/datapack/itx-current-network-edge-admission-20260823.json",
     "--builder-git-sha", "b".repeat(40),
     "--build-now", "2026-08-23T14:53:48.203Z",
     "--check",
@@ -708,12 +709,10 @@ test("activation CLI는 Data-owned capital/Incheon snapshot paths만 수용한�
     incheon_line1_timetable: "tools/datapack/sources/incheon-line1-train-timetable-20260814.json",
     incheon_line2_timetable: "tools/datapack/sources/incheon-line2-train-timetable-20260814.json",
     itx_topology_evidence: "tools/datapack/itx-cheongchun-topology-evidence.json",
+    itx_current_admission: "tools/datapack/itx-current-network-edge-admission-20260823.json",
     builder_git_sha: "b".repeat(40),
     build_now: "2026-08-23T14:53:48.203Z",
   });
-  assert.throws(() => parseCurrentTopologyRefreshArgs([
-    "--itx-current-admission", "tools/datapack/itx-current-network-edge-admission-20260823.json",
-  ]), /unknown topology refresh argument/);
 });
 
 test("approved ITX bootstrap은 exact full-source identity만 candidate에 결속한다", async () => {
@@ -1273,6 +1272,35 @@ test("generated current candidate spec은 expired ITX topology overlay를 재도
     path: currentTopologyPath,
     sha256: sha256(currentTopologyBytes),
     snapshotId: admission.topologySnapshotId,
+  });
+
+  const itxCurrentAdmissionPath =
+    "tools/datapack/itx-current-network-edge-admission-20260810.json";
+  const itxCurrentAdmissionBytes = await readFile(path.join(root, itxCurrentAdmissionPath));
+  const nextWithCurrentItx = buildCurrentCandidateSpec({
+    baseSpec,
+    builderGitSha: "a".repeat(40),
+    sourceInventoryBytes: Buffer.from("{}"),
+    fullTopology: currentTopology,
+    fullTopologyBytes: currentTopologyBytes,
+    fullTopologyPath: currentTopologyPath,
+    candidateTopology: currentTopology,
+    candidateTopologyBytes: currentTopologyBytes,
+    candidateTopologyPath: currentTopologyPath,
+    topologyReverificationBytes: Buffer.from("{}"),
+    productionScopePolicyBytes,
+    incheonAccessibilityPath: accessibilityPath,
+    incheonAccessibilityBytes: accessibilityBytes,
+    incheonAccessibilitySnapshotId: accessibilityRegistration.snapshotId,
+    incheonTimetablePaths: timetablePaths,
+    incheonTimetableBytes: timetableBytes,
+    incheonTimetableSnapshotIds: timetableSnapshotIds,
+    itxCurrentAdmissionPath,
+    itxCurrentAdmissionBytes,
+  });
+  assert.deepEqual(nextWithCurrentItx.networkEdgeEvidence.itxCurrentTopologyAdmission, {
+    path: itxCurrentAdmissionPath,
+    sha256: sha256(itxCurrentAdmissionBytes),
   });
   assert.equal(currentTopology.lines.some(({ lineId }) => lineId === "line-42b5805f3b5a"), false);
   assert.equal(currentTopology.lines.some(({ lineId }) => lineId === "line-98718184f016"), false);

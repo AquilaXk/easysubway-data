@@ -7,6 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { validateItxCurrentTopologyAdmission } from "./build-datapack.mjs";
 import { canonicalRideEdgeSetSha256 } from "./evaluate-route-accessibility-edges.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 
@@ -172,10 +173,17 @@ function candidateBuildNow() {
   return buildNow;
 }
 
-async function admittedSource(contractPath, { repositoryRoot = root, buildNow = candidateBuildNow() } = {}) {
+async function admittedSource(contractPath, {
+  repositoryRoot = root,
+  buildNow = candidateBuildNow(),
+  currentAdmissionPath = null,
+} = {}) {
   const contract = JSON.parse(await readFile(contractPath, "utf8"));
   const reference = contract?.sourceTimetableArtifact;
   validateAdmittedSourceReference(contract, reference);
+  const currentAdmission = currentAdmissionPath == null
+    ? null
+    : JSON.parse(await readFile(currentAdmissionPath, "utf8"));
   const sourceBytes = await readFile(repositoryPath(reference.artifactPath, repositoryRoot));
   const completenessBytes = await readFile(repositoryPath(reference.completenessEvidencePath, repositoryRoot));
   const { source, completeness } = parseAuthenticatedAdmittedSourceDocuments(
@@ -183,16 +191,16 @@ async function admittedSource(contractPath, { repositoryRoot = root, buildNow = 
     sourceBytes,
     completenessBytes,
   );
-  validateAdmittedSourceDocuments(
+  const currentProjection = validateAdmittedSourceDocuments(
     contract,
     reference,
     source,
     completeness,
     sha256(sourceBytes),
     sha256(completenessBytes),
-    buildNow,
+    { buildNow, currentAdmission },
   );
-  return { contract, reference, source, sourceBytes };
+  return { contract, reference, source, sourceBytes, currentAdmission, currentProjection };
 }
 
 export function deriveAdmittedItxRideEdgeSetSha256(source) {
@@ -265,8 +273,11 @@ export function validateAdmittedSourceDocuments(
   completeness,
   sourceSha256,
   completenessSha256,
-  buildNow = candidateBuildNow(),
+  validation = {},
 ) {
+  const { buildNow, currentAdmission } = validation instanceof Date
+    ? { buildNow: validation, currentAdmission: null }
+    : { buildNow: validation.buildNow ?? candidateBuildNow(), currentAdmission: validation.currentAdmission ?? null };
   validateAdmittedSourceReference(contract, reference);
   if (sourceSha256 !== reference.sha256
     || completenessSha256 !== reference.completenessEvidenceSha256) {
@@ -274,7 +285,8 @@ export function validateAdmittedSourceDocuments(
   }
   const freshUntilMillis = Date.parse(reference.freshUntil);
   if (!(buildNow instanceof Date) || Number.isNaN(buildNow.getTime())
-    || !Number.isFinite(freshUntilMillis) || freshUntilMillis <= buildNow.getTime()) {
+    || !Number.isFinite(freshUntilMillis)
+    || (currentAdmission == null && freshUntilMillis <= buildNow.getTime())) {
     throw new Error("ITX topology source artifact is expired");
   }
   const admission = contract?.officialEvidence?.korailCompletenessAdmission;
@@ -328,6 +340,20 @@ export function validateAdmittedSourceDocuments(
     || completeness?.credentialRedacted !== true) {
     throw new Error("ITX topology source identity is invalid");
   }
+  if (currentAdmission != null) {
+    return validateItxCurrentTopologyAdmission(currentAdmission, {
+      previousArtifactSha256: reference.sha256,
+      stationSequences: source.stationSequences,
+      now: buildNow,
+    });
+  }
+  return {
+    sourceId: source.artifactKind,
+    sourceSnapshotId: source.artifactId,
+    evidenceHash: source.evidenceHash,
+    verifiedAt: source.observedAt,
+    freshUntil: reference.freshUntil,
+  };
 }
 
 function isUtcInstant(value) {
@@ -375,7 +401,7 @@ function hasExactKeys(value, keys) {
       === [...keys].sort((left, right) => left.localeCompare(right)).join(",");
 }
 
-export async function admittedTopologySource(reference, source) {
+export async function admittedTopologySource(reference, source, _currentAdmission = null) {
   if (Object.hasOwn(source, "canonicalPackIdentity")
     || Object.hasOwn(source, "readmissions")
     || reference?.promotion?.mode !== "CURRENT_CANDIDATE_OWNER_APPROVED") {
@@ -464,7 +490,7 @@ export function validateTopologyEvidence({
   return { inputSqliteBytes };
 }
 
-function routeServiceEvidence(contract, reference, source, canonicalPackIdentity) {
+function routeServiceEvidence(contract, reference, source, canonicalPackIdentity, currentProjection) {
   const identity = stationCatalogIdentity(
     contract?.officialEvidence?.korailCompletenessAdmission?.stationCatalogPackIdentity,
     "ITX coverage station catalog identity",
@@ -482,7 +508,7 @@ function routeServiceEvidence(contract, reference, source, canonicalPackIdentity
       canonicalPackSqliteSha256: canonicalPackIdentity.sqliteSha256,
       admissionStatus: "ADMITTED",
       admissionEligible: 1,
-      freshUntil: reference.freshUntil,
+      freshUntil: currentProjection.freshUntil,
       sourceIssue: 2135,
     },
     stationCatalogEvidence: {
@@ -495,7 +521,7 @@ function routeServiceEvidence(contract, reference, source, canonicalPackIdentity
       stationCatalogManifestSha256: identity.manifestSha256,
       admissionStatus: "ADMITTED",
       admissionEligible: 1,
-      freshUntil: reference.freshUntil,
+      freshUntil: currentProjection.freshUntil,
       sourceIssue: 2649,
     },
   };
@@ -971,6 +997,8 @@ async function main() {
   const indexPath = path.resolve(root, option("--index", "apps/mobile/assets/datapacks/index.json"));
   const contractPath = path.resolve(root, option("--contract", "tools/datapack/itx-cheongchun-coverage-contract.json"));
   const evidencePath = path.resolve(root, option("--evidence", "tools/datapack/itx-cheongchun-topology-evidence.json"));
+  const currentAdmissionOption = option("--current-admission", null);
+  const currentAdmissionPath = currentAdmissionOption == null ? null : path.resolve(root, currentAdmissionOption);
   const fixtureProjectionPath = option("--project-fixture", null);
   const check = process.argv.includes("--check");
   const migrateCurrentV18Requested = process.argv.includes("--migrate-current-v18");
@@ -986,8 +1014,9 @@ async function main() {
       throw new Error("ITX topology migration evidence is forbidden by the current-only datapack contract");
     }
   }
-  const { contract, reference, source, sourceBytes } = await admittedSource(contractPath);
-  const topologySource = await admittedTopologySource(reference, source);
+  const { contract, reference, source, sourceBytes, currentAdmission, currentProjection } =
+    await admittedSource(contractPath, { currentAdmissionPath });
+  const topologySource = await admittedTopologySource(reference, source, currentAdmission);
   const topology = deriveTopology(source);
   if (fixtureProjectionPath != null) {
     const fixturePath = path.resolve(root, fixtureProjectionPath);
@@ -1000,7 +1029,13 @@ async function main() {
     contract?.officialEvidence?.korailCompletenessAdmission?.topologyInputPackIdentity,
     "ITX topology input pack identity",
   );
-  const admissionEvidence = routeServiceEvidence(contract, reference, source, admittedInputPack);
+  const admissionEvidence = routeServiceEvidence(
+    contract,
+    reference,
+    source,
+    admittedInputPack,
+    currentProjection,
+  );
   if (admittedInputPack.sha256 !== topologySource.gzipSha256
     || admittedInputPack.sqliteSha256 !== topologySource.sqliteSha256
     || admittedInputPack.byteSize !== topologySource.byteSize) {

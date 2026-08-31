@@ -3,12 +3,22 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 const EXPECTED_REPOSITORY = "AquilaXk/easysubway-data";
-const EXPECTED_EVENT = "workflow_dispatch";
 const EXPECTED_REF = "refs/heads/main";
 const EXPECTED_BRANCH = "main";
-const WORKFLOW_FILE = "itx-current-collection.yml";
-const JOB_NAME = "ITX current collection";
-const COLLECTOR_STEP_NAME = "ITX current collection / Collect ITX current timetable";
+const COLLECTION_CONTEXTS = [
+  {
+    workflowFile: "itx-current-collection.yml",
+    events: ["workflow_dispatch"],
+    jobName: "ITX current collection",
+    collectorStepName: "ITX current collection / Collect ITX current timetable",
+  },
+  {
+    workflowFile: "current-capital-topology-refresh.yml",
+    events: ["schedule", "workflow_dispatch"],
+    jobName: "Current topology refresh",
+    collectorStepName: "Collect current ITX timetable once",
+  },
+];
 const MAX_RUNS = 100;
 const MAX_JOBS = 100;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
@@ -52,12 +62,12 @@ function quotaWindow(now) {
   };
 }
 
-function validateRun(run, window) {
+function validateRun(run, window, context, event) {
   if (!run || typeof run !== "object" || Array.isArray(run)) throw failure();
   if (!Number.isSafeInteger(run.id) || run.id <= 0) throw failure();
-  if (run.event !== EXPECTED_EVENT || run.head_branch !== EXPECTED_BRANCH) throw failure();
+  if (run.event !== event || run.head_branch !== EXPECTED_BRANCH) throw failure();
   if (!Number.isSafeInteger(run.run_attempt) || run.run_attempt <= 0) throw failure();
-  if (run.path !== `.github/workflows/${WORKFLOW_FILE}`) throw failure();
+  if (run.path !== `.github/workflows/${context.workflowFile}`) throw failure();
   const createdAt = Date.parse(run.created_at);
   if (!Number.isFinite(createdAt) || createdAt < window.startMillis || createdAt > window.endMillis) {
     throw failure();
@@ -65,13 +75,13 @@ function validateRun(run, window) {
   return run;
 }
 
-function validateCollectorJob(job, runId) {
+function validateCollectorJob(job, runId, context) {
   if (!job || typeof job !== "object" || Array.isArray(job)
     || !Number.isSafeInteger(job.id) || job.id <= 0 || job.run_id !== runId
-    || job.name !== JOB_NAME || !Array.isArray(job.steps)) {
+    || job.name !== context.jobName || !Array.isArray(job.steps)) {
     throw failure();
   }
-  const steps = job.steps.filter((step) => step?.name === COLLECTOR_STEP_NAME);
+  const steps = job.steps.filter((step) => step?.name === context.collectorStepName);
   if (steps.length !== 1) throw failure();
   const step = steps[0];
   if (step.status === "in_progress" && step.conclusion == null) return true;
@@ -99,7 +109,7 @@ async function readResponse(response) {
   }
 }
 
-async function previousRunEnteredCollector({ runId, token, fetchImpl }) {
+async function previousRunEnteredCollector({ runId, token, fetchImpl, context }) {
   const requestUrl = new URL(
     `https://api.github.com/repos/${EXPECTED_REPOSITORY}/actions/runs/${runId}/jobs`,
   );
@@ -131,7 +141,7 @@ async function previousRunEnteredCollector({ runId, token, fetchImpl }) {
   for (const job of body.jobs) {
     if (jobIds.has(job?.id)) throw failure();
     jobIds.add(job?.id);
-    if (validateCollectorJob(job, runId)) enteredCollector = true;
+    if (validateCollectorJob(job, runId, context)) enteredCollector = true;
   }
   return enteredCollector;
 }
@@ -145,7 +155,7 @@ export async function guardItxCurrentCollectionBudget({
   if (!Array.isArray(argv) || argv.length !== 0) throw failure();
   if (!env || typeof env !== "object") throw failure();
   if (env.GITHUB_REPOSITORY !== EXPECTED_REPOSITORY
-    || env.GITHUB_EVENT_NAME !== EXPECTED_EVENT
+    || !COLLECTION_CONTEXTS.some(({ events }) => events.includes(env.GITHUB_EVENT_NAME))
     || env.GITHUB_REF !== EXPECTED_REF) throw failure();
 
   const runId = positiveInteger(env.GITHUB_RUN_ID);
@@ -154,42 +164,51 @@ export async function guardItxCurrentCollectionBudget({
   if (typeof fetchImpl !== "function") throw failure();
 
   const window = quotaWindow(now);
-  const requestUrl = new URL(
-    `https://api.github.com/repos/${EXPECTED_REPOSITORY}/actions/workflows/${WORKFLOW_FILE}/runs`,
-  );
-  requestUrl.searchParams.set("event", EXPECTED_EVENT);
-  requestUrl.searchParams.set("branch", EXPECTED_BRANCH);
-  requestUrl.searchParams.set("created", window.createdRange);
-  requestUrl.searchParams.set("per_page", String(MAX_RUNS));
-
-  let response;
-  try {
-    response = await fetchImpl(requestUrl.href, {
-      method: "GET",
-      redirect: "error",
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MILLIS),
-      headers: {
-        accept: "application/vnd.github+json",
-        authorization: `Bearer ${token}`,
-        "x-github-api-version": "2026-03-10",
-      },
-    });
-  } catch {
-    throw failure();
+  const runs = [];
+  for (const context of COLLECTION_CONTEXTS) {
+    for (const event of context.events) {
+      const requestUrl = new URL(
+        `https://api.github.com/repos/${EXPECTED_REPOSITORY}/actions/workflows/${context.workflowFile}/runs`,
+      );
+      requestUrl.searchParams.set("event", event);
+      requestUrl.searchParams.set("branch", EXPECTED_BRANCH);
+      requestUrl.searchParams.set("created", window.createdRange);
+      requestUrl.searchParams.set("per_page", String(MAX_RUNS));
+      let response;
+      try {
+        response = await fetchImpl(requestUrl.href, {
+          method: "GET",
+          redirect: "error",
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MILLIS),
+          headers: {
+            accept: "application/vnd.github+json",
+            authorization: `Bearer ${token}`,
+            "x-github-api-version": "2026-03-10",
+          },
+        });
+      } catch {
+        throw failure();
+      }
+      const body = await readResponse(response);
+      if (!body || typeof body !== "object" || Array.isArray(body)
+        || !Number.isSafeInteger(body.total_count) || body.total_count < 0 || body.total_count > MAX_RUNS
+        || !Array.isArray(body.workflow_runs) || body.workflow_runs.length !== body.total_count) {
+        throw failure();
+      }
+      runs.push(...body.workflow_runs.map((run) => ({
+        run: validateRun(run, window, context, event),
+        context,
+      })));
+    }
   }
-
-  const body = await readResponse(response);
-  if (!body || typeof body !== "object" || Array.isArray(body)
-    || !Number.isSafeInteger(body.total_count) || body.total_count < 0 || body.total_count > MAX_RUNS
-    || !Array.isArray(body.workflow_runs) || body.workflow_runs.length !== body.total_count) {
-    throw failure();
-  }
-
-  const runs = body.workflow_runs.map((run) => validateRun(run, window));
-  const currentRuns = runs.filter((run) => run.id === runId);
-  if (currentRuns.length !== 1 || currentRuns[0].run_attempt !== 1) throw failure();
-  for (const run of runs) {
-    if (run.id !== runId && await previousRunEnteredCollector({ runId: run.id, token, fetchImpl })) {
+  if (new Set(runs.map(({ run }) => run.id)).size !== runs.length) throw failure();
+  const currentRuns = runs.filter(({ run }) => run.id === runId);
+  if (currentRuns.length !== 1 || currentRuns[0].run.run_attempt !== 1
+    || currentRuns[0].run.event !== env.GITHUB_EVENT_NAME) throw failure();
+  for (const { run, context } of runs) {
+    if (run.id !== runId && await previousRunEnteredCollector({
+      runId: run.id, token, fetchImpl, context,
+    })) {
       throw failure();
     }
   }
