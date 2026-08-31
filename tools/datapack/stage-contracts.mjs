@@ -4,10 +4,20 @@ import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/3c6c99da4e00ccd5f04ae25da6fc32ac417fd3e6/contracts/bundles/data-contracts-v1.0.0.json";
+const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/8b09a017adca69fb76a68205835dfea6586ddf80/contracts/bundles/data-contracts-v1.0.0.json";
 const annualOfficialFileSourceIds = [
   "molit-railway-transfer-movement",
   "seoul-metro-transfer-distance-duration",
+];
+const staticAccessibilitySourceIds = [
+  "kric-station-convenience-standard",
+  "kric-station-elevator",
+  "kric-station-elevator-movement",
+  "kric-station-escalator",
+  "kric-wheelchair-lift-location",
+  "kric-wheelchair-lift-movement",
+  "seoul-metro-accessibility",
+  "incheon-transit-accessibility",
 ];
 const routeMapPositionSourceIds = ["seoul-metro-route-map-positions"];
 const historicalRouteMapSourceIds = ["seoulmetro-cyberstation-route-map"];
@@ -16,6 +26,7 @@ const routeMapGovernanceMappings = [
   { sourceId: "seoulmetro-cyberstation-route-map", sourceClassId: "route_map_asset_historical" },
 ];
 const productionRequiredSourceIds = [
+  "incheon-transit-accessibility",
   "molit-urban-rail-full-route",
   "seoulmetro-station-line-info",
   "seoul-metro-accessibility",
@@ -58,6 +69,11 @@ export async function stageContracts({ root = process.cwd(), fetchBundle = downl
   const annualOfficialFile = freshnessPolicy.sourceClasses?.find(({ id }) => id === "annual_official_file");
   if (JSON.stringify(annualOfficialFile?.sourceIds) !== JSON.stringify(annualOfficialFileSourceIds)) {
     throw new Error("contract bundle annual_official_file sourceIds are invalid");
+  }
+  const staticAccessibility = freshnessPolicy.sourceClasses
+    ?.find(({ id }) => id === "static_accessibility_facility");
+  if (JSON.stringify(staticAccessibility?.sourceIds) !== JSON.stringify(staticAccessibilitySourceIds)) {
+    throw new Error("contract bundle static_accessibility_facility sourceIds are invalid");
   }
   const routeMapPositions = freshnessPolicy.sourceClasses?.find(({ id }) => id === "route_map_positions");
   const historicalRouteMap = freshnessPolicy.sourceClasses?.find(({ id }) => id === "route_map_asset_historical");
