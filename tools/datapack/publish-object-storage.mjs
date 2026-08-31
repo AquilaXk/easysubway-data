@@ -7,10 +7,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { canonicalCurrentCapitalLiveChainOciPlanJson } from "./build-current-capital-live-chain-oci-plan.mjs";
+import { canonicalCurrentKricExitProviderOciPlanJson } from "./build-current-kric-exit-provider-oci-plan.mjs";
 import {
   readCurrentCapitalLiveChainOciReceipt,
   writeCurrentCapitalLiveChainOciReceipt,
 } from "./build-current-capital-live-chain-oci-receipt.mjs";
+import { writeCurrentKricExitProviderOciReceipt } from "./build-current-kric-exit-provider-oci-receipt.mjs";
 
 const emptySha256 = sha256(Buffer.alloc(0));
 const CURRENT_LIVE_CHAIN_OCI_PAR = /^https:\/\/objectstorage\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.oraclecloud\.com\/p\/[^\/?#\s]+\/n\/axvym6vk8g7i\/b\/easysubway-datapacks\/o\/?$/u;
@@ -24,6 +26,13 @@ async function main() {
   const dryRun = args.has("dry-run");
   const verifyOnly = args.has("verify-only");
   const plan = JSON.parse(await readFile(planPath, "utf8"));
+  if (plan?.artifactKind === "current-kric-exit-provider-oci-plan") {
+    if (JSON.stringify(plan) !== canonicalCurrentKricExitProviderOciPlanJson(plan)) throw new Error("current EXIT provider OCI plan must be canonical JSON");
+    if (dryRun) return;
+    if (verifyOnly) throw new Error("current EXIT provider OCI plan requires exact immutable publish and readback");
+    await publishCurrentKricExitProviderOciPlan({ planBytes: await readFile(planPath), root, receiptPath: path.resolve(requireArg(args, "receipt")) });
+    return;
+  }
   if (plan?.artifactKind === "current-capital-live-chain-oci-plan") {
     if (JSON.stringify(plan) !== canonicalCurrentCapitalLiveChainOciPlanJson(plan)) {
       throw new Error("current live-chain OCI plan must be canonical JSON");
@@ -236,6 +245,34 @@ export async function publishCurrentCapitalLiveChainOciPlan({
   // Receipt creation is deliberately last: a failed PUT/readback must leave
   // no success-shaped receipt behind.
   return writeCurrentCapitalLiveChainOciReceipt({ planBytes, outputPath: receiptPath });
+}
+
+/** Publish the one EXIT provider bundle, fully read it back, then create its receipt. */
+export async function publishCurrentKricExitProviderOciPlan({
+  planBytes,
+  root,
+  receiptPath,
+  env = process.env,
+  client = null,
+} = {}) {
+  const plan = parseCanonicalCurrentKricExitProviderPlan(planBytes);
+  if (!path.isAbsolute(root ?? "") || !path.isAbsolute(receiptPath ?? "")) throw new Error("current EXIT provider publication paths must be absolute");
+  const parBaseUrl = requireCurrentCapitalLiveChainOciParBaseUrl(env);
+  const storage = client ?? preauthenticatedObjectStorageClient(parBaseUrl, { includeErrorBody: false });
+  validateImmutableObjectPlan(plan.publishPlan);
+  for (const step of plan.publishPlan.steps) {
+    if (step.type === "put-immutable-bundle-object") await putImmutableObject(storage, path.resolve(root), step);
+    else if (step.type === "verify-immutable-bundle-object") await verifyImmutableObject(storage, step);
+    else throw new Error(`unsupported current EXIT provider OCI step: ${step.type}`);
+  }
+  return writeCurrentKricExitProviderOciReceipt({ planBytes, outputPath: receiptPath });
+}
+
+function parseCanonicalCurrentKricExitProviderPlan(planBytes) {
+  if (!Buffer.isBuffer(planBytes) || planBytes.length === 0) throw new Error("current EXIT provider OCI plan bytes mismatch");
+  let plan; try { plan = JSON.parse(planBytes.toString("utf8")); } catch { throw new Error("current EXIT provider OCI plan JSON mismatch"); }
+  if (!planBytes.equals(Buffer.from(`${canonicalCurrentKricExitProviderOciPlanJson(plan)}\n`))) throw new Error("current EXIT provider OCI plan must be canonical bytes");
+  return plan;
 }
 
 /** Fetch both OCI objects named by a canonical plan and receipt, after exact full GET verification. */

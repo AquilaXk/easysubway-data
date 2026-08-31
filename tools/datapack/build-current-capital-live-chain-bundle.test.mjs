@@ -10,6 +10,7 @@ import { buildCurrentCapitalLiveChainFanInBoundary, CURRENT_CAPITAL_LIVE_CHAIN_F
 import { buildCurrentExitAdmissionOciReceipt, canonicalCurrentExitAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
 import { canonicalRideEdgeSetSha256, canonicalRouteEdgeEvaluationJson, evaluateRouteAccessibilityEdges, routeEdgeSha256 } from "./evaluate-route-accessibility-edges.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
+import { validateCurrentCapitalLiveChainMaterialization } from "./validate-current-capital-live-chain-materialization.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 
@@ -31,6 +32,8 @@ test("composite bundle embeds canonical fan-in evidence without expanding the ou
     await writeFile(path.join(root, "out", relative), bytes);
   }
   const options = { root, outputDirectory: path.join(root, "out"), repository: "AquilaXk/easysubway-data", repositorySha: "b".repeat(40), operationId: "current-capital-560", boundaryBytes: boundaryFor(entryBytes) };
+  const validated = await validateCurrentCapitalLiveChainMaterialization(options);
+  assert.deepEqual(validated.outputPaths, outputPaths);
   const bytes = await buildCurrentCapitalLiveChainBundle(options);
   const readOptions = omit(options, "root", "outputDirectory", "boundaryBytes");
   const bundle = readCurrentCapitalLiveChainBundle(bytes, readOptions);

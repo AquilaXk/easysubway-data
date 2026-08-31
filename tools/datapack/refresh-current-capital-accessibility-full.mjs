@@ -250,7 +250,7 @@ function assertPendingMarkerProducerBoundary({ marker, facility, exit, station, 
   }
 }
 
-function assertNarrowDelta({ stationBefore, routeBefore, stationAfter, routeAfter, allowCandidateIdentityTransition = false }) {
+function assertNarrowDelta({ stationBefore, routeBefore, stationAfter, routeAfter, allowCandidateIdentityTransition = false, expectedExitEvidenceRows = null }) {
   if (!equalJson(stationBefore.stationLines, stationAfter.stationLines)
     || !equalJson(routeBefore.stationLines, routeAfter.stationLines)
     || !equalJson(routeBefore.routeEdges, routeAfter.routeEdges)) throw new Error("current-capital refresh topology delta mismatch");
@@ -268,13 +268,22 @@ function assertNarrowDelta({ stationBefore, routeBefore, stationAfter, routeAfte
   }
   if (stationBefore.evidenceRows.length !== stationAfter.evidenceRows.length) throw new Error("current-capital refresh evidence delta mismatch");
   for (const [index, before] of stationBefore.evidenceRows.entries()) {
-    assertEvidenceDelta(before, stationAfter.evidenceRows[index], allowCandidateIdentityTransition);
+    assertEvidenceDelta(before, stationAfter.evidenceRows[index], allowCandidateIdentityTransition, expectedExitEvidenceRows);
   }
 }
 
-function assertEvidenceDelta(before, after, allowCandidateIdentityTransition) {
+function assertEvidenceDelta(before, after, allowCandidateIdentityTransition, expectedExitEvidenceRows) {
   const domain = before?.domain;
   if (domain !== after?.domain) throw new Error("current-capital refresh evidence delta mismatch");
+  if (allowCandidateIdentityTransition && domain === "EXIT") {
+    const identity = `${after.stationId}\0${after.lineId}`;
+    const expected = expectedExitEvidenceRows?.get(identity);
+    if (!expected || before.stationId !== after.stationId || before.lineId !== after.lineId
+      || before.operatorId !== after.operatorId || !equalJson(expected, after)) {
+      throw new Error("current-capital refresh EXIT evidence projection mismatch");
+    }
+    return;
+  }
   const allowed = new Set(["sourceSetSha256"]);
   if (allowCandidateIdentityTransition) allowed.add("candidateId");
   const keys = new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})]);
@@ -351,7 +360,21 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
   if (alreadyCurrent && (!stationBytes.equals(files[OUTPUTS[0]].bytes)
     || !routeBytes.equals(files[OUTPUTS[1]].bytes)
     || !fanInBytes.equals(files[FAN_IN_OUTPUT].bytes))) throw new Error("current-capital refresh current output bytes mismatch");
-  assertNarrowDelta({ stationBefore: parse(files[OUTPUTS[0]].bytes, "activated station input"), routeBefore: parse(files[OUTPUTS[1]].bytes, "activated route input"), stationAfter, routeAfter, allowCandidateIdentityTransition: Boolean(marker) });
+  const expectedExitEvidenceRows = marker ? new Map(selectedInput.exitAdmission.materializerEvidenceRows.map((row) => [
+    `${row.stationId}\0${row.lineId}`,
+    {
+      ...row,
+      candidateId: selectedInput.candidateBuildSpec.candidateId,
+      stationSetSha256: selectedInput.exitAdmission.candidate.stationSetSha256,
+      sourceSetSha256: selectedInput.candidateBuildSpec.sourceSnapshotSetHash,
+      mappingContractVersion: selectedInput.exitAdmission.candidate.mappingContractVersion,
+      materializerVersion: selectedInput.exitAdmission.candidate.materializerVersion,
+    },
+  ])) : null;
+  if (marker && expectedExitEvidenceRows.size !== selectedInput.exitAdmission.materializerEvidenceRows.length) {
+    throw new Error("current-capital refresh EXIT evidence projection mismatch");
+  }
+  assertNarrowDelta({ stationBefore: parse(files[OUTPUTS[0]].bytes, "activated station input"), routeBefore: parse(files[OUTPUTS[1]].bytes, "activated route input"), stationAfter, routeAfter, allowCandidateIdentityTransition: Boolean(marker), expectedExitEvidenceRows });
   const outputs = OUTPUTS.map((relative, index) => ({ relative, bytes: index === 0 ? stationBytes : routeBytes, prestate: files[relative], inputs: Object.values(files) }));
   outputs[0].fanIn = { relative: FAN_IN_OUTPUT, bytes: fanInBytes, prestate: files[FAN_IN_OUTPUT], inputs: Object.values(files) };
   return outputs;

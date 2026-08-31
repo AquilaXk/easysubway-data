@@ -154,27 +154,54 @@ export function deriveCurrentLiveChainTransferDescriptorIdentity({ candidate, so
   return { sourceId: source.id, snapshotId: transfer.snapshotId, relativePath, row: transfer, projection: transferProjection, source, sourceSetSha256: candidate.sourceSnapshotSetHash };
 }
 
-function validateCurrentIdentity(components, candidate, ledger) {
+// EXIT evidence intentionally excludes only the terminal TRANSFER descriptor.
+// Keep the subset derivation alongside the descriptor proof so both fan-in and
+// EXIT admission bind the same full candidate and ledger ordering.
+export function deriveCurrentLiveChainTerminalTransferEvidenceSubset({
+  candidate,
+  sourceInventory,
+  sourceSnapshotLedger,
+}) {
   const identity = deriveCurrentLiveChainTransferDescriptorIdentity({
+    candidate,
+    sourceInventory,
+    sourceSnapshotLedger,
+  });
+  const ledger = sourceSnapshotLedger;
+  const transferIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === identity.source.id);
+  if (transferIndex !== candidate.sourceSnapshots.length - 1
+    || candidate.sourceSnapshotIds.at(-1) !== identity.row.snapshotId) {
+    throw new Error("current live-chain transfer must be terminal in the candidate");
+  }
+  const predecessorSnapshotIds = new Set(candidate.sourceSnapshotIds.slice(0, -1));
+  const predecessorEvidenceRows = ledger.filter(({ snapshotId }) => predecessorSnapshotIds.has(snapshotId));
+  const predecessorEvidenceSha256 = sha256(JSON.stringify(predecessorEvidenceRows));
+  if (predecessorSnapshotIds.size !== candidate.sourceSnapshotIds.length - 1
+    || predecessorEvidenceRows.length !== predecessorSnapshotIds.size
+    || predecessorEvidenceRows.some(({ sourceId }) => sourceId === identity.source.id)
+    || predecessorEvidenceSha256 === candidate.sourceSnapshotSetHash) {
+    throw new Error("current live-chain evidence source-set mismatch");
+  }
+  return {
+    ...identity,
+    currentCandidateSourceSetSha256: candidate.sourceSnapshotSetHash,
+    predecessorEvidenceRows,
+    predecessorEvidenceSha256,
+  };
+}
+
+function validateCurrentIdentity(components, candidate, ledger) {
+  const identity = deriveCurrentLiveChainTerminalTransferEvidenceSubset({
     candidate,
     sourceInventory: components.sourceInventory.value,
     sourceSnapshotLedger: ledger,
   });
-  const { row: transfer, source, sourceSetSha256: currentCandidateSourceSetSha256 } = identity;
-  const transferIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === source.id);
-  if (transferIndex !== candidate.sourceSnapshots.length - 1
-    || candidate.sourceSnapshotIds.at(-1) !== transfer.snapshotId) {
-    throw new Error("current live-chain transfer must be terminal in the candidate");
-  }
-  const evidenceSnapshotIds = new Set(candidate.sourceSnapshotIds.slice(0, -1));
-  const evidenceRows = ledger.filter(({ snapshotId }) => evidenceSnapshotIds.has(snapshotId));
-  const evidenceSourceSetSha256 = sha256(JSON.stringify(evidenceRows));
-  if (evidenceSnapshotIds.size !== candidate.sourceSnapshotIds.length - 1
-    || evidenceRows.length !== evidenceSnapshotIds.size
-    || evidenceRows.some(({ sourceId }) => sourceId === source.id)
-    || evidenceSourceSetSha256 === currentCandidateSourceSetSha256) {
-    throw new Error("current live-chain evidence source-set mismatch");
-  }
+  const {
+    row: transfer,
+    source,
+    currentCandidateSourceSetSha256,
+    predecessorEvidenceSha256: evidenceSourceSetSha256,
+  } = identity;
   const admission = source.transferAdmissionEvidence;
   const metrics = components.transferMetrics.value;
   const applicability = components.transferApplicability.value;

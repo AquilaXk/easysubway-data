@@ -12,6 +12,7 @@ import {
   fetchCurrentCapitalLiveChainComposite,
   preauthenticatedObjectStorageClient,
   publishCurrentCapitalLiveChainOciPlan,
+  publishCurrentKricExitProviderOciPlan,
   publishImmutableObjectPlan,
   requireCurrentCapitalLiveChainOciParBaseUrl,
 } from "./publish-object-storage.mjs";
@@ -19,6 +20,7 @@ import {
   buildCurrentCapitalLiveChainOciPlan,
   canonicalCurrentCapitalLiveChainOciPlanJson,
 } from "./build-current-capital-live-chain-oci-plan.mjs";
+import { buildCurrentKricExitProviderOciPlan, canonicalCurrentKricExitProviderOciPlanJson } from "./build-current-kric-exit-provider-oci-plan.mjs";
 import { buildCanonicalCurrentKricExitCollectionBundle, buildCanonicalCurrentLiveChainComposite, canonicalCurrentKricExitCollectionReceiptJson } from "./test-fixtures/current-live-chain-artifacts.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -117,6 +119,25 @@ test("current live-chain verification failure leaves no receipt", async (t) => {
     /immutable violation|uploaded checksum mismatch/,
   );
   await assert.rejects(() => access(receiptPath));
+});
+
+test("EXIT provider writes a create-new receipt only after one-object PUT and full GET", async (t) => {
+  const fixture = await liveChainFixture(t);
+  const providerArtifact = await buildCanonicalCurrentKricExitCollectionBundle({ operationId: "current-capital-647" });
+  await writeFile(path.join(fixture.root, "current-kric-exit-collection-bundle.json"), providerArtifact.bytes);
+  const plan = buildCurrentKricExitProviderOciPlan({
+    mainSha: "a".repeat(40), operationId: "current-capital-647",
+    providerCollectionBundleBytes: providerArtifact.bytes,
+    providerCapturedAt: providerArtifact.snapshot.capturedAt,
+  });
+  const planBytes = Buffer.from(`${canonicalCurrentKricExitProviderOciPlanJson(plan)}\n`);
+  const receiptPath = path.join(fixture.root, "exit-provider-receipt.json");
+  const client = memoryImmutableClient();
+  const receipt = await publishCurrentKricExitProviderOciPlan({ planBytes, root: fixture.root, receiptPath, env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: OCI_PAR }, client });
+  assert.equal(receipt.providerObject.objectKey, plan.providerObject.objectKey);
+  assert.deepEqual(client.objects.get(plan.providerObject.objectKey), providerArtifact.bytes);
+  await assert.rejects(() => publishCurrentKricExitProviderOciPlan({ planBytes, root: fixture.root, receiptPath: path.join(fixture.root, "failed-receipt.json"), env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: OCI_PAR }, client: memoryImmutableClient({ mismatch: true }) }), /immutable violation|uploaded checksum mismatch/);
+  await assert.rejects(() => access(path.join(fixture.root, "failed-receipt.json")));
 });
 
 test("current live-chain fetch는 canonical receipt의 exact composite만 create-new으로 내려받는다", async (t) => {

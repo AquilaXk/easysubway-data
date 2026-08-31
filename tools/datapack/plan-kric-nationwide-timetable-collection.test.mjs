@@ -11,19 +11,26 @@ const SEOUL_LINES = [
   ["line-15b3b8a93259", "7"], ["line-2b2d9eaa53d0", "8"], ["line-3f41718e0833", "6"], ["line-41a8c75ec9d8", "3"],
   ["line-472a81add377", "1"], ["line-80fc4d5350d4", "5"], ["seoul-2", "2"], ["seoul-4", "4"],
 ];
+const INCHEON_LINES = [["line-15b3b8a93259", "7"]];
+const ADMITTED_INCHEON_LINES = [
+  ["line-42b5805f3b5a", "2"], ["line-98718184f016", "1"],
+];
 
 function inputs() {
-  const providerScopes = [
+  const missingProviderScopes = [
     ...KORAIL_LINES.map(([lineId, lnCd]) => scope("korail", lineId, "KR", lnCd)),
     ...SEOUL_LINES.map(([lineId, lnCd]) => scope("seoul-metro", lineId, "S1", lnCd)),
+    ...INCHEON_LINES.map(([lineId, lnCd]) => scope("incheon-transit", lineId, "IC", lnCd)),
   ];
+  const admittedProviderScopes = ADMITTED_INCHEON_LINES.map(([lineId, lnCd]) => scope("incheon-transit", lineId, "IC", lnCd));
+  const providerScopes = [...missingProviderScopes, ...admittedProviderScopes];
   return {
     tally: {
       targetVersion: "2026-07-13",
-      launchRequired: { requirements: providerScopes.map(({ regionId, operatorId, lineId }) => ({
-        regionId, operatorId, lineId, sourceDomain: "schedule_timetable", status: "MISSING", missingKind: "NO_ADMITTED_SOURCE",
-        requiredFieldCount: 3, unadmittedFields: ["service_calendar", "trip", "stop_time"],
-      })) },
+      launchRequired: { requirements: [
+        ...missingProviderScopes.map(missingRequirement),
+        ...admittedProviderScopes.map(admittedRequirement),
+      ] },
     },
     rosterArtifact: {
       schemaVersion: 1, artifactKind: "kric-nationwide-route-rosters", sourceId: "kric-subway-route-info", targetVersion: "2026-07-13",
@@ -34,7 +41,7 @@ function inputs() {
   };
 }
 
-test("#454 exact 16 MISSING scope와 selected roster station으로 credential-free Exp×day plan을 결정적으로 만든다", () => {
+test("#459 plans the exact roster-owned IC/7 station and service-day requests", () => {
   const input = inputs();
   input.rosterArtifact.providerScopes.push(scope("other", "other-line", "OT", "WS"));
   input.rosterArtifact.rosters[0].stations.push({ mreaWideCd: "01", railOprIsttCd: "OT", lnCd: "WS", stinCd: "non-target" });
@@ -45,13 +52,20 @@ test("#454 exact 16 MISSING scope와 selected roster station으로 credential-fr
   assert.equal(result.credentialRedacted, true);
   assert.equal(result.operation, "subwayTimetableExp");
   assert.deepEqual(result.dayCds, ["8", "7", "9"]);
-  assert.equal(result.providerScopeCount, 16);
-  assert.equal(result.stationCount, 16);
-  assert.equal(result.requestCount, 48);
+  assert.equal(result.providerScopeCount, 17);
+  assert.equal(result.stationCount, 27);
+  assert.equal(result.requestCount, 81);
   assert.ok(result.requests.every(({ params }) => !Object.hasOwn(params, "serviceKey") && params.format === "json"));
   assert.ok(result.requests.every(({ endpoint }) => endpoint === "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetableExp"));
   assert.deepEqual(result.requests.map(({ requestKey }) => requestKey), [...result.requests.map(({ requestKey }) => requestKey)].sort());
-  assert.equal(new Set(result.requests.map(({ requestKey }) => requestKey)).size, 48);
+  assert.equal(new Set(result.requests.map(({ requestKey }) => requestKey)).size, 81);
+  const incheonRequests = result.requests.filter(({ params }) => params.railOprIsttCd === "IC" && params.lnCd === "7");
+  assert.equal(incheonRequests.length, 33);
+  assert.deepEqual(
+    [...new Set(incheonRequests.map(({ params }) => params.stinCd))].sort(),
+    Array.from({ length: 11 }, (_, index) => String(751 + index)),
+  );
+  assert.deepEqual([...new Set(incheonRequests.map(({ params }) => params.dayCd))].sort(), ["7", "8", "9"]);
   assert.ok(!JSON.stringify(result).includes("serviceKey="));
 });
 
@@ -80,6 +94,12 @@ test("#454 planner는 selector/candidate/roster identity와 selected provider st
   malformedTargetScope.rosterArtifact.providerScopes.push(scope("korail", "unknown-target", "KR", "X"));
   assert.throws(() => planKricNationwideTimetableCollection(malformedTargetScope), /unknown target-owned provider scope/);
 
+  const unknownIncheonCollision = inputs();
+  unknownIncheonCollision.tally.launchRequired.requirements.push(
+    missingRequirement(scope("incheon-transit", "unknown-target", "IC", "7")),
+  );
+  assert.throws(() => planKricNationwideTimetableCollection(unknownIncheonCollision), /unknown timetable requirement/);
+
   const invalidSelectedRoster = inputs();
   invalidSelectedRoster.rosterArtifact.rosters[0].sourceId = "wrong-source";
   assert.throws(() => planKricNationwideTimetableCollection(invalidSelectedRoster), /invalid timetable roster/);
@@ -93,6 +113,21 @@ function scope(operatorId, lineId, railOprIsttCd, lnCd) {
   return { regionId: "capital", operatorId, lineId, mreaWideCd: "01", railOprIsttCd, lnCd };
 }
 
+function missingRequirement({ regionId, operatorId, lineId }) {
+  return {
+    regionId, operatorId, lineId, sourceDomain: "schedule_timetable", status: "MISSING", missingKind: "NO_ADMITTED_SOURCE",
+    requiredFieldCount: 3, unadmittedFields: ["service_calendar", "trip", "stop_time"],
+  };
+}
+
+function admittedRequirement({ regionId, operatorId, lineId }) {
+  return {
+    regionId, operatorId, lineId, sourceDomain: "schedule_timetable", status: "INVENTORY_ADMITTED", missingKind: null,
+    admissionRatio: 1, admittedFieldCount: 3, admittedSourceIds: [`${lineId}-timetable`],
+    requiredFieldCount: 3, unadmittedFields: [],
+  };
+}
+
 function station(providerScope, stinCd) {
   return { railOprIsttCd: providerScope.railOprIsttCd, lnCd: providerScope.lnCd, mreaWideCd: "01", stinCd };
 }
@@ -104,7 +139,11 @@ function rostersFor(providerScopes) {
     const roster = byRequest.get(key) ?? {
       schemaVersion: 1, artifactKind: "kric-route-roster", sourceId: "kric-subway-route-info", resultCode: "00", mreaWideCd: "01", lnCd: providerScope.lnCd, stations: [],
     };
-    roster.stations.push(station(providerScope, `station-${String(index).padStart(2, "0")}`));
+    if (providerScope.operatorId === "incheon-transit") {
+      for (let stinCd = 751; stinCd <= 761; stinCd += 1) roster.stations.push(station(providerScope, String(stinCd)));
+    } else {
+      roster.stations.push(station(providerScope, `station-${String(index).padStart(2, "0")}`));
+    }
     byRequest.set(key, roster);
   }
   return [...byRequest.values()];

@@ -6,6 +6,7 @@ const ENDPOINT = "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetabl
 const TARGET_VERSION = "2026-07-13";
 const DAY_CDS = Object.freeze(["8", "7", "9"]);
 const REQUIRED_FIELDS = Object.freeze(["service_calendar", "trip", "stop_time"]);
+const TARGET_OPERATOR_IDS = Object.freeze(["korail", "seoul-metro", "incheon-transit"]);
 const EXPECTED_SCOPES = Object.freeze([
   scope("korail", "line-051552e50435", "KR", "WS"),
   scope("korail", "line-41a8c75ec9d8", "KR", "3"),
@@ -23,12 +24,13 @@ const EXPECTED_SCOPES = Object.freeze([
   scope("seoul-metro", "line-80fc4d5350d4", "S1", "5"),
   scope("seoul-metro", "seoul-2", "S1", "2"),
   scope("seoul-metro", "seoul-4", "S1", "4"),
+  scope("incheon-transit", "line-15b3b8a93259", "IC", "7"),
 ]);
 
 export function planKricNationwideTimetableCollection({ tally, rosterArtifact, sourceCandidates } = {}) {
-  validateTally(tally);
+  const { knownRequirementKeys } = validateTally(tally);
   const candidate = validateCandidate(sourceCandidates);
-  const { providerScopes, knownProviderKeys } = validateProviderScopes(rosterArtifact);
+  const { providerScopes, knownProviderKeys } = validateProviderScopes(rosterArtifact, knownRequirementKeys);
   const selectedStations = selectOwnedStations(rosterArtifact, providerScopes, knownProviderKeys);
   const requests = selectedStations.flatMap((station) => DAY_CDS.map((dayCd) => requestFor(station, dayCd)));
   requests.sort((left, right) => codepointCompare(left.requestKey, right.requestKey));
@@ -57,16 +59,27 @@ function validateTally(tally) {
   if (tally?.targetVersion !== TARGET_VERSION || !Array.isArray(tally?.launchRequired?.requirements)) {
     throw new Error("timetable tally identity is invalid");
   }
-  const selected = tally.launchRequired.requirements.filter((entry) => (
-    entry?.regionId === "capital"
-    && ["korail", "seoul-metro"].includes(entry.operatorId)
-    && entry.sourceDomain === "schedule_timetable"
-  ));
   const expectedByKey = new Map(EXPECTED_SCOPES.map((value) => [scopeKey(value), value]));
   const seen = new Set();
-  for (const entry of selected) {
+  const knownRequirementKeys = new Set();
+  for (const entry of tally.launchRequired.requirements) {
+    if (entry?.regionId !== "capital" || !TARGET_OPERATOR_IDS.includes(entry.operatorId)
+      || entry.sourceDomain !== "schedule_timetable") continue;
     const key = scopeKey(entry);
-    if (seen.has(key)) throw new Error(`duplicate timetable requirement: ${key}`);
+    if (knownRequirementKeys.has(key)) throw new Error(`duplicate timetable requirement: ${key}`);
+    knownRequirementKeys.add(key);
+    if (entry.status === "INVENTORY_ADMITTED") {
+      if (entry.missingKind !== null || entry.requiredFieldCount !== 3
+        || entry.admissionRatio !== 1 || entry.admittedFieldCount !== 3
+        || !Array.isArray(entry.admittedSourceIds) || entry.admittedSourceIds.length === 0
+        || new Set(entry.admittedSourceIds).size !== entry.admittedSourceIds.length
+        || entry.admittedSourceIds.some((value) => !nonBlank(value))
+        || !Array.isArray(entry.unadmittedFields) || entry.unadmittedFields.length !== 0) {
+        throw new Error(`admitted timetable requirement is invalid: ${key}`);
+      }
+      continue;
+    }
+    if (entry.status !== "MISSING") throw new Error(`timetable requirement status is invalid: ${key}`);
     seen.add(key);
     if (!expectedByKey.has(key)) throw new Error(`unknown timetable requirement: ${key}`);
     if (entry.status !== "MISSING" || entry.missingKind !== "NO_ADMITTED_SOURCE" || entry.requiredFieldCount !== 3
@@ -75,8 +88,9 @@ function validateTally(tally) {
     }
   }
   if (seen.size !== EXPECTED_SCOPES.length || [...expectedByKey.keys()].some((key) => !seen.has(key))) {
-    throw new Error("exact 16 timetable requirements are required");
+    throw new Error(`exact ${EXPECTED_SCOPES.length} timetable requirements are required`);
   }
+  return { knownRequirementKeys };
 }
 
 function validateCandidate(sourceCandidates) {
@@ -99,7 +113,7 @@ function validateCandidate(sourceCandidates) {
   return candidate;
 }
 
-function validateProviderScopes(rosterArtifact) {
+function validateProviderScopes(rosterArtifact, knownRequirementKeys) {
   if (rosterArtifact?.schemaVersion !== 1 || rosterArtifact.artifactKind !== "kric-nationwide-route-rosters"
     || rosterArtifact.sourceId !== "kric-subway-route-info" || rosterArtifact.targetVersion !== TARGET_VERSION
     || rosterArtifact.credentialRedacted !== true || !Array.isArray(rosterArtifact.providerScopes) || !Array.isArray(rosterArtifact.rosters)) {
@@ -109,22 +123,27 @@ function validateProviderScopes(rosterArtifact) {
   const knownProviderKeys = new Set();
   const expectedByKey = new Map(EXPECTED_SCOPES.map((expected) => [scopeKey(expected), expected]));
   for (const value of rosterArtifact.providerScopes) {
-    const targetOwned = value?.regionId === "capital" && ["korail", "seoul-metro"].includes(value?.operatorId);
+    const targetOwned = value?.regionId === "capital" && TARGET_OPERATOR_IDS.includes(value?.operatorId);
     if (targetOwned) {
       for (const field of ["regionId", "operatorId", "lineId", "mreaWideCd", "railOprIsttCd", "lnCd"]) {
         if (!nonBlank(value[field])) throw new Error(`invalid target-owned provider scope: ${field}`);
       }
       const key = scopeKey(value);
-      if (!expectedByKey.has(key)) throw new Error(`unknown target-owned provider scope: ${key}`);
-      if (actual.has(key)) throw new Error(`duplicate timetable provider scope: ${key}`);
-      actual.set(key, value);
       knownProviderKeys.add(providerKey(value));
+      if (expectedByKey.has(key)) {
+        if (actual.has(key)) throw new Error(`duplicate timetable provider scope: ${key}`);
+        actual.set(key, value);
+        continue;
+      }
+      if (!knownRequirementKeys.has(key)) throw new Error(`unknown target-owned provider scope: ${key}`);
       continue;
     }
     if (!nonBlank(value?.mreaWideCd) || !nonBlank(value?.railOprIsttCd) || !nonBlank(value?.lnCd)) continue;
     knownProviderKeys.add(providerKey(value));
   }
-  if (actual.size !== EXPECTED_SCOPES.length) throw new Error("exact 16 timetable provider scopes are required");
+  if (actual.size !== EXPECTED_SCOPES.length) {
+    throw new Error(`exact ${EXPECTED_SCOPES.length} timetable provider scopes are required`);
+  }
   for (const expected of EXPECTED_SCOPES) {
     const value = actual.get(scopeKey(expected));
     if (!value || value.mreaWideCd !== expected.mreaWideCd || value.lnCd !== expected.lnCd || value.railOprIsttCd !== expected.railOprIsttCd) {

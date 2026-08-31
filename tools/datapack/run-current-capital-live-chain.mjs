@@ -14,9 +14,10 @@ import {
   canonicalCurrentCapitalLiveChainFanInBoundaryJson,
   readCurrentCapitalLiveChainFanInBoundary,
 } from "./build-current-capital-live-chain-boundary.mjs";
-import { buildCurrentCapitalLiveChainOciPlan, buildCurrentCapitalLiveChainProviderObject, canonicalCurrentCapitalLiveChainOciPlanJson } from "./build-current-capital-live-chain-oci-plan.mjs";
+import { buildCurrentCapitalLiveChainProviderObject } from "./build-current-capital-live-chain-oci-plan.mjs";
+import { buildCurrentKricExitProviderOciPlan, canonicalCurrentKricExitProviderOciPlanJson } from "./build-current-kric-exit-provider-oci-plan.mjs";
 import { canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-current-capital-facility-source-admission.mjs";
-import { buildCurrentExitAdmissionOciReceipt, canonicalCurrentExitAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
+import { buildCurrentExitAdmissionOciReceipt, buildCurrentExitReboundAdmissionOciReceipt, canonicalCurrentExitAdmissionOciReceiptJson, canonicalCurrentExitReboundAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
 import { buildCurrentKricExitCollectionBundle, buildCurrentKricExitCollectionReceipt, canonicalCurrentKricExitCollectionBundleJson } from "./build-current-kric-exit-collection-receipt.mjs";
 import { readRegularSnapshot } from "./build-current-kric-exit-collection-plan.mjs";
 import { canonicalKricExitPathProviderSnapshotJson } from "./collect-kric-exit-path-provider-snapshot.mjs";
@@ -24,20 +25,27 @@ import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { canonicalKricExitPathCollectionPlanJson } from "./plan-kric-exit-path-collection.mjs";
 import { main as buildCurrentCapitalRouteEdgeInput } from "./build-current-capital-route-edge-input.mjs";
 import { canonicalRouteEdgeEvaluationJson, evaluateRouteAccessibilityEdges } from "./evaluate-route-accessibility-edges.mjs";
-import { extractCurrentCapitalLiveChainDirectory } from "./extract-current-capital-live-chain-directory.mjs";
 import {
-  buildCurrentCapitalExitProviderSourceHandoffFromLiveChain,
+  buildCurrentCapitalExitProviderSourceHandoffFromProviderOci,
+  canonicalCurrentCapitalExitProviderCandidateHandoffJson,
+  CURRENT_CAPITAL_EXIT_PROVIDER_CANDIDATE_RECEIPT,
+  CURRENT_CAPITAL_EXIT_PROVIDER_REBOUND_BUNDLE,
   canonicalCurrentCapitalExitProviderSourceHandoffJson,
   CURRENT_CAPITAL_EXIT_PROVIDER_OCI_PLAN,
   CURRENT_CAPITAL_EXIT_PROVIDER_OCI_RECEIPT,
   CURRENT_CAPITAL_EXIT_PROVIDER_SOURCE_RECEIPT,
 } from "./current-capital-exit-provider-handoff.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
-import { fetchCurrentCapitalLiveChainComposite, publishCurrentCapitalLiveChainOciPlan, requireCurrentCapitalLiveChainOciParBaseUrl } from "./publish-object-storage.mjs";
+import { publishCurrentKricExitProviderOciPlan, requireCurrentCapitalLiveChainOciParBaseUrl } from "./publish-object-storage.mjs";
+import { preauthenticatedObjectStorageClient } from "./publish-object-storage.mjs";
+import { recoverCurrentCapitalExitProviderCandidate } from "./current-capital-exit-provider-handoff.mjs";
+import { rebindCurrentCandidateSourceSnapshots } from "./rebind-current-candidate-source-snapshots.mjs";
+import { buildCurrentCapitalAccessibilityRefreshOutputs, refreshCurrentCapitalAccessibilityFull } from "./refresh-current-capital-accessibility-full.mjs";
 import { rebindCurrentActiveFacilityDerivedIdentity } from "./rebind-current-active-facility-derived-identity.mjs";
 import { rebindCurrentActivePublicRouteMapMaterialization } from "./rebind-current-active-public-route-map-materialization.mjs";
 import { currentLiveChainTransferStageInputs, rebindCurrentLiveChainTransferDerivedIdentities } from "./rebind-current-live-chain-transfer-derived-identities.mjs";
 import { assertCurrentStaticNetworkTopologyAdmission } from "./register-current-static-network-successors.mjs";
+import { validateCurrentCapitalLiveChainMaterialization } from "./validate-current-capital-live-chain-materialization.mjs";
 
 const execFile = promisify(execFileCallback);
 const DATA_MAIN_REMOTE = "https://github.com/AquilaXk/easysubway-data.git";
@@ -362,9 +370,9 @@ async function replaceStagedFile({ from, to }) {
   await rename(from, to);
 }
 
-function stagedCopyAllowed(repositoryRoot, sourcePath) {
+function stagedCopyAllowed(repositoryRoot, sourcePath, excludedPaths = EXCLUDED_STAGED_PATHS) {
   const relative = path.relative(repositoryRoot, sourcePath).split(path.sep).join("/");
-  return !EXCLUDED_STAGED_PATHS.some((excluded) => relative === excluded || relative.startsWith(`${excluded}/`));
+  return !excludedPaths.some((excluded) => relative === excluded || relative.startsWith(`${excluded}/`));
 }
 
 async function buildFanInBoundaryBytes(stagedRoot) {
@@ -383,6 +391,8 @@ async function buildFanInBoundaryBytes(stagedRoot) {
 export async function evaluateStagedRoutePolicy({
   stagedRoot,
   evaluationAt,
+  routeEdgeInputBytes = null,
+  stationLineInputBytes = null,
   materializeStationLineAccessibilityImpl = materializeStationLineAccessibility,
   evaluateRouteAccessibilityEdgesImpl = evaluateRouteAccessibilityEdges,
   canonicalRouteEdgeEvaluationJsonImpl = canonicalRouteEdgeEvaluationJson,
@@ -391,11 +401,15 @@ export async function evaluateStagedRoutePolicy({
   const stationLineInputPath = path.join(stagedRoot, "tools/datapack/release/current-capital-accessibility-full/station-line-input.json");
   const policyPath = path.join(stagedRoot, "release/product-gates/route-edge-evaluation-policy.json");
   const outputPath = path.join(stagedRoot, "tools/datapack/release/current-capital-accessibility-full/route-edge-evaluation.json");
-  const [routeEdgeInputBytes, stationLineInputBytes, policyBytes] = await Promise.all([
-    readFile(routeEdgeInputPath), readFile(stationLineInputPath), readFile(policyPath),
+  if ((routeEdgeInputBytes == null) !== (stationLineInputBytes == null)
+    || (routeEdgeInputBytes != null && (!Buffer.isBuffer(routeEdgeInputBytes) || !Buffer.isBuffer(stationLineInputBytes)))) {
+    throw new Error("staged route policy input bytes mismatch");
+  }
+  const [resolvedRouteEdgeInputBytes, resolvedStationLineInputBytes, policyBytes] = await Promise.all([
+    routeEdgeInputBytes ?? readFile(routeEdgeInputPath), stationLineInputBytes ?? readFile(stationLineInputPath), readFile(policyPath),
   ]);
-  const routeEdgeInput = JSON.parse(routeEdgeInputBytes.toString("utf8"));
-  const stationLineInput = JSON.parse(stationLineInputBytes.toString("utf8"));
+  const routeEdgeInput = JSON.parse(resolvedRouteEdgeInputBytes.toString("utf8"));
+  const stationLineInput = JSON.parse(resolvedStationLineInputBytes.toString("utf8"));
   const materialization = materializeStationLineAccessibilityImpl({ ...stationLineInput, observedAt: evaluationAt });
   const evaluation = evaluateRouteAccessibilityEdgesImpl(
     { ...routeEdgeInput, evaluationAt, materialization },
@@ -409,7 +423,7 @@ export async function evaluateStagedRoutePolicy({
   return evaluationBytes;
 }
 
-export async function runCurrentCapitalLiveChain({ repositoryRoot, runnerTemp, repository, repositorySha, operationId, transferObservationDirectory, transferReceiptPath, handoffDirectory, retainedExitBundle = undefined, retainedExitBundleSha256 = undefined, env = process.env, execFileImpl = execFile, clock = () => new Date(), assertCurrentTopologyAdmissionImpl = assertCurrentStaticNetworkTopologyAdmission, assertCurrentFacilityAdmissionImpl = assertCurrentCapitalFacilityAdmission, rebindPublicRouteMapImpl = rebindCurrentActivePublicRouteMapMaterialization, rebindTransferImpl = rebindCurrentLiveChainTransferDerivedIdentities, rebindFacilityImpl = rebindCurrentActiveFacilityDerivedIdentity, publishImpl = publishCurrentCapitalLiveChainOciPlan, fetchImpl = fetchCurrentCapitalLiveChainComposite, extractImpl = extractCurrentCapitalLiveChainDirectory }) {
+export async function runCurrentCapitalLiveChain({ repositoryRoot, runnerTemp, repository, repositorySha, operationId, transferObservationDirectory, transferReceiptPath, handoffDirectory, retainedExitBundle = undefined, retainedExitBundleSha256 = undefined, env = process.env, execFileImpl = execFile, clock = () => new Date(), assertCurrentTopologyAdmissionImpl = assertCurrentStaticNetworkTopologyAdmission, assertCurrentFacilityAdmissionImpl = assertCurrentCapitalFacilityAdmission, rebindPublicRouteMapImpl = rebindCurrentActivePublicRouteMapMaterialization, rebindTransferImpl = rebindCurrentLiveChainTransferDerivedIdentities, rebindFacilityImpl = rebindCurrentActiveFacilityDerivedIdentity, publishImpl = publishCurrentKricExitProviderOciPlan }) {
   if (repository !== "AquilaXk/easysubway-data") throw new Error("repository identity mismatch");
   if (![repositoryRoot, runnerTemp, transferObservationDirectory, transferReceiptPath, handoffDirectory].every((value) => path.isAbsolute(value ?? ""))) throw new Error("current live-chain paths must be absolute");
   requiredSha(repositorySha); requiredOperation(operationId);
@@ -503,29 +517,300 @@ export async function runCurrentCapitalLiveChain({ repositoryRoot, runnerTemp, r
   await evaluateStagedRoutePolicy({ stagedRoot, evaluationAt: derivationAt });
   const bundle = await buildCurrentCapitalLiveChainBundle({ root, outputDirectory: stagedRoot, repository, repositorySha, operationId, boundaryBytes });
   await writeFile(path.join(stagedRoot, "current-capital-live-chain-bundle.json"), bundle, { flag: "wx", mode: 0o600 });
-  const ociPlan = buildCurrentCapitalLiveChainOciPlan({ mainSha: repositorySha, operationId, providerCollectionBundleBytes: collectionBundleBytes, providerCapturedAt: snapshot.capturedAt, compositeBundleBytes: bundle });
-  const ociPlanBytes = Buffer.from(`${canonicalCurrentCapitalLiveChainOciPlanJson(ociPlan)}\n`);
-  const ociPlanPath = path.join(stagedRoot, "current-capital-live-chain-oci-plan.json");
-  const externalReceiptPath = path.join(stagedRoot, "current-capital-live-chain-oci-receipt.json");
-  const fetchedProviderCollectionPath = path.join(stagedRoot, "fetched-current-kric-exit-collection-bundle.json");
-  const fetchedBundlePath = path.join(stagedRoot, "fetched-current-capital-live-chain-bundle.json");
+  const ociPlan = buildCurrentKricExitProviderOciPlan({ mainSha: repositorySha, operationId, providerCollectionBundleBytes: collectionBundleBytes, providerCapturedAt: snapshot.capturedAt });
+  const ociPlanBytes = Buffer.from(`${canonicalCurrentKricExitProviderOciPlanJson(ociPlan)}\n`);
+  const ociPlanPath = path.join(stagedRoot, CURRENT_CAPITAL_EXIT_PROVIDER_OCI_PLAN);
+  const externalReceiptPath = path.join(stagedRoot, CURRENT_CAPITAL_EXIT_PROVIDER_OCI_RECEIPT);
   await writeFile(ociPlanPath, ociPlanBytes, { flag: "wx", mode: 0o600 });
   const ociEnv = narrowOciEnv(env);
   await publishImpl({ planBytes: ociPlanBytes, root: stagedRoot, receiptPath: externalReceiptPath, env: ociEnv });
-  await fetchImpl({ planBytes: ociPlanBytes, receiptPath: externalReceiptPath, providerDestinationPath: fetchedProviderCollectionPath, destinationPath: fetchedBundlePath, env: ociEnv });
   const externalReceiptBytes = await readFile(externalReceiptPath);
-  const fetchedProviderCollectionBundleBytes = await readFile(fetchedProviderCollectionPath);
-  const fetchedBundleBytes = await readFile(fetchedBundlePath);
-  await extractImpl({ ociPlanBytes, externalReceiptBytes, fetchedProviderCollectionBundleBytes, fetchedBundleBytes, destinationDirectory: handoffDirectory, repository, repositorySha, operationId });
-  const sourceHandoff = buildCurrentCapitalExitProviderSourceHandoffFromLiveChain({
-    ociPlanBytes, externalReceiptBytes, fetchedProviderCollectionBundleBytes, fetchedCompositeBundleBytes: fetchedBundleBytes,
-    repository, repositorySha, operationId,
+  const sourceHandoff = buildCurrentCapitalExitProviderSourceHandoffFromProviderOci({
+    providerOciPlanBytes: ociPlanBytes, providerOciReceiptBytes: externalReceiptBytes,
+    fetchedProviderCollectionBundleBytes: collectionBundleBytes, repository, repositorySha, operationId,
   });
   const handoffRoot = path.resolve(handoffDirectory);
   await writeFile(path.join(handoffRoot, CURRENT_CAPITAL_EXIT_PROVIDER_OCI_PLAN), ociPlanBytes, { flag: "wx", mode: 0o600 });
   await writeFile(path.join(handoffRoot, CURRENT_CAPITAL_EXIT_PROVIDER_OCI_RECEIPT), externalReceiptBytes, { flag: "wx", mode: 0o600 });
   await writeFile(path.join(handoffRoot, CURRENT_CAPITAL_EXIT_PROVIDER_SOURCE_RECEIPT), `${canonicalCurrentCapitalExitProviderSourceHandoffJson(sourceHandoff)}\n`, { flag: "wx", mode: 0o600 });
-  return { stagedRoot, handoffDirectory: handoffRoot, plan, bundleSha256: JSON.parse(bundle).bundleSha256, providerCollectionBundleSha256: providerObject.sha256, sourceHandoff, ociPlan };
+  return { stagedRoot, handoffDirectory: handoffRoot, plan, bundleSha256: JSON.parse(bundle).bundleSha256, providerCollectionBundleSha256: ociPlan.providerObject.sha256, sourceHandoff, ociPlan };
+}
+
+/**
+ * Consume one immutable EXIT provider object on the validated FACILITY branch.
+ * The caller owns constructing the target EXIT plan and the admission/fan-in
+ * materialization; this function owns the protected ordering and verifies that
+ * neither provider collection nor an OCI write can occur on the consumer path.
+ */
+export async function runCurrentCapitalExitTerminalConsumer({
+  repositoryRoot,
+  runnerTemp,
+  repository,
+  candidateOperationId,
+  operationNow,
+  sourceReceiptBytes,
+  providerOciPlanBytes,
+  providerOciReceiptBytes,
+  reboundOutputPath = CURRENT_CAPITAL_EXIT_PROVIDER_REBOUND_BUNDLE,
+  client,
+  isAncestor,
+  transferObservationDirectory,
+  transferReceiptPath,
+  env = process.env,
+  execFileImpl = execFile,
+  rebindPublicRouteMapImpl = rebindCurrentActivePublicRouteMapMaterialization,
+  rebindTransferImpl = rebindCurrentLiveChainTransferDerivedIdentities,
+  rebindFacilityImpl = rebindCurrentActiveFacilityDerivedIdentity,
+} = {}) {
+  if (repository !== "AquilaXk/easysubway-data") throw new Error("repository identity mismatch");
+  if (![repositoryRoot, runnerTemp, transferObservationDirectory, transferReceiptPath].every((value) => path.isAbsolute(value ?? ""))
+    || !(operationNow instanceof Date) || Number.isNaN(operationNow.valueOf())) {
+    throw new Error("terminal consumer inputs mismatch");
+  }
+  if (typeof isAncestor !== "function") throw new Error("terminal consumer ancestry is required");
+  const root = path.resolve(repositoryRoot);
+  await requireRealDirectory(root, "terminal candidate repository root");
+  await requireRealDirectory(path.resolve(runnerTemp), "terminal runner temp");
+  const preflight = await terminalCandidatePreflight(root, execFileImpl);
+  const candidateRootSha = preflight.headSha;
+  const [currentCandidate, candidateStageInputs] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse)
+      .then((candidate) => resolveCurrentLiveChainCandidateStageInputs(candidate, root)),
+  ]);
+  const transferStageInputs = currentLiveChainTransferStageInputs(currentCandidate, root);
+  const stagedRoot = await mkdtemp(path.join(path.resolve(runnerTemp), "current-capital-exit-terminal-"));
+  // Terminal refresh needs the currently committed output bytes and both
+  // markers as CAS prestates.  They never leave this isolated staging root.
+  for (const relative of new Set([...STAGED_INPUTS, ...transferStageInputs, ...candidateStageInputs])) {
+    const source = path.join(root, relative); const destination = path.join(stagedRoot, relative);
+    await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
+    await cp(source, destination, { recursive: true, force: false, verbatimSymlinks: true,
+      filter: (entry) => stagedCopyAllowed(root, entry, []) });
+  }
+  await rebindPublicRouteMapImpl({ repositoryRoot: stagedRoot });
+  await rebindTransferImpl({ repositoryRoot: stagedRoot, observationDirectory: transferObservationDirectory, receiptPath: transferReceiptPath });
+  await rebindFacilityImpl({ repositoryRoot: stagedRoot });
+  // This create-once transaction is the boundary between P/T/F materialization
+  // and every candidate-dependent EXIT/fan-in operation.  All later inputs are
+  // read from its committed staged bytes.
+  await rebindCurrentCandidateSourceSnapshots({ repositoryRoot: stagedRoot, now: operationNow });
+  const currentKricExitPlanInputs = await resolveCurrentKricExitPlanInputs(stagedRoot);
+  const [stagedCandidate, stagedInventory, stagedSnapshotLedger] = await Promise.all([
+    readFile(path.join(stagedRoot, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(stagedRoot, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
+    readFile(path.join(stagedRoot, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+  ]);
+  const incheonTopologyRelativePath = resolveStagedIncheonTopologyPath(stagedInventory);
+  const outputPaths = currentCapitalLiveChainOutputPaths({ candidate: stagedCandidate, sourceInventory: stagedInventory, sourceSnapshotLedger: stagedSnapshotLedger });
+  const plan = buildCurrentCapitalLiveChainPlan({
+    repositoryRoot: root, repositorySha: candidateRootSha, operationId: candidateOperationId,
+    stagedRoot, transferObservationDirectory, transferReceiptPath, incheonTopologyRelativePath,
+    ...currentKricExitPlanInputs, outputPaths,
+  });
+  const buildExitPlan = plan.steps.find((entry) => entry.id === "build-exit-plan");
+  await execFileImpl(process.execPath, [buildExitPlan.script, ...buildExitPlan.args], {
+    cwd: root, env: { ...narrowRunnerEnv(env), RUNNER_TEMP: stagedRoot },
+  });
+  await assertCurrentStaticNetworkTopologyAdmission({ repositoryRoot: stagedRoot, now: operationNow });
+  await assertCurrentCapitalFacilityAdmission({ stagedRoot, now: operationNow });
+  const targetPlan = await readRegularSnapshot(path.join(stagedRoot, "current-kric-exit-plan.json"), "terminal EXIT plan");
+  const recoveryClient = client ?? preauthenticatedObjectStorageClient(
+    requireCurrentCapitalLiveChainOciParBaseUrl(env), { includeErrorBody: false },
+  );
+  const recovered = await recoverCurrentCapitalExitProviderCandidate({
+    sourceReceiptBytes, providerOciPlanBytes, providerOciReceiptBytes,
+    targetPlanBytes: targetPlan.bytes, candidateOperationId, operationNow, preflight,
+    reboundOutputPath, client: recoveryClient,
+    isAncestor,
+  });
+  if (recovered.providerCalls !== 0 || recovered.ociPutCalls !== 0) throw new Error("terminal consumer provider boundary mismatch");
+  const reboundBundlePath = path.join(stagedRoot, reboundOutputPath);
+  await writeFile(reboundBundlePath, recovered.reboundBundleBytes, { flag: "wx", mode: 0o600 });
+  const recoveredBundle = JSON.parse(recovered.reboundBundleBytes.toString("utf8"));
+  const recoveredSnapshotBytes = Buffer.from(recoveredBundle.providerSnapshotJson);
+  await writeFile(path.join(stagedRoot, "current-kric-exit-snapshot.json"), recoveredSnapshotBytes, { flag: "wx", mode: 0o600 });
+  await writeFile(path.join(stagedRoot, CURRENT_CAPITAL_EXIT_PROVIDER_CANDIDATE_RECEIPT),
+    `${canonicalCurrentCapitalExitProviderCandidateHandoffJson(recovered.candidateReceipt)}\n`, { flag: "wx", mode: 0o600 });
+  const admissionStep = plan.steps.find((entry) => entry.id === "admit-exit");
+  const derivationAt = recovered.candidateReceipt.providerCapturedAt;
+  const admissionArgs = admissionStep.args.map((value) => value === "FROM_PROVIDER_CAPTURED_AT" ? derivationAt : value);
+  await execFileImpl(process.execPath, [admissionStep.script, ...admissionArgs], {
+    cwd: root, env: { ...narrowRunnerEnv(env), RUNNER_TEMP: stagedRoot },
+  });
+  await replaceStagedFile({ from: path.join(stagedRoot, "current-exit-admission", "exit-path-normalized-source-snapshot.json"), to: path.join(stagedRoot, "tools/datapack/release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json") });
+  await replaceStagedFile({ from: path.join(stagedRoot, "current-exit-admission", "exit-path-source-admission.json"), to: path.join(stagedRoot, "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json") });
+  const [normalizedBytes, admissionBytes] = await Promise.all([
+    readFile(path.join(stagedRoot, "tools/datapack/release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json")),
+    readFile(path.join(stagedRoot, "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json")),
+  ]);
+  const providerObject = recovered.sourceReceipt.providerObject;
+  const exitReceipt = buildCurrentExitReboundAdmissionOciReceipt({
+    repository,
+    sourceMainSha: recovered.sourceReceipt.sourceMainSha,
+    sourceOperationId: recovered.sourceReceipt.sourceOperationId,
+    candidateHeadSha: candidateRootSha,
+    candidateOperationId,
+    providerCapturedAt: derivationAt,
+    providerCollectionBundleBytes: recovered.fetchedProviderCollectionBundleBytes,
+    providerObjectUri: providerObject.ociUri,
+    providerObjectSha256: providerObject.sha256,
+    providerObjectByteSize: providerObject.sizeBytes,
+    sourceReceiptSha256: recovered.sourceReceipt.receiptSha256,
+    candidateReceiptSha256: recovered.candidateReceipt.receiptSha256,
+    reboundCollectionBundleBytes: recovered.reboundBundleBytes,
+    normalizedBytes,
+    admissionBytes,
+  });
+  await writeFile(path.join(stagedRoot, "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json"),
+    `${canonicalCurrentExitReboundAdmissionOciReceiptJson(exitReceipt)}\n`, { flag: "w", mode: 0o600 });
+  const proposedOutputs = await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: stagedRoot });
+  const proposedByPath = new Map([
+    ...proposedOutputs.map(({ relative, bytes }) => [relative, bytes]),
+    [proposedOutputs[0].fanIn.relative, proposedOutputs[0].fanIn.bytes],
+  ]);
+  await evaluateStagedRoutePolicy({
+    stagedRoot,
+    evaluationAt: derivationAt,
+    routeEdgeInputBytes: proposedByPath.get("tools/datapack/release/current-capital-accessibility-full/route-edge-input.json"),
+    stationLineInputBytes: proposedByPath.get("tools/datapack/release/current-capital-accessibility-full/station-line-input.json"),
+  });
+  const refresh = await refreshCurrentCapitalAccessibilityFull({ repositoryRoot: stagedRoot });
+  if (!refresh || JSON.stringify(refresh.outputs) !== JSON.stringify([
+    "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
+    "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
+    CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH,
+  ])) throw new Error("terminal consumer refresh transaction mismatch");
+  const markerPaths = [
+    "tools/datapack/release/current-capital-accessibility-transition.json",
+    "tools/datapack/release/current-capital-accessibility-transition-successor.json",
+  ];
+  const validation = await validateCurrentCapitalLiveChainMaterialization({
+    outputDirectory: stagedRoot,
+    repository,
+    repositorySha: candidateRootSha,
+    operationId: candidateOperationId,
+    boundaryBytes: await readFile(path.join(stagedRoot, CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH)),
+  });
+  if (JSON.stringify(validation.outputPaths) !== JSON.stringify(outputPaths)) {
+    throw new Error("terminal consumer post-CAS output identity mismatch");
+  }
+  for (const relative of markerPaths) await requireAbsent(path.join(stagedRoot, relative), "terminal consumer marker");
+  return Object.freeze({
+    providerCalls: 0,
+    ociGetCalls: 1,
+    ociPutCalls: 0,
+    candidateReceipt: recovered.candidateReceipt,
+    stagedRoot,
+    outputPaths,
+    fanInPath: CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH,
+    deletedMarkerPaths: Object.freeze(markerPaths),
+  });
+}
+
+async function terminalCandidatePreflight(root, execFileImpl = execFile) {
+  const run = async (args) => String((await execFileImpl("git", args, { cwd: root })).stdout).trim();
+  const [origin, branch, headSha, upstream, remoteHeadSha, dirty] = await Promise.all([
+    run(["remote", "get-url", "origin"]), run(["branch", "--show-current"]), run(["rev-parse", "HEAD"]),
+    run(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]),
+    run(["rev-parse", "@{upstream}"]), run(["status", "--porcelain=v1", "--untracked-files=all"]),
+  ]);
+  if (!new Set([DATA_MAIN_REMOTE, "git@github.com:AquilaXk/easysubway-data.git"]).has(origin)
+    || branch === "" || branch === "main" || upstream !== `origin/${branch}` || headSha !== remoteHeadSha || dirty !== "") {
+    throw new Error("exact clean remote non-main terminal preflight failed");
+  }
+  return { origin, branch, headSha, upstream, remoteHeadSha, clean: true };
+}
+
+/**
+ * Produce the immutable KRIC EXIT source object from exact clean main.  This
+ * deliberately stops before the FACILITY-dependent fan-in and the canonical
+ * output transaction: those are terminal-consumer responsibilities on the
+ * validated FACILITY branch.  Keeping the boundary here makes it impossible
+ * for the provider operation to mutate a candidate output.
+ */
+export async function runCurrentCapitalExitOnlyProducer({ repositoryRoot, runnerTemp, repository, repositorySha, operationId, handoffDirectory, facilityPullRequest, env = process.env, execFileImpl = execFile, clock = () => new Date(), assertCurrentTopologyAdmissionImpl = assertCurrentStaticNetworkTopologyAdmission, publishImpl = publishCurrentKricExitProviderOciPlan }) {
+  if (repository !== "AquilaXk/easysubway-data") throw new Error("repository identity mismatch");
+  if (![repositoryRoot, runnerTemp, handoffDirectory].every((value) => path.isAbsolute(value ?? ""))) throw new Error("EXIT-only producer paths must be absolute");
+  requiredSha(repositorySha); requiredOperation(operationId);
+  if (!facilityPullRequest || facilityPullRequest.repository !== repository
+    || !/^automation\/629-kric-facility-refresh-[0-9]+$/u.test(facilityPullRequest.branch ?? "")
+    || !/^[a-f0-9]{40}$/u.test(facilityPullRequest.headSha ?? "")) {
+    throw new Error("validated same-repository FACILITY pull request is required");
+  }
+  if (typeof env.KRIC_SERVICE_KEY !== "string" || env.KRIC_SERVICE_KEY === "") throw new Error("KRIC service key is required");
+  requireCurrentCapitalLiveChainOciParBaseUrl(env);
+  const root = path.resolve(repositoryRoot);
+  await requireRealDirectory(path.resolve(runnerTemp), "runner temp");
+  await requireRealDirectory(path.dirname(path.resolve(handoffDirectory)), "handoff parent");
+  await requireAbsent(path.resolve(handoffDirectory), "handoff directory");
+  const [{ stdout: origin }, { stdout: head }, { stdout: main }, { stdout: branch }, { stdout: dirty }] = await Promise.all([
+    execFileImpl("git", ["remote", "get-url", "origin"], { cwd: root }),
+    execFileImpl("git", ["rev-parse", "HEAD"], { cwd: root }),
+    execFileImpl("git", ["rev-parse", "origin/main"], { cwd: root }),
+    execFileImpl("git", ["branch", "--show-current"], { cwd: root }),
+    execFileImpl("git", ["status", "--porcelain=v1", "--untracked-files=all"], { cwd: root }),
+  ]);
+  if (!new Set([DATA_MAIN_REMOTE, "git@github.com:AquilaXk/easysubway-data.git"]).has(origin.trim()) || head.trim() !== repositorySha || main.trim() !== repositorySha || branch.trim() !== "main" || dirty !== "") throw new Error("exact clean main preflight failed");
+  await assertRemoteMain({ root, repositorySha, execFileImpl });
+  const facilityRef = `refs/remotes/origin/${facilityPullRequest.branch}`;
+  const [{ stdout: facilityHead }, facilityAncestor, { stdout: facilityPaths }] = await Promise.all([
+    execFileImpl("git", ["rev-parse", facilityRef], { cwd: root }),
+    execFileImpl("git", ["merge-base", "--is-ancestor", repositorySha, facilityPullRequest.headSha], { cwd: root }),
+    execFileImpl("git", ["diff", "--name-only", repositorySha, facilityPullRequest.headSha], { cwd: root }),
+  ]);
+  if (facilityAncestor === undefined || facilityHead.trim() !== facilityPullRequest.headSha) throw new Error("FACILITY pull request remote identity mismatch");
+  const requiredFacilityPaths = new Set([
+    "tools/datapack/release/candidate-build-spec.json",
+    "tools/datapack/release/current-capital-facility-source-admission.json",
+    "tools/datapack/release/source-snapshots.json",
+    "tools/datapack/source-inventory.json",
+    "tools/datapack/release/release-request.json",
+    "tools/datapack/release/hash-evidence.json",
+  ]);
+  const actualFacilityPaths = String(facilityPaths).split("\n").filter(Boolean);
+  if (!requiredFacilityPaths.isSubsetOf(new Set(actualFacilityPaths))
+    || actualFacilityPaths.some((relative) => !requiredFacilityPaths.has(relative) && !/^tools\/datapack\/sources\/[^/]+\.json$/u.test(relative))) {
+    throw new Error("FACILITY pull request path identity mismatch");
+  }
+  let candidate;
+  try { candidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8")); } catch { throw new Error("current candidate JSON mismatch"); }
+  const candidateStageInputs = await resolveCurrentLiveChainCandidateStageInputs(candidate, root);
+  const stagedRoot = await mkdtemp(path.join(path.resolve(runnerTemp), "current-capital-exit-producer-"));
+  for (const relative of new Set([...STAGED_INPUTS, ...candidateStageInputs])) {
+    const source = path.join(root, relative); const destination = path.join(stagedRoot, relative);
+    await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
+    await cp(source, destination, { recursive: true, force: false, verbatimSymlinks: true, filter: (entry) => stagedCopyAllowed(root, entry) });
+  }
+  const currentKricExitPlanInputs = await resolveCurrentKricExitPlanInputs(stagedRoot);
+  const stagedInventory = JSON.parse(await readFile(path.join(stagedRoot, "tools/datapack/source-inventory.json"), "utf8"));
+  const incheonTopologyRelativePath = resolveStagedIncheonTopologyPath(stagedInventory);
+  const plan = buildCurrentCapitalLiveChainPlan({ repositoryRoot: root, repositorySha, operationId, stagedRoot, transferObservationDirectory: path.join(stagedRoot, "unused-transfer-observation"), transferReceiptPath: path.join(stagedRoot, "unused-transfer-receipt.json"), incheonTopologyRelativePath, ...currentKricExitPlanInputs, outputPaths: ["producer-only"] });
+  const buildExitPlan = plan.steps.find((entry) => entry.id === "build-exit-plan");
+  await execFileImpl(process.execPath, [buildExitPlan.script, ...buildExitPlan.args], { cwd: root, env: { ...narrowRunnerEnv(env), RUNNER_TEMP: stagedRoot } });
+  const operationNow = clock();
+  if (!(operationNow instanceof Date) || Number.isNaN(operationNow.valueOf())) throw new Error("current live-chain operation clock mismatch");
+  await assertCurrentTopologyAdmissionImpl({ repositoryRoot: stagedRoot, now: operationNow });
+  await assertRemoteMain({ root, repositorySha, execFileImpl });
+  const collectExit = plan.steps.find((entry) => entry.id === "collect-kric-exit");
+  await execFileImpl(process.execPath, [collectExit.script, ...collectExit.args], { cwd: root, env: { ...narrowRunnerEnv(env), RUNNER_TEMP: stagedRoot, KRIC_SERVICE_KEY: env.KRIC_SERVICE_KEY } });
+  const bindExit = plan.steps.find((entry) => entry.id === "bind-exit-collection");
+  await execFileImpl(process.execPath, [bindExit.script, ...bindExit.args], { cwd: root, env: { ...narrowRunnerEnv(env), RUNNER_TEMP: stagedRoot } });
+  const [snapshotBytes, collectionBundleBytes] = await Promise.all([
+    readFile(path.join(stagedRoot, "current-kric-exit-snapshot.json")), readFile(path.join(stagedRoot, "current-kric-exit-collection-bundle.json")),
+  ]);
+  const snapshot = JSON.parse(snapshotBytes.toString("utf8"));
+  const ociPlan = buildCurrentKricExitProviderOciPlan({ mainSha: repositorySha, operationId, providerCollectionBundleBytes: collectionBundleBytes, providerCapturedAt: snapshot.capturedAt });
+  const ociPlanBytes = Buffer.from(`${canonicalCurrentKricExitProviderOciPlanJson(ociPlan)}\n`);
+  const receiptPath = path.join(stagedRoot, CURRENT_CAPITAL_EXIT_PROVIDER_OCI_RECEIPT);
+  await publishImpl({ planBytes: ociPlanBytes, root: stagedRoot, receiptPath, env: narrowOciEnv(env) });
+  const receiptBytes = await readFile(receiptPath);
+  const sourceHandoff = buildCurrentCapitalExitProviderSourceHandoffFromProviderOci({ providerOciPlanBytes: ociPlanBytes, providerOciReceiptBytes: receiptBytes, fetchedProviderCollectionBundleBytes: collectionBundleBytes, repository, repositorySha, operationId });
+  const handoffRoot = path.resolve(handoffDirectory); await mkdir(handoffRoot, { mode: 0o700 });
+  await writeFile(path.join(handoffRoot, CURRENT_CAPITAL_EXIT_PROVIDER_OCI_PLAN), ociPlanBytes, { flag: "wx", mode: 0o600 });
+  await writeFile(path.join(handoffRoot, CURRENT_CAPITAL_EXIT_PROVIDER_OCI_RECEIPT), receiptBytes, { flag: "wx", mode: 0o600 });
+  await writeFile(path.join(handoffRoot, CURRENT_CAPITAL_EXIT_PROVIDER_SOURCE_RECEIPT), `${canonicalCurrentCapitalExitProviderSourceHandoffJson(sourceHandoff)}\n`, { flag: "wx", mode: 0o600 });
+  return Object.freeze({ stagedRoot, handoffDirectory: handoffRoot, ociPlan, sourceHandoff });
 }
 
 export function parseArgs(argv) {

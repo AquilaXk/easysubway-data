@@ -134,6 +134,7 @@ jobs:
           node tools/datapack/collect-incheon-station-info.mjs --download --output "${TOPOLOGY_OPERATION_ROOT}/incheon-transit-station-info.json"
           station_stamp="$(node --input-type=module -e 'import { readFile, rename } from "node:fs/promises"; const root = process.env.TOPOLOGY_OPERATION_ROOT; const source = root + "/incheon-transit-station-info.json"; const snapshot = JSON.parse(await readFile(source, "utf8")); const capturedAt = snapshot.capturedAt; if (snapshot.sourceId !== "incheon-transit-station-info" || typeof capturedAt !== "string" || new Date(capturedAt).toISOString() !== capturedAt) throw new Error("station collector identity is invalid"); const stamp = capturedAt.slice(0, 10).replaceAll("-", ""); await rename(source, root + "/incheon-transit-station-info-" + stamp + ".json"); process.stdout.write(stamp);')"
           printf 'TOPOLOGY_STATION_SNAPSHOT=%s/incheon-transit-station-info-%s.json\n' "${TOPOLOGY_OPERATION_ROOT}" "${station_stamp}" >> "${GITHUB_ENV}"
+          mkdir -p "${TOPOLOGY_OPERATION_ROOT}/timetables"
           node tools/datapack/collect-incheon-timetable.mjs --download --topology-snapshot "${TOPOLOGY_OPERATION_ROOT}/incheon-transit-station-info-${station_stamp}.json" --output-dir "${TOPOLOGY_OPERATION_ROOT}/timetables"
 
       - name: Prepare current ITX collection

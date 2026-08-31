@@ -550,6 +550,10 @@ function parseTransaction(bytes) {
   }
   return value;
 }
+async function existingTransaction(target) {
+  try { return await readStableRegularFile(target, "candidate rebind transaction"); }
+  catch (error) { if (error?.code === "ENOENT" || error?.cause?.code === "ENOENT") return null; throw error; }
+}
 async function recoverTransaction(root, atomicReplaceImpl) {
   const journalPath = path.join(root, PATHS.transaction);
   const existing = await existingTransaction(journalPath);
@@ -565,9 +569,20 @@ async function recoverTransaction(root, atomicReplaceImpl) {
   }
   await unlink(journalPath);
 }
-async function existingTransaction(target) {
-  try { return await readStableRegularFile(target, "candidate rebind transaction"); }
-  catch (error) { if (error?.code === "ENOENT" || error?.cause?.code === "ENOENT") return null; throw error; }
+async function syncTransaction(target, value) {
+  const parent = path.dirname(target); const temporary = path.join(parent, `.${path.basename(target)}.${randomUUID()}.tmp`);
+  let published = false;
+  try {
+    const handle = await open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+    try { await handle.writeFile(jsonBytes(value)); await handle.sync(); } finally { await handle.close(); }
+    const original = await existingTransaction(target);
+    if (original != null) {
+      await atomicReplace(target, jsonBytes(value), { original });
+      await unlink(temporary);
+    } else await rename(temporary, target);
+    published = true;
+    const directory = await open(parent, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW); try { await directory.sync(); } finally { await directory.close(); }
+  } finally { if (!published) await unlink(temporary).catch(() => {}); }
 }
 
 export async function rebindCurrentCandidateSourceSnapshots({
@@ -616,22 +631,6 @@ export async function rebindCurrentCandidateSourceSnapshots({
     await unlink(journalPath);
     return { target: input.candidate.target, bytes, candidate: result };
   } finally { await release(); }
-}
-
-async function syncTransaction(target, value) {
-  const parent = path.dirname(target); const temporary = path.join(parent, `.${path.basename(target)}.${randomUUID()}.tmp`);
-  let published = false;
-  try {
-    const handle = await open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
-    try { await handle.writeFile(jsonBytes(value)); await handle.sync(); } finally { await handle.close(); }
-    const original = await existingTransaction(target);
-    if (original != null) {
-      await atomicReplace(target, jsonBytes(value), { original });
-      await unlink(temporary);
-    } else await rename(temporary, target);
-    published = true;
-    const directory = await open(parent, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW); try { await directory.sync(); } finally { await directory.close(); }
-  } finally { if (!published) await unlink(temporary).catch(() => {}); }
 }
 
 function parseArgs(argv) {

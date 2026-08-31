@@ -8,6 +8,7 @@ import { canonicalCurrentExitAdmissionOciReceiptJson } from "./build-current-exi
 import { canonicalExitPathAdmissionJson } from "./build-exit-path-admission.mjs";
 import { canonicalRouteEdgeEvaluationJson, evaluateRouteAccessibilityEdges } from "./evaluate-route-accessibility-edges.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
+import { validateCurrentCapitalLiveChainMaterialization } from "./validate-current-capital-live-chain-materialization.mjs";
 
 const REPOSITORY = "AquilaXk/easysubway-data";
 const SHA256 = /^[a-f0-9]{64}$/u;
@@ -73,7 +74,9 @@ async function regularBytes(root, relative) {
 
 export async function buildCurrentCapitalLiveChainBundle({ root, outputDirectory, repository, repositorySha, operationId, boundaryBytes, boundaryRelativePath = CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH }) {
   requireIdentity({ repository, repositorySha, operationId });
-  const allowlist = await outputPathsFromDirectory(outputDirectory);
+  const { outputPaths: allowlist } = await validateCurrentCapitalLiveChainMaterialization({
+    outputDirectory, repository, repositorySha, operationId, boundaryBytes, boundaryRelativePath,
+  });
   const receipt = CURRENT_CAPITAL_LIVE_CHAIN_PROVIDER_RECEIPT_PATH;
   const boundary = readCanonicalBoundary(boundaryBytes, boundaryRelativePath);
   if (!allowlist.includes(receipt)) throw new Error("provider receipt is not allowlisted");
@@ -81,11 +84,6 @@ export async function buildCurrentCapitalLiveChainBundle({ root, outputDirectory
     const bytes = await regularBytes(outputDirectory, relative);
     return { path: relative, sha256: sha256(bytes), bytesBase64: bytes.toString("base64") };
   }));
-  correlateBoundaryComponents(boundary.value, entries);
-  validateRouteEdgeEvaluationEntries(
-    new Map(entries.map((entry) => [entry.path, entry])),
-    { repository, repositorySha, operationId, boundary: boundary.value },
-  );
   const manifest = { schemaVersion: 1, artifactKind: "current-capital-live-chain-composite", repository, repositorySha, operationId, providerReceiptRelativePath: receipt, providerReceiptSha256: entries.find((entry) => entry.path === receipt).sha256, boundary: { path: boundary.relativePath, sha256: sha256(boundary.bytes) }, entries: entries.map(({ path: entryPath, sha256: digest }) => ({ path: entryPath, sha256: digest })) };
   const manifestJson = `${canonical(manifest)}\n`;
   const payload = { ...manifest, manifestSha256: sha256(Buffer.from(manifestJson)), boundaryBytesBase64: boundary.bytes.toString("base64"), entries };
