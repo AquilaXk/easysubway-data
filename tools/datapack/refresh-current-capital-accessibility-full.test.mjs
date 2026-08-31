@@ -237,6 +237,31 @@ test("pending v2 marker accepts FACILITY next-eight and EXIT previous-seven befo
   await writeFile(stationPath, JSON.stringify(beforeStation));
 });
 
+test("pre-approval projection consumes the validated pending v2 marker without mutating tracked bytes", async (t) => {
+  const root = await actualPendingMarkerRepository(t);
+  const candidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json")));
+  const canonicalPack = JSON.parse(await readFile(path.join(root, candidate.fixturePath)));
+  const trackedPaths = [...TRANSACTION_OUTPUTS, TRANSITION, SUCCESSOR];
+  const before = await Promise.all(trackedPaths.map((relative) => readFile(path.join(root, relative))));
+
+  const outputs = await buildCurrentCapitalAccessibilityRefreshOutputs({
+    repositoryRoot: root,
+    phase: "PRE_APPROVAL_CURRENT_CANDIDATE",
+    candidateBuildSpec: candidate,
+    canonicalPack,
+  });
+
+  for (const { bytes } of outputs) {
+    const output = JSON.parse(bytes);
+    assert.equal(output.candidate.candidateId, candidate.candidateId);
+    assert.equal(output.candidate.sourceSetSha256, candidate.sourceSnapshotSetHash);
+  }
+  assert.deepEqual(
+    await Promise.all(trackedPaths.map((relative) => readFile(path.join(root, relative)))),
+    before,
+  );
+});
+
 test("predecessor-bound activated inputs are rebuilt atomically to exact current bytes", async (t) => {
   const root = await stagedRefreshRepository(t);
   const expected = await expectedCurrentBytes(root);
