@@ -16,6 +16,37 @@ const execFile = promisify(execFileCallback);
 const root = path.resolve(import.meta.dirname, "../..");
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 
+function sealedProductionSource(source, snapshot, topologySnapshot) {
+  const productionSource = structuredClone(source);
+  productionSource.requiredForProductionPack = false;
+  productionSource.observedDataUpdatedAt = "2026-07-24";
+  productionSource.accessibilityAdmissionEvidence = {
+    issue: 2492,
+    materializer: "tools/datapack/materialize-incheon-accessibility.mjs",
+    verificationTest: "tools/datapack/materialize-incheon-accessibility.test.mjs",
+    snapshotId: "incheon-transit-accessibility-20260828",
+    snapshotPath: "tools/datapack/sources/incheon-transit-accessibility-20260828.json",
+    capturedAt: snapshot.capturedAt,
+    freshUntil: new Date(Date.parse(snapshot.capturedAt) + 86_400_000).toISOString(),
+    stationCount: snapshot.stationCount,
+    rowCount: snapshot.rowCount,
+    facilityCount: snapshot.rowCount * 3,
+    rawSha256: snapshot.rawSha256,
+    rowsSha256: snapshot.rowsSha256,
+    datasetIds: snapshot.datasetIds,
+    topologySourceId: topologySnapshot.sourceId,
+    topologySnapshotId: topologySnapshot.snapshotId,
+    topologyContentSha256: topologySnapshot.contentSha256,
+    topologyLineages: snapshot.topologyLineages,
+    membershipLineages: snapshot.membershipLineages,
+  };
+  delete productionSource.registrationEvidence;
+  productionSource.admissionEvidence = {
+    quotaEvidence: structuredClone(source.admissionEvidence.quotaEvidence),
+  };
+  return productionSource;
+}
+
 async function input() {
   const [elevatorBytes, escalatorBytes, wheelchairBytes, topology, freshnessPolicy, inventoryBytes, candidates, policy, candidateBuildSpecBytes, releaseRequestBytes, hashEvidenceBytes] = await Promise.all([
     readFile(path.join(root, "tools/datapack/fixtures/incheon-accessibility-raw/data-go-15083478.csv")),
@@ -58,7 +89,7 @@ async function input() {
     approvedAt: "2026-08-29T04:49:49.000Z", licenseEvidenceHash,
     aliasLedgerHash: first.admissionEvidence.aliasLedgerHash, operatorMappingLedgerHash: first.admissionEvidence.operatorMappingLedgerHash,
     facilityEvidenceLedgerHash: first.admissionEvidence.facilityEvidenceLedgerHash, routeEvidenceLedgerHash: first.admissionEvidence.routeEvidenceLedgerHash,
-    overrideHash: first.admissionEvidence.overrideHash, quotaEvidence: { defaultDailyLimit: "unlimited", portal: "data.go.kr", productionUseAllowed: true, unlockStatus: "not_required" }, productionSource: { ...structuredClone(source), admissionEvidence: { quotaEvidence: structuredClone(source.admissionEvidence.quotaEvidence) } },
+    overrideHash: first.admissionEvidence.overrideHash, quotaEvidence: { defaultDailyLimit: "unlimited", portal: "data.go.kr", productionUseAllowed: true, unlockStatus: "not_required" }, productionSource: sealedProductionSource(source, snapshot, topologySnapshot),
   };
   const ownerDecision = {
     schemaVersion: 1, artifactKind: "source-admission-owner-decision", policyVersion: policy.policyVersion, issue: 622,
