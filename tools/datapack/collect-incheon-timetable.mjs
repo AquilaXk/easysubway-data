@@ -9,16 +9,16 @@
 // 빈 시각 칸은 해당 열차가 정차하지 않음(단기·미정차)으로 해석하고 시간을 발명하지 않는다.
 // 7호선 FILE/행은 범위 밖이다.
 import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { access, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { decodeOfficialCsv } from "./collect-daegu-datapack-sources.mjs";
+import { resolveDataGoDownloadUrl } from "./collect-capital-route-topology.mjs";
 import {
   I210_SEOHAE_GU_OFFICE_RENAME,
   validateIncheonStationInfoSnapshot,
 } from "./collect-incheon-station-info.mjs";
-import { resolveDataGoDownloadUrl } from "./collect-capital-route-topology.mjs";
 
 const TOPOLOGY_SOURCE_ID = "incheon-transit-station-info";
 const ARTIFACT_KIND = "incheon-train-timetable-snapshot";
@@ -91,7 +91,7 @@ export function parseIncheonTrainTimetable(files, topologySnapshot, {
   const config = INCHEON_TIMETABLE_LINES.find((line) => line.lineNumber === lineNumber);
   if (!config) throw new Error(`unknown Incheon timetable line: ${lineNumber}`);
   const captured = validDate(capturedAt);
-  const { scope, snapshotId, contentSha256 } = validateTopologyForLine(topologySnapshot, config);
+  const { scope, snapshotId, contentSha256 } = validateTopologyForLine(topologySnapshot, config, captured);
   const seqByNorm = new Map(scope.map((station) => [
     normalizedIncheonTimetableStationName(station.stationName),
     station,
@@ -232,29 +232,25 @@ export function collectIncheonTimetableLine({
   });
 }
 
-function verifyDownloadProvenance(entries, config, rawHashes) {
-  if (!Array.isArray(entries) || entries.length !== DAY_CODES.length * DIRECTIONS.length) {
+function verifyDownloadProvenance(provenance, config, rawHashes) {
+  const expected = DAY_CODES.flatMap((dayCode) => DIRECTIONS.map((direction) => ({
+    dayCode,
+    direction,
+    datasetId: config.datasets[dayCode][direction],
+  })));
+  if (!Array.isArray(provenance) || provenance.length !== expected.length) {
     throw new Error(`Incheon line ${config.lineNumber} download provenance is invalid`);
   }
-  return DAY_CODES.flatMap((dayCode) => DIRECTIONS.map((direction) => {
-    const index = DAY_CODES.indexOf(dayCode) * DIRECTIONS.length + DIRECTIONS.indexOf(direction);
-    const entry = entries[index];
-    const datasetId = config.datasets[dayCode][direction];
+  return expected.map(({ dayCode, direction, datasetId }, index) => {
+    const entry = provenance[index];
     const detailUrl = `https://www.data.go.kr/data/${datasetId}/fileData.do`;
-    let downloadUrl;
-    try {
-      downloadUrl = new URL(entry?.downloadUrl);
-    } catch {
-      throw new Error(`Incheon line ${config.lineNumber} download provenance is invalid`);
+    if (entry?.dayCode !== dayCode || entry.direction !== direction || entry.datasetId !== datasetId
+      || entry.detailUrl !== detailUrl || !isCanonicalDataGoDownloadUrl(entry.downloadUrl)
+      || entry.rawSha256 !== rawHashes[`${dayCode}:${direction}`]) {
+      throw new Error(`Incheon ${datasetId} download provenance is invalid`);
     }
-    if (entry?.dayCode !== dayCode || entry?.direction !== direction || entry?.datasetId !== datasetId
-      || entry?.detailUrl !== detailUrl || entry?.rawSha256 !== rawHashes[`${dayCode}:${direction}`]
-      || downloadUrl.origin !== "https://www.data.go.kr"
-      || downloadUrl.pathname !== "/cmm/cmm/fileDownload.do") {
-      throw new Error(`Incheon line ${config.lineNumber} download provenance is invalid`);
-    }
-    return { dayCode, direction, datasetId, detailUrl, downloadUrl: downloadUrl.toString(), rawSha256: entry.rawSha256 };
-  }));
+    return { dayCode, direction, datasetId, detailUrl, downloadUrl: entry.downloadUrl, rawSha256: entry.rawSha256 };
+  });
 }
 
 function parseTimetableFile(bytes, {
@@ -385,7 +381,7 @@ function parseTimetableFile(bytes, {
   return { trips, rowCount: body.length, rolloverTripCount, destinationLabelNormalizedCount };
 }
 
-function validateTopologyForLine(topologySnapshot, config) {
+function validateTopologyForLine(topologySnapshot, config, capturedAt) {
   validateIncheonStationInfoSnapshot(topologySnapshot);
   const capturedDate = topologySnapshot.capturedAt?.slice(0, 10).replaceAll("-", "");
   const snapshotId = `${TOPOLOGY_SOURCE_ID}-${capturedDate}`;
@@ -393,6 +389,10 @@ function validateTopologyForLine(topologySnapshot, config) {
     || !/^\d{8}$/u.test(capturedDate ?? "")
     || topologySnapshot.snapshotId !== snapshotId) {
     throw new Error("invalid Incheon topology snapshot");
+  }
+  const freshUntil = validDate(topologySnapshot.freshUntil);
+  if (freshUntil.getTime() <= capturedAt.getTime()) {
+    throw new Error("Incheon topology snapshot is stale at capture time");
   }
   const scope = topologySnapshot.scope.filter((station) => station.lineId === config.lineId)
     .sort((left, right) => left.lineSequence - right.lineSequence);
@@ -441,44 +441,71 @@ function sha256(value) {
 }
 
 function parseArgs(argv) {
-  const args = {};
-  for (let index = 0; index < argv.length;) {
-    if (!argv[index]?.startsWith("--")) {
-      throw new Error(usage());
-    }
-    const key = argv[index].slice(2);
-    if (key === "download") {
-      if (args.download) throw new Error(usage());
+  const args = { download: false };
+  const seen = new Set();
+  for (let index = 0; index < argv.length; index += 1) {
+    const flag = argv[index];
+    if (seen.has(flag)) throw new Error(`duplicate argument: ${flag}`);
+    seen.add(flag);
+    if (flag === "--download") {
       args.download = true;
-      index += 1;
       continue;
     }
-    if (!["input-dir", "topology-snapshot", "output-dir", "captured-at", "date-stamp", "line"].includes(key)
-      || args[key] != null || !argv[index + 1] || argv[index + 1].startsWith("--")) {
+    if (!["--input-dir", "--topology-snapshot", "--output-dir", "--captured-at", "--date-stamp", "--line"].includes(flag)) {
       throw new Error(usage());
     }
-    args[key] = argv[index + 1];
-    index += 2;
+    const value = argv[index + 1];
+    if (!value || value.startsWith("--")) throw new Error(usage());
+    args[flag.slice(2)] = value;
+    index += 1;
   }
-  if (Boolean(args["input-dir"]) === Boolean(args.download)
-    || (!args.download && !args["captured-at"]) || (args.download && args["captured-at"])
-    || !args["topology-snapshot"] || !args["output-dir"]
-    || !path.isAbsolute(args["output-dir"])) {
+  if (Boolean(args["input-dir"]) === args.download || !args["topology-snapshot"]
+    || !args["output-dir"] || !path.isAbsolute(args["output-dir"])
+    || (args.download && (args["captured-at"] || args["date-stamp"]))
+    || (!args.download && !args["captured-at"])) {
     throw new Error(usage());
   }
   return args;
 }
 
 function usage() {
-  return "usage: collect-incheon-timetable.mjs "
-    + "(--input-dir <dir> --captured-at <iso> | --download) "
-    + "--topology-snapshot <json> --output-dir <abs-dir> "
-    + "[--date-stamp YYYYMMDD] [--line 1|2]";
+  return "usage: collect-incheon-timetable.mjs (--input-dir <dir> | --download) --topology-snapshot <json> "
+    + "--output-dir <abs-dir> [--captured-at <iso> --date-stamp YYYYMMDD] [--line 1|2]";
 }
 
-export async function runIncheonTimetableCollector(argv, { fetchImpl = fetch, now = new Date() } = {}) {
+function isCanonicalDataGoDownloadUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.origin === "https://www.data.go.kr" && url.pathname === "/cmm/cmm/fileDownload.do"
+      && /^FILE_[0-9]+$/u.test(url.searchParams.get("atchFileId") ?? "")
+      && /^[1-9][0-9]*$/u.test(url.searchParams.get("fileDetailSn") ?? "");
+  } catch {
+    return false;
+  }
+}
+
+async function downloadDataGoFile(fetchImpl, datasetId) {
+  const detailUrl = `https://www.data.go.kr/data/${datasetId}/fileData.do`;
+  const detailResponse = await fetchImpl(detailUrl, {
+    headers: { "User-Agent": "easysubway-datapack-collector/1.0" },
+  });
+  if (!detailResponse.ok) throw new Error(`Incheon ${datasetId} detail HTTP ${detailResponse.status}`);
+  const downloadUrl = resolveDataGoDownloadUrl(await detailResponse.text(), detailUrl);
+  if (!isCanonicalDataGoDownloadUrl(downloadUrl)) throw new Error(`Incheon ${datasetId} download URL is invalid`);
+  const fileResponse = await fetchImpl(downloadUrl, {
+    headers: {
+      "User-Agent": "easysubway-datapack-collector/1.0",
+      Referer: detailUrl,
+    },
+  });
+  if (!fileResponse.ok) throw new Error(`Incheon ${datasetId} CSV HTTP ${fileResponse.status}`);
+  const bytes = Buffer.from(await fileResponse.arrayBuffer());
+  if (bytes.byteLength === 0) throw new Error(`Incheon ${datasetId} CSV is empty`);
+  return { bytes, detailUrl, downloadUrl, rawSha256: sha256(bytes) };
+}
+
+export async function runIncheonTimetableCollector(argv, { fetchImpl = fetch, now = () => new Date() } = {}) {
   const args = parseArgs(argv);
-  const capturedAt = args["captured-at"] ?? validDate(now).toISOString();
   const stamp = args["date-stamp"];
   const topologyPath = args["topology-snapshot"];
   const topologySnapshotId = path.basename(topologyPath, ".json");
@@ -489,16 +516,12 @@ export async function runIncheonTimetableCollector(argv, { fetchImpl = fetch, no
     ...JSON.parse(await readFile(topologyPath, "utf8")),
     snapshotId: topologySnapshotId,
   };
-  const derivedStamp = compactSeoulDate(capturedAt);
-  if (stamp != null && stamp !== derivedStamp) {
-    throw new Error("--date-stamp must match captured-at Asia/Seoul date");
-  }
   const lines = args.line
     ? INCHEON_TIMETABLE_LINES.filter((line) => String(line.lineNumber) === String(args.line))
     : INCHEON_TIMETABLE_LINES;
   if (lines.length === 0) throw new Error(`unknown --line ${args.line}`);
 
-  const outputs = [];
+  const collected = [];
   for (const config of lines) {
     const files = {};
     const downloadProvenance = [];
@@ -506,16 +529,9 @@ export async function runIncheonTimetableCollector(argv, { fetchImpl = fetch, no
       for (const direction of DIRECTIONS) {
         const datasetId = config.datasets[dayCode][direction];
         if (args.download) {
-          const downloaded = await downloadDataGoTimetableCsv(fetchImpl, datasetId);
+          const downloaded = await downloadDataGoFile(fetchImpl, datasetId);
           files[`${dayCode}:${direction}`] = downloaded.bytes;
-          downloadProvenance.push({
-            dayCode,
-            direction,
-            datasetId,
-            detailUrl: downloaded.detailUrl,
-            downloadUrl: downloaded.downloadUrl,
-            rawSha256: sha256(downloaded.bytes),
-          });
+          downloadProvenance.push({ dayCode, direction, datasetId, ...downloaded });
         } else {
           files[`${dayCode}:${direction}`] = await readFile(
             path.join(args["input-dir"], `data-go-${datasetId}.csv`),
@@ -523,15 +539,36 @@ export async function runIncheonTimetableCollector(argv, { fetchImpl = fetch, no
         }
       }
     }
-    const snapshot = collectIncheonTimetableLine({
-      files,
-      topologySnapshot,
+    collected.push({ config, files, downloadProvenance });
+  }
+  // A download capture is only true after every selected official FILE body exists.
+  const capturedAt = args.download
+    ? validDate(typeof now === "function" ? now() : now)
+    : validDate(args["captured-at"]);
+  const derivedStamp = compactSeoulDate(capturedAt);
+  if (stamp != null && stamp !== derivedStamp) {
+    throw new Error("--date-stamp must match captured-at Asia/Seoul date");
+  }
+  const prepared = collected.map(({ config, files, downloadProvenance }) => {
+    const snapshot = parseIncheonTrainTimetable(files, topologySnapshot, {
       lineNumber: config.lineNumber,
-      now: new Date(capturedAt),
-      downloadProvenance: args.download ? downloadProvenance : undefined,
+      capturedAt,
+      ...(args.download ? { downloadProvenance } : {}),
     });
     const outputPath = path.join(args["output-dir"], `${config.sourceId}-${stamp ?? derivedStamp}.json`);
-    await writeFile(outputPath, `${JSON.stringify(snapshot)}\n`);
+    return { config, snapshot, outputPath };
+  });
+  for (const { outputPath } of prepared) {
+    try {
+      await access(outputPath);
+      throw new Error(`refusing to overwrite existing output: ${outputPath}`);
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
+  const outputs = [];
+  for (const { config, snapshot, outputPath } of prepared) {
+    await writeFile(outputPath, `${JSON.stringify(snapshot)}\n`, { flag: "wx" });
     outputs.push(outputPath);
     console.log(
       `Incheon line ${config.lineNumber}: ${snapshot.tripCount} trips, `
@@ -539,27 +576,6 @@ export async function runIncheonTimetableCollector(argv, { fetchImpl = fetch, no
     );
   }
   return outputs;
-}
-
-async function downloadDataGoTimetableCsv(fetchImpl, datasetId) {
-  const detailUrl = `https://www.data.go.kr/data/${datasetId}/fileData.do`;
-  const detailResponse = await fetchImpl(detailUrl, {
-    headers: { "User-Agent": "easysubway-datapack-collector/1.0" },
-  });
-  if (!detailResponse.ok) throw new Error(`Incheon ${datasetId} detail HTTP ${detailResponse.status}`);
-  const downloadUrl = resolveDataGoDownloadUrl(await detailResponse.text(), detailUrl);
-  const fileResponse = await fetchImpl(downloadUrl, {
-    headers: {
-      "User-Agent": "easysubway-datapack-collector/1.0",
-      Referer: detailUrl,
-    },
-  });
-  if (!fileResponse.ok) throw new Error(`Incheon ${datasetId} CSV HTTP ${fileResponse.status}`);
-  return {
-    bytes: Buffer.from(await fileResponse.arrayBuffer()),
-    detailUrl,
-    downloadUrl,
-  };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

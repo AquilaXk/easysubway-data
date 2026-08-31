@@ -5,7 +5,7 @@
     "geometry": "tools/route-map/route-map-defs/easy-subway-daegu-v3-geometry.json",
     "geometrySha256": "1704eb883b4e3f723572f5a6c8158db9a5bb1b2b80ad9bf0aa8e1656e104d607",
     "pack": "apps/mobile/assets/datapacks/capital.sqlite.gz",
-    "packSha256": "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a"
+    "packSha256": "905e77589971bd53d6ecaab9dbfd211ab56f86de883425747bf1d93d31ebae4f"
   },
   "stationCount": 102,
   "unmatchedCount": 0,

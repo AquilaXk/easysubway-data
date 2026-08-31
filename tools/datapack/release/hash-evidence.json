@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
   "issue": 1996,
-  "builderGitSha": "d06c30ae1a1b4574621a68faa65f3ba8da1a5362",
+  "builderGitSha": "7474c915262f70a2b4028a9dd415b863c3154358",
   "builderVersion": "build-datapack.mjs@26",
   "productionScopeId": "capital_pilot_android_v1",
   "truthfulnessRule": "모든 값은 tracked canonical fixture·inventory·official snapshot에서 결정적으로 재산출한다. 2026-07-28 신규 KRIC standard·서울 snapshot을 소비 claim에 결속하고 route 가용성은 추론하지 않는다.",
@@ -37,35 +37,35 @@
   },
   "sourceSnapshots": {
     "note": "historical source snapshot lineage는 유지하고 canonical capital sourceInventory의 active source만 release snapshot으로 소비한다. retired KRIC movement 2종은 소비하지 않는다.",
-    "order": "release snapshot ledger 순서: kric-subway-timetable → seoulmetro-station-line-info → seoul-metro-transfer-distance-duration → seoul-metro-accessibility → seoul-metro-route-map-positions → molit-urban-rail-full-route → kric-station-convenience-standard",
+    "order": "release snapshot ledger 순서: kric-subway-timetable → seoulmetro-station-line-info → seoul-metro-transfer-distance-duration → seoul-metro-route-map-positions → molit-urban-rail-full-route → incheon-transit-accessibility → kric-station-convenience-standard → seoul-metro-accessibility",
     "committedVerificationCommand": "node -e \"import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto');const s=require('./tools/datapack/release/source-snapshots.json'),b=require('./tools/datapack/release/candidate-build-spec.json'),i=b.sourceSnapshotIds;if(!Array.isArray(i)||new Set(i).size!==i.length)throw new Error('candidate snapshot IDs are invalid');const h=validateLineage(s).headsBySource,p=i.map(id=>{const n=s.filter(x=>x.snapshotId===id);if(n.length!==1||h[n[0].sourceId]!==id)throw new Error('candidate source snapshot mismatch: '+id);return n[0]});if(new Set(p.map(x=>x.sourceId)).size!==p.length)throw new Error('candidate source snapshots are not unique');const k=new Set(i),r=s.filter(x=>k.has(x.snapshotId));if(r.length!==p.length)throw new Error('candidate ledger selection mismatch');if(!Array.isArray(b.sourceSnapshots)||b.sourceSnapshots.length!==p.length||b.sourceSnapshots.some((x,n)=>x.sourceId!==p[n].sourceId||x.snapshotId!==p[n].snapshotId))throw new Error('candidate source projection mismatch');const e=require('./tools/datapack/release/hash-evidence.json'),v=e.perSourceEvidence;if(!Array.isArray(v)||v.length!==r.length)throw new Error('source snapshot evidence count mismatch');for(const [i,n] of r.entries()){const q=v[i],h=c.createHash('sha256').update(JSON.stringify([n])).digest('hex');if(!q||q.sourceId!==n.sourceId||q.snapshotId!==n.snapshotId)throw new Error('source snapshot evidence order or identity mismatch: '+n.sourceId);if(q.perSourceSnapshotSetHash!==h)throw new Error('source snapshot evidence hash mismatch: '+n.sourceId)}})\"",
     "timetableEvidenceCommand": "node -e \"const s=require('./tools/datapack/release/source-snapshots.json').find(n=>n.sourceId==='kric-subway-timetable'),i=require('./tools/datapack/source-inventory.json').sources.find(n=>n.id==='kric-subway-timetable').admissionEvidence,p=require('./tools/datapack/inputs/capital-pilot-production-source-input.json').scheduleProvenance;if(!(s&&i&&p&&s.snapshotId===i.snapshotId&&s.snapshotId===p.sourceSnapshotId&&s.rawSha256===i.rawSha256&&s.schemaFingerprint===i.schemaFingerprint))throw new Error('timetable snapshot evidence mismatch')\"",
-    "specRowRawSha256Note": "build-spec sourceSnapshots[].rawSha256는 admissionEvidence.rawSha256(=raw 바이트 해시, fixture 주석 선례 'admission sample.rawSha256')를 기입. snapshot 객체 내부 rawSha256는 canonical(minified·key정렬) raw 해시로 값이 다르며 source-snapshots.json에 보존됨.",
+    "specRowRawSha256Note": "build-spec projections use the selected official ledger rawSha256 (the OCI object hash); observation snapshot internal composite/canonical hashes remain separately bound in the tracked snapshot and admission evidence.",
     "governanceOverlayNote": "retained legacy root 5종과 timetable의 원천 identity를 유지하고 신규 접근성 snapshot 2종을 추가했다. build-spec의 freshnessExpiresAt·rawRetentionExpiresAt·governance policy binding은 현행 정책에서 파생하며 validator가 임의 연장을 차단한다."
   },
   "sourceSnapshotSetHash": {
-    "value": "3e7e872a783e18dd4e8d594db331a46d4570d43e3adfd3e20d56bacdca6ede0a",
-    "contract": "source별 head 7종의 byte-ordered JSON hash와 build spec·release request가 일치해야 한다.",
+    "value": "05de19c56acc6af812b071ee3081612a8ee9502e86c3cb38cec54c83c15040cc",
+    "contract": "source별 head 8종의 byte-ordered JSON hash와 build spec·release request가 일치해야 한다.",
     "reproductionCommand": "node -e \"import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto');const s=require('./tools/datapack/release/source-snapshots.json'),b=require('./tools/datapack/release/candidate-build-spec.json'),i=b.sourceSnapshotIds;if(!Array.isArray(i)||new Set(i).size!==i.length)throw new Error('candidate snapshot IDs are invalid');const h=validateLineage(s).headsBySource,p=i.map(id=>{const n=s.filter(x=>x.snapshotId===id);if(n.length!==1||h[n[0].sourceId]!==id)throw new Error('candidate source snapshot mismatch: '+id);return n[0]});if(new Set(p.map(x=>x.sourceId)).size!==p.length)throw new Error('candidate source snapshots are not unique');const k=new Set(i),r=s.filter(x=>k.has(x.snapshotId));if(r.length!==p.length)throw new Error('candidate ledger selection mismatch');if(!Array.isArray(b.sourceSnapshots)||b.sourceSnapshots.length!==p.length||b.sourceSnapshots.some((x,n)=>x.sourceId!==p[n].sourceId||x.snapshotId!==p[n].snapshotId))throw new Error('candidate source projection mismatch');console.log(c.createHash('sha256').update(JSON.stringify(r)).digest('hex'))})\""
   },
   "sourceInventorySha256": {
-    "value": "7e21c9745f378a80a3e1b6ad5db2e6faba70373eaadacc608b7be236fd36d959",
+    "value": "ed2466eaf8cae69a2883e0860b4292e885193e2169d60977ce29cd0ebc21c635",
     "contract": "run-source-admission-pipeline.mjs의 공식 sha256(JSON.stringify(admittedInventory)) 계약. 현행 브랜치의 tools/datapack/source-inventory.json이 최종 admitted inventory이며 워크플로 빌드가 실제로 소비하는 인벤토리와 동일 파일.",
     "reproductionCommand": "node -e \"const c=require('crypto'),fs=require('fs');console.log(c.createHash('sha256').update(JSON.stringify(JSON.parse(fs.readFileSync('tools/datapack/source-inventory.json','utf8')))).digest('hex'))\""
   },
   "fixturePath": {
     "value": "tools/datapack/release/capital-production-canonical-pack.json",
-    "sha256": "f297e5cb326989bcfb5d95d9066f5fdc1614cd69a286b9fed86041e90eb7c539",
+    "sha256": "d2570d183a0a320723b7f1987785cda75d6ba6b72e77f90674f8c5817ddf134c",
     "contract": "#2648에서 배포 중인 capital SQLite 전체를 lossless fixture로 고정하고, 2c72677b builder가 전체 ITX readmission chain과 최종 output identity를 검증한다.",
     "reproductionCommand": "shasum -a 256 tools/datapack/release/capital-production-canonical-pack.json"
   },
   "identifiers": {
     "candidateId": {
-      "value": "capital-pilot-candidate-20260828",
+      "value": "capital-pilot-candidate-20260830",
       "note": "파일 기반 경로는 backend candidate 행을 우회하므로 리포에 고정 명명 계약 없음. fixture 선례(capital-pilot-candidate-fixture)+snapshot 날짜 관례로 명명. release-request.candidateId와 동일(자체 정합)."
     },
     "approvalId": {
-      "value": "release-request-capital-pilot-candidate-20260828-c6ce7306d1458cbbdad6ffcdef856284188943801ca67495a0a92b6355238afd",
+      "value": "release-request-capital-pilot-candidate-20260830-dad3b9e171863a990d8846ac69f150c52b2f45e6745a0a5f1f0ef25e9d2d95da",
       "note": "Recorded release authorization ID; mirrored in release-request and must match dispatch. Exact build-spec identity is bound separately by release-request.buildSpecSha256."
     }
   },
@@ -89,14 +89,7 @@
       "snapshotId": "seoul-metro-transfer-distance-duration-20260815T094038817Z",
       "rawSha256": "3d872c9ac390426b5e0e26fa1916ae9d9a44b70077b632d3c85cb8e82381f7cf",
       "adminReviewRecordHash": "f1636fbd2b36b2687fc8d728290158ca934461276936036606bc03a3156d594e",
-      "perSourceSnapshotSetHash": "a6b02f7080cf21eb17cfc6813d945565ea9d0502c83a88a421b8efa74509cf15"
-    },
-    {
-      "sourceId": "seoul-metro-accessibility",
-      "snapshotId": "seoul-metro-accessibility-20260822T094318289Z",
-      "rawSha256": "1cdbcb99b212564c049ef7a1f6d19f29c8f5639376b95af87454cc763e5e9ea6",
-      "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",
-      "perSourceSnapshotSetHash": "6bab7dde2caae028734ebeb27e646a85f300a588c2c5ca640379ccda1113ac75"
+      "perSourceSnapshotSetHash": "533dccf82bdeb4e98f68baf2c5d674c83e88835d27d957a860d349021f3f4e9a"
     },
     {
       "sourceId": "seoul-metro-route-map-positions",
@@ -113,11 +106,25 @@
       "perSourceSnapshotSetHash": "6531acd02adaea0f4bc11ab4e03b119f1d6f028e50132812a9169b33f87b3024"
     },
     {
+      "sourceId": "incheon-transit-accessibility",
+      "snapshotId": "incheon-transit-accessibility-20260828T043356000Z",
+      "rawSha256": "ccfac4c6c454fe2c2b81373a33909e4bd34cc9ff6b0186276a28226a2262610f",
+      "adminReviewRecordHash": "3c705c2f2d65bd171d2cd4125266c63d0c3dee506cd76405e727573955f580f4",
+      "perSourceSnapshotSetHash": "11318faf60ca6dfd9b5022e4a9eea2b2228ba651bd6764578190bc21582cf3c3"
+    },
+    {
       "sourceId": "kric-station-convenience-standard",
-      "snapshotId": "kric-station-convenience-standard-20260828T141640087Z",
-      "rawSha256": "6b7173a23b33d43e4a62413b903da3fac0329dd30af4b8dcc70bfd2959ffba03",
+      "snapshotId": "kric-station-convenience-standard-20260830T022401673Z",
+      "rawSha256": "0c28d09b154b3975dda17c6fa45d236fccdb9d8687c746aa0279fba04f5840ec",
       "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
-      "perSourceSnapshotSetHash": "f7e58df6d7de0505d380fb709c0066c083c99c553bdb14c77eae48c912cbbd6d"
+      "perSourceSnapshotSetHash": "2f2963972e17ccf155b7d1c9c39b0f1fd2268f8a24d13df03a420f5384de130e"
+    },
+    {
+      "sourceId": "seoul-metro-accessibility",
+      "snapshotId": "seoul-metro-accessibility-20260830T173929300Z",
+      "rawSha256": "49447f84ec83e01317757bc5a84699e3eb576f1d793a43dcf83eb8a3af0b5ee8",
+      "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",
+      "perSourceSnapshotSetHash": "15fd7bcb47282efef77f43b8f537b6b51b02bc724f553123d16a4abdf9eeb089"
     }
   ],
   "officialOdFareEvidence": {

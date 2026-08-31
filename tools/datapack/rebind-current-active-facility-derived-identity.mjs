@@ -2,18 +2,25 @@
 // Rebinds the already-active FACILITY admission to the current candidate only.
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, mkdir, open, readFile, rename, rmdir, unlink, writeFile } from "node:fs/promises";
+import { link, lstat, mkdir, open, readFile, rename, rmdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
 import { buildCurrentCapitalFacilitySourceAdmission, canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-current-capital-facility-source-admission.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import {
+  buildCurrentCapitalAccessibilityTransition,
+  buildCurrentCapitalAccessibilityTransitionSuccessor,
+  canonicalCurrentCapitalAccessibilityTransitionSuccessorJson,
+} from "./current-capital-accessibility-transition.mjs";
 import { verifyCurrentCapitalPublicRouteMapDocument } from "./materialize-seoul-route-map-positions.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const OUTPUT = "tools/datapack/release/current-capital-facility-source-admission.json";
+const TRANSITION = "tools/datapack/release/current-capital-accessibility-transition.json";
+const SUCCESSOR = "tools/datapack/release/current-capital-accessibility-transition-successor.json";
 const SOURCE = "kric-station-convenience-standard";
 const POSITION = "seoul-metro-route-map-positions";
 const JOURNAL = "tools/datapack/.active-facility-derived-identity-rebind.json";
@@ -98,13 +105,94 @@ export async function buildCurrentActiveFacilityDerivedIdentityOutput({ reposito
   validateFacilityDerivedIdentityRebind(old, next, previous.bytes, bytes);
   return { relative: OUTPUT, bytes, prestate: previous.bytes };
 }
+export async function buildCurrentActiveFacilityDerivedIdentitySuccessorTransaction({ repositoryRoot = ROOT } = {}) {
+  const root = rootOf(repositoryRoot);
+  const facility = await buildCurrentActiveFacilityDerivedIdentityOutput({ repositoryRoot: root });
+  if (!facilityDerivedIdentityRebindState(facility)) return { facility, successor: null, base: null };
+  const [baseBytes, candidate, previous, ledger, inventory] = await Promise.all([
+    stable(path.join(root, TRANSITION), "current accessibility transition"),
+    json(root, "tools/datapack/release/candidate-build-spec.json"),
+    json(root, "tools/datapack/release/current-station-line-accessibility/station-line-input.json"),
+    json(root, "tools/datapack/release/source-snapshots.json"),
+    json(root, "tools/datapack/source-inventory.json"),
+  ]);
+  try { await stable(path.join(root, SUCCESSOR), "current accessibility transition successor"); throw new Error("current accessibility transition successor already exists"); }
+  catch (error) { if (error?.code !== "ENOENT") throw error; }
+  const currentTransition = buildCurrentCapitalAccessibilityTransition({
+    candidate: candidate.value, candidateBytes: candidate.bytes,
+    previous: previous.value, previousBytes: previous.bytes,
+    facilityAdmission: JSON.parse(facility.bytes), facilityBytes: facility.bytes,
+    ledger: ledger.value, ledgerBytes: ledger.bytes,
+    inventory: inventory.value, inventoryBytes: inventory.bytes,
+  });
+  const successorValue = buildCurrentCapitalAccessibilityTransitionSuccessor({
+    baseTransitionBytes: baseBytes, previousFacilityBytes: facility.prestate, currentTransition,
+  });
+  return {
+    facility,
+    base: { relative: TRANSITION, bytes: baseBytes },
+    successor: { relative: SUCCESSOR, bytes: Buffer.from(canonicalCurrentCapitalAccessibilityTransitionSuccessorJson(successorValue)), prestate: null },
+  };
+}
 async function replace(root, output) { const file = path.join(root, output.relative); const actual = await stable(file, "FACILITY admission"); if (!actual.equals(output.prestate)) throw new Error("FACILITY rebind input drift"); const temp = path.join(path.dirname(file), `.${path.basename(file)}.${randomUUID()}.tmp`); try { const h = await open(temp, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600); try { await h.writeFile(output.bytes); await h.sync(); } finally { await h.close(); } if (!(await stable(file, "FACILITY admission")).equals(output.prestate)) throw new Error("FACILITY rebind input drift"); await rename(temp, file); } finally { await unlink(temp).catch(() => {}); } }
+async function createOnce(root, output) {
+  const file = path.join(root, output.relative); const parent = path.dirname(file);
+  const parentInfo = await lstat(parent); if (!parentInfo.isDirectory() || parentInfo.isSymbolicLink()) throw new Error("successor transition parent mismatch");
+  try { await lstat(file); throw new Error("current accessibility transition successor already exists"); }
+  catch (error) { if (error?.code !== "ENOENT") throw error; }
+  const temp = path.join(parent, `.${path.basename(file)}.${randomUUID()}.tmp`);
+  try {
+    const handle = await open(temp, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
+    try { await handle.writeFile(output.bytes); await handle.sync(); } finally { await handle.close(); }
+    try { await lstat(file); throw new Error("current accessibility transition successor already exists"); }
+    catch (error) { if (error?.code !== "ENOENT") throw error; }
+    await link(temp, file);
+  } finally { await unlink(temp).catch(() => {}); }
+}
 export function facilityDerivedIdentityRebindState(output, { check = false } = {}) {
   if (!Buffer.isBuffer(output?.bytes) || !Buffer.isBuffer(output?.prestate)) throw new Error("FACILITY rebind output bytes missing");
   if (output.bytes.equals(output.prestate)) return false;
   if (check) throw new Error("active FACILITY derived identity drift");
   return true;
 }
-export async function rebindCurrentActiveFacilityDerivedIdentity({ repositoryRoot = ROOT, check = false } = {}) { const root = rootOf(repositoryRoot); const output = await buildCurrentActiveFacilityDerivedIdentityOutput({ repositoryRoot: root }); if (!facilityDerivedIdentityRebindState(output, { check })) return { changed: false }; const lock = path.join(root, LOCK); await mkdir(lock, { mode: 0o700 }); const journal = path.join(root, JOURNAL); try { await writeFile(journal, JSON.stringify({ relative: output.relative, before: output.prestate.toString("base64"), after: output.bytes.toString("base64") }), { flag: "wx", mode: 0o600 }); try { await replace(root, output); } catch (error) { const now = await stable(path.join(root, output.relative), "FACILITY rollback"); if (now.equals(output.bytes)) await replace(root, { ...output, bytes: output.prestate, prestate: output.bytes }); throw error; } await unlink(journal); return { changed: true, admissionDigest: sha(output.bytes) }; } finally { await unlink(journal).catch(() => {}); await rmdir(lock).catch(() => {}); } }
+export async function rebindCurrentActiveFacilityDerivedIdentity({ repositoryRoot = ROOT, check = false, failAfter = async () => {} } = {}) {
+  const root = rootOf(repositoryRoot); const transaction = await buildCurrentActiveFacilityDerivedIdentitySuccessorTransaction({ repositoryRoot: root });
+  if (!facilityDerivedIdentityRebindState(transaction.facility, { check })) return { changed: false };
+  const lock = path.join(root, LOCK); await mkdir(lock, { mode: 0o700 }); const journal = path.join(root, JOURNAL);
+  let preserveJournal = false;
+  const records = [
+    { operation: "replace", relative: transaction.facility.relative, before: transaction.facility.prestate.toString("base64"), after: transaction.facility.bytes.toString("base64") },
+    { operation: "create", relative: transaction.successor.relative, after: transaction.successor.bytes.toString("base64") },
+  ];
+  try {
+    await writeFile(journal, JSON.stringify({ schemaVersion: 2, state: "PREPARED", records }), { flag: "wx", mode: 0o600 });
+    preserveJournal = true;
+    try {
+      if (!(await stable(path.join(root, TRANSITION), "current accessibility transition")).equals(transaction.base.bytes)) throw new Error("successor transition input drift");
+      await replace(root, transaction.facility); await failAfter({ stage: "facility" });
+      await createOnce(root, transaction.successor); await failAfter({ stage: "successor" });
+      if (!(await stable(path.join(root, transaction.facility.relative), "FACILITY admission")).equals(transaction.facility.bytes)
+        || !(await stable(path.join(root, transaction.successor.relative), "current accessibility transition successor")).equals(transaction.successor.bytes)) throw new Error("FACILITY successor transaction verification failed");
+    } catch (error) {
+      try {
+        const successor = await stable(path.join(root, transaction.successor.relative), "FACILITY successor rollback").catch((missing) => missing?.code === "ENOENT" ? null : Promise.reject(missing));
+        if (successor && !successor.equals(transaction.successor.bytes)) throw new Error("FACILITY successor transaction preserves foreign successor");
+        if (successor) await unlink(path.join(root, transaction.successor.relative));
+        const current = await stable(path.join(root, transaction.facility.relative), "FACILITY rollback");
+        if (current.equals(transaction.facility.bytes)) await replace(root, { ...transaction.facility, bytes: transaction.facility.prestate, prestate: transaction.facility.bytes });
+        if (!(await stable(path.join(root, transaction.facility.relative), "FACILITY rollback verification")).equals(transaction.facility.prestate)) throw new Error("FACILITY successor transaction rollback failed");
+        await unlink(journal); preserveJournal = false;
+      } catch (rollbackError) {
+        throw new AggregateError([error, rollbackError], "FACILITY successor transaction rollback failed");
+      }
+      throw error;
+    }
+    await unlink(journal); preserveJournal = false;
+    return { changed: true, admissionDigest: sha(transaction.facility.bytes), successorSha256: sha(transaction.successor.bytes) };
+  } finally {
+    if (!preserveJournal) await unlink(journal).catch(() => {});
+    await rmdir(lock).catch(() => {});
+  }
+}
 function parseArgs(argv) { const root = argv[argv.indexOf("--repository-root") + 1]; if (!root) throw new Error("--repository-root is required"); return { repositoryRoot: root, check: argv.includes("--check") }; }
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) rebindCurrentActiveFacilityDerivedIdentity(parseArgs(process.argv.slice(2))).catch((error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });

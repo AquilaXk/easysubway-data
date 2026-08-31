@@ -7,7 +7,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 
-import { deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
+import { CURRENT_FULL_CANDIDATE_SOURCE_IDS, deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
@@ -30,7 +30,7 @@ import { assertCurrentTopologyAdmissionFreshness } from "./lib/route-map-admissi
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const TARGETS = Object.freeze(["seoul-metro-route-map-positions", "molit-urban-rail-full-route"]);
-const CANDIDATE_SOURCE_IDS = Object.freeze(["seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-transfer-distance-duration"]);
+const CANDIDATE_SOURCE_IDS = CURRENT_FULL_CANDIDATE_SOURCE_IDS;
 const FIXED_OUTPUTS = Object.freeze(["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json"]);
 const APPROVAL_INPUTS = Object.freeze(["tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json"]);
 const INPUTS = Object.freeze([...FIXED_OUTPUTS, ...APPROVAL_INPUTS, "tools/datapack/source-governance-policy.json", "release/product-gates/datapack-freshness-sla.json"]);

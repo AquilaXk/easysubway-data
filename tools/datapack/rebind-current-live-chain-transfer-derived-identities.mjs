@@ -17,6 +17,7 @@ import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { registerSeoulTransferSourceSnapshot } from "./register-seoul-transfer-source-snapshot.mjs";
 import { validateSeoulTransferRawReceipt } from "./publish-seoul-transfer-raw.mjs";
 import { approvedGovernanceBindingTransition, deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
+import { CURRENT_FULL_CANDIDATE_SOURCE_IDS } from "./rebind-current-candidate-source-snapshots.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const SOURCE = "seoul-metro-transfer-distance-duration";
@@ -55,10 +56,6 @@ const JOURNAL = "tools/datapack/.current-live-chain-transfer-derived-identities.
 const LOCK = "tools/datapack/.current-live-chain-transfer-derived-identities.lock";
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const json = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
-const CURRENT_SOURCE_IDS = Object.freeze([
-  "seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility",
-  "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info", SOURCE,
-]);
 
 function repositoryRoot(value) {
   if (typeof value !== "string" || !path.isAbsolute(value)) throw new Error("repository root must be absolute");
@@ -120,15 +117,15 @@ async function stage(root, inputs) {
   } catch (error) { await rm(temporary, { recursive: true, force: true }); throw error; }
 }
 export function currentReleaseSnapshots(candidate, snapshots) {
-  if (JSON.stringify(candidate.sourceSnapshots?.map(({ sourceId }) => sourceId)) !== JSON.stringify(CURRENT_SOURCE_IDS)
-    || candidate.sourceSnapshotIds?.length !== CURRENT_SOURCE_IDS.length
+  if (JSON.stringify(candidate.sourceSnapshots?.map(({ sourceId }) => sourceId)) !== JSON.stringify(CURRENT_FULL_CANDIDATE_SOURCE_IDS)
+    || candidate.sourceSnapshotIds?.length !== CURRENT_FULL_CANDIDATE_SOURCE_IDS.length
     || new Set(candidate.sourceSnapshotIds).size !== candidate.sourceSnapshotIds.length
     || !Array.isArray(snapshots) || snapshots.some((snapshot) => typeof snapshot?.snapshotId !== "string" || snapshot.snapshotId === "")
     || new Set(snapshots.map(({ snapshotId }) => snapshotId)).size !== snapshots.length) throw new Error("current source sequence is not exact");
   const orderedRows = candidate.sourceSnapshotIds.map((snapshotId, index) => {
     const rows = snapshots.filter((snapshot) => snapshot.snapshotId === snapshotId);
     const row = rows.length === 1 ? rows[0] : null;
-    if (!row || row.sourceId !== CURRENT_SOURCE_IDS[index]) throw new Error("current source ledger binding is not exact");
+    if (!row || row.sourceId !== CURRENT_FULL_CANDIDATE_SOURCE_IDS[index]) throw new Error("current source ledger binding is not exact");
     if (typeof row.governancePolicyVersion !== "string" || !/^[0-9a-f]{64}$/u.test(row.governancePolicySha256 ?? "")) {
       throw new Error("current source lacks sealed governance binding");
     }

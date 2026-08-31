@@ -15,6 +15,7 @@ import {
   currentLiveChainTransferStageInputs,
   deriveCurrentOnlyProjection,
 } from "./rebind-current-live-chain-transfer-derived-identities.mjs";
+import { CURRENT_FULL_CANDIDATE_SOURCE_IDS } from "./rebind-current-candidate-source-snapshots.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 
@@ -71,6 +72,7 @@ test("current release selection preserves candidate order while exposing rebuilt
   }));
   const reversedLedger = [...selected].reverse();
   const result = currentReleaseSnapshots(candidate, reversedLedger);
+  assert.deepEqual(candidate.sourceSnapshots.map(({ sourceId }) => sourceId), CURRENT_FULL_CANDIDATE_SOURCE_IDS);
   assert.deepEqual(result.orderedRows.map(({ snapshotId }) => snapshotId), candidate.sourceSnapshotIds);
   assert.deepEqual(result.ledgerOrderedRows.map(({ snapshotId }) => snapshotId), reversedLedger.map(({ snapshotId }) => snapshotId));
   const rebuilt = { candidateId: candidate.candidateId, sourceSnapshotIds: result.orderedRows.map(({ snapshotId }) => snapshotId), sourceSnapshotSetHash: createHash("sha256").update(JSON.stringify(result.ledgerOrderedRows)).digest("hex") };

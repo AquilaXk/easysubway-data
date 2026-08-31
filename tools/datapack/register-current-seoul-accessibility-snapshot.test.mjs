@@ -135,7 +135,7 @@ test("fresh Seoul observation and OCI receipt rebind exactly seven outputs", asy
   const afterHeads = validateLineage(ledger).headsBySource;
   assert.equal(afterHeads["kric-station-convenience-standard"], beforeHeads["kric-station-convenience-standard"]);
   const selected = ledger.filter(({ snapshotId }) => candidate.sourceSnapshotIds.includes(snapshotId));
-  assert.equal(selected.length, 7);
+  assert.equal(selected.length, 8);
   assert.equal(selected.some(({ sourceId }) => sourceId === "seoul-metro-transfer-distance-duration"), true);
   assert.equal(candidate.sourceSnapshotSetHash, sha(Buffer.from(JSON.stringify(selected))));
   const request = JSON.parse(await readFile(path.join(values.root, OUTPUTS[4]), "utf8"));

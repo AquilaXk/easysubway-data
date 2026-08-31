@@ -290,7 +290,10 @@ async function historicalFacilityFixtureInput(observedAt) {
   const lineage = validateLineage(input.sourceSnapshots);
   const snapshotsById = new Map(input.sourceSnapshots.map((snapshot) => [snapshot.snapshotId, snapshot]));
   const historicalSourceSlots = input.candidateBuildSpec.sourceSnapshots
-    .filter(({ sourceId }) => sourceId !== "seoul-metro-transfer-distance-duration")
+    .filter(({ sourceId }) => sourceId !== "seoul-metro-transfer-distance-duration"
+      && (sourceId === "seoul-metro-route-map-positions"
+        || input.sourceSnapshots.some((snapshot) => snapshot.sourceId === sourceId
+          && snapshotEvidenceAt(snapshot) <= Date.parse(historicalMembershipAt))))
     .map((projection) => {
       const selectedHead = input.sourceSnapshots.find(({ snapshotId, sourceId }) =>
         snapshotId === projection.snapshotId && sourceId === projection.sourceId);

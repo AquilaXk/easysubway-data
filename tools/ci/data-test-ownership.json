@@ -233,8 +233,8 @@
       "fixtureStageContracts": {
         "mobile": [
           "source=\".external/mobile/apps/mobile\"",
-          "expected_revision=\"5b58d426258f536070137737c3f19a8dbeda44c1\"",
-          "expected_sha256=\"609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a\"",
+          "expected_revision=\"4d133ad853fa6ef4e024a37a1409b5eaadd1cc69\"",
+          "expected_sha256=\"905e77589971bd53d6ecaab9dbfd211ab56f86de883425747bf1d93d31ebae4f\"",
           "fetch-depth: 0",
           "cp -a \"${source}\" apps/mobile"
         ]
@@ -498,6 +498,7 @@
     {"path":"tools/datapack/rebind-current-active-facility-derived-identity.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":900},
     {"path":"tools/datapack/rebind-current-active-public-route-map-materialization.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":900},
     {"path":"tools/datapack/rebind-current-candidate-source-snapshots.test.mjs","semanticOwner":"data329","classes":["required-pr"],"durationMs":696},
+    {"path":"tools/datapack/rebind-current-exit-admission-identities.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":250},
     {"path":"tools/datapack/rebind-current-live-chain-transfer-derived-identities.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":900},
     {"path":"tools/datapack/recover-current-live-chain-transfer-observation.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":300},
     {"path":"tools/datapack/reconstruct-transit-trips.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":131},
@@ -598,7 +599,7 @@
       "repository": "AquilaXk/easysubway-mobile",
       "commit": "39d2c4723d0ff855041c6162825930c7d12ffad3",
       "profileCommit": {
-        "mobile-v19": "5b58d426258f536070137737c3f19a8dbeda44c1"
+        "mobile-v19": "4d133ad853fa6ef4e024a37a1409b5eaadd1cc69"
       },
       "checkoutPath": ".external/mobile",
       "sourcePath": "apps/mobile",
@@ -608,7 +609,7 @@
           "path": "assets/datapacks/capital.sqlite.gz",
           "sha256": "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
           "profileSha256": {
-            "mobile-v19": "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a"
+            "mobile-v19": "905e77589971bd53d6ecaab9dbfd211ab56f86de883425747bf1d93d31ebae4f"
           }
         },
         {
@@ -619,14 +620,14 @@
           "path": "pubspec.yaml",
           "sha256": "82bfad8bd6f06fd0163573fe45c08af050f8688010309bb04532c4481428ebf4",
           "profileSha256": {
-            "mobile-v19": "8ae9f49ab9adb7cddf6510d024da992d78eeedfb205e0245b16c6841151068ba"
+            "mobile-v19": "d19166efa08e5148e9a51d06b8694b9b302e4a6daa1b0586f28a8dac08a1a093"
           }
         },
         {
           "path": "pubspec.lock",
           "sha256": "e42fbcce9ba3dd351ef4918e1c15bf231b2cf72cc281583db39e35f50ca4c03f",
           "profileSha256": {
-            "mobile-v19": "d2ec63d74ffcc0305cac4b905e19de440ca7866215e85ad679408951e565c870"
+            "mobile-v19": "1cd555c1c5cff59e9ccc5b1b5f356734de5d41ed3db420b731c541e41f875b10"
           }
         }
       ]

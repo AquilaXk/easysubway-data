@@ -460,8 +460,9 @@ test("candidate-selected versioned ITX topology evidence is staged before every 
   const runnerTemp = path.join(temporary, "runner");
   const handoffParent = path.join(temporary, "handoff-parent");
   const handoffDirectory = path.join(handoffParent, "handoff");
-  const selectedPath = "tools/datapack/itx-cheongchun-topology-evidence-20260824170958799.json";
-  const coveragePath = "tools/datapack/itx-cheongchun-coverage-contract.json";
+  const candidate = JSON.parse(await readFile(path.join(ROOT, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
+  const selectedPath = candidate.itxTopologyEvidencePath;
+  const coveragePath = candidate.networkEdgeEvidence.itxCoverageContract.path;
   let providerCount = 0;
   let publicationCount = 0;
   try {

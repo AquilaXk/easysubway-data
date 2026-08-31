@@ -188,10 +188,10 @@ test("ITX-청춘 current source artifact는 OWNER-approved admission bytes를 �
   assert.match(reference.completenessEvidenceSha256, /^[a-f0-9]{64}$/);
   assert.deepEqual(reference.promotion, {
     mode: "CURRENT_CANDIDATE_OWNER_APPROVED",
-    previousArtifactSha256: "2a11bb723310744d6f3ffc084b5a5219367ae209a6c7e65289dab8a5520f9a26",
-    previousArtifactPath: "tools/datapack/sources/itx-cheongchun-source-timetable-20260812165525800.json",
-    approvalUrl: "https://github.com/AquilaXk/easysubway-data/issues/96#issuecomment-5403832794",
-    approvedArtifactSha256: "f3f00e6f99862ddf1c6964d09a220169f29a85181f420f30e20428f2bee835ab",
+    previousArtifactSha256: "f3f00e6f99862ddf1c6964d09a220169f29a85181f420f30e20428f2bee835ab",
+    previousArtifactPath: "tools/datapack/sources/itx-cheongchun-source-timetable-20260824170958799.json",
+    approvalUrl: "https://github.com/AquilaXk/easysubway-data/issues/636#issuecomment-5469639706",
+    approvedArtifactSha256: "7bff64ecf229a31e64817bd3315a95bc965c20cbe0aa88d788e59b9fd6d5789e",
   });
 
   const previousBytes = await readFile(new URL(`../../${reference.promotion.previousArtifactPath}`, import.meta.url));
@@ -236,7 +236,7 @@ test("ITX-청춘 current source artifact는 OWNER-approved admission bytes를 �
     }
   }
   assert.equal(artifact.credentialRedacted, true);
-  assert.deepEqual(artifact.selectedServiceDates, { "8": "20260825", "7": "20260829", "9": "20260830" });
+  assert.deepEqual(artifact.selectedServiceDates, { "8": "20260831", "7": "20260905", "9": "20260906" });
   for (const dayCd of ["8", "7", "9"]) {
     assert.deepEqual(
       [...new Set(artifact.stationSequences.filter((row) => row.dayCd === dayCd).map((row) => row.directionId))].sort(),
@@ -263,9 +263,9 @@ test("ITX-청춘 admission evidence는 historical 관측과 current pack identit
     artifactId: "itx-cheongchun-completeness-admission-20260714T083544292Z",
     topologyInputPackIdentity: {
       id: "capital",
-      sha256: "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
-      sqliteSha256: "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5",
-      byteSize: 1463745,
+      sha256: "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a",
+      sqliteSha256: "bba39f717671c82278a44d0be731801c41d90b7a92dd11a9f184e6ec0f55da98",
+      byteSize: 388623,
     },
     selectedServiceDates: { "8": "20260715", "7": "20260718", "9": "20260719" },
     admissionStatus: "MISSING",
@@ -305,9 +305,9 @@ test("ITX-청춘 admission evidence는 historical 관측과 current pack identit
       artifactKind: "station-catalog-pack",
       manifestVersion: 1,
       catalogPackId: "itx-current-station-catalog-v1",
-      stationSetSha256: "d2cef87aa1eeee23a50ac94d7e784f432101e9d8936331152981dcaeb8d25dd9",
-      payloadSha256: "a7726c83e9637b0008000579ad74e329495ac0928e673bcb8ccac1deaeedc8a4",
-      manifestSha256: "0cea5ac4d07ce3a09232eb7dd53a0d2b59f423ad10ef97c8a4db233c873737b5",
+      stationSetSha256: "bcbbb7f738a7ca2f581ac571574d88499a988d038cdc71ba79ef1936d60e9b6c",
+      payloadSha256: "d916d16b77af9fae81ce26d4cabb299a6a4e15ea7be9cd2d9c1130f95803e788",
+      manifestSha256: "d7c569ed24ff7e35a0edd57e7aab5234fdf4b170c48ece4d7c06aa5824d5828d",
     },
   });
   const korailCandidate = sourceCandidates.candidates.find(({ id }) => id === "korail-traveler-train-run-info");

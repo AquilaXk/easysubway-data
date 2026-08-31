@@ -13,7 +13,7 @@ test("tracked current live-chain fan-in binds the repository component bytes", a
   }));
 });
 
-test("current live-chain fan-in binds all current component bytes and bypasses no predecessor reconstruction", async () => {
+test("current live-chain fan-in binds current eight and evidence seven component identities", async () => {
   const input = await fixture();
   const components = fanInComponents(input);
   const boundary = buildCurrentCapitalLiveChainFanInBoundary(components);
@@ -23,7 +23,7 @@ test("current live-chain fan-in binds all current component bytes and bypasses n
   const result = buildCurrentCapitalStationLineInput(input);
 
   assert.equal(result.candidate.sourceSetSha256, boundary.currentCandidateSourceSetSha256);
-  assert.equal(boundary.evidenceSourceSetSha256, boundary.currentCandidateSourceSetSha256);
+  assert.notEqual(boundary.evidenceSourceSetSha256, boundary.currentCandidateSourceSetSha256);
   assert.equal(result.evidenceRows.length, 641);
 });
 
@@ -44,7 +44,7 @@ test("current live-chain fan-in rejects component drift and boundary historical 
   assert.throws(() => canonicalCurrentCapitalLiveChainFanInBoundaryJson(boundary), /keys mismatch|forbidden historical/i);
 });
 
-test("current live-chain consumes selected current heads while allowing ledger lineage metadata", async () => {
+test("current live-chain derives evidence set in ledger order while allowing ledger lineage metadata", async () => {
   const input = await fixture();
   const components = fanInComponents(input);
   components.sourceSnapshotLedger.value[0].previousSnapshotId = "prior-current-head";
@@ -54,7 +54,11 @@ test("current live-chain consumes selected current heads while allowing ledger l
   components.candidateBuildSpec.bytes = bytes(components.candidateBuildSpec.value);
   components.facilityAdmission.value.candidate.sourceSnapshotSetHash = sourceSetSha256;
   components.facilityAdmission.bytes = bytes(components.facilityAdmission.value);
-  components.exitAdmission.value.candidate.sourceSetSha256 = sourceSetSha256;
+  const transferSnapshotId = components.candidateBuildSpec.value.sourceSnapshotIds.at(-1);
+  const evidenceSourceSetSha256 = sha(JSON.stringify(
+    components.sourceSnapshotLedger.value.filter(({ snapshotId }) => snapshotId !== transferSnapshotId),
+  ));
+  components.exitAdmission.value.candidate.sourceSetSha256 = evidenceSourceSetSha256;
   components.exitAdmission.bytes = bytes(components.exitAdmission.value);
   components.exitAdmissionOciReceipt.value.admissionSha256 = sha(components.exitAdmission.bytes);
   components.exitAdmissionOciReceipt.bytes = bytes(components.exitAdmissionOciReceipt.value);
@@ -62,10 +66,26 @@ test("current live-chain consumes selected current heads while allowing ledger l
   const boundary = buildCurrentCapitalLiveChainFanInBoundary(components);
 
   assert.equal(boundary.currentCandidateSourceSetSha256, sourceSetSha256);
-  assert.equal(boundary.evidenceSourceSetSha256, sourceSetSha256);
+  assert.equal(boundary.evidenceSourceSetSha256, evidenceSourceSetSha256);
 });
 
-test("current live-chain derives TRANSFER identity without a candidate array-order assumption", async () => {
+test("current live-chain rejects schema 1, all-current EXIT, and a wrong evidence hash", async () => {
+  const input = await fixture();
+  const components = fanInComponents(input);
+  const boundary = buildCurrentCapitalLiveChainFanInBoundary(components);
+
+  assert.throws(() => canonicalCurrentCapitalLiveChainFanInBoundaryJson({ ...boundary, schemaVersion: 1 }), /identity mismatch/);
+  const allCurrentExit = fanInComponents(await fixture());
+  allCurrentExit.exitAdmission.value.candidate.sourceSetSha256 = boundary.currentCandidateSourceSetSha256;
+  allCurrentExit.exitAdmission.bytes = bytes(allCurrentExit.exitAdmission.value);
+  assert.throws(() => buildCurrentCapitalLiveChainFanInBoundary(allCurrentExit), /EXIT candidate mismatch/);
+  assert.throws(() => verifyCurrentCapitalLiveChainFanInComponents(
+    { ...boundary, evidenceSourceSetSha256: "0".repeat(64) },
+    components,
+  ), /source-set mismatch/);
+});
+
+test("current live-chain rejects a non-terminal TRANSFER candidate projection", async () => {
   const components = fanInComponents(await fixture());
   const candidate = components.candidateBuildSpec.value;
   const transferIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === "seoul-metro-transfer-distance-duration");
@@ -75,7 +95,7 @@ test("current live-chain derives TRANSFER identity without a candidate array-ord
   candidate.sourceSnapshots.unshift(transferProjection);
   components.candidateBuildSpec.bytes = bytes(candidate);
 
-  assert.doesNotThrow(() => buildCurrentCapitalLiveChainFanInBoundary(components));
+  assert.throws(() => buildCurrentCapitalLiveChainFanInBoundary(components), /terminal in the candidate/);
 });
 
 test("current live-chain boundary detects source-set and byte mismatch before station-line materialization", async () => {
@@ -99,9 +119,9 @@ test("current live-chain boundary detects source-set and byte mismatch before st
 });
 
 function fanInComponents(input) {
-  // The station-line fixture retains the old six-source FACILITY evidence path
-  // for its transition tests.  A live-chain fan-in is current-only, so its
-  // FACILITY admission must bind the selected seven-source candidate instead.
+  // The station-line fixture retains a transition shape. The terminal fan-in
+  // binds FACILITY to the selected candidate and EXIT to its ledger-order
+  // evidence subset, excluding only terminal TRANSFER.
   const transferSource = input.sourceInventory.sources.find(({ transferAdmissionEvidence }) => transferAdmissionEvidence);
   const transfer = input.sourceSnapshots.find(({ sourceId }) => sourceId === transferSource.id);
   transfer.rawReceipt = {
@@ -116,10 +136,12 @@ function fanInComponents(input) {
   resealFacilityAdmission(facilityAdmission);
   input.facilityAdmission = facilityAdmission;
   const exitAdmission = structuredClone(input.exitAdmission);
-  exitAdmission.candidate.sourceSetSha256 = input.candidateBuildSpec.sourceSnapshotSetHash;
+  const evidenceSourceSetSha256 = sha(JSON.stringify(input.sourceSnapshots.filter(({ snapshotId }) =>
+    snapshotId !== input.candidateBuildSpec.sourceSnapshotIds.at(-1))));
+  exitAdmission.candidate.sourceSetSha256 = evidenceSourceSetSha256;
   exitAdmission.materializerEvidenceRows = exitAdmission.materializerEvidenceRows.map((row) => ({
     ...row,
-    sourceSetSha256: input.candidateBuildSpec.sourceSnapshotSetHash,
+    sourceSetSha256: evidenceSourceSetSha256,
   }));
   resealExitAdmission(exitAdmission);
   input.exitAdmission = exitAdmission;

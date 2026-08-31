@@ -10,8 +10,8 @@ const ownership = JSON.parse(
   readFileSync(path.join(root, "tools/ci/data-test-ownership.json"), "utf8"),
 );
 const mobileRepository = "AquilaXk/easysubway-mobile";
-const ciMobileRevision = "5b58d426258f536070137737c3f19a8dbeda44c1";
-const ciCapitalGzipSha256 = "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a";
+const ciMobileRevision = "4d133ad853fa6ef4e024a37a1409b5eaadd1cc69";
+const ciCapitalGzipSha256 = "905e77589971bd53d6ecaab9dbfd211ab56f86de883425747bf1d93d31ebae4f";
 const releaseMobileRevision = "39d2c4723d0ff855041c6162825930c7d12ffad3";
 const releaseCapitalGzipSha256 = "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3";
 const releaseIndexSha256 = "ad801ec865d385e86cf4094e3c007af9cbfbe1d4a8c42bab8f9b2682b229026e";

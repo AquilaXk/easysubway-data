@@ -6,7 +6,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { buildCurrentCapitalLiveChainBundle, currentCapitalLiveChainOutputPaths, readCurrentCapitalLiveChainBundle } from "./build-current-capital-live-chain-bundle.mjs";
-import { CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS, canonicalCurrentCapitalLiveChainFanInBoundaryJson } from "./build-current-capital-live-chain-boundary.mjs";
+import { buildCurrentCapitalLiveChainFanInBoundary, CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS, canonicalCurrentCapitalLiveChainFanInBoundaryJson } from "./build-current-capital-live-chain-boundary.mjs";
 import { buildCurrentExitAdmissionOciReceipt, canonicalCurrentExitAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
 import { canonicalRideEdgeSetSha256, canonicalRouteEdgeEvaluationJson, evaluateRouteAccessibilityEdges, routeEdgeSha256 } from "./evaluate-route-accessibility-edges.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
@@ -24,8 +24,8 @@ test("composite bundle embeds canonical fan-in evidence without expanding the ou
   });
   const entryBytes = new Map();
   await populateEvaluationFixture(entryBytes);
-  for (const [index, relative] of outputPaths.entries()) {
-    const bytes = entryBytes.get(relative) ?? authorityBytes.get(relative) ?? Buffer.from(`{\"component\":${index}}`);
+  for (const relative of outputPaths) {
+    const bytes = entryBytes.get(relative) ?? authorityBytes.get(relative) ?? await readFile(path.join(ROOT, relative));
     entryBytes.set(relative, bytes);
     await mkdir(path.dirname(path.join(root, "out", relative)), { recursive: true });
     await writeFile(path.join(root, "out", relative), bytes);
@@ -96,8 +96,8 @@ test("composite bundle reads a valid large source snapshot ledger", async () => 
   const repositorySha = sha256(Buffer.from("large-source-snapshot-ledger-regression")).slice(0, 40);
   const entryBytes = new Map();
   await populateEvaluationFixture(entryBytes, { repositorySha, operationId: "current-capital-large-ledger" });
-  for (const [index, relative] of outputPaths.entries()) {
-    const bytes = entryBytes.get(relative) ?? authorityBytes.get(relative) ?? Buffer.from(`{\"component\":${index}}`);
+  for (const relative of outputPaths) {
+    const bytes = entryBytes.get(relative) ?? authorityBytes.get(relative) ?? await readFile(path.join(ROOT, relative));
     const payload = relative === "tools/datapack/release/source-snapshots.json"
       ? Buffer.concat([bytes, Buffer.alloc(2_066_759, 0x20)])
       : bytes;
@@ -111,8 +111,13 @@ test("composite bundle reads a valid large source snapshot ledger", async () => 
 });
 
 function boundaryFor(entryBytes, overrides = {}) {
-  const components = Object.fromEntries(Object.entries(CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS).map(([name, relative]) => [name, { path: relative, sha256: overrides[name] ?? sha256(entryBytes.get(relative)) }]));
-  return Buffer.from(canonicalCurrentCapitalLiveChainFanInBoundaryJson({ artifactKind: "current-capital-live-chain-fan-in", components, currentCandidateSourceSetSha256: "a".repeat(64), evidenceSourceSetSha256: "a".repeat(64), kind: "CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN", schemaVersion: 1 }));
+  const components = Object.fromEntries(Object.entries(CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS).map(([name, relative]) => {
+    const bytes = entryBytes.get(relative);
+    return [name, { bytes, value: JSON.parse(bytes) }];
+  }));
+  const boundary = buildCurrentCapitalLiveChainFanInBoundary(components);
+  for (const [name, digest] of Object.entries(overrides)) boundary.components[name].sha256 = digest;
+  return Buffer.from(canonicalCurrentCapitalLiveChainFanInBoundaryJson(boundary));
 }
 async function writeOutputEntries(outputDirectory, outputPaths, entryBytes) {
   await Promise.all(outputPaths.map(async (relative, index) => {
@@ -132,9 +137,12 @@ function replaceEntryJson(entryBytes, relative, mutate) {
 async function populateEvaluationFixture(entryBytes, { repositorySha = "b".repeat(40), operationId = "current-capital-560" } = {}) {
   const policy = JSON.parse(await readFile(path.join(ROOT, "release/product-gates/route-edge-evaluation-policy.json"), "utf8"));
   const candidateBuildSpec = JSON.parse(await readFile(path.join(ROOT, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
+  const sourceSnapshotLedger = JSON.parse(await readFile(path.join(ROOT, "tools/datapack/release/source-snapshots.json"), "utf8"));
+  const evidenceSnapshotIds = new Set(candidateBuildSpec.sourceSnapshotIds.slice(0, -1));
+  const evidenceSourceSetSha256 = sha256(Buffer.from(JSON.stringify(sourceSnapshotLedger.filter(({ snapshotId }) => evidenceSnapshotIds.has(snapshotId)))));
   const evaluationAt = "2026-08-10T00:00:00.000Z";
   const materializationCandidate = {
-    candidateId: "bundle-evaluation-candidate",
+    candidateId: candidateBuildSpec.candidateId,
     stationSetSha256: sha256(Buffer.from(JSON.stringify(["station-a"]))),
     sourceSetSha256: candidateBuildSpec.sourceSnapshotSetHash,
     mappingContractVersion: "station-line-v1",
@@ -176,9 +184,8 @@ async function populateEvaluationFixture(entryBytes, { repositorySha = "b".repea
   };
   const materialization = materializeStationLineAccessibility({ ...stationLineInput, observedAt: evaluationAt });
   const evaluation = evaluateRouteAccessibilityEdges({ ...routeEdgeInput, evaluationAt, materialization }, policy);
-  candidateBuildSpec.candidateId = materializationCandidate.candidateId;
   const admission = JSON.parse(await readFile(path.join(ROOT, "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json"), "utf8"));
-  admission.candidate = materializationCandidate;
+  admission.candidate = { ...materializationCandidate, sourceSetSha256: evidenceSourceSetSha256 };
   admission.sourceIdentity.approvedAt = evaluationAt;
   delete admission.admissionDigest;
   admission.admissionDigest = sha256(Buffer.from(canonical(admission)));
@@ -186,13 +193,14 @@ async function populateEvaluationFixture(entryBytes, { repositorySha = "b".repea
   const providerCollectionBundleBytes = Buffer.from("provider-collection");
   const providerCollectionBundleSha256 = sha256(providerCollectionBundleBytes);
   const providerCapturedAt = "2026-08-09T00:00:00.000Z";
+  const normalizedBytes = await readFile(path.join(ROOT, "tools/datapack/release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json"));
   const receipt = buildCurrentExitAdmissionOciReceipt({
     repository: "AquilaXk/easysubway-data", mainSha: repositorySha, operationId, providerCapturedAt,
     providerCollectionBundleBytes,
     providerObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/operations/current-capital-live-chain/v1/heads/${repositorySha}/operations/${operationId}/provider-collections/20260809-${providerCollectionBundleSha256}.json`,
     providerObjectSha256: providerCollectionBundleSha256,
     providerObjectByteSize: providerCollectionBundleBytes.length,
-    normalizedBytes: Buffer.from("normalized-snapshot"), admissionBytes,
+    normalizedBytes, admissionBytes,
   });
   entryBytes.set("tools/datapack/release/candidate-build-spec.json", Buffer.from(JSON.stringify(candidateBuildSpec)));
   entryBytes.set("tools/datapack/release/current-capital-accessibility-full/route-edge-input.json", Buffer.from(JSON.stringify(routeEdgeInput)));
