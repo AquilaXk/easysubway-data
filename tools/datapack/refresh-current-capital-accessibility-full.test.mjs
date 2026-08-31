@@ -384,7 +384,7 @@ test("current output headers with a one-sided producer boundary fail closed", as
 
   await assert.rejects(
     buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root }),
-    /activated producer boundary mismatch/,
+    /pending marker producer boundary mismatch/,
   );
 });
 
