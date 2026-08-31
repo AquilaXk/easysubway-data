@@ -13,6 +13,16 @@ const annualOfficialFileSourceIds = [
   "molit-railway-transfer-movement",
   "seoul-metro-transfer-distance-duration",
 ];
+const staticAccessibilitySourceIds = [
+  "kric-station-convenience-standard",
+  "kric-station-elevator",
+  "kric-station-elevator-movement",
+  "kric-station-escalator",
+  "kric-wheelchair-lift-location",
+  "kric-wheelchair-lift-movement",
+  "seoul-metro-accessibility",
+  "incheon-transit-accessibility",
+];
 const routeMapPositionSourceIds = ["seoul-metro-route-map-positions"];
 const historicalRouteMapSourceIds = ["seoulmetro-cyberstation-route-map"];
 const routeMapGovernanceMappings = [
@@ -20,6 +30,7 @@ const routeMapGovernanceMappings = [
   { sourceId: "seoulmetro-cyberstation-route-map", sourceClassId: "route_map_asset_historical" },
 ];
 const productionRequiredSourceIds = [
+  "incheon-transit-accessibility",
   "molit-urban-rail-full-route",
   "seoulmetro-station-line-info",
   "seoul-metro-accessibility",
@@ -33,6 +44,7 @@ const resources = {
   "datapack/mobility-profile-policy.json": "{\"id\":\"mobility\"}\n",
   "datapack/datapack-freshness-sla.json": `${JSON.stringify({
     sourceClasses: [
+      { id: "static_accessibility_facility", sourceIds: staticAccessibilitySourceIds },
       { id: "route_map_positions", sourceIds: routeMapPositionSourceIds, reverificationCadence: "P90D", offlinePackEligible: true },
       { id: "route_map_asset_historical", sourceIds: historicalRouteMapSourceIds, reverificationCadence: "P1Y", offlinePackEligible: false },
       { id: "annual_official_file", sourceIds: annualOfficialFileSourceIds },
@@ -110,9 +122,31 @@ test("고정된 hub bundle만 build/contracts에 원문 그대로 stage한다", 
       /annual_official_file sourceIds/,
     );
 
+    const invalidStaticAccessibilityResources = structuredClone(resources);
+    invalidStaticAccessibilityResources["datapack/datapack-freshness-sla.json"] = `${JSON.stringify({
+      sourceClasses: [
+        { id: "static_accessibility_facility", sourceIds: staticAccessibilitySourceIds.slice(0, -1) },
+        { id: "route_map_positions", sourceIds: routeMapPositionSourceIds, reverificationCadence: "P90D", offlinePackEligible: true },
+        { id: "route_map_asset_historical", sourceIds: historicalRouteMapSourceIds, reverificationCadence: "P1Y", offlinePackEligible: false },
+        { id: "annual_official_file", sourceIds: annualOfficialFileSourceIds },
+      ],
+    })}\n`;
+    const invalidStaticAccessibilityBytes = Buffer.from(`${JSON.stringify({
+      schemaVersion: 1,
+      bundleVersion: "1.0.0",
+      resources: invalidStaticAccessibilityResources,
+    }, null, 2)}\n`);
+    lock.sha256 = createHash("sha256").update(invalidStaticAccessibilityBytes).digest("hex");
+    writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
+    await assert.rejects(
+      stageContracts({ root, fetchBundle: async () => invalidStaticAccessibilityBytes }),
+      /static_accessibility_facility sourceIds/,
+    );
+
     const invalidRouteMapResources = structuredClone(resources);
     invalidRouteMapResources["datapack/datapack-freshness-sla.json"] = `${JSON.stringify({
       sourceClasses: [
+        { id: "static_accessibility_facility", sourceIds: staticAccessibilitySourceIds },
         { id: "route_map_asset", sourceIds: historicalRouteMapSourceIds, reverificationCadence: "P1Y", offlinePackEligible: true },
         { id: "annual_official_file", sourceIds: annualOfficialFileSourceIds },
       ],
