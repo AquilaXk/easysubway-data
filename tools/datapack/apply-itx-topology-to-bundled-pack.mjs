@@ -7,6 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { canonicalRideEdgeSetSha256 } from "./evaluate-route-accessibility-edges.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
@@ -158,8 +159,8 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function repositoryPath(value) {
-  return path.resolve(root, value);
+function repositoryPath(value, repositoryRoot = root) {
+  return path.resolve(repositoryRoot, value);
 }
 
 function candidateBuildNow() {
@@ -171,12 +172,12 @@ function candidateBuildNow() {
   return buildNow;
 }
 
-async function admittedSource(contractPath) {
+async function admittedSource(contractPath, { repositoryRoot = root, buildNow = candidateBuildNow() } = {}) {
   const contract = JSON.parse(await readFile(contractPath, "utf8"));
   const reference = contract?.sourceTimetableArtifact;
   validateAdmittedSourceReference(contract, reference);
-  const sourceBytes = await readFile(repositoryPath(reference.artifactPath));
-  const completenessBytes = await readFile(repositoryPath(reference.completenessEvidencePath));
+  const sourceBytes = await readFile(repositoryPath(reference.artifactPath, repositoryRoot));
+  const completenessBytes = await readFile(repositoryPath(reference.completenessEvidencePath, repositoryRoot));
   const { source, completeness } = parseAuthenticatedAdmittedSourceDocuments(
     reference,
     sourceBytes,
@@ -189,8 +190,35 @@ async function admittedSource(contractPath) {
     completeness,
     sha256(sourceBytes),
     sha256(completenessBytes),
+    buildNow,
   );
   return { contract, reference, source, sourceBytes };
+}
+
+export function deriveAdmittedItxRideEdgeSetSha256(source) {
+  const rides = deriveTopology(source).edges.map((edge) => ({
+    edgeId: edge.id,
+    fromNodeId: edge.fromNodeId,
+    toNodeId: edge.toNodeId,
+    edgeType: edge.edgeType,
+    servicePattern: edge.servicePattern,
+    serviceClass: edge.serviceClass,
+    durationSeconds: edge.durationSeconds,
+    distanceMeters: edge.distanceMeters,
+  }));
+  return canonicalRideEdgeSetSha256(rides);
+}
+
+export async function readAdmittedItxRideEdgeSetSha256(
+  repositoryRoot = root,
+  { buildNow = candidateBuildNow() } = {},
+) {
+  const resolvedRoot = path.resolve(repositoryRoot);
+  const { source } = await admittedSource(
+    path.join(resolvedRoot, "tools/datapack/itx-cheongchun-coverage-contract.json"),
+    { repositoryRoot: resolvedRoot, buildNow },
+  );
+  return deriveAdmittedItxRideEdgeSetSha256(source);
 }
 
 function validateAdmittedSourceReference(contract, reference) {

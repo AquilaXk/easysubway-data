@@ -220,7 +220,7 @@ export async function writeFreshExitAdmissionChain(repositoryRoot, observedAt) {
   ]);
 }
 
-async function rebindFreshExitAdmissionForCurrentTransition(repositoryRoot, previousBytes) {
+export async function rebindFreshExitAdmissionForCurrentTransition(repositoryRoot, previousBytes) {
   const paths = {
     candidate: "tools/datapack/release/candidate-build-spec.json",
     facility: "tools/datapack/release/current-capital-facility-source-admission.json",
