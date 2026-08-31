@@ -17,10 +17,20 @@ import {
   resolveStagedIncheonTopologyPath,
   recoverCurrentKricExitCollection,
   resolveCurrentExitDerivationAt,
+  runCurrentCapitalExitOnlyProducer,
+  runCurrentCapitalExitTerminalConsumer,
   runCurrentCapitalLiveChain,
 } from "./run-current-capital-live-chain.mjs";
 import { buildCurrentKricExitCollectionBundle, buildCurrentKricExitCollectionReceipt, canonicalCurrentKricExitCollectionBundleJson } from "./build-current-kric-exit-collection-receipt.mjs";
 import { buildCurrentKricExitCollectionPlan } from "./build-current-kric-exit-collection-plan.mjs";
+import { currentCapitalLiveChainOutputPaths } from "./build-current-capital-live-chain-bundle.mjs";
+import { canonicalKricExitPathCollectionPlanJson } from "./plan-kric-exit-path-collection.mjs";
+import { buildCurrentKricExitProviderOciPlan, canonicalCurrentKricExitProviderOciPlanJson } from "./build-current-kric-exit-provider-oci-plan.mjs";
+import { buildCurrentKricExitProviderOciReceipt, canonicalCurrentKricExitProviderOciReceiptJson } from "./build-current-kric-exit-provider-oci-receipt.mjs";
+import {
+  buildCurrentCapitalExitProviderSourceHandoffFromProviderOci,
+  canonicalCurrentCapitalExitProviderSourceHandoffJson,
+} from "./current-capital-exit-provider-handoff.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const sha = (value) => createHash("sha256").update(value).digest("hex");
@@ -55,6 +65,203 @@ test("live chain fixes the staged P/F/T to EXIT to full-capital order and invoke
   assert.deepEqual(plan.outputs, planInput.outputPaths);
   assert.throws(() => buildCurrentCapitalLiveChainPlan({ ...planInput, repositorySha: "not-a-sha" }), /repository SHA/);
   assert.throws(() => buildCurrentCapitalLiveChainPlan({ ...planInput, transferReceiptPath: "relative.json" }), /paths must be absolute/);
+});
+
+test("EXIT-only producer refuses provider access without a validated same-repository FACILITY PR", async () => {
+  await assert.rejects(runCurrentCapitalExitOnlyProducer({
+    repositoryRoot: "/repository", runnerTemp: "/runner", handoffDirectory: "/handoff", repository: "AquilaXk/easysubway-data",
+    repositorySha: "a".repeat(40), operationId: "current-capital-647",
+    env: { KRIC_SERVICE_KEY: "key", EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/token/n/axvym6vk8g7i/b/easysubway-datapacks/o/" },
+    execFileImpl: async () => { throw new Error("provider boundary must not start"); },
+  }), /validated same-repository FACILITY pull request is required/);
+});
+
+function terminalGitPreflight(command, args) {
+  if (command !== "git") throw new Error("only terminal child scripts may execute outside git preflight");
+  const key = args.join(" ");
+  const values = new Map([
+    ["remote get-url origin", "https://github.com/AquilaXk/easysubway-data.git\n"],
+    ["branch --show-current", "automation/629-kric-facility-refresh-647\n"],
+    ["rev-parse HEAD", `${"b".repeat(40)}\n`],
+    ["rev-parse --abbrev-ref --symbolic-full-name @{upstream}", "origin/automation/629-kric-facility-refresh-647\n"],
+    ["rev-parse @{upstream}", `${"b".repeat(40)}\n`],
+    ["status --porcelain=v1 --untracked-files=all", ""],
+  ]);
+  if (!values.has(key)) throw new Error(`unexpected terminal git preflight: ${key}`);
+  return Promise.resolve({ stdout: values.get(key) });
+}
+
+function memoryOciObject(bytes, key) {
+  let gets = 0;
+  return {
+    get gets() { return gets; },
+    async readObject(requestedKey) {
+      gets += 1;
+      return requestedKey === key ? { exists: true, body: Buffer.from(bytes) } : { exists: false };
+    },
+  };
+}
+
+async function terminalProviderHandoff({ mutatePlan = (plan) => plan } = {}) {
+  const paths = {
+    canonicalPackBytes: "tools/datapack/release/capital-production-canonical-pack.json",
+    coverageTargetsBytes: "tools/datapack/nationwide-coverage-targets.json",
+    providerCodeCatalogBytes: "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
+    routeRostersBytes: "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
+    sourceInventoryBytes: "tools/datapack/source-inventory.json",
+  };
+  const input = Object.fromEntries(await Promise.all(Object.entries(paths).map(async ([key, relative]) =>
+    [key, await readFile(path.join(ROOT, relative))],
+  )));
+  const inventory = JSON.parse(input.sourceInventoryBytes);
+  const incheon = inventory.sources.find(({ id }) => id === "incheon-transit-station-info").topologyAdmissionEvidence;
+  input.incheonTopologyBytes = await readFile(path.join(ROOT, incheon.snapshotPath));
+  const plan = buildCurrentKricExitCollectionPlan(input, {
+    now: new Date(incheon.capturedAt), coverageSelector: "capital-seoul-metro-production",
+  });
+  plan.candidate.candidateId = `${plan.candidate.candidateId}-source`;
+  mutatePlan(plan);
+  delete plan.collectionPlanDigest;
+  plan.collectionPlanDigest = sha(canonical(plan));
+  const planBytes = Buffer.from(canonicalKricExitPathCollectionPlanJson(plan));
+  const rows = [{ edMovePath: null, elvtSttCd: null, elvtTpCd: null, exitMvTpOrdr: "1", imgPath: null, mvContDtl: null, mvPathMgNo: "1", stMovePath: null }];
+  const results = plan.queryPlan.map((query, index) => ({
+    queryId: query.queryId, state: index === 0 ? "ROWS_OBSERVED" : "EXPLICIT_ZERO", providerResultCode: "00",
+    rawResponseSha256: sha(`terminal-raw-${index}`), rawResponseByteSize: 1,
+    providerRecordHash: sha(canonical(index === 0 ? rows : [])), rows: index === 0 ? rows : [],
+  }));
+  const snapshotPayload = {
+    schemaVersion: 1, artifactKind: "kric-exit-path-provider-snapshot", sourceId: "kric-station-movement-standard",
+    snapshotId: `kric-station-movement-standard-${incheon.capturedAt.replaceAll(/[-:.]/gu, "")}`,
+    capturedAt: incheon.capturedAt, freshUntil: incheon.freshUntil, credentialRedacted: true,
+    collectionPlanDigest: plan.collectionPlanDigest, queryPlanSha256: plan.queryPlanSha256,
+    coverage: { requestPlanComplete: true, queryIds: plan.queryPlan.map(({ queryId }) => queryId) }, queryPlan: plan.queryPlan, results,
+  };
+  const snapshotBytes = Buffer.from(canonical({ ...snapshotPayload, snapshotDigest: sha(canonical(snapshotPayload)) }));
+  const receipt = buildCurrentKricExitCollectionReceipt({
+    collectionPlanBytes: planBytes, providerSnapshotBytes: snapshotBytes,
+    repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-560",
+  });
+  const bundleBytes = Buffer.from(canonicalCurrentKricExitCollectionBundleJson(buildCurrentKricExitCollectionBundle({
+    collectionPlanBytes: planBytes, providerSnapshotBytes: snapshotBytes, receipt,
+  })));
+  const providerPlan = buildCurrentKricExitProviderOciPlan({
+    mainSha: "a".repeat(40), operationId: "current-capital-560", providerCollectionBundleBytes: bundleBytes,
+    providerCapturedAt: incheon.capturedAt,
+  });
+  const providerOciPlanBytes = Buffer.from(`${canonicalCurrentKricExitProviderOciPlanJson(providerPlan)}\n`);
+  const providerOciReceiptBytes = Buffer.from(`${canonicalCurrentKricExitProviderOciReceiptJson(
+    buildCurrentKricExitProviderOciReceipt({ planBytes: providerOciPlanBytes }), { planBytes: providerOciPlanBytes },
+  )}\n`);
+  const source = buildCurrentCapitalExitProviderSourceHandoffFromProviderOci({
+    providerOciPlanBytes, providerOciReceiptBytes, fetchedProviderCollectionBundleBytes: bundleBytes,
+    repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-560",
+  });
+  return {
+    operationNow: new Date(incheon.capturedAt), bundleBytes, providerObject: providerPlan.providerObject,
+    providerOciPlanBytes, providerOciReceiptBytes,
+    sourceReceiptBytes: Buffer.from(`${canonicalCurrentCapitalExitProviderSourceHandoffJson(source)}\n`),
+  };
+}
+
+function changeProviderMappingIdentity(plan) {
+  const mapping = plan.providerMappings[0];
+  const stationLineId = `${mapping.stationId}:${mapping.lineId}`;
+  const stationLineQueries = plan.stationLineQueries.find((entry) => entry.stationLineId === stationLineId);
+  const affectedQueryIds = new Set(stationLineQueries.queryIds);
+  mapping.providerOperatorId = `${mapping.providerOperatorId}-source`;
+  plan.candidate.providerMappingSha256 = sha(canonical(plan.providerMappings));
+  const replacementIds = new Map();
+  for (const query of plan.queryPlan) {
+    if (!affectedQueryIds.has(query.queryId)) continue;
+    const previousId = query.queryId;
+    query.providerOperatorId = mapping.providerOperatorId;
+    query.queryId = sha(canonical({
+      providerLineId: query.providerLineId,
+      providerNextStationId: query.providerNextStationId,
+      providerOperatorId: query.providerOperatorId,
+      providerStationId: query.providerStationId,
+      routeEdgeId: query.routeEdgeId,
+    }));
+    replacementIds.set(previousId, query.queryId);
+  }
+  stationLineQueries.queryIds = stationLineQueries.queryIds.map((queryId) => replacementIds.get(queryId));
+  const compareQuery = (left, right) => Buffer.compare(Buffer.from(left.providerStationId), Buffer.from(right.providerStationId))
+    || Buffer.compare(Buffer.from(left.providerNextStationId), Buffer.from(right.providerNextStationId))
+    || Buffer.compare(Buffer.from(left.routeEdgeId), Buffer.from(right.routeEdgeId))
+    || Buffer.compare(Buffer.from(left.queryId), Buffer.from(right.queryId));
+  plan.queryPlan.sort(compareQuery);
+  const queryById = new Map(plan.queryPlan.map((query) => [query.queryId, query]));
+  stationLineQueries.queryIds.sort((left, right) => compareQuery(queryById.get(left), queryById.get(right)));
+  plan.queryPlanSha256 = sha(canonical(plan.queryPlan));
+}
+
+test("terminal consumer orders P/T/F and CAS before one OCI recovery and semantic refresh", async (t) => {
+  const runnerTemp = await mkdtemp(path.join(os.tmpdir(), "current-capital-terminal-consumer-"));
+  t.after(() => rm(runnerTemp, { recursive: true, force: true }));
+  const handoff = await terminalProviderHandoff();
+  const markers = [
+    "tools/datapack/release/current-capital-accessibility-transition.json",
+    "tools/datapack/release/current-capital-accessibility-transition-successor.json",
+  ];
+  const rootPrestates = await Promise.all([
+    "tools/datapack/release/candidate-build-spec.json", ...markers,
+  ].map(async (relative) => [relative, await readFile(path.join(ROOT, relative))]));
+  const calls = [];
+  const client = memoryOciObject(handoff.bundleBytes, handoff.providerObject.objectKey);
+  const stageRoots = [];
+  const result = await runCurrentCapitalExitTerminalConsumer({
+    repositoryRoot: ROOT, runnerTemp, repository: "AquilaXk/easysubway-data", candidateOperationId: "current-capital-647",
+    operationNow: handoff.operationNow, sourceReceiptBytes: handoff.sourceReceiptBytes,
+    providerOciPlanBytes: handoff.providerOciPlanBytes, providerOciReceiptBytes: handoff.providerOciReceiptBytes,
+    client, isAncestor: async (from, to) => from === "a".repeat(40) && to === "b".repeat(40),
+    transferObservationDirectory: "/retained/transfer/observation", transferReceiptPath: "/retained/transfer/receipt.json",
+    execFileImpl: async (command, args, options) => command === "git"
+      ? terminalGitPreflight(command, args)
+      : (await import("node:child_process")).execFileSync(command, args, options),
+    rebindPublicRouteMapImpl: async ({ repositoryRoot }) => { calls.push("P"); stageRoots.push(repositoryRoot); },
+    rebindTransferImpl: async ({ repositoryRoot }) => { calls.push("T"); assert.equal(repositoryRoot, stageRoots[0]); },
+    rebindFacilityImpl: async ({ repositoryRoot }) => { calls.push("F"); assert.equal(repositoryRoot, stageRoots[0]); },
+  });
+  assert.deepEqual(calls, ["P", "T", "F"]);
+  assert.equal(client.gets, 1);
+  assert.deepEqual({ providerCalls: result.providerCalls, ociGetCalls: result.ociGetCalls, ociPutCalls: result.ociPutCalls }, { providerCalls: 0, ociGetCalls: 1, ociPutCalls: 0 });
+  assert.equal(result.outputPaths.length, 17);
+  assert.equal(result.fanInPath, "tools/datapack/release/current-capital-live-chain-fan-in.json");
+  await Promise.all(result.outputPaths.map((relative) => stat(path.join(result.stagedRoot, relative))));
+  await stat(path.join(result.stagedRoot, result.fanInPath));
+  await Promise.all(markers.map((relative) => assert.rejects(stat(path.join(result.stagedRoot, relative)), { code: "ENOENT" })));
+  assert.deepEqual(result.deletedMarkerPaths, markers);
+  for (const [relative, before] of rootPrestates) assert.deepEqual(await readFile(path.join(ROOT, relative)), before, `ROOT mutated: ${relative}`);
+});
+
+test("terminal consumer rejects an inconsistent real OCI source before refresh or marker deletion", async (t) => {
+  const runnerTemp = await mkdtemp(path.join(os.tmpdir(), "current-capital-terminal-reject-"));
+  t.after(() => rm(runnerTemp, { recursive: true, force: true }));
+  const handoff = await terminalProviderHandoff({ mutatePlan: changeProviderMappingIdentity });
+  const client = memoryOciObject(handoff.bundleBytes, handoff.providerObject.objectKey);
+  const routeEvaluationRelative = "tools/datapack/release/current-capital-accessibility-full/route-edge-evaluation.json";
+  const routeEvaluationPrestate = await readFile(path.join(ROOT, routeEvaluationRelative));
+  let stagedRoot;
+  await assert.rejects(runCurrentCapitalExitTerminalConsumer({
+    repositoryRoot: ROOT, runnerTemp, repository: "AquilaXk/easysubway-data", candidateOperationId: "current-capital-647",
+    operationNow: handoff.operationNow, sourceReceiptBytes: handoff.sourceReceiptBytes,
+    providerOciPlanBytes: handoff.providerOciPlanBytes, providerOciReceiptBytes: handoff.providerOciReceiptBytes,
+    client, isAncestor: async () => true,
+    transferObservationDirectory: "/retained/transfer/observation", transferReceiptPath: "/retained/transfer/receipt.json",
+    execFileImpl: async (command, args, options) => command === "git"
+      ? terminalGitPreflight(command, args)
+      : (await import("node:child_process")).execFileSync(command, args, options),
+    rebindPublicRouteMapImpl: async ({ repositoryRoot }) => { stagedRoot = repositoryRoot; },
+    rebindTransferImpl: async () => {}, rebindFacilityImpl: async () => {},
+  }), /not provider-equivalent to the current plan/);
+  assert.equal(client.gets, 1);
+  assert.ok(stagedRoot);
+  await Promise.all([
+    "tools/datapack/release/current-capital-accessibility-transition.json",
+    "tools/datapack/release/current-capital-accessibility-transition-successor.json",
+  ].map((relative) => stat(path.join(stagedRoot, relative))));
+  assert.deepEqual(await readFile(path.join(stagedRoot, routeEvaluationRelative)), routeEvaluationPrestate);
 });
 
 test("Incheon topology path is derived from the current staged inventory head", () => {

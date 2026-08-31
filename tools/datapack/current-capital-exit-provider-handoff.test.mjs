@@ -8,12 +8,12 @@ import { buildCurrentKricExitCollectionPlan } from "./build-current-kric-exit-co
 import { buildCurrentKricExitCollectionBundle, buildCurrentKricExitCollectionReceipt, canonicalCurrentKricExitCollectionBundleJson } from "./build-current-kric-exit-collection-receipt.mjs";
 import { canonicalKricExitPathCollectionPlanJson } from "./plan-kric-exit-path-collection.mjs";
 import { recoverCurrentKricExitCollectionBytes } from "./run-current-capital-live-chain.mjs";
-import { buildCurrentCapitalLiveChainOciReceipt, canonicalCurrentCapitalLiveChainOciReceiptJson } from "./build-current-capital-live-chain-oci-receipt.mjs";
-import { canonicalCurrentCapitalLiveChainOciPlanJson } from "./build-current-capital-live-chain-oci-plan.mjs";
+import { buildCurrentKricExitProviderOciPlan, canonicalCurrentKricExitProviderOciPlanJson } from "./build-current-kric-exit-provider-oci-plan.mjs";
+import { buildCurrentKricExitProviderOciReceipt, canonicalCurrentKricExitProviderOciReceiptJson } from "./build-current-kric-exit-provider-oci-receipt.mjs";
 import {
   bindCurrentCapitalExitProviderRelease,
   buildCurrentCapitalExitProviderCandidateHandoff,
-  buildCurrentCapitalExitProviderSourceHandoffFromLiveChain,
+  buildCurrentCapitalExitProviderSourceHandoffFromProviderOci,
   canonicalCurrentCapitalExitProviderReleaseBindingJson,
   canonicalCurrentCapitalExitProviderSourceHandoffJson,
   recoverCurrentCapitalExitProviderCandidate,
@@ -32,35 +32,30 @@ async function bundleFixture() {
   const payload = { schemaVersion: 1, artifactKind: "kric-exit-path-provider-snapshot", sourceId: "kric-station-movement-standard", snapshotId: `kric-station-movement-standard-${admission.capturedAt.replaceAll(/[-:.]/gu, "")}`, capturedAt: admission.capturedAt, freshUntil: admission.freshUntil, credentialRedacted: true, collectionPlanDigest: plan.collectionPlanDigest, queryPlanSha256: plan.queryPlanSha256, coverage: { requestPlanComplete: true, queryIds: plan.queryPlan.map(({ queryId }) => queryId) }, queryPlan: plan.queryPlan, results }; const snapshot = sort({ ...payload, snapshotDigest: sha(canonical(payload)) }); const planBytes = Buffer.from(canonical(plan)); const snapshotBytes = Buffer.from(canonical(snapshot)); const receipt = buildCurrentKricExitCollectionReceipt({ collectionPlanBytes: planBytes, providerSnapshotBytes: snapshotBytes, repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-560" }); const bundle = buildCurrentKricExitCollectionBundle({ collectionPlanBytes: planBytes, providerSnapshotBytes: snapshotBytes, receipt }); return { candidateId: plan.candidate.candidateId, bytes: Buffer.from(canonicalCurrentKricExitCollectionBundleJson(bundle)) };
 }
 
-function liveChainHandoffFixture(fixture) {
+function providerOciHandoffFixture(fixture) {
   const provider = JSON.parse(fixture.bytes); const snapshot = JSON.parse(provider.providerSnapshotJson);
-  const mainSha = "a".repeat(40); const operationId = "current-capital-560"; const composite = Buffer.from("already-fetched-composite");
-  const providerObject = { objectKey: `operations/current-capital-live-chain/v1/heads/${mainSha}/operations/${operationId}/provider-collections/${snapshot.capturedAt.slice(0, 10).replaceAll("-", "")}-${sha(fixture.bytes)}.json`, ociUri: "", sha256: sha(fixture.bytes), sizeBytes: fixture.bytes.length };
-  providerObject.ociUri = `oci://axvym6vk8g7i/easysubway-datapacks/${providerObject.objectKey}`;
-  const compositeObject = { objectKey: `operations/current-capital-live-chain/v1/heads/${mainSha}/operations/${operationId}/bundles/${sha(composite)}.json`, ociUri: "", sha256: sha(composite), sizeBytes: composite.length };
-  compositeObject.ociUri = `oci://axvym6vk8g7i/easysubway-datapacks/${compositeObject.objectKey}`;
-  const steps = [["put-immutable-bundle-object", providerObject, "current-kric-exit-collection-bundle.json"], ["verify-immutable-bundle-object", providerObject, "current-kric-exit-collection-bundle.json"], ["put-immutable-bundle-object", compositeObject, "current-capital-live-chain-bundle.json"], ["verify-immutable-bundle-object", compositeObject, "current-capital-live-chain-bundle.json"]].map(([type, object, sourcePath]) => ({ type, objectKey: object.objectKey, sourcePath, sha256: object.sha256, sizeBytes: object.sizeBytes }));
-  const plan = { schemaVersion: 1, artifactKind: "current-capital-live-chain-oci-plan", repository: "AquilaXk/easysubway-data", mainSha, operationId, ociNamespace: "axvym6vk8g7i", bucket: "easysubway-datapacks", providerCapturedAt: snapshot.capturedAt, providerObject, compositeObject, publishPlan: { steps }, fetchPlan: { steps: [{ type: "fetch-provider-collection-bundle-object", objectKey: providerObject.objectKey, destinationPath: "fetched-current-kric-exit-collection-bundle.json", sha256: providerObject.sha256, sizeBytes: providerObject.sizeBytes }, { type: "fetch-current-capital-live-chain-composite-object", objectKey: compositeObject.objectKey, destinationPath: "fetched-current-capital-live-chain-bundle.json", sha256: compositeObject.sha256, sizeBytes: compositeObject.sizeBytes }] } };
-  const planBytes = Buffer.from(`${canonicalCurrentCapitalLiveChainOciPlanJson(plan)}\n`);
-  const externalReceipt = buildCurrentCapitalLiveChainOciReceipt({ planBytes });
-  const externalReceiptBytes = Buffer.from(`${canonicalCurrentCapitalLiveChainOciReceiptJson(externalReceipt, { planBytes })}\n`);
-  const source = buildCurrentCapitalExitProviderSourceHandoffFromLiveChain({ ociPlanBytes: planBytes, externalReceiptBytes, fetchedProviderCollectionBundleBytes: fixture.bytes, fetchedCompositeBundleBytes: composite, repository: "AquilaXk/easysubway-data", repositorySha: mainSha, operationId });
-  return { snapshot, mainSha, operationId, composite, providerObject, compositeObject, planBytes, externalReceiptBytes, sourceReceiptBytes: Buffer.from(`${canonicalCurrentCapitalExitProviderSourceHandoffJson(source)}\n`) };
+  const mainSha = "a".repeat(40); const operationId = "current-capital-560";
+  const plan = buildCurrentKricExitProviderOciPlan({ mainSha, operationId, providerCollectionBundleBytes: fixture.bytes, providerCapturedAt: snapshot.capturedAt });
+  const planBytes = Buffer.from(`${canonicalCurrentKricExitProviderOciPlanJson(plan)}\n`);
+  const receipt = buildCurrentKricExitProviderOciReceipt({ planBytes });
+  const receiptBytes = Buffer.from(`${canonicalCurrentKricExitProviderOciReceiptJson(receipt, { planBytes })}\n`);
+  const source = buildCurrentCapitalExitProviderSourceHandoffFromProviderOci({ providerOciPlanBytes: planBytes, providerOciReceiptBytes: receiptBytes, fetchedProviderCollectionBundleBytes: fixture.bytes, repository: "AquilaXk/easysubway-data", repositorySha: mainSha, operationId });
+  return { snapshot, mainSha, operationId, providerObject: plan.providerObject, planBytes, receiptBytes, sourceReceiptBytes: Buffer.from(`${canonicalCurrentCapitalExitProviderSourceHandoffJson(source)}\n`) };
 }
 
-test("candidate reuses the already-published OCI pair without another PUT", async () => {
+test("candidate binds provider-only OCI evidence with exactly one GET", async () => {
   const fixture = await bundleFixture();
   const sourceBundle = JSON.parse(fixture.bytes);
-  const handoff = liveChainHandoffFixture(fixture); const operationNow = new Date(handoff.snapshot.capturedAt);
+  const handoff = providerOciHandoffFixture(fixture); const operationNow = new Date(handoff.snapshot.capturedAt);
   const targetPlan = JSON.parse(sourceBundle.collectionPlanJson);
   targetPlan.candidate.candidateId = `${targetPlan.candidate.candidateId}-next`;
   delete targetPlan.collectionPlanDigest;
   targetPlan.collectionPlanDigest = sha(canonical(targetPlan));
   const targetPlanBytes = Buffer.from(canonicalKricExitPathCollectionPlanJson(targetPlan));
   const reboundPath = "tools/datapack/release/current-kric-exit-collection-bundle.json";
-  const store = memoryStore(new Map([[handoff.providerObject.objectKey, fixture.bytes], [handoff.compositeObject.objectKey, handoff.composite]]));
+  const store = memoryStore(new Map([[handoff.providerObject.objectKey, fixture.bytes]]));
   const consumed = await recoverCurrentCapitalExitProviderCandidate({
-    sourceReceiptBytes: handoff.sourceReceiptBytes, ociPlanBytes: handoff.planBytes, externalReceiptBytes: handoff.externalReceiptBytes,
+    sourceReceiptBytes: handoff.sourceReceiptBytes, providerOciPlanBytes: handoff.planBytes, providerOciReceiptBytes: handoff.receiptBytes,
     targetPlanBytes, candidateOperationId: "current-capital-633", operationNow,
     preflight: { origin: "git@github.com:AquilaXk/easysubway-data.git", branch: "feat/633", clean: true, headSha: "b".repeat(40), upstream: "origin/feat/633", remoteHeadSha: "b".repeat(40) }, reboundOutputPath: reboundPath,
     client: store, isAncestor: async (from, to) => from === "a".repeat(40) && to === "b".repeat(40),
@@ -77,16 +72,16 @@ test("candidate reuses the already-published OCI pair without another PUT", asyn
     candidateReceiptBytes: Buffer.from(`${canonical(JSON.parse(JSON.stringify(consumed.candidateReceipt)))}\n`), reboundBundleBytes: consumed.reboundBundleBytes, preflight: { origin: "git@github.com:AquilaXk/easysubway-data.git", branch: "main", clean: true, headSha: "c".repeat(40), originMainSha: "c".repeat(40), remoteMainSha: "c".repeat(40) }, operationNow,
     trackedOutputInventory: trackedInventory, trackedOutputs: tracked, isAncestor: async (from, to) => from === "b".repeat(40) && to === "c".repeat(40),
   });
-  assert.equal(binding.releaseMainSha, "c".repeat(40)); assert.equal(store.puts, 0); assert.equal(store.gets, 2);
+  assert.equal(binding.releaseMainSha, "c".repeat(40)); assert.equal(store.puts, 0); assert.equal(store.gets, 1);
 });
 
 test("candidate and release binding reject wrong remote identity, stale evidence, drift, and ancestry", async () => {
-  const fixture = await bundleFixture(); const raw = JSON.parse(fixture.bytes); const handoff = liveChainHandoffFixture(fixture); const now = new Date(handoff.snapshot.capturedAt);
-  const store = memoryStore(new Map([[handoff.providerObject.objectKey, fixture.bytes], [handoff.compositeObject.objectKey, handoff.composite]]));
+  const fixture = await bundleFixture(); const raw = JSON.parse(fixture.bytes); const handoff = providerOciHandoffFixture(fixture); const now = new Date(handoff.snapshot.capturedAt);
+  const store = memoryStore(new Map([[handoff.providerObject.objectKey, fixture.bytes]]));
   const target = JSON.parse(raw.collectionPlanJson); target.candidate.candidateId = `${target.candidate.candidateId}-next`; delete target.collectionPlanDigest; target.collectionPlanDigest = sha(canonical(target));
   const targetBytes = Buffer.from(canonicalKricExitPathCollectionPlanJson(target));
   const outputPath = "tools/datapack/release/current-kric-exit-collection-bundle.json";
-  const consume = (overrides = {}) => recoverCurrentCapitalExitProviderCandidate({ sourceReceiptBytes: handoff.sourceReceiptBytes, ociPlanBytes: handoff.planBytes, externalReceiptBytes: handoff.externalReceiptBytes, targetPlanBytes: overrides.targetPlanBytes ?? targetBytes, candidateOperationId: "current-capital-633", operationNow: overrides.operationNow ?? now, preflight: overrides.preflight ?? { origin: "https://github.com/AquilaXk/easysubway-data.git", branch: "feat/633", clean: true, headSha: "b".repeat(40), upstream: "origin/feat/633", remoteHeadSha: "b".repeat(40) }, reboundOutputPath: outputPath, client: overrides.client ?? store, isAncestor: overrides.isAncestor ?? (async () => true) });
+  const consume = (overrides = {}) => recoverCurrentCapitalExitProviderCandidate({ sourceReceiptBytes: handoff.sourceReceiptBytes, providerOciPlanBytes: handoff.planBytes, providerOciReceiptBytes: handoff.receiptBytes, targetPlanBytes: overrides.targetPlanBytes ?? targetBytes, candidateOperationId: "current-capital-633", operationNow: overrides.operationNow ?? now, preflight: overrides.preflight ?? { origin: "https://github.com/AquilaXk/easysubway-data.git", branch: "feat/633", clean: true, headSha: "b".repeat(40), upstream: "origin/feat/633", remoteHeadSha: "b".repeat(40) }, reboundOutputPath: outputPath, client: overrides.client ?? store, isAncestor: overrides.isAncestor ?? (async () => true) });
   await assert.rejects(consume({ preflight: { origin: "https://github.com/AquilaXk/easysubway-data.git", branch: "feat/633", clean: true, headSha: "b".repeat(40), upstream: "origin/feat/633", remoteHeadSha: "c".repeat(40) } }), /remote non-main/);
   const semanticDrift = structuredClone(target); semanticDrift.candidate.stationSetSha256 = "f".repeat(64); delete semanticDrift.collectionPlanDigest; semanticDrift.collectionPlanDigest = sha(canonical(semanticDrift));
   await assert.rejects(consume({ targetPlanBytes: Buffer.from(canonicalKricExitPathCollectionPlanJson(semanticDrift)) }), /provider-equivalent/);

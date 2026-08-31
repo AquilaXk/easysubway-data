@@ -298,20 +298,28 @@ test("additive governance successor preserves only approved non-TRANSFER prior p
   }
 });
 
-test("release request/hash evidence remain byte-identical and stale approval fails closed", async (t) => {
+test("rebind atomically preserves release authority while binding all release artifacts", async (t) => {
   const { root } = await fixture();
   t.after(() => rm(root, { recursive: true, force: true }));
   const requestBefore = await readFile(path.join(root, "tools/datapack/release/release-request.json"));
-  const hashesBefore = await readFile(path.join(root, "tools/datapack/release/hash-evidence.json"));
+  const requestIdentity = JSON.parse(requestBefore);
   const result = await rebindCurrentCandidateSourceSnapshots({ repositoryRoot: root, now: NOW });
-  assert.deepEqual(await readFile(path.join(root, "tools/datapack/release/release-request.json")), requestBefore);
-  assert.deepEqual(await readFile(path.join(root, "tools/datapack/release/hash-evidence.json")), hashesBefore);
+  const request = JSON.parse(await readFile(path.join(root, "tools/datapack/release/release-request.json"), "utf8"));
+  const evidence = JSON.parse(await readFile(path.join(root, "tools/datapack/release/hash-evidence.json"), "utf8"));
+  assert.equal(request.approvalId, requestIdentity.approvalId);
+  assert.equal(request.requestedBy, requestIdentity.requestedBy);
+  assert.equal(request.approvedBy, requestIdentity.approvedBy);
   const violations = releaseRequestBindingViolations({
     buildSpec: result.candidate,
     buildSpecSha256: sha(result.bytes),
-    releaseRequest: JSON.parse(requestBefore),
+    releaseRequest: request,
   });
-  assert.ok(violations.some((violation) => /sourceSnapshotSetHash/.test(violation)));
+  assert.deepEqual(violations, []);
+  assert.equal(evidence.sourceSnapshotSetHash.value, result.candidate.sourceSnapshotSetHash);
+  assert.equal(evidence.sourceInventorySha256.value, result.candidate.sourceInventorySha256);
+  assert.deepEqual(evidence.perSourceEvidence.map(({ snapshotId }) => snapshotId), JSON.parse(await readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8"))
+    .filter(({ snapshotId }) => result.candidate.sourceSnapshotIds.includes(snapshotId)).map(({ snapshotId }) => snapshotId));
+  await assert.rejects(readFile(path.join(root, "tools/datapack/.candidate-source-rebind-transaction.json")), { code: "ENOENT" });
 });
 
 test("CLI rejects candidate source-inventory and raw-inventory-hash drift before replacement", async (t) => {
