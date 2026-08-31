@@ -16,11 +16,13 @@ const SEOUL_LINES = [
   ["line-15b3b8a93259", "7"], ["line-2b2d9eaa53d0", "8"], ["line-3f41718e0833", "6"], ["line-41a8c75ec9d8", "3"],
   ["line-472a81add377", "1"], ["line-80fc4d5350d4", "5"], ["seoul-2", "2"], ["seoul-4", "4"],
 ];
+const INCHEON_LINES = [["line-15b3b8a93259", "7"]];
 
 function fixture({ firstExptCd = "N", servicePatternByExptCd = [{ exptCd: "N", servicePattern: "LOCAL" }] } = {}) {
   const providerScopes = [
     ...KORAIL_LINES.map(([lineId, lnCd]) => scope("korail", lineId, "KR", lnCd)),
     ...SEOUL_LINES.map(([lineId, lnCd]) => scope("seoul-metro", lineId, "S1", lnCd)),
+    ...INCHEON_LINES.map(([lineId, lnCd]) => scope("incheon-transit", lineId, "IC", lnCd)),
   ];
   const plannerInputs = {
     tally: {
@@ -48,7 +50,7 @@ function fixture({ firstExptCd = "N", servicePatternByExptCd = [{ exptCd: "N", s
   const sourceSnapshot = {
     sourceId: SOURCE_ID, snapshotId: SNAPSHOT_ID, retrievedAt: "2026-08-24T00:00:00.000Z",
     rawSha256: RAW_SHA256, schemaFingerprint: "b".repeat(64), redactedRequestFingerprint: "c".repeat(64),
-    sourceUpdatedAt: "2026-08-24T00:00:00.000Z", rowCount: 48, coverageCount: 16, rawByteSize: 256,
+    sourceUpdatedAt: "2026-08-24T00:00:00.000Z", rowCount: 81, coverageCount: 27, rawByteSize: 256,
     requestPlanSha256: base.requestPlanSha256, targetSetSha256: base.targetSetSha256, eventSetSha256: base.eventSetSha256,
     servicePatternMappingSha256: base.servicePatternMappingSha256,
     previousSnapshotId: null, diffSummary: null, freshUntil: "2026-08-25T00:00:00.000Z",
@@ -81,14 +83,14 @@ test("#454 full synthetic operation evidence stays PENDING and requires admissio
   assert.equal(result.status, "PENDING");
   assert.equal(result.decision, "CONTRACT_GAP");
   assert.equal(result.sourceId, SOURCE_ID);
-  assert.equal(result.targetSetCount, 16);
-  assert.equal(result.requestCount, 48);
-  assert.equal(result.eventCount, 48);
+  assert.equal(result.targetSetCount, 27);
+  assert.equal(result.requestCount, 81);
+  assert.equal(result.eventCount, 81);
   assert.deepEqual(result.gaps, [{ code: "ADMISSION_EXECUTION_REQUIRED", status: "PENDING", decision: "CONTRACT_GAP" }]);
   assert.ok(!JSON.stringify(result).includes("ADMITTED"));
 });
 
-test("#454 preflight binds cardinality to the supplied planner rather than a runtime 48-request constant", () => {
+test("#454 preflight binds cardinality to the supplied planner", () => {
   const input = fixture();
   const requestPlan = {
     ...input.requestPlan,
@@ -200,7 +202,12 @@ function rostersFor(providerScopes) {
   for (const [index, providerScope] of providerScopes.entries()) {
     const key = `${providerScope.mreaWideCd}:${providerScope.lnCd}`;
     const roster = byRequest.get(key) ?? { schemaVersion: 1, artifactKind: "kric-route-roster", sourceId: "kric-subway-route-info", resultCode: "00", mreaWideCd: "01", lnCd: providerScope.lnCd, stations: [] };
-    roster.stations.push({ mreaWideCd: "01", railOprIsttCd: providerScope.railOprIsttCd, lnCd: providerScope.lnCd, stinCd: `station-${String(index).padStart(2, "0")}` });
+    const stationCodes = providerScope.operatorId === "incheon-transit"
+      ? ["751", "752", "753", "754", "755", "756", "757", "758", "759", "760", "761"]
+      : [`station-${String(index).padStart(2, "0")}`];
+    for (const stinCd of stationCodes) {
+      roster.stations.push({ mreaWideCd: "01", railOprIsttCd: providerScope.railOprIsttCd, lnCd: providerScope.lnCd, stinCd });
+    }
     byRequest.set(key, roster);
   }
   return [...byRequest.values()];
