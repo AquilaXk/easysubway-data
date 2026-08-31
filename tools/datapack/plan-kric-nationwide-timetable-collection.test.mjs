@@ -12,20 +12,25 @@ const SEOUL_LINES = [
   ["line-472a81add377", "1"], ["line-80fc4d5350d4", "5"], ["seoul-2", "2"], ["seoul-4", "4"],
 ];
 const INCHEON_LINES = [["line-15b3b8a93259", "7"]];
+const ADMITTED_INCHEON_LINES = [
+  ["line-42b5805f3b5a", "2"], ["line-98718184f016", "1"],
+];
 
 function inputs() {
-  const providerScopes = [
+  const missingProviderScopes = [
     ...KORAIL_LINES.map(([lineId, lnCd]) => scope("korail", lineId, "KR", lnCd)),
     ...SEOUL_LINES.map(([lineId, lnCd]) => scope("seoul-metro", lineId, "S1", lnCd)),
     ...INCHEON_LINES.map(([lineId, lnCd]) => scope("incheon-transit", lineId, "IC", lnCd)),
   ];
+  const admittedProviderScopes = ADMITTED_INCHEON_LINES.map(([lineId, lnCd]) => scope("incheon-transit", lineId, "IC", lnCd));
+  const providerScopes = [...missingProviderScopes, ...admittedProviderScopes];
   return {
     tally: {
       targetVersion: "2026-07-13",
-      launchRequired: { requirements: providerScopes.map(({ regionId, operatorId, lineId }) => ({
-        regionId, operatorId, lineId, sourceDomain: "schedule_timetable", status: "MISSING", missingKind: "NO_ADMITTED_SOURCE",
-        requiredFieldCount: 3, unadmittedFields: ["service_calendar", "trip", "stop_time"],
-      })) },
+      launchRequired: { requirements: [
+        ...missingProviderScopes.map(missingRequirement),
+        ...admittedProviderScopes.map(admittedRequirement),
+      ] },
     },
     rosterArtifact: {
       schemaVersion: 1, artifactKind: "kric-nationwide-route-rosters", sourceId: "kric-subway-route-info", targetVersion: "2026-07-13",
@@ -89,6 +94,12 @@ test("#454 planner는 selector/candidate/roster identity와 selected provider st
   malformedTargetScope.rosterArtifact.providerScopes.push(scope("korail", "unknown-target", "KR", "X"));
   assert.throws(() => planKricNationwideTimetableCollection(malformedTargetScope), /unknown target-owned provider scope/);
 
+  const unknownIncheonCollision = inputs();
+  unknownIncheonCollision.tally.launchRequired.requirements.push(
+    missingRequirement(scope("incheon-transit", "unknown-target", "IC", "7")),
+  );
+  assert.throws(() => planKricNationwideTimetableCollection(unknownIncheonCollision), /unknown timetable requirement/);
+
   const invalidSelectedRoster = inputs();
   invalidSelectedRoster.rosterArtifact.rosters[0].sourceId = "wrong-source";
   assert.throws(() => planKricNationwideTimetableCollection(invalidSelectedRoster), /invalid timetable roster/);
@@ -100,6 +111,21 @@ test("#454 planner는 selector/candidate/roster identity와 selected provider st
 
 function scope(operatorId, lineId, railOprIsttCd, lnCd) {
   return { regionId: "capital", operatorId, lineId, mreaWideCd: "01", railOprIsttCd, lnCd };
+}
+
+function missingRequirement({ regionId, operatorId, lineId }) {
+  return {
+    regionId, operatorId, lineId, sourceDomain: "schedule_timetable", status: "MISSING", missingKind: "NO_ADMITTED_SOURCE",
+    requiredFieldCount: 3, unadmittedFields: ["service_calendar", "trip", "stop_time"],
+  };
+}
+
+function admittedRequirement({ regionId, operatorId, lineId }) {
+  return {
+    regionId, operatorId, lineId, sourceDomain: "schedule_timetable", status: "INVENTORY_ADMITTED", missingKind: null,
+    admissionRatio: 1, admittedFieldCount: 3, admittedSourceIds: [`${lineId}-timetable`],
+    requiredFieldCount: 3, unadmittedFields: [],
+  };
 }
 
 function station(providerScope, stinCd) {
