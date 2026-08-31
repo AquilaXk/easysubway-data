@@ -1,0 +1,131 @@
+name: Seoul Current Accessibility Refresh
+
+on:
+  schedule:
+    - cron: "31 */2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: seoul-current-accessibility-refresh-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    environment: datapack-release-check
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
+      - name: Prepare paths
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/seoul-current-accessibility-refresh/${GITHUB_RUN_ID}"
+          printf 'SEOUL_REFRESH_DECISION=%s\n' "${RUNNER_TEMP}/seoul-current-accessibility-refresh/decision.json" >> "${GITHUB_ENV}"
+          printf 'SEOUL_REFRESH_RECEIPT=%s\n' "${RUNNER_TEMP}/seoul-current-accessibility-refresh/${GITHUB_RUN_ID}/receipt.json" >> "${GITHUB_ENV}"
+      - name: Read due state
+        id: decision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          prs="${RUNNER_TEMP}/seoul-current-accessibility-refresh/open-prs.json"
+          claims="${RUNNER_TEMP}/seoul-current-accessibility-refresh/claims.txt"
+          gh pr list --repo "${GITHUB_REPOSITORY}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > "${prs}"
+          git ls-remote --heads origin "refs/heads/automation/639-seoul-accessibility-refresh-*" > "${claims}"
+          node tools/ci/decide-current-seoul-accessibility-refresh.mjs --inventory tools/datapack/source-inventory.json --policy release/product-gates/datapack-freshness-sla.json --prs "${prs}" --claims "${claims}" --repository "${GITHUB_REPOSITORY}" --output "${SEOUL_REFRESH_DECISION}" --github-output "${GITHUB_OUTPUT}"
+      - name: Recover completed claimed refresh
+        if: ${{ steps.decision.outputs.state == 'RECOVER_CLAIM' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch="${{ steps.decision.outputs.branch }}"
+          git fetch --no-tags origin "refs/heads/${branch}:refs/remotes/origin/${branch}"
+          [[ "$(git rev-list --count HEAD.."origin/${branch}")" == "2" ]] || { echo "Seoul refresh claim does not have exactly one claim and one output commit" >&2; exit 1; }
+          [[ "$(git rev-parse "origin/${branch}^^")" == "$(git rev-parse HEAD)" ]] || { echo "Seoul refresh claim is not based on current main" >&2; exit 1; }
+          [[ "$(git log -1 --format=%s "origin/${branch}")" == "Refresh Seoul accessibility snapshot" ]] || { echo "Seoul refresh claim has no completed output commit" >&2; exit 1; }
+          changed="$(git diff --name-only --diff-filter=ACMR "origin/${branch}^" "origin/${branch}")"; deleted="$(git diff --name-only --diff-filter=D "origin/${branch}^" "origin/${branch}")"
+          [[ -z "${deleted}" ]] || { echo "Seoul refresh claim removed a tracked input" >&2; exit 1; }
+          source_count="$(grep -Ec '^tools/datapack/sources/seoul-metro-accessibility-[^/]+\.json$' <<< "${changed}" || true)"
+          [[ "${source_count}" == "1" ]] || { echo "Seoul refresh claim is incomplete" >&2; exit 1; }
+          expected=$'tools/datapack/source-inventory.json\ntools/datapack/release/source-snapshots.json\ntools/datapack/inputs/capital-pilot-production-source-input.json\ntools/datapack/release/candidate-build-spec.json\ntools/datapack/release/release-request.json\ntools/datapack/release/hash-evidence.json'
+          while IFS= read -r required; do [[ "$(grep -Fxc "${required}" <<< "${changed}")" == "1" ]] || { echo "Seoul refresh claim is incomplete" >&2; exit 1; }; done <<< "${expected}"
+          unexpected="$(printf '%s\n' "${changed}" | grep -Ev '^(tools/datapack/sources/seoul-metro-accessibility-[^/]+\.json|tools/datapack/source-inventory\.json|tools/datapack/release/source-snapshots\.json|tools/datapack/inputs/capital-pilot-production-source-input\.json|tools/datapack/release/candidate-build-spec\.json|tools/datapack/release/release-request\.json|tools/datapack/release/hash-evidence\.json)$' || true)"
+          [[ -z "${unexpected}" ]] && [[ "$(wc -l <<< "${changed}" | tr -d ' ')" == "7" ]] || { echo "Seoul refresh claim changed an unsupported path" >&2; exit 1; }
+          existing="${RUNNER_TEMP}/seoul-current-accessibility-refresh/claim-prs.json"; gh pr list --repo "${GITHUB_REPOSITORY}" --state all --base main --head "${branch}" --limit 100 --json number,state,headRefName,baseRefName,headRepository,isCrossRepository > "${existing}"; [[ "$(tr -d '[:space:]' < "${existing}")" == "[]" ]] || { echo "Seoul refresh claim already has a pull request" >&2; exit 1; }
+          gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${branch}" --title "Refresh Seoul accessibility snapshot" --body "Refresh the due Seoul accessibility snapshot through the current OCI operation.\n\nRefs #639"
+      - name: Create durable claim
+        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch="automation/639-seoul-accessibility-refresh-${GITHUB_RUN_ID}"
+          main_sha="$(git rev-parse HEAD)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "${branch}"
+          git commit --allow-empty -m "Claim Seoul accessibility refresh"
+          gh auth setup-git
+          git push origin "${branch}"
+          git switch --detach "${main_sha}"
+          printf 'SEOUL_REFRESH_BRANCH=%s\n' "${branch}" >> "${GITHUB_ENV}"
+          printf 'SEOUL_REFRESH_MAIN_SHA=%s\n' "${main_sha}" >> "${GITHUB_ENV}"
+      - name: Validate provider configuration
+        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
+        env:
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+          EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
+        run: |
+          set -euo pipefail
+          [[ -n "${DATA_GO_KR_SERVICE_KEY:-}" && "${DATA_GO_KR_SERVICE_KEY}" != *$'\n'* && "${DATA_GO_KR_SERVICE_KEY}" != *$'\r'* ]] || { echo "DATA_GO_KR_SERVICE_KEY must be a nonempty single line" >&2; exit 1; }
+          [[ -n "${EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL:-}" && "${EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL}" != *$'\n'* && "${EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL}" != *$'\r'* ]] || { echo "EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL must be a nonempty single line" >&2; exit 1; }
+      - name: Collect and bind current snapshot
+        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
+        env:
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+          EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "${SEOUL_REFRESH_MAIN_SHA}" ]] || { echo "Seoul refresh operation is not running from its claimed main" >&2; exit 1; }
+          node tools/datapack/run-current-seoul-accessibility-registration.mjs --observation-name "refresh-${GITHUB_RUN_ID}" --receipt "${SEOUL_REFRESH_RECEIPT}" --request-attempts 1
+      - name: Finalize claimed refresh branch
+        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git switch "${SEOUL_REFRESH_BRANCH}"; [[ "$(git rev-parse HEAD^)" == "${SEOUL_REFRESH_MAIN_SHA}" ]] || { echo "Seoul refresh claim is not based on its operation main" >&2; exit 1; }
+          git add -A
+          changed="$(git diff --cached --name-only --diff-filter=ACMR)"; deleted="$(git diff --cached --name-only --diff-filter=D)"; [[ -z "${deleted}" ]] || { echo "Seoul refresh removed a tracked input" >&2; exit 1; }
+          source_count="$(grep -Ec '^tools/datapack/sources/seoul-metro-accessibility-[^/]+\.json$' <<< "${changed}" || true)"; [[ "${source_count}" == "1" ]] || { echo "Seoul refresh produced an incomplete output" >&2; exit 1; }
+          expected=$'tools/datapack/source-inventory.json\ntools/datapack/release/source-snapshots.json\ntools/datapack/inputs/capital-pilot-production-source-input.json\ntools/datapack/release/candidate-build-spec.json\ntools/datapack/release/release-request.json\ntools/datapack/release/hash-evidence.json'
+          while IFS= read -r required; do [[ "$(grep -Fxc "${required}" <<< "${changed}")" == "1" ]] || { echo "Seoul refresh produced an incomplete output" >&2; exit 1; }; done <<< "${expected}"
+          unexpected="$(printf '%s\n' "${changed}" | grep -Ev '^(tools/datapack/sources/seoul-metro-accessibility-[^/]+\.json|tools/datapack/source-inventory\.json|tools/datapack/release/source-snapshots\.json|tools/datapack/inputs/capital-pilot-production-source-input\.json|tools/datapack/release/candidate-build-spec\.json|tools/datapack/release/release-request\.json|tools/datapack/release/hash-evidence\.json)$' || true)"
+          [[ -z "${unexpected}" ]] && [[ "$(wc -l <<< "${changed}" | tr -d ' ')" == "7" ]] || { echo "Seoul refresh changed an unsupported path" >&2; exit 1; }
+          git diff --cached --quiet && exit 1; git commit -m "Refresh Seoul accessibility snapshot"; git push origin "${SEOUL_REFRESH_BRANCH}"
+      - name: Create draft pull request
+        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${SEOUL_REFRESH_BRANCH}" --title "Refresh Seoul accessibility snapshot" --body $'Refresh the due Seoul accessibility snapshot through the current OCI operation.\n\nRefs #639'
+      - name: Upload sanitized evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: seoul-current-accessibility-refresh-${{ github.run_id }}
+          path: ${{ runner.temp }}/seoul-current-accessibility-refresh/decision.json
+          if-no-files-found: ignore
+          retention-days: 14

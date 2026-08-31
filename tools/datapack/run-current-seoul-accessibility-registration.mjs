@@ -92,6 +92,7 @@ async function readCurrentSeoulSnapshot(operations, root) {
 export async function runCurrentSeoulAccessibilityRegistration({
   observationName,
   receiptPath,
+  requestAttempts = 2,
   repositoryRoot = ROOT,
   env = process.env,
   deps = {},
@@ -100,7 +101,8 @@ export async function runCurrentSeoulAccessibilityRegistration({
   const root = path.resolve(repositoryRoot); const name = requiredObservationName(observationName); const externalReceipt = await requiredExternalReceipt(root, receiptPath);
   const serviceKey = normalizeDataGoKrServiceKey(env?.DATA_GO_KR_SERVICE_KEY);
   const previousSnapshot = await readCurrentSeoulSnapshot(operations, root);
-  const observation = await operations.collect({ serviceKey, previousSnapshot });
+  if (!Number.isSafeInteger(requestAttempts) || ![1, 2].includes(requestAttempts)) throw new Error("Seoul accessibility request attempts are invalid");
+  const observation = await operations.collect({ serviceKey, previousSnapshot, requestAttempts });
   if (observation?.snapshot?.sourceId !== SOURCE_ID || typeof observation.snapshot.snapshotId !== "string") throw new Error("current Seoul accessibility observation is invalid");
   const outputRoot = await operations.observationRoot(name);
   await operations.writeObservation({ outputRoot, observation });
@@ -112,10 +114,12 @@ export async function runCurrentSeoulAccessibilityRegistration({
 }
 
 async function main(argv) {
-  if (argv.length !== 4 || argv[0] !== "--observation-name" || argv[2] !== "--receipt") {
-    throw new Error("usage: --observation-name <safe> --receipt <absolute external path>");
+  const scheduled = argv.length === 6 && argv[4] === "--request-attempts" && argv[5] === "1";
+  if ((!scheduled && (argv.length !== 4 || argv[0] !== "--observation-name" || argv[2] !== "--receipt"))
+    || (scheduled && (argv[0] !== "--observation-name" || argv[2] !== "--receipt"))) {
+    throw new Error("usage: --observation-name <safe> --receipt <absolute external path> [--request-attempts 1]");
   }
-  const result = await runCurrentSeoulAccessibilityRegistration({ observationName: argv[1], receiptPath: argv[3] });
+  const result = await runCurrentSeoulAccessibilityRegistration({ observationName: argv[1], receiptPath: argv[3], ...(scheduled ? { requestAttempts: 1 } : {}) });
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 
