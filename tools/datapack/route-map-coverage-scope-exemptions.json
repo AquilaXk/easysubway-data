@@ -138,7 +138,7 @@
         "renamedAt": "2026-06-12",
         "officialUrl": "https://www.incheon.go.kr/IC010307/view?curPage=14&gosigbn=N&sno=66730",
         "crossCheck": "ADMITTED_OFFICIAL_RENAME",
-        "packTopologyPath": "tools/datapack/sources/incheon-transit-station-info-20260829.json",
+        "packTopologyPath": "tools/datapack/sources/incheon-transit-station-info-20260830.json",
         "note": "Incheon Metropolitan City Notice 2026-156 renamed Seo-gu Office to Seohae-gu Office on 2026-06-12; the current station FILE is data.go.kr dataset 15083751."
       }
     }
