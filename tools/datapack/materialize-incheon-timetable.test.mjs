@@ -180,6 +180,7 @@ async function inputs({ materializeIncheon = true } = {}) {
       topologySnapshot: { ...incheonSnapshot, snapshotId: admission.snapshotId },
       inventory,
       now: new Date(accessibilitySnapshot.capturedAt),
+      topologyMode: "registered-topology-successor",
     })
     : null;
   return {
