@@ -215,6 +215,10 @@
     "data636": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/636",
       "title": "Automate due-only current topology refresh"
+    },
+    "data639": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/639",
+      "title": "Automate due-only Seoul accessibility refresh"
     }
   },
   "workflows": {
