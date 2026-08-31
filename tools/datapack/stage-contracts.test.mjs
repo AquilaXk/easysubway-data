@@ -7,8 +7,8 @@ import test from "node:test";
 
 import { stageContracts } from "./stage-contracts.mjs";
 
-const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/3c6c99da4e00ccd5f04ae25da6fc32ac417fd3e6/contracts/bundles/data-contracts-v1.0.0.json";
-const bundleSha256 = "1468d294e6c3ac7a87c63a1f945cedac3eb90bc470bffefcc8c6d9e6ef399b2e";
+const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/8b09a017adca69fb76a68205835dfea6586ddf80/contracts/bundles/data-contracts-v1.0.0.json";
+const bundleSha256 = "98537dfff02804451800c8163bf3b91b155222f27efe68a0e138c937481e08b7";
 const annualOfficialFileSourceIds = [
   "molit-railway-transfer-movement",
   "seoul-metro-transfer-distance-duration",
