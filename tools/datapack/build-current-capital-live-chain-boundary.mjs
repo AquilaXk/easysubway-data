@@ -26,16 +26,16 @@ export function buildCurrentCapitalLiveChainFanInBoundary(components) {
   const normalized = normalizeComponents(components);
   const candidate = normalized.candidateBuildSpec.value;
   const ledger = normalized.sourceSnapshotLedger.value;
-  const sourceSetSha256 = validateCurrentIdentity(normalized, candidate, ledger);
+  const { currentCandidateSourceSetSha256, evidenceSourceSetSha256 } = validateCurrentIdentity(normalized, candidate, ledger);
   return canonicalObject({
     artifactKind: "current-capital-live-chain-fan-in",
     components: Object.fromEntries(COMPONENT_NAMES.map((name) => [name, {
       path: CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS[name], sha256: sha256(normalized[name].bytes),
     }])),
-    currentCandidateSourceSetSha256: sourceSetSha256,
-    evidenceSourceSetSha256: sourceSetSha256,
+    currentCandidateSourceSetSha256,
+    evidenceSourceSetSha256,
     kind: CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_KIND,
-    schemaVersion: 1,
+    schemaVersion: 2,
   });
 }
 
@@ -46,8 +46,9 @@ export function canonicalCurrentCapitalLiveChainFanInBoundaryJson(value) {
 
 export function validateCurrentCapitalLiveChainFanInBoundary(value) {
   assertKeys(value, ["artifactKind", "components", "currentCandidateSourceSetSha256", "evidenceSourceSetSha256", "kind", "schemaVersion"], "current live-chain fan-in boundary");
-  if (value.schemaVersion !== 1 || value.artifactKind !== "current-capital-live-chain-fan-in" || value.kind !== CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_KIND
-    || !SHA256.test(value.currentCandidateSourceSetSha256 ?? "") || value.evidenceSourceSetSha256 !== value.currentCandidateSourceSetSha256) {
+  if (value.schemaVersion !== 2 || value.artifactKind !== "current-capital-live-chain-fan-in" || value.kind !== CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_KIND
+    || !SHA256.test(value.currentCandidateSourceSetSha256 ?? "") || !SHA256.test(value.evidenceSourceSetSha256 ?? "")
+    || value.evidenceSourceSetSha256 === value.currentCandidateSourceSetSha256) {
     throw new Error("current live-chain fan-in identity mismatch");
   }
   assertKeys(value.components, COMPONENT_NAMES, "current live-chain fan-in components");
@@ -68,8 +69,13 @@ export function verifyCurrentCapitalLiveChainFanInComponents(boundary, component
   for (const name of COMPONENT_NAMES) {
     if (boundary.components[name].sha256 !== sha256(normalized[name].bytes)) throw new Error(`current live-chain ${name} byte binding mismatch`);
   }
-  const sourceSetSha256 = validateCurrentIdentity(normalized, normalized.candidateBuildSpec.value, normalized.sourceSnapshotLedger.value);
-  if (boundary.currentCandidateSourceSetSha256 !== sourceSetSha256 || boundary.evidenceSourceSetSha256 !== sourceSetSha256) {
+  const { currentCandidateSourceSetSha256, evidenceSourceSetSha256 } = validateCurrentIdentity(
+    normalized,
+    normalized.candidateBuildSpec.value,
+    normalized.sourceSnapshotLedger.value,
+  );
+  if (boundary.currentCandidateSourceSetSha256 !== currentCandidateSourceSetSha256
+    || boundary.evidenceSourceSetSha256 !== evidenceSourceSetSha256) {
     throw new Error("current live-chain fan-in source-set mismatch");
   }
   return boundary;
@@ -154,7 +160,21 @@ function validateCurrentIdentity(components, candidate, ledger) {
     sourceInventory: components.sourceInventory.value,
     sourceSnapshotLedger: ledger,
   });
-  const { row: transfer, source, sourceSetSha256 } = identity;
+  const { row: transfer, source, sourceSetSha256: currentCandidateSourceSetSha256 } = identity;
+  const transferIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === source.id);
+  if (transferIndex !== candidate.sourceSnapshots.length - 1
+    || candidate.sourceSnapshotIds.at(-1) !== transfer.snapshotId) {
+    throw new Error("current live-chain transfer must be terminal in the candidate");
+  }
+  const evidenceSnapshotIds = new Set(candidate.sourceSnapshotIds.slice(0, -1));
+  const evidenceRows = ledger.filter(({ snapshotId }) => evidenceSnapshotIds.has(snapshotId));
+  const evidenceSourceSetSha256 = sha256(JSON.stringify(evidenceRows));
+  if (evidenceSnapshotIds.size !== candidate.sourceSnapshotIds.length - 1
+    || evidenceRows.length !== evidenceSnapshotIds.size
+    || evidenceRows.some(({ sourceId }) => sourceId === source.id)
+    || evidenceSourceSetSha256 === currentCandidateSourceSetSha256) {
+    throw new Error("current live-chain evidence source-set mismatch");
+  }
   const admission = source.transferAdmissionEvidence;
   const metrics = components.transferMetrics.value;
   const applicability = components.transferApplicability.value;
@@ -164,18 +184,20 @@ function validateCurrentIdentity(components, candidate, ledger) {
     throw new Error("current live-chain transfer identity mismatch");
   }
   const facility = components.facilityAdmission.value;
-  if (facility?.decision !== "GO" || facility.candidate?.candidateId !== candidate.candidateId || facility.candidate?.sourceSnapshotSetHash !== candidate.sourceSnapshotSetHash) {
+  if (facility?.decision !== "GO" || facility.candidate?.candidateId !== candidate.candidateId
+    || facility.candidate?.sourceSnapshotSetHash !== currentCandidateSourceSetSha256) {
     throw new Error("current live-chain FACILITY candidate mismatch");
   }
   const exit = components.exitAdmission.value;
   const normalized = components.exitNormalized.value;
   const receipt = components.exitAdmissionOciReceipt.value;
-  if (exit?.decision !== "GO" || exit.candidate?.candidateId !== candidate.candidateId || exit.candidate?.sourceSetSha256 !== candidate.sourceSnapshotSetHash
+  if (exit?.decision !== "GO" || exit.candidate?.candidateId !== candidate.candidateId
+    || exit.candidate?.sourceSetSha256 !== evidenceSourceSetSha256
     || normalized?.sourceId !== exit.sourceIdentity?.sourceId || normalized?.snapshotId !== exit.sourceIdentity?.snapshotId
     || receipt?.normalizedSnapshotSha256 !== sha256(components.exitNormalized.bytes) || receipt?.admissionSha256 !== sha256(components.exitAdmission.bytes)) {
     throw new Error("current live-chain EXIT candidate mismatch");
   }
-  return sourceSetSha256;
+  return { currentCandidateSourceSetSha256, evidenceSourceSetSha256 };
 }
 
 function rejectForbiddenMetadata(value, label) {

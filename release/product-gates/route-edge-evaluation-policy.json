@@ -43,7 +43,7 @@
     "itxCheongchunExpress": {
       "serviceClass": "ITX_CHEONGCHUN",
       "servicePattern": "EXPRESS",
-      "admittedEdgeSetSha256": "715f6ec1fdb977b04956fa9081a00cfbf29925788966c9e6c00774dcbc993ec2",
+      "admittedEdgeSetSha256": "55619191e804b96703ebc92254b0c664ef250d9d1d988e5692a0dbb5eaed230d",
       "digestShape": "sqlite-route-graph-v1"
     }
   }

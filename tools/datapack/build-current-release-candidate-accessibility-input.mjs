@@ -46,7 +46,7 @@ const COUNTS = Object.freeze({
   ENTRY: 213,
   EXIT: 213,
   IN_STATION_TRANSFER: 30,
-  RIDE: 2208,
+  RIDE: 2198,
 });
 const totalCount = (counts) => Object.values(counts).reduce((total, count) => total + count, 0);
 const AUTHORITY_COUNTS = Object.freeze(Object.fromEntries(

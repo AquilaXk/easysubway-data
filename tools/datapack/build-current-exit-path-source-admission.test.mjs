@@ -21,6 +21,7 @@ import { collectKricAccessibilitySnapshots } from "./collect-kric-accessibility-
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
+import { deriveCurrentIncheonTopologyFixturePath } from "./test-fixtures/current-live-chain-artifacts.mjs";
 import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
 
 const SOURCE_ROOT = import.meta.dirname;
@@ -367,11 +368,15 @@ async function fullBundleFixture() {
   const files = {
     canonicalPackBytes: "release/capital-production-canonical-pack.json", coverageTargetsBytes: "nationwide-coverage-targets.json",
     providerCodeCatalogBytes: "sources/kric-provider-code-catalog-20260228.json", routeRostersBytes: "sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
-    sourceInventoryBytes: "source-inventory.json", incheonTopologyBytes: "sources/incheon-transit-station-info-20260828.json",
+    sourceInventoryBytes: "source-inventory.json",
   };
   const input = Object.fromEntries(
     await Promise.all(Object.entries(files).map(async ([key, file]) => [key, await readFile(path.join(root, file))])),
   );
+  input.incheonTopologyBytes = await readFile(path.join(
+    root,
+    deriveCurrentIncheonTopologyFixturePath(JSON.parse(input.sourceInventoryBytes)),
+  ));
   const capturedAt = Date.parse(CAPTURED_AT);
   const incheonCapturedAt = Date.parse(JSON.parse(input.incheonTopologyBytes).capturedAt);
   assert.ok(Number.isFinite(capturedAt), "fixture operation timestamp");

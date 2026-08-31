@@ -660,7 +660,21 @@ function canonicalProvenanceSourceIds(capital) {
       .filter((sourceId) => typeof sourceId === "string" && sourceId.length > 0)));
 }
 
-export function currentCandidateReleaseSnapshots(snapshots, canonical, headsBySource = validateLineage(snapshots).headsBySource) {
+function registeredCanonicalTailSourceIds(canonicalTail, snapshots, headsBySource, sourceInventory) {
+  const inventoryBySource = new Map((sourceInventory ?? []).map((entry) => [entry.id, entry]));
+  return canonicalTail.filter((sourceId) => {
+    const head = headsBySource[sourceId];
+    const snapshot = snapshots.find((entry) => entry.sourceId === sourceId && entry.snapshotId === head);
+    const registration = inventoryBySource.get(sourceId)?.registrationEvidence;
+    return snapshot && registration?.sourceId === sourceId
+      && registration.snapshotId === snapshot.snapshotId
+      && registration.rawObjectUri === snapshot.rawObjectUri
+      && registration.rawObjectSha256 === snapshot.rawSha256
+      && registration.contentSha256 === snapshot.contentSha256;
+  });
+}
+
+export function currentCandidateReleaseSnapshots(snapshots, canonical, headsBySource = validateLineage(snapshots).headsBySource, sourceInventory = []) {
   const capital = canonical.packs?.find(({ id }) => id === "capital");
   const canonicalSourceIds = capital?.sourceInventory?.map(({ id }) => id);
   const canonicalTail = Array.isArray(canonicalSourceIds)
@@ -675,7 +689,13 @@ export function currentCandidateReleaseSnapshots(snapshots, canonical, headsBySo
       || !canonicalProvenanceIds.has(sourceId))) {
     throw new Error("capital canonical active source identity drift");
   }
-  return CURRENT_CANDIDATE_SOURCE_IDS.map((sourceId) => {
+  const terminalSourceId = CURRENT_CANDIDATE_SOURCE_IDS.at(-1);
+  const candidateSourceIds = [
+    ...CURRENT_CANDIDATE_SOURCE_IDS.slice(0, -1),
+    ...registeredCanonicalTailSourceIds(canonicalTail, snapshots, headsBySource, sourceInventory),
+    terminalSourceId,
+  ];
+  return candidateSourceIds.map((sourceId) => {
     const head = headsBySource[sourceId];
     const selected = snapshots.filter((snapshot) => snapshot.sourceId === sourceId && snapshot.snapshotId === head);
     if (selected.length !== 1) throw new Error(`current candidate source head is missing: ${sourceId}`);
@@ -707,7 +727,7 @@ export async function syncReleaseEvidence({ check, releaseRoot: explicitReleaseR
   const freshness = JSON.parse(freshnessBytes);
   const inventoryBySource = new Map(inventory.sources.map((entry) => [entry.id, entry]));
   const canonical = JSON.parse(canonicalBytes);
-  const releaseSnapshots = currentCandidateReleaseSnapshots(snapshots, canonical);
+  const releaseSnapshots = currentCandidateReleaseSnapshots(snapshots, canonical, undefined, inventory.sources);
   const selectedSnapshotIds = new Set(releaseSnapshots.map(({ snapshotId }) => snapshotId));
   const selectedInLedgerOrder = snapshots.filter(({ snapshotId }) => selectedSnapshotIds.has(snapshotId));
   if (selectedSnapshotIds.size !== releaseSnapshots.length || selectedInLedgerOrder.length !== releaseSnapshots.length) {
@@ -729,9 +749,11 @@ export async function syncReleaseEvidence({ check, releaseRoot: explicitReleaseR
   const nextSpecBytes = Buffer.from(`${JSON.stringify(spec, null, 2)}\n`);
   request.candidateId = spec.candidateId;
   request.buildSpecSha256 = sha256(nextSpecBytes);
+  request.approvalId = `release-request-${spec.candidateId}-${request.buildSpecSha256}`;
   request.sourceSnapshotSetHash = spec.sourceSnapshotSetHash;
   hashes.builderGitSha = spec.builderGitSha;
   hashes.identifiers.candidateId.value = spec.candidateId;
+  hashes.identifiers.approvalId.value = request.approvalId;
   hashes.truthfulnessRule = "모든 값은 tracked canonical fixture·inventory·official snapshot에서 결정적으로 재산출한다. 2026-07-28 신규 KRIC standard·서울 snapshot을 소비 claim에 결속하고 route 가용성은 추론하지 않는다.";
   hashes.sourceSnapshotSetHash.value = spec.sourceSnapshotSetHash;
   hashes.sourceSnapshotSetHash.contract = `source별 head ${releaseSnapshots.length}종의 byte-ordered JSON hash와 build spec·release request가 일치해야 한다.`;

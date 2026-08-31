@@ -8,8 +8,8 @@ import test from "node:test";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 
 import { buildTransferRegistrationOutputs, commitTransferRegistrationOutputs } from "./register-current-seoul-transfer-source.mjs";
-import { deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
-import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
+import { CURRENT_FULL_CANDIDATE_SOURCE_IDS, CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS, deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
+import { copySyntheticCurrentPublicRouteMapRepository, nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
 
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const bytes = (value) => Buffer.from(`${JSON.stringify(value)}\n`);
@@ -20,7 +20,7 @@ async function compositionFixture(t) {
   const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "transfer-public-successor-"));
   t.after(() => rm(fixtureRoot, { recursive: true, force: true }));
   await copySyntheticCurrentPublicRouteMapRepository(root, fixtureRoot, {
-    now: new Date("2026-08-22T09:45:18.609Z"),
+    now: await nextSyntheticCurrentStaticNetworkNow(root),
   });
   const load = (relative, base = fixtureRoot) => {
     const body = readFileSync(path.join(base, relative));
@@ -149,11 +149,13 @@ test("PREPARED rollback and COMMITTED forward recovery preserve foreign replacem
   assert.ok(await readFile(path.join(committed.root, "tools/datapack/.seoul-transfer-registration-transaction.json")));
 });
 
-test("actual composition emits only the five targets and appends TRANSFER seventh", async (t) => {
+test("actual composition preserves current Incheon predecessor and appends TRANSFER eighth", async (t) => {
   const input = await compositionFixture(t);
   const outputs = buildTransferRegistrationOutputs(input);
   assert.equal(outputs.length, 5);
   const candidate = JSON.parse(outputs.find(({ relative }) => relative.endsWith("candidate-build-spec.json")).bytes);
+  assert.deepEqual(candidate.sourceSnapshots.map(({ sourceId }) => sourceId), CURRENT_FULL_CANDIDATE_SOURCE_IDS);
+  assert.deepEqual(candidate.sourceSnapshots.slice(0, 7).map(({ sourceId }) => sourceId), CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS);
   assert.equal(candidate.sourceSnapshots.at(-1).sourceId, "seoul-metro-transfer-distance-duration");
   const ledger = JSON.parse(outputs.find(({ relative }) => relative.endsWith("source-snapshots.json")).bytes);
   assert.equal(ledger.at(-1).observedAt, "2026-07-12T15:00:00.000Z");

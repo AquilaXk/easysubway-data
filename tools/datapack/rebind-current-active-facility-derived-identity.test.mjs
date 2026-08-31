@@ -1,16 +1,20 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import {
   activeFacilitySnapshotObservedAt,
   buildCurrentActiveFacilityDerivedIdentityOutput,
+  buildCurrentActiveFacilityDerivedIdentitySuccessorTransaction,
   facilityDerivedIdentityRebindState,
+  rebindCurrentActiveFacilityDerivedIdentity,
   validateFacilityDerivedIdentityRebind,
   validateFacilityProtectedSemanticIdentity,
   validateCurrentPublicRouteMapReplacementProof,
 } from "./rebind-current-active-facility-derived-identity.mjs";
+import { sha256 } from "./lib/manifest-validation.mjs";
 const ROOT = path.resolve(import.meta.dirname, "../..");
 
 test("current route-map proof는 two-hop same-source current head에서 유일한 replacement ancestor를 요구한다", async () => {
@@ -140,3 +144,75 @@ test("tracked admission은 current candidate로 rebind되고 protected semantics
   mutation.materializerEvidenceRows[0].evidenceState = "UNVERIFIED_EVIDENCE_BLOCKED";
   assert.throws(() => validateFacilityProtectedSemanticIdentity(previous, mutation), /semantic identity changed/);
 });
+
+test("FACILITY rebind는 immutable marker를 보존한 successor create-once transaction을 준비한다", async (t) => {
+  const root = await temporaryRepository(t);
+  await restorePredecessorFacilityState(root);
+  const transaction = await buildCurrentActiveFacilityDerivedIdentitySuccessorTransaction({ repositoryRoot: root });
+  assert.ok(transaction.base?.bytes.length > 0);
+  assert.equal(transaction.facility.relative, "tools/datapack/release/current-capital-facility-source-admission.json");
+  assert.equal(transaction.successor.relative, "tools/datapack/release/current-capital-accessibility-transition-successor.json");
+  const successor = JSON.parse(transaction.successor.bytes);
+  assert.equal(successor.supersededTransition.sha256, sha256(transaction.base.bytes));
+  assert.equal(successor.previousFacilityAdmission.sha256, sha256(transaction.facility.prestate));
+  assert.notDeepEqual(transaction.facility.bytes, transaction.facility.prestate);
+});
+
+test("FACILITY와 successor는 한 transaction에서 성공하거나 함께 원복된다", async (t) => {
+  const root = await temporaryRepository(t);
+  await restorePredecessorFacilityState(root);
+  const basePath = path.join(root, "tools/datapack/release/current-capital-accessibility-transition.json");
+  const facilityPath = path.join(root, "tools/datapack/release/current-capital-facility-source-admission.json");
+  const successorPath = path.join(root, "tools/datapack/release/current-capital-accessibility-transition-successor.json");
+  const [baseBefore, facilityBefore] = await Promise.all([readFile(basePath), readFile(facilityPath)]);
+
+  await assert.rejects(
+    rebindCurrentActiveFacilityDerivedIdentity({
+      repositoryRoot: root,
+      failAfter: async ({ stage }) => {
+        if (stage === "successor") throw new Error("injected successor transaction failure");
+      },
+    }),
+    /injected successor transaction failure/,
+  );
+  assert.deepEqual(await readFile(basePath), baseBefore);
+  assert.deepEqual(await readFile(facilityPath), facilityBefore);
+  await assert.rejects(readFile(successorPath), { code: "ENOENT" });
+
+  const result = await rebindCurrentActiveFacilityDerivedIdentity({ repositoryRoot: root });
+  assert.equal(result.changed, true);
+  assert.deepEqual(await readFile(basePath), baseBefore);
+  assert.notDeepEqual(await readFile(facilityPath), facilityBefore);
+  assert.equal(sha256(await readFile(successorPath)), result.successorSha256);
+});
+
+async function temporaryRepository(t) {
+  const root = await mkdtemp(path.join(os.tmpdir(), "current-facility-successor-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  for (const relative of ["tools/datapack/release", "tools/datapack/sources"]) {
+    await cp(path.join(ROOT, relative), path.join(root, relative), { recursive: true });
+  }
+  for (const relative of [
+    "tools/datapack/nationwide-coverage-targets.json",
+    "tools/datapack/source-inventory.json",
+    "tools/datapack/source-governance-policy.json",
+    "release/product-gates/datapack-freshness-sla.json",
+  ]) {
+    const destination = path.join(root, relative);
+    await mkdir(path.dirname(destination), { recursive: true });
+    await cp(path.join(ROOT, relative), destination);
+  }
+  return root;
+}
+
+async function restorePredecessorFacilityState(root) {
+  const successorPath = path.join(root, "tools/datapack/release/current-capital-accessibility-transition-successor.json");
+  const successor = JSON.parse(await readFile(successorPath, "utf8"));
+  const previousFacilityBytes = Buffer.from(successor.previousFacilityAdmissionBase64, "base64");
+  assert.equal(sha256(previousFacilityBytes), successor.previousFacilityAdmission.sha256);
+  await writeFile(
+    path.join(root, "tools/datapack/release/current-capital-facility-source-admission.json"),
+    previousFacilityBytes,
+  );
+  await unlink(successorPath);
+}

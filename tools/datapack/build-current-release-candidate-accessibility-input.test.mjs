@@ -31,24 +31,24 @@ import {
   nextSyntheticCurrentStaticNetworkNow,
 } from "./test-fixtures/current-public-route-map-successor.mjs";
 
-test("full-capital authority는 213/639 input과 456 non-RIDE를 2,664-edge fixture에 결속한다", async () => {
+test("full-capital authority는 213/639 input과 456 non-RIDE를 2,654-edge fixture에 결속한다", async () => {
   const input = await fullInput();
   const before = structuredClone(input.projectedFixture);
   const result = buildCurrentReleaseCandidateAccessibilityAuthority(input);
 
   assert.deepEqual(edgeCounts(JSON.parse(input.sourceFixtureBytes).packs[0].networkEdges), {
-    RIDE: 2208,
+    RIDE: 2198,
   });
   assert.deepEqual(edgeCounts(input.projectedFixture.packs[0].networkEdges), {
-    RIDE: 2208,
+    RIDE: 2198,
   });
-  assert.equal(result.candidateFixture.packs[0].networkEdges.length, 2664);
+  assert.equal(result.candidateFixture.packs[0].networkEdges.length, 2654);
   assert.equal(input.route.stationLines.length, 1102);
   assert.deepEqual(edgeCounts(result.candidateFixture.packs[0].networkEdges), {
     ENTRY: 213,
     EXIT: 213,
     IN_STATION_TRANSFER: 30,
-    RIDE: 2208,
+    RIDE: 2198,
   });
   assert.deepEqual(result.authority.edgeCounts, {
     ENTRY: 213,
@@ -74,7 +74,7 @@ test("full-capital authority는 213/639 input과 456 non-RIDE를 2,664-edge fixt
   assert.deepEqual(input.projectedFixture, before);
 });
 
-test("합성 current public successor는 1,102 metadata·2,664 route·456 authority를 완성한다", async (t) => {
+test("합성 current public successor는 1,102 metadata·2,654 route·456 authority를 완성한다", async (t) => {
   const sourceRoot = path.resolve(fileURLToPath(new URL("../../", import.meta.url)));
   const temp = await mkdtemp(path.join(tmpdir(), "public-route-map-authority-"));
   t.after(() => rm(temp, { recursive: true, force: true }));
@@ -116,8 +116,8 @@ test("합성 current public successor는 1,102 metadata·2,664 route·456 author
     routeBytes.toString("utf8"),
     canonicalCurrentCapitalRouteEdgeInputJson(route),
   );
-  assert.deepEqual(edgeCounts(sourceFixture.packs[0].networkEdges), { RIDE: 2208 });
-  assert.deepEqual(edgeCounts(projectedFixture.packs[0].networkEdges), { RIDE: 2208 });
+  assert.deepEqual(edgeCounts(sourceFixture.packs[0].networkEdges), { RIDE: 2198 });
+  assert.deepEqual(edgeCounts(projectedFixture.packs[0].networkEdges), { RIDE: 2198 });
   const result = buildCurrentReleaseCandidateAccessibilityAuthority({
     buildSpec,
     buildSpecBytes,
@@ -130,7 +130,7 @@ test("합성 current public successor는 1,102 metadata·2,664 route·456 author
   });
 
   assert.equal(route.stationLines.length, 1102);
-  assert.equal(route.routeEdges.length, 2664);
+  assert.equal(route.routeEdges.length, 2654);
   assert.equal(result.authority.edges.length, 456);
   const authorityCells = result.authority.edges.flatMap(({ requiredCells }) => requiredCells);
   const authorityCellKeys = new Set(authorityCells.map(({ stationId, lineId, domain }) =>
@@ -143,7 +143,7 @@ test("합성 current public successor는 1,102 metadata·2,664 route·456 author
     state === "UNVERIFIED_EVIDENCE_BLOCKED" && authorityCellKeys.has(`${stationId}:${lineId}:${domain}`)).length;
   assert.ok(expectedBlockedCellCount > 0);
   assert.equal(authorityCells.filter(({ state }) => state === "UNVERIFIED_EVIDENCE_BLOCKED").length, expectedBlockedCellCount);
-  assert.equal(result.candidateFixture.packs[0].networkEdges.length, 2664);
+  assert.equal(result.candidateFixture.packs[0].networkEdges.length, 2654);
 });
 
 test("unresolved·stale·candidate·route·projected RIDE drift는 output 전에 fail-closed다", async () => {
@@ -562,7 +562,7 @@ async function fullInput() {
   const source = await fullCapitalFixture();
   const routeOnly = addFullRouteStationLines(source);
   source.canonicalPack.packs[0].networkEdges = [
-    ...Array.from({ length: 2208 }, (_, index) => ({
+    ...Array.from({ length: 2198 }, (_, index) => ({
       id: `ride-${index}`,
       edgeType: "RIDE",
       fromNodeId: "station-000:seoul-2",

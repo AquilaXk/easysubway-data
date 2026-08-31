@@ -98,6 +98,7 @@ const incheonTopologyLineIds = Object.freeze([
   "line-42b5805f3b5a",
   "line-98718184f016",
 ]);
+const incheonAccessibilitySourceId = "incheon-transit-accessibility";
 
 export function validateSourceSeparatedCurrentTopology({ capitalTopology, incheonSnapshot }) {
   const capital = loadCapitalRouteTopologySnapshot(capitalTopology);
@@ -1173,22 +1174,25 @@ export async function applyCandidateNetworkEdgeProjection(
   });
 }
 
-export async function admittedPinnedIncheonAccessibilityEvidence(reference, {
+export async function admittedTrackedIncheonAccessibilityEvidence(reference, {
   sourceInventory,
   topologySnapshot,
   repositoryRoot = root,
+  topologyMode = "exact-current",
   now = candidateBuildNow(),
 } = {}) {
   const pinned = await readPinnedBuildJson(
     reference,
-    "buildSpec.networkEdgeEvidence.incheonAccessibility",
+    "registered Incheon accessibility snapshot",
     ["path", "sha256", "snapshotId"],
     repositoryRoot,
   );
   const admission = admittedIncheonAccessibilityEvidence({
     sourceInventory,
     snapshot: pinned.value,
+    snapshotBytes: pinned.bytes,
     topologySnapshot,
+    topologyMode,
     now,
   });
   if (pinned.pinned.snapshotId !== admission.snapshotId
@@ -1196,6 +1200,142 @@ export async function admittedPinnedIncheonAccessibilityEvidence(reference, {
     throw new Error("pinned Incheon accessibility admission identity mismatch");
   }
   return admission;
+}
+
+export async function admittedRegisteredIncheonAccessibilityEvidence(buildSpec, {
+  sourceInventory,
+  topologySnapshot,
+  repositoryRoot = root,
+  topologyMode = "exact-current",
+  now = candidateBuildNow(),
+} = {}) {
+  const validatedProjections = requiredSourceSnapshots(
+    buildSpec?.sourceSnapshots,
+    "buildSpec.sourceSnapshots",
+    now,
+  ).filter(({ sourceId }) => sourceId === incheonAccessibilitySourceId);
+  const projections = buildSpec.sourceSnapshots.filter(
+    ({ sourceId }) => sourceId === incheonAccessibilitySourceId,
+  );
+  if (validatedProjections.length !== 1 || projections.length !== 1
+    || validatedProjections[0].snapshotId !== projections[0].snapshotId) {
+    throw new Error("buildSpec requires exactly one registered Incheon accessibility projection");
+  }
+  const [projection] = projections;
+  const sourceSnapshotIds = requiredStringArray(
+    buildSpec?.sourceSnapshotIds,
+    "buildSpec.sourceSnapshotIds",
+  );
+  if (sourceSnapshotIds.filter((snapshotId) => snapshotId === projection.snapshotId).length !== 1) {
+    throw new Error("buildSpec requires the registered Incheon accessibility snapshot exactly once");
+  }
+  await validateRegisteredIncheonAccessibilityLedgerProjection(buildSpec, projection, repositoryRoot);
+  const source = sourceInventory?.sources?.find(({ id }) => id === incheonAccessibilitySourceId);
+  const registration = source?.registrationEvidence;
+  const admission = await admittedTrackedIncheonAccessibilityEvidence({
+    path: `tools/datapack/sources/${registration?.snapshotId}.json`,
+    sha256: registration?.snapshotFileSha256,
+    snapshotId: registration?.snapshotId,
+  }, {
+    sourceInventory,
+    topologySnapshot,
+    repositoryRoot,
+    topologyMode,
+    now,
+  });
+  const snapshotPath = `tools/datapack/sources/${admission.snapshotId}.json`;
+  const requestedPath = path.resolve(repositoryRoot, snapshotPath);
+  const metadata = await lstat(requestedPath);
+  if (!metadata.isFile() || metadata.isSymbolicLink()) {
+    throw new Error("registered Incheon accessibility snapshot must be a regular non-symlink file");
+  }
+  const snapshotBytes = await readFile(requestedPath);
+  const snapshot = JSON.parse(snapshotBytes);
+  const admittedRegistration = admission.source.registrationEvidence;
+  if (projection.snapshotId !== admission.snapshotId
+    || projection.rawObjectUri !== admittedRegistration.rawObjectUri
+    || projection.rawSha256 !== admittedRegistration.rawObjectSha256
+    || projection.schemaFingerprint !== admittedRegistration.normalizedSchemaFingerprint
+    || projection.adminReviewRecordHash !== admittedRegistration.adminReviewRecordHash
+    || projection.licenseStatus !== "PASS"
+    || projection.redistributionAllowed !== true
+    || projection.credentialRedacted !== true
+    || projection.snapshotStatus !== "LOCKED") {
+    throw new Error("registered Incheon accessibility projection does not match admission");
+  }
+  return { admission, projection, snapshot, snapshotBytes };
+}
+
+async function validateRegisteredIncheonAccessibilityLedgerProjection(
+  buildSpec,
+  projection,
+  repositoryRoot,
+) {
+  const ledgerPath = path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json");
+  const metadata = await lstat(ledgerPath);
+  if (!metadata.isFile() || metadata.isSymbolicLink()) {
+    throw new Error("registered Incheon source snapshot ledger must be a regular non-symlink file");
+  }
+  const ledgerBytes = await readFile(ledgerPath);
+  const ledger = JSON.parse(ledgerBytes);
+  if (!Array.isArray(ledger)) throw new Error("registered Incheon source snapshot ledger is invalid");
+  const selectedIds = requiredStringArray(buildSpec.sourceSnapshotIds, "buildSpec.sourceSnapshotIds");
+  const selected = ledger.filter(({ snapshotId }) => selectedIds.includes(snapshotId));
+  if (selected.length !== selectedIds.length
+    || new Set(selected.map(({ snapshotId }) => snapshotId)).size !== selectedIds.length
+    || sha256(Buffer.from(JSON.stringify(selected))) !== buildSpec.sourceSnapshotSetHash) {
+    throw new Error("buildSpec source snapshot set is not bound to the tracked ledger");
+  }
+  const rows = selected.filter(({ sourceId }) => sourceId === incheonAccessibilitySourceId);
+  if (rows.length !== 1 || rows[0].snapshotId !== projection.snapshotId) {
+    throw new Error("registered Incheon accessibility ledger selection is invalid");
+  }
+  const row = rows[0];
+  const expected = Object.fromEntries([
+    "snapshotId", "sourceId", "rawObjectUri", "rawSha256", "redactedRequestFingerprint",
+    "schemaFingerprint", "licenseStatus", "redistributionAllowed", "adminReviewRecordHash",
+    "snapshotStatus", "credentialRedacted", "freshnessExpiresAt", "rawRetentionExpiresAt",
+    "governancePolicyVersion", "governancePolicySha256",
+  ].map((key) => [key, row[key]]));
+  if (!isDeepStrictEqual(projection, expected)) {
+    throw new Error("registered Incheon accessibility projection does not match tracked ledger");
+  }
+  return row;
+}
+
+export function validateRegisteredIncheonAccessibilityFixture(
+  packs,
+  { admission, projection },
+  now = candidateBuildNow(),
+) {
+  if (!(now instanceof Date) || Number.isNaN(now.getTime())
+    || admission?.source?.id !== incheonAccessibilitySourceId
+    || admission.source.requiredForProductionPack !== true
+    || admission.source.productionUseAllowed !== true
+    || admission.source.license?.redistributionAllowed !== true
+    || projection?.snapshotId !== admission.snapshotId
+    || projection.rawObjectUri !== admission.source.registrationEvidence?.rawObjectUri
+    || projection.rawSha256 !== admission.source.registrationEvidence?.rawObjectSha256
+    || projection.schemaFingerprint !== admission.source.registrationEvidence?.normalizedSchemaFingerprint
+    || projection.adminReviewRecordHash !== admission.source.registrationEvidence?.adminReviewRecordHash
+    || projection.snapshotStatus !== "LOCKED"
+    || projection.licenseStatus !== "PASS"
+    || projection.redistributionAllowed !== true
+    || projection.credentialRedacted !== true
+    || Date.parse(projection.freshnessExpiresAt) <= now.getTime()) {
+    throw new Error("registered Incheon accessibility projection is invalid or stale");
+  }
+  for (const row of packs.flatMap((pack) => [
+    ...(pack?.facilities ?? []),
+    ...(pack?.stationFacilityEvidence ?? []),
+  ]).filter(({ sourceId }) => sourceId === incheonAccessibilitySourceId)) {
+    if (row.sourceId !== admission.source.id
+      || row.sourceSnapshotId !== admission.snapshotId
+      || row.evidenceHash !== admission.evidenceHash) {
+      throw new Error("registered Incheon accessibility row does not match admission");
+    }
+  }
+  return validateProductionIncheonAccessibilityFixture(packs, admission);
 }
 
 async function applyCandidateNetworkEdgeProjectionInternal(
@@ -1299,7 +1439,6 @@ function exactNetworkEdgeEvidenceKeys(evidence) {
   return [
     ...currentNetworkEdgeEvidenceKeys,
     ...(evidence?.itxCurrentTopologyAdmission == null ? [] : ["itxCurrentTopologyAdmission"]),
-    ...(evidence?.incheonAccessibility == null ? [] : ["incheonAccessibility"]),
     ...(evidence?.incheonTimetables == null ? [] : ["incheonTimetables"]),
   ];
 }
@@ -1335,13 +1474,6 @@ export function candidateNetworkEdgeEvidence(evidence, validationNow = candidate
         evidence.itxCurrentTopologyAdmission,
         "buildSpec.networkEdgeEvidence.itxCurrentTopologyAdmission",
       );
-  const incheonAccessibility = evidence.incheonAccessibility == null
-    ? null
-    : pinnedBuildInput(
-        evidence.incheonAccessibility,
-        "buildSpec.networkEdgeEvidence.incheonAccessibility",
-        ["path", "sha256", "snapshotId"],
-      );
   if (!evidence?.incheonTimetables || typeof evidence.incheonTimetables !== "object") {
     throw new Error("production build requires pinned Incheon timetable evidence");
   }
@@ -1365,12 +1497,6 @@ export function candidateNetworkEdgeEvidence(evidence, validationNow = candidate
     ...(itxCurrentTopologyAdmission == null
       ? {}
       : { itxCurrentTopologyAdmissionSha256: itxCurrentTopologyAdmission.sha256 }),
-    ...(incheonAccessibility == null
-      ? {}
-      : {
-          incheonAccessibilitySnapshotId: incheonAccessibility.snapshotId,
-          incheonAccessibilitySha256: incheonAccessibility.sha256,
-        }),
     incheonTimetableSnapshotIds: Object.fromEntries([1, 2].map((lineNumber) => [
       `line${lineNumber}`, incheonTimetables[`line${lineNumber}`].snapshotId,
     ])),
@@ -1532,14 +1658,14 @@ async function validateAndApplyNetworkEdgeProvenance(
     snapshotBytes: incheonTopology.bytes,
     now,
   });
-  const incheonAccessibilityAdmission = evidence.incheonAccessibility == null
-    ? null
-    : await admittedPinnedIncheonAccessibilityEvidence(evidence.incheonAccessibility, {
-        sourceInventory: sourceInventory.value,
-        topologySnapshot: incheonTopology.value,
-        repositoryRoot,
-        now,
-      });
+  const registeredIncheonAccessibility = await admittedRegisteredIncheonAccessibilityEvidence(buildSpec, {
+    sourceInventory: sourceInventory.value,
+    topologySnapshot: incheonTopology.value,
+    repositoryRoot,
+    topologyMode: "registered-topology-successor",
+    now,
+  });
+  const incheonAccessibilityAdmission = registeredIncheonAccessibility.admission;
   const incheonTimetablePins = await Promise.all([1, 2].map(async (lineNumber) => {
     const pinned = await readPinnedBuildJson(evidence.incheonTimetables[`line${lineNumber}`],
       `buildSpec.networkEdgeEvidence.incheonTimetables.line${lineNumber}`,
@@ -1601,16 +1727,11 @@ async function validateAndApplyNetworkEdgeProvenance(
   );
   const productionPacks = fixture.packs?.filter(({ artifactKind }) => artifactKind === "production") ?? [];
   if (productionPacks.length === 0) throw new Error("network edge evidence requires a production pack");
-  const hasIncheonAccessibilityRows = productionPacks.some((pack) => [
-    ...(pack.facilities ?? []),
-    ...(pack.stationFacilityEvidence ?? []),
-  ].some(({ sourceId }) => sourceId === "incheon-transit-accessibility"));
-  if (hasIncheonAccessibilityRows && incheonAccessibilityAdmission == null) {
-    throw new Error("production build requires pinned Incheon accessibility evidence");
-  }
-  if (incheonAccessibilityAdmission != null) {
-    validateProductionIncheonAccessibilityFixture(productionPacks, incheonAccessibilityAdmission);
-  }
+  validateRegisteredIncheonAccessibilityFixture(
+    productionPacks,
+    registeredIncheonAccessibility,
+    now,
+  );
   validateProductionIncheonTimetableFixture(productionPacks, incheonTimetableAdmission);
   for (const pack of productionPacks) {
     const expectedIncheonEdges = projectIncheonNetworkEdges(
@@ -1649,9 +1770,10 @@ async function validateAndApplyNetworkEdgeProvenance(
       sourceInventory.value,
       buildSpec.sourceSnapshots,
       now,
-      { admittedNonLedgerAccessibility: incheonAccessibilityAdmission == null
-        ? new Map()
-        : new Map([[incheonAccessibilityAdmission.source.id, incheonAccessibilityAdmission]]) },
+      { admittedAccessibilityEvidence: new Map([[
+        incheonAccessibilityAdmission.source.id,
+        incheonAccessibilityAdmission,
+      ]]) },
     )));
   }
   return new Date(Math.min(...freshnessMillis)).toISOString();
@@ -1811,13 +1933,13 @@ export function productionAccessibilityFreshUntil(
   inventory,
   sourceSnapshots,
   now = candidateBuildNow(),
-  { admittedNonLedgerAccessibility = new Map() } = {},
+  { admittedAccessibilityEvidence = new Map() } = {},
 ) {
   if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
     throw new TypeError("production accessibility validation time is invalid");
   }
-  if (!(admittedNonLedgerAccessibility instanceof Map)) {
-    throw new TypeError("production non-ledger accessibility admissions are invalid");
+  if (!(admittedAccessibilityEvidence instanceof Map)) {
+    throw new TypeError("production accessibility evidence admissions are invalid");
   }
   const sources = new Map(inventory.sources.map((source) => [source.id, source]));
   const snapshots = new Map(sourceSnapshots.map((snapshot) => [snapshot.sourceId, snapshot]));
@@ -1827,6 +1949,41 @@ export function productionAccessibilityFreshUntil(
     ...(pack.networkEdges ?? []).filter(({ edgeType }) => ["ENTRY", "EXIT"].includes(edgeType)),
   ]).filter(({ sourceId }) => sourceId);
   const expires = rows.map((row) => {
+    if (row.sourceId === incheonAccessibilitySourceId) {
+      const admission = admittedAccessibilityEvidence.get(row.sourceId);
+      const source = sources.get(row.sourceId);
+      const registration = admission?.source?.registrationEvidence;
+      const projection = snapshots.get(row.sourceId);
+      if (admission?.source?.id !== row.sourceId
+        || !isDeepStrictEqual(admission.source, source)
+        || admission.source.requiredForProductionPack !== true
+        || admission.source.productionUseAllowed !== true
+        || admission.source.license?.redistributionAllowed !== true
+        || registration?.sourceId !== row.sourceId
+        || registration.snapshotId !== admission.snapshotId
+        || registration.snapshotId !== row.sourceSnapshotId
+        || registration.adminReviewRecordHash !== admission.source.admissionEvidence?.adminReviewRecordHash
+        || !/^[a-f0-9]{64}$/u.test(registration.normalizedSchemaFingerprint ?? "")
+        || !/^[a-f0-9]{64}$/u.test(registration.claimBindingsSha256 ?? "")
+        || admission.source.admissionEvidence?.sampleEvidenceHash !== row.evidenceHash
+        || projection?.sourceId !== row.sourceId
+        || projection.snapshotId !== admission.snapshotId
+        || projection.rawObjectUri !== registration.rawObjectUri
+        || projection.rawSha256 !== registration.rawObjectSha256
+        || projection.schemaFingerprint !== registration.normalizedSchemaFingerprint
+        || projection.adminReviewRecordHash !== registration.adminReviewRecordHash
+        || projection.licenseStatus !== "PASS"
+        || projection.redistributionAllowed !== true
+        || projection.credentialRedacted !== true
+        || projection.snapshotStatus !== "LOCKED"
+        || !Number.isFinite(Date.parse(projection.freshnessExpiresAt))) {
+        throw new Error(`production accessibility snapshot mismatch: ${row.sourceId}`);
+      }
+      if (Date.parse(projection.freshnessExpiresAt) <= now.getTime()) {
+        throw new Error(`production accessibility snapshot is stale: ${row.sourceId}`);
+      }
+      return Date.parse(projection.freshnessExpiresAt);
+    }
     const evidence = sources.get(row.sourceId)?.accessibilityAdmissionEvidence;
     if (!evidence || evidence.snapshotId !== row.sourceSnapshotId || !Number.isFinite(Date.parse(evidence.freshUntil))) {
       throw new Error(`production accessibility evidence mismatch: ${row.sourceId}`);
@@ -1842,7 +1999,7 @@ export function productionAccessibilityFreshUntil(
       }
       return Date.parse(snapshot.freshnessExpiresAt);
     }
-    const admission = admittedNonLedgerAccessibility.get(row.sourceId);
+    const admission = admittedAccessibilityEvidence.get(row.sourceId);
     if (admission?.source?.id !== row.sourceId
       || !isDeepStrictEqual(admission.source, sources.get(row.sourceId))
       || admission.source.requiredForProductionPack !== false
@@ -2564,7 +2721,7 @@ export async function admittedItxNetworkEdgeEvidence(
 function validateCurrentItxApprovalIdentity(reference) {
   const promotion = reference?.promotion;
   if (promotion?.mode !== "CURRENT_CANDIDATE_OWNER_APPROVED"
-    || !/^https:\/\/github\.com\/AquilaXk\/easysubway-data\/issues\/96#issuecomment-[1-9][0-9]*$/u
+    || !/^https:\/\/github\.com\/AquilaXk\/easysubway-data\/issues\/(?:96|636)#issuecomment-[1-9][0-9]*$/u
       .test(promotion.approvalUrl ?? "")
     || promotion.approvedArtifactSha256 !== reference.sha256) {
     throw new Error("ITX network edge approval identity is invalid");

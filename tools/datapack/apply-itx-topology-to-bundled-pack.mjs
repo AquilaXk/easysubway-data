@@ -7,6 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { canonicalRideEdgeSetSha256 } from "./evaluate-route-accessibility-edges.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
@@ -43,6 +44,14 @@ const ADMITTED_TOPOLOGY_INPUTS = new Map([
       gzipSha256: "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
       sqliteSha256: "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5",
       byteSize: 1463745,
+    },
+  ],
+  [
+    "7bff64ecf229a31e64817bd3315a95bc965c20cbe0aa88d788e59b9fd6d5789e",
+    {
+      gzipSha256: "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a",
+      sqliteSha256: "bba39f717671c82278a44d0be731801c41d90b7a92dd11a9f184e6ec0f55da98",
+      byteSize: 388623,
     },
   ],
 ]);
@@ -150,8 +159,8 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function repositoryPath(value) {
-  return path.resolve(root, value);
+function repositoryPath(value, repositoryRoot = root) {
+  return path.resolve(repositoryRoot, value);
 }
 
 function candidateBuildNow() {
@@ -163,12 +172,12 @@ function candidateBuildNow() {
   return buildNow;
 }
 
-async function admittedSource(contractPath) {
+async function admittedSource(contractPath, { repositoryRoot = root, buildNow = candidateBuildNow() } = {}) {
   const contract = JSON.parse(await readFile(contractPath, "utf8"));
   const reference = contract?.sourceTimetableArtifact;
   validateAdmittedSourceReference(contract, reference);
-  const sourceBytes = await readFile(repositoryPath(reference.artifactPath));
-  const completenessBytes = await readFile(repositoryPath(reference.completenessEvidencePath));
+  const sourceBytes = await readFile(repositoryPath(reference.artifactPath, repositoryRoot));
+  const completenessBytes = await readFile(repositoryPath(reference.completenessEvidencePath, repositoryRoot));
   const { source, completeness } = parseAuthenticatedAdmittedSourceDocuments(
     reference,
     sourceBytes,
@@ -181,8 +190,35 @@ async function admittedSource(contractPath) {
     completeness,
     sha256(sourceBytes),
     sha256(completenessBytes),
+    buildNow,
   );
   return { contract, reference, source, sourceBytes };
+}
+
+export function deriveAdmittedItxRideEdgeSetSha256(source) {
+  const rides = deriveTopology(source).edges.map((edge) => ({
+    edgeId: edge.id,
+    fromNodeId: edge.fromNodeId,
+    toNodeId: edge.toNodeId,
+    edgeType: edge.edgeType,
+    servicePattern: edge.servicePattern,
+    serviceClass: edge.serviceClass,
+    durationSeconds: edge.durationSeconds,
+    distanceMeters: edge.distanceMeters,
+  }));
+  return canonicalRideEdgeSetSha256(rides);
+}
+
+export async function readAdmittedItxRideEdgeSetSha256(
+  repositoryRoot = root,
+  { buildNow = candidateBuildNow() } = {},
+) {
+  const resolvedRoot = path.resolve(repositoryRoot);
+  const { source } = await admittedSource(
+    path.join(resolvedRoot, "tools/datapack/itx-cheongchun-coverage-contract.json"),
+    { repositoryRoot: resolvedRoot, buildNow },
+  );
+  return deriveAdmittedItxRideEdgeSetSha256(source);
 }
 
 function validateAdmittedSourceReference(contract, reference) {
@@ -207,7 +243,7 @@ function validateAdmittedSourceReference(contract, reference) {
 function validateCurrentApprovalIdentity(reference) {
   const promotion = reference?.promotion;
   if (promotion?.mode !== "CURRENT_CANDIDATE_OWNER_APPROVED"
-    || !/^https:\/\/github\.com\/AquilaXk\/easysubway-data\/issues\/96#issuecomment-[1-9][0-9]*$/u
+    || !/^https:\/\/github\.com\/AquilaXk\/easysubway-data\/issues\/(?:96|636)#issuecomment-[1-9][0-9]*$/u
       .test(promotion.approvalUrl ?? "")
     || promotion.approvedArtifactSha256 !== reference.sha256) {
     throw new Error("ITX topology approval identity is invalid");
@@ -229,6 +265,7 @@ export function validateAdmittedSourceDocuments(
   completeness,
   sourceSha256,
   completenessSha256,
+  buildNow = candidateBuildNow(),
 ) {
   validateAdmittedSourceReference(contract, reference);
   if (sourceSha256 !== reference.sha256
@@ -236,7 +273,8 @@ export function validateAdmittedSourceDocuments(
     throw new Error("ITX topology source bytes do not match the coverage contract");
   }
   const freshUntilMillis = Date.parse(reference.freshUntil);
-  if (!Number.isFinite(freshUntilMillis) || freshUntilMillis <= candidateBuildNow().getTime()) {
+  if (!(buildNow instanceof Date) || Number.isNaN(buildNow.getTime())
+    || !Number.isFinite(freshUntilMillis) || freshUntilMillis <= buildNow.getTime()) {
     throw new Error("ITX topology source artifact is expired");
   }
   const admission = contract?.officialEvidence?.korailCompletenessAdmission;

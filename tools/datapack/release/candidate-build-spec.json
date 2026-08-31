@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-candidate-build-spec",
-  "candidateId": "capital-pilot-candidate-20260828",
+  "candidateId": "capital-pilot-candidate-20260830",
   "productionScopeId": "capital_pilot_android_v1",
-  "publishedAt": "2026-08-28T14:18:23.340Z",
+  "publishedAt": "2026-08-30T17:40:02.000Z",
   "releaseSequence": 115,
   "fixturePath": "tools/datapack/release/capital-production-canonical-pack.json",
-  "itxTopologyEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence-20260824170958799.json",
-  "itxTopologyEvidenceSha256": "9ff9810e467eb9df53fc461e380ccb368bca4cd6c52b3f84fa2b0fb7c58acd1a",
+  "itxTopologyEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence-20260830151508786.json",
+  "itxTopologyEvidenceSha256": "50e2f03b2975c26d488b4f0a23c9a0f5cad7e91a56eb9b7b4977fbbba611745d",
   "networkEdgeEvidence": {
     "sourceInventory": {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "c62545648f2478f341aa99d6f45431fba657a20e77d4ae60a274344c3d89b9a5"
+      "sha256": "175b22a7291ed9abb6b38f7cfa7c0fcb0be498f9c490e4ce8ed44688b8969834"
     },
     "capitalTopology": {
       "path": "tools/datapack/sources/capital-route-topology-20260724.json",
@@ -19,55 +19,51 @@
       "snapshotId": "capital-route-topology-20260724"
     },
     "capitalTopologyCandidate": {
-      "path": "tools/datapack/sources/capital-route-topology-20260828.json",
-      "sha256": "01f52c0f0bd8154c3c43c14eaa6ca76ffb1ef715f526321b6674677f2b4f6de9",
-      "snapshotId": "capital-route-topology-20260828"
+      "path": "tools/datapack/sources/capital-route-topology-20260830.json",
+      "sha256": "683388f107bec297b3f1cd49ab3e0c711e6c03439401dafcf8effce2c661f532",
+      "snapshotId": "capital-route-topology-20260830"
     },
     "capitalTopologyReverification": {
-      "path": "tools/datapack/release/capital-topology-reverification-20260828.json",
-      "sha256": "38335740aef441a2cd12be7e7204c8250ff5f0d0e549e34e1c376db132ca36eb"
+      "path": "tools/datapack/release/capital-topology-reverification-20260830.json",
+      "sha256": "04931407aa7401de0b29c0a5a507d7fde0e736429a9ca4b3a26f327374e31a3a"
     },
     "capitalTopologyAdmission": {
       "schemaVersion": 1,
       "artifactKind": "capital-network-edge-admission",
       "issue": 2649,
       "status": "ADMITTED",
-      "snapshotId": "capital-route-topology-20260828",
+      "snapshotId": "capital-route-topology-20260830",
       "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
-      "reviewedAt": "2026-08-28T03:47:35.000Z",
-      "reverifiedAt": "2026-08-28T03:47:35.000Z",
-      "freshUntil": "2026-08-29T03:47:35.000Z"
+      "reviewedAt": "2026-08-30T12:36:31.000Z",
+      "reverifiedAt": "2026-08-30T12:36:31.000Z",
+      "freshUntil": "2026-08-31T12:36:31.000Z"
     },
     "itxCoverageContract": {
       "path": "tools/datapack/itx-cheongchun-coverage-contract.json",
-      "sha256": "97400bd534278ec9d16dd5eeacde5a2c1a4b5d4de195ad0615cde8b605519f13"
+      "sha256": "a5d64bbabd8d4ef5f88a3f06c6eb1a3ebc2c682e62e42b899d8b8e689bb26d8c"
     },
     "incheonTimetables": {
       "line1": {
-        "path": "tools/datapack/sources/incheon-line1-train-timetable-20260828.json",
-        "sha256": "4635814c180b7950799bb901048eed6d8a76167f0f8645c5aaf7b9ee46b4d109",
-        "snapshotId": "incheon-line1-train-timetable-20260828"
+        "path": "tools/datapack/sources/incheon-line1-train-timetable-20260830.json",
+        "sha256": "135bb9e9ee67670cf77dec8c8bfe5dd8febff6812517ef1e6364c1de5ac7bad4",
+        "snapshotId": "incheon-line1-train-timetable-20260830"
       },
       "line2": {
-        "path": "tools/datapack/sources/incheon-line2-train-timetable-20260828.json",
-        "sha256": "99a12f7e3d4f9d926882dd9fa5b092f3c40ff85e2d2c53a4750413f579a33f95",
-        "snapshotId": "incheon-line2-train-timetable-20260828"
+        "path": "tools/datapack/sources/incheon-line2-train-timetable-20260830.json",
+        "sha256": "2f54bc709fe7fb1e51626e5485b69735be3a129b59b5524f93020bbb12ae4fca",
+        "snapshotId": "incheon-line2-train-timetable-20260830"
       }
-    },
-    "incheonAccessibility": {
-      "path": "tools/datapack/sources/incheon-transit-accessibility-20260828.json",
-      "sha256": "1919be286404a006ec3c6131c2ee0185fa604b5d9270b5ee4ea8b3bad6182ad0",
-      "snapshotId": "incheon-transit-accessibility-20260828"
     }
   },
   "sourceSnapshotEvidencePath": "tools/datapack/release/source-snapshots.json",
   "sourceSnapshotIds": [
     "seoul-metro-route-map-positions-current-20260826T035408251Z",
     "kric-subway-timetable-line4-pilot-20260809",
-    "seoul-metro-accessibility-20260822T094318289Z",
-    "kric-station-convenience-standard-20260828T141640087Z",
+    "seoul-metro-accessibility-20260830T173929300Z",
+    "kric-station-convenience-standard-20260830T022401673Z",
     "molit-urban-rail-full-route-current-20260826T035408251Z",
     "seoulmetro-station-line-info-revalidated-20260814",
+    "incheon-transit-accessibility-20260828T043356000Z",
     "seoul-metro-transfer-distance-duration-20260815T094038817Z"
   ],
   "sourceSnapshots": [
@@ -106,10 +102,10 @@
       "governancePolicySha256": "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70"
     },
     {
-      "snapshotId": "seoul-metro-accessibility-20260822T094318289Z",
+      "snapshotId": "seoul-metro-accessibility-20260830T173929300Z",
       "sourceId": "seoul-metro-accessibility",
-      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-accessibility/20260822/1cdbcb99b212564c049ef7a1f6d19f29c8f5639376b95af87454cc763e5e9ea6.json",
-      "rawSha256": "1cdbcb99b212564c049ef7a1f6d19f29c8f5639376b95af87454cc763e5e9ea6",
+      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-accessibility/20260830/49447f84ec83e01317757bc5a84699e3eb576f1d793a43dcf83eb8a3af0b5ee8.json",
+      "rawSha256": "49447f84ec83e01317757bc5a84699e3eb576f1d793a43dcf83eb8a3af0b5ee8",
       "redactedRequestFingerprint": "f2b9752b0554f3945909d44e7f42dddc5ca8d87b1d14f6cfd542291120c9faa5",
       "schemaFingerprint": "89175633c9f84c1593c92cfcb89dc25a64030d970be6c8970d51097dc7075982",
       "licenseStatus": "PASS",
@@ -117,16 +113,16 @@
       "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",
       "snapshotStatus": "LOCKED",
       "credentialRedacted": true,
-      "freshnessExpiresAt": "2026-11-20T09:43:18.289Z",
-      "rawRetentionExpiresAt": "2026-11-20T09:43:18.289Z",
-      "governancePolicyVersion": "2026-07-15",
-      "governancePolicySha256": "13f8a78c0ae0f7bfa6817005f44a92be3131e6f6708a69a4024747478203beaa"
+      "freshnessExpiresAt": "2026-11-28T17:39:29.300Z",
+      "rawRetentionExpiresAt": "2026-11-28T17:39:29.300Z",
+      "governancePolicyVersion": "2026-08-29",
+      "governancePolicySha256": "b4656dca1fdb660da495d0269ff91c7d31469045fd1db66a1534e3feffeeba33"
     },
     {
-      "snapshotId": "kric-station-convenience-standard-20260828T141640087Z",
+      "snapshotId": "kric-station-convenience-standard-20260830T022401673Z",
       "sourceId": "kric-station-convenience-standard",
-      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-station-convenience-standard/20260828/6b7173a23b33d43e4a62413b903da3fac0329dd30af4b8dcc70bfd2959ffba03.json",
-      "rawSha256": "6b7173a23b33d43e4a62413b903da3fac0329dd30af4b8dcc70bfd2959ffba03",
+      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-station-convenience-standard/20260830/0c28d09b154b3975dda17c6fa45d236fccdb9d8687c746aa0279fba04f5840ec.json",
+      "rawSha256": "0c28d09b154b3975dda17c6fa45d236fccdb9d8687c746aa0279fba04f5840ec",
       "redactedRequestFingerprint": "6bfc760d8afac637c2cb39784a2b6b7c68c7e6fa81c15270a405dd8dfca86a49",
       "schemaFingerprint": "6cf45df8488510187063c4b7396ca9628295d6961becdcf1de87f2ae521e8591",
       "licenseStatus": "PASS",
@@ -134,10 +130,10 @@
       "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
       "snapshotStatus": "LOCKED",
       "credentialRedacted": true,
-      "freshnessExpiresAt": "2026-11-26T14:16:40.087Z",
-      "rawRetentionExpiresAt": "2026-11-26T14:16:40.087Z",
-      "governancePolicyVersion": "2026-07-15",
-      "governancePolicySha256": "e6e607e0711bebafbc25843996a0d6ff1dce6e6e82b4cadb425e78ccd284d9f3"
+      "freshnessExpiresAt": "2026-11-28T02:24:01.673Z",
+      "rawRetentionExpiresAt": "2026-11-28T02:24:01.673Z",
+      "governancePolicyVersion": "2026-08-29",
+      "governancePolicySha256": "b4656dca1fdb660da495d0269ff91c7d31469045fd1db66a1534e3feffeeba33"
     },
     {
       "snapshotId": "molit-urban-rail-full-route-current-20260826T035408251Z",
@@ -174,6 +170,23 @@
       "governancePolicySha256": "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70"
     },
     {
+      "snapshotId": "incheon-transit-accessibility-20260828T043356000Z",
+      "sourceId": "incheon-transit-accessibility",
+      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/incheon-transit-accessibility/20260828/ccfac4c6c454fe2c2b81373a33909e4bd34cc9ff6b0186276a28226a2262610f.json",
+      "rawSha256": "ccfac4c6c454fe2c2b81373a33909e4bd34cc9ff6b0186276a28226a2262610f",
+      "redactedRequestFingerprint": "caa1d116776b658049e5dfb791b6750d052cd88fdf97306777941c95ae038045",
+      "schemaFingerprint": "793a13f30d59d005223245f2c7211351c3fbcc54708fc9cf895d39723c413a19",
+      "licenseStatus": "PASS",
+      "redistributionAllowed": true,
+      "adminReviewRecordHash": "3c705c2f2d65bd171d2cd4125266c63d0c3dee506cd76405e727573955f580f4",
+      "snapshotStatus": "LOCKED",
+      "credentialRedacted": true,
+      "freshnessExpiresAt": "2026-11-26T04:33:56.000Z",
+      "rawRetentionExpiresAt": "2026-11-26T04:33:56.000Z",
+      "governancePolicyVersion": "2026-08-29",
+      "governancePolicySha256": "b4656dca1fdb660da495d0269ff91c7d31469045fd1db66a1534e3feffeeba33"
+    },
+    {
       "snapshotId": "seoul-metro-transfer-distance-duration-20260815T094038817Z",
       "sourceId": "seoul-metro-transfer-distance-duration",
       "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-transfer-distance-duration/20260815/3d872c9ac390426b5e0e26fa1916ae9d9a44b70077b632d3c85cb8e82381f7cf.json",
@@ -191,13 +204,13 @@
       "governancePolicySha256": "13f8a78c0ae0f7bfa6817005f44a92be3131e6f6708a69a4024747478203beaa"
     }
   ],
-  "sourceSnapshotSetHash": "3e7e872a783e18dd4e8d594db331a46d4570d43e3adfd3e20d56bacdca6ede0a",
+  "sourceSnapshotSetHash": "05de19c56acc6af812b071ee3081612a8ee9502e86c3cb38cec54c83c15040cc",
   "approvedAliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
   "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
   "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
   "approvedOverrideSetHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
-  "sourceInventorySha256": "7e21c9745f378a80a3e1b6ad5db2e6faba70373eaadacc608b7be236fd36d959",
-  "builderGitSha": "d06c30ae1a1b4574621a68faa65f3ba8da1a5362",
+  "sourceInventorySha256": "ed2466eaf8cae69a2883e0860b4292e885193e2169d60977ce29cd0ebc21c635",
+  "builderGitSha": "7474c915262f70a2b4028a9dd415b863c3154358",
   "builderVersion": "build-datapack.mjs@26",
   "officialOdFareEvidence": {
     "sourceId": "seoul-metro-official-od-fares",

@@ -59,17 +59,20 @@ test("current source-set handoff binds the exact verified live-chain and fails c
   const handoffBytes = buildCurrentSourceSetHandoff(input);
   const handoff = readCurrentSourceSetHandoff(handoffBytes, input);
 
-  assert.equal(handoff.schemaVersion, 2);
+  assert.equal(handoff.schemaVersion, 3);
   assert.equal(handoff.repository, REPOSITORY);
   assert.equal(handoff.producerSha, input.producerSha);
   assert.equal(handoff.sourceRepositorySha, input.sourceRepositorySha);
   assert.equal(handoff.operationId, input.operationId);
   assert.equal(handoff.composite.object.sha256, sha256(input.compositeBytes));
   assert.equal(handoff.fanIn.sha256, sha256(Buffer.from(canonicalCurrentCapitalLiveChainFanInBoundaryJson(input.boundary))));
-  assert.equal(handoff.fanIn.sourceSetSha256, input.candidate.sourceSnapshotSetHash);
+  assert.equal(handoff.fanIn.currentCandidateSourceSetSha256, input.candidate.sourceSnapshotSetHash);
+  assert.equal(handoff.fanIn.evidenceSourceSetSha256, input.boundary.evidenceSourceSetSha256);
+  assert.notEqual(handoff.fanIn.evidenceSourceSetSha256, handoff.fanIn.currentCandidateSourceSetSha256);
   assert.deepEqual(handoff.candidate.sourceSnapshots, input.candidate.sourceSnapshots.map(({ sourceId, snapshotId }) => ({ sourceId, snapshotId })));
   assert.equal(handoff.evidence.facility.sourceSnapshotSetHash, handoff.candidate.sourceSnapshotSetHash);
-  assert.equal(handoff.evidence.exit.sourceSnapshotSetHash, handoff.candidate.sourceSnapshotSetHash);
+  assert.equal(handoff.evidence.exit.sourceSnapshotSetHash, handoff.fanIn.evidenceSourceSetSha256);
+  assert.notEqual(handoff.evidence.exit.sourceSnapshotSetHash, handoff.candidate.sourceSnapshotSetHash);
   assert.deepEqual(handoff.releaseRequest, {
     approvalId: JSON.parse(input.releaseRequestBytes).approvalId,
     candidateId: handoff.candidate.candidateId,
@@ -258,6 +261,30 @@ test("current source-set handoff binds the exact verified live-chain and fails c
   assert.throws(
     () => readCurrentSourceSetHandoff(Buffer.from(`${canonical(tamperedFanIn)}\n`), input),
     /fan-in/,
+  );
+
+  const equalSourceSets = rehashHandoff({
+    ...handoff,
+    fanIn: {
+      ...handoff.fanIn,
+      evidenceSourceSetSha256: handoff.fanIn.currentCandidateSourceSetSha256,
+    },
+  });
+  assert.throws(
+    () => readCurrentSourceSetHandoff(Buffer.from(`${canonical(equalSourceSets)}\n`), input),
+    /fan-in/,
+  );
+
+  const tamperedExitEvidenceSet = rehashHandoff({
+    ...handoff,
+    evidence: {
+      ...handoff.evidence,
+      exit: { ...handoff.evidence.exit, sourceSnapshotSetHash: handoff.candidate.sourceSnapshotSetHash },
+    },
+  });
+  assert.throws(
+    () => readCurrentSourceSetHandoff(Buffer.from(`${canonical(tamperedExitEvidenceSet)}\n`), input),
+    /EXIT evidence mismatch/,
   );
 
   const tamperedProjection = rehashHandoff({
