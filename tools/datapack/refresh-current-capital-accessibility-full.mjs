@@ -213,14 +213,12 @@ async function inputFiles(root, phase) {
   }
   const files = Object.fromEntries(await Promise.all(relatives.map(async (relative) =>
     [relative, await readStableRegularFile(target(root, relative), relative)])));
-  if (phase === ACTIVATED_CURRENT_OUTPUT) {
-    try {
-      files[TRANSITION] = await readStableRegularFile(target(root, TRANSITION), TRANSITION);
-    } catch (error) {
-      if (error?.code !== "ENOENT" && error?.cause?.code !== "ENOENT") throw error;
-    }
-    if (files[TRANSITION]) files[SUCCESSOR] = await readStableRegularFile(target(root, SUCCESSOR), SUCCESSOR);
+  try {
+    files[TRANSITION] = await readStableRegularFile(target(root, TRANSITION), TRANSITION);
+  } catch (error) {
+    if (error?.code !== "ENOENT" && error?.cause?.code !== "ENOENT") throw error;
   }
+  if (files[TRANSITION]) files[SUCCESSOR] = await readStableRegularFile(target(root, SUCCESSOR), SUCCESSOR);
   if (phase === PRE_APPROVAL_CURRENT_CANDIDATE) {
     const fixturePath = candidateFixturePath(parse(files[CANDIDATE_BUILD_SPEC].bytes, "current candidate"));
     files[fixturePath] = await readStableRegularFile(target(root, fixturePath), fixturePath);
