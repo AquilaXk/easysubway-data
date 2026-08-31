@@ -80,6 +80,19 @@ async function fixture() {
   };
 }
 
+async function setCandidateItxFreshUntil(input, freshUntil) {
+  const candidate = JSON.parse(await readFile(input.candidatePath, "utf8"));
+  const evidencePath = path.join(input.repositoryRoot, candidate.itxTopologyEvidencePath);
+  const evidenceBytes = Buffer.from(`${JSON.stringify({
+    schemaVersion: 1,
+    artifactKind: "itx-cheongchun-mobile-topology-evidence",
+    sourceArtifact: { freshUntil },
+  })}\n`);
+  await writeFile(evidencePath, evidenceBytes);
+  candidate.itxTopologyEvidenceSha256 = sha256(evidenceBytes);
+  await writeFile(input.candidatePath, JSON.stringify(candidate));
+}
+
 test("earliest canonical current topology expiry determines NOT_DUE, DUE, and EXPIRED", async () => {
   const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
   for (const [now, state] of [["2026-08-30T05:59:59.999Z", "NOT_DUE"], ["2026-08-30T06:00:00.000Z", "DUE"], ["2026-08-30T12:00:00.000Z", "EXPIRED"]]) {
@@ -103,16 +116,7 @@ test("requires exactly sixteen distinct admitted capital sources and all three I
 
 test("candidate-selected ITX freshness participates in the earliest due decision", async () => {
   const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
-  const candidate = JSON.parse(await readFile(input.candidatePath, "utf8"));
-  const evidencePath = path.join(input.repositoryRoot, candidate.itxTopologyEvidencePath);
-  const evidenceBytes = Buffer.from(`${JSON.stringify({
-    schemaVersion: 1,
-    artifactKind: "itx-cheongchun-mobile-topology-evidence",
-    sourceArtifact: { freshUntil: "2026-08-30T10:00:00.000Z" },
-  })}\n`);
-  await writeFile(evidencePath, evidenceBytes);
-  candidate.itxTopologyEvidenceSha256 = sha256(evidenceBytes);
-  await writeFile(input.candidatePath, JSON.stringify(candidate));
+  await setCandidateItxFreshUntil(input, "2026-08-30T10:00:00.000Z");
 
   assert.equal((await decideCurrentCapitalTopologyRefresh({
     ...input,
@@ -122,16 +126,7 @@ test("candidate-selected ITX freshness participates in the earliest due decision
 
 test("candidate-selected ITX freshness accepts an explicit timezone offset", async () => {
   const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
-  const candidate = JSON.parse(await readFile(input.candidatePath, "utf8"));
-  const evidencePath = path.join(input.repositoryRoot, candidate.itxTopologyEvidencePath);
-  const evidenceBytes = Buffer.from(`${JSON.stringify({
-    schemaVersion: 1,
-    artifactKind: "itx-cheongchun-mobile-topology-evidence",
-    sourceArtifact: { freshUntil: "2026-08-31T01:00:00+09:00" },
-  })}\n`);
-  await writeFile(evidencePath, evidenceBytes);
-  candidate.itxTopologyEvidenceSha256 = sha256(evidenceBytes);
-  await writeFile(input.candidatePath, JSON.stringify(candidate));
+  await setCandidateItxFreshUntil(input, "2026-08-31T01:00:00+09:00");
 
   assert.equal((await decideCurrentCapitalTopologyRefresh({
     ...input,
