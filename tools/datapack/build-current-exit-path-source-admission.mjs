@@ -10,6 +10,7 @@ import {
 } from "./build-exit-path-admission.mjs";
 import { readRegularSnapshot } from "./build-current-kric-exit-collection-plan.mjs";
 import { canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-current-capital-facility-source-admission.mjs";
+import { deriveCurrentLiveChainTerminalTransferEvidenceSubset } from "./build-current-capital-live-chain-boundary.mjs";
 import { canonicalKricExitPathProviderSnapshotJson } from "./collect-kric-exit-path-provider-snapshot.mjs";
 import { consumeCurrentKricExitCollectionBundle } from "./consume-current-kric-exit-collection-bundle.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
@@ -63,12 +64,21 @@ export function buildCurrentExitPathSourceAdmission(input) {
   const facilityAdmission = validateFacilityAdmission(
     input.facilityAdmission, collectionPlan, input.candidateBuildSpec, input.sourceSnapshots, observedAt,
   );
-  const { candidateBuildSpec, selectedSnapshots } = validateCandidateBuildSpec(
+  const { candidateBuildSpec } = validateCandidateBuildSpec(
     input.candidateBuildSpec,
     facilityAdmission.candidate,
     input.sourceSnapshots,
   );
   const source = validateSourceInventory(input.sourceInventory);
+  const terminalTransferEvidence = deriveCurrentLiveChainTerminalTransferEvidenceSubset({
+    candidate: candidateBuildSpec,
+    sourceInventory: input.sourceInventory,
+    sourceSnapshotLedger: input.sourceSnapshots,
+  });
+  const exitCandidate = canonicalObject({
+    ...facilityAdmission.candidate,
+    sourceSetSha256: terminalTransferEvidence.predecessorEvidenceSha256,
+  });
   const stationContext = buildStationContext(
     facilityAdmission,
     collectionPlan,
@@ -114,7 +124,7 @@ export function buildCurrentExitPathSourceAdmission(input) {
     sourceId: providerSnapshot.sourceId,
     snapshotId: providerSnapshot.snapshotId,
     rawSha256: sha256(normalizedSnapshotBytes),
-    sourceSnapshotSetHash: facilityAdmission.candidate.sourceSetSha256,
+    sourceSnapshotSetHash: exitCandidate.sourceSetSha256,
     stationSetSha256: facilityAdmission.candidate.stationSetSha256,
     stationLineMappingSha256: stationContext.stationLineMappingSha256,
     queryPlanSha256: sha256(canonicalJson(normalizedSnapshot.queryPlan)),
@@ -133,10 +143,10 @@ export function buildCurrentExitPathSourceAdmission(input) {
     facilityStationLineMappingSha256: facilityAdmission.stationLineMappingSha256,
   });
   const admission = buildExitPathAdmission({
-    candidate: facilityAdmission.candidate,
+    candidate: exitCandidate,
     observedAt: input.observedAt,
     sourceAdmission,
-    sourceSnapshots: selectedSnapshots,
+    sourceSnapshots: terminalTransferEvidence.predecessorEvidenceRows,
     stationLines: stationContext.stationLines,
     stationLineMappingSha256: stationContext.stationLineMappingSha256,
     stationLineSetSha256: facilityAdmission.stationLineSetSha256,

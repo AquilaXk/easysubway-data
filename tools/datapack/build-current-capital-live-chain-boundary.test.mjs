@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { buildCurrentCapitalLiveChainFanInBoundary, canonicalCurrentCapitalLiveChainFanInBoundaryJson, readCurrentCapitalLiveChainFanInBoundary, verifyCurrentCapitalLiveChainFanInComponents } from "./build-current-capital-live-chain-boundary.mjs";
+import { buildCurrentCapitalLiveChainFanInBoundary, canonicalCurrentCapitalLiveChainFanInBoundaryJson, deriveCurrentLiveChainTerminalTransferEvidenceSubset, readCurrentCapitalLiveChainFanInBoundary, verifyCurrentCapitalLiveChainFanInComponents } from "./build-current-capital-live-chain-boundary.mjs";
 import { buildCurrentCapitalStationLineInput } from "./build-current-capital-station-line-input.mjs";
 import { fixture } from "./build-current-capital-station-line-input.test.mjs";
 
@@ -95,7 +95,32 @@ test("current live-chain rejects a non-terminal TRANSFER candidate projection", 
   candidate.sourceSnapshots.unshift(transferProjection);
   components.candidateBuildSpec.bytes = bytes(candidate);
 
+  assert.throws(() => deriveCurrentLiveChainTerminalTransferEvidenceSubset({
+    candidate,
+    sourceInventory: components.sourceInventory.value,
+    sourceSnapshotLedger: components.sourceSnapshotLedger.value,
+  }), /terminal in the candidate/);
   assert.throws(() => buildCurrentCapitalLiveChainFanInBoundary(components), /terminal in the candidate/);
+});
+
+test("current live-chain derives EXIT evidence from exactly the ledger-order terminal TRANSFER predecessors", async () => {
+  const components = fanInComponents(await fixture());
+  const candidate = components.candidateBuildSpec.value;
+  const evidence = deriveCurrentLiveChainTerminalTransferEvidenceSubset({
+    candidate,
+    sourceInventory: components.sourceInventory.value,
+    sourceSnapshotLedger: components.sourceSnapshotLedger.value,
+  });
+
+  assert.equal(evidence.currentCandidateSourceSetSha256, candidate.sourceSnapshotSetHash);
+  assert.equal(evidence.predecessorEvidenceSha256, sha(JSON.stringify(evidence.predecessorEvidenceRows)));
+  assert.deepEqual(
+    evidence.predecessorEvidenceRows.map(({ snapshotId }) => snapshotId),
+    components.sourceSnapshotLedger.value
+      .filter(({ snapshotId }) => candidate.sourceSnapshotIds.slice(0, -1).includes(snapshotId))
+      .map(({ snapshotId }) => snapshotId),
+  );
+  assert.equal(evidence.predecessorEvidenceRows.some(({ sourceId }) => sourceId === evidence.sourceId), false);
 });
 
 test("current live-chain boundary detects source-set and byte mismatch before station-line materialization", async () => {

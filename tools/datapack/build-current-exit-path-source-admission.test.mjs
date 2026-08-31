@@ -62,6 +62,29 @@ test("current provider snapshot을 current full-capital station-line EXIT admiss
     result.admission.sourceIdentity.facilityAdmissionDigest,
     input.facilityAdmission.admissionDigest,
   );
+  const predecessorSnapshotIds = new Set(input.candidateBuildSpec.sourceSnapshotIds.slice(0, -1));
+  const expectedExitSourceSetSha256 = sha256(JSON.stringify(
+    input.sourceSnapshots.filter(({ snapshotId }) => predecessorSnapshotIds.has(snapshotId)),
+  ));
+  assert.equal(result.admission.candidate.candidateId, input.candidateBuildSpec.candidateId);
+  assert.equal(result.admission.candidate.sourceSetSha256, expectedExitSourceSetSha256);
+  assert.notEqual(result.admission.candidate.sourceSetSha256, input.candidateBuildSpec.sourceSnapshotSetHash);
+});
+
+test("current EXIT admission rejects a selected TRANSFER that is not terminal", async () => {
+  const input = await fullCapitalInput();
+  const transferIndex = input.candidateBuildSpec.sourceSnapshots.findIndex(({ sourceId }) =>
+    sourceId === "seoul-metro-transfer-distance-duration");
+  assert.ok(transferIndex >= 0, "fixture includes selected TRANSFER");
+  const [transferSnapshotId] = input.candidateBuildSpec.sourceSnapshotIds.splice(transferIndex, 1);
+  const [transferProjection] = input.candidateBuildSpec.sourceSnapshots.splice(transferIndex, 1);
+  input.candidateBuildSpec.sourceSnapshotIds.unshift(transferSnapshotId);
+  input.candidateBuildSpec.sourceSnapshots.unshift(transferProjection);
+
+  assert.throws(
+    () => buildCurrentExitPathSourceAdmission(input),
+    /terminal in the candidate/,
+  );
 });
 
 test("tracked current EXIT handoff는 exact immutable snapshot과 GO admission을 고정한다", async () => {
