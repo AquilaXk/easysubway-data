@@ -2570,6 +2570,48 @@ function requiredItxTopologyEvidencePath(spec) {
   return relativePath;
 }
 
+export function validateFreshCandidateSelectedItxEvidence({ spec, evidencePath, evidenceBytes, buildNow }) {
+  if (evidencePath !== requiredItxTopologyEvidencePath(spec)
+    || !Buffer.isBuffer(evidenceBytes)
+    || sha256(evidenceBytes) !== spec.itxTopologyEvidenceSha256) {
+    throw new Error("candidate-selected ITX topology evidence identity is invalid");
+  }
+  const evidencePathMatch = /^tools\/datapack\/itx-cheongchun-topology-evidence-([0-9]{17})\.json$/u
+    .exec(evidencePath);
+  if (evidencePathMatch == null) {
+    throw new Error("candidate-selected ITX topology evidence identity is invalid");
+  }
+  const evidence = parseJson(evidenceBytes, "candidate-selected ITX topology evidence");
+  const source = evidence?.sourceArtifact;
+  const freshUntilMatch = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{3})?(Z|[+-]\d{2}:\d{2})$/u
+    .exec(source?.freshUntil ?? "");
+  const freshUntil = Date.parse(source?.freshUntil ?? "");
+  const freshUntilParts = freshUntilMatch?.slice(1, 7).map(Number);
+  const localFreshUntil = freshUntilParts == null ? null : new Date(Date.UTC(
+    freshUntilParts[0], freshUntilParts[1] - 1, freshUntilParts[2], freshUntilParts[3],
+    freshUntilParts[4], freshUntilParts[5],
+  ));
+  if (freshUntilMatch == null || !Number.isFinite(freshUntil)
+    || localFreshUntil.getUTCFullYear() !== freshUntilParts[0]
+    || localFreshUntil.getUTCMonth() + 1 !== freshUntilParts[1]
+    || localFreshUntil.getUTCDate() !== freshUntilParts[2]
+    || localFreshUntil.getUTCHours() !== freshUntilParts[3]
+    || localFreshUntil.getUTCMinutes() !== freshUntilParts[4]
+    || localFreshUntil.getUTCSeconds() !== freshUntilParts[5]) {
+    throw new Error("candidate-selected ITX topology evidence freshUntil is invalid");
+  }
+  const now = requiredUtcInstant(buildNow, "buildNow");
+  if (evidence?.schemaVersion !== 1
+    || evidence.artifactKind !== "itx-cheongchun-mobile-topology-evidence"
+    || evidence.serviceId !== "ITX_CHEONGCHUN"
+    || source?.id !== `itx-cheongchun-source-timetable-${evidencePathMatch[1]}`
+    || !SHA256.test(source?.sha256 ?? "")
+    || !SHA256.test(source?.completenessEvidenceSha256 ?? "")
+    || freshUntil <= now) {
+    throw new Error("candidate-selected ITX topology evidence is not active at buildNow");
+  }
+}
+
 export async function stageValidationItxTopologyEvidence({
   spec,
   temporaryRoot,
@@ -2771,8 +2813,9 @@ export async function generateCurrentCapitalTopologyRefresh({
     .test(itxTopologyEvidencePath ?? "")) {
     throw new Error("current ITX topology evidence must be a tracked artifact path");
   }
-  if (!/^tools\/datapack\/itx-current-network-edge-admission-[0-9]{8}\.json$/u
-    .test(itxCurrentAdmissionPath ?? "")) {
+  if (itxCurrentAdmissionPath != null
+    && !/^tools\/datapack\/itx-current-network-edge-admission-[0-9]{8}\.json$/u
+      .test(itxCurrentAdmissionPath)) {
     throw new Error("current ITX topology admission must be a tracked artifact path");
   }
   let approvedItxCoverageContractBytes = null;
@@ -2831,6 +2874,14 @@ export async function generateCurrentCapitalTopologyRefresh({
     await requireCleanBuilder(builderGitSha, { check, allowedDescendantPaths });
     const sourceInventory = parseJson(sourceInventoryBytes, "source inventory");
     let baseSpec = parseJson(baseSpecBytes, "candidate build spec");
+    if (itxCurrentAdmissionPath == null) {
+      validateFreshCandidateSelectedItxEvidence({
+        spec: baseSpec,
+        evidencePath: currentItxTopologyEvidencePath,
+        evidenceBytes: currentItxTopologyEvidenceBytes,
+        buildNow,
+      });
+    }
     let approvedItxTopology = null;
     if (approvedItxBootstrap) {
       const [sourceBytes, completenessBytes] = await Promise.all([
@@ -3329,7 +3380,6 @@ export function parseCurrentTopologyRefreshArgs(argv) {
   }
   for (const key of ["capital_topology", "incheon_topology", "incheon_accessibility",
     "incheon_line1_timetable", "incheon_line2_timetable", "itx_topology_evidence",
-    "itx_current_admission",
     "builder_git_sha", "build_now"]) {
     if (!args[key]) throw new Error(`--${key.replaceAll("_", "-")} is required`);
   }

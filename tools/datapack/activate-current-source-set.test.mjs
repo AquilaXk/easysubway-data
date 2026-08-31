@@ -27,6 +27,7 @@ import { requireCurrentIncheonTopologyAdmission, activateStaticSourceRevalidatio
   CURRENT_PRODUCTION_SOURCE_IDS, CURRENT_SOURCE_INVENTORY_IDS,
   readBuilderBaselineBytes,
   stageValidationItxTopologyEvidence,
+  validateFreshCandidateSelectedItxEvidence,
   validatePreparedCandidate, verifyCurrentStaticNetworkSuccessorHeads,
   verifyCurrentSeoulCanonicalMembership } from "./activate-current-source-set.mjs";
 import {
@@ -713,6 +714,16 @@ test("activation CLI는 Data-owned capital/Incheon snapshot paths만 수용한�
     builder_git_sha: "b".repeat(40),
     build_now: "2026-08-23T14:53:48.203Z",
   });
+  assert.deepEqual(parseCurrentTopologyRefreshArgs([
+    "--capital-topology", "tools/datapack/sources/capital-route-topology-20260814.json",
+    "--incheon-topology", "tools/datapack/sources/incheon-transit-station-info-20260814.json",
+    "--incheon-accessibility", "tools/datapack/sources/incheon-transit-accessibility-20260814T000000000Z.json",
+    "--incheon-line1-timetable", "tools/datapack/sources/incheon-line1-train-timetable-20260814.json",
+    "--incheon-line2-timetable", "tools/datapack/sources/incheon-line2-train-timetable-20260814.json",
+    "--itx-topology-evidence", "tools/datapack/itx-cheongchun-topology-evidence.json",
+    "--builder-git-sha", "b".repeat(40),
+    "--build-now", "2026-08-23T14:53:48.203Z",
+  ]).itx_current_admission, undefined);
 });
 
 test("approved ITX bootstrap은 exact full-source identity만 candidate에 결속한다", async () => {
@@ -786,6 +797,27 @@ test("approved ITX bootstrap은 exact full-source identity만 candidate에 결�
     topologyEvidencePath,
     buildNow,
   }), /approved ITX topology evidence is invalid/);
+});
+
+test("candidate-selected fresh ITX evidence binds its source artifact identity to the path suffix", async () => {
+  const spec = await readJson("tools/datapack/release/candidate-build-spec.json");
+  const evidencePath = spec.itxTopologyEvidencePath;
+  const evidenceBytes = await readFile(path.join(root, evidencePath));
+  assert.doesNotThrow(() => validateFreshCandidateSelectedItxEvidence({
+    spec,
+    evidencePath,
+    evidenceBytes,
+    buildNow: "2026-08-30T16:00:00.000Z",
+  }));
+  const mismatched = JSON.parse(evidenceBytes);
+  mismatched.sourceArtifact.id = "itx-cheongchun-source-timetable-20260830151508787";
+  const mismatchedBytes = Buffer.from(`${JSON.stringify(mismatched)}\n`);
+  assert.throws(() => validateFreshCandidateSelectedItxEvidence({
+    spec: { ...spec, itxTopologyEvidenceSha256: sha256(mismatchedBytes) },
+    evidencePath,
+    evidenceBytes: mismatchedBytes,
+    buildNow: "2026-08-30T16:00:00.000Z",
+  }), /not active at buildNow/);
 });
 
 test("prepared candidate validation은 spec-selected current ITX evidence bytes만 stage한다", async (context) => {
