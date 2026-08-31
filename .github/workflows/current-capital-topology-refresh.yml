@@ -54,9 +54,9 @@ jobs:
             merge_base="$(git merge-base "${main_sha}" "${head_sha}")"
             commit_count="$(git rev-list --count "${merge_base}..${head_sha}")"
             subjects="$(git log --format=%s --reverse "${merge_base}..${head_sha}")"
-            node --input-type=module -e 'import { appendFile } from "node:fs/promises"; const [headSha, ref, mergeBaseSha, commitCount, subjects] = process.argv.slice(1); await appendFile(process.env.CLAIMS_PATH, `${JSON.stringify({ headSha, ref, mergeBaseSha, commitCount: Number(commitCount), subjects: subjects ? subjects.split("\n") : [] })}\n`);' "${head_sha}" "${ref}" "${merge_base}" "${commit_count}" "${subjects}"
+            node --input-type=module -e 'import { appendFile } from "node:fs/promises"; const [headSha, ref, mergeBaseSha, commitCount, subjects] = process.argv.slice(1); await appendFile(process.env.CLAIMS_PATH, JSON.stringify({ headSha, ref, mergeBaseSha, commitCount: Number(commitCount), subjects: subjects ? subjects.split("\n") : [] }) + "\n");' "${head_sha}" "${ref}" "${merge_base}" "${commit_count}" "${subjects}"
           done < "${state_root}/claim-refs.txt"
-          node --input-type=module -e 'import { readFile, writeFile } from "node:fs/promises"; const claims = (await readFile(process.env.CLAIMS_PATH, "utf8")).split("\n").filter(Boolean).map(JSON.parse); await writeFile(process.env.CLAIMS_PATH, `${JSON.stringify(claims)}\n`, { flag: "w" });'
+          node --input-type=module -e 'import { readFile, writeFile } from "node:fs/promises"; const claims = (await readFile(process.env.CLAIMS_PATH, "utf8")).split("\n").filter(Boolean).map(JSON.parse); await writeFile(process.env.CLAIMS_PATH, JSON.stringify(claims) + "\n", { flag: "w" });'
           node tools/ci/decide-current-capital-topology-refresh.mjs --inventory tools/datapack/source-inventory.json --candidate tools/datapack/release/candidate-build-spec.json --policy release/product-gates/datapack-freshness-sla.json --prs "${state_root}/prs.json" --claims "${state_root}/claims.json" --repository "${GITHUB_REPOSITORY}" --current-main-sha "${main_sha}" --output "${TOPOLOGY_DECISION}" --github-output "${GITHUB_OUTPUT}"
       - name: Preflight immutable current topology identities
         id: preflight
@@ -64,7 +64,7 @@ jobs:
         run: |
           set -euo pipefail
           git ls-tree -r --name-only HEAD > "${TOPOLOGY_OPERATION_ROOT}/existing-paths.txt"
-          node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { currentCapitalTopologyPreflight } from "./tools/ci/decide-current-capital-topology-refresh.mjs"; const existingPaths = (await readFile(process.env.PATHS, "utf8")).split("\n").filter(Boolean); const result = currentCapitalTopologyPreflight({ existingPaths }); process.stdout.write(`state=${result.state}\n`);' >> "${GITHUB_OUTPUT}"
+          node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { currentCapitalTopologyPreflight } from "./tools/ci/decide-current-capital-topology-refresh.mjs"; const existingPaths = (await readFile(process.env.PATHS, "utf8")).split("\n").filter(Boolean); const result = currentCapitalTopologyPreflight({ existingPaths }); process.stdout.write("state=" + result.state + "\n");' >> "${GITHUB_OUTPUT}"
         env:
           PATHS: ${{ runner.temp }}/current-capital-topology-refresh/${{ github.run_id }}/existing-paths.txt
       - name: Recover a completed claimed refresh
@@ -122,7 +122,7 @@ jobs:
           git fetch --no-tags origin main
           [[ "$(git rev-parse origin/main)" == "${TOPOLOGY_MAIN_SHA}" ]] || { echo "main changed after topology claim" >&2; exit 1; }
           git ls-tree -r --name-only "${TOPOLOGY_MAIN_SHA}" > "${TOPOLOGY_OPERATION_ROOT}/existing-paths.txt"
-          node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { currentCapitalTopologyPreflight } from "./tools/ci/decide-current-capital-topology-refresh.mjs"; const existingPaths = (await readFile(process.env.PATHS, "utf8")).split("\n").filter(Boolean); const result = currentCapitalTopologyPreflight({ existingPaths }); process.stdout.write(`state=${result.state}\n`);' >> "${GITHUB_OUTPUT}"
+          node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { currentCapitalTopologyPreflight } from "./tools/ci/decide-current-capital-topology-refresh.mjs"; const existingPaths = (await readFile(process.env.PATHS, "utf8")).split("\n").filter(Boolean); const result = currentCapitalTopologyPreflight({ existingPaths }); process.stdout.write("state=" + result.state + "\n");' >> "${GITHUB_OUTPUT}"
         env:
           PATHS: ${{ runner.temp }}/current-capital-topology-refresh/${{ github.run_id }}/existing-paths.txt
       - name: Collect each official current topology input once
@@ -132,7 +132,7 @@ jobs:
           [[ "$(git rev-parse HEAD)" == "${TOPOLOGY_MAIN_SHA}" ]] || { echo "topology collector is not running from its claimed main" >&2; exit 1; }
           node tools/datapack/collect-capital-route-topology.mjs --download --output "${TOPOLOGY_OPERATION_ROOT}/capital-route-topology.json"
           node tools/datapack/collect-incheon-station-info.mjs --download --output "${TOPOLOGY_OPERATION_ROOT}/incheon-transit-station-info.json"
-          station_stamp="$(node --input-type=module -e 'import { readFile, rename } from "node:fs/promises"; const root = process.env.TOPOLOGY_OPERATION_ROOT; const snapshot = JSON.parse(await readFile(`${root}/incheon-transit-station-info.json`, "utf8")); const capturedAt = snapshot.capturedAt; if (snapshot.sourceId !== "incheon-transit-station-info" || typeof capturedAt !== "string" || new Date(capturedAt).toISOString() !== capturedAt) throw new Error("station collector identity is invalid"); const stamp = capturedAt.slice(0, 10).replaceAll("-", ""); await rename(`${root}/incheon-transit-station-info.json`, `${root}/incheon-transit-station-info-${stamp}.json`); process.stdout.write(stamp);')"
+          station_stamp="$(node --input-type=module -e 'import { readFile, rename } from "node:fs/promises"; const root = process.env.TOPOLOGY_OPERATION_ROOT; const source = root + "/incheon-transit-station-info.json"; const snapshot = JSON.parse(await readFile(source, "utf8")); const capturedAt = snapshot.capturedAt; if (snapshot.sourceId !== "incheon-transit-station-info" || typeof capturedAt !== "string" || new Date(capturedAt).toISOString() !== capturedAt) throw new Error("station collector identity is invalid"); const stamp = capturedAt.slice(0, 10).replaceAll("-", ""); await rename(source, root + "/incheon-transit-station-info-" + stamp + ".json"); process.stdout.write(stamp);')"
           printf 'TOPOLOGY_STATION_SNAPSHOT=%s/incheon-transit-station-info-%s.json\n' "${TOPOLOGY_OPERATION_ROOT}" "${station_stamp}" >> "${GITHUB_ENV}"
           node tools/datapack/collect-incheon-timetable.mjs --download --topology-snapshot "${TOPOLOGY_OPERATION_ROOT}/incheon-transit-station-info-${station_stamp}.json" --output-dir "${TOPOLOGY_OPERATION_ROOT}/timetables"
 
@@ -164,27 +164,27 @@ jobs:
           node --input-type=module -e '
             import { readFile, readdir } from "node:fs/promises";
             const root = process.env.TOPOLOGY_OPERATION_ROOT;
-            const read = async (name) => JSON.parse(await readFile(`${root}/${name}`, "utf8"));
+            const read = async (name) => JSON.parse(await readFile(root + "/" + name, "utf8"));
             const utc = (value) => { if (typeof value !== "string" || new Date(value).toISOString() !== value) throw new Error("collector capturedAt is invalid"); return value.slice(0, 10).replaceAll("-", ""); };
             const seoul = (value) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(value)).filter(({ type }) => type !== "literal").map(({ value: part }) => part).join("");
             const capital = await read("capital-route-topology.json"); const incheon = JSON.parse(await readFile(process.env.TOPOLOGY_STATION_SNAPSHOT, "utf8")); const itxAdmission = await read("itx-current-admission.json");
             if (capital.sourceId !== "capital-route-topology" || incheon.sourceId !== "incheon-transit-station-info") throw new Error("collector source identity is invalid");
-            if (itxAdmission.artifactKind !== "itx-current-network-edge-admission" || itxAdmission.artifactId !== `itx-current-network-edge-admission-${itxAdmission.serviceDate}` || !/^[0-9]{8}$/u.test(itxAdmission.serviceDate)) throw new Error("ITX admission identity is invalid");
-            const timetableFiles = await readdir(`${root}/timetables`); if (timetableFiles.length !== 2) throw new Error("collector timetable output count is invalid");
-            const timetables = await Promise.all(timetableFiles.map(async (file) => [file, await read(`timetables/${file}`)]));
+            if (itxAdmission.artifactKind !== "itx-current-network-edge-admission" || itxAdmission.artifactId !== "itx-current-network-edge-admission-" + itxAdmission.serviceDate || !/^[0-9]{8}$/u.test(itxAdmission.serviceDate)) throw new Error("ITX admission identity is invalid");
+            const timetableFiles = await readdir(root + "/timetables"); if (timetableFiles.length !== 2) throw new Error("collector timetable output count is invalid");
+            const timetables = await Promise.all(timetableFiles.map(async (file) => [file, await read("timetables/" + file)]));
             const line1 = timetables.find(([, snapshot]) => snapshot.sourceId === "incheon-line1-train-timetable"); const line2 = timetables.find(([, snapshot]) => snapshot.sourceId === "incheon-line2-train-timetable");
             if (!line1 || !line2 || !/^incheon-line1-train-timetable-[0-9]{8}\.json$/u.test(line1[0]) || !/^incheon-line2-train-timetable-[0-9]{8}\.json$/u.test(line2[0])) throw new Error("collector timetable output identity is invalid");
             const line1Snapshot = line1[1]; const line2Snapshot = line2[1]; utc(line1Snapshot.capturedAt); utc(line2Snapshot.capturedAt);
-            if (line1[0] !== `incheon-line1-train-timetable-${seoul(line1Snapshot.capturedAt)}.json` || line2[0] !== `incheon-line2-train-timetable-${seoul(line2Snapshot.capturedAt)}.json`) throw new Error("collector timetable path identity is invalid");
+            if (line1[0] !== "incheon-line1-train-timetable-" + seoul(line1Snapshot.capturedAt) + ".json" || line2[0] !== "incheon-line2-train-timetable-" + seoul(line2Snapshot.capturedAt) + ".json") throw new Error("collector timetable path identity is invalid");
             const values = [
-              ["TOPOLOGY_CAPITAL_PATH", `tools/datapack/sources/capital-route-topology-${utc(capital.capturedAt)}.json`, `${root}/capital-route-topology.json`],
-              ["TOPOLOGY_INCHEON_PATH", `tools/datapack/sources/incheon-transit-station-info-${utc(incheon.capturedAt)}.json`, process.env.TOPOLOGY_STATION_SNAPSHOT],
-              ["TOPOLOGY_LINE1_PATH", `tools/datapack/sources/incheon-line1-train-timetable-${seoul(line1Snapshot.capturedAt)}.json`, `${root}/timetables/${line1[0]}`],
-              ["TOPOLOGY_LINE2_PATH", `tools/datapack/sources/incheon-line2-train-timetable-${seoul(line2Snapshot.capturedAt)}.json`, `${root}/timetables/${line2[0]}`],
-              ["TOPOLOGY_ITX_ADMISSION_PATH", `tools/datapack/${itxAdmission.artifactId}.json`, `${root}/itx-current-admission.json`],
-              ["TOPOLOGY_REVERIFICATION_PATH", `tools/datapack/release/capital-topology-reverification-${utc(capital.capturedAt)}.json`, ""],
+              ["TOPOLOGY_CAPITAL_PATH", "tools/datapack/sources/capital-route-topology-" + utc(capital.capturedAt) + ".json", root + "/capital-route-topology.json"],
+              ["TOPOLOGY_INCHEON_PATH", "tools/datapack/sources/incheon-transit-station-info-" + utc(incheon.capturedAt) + ".json", process.env.TOPOLOGY_STATION_SNAPSHOT],
+              ["TOPOLOGY_LINE1_PATH", "tools/datapack/sources/incheon-line1-train-timetable-" + seoul(line1Snapshot.capturedAt) + ".json", root + "/timetables/" + line1[0]],
+              ["TOPOLOGY_LINE2_PATH", "tools/datapack/sources/incheon-line2-train-timetable-" + seoul(line2Snapshot.capturedAt) + ".json", root + "/timetables/" + line2[0]],
+              ["TOPOLOGY_ITX_ADMISSION_PATH", "tools/datapack/" + itxAdmission.artifactId + ".json", root + "/itx-current-admission.json"],
+              ["TOPOLOGY_REVERIFICATION_PATH", "tools/datapack/release/capital-topology-reverification-" + utc(capital.capturedAt) + ".json", ""],
             ];
-            for (const [key, target, source] of values) { process.stdout.write(`${key}=${target}\\n`); if (source) process.stdout.write(`${key}_SOURCE=${source}\\n`); }
+            for (const [key, target, source] of values) { process.stdout.write(key + "=" + target + "\\n"); if (source) process.stdout.write(key + "_SOURCE=" + source + "\\n"); }
           ' >> "${GITHUB_ENV}"
       - name: Commit exactly five immutable current topology inputs
         if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
@@ -213,7 +213,7 @@ jobs:
             const inventory = JSON.parse(await readFile("tools/datapack/source-inventory.json", "utf8")); const source = inventory.sources?.filter(({ id }) => id === "incheon-transit-accessibility");
             if (source?.length !== 1 || typeof source[0].registrationEvidence?.snapshotId !== "string" || !/^incheon-transit-accessibility-[0-9]{8}T[0-9]{9}Z$/u.test(source[0].registrationEvidence.snapshotId)) throw new Error("Incheon accessibility registration identity is invalid");
             const spec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8")); if (typeof spec.itxTopologyEvidencePath !== "string" || !/^tools\/datapack\/itx-cheongchun-topology-evidence-[0-9]+\.json$/u.test(spec.itxTopologyEvidencePath)) throw new Error("ITX topology evidence identity is invalid");
-            process.stdout.write(`TOPOLOGY_INCHEON_ACCESSIBILITY_PATH=tools/datapack/sources/${source[0].registrationEvidence.snapshotId}.json\\nTOPOLOGY_ITX_EVIDENCE_PATH=${spec.itxTopologyEvidencePath}\\n`);
+            process.stdout.write("TOPOLOGY_INCHEON_ACCESSIBILITY_PATH=tools/datapack/sources/" + source[0].registrationEvidence.snapshotId + ".json\\nTOPOLOGY_ITX_EVIDENCE_PATH=" + spec.itxTopologyEvidencePath + "\\n");
           ' >> "${GITHUB_ENV}"
           [[ -f "${TOPOLOGY_INCHEON_ACCESSIBILITY_PATH}" && -f "${TOPOLOGY_ITX_EVIDENCE_PATH}" && ! -e "${TOPOLOGY_REVERIFICATION_PATH}" ]] || { echo "topology activation dependency or target is invalid" >&2; exit 1; }
       - name: Activate current topology inputs exactly once
