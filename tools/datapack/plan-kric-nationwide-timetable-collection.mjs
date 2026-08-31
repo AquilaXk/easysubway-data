@@ -6,6 +6,7 @@ const ENDPOINT = "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetabl
 const TARGET_VERSION = "2026-07-13";
 const DAY_CDS = Object.freeze(["8", "7", "9"]);
 const REQUIRED_FIELDS = Object.freeze(["service_calendar", "trip", "stop_time"]);
+const TARGET_OPERATOR_IDS = Object.freeze(["korail", "seoul-metro", "incheon-transit"]);
 const EXPECTED_SCOPES = Object.freeze([
   scope("korail", "line-051552e50435", "KR", "WS"),
   scope("korail", "line-41a8c75ec9d8", "KR", "3"),
@@ -23,6 +24,7 @@ const EXPECTED_SCOPES = Object.freeze([
   scope("seoul-metro", "line-80fc4d5350d4", "S1", "5"),
   scope("seoul-metro", "seoul-2", "S1", "2"),
   scope("seoul-metro", "seoul-4", "S1", "4"),
+  scope("incheon-transit", "line-15b3b8a93259", "IC", "7"),
 ]);
 
 export function planKricNationwideTimetableCollection({ tally, rosterArtifact, sourceCandidates } = {}) {
@@ -59,7 +61,7 @@ function validateTally(tally) {
   }
   const selected = tally.launchRequired.requirements.filter((entry) => (
     entry?.regionId === "capital"
-    && ["korail", "seoul-metro"].includes(entry.operatorId)
+    && TARGET_OPERATOR_IDS.includes(entry.operatorId)
     && entry.sourceDomain === "schedule_timetable"
   ));
   const expectedByKey = new Map(EXPECTED_SCOPES.map((value) => [scopeKey(value), value]));
@@ -75,7 +77,7 @@ function validateTally(tally) {
     }
   }
   if (seen.size !== EXPECTED_SCOPES.length || [...expectedByKey.keys()].some((key) => !seen.has(key))) {
-    throw new Error("exact 16 timetable requirements are required");
+    throw new Error(`exact ${EXPECTED_SCOPES.length} timetable requirements are required`);
   }
 }
 
@@ -109,7 +111,7 @@ function validateProviderScopes(rosterArtifact) {
   const knownProviderKeys = new Set();
   const expectedByKey = new Map(EXPECTED_SCOPES.map((expected) => [scopeKey(expected), expected]));
   for (const value of rosterArtifact.providerScopes) {
-    const targetOwned = value?.regionId === "capital" && ["korail", "seoul-metro"].includes(value?.operatorId);
+    const targetOwned = value?.regionId === "capital" && TARGET_OPERATOR_IDS.includes(value?.operatorId);
     if (targetOwned) {
       for (const field of ["regionId", "operatorId", "lineId", "mreaWideCd", "railOprIsttCd", "lnCd"]) {
         if (!nonBlank(value[field])) throw new Error(`invalid target-owned provider scope: ${field}`);
@@ -124,7 +126,9 @@ function validateProviderScopes(rosterArtifact) {
     if (!nonBlank(value?.mreaWideCd) || !nonBlank(value?.railOprIsttCd) || !nonBlank(value?.lnCd)) continue;
     knownProviderKeys.add(providerKey(value));
   }
-  if (actual.size !== EXPECTED_SCOPES.length) throw new Error("exact 16 timetable provider scopes are required");
+  if (actual.size !== EXPECTED_SCOPES.length) {
+    throw new Error(`exact ${EXPECTED_SCOPES.length} timetable provider scopes are required`);
+  }
   for (const expected of EXPECTED_SCOPES) {
     const value = actual.get(scopeKey(expected));
     if (!value || value.mreaWideCd !== expected.mreaWideCd || value.lnCd !== expected.lnCd || value.railOprIsttCd !== expected.railOprIsttCd) {

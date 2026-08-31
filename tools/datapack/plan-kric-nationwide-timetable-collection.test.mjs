@@ -11,11 +11,13 @@ const SEOUL_LINES = [
   ["line-15b3b8a93259", "7"], ["line-2b2d9eaa53d0", "8"], ["line-3f41718e0833", "6"], ["line-41a8c75ec9d8", "3"],
   ["line-472a81add377", "1"], ["line-80fc4d5350d4", "5"], ["seoul-2", "2"], ["seoul-4", "4"],
 ];
+const INCHEON_LINES = [["line-15b3b8a93259", "7"]];
 
 function inputs() {
   const providerScopes = [
     ...KORAIL_LINES.map(([lineId, lnCd]) => scope("korail", lineId, "KR", lnCd)),
     ...SEOUL_LINES.map(([lineId, lnCd]) => scope("seoul-metro", lineId, "S1", lnCd)),
+    ...INCHEON_LINES.map(([lineId, lnCd]) => scope("incheon-transit", lineId, "IC", lnCd)),
   ];
   return {
     tally: {
@@ -34,7 +36,7 @@ function inputs() {
   };
 }
 
-test("#454 exact 16 MISSING scope와 selected roster station으로 credential-free Exp×day plan을 결정적으로 만든다", () => {
+test("#459 plans the exact roster-owned IC/7 station and service-day requests", () => {
   const input = inputs();
   input.rosterArtifact.providerScopes.push(scope("other", "other-line", "OT", "WS"));
   input.rosterArtifact.rosters[0].stations.push({ mreaWideCd: "01", railOprIsttCd: "OT", lnCd: "WS", stinCd: "non-target" });
@@ -45,13 +47,20 @@ test("#454 exact 16 MISSING scope와 selected roster station으로 credential-fr
   assert.equal(result.credentialRedacted, true);
   assert.equal(result.operation, "subwayTimetableExp");
   assert.deepEqual(result.dayCds, ["8", "7", "9"]);
-  assert.equal(result.providerScopeCount, 16);
-  assert.equal(result.stationCount, 16);
-  assert.equal(result.requestCount, 48);
+  assert.equal(result.providerScopeCount, 17);
+  assert.equal(result.stationCount, 27);
+  assert.equal(result.requestCount, 81);
   assert.ok(result.requests.every(({ params }) => !Object.hasOwn(params, "serviceKey") && params.format === "json"));
   assert.ok(result.requests.every(({ endpoint }) => endpoint === "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetableExp"));
   assert.deepEqual(result.requests.map(({ requestKey }) => requestKey), [...result.requests.map(({ requestKey }) => requestKey)].sort());
-  assert.equal(new Set(result.requests.map(({ requestKey }) => requestKey)).size, 48);
+  assert.equal(new Set(result.requests.map(({ requestKey }) => requestKey)).size, 81);
+  const incheonRequests = result.requests.filter(({ params }) => params.railOprIsttCd === "IC" && params.lnCd === "7");
+  assert.equal(incheonRequests.length, 33);
+  assert.deepEqual(
+    [...new Set(incheonRequests.map(({ params }) => params.stinCd))].sort(),
+    Array.from({ length: 11 }, (_, index) => String(751 + index)),
+  );
+  assert.deepEqual([...new Set(incheonRequests.map(({ params }) => params.dayCd))].sort(), ["7", "8", "9"]);
   assert.ok(!JSON.stringify(result).includes("serviceKey="));
 });
 
@@ -104,7 +113,11 @@ function rostersFor(providerScopes) {
     const roster = byRequest.get(key) ?? {
       schemaVersion: 1, artifactKind: "kric-route-roster", sourceId: "kric-subway-route-info", resultCode: "00", mreaWideCd: "01", lnCd: providerScope.lnCd, stations: [],
     };
-    roster.stations.push(station(providerScope, `station-${String(index).padStart(2, "0")}`));
+    if (providerScope.operatorId === "incheon-transit") {
+      for (let stinCd = 751; stinCd <= 761; stinCd += 1) roster.stations.push(station(providerScope, String(stinCd)));
+    } else {
+      roster.stations.push(station(providerScope, `station-${String(index).padStart(2, "0")}`));
+    }
     byRequest.set(key, roster);
   }
   return [...byRequest.values()];
