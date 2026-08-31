@@ -17899,13 +17899,6 @@ async function writeCurrentItxReleaseInputs(
     completenessEvidenceSha256: sha256(completenessBytes),
     freshUntil: source.freshUntil,
     policyVersion: source.policyVersion,
-    promotion: {
-      mode: "UNCHANGED_AUTO",
-      previousArtifactSha256: topologyEvidence.sourceArtifact.sha256,
-      previousArtifactPath: `tools/datapack/sources/${topologyEvidence.sourceArtifact.id}.json`,
-      approvalUrl: null,
-      approvedArtifactSha256: null,
-    },
   });
   const contractPath = path.join(workspace, "itx-coverage-contract.json");
   let contractBytes = Buffer.from(`${JSON.stringify(contract)}\n`);
@@ -18076,7 +18069,7 @@ async function writeCurrentItxReleaseInputs(
     freshUntil: sourceFreshUntil,
     promotion: {
       ...contract.sourceTimetableArtifact.promotion,
-      previousArtifactSha256: sha256(sourceBytes),
+      approvedArtifactSha256: sha256(sourceBytes),
     },
   });
   contract.freshness.nextReviewAt = sourceFreshUntil;
