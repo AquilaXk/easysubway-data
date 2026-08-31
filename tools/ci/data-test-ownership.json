@@ -336,6 +336,8 @@
     {"path":"tools/datapack/build-current-exit-path-source-admission.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":93},
     {"path":"tools/datapack/build-current-kric-exit-collection-plan.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":1350},
     {"path":"tools/datapack/build-current-kric-exit-collection-receipt.test.mjs","semanticOwner":"data326","classes":["required-pr"],"durationMs":1032},
+    {"path":"tools/datapack/build-current-kric-exit-provider-oci-plan.test.mjs","semanticOwner":"data647","classes":["required-pr"],"durationMs":100},
+    {"path":"tools/datapack/build-current-kric-exit-provider-oci-receipt.test.mjs","semanticOwner":"data647","classes":["required-pr"],"durationMs":100},
     {"path":"tools/datapack/build-current-release-candidate-accessibility-input.test.mjs","semanticOwner":"data530","classes":["required-pr"],"durationMs":47},
     {"path":"tools/datapack/build-current-station-line-accessibility.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":72},
     {"path":"tools/datapack/build-current-strict-route-regression-report.test.mjs","semanticOwner":"data309","classes":["required-pr"],"durationMs":43},
