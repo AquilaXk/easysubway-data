@@ -29,7 +29,11 @@ test("EXIT full-capital refresh is main-only, due-only, exact-claim automation w
   assert.match(yml, /git rev-parse "origin\/\$\{branch\}\^\^"/);
   assert.match(yml, /git log -1 --format=%s "origin\/\$\{branch\}"/);
   assert.match(yml, /currentCapitalLiveChainOutputPaths/);
-  assert.match(yml, /changed\.length !== 17/);
+  assert.equal((yml.match(/expected\.length !== 17/g) ?? []).length, 2);
+  assert.equal((yml.match(/changed\.length === 0 \|\| changed\.some\(\(relative\) => !expected\.includes\(relative\)\)/g) ?? []).length, 2);
+  assert.match(yml, /await Promise\.all\(expected\.map\(\(relative\) => readFile/);
+  assert.match(yml, /cmp -s "\$\{EXIT_REFRESH_OPERATION_ROOT\}\/handoff\/\$\{output\}" "\$\{output\}"/);
+  assert.doesNotMatch(yml, /changed\.length !== 17/);
   assert.match(yml, /git commit -m "Refresh KRIC EXIT full-capital snapshot"/);
   assert.match(yml, /--draft/);
   assert.match(yml, /Refresh KRIC EXIT full-capital snapshot/);
