@@ -256,6 +256,12 @@ jobs:
         with:
           node-version: "24.19.0"
 
+      - name: Normalize exact Data origin for terminal
+        run: |
+          set -euo pipefail
+          git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          [[ "$(git remote get-url origin)" == "https://github.com/${GITHUB_REPOSITORY}.git" ]] || { echo "Data origin normalization failed" >&2; exit 1; }
+
       - name: Prepare terminal identities
         run: |
           set -euo pipefail
