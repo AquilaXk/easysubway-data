@@ -89,6 +89,13 @@ jobs:
             printf 'EXIT_REFRESH_FACILITY_HEAD_SHA=%s\n' "${head_sha}"
           } >> "${GITHUB_ENV}"
 
+      - name: Normalize exact Data origin before claiming
+        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
+        run: |
+          set -euo pipefail
+          git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          [[ "$(git remote get-url origin)" == "https://github.com/${GITHUB_REPOSITORY}.git" ]] || { echo "Data origin normalization failed" >&2; exit 1; }
+
       - name: Create durable claim before provider access
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
         env:

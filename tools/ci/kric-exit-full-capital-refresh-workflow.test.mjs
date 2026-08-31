@@ -17,6 +17,9 @@ test("EXIT refresh keeps exact-main OCI producer, immutable recovery, and select
   assert.match(yml, /terminal:\n    name: Commit verified EXIT terminal candidate[\s\S]*?permissions:\n      actions: read\n      contents: write/);
   assert.match(yml, /decide-current-kric-exit-full-capital-refresh\.mjs/);
   assert.match(yml, /--json number,state,isDraft,headRefName,headRefOid,baseRefName,headRepository,isCrossRepository,files/);
+  const normalizeOrigin = yml.indexOf('git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"');
+  const createClaim = yml.indexOf('git switch -c "${branch}"');
+  assert.ok(normalizeOrigin >= 0 && normalizeOrigin < createClaim);
   assert.match(yml, /runCurrentCapitalExitOnlyProducer/);
   assert.match(yml, /repositorySha: process\.env\.EXIT_REFRESH_MAIN_SHA/);
   assert.match(yml, /facilityPullRequest: \{ repository: process\.env\.GITHUB_REPOSITORY, branch: process\.env\.EXIT_REFRESH_FACILITY_BRANCH, headSha: process\.env\.EXIT_REFRESH_FACILITY_HEAD_SHA \}/);
