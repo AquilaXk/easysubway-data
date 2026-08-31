@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cp, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -145,8 +145,10 @@ test("tracked admission은 current candidate로 rebind되고 protected semantics
   assert.throws(() => validateFacilityProtectedSemanticIdentity(previous, mutation), /semantic identity changed/);
 });
 
-test("FACILITY rebind는 immutable marker를 보존한 successor create-once transaction을 준비한다", async () => {
-  const transaction = await buildCurrentActiveFacilityDerivedIdentitySuccessorTransaction({ repositoryRoot: ROOT });
+test("FACILITY rebind는 immutable marker를 보존한 successor create-once transaction을 준비한다", async (t) => {
+  const root = await temporaryRepository(t);
+  await restorePredecessorFacilityState(root);
+  const transaction = await buildCurrentActiveFacilityDerivedIdentitySuccessorTransaction({ repositoryRoot: root });
   assert.ok(transaction.base?.bytes.length > 0);
   assert.equal(transaction.facility.relative, "tools/datapack/release/current-capital-facility-source-admission.json");
   assert.equal(transaction.successor.relative, "tools/datapack/release/current-capital-accessibility-transition-successor.json");
@@ -158,6 +160,7 @@ test("FACILITY rebind는 immutable marker를 보존한 successor create-once tra
 
 test("FACILITY와 successor는 한 transaction에서 성공하거나 함께 원복된다", async (t) => {
   const root = await temporaryRepository(t);
+  await restorePredecessorFacilityState(root);
   const basePath = path.join(root, "tools/datapack/release/current-capital-accessibility-transition.json");
   const facilityPath = path.join(root, "tools/datapack/release/current-capital-facility-source-admission.json");
   const successorPath = path.join(root, "tools/datapack/release/current-capital-accessibility-transition-successor.json");
@@ -200,4 +203,16 @@ async function temporaryRepository(t) {
     await cp(path.join(ROOT, relative), destination);
   }
   return root;
+}
+
+async function restorePredecessorFacilityState(root) {
+  const successorPath = path.join(root, "tools/datapack/release/current-capital-accessibility-transition-successor.json");
+  const successor = JSON.parse(await readFile(successorPath, "utf8"));
+  const previousFacilityBytes = Buffer.from(successor.previousFacilityAdmissionBase64, "base64");
+  assert.equal(sha256(previousFacilityBytes), successor.previousFacilityAdmission.sha256);
+  await writeFile(
+    path.join(root, "tools/datapack/release/current-capital-facility-source-admission.json"),
+    previousFacilityBytes,
+  );
+  await unlink(successorPath);
 }
