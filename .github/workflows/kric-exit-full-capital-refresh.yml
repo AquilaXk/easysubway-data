@@ -57,10 +57,17 @@ jobs:
           [[ "$(git rev-parse "origin/${branch}^^")" == "$(git rev-parse HEAD)" ]] || { echo "EXIT refresh claim is not based on current main" >&2; exit 1; }
           [[ "$(git log -1 --format=%s "origin/${branch}^")" == "Claim KRIC EXIT full-capital refresh" ]] || { echo "EXIT refresh claim subject is invalid" >&2; exit 1; }
           [[ "$(git log -1 --format=%s "origin/${branch}")" == "Refresh KRIC EXIT full-capital snapshot" ]] || { echo "EXIT refresh output subject is invalid" >&2; exit 1; }
-          deleted="$(git diff --name-only --diff-filter=D HEAD "origin/${branch}")"
-          [[ -z "${deleted}" ]] || { echo "EXIT refresh claim removed a tracked output" >&2; exit 1; }
+          mapfile -t deleted < <(git diff --name-only --diff-filter=D HEAD "origin/${branch}")
+          expected_markers=(
+            "tools/datapack/release/current-capital-accessibility-transition.json"
+            "tools/datapack/release/current-capital-accessibility-transition-successor.json"
+          )
+          [[ "${#deleted[@]}" == "${#expected_markers[@]}" ]] || { echo "EXIT refresh claim deletion allowlist mismatch" >&2; exit 1; }
+          for marker in "${expected_markers[@]}"; do
+            [[ " ${deleted[*]} " == *" ${marker} "* ]] || { echo "EXIT refresh claim did not consume a pending transition marker" >&2; exit 1; }
+          done
           changed="$(git diff --name-only --diff-filter=ACMR HEAD "origin/${branch}")"
-          EXIT_REFRESH_CHANGED="${changed}" node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { currentCapitalLiveChainOutputPaths } from "./tools/datapack/build-current-capital-live-chain-bundle.mjs"; const root = process.env.GITHUB_WORKSPACE; const [candidate, inventory, ledger] = await Promise.all([readFile(root + "/tools/datapack/release/candidate-build-spec.json", "utf8").then(JSON.parse), readFile(root + "/tools/datapack/source-inventory.json", "utf8").then(JSON.parse), readFile(root + "/tools/datapack/release/source-snapshots.json", "utf8").then(JSON.parse)]); const expected = currentCapitalLiveChainOutputPaths({ candidate, sourceInventory: inventory, sourceSnapshotLedger: ledger }); await Promise.all(expected.map((relative) => readFile(root + "/" + relative))); const changed = process.env.EXIT_REFRESH_CHANGED.split("\n").filter(Boolean).sort(); if (expected.length !== 17 || changed.length === 0 || changed.some((relative) => !expected.includes(relative))) throw new Error("EXIT refresh claim output allowlist mismatch");'
+          EXIT_REFRESH_BRANCH="${branch}" EXIT_REFRESH_CHANGED="${changed}" EXIT_REFRESH_PATHS="$(git diff --name-only HEAD "origin/${branch}")" node --input-type=module -e 'import { execFileSync } from "node:child_process"; import { currentCapitalLiveChainOutputPaths } from "./tools/datapack/build-current-capital-live-chain-bundle.mjs"; const branch = "origin/" + process.env.EXIT_REFRESH_BRANCH; const readBranchJson = (relative) => JSON.parse(execFileSync("git", ["show", branch + ":" + relative], { encoding: "utf8" })); const candidate = readBranchJson("tools/datapack/release/candidate-build-spec.json"); const inventory = readBranchJson("tools/datapack/source-inventory.json"); const ledger = readBranchJson("tools/datapack/release/source-snapshots.json"); const expected = currentCapitalLiveChainOutputPaths({ candidate, sourceInventory: inventory, sourceSnapshotLedger: ledger }); for (const relative of expected) execFileSync("git", ["show", branch + ":" + relative], { stdio: "ignore" }); const changed = process.env.EXIT_REFRESH_CHANGED.split("\n").filter(Boolean).sort(); const paths = process.env.EXIT_REFRESH_PATHS.split("\n").filter(Boolean); const markers = ["tools/datapack/release/current-capital-accessibility-transition.json", "tools/datapack/release/current-capital-accessibility-transition-successor.json"]; const allowed = new Set([...expected, ...markers]); if (expected.length !== 17 || changed.length === 0 || changed.some((relative) => !expected.includes(relative)) || paths.some((relative) => !allowed.has(relative))) throw new Error("EXIT refresh claim output allowlist mismatch");'
           existing="${RUNNER_TEMP}/kric-exit-full-capital-refresh/claim-prs.json"
           gh pr list --repo "${GITHUB_REPOSITORY}" --state all --base main --head "${branch}" --limit 100 --json state,headRefName,baseRefName,headRepository,isCrossRepository > "${existing}"
           [[ "$(tr -d '[:space:]' < "${existing}")" == "[]" ]] || { echo "EXIT refresh claim already has a pull request" >&2; exit 1; }
@@ -116,11 +123,24 @@ jobs:
             cp "${EXIT_REFRESH_OPERATION_ROOT}/handoff/${output}" "${output}"
             cmp -s "${EXIT_REFRESH_OPERATION_ROOT}/handoff/${output}" "${output}" || { echo "EXIT refresh handoff copy mismatch" >&2; exit 1; }
           done
+          markers=(
+            "tools/datapack/release/current-capital-accessibility-transition.json"
+            "tools/datapack/release/current-capital-accessibility-transition-successor.json"
+          )
+          for marker in "${markers[@]}"; do
+            [[ -f "${marker}" && ! -L "${marker}" ]] || { echo "EXIT refresh pending transition marker is not a regular file" >&2; exit 1; }
+          done
           git add "${outputs[@]}"
-          deleted="$(git diff --cached --name-only --diff-filter=D)"
-          [[ -z "${deleted}" ]] || { echo "EXIT refresh removed a tracked output" >&2; exit 1; }
+          git rm -- "${markers[@]}"
+          mapfile -t deleted < <(git diff --cached --name-only --diff-filter=D)
+          [[ "${#deleted[@]}" == "${#markers[@]}" ]] || { echo "EXIT refresh deletion allowlist mismatch" >&2; exit 1; }
+          for marker in "${markers[@]}"; do
+            [[ " ${deleted[*]} " == *" ${marker} "* ]] || { echo "EXIT refresh did not consume a pending transition marker" >&2; exit 1; }
+          done
           mapfile -t changed < <(git diff --cached --name-only --diff-filter=ACMR)
           EXIT_REFRESH_CHANGED="$(printf '%s\n' "${changed[@]}")" EXIT_REFRESH_OPERATION_ROOT="${EXIT_REFRESH_OPERATION_ROOT}" node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { currentCapitalLiveChainOutputPaths } from "./tools/datapack/build-current-capital-live-chain-bundle.mjs"; const handoff = process.env.EXIT_REFRESH_OPERATION_ROOT + "/handoff"; const [candidate, inventory, ledger] = await Promise.all([readFile(handoff + "/tools/datapack/release/candidate-build-spec.json", "utf8").then(JSON.parse), readFile(handoff + "/tools/datapack/source-inventory.json", "utf8").then(JSON.parse), readFile(handoff + "/tools/datapack/release/source-snapshots.json", "utf8").then(JSON.parse)]); const expected = currentCapitalLiveChainOutputPaths({ candidate, sourceInventory: inventory, sourceSnapshotLedger: ledger }); await Promise.all(expected.map((relative) => readFile(handoff + "/" + relative))); const changed = process.env.EXIT_REFRESH_CHANGED.split("\n").filter(Boolean).sort(); if (expected.length !== 17 || changed.length === 0 || changed.some((relative) => !expected.includes(relative))) throw new Error("EXIT refresh output allowlist mismatch");'
+          paths="$(git diff --cached --name-only)"
+          EXIT_REFRESH_PATHS="${paths}" EXIT_REFRESH_OUTPUTS="$(printf '%s\n' "${outputs[@]}")" node --input-type=module -e 'const outputs = process.env.EXIT_REFRESH_OUTPUTS.split("\n").filter(Boolean); const markers = ["tools/datapack/release/current-capital-accessibility-transition.json", "tools/datapack/release/current-capital-accessibility-transition-successor.json"]; const paths = process.env.EXIT_REFRESH_PATHS.split("\n").filter(Boolean).sort(); const allowed = new Set([...outputs, ...markers]); if (paths.length === 0 || paths.some((relative) => !allowed.has(relative))) throw new Error("EXIT refresh changed an unsupported path");'
           [[ -z "$(git diff --name-only)" && -z "$(git ls-files --others --exclude-standard)" ]] || { echo "EXIT refresh changed an unsupported path" >&2; exit 1; }
           git commit -m "Refresh KRIC EXIT full-capital snapshot"
           git push origin "${EXIT_REFRESH_BRANCH}"

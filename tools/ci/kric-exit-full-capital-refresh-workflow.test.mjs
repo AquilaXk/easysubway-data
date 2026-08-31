@@ -33,6 +33,14 @@ test("EXIT full-capital refresh is main-only, due-only, exact-claim automation w
   assert.equal((yml.match(/changed\.length === 0 \|\| changed\.some\(\(relative\) => !expected\.includes\(relative\)\)/g) ?? []).length, 2);
   assert.match(yml, /await Promise\.all\(expected\.map\(\(relative\) => readFile/);
   assert.match(yml, /cmp -s "\$\{EXIT_REFRESH_OPERATION_ROOT\}\/handoff\/\$\{output\}" "\$\{output\}"/);
+  assert.match(yml, /current-capital-accessibility-transition\.json/);
+  assert.match(yml, /current-capital-accessibility-transition-successor\.json/);
+  assert.match(yml, /\[\[ -f "\$\{marker\}" && ! -L "\$\{marker\}" \]\]/);
+  assert.match(yml, /git rm -- "\$\{markers\[@\]\}"/);
+  assert.equal((yml.match(/deletion allowlist mismatch/g) ?? []).length, 2);
+  assert.match(yml, /JSON\.parse\(execFileSync\("git", \["show", branch \+ ":" \+ relative\]/);
+  assert.match(yml, /EXIT_REFRESH_PATHS="\$\(git diff --name-only HEAD "origin\/\$\{branch\}"\)"/);
+  assert.match(yml, /EXIT_REFRESH_PATHS=.*EXIT_REFRESH_OUTPUTS=/);
   assert.doesNotMatch(yml, /changed\.length !== 17/);
   assert.match(yml, /git commit -m "Refresh KRIC EXIT full-capital snapshot"/);
   assert.match(yml, /--draft/);
