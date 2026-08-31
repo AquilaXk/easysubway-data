@@ -36,9 +36,12 @@ test("KRIC refresh workflow has one scheduled, fail-closed, PR-only path", () =>
   assert.match(yml, /KRIC_SERVICE_KEY.*nonempty single line/);
   assert.match(yml, /EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL.*nonempty single line/);
   assert.match(yml, /automation\/629-kric-facility-refresh-\$\{GITHUB_RUN_ID\}/);
-  assert.match(yml, /main_sha="\$\(git rev-parse HEAD\)"[\s\S]*git commit --allow-empty -m "Claim KRIC facility refresh"[\s\S]*git push origin "\$\{branch\}"[\s\S]*git switch --detach "\$\{main_sha\}"[\s\S]*KRIC_REFRESH_MAIN_SHA/);
+  assert.match(
+    yml,
+    /main_sha="\$\(git rev-parse HEAD\)"[\s\S]*git config user\.name "github-actions\[bot\]"[\s\S]*git config user\.email "41898282\+github-actions\[bot\]@users\.noreply\.github\.com"[\s\S]*git commit --allow-empty -m "Claim KRIC facility refresh"[\s\S]*git push origin "\$\{branch\}"[\s\S]*git switch --detach "\$\{main_sha\}"[\s\S]*KRIC_REFRESH_MAIN_SHA/,
+  );
   assert.match(yml, /\[\[ "\$\(git rev-parse HEAD\)" == "\$\{KRIC_REFRESH_MAIN_SHA\}" \]\][\s\S]*run-current-capital-facility-operation\.mjs --phase prepare/);
-  assert.match(yml, /git switch "\$\{KRIC_REFRESH_BRANCH\}"[\s\S]*\[\[ "\$\(git rev-parse HEAD\^\)" == "\$\{KRIC_REFRESH_MAIN_SHA\}" \]\][\s\S]*deleted="\$\(git diff --name-only --diff-filter=D\)"/);
+  assert.match(yml, /git switch "\$\{KRIC_REFRESH_BRANCH\}"[\s\S]*\[\[ "\$\(git rev-parse HEAD\^\)" == "\$\{KRIC_REFRESH_MAIN_SHA\}" \]\][\s\S]*git add -A[\s\S]*deleted="\$\(git diff --cached --name-only --diff-filter=D\)"[\s\S]*changed="\$\(git diff --cached --name-only --diff-filter=ACMR\)"/);
   assert.match(yml, /git rev-list --count HEAD\.\."origin\/\$\{branch\}"[\s\S]*git rev-parse "origin\/\$\{branch\}\^\^"[\s\S]*git log -1 --format=%s "origin\/\$\{branch\}"/);
   assert.match(yml, /git diff --name-only --diff-filter=ACMR "origin\/\$\{branch\}\^" "origin\/\$\{branch\}"/);
   assert.equal(
@@ -54,7 +57,7 @@ test("KRIC refresh workflow has one scheduled, fail-closed, PR-only path", () =>
     1,
   );
   assert.doesNotMatch(yml, /\\\\\.json|%s\\\\n/);
-  assert.match(yml, /git diff --name-only --diff-filter=D[\s\S]*KRIC refresh removed a tracked input/);
+  assert.match(yml, /git diff --cached --name-only --diff-filter=D[\s\S]*KRIC refresh removed a tracked input/);
   assert.match(yml, /gh pr list --repo "\$\{GITHUB_REPOSITORY\}" --state all --base main --head "\$\{branch\}"/);
   assert.match(yml, /--draft/);
   assert.match(yml, /git commit -m "Refresh KRIC facility snapshot"[\s\S]*git push origin "\$\{KRIC_REFRESH_BRANCH\}"[\s\S]*gh pr create/);
@@ -68,7 +71,7 @@ test("KRIC refresh workflow only uploads sanitized decision and operation eviden
   assert.match(yml, /journal\.json/);
   assert.match(yml, /raw-receipt\.json/);
   assert.doesNotMatch(yml, /provider-response|observation|sources\/kric-station-convenience-standard.*\.json/);
-  assert.match(yml, /git diff --name-only --diff-filter=ACMR/);
+  assert.match(yml, /git diff --cached --name-only --diff-filter=ACMR/);
   assert.match(yml, /candidate-build-spec\.json/);
   assert.match(yml, /current-capital-facility-source-admission\.json/);
   assert.match(yml, /source-snapshots\.json/);

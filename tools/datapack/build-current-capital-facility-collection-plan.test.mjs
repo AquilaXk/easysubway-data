@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import {
   buildCurrentCapitalFacilityCollectionPlan,
   canonicalCurrentCapitalFacilityCollectionPlanJson,
+  main,
 } from "./build-current-capital-facility-collection-plan.mjs";
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
 
@@ -152,6 +154,46 @@ test("canonical FACILITY plan은 rehash된 semantic/nested order drift도 거부
   reordered.stationLineProviderMappings.reverse();
   rehash(reordered);
   assert.throws(() => canonicalCurrentCapitalFacilityCollectionPlanJson(reordered), /mapping order mismatch/);
+});
+
+test("candidate root의 다섯 정본 입력을 canonical FACILITY plan으로 외부에 독점 materialize한다", async (t) => {
+  const outputParent = await mkdtemp(path.join(os.tmpdir(), "easysubway-facility-plan-"));
+  const outsideParent = await mkdtemp(path.join(os.tmpdir(), "easysubway-facility-plan-outside-"));
+  t.after(async () => {
+    await Promise.all([rm(outputParent, { recursive: true, force: true }), rm(outsideParent, { recursive: true, force: true })]);
+  });
+  const output = path.join(await realpath(outputParent), "plan.json");
+  const canonicalOutsideParent = await realpath(outsideParent);
+
+  await main(["--repository-root", path.resolve(datapackRoot, "../.."), "--output", output], { log: () => {} });
+
+  const expected = canonicalCurrentCapitalFacilityCollectionPlanJson(
+    buildCurrentCapitalFacilityCollectionPlan(await readInput()),
+  );
+  assert.equal(await readFile(output, "utf8"), expected);
+  await assert.rejects(
+    () => main(["--repository-root", path.resolve(datapackRoot, "../.."), "--output", output], { log: () => {} }),
+    /output must not already exist/,
+  );
+  await assert.rejects(
+    () => main(["--repository-root", "relative", "--output", path.join(outsideParent, "relative.json")], { log: () => {} }),
+    /repository root must be an absolute path/,
+  );
+  await assert.rejects(
+    () => main(["--repository-root", path.resolve(datapackRoot, "../.."), "--output", path.join(datapackRoot, "plan.json")], { log: () => {} }),
+    /output must stay outside repository root/,
+  );
+  const linkedParent = path.join(outputParent, "linked");
+  await symlink(canonicalOutsideParent, linkedParent);
+  await assert.rejects(
+    () => main(["--repository-root", path.resolve(datapackRoot, "../.."), "--output", path.join(linkedParent, "plan.json")], { log: () => {} }),
+    /output parent must be a regular non-symlink directory/,
+  );
+  await writeFile(path.join(canonicalOutsideParent, "existing.json"), "already exists");
+  await assert.rejects(
+    () => main(["--repository-root", path.resolve(datapackRoot, "../.."), "--output", path.join(canonicalOutsideParent, "existing.json")], { log: () => {} }),
+    /output must not already exist/,
+  );
 });
 
 async function readInput() {

@@ -35,7 +35,7 @@ const CURRENT_ROUTE_EDGE_COUNTS = Object.freeze({
   ENTRY: 213,
   EXIT: 213,
   IN_STATION_TRANSFER: 30,
-  RIDE: 2208,
+  RIDE: 2198,
 });
 const CURRENT_ROUTE_EDGE_COUNT = Object.values(CURRENT_ROUTE_EDGE_COUNTS)
   .reduce((sum, count) => sum + count, 0);

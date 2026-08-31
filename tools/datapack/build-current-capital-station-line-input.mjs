@@ -30,13 +30,23 @@ const FILES = Object.freeze({
 const SHA = /^[a-f0-9]{64}$/u;
 const MOLIT = "molit-urban-rail-full-route";
 const POSITIONS = "seoul-metro-route-map-positions";
+const CURRENT_CAPITAL_SOURCE_ROSTER = [
+  POSITIONS,
+  "kric-subway-timetable",
+  "seoul-metro-accessibility",
+  "kric-station-convenience-standard",
+  MOLIT,
+  "seoulmetro-station-line-info",
+  "incheon-transit-accessibility",
+  "seoul-metro-transfer-distance-duration",
+];
 const BLOCKED = { stationId: "station-b35616704ce3", lineId: "seoul-2" };
 
 export function buildCurrentCapitalStationLineInput(input) {
   assertInputKeys(input);
   const stationLines = canonicalStationLines(input.canonicalPack, input.facilityAdmission);
-  const { candidate, evidenceSourceSetSha256, candidatePublishedAt } = validateCandidate(input, stationLines);
-  const facility = validateFacility(input.facilityAdmission, input.facilitySnapshotBytes, stationLines, candidate, evidenceSourceSetSha256, candidatePublishedAt);
+  const { candidate, evidenceSourceSetSha256, facilitySourceSetSha256, candidatePublishedAt } = validateCandidate(input, stationLines);
+  const facility = validateFacility(input.facilityAdmission, input.facilitySnapshotBytes, stationLines, candidate, facilitySourceSetSha256, candidatePublishedAt);
   const exit = validateExit(input, stationLines, candidate, evidenceSourceSetSha256);
   const transfer = validateTransfer(input, stationLines, candidate);
   validatePolicy(input.policy);
@@ -109,9 +119,11 @@ function validateCandidate(input, stationLines) {
     ? ["currentCandidateBytesSha256", "currentCandidateSourceSetSha256", "evidenceSourceSetSha256", "facilityAdmissionBytesSha256", "kind", "molitPreviousSnapshotId", "positionPreviousSnapshotId", "predecessorCandidateSourceSetSha256"]
     : ["currentCandidateBytesSha256", "currentCandidateSourceSetSha256", "evidenceSourceSetSha256", "facilityAdmissionBytesSha256"], "full-capital source-set transition");
   if (typeof spec?.candidateId !== "string" || spec.candidateId === "" || !Array.isArray(spec.sourceSnapshots) || !Array.isArray(spec.sourceSnapshotIds)
-    || spec.sourceSnapshots.length !== 7 || spec.sourceSnapshotIds.length !== 7 || spec.sourceSnapshots.at(-1)?.sourceId !== "seoul-metro-transfer-distance-duration"
-    || spec.sourceSnapshotIds.at(-1) !== spec.sourceSnapshots.at(-1)?.snapshotId || !SHA.test(spec.sourceSnapshotSetHash ?? "")) {
-    throw new Error("full-capital candidate seventh projection mismatch");
+    || spec.sourceSnapshots.length !== CURRENT_CAPITAL_SOURCE_ROSTER.length || spec.sourceSnapshotIds.length !== CURRENT_CAPITAL_SOURCE_ROSTER.length
+    || !equalArrays(spec.sourceSnapshots.map(({ sourceId }) => sourceId), CURRENT_CAPITAL_SOURCE_ROSTER)
+    || spec.sourceSnapshots.some((projection, index) => projection?.snapshotId !== spec.sourceSnapshotIds[index])
+    || !SHA.test(spec.sourceSnapshotSetHash ?? "")) {
+    throw new Error("full-capital candidate eighth projection mismatch");
   }
   const selected = spec.sourceSnapshotIds.map((id, index) => {
     const row = exactlyOne(input.sourceSnapshots, (entry) => entry?.snapshotId === id, "candidate source snapshot");
@@ -120,13 +132,13 @@ function validateCandidate(input, stationLines) {
   });
   const selectedIds = new Set(spec.sourceSnapshotIds);
   const selectedInLedgerOrder = input.sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
-  if (selectedIds.size !== 7 || selectedInLedgerOrder.length !== 7 || sha256(JSON.stringify(selectedInLedgerOrder)) !== spec.sourceSnapshotSetHash) throw new Error("full-capital candidate source-set mismatch");
+  if (selectedIds.size !== CURRENT_CAPITAL_SOURCE_ROSTER.length || selectedInLedgerOrder.length !== CURRENT_CAPITAL_SOURCE_ROSTER.length || sha256(JSON.stringify(selectedInLedgerOrder)) !== spec.sourceSnapshotSetHash) throw new Error("full-capital candidate source-set mismatch");
   const publicV2 = publicStaticV2Refresh ? {
     positions: requireCurrentPublicV2Head(selected, input.sourceSnapshots, POSITIONS, transition.positionPreviousSnapshotId),
     molit: requireCurrentPublicV2Head(selected, input.sourceSnapshots, MOLIT, transition.molitPreviousSnapshotId),
   } : null;
-  const predecessorIds = new Set(currentFanIn ? [] : publicStaticV2Refresh
-    ? spec.sourceSnapshotIds.map((snapshotId, index) => {
+  const predecessorIds = new Set(currentFanIn ? spec.sourceSnapshotIds.slice(0, -1) : publicStaticV2Refresh
+    ? spec.sourceSnapshotIds.slice(0, -1).map((snapshotId, index) => {
       const sourceId = spec.sourceSnapshots[index].sourceId;
       if (sourceId === POSITIONS) return publicV2.positions.previousSnapshotId;
       if (sourceId === MOLIT) return publicV2.molit.previousSnapshotId;
@@ -137,7 +149,7 @@ function validateCandidate(input, stationLines) {
   const currentSeoulRows = publicStaticV2Refresh ? selected.filter(({ sourceId }) =>
     sourceId === "seoul-metro-accessibility") : [];
   const previousSeoulSnapshotId = currentSeoulRows[0]?.previousSnapshotId;
-  const evidenceIds = currentFanIn ? new Set(spec.sourceSnapshotIds) : publicStaticV2Refresh ? new Set(spec.sourceSnapshotIds.flatMap((snapshotId, index) => {
+  const evidenceIds = currentFanIn ? new Set(spec.sourceSnapshotIds.slice(0, -1)) : publicStaticV2Refresh ? new Set(spec.sourceSnapshotIds.flatMap((snapshotId, index) => {
     const sourceId = spec.sourceSnapshots[index].sourceId;
     if (sourceId === "seoul-metro-transfer-distance-duration") return [];
     if (sourceId === "seoul-metro-accessibility") return [previousSeoulSnapshotId];
@@ -148,9 +160,13 @@ function validateCandidate(input, stationLines) {
   const evidenceInLedgerOrder = input.sourceSnapshots.filter(({ snapshotId }) => evidenceIds.has(snapshotId));
   if (currentFanIn
     ? transition.currentCandidateSourceSetSha256 !== spec.sourceSnapshotSetHash
-      || transition.evidenceSourceSetSha256 !== spec.sourceSnapshotSetHash
-      || evidenceIds.size !== 7 || evidenceInLedgerOrder.length !== 7
-      || sha256(JSON.stringify(evidenceInLedgerOrder)) !== spec.sourceSnapshotSetHash
+      || transition.evidenceSourceSetSha256 === spec.sourceSnapshotSetHash
+      || predecessorIds.size !== CURRENT_CAPITAL_SOURCE_ROSTER.length - 1
+      || predecessorInLedgerOrder.length !== CURRENT_CAPITAL_SOURCE_ROSTER.length - 1
+      || evidenceIds.size !== CURRENT_CAPITAL_SOURCE_ROSTER.length - 1
+      || evidenceInLedgerOrder.length !== CURRENT_CAPITAL_SOURCE_ROSTER.length - 1
+      || evidenceIds.has(spec.sourceSnapshotIds.at(-1))
+      || sha256(JSON.stringify(evidenceInLedgerOrder)) !== transition.evidenceSourceSetSha256
     : ![transition.currentCandidateBytesSha256, transition.evidenceSourceSetSha256, transition.facilityAdmissionBytesSha256].every((value) => SHA.test(value ?? ""))
       || transition.currentCandidateSourceSetSha256 !== spec.sourceSnapshotSetHash
       || transition.evidenceSourceSetSha256 === spec.sourceSnapshotSetHash
@@ -158,13 +174,12 @@ function validateCandidate(input, stationLines) {
       ? !SHA.test(transition.predecessorCandidateSourceSetSha256 ?? "")
         || !nonBlank(transition.positionPreviousSnapshotId)
         || !nonBlank(transition.molitPreviousSnapshotId)
-        || predecessorIds.size !== 7 || predecessorInLedgerOrder.length !== 7
+        || predecessorIds.size !== CURRENT_CAPITAL_SOURCE_ROSTER.length - 1 || predecessorInLedgerOrder.length !== CURRENT_CAPITAL_SOURCE_ROSTER.length - 1
         || currentSeoulRows.length !== 1 || !nonBlank(previousSeoulSnapshotId)
-        || evidenceIds.size !== 6 || evidenceInLedgerOrder.length !== 6
+        || evidenceIds.size !== CURRENT_CAPITAL_SOURCE_ROSTER.length - 1 || evidenceInLedgerOrder.length !== CURRENT_CAPITAL_SOURCE_ROSTER.length - 1
         || sha256(JSON.stringify(predecessorInLedgerOrder)) !== transition.predecessorCandidateSourceSetSha256
         || sha256(JSON.stringify(evidenceInLedgerOrder)) !== transition.evidenceSourceSetSha256
-      : predecessorIds.size !== 6 || predecessorInLedgerOrder.length !== 6
-        || selectedInLedgerOrder.at(-1)?.sourceId !== "seoul-metro-transfer-distance-duration"
+      : predecessorIds.size !== CURRENT_CAPITAL_SOURCE_ROSTER.length - 1 || predecessorInLedgerOrder.length !== CURRENT_CAPITAL_SOURCE_ROSTER.length - 1
         || sha256(JSON.stringify(predecessorInLedgerOrder)) !== transition.evidenceSourceSetSha256)) throw new Error("full-capital source-set transition mismatch");
   if (!Buffer.isBuffer(input.sourceInventoryBytes) || canonicalJson(input.sourceInventory) !== canonicalJson(JSON.parse(input.sourceInventoryBytes.toString("utf8")))) throw new Error("full-capital source inventory raw binding mismatch");
   const inventorySha256 = sha256(JSON.stringify(input.sourceInventory));
@@ -190,6 +205,7 @@ function validateCandidate(input, stationLines) {
       stationSetSha256: exitCandidate.stationSetSha256,
     }),
     evidenceSourceSetSha256: transition.evidenceSourceSetSha256,
+    facilitySourceSetSha256: publicStaticV2Refresh ? transition.evidenceSourceSetSha256 : spec.sourceSnapshotSetHash,
     candidatePublishedAt: requiredUtcMillis(spec.publishedAt, "full-capital candidate publishedAt"),
   };
 }
@@ -257,9 +273,9 @@ function canonicalStationLines(pack, facilityAdmission) {
   return lines;
 }
 
-function validateFacility(value, snapshotBytes, stationLines, candidate, evidenceSourceSetSha256, candidatePublishedAt) {
+function validateFacility(value, snapshotBytes, stationLines, candidate, facilitySourceSetSha256, candidatePublishedAt) {
   canonicalCurrentCapitalFacilitySourceAdmissionJson(value);
-  if (value.decision !== "GO" || value.candidate?.candidateId !== candidate.candidateId || value.candidate?.sourceSnapshotSetHash !== evidenceSourceSetSha256) throw new Error("full-capital FACILITY identity mismatch");
+  if (value.decision !== "GO" || value.candidate?.candidateId !== candidate.candidateId || value.candidate?.sourceSnapshotSetHash !== facilitySourceSetSha256) throw new Error("full-capital FACILITY identity mismatch");
   if (!Buffer.isBuffer(snapshotBytes)) throw new Error("full-capital FACILITY snapshot bytes mismatch");
   let snapshot; try { snapshot = validateKricAccessibilitySnapshotIdentity(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(snapshotBytes))); } catch (error) { throw new Error("full-capital FACILITY snapshot identity mismatch", { cause: error }); }
   if (sha256(snapshotBytes) !== value.sourceIdentity.snapshotFileSha256 || snapshot.snapshotId !== value.sourceIdentity.snapshotId || snapshot.sourceId !== value.sourceIdentity.sourceId || snapshot.rawSha256 !== value.sourceIdentity.rawSha256 || snapshot.contentSha256 !== value.sourceIdentity.contentSha256 || snapshot.schemaFingerprint !== value.sourceIdentity.schemaFingerprint || snapshot.redactedRequestFingerprint !== value.sourceIdentity.redactedRequestFingerprint || snapshot.capturedAt !== value.sourceIdentity.capturedAt || snapshot.observedAt !== value.sourceIdentity.observedAt || snapshot.freshUntil !== value.sourceIdentity.freshUntil) throw new Error("full-capital FACILITY snapshot binding mismatch");
@@ -443,6 +459,7 @@ function assertKeys(value, keys, label) { if (!value || typeof value !== "object
 function exactlyOne(rows, predicate, label) { const matches = rows.filter(predicate); if (matches.length !== 1) throw new Error(`${label} must be exactly one`); return matches[0]; }
 function transferDirectionKey(stationId, fromLineId, toLineId) { return `${stationId}\0${fromLineId}\0${toLineId}`; }
 function equalSets(left, right) { return left.size === right.size && [...left].every((value) => right.has(value)); }
+function equalArrays(left, right) { return left.length === right.length && left.every((value, index) => value === right[index]); }
 function key({ stationId, lineId }) { return `${stationId}\0${lineId}`; }
 function compareStationLine(left, right) { return compareBytes(left.stationId, right.stationId) || compareBytes(left.lineId, right.lineId) || compareBytes(left.operatorId, right.operatorId); }
 function compareEvidence(left, right) { return compareStationLine(left, right) || compareBytes(left.domain, right.domain); }

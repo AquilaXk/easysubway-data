@@ -130,6 +130,8 @@ jobs:
           set -euo pipefail
           branch="automation/629-kric-facility-refresh-${GITHUB_RUN_ID}"
           main_sha="$(git rev-parse HEAD)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "${branch}"
           git commit --allow-empty -m "Claim KRIC facility refresh"
           gh auth setup-git
@@ -181,12 +183,13 @@ jobs:
             echo "KRIC refresh claim is not based on its operation main" >&2
             exit 1
           }
-          deleted="$(git diff --name-only --diff-filter=D)"
+          git add -A
+          deleted="$(git diff --cached --name-only --diff-filter=D)"
           [[ -z "${deleted}" ]] || {
             echo "KRIC refresh removed a tracked input" >&2
             exit 1
           }
-          changed="$(git diff --name-only --diff-filter=ACMR)"
+          changed="$(git diff --cached --name-only --diff-filter=ACMR)"
           if [[ -z "${changed}" ]]; then
             echo "KRIC refresh produced no tracked update" >&2
             exit 1
@@ -211,10 +214,6 @@ jobs:
             echo "KRIC refresh changed an unsupported path" >&2
             exit 1
           fi
-          git add tools/datapack/release/candidate-build-spec.json \
-            tools/datapack/release/current-capital-facility-source-admission.json \
-            tools/datapack/release/source-snapshots.json \
-            tools/datapack/source-inventory.json tools/datapack/sources
           git diff --cached --quiet && exit 1
           git commit -m "Refresh KRIC facility snapshot"
           git push origin "${KRIC_REFRESH_BRANCH}"

@@ -16,6 +16,13 @@ import {
   syncCanonicalAccessibilityEvidence,
   syncCanonicalFixture,
 } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
+import {
+  admittedTopologySource,
+  deriveTopology,
+  parseAuthenticatedAdmittedSourceDocuments,
+  projectItxTopologyIntoCanonicalFixture,
+  validateAdmittedSourceDocuments,
+} from "./apply-itx-topology-to-bundled-pack.mjs";
 import { buildFixture as buildOfficialSourceFixture } from "./import-official-sources.mjs";
 import { assertNoRetiredTransitReferences, projectRetiredTransitLines } from "./project-retired-transit-lines.mjs";
 import { projectCanonicalRouteMapProvenance } from "./project-canonical-route-map-provenance.mjs";
@@ -782,6 +789,9 @@ export function requireCurrentIncheonTopologyAdmission({
   snapshot,
   snapshotBytes,
   snapshotPath,
+  accessibilitySnapshot,
+  accessibilitySnapshotBytes,
+  accessibilitySnapshotPath,
   now,
 }) {
   const incheon = validateIncheonStationInfoSnapshot(snapshot);
@@ -827,7 +837,6 @@ export function requireCurrentIncheonTopologyAdmission({
   const topology = source.topologyAdmissionEvidence;
   const membership = source.membershipAdmissionEvidence;
   const routeMap = source.routeMapAdmissionEvidence;
-  const accessibility = accessibilitySource.accessibilityAdmissionEvidence;
   const schedules = timetableSources.map(({ scheduleAdmissionEvidence }) => scheduleAdmissionEvidence);
   if (source.requiredForProductionPack !== false
     || source.productionUseAllowed !== true
@@ -863,20 +872,6 @@ export function requireCurrentIncheonTopologyAdmission({
   if (topology.contentSha256 !== incheon.contentSha256) {
     throw new Error("current Incheon topology content changed; re-admission required");
   }
-  if (accessibility?.topologySourceId !== source.id
-    || accessibility.topologySnapshotId !== snapshotId
-    || accessibility.topologyContentSha256 !== incheon.contentSha256
-    || !Array.isArray(accessibility.topologyLineages)
-    || accessibility.topologyLineages.length !== 2
-    || !Array.isArray(accessibility.membershipLineages)
-    || accessibility.membershipLineages.length !== 1
-    || [...accessibility.topologyLineages, ...accessibility.membershipLineages].some((lineage) => (
-      lineage.sourceId !== source.id
-        || lineage.snapshotId !== accessibility.topologySnapshotId
-        || lineage.contentSha256 !== incheon.contentSha256
-    ))) {
-    throw new Error("current Incheon accessibility lineage contract is invalid");
-  }
   if (schedules.some((schedule) => (
     schedule?.topologySourceId !== source.id
       || schedule.topologySnapshotId !== snapshotId
@@ -906,6 +901,23 @@ export function requireCurrentIncheonTopologyAdmission({
     || JSON.stringify(routeMap.topologyLineages) !== JSON.stringify(expectedRouteMapTopologyLineages)
     || JSON.stringify(routeMap.officialRenameEvidence) !== JSON.stringify(expectedOfficialRenameEvidence)) {
     throw new Error("current Incheon topology inventory admission is not exact");
+  }
+  requireRegisteredIncheonAccessibilitySnapshotInput(
+    accessibilitySnapshot,
+    accessibilitySnapshotBytes,
+    accessibilitySnapshotPath,
+  );
+  const accessibilityAdmission = admittedIncheonAccessibilityEvidence({
+    sourceInventory,
+    snapshot: accessibilitySnapshot,
+    snapshotBytes: accessibilitySnapshotBytes,
+    topologySnapshot: incheon,
+    topologyMode: "registered-topology-successor",
+    now,
+  });
+  if (accessibilityAdmission.source.id !== accessibilitySource.id
+    || accessibilityAdmission.snapshotPath !== accessibilitySnapshotPath) {
+    throw new Error("current Incheon accessibility receipt-bound admission is invalid");
   }
   return sourceInventory;
 }
@@ -944,6 +956,24 @@ function requireCurrentIncheonSnapshotBytes(snapshot, snapshotBytes, snapshotPat
   return expectedId;
 }
 
+function requireRegisteredIncheonAccessibilitySnapshotInput(snapshot, snapshotBytes, snapshotPath) {
+  if (!Buffer.isBuffer(snapshotBytes)
+    || !/^incheon-transit-accessibility-\d{8}T\d{9}Z$/u.test(snapshot?.snapshotId ?? "")
+    || snapshotPath !== `tools/datapack/sources/${snapshot.snapshotId}.json`) {
+    throw new Error("current Incheon accessibility snapshot path identity mismatch");
+  }
+  let bytesSnapshot;
+  try {
+    bytesSnapshot = JSON.parse(snapshotBytes.toString("utf8"));
+  } catch {
+    throw new Error("current Incheon accessibility snapshot byte identity mismatch");
+  }
+  if (!isDeepStrictEqual(bytesSnapshot, snapshot)) {
+    throw new Error("current Incheon accessibility snapshot byte identity mismatch");
+  }
+  return snapshot.snapshotId;
+}
+
 export function activateCurrentIncheonSourceAdmissions({
   sourceInventory,
   topologySnapshot,
@@ -963,9 +993,8 @@ export function activateCurrentIncheonSourceAdmissions({
     topology, topologySnapshotBytes, topologySnapshotPath, "incheon-transit-station-info",
     (value) => value?.slice(0, 10).replaceAll("-", ""),
   );
-  const accessibilitySnapshotId = requireCurrentIncheonSnapshotBytes(
+  requireRegisteredIncheonAccessibilitySnapshotInput(
     accessibilitySnapshot, accessibilitySnapshotBytes, accessibilitySnapshotPath,
-    "incheon-transit-accessibility", seoulCompactDate,
   );
   const timetableSnapshotIds = [1, 2].map((lineNumber) => requireCurrentIncheonSnapshotBytes(
     timetableSnapshots[lineNumber], timetableSnapshotBytes[lineNumber],
@@ -982,19 +1011,7 @@ export function activateCurrentIncheonSourceAdmissions({
       throw new Error("current Incheon snapshot is not active at buildNow");
     }
   }
-  if (accessibilitySnapshot?.topologySourceId != null
-    || accessibilitySnapshot?.topologyContentSha256 != null
-    || accessibilitySnapshot?.topologyLineages?.some((lineage) => (
-      lineage.sourceId !== topology.sourceId
-        || lineage.snapshotId !== topologySnapshotId
-        || lineage.contentSha256 !== topology.contentSha256
-    ))
-    || accessibilitySnapshot?.membershipLineages?.some((lineage) => (
-      lineage.sourceId !== topology.sourceId
-        || lineage.snapshotId !== topologySnapshotId
-        || lineage.contentSha256 !== topology.contentSha256
-    ))
-    || [1, 2].some((lineNumber) => {
+  if ([1, 2].some((lineNumber) => {
       const timetable = timetableSnapshots[lineNumber];
       return timetable?.topologySourceId !== topology.sourceId
         || timetable.topologySnapshotId !== topologySnapshotId
@@ -1013,6 +1030,7 @@ export function activateCurrentIncheonSourceAdmissions({
     "current Incheon topology source");
   const accessibilitySource = requireOne(next.sources, ({ id }) => id === accessibilitySnapshot.sourceId,
     "current Incheon accessibility source");
+  const originalAccessibilitySource = structuredClone(accessibilitySource);
   const scheduleSources = [1, 2].map((lineNumber) => requireOne(next.sources,
     ({ id }) => id === timetableSnapshots[lineNumber].sourceId,
     `current Incheon line ${lineNumber} timetable source`));
@@ -1071,20 +1089,6 @@ export function activateCurrentIncheonSourceAdmissions({
       "current Incheon topology capturedAt"), ROUTE_MAP_REVERIFICATION_CADENCE)).toISOString(),
   });
 
-  const accessibilityAdmission = accessibilitySource.accessibilityAdmissionEvidence;
-  if (!accessibilityAdmission) throw new Error("current Incheon accessibility source contract is invalid");
-  accessibilitySource.retrievedAt = accessibilitySnapshot.capturedAt.slice(0, 10);
-  Object.assign(accessibilityAdmission, {
-    snapshotId: accessibilitySnapshotId, snapshotPath: accessibilitySnapshotPath,
-    capturedAt: accessibilitySnapshot.capturedAt, freshUntil: accessibilitySnapshot.freshUntil,
-    stationCount: accessibilitySnapshot.stationCount, rowCount: accessibilitySnapshot.rowCount,
-    facilityCount: accessibilitySnapshot.rowCount * 3, rawSha256: accessibilitySnapshot.rawSha256,
-    rowsSha256: accessibilitySnapshot.rowsSha256, datasetIds: [...accessibilitySnapshot.datasetIds],
-    topologySourceId: topology.sourceId, topologySnapshotId,
-    topologyContentSha256: topology.contentSha256,
-    topologyLineages: structuredClone(accessibilitySnapshot.topologyLineages),
-    membershipLineages: structuredClone(accessibilitySnapshot.membershipLineages),
-  });
   scheduleSources.forEach((source, index) => {
     const lineNumber = index + 1;
     const snapshot = timetableSnapshots[lineNumber];
@@ -1106,6 +1110,19 @@ export function activateCurrentIncheonSourceAdmissions({
       topologyContentSha256: topology.contentSha256,
     });
   });
+  requireCurrentIncheonTopologyAdmission({
+    sourceInventory: next,
+    snapshot: topology,
+    snapshotBytes: topologySnapshotBytes,
+    snapshotPath: topologySnapshotPath,
+    accessibilitySnapshot,
+    accessibilitySnapshotBytes,
+    accessibilitySnapshotPath,
+    now: new Date(nowMillis),
+  });
+  if (!isDeepStrictEqual(accessibilitySource, originalAccessibilitySource)) {
+    throw new Error("current Incheon accessibility source evidence must remain immutable");
+  }
   return next;
 }
 
@@ -1138,9 +1155,17 @@ function replaceIncheonCanonicalSlice(canonical, projected, {
   const sourceSnapshotId = (binding) => binding.id === "incheon-transit-station-info"
     ? binding.topologyAdmission?.snapshotId
     : binding.id === "incheon-transit-accessibility"
-      ? binding.source?.accessibilityAdmissionEvidence?.snapshotId
+      ? binding.snapshot?.snapshotId
       : binding.source?.scheduleAdmissionEvidence?.snapshotId;
   const sourceCapturedAt = (binding) => binding.snapshot?.capturedAt;
+  const allowedReplaySnapshotIds = (binding) => {
+    const exactSnapshotId = sourceSnapshotId(binding);
+    if (binding.id !== "incheon-transit-accessibility") return new Set([exactSnapshotId]);
+    const registeredSnapshot = /^incheon-transit-accessibility-(\d{8})T\d{9}Z$/u
+      .exec(exactSnapshotId);
+    if (registeredSnapshot == null) return new Set([exactSnapshotId]);
+    return new Set([exactSnapshotId, `${binding.id}-${registeredSnapshot[1]}`]);
+  };
   const expectedProjectedSource = (binding) => ({
     id: binding.id,
     owner: binding.source?.owner,
@@ -1186,14 +1211,22 @@ function replaceIncheonCanonicalSlice(canonical, projected, {
   replace("operators", ({ id }) => id === "incheon-transit", ({ id }) => id);
   replace("lines", ({ id }) => ["line-98718184f016", "line-42b5805f3b5a"].includes(id), ({ id }) => id);
   const topologyOwnedLineIds = new Set(topologySnapshot.topologyLineIds);
-  const topologyStationLines = projectedPack.stationLines.filter(({ sourceId, lineId }) => (
-    sourceId === "incheon-transit-station-info" && topologyOwnedLineIds.has(lineId)
+  const topologyScope = new Set(topologySnapshot.scope.map(({ stationId, lineId }) => `${stationId}:${lineId}`));
+  const topologyStationLines = projectedPack.stationLines.filter(({ sourceId, stationId, lineId }) => (
+    sourceId === "incheon-transit-station-info" && topologyScope.has(`${stationId}:${lineId}`)
   ));
-  const topologyScope = new Set(topologyStationLines.map(({ stationId, lineId }) => `${stationId}:${lineId}`));
-  if (topologyOwnedLineIds.size === 0 || topologyScope.size !== topologyStationLines.length) {
+  const projectedTopologyScope = new Set(topologyStationLines.map(({ stationId, lineId }) => `${stationId}:${lineId}`));
+  if (topologyOwnedLineIds.size === 0 || topologyScope.size === 0
+    || projectedTopologyScope.size !== topologyStationLines.length
+    || !isDeepStrictEqual(
+      [...projectedTopologyScope].sort(codepointCompare),
+      [...topologyScope].sort(codepointCompare),
+    )) {
     throw new Error("Incheon canonical topology stationLines identity is invalid");
   }
-  replace("stationLines", ({ lineId }) => topologyOwnedLineIds.has(lineId),
+  replace("stationLines", ({ stationId, lineId }) => (
+    topologyOwnedLineIds.has(lineId) || topologyScope.has(`${stationId}:${lineId}`)
+  ),
     ({ stationId, lineId }) => `${stationId}:${lineId}`);
   const topologyStationIds = new Set([...topologyScope].map((scope) => scope.split(":")[0]));
   const canonicalStationsById = new Map(pack.stations.map((station) => [station.id, station]));
@@ -1208,6 +1241,25 @@ function replaceIncheonCanonicalSlice(canonical, projected, {
       canonicalStationsById.set(stationId, projectedStation);
       promotedRows.push(projectedStation);
     }
+  }
+  for (const stationId of topologyStationIds) {
+    const projectedStation = requireOne(projectedPack.stations, ({ id }) => id === stationId,
+      "projected Incheon topology station");
+    const canonicalStation = requireOne(pack.stations, ({ id }) => id === stationId,
+      "canonical Incheon topology station");
+    if (typeof projectedStation.nameKo !== "string" || typeof projectedStation.nameEn !== "string"
+      || projectedStation.normalizedName !== projectedStation.nameKo.normalize("NFKC")) {
+      throw new Error("projected Incheon topology station identity is invalid");
+    }
+    if (canonicalStation.sourceId === "incheon-transit-station-info") {
+      const stationIndex = pack.stations.indexOf(canonicalStation);
+      pack.stations[stationIndex] = structuredClone(projectedStation);
+      canonicalStationsById.set(stationId, pack.stations[stationIndex]);
+      continue;
+    }
+    canonicalStation.nameKo = projectedStation.nameKo;
+    canonicalStation.nameEn = projectedStation.nameEn;
+    canonicalStation.normalizedName = projectedStation.normalizedName;
   }
   const expectedIncheonEdges = projectIncheonNetworkEdges(pack, topologySnapshot, topologyAdmission);
   const expectedIncheonEdgeIds = new Set(expectedIncheonEdges.map(({ id }) => id));
@@ -1286,10 +1338,21 @@ function replaceIncheonCanonicalSlice(canonical, projected, {
   }
   {
     const beforeById = new Map(before.stations.map((row) => [row.id, row]));
+    const projectedStationsById = new Map(projectedPack.stations.map((row) => [row.id, row]));
     if (pack.stations.some((row) => (
       beforeById.has(row.id)
-      && row.id !== mapping.stationId
-      && !isDeepStrictEqual(row, beforeById.get(row.id))
+      && !isDeepStrictEqual(row, {
+        ...beforeById.get(row.id),
+        ...(topologyStationIds.has(row.id) ? {
+          ...(beforeById.get(row.id).sourceId === "incheon-transit-station-info"
+            ? projectedStationsById.get(row.id)
+            : {
+              nameKo: projectedStationsById.get(row.id)?.nameKo,
+              nameEn: projectedStationsById.get(row.id)?.nameEn,
+              normalizedName: projectedStationsById.get(row.id)?.normalizedName,
+            }),
+        } : {}),
+      })
     )) || pack.stations.some((row) => (
       !beforeById.has(row.id)
       && (!topologyStationIds.has(row.id)
@@ -1310,7 +1373,9 @@ function replaceIncheonCanonicalSlice(canonical, projected, {
   }
   const ownedBySource = new Map([
     ["incheon-transit-station-info", new Map([
-      ["stationLines", ({ lineId }) => topologyOwnedLineIds.has(lineId)],
+      ["stationLines", ({ stationId, lineId }) => (
+        topologyOwnedLineIds.has(lineId) || topologyScope.has(`${stationId}:${lineId}`)
+      )],
       ["networkEdges", ownsIncheonTopologyEdge],
       ["routeMapPositions", ({ lineId }) => topologyOwnedLineIds.has(lineId)],
     ])],
@@ -1355,7 +1420,8 @@ function replaceIncheonCanonicalSlice(canonical, projected, {
     if (existing) {
       const isReplay = isDeepStrictEqual(existing, expectedSource);
       if (isReplay) {
-        if (oldRows.some(({ row }) => row.sourceSnapshotId !== sourceSnapshotId(binding))) {
+        const allowedSnapshotIds = allowedReplaySnapshotIds(binding);
+        if (oldRows.some(({ row }) => !allowedSnapshotIds.has(row.sourceSnapshotId))) {
           throw new Error(`Incheon canonical successor replay rows are invalid: ${id}`);
         }
         continue;
@@ -1505,6 +1571,9 @@ export function buildCurrentSourcePrimaryOutputs({
   currentIncheonTopology,
   currentIncheonTopologyBytes,
   currentIncheonTopologyPath,
+  currentIncheonAccessibility,
+  currentIncheonAccessibilityBytes,
+  currentIncheonAccessibilityPath,
   buildNow,
   snapshotBytesByPath,
   layoutTopologySnapshotBytesById,
@@ -1591,6 +1660,9 @@ export function buildCurrentSourcePrimaryOutputs({
     snapshot: currentIncheonTopology,
     snapshotBytes: currentIncheonTopologyBytes,
     snapshotPath: currentIncheonTopologyPath,
+    accessibilitySnapshot: currentIncheonAccessibility,
+    accessibilitySnapshotBytes: currentIncheonAccessibilityBytes,
+    accessibilitySnapshotPath: currentIncheonAccessibilityPath,
     now: activationNow,
   });
   const reboundInventory = capitalInventory;
@@ -1632,6 +1704,7 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
   currentItxTopologyEvidenceBytes,
   currentItxAdmissionPath,
   currentItxAdmissionBytes,
+  approvedItxTopology = null,
   baselineTopology,
   baselineTopologyBytes,
   canonical,
@@ -1690,7 +1763,9 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
   const incheonAccessibilityAdmission = admittedIncheonAccessibilityEvidence({
     sourceInventory: nextInventory,
     snapshot: currentIncheonAccessibility,
+    snapshotBytes: currentIncheonAccessibilityBytes,
     topologySnapshot: currentIncheonTopology,
+    topologyMode: "registered-topology-successor",
     now: activationNow,
   });
   if (incheonAccessibilityAdmission.snapshotPath !== currentIncheonAccessibilityPath) {
@@ -1735,8 +1810,10 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
   const incheonAccessibilityProjection = materializeIncheonAccessibility({
     baseFixture: incheonStationProjection,
     accessibilitySnapshot: currentIncheonAccessibility,
+    accessibilitySnapshotBytes: currentIncheonAccessibilityBytes,
     topologySnapshot: currentIncheonTopology,
     inventory: nextInventory,
+    topologyMode: "registered-topology-successor",
     now: activationNow,
   });
   const incheonProjection = materializeIncheonTimetable({
@@ -1776,6 +1853,9 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
     topologyAdmission: incheonTopologyAdmission,
     sourceSuccessors: incheonSourceSuccessors,
   });
+  if (approvedItxTopology != null) {
+    projectItxTopologyIntoCanonicalFixture(canonicalWithIncheon, approvedItxTopology);
+  }
   const canonicalBytes = jsonBytes(canonicalWithIncheon, false);
   const spec = buildCurrentCandidateSpec({
     baseSpec,
@@ -1955,7 +2035,7 @@ export function buildCurrentCandidateSpec({
   const snapshotDate = topologySnapshotId.slice(-8);
   const topologyReverificationPath = `tools/datapack/release/capital-topology-reverification-${snapshotDate}.json`;
   if (typeof incheonAccessibilityPath !== "string"
-    || !/^incheon-transit-accessibility-\d{8}$/u.test(incheonAccessibilitySnapshotId ?? "")
+    || !/^incheon-transit-accessibility-\d{8}T\d{9}Z$/u.test(incheonAccessibilitySnapshotId ?? "")
     || incheonAccessibilityPath !== `tools/datapack/sources/${incheonAccessibilitySnapshotId}.json`) {
     throw new Error("current Incheon accessibility candidate identity is invalid");
   }
@@ -1976,7 +2056,9 @@ export function buildCurrentCandidateSpec({
   const spec = structuredClone(baseSpec);
   if (spec.networkEdgeEvidence) {
     delete spec.networkEdgeEvidence.itxCurrentTopologyAdmission;
-    delete spec.networkEdgeEvidence.incheonAccessibility;
+    if (Object.hasOwn(spec.networkEdgeEvidence, "incheonAccessibility")) {
+      throw new Error("current candidate base spec contains superseded Incheon accessibility evidence");
+    }
   }
   spec.candidateId = `capital-pilot-candidate-${snapshotDate}`;
   spec.builderGitSha = builderGitSha;
@@ -2012,11 +2094,6 @@ export function buildCurrentCandidateSpec({
       reverifiedAt: candidateTopology.capturedAt,
       freshUntil: candidateTopology.freshUntil,
     },
-    incheonAccessibility: {
-      path: incheonAccessibilityPath,
-      sha256: sha256(incheonAccessibilityBytes),
-      snapshotId: incheonAccessibilitySnapshotId,
-    },
     incheonTimetables: Object.fromEntries([1, 2].map((lineNumber) => [`line${lineNumber}`, {
       path: incheonTimetablePaths[lineNumber],
       sha256: sha256(incheonTimetableBytes[lineNumber]),
@@ -2030,6 +2107,99 @@ export function buildCurrentCandidateSpec({
     } : {}),
   };
   return spec;
+}
+
+export function deriveApprovedItxTopologyEvidencePath(reference) {
+  const artifactMatch = /^itx-cheongchun-source-timetable-([0-9]{17})$/u
+    .exec(reference?.artifactId ?? "");
+  if (artifactMatch == null) {
+    throw new Error("approved ITX source artifact identity is invalid");
+  }
+  return `tools/datapack/itx-cheongchun-topology-evidence-${artifactMatch[1]}.json`;
+}
+
+export async function bindApprovedItxCurrentSourceSpec({
+  baseSpec,
+  coverageContractBytes,
+  sourceBytes,
+  completenessBytes,
+  topologyEvidenceBytes,
+  topologyEvidencePath,
+  buildNow,
+}) {
+  const activationNow = new Date(requiredUtcInstant(buildNow, "approved ITX bootstrap buildNow"));
+  const contract = parseJson(coverageContractBytes, "approved ITX coverage contract");
+  const reference = contract?.sourceTimetableArtifact;
+  if (topologyEvidencePath !== deriveApprovedItxTopologyEvidencePath(reference)) {
+    throw new Error("approved ITX topology evidence path is invalid");
+  }
+  const { source, completeness } = parseAuthenticatedAdmittedSourceDocuments(
+    reference,
+    sourceBytes,
+    completenessBytes,
+  );
+  validateAdmittedSourceDocuments(
+    contract,
+    reference,
+    source,
+    completeness,
+    sha256(sourceBytes),
+    sha256(completenessBytes),
+    activationNow,
+  );
+  const admittedInput = await admittedTopologySource(reference, source);
+  const topology = deriveTopology(source);
+  let evidence;
+  try {
+    evidence = JSON.parse(topologyEvidenceBytes?.toString("utf8"));
+  } catch {
+    throw new Error("approved ITX topology evidence is invalid");
+  }
+  const contractInput = contract?.officialEvidence?.korailCompletenessAdmission
+    ?.topologyInputPackIdentity;
+  if (!Buffer.isBuffer(topologyEvidenceBytes)
+    || evidence?.schemaVersion !== 1
+    || evidence?.artifactKind !== "itx-cheongchun-mobile-topology-evidence"
+    || evidence?.serviceId !== "ITX_CHEONGCHUN"
+    || evidence?.sourceIssue !== 2135
+    || evidence?.sourceArtifact?.id !== reference.artifactId
+    || evidence?.sourceArtifact?.sha256 !== reference.sha256
+    || evidence?.sourceArtifact?.completenessEvidenceSha256
+      !== reference.completenessEvidenceSha256
+    || evidence?.sourceArtifact?.freshUntil !== reference.freshUntil
+    || JSON.stringify(evidence?.sourceArtifact?.stationCatalogPackIdentity)
+      !== JSON.stringify(source.stationCatalogPackIdentity)
+    || evidence?.topology?.stationMembershipCount !== topology.stations.length
+    || evidence?.topology?.servedStationCount !== topology.servedStations.length
+    || evidence?.topology?.edgeCount !== topology.edges.length
+    || evidence?.topology?.sha256 !== topology.sha256
+    || evidence?.pack?.id !== "capital"
+    || evidence?.pack?.inputSha256 !== admittedInput.gzipSha256
+    || evidence?.pack?.inputSqliteSha256 !== admittedInput.sqliteSha256
+    || evidence?.pack?.inputByteSize !== admittedInput.byteSize
+    || contractInput?.sha256 !== admittedInput.gzipSha256
+    || contractInput?.sqliteSha256 !== admittedInput.sqliteSha256
+    || contractInput?.byteSize !== admittedInput.byteSize
+    || !SHA256.test(evidence?.pack?.outputSha256 ?? "")
+    || !SHA256.test(evidence?.pack?.outputSqliteSha256 ?? "")
+    || !Number.isSafeInteger(evidence?.pack?.byteSize)
+    || evidence.pack.byteSize <= 0) {
+    throw new Error("approved ITX topology evidence is invalid");
+  }
+  if (baseSpec?.schemaVersion !== 1
+    || baseSpec?.artifactKind !== "datapack-candidate-build-spec"
+    || baseSpec.networkEdgeEvidence == null) {
+    throw new Error("approved ITX bootstrap base spec is invalid");
+  }
+  const next = structuredClone(baseSpec);
+  next.itxTopologyEvidencePath = topologyEvidencePath;
+  next.itxTopologyEvidenceSha256 = sha256(topologyEvidenceBytes);
+  next.networkEdgeEvidence.itxCoverageContract = {
+    path: "tools/datapack/itx-cheongchun-coverage-contract.json",
+    sha256: sha256(coverageContractBytes),
+  };
+  delete next.networkEdgeEvidence.itxCurrentTopologyAdmission;
+  return next;
 }
 
 async function readRegularBytes(repositoryRoot, relativePath, label = relativePath) {
@@ -2168,13 +2338,21 @@ async function acquireActivationLock(repositoryRoot) {
   };
 }
 
-function validateOutputs(outputs) {
+function validateOutputs(outputs, approvedItxTopologyEvidencePath = null) {
   if (!Array.isArray(outputs) || outputs.length === 0) {
     throw new Error("activation outputs are required");
   }
+  if (approvedItxTopologyEvidencePath != null
+    && !/^tools\/datapack\/itx-cheongchun-topology-evidence-[0-9]{17}\.json$/u
+      .test(approvedItxTopologyEvidencePath)) {
+    throw new Error("approved ITX topology evidence output path is invalid");
+  }
   const seen = new Set();
   return outputs.map((output) => {
-    if (!output || !isAllowedActivationOutput(output.relativePath) || seen.has(output.relativePath)) {
+    if (!output
+      || (!isAllowedActivationOutput(output.relativePath)
+        && output.relativePath !== approvedItxTopologyEvidencePath)
+      || seen.has(output.relativePath)) {
       throw new Error(`activation output is not allowed or is duplicated: ${output?.relativePath ?? ""}`);
     }
     if (!Buffer.isBuffer(output.bytes)) {
@@ -2210,13 +2388,14 @@ async function stageOutputs(repositoryRoot, transactionDirectory, outputs) {
   return records;
 }
 
-function validateJournal(journal, outputCount) {
+function validateJournal(journal, outputCount, approvedItxTopologyEvidencePath = null) {
   if (!journal || journal.schemaVersion !== 1 || journal.state !== "PREPARED"
     || !Array.isArray(journal.records) || journal.records.length !== outputCount) {
     throw new Error("current source activation journal is invalid");
   }
   for (const record of journal.records) {
-    if (!isAllowedActivationOutput(record.relativePath)
+    if ((!isAllowedActivationOutput(record.relativePath)
+      && record.relativePath !== approvedItxTopologyEvidencePath)
       || typeof record.existed !== "boolean"
       || !SHA256.test(record.expectedSha256 ?? "")
       || (record.existed && (!SHA256.test(record.originalSha256 ?? "") || typeof record.backupPath !== "string"))
@@ -2248,9 +2427,10 @@ export async function commitCurrentSourceActivation({
   outputs,
   validate,
   replace = replaceAtomically,
+  approvedItxTopologyEvidencePath = null,
 }) {
   const root = path.resolve(repositoryRoot);
-  const checkedOutputs = validateOutputs(outputs);
+  const checkedOutputs = validateOutputs(outputs, approvedItxTopologyEvidencePath);
   if (typeof validate !== "function") throw new TypeError("activation validation callback is required");
   const releaseLock = await acquireActivationLock(root);
   const journalPath = path.join(root, "tools/datapack/.current-source-activation-transaction.json");
@@ -2267,7 +2447,7 @@ export async function commitCurrentSourceActivation({
       transactionDirectory: path.relative(root, transactionDirectory),
       records,
     };
-    validateJournal(journal, checkedOutputs.length);
+    validateJournal(journal, checkedOutputs.length, approvedItxTopologyEvidencePath);
     await writeDurably(journalPath, Buffer.from(`${JSON.stringify(journal)}\n`));
     await syncDirectory(path.dirname(journalPath));
     for (const output of checkedOutputs) {
@@ -2394,9 +2574,12 @@ export async function stageValidationItxTopologyEvidence({
   spec,
   temporaryRoot,
   repositoryRoot = root,
+  topologyEvidenceBytes = null,
 }) {
   const relativePath = requiredItxTopologyEvidencePath(spec);
-  const bytes = await readRegularBytes(repositoryRoot, relativePath, "ITX topology evidence");
+  const bytes = topologyEvidenceBytes == null
+    ? await readRegularBytes(repositoryRoot, relativePath, "ITX topology evidence")
+    : Buffer.from(topologyEvidenceBytes);
   if (sha256(bytes) !== spec.itxTopologyEvidenceSha256) {
     throw new Error("ITX topology evidence identity mismatch");
   }
@@ -2407,6 +2590,7 @@ export async function stageValidationItxTopologyEvidence({
 async function prepareReleaseEvidenceRoot(temporaryRoot, spec, {
   repositoryRoot = root,
   readMutableInput = (relativePath) => readRegularBytes(repositoryRoot, relativePath),
+  topologyEvidenceBytes = null,
 } = {}) {
   for (const relativePath of [
     "tools/datapack/release/release-request.json",
@@ -2424,7 +2608,12 @@ async function prepareReleaseEvidenceRoot(temporaryRoot, spec, {
       await readRegularBytes(repositoryRoot, relativePath),
     );
   }
-  await stageValidationItxTopologyEvidence({ spec, temporaryRoot, repositoryRoot });
+  await stageValidationItxTopologyEvidence({
+    spec,
+    temporaryRoot,
+    repositoryRoot,
+    topologyEvidenceBytes,
+  });
 }
 
 function validationBuildSpec(spec, temporaryRoot) {
@@ -2559,6 +2748,7 @@ export async function generateCurrentCapitalTopologyRefresh({
   builderGitSha,
   buildNow,
   check = false,
+  approvedItxBootstrap = false,
 }) {
   const capitalPathMatch = /^tools\/datapack\/sources\/capital-route-topology-([0-9]{8})\.json$/u
     .exec(capitalTopologyPath ?? "");
@@ -2570,7 +2760,7 @@ export async function generateCurrentCapitalTopologyRefresh({
     throw new Error("current Incheon topology input must be a tracked source snapshot path");
   }
   const incheonDependentPaths = [
-    [incheonAccessibilityPath, /^tools\/datapack\/sources\/incheon-transit-accessibility-[0-9]{8}\.json$/u],
+    [incheonAccessibilityPath, /^tools\/datapack\/sources\/incheon-transit-accessibility-[0-9]{8}T[0-9]{9}Z\.json$/u],
     [incheonLine1TimetablePath, /^tools\/datapack\/sources\/incheon-line1-train-timetable-[0-9]{8}\.json$/u],
     [incheonLine2TimetablePath, /^tools\/datapack\/sources\/incheon-line2-train-timetable-[0-9]{8}\.json$/u],
   ];
@@ -2585,11 +2775,31 @@ export async function generateCurrentCapitalTopologyRefresh({
     .test(itxCurrentAdmissionPath ?? "")) {
     throw new Error("current ITX topology admission must be a tracked artifact path");
   }
+  let approvedItxCoverageContractBytes = null;
+  let approvedItxCoverageReference = null;
+  let selectedItxTopologyEvidencePath = itxTopologyEvidencePath;
+  if (approvedItxBootstrap) {
+    if (itxTopologyEvidencePath !== "tools/datapack/itx-cheongchun-topology-evidence.json") {
+      throw new Error("approved ITX bootstrap input must be the tracked source evidence path");
+    }
+    approvedItxCoverageContractBytes = await readRegularBytes(
+      root,
+      "tools/datapack/itx-cheongchun-coverage-contract.json",
+      "approved ITX coverage contract",
+    );
+    approvedItxCoverageReference = parseJson(
+      approvedItxCoverageContractBytes,
+      "approved ITX coverage contract",
+    )?.sourceTimetableArtifact;
+    selectedItxTopologyEvidencePath =
+      deriveApprovedItxTopologyEvidencePath(approvedItxCoverageReference);
+  }
   const topologyReverificationPath =
     `tools/datapack/release/capital-topology-reverification-${capitalPathMatch[1]}.json`;
   const allowedDescendantPaths = [
     ...CURRENT_TOPOLOGY_REFRESH_OUTPUTS,
     topologyReverificationPath,
+    ...(approvedItxBootstrap ? [selectedItxTopologyEvidencePath] : []),
   ];
   await requireCleanBuilder(builderGitSha, { check, allowedDescendantPaths });
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "current-topology-refresh-"));
@@ -2620,9 +2830,30 @@ export async function generateCurrentCapitalTopologyRefresh({
       ]);
     await requireCleanBuilder(builderGitSha, { check, allowedDescendantPaths });
     const sourceInventory = parseJson(sourceInventoryBytes, "source inventory");
-    const baseSpec = parseJson(baseSpecBytes, "candidate build spec");
+    let baseSpec = parseJson(baseSpecBytes, "candidate build spec");
+    let approvedItxTopology = null;
+    if (approvedItxBootstrap) {
+      const [sourceBytes, completenessBytes] = await Promise.all([
+        readRegularBytes(root, approvedItxCoverageReference?.artifactPath, "approved ITX source"),
+        readRegularBytes(
+          root,
+          approvedItxCoverageReference?.completenessEvidencePath,
+          "approved ITX completeness evidence",
+        ),
+      ]);
+      baseSpec = await bindApprovedItxCurrentSourceSpec({
+        baseSpec,
+        coverageContractBytes: approvedItxCoverageContractBytes,
+        sourceBytes,
+        completenessBytes,
+        topologyEvidenceBytes: currentItxTopologyEvidenceBytes,
+        topologyEvidencePath: selectedItxTopologyEvidencePath,
+        buildNow,
+      });
+      approvedItxTopology = deriveTopology(parseJson(sourceBytes, "approved ITX source"));
+    }
     const primary = buildCurrentTopologyRefreshPrimaryOutputs({
-      baseSpec: parseJson(baseSpecBytes, "candidate build spec"),
+      baseSpec,
       builderGitSha,
       sourceInventory,
       currentTopology: parseJson(currentTopologyBytes, "current capital topology"),
@@ -2650,10 +2881,11 @@ export async function generateCurrentCapitalTopologyRefresh({
         1: incheonLine1TimetablePath,
         2: incheonLine2TimetablePath,
       },
-      currentItxTopologyEvidencePath: itxTopologyEvidencePath,
+      currentItxTopologyEvidencePath: selectedItxTopologyEvidencePath,
       currentItxTopologyEvidenceBytes,
       currentItxAdmissionPath: itxCurrentAdmissionPath,
       currentItxAdmissionBytes,
+      approvedItxTopology,
       baselineTopology: parseJson(baselineTopologyBytes, "baseline capital topology"),
       baselineTopologyBytes,
       canonical: parseJson(canonicalBytes, "canonical pack"),
@@ -2687,7 +2919,10 @@ export async function generateCurrentCapitalTopologyRefresh({
         sourceSnapshotsBytes,
       ),
     ]);
-    await prepareReleaseEvidenceRoot(temporaryRoot, primary.spec, { readMutableInput });
+    await prepareReleaseEvidenceRoot(temporaryRoot, primary.spec, {
+      readMutableInput,
+      topologyEvidenceBytes: approvedItxBootstrap ? currentItxTopologyEvidenceBytes : null,
+    });
     await runNode("tools/datapack/apply-accessibility-evidence-to-bundled-pack.mjs", [
       "--release-evidence-only",
       "--release-root", temporaryRoot,
@@ -2707,6 +2942,10 @@ export async function generateCurrentCapitalTopologyRefresh({
       { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[3], bytes: finalSpecBytes },
       { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[4], bytes: releaseRequestBytes },
       { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[5], bytes: hashEvidenceBytes },
+      ...(approvedItxBootstrap ? [{
+        relativePath: selectedItxTopologyEvidencePath,
+        bytes: currentItxTopologyEvidenceBytes,
+      }] : []),
     ];
     const validateOutputBytes = async () => {
       for (const output of outputs) {
@@ -2722,6 +2961,9 @@ export async function generateCurrentCapitalTopologyRefresh({
         repositoryRoot: root,
         outputs,
         validate: validateOutputBytes,
+        approvedItxTopologyEvidencePath: approvedItxBootstrap
+          ? selectedItxTopologyEvidencePath
+          : null,
       });
     }
     return {
@@ -2734,6 +2976,13 @@ export async function generateCurrentCapitalTopologyRefresh({
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });
   }
+}
+
+export async function generateApprovedItxCurrentSourceBootstrap(options) {
+  return generateCurrentCapitalTopologyRefresh({
+    ...options,
+    approvedItxBootstrap: true,
+  });
 }
 
 export async function generateCurrentSourceActivation({
@@ -2752,7 +3001,7 @@ export async function generateCurrentSourceActivation({
   if (capitalPathMatch == null
     || !/^tools\/datapack\/sources\/incheon-transit-station-info-[0-9]{8}\.json$/u
       .test(incheonTopologyPath ?? "")
-    || !/^tools\/datapack\/sources\/incheon-transit-accessibility-[0-9]{8}\.json$/u
+    || !/^tools\/datapack\/sources\/incheon-transit-accessibility-[0-9]{8}T[0-9]{9}Z\.json$/u
       .test(incheonAccessibilityPath ?? "")) {
     throw new Error("current topology inputs must be tracked source snapshot paths");
   }
@@ -2847,6 +3096,9 @@ export async function generateCurrentSourceActivation({
       currentIncheonTopology: incheonTopology,
       currentIncheonTopologyBytes: incheonTopologyBytes,
       currentIncheonTopologyPath: incheonTopologyPath,
+      currentIncheonAccessibility: incheonAccessibility,
+      currentIncheonAccessibilityBytes: incheonAccessibilityBytes,
+      currentIncheonAccessibilityPath: incheonAccessibilityPath,
       buildNow,
       snapshotBytesByPath: positionSnapshotBytes,
       layoutTopologySnapshotBytesById: await collectLayoutTopologySnapshotBytes(sourceInventory),
@@ -2854,7 +3106,9 @@ export async function generateCurrentSourceActivation({
     const incheonAccessibilityAdmission = admittedIncheonAccessibilityEvidence({
       sourceInventory: primary.sourceInventory,
       snapshot: incheonAccessibility,
+      snapshotBytes: incheonAccessibilityBytes,
       topologySnapshot: incheonTopology,
+      topologyMode: "registered-topology-successor",
       now: new Date(buildNow),
     });
     if (incheonAccessibilityAdmission.snapshotPath !== incheonAccessibilityPath) {
@@ -3082,25 +3336,62 @@ export function parseCurrentTopologyRefreshArgs(argv) {
   return args;
 }
 
+export function parseApprovedItxBootstrapArgs(argv) {
+  const args = { approved_itx_bootstrap: true, check: false };
+  for (let index = 0; index < argv.length; index += 1) {
+    const flag = argv[index];
+    if (flag === "--check") {
+      args.check = true;
+      continue;
+    }
+    if (!["--capital-topology", "--incheon-topology", "--incheon-accessibility",
+      "--incheon-line1-timetable", "--incheon-line2-timetable", "--itx-topology-evidence",
+      "--builder-git-sha", "--build-now"].includes(flag)) {
+      throw new Error(`unknown approved ITX bootstrap argument: ${flag ?? ""}`);
+    }
+    const value = argv[index + 1];
+    if (!value || value.startsWith("--")) throw new Error(`${flag} requires a value`);
+    const key = flag.slice(2).replaceAll("-", "_");
+    if (args[key] != null) throw new Error(`duplicate approved ITX bootstrap argument: ${flag}`);
+    args[key] = value;
+    index += 1;
+  }
+  for (const key of ["capital_topology", "incheon_topology", "incheon_accessibility",
+    "incheon_line1_timetable", "incheon_line2_timetable", "itx_topology_evidence",
+    "builder_git_sha", "build_now"]) {
+    if (!args[key]) throw new Error(`--${key.replaceAll("_", "-")} is required`);
+  }
+  return args;
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   const topologyOnly = argv.includes("--topology-only");
-  const args = topologyOnly
-    ? parseCurrentTopologyRefreshArgs(argv.filter((value) => value !== "--topology-only"))
-    : parseCurrentSourceActivationArgs(argv);
-  const result = topologyOnly
-    ? await generateCurrentCapitalTopologyRefresh({
-        capitalTopologyPath: args.capital_topology,
-        incheonTopologyPath: args.incheon_topology,
-        incheonAccessibilityPath: args.incheon_accessibility,
-        incheonLine1TimetablePath: args.incheon_line1_timetable,
-        incheonLine2TimetablePath: args.incheon_line2_timetable,
-        itxTopologyEvidencePath: args.itx_topology_evidence,
-        itxCurrentAdmissionPath: args.itx_current_admission,
-        builderGitSha: args.builder_git_sha,
-        buildNow: args.build_now,
-        check: args.check,
-      })
+  const approvedItxBootstrap = argv.includes("--approved-itx-bootstrap");
+  if (topologyOnly && approvedItxBootstrap) {
+    throw new Error("topology-only and approved ITX bootstrap modes are mutually exclusive");
+  }
+  const args = approvedItxBootstrap
+    ? parseApprovedItxBootstrapArgs(argv.filter((value) => value !== "--approved-itx-bootstrap"))
+    : topologyOnly
+      ? parseCurrentTopologyRefreshArgs(argv.filter((value) => value !== "--topology-only"))
+      : parseCurrentSourceActivationArgs(argv);
+  const currentTopologyOptions = {
+    capitalTopologyPath: args.capital_topology,
+    incheonTopologyPath: args.incheon_topology,
+    incheonAccessibilityPath: args.incheon_accessibility,
+    incheonLine1TimetablePath: args.incheon_line1_timetable,
+    incheonLine2TimetablePath: args.incheon_line2_timetable,
+    itxTopologyEvidencePath: args.itx_topology_evidence,
+    itxCurrentAdmissionPath: args.itx_current_admission,
+    builderGitSha: args.builder_git_sha,
+    buildNow: args.build_now,
+    check: args.check,
+  };
+  const result = approvedItxBootstrap
+    ? await generateApprovedItxCurrentSourceBootstrap(currentTopologyOptions)
+    : topologyOnly
+      ? await generateCurrentCapitalTopologyRefresh(currentTopologyOptions)
     : await generateCurrentSourceActivation({
         capitalTopologyPath: args.capital_topology,
         incheonTopologyPath: args.incheon_topology,

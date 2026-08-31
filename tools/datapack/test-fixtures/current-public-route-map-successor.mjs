@@ -207,18 +207,25 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
       now,
       activatePublicRouteMap: false,
     });
+    const previousBytes = await readFile(path.join(
+      sourceRoot,
+      "tools/datapack/release/current-station-line-accessibility/station-line-input.json",
+    ));
     await bindSyntheticActivatedOutputsToCurrentCandidate(targetRoot);
     const result = await activateSyntheticCurrentStaticNetworkSuccessors(targetRoot, { now });
     const {
       currentizeFreshFacilitySource,
+      rebindFreshExitAdmissionForCurrentTransition,
       writeFreshExitAdmissionChain,
       writeFreshCurrentAccessibilityOutputs,
     } = await import("./current-full-capital-production-artifact.mjs");
     const facilityNow = await nextSyntheticCurrentStaticNetworkNow(targetRoot);
     await currentizeFreshFacilitySource(targetRoot, facilityNow);
     await writeFreshExitAdmissionChain(targetRoot, facilityNow);
+    await rebindFreshExitAdmissionForCurrentTransition(targetRoot, previousBytes);
     await writeFreshCurrentAccessibilityOutputs(targetRoot);
     await syncCurrentRouteEdgePolicyFile({
+      repositoryRoot: targetRoot,
       inputPath: path.join(targetRoot, "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json"),
       policyPath: path.join(targetRoot, "release/product-gates/route-edge-evaluation-policy.json"),
     });
@@ -253,6 +260,11 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
     ...inventory.sources.map((source) => source.routeMapAdmissionEvidence?.snapshotPath),
     ...inventory.sources.map((source) => source.routeMapAdmissionEvidence?.currentLayoutAdmission?.snapshotPath),
     ...inventory.sources.map((source) => source.accessibilityAdmissionEvidence?.snapshotPath),
+    ...inventory.sources.map((source) => source.topologyAdmissionEvidence?.snapshotPath),
+    ...inventory.sources.map((source) => {
+      const snapshotId = source.registrationEvidence?.snapshotId;
+      return typeof snapshotId === "string" ? `tools/datapack/sources/${snapshotId}.json` : null;
+    }),
     ...inventory.sources.map((source) => {
       const snapshotId = source.routeMapAdmissionEvidence?.currentTopologyAdmission?.topologySnapshotId;
       return typeof snapshotId === "string" ? `tools/datapack/sources/${snapshotId}.json` : null;

@@ -80,15 +80,16 @@ test("admitted target missing·duplicate·operator drift는 superset selection �
   }
 });
 
-test("candidate source set은 selected append-only ledger 순서 hash를 검증한다", async () => {
+test("candidate order ends in TRANSFER even when exact ledger order does not", async () => {
   const input = await fixture();
-  input.sourceSnapshots = [input.sourceSnapshots[1], input.sourceSnapshots[0], ...input.sourceSnapshots.slice(2)];
+  input.sourceSnapshots = [input.sourceSnapshots.at(-1), ...input.sourceSnapshots.slice(0, -1)];
   const sourceSet = sha(JSON.stringify(input.sourceSnapshots));
-  const evidenceSourceSet = sha(JSON.stringify(input.sourceSnapshots.slice(0, -1)));
+  const predecessorIds = new Set(input.candidateBuildSpec.sourceSnapshotIds.slice(0, -1));
+  const evidenceSourceSet = sha(JSON.stringify(input.sourceSnapshots.filter(({ snapshotId }) => predecessorIds.has(snapshotId))));
   input.candidateBuildSpec.sourceSnapshotSetHash = sourceSet;
   input.sourceSetTransition.currentCandidateSourceSetSha256 = sourceSet;
   input.sourceSetTransition.evidenceSourceSetSha256 = evidenceSourceSet;
-  input.facilityAdmission.candidate.sourceSnapshotSetHash = evidenceSourceSet;
+  input.facilityAdmission.candidate.sourceSnapshotSetHash = sourceSet;
   resealFacility(input.facilityAdmission);
   input.exitAdmission.candidate.sourceSetSha256 = evidenceSourceSet;
   input.exitAdmission.materializerEvidenceRows = input.exitAdmission.materializerEvidenceRows.map((row) => ({ ...row, sourceSetSha256: evidenceSourceSet }));
@@ -97,8 +98,33 @@ test("candidate source set은 selected append-only ledger 순서 hash를 검증�
   const result = buildCurrentCapitalStationLineInput(input);
 
   assert.equal(result.candidate.sourceSetSha256, sourceSet);
+  assert.equal(input.candidateBuildSpec.sourceSnapshots.at(-1).sourceId, "seoul-metro-transfer-distance-duration");
+  assert.notEqual(input.sourceSnapshots.at(-1).sourceId, "seoul-metro-transfer-distance-duration");
   assert.equal(result.stationLines.length, 213);
   assert.equal(result.evidenceRows.length, 641);
+});
+
+test("current capital candidate는 exact eight-source roster만 허용한다", async () => {
+  const input = await fixture();
+  assert.deepEqual(input.candidateBuildSpec.sourceSnapshots.map(({ sourceId }) => sourceId), [
+    "seoul-metro-route-map-positions",
+    "kric-subway-timetable",
+    "seoul-metro-accessibility",
+    "kric-station-convenience-standard",
+    "molit-urban-rail-full-route",
+    "seoulmetro-station-line-info",
+    "incheon-transit-accessibility",
+    "seoul-metro-transfer-distance-duration",
+  ]);
+  for (const mutate of [
+    (value) => { value.candidateBuildSpec.sourceSnapshots.splice(1, 1); value.candidateBuildSpec.sourceSnapshotIds.splice(1, 1); },
+    (value) => { [value.candidateBuildSpec.sourceSnapshots[0], value.candidateBuildSpec.sourceSnapshots[1]] = [value.candidateBuildSpec.sourceSnapshots[1], value.candidateBuildSpec.sourceSnapshots[0]]; },
+    (value) => { value.candidateBuildSpec.sourceSnapshots[0].snapshotId = "projection-drift"; },
+    (value) => { value.candidateBuildSpec.sourceSnapshots.splice(-1, 0, { sourceId: "extra-source", snapshotId: "extra-snapshot" }); value.candidateBuildSpec.sourceSnapshotIds.splice(-1, 0, "extra-snapshot"); },
+  ]) {
+    const value = await fixture(); mutate(value);
+    assert.throws(() => buildCurrentCapitalStationLineInput(value), /eighth|source roster|source-set/i);
+  }
 });
 
 test("candidate inventory semantic hash와 authenticated raw-byte hash를 분리 검증한다", async () => {
@@ -122,7 +148,7 @@ test("public static-network V2 transition은 Seoul accessibility의 evidence pre
   assert.equal(result.evidenceRows.length, 641);
 });
 
-test("public static-network V2 두 head는 same-source predecessor 7/evidence 6만 허용한다", async () => {
+test("public static-network V2 두 head는 first-seven predecessor/evidence seven만 허용한다", async () => {
   const input = await publicStaticV2Fixture();
 
   const result = buildCurrentCapitalStationLineInput(input);
@@ -139,7 +165,7 @@ test("public static-network V2 두 head는 same-source predecessor 7/evidence 6�
     const selected = value.sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
     value.candidateBuildSpec.sourceSnapshotSetHash = sha(JSON.stringify(selected));
     value.sourceSetTransition.currentCandidateSourceSetSha256 = value.candidateBuildSpec.sourceSnapshotSetHash;
-    assert.throws(() => buildCurrentCapitalStationLineInput(value), /public v2|source identity/i);
+    assert.throws(() => buildCurrentCapitalStationLineInput(value), /public v2|source identity|eighth projection/i);
   }
 });
 
@@ -190,27 +216,30 @@ test("count를 유지한 blocked carrier·directed pair·applicability swap drif
 
 export async function fixture() {
   const lines = stationLines(); const stationIds = [...new Set(lines.map(({ stationId }) => stationId))].sort();
-  const snapshotIds = ["s0", "s1", "s2", "s3", "s4", "s5", "transfer-snapshot"];
-  const sourceSnapshots = snapshotIds.map((snapshotId, index) => index === 6 ? ({ snapshotId, sourceId: "seoul-metro-transfer-distance-duration", rawObjectUri: "oci://fixture/transfer", rawSha256: "a".repeat(64), redactedRequestFingerprint: "b".repeat(64), schemaFingerprint: "c".repeat(64), licenseStatus: "PASS", redistributionAllowed: true, adminReviewRecordHash: "d".repeat(64), snapshotStatus: "LOCKED", credentialRedacted: true, freshnessExpiresAt: "2026-09-01T00:00:00.000Z", rawRetentionExpiresAt: "2026-10-01T00:00:00.000Z", governancePolicyVersion: "fixture", governancePolicySha256: "e".repeat(64) }) : ({ sourceId: `source-${index}`, snapshotId, snapshotStatus: "LOCKED" }));
+  const sourceIds = ["seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info", "incheon-transit-accessibility", "seoul-metro-transfer-distance-duration"];
+  const snapshotIds = ["positions-snapshot", "timetable-snapshot", "seoul-snapshot", "facility-snapshot", "molit-snapshot", "station-line-snapshot", "incheon-snapshot", "transfer-snapshot"];
+  const sourceSnapshots = snapshotIds.map((snapshotId, index) => index === 7 ? ({ snapshotId, sourceId: sourceIds[index], rawObjectUri: "oci://fixture/transfer", rawSha256: "a".repeat(64), redactedRequestFingerprint: "b".repeat(64), schemaFingerprint: "c".repeat(64), licenseStatus: "PASS", redistributionAllowed: true, adminReviewRecordHash: "d".repeat(64), snapshotStatus: "LOCKED", credentialRedacted: true, freshnessExpiresAt: "2026-09-01T00:00:00.000Z", rawRetentionExpiresAt: "2026-10-01T00:00:00.000Z", governancePolicyVersion: "fixture", governancePolicySha256: "e".repeat(64) }) : ({ sourceId: sourceIds[index], snapshotId, snapshotStatus: "LOCKED" }));
   const sourceSet = sha(JSON.stringify(sourceSnapshots)); const evidenceSourceSet = sha(JSON.stringify(sourceSnapshots.slice(0, -1))); const stationSet = sha(canonical(stationIds));
   const candidate = { candidateId: "capital-full-fixture", stationSetSha256: stationSet, sourceSetSha256: sourceSet, mappingContractVersion: "station-line-v1", materializerVersion: "1" };
   const evidenceCandidate = { ...candidate, sourceSetSha256: evidenceSourceSet };
   const snapshot = await facilitySnapshot(lines); const snapshotBytes = Buffer.from(JSON.stringify(snapshot));
   const sourceIdentity = { sourceId: snapshot.sourceId, snapshotId: snapshot.snapshotId, snapshotPath: `tools/datapack/sources/${snapshot.snapshotId}.json`, rawSha256: snapshot.rawSha256, redactedRequestFingerprint: snapshot.redactedRequestFingerprint, contentSha256: snapshot.contentSha256, schemaFingerprint: snapshot.schemaFingerprint, snapshotFileSha256: sha(snapshotBytes), capturedAt: snapshot.capturedAt, observedAt: snapshot.observedAt, freshUntil: snapshot.freshUntil, rawObjectUri: "oci://fixture/facility", rawObjectSha256: "7".repeat(64), credentialRedacted: true, licenseEvidenceHash: "8".repeat(64) };
-  const facilityAdmission = facility(lines, evidenceSourceSet, sourceIdentity);
+  const facilityAdmission = facility(lines, sourceSet, sourceIdentity);
   const normalized = { schemaVersion: 4, artifactKind: "exit-path-normalized-source-snapshot", sourceId: "kric-station-movement-standard", snapshotId: "exit-snapshot", queryPlan: Array.from({ length: 420 }, (_, index) => index < 213 ? ({ queryId: `query-${index}`, stationName: `역${index}`, lineName: "2호선", operatorName: "서울교통공사", regionId: "capital" }) : ({ queryId: `query-${index}` })), results: Array.from({ length: 420 }, (_, index) => ({ queryId: `query-${index}`, providerResponseSha256: index === 0 ? "9".repeat(64) : "8".repeat(64) })) };
   const exitAdmission = exit(lines, evidenceCandidate); exitAdmission.queryPartition = { joined: lines.map((line, index) => ({ stationLineId: `${line.stationId}:${line.lineId}`, queryId: `query-${index}` })) }; const mapping = lines.map((line, index) => ({ stationId: line.stationId, stationName: `역${index}`, stationAliases: [], regionId: "capital", lineId: line.lineId, lineName: "2호선", operatorId: "seoul-metro", operatorName: "서울교통공사" })).sort((a, b) => a.stationId.localeCompare(b.stationId) || a.lineId.localeCompare(b.lineId)); exitAdmission.stationLineMappingSha256 = sha(canonical(mapping)); resealFacility(exitAdmission); const exitNormalizedBytes = Buffer.from(canonical(normalized)); const exitAdmissionBytes = Buffer.from(canonical(exitAdmission));
   const exitReceipt = receipt(exitNormalizedBytes, exitAdmissionBytes, exitAdmission.admissionDigest);
   const metrics = transferMetrics(lines); const applicability = transferApplicability(lines, metrics);
   const transferAdmissionEvidence = { decision: "APPROVED", metricsArtifactSha256: metrics.artifactSha256, applicabilityArtifactSha256: applicability.artifactSha256, physicalPairCount: 15, directedMetricCount: 30, officialMetricCount: 28, derivedReciprocalMetricCount: 2, durationRole: "REFERENCE_ONLY", snapshotId: "transfer-snapshot", freshUntil: "2026-09-01T00:00:00.000Z", licenseEvidenceHash: "9".repeat(64) };
   const sourceInventory = { sources: [{ id: "seoul-metro-transfer-distance-duration", requiredForProductionPack: true, admissionEvidence: { adminReviewRecordHash: "d".repeat(64) }, transferAdmissionEvidence }] }; const sourceInventoryBytes = Buffer.from(canonical(sourceInventory));
-  const candidateBuildSpec = { candidateId: candidate.candidateId, publishedAt: "2026-08-01T00:00:00.000Z", sourceSnapshotIds: snapshotIds, sourceSnapshots: [...sourceSnapshots.slice(0, 6).map((entry) => ({ snapshotId: entry.snapshotId, sourceId: entry.sourceId })), Object.fromEntries(["snapshotId", "sourceId", "rawObjectUri", "rawSha256", "redactedRequestFingerprint", "schemaFingerprint", "licenseStatus", "redistributionAllowed", "adminReviewRecordHash", "snapshotStatus", "credentialRedacted", "freshnessExpiresAt", "rawRetentionExpiresAt", "governancePolicyVersion", "governancePolicySha256"].map((key) => [key, sourceSnapshots.at(-1)[key]]))], sourceSnapshotSetHash: sha(JSON.stringify(sourceSnapshots)), sourceInventorySha256: sha(JSON.stringify(sourceInventory)), networkEdgeEvidence: { sourceInventory: { path: "tools/datapack/source-inventory.json", sha256: sha(sourceInventoryBytes) } } };
+  const candidateBuildSpec = { candidateId: candidate.candidateId, publishedAt: "2026-08-01T00:00:00.000Z", sourceSnapshotIds: snapshotIds, sourceSnapshots: [...sourceSnapshots.slice(0, -1).map((entry) => ({ snapshotId: entry.snapshotId, sourceId: entry.sourceId })), Object.fromEntries(["snapshotId", "sourceId", "rawObjectUri", "rawSha256", "redactedRequestFingerprint", "schemaFingerprint", "licenseStatus", "redistributionAllowed", "adminReviewRecordHash", "snapshotStatus", "credentialRedacted", "freshnessExpiresAt", "rawRetentionExpiresAt", "governancePolicyVersion", "governancePolicySha256"].map((key) => [key, sourceSnapshots.at(-1)[key]]))], sourceSnapshotSetHash: sha(JSON.stringify(sourceSnapshots)), sourceInventorySha256: sha(JSON.stringify(sourceInventory)), networkEdgeEvidence: { sourceInventory: { path: "tools/datapack/source-inventory.json", sha256: sha(sourceInventoryBytes) } } };
   return { canonicalPack: { manifest: { channel: "production", activePack: { id: "capital" } }, packs: [{ id: "capital", lines: [{ id: "seoul-2", operatorId: "seoul-metro" }, { id: "seoul-4", operatorId: "seoul-metro" }, { id: "seoul-5", operatorId: "seoul-metro" }], stationLines: lines.map((line, lineSequence) => ({ ...line, lineSequence })) }] }, candidateBuildSpec, exitAdmission, exitAdmissionBytes, exitNormalized: normalized, exitNormalizedBytes, exitReceipt, facilityAdmission, facilitySnapshotBytes: snapshotBytes, policy: { artifactKind: "route-edge-evaluation-policy", policyVersion: "route-edge-evaluation-v2", edgeDomainMap: { RIDE: { endpointTarget: "NONE" } } }, sourceInventory, sourceInventoryBytes, sourceSnapshots, sourceSetTransition: { currentCandidateBytesSha256: "1".repeat(64), currentCandidateSourceSetSha256: sourceSet, evidenceSourceSetSha256: evidenceSourceSet, facilityAdmissionBytesSha256: "2".repeat(64) }, transferMetrics: metrics, transferApplicability: applicability };
 }
 
 async function publicStaticV2Fixture() {
   const input = await fixture();
-  const [positionsOld, molitOld, seoulOld] = input.sourceSnapshots.slice(0, 3).map((snapshot) => structuredClone(snapshot));
+  const positionsOld = structuredClone(input.sourceSnapshots[0]);
+  const molitOld = structuredClone(input.sourceSnapshots[4]);
+  const seoulOld = structuredClone(input.sourceSnapshots[2]);
   Object.assign(positionsOld, { sourceId: "seoul-metro-route-map-positions", snapshotId: "positions-old" });
   Object.assign(molitOld, { sourceId: "molit-urban-rail-full-route", snapshotId: "molit-old" });
   Object.assign(seoulOld, { sourceId: "seoul-metro-accessibility", snapshotId: "seoul-old" });
@@ -228,21 +257,28 @@ async function publicStaticV2Fixture() {
   const positionsCurrent = v2Head(positionsOld, "positions-current");
   const molitCurrent = v2Head(molitOld, "molit-current");
   const seoulCurrent = { ...structuredClone(seoulOld), snapshotId: "seoul-current", previousSnapshotId: seoulOld.snapshotId };
-  input.sourceSnapshots = [positionsOld, molitOld, seoulOld, ...input.sourceSnapshots.slice(3), positionsCurrent, molitCurrent, seoulCurrent];
-  input.candidateBuildSpec.sourceSnapshotIds.splice(0, 3, positionsCurrent.snapshotId, molitCurrent.snapshotId, seoulCurrent.snapshotId);
-  input.candidateBuildSpec.sourceSnapshots.splice(0, 3,
-    { sourceId: positionsCurrent.sourceId, snapshotId: positionsCurrent.snapshotId },
-    { sourceId: molitCurrent.sourceId, snapshotId: molitCurrent.snapshotId },
-    { sourceId: seoulCurrent.sourceId, snapshotId: seoulCurrent.snapshotId });
+  input.sourceSnapshots = [
+    positionsOld, molitOld, seoulOld,
+    positionsCurrent, input.sourceSnapshots[1], seoulCurrent, input.sourceSnapshots[3],
+    molitCurrent, input.sourceSnapshots[5], input.sourceSnapshots[6], input.sourceSnapshots[7],
+  ];
+  input.candidateBuildSpec.sourceSnapshotIds.splice(0, 1, positionsCurrent.snapshotId);
+  input.candidateBuildSpec.sourceSnapshotIds.splice(2, 1, seoulCurrent.snapshotId);
+  input.candidateBuildSpec.sourceSnapshotIds.splice(4, 1, molitCurrent.snapshotId);
+  input.candidateBuildSpec.sourceSnapshots.splice(0, 1, { sourceId: positionsCurrent.sourceId, snapshotId: positionsCurrent.snapshotId });
+  input.candidateBuildSpec.sourceSnapshots.splice(2, 1, { sourceId: seoulCurrent.sourceId, snapshotId: seoulCurrent.snapshotId });
+  input.candidateBuildSpec.sourceSnapshots.splice(4, 1, { sourceId: molitCurrent.sourceId, snapshotId: molitCurrent.snapshotId });
   const selectedIds = new Set(input.candidateBuildSpec.sourceSnapshotIds);
   const selected = input.sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
   const predecessor = input.sourceSnapshots.filter(({ snapshotId }) => new Set([
-    positionsOld.snapshotId, molitOld.snapshotId, seoulCurrent.snapshotId,
-    ...input.candidateBuildSpec.sourceSnapshotIds.slice(3),
+    positionsOld.snapshotId, input.candidateBuildSpec.sourceSnapshotIds[1], seoulCurrent.snapshotId,
+    input.candidateBuildSpec.sourceSnapshotIds[3], molitOld.snapshotId,
+    ...input.candidateBuildSpec.sourceSnapshotIds.slice(5, 7),
   ]).has(snapshotId));
   const evidence = input.sourceSnapshots.filter(({ snapshotId }) => new Set([
-    positionsOld.snapshotId, molitOld.snapshotId, seoulOld.snapshotId,
-    ...input.candidateBuildSpec.sourceSnapshotIds.slice(3, -1),
+    positionsOld.snapshotId, input.candidateBuildSpec.sourceSnapshotIds[1], seoulOld.snapshotId,
+    input.candidateBuildSpec.sourceSnapshotIds[3], molitOld.snapshotId,
+    ...input.candidateBuildSpec.sourceSnapshotIds.slice(5, -1),
   ]).has(snapshotId));
   const sourceSet = sha(JSON.stringify(selected)); const predecessorSourceSet = sha(JSON.stringify(predecessor)); const evidenceSourceSet = sha(JSON.stringify(evidence));
   input.candidateBuildSpec.sourceSnapshotSetHash = sourceSet;

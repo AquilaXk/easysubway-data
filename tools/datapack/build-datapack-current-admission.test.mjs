@@ -8,7 +8,8 @@ import test from "node:test";
 
 import {
   admittedIncheonTopologyEvidence,
-  admittedPinnedIncheonAccessibilityEvidence,
+  admittedTrackedIncheonAccessibilityEvidence,
+  admittedRegisteredIncheonAccessibilityEvidence,
   admittedItxNetworkEdgeEvidence,
   applyCandidateReleaseIdentity,
   candidateNetworkEdgeEvidence,
@@ -22,6 +23,7 @@ import {
   validateItxCurrentTopologyAdmission,
   validateCandidateProductionScope,
   productionAccessibilityFreshUntil,
+  validateRegisteredIncheonAccessibilityFixture,
   main as buildDatapackMain,
 } from "./build-datapack.mjs";
 import {
@@ -152,6 +154,25 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   const buildSpecPath = "tools/datapack/release/candidate-build-spec.json";
   const buildSpecBytes = await readFile(path.join(directory, buildSpecPath));
   const buildSpec = JSON.parse(buildSpecBytes);
+  const [ledger, exitAdmissionBytes, exitReceiptBytes] = await Promise.all([
+    readFile(path.join(directory, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+    readFile(path.join(directory, "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json")),
+    readFile(path.join(directory, "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json"), "utf8").then(JSON.parse),
+  ]);
+  const predecessorIds = new Set(buildSpec.sourceSnapshotIds.slice(0, -1));
+  const predecessorSourceSetSha256 = sha256(Buffer.from(JSON.stringify(
+    ledger.filter(({ snapshotId }) => predecessorIds.has(snapshotId)),
+  )));
+  const exitAdmission = JSON.parse(exitAdmissionBytes);
+  assert.equal(exitAdmission.candidate.candidateId, buildSpec.candidateId);
+  assert.equal(exitAdmission.candidate.sourceSetSha256, predecessorSourceSetSha256);
+  assert.notEqual(exitAdmission.candidate.sourceSetSha256, buildSpec.sourceSnapshotSetHash);
+  for (const row of [...exitAdmission.cells, ...exitAdmission.materializerEvidenceRows]) {
+    assert.equal(row.candidateId, buildSpec.candidateId);
+    assert.equal(row.sourceSetSha256, predecessorSourceSetSha256);
+  }
+  assert.equal(exitReceiptBytes.admissionSha256, sha256(exitAdmissionBytes));
+  assert.equal(exitReceiptBytes.admissionDigest, exitAdmission.admissionDigest);
   const topologyAdmission = buildSpec.networkEdgeEvidence.capitalTopologyAdmission;
   const firstBuildAt = Math.max(
     Date.parse(buildSpec.publishedAt),
@@ -238,7 +259,7 @@ test("candidate build spec release identity는 wall clock과 workflow run number
     validationOnlyProvenance.packs.map(({ artifactKind }) => artifactKind),
     ["fixture"],
   );
-  async function build(name, buildNow, runNumber) {
+  async function build(name, buildNow, runNumber, repositoryRoot = directory) {
     const output = path.join(directory, name);
     await withEnvironment({
       EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow,
@@ -252,7 +273,7 @@ test("candidate build spec release identity는 wall clock과 workflow run number
       "--current-capital-station-line-input", candidateStationLine,
       "--current-capital-route-edge-input", candidateRouteEdge,
       "--output", output,
-    ], { repositoryRoot: directory }));
+    ], { repositoryRoot }));
     return {
       manifest: await readFile(path.join(output, "current.json")),
       provenance: await readFile(path.join(output, "current.provenance.json")),
@@ -264,7 +285,7 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   try {
     await readFile(path.join(root, "tools/datapack/release/current-capital-accessibility-transition.json"));
     await assert.rejects(
-      build("transition-blocked", secondBuildNow, "303"),
+      build("transition-blocked", secondBuildNow, "303", root),
       /CURRENT_ACCESSIBILITY_TRANSITION_BLOCKED/,
     );
     await assert.rejects(
@@ -350,9 +371,11 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   );
 });
 
-test("candidate override accessibility freshness는 authority input identity와 earliest expiry에 결속된다", async () => {
+test("candidate override accessibility freshness는 authority input identity와 earliest expiry에 결속된다", async (context) => {
+  const directory = await prepareCurrentFullCapitalProductionRepository(root);
+  context.after(() => rm(directory, { recursive: true, force: true }));
   const stationLineInputBytes = await readFile(path.join(
-    root,
+    directory,
     "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
   ));
   const stationLineInput = JSON.parse(stationLineInputBytes);
@@ -444,18 +467,25 @@ test("source-separated current topology는 capital과 Incheon 1/2 line ownership
 });
 
 test("source-separated current topology materialization은 Incheon 1/2 exact 116 edges만 교체한다", async () => {
-  const inventory = await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse);
+  const [inventory, buildSpec] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8")
+      .then(JSON.parse),
+  ]);
   const source = (id) => inventory.sources.find((entry) => entry.id === id);
   const topologySnapshotPath = source("incheon-transit-station-info")
     ?.topologyAdmissionEvidence?.snapshotPath;
-  const accessibilitySnapshotPath = source("incheon-transit-accessibility")
-    ?.accessibilityAdmissionEvidence?.snapshotPath;
+  const accessibilityRegistration = source("incheon-transit-accessibility")
+    ?.registrationEvidence;
+  const accessibilitySnapshotPath = typeof accessibilityRegistration?.snapshotId === "string"
+    ? `tools/datapack/sources/${accessibilityRegistration.snapshotId}.json`
+    : null;
   const timetableSnapshotPaths = {
     1: source("incheon-line1-train-timetable")?.scheduleAdmissionEvidence?.snapshotPath,
     2: source("incheon-line2-train-timetable")?.scheduleAdmissionEvidence?.snapshotPath,
   };
   if (!/^tools\/datapack\/sources\/incheon-transit-station-info-[0-9]{8}\.json$/u.test(topologySnapshotPath ?? "")
-    || !/^tools\/datapack\/sources\/incheon-transit-accessibility-[0-9]{8}\.json$/u.test(accessibilitySnapshotPath ?? "")
+    || !/^tools\/datapack\/sources\/incheon-transit-accessibility-[0-9]{8}T[0-9]{9}Z\.json$/u.test(accessibilitySnapshotPath ?? "")
     || Object.values(timetableSnapshotPaths).some((snapshotPath) =>
       !/^tools\/datapack\/sources\/incheon-line[12]-train-timetable-[0-9]{8}\.json$/u.test(snapshotPath ?? ""))) {
     throw new Error("current Incheon source admission paths are missing");
@@ -515,39 +545,42 @@ test("source-separated current topology materialization은 Incheon 1/2 exact 116
   const accessibilityAdmission = admittedIncheonAccessibilityEvidence({
     sourceInventory: currentInventory,
     snapshot: accessibilitySnapshot,
+    snapshotBytes: accessibilityBytes,
     topologySnapshot: snapshot,
+    topologyMode: "registered-topology-successor",
     now,
   });
-  assert.equal(accessibilityAdmission.snapshotId,
-    currentInventory.sources.find(({ id }) => id === "incheon-transit-accessibility")
-      .accessibilityAdmissionEvidence.snapshotId);
+  assert.equal(accessibilityAdmission.snapshotId, accessibilitySnapshot.snapshotId);
   assert.equal(accessibilityAdmission.freshUntil, accessibilitySnapshot.freshUntil);
   const accessibilityPin = {
     path: accessibilitySnapshotPath,
     sha256: sha256(accessibilityBytes),
     snapshotId: accessibilityAdmission.snapshotId,
   };
-  assert.deepEqual(await admittedPinnedIncheonAccessibilityEvidence(accessibilityPin, {
+  assert.deepEqual(await admittedTrackedIncheonAccessibilityEvidence(accessibilityPin, {
     sourceInventory: currentInventory,
     topologySnapshot: snapshot,
+    topologyMode: "registered-topology-successor",
     repositoryRoot: root,
     now,
   }), accessibilityAdmission);
-  await assert.rejects(admittedPinnedIncheonAccessibilityEvidence({
+  await assert.rejects(admittedTrackedIncheonAccessibilityEvidence({
     ...accessibilityPin,
     sha256: "0".repeat(64),
   }, {
     sourceInventory: currentInventory,
     topologySnapshot: snapshot,
+    topologyMode: "registered-topology-successor",
     repositoryRoot: root,
     now,
   }), /sha256 must match tracked input bytes/);
-  await assert.rejects(admittedPinnedIncheonAccessibilityEvidence({
+  await assert.rejects(admittedTrackedIncheonAccessibilityEvidence({
     ...accessibilityPin,
     snapshotId: "incheon-transit-accessibility-20260827",
   }, {
     sourceInventory: currentInventory,
     topologySnapshot: snapshot,
+    topologyMode: "registered-topology-successor",
     repositoryRoot: root,
     now,
   }), /pinned Incheon accessibility admission identity mismatch/);
@@ -662,12 +695,12 @@ test("source-separated current topology materialization은 Incheon 1/2 exact 116
   assert.equal(productionAccessibilityFreshUntil(
     [accessibilityFixture],
     currentInventory,
-    [],
+    buildSpec.sourceSnapshots,
     now,
-    { admittedNonLedgerAccessibility: new Map([[accessibilityAdmission.source.id, accessibilityAdmission]]) },
+    { admittedAccessibilityEvidence: new Map([[accessibilityAdmission.source.id, accessibilityAdmission]]) },
   ), accessibilityAdmission.freshUntil);
   assert.throws(() => productionAccessibilityFreshUntil(
-    [accessibilityFixture], currentInventory, [], now,
+    [accessibilityFixture], currentInventory, buildSpec.sourceSnapshots, now,
   ), /production accessibility snapshot mismatch: incheon-transit-accessibility/);
   const wrongEvidenceFixture = structuredClone(accessibilityFixture);
   wrongEvidenceFixture.facilities[0].evidenceHash = "0".repeat(64);
@@ -700,8 +733,124 @@ test("source-separated current topology materialization은 Incheon 1/2 exact 116
   };
   assert.throws(() => productionAccessibilityFreshUntil(
     [unrelatedFixture], currentInventory, [], now,
-    { admittedNonLedgerAccessibility: new Map([[accessibilityAdmission.source.id, accessibilityAdmission]]) },
+    { admittedAccessibilityEvidence: new Map([[accessibilityAdmission.source.id, accessibilityAdmission]]) },
   ), /production accessibility snapshot mismatch: kric-station-convenience-standard/);
+});
+
+test("registered Incheon accessibility projection binds the current candidate and every materialized row", async () => {
+  const [buildSpec, sourceInventory] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
+  ]);
+  const topologySource = sourceInventory.sources.find(({ id }) => id === "incheon-transit-station-info");
+  const topologySnapshot = await readFile(
+    path.join(root, topologySource.topologyAdmissionEvidence.snapshotPath),
+    "utf8",
+  ).then(JSON.parse);
+  const registeredNow = new Date(buildSpec.publishedAt);
+  const registered = await admittedRegisteredIncheonAccessibilityEvidence(buildSpec, {
+    sourceInventory,
+    topologySnapshot,
+    topologyMode: "registered-topology-successor",
+    repositoryRoot: root,
+    now: registeredNow,
+  });
+  const externalLegacyKey = structuredClone(buildSpec.networkEdgeEvidence);
+  externalLegacyKey.incheonAccessibility = {
+    path: `tools/datapack/sources/${registered.admission.snapshotId}.json`,
+    sha256: registered.admission.source.registrationEvidence.snapshotFileSha256,
+    snapshotId: registered.admission.snapshotId,
+  };
+  const previousBuildNow = process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
+  process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = registeredNow.toISOString();
+  try {
+    assert.throws(
+      () => candidateNetworkEdgeEvidence(externalLegacyKey),
+      /incheonAccessibility is not allowed/,
+    );
+    assert.doesNotThrow(() => candidateNetworkEdgeEvidence(buildSpec.networkEdgeEvidence));
+  } finally {
+    if (previousBuildNow == null) delete process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
+    else process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = previousBuildNow;
+  }
+  const fixture = {
+    facilities: structuredClone(registered.admission.fixtureRows.facilities),
+    stationFacilityEvidence: structuredClone(registered.admission.fixtureRows.evidence),
+  };
+  assert.doesNotThrow(() => validateRegisteredIncheonAccessibilityFixture(
+    [fixture], registered, registeredNow,
+  ));
+  assert.equal(productionAccessibilityFreshUntil(
+    [fixture],
+    sourceInventory,
+    buildSpec.sourceSnapshots,
+    registeredNow,
+    { admittedAccessibilityEvidence: new Map([[
+      registered.admission.source.id,
+      registered.admission,
+    ]]) },
+  ), registered.projection.freshnessExpiresAt);
+
+  const absentProjection = structuredClone(buildSpec);
+  absentProjection.sourceSnapshots = absentProjection.sourceSnapshots.filter(
+    ({ sourceId }) => sourceId !== "incheon-transit-accessibility",
+  );
+  await assert.rejects(admittedRegisteredIncheonAccessibilityEvidence(absentProjection, {
+    sourceInventory, topologySnapshot, topologyMode: "registered-topology-successor",
+    repositoryRoot: root, now: registeredNow,
+  }), /exactly one registered Incheon accessibility projection/);
+  const duplicateProjection = structuredClone(buildSpec);
+  duplicateProjection.sourceSnapshots.push(structuredClone(registered.projection));
+  await assert.rejects(admittedRegisteredIncheonAccessibilityEvidence(duplicateProjection, {
+    sourceInventory, topologySnapshot, topologyMode: "registered-topology-successor",
+    repositoryRoot: root, now: registeredNow,
+  }), /exactly one registered Incheon accessibility projection/);
+
+  const byteHashDrift = structuredClone(sourceInventory);
+  byteHashDrift.sources.find(({ id }) => id === "incheon-transit-accessibility")
+    .registrationEvidence.snapshotFileSha256 = "0".repeat(64);
+  await assert.rejects(admittedRegisteredIncheonAccessibilityEvidence(buildSpec, {
+    sourceInventory: byteHashDrift, topologySnapshot,
+    topologyMode: "registered-topology-successor", repositoryRoot: root, now: registeredNow,
+  }), /sha256 must match tracked input bytes/);
+  const normalizedSchemaDrift = structuredClone(sourceInventory);
+  normalizedSchemaDrift.sources.find(({ id }) => id === "incheon-transit-accessibility")
+    .registrationEvidence.normalizedSchemaFingerprint = "0".repeat(64);
+  await assert.rejects(admittedRegisteredIncheonAccessibilityEvidence(buildSpec, {
+    sourceInventory: normalizedSchemaDrift, topologySnapshot,
+    topologyMode: "registered-topology-successor", repositoryRoot: root, now: registeredNow,
+  }), /registration evidence does not match tracked snapshot bytes/);
+  const adminReviewDrift = structuredClone(buildSpec);
+  adminReviewDrift.sourceSnapshots.find(({ sourceId }) => sourceId === "incheon-transit-accessibility")
+    .adminReviewRecordHash = "0".repeat(64);
+  await assert.rejects(admittedRegisteredIncheonAccessibilityEvidence(adminReviewDrift, {
+    sourceInventory, topologySnapshot, topologyMode: "registered-topology-successor",
+    repositoryRoot: root, now: registeredNow,
+  }), /projection does not match tracked ledger/);
+  const ociDrift = structuredClone(buildSpec);
+  ociDrift.sourceSnapshots.find(({ sourceId }) => sourceId === "incheon-transit-accessibility")
+    .rawObjectUri = "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/invalid.json";
+  await assert.rejects(admittedRegisteredIncheonAccessibilityEvidence(ociDrift, {
+    sourceInventory, topologySnapshot, topologyMode: "registered-topology-successor",
+    repositoryRoot: root, now: registeredNow,
+  }), /projection does not match tracked ledger/);
+  const ledgerFreshnessDrift = structuredClone(buildSpec);
+  ledgerFreshnessDrift.sourceSnapshots.find(({ sourceId }) => sourceId === "incheon-transit-accessibility")
+    .freshnessExpiresAt = "2026-12-01T00:00:00.000Z";
+  await assert.rejects(admittedRegisteredIncheonAccessibilityEvidence(ledgerFreshnessDrift, {
+    sourceInventory, topologySnapshot, topologyMode: "registered-topology-successor",
+    repositoryRoot: root, now: registeredNow,
+  }), /projection does not match tracked ledger/);
+  const staleProjection = structuredClone(registered);
+  staleProjection.projection.freshnessExpiresAt = "2026-08-01T00:00:00.000Z";
+  assert.throws(() => validateRegisteredIncheonAccessibilityFixture(
+    [fixture], staleProjection, registeredNow,
+  ), /projection is invalid or stale/);
+  const rowEvidenceDrift = structuredClone(fixture);
+  rowEvidenceDrift.facilities[0].evidenceHash = "0".repeat(64);
+  assert.throws(() => validateRegisteredIncheonAccessibilityFixture(
+    [rowEvidenceDrift], registered, registeredNow,
+  ), /registered Incheon accessibility row does not match admission/);
 });
 
 test("networkEdgeEvidence는 current source evidence와 historical topology overlay를 구분한다", () => {
@@ -721,6 +870,18 @@ test("networkEdgeEvidence는 current source evidence와 historical topology over
         sha256: "7".repeat(64),
       },
     };
+    const legacyIncheonAccessibility = {
+      ...current,
+      incheonAccessibility: {
+        path: "tools/datapack/sources/incheon-transit-accessibility-20260828T043356000Z.json",
+        sha256: "a".repeat(64),
+        snapshotId: "incheon-transit-accessibility-20260828T043356000Z",
+      },
+    };
+    assert.throws(
+      () => candidateNetworkEdgeEvidence(legacyIncheonAccessibility),
+      /incheonAccessibility is not allowed/,
+    );
     assert.equal(
       candidateNetworkEdgeEvidence(current).itxCurrentTopologyAdmissionSha256,
       "7".repeat(64),
@@ -868,19 +1029,20 @@ test("tracked current source topology evidence는 expired overlay 없이 exact a
   ]);
   assert.equal(Object.hasOwn(buildSpec.networkEdgeEvidence, "itxCurrentTopologyAdmission"), false);
   const topology = await validateTrackedItxTopologyEvidence(buildSpec, fixture);
+  const expectedItxEdgeCount = topology.evidence.topology.edgeCount;
   contract.sourceTimetableArtifact.promotion.approvalUrl =
     "https://github.com/AquilaXk/easysubway-data/issues/636#issuecomment-123";
   assert.equal(
     fixture.packs.find(({ id }) => id === "capital").networkEdges
       .filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN").length,
-    74,
+    expectedItxEdgeCount,
   );
   const previousBuildNow = process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
-  process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = "2026-08-25T00:00:00.000Z";
+  process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = buildSpec.publishedAt;
   try {
     const admitted = await admittedItxNetworkEdgeEvidence(contract, topology);
     assert.equal(admitted.sourceSnapshotId, contract.sourceTimetableArtifact.artifactId);
-    assert.equal(admitted.pairHashes.size, 74);
+    assert.equal(admitted.pairHashes.size, expectedItxEdgeCount);
     assert.equal(admitted.routeServiceArtifactEvidence.artifactEvidence.admissionStatus, "ADMITTED");
     assert.equal(admitted.routeServiceArtifactEvidence.stationCatalogEvidence.admissionStatus, "ADMITTED");
   } finally {

@@ -1,4 +1,9 @@
 #!/usr/bin/env node
+import { constants } from "node:fs";
+import { lstat, open, realpath, unlink } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
 import { KRIC_STATION_TUPLE_MAPPINGS } from "./collect-kric-accessibility-snapshots.mjs";
 import { providerLineScopesFor, validateKricProviderCodeCatalogIdentity } from "./build-molit-nationwide-fixture.mjs";
@@ -23,6 +28,13 @@ const ROUTE_ROSTER_KEYS = ["artifactKind", "capturedAt", "credentialRedacted", "
 const OUTPUT_KEYS = [
   "schemaVersion", "artifactKind", "coverage", "sourceIdentity", "stationLineProviderMappings", "counts", "planSha256",
 ];
+const CANONICAL_INPUTS = Object.freeze({
+  canonicalPackBytes: "tools/datapack/release/capital-production-canonical-pack.json",
+  coverageTargetsBytes: "tools/datapack/nationwide-coverage-targets.json",
+  providerCodeCatalogBytes: "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
+  routeRostersBytes: "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
+  sourceInventoryBytes: "tools/datapack/source-inventory.json",
+});
 
 export function buildCurrentCapitalFacilityCollectionPlan(input) {
   assertInput(input);
@@ -91,6 +103,119 @@ export function canonicalCurrentCapitalFacilityCollectionPlanJson(value) {
   }
   return `${canonicalJson(value)}\n`;
 }
+
+export async function main(argv, { log = console.log } = {}) {
+  const { repositoryRoot, output } = parseArguments(argv);
+  const root = await regularDirectory(repositoryRoot, "repository root");
+  const outputPath = await externalAbsentOutput(root, output);
+  const input = Object.fromEntries(await Promise.all(Object.entries(CANONICAL_INPUTS).map(async ([key, relative]) => [
+    key,
+    await readStableRegularInput(root, relative),
+  ])));
+  const bytes = Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(
+    buildCurrentCapitalFacilityCollectionPlan(input),
+  ));
+  await exclusiveWrite(outputPath, bytes);
+  log(JSON.stringify({ planSha256: sha256(bytes), output: outputPath }));
+}
+
+function parseArguments(argv) {
+  if (!Array.isArray(argv) || argv.length !== 4 || argv[0] !== "--repository-root" || argv[2] !== "--output") {
+    throw new Error("usage: --repository-root <absolute-path> --output <absolute-path>");
+  }
+  for (const [value, label] of [[argv[1], "repository root"], [argv[3], "output"]]) {
+    if (typeof value !== "string" || !path.isAbsolute(value)) throw new Error(`${label} must be an absolute path`);
+  }
+  return { repositoryRoot: path.resolve(argv[1]), output: path.resolve(argv[3]) };
+}
+
+async function regularDirectory(value, label) {
+  const initial = await lstat(value).catch(() => { throw new Error(`${label} must be a regular non-symlink directory`); });
+  if (!initial.isDirectory() || initial.isSymbolicLink()) throw new Error(`${label} must be a regular non-symlink directory`);
+  const resolved = await realpath(value);
+  const current = await lstat(resolved);
+  if (!current.isDirectory() || current.isSymbolicLink()) throw new Error(`${label} must be a regular non-symlink directory`);
+  return resolved;
+}
+
+async function externalAbsentOutput(root, output) {
+  const parent = path.dirname(output);
+  const initial = await lstat(parent).catch(() => { throw new Error("output parent must be a regular non-symlink directory"); });
+  if (!initial.isDirectory() || initial.isSymbolicLink()) throw new Error("output parent must be a regular non-symlink directory");
+  const resolvedParent = await realpath(parent);
+  const current = await lstat(resolvedParent);
+  if (!current.isDirectory() || current.isSymbolicLink() || resolvedParent !== parent) {
+    throw new Error("output parent must be a regular non-symlink directory");
+  }
+  const target = path.join(resolvedParent, path.basename(output));
+  if (within(root, target)) throw new Error("output must stay outside repository root");
+  await lstat(target).then(() => { throw new Error("output must not already exist"); }).catch((error) => {
+    if (error?.code !== "ENOENT") throw error;
+  });
+  return target;
+}
+
+async function readStableRegularInput(root, relative) {
+  if (!Number.isInteger(constants.O_NOFOLLOW)) throw new Error("canonical input cannot enforce O_NOFOLLOW");
+  const target = path.join(root, relative);
+  const pathBefore = await lstat(target).catch(() => { throw new Error(`canonical input is not a regular file: ${relative}`); });
+  if (!pathBefore.isFile() || pathBefore.isSymbolicLink() || await realpath(target) !== target) {
+    throw new Error(`canonical input is not a regular file: ${relative}`);
+  }
+  const handle = await open(target, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const before = await handle.stat();
+    if (!before.isFile() || !sameIdentity(pathBefore, before)) {
+      throw new Error(`canonical input changed while reading: ${relative}`);
+    }
+    const bytes = await handle.readFile();
+    const after = await handle.stat();
+    const pathAfter = await lstat(target).catch(() => { throw new Error(`canonical input changed while reading: ${relative}`); });
+    if (!sameFile(before, after) || !sameFile(after, pathAfter) || bytes.length !== before.size) {
+      throw new Error(`canonical input changed while reading: ${relative}`);
+    }
+    return bytes;
+  } finally {
+    await handle.close();
+  }
+}
+
+async function exclusiveWrite(target, bytes) {
+  if (!Number.isInteger(constants.O_NOFOLLOW)) throw new Error("output cannot enforce O_NOFOLLOW");
+  let handle;
+  try {
+    handle = await open(target, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
+  } catch (error) {
+    if (error?.code === "EEXIST") throw new Error("output must not already exist");
+    throw error;
+  }
+  let reserved;
+  let completed = false;
+  try {
+    reserved = await handle.stat();
+    await handle.writeFile(bytes);
+    await handle.sync();
+    const after = await handle.stat();
+    const pathAfter = await lstat(target).catch(() => { throw new Error("output changed while writing"); });
+    if (!sameIdentity(reserved, after) || !sameIdentity(after, pathAfter) || after.size !== bytes.length) {
+      throw new Error("output changed while writing");
+    }
+    completed = true;
+  } finally {
+    await handle.close().catch(() => {});
+    if (completed) return;
+    const current = await lstat(target).catch(() => null);
+    if (current && sameIdentity(reserved, current)) await unlink(target);
+  }
+}
+
+function sameFile(left, right) {
+  return sameIdentity(left, right) && left.size === right.size
+    && left.mtimeMs === right.mtimeMs && left.ctimeMs === right.ctimeMs;
+}
+
+function sameIdentity(left, right) { return left.dev === right.dev && left.ino === right.ino; }
+function within(root, target) { return target === root || target.startsWith(`${root}${path.sep}`); }
 
 function validatePlanPayload(value) {
   assertKeys(value.coverage, ["operatorId", "regionId", "sourceDomain", "sourceIds"], "capital FACILITY coverage");
@@ -392,3 +517,6 @@ function compare(left, right) { return left < right ? -1 : left > right ? 1 : 0;
 function compareTarget(left, right) { return compare(left.stationId, right.stationId) || compare(left.lineId, right.lineId); }
 function compareMapping(left, right) { return compareTarget(left, right) || compare(providerTupleKey(left), providerTupleKey(right)); }
 function compareProviderScope(left, right) { return compare(`${left.regionId}\0${left.operatorId}\0${left.lineId}`, `${right.regionId}\0${right.operatorId}\0${right.lineId}`); }
+
+const invokedAsScript = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+if (invokedAsScript) main(process.argv.slice(2)).catch((error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });
