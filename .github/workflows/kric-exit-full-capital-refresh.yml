@@ -1,0 +1,137 @@
+name: KRIC EXIT Full-Capital Refresh
+
+on:
+  schedule:
+    - cron: "41 */2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: kric-exit-full-capital-refresh-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: KRIC EXIT full-capital refresh
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    environment: datapack-release-check
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
+      - name: Prepare KRIC EXIT refresh paths
+        run: |
+          set -euo pipefail
+          operation_root="${RUNNER_TEMP}/kric-exit-full-capital-refresh/${GITHUB_RUN_ID}"
+          mkdir -p "${operation_root}"
+          printf 'EXIT_REFRESH_OPERATION_ROOT=%s\n' "${operation_root}" >> "${GITHUB_ENV}"
+          printf 'EXIT_REFRESH_DECISION=%s\n' "${RUNNER_TEMP}/kric-exit-full-capital-refresh/decision.json" >> "${GITHUB_ENV}"
+      - name: Decide whether KRIC EXIT refresh is due
+        id: decision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          state_root="${RUNNER_TEMP}/kric-exit-full-capital-refresh"
+          gh pr list --repo "${GITHUB_REPOSITORY}" --state all --limit 1000 --json state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > "${state_root}/prs.json"
+          git ls-remote --heads origin "refs/heads/automation/6-kric-exit-full-capital-refresh-*" > "${state_root}/claims.txt"
+          node tools/ci/decide-current-kric-exit-full-capital-refresh.mjs --inventory tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json --policy release/product-gates/datapack-freshness-sla.json --prs "${state_root}/prs.json" --claims "${state_root}/claims.txt" --repository "${GITHUB_REPOSITORY}" --output "${EXIT_REFRESH_DECISION}" --github-output "${GITHUB_OUTPUT}"
+      - name: Recover completed claimed refresh
+        if: ${{ steps.decision.outputs.state == 'RECOVER_CLAIM' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch="${{ steps.decision.outputs.branch }}"
+          git fetch --no-tags origin "refs/heads/${branch}:refs/remotes/origin/${branch}"
+          [[ "$(git rev-list --count HEAD.."origin/${branch}")" == "2" ]] || { echo "EXIT refresh claim must have exactly a claim and output commit" >&2; exit 1; }
+          [[ "$(git rev-parse "origin/${branch}^^")" == "$(git rev-parse HEAD)" ]] || { echo "EXIT refresh claim is not based on current main" >&2; exit 1; }
+          [[ "$(git log -1 --format=%s "origin/${branch}^")" == "Claim KRIC EXIT full-capital refresh" ]] || { echo "EXIT refresh claim subject is invalid" >&2; exit 1; }
+          [[ "$(git log -1 --format=%s "origin/${branch}")" == "Refresh KRIC EXIT full-capital snapshot" ]] || { echo "EXIT refresh output subject is invalid" >&2; exit 1; }
+          deleted="$(git diff --name-only --diff-filter=D HEAD "origin/${branch}")"
+          [[ -z "${deleted}" ]] || { echo "EXIT refresh claim removed a tracked output" >&2; exit 1; }
+          changed="$(git diff --name-only --diff-filter=ACMR HEAD "origin/${branch}")"
+          EXIT_REFRESH_CHANGED="${changed}" node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { currentCapitalLiveChainOutputPaths } from "./tools/datapack/build-current-capital-live-chain-bundle.mjs"; const root = process.env.GITHUB_WORKSPACE; const [candidate, inventory, ledger] = await Promise.all([readFile(root + "/tools/datapack/release/candidate-build-spec.json", "utf8").then(JSON.parse), readFile(root + "/tools/datapack/source-inventory.json", "utf8").then(JSON.parse), readFile(root + "/tools/datapack/release/source-snapshots.json", "utf8").then(JSON.parse)]); const expected = currentCapitalLiveChainOutputPaths({ candidate, sourceInventory: inventory, sourceSnapshotLedger: ledger }); const changed = process.env.EXIT_REFRESH_CHANGED.split("\n").filter(Boolean).sort(); if (changed.length !== 17 || JSON.stringify(changed) !== JSON.stringify(expected)) throw new Error("EXIT refresh claim output allowlist mismatch");'
+          existing="${RUNNER_TEMP}/kric-exit-full-capital-refresh/claim-prs.json"
+          gh pr list --repo "${GITHUB_REPOSITORY}" --state all --base main --head "${branch}" --limit 100 --json state,headRefName,baseRefName,headRepository,isCrossRepository > "${existing}"
+          [[ "$(tr -d '[:space:]' < "${existing}")" == "[]" ]] || { echo "EXIT refresh claim already has a pull request" >&2; exit 1; }
+          gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${branch}" --title "Refresh KRIC EXIT full-capital snapshot" --body "Refresh the due KRIC EXIT full-capital source admission through the current OCI operation.\n\nRefs #6"
+      - name: Create durable claim before provider access
+        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch="automation/6-kric-exit-full-capital-refresh-${GITHUB_RUN_ID}"
+          main_sha="$(git rev-parse HEAD)"
+          git switch -c "${branch}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "Claim KRIC EXIT full-capital refresh"
+          gh auth setup-git
+          git push origin "${branch}"
+          git switch main
+          [[ "$(git rev-parse HEAD)" == "${main_sha}" ]] || { echo "main changed while creating EXIT refresh claim" >&2; exit 1; }
+          printf 'EXIT_REFRESH_BRANCH=%s\n' "${branch}" >> "${GITHUB_ENV}"
+          printf 'EXIT_REFRESH_MAIN_SHA=%s\n' "${main_sha}" >> "${GITHUB_ENV}"
+      - name: Validate provider and OCI configuration
+        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
+        env:
+          KRIC_SERVICE_KEY: ${{ secrets.KRIC_SERVICE_KEY }}
+          EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
+        run: |
+          set -euo pipefail
+          [[ -n "${KRIC_SERVICE_KEY:-}" && "${KRIC_SERVICE_KEY}" != *$'\n'* && "${KRIC_SERVICE_KEY}" != *$'\r'* ]] || { echo "KRIC_SERVICE_KEY must be a nonempty single line" >&2; exit 1; }
+          [[ -n "${EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL:-}" && "${EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL}" != *$'\n'* && "${EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL}" != *$'\r'* ]] || { echo "EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL must be a nonempty single line" >&2; exit 1; }
+      - name: Recover transfer raw and collect one current EXIT snapshot
+        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
+        env:
+          KRIC_SERVICE_KEY: ${{ secrets.KRIC_SERVICE_KEY }}
+          EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "${EXIT_REFRESH_MAIN_SHA}" ]] || { echo "EXIT refresh collector is not running from claimed main" >&2; exit 1; }
+          node tools/datapack/recover-current-live-chain-transfer-observation.mjs --repository-root "${GITHUB_WORKSPACE}" --recovery-root "${EXIT_REFRESH_OPERATION_ROOT}/transfer"
+          node tools/datapack/run-current-capital-live-chain.mjs --repository-root "${GITHUB_WORKSPACE}" --runner-temp "${RUNNER_TEMP}" --repository "${GITHUB_REPOSITORY}" --repository-sha "${EXIT_REFRESH_MAIN_SHA}" --operation-id "kric-exit-full-capital-refresh-${GITHUB_RUN_ID}" --transfer-observation-directory "${EXIT_REFRESH_OPERATION_ROOT}/transfer/observation" --transfer-receipt "${EXIT_REFRESH_OPERATION_ROOT}/transfer/receipt.json" --handoff-directory "${EXIT_REFRESH_OPERATION_ROOT}/handoff"
+      - name: Commit exactly the current live-chain outputs
+        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git switch "${EXIT_REFRESH_BRANCH}"
+          [[ "$(git rev-parse HEAD^)" == "${EXIT_REFRESH_MAIN_SHA}" ]] || { echo "EXIT refresh claim is not based on its operation main" >&2; exit 1; }
+          mapfile -t outputs < <(node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { currentCapitalLiveChainOutputPaths } from "./tools/datapack/build-current-capital-live-chain-bundle.mjs"; const handoff = process.env.EXIT_REFRESH_OPERATION_ROOT + "/handoff"; const [candidate, inventory, ledger] = await Promise.all([readFile(handoff + "/tools/datapack/release/candidate-build-spec.json", "utf8").then(JSON.parse), readFile(handoff + "/tools/datapack/source-inventory.json", "utf8").then(JSON.parse), readFile(handoff + "/tools/datapack/release/source-snapshots.json", "utf8").then(JSON.parse)]); process.stdout.write(currentCapitalLiveChainOutputPaths({ candidate, sourceInventory: inventory, sourceSnapshotLedger: ledger }).join("\n"));')
+          [[ "${#outputs[@]}" == "17" ]] || { echo "EXIT refresh output allowlist is invalid" >&2; exit 1; }
+          for output in "${outputs[@]}"; do cp "${EXIT_REFRESH_OPERATION_ROOT}/handoff/${output}" "${output}"; done
+          git add "${outputs[@]}"
+          deleted="$(git diff --cached --name-only --diff-filter=D)"
+          [[ -z "${deleted}" ]] || { echo "EXIT refresh removed a tracked output" >&2; exit 1; }
+          mapfile -t changed < <(git diff --cached --name-only --diff-filter=ACMR)
+          EXIT_REFRESH_CHANGED="$(printf '%s\n' "${changed[@]}")" EXIT_REFRESH_OPERATION_ROOT="${EXIT_REFRESH_OPERATION_ROOT}" node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { currentCapitalLiveChainOutputPaths } from "./tools/datapack/build-current-capital-live-chain-bundle.mjs"; const handoff = process.env.EXIT_REFRESH_OPERATION_ROOT + "/handoff"; const [candidate, inventory, ledger] = await Promise.all([readFile(handoff + "/tools/datapack/release/candidate-build-spec.json", "utf8").then(JSON.parse), readFile(handoff + "/tools/datapack/source-inventory.json", "utf8").then(JSON.parse), readFile(handoff + "/tools/datapack/release/source-snapshots.json", "utf8").then(JSON.parse)]); const expected = currentCapitalLiveChainOutputPaths({ candidate, sourceInventory: inventory, sourceSnapshotLedger: ledger }); const changed = process.env.EXIT_REFRESH_CHANGED.split("\n").filter(Boolean).sort(); if (changed.length !== 17 || JSON.stringify(changed) !== JSON.stringify(expected)) throw new Error("EXIT refresh output allowlist mismatch");'
+          git commit -m "Refresh KRIC EXIT full-capital snapshot"
+          git push origin "${EXIT_REFRESH_BRANCH}"
+      - name: Create draft pull request
+        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${EXIT_REFRESH_BRANCH}" --title "Refresh KRIC EXIT full-capital snapshot" --body "Refresh the due KRIC EXIT full-capital source admission through the current OCI operation.\n\nRefs #6"
+      - name: Upload sanitized evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: kric-exit-full-capital-refresh-${{ github.run_id }}
+          path: ${{ runner.temp }}/kric-exit-full-capital-refresh/decision.json
+          if-no-files-found: ignore
+          retention-days: 14
