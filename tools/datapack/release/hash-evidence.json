@@ -44,12 +44,12 @@
     "governanceOverlayNote": "retained legacy root 5종과 timetable의 원천 identity를 유지하고 신규 접근성 snapshot 2종을 추가했다. build-spec의 freshnessExpiresAt·rawRetentionExpiresAt·governance policy binding은 현행 정책에서 파생하며 validator가 임의 연장을 차단한다."
   },
   "sourceSnapshotSetHash": {
-    "value": "05de19c56acc6af812b071ee3081612a8ee9502e86c3cb38cec54c83c15040cc",
+    "value": "9efd668071d0c3b12c29e758e4f981c0d2fab5f066b6497631ce1735bd6e82e5",
     "contract": "source별 head 8종의 byte-ordered JSON hash와 build spec·release request가 일치해야 한다.",
     "reproductionCommand": "node -e \"import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto');const s=require('./tools/datapack/release/source-snapshots.json'),b=require('./tools/datapack/release/candidate-build-spec.json'),i=b.sourceSnapshotIds;if(!Array.isArray(i)||new Set(i).size!==i.length)throw new Error('candidate snapshot IDs are invalid');const h=validateLineage(s).headsBySource,p=i.map(id=>{const n=s.filter(x=>x.snapshotId===id);if(n.length!==1||h[n[0].sourceId]!==id)throw new Error('candidate source snapshot mismatch: '+id);return n[0]});if(new Set(p.map(x=>x.sourceId)).size!==p.length)throw new Error('candidate source snapshots are not unique');const k=new Set(i),r=s.filter(x=>k.has(x.snapshotId));if(r.length!==p.length)throw new Error('candidate ledger selection mismatch');if(!Array.isArray(b.sourceSnapshots)||b.sourceSnapshots.length!==p.length||b.sourceSnapshots.some((x,n)=>x.sourceId!==p[n].sourceId||x.snapshotId!==p[n].snapshotId))throw new Error('candidate source projection mismatch');console.log(c.createHash('sha256').update(JSON.stringify(r)).digest('hex'))})\""
   },
   "sourceInventorySha256": {
-    "value": "ed2466eaf8cae69a2883e0860b4292e885193e2169d60977ce29cd0ebc21c635",
+    "value": "1f0babe8be1aef746444807112c2b73b0d13b926b80f168e9b5732a9124b6c5b",
     "contract": "run-source-admission-pipeline.mjs의 공식 sha256(JSON.stringify(admittedInventory)) 계약. 현행 브랜치의 tools/datapack/source-inventory.json이 최종 admitted inventory이며 워크플로 빌드가 실제로 소비하는 인벤토리와 동일 파일.",
     "reproductionCommand": "node -e \"const c=require('crypto'),fs=require('fs');console.log(c.createHash('sha256').update(JSON.stringify(JSON.parse(fs.readFileSync('tools/datapack/source-inventory.json','utf8')))).digest('hex'))\""
   },
@@ -113,18 +113,18 @@
       "perSourceSnapshotSetHash": "11318faf60ca6dfd9b5022e4a9eea2b2228ba651bd6764578190bc21582cf3c3"
     },
     {
-      "sourceId": "kric-station-convenience-standard",
-      "snapshotId": "kric-station-convenience-standard-20260830T022401673Z",
-      "rawSha256": "0c28d09b154b3975dda17c6fa45d236fccdb9d8687c746aa0279fba04f5840ec",
-      "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
-      "perSourceSnapshotSetHash": "2f2963972e17ccf155b7d1c9c39b0f1fd2268f8a24d13df03a420f5384de130e"
-    },
-    {
       "sourceId": "seoul-metro-accessibility",
       "snapshotId": "seoul-metro-accessibility-20260830T173929300Z",
       "rawSha256": "49447f84ec83e01317757bc5a84699e3eb576f1d793a43dcf83eb8a3af0b5ee8",
       "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",
       "perSourceSnapshotSetHash": "15fd7bcb47282efef77f43b8f537b6b51b02bc724f553123d16a4abdf9eeb089"
+    },
+    {
+      "sourceId": "kric-station-convenience-standard",
+      "snapshotId": "kric-station-convenience-standard-20260831T084124560Z",
+      "rawSha256": "a3fef290c159b4082ee8cadf6fc67c0ca5fd4aa3c39815ff6688cd525b3bfb3a",
+      "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
+      "perSourceSnapshotSetHash": "290092f8c22dee20f58ae784b5086bf6e9fb426222e216fc2dfaf07e6959881c"
     }
   ],
   "officialOdFareEvidence": {

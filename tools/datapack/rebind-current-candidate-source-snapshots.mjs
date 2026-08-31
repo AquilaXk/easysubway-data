@@ -12,6 +12,7 @@ import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-access
 import { requiredCredentialFreeObjectUri, validateLineage } from "./source-snapshot-policy.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { approvedLegacyGovernanceBinding } from "./legacy-source-governance.mjs";
+import { releaseRequestBindingViolations } from "./verify-release-request-binding.mjs";
 
 const SOURCE_ID = "kric-station-convenience-standard";
 const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
@@ -56,12 +57,14 @@ const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const PATHS = Object.freeze({
   candidate: "tools/datapack/release/candidate-build-spec.json",
   releaseRequest: "tools/datapack/release/release-request.json",
+  hashEvidence: "tools/datapack/release/hash-evidence.json",
   inventory: "tools/datapack/source-inventory.json",
   snapshots: "tools/datapack/release/source-snapshots.json",
   pack: "tools/datapack/release/capital-production-canonical-pack.json",
   governance: "tools/datapack/source-governance-policy.json",
   freshness: "release/product-gates/datapack-freshness-sla.json",
   lock: "tools/datapack/.candidate-source-rebind.lock",
+  transaction: "tools/datapack/.candidate-source-rebind-transaction.json",
 });
 
 function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
@@ -489,13 +492,92 @@ async function acquireLock(root) {
   return async () => { await rmdir(lock); };
 }
 
+function jsonBytes(value) { return Buffer.from(`${JSON.stringify(value, null, 2)}\n`); }
+function selectedLedgerSnapshots(sourceSnapshots, candidate) {
+  const ids = new Set(candidate.sourceSnapshotIds);
+  const selected = sourceSnapshots.filter(({ snapshotId }) => ids.has(snapshotId));
+  if (ids.size !== candidate.sourceSnapshotIds.length || selected.length !== candidate.sourceSnapshotIds.length
+    || selected.some((snapshot) => !candidate.sourceSnapshots.some(({ snapshotId, sourceId }) => snapshotId === snapshot.snapshotId && sourceId === snapshot.sourceId))) {
+    throw new Error("candidate source snapshot selection is invalid");
+  }
+  return selected;
+}
+
+function deriveBoundReleaseArtifacts({ candidate, candidateBytes, releaseRequest, hashEvidence, sourceSnapshots, sourceInventory }) {
+  const request = structuredClone(releaseRequest);
+  if (request.candidateId !== candidate.candidateId || request.scopeId !== candidate.productionScopeId
+    || typeof request.approvalId !== "string" || request.approvalId === ""
+    || typeof request.requestedBy !== "string" || request.requestedBy === ""
+    || typeof request.approvedBy !== "string" || request.approvedBy === "" || request.requestedBy === request.approvedBy) {
+    throw new Error("release authorization identity is invalid");
+  }
+  request.buildSpecSha256 = sha256(candidateBytes);
+  request.sourceSnapshotSetHash = candidate.sourceSnapshotSetHash;
+  const selected = selectedLedgerSnapshots(sourceSnapshots, candidate);
+  const evidence = structuredClone(hashEvidence);
+  if (evidence?.artifactKind !== "datapack-build-spec-hash-evidence"
+    || evidence.productionScopeId !== candidate.productionScopeId
+    || evidence.identifiers?.candidateId?.value !== candidate.candidateId
+    || evidence.identifiers?.approvalId?.value !== request.approvalId
+    || evidence.ledgerHashes?.approvedAliasLedgerHash?.value !== candidate.approvedAliasLedgerHash) {
+    throw new Error("hash evidence authorization identity is invalid");
+  }
+  evidence.sourceSnapshotSetHash.value = candidate.sourceSnapshotSetHash;
+  evidence.sourceInventorySha256.value = candidate.sourceInventorySha256;
+  evidence.perSourceEvidence = selected.map((snapshot) => ({
+    sourceId: snapshot.sourceId,
+    snapshotId: snapshot.snapshotId,
+    rawSha256: snapshot.rawSha256,
+    adminReviewRecordHash: exactlyOne(sourceInventory.sources ?? [], ({ id }) => id === snapshot.sourceId, "release source").admissionEvidence.adminReviewRecordHash,
+    perSourceSnapshotSetHash: sha256(JSON.stringify([snapshot])),
+  }));
+  const requestBytes = jsonBytes(request);
+  if (releaseRequestBindingViolations({ buildSpec: candidate, buildSpecSha256: sha256(candidateBytes), releaseRequest: request }).length !== 0) {
+    throw new Error("release request rebinding verification failed");
+  }
+  return { requestBytes, hashEvidenceBytes: jsonBytes(evidence) };
+}
+
+function transactionRecord(relative, before, after) {
+  return { path: relative, before: before.toString("base64"), after: after.toString("base64"), beforeSha256: sha256(before), afterSha256: sha256(after) };
+}
+function parseTransaction(bytes) {
+  const value = parse(bytes, "candidate rebind transaction");
+  if (value?.schemaVersion !== 1 || !["PREPARED", "COMMITTED"].includes(value.state) || !Array.isArray(value.records) || value.records.length !== 3
+    || new Set(value.records.map(({ path: relative }) => relative)).size !== 3
+    || value.records.some((record) => ![PATHS.candidate, PATHS.releaseRequest, PATHS.hashEvidence].includes(record.path) || !SHA256.test(record.beforeSha256 ?? "") || !SHA256.test(record.afterSha256 ?? "") || typeof record.before !== "string" || typeof record.after !== "string")) {
+    throw new Error("candidate rebind transaction is invalid");
+  }
+  return value;
+}
+async function recoverTransaction(root, atomicReplaceImpl) {
+  const journalPath = path.join(root, PATHS.transaction);
+  const existing = await existingTransaction(journalPath);
+  if (existing == null) return;
+  const journal = parseTransaction(existing.bytes);
+  for (const record of journal.records) {
+    const before = Buffer.from(record.before, "base64"), after = Buffer.from(record.after, "base64");
+    if (sha256(before) !== record.beforeSha256 || sha256(after) !== record.afterSha256) throw new Error("candidate rebind transaction hashes are invalid");
+    const current = await readStableRegularFile(path.join(root, record.path), record.path);
+    if (journal.state === "PREPARED" && current.bytes.equals(after)) await atomicReplaceImpl(current.target, before, { original: current });
+    else if (journal.state === "COMMITTED" && current.bytes.equals(before)) await atomicReplaceImpl(current.target, after, { original: current });
+    else if (!(journal.state === "PREPARED" ? current.bytes.equals(before) : current.bytes.equals(after))) throw new Error("candidate rebind preserves foreign replacement");
+  }
+  await unlink(journalPath);
+}
+async function existingTransaction(target) {
+  try { return await readStableRegularFile(target, "candidate rebind transaction"); }
+  catch (error) { if (error?.code === "ENOENT" || error?.cause?.code === "ENOENT") return null; throw error; }
+}
+
 export async function rebindCurrentCandidateSourceSnapshots({
   repositoryRoot = ROOT, now = new Date(), atomicReplaceImpl = atomicReplace, beforeReplace = async () => {},
 } = {}) {
   const root = path.resolve(repositoryRoot);
   const release = await acquireLock(root);
   try {
-    const entries = await Promise.all(Object.entries(PATHS).filter(([key]) => key !== "lock").map(async ([key, relative]) => {
+    await recoverTransaction(root, atomicReplaceImpl);
+    const entries = await Promise.all(Object.entries(PATHS).filter(([key]) => !["lock", "transaction"].includes(key)).map(async ([key, relative]) => {
       const target = path.join(root, relative);
       return [key, await readStableRegularFile(target, key)];
     }));
@@ -509,27 +591,47 @@ export async function rebindCurrentCandidateSourceSnapshots({
       throw new Error("KRIC snapshot evidence path is invalid");
     }
     input.kricSnapshot = await readStableRegularFile(path.resolve(root, relativeSnapshotPath), "KRIC snapshot evidence file");
-    const result = rebindCandidateSourceSnapshots({
-      candidateBuildSpec: parse(input.candidate.bytes, "candidate"),
-      candidateBuildSpecBytes: input.candidate.bytes,
-      releaseRequest: parse(input.releaseRequest.bytes, "release request"),
-      sourceInventory,
-      sourceInventoryBytes: input.inventory.bytes,
-      sourceSnapshots: parse(input.snapshots.bytes, "source snapshot ledger"),
-      canonicalPack: parse(input.pack.bytes, "capital canonical pack"),
-      governancePolicy: parse(input.governance.bytes, "source governance policy"),
-      governancePolicyBytes: input.governance.bytes,
-      freshnessPolicy: parse(input.freshness.bytes, "freshness SLA"), now,
-      kricSnapshotBytes: input.kricSnapshot.bytes,
+    const currentCandidate = parse(input.candidate.bytes, "candidate");
+    const currentKric = currentCandidate.sourceSnapshots?.find(({ sourceId }) => sourceId === SOURCE_ID)?.snapshotId;
+    const result = currentKric === kricEvidence.snapshotId ? currentCandidate : rebindCandidateSourceSnapshots({
+      candidateBuildSpec: currentCandidate, candidateBuildSpecBytes: input.candidate.bytes, releaseRequest: parse(input.releaseRequest.bytes, "release request"), sourceInventory, sourceInventoryBytes: input.inventory.bytes,
+      sourceSnapshots: parse(input.snapshots.bytes, "source snapshot ledger"), canonicalPack: parse(input.pack.bytes, "capital canonical pack"), governancePolicy: parse(input.governance.bytes, "source governance policy"), governancePolicyBytes: input.governance.bytes, freshnessPolicy: parse(input.freshness.bytes, "freshness SLA"), now, kricSnapshotBytes: input.kricSnapshot.bytes,
     });
-    const bytes = Buffer.from(`${JSON.stringify(result, null, 2)}\n`);
+    const bytes = jsonBytes(result);
+    const bound = deriveBoundReleaseArtifacts({ candidate: result, candidateBytes: bytes, releaseRequest: parse(input.releaseRequest.bytes, "release request"), hashEvidence: parse(input.hashEvidence.bytes, "hash evidence"), sourceSnapshots: parse(input.snapshots.bytes, "source snapshot ledger"), sourceInventory });
     await beforeReplace({ root, input, bytes });
     for (const snapshot of Object.values(input)) await assertStable(snapshot);
-    await atomicReplaceImpl(input.candidate.target, bytes, { original: input.candidate });
-    const final = await readStableRegularFile(input.candidate.target, "candidate target");
-    if (!sameBytes(final.bytes, bytes)) throw new Error("candidate target replacement verification failed");
+    const outputs = [
+      { input: input.candidate, bytes }, { input: input.releaseRequest, bytes: bound.requestBytes }, { input: input.hashEvidence, bytes: bound.hashEvidenceBytes },
+    ];
+    const records = outputs.map(({ input: original, bytes: after }) => transactionRecord(path.relative(root, original.target), original.bytes, after));
+    const journalPath = path.join(root, PATHS.transaction);
+    await syncTransaction(journalPath, { schemaVersion: 1, state: "PREPARED", records });
+    for (const output of outputs) if (!output.input.bytes.equals(output.bytes)) await atomicReplaceImpl(output.input.target, output.bytes, { original: output.input });
+    await syncTransaction(journalPath, { schemaVersion: 1, state: "COMMITTED", records });
+    for (const output of outputs) {
+      const final = await readStableRegularFile(output.input.target, output.input.label);
+      if (!sameBytes(final.bytes, output.bytes)) throw new Error("candidate rebind output verification failed");
+    }
+    await unlink(journalPath);
     return { target: input.candidate.target, bytes, candidate: result };
   } finally { await release(); }
+}
+
+async function syncTransaction(target, value) {
+  const parent = path.dirname(target); const temporary = path.join(parent, `.${path.basename(target)}.${randomUUID()}.tmp`);
+  let published = false;
+  try {
+    const handle = await open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+    try { await handle.writeFile(jsonBytes(value)); await handle.sync(); } finally { await handle.close(); }
+    const original = await existingTransaction(target);
+    if (original != null) {
+      await atomicReplace(target, jsonBytes(value), { original });
+      await unlink(temporary);
+    } else await rename(temporary, target);
+    published = true;
+    const directory = await open(parent, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW); try { await directory.sync(); } finally { await directory.close(); }
+  } finally { if (!published) await unlink(temporary).catch(() => {}); }
 }
 
 function parseArgs(argv) {

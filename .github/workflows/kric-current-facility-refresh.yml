@@ -93,6 +93,8 @@ jobs:
           fi
           for required in \
             tools/datapack/release/candidate-build-spec.json \
+            tools/datapack/release/release-request.json \
+            tools/datapack/release/hash-evidence.json \
             tools/datapack/release/current-capital-facility-source-admission.json \
             tools/datapack/release/source-snapshots.json \
             tools/datapack/source-inventory.json; do
@@ -106,7 +108,7 @@ jobs:
             exit 1
           }
           unexpected="$(printf '%s\n' "${changed}" | grep -Ev \
-            'tools/datapack/(release/candidate-build-spec\.json|release/current-capital-facility-source-admission\.json|release/source-snapshots\.json|source-inventory\.json|sources/[^/]+\.json)' || true)"
+            'tools/datapack/(release/(candidate-build-spec|release-request|hash-evidence)\.json|release/current-capital-facility-source-admission\.json|release/source-snapshots\.json|source-inventory\.json|sources/[^/]+\.json)' || true)"
           if [[ -n "${unexpected}" ]]; then
             echo "KRIC refresh claim changed an unsupported path" >&2
             exit 1
@@ -196,6 +198,8 @@ jobs:
           fi
           for required in \
             tools/datapack/release/candidate-build-spec.json \
+            tools/datapack/release/release-request.json \
+            tools/datapack/release/hash-evidence.json \
             tools/datapack/release/current-capital-facility-source-admission.json \
             tools/datapack/release/source-snapshots.json \
             tools/datapack/source-inventory.json; do
@@ -209,7 +213,7 @@ jobs:
             exit 1
           }
           unexpected="$(printf '%s\n' "${changed}" | grep -Ev \
-            'tools/datapack/(release/candidate-build-spec\.json|release/current-capital-facility-source-admission\.json|release/source-snapshots\.json|source-inventory\.json|sources/[^/]+\.json)' || true)"
+            'tools/datapack/(release/(candidate-build-spec|release-request|hash-evidence)\.json|release/current-capital-facility-source-admission\.json|release/source-snapshots\.json|source-inventory\.json|sources/[^/]+\.json)' || true)"
           if [[ -n "${unexpected}" ]]; then
             echo "KRIC refresh changed an unsupported path" >&2
             exit 1

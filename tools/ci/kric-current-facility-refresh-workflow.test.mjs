@@ -73,6 +73,8 @@ test("KRIC refresh workflow only uploads sanitized decision and operation eviden
   assert.doesNotMatch(yml, /provider-response|observation|sources\/kric-station-convenience-standard.*\.json/);
   assert.match(yml, /git diff --cached --name-only --diff-filter=ACMR/);
   assert.match(yml, /candidate-build-spec\.json/);
+  assert.match(yml, /release-request\.json/);
+  assert.match(yml, /hash-evidence\.json/);
   assert.match(yml, /current-capital-facility-source-admission\.json/);
   assert.match(yml, /source-snapshots\.json/);
   assert.match(yml, /source-inventory\.json/);

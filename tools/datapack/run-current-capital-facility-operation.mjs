@@ -36,7 +36,7 @@ const RELEASE_INPUTS = Object.freeze({
 });
 const ADMISSION = "tools/datapack/release/current-capital-facility-source-admission.json";
 const JOURNAL = "journal.json";
-const REGISTRAR_RESIDUES = Object.freeze(["tools/datapack/.kric-standard-registration-transaction.json", "tools/datapack/.kric-standard-registration.lock", "tools/datapack/.candidate-source-rebind.lock", "tools/datapack/.active-facility-derived-identity-rebind.lock"]);
+const REGISTRAR_RESIDUES = Object.freeze(["tools/datapack/.kric-standard-registration-transaction.json", "tools/datapack/.kric-standard-registration.lock", "tools/datapack/.candidate-source-rebind.lock", "tools/datapack/.candidate-source-rebind-transaction.json", "tools/datapack/.active-facility-derived-identity-rebind.lock"]);
 const CURRENT_SOURCE_IDS = Object.freeze([
   "seoul-metro-route-map-positions",
   "kric-subway-timetable",
@@ -435,8 +435,8 @@ export async function finalizeCurrentCapitalFacilityOperation({ repositoryRoot =
   }
   if (!["COLLECTED", "FINALIZE_STARTED"].includes(reconciledJournal.phase)) throw new Error("finalize requires collected observation");
   const allowedResumePaths = new Set([
-    "tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json", ADMISSION,
-    "tools/datapack/.kric-standard-registration-transaction.json", "tools/datapack/.kric-standard-registration.lock", "tools/datapack/.candidate-source-rebind.lock",
+    "tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json", "tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json", ADMISSION,
+    "tools/datapack/.kric-standard-registration-transaction.json", "tools/datapack/.kric-standard-registration.lock", "tools/datapack/.candidate-source-rebind.lock", "tools/datapack/.candidate-source-rebind-transaction.json",
   ]);
   const completedObservation = await readCompletedObservation(path.join(operation, "observation")); assertObservationBinding(reconciledJournal, completedObservation);
   const observationManifest = completedObservation.manifest;
