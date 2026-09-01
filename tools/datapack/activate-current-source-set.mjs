@@ -2240,11 +2240,12 @@ async function replaceTempFile(temporaryRoot, relativePath, bytes) {
 }
 
 async function runNode(script, args, options = {}) {
+  const repositoryRoot = path.resolve(options.repositoryRoot ?? root);
   return await execFileAsync(
     process.execPath,
-    [path.join(root, script), ...args],
+    [path.join(repositoryRoot, script), ...args],
     {
-      cwd: root,
+      cwd: repositoryRoot,
       env: { ...process.env, ...(options.env ?? {}) },
       maxBuffer: MAX_BUFFER,
     },
@@ -2681,7 +2682,8 @@ async function prepareReleaseEvidenceRoot(temporaryRoot, spec, {
   });
 }
 
-function validationBuildSpec(spec, temporaryRoot) {
+function validationBuildSpec(spec, temporaryRoot, repositoryRoot = root) {
+  const builderRoot = path.resolve(repositoryRoot);
   const next = structuredClone(spec);
   next.fixturePath = path.join(
     temporaryRoot,
@@ -2695,16 +2697,16 @@ function validationBuildSpec(spec, temporaryRoot) {
     path: path.join(temporaryRoot, "tools/datapack/source-inventory.json"),
   });
   Object.assign(next.networkEdgeEvidence.capitalTopology, {
-    path: path.join(root, next.networkEdgeEvidence.capitalTopology.path),
+    path: path.join(builderRoot, next.networkEdgeEvidence.capitalTopology.path),
   });
   Object.assign(next.networkEdgeEvidence.capitalTopologyCandidate, {
-    path: path.join(root, next.networkEdgeEvidence.capitalTopologyCandidate.path),
+    path: path.join(builderRoot, next.networkEdgeEvidence.capitalTopologyCandidate.path),
   });
   Object.assign(next.networkEdgeEvidence.capitalTopologyReverification, {
     path: path.join(temporaryRoot, next.networkEdgeEvidence.capitalTopologyReverification.path),
   });
   Object.assign(next.networkEdgeEvidence.itxCoverageContract, {
-    path: path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"),
+    path: path.join(builderRoot, "tools/datapack/itx-cheongchun-coverage-contract.json"),
   });
   return next;
 }
@@ -2713,12 +2715,14 @@ export async function validatePreparedCandidate({
   temporaryRoot,
   spec,
   buildNow,
+  repositoryRoot = root,
   runNodeImpl = runNode,
 }) {
+  const builderRoot = path.resolve(repositoryRoot);
   const validationSpecPath = await writeTempFile(
     temporaryRoot,
     "validation/candidate-build-spec.json",
-    jsonBytes(validationBuildSpec(spec, temporaryRoot)),
+    jsonBytes(validationBuildSpec(spec, temporaryRoot, builderRoot)),
   );
   const outputPath = path.join(temporaryRoot, "validation/output");
   await runNodeImpl("tools/datapack/build-datapack.mjs", [
@@ -2727,7 +2731,7 @@ export async function validatePreparedCandidate({
   ], { env: {
     EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow,
     EASYSUBWAY_DATAPACK_BUILD_SPEC_VALIDATION_ONLY: "true",
-  } });
+  }, repositoryRoot: builderRoot });
 }
 
 function validateBuildNow(buildNow, handoff) {
@@ -3003,14 +3007,14 @@ export async function generateCurrentCapitalTopologyRefresh({
     await runNode("tools/datapack/apply-accessibility-evidence-to-bundled-pack.mjs", [
       "--release-evidence-only",
       "--release-root", temporaryRoot,
-    ], { env: { EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow } });
+    ], { env: { EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow }, repositoryRoot: repositoryPath });
     const [finalSpecBytes, releaseRequestBytes, hashEvidenceBytes] = await Promise.all([
       readFile(contained(temporaryRoot, "tools/datapack/release/candidate-build-spec.json")),
       readFile(contained(temporaryRoot, "tools/datapack/release/release-request.json")),
       readFile(contained(temporaryRoot, "tools/datapack/release/hash-evidence.json")),
     ]);
     const finalSpec = parseJson(finalSpecBytes, "generated candidate build spec");
-    await validatePreparedCandidate({ temporaryRoot, spec: finalSpec, buildNow });
+    await validatePreparedCandidate({ temporaryRoot, spec: finalSpec, buildNow, repositoryRoot: repositoryPath });
     const outputs = [
       { relativePath: topologyReverificationPath, bytes: primary.topologyReverificationBytes },
       { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[0], bytes: primary.sourceInventoryBytes },

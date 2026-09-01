@@ -119,26 +119,40 @@ function terminalMaterializationReceipt(receipt, liveChainOutputs, fanInPath) {
   return new Map([...entries, { relative: receipt.fanIn.path, digest: receipt.fanIn.sha256 }].map(({ relative, digest }) => [relative, digest]));
 }
 function terminalVerifierProof(proof) {
-  const keys = ["artifactKind", "builderGitSha", "facilityHeadGitSha", "retainedOutputs", "schemaVersion", "sourceMainGitSha", "topologyInputs", "topologyOutputs", "transition"];
+  const keys = ["artifactKind", "builderGitSha", "facilityHeadGitSha", "replacementPrestates", "retainedOutputs", "schemaVersion", "sourceMainGitSha", "topologyInputs", "topologyOutputs", "transition"];
   if (!proof || typeof proof !== "object" || Array.isArray(proof)
     || JSON.stringify(Object.keys(proof).sort(codepointCompare)) !== JSON.stringify(keys)
-    || proof.schemaVersion !== 1 || proof.artifactKind !== "current-capital-terminal-lineage"
+    || proof.schemaVersion !== 2 || proof.artifactKind !== "current-capital-terminal-lineage"
     || ![proof.sourceMainGitSha, proof.facilityHeadGitSha, proof.builderGitSha].every((value) => /^[a-f0-9]{40}$/u.test(value ?? ""))
     || !proof.transition || ![proof.transition.baseSha256, proof.transition.successorSha256,
       proof.transition.sourceMainCandidateSha256, proof.transition.sourceMainFacilitySha256].every((value) => /^[a-f0-9]{64}$/u.test(value ?? ""))
-    || !Array.isArray(proof.retainedOutputs) || !Array.isArray(proof.topologyInputs) || !Array.isArray(proof.topologyOutputs)) {
+    || !Array.isArray(proof.retainedOutputs) || !Array.isArray(proof.topologyInputs)
+    || !Array.isArray(proof.topologyOutputs) || !Array.isArray(proof.replacementPrestates)) {
     throw new Error("current-capital terminal lineage proof mismatch");
   }
   const retained = new Map(proof.retainedOutputs.map(({ relative, sha256: digest }) => [relative, digest]));
   const inputs = new Map(proof.topologyInputs.map(({ relativePath, sha256: digest }) => [relativePath, digest]));
-  const outputs = new Map(proof.topologyOutputs.map(({ relativePath, beforeSha256, afterSha256 }) => [relativePath, { beforeSha256, afterSha256 }]));
-  if (retained.size !== proof.retainedOutputs.length || inputs.size !== proof.topologyInputs.length || outputs.size !== proof.topologyOutputs.length
+  const outputs = new Map(proof.topologyOutputs.map(({ relativePath, beforeSha256, generatedSha256 }) => [relativePath, { beforeSha256, generatedSha256 }]));
+  const replacementPrestates = new Map(proof.replacementPrestates.map(({ relativePath, sha256: digest }) => [relativePath, digest]));
+  if (retained.size !== proof.retainedOutputs.length || inputs.size !== proof.topologyInputs.length
+    || outputs.size !== proof.topologyOutputs.length || replacementPrestates.size !== proof.replacementPrestates.length
+    || proof.retainedOutputs.some((entry) => !entry || typeof entry !== "object" || Array.isArray(entry)
+      || JSON.stringify(Object.keys(entry).sort(codepointCompare)) !== JSON.stringify(["relative", "sha256"]))
+    || proof.topologyInputs.some((entry) => !entry || typeof entry !== "object" || Array.isArray(entry)
+      || JSON.stringify(Object.keys(entry).sort(codepointCompare)) !== JSON.stringify(["relativePath", "sha256"]))
+    || proof.topologyOutputs.some((entry) => !entry || typeof entry !== "object" || Array.isArray(entry)
+      || JSON.stringify(Object.keys(entry).sort(codepointCompare)) !== JSON.stringify(["beforeSha256", "generatedSha256", "relativePath"]))
+    || proof.replacementPrestates.some((entry) => !entry || typeof entry !== "object" || Array.isArray(entry)
+      || JSON.stringify(Object.keys(entry).sort(codepointCompare)) !== JSON.stringify(["relativePath", "sha256"]))
     || [...retained].some(([relative, digest]) => typeof relative !== "string" || !/^[a-f0-9]{64}$/u.test(digest ?? ""))
     || [...inputs].some(([relative, digest]) => typeof relative !== "string" || !/^[a-f0-9]{64}$/u.test(digest ?? ""))
-    || [...outputs].some(([relative, value]) => typeof relative !== "string" || (value.beforeSha256 != null && !/^[a-f0-9]{64}$/u.test(value.beforeSha256)) || !/^[a-f0-9]{64}$/u.test(value.afterSha256 ?? ""))) {
+    || [...outputs].some(([relative, value]) => typeof relative !== "string"
+      || (value.beforeSha256 != null && !/^[a-f0-9]{64}$/u.test(value.beforeSha256))
+      || !/^[a-f0-9]{64}$/u.test(value.generatedSha256 ?? ""))
+    || [...replacementPrestates].some(([relative, digest]) => typeof relative !== "string" || !/^[a-f0-9]{64}$/u.test(digest ?? ""))) {
     throw new Error("current-capital terminal lineage proof mismatch");
   }
-  return { retained, inputs, outputs };
+  return { retained, inputs, outputs, replacementPrestates };
 }
 
 /**
@@ -174,6 +188,17 @@ export function validateCurrentCapitalTerminalManifest(manifest) {
   }
   exactPathSet(manifest.topologyInputs, [...proof.inputs.keys()], "current-capital terminal verifier topology inputs");
   exactPathSet(manifest.topologyOutputs, [...proof.outputs.keys()], "current-capital terminal verifier topology outputs");
+  const createOncePaths = [...manifest.topologyInputs,
+    ...manifest.topologyOutputs.filter((relative) => TERMINAL_TOPOLOGY_REVERIFICATION.test(relative))].sort(codepointCompare);
+  const replacementPrestatePaths = manifest.replacementPaths.filter((relative) => !createOncePaths.includes(relative));
+  exactPathSet(replacementPrestatePaths, [...proof.replacementPrestates.keys()], "current-capital terminal replacement prestates");
+  for (const [relative, topology] of proof.outputs) {
+    if (createOncePaths.includes(relative)) {
+      if (topology.beforeSha256 != null) throw new Error("current-capital terminal topology create-once prestate mismatch");
+    } else if (topology.beforeSha256 !== proof.replacementPrestates.get(relative)) {
+      throw new Error("current-capital terminal topology replacement prestate mismatch");
+    }
+  }
   return Object.freeze({
     topologyInputs: Object.freeze([...manifest.topologyInputs]),
     topologyOutputs: Object.freeze([...manifest.topologyOutputs]),
@@ -184,8 +209,9 @@ export function validateCurrentCapitalTerminalManifest(manifest) {
     retainedProof: proof.retained,
     topologyInputProof: proof.inputs,
     topologyOutputProof: proof.outputs,
+    replacementPrestateProof: proof.replacementPrestates,
     materializationProof,
-    createOncePaths: Object.freeze([...manifest.topologyInputs, ...manifest.topologyOutputs.filter((relative) => TERMINAL_TOPOLOGY_REVERIFICATION.test(relative))].sort(codepointCompare)),
+    createOncePaths: Object.freeze(createOncePaths),
     replacements: Object.freeze([...manifest.replacementPaths]),
   });
 }
@@ -801,11 +827,8 @@ export async function commitCurrentCapitalTerminalManifest({
     const retained = checkedManifest.retainedProof.get(output.relative);
     const input = checkedManifest.topologyInputProof.get(output.relative);
     const materialized = checkedManifest.materializationProof.get(output.relative);
-    if (topology && materialized && topology.afterSha256 !== materialized) {
-      throw new Error("current-capital terminal materialization topology mismatch");
-    }
-    const expectedAfter = topology?.afterSha256 ?? input ?? materialized ?? retained;
-    const expectedBefore = topology?.beforeSha256 ?? retained;
+    const expectedAfter = materialized ?? topology?.generatedSha256 ?? input ?? retained;
+    const expectedBefore = checkedManifest.replacementPrestateProof.get(output.relative);
     if (!expectedAfter || sha(output.bytes) !== expectedAfter
       || (checkedManifest.createOncePaths.includes(output.relative)
         ? expectedBefore != null
@@ -818,12 +841,15 @@ export async function commitCurrentCapitalTerminalManifest({
   try {
     await recover(root); await recoverCurrentCapitalTerminalTransaction(root);
     await beforeCommit(); await assertInputsStable(outputs.flatMap(({ inputs = [] }) => inputs));
+    const authenticatedPrestates = new Map();
     for (const output of outputs) {
       const current = await readOptionalStable(target(root, output.relative), "current-capital terminal target");
       if (checkedManifest.createOncePaths.includes(output.relative)) {
         if (current != null) throw new Error("current-capital terminal create-once target exists");
       } else if (current == null || !current.bytes.equals(output.prestate.bytes)) {
         throw new Error("current-capital terminal preserves foreign replacement");
+      } else {
+        authenticatedPrestates.set(output.relative, current);
       }
     }
     const currentMarker = await readStableRegularFile(target(root, TRANSITION), TRANSITION);
@@ -845,7 +871,7 @@ export async function commitCurrentCapitalTerminalManifest({
     for (const output of outputs) {
       const file = target(root, output.relative);
       if (checkedManifest.createOncePaths.includes(output.relative)) await createTerminalOutput(root, checkedManifest, output.relative, output.bytes);
-      else await atomicReplace(file, output.bytes, { original: output.prestate });
+      else await atomicReplace(file, output.bytes, { original: authenticatedPrestates.get(output.relative) });
       const current = await readStableRegularFile(file, "current-capital terminal final target");
       if (!current.bytes.equals(output.bytes)) throw new Error("current-capital terminal final byte mismatch");
     }

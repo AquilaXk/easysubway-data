@@ -305,6 +305,7 @@ export async function verifyCurrentCapitalTerminalLineage({
   }
   retained[retainedSnapshotPath] = await lineageFile(retainedRoot, retainedSnapshotPath, "retained FACILITY snapshot");
   const retainedCandidate = JSON.parse(retained["tools/datapack/release/candidate-build-spec.json"].bytes);
+  const retainedInventory = JSON.parse(retained["tools/datapack/source-inventory.json"].bytes);
   const retainedLedger = JSON.parse(retained["tools/datapack/release/source-snapshots.json"].bytes);
   const retainedSnapshot = JSON.parse(retained[retainedSnapshotPath].bytes);
   const retainedLedgerEntry = retainedLedger.find((entry) => entry?.sourceId === "kric-station-convenience-standard"
@@ -392,15 +393,39 @@ export async function verifyCurrentCapitalTerminalLineage({
   })));
   const topologyProofOutputs = await Promise.all(topologyOutputs.map(async ({ relativePath, bytes }) => {
     const before = await optionalLineageFile(retainedRoot, relativePath, `retained topology ${relativePath}`);
-    return { relativePath, beforeSha256: before == null ? null : sha256(before.bytes), afterSha256: sha256(bytes) };
+    return { relativePath, beforeSha256: before == null ? null : sha256(before.bytes), generatedSha256: sha256(bytes) };
   }));
   const reverification = topologyProofOutputs.filter(({ relativePath }) => /^tools\/datapack\/release\/capital-topology-reverification-[0-9]{8}\.json$/u.test(relativePath));
   if (topologyProofOutputs.length !== generated.outputs.length || reverification.length !== 1
     || topologyProofOutputs.some(({ beforeSha256, relativePath }) => beforeSha256 == null && !/^tools\/datapack\/release\/capital-topology-reverification-[0-9]{8}\.json$/u.test(relativePath))) {
     throw new Error("terminal topology output subset mismatch");
   }
+  const createOncePaths = new Set([
+    ...topologyInputPaths,
+    ...reverification.map(({ relativePath }) => relativePath),
+  ]);
+  const replacementPaths = sortedLineagePaths([
+    ...new Set([
+      ...topologyOutputs.map(({ relativePath }) => relativePath).filter((relativePath) => !createOncePaths.has(relativePath)),
+      ...currentCapitalLiveChainOutputPaths({
+        candidate: retainedCandidate,
+        sourceInventory: retainedInventory,
+        sourceSnapshotLedger: retainedLedger,
+      }),
+      CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH,
+    ]),
+  ], "terminal replacement prestate paths");
+  const replacementPrestates = await Promise.all(replacementPaths.map(async (relativePath) => ({
+    relativePath,
+    sha256: sha256((await lineageFile(retainedRoot, relativePath, `retained replacement ${relativePath}`)).bytes),
+  })));
+  const replacementByPath = new Map(replacementPrestates.map((entry) => [entry.relativePath, entry.sha256]));
+  if (topologyProofOutputs.some(({ relativePath, beforeSha256 }) => !createOncePaths.has(relativePath)
+    && beforeSha256 !== replacementByPath.get(relativePath))) {
+    throw new Error("terminal topology replacement prestate mismatch");
+  }
   const proof = Object.freeze({
-    schemaVersion: 1,
+    schemaVersion: 2,
     artifactKind: "current-capital-terminal-lineage",
     sourceMainGitSha,
     facilityHeadGitSha,
@@ -412,6 +437,7 @@ export async function verifyCurrentCapitalTerminalLineage({
     retainedOutputs: Object.freeze(retainedPaths.map(Object.freeze)),
     topologyInputs: Object.freeze(topologyInputs.map(Object.freeze)),
     topologyOutputs: Object.freeze(topologyProofOutputs.sort((left, right) => codepointCompare(left.relativePath, right.relativePath)).map(Object.freeze)),
+    replacementPrestates: Object.freeze(replacementPrestates.map(Object.freeze)),
   });
   return Object.freeze({
     proof,
@@ -509,6 +535,23 @@ async function readStagedRegularFile(stagedRoot, relativePath, label) {
     }
   }
   return { path: current, bytes: await readFile(current) };
+}
+
+async function verifyPreparedTopologyStage(stagedRoot, proof) {
+  if (!proof || proof.schemaVersion !== 2
+    || !Array.isArray(proof.topologyInputs) || !Array.isArray(proof.topologyOutputs)) {
+    throw new Error("terminal staged topology lineage proof mismatch");
+  }
+  await Promise.all([
+    ...proof.topologyInputs.map(async ({ relativePath, sha256: expected }) => {
+      const staged = await readStagedRegularFile(stagedRoot, relativePath, `terminal staged topology input ${relativePath}`);
+      if (sha256(staged.bytes) !== expected) throw new Error("terminal staged topology input mismatch");
+    }),
+    ...proof.topologyOutputs.map(async ({ relativePath, generatedSha256 }) => {
+      const staged = await readStagedRegularFile(stagedRoot, relativePath, `terminal staged topology output ${relativePath}`);
+      if (sha256(staged.bytes) !== generatedSha256) throw new Error("terminal staged topology output mismatch");
+    }),
+  ]);
 }
 
 export async function resolveCurrentKricExitPlanInputs(stagedRoot) {
@@ -1038,6 +1081,7 @@ export async function runCurrentCapitalExitTerminalConsumer({
     await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
     await writeFile(destination, bytes, { flag: "w", mode: 0o600 });
   }
+  await verifyPreparedTopologyStage(stagedRoot, preparedTerminal.proof);
   await rebindPublicRouteMapImpl({ repositoryRoot: stagedRoot });
   await rebindTransferImpl({ repositoryRoot: stagedRoot, observationDirectory: transferObservationDirectory, receiptPath: transferReceiptPath });
   await rebindFacilityImpl({ repositoryRoot: stagedRoot });
@@ -1162,9 +1206,17 @@ export async function runCurrentCapitalExitTerminalConsumer({
   if (!Array.isArray(topologyInputs) || !Array.isArray(topologyOutputs)) throw new Error("terminal consumer lineage proof mismatch");
   const replacementPaths = [...new Set([...topologyInputs, ...topologyOutputs, ...outputPaths, CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH])].sort(codepointCompare);
   const createOnce = new Set([...topologyInputs, ...topologyOutputs.filter((relative) => /^tools\/datapack\/release\/capital-topology-reverification-[0-9]{8}\.json$/u.test(relative))]);
+  const replacementPrestates = new Map(preparedTerminal.proof.replacementPrestates?.map((entry) => [entry.relativePath, entry.sha256]));
+  if (JSON.stringify([...replacementPrestates.keys()].sort(codepointCompare))
+    !== JSON.stringify(replacementPaths.filter((relative) => !createOnce.has(relative)))) {
+    throw new Error("terminal consumer replacement prestate proof mismatch");
+  }
   const terminalOutputs = await Promise.all(replacementPaths.map(async (relative) => {
     const staged = await readStagedRegularFile(stagedRoot, relative, `terminal staged ${relative}`);
     const prestate = createOnce.has(relative) ? null : await readStagedRegularFile(root, relative, `terminal retained ${relative}`);
+    if (prestate != null && sha256(prestate.bytes) !== replacementPrestates.get(relative)) {
+      throw new Error("terminal consumer replacement prestate mismatch");
+    }
     return { relative, bytes: staged.bytes, prestate };
   }));
   const [marker, successor] = await Promise.all(markerPaths.map((relative) => readStagedRegularFile(root, relative, `terminal retained ${relative}`)));

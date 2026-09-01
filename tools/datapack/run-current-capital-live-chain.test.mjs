@@ -41,13 +41,38 @@ import {
   buildCurrentCapitalExitProviderSourceHandoffFromProviderOci,
   canonicalCurrentCapitalExitProviderSourceHandoffJson,
 } from "./current-capital-exit-provider-handoff.mjs";
-import { validateCurrentCapitalTerminalManifest } from "./refresh-current-capital-accessibility-full.mjs";
+import { commitCurrentCapitalTerminalManifest, validateCurrentCapitalTerminalManifest } from "./refresh-current-capital-accessibility-full.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const execFile = promisify(execFileCallback);
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const canonical = (value) => JSON.stringify(sort(value));
 function sort(value) { if (Array.isArray(value)) return value.map(sort); if (!value || typeof value !== "object") return value; return Object.fromEntries(Object.keys(value).sort((left, right) => left.localeCompare(right, "en")).map((key) => [key, sort(value[key])])); }
+
+async function terminalConsumerProof(repositoryRoot = ROOT) {
+  const [candidate, sourceInventory, sourceSnapshotLedger] = await Promise.all([
+    "tools/datapack/release/candidate-build-spec.json",
+    "tools/datapack/source-inventory.json",
+    "tools/datapack/release/source-snapshots.json",
+  ].map(async (relative) => JSON.parse(await readFile(path.join(repositoryRoot, relative), "utf8"))));
+  const replacementPaths = [
+    ...currentCapitalLiveChainOutputPaths({ candidate, sourceInventory, sourceSnapshotLedger }),
+    "tools/datapack/release/current-capital-live-chain-fan-in.json",
+  ];
+  return {
+    schemaVersion: 2,
+    artifactKind: "current-capital-terminal-lineage",
+    sourceMainGitSha: "a".repeat(40), facilityHeadGitSha: "b".repeat(40), builderGitSha: "c".repeat(40),
+    transition: {
+      baseSha256: "d".repeat(64), successorSha256: "e".repeat(64),
+      sourceMainCandidateSha256: "f".repeat(64), sourceMainFacilitySha256: "0".repeat(64),
+    },
+    retainedOutputs: [], topologyInputs: [], topologyOutputs: [],
+    replacementPrestates: await Promise.all(replacementPaths.map(async (relativePath) => ({
+      relativePath, sha256: sha(await readFile(path.join(repositoryRoot, relativePath))),
+    }))),
+  };
+}
 
 test("EXIT topology preflight rejects a stale selected ITX authority before collection", async (t) => {
   const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "current-exit-itx-preflight-"));
@@ -305,8 +330,14 @@ test("terminal manifest accepts only a verifier-shaped proof and rejects caller 
     ...liveChainOutputs,
     "tools/datapack/release/current-capital-live-chain-fan-in.json",
   ])].sort((left, right) => left.localeCompare(right));
+  const createOncePaths = new Set([
+    ...topologyInputs,
+    ...topologyOutputs.filter((relative) => /reverification/.test(relative)),
+  ]);
+  const replacementPrestates = replacementPaths.filter((relative) => !createOncePaths.has(relative))
+    .map((relativePath) => ({ relativePath, sha256: sha(Buffer.from(relativePath)) }));
   const proof = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     artifactKind: "current-capital-terminal-lineage",
     sourceMainGitSha: "a".repeat(40),
     facilityHeadGitSha: "b".repeat(40),
@@ -320,9 +351,10 @@ test("terminal manifest accepts only a verifier-shaped proof and rejects caller 
     topologyInputs: topologyInputs.map((relative) => ({ relativePath: relative, sha256: sha(Buffer.from(relative)) })),
     topologyOutputs: topologyOutputs.map((relative) => ({
       relativePath: relative,
-      beforeSha256: /reverification/.test(relative) ? null : sha(Buffer.from(relative)),
-      afterSha256: sha(Buffer.from(`${relative}:producer`)),
+      beforeSha256: /reverification/.test(relative) ? null : replacementPrestates.find((entry) => entry.relativePath === relative)?.sha256,
+      generatedSha256: sha(Buffer.from(`${relative}:producer`)),
     })),
+    replacementPrestates,
   };
   const manifest = {
     topologyInputs, topologyOutputs, liveChainOutputs,
@@ -347,6 +379,110 @@ test("terminal manifest accepts only a verifier-shaped proof and rejects caller 
   assert.throws(() => validateCurrentCapitalTerminalManifest({
     ...manifest, lineageProof: { baseTransitionSha256: sha(markerBytes[0]) },
   }), /manifest mismatch/);
+  assert.throws(() => validateCurrentCapitalTerminalManifest({
+    ...manifest,
+    proof: { ...proof, replacementPrestates: proof.replacementPrestates.slice(1) },
+  }), /replacement prestates mismatch/);
+  assert.throws(() => validateCurrentCapitalTerminalManifest({
+    ...manifest,
+    proof: { ...proof, topologyOutputs: proof.topologyOutputs.map((entry) => entry.beforeSha256 == null
+      ? entry : { ...entry, beforeSha256: "f".repeat(64) }) },
+  }), /topology replacement prestate mismatch/);
+});
+
+async function terminalCommitFixture(repositoryRoot) {
+  const [candidate, sourceInventory, sourceSnapshotLedger, marker, successor] = await Promise.all([
+    "tools/datapack/release/candidate-build-spec.json",
+    "tools/datapack/source-inventory.json",
+    "tools/datapack/release/source-snapshots.json",
+    "tools/datapack/release/current-capital-accessibility-transition.json",
+    "tools/datapack/release/current-capital-accessibility-transition-successor.json",
+  ].map(async (relative) => readFile(path.join(repositoryRoot, relative))));
+  const liveChainOutputs = currentCapitalLiveChainOutputPaths({
+    candidate: JSON.parse(candidate), sourceInventory: JSON.parse(sourceInventory), sourceSnapshotLedger: JSON.parse(sourceSnapshotLedger),
+  });
+  const topologyInputs = [
+    "tools/datapack/sources/capital-route-topology-20990101.json",
+    "tools/datapack/sources/incheon-transit-station-info-20990101.json",
+    "tools/datapack/sources/incheon-line1-train-timetable-20990101.json",
+    "tools/datapack/sources/incheon-line2-train-timetable-20990101.json",
+  ];
+  const topologyOutputs = [
+    "tools/datapack/source-inventory.json",
+    "tools/datapack/release/candidate-build-spec.json",
+    "tools/datapack/release/capital-topology-reverification-20990101.json",
+  ];
+  const fanInPath = "tools/datapack/release/current-capital-live-chain-fan-in.json";
+  const replacementPaths = [...new Set([...topologyInputs, ...topologyOutputs, ...liveChainOutputs, fanInPath])].sort((left, right) => left.localeCompare(right));
+  const createOnce = new Set([...topologyInputs, topologyOutputs[2]]);
+  const beforeByPath = new Map(await Promise.all(replacementPaths.filter((relative) => !createOnce.has(relative))
+    .map(async (relative) => [relative, await readFile(path.join(repositoryRoot, relative))])));
+  const afterByPath = new Map(replacementPaths.map((relative) => [relative, Buffer.from(`terminal-after:${relative}`)]));
+  const generatedByPath = new Map(topologyOutputs.map((relative) => [relative,
+    relative === topologyOutputs[2] ? afterByPath.get(relative) : Buffer.from(`terminal-generated:${relative}`)]));
+  const replacementPrestates = [...beforeByPath].map(([relativePath, bytes]) => ({ relativePath, sha256: sha(bytes) }));
+  const proof = {
+    schemaVersion: 2, artifactKind: "current-capital-terminal-lineage",
+    sourceMainGitSha: "a".repeat(40), facilityHeadGitSha: "b".repeat(40), builderGitSha: "c".repeat(40),
+    transition: {
+      baseSha256: sha(marker), successorSha256: sha(successor),
+      sourceMainCandidateSha256: sha(candidate), sourceMainFacilitySha256: "d".repeat(64),
+    },
+    retainedOutputs: [{ relative: "tools/datapack/release/candidate-build-spec.json", sha256: sha(candidate) }],
+    topologyInputs: topologyInputs.map((relativePath) => ({ relativePath, sha256: sha(afterByPath.get(relativePath)) })),
+    topologyOutputs: topologyOutputs.map((relativePath) => ({
+      relativePath,
+      beforeSha256: createOnce.has(relativePath) ? null : sha(beforeByPath.get(relativePath)),
+      generatedSha256: sha(generatedByPath.get(relativePath)),
+    })),
+    replacementPrestates,
+  };
+  const manifest = {
+    topologyInputs, topologyOutputs, liveChainOutputs, fanInPath,
+    markerPaths: [
+      "tools/datapack/release/current-capital-accessibility-transition.json",
+      "tools/datapack/release/current-capital-accessibility-transition-successor.json",
+    ],
+    replacementPaths, proof,
+    materialization: {
+      repository: "AquilaXk/easysubway-data", repositorySha: "e".repeat(40), operationId: "current-capital-673",
+      entries: [...liveChainOutputs].sort().map((relativePath) => ({ path: relativePath, sha256: sha(afterByPath.get(relativePath)) })),
+      fanIn: { path: fanInPath, sha256: sha(afterByPath.get(fanInPath)) },
+    },
+  };
+  return {
+    manifest,
+    outputs: replacementPaths.map((relative) => ({
+      relative,
+      bytes: afterByPath.get(relative),
+      prestate: createOnce.has(relative) ? null : { bytes: beforeByPath.get(relative) },
+    })),
+    marker: { bytes: marker }, successor: { bytes: successor }, fanInPath,
+  };
+}
+
+test("terminal CAS verifies proof-bound fan-in and every replacement prestate", async (t) => {
+  const parent = await mkdtemp(path.join(os.tmpdir(), "current-capital-terminal-commit-"));
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  const successRoot = path.join(parent, "success");
+  await cloneCleanFixture(ROOT, successRoot);
+  const success = await terminalCommitFixture(successRoot);
+  await commitCurrentCapitalTerminalManifest({ repositoryRoot: successRoot, ...success });
+  assert.deepEqual(await readFile(path.join(successRoot, success.fanInPath)), success.outputs.find(({ relative }) => relative === success.fanInPath).bytes);
+
+  for (const [name, target] of [
+    ["fan-in", success.fanInPath],
+    ["route-evaluation", "tools/datapack/release/current-capital-accessibility-full/route-edge-evaluation.json"],
+  ]) {
+    const tamperedRoot = path.join(parent, `tampered-${name}`);
+    await cloneCleanFixture(ROOT, tamperedRoot);
+    const fixture = await terminalCommitFixture(tamperedRoot);
+    await writeFile(path.join(tamperedRoot, target), "foreign replacement");
+    await assert.rejects(
+      commitCurrentCapitalTerminalManifest({ repositoryRoot: tamperedRoot, ...fixture }),
+      /preserves foreign replacement/,
+    );
+  }
 });
 
 test("terminal lineage replays the retained FACILITY producer and rejects builder tampering before journaling", async (t) => {
@@ -629,7 +765,7 @@ test("terminal consumer orders P/T/F and CAS before one OCI recovery and semanti
       incheonLine2TimetablePath: "tools/datapack/sources/incheon-line2-train-timetable-20260901.json", incheonTopologyPath: "tools/datapack/sources/incheon-transit-station-info-20260901.json",
       itxCurrentAdmissionPath: "tools/datapack/release/current-itx-admission.json", itxTopologyEvidencePath: "tools/datapack/itx-topology-evidence.json",
     }, topologyHandoffBytes: Buffer.from("{}\n"), verifyTerminalLineageImpl: async () => ({
-      proof: { topologyInputs: [], topologyOutputs: [] }, topologyInputs: [], topologyOutputs: [],
+      proof: await terminalConsumerProof(), topologyInputs: [], topologyOutputs: [],
     }),
     verifyTopologyHandoffImpl: () => ({ operationId: "current-capital-560" }),
     commitTerminalManifestImpl: async (input) => { terminalCommit = input; return { repositoryRoot: stageRoots[0] }; },
@@ -660,6 +796,45 @@ test("terminal consumer orders P/T/F and CAS before one OCI recovery and semanti
   for (const [relative, before] of rootPrestates) assert.deepEqual(await readFile(path.join(ROOT, relative)), before, `ROOT mutated: ${relative}`);
 });
 
+test("terminal consumer verifies generated topology bytes before the first rebind", async (t) => {
+  const runnerTemp = await mkdtemp(path.join(os.tmpdir(), "current-capital-terminal-generated-proof-"));
+  t.after(() => rm(runnerTemp, { recursive: true, force: true }));
+  const handoff = await terminalProviderHandoff();
+  const topologyOutputPath = "tools/datapack/source-inventory.json";
+  const topologyBefore = await readFile(path.join(ROOT, topologyOutputPath));
+  let firstRebindCalled = false;
+  await assert.rejects(runCurrentCapitalExitTerminalConsumer({
+    repositoryRoot: ROOT, runnerTemp, repository: "AquilaXk/easysubway-data", candidateOperationId: "current-capital-647",
+    sourceMainRoot: ROOT, sourceMainGitSha: "a".repeat(40), privateBuilderRoot: ROOT, builderGitSha: "b".repeat(40), topologyBuild: {
+      buildNow: "2026-09-01T00:00:00.000Z", capitalTopologyPath: "tools/datapack/sources/capital-route-topology-20260901.json",
+      incheonAccessibilityPath: "tools/datapack/sources/incheon-transit-accessibility-20260901.json", incheonLine1TimetablePath: "tools/datapack/sources/incheon-line1-train-timetable-20260901.json",
+      incheonLine2TimetablePath: "tools/datapack/sources/incheon-line2-train-timetable-20260901.json", incheonTopologyPath: "tools/datapack/sources/incheon-transit-station-info-20260901.json",
+      itxCurrentAdmissionPath: "tools/datapack/release/current-itx-admission.json", itxTopologyEvidencePath: "tools/datapack/itx-topology-evidence.json",
+    }, topologyHandoffBytes: Buffer.from("{}\n"), verifyTerminalLineageImpl: async () => {
+      const proof = await terminalConsumerProof();
+      proof.topologyOutputs = [{
+        relativePath: topologyOutputPath,
+        beforeSha256: sha(topologyBefore), generatedSha256: sha(topologyBefore),
+      }];
+      return {
+        proof, topologyInputs: [],
+        topologyOutputs: [{ relativePath: topologyOutputPath, bytes: Buffer.from("tampered generated topology") }],
+      };
+    },
+    verifyTopologyHandoffImpl: () => ({ operationId: "current-capital-560" }),
+    commitTerminalManifestImpl: async () => { throw new Error("terminal commit must not start"); },
+    operationNow: handoff.operationNow, sourceReceiptBytes: handoff.sourceReceiptBytes,
+    providerOciPlanBytes: handoff.providerOciPlanBytes, providerOciReceiptBytes: handoff.providerOciReceiptBytes,
+    client: memoryOciObject(handoff.bundleBytes, handoff.providerObject.objectKey), isAncestor: async () => true,
+    transferObservationDirectory: "/retained/transfer/observation", transferReceiptPath: "/retained/transfer/receipt.json",
+    execFileImpl: async (command, args, options) => command === "git"
+      ? terminalGitPreflight(command, args)
+      : (await import("node:child_process")).execFileSync(command, args, options),
+    rebindPublicRouteMapImpl: async () => { firstRebindCalled = true; },
+  }), /terminal staged topology output mismatch/);
+  assert.equal(firstRebindCalled, false);
+});
+
 test("terminal consumer rejects an inconsistent real OCI source before refresh or marker deletion", async (t) => {
   const runnerTemp = await mkdtemp(path.join(os.tmpdir(), "current-capital-terminal-reject-"));
   t.after(() => rm(runnerTemp, { recursive: true, force: true }));
@@ -676,7 +851,7 @@ test("terminal consumer rejects an inconsistent real OCI source before refresh o
       incheonLine2TimetablePath: "tools/datapack/sources/incheon-line2-train-timetable-20260901.json", incheonTopologyPath: "tools/datapack/sources/incheon-transit-station-info-20260901.json",
       itxCurrentAdmissionPath: "tools/datapack/release/current-itx-admission.json", itxTopologyEvidencePath: "tools/datapack/itx-topology-evidence.json",
     }, topologyHandoffBytes: Buffer.from("{}\n"), verifyTerminalLineageImpl: async () => ({
-      proof: { topologyInputs: [], topologyOutputs: [] }, topologyInputs: [], topologyOutputs: [],
+      proof: await terminalConsumerProof(), topologyInputs: [], topologyOutputs: [],
     }),
     verifyTopologyHandoffImpl: () => ({ operationId: "current-capital-560" }),
     commitTerminalManifestImpl: async () => ({ repositoryRoot: stagedRoot }),
