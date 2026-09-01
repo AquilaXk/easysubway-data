@@ -228,7 +228,7 @@ function validateAggregateSourceSetOperation(candidate, operation) {
   }
   requireAllowedKeys(operation, new Set([
     "kind", "method", "auth", "retryPolicy", "responseEnvelope", "runner",
-    "sourceDefinition", "secretPolicy",
+    "sourceDefinition", "secretPolicy", "requestTimeoutMs",
   ]), label);
   if (operation.kind !== "AGGREGATE_SOURCE_SET" || operation.method !== "GET") {
     throw new Error(`${label} identity is invalid`);
@@ -244,6 +244,12 @@ function validateAggregateSourceSetOperation(candidate, operation) {
   }
   requireAllowedKeys(operation.retryPolicy, new Set(["maxRetries"]), `${label}.retryPolicy`);
   if (operation.retryPolicy.maxRetries !== 0) throw new Error(`${label} retry max must be zero`);
+  if (candidate.id === "capital-route-topology" && operation.requestTimeoutMs !== 30_000) {
+    throw new Error(`${label} requestTimeoutMs must be exactly 30000`);
+  }
+  if (candidate.id !== "capital-route-topology" && operation.requestTimeoutMs != null) {
+    throw new Error(`${label} requestTimeoutMs is unsupported`);
+  }
   requiredText(operation.responseEnvelope, `${label}.responseEnvelope`);
 
   const runner = operation.runner;
@@ -531,6 +537,7 @@ export function operationHumanSummary(summary) {
         `dataset count: ${summary.operation.sourceDefinition.datasetCount}`,
         `source-set digest: ${summary.operation.sourceDefinition.sourceSetSha256}`,
         `retry max: ${summary.operation.retryPolicy.maxRetries}`,
+        `request timeout ms: ${summary.operation.requestTimeoutMs}`,
         `response envelope: ${summary.operation.responseEnvelope}`,
         `runner: ${runner}`,
         "runner env: not required",
