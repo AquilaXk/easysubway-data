@@ -294,9 +294,9 @@ jobs:
           printf '%s\n' "${activation_paths[@]}" | grep -Fqx "${TOPOLOGY_REVERIFICATION_PATH}" || { echo "topology activation is missing its create-once reverification" >&2; exit 1; }
           allowed_activation_paths=(tools/datapack/source-inventory.json tools/datapack/release/capital-production-reviewed-pack.json tools/datapack/release/capital-production-canonical-pack.json tools/datapack/release/candidate-build-spec.json tools/datapack/release/release-request.json tools/datapack/release/hash-evidence.json "${TOPOLOGY_REVERIFICATION_PATH}")
           for changed in "${activation_paths[@]}"; do printf '%s\n' "${allowed_activation_paths[@]}" | grep -Fqx "${changed}" || { echo "topology activation changed an unsupported path" >&2; exit 1; }; done
+          git commit -m "Activate current topology inputs"
           node tools/datapack/activate-current-source-set.mjs --topology-only --check --capital-topology "${TOPOLOGY_CAPITAL_PATH}" --incheon-topology "${TOPOLOGY_INCHEON_PATH}" --incheon-accessibility "${TOPOLOGY_INCHEON_ACCESSIBILITY_PATH}" --incheon-line1-timetable "${TOPOLOGY_LINE1_PATH}" --incheon-line2-timetable "${TOPOLOGY_LINE2_PATH}" --itx-topology-evidence "${TOPOLOGY_ITX_EVIDENCE_PATH}" "${itx_args[@]}" --builder-git-sha "${TOPOLOGY_BUILDER_SHA}" --build-now "${TOPOLOGY_BUILD_NOW}"
           [[ -z "$(git diff --name-only)" && -z "$(git ls-files --others --exclude-standard)" ]] || { echo "topology activation changed an unsupported path" >&2; exit 1; }
-          git commit -m "Activate current topology inputs"
           git push origin "${TOPOLOGY_BRANCH}"
       - name: Create draft pull request
         if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.claimed-preflight.outputs.state == 'CLEAR' }}

@@ -90,7 +90,9 @@ test("topology refresh workflow is a pinned, main-only, durable claim automation
   assert.match(activate, /topology activation must change a nonempty subset of the seven activation paths/);
   assert.match(activate, /grep -Fqx "\$\{TOPOLOGY_REVERIFICATION_PATH\}"/);
   assert.match(activate, /topology activation changed an unsupported path/);
-  assert.ok(activate.indexOf("--topology-only --check") < activate.indexOf('git commit -m "Activate current topology inputs"'));
+  assert.ok(activate.indexOf('git commit -m "Activate current topology inputs"') < activate.indexOf("--topology-only --check"));
+  assert.ok(activate.indexOf("--topology-only --check") < activate.indexOf('[[ -z "$(git diff --name-only)"'));
+  assert.ok(activate.indexOf('[[ -z "$(git diff --name-only)"') < activate.indexOf('git push origin "${TOPOLOGY_BRANCH}"'));
   assert.doesNotMatch(activate, /exactly seven activation paths/);
   assert.doesNotMatch(yml, /- name: Verify current topology activation exactly once/);
   assert.equal((yml.match(/itx_args=\(\)/g) ?? []).length, 1);
