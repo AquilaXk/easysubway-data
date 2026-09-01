@@ -3,7 +3,7 @@
   "artifactKind": "production-source-candidates",
   "source": "tools/datapack/source-candidates.json",
   "retrievedAt": "2026-06-22",
-  "updatedAt": "2026-08-27",
+  "updatedAt": "2026-09-01",
   "providers": {
     "kric": {
       "credential": {
@@ -7355,6 +7355,43 @@
           "nodeid",
           "nodename"
         ]
+      }
+    },
+    {
+      "id": "capital-route-topology",
+      "priority": "P0",
+      "domain": "route_graph_topology",
+      "coverageScope": {
+        "regionIds": ["capital"],
+        "operatorIds": ["capital-urban-rail-operators"]
+      },
+      "displayName": "수도권 도시철도 노선별 역간거리 FILE source set",
+      "operation": {
+        "method": "GET",
+        "auth": { "placement": "none" },
+        "retryPolicy": { "maxRetries": 0 },
+        "runner": {
+          "command": "node tools/datapack/collect-capital-route-topology.mjs",
+          "arguments": ["--download", "--output", "[absent-task-owned-absolute-file.json]"],
+          "requiredEnv": []
+        },
+        "sourceDefinition": {
+          "module": "tools/datapack/collect-capital-route-topology.mjs",
+          "exportName": "LINE_SOURCES",
+          "sourceCount": 24,
+          "datasetCount": 23,
+          "sourceSetSha256": "a5c1a069fa0775d67141be9680c0ad5dd3829b0530aeff72cb2081a11586e129"
+        },
+        "secretPolicy": "credential-free-output"
+      },
+      "licenseEvidenceStatus": "confirmed_attribution",
+      "sampleEvidenceStatus": "operation_contract_recorded",
+      "admissionStatus": "preflight_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "formats": ["CSV", "XLSX"],
+        "coverage": "24 ordered Capital topology source definitions",
+        "provider": "data.go.kr official FILE"
       }
     },
     {

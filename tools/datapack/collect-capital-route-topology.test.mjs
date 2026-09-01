@@ -90,6 +90,34 @@ test("MOLIT 전체노선 collector는 공개 FILE 링크의 CSV만 수집한다"
   assert.equal(csv.toString("utf8"), body);
 });
 
+test("Capital topology rejected fetch exposes only closed source transport identity", async () => {
+  const secret = "provider-secret-must-not-escape";
+  const sourceUrl = LINE_SOURCES[0].downloadUrl;
+  const networkCause = Object.assign(
+    new Error(`getaddrinfo ENOTFOUND ${sourceUrl} ${secret}`),
+    { code: "ENOTFOUND" },
+  );
+  let calls = 0;
+
+  await assert.rejects(
+    () => collectCapitalRouteTopology({
+      useLocalFiles: false,
+      sources: [LINE_SOURCES[0]],
+      fetchImpl: async () => {
+        calls += 1;
+        throw new TypeError("fetch failed", { cause: networkCause });
+      },
+    }),
+    (error) => {
+      assert.equal(error.message, "capital topology transport NETWORK_DNS: line1/15041460");
+      assert.doesNotMatch(error.message, new RegExp(secret, "u"));
+      assert.doesNotMatch(error.message, /https?:|data\.go\.kr|ENOTFOUND|fetch failed/iu);
+      return true;
+    },
+  );
+  assert.equal(calls, 1);
+});
+
 test("서해선 병합기는 코레일 전체 파일에서 서해선 행만 사용한다", () => {
   const korail = Buffer.from([
     "철도운영기관명,선명,역명,역간거리(km)",

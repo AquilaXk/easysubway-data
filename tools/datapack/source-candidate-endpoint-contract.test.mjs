@@ -1,5 +1,6 @@
 // #22: 카탈로그 endpoint·detailUrl 실재 계약. 네트워크 호출 없이 형식과 provider host 규약만 검사한다.
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
@@ -13,6 +14,7 @@ import {
   preflightKricFacilityProviderProbe,
   resolveKricFacilityProviderProbe,
 } from "./probe-kric-facility-provider-tuples.mjs";
+import { LINE_SOURCES } from "./collect-capital-route-topology.mjs";
 
 const CANDIDATES_PATH = path.join(import.meta.dirname, "source-candidates.json");
 const DATAPACK_DIRECTORY = import.meta.dirname;
@@ -124,6 +126,53 @@ test("Incheon timetable catalog runs the credential-free official data.go.kr dow
     assert.doesNotMatch(JSON.stringify(runner), /fixtures|\/tmp\/|2026-07/);
     assert.deepEqual(runner?.requiredEnv, []);
   }
+});
+
+test("Capital topology catalog binds the exact credential-free 24-source operation", () => {
+  const candidate = document.candidates.find(({ id }) => id === "capital-route-topology");
+  assert.ok(candidate);
+  assert.equal(candidate.admissionStatus, "preflight_only");
+  assert.deepEqual(candidate.operation?.runner, {
+    command: "node tools/datapack/collect-capital-route-topology.mjs",
+    arguments: ["--download", "--output", "[absent-task-owned-absolute-file.json]"],
+    requiredEnv: [],
+  });
+  assert.deepEqual(candidate.operation?.auth, { placement: "none" });
+  assert.deepEqual(candidate.operation?.retryPolicy, { maxRetries: 0 });
+
+  const projection = LINE_SOURCES.map(({
+    slug, lineId, datasetId, detailUrl, downloadUrl, resolveDownloadFromDetail = false,
+  }) => ({ slug, lineId, datasetId, detailUrl, downloadUrl, resolveDownloadFromDetail }));
+  const sourceSetSha256 = createHash("sha256").update(JSON.stringify(projection)).digest("hex");
+  assert.deepEqual(candidate.operation?.sourceDefinition, {
+    module: "tools/datapack/collect-capital-route-topology.mjs",
+    exportName: "LINE_SOURCES",
+    sourceCount: 24,
+    datasetCount: 23,
+    sourceSetSha256,
+  });
+  assert.equal(sourceSetSha256, "a5c1a069fa0775d67141be9680c0ad5dd3829b0530aeff72cb2081a11586e129");
+  assert.equal(new Set(projection.map(({ slug }) => slug)).size, 24);
+  assert.equal(new Set(projection.map(({ lineId }) => lineId)).size, 24);
+  assert.equal(new Set(projection.map(({ datasetId }) => datasetId)).size, 23);
+
+  for (const source of projection) {
+    const detailUrl = new URL(source.detailUrl);
+    const downloadUrl = new URL(source.downloadUrl);
+    assert.equal(detailUrl.protocol, "https:");
+    assert.equal(detailUrl.hostname, "www.data.go.kr");
+    assert.match(detailUrl.pathname, /^\/data\/[0-9]+\/fileData\.do$/u);
+    assert.equal(downloadUrl.protocol, "https:");
+    assert.equal(downloadUrl.hostname, "www.data.go.kr");
+    if (source.resolveDownloadFromDetail) {
+      assert.match(downloadUrl.pathname, /^\/data\/[0-9]+\/fileData\.do$/u);
+    } else {
+      assert.equal(downloadUrl.pathname, "/cmm/cmm/fileDownload.do");
+      assert.match(downloadUrl.searchParams.get("atchFileId") ?? "", /^FILE_[0-9]+$/u);
+      assert.match(downloadUrl.searchParams.get("fileDetailSn") ?? "", /^[1-9][0-9]*$/u);
+    }
+  }
+  assert.doesNotMatch(JSON.stringify(candidate), /s3:|aws|fallback/iu);
 });
 
 test("FACILITY provider probe는 canonical identity 없이 exact tuple evidence만 만든다", async () => {
