@@ -6,6 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: write
   pull-requests: write
 
@@ -106,12 +107,76 @@ jobs:
             fi
           }
 
-          subject="$(git log -1 --format=%s "origin/${branch}")"
-          if [[ "${subject}" == "Claim KRIC facility refresh" ]]; then
-            [[ "${branch}" =~ ^automation/629-kric-facility-refresh-([0-9]+)$ ]] || {
-              echo "KRIC refresh claim branch identity is invalid" >&2
+          changed_outputs() {
+            {
+              git diff --name-only --diff-filter=ACMR
+              git ls-files --others --exclude-standard
+            } | LC_ALL=C sort -u
+          }
+
+          validate_terminal_claim_topology() {
+            local output_sha="origin/${branch}"
+            local output_parent
+            local parent_record
+            local claim_commit
+            local source_main_sha
+            local merged_main_sha=""
+            local -a parent_fields
+            output_parent="$(git rev-parse "${output_sha}^")"
+            [[ "$(git rev-list --count "${output_parent}..${output_sha}")" == "1" ]] || {
+              echo "KRIC refresh branch has multiple output commits" >&2
               exit 1
             }
+            parent_record="$(git rev-list --parents -n 1 "${output_parent}")"
+            read -r -a parent_fields <<< "${parent_record}"
+            case "${#parent_fields[@]}" in
+              2)
+                claim_commit="${output_parent}"
+                ;;
+              3)
+                claim_commit="$(git rev-parse "${output_parent}^1")"
+                merged_main_sha="$(git rev-parse "${output_parent}^2")"
+                ;;
+              *)
+                echo "KRIC refresh branch has an invalid recovery topology" >&2
+                exit 1
+                ;;
+            esac
+            [[ "$(git log -1 --format=%s "${claim_commit}")" == "Claim KRIC facility refresh" ]] || {
+              echo "KRIC refresh branch has no exact claim commit" >&2
+              exit 1
+            }
+            source_main_sha="$(git rev-parse "${claim_commit}^")"
+            [[ "$(git rev-list --count "${source_main_sha}..${claim_commit}")" == "1" ]] || {
+              echo "KRIC refresh branch has multiple claim commits" >&2
+              exit 1
+            }
+            git merge-base --is-ancestor "${source_main_sha}" HEAD || {
+              echo "KRIC refresh source main is not an ancestor of current main" >&2
+              exit 1
+            }
+            if [[ -n "${merged_main_sha}" ]]; then
+              git merge-base --is-ancestor "${source_main_sha}" "${merged_main_sha}" || {
+                echo "KRIC refresh merge does not descend from the source main" >&2
+                exit 1
+              }
+              git merge-base --is-ancestor "${merged_main_sha}" HEAD || {
+                echo "KRIC refresh merged main is not an ancestor of current main" >&2
+                exit 1
+              }
+              git diff --quiet "${merged_main_sha}" "${output_parent}" || {
+                echo "KRIC refresh merge contains unsupported changes" >&2
+                exit 1
+              }
+            fi
+          }
+
+          [[ "${branch}" =~ ^automation/629-kric-facility-refresh-([0-9]+)$ ]] || {
+            echo "KRIC refresh claim branch identity is invalid" >&2
+            exit 1
+          }
+          subject="$(git log -1 --format=%s "origin/${branch}")"
+          if [[ "${subject}" == "Claim KRIC facility refresh" ]]; then
             source_run_id="${BASH_REMATCH[1]}"
             source_main_sha="$(git rev-parse "origin/${branch}^")"
             [[ "$(git rev-list --count "${source_main_sha}..origin/${branch}")" == "1" ]] || {
@@ -153,7 +218,7 @@ jobs:
               --phase recover-published --operation-root "${target_root}" --source-operation-root "${source_root}"
             node tools/datapack/run-current-capital-facility-operation.mjs \
               --phase finalize --operation-root "${target_root}"
-            validate_output_set "$(git diff --name-only --diff-filter=ACMR)" "$(git diff --name-only --diff-filter=D)"
+            validate_output_set "$(changed_outputs)" "$(git diff --name-only --diff-filter=D)"
             git stash push --include-untracked -m "Recover KRIC facility snapshot ${source_run_id}" -- \
               tools/datapack/release/candidate-build-spec.json \
               tools/datapack/release/current-capital-facility-source-admission.json \
@@ -167,7 +232,7 @@ jobs:
             git switch --track -c "${branch}" "origin/${branch}"
             git merge --no-edit "${main_sha}"
             git stash pop
-            validate_output_set "$(git diff --name-only --diff-filter=ACMR)" "$(git diff --name-only --diff-filter=D)"
+            validate_output_set "$(changed_outputs)" "$(git diff --name-only --diff-filter=D)"
             git add tools/datapack/release/candidate-build-spec.json \
               tools/datapack/release/current-capital-facility-source-admission.json \
               tools/datapack/release/release-request.json \
@@ -178,14 +243,7 @@ jobs:
             git commit -m "Refresh KRIC facility snapshot"
             git push origin "${branch}"
           elif [[ "${subject}" == "Refresh KRIC facility snapshot" ]]; then
-            [[ "$(git rev-list --count HEAD.."origin/${branch}")" == "2" ]] || {
-              echo "KRIC refresh claim does not have exactly one claim and one output commit" >&2
-              exit 1
-            }
-            [[ "$(git rev-parse "origin/${branch}^^")" == "$(git rev-parse HEAD)" ]] || {
-              echo "KRIC refresh claim is not based on the current main" >&2
-              exit 1
-            }
+            validate_terminal_claim_topology
           else
             echo "KRIC refresh claim has no recognized terminal commit" >&2
             exit 1

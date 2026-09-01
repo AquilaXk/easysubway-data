@@ -15,6 +15,7 @@ test("KRIC refresh workflow has one scheduled, fail-closed, PR-only path", () =>
   assert.match(yml, /cancel-in-progress: false/);
   assert.match(yml, /contents: write/);
   assert.match(yml, /pull-requests: write/);
+  assert.match(yml, /actions: read/);
   assert.match(yml, /persist-credentials: false/);
   assert.match(yml, /fetch-depth: 0/);
   assert.match(yml, /node-version: "24\.19\.0"/);
@@ -47,8 +48,14 @@ test("KRIC refresh workflow has one scheduled, fail-closed, PR-only path", () =>
   assert.match(yml, /\[\[ "\$\(git rev-parse HEAD\)" == "\$\{KRIC_REFRESH_MAIN_SHA\}" \]\][\s\S]*run-current-capital-facility-operation\.mjs --phase prepare/);
   assert.match(yml, /git switch "\$\{KRIC_REFRESH_BRANCH\}"[\s\S]*\[\[ "\$\(git rev-parse HEAD\^\)" == "\$\{KRIC_REFRESH_MAIN_SHA\}" \]\][\s\S]*git add -A[\s\S]*deleted="\$\(git diff --cached --name-only --diff-filter=D\)"[\s\S]*changed="\$\(git diff --cached --name-only --diff-filter=ACMR\)"/);
   assert.match(yml, /subject="\$\(git log -1 --format=%s "origin\/\$\{branch\}"\)"/);
-  assert.match(yml, /git rev-list --count HEAD\.\."origin\/\$\{branch\}"/);
-  assert.match(yml, /git rev-parse "origin\/\$\{branch\}\^\^"/);
+  assert.match(yml, /validate_terminal_claim_topology/);
+  assert.match(yml, /git rev-list --parents -n 1 "\$\{output_parent\}"/);
+  assert.match(yml, /git rev-parse "\$\{output_parent\}\^1"/);
+  assert.match(yml, /git rev-parse "\$\{output_parent\}\^2"/);
+  assert.match(yml, /git merge-base --is-ancestor "\$\{merged_main_sha\}" HEAD/);
+  assert.match(yml, /Claim KRIC facility refresh/);
+  assert.match(yml, /changed_outputs/);
+  assert.match(yml, /git ls-files --others --exclude-standard/);
   assert.match(yml, /git diff --name-only --diff-filter=ACMR "origin\/\$\{branch\}\^" "origin\/\$\{branch\}"/);
   assert.equal(
     (yml.match(/grep -Eq '\^tools\/datapack\/sources\/\[\^\/\]\+\\\.json\$'/g) ?? []).length,
