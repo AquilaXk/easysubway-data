@@ -349,6 +349,9 @@ test("candidate build spec release identity는 wall clock과 workflow run number
     build("transition-blocked", secondBuildNow, "303", directory),
     /CURRENT_ACCESSIBILITY_TRANSITION_BLOCKED/,
   );
+  await rm(
+    path.join(directory, "tools/datapack/release/current-capital-accessibility-transition.json"),
+  );
 
   try {
     await readFile(path.join(root, "tools/datapack/release/current-capital-accessibility-transition.json"));
