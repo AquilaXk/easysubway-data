@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -103,8 +104,10 @@ test("Capital topology rejected fetch exposes only closed source transport ident
     () => collectCapitalRouteTopology({
       useLocalFiles: false,
       sources: [LINE_SOURCES[0]],
-      fetchImpl: async () => {
+      fetchImpl: async (_url, init) => {
         calls += 1;
+        assert.ok(init.signal instanceof AbortSignal);
+        assert.equal(init.signal.aborted, false);
         throw new TypeError("fetch failed", { cause: networkCause });
       },
     }),
@@ -116,6 +119,62 @@ test("Capital topology rejected fetch exposes only closed source transport ident
     },
   );
   assert.equal(calls, 1);
+});
+
+test("Capital topology native HTTPS drains redirects with closed identity-encoded failures", async () => {
+  const calls = [];
+  const rawCause = "raw redirect socket detail must not escape";
+  const httpsRequestImpl = (url, options, onResponse) => {
+    const request = new EventEmitter();
+    request.end = () => {
+      calls.push({ url, options });
+      queueMicrotask(() => {
+        const response = new EventEmitter();
+        response.statusCode = 302;
+        response.headers = { location: "https://www.data.go.kr/redirected.csv" };
+        response.resume = () => queueMicrotask(() => response.emit(
+          "error",
+          Object.assign(new Error(rawCause), { code: "ECONNRESET" }),
+        ));
+        onResponse(response);
+      });
+    };
+    return request;
+  };
+
+  await assert.rejects(
+    () => collectCapitalRouteTopology({
+      useLocalFiles: false,
+      sources: [LINE_SOURCES[0]],
+      httpsRequestImpl,
+    }),
+    (error) => {
+      assert.equal(error.message, "capital topology transport NETWORK_SOCKET: line1/15041460");
+      assert.doesNotMatch(error.message, new RegExp(rawCause, "u"));
+      assert.doesNotMatch(error.message, /https?:|data\.go\.kr|ECONNRESET/iu);
+      return true;
+    },
+  );
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].options.headers["Accept-Encoding"], "identity");
+  assert.ok(calls[0].options.signal instanceof AbortSignal);
+});
+
+test("Capital topology transport rejects any timeout other than the recorded 30000ms contract", async () => {
+  let calls = 0;
+  await assert.rejects(
+    () => collectCapitalRouteTopology({
+      useLocalFiles: false,
+      sources: [LINE_SOURCES[0]],
+      requestTimeoutMs: 29_999,
+      fetchImpl: async () => {
+        calls += 1;
+        return new Response("unexpected");
+      },
+    }),
+    /requestTimeoutMs must be exactly 30000/,
+  );
+  assert.equal(calls, 0);
 });
 
 test("Capital topology secondary MOLIT fetch uses the same closed transport identity", async () => {
@@ -465,7 +524,11 @@ test("data.go.kr detail source는 실제 resolved download URL을 line provenanc
     "1,수도권,김포골드라인운영,김포골드라인,1,양촌",
     "1,수도권,김포골드라인운영,김포골드라인,2,구래",
   ].join("\n"));
-  const fetchImpl = async (url) => {
+  const requests = [];
+  const fetchImpl = async (url, init) => {
+    requests.push({ url, init });
+    assert.ok(init.signal instanceof AbortSignal);
+    assert.equal(init.signal.aborted, false);
     if (url === source.detailUrl) {
       return {
         ok: true,
@@ -484,6 +547,7 @@ test("data.go.kr detail source는 실제 resolved download URL을 line provenanc
   });
 
   assert.equal(snapshot.lines[0].endpoint, downloadUrl);
+  assert.equal(requests.length, 2);
 });
 
 test("상충하는 official 거리는 선택하지 않고 conflict evidence를 보존한다", () => {

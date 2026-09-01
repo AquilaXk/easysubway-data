@@ -40,6 +40,7 @@
  */
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
+import { request as httpsRequest } from "node:https";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { inflateRawSync } from "node:zlib";
@@ -62,6 +63,8 @@ export { decodeOfficialCsv, normalizeStationName };
 export const SOURCE_ID = "capital-route-topology";
 export const ARTIFACT_KIND = "capital-route-topology-snapshot";
 export const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
+// Kept in lockstep with the capital-route-topology operation contract.
+export const CAPITAL_TOPOLOGY_REQUEST_TIMEOUT_MS = 30_000;
 export const MOLIT_FULL_ROUTE_DETAIL_URL = "https://www.data.go.kr/data/15122916/fileData.do";
 
 /** Capital map lineIds that topology apply may replace (SUBWAY LOCAL RIDE). */
@@ -1578,19 +1581,96 @@ export function parseLineSource(source, fileBytes, {
   );
 }
 
+function responseFromBytes(status, headers, bytes) {
+  return {
+    status,
+    ok: status >= 200 && status < 300,
+    headers,
+    text: async () => bytes.toString("utf8"),
+    arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+  };
+}
+
+async function nativeHttpsGet(input, init = {}, httpsRequestImpl = httpsRequest) {
+  const url = input instanceof URL ? input : new URL(input);
+  if (url.protocol !== "https:") throw new Error("capital topology transport requires HTTPS");
+  const redirectLimit = 20;
+  const signal = init.signal;
+
+  const requestOnce = (requestUrl, redirectsRemaining) => new Promise((resolve, reject) => {
+    const request = httpsRequestImpl(requestUrl, {
+      method: "GET",
+      headers: { ...init.headers, "Accept-Encoding": "identity" },
+      signal,
+    }, (response) => {
+      const status = response.statusCode ?? 0;
+      const location = response.headers.location;
+      response.once("error", reject);
+      if (new Set([301, 302, 303, 307, 308]).has(status) && location != null) {
+        if (redirectsRemaining === 0) {
+          response.resume();
+          reject(new Error("capital topology HTTPS redirect limit exceeded"));
+          return;
+        }
+        let redirected;
+        try {
+          redirected = new URL(location, requestUrl);
+          if (redirected.protocol !== "https:") throw new Error();
+        } catch {
+          response.resume();
+          reject(new Error("capital topology HTTPS redirect is invalid"));
+          return;
+        }
+        response.once("end", () => resolve(requestOnce(redirected, redirectsRemaining - 1)));
+        response.resume();
+        return;
+      }
+      const chunks = [];
+      response.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+      response.once("end", () => resolve(responseFromBytes(
+        status,
+        response.headers,
+        Buffer.concat(chunks),
+      )));
+    });
+    request.once("error", reject);
+    request.end();
+  });
+
+  return requestOnce(url, redirectLimit);
+}
+
+function requireCapitalTopologyRequestTimeout(requestTimeoutMs) {
+  if (requestTimeoutMs !== CAPITAL_TOPOLOGY_REQUEST_TIMEOUT_MS) {
+    throw new Error("capital topology requestTimeoutMs must be exactly 30000");
+  }
+  return requestTimeoutMs;
+}
+
+async function requestCapitalTopologyGet(fetchImpl, url, init, requestTimeoutMs) {
+  const timeoutMs = requireCapitalTopologyRequestTimeout(requestTimeoutMs);
+  return fetchImpl(url, {
+    ...init,
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+}
+
 export async function collectCapitalRouteTopology({
   root = path.resolve(import.meta.dirname, "../.."),
-  fetchImpl = fetch,
+  httpsRequestImpl = httpsRequest,
+  fetchImpl = (input, init) => nativeHttpsGet(input, init, httpsRequestImpl),
   now = new Date(),
   useLocalFiles = true,
   sources = LINE_SOURCES,
+  requestTimeoutMs = CAPITAL_TOPOLOGY_REQUEST_TIMEOUT_MS,
 } = {}) {
   const captured = validDate(now, "now");
+  requireCapitalTopologyRequestTimeout(requestTimeoutMs);
   const lines = [];
   const detailDownloads = new Map();
   const downloadDetailFile = (detailUrl) => {
     if (!detailDownloads.has(detailUrl)) {
-      detailDownloads.set(detailUrl, downloadDataGoDetailFile(fetchImpl, detailUrl));
+      detailDownloads.set(detailUrl, downloadDataGoDetailFile(fetchImpl, detailUrl, requestTimeoutMs));
     }
     return detailDownloads.get(detailUrl);
   };
@@ -1600,7 +1680,7 @@ export async function collectCapitalRouteTopology({
           bytes: await readFile(path.resolve(root, source.localCsv)),
           downloadUrl: source.downloadUrl,
         }
-      : await downloadBytes(fetchImpl, source, downloadDetailFile);
+      : await downloadBytes(fetchImpl, source, requestTimeoutMs, downloadDetailFile);
     let secondary = null;
     if (source.kind === "seohae-merged") {
       if (typeof source.localMolitCsv !== "string" || source.localMolitCsv.length === 0) {
@@ -1684,18 +1764,18 @@ export async function collectCapitalRouteTopology({
   };
 }
 
-async function downloadBytes(fetchImpl, source, downloadDetailFile = (detailUrl) =>
-  downloadDataGoDetailFile(fetchImpl, detailUrl)) {
+async function downloadBytes(fetchImpl, source, requestTimeoutMs, downloadDetailFile = (detailUrl) =>
+  downloadDataGoDetailFile(fetchImpl, detailUrl, requestTimeoutMs)) {
   return withCapitalTopologyTransportIdentity(source, async () => {
     if (source.resolveDownloadFromDetail === true) {
       return downloadDetailFile(source.downloadUrl);
     }
-    const response = await fetchImpl(source.downloadUrl, {
+    const response = await requestCapitalTopologyGet(fetchImpl, source.downloadUrl, {
       headers: {
         "User-Agent": "easysubway-datapack-collector/1.0",
         Referer: source.detailUrl,
       },
-    });
+    }, requestTimeoutMs);
     if (!response.ok) throw new Error(`${source.slug} CSV HTTP ${response.status}`);
     return {
       bytes: Buffer.from(await response.arrayBuffer()),
@@ -1755,18 +1835,18 @@ function capitalTopologyTransportCode(error) {
   return rejectedFetch ? "NETWORK_UNKNOWN" : null;
 }
 
-async function downloadDataGoDetailFile(fetchImpl, detailUrl) {
-  const detailResponse = await fetchImpl(detailUrl, {
+async function downloadDataGoDetailFile(fetchImpl, detailUrl, requestTimeoutMs) {
+  const detailResponse = await requestCapitalTopologyGet(fetchImpl, detailUrl, {
     headers: { "User-Agent": "easysubway-datapack-collector/1.0" },
-  });
+  }, requestTimeoutMs);
   if (!detailResponse.ok) throw new Error(`data.go.kr detail HTTP ${detailResponse.status}`);
   const downloadUrl = resolveDataGoDownloadUrl(await detailResponse.text(), detailUrl);
-  const fileResponse = await fetchImpl(downloadUrl, {
+  const fileResponse = await requestCapitalTopologyGet(fetchImpl, downloadUrl, {
     headers: {
       "User-Agent": "easysubway-datapack-collector/1.0",
       Referer: detailUrl,
     },
-  });
+  }, requestTimeoutMs);
   if (!fileResponse.ok) throw new Error(`data.go.kr file HTTP ${fileResponse.status}`);
   return {
     bytes: Buffer.from(await fileResponse.arrayBuffer()),

@@ -7371,6 +7371,7 @@
         "method": "GET",
         "auth": { "placement": "none" },
         "retryPolicy": { "maxRetries": 0 },
+        "requestTimeoutMs": 30000,
         "responseEnvelope": "capital-route-topology-snapshot",
         "runner": {
           "command": "node tools/datapack/collect-capital-route-topology.mjs",
