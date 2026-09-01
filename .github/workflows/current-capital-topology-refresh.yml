@@ -203,8 +203,8 @@ jobs:
               ["TOPOLOGY_LINE2_PATH", "tools/datapack/sources/incheon-line2-train-timetable-" + seoul(line2Snapshot.capturedAt) + ".json", root + "/timetables/" + line2[0]],
               ["TOPOLOGY_REVERIFICATION_PATH", "tools/datapack/release/capital-topology-reverification-" + utc(capital.capturedAt) + ".json", ""],
             ];
-            for (const [key, target, source] of values) { process.stdout.write(key + "=" + target + "\\n"); if (source) process.stdout.write(key + "_SOURCE=" + source + "\\n"); }
-            process.stdout.write("TOPOLOGY_BUILD_NOW=" + new Date().toISOString().replace(/\.\d{3}Z$/u, ".000Z") + "\\n");
+            for (const [key, target, source] of values) { console.log(key + "=" + target); if (source) console.log(key + "_SOURCE=" + source); }
+            console.log("TOPOLOGY_BUILD_NOW=" + new Date().toISOString().replace(/\.\d{3}Z$/u, ".000Z"));
           ' >> "${GITHUB_ENV}"
       - name: Derive current ITX admission identity
         if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.decision.outputs.itx_refresh_required == 'true' && steps.claimed-preflight.outputs.state == 'CLEAR' }}
@@ -214,7 +214,8 @@ jobs:
             import { readFile } from "node:fs/promises";
             const admission = JSON.parse(await readFile(process.env.TOPOLOGY_OPERATION_ROOT + "/itx-current-admission.json", "utf8"));
             if (admission.artifactKind !== "itx-current-network-edge-admission" || admission.artifactId !== "itx-current-network-edge-admission-" + admission.serviceDate || !/^[0-9]{8}$/u.test(admission.serviceDate)) throw new Error("ITX admission identity is invalid");
-            process.stdout.write("TOPOLOGY_ITX_ADMISSION_PATH=tools/datapack/" + admission.artifactId + ".json\\nTOPOLOGY_ITX_ADMISSION_PATH_SOURCE=" + process.env.TOPOLOGY_OPERATION_ROOT + "/itx-current-admission.json\\n");
+            console.log("TOPOLOGY_ITX_ADMISSION_PATH=tools/datapack/" + admission.artifactId + ".json");
+            console.log("TOPOLOGY_ITX_ADMISSION_PATH_SOURCE=" + process.env.TOPOLOGY_OPERATION_ROOT + "/itx-current-admission.json");
           ' >> "${GITHUB_ENV}"
       - name: Commit exactly four or five immutable current topology inputs
         if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
@@ -247,7 +248,8 @@ jobs:
             const inventory = JSON.parse(await readFile("tools/datapack/source-inventory.json", "utf8")); const source = inventory.sources?.filter(({ id }) => id === "incheon-transit-accessibility");
             if (source?.length !== 1 || typeof source[0].registrationEvidence?.snapshotId !== "string" || !/^incheon-transit-accessibility-[0-9]{8}T[0-9]{9}Z$/u.test(source[0].registrationEvidence.snapshotId)) throw new Error("Incheon accessibility registration identity is invalid");
             const spec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8")); if (typeof spec.itxTopologyEvidencePath !== "string" || !/^tools\/datapack\/itx-cheongchun-topology-evidence-[0-9]+\.json$/u.test(spec.itxTopologyEvidencePath) || !/^[a-f0-9]{64}$/u.test(spec.itxTopologyEvidenceSha256 ?? "")) throw new Error("ITX topology evidence identity is invalid");
-            process.stdout.write("TOPOLOGY_INCHEON_ACCESSIBILITY_PATH=tools/datapack/sources/" + source[0].registrationEvidence.snapshotId + ".json\\nTOPOLOGY_ITX_EVIDENCE_PATH=" + spec.itxTopologyEvidencePath + "\\n");
+            console.log("TOPOLOGY_INCHEON_ACCESSIBILITY_PATH=tools/datapack/sources/" + source[0].registrationEvidence.snapshotId + ".json");
+            console.log("TOPOLOGY_ITX_EVIDENCE_PATH=" + spec.itxTopologyEvidencePath);
           ' >> "${GITHUB_ENV}"
           [[ -f "${TOPOLOGY_INCHEON_ACCESSIBILITY_PATH}" && -f "${TOPOLOGY_ITX_EVIDENCE_PATH}" && ! -e "${TOPOLOGY_REVERIFICATION_PATH}" ]] || { echo "topology activation dependency or target is invalid" >&2; exit 1; }
       - name: Activate current topology inputs exactly once

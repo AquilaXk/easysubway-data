@@ -9,6 +9,17 @@ function stepBody(name) {
   const end = yml.indexOf("\n      - name: ", start + 1);
   return yml.slice(start, end === -1 ? yml.length : end);
 }
+test("derived GitHub environment values use physical records", () => {
+  for (const name of [
+    "Derive immutable input identities from collector output",
+    "Derive current ITX admission identity",
+    "Derive current activation dependencies",
+  ]) {
+    const body = stepBody(name);
+    assert.doesNotMatch(body, /process\.stdout\.write\([\s\S]*?\\\\n/);
+    assert.match(body, /console\.log\(/);
+  }
+});
 test("topology refresh workflow is a pinned, main-only, durable claim automation", () => {
   assert.match(yml, /cron: "47 \*\/2 \* \* \*"/); assert.match(yml, /github\.ref == 'refs\/heads\/main'/);
   assert.match(yml, /actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1/); assert.match(yml, /actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020/); assert.match(yml, /node-version: "24\.19\.0"/);
