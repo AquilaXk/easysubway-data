@@ -20,6 +20,14 @@ test("derived GitHub environment values use physical records", () => {
     assert.match(body, /console\.log\(/);
   }
 });
+test("activation dependencies are validated after GitHub environment update", () => {
+  const derive = stepBody("Derive current activation dependencies");
+  const validate = stepBody("Validate current activation dependencies");
+  assert.doesNotMatch(derive, /\$\{TOPOLOGY_INCHEON_ACCESSIBILITY_PATH\}|\$\{TOPOLOGY_ITX_EVIDENCE_PATH\}/);
+  assert.match(validate, /\[\[ -f "\$\{TOPOLOGY_INCHEON_ACCESSIBILITY_PATH\}" && -f "\$\{TOPOLOGY_ITX_EVIDENCE_PATH\}" && ! -e "\$\{TOPOLOGY_REVERIFICATION_PATH\}" \]\]/);
+  assert.ok(yml.indexOf("Derive current activation dependencies") < yml.indexOf("Validate current activation dependencies"));
+  assert.ok(yml.indexOf("Validate current activation dependencies") < yml.indexOf("Activate current topology inputs exactly once"));
+});
 test("topology refresh workflow is a pinned, main-only, durable claim automation", () => {
   assert.match(yml, /cron: "47 \*\/2 \* \* \*"/); assert.match(yml, /github\.ref == 'refs\/heads\/main'/);
   assert.match(yml, /actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1/); assert.match(yml, /actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020/); assert.match(yml, /node-version: "24\.19\.0"/);

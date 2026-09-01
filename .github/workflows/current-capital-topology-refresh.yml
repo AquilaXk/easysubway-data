@@ -251,6 +251,10 @@ jobs:
             console.log("TOPOLOGY_INCHEON_ACCESSIBILITY_PATH=tools/datapack/sources/" + source[0].registrationEvidence.snapshotId + ".json");
             console.log("TOPOLOGY_ITX_EVIDENCE_PATH=" + spec.itxTopologyEvidencePath);
           ' >> "${GITHUB_ENV}"
+      - name: Validate current activation dependencies
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        run: |
+          set -euo pipefail
           [[ -f "${TOPOLOGY_INCHEON_ACCESSIBILITY_PATH}" && -f "${TOPOLOGY_ITX_EVIDENCE_PATH}" && ! -e "${TOPOLOGY_REVERIFICATION_PATH}" ]] || { echo "topology activation dependency or target is invalid" >&2; exit 1; }
       - name: Activate current topology inputs exactly once
         if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
