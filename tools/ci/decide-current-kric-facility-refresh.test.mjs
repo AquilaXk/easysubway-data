@@ -61,7 +61,7 @@ test("KRIC refresh decision recovers exactly one durable remote claim before pro
   await assert.rejects(() => decideCurrentKricFacilityRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") }), /claim/);
 });
 
-test("terminal historical claims do not block the next due refresh", async () => {
+test("terminal historical claims distinguish merged history from one retireable closed claim", async () => {
   const { decideCurrentKricFacilityRefresh } = await load();
   const input = await fixture();
   const branch = "automation/629-kric-facility-refresh-122";
@@ -70,19 +70,47 @@ test("terminal historical claims do not block the next due refresh", async () =>
   assert.equal((await decideCurrentKricFacilityRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") })).state, "DUE");
   await writeFile(input.claimsPath, `0123456789abcdef0123456789abcdef01234567\trefs/heads/${branch}\n89abcdef0123456789abcdef0123456789abcdef\trefs/heads/automation/629-kric-facility-refresh-123\n`);
   assert.equal((await decideCurrentKricFacilityRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") })).state, "RECOVER_CLAIM");
+  const approvedBranch = "automation/629-kric-facility-refresh-33374059575";
+  const approvedSha = "4a75f913e06c7eded7112ef06017f95689626dff";
+  await writeFile(input.claimsPath, `${approvedSha}\trefs/heads/${approvedBranch}\n`);
+  await writeFile(input.prsPath, JSON.stringify([{ number: 644, state: "CLOSED", isDraft: true, headRefName: approvedBranch, baseRefName: "main", headRepository: { nameWithOwner: input.repository }, isCrossRepository: false }]));
+  assert.deepEqual(
+    await decideCurrentKricFacilityRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") }),
+    {
+      state: "RETIRE_CLOSED_CLAIM",
+      alertBeforePackExpiry: "PT6H",
+      branch: approvedBranch,
+      claimSha: approvedSha,
+    },
+  );
+  await writeFile(input.claimsPath, `${approvedSha}\trefs/heads/${approvedBranch}\n89abcdef0123456789abcdef0123456789abcdef\trefs/heads/automation/629-kric-facility-refresh-123\n`);
+  await assert.rejects(
+    () => decideCurrentKricFacilityRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") }),
+    /duplicate|ambiguous/,
+  );
   await writeFile(input.claimsPath, `0123456789abcdef0123456789abcdef01234567\trefs/heads/${branch}\n`);
   await writeFile(input.prsPath, JSON.stringify([{ number: 628, state: "CLOSED", isDraft: true, headRefName: branch, baseRefName: "main", headRepository: { nameWithOwner: input.repository }, isCrossRepository: false }]));
-  assert.equal((await decideCurrentKricFacilityRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") })).state, "DUE");
+  await assert.rejects(
+    () => decideCurrentKricFacilityRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") }),
+    /not approved/,
+  );
 });
 
-test("decision CLI writes sanitized JSON and GitHub outputs without PR URLs", async () => {
+test("decision CLI writes the approved retirement identity without PR URLs", async () => {
   const input = await fixture();
+  const branch = "automation/629-kric-facility-refresh-33374059575";
+  const claimSha = "4a75f913e06c7eded7112ef06017f95689626dff";
+  await writeFile(input.claimsPath, `${claimSha}\trefs/heads/${branch}\n`);
+  await writeFile(input.prsPath, JSON.stringify([{ number: 644, state: "CLOSED", isDraft: true, headRefName: branch, baseRefName: "main", headRepository: { nameWithOwner: input.repository }, isCrossRepository: false }]));
   const outputPath = path.join(input.directory, "decision.json");
   const githubOutputPath = path.join(input.directory, "github-output.txt");
   const { runCurrentKricFacilityRefreshDecision } = await load();
   await runCurrentKricFacilityRefreshDecision({ inventoryPath: input.inventoryPath, policyPath: input.policyPath, prsPath: input.prsPath, claimsPath: input.claimsPath, repository: input.repository, outputPath, githubOutputPath, now: new Date("2026-08-30T07:00:00.000Z") });
   const output = await readFile(outputPath, "utf8");
-  assert.match(output, /"state": "DUE"/);
+  assert.match(output, /"state": "RETIRE_CLOSED_CLAIM"/);
   assert.doesNotMatch(output, /https:\/\//);
-  assert.match(await readFile(githubOutputPath, "utf8"), /^state=DUE$/m);
+  assert.equal(
+    await readFile(githubOutputPath, "utf8"),
+    `state=RETIRE_CLOSED_CLAIM\nbranch=${branch}\nclaim_sha=${claimSha}\n`,
+  );
 });
