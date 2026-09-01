@@ -81,7 +81,6 @@ export async function decideCurrentKricFacilityRefresh({ inventoryPath, policyPa
   const recoverable = claims.filter(({ branch }) => {
     const associated = pullRequests.filter(({ headRefName }) => headRefName === branch);
     if (associated.length > 1) throw new Error("duplicate KRIC refresh pull requests exist");
-    if (associated[0]?.state === "CLOSED") throw new Error("closed KRIC refresh claim requires manual resolution");
     return associated.length === 0;
   });
   if (recoverable.length > 1) throw new Error("duplicate KRIC refresh claims exist");

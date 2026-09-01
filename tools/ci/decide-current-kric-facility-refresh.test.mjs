@@ -61,7 +61,7 @@ test("KRIC refresh decision recovers exactly one durable remote claim before pro
   await assert.rejects(() => decideCurrentKricFacilityRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") }), /claim/);
 });
 
-test("merged historical claims do not block the next due refresh", async () => {
+test("terminal historical claims do not block the next due refresh", async () => {
   const { decideCurrentKricFacilityRefresh } = await load();
   const input = await fixture();
   const branch = "automation/629-kric-facility-refresh-122";
@@ -72,7 +72,7 @@ test("merged historical claims do not block the next due refresh", async () => {
   assert.equal((await decideCurrentKricFacilityRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") })).state, "RECOVER_CLAIM");
   await writeFile(input.claimsPath, `0123456789abcdef0123456789abcdef01234567\trefs/heads/${branch}\n`);
   await writeFile(input.prsPath, JSON.stringify([{ number: 628, state: "CLOSED", isDraft: true, headRefName: branch, baseRefName: "main", headRepository: { nameWithOwner: input.repository }, isCrossRepository: false }]));
-  await assert.rejects(() => decideCurrentKricFacilityRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") }), /manual resolution/);
+  assert.equal((await decideCurrentKricFacilityRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") })).state, "DUE");
 });
 
 test("decision CLI writes sanitized JSON and GitHub outputs without PR URLs", async () => {
