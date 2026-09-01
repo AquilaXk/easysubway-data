@@ -2211,6 +2211,12 @@ async function readRegularBytes(repositoryRoot, relativePath, label = relativePa
   return await readFile(absolutePath);
 }
 
+export async function readOptionalCurrentItxAdmissionBytes(repositoryRoot, relativePath) {
+  return relativePath == null
+    ? null
+    : readRegularBytes(repositoryRoot, relativePath, "current ITX topology admission");
+}
+
 function parseJson(bytes, label) {
   try {
     return JSON.parse(Buffer.from(bytes).toString("utf8"));
@@ -2862,7 +2868,7 @@ export async function generateCurrentCapitalTopologyRefresh({
         readRegularBytes(root, incheonLine1TimetablePath, "current Incheon line 1 timetable"),
         readRegularBytes(root, incheonLine2TimetablePath, "current Incheon line 2 timetable"),
         readRegularBytes(root, itxTopologyEvidencePath, "current ITX topology evidence"),
-        readRegularBytes(root, itxCurrentAdmissionPath, "current ITX topology admission"),
+        readOptionalCurrentItxAdmissionBytes(root, itxCurrentAdmissionPath),
         readRegularBytes(root, "tools/datapack/sources/capital-route-topology-20260724.json"),
         readMutableInput("tools/datapack/source-inventory.json"),
         readMutableInput("tools/datapack/inputs/capital-pilot-production-source-input.json"),

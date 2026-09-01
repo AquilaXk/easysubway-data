@@ -26,6 +26,7 @@ import { requireCurrentIncheonTopologyAdmission, activateStaticSourceRevalidatio
   parseApprovedItxBootstrapArgs, parseCurrentTopologyRefreshArgs, requireCleanBuilder,
   CURRENT_PRODUCTION_SOURCE_IDS, CURRENT_SOURCE_INVENTORY_IDS,
   readBuilderBaselineBytes,
+  readOptionalCurrentItxAdmissionBytes,
   stageValidationItxTopologyEvidence,
   validateFreshCandidateSelectedItxEvidence,
   validatePreparedCandidate, verifyCurrentStaticNetworkSuccessorHeads,
@@ -724,6 +725,10 @@ test("activation CLI는 Data-owned capital/Incheon snapshot paths만 수용한�
     "--builder-git-sha", "b".repeat(40),
     "--build-now", "2026-08-23T14:53:48.203Z",
   ]).itx_current_admission, undefined);
+});
+
+test("topology refresh skips the optional ITX admission file read", async () => {
+  assert.equal(await readOptionalCurrentItxAdmissionBytes(root, undefined), null);
 });
 
 test("approved ITX bootstrap은 exact full-source identity만 candidate에 결속한다", async () => {

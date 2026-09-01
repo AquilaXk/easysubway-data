@@ -93,6 +93,25 @@ async function setCandidateItxFreshUntil(input, freshUntil) {
   await writeFile(input.candidatePath, JSON.stringify(candidate));
 }
 
+async function setCandidateItxAdmission(input, freshUntil) {
+  const candidate = JSON.parse(await readFile(input.candidatePath, "utf8"));
+  const artifactId = "itx-current-network-edge-admission-20260830";
+  const relativePath = `tools/datapack/${artifactId}.json`;
+  const bytes = Buffer.from(`${JSON.stringify({
+    schemaVersion: 1,
+    artifactKind: "itx-current-network-edge-admission",
+    artifactId,
+    status: "ADMITTED",
+    freshUntil,
+  })}\n`);
+  await writeFile(path.join(input.repositoryRoot, relativePath), bytes);
+  candidate.networkEdgeEvidence.itxCurrentTopologyAdmission = {
+    path: relativePath,
+    sha256: sha256(bytes),
+  };
+  await writeFile(input.candidatePath, JSON.stringify(candidate));
+}
+
 test("earliest canonical current topology expiry determines NOT_DUE, DUE, and EXPIRED", async () => {
   const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
   for (const [now, state] of [["2026-08-30T05:59:59.999Z", "NOT_DUE"], ["2026-08-30T06:00:00.000Z", "DUE"], ["2026-08-30T12:00:00.000Z", "EXPIRED"]]) {
@@ -144,6 +163,20 @@ test("candidate-selected ITX freshness accepts an explicit timezone offset", asy
     ...input,
     now: new Date("2026-08-30T05:59:59.999Z"),
   })).state, "NOT_DUE");
+});
+
+test("ITX provider skip uses the standalone evidence retained by the next candidate", async () => {
+  const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
+  await setCandidateItxFreshUntil(input, "2026-08-30T10:00:00.000Z");
+  await setCandidateItxAdmission(input, "2026-08-30T16:00:00.000Z");
+
+  const result = await decideCurrentCapitalTopologyRefresh({
+    ...input,
+    now: new Date("2026-08-30T07:00:00.000Z"),
+  });
+  assert.equal(result.state, "DUE");
+  assert.equal(result.itxFreshUntil, "2026-08-30T10:00:00.000Z");
+  assert.equal(result.itxRefreshRequired, true);
 });
 
 test("only a same-repository main-base claim can own this automation", async () => {
