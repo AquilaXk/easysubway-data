@@ -27,15 +27,30 @@ async function fixture({ freshUntil = "2026-08-30T12:00:00.000Z" } = {}) {
   const policyPath = path.join(directory, "policy.json");
   const prsPath = path.join(directory, "prs.json");
   const claimsPath = path.join(directory, "claims.txt");
+  const claimEvidencePath = path.join(directory, "claim-evidence.json");
   const facilityPrsPath = path.join(directory, "facility-prs.json");
   await Promise.all([
     writeFile(inventoryPath, JSON.stringify({ sourceIdentity: { sourceId: "kric-station-movement-standard", freshUntil } })),
     writeFile(policyPath, JSON.stringify({ monitoring: { alertBeforePackExpiry: "PT6H" } })),
     writeFile(prsPath, "[]"),
     writeFile(claimsPath, ""),
+    writeFile(claimEvidencePath, "[]"),
     writeFile(facilityPrsPath, JSON.stringify([facilityPullRequest()])),
   ]);
-  return { directory, inventoryPath, policyPath, prsPath, claimsPath, facilityPrsPath, repository };
+  return {
+    directory, inventoryPath, policyPath, prsPath, claimsPath, claimEvidencePath,
+    currentMainSha: "b".repeat(40), facilityPrsPath, repository,
+  };
+}
+
+function claimEvidence({
+  sha = "c".repeat(40),
+  branch = "automation/6-kric-exit-full-capital-refresh-123",
+  parentSha = "b".repeat(40),
+  commitCount = 1,
+  subject = "Claim KRIC EXIT full-capital refresh",
+} = {}) {
+  return { sha, branch, parentSha, commitCount, subject };
 }
 
 function facilityPullRequest({ files = facilityPaths, headRefOid = "a".repeat(40) } = {}) {
@@ -100,9 +115,51 @@ test("EXIT decision stops new work behind an open EXIT PR and carries the valida
   await writeFile(input.prsPath, "[]");
   const branch = "automation/6-kric-exit-full-capital-refresh-123";
   await writeFile(input.claimsPath, `${"c".repeat(40)}\trefs/heads/${branch}\n`);
+  await writeFile(input.claimEvidencePath, JSON.stringify([claimEvidence()]));
   assert.deepEqual(
     await decideCurrentKricExitFullCapitalRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") }),
     { state: "RECOVER_CLAIM", alertBeforePackExpiry: "PT6H", branch, facilityBranch: "automation/629-kric-facility-refresh-123", facilityHeadSha: "a".repeat(40) },
+  );
+});
+
+test("EXIT decision recovers only an exact canonical claim directly parented by current main", async () => {
+  const { decideCurrentKricExitFullCapitalRefresh } = await load();
+  const input = await fixture();
+  const branch = "automation/6-kric-exit-full-capital-refresh-123";
+  await writeFile(input.claimsPath, `${"c".repeat(40)}\trefs/heads/${branch}\n`);
+  await writeFile(input.claimEvidencePath, JSON.stringify([claimEvidence()]));
+  assert.deepEqual(
+    await decideCurrentKricExitFullCapitalRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") }),
+    { state: "RECOVER_CLAIM", alertBeforePackExpiry: "PT6H", branch, facilityBranch: "automation/629-kric-facility-refresh-123", facilityHeadSha: "a".repeat(40) },
+  );
+
+  await writeFile(input.claimEvidencePath, JSON.stringify([claimEvidence({ parentSha: "d".repeat(40) })]));
+  assert.deepEqual(
+    await decideCurrentKricExitFullCapitalRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") }),
+    { state: "DUE", alertBeforePackExpiry: "PT6H", facilityBranch: "automation/629-kric-facility-refresh-123", facilityHeadSha: "a".repeat(40) },
+  );
+});
+
+test("EXIT decision fails closed for malformed or duplicate current-main claim evidence", async () => {
+  const { decideCurrentKricExitFullCapitalRefresh } = await load();
+  const input = await fixture();
+  const firstBranch = "automation/6-kric-exit-full-capital-refresh-123";
+  const secondBranch = "automation/6-kric-exit-full-capital-refresh-456";
+  await writeFile(input.claimsPath, `${"c".repeat(40)}\trefs/heads/${firstBranch}\n`);
+  await writeFile(input.claimEvidencePath, JSON.stringify([{ ...claimEvidence(), subject: "Unexpected claim subject" }]));
+  await assert.rejects(
+    () => decideCurrentKricExitFullCapitalRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") }),
+    /EXIT full-capital refresh claim evidence is invalid/,
+  );
+
+  await writeFile(input.claimsPath, `${"c".repeat(40)}\trefs/heads/${firstBranch}\n${"d".repeat(40)}\trefs/heads/${secondBranch}\n`);
+  await writeFile(input.claimEvidencePath, JSON.stringify([
+    claimEvidence(),
+    claimEvidence({ sha: "d".repeat(40), branch: secondBranch }),
+  ]));
+  await assert.rejects(
+    () => decideCurrentKricExitFullCapitalRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") }),
+    /duplicate current-main EXIT full-capital refresh claims exist/,
   );
 });
 
