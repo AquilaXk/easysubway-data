@@ -2618,6 +2618,23 @@ export function validateFreshCandidateSelectedItxEvidence({ spec, evidencePath, 
   }
 }
 
+export function validateCurrentTopologyRefreshItxEvidence({
+  spec,
+  itxCurrentAdmissionPath,
+  selectedItxTopologyEvidencePath,
+  currentItxTopologyEvidenceBytes,
+  buildNow,
+}) {
+  if (itxCurrentAdmissionPath == null) {
+    validateFreshCandidateSelectedItxEvidence({
+      spec,
+      evidencePath: selectedItxTopologyEvidencePath,
+      evidenceBytes: currentItxTopologyEvidenceBytes,
+      buildNow,
+    });
+  }
+}
+
 export async function stageValidationItxTopologyEvidence({
   spec,
   temporaryRoot,
@@ -2880,14 +2897,13 @@ export async function generateCurrentCapitalTopologyRefresh({
     await requireCleanBuilder(builderGitSha, { check, allowedDescendantPaths });
     const sourceInventory = parseJson(sourceInventoryBytes, "source inventory");
     let baseSpec = parseJson(baseSpecBytes, "candidate build spec");
-    if (itxCurrentAdmissionPath == null) {
-      validateFreshCandidateSelectedItxEvidence({
-        spec: baseSpec,
-        evidencePath: currentItxTopologyEvidencePath,
-        evidenceBytes: currentItxTopologyEvidenceBytes,
-        buildNow,
-      });
-    }
+    validateCurrentTopologyRefreshItxEvidence({
+      spec: baseSpec,
+      itxCurrentAdmissionPath,
+      selectedItxTopologyEvidencePath,
+      currentItxTopologyEvidenceBytes,
+      buildNow,
+    });
     let approvedItxTopology = null;
     if (approvedItxBootstrap) {
       const [sourceBytes, completenessBytes] = await Promise.all([
