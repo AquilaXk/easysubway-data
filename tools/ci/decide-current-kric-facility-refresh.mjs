@@ -5,6 +5,11 @@ import path from "node:path";
 const SOURCE_ID = "kric-station-convenience-standard";
 const AUTOMATION_BRANCH = /^automation\/629-kric-facility-refresh-[0-9]+$/;
 const CLAIM_REF = /^([0-9a-f]{40})\trefs\/heads\/(automation\/629-kric-facility-refresh-[0-9]+)$/;
+const APPROVED_CLOSED_CLAIM = Object.freeze({
+  number: 644,
+  branch: "automation/629-kric-facility-refresh-33374059575",
+  sha: "4a75f913e06c7eded7112ef06017f95689626dff",
+});
 
 function parseJson(bytes, label) {
   try { return JSON.parse(bytes); }
@@ -76,15 +81,37 @@ export async function decideCurrentKricFacilityRefresh({ inventoryPath, policyPa
   }
   const openPullRequests = pullRequests.filter(({ state }) => state === "OPEN");
   if (openPullRequests.length > 1) throw new Error("duplicate KRIC refresh pull requests exist");
-  if (openPullRequests.length === 1) return { state: "OPEN_PR", alertBeforePackExpiry };
   const claims = automationClaims(claimsBytes);
-  const recoverable = claims.filter(({ branch }) => {
+  if (openPullRequests.length === 1) return { state: "OPEN_PR", alertBeforePackExpiry };
+  const analyzedClaims = claims.map((claim) => {
+    const { branch } = claim;
     const associated = pullRequests.filter(({ headRefName }) => headRefName === branch);
     if (associated.length > 1) throw new Error("duplicate KRIC refresh pull requests exist");
-    if (associated[0]?.state === "CLOSED") throw new Error("closed KRIC refresh claim requires manual resolution");
-    return associated.length === 0;
+    return {
+      ...claim,
+      pullRequestNumber: associated[0]?.number ?? null,
+      pullRequestState: associated[0]?.state ?? null,
+    };
   });
+  const recoverable = analyzedClaims.filter(({ pullRequestState }) => pullRequestState === null);
+  const closed = analyzedClaims.filter(({ pullRequestState }) => pullRequestState === "CLOSED");
   if (recoverable.length > 1) throw new Error("duplicate KRIC refresh claims exist");
+  if (closed.length > 1 || (closed.length === 1 && recoverable.length === 1)) {
+    throw new Error("KRIC refresh claims are ambiguous");
+  }
+  if (closed.length === 1) {
+    if (closed[0].pullRequestNumber !== APPROVED_CLOSED_CLAIM.number
+      || closed[0].branch !== APPROVED_CLOSED_CLAIM.branch
+      || closed[0].sha !== APPROVED_CLOSED_CLAIM.sha) {
+      throw new Error("closed KRIC refresh claim is not approved for retirement");
+    }
+    return {
+      state: "RETIRE_CLOSED_CLAIM",
+      alertBeforePackExpiry,
+      branch: closed[0].branch,
+      claimSha: closed[0].sha,
+    };
+  }
   if (recoverable.length === 1) return { state: "RECOVER_CLAIM", alertBeforePackExpiry, branch: recoverable[0].branch };
   if (currentTime >= freshUntil) return { state: "EXPIRED", alertBeforePackExpiry };
   if (currentTime >= freshUntil - threshold) return { state: "DUE", alertBeforePackExpiry };
@@ -95,7 +122,7 @@ export async function runCurrentKricFacilityRefreshDecision({ inventoryPath, pol
   const result = await decideCurrentKricFacilityRefresh({ inventoryPath, policyPath, prsPath, claimsPath, repository, now });
   await Promise.all([
     writeFile(path.resolve(outputPath), `${JSON.stringify(result, null, 2)}\n`, { flag: "wx" }),
-    writeFile(path.resolve(githubOutputPath), `state=${result.state}\nbranch=${result.branch ?? ""}\n`, { flag: "a" }),
+    writeFile(path.resolve(githubOutputPath), `state=${result.state}\nbranch=${result.branch ?? ""}\nclaim_sha=${result.claimSha ?? ""}\n`, { flag: "a" }),
   ]);
   return result;
 }
