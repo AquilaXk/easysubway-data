@@ -28,6 +28,7 @@ import { requireCurrentIncheonTopologyAdmission, activateStaticSourceRevalidatio
   readBuilderBaselineBytes,
   readOptionalCurrentItxAdmissionBytes,
   stageValidationItxTopologyEvidence,
+  validateCurrentTopologyRefreshItxEvidence,
   validateFreshCandidateSelectedItxEvidence,
   validatePreparedCandidate, verifyCurrentStaticNetworkSuccessorHeads,
   verifyCurrentSeoulCanonicalMembership } from "./activate-current-source-set.mjs";
@@ -823,6 +824,35 @@ test("candidate-selected fresh ITX evidence binds its source artifact identity t
     evidenceBytes: mismatchedBytes,
     buildNow: "2026-08-30T16:00:00.000Z",
   }), /not active at buildNow/);
+});
+
+test("topology refresh without a current ITX admission validates the selected tracked evidence", async () => {
+  const spec = await readJson("tools/datapack/release/candidate-build-spec.json");
+  const evidencePath = spec.itxTopologyEvidencePath;
+  const evidenceBytes = await readFile(path.join(root, evidencePath));
+  const buildNow = "2026-08-30T16:00:00.000Z";
+
+  assert.doesNotThrow(() => validateCurrentTopologyRefreshItxEvidence({
+    spec,
+    itxCurrentAdmissionPath: null,
+    selectedItxTopologyEvidencePath: evidencePath,
+    currentItxTopologyEvidenceBytes: evidenceBytes,
+    buildNow,
+  }));
+  assert.throws(() => validateCurrentTopologyRefreshItxEvidence({
+    spec,
+    itxCurrentAdmissionPath: null,
+    selectedItxTopologyEvidencePath: "tools/datapack/itx-cheongchun-topology-evidence.json",
+    currentItxTopologyEvidenceBytes: evidenceBytes,
+    buildNow,
+  }), /identity is invalid/);
+  assert.throws(() => validateCurrentTopologyRefreshItxEvidence({
+    spec,
+    itxCurrentAdmissionPath: null,
+    selectedItxTopologyEvidencePath: evidencePath,
+    currentItxTopologyEvidenceBytes: Buffer.from("not the selected evidence\n"),
+    buildNow,
+  }), /identity is invalid/);
 });
 
 test("prepared candidate validation은 spec-selected current ITX evidence bytes만 stage한다", async (context) => {

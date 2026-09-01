@@ -194,6 +194,28 @@ test("only a same-repository main-base claim can own this automation", async () 
   });
 });
 
+test("an exact empty current-main claim is reused after a provider failure", async () => {
+  const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
+  const branch = "automation/636-current-topology-refresh-33457248862";
+  await writeFile(input.claimsPath, JSON.stringify([{
+    headSha: sha,
+    ref: `refs/heads/${branch}`,
+    mergeBaseSha: sha,
+    commitCount: 1,
+    subjects: ["Claim current topology refresh"],
+  }]));
+  assert.deepEqual(await decideCurrentCapitalTopologyRefresh({
+    ...input,
+    now: new Date("2026-08-30T07:00:00.000Z"),
+  }), {
+    state: "REUSE_CLAIM",
+    alertBeforePackExpiry: "PT6H",
+    branch,
+    itxFreshUntil: "2026-08-30T16:00:00.000Z",
+    itxRefreshRequired: false,
+  });
+});
+
 test("duplicate, malformed, and closed claims fail closed", async () => {
   const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
   await writeFile(input.claimsPath, `bad\n`);
