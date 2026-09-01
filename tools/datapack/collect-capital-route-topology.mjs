@@ -1591,23 +1591,24 @@ function responseFromBytes(status, headers, bytes) {
   };
 }
 
-async function nativeHttpsGet(input, init = {}) {
+async function nativeHttpsGet(input, init = {}, httpsRequestImpl = httpsRequest) {
   const url = input instanceof URL ? input : new URL(input);
   if (url.protocol !== "https:") throw new Error("capital topology transport requires HTTPS");
   const redirectLimit = 20;
   const signal = init.signal;
 
   const requestOnce = (requestUrl, redirectsRemaining) => new Promise((resolve, reject) => {
-    const request = httpsRequest(requestUrl, {
+    const request = httpsRequestImpl(requestUrl, {
       method: "GET",
-      headers: init.headers,
+      headers: { ...init.headers, "Accept-Encoding": "identity" },
       signal,
     }, (response) => {
       const status = response.statusCode ?? 0;
       const location = response.headers.location;
+      response.once("error", reject);
       if (new Set([301, 302, 303, 307, 308]).has(status) && location != null) {
-        response.resume();
         if (redirectsRemaining === 0) {
+          response.resume();
           reject(new Error("capital topology HTTPS redirect limit exceeded"));
           return;
         }
@@ -1616,15 +1617,16 @@ async function nativeHttpsGet(input, init = {}) {
           redirected = new URL(location, requestUrl);
           if (redirected.protocol !== "https:") throw new Error();
         } catch {
+          response.resume();
           reject(new Error("capital topology HTTPS redirect is invalid"));
           return;
         }
-        resolve(requestOnce(redirected, redirectsRemaining - 1));
+        response.once("end", () => resolve(requestOnce(redirected, redirectsRemaining - 1)));
+        response.resume();
         return;
       }
       const chunks = [];
       response.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
-      response.once("error", reject);
       response.once("end", () => resolve(responseFromBytes(
         status,
         response.headers,
@@ -1655,7 +1657,8 @@ async function requestCapitalTopologyGet(fetchImpl, url, init, requestTimeoutMs)
 
 export async function collectCapitalRouteTopology({
   root = path.resolve(import.meta.dirname, "../.."),
-  fetchImpl = nativeHttpsGet,
+  httpsRequestImpl = httpsRequest,
+  fetchImpl = (input, init) => nativeHttpsGet(input, init, httpsRequestImpl),
   now = new Date(),
   useLocalFiles = true,
   sources = LINE_SOURCES,

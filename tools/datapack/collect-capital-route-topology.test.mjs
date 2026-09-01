@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -118,6 +119,45 @@ test("Capital topology rejected fetch exposes only closed source transport ident
     },
   );
   assert.equal(calls, 1);
+});
+
+test("Capital topology native HTTPS drains redirects with closed identity-encoded failures", async () => {
+  const calls = [];
+  const rawCause = "raw redirect socket detail must not escape";
+  const httpsRequestImpl = (url, options, onResponse) => {
+    const request = new EventEmitter();
+    request.end = () => {
+      calls.push({ url, options });
+      queueMicrotask(() => {
+        const response = new EventEmitter();
+        response.statusCode = 302;
+        response.headers = { location: "https://www.data.go.kr/redirected.csv" };
+        response.resume = () => queueMicrotask(() => response.emit(
+          "error",
+          Object.assign(new Error(rawCause), { code: "ECONNRESET" }),
+        ));
+        onResponse(response);
+      });
+    };
+    return request;
+  };
+
+  await assert.rejects(
+    () => collectCapitalRouteTopology({
+      useLocalFiles: false,
+      sources: [LINE_SOURCES[0]],
+      httpsRequestImpl,
+    }),
+    (error) => {
+      assert.equal(error.message, "capital topology transport NETWORK_SOCKET: line1/15041460");
+      assert.doesNotMatch(error.message, new RegExp(rawCause, "u"));
+      assert.doesNotMatch(error.message, /https?:|data\.go\.kr|ECONNRESET/iu);
+      return true;
+    },
+  );
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].options.headers["Accept-Encoding"], "identity");
+  assert.ok(calls[0].options.signal instanceof AbortSignal);
 });
 
 test("Capital topology transport rejects any timeout other than the recorded 30000ms contract", async () => {
