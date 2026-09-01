@@ -59,21 +59,28 @@ async function selectedSourceHeadAt() {
 function nextSnapshot(plan) {
   const operation = KRIC_ACCESSIBILITY_OPERATIONS.find(({ sourceId }) => sourceId === "kric-station-convenience-standard");
   const capturedAt = new Date(CURRENT_SOURCE_HEAD_AT + 60_000).toISOString();
-  const queries = plan.stationLineProviderMappings.map((mapping) => ({
+  const mappings = [...plan.stationLineProviderMappings].sort((left, right) => {
+    const identity = (mapping) => [mapping.providerOperatorId, mapping.providerLineId, mapping.providerStationId, mapping.stationId, mapping.lineId].join("\0");
+    return identity(left) < identity(right) ? -1 : identity(left) > identity(right) ? 1 : 0;
+  });
+  const queries = mappings.map((mapping) => ({
     stationId: mapping.stationId, lineId: mapping.lineId, railOprIsttCd: mapping.providerOperatorId,
-    lnCd: mapping.providerLineId, stinCd: mapping.providerStationId, rows: [], rawResponseSha256: sha(Buffer.from(JSON.stringify({ header: { resultCode: "00" }, body: [] }))),
-    providerRecordHash: jsonSha([]), status: "ABSENT_EXPLICIT_ZERO",
+    lnCd: mapping.providerLineId, stinCd: mapping.providerStationId,
     canonicalMappings: [{ artifactId: "bundled-capital", stationId: mapping.stationId, lineId: mapping.lineId }],
+    status: "ABSENT_EXPLICIT_ZERO",
+    rawResponseSha256: sha(Buffer.from(JSON.stringify({ header: { resultCode: "00" }, body: [] }))),
+    providerRecordHash: jsonSha([]), rows: [],
   }));
+  const contentSha256 = jsonSha(queries.map(({ rawResponseSha256: _ignored, ...query }) => query));
+  const rawSha256 = jsonSha(queries.map(({ stationId, lineId, railOprIsttCd, lnCd, stinCd, rawResponseSha256 }) => ({ stationId, lineId, railOprIsttCd, lnCd, stinCd, rawResponseSha256 })));
   return {
     schemaVersion: 1, artifactKind: "kric-accessibility-snapshot", sourceId: operation.sourceId,
     snapshotId: `kric-station-convenience-standard-${capturedAt.replaceAll(/[-:.]/g, "")}`, capturedAt, observedAt: capturedAt,
-    freshUntil: new Date(Date.parse(capturedAt) + 24 * 60 * 60 * 1_000).toISOString(), providerResultCode: "00", schemaStatus: "PASS",
-    absenceEvidenceMode: "EXHAUSTIVE_LIST", credentialRedacted: true, queries, queryCount: queries.length, rowCount: 0,
-    contentSha256: jsonSha(queries.map(({ rawResponseSha256: _ignored, ...query }) => query)),
-    rawSha256: jsonSha(queries.map(({ stationId, lineId, railOprIsttCd, lnCd, stinCd, rawResponseSha256 }) => ({ stationId, lineId, railOprIsttCd, lnCd, stinCd, rawResponseSha256 }))),
+    freshUntil: new Date(Date.parse(capturedAt) + 24 * 60 * 60 * 1_000).toISOString(), credentialRedacted: true,
+    providerResultCode: "00", schemaStatus: "PASS", absenceEvidenceMode: "EXHAUSTIVE_LIST",
+    queryCount: queries.length, rowCount: 0, rawSha256, contentSha256,
     schemaFingerprint: jsonSha([...operation.responseFields].sort()),
-    redactedRequestFingerprint: jsonSha({ endpoint: operation.endpoint, tuples: queries.map(({ railOprIsttCd, lnCd, stinCd }) => ({ railOprIsttCd, lnCd, stinCd })) }),
+    redactedRequestFingerprint: jsonSha({ endpoint: operation.endpoint, tuples: queries.map(({ railOprIsttCd, lnCd, stinCd }) => ({ railOprIsttCd, lnCd, stinCd })) }), queries,
   };
 }
 
@@ -495,6 +502,37 @@ test("published recovery accepts a complete finalized source journal without rep
   assert.equal(targetJournal.phase, "FINALIZE_STARTED");
   assert.deepEqual(targetJournal.completedStages, { published: journal.completedStages.published });
   assert.deepEqual(await readFile(path.join(operationRoot, "receipt.json")), receiptBytes);
+});
+
+test("retained FINALIZED publication recovery performs one OCI GET and reconstructs collector bytes", async (t) => {
+  const { source, receiptBytes, journal } = await finalizedPublishedRecoveryFixture(t);
+  await rm(path.join(source.operationRoot, "observation"), { recursive: true, force: true });
+  await rm(path.join(source.operationRoot, "plan.json"));
+  const repositoryRoot = await currentReleaseFixture(t);
+  const parent = await mkdtemp(path.join(tmpdir(), "facility-retained-publication-recovery-"));
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  const operationRoot = path.join(parent, "operation");
+  await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot, expectedMainSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
+  let getCalls = 0;
+  const result = await recoverPublishedCurrentCapitalFacilityOperation({
+    repositoryRoot,
+    operationRoot,
+    sourceOperationRoot: source.operationRoot,
+    execFileImpl: exactMainExec,
+    now: NOW,
+    rawObjectClient: {
+      readObject: async (objectKey) => {
+        getCalls += 1;
+        assert.equal(objectKey, `source-raw/${source.snapshot.sourceId}/${source.snapshot.capturedAt.slice(0, 10).replaceAll("-", "")}/${sha(source.rawBytes)}.json`);
+        return { exists: true, body: source.rawBytes };
+      },
+    },
+  });
+  assert.deepEqual(result, { snapshotId: source.snapshot.snapshotId, status: "RECOVERED_PUBLISHED" });
+  assert.equal(getCalls, 1);
+  assert.equal(JSON.parse(await readFile(path.join(operationRoot, "journal.json"), "utf8")).phase, "FINALIZE_STARTED");
+  assert.deepEqual(await readFile(path.join(operationRoot, "receipt.json")), receiptBytes);
+  assert.equal(journal.phase, "FINALIZED");
 });
 
 test("published recovery runs current release preflight and rejects an expired observation before target mutation", async (t) => {
