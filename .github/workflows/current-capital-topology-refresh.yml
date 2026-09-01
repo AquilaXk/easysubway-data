@@ -81,22 +81,27 @@ jobs:
           [[ "$(git log -1 --format=%s "origin/${branch}^^")" == "Claim current topology refresh" ]] || { echo "topology claim subject is invalid" >&2; exit 1; }
           [[ "$(git log -1 --format=%s "origin/${branch}^")" == "Register current topology inputs" ]] || { echo "topology input subject is invalid" >&2; exit 1; }
           [[ "$(git log -1 --format=%s "origin/${branch}")" == "Activate current topology inputs" ]] || { echo "topology activation subject is invalid" >&2; exit 1; }
-          deleted="$(git diff --name-only --diff-filter=D HEAD "origin/${branch}")"
-          [[ -z "${deleted}" ]] || { echo "topology claim deleted a tracked path" >&2; exit 1; }
-          mapfile -t changed_paths < <(git diff --name-only --diff-filter=ACMR HEAD "origin/${branch}")
-          [[ "${#changed_paths[@]}" == "11" || "${#changed_paths[@]}" == "12" ]] || { echo "topology claim must change exactly eleven or twelve paths" >&2; exit 1; }
-          required_outputs=(tools/datapack/source-inventory.json tools/datapack/release/capital-production-reviewed-pack.json tools/datapack/release/capital-production-canonical-pack.json tools/datapack/release/candidate-build-spec.json tools/datapack/release/release-request.json tools/datapack/release/hash-evidence.json)
-          for required in "${required_outputs[@]}"; do
-            printf '%s\n' "${changed_paths[@]}" | grep -Fqx "${required}" || { echo "topology claim is missing a required activation output" >&2; exit 1; }
+          input_deleted="$(git diff --name-only --diff-filter=D "origin/${branch}^^" "origin/${branch}^")"
+          [[ -z "${input_deleted}" ]] || { echo "topology input commit deleted a tracked path" >&2; exit 1; }
+          activation_deleted="$(git diff --name-only --diff-filter=D "origin/${branch}^" "origin/${branch}")"
+          [[ -z "${activation_deleted}" ]] || { echo "topology activation commit deleted a tracked path" >&2; exit 1; }
+          mapfile -t input_paths < <(git diff --name-only --diff-filter=ACMR "origin/${branch}^^" "origin/${branch}^")
+          [[ "${#input_paths[@]}" == "4" || "${#input_paths[@]}" == "5" ]] || { echo "topology input commit must change exactly four or five paths" >&2; exit 1; }
+          for pattern in '^tools/datapack/sources/capital-route-topology-[0-9]{8}\.json$' '^tools/datapack/sources/incheon-transit-station-info-[0-9]{8}\.json$' '^tools/datapack/sources/incheon-line1-train-timetable-[0-9]{8}\.json$' '^tools/datapack/sources/incheon-line2-train-timetable-[0-9]{8}\.json$'; do
+            [[ "$(printf '%s\n' "${input_paths[@]}" | grep -Ec "${pattern}")" == "1" ]] || { echo "topology claim input identity is invalid" >&2; exit 1; }
           done
-          for pattern in '^tools/datapack/sources/capital-route-topology-[0-9]{8}\.json$' '^tools/datapack/sources/incheon-transit-station-info-[0-9]{8}\.json$' '^tools/datapack/sources/incheon-line1-train-timetable-[0-9]{8}\.json$' '^tools/datapack/sources/incheon-line2-train-timetable-[0-9]{8}\.json$' '^tools/datapack/release/capital-topology-reverification-[0-9]{8}\.json$'; do
-            [[ "$(printf '%s\n' "${changed_paths[@]}" | grep -Ec "${pattern}")" == "1" ]] || { echo "topology claim input or reverification identity is invalid" >&2; exit 1; }
-          done
-          itx_admission_count="$(printf '%s\n' "${changed_paths[@]}" | grep -Ec '^tools/datapack/itx-current-network-edge-admission-[0-9]{8}\.json$' || true)"
-          if [[ "${#changed_paths[@]}" == "11" ]]; then [[ "${itx_admission_count}" == "0" ]] || { echo "four-input topology claim has an ITX admission" >&2; exit 1; }; else [[ "${itx_admission_count}" == "1" ]] || { echo "five-input topology claim is missing its ITX admission" >&2; exit 1; }; fi
+          itx_admission_count="$(printf '%s\n' "${input_paths[@]}" | grep -Ec '^tools/datapack/itx-current-network-edge-admission-[0-9]{8}\.json$' || true)"
+          if [[ "${#input_paths[@]}" == "4" ]]; then [[ "${itx_admission_count}" == "0" ]] || { echo "four-input topology claim has an ITX admission" >&2; exit 1; }; else [[ "${itx_admission_count}" == "1" ]] || { echo "five-input topology claim is missing its ITX admission" >&2; exit 1; }; fi
+          input_unexpected="$(printf '%s\n' "${input_paths[@]}" | grep -Ev '^(tools/datapack/itx-current-network-edge-admission-[0-9]{8}\.json|tools/datapack/sources/(capital-route-topology|incheon-transit-station-info|incheon-line1-train-timetable|incheon-line2-train-timetable)-[0-9]{8}\.json)$' || true)"
+          [[ -z "${input_unexpected}" ]] || { echo "topology input commit changed an unsupported path" >&2; exit 1; }
+          mapfile -t activation_paths < <(git diff --name-only --diff-filter=ACMR "origin/${branch}^" "origin/${branch}")
+          [[ "${#activation_paths[@]}" -gt 0 ]] || { echo "topology activation commit must change a nonempty subset of the seven activation paths" >&2; exit 1; }
+          [[ "$(printf '%s\n' "${activation_paths[@]}" | grep -Ec '^tools/datapack/release/capital-topology-reverification-[0-9]{8}\.json$')" == "1" ]] || { echo "topology activation reverification identity is invalid" >&2; exit 1; }
+          activation_unexpected="$(printf '%s\n' "${activation_paths[@]}" | grep -Ev '^(tools/datapack/source-inventory\.json|tools/datapack/release/(capital-production-reviewed-pack\.json|capital-production-canonical-pack\.json|candidate-build-spec\.json|release-request\.json|hash-evidence\.json|capital-topology-reverification-[0-9]{8}\.json))$' || true)"
+          [[ -z "${activation_unexpected}" ]] || { echo "topology activation commit changed an unsupported path" >&2; exit 1; }
           claim_spec="${RUNNER_TEMP}/current-capital-topology-refresh/claim-candidate-build-spec.json"
           git show "origin/${branch}:tools/datapack/release/candidate-build-spec.json" > "${claim_spec}"
-          itx_admission_path="$(printf '%s\n' "${changed_paths[@]}" | grep -E '^tools/datapack/itx-current-network-edge-admission-[0-9]{8}\.json$' || true)"
+          itx_admission_path="$(printf '%s\n' "${input_paths[@]}" | grep -E '^tools/datapack/itx-current-network-edge-admission-[0-9]{8}\.json$' || true)"
           claim_itx_admission="${RUNNER_TEMP}/current-capital-topology-refresh/claim-itx-admission.json"
           if [[ -n "${itx_admission_path}" ]]; then git show "origin/${branch}:${itx_admission_path}" > "${claim_itx_admission}"; fi
           CLAIM_SPEC="${claim_spec}" ITX_ADMISSION_PATH="${itx_admission_path}" CLAIM_ITX_ADMISSION="${claim_itx_admission}" node --input-type=module -e '
@@ -105,8 +110,6 @@ jobs:
             if (!path) { if (binding != null) throw new Error("four-input topology claim must not select an ITX admission"); }
             else { const bytes = await readFile(process.env.CLAIM_ITX_ADMISSION); if (binding?.path !== path || !/^[a-f0-9]{64}$/u.test(binding.sha256 ?? "") || createHash("sha256").update(bytes).digest("hex") !== binding.sha256) throw new Error("five-input topology claim ITX admission binding is invalid"); }
           '
-          unexpected="$(printf '%s\n' "${changed_paths[@]}" | grep -Ev '^(tools/datapack/source-inventory\.json|tools/datapack/itx-current-network-edge-admission-[0-9]{8}\.json|tools/datapack/release/(capital-production-reviewed-pack\.json|capital-production-canonical-pack\.json|candidate-build-spec\.json|release-request\.json|hash-evidence\.json|capital-topology-reverification-[0-9]{8}\.json)|tools/datapack/sources/(capital-route-topology|incheon-transit-station-info|incheon-line1-train-timetable|incheon-line2-train-timetable)-[0-9]{8}\.json)$' || true)"
-          [[ -z "${unexpected}" ]] || { echo "topology claim changed an unsupported path" >&2; exit 1; }
           existing="${RUNNER_TEMP}/current-capital-topology-refresh/claim-prs.json"
           gh pr list --repo "${GITHUB_REPOSITORY}" --state all --base main --head "${branch}" --limit 100 --json state,headRefName,baseRefName,headRepository,isCrossRepository > "${existing}"
           [[ "$(tr -d '[:space:]' < "${existing}")" == "[]" ]] || { echo "topology claim already has a pull request" >&2; exit 1; }
@@ -283,19 +286,17 @@ jobs:
           if [[ "${{ steps.decision.outputs.itx_refresh_required }}" == "true" ]]; then itx_args=(--itx-current-admission "${TOPOLOGY_ITX_ADMISSION_PATH}"); fi
           node tools/datapack/activate-current-source-set.mjs --topology-only --capital-topology "${TOPOLOGY_CAPITAL_PATH}" --incheon-topology "${TOPOLOGY_INCHEON_PATH}" --incheon-accessibility "${TOPOLOGY_INCHEON_ACCESSIBILITY_PATH}" --incheon-line1-timetable "${TOPOLOGY_LINE1_PATH}" --incheon-line2-timetable "${TOPOLOGY_LINE2_PATH}" --itx-topology-evidence "${TOPOLOGY_ITX_EVIDENCE_PATH}" "${itx_args[@]}" --builder-git-sha "${TOPOLOGY_BUILDER_SHA}" --build-now "${TOPOLOGY_BUILD_NOW}"
           git add tools/datapack/source-inventory.json tools/datapack/release/capital-production-reviewed-pack.json tools/datapack/release/capital-production-canonical-pack.json tools/datapack/release/candidate-build-spec.json tools/datapack/release/release-request.json tools/datapack/release/hash-evidence.json "${TOPOLOGY_REVERIFICATION_PATH}"
-          mapfile -t activation_paths < <(git diff --cached --name-only)
-          [[ "${#activation_paths[@]}" == "7" ]] || { echo "topology activation must change exactly seven activation paths" >&2; exit 1; }
-          for required in tools/datapack/source-inventory.json tools/datapack/release/capital-production-reviewed-pack.json tools/datapack/release/capital-production-canonical-pack.json tools/datapack/release/candidate-build-spec.json tools/datapack/release/release-request.json tools/datapack/release/hash-evidence.json "${TOPOLOGY_REVERIFICATION_PATH}"; do printf '%s\n' "${activation_paths[@]}" | grep -Fqx "${required}" || exit 1; done
+          deleted="$(git diff --cached --name-only --diff-filter=D)"
+          [[ -z "${deleted}" ]] || { echo "topology activation deleted a tracked path" >&2; exit 1; }
+          mapfile -t activation_paths < <(git diff --cached --name-only --diff-filter=ACMR)
+          [[ "${#activation_paths[@]}" -gt 0 ]] || { echo "topology activation must change a nonempty subset of the seven activation paths" >&2; exit 1; }
+          printf '%s\n' "${activation_paths[@]}" | grep -Fqx "${TOPOLOGY_REVERIFICATION_PATH}" || { echo "topology activation is missing its create-once reverification" >&2; exit 1; }
+          allowed_activation_paths=(tools/datapack/source-inventory.json tools/datapack/release/capital-production-reviewed-pack.json tools/datapack/release/capital-production-canonical-pack.json tools/datapack/release/candidate-build-spec.json tools/datapack/release/release-request.json tools/datapack/release/hash-evidence.json "${TOPOLOGY_REVERIFICATION_PATH}")
+          for changed in "${activation_paths[@]}"; do printf '%s\n' "${allowed_activation_paths[@]}" | grep -Fqx "${changed}" || { echo "topology activation changed an unsupported path" >&2; exit 1; }; done
+          node tools/datapack/activate-current-source-set.mjs --topology-only --check --capital-topology "${TOPOLOGY_CAPITAL_PATH}" --incheon-topology "${TOPOLOGY_INCHEON_PATH}" --incheon-accessibility "${TOPOLOGY_INCHEON_ACCESSIBILITY_PATH}" --incheon-line1-timetable "${TOPOLOGY_LINE1_PATH}" --incheon-line2-timetable "${TOPOLOGY_LINE2_PATH}" --itx-topology-evidence "${TOPOLOGY_ITX_EVIDENCE_PATH}" "${itx_args[@]}" --builder-git-sha "${TOPOLOGY_BUILDER_SHA}" --build-now "${TOPOLOGY_BUILD_NOW}"
           [[ -z "$(git diff --name-only)" && -z "$(git ls-files --others --exclude-standard)" ]] || { echo "topology activation changed an unsupported path" >&2; exit 1; }
           git commit -m "Activate current topology inputs"
           git push origin "${TOPOLOGY_BRANCH}"
-      - name: Verify current topology activation exactly once
-        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
-        run: |
-          set -euo pipefail
-          itx_args=()
-          if [[ "${{ steps.decision.outputs.itx_refresh_required }}" == "true" ]]; then itx_args=(--itx-current-admission "${TOPOLOGY_ITX_ADMISSION_PATH}"); fi
-          node tools/datapack/activate-current-source-set.mjs --topology-only --check --capital-topology "${TOPOLOGY_CAPITAL_PATH}" --incheon-topology "${TOPOLOGY_INCHEON_PATH}" --incheon-accessibility "${TOPOLOGY_INCHEON_ACCESSIBILITY_PATH}" --incheon-line1-timetable "${TOPOLOGY_LINE1_PATH}" --incheon-line2-timetable "${TOPOLOGY_LINE2_PATH}" --itx-topology-evidence "${TOPOLOGY_ITX_EVIDENCE_PATH}" "${itx_args[@]}" --builder-git-sha "${TOPOLOGY_BUILDER_SHA}" --build-now "${TOPOLOGY_BUILD_NOW}"
       - name: Create draft pull request
         if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
         env:
