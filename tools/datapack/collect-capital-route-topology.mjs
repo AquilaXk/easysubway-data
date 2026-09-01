@@ -1611,7 +1611,10 @@ export async function collectCapitalRouteTopology({
             bytes: await readFile(path.resolve(root, source.localMolitCsv)),
             downloadUrl: source.molitDownloadUrl,
           }
-        : await downloadDetailFile(source.molitDownloadUrl);
+        : await withCapitalTopologyTransportIdentity(
+          { slug: source.slug, datasetId: source.molitDatasetId },
+          () => downloadDetailFile(source.molitDownloadUrl),
+        );
     }
     try {
       lines.push(parseLineSource(source, primary.bytes, {
@@ -1683,20 +1686,73 @@ export async function collectCapitalRouteTopology({
 
 async function downloadBytes(fetchImpl, source, downloadDetailFile = (detailUrl) =>
   downloadDataGoDetailFile(fetchImpl, detailUrl)) {
-  if (source.resolveDownloadFromDetail === true) {
-    return downloadDetailFile(source.downloadUrl);
-  }
-  const response = await fetchImpl(source.downloadUrl, {
-    headers: {
-      "User-Agent": "easysubway-datapack-collector/1.0",
-      Referer: source.detailUrl,
-    },
+  return withCapitalTopologyTransportIdentity(source, async () => {
+    if (source.resolveDownloadFromDetail === true) {
+      return downloadDetailFile(source.downloadUrl);
+    }
+    const response = await fetchImpl(source.downloadUrl, {
+      headers: {
+        "User-Agent": "easysubway-datapack-collector/1.0",
+        Referer: source.detailUrl,
+      },
+    });
+    if (!response.ok) throw new Error(`${source.slug} CSV HTTP ${response.status}`);
+    return {
+      bytes: Buffer.from(await response.arrayBuffer()),
+      downloadUrl: source.downloadUrl,
+    };
   });
-  if (!response.ok) throw new Error(`${source.slug} CSV HTTP ${response.status}`);
-  return {
-    bytes: Buffer.from(await response.arrayBuffer()),
-    downloadUrl: source.downloadUrl,
-  };
+}
+
+async function withCapitalTopologyTransportIdentity(source, operation) {
+  try {
+    return await operation();
+  } catch (error) {
+    const transportCode = capitalTopologyTransportCode(error);
+    if (transportCode == null) throw error;
+    throw new Error(`capital topology transport ${transportCode}: ${source.slug}/${source.datasetId}`);
+  }
+}
+
+function capitalTopologyTransportCode(error) {
+  const dnsCodes = new Set(["EAI_AGAIN", "ENOTFOUND"]);
+  const timeoutCodes = new Set([
+    "ETIMEDOUT", "UND_ERR_BODY_TIMEOUT", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT",
+  ]);
+  const socketCodes = new Set([
+    "ECONNREFUSED", "ECONNRESET", "EHOSTUNREACH", "ENETUNREACH", "EPIPE", "UND_ERR_SOCKET",
+  ]);
+  const seen = new Set();
+  let current = error;
+  let rejectedFetch = false;
+  for (let depth = 0; current != null && depth < 8 && !seen.has(current); depth += 1) {
+    seen.add(current);
+    let code;
+    let name;
+    let message;
+    let cause;
+    try {
+      code = typeof current.code === "string" ? current.code : "";
+      name = typeof current.name === "string" ? current.name : "";
+      message = typeof current.message === "string" ? current.message : "";
+      cause = current.cause;
+    } catch {
+      return null;
+    }
+    if (dnsCodes.has(code)) return "NETWORK_DNS";
+    if (code.startsWith("ERR_TLS_") || code.startsWith("ERR_SSL_") || code.startsWith("CERT_")
+      || [
+        "DEPTH_ZERO_SELF_SIGNED_CERT",
+        "SELF_SIGNED_CERT_IN_CHAIN",
+        "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+        "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+      ].includes(code)) return "NETWORK_TLS";
+    if (timeoutCodes.has(code) || name === "AbortError" || name === "TimeoutError") return "NETWORK_TIMEOUT";
+    if (socketCodes.has(code)) return "NETWORK_SOCKET";
+    if (name === "TypeError" && message === "fetch failed") rejectedFetch = true;
+    current = cause;
+  }
+  return rejectedFetch ? "NETWORK_UNKNOWN" : null;
 }
 
 async function downloadDataGoDetailFile(fetchImpl, detailUrl) {

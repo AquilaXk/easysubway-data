@@ -2240,11 +2240,12 @@ async function replaceTempFile(temporaryRoot, relativePath, bytes) {
 }
 
 async function runNode(script, args, options = {}) {
+  const repositoryRoot = path.resolve(options.repositoryRoot ?? root);
   return await execFileAsync(
     process.execPath,
-    [path.join(root, script), ...args],
+    [path.join(repositoryRoot, script), ...args],
     {
-      cwd: root,
+      cwd: repositoryRoot,
       env: { ...process.env, ...(options.env ?? {}) },
       maxBuffer: MAX_BUFFER,
     },
@@ -2681,7 +2682,8 @@ async function prepareReleaseEvidenceRoot(temporaryRoot, spec, {
   });
 }
 
-function validationBuildSpec(spec, temporaryRoot) {
+function validationBuildSpec(spec, temporaryRoot, repositoryRoot = root) {
+  const builderRoot = path.resolve(repositoryRoot);
   const next = structuredClone(spec);
   next.fixturePath = path.join(
     temporaryRoot,
@@ -2695,16 +2697,16 @@ function validationBuildSpec(spec, temporaryRoot) {
     path: path.join(temporaryRoot, "tools/datapack/source-inventory.json"),
   });
   Object.assign(next.networkEdgeEvidence.capitalTopology, {
-    path: path.join(root, next.networkEdgeEvidence.capitalTopology.path),
+    path: path.join(builderRoot, next.networkEdgeEvidence.capitalTopology.path),
   });
   Object.assign(next.networkEdgeEvidence.capitalTopologyCandidate, {
-    path: path.join(root, next.networkEdgeEvidence.capitalTopologyCandidate.path),
+    path: path.join(builderRoot, next.networkEdgeEvidence.capitalTopologyCandidate.path),
   });
   Object.assign(next.networkEdgeEvidence.capitalTopologyReverification, {
     path: path.join(temporaryRoot, next.networkEdgeEvidence.capitalTopologyReverification.path),
   });
   Object.assign(next.networkEdgeEvidence.itxCoverageContract, {
-    path: path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"),
+    path: path.join(builderRoot, "tools/datapack/itx-cheongchun-coverage-contract.json"),
   });
   return next;
 }
@@ -2713,12 +2715,14 @@ export async function validatePreparedCandidate({
   temporaryRoot,
   spec,
   buildNow,
+  repositoryRoot = root,
   runNodeImpl = runNode,
 }) {
+  const builderRoot = path.resolve(repositoryRoot);
   const validationSpecPath = await writeTempFile(
     temporaryRoot,
     "validation/candidate-build-spec.json",
-    jsonBytes(validationBuildSpec(spec, temporaryRoot)),
+    jsonBytes(validationBuildSpec(spec, temporaryRoot, builderRoot)),
   );
   const outputPath = path.join(temporaryRoot, "validation/output");
   await runNodeImpl("tools/datapack/build-datapack.mjs", [
@@ -2727,7 +2731,7 @@ export async function validatePreparedCandidate({
   ], { env: {
     EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow,
     EASYSUBWAY_DATAPACK_BUILD_SPEC_VALIDATION_ONLY: "true",
-  } });
+  }, repositoryRoot: builderRoot });
 }
 
 function validateBuildNow(buildNow, handoff) {
@@ -2803,6 +2807,7 @@ export async function readBuilderBaselineBytes(
 }
 
 export async function generateCurrentCapitalTopologyRefresh({
+  repositoryRoot = root,
   capitalTopologyPath,
   incheonTopologyPath,
   incheonAccessibilityPath,
@@ -2813,8 +2818,11 @@ export async function generateCurrentCapitalTopologyRefresh({
   builderGitSha,
   buildNow,
   check = false,
+  prepareOnly = false,
   approvedItxBootstrap = false,
 }) {
+  const repositoryPath = path.resolve(repositoryRoot);
+  if (prepareOnly && check) throw new Error("current topology prepare/check mode mismatch");
   const capitalPathMatch = /^tools\/datapack\/sources\/capital-route-topology-([0-9]{8})\.json$/u
     .exec(capitalTopologyPath ?? "");
   if (capitalPathMatch == null) {
@@ -2849,7 +2857,7 @@ export async function generateCurrentCapitalTopologyRefresh({
       throw new Error("approved ITX bootstrap input must be the tracked source evidence path");
     }
     approvedItxCoverageContractBytes = await readRegularBytes(
-      root,
+      repositoryPath,
       "tools/datapack/itx-cheongchun-coverage-contract.json",
       "approved ITX coverage contract",
     );
@@ -2867,34 +2875,34 @@ export async function generateCurrentCapitalTopologyRefresh({
     topologyReverificationPath,
     ...(approvedItxBootstrap ? [selectedItxTopologyEvidencePath] : []),
   ];
-  await requireCleanBuilder(builderGitSha, { check, allowedDescendantPaths });
+  await requireCleanBuilder(builderGitSha, { check, repositoryRoot: repositoryPath, allowedDescendantPaths });
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "current-topology-refresh-"));
   try {
     const readMutableInput = (relativePath) => check
-      ? readBuilderBaselineBytes(builderGitSha, relativePath)
-      : readRegularBytes(root, relativePath);
+      ? readBuilderBaselineBytes(builderGitSha, relativePath, repositoryPath)
+      : readRegularBytes(repositoryPath, relativePath);
     const [currentTopologyBytes, currentIncheonTopologyBytes, currentIncheonAccessibilityBytes,
       currentIncheonLine1TimetableBytes, currentIncheonLine2TimetableBytes, currentItxTopologyEvidenceBytes,
       currentItxAdmissionBytes,
       baselineTopologyBytes, sourceInventoryBytes, productionInputBytes,
       baseSpecBytes, canonicalBytes, productionScopePolicyBytes, sourceSnapshotsBytes] =
       await Promise.all([
-        readRegularBytes(root, capitalTopologyPath, "current capital topology"),
-        readRegularBytes(root, incheonTopologyPath, "current Incheon topology"),
-        readRegularBytes(root, incheonAccessibilityPath, "current Incheon accessibility"),
-        readRegularBytes(root, incheonLine1TimetablePath, "current Incheon line 1 timetable"),
-        readRegularBytes(root, incheonLine2TimetablePath, "current Incheon line 2 timetable"),
-        readRegularBytes(root, itxTopologyEvidencePath, "current ITX topology evidence"),
-        readOptionalCurrentItxAdmissionBytes(root, itxCurrentAdmissionPath),
-        readRegularBytes(root, "tools/datapack/sources/capital-route-topology-20260724.json"),
+        readRegularBytes(repositoryPath, capitalTopologyPath, "current capital topology"),
+        readRegularBytes(repositoryPath, incheonTopologyPath, "current Incheon topology"),
+        readRegularBytes(repositoryPath, incheonAccessibilityPath, "current Incheon accessibility"),
+        readRegularBytes(repositoryPath, incheonLine1TimetablePath, "current Incheon line 1 timetable"),
+        readRegularBytes(repositoryPath, incheonLine2TimetablePath, "current Incheon line 2 timetable"),
+        readRegularBytes(repositoryPath, itxTopologyEvidencePath, "current ITX topology evidence"),
+        readOptionalCurrentItxAdmissionBytes(repositoryPath, itxCurrentAdmissionPath),
+        readRegularBytes(repositoryPath, "tools/datapack/sources/capital-route-topology-20260724.json"),
         readMutableInput("tools/datapack/source-inventory.json"),
         readMutableInput("tools/datapack/inputs/capital-pilot-production-source-input.json"),
         readMutableInput("tools/datapack/release/candidate-build-spec.json"),
         readMutableInput("tools/datapack/release/capital-production-canonical-pack.json"),
-        readRegularBytes(root, "tools/datapack/nationwide-coverage-targets.json"),
-        readRegularBytes(root, "tools/datapack/release/source-snapshots.json"),
+        readRegularBytes(repositoryPath, "tools/datapack/nationwide-coverage-targets.json"),
+        readRegularBytes(repositoryPath, "tools/datapack/release/source-snapshots.json"),
       ]);
-    await requireCleanBuilder(builderGitSha, { check, allowedDescendantPaths });
+    await requireCleanBuilder(builderGitSha, { check, repositoryRoot: repositoryPath, allowedDescendantPaths });
     const sourceInventory = parseJson(sourceInventoryBytes, "source inventory");
     let baseSpec = parseJson(baseSpecBytes, "candidate build spec");
     validateCurrentTopologyRefreshItxEvidence({
@@ -2907,9 +2915,9 @@ export async function generateCurrentCapitalTopologyRefresh({
     let approvedItxTopology = null;
     if (approvedItxBootstrap) {
       const [sourceBytes, completenessBytes] = await Promise.all([
-        readRegularBytes(root, approvedItxCoverageReference?.artifactPath, "approved ITX source"),
+        readRegularBytes(repositoryPath, approvedItxCoverageReference?.artifactPath, "approved ITX source"),
         readRegularBytes(
-          root,
+          repositoryPath,
           approvedItxCoverageReference?.completenessEvidencePath,
           "approved ITX completeness evidence",
         ),
@@ -2965,8 +2973,8 @@ export async function generateCurrentCapitalTopologyRefresh({
       productionInput: parseJson(productionInputBytes, "production input"),
       productionScopePolicyBytes,
       buildNow,
-      snapshotBytesByPath: await collectPositionSnapshotBytes(sourceInventory),
-      layoutTopologySnapshotBytesById: await collectLayoutTopologySnapshotBytes(sourceInventory),
+      snapshotBytesByPath: await collectPositionSnapshotBytes(sourceInventory, repositoryPath),
+      layoutTopologySnapshotBytesById: await collectLayoutTopologySnapshotBytes(sourceInventory, repositoryPath),
     });
     await Promise.all([
       writeTempFile(temporaryRoot, topologyReverificationPath, primary.topologyReverificationBytes),
@@ -2999,14 +3007,14 @@ export async function generateCurrentCapitalTopologyRefresh({
     await runNode("tools/datapack/apply-accessibility-evidence-to-bundled-pack.mjs", [
       "--release-evidence-only",
       "--release-root", temporaryRoot,
-    ], { env: { EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow } });
+    ], { env: { EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow }, repositoryRoot: repositoryPath });
     const [finalSpecBytes, releaseRequestBytes, hashEvidenceBytes] = await Promise.all([
       readFile(contained(temporaryRoot, "tools/datapack/release/candidate-build-spec.json")),
       readFile(contained(temporaryRoot, "tools/datapack/release/release-request.json")),
       readFile(contained(temporaryRoot, "tools/datapack/release/hash-evidence.json")),
     ]);
     const finalSpec = parseJson(finalSpecBytes, "generated candidate build spec");
-    await validatePreparedCandidate({ temporaryRoot, spec: finalSpec, buildNow });
+    await validatePreparedCandidate({ temporaryRoot, spec: finalSpec, buildNow, repositoryRoot: repositoryPath });
     const outputs = [
       { relativePath: topologyReverificationPath, bytes: primary.topologyReverificationBytes },
       { relativePath: CURRENT_TOPOLOGY_REFRESH_OUTPUTS[0], bytes: primary.sourceInventoryBytes },
@@ -3022,16 +3030,23 @@ export async function generateCurrentCapitalTopologyRefresh({
     ];
     const validateOutputBytes = async () => {
       for (const output of outputs) {
-        const actual = await readRegularBytes(root, output.relativePath);
+        const actual = await readRegularBytes(repositoryPath, output.relativePath);
         if (!actual.equals(output.bytes)) {
           throw new Error(`current topology refresh output mismatch: ${output.relativePath}`);
         }
       }
     };
+    if (prepareOnly) return Object.freeze({
+      candidateId: finalSpec.candidateId,
+      topologySnapshotId: finalSpec.networkEdgeEvidence.capitalTopologyCandidate.snapshotId,
+      sourceInventorySha256: finalSpec.sourceInventorySha256,
+      outputCount: outputs.length,
+      outputs: Object.freeze(outputs.map(({ relativePath, bytes }) => Object.freeze({ relativePath, bytes: Buffer.from(bytes) }))),
+    });
     if (check) await validateOutputBytes();
     else {
       await commitCurrentSourceActivation({
-        repositoryRoot: root,
+        repositoryRoot: repositoryPath,
         outputs,
         validate: validateOutputBytes,
         approvedItxTopologyEvidencePath: approvedItxBootstrap
@@ -3049,6 +3064,15 @@ export async function generateCurrentCapitalTopologyRefresh({
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });
   }
+}
+
+/**
+ * Derive, validate, and return the topology activation bytes without mutating
+ * the builder tree.  #673 uses this only from its private clean builder tree;
+ * the public generator retains its existing commit/check behavior.
+ */
+export async function buildCurrentCapitalTopologyRefreshOutputs(options) {
+  return generateCurrentCapitalTopologyRefresh({ ...options, check: false, prepareOnly: true });
 }
 
 export async function generateApprovedItxCurrentSourceBootstrap(options) {

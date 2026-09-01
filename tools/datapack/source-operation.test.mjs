@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   listOperations,
+  operationHumanSummary,
   operationSummary,
   providerApprovalExpirySummary,
   validateOperation,
@@ -46,6 +47,31 @@ function validOperation(overrides = {}) {
   };
 }
 
+function aggregateOperation(overrides = {}) {
+  return {
+    kind: "AGGREGATE_SOURCE_SET",
+    method: "GET",
+    auth: { placement: "none" },
+    retryPolicy: { maxRetries: 0 },
+    responseEnvelope: "capital-route-topology-snapshot",
+    runner: {
+      command: "node tools/datapack/collect-capital-route-topology.mjs",
+      arguments: ["--download", "--output", "[absent-task-owned-absolute-file.json]"],
+      requiredEnv: [],
+    },
+    sourceDefinition: {
+      module: "tools/datapack/collect-capital-route-topology.mjs",
+      exportName: "LINE_SOURCES",
+      sourceCount: 24,
+      datasetCount: 23,
+      excludedFields: ["localCsv", "localMolitCsv", "note"],
+      sourceSetSha256: "15c9bc1573f1b6e35b478472c29b9b404b2cf2d60a68cf7fff4187a2f6e08534",
+    },
+    secretPolicy: "credential-free-output",
+    ...overrides,
+  };
+}
+
 function providerApproval(overrides = {}) {
   return {
     status: "APPROVED",
@@ -76,6 +102,43 @@ test("list는 requestUrl이 있는 source를 ID 순으로 반환한다", () => {
     listOperations(document).map((row) => row.id),
     ["a", "b"],
   );
+});
+
+test("aggregate source-set operation은 fake endpoint 없이 검증·검색된다", () => {
+  const source = {
+    id: "capital-route-topology",
+    admissionStatus: "preflight_only",
+    operation: aggregateOperation(),
+  };
+
+  assert.equal(validateOperation(source), source.operation);
+  const [summary] = listOperations({ candidates: [source] });
+  assert.equal(summary.id, source.id);
+  assert.equal(summary.endpoint, null);
+  assert.equal(summary.operationValidationError, null);
+  assert.match(operationHumanSummary(summary), /^endpoint: aggregate source set$/m);
+  assert.match(
+    operationHumanSummary(summary),
+    /^source set: tools\/datapack\/collect-capital-route-topology\.mjs#LINE_SOURCES$/m,
+  );
+  assert.match(operationHumanSummary(summary), /^source count: 24$/m);
+  assert.match(operationHumanSummary(summary), /^retry max: 0$/m);
+
+  for (const invalid of [
+    { ...source, requestUrl: "https://www.data.go.kr/" },
+    { ...source, operation: aggregateOperation({ method: "POST" }) },
+    { ...source, operation: aggregateOperation({ retryPolicy: { maxRetries: 1 } }) },
+    { ...source, operation: aggregateOperation({ sourceDefinition: {
+      ...aggregateOperation().sourceDefinition,
+      sourceCount: 0,
+    } }) },
+    { ...source, operation: aggregateOperation({ sourceDefinition: {
+      ...aggregateOperation().sourceDefinition,
+      sourceSetSha256: "not-a-sha",
+    } }) },
+  ]) {
+    assert.throws(() => validateOperation(invalid), /aggregate source-set operation/);
+  }
 });
 
 test("show는 operation이 없어도 기존 endpoint와 response fields를 반환한다", () => {
@@ -410,6 +473,32 @@ test("show는 operation이 없어도 request URL credential을 출력 전에 거
       /credential values are forbidden/,
     );
   }
+});
+
+test("show는 malformed operation credential을 validation 오류보다 먼저 거부한다", () => {
+  for (const operation of [
+    "https://provider.example/items?serviceKey=actual-secret",
+    [{ serviceKey: "actual-secret" }],
+  ]) {
+    assert.throws(
+      () => operationSummary(candidate("a", { operation })),
+      /credential values are forbidden/,
+    );
+  }
+});
+
+test("show는 aggregate candidate sample credential을 출력 전에 거부한다", () => {
+  assert.throws(
+    () => operationSummary({
+      id: "capital-route-topology",
+      admissionStatus: "preflight_only",
+      evidence: {
+        sampleUrl: "https://provider.example/items?serviceKey=actual-secret",
+      },
+      operation: aggregateOperation(),
+    }),
+    /credential values are forbidden/,
+  );
 });
 
 test("validate는 credential 값을 거부한다", () => {
