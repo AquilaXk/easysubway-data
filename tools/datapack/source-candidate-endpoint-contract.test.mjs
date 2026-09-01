@@ -15,6 +15,7 @@ import {
   resolveKricFacilityProviderProbe,
 } from "./probe-kric-facility-provider-tuples.mjs";
 import { LINE_SOURCES } from "./collect-capital-route-topology.mjs";
+import { listOperations, validateOperation } from "./source-operation.mjs";
 
 const CANDIDATES_PATH = path.join(import.meta.dirname, "source-candidates.json");
 const DATAPACK_DIRECTORY = import.meta.dirname;
@@ -132,6 +133,11 @@ test("Capital topology catalog binds the exact credential-free 24-source operati
   const candidate = document.candidates.find(({ id }) => id === "capital-route-topology");
   assert.ok(candidate);
   assert.equal(candidate.admissionStatus, "preflight_only");
+  assert.equal(candidate.operation?.kind, "AGGREGATE_SOURCE_SET");
+  assert.equal(candidate.operation?.method, "GET");
+  assert.equal(candidate.operation?.responseEnvelope, "capital-route-topology-snapshot");
+  assert.equal(validateOperation(candidate), candidate.operation);
+  assert.equal(listOperations(document).find(({ id }) => id === candidate.id)?.operationValidationError, null);
   assert.deepEqual(candidate.operation?.runner, {
     command: "node tools/datapack/collect-capital-route-topology.mjs",
     arguments: ["--download", "--output", "[absent-task-owned-absolute-file.json]"],
@@ -140,18 +146,38 @@ test("Capital topology catalog binds the exact credential-free 24-source operati
   assert.deepEqual(candidate.operation?.auth, { placement: "none" });
   assert.deepEqual(candidate.operation?.retryPolicy, { maxRetries: 0 });
 
-  const projection = LINE_SOURCES.map(({
-    slug, lineId, datasetId, detailUrl, downloadUrl, resolveDownloadFromDetail = false,
-  }) => ({ slug, lineId, datasetId, detailUrl, downloadUrl, resolveDownloadFromDetail }));
+  const excludedFields = new Set(["localCsv", "localMolitCsv", "note"]);
+  const projection = LINE_SOURCES.map((source) => Object.fromEntries(
+    Object.entries(source).filter(([key]) => !excludedFields.has(key)),
+  ));
   const sourceSetSha256 = createHash("sha256").update(JSON.stringify(projection)).digest("hex");
   assert.deepEqual(candidate.operation?.sourceDefinition, {
     module: "tools/datapack/collect-capital-route-topology.mjs",
     exportName: "LINE_SOURCES",
     sourceCount: 24,
     datasetCount: 23,
+    excludedFields: ["localCsv", "localMolitCsv", "note"],
     sourceSetSha256,
   });
-  assert.equal(sourceSetSha256, "a5c1a069fa0775d67141be9680c0ad5dd3829b0530aeff72cb2081a11586e129");
+  assert.equal(sourceSetSha256, "15c9bc1573f1b6e35b478472c29b9b404b2cf2d60a68cf7fff4187a2f6e08534");
+  assert.deepEqual([...new Set(projection.flatMap(Object.keys))].sort(), [
+    "acceptedBranchNames",
+    "chainAcrossOperators",
+    "closeCycleOnFirstSegmentOnly",
+    "datasetId",
+    "detailUrl",
+    "downloadUrl",
+    "kind",
+    "lineId",
+    "molitDatasetId",
+    "molitDownloadUrl",
+    "molitMinSequence",
+    "molitRouteName",
+    "resolveDownloadFromDetail",
+    "restartOnFirstStation",
+    "slug",
+    "splices",
+  ]);
   assert.equal(new Set(projection.map(({ slug }) => slug)).size, 24);
   assert.equal(new Set(projection.map(({ lineId }) => lineId)).size, 24);
   assert.equal(new Set(projection.map(({ datasetId }) => datasetId)).size, 23);

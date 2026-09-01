@@ -118,6 +118,35 @@ test("Capital topology rejected fetch exposes only closed source transport ident
   assert.equal(calls, 1);
 });
 
+test("Capital topology secondary MOLIT fetch uses the same closed transport identity", async () => {
+  const source = LINE_SOURCES.find(({ kind }) => kind === "seohae-merged");
+  assert.ok(source);
+  let calls = 0;
+
+  await assert.rejects(
+    () => collectCapitalRouteTopology({
+      useLocalFiles: false,
+      sources: [source],
+      fetchImpl: async () => {
+        calls += 1;
+        if (calls === 1) return new Response("primary bytes");
+        throw new TypeError("fetch failed", {
+          cause: Object.assign(new Error("private secondary provider text"), { code: "EAI_AGAIN" }),
+        });
+      },
+    }),
+    (error) => {
+      assert.equal(
+        error.message,
+        `capital topology transport NETWORK_DNS: ${source.slug}/${source.molitDatasetId}`,
+      );
+      assert.doesNotMatch(error.message, /private|fetch failed|EAI_AGAIN|https?:/iu);
+      return true;
+    },
+  );
+  assert.equal(calls, 2);
+});
+
 test("서해선 병합기는 코레일 전체 파일에서 서해선 행만 사용한다", () => {
   const korail = Buffer.from([
     "철도운영기관명,선명,역명,역간거리(km)",

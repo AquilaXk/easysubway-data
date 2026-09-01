@@ -7367,9 +7367,11 @@
       },
       "displayName": "수도권 도시철도 노선별 역간거리 FILE source set",
       "operation": {
+        "kind": "AGGREGATE_SOURCE_SET",
         "method": "GET",
         "auth": { "placement": "none" },
         "retryPolicy": { "maxRetries": 0 },
+        "responseEnvelope": "capital-route-topology-snapshot",
         "runner": {
           "command": "node tools/datapack/collect-capital-route-topology.mjs",
           "arguments": ["--download", "--output", "[absent-task-owned-absolute-file.json]"],
@@ -7380,7 +7382,8 @@
           "exportName": "LINE_SOURCES",
           "sourceCount": 24,
           "datasetCount": 23,
-          "sourceSetSha256": "a5c1a069fa0775d67141be9680c0ad5dd3829b0530aeff72cb2081a11586e129"
+          "excludedFields": ["localCsv", "localMolitCsv", "note"],
+          "sourceSetSha256": "15c9bc1573f1b6e35b478472c29b9b404b2cf2d60a68cf7fff4187a2f6e08534"
         },
         "secretPolicy": "credential-free-output"
       },

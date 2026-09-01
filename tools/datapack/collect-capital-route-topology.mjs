@@ -1611,7 +1611,10 @@ export async function collectCapitalRouteTopology({
             bytes: await readFile(path.resolve(root, source.localMolitCsv)),
             downloadUrl: source.molitDownloadUrl,
           }
-        : await downloadDetailFile(source.molitDownloadUrl);
+        : await withCapitalTopologyTransportIdentity(
+          { slug: source.slug, datasetId: source.molitDatasetId },
+          () => downloadDetailFile(source.molitDownloadUrl),
+        );
     }
     try {
       lines.push(parseLineSource(source, primary.bytes, {
@@ -1683,9 +1686,9 @@ export async function collectCapitalRouteTopology({
 
 async function downloadBytes(fetchImpl, source, downloadDetailFile = (detailUrl) =>
   downloadDataGoDetailFile(fetchImpl, detailUrl)) {
-  try {
+  return withCapitalTopologyTransportIdentity(source, async () => {
     if (source.resolveDownloadFromDetail === true) {
-      return await downloadDetailFile(source.downloadUrl);
+      return downloadDetailFile(source.downloadUrl);
     }
     const response = await fetchImpl(source.downloadUrl, {
       headers: {
@@ -1698,6 +1701,12 @@ async function downloadBytes(fetchImpl, source, downloadDetailFile = (detailUrl)
       bytes: Buffer.from(await response.arrayBuffer()),
       downloadUrl: source.downloadUrl,
     };
+  });
+}
+
+async function withCapitalTopologyTransportIdentity(source, operation) {
+  try {
+    return await operation();
   } catch (error) {
     const transportCode = capitalTopologyTransportCode(error);
     if (transportCode == null) throw error;
