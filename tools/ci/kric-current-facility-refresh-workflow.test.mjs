@@ -27,17 +27,10 @@ test("KRIC refresh workflow has one scheduled, fail-closed, PR-only path", () =>
   assert.match(yml, /--claims "\$\{claims\}"/);
   assert.match(yml, /--repository "\$\{GITHUB_REPOSITORY\}"/);
   assert.match(yml, /RECOVER_CLAIM/);
-  assert.match(yml, /RETIRE_CLOSED_CLAIM/);
-  assert.match(yml, /steps\.decision\.outputs\.claim_sha/);
-  assert.match(yml, /\^automation\/629-kric-facility-refresh-\[0-9\]\+\$/);
-  assert.match(yml, /\^\[0-9a-f\]\{40\}\$/);
-  assert.match(yml, /automation\/629-kric-facility-refresh-33374059575/);
-  assert.match(yml, /4a75f913e06c7eded7112ef06017f95689626dff/);
-  assert.match(yml, /pullRequest\.number !== 644/);
-  assert.match(
-    yml,
-    /Retire closed durable claim[\s\S]*gh pr list --repo "\$\{GITHUB_REPOSITORY\}" --state all --base main --head "\$\{branch\}"[\s\S]*number,state,headRefName,baseRefName,headRepository,isCrossRepository[\s\S]*git ls-remote --heads origin "refs\/heads\/\$\{branch\}"[\s\S]*\[\[ "\$\{remote_sha\}" == "\$\{claim_sha\}" \]\][\s\S]*git push origin --delete "\$\{branch\}"/,
-  );
+  assert.doesNotMatch(yml, /RETIRE_CLOSED_CLAIM|claim_sha|Retire closed durable claim/);
+  assert.doesNotMatch(yml, /automation\/629-kric-facility-refresh-33374059575/);
+  assert.doesNotMatch(yml, /4a75f913e06c7eded7112ef06017f95689626dff/);
+  assert.doesNotMatch(yml, /git push origin --delete/);
   assert.match(yml, /steps\.decision\.outputs\.state == 'DUE'/);
   assert.match(yml, /steps\.decision\.outputs\.state == 'EXPIRED'/);
   assert.match(yml, /run-current-capital-facility-operation\.mjs --phase prepare --operation-root "\$\{KRIC_REFRESH_OPERATION_ROOT\}" --expected-main-sha "\$\{KRIC_REFRESH_MAIN_SHA\}"/);
@@ -73,10 +66,6 @@ test("KRIC refresh workflow has one scheduled, fail-closed, PR-only path", () =>
   assert.match(yml, /--draft/);
   assert.match(yml, /git commit -m "Refresh KRIC facility snapshot"[\s\S]*git push origin "\$\{KRIC_REFRESH_BRANCH\}"[\s\S]*gh pr create/);
   assert.match(yml, /Refs #629, #39, #29/);
-  assert.ok(
-    yml.indexOf("KRIC current facility refresh / Retire closed durable claim")
-      < yml.indexOf("KRIC current facility refresh / Create durable claim"),
-  );
   assert.doesNotMatch(yml, /aws|s3:|retry|automerge|git push origin main|gh workflow run/i);
 });
 
