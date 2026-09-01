@@ -28,6 +28,12 @@ test("activation dependencies are validated after GitHub environment update", ()
   assert.ok(yml.indexOf("Derive current activation dependencies") < yml.indexOf("Validate current activation dependencies"));
   assert.ok(yml.indexOf("Validate current activation dependencies") < yml.indexOf("Activate current topology inputs exactly once"));
 });
+test("topology buildNow preserves its post-collection millisecond instant", () => {
+  const derive = stepBody("Derive immutable input identities from collector output");
+  assert.ok(yml.indexOf("Collect each official current topology input once") < yml.indexOf("Derive immutable input identities from collector output"));
+  assert.match(derive, /console\.log\("TOPOLOGY_BUILD_NOW=" \+ new Date\(\)\.toISOString\(\)\);/);
+  assert.doesNotMatch(derive, /new Date\(\)\.toISOString\(\)\.replace\(/);
+});
 test("an exact empty claim is reused without creating another claim", () => {
   const preflight = stepBody("Preflight immutable current topology identities");
   const create = stepBody("Create durable claim before provider access");
