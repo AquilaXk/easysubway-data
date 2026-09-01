@@ -168,6 +168,10 @@ jobs:
           retained_root="${EXIT_REFRESH_OPERATION_ROOT}/retained-facility"
           private_builder_root="${EXIT_REFRESH_OPERATION_ROOT}/private-builder"
           git worktree add --detach "${retained_root}" "${EXIT_REFRESH_FACILITY_HEAD_SHA}"
+          EXIT_REFRESH_RETAINED_ROOT="${retained_root}" node --input-type=module -e '
+            import { assertCurrentCapitalExitItxAuthorityFresh } from "./tools/datapack/run-current-capital-live-chain.mjs";
+            await assertCurrentCapitalExitItxAuthorityFresh({ repositoryRoot: process.env.EXIT_REFRESH_RETAINED_ROOT });
+          '
           git worktree add --detach "${private_builder_root}" "${EXIT_REFRESH_FACILITY_HEAD_SHA}"
           node tools/datapack/collect-capital-route-topology.mjs --download --output "${EXIT_REFRESH_OPERATION_ROOT}/capital-route-topology.json"
           node tools/datapack/collect-incheon-station-info.mjs --download --output "${EXIT_REFRESH_OPERATION_ROOT}/incheon-transit-station-info.json"

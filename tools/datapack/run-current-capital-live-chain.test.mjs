@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 import {
   CURRENT_KRIC_EXIT_REQUEST_INTERVAL_MS,
   CURRENT_KRIC_EXIT_REQUEST_TIMEOUT_MS,
+  assertCurrentCapitalExitItxAuthorityFresh,
   buildCurrentCapitalLiveChainPlan,
   assertCurrentCapitalFacilityAdmission,
   evaluateStagedRoutePolicy,
@@ -47,6 +48,42 @@ const execFile = promisify(execFileCallback);
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const canonical = (value) => JSON.stringify(sort(value));
 function sort(value) { if (Array.isArray(value)) return value.map(sort); if (!value || typeof value !== "object") return value; return Object.fromEntries(Object.keys(value).sort((left, right) => left.localeCompare(right, "en")).map((key) => [key, sort(value[key])])); }
+
+test("EXIT topology preflight rejects a stale selected ITX authority before collection", async (t) => {
+  const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "current-exit-itx-preflight-"));
+  t.after(() => rm(repositoryRoot, { recursive: true, force: true }));
+  const evidencePath = "tools/datapack/itx-cheongchun-topology-evidence-20260830151508786.json";
+  const admissionPath = "tools/datapack/itx-current-network-edge-admission-20260901.json";
+  const evidenceBytes = Buffer.from(`${JSON.stringify({ artifactKind: "itx-cheongchun-mobile-topology-evidence" })}\n`);
+  const admissionBytes = Buffer.from(`${JSON.stringify({
+    artifactKind: "itx-current-network-edge-admission",
+    artifactId: "itx-current-network-edge-admission-20260901",
+    status: "ADMITTED",
+    freshUntil: "2026-09-02T00:00:00+09:00",
+  })}\n`);
+  const candidate = {
+    itxTopologyEvidencePath: evidencePath,
+    itxTopologyEvidenceSha256: sha(evidenceBytes),
+    networkEdgeEvidence: { itxCurrentTopologyAdmission: { path: admissionPath, sha256: sha(admissionBytes) } },
+  };
+  for (const [relative, bytes] of [
+    ["tools/datapack/release/candidate-build-spec.json", Buffer.from(`${JSON.stringify(candidate)}\n`)],
+    [evidencePath, evidenceBytes],
+    [admissionPath, admissionBytes],
+  ]) {
+    const target = path.join(repositoryRoot, relative);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, bytes, { flag: "wx" });
+  }
+  await assert.doesNotReject(assertCurrentCapitalExitItxAuthorityFresh({
+    repositoryRoot,
+    now: new Date("2026-09-01T14:59:59.999Z"),
+  }));
+  await assert.rejects(assertCurrentCapitalExitItxAuthorityFresh({
+    repositoryRoot,
+    now: new Date("2026-09-01T15:00:00.000Z"),
+  }), /admission is not current/);
+});
 
 async function cloneCleanFixture(source, target) {
   await execFile("git", ["clone", "--shared", "--quiet", source, target]);

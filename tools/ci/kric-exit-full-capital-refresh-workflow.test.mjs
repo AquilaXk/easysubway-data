@@ -62,6 +62,9 @@ test("EXIT refresh keeps exact-main OCI producer, immutable recovery, and select
   assert.match(yml, /git worktree add --detach "\$\{source_main_root\}" "\$\{EXIT_REFRESH_MAIN_SHA\}"/);
   assert.match(yml, /git worktree add --detach "\$\{private_builder_root\}" "\$\{EXIT_REFRESH_BUILDER_SHA\}"/);
   assert.match(yml, /git worktree remove --force "\$\{directory\}"/);
+  const itxFreshnessPreflight = yml.indexOf("assertCurrentCapitalExitItxAuthorityFresh");
+  const firstTopologyCollector = yml.indexOf("collect-capital-route-topology.mjs --download --output");
+  assert.ok(itxFreshnessPreflight >= 0 && itxFreshnessPreflight < firstTopologyCollector);
   assert.equal((yml.match(/collect-capital-route-topology\.mjs --download --output/g) ?? []).length, 1);
   assert.equal((yml.match(/collect-incheon-station-info\.mjs --download --output/g) ?? []).length, 1);
   assert.equal((yml.match(/collect-incheon-timetable\.mjs --download/g) ?? []).length, 1);

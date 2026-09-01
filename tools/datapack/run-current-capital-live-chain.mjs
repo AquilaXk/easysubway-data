@@ -58,7 +58,10 @@ import {
 import { buildCurrentCapitalFacilityCollectionPlan } from "./build-current-capital-facility-collection-plan.mjs";
 import { canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
 import { registerKricStandardAccessibilitySnapshot } from "./register-kric-standard-accessibility-snapshot.mjs";
-import { buildCurrentCapitalTopologyRefreshOutputs } from "./activate-current-source-set.mjs";
+import {
+  buildCurrentCapitalTopologyRefreshOutputs,
+  validateCurrentTopologyRefreshItxEvidence,
+} from "./activate-current-source-set.mjs";
 import { rebindCurrentActivePublicRouteMapMaterialization } from "./rebind-current-active-public-route-map-materialization.mjs";
 import { currentLiveChainTransferStageInputs, rebindCurrentLiveChainTransferDerivedIdentities } from "./rebind-current-live-chain-transfer-derived-identities.mjs";
 import { assertCurrentStaticNetworkTopologyAdmission } from "./register-current-static-network-successors.mjs";
@@ -107,6 +110,24 @@ function requiredBindingSha(value, label) {
   if (!/^[a-f0-9]{64}$/u.test(value ?? "")) throw new Error(`${label} hash mismatch`);
   return value;
 }
+function requiredOffsetInstantMillis(value, label) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{3}))?(Z|[+-]\d{2}:\d{2})$/u.exec(value ?? "");
+  const parts = match?.slice(1, 8).map((part) => Number(part ?? 0));
+  const offset = match?.[8];
+  const offsetParts = offset && offset !== "Z" ? offset.slice(1).split(":").map(Number) : [0, 0];
+  const parsed = Date.parse(value);
+  const local = parts == null ? null : new Date(Date.UTC(
+    parts[0], parts[1] - 1, parts[2], parts[3], parts[4], parts[5], parts[6],
+  ));
+  if (match == null || !Number.isFinite(parsed) || offsetParts[0] > 23 || offsetParts[1] > 59
+    || local.getUTCFullYear() !== parts[0] || local.getUTCMonth() + 1 !== parts[1]
+    || local.getUTCDate() !== parts[2] || local.getUTCHours() !== parts[3]
+    || local.getUTCMinutes() !== parts[4] || local.getUTCSeconds() !== parts[5]
+    || local.getUTCMilliseconds() !== parts[6]) {
+    throw new Error(`${label} mismatch`);
+  }
+  return parsed;
+}
 function parsedCanonical(bytes, canonicalizer, label) {
   if (!(bytes instanceof Uint8Array) || bytes.byteLength === 0) throw new Error(`${label} bytes mismatch`);
   let value;
@@ -126,6 +147,64 @@ const LINEAGE_TOPOLOGY_INPUTS = Object.freeze([
   "capitalTopologyPath", "incheonTopologyPath", "incheonLine1TimetablePath", "incheonLine2TimetablePath",
 ]);
 const CURRENT_CAPITAL_TOPOLOGY_HANDOFF = "current-capital-topology-terminal-handoff.json";
+
+export async function assertCurrentCapitalExitItxAuthorityFresh({ repositoryRoot, now = new Date() } = {}) {
+  if (!path.isAbsolute(repositoryRoot ?? "") || !(now instanceof Date) || Number.isNaN(now.valueOf())) {
+    throw new Error("EXIT topology ITX preflight inputs mismatch");
+  }
+  const root = path.resolve(repositoryRoot);
+  await requireRealDirectory(root, "EXIT topology ITX preflight root");
+  const candidateFile = await readStagedRegularFile(
+    root,
+    "tools/datapack/release/candidate-build-spec.json",
+    "EXIT topology ITX candidate",
+  );
+  let candidate;
+  try { candidate = JSON.parse(candidateFile.bytes); } catch { throw new Error("EXIT topology ITX candidate JSON mismatch"); }
+  const evidencePath = requiredRelativePath(candidate?.itxTopologyEvidencePath, "EXIT topology ITX evidence");
+  if (!/^tools\/datapack\/itx-cheongchun-topology-evidence-[0-9]{17}\.json$/u.test(evidencePath)) {
+    throw new Error("EXIT topology ITX evidence identity mismatch");
+  }
+  const evidenceFile = await readStagedRegularFile(root, evidencePath, "EXIT topology ITX evidence");
+  if (sha256(evidenceFile.bytes) !== requiredBindingSha(candidate.itxTopologyEvidenceSha256, "EXIT topology ITX evidence")) {
+    throw new Error("EXIT topology ITX evidence hash mismatch");
+  }
+  let evidence;
+  try { evidence = JSON.parse(evidenceFile.bytes); } catch { throw new Error("EXIT topology ITX evidence JSON mismatch"); }
+  if (evidence?.artifactKind !== "itx-cheongchun-mobile-topology-evidence") {
+    throw new Error("EXIT topology ITX evidence identity mismatch");
+  }
+  const binding = candidate.networkEdgeEvidence?.itxCurrentTopologyAdmission;
+  if (binding == null) {
+    validateCurrentTopologyRefreshItxEvidence({
+      spec: candidate,
+      itxCurrentAdmissionPath: null,
+      selectedItxTopologyEvidencePath: evidencePath,
+      currentItxTopologyEvidenceBytes: evidenceFile.bytes,
+      buildNow: now.toISOString(),
+    });
+    return Object.freeze({ evidencePath, admissionPath: null });
+  }
+  exactKeys(binding, ["path", "sha256"], "EXIT topology ITX admission binding");
+  const admissionPath = requiredRelativePath(binding.path, "EXIT topology ITX admission");
+  if (!/^tools\/datapack\/itx-current-network-edge-admission-[0-9]{8}\.json$/u.test(admissionPath)) {
+    throw new Error("EXIT topology ITX admission identity mismatch");
+  }
+  const admissionFile = await readStagedRegularFile(root, admissionPath, "EXIT topology ITX admission");
+  if (sha256(admissionFile.bytes) !== requiredBindingSha(binding.sha256, "EXIT topology ITX admission")) {
+    throw new Error("EXIT topology ITX admission hash mismatch");
+  }
+  let admission;
+  try { admission = JSON.parse(admissionFile.bytes); } catch { throw new Error("EXIT topology ITX admission JSON mismatch"); }
+  const freshUntil = requiredOffsetInstantMillis(admission?.freshUntil, "EXIT topology ITX admission freshUntil");
+  if (admission?.artifactKind !== "itx-current-network-edge-admission"
+    || admission.status !== "ADMITTED"
+    || admissionPath !== `tools/datapack/${admission.artifactId}.json`
+    || freshUntil <= now.valueOf()) {
+    throw new Error("EXIT topology ITX admission is not current");
+  }
+  return Object.freeze({ evidencePath, admissionPath });
+}
 async function lineageFile(root, relative, label) {
   return readStagedRegularFile(root, relative, label);
 }
