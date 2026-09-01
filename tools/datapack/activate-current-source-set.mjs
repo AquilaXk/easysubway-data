@@ -2803,6 +2803,7 @@ export async function readBuilderBaselineBytes(
 }
 
 export async function generateCurrentCapitalTopologyRefresh({
+  repositoryRoot = root,
   capitalTopologyPath,
   incheonTopologyPath,
   incheonAccessibilityPath,
@@ -2813,8 +2814,11 @@ export async function generateCurrentCapitalTopologyRefresh({
   builderGitSha,
   buildNow,
   check = false,
+  prepareOnly = false,
   approvedItxBootstrap = false,
 }) {
+  const repositoryPath = path.resolve(repositoryRoot);
+  if (prepareOnly && check) throw new Error("current topology prepare/check mode mismatch");
   const capitalPathMatch = /^tools\/datapack\/sources\/capital-route-topology-([0-9]{8})\.json$/u
     .exec(capitalTopologyPath ?? "");
   if (capitalPathMatch == null) {
@@ -2849,7 +2853,7 @@ export async function generateCurrentCapitalTopologyRefresh({
       throw new Error("approved ITX bootstrap input must be the tracked source evidence path");
     }
     approvedItxCoverageContractBytes = await readRegularBytes(
-      root,
+      repositoryPath,
       "tools/datapack/itx-cheongchun-coverage-contract.json",
       "approved ITX coverage contract",
     );
@@ -2867,34 +2871,34 @@ export async function generateCurrentCapitalTopologyRefresh({
     topologyReverificationPath,
     ...(approvedItxBootstrap ? [selectedItxTopologyEvidencePath] : []),
   ];
-  await requireCleanBuilder(builderGitSha, { check, allowedDescendantPaths });
+  await requireCleanBuilder(builderGitSha, { check, repositoryRoot: repositoryPath, allowedDescendantPaths });
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "current-topology-refresh-"));
   try {
     const readMutableInput = (relativePath) => check
-      ? readBuilderBaselineBytes(builderGitSha, relativePath)
-      : readRegularBytes(root, relativePath);
+      ? readBuilderBaselineBytes(builderGitSha, relativePath, repositoryPath)
+      : readRegularBytes(repositoryPath, relativePath);
     const [currentTopologyBytes, currentIncheonTopologyBytes, currentIncheonAccessibilityBytes,
       currentIncheonLine1TimetableBytes, currentIncheonLine2TimetableBytes, currentItxTopologyEvidenceBytes,
       currentItxAdmissionBytes,
       baselineTopologyBytes, sourceInventoryBytes, productionInputBytes,
       baseSpecBytes, canonicalBytes, productionScopePolicyBytes, sourceSnapshotsBytes] =
       await Promise.all([
-        readRegularBytes(root, capitalTopologyPath, "current capital topology"),
-        readRegularBytes(root, incheonTopologyPath, "current Incheon topology"),
-        readRegularBytes(root, incheonAccessibilityPath, "current Incheon accessibility"),
-        readRegularBytes(root, incheonLine1TimetablePath, "current Incheon line 1 timetable"),
-        readRegularBytes(root, incheonLine2TimetablePath, "current Incheon line 2 timetable"),
-        readRegularBytes(root, itxTopologyEvidencePath, "current ITX topology evidence"),
-        readOptionalCurrentItxAdmissionBytes(root, itxCurrentAdmissionPath),
-        readRegularBytes(root, "tools/datapack/sources/capital-route-topology-20260724.json"),
+        readRegularBytes(repositoryPath, capitalTopologyPath, "current capital topology"),
+        readRegularBytes(repositoryPath, incheonTopologyPath, "current Incheon topology"),
+        readRegularBytes(repositoryPath, incheonAccessibilityPath, "current Incheon accessibility"),
+        readRegularBytes(repositoryPath, incheonLine1TimetablePath, "current Incheon line 1 timetable"),
+        readRegularBytes(repositoryPath, incheonLine2TimetablePath, "current Incheon line 2 timetable"),
+        readRegularBytes(repositoryPath, itxTopologyEvidencePath, "current ITX topology evidence"),
+        readOptionalCurrentItxAdmissionBytes(repositoryPath, itxCurrentAdmissionPath),
+        readRegularBytes(repositoryPath, "tools/datapack/sources/capital-route-topology-20260724.json"),
         readMutableInput("tools/datapack/source-inventory.json"),
         readMutableInput("tools/datapack/inputs/capital-pilot-production-source-input.json"),
         readMutableInput("tools/datapack/release/candidate-build-spec.json"),
         readMutableInput("tools/datapack/release/capital-production-canonical-pack.json"),
-        readRegularBytes(root, "tools/datapack/nationwide-coverage-targets.json"),
-        readRegularBytes(root, "tools/datapack/release/source-snapshots.json"),
+        readRegularBytes(repositoryPath, "tools/datapack/nationwide-coverage-targets.json"),
+        readRegularBytes(repositoryPath, "tools/datapack/release/source-snapshots.json"),
       ]);
-    await requireCleanBuilder(builderGitSha, { check, allowedDescendantPaths });
+    await requireCleanBuilder(builderGitSha, { check, repositoryRoot: repositoryPath, allowedDescendantPaths });
     const sourceInventory = parseJson(sourceInventoryBytes, "source inventory");
     let baseSpec = parseJson(baseSpecBytes, "candidate build spec");
     validateCurrentTopologyRefreshItxEvidence({
@@ -2907,9 +2911,9 @@ export async function generateCurrentCapitalTopologyRefresh({
     let approvedItxTopology = null;
     if (approvedItxBootstrap) {
       const [sourceBytes, completenessBytes] = await Promise.all([
-        readRegularBytes(root, approvedItxCoverageReference?.artifactPath, "approved ITX source"),
+        readRegularBytes(repositoryPath, approvedItxCoverageReference?.artifactPath, "approved ITX source"),
         readRegularBytes(
-          root,
+          repositoryPath,
           approvedItxCoverageReference?.completenessEvidencePath,
           "approved ITX completeness evidence",
         ),
@@ -2965,8 +2969,8 @@ export async function generateCurrentCapitalTopologyRefresh({
       productionInput: parseJson(productionInputBytes, "production input"),
       productionScopePolicyBytes,
       buildNow,
-      snapshotBytesByPath: await collectPositionSnapshotBytes(sourceInventory),
-      layoutTopologySnapshotBytesById: await collectLayoutTopologySnapshotBytes(sourceInventory),
+      snapshotBytesByPath: await collectPositionSnapshotBytes(sourceInventory, repositoryPath),
+      layoutTopologySnapshotBytesById: await collectLayoutTopologySnapshotBytes(sourceInventory, repositoryPath),
     });
     await Promise.all([
       writeTempFile(temporaryRoot, topologyReverificationPath, primary.topologyReverificationBytes),
@@ -3022,16 +3026,23 @@ export async function generateCurrentCapitalTopologyRefresh({
     ];
     const validateOutputBytes = async () => {
       for (const output of outputs) {
-        const actual = await readRegularBytes(root, output.relativePath);
+        const actual = await readRegularBytes(repositoryPath, output.relativePath);
         if (!actual.equals(output.bytes)) {
           throw new Error(`current topology refresh output mismatch: ${output.relativePath}`);
         }
       }
     };
+    if (prepareOnly) return Object.freeze({
+      candidateId: finalSpec.candidateId,
+      topologySnapshotId: finalSpec.networkEdgeEvidence.capitalTopologyCandidate.snapshotId,
+      sourceInventorySha256: finalSpec.sourceInventorySha256,
+      outputCount: outputs.length,
+      outputs: Object.freeze(outputs.map(({ relativePath, bytes }) => Object.freeze({ relativePath, bytes: Buffer.from(bytes) }))),
+    });
     if (check) await validateOutputBytes();
     else {
       await commitCurrentSourceActivation({
-        repositoryRoot: root,
+        repositoryRoot: repositoryPath,
         outputs,
         validate: validateOutputBytes,
         approvedItxTopologyEvidencePath: approvedItxBootstrap
@@ -3049,6 +3060,15 @@ export async function generateCurrentCapitalTopologyRefresh({
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });
   }
+}
+
+/**
+ * Derive, validate, and return the topology activation bytes without mutating
+ * the builder tree.  #673 uses this only from its private clean builder tree;
+ * the public generator retains its existing commit/check behavior.
+ */
+export async function buildCurrentCapitalTopologyRefreshOutputs(options) {
+  return generateCurrentCapitalTopologyRefresh({ ...options, check: false, prepareOnly: true });
 }
 
 export async function generateApprovedItxCurrentSourceBootstrap(options) {

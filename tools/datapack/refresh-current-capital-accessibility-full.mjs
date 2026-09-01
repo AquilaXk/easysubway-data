@@ -14,6 +14,8 @@ import {
   CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH,
   readCurrentCapitalLiveChainFanInBoundary,
 } from "./build-current-capital-live-chain-boundary.mjs";
+import { CURRENT_CAPITAL_LIVE_CHAIN_FIXED_OUTPUT_PATHS } from "./build-current-capital-live-chain-bundle.mjs";
+import { CURRENT_TOPOLOGY_REFRESH_OUTPUTS } from "./activate-current-source-set.mjs";
 import { readCurrentCapitalAccessibilityTransitionBoundary, readEffectiveCurrentCapitalAccessibilityTransition } from "./current-capital-accessibility-transition.mjs";
 import { projectCandidateFixtureForAccessibilityAuthority } from "./build-datapack.mjs";
 import { atomicReplace, readStableRegularFile } from "./rebind-current-candidate-source-snapshots.mjs";
@@ -27,6 +29,7 @@ const OUTPUTS = Object.freeze([
 const FAN_IN_OUTPUT = CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH;
 const TRANSACTION_OUTPUTS = Object.freeze([...OUTPUTS, FAN_IN_OUTPUT]);
 const JOURNAL = "tools/datapack/.current-capital-accessibility-refresh-transaction.json";
+const TERMINAL_JOURNAL = "tools/datapack/.current-capital-terminal-transaction.json";
 const LOCK = "tools/datapack/.current-capital-accessibility-refresh.lock";
 const LOCK_OWNER = "owner.json";
 const CANDIDATE_BUILD_SPEC = "tools/datapack/release/candidate-build-spec.json";
@@ -51,11 +54,140 @@ const CURRENT_CAPITAL_SOURCE_ROSTER = Object.freeze([
 const PREDECESSOR_SOURCE_ROSTER = Object.freeze(CURRENT_CAPITAL_SOURCE_ROSTER.slice(0, -1));
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 
+const TERMINAL_MARKERS = Object.freeze([TRANSITION, SUCCESSOR]);
+const TERMINAL_TOPOLOGY_INPUT_PATTERNS = Object.freeze([
+  /^tools\/datapack\/sources\/capital-route-topology-[0-9]{8}\.json$/u,
+  /^tools\/datapack\/sources\/incheon-transit-station-info-[0-9]{8}\.json$/u,
+  /^tools\/datapack\/sources\/incheon-line1-train-timetable-[0-9]{8}\.json$/u,
+  /^tools\/datapack\/sources\/incheon-line2-train-timetable-[0-9]{8}\.json$/u,
+]);
+const TERMINAL_TOPOLOGY_REVERIFICATION = /^tools\/datapack\/release\/capital-topology-reverification-[0-9]{8}\.json$/u;
+const TERMINAL_TRANSFER_DESCRIPTOR = /^tools\/datapack\/sources\/seoul-metro-transfer-distance-duration-[0-9]{8}T[0-9]{9}Z\.json$/u;
+
 function target(root, relative) {
   if (typeof relative !== "string" || path.isAbsolute(relative)) throw new Error("current-capital refresh path is invalid");
   const resolved = path.resolve(root, relative);
   if (!resolved.startsWith(`${root}${path.sep}`)) throw new Error("current-capital refresh path escapes repository");
   return resolved;
+}
+function exactPathSet(actual, expected, label) {
+  if (!Array.isArray(actual) || new Set(actual).size !== actual.length
+    || JSON.stringify([...actual].sort(codepointCompare)) !== JSON.stringify([...expected].sort(codepointCompare))) {
+    throw new Error(`${label} mismatch`);
+  }
+}
+function terminalTopologyInputs(paths) {
+  if (!Array.isArray(paths) || paths.length !== TERMINAL_TOPOLOGY_INPUT_PATTERNS.length
+    || new Set(paths).size !== paths.length
+    || TERMINAL_TOPOLOGY_INPUT_PATTERNS.some((pattern) => paths.filter((entry) => pattern.test(entry)).length !== 1)) {
+    throw new Error("current-capital terminal topology input manifest mismatch");
+  }
+}
+function terminalTopologyOutputs(paths) {
+  if (!Array.isArray(paths) || paths.length === 0 || new Set(paths).size !== paths.length
+    || paths.filter((entry) => TERMINAL_TOPOLOGY_REVERIFICATION.test(entry)).length !== 1
+    || paths.some((entry) => !CURRENT_TOPOLOGY_REFRESH_OUTPUTS.includes(entry)
+      && !TERMINAL_TOPOLOGY_REVERIFICATION.test(entry))) {
+    throw new Error("current-capital terminal topology output manifest mismatch");
+  }
+}
+function terminalLiveChainOutputs(paths) {
+  if (!Array.isArray(paths) || paths.length !== CURRENT_CAPITAL_LIVE_CHAIN_FIXED_OUTPUT_PATHS.length + 1
+    || new Set(paths).size !== paths.length
+    || paths.filter((entry) => TERMINAL_TRANSFER_DESCRIPTOR.test(entry)).length !== 1) {
+    throw new Error("current-capital terminal live-chain manifest mismatch");
+  }
+  exactPathSet(paths.filter((entry) => !TERMINAL_TRANSFER_DESCRIPTOR.test(entry)), CURRENT_CAPITAL_LIVE_CHAIN_FIXED_OUTPUT_PATHS,
+    "current-capital terminal live-chain manifest");
+}
+function terminalMaterializationReceipt(receipt, liveChainOutputs, fanInPath) {
+  const keys = ["entries", "fanIn", "operationId", "repository", "repositorySha"];
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)
+    || JSON.stringify(Object.keys(receipt).sort(codepointCompare)) !== JSON.stringify(keys)
+    || receipt.repository !== "AquilaXk/easysubway-data" || !/^[a-f0-9]{40}$/u.test(receipt.repositorySha ?? "")
+    || typeof receipt.operationId !== "string" || !Array.isArray(receipt.entries)
+    || !receipt.fanIn || typeof receipt.fanIn !== "object") {
+    throw new Error("current-capital terminal materialization receipt mismatch");
+  }
+  const entries = receipt.entries.map(({ path: relative, sha256: digest }) => ({ relative, digest }));
+  if (entries.length !== liveChainOutputs.length || new Set(entries.map(({ relative }) => relative)).size !== entries.length
+    || entries.some(({ relative, digest }) => typeof relative !== "string" || !/^[a-f0-9]{64}$/u.test(digest ?? ""))
+    || JSON.stringify(entries.map(({ relative }) => relative)) !== JSON.stringify([...liveChainOutputs].sort(codepointCompare))
+    || receipt.fanIn.path !== fanInPath || !/^[a-f0-9]{64}$/u.test(receipt.fanIn.sha256 ?? "")) {
+    throw new Error("current-capital terminal materialization receipt mismatch");
+  }
+  return new Map([...entries, { relative: receipt.fanIn.path, digest: receipt.fanIn.sha256 }].map(({ relative, digest }) => [relative, digest]));
+}
+function terminalVerifierProof(proof) {
+  const keys = ["artifactKind", "builderGitSha", "facilityHeadGitSha", "retainedOutputs", "schemaVersion", "sourceMainGitSha", "topologyInputs", "topologyOutputs", "transition"];
+  if (!proof || typeof proof !== "object" || Array.isArray(proof)
+    || JSON.stringify(Object.keys(proof).sort(codepointCompare)) !== JSON.stringify(keys)
+    || proof.schemaVersion !== 1 || proof.artifactKind !== "current-capital-terminal-lineage"
+    || ![proof.sourceMainGitSha, proof.facilityHeadGitSha, proof.builderGitSha].every((value) => /^[a-f0-9]{40}$/u.test(value ?? ""))
+    || !proof.transition || ![proof.transition.baseSha256, proof.transition.successorSha256,
+      proof.transition.sourceMainCandidateSha256, proof.transition.sourceMainFacilitySha256].every((value) => /^[a-f0-9]{64}$/u.test(value ?? ""))
+    || !Array.isArray(proof.retainedOutputs) || !Array.isArray(proof.topologyInputs) || !Array.isArray(proof.topologyOutputs)) {
+    throw new Error("current-capital terminal lineage proof mismatch");
+  }
+  const retained = new Map(proof.retainedOutputs.map(({ relative, sha256: digest }) => [relative, digest]));
+  const inputs = new Map(proof.topologyInputs.map(({ relativePath, sha256: digest }) => [relativePath, digest]));
+  const outputs = new Map(proof.topologyOutputs.map(({ relativePath, beforeSha256, afterSha256 }) => [relativePath, { beforeSha256, afterSha256 }]));
+  if (retained.size !== proof.retainedOutputs.length || inputs.size !== proof.topologyInputs.length || outputs.size !== proof.topologyOutputs.length
+    || [...retained].some(([relative, digest]) => typeof relative !== "string" || !/^[a-f0-9]{64}$/u.test(digest ?? ""))
+    || [...inputs].some(([relative, digest]) => typeof relative !== "string" || !/^[a-f0-9]{64}$/u.test(digest ?? ""))
+    || [...outputs].some(([relative, value]) => typeof relative !== "string" || (value.beforeSha256 != null && !/^[a-f0-9]{64}$/u.test(value.beforeSha256)) || !/^[a-f0-9]{64}$/u.test(value.afterSha256 ?? ""))) {
+    throw new Error("current-capital terminal lineage proof mismatch");
+  }
+  return { retained, inputs, outputs };
+}
+
+/**
+ * Validate the only manifest shape permitted to retire the two protected
+ * current-capital transition markers.  This is intentionally not a general
+ * file transaction API: every class, cardinality, and deletion target is part
+ * of the executable #673 contract.
+ */
+export function validateCurrentCapitalTerminalManifest(manifest) {
+  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)
+    || JSON.stringify(Object.keys(manifest).sort(codepointCompare)) !== JSON.stringify([
+      "fanInPath", "liveChainOutputs", "markerPaths", "materialization", "proof", "replacementPaths", "topologyInputs", "topologyOutputs",
+    ])) {
+    throw new Error("current-capital terminal manifest mismatch");
+  }
+  terminalTopologyInputs(manifest.topologyInputs);
+  terminalTopologyOutputs(manifest.topologyOutputs);
+  terminalLiveChainOutputs(manifest.liveChainOutputs);
+  const materializationProof = terminalMaterializationReceipt(manifest.materialization, manifest.liveChainOutputs, manifest.fanInPath);
+  const proof = terminalVerifierProof(manifest.proof);
+  if (manifest.fanInPath !== FAN_IN_OUTPUT) throw new Error("current-capital terminal fan-in manifest mismatch");
+  exactPathSet(manifest.markerPaths, TERMINAL_MARKERS, "current-capital terminal marker manifest");
+  const classPaths = [
+    ...manifest.topologyInputs,
+    ...manifest.topologyOutputs,
+    ...manifest.liveChainOutputs,
+    manifest.fanInPath,
+  ];
+  if (!Array.isArray(manifest.replacementPaths) || new Set(manifest.replacementPaths).size !== manifest.replacementPaths.length
+    || JSON.stringify([...manifest.replacementPaths].sort(codepointCompare))
+      !== JSON.stringify([...new Set(classPaths)].sort(codepointCompare))) {
+    throw new Error("current-capital terminal replacement manifest mismatch");
+  }
+  exactPathSet(manifest.topologyInputs, [...proof.inputs.keys()], "current-capital terminal verifier topology inputs");
+  exactPathSet(manifest.topologyOutputs, [...proof.outputs.keys()], "current-capital terminal verifier topology outputs");
+  return Object.freeze({
+    topologyInputs: Object.freeze([...manifest.topologyInputs]),
+    topologyOutputs: Object.freeze([...manifest.topologyOutputs]),
+    liveChainOutputs: Object.freeze([...manifest.liveChainOutputs]),
+    fanInPath: manifest.fanInPath,
+    markerPaths: Object.freeze([...TERMINAL_MARKERS]),
+    proof: manifest.proof,
+    retainedProof: proof.retained,
+    topologyInputProof: proof.inputs,
+    topologyOutputProof: proof.outputs,
+    materializationProof,
+    createOncePaths: Object.freeze([...manifest.topologyInputs, ...manifest.topologyOutputs.filter((relative) => TERMINAL_TOPOLOGY_REVERIFICATION.test(relative))].sort(codepointCompare)),
+    replacements: Object.freeze([...manifest.replacementPaths]),
+  });
 }
 function parse(bytes, label) { try { return JSON.parse(bytes); } catch { throw new Error(`${label} is invalid JSON`); } }
 function canonical(value) { if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`; if (value && typeof value === "object") return `{${Object.keys(value).sort(codepointCompare).map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`; return JSON.stringify(value); }
@@ -453,6 +585,23 @@ async function deleteExpectedFile(file, before) {
   if (!current.bytes.equals(before)) throw new Error("current-capital refresh preserves foreign replacement");
   await unlink(file); await syncParent(file);
 }
+async function createExpectedFile(file, bytes) {
+  const parent = path.dirname(file); const info = await lstat(parent);
+  if (!info.isDirectory() || info.isSymbolicLink()) throw new Error("current-capital terminal create parent is unsafe");
+  let handle;
+  try {
+    handle = await open(file, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+    await handle.writeFile(bytes); await handle.sync();
+  } catch (error) {
+    if (error?.code === "EEXIST") throw new Error("current-capital terminal create-once target exists");
+    throw error;
+  } finally { await handle?.close(); }
+  await syncParent(file);
+}
+async function createTerminalOutput(root, manifest, relative, bytes) {
+  if (!manifest.createOncePaths.includes(relative)) throw new Error("current-capital terminal create-once class mismatch");
+  await createExpectedFile(target(root, relative), bytes);
+}
 function parseLockLease(bytes) {
   let lease;
   try { lease = JSON.parse(bytes); } catch { throw new Error("current-capital refresh lock lease is invalid"); }
@@ -555,6 +704,159 @@ async function commitCurrentCapitalAccessibilityRefresh({ repositoryRoot = ROOT,
   try {
     await recover(root);
     await commitUnlocked({ root, outputs, marker, successor, failAfter, beforeCommit });
+  } finally { await release(); }
+}
+
+function terminalJournalError() { throw new Error("current-capital terminal recovery required"); }
+function validateCurrentCapitalTerminalJournal(journal) {
+  if (!journal || journal.schemaVersion !== 1 || !["PREPARED", "COMMITTED"].includes(journal.state)
+    || !Array.isArray(journal.records)) terminalJournalError();
+  const manifest = validateCurrentCapitalTerminalManifest(journal.manifest);
+  if (journal.records.length !== manifest.replacements.length + 2
+    || JSON.stringify(journal.records.slice(0, -2).map(({ relative }) => relative))
+      !== JSON.stringify(manifest.replacements)
+    || JSON.stringify(journal.records.slice(-2).map(({ relative }) => relative))
+      !== JSON.stringify(manifest.markerPaths)) terminalJournalError();
+  for (const [index, record] of journal.records.slice(0, -2).entries()) {
+    const create = manifest.createOncePaths.includes(record.relative);
+    if (record.operation !== (create ? "create" : "replace") || typeof record.after !== "string"
+      || sha(Buffer.from(record.after, "base64")) !== record.afterSha256) terminalJournalError();
+    if (create ? record.before !== null || record.beforeSha256 !== null
+      : typeof record.before !== "string" || sha(Buffer.from(record.before, "base64")) !== record.beforeSha256) terminalJournalError();
+    if (record.relative !== manifest.replacements[index]) terminalJournalError();
+  }
+  for (const marker of journal.records.slice(-2)) {
+    if (marker.operation !== "delete" || typeof marker.before !== "string"
+      || sha(Buffer.from(marker.before, "base64")) !== marker.beforeSha256) terminalJournalError();
+  }
+  return manifest;
+}
+async function recoverCurrentCapitalTerminalTransaction(root) {
+  const journalPath = target(root, TERMINAL_JOURNAL); let journalFile;
+  try { journalFile = await readStableRegularFile(journalPath, "current-capital terminal journal"); }
+  catch (error) { if (error?.code === "ENOENT" || error?.cause?.code === "ENOENT") return; throw error; }
+  const journal = parse(journalFile.bytes, "current-capital terminal journal");
+  validateCurrentCapitalTerminalJournal(journal);
+  for (const record of journal.records) {
+    const file = target(root, record.relative);
+    if (record.operation === "delete") {
+      if (journal.state === "PREPARED") await restoreDeletedFile(file, Buffer.from(record.before, "base64"));
+      else await deleteExpectedFile(file, Buffer.from(record.before, "base64"));
+      continue;
+    }
+    const after = Buffer.from(record.after, "base64");
+    const current = record.operation === "create"
+      ? await readOptionalStable(file, "current-capital terminal target")
+      : await readStableRegularFile(file, "current-capital terminal target");
+    if (record.operation === "create") {
+      if (journal.state === "PREPARED") {
+        if (current == null) continue;
+        if (!current.bytes.equals(after)) throw new Error("current-capital terminal preserves foreign replacement");
+        await unlink(file); await syncParent(file);
+      } else if (current == null) await createTerminalOutput(root, validateCurrentCapitalTerminalManifest(journal.manifest), record.relative, after);
+      else if (!current.bytes.equals(after)) throw new Error("current-capital terminal preserves foreign replacement");
+      continue;
+    }
+    const before = Buffer.from(record.before, "base64");
+    if (journal.state === "PREPARED" && current.bytes.equals(after)) await atomicReplace(file, before, { original: current });
+    else if (journal.state === "COMMITTED" && current.bytes.equals(before)) await atomicReplace(file, after, { original: current });
+    else if (!(journal.state === "PREPARED" ? current.bytes.equals(before) : current.bytes.equals(after))) {
+      throw new Error("current-capital terminal preserves foreign replacement");
+    }
+  }
+  await unlink(journalPath); await syncParent(journalPath);
+}
+
+/**
+ * Commit the exact #673 terminal manifest.  The caller supplies generated
+ * bytes only after the topology/FACILITY/EXIT lineage has been proven in its
+ * isolated staging root; this boundary performs no derivation and cannot
+ * target paths outside that closed manifest.
+ */
+export async function commitCurrentCapitalTerminalManifest({
+  repositoryRoot = ROOT,
+  manifest,
+  outputs,
+  marker,
+  successor,
+  beforeCommit = async () => {},
+} = {}) {
+  const root = path.resolve(repositoryRoot);
+  const checkedManifest = validateCurrentCapitalTerminalManifest(manifest);
+  if (!Array.isArray(outputs) || JSON.stringify(outputs.map(({ relative }) => relative))
+    !== JSON.stringify(checkedManifest.replacements)
+    || outputs.some(({ relative, bytes, prestate }) => !Buffer.isBuffer(bytes)
+      || (checkedManifest.createOncePaths.includes(relative) ? prestate != null : !prestate?.bytes))) {
+    throw new Error("current-capital terminal output manifest mismatch");
+  }
+  if (!marker?.bytes || !successor?.bytes || !Buffer.isBuffer(marker.bytes) || !Buffer.isBuffer(successor.bytes)) {
+    throw new Error("current-capital terminal markers are required");
+  }
+  if (sha(marker.bytes) !== checkedManifest.proof.transition.baseSha256
+    || sha(successor.bytes) !== checkedManifest.proof.transition.successorSha256) {
+    throw new Error("current-capital terminal lineage marker mismatch");
+  }
+  for (const output of outputs) {
+    const topology = checkedManifest.topologyOutputProof.get(output.relative);
+    const retained = checkedManifest.retainedProof.get(output.relative);
+    const input = checkedManifest.topologyInputProof.get(output.relative);
+    const materialized = checkedManifest.materializationProof.get(output.relative);
+    if (topology && materialized && topology.afterSha256 !== materialized) {
+      throw new Error("current-capital terminal materialization topology mismatch");
+    }
+    const expectedAfter = topology?.afterSha256 ?? input ?? materialized ?? retained;
+    const expectedBefore = topology?.beforeSha256 ?? retained;
+    if (!expectedAfter || sha(output.bytes) !== expectedAfter
+      || (checkedManifest.createOncePaths.includes(output.relative)
+        ? expectedBefore != null
+        : !output.prestate?.bytes || !expectedBefore || sha(output.prestate.bytes) !== expectedBefore)) {
+      throw new Error("current-capital terminal verifier output mismatch");
+    }
+  }
+  const release = await acquireLock(root);
+  let prepared = false;
+  try {
+    await recover(root); await recoverCurrentCapitalTerminalTransaction(root);
+    await beforeCommit(); await assertInputsStable(outputs.flatMap(({ inputs = [] }) => inputs));
+    for (const output of outputs) {
+      const current = await readOptionalStable(target(root, output.relative), "current-capital terminal target");
+      if (checkedManifest.createOncePaths.includes(output.relative)) {
+        if (current != null) throw new Error("current-capital terminal create-once target exists");
+      } else if (current == null || !current.bytes.equals(output.prestate.bytes)) {
+        throw new Error("current-capital terminal preserves foreign replacement");
+      }
+    }
+    const currentMarker = await readStableRegularFile(target(root, TRANSITION), TRANSITION);
+    const currentSuccessor = await readStableRegularFile(target(root, SUCCESSOR), SUCCESSOR);
+    if (!currentMarker.bytes.equals(marker.bytes) || !currentSuccessor.bytes.equals(successor.bytes)) {
+      throw new Error("current-capital terminal preserves foreign replacement");
+    }
+    const records = [
+      ...outputs.map(({ relative, bytes, prestate }) => checkedManifest.createOncePaths.includes(relative)
+        ? { operation: "create", relative, before: null, beforeSha256: null, after: bytes.toString("base64"), afterSha256: sha(bytes) }
+        : { operation: "replace", relative, before: prestate.bytes.toString("base64"), beforeSha256: sha(prestate.bytes), after: bytes.toString("base64"), afterSha256: sha(bytes) }),
+      { operation: "delete", relative: TRANSITION, before: marker.bytes.toString("base64"), beforeSha256: sha(marker.bytes) },
+      { operation: "delete", relative: SUCCESSOR, before: successor.bytes.toString("base64"), beforeSha256: sha(successor.bytes) },
+    ];
+    const journalPath = target(root, TERMINAL_JOURNAL);
+    const journal = { schemaVersion: 1, state: "PREPARED", manifest, records };
+    validateCurrentCapitalTerminalJournal(journal);
+    await writeNewJournal(journalPath, Buffer.from(JSON.stringify(journal))); prepared = true;
+    for (const output of outputs) {
+      const file = target(root, output.relative);
+      if (checkedManifest.createOncePaths.includes(output.relative)) await createTerminalOutput(root, checkedManifest, output.relative, output.bytes);
+      else await atomicReplace(file, output.bytes, { original: output.prestate });
+      const current = await readStableRegularFile(file, "current-capital terminal final target");
+      if (!current.bytes.equals(output.bytes)) throw new Error("current-capital terminal final byte mismatch");
+    }
+    await deleteExpectedFile(target(root, TRANSITION), marker.bytes);
+    await deleteExpectedFile(target(root, SUCCESSOR), successor.bytes);
+    const currentJournal = await readStableRegularFile(journalPath, "current-capital terminal journal");
+    await atomicReplace(journalPath, Buffer.from(JSON.stringify({ ...journal, state: "COMMITTED" })), { original: currentJournal });
+    await recoverCurrentCapitalTerminalTransaction(root); prepared = false;
+  } catch (error) {
+    if (prepared) await recoverCurrentCapitalTerminalTransaction(root);
+    throw error;
   } finally { await release(); }
 }
 export async function refreshCurrentCapitalAccessibilityFull({ repositoryRoot = ROOT, beforeCommit = async () => {} } = {}) {
