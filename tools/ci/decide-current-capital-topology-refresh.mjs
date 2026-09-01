@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { lstat, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { readEffectiveCurrentCapitalAccessibilityTransition } from "../datapack/current-capital-accessibility-transition.mjs";
@@ -124,7 +124,7 @@ function availableTopologyRefreshClaims(prs, claims) {
 }
 
 async function exists(file) {
-  try { await readFile(file); return true; }
+  try { await lstat(file); return true; }
   catch (error) { if (error?.code === "ENOENT") return false; throw error; }
 }
 async function hasPendingAccessibilityTransition(repositoryRoot, readTransitionBoundary) {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -152,6 +152,20 @@ test("an orphan transition successor fails closed", async () => {
   await assert.rejects(
     () => decideCurrentCapitalTopologyRefresh(input),
     /successor has no base transition/,
+  );
+});
+
+test("a dangling transition marker fails closed", async () => {
+  const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
+  const transitionPath = path.join(
+    input.repositoryRoot,
+    "tools/datapack/release/current-capital-accessibility-transition.json",
+  );
+  await mkdir(path.dirname(transitionPath), { recursive: true });
+  await symlink("missing-transition.json", transitionPath);
+  await assert.rejects(
+    () => decideCurrentCapitalTopologyRefresh(input),
+    /regular non-symlink file/,
   );
 });
 
