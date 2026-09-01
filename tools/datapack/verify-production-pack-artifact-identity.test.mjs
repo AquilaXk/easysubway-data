@@ -20,6 +20,7 @@ const candidateReplayAt = JSON.parse(await readFile(
 )).publishedAt;
 const env = {
   ...process.env,
+  EASYSUBWAY_DATAPACK_BUILD_SPEC_VALIDATION_ONLY: "true",
   EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey.export({ type: "pkcs8", format: "pem" }),
   EASYSUBWAY_DATAPACK_BUILD_NOW: candidateReplayAt,
 };
