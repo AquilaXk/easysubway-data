@@ -1742,6 +1742,9 @@ async function validateAndApplyNetworkEdgeProvenance(
   );
   const productionPacks = fixture.packs?.filter(({ artifactKind }) => artifactKind === "production") ?? [];
   if (productionPacks.length === 0) throw new Error("network edge evidence requires a production pack");
+  if (productionPacks.some(({ sourceInventory: packSources }) => !Array.isArray(packSources))) {
+    throw new TypeError("network edge evidence requires pack.sourceInventory");
+  }
   validateRegisteredIncheonAccessibilityFixture(
     productionPacks,
     registeredIncheonAccessibility,
