@@ -33,6 +33,7 @@ jobs:
       producer_run_id: ${{ steps.source-outputs.outputs.producer_run_id }}
       main_sha: ${{ steps.source-outputs.outputs.main_sha }}
       claim_sha: ${{ steps.source-outputs.outputs.claim_sha }}
+      builder_sha: ${{ steps.source-outputs.outputs.builder_sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -164,11 +165,64 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$(git branch --show-current)" == "main" && "$(git rev-parse HEAD)" == "${EXIT_REFRESH_MAIN_SHA}" ]] || { echo "EXIT producer is not on exact main" >&2; exit 1; }
+          retained_root="${EXIT_REFRESH_OPERATION_ROOT}/retained-facility"
+          private_builder_root="${EXIT_REFRESH_OPERATION_ROOT}/private-builder"
+          git worktree add --detach "${retained_root}" "${EXIT_REFRESH_FACILITY_HEAD_SHA}"
+          EXIT_REFRESH_RETAINED_ROOT="${retained_root}" node --input-type=module -e '
+            import { assertCurrentCapitalExitItxAuthorityFresh } from "./tools/datapack/run-current-capital-live-chain.mjs";
+            await assertCurrentCapitalExitItxAuthorityFresh({ repositoryRoot: process.env.EXIT_REFRESH_RETAINED_ROOT });
+          '
+          git worktree add --detach "${private_builder_root}" "${EXIT_REFRESH_FACILITY_HEAD_SHA}"
+          node tools/datapack/collect-capital-route-topology.mjs --download --output "${EXIT_REFRESH_OPERATION_ROOT}/capital-route-topology.json"
+          node tools/datapack/collect-incheon-station-info.mjs --download --output "${EXIT_REFRESH_OPERATION_ROOT}/incheon-transit-station-info.json"
+          station_stamp="$(node --input-type=module -e 'import { readFile, rename } from "node:fs/promises"; const root = process.env.EXIT_REFRESH_OPERATION_ROOT; const file = root + "/incheon-transit-station-info.json"; const value = JSON.parse(await readFile(file)); if (value.sourceId !== "incheon-transit-station-info" || new Date(value.capturedAt).toISOString() !== value.capturedAt) throw new Error("Incheon topology collector identity mismatch"); const stamp = value.capturedAt.slice(0, 10).replaceAll("-", ""); await rename(file, root + "/incheon-transit-station-info-" + stamp + ".json"); process.stdout.write(stamp);')"
+          mkdir -p "${EXIT_REFRESH_OPERATION_ROOT}/timetables"
+          node tools/datapack/collect-incheon-timetable.mjs --download --topology-snapshot "${EXIT_REFRESH_OPERATION_ROOT}/incheon-transit-station-info-${station_stamp}.json" --output-dir "${EXIT_REFRESH_OPERATION_ROOT}/timetables"
+          # shellcheck disable=SC2016
+          EXIT_REFRESH_PRIVATE_BUILDER_ROOT="${private_builder_root}" EXIT_REFRESH_STATION_STAMP="${station_stamp}" node --input-type=module -e '
+            import { readFile, readdir, writeFile } from "node:fs/promises";
+            import path from "node:path";
+            const operation = process.env.EXIT_REFRESH_OPERATION_ROOT; const builder = process.env.EXIT_REFRESH_PRIVATE_BUILDER_ROOT;
+            const capital = JSON.parse(await readFile(operation + "/capital-route-topology.json")); const station = JSON.parse(await readFile(operation + "/incheon-transit-station-info-" + process.env.EXIT_REFRESH_STATION_STAMP + ".json"));
+            const names = await readdir(operation + "/timetables"); if (names.length !== 2) throw new Error("Incheon timetable output count mismatch");
+            const parsed = await Promise.all(names.map(async (name) => [name, JSON.parse(await readFile(operation + "/timetables/" + name))]));
+            const line1 = parsed.find(([, value]) => value.sourceId === "incheon-line1-train-timetable"); const line2 = parsed.find(([, value]) => value.sourceId === "incheon-line2-train-timetable");
+            const utc = (value) => { if (new Date(value).toISOString() !== value) throw new Error("topology capture timestamp mismatch"); return value.slice(0, 10).replaceAll("-", ""); };
+            const seoul = (value) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(value)).filter(({ type }) => type !== "literal").map(({ value: part }) => part).join("");
+            if (capital.sourceId !== "capital-route-topology" || station.sourceId !== "incheon-transit-station-info" || !line1 || !line2) throw new Error("topology capture identity mismatch");
+            const rows = [["capitalTopologyPath", "tools/datapack/sources/capital-route-topology-" + utc(capital.capturedAt) + ".json", operation + "/capital-route-topology.json"], ["incheonTopologyPath", "tools/datapack/sources/incheon-transit-station-info-" + utc(station.capturedAt) + ".json", operation + "/incheon-transit-station-info-" + process.env.EXIT_REFRESH_STATION_STAMP + ".json"], ["incheonLine1TimetablePath", "tools/datapack/sources/incheon-line1-train-timetable-" + seoul(line1[1].capturedAt) + ".json", operation + "/timetables/" + line1[0]], ["incheonLine2TimetablePath", "tools/datapack/sources/incheon-line2-train-timetable-" + seoul(line2[1].capturedAt) + ".json", operation + "/timetables/" + line2[0]]];
+            for (const [, relative, source] of rows) await writeFile(path.join(builder, relative), await readFile(source), { flag: "wx", mode: 0o600 });
+            const inventory = JSON.parse(await readFile(builder + "/tools/datapack/source-inventory.json")); const incheon = inventory.sources.find(({ id }) => id === "incheon-transit-accessibility"); const candidate = JSON.parse(await readFile(builder + "/tools/datapack/release/candidate-build-spec.json"));
+            const accessibilityId = incheon?.registrationEvidence?.snapshotId; if (!/^incheon-transit-accessibility-[0-9]{8}T[0-9]{9}Z$/u.test(accessibilityId ?? "") || typeof candidate.itxTopologyEvidencePath !== "string") throw new Error("topology dependency identity mismatch");
+            const currentItxAdmission = candidate.networkEdgeEvidence?.itxCurrentTopologyAdmission?.path ?? null;
+            await writeFile(operation + "/topology-build.json", JSON.stringify({ buildNow: new Date().toISOString(), capitalTopologyPath: rows[0][1], incheonTopologyPath: rows[1][1], incheonLine1TimetablePath: rows[2][1], incheonLine2TimetablePath: rows[3][1], incheonAccessibilityPath: "tools/datapack/sources/" + accessibilityId + ".json", itxCurrentAdmissionPath: currentItxAdmission, itxTopologyEvidencePath: candidate.itxTopologyEvidencePath }) + "\n", { flag: "wx", mode: 0o600 });
+          '
+          git -C "${private_builder_root}" add tools/datapack/sources
+          mapfile -t builder_paths < <(git -C "${private_builder_root}" diff --cached --name-only)
+          [[ "${#builder_paths[@]}" == "4" ]] || { echo "private builder input count mismatch" >&2; exit 1; }
+          git -C "${private_builder_root}" config user.name "github-actions[bot]"
+          git -C "${private_builder_root}" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "${private_builder_root}" commit -m "Stage current topology inputs"
+          builder_sha="$(git -C "${private_builder_root}" rev-parse HEAD)"
+          [[ "$(git -C "${private_builder_root}" rev-parse HEAD^)" == "${EXIT_REFRESH_FACILITY_HEAD_SHA}" ]] || { echo "private builder parent mismatch" >&2; exit 1; }
+          private_ref="refs/easysubway-private/topology-${GITHUB_RUN_ID}"
+          git update-ref "${private_ref}" "${builder_sha}"
+          git bundle create "${EXIT_REFRESH_OPERATION_ROOT}/private-builder.bundle" "${private_ref}" "^${EXIT_REFRESH_FACILITY_HEAD_SHA}"
+          git update-ref -d "${private_ref}"
+          export EXIT_REFRESH_RETAINED_ROOT="${retained_root}"
+          export EXIT_REFRESH_PRIVATE_BUILDER_ROOT="${private_builder_root}"
+          export EXIT_REFRESH_BUILDER_SHA="${builder_sha}"
+          printf 'EXIT_REFRESH_RETAINED_ROOT=%s\nEXIT_REFRESH_PRIVATE_BUILDER_ROOT=%s\nEXIT_REFRESH_BUILDER_SHA=%s\n' "${retained_root}" "${private_builder_root}" "${builder_sha}" >> "${GITHUB_ENV}"
           # shellcheck disable=SC2016
           node --input-type=module -e '
+            import { readFile } from "node:fs/promises";
             import { runCurrentCapitalExitOnlyProducer } from "./tools/datapack/run-current-capital-live-chain.mjs";
             await runCurrentCapitalExitOnlyProducer({
               repositoryRoot: process.env.GITHUB_WORKSPACE,
+              retainedRoot: process.env.EXIT_REFRESH_RETAINED_ROOT,
+              privateBuilderRoot: process.env.EXIT_REFRESH_PRIVATE_BUILDER_ROOT,
+              builderGitSha: process.env.EXIT_REFRESH_BUILDER_SHA,
+              topologyBuild: JSON.parse(await readFile(`${process.env.EXIT_REFRESH_OPERATION_ROOT}/topology-build.json`)),
               runnerTemp: process.env.RUNNER_TEMP,
               repository: process.env.GITHUB_REPOSITORY,
               repositorySha: process.env.EXIT_REFRESH_MAIN_SHA,
@@ -177,6 +231,7 @@ jobs:
               facilityPullRequest: { repository: process.env.GITHUB_REPOSITORY, branch: process.env.EXIT_REFRESH_FACILITY_BRANCH, headSha: process.env.EXIT_REFRESH_FACILITY_HEAD_SHA },
             });
           '
+          cp "${EXIT_REFRESH_OPERATION_ROOT}/private-builder.bundle" "${EXIT_REFRESH_OPERATION_ROOT}/source-handoff/private-builder.bundle"
 
       - name: Upload immutable EXIT source handoff
         if: ${{ always() && (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') }}
@@ -187,8 +242,28 @@ jobs:
             ${{ runner.temp }}/kric-exit-full-capital-refresh/${{ github.run_id }}/source-handoff/current-kric-exit-provider-oci-plan.json
             ${{ runner.temp }}/kric-exit-full-capital-refresh/${{ github.run_id }}/source-handoff/current-kric-exit-provider-oci-receipt.json
             ${{ runner.temp }}/kric-exit-full-capital-refresh/${{ github.run_id }}/source-handoff/current-capital-exit-provider-source-handoff.json
+            ${{ runner.temp }}/kric-exit-full-capital-refresh/${{ github.run_id }}/source-handoff/current-capital-topology-terminal-handoff.json
+            ${{ runner.temp }}/kric-exit-full-capital-refresh/${{ github.run_id }}/source-handoff/private-builder.bundle
           if-no-files-found: error
           retention-days: 14
+
+      - name: Remove private producer worktrees
+        if: ${{ always() && (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') }}
+        run: |
+          set -euo pipefail
+          for entry in "retained-facility:${EXIT_REFRESH_FACILITY_HEAD_SHA}" "private-builder:${EXIT_REFRESH_BUILDER_SHA:-}"; do
+            directory="${EXIT_REFRESH_OPERATION_ROOT}/${entry%%:*}"
+            expected="${entry#*:}"
+            if [[ -e "${directory}" ]]; then
+              actual="$(git -C "${directory}" rev-parse HEAD)"
+              if [[ -z "${expected}" ]]; then
+                [[ "${entry%%:*}" == "private-builder" && "${actual}" == "${EXIT_REFRESH_FACILITY_HEAD_SHA}" ]] || { echo "private producer worktree identity mismatch" >&2; exit 1; }
+              else
+                [[ "${actual}" == "${expected}" ]] || { echo "private producer worktree identity mismatch" >&2; exit 1; }
+              fi
+              git worktree remove --force "${directory}"
+            fi
+          done
 
       - name: Recover immutable EXIT source handoff
         if: ${{ steps.decision.outputs.state == 'RECOVER_CLAIM' }}
@@ -223,14 +298,23 @@ jobs:
             import { canonicalCurrentCapitalExitProviderSourceHandoffJson } from "./tools/datapack/current-capital-exit-provider-handoff.mjs";
             import { canonicalCurrentKricExitProviderOciPlanJson } from "./tools/datapack/build-current-kric-exit-provider-oci-plan.mjs";
             import { canonicalCurrentKricExitProviderOciReceiptJson } from "./tools/datapack/build-current-kric-exit-provider-oci-receipt.mjs";
+            import { canonicalJson } from "./tools/datapack/lib/manifest-validation.mjs";
             const root = process.env.EXIT_REFRESH_SOURCE_HANDOFF;
-            const names = ["current-kric-exit-provider-oci-plan.json", "current-kric-exit-provider-oci-receipt.json", "current-capital-exit-provider-source-handoff.json"];
+            const names = ["current-kric-exit-provider-oci-plan.json", "current-kric-exit-provider-oci-receipt.json", "current-capital-exit-provider-source-handoff.json", "current-capital-topology-terminal-handoff.json", "private-builder.bundle"];
             const actual = await readdir(root); if (actual.length !== names.length || names.some((name) => !actual.includes(name))) throw new Error("producer artifact file set is invalid");
             for (const name of names) { const stat = await lstat(path.join(root, name)); if (!stat.isFile() || stat.isSymbolicLink()) throw new Error("producer artifact path is invalid"); }
-            const [planBytes, receiptBytes, handoffBytes] = await Promise.all(names.map((name) => readFile(path.join(root, name))));
+            const [planBytes, receiptBytes, handoffBytes, topologyBytes] = await Promise.all(names.slice(0, 4).map((name) => readFile(path.join(root, name))));
             const value = JSON.parse(handoffBytes); const plan = JSON.parse(planBytes); const receipt = JSON.parse(receiptBytes);
-            if (!handoffBytes.equals(Buffer.from(`${canonicalCurrentCapitalExitProviderSourceHandoffJson(value)}\n`)) || !planBytes.equals(Buffer.from(`${canonicalCurrentKricExitProviderOciPlanJson(plan)}\n`)) || !receiptBytes.equals(Buffer.from(`${canonicalCurrentKricExitProviderOciReceiptJson(receipt, { planBytes })}\n`)) || value.sourceProviderOciPlanSha256 !== createHash("sha256").update(planBytes).digest("hex") || value.sourceProviderOciReceiptSha256 !== createHash("sha256").update(receiptBytes).digest("hex") || plan.mainSha !== value.sourceMainSha || plan.operationId !== value.sourceOperationId || receipt.mainSha !== value.sourceMainSha || receipt.operationId !== value.sourceOperationId) throw new Error("producer artifact cross-digest mismatch");
+            const topology = JSON.parse(topologyBytes); const { handoffSha256, ...topologyPayload } = topology;
+            if (!handoffBytes.equals(Buffer.from(`${canonicalCurrentCapitalExitProviderSourceHandoffJson(value)}\n`)) || !planBytes.equals(Buffer.from(`${canonicalCurrentKricExitProviderOciPlanJson(plan)}\n`)) || !receiptBytes.equals(Buffer.from(`${canonicalCurrentKricExitProviderOciReceiptJson(receipt, { planBytes })}\n`)) || !topologyBytes.equals(Buffer.from(`${canonicalJson(topology)}\n`)) || handoffSha256 !== createHash("sha256").update(Buffer.from(canonicalJson(topologyPayload))).digest("hex") || topology.repository !== process.env.GITHUB_REPOSITORY || topology.sourceMainGitSha !== value.sourceMainSha || topology.operationId !== value.sourceOperationId || topology.facility?.branch !== process.env.EXIT_REFRESH_FACILITY_BRANCH || topology.facility?.headSha !== process.env.EXIT_REFRESH_FACILITY_HEAD_SHA || topology.itxProviderCalls !== 0 || value.sourceProviderOciPlanSha256 !== createHash("sha256").update(planBytes).digest("hex") || value.sourceProviderOciReceiptSha256 !== createHash("sha256").update(receiptBytes).digest("hex") || plan.mainSha !== value.sourceMainSha || plan.operationId !== value.sourceOperationId || receipt.mainSha !== value.sourceMainSha || receipt.operationId !== value.sourceOperationId) throw new Error("producer artifact cross-digest mismatch");
           '
+          git bundle verify "${EXIT_REFRESH_OPERATION_ROOT}/source-handoff/private-builder.bundle"
+          # shellcheck disable=SC2016
+          EXIT_REFRESH_SOURCE_HANDOFF="${EXIT_REFRESH_OPERATION_ROOT}/source-handoff" node --input-type=module -e '
+            import { readFile } from "node:fs/promises";
+            const topology = JSON.parse(await readFile(process.env.EXIT_REFRESH_SOURCE_HANDOFF + "/current-capital-topology-terminal-handoff.json"));
+            process.stdout.write(`EXIT_REFRESH_BUILDER_SHA=${topology.builderGitSha}\n`);
+          ' >> "${GITHUB_ENV}"
           {
             printf 'EXIT_REFRESH_MAIN_SHA=%s\n' "${producer_main_sha}"
             printf 'EXIT_REFRESH_BRANCH=%s\n' "${branch}"
@@ -251,6 +335,7 @@ jobs:
             printf 'producer_run_id=%s\n' "${EXIT_REFRESH_PRODUCER_RUN_ID}"
             printf 'main_sha=%s\n' "${EXIT_REFRESH_MAIN_SHA}"
             printf 'claim_sha=%s\n' "${EXIT_REFRESH_CLAIM_SHA}"
+            printf 'builder_sha=%s\n' "${EXIT_REFRESH_BUILDER_SHA}"
           } >> "${GITHUB_OUTPUT}"
 
       - name: Upload refresh decision
@@ -301,6 +386,7 @@ jobs:
             printf 'EXIT_REFRESH_PRODUCER_RUN_ID=%s\n' "${{ needs.source.outputs.producer_run_id }}"
             printf 'EXIT_REFRESH_MAIN_SHA=%s\n' "${{ needs.source.outputs.main_sha }}"
             printf 'EXIT_REFRESH_CLAIM_SHA=%s\n' "${{ needs.source.outputs.claim_sha }}"
+            printf 'EXIT_REFRESH_BUILDER_SHA=%s\n' "${{ needs.source.outputs.builder_sha }}"
           } >> "${GITHUB_ENV}"
 
       - name: Download immutable EXIT source handoff
@@ -321,10 +407,21 @@ jobs:
           [[ "$(git rev-parse HEAD)" == "${EXIT_REFRESH_FACILITY_HEAD_SHA}" ]] || { echo "terminal candidate head changed" >&2; exit 1; }
           [[ "$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}')" == "origin/${EXIT_REFRESH_FACILITY_BRANCH}" ]] || { echo "terminal candidate upstream mismatch" >&2; exit 1; }
           transfer_source_root="${EXIT_REFRESH_OPERATION_ROOT}/transfer-source"
+          source_main_root="${EXIT_REFRESH_OPERATION_ROOT}/source-main"
+          private_builder_root="${EXIT_REFRESH_OPERATION_ROOT}/private-builder"
           git worktree add --detach "${transfer_source_root}" "${EXIT_REFRESH_FACILITY_HEAD_SHA}"
+          git worktree add --detach "${source_main_root}" "${EXIT_REFRESH_MAIN_SHA}"
+          git bundle verify "${EXIT_REFRESH_OPERATION_ROOT}/source-handoff/private-builder.bundle"
+          mapfile -t bundled_refs < <(git bundle unbundle "${EXIT_REFRESH_OPERATION_ROOT}/source-handoff/private-builder.bundle")
+          [[ "${#bundled_refs[@]}" == "1" && "${bundled_refs[0]%%[[:space:]]*}" == "${EXIT_REFRESH_BUILDER_SHA}" ]] || { echo "private builder bundle identity mismatch" >&2; exit 1; }
+          git worktree add --detach "${private_builder_root}" "${EXIT_REFRESH_BUILDER_SHA}"
+          [[ "$(git -C "${private_builder_root}" rev-parse HEAD^)" == "${EXIT_REFRESH_FACILITY_HEAD_SHA}" ]] || { echo "private builder parent mismatch" >&2; exit 1; }
           node "${GITHUB_WORKSPACE}/tools/datapack/recover-current-live-chain-transfer-observation.mjs" \
             --repository-root "${transfer_source_root}" \
             --recovery-root "${EXIT_REFRESH_OPERATION_ROOT}/transfer"
+          export EXIT_REFRESH_SOURCE_MAIN_ROOT="${source_main_root}"
+          export EXIT_REFRESH_PRIVATE_BUILDER_ROOT="${private_builder_root}"
+          printf 'EXIT_REFRESH_SOURCE_MAIN_ROOT=%s\nEXIT_REFRESH_PRIVATE_BUILDER_ROOT=%s\n' "${source_main_root}" "${private_builder_root}" >> "${GITHUB_ENV}"
           # shellcheck disable=SC2016
           node --input-type=module -e '
             import { execFile } from "node:child_process";
@@ -333,8 +430,13 @@ jobs:
             import { runCurrentCapitalExitTerminalConsumer } from "./tools/datapack/run-current-capital-live-chain.mjs";
             const run = promisify(execFile);
             const handoff = `${process.env.EXIT_REFRESH_OPERATION_ROOT}/source-handoff`;
+            const topologyHandoffBytes = await readFile(`${handoff}/current-capital-topology-terminal-handoff.json`);
+            const topologyHandoff = JSON.parse(topologyHandoffBytes);
             const result = await runCurrentCapitalExitTerminalConsumer({
               repositoryRoot: process.env.GITHUB_WORKSPACE, runnerTemp: process.env.RUNNER_TEMP, repository: process.env.GITHUB_REPOSITORY,
+              sourceMainRoot: process.env.EXIT_REFRESH_SOURCE_MAIN_ROOT, sourceMainGitSha: process.env.EXIT_REFRESH_MAIN_SHA,
+              privateBuilderRoot: process.env.EXIT_REFRESH_PRIVATE_BUILDER_ROOT, builderGitSha: process.env.EXIT_REFRESH_BUILDER_SHA,
+              topologyBuild: topologyHandoff.topologyBuild, topologyHandoffBytes,
               candidateOperationId: `kric-exit-full-capital-terminal-${process.env.GITHUB_RUN_ID}`,
               operationNow: new Date(), sourceReceiptBytes: await readFile(`${handoff}/current-capital-exit-provider-source-handoff.json`),
               providerOciPlanBytes: await readFile(`${handoff}/current-kric-exit-provider-oci-plan.json`), providerOciReceiptBytes: await readFile(`${handoff}/current-kric-exit-provider-oci-receipt.json`),
@@ -350,41 +452,25 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # shellcheck disable=SC2016
-          staged_root="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.env.EXIT_REFRESH_OPERATION_ROOT + "/terminal-result.json", "utf8")).stagedRoot)')"
-          # shellcheck disable=SC2016
-          mapfile -t outputs < <(EXIT_REFRESH_STAGED_ROOT="${staged_root}" node --input-type=module -e '
-            import { readFile } from "node:fs/promises";
-            import { currentCapitalLiveChainOutputPaths } from "./tools/datapack/build-current-capital-live-chain-bundle.mjs";
-            const root = process.env.EXIT_REFRESH_STAGED_ROOT;
-            const [candidate, sourceInventory, sourceSnapshotLedger] = await Promise.all(["tools/datapack/release/candidate-build-spec.json", "tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json"].map(async (relative) => JSON.parse(await readFile(`${root}/${relative}`, "utf8"))));
-            process.stdout.write(currentCapitalLiveChainOutputPaths({ candidate, sourceInventory, sourceSnapshotLedger }).join("\n"));
-          ')
-          [[ "${#outputs[@]}" == "17" ]] || { echo "terminal output identity is invalid" >&2; exit 1; }
-          fan_in="tools/datapack/release/current-capital-live-chain-fan-in.json"
-          for output in "${outputs[@]}" "${fan_in}"; do
-            [[ -f "${staged_root}/${output}" && ! -L "${staged_root}/${output}" ]] || { echo "terminal output is invalid" >&2; exit 1; }
-            cp "${staged_root}/${output}" "${output}"
-            cmp -s "${staged_root}/${output}" "${output}" || { echo "terminal copy mismatch" >&2; exit 1; }
-          done
-          markers=(
-            "tools/datapack/release/current-capital-accessibility-transition.json"
-            "tools/datapack/release/current-capital-accessibility-transition-successor.json"
-          )
-          for marker in "${markers[@]}"; do [[ -f "${marker}" && ! -L "${marker}" ]] || { echo "terminal marker is invalid" >&2; exit 1; }; done
-          git add "${outputs[@]}" "${fan_in}"
-          git rm -- "${markers[@]}"
-          mapfile -t changed < <(git diff --cached --name-only --diff-filter=ACMR)
-          mapfile -t deleted < <(git diff --cached --name-only --diff-filter=D)
-          [[ "${#changed[@]}" -gt 0 && "${#deleted[@]}" == "${#markers[@]}" ]] || { echo "terminal Git delta is incomplete" >&2; exit 1; }
-          for path in "${changed[@]}"; do [[ " ${outputs[*]} ${fan_in} " == *" ${path} "* ]] || { echo "terminal changed an unsupported path" >&2; exit 1; }; done
-          for marker in "${markers[@]}"; do [[ " ${deleted[*]} " == *" ${marker} "* ]] || { echo "terminal marker deletion mismatch" >&2; exit 1; }; done
-          [[ -z "$(git diff --name-only)" && -z "$(git ls-files --others --exclude-standard)" ]] || { echo "terminal changed an unsupported path" >&2; exit 1; }
+          mapfile -t replacements < <(node -e 'const value=JSON.parse(require("fs").readFileSync(process.env.EXIT_REFRESH_OPERATION_ROOT + "/terminal-result.json")); process.stdout.write(value.replacementPaths.join("\n"))')
+          mapfile -t markers < <(node -e 'const value=JSON.parse(require("fs").readFileSync(process.env.EXIT_REFRESH_OPERATION_ROOT + "/terminal-result.json")); process.stdout.write(value.deletedMarkerPaths.join("\n"))')
+          [[ "${#replacements[@]}" -gt 0 && "${#markers[@]}" == "2" ]] || { echo "terminal result path identity mismatch" >&2; exit 1; }
+          git add -- "${replacements[@]}"
+          git add -u -- "${markers[@]}"
+          mapfile -t staged_paths < <(git diff --cached --name-only)
+          mapfile -t expected_paths < <(printf '%s\n' "${replacements[@]}" "${markers[@]}" | LC_ALL=C sort -u)
+          [[ "$(printf '%s\n' "${staged_paths[@]}")" == "$(printf '%s\n' "${expected_paths[@]}")" ]] || { echo "terminal staged path set mismatch" >&2; exit 1; }
+          [[ -z "$(git diff --name-only)" && -z "$(git ls-files --others --exclude-standard)" ]] || { echo "terminal left an unsupported worktree delta" >&2; exit 1; }
+          final_tree="$(git write-tree)"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "Refresh KRIC EXIT full-capital snapshot"
+          final_sha="$(printf '%s\n' 'Refresh KRIC EXIT full-capital snapshot' | git commit-tree "${final_tree}" -p "${EXIT_REFRESH_BUILDER_SHA}")"
+          [[ "$(git rev-parse "${final_sha}^")" == "${EXIT_REFRESH_BUILDER_SHA}" && "$(git rev-parse "${final_sha}^{tree}")" == "${final_tree}" ]] || { echo "terminal commit identity mismatch" >&2; exit 1; }
+          git update-ref "refs/heads/${EXIT_REFRESH_FACILITY_BRANCH}" "${final_sha}" "${EXIT_REFRESH_FACILITY_HEAD_SHA}"
+          [[ "$(git rev-parse HEAD)" == "${final_sha}" ]] || { echo "terminal local head update mismatch" >&2; exit 1; }
           gh auth setup-git
           git push origin "${EXIT_REFRESH_FACILITY_BRANCH}"
+          [[ "$(git ls-remote --heads origin "refs/heads/${EXIT_REFRESH_FACILITY_BRANCH}" | cut -f1)" == "${final_sha}" ]] || { echo "terminal remote head mismatch" >&2; exit 1; }
 
       - name: Retire completed durable claim
         env:
@@ -400,13 +486,16 @@ jobs:
           gh auth setup-git
           git push origin --delete "${EXIT_REFRESH_BRANCH}"
 
-      - name: Remove disposable transfer worktree
+      - name: Remove disposable terminal worktrees
         if: ${{ always() }}
         run: |
           set -euo pipefail
-          transfer_source_root="${EXIT_REFRESH_OPERATION_ROOT}/transfer-source"
-          if [[ -e "${transfer_source_root}" ]]; then
-            [[ "$(git -C "${transfer_source_root}" rev-parse HEAD)" == "${EXIT_REFRESH_FACILITY_HEAD_SHA}" ]] || { echo "disposable transfer worktree identity mismatch" >&2; exit 1; }
-            git worktree remove --force "${transfer_source_root}"
-            [[ ! -e "${transfer_source_root}" ]] || { echo "disposable transfer worktree removal failed" >&2; exit 1; }
-          fi
+          for entry in "transfer-source:${EXIT_REFRESH_FACILITY_HEAD_SHA}" "source-main:${EXIT_REFRESH_MAIN_SHA}" "private-builder:${EXIT_REFRESH_BUILDER_SHA}"; do
+            directory="${EXIT_REFRESH_OPERATION_ROOT}/${entry%%:*}"
+            expected="${entry#*:}"
+            if [[ -e "${directory}" ]]; then
+              [[ "$(git -C "${directory}" rev-parse HEAD)" == "${expected}" ]] || { echo "disposable terminal worktree identity mismatch" >&2; exit 1; }
+              git worktree remove --force "${directory}"
+              [[ ! -e "${directory}" ]] || { echo "disposable terminal worktree removal failed" >&2; exit 1; }
+            fi
+          done

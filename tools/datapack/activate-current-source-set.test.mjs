@@ -510,6 +510,49 @@ test("prepared current candidate 검증은 build를 수행하고 final release e
   assert.equal(calls[0].options.env.EASYSUBWAY_DATAPACK_BUILD_SPEC_VALIDATION_ONLY, "true");
 });
 
+test("prepared current candidate validation resolves fresh topology only from its private builder", async (t) => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "prepared-private-builder-candidate-"));
+  const privateBuilderRoot = path.join(temporaryRoot, "private-builder");
+  t.after(() => rm(temporaryRoot, { recursive: true, force: true }));
+  const capitalTopologyPath = "tools/datapack/sources/capital-route-topology-20990101.json";
+  const candidateTopologyPath = "tools/datapack/sources/capital-route-topology-20990102.json";
+  const coverageContractPath = "tools/datapack/itx-cheongchun-coverage-contract.json";
+  await Promise.all([
+    mkdir(path.join(privateBuilderRoot, path.dirname(capitalTopologyPath)), { recursive: true }),
+    mkdir(path.join(privateBuilderRoot, path.dirname(coverageContractPath)), { recursive: true }),
+  ]);
+  await Promise.all([
+    writeFile(path.join(privateBuilderRoot, capitalTopologyPath), "private baseline"),
+    writeFile(path.join(privateBuilderRoot, candidateTopologyPath), "private fresh candidate"),
+    writeFile(path.join(privateBuilderRoot, coverageContractPath), "private coverage"),
+  ]);
+  await validatePreparedCandidate({
+    temporaryRoot,
+    repositoryRoot: privateBuilderRoot,
+    buildNow: "2026-08-13T16:46:31Z",
+    spec: {
+      fixturePath: "tools/datapack/release/capital-production-canonical-pack.json",
+      itxTopologyEvidencePath: "tools/datapack/itx-cheongchun-topology-evidence-20260812165525800.json",
+      itxTopologyEvidenceSha256: "a".repeat(64),
+      networkEdgeEvidence: {
+        sourceInventory: { path: "tools/datapack/source-inventory.json" },
+        capitalTopology: { path: capitalTopologyPath },
+        capitalTopologyCandidate: { path: candidateTopologyPath },
+        capitalTopologyReverification: { path: "tools/datapack/release/capital-topology-reverification-20990102.json" },
+        itxCoverageContract: { path: coverageContractPath },
+      },
+    },
+    async runNodeImpl(script, args, options) {
+      const staged = JSON.parse(await readFile(args[1], "utf8"));
+      assert.equal(script, "tools/datapack/build-datapack.mjs");
+      assert.equal(options.repositoryRoot, privateBuilderRoot);
+      assert.equal(staged.networkEdgeEvidence.capitalTopology.path, path.join(privateBuilderRoot, capitalTopologyPath));
+      assert.equal(staged.networkEdgeEvidence.capitalTopologyCandidate.path, path.join(privateBuilderRoot, candidateTopologyPath));
+      assert.equal(staged.networkEdgeEvidence.itxCoverageContract.path, path.join(privateBuilderRoot, coverageContractPath));
+    },
+  });
+});
+
 test("activation loader는 historical binding과 서울 공식 current topology position bytes를 함께 로드한다", async (t) => {
   const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "current-position-snapshots-"));
   t.after(() => rm(repositoryRoot, { recursive: true, force: true }));
