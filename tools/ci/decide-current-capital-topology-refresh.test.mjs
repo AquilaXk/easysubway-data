@@ -112,6 +112,49 @@ async function setCandidateItxAdmission(input, freshUntil) {
   await writeFile(input.candidatePath, JSON.stringify(candidate));
 }
 
+async function writePendingTransitionMarker(input) {
+  const transitionPath = path.join(
+    input.repositoryRoot,
+    "tools/datapack/release/current-capital-accessibility-transition.json",
+  );
+  await mkdir(path.dirname(transitionPath), { recursive: true });
+  await writeFile(transitionPath, "{}\n");
+}
+
+test("a valid pending fan-in preempts due, claim, and provider inputs", async () => {
+  const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
+  await writePendingTransitionMarker(input);
+  assert.deepEqual(await decideCurrentCapitalTopologyRefresh({
+    ...input,
+    inventoryPath: path.join(input.repositoryRoot, "must-not-be-read.json"),
+    readTransitionBoundary: async () => ({ state: "PENDING_FULL_FAN_IN" }),
+  }), { state: "PENDING_FULL_FAN_IN" });
+});
+
+test("an invalid pending fan-in fails before due and provider inputs", async () => {
+  const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
+  await writePendingTransitionMarker(input);
+  await assert.rejects(() => decideCurrentCapitalTopologyRefresh({
+    ...input,
+    inventoryPath: path.join(input.repositoryRoot, "must-not-be-read.json"),
+    readTransitionBoundary: async () => { throw new Error("transition candidate binding mismatch"); },
+  }), /transition candidate binding mismatch/);
+});
+
+test("an orphan transition successor fails closed", async () => {
+  const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
+  const successorPath = path.join(
+    input.repositoryRoot,
+    "tools/datapack/release/current-capital-accessibility-transition-successor.json",
+  );
+  await mkdir(path.dirname(successorPath), { recursive: true });
+  await writeFile(successorPath, "{}\n");
+  await assert.rejects(
+    () => decideCurrentCapitalTopologyRefresh(input),
+    /successor has no base transition/,
+  );
+});
+
 test("earliest canonical current topology expiry determines NOT_DUE, DUE, and EXPIRED", async () => {
   const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
   for (const [now, state] of [["2026-08-30T05:59:59.999Z", "NOT_DUE"], ["2026-08-30T06:00:00.000Z", "DUE"], ["2026-08-30T12:00:00.000Z", "EXPIRED"]]) {
