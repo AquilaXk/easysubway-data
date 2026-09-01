@@ -53,6 +53,7 @@ function aggregateOperation(overrides = {}) {
     method: "GET",
     auth: { placement: "none" },
     retryPolicy: { maxRetries: 0 },
+    requestTimeoutMs: 30_000,
     responseEnvelope: "capital-route-topology-snapshot",
     runner: {
       command: "node tools/datapack/collect-capital-route-topology.mjs",
@@ -123,11 +124,16 @@ test("aggregate source-set operation은 fake endpoint 없이 검증·검색된�
   );
   assert.match(operationHumanSummary(summary), /^source count: 24$/m);
   assert.match(operationHumanSummary(summary), /^retry max: 0$/m);
+  assert.match(operationHumanSummary(summary), /^request timeout ms: 30000$/m);
 
   for (const invalid of [
     { ...source, requestUrl: "https://www.data.go.kr/" },
     { ...source, operation: aggregateOperation({ method: "POST" }) },
     { ...source, operation: aggregateOperation({ retryPolicy: { maxRetries: 1 } }) },
+    { ...source, operation: aggregateOperation({ requestTimeoutMs: undefined }) },
+    { ...source, operation: aggregateOperation({ requestTimeoutMs: 29_999 }) },
+    { ...source, operation: aggregateOperation({ requestTimeoutMs: "30000" }) },
+    { ...source, operation: aggregateOperation({ requestTimeoutMs: 30_000.5 }) },
     { ...source, operation: aggregateOperation({ sourceDefinition: {
       ...aggregateOperation().sourceDefinition,
       sourceCount: 0,
