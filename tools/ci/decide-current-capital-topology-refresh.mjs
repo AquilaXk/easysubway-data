@@ -90,6 +90,35 @@ async function currentItxFreshness(candidate, repositoryRoot) {
 }
 function ownedPrs(value, repository) { if (!Array.isArray(value) || !/^[^/\s]+\/[^/\s]+$/u.test(repository ?? "")) throw new Error("pull requests are invalid"); return value.filter((pr) => { object(pr, "pull request"); if (!BRANCH.test(pr.headRefName ?? "")) return false; if (pr.baseRefName !== "main" || pr.isCrossRepository !== false || pr.headRepository?.nameWithOwner !== repository || !["OPEN", "CLOSED", "MERGED"].includes(pr.state) || typeof pr.isDraft !== "boolean") throw new Error("current topology refresh pull request is invalid"); return true; }); }
 function claimEvidence(value, currentMainSha) { if (!Array.isArray(value) || !SHA.test(currentMainSha ?? "")) throw new Error("current topology refresh claim evidence is invalid"); const claims = value.map((claim) => { object(claim, "current topology refresh claim"); const { ref, headSha, mergeBaseSha, commitCount, subjects } = claim; if (typeof ref !== "string" || !ref.startsWith("refs/heads/") || !BRANCH.test(ref.slice("refs/heads/".length)) || !SHA.test(headSha ?? "") || !SHA.test(mergeBaseSha ?? "") || !Number.isInteger(commitCount) || commitCount < 0 || !Array.isArray(subjects) || subjects.some((subject) => typeof subject !== "string")) throw new Error("current topology refresh claim is invalid"); return { branch: ref.slice("refs/heads/".length), ref, headSha, mergeBaseSha, commitCount, subjects }; }); if (new Set(claims.map(({ ref }) => ref)).size !== claims.length) throw new Error("duplicate current topology refresh claims exist"); return claims.map((claim) => ({ ...claim, current: claim.mergeBaseSha === currentMainSha })); }
+function expectedClaimSubjects(claim) {
+  if (!claim.current) return null;
+  if (claim.commitCount === 1) return SUBJECTS.slice(0, 1);
+  if (claim.commitCount === 3) return SUBJECTS;
+  throw new Error("current-main topology refresh claim is incomplete");
+}
+function validateClaimOwner(claim, prs) {
+  const associated = prs.filter(({ headRefName }) => headRefName === claim.branch);
+  if (associated.length > 1) throw new Error("duplicate current topology refresh owners exist");
+  if (associated[0]?.state === "CLOSED") throw new Error("closed current topology refresh claim requires manual resolution");
+  const expected = expectedClaimSubjects(claim);
+  if (expected && (claim.subjects.length !== expected.length
+    || claim.subjects.some((subject, index) => subject !== expected[index]))) {
+    throw new Error("current-main topology refresh claim is incomplete");
+  }
+}
+function openTopologyRefreshPrs(prs, claims) {
+  if (new Set(prs.map(({ headRefName }) => headRefName)).size !== prs.length) throw new Error("duplicate current topology refresh owners exist");
+  const open = prs.filter(({ state }) => state === "OPEN");
+  if (open.length > 1) throw new Error("duplicate current topology refresh owners exist");
+  for (const claim of claims) validateClaimOwner(claim, prs);
+  return open;
+}
+function availableTopologyRefreshClaims(prs, claims) {
+  const available = claims.filter((claim) => claim.current
+    && !prs.some(({ headRefName }) => headRefName === claim.branch));
+  if (available.length > 1) throw new Error("duplicate current topology refresh claims exist");
+  return available;
+}
 
 export function currentCapitalTopologyPreflight({ now = new Date(), jobWindowMinutes = 45, existingPaths = [], itxRefreshRequired = true } = {}) { const start = now instanceof Date ? now.getTime() : NaN; if (!Number.isFinite(start) || !Number.isInteger(jobWindowMinutes) || jobWindowMinutes < 1 || !Array.isArray(existingPaths) || existingPaths.some((item) => typeof item !== "string") || typeof itxRefreshRequired !== "boolean") throw new Error("current topology preflight is invalid"); const dates = new Set(); for (let point = start; point <= start + jobWindowMinutes * 60_000; point += 60_000) { const date = new Date(point); dates.add(date.toISOString().slice(0, 10).replaceAll("-", "")); dates.add(new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date).filter(({ type }) => type !== "literal").map(({ value }) => value).join("")); } const candidates = [...dates].flatMap((stamp) => [`tools/datapack/sources/capital-route-topology-${stamp}.json`, `tools/datapack/sources/incheon-transit-station-info-${stamp}.json`, `tools/datapack/sources/incheon-line1-train-timetable-${stamp}.json`, `tools/datapack/sources/incheon-line2-train-timetable-${stamp}.json`, ...(itxRefreshRequired ? [`tools/datapack/itx-current-network-edge-admission-${stamp}.json`] : []), `tools/datapack/release/capital-topology-reverification-${stamp}.json`]); const conflicts = candidates.filter((candidate) => existingPaths.includes(candidate)); return { state: conflicts.length ? "WAIT_IMMUTABLE_IDENTITY" : "CLEAR", conflicts }; }
 
@@ -108,23 +137,9 @@ export async function decideCurrentCapitalTopologyRefresh({ inventoryPath, candi
   const component = { alertBeforePackExpiry, itxFreshUntil: itx.freshUntil, itxRefreshRequired: current >= itx.reusableExpiry - threshold };
   const prs = ownedPrs(json(prsBytes, "pull requests"), repository);
   const claims = claimEvidence(json(claimsBytes, "current topology refresh claims"), currentMainSha);
-  if (new Set(prs.map(({ headRefName }) => headRefName)).size !== prs.length) throw new Error("duplicate current topology refresh owners exist");
-  const open = prs.filter(({ state }) => state === "OPEN");
-  if (open.length > 1) throw new Error("duplicate current topology refresh owners exist");
-  for (const claim of claims) {
-    const associated = prs.filter(({ headRefName }) => headRefName === claim.branch);
-    if (associated.length > 1) throw new Error("duplicate current topology refresh owners exist");
-    if (associated[0]?.state === "CLOSED") throw new Error("closed current topology refresh claim requires manual resolution");
-    if (claim.current) {
-      const expected = claim.commitCount === 1 ? SUBJECTS.slice(0, 1) : claim.commitCount === 3 ? SUBJECTS : null;
-      if (!expected || claim.subjects.length !== expected.length || claim.subjects.some((subject, index) => subject !== expected[index])) {
-        throw new Error("current-main topology refresh claim is incomplete");
-      }
-    }
-  }
+  const open = openTopologyRefreshPrs(prs, claims);
   if (open.length === 1) return { state: "OPEN_PR", ...component };
-  const available = claims.filter((claim) => claim.current && !prs.some(({ headRefName }) => headRefName === claim.branch));
-  if (available.length > 1) throw new Error("duplicate current topology refresh claims exist");
+  const available = availableTopologyRefreshClaims(prs, claims);
   if (available.length === 1) {
     return { state: available[0].commitCount === 1 ? "REUSE_CLAIM" : "RECOVER_CLAIM", ...component, branch: available[0].branch };
   }
