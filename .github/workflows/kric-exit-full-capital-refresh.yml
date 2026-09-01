@@ -84,7 +84,7 @@ jobs:
               const [sha, branch, parentSha, commitCount, subject] = line.split("\\t");
               return { sha, branch, parentSha, commitCount: Number(commitCount), subject };
             });
-            await writeFile(outputPath, `${JSON.stringify(rows)}\\n`, { flag: "wx" });
+            await writeFile(outputPath, JSON.stringify(rows) + "\\n", { flag: "wx" });
           ' "${claim_rows}" "${claim_evidence}"
           node tools/ci/decide-current-kric-exit-full-capital-refresh.mjs \
             --inventory tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json \
