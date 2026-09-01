@@ -5,11 +5,6 @@ import path from "node:path";
 const SOURCE_ID = "kric-station-convenience-standard";
 const AUTOMATION_BRANCH = /^automation\/629-kric-facility-refresh-[0-9]+$/;
 const CLAIM_REF = /^([0-9a-f]{40})\trefs\/heads\/(automation\/629-kric-facility-refresh-[0-9]+)$/;
-const APPROVED_CLOSED_CLAIM = Object.freeze({
-  number: 644,
-  branch: "automation/629-kric-facility-refresh-33374059575",
-  sha: "4a75f913e06c7eded7112ef06017f95689626dff",
-});
 
 function parseJson(bytes, label) {
   try { return JSON.parse(bytes); }
@@ -100,17 +95,7 @@ export async function decideCurrentKricFacilityRefresh({ inventoryPath, policyPa
     throw new Error("KRIC refresh claims are ambiguous");
   }
   if (closed.length === 1) {
-    if (closed[0].pullRequestNumber !== APPROVED_CLOSED_CLAIM.number
-      || closed[0].branch !== APPROVED_CLOSED_CLAIM.branch
-      || closed[0].sha !== APPROVED_CLOSED_CLAIM.sha) {
-      throw new Error("closed KRIC refresh claim is not approved for retirement");
-    }
-    return {
-      state: "RETIRE_CLOSED_CLAIM",
-      alertBeforePackExpiry,
-      branch: closed[0].branch,
-      claimSha: closed[0].sha,
-    };
+    throw new Error("closed KRIC refresh claim requires manual resolution");
   }
   if (recoverable.length === 1) return { state: "RECOVER_CLAIM", alertBeforePackExpiry, branch: recoverable[0].branch };
   if (currentTime >= freshUntil) return { state: "EXPIRED", alertBeforePackExpiry };
@@ -122,7 +107,7 @@ export async function runCurrentKricFacilityRefreshDecision({ inventoryPath, pol
   const result = await decideCurrentKricFacilityRefresh({ inventoryPath, policyPath, prsPath, claimsPath, repository, now });
   await Promise.all([
     writeFile(path.resolve(outputPath), `${JSON.stringify(result, null, 2)}\n`, { flag: "wx" }),
-    writeFile(path.resolve(githubOutputPath), `state=${result.state}\nbranch=${result.branch ?? ""}\nclaim_sha=${result.claimSha ?? ""}\n`, { flag: "a" }),
+    writeFile(path.resolve(githubOutputPath), `state=${result.state}\nbranch=${result.branch ?? ""}\n`, { flag: "a" }),
   ]);
   return result;
 }
