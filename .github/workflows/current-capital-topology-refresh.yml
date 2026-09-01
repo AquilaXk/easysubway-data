@@ -60,7 +60,7 @@ jobs:
           node tools/ci/decide-current-capital-topology-refresh.mjs --inventory tools/datapack/source-inventory.json --candidate tools/datapack/release/candidate-build-spec.json --policy release/product-gates/datapack-freshness-sla.json --prs "${state_root}/prs.json" --claims "${state_root}/claims.json" --repository "${GITHUB_REPOSITORY}" --current-main-sha "${main_sha}" --output "${TOPOLOGY_DECISION}" --github-output "${GITHUB_OUTPUT}"
       - name: Preflight immutable current topology identities
         id: preflight
-        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
+        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM' }}
         run: |
           set -euo pipefail
           git ls-tree -r --name-only HEAD > "${TOPOLOGY_OPERATION_ROOT}/existing-paths.txt"
@@ -128,9 +128,26 @@ jobs:
           git switch --detach "${main_sha}"
           printf 'TOPOLOGY_BRANCH=%s\n' "${branch}" >> "${GITHUB_ENV}"
           printf 'TOPOLOGY_MAIN_SHA=%s\n' "${main_sha}" >> "${GITHUB_ENV}"
+      - name: Reuse an exact empty claim after provider failure
+        if: ${{ steps.decision.outputs.state == 'REUSE_CLAIM' && steps.preflight.outputs.state == 'CLEAR' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch="${{ steps.decision.outputs.branch }}"
+          main_sha="$(git rev-parse HEAD)"
+          git fetch --no-tags origin "refs/heads/${branch}:refs/remotes/origin/${branch}"
+          [[ "$(git rev-list --count HEAD.."origin/${branch}")" == "1" ]] || { echo "reusable topology claim must have exactly one commit" >&2; exit 1; }
+          [[ "$(git rev-parse "origin/${branch}^")" == "$(git rev-parse HEAD)" ]] || { echo "reusable topology claim is not based on current main" >&2; exit 1; }
+          [[ "$(git log -1 --format=%s "origin/${branch}")" == "Claim current topology refresh" ]] || { echo "reusable topology claim subject is invalid" >&2; exit 1; }
+          git switch -c "${branch}" --track "origin/${branch}"
+          gh auth setup-git
+          git switch --detach "${main_sha}"
+          printf 'TOPOLOGY_BRANCH=%s\n' "${branch}" >> "${GITHUB_ENV}"
+          printf 'TOPOLOGY_MAIN_SHA=%s\n' "${main_sha}" >> "${GITHUB_ENV}"
       - name: Recheck immutable identities after claim
         id: claimed-preflight
-        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.preflight.outputs.state == 'CLEAR' }}
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.preflight.outputs.state == 'CLEAR' }}
         run: |
           set -euo pipefail
           git fetch --no-tags origin main
@@ -141,7 +158,7 @@ jobs:
           PATHS: ${{ runner.temp }}/current-capital-topology-refresh/${{ github.run_id }}/existing-paths.txt
           ITX_REFRESH_REQUIRED: ${{ steps.decision.outputs.itx_refresh_required }}
       - name: Collect each official current topology input once
-        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
         run: |
           set -euo pipefail
           [[ "$(git rev-parse HEAD)" == "${TOPOLOGY_MAIN_SHA}" ]] || { echo "topology collector is not running from its claimed main" >&2; exit 1; }
@@ -153,7 +170,7 @@ jobs:
           node tools/datapack/collect-incheon-timetable.mjs --download --topology-snapshot "${TOPOLOGY_OPERATION_ROOT}/incheon-transit-station-info-${station_stamp}.json" --output-dir "${TOPOLOGY_OPERATION_ROOT}/timetables"
 
       - name: Prepare current ITX collection
-        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.decision.outputs.itx_refresh_required == 'true' && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.decision.outputs.itx_refresh_required == 'true' && steps.claimed-preflight.outputs.state == 'CLEAR' }}
         env:
           DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
@@ -164,7 +181,7 @@ jobs:
           node tools/datapack/emit-station-catalog-pack.mjs --output "${TOPOLOGY_OPERATION_ROOT}/station-catalog-pack" --catalog-pack-id "itx-current-station-catalog-v1"
           node tools/ci/guard-itx-current-collection-budget.mjs --output "${TOPOLOGY_OPERATION_ROOT}/freshness.json"
       - name: Collect current ITX timetable once
-        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.decision.outputs.itx_refresh_required == 'true' && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.decision.outputs.itx_refresh_required == 'true' && steps.claimed-preflight.outputs.state == 'CLEAR' }}
         env:
           DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
         run: |
@@ -179,7 +196,7 @@ jobs:
           if [[ "${collector_status}" == "1" ]]; then collection_input="${TOPOLOGY_OPERATION_ROOT}/itx-result.json"; fi
           node tools/datapack/build-itx-current-topology-admission.mjs --collection "${collection_input}" --coverage-contract tools/datapack/itx-cheongchun-coverage-contract.json --output "${TOPOLOGY_OPERATION_ROOT}/itx-current-admission.json"
       - name: Derive immutable input identities from collector output
-        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
         run: |
           set -euo pipefail
           node --input-type=module -e '
@@ -207,7 +224,7 @@ jobs:
             console.log("TOPOLOGY_BUILD_NOW=" + new Date().toISOString().replace(/\.\d{3}Z$/u, ".000Z"));
           ' >> "${GITHUB_ENV}"
       - name: Derive current ITX admission identity
-        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.decision.outputs.itx_refresh_required == 'true' && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.decision.outputs.itx_refresh_required == 'true' && steps.claimed-preflight.outputs.state == 'CLEAR' }}
         run: |
           set -euo pipefail
           node --input-type=module -e '
@@ -218,7 +235,7 @@ jobs:
             console.log("TOPOLOGY_ITX_ADMISSION_PATH_SOURCE=" + process.env.TOPOLOGY_OPERATION_ROOT + "/itx-current-admission.json");
           ' >> "${GITHUB_ENV}"
       - name: Commit exactly four or five immutable current topology inputs
-        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
         run: |
           set -euo pipefail
           git switch "${TOPOLOGY_BRANCH}"
@@ -240,7 +257,7 @@ jobs:
           git commit -m "Register current topology inputs"
           printf 'TOPOLOGY_BUILDER_SHA=%s\n' "$(git rev-parse HEAD)" >> "${GITHUB_ENV}"
       - name: Derive current activation dependencies
-        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
         run: |
           set -euo pipefail
           node --input-type=module -e '
@@ -252,12 +269,12 @@ jobs:
             console.log("TOPOLOGY_ITX_EVIDENCE_PATH=" + spec.itxTopologyEvidencePath);
           ' >> "${GITHUB_ENV}"
       - name: Validate current activation dependencies
-        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
         run: |
           set -euo pipefail
           [[ -f "${TOPOLOGY_INCHEON_ACCESSIBILITY_PATH}" && -f "${TOPOLOGY_ITX_EVIDENCE_PATH}" && ! -e "${TOPOLOGY_REVERIFICATION_PATH}" ]] || { echo "topology activation dependency or target is invalid" >&2; exit 1; }
       - name: Activate current topology inputs exactly once
-        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -273,14 +290,14 @@ jobs:
           git commit -m "Activate current topology inputs"
           git push origin "${TOPOLOGY_BRANCH}"
       - name: Verify current topology activation exactly once
-        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
         run: |
           set -euo pipefail
           itx_args=()
           if [[ "${{ steps.decision.outputs.itx_refresh_required }}" == "true" ]]; then itx_args=(--itx-current-admission "${TOPOLOGY_ITX_ADMISSION_PATH}"); fi
           node tools/datapack/activate-current-source-set.mjs --topology-only --check --capital-topology "${TOPOLOGY_CAPITAL_PATH}" --incheon-topology "${TOPOLOGY_INCHEON_PATH}" --incheon-accessibility "${TOPOLOGY_INCHEON_ACCESSIBILITY_PATH}" --incheon-line1-timetable "${TOPOLOGY_LINE1_PATH}" --incheon-line2-timetable "${TOPOLOGY_LINE2_PATH}" --itx-topology-evidence "${TOPOLOGY_ITX_EVIDENCE_PATH}" "${itx_args[@]}" --builder-git-sha "${TOPOLOGY_BUILDER_SHA}" --build-now "${TOPOLOGY_BUILD_NOW}"
       - name: Create draft pull request
-        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
