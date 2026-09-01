@@ -81,7 +81,9 @@ jobs:
             import { readFile, writeFile } from "node:fs/promises";
             const [rowsPath, outputPath] = process.argv.slice(1);
             const rows = (await readFile(rowsPath, "utf8")).split("\\n").filter(Boolean).map((line) => {
-              const [sha, branch, parentSha, commitCount, subject] = line.split("\\t");
+              const fields = line.split("\\t");
+              if (fields.length !== 5) throw new Error("invalid claim evidence field count");
+              const [sha, branch, parentSha, commitCount, subject] = fields;
               return { sha, branch, parentSha, commitCount: Number(commitCount), subject };
             });
             await writeFile(outputPath, JSON.stringify(rows) + "\\n", { flag: "wx" });
