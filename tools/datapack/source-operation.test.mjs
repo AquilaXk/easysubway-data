@@ -475,6 +475,32 @@ test("show는 operation이 없어도 request URL credential을 출력 전에 거
   }
 });
 
+test("show는 malformed operation credential을 validation 오류보다 먼저 거부한다", () => {
+  for (const operation of [
+    "https://provider.example/items?serviceKey=actual-secret",
+    [{ serviceKey: "actual-secret" }],
+  ]) {
+    assert.throws(
+      () => operationSummary(candidate("a", { operation })),
+      /credential values are forbidden/,
+    );
+  }
+});
+
+test("show는 aggregate candidate sample credential을 출력 전에 거부한다", () => {
+  assert.throws(
+    () => operationSummary({
+      id: "capital-route-topology",
+      admissionStatus: "preflight_only",
+      evidence: {
+        sampleUrl: "https://provider.example/items?serviceKey=actual-secret",
+      },
+      operation: aggregateOperation(),
+    }),
+    /credential values are forbidden/,
+  );
+});
+
 test("validate는 credential 값을 거부한다", () => {
   const invalid = candidate("a", {
     operation: validOperation({ credentialValue: "actual-secret-value" }),

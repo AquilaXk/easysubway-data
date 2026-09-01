@@ -226,9 +226,6 @@ function validateAggregateSourceSetOperation(candidate, operation) {
   if (candidate.requestUrl != null) {
     throw new Error(`${label} must not invent requestUrl`);
   }
-  if (hasCredentialValue(operation)) {
-    throw new Error(`${label} credential values are forbidden`);
-  }
   requireAllowedKeys(operation, new Set([
     "kind", "method", "auth", "retryPolicy", "responseEnvelope", "runner",
     "sourceDefinition", "secretPolicy",
@@ -296,15 +293,24 @@ function validateAggregateSourceSetOperation(candidate, operation) {
   return operation;
 }
 
+function validateSummaryCredentialValues(candidate) {
+  if (candidate?.requestUrl != null && hasCredentialValue(candidate.requestUrl)) {
+    throw new Error(`${candidate?.id ?? "candidate"}.requestUrl credential values are forbidden`);
+  }
+  if (candidate?.evidence?.sampleUrl != null && hasCredentialValue(candidate.evidence.sampleUrl)) {
+    throw new Error(`${candidate?.id ?? "candidate"}.evidence.sampleUrl credential values are forbidden`);
+  }
+  if (candidate?.operation != null && hasCredentialValue(candidate.operation)) {
+    throw new Error(`${candidate?.id ?? "candidate"}.operation credential values are forbidden`);
+  }
+}
+
 function validateCandidateRequestUrl(candidate) {
   const requestUrl = requiredHttpUrl(candidate?.requestUrl, `${candidate?.id ?? "candidate"}.requestUrl`);
-  if (hasCredentialValue(candidate.requestUrl)) {
-    throw new Error(`${candidate.id}.requestUrl credential values are forbidden`);
-  }
   const sampleValue = candidate?.evidence?.sampleUrl;
   if (sampleValue != null) {
     const sampleUrl = requiredHttpUrl(sampleValue, `${candidate.id}.evidence.sampleUrl`);
-    if (hasCredentialValue(sampleValue) || hasConcretePathCredential(requestUrl, sampleUrl)) {
+    if (hasConcretePathCredential(requestUrl, sampleUrl)) {
       throw new Error(`${candidate.id}.evidence.sampleUrl credential values are forbidden`);
     }
   }
@@ -312,6 +318,7 @@ function validateCandidateRequestUrl(candidate) {
 }
 
 export function validateOperation(candidate, { allowMissing = false } = {}) {
+  validateSummaryCredentialValues(candidate);
   const operation = candidate?.operation;
   if (operation == null) {
     validateCandidateRequestUrl(candidate);
@@ -325,9 +332,6 @@ export function validateOperation(candidate, { allowMissing = false } = {}) {
     return validateAggregateSourceSetOperation(candidate, operation);
   }
   const requestUrl = validateCandidateRequestUrl(candidate);
-  if (hasCredentialValue(operation)) {
-    throw new Error(`${candidate.id}.operation credential values are forbidden`);
-  }
   requireAllowedKeys(operation, new Set([
     "method", "endpoint", "sampleUrl", "auth", "requiredParameters", "fixedParameters", "optionalParameters",
     "responseEnvelope", "responseFields", "runner", "secretPolicy",
