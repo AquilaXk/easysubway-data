@@ -93,11 +93,39 @@ async function setCandidateItxFreshUntil(input, freshUntil) {
   await writeFile(input.candidatePath, JSON.stringify(candidate));
 }
 
+async function setCandidateItxAdmission(input, freshUntil) {
+  const candidate = JSON.parse(await readFile(input.candidatePath, "utf8"));
+  const artifactId = "itx-current-network-edge-admission-20260830";
+  const relativePath = `tools/datapack/${artifactId}.json`;
+  const bytes = Buffer.from(`${JSON.stringify({
+    schemaVersion: 1,
+    artifactKind: "itx-current-network-edge-admission",
+    artifactId,
+    status: "ADMITTED",
+    freshUntil,
+  })}\n`);
+  await writeFile(path.join(input.repositoryRoot, relativePath), bytes);
+  candidate.networkEdgeEvidence.itxCurrentTopologyAdmission = {
+    path: relativePath,
+    sha256: sha256(bytes),
+  };
+  await writeFile(input.candidatePath, JSON.stringify(candidate));
+}
+
 test("earliest canonical current topology expiry determines NOT_DUE, DUE, and EXPIRED", async () => {
   const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
   for (const [now, state] of [["2026-08-30T05:59:59.999Z", "NOT_DUE"], ["2026-08-30T06:00:00.000Z", "DUE"], ["2026-08-30T12:00:00.000Z", "EXPIRED"]]) {
     assert.equal((await decideCurrentCapitalTopologyRefresh({ ...input, now: new Date(now) })).state, state);
   }
+  assert.deepEqual(await decideCurrentCapitalTopologyRefresh({
+    ...input,
+    now: new Date("2026-08-30T07:00:00.000Z"),
+  }), {
+    state: "DUE",
+    alertBeforePackExpiry: "PT6H",
+    itxFreshUntil: "2026-08-30T16:00:00.000Z",
+    itxRefreshRequired: false,
+  });
 });
 
 test("requires exactly sixteen distinct admitted capital sources and all three Incheon inputs", async () => {
@@ -118,10 +146,13 @@ test("candidate-selected ITX freshness participates in the earliest due decision
   const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
   await setCandidateItxFreshUntil(input, "2026-08-30T10:00:00.000Z");
 
-  assert.equal((await decideCurrentCapitalTopologyRefresh({
+  const result = await decideCurrentCapitalTopologyRefresh({
     ...input,
     now: new Date("2026-08-30T04:00:00.000Z"),
-  })).state, "DUE");
+  });
+  assert.equal(result.state, "DUE");
+  assert.equal(result.itxFreshUntil, "2026-08-30T10:00:00.000Z");
+  assert.equal(result.itxRefreshRequired, true);
 });
 
 test("candidate-selected ITX freshness accepts an explicit timezone offset", async () => {
@@ -134,13 +165,33 @@ test("candidate-selected ITX freshness accepts an explicit timezone offset", asy
   })).state, "NOT_DUE");
 });
 
+test("ITX provider skip uses the standalone evidence retained by the next candidate", async () => {
+  const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
+  await setCandidateItxFreshUntil(input, "2026-08-30T10:00:00.000Z");
+  await setCandidateItxAdmission(input, "2026-08-30T16:00:00.000Z");
+
+  const result = await decideCurrentCapitalTopologyRefresh({
+    ...input,
+    now: new Date("2026-08-30T07:00:00.000Z"),
+  });
+  assert.equal(result.state, "DUE");
+  assert.equal(result.itxFreshUntil, "2026-08-30T10:00:00.000Z");
+  assert.equal(result.itxRefreshRequired, true);
+});
+
 test("only a same-repository main-base claim can own this automation", async () => {
   const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
   const branch = "automation/636-current-topology-refresh-7";
   await writeFile(input.prsPath, JSON.stringify([{ state: "OPEN", isDraft: true, headRefName: branch, baseRefName: "main", isCrossRepository: false, headRepository: { nameWithOwner: repo } }]));
   assert.equal((await decideCurrentCapitalTopologyRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") })).state, "OPEN_PR");
   await writeFile(input.prsPath, "[]"); await writeFile(input.claimsPath, JSON.stringify([{ headSha: sha, ref: `refs/heads/${branch}`, mergeBaseSha: sha, commitCount: 3, subjects: ["Claim current topology refresh", "Register current topology inputs", "Activate current topology inputs"] }]));
-  assert.deepEqual(await decideCurrentCapitalTopologyRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") }), { state: "RECOVER_CLAIM", alertBeforePackExpiry: "PT6H", branch });
+  assert.deepEqual(await decideCurrentCapitalTopologyRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") }), {
+    state: "RECOVER_CLAIM",
+    alertBeforePackExpiry: "PT6H",
+    branch,
+    itxFreshUntil: "2026-08-30T16:00:00.000Z",
+    itxRefreshRequired: false,
+  });
 });
 
 test("duplicate, malformed, and closed claims fail closed", async () => {
@@ -168,5 +219,6 @@ test("preflight blocks every possible UTC or KST identity during the job window"
   const { currentCapitalTopologyPreflight } = await load();
   assert.deepEqual(currentCapitalTopologyPreflight({ now: new Date("2026-08-30T14:59:00.000Z"), existingPaths: ["tools/datapack/sources/incheon-line1-train-timetable-20260831.json"] }).state, "WAIT_IMMUTABLE_IDENTITY");
   assert.deepEqual(currentCapitalTopologyPreflight({ now: new Date("2026-08-30T14:59:00.000Z"), existingPaths: ["tools/datapack/itx-current-network-edge-admission-20260831.json"] }).state, "WAIT_IMMUTABLE_IDENTITY");
+  assert.equal(currentCapitalTopologyPreflight({ now: new Date("2026-08-30T14:59:00.000Z"), existingPaths: ["tools/datapack/itx-current-network-edge-admission-20260831.json"], itxRefreshRequired: false }).state, "CLEAR");
   assert.equal(currentCapitalTopologyPreflight({ now: new Date("2026-08-30T14:00:00.000Z"), existingPaths: [] }).state, "CLEAR");
 });
