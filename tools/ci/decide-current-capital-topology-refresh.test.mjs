@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -111,6 +111,63 @@ async function setCandidateItxAdmission(input, freshUntil) {
   };
   await writeFile(input.candidatePath, JSON.stringify(candidate));
 }
+
+async function writePendingTransitionMarker(input) {
+  const transitionPath = path.join(
+    input.repositoryRoot,
+    "tools/datapack/release/current-capital-accessibility-transition.json",
+  );
+  await mkdir(path.dirname(transitionPath), { recursive: true });
+  await writeFile(transitionPath, "{}\n");
+}
+
+test("a valid pending fan-in preempts due, claim, and provider inputs", async () => {
+  const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
+  await writePendingTransitionMarker(input);
+  assert.deepEqual(await decideCurrentCapitalTopologyRefresh({
+    ...input,
+    inventoryPath: path.join(input.repositoryRoot, "must-not-be-read.json"),
+    readTransitionBoundary: async () => ({ state: "PENDING_FULL_FAN_IN" }),
+  }), { state: "PENDING_FULL_FAN_IN" });
+});
+
+test("an invalid pending fan-in fails before due and provider inputs", async () => {
+  const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
+  await writePendingTransitionMarker(input);
+  await assert.rejects(() => decideCurrentCapitalTopologyRefresh({
+    ...input,
+    inventoryPath: path.join(input.repositoryRoot, "must-not-be-read.json"),
+    readTransitionBoundary: async () => { throw new Error("transition candidate binding mismatch"); },
+  }), /transition candidate binding mismatch/);
+});
+
+test("an orphan transition successor fails closed", async () => {
+  const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
+  const successorPath = path.join(
+    input.repositoryRoot,
+    "tools/datapack/release/current-capital-accessibility-transition-successor.json",
+  );
+  await mkdir(path.dirname(successorPath), { recursive: true });
+  await writeFile(successorPath, "{}\n");
+  await assert.rejects(
+    () => decideCurrentCapitalTopologyRefresh(input),
+    /successor has no base transition/,
+  );
+});
+
+test("a dangling transition marker fails closed", async () => {
+  const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
+  const transitionPath = path.join(
+    input.repositoryRoot,
+    "tools/datapack/release/current-capital-accessibility-transition.json",
+  );
+  await mkdir(path.dirname(transitionPath), { recursive: true });
+  await symlink("missing-transition.json", transitionPath);
+  await assert.rejects(
+    () => decideCurrentCapitalTopologyRefresh(input),
+    /regular non-symlink file/,
+  );
+});
 
 test("earliest canonical current topology expiry determines NOT_DUE, DUE, and EXPIRED", async () => {
   const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();

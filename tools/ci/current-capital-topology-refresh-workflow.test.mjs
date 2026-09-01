@@ -50,6 +50,24 @@ test("an exact empty claim is reused without creating another claim", () => {
   assert.match(reuse, /TOPOLOGY_MAIN_SHA/);
   assert.match(collect, /steps\.decision\.outputs\.state == 'REUSE_CLAIM'/);
 });
+test("pending full fan-in cannot reach a topology side effect", () => {
+  const effectSteps = [
+    "Recover a completed claimed refresh",
+    "Create durable claim before provider access",
+    "Reuse an exact empty claim after provider failure",
+    "Collect each official current topology input once",
+    "Prepare current ITX collection",
+    "Collect current ITX timetable once",
+    "Commit exactly four or five immutable current topology inputs",
+    "Activate current topology inputs exactly once",
+    "Create draft pull request",
+  ];
+  for (const name of effectSteps) {
+    const body = stepBody(name);
+    assert.match(body, /\n\s+if: \$\{\{[^\n]+steps\.decision\.outputs\.state/);
+    assert.doesNotMatch(body, /PENDING_FULL_FAN_IN|outputs\.state\s*!=/);
+  }
+});
 test("topology refresh workflow is a pinned, main-only, durable claim automation", () => {
   assert.match(yml, /cron: "47 \*\/2 \* \* \*"/); assert.match(yml, /github\.ref == 'refs\/heads\/main'/);
   assert.match(yml, /actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1/); assert.match(yml, /actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020/); assert.match(yml, /node-version: "24\.19\.0"/);
