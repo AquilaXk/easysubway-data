@@ -61,56 +61,138 @@ jobs:
             --output "${KRIC_REFRESH_DECISION}" \
             --github-output "${GITHUB_OUTPUT}"
 
-      - name: KRIC current facility refresh / Recover completed claimed refresh
+      - name: KRIC current facility refresh / Recover claimed refresh
         if: ${{ steps.decision.outputs.state == 'RECOVER_CLAIM' }}
         env:
           GH_TOKEN: ${{ github.token }}
+          EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
         run: |
           set -euo pipefail
           branch="${{ steps.decision.outputs.branch }}"
           git fetch --no-tags origin "refs/heads/${branch}:refs/remotes/origin/${branch}"
-          [[ "$(git rev-list --count HEAD.."origin/${branch}")" == "2" ]] || {
-            echo "KRIC refresh claim does not have exactly one claim and one output commit" >&2
-            exit 1
-          }
-          [[ "$(git rev-parse "origin/${branch}^^")" == "$(git rev-parse HEAD)" ]] || {
-            echo "KRIC refresh claim is not based on the current main" >&2
-            exit 1
-          }
-          [[ "$(git log -1 --format=%s "origin/${branch}")" == "Refresh KRIC facility snapshot" ]] || {
-            echo "KRIC refresh claim has no completed output commit" >&2
-            exit 1
-          }
-          deleted="$(git diff --name-only --diff-filter=D "origin/${branch}^" "origin/${branch}")"
-          [[ -z "${deleted}" ]] || {
-            echo "KRIC refresh claim removed a tracked input" >&2
-            exit 1
-          }
-          changed="$(git diff --name-only --diff-filter=ACMR "origin/${branch}^" "origin/${branch}")"
-          if [[ -z "${changed}" ]]; then
-            echo "KRIC refresh claim is incomplete" >&2
-            exit 1
-          fi
-          for required in \
-            tools/datapack/release/candidate-build-spec.json \
-            tools/datapack/release/current-capital-facility-source-admission.json \
-            tools/datapack/release/source-snapshots.json \
-            tools/datapack/source-inventory.json; do
-            grep -Fqx "${required}" <<< "${changed}" || {
+          validate_output_set() {
+            local changed="$1"
+            local deleted="$2"
+            [[ -z "${deleted}" ]] || {
+              echo "KRIC refresh claim removed a tracked input" >&2
+              exit 1
+            }
+            [[ -n "${changed}" ]] || {
               echo "KRIC refresh claim is incomplete" >&2
               exit 1
             }
-          done
-          grep -Eq '^tools/datapack/sources/[^/]+\.json$' <<< "${changed}" || {
-            echo "KRIC refresh claim is incomplete" >&2
-            exit 1
+            for required in \
+              tools/datapack/release/candidate-build-spec.json \
+              tools/datapack/release/current-capital-facility-source-admission.json \
+              tools/datapack/release/release-request.json \
+              tools/datapack/release/hash-evidence.json \
+              tools/datapack/release/source-snapshots.json \
+              tools/datapack/source-inventory.json; do
+              grep -Fqx "${required}" <<< "${changed}" || {
+                echo "KRIC refresh claim is incomplete" >&2
+                exit 1
+              }
+            done
+            grep -Eq '^tools/datapack/sources/[^/]+\.json$' <<< "${changed}" || {
+              echo "KRIC refresh claim is incomplete" >&2
+              exit 1
+            }
+            local unexpected
+            unexpected="$(printf '%s\n' "${changed}" | grep -Ev \
+              'tools/datapack/(release/candidate-build-spec\.json|release/current-capital-facility-source-admission\.json|release/release-request\.json|release/hash-evidence\.json|release/source-snapshots\.json|source-inventory\.json|sources/[^/]+\.json)' || true)"
+            if [[ -n "${unexpected}" ]]; then
+              echo "KRIC refresh claim changed an unsupported path" >&2
+              exit 1
+            fi
           }
-          unexpected="$(printf '%s\n' "${changed}" | grep -Ev \
-            'tools/datapack/(release/candidate-build-spec\.json|release/current-capital-facility-source-admission\.json|release/source-snapshots\.json|source-inventory\.json|sources/[^/]+\.json)' || true)"
-          if [[ -n "${unexpected}" ]]; then
-            echo "KRIC refresh claim changed an unsupported path" >&2
+
+          subject="$(git log -1 --format=%s "origin/${branch}")"
+          if [[ "${subject}" == "Claim KRIC facility refresh" ]]; then
+            [[ "${branch}" =~ ^automation/629-kric-facility-refresh-([0-9]+)$ ]] || {
+              echo "KRIC refresh claim branch identity is invalid" >&2
+              exit 1
+            }
+            source_run_id="${BASH_REMATCH[1]}"
+            source_main_sha="$(git rev-parse "origin/${branch}^")"
+            [[ "$(git rev-list --count "${source_main_sha}..origin/${branch}")" == "1" ]] || {
+              echo "KRIC refresh claim is not an exact one-commit claim" >&2
+              exit 1
+            }
+            git merge-base --is-ancestor "${source_main_sha}" HEAD || {
+              echo "KRIC refresh claim main is not an ancestor of current main" >&2
+              exit 1
+            }
+            metadata="$(gh run view "${source_run_id}" --repo "${GITHUB_REPOSITORY}" \
+              --json headSha,status,conclusion,event,workflowName \
+              --jq '[.headSha,.status,.conclusion,.event,.workflowName] | @tsv')"
+            IFS=$'\t' read -r run_head run_status run_conclusion run_event run_workflow <<< "${metadata}"
+            [[ "${run_head}" == "${source_main_sha}" \
+              && "${run_status}" == "completed" \
+              && "${run_conclusion}" == "failure" \
+              && ( "${run_event}" == "schedule" || "${run_event}" == "workflow_dispatch" ) \
+              && "${run_workflow}" == "KRIC Current Facility Refresh" ]] || {
+              echo "KRIC refresh source run identity is invalid" >&2
+              exit 1
+            }
+            evidence_root="${RUNNER_TEMP}/kric-current-facility-refresh/retained-${source_run_id}"
+            source_root="${evidence_root}/${source_run_id}"
+            target_root="${KRIC_REFRESH_OPERATION_ROOT}"
+            gh run download "${source_run_id}" --repo "${GITHUB_REPOSITORY}" \
+              --name "kric-current-facility-refresh-${source_run_id}" --dir "${evidence_root}"
+            [[ -f "${evidence_root}/decision.json" \
+              && -f "${source_root}/journal.json" \
+              && -f "${source_root}/raw-receipt.json" ]] || {
+              echo "KRIC refresh retained evidence is incomplete" >&2
+              exit 1
+            }
+            cp "${source_root}/raw-receipt.json" "${source_root}/receipt.json"
+            main_sha="$(git rev-parse HEAD)"
+            node tools/datapack/run-current-capital-facility-operation.mjs \
+              --phase prepare --operation-root "${target_root}" --expected-main-sha "${main_sha}"
+            node tools/datapack/run-current-capital-facility-operation.mjs \
+              --phase recover-published --operation-root "${target_root}" --source-operation-root "${source_root}"
+            node tools/datapack/run-current-capital-facility-operation.mjs \
+              --phase finalize --operation-root "${target_root}"
+            validate_output_set "$(git diff --name-only --diff-filter=ACMR)" "$(git diff --name-only --diff-filter=D)"
+            git stash push --include-untracked -m "Recover KRIC facility snapshot ${source_run_id}" -- \
+              tools/datapack/release/candidate-build-spec.json \
+              tools/datapack/release/current-capital-facility-source-admission.json \
+              tools/datapack/release/release-request.json \
+              tools/datapack/release/hash-evidence.json \
+              tools/datapack/release/source-snapshots.json \
+              tools/datapack/source-inventory.json tools/datapack/sources
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            gh auth setup-git
+            git switch --track -c "${branch}" "origin/${branch}"
+            git merge --no-edit "${main_sha}"
+            git stash pop
+            validate_output_set "$(git diff --name-only --diff-filter=ACMR)" "$(git diff --name-only --diff-filter=D)"
+            git add tools/datapack/release/candidate-build-spec.json \
+              tools/datapack/release/current-capital-facility-source-admission.json \
+              tools/datapack/release/release-request.json \
+              tools/datapack/release/hash-evidence.json \
+              tools/datapack/release/source-snapshots.json \
+              tools/datapack/source-inventory.json tools/datapack/sources
+            git diff --cached --quiet && exit 1
+            git commit -m "Refresh KRIC facility snapshot"
+            git push origin "${branch}"
+          elif [[ "${subject}" == "Refresh KRIC facility snapshot" ]]; then
+            [[ "$(git rev-list --count HEAD.."origin/${branch}")" == "2" ]] || {
+              echo "KRIC refresh claim does not have exactly one claim and one output commit" >&2
+              exit 1
+            }
+            [[ "$(git rev-parse "origin/${branch}^^")" == "$(git rev-parse HEAD)" ]] || {
+              echo "KRIC refresh claim is not based on the current main" >&2
+              exit 1
+            }
+          else
+            echo "KRIC refresh claim has no recognized terminal commit" >&2
             exit 1
           fi
+          deleted="$(git diff --name-only --diff-filter=D "origin/${branch}^" "origin/${branch}")"
+          changed="$(git diff --name-only --diff-filter=ACMR "origin/${branch}^" "origin/${branch}")"
+          validate_output_set "${changed}" "${deleted}"
           existing="${RUNNER_TEMP}/kric-current-facility-refresh/claim-prs.json"
           gh pr list --repo "${GITHUB_REPOSITORY}" --state all --base main --head "${branch}" \
             --limit 100 --json number,state,headRefName,baseRefName,headRepository,isCrossRepository > "${existing}"
@@ -197,6 +279,8 @@ jobs:
           for required in \
             tools/datapack/release/candidate-build-spec.json \
             tools/datapack/release/current-capital-facility-source-admission.json \
+            tools/datapack/release/release-request.json \
+            tools/datapack/release/hash-evidence.json \
             tools/datapack/release/source-snapshots.json \
             tools/datapack/source-inventory.json; do
             grep -Fqx "${required}" <<< "${changed}" || {
@@ -209,7 +293,7 @@ jobs:
             exit 1
           }
           unexpected="$(printf '%s\n' "${changed}" | grep -Ev \
-            'tools/datapack/(release/candidate-build-spec\.json|release/current-capital-facility-source-admission\.json|release/source-snapshots\.json|source-inventory\.json|sources/[^/]+\.json)' || true)"
+            'tools/datapack/(release/candidate-build-spec\.json|release/current-capital-facility-source-admission\.json|release/release-request\.json|release/hash-evidence\.json|release/source-snapshots\.json|source-inventory\.json|sources/[^/]+\.json)' || true)"
           if [[ -n "${unexpected}" ]]; then
             echo "KRIC refresh changed an unsupported path" >&2
             exit 1

@@ -46,7 +46,9 @@ test("KRIC refresh workflow has one scheduled, fail-closed, PR-only path", () =>
   );
   assert.match(yml, /\[\[ "\$\(git rev-parse HEAD\)" == "\$\{KRIC_REFRESH_MAIN_SHA\}" \]\][\s\S]*run-current-capital-facility-operation\.mjs --phase prepare/);
   assert.match(yml, /git switch "\$\{KRIC_REFRESH_BRANCH\}"[\s\S]*\[\[ "\$\(git rev-parse HEAD\^\)" == "\$\{KRIC_REFRESH_MAIN_SHA\}" \]\][\s\S]*git add -A[\s\S]*deleted="\$\(git diff --cached --name-only --diff-filter=D\)"[\s\S]*changed="\$\(git diff --cached --name-only --diff-filter=ACMR\)"/);
-  assert.match(yml, /git rev-list --count HEAD\.\."origin\/\$\{branch\}"[\s\S]*git rev-parse "origin\/\$\{branch\}\^\^"[\s\S]*git log -1 --format=%s "origin\/\$\{branch\}"/);
+  assert.match(yml, /subject="\$\(git log -1 --format=%s "origin\/\$\{branch\}"\)"/);
+  assert.match(yml, /git rev-list --count HEAD\.\."origin\/\$\{branch\}"/);
+  assert.match(yml, /git rev-parse "origin\/\$\{branch\}\^\^"/);
   assert.match(yml, /git diff --name-only --diff-filter=ACMR "origin\/\$\{branch\}\^" "origin\/\$\{branch\}"/);
   assert.equal(
     (yml.match(/grep -Eq '\^tools\/datapack\/sources\/\[\^\/\]\+\\\.json\$'/g) ?? []).length,
@@ -80,4 +82,16 @@ test("KRIC refresh workflow only uploads sanitized decision and operation eviden
   assert.match(yml, /current-capital-facility-source-admission\.json/);
   assert.match(yml, /source-snapshots\.json/);
   assert.match(yml, /source-inventory\.json/);
+});
+
+test("KRIC refresh workflow retains both canonical release identity outputs", () => {
+  const yml = readFileSync(workflowPath, "utf8");
+  assert.match(yml, /tools\/datapack\/release\/release-request\.json/);
+  assert.match(yml, /tools\/datapack\/release\/hash-evidence\.json/);
+  assert.match(yml, /gh run download "\$\{source_run_id\}"/);
+  assert.match(yml, /--phase recover-published/);
+  assert.match(yml, /--phase finalize/);
+  assert.match(yml, /git switch --track -c "\$\{branch\}" "origin\/\$\{branch\}"[\s\S]*git merge --no-edit "\$\{main_sha\}"/);
+  assert.match(yml, /git commit -m "Refresh KRIC facility snapshot"/);
+  assert.match(yml, /git push origin "\$\{branch\}"/);
 });
