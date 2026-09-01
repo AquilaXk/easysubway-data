@@ -358,7 +358,9 @@ export async function main(
 ) {
   const root = path.resolve(repositoryRoot);
   const args = parseArgs(argv);
-  if (args["build-spec"] != null) {
+  const buildSpecValidationOnlyRequested = args["build-spec"] != null
+    && process.env.EASYSUBWAY_DATAPACK_BUILD_SPEC_VALIDATION_ONLY === "true";
+  if (args["build-spec"] != null && !buildSpecValidationOnlyRequested) {
     await assertCurrentCapitalAccessibilityBuildAllowed({ repositoryRoot: root });
   }
   const outputDir = path.resolve(root, requireArg(args, "output"));
@@ -366,12 +368,23 @@ export async function main(
   const officialOdFareAdmissionBytes = await readFile(path.join(root, "tools/datapack/official-od-fare-admission.json"));
   const officialOdFareAdmissionBundle = JSON.parse(officialOdFareAdmissionBytes);
   const officialOdFareAdmissions = officialOdFareAdmissionsBySource(officialOdFareAdmissionBundle);
-  const { fixture, candidateBuild, artifactFreshUntil, outputArtifactKind } = await loadBuildInput(
+  const {
+    fixture,
+    candidateBuild,
+    artifactFreshUntil,
+    outputArtifactKind,
+    validationOnlyProductionFixture,
+  } = await loadBuildInput(
     args,
     officialOdFareAdmissions,
     officialOdFareAdmissionBytes,
     root,
   );
+  if (buildSpecValidationOnlyRequested && validationOnlyProductionFixture !== true) {
+    throw new Error(
+      "build-spec validation-only requires a production source fixture without accessibility authority replay",
+    );
+  }
 
   validateFixture(fixture);
   const manifestPacks = [];
@@ -571,6 +584,7 @@ async function loadBuildInput(
       candidateBuild: null,
       artifactFreshUntil: null,
       outputArtifactKind: hasProductionPack ? "fixture" : null,
+      validationOnlyProductionFixture: false,
     };
   }
   if (args["test-only-itx-admission"] != null) {
@@ -690,6 +704,7 @@ async function loadBuildInput(
     ),
     artifactFreshUntil,
     outputArtifactKind: validationOnlyProductionFixture ? "fixture" : null,
+    validationOnlyProductionFixture,
   };
 }
 

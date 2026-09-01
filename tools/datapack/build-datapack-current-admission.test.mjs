@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -39,6 +39,10 @@ import { activateCurrentIncheonSourceAdmissions } from "./activate-current-sourc
 import { retainPreAuthorityRideEdges } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
 import {
+  buildCurrentCapitalAccessibilityTransition,
+  canonicalCurrentCapitalAccessibilityTransitionJson,
+} from "./current-capital-accessibility-transition.mjs";
+import {
   materializeCurrentFanInCandidateArtifact,
   prepareCurrentFullCapitalProductionRepository,
 } from "./test-fixtures/current-full-capital-production-artifact.mjs";
@@ -66,15 +70,20 @@ async function withEnvironment(values, action) {
   }
 }
 
-test("build-datapack은 candidate mode만 staged transition을 입력보다 먼저 차단한다", async () => {
+test("build-datapack은 ordinary candidate를 먼저 차단하고 validation-only shape를 output 전에 확정한다", async () => {
   const source = await readFile(path.join(root, "tools/datapack/build-datapack.mjs"), "utf8");
-  const candidateMode = source.indexOf('if (args["build-spec"] != null) {');
+  const validationOnlyRequest = source.indexOf("const buildSpecValidationOnlyRequested =");
+  const candidateMode = source.indexOf('if (args["build-spec"] != null && !buildSpecValidationOnlyRequested) {');
   const guard = source.indexOf("await assertCurrentCapitalAccessibilityBuildAllowed({ repositoryRoot: root });");
   const buildInput = source.indexOf("await loadBuildInput(");
-  assert.ok(candidateMode >= 0, "staged transition guard는 candidate mode에만 적용돼야 한다");
+  const validationOnlyShape = source.indexOf("if (buildSpecValidationOnlyRequested && validationOnlyProductionFixture !== true) {");
+  const fixtureValidation = source.indexOf("validateFixture(fixture);");
+  assert.ok(validationOnlyRequest >= 0, "validation-only 요청을 명시적으로 분류해야 한다");
+  assert.ok(candidateMode >= 0, "ordinary candidate transition guard가 필요하다");
   assert.ok(guard >= 0, "staged transition guard가 필요하다");
-  assert.ok(candidateMode < guard, "candidate mode를 확인한 뒤 guard를 실행해야 한다");
+  assert.ok(validationOnlyRequest < candidateMode && candidateMode < guard, "ordinary candidate mode를 확인한 뒤 guard를 실행해야 한다");
   assert.ok(guard < buildInput, "staged transition guard는 candidate 입력보다 먼저 실행돼야 한다");
+  assert.ok(buildInput < validationOnlyShape && validationOnlyShape < fixtureValidation, "validation-only shape는 input 검증 후 output 전에 확정해야 한다");
 });
 test("retired production transit unprojected fixture는 candidate admission에서 거부된다", async () => {
   const [fixture, policyBytes] = await Promise.all([
@@ -209,6 +218,44 @@ test("candidate build spec release identity는 wall clock과 workflow run number
     /production accessibility evidence mismatch/,
   );
   await assert.rejects(readFile(path.join(directOutput, "current.json")), /ENOENT/);
+  const transitionPaths = {
+    candidate: "tools/datapack/release/candidate-build-spec.json",
+    facility: "tools/datapack/release/current-capital-facility-source-admission.json",
+    ledger: "tools/datapack/release/source-snapshots.json",
+    inventory: "tools/datapack/source-inventory.json",
+  };
+  const transitionBytes = Object.fromEntries(await Promise.all(
+    Object.entries(transitionPaths).map(async ([key, relativePath]) => [
+      key,
+      await readFile(path.join(directory, relativePath)),
+    ]),
+  ));
+  const previousBytes = await readFile(path.join(
+    root,
+    "tools/datapack/release/current-station-line-accessibility/station-line-input.json",
+  ));
+  const previousPath = path.join(
+    directory,
+    "tools/datapack/release/current-station-line-accessibility/station-line-input.json",
+  );
+  await mkdir(path.dirname(previousPath), { recursive: true });
+  await writeFile(previousPath, previousBytes);
+  const transition = buildCurrentCapitalAccessibilityTransition({
+    candidate: JSON.parse(transitionBytes.candidate),
+    candidateBytes: transitionBytes.candidate,
+    previous: JSON.parse(previousBytes),
+    previousBytes,
+    facilityAdmission: JSON.parse(transitionBytes.facility),
+    facilityBytes: transitionBytes.facility,
+    ledger: JSON.parse(transitionBytes.ledger),
+    ledgerBytes: transitionBytes.ledger,
+    inventory: JSON.parse(transitionBytes.inventory),
+    inventoryBytes: transitionBytes.inventory,
+  });
+  await writeFile(
+    path.join(directory, "tools/datapack/release/current-capital-accessibility-transition.json"),
+    canonicalCurrentCapitalAccessibilityTransitionJson(transition),
+  );
   const validationOnlyFixturePath = "validation-only-source-fixture.json";
   const validationOnlyBuildSpecPath = "validation-only-build-spec.json";
   const sourceFixture = JSON.parse(await readFile(path.join(directory, buildSpec.fixturePath)));
@@ -281,6 +328,27 @@ test("candidate build spec release identity는 wall clock과 workflow run number
       gzip: await readFile(path.join(output, "catalog/capital-v1.sqlite.gz")),
     };
   }
+
+  await assert.rejects(
+    withEnvironment({
+      EASYSUBWAY_DATAPACK_BUILD_NOW: secondBuildNow,
+      EASYSUBWAY_DATAPACK_BUILD_SPEC_VALIDATION_ONLY: "true",
+      EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey,
+      EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: "production-v1",
+    }, () => buildDatapackMain([
+      "--build-spec", buildSpecPath,
+      "--candidate-fixture-override", candidateFixture,
+      "--server-route-coverage-authority", routeCoverageAuthority,
+      "--current-capital-station-line-input", candidateStationLine,
+      "--current-capital-route-edge-input", candidateRouteEdge,
+      "--output", path.join(directory, "validation-only-replay-blocked"),
+    ], { repositoryRoot: directory })),
+    /build-spec validation-only requires a production source fixture without accessibility authority replay/,
+  );
+  await assert.rejects(
+    build("transition-blocked", secondBuildNow, "303", directory),
+    /CURRENT_ACCESSIBILITY_TRANSITION_BLOCKED/,
+  );
 
   try {
     await readFile(path.join(root, "tools/datapack/release/current-capital-accessibility-transition.json"));
