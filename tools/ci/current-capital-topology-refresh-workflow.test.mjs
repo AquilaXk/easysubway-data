@@ -28,6 +28,22 @@ test("activation dependencies are validated after GitHub environment update", ()
   assert.ok(yml.indexOf("Derive current activation dependencies") < yml.indexOf("Validate current activation dependencies"));
   assert.ok(yml.indexOf("Validate current activation dependencies") < yml.indexOf("Activate current topology inputs exactly once"));
 });
+test("an exact empty claim is reused without creating another claim", () => {
+  const preflight = stepBody("Preflight immutable current topology identities");
+  const create = stepBody("Create durable claim before provider access");
+  const reuse = stepBody("Reuse an exact empty claim after provider failure");
+  const collect = stepBody("Collect each official current topology input once");
+  assert.match(preflight, /steps\.decision\.outputs\.state == 'REUSE_CLAIM'/);
+  assert.doesNotMatch(create, /REUSE_CLAIM/);
+  assert.match(reuse, /steps\.decision\.outputs\.state == 'REUSE_CLAIM'/);
+  assert.match(reuse, /git rev-list --count HEAD\.\."origin\/\$\{branch\}"\)" == "1"/);
+  assert.match(reuse, /git rev-parse "origin\/\$\{branch\}\^"\)" == "\$\(git rev-parse HEAD\)"/);
+  assert.match(reuse, /Claim current topology refresh/);
+  assert.match(reuse, /gh auth setup-git/);
+  assert.match(reuse, /TOPOLOGY_BRANCH/);
+  assert.match(reuse, /TOPOLOGY_MAIN_SHA/);
+  assert.match(collect, /steps\.decision\.outputs\.state == 'REUSE_CLAIM'/);
+});
 test("topology refresh workflow is a pinned, main-only, durable claim automation", () => {
   assert.match(yml, /cron: "47 \*\/2 \* \* \*"/); assert.match(yml, /github\.ref == 'refs\/heads\/main'/);
   assert.match(yml, /actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1/); assert.match(yml, /actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020/); assert.match(yml, /node-version: "24\.19\.0"/);
