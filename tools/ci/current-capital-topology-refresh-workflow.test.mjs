@@ -79,6 +79,7 @@ test("topology refresh workflow is a pinned, main-only, durable claim automation
   assert.match(yml, /TOPOLOGY_BUILD_NOW/); assert.equal((yml.match(/activate-current-source-set\.mjs --topology-only/g) ?? []).length, 2); assert.match(yml, /--check/);
   assert.match(yml, /registrationEvidence\.snapshotId/); assert.match(yml, /itxTopologyEvidencePath/); assert.match(yml, /source_key="\$\{key\}_SOURCE"; source="\$\{!source_key\}"/); assert.match(yml, /itxRefreshRequired: process\.env\.ITX_REFRESH_REQUIRED === "true"/); assert.match(yml, /four-input topology claim must not select an ITX admission/); assert.match(yml, /five-input topology claim ITX admission binding is invalid/); assert.match(yml, /exactly four or five immutable current topology inputs/);
   const recovery = stepBody("Recover a completed claimed refresh");
+  assert.match(recovery, /git diff --quiet HEAD "origin\/\$\{branch\}\^\^"/);
   assert.match(recovery, /git diff --name-only --diff-filter=ACMR "origin\/\$\{branch\}\^\^" "origin\/\$\{branch\}\^"/);
   assert.match(recovery, /git diff --name-only --diff-filter=ACMR "origin\/\$\{branch\}\^" "origin\/\$\{branch\}"/);
   assert.match(recovery, /topology input commit must change exactly four or five paths/);

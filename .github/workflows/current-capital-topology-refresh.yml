@@ -81,6 +81,7 @@ jobs:
           [[ "$(git log -1 --format=%s "origin/${branch}^^")" == "Claim current topology refresh" ]] || { echo "topology claim subject is invalid" >&2; exit 1; }
           [[ "$(git log -1 --format=%s "origin/${branch}^")" == "Register current topology inputs" ]] || { echo "topology input subject is invalid" >&2; exit 1; }
           [[ "$(git log -1 --format=%s "origin/${branch}")" == "Activate current topology inputs" ]] || { echo "topology activation subject is invalid" >&2; exit 1; }
+          git diff --quiet HEAD "origin/${branch}^^" || { echo "topology claim commit must preserve the current main tree" >&2; exit 1; }
           input_deleted="$(git diff --name-only --diff-filter=D "origin/${branch}^^" "origin/${branch}^")"
           [[ -z "${input_deleted}" ]] || { echo "topology input commit deleted a tracked path" >&2; exit 1; }
           activation_deleted="$(git diff --name-only --diff-filter=D "origin/${branch}^" "origin/${branch}")"
