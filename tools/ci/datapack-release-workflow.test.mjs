@@ -220,7 +220,7 @@ test("route-final candidate는 authority·strict validation·signed route stage�
   assert.match(evidenceBundle, /releaseMode,/);
   assert.match(evidenceBundle, /server-route-bundle-evidence\/route-accessibility-eligibility\.json/);
   assert.match(evidenceBundle, /server-route-bundle-evidence\/server-route-bundle-final\.json/);
-  const evidenceValidation = yml.slice(step("Data Pack Release / Validate release evidence bundle"), step("Data Pack Release / Create manifest-last publish preflight plan"));
+  const evidenceValidation = yml.slice(step("Data Pack Release / Validate release evidence bundle"), step("Data Pack Release / Build candidate promotion metadata"));
   assert.match(evidenceValidation, /--candidate-server-route-root "\$\{EASYSUBWAY_DATAPACK_STAGE\}"/);
   const metadataText = yml.slice(metadata, step("Data Pack Release / Upload candidate promotion artifact"));
   assert.match(metadataText, /--candidate-server-route-only/);
@@ -474,6 +474,28 @@ test("production-publish는 current-head server route OCI·GO FINAL·v2 descript
   assert.ok(publish.indexOf("publish-server-route-bundle-publication-descriptor.mjs") < publish.indexOf('cp -- "${descriptor}" "${staged_descriptor}"'));
   assert.ok(yml.indexOf('cp -- "${descriptor}" "${staged_descriptor}"') < yml.indexOf("Data Pack Release / Upload staged data packs"));
   assert.doesNotMatch(publish, /AWS_|fallback|retry|upload-artifact|download-artifact/i);
+});
+
+test("production-publish NO_CHANGE_VALID validates standalone evidence while PUBLISH_REQUIRED waits for GO FINAL", () => {
+  const step = (name) => {
+    const value = yml.match(new RegExp(`- name: ${name}[\\s\\S]*?\\n\\s+- name:`))?.[0];
+    assert.ok(value, `${name} step was not found`);
+    return value;
+  };
+  const decision = step("Data Pack Release / Decide conditional publish");
+  const standaloneValidation = step("Data Pack Release / Validate release evidence bundle");
+  const route = step("Data Pack Release / Publish current server route bundle and descriptor");
+  const genericPublication = step("Data Pack Release / Publish staged data packs to object storage");
+  assert.ok(yml.indexOf("Data Pack Release / Decide conditional publish") < yml.indexOf("Data Pack Release / Validate release evidence bundle"));
+  assert.match(decision, /id:\s*release-decision/);
+  assert.match(standaloneValidation, /steps\.release-mode\.outputs\.mode != 'production-publish'/);
+  assert.match(standaloneValidation, /steps\.release-decision\.outputs\.outcome == 'NO_CHANGE_VALID'/);
+  assert.doesNotMatch(standaloneValidation, /PUBLISH_REQUIRED/);
+  assert.match(standaloneValidation, /--require-pass/);
+  assert.ok(yml.indexOf("Data Pack Release / Publish current server route bundle and descriptor") < yml.indexOf("Data Pack Release / Publish staged data packs to object storage"));
+  assert.match(genericPublication, /validate-release-evidence-bundle\.mjs/);
+  assert.match(genericPublication, /--require-pass/);
+  assert.doesNotMatch(route, /steps\.production-publish\.outputs|steps\.final-release-decision\.outputs/);
 });
 
 test("production-publish는 pack 빌드 전에 release request ↔ build spec 결속을 확인한다", () => {

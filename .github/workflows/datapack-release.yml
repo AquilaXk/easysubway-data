@@ -1235,35 +1235,6 @@ jobs:
           fs.writeFileSync(process.env.EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE, `${JSON.stringify(bundle, null, 2)}\n`);
           NODE
 
-      - name: Data Pack Release / Validate release evidence bundle
-        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'candidate-create' && steps.release-mode.outputs.mode != 'production-publish' }}
-        run: |
-          set -euo pipefail
-          bundle_args=(
-            --bundle "${EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE}"
-            --scope "${EASYSUBWAY_DATAPACK_SCOPE_POLICY}"
-            --launch-report "${EASYSUBWAY_LAUNCH_DENOMINATOR_REPORT}"
-            --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}"
-            --manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json"
-            --source-evidence "${EASYSUBWAY_DATAPACK_STAGE}/current.provenance.json"
-          )
-          if [[ -f "${EASYSUBWAY_ACCESSIBILITY_SOURCE_COVERAGE_REPORT}" ]]; then
-            bundle_args+=(--accessibility-source-coverage "${EASYSUBWAY_ACCESSIBILITY_SOURCE_COVERAGE_REPORT}")
-          fi
-          if [[ -n "${EASYSUBWAY_STRICT_ROUTE_REGRESSION_PATH}" ]]; then
-            bundle_args+=(--server-evidence "${EASYSUBWAY_STRICT_ROUTE_REGRESSION_PATH}")
-          fi
-          if [[ -n "${EASYSUBWAY_ANDROID_EVIDENCE_PATH}" ]]; then
-            bundle_args+=(--mobile-evidence "${EASYSUBWAY_ANDROID_EVIDENCE_PATH}")
-          fi
-          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "release-candidate" ]]; then
-            bundle_args+=(--candidate-server-route-root "${EASYSUBWAY_DATAPACK_STAGE}")
-          fi
-          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "production-publish" ]]; then
-            bundle_args+=(--require-pass)
-          fi
-          node tools/datapack/validate-release-evidence-bundle.mjs "${bundle_args[@]}"
-
       - name: Data Pack Release / Create manifest-last publish preflight plan
         if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'candidate-create' }}
         run: |
@@ -1341,6 +1312,35 @@ jobs:
           }
           NODE
           fi
+
+      - name: Data Pack Release / Validate release evidence bundle
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'candidate-create' && (steps.release-mode.outputs.mode != 'production-publish' || steps.release-decision.outputs.outcome == 'NO_CHANGE_VALID') }}
+        run: |
+          set -euo pipefail
+          bundle_args=(
+            --bundle "${EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE}"
+            --scope "${EASYSUBWAY_DATAPACK_SCOPE_POLICY}"
+            --launch-report "${EASYSUBWAY_LAUNCH_DENOMINATOR_REPORT}"
+            --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}"
+            --manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json"
+            --source-evidence "${EASYSUBWAY_DATAPACK_STAGE}/current.provenance.json"
+          )
+          if [[ -f "${EASYSUBWAY_ACCESSIBILITY_SOURCE_COVERAGE_REPORT}" ]]; then
+            bundle_args+=(--accessibility-source-coverage "${EASYSUBWAY_ACCESSIBILITY_SOURCE_COVERAGE_REPORT}")
+          fi
+          if [[ -n "${EASYSUBWAY_STRICT_ROUTE_REGRESSION_PATH}" ]]; then
+            bundle_args+=(--server-evidence "${EASYSUBWAY_STRICT_ROUTE_REGRESSION_PATH}")
+          fi
+          if [[ -n "${EASYSUBWAY_ANDROID_EVIDENCE_PATH}" ]]; then
+            bundle_args+=(--mobile-evidence "${EASYSUBWAY_ANDROID_EVIDENCE_PATH}")
+          fi
+          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "release-candidate" ]]; then
+            bundle_args+=(--candidate-server-route-root "${EASYSUBWAY_DATAPACK_STAGE}")
+          fi
+          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "production-publish" ]]; then
+            bundle_args+=(--require-pass)
+          fi
+          node tools/datapack/validate-release-evidence-bundle.mjs "${bundle_args[@]}"
 
       - name: Data Pack Release / Build candidate promotion metadata
         if: ${{ steps.release-mode.outputs.mode == 'release-candidate' }}
