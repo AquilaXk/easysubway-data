@@ -22,8 +22,11 @@ test("EXIT refresh keeps exact-main OCI producer, immutable recovery, and select
   assert.match(yml, /git rev-parse "\$\{claim_sha\}\^"/);
   assert.match(yml, /git rev-list --count "\$\{main_sha\}\.\.\$\{claim_sha\}"/);
   assert.match(yml, /git show -s --format=%s "\$\{claim_sha\}"/);
-  assert.match(yml, /const fields = line\.split\("\\\\t"\);/);
+  assert.match(yml, /\.split\("\\n"\)\.filter\(Boolean\)/);
+  assert.match(yml, /const fields = line\.split\("\\t"\);/);
   assert.match(yml, /if \(fields\.length !== 5\) throw new Error\("invalid claim evidence field count"\);/);
+  assert.match(yml, /JSON\.stringify\(rows\) \+ "\\n"/);
+  assert.doesNotMatch(yml, /split\("\\\\(?:n|t)"\)|\+ "\\\\n"/);
   assert.match(yml, /--claim-evidence "\$\{claim_evidence\}"/);
   assert.match(yml, /--current-main-sha "\$\{main_sha\}"/);
   const normalizeCommand = 'git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"';
