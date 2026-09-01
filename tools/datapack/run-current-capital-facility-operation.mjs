@@ -10,6 +10,7 @@ import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacil
 import { collectKricStandardAccessibilityObservation, validateKricAccessibilityRawCollection, validateKricAccessibilitySnapshotIdentity, writeKricStandardAccessibilityObservation } from "./collect-kric-accessibility-snapshots.mjs";
 import { publishKricAccessibilityRawArtifact } from "./publish-kric-accessibility-raw.mjs";
 import { requireOciParBaseUrl } from "./lib/kric-raw-object-storage.mjs";
+import { preauthenticatedObjectStorageClient } from "./publish-object-storage.mjs";
 import { registerKricStandardAccessibilitySnapshot } from "./register-kric-standard-accessibility-snapshot.mjs";
 import { rebindCandidateSourceSnapshots, rebindCurrentCandidateSourceSnapshots, readStableRegularFile } from "./rebind-current-candidate-source-snapshots.mjs";
 import { buildCurrentCapitalFacilitySourceAdmission, canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-current-capital-facility-source-admission.mjs";
@@ -234,6 +235,95 @@ function assertObservationBinding(journal, observation) {
   const binding = journal?.completedObservation;
   if (!binding || JSON.stringify(binding) !== JSON.stringify(observationBinding(observation))) throw new Error("completed observation identity mismatch");
 }
+async function retainedReceiptObjectKey(receipt, root, now) {
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)
+    || Object.keys(receipt).length !== RAW_RECEIPT_KEYS.length
+    || RAW_RECEIPT_KEYS.some((key, index) => Object.keys(receipt)[index] !== key)
+    || receipt.schemaVersion !== 1
+    || receipt.artifactKind !== "kric-accessibility-raw-object-receipt"
+    || receipt.sourceId !== "kric-station-convenience-standard"
+    || typeof receipt.snapshotId !== "string" || receipt.snapshotId === ""
+    || !/^[0-9a-f]{64}$/.test(receipt.snapshotRawSha256 ?? "")
+    || !/^[0-9a-f]{64}$/.test(receipt.snapshotFileSha256 ?? "")
+    || !/^[0-9a-f]{64}$/.test(receipt.rawObjectSha256 ?? "")
+    || !Number.isSafeInteger(receipt.byteSize) || receipt.byteSize < 1) {
+    throw new Error("published receipt schema is invalid");
+  }
+  const capturedAt = requiredUtcInstant(receipt.capturedAt, "published receipt capturedAt");
+  const storedAt = requiredUtcInstant(receipt.storedAt, "published receipt storedAt");
+  const retention = deriveRawRetentionExpiresAt({
+    policy: parse((await readStableRegularFile(path.join(root, RELEASE_INPUTS.governance), "source governance policy")).bytes, "source governance policy"),
+    sourceId: receipt.sourceId,
+    retrievedAt: receipt.capturedAt,
+  });
+  if (storedAt < capturedAt || storedAt > now.getTime() || receipt.rawRetentionExpiresAt !== retention) {
+    throw new Error("published receipt identity mismatch");
+  }
+  const objectKey = `source-raw/${receipt.sourceId}/${receipt.capturedAt.slice(0, 10).replaceAll("-", "")}/${receipt.rawObjectSha256}.json`;
+  if (receipt.rawObjectUri !== `oci://axvym6vk8g7i/easysubway-datapacks/${objectKey}`) {
+    throw new Error("published receipt identity mismatch");
+  }
+  return objectKey;
+}
+function reconstructedObservationBytes(observation, retainedRawArtifact, retainedRawBytes) {
+  const { snapshot } = observation ?? {};
+  const rawArtifact = retainedRawArtifact ?? observation?.rawArtifact;
+  validateKricAccessibilityRawCollection(rawArtifact, snapshot);
+  const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot, null, 2)}\n`);
+  const rawBytes = retainedRawBytes ?? Buffer.from(`${JSON.stringify(rawArtifact, null, 2)}\n`);
+  const manifest = {
+    schemaVersion: 1,
+    artifactKind: "kric-standard-accessibility-observation",
+    sourceId: snapshot.sourceId,
+    capturedAt: snapshot.capturedAt,
+    snapshotId: snapshot.snapshotId,
+    snapshotRawSha256: snapshot.rawSha256,
+    snapshotFile: `${snapshot.snapshotId}.json`,
+    snapshotFileSha256: hash(snapshotBytes),
+    rawArtifactFile: `${snapshot.snapshotId}.raw.json`,
+    rawObjectSha256: hash(rawBytes),
+    rawObjectChecksumSha256: createHash("sha256").update(rawBytes).digest("base64"),
+    rawObjectByteSize: rawBytes.length,
+    credentialRedacted: true,
+  };
+  return {
+    manifest,
+    manifestBytes: Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`),
+    snapshot,
+    snapshotBytes,
+    rawArtifact,
+    rawBytes,
+  };
+}
+async function reconstructRetainedObservation({ plan, receipt, rawBytes, collectImpl }) {
+  const rawArtifact = parse(rawBytes, "retained OCI raw artifact");
+  const responses = new Map();
+  if (!Array.isArray(rawArtifact?.responses)) throw new Error("retained OCI raw artifact is invalid");
+  for (const response of rawArtifact.responses) {
+    const key = [response?.railOprIsttCd, response?.lnCd, response?.stinCd].join("\0");
+    if (responses.has(key) || typeof response?.bodyBase64 !== "string") {
+      throw new Error("retained OCI raw artifact is invalid");
+    }
+    responses.set(key, response);
+  }
+  const observation = await collectImpl({
+    roster: roster(plan),
+    serviceKey: "retained-oci-recovery",
+    now: new Date(receipt.capturedAt),
+    requestIntervalMs: 0,
+    delayImpl: async () => {},
+    fetchImpl: async (url) => {
+      const parsed = new URL(url);
+      const response = responses.get([
+        parsed.searchParams.get("railOprIsttCd"), parsed.searchParams.get("lnCd"), parsed.searchParams.get("stinCd"),
+      ].join("\0"));
+      if (!response) throw new Error("retained OCI raw artifact does not cover current plan");
+      const bytes = Buffer.from(response.bodyBase64, "base64");
+      return { ok: true, status: 200, json: async () => parse(bytes, "retained OCI provider response") };
+    },
+  });
+  return reconstructedObservationBytes(observation, rawArtifact, rawBytes);
+}
 function roster(plan) { return plan.stationLineProviderMappings.map((mapping) => ({
   stationId: mapping.stationId, lineId: mapping.lineId, railOprIsttCd: mapping.providerOperatorId,
   lnCd: mapping.providerLineId, stinCd: mapping.providerStationId,
@@ -305,7 +395,7 @@ export async function collectCurrentCapitalFacilityOperation({ repositoryRoot = 
     throw error;
   } finally { await releaseClaim(); }
 }
-export async function recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot = ROOT, operationRoot, sourceOperationRoot, now = new Date(), execFileImpl = execFile, durableCreateImpl = durableCreateBytes, journalWriteImpl = syncWrite, releasePreflightImpl = validateReleasePreflight } = {}) {
+export async function recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot = ROOT, operationRoot, sourceOperationRoot, now = new Date(), env = process.env, execFileImpl = execFile, durableCreateImpl = durableCreateBytes, journalWriteImpl = syncWrite, releasePreflightImpl = validateReleasePreflight, rawObjectClient = null, collectImpl = collectKricStandardAccessibilityObservation } = {}) {
   const repository = path.resolve(repositoryRoot);
   const targetRoot = path.resolve(requireText(operationRoot, "operation root"));
   const sourceRoot = path.resolve(requireText(sourceOperationRoot, "source operation root"));
@@ -346,25 +436,57 @@ export async function recoverPublishedCurrentCapitalFacilityOperation({ reposito
   try { await execFileImpl("git", ["merge-base", "--is-ancestor", sourceExpectedMainSha, targetExpectedMainSha], { cwd: repository }); }
   catch { throw new Error("published recovery source main is not an ancestor"); }
 
-  const [targetPlanBytes, sourcePlanBytes, preparedInputs] = await Promise.all([
+  const [targetPlanBytes, preparedInputs] = await Promise.all([
     assertPlanBinding(targetRoot, targetJournal),
-    assertPlanBinding(sourceRoot, sourceJournal),
     assertPreparedInputs(repository, targetJournal),
   ]);
+  let sourcePlanBytes;
+  try {
+    sourcePlanBytes = await assertPlanBinding(sourceRoot, sourceJournal);
+  } catch (error) {
+    if (error?.code !== "ENOENT" || !sourceFinalized || sourceJournal.planSha256 !== hash(targetPlanBytes)) throw error;
+    sourcePlanBytes = targetPlanBytes;
+  }
   if (!targetPlanBytes.equals(sourcePlanBytes)) throw new Error("published recovery plan identity mismatch");
   const rebuiltPlan = buildCurrentCapitalFacilityCollectionPlan(snapshotBytes(preparedInputs));
   const rebuiltPlanBytes = Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(rebuiltPlan));
   if (!targetPlanBytes.equals(rebuiltPlanBytes) || rebuiltPlan.counts.stationLineCount !== 213 || rebuiltPlan.counts.stationCount !== 199 || rebuiltPlan.counts.providerTupleCount !== 213) throw new Error("published recovery canonical plan identity mismatch");
   await releasePreflightImpl(repository, targetPlanBytes, now);
-  const observation = await readCompletedObservation(path.join(sourceRoot, "observation"));
+  const receiptBytes = await regularBytes(path.join(sourceRoot, "receipt.json"), "source raw receipt");
+  if (hash(receiptBytes) !== sourcePublished.receiptSha256) throw new Error("published recovery receipt identity mismatch");
+  const receipt = parse(receiptBytes, "source raw receipt");
+  let observation;
+  try {
+    observation = await readCompletedObservation(path.join(sourceRoot, "observation"));
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+    if (!sourceFinalized || sourcePublished.snapshotId !== receipt.snapshotId) {
+      throw new Error("published recovery source observation is unavailable");
+    }
+    const objectKey = await retainedReceiptObjectKey(receipt, repository, now);
+    requireOciParBaseUrl(env);
+    const client = rawObjectClient ?? preauthenticatedObjectStorageClient(
+      new URL(env.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL.trim()),
+      { includeErrorBody: false },
+    );
+    if (typeof client?.readObject !== "function") throw new Error("retained OCI raw client is invalid");
+    const stored = await client.readObject(objectKey, { maxResponseBytes: receipt.byteSize });
+    if (!stored?.exists || !Buffer.isBuffer(stored.body)
+      || stored.body.length !== receipt.byteSize || hash(stored.body) !== receipt.rawObjectSha256) {
+      throw new Error("retained OCI raw object identity mismatch");
+    }
+    observation = await reconstructRetainedObservation({
+      plan: rebuiltPlan,
+      receipt,
+      rawBytes: stored.body,
+      collectImpl,
+    });
+  }
   assertObservationBinding(sourceJournal, observation);
   if (sourcePublished.snapshotId !== observation.snapshot.snapshotId) throw new Error("published recovery source stage is invalid");
   if (sourceFinalized && sourceFinalizedStages.registered.snapshotSha256 !== hash(observation.snapshotBytes)) throw new Error("published recovery finalized source stages are invalid");
   const recoveryNowMillis = requiredUtcInstant(now.toISOString(), "published recovery now");
   if (requiredUtcInstant(observation.snapshot.freshUntil, "published recovery freshUntil") <= recoveryNowMillis) throw new Error("published recovery observation is stale");
-  const receiptBytes = await regularBytes(path.join(sourceRoot, "receipt.json"), "source raw receipt");
-  if (hash(receiptBytes) !== sourcePublished.receiptSha256) throw new Error("published recovery receipt identity mismatch");
-  const receipt = parse(receiptBytes, "source raw receipt");
   await assertClosedRawReceipt({ root: repository, receipt, observation, now });
   const collectionStartedAtMillis = requiredUtcInstant(sourceJournal.collectionStartedAt, "source collectionStartedAt");
   const finalizeObservedAtMillis = requiredUtcInstant(sourceJournal.finalizeObservedAt, "source finalizeObservedAt");

@@ -1,11 +1,15 @@
 #!/usr/bin/env node
-import { readFile, writeFile } from "node:fs/promises";
+import { lstat, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+
+import { readEffectiveCurrentCapitalAccessibilityTransition } from "../datapack/current-capital-accessibility-transition.mjs";
 
 const SOURCE_ID = "seoul-metro-accessibility";
 const AUTOMATION_BRANCH = /^automation\/639-seoul-accessibility-refresh-\d+$/;
 const CLAIM_REF = /^[\da-f]{40}\trefs\/heads\/(automation\/639-seoul-accessibility-refresh-\d+)$/;
 const ALERT_THRESHOLD = /^PT(?:(?<hours>\d+)H)?(?:(?<minutes>\d+)M)?(?:(?<seconds>\d+)S)?$/;
+const TRANSITION = "tools/datapack/release/current-capital-accessibility-transition.json";
+const TRANSITION_SUCCESSOR = "tools/datapack/release/current-capital-accessibility-transition-successor.json";
 
 function parseJson(bytes, label) {
   try {
@@ -81,7 +85,33 @@ function automationClaims(bytes) {
   return claims;
 }
 
-export async function decideCurrentSeoulAccessibilityRefresh({ inventoryPath, policyPath, prsPath, claimsPath, repository, now = new Date() } = {}) {
+async function exists(file) {
+  try {
+    await lstat(file);
+    return true;
+  } catch (error) {
+    if (error?.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+async function hasPendingAccessibilityTransition(repositoryRoot, readTransitionBoundary) {
+  const root = path.resolve(repositoryRoot);
+  if (!await exists(path.join(root, TRANSITION))) {
+    if (await exists(path.join(root, TRANSITION_SUCCESSOR))) {
+      throw new Error("current accessibility transition successor has no base transition");
+    }
+    return false;
+  }
+  await readTransitionBoundary({ repositoryRoot: root });
+  return true;
+}
+
+export async function decideCurrentSeoulAccessibilityRefresh({ inventoryPath, policyPath, prsPath, claimsPath, repository, repositoryRoot = process.cwd(), now = new Date(), readTransitionBoundary = readEffectiveCurrentCapitalAccessibilityTransition } = {}) {
+  if (typeof readTransitionBoundary !== "function") throw new Error("transition boundary reader is invalid");
+  if (await hasPendingAccessibilityTransition(repositoryRoot, readTransitionBoundary)) {
+    return { state: "PENDING_FULL_FAN_IN" };
+  }
   const [inventoryBytes, policyBytes, prsBytes, claimsBytes] = await Promise.all([
     readFile(path.resolve(inventoryPath)),
     readFile(path.resolve(policyPath)),
