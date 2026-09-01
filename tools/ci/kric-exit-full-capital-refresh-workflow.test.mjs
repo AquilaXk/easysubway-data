@@ -31,6 +31,8 @@ test("EXIT refresh keeps exact-main OCI producer, immutable recovery, and select
   assert.match(yml, /--current-main-sha "\$\{main_sha\}"/);
   const normalizeCommand = 'git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"';
   const normalizeOrigin = yml.indexOf(normalizeCommand);
+  const boundFacilityFetch = yml.indexOf('git fetch --no-tags origin "refs/heads/${branch}:refs/remotes/origin/${branch}"');
+  const preProviderAncestry = yml.indexOf('execFileSync("git", ["merge-base", "--is-ancestor", sourceMainSha, process.env.EXIT_REFRESH_FACILITY_HEAD_SHA]');
   const createClaim = yml.indexOf('git switch -c "${branch}"');
   assert.ok(normalizeOrigin >= 0 && normalizeOrigin < createClaim);
   const terminalJob = yml.indexOf("\n  terminal:");
@@ -64,6 +66,9 @@ test("EXIT refresh keeps exact-main OCI producer, immutable recovery, and select
   assert.match(yml, /git worktree remove --force "\$\{directory\}"/);
   const itxFreshnessPreflight = yml.indexOf("assertCurrentCapitalExitItxAuthorityFresh");
   const firstTopologyCollector = yml.indexOf("collect-capital-route-topology.mjs --download --output");
+  const providerConfiguration = yml.indexOf("name: Validate provider and OCI configuration");
+  assert.ok(boundFacilityFetch >= 0 && preProviderAncestry > boundFacilityFetch);
+  assert.ok(preProviderAncestry < createClaim && preProviderAncestry < providerConfiguration && preProviderAncestry < firstTopologyCollector);
   assert.ok(itxFreshnessPreflight >= 0 && itxFreshnessPreflight < firstTopologyCollector);
   assert.equal((yml.match(/collect-capital-route-topology\.mjs --download --output/g) ?? []).length, 1);
   assert.equal((yml.match(/collect-incheon-station-info\.mjs --download --output/g) ?? []).length, 1);

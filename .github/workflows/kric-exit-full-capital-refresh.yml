@@ -123,6 +123,22 @@ jobs:
           git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
           [[ "$(git remote get-url origin)" == "https://github.com/${GITHUB_REPOSITORY}.git" ]] || { echo "Data origin normalization failed" >&2; exit 1; }
 
+      - name: Require source-main ancestry before claiming
+        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
+        run: |
+          set -euo pipefail
+          source_main_sha="$(git rev-parse HEAD)"
+          [[ "${source_main_sha}" =~ ^[a-f0-9]{40}$ ]] || { echo "source main identity is invalid" >&2; exit 1; }
+          EXIT_REFRESH_SOURCE_MAIN_SHA="${source_main_sha}" node --input-type=module -e '
+            import { execFileSync } from "node:child_process";
+            const sourceMainSha = process.env.EXIT_REFRESH_SOURCE_MAIN_SHA;
+            try {
+              execFileSync("git", ["merge-base", "--is-ancestor", sourceMainSha, process.env.EXIT_REFRESH_FACILITY_HEAD_SHA], { cwd: process.env.GITHUB_WORKSPACE, stdio: "ignore" });
+            } catch {
+              throw new Error("source main is not an ancestor of selected FACILITY head");
+            }
+          '
+
       - name: Create durable claim before provider access
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
         env:
