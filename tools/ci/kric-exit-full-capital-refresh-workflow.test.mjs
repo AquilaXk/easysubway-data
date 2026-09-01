@@ -17,6 +17,15 @@ test("EXIT refresh keeps exact-main OCI producer, immutable recovery, and select
   assert.match(yml, /terminal:\n    name: Commit verified EXIT terminal candidate[\s\S]*?permissions:\n      actions: read\n      contents: write/);
   assert.match(yml, /decide-current-kric-exit-full-capital-refresh\.mjs/);
   assert.match(yml, /--json number,state,isDraft,headRefName,headRefOid,baseRefName,headRepository,isCrossRepository,files/);
+  assert.match(yml, /claim-evidence\.json/);
+  assert.match(yml, /git fetch --no-tags origin "\$\{claim_ref\}"/);
+  assert.match(yml, /git rev-parse "\$\{claim_sha\}\^"/);
+  assert.match(yml, /git rev-list --count "\$\{main_sha\}\.\.\$\{claim_sha\}"/);
+  assert.match(yml, /git show -s --format=%s "\$\{claim_sha\}"/);
+  assert.match(yml, /const fields = line\.split\("\\\\t"\);/);
+  assert.match(yml, /if \(fields\.length !== 5\) throw new Error\("invalid claim evidence field count"\);/);
+  assert.match(yml, /--claim-evidence "\$\{claim_evidence\}"/);
+  assert.match(yml, /--current-main-sha "\$\{main_sha\}"/);
   const normalizeCommand = 'git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"';
   const normalizeOrigin = yml.indexOf(normalizeCommand);
   const createClaim = yml.indexOf('git switch -c "${branch}"');

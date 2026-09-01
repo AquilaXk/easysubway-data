@@ -221,7 +221,7 @@ jobs:
               ["TOPOLOGY_REVERIFICATION_PATH", "tools/datapack/release/capital-topology-reverification-" + utc(capital.capturedAt) + ".json", ""],
             ];
             for (const [key, target, source] of values) { console.log(key + "=" + target); if (source) console.log(key + "_SOURCE=" + source); }
-            console.log("TOPOLOGY_BUILD_NOW=" + new Date().toISOString().replace(/\.\d{3}Z$/u, ".000Z"));
+            console.log("TOPOLOGY_BUILD_NOW=" + new Date().toISOString());
           ' >> "${GITHUB_ENV}"
       - name: Derive current ITX admission identity
         if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.decision.outputs.itx_refresh_required == 'true' && steps.claimed-preflight.outputs.state == 'CLEAR' }}

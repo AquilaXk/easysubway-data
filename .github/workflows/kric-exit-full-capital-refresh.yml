@@ -64,11 +64,37 @@ jobs:
           gh pr list --repo "${GITHUB_REPOSITORY}" --state open --limit 1000 \
             --json number,state,isDraft,headRefName,headRefOid,baseRefName,headRepository,isCrossRepository,files > "${state_root}/facility-prs.json"
           git ls-remote --heads origin "refs/heads/automation/6-kric-exit-full-capital-refresh-*" > "${state_root}/claims.txt"
+          main_sha="$(git rev-parse HEAD)"
+          claim_rows="${state_root}/claim-evidence.tsv"
+          claim_evidence="${state_root}/claim-evidence.json"
+          : > "${claim_rows}"
+          while IFS=$'\t' read -r claim_sha claim_ref; do
+            [[ -z "${claim_sha}" ]] && continue
+            branch="${claim_ref#refs/heads/}"
+            git fetch --no-tags origin "${claim_ref}"
+            parent_sha="$(git rev-parse "${claim_sha}^")"
+            commit_count="$(git rev-list --count "${main_sha}..${claim_sha}")"
+            subject="$(git show -s --format=%s "${claim_sha}")"
+            printf '%s\t%s\t%s\t%s\t%s\n' "${claim_sha}" "${branch}" "${parent_sha}" "${commit_count}" "${subject}" >> "${claim_rows}"
+          done < "${state_root}/claims.txt"
+          node --input-type=module -e '
+            import { readFile, writeFile } from "node:fs/promises";
+            const [rowsPath, outputPath] = process.argv.slice(1);
+            const rows = (await readFile(rowsPath, "utf8")).split("\\n").filter(Boolean).map((line) => {
+              const fields = line.split("\\t");
+              if (fields.length !== 5) throw new Error("invalid claim evidence field count");
+              const [sha, branch, parentSha, commitCount, subject] = fields;
+              return { sha, branch, parentSha, commitCount: Number(commitCount), subject };
+            });
+            await writeFile(outputPath, JSON.stringify(rows) + "\\n", { flag: "wx" });
+          ' "${claim_rows}" "${claim_evidence}"
           node tools/ci/decide-current-kric-exit-full-capital-refresh.mjs \
             --inventory tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json \
             --policy release/product-gates/datapack-freshness-sla.json \
             --prs "${state_root}/prs.json" \
             --claims "${state_root}/claims.txt" \
+            --claim-evidence "${claim_evidence}" \
+            --current-main-sha "${main_sha}" \
             --facility-prs "${state_root}/facility-prs.json" \
             --repository "${GITHUB_REPOSITORY}" \
             --output "${EXIT_REFRESH_DECISION}" \
