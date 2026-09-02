@@ -220,6 +220,7 @@ function requiredSources(inventory, timetableSnapshot, topologySnapshot, mapping
   const schedule = timetable?.scheduleAdmissionEvidence;
   const topologyEvidence = topology?.topologyAdmissionEvidence;
   const membershipEvidence = membership?.membershipAdmissionEvidence;
+  const membershipVerifiedAt = Date.parse(membershipEvidence?.verifiedAt ?? "");
   const mappingSha256 = sha256(JSON.stringify(mappings));
   const stationCodesSha256 = sha256(JSON.stringify(mappings?.map(({ stationNumber }) => stationNumber)));
   if (timetable?.productionUseAllowed !== true || timetable.license?.redistributionAllowed !== true
@@ -264,8 +265,13 @@ function requiredSources(inventory, timetableSnapshot, topologySnapshot, mapping
     || membershipEvidence.membershipSourceSnapshotSha256 !== mappings.sourceRawSha256
     || membershipEvidence.stationCodeSourceId !== TOPOLOGY_SOURCE_ID
     || membershipEvidence.stationCodeSnapshotId !== topologyEvidence.snapshotId
-    || membershipEvidence.stationCodeContentSha256 !== topologySnapshot.contentSha256) {
+    || membershipEvidence.stationCodeContentSha256 !== topologySnapshot.contentSha256
+    || !Number.isFinite(membershipVerifiedAt)
+    || new Date(membershipVerifiedAt).toISOString() !== membershipEvidence.verifiedAt) {
     throw new Error(`${MEMBERSHIP_SOURCE_ID} membership evidence is invalid`);
+  }
+  if (!(now instanceof Date) || !Number.isFinite(now.getTime()) || now.getTime() < membershipVerifiedAt) {
+    throw new Error(`${MEMBERSHIP_SOURCE_ID} membership evidence is future-dated`);
   }
   for (const [label, capturedAt, freshUntil] of [
     [SOURCE_ID, schedule.capturedAt, schedule.freshUntil],

@@ -110,6 +110,24 @@ test("대구 materializer는 snapshot·inventory·freshness 변조를 fail close
   }), /stale/);
 });
 
+test("대구 materializer는 evaluation instant 이후 membership verification을 거부한다", async () => {
+  const values = await inputs({ materialize: false });
+  const inventory = structuredClone(values.inventory);
+  const membership = inventory.sources.find(
+    ({ id }) => id === "molit-urban-rail-full-route-daegu-line1-membership",
+  );
+  membership.membershipAdmissionEvidence.verifiedAt = new Date(now.getTime() + 1).toISOString();
+
+  assert.throws(() => materializeDaeguTimetable({
+    baseFixture: values.baseFixture,
+    topologySnapshots: values.topologySnapshots,
+    timetableSnapshots: values.timetableSnapshots,
+    inventory,
+    canonicalStationMappings: values.mappings,
+    now,
+  }), /molit-urban-rail-full-route-daegu-line1-membership membership evidence is future-dated/);
+});
+
 test("대구 시각표 snapshot의 trips 변조(tripsSha256 불일치)는 fail-closed된다", async () => {
   const values = await inputs({ materialize: false });
   const timetable = structuredClone(values.timetableSnapshots[1]);
