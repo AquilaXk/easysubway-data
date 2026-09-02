@@ -61,6 +61,7 @@ jobs:
         id: decision
         env:
           GH_TOKEN: ${{ github.token }}
+          RECOVERY_PRODUCER_RUN_ID: ${{ github.event.inputs.recovery_producer_run_id || '' }}
         run: |
           set -euo pipefail
           state_root="${RUNNER_TEMP}/kric-exit-full-capital-refresh"
@@ -94,7 +95,7 @@ jobs:
             });
             await writeFile(outputPath, JSON.stringify(rows) + "\n", { flag: "wx" });
           ' "${claim_rows}" "${claim_evidence}"
-          recovery_producer_run_id="${{ github.event.inputs.recovery_producer_run_id || '' }}"
+          recovery_producer_run_id="${RECOVERY_PRODUCER_RUN_ID}"
           decision_args=(
             --inventory tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json
             --policy release/product-gates/datapack-freshness-sla.json

@@ -12,6 +12,8 @@ test("EXIT refresh keeps exact-main OCI producer, immutable recovery, and select
   const yml = readFileSync(workflowPath, "utf8");
   assert.match(yml, /cron: "41 \*\/2 \* \* \*"/);
   assert.match(yml, /recovery_producer_run_id:/);
+  assert.match(yml, /RECOVERY_PRODUCER_RUN_ID: \$\{\{ github\.event\.inputs\.recovery_producer_run_id \|\| '' \}\}/);
+  assert.doesNotMatch(yml, /recovery_producer_run_id="\$\{\{ github\.event\.inputs/);
   assert.match(yml, /INSPECT_SELECTED_CLAIM/);
   assert.match(yml, /INSPECTED_ANCESTOR_CLAIM/);
   assert.match(yml, /--recovery-producer-run-id "\$\{recovery_producer_run_id\}"/);
