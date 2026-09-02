@@ -147,6 +147,10 @@ const LINEAGE_TOPOLOGY_INPUTS = Object.freeze([
   "capitalTopologyPath", "incheonTopologyPath", "incheonLine1TimetablePath", "incheonLine2TimetablePath",
 ]);
 const CURRENT_CAPITAL_TOPOLOGY_HANDOFF = "current-capital-topology-terminal-handoff.json";
+const CURRENT_CAPITAL_TERMINAL_MARKERS = Object.freeze([
+  "tools/datapack/release/current-capital-accessibility-transition.json",
+  "tools/datapack/release/current-capital-accessibility-transition-successor.json",
+]);
 
 export async function assertCurrentCapitalExitItxAuthorityFresh({ repositoryRoot, now = new Date() } = {}) {
   if (!path.isAbsolute(repositoryRoot ?? "") || !(now instanceof Date) || Number.isNaN(now.valueOf())) {
@@ -449,7 +453,7 @@ export async function verifyCurrentCapitalTerminalLineage({
   });
 }
 
-async function buildCurrentCapitalTopologyTerminalHandoff({
+export async function buildCurrentCapitalTopologyTerminalHandoff({
   repository,
   operationId,
   sourceMainGitSha,
@@ -520,6 +524,119 @@ function validateCurrentCapitalTopologyTerminalHandoff(bytes, expected) {
     }
   }
   return Object.freeze(value);
+}
+function proofHashMap(entries, pathKey, label) {
+  if (!Array.isArray(entries)) throw new Error(`${label} mismatch`);
+  const mapped = new Map(entries.map((entry) => [entry?.[pathKey], entry?.sha256]));
+  if (mapped.size !== entries.length || [...mapped].some(([relativePath, digest]) =>
+    requiredRelativePath(relativePath, label) !== relativePath || !/^[a-f0-9]{64}$/u.test(digest ?? ""))) {
+    throw new Error(`${label} mismatch`);
+  }
+  return mapped;
+}
+function equalHashMaps(left, right, label) {
+  if (left.size !== right.size || [...left].some(([relativePath, digest]) => right.get(relativePath) !== digest)) {
+    throw new Error(`${label} mismatch`);
+  }
+}
+async function assertAncestorRecoveryByteEquality({ ancestorRoot, currentRoot, entries, pathKey, label }) {
+  const expected = proofHashMap(entries, pathKey, label);
+  await Promise.all([...expected].map(async ([relativePath, digest]) => {
+    const [ancestor, current] = await Promise.all([
+      lineageFile(ancestorRoot, relativePath, `ancestor recovery ancestor ${relativePath}`),
+      lineageFile(currentRoot, relativePath, `ancestor recovery current ${relativePath}`),
+    ]);
+    if (sha256(ancestor.bytes) !== digest || !ancestor.bytes.equals(current.bytes)) {
+      throw new Error("ancestor recovery retained terminal input mismatch");
+    }
+  }));
+  return expected;
+}
+
+/**
+ * Rebind an already authenticated producer topology handoff to the current
+ * FACILITY head only after every terminal input still has the old proof's
+ * exact bytes.  This changes neither the provider source handoff nor its OCI
+ * tuple: the returned handoff retains the original source operation ID.
+ */
+export async function rebuildCurrentCapitalTopologyTerminalHandoffForAncestorRecovery({
+  repository,
+  sourceMainRoot,
+  sourceMainGitSha,
+  ancestorRetainedRoot,
+  ancestorFacilityHeadGitSha,
+  originalPrivateBuilderRoot,
+  originalBuilderGitSha,
+  currentRetainedRoot,
+  currentFacilityBranch,
+  currentFacilityHeadGitSha,
+  topologyHandoffBytes,
+  execFileImpl = execFile,
+  verifyTerminalLineageImpl = verifyCurrentCapitalTerminalLineage,
+  buildTopologyHandoffImpl = buildCurrentCapitalTopologyTerminalHandoff,
+} = {}) {
+  if (repository !== "AquilaXk/easysubway-data"
+    || !/^automation\/629-kric-facility-refresh-[0-9]+$/u.test(currentFacilityBranch ?? "")
+    || !Buffer.isBuffer(topologyHandoffBytes)
+    || typeof verifyTerminalLineageImpl !== "function" || typeof buildTopologyHandoffImpl !== "function") {
+    throw new Error("ancestor recovery topology handoff inputs mismatch");
+  }
+  [sourceMainGitSha, ancestorFacilityHeadGitSha, originalBuilderGitSha, currentFacilityHeadGitSha].forEach(requiredSha);
+  if (![sourceMainRoot, ancestorRetainedRoot, originalPrivateBuilderRoot, currentRetainedRoot]
+    .every((value) => path.isAbsolute(value ?? ""))) {
+    throw new Error("ancestor recovery topology handoff roots mismatch");
+  }
+  let originalTopology;
+  try { originalTopology = JSON.parse(topologyHandoffBytes.toString("utf8")); } catch { throw new Error("ancestor recovery topology handoff JSON mismatch"); }
+  const topologyBuild = originalTopology?.topologyBuild;
+  const originalPrepared = await verifyTerminalLineageImpl({
+    sourceMainRoot: path.resolve(sourceMainRoot), retainedRoot: path.resolve(ancestorRetainedRoot),
+    privateBuilderRoot: path.resolve(originalPrivateBuilderRoot), sourceMainGitSha,
+    facilityHeadGitSha: ancestorFacilityHeadGitSha, builderGitSha: originalBuilderGitSha,
+    topologyBuild, execFileImpl,
+  });
+  if (!originalPrepared?.proof) throw new Error("ancestor recovery original lineage mismatch");
+  const originalHandoff = validateCurrentCapitalTopologyTerminalHandoff(topologyHandoffBytes, {
+    repository, sourceMainGitSha, facilityBranch: currentFacilityBranch,
+    facilityHeadGitSha: ancestorFacilityHeadGitSha, builderGitSha: originalBuilderGitSha,
+    topologyBuild, proof: originalPrepared.proof,
+  });
+  const retained = await assertAncestorRecoveryByteEquality({
+    ancestorRoot: path.resolve(ancestorRetainedRoot), currentRoot: path.resolve(currentRetainedRoot),
+    entries: originalPrepared.proof.retainedOutputs, pathKey: "relative", label: "ancestor recovery retained outputs",
+  });
+  const prestates = await assertAncestorRecoveryByteEquality({
+    ancestorRoot: path.resolve(ancestorRetainedRoot), currentRoot: path.resolve(currentRetainedRoot),
+    entries: originalPrepared.proof.replacementPrestates, pathKey: "relativePath", label: "ancestor recovery replacement prestates",
+  });
+  await Promise.all(CURRENT_CAPITAL_TERMINAL_MARKERS.map(async (relativePath) => {
+    const [ancestor, current] = await Promise.all([
+      lineageFile(path.resolve(ancestorRetainedRoot), relativePath, `ancestor recovery ancestor ${relativePath}`),
+      lineageFile(path.resolve(currentRetainedRoot), relativePath, `ancestor recovery current ${relativePath}`),
+    ]);
+    if (!ancestor.bytes.equals(current.bytes)) throw new Error("ancestor recovery retained terminal input mismatch");
+  }));
+  const currentPrepared = await verifyTerminalLineageImpl({
+    sourceMainRoot: path.resolve(sourceMainRoot), retainedRoot: path.resolve(currentRetainedRoot),
+    privateBuilderRoot: path.resolve(originalPrivateBuilderRoot), sourceMainGitSha,
+    facilityHeadGitSha: currentFacilityHeadGitSha, builderGitSha: originalBuilderGitSha,
+    topologyBuild, execFileImpl,
+  });
+  if (!currentPrepared?.proof) throw new Error("ancestor recovery current lineage mismatch");
+  equalHashMaps(retained, proofHashMap(currentPrepared.proof.retainedOutputs, "relative", "ancestor recovery retained outputs"), "ancestor recovery retained outputs");
+  equalHashMaps(prestates, proofHashMap(currentPrepared.proof.replacementPrestates, "relativePath", "ancestor recovery replacement prestates"), "ancestor recovery replacement prestates");
+  equalHashMaps(
+    proofHashMap(originalPrepared.proof.topologyInputs, "relativePath", "ancestor recovery topology inputs"),
+    proofHashMap(currentPrepared.proof.topologyInputs, "relativePath", "ancestor recovery topology inputs"),
+    "ancestor recovery topology inputs",
+  );
+  const topologyHandoff = await buildTopologyHandoffImpl({
+    repository, operationId: originalHandoff.operationId, sourceMainGitSha,
+    facilityBranch: currentFacilityBranch, facilityHeadGitSha: currentFacilityHeadGitSha,
+    builderGitSha: originalBuilderGitSha, topologyBuild,
+    privateBuilderRoot: path.resolve(originalPrivateBuilderRoot), proof: currentPrepared.proof,
+  });
+  return Object.freeze({ topologyHandoff, originalProof: originalPrepared.proof, currentProof: currentPrepared.proof });
 }
 async function readStagedRegularFile(stagedRoot, relativePath, label) {
   const root = path.resolve(stagedRoot);
