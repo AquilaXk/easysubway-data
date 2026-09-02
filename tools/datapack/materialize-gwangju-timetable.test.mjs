@@ -144,6 +144,25 @@ test("광주 materializer는 snapshot·inventory·freshness·topology lineage �
   }), /stale/);
 });
 
+test("광주 materializer는 evaluation instant 이후 membership verification을 거부한다", async () => {
+  const values = await inputs({ materialize: false });
+  const inventory = structuredClone(values.inventory);
+  const verifiedAt = new Date(now.getTime() + 1).toISOString();
+  inventory.sources.find(({ id }) => id === "molit-urban-rail-full-route-gwangju-membership")
+    .membershipAdmissionEvidence.verifiedAt = verifiedAt;
+  inventory.sources.find(({ id }) => id === "gwangju-transportation-route-topology")
+    .membershipAdmissionEvidence.verifiedAt = verifiedAt;
+
+  assert.throws(() => materializeGwangjuTimetable({
+    baseFixture: values.baseFixture,
+    timetableSnapshot: values.gwangjuTimetable,
+    topologySnapshot: values.gwangjuTopology,
+    inventory,
+    canonicalStationMappings: values.gwangjuMappings,
+    now,
+  }), /molit-urban-rail-full-route-gwangju-membership membership evidence is future-dated/);
+});
+
 test("MOLIT 광주 station mapping과 materializer CLI를 고정한다", async () => {
   const values = await inputs({ materialize: false });
   assert.equal(values.gwangjuMappings.length, 20);
