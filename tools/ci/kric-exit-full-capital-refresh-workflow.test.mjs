@@ -22,6 +22,7 @@ test("EXIT refresh keeps exact-main OCI producer, immutable recovery, and select
   assert.match(yml, /git merge-base --is-ancestor "\$\{producer_main_sha\}" "\$\{current_main_sha\}"/);
   assert.match(yml, /git merge-base --is-ancestor "\$\{current_main_sha\}" "\$\{EXIT_REFRESH_FACILITY_HEAD_SHA\}"/);
   assert.match(yml, /rebuildCurrentCapitalTopologyTerminalHandoffForAncestorRecovery/);
+  assert.match(yml, /ancestor_facility_branch.*EXIT_REFRESH_FACILITY_BRANCH/);
   assert.match(yml, /github\.ref == 'refs\/heads\/main'/);
   assert.match(yml, /permissions:\n  actions: read\n  contents: read\n  pull-requests: read/);
   assert.match(yml, /source:\n    name: Produce immutable EXIT source[\s\S]*?permissions:\n      actions: read\n      contents: write\n      pull-requests: read/);
