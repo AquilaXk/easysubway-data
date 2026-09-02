@@ -281,6 +281,48 @@ test("mixed handoff retains Seoul bytes and refreshes only KRIC", async (t) => {
   assert.equal(rebuilt.outputs.some(({ relativePath }) => relativePath === retainedSnapshotPath), false);
 });
 
+test("retain-only handoff preserves both current sources without provider outputs", async (t) => {
+  const input = await fixture(t);
+  for (const relativePath of [
+    "tools/datapack/release/candidate-build-spec.json",
+    "tools/datapack/source-inventory.json",
+    "tools/datapack/release/source-snapshots.json",
+    ...input.sources.map(({ relativePath }) => relativePath),
+  ]) {
+    await write(input.retainedRoot, relativePath, await readFile(path.join(input.preparedRoot, relativePath)));
+  }
+  const parameters = {
+    repository: "AquilaXk/easysubway-data",
+    operationId: "kric-exit-full-capital-refresh-123456",
+    sourceMainGitSha: SOURCE_MAIN_SHA,
+    facilityBranch: "automation/629-kric-facility-refresh-123456",
+    facilityHeadGitSha: FACILITY_HEAD_SHA,
+    providerStartedAt: new Date(OPERATION_NOW),
+    operationNow: new Date(OPERATION_NOW),
+    protectedCandidateId: PROTECTED_CANDIDATE_ID,
+    retainedRoot: input.retainedRoot,
+    preparedRoot: input.preparedRoot,
+  };
+  const handoff = await buildCurrentCapitalAccessibilitySourceHandoff({
+    ...parameters,
+    sources: input.sources.map(({ sourceId }) => ({ action: "RETAIN", sourceId })),
+  });
+  const verified = await verifyCurrentCapitalAccessibilitySourceHandoff({
+    handoffBytes: Buffer.from(`${canonicalCurrentCapitalAccessibilitySourceHandoffJson(handoff)}\n`),
+    retainedRoot: input.retainedRoot,
+    preparedRoot: input.preparedRoot,
+    expected: parameters,
+  });
+  const rebuilt = await rebuildCurrentCapitalAccessibilitySourceHandoffFromRoots(parameters);
+
+  assert.deepEqual(verified.sources.map(({ sourceId, action }) => [sourceId, action]), [
+    ["kric-station-convenience-standard", "RETAIN"],
+    ["seoul-metro-accessibility", "RETAIN"],
+  ]);
+  assert.equal(verified.outputs.some(({ operation }) => operation === "create"), false);
+  assert.equal(rebuilt.handoffSha256, verified.handoffSha256);
+});
+
 test("roots-only rebuild preserves caller-supplied operation clocks", async (t) => {
   const input = await fixture(t);
   const rebuilt = await rebuildCurrentCapitalAccessibilitySourceHandoffFromRoots({

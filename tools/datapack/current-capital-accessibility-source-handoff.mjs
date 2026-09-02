@@ -153,7 +153,6 @@ function validatePayload(value, expected = undefined) {
     !== JSON.stringify([...SOURCE_CONTRACTS.keys()].sort(codepointCompare))) throw new Error("source set mismatch");
   sources.forEach((source) => validateSource(source, operationNow));
   const refreshed = sources.filter(({ action }) => action === "REFRESH");
-  if (refreshed.length === 0) throw new Error("accessibility source handoff has no refresh");
   const expectedPaths = [...CURRENT_CAPITAL_ACCESSIBILITY_SOURCE_FIXED_OUTPUTS,
     ...refreshed.map(({ snapshotPath }) => snapshotPath)].sort(codepointCompare);
   if (value.outputs.length !== expectedPaths.length
@@ -542,7 +541,6 @@ export async function rebuildCurrentCapitalAccessibilitySourceHandoffFromRoots({
   if (retainedSet.candidateId !== protectedCandidateId || preparedSet.candidateId !== protectedCandidateId) {
     throw new Error("protected candidate identity mismatch");
   }
-  let refreshCount = 0;
   const sources = SOURCE_IDS.map((sourceId) => {
     const retainedSource = retainedSet.sources.get(sourceId);
     const preparedSource = preparedSet.sources.get(sourceId);
@@ -552,7 +550,6 @@ export async function rebuildCurrentCapitalAccessibilitySourceHandoffFromRoots({
     if (preparedSource.capturedAt !== providerStartedAt.valueOf()) {
       throw new Error(`accessibility source provider clock mismatch: ${sourceId}`);
     }
-    refreshCount += 1;
     return {
       action: "REFRESH",
       sourceId,
@@ -562,7 +559,6 @@ export async function rebuildCurrentCapitalAccessibilitySourceHandoffFromRoots({
       receiptBytes: Buffer.from(canonicalJson(preparedSource.rawReceipt)),
     };
   });
-  if (refreshCount === 0) throw new Error("accessibility source handoff has no refresh");
   return buildCurrentCapitalAccessibilitySourceHandoff({
     repository,
     operationId,
