@@ -140,6 +140,8 @@ export async function buildCurrentActiveFacilityDerivedIdentitySuccessorTransact
     const expected = buildCurrentCapitalAccessibilityTransitionSuccessor({
       baseTransitionBytes: baseBytes,
       previousFacilityBytes,
+      currentFacilityBytes: facility.prestate,
+      currentLedger: ledger.value,
       currentTransition: existingTransition,
     });
     if (canonicalJson(existing) !== canonicalJson(expected)) {
