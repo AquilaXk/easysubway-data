@@ -1712,6 +1712,7 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
   productionInput,
   productionScopePolicyBytes,
   buildNow,
+  terminalCandidateId,
   snapshotBytesByPath,
   layoutTopologySnapshotBytesById,
 }) {
@@ -1880,6 +1881,7 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
         `admitted Incheon line ${lineNumber} timetable source`).scheduleAdmissionEvidence.snapshotId])),
     itxCurrentAdmissionPath: currentItxAdmissionPath,
     itxCurrentAdmissionBytes: currentItxAdmissionBytes,
+    terminalCandidateId,
   });
   spec.publishedAt = activationNow.toISOString();
   if (currentItxTopologyEvidencePath !== requiredItxTopologyEvidencePath(baseSpec)
@@ -2007,6 +2009,7 @@ export function buildCurrentCandidateSpec({
   incheonTimetableSnapshotIds,
   itxCurrentAdmissionPath,
   itxCurrentAdmissionBytes,
+  terminalCandidateId,
 }) {
   if (!baseSpec || baseSpec.schemaVersion !== 1
     || baseSpec.artifactKind !== "datapack-candidate-build-spec"
@@ -2054,6 +2057,10 @@ export function buildCurrentCandidateSpec({
       || !Buffer.isBuffer(itxCurrentAdmissionBytes))) {
     throw new Error("current ITX topology admission identity is invalid");
   }
+  if (terminalCandidateId != null
+    && (typeof terminalCandidateId !== "string" || terminalCandidateId.trim() === "")) {
+    throw new Error("terminal candidate identity is invalid");
+  }
   const spec = structuredClone(baseSpec);
   if (spec.networkEdgeEvidence) {
     delete spec.networkEdgeEvidence.itxCurrentTopologyAdmission;
@@ -2061,7 +2068,7 @@ export function buildCurrentCandidateSpec({
       throw new Error("current candidate base spec contains superseded Incheon accessibility evidence");
     }
   }
-  spec.candidateId = `capital-pilot-candidate-${snapshotDate}`;
+  spec.candidateId = terminalCandidateId ?? `capital-pilot-candidate-${snapshotDate}`;
   spec.builderGitSha = builderGitSha;
   spec.builderVersion = "build-datapack.mjs@26";
   spec.fixturePath = "tools/datapack/release/capital-production-canonical-pack.json";
@@ -2856,9 +2863,14 @@ export async function generateCurrentCapitalTopologyRefresh({
   check = false,
   prepareOnly = false,
   approvedItxBootstrap = false,
+  terminalCandidateId,
 }) {
   const repositoryPath = path.resolve(repositoryRoot);
   if (prepareOnly && check) throw new Error("current topology prepare/check mode mismatch");
+  if (terminalCandidateId != null
+    && (!prepareOnly || typeof terminalCandidateId !== "string" || terminalCandidateId.trim() === "")) {
+    throw new Error("terminal candidate identity is invalid");
+  }
   const capitalPathMatch = /^tools\/datapack\/sources\/capital-route-topology-([0-9]{8})\.json$/u
     .exec(capitalTopologyPath ?? "");
   if (capitalPathMatch == null) {
@@ -3009,6 +3021,7 @@ export async function generateCurrentCapitalTopologyRefresh({
       productionInput: parseJson(productionInputBytes, "production input"),
       productionScopePolicyBytes,
       buildNow,
+      terminalCandidateId,
       snapshotBytesByPath: await collectPositionSnapshotBytes(sourceInventory, repositoryPath),
       layoutTopologySnapshotBytesById: await collectLayoutTopologySnapshotBytes(sourceInventory, repositoryPath),
     });

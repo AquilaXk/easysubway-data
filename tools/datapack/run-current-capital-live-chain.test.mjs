@@ -32,6 +32,7 @@ import { buildCurrentCapitalFacilitySourceAdmission, canonicalCurrentCapitalFaci
 import { collectKricAccessibilitySnapshots } from "./collect-kric-accessibility-snapshots.mjs";
 import { rebindCurrentCandidateSourceSnapshots } from "./rebind-current-candidate-source-snapshots.mjs";
 import { registerKricStandardAccessibilitySnapshot } from "./register-kric-standard-accessibility-snapshot.mjs";
+import { buildCurrentCapitalTopologyRefreshOutputs } from "./activate-current-source-set.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { buildCurrentKricExitCollectionBundle, buildCurrentKricExitCollectionReceipt, canonicalCurrentKricExitCollectionBundleJson } from "./build-current-kric-exit-collection-receipt.mjs";
 import { buildCurrentKricExitCollectionPlan } from "./build-current-kric-exit-collection-plan.mjs";
@@ -499,6 +500,7 @@ test("terminal lineage replays the retained FACILITY producer and rejects builde
   const builderGitSha = await cloneCleanFixture(ROOT, privateBuilderRoot);
   const facilityHeadGitSha = await buildRetainedFacilityFixture(retainedRoot);
   const topologyBuild = await currentTopologyFixture(privateBuilderRoot);
+  let observedTerminalCandidateId = null;
   const verified = await verifyCurrentCapitalTerminalLineage({
     sourceMainRoot,
     retainedRoot,
@@ -507,12 +509,24 @@ test("terminal lineage replays the retained FACILITY producer and rejects builde
     facilityHeadGitSha,
     builderGitSha,
     topologyBuild,
+    buildTopologyOutputsImpl: async (options) => {
+      observedTerminalCandidateId = options.terminalCandidateId;
+      return buildCurrentCapitalTopologyRefreshOutputs(options);
+    },
   });
   assert.equal(verified.proof.sourceMainGitSha, sourceMainGitSha);
   assert.equal(verified.proof.facilityHeadGitSha, facilityHeadGitSha);
   assert.equal(verified.proof.builderGitSha, builderGitSha);
   assert.equal(verified.topologyInputs.length, 4);
   assert.ok(verified.topologyOutputs.length > 0);
+  const retainedCandidate = JSON.parse(await readFile(
+    path.join(retainedRoot, "tools/datapack/release/candidate-build-spec.json"),
+  ));
+  const generatedCandidate = verified.topologyOutputs.find(({ relativePath }) =>
+    relativePath === "tools/datapack/release/candidate-build-spec.json");
+  assert.ok(generatedCandidate);
+  assert.equal(JSON.parse(generatedCandidate.bytes).candidateId, retainedCandidate.candidateId);
+  assert.equal(observedTerminalCandidateId, retainedCandidate.candidateId);
 
   const tamperedPath = path.join(privateBuilderRoot, topologyBuild.capitalTopologyPath);
   await writeFile(tamperedPath, Buffer.concat([await readFile(tamperedPath), Buffer.from("\n")]));
