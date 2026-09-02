@@ -46,7 +46,17 @@ export function buildCurrentCapitalStationLineInput(input) {
   assertInputKeys(input);
   const stationLines = canonicalStationLines(input.canonicalPack, input.facilityAdmission);
   const { candidate, evidenceSourceSetSha256, facilitySourceSetSha256, candidatePublishedAt } = validateCandidate(input, stationLines);
-  const facility = validateFacility(input.facilityAdmission, input.facilitySnapshotBytes, stationLines, candidate, facilitySourceSetSha256, candidatePublishedAt);
+  const facility = buildAuthenticatedCurrentCapitalFacilityEvidenceRows({
+    facilityAdmission: input.facilityAdmission,
+    facilitySnapshotBytes: input.facilitySnapshotBytes,
+    stationLines,
+    admissionCandidate: {
+      candidateId: candidate.candidateId,
+      sourceSnapshotSetHash: facilitySourceSetSha256,
+    },
+    outputCandidate: candidate,
+    candidatePublishedAt,
+  });
   const exit = validateExit(input, stationLines, candidate, evidenceSourceSetSha256);
   const transfer = validateTransfer(input, stationLines, candidate);
   validatePolicy(input.policy);
@@ -273,13 +283,27 @@ function canonicalStationLines(pack, facilityAdmission) {
   return lines;
 }
 
-function validateFacility(value, snapshotBytes, stationLines, candidate, facilitySourceSetSha256, candidatePublishedAt) {
+export function buildAuthenticatedCurrentCapitalFacilityEvidenceRows({
+  facilityAdmission: value,
+  facilitySnapshotBytes: snapshotBytes,
+  stationLines,
+  admissionCandidate,
+  outputCandidate,
+  candidatePublishedAt,
+}) {
   canonicalCurrentCapitalFacilitySourceAdmissionJson(value);
-  if (value.decision !== "GO" || value.candidate?.candidateId !== candidate.candidateId || value.candidate?.sourceSnapshotSetHash !== facilitySourceSetSha256) throw new Error("full-capital FACILITY identity mismatch");
+  if (value.decision !== "GO"
+    || value.candidate?.candidateId !== admissionCandidate?.candidateId
+    || value.candidate?.sourceSnapshotSetHash !== admissionCandidate?.sourceSnapshotSetHash
+    || !nonBlank(outputCandidate?.candidateId)
+    || ![outputCandidate?.stationSetSha256, outputCandidate?.sourceSetSha256].every((entry) => SHA.test(entry ?? ""))
+    || !nonBlank(outputCandidate?.mappingContractVersion)
+    || !nonBlank(outputCandidate?.materializerVersion)) throw new Error("full-capital FACILITY identity mismatch");
   if (!Buffer.isBuffer(snapshotBytes)) throw new Error("full-capital FACILITY snapshot bytes mismatch");
   let snapshot; try { snapshot = validateKricAccessibilitySnapshotIdentity(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(snapshotBytes))); } catch (error) { throw new Error("full-capital FACILITY snapshot identity mismatch", { cause: error }); }
   if (sha256(snapshotBytes) !== value.sourceIdentity.snapshotFileSha256 || snapshot.snapshotId !== value.sourceIdentity.snapshotId || snapshot.sourceId !== value.sourceIdentity.sourceId || snapshot.rawSha256 !== value.sourceIdentity.rawSha256 || snapshot.contentSha256 !== value.sourceIdentity.contentSha256 || snapshot.schemaFingerprint !== value.sourceIdentity.schemaFingerprint || snapshot.redactedRequestFingerprint !== value.sourceIdentity.redactedRequestFingerprint || snapshot.capturedAt !== value.sourceIdentity.capturedAt || snapshot.observedAt !== value.sourceIdentity.observedAt || snapshot.freshUntil !== value.sourceIdentity.freshUntil) throw new Error("full-capital FACILITY snapshot binding mismatch");
-  if (requiredUtcMillis(value.sourceIdentity.freshUntil, "full-capital FACILITY freshUntil") <= candidatePublishedAt) throw new Error("full-capital FACILITY freshness mismatch");
+  if (!Number.isFinite(candidatePublishedAt)
+    || requiredUtcMillis(value.sourceIdentity.freshUntil, "full-capital FACILITY freshUntil") <= candidatePublishedAt) throw new Error("full-capital FACILITY freshness mismatch");
   const cells = indexExact(value.cells, stationLines, "FACILITY cells");
   const blocked = cells.get(key(BLOCKED));
   if (blocked?.state !== "ADMITTED_FACILITY_UNVERIFIED_BLOCKED" || value.cells.filter(({ state }) => state === "ADMITTED_FACILITY_UNVERIFIED_BLOCKED").length !== 1) throw new Error("full-capital FACILITY blocked tuple mismatch");
@@ -292,10 +316,10 @@ function validateFacility(value, snapshotBytes, stationLines, candidate, facilit
     const cell = cells.get(key(line));
     const blockedCell = cell.state === "ADMITTED_FACILITY_UNVERIFIED_BLOCKED";
     const query = queries.get(key(line));
-    if (blockedCell) return ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"].map((facilityType) => terminalEvidence(line, facilityType, query, value.sourceIdentity, candidate));
+    if (blockedCell) return ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"].map((facilityType) => terminalEvidence(line, facilityType, query, value.sourceIdentity, outputCandidate));
     const state = cell.state === "ADMITTED_FACILITY_PRESENT" ? "VERIFIED_PRESENT" : "VERIFIED_ABSENT";
     const kind = state === "VERIFIED_PRESENT" ? "OBSERVED" : "EXHAUSTIVE_LIST";
-    return [evidence(line, "FACILITY", state, value.sourceIdentity, candidate, kind, query.providerRecordHash)];
+    return [evidence(line, "FACILITY", state, value.sourceIdentity, outputCandidate, kind, query.providerRecordHash)];
   });
 }
 
