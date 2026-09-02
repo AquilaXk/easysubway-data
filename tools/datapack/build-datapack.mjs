@@ -741,7 +741,11 @@ export async function projectCandidateFixtureForAccessibilityAuthority({
   buildSpec,
   sourceFixture,
   repositoryRoot = root,
+  retainPreAuthorityRideOnly = true,
 }) {
+  if (typeof retainPreAuthorityRideOnly !== "boolean") {
+    throw new TypeError("retainPreAuthorityRideOnly must be a boolean");
+  }
   const trackedSourceFixture = JSON.parse(await readFile(await resolveBuildInputPath(
     buildSpec?.fixturePath,
     "buildSpec.fixturePath",
@@ -778,7 +782,7 @@ export async function projectCandidateFixtureForAccessibilityAuthority({
       repositoryRoot,
     )),
     readFile(await resolveBuildInputPath(
-      "tools/datapack/source-inventory.json",
+      buildSpec?.networkEdgeEvidence?.sourceInventory?.path,
       "source inventory",
       repositoryRoot,
     )),
@@ -817,7 +821,9 @@ export async function projectCandidateFixtureForAccessibilityAuthority({
     throw new Error("candidate-selected reviewed accessibility capital pack is invalid");
   }
   syncCanonicalAccessibilityEvidence(fixture, reviewedPack);
-  retainPreAuthorityRideEdges(fixture, "candidate-selected canonical pack");
+  if (retainPreAuthorityRideOnly) {
+    retainPreAuthorityRideEdges(fixture, "candidate-selected canonical pack");
+  }
   return fixture;
 }
 
