@@ -662,7 +662,7 @@ export async function rebuildCurrentCapitalTopologyTerminalHandoffForAncestorRec
     sourceMainRoot: path.resolve(sourceMainRoot), retainedRoot: path.resolve(ancestorRetainedRoot),
     privateBuilderRoot: path.resolve(originalPrivateBuilderRoot), sourceMainGitSha,
     facilityHeadGitSha: ancestorFacilityHeadGitSha, builderGitSha: originalBuilderGitSha,
-    topologyBuild, execFileImpl, proofMode: "IMMUTABLE_PREDECESSOR",
+    topologyBuild, execFileImpl, proofMode: "CURRENT_TERMINAL",
   });
   if (!originalPrepared?.proof) throw new Error("ancestor recovery original lineage mismatch");
   const originalHandoff = validateCurrentCapitalTopologyTerminalHandoff(topologyHandoffBytes, {

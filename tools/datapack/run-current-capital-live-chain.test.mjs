@@ -666,7 +666,7 @@ test("ancestor recovery rebuilds only a current-head topology handoff and reject
   const originalProof = await verifyCurrentCapitalTerminalLineage({
     sourceMainRoot, retainedRoot: ancestorRetainedRoot, privateBuilderRoot: originalPrivateBuilderRoot,
     sourceMainGitSha, facilityHeadGitSha: ancestorFacilityHeadGitSha, builderGitSha: originalBuilderGitSha,
-    topologyBuild, proofMode: "IMMUTABLE_PREDECESSOR",
+    topologyBuild, proofMode: "CURRENT_TERMINAL",
   });
   const originalTopologyHandoff = await buildCurrentCapitalTopologyTerminalHandoff({
     repository: "AquilaXk/easysubway-data", operationId: "kric-exit-full-capital-refresh-123",
@@ -702,7 +702,7 @@ test("ancestor recovery rebuilds only a current-head topology handoff and reject
       return verifyCurrentCapitalTerminalLineage(options);
     },
   });
-  assert.deepEqual(observedProofModes, ["IMMUTABLE_PREDECESSOR", "CURRENT_TERMINAL"]);
+  assert.deepEqual(observedProofModes, ["CURRENT_TERMINAL", "CURRENT_TERMINAL"]);
   assert.equal(rebuilt.topologyHandoff.operationId, originalTopologyHandoff.operationId);
   assert.equal(rebuilt.topologyHandoff.schemaVersion, 2);
   assert.equal(rebuilt.topologyHandoff.facility.headSha, currentFacilityHeadGitSha);
