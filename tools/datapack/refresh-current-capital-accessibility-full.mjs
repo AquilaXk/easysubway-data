@@ -6,7 +6,12 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { buildCurrentCapitalRouteEdgeInput, canonicalCurrentCapitalRouteEdgeInputJson } from "./build-current-capital-route-edge-input.mjs";
-import { buildCurrentCapitalStationLineInput, canonicalCurrentCapitalStationLineInputJson, readCurrentCapitalInputs } from "./build-current-capital-station-line-input.mjs";
+import {
+  buildAuthenticatedCurrentCapitalFacilityEvidenceRows,
+  buildCurrentCapitalStationLineInput,
+  canonicalCurrentCapitalStationLineInputJson,
+  readCurrentCapitalInputs,
+} from "./build-current-capital-station-line-input.mjs";
 import {
   buildCurrentCapitalLiveChainFanInBoundary,
   canonicalCurrentCapitalLiveChainFanInBoundaryJson,
@@ -399,7 +404,22 @@ async function inputFiles(root, phase) {
   } catch (error) {
     if (error?.code !== "ENOENT" && error?.cause?.code !== "ENOENT") throw error;
   }
-  if (files[TRANSITION]) files[SUCCESSOR] = await readStableRegularFile(target(root, SUCCESSOR), SUCCESSOR);
+  if (files[TRANSITION]) {
+    files[SUCCESSOR] = await readStableRegularFile(target(root, SUCCESSOR), SUCCESSOR);
+    const successor = parse(files[SUCCESSOR].bytes, "current-capital refresh transition successor");
+    const previousFacilityBytes = Buffer.from(successor?.previousFacilityAdmissionBase64 ?? "", "base64");
+    if (!previousFacilityBytes.length
+      || previousFacilityBytes.toString("base64") !== successor.previousFacilityAdmissionBase64) {
+      throw new Error("current-capital refresh previous FACILITY admission mismatch");
+    }
+    const previousFacility = parse(previousFacilityBytes, "current-capital refresh previous FACILITY admission");
+    const snapshotId = previousFacility?.sourceIdentity?.snapshotId;
+    const snapshotPath = previousFacility?.sourceIdentity?.snapshotPath;
+    if (snapshotPath !== `tools/datapack/sources/${snapshotId}.json`) {
+      throw new Error("current-capital refresh previous FACILITY snapshot path mismatch");
+    }
+    files[snapshotPath] = await readStableRegularFile(target(root, snapshotPath), snapshotPath);
+  }
   if (phase === PRE_APPROVAL_CURRENT_CANDIDATE) {
     const fixturePath = candidateFixturePath(parse(files[CANDIDATE_BUILD_SPEC].bytes, "current candidate"));
     files[fixturePath] = await readStableRegularFile(target(root, fixturePath), fixturePath);
@@ -435,7 +455,16 @@ export function assertPendingMarkerProducerBoundary({ baseMarker, effectiveMarke
   }
 }
 
-function assertNarrowDelta({ stationBefore, routeBefore, stationAfter, routeAfter, allowCandidateIdentityTransition = false, expectedExitEvidenceRows = null }) {
+function assertNarrowDelta({
+  stationBefore,
+  routeBefore,
+  stationAfter,
+  routeAfter,
+  allowCandidateIdentityTransition = false,
+  expectedExitEvidenceRows = null,
+  expectedBeforeFacilityRows = null,
+  expectedAfterFacilityRows = null,
+}) {
   if (!equalJson(stationBefore.stationLines, stationAfter.stationLines)
     || !equalJson(routeBefore.stationLines, routeAfter.stationLines)
     || !equalJson(routeBefore.routeEdges, routeAfter.routeEdges)) throw new Error("current-capital refresh topology delta mismatch");
@@ -451,15 +480,39 @@ function assertNarrowDelta({ stationBefore, routeBefore, stationAfter, routeAfte
   if (!equalJson(stripStation(stationBefore), stripStation(stationAfter)) || !equalJson(stripRoute(routeBefore), stripRoute(routeAfter))) {
     throw new Error("current-capital refresh evidence delta mismatch");
   }
+  const exactFacilityTransition = expectedBeforeFacilityRows !== null || expectedAfterFacilityRows !== null;
+  if (exactFacilityTransition) {
+    assertExactCurrentCapitalFacilityEvidenceTransition({
+      beforeRows: stationBefore.evidenceRows.filter(({ domain }) => domain === "FACILITY"),
+      afterRows: stationAfter.evidenceRows.filter(({ domain }) => domain === "FACILITY"),
+      expectedBeforeRows: expectedBeforeFacilityRows,
+      expectedAfterRows: expectedAfterFacilityRows,
+    });
+  }
   if (stationBefore.evidenceRows.length !== stationAfter.evidenceRows.length) throw new Error("current-capital refresh evidence delta mismatch");
   for (const [index, before] of stationBefore.evidenceRows.entries()) {
-    assertEvidenceDelta(before, stationAfter.evidenceRows[index], allowCandidateIdentityTransition, expectedExitEvidenceRows);
+    assertEvidenceDelta(before, stationAfter.evidenceRows[index], allowCandidateIdentityTransition, expectedExitEvidenceRows, exactFacilityTransition);
   }
 }
 
-function assertEvidenceDelta(before, after, allowCandidateIdentityTransition, expectedExitEvidenceRows) {
+export function assertExactCurrentCapitalFacilityEvidenceTransition({
+  beforeRows,
+  afterRows,
+  expectedBeforeRows,
+  expectedAfterRows,
+}) {
+  if (![beforeRows, afterRows, expectedBeforeRows, expectedAfterRows].every((rows) =>
+    Array.isArray(rows) && rows.length > 0 && rows.every(({ domain }) => domain === "FACILITY"))
+    || !equalJson(beforeRows, expectedBeforeRows)
+    || !equalJson(afterRows, expectedAfterRows)) {
+    throw new Error("current-capital refresh FACILITY evidence projection mismatch");
+  }
+}
+
+function assertEvidenceDelta(before, after, allowCandidateIdentityTransition, expectedExitEvidenceRows, exactFacilityTransition) {
   const domain = before?.domain;
   if (domain !== after?.domain) throw new Error("current-capital refresh evidence delta mismatch");
+  if (exactFacilityTransition && domain === "FACILITY") return;
   if (allowCandidateIdentityTransition && domain === "EXIT") {
     const identity = `${after.stationId}\0${after.lineId}`;
     const expected = expectedExitEvidenceRows?.get(identity);
@@ -488,6 +541,10 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
   requirePhase(phase);
   const root = path.resolve(repositoryRoot); const files = await inputFiles(root, phase);
   const marker = files[TRANSITION]; const effectiveMarker = files[SUCCESSOR];
+  const baseMarker = marker ? parse(marker.bytes, "current-capital refresh base transition marker") : null;
+  const effectiveMarkerValue = effectiveMarker ? parse(effectiveMarker.bytes, "current-capital refresh effective transition marker") : null;
+  const stationBefore = parse(files[OUTPUTS[0]].bytes, "activated station input");
+  const routeBefore = parse(files[OUTPUTS[1]].bytes, "activated route input");
   const proof = marker ? { alreadyCurrent: false } : buildRefreshProof({ phase, candidateFile: files[CANDIDATE_BUILD_SPEC], ledgerFile: files["tools/datapack/release/source-snapshots.json"], requestFile: files["tools/datapack/release/release-request.json"], hashesFile: files["tools/datapack/release/hash-evidence.json"], facilityFile: files["tools/datapack/release/current-capital-facility-source-admission.json"], exitFile: files["tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json"], stationFile: files[OUTPUTS[0]], routeFile: files[OUTPUTS[1]] });
   const { alreadyCurrent, ...transition } = proof;
   if (marker) {
@@ -498,13 +555,13 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
     const currentSuccessor = await readStableRegularFile(target(root, SUCCESSOR), SUCCESSOR);
     if (!currentSuccessor.bytes.equals(files[SUCCESSOR].bytes)) throw new Error("current-capital refresh transition successor changed during validation");
     assertPendingMarkerProducerBoundary({
-      baseMarker: parse(marker.bytes, "current-capital refresh base transition marker"),
-      effectiveMarker: parse(effectiveMarker.bytes, "current-capital refresh effective transition marker"),
+      baseMarker,
+      effectiveMarker: effectiveMarkerValue,
       candidate: parse(files[CANDIDATE_BUILD_SPEC].bytes, "current candidate"),
       facility: parse(files["tools/datapack/release/current-capital-facility-source-admission.json"].bytes, "FACILITY admission"),
       exit: parse(files["tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json"].bytes, "EXIT admission"),
-      station: parse(files[OUTPUTS[0]].bytes, "activated station input"),
-      route: parse(files[OUTPUTS[1]].bytes, "activated route input"),
+      station: stationBefore,
+      route: routeBefore,
     });
   }
   const input = await readCurrentCapitalInputs(root, marker
@@ -561,7 +618,40 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
   if (marker && expectedExitEvidenceRows.size !== selectedInput.exitAdmission.materializerEvidenceRows.length) {
     throw new Error("current-capital refresh EXIT evidence projection mismatch");
   }
-  assertNarrowDelta({ stationBefore: parse(files[OUTPUTS[0]].bytes, "activated station input"), routeBefore: parse(files[OUTPUTS[1]].bytes, "activated route input"), stationAfter, routeAfter, allowCandidateIdentityTransition: Boolean(marker), expectedExitEvidenceRows });
+  let expectedBeforeFacilityRows = null;
+  let expectedAfterFacilityRows = null;
+  if (marker) {
+    const previousFacilityBytes = Buffer.from(effectiveMarkerValue.previousFacilityAdmissionBase64, "base64");
+    const previousFacility = parse(previousFacilityBytes, "current-capital refresh previous FACILITY admission");
+    const previousSnapshot = files[previousFacility.sourceIdentity.snapshotPath];
+    if (!previousSnapshot) throw new Error("current-capital refresh previous FACILITY snapshot is missing");
+    expectedBeforeFacilityRows = buildAuthenticatedCurrentCapitalFacilityEvidenceRows({
+      facilityAdmission: previousFacility,
+      facilitySnapshotBytes: previousSnapshot.bytes,
+      stationLines: stationBefore.stationLines,
+      admissionCandidate: baseMarker.nextCandidate,
+      outputCandidate: stationBefore.candidate,
+      candidatePublishedAt: Date.parse(baseMarker.previousCandidate.canonicalCandidate?.publishedAt ?? ""),
+    });
+    expectedAfterFacilityRows = buildAuthenticatedCurrentCapitalFacilityEvidenceRows({
+      facilityAdmission: selectedInput.facilityAdmission,
+      facilitySnapshotBytes: selectedInput.facilitySnapshotBytes,
+      stationLines: stationAfter.stationLines,
+      admissionCandidate: effectiveMarkerValue.nextCandidate,
+      outputCandidate: stationAfter.candidate,
+      candidatePublishedAt: Date.parse(selectedInput.candidateBuildSpec.publishedAt ?? ""),
+    });
+  }
+  assertNarrowDelta({
+    stationBefore,
+    routeBefore,
+    stationAfter,
+    routeAfter,
+    allowCandidateIdentityTransition: Boolean(marker),
+    expectedExitEvidenceRows,
+    expectedBeforeFacilityRows,
+    expectedAfterFacilityRows,
+  });
   const outputs = OUTPUTS.map((relative, index) => ({ relative, bytes: index === 0 ? stationBytes : routeBytes, prestate: files[relative], inputs: Object.values(files) }));
   outputs[0].fanIn = { relative: FAN_IN_OUTPUT, bytes: fanInBytes, prestate: files[FAN_IN_OUTPUT], inputs: Object.values(files) };
   return outputs;
