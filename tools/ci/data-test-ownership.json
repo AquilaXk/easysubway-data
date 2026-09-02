@@ -368,6 +368,7 @@
     {"path":"tools/datapack/build-kric-current-station-line-observation.test.mjs","semanticOwner":"data455","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/build-kric-nationwide-route-roster-admission.test.mjs","semanticOwner":"data455","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/build-kric-retained-file-pending-handoff.test.mjs","semanticOwner":"data454","classes":["required-pr"],"durationMs":120},
+    {"path":"tools/datapack/build-current-five-region-source-fan-in.test.mjs","semanticOwner":"data449","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/build-nationwide-coverage-tally.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":905},
     {"path":"tools/datapack/build-nationwide-requirement-ownership-ledger.test.mjs","semanticOwner":"data449","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/build-molit-nationwide-fixture.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":127},
