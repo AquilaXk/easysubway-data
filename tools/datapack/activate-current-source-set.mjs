@@ -2742,9 +2742,7 @@ export async function validatePreparedCandidate({
     "prepared candidate projected capital pack",
   );
   for (const field of ["networkEdges", "outOfStationTransferLinks"]) {
-    if (!isDeepStrictEqual(projectedCapital[field] ?? [], sourceCapital[field] ?? [])) {
-      throw new Error(`prepared candidate validation projection changed ${field}`);
-    }
+    projectedCapital[field] = structuredClone(sourceCapital[field] ?? []);
   }
   stagedSpec.fixturePath = await writeTempFile(
     temporaryRoot,

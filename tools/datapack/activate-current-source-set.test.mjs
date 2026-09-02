@@ -515,7 +515,11 @@ test("prepared current candidate 검증은 build를 수행하고 final release e
       projections.push(options);
       assert.deepEqual(options.sourceFixture, stagedCanonical);
       assert.equal(options.buildSpec.networkEdgeEvidence.sourceInventory.path, stagedInventoryPath);
-      return { ...options.sourceFixture, validationProjection: true };
+      const projected = structuredClone(options.sourceFixture);
+      projected.validationProjection = true;
+      projected.packs[0].networkEdges = [{ id: "projected-entry", edgeType: "ENTRY" }];
+      projected.packs[0].outOfStationTransferLinks = [{ id: "projected-walk" }];
+      return projected;
     },
     async runNodeImpl(script, args, options) {
       calls.push({ script, args, options });
@@ -529,9 +533,15 @@ test("prepared current candidate 검증은 build를 수행하고 final release e
         path.join(root, currentTopologyPath),
       );
       assert.notEqual(staged.fixturePath, stagedCanonicalPath);
-      assert.equal(
-        JSON.parse(await readFile(staged.fixturePath, "utf8")).validationProjection,
-        true,
+      const validationFixture = JSON.parse(await readFile(staged.fixturePath, "utf8"));
+      assert.equal(validationFixture.validationProjection, true);
+      assert.deepEqual(
+        validationFixture.packs[0].networkEdges,
+        stagedCanonical.packs[0].networkEdges,
+      );
+      assert.deepEqual(
+        validationFixture.packs[0].outOfStationTransferLinks,
+        stagedCanonical.packs[0].outOfStationTransferLinks,
       );
     },
   });
