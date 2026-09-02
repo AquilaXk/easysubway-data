@@ -197,6 +197,22 @@ test("terminal successor는 continuous KRIC FACILITY lineage만 exact-seven pred
     currentTransition,
   }));
 
+  const adminProjectionDrift = structuredClone(currentTransition);
+  const facilityProjection = adminProjectionDrift.previousCandidate.canonicalCandidate.sourceSnapshots
+    .find(({ sourceId }) => sourceId === FACILITY_SOURCE_ID);
+  facilityProjection.adminReviewRecordHash = "7".repeat(64);
+  adminProjectionDrift.previousCandidate.sha256 = sha256(Buffer.from(canonicalJson(
+    adminProjectionDrift.previousCandidate.canonicalCandidate,
+  )));
+  rehashTransition(adminProjectionDrift);
+  assert.throws(() => buildCurrentCapitalAccessibilityTransitionSuccessor({
+    baseTransitionBytes: baseBytes,
+    previousFacilityBytes: fixture.input.facilityBytes,
+    currentFacilityBytes,
+    currentLedger,
+    currentTransition: adminProjectionDrift,
+  }), /FACILITY predecessor lineage mismatch/);
+
   const dualLedger = structuredClone(currentLedger);
   const seoulLedgerIndex = dualLedger.findIndex(({ sourceId }) => sourceId === SEOUL_ACCESSIBILITY_SOURCE_ID);
   const previousSeoulSnapshotId = dualLedger[seoulLedgerIndex].snapshotId;
@@ -298,8 +314,8 @@ test("terminal successor는 continuous KRIC FACILITY lineage만 exact-seven pred
 
   for (const key of [
     "sourceId", "contentSha256", "redactedRequestFingerprint", "schemaFingerprint",
-    "licenseStatus", "redistributionAllowed", "adminReviewRecordHash", "snapshotStatus",
-    "credentialRedacted", "governancePolicyVersion", "governancePolicySha256",
+    "licenseStatus", "redistributionAllowed", "snapshotStatus", "credentialRedacted",
+    "governancePolicyVersion", "governancePolicySha256",
   ]) {
     const identityDrift = structuredClone(currentLedger);
     const value = identityDrift[intermediateIndex][key];
@@ -511,7 +527,6 @@ async function createFixture(t) {
     credentialRedacted: true,
     freshnessExpiresAt: "2026-09-01T00:00:00.000Z",
     rawRetentionExpiresAt: "2026-11-01T00:00:00.000Z",
-    adminReviewRecordHash: String.fromCharCode(100 + index).repeat(64),
     governancePolicyVersion: "fixture-v1",
     governancePolicySha256: "c".repeat(64),
   });
