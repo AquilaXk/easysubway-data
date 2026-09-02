@@ -119,6 +119,21 @@ test("#687 builds a candidate-independent five-region OCI source fan-in", () => 
 });
 
 test("#687 fails closed on ambiguous, non-OCI, stale, or unbound source heads", () => {
+  const reduced = fixture();
+  reduced.targets.activeLineScopes = reduced.targets.activeLineScopes
+    .filter(({ regionId }) => regionId !== "gwangju");
+  reduced.tally.launchRequired.requirements = reduced.tally.launchRequired.requirements
+    .filter(({ regionId }) => regionId !== "gwangju");
+  reduced.inputBytes.targets = bytes(reduced.targets);
+  reduced.inputBytes.tally = bytes(reduced.tally);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(reduced), /five-region scope/);
+
+  const missingStatus = fixture();
+  delete missingStatus.tally.launchRequired.requirements[0].status;
+  delete missingStatus.tally.launchRequired.requirements[0].admittedSourceIds;
+  missingStatus.inputBytes.tally = bytes(missingStatus.tally);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(missingStatus), /requirement disposition/);
+
   const ambiguous = fixture();
   ambiguous.sourceSnapshots.push({
     ...ambiguous.sourceSnapshots[0],
@@ -132,6 +147,11 @@ test("#687 fails closed on ambiguous, non-OCI, stale, or unbound source heads", 
   nonOci.sourceSnapshots[0].rawObjectUri = "s3://historical/not-current.json";
   nonOci.inputBytes.sourceSnapshots = bytes(nonOci.sourceSnapshots);
   assert.throws(() => buildCurrentFiveRegionSourceFanIn(nonOci), /immutable OCI/);
+
+  const incompleteOci = fixture();
+  incompleteOci.sourceSnapshots[0].rawObjectUri = "oci://namespace/bucket";
+  incompleteOci.inputBytes.sourceSnapshots = bytes(incompleteOci.sourceSnapshots);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(incompleteOci), /immutable OCI/);
 
   const stale = fixture();
   stale.sourceSnapshots[0].freshnessExpiresAt = EVALUATED_AT;

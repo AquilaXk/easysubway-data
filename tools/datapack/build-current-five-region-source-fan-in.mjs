@@ -15,6 +15,12 @@ const INPUT_PATHS = Object.freeze({
   sourceSnapshots: "tools/datapack/release/source-snapshots.json",
 });
 const SHA256 = /^[a-f0-9]{64}$/u;
+const REQUIRED_REGION_IDS = Object.freeze(["busan", "capital", "daegu", "daejeon", "gwangju"]);
+const TALLY_STATUSES = new Set([
+  "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE",
+  "INVENTORY_ADMITTED",
+  "MISSING",
+]);
 
 const compare = (left, right) => left < right ? -1 : left > right ? 1 : 0;
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
@@ -95,6 +101,16 @@ function admittedEvidence(source) {
     && value && typeof value === "object" && !Array.isArray(value));
 }
 
+function isImmutableOciObjectUri(value) {
+  try {
+    const uri = new URL(value);
+    return uri.protocol === "oci:" && uri.hostname.length > 0
+      && uri.pathname.split("/").filter(Boolean).length >= 2;
+  } catch {
+    return false;
+  }
+}
+
 function terminalHead(sourceId, sourceSnapshots) {
   const snapshots = sourceSnapshots.filter((snapshot) => snapshot?.sourceId === sourceId);
   if (snapshots.length === 0) throw new Error(`terminal snapshot head missing for ${sourceId}`);
@@ -137,10 +153,11 @@ function selectedSources(rows, inventory, sourceSnapshots, evaluatedAt) {
   const admittedIds = new Set();
   for (const row of rows) {
     const ids = row.admittedSourceIds ?? [];
-    if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string" || id.length === 0)
+    if (!TALLY_STATUSES.has(row.status)
+      || !Array.isArray(ids) || ids.some((id) => typeof id !== "string" || id.length === 0)
       || (row.status === "INVENTORY_ADMITTED" && ids.length === 0)
       || (row.status !== "INVENTORY_ADMITTED" && ids.length !== 0)) {
-      throw new Error(`admitted source binding mismatch for ${pk(row)}`);
+      throw new Error(`requirement disposition mismatch for ${pk(row)}`);
     }
     ids.forEach((id) => admittedIds.add(id));
   }
@@ -154,7 +171,7 @@ function selectedSources(rows, inventory, sourceSnapshots, evaluatedAt) {
     }
     const snapshot = terminalHead(sourceId, sourceSnapshots);
     if (snapshot.provider !== source.provider || !SHA256.test(snapshot.rawSha256 ?? "")
-      || typeof snapshot.rawObjectUri !== "string" || !snapshot.rawObjectUri.startsWith("oci://")
+      || !isImmutableOciObjectUri(snapshot.rawObjectUri)
       || snapshot.snapshotStatus !== "LOCKED" || snapshot.schemaStatus !== "PASS"
       || snapshot.licenseStatus !== "PASS" || snapshot.fetchStatus !== "SUCCESS"
       || snapshot.redistributionAllowed !== true) {
@@ -195,6 +212,9 @@ export function buildCurrentFiveRegionSourceFanIn(input = {}) {
   const rows = requiredRows(targets, tally);
   const regionIds = [...new Set(targets.activeLineScopes.map(({ regionId }) => string(regionId, "region ID")))]
     .sort(compare);
+  if (canonical(regionIds) !== canonical(REQUIRED_REGION_IDS)) {
+    throw new Error("five-region scope mismatch");
+  }
   const sources = selectedSources(rows, inventory, sourceSnapshots, evaluatedAt);
   const scope = {
     targetVersion,
