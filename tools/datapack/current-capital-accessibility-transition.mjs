@@ -36,6 +36,11 @@ const FACILITY_PROJECTION_IDENTITY_KEYS = Object.freeze([
   "redistributionAllowed", "adminReviewRecordHash", "snapshotStatus", "credentialRedacted",
   "governancePolicyVersion", "governancePolicySha256",
 ]);
+const FACILITY_LINEAGE_IDENTITY_KEYS = Object.freeze([
+  "sourceId", "contentSha256", "redactedRequestFingerprint", "schemaFingerprint",
+  "licenseStatus", "redistributionAllowed", "adminReviewRecordHash", "snapshotStatus", "credentialRedacted",
+  "governancePolicyVersion", "governancePolicySha256",
+]);
 const FACILITY_SOURCE_IDENTITY_KEYS = Object.freeze([
   "sourceId", "redactedRequestFingerprint", "contentSha256", "schemaFingerprint",
   "licenseEvidenceHash", "credentialRedacted",
@@ -336,8 +341,7 @@ function assertDirectAccessibilityPredecessorAdvance({
   const ledgerMatches = currentLedger.filter(({ sourceId, snapshotId }) =>
     sourceId === FACILITY_SOURCE_ID && snapshotId === currentSnapshotId);
   const ledgerRow = ledgerMatches.length === 1 ? ledgerMatches[0] : null;
-  if (!ledgerRow || ledgerRow.previousSnapshotId !== previousSnapshotId
-    || ledgerRow.contentSha256 !== previousFacility.sourceIdentity?.contentSha256
+  if (!ledgerRow || ledgerRow.contentSha256 !== previousFacility.sourceIdentity?.contentSha256
     || ledgerRow.contentSha256 !== currentFacility.sourceIdentity?.contentSha256
     || currentMatches[0].redactedRequestFingerprint !== ledgerRow.redactedRequestFingerprint
     || currentMatches[0].schemaFingerprint !== ledgerRow.schemaFingerprint
@@ -349,6 +353,17 @@ function assertDirectAccessibilityPredecessorAdvance({
     || currentMatches[0].governancePolicySha256 !== ledgerRow.governancePolicySha256) {
     throw new Error("FACILITY predecessor lineage mismatch");
   }
+  assertContinuousFacilityPredecessorLineage({
+    currentLedger,
+    previousSnapshotId,
+    currentSnapshotId,
+    expectedIdentity: Object.fromEntries(FACILITY_LINEAGE_IDENTITY_KEYS.map((key) => [
+      key,
+      key === "contentSha256"
+        ? previousFacility.sourceIdentity?.contentSha256
+        : baseMatches[0][key],
+    ])),
+  });
   if (canonicalJson(pick(previousFacility.sourceIdentity, FACILITY_SOURCE_IDENTITY_KEYS))
       !== canonicalJson(pick(currentFacility.sourceIdentity, FACILITY_SOURCE_IDENTITY_KEYS))) {
     throw new Error("FACILITY protected semantics mismatch");
@@ -365,6 +380,52 @@ function assertDirectAccessibilityPredecessorAdvance({
       currentProjections,
       currentLedger,
     });
+  }
+}
+
+function assertContinuousFacilityPredecessorLineage({
+  currentLedger,
+  previousSnapshotId,
+  currentSnapshotId,
+  expectedIdentity,
+}) {
+  const rows = currentLedger.filter(({ sourceId }) => sourceId === FACILITY_SOURCE_ID);
+  const rowsBySnapshotId = new Map();
+  for (const row of rows) {
+    if (typeof row.snapshotId !== "string" || row.snapshotId.length === 0
+      || rowsBySnapshotId.has(row.snapshotId)) {
+      throw new Error("FACILITY predecessor lineage mismatch");
+    }
+    rowsBySnapshotId.set(row.snapshotId, row);
+  }
+  const assertStableIdentity = (row) => {
+    if (canonicalJson(pick(row, FACILITY_LINEAGE_IDENTITY_KEYS)) !== canonicalJson(expectedIdentity)) {
+      throw new Error("FACILITY predecessor lineage mismatch");
+    }
+  };
+  const protectedRow = rowsBySnapshotId.get(previousSnapshotId);
+  if (!protectedRow) throw new Error("FACILITY predecessor lineage mismatch");
+  assertStableIdentity(protectedRow);
+
+  const visited = new Set();
+  let snapshotId = currentSnapshotId;
+  while (snapshotId !== previousSnapshotId) {
+    if (visited.has(snapshotId) || visited.size >= rows.length) {
+      throw new Error("FACILITY predecessor lineage mismatch");
+    }
+    visited.add(snapshotId);
+    const row = rowsBySnapshotId.get(snapshotId);
+    if (!row) throw new Error("FACILITY predecessor lineage mismatch");
+    assertStableIdentity(row);
+    const parentId = row.previousSnapshotId;
+    if (typeof parentId !== "string" || parentId.length === 0 || parentId === snapshotId) {
+      throw new Error("FACILITY predecessor lineage mismatch");
+    }
+    const children = rows.filter(({ previousSnapshotId: candidateParentId }) => candidateParentId === parentId);
+    if (children.length !== 1 || children[0].snapshotId !== snapshotId) {
+      throw new Error("FACILITY predecessor lineage mismatch");
+    }
+    snapshotId = parentId;
   }
 }
 
