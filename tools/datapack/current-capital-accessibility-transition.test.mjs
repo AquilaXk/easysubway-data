@@ -132,22 +132,32 @@ test("successor는 immutable base marker와 pre-rebind FACILITY bytes를 함께 
   );
 });
 
-test("terminal successor는 direct KRIC FACILITY lineage만 exact-seven predecessor advance로 허용한다", async (t) => {
+test("terminal successor는 continuous KRIC FACILITY lineage만 exact-seven predecessor advance로 허용한다", async (t) => {
   const fixture = await createFixture(t);
   const base = buildCurrentCapitalAccessibilityTransition(fixture.input);
   const baseBytes = Buffer.from(canonicalCurrentCapitalAccessibilityTransitionJson(base));
   const currentLedger = structuredClone(fixture.baseLedger);
-  const ledgerIndex = currentLedger.findIndex(({ sourceId }) => sourceId === FACILITY_SOURCE_ID);
+  const baseLedgerIndex = currentLedger.findIndex(({ sourceId }) => sourceId === FACILITY_SOURCE_ID);
+  const intermediateSnapshotId = "kric-station-convenience-standard-20260830T120000000Z";
   const currentSnapshotId = "kric-station-convenience-standard-20260901T081638049Z";
-  currentLedger[ledgerIndex] = {
-    ...currentLedger[ledgerIndex],
-    snapshotId: currentSnapshotId,
+  const intermediateIndex = currentLedger.push({
+    ...currentLedger[baseLedgerIndex],
+    snapshotId: intermediateSnapshotId,
     previousSnapshotId: BASE_FACILITY_SNAPSHOT_ID,
+    rawObjectUri: "oci://trusted/kric-station-convenience-standard/intermediate.json",
+    rawSha256: "8".repeat(64),
+    freshnessExpiresAt: "2026-09-01T00:00:00.000Z",
+    rawRetentionExpiresAt: "2026-11-30T00:00:00.000Z",
+  }) - 1;
+  const ledgerIndex = currentLedger.push({
+    ...currentLedger[intermediateIndex],
+    snapshotId: currentSnapshotId,
+    previousSnapshotId: intermediateSnapshotId,
     rawObjectUri: "oci://trusted/kric-station-convenience-standard/current.json",
     rawSha256: "9".repeat(64),
     freshnessExpiresAt: "2026-09-02T00:00:00.000Z",
     rawRetentionExpiresAt: "2026-12-01T00:00:00.000Z",
-  };
+  }) - 1;
   const candidate = structuredClone(fixture.input.candidate);
   candidate.sourceSnapshotIds = candidate.sourceSnapshotIds.map((snapshotId) =>
     snapshotId === BASE_FACILITY_SNAPSHOT_ID ? currentSnapshotId : snapshotId);
@@ -159,7 +169,10 @@ test("terminal successor는 direct KRIC FACILITY lineage만 exact-seven predeces
         : currentLedger[ledgerIndex][key],
     ]))
     : projection);
-  candidate.sourceSnapshotSetHash = sha256(Buffer.from(JSON.stringify(currentLedger)));
+  const selectedSnapshotIds = new Set(candidate.sourceSnapshotIds);
+  candidate.sourceSnapshotSetHash = sha256(Buffer.from(JSON.stringify(
+    currentLedger.filter(({ snapshotId }) => selectedSnapshotIds.has(snapshotId)),
+  )));
   const candidateBytes = Buffer.from(`${JSON.stringify(candidate, null, 2)}\n`);
   const currentFacility = buildFacilityAdmission(candidate.candidateId, candidate.sourceSnapshotSetHash, {
     snapshotId: currentSnapshotId,
@@ -209,7 +222,10 @@ test("terminal successor는 direct KRIC FACILITY lineage만 exact-seven predeces
           : dualLedger[seoulLedgerIndex][key],
       ]))
       : projection);
-  dualCandidate.sourceSnapshotSetHash = sha256(Buffer.from(JSON.stringify(dualLedger)));
+  const dualSelectedSnapshotIds = new Set(dualCandidate.sourceSnapshotIds);
+  dualCandidate.sourceSnapshotSetHash = sha256(Buffer.from(JSON.stringify(
+    dualLedger.filter(({ snapshotId }) => dualSelectedSnapshotIds.has(snapshotId)),
+  )));
   const dualCandidateBytes = Buffer.from(`${JSON.stringify(dualCandidate, null, 2)}\n`);
   const dualFacility = buildFacilityAdmission(dualCandidate.candidateId, dualCandidate.sourceSnapshotSetHash, {
     snapshotId: currentSnapshotId,
@@ -280,13 +296,53 @@ test("terminal successor는 direct KRIC FACILITY lineage만 exact-seven predeces
     currentTransition,
   }), /FACILITY predecessor lineage mismatch/);
 
-  const contentDrift = structuredClone(currentLedger);
-  contentDrift[ledgerIndex].contentSha256 = "8".repeat(64);
+  for (const key of [
+    "sourceId", "contentSha256", "redactedRequestFingerprint", "schemaFingerprint",
+    "licenseStatus", "redistributionAllowed", "adminReviewRecordHash", "snapshotStatus",
+    "credentialRedacted", "governancePolicyVersion", "governancePolicySha256",
+  ]) {
+    const identityDrift = structuredClone(currentLedger);
+    const value = identityDrift[intermediateIndex][key];
+    identityDrift[intermediateIndex][key] = typeof value === "boolean" ? !value : `${value}-drift`;
+    assert.throws(() => buildCurrentCapitalAccessibilityTransitionSuccessor({
+      baseTransitionBytes: baseBytes,
+      previousFacilityBytes: fixture.input.facilityBytes,
+      currentFacilityBytes,
+      currentLedger: identityDrift,
+      currentTransition,
+    }), /FACILITY predecessor lineage mismatch/, key);
+  }
+
+  const duplicateLineage = structuredClone(currentLedger);
+  duplicateLineage.push(structuredClone(duplicateLineage[intermediateIndex]));
   assert.throws(() => buildCurrentCapitalAccessibilityTransitionSuccessor({
     baseTransitionBytes: baseBytes,
     previousFacilityBytes: fixture.input.facilityBytes,
     currentFacilityBytes,
-    currentLedger: contentDrift,
+    currentLedger: duplicateLineage,
+    currentTransition,
+  }), /FACILITY predecessor lineage mismatch/);
+
+  const cyclicLineage = structuredClone(currentLedger);
+  cyclicLineage[intermediateIndex].previousSnapshotId = currentSnapshotId;
+  assert.throws(() => buildCurrentCapitalAccessibilityTransitionSuccessor({
+    baseTransitionBytes: baseBytes,
+    previousFacilityBytes: fixture.input.facilityBytes,
+    currentFacilityBytes,
+    currentLedger: cyclicLineage,
+    currentTransition,
+  }), /FACILITY predecessor lineage mismatch/);
+
+  const forkedLineage = structuredClone(currentLedger);
+  forkedLineage.push({
+    ...forkedLineage[intermediateIndex],
+    snapshotId: "kric-station-convenience-standard-fork",
+  });
+  assert.throws(() => buildCurrentCapitalAccessibilityTransitionSuccessor({
+    baseTransitionBytes: baseBytes,
+    previousFacilityBytes: fixture.input.facilityBytes,
+    currentFacilityBytes,
+    currentLedger: forkedLineage,
     currentTransition,
   }), /FACILITY predecessor lineage mismatch/);
 
@@ -455,6 +511,7 @@ async function createFixture(t) {
     credentialRedacted: true,
     freshnessExpiresAt: "2026-09-01T00:00:00.000Z",
     rawRetentionExpiresAt: "2026-11-01T00:00:00.000Z",
+    adminReviewRecordHash: String.fromCharCode(100 + index).repeat(64),
     governancePolicyVersion: "fixture-v1",
     governancePolicySha256: "c".repeat(64),
   });
