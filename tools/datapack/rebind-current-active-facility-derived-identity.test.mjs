@@ -148,6 +148,16 @@ test("tracked admission은 current candidate로 rebind되고 protected semantics
 test("FACILITY rebind는 immutable marker를 보존한 successor create-once transaction을 준비한다", async (t) => {
   const root = await temporaryRepository(t);
   await restorePredecessorFacilityState(root);
+  await assert.rejects(
+    buildCurrentActiveFacilityDerivedIdentitySuccessorTransaction({
+      repositoryRoot: root,
+      allowedPredecessorSourceIds: [
+        "kric-station-convenience-standard",
+        "seoul-metro-accessibility",
+      ],
+    }),
+    /requires terminal successor replacement/,
+  );
   const transaction = await buildCurrentActiveFacilityDerivedIdentitySuccessorTransaction({ repositoryRoot: root });
   assert.ok(transaction.base?.bytes.length > 0);
   assert.equal(transaction.facility.relative, "tools/datapack/release/current-capital-facility-source-admission.json");

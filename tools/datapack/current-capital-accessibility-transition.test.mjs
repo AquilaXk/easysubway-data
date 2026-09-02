@@ -22,6 +22,7 @@ const BASE_SOURCE_IDS = Object.freeze([
   "incheon-transit-accessibility",
 ]);
 const FACILITY_SOURCE_ID = "kric-station-convenience-standard";
+const SEOUL_ACCESSIBILITY_SOURCE_ID = "seoul-metro-accessibility";
 const BASE_FACILITY_SNAPSHOT_ID = "kric-station-convenience-standard-20260816T015619375Z";
 const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
 const INVENTORY_PATH = "tools/datapack/source-inventory.json";
@@ -182,6 +183,89 @@ test("terminal successor는 direct KRIC FACILITY lineage만 exact-seven predeces
     currentLedger,
     currentTransition,
   }));
+
+  const dualLedger = structuredClone(currentLedger);
+  const seoulLedgerIndex = dualLedger.findIndex(({ sourceId }) => sourceId === SEOUL_ACCESSIBILITY_SOURCE_ID);
+  const previousSeoulSnapshotId = dualLedger[seoulLedgerIndex].snapshotId;
+  const currentSeoulSnapshotId = "seoul-metro-accessibility-20260902T160000000Z";
+  dualLedger[seoulLedgerIndex] = {
+    ...dualLedger[seoulLedgerIndex],
+    snapshotId: currentSeoulSnapshotId,
+    previousSnapshotId: previousSeoulSnapshotId,
+    adminReviewRecordHash: candidate.sourceSnapshots
+      .find(({ sourceId }) => sourceId === SEOUL_ACCESSIBILITY_SOURCE_ID).adminReviewRecordHash,
+    rawObjectUri: "oci://trusted/seoul-metro-accessibility/current.json",
+    rawSha256: "8".repeat(64),
+    freshnessExpiresAt: "2026-09-03T16:00:00.000Z",
+    rawRetentionExpiresAt: "2026-12-02T16:00:00.000Z",
+  };
+  const dualCandidate = structuredClone(candidate);
+  dualCandidate.sourceSnapshotIds = dualCandidate.sourceSnapshotIds.map((snapshotId) =>
+    snapshotId === previousSeoulSnapshotId ? currentSeoulSnapshotId : snapshotId);
+  dualCandidate.sourceSnapshots = dualCandidate.sourceSnapshots.map((projection) =>
+    projection.sourceId === SEOUL_ACCESSIBILITY_SOURCE_ID
+      ? Object.fromEntries(PROJECTION_KEYS.map((key) => [key, dualLedger[seoulLedgerIndex][key]]))
+      : projection);
+  dualCandidate.sourceSnapshotSetHash = sha256(Buffer.from(JSON.stringify(dualLedger)));
+  const dualCandidateBytes = Buffer.from(`${JSON.stringify(dualCandidate, null, 2)}\n`);
+  const dualFacility = buildFacilityAdmission(dualCandidate.candidateId, dualCandidate.sourceSnapshotSetHash, {
+    snapshotId: currentSnapshotId,
+    previous: currentFacility,
+  });
+  const dualFacilityBytes = Buffer.from(`${canonicalJson(dualFacility)}\n`);
+  const dualTransition = buildCurrentCapitalAccessibilityTransition({
+    ...fixture.input,
+    candidate: dualCandidate,
+    candidateBytes: dualCandidateBytes,
+    facilityAdmission: dualFacility,
+    facilityBytes: dualFacilityBytes,
+    ledger: dualLedger,
+    ledgerBytes: Buffer.from(`${JSON.stringify(dualLedger, null, 2)}\n`),
+  });
+
+  assert.throws(() => buildCurrentCapitalAccessibilityTransitionSuccessor({
+    baseTransitionBytes: baseBytes,
+    previousFacilityBytes: fixture.input.facilityBytes,
+    currentFacilityBytes: dualFacilityBytes,
+    currentLedger: dualLedger,
+    currentTransition: dualTransition,
+  }), /non-FACILITY predecessor changed/);
+  assert.doesNotThrow(() => buildCurrentCapitalAccessibilityTransitionSuccessor({
+    baseTransitionBytes: baseBytes,
+    previousFacilityBytes: fixture.input.facilityBytes,
+    currentFacilityBytes: dualFacilityBytes,
+    currentLedger: dualLedger,
+    currentTransition: dualTransition,
+    allowedPredecessorSourceIds: [FACILITY_SOURCE_ID, SEOUL_ACCESSIBILITY_SOURCE_ID],
+  }));
+
+  const brokenSeoulLineage = structuredClone(dualLedger);
+  brokenSeoulLineage[seoulLedgerIndex].previousSnapshotId = "unrelated-seoul-snapshot";
+  assert.throws(() => buildCurrentCapitalAccessibilityTransitionSuccessor({
+    baseTransitionBytes: baseBytes,
+    previousFacilityBytes: fixture.input.facilityBytes,
+    currentFacilityBytes: dualFacilityBytes,
+    currentLedger: brokenSeoulLineage,
+    currentTransition: dualTransition,
+    allowedPredecessorSourceIds: [FACILITY_SOURCE_ID, SEOUL_ACCESSIBILITY_SOURCE_ID],
+  }), /accessibility predecessor lineage mismatch/);
+
+  const seoulIdentityDrift = structuredClone(dualTransition);
+  const seoulProjection = seoulIdentityDrift.previousCandidate.canonicalCandidate.sourceSnapshots
+    .find(({ sourceId }) => sourceId === SEOUL_ACCESSIBILITY_SOURCE_ID);
+  seoulProjection.governancePolicySha256 = "7".repeat(64);
+  seoulIdentityDrift.previousCandidate.sha256 = sha256(Buffer.from(canonicalJson(
+    seoulIdentityDrift.previousCandidate.canonicalCandidate,
+  )));
+  rehashTransition(seoulIdentityDrift);
+  assert.throws(() => buildCurrentCapitalAccessibilityTransitionSuccessor({
+    baseTransitionBytes: baseBytes,
+    previousFacilityBytes: fixture.input.facilityBytes,
+    currentFacilityBytes: dualFacilityBytes,
+    currentLedger: dualLedger,
+    currentTransition: seoulIdentityDrift,
+    allowedPredecessorSourceIds: [FACILITY_SOURCE_ID, SEOUL_ACCESSIBILITY_SOURCE_ID],
+  }), /accessibility predecessor identity mismatch/);
 
   const brokenLineage = structuredClone(currentLedger);
   brokenLineage[ledgerIndex].previousSnapshotId = "unrelated-snapshot";

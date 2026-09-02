@@ -111,6 +111,10 @@ function terminalAccessibilityVerifierResult(outputs = []) {
     providerStartedAt: "2026-08-30T17:58:00.000Z",
     operationNow: "2026-08-30T17:59:00.000Z",
     protectedCandidateId: "terminal-candidate",
+    sources: [
+      { action: "REFRESH", sourceId: "kric-station-convenience-standard" },
+      { action: "REFRESH", sourceId: "seoul-metro-accessibility" },
+    ],
     outputs,
   };
 }
@@ -999,10 +1003,14 @@ test("terminal consumer orders P/T/F and CAS before one OCI recovery and semanti
       assert.deepEqual(await readFile(path.join(repositoryRoot, accessibilityPath)), accessibilityBytes);
     },
     rebindTransferImpl: async ({ repositoryRoot }) => { calls.push("T"); assert.equal(repositoryRoot, stageRoots[0]); },
-    rebindFacilityImpl: async ({ repositoryRoot, replaceExistingSuccessor }) => {
+    rebindFacilityImpl: async ({ repositoryRoot, replaceExistingSuccessor, allowedPredecessorSourceIds }) => {
       calls.push("F");
       assert.equal(repositoryRoot, stageRoots[0]);
       assert.equal(replaceExistingSuccessor, true);
+      assert.deepEqual(allowedPredecessorSourceIds, [
+        "kric-station-convenience-standard",
+        "seoul-metro-accessibility",
+      ]);
     },
   });
   assert.deepEqual(calls, ["P", "T", "F"]);

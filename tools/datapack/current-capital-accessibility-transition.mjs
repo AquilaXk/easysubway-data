@@ -25,6 +25,12 @@ const FILES = Object.freeze({
 const SHA = /^[a-f0-9]{64}$/u;
 const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
 const FACILITY_SOURCE_ID = "kric-station-convenience-standard";
+const SEOUL_ACCESSIBILITY_SOURCE_ID = "seoul-metro-accessibility";
+const FACILITY_ONLY_PREDECESSOR_SOURCE_IDS = Object.freeze([FACILITY_SOURCE_ID]);
+const TERMINAL_ACCESSIBILITY_PREDECESSOR_SOURCE_IDS = Object.freeze([
+  FACILITY_SOURCE_ID,
+  SEOUL_ACCESSIBILITY_SOURCE_ID,
+]);
 const FACILITY_PROJECTION_IDENTITY_KEYS = Object.freeze([
   "sourceId", "redactedRequestFingerprint", "schemaFingerprint", "licenseStatus",
   "redistributionAllowed", "adminReviewRecordHash", "snapshotStatus", "credentialRedacted",
@@ -104,6 +110,7 @@ export function buildCurrentCapitalAccessibilityTransitionSuccessor({
   currentFacilityBytes,
   currentLedger,
   currentTransition,
+  allowedPredecessorSourceIds = FACILITY_ONLY_PREDECESSOR_SOURCE_IDS,
 } = {}) {
   const baseBytes = requiredBytes(baseTransitionBytes, "base accessibility transition");
   const facilityBytes = requiredBytes(previousFacilityBytes, "pre-rebind FACILITY admission");
@@ -135,12 +142,13 @@ export function buildCurrentCapitalAccessibilityTransitionSuccessor({
   const predecessorChanged = base.previousCandidate.candidateId !== currentTransition.previousCandidate.candidateId
     || base.previousCandidate.sourceSnapshotSetHash !== currentTransition.previousCandidate.sourceSnapshotSetHash;
   if (predecessorChanged) {
-    assertDirectFacilityPredecessorAdvance({
+    assertDirectAccessibilityPredecessorAdvance({
       base,
       previousFacility,
       currentFacilityBytes,
       currentLedger,
       currentTransition,
+      allowedPredecessorSourceIds: normalizeAllowedPredecessorSourceIds(allowedPredecessorSourceIds),
     });
   }
   const payload = {
@@ -255,6 +263,7 @@ async function inspectCurrentCapitalAccessibilityTransition({ repositoryRoot, al
         currentFacilityBytes: facilityBytes,
         currentLedger: ledger,
         currentTransition: rebuilt,
+        allowedPredecessorSourceIds: changedPredecessorSourceIds(base, rebuilt),
       });
       if (canonicalJson(effective) !== canonicalJson(expected)) throw new Error("stored successor transition mismatch");
     } else if (canonicalJson(base) !== canonicalJson(rebuilt)) {
@@ -271,12 +280,13 @@ async function inspectCurrentCapitalAccessibilityTransition({ repositoryRoot, al
   };
 }
 
-function assertDirectFacilityPredecessorAdvance({
+function assertDirectAccessibilityPredecessorAdvance({
   base,
   previousFacility,
   currentFacilityBytes,
   currentLedger,
   currentTransition,
+  allowedPredecessorSourceIds,
 }) {
   if (base.previousCandidate.candidateId === currentTransition.previousCandidate.candidateId
     || base.previousCandidate.sourceSnapshotSetHash === currentTransition.previousCandidate.sourceSnapshotSetHash) {
@@ -298,8 +308,9 @@ function assertDirectFacilityPredecessorAdvance({
       !== JSON.stringify(currentProjections.map(({ sourceId }) => sourceId))) {
     throw new Error("non-FACILITY predecessor changed");
   }
+  const allowedSourceIds = new Set(allowedPredecessorSourceIds);
   for (let index = 0; index < baseProjections.length; index += 1) {
-    if (baseProjections[index].sourceId !== FACILITY_SOURCE_ID
+    if (!allowedSourceIds.has(baseProjections[index].sourceId)
       && canonicalJson(baseProjections[index]) !== canonicalJson(currentProjections[index])) {
       throw new Error("non-FACILITY predecessor changed");
     }
@@ -345,6 +356,59 @@ function assertDirectFacilityPredecessorAdvance({
       throw new Error("FACILITY protected semantics mismatch");
     }
   }
+  if (allowedSourceIds.has(SEOUL_ACCESSIBILITY_SOURCE_ID)) {
+    assertDirectSeoulAccessibilityPredecessorAdvance({
+      baseProjections,
+      currentProjections,
+      currentLedger,
+    });
+  }
+}
+
+function assertDirectSeoulAccessibilityPredecessorAdvance({ baseProjections, currentProjections, currentLedger }) {
+  const baseMatches = baseProjections.filter(({ sourceId }) => sourceId === SEOUL_ACCESSIBILITY_SOURCE_ID);
+  const currentMatches = currentProjections.filter(({ sourceId }) => sourceId === SEOUL_ACCESSIBILITY_SOURCE_ID);
+  if (baseMatches.length !== 1 || currentMatches.length !== 1
+    || baseMatches[0].snapshotId === currentMatches[0].snapshotId) {
+    throw new Error("accessibility predecessor lineage mismatch");
+  }
+  if (canonicalJson(pick(baseMatches[0], FACILITY_PROJECTION_IDENTITY_KEYS))
+      !== canonicalJson(pick(currentMatches[0], FACILITY_PROJECTION_IDENTITY_KEYS))) {
+    throw new Error("accessibility predecessor identity mismatch");
+  }
+  if (!Array.isArray(currentLedger)) throw new Error("accessibility predecessor lineage mismatch");
+  const ledgerMatches = currentLedger.filter(({ sourceId, snapshotId }) =>
+    sourceId === SEOUL_ACCESSIBILITY_SOURCE_ID && snapshotId === currentMatches[0].snapshotId);
+  if (ledgerMatches.length !== 1
+    || ledgerMatches[0].previousSnapshotId !== baseMatches[0].snapshotId
+    || canonicalJson(pick(currentMatches[0], PROJECTION_KEYS))
+      !== canonicalJson(pick(ledgerMatches[0], PROJECTION_KEYS))) {
+    throw new Error("accessibility predecessor lineage mismatch");
+  }
+}
+
+function normalizeAllowedPredecessorSourceIds(value) {
+  if (!Array.isArray(value) || new Set(value).size !== value.length) {
+    throw new Error("accessibility predecessor source set mismatch");
+  }
+  const serialized = JSON.stringify(value);
+  if (serialized !== JSON.stringify(FACILITY_ONLY_PREDECESSOR_SOURCE_IDS)
+    && serialized !== JSON.stringify(TERMINAL_ACCESSIBILITY_PREDECESSOR_SOURCE_IDS)) {
+    throw new Error("accessibility predecessor source set mismatch");
+  }
+  return value;
+}
+
+function changedPredecessorSourceIds(base, currentTransition) {
+  const baseProjections = base.previousCandidate.canonicalCandidate.sourceSnapshots;
+  const currentProjections = currentTransition.previousCandidate.canonicalCandidate.sourceSnapshots;
+  if (baseProjections.length !== currentProjections.length) {
+    throw new Error("accessibility predecessor source set mismatch");
+  }
+  return baseProjections
+    .filter((projection, index) => canonicalJson(projection) !== canonicalJson(currentProjections[index]))
+    .map(({ sourceId }) => sourceId)
+    .sort();
 }
 
 function pick(value, keys) {
