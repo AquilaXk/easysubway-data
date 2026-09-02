@@ -105,7 +105,10 @@ export async function buildCurrentActiveFacilityDerivedIdentityOutput({ reposito
   validateFacilityDerivedIdentityRebind(old, next, previous.bytes, bytes);
   return { relative: OUTPUT, bytes, prestate: previous.bytes };
 }
-export async function buildCurrentActiveFacilityDerivedIdentitySuccessorTransaction({ repositoryRoot = ROOT, replaceExistingSuccessor = false } = {}) {
+export async function buildCurrentActiveFacilityDerivedIdentitySuccessorTransaction({ repositoryRoot = ROOT, replaceExistingSuccessor = false, allowedPredecessorSourceIds = undefined } = {}) {
+  if (allowedPredecessorSourceIds !== undefined && !replaceExistingSuccessor) {
+    throw new Error("expanded predecessor source set requires terminal successor replacement");
+  }
   const root = rootOf(repositoryRoot);
   const facility = await buildCurrentActiveFacilityDerivedIdentityOutput({ repositoryRoot: root });
   if (!facilityDerivedIdentityRebindState(facility)) return { facility, successor: null, base: null };
@@ -164,6 +167,7 @@ export async function buildCurrentActiveFacilityDerivedIdentitySuccessorTransact
     currentFacilityBytes: facility.bytes,
     currentLedger: ledger.value,
     currentTransition,
+    ...(allowedPredecessorSourceIds === undefined ? {} : { allowedPredecessorSourceIds }),
   });
   return {
     facility,
@@ -192,8 +196,8 @@ export function facilityDerivedIdentityRebindState(output, { check = false } = {
   if (check) throw new Error("active FACILITY derived identity drift");
   return true;
 }
-export async function rebindCurrentActiveFacilityDerivedIdentity({ repositoryRoot = ROOT, check = false, replaceExistingSuccessor = false, failAfter = async () => {} } = {}) {
-  const root = rootOf(repositoryRoot); const transaction = await buildCurrentActiveFacilityDerivedIdentitySuccessorTransaction({ repositoryRoot: root, replaceExistingSuccessor });
+export async function rebindCurrentActiveFacilityDerivedIdentity({ repositoryRoot = ROOT, check = false, replaceExistingSuccessor = false, allowedPredecessorSourceIds = undefined, failAfter = async () => {} } = {}) {
+  const root = rootOf(repositoryRoot); const transaction = await buildCurrentActiveFacilityDerivedIdentitySuccessorTransaction({ repositoryRoot: root, replaceExistingSuccessor, allowedPredecessorSourceIds });
   if (!facilityDerivedIdentityRebindState(transaction.facility, { check })) return { changed: false };
   const lock = path.join(root, LOCK); await mkdir(lock, { mode: 0o700 }); const journal = path.join(root, JOURNAL);
   let preserveJournal = false;
