@@ -254,12 +254,16 @@ export async function verifyCurrentCapitalTerminalLineage({
   builderGitSha,
   topologyBuild,
   execFileImpl = execFile,
+  buildTopologyOutputsImpl = buildCurrentCapitalTopologyRefreshOutputs,
 } = {}) {
   if (![sourceMainRoot, retainedRoot, privateBuilderRoot].every((value) => path.isAbsolute(value ?? ""))) {
     throw new Error("terminal lineage roots mismatch");
   }
   [sourceMainGitSha, facilityHeadGitSha, builderGitSha].forEach(requiredSha);
   if (typeof execFileImpl !== "function") throw new Error("terminal lineage git runner mismatch");
+  if (typeof buildTopologyOutputsImpl !== "function") {
+    throw new Error("terminal topology generator mismatch");
+  }
   await Promise.all([
     assertExactCleanGitRoot(sourceMainRoot, sourceMainGitSha, "source-main", execFileImpl),
     assertExactCleanGitRoot(retainedRoot, facilityHeadGitSha, "retained", execFileImpl),
@@ -309,6 +313,11 @@ export async function verifyCurrentCapitalTerminalLineage({
   }
   retained[retainedSnapshotPath] = await lineageFile(retainedRoot, retainedSnapshotPath, "retained FACILITY snapshot");
   const retainedCandidate = JSON.parse(retained["tools/datapack/release/candidate-build-spec.json"].bytes);
+  const protectedTerminalCandidateId = successor.nextCandidate?.candidateId;
+  if (typeof protectedTerminalCandidateId !== "string" || protectedTerminalCandidateId === ""
+    || retainedCandidate?.candidateId !== protectedTerminalCandidateId) {
+    throw new Error("terminal protected candidate identity mismatch");
+  }
   const retainedInventory = JSON.parse(retained["tools/datapack/source-inventory.json"].bytes);
   const retainedLedger = JSON.parse(retained["tools/datapack/release/source-snapshots.json"].bytes);
   const retainedSnapshot = JSON.parse(retained[retainedSnapshotPath].bytes);
@@ -382,8 +391,9 @@ export async function verifyCurrentCapitalTerminalLineage({
   } finally {
     await rm(replayParent, { recursive: true, force: true });
   }
-  const generated = await buildCurrentCapitalTopologyRefreshOutputs({
-    repositoryRoot: privateBuilderRoot, builderGitSha, ...topologyBuild,
+  const generated = await buildTopologyOutputsImpl({
+    repositoryRoot: privateBuilderRoot, builderGitSha, terminalCandidateId: protectedTerminalCandidateId,
+    ...topologyBuild,
   });
   const topologyOutputs = generated.outputs.map(({ relativePath, bytes }) => ({ relativePath, bytes }));
   if (topologyOutputs.length === 0 || !topologyOutputs.every(({ relativePath, bytes }) => Buffer.isBuffer(bytes) && bytes.length > 0)) {
