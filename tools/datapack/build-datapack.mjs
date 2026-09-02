@@ -778,7 +778,7 @@ export async function projectCandidateFixtureForAccessibilityAuthority({
       repositoryRoot,
     )),
     readFile(await resolveBuildInputPath(
-      "tools/datapack/source-inventory.json",
+      buildSpec?.networkEdgeEvidence?.sourceInventory?.path,
       "source inventory",
       repositoryRoot,
     )),

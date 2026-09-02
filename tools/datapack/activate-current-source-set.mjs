@@ -47,6 +47,7 @@ import { materializeIncheonTimetable } from "./materialize-incheon-timetable.mjs
 import {
   admittedCapitalLineEvidence,
   admittedIncheonTopologyEvidence,
+  projectCandidateFixtureForAccessibilityAuthority,
   projectCapitalTopologyIntoCanonicalFixture,
   projectIncheonNetworkEdges,
   validateSourceSeparatedCurrentTopology,
@@ -2716,13 +2717,44 @@ export async function validatePreparedCandidate({
   spec,
   buildNow,
   repositoryRoot = root,
+  projectCandidateFixtureImpl = projectCandidateFixtureForAccessibilityAuthority,
   runNodeImpl = runNode,
 }) {
   const builderRoot = path.resolve(repositoryRoot);
+  const stagedSpec = validationBuildSpec(spec, temporaryRoot, builderRoot);
+  const sourceFixture = parseJson(
+    await readFile(stagedSpec.fixturePath),
+    "prepared candidate source fixture",
+  );
+  const projectedFixture = await projectCandidateFixtureImpl({
+    buildSpec: stagedSpec,
+    sourceFixture,
+    repositoryRoot: builderRoot,
+  });
+  const sourceCapital = requireOne(
+    sourceFixture.packs,
+    ({ id }) => id === "capital",
+    "prepared candidate source capital pack",
+  );
+  const projectedCapital = requireOne(
+    projectedFixture.packs,
+    ({ id }) => id === "capital",
+    "prepared candidate projected capital pack",
+  );
+  for (const field of ["networkEdges", "outOfStationTransferLinks"]) {
+    if (!isDeepStrictEqual(projectedCapital[field] ?? [], sourceCapital[field] ?? [])) {
+      throw new Error(`prepared candidate validation projection changed ${field}`);
+    }
+  }
+  stagedSpec.fixturePath = await writeTempFile(
+    temporaryRoot,
+    "validation/candidate-fixture.json",
+    jsonBytes(projectedFixture),
+  );
   const validationSpecPath = await writeTempFile(
     temporaryRoot,
     "validation/candidate-build-spec.json",
-    jsonBytes(validationBuildSpec(spec, temporaryRoot, builderRoot)),
+    jsonBytes(stagedSpec),
   );
   const outputPath = path.join(temporaryRoot, "validation/output");
   await runNodeImpl("tools/datapack/build-datapack.mjs", [

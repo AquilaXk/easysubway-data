@@ -471,7 +471,29 @@ test("prepared current candidate 검증은 build를 수행하고 final release e
     currentCapitalTopology(sourceInventory),
     Promise.resolve(baseSpec.networkEdgeEvidence.capitalTopology),
   ]);
+  const stagedCanonicalPath = path.join(
+    temporaryRoot,
+    "tools/datapack/release/capital-production-canonical-pack.json",
+  );
+  const stagedInventoryPath = path.join(temporaryRoot, "tools/datapack/source-inventory.json");
+  const stagedCanonical = {
+    manifest: { channel: "production" },
+    packs: [{
+      id: "capital",
+      networkEdges: [{ id: "ride", edgeType: "RIDE" }],
+      outOfStationTransferLinks: [{ id: "walk" }],
+    }],
+  };
+  await Promise.all([
+    mkdir(path.dirname(stagedCanonicalPath), { recursive: true }),
+    mkdir(path.dirname(stagedInventoryPath), { recursive: true }),
+  ]);
+  await Promise.all([
+    writeFile(stagedCanonicalPath, `${JSON.stringify(stagedCanonical)}\n`),
+    writeFile(stagedInventoryPath, '{"sources":[]}\n'),
+  ]);
   const calls = [];
+  const projections = [];
   await validatePreparedCandidate({
     temporaryRoot,
     buildNow: "2026-08-13T16:46:31Z",
@@ -489,6 +511,12 @@ test("prepared current candidate 검증은 build를 수행하고 final release e
         itxCoverageContract: { path: "tools/datapack/itx-cheongchun-coverage-contract.json" },
       },
     },
+    async projectCandidateFixtureImpl(options) {
+      projections.push(options);
+      assert.deepEqual(options.sourceFixture, stagedCanonical);
+      assert.equal(options.buildSpec.networkEdgeEvidence.sourceInventory.path, stagedInventoryPath);
+      return { ...options.sourceFixture, validationProjection: true };
+    },
     async runNodeImpl(script, args, options) {
       calls.push({ script, args, options });
       const staged = JSON.parse(await readFile(args[1], "utf8"));
@@ -500,9 +528,15 @@ test("prepared current candidate 검증은 build를 수행하고 final release e
         staged.networkEdgeEvidence.capitalTopologyCandidate.path,
         path.join(root, currentTopologyPath),
       );
+      assert.notEqual(staged.fixturePath, stagedCanonicalPath);
+      assert.equal(
+        JSON.parse(await readFile(staged.fixturePath, "utf8")).validationProjection,
+        true,
+      );
     },
   });
 
+  assert.equal(projections.length, 1);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].script, "tools/datapack/build-datapack.mjs");
   assert.deepEqual(calls[0].args.slice(-2), ["--output", path.join(temporaryRoot, "validation/output")]);
@@ -526,6 +560,22 @@ test("prepared current candidate validation resolves fresh topology only from it
     writeFile(path.join(privateBuilderRoot, candidateTopologyPath), "private fresh candidate"),
     writeFile(path.join(privateBuilderRoot, coverageContractPath), "private coverage"),
   ]);
+  const stagedCanonicalPath = path.join(
+    temporaryRoot,
+    "tools/datapack/release/capital-production-canonical-pack.json",
+  );
+  const stagedInventoryPath = path.join(temporaryRoot, "tools/datapack/source-inventory.json");
+  const stagedCanonical = {
+    packs: [{ id: "capital", networkEdges: [], outOfStationTransferLinks: [] }],
+  };
+  await Promise.all([
+    mkdir(path.dirname(stagedCanonicalPath), { recursive: true }),
+    mkdir(path.dirname(stagedInventoryPath), { recursive: true }),
+  ]);
+  await Promise.all([
+    writeFile(stagedCanonicalPath, `${JSON.stringify(stagedCanonical)}\n`),
+    writeFile(stagedInventoryPath, '{"sources":[]}\n'),
+  ]);
   await validatePreparedCandidate({
     temporaryRoot,
     repositoryRoot: privateBuilderRoot,
@@ -541,6 +591,11 @@ test("prepared current candidate validation resolves fresh topology only from it
         capitalTopologyReverification: { path: "tools/datapack/release/capital-topology-reverification-20990102.json" },
         itxCoverageContract: { path: coverageContractPath },
       },
+    },
+    async projectCandidateFixtureImpl(options) {
+      assert.equal(options.repositoryRoot, privateBuilderRoot);
+      assert.equal(options.buildSpec.networkEdgeEvidence.sourceInventory.path, stagedInventoryPath);
+      return options.sourceFixture;
     },
     async runNodeImpl(script, args, options) {
       const staged = JSON.parse(await readFile(args[1], "utf8"));
