@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "41 */2 * * *"
   workflow_dispatch:
+    inputs:
+      recovery_producer_run_id:
+        description: Inspect one canonical producer run for guarded ancestor recovery
+        required: false
+        type: string
 
 permissions:
   actions: read
@@ -56,6 +61,7 @@ jobs:
         id: decision
         env:
           GH_TOKEN: ${{ github.token }}
+          RECOVERY_PRODUCER_RUN_ID: ${{ github.event.inputs.recovery_producer_run_id || '' }}
         run: |
           set -euo pipefail
           state_root="${RUNNER_TEMP}/kric-exit-full-capital-refresh"
@@ -89,20 +95,42 @@ jobs:
             });
             await writeFile(outputPath, JSON.stringify(rows) + "\n", { flag: "wx" });
           ' "${claim_rows}" "${claim_evidence}"
-          node tools/ci/decide-current-kric-exit-full-capital-refresh.mjs \
-            --inventory tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json \
-            --policy release/product-gates/datapack-freshness-sla.json \
-            --prs "${state_root}/prs.json" \
-            --claims "${state_root}/claims.txt" \
-            --claim-evidence "${claim_evidence}" \
-            --current-main-sha "${main_sha}" \
-            --facility-prs "${state_root}/facility-prs.json" \
-            --repository "${GITHUB_REPOSITORY}" \
-            --output "${EXIT_REFRESH_DECISION}" \
+          recovery_producer_run_id="${RECOVERY_PRODUCER_RUN_ID}"
+          decision_args=(
+            --inventory tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json
+            --policy release/product-gates/datapack-freshness-sla.json
+            --prs "${state_root}/prs.json"
+            --claims "${state_root}/claims.txt"
+            --claim-evidence "${claim_evidence}"
+            --current-main-sha "${main_sha}"
+            --facility-prs "${state_root}/facility-prs.json"
+            --repository "${GITHUB_REPOSITORY}"
+            --output "${EXIT_REFRESH_DECISION}"
             --github-output "${GITHUB_OUTPUT}"
+          )
+          if [[ -n "${recovery_producer_run_id}" ]]; then
+            [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]] || { echo "manual recovery selector is invalid" >&2; exit 1; }
+            decision_args+=(--recovery-producer-run-id "${recovery_producer_run_id}")
+          fi
+          node tools/ci/decide-current-kric-exit-full-capital-refresh.mjs "${decision_args[@]}"
 
       - name: Bind selected FACILITY branch
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'RECOVER_CLAIM' }}
+        run: |
+          set -euo pipefail
+          branch="${{ steps.decision.outputs.facility_branch }}"
+          head_sha="${{ steps.decision.outputs.facility_head_sha }}"
+          [[ "${branch}" =~ ^automation/629-kric-facility-refresh-[0-9]+$ ]] || { echo "FACILITY branch is invalid" >&2; exit 1; }
+          [[ "${head_sha}" =~ ^[a-f0-9]{40}$ ]] || { echo "FACILITY head is invalid" >&2; exit 1; }
+          git fetch --no-tags origin "refs/heads/${branch}:refs/remotes/origin/${branch}"
+          [[ "$(git rev-parse "origin/${branch}")" == "${head_sha}" ]] || { echo "FACILITY remote head changed" >&2; exit 1; }
+          {
+            printf 'EXIT_REFRESH_FACILITY_BRANCH=%s\n' "${branch}"
+            printf 'EXIT_REFRESH_FACILITY_HEAD_SHA=%s\n' "${head_sha}"
+          } >> "${GITHUB_ENV}"
+
+      - name: Inspect selected current FACILITY identity
+        if: ${{ steps.decision.outputs.state == 'INSPECT_SELECTED_CLAIM' }}
         run: |
           set -euo pipefail
           branch="${{ steps.decision.outputs.facility_branch }}"
@@ -288,8 +316,9 @@ jobs:
         run: |
           set -euo pipefail
           branch="${{ steps.decision.outputs.branch }}"
-          producer_run_id="${branch##*-}"
-          [[ "${producer_run_id}" =~ ^[0-9]+$ ]] || { echo "EXIT claim run identity is invalid" >&2; exit 1; }
+          producer_run_id="${{ steps.decision.outputs.producer_run_id }}"
+          [[ "${producer_run_id}" =~ ^[1-9][0-9]*$ ]] || { echo "EXIT claim run identity is invalid" >&2; exit 1; }
+          [[ "${branch}" == "automation/6-kric-exit-full-capital-refresh-${producer_run_id}" ]] || { echo "EXIT claim/run identity mismatch" >&2; exit 1; }
           git fetch --no-tags origin "refs/heads/${branch}:refs/remotes/origin/${branch}"
           claim_sha="$(git rev-parse "origin/${branch}")"
           producer_main_sha="$(git rev-parse "origin/${branch}^")"
@@ -338,13 +367,83 @@ jobs:
             printf 'EXIT_REFRESH_PRODUCER_RUN_ID=%s\n' "${producer_run_id}"
           } >> "${GITHUB_ENV}"
 
-      - name: Export immutable source identity
-        id: source-outputs
-        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'RECOVER_CLAIM' }}
+      - name: Verify selected ancestor recovery handoff
+        if: ${{ steps.decision.outputs.state == 'INSPECT_SELECTED_CLAIM' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          producer_run_id="${{ steps.decision.outputs.producer_run_id }}"
+          branch="${{ steps.decision.outputs.branch }}"
+          [[ "${producer_run_id}" =~ ^[1-9][0-9]*$ ]] || { echo "selected producer run identity is invalid" >&2; exit 1; }
+          [[ "${branch}" == "automation/6-kric-exit-full-capital-refresh-${producer_run_id}" ]] || { echo "selected claim/run identity mismatch" >&2; exit 1; }
+          git fetch --no-tags origin "refs/heads/${branch}:refs/remotes/origin/${branch}"
+          claim_sha="$(git rev-parse "origin/${branch}")"
+          producer_main_sha="$(git rev-parse "origin/${branch}^")"
+          current_main_sha="$(git rev-parse HEAD)"
+          [[ "$(git show -s --format=%s "${claim_sha}")" == "Claim KRIC EXIT full-capital refresh" ]] || { echo "selected claim subject mismatch" >&2; exit 1; }
+          [[ "$(git rev-list --count "${producer_main_sha}..${claim_sha}")" == "1" ]] || { echo "selected claim commit count mismatch" >&2; exit 1; }
+          git merge-base --is-ancestor "${producer_main_sha}" "${current_main_sha}"
+          git merge-base --is-ancestor "${current_main_sha}" "${EXIT_REFRESH_FACILITY_HEAD_SHA}"
+          run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${producer_run_id}")"
+          jobs_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${producer_run_id}/jobs?filter=all&per_page=100")"
+          # shellcheck disable=SC2016
+          RUN_JSON="${run_json}" JOBS_JSON="${jobs_json}" PRODUCER_RUN_ID="${producer_run_id}" EXIT_REFRESH_MAIN_SHA="${producer_main_sha}" node --input-type=module -e '
+            const run = JSON.parse(process.env.RUN_JSON);
+            const jobs = JSON.parse(process.env.JOBS_JSON)?.jobs?.filter((job) => job?.name === "Produce immutable EXIT source") ?? [];
+            if (run?.status !== "completed" || run?.conclusion !== "failure" || run?.head_repository?.full_name !== process.env.GITHUB_REPOSITORY || run?.head_sha !== process.env.EXIT_REFRESH_MAIN_SHA || typeof run?.path !== "string" || !run.path.startsWith(".github/workflows/kric-exit-full-capital-refresh.yml@") || jobs.length !== 1 || jobs[0].conclusion !== "success" || jobs[0].run_id !== Number(process.env.PRODUCER_RUN_ID) || jobs[0].head_sha !== process.env.EXIT_REFRESH_MAIN_SHA) throw new Error("selected producer workflow identity mismatch");
+          '
+          artifact_name="kric-exit-full-capital-source-${producer_run_id}"
+          artifacts="${RUNNER_TEMP}/kric-exit-full-capital-refresh/selected-producer-artifacts.json"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${producer_run_id}/artifacts?name=${artifact_name}&per_page=100" > "${artifacts}"
+          node tools/ci/require-workflow-artifact.mjs "${artifacts}" "${artifact_name}" "${producer_run_id}" "${producer_main_sha}"
+          selected_handoff="${EXIT_REFRESH_OPERATION_ROOT}/selected-source-handoff"
+          gh run download "${producer_run_id}" --repo "${GITHUB_REPOSITORY}" --name "${artifact_name}" --dir "${selected_handoff}"
+          # shellcheck disable=SC2016
+          identity_lines="$(EXIT_REFRESH_SOURCE_HANDOFF="${selected_handoff}" node --input-type=module -e '
+            import { lstat, readFile, readdir } from "node:fs/promises";
+            import path from "node:path";
+            import { createHash } from "node:crypto";
+            import { canonicalCurrentCapitalExitProviderSourceHandoffJson } from "./tools/datapack/current-capital-exit-provider-handoff.mjs";
+            import { canonicalCurrentKricExitProviderOciPlanJson } from "./tools/datapack/build-current-kric-exit-provider-oci-plan.mjs";
+            import { canonicalCurrentKricExitProviderOciReceiptJson } from "./tools/datapack/build-current-kric-exit-provider-oci-receipt.mjs";
+            import { canonicalJson } from "./tools/datapack/lib/manifest-validation.mjs";
+            const root = process.env.EXIT_REFRESH_SOURCE_HANDOFF;
+            const names = ["current-kric-exit-provider-oci-plan.json", "current-kric-exit-provider-oci-receipt.json", "current-capital-exit-provider-source-handoff.json", "current-capital-topology-terminal-handoff.json", "private-builder.bundle"];
+            const actual = await readdir(root); if (actual.length !== names.length || names.some((name) => !actual.includes(name))) throw new Error("selected producer artifact file set is invalid");
+            for (const name of names) { const stat = await lstat(path.join(root, name)); if (!stat.isFile() || stat.isSymbolicLink()) throw new Error("selected producer artifact path is invalid"); }
+            const [planBytes, receiptBytes, handoffBytes, topologyBytes] = await Promise.all(names.slice(0, 4).map((name) => readFile(path.join(root, name))));
+            const source = JSON.parse(handoffBytes); const plan = JSON.parse(planBytes); const receipt = JSON.parse(receiptBytes); const topology = JSON.parse(topologyBytes); const { handoffSha256, ...topologyPayload } = topology;
+            if (!handoffBytes.equals(Buffer.from(`${canonicalCurrentCapitalExitProviderSourceHandoffJson(source)}\n`)) || !planBytes.equals(Buffer.from(`${canonicalCurrentKricExitProviderOciPlanJson(plan)}\n`)) || !receiptBytes.equals(Buffer.from(`${canonicalCurrentKricExitProviderOciReceiptJson(receipt, { planBytes })}\n`)) || !topologyBytes.equals(Buffer.from(`${canonicalJson(topology)}\n`)) || handoffSha256 !== createHash("sha256").update(Buffer.from(canonicalJson(topologyPayload))).digest("hex") || topology.repository !== process.env.GITHUB_REPOSITORY || topology.sourceMainGitSha !== source.sourceMainSha || topology.operationId !== source.sourceOperationId || !/^automation\/629-kric-facility-refresh-[0-9]+$/u.test(topology.facility?.branch ?? "") || !/^[a-f0-9]{40}$/u.test(topology.facility?.headSha ?? "") || !/^[a-f0-9]{40}$/u.test(topology.builderGitSha ?? "") || topology.itxProviderCalls !== 0 || source.sourceProviderOciPlanSha256 !== createHash("sha256").update(planBytes).digest("hex") || source.sourceProviderOciReceiptSha256 !== createHash("sha256").update(receiptBytes).digest("hex") || plan.mainSha !== source.sourceMainSha || plan.operationId !== source.sourceOperationId || receipt.mainSha !== source.sourceMainSha || receipt.operationId !== source.sourceOperationId) throw new Error("selected producer artifact cross-digest mismatch");
+            process.stdout.write(`${topology.facility.branch}\t${topology.facility.headSha}\t${topology.builderGitSha}`);
+          ')"
+          IFS=$'\t' read -r ancestor_facility_branch ancestor_facility_head_sha ancestor_builder_sha <<< "${identity_lines}"
+          [[ "${ancestor_facility_branch}" =~ ^automation/629-kric-facility-refresh-[0-9]+$ && "${ancestor_facility_head_sha}" =~ ^[a-f0-9]{40}$ && "${ancestor_builder_sha}" =~ ^[a-f0-9]{40}$ ]] || { echo "selected producer topology identity mismatch" >&2; exit 1; }
+          git merge-base --is-ancestor "${ancestor_facility_head_sha}" "${EXIT_REFRESH_FACILITY_HEAD_SHA}"
           {
-            printf 'state=%s\n' "${{ steps.decision.outputs.state }}"
+            printf 'EXIT_REFRESH_BRANCH=%s\n' "${branch}"
+            printf 'EXIT_REFRESH_MAIN_SHA=%s\n' "${producer_main_sha}"
+            printf 'EXIT_REFRESH_CLAIM_SHA=%s\n' "${claim_sha}"
+            printf 'EXIT_REFRESH_PRODUCER_RUN_ID=%s\n' "${producer_run_id}"
+            printf 'EXIT_REFRESH_BUILDER_SHA=%s\n' "${ancestor_builder_sha}"
+            printf 'EXIT_REFRESH_ANCESTOR_FACILITY_BRANCH=%s\n' "${ancestor_facility_branch}"
+            printf 'EXIT_REFRESH_ANCESTOR_FACILITY_HEAD_SHA=%s\n' "${ancestor_facility_head_sha}"
+            printf 'EXIT_REFRESH_ANCESTOR_BUILDER_SHA=%s\n' "${ancestor_builder_sha}"
+            printf 'EXIT_REFRESH_ANCESTOR_RECOVERY_PREFLIGHTED=true\n'
+          } >> "${GITHUB_ENV}"
+
+      - name: Export immutable source identity
+        id: source-outputs
+        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'RECOVER_CLAIM' || steps.decision.outputs.state == 'INSPECT_SELECTED_CLAIM' }}
+        run: |
+          set -euo pipefail
+          state="${{ steps.decision.outputs.state }}"
+          if [[ "${state}" == "INSPECT_SELECTED_CLAIM" ]]; then
+            [[ "${EXIT_REFRESH_ANCESTOR_RECOVERY_PREFLIGHTED:-}" == "true" ]] || { echo "selected ancestor recovery preflight is incomplete" >&2; exit 1; }
+            state="INSPECTED_ANCESTOR_CLAIM"
+          fi
+          {
+            printf 'state=%s\n' "${state}"
             printf 'facility_branch=%s\n' "${EXIT_REFRESH_FACILITY_BRANCH}"
             printf 'facility_head_sha=%s\n' "${EXIT_REFRESH_FACILITY_HEAD_SHA}"
             printf 'exit_branch=%s\n' "${EXIT_REFRESH_BRANCH}"
@@ -366,7 +465,7 @@ jobs:
   terminal:
     name: Commit verified EXIT terminal candidate
     needs: source
-    if: ${{ needs.source.outputs.state == 'DUE' || needs.source.outputs.state == 'EXPIRED' || needs.source.outputs.state == 'RECOVER_CLAIM' }}
+    if: ${{ needs.source.outputs.state == 'DUE' || needs.source.outputs.state == 'EXPIRED' || needs.source.outputs.state == 'RECOVER_CLAIM' || needs.source.outputs.state == 'INSPECTED_ANCESTOR_CLAIM' }}
     permissions:
       actions: read
       contents: write
@@ -396,6 +495,7 @@ jobs:
           mkdir -p "${operation_root}"
           {
             printf 'EXIT_REFRESH_OPERATION_ROOT=%s\n' "${operation_root}"
+            printf 'EXIT_REFRESH_RECOVERY_STATE=%s\n' "${{ needs.source.outputs.state }}"
             printf 'EXIT_REFRESH_FACILITY_BRANCH=%s\n' "${{ needs.source.outputs.facility_branch }}"
             printf 'EXIT_REFRESH_FACILITY_HEAD_SHA=%s\n' "${{ needs.source.outputs.facility_head_sha }}"
             printf 'EXIT_REFRESH_BRANCH=%s\n' "${{ needs.source.outputs.exit_branch }}"
@@ -431,22 +531,58 @@ jobs:
           mapfile -t bundled_refs < <(git bundle unbundle "${EXIT_REFRESH_OPERATION_ROOT}/source-handoff/private-builder.bundle")
           [[ "${#bundled_refs[@]}" == "1" && "${bundled_refs[0]%%[[:space:]]*}" == "${EXIT_REFRESH_BUILDER_SHA}" ]] || { echo "private builder bundle identity mismatch" >&2; exit 1; }
           git worktree add --detach "${private_builder_root}" "${EXIT_REFRESH_BUILDER_SHA}"
-          [[ "$(git -C "${private_builder_root}" rev-parse HEAD^)" == "${EXIT_REFRESH_FACILITY_HEAD_SHA}" ]] || { echo "private builder parent mismatch" >&2; exit 1; }
+          topology_handoff_path="${EXIT_REFRESH_OPERATION_ROOT}/source-handoff/current-capital-topology-terminal-handoff.json"
+          if [[ "${EXIT_REFRESH_RECOVERY_STATE}" == "INSPECTED_ANCESTOR_CLAIM" ]]; then
+            # shellcheck disable=SC2016
+            topology_identity="$(EXIT_REFRESH_TOPOLOGY_HANDOFF="${topology_handoff_path}" node --input-type=module -e '
+              import { readFile } from "node:fs/promises";
+              const value = JSON.parse(await readFile(process.env.EXIT_REFRESH_TOPOLOGY_HANDOFF));
+              if (!/^automation\/629-kric-facility-refresh-[0-9]+$/u.test(value?.facility?.branch ?? "") || !/^[a-f0-9]{40}$/u.test(value?.facility?.headSha ?? "") || !/^[a-f0-9]{40}$/u.test(value?.builderGitSha ?? "")) throw new Error("ancestor topology identity mismatch");
+              process.stdout.write(`${value.facility.branch}\t${value.facility.headSha}\t${value.builderGitSha}`);
+            ')"
+            IFS=$'\t' read -r ancestor_facility_branch ancestor_facility_head_sha ancestor_builder_sha <<< "${topology_identity}"
+            [[ "${ancestor_facility_branch}" == "${EXIT_REFRESH_FACILITY_BRANCH}" ]] || { echo "ancestor FACILITY branch changed" >&2; exit 1; }
+            [[ "${ancestor_builder_sha}" == "${EXIT_REFRESH_BUILDER_SHA}" ]] || { echo "ancestor builder identity changed" >&2; exit 1; }
+            git merge-base --is-ancestor "${EXIT_REFRESH_MAIN_SHA}" "$(git rev-parse origin/main)"
+            git merge-base --is-ancestor "$(git rev-parse origin/main)" "${EXIT_REFRESH_FACILITY_HEAD_SHA}"
+            git merge-base --is-ancestor "${ancestor_facility_head_sha}" "${EXIT_REFRESH_FACILITY_HEAD_SHA}"
+            [[ "$(git -C "${private_builder_root}" rev-parse HEAD^)" == "${ancestor_facility_head_sha}" ]] || { echo "ancestor private builder parent mismatch" >&2; exit 1; }
+            ancestor_retained_root="${EXIT_REFRESH_OPERATION_ROOT}/ancestor-retained"
+            git worktree add --detach "${ancestor_retained_root}" "${ancestor_facility_head_sha}"
+            export EXIT_REFRESH_ANCESTOR_RETAINED_ROOT="${ancestor_retained_root}"
+            export EXIT_REFRESH_ANCESTOR_FACILITY_HEAD_SHA="${ancestor_facility_head_sha}"
+          else
+            [[ "$(git -C "${private_builder_root}" rev-parse HEAD^)" == "${EXIT_REFRESH_FACILITY_HEAD_SHA}" ]] || { echo "private builder parent mismatch" >&2; exit 1; }
+          fi
           node "${GITHUB_WORKSPACE}/tools/datapack/recover-current-live-chain-transfer-observation.mjs" \
             --repository-root "${transfer_source_root}" \
             --recovery-root "${EXIT_REFRESH_OPERATION_ROOT}/transfer"
           export EXIT_REFRESH_SOURCE_MAIN_ROOT="${source_main_root}"
           export EXIT_REFRESH_PRIVATE_BUILDER_ROOT="${private_builder_root}"
-          printf 'EXIT_REFRESH_SOURCE_MAIN_ROOT=%s\nEXIT_REFRESH_PRIVATE_BUILDER_ROOT=%s\n' "${source_main_root}" "${private_builder_root}" >> "${GITHUB_ENV}"
+          printf 'EXIT_REFRESH_SOURCE_MAIN_ROOT=%s\nEXIT_REFRESH_PRIVATE_BUILDER_ROOT=%s\nEXIT_REFRESH_ANCESTOR_RETAINED_ROOT=%s\nEXIT_REFRESH_ANCESTOR_FACILITY_HEAD_SHA=%s\n' "${source_main_root}" "${private_builder_root}" "${EXIT_REFRESH_ANCESTOR_RETAINED_ROOT:-}" "${EXIT_REFRESH_ANCESTOR_FACILITY_HEAD_SHA:-}" >> "${GITHUB_ENV}"
           # shellcheck disable=SC2016
           node --input-type=module -e '
             import { execFile } from "node:child_process";
             import { readFile, writeFile } from "node:fs/promises";
             import { promisify } from "node:util";
-            import { runCurrentCapitalExitTerminalConsumer } from "./tools/datapack/run-current-capital-live-chain.mjs";
+            import { canonicalJson } from "./tools/datapack/lib/manifest-validation.mjs";
+            import { rebuildCurrentCapitalTopologyTerminalHandoffForAncestorRecovery, runCurrentCapitalExitTerminalConsumer } from "./tools/datapack/run-current-capital-live-chain.mjs";
             const run = promisify(execFile);
             const handoff = `${process.env.EXIT_REFRESH_OPERATION_ROOT}/source-handoff`;
-            const topologyHandoffBytes = await readFile(`${handoff}/current-capital-topology-terminal-handoff.json`);
+            const originalTopologyHandoffBytes = await readFile(`${handoff}/current-capital-topology-terminal-handoff.json`);
+            let topologyHandoffBytes = originalTopologyHandoffBytes;
+            if (process.env.EXIT_REFRESH_RECOVERY_STATE === "INSPECTED_ANCESTOR_CLAIM") {
+              const rebound = await rebuildCurrentCapitalTopologyTerminalHandoffForAncestorRecovery({
+                repository: process.env.GITHUB_REPOSITORY, sourceMainRoot: process.env.EXIT_REFRESH_SOURCE_MAIN_ROOT,
+                sourceMainGitSha: process.env.EXIT_REFRESH_MAIN_SHA, ancestorRetainedRoot: process.env.EXIT_REFRESH_ANCESTOR_RETAINED_ROOT,
+                ancestorFacilityHeadGitSha: process.env.EXIT_REFRESH_ANCESTOR_FACILITY_HEAD_SHA,
+                originalPrivateBuilderRoot: process.env.EXIT_REFRESH_PRIVATE_BUILDER_ROOT,
+                originalBuilderGitSha: process.env.EXIT_REFRESH_BUILDER_SHA, currentRetainedRoot: process.env.GITHUB_WORKSPACE,
+                currentFacilityBranch: process.env.EXIT_REFRESH_FACILITY_BRANCH,
+                currentFacilityHeadGitSha: process.env.EXIT_REFRESH_FACILITY_HEAD_SHA, topologyHandoffBytes: originalTopologyHandoffBytes,
+              });
+              topologyHandoffBytes = Buffer.from(`${canonicalJson(rebound.topologyHandoff)}\n`);
+            }
             const topologyHandoff = JSON.parse(topologyHandoffBytes);
             const result = await runCurrentCapitalExitTerminalConsumer({
               repositoryRoot: process.env.GITHUB_WORKSPACE, runnerTemp: process.env.RUNNER_TEMP, repository: process.env.GITHUB_REPOSITORY,
@@ -480,8 +616,13 @@ jobs:
           final_tree="$(git write-tree)"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          final_sha="$(printf '%s\n' 'Refresh KRIC EXIT full-capital snapshot' | git commit-tree "${final_tree}" -p "${EXIT_REFRESH_BUILDER_SHA}")"
-          [[ "$(git rev-parse "${final_sha}^")" == "${EXIT_REFRESH_BUILDER_SHA}" && "$(git rev-parse "${final_sha}^{tree}")" == "${final_tree}" ]] || { echo "terminal commit identity mismatch" >&2; exit 1; }
+          terminal_parent_args=(-p "${EXIT_REFRESH_BUILDER_SHA}")
+          if [[ "${EXIT_REFRESH_RECOVERY_STATE}" == "INSPECTED_ANCESTOR_CLAIM" ]]; then terminal_parent_args=(-p "${EXIT_REFRESH_FACILITY_HEAD_SHA}" -p "${EXIT_REFRESH_BUILDER_SHA}"); fi
+          final_sha="$(printf '%s\n' 'Refresh KRIC EXIT full-capital snapshot' | git commit-tree "${final_tree}" "${terminal_parent_args[@]}")"
+          terminal_parents="$(git show -s --format=%P "${final_sha}")"
+          expected_terminal_parents="${terminal_parent_args[1]}"
+          if [[ "${#terminal_parent_args[@]}" == "4" ]]; then expected_terminal_parents+=" ${terminal_parent_args[3]}"; fi
+          [[ "${terminal_parents}" == "${expected_terminal_parents}" && "$(git rev-parse "${final_sha}^{tree}")" == "${final_tree}" ]] || { echo "terminal commit identity mismatch" >&2; exit 1; }
           git update-ref "refs/heads/${EXIT_REFRESH_FACILITY_BRANCH}" "${final_sha}" "${EXIT_REFRESH_FACILITY_HEAD_SHA}"
           [[ "$(git rev-parse HEAD)" == "${final_sha}" ]] || { echo "terminal local head update mismatch" >&2; exit 1; }
           gh auth setup-git
@@ -515,3 +656,11 @@ jobs:
               [[ ! -e "${directory}" ]] || { echo "disposable terminal worktree removal failed" >&2; exit 1; }
             fi
           done
+          if [[ "${EXIT_REFRESH_RECOVERY_STATE:-}" == "INSPECTED_ANCESTOR_CLAIM" ]]; then
+            directory="${EXIT_REFRESH_OPERATION_ROOT}/ancestor-retained"
+            if [[ -e "${directory}" ]]; then
+              [[ "$(git -C "${directory}" rev-parse HEAD)" == "${EXIT_REFRESH_ANCESTOR_FACILITY_HEAD_SHA}" ]] || { echo "ancestor retained worktree identity mismatch" >&2; exit 1; }
+              git worktree remove --force "${directory}"
+              [[ ! -e "${directory}" ]] || { echo "ancestor retained worktree removal failed" >&2; exit 1; }
+            fi
+          fi

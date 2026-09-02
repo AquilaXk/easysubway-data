@@ -12,6 +12,7 @@ import {
   CURRENT_KRIC_EXIT_REQUEST_TIMEOUT_MS,
   assertCurrentCapitalExitItxAuthorityFresh,
   buildCurrentCapitalLiveChainPlan,
+  buildCurrentCapitalTopologyTerminalHandoff,
   assertCurrentCapitalFacilityAdmission,
   evaluateStagedRoutePolicy,
   parseArgs,
@@ -22,6 +23,7 @@ import {
   resolveCurrentExitDerivationAt,
   runCurrentCapitalExitOnlyProducer,
   runCurrentCapitalExitTerminalConsumer,
+  rebuildCurrentCapitalTopologyTerminalHandoffForAncestorRecovery,
   runCurrentCapitalLiveChain,
   verifyCurrentCapitalTerminalLineage,
 } from "./run-current-capital-live-chain.mjs";
@@ -42,6 +44,7 @@ import {
   canonicalCurrentCapitalExitProviderSourceHandoffJson,
 } from "./current-capital-exit-provider-handoff.mjs";
 import { commitCurrentCapitalTerminalManifest, validateCurrentCapitalTerminalManifest } from "./refresh-current-capital-accessibility-full.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const execFile = promisify(execFileCallback);
@@ -251,7 +254,7 @@ async function currentTopologyFixture(root) {
     incheonAccessibilityPath: `tools/datapack/sources/${source("incheon-transit-accessibility").admissionEvidence.snapshotId}.json`,
     incheonLine1TimetablePath: source("incheon-line1-train-timetable").scheduleAdmissionEvidence.snapshotPath,
     incheonLine2TimetablePath: source("incheon-line2-train-timetable").scheduleAdmissionEvidence.snapshotPath,
-    itxCurrentAdmissionPath: spec.networkEdgeEvidence.itxCurrentTopologyAdmission?.path,
+    itxCurrentAdmissionPath: spec.networkEdgeEvidence.itxCurrentTopologyAdmission?.path ?? null,
     itxTopologyEvidencePath: spec.itxTopologyEvidencePath,
   };
   const topologySnapshots = await Promise.all([
@@ -526,6 +529,61 @@ test("terminal lineage replays the retained FACILITY producer and rejects builde
     stat(path.join(retainedRoot, "tools/datapack/.current-capital-terminal-transaction.json")),
     { code: "ENOENT" },
   );
+});
+
+test("ancestor recovery rebuilds only a current-head topology handoff and rejects retained byte drift", async (t) => {
+  const parent = await mkdtemp(path.join(os.tmpdir(), "current-terminal-ancestor-recovery-"));
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  const sourceMainRoot = path.join(parent, "source-main");
+  const ancestorRetainedRoot = path.join(parent, "ancestor-retained");
+  const originalPrivateBuilderRoot = path.join(parent, "original-private-builder");
+  const currentRetainedRoot = path.join(parent, "current-retained");
+  const sourceMainGitSha = await cloneCleanFixture(ROOT, sourceMainRoot);
+  await cloneCleanFixture(ROOT, ancestorRetainedRoot);
+  const originalBuilderGitSha = await cloneCleanFixture(ROOT, originalPrivateBuilderRoot);
+  const ancestorFacilityHeadGitSha = await buildRetainedFacilityFixture(ancestorRetainedRoot);
+  const topologyBuild = await currentTopologyFixture(originalPrivateBuilderRoot);
+  const originalProof = await verifyCurrentCapitalTerminalLineage({
+    sourceMainRoot, retainedRoot: ancestorRetainedRoot, privateBuilderRoot: originalPrivateBuilderRoot,
+    sourceMainGitSha, facilityHeadGitSha: ancestorFacilityHeadGitSha, builderGitSha: originalBuilderGitSha,
+    topologyBuild,
+  });
+  const originalTopologyHandoff = await buildCurrentCapitalTopologyTerminalHandoff({
+    repository: "AquilaXk/easysubway-data", operationId: "kric-exit-full-capital-refresh-123",
+    sourceMainGitSha, facilityBranch: "automation/629-kric-facility-refresh-123",
+    facilityHeadGitSha: ancestorFacilityHeadGitSha, builderGitSha: originalBuilderGitSha,
+    topologyBuild, privateBuilderRoot: originalPrivateBuilderRoot, proof: originalProof.proof,
+  });
+  await cloneCleanFixture(ancestorRetainedRoot, currentRetainedRoot);
+  await writeFile(path.join(currentRetainedRoot, "recovery-note.txt"), "current head only\n");
+  await execFile("git", ["add", "--", "recovery-note.txt"], { cwd: currentRetainedRoot });
+  await execFile("git", ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--quiet", "-m", "Advance current FACILITY head"], { cwd: currentRetainedRoot });
+  const currentFacilityHeadGitSha = (await execFile("git", ["rev-parse", "HEAD"], { cwd: currentRetainedRoot })).stdout.trim();
+
+  const rebuilt = await rebuildCurrentCapitalTopologyTerminalHandoffForAncestorRecovery({
+    repository: "AquilaXk/easysubway-data", sourceMainRoot, sourceMainGitSha,
+    ancestorRetainedRoot, ancestorFacilityHeadGitSha, originalPrivateBuilderRoot, originalBuilderGitSha,
+    currentRetainedRoot, currentFacilityBranch: "automation/629-kric-facility-refresh-123",
+    currentFacilityHeadGitSha, topologyBuild,
+    topologyHandoffBytes: Buffer.from(`${canonicalJson(originalTopologyHandoff)}\n`),
+  });
+  assert.equal(rebuilt.topologyHandoff.operationId, originalTopologyHandoff.operationId);
+  assert.equal(rebuilt.topologyHandoff.facility.headSha, currentFacilityHeadGitSha);
+  assert.equal(rebuilt.topologyHandoff.builderGitSha, originalBuilderGitSha);
+  assert.notEqual(rebuilt.topologyHandoff.handoffSha256, originalTopologyHandoff.handoffSha256);
+
+  const driftPath = path.join(currentRetainedRoot, "tools/datapack/release/candidate-build-spec.json");
+  await writeFile(driftPath, Buffer.concat([await readFile(driftPath), Buffer.from("\n")]));
+  await execFile("git", ["add", "--", "tools/datapack/release/candidate-build-spec.json"], { cwd: currentRetainedRoot });
+  await execFile("git", ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--quiet", "-m", "Drift retained candidate"], { cwd: currentRetainedRoot });
+  const driftedCurrentFacilityHeadGitSha = (await execFile("git", ["rev-parse", "HEAD"], { cwd: currentRetainedRoot })).stdout.trim();
+  await assert.rejects(rebuildCurrentCapitalTopologyTerminalHandoffForAncestorRecovery({
+    repository: "AquilaXk/easysubway-data", sourceMainRoot, sourceMainGitSha,
+    ancestorRetainedRoot, ancestorFacilityHeadGitSha, originalPrivateBuilderRoot, originalBuilderGitSha,
+    currentRetainedRoot, currentFacilityBranch: "automation/629-kric-facility-refresh-123",
+    currentFacilityHeadGitSha: driftedCurrentFacilityHeadGitSha,
+    topologyBuild, topologyHandoffBytes: Buffer.from(`${canonicalJson(originalTopologyHandoff)}\n`),
+  }), /ancestor recovery retained terminal input mismatch/);
 });
 
 test("EXIT-only producer refuses provider access without a validated same-repository FACILITY PR", async () => {
