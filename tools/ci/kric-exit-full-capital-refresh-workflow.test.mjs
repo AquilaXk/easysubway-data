@@ -108,9 +108,13 @@ test("EXIT refresh keeps exact-main OCI producer, immutable recovery, and select
   assert.match(yml, /candidateOperationId: `kric-exit-full-capital-terminal-\$\{process\.env\.GITHUB_RUN_ID\}`/);
   assert.match(yml, /git fetch --no-tags origin "refs\/heads\/\$\{EXIT_REFRESH_FACILITY_BRANCH\}:refs\/remotes\/origin\/\$\{EXIT_REFRESH_FACILITY_BRANCH\}"/);
   assert.match(yml, /git switch --track -c "\$\{EXIT_REFRESH_FACILITY_BRANCH\}" "origin\/\$\{EXIT_REFRESH_FACILITY_BRANCH\}"/);
-  assert.match(yml, /terminal_parent_sha="\$\{EXIT_REFRESH_BUILDER_SHA\}"/);
-  assert.match(yml, /INSPECTED_ANCESTOR_CLAIM[\s\S]*?terminal_parent_sha="\$\{EXIT_REFRESH_FACILITY_HEAD_SHA\}"/);
-  assert.match(yml, /git commit-tree "\$\{final_tree\}" -p "\$\{terminal_parent_sha\}"/);
+  assert.match(yml, /terminal_parent_args=\(-p "\$\{EXIT_REFRESH_BUILDER_SHA\}"\)/);
+  assert.match(yml, /INSPECTED_ANCESTOR_CLAIM[\s\S]*?terminal_parent_args=\(-p "\$\{EXIT_REFRESH_FACILITY_HEAD_SHA\}" -p "\$\{EXIT_REFRESH_BUILDER_SHA\}"\)/);
+  assert.match(yml, /git commit-tree "\$\{final_tree\}" "\$\{terminal_parent_args\[@\]\}"/);
+  assert.match(yml, /terminal_parents="\$\(git show -s --format=%P "\$\{final_sha\}"\)"/);
+  assert.match(yml, /expected_terminal_parents="\$\{terminal_parent_args\[1\]\}"/);
+  assert.match(yml, /expected_terminal_parents\+=\" \$\{terminal_parent_args\[3\]\}\"/);
+  assert.match(yml, /"\$\{terminal_parents\}" == "\$\{expected_terminal_parents\}"/);
   assert.match(yml, /git update-ref "refs\/heads\/\$\{EXIT_REFRESH_FACILITY_BRANCH\}" "\$\{final_sha\}" "\$\{EXIT_REFRESH_FACILITY_HEAD_SHA\}"/);
   assert.match(yml, /Refresh KRIC EXIT full-capital snapshot/);
   const terminalPush = yml.indexOf('git push origin "${EXIT_REFRESH_FACILITY_BRANCH}"');

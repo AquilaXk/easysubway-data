@@ -616,10 +616,13 @@ jobs:
           final_tree="$(git write-tree)"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          terminal_parent_sha="${EXIT_REFRESH_BUILDER_SHA}"
-          if [[ "${EXIT_REFRESH_RECOVERY_STATE}" == "INSPECTED_ANCESTOR_CLAIM" ]]; then terminal_parent_sha="${EXIT_REFRESH_FACILITY_HEAD_SHA}"; fi
-          final_sha="$(printf '%s\n' 'Refresh KRIC EXIT full-capital snapshot' | git commit-tree "${final_tree}" -p "${terminal_parent_sha}")"
-          [[ "$(git rev-parse "${final_sha}^")" == "${terminal_parent_sha}" && "$(git rev-parse "${final_sha}^{tree}")" == "${final_tree}" ]] || { echo "terminal commit identity mismatch" >&2; exit 1; }
+          terminal_parent_args=(-p "${EXIT_REFRESH_BUILDER_SHA}")
+          if [[ "${EXIT_REFRESH_RECOVERY_STATE}" == "INSPECTED_ANCESTOR_CLAIM" ]]; then terminal_parent_args=(-p "${EXIT_REFRESH_FACILITY_HEAD_SHA}" -p "${EXIT_REFRESH_BUILDER_SHA}"); fi
+          final_sha="$(printf '%s\n' 'Refresh KRIC EXIT full-capital snapshot' | git commit-tree "${final_tree}" "${terminal_parent_args[@]}")"
+          terminal_parents="$(git show -s --format=%P "${final_sha}")"
+          expected_terminal_parents="${terminal_parent_args[1]}"
+          if [[ "${#terminal_parent_args[@]}" == "4" ]]; then expected_terminal_parents+=" ${terminal_parent_args[3]}"; fi
+          [[ "${terminal_parents}" == "${expected_terminal_parents}" && "$(git rev-parse "${final_sha}^{tree}")" == "${final_tree}" ]] || { echo "terminal commit identity mismatch" >&2; exit 1; }
           git update-ref "refs/heads/${EXIT_REFRESH_FACILITY_BRANCH}" "${final_sha}" "${EXIT_REFRESH_FACILITY_HEAD_SHA}"
           [[ "$(git rev-parse HEAD)" == "${final_sha}" ]] || { echo "terminal local head update mismatch" >&2; exit 1; }
           gh auth setup-git
