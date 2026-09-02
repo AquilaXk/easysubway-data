@@ -397,7 +397,10 @@ export async function verifyCurrentCapitalTerminalLineage({
   }
   const generated = await buildTopologyOutputsImpl({
     repositoryRoot: privateBuilderRoot, builderGitSha,
-    terminalCandidateId: proofMode === "CURRENT_TERMINAL" ? protectedTerminalCandidateId : undefined,
+    terminalCandidateId: terminalCandidateIdForLineageProof({
+      proofMode,
+      protectedTerminalCandidateId,
+    }),
     ...topologyBuild,
   });
   const topologyOutputs = generated.outputs.map(({ relativePath, bytes }) => ({ relativePath, bytes }));
@@ -466,6 +469,19 @@ export async function verifyCurrentCapitalTerminalLineage({
     })) ))),
     topologyOutputs: Object.freeze(topologyOutputs.map(({ relativePath, bytes }) => Object.freeze({ relativePath, bytes: Buffer.from(bytes) }))),
   });
+}
+
+export function terminalCandidateIdForLineageProof({
+  proofMode,
+  protectedTerminalCandidateId,
+} = {}) {
+  if (!["CURRENT_TERMINAL", "IMMUTABLE_PREDECESSOR"].includes(proofMode)) {
+    throw new Error("terminal topology proof mode mismatch");
+  }
+  if (typeof protectedTerminalCandidateId !== "string" || protectedTerminalCandidateId === "") {
+    throw new Error("terminal protected candidate identity mismatch");
+  }
+  return proofMode === "CURRENT_TERMINAL" ? protectedTerminalCandidateId : undefined;
 }
 
 export async function buildCurrentCapitalTopologyTerminalHandoff({
