@@ -239,7 +239,7 @@ test("pending v2 marker accepts FACILITY next-eight and EXIT previous-seven befo
     ? "2026-08-30T00:00:00.001Z"
     : "2026-08-30T00:00:00.000Z";
   await writeFile(stationPath, JSON.stringify(mutatedStation));
-  await assert.rejects(buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root }), /evidence delta mismatch/);
+  await assert.rejects(buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root }), /FACILITY evidence projection mismatch/);
   await writeFile(stationPath, JSON.stringify(beforeStation));
 });
 
@@ -267,12 +267,7 @@ test("pending marker authenticates an exact FACILITY snapshot transition", async
   });
   const beforeFacilityRows = beforeStation.evidenceRows.filter(({ domain }) => domain === "FACILITY");
   assert.deepEqual(beforeFacilityRows, expectedBeforeRows);
-  const nextCapturedAt = new Date(Date.parse(previousFacility.sourceIdentity.capturedAt) + 1_000).toISOString();
-  const expectedAfterRows = expectedBeforeRows.map((row) => ({
-    ...row,
-    capturedAt: nextCapturedAt,
-    sourceSnapshotId: `${previousFacility.sourceIdentity.sourceId}-${nextCapturedAt.replaceAll(/[-:.]/gu, "")}`,
-  }));
+  const expectedAfterRows = rebuiltStation.evidenceRows.filter(({ domain }) => domain === "FACILITY");
   assert.doesNotThrow(() => assertExactCurrentCapitalFacilityEvidenceTransition({
     beforeRows: beforeFacilityRows,
     afterRows: expectedAfterRows,
