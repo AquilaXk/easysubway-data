@@ -328,7 +328,7 @@ jobs:
           RUN_JSON="${run_json}" JOBS_JSON="${jobs_json}" PRODUCER_RUN_ID="${producer_run_id}" EXIT_REFRESH_MAIN_SHA="${producer_main_sha}" node --input-type=module -e '
             const run = JSON.parse(process.env.RUN_JSON);
             const jobs = JSON.parse(process.env.JOBS_JSON)?.jobs?.filter((job) => job?.name === "Produce immutable EXIT source") ?? [];
-            if (run?.status !== "completed" || typeof run?.conclusion !== "string" || run?.head_repository?.full_name !== process.env.GITHUB_REPOSITORY || run?.head_sha !== process.env.EXIT_REFRESH_MAIN_SHA || typeof run?.path !== "string" || !run.path.startsWith(".github/workflows/kric-exit-full-capital-refresh.yml@") || jobs.length !== 1 || jobs[0].conclusion !== "success" || jobs[0].run_id !== Number(process.env.PRODUCER_RUN_ID) || jobs[0].head_sha !== process.env.EXIT_REFRESH_MAIN_SHA) throw new Error("producer workflow identity mismatch");
+            if (run?.status !== "completed" || typeof run?.conclusion !== "string" || run?.head_repository?.full_name !== process.env.GITHUB_REPOSITORY || run?.head_sha !== process.env.EXIT_REFRESH_MAIN_SHA || run?.path !== ".github/workflows/kric-exit-full-capital-refresh.yml" || jobs.length !== 1 || jobs[0].conclusion !== "success" || jobs[0].run_id !== Number(process.env.PRODUCER_RUN_ID) || jobs[0].head_sha !== process.env.EXIT_REFRESH_MAIN_SHA) throw new Error("producer workflow identity mismatch");
           '
           artifact_name="kric-exit-full-capital-source-${producer_run_id}"
           artifacts="${RUNNER_TEMP}/kric-exit-full-capital-refresh/producer-artifacts.json"
@@ -391,7 +391,7 @@ jobs:
           RUN_JSON="${run_json}" JOBS_JSON="${jobs_json}" PRODUCER_RUN_ID="${producer_run_id}" EXIT_REFRESH_MAIN_SHA="${producer_main_sha}" node --input-type=module -e '
             const run = JSON.parse(process.env.RUN_JSON);
             const jobs = JSON.parse(process.env.JOBS_JSON)?.jobs?.filter((job) => job?.name === "Produce immutable EXIT source") ?? [];
-            if (run?.status !== "completed" || run?.conclusion !== "failure" || run?.head_repository?.full_name !== process.env.GITHUB_REPOSITORY || run?.head_sha !== process.env.EXIT_REFRESH_MAIN_SHA || typeof run?.path !== "string" || !run.path.startsWith(".github/workflows/kric-exit-full-capital-refresh.yml@") || jobs.length !== 1 || jobs[0].conclusion !== "success" || jobs[0].run_id !== Number(process.env.PRODUCER_RUN_ID) || jobs[0].head_sha !== process.env.EXIT_REFRESH_MAIN_SHA) throw new Error("selected producer workflow identity mismatch");
+            if (run?.status !== "completed" || run?.conclusion !== "failure" || run?.head_repository?.full_name !== process.env.GITHUB_REPOSITORY || run?.head_sha !== process.env.EXIT_REFRESH_MAIN_SHA || run?.path !== ".github/workflows/kric-exit-full-capital-refresh.yml" || jobs.length !== 1 || jobs[0].conclusion !== "success" || jobs[0].run_id !== Number(process.env.PRODUCER_RUN_ID) || jobs[0].head_sha !== process.env.EXIT_REFRESH_MAIN_SHA) throw new Error("selected producer workflow identity mismatch");
           '
           artifact_name="kric-exit-full-capital-source-${producer_run_id}"
           artifacts="${RUNNER_TEMP}/kric-exit-full-capital-refresh/selected-producer-artifacts.json"

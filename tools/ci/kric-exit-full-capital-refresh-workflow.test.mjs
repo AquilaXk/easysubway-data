@@ -69,7 +69,11 @@ test("EXIT refresh keeps exact-main OCI producer, immutable recovery, and select
   assert.match(yml, /name: Commit verified EXIT terminal candidate/);
   assert.match(yml, /jobs\[0\]\.conclusion !== "success"/);
   assert.match(yml, /needs\.source\.outputs\.producer_run_id/);
-  assert.match(yml, /\.github\/workflows\/kric-exit-full-capital-refresh\.yml/);
+  assert.equal(
+    (yml.match(/run\?\.path !== "\.github\/workflows\/kric-exit-full-capital-refresh\.yml"/g) ?? []).length,
+    2,
+  );
+  assert.doesNotMatch(yml, /run\?\.path\.startsWith\("\.github\/workflows\/kric-exit-full-capital-refresh\.yml@"\)/);
   assert.match(yml, /gh run download "\$\{producer_run_id\}"/);
   assert.match(yml, /recover-current-live-chain-transfer-observation\.mjs/);
   assert.match(yml, /git worktree add --detach "\$\{transfer_source_root\}" "\$\{EXIT_REFRESH_FACILITY_HEAD_SHA\}"/);
