@@ -105,7 +105,7 @@ export async function buildCurrentActiveFacilityDerivedIdentityOutput({ reposito
   validateFacilityDerivedIdentityRebind(old, next, previous.bytes, bytes);
   return { relative: OUTPUT, bytes, prestate: previous.bytes };
 }
-export async function buildCurrentActiveFacilityDerivedIdentitySuccessorTransaction({ repositoryRoot = ROOT } = {}) {
+export async function buildCurrentActiveFacilityDerivedIdentitySuccessorTransaction({ repositoryRoot = ROOT, replaceExistingSuccessor = false } = {}) {
   const root = rootOf(repositoryRoot);
   const facility = await buildCurrentActiveFacilityDerivedIdentityOutput({ repositoryRoot: root });
   if (!facilityDerivedIdentityRebindState(facility)) return { facility, successor: null, base: null };
@@ -116,8 +116,39 @@ export async function buildCurrentActiveFacilityDerivedIdentitySuccessorTransact
     json(root, "tools/datapack/release/source-snapshots.json"),
     json(root, "tools/datapack/source-inventory.json"),
   ]);
-  try { await stable(path.join(root, SUCCESSOR), "current accessibility transition successor"); throw new Error("current accessibility transition successor already exists"); }
-  catch (error) { if (error?.code !== "ENOENT") throw error; }
+  let successorPrestate = null;
+  let previousFacilityBytes = facility.prestate;
+  try {
+    successorPrestate = await stable(path.join(root, SUCCESSOR), "current accessibility transition successor");
+    if (!replaceExistingSuccessor) throw new Error("current accessibility transition successor already exists");
+    const existing = JSON.parse(successorPrestate);
+    if (canonicalCurrentCapitalAccessibilityTransitionSuccessorJson(existing) !== successorPrestate.toString("utf8")) {
+      throw new Error("existing successor transition bytes are not canonical");
+    }
+    previousFacilityBytes = Buffer.from(existing.previousFacilityAdmissionBase64, "base64");
+    const existingTransition = {
+      schemaVersion: existing.schemaVersion,
+      artifactKind: "current-capital-accessibility-transition",
+      state: existing.state,
+      nextCandidate: existing.nextCandidate,
+      previousCandidate: existing.previousCandidate,
+      previousProduction: existing.previousProduction,
+      facilityAdmission: existing.facilityAdmission,
+      pendingPrerequisites: existing.pendingPrerequisites,
+      transitionSha256: existing.transitionSha256,
+    };
+    const expected = buildCurrentCapitalAccessibilityTransitionSuccessor({
+      baseTransitionBytes: baseBytes,
+      previousFacilityBytes,
+      currentTransition: existingTransition,
+    });
+    if (canonicalJson(existing) !== canonicalJson(expected)) {
+      throw new Error("existing successor transition binding mismatch");
+    }
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+    if (replaceExistingSuccessor) throw new Error("terminal successor transition prestate is missing");
+  }
   const currentTransition = buildCurrentCapitalAccessibilityTransition({
     candidate: candidate.value, candidateBytes: candidate.bytes,
     previous: previous.value, previousBytes: previous.bytes,
@@ -126,12 +157,12 @@ export async function buildCurrentActiveFacilityDerivedIdentitySuccessorTransact
     inventory: inventory.value, inventoryBytes: inventory.bytes,
   });
   const successorValue = buildCurrentCapitalAccessibilityTransitionSuccessor({
-    baseTransitionBytes: baseBytes, previousFacilityBytes: facility.prestate, currentTransition,
+    baseTransitionBytes: baseBytes, previousFacilityBytes, currentTransition,
   });
   return {
     facility,
     base: { relative: TRANSITION, bytes: baseBytes },
-    successor: { relative: SUCCESSOR, bytes: Buffer.from(canonicalCurrentCapitalAccessibilityTransitionSuccessorJson(successorValue)), prestate: null },
+    successor: { relative: SUCCESSOR, bytes: Buffer.from(canonicalCurrentCapitalAccessibilityTransitionSuccessorJson(successorValue)), prestate: successorPrestate },
   };
 }
 async function replace(root, output) { const file = path.join(root, output.relative); const actual = await stable(file, "FACILITY admission"); if (!actual.equals(output.prestate)) throw new Error("FACILITY rebind input drift"); const temp = path.join(path.dirname(file), `.${path.basename(file)}.${randomUUID()}.tmp`); try { const h = await open(temp, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600); try { await h.writeFile(output.bytes); await h.sync(); } finally { await h.close(); } if (!(await stable(file, "FACILITY admission")).equals(output.prestate)) throw new Error("FACILITY rebind input drift"); await rename(temp, file); } finally { await unlink(temp).catch(() => {}); } }
@@ -155,14 +186,16 @@ export function facilityDerivedIdentityRebindState(output, { check = false } = {
   if (check) throw new Error("active FACILITY derived identity drift");
   return true;
 }
-export async function rebindCurrentActiveFacilityDerivedIdentity({ repositoryRoot = ROOT, check = false, failAfter = async () => {} } = {}) {
-  const root = rootOf(repositoryRoot); const transaction = await buildCurrentActiveFacilityDerivedIdentitySuccessorTransaction({ repositoryRoot: root });
+export async function rebindCurrentActiveFacilityDerivedIdentity({ repositoryRoot = ROOT, check = false, replaceExistingSuccessor = false, failAfter = async () => {} } = {}) {
+  const root = rootOf(repositoryRoot); const transaction = await buildCurrentActiveFacilityDerivedIdentitySuccessorTransaction({ repositoryRoot: root, replaceExistingSuccessor });
   if (!facilityDerivedIdentityRebindState(transaction.facility, { check })) return { changed: false };
   const lock = path.join(root, LOCK); await mkdir(lock, { mode: 0o700 }); const journal = path.join(root, JOURNAL);
   let preserveJournal = false;
   const records = [
     { operation: "replace", relative: transaction.facility.relative, before: transaction.facility.prestate.toString("base64"), after: transaction.facility.bytes.toString("base64") },
-    { operation: "create", relative: transaction.successor.relative, after: transaction.successor.bytes.toString("base64") },
+    transaction.successor.prestate == null
+      ? { operation: "create", relative: transaction.successor.relative, after: transaction.successor.bytes.toString("base64") }
+      : { operation: "replace", relative: transaction.successor.relative, before: transaction.successor.prestate.toString("base64"), after: transaction.successor.bytes.toString("base64") },
   ];
   try {
     await writeFile(journal, JSON.stringify({ schemaVersion: 2, state: "PREPARED", records }), { flag: "wx", mode: 0o600 });
@@ -170,17 +203,29 @@ export async function rebindCurrentActiveFacilityDerivedIdentity({ repositoryRoo
     try {
       if (!(await stable(path.join(root, TRANSITION), "current accessibility transition")).equals(transaction.base.bytes)) throw new Error("successor transition input drift");
       await replace(root, transaction.facility); await failAfter({ stage: "facility" });
-      await createOnce(root, transaction.successor); await failAfter({ stage: "successor" });
+      if (transaction.successor.prestate == null) await createOnce(root, transaction.successor);
+      else await replace(root, transaction.successor);
+      await failAfter({ stage: "successor" });
       if (!(await stable(path.join(root, transaction.facility.relative), "FACILITY admission")).equals(transaction.facility.bytes)
         || !(await stable(path.join(root, transaction.successor.relative), "current accessibility transition successor")).equals(transaction.successor.bytes)) throw new Error("FACILITY successor transaction verification failed");
     } catch (error) {
       try {
         const successor = await stable(path.join(root, transaction.successor.relative), "FACILITY successor rollback").catch((missing) => missing?.code === "ENOENT" ? null : Promise.reject(missing));
-        if (successor && !successor.equals(transaction.successor.bytes)) throw new Error("FACILITY successor transaction preserves foreign successor");
-        if (successor) await unlink(path.join(root, transaction.successor.relative));
+        const successorMatchesPrestate = transaction.successor.prestate != null
+          && successor?.equals(transaction.successor.prestate);
+        if (successor && !successor.equals(transaction.successor.bytes) && !successorMatchesPrestate) throw new Error("FACILITY successor transaction preserves foreign successor");
+        if (transaction.successor.prestate == null) {
+          if (successor) await unlink(path.join(root, transaction.successor.relative));
+        } else if (successor?.equals(transaction.successor.bytes)) {
+          await replace(root, { ...transaction.successor, bytes: transaction.successor.prestate, prestate: transaction.successor.bytes });
+        }
         const current = await stable(path.join(root, transaction.facility.relative), "FACILITY rollback");
         if (current.equals(transaction.facility.bytes)) await replace(root, { ...transaction.facility, bytes: transaction.facility.prestate, prestate: transaction.facility.bytes });
-        if (!(await stable(path.join(root, transaction.facility.relative), "FACILITY rollback verification")).equals(transaction.facility.prestate)) throw new Error("FACILITY successor transaction rollback failed");
+        if (!(await stable(path.join(root, transaction.facility.relative), "FACILITY rollback verification")).equals(transaction.facility.prestate)
+          || (transaction.successor.prestate != null
+            && !(await stable(path.join(root, transaction.successor.relative), "successor rollback verification")).equals(transaction.successor.prestate))) {
+          throw new Error("FACILITY successor transaction rollback failed");
+        }
         await unlink(journal); preserveJournal = false;
       } catch (rollbackError) {
         throw new AggregateError([error, rollbackError], "FACILITY successor transaction rollback failed");
