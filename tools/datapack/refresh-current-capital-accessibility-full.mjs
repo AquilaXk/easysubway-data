@@ -16,6 +16,7 @@ import {
 } from "./build-current-capital-live-chain-boundary.mjs";
 import { CURRENT_CAPITAL_LIVE_CHAIN_FIXED_OUTPUT_PATHS } from "./build-current-capital-live-chain-bundle.mjs";
 import { CURRENT_TOPOLOGY_REFRESH_OUTPUTS } from "./activate-current-source-set.mjs";
+import { validateCurrentCapitalAccessibilitySourceHandoff } from "./current-capital-accessibility-source-handoff.mjs";
 import { readCurrentCapitalAccessibilityTransitionBoundary, readEffectiveCurrentCapitalAccessibilityTransition } from "./current-capital-accessibility-transition.mjs";
 import { projectCandidateFixtureForAccessibilityAuthority } from "./build-datapack.mjs";
 import { atomicReplace, readStableRegularFile } from "./rebind-current-candidate-source-snapshots.mjs";
@@ -164,10 +165,12 @@ function terminalVerifierProof(proof) {
 export function validateCurrentCapitalTerminalManifest(manifest) {
   if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)
     || JSON.stringify(Object.keys(manifest).sort(codepointCompare)) !== JSON.stringify([
-      "fanInPath", "liveChainOutputs", "markerPaths", "materialization", "proof", "replacementPaths", "topologyInputs", "topologyOutputs",
+      "accessibilitySourceHandoff", "fanInPath", "liveChainOutputs", "markerPaths", "materialization", "proof", "replacementPaths", "topologyInputs", "topologyOutputs",
     ])) {
     throw new Error("current-capital terminal manifest mismatch");
   }
+  const accessibilitySourceHandoff = validateCurrentCapitalAccessibilitySourceHandoff(manifest.accessibilitySourceHandoff);
+  const accessibilityOutputs = new Map(accessibilitySourceHandoff.outputs.map((entry) => [entry.relativePath, entry]));
   terminalTopologyInputs(manifest.topologyInputs);
   terminalTopologyOutputs(manifest.topologyOutputs);
   terminalLiveChainOutputs(manifest.liveChainOutputs);
@@ -176,6 +179,7 @@ export function validateCurrentCapitalTerminalManifest(manifest) {
   if (manifest.fanInPath !== FAN_IN_OUTPUT) throw new Error("current-capital terminal fan-in manifest mismatch");
   exactPathSet(manifest.markerPaths, TERMINAL_MARKERS, "current-capital terminal marker manifest");
   const classPaths = [
+    ...accessibilityOutputs.keys(),
     ...manifest.topologyInputs,
     ...manifest.topologyOutputs,
     ...manifest.liveChainOutputs,
@@ -189,9 +193,26 @@ export function validateCurrentCapitalTerminalManifest(manifest) {
   exactPathSet(manifest.topologyInputs, [...proof.inputs.keys()], "current-capital terminal verifier topology inputs");
   exactPathSet(manifest.topologyOutputs, [...proof.outputs.keys()], "current-capital terminal verifier topology outputs");
   const createOncePaths = [...manifest.topologyInputs,
-    ...manifest.topologyOutputs.filter((relative) => TERMINAL_TOPOLOGY_REVERIFICATION.test(relative))].sort(codepointCompare);
+    ...manifest.topologyOutputs.filter((relative) => TERMINAL_TOPOLOGY_REVERIFICATION.test(relative)),
+    ...[...accessibilityOutputs.values()].filter(({ operation }) => operation === "create").map(({ relativePath }) => relativePath),
+  ].sort(codepointCompare);
+  const proofReplacementPaths = [...new Set([
+    ...manifest.topologyOutputs,
+    ...manifest.liveChainOutputs,
+    manifest.fanInPath,
+  ])].filter((relative) => !createOncePaths.includes(relative));
+  exactPathSet(proofReplacementPaths, [...proof.replacementPrestates.keys()], "current-capital terminal replacement prestates");
+  for (const output of accessibilityOutputs.values()) {
+    const proofPrestate = proof.replacementPrestates.get(output.relativePath);
+    if (output.operation === "replace" && proofPrestate != null && proofPrestate !== output.beforeSha256) {
+      throw new Error("current-capital terminal accessibility replacement prestate mismatch");
+    }
+  }
   const replacementPrestatePaths = manifest.replacementPaths.filter((relative) => !createOncePaths.includes(relative));
-  exactPathSet(replacementPrestatePaths, [...proof.replacementPrestates.keys()], "current-capital terminal replacement prestates");
+  if (replacementPrestatePaths.some((relative) => proof.replacementPrestates.get(relative) == null
+    && accessibilityOutputs.get(relative)?.beforeSha256 == null)) {
+    throw new Error("current-capital terminal replacement prestate mismatch");
+  }
   for (const [relative, topology] of proof.outputs) {
     if (createOncePaths.includes(relative)) {
       if (topology.beforeSha256 != null) throw new Error("current-capital terminal topology create-once prestate mismatch");
@@ -209,6 +230,8 @@ export function validateCurrentCapitalTerminalManifest(manifest) {
     retainedProof: proof.retained,
     topologyInputProof: proof.inputs,
     topologyOutputProof: proof.outputs,
+    accessibilitySourceHandoff,
+    accessibilityOutputProof: accessibilityOutputs,
     replacementPrestateProof: proof.replacementPrestates,
     materializationProof,
     createOncePaths: Object.freeze(createOncePaths),
@@ -827,8 +850,9 @@ export async function commitCurrentCapitalTerminalManifest({
     const retained = checkedManifest.retainedProof.get(output.relative);
     const input = checkedManifest.topologyInputProof.get(output.relative);
     const materialized = checkedManifest.materializationProof.get(output.relative);
-    const expectedAfter = materialized ?? topology?.generatedSha256 ?? input ?? retained;
-    const expectedBefore = checkedManifest.replacementPrestateProof.get(output.relative);
+    const accessibility = checkedManifest.accessibilityOutputProof.get(output.relative);
+    const expectedAfter = materialized ?? topology?.generatedSha256 ?? input ?? accessibility?.afterSha256 ?? retained;
+    const expectedBefore = checkedManifest.replacementPrestateProof.get(output.relative) ?? accessibility?.beforeSha256;
     if (!expectedAfter || sha(output.bytes) !== expectedAfter
       || (checkedManifest.createOncePaths.includes(output.relative)
         ? expectedBefore != null

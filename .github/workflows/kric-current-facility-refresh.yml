@@ -213,7 +213,7 @@ jobs:
             cp "${source_root}/raw-receipt.json" "${source_root}/receipt.json"
             main_sha="$(git rev-parse HEAD)"
             node tools/datapack/run-current-capital-facility-operation.mjs \
-              --phase prepare --operation-root "${target_root}" --expected-main-sha "${main_sha}"
+              --phase prepare --operation-root "${target_root}" --expected-main-sha "${main_sha}" --expected-facility-head-sha "${main_sha}"
             node tools/datapack/run-current-capital-facility-operation.mjs \
               --phase recover-published --operation-root "${target_root}" --source-operation-root "${source_root}"
             node tools/datapack/run-current-capital-facility-operation.mjs \
@@ -307,7 +307,7 @@ jobs:
             echo "KRIC refresh operation is not running from its claimed main" >&2
             exit 1
           }
-          node tools/datapack/run-current-capital-facility-operation.mjs --phase prepare --operation-root "${KRIC_REFRESH_OPERATION_ROOT}" --expected-main-sha "${KRIC_REFRESH_MAIN_SHA}"
+          node tools/datapack/run-current-capital-facility-operation.mjs --phase prepare --operation-root "${KRIC_REFRESH_OPERATION_ROOT}" --expected-main-sha "${KRIC_REFRESH_MAIN_SHA}" --expected-facility-head-sha "${KRIC_REFRESH_MAIN_SHA}"
           node tools/datapack/run-current-capital-facility-operation.mjs --phase collect --operation-root "${KRIC_REFRESH_OPERATION_ROOT}"
           node tools/datapack/run-current-capital-facility-operation.mjs --phase finalize --operation-root "${KRIC_REFRESH_OPERATION_ROOT}"
           cp "${KRIC_REFRESH_OPERATION_ROOT}/receipt.json" "${KRIC_REFRESH_OPERATION_ROOT}/raw-receipt.json"
