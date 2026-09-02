@@ -241,9 +241,10 @@ test("pending v2 marker accepts FACILITY next-eight and EXIT previous-seven befo
   await writeFile(stationPath, JSON.stringify(beforeStation));
 });
 
-test("pending marker producer boundary follows the transition-validated current candidate", async (t) => {
+test("pending marker producer boundary distinguishes base prestates from effective evidence", async (t) => {
   const root = await actualPendingMarkerRepository(t);
-  const [marker, candidate, facility, exit, station, route] = await Promise.all([
+  const [baseMarker, effectiveMarker, candidate, facility, exit, station, route] = await Promise.all([
+    readFile(path.join(root, TRANSITION)).then(JSON.parse),
     readFile(path.join(root, SUCCESSOR)).then(JSON.parse),
     readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json")).then(JSON.parse),
     readFile(path.join(root, "tools/datapack/release/current-capital-facility-source-admission.json")).then(JSON.parse),
@@ -253,13 +254,21 @@ test("pending marker producer boundary follows the transition-validated current 
   ]);
 
   const currentSourceSetSha256 = "a".repeat(64);
+  const refreshedPredecessorSourceSetSha256 = "b".repeat(64);
   candidate.sourceSnapshotSetHash = currentSourceSetSha256;
   facility.candidate.sourceSnapshotSetHash = currentSourceSetSha256;
-  assert.notEqual(marker.nextCandidate.sourceSnapshotSetHash, candidate.sourceSnapshotSetHash);
-  assert.equal(marker.nextCandidate.candidateId, candidate.candidateId);
+  effectiveMarker.previousCandidate.candidateId = "capital-accessibility-20260902-refreshed-seven";
+  effectiveMarker.previousCandidate.sourceSnapshotSetHash = refreshedPredecessorSourceSetSha256;
+  exit.candidate.sourceSetSha256 = refreshedPredecessorSourceSetSha256;
+  assert.notEqual(baseMarker.previousCandidate.candidateId, effectiveMarker.previousCandidate.candidateId);
+  assert.notEqual(baseMarker.previousCandidate.sourceSnapshotSetHash, effectiveMarker.previousCandidate.sourceSnapshotSetHash);
+  assert.equal(effectiveMarker.nextCandidate.candidateId, candidate.candidateId);
   assert.equal(facility.candidate.candidateId, candidate.candidateId);
   assert.equal(facility.candidate.sourceSnapshotSetHash, candidate.sourceSnapshotSetHash);
-  assertPendingMarkerProducerBoundary({ marker, candidate, facility, exit, station, route });
+  assert.equal(exit.candidate.sourceSetSha256, effectiveMarker.previousCandidate.sourceSnapshotSetHash);
+  assert.equal(station.candidate.sourceSetSha256, baseMarker.previousCandidate.sourceSnapshotSetHash);
+  assert.equal(route.candidate.sourceSetSha256, baseMarker.previousCandidate.sourceSnapshotSetHash);
+  assertPendingMarkerProducerBoundary({ baseMarker, effectiveMarker, candidate, facility, exit, station, route });
 });
 
 test("pre-approval projection consumes the validated pending v2 marker without mutating tracked bytes", async (t) => {
