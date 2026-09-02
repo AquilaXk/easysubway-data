@@ -224,7 +224,6 @@ jobs:
             import { collectCurrentCapitalTerminalAccessibilitySources, canonicalCurrentCapitalAccessibilitySourceHandoffJson, decideCurrentCapitalAccessibilitySourceRefresh, stageCurrentCapitalTerminalAccessibilitySources } from "./tools/datapack/current-capital-accessibility-source-handoff.mjs";
             const providerStartedAt = new Date();
             const decision = await decideCurrentCapitalAccessibilitySourceRefresh({ repositoryRoot: process.env.EXIT_REFRESH_RETAINED_ROOT, now: providerStartedAt });
-            if (decision.state !== "EXPIRED" || decision.refreshSourceIds.length === 0) throw new Error("terminal accessibility refresh is not due");
             const collected = await collectCurrentCapitalTerminalAccessibilitySources({
               repositoryRoot: process.env.EXIT_REFRESH_RETAINED_ROOT,
               operationRoot: `${process.env.EXIT_REFRESH_OPERATION_ROOT}/accessibility-source`,
@@ -283,7 +282,7 @@ jobs:
           '
           mapfile -t expected_builder_paths < <(node --input-type=module -e '
             import { readFile } from "node:fs/promises";
-            import { CURRENT_CAPITAL_ACCESSIBILITY_SOURCE_FIXED_OUTPUTS, validateCurrentCapitalAccessibilitySourceHandoff } from "./tools/datapack/current-capital-accessibility-source-handoff.mjs";
+            import { CURRENT_CAPITAL_ACCESSIBILITY_SOURCE_FIXED_OUTPUTS, changedCurrentCapitalAccessibilitySourceOutputPaths, validateCurrentCapitalAccessibilitySourceHandoff } from "./tools/datapack/current-capital-accessibility-source-handoff.mjs";
             const handoff = validateCurrentCapitalAccessibilitySourceHandoff(JSON.parse(await readFile(process.env.EXIT_REFRESH_OPERATION_ROOT + "/current-capital-accessibility-source-handoff.json")));
             const fixed = new Set(CURRENT_CAPITAL_ACCESSIBILITY_SOURCE_FIXED_OUTPUTS);
             const sourcePattern = /^tools\/datapack\/sources\/(?:seoul-metro-accessibility|kric-station-convenience-standard)-[0-9TZ]+\.json$/u;
@@ -292,7 +291,7 @@ jobs:
             const topologyPaths = [topology.capitalTopologyPath, topology.incheonTopologyPath, topology.incheonLine1TimetablePath, topology.incheonLine2TimetablePath];
             const topologyPatterns = [/^tools\/datapack\/sources\/capital-route-topology-[0-9]{8}\.json$/u, /^tools\/datapack\/sources\/incheon-transit-station-info-[0-9]{8}\.json$/u, /^tools\/datapack\/sources\/incheon-line1-train-timetable-[0-9]{8}\.json$/u, /^tools\/datapack\/sources\/incheon-line2-train-timetable-[0-9]{8}\.json$/u];
             if (topologyPaths.some((relative, index) => !topologyPatterns[index].test(relative ?? ""))) throw new Error("private builder topology path set mismatch");
-            const paths = [...handoff.outputs.map(({ relativePath }) => relativePath), ...topologyPaths].sort();
+            const paths = [...changedCurrentCapitalAccessibilitySourceOutputPaths(handoff), ...topologyPaths].sort();
             if (new Set(paths).size !== paths.length) throw new Error("private builder expected path set mismatch");
             process.stdout.write(paths.join("\n"));
           ')

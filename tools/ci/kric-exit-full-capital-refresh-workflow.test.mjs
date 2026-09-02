@@ -93,6 +93,8 @@ test("EXIT refresh keeps exact-main OCI producer, immutable recovery, and select
   assert.match(yml, /collectCurrentCapitalTerminalAccessibilitySources/);
   assert.match(yml, /stageCurrentCapitalTerminalAccessibilitySources/);
   assert.match(yml, /refreshSourceIds: decision\.refreshSourceIds/);
+  assert.doesNotMatch(yml, /decision\.state !== "EXPIRED" \|\| decision\.refreshSourceIds\.length === 0/);
+  assert.match(yml, /changedCurrentCapitalAccessibilitySourceOutputPaths/);
   assert.match(yml, /current-capital-accessibility-source-handoff\.json/);
   assert.doesNotMatch(yml, /source-handoff\/current-capital-accessibility-source-handoff\.json/);
   assert.match(yml, /private builder input path set mismatch/);

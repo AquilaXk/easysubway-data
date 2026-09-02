@@ -172,10 +172,21 @@ async function assertPlanBinding(operationRoot, journal) {
   if (hash(bytes) !== journal.planSha256) throw new Error("operation plan identity mismatch");
   return bytes;
 }
-async function validateReleasePreflight(root, planBytes, now, { replacingSourceId } = {}) {
-  if (replacingSourceId !== undefined && replacingSourceId !== "kric-station-convenience-standard") {
+const TERMINAL_REPLACEABLE_SOURCE_IDS = new Set([
+  "kric-station-convenience-standard",
+  "seoul-metro-accessibility",
+]);
+function normalizeReplacingSourceIds(replacingSourceId, replacingSourceIds) {
+  if (replacingSourceId !== undefined && replacingSourceIds !== undefined) throw new Error("replacement source identity mismatch");
+  const values = replacingSourceIds ?? (replacingSourceId === undefined ? [] : [replacingSourceId]);
+  if (!Array.isArray(values) || new Set(values).size !== values.length
+    || values.some((sourceId) => !TERMINAL_REPLACEABLE_SOURCE_IDS.has(sourceId))
+    || (values.length > 0 && !values.includes("kric-station-convenience-standard"))) {
     throw new Error("replacement source identity mismatch");
   }
+  return new Set(values);
+}
+async function validateReleasePreflight(root, planBytes, now, { replacingSourceIds = new Set() } = {}) {
   const release = Object.fromEntries(await Promise.all(Object.entries(RELEASE_INPUTS).map(async ([key, relative]) => [key, await readStableRegularFile(path.join(root, relative), key)])));
   const candidate = parse(release.candidate.bytes, "candidate"); const request = parse(release.releaseRequest.bytes, "release request"); const inventory = parse(release.inventory.bytes, "source inventory"); const snapshots = parse(release.snapshots.bytes, "source snapshot ledger"); const governance = parse(release.governance.bytes, "source governance policy"); const freshness = parse(release.freshness.bytes, "freshness SLA");
   if (request?.buildSpecSha256 !== hash(release.candidate.bytes)) throw new Error("release request is not bound to candidate bytes");
@@ -186,7 +197,7 @@ async function validateReleasePreflight(root, planBytes, now, { replacingSourceI
     const ledger = snapshots.find((entry) => entry?.snapshotId === snapshotId); const projection = candidate.sourceSnapshots[index]; const source = inventory.sources?.find(({ id }) => id === ledger?.sourceId); const governanceSource = governance.sources?.find(({ sourceId }) => sourceId === ledger?.sourceId); const review = governanceSource?.licenseReview;
     let freshnessExpiresAt; let rawRetentionExpiresAt; let nextReviewAt;
     try { freshnessExpiresAt = requiredUtcInstant(ledger?.freshnessExpiresAt, "candidate freshnessExpiresAt"); rawRetentionExpiresAt = requiredUtcInstant(ledger?.rawRetentionExpiresAt, "candidate rawRetentionExpiresAt"); nextReviewAt = requiredUtcInstant(review?.nextReviewAt, "license nextReviewAt"); } catch { throw new Error("candidate source ledger/freshness binding mismatch"); }
-    const replacingExpiredSource = ledger?.sourceId === replacingSourceId;
+    const replacingExpiredSource = replacingSourceIds.has(ledger?.sourceId);
     if (!ledger || projection?.sourceId !== ledger.sourceId || heads[ledger.sourceId] !== snapshotId || ledger.licenseStatus !== "PASS" || ledger.snapshotStatus !== "LOCKED" || ledger.credentialRedacted !== true || (!replacingExpiredSource && freshnessExpiresAt <= now.getTime()) || rawRetentionExpiresAt <= now.getTime() || review?.status !== "APPROVED" || nextReviewAt <= now.getTime() || review.termsHash !== source?.admissionEvidence?.licenseEvidenceHash) throw new Error("candidate source ledger/freshness binding mismatch");
   }
   const source = inventory.sources?.find(({ id }) => id === "kric-station-convenience-standard"); const relativeSnapshot = source?.accessibilityAdmissionEvidence?.snapshotPath;
@@ -378,7 +389,7 @@ export async function prepareCurrentCapitalFacilityOperation({ repositoryRoot = 
   const journal = { schemaVersion: 1, artifactKind: "current-capital-facility-operation-journal", operationId: randomUUID(), phase: "PREPARED", preparedAt: now.toISOString(), expectedMainSha, expectedFacilityHeadSha, planSha256: hash(Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(plan))), inputSha256: Object.fromEntries(Object.entries(bytes).map(([key, value]) => [key, hash(value)])), priorAdmissionSha256, completedStages: {} };
   await syncWrite(path.join(output, JOURNAL), journal); return { plan, journal };
 }
-export async function collectCurrentCapitalFacilityOperation({ repositoryRoot = ROOT, operationRoot, serviceKey, replacingSourceId, fetchImpl = fetch, delayImpl, now = new Date(), env = process.env, execFileImpl = execFile, journalWriteImpl = syncWrite, collectImpl = collectKricStandardAccessibilityObservation, writeObservationImpl = writeKricStandardAccessibilityObservation } = {}) {
+export async function collectCurrentCapitalFacilityOperation({ repositoryRoot = ROOT, operationRoot, serviceKey, replacingSourceId, replacingSourceIds, fetchImpl = fetch, delayImpl, now = new Date(), env = process.env, execFileImpl = execFile, journalWriteImpl = syncWrite, collectImpl = collectKricStandardAccessibilityObservation, writeObservationImpl = writeKricStandardAccessibilityObservation } = {}) {
   const repository = path.resolve(repositoryRoot); const root = path.resolve(requireText(operationRoot, "operation root")); let journal = parseJournal(await regularBytes(path.join(root, JOURNAL), "operation journal"));
   targetAdmissionBinding(journal);
   await assertExternalOperationRoot(repository, root); const planBytes = await assertPlanBinding(root, journal);
@@ -389,7 +400,8 @@ export async function collectCurrentCapitalFacilityOperation({ repositoryRoot = 
   }
   if (journal.phase !== "PREPARED") throw new Error("collection may only start from PREPARED operation");
   const key = requireText(serviceKey, "KRIC_SERVICE_KEY");
-  await assertExactFacilityRepository(repository, requireText(journal.expectedMainSha, "prepared expected main SHA"), requireText(journal.expectedFacilityHeadSha, "prepared expected facility head SHA"), execFileImpl); await assertNoRegistrarResidues(repository); await assertPreparedInputs(repository, journal); await validateReleasePreflight(repository, planBytes, now, { replacingSourceId });
+  const replacementSet = normalizeReplacingSourceIds(replacingSourceId, replacingSourceIds);
+  await assertExactFacilityRepository(repository, requireText(journal.expectedMainSha, "prepared expected main SHA"), requireText(journal.expectedFacilityHeadSha, "prepared expected facility head SHA"), execFileImpl); await assertNoRegistrarResidues(repository); await assertPreparedInputs(repository, journal); await validateReleasePreflight(repository, planBytes, now, { replacingSourceIds: replacementSet });
   const plan = parse(planBytes, "operation plan");
   if (canonicalCurrentCapitalFacilityCollectionPlanJson(plan) !== planBytes.toString("utf8") || plan.counts.providerTupleCount !== 213) throw new Error("operation plan is invalid");
   requireOciParBaseUrl(env);

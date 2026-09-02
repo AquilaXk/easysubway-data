@@ -9,6 +9,7 @@ import {
   CURRENT_CAPITAL_ACCESSIBILITY_SOURCE_FIXED_OUTPUTS,
   buildCurrentCapitalAccessibilitySourceHandoff,
   canonicalCurrentCapitalAccessibilitySourceHandoffJson,
+  changedCurrentCapitalAccessibilitySourceOutputPaths,
   collectCurrentCapitalTerminalAccessibilitySources,
   decideCurrentCapitalAccessibilitySourceRefresh,
   rebuildCurrentCapitalAccessibilitySourceHandoffFromRoots,
@@ -144,6 +145,8 @@ async function fixture(t) {
 
 test("closed handoff binds two fresh sources and seven protected replacements", async (t) => {
   const input = await fixture(t);
+  const noOpPath = "tools/datapack/release/release-request.json";
+  await write(input.preparedRoot, noOpPath, await readFile(path.join(input.retainedRoot, noOpPath)));
   const handoff = await buildCurrentCapitalAccessibilitySourceHandoff({
     repository: "AquilaXk/easysubway-data",
     operationId: "kric-exit-full-capital-refresh-123456",
@@ -175,6 +178,8 @@ test("closed handoff binds two fresh sources and seven protected replacements", 
     ...CURRENT_CAPITAL_ACCESSIBILITY_SOURCE_FIXED_OUTPUTS.map((relative) => [relative, "replace"]),
     ...input.sources.map(({ relativePath }) => [relativePath, "create"]).sort(([left], [right]) => left.localeCompare(right, "en")),
   ].sort(([left], [right]) => left.localeCompare(right, "en")));
+  assert.equal(changedCurrentCapitalAccessibilitySourceOutputPaths(verified).includes(noOpPath), false);
+  assert.equal(changedCurrentCapitalAccessibilitySourceOutputPaths(verified).includes(input.sources[0].relativePath), true);
 
   await write(input.preparedRoot, input.sources[0].relativePath, Buffer.from("tampered\n"));
   await assert.rejects(verifyCurrentCapitalAccessibilitySourceHandoff({
@@ -364,6 +369,41 @@ test("refresh decision expires only the selected source whose direct freshUntil 
     repositoryRoot: parent,
     now: new Date(selected[1].freshUntil),
   }), /selected accessibility source identity mismatch: seoul-metro-accessibility/);
+});
+
+test("current sources prepare retain-only inputs with zero provider or OCI calls", async (t) => {
+  const parent = await mkdtemp(path.join(tmpdir(), "capital-accessibility-retain-only-"));
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  const inventory = JSON.parse(await readFile(path.join(ROOT, "tools/datapack/source-inventory.json")));
+  const selected = ["kric-station-convenience-standard", "seoul-metro-accessibility"]
+    .map((sourceId) => inventory.sources.find(({ id }) => id === sourceId).accessibilityAdmissionEvidence);
+  const lowerBound = Math.max(...selected.flatMap(({ capturedAt, observedAt }) => [Date.parse(capturedAt), Date.parse(observedAt)]));
+  const upperBound = Math.min(...selected.map(({ freshUntil }) => Date.parse(freshUntil)));
+  assert.ok(lowerBound < upperBound);
+  const providerStartedAt = new Date(lowerBound + 1);
+  const decision = await decideCurrentCapitalAccessibilitySourceRefresh({ repositoryRoot: ROOT, now: providerStartedAt });
+  assert.deepEqual(decision.refreshSourceIds, []);
+  const calls = { prepare: 0, providerOrOci: 0 };
+  const providerOrOci = async () => { calls.providerOrOci += 1; };
+  const result = await collectCurrentCapitalTerminalAccessibilitySources({
+    repositoryRoot: ROOT,
+    operationRoot: path.join(parent, "operation"),
+    expectedMainSha: SOURCE_MAIN_SHA,
+    expectedFacilityHeadSha: FACILITY_HEAD_SHA,
+    providerStartedAt,
+    refreshSourceIds: [],
+    env: {},
+    collectSeoulImpl: providerOrOci,
+    writeSeoulImpl: providerOrOci,
+    publishSeoulImpl: providerOrOci,
+    prepareKricImpl: async () => { calls.prepare += 1; },
+    collectKricImpl: providerOrOci,
+    publishKricImpl: providerOrOci,
+  });
+  assert.deepEqual(calls, { prepare: 1, providerOrOci: 0 });
+  assert.deepEqual(result.refreshSourceIds, []);
+  assert.equal(result.seoul, null);
+  assert.equal(result.kric, null);
 });
 
 test("malformed DATA_GO credential fails before every source delegate", async (t) => {

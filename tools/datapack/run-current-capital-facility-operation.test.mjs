@@ -422,6 +422,19 @@ test("terminal source preflight may replace only an expired KRIC predecessor", a
     collectImpl: async () => { providerCalls += 1; },
   }), /candidate source ledger\/freshness binding mismatch/);
   assert.equal(providerCalls, 0);
+
+  const exactPairRoot = path.join(parent, "exact-pair");
+  await prepareCurrentCapitalFacilityOperation({
+    repositoryRoot, operationRoot: exactPairRoot, expectedMainSha: EXACT_MAIN,
+    expectedFacilityHeadSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW,
+  });
+  await assert.doesNotReject(collectCurrentCapitalFacilityOperation({
+    repositoryRoot, operationRoot: exactPairRoot, serviceKey: "test", env: OCI_ENV,
+    execFileImpl: exactMainExec, now: NOW,
+    replacingSourceIds: ["kric-station-convenience-standard", "seoul-metro-accessibility"],
+    collectImpl: async () => { providerCalls += 1; return observationFor(nextSnapshot(plan)); },
+  }));
+  assert.equal(providerCalls, 1);
 });
 
 test("selected FACILITY collection binds exact main, head, and ancestry before provider access", async (t) => {

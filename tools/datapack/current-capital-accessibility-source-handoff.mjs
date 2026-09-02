@@ -186,6 +186,20 @@ export function canonicalCurrentCapitalAccessibilitySourceHandoffJson(value) {
   return canonicalJson(validatePayload(value));
 }
 
+export function changedCurrentCapitalAccessibilitySourceOutputPaths(value) {
+  return validatePayload(value).outputs
+    .filter((output) => output.operation === "create" || output.beforeSha256 !== output.afterSha256)
+    .map(({ relativePath }) => relativePath);
+}
+
+function normalizeRefreshSourceIds(refreshSourceIds) {
+  if (!Array.isArray(refreshSourceIds) || new Set(refreshSourceIds).size !== refreshSourceIds.length
+    || refreshSourceIds.some((sourceId) => !SOURCE_CONTRACTS.has(sourceId))) {
+    throw new Error("accessibility source refresh set mismatch");
+  }
+  return [...refreshSourceIds].sort(codepointCompare);
+}
+
 async function readSelectedAccessibilitySourceSet(root, label) {
   const [inventory, candidate, ledger] = await Promise.all([
     regularBytes(root, "tools/datapack/source-inventory.json", `${label} source inventory`).then((bytes) => parseJson(bytes, `${label} source inventory`)),
@@ -303,10 +317,7 @@ export async function collectCurrentCapitalTerminalAccessibilitySources({
 } = {}) {
   const repository = requiredRoot(repositoryRoot, "repository root");
   const operation = requiredRoot(operationRoot, "accessibility operation root");
-  if (!(providerStartedAt instanceof Date) || Number.isNaN(providerStartedAt.valueOf())
-    || !Array.isArray(refreshSourceIds) || refreshSourceIds.length === 0
-    || new Set(refreshSourceIds).size !== refreshSourceIds.length
-    || refreshSourceIds.some((sourceId) => !SOURCE_CONTRACTS.has(sourceId))) {
+  if (!(providerStartedAt instanceof Date) || Number.isNaN(providerStartedAt.valueOf())) {
     throw new Error("accessibility source collection inputs mismatch");
   }
   await Promise.all([assertDirectory(repository, "repository root"), assertDirectory(path.dirname(operation), "accessibility operation parent")]);
@@ -315,7 +326,7 @@ export async function collectCurrentCapitalTerminalAccessibilitySources({
     throw new Error("accessibility operation root must be external to repository");
   }
   const decision = await decideCurrentCapitalAccessibilitySourceRefresh({ repositoryRoot: repository, now: providerStartedAt });
-  const refreshed = [...refreshSourceIds].sort(codepointCompare);
+  const refreshed = normalizeRefreshSourceIds(refreshSourceIds);
   if (JSON.stringify(refreshed) !== JSON.stringify(decision.refreshSourceIds)) {
     throw new Error("accessibility source refresh decision changed");
   }
@@ -355,7 +366,7 @@ export async function collectCurrentCapitalTerminalAccessibilitySources({
     await collectKricImpl({
       repositoryRoot: repository,
       operationRoot: kricOperationRoot,
-      replacingSourceId: "kric-station-convenience-standard",
+      replacingSourceIds: refreshed,
       serviceKey: env.KRIC_SERVICE_KEY,
       env,
       now: providerStartedAt,
@@ -635,12 +646,10 @@ export async function stageCurrentCapitalTerminalAccessibilitySources({
 } = {}) {
   const prepared = requiredRoot(preparedRoot, "prepared root");
   const retained = requiredRoot(retainedRoot, "retained root");
-  const refreshed = Array.isArray(refreshSourceIds) ? [...refreshSourceIds].sort(codepointCompare) : null;
+  const refreshed = normalizeRefreshSourceIds(refreshSourceIds);
   if (prepared === retained || !(providerStartedAt instanceof Date) || Number.isNaN(providerStartedAt.valueOf())
     || !(operationNow instanceof Date) || Number.isNaN(operationNow.valueOf())
     || providerStartedAt.valueOf() > operationNow.valueOf()
-    || refreshed == null || refreshed.length === 0 || new Set(refreshed).size !== refreshed.length
-    || refreshed.some((sourceId) => !SOURCE_CONTRACTS.has(sourceId))
     || typeof kricPlanPath !== "string" || !path.isAbsolute(kricPlanPath)) {
     throw new Error("accessibility source staging inputs mismatch");
   }
