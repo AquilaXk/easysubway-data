@@ -9,6 +9,7 @@ import {
   CURRENT_CAPITAL_ACCESSIBILITY_SOURCE_FIXED_OUTPUTS,
   buildCurrentCapitalAccessibilitySourceHandoff,
   canonicalCurrentCapitalAccessibilitySourceHandoffJson,
+  collectCurrentCapitalTerminalAccessibilitySources,
   decideCurrentCapitalAccessibilitySourceRefresh,
   rebuildCurrentCapitalAccessibilitySourceHandoffFromRoots,
   verifyCurrentCapitalAccessibilitySourceHandoff,
@@ -363,4 +364,32 @@ test("refresh decision expires only the selected source whose direct freshUntil 
     repositoryRoot: parent,
     now: new Date(selected[1].freshUntil),
   }), /selected accessibility source identity mismatch: seoul-metro-accessibility/);
+});
+
+test("malformed DATA_GO credential fails before every source delegate", async (t) => {
+  const parent = await mkdtemp(path.join(tmpdir(), "capital-accessibility-credential-"));
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  const providerStartedAt = new Date("2027-01-01T00:00:00.000Z");
+  const decision = await decideCurrentCapitalAccessibilitySourceRefresh({
+    repositoryRoot: ROOT,
+    now: providerStartedAt,
+  });
+  let calls = 0;
+  const delegate = async () => { calls += 1; };
+  await assert.rejects(collectCurrentCapitalTerminalAccessibilitySources({
+    repositoryRoot: ROOT,
+    operationRoot: path.join(parent, "operation"),
+    expectedMainSha: SOURCE_MAIN_SHA,
+    expectedFacilityHeadSha: FACILITY_HEAD_SHA,
+    providerStartedAt,
+    refreshSourceIds: decision.refreshSourceIds,
+    env: { DATA_GO_KR_SERVICE_KEY: "invalid%ZZ" },
+    collectSeoulImpl: delegate,
+    writeSeoulImpl: delegate,
+    publishSeoulImpl: delegate,
+    prepareKricImpl: delegate,
+    collectKricImpl: delegate,
+    publishKricImpl: delegate,
+  }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  assert.equal(calls, 0);
 });

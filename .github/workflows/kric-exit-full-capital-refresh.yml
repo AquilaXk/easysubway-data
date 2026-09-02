@@ -218,6 +218,7 @@ jobs:
             await assertCurrentCapitalExitItxAuthorityFresh({ repositoryRoot: process.env.EXIT_REFRESH_RETAINED_ROOT });
           '
           git worktree add --detach "${private_builder_root}" "${EXIT_REFRESH_FACILITY_HEAD_SHA}"
+          # shellcheck disable=SC2016
           EXIT_REFRESH_RETAINED_ROOT="${retained_root}" EXIT_REFRESH_PRIVATE_BUILDER_ROOT="${private_builder_root}" node --input-type=module -e '
             import { readFile, writeFile } from "node:fs/promises";
             import { collectCurrentCapitalTerminalAccessibilitySources, canonicalCurrentCapitalAccessibilitySourceHandoffJson, decideCurrentCapitalAccessibilitySourceRefresh, stageCurrentCapitalTerminalAccessibilitySources } from "./tools/datapack/current-capital-accessibility-source-handoff.mjs";

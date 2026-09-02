@@ -10,6 +10,7 @@ import { collectSeoulAccessibilityObservation, writeSeoulAccessibilityObservatio
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { publishKricAccessibilityRawArtifact } from "./publish-kric-accessibility-raw.mjs";
 import { publishSeoulAccessibilityRawArtifact } from "./publish-seoul-accessibility-raw.mjs";
+import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { rebindCurrentCandidateSourceSnapshots } from "./rebind-current-candidate-source-snapshots.mjs";
 import { registerCurrentSeoulAccessibilitySnapshot } from "./register-current-seoul-accessibility-snapshot.mjs";
 import { registerKricStandardAccessibilitySnapshot } from "./register-kric-standard-accessibility-snapshot.mjs";
@@ -324,11 +325,12 @@ export async function collectCurrentCapitalTerminalAccessibilitySources({
   const selected = await readSelectedAccessibilitySourceSet(repository, "provider-start");
   let seoul = null;
   if (refreshed.includes("seoul-metro-accessibility")) {
+    const serviceKey = normalizeDataGoKrServiceKey(env.DATA_GO_KR_SERVICE_KEY);
     const observationRoot = path.join(operation, "seoul-observation");
     const receiptPath = path.join(operation, "seoul-raw-receipt.json");
     const previousSnapshot = parseJson(selected.sources.get("seoul-metro-accessibility").snapshotBytes, "current Seoul snapshot");
     const observation = await collectSeoulImpl({
-      serviceKey: env.DATA_GO_KR_SERVICE_KEY,
+      serviceKey,
       previousSnapshot,
       requestAttempts: 1,
       retrievedAt: providerStartedAt.toISOString(),

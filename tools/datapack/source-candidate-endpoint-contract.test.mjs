@@ -68,6 +68,7 @@ const DATA_GO_FOCUSED_TESTS = Object.freeze({
   "tools/datapack/collect-nationwide-public-api-coverage.mjs": "tools/datapack/collect-nationwide-public-api-coverage.test.mjs",
   "tools/datapack/collect-seoul-accessibility-evidence.mjs": "tools/datapack/collect-seoul-accessibility-evidence.test.mjs",
   "tools/datapack/collect-tago-itx-cheongchun-od.mjs": "tools/datapack/collect-tago-itx-cheongchun-od.test.mjs",
+  "tools/datapack/current-capital-accessibility-source-handoff.mjs": "tools/datapack/current-capital-accessibility-source-handoff.test.mjs",
   "tools/datapack/fetch-kasi-public-holiday-calendar.mjs": "tools/datapack/fetch-kasi-public-holiday-calendar.test.mjs",
   "tools/datapack/probe-daejeon-coverage-api.mjs": "tools/datapack/probe-daejeon-coverage-api.test.mjs",
   "tools/datapack/probe-korail-train-operation-api.mjs": "tools/datapack/probe-korail-train-operation-api.test.mjs",
