@@ -560,7 +560,7 @@ test("ancestor recovery rebuilds only a current-head topology handoff and reject
   const originalProof = await verifyCurrentCapitalTerminalLineage({
     sourceMainRoot, retainedRoot: ancestorRetainedRoot, privateBuilderRoot: originalPrivateBuilderRoot,
     sourceMainGitSha, facilityHeadGitSha: ancestorFacilityHeadGitSha, builderGitSha: originalBuilderGitSha,
-    topologyBuild,
+    topologyBuild, proofMode: "IMMUTABLE_PREDECESSOR",
   });
   const originalTopologyHandoff = await buildCurrentCapitalTopologyTerminalHandoff({
     repository: "AquilaXk/easysubway-data", operationId: "kric-exit-full-capital-refresh-123",
@@ -574,13 +574,19 @@ test("ancestor recovery rebuilds only a current-head topology handoff and reject
   await execFile("git", ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--quiet", "-m", "Advance current FACILITY head"], { cwd: currentRetainedRoot });
   const currentFacilityHeadGitSha = (await execFile("git", ["rev-parse", "HEAD"], { cwd: currentRetainedRoot })).stdout.trim();
 
+  const observedProofModes = [];
   const rebuilt = await rebuildCurrentCapitalTopologyTerminalHandoffForAncestorRecovery({
     repository: "AquilaXk/easysubway-data", sourceMainRoot, sourceMainGitSha,
     ancestorRetainedRoot, ancestorFacilityHeadGitSha, originalPrivateBuilderRoot, originalBuilderGitSha,
     currentRetainedRoot, currentFacilityBranch: "automation/629-kric-facility-refresh-123",
     currentFacilityHeadGitSha, topologyBuild,
     topologyHandoffBytes: Buffer.from(`${canonicalJson(originalTopologyHandoff)}\n`),
+    verifyTerminalLineageImpl: async (options) => {
+      observedProofModes.push(options.proofMode);
+      return verifyCurrentCapitalTerminalLineage(options);
+    },
   });
+  assert.deepEqual(observedProofModes, ["IMMUTABLE_PREDECESSOR", "CURRENT_TERMINAL"]);
   assert.equal(rebuilt.topologyHandoff.operationId, originalTopologyHandoff.operationId);
   assert.equal(rebuilt.topologyHandoff.facility.headSha, currentFacilityHeadGitSha);
   assert.equal(rebuilt.topologyHandoff.builderGitSha, originalBuilderGitSha);

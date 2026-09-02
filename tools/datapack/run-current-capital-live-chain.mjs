@@ -255,6 +255,7 @@ export async function verifyCurrentCapitalTerminalLineage({
   topologyBuild,
   execFileImpl = execFile,
   buildTopologyOutputsImpl = buildCurrentCapitalTopologyRefreshOutputs,
+  proofMode = "CURRENT_TERMINAL",
 } = {}) {
   if (![sourceMainRoot, retainedRoot, privateBuilderRoot].every((value) => path.isAbsolute(value ?? ""))) {
     throw new Error("terminal lineage roots mismatch");
@@ -263,6 +264,9 @@ export async function verifyCurrentCapitalTerminalLineage({
   if (typeof execFileImpl !== "function") throw new Error("terminal lineage git runner mismatch");
   if (typeof buildTopologyOutputsImpl !== "function") {
     throw new Error("terminal topology generator mismatch");
+  }
+  if (!["CURRENT_TERMINAL", "IMMUTABLE_PREDECESSOR"].includes(proofMode)) {
+    throw new Error("terminal topology proof mode mismatch");
   }
   await Promise.all([
     assertExactCleanGitRoot(sourceMainRoot, sourceMainGitSha, "source-main", execFileImpl),
@@ -392,7 +396,8 @@ export async function verifyCurrentCapitalTerminalLineage({
     await rm(replayParent, { recursive: true, force: true });
   }
   const generated = await buildTopologyOutputsImpl({
-    repositoryRoot: privateBuilderRoot, builderGitSha, terminalCandidateId: protectedTerminalCandidateId,
+    repositoryRoot: privateBuilderRoot, builderGitSha,
+    terminalCandidateId: proofMode === "CURRENT_TERMINAL" ? protectedTerminalCandidateId : undefined,
     ...topologyBuild,
   });
   const topologyOutputs = generated.outputs.map(({ relativePath, bytes }) => ({ relativePath, bytes }));
@@ -603,7 +608,7 @@ export async function rebuildCurrentCapitalTopologyTerminalHandoffForAncestorRec
     sourceMainRoot: path.resolve(sourceMainRoot), retainedRoot: path.resolve(ancestorRetainedRoot),
     privateBuilderRoot: path.resolve(originalPrivateBuilderRoot), sourceMainGitSha,
     facilityHeadGitSha: ancestorFacilityHeadGitSha, builderGitSha: originalBuilderGitSha,
-    topologyBuild, execFileImpl,
+    topologyBuild, execFileImpl, proofMode: "IMMUTABLE_PREDECESSOR",
   });
   if (!originalPrepared?.proof) throw new Error("ancestor recovery original lineage mismatch");
   const originalHandoff = validateCurrentCapitalTopologyTerminalHandoff(topologyHandoffBytes, {
@@ -630,7 +635,7 @@ export async function rebuildCurrentCapitalTopologyTerminalHandoffForAncestorRec
     sourceMainRoot: path.resolve(sourceMainRoot), retainedRoot: path.resolve(currentRetainedRoot),
     privateBuilderRoot: path.resolve(originalPrivateBuilderRoot), sourceMainGitSha,
     facilityHeadGitSha: currentFacilityHeadGitSha, builderGitSha: originalBuilderGitSha,
-    topologyBuild, execFileImpl,
+    topologyBuild, execFileImpl, proofMode: "CURRENT_TERMINAL",
   });
   if (!currentPrepared?.proof) throw new Error("ancestor recovery current lineage mismatch");
   equalHashMaps(retained, proofHashMap(currentPrepared.proof.retainedOutputs, "relative", "ancestor recovery retained outputs"), "ancestor recovery retained outputs");
