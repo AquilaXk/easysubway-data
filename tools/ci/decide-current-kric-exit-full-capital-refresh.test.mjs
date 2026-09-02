@@ -118,7 +118,7 @@ test("EXIT decision stops new work behind an open EXIT PR and carries the valida
   await writeFile(input.claimEvidencePath, JSON.stringify([claimEvidence()]));
   assert.deepEqual(
     await decideCurrentKricExitFullCapitalRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") }),
-    { state: "RECOVER_CLAIM", alertBeforePackExpiry: "PT6H", branch, facilityBranch: "automation/629-kric-facility-refresh-123", facilityHeadSha: "a".repeat(40) },
+    { state: "RECOVER_CLAIM", alertBeforePackExpiry: "PT6H", branch, producerRunId: "123", facilityBranch: "automation/629-kric-facility-refresh-123", facilityHeadSha: "a".repeat(40) },
   );
 });
 
@@ -130,13 +130,48 @@ test("EXIT decision recovers only an exact canonical claim directly parented by 
   await writeFile(input.claimEvidencePath, JSON.stringify([claimEvidence()]));
   assert.deepEqual(
     await decideCurrentKricExitFullCapitalRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") }),
-    { state: "RECOVER_CLAIM", alertBeforePackExpiry: "PT6H", branch, facilityBranch: "automation/629-kric-facility-refresh-123", facilityHeadSha: "a".repeat(40) },
+    { state: "RECOVER_CLAIM", alertBeforePackExpiry: "PT6H", branch, producerRunId: "123", facilityBranch: "automation/629-kric-facility-refresh-123", facilityHeadSha: "a".repeat(40) },
   );
 
   await writeFile(input.claimEvidencePath, JSON.stringify([claimEvidence({ parentSha: "d".repeat(40) })]));
   assert.deepEqual(
     await decideCurrentKricExitFullCapitalRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") }),
     { state: "DUE", alertBeforePackExpiry: "PT6H", facilityBranch: "automation/629-kric-facility-refresh-123", facilityHeadSha: "a".repeat(40) },
+  );
+});
+
+test("EXIT decision selects an ancestor claim only from an explicit canonical producer run ID", async () => {
+  const { decideCurrentKricExitFullCapitalRefresh } = await load();
+  const input = await fixture();
+  const branch = "automation/6-kric-exit-full-capital-refresh-123";
+  await writeFile(input.claimsPath, `${"c".repeat(40)}\trefs/heads/${branch}\n`);
+  await writeFile(input.claimEvidencePath, JSON.stringify([claimEvidence({ parentSha: "d".repeat(40) })]));
+
+  assert.deepEqual(
+    await decideCurrentKricExitFullCapitalRefresh({
+      ...input, recoveryProducerRunId: "123", now: new Date("2026-08-30T07:00:00.000Z"),
+    }),
+    {
+      state: "INSPECT_SELECTED_CLAIM",
+      alertBeforePackExpiry: "PT6H",
+      branch,
+      producerRunId: "123",
+      facilityBranch: "automation/629-kric-facility-refresh-123",
+      facilityHeadSha: "a".repeat(40),
+    },
+  );
+
+  await assert.rejects(
+    () => decideCurrentKricExitFullCapitalRefresh({
+      ...input, recoveryProducerRunId: "0123", now: new Date("2026-08-30T07:00:00.000Z"),
+    }),
+    /selected producer run identity is invalid/,
+  );
+  await assert.rejects(
+    () => decideCurrentKricExitFullCapitalRefresh({
+      ...input, recoveryProducerRunId: "456", now: new Date("2026-08-30T07:00:00.000Z"),
+    }),
+    /selected EXIT full-capital refresh claim is not available/,
   );
 });
 
