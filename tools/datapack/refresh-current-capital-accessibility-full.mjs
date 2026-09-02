@@ -415,20 +415,22 @@ function fanInComponents(files) {
   }));
 }
 
-export function assertPendingMarkerProducerBoundary({ marker, candidate, facility, exit, station, route }) {
-  const next = marker?.nextCandidate; const previous = marker?.previousCandidate;
+export function assertPendingMarkerProducerBoundary({ baseMarker, effectiveMarker, candidate, facility, exit, station, route }) {
+  const basePrevious = baseMarker?.previousCandidate;
+  const next = effectiveMarker?.nextCandidate; const effectivePrevious = effectiveMarker?.previousCandidate;
   if (next?.candidateId == null || next?.sourceSnapshotSetHash == null
-    || previous?.candidateId == null || previous?.sourceSnapshotSetHash == null
+    || basePrevious?.candidateId == null || basePrevious?.sourceSnapshotSetHash == null
+    || effectivePrevious?.candidateId == null || effectivePrevious?.sourceSnapshotSetHash == null
     || candidate?.candidateId == null || candidate?.sourceSnapshotSetHash == null
     || next.candidateId !== candidate.candidateId
     || facility?.candidate?.candidateId !== candidate.candidateId
     || facility.candidate?.sourceSnapshotSetHash !== candidate.sourceSnapshotSetHash
     || exit?.candidate?.candidateId !== next.candidateId
-    || exit.candidate?.sourceSetSha256 !== previous.sourceSnapshotSetHash
-    || station?.candidate?.candidateId !== previous.candidateId
-    || station.candidate?.sourceSetSha256 !== previous.sourceSnapshotSetHash
-    || route?.candidate?.candidateId !== previous.candidateId
-    || route.candidate?.sourceSetSha256 !== previous.sourceSnapshotSetHash) {
+    || exit.candidate?.sourceSetSha256 !== effectivePrevious.sourceSnapshotSetHash
+    || station?.candidate?.candidateId !== basePrevious.candidateId
+    || station.candidate?.sourceSetSha256 !== basePrevious.sourceSnapshotSetHash
+    || route?.candidate?.candidateId !== basePrevious.candidateId
+    || route.candidate?.sourceSetSha256 !== basePrevious.sourceSnapshotSetHash) {
     throw new Error("current-capital refresh pending marker producer boundary mismatch");
   }
 }
@@ -496,7 +498,8 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
     const currentSuccessor = await readStableRegularFile(target(root, SUCCESSOR), SUCCESSOR);
     if (!currentSuccessor.bytes.equals(files[SUCCESSOR].bytes)) throw new Error("current-capital refresh transition successor changed during validation");
     assertPendingMarkerProducerBoundary({
-      marker: parse(effectiveMarker.bytes, "current-capital refresh transition marker"),
+      baseMarker: parse(marker.bytes, "current-capital refresh base transition marker"),
+      effectiveMarker: parse(effectiveMarker.bytes, "current-capital refresh effective transition marker"),
       candidate: parse(files[CANDIDATE_BUILD_SPEC].bytes, "current candidate"),
       facility: parse(files["tools/datapack/release/current-capital-facility-source-admission.json"].bytes, "FACILITY admission"),
       exit: parse(files["tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json"].bytes, "EXIT admission"),
