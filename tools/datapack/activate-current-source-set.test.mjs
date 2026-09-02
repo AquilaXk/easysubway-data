@@ -480,7 +480,10 @@ test("prepared current candidate 검증은 build를 수행하고 final release e
     manifest: { channel: "production" },
     packs: [{
       id: "capital",
-      networkEdges: [{ id: "ride", edgeType: "RIDE" }],
+      networkEdges: [
+        { id: "ride", edgeType: "RIDE" },
+        { id: "stale-entry", edgeType: "ENTRY" },
+      ],
       outOfStationTransferLinks: [{ id: "walk" }],
     }],
   };
@@ -515,9 +518,13 @@ test("prepared current candidate 검증은 build를 수행하고 final release e
       projections.push(options);
       assert.deepEqual(options.sourceFixture, stagedCanonical);
       assert.equal(options.buildSpec.networkEdgeEvidence.sourceInventory.path, stagedInventoryPath);
+      assert.equal(options.retainPreAuthorityRideOnly, false);
       const projected = structuredClone(options.sourceFixture);
       projected.validationProjection = true;
-      projected.packs[0].networkEdges = [{ id: "projected-entry", edgeType: "ENTRY" }];
+      projected.packs[0].networkEdges = [
+        { id: "projected-ride", edgeType: "RIDE" },
+        { id: "projected-entry", edgeType: "ENTRY" },
+      ];
       projected.packs[0].outOfStationTransferLinks = [{ id: "projected-walk" }];
       return projected;
     },
@@ -537,7 +544,10 @@ test("prepared current candidate 검증은 build를 수행하고 final release e
       assert.equal(validationFixture.validationProjection, true);
       assert.deepEqual(
         validationFixture.packs[0].networkEdges,
-        stagedCanonical.packs[0].networkEdges,
+        [
+          { id: "projected-entry", edgeType: "ENTRY" },
+          { id: "ride", edgeType: "RIDE" },
+        ],
       );
       assert.deepEqual(
         validationFixture.packs[0].outOfStationTransferLinks,

@@ -2730,6 +2730,7 @@ export async function validatePreparedCandidate({
     buildSpec: stagedSpec,
     sourceFixture,
     repositoryRoot: builderRoot,
+    retainPreAuthorityRideOnly: false,
   });
   const sourceCapital = requireOne(
     sourceFixture.packs,
@@ -2741,9 +2742,14 @@ export async function validatePreparedCandidate({
     ({ id }) => id === "capital",
     "prepared candidate projected capital pack",
   );
-  for (const field of ["networkEdges", "outOfStationTransferLinks"]) {
-    projectedCapital[field] = structuredClone(sourceCapital[field] ?? []);
-  }
+  projectedCapital.networkEdges = [
+    ...(sourceCapital.networkEdges ?? []).filter(({ edgeType }) => edgeType === "RIDE"),
+    ...(projectedCapital.networkEdges ?? []).filter(({ edgeType }) => edgeType !== "RIDE"),
+  ].map((edge) => structuredClone(edge))
+    .sort((left, right) => codepointCompare(left.id, right.id));
+  projectedCapital.outOfStationTransferLinks = structuredClone(
+    sourceCapital.outOfStationTransferLinks ?? [],
+  );
   stagedSpec.fixturePath = await writeTempFile(
     temporaryRoot,
     "validation/candidate-fixture.json",
