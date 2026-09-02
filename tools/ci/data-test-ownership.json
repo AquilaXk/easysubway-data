@@ -223,6 +223,10 @@
     "data647": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/647",
       "title": "Split exact-main EXIT collection from FACILITY terminal materialization"
+    },
+    "data673": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/673",
+      "title": "Eliminate the pending-fan-in topology freshness cycle"
     }
   },
   "workflows": {
@@ -429,6 +433,7 @@
     {"path":"tools/datapack/consume-current-kric-exit-collection-bundle.test.mjs","semanticOwner":"data330","classes":["required-pr"],"durationMs":669},
     {"path":"tools/datapack/continue-current-itx-collection.test.mjs","semanticOwner":"data96","classes":["required-pr"],"durationMs":77},
     {"path":"tools/datapack/contract-producer.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":554},
+    {"path":"tools/datapack/current-capital-accessibility-source-handoff.test.mjs","semanticOwner":"data673","classes":["required-pr"],"durationMs":329},
     {"path":"tools/datapack/current-capital-accessibility-transition.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":172},
     {"path":"tools/datapack/datapack-tools.test.mjs","semanticOwner":"data447","classes":["required-pr"],"executionProfile":"mobile-v19","durationMs":52805},
     {"path":"tools/datapack/decide-datapack-release.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":233},
