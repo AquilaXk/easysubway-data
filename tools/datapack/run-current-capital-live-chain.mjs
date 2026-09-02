@@ -1084,7 +1084,7 @@ export async function runCurrentCapitalExitTerminalConsumer({
   await verifyPreparedTopologyStage(stagedRoot, preparedTerminal.proof);
   await rebindPublicRouteMapImpl({ repositoryRoot: stagedRoot });
   await rebindTransferImpl({ repositoryRoot: stagedRoot, observationDirectory: transferObservationDirectory, receiptPath: transferReceiptPath });
-  await rebindFacilityImpl({ repositoryRoot: stagedRoot });
+  await rebindFacilityImpl({ repositoryRoot: stagedRoot, replaceExistingSuccessor: true });
   // This create-once transaction is the boundary between P/T/F materialization
   // and every candidate-dependent EXIT/fan-in operation.  All later inputs are
   // read from its committed staged bytes.

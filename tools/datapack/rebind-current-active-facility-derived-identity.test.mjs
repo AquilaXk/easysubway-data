@@ -186,6 +186,41 @@ test("FACILITY와 successor는 한 transaction에서 성공하거나 함께 원�
   assert.equal(sha256(await readFile(successorPath)), result.successorSha256);
 });
 
+test("terminal staging은 검증된 기존 successor를 exact-prestate로 교체하고 함께 원복한다", async (t) => {
+  const root = await temporaryRepository(t);
+  const successorPath = path.join(root, "tools/datapack/release/current-capital-accessibility-transition-successor.json");
+  const existingSuccessor = await readFile(successorPath);
+  await restorePredecessorFacilityState(root);
+  await writeFile(successorPath, existingSuccessor, { flag: "wx" });
+  const facilityPath = path.join(root, "tools/datapack/release/current-capital-facility-source-admission.json");
+  const facilityBefore = await readFile(facilityPath);
+
+  await assert.rejects(
+    rebindCurrentActiveFacilityDerivedIdentity({ repositoryRoot: root }),
+    /successor already exists/,
+  );
+  await assert.rejects(
+    rebindCurrentActiveFacilityDerivedIdentity({
+      repositoryRoot: root,
+      replaceExistingSuccessor: true,
+      failAfter: async ({ stage }) => {
+        if (stage === "successor") throw new Error("injected terminal successor failure");
+      },
+    }),
+    /injected terminal successor failure/,
+  );
+  assert.deepEqual(await readFile(facilityPath), facilityBefore);
+  assert.deepEqual(await readFile(successorPath), existingSuccessor);
+
+  const result = await rebindCurrentActiveFacilityDerivedIdentity({
+    repositoryRoot: root,
+    replaceExistingSuccessor: true,
+  });
+  assert.equal(result.changed, true);
+  assert.notDeepEqual(await readFile(facilityPath), facilityBefore);
+  assert.equal(sha256(await readFile(successorPath)), result.successorSha256);
+});
+
 async function temporaryRepository(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), "current-facility-successor-"));
   t.after(() => rm(root, { recursive: true, force: true }));
