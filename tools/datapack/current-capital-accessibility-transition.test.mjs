@@ -314,7 +314,7 @@ test("terminal successor는 continuous KRIC FACILITY lineage만 exact-seven pred
 
   for (const key of [
     "sourceId", "contentSha256", "redactedRequestFingerprint", "schemaFingerprint",
-    "licenseStatus", "redistributionAllowed", "snapshotStatus", "credentialRedacted",
+    "licenseStatus", "redistributionAllowed", "adminReviewRecordHash", "snapshotStatus", "credentialRedacted",
     "governancePolicyVersion", "governancePolicySha256",
   ]) {
     const identityDrift = structuredClone(currentLedger);
@@ -523,6 +523,7 @@ async function createFixture(t) {
     schemaFingerprint: "b".repeat(64),
     licenseStatus: "PASS",
     redistributionAllowed: true,
+    adminReviewRecordHash: String.fromCharCode(100 + index).repeat(64),
     snapshotStatus: "LOCKED",
     credentialRedacted: true,
     freshnessExpiresAt: "2026-09-01T00:00:00.000Z",

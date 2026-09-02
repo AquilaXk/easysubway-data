@@ -38,7 +38,7 @@ const FACILITY_PROJECTION_IDENTITY_KEYS = Object.freeze([
 ]);
 const FACILITY_LINEAGE_IDENTITY_KEYS = Object.freeze([
   "sourceId", "contentSha256", "redactedRequestFingerprint", "schemaFingerprint",
-  "licenseStatus", "redistributionAllowed", "snapshotStatus", "credentialRedacted",
+  "licenseStatus", "redistributionAllowed", "adminReviewRecordHash", "snapshotStatus", "credentialRedacted",
   "governancePolicyVersion", "governancePolicySha256",
 ]);
 const FACILITY_SOURCE_IDENTITY_KEYS = Object.freeze([
