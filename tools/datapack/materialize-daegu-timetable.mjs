@@ -203,6 +203,7 @@ function requiredSources(inventory, config, topology, timetable, mappings, now) 
   const topologyEvidence = topologySource?.topologyAdmissionEvidence;
   const scheduleEvidence = timetableSource?.scheduleAdmissionEvidence;
   const membershipEvidence = membershipSource?.membershipAdmissionEvidence;
+  const membershipVerifiedAt = Date.parse(membershipEvidence?.verifiedAt ?? "");
   const mappingSha256 = sha256(JSON.stringify(mappings));
   const stationCodesSha256 = sha256(JSON.stringify(topology.scope.map(({ stationCode }) => stationCode)));
 
@@ -248,8 +249,13 @@ function requiredSources(inventory, config, topology, timetable, mappings, now) 
     || membershipEvidence.membershipSourceSnapshotSha256 !== mappings.sourceRawSha256
     || membershipEvidence.stationCodeSourceId !== topologyId
     || membershipEvidence.stationCodeSnapshotId !== topologyEvidence.snapshotId
-    || membershipEvidence.stationCodeContentSha256 !== topology.contentSha256) {
+    || membershipEvidence.stationCodeContentSha256 !== topology.contentSha256
+    || !Number.isFinite(membershipVerifiedAt)
+    || new Date(membershipVerifiedAt).toISOString() !== membershipEvidence.verifiedAt) {
     throw new Error(`${membershipId} membership evidence is invalid`);
+  }
+  if (!(now instanceof Date) || !Number.isFinite(now.getTime()) || now.getTime() < membershipVerifiedAt) {
+    throw new Error(`${membershipId} membership evidence is future-dated`);
   }
   for (const [label, capturedAt, freshUntil] of [
     [topologyId, topologyEvidence.capturedAt, topologyEvidence.freshUntil],
