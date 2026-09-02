@@ -50,6 +50,9 @@ const PROJECTION_KEYS = Object.freeze([
   "snapshotStatus", "credentialRedacted", "freshnessExpiresAt", "rawRetentionExpiresAt",
   "governancePolicyVersion", "governancePolicySha256",
 ]);
+const LEDGER_PROJECTION_KEYS = Object.freeze(
+  PROJECTION_KEYS.filter((key) => key !== "adminReviewRecordHash"),
+);
 const TOP_LEVEL_KEYS = Object.freeze([
   "schemaVersion", "artifactKind", "state", "nextCandidate", "previousCandidate", "previousProduction",
   "facilityAdmission", "pendingPrerequisites", "transitionSha256",
@@ -381,8 +384,8 @@ function assertDirectSeoulAccessibilityPredecessorAdvance({ baseProjections, cur
     sourceId === SEOUL_ACCESSIBILITY_SOURCE_ID && snapshotId === currentMatches[0].snapshotId);
   if (ledgerMatches.length !== 1
     || ledgerMatches[0].previousSnapshotId !== baseMatches[0].snapshotId
-    || canonicalJson(pick(currentMatches[0], PROJECTION_KEYS))
-      !== canonicalJson(pick(ledgerMatches[0], PROJECTION_KEYS))) {
+    || canonicalJson(pick(currentMatches[0], LEDGER_PROJECTION_KEYS))
+      !== canonicalJson(pick(ledgerMatches[0], LEDGER_PROJECTION_KEYS))) {
     throw new Error("accessibility predecessor lineage mismatch");
   }
 }

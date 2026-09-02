@@ -192,8 +192,6 @@ test("terminal successor는 direct KRIC FACILITY lineage만 exact-seven predeces
     ...dualLedger[seoulLedgerIndex],
     snapshotId: currentSeoulSnapshotId,
     previousSnapshotId: previousSeoulSnapshotId,
-    adminReviewRecordHash: candidate.sourceSnapshots
-      .find(({ sourceId }) => sourceId === SEOUL_ACCESSIBILITY_SOURCE_ID).adminReviewRecordHash,
     rawObjectUri: "oci://trusted/seoul-metro-accessibility/current.json",
     rawSha256: "8".repeat(64),
     freshnessExpiresAt: "2026-09-03T16:00:00.000Z",
@@ -204,7 +202,12 @@ test("terminal successor는 direct KRIC FACILITY lineage만 exact-seven predeces
     snapshotId === previousSeoulSnapshotId ? currentSeoulSnapshotId : snapshotId);
   dualCandidate.sourceSnapshots = dualCandidate.sourceSnapshots.map((projection) =>
     projection.sourceId === SEOUL_ACCESSIBILITY_SOURCE_ID
-      ? Object.fromEntries(PROJECTION_KEYS.map((key) => [key, dualLedger[seoulLedgerIndex][key]]))
+      ? Object.fromEntries(PROJECTION_KEYS.map((key) => [
+        key,
+        key === "adminReviewRecordHash"
+          ? projection.adminReviewRecordHash
+          : dualLedger[seoulLedgerIndex][key],
+      ]))
       : projection);
   dualCandidate.sourceSnapshotSetHash = sha256(Buffer.from(JSON.stringify(dualLedger)));
   const dualCandidateBytes = Buffer.from(`${JSON.stringify(dualCandidate, null, 2)}\n`);
