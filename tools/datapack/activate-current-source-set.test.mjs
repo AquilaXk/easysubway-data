@@ -1424,7 +1424,7 @@ test("generated current candidate spec은 expired ITX topology overlay를 재도
     timetableAdmissions[lineNumber].snapshotId]));
   assert.equal(currentTopology.lines.length, 22);
 
-  const next = buildCurrentCandidateSpec({
+  const candidateInput = {
     baseSpec,
     builderGitSha: "a".repeat(40),
     sourceInventoryBytes: Buffer.from("{}"),
@@ -1442,7 +1442,8 @@ test("generated current candidate spec은 expired ITX topology overlay를 재도
     incheonTimetablePaths: timetablePaths,
     incheonTimetableBytes: timetableBytes,
     incheonTimetableSnapshotIds: timetableSnapshotIds,
-  });
+  };
+  const next = buildCurrentCandidateSpec(candidateInput);
 
   assert.equal(Object.hasOwn(next.networkEdgeEvidence, "itxCurrentTopologyAdmission"), false);
   assert.equal(Object.hasOwn(next.networkEdgeEvidence, "incheonAccessibility"), false);
@@ -1458,6 +1459,11 @@ test("generated current candidate spec은 expired ITX topology overlay를 재도
     sha256: sha256(currentTopologyBytes),
     snapshotId: admission.topologySnapshotId,
   });
+
+  const terminalCandidateId = `${baseSpec.candidateId.slice(0, -1)}${baseSpec.candidateId.endsWith("0") ? "1" : "0"}`;
+  assert.notEqual(terminalCandidateId, next.candidateId);
+  const terminal = buildCurrentCandidateSpec({ ...candidateInput, terminalCandidateId });
+  assert.equal(terminal.candidateId, terminalCandidateId);
 
   const itxCurrentAdmissionPath =
     "tools/datapack/itx-current-network-edge-admission-20260810.json";
