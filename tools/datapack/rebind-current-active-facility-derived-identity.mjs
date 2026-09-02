@@ -140,6 +140,8 @@ export async function buildCurrentActiveFacilityDerivedIdentitySuccessorTransact
     const expected = buildCurrentCapitalAccessibilityTransitionSuccessor({
       baseTransitionBytes: baseBytes,
       previousFacilityBytes,
+      currentFacilityBytes: facility.prestate,
+      currentLedger: ledger.value,
       currentTransition: existingTransition,
     });
     if (canonicalJson(existing) !== canonicalJson(expected)) {
@@ -157,7 +159,11 @@ export async function buildCurrentActiveFacilityDerivedIdentitySuccessorTransact
     inventory: inventory.value, inventoryBytes: inventory.bytes,
   });
   const successorValue = buildCurrentCapitalAccessibilityTransitionSuccessor({
-    baseTransitionBytes: baseBytes, previousFacilityBytes, currentTransition,
+    baseTransitionBytes: baseBytes,
+    previousFacilityBytes,
+    currentFacilityBytes: facility.bytes,
+    currentLedger: ledger.value,
+    currentTransition,
   });
   return {
     facility,
