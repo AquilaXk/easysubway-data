@@ -6,10 +6,12 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  assertExactCurrentCapitalFacilityEvidenceTransition,
   assertPendingMarkerProducerBoundary,
   buildCurrentCapitalAccessibilityRefreshOutputs,
   refreshCurrentCapitalAccessibilityFull,
 } from "./refresh-current-capital-accessibility-full.mjs";
+import { buildAuthenticatedCurrentCapitalFacilityEvidenceRows } from "./build-current-capital-station-line-input.mjs";
 import { buildCurrentExitAdmissionOciReceipt, canonicalCurrentExitAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
 import { buildReboundCurrentExitAdmissionIdentities } from "./rebind-current-exit-admission-identities.mjs";
 import { rebindCurrentActiveFacilityDerivedIdentity } from "./rebind-current-active-facility-derived-identity.mjs";
@@ -237,8 +239,54 @@ test("pending v2 marker accepts FACILITY next-eight and EXIT previous-seven befo
     ? "2026-08-30T00:00:00.001Z"
     : "2026-08-30T00:00:00.000Z";
   await writeFile(stationPath, JSON.stringify(mutatedStation));
-  await assert.rejects(buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root }), /evidence delta mismatch/);
+  await assert.rejects(buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root }), /FACILITY evidence projection mismatch/);
   await writeFile(stationPath, JSON.stringify(beforeStation));
+});
+
+test("pending marker authenticates an exact FACILITY snapshot transition", async (t) => {
+  const root = await actualPendingMarkerRepository(t);
+  const [baseMarker, effectiveMarker, beforeStation] = await Promise.all([
+    readFile(path.join(root, TRANSITION)).then(JSON.parse),
+    readFile(path.join(root, SUCCESSOR)).then(JSON.parse),
+    readFile(path.join(root, OUTPUTS[0])).then(JSON.parse),
+  ]);
+  const previousFacilityBytes = Buffer.from(effectiveMarker.previousFacilityAdmissionBase64, "base64");
+  const previousFacility = JSON.parse(previousFacilityBytes);
+  const previousSnapshotBytes = await readFile(path.join(root, previousFacility.sourceIdentity.snapshotPath));
+  const [rebuiltStation] = (await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root }))
+    .map(({ bytes }) => JSON.parse(bytes));
+  assert.equal(rebuiltStation.candidate.candidateId, effectiveMarker.nextCandidate.candidateId);
+  assert.equal(rebuiltStation.candidate.sourceSetSha256, effectiveMarker.nextCandidate.sourceSnapshotSetHash);
+  const expectedBeforeRows = buildAuthenticatedCurrentCapitalFacilityEvidenceRows({
+    facilityAdmission: previousFacility,
+    facilitySnapshotBytes: previousSnapshotBytes,
+    stationLines: beforeStation.stationLines,
+    admissionCandidate: baseMarker.nextCandidate,
+    outputCandidate: beforeStation.candidate,
+    candidatePublishedAt: Date.parse(baseMarker.previousCandidate.canonicalCandidate.publishedAt),
+  });
+  const beforeFacilityRows = beforeStation.evidenceRows.filter(({ domain }) => domain === "FACILITY");
+  assert.deepEqual(beforeFacilityRows, expectedBeforeRows);
+  const expectedAfterRows = rebuiltStation.evidenceRows.filter(({ domain }) => domain === "FACILITY");
+  assert.doesNotThrow(() => assertExactCurrentCapitalFacilityEvidenceTransition({
+    beforeRows: beforeFacilityRows,
+    afterRows: expectedAfterRows,
+    expectedBeforeRows,
+    expectedAfterRows,
+  }));
+
+  const corrupted = structuredClone(beforeFacilityRows);
+  const row = corrupted.find(({ providerRecordHash }) => providerRecordHash !== null);
+  row.providerRecordHash = row.providerRecordHash === "a".repeat(64) ? "b".repeat(64) : "a".repeat(64);
+  assert.throws(
+    () => assertExactCurrentCapitalFacilityEvidenceTransition({
+      beforeRows: corrupted,
+      afterRows: expectedAfterRows,
+      expectedBeforeRows,
+      expectedAfterRows,
+    }),
+    /FACILITY evidence projection mismatch/,
+  );
 });
 
 test("pending marker producer boundary distinguishes base prestates from effective evidence", async (t) => {
