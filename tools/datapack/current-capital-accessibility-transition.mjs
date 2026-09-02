@@ -24,6 +24,20 @@ const FILES = Object.freeze({
 });
 const SHA = /^[a-f0-9]{64}$/u;
 const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
+const FACILITY_SOURCE_ID = "kric-station-convenience-standard";
+const FACILITY_PROJECTION_IDENTITY_KEYS = Object.freeze([
+  "sourceId", "redactedRequestFingerprint", "schemaFingerprint", "licenseStatus",
+  "redistributionAllowed", "adminReviewRecordHash", "snapshotStatus", "credentialRedacted",
+  "governancePolicyVersion", "governancePolicySha256",
+]);
+const FACILITY_SOURCE_IDENTITY_KEYS = Object.freeze([
+  "sourceId", "redactedRequestFingerprint", "contentSha256", "schemaFingerprint",
+  "licenseEvidenceHash", "credentialRedacted",
+]);
+const FACILITY_PROTECTED_SEMANTIC_KEYS = Object.freeze([
+  "stationLineProviderMappingSha256", "denominatorRows", "denominatorStateSummary",
+  "cells", "cellStateSummary", "materializerEvidenceRows", "decision",
+]);
 const PROJECTION_KEYS = Object.freeze([
   "snapshotId", "sourceId", "rawObjectUri", "rawSha256", "redactedRequestFingerprint",
   "schemaFingerprint", "licenseStatus", "redistributionAllowed", "adminReviewRecordHash",
@@ -84,7 +98,13 @@ export function canonicalCurrentCapitalAccessibilityTransitionJson(value) {
 
 // A successor never rewrites the protected base marker.  It is an independently
 // create-once evidence object for the one permitted current-source replacement.
-export function buildCurrentCapitalAccessibilityTransitionSuccessor({ baseTransitionBytes, previousFacilityBytes, currentTransition } = {}) {
+export function buildCurrentCapitalAccessibilityTransitionSuccessor({
+  baseTransitionBytes,
+  previousFacilityBytes,
+  currentFacilityBytes,
+  currentLedger,
+  currentTransition,
+} = {}) {
   const baseBytes = requiredBytes(baseTransitionBytes, "base accessibility transition");
   const facilityBytes = requiredBytes(previousFacilityBytes, "pre-rebind FACILITY admission");
   const base = parse(baseBytes, "base accessibility transition");
@@ -98,10 +118,10 @@ export function buildCurrentCapitalAccessibilityTransitionSuccessor({ baseTransi
   // Reuse the full v2 transition validator rather than accepting a partial
   // replacement payload.
   canonicalCurrentCapitalAccessibilityTransitionJson(currentTransition);
-  if (base.previousCandidate.candidateId !== currentTransition.previousCandidate.candidateId
-    || base.previousCandidate.sourceSnapshotSetHash !== currentTransition.previousCandidate.sourceSnapshotSetHash
-    || base.previousProduction.candidateId !== currentTransition.previousProduction.candidateId
-    || base.previousProduction.sourceSnapshotSetHash !== currentTransition.previousProduction.sourceSnapshotSetHash
+  if (canonicalJson(base.previousProduction) !== canonicalJson(currentTransition.previousProduction)
+    || base.nextCandidate.path !== currentTransition.nextCandidate.path
+    || base.nextCandidate.candidateId !== currentTransition.nextCandidate.candidateId
+    || canonicalJson(base.pendingPrerequisites) !== canonicalJson(currentTransition.pendingPrerequisites)
     || base.nextCandidate.sourceSnapshotSetHash === currentTransition.nextCandidate.sourceSnapshotSetHash
     || currentTransition.previousCandidate.candidateId === currentTransition.nextCandidate.candidateId
     || currentTransition.previousCandidate.sourceSnapshotSetHash === currentTransition.nextCandidate.sourceSnapshotSetHash) {
@@ -111,6 +131,17 @@ export function buildCurrentCapitalAccessibilityTransitionSuccessor({ baseTransi
     || base.facilityAdmission.admissionDigest !== previousFacility.admissionDigest
     || base.facilityAdmission.snapshotId !== previousFacility.sourceIdentity?.snapshotId) {
     throw new Error("successor pre-rebind FACILITY binding mismatch");
+  }
+  const predecessorChanged = base.previousCandidate.candidateId !== currentTransition.previousCandidate.candidateId
+    || base.previousCandidate.sourceSnapshotSetHash !== currentTransition.previousCandidate.sourceSnapshotSetHash;
+  if (predecessorChanged) {
+    assertDirectFacilityPredecessorAdvance({
+      base,
+      previousFacility,
+      currentFacilityBytes,
+      currentLedger,
+      currentTransition,
+    });
   }
   const payload = {
     schemaVersion: 2,
@@ -201,6 +232,7 @@ async function inspectCurrentCapitalAccessibilityTransition({ repositoryRoot, al
   const candidate = parse(candidateBytes, "candidate build spec");
   const previous = parse(previousBytes, "previous production station-line input");
   const facility = parse(facilityBytes, "current FACILITY admission");
+  const ledger = parse(ledgerBytes, "source snapshot ledger");
   try {
     const rebuilt = buildCurrentCapitalAccessibilityTransition({
       candidate,
@@ -209,7 +241,7 @@ async function inspectCurrentCapitalAccessibilityTransition({ repositoryRoot, al
       previousBytes,
       facilityAdmission: facility,
       facilityBytes,
-      ledger: parse(ledgerBytes, "source snapshot ledger"),
+      ledger,
       ledgerBytes,
       inventory: parse(inventoryBytes, "source inventory"),
       inventoryBytes,
@@ -220,6 +252,8 @@ async function inspectCurrentCapitalAccessibilityTransition({ repositoryRoot, al
       const expected = buildCurrentCapitalAccessibilityTransitionSuccessor({
         baseTransitionBytes: transition,
         previousFacilityBytes: Buffer.from(effective.previousFacilityAdmissionBase64, "base64"),
+        currentFacilityBytes: facilityBytes,
+        currentLedger: ledger,
         currentTransition: rebuilt,
       });
       if (canonicalJson(effective) !== canonicalJson(expected)) throw new Error("stored successor transition mismatch");
@@ -235,6 +269,100 @@ async function inspectCurrentCapitalAccessibilityTransition({ repositoryRoot, al
     facilityAdmissionBytesSha256: sha256(facilityBytes),
     evidenceSourceSetSha256: requiredSha((successorBytes ? parse(successorBytes, "current accessibility transition successor") : base).previousCandidate.sourceSnapshotSetHash, "transition evidence source snapshot set"),
   };
+}
+
+function assertDirectFacilityPredecessorAdvance({
+  base,
+  previousFacility,
+  currentFacilityBytes,
+  currentLedger,
+  currentTransition,
+}) {
+  if (base.previousCandidate.candidateId === currentTransition.previousCandidate.candidateId
+    || base.previousCandidate.sourceSnapshotSetHash === currentTransition.previousCandidate.sourceSnapshotSetHash) {
+    throw new Error("successor transition boundary mismatch");
+  }
+  const currentBytes = requiredBytes(currentFacilityBytes, "current FACILITY admission");
+  const currentFacility = parse(currentBytes, "current FACILITY admission");
+  if (canonicalCurrentCapitalFacilitySourceAdmissionJson(currentFacility) !== currentBytes.toString("utf8")
+    || currentTransition.facilityAdmission.sha256 !== sha256(currentBytes)
+    || currentTransition.facilityAdmission.admissionDigest !== currentFacility.admissionDigest
+    || currentTransition.facilityAdmission.snapshotId !== currentFacility.sourceIdentity?.snapshotId) {
+    throw new Error("current FACILITY predecessor binding mismatch");
+  }
+  const baseCandidate = base.previousCandidate.canonicalCandidate;
+  const currentCandidate = currentTransition.previousCandidate.canonicalCandidate;
+  const baseProjections = baseCandidate.sourceSnapshots;
+  const currentProjections = currentCandidate.sourceSnapshots;
+  if (JSON.stringify(baseProjections.map(({ sourceId }) => sourceId))
+      !== JSON.stringify(currentProjections.map(({ sourceId }) => sourceId))) {
+    throw new Error("non-FACILITY predecessor changed");
+  }
+  for (let index = 0; index < baseProjections.length; index += 1) {
+    if (baseProjections[index].sourceId !== FACILITY_SOURCE_ID
+      && canonicalJson(baseProjections[index]) !== canonicalJson(currentProjections[index])) {
+      throw new Error("non-FACILITY predecessor changed");
+    }
+  }
+  const baseMatches = baseProjections.filter(({ sourceId }) => sourceId === FACILITY_SOURCE_ID);
+  const currentMatches = currentProjections.filter(({ sourceId }) => sourceId === FACILITY_SOURCE_ID);
+  if (baseMatches.length !== 1 || currentMatches.length !== 1
+    || canonicalJson(pick(baseMatches[0], FACILITY_PROJECTION_IDENTITY_KEYS))
+      !== canonicalJson(pick(currentMatches[0], FACILITY_PROJECTION_IDENTITY_KEYS))) {
+    throw new Error("FACILITY predecessor lineage mismatch");
+  }
+  const previousSnapshotId = requiredString(previousFacility.sourceIdentity?.snapshotId, "pre-rebind FACILITY snapshotId");
+  const currentSnapshotId = requiredString(currentFacility.sourceIdentity?.snapshotId, "current FACILITY snapshotId");
+  if (baseMatches[0].snapshotId !== previousSnapshotId
+    || currentMatches[0].snapshotId !== currentSnapshotId
+    || previousSnapshotId === currentSnapshotId
+    || !Array.isArray(currentLedger)) {
+    throw new Error("FACILITY predecessor lineage mismatch");
+  }
+  const ledgerMatches = currentLedger.filter(({ sourceId, snapshotId }) =>
+    sourceId === FACILITY_SOURCE_ID && snapshotId === currentSnapshotId);
+  const ledgerRow = ledgerMatches.length === 1 ? ledgerMatches[0] : null;
+  if (!ledgerRow || ledgerRow.previousSnapshotId !== previousSnapshotId
+    || ledgerRow.contentSha256 !== previousFacility.sourceIdentity?.contentSha256
+    || ledgerRow.contentSha256 !== currentFacility.sourceIdentity?.contentSha256
+    || currentMatches[0].redactedRequestFingerprint !== ledgerRow.redactedRequestFingerprint
+    || currentMatches[0].schemaFingerprint !== ledgerRow.schemaFingerprint
+    || currentMatches[0].licenseStatus !== ledgerRow.licenseStatus
+    || currentMatches[0].redistributionAllowed !== ledgerRow.redistributionAllowed
+    || currentMatches[0].snapshotStatus !== ledgerRow.snapshotStatus
+    || currentMatches[0].credentialRedacted !== ledgerRow.credentialRedacted
+    || currentMatches[0].governancePolicyVersion !== ledgerRow.governancePolicyVersion
+    || currentMatches[0].governancePolicySha256 !== ledgerRow.governancePolicySha256) {
+    throw new Error("FACILITY predecessor lineage mismatch");
+  }
+  if (canonicalJson(pick(previousFacility.sourceIdentity, FACILITY_SOURCE_IDENTITY_KEYS))
+      !== canonicalJson(pick(currentFacility.sourceIdentity, FACILITY_SOURCE_IDENTITY_KEYS))) {
+    throw new Error("FACILITY protected semantics mismatch");
+  }
+  for (const key of FACILITY_PROTECTED_SEMANTIC_KEYS) {
+    const previousValue = replaceSnapshotId(previousFacility[key], previousSnapshotId, currentSnapshotId);
+    if (canonicalJson(previousValue) !== canonicalJson(currentFacility[key])) {
+      throw new Error("FACILITY protected semantics mismatch");
+    }
+  }
+}
+
+function pick(value, keys) {
+  return Object.fromEntries(keys.map((key) => [key, value?.[key]]));
+}
+
+function replaceSnapshotId(value, previousSnapshotId, currentSnapshotId) {
+  if (value === previousSnapshotId) return currentSnapshotId;
+  if (Array.isArray(value)) {
+    return value.map((entry) => replaceSnapshotId(entry, previousSnapshotId, currentSnapshotId));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [
+      key,
+      replaceSnapshotId(entry, previousSnapshotId, currentSnapshotId),
+    ]));
+  }
+  return value;
 }
 
 function buildTransitionPayload({ nextCandidate, previousCandidate, previous, previousBytes, facility, facilityBytes }) {

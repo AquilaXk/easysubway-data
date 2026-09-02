@@ -21,6 +21,8 @@ const BASE_SOURCE_IDS = Object.freeze([
   "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info",
   "incheon-transit-accessibility",
 ]);
+const FACILITY_SOURCE_ID = "kric-station-convenience-standard";
+const BASE_FACILITY_SNAPSHOT_ID = "kric-station-convenience-standard-20260816T015619375Z";
 const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
 const INVENTORY_PATH = "tools/datapack/source-inventory.json";
 const PROJECTION_KEYS = Object.freeze([
@@ -105,12 +107,13 @@ test("successor는 immutable base marker와 pre-rebind FACILITY bytes를 함께 
   const baseBytes = Buffer.from(canonicalCurrentCapitalAccessibilityTransitionJson(base));
   const current = structuredClone(base);
   current.nextCandidate = { ...current.nextCandidate, sourceSnapshotSetHash: "e".repeat(64) };
-  current.facilityAdmission = { ...current.facilityAdmission, sha256: "f".repeat(64), admissionDigest: "a".repeat(64) };
   const { transitionSha256: _ignored, ...currentPayload } = current;
   current.transitionSha256 = sha256(Buffer.from(canonicalJson(currentPayload)));
   const successor = buildCurrentCapitalAccessibilityTransitionSuccessor({
     baseTransitionBytes: baseBytes,
     previousFacilityBytes: fixture.input.facilityBytes,
+    currentFacilityBytes: fixture.input.facilityBytes,
+    currentLedger: fixture.baseLedger,
     currentTransition: current,
   });
   const bytes = canonicalCurrentCapitalAccessibilityTransitionSuccessorJson(successor);
@@ -126,6 +129,111 @@ test("successor는 immutable base marker와 pre-rebind FACILITY bytes를 함께 
     () => canonicalCurrentCapitalAccessibilityTransitionSuccessorJson(parsed),
     /capital FACILITY admission output keys mismatch/,
   );
+});
+
+test("terminal successor는 direct KRIC FACILITY lineage만 exact-seven predecessor advance로 허용한다", async (t) => {
+  const fixture = await createFixture(t);
+  const base = buildCurrentCapitalAccessibilityTransition(fixture.input);
+  const baseBytes = Buffer.from(canonicalCurrentCapitalAccessibilityTransitionJson(base));
+  const currentLedger = structuredClone(fixture.baseLedger);
+  const ledgerIndex = currentLedger.findIndex(({ sourceId }) => sourceId === FACILITY_SOURCE_ID);
+  const currentSnapshotId = "kric-station-convenience-standard-20260901T081638049Z";
+  currentLedger[ledgerIndex] = {
+    ...currentLedger[ledgerIndex],
+    snapshotId: currentSnapshotId,
+    previousSnapshotId: BASE_FACILITY_SNAPSHOT_ID,
+    rawObjectUri: "oci://trusted/kric-station-convenience-standard/current.json",
+    rawSha256: "9".repeat(64),
+    freshnessExpiresAt: "2026-09-02T00:00:00.000Z",
+    rawRetentionExpiresAt: "2026-12-01T00:00:00.000Z",
+  };
+  const candidate = structuredClone(fixture.input.candidate);
+  candidate.sourceSnapshotIds = candidate.sourceSnapshotIds.map((snapshotId) =>
+    snapshotId === BASE_FACILITY_SNAPSHOT_ID ? currentSnapshotId : snapshotId);
+  candidate.sourceSnapshots = candidate.sourceSnapshots.map((projection) => projection.sourceId === FACILITY_SOURCE_ID
+    ? Object.fromEntries(PROJECTION_KEYS.map((key) => [
+      key,
+      key === "adminReviewRecordHash"
+        ? projection.adminReviewRecordHash
+        : currentLedger[ledgerIndex][key],
+    ]))
+    : projection);
+  candidate.sourceSnapshotSetHash = sha256(Buffer.from(JSON.stringify(currentLedger)));
+  const candidateBytes = Buffer.from(`${JSON.stringify(candidate, null, 2)}\n`);
+  const currentFacility = buildFacilityAdmission(candidate.candidateId, candidate.sourceSnapshotSetHash, {
+    snapshotId: currentSnapshotId,
+    previous: fixture.input.facilityAdmission,
+  });
+  const currentFacilityBytes = Buffer.from(`${canonicalJson(currentFacility)}\n`);
+  const currentTransition = buildCurrentCapitalAccessibilityTransition({
+    ...fixture.input,
+    candidate,
+    candidateBytes,
+    facilityAdmission: currentFacility,
+    facilityBytes: currentFacilityBytes,
+    ledger: currentLedger,
+    ledgerBytes: Buffer.from(`${JSON.stringify(currentLedger, null, 2)}\n`),
+  });
+
+  assert.doesNotThrow(() => buildCurrentCapitalAccessibilityTransitionSuccessor({
+    baseTransitionBytes: baseBytes,
+    previousFacilityBytes: fixture.input.facilityBytes,
+    currentFacilityBytes,
+    currentLedger,
+    currentTransition,
+  }));
+
+  const brokenLineage = structuredClone(currentLedger);
+  brokenLineage[ledgerIndex].previousSnapshotId = "unrelated-snapshot";
+  assert.throws(() => buildCurrentCapitalAccessibilityTransitionSuccessor({
+    baseTransitionBytes: baseBytes,
+    previousFacilityBytes: fixture.input.facilityBytes,
+    currentFacilityBytes,
+    currentLedger: brokenLineage,
+    currentTransition,
+  }), /FACILITY predecessor lineage mismatch/);
+
+  const contentDrift = structuredClone(currentLedger);
+  contentDrift[ledgerIndex].contentSha256 = "8".repeat(64);
+  assert.throws(() => buildCurrentCapitalAccessibilityTransitionSuccessor({
+    baseTransitionBytes: baseBytes,
+    previousFacilityBytes: fixture.input.facilityBytes,
+    currentFacilityBytes,
+    currentLedger: contentDrift,
+    currentTransition,
+  }), /FACILITY predecessor lineage mismatch/);
+
+  const otherSourceDrift = structuredClone(currentTransition);
+  otherSourceDrift.previousCandidate.canonicalCandidate.sourceSnapshots[0].rawSha256 = "7".repeat(64);
+  otherSourceDrift.previousCandidate.sha256 = sha256(Buffer.from(canonicalJson(otherSourceDrift.previousCandidate.canonicalCandidate)));
+  rehashTransition(otherSourceDrift);
+  assert.throws(() => buildCurrentCapitalAccessibilityTransitionSuccessor({
+    baseTransitionBytes: baseBytes,
+    previousFacilityBytes: fixture.input.facilityBytes,
+    currentFacilityBytes,
+    currentLedger,
+    currentTransition: otherSourceDrift,
+  }), /non-FACILITY predecessor changed/);
+
+  const semanticDrift = structuredClone(currentFacility);
+  semanticDrift.stationLineProviderMappingSha256 = "0".repeat(64);
+  delete semanticDrift.admissionDigest;
+  semanticDrift.admissionDigest = sha256(Buffer.from(canonicalJson(semanticDrift)));
+  const semanticDriftBytes = Buffer.from(`${canonicalJson(semanticDrift)}\n`);
+  const semanticTransition = structuredClone(currentTransition);
+  semanticTransition.facilityAdmission = {
+    ...semanticTransition.facilityAdmission,
+    sha256: sha256(semanticDriftBytes),
+    admissionDigest: semanticDrift.admissionDigest,
+  };
+  rehashTransition(semanticTransition);
+  assert.throws(() => buildCurrentCapitalAccessibilityTransitionSuccessor({
+    baseTransitionBytes: baseBytes,
+    previousFacilityBytes: fixture.input.facilityBytes,
+    currentFacilityBytes: semanticDriftBytes,
+    currentLedger,
+    currentTransition: semanticTransition,
+  }), /FACILITY protected semantics mismatch/);
 });
 
 test("exact TRANSFER-last append는 seven-source marker를 인증한 뒤에도 build를 차단한다", async (t) => {
@@ -248,6 +356,8 @@ async function createFixture(t) {
   const ledgerRow = (sourceId, snapshotId, index) => ({
     sourceId,
     snapshotId,
+    previousSnapshotId: null,
+    contentSha256: "3".repeat(64),
     rawObjectUri: `oci://trusted/${sourceId}.json`,
     rawSha256: String(index + 1).repeat(64).slice(0, 64),
     redactedRequestFingerprint: "a".repeat(64),
@@ -261,7 +371,11 @@ async function createFixture(t) {
     governancePolicyVersion: "fixture-v1",
     governancePolicySha256: "c".repeat(64),
   });
-  const predecessorLedger = BASE_SOURCE_IDS.map((sourceId, index) => ledgerRow(sourceId, `snapshot-${index}`, index));
+  const predecessorLedger = BASE_SOURCE_IDS.map((sourceId, index) => ledgerRow(
+    sourceId,
+    sourceId === FACILITY_SOURCE_ID ? BASE_FACILITY_SNAPSHOT_ID : `snapshot-${index}`,
+    index,
+  ));
   const transfer = ledgerRow(TRANSFER_SOURCE_ID, "snapshot-transfer", 8);
   const baseLedger = [predecessorLedger[0], predecessorLedger[1], transfer, ...predecessorLedger.slice(2)];
   const baseSourceSet = sha256(Buffer.from(JSON.stringify(baseLedger)));
@@ -324,8 +438,7 @@ async function createFixture(t) {
   };
 }
 
-function buildFacilityAdmission(candidateId, sourceSnapshotSetHash) {
-  const snapshotId = "kric-station-convenience-standard-20260816T015619375Z";
+function buildFacilityAdmission(candidateId, sourceSnapshotSetHash, { snapshotId = BASE_FACILITY_SNAPSHOT_ID, previous = null } = {}) {
   const cells = Array.from({ length: 213 }, (_, index) => {
     if (index === 0) return { stationId: "station-b35616704ce3", lineId: "seoul-2", state: "ADMITTED_FACILITY_UNVERIFIED_BLOCKED", sourceId: "kric-station-convenience-standard", snapshotId };
     const stationIndex = Math.min(index, 198);
@@ -349,10 +462,10 @@ function buildFacilityAdmission(candidateId, sourceSnapshotSetHash) {
       sourceId: "kric-station-convenience-standard",
       snapshotId,
       snapshotPath: `tools/datapack/sources/${snapshotId}.json`,
-      rawSha256: "1".repeat(64),
+      rawSha256: previous?.sourceIdentity?.rawSha256 ?? "1".repeat(64),
       redactedRequestFingerprint: "2".repeat(64),
-      contentSha256: "3".repeat(64),
-      schemaFingerprint: "4".repeat(64),
+      contentSha256: previous?.sourceIdentity?.contentSha256 ?? "3".repeat(64),
+      schemaFingerprint: previous?.sourceIdentity?.schemaFingerprint ?? "b".repeat(64),
       snapshotFileSha256: "5".repeat(64),
       capturedAt: "2026-08-16T01:56:19.375Z",
       observedAt: "2026-08-16T01:56:19.375Z",
@@ -360,7 +473,7 @@ function buildFacilityAdmission(candidateId, sourceSnapshotSetHash) {
       rawObjectUri: "oci://trusted/object.json",
       rawObjectSha256: "6".repeat(64),
       credentialRedacted: true,
-      licenseEvidenceHash: "7".repeat(64),
+      licenseEvidenceHash: previous?.sourceIdentity?.licenseEvidenceHash ?? "7".repeat(64),
     },
     stationLineProviderMappingSha256: "8".repeat(64),
     denominatorRows,
@@ -371,4 +484,10 @@ function buildFacilityAdmission(candidateId, sourceSnapshotSetHash) {
     decision: "GO",
   };
   return { ...payload, admissionDigest: sha256(Buffer.from(canonicalJson(payload))) };
+}
+
+function rehashTransition(transition) {
+  delete transition.transitionSha256;
+  transition.transitionSha256 = sha256(Buffer.from(canonicalJson(transition)));
+  return transition;
 }

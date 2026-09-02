@@ -157,7 +157,11 @@ export async function buildCurrentActiveFacilityDerivedIdentitySuccessorTransact
     inventory: inventory.value, inventoryBytes: inventory.bytes,
   });
   const successorValue = buildCurrentCapitalAccessibilityTransitionSuccessor({
-    baseTransitionBytes: baseBytes, previousFacilityBytes, currentTransition,
+    baseTransitionBytes: baseBytes,
+    previousFacilityBytes,
+    currentFacilityBytes: facility.bytes,
+    currentLedger: ledger.value,
+    currentTransition,
   });
   return {
     facility,
