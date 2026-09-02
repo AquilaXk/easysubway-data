@@ -25,6 +25,10 @@ import { buildCurrentKricExitCollectionBundle, buildCurrentKricExitCollectionRec
 import { readRegularSnapshot } from "./build-current-kric-exit-collection-plan.mjs";
 import { canonicalKricExitPathProviderSnapshotJson } from "./collect-kric-exit-path-provider-snapshot.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import {
+  validateCurrentCapitalAccessibilitySourceHandoff,
+  verifyCurrentCapitalAccessibilitySourceHandoff,
+} from "./current-capital-accessibility-source-handoff.mjs";
 import { canonicalKricExitPathCollectionPlanJson } from "./plan-kric-exit-path-collection.mjs";
 import { main as buildCurrentCapitalRouteEdgeInput } from "./build-current-capital-route-edge-input.mjs";
 import { canonicalRouteEdgeEvaluationJson, evaluateRouteAccessibilityEdges } from "./evaluate-route-accessibility-edges.mjs";
@@ -43,6 +47,7 @@ import { publishCurrentKricExitProviderOciPlan, requireCurrentCapitalLiveChainOc
 import { preauthenticatedObjectStorageClient } from "./publish-object-storage.mjs";
 import { recoverCurrentCapitalExitProviderCandidate } from "./current-capital-exit-provider-handoff.mjs";
 import { rebindCandidateSourceSnapshots, rebindCurrentCandidateSourceSnapshots } from "./rebind-current-candidate-source-snapshots.mjs";
+import { validateLineage } from "./source-snapshot-policy.mjs";
 import {
   buildCurrentCapitalAccessibilityRefreshOutputs,
   commitCurrentCapitalTerminalManifest,
@@ -494,6 +499,7 @@ export async function buildCurrentCapitalTopologyTerminalHandoff({
   topologyBuild,
   privateBuilderRoot,
   proof,
+  accessibilitySourceHandoff,
 }) {
   requiredOperation(operationId);
   [sourceMainGitSha, facilityHeadGitSha, builderGitSha].forEach(requiredSha);
@@ -511,8 +517,16 @@ export async function buildCurrentCapitalTopologyTerminalHandoff({
     }
     return { key, relativePath, sha256: sha256(file.bytes), sourceId: value.sourceId, capturedAt: value.capturedAt, freshUntil: value.freshUntil };
   }));
+  const accessibility = validateCurrentCapitalAccessibilitySourceHandoff(accessibilitySourceHandoff, {
+    repository,
+    operationId,
+    sourceMainGitSha,
+    facilityBranch,
+    facilityHeadGitSha,
+    protectedCandidateId: accessibilitySourceHandoff?.protectedCandidateId,
+  });
   const payload = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     artifactKind: "current-capital-topology-terminal-handoff",
     repository,
     operationId,
@@ -522,6 +536,13 @@ export async function buildCurrentCapitalTopologyTerminalHandoff({
     topologyBuild,
     inputs,
     lineageProofSha256: sha256(Buffer.from(canonicalJson(proof))),
+    accessibilitySourceHandoff: {
+      handoffSha256: accessibility.handoffSha256,
+      operationId: accessibility.operationId,
+      operationNow: accessibility.operationNow,
+      protectedCandidateId: accessibility.protectedCandidateId,
+      providerStartedAt: accessibility.providerStartedAt,
+    },
     itxProviderCalls: 0,
   };
   return Object.freeze({ ...payload, handoffSha256: sha256(Buffer.from(canonicalJson(payload))) });
@@ -530,16 +551,32 @@ export async function buildCurrentCapitalTopologyTerminalHandoff({
 function validateCurrentCapitalTopologyTerminalHandoff(bytes, expected) {
   let value;
   try { value = JSON.parse(Buffer.from(bytes).toString("utf8")); } catch { throw new Error("topology terminal handoff JSON mismatch"); }
+  exactKeys(value, [
+    "schemaVersion", "artifactKind", "repository", "operationId", "sourceMainGitSha", "facility",
+    "builderGitSha", "topologyBuild", "inputs", "lineageProofSha256", "accessibilitySourceHandoff",
+    "itxProviderCalls", "handoffSha256",
+  ], "topology terminal handoff");
+  exactKeys(value.facility, ["branch", "headSha"], "topology terminal handoff facility");
   const { handoffSha256, ...payload } = value ?? {};
+  const accessibility = value?.accessibilitySourceHandoff;
   if (!Buffer.from(bytes).equals(Buffer.from(`${canonicalJson(value)}\n`))
     || handoffSha256 !== sha256(Buffer.from(canonicalJson(payload)))
-    || value.schemaVersion !== 1 || value.artifactKind !== "current-capital-topology-terminal-handoff"
+    || value.schemaVersion !== 2 || value.artifactKind !== "current-capital-topology-terminal-handoff"
     || value.repository !== expected.repository || value.sourceMainGitSha !== expected.sourceMainGitSha
     || value.facility?.branch !== expected.facilityBranch || value.facility?.headSha !== expected.facilityHeadGitSha
     || value.builderGitSha !== expected.builderGitSha
     || canonicalJson(value.topologyBuild) !== canonicalJson(expected.topologyBuild)
     || value.lineageProofSha256 !== sha256(Buffer.from(canonicalJson(expected.proof)))
-    || value.itxProviderCalls !== 0 || !Array.isArray(value.inputs) || value.inputs.length !== 4) {
+    || value.itxProviderCalls !== 0 || !Array.isArray(value.inputs) || value.inputs.length !== 4
+    || !accessibility || typeof accessibility !== "object" || Array.isArray(accessibility)
+    || JSON.stringify(Object.keys(accessibility).sort(codepointCompare)) !== JSON.stringify([
+      "handoffSha256", "operationId", "operationNow", "protectedCandidateId", "providerStartedAt",
+    ])
+    || !/^[a-f0-9]{64}$/u.test(accessibility.handoffSha256 ?? "")
+    || accessibility.operationId !== value.operationId
+    || typeof accessibility.protectedCandidateId !== "string" || accessibility.protectedCandidateId === ""
+    || requiredOffsetInstantMillis(accessibility.providerStartedAt, "accessibility provider start")
+      > requiredOffsetInstantMillis(accessibility.operationNow, "accessibility operation now")) {
     throw new Error("topology terminal handoff identity mismatch");
   }
   const proofInputs = new Map(expected.proof.topologyInputs.map((entry) => [entry.relativePath, entry.sha256]));
@@ -602,6 +639,7 @@ export async function rebuildCurrentCapitalTopologyTerminalHandoffForAncestorRec
   currentFacilityBranch,
   currentFacilityHeadGitSha,
   topologyHandoffBytes,
+  accessibilitySourceHandoff,
   execFileImpl = execFile,
   verifyTerminalLineageImpl = verifyCurrentCapitalTerminalLineage,
   buildTopologyHandoffImpl = buildCurrentCapitalTopologyTerminalHandoff,
@@ -632,6 +670,18 @@ export async function rebuildCurrentCapitalTopologyTerminalHandoffForAncestorRec
     facilityHeadGitSha: ancestorFacilityHeadGitSha, builderGitSha: originalBuilderGitSha,
     topologyBuild, proof: originalPrepared.proof,
   });
+  const reboundAccessibility = validateCurrentCapitalAccessibilitySourceHandoff(accessibilitySourceHandoff, {
+    repository,
+    operationId: originalHandoff.operationId,
+    sourceMainGitSha,
+    facilityBranch: currentFacilityBranch,
+    facilityHeadGitSha: currentFacilityHeadGitSha,
+    protectedCandidateId: originalHandoff.accessibilitySourceHandoff.protectedCandidateId,
+  });
+  if (reboundAccessibility.providerStartedAt !== originalHandoff.accessibilitySourceHandoff.providerStartedAt
+    || reboundAccessibility.operationNow !== originalHandoff.accessibilitySourceHandoff.operationNow) {
+    throw new Error("ancestor recovery accessibility source clock mismatch");
+  }
   const retained = await assertAncestorRecoveryByteEquality({
     ancestorRoot: path.resolve(ancestorRetainedRoot), currentRoot: path.resolve(currentRetainedRoot),
     entries: originalPrepared.proof.retainedOutputs, pathKey: "relative", label: "ancestor recovery retained outputs",
@@ -666,8 +716,14 @@ export async function rebuildCurrentCapitalTopologyTerminalHandoffForAncestorRec
     facilityBranch: currentFacilityBranch, facilityHeadGitSha: currentFacilityHeadGitSha,
     builderGitSha: originalBuilderGitSha, topologyBuild,
     privateBuilderRoot: path.resolve(originalPrivateBuilderRoot), proof: currentPrepared.proof,
+    accessibilitySourceHandoff: reboundAccessibility,
   });
-  return Object.freeze({ topologyHandoff, originalProof: originalPrepared.proof, currentProof: currentPrepared.proof });
+  return Object.freeze({
+    topologyHandoff,
+    accessibilitySourceHandoff: reboundAccessibility,
+    originalProof: originalPrepared.proof,
+    currentProof: currentPrepared.proof,
+  });
 }
 async function readStagedRegularFile(stagedRoot, relativePath, label) {
   const root = path.resolve(stagedRoot);
@@ -805,11 +861,12 @@ export async function resolveCurrentLiveChainCandidateStageInputs(candidate, rep
 
 export async function assertCurrentCapitalFacilityAdmission({ stagedRoot, now }) {
   if (!(now instanceof Date) || Number.isNaN(now.valueOf())) throw new Error("current live-chain operation clock mismatch");
-  const file = await readStagedRegularFile(
-    stagedRoot,
-    "tools/datapack/release/current-capital-facility-source-admission.json",
-    "current capital facility admission",
-  );
+  const [file, inventoryFile, candidateFile, ledgerFile] = await Promise.all([
+    readStagedRegularFile(stagedRoot, "tools/datapack/release/current-capital-facility-source-admission.json", "current capital facility admission"),
+    readStagedRegularFile(stagedRoot, "tools/datapack/source-inventory.json", "current source inventory"),
+    readStagedRegularFile(stagedRoot, "tools/datapack/release/candidate-build-spec.json", "current candidate build spec"),
+    readStagedRegularFile(stagedRoot, "tools/datapack/release/source-snapshots.json", "current source snapshot ledger"),
+  ]);
   let admission;
   try { admission = JSON.parse(file.bytes.toString("utf8")); } catch { throw new Error("current capital facility admission JSON mismatch"); }
   let canonical;
@@ -821,6 +878,39 @@ export async function assertCurrentCapitalFacilityAdmission({ stagedRoot, now })
   }
   if (Date.parse(admission.sourceIdentity.freshUntil) <= now.valueOf()) {
     throw new Error("current capital facility admission is stale");
+  }
+  let inventory; let candidate; let ledger; let heads;
+  try {
+    inventory = JSON.parse(inventoryFile.bytes.toString("utf8"));
+    candidate = JSON.parse(candidateFile.bytes.toString("utf8"));
+    ledger = JSON.parse(ledgerFile.bytes.toString("utf8"));
+    heads = validateLineage(ledger).headsBySource;
+  } catch {
+    throw new Error("selected accessibility source identity mismatch");
+  }
+  for (const sourceId of ["seoul-metro-accessibility", "kric-station-convenience-standard"]) {
+    const sources = inventory.sources?.filter(({ id }) => id === sourceId) ?? [];
+    const projections = candidate.sourceSnapshots?.filter(({ sourceId: selected }) => selected === sourceId) ?? [];
+    const source = sources[0]; const projection = projections[0]; const evidence = source?.accessibilityAdmissionEvidence;
+    const selectedIndex = candidate.sourceSnapshots?.findIndex(({ sourceId: selected }) => selected === sourceId) ?? -1;
+    const selectedSnapshotId = candidate.sourceSnapshotIds?.[selectedIndex];
+    const capturedAt = Date.parse(evidence?.capturedAt); const observedAt = Date.parse(evidence?.observedAt);
+    const freshUntil = Date.parse(evidence?.freshUntil);
+    if (sources.length !== 1 || projections.length !== 1 || selectedIndex < 0
+      || selectedSnapshotId !== evidence?.snapshotId || projection?.snapshotId !== evidence?.snapshotId
+      || heads[sourceId] !== evidence?.snapshotId) {
+      throw new Error(`selected accessibility source identity mismatch: ${sourceId}`);
+    }
+    if (![capturedAt, observedAt, freshUntil].every(Number.isFinite)
+      || capturedAt > now.valueOf() || observedAt > now.valueOf()) {
+      throw new Error(`selected accessibility source is from the future: ${sourceId}`);
+    }
+    if (freshUntil <= now.valueOf()) throw new Error(`selected accessibility source is stale: ${sourceId}`);
+    if (sourceId === "kric-station-convenience-standard"
+      && (admission.sourceIdentity.snapshotId !== evidence.snapshotId
+        || admission.sourceIdentity.freshUntil !== evidence.freshUntil)) {
+      throw new Error("current capital facility admission source identity mismatch");
+    }
   }
   return admission;
 }
@@ -1147,6 +1237,7 @@ export async function runCurrentCapitalExitTerminalConsumer({
   builderGitSha,
   topologyBuild,
   topologyHandoffBytes,
+  accessibilitySourceHandoffBytes,
   runnerTemp,
   repository,
   candidateOperationId,
@@ -1166,11 +1257,12 @@ export async function runCurrentCapitalExitTerminalConsumer({
   rebindFacilityImpl = rebindCurrentActiveFacilityDerivedIdentity,
   verifyTerminalLineageImpl = verifyCurrentCapitalTerminalLineage,
   verifyTopologyHandoffImpl = validateCurrentCapitalTopologyTerminalHandoff,
+  verifyAccessibilityHandoffImpl = verifyCurrentCapitalAccessibilitySourceHandoff,
   commitTerminalManifestImpl = commitCurrentCapitalTerminalManifest,
 } = {}) {
   if (repository !== "AquilaXk/easysubway-data") throw new Error("repository identity mismatch");
   if (![repositoryRoot, sourceMainRoot, privateBuilderRoot, runnerTemp, transferObservationDirectory, transferReceiptPath].every((value) => path.isAbsolute(value ?? ""))
-    || !Buffer.isBuffer(topologyHandoffBytes)
+    || !Buffer.isBuffer(topologyHandoffBytes) || !Buffer.isBuffer(accessibilitySourceHandoffBytes)
     || !(operationNow instanceof Date) || Number.isNaN(operationNow.valueOf())) {
     throw new Error("terminal consumer inputs mismatch");
   }
@@ -1205,6 +1297,29 @@ export async function runCurrentCapitalExitTerminalConsumer({
     readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse)
       .then((candidate) => resolveCurrentLiveChainCandidateStageInputs(candidate, root)),
   ]);
+  const accessibilitySourceHandoff = await verifyAccessibilityHandoffImpl({
+    handoffBytes: accessibilitySourceHandoffBytes,
+    retainedRoot: root,
+    preparedRoot: path.resolve(privateBuilderRoot),
+    expected: {
+      repository,
+      operationId: topologyHandoff.operationId,
+      sourceMainGitSha,
+      facilityBranch: preflight.branch,
+      facilityHeadGitSha: candidateRootSha,
+      protectedCandidateId: currentCandidate.candidateId,
+    },
+  });
+  const accessibilityIdentity = topologyHandoff.accessibilitySourceHandoff;
+  if (accessibilitySourceHandoff.handoffSha256 !== accessibilityIdentity?.handoffSha256
+    || accessibilitySourceHandoff.operationId !== accessibilityIdentity?.operationId
+    || accessibilitySourceHandoff.providerStartedAt !== accessibilityIdentity?.providerStartedAt
+    || accessibilitySourceHandoff.operationNow !== accessibilityIdentity?.operationNow
+    || accessibilitySourceHandoff.protectedCandidateId !== accessibilityIdentity?.protectedCandidateId
+    || requiredOffsetInstantMillis(accessibilitySourceHandoff.operationNow, "accessibility source operation now")
+      > operationNow.valueOf()) {
+    throw new Error("terminal accessibility source identity mismatch");
+  }
   const transferStageInputs = currentLiveChainTransferStageInputs(currentCandidate, root);
   const stagedRoot = await mkdtemp(path.join(path.resolve(runnerTemp), "current-capital-exit-terminal-"));
   // Terminal refresh needs the currently committed output bytes and both
@@ -1214,6 +1329,13 @@ export async function runCurrentCapitalExitTerminalConsumer({
     await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
     await cp(source, destination, { recursive: true, force: false, verbatimSymlinks: true,
       filter: (entry) => stagedCopyAllowed(root, entry, []) });
+  }
+  for (const { relativePath, operation } of accessibilitySourceHandoff.outputs) {
+    requiredRelativePath(relativePath, "terminal accessibility source output");
+    const bytes = await readStagedRegularFile(path.resolve(privateBuilderRoot), relativePath, "prepared accessibility source output");
+    const destination = path.join(stagedRoot, relativePath);
+    await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
+    await writeFile(destination, bytes.bytes, { flag: operation === "create" ? "wx" : "w", mode: 0o600 });
   }
   for (const { relativePath, bytes } of preparedTerminal.topologyInputs) {
     requiredRelativePath(relativePath, "terminal topology input");
@@ -1352,23 +1474,35 @@ export async function runCurrentCapitalExitTerminalConsumer({
   const topologyInputs = preparedTerminal.proof.topologyInputs?.map(({ relativePath }) => relativePath);
   const topologyOutputs = preparedTerminal.proof.topologyOutputs?.map(({ relativePath }) => relativePath);
   if (!Array.isArray(topologyInputs) || !Array.isArray(topologyOutputs)) throw new Error("terminal consumer lineage proof mismatch");
-  const replacementPaths = [...new Set([...topologyInputs, ...topologyOutputs, ...outputPaths, CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH])].sort(codepointCompare);
-  const createOnce = new Set([...topologyInputs, ...topologyOutputs.filter((relative) => /^tools\/datapack\/release\/capital-topology-reverification-[0-9]{8}\.json$/u.test(relative))]);
+  const replacementPaths = [...new Set([
+    ...accessibilitySourceHandoff.outputs.map(({ relativePath }) => relativePath),
+    ...topologyInputs, ...topologyOutputs, ...outputPaths, CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH,
+  ])].sort(codepointCompare);
+  const createOnce = new Set([
+    ...accessibilitySourceHandoff.outputs.filter(({ operation }) => operation === "create").map(({ relativePath }) => relativePath),
+    ...topologyInputs,
+    ...topologyOutputs.filter((relative) => /^tools\/datapack\/release\/capital-topology-reverification-[0-9]{8}\.json$/u.test(relative)),
+  ]);
   const replacementPrestates = new Map(preparedTerminal.proof.replacementPrestates?.map((entry) => [entry.relativePath, entry.sha256]));
   if (JSON.stringify([...replacementPrestates.keys()].sort(codepointCompare))
-    !== JSON.stringify(replacementPaths.filter((relative) => !createOnce.has(relative)))) {
+    !== JSON.stringify([...new Set([...topologyOutputs, ...outputPaths, CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH])]
+      .filter((relative) => !createOnce.has(relative)).sort(codepointCompare))) {
     throw new Error("terminal consumer replacement prestate proof mismatch");
   }
+  const accessibilityPrestates = new Map(accessibilitySourceHandoff.outputs
+    .filter(({ operation }) => operation === "replace").map(({ relativePath, beforeSha256 }) => [relativePath, beforeSha256]));
   const terminalOutputs = await Promise.all(replacementPaths.map(async (relative) => {
     const staged = await readStagedRegularFile(stagedRoot, relative, `terminal staged ${relative}`);
     const prestate = createOnce.has(relative) ? null : await readStagedRegularFile(root, relative, `terminal retained ${relative}`);
-    if (prestate != null && sha256(prestate.bytes) !== replacementPrestates.get(relative)) {
+    const expectedPrestate = replacementPrestates.get(relative) ?? accessibilityPrestates.get(relative);
+    if (prestate != null && sha256(prestate.bytes) !== expectedPrestate) {
       throw new Error("terminal consumer replacement prestate mismatch");
     }
     return { relative, bytes: staged.bytes, prestate };
   }));
   const [marker, successor] = await Promise.all(markerPaths.map((relative) => readStagedRegularFile(root, relative, `terminal retained ${relative}`)));
   const manifest = {
+    accessibilitySourceHandoff,
     topologyInputs, topologyOutputs, liveChainOutputs: outputPaths,
     fanInPath: CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH, markerPaths, replacementPaths,
     proof: preparedTerminal.proof, materialization,
@@ -1426,6 +1560,7 @@ export async function runCurrentCapitalExitOnlyProducer({
   operationId,
   handoffDirectory,
   facilityPullRequest,
+  accessibilitySourceHandoff,
   env = process.env,
   execFileImpl = execFile,
   clock = () => new Date(),
@@ -1506,6 +1641,7 @@ export async function runCurrentCapitalExitOnlyProducer({
     topologyBuild,
     privateBuilderRoot: path.resolve(privateBuilderRoot),
     proof: preparedTerminal.proof,
+    accessibilitySourceHandoff,
   });
   let candidate;
   const retained = path.resolve(retainedRoot);

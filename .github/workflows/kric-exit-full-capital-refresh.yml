@@ -204,6 +204,7 @@ jobs:
       - name: Produce immutable EXIT source handoff from exact main
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
         env:
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
           KRIC_SERVICE_KEY: ${{ secrets.KRIC_SERVICE_KEY }}
           EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
         run: |
@@ -217,6 +218,44 @@ jobs:
             await assertCurrentCapitalExitItxAuthorityFresh({ repositoryRoot: process.env.EXIT_REFRESH_RETAINED_ROOT });
           '
           git worktree add --detach "${private_builder_root}" "${EXIT_REFRESH_FACILITY_HEAD_SHA}"
+          EXIT_REFRESH_RETAINED_ROOT="${retained_root}" EXIT_REFRESH_PRIVATE_BUILDER_ROOT="${private_builder_root}" node --input-type=module -e '
+            import { readFile, writeFile } from "node:fs/promises";
+            import { collectCurrentCapitalTerminalAccessibilitySources, canonicalCurrentCapitalAccessibilitySourceHandoffJson, decideCurrentCapitalAccessibilitySourceRefresh, stageCurrentCapitalTerminalAccessibilitySources } from "./tools/datapack/current-capital-accessibility-source-handoff.mjs";
+            const providerStartedAt = new Date();
+            const decision = await decideCurrentCapitalAccessibilitySourceRefresh({ repositoryRoot: process.env.EXIT_REFRESH_RETAINED_ROOT, now: providerStartedAt });
+            if (decision.state !== "EXPIRED" || decision.refreshSourceIds.length === 0) throw new Error("terminal accessibility refresh is not due");
+            const collected = await collectCurrentCapitalTerminalAccessibilitySources({
+              repositoryRoot: process.env.EXIT_REFRESH_RETAINED_ROOT,
+              operationRoot: `${process.env.EXIT_REFRESH_OPERATION_ROOT}/accessibility-source`,
+              expectedMainSha: process.env.EXIT_REFRESH_MAIN_SHA,
+              expectedFacilityHeadSha: process.env.EXIT_REFRESH_FACILITY_HEAD_SHA,
+              providerStartedAt,
+              refreshSourceIds: decision.refreshSourceIds,
+              env: process.env,
+            });
+            const operationNow = new Date();
+            const candidate = JSON.parse(await readFile(`${process.env.EXIT_REFRESH_RETAINED_ROOT}/tools/datapack/release/candidate-build-spec.json`));
+            const handoff = await stageCurrentCapitalTerminalAccessibilitySources({
+              repository: process.env.GITHUB_REPOSITORY,
+              operationId: `kric-exit-full-capital-refresh-${process.env.GITHUB_RUN_ID}`,
+              sourceMainGitSha: process.env.EXIT_REFRESH_MAIN_SHA,
+              facilityBranch: process.env.EXIT_REFRESH_FACILITY_BRANCH,
+              facilityHeadGitSha: process.env.EXIT_REFRESH_FACILITY_HEAD_SHA,
+              providerStartedAt,
+              operationNow,
+              refreshSourceIds: decision.refreshSourceIds,
+              protectedCandidateId: candidate.candidateId,
+              retainedRoot: process.env.EXIT_REFRESH_RETAINED_ROOT,
+              preparedRoot: process.env.EXIT_REFRESH_PRIVATE_BUILDER_ROOT,
+              seoulSnapshotPath: collected.seoul?.snapshotPath,
+              seoulReceiptPath: collected.seoul?.receiptPath,
+              kricSnapshotPath: collected.kric?.snapshotPath,
+              kricReceiptPath: collected.kric?.receiptPath,
+              kricPlanPath: collected.kricPlanPath,
+            });
+            await writeFile(`${process.env.EXIT_REFRESH_OPERATION_ROOT}/current-capital-accessibility-source-handoff.json`, `${canonicalCurrentCapitalAccessibilitySourceHandoffJson(handoff)}\n`, { flag: "wx", mode: 0o600 });
+            await writeFile(`${process.env.EXIT_REFRESH_OPERATION_ROOT}/accessibility-source-decision.json`, `${JSON.stringify(decision, null, 2)}\n`, { flag: "wx", mode: 0o600 });
+          '
           node tools/datapack/collect-capital-route-topology.mjs --download --output "${EXIT_REFRESH_OPERATION_ROOT}/capital-route-topology.json"
           node tools/datapack/collect-incheon-station-info.mjs --download --output "${EXIT_REFRESH_OPERATION_ROOT}/incheon-transit-station-info.json"
           station_stamp="$(node --input-type=module -e 'import { readFile, rename } from "node:fs/promises"; const root = process.env.EXIT_REFRESH_OPERATION_ROOT; const file = root + "/incheon-transit-station-info.json"; const value = JSON.parse(await readFile(file)); if (value.sourceId !== "incheon-transit-station-info" || new Date(value.capturedAt).toISOString() !== value.capturedAt) throw new Error("Incheon topology collector identity mismatch"); const stamp = value.capturedAt.slice(0, 10).replaceAll("-", ""); await rename(file, root + "/incheon-transit-station-info-" + stamp + ".json"); process.stdout.write(stamp);')"
@@ -241,12 +280,27 @@ jobs:
             const currentItxAdmission = candidate.networkEdgeEvidence?.itxCurrentTopologyAdmission?.path ?? null;
             await writeFile(operation + "/topology-build.json", JSON.stringify({ buildNow: new Date().toISOString(), capitalTopologyPath: rows[0][1], incheonTopologyPath: rows[1][1], incheonLine1TimetablePath: rows[2][1], incheonLine2TimetablePath: rows[3][1], incheonAccessibilityPath: "tools/datapack/sources/" + accessibilityId + ".json", itxCurrentAdmissionPath: currentItxAdmission, itxTopologyEvidencePath: candidate.itxTopologyEvidencePath }) + "\n", { flag: "wx", mode: 0o600 });
           '
-          git -C "${private_builder_root}" add tools/datapack/sources
+          mapfile -t expected_builder_paths < <(node --input-type=module -e '
+            import { readFile } from "node:fs/promises";
+            import { CURRENT_CAPITAL_ACCESSIBILITY_SOURCE_FIXED_OUTPUTS, validateCurrentCapitalAccessibilitySourceHandoff } from "./tools/datapack/current-capital-accessibility-source-handoff.mjs";
+            const handoff = validateCurrentCapitalAccessibilitySourceHandoff(JSON.parse(await readFile(process.env.EXIT_REFRESH_OPERATION_ROOT + "/current-capital-accessibility-source-handoff.json")));
+            const fixed = new Set(CURRENT_CAPITAL_ACCESSIBILITY_SOURCE_FIXED_OUTPUTS);
+            const sourcePattern = /^tools\/datapack\/sources\/(?:seoul-metro-accessibility|kric-station-convenience-standard)-[0-9TZ]+\.json$/u;
+            if (handoff.outputs.some(({ relativePath, operation }) => fixed.has(relativePath) ? operation !== "replace" : operation !== "create" || !sourcePattern.test(relativePath))) throw new Error("private builder accessibility path set mismatch");
+            const topology = JSON.parse(await readFile(process.env.EXIT_REFRESH_OPERATION_ROOT + "/topology-build.json"));
+            const topologyPaths = [topology.capitalTopologyPath, topology.incheonTopologyPath, topology.incheonLine1TimetablePath, topology.incheonLine2TimetablePath];
+            const topologyPatterns = [/^tools\/datapack\/sources\/capital-route-topology-[0-9]{8}\.json$/u, /^tools\/datapack\/sources\/incheon-transit-station-info-[0-9]{8}\.json$/u, /^tools\/datapack\/sources\/incheon-line1-train-timetable-[0-9]{8}\.json$/u, /^tools\/datapack\/sources\/incheon-line2-train-timetable-[0-9]{8}\.json$/u];
+            if (topologyPaths.some((relative, index) => !topologyPatterns[index].test(relative ?? ""))) throw new Error("private builder topology path set mismatch");
+            const paths = [...handoff.outputs.map(({ relativePath }) => relativePath), ...topologyPaths].sort();
+            if (new Set(paths).size !== paths.length) throw new Error("private builder expected path set mismatch");
+            process.stdout.write(paths.join("\n"));
+          ')
+          git -C "${private_builder_root}" add -- "${expected_builder_paths[@]}"
           mapfile -t builder_paths < <(git -C "${private_builder_root}" diff --cached --name-only)
-          [[ "${#builder_paths[@]}" == "4" ]] || { echo "private builder input count mismatch" >&2; exit 1; }
+          [[ "$(printf '%s\n' "${builder_paths[@]}")" == "$(printf '%s\n' "${expected_builder_paths[@]}")" ]] || { echo "private builder input path set mismatch" >&2; exit 1; }
           git -C "${private_builder_root}" config user.name "github-actions[bot]"
           git -C "${private_builder_root}" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C "${private_builder_root}" commit -m "Stage current topology inputs"
+          git -C "${private_builder_root}" commit -m "Stage current terminal inputs"
           builder_sha="$(git -C "${private_builder_root}" rev-parse HEAD)"
           [[ "$(git -C "${private_builder_root}" rev-parse HEAD^)" == "${EXIT_REFRESH_FACILITY_HEAD_SHA}" ]] || { echo "private builder parent mismatch" >&2; exit 1; }
           private_ref="refs/easysubway-private/topology-${GITHUB_RUN_ID}"
@@ -267,6 +321,7 @@ jobs:
               privateBuilderRoot: process.env.EXIT_REFRESH_PRIVATE_BUILDER_ROOT,
               builderGitSha: process.env.EXIT_REFRESH_BUILDER_SHA,
               topologyBuild: JSON.parse(await readFile(`${process.env.EXIT_REFRESH_OPERATION_ROOT}/topology-build.json`)),
+              accessibilitySourceHandoff: JSON.parse(await readFile(`${process.env.EXIT_REFRESH_OPERATION_ROOT}/current-capital-accessibility-source-handoff.json`)),
               runnerTemp: process.env.RUNNER_TEMP,
               repository: process.env.GITHUB_REPOSITORY,
               repositorySha: process.env.EXIT_REFRESH_MAIN_SHA,
@@ -566,12 +621,39 @@ jobs:
             import { readFile, writeFile } from "node:fs/promises";
             import { promisify } from "node:util";
             import { canonicalJson } from "./tools/datapack/lib/manifest-validation.mjs";
+            import { canonicalCurrentCapitalAccessibilitySourceHandoffJson, rebuildCurrentCapitalAccessibilitySourceHandoffFromRoots } from "./tools/datapack/current-capital-accessibility-source-handoff.mjs";
             import { rebuildCurrentCapitalTopologyTerminalHandoffForAncestorRecovery, runCurrentCapitalExitTerminalConsumer } from "./tools/datapack/run-current-capital-live-chain.mjs";
             const run = promisify(execFile);
             const handoff = `${process.env.EXIT_REFRESH_OPERATION_ROOT}/source-handoff`;
             const originalTopologyHandoffBytes = await readFile(`${handoff}/current-capital-topology-terminal-handoff.json`);
+            const originalTopologyHandoff = JSON.parse(originalTopologyHandoffBytes);
+            const accessibilityIdentity = originalTopologyHandoff.accessibilitySourceHandoff;
+            const rebuildAccessibility = (retainedRoot, facilityHeadGitSha) => rebuildCurrentCapitalAccessibilitySourceHandoffFromRoots({
+              repository: process.env.GITHUB_REPOSITORY,
+              operationId: originalTopologyHandoff.operationId,
+              sourceMainGitSha: process.env.EXIT_REFRESH_MAIN_SHA,
+              facilityBranch: process.env.EXIT_REFRESH_FACILITY_BRANCH,
+              facilityHeadGitSha,
+              providerStartedAt: new Date(accessibilityIdentity.providerStartedAt),
+              operationNow: new Date(accessibilityIdentity.operationNow),
+              protectedCandidateId: accessibilityIdentity.protectedCandidateId,
+              retainedRoot,
+              preparedRoot: process.env.EXIT_REFRESH_PRIVATE_BUILDER_ROOT,
+            });
+            const originalRetainedRoot = process.env.EXIT_REFRESH_RECOVERY_STATE === "INSPECTED_ANCESTOR_CLAIM"
+              ? process.env.EXIT_REFRESH_ANCESTOR_RETAINED_ROOT : process.env.GITHUB_WORKSPACE;
+            const originalFacilityHead = process.env.EXIT_REFRESH_RECOVERY_STATE === "INSPECTED_ANCESTOR_CLAIM"
+              ? process.env.EXIT_REFRESH_ANCESTOR_FACILITY_HEAD_SHA : process.env.EXIT_REFRESH_FACILITY_HEAD_SHA;
+            let accessibilitySourceHandoff = await rebuildAccessibility(originalRetainedRoot, originalFacilityHead);
+            if (accessibilitySourceHandoff.handoffSha256 !== accessibilityIdentity.handoffSha256) {
+              throw new Error("accessibility source handoff digest mismatch");
+            }
             let topologyHandoffBytes = originalTopologyHandoffBytes;
             if (process.env.EXIT_REFRESH_RECOVERY_STATE === "INSPECTED_ANCESTOR_CLAIM") {
+              const currentAccessibilitySourceHandoff = await rebuildAccessibility(
+                process.env.GITHUB_WORKSPACE,
+                process.env.EXIT_REFRESH_FACILITY_HEAD_SHA,
+              );
               const rebound = await rebuildCurrentCapitalTopologyTerminalHandoffForAncestorRecovery({
                 repository: process.env.GITHUB_REPOSITORY, sourceMainRoot: process.env.EXIT_REFRESH_SOURCE_MAIN_ROOT,
                 sourceMainGitSha: process.env.EXIT_REFRESH_MAIN_SHA, ancestorRetainedRoot: process.env.EXIT_REFRESH_ANCESTOR_RETAINED_ROOT,
@@ -580,15 +662,21 @@ jobs:
                 originalBuilderGitSha: process.env.EXIT_REFRESH_BUILDER_SHA, currentRetainedRoot: process.env.GITHUB_WORKSPACE,
                 currentFacilityBranch: process.env.EXIT_REFRESH_FACILITY_BRANCH,
                 currentFacilityHeadGitSha: process.env.EXIT_REFRESH_FACILITY_HEAD_SHA, topologyHandoffBytes: originalTopologyHandoffBytes,
+                accessibilitySourceHandoff: currentAccessibilitySourceHandoff,
               });
               topologyHandoffBytes = Buffer.from(`${canonicalJson(rebound.topologyHandoff)}\n`);
+              accessibilitySourceHandoff = rebound.accessibilitySourceHandoff;
             }
             const topologyHandoff = JSON.parse(topologyHandoffBytes);
+            if (topologyHandoff.accessibilitySourceHandoff.handoffSha256 !== accessibilitySourceHandoff.handoffSha256) {
+              throw new Error("terminal accessibility source identity mismatch");
+            }
             const result = await runCurrentCapitalExitTerminalConsumer({
               repositoryRoot: process.env.GITHUB_WORKSPACE, runnerTemp: process.env.RUNNER_TEMP, repository: process.env.GITHUB_REPOSITORY,
               sourceMainRoot: process.env.EXIT_REFRESH_SOURCE_MAIN_ROOT, sourceMainGitSha: process.env.EXIT_REFRESH_MAIN_SHA,
               privateBuilderRoot: process.env.EXIT_REFRESH_PRIVATE_BUILDER_ROOT, builderGitSha: process.env.EXIT_REFRESH_BUILDER_SHA,
               topologyBuild: topologyHandoff.topologyBuild, topologyHandoffBytes,
+              accessibilitySourceHandoffBytes: Buffer.from(`${canonicalCurrentCapitalAccessibilitySourceHandoffJson(accessibilitySourceHandoff)}\n`),
               candidateOperationId: `kric-exit-full-capital-terminal-${process.env.GITHUB_RUN_ID}`,
               operationNow: new Date(), sourceReceiptBytes: await readFile(`${handoff}/current-capital-exit-provider-source-handoff.json`),
               providerOciPlanBytes: await readFile(`${handoff}/current-kric-exit-provider-oci-plan.json`), providerOciReceiptBytes: await readFile(`${handoff}/current-kric-exit-provider-oci-receipt.json`),

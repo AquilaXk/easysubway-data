@@ -89,8 +89,14 @@ test("EXIT refresh keeps exact-main OCI producer, immutable recovery, and select
   assert.equal((yml.match(/collect-capital-route-topology\.mjs --download --output/g) ?? []).length, 1);
   assert.equal((yml.match(/collect-incheon-station-info\.mjs --download --output/g) ?? []).length, 1);
   assert.equal((yml.match(/collect-incheon-timetable\.mjs --download/g) ?? []).length, 1);
-  assert.match(yml, /private builder input count mismatch/);
-  assert.match(yml, /git -C "\$\{private_builder_root\}" commit -m "Stage current topology inputs"/);
+  assert.match(yml, /decideCurrentCapitalAccessibilitySourceRefresh/);
+  assert.match(yml, /collectCurrentCapitalTerminalAccessibilitySources/);
+  assert.match(yml, /stageCurrentCapitalTerminalAccessibilitySources/);
+  assert.match(yml, /refreshSourceIds: decision\.refreshSourceIds/);
+  assert.match(yml, /current-capital-accessibility-source-handoff\.json/);
+  assert.doesNotMatch(yml, /source-handoff\/current-capital-accessibility-source-handoff\.json/);
+  assert.match(yml, /private builder input path set mismatch/);
+  assert.match(yml, /git -C "\$\{private_builder_root\}" commit -m "Stage current terminal inputs"/);
   assert.match(yml, /private builder parent mismatch/);
   assert.match(yml, /git bundle create/);
   assert.match(yml, /git bundle unbundle/);
@@ -101,6 +107,7 @@ test("EXIT refresh keeps exact-main OCI producer, immutable recovery, and select
   assert.match(yml, /privateBuilderRoot: process\.env\.EXIT_REFRESH_PRIVATE_BUILDER_ROOT/);
   assert.match(yml, /builderGitSha: process\.env\.EXIT_REFRESH_BUILDER_SHA/);
   assert.match(yml, /topologyBuild: JSON\.parse\(await readFile/);
+  assert.match(yml, /accessibilitySourceHandoff: JSON\.parse\(await readFile/);
   assert.match(yml, /"private-builder" && "\$\{actual\}" == "\$\{EXIT_REFRESH_FACILITY_HEAD_SHA\}"/);
   assert.match(yml, /runCurrentCapitalExitTerminalConsumer/);
   assert.match(yml, /export EXIT_REFRESH_SOURCE_MAIN_ROOT="\$\{source_main_root\}"/);
@@ -109,6 +116,9 @@ test("EXIT refresh keeps exact-main OCI producer, immutable recovery, and select
   assert.match(yml, /privateBuilderRoot: process\.env\.EXIT_REFRESH_PRIVATE_BUILDER_ROOT/);
   assert.match(yml, /builderGitSha: process\.env\.EXIT_REFRESH_BUILDER_SHA/);
   assert.match(yml, /topologyBuild: topologyHandoff\.topologyBuild, topologyHandoffBytes/);
+  assert.match(yml, /rebuildCurrentCapitalAccessibilitySourceHandoffFromRoots/);
+  assert.match(yml, /accessibilitySourceHandoff\.handoffSha256 !== accessibilityIdentity\.handoffSha256/);
+  assert.match(yml, /accessibilitySourceHandoffBytes: Buffer\.from/);
   assert.match(yml, /candidateOperationId: `kric-exit-full-capital-terminal-\$\{process\.env\.GITHUB_RUN_ID\}`/);
   assert.match(yml, /git fetch --no-tags origin "refs\/heads\/\$\{EXIT_REFRESH_FACILITY_BRANCH\}:refs\/remotes\/origin\/\$\{EXIT_REFRESH_FACILITY_BRANCH\}"/);
   assert.match(yml, /git switch --track -c "\$\{EXIT_REFRESH_FACILITY_BRANCH\}" "origin\/\$\{EXIT_REFRESH_FACILITY_BRANCH\}"/);
@@ -131,7 +141,8 @@ test("EXIT refresh keeps exact-main OCI producer, immutable recovery, and select
   assert.doesNotMatch(yml, /cp "\$\{staged_root\}/);
   assert.doesNotMatch(yml, /git reset --hard|git apply --index/);
   assert.doesNotMatch(yml, /itxCurrentAdmissionPath: null/);
-  assert.doesNotMatch(yml, /run-current-itx-collection|DATA_GO_KR_SERVICE_KEY/);
+  assert.match(yml, /DATA_GO_KR_SERVICE_KEY: \$\{\{ secrets\.DATA_GO_KR_SERVICE_KEY \}\}/);
+  assert.doesNotMatch(yml, /run-current-itx-collection/);
   assert.doesNotMatch(yml, /gh pr create/);
   assert.doesNotMatch(yml, /aws|s3:|fallback|previous|stale|composite|legacy|automerge|approval|gh pr merge|git merge(?:\s|$)|git push origin main/i);
 });
