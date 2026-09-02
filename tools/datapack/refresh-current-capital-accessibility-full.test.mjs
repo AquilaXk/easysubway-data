@@ -5,7 +5,11 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { buildCurrentCapitalAccessibilityRefreshOutputs, refreshCurrentCapitalAccessibilityFull } from "./refresh-current-capital-accessibility-full.mjs";
+import {
+  assertPendingMarkerProducerBoundary,
+  buildCurrentCapitalAccessibilityRefreshOutputs,
+  refreshCurrentCapitalAccessibilityFull,
+} from "./refresh-current-capital-accessibility-full.mjs";
 import { buildCurrentExitAdmissionOciReceipt, canonicalCurrentExitAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
 import { buildReboundCurrentExitAdmissionIdentities } from "./rebind-current-exit-admission-identities.mjs";
 import { rebindCurrentActiveFacilityDerivedIdentity } from "./rebind-current-active-facility-derived-identity.mjs";
@@ -235,6 +239,27 @@ test("pending v2 marker accepts FACILITY next-eight and EXIT previous-seven befo
   await writeFile(stationPath, JSON.stringify(mutatedStation));
   await assert.rejects(buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root }), /evidence delta mismatch/);
   await writeFile(stationPath, JSON.stringify(beforeStation));
+});
+
+test("pending marker producer boundary follows the transition-validated current candidate", async (t) => {
+  const root = await actualPendingMarkerRepository(t);
+  const [marker, candidate, facility, exit, station, route] = await Promise.all([
+    readFile(path.join(root, SUCCESSOR)).then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json")).then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/release/current-capital-facility-source-admission.json")).then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json")).then(JSON.parse),
+    readFile(path.join(root, OUTPUTS[0])).then(JSON.parse),
+    readFile(path.join(root, OUTPUTS[1])).then(JSON.parse),
+  ]);
+
+  const currentSourceSetSha256 = "a".repeat(64);
+  candidate.sourceSnapshotSetHash = currentSourceSetSha256;
+  facility.candidate.sourceSnapshotSetHash = currentSourceSetSha256;
+  assert.notEqual(marker.nextCandidate.sourceSnapshotSetHash, candidate.sourceSnapshotSetHash);
+  assert.equal(marker.nextCandidate.candidateId, candidate.candidateId);
+  assert.equal(facility.candidate.candidateId, candidate.candidateId);
+  assert.equal(facility.candidate.sourceSnapshotSetHash, candidate.sourceSnapshotSetHash);
+  assertPendingMarkerProducerBoundary({ marker, candidate, facility, exit, station, route });
 });
 
 test("pre-approval projection consumes the validated pending v2 marker without mutating tracked bytes", async (t) => {

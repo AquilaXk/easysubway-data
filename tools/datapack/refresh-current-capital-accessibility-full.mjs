@@ -415,12 +415,14 @@ function fanInComponents(files) {
   }));
 }
 
-function assertPendingMarkerProducerBoundary({ marker, facility, exit, station, route }) {
+export function assertPendingMarkerProducerBoundary({ marker, candidate, facility, exit, station, route }) {
   const next = marker?.nextCandidate; const previous = marker?.previousCandidate;
   if (next?.candidateId == null || next?.sourceSnapshotSetHash == null
     || previous?.candidateId == null || previous?.sourceSnapshotSetHash == null
-    || facility?.candidate?.candidateId !== next.candidateId
-    || facility.candidate?.sourceSnapshotSetHash !== next.sourceSnapshotSetHash
+    || candidate?.candidateId == null || candidate?.sourceSnapshotSetHash == null
+    || next.candidateId !== candidate.candidateId
+    || facility?.candidate?.candidateId !== candidate.candidateId
+    || facility.candidate?.sourceSnapshotSetHash !== candidate.sourceSnapshotSetHash
     || exit?.candidate?.candidateId !== next.candidateId
     || exit.candidate?.sourceSetSha256 !== previous.sourceSnapshotSetHash
     || station?.candidate?.candidateId !== previous.candidateId
@@ -495,6 +497,7 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
     if (!currentSuccessor.bytes.equals(files[SUCCESSOR].bytes)) throw new Error("current-capital refresh transition successor changed during validation");
     assertPendingMarkerProducerBoundary({
       marker: parse(effectiveMarker.bytes, "current-capital refresh transition marker"),
+      candidate: parse(files[CANDIDATE_BUILD_SPEC].bytes, "current candidate"),
       facility: parse(files["tools/datapack/release/current-capital-facility-source-admission.json"].bytes, "FACILITY admission"),
       exit: parse(files["tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json"].bytes, "EXIT admission"),
       station: parse(files[OUTPUTS[0]].bytes, "activated station input"),
