@@ -778,7 +778,11 @@ test("terminal consumer orders P/T/F and CAS before one OCI recovery and semanti
       : (await import("node:child_process")).execFileSync(command, args, options),
     rebindPublicRouteMapImpl: async ({ repositoryRoot }) => { calls.push("P"); stageRoots.push(repositoryRoot); },
     rebindTransferImpl: async ({ repositoryRoot }) => { calls.push("T"); assert.equal(repositoryRoot, stageRoots[0]); },
-    rebindFacilityImpl: async ({ repositoryRoot }) => { calls.push("F"); assert.equal(repositoryRoot, stageRoots[0]); },
+    rebindFacilityImpl: async ({ repositoryRoot, replaceExistingSuccessor }) => {
+      calls.push("F");
+      assert.equal(repositoryRoot, stageRoots[0]);
+      assert.equal(replaceExistingSuccessor, true);
+    },
   });
   assert.deepEqual(calls, ["P", "T", "F"]);
   assert.equal(client.gets, 1);
