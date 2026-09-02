@@ -382,14 +382,14 @@ export async function collectCurrentCapitalFacilityOperation({ repositoryRoot = 
   const repository = path.resolve(repositoryRoot); const root = path.resolve(requireText(operationRoot, "operation root")); let journal = parseJournal(await regularBytes(path.join(root, JOURNAL), "operation journal"));
   targetAdmissionBinding(journal);
   await assertExternalOperationRoot(repository, root); const planBytes = await assertPlanBinding(root, journal);
-  await assertExactFacilityRepository(repository, requireText(journal.expectedMainSha, "prepared expected main SHA"), requireText(journal.expectedFacilityHeadSha, "prepared expected facility head SHA"), execFileImpl);
   if (journal.phase === "COLLECTION_STARTED") {
+    await assertExactFacilityRepository(repository, requireText(journal.expectedMainSha, "prepared expected main SHA"), requireText(journal.expectedFacilityHeadSha, "prepared expected facility head SHA"), execFileImpl);
     const observation = await readCompletedObservation(path.join(root, "observation"));
     const binding = observationBinding(observation); journal = { ...journal, phase: "COLLECTED", snapshotId: observation.snapshot.snapshotId, completedObservation: binding, collectionReconciledAt: now.toISOString() }; await journalWriteImpl(path.join(root, JOURNAL), journal); return summary(observation);
   }
   if (journal.phase !== "PREPARED") throw new Error("collection may only start from PREPARED operation");
   const key = requireText(serviceKey, "KRIC_SERVICE_KEY");
-  await assertNoRegistrarResidues(repository); await assertPreparedInputs(repository, journal); await validateReleasePreflight(repository, planBytes, now, { replacingSourceId });
+  await assertExactFacilityRepository(repository, requireText(journal.expectedMainSha, "prepared expected main SHA"), requireText(journal.expectedFacilityHeadSha, "prepared expected facility head SHA"), execFileImpl); await assertNoRegistrarResidues(repository); await assertPreparedInputs(repository, journal); await validateReleasePreflight(repository, planBytes, now, { replacingSourceId });
   const plan = parse(planBytes, "operation plan");
   if (canonicalCurrentCapitalFacilityCollectionPlanJson(plan) !== planBytes.toString("utf8") || plan.counts.providerTupleCount !== 213) throw new Error("operation plan is invalid");
   requireOciParBaseUrl(env);
