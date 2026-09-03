@@ -694,12 +694,33 @@ jobs:
           set -euo pipefail
           mapfile -t replacements < <(node -e 'const value=JSON.parse(require("fs").readFileSync(process.env.EXIT_REFRESH_OPERATION_ROOT + "/terminal-result.json")); process.stdout.write(value.replacementPaths.join("\n"))')
           mapfile -t markers < <(node -e 'const value=JSON.parse(require("fs").readFileSync(process.env.EXIT_REFRESH_OPERATION_ROOT + "/terminal-result.json")); process.stdout.write(value.deletedMarkerPaths.join("\n"))')
-          [[ "${#replacements[@]}" -gt 0 && "${#markers[@]}" == "2" ]] || { echo "terminal result path identity mismatch" >&2; exit 1; }
+          expected_markers=(
+            "tools/datapack/release/current-capital-accessibility-transition-successor.json"
+            "tools/datapack/release/current-capital-accessibility-transition.json"
+          )
+          mapfile -t replacement_allowlist < <(printf '%s\n' "${replacements[@]}" | LC_ALL=C sort -u)
+          mapfile -t marker_allowlist < <(printf '%s\n' "${markers[@]}" | LC_ALL=C sort -u)
+          [[ "${#replacement_allowlist[@]}" -gt 0 && "${#replacement_allowlist[@]}" == "${#replacements[@]}"
+            && "$(printf '%s\n' "${marker_allowlist[@]}")" == "$(printf '%s\n' "${expected_markers[@]}")" ]] \
+            || { echo "terminal result path identity mismatch" >&2; exit 1; }
           git add -- "${replacements[@]}"
           git add -u -- "${markers[@]}"
           mapfile -t staged_paths < <(git diff --cached --name-only)
-          mapfile -t expected_paths < <(printf '%s\n' "${replacements[@]}" "${markers[@]}" | LC_ALL=C sort -u)
-          [[ "$(printf '%s\n' "${staged_paths[@]}")" == "$(printf '%s\n' "${expected_paths[@]}")" ]] || { echo "terminal staged path set mismatch" >&2; exit 1; }
+          mapfile -t staged_replacements < <(git diff --cached --name-only --diff-filter=AM)
+          mapfile -t staged_deletions < <(git diff --cached --name-only --diff-filter=D)
+          [[ "${#staged_replacements[@]}" -gt 0 ]] || { echo "terminal staged replacement set is empty" >&2; exit 1; }
+          [[ "$(printf '%s\n' "${staged_deletions[@]}")" == "$(printf '%s\n' "${expected_markers[@]}")" ]] \
+            || { echo "terminal staged marker deletion mismatch" >&2; exit 1; }
+          for staged in "${staged_replacements[@]}"; do
+            matched=0
+            for allowed in "${replacement_allowlist[@]}"; do
+              if [[ "${staged}" == "${allowed}" ]]; then matched=1; break; fi
+            done
+            [[ "${matched}" == "1" ]] || { echo "terminal staged replacement is outside verified allowlist" >&2; exit 1; }
+          done
+          mapfile -t allowed_staged_paths < <(printf '%s\n' "${staged_replacements[@]}" "${expected_markers[@]}" | LC_ALL=C sort -u)
+          [[ "$(printf '%s\n' "${staged_paths[@]}")" == "$(printf '%s\n' "${allowed_staged_paths[@]}")" ]] \
+            || { echo "terminal staged change type mismatch" >&2; exit 1; }
           [[ -z "$(git diff --name-only)" && -z "$(git ls-files --others --exclude-standard)" ]] || { echo "terminal left an unsupported worktree delta" >&2; exit 1; }
           final_tree="$(git write-tree)"
           git config user.name "github-actions[bot]"
