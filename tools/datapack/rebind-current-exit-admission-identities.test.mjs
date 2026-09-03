@@ -1,31 +1,27 @@
 import assert from "node:assert/strict";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
 import { canonicalCurrentExitAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
 import { canonicalExitPathAdmissionJson } from "./build-exit-path-admission.mjs";
-import {
-  buildCurrentActiveFacilityDerivedIdentitySuccessorTransaction,
-  rebindCurrentActiveFacilityDerivedIdentity,
-} from "./rebind-current-active-facility-derived-identity.mjs";
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
 import {
   buildReboundCurrentExitAdmissionIdentities,
   buildReboundCurrentExitAdmissionIdentitiesFromRepository,
   applyReboundCurrentExitAdmissionIdentities,
 } from "./rebind-current-exit-admission-identities.mjs";
+import { preparePendingCurrentAccessibilityTransitionRepository } from "./test-fixtures/current-full-capital-production-artifact.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const EXIT_DIRECTORY = "tools/datapack/release/current-exit-admission-v2";
 
 test("rebinds only EXIT candidate identities to the canonical v2 transition boundary", async (t) => {
   const repositoryRoot = await temporaryRepository(t);
-  const transitionBytes = await currentTransitionBytes();
-  const normalizedBytes = await bytes(`${EXIT_DIRECTORY}/exit-path-normalized-source-snapshot.json`);
-  const admissionBytes = await bytes(`${EXIT_DIRECTORY}/exit-path-source-admission.json`);
-  const receiptBytes = await bytes(`${EXIT_DIRECTORY}/exit-path-admission-oci-receipt.json`);
+  const transitionBytes = await currentTransitionBytes(repositoryRoot);
+  const normalizedBytes = await bytes(`${EXIT_DIRECTORY}/exit-path-normalized-source-snapshot.json`, repositoryRoot);
+  const admissionBytes = await bytes(`${EXIT_DIRECTORY}/exit-path-source-admission.json`, repositoryRoot);
+  const receiptBytes = await bytes(`${EXIT_DIRECTORY}/exit-path-admission-oci-receipt.json`, repositoryRoot);
   const result = buildReboundCurrentExitAdmissionIdentities({ transitionBytes, normalizedBytes, admissionBytes, receiptBytes });
   const transition = JSON.parse(transitionBytes);
   const beforeAdmission = JSON.parse(admissionBytes);
@@ -53,11 +49,12 @@ test("rebinds only EXIT candidate identities to the canonical v2 transition boun
   assert.deepEqual(fromRepository, result);
 });
 
-test("rejects an EXIT OCI receipt that is not bound to the starting admission bytes", async () => {
-  const transitionBytes = await currentTransitionBytes();
-  const normalizedBytes = await bytes(`${EXIT_DIRECTORY}/exit-path-normalized-source-snapshot.json`);
-  const admissionBytes = await bytes(`${EXIT_DIRECTORY}/exit-path-source-admission.json`);
-  const receipt = JSON.parse(await bytes(`${EXIT_DIRECTORY}/exit-path-admission-oci-receipt.json`));
+test("rejects an EXIT OCI receipt that is not bound to the starting admission bytes", async (t) => {
+  const repositoryRoot = await temporaryRepository(t);
+  const transitionBytes = await currentTransitionBytes(repositoryRoot);
+  const normalizedBytes = await bytes(`${EXIT_DIRECTORY}/exit-path-normalized-source-snapshot.json`, repositoryRoot);
+  const admissionBytes = await bytes(`${EXIT_DIRECTORY}/exit-path-source-admission.json`, repositoryRoot);
+  const receipt = JSON.parse(await bytes(`${EXIT_DIRECTORY}/exit-path-admission-oci-receipt.json`, repositoryRoot));
   receipt.admissionSha256 = "0".repeat(64);
   const { receiptSha256: _ignored, ...payload } = receipt;
   receipt.receiptSha256 = sha256(Buffer.from(canonicalJson(payload)));
@@ -178,33 +175,16 @@ test("rejects transition dependency replacement before durable journal creation"
   await assert.rejects(readFile(journalPath), { code: "ENOENT" });
 });
 
-async function bytes(relative) { return readFile(path.join(ROOT, relative)); }
-async function currentTransitionBytes(repositoryRoot = ROOT) {
-  const successorPath = path.join(
+async function bytes(relative, repositoryRoot = ROOT) { return readFile(path.join(repositoryRoot, relative)); }
+async function currentTransitionBytes(repositoryRoot) {
+  return readFile(path.join(
     repositoryRoot,
     "tools/datapack/release/current-capital-accessibility-transition-successor.json",
-  );
-  try { return await readFile(successorPath); }
-  catch (error) { if (error?.code !== "ENOENT") throw error; }
-  const transaction = await buildCurrentActiveFacilityDerivedIdentitySuccessorTransaction({ repositoryRoot });
-  return transaction.successor.bytes;
+  ));
 }
 async function temporaryRepository(t) {
-  const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "easysubway-exit-rebind-"));
+  const repositoryRoot = await preparePendingCurrentAccessibilityTransitionRepository(ROOT);
   t.after(() => rm(repositoryRoot, { recursive: true, force: true }));
-  for (const relative of ["tools/datapack/release", "tools/datapack/sources", "release/product-gates"]) {
-    await cp(path.join(ROOT, relative), path.join(repositoryRoot, relative), { recursive: true });
-  }
-  for (const relative of [
-    "tools/datapack/nationwide-coverage-targets.json",
-    "tools/datapack/source-inventory.json",
-    "tools/datapack/source-governance-policy.json",
-  ]) {
-    const destination = path.join(repositoryRoot, relative);
-    await mkdir(path.dirname(destination), { recursive: true });
-    await cp(path.join(ROOT, relative), destination);
-  }
-  await rebindCurrentActiveFacilityDerivedIdentity({ repositoryRoot });
   return repositoryRoot;
 }
 function stripAdmission(value) {
