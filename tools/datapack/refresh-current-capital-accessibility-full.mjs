@@ -9,6 +9,7 @@ import { buildCurrentCapitalRouteEdgeInput, canonicalCurrentCapitalRouteEdgeInpu
 import {
   buildAuthenticatedCurrentCapitalFacilityEvidenceRows,
   buildCurrentCapitalStationLineInput,
+  buildValidatedCurrentCapitalTransferEvidenceRows,
   canonicalCurrentCapitalStationLineInputJson,
   readCurrentCapitalInputs,
 } from "./build-current-capital-station-line-input.mjs";
@@ -25,6 +26,12 @@ import { validateCurrentCapitalAccessibilitySourceHandoff } from "./current-capi
 import { readCurrentCapitalAccessibilityTransitionBoundary, readEffectiveCurrentCapitalAccessibilityTransition } from "./current-capital-accessibility-transition.mjs";
 import { projectCandidateFixtureForAccessibilityAuthority } from "./build-datapack.mjs";
 import { atomicReplace, readStableRegularFile } from "./rebind-current-candidate-source-snapshots.mjs";
+import {
+  assertCurrentLiveChainTransferIdentity,
+  assertRebuiltCurrentLiveChainTransferCandidateIdentity,
+  CURRENT_LIVE_CHAIN_TRANSFER_FIXED_OUTPUTS,
+  currentLiveChainTransferOutputPaths,
+} from "./rebind-current-live-chain-transfer-derived-identities.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -464,6 +471,8 @@ function assertNarrowDelta({
   expectedExitEvidenceRows = null,
   expectedBeforeFacilityRows = null,
   expectedAfterFacilityRows = null,
+  expectedBeforeTransferRows = null,
+  expectedAfterTransferRows = null,
 }) {
   if (!equalJson(stationBefore.stationLines, stationAfter.stationLines)
     || !equalJson(routeBefore.stationLines, routeAfter.stationLines)
@@ -489,9 +498,18 @@ function assertNarrowDelta({
       expectedAfterRows: expectedAfterFacilityRows,
     });
   }
+  const exactTransferTransition = expectedBeforeTransferRows !== null || expectedAfterTransferRows !== null;
+  if (exactTransferTransition) {
+    assertExactCurrentCapitalTransferEvidenceTransition({
+      beforeRows: stationBefore.evidenceRows.filter(({ domain }) => domain === "TRANSFER"),
+      afterRows: stationAfter.evidenceRows.filter(({ domain }) => domain === "TRANSFER"),
+      expectedBeforeRows: expectedBeforeTransferRows,
+      expectedAfterRows: expectedAfterTransferRows,
+    });
+  }
   if (stationBefore.evidenceRows.length !== stationAfter.evidenceRows.length) throw new Error("current-capital refresh evidence delta mismatch");
   for (const [index, before] of stationBefore.evidenceRows.entries()) {
-    assertEvidenceDelta(before, stationAfter.evidenceRows[index], allowCandidateIdentityTransition, expectedExitEvidenceRows, exactFacilityTransition);
+    assertEvidenceDelta(before, stationAfter.evidenceRows[index], allowCandidateIdentityTransition, expectedExitEvidenceRows, exactFacilityTransition, exactTransferTransition);
   }
 }
 
@@ -509,10 +527,90 @@ export function assertExactCurrentCapitalFacilityEvidenceTransition({
   }
 }
 
-function assertEvidenceDelta(before, after, allowCandidateIdentityTransition, expectedExitEvidenceRows, exactFacilityTransition) {
+export function assertExactCurrentCapitalTransferEvidenceTransition({
+  beforeRows,
+  afterRows,
+  expectedBeforeRows,
+  expectedAfterRows,
+}) {
+  if (![beforeRows, afterRows, expectedBeforeRows, expectedAfterRows].every((rows) =>
+    Array.isArray(rows) && rows.length > 0 && rows.every(({ domain }) => domain === "TRANSFER")
+      && new Set(rows.map(({ stationId, lineId }) => `${stationId}\0${lineId}`)).size === rows.length)
+    || !equalJson(beforeRows, expectedBeforeRows)
+    || !equalJson(afterRows, expectedAfterRows)) {
+    throw new Error("current-capital refresh TRANSFER evidence projection mismatch");
+  }
+}
+
+async function buildAuthenticatedCurrentCapitalTransferEvidenceTransition({
+  repositoryRoot,
+  outputs,
+  beforeStation,
+  afterStation,
+}) {
+  if (!Array.isArray(outputs)) throw new Error("current-capital refresh TRANSFER rebind outputs mismatch");
+  const descriptorOutputs = outputs.filter(({ relative } = {}) =>
+    typeof relative === "string" && !CURRENT_LIVE_CHAIN_TRANSFER_FIXED_OUTPUTS.includes(relative));
+  if (descriptorOutputs.length !== 1) throw new Error("current-capital refresh TRANSFER rebind outputs mismatch");
+  const expectedPaths = currentLiveChainTransferOutputPaths(descriptorOutputs[0].relative);
+  if (outputs.length !== expectedPaths.length
+    || JSON.stringify(outputs.map(({ relative }) => relative)) !== JSON.stringify(expectedPaths)
+    || outputs.some((output) => !output || typeof output !== "object" || Array.isArray(output)
+      || JSON.stringify(Object.keys(output).sort(codepointCompare)) !== JSON.stringify(["bytes", "prestate", "relative"])
+      || !Buffer.isBuffer(output.bytes) || !Buffer.isBuffer(output.prestate))) {
+    throw new Error("current-capital refresh TRANSFER rebind outputs mismatch");
+  }
+  const currentInputs = await Promise.all(outputs.map(async ({ relative, bytes }) => {
+    const current = await readStableRegularFile(target(repositoryRoot, relative), `current TRANSFER rebind ${relative}`);
+    if (!current.bytes.equals(bytes)) throw new Error("current-capital refresh TRANSFER rebind output drift");
+    return current;
+  }));
+  const byPath = new Map(outputs.map((output) => [output.relative, output]));
+  const rows = (side, station) => {
+    const bytes = (relative) => byPath.get(relative)[side];
+    const candidateBytes = bytes("tools/datapack/release/candidate-build-spec.json");
+    const inventoryBytes = bytes("tools/datapack/source-inventory.json");
+    const snapshotsBytes = bytes("tools/datapack/release/source-snapshots.json");
+    const candidate = parse(candidateBytes, `current-capital refresh ${side} TRANSFER candidate`);
+    const inventory = parse(inventoryBytes, `current-capital refresh ${side} TRANSFER inventory`);
+    const snapshots = parse(snapshotsBytes, `current-capital refresh ${side} TRANSFER snapshots`);
+    const descriptorBytes = bytes(descriptorOutputs[0].relative);
+    const descriptor = parse(descriptorBytes, `current-capital refresh ${side} TRANSFER descriptor`);
+    const selected = snapshots.find(({ snapshotId }) => snapshotId === candidate.sourceSnapshotIds?.at(-1));
+    assertRebuiltCurrentLiveChainTransferCandidateIdentity(candidate, candidate, snapshots);
+    if (candidate.sourceInventorySha256 !== sha(JSON.stringify(inventory))
+      || candidate.networkEdgeEvidence?.sourceInventory?.path !== "tools/datapack/source-inventory.json"
+      || candidate.networkEdgeEvidence.sourceInventory.sha256 !== sha(inventoryBytes)) {
+      throw new Error("current-capital refresh TRANSFER inventory binding mismatch");
+    }
+    assertCurrentLiveChainTransferIdentity(
+      candidate,
+      inventory,
+      snapshots,
+      descriptor,
+      descriptorBytes,
+      selected?.rawReceipt,
+    );
+    return buildValidatedCurrentCapitalTransferEvidenceRows({
+      transferMetrics: parse(bytes("tools/datapack/release/current-transfer-topology-metrics.json"), `current-capital refresh ${side} TRANSFER metrics`),
+      transferApplicability: parse(bytes("tools/datapack/release/current-capital-transfer-topology-applicability.json"), `current-capital refresh ${side} TRANSFER applicability`),
+      sourceInventory: inventory,
+      stationLines: station.stationLines,
+      candidate: station.candidate,
+    });
+  };
+  return {
+    beforeRows: rows("prestate", beforeStation),
+    afterRows: rows("bytes", afterStation),
+    inputs: currentInputs,
+  };
+}
+
+function assertEvidenceDelta(before, after, allowCandidateIdentityTransition, expectedExitEvidenceRows, exactFacilityTransition, exactTransferTransition) {
   const domain = before?.domain;
   if (domain !== after?.domain) throw new Error("current-capital refresh evidence delta mismatch");
   if (exactFacilityTransition && domain === "FACILITY") return;
+  if (exactTransferTransition && domain === "TRANSFER") return;
   if (allowCandidateIdentityTransition && domain === "EXIT") {
     const identity = `${after.stationId}\0${after.lineId}`;
     const expected = expectedExitEvidenceRows?.get(identity);
@@ -537,6 +635,7 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
   phase = ACTIVATED_CURRENT_OUTPUT,
   candidateBuildSpec = undefined,
   canonicalPack = undefined,
+  transferRebindOutputs = undefined,
 } = {}) {
   requirePhase(phase);
   const root = path.resolve(repositoryRoot); const files = await inputFiles(root, phase);
@@ -620,6 +719,9 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
   }
   let expectedBeforeFacilityRows = null;
   let expectedAfterFacilityRows = null;
+  let expectedBeforeTransferRows = null;
+  let expectedAfterTransferRows = null;
+  let transferRebindInputs = [];
   if (marker) {
     const previousFacilityBytes = Buffer.from(effectiveMarkerValue.previousFacilityAdmissionBase64, "base64");
     const previousFacility = parse(previousFacilityBytes, "current-capital refresh previous FACILITY admission");
@@ -641,6 +743,19 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
       outputCandidate: stationAfter.candidate,
       candidatePublishedAt: Date.parse(selectedInput.candidateBuildSpec.publishedAt ?? ""),
     });
+    if (transferRebindOutputs !== undefined) {
+      const transferTransition = await buildAuthenticatedCurrentCapitalTransferEvidenceTransition({
+        repositoryRoot: root,
+        outputs: transferRebindOutputs,
+        beforeStation: stationBefore,
+        afterStation: stationAfter,
+      });
+      expectedBeforeTransferRows = transferTransition.beforeRows;
+      expectedAfterTransferRows = transferTransition.afterRows;
+      transferRebindInputs = transferTransition.inputs;
+    }
+  } else if (transferRebindOutputs !== undefined) {
+    throw new Error("current-capital refresh TRANSFER evidence transition requires pending markers");
   }
   assertNarrowDelta({
     stationBefore,
@@ -651,8 +766,15 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
     expectedExitEvidenceRows,
     expectedBeforeFacilityRows,
     expectedAfterFacilityRows,
+    expectedBeforeTransferRows,
+    expectedAfterTransferRows,
   });
-  const outputs = OUTPUTS.map((relative, index) => ({ relative, bytes: index === 0 ? stationBytes : routeBytes, prestate: files[relative], inputs: Object.values(files) }));
+  const outputs = OUTPUTS.map((relative, index) => ({
+    relative,
+    bytes: index === 0 ? stationBytes : routeBytes,
+    prestate: files[relative],
+    inputs: [...Object.values(files), ...transferRebindInputs],
+  }));
   outputs[0].fanIn = { relative: FAN_IN_OUTPUT, bytes: fanInBytes, prestate: files[FAN_IN_OUTPUT], inputs: Object.values(files) };
   return outputs;
 }
@@ -1005,11 +1127,11 @@ export async function commitCurrentCapitalTerminalManifest({
     throw error;
   } finally { await release(); }
 }
-export async function refreshCurrentCapitalAccessibilityFull({ repositoryRoot = ROOT, beforeCommit = async () => {} } = {}) {
+export async function refreshCurrentCapitalAccessibilityFull({ repositoryRoot = ROOT, beforeCommit = async () => {}, transferRebindOutputs = undefined } = {}) {
   const root = path.resolve(repositoryRoot); const release = await acquireLock(root);
   try {
     await recover(root);
-    const outputs = await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root });
+    const outputs = await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root, transferRebindOutputs });
     await assertInputsStable(outputs.flatMap(({ inputs = [] }) => inputs));
     const marker = outputs[0]?.inputs?.find(({ target: inputTarget }) => inputTarget === target(root, TRANSITION));
     const transactionOutputs = [...outputs, outputs[0].fanIn];

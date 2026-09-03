@@ -361,7 +361,15 @@ export async function rebindCurrentLiveChainTransferDerivedIdentities(options = 
     if (stale.length) throw new Error(`current live-chain TRANSFER output drift: ${stale.join(", ")}`);
     return { targets: outputPaths, changed: false };
   }
-  return commitCurrentLiveChainTransferDerivedIdentityOutputs({ repositoryRoot: options.repositoryRoot, outputs, failAfter: options.failAfter });
+  const committed = await commitCurrentLiveChainTransferDerivedIdentityOutputs({ repositoryRoot: options.repositoryRoot, outputs, failAfter: options.failAfter });
+  return {
+    ...committed,
+    outputs: Object.freeze(outputs.map(({ relative, bytes, prestate }) => Object.freeze({
+      relative,
+      bytes: Buffer.from(bytes),
+      prestate: Buffer.from(prestate),
+    }))),
+  };
 }
 function args(argv) { const value = (name) => argv[argv.indexOf(name) + 1]; if (!argv.includes("--repository-root") || !argv.includes("--observation-directory") || !argv.includes("--receipt")) throw new Error("arguments require --repository-root, --observation-directory, and --receipt"); return { repositoryRoot: value("--repository-root"), observationDirectory: value("--observation-directory"), receiptPath: value("--receipt"), check: argv.includes("--check") }; }
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) rebindCurrentLiveChainTransferDerivedIdentities(args(process.argv.slice(2))).catch((error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });
