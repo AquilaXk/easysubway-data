@@ -570,7 +570,7 @@
       "repository": "AquilaXk/easysubway-mobile",
       "commit": "39d2c4723d0ff855041c6162825930c7d12ffad3",
       "profileCommit": {
-        "mobile-v19": "4d133ad853fa6ef4e024a37a1409b5eaadd1cc69"
+        "mobile-v19": "23f4262087af99ff49e120707f7de317666679ef"
       },
       "checkoutPath": ".external/mobile",
       "sourcePath": "apps/mobile",
@@ -580,7 +580,7 @@
           "path": "assets/datapacks/capital.sqlite.gz",
           "sha256": "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
           "profileSha256": {
-            "mobile-v19": "905e77589971bd53d6ecaab9dbfd211ab56f86de883425747bf1d93d31ebae4f"
+            "mobile-v19": "6339daf6de99f9eb69b3940d3eab41302d55cf4c47270625a771d1bc99568cd1"
           }
         },
         {

@@ -27,7 +27,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: AquilaXk/easysubway-mobile
-          ref: 4d133ad853fa6ef4e024a37a1409b5eaadd1cc69
+          ref: 23f4262087af99ff49e120707f7de317666679ef
           path: .external/mobile
           persist-credentials: false
           fetch-depth: 0
@@ -36,10 +36,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected_revision="4d133ad853fa6ef4e024a37a1409b5eaadd1cc69"
+          expected_revision="23f4262087af99ff49e120707f7de317666679ef"
           source=".external/mobile/apps/mobile"
           capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
-          expected_sha256="905e77589971bd53d6ecaab9dbfd211ab56f86de883425747bf1d93d31ebae4f"
+          expected_sha256="6339daf6de99f9eb69b3940d3eab41302d55cf4c47270625a771d1bc99568cd1"
 
           actual_revision="$(git -C .external/mobile rev-parse HEAD)"
           [[ "${actual_revision}" == "${expected_revision}" ]]
@@ -81,8 +81,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected_revision="4d133ad853fa6ef4e024a37a1409b5eaadd1cc69"
-          expected_sha256="905e77589971bd53d6ecaab9dbfd211ab56f86de883425747bf1d93d31ebae4f"
+          expected_revision="23f4262087af99ff49e120707f7de317666679ef"
+          expected_sha256="6339daf6de99f9eb69b3940d3eab41302d55cf4c47270625a771d1bc99568cd1"
           source=".external/mobile/apps/mobile"
           source_capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
           target="apps/mobile"
@@ -146,7 +146,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: AquilaXk/easysubway-mobile
-          ref: 4d133ad853fa6ef4e024a37a1409b5eaadd1cc69
+          ref: 23f4262087af99ff49e120707f7de317666679ef
           path: .external/mobile
           persist-credentials: false
           fetch-depth: 0
@@ -155,10 +155,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected_revision="4d133ad853fa6ef4e024a37a1409b5eaadd1cc69"
+          expected_revision="23f4262087af99ff49e120707f7de317666679ef"
           source=".external/mobile/apps/mobile"
           capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
-          expected_sha256="905e77589971bd53d6ecaab9dbfd211ab56f86de883425747bf1d93d31ebae4f"
+          expected_sha256="6339daf6de99f9eb69b3940d3eab41302d55cf4c47270625a771d1bc99568cd1"
 
           actual_revision="$(git -C .external/mobile rev-parse HEAD)"
           [[ "${actual_revision}" == "${expected_revision}" ]]
@@ -215,7 +215,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: AquilaXk/easysubway-mobile
-          ref: 4d133ad853fa6ef4e024a37a1409b5eaadd1cc69
+          ref: 23f4262087af99ff49e120707f7de317666679ef
           path: .external/mobile
           persist-credentials: false
           fetch-depth: 0
@@ -224,10 +224,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected_revision="4d133ad853fa6ef4e024a37a1409b5eaadd1cc69"
+          expected_revision="23f4262087af99ff49e120707f7de317666679ef"
           source=".external/mobile/apps/mobile"
           capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
-          expected_sha256="905e77589971bd53d6ecaab9dbfd211ab56f86de883425747bf1d93d31ebae4f"
+          expected_sha256="6339daf6de99f9eb69b3940d3eab41302d55cf4c47270625a771d1bc99568cd1"
 
           actual_revision="$(git -C .external/mobile rev-parse HEAD)"
           [[ "${actual_revision}" == "${expected_revision}" ]]
@@ -284,7 +284,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: AquilaXk/easysubway-mobile
-          ref: 4d133ad853fa6ef4e024a37a1409b5eaadd1cc69
+          ref: 23f4262087af99ff49e120707f7de317666679ef
           path: .external/mobile
           persist-credentials: false
           fetch-depth: 0
@@ -293,10 +293,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected_revision="4d133ad853fa6ef4e024a37a1409b5eaadd1cc69"
+          expected_revision="23f4262087af99ff49e120707f7de317666679ef"
           source=".external/mobile/apps/mobile"
           capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
-          expected_sha256="905e77589971bd53d6ecaab9dbfd211ab56f86de883425747bf1d93d31ebae4f"
+          expected_sha256="6339daf6de99f9eb69b3940d3eab41302d55cf4c47270625a771d1bc99568cd1"
 
           actual_revision="$(git -C .external/mobile rev-parse HEAD)"
           [[ "${actual_revision}" == "${expected_revision}" ]]
@@ -353,7 +353,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: AquilaXk/easysubway-mobile
-          ref: 4d133ad853fa6ef4e024a37a1409b5eaadd1cc69
+          ref: 23f4262087af99ff49e120707f7de317666679ef
           path: .external/mobile
           persist-credentials: false
           fetch-depth: 0
@@ -362,10 +362,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected_revision="4d133ad853fa6ef4e024a37a1409b5eaadd1cc69"
+          expected_revision="23f4262087af99ff49e120707f7de317666679ef"
           source=".external/mobile/apps/mobile"
           capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
-          expected_sha256="905e77589971bd53d6ecaab9dbfd211ab56f86de883425747bf1d93d31ebae4f"
+          expected_sha256="6339daf6de99f9eb69b3940d3eab41302d55cf4c47270625a771d1bc99568cd1"
 
           actual_revision="$(git -C .external/mobile rev-parse HEAD)"
           [[ "${actual_revision}" == "${expected_revision}" ]]
