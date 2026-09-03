@@ -206,7 +206,9 @@ function selectedSources(rows, inventory, sourceSnapshots, evaluatedAt) {
       || (row.status !== "INVENTORY_ADMITTED" && ids.length !== 0)) {
       throw new Error(`requirement disposition mismatch for ${pk(row)}`);
     }
-    ids.forEach((id) => admittedIds.add(id));
+    if (row.releaseTier === "LAUNCH_REQUIRED") {
+      ids.forEach((id) => admittedIds.add(id));
+    }
   }
   return [...admittedIds].sort(compare).map((sourceId) => {
     const source = inventoryById.get(sourceId);

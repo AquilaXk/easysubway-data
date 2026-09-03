@@ -135,6 +135,56 @@ test("#687 builds a candidate-independent five-region OCI source fan-in", () => 
   assert.equal(canonicalCurrentFiveRegionSourceFanInJson(fanIn).includes("s3://"), false);
 });
 
+test("#687 keeps enhancement heads non-blocking until their tier is promoted", () => {
+  const input = fixture();
+  input.targets.requiredSourceDomains.push({
+    id: "demand_reference",
+    releaseTier: "ENHANCEMENT",
+    requiredFields: ["demand"],
+  });
+  input.tally.enhancement.requirements = input.targets.activeLineScopes.map((scope) => ({
+    ...scope,
+    sourceDomain: "demand_reference",
+    releaseTier: "ENHANCEMENT",
+    status: "INVENTORY_ADMITTED",
+    admittedSourceIds: ["official-five-region-demand"],
+  }));
+  input.inventory.sources.push({
+    id: "official-five-region-demand",
+    provider: "Official Demand Provider",
+    requiredForProductionPack: true,
+    productionUseAllowed: true,
+    license: {
+      commercialUseAllowed: true,
+      derivativeWorkAllowed: true,
+      redistributionAllowed: true,
+    },
+  });
+  input.inputBytes.targets = bytes(input.targets);
+  input.inputBytes.tally = bytes(input.tally);
+  input.inputBytes.inventory = bytes(input.inventory);
+
+  const fanIn = buildCurrentFiveRegionSourceFanIn(input);
+  assert.deepEqual(fanIn.selectedSources.map(({ sourceId }) => sourceId), [
+    "official-five-region-timetable",
+  ]);
+  assert.equal(fanIn.regionalMatrixSha256, fanIn.inputs.tally.sha256);
+
+  input.targets.requiredSourceDomains[1].releaseTier = "LAUNCH_REQUIRED";
+  for (const requirement of input.tally.enhancement.requirements) {
+    requirement.releaseTier = "LAUNCH_REQUIRED";
+    input.tally.launchRequired.requirements.push(requirement);
+  }
+  input.tally.enhancement.requirements = [];
+  input.inputBytes.targets = bytes(input.targets);
+  input.inputBytes.tally = bytes(input.tally);
+
+  assert.throws(
+    () => buildCurrentFiveRegionSourceFanIn(input),
+    /terminal snapshot head missing for official-five-region-demand/,
+  );
+});
+
 test("#687 fails closed on ambiguous, non-OCI, stale, or unbound source heads", () => {
   const reduced = fixture();
   reduced.targets.activeLineScopes = reduced.targets.activeLineScopes
