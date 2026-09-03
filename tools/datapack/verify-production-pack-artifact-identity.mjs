@@ -11,7 +11,10 @@ import { gunzipSync } from "node:zlib";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
-const READMISSION_VERIFIER_PATH = path.join(root, "tools/datapack/readmit-bundled-pack-identity.mjs");
+const CURRENT_TOPOLOGY_VERIFIER_PATH = path.join(
+  root,
+  "tools/datapack/apply-itx-topology-to-bundled-pack.mjs",
+);
 const DEPLOYED_EVIDENCE_ARTIFACT_KIND = "itx-cheongchun-mobile-topology-evidence";
 
 function sha256(bytes) {
@@ -91,18 +94,18 @@ export async function verifyProductionPackArtifactIdentity({ evidencePath, asset
     const evidence = JSON.parse(await readFile(evidencePath, "utf8"));
     if (evidence.schemaVersion !== 1
       || evidence.artifactKind !== DEPLOYED_EVIDENCE_ARTIFACT_KIND
-      || !Array.isArray(evidence.readmissions)
-      || evidence.readmissions.length === 0) {
-      throw new Error("deployed readmission evidence contract mismatch");
+      || Object.hasOwn(evidence, "readmissions")) {
+      throw new Error("deployed current topology evidence contract mismatch");
     }
 
-    // Deployed bytes are independently admitted through the complete readmission chain. Rebuilding the
-    // current candidate here would conflate its advancing source inventory with the already shipped pack.
+    // Validate the deployed bytes against the current admitted topology and its v19 route-service
+    // evidence. This stays independent from the advancing nationwide candidate replay.
     await execFileAsync(process.execPath, [
-      READMISSION_VERIFIER_PATH,
+      CURRENT_TOPOLOGY_VERIFIER_PATH,
       "--check",
       "--pack", assetPath,
       "--evidence", evidencePath,
+      "--index", indexPath,
     ], { cwd: root });
 
     const assetGzip = await readFile(assetPath);

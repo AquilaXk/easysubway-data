@@ -256,7 +256,7 @@
         ]
       },
       "contextInvocations": [
-        "node --test tools/datapack/readmit-bundled-pack-identity.test.mjs",
+        "node --test tools/datapack/verify-production-pack-artifact-identity.test.mjs",
         "node --test --test-name-pattern='bundled 공식 OD quote|bundled 차량·출입문 힌트' tools/datapack/datapack-tools.test.mjs",
         "node --test tools/datapack/run-current-capital-live-chain.test.mjs",
         "node --test tools/datapack/build-current-capital-live-chain-oci-receipt.test.mjs",
@@ -519,7 +519,6 @@
     {"path":"tools/datapack/publish-server-route-bundle.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":940},
     {"path":"tools/datapack/publish-static-network-source-raw.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/purge-expired-source-raw.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":3184},
-    {"path":"tools/datapack/readmit-bundled-pack-identity.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":7711},
     {"path":"tools/datapack/rebind-capital-route-map-admissions.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":170},
     {"path":"tools/datapack/rebind-current-active-facility-derived-identity.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":900},
     {"path":"tools/datapack/rebind-current-active-public-route-map-materialization.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":900},
