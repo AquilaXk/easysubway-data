@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
   "issue": 1996,
-  "builderGitSha": "7474c915262f70a2b4028a9dd415b863c3154358",
+  "builderGitSha": "f406e7e14a9f85fb031f9c7cb87ccd1b421cafff",
   "builderVersion": "build-datapack.mjs@26",
   "productionScopeId": "capital_pilot_android_v1",
   "truthfulnessRule": "모든 값은 tracked canonical fixture·inventory·official snapshot에서 결정적으로 재산출한다. 2026-07-28 신규 KRIC standard·서울 snapshot을 소비 claim에 결속하고 route 가용성은 추론하지 않는다.",
@@ -44,18 +44,18 @@
     "governanceOverlayNote": "retained legacy root 5종과 timetable의 원천 identity를 유지하고 신규 접근성 snapshot 2종을 추가했다. build-spec의 freshnessExpiresAt·rawRetentionExpiresAt·governance policy binding은 현행 정책에서 파생하며 validator가 임의 연장을 차단한다."
   },
   "sourceSnapshotSetHash": {
-    "value": "71eebe5b8717b5fa137620e8a8df94ade7e863992b381751a3dc45e248542dd4",
+    "value": "9560ff9e2f926d59a8155fa950cb441af7a6aaf568820298b35e13d684422fe6",
     "contract": "source별 head 8종의 byte-ordered JSON hash와 build spec·release request가 일치해야 한다.",
     "reproductionCommand": "node -e \"import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto');const s=require('./tools/datapack/release/source-snapshots.json'),b=require('./tools/datapack/release/candidate-build-spec.json'),i=b.sourceSnapshotIds;if(!Array.isArray(i)||new Set(i).size!==i.length)throw new Error('candidate snapshot IDs are invalid');const h=validateLineage(s).headsBySource,p=i.map(id=>{const n=s.filter(x=>x.snapshotId===id);if(n.length!==1||h[n[0].sourceId]!==id)throw new Error('candidate source snapshot mismatch: '+id);return n[0]});if(new Set(p.map(x=>x.sourceId)).size!==p.length)throw new Error('candidate source snapshots are not unique');const k=new Set(i),r=s.filter(x=>k.has(x.snapshotId));if(r.length!==p.length)throw new Error('candidate ledger selection mismatch');if(!Array.isArray(b.sourceSnapshots)||b.sourceSnapshots.length!==p.length||b.sourceSnapshots.some((x,n)=>x.sourceId!==p[n].sourceId||x.snapshotId!==p[n].snapshotId))throw new Error('candidate source projection mismatch');console.log(c.createHash('sha256').update(JSON.stringify(r)).digest('hex'))})\""
   },
   "sourceInventorySha256": {
-    "value": "67981a0a6688e42f4329602602b9ebabd04a2852b05e5e634da4b40f8fe73442",
+    "value": "0127183c7c5b0d46faeb07e6c53342b33a31e4b64037dfab6a34798d19dceec0",
     "contract": "run-source-admission-pipeline.mjs의 공식 sha256(JSON.stringify(admittedInventory)) 계약. 현행 브랜치의 tools/datapack/source-inventory.json이 최종 admitted inventory이며 워크플로 빌드가 실제로 소비하는 인벤토리와 동일 파일.",
     "reproductionCommand": "node -e \"const c=require('crypto'),fs=require('fs');console.log(c.createHash('sha256').update(JSON.stringify(JSON.parse(fs.readFileSync('tools/datapack/source-inventory.json','utf8')))).digest('hex'))\""
   },
   "fixturePath": {
     "value": "tools/datapack/release/capital-production-canonical-pack.json",
-    "sha256": "d2570d183a0a320723b7f1987785cda75d6ba6b72e77f90674f8c5817ddf134c",
+    "sha256": "40df2d134eea5b8e5664dadb1f9d4e6bb40bac73af25a0748f9d8754ae0e136c",
     "contract": "#2648에서 배포 중인 capital SQLite 전체를 lossless fixture로 고정하고, 2c72677b builder가 전체 ITX readmission chain과 최종 output identity를 검증한다.",
     "reproductionCommand": "shasum -a 256 tools/datapack/release/capital-production-canonical-pack.json"
   },
@@ -65,7 +65,7 @@
       "note": "파일 기반 경로는 backend candidate 행을 우회하므로 리포에 고정 명명 계약 없음. fixture 선례(capital-pilot-candidate-fixture)+snapshot 날짜 관례로 명명. release-request.candidateId와 동일(자체 정합)."
     },
     "approvalId": {
-      "value": "release-request-capital-pilot-candidate-20260830-dad3b9e171863a990d8846ac69f150c52b2f45e6745a0a5f1f0ef25e9d2d95da",
+      "value": "release-request-capital-pilot-candidate-20260830-7dd8013754d5a01e3b2d602878a77960a055b89c6d77ffc43ad7fd77c84c180c",
       "note": "Recorded release authorization ID; mirrored in release-request and must match dispatch. Exact build-spec identity is bound separately by release-request.buildSpecSha256."
     }
   },
@@ -89,7 +89,7 @@
       "snapshotId": "seoul-metro-transfer-distance-duration-20260815T094038817Z",
       "rawSha256": "3d872c9ac390426b5e0e26fa1916ae9d9a44b70077b632d3c85cb8e82381f7cf",
       "adminReviewRecordHash": "f1636fbd2b36b2687fc8d728290158ca934461276936036606bc03a3156d594e",
-      "perSourceSnapshotSetHash": "533dccf82bdeb4e98f68baf2c5d674c83e88835d27d957a860d349021f3f4e9a"
+      "perSourceSnapshotSetHash": "c4d2b62454258252e5f817ec7e977ef36ffe12a165aae84d1d11491ce79b2bf7"
     },
     {
       "sourceId": "seoul-metro-route-map-positions",
@@ -113,18 +113,18 @@
       "perSourceSnapshotSetHash": "11318faf60ca6dfd9b5022e4a9eea2b2228ba651bd6764578190bc21582cf3c3"
     },
     {
-      "sourceId": "seoul-metro-accessibility",
-      "snapshotId": "seoul-metro-accessibility-20260830T173929300Z",
-      "rawSha256": "49447f84ec83e01317757bc5a84699e3eb576f1d793a43dcf83eb8a3af0b5ee8",
-      "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",
-      "perSourceSnapshotSetHash": "15fd7bcb47282efef77f43b8f537b6b51b02bc724f553123d16a4abdf9eeb089"
+      "sourceId": "kric-station-convenience-standard",
+      "snapshotId": "kric-station-convenience-standard-20260902T200616033Z",
+      "rawSha256": "80c760fe25b17257696686318c30cc2f49394eab13bc80f23e84d5a63319a675",
+      "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
+      "perSourceSnapshotSetHash": "b07ba4241390bb6a3d71607ddfe024c449fc47f8929f4599dd25acc7f19682b5"
     },
     {
-      "sourceId": "kric-station-convenience-standard",
-      "snapshotId": "kric-station-convenience-standard-20260901T081638049Z",
-      "rawSha256": "066a5f0a2fc44c6c5564fc5dc68f4f46164a34e0c3d367cb654e8aed9dc792c1",
-      "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
-      "perSourceSnapshotSetHash": "30bd053bc0f31501a3a6b2f6e58b979a6b8a62293221f3d5f669f601140a5cde"
+      "sourceId": "seoul-metro-accessibility",
+      "snapshotId": "seoul-metro-accessibility-20260902T200616033Z",
+      "rawSha256": "2aa01ccba54f377d63db75f18ab5e379fa633987481e2376ddaf66e754c564de",
+      "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",
+      "perSourceSnapshotSetHash": "6b6f78984a6c5749aa1c6a2cebf397b581962763f6e4a25be1a812f0c581cc90"
     }
   ],
   "officialOdFareEvidence": {
