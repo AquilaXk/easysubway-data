@@ -116,12 +116,14 @@ function licenseEvidence(source, sourceId) {
 function headAdmissionEvidence(source, sourceId, snapshot, evaluatedAt) {
   const matching = admittedEvidence(source).filter(([, evidence]) =>
     evidence.snapshotId === snapshot.snapshotId
-    && (evidence.sourceId === undefined || evidence.sourceId === sourceId)
-    && (evidence.decision === undefined || evidence.decision === "APPROVED")
-    && (evidence.productionUseAllowed === undefined || evidence.productionUseAllowed === true));
+    && (evidence.sourceId === undefined || evidence.sourceId === sourceId));
   if (matching.length === 0) throw new Error(`admission snapshot mismatch for ${sourceId}`);
 
-  const bound = matching.filter(([, evidence]) => evidence.rawSha256 === snapshot.rawSha256);
+  const approved = matching.filter(([, evidence]) => evidence.decision === "APPROVED"
+    || evidence.productionUseAllowed === true);
+  if (approved.length === 0) throw new Error(`admission approval mismatch for ${sourceId}`);
+
+  const bound = approved.filter(([, evidence]) => evidence.rawSha256 === snapshot.rawSha256);
   if (bound.length === 0) throw new Error(`admission digest mismatch for ${sourceId}`);
 
   const current = bound.filter(([, evidence]) => {

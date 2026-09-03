@@ -190,6 +190,11 @@ test("#687 fails closed on ambiguous, non-OCI, stale, or unbound source heads", 
   unboundDigest.inputBytes.inventory = bytes(unboundDigest.inventory);
   assert.throws(() => buildCurrentFiveRegionSourceFanIn(unboundDigest), /admission.*digest/);
 
+  const noAffirmativeAdmission = fixture();
+  delete noAffirmativeAdmission.inventory.sources[0].admissionEvidence.decision;
+  noAffirmativeAdmission.inputBytes.inventory = bytes(noAffirmativeAdmission.inventory);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(noAffirmativeAdmission), /admission.*approval/);
+
   const staleAdmission = fixture();
   staleAdmission.inventory.sources[0].admissionEvidence.freshUntil = EVALUATED_AT;
   staleAdmission.inputBytes.inventory = bytes(staleAdmission.inventory);
