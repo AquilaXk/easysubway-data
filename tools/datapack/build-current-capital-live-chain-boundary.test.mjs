@@ -201,7 +201,11 @@ function fanInComponents(input) {
       values.sourceInventory.sources.push({ id: sourceId, requiredForProductionPack: true });
     }
   }
-  Object.assign(values.sourceInventory.sources[0].transferAdmissionEvidence, {
+  const transferInventorySource = values.sourceInventory.sources.find(({ id }) => id === transferSource.id);
+  if (!transferInventorySource?.transferAdmissionEvidence) {
+    throw new Error("transfer admission fixture is incomplete");
+  }
+  Object.assign(transferInventorySource.transferAdmissionEvidence, {
     snapshotPath: `tools/datapack/sources/${transfer.snapshotId}.json`, rawSha256: transfer.rawSha256,
     schemaFingerprint: transfer.schemaFingerprint,
     metricsArtifactSha256: values.transferMetrics.artifactSha256,
