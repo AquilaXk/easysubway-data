@@ -91,6 +91,7 @@ function authorityReport() {
       candidateFixtureSha256: "e".repeat(64),
       stationLineInputSha256: "f".repeat(64),
       routeEdgeInputSha256: "1".repeat(64),
+      transferMetricsSha256: sha(Buffer.from("fixture-transfer-metrics")),
       materializationDigest: "2".repeat(64),
       observedAt: "2026-08-16T00:00:00.000Z",
     },

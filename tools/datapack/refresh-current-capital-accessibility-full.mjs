@@ -54,17 +54,6 @@ const SEOUL = "seoul-metro-accessibility";
 const TRANSFER = "seoul-metro-transfer-distance-duration";
 const MOLIT = "molit-urban-rail-full-route";
 const PUBLIC_STATIC_NETWORK_V2_SUCCESSOR = "PUBLIC_STATIC_NETWORK_V2_SUCCESSOR_REFRESH";
-const CURRENT_CAPITAL_SOURCE_ROSTER = Object.freeze([
-  "seoul-metro-route-map-positions",
-  "kric-subway-timetable",
-  SEOUL,
-  "kric-station-convenience-standard",
-  MOLIT,
-  "seoulmetro-station-line-info",
-  "incheon-transit-accessibility",
-  TRANSFER,
-]);
-const PREDECESSOR_SOURCE_ROSTER = Object.freeze(CURRENT_CAPITAL_SOURCE_ROSTER.slice(0, -1));
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 
 const TERMINAL_MARKERS = Object.freeze([TRANSITION, SUCCESSOR]);
@@ -286,19 +275,34 @@ function requireCurrentPublicV2Head(selected, ledger, sourceId) {
   return { head, previousSnapshotId };
 }
 
-function buildRefreshProof({ phase, candidateFile, ledgerFile, requestFile, hashesFile, facilityFile, exitFile, stationFile, routeFile }) {
-  const candidate = parse(candidateFile.bytes, "current candidate"); const ledger = parse(ledgerFile.bytes, "source snapshot ledger");
-  const station = parse(stationFile.bytes, "activated station input"); const route = parse(routeFile.bytes, "activated route input");
-  if (!Array.isArray(candidate.sourceSnapshotIds) || !Array.isArray(candidate.sourceSnapshots) || candidate.sourceSnapshotIds.length !== CURRENT_CAPITAL_SOURCE_ROSTER.length
-    || candidate.sourceSnapshotIds.length !== candidate.sourceSnapshots.length
-    || candidate.sourceSnapshots.some(({ sourceId }, index) => sourceId !== CURRENT_CAPITAL_SOURCE_ROSTER[index])) throw new Error("current candidate source-set mismatch");
-  if (phase === ACTIVATED_CURRENT_OUTPUT) {
-    const request = parse(requestFile.bytes, "release request"); const hashes = parse(hashesFile.bytes, "hash evidence");
-    if (candidate.sourceSnapshotSetHash !== request.sourceSnapshotSetHash
-      || candidate.sourceSnapshotSetHash !== hashes.sourceSnapshotSetHash?.value) {
-      throw new Error("current candidate/request/hash binding mismatch");
-    }
+function validateCurrentCandidateSourceSet({ candidate, inventory, inventoryFile }) {
+  const inventorySources = inventory?.sources;
+  const requiredSourceIds = Array.isArray(inventorySources)
+    ? inventorySources.filter(({ requiredForProductionPack }) => requiredForProductionPack === true).map(({ id }) => id)
+    : [];
+  const candidateSourceIds = Array.isArray(candidate.sourceSnapshots)
+    ? candidate.sourceSnapshots.map(({ sourceId }) => sourceId)
+    : [];
+  const transferIndex = candidateSourceIds.indexOf(TRANSFER);
+  if (!Array.isArray(candidate.sourceSnapshotIds) || !Array.isArray(candidate.sourceSnapshots)
+    || candidate.sourceSnapshotIds.length === 0 || candidate.sourceSnapshotIds.length !== candidate.sourceSnapshots.length
+    || !Array.isArray(inventorySources) || requiredSourceIds.length === 0
+    || inventorySources.some(({ id }) => typeof id !== "string" || id.length === 0)
+    || new Set(inventorySources.map(({ id }) => id)).size !== inventorySources.length
+    || candidateSourceIds.some((sourceId) => typeof sourceId !== "string" || sourceId.length === 0)
+    || new Set(candidate.sourceSnapshotIds).size !== candidate.sourceSnapshotIds.length
+    || new Set(candidateSourceIds).size !== candidateSourceIds.length
+    || requiredSourceIds.length !== candidateSourceIds.length
+    || requiredSourceIds.some((sourceId) => !candidateSourceIds.includes(sourceId))
+    || transferIndex !== candidateSourceIds.length - 1
+    || candidate.sourceInventorySha256 !== sha(JSON.stringify(inventory))
+    || candidate.networkEdgeEvidence?.sourceInventory?.path !== "tools/datapack/source-inventory.json"
+    || candidate.networkEdgeEvidence.sourceInventory.sha256 !== sha(inventoryFile.bytes)) {
+    throw new Error("current candidate source-set mismatch");
   }
+}
+
+function deriveRefreshSourceProof({ candidate, ledger }) {
   const selected = candidate.sourceSnapshotIds.map((snapshotId, index) => {
     const row = requireOne(ledger, (entry) => entry?.snapshotId === snapshotId, "current candidate ledger");
     if (row.sourceId !== candidate.sourceSnapshots[index]?.sourceId) throw new Error("current candidate source identity mismatch");
@@ -306,7 +310,8 @@ function buildRefreshProof({ phase, candidateFile, ledgerFile, requestFile, hash
   });
   const selectedIds = new Set(candidate.sourceSnapshotIds);
   const selectedLedgerOrder = ledger.filter(({ snapshotId }) => selectedIds.has(snapshotId));
-  if (selectedIds.size !== CURRENT_CAPITAL_SOURCE_ROSTER.length || selectedLedgerOrder.length !== CURRENT_CAPITAL_SOURCE_ROSTER.length || sha(JSON.stringify(selectedLedgerOrder)) !== candidate.sourceSnapshotSetHash) throw new Error("current candidate source-set mismatch");
+  if (selectedLedgerOrder.length !== candidate.sourceSnapshotIds.length
+    || sha(JSON.stringify(selectedLedgerOrder)) !== candidate.sourceSnapshotSetHash) throw new Error("current candidate source-set mismatch");
   const position = requireCurrentPublicV2Head(selected, ledger, "seoul-metro-route-map-positions");
   const molit = requireCurrentPublicV2Head(selected, ledger, MOLIT);
   const positionIndex = selected.indexOf(position.head);
@@ -322,27 +327,62 @@ function buildRefreshProof({ phase, candidateFile, ledgerFile, requestFile, hash
       snapshotId === previousSeoulSnapshotId && sourceId === SEOUL).length !== 1) {
     throw new Error("current Seoul evidence predecessor mismatch");
   }
-  const terminalPredecessorIds = new Set(candidate.sourceSnapshotIds.slice(0, -1));
+  const predecessorProjections = candidate.sourceSnapshots.map((projection, index) => ({
+    projection,
+    index,
+    snapshotId: candidate.sourceSnapshotIds[index],
+  })).filter(({ projection }) => projection.sourceId !== TRANSFER);
+  const terminalPredecessorIds = new Set(predecessorProjections.map(({ snapshotId }) => snapshotId));
   const terminalPredecessor = ledger.filter(({ snapshotId }) => terminalPredecessorIds.has(snapshotId));
-  if (terminalPredecessorIds.size !== CURRENT_CAPITAL_SOURCE_ROSTER.length - 1
-    || terminalPredecessor.length !== CURRENT_CAPITAL_SOURCE_ROSTER.length - 1) {
+  if (terminalPredecessorIds.size !== predecessorProjections.length
+    || terminalPredecessor.length !== predecessorProjections.length) {
     throw new Error("current accessibility terminal predecessor mismatch");
   }
-  const terminalPredecessorHash = sha(JSON.stringify(terminalPredecessor));
-  const transitionIdentity = { kind: PUBLIC_STATIC_NETWORK_V2_SUCCESSOR };
-  const predecessorIds = candidate.sourceSnapshotIds.slice(0, -1).map((snapshotId, index) => {
+  const predecessorIds = predecessorProjections.map(({ snapshotId, index }) => {
     if (index === positionIndex) return position.previousSnapshotId;
     if (index === molitIndex) return molit.previousSnapshotId;
     return snapshotId;
   });
-  const predecessorIdSet = new Set(predecessorIds); const predecessor = ledger.filter(({ snapshotId }) => predecessorIdSet.has(snapshotId));
-  const predecessorHash = sha(JSON.stringify(predecessor));
-  const evidenceIds = new Set(predecessorIds.flatMap((snapshotId, index) => {
-    const sourceId = candidate.sourceSnapshots[index].sourceId;
-    return [sourceId === SEOUL ? previousSeoulSnapshotId : snapshotId];
+  const predecessorIdSet = new Set(predecessorIds);
+  const predecessor = ledger.filter(({ snapshotId }) => predecessorIdSet.has(snapshotId));
+  const evidenceIds = new Set(predecessorIds.map((snapshotId, index) => {
+    const sourceId = predecessorProjections[index].projection.sourceId;
+    return sourceId === SEOUL ? previousSeoulSnapshotId : snapshotId;
   }));
   const evidence = ledger.filter(({ snapshotId }) => evidenceIds.has(snapshotId));
-  const evidenceHash = sha(JSON.stringify(evidence));
+  return {
+    evidenceHash: sha(JSON.stringify(evidence)),
+    molitPreviousSnapshotId: molit.previousSnapshotId,
+    positionPreviousSnapshotId: position.previousSnapshotId,
+    predecessorComplete: predecessorIdSet.size === predecessorProjections.length
+      && predecessor.length === predecessorProjections.length
+      && evidenceIds.size === predecessorProjections.length
+      && evidence.length === predecessorProjections.length,
+    predecessorHash: sha(JSON.stringify(predecessor)),
+    terminalPredecessorHash: sha(JSON.stringify(terminalPredecessor)),
+  };
+}
+
+function buildRefreshProof({ phase, candidateFile, inventoryFile, ledgerFile, requestFile, hashesFile, facilityFile, exitFile, stationFile, routeFile }) {
+  const candidate = parse(candidateFile.bytes, "current candidate"); const inventory = parse(inventoryFile.bytes, "source inventory"); const ledger = parse(ledgerFile.bytes, "source snapshot ledger");
+  const station = parse(stationFile.bytes, "activated station input"); const route = parse(routeFile.bytes, "activated route input");
+  validateCurrentCandidateSourceSet({ candidate, inventory, inventoryFile });
+  if (phase === ACTIVATED_CURRENT_OUTPUT) {
+    const request = parse(requestFile.bytes, "release request"); const hashes = parse(hashesFile.bytes, "hash evidence");
+    if (candidate.sourceSnapshotSetHash !== request.sourceSnapshotSetHash
+      || candidate.sourceSnapshotSetHash !== hashes.sourceSnapshotSetHash?.value) {
+      throw new Error("current candidate/request/hash binding mismatch");
+    }
+  }
+  const {
+    evidenceHash,
+    molitPreviousSnapshotId,
+    positionPreviousSnapshotId,
+    predecessorComplete,
+    predecessorHash,
+    terminalPredecessorHash,
+  } = deriveRefreshSourceProof({ candidate, ledger });
+  const transitionIdentity = { kind: PUBLIC_STATIC_NETWORK_V2_SUCCESSOR };
   const activatedSourceSet = station.candidate?.sourceSetSha256;
   if (phase === ACTIVATED_CURRENT_OUTPUT || phase === PRE_APPROVAL_CURRENT_CANDIDATE) {
     const facility = parse(facilityFile.bytes, "FACILITY admission");
@@ -364,9 +404,8 @@ function buildRefreshProof({ phase, candidateFile, ledgerFile, requestFile, hash
       throw new Error("activated producer boundary mismatch");
     }
   }
-  if (predecessorIdSet.size !== PREDECESSOR_SOURCE_ROSTER.length || predecessor.length !== PREDECESSOR_SOURCE_ROSTER.length
-    || evidenceIds.size !== PREDECESSOR_SOURCE_ROSTER.length || evidence.length !== PREDECESSOR_SOURCE_ROSTER.length
-    || activatedSourceSet !== route.candidate?.sourceSetSha256 || ![predecessorHash, candidate.sourceSnapshotSetHash].includes(activatedSourceSet)
+  if (!predecessorComplete || activatedSourceSet !== route.candidate?.sourceSetSha256
+    || ![predecessorHash, candidate.sourceSnapshotSetHash].includes(activatedSourceSet)
     || station.candidate?.candidateId !== candidate.candidateId || route.candidate?.candidateId !== candidate.candidateId) {
     throw new Error("activated predecessor source-set mismatch");
   }
@@ -375,8 +414,8 @@ function buildRefreshProof({ phase, candidateFile, ledgerFile, requestFile, hash
     evidenceSourceSetSha256: evidenceHash, facilityAdmissionBytesSha256: null,
     ...transitionIdentity,
     predecessorCandidateSourceSetSha256: predecessorHash,
-    positionPreviousSnapshotId: position.previousSnapshotId,
-    molitPreviousSnapshotId: molit.previousSnapshotId,
+    positionPreviousSnapshotId,
+    molitPreviousSnapshotId,
   };
 }
 
@@ -396,7 +435,7 @@ function candidateFixturePath(candidate) {
 
 async function inputFiles(root, phase) {
   const relatives = [
-    CANDIDATE_BUILD_SPEC, "tools/datapack/release/source-snapshots.json",
+    CANDIDATE_BUILD_SPEC, "tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json",
     "tools/datapack/release/current-capital-facility-source-admission.json",
     "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json", ...OUTPUTS,
   ];
@@ -576,7 +615,9 @@ async function buildAuthenticatedCurrentCapitalTransferEvidenceTransition({
     const snapshots = parse(snapshotsBytes, `current-capital refresh ${side} TRANSFER snapshots`);
     const descriptorBytes = bytes(descriptorOutputs[0].relative);
     const descriptor = parse(descriptorBytes, `current-capital refresh ${side} TRANSFER descriptor`);
-    const selected = snapshots.find(({ snapshotId }) => snapshotId === candidate.sourceSnapshotIds?.at(-1));
+    const transferProjection = candidate.sourceSnapshots?.find(({ sourceId }) => sourceId === TRANSFER);
+    const selected = snapshots.find(({ snapshotId, sourceId }) =>
+      snapshotId === transferProjection?.snapshotId && sourceId === TRANSFER);
     assertRebuiltCurrentLiveChainTransferCandidateIdentity(candidate, candidate, snapshots);
     if (candidate.sourceInventorySha256 !== sha(JSON.stringify(inventory))
       || candidate.networkEdgeEvidence?.sourceInventory?.path !== "tools/datapack/source-inventory.json"
@@ -644,7 +685,7 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
   const effectiveMarkerValue = effectiveMarker ? parse(effectiveMarker.bytes, "current-capital refresh effective transition marker") : null;
   const stationBefore = parse(files[OUTPUTS[0]].bytes, "activated station input");
   const routeBefore = parse(files[OUTPUTS[1]].bytes, "activated route input");
-  const proof = marker ? { alreadyCurrent: false } : buildRefreshProof({ phase, candidateFile: files[CANDIDATE_BUILD_SPEC], ledgerFile: files["tools/datapack/release/source-snapshots.json"], requestFile: files["tools/datapack/release/release-request.json"], hashesFile: files["tools/datapack/release/hash-evidence.json"], facilityFile: files["tools/datapack/release/current-capital-facility-source-admission.json"], exitFile: files["tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json"], stationFile: files[OUTPUTS[0]], routeFile: files[OUTPUTS[1]] });
+  const proof = marker ? { alreadyCurrent: false } : buildRefreshProof({ phase, candidateFile: files[CANDIDATE_BUILD_SPEC], inventoryFile: files["tools/datapack/source-inventory.json"], ledgerFile: files["tools/datapack/release/source-snapshots.json"], requestFile: files["tools/datapack/release/release-request.json"], hashesFile: files["tools/datapack/release/hash-evidence.json"], facilityFile: files["tools/datapack/release/current-capital-facility-source-admission.json"], exitFile: files["tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json"], stationFile: files[OUTPUTS[0]], routeFile: files[OUTPUTS[1]] });
   const { alreadyCurrent, ...transition } = proof;
   if (marker) {
     await readCurrentCapitalAccessibilityTransitionBoundary({ repositoryRoot: root });

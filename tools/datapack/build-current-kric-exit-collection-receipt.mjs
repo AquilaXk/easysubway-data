@@ -37,11 +37,11 @@ export function buildCurrentKricExitCollectionReceipt({ collectionPlanBytes, pro
     operationId,
     coverageSelector: SELECTOR,
     sourceId: SOURCE_ID,
-    providerMappingCount: 213,
-    stationLineQueryCount: 213,
-    stationCount: 199,
-    routeEdgeCount: 420,
-    queryCount: 420,
+    providerMappingCount: plan.providerMappings.length,
+    stationLineQueryCount: plan.stationLineQueries.length,
+    stationCount: new Set(plan.providerMappings.map(({ stationId }) => stationId)).size,
+    routeEdgeCount: plan.routeEdges.length,
+    queryCount: plan.queryPlan.length,
     collectionPlanSha256: sha256(planBytes),
     providerSnapshotSha256: sha256(snapshotBytes),
     collectionPlanDigest: plan.collectionPlanDigest,
@@ -65,11 +65,9 @@ export function canonicalCurrentKricExitCollectionReceiptJson(receipt) {
     || receipt.repository !== "AquilaXk/easysubway-data" || !/^[a-f0-9]{40}$/.test(receipt.repositorySha)
     || typeof receipt.operationId !== "string" || !/^[a-z0-9][a-z0-9-]{7,127}$/u.test(receipt.operationId)
     || receipt.coverageSelector !== SELECTOR || receipt.sourceId !== SOURCE_ID
-    || !Number.isSafeInteger(receipt.providerMappingCount) || receipt.providerMappingCount !== 213
-    || !Number.isSafeInteger(receipt.stationLineQueryCount) || receipt.stationLineQueryCount !== 213
-    || !Number.isSafeInteger(receipt.stationCount) || receipt.stationCount !== 199
-    || !Number.isSafeInteger(receipt.routeEdgeCount) || receipt.routeEdgeCount !== 420
-    || !Number.isSafeInteger(receipt.queryCount) || receipt.queryCount !== 420) {
+    || ![receipt.providerMappingCount, receipt.stationLineQueryCount, receipt.stationCount,
+      receipt.routeEdgeCount, receipt.queryCount]
+      .every((count) => Number.isSafeInteger(count) && count > 0)) {
     throw new Error("collection receipt identity mismatch");
   }
   if (receipt.schemaVersion === 2) validateRecoveredFrom(receipt.recoveredFrom, receipt.operationId);
@@ -132,7 +130,12 @@ function assertReceiptBinds({ plan, snapshot, receipt }) {
     || receipt.queryPlanSha256 !== plan.queryPlanSha256
     || receipt.providerSnapshotDigest !== snapshot.snapshotDigest
     || snapshot.collectionPlanDigest !== plan.collectionPlanDigest
-    || snapshot.queryPlanSha256 !== plan.queryPlanSha256) throw new Error("collection receipt binding mismatch");
+    || snapshot.queryPlanSha256 !== plan.queryPlanSha256
+    || receipt.providerMappingCount !== plan.providerMappings.length
+    || receipt.stationLineQueryCount !== plan.stationLineQueries.length
+    || receipt.stationCount !== new Set(plan.providerMappings.map(({ stationId }) => stationId)).size
+    || receipt.routeEdgeCount !== plan.routeEdges.length
+    || receipt.queryCount !== plan.queryPlan.length) throw new Error("collection receipt binding mismatch");
 }
 
 export async function main(argv, { env = process.env, log = console.log } = {}) {
@@ -152,7 +155,7 @@ export async function main(argv, { env = process.env, log = console.log } = {}) 
   await assertUnchanged(snapshot);
   const bundle = buildCurrentKricExitCollectionBundle({ collectionPlanBytes: plan.bytes, providerSnapshotBytes: snapshot.bytes, receipt });
   await publishBundle({ output: args.output, bytes: Buffer.from(canonicalCurrentKricExitCollectionBundleJson(bundle)) });
-  log(JSON.stringify({ result: "PASS", sourceId: SOURCE_ID, receiptSha256: receipt.receiptSha256, queryCount: 420 }));
+  log(JSON.stringify({ result: "PASS", sourceId: SOURCE_ID, receiptSha256: receipt.receiptSha256, queryCount: receipt.queryCount }));
   return receipt;
 }
 
@@ -183,7 +186,9 @@ function validatePlanSemantics(plan) {
   const stationQueries = plan.stationLineQueries;
   const edges = plan.routeEdges;
   const queries = plan.queryPlan;
-  if (![mappings, stationQueries, edges, queries].every(Array.isArray) || mappings.length !== 213 || stationQueries.length !== 213 || edges.length !== 420 || queries.length !== 420) throw new Error("collection plan coverage mismatch");
+  if (![mappings, stationQueries, edges, queries].every((entries) => Array.isArray(entries) && entries.length > 0)) {
+    throw new Error("collection plan coverage mismatch");
+  }
   const stationLines = new Set(); const providerTuples = new Set(); const mappingByStationLine = new Map();
   for (const mapping of mappings) {
     assertKeys(mapping, ["stationId", "lineId", "providerOperatorId", "providerLineId", "providerStationId"], "provider mapping keys");
@@ -193,7 +198,7 @@ function validatePlanSemantics(plan) {
     stationLines.add(stationLine); providerTuples.add(tuple); mappingByStationLine.set(stationLine, mapping);
   }
   if (plan.candidate.providerMappingSha256 !== sha256(canonicalJson(mappings)) || plan.candidate.topologySha256 !== sha256(canonicalJson(edges))) throw new Error("collection candidate inventory mismatch");
-  if (new Set(mappings.map(({ stationId }) => stationId)).size !== 199 || canonicalJson(mappings) !== canonicalJson([...mappings].sort((a, b) => compare(`${a.stationId}\0${a.lineId}`, `${b.stationId}\0${b.lineId}`)))) throw new Error("provider mapping order mismatch");
+  if (canonicalJson(mappings) !== canonicalJson([...mappings].sort((a, b) => compare(`${a.stationId}\0${a.lineId}`, `${b.stationId}\0${b.lineId}`)))) throw new Error("provider mapping order mismatch");
   const stationIds = [...new Set(mappings.map(({ stationId }) => stationId))].sort(compare);
   if (plan.candidate.stationSetSha256 !== sha256(canonicalJson(stationIds))) throw new Error("collection candidate station set mismatch");
   const queryIds = new Set(); const queryTuple = new Set(); const queryById = new Map();
@@ -207,10 +212,13 @@ function validatePlanSemantics(plan) {
     queryIds.add(query.queryId); queryTuple.add(tuple); queryById.set(query.queryId, query);
   }
   if (canonicalJson(queries) !== canonicalJson([...queries].sort(compareQuery))) throw new Error("provider query order mismatch");
-  const stationQueryIds = new Set(); const edgeById = new Map(edges.map((edge) => [edge.routeEdgeId, edge]));
+  const stationQueryIds = new Set(); const stationQueryLines = new Set();
+  const edgeById = new Map(edges.map((edge) => [edge.routeEdgeId, edge]));
   for (const entry of stationQueries) {
     assertKeys(entry, ["stationLineId", "queryIds"], "station-line query keys");
     if (typeof entry.stationLineId !== "string" || !stationLines.has(entry.stationLineId.replace(":", "\0")) || !Array.isArray(entry.queryIds) || entry.queryIds.length === 0) throw new Error("station-line query relation mismatch");
+    if (stationQueryLines.has(entry.stationLineId)) throw new Error("station-line query relation mismatch");
+    stationQueryLines.add(entry.stationLineId);
     if (canonicalJson(entry.queryIds) !== canonicalJson([...entry.queryIds].sort((a, b) => compareQuery(queryById.get(a), queryById.get(b))))) throw new Error("station-line query order mismatch");
     const mapping = mappingByStationLine.get(entry.stationLineId.replace(":", "\0"));
     for (const id of entry.queryIds) {
@@ -221,7 +229,11 @@ function validatePlanSemantics(plan) {
       stationQueryIds.add(id);
     }
   }
-  if (stationQueryIds.size !== 420 || canonicalJson(stationQueries) !== canonicalJson([...stationQueries].sort((a, b) => compare(a.stationLineId, b.stationLineId)))) throw new Error("station-line query coverage mismatch");
+  const mappedStationLineIds = new Set([...stationLines].map((key) => key.replace("\0", ":")));
+  if (stationQueryIds.size !== queries.length || !sameSet(stationQueryLines, mappedStationLineIds)
+    || canonicalJson(stationQueries) !== canonicalJson([...stationQueries].sort((a, b) => compare(a.stationLineId, b.stationLineId)))) {
+    throw new Error("station-line query coverage mismatch");
+  }
   const edgeIds = new Set();
   for (const edge of edges) {
     assertKeys(edge, ["routeEdgeId", "fromStationId", "toStationId", "lineId", "edgeType", "servicePattern", "serviceClass"], "route edge keys");
@@ -232,7 +244,12 @@ function validatePlanSemantics(plan) {
     const edge = edgeIds.has(query.routeEdgeId) ? edges.find(({ routeEdgeId }) => routeEdgeId === query.routeEdgeId) : undefined;
     if (!edge || query.lineName !== CAPITAL_LINE_NAMES.get(edge.lineId)) throw new Error("provider query line identity mismatch");
   }
-  if (canonicalJson(edges) !== canonicalJson([...edges].sort((a, b) => compare(a.routeEdgeId, b.routeEdgeId))) || new Set(queries.map(({ routeEdgeId }) => routeEdgeId)).size !== 420 || [...queryById.values()].some(({ routeEdgeId }) => !edgeIds.has(routeEdgeId))) throw new Error("route edge coverage mismatch");
+  const queryRouteEdgeIds = new Set(queries.map(({ routeEdgeId }) => routeEdgeId));
+  if (canonicalJson(edges) !== canonicalJson([...edges].sort((a, b) => compare(a.routeEdgeId, b.routeEdgeId)))
+    || queryRouteEdgeIds.size !== queries.length || !sameSet(queryRouteEdgeIds, edgeIds)
+    || [...queryById.values()].some(({ routeEdgeId }) => !edgeIds.has(routeEdgeId))) {
+    throw new Error("route edge coverage mismatch");
+  }
 }
 
 function validateSnapshotSemantics(snapshot) {
@@ -244,16 +261,10 @@ function validateSnapshotSemantics(snapshot) {
 function validateSemanticPair(plan, snapshot) {
   if (snapshot.schemaVersion !== 1 || snapshot.artifactKind !== "kric-exit-path-provider-snapshot" || snapshot.sourceId !== SOURCE_ID || snapshot.credentialRedacted !== true
     || snapshot.collectionPlanDigest !== plan.collectionPlanDigest || snapshot.queryPlanSha256 !== plan.queryPlanSha256) throw new Error("plan/snapshot identity mismatch");
-  if (!Array.isArray(plan.providerMappings) || !Array.isArray(plan.stationLineQueries) || !Array.isArray(plan.routeEdges) || !Array.isArray(plan.queryPlan)
-    || plan.providerMappings.length !== 213 || plan.stationLineQueries.length !== 213 || plan.routeEdges.length !== 420 || plan.queryPlan.length !== 420
-    || new Set(plan.providerMappings.map(({ stationId }) => stationId)).size !== 199) throw new Error("collection plan coverage mismatch");
-  const lineCounts = new Map();
-  for (const query of plan.queryPlan) lineCounts.set(query.lineName, (lineCounts.get(query.lineName) ?? 0) + 1);
-  if (canonicalJson([...lineCounts].sort(([a], [b]) => compare(a, b))) !== canonicalJson([["수도권 2호선", 102], ["수도권 4호선", 100], ["수도권 5호선", 110], ["수도권 6호선", 78], ["수도권 신분당", 30]])) throw new Error("capital selector coverage mismatch");
   if (!snapshot.coverage || snapshot.coverage.requestPlanComplete !== true || !Array.isArray(snapshot.coverage.queryIds)
     || canonicalJson(snapshot.queryPlan) !== canonicalJson(plan.queryPlan)
     || canonicalJson(snapshot.coverage.queryIds) !== canonicalJson(plan.queryPlan.map(({ queryId }) => queryId))) throw new Error("provider snapshot query coverage mismatch");
-  if (!Array.isArray(snapshot.results) || snapshot.results.length !== 420) throw new Error("provider snapshot result coverage mismatch");
+  if (!Array.isArray(snapshot.results) || snapshot.results.length !== plan.queryPlan.length) throw new Error("provider snapshot result coverage mismatch");
   const ids = plan.queryPlan.map(({ queryId }) => queryId);
   const seen = new Set();
   for (let index = 0; index < snapshot.results.length; index += 1) {
@@ -339,6 +350,9 @@ function assertSha256(value, label) { if (typeof value !== "string" || !/^[a-f0-
 function canonicalObject(value) { if (Array.isArray(value)) return value.map(canonicalObject); if (!value || typeof value !== "object") return value; return Object.fromEntries(Object.keys(value).sort(compare).map((key) => [key, canonicalObject(value[key])])); }
 function canonicalJson(value) { return JSON.stringify(canonicalObject(value)); }
 function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
+function sameSet(left, right) {
+  return left.size === right.size && [...left].every((value) => right.has(value));
+}
 function compare(left, right) { return Buffer.compare(Buffer.from(left), Buffer.from(right)); }
 function compareQuery(left, right) { if (!left || !right) return 1; return compare(left.providerStationId, right.providerStationId) || compare(left.providerNextStationId, right.providerNextStationId) || compare(left.routeEdgeId, right.routeEdgeId) || compare(left.queryId, right.queryId); }
 function compareRow(left, right) { return compare(String(left.mvPathMgNo), String(right.mvPathMgNo)) || compare(String(left.exitMvTpOrdr), String(right.exitMvTpOrdr)) || compare(canonicalJson(left), canonicalJson(right)); }

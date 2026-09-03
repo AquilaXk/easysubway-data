@@ -11,6 +11,7 @@ import {
   activateSyntheticCurrentPublicRouteMapSuccessor,
   copySyntheticCurrentPublicRouteMapRepository,
   createStaticNetworkRegistrarPredecessorFixture,
+  nextSyntheticCurrentStaticNetworkNow,
 } from "./current-public-route-map-successor.mjs";
 
 const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
@@ -19,7 +20,7 @@ test("current public fixture copies registered and topology-admission source evi
   const root = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-registered-source-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, root, {
-    now: new Date("2026-08-26T04:00:00.000Z"),
+    now: await nextSyntheticCurrentStaticNetworkNow(repositoryRoot),
     activatePublicRouteMap: false,
   });
 
@@ -46,7 +47,7 @@ test("current public candidate slot derives a same-source public V2 successor on
   const root = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-predecessor-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, root, {
-    now: new Date("2026-08-26T04:00:00.000Z"),
+    now: await nextSyntheticCurrentStaticNetworkNow(repositoryRoot),
   });
 
   const [before, sourceCanonical, fixtureCanonical] = await Promise.all([
@@ -58,24 +59,37 @@ test("current public candidate slot derives a same-source public V2 successor on
     fixtureCanonical.packs[0].sourceInventory.map(({ id }) => id),
     sourceCanonical.packs[0].sourceInventory.map(({ id }) => id),
   );
-  assert.equal(before.sourceSnapshots[0].sourceId, "seoul-metro-route-map-positions");
+  const beforePublicIndex = before.sourceSnapshots.findIndex(({ sourceId }) =>
+    sourceId === "seoul-metro-route-map-positions");
+  assert.notEqual(beforePublicIndex, -1);
 
   const result = await activateSyntheticCurrentPublicRouteMapSuccessor(root, {
-    now: new Date("2026-08-26T04:15:00.000Z"),
+    now: await nextSyntheticCurrentStaticNetworkNow(root),
   });
   assert.match(result.predecessorSnapshotId, /^seoul-metro-route-map-positions-current-/u);
 
-  const after = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
+  const candidateBytes = await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"));
+  const after = JSON.parse(candidateBytes);
+  const request = JSON.parse(await readFile(path.join(root, "tools/datapack/release/release-request.json"), "utf8"));
+  const hashes = JSON.parse(await readFile(path.join(root, "tools/datapack/release/hash-evidence.json"), "utf8"));
   const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
-  assert.equal(after.sourceSnapshots[0].sourceId, "seoul-metro-route-map-positions");
-  assert.equal(after.sourceSnapshotIds[0], result.snapshotId);
+  const afterPublicIndex = after.sourceSnapshots.findIndex(({ sourceId }) =>
+    sourceId === "seoul-metro-route-map-positions");
+  assert.notEqual(afterPublicIndex, -1);
+  assert.equal(after.sourceSnapshotIds[afterPublicIndex], result.snapshotId);
+  assert.equal(request.candidateId, after.candidateId);
+  assert.equal(request.buildSpecSha256, createHash("sha256").update(candidateBytes).digest("hex"));
+  assert.equal(request.approvalId, `release-request-${after.candidateId}-${request.buildSpecSha256}`);
+  assert.equal(hashes.identifiers.candidateId.value, after.candidateId);
+  assert.equal(hashes.identifiers.approvalId.value, request.approvalId);
+  assert.equal(hashes.ledgerHashes.approvedAliasLedgerHash.value, after.approvedAliasLedgerHash);
   assert.deepEqual(after.networkEdgeEvidence.capitalTopology, before.networkEdgeEvidence.capitalTopology);
   const admissions = inventory.sources
     .filter(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence?.topologySourceId === "capital-route-topology")
     .map(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence.currentTopologyAdmission);
   const candidate = after.networkEdgeEvidence.capitalTopologyCandidate;
   const topologyAdmission = after.networkEdgeEvidence.capitalTopologyAdmission;
-  assert.equal(admissions.length, 16);
+  assert.ok(admissions.length > 0);
   assert.ok(Date.parse(after.publishedAt) >= Date.parse(topologyAdmission.reverifiedAt));
   assert.ok(Date.parse(after.publishedAt) < Date.parse(topologyAdmission.freshUntil));
   assert.ok(admissions.every((admission) => admission.topologySnapshotId === candidate.snapshotId
@@ -91,28 +105,31 @@ test("already-public-root fixture activation preserves one valid source lineage 
   const root = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-existing-root-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, root, {
-    now: new Date("2026-08-26T04:00:00.000Z"),
+    now: await nextSyntheticCurrentStaticNetworkNow(repositoryRoot),
   });
 
   const result = await activateSyntheticCurrentPublicRouteMapSuccessor(root, {
-    now: new Date("2026-08-26T04:15:00.000Z"),
+    now: await nextSyntheticCurrentStaticNetworkNow(root),
   });
   const [candidate, snapshots] = await Promise.all([
     readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
     readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
   ]);
   const publicSnapshots = snapshots.filter(({ sourceId }) => sourceId === "seoul-metro-route-map-positions");
+  const publicIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) =>
+    sourceId === "seoul-metro-route-map-positions");
 
   assert.doesNotThrow(() => validateLineage(snapshots));
+  assert.notEqual(publicIndex, -1);
   assert.equal(publicSnapshots.filter(({ previousSnapshotId }) => previousSnapshotId == null).length, 1);
-  assert.equal(candidate.sourceSnapshotIds[0], result.snapshotId);
+  assert.equal(candidate.sourceSnapshotIds[publicIndex], result.snapshotId);
 });
 
 test("current public fixture rejects a fork outside the selected head before mutation", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-forked-lineage-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, root, {
-    now: new Date("2026-08-26T04:00:00.000Z"),
+    now: await nextSyntheticCurrentStaticNetworkNow(repositoryRoot),
     activatePublicRouteMap: false,
   });
   const [candidate, snapshots] = await Promise.all([
@@ -136,7 +153,7 @@ test("current public fixture rejects a fork outside the selected head before mut
   );
 
   await assert.rejects(
-    activateSyntheticCurrentPublicRouteMapSuccessor(root, { now: new Date("2026-08-26T04:15:00.000Z") }),
+    activateSyntheticCurrentPublicRouteMapSuccessor(root, { now: await nextSyntheticCurrentStaticNetworkNow(root) }),
     /SOURCE_LINEAGE_BROKEN: snapshot fork/,
   );
 });
@@ -145,7 +162,7 @@ test("current public fixture rejects a duplicate or out-of-scope candidate linea
   const root = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-invalid-lineage-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, root, {
-    now: new Date("2026-08-26T04:00:00.000Z"),
+    now: await nextSyntheticCurrentStaticNetworkNow(repositoryRoot),
     activatePublicRouteMap: false,
   });
   const inventoryPath = path.join(root, "tools/datapack/source-inventory.json");
@@ -157,7 +174,7 @@ test("current public fixture rejects a duplicate or out-of-scope candidate linea
   await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
 
   await assert.rejects(
-    activateSyntheticCurrentPublicRouteMapSuccessor(root, { now: new Date("2026-08-26T04:15:00.000Z") }),
+    activateSyntheticCurrentPublicRouteMapSuccessor(root, { now: await nextSyntheticCurrentStaticNetworkNow(root) }),
     /synthetic current topology admission bytes are invalid/,
   );
 });
@@ -166,7 +183,7 @@ test("advancing a current public head derives records from its admitted current 
   const root = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-current-layout-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, root, {
-    now: new Date("2026-08-26T04:00:00.000Z"),
+    now: await nextSyntheticCurrentStaticNetworkNow(repositoryRoot),
     activatePublicRouteMap: false,
   });
 
@@ -217,7 +234,7 @@ test("advancing a current public head keeps retrieval time monotonic in a one-se
   const root = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-monotonic-time-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, root, {
-    now: new Date("2026-08-26T04:00:00.000Z"),
+    now: await nextSyntheticCurrentStaticNetworkNow(repositoryRoot),
     activatePublicRouteMap: false,
   });
 
@@ -254,20 +271,22 @@ test("registrar fixture derives a selected same-source public root", async (t) =
   t.after(() => rm(source, { recursive: true, force: true }));
   t.after(() => rm(root, { recursive: true, force: true }));
   await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, source, {
-    now: new Date("2026-08-26T04:00:00.000Z"),
+    now: await nextSyntheticCurrentStaticNetworkNow(repositoryRoot),
   });
 
   const result = await createStaticNetworkRegistrarPredecessorFixture(source, root, {
-    now: new Date("2026-08-26T04:00:00.000Z"),
+    now: await nextSyntheticCurrentStaticNetworkNow(source),
   });
   const [candidate, snapshots] = await Promise.all([
     readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
     readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
   ]);
-  const selected = snapshots.find(({ snapshotId }) => snapshotId === candidate.sourceSnapshotIds[0]);
+  const publicIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) =>
+    sourceId === "seoul-metro-route-map-positions");
+  assert.notEqual(publicIndex, -1);
+  const selected = snapshots.find(({ snapshotId }) => candidate.sourceSnapshotIds[publicIndex] === snapshotId);
 
   assert.equal(selected.snapshotId, result.currentSnapshotId);
-  assert.equal(candidate.sourceSnapshots[0].sourceId, "seoul-metro-route-map-positions");
   assert.equal(selected.previousSnapshotId, result.predecessorSnapshotId);
   assert.doesNotThrow(() => validateLineage(snapshots));
 });

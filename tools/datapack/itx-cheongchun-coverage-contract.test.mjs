@@ -40,11 +40,15 @@ test("deterministic ADMITTED fixture는 test-only이며 production evidence에 �
     id: "test-only-itx-cheongchun-admitted-v1",
     sha256Source: "FIXTURE_FILE_BYTES",
   });
-  assert.deepEqual(fixture.canonicalPackIdentity, {
+  const currentProductionPackIdentity = {
     id: topologyEvidence.pack.id,
     sha256: topologyEvidence.pack.outputSha256,
     sqliteSha256: topologyEvidence.pack.outputSqliteSha256,
-  });
+  };
+  assert.match(fixture.canonicalPackIdentity.id, /^test-only-/u);
+  assert.match(fixture.canonicalPackIdentity.sha256, /^[a-f0-9]{64}$/u);
+  assert.match(fixture.canonicalPackIdentity.sqliteSha256, /^[a-f0-9]{64}$/u);
+  assert.notDeepEqual(fixture.canonicalPackIdentity, currentProductionPackIdentity);
 
   const forbiddenProductionSurfaces = [
     new URL("./source-inventory.json", import.meta.url),

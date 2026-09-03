@@ -45,11 +45,20 @@ test("current provider snapshot을 current full-capital station-line EXIT admiss
 
   assert.equal(result.normalizedSnapshot.schemaVersion, 4);
   assert.equal(result.admission.schemaVersion, 2);
-  assert.equal(result.normalizedSnapshot.queryPlan.length, 420);
-  assert.equal(result.admission.cells.length, 213);
-  assert.equal(new Set(result.admission.cells.map(({ stationId }) => stationId)).size, 199);
+  assert.deepEqual(
+    result.normalizedSnapshot.queryPlan.map(({ queryId }) => queryId),
+    input.collectionPlan.queryPlan.map(({ queryId }) => queryId),
+  );
+  assert.deepEqual(
+    result.admission.cells.map(({ stationId, lineId }) => `${stationId}\0${lineId}`).sort(),
+    input.facilityAdmission.cells.map(({ stationId, lineId }) => `${stationId}\0${lineId}`).sort(),
+  );
   assert.equal(result.admission.decision, "GO");
-  assert.equal(result.admission.materializerEvidenceRows.length, 213);
+  assert.deepEqual(
+    result.admission.materializerEvidenceRows
+      .map(({ stationId, lineId }) => `${stationId}\0${lineId}`).sort(),
+    input.facilityAdmission.cells.map(({ stationId, lineId }) => `${stationId}\0${lineId}`).sort(),
+  );
   assert.equal(
     result.admission.sourceIdentity.providerSnapshotDigest,
     JSON.parse(input.providerSnapshotBytes).snapshotDigest,
@@ -179,14 +188,21 @@ test("current capital FACILITY 형식은 legacy 2-station matrix로 downscope하
   );
 });
 
-test("#331 builder canonical 213/199 FACILITY는 420 EXIT query GO로 직접 결속된다", async () => {
+test("canonical FACILITY set은 plan-derived EXIT query GO로 직접 결속된다", async () => {
   const {
     bundle, candidateBuildSpec, facilityAdmission, inventory, ledger, sourceSnapshots,
     successorObservedAt,
   } = await fullCapitalFixture();
   const result = buildCurrentExitPathSourceAdmission({ providerSnapshotBytes: bundle.snapshotBytes, collectionPlan: JSON.parse(bundle.planBytes), facilityAdmission, candidateBuildSpec, sourceInventory: inventory, sourceSnapshots, observedAt: successorObservedAt });
-  assert.equal(facilityAdmission.cells.length, 213); assert.equal(new Set(facilityAdmission.cells.map(({ stationId }) => stationId)).size, 199);
-  assert.equal(result.normalizedSnapshot.queryPlan.length, 420); assert.equal(result.admission.cells.length, 213); assert.equal(result.admission.decision, "GO");
+  assert.deepEqual(
+    result.admission.cells.map(({ stationId, lineId }) => `${stationId}\0${lineId}`).sort(),
+    facilityAdmission.cells.map(({ stationId, lineId }) => `${stationId}\0${lineId}`).sort(),
+  );
+  assert.deepEqual(
+    result.normalizedSnapshot.queryPlan.map(({ queryId }) => queryId),
+    JSON.parse(bundle.planBytes).queryPlan.map(({ queryId }) => queryId),
+  );
+  assert.equal(result.admission.decision, "GO");
   const snapshotRawDrift = structuredClone(facilityAdmission);
   snapshotRawDrift.sourceIdentity.rawSha256 = "f".repeat(64);
   const { admissionDigest: ignoredDigest, ...snapshotRawPayload } = snapshotRawDrift;
@@ -431,7 +447,7 @@ async function fullCapitalFixture() {
   const productionSnapshots = JSON.parse(productionSnapshotsBytes); const productionSpec = JSON.parse(productionSpecBytes);
   const previousId = productionSpec.sourceSnapshots.find(({ sourceId }) => sourceId === snapshot.sourceId)?.snapshotId;
   const previous = productionSnapshots.find((entry) => entry.sourceId === snapshot.sourceId && entry.snapshotId === previousId);
-  const ledger = { schemaVersion: 1, artifactKind: "official-source-snapshot", sourceId: snapshot.sourceId, snapshotId: snapshot.snapshotId, provider: source.provider, rawSha256, rawObjectUri: "oci://fixture/easysubway-datapacks/raw.json", rawReceipt: { sourceId: snapshot.sourceId, snapshotId: snapshot.snapshotId, snapshotRawSha256: snapshot.rawSha256, snapshotFileSha256: sha256(snapshotBytes), rawObjectSha256: rawSha256, capturedAt: snapshot.capturedAt, storedAt: snapshot.observedAt, byteSize: 1 }, contentSha256: snapshot.contentSha256, redactedRequestFingerprint: snapshot.redactedRequestFingerprint, schemaFingerprint: snapshot.schemaFingerprint, retrievedAt: snapshot.capturedAt, sourceUpdatedAt: snapshot.observedAt, rowCount: snapshot.rowCount, coverageCount: 213, freshnessExpiresAt: snapshot.freshUntil, rawRetentionExpiresAt: new Date(CURRENT_SOURCE_HEAD_AT + 90 * 24 * 60 * 60 * 1_000).toISOString(), governancePolicyVersion: "fixture", governancePolicySha256: "b".repeat(64), adminReviewRecordHash: admission.adminReviewRecordHash, previousSnapshotId: previous.snapshotId, diffSummary: {}, snapshotStatus: "LOCKED", fetchStatus: "SUCCESS", schemaStatus: "PASS", licenseStatus: "PASS", credentialRedacted: true, redistributionAllowed: true };
+  const ledger = { schemaVersion: 1, artifactKind: "official-source-snapshot", sourceId: snapshot.sourceId, snapshotId: snapshot.snapshotId, provider: source.provider, rawSha256, rawObjectUri: "oci://fixture/easysubway-datapacks/raw.json", rawReceipt: { sourceId: snapshot.sourceId, snapshotId: snapshot.snapshotId, snapshotRawSha256: snapshot.rawSha256, snapshotFileSha256: sha256(snapshotBytes), rawObjectSha256: rawSha256, capturedAt: snapshot.capturedAt, storedAt: snapshot.observedAt, byteSize: 1 }, contentSha256: snapshot.contentSha256, redactedRequestFingerprint: snapshot.redactedRequestFingerprint, schemaFingerprint: snapshot.schemaFingerprint, retrievedAt: snapshot.capturedAt, sourceUpdatedAt: snapshot.observedAt, rowCount: snapshot.rowCount, coverageCount: facilityPlan.stationLineProviderMappings.length, freshnessExpiresAt: snapshot.freshUntil, rawRetentionExpiresAt: new Date(CURRENT_SOURCE_HEAD_AT + 90 * 24 * 60 * 60 * 1_000).toISOString(), governancePolicyVersion: "fixture", governancePolicySha256: "b".repeat(64), adminReviewRecordHash: admission.adminReviewRecordHash, previousSnapshotId: previous.snapshotId, diffSummary: {}, snapshotStatus: "LOCKED", fetchStatus: "SUCCESS", schemaStatus: "PASS", licenseStatus: "PASS", credentialRedacted: true, redistributionAllowed: true };
   ledger.diffSummary = buildSnapshotDiff(previous, ledger);
   const governancePolicy = JSON.parse(governancePolicyBytes); const freshnessPolicy = JSON.parse(freshnessPolicyBytes);
   ledger.governancePolicyVersion = governancePolicy.policyVersion; ledger.governancePolicySha256 = sha256(governancePolicyBytes);

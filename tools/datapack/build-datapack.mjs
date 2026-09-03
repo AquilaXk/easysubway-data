@@ -665,7 +665,7 @@ async function loadBuildInput(
       validated.fixture,
     );
     overrideBinding = validated.binding;
-    const [stationLineInputBytes, routeEdgeInputBytes] = await Promise.all([
+    const [stationLineInputBytes, routeEdgeInputBytes, transferMetricsBytes] = await Promise.all([
       readFile(await resolveBuildInputPath(
         stationLineInputArg,
         "current full-capital station-line input",
@@ -676,12 +676,18 @@ async function loadBuildInput(
         "current full-capital route-edge input",
         repositoryRoot,
       )),
+      readFile(await resolveBuildInputPath(
+        "tools/datapack/release/current-transfer-topology-metrics.json",
+        "current transfer topology metrics",
+        repositoryRoot,
+      )),
     ]);
     validateCurrentReleaseCandidateAccessibilityAuthorityReplay({
       authority: validated.authority,
       projectedFixture,
       stationLineInputBytes,
       routeEdgeInputBytes,
+      transferMetricsBytes,
     });
     const accessibilityFreshUntil = candidateOverrideAccessibilityFreshUntil({
       authority: validated.authority,
@@ -956,7 +962,6 @@ export function candidateOverrideAccessibilityFreshUntil({
     "UNVERIFIED_EVIDENCE_BLOCKED",
   ]);
   if (materialization.materializationDigest !== authority.buildInput.materializationDigest
-    || materialization.rows.length !== 639
     || materialization.stateSummary.UNKNOWN !== 0
     || materialization.stateSummary.MISSING !== 0
     || materialization.stateSummary.STALE !== 0

@@ -10,34 +10,28 @@ import { projectCandidateFixtureForAccessibilityAuthority } from "./build-datapa
 import { buildCurrentCapitalRouteEdgeInput, canonicalCurrentCapitalRouteEdgeInputJson, main } from "./build-current-capital-route-edge-input.mjs";
 import { buildCurrentCapitalStationLineInput, canonicalCurrentCapitalStationLineInputJson } from "./build-current-capital-station-line-input.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
-import { canonicalRideEdgeSetSha256, evaluateRouteAccessibilityEdges } from "./evaluate-route-accessibility-edges.mjs";
-import { fixture } from "./build-current-capital-station-line-input.test.mjs";
+import { canonicalRideEdgeSetSha256, evaluateRouteAccessibilityEdges, routeEdgeSha256 } from "./evaluate-route-accessibility-edges.mjs";
+import { buildCurrentCapitalStationLineInputFixture } from "./test-fixtures/current-capital-station-line-input.mjs";
 import {
   copySyntheticCurrentPublicRouteMapRepository,
   nextSyntheticCurrentStaticNetworkNow,
 } from "./test-fixtures/current-public-route-map-successor.mjs";
 
-test("full-capital route fan-in은 2198+213+213+30 edge contract를 만든다", async () => {
-  const input = await fixture();
+test("full-capital route fan-in은 input-derived edge sets를 만든다", async () => {
+  const input = await buildCurrentCapitalStationLineInputFixture();
   const routeOnly = addFullRouteStationLines(input);
-  input.canonicalPack.packs[0].networkEdges = rideEdges(2198);
-  Object.assign(input.canonicalPack.packs[0].networkEdges[0], {
-    fromNodeId: `${routeOnly[0].stationId}:${routeOnly[0].lineId}`,
-    toNodeId: `${routeOnly[1].stationId}:${routeOnly[1].lineId}`,
-  });
+  input.canonicalPack.packs[0].networkEdges = [rideEdgeBetween(routeOnly[0], routeOnly[1])];
   const result = buildCurrentCapitalRouteEdgeInput(input);
   assert.deepEqual(Object.keys(result).sort(), ["candidate", "routeEdges", "stationLines"]);
-  assert.equal(result.stationLines.length, 1102);
-  assert.ok(result.stationLines.some(({ stationId }) => stationId === routeOnly[0].stationId));
-  assert.equal(result.routeEdges.length, 2654);
-  assert.deepEqual(Object.fromEntries(["RIDE", "ENTRY", "EXIT", "IN_STATION_TRANSFER"].map((type) => [type, result.routeEdges.filter((edge) => edge.edgeType === type).length])), { RIDE: 2198, ENTRY: 213, EXIT: 213, IN_STATION_TRANSFER: 30 });
-  assert.equal(new Set(result.routeEdges.map(({ edgeId }) => edgeId)).size, 2654);
-  assert.ok(result.routeEdges.filter(({ edgeType }) => edgeType === "IN_STATION_TRANSFER").every(({ durationSeconds, distanceMeters }) => durationSeconds === 0 && distanceMeters > 0));
   const station = buildCurrentCapitalStationLineInput(input);
-  const materialization = materializeStationLineAccessibility({ ...station, observedAt: "2026-08-01T01:00:00.000Z" });
-  const policy = evaluatorPolicy(canonicalRideEdgeSetSha256(result.routeEdges.filter(({ edgeType }) => edgeType === "RIDE")));
-  const evaluated = evaluateRouteAccessibilityEdges({ candidate: result.candidate, evaluationAt: "2026-08-01T01:00:00.000Z", stationLines: result.stationLines, routeEdges: result.routeEdges, materialization }, policy);
-  assert.equal(evaluated.denominator.edgeCount, 2654);
+  const rides = routeFixtureRides(input.canonicalPack.packs[0].networkEdges);
+  assertExactRouteFanIn(result.routeEdges, { rides, stationLines: station.stationLines, metrics: input.transferMetrics.metrics });
+  assert.ok(result.stationLines.some(({ stationId }) => stationId === routeOnly[0].stationId));
+  const evaluationAt = input.candidateBuildSpec.publishedAt;
+  const materialization = materializeStationLineAccessibility({ ...station, observedAt: evaluationAt });
+  const policy = evaluatorPolicy(canonicalRideEdgeSetSha256(rides));
+  const evaluated = evaluateRouteAccessibilityEdges({ candidate: result.candidate, evaluationAt, stationLines: result.stationLines, routeEdges: result.routeEdges, materialization }, policy);
+  assert.equal(evaluated.denominator.edgeCount, result.routeEdges.length);
   const terminalExit = materialization.rows.find(({ state, domain }) => state === "UNVERIFIED_EVIDENCE_BLOCKED" && domain === "EXIT");
   assert.ok(terminalExit);
   const terminalExitEdge = result.routeEdges.find(({ edgeType, fromNodeId }) => edgeType === "EXIT" && fromNodeId === `${terminalExit.stationId}:${terminalExit.lineId}`);
@@ -48,15 +42,15 @@ test("full-capital route fan-in은 2198+213+213+30 edge contract를 만든다", 
 });
 
 test("route builder 직접 호출은 projected fixture의 non-RIDE drift를 거부한다", async () => {
-  const input = await fixture();
-  addFullRouteStationLines(input);
+  const input = await buildCurrentCapitalStationLineInputFixture();
+  const routeOnly = addFullRouteStationLines(input);
   input.canonicalPack.packs[0].networkEdges = [
-    ...rideEdges(2198),
+    rideEdgeBetween(routeOnly[0], routeOnly[1]),
     {
       id: "unexpected-walkway",
       edgeType: "WALKWAY",
-      fromNodeId: "station-000",
-      toNodeId: "station-001",
+      fromNodeId: routeOnly[0].stationId,
+      toNodeId: routeOnly[1].stationId,
       durationSeconds: 60,
       distanceMeters: 80,
     },
@@ -64,7 +58,7 @@ test("route builder 직접 호출은 projected fixture의 non-RIDE drift를 거�
 
   assert.throws(
     () => buildCurrentCapitalRouteEdgeInput(input),
-    /projected edge denominator mismatch/,
+    /full-capital RIDE schema mismatch/,
   );
 });
 
@@ -91,9 +85,7 @@ test("accessibility-authority projector는 합성 current public successor를 �
     repositoryRoot,
   });
 
-  assert.deepEqual(edgeCounts(projected.packs[0].networkEdges), {
-    RIDE: 2198,
-  });
+  assertExactEdges(routeFixtureRides(projected.packs[0].networkEdges), routeFixtureRides(sourceFixture.packs[0].networkEdges));
 });
 
 test("accessibility-authority replay도 historical accessibility provenance drift를 거부한다", async () => {
@@ -121,10 +113,12 @@ test("accessibility-authority replay도 historical accessibility provenance drif
 test("route CLI만 temporary fixed target에 exact two-file handoff를 원자 publish한다", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "current-capital-full-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const input = await fixture();
+  const input = await buildCurrentCapitalStationLineInputFixture();
   input.sourceSnapshots = JSON.parse(canonical(input.sourceSnapshots));
   const sourceSet = sha(JSON.stringify(input.sourceSnapshots));
-  const evidenceSourceSet = sha(JSON.stringify(input.sourceSnapshots.slice(0, -1)));
+  const transferSnapshotId = input.candidateBuildSpec.sourceSnapshots
+    .find(({ sourceId }) => sourceId === "seoul-metro-transfer-distance-duration").snapshotId;
+  const evidenceSourceSet = sha(JSON.stringify(input.sourceSnapshots.filter(({ snapshotId }) => snapshotId !== transferSnapshotId)));
   input.candidateBuildSpec.sourceSnapshotSetHash = sourceSet;
   input.sourceSetTransition.currentCandidateSourceSetSha256 = sourceSet;
   input.sourceSetTransition.evidenceSourceSetSha256 = evidenceSourceSet;
@@ -138,8 +132,9 @@ test("route CLI만 temporary fixed target에 exact two-file handoff를 원자 pu
   resealReceipt(input.exitReceipt);
   input.candidateBuildSpec.sourceInventorySha256 = sha(canonical(input.sourceInventory));
   input.candidateBuildSpec.networkEdgeEvidence.sourceInventory.sha256 = sha(canonical(input.sourceInventory));
-  addFullRouteStationLines(input);
-  input.canonicalPack.packs[0].networkEdges = rideEdges(2198);
+  const routeOnly = addFullRouteStationLines(input);
+  input.canonicalPack.packs[0].networkEdges = [rideEdgeBetween(routeOnly[0], routeOnly[1])];
+  const baselineRides = structuredClone(input.canonicalPack.packs[0].networkEdges);
   const entries = {
     "tools/datapack/release/current-capital-facility-source-admission.json": input.facilityAdmission,
     [input.facilityAdmission.sourceIdentity.snapshotPath]: input.facilitySnapshotBytes,
@@ -167,10 +162,9 @@ test("route CLI만 temporary fixed target에 exact two-file handoff를 원자 pu
     readTransitionBoundaryImpl: async () => input.sourceSetTransition,
     projectFixtureImpl: async ({ buildSpec, sourceFixture, repositoryRoot }) => {
       assert.equal(buildSpec.candidateId, input.candidateBuildSpec.candidateId);
-      assert.equal(sourceFixture.packs[0].networkEdges.length, 2198);
       assert.equal(repositoryRoot, root);
       const projected = structuredClone(sourceFixture);
-      projected.packs[0].networkEdges = rideEdges(2198);
+      projected.packs[0].networkEdges = structuredClone(baselineRides);
       return projected;
     },
   };
@@ -180,17 +174,22 @@ test("route CLI만 temporary fixed target에 exact two-file handoff를 원자 pu
   const packPath = path.join(root, "tools/datapack/release/capital-production-canonical-pack.json");
   const rawPackBytes = await readFile(packPath);
   const rawPack = JSON.parse(rawPackBytes);
-  rawPack.packs[0].networkEdges.pop();
+  const baselineRideId = baselineRides.at(-1).id;
+  rawPack.packs[0].networkEdges = rawPack.packs[0].networkEdges.map((edge) => edge.id === baselineRideId
+    ? { ...edge, id: `${baselineRideId}-drift` }
+    : edge);
   await writeFile(packPath, canonical(rawPack));
-  await assert.rejects(main([], dependencies), /raw edge denominator mismatch/);
+  await assert.rejects(main([], dependencies), /raw\/projected edge set mismatch/);
   await writeFile(packPath, rawPackBytes);
   const projected = dependencies.projectFixtureImpl;
   dependencies.projectFixtureImpl = async (args) => {
     const value = await projected(args);
-    value.packs[0].networkEdges = value.packs[0].networkEdges.filter(({ id }) => id !== "ride-2197");
+    value.packs[0].networkEdges = value.packs[0].networkEdges.map((edge) => edge.id === baselineRideId
+      ? { ...edge, id: `${baselineRideId}-drift` }
+      : edge);
     return value;
   };
-  await assert.rejects(main([], dependencies), /projected edge denominator mismatch/);
+  await assert.rejects(main([], dependencies), /raw\/projected edge set mismatch/);
   dependencies.projectFixtureImpl = projected;
   const result = await main([], dependencies);
   const output = path.join(root, "tools/datapack/release/current-capital-accessibility-full");
@@ -206,32 +205,58 @@ function addFullRouteStationLines(input) {
   const pack = input.canonicalPack.packs[0];
   const lineId = "route-only-line";
   pack.lines.push({ id: lineId, operatorId: "route-only-operator" });
-  const extras = Array.from({ length: 1102 - pack.stationLines.length }, (_, index) => ({
-    stationId: `station-route-${String(index).padStart(4, "0")}`,
+  const extras = ["route-a", "route-b"].map((suffix, lineSequence) => ({
+    stationId: `station-${suffix}`,
     lineId,
-    lineSequence: index,
+    lineSequence,
   }));
   pack.stationLines.push(...extras);
   return extras;
 }
 
-function rideEdges(count) {
-  return Array.from({ length: count }, (_, index) => ({
-    id: `ride-${index}`,
+function rideEdgeBetween(from, to, id = "ride-fixture") {
+  return {
+    id,
     edgeType: "RIDE",
-    fromNodeId: "station-000:seoul-2",
-    toNodeId: "station-001:seoul-2",
+    fromNodeId: `${from.stationId}:${from.lineId}`,
+    toNodeId: `${to.stationId}:${to.lineId}`,
     durationSeconds: 120,
     distanceMeters: 1000,
     serviceClass: "SUBWAY",
     servicePattern: "LOCAL",
-  }));
+  };
 }
 
-function edgeCounts(edges) {
-  return Object.fromEntries([...new Set(edges.map(({ edgeType }) => edgeType))]
-    .sort()
-    .map((edgeType) => [edgeType, edges.filter((edge) => edge.edgeType === edgeType).length]));
+function assertExactRouteFanIn(routeEdges, { rides, stationLines, metrics }) {
+  const expected = new Map([
+    ["RIDE", rides],
+    ["ENTRY", stationLines.map((line) => routeEdge({ edgeId: `edge-entry-${line.stationId}-${line.lineId}`, edgeType: "ENTRY", fromNodeId: line.stationId, toNodeId: `${line.stationId}:${line.lineId}`, durationSeconds: 90, distanceMeters: 0 }))],
+    ["EXIT", stationLines.map((line) => routeEdge({ edgeId: `edge-exit-${line.stationId}-${line.lineId}`, edgeType: "EXIT", fromNodeId: `${line.stationId}:${line.lineId}`, toNodeId: line.stationId, durationSeconds: 60, distanceMeters: 0 }))],
+    ["IN_STATION_TRANSFER", metrics.map((metric) => routeEdge({ edgeId: `edge-transfer-${metric.stationId}-${metric.fromLineId}-${metric.toLineId}`, edgeType: "IN_STATION_TRANSFER", fromNodeId: `${metric.stationId}:${metric.fromLineId}`, toNodeId: `${metric.stationId}:${metric.toLineId}`, durationSeconds: 0, distanceMeters: metric.distanceMeters }))],
+  ]);
+  assert.equal(new Set(routeEdges.map(({ edgeId }) => edgeId)).size, routeEdges.length);
+  assert.deepEqual(new Set(routeEdges.map(({ edgeType }) => edgeType)), new Set(expected.keys()));
+  for (const [edgeType, expectedEdges] of expected) {
+    assertExactEdges(routeEdges.filter((edge) => edge.edgeType === edgeType), expectedEdges);
+  }
+}
+
+function routeFixtureRides(edges) {
+  return edges.map(({ id, edgeType, fromNodeId, toNodeId, durationSeconds, distanceMeters, serviceClass, servicePattern }) => routeEdge({ edgeId: id, edgeType, fromNodeId, toNodeId, durationSeconds, distanceMeters, serviceClass, servicePattern }));
+}
+
+function routeEdge(value) {
+  const normalized = { edgeId: value.edgeId, edgeType: value.edgeType, fromNodeId: value.fromNodeId, toNodeId: value.toNodeId, durationSeconds: value.durationSeconds, distanceMeters: value.distanceMeters, servicePattern: value.servicePattern ?? "", serviceClass: value.serviceClass ?? "SUBWAY" };
+  return { ...normalized, edgeSha256: routeEdgeSha256(normalized) };
+}
+
+function assertExactEdges(actual, expected) {
+  const actualById = new Map(actual.map((edge) => [edge.edgeId, edge]));
+  const expectedById = new Map(expected.map((edge) => [edge.edgeId, edge]));
+  assert.equal(actualById.size, actual.length);
+  assert.equal(expectedById.size, expected.length);
+  assert.equal(actualById.size, expectedById.size);
+  for (const [edgeId, expectedEdge] of expectedById) assert.deepEqual(actualById.get(edgeId), expectedEdge);
 }
 
 function canonical(value) { if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`; if (value && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`; return JSON.stringify(value); }
