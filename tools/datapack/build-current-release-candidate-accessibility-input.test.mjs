@@ -151,6 +151,15 @@ test("unresolved·stale·candidate·route·projected RIDE drift는 output 전에
     }, /route edge identifier mismatch/i],
     ["route metadata missing", (value) => { value.route.stationLines.pop(); }, /route station-line/i],
     ["route metadata operator", (value) => { value.route.stationLines[0].operatorId = "drift"; }, /route station-line/i],
+    ["cross-station ENTRY", (value) => {
+      const entry = value.route.routeEdges.find(({ edgeType }) => edgeType === "ENTRY");
+      assert.ok(entry, "current route input requires one ENTRY edge");
+      const endpointStationId = entry.toNodeId.split(":")[0];
+      const other = value.route.stationLines.find(({ stationId }) => stationId !== endpointStationId);
+      assert.ok(other, "current route input requires a second station");
+      entry.fromNodeId = other.stationId;
+      rebindRouteEdge(value.route, entry);
+    }, /route edge station mismatch/i],
     ["projected metadata missing", (value) => { value.projectedFixture.packs[0].stationLines.pop(); }, /route station-line/i],
     ["source RIDE missing", (value) => {
       const source = JSON.parse(value.sourceFixtureBytes);
