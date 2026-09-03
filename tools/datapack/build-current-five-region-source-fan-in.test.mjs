@@ -136,6 +136,18 @@ test("#687 builds a candidate-independent five-region OCI source fan-in", () => 
 });
 
 test("#687 keeps enhancement heads non-blocking until their tier is promoted", () => {
+  const unknownTier = fixture();
+  unknownTier.targets.requiredSourceDomains[0].releaseTier = "LUNCH_REQUIRED";
+  for (const requirement of unknownTier.tally.launchRequired.requirements) {
+    requirement.releaseTier = "LUNCH_REQUIRED";
+  }
+  unknownTier.inputBytes.targets = bytes(unknownTier.targets);
+  unknownTier.inputBytes.tally = bytes(unknownTier.tally);
+  assert.throws(
+    () => buildCurrentFiveRegionSourceFanIn(unknownTier),
+    /release tier/,
+  );
+
   const input = fixture();
   input.targets.requiredSourceDomains.push({
     id: "demand_reference",
