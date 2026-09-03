@@ -24,12 +24,40 @@ import {
 import { canonicalRouteEdgeEvaluationJson, evaluateRouteAccessibilityEdges } from "../evaluate-route-accessibility-edges.mjs";
 import { materializeStationLineAccessibility } from "../materialize-station-line-accessibility.mjs";
 import { buildReboundCurrentExitAdmissionIdentities } from "../rebind-current-exit-admission-identities.mjs";
+import { deriveBoundReleaseArtifacts } from "../rebind-current-candidate-source-snapshots.mjs";
 import { resolveStagedIncheonTopologyPath } from "../run-current-capital-live-chain.mjs";
 
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const canonical = (value) => JSON.stringify(sort(value));
 const DATAPACK_ROOT = path.resolve(import.meta.dirname, "../../..");
+const CANDIDATE_PATH = "tools/datapack/release/candidate-build-spec.json";
+const INVENTORY_PATH = "tools/datapack/source-inventory.json";
+const SNAPSHOTS_PATH = "tools/datapack/release/source-snapshots.json";
+const RELEASE_REQUEST_PATH = "tools/datapack/release/release-request.json";
+const HASH_EVIDENCE_PATH = "tools/datapack/release/hash-evidence.json";
 function sort(value) { if (Array.isArray(value)) return value.map(sort); if (!value || typeof value !== "object") return value; return Object.fromEntries(Object.keys(value).sort((left, right) => left.localeCompare(right, "en")).map((key) => [key, sort(value[key])])); }
+
+function bindCurrentLiveChainCandidateAuthority(authorityBytes) {
+  const bound = new Map(authorityBytes);
+  const inventoryBytes = bound.get(INVENTORY_PATH);
+  const sourceInventory = JSON.parse(inventoryBytes);
+  const candidate = JSON.parse(bound.get(CANDIDATE_PATH));
+  candidate.sourceInventorySha256 = sha256(JSON.stringify(sourceInventory));
+  candidate.networkEdgeEvidence.sourceInventory.sha256 = sha256(inventoryBytes);
+  const candidateBytes = Buffer.from(`${JSON.stringify(candidate, null, 2)}\n`);
+  const release = deriveBoundReleaseArtifacts({
+    candidate,
+    candidateBytes,
+    releaseRequest: JSON.parse(bound.get(RELEASE_REQUEST_PATH)),
+    hashEvidence: JSON.parse(bound.get(HASH_EVIDENCE_PATH)),
+    sourceSnapshots: JSON.parse(bound.get(SNAPSHOTS_PATH)),
+    sourceInventory,
+  });
+  bound.set(CANDIDATE_PATH, candidateBytes);
+  bound.set(RELEASE_REQUEST_PATH, release.requestBytes);
+  bound.set(HASH_EVIDENCE_PATH, release.hashEvidenceBytes);
+  return bound;
+}
 
 function currentIncheonTopologyFixture(sourceInventory) {
   const snapshotPath = resolveStagedIncheonTopologyPath(sourceInventory);
@@ -66,8 +94,10 @@ export async function buildCanonicalCurrentKricExitCollectionBundle({ repository
 
 export async function buildCanonicalCurrentLiveChainComposite({ root, repositorySha = "a".repeat(40), operationId = "current-capital-560", providerCollectionBundleBytes }) {
   if (!Buffer.isBuffer(providerCollectionBundleBytes) || providerCollectionBundleBytes.length === 0) throw new Error("provider collection bundle bytes are required");
-  const authorityPaths = ["tools/datapack/release/candidate-build-spec.json", "tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json"];
-  const authorityBytes = new Map(await Promise.all(authorityPaths.map(async (relative) => [relative, await readFile(path.join(DATAPACK_ROOT, relative))])));
+  const authorityPaths = [CANDIDATE_PATH, INVENTORY_PATH, SNAPSHOTS_PATH, RELEASE_REQUEST_PATH, HASH_EVIDENCE_PATH];
+  const authorityBytes = bindCurrentLiveChainCandidateAuthority(new Map(
+    await Promise.all(authorityPaths.map(async (relative) => [relative, await readFile(path.join(DATAPACK_ROOT, relative))])),
+  ));
   const outputPaths = currentCapitalLiveChainOutputPaths({
     candidate: JSON.parse(authorityBytes.get(authorityPaths[0])),
     sourceInventory: JSON.parse(authorityBytes.get(authorityPaths[1])),

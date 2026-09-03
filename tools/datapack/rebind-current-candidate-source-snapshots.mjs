@@ -507,7 +507,7 @@ function selectedLedgerSnapshots(sourceSnapshots, candidate) {
   return selected;
 }
 
-function deriveBoundReleaseArtifacts({ candidate, candidateBytes, releaseRequest, hashEvidence, sourceSnapshots, sourceInventory }) {
+export function deriveBoundReleaseArtifacts({ candidate, candidateBytes, releaseRequest, hashEvidence, sourceSnapshots, sourceInventory }) {
   const request = structuredClone(releaseRequest);
   if (request.candidateId !== candidate.candidateId || request.scopeId !== candidate.productionScopeId
     || typeof request.approvalId !== "string" || request.approvalId === ""
