@@ -110,6 +110,7 @@ function overrideFixture() {
       candidateFixtureSha256: "0".repeat(64),
       stationLineInputSha256: "c".repeat(64),
       routeEdgeInputSha256: "d".repeat(64),
+      transferMetricsSha256: sha(Buffer.from("fixture-transfer-metrics")),
       materializationDigest: "e".repeat(64),
       observedAt: "2026-08-16T00:00:00.000Z",
     },
