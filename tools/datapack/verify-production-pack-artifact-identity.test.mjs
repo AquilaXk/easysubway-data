@@ -246,13 +246,16 @@ test("deployed pack과 bundled asset/index의 artifact identity를 exact-match�
             verification_status = 'UNKNOWN'
             AND (accessibility_status != 'UNKNOWN' OR stair_access_state != 'UNKNOWN')
           ) AS unsafeUnknownCount,
-          SUM(service_class = 'ITX_CHEONGCHUN') AS itxTopologyCount
+          SUM(
+            service_class = 'ITX_CHEONGCHUN'
+            AND verification_status = 'VERIFIED'
+          ) AS verifiedItxCount
         FROM network_edges
       `).get();
       assert.ok(provenance.unknownCount > 0);
       assert.equal(provenance.incompleteVerifiedCount, 0);
       assert.equal(provenance.unsafeUnknownCount, 0);
-      assert.equal(provenance.itxTopologyCount, evidence.topology.edgeCount);
+      assert.equal(provenance.verifiedItxCount, evidence.topology.edgeCount);
       expectedNetworkEdgeCounts = {
         total: provenance.total,
         provenanceComplete: provenance.provenanceComplete,
