@@ -57,7 +57,7 @@ const sha = (value) => createHash("sha256").update(value).digest("hex");
 const canonical = (value) => JSON.stringify(sort(value));
 function sort(value) { if (Array.isArray(value)) return value.map(sort); if (!value || typeof value !== "object") return value; return Object.fromEntries(Object.keys(value).sort((left, right) => left.localeCompare(right, "en")).map((key) => [key, sort(value[key])])); }
 
-async function unchangedTransferRebindProof(repositoryRoot) {
+async function unchangedTransferRebindProof({ repositoryRoot }) {
   const inventory = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/source-inventory.json")));
   const descriptorPath = inventory.sources.find(({ id }) =>
     id === "seoul-metro-transfer-distance-duration")?.transferAdmissionEvidence?.snapshotPath;
