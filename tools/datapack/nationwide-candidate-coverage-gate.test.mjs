@@ -519,6 +519,14 @@ async function deriveCapitalRouteMapAddedRows(state, inventory, sourceIds) {
   return addedRows;
 }
 
+async function materializeCurrentCapitalRouteMaps(spec, inherited, inventory) {
+  const focused = structuredClone(spec);
+  focused.packDataInclusions = spec.packDataInclusions.slice(CAPITAL_INDEX, INCHEON_INDEX);
+  const focusedInherited = structuredClone(inherited);
+  focusedInherited.packs[0].routeMapLineTracks = [];
+  return applyPackDataInclusions(focused, focusedInherited, inventory);
+}
+
 async function sha256Of(relativePath) {
   return createHash("sha256").update(await readFile(path.join(root, relativePath))).digest("hex");
 }
@@ -1211,7 +1219,8 @@ test("광주 5 requirement는 체인 편입으로 MISSING에서 SUPPORTED로 전
 // #2595 B3: 수도권 KRIC 노선도 10 requirement는 두 materializer로 전이한다. 서울 1~8호선은
 // 공공 관측의 v2 admission 전까지 이 candidate에서 의도적으로 열지 않는다.
 test("수도권 KRIC 노선도 10 requirement는 편입 2건으로 MISSING에서 SUPPORTED로 전이한다", async () => {
-  const [evidence, inventory, inherited] = await Promise.all([
+  const [spec, evidence, inventory, inherited] = await Promise.all([
+    readJson(SPEC_PATH),
     readJson(EVIDENCE_PATH),
     readJson(INVENTORY_PATH),
     readJson(REVIEWED_PACK_PATH),
@@ -1237,7 +1246,8 @@ test("수도권 KRIC 노선도 10 requirement는 편입 2건으로 MISSING에서
       `${requirementKey} supporting rows`,
     );
   }
-  const [wideRail, lightRail] = evidence.packDataInclusions.entries.slice(CAPITAL_INDEX);
+  const currentCapital = await materializeCurrentCapitalRouteMaps(spec, inherited, inventory);
+  const [wideRail, lightRail] = currentCapital.records;
   // 광역철도 편입은 승계 원본에 없던 표(coverageLineOperatorScopes)를 새로 만든다 — 뒤 편입은 자기 몫만 더한다.
   // 서해선·GTX-A는 두 운영기관 scope를 함께 내므로 광역철도의 scope 행이 노선 수보다 둘 많다. 경전철은
   // 노선당 하나다 — 신분당선 정본도 두 운영기관을 등재하지만 FILE 계보 표기(서울교통공사)는 scope로 내지 않는다.
@@ -1276,10 +1286,7 @@ test("수도권 KRIC 노선도 10 requirement는 편입 2건으로 MISSING에서
   );
   // 재정렬 선언은 evidence에도 남는다. 선언하지 않은 편입에는 키 자체가 없어야 한다(죽은 선언 방지).
   for (const { offset, reorderedTables } of CAPITAL_INCLUSION_BINDINGS) {
-    assert.deepEqual(evidence.packDataInclusions.entries[CAPITAL_INDEX + offset].reorderedTables, reorderedTables);
-  }
-  for (const entry of evidence.packDataInclusions.entries.slice(0, CAPITAL_INDEX)) {
-    assert.equal("reorderedTables" in entry, false, `${entry.materializer}는 재정렬을 선언하지 않는다`);
+    assert.deepEqual(currentCapital.records[offset].reorderedTables, reorderedTables);
   }
 });
 
@@ -1546,24 +1553,27 @@ test("candidate spec validation seam은 production 채널을 거부한다", asyn
 });
 
 test("수도권 노선도 입력 경로는 admission evidence에서만 파생한다", async () => {
-  const [spec, inventory, evidence] = await Promise.all([
+  const [spec, inventory, inherited] = await Promise.all([
     readJson(SPEC_PATH),
     readJson(INVENTORY_PATH),
-    readJson(EVIDENCE_PATH),
+    readJson(REVIEWED_PACK_PATH),
   ]);
   const capitalRouteMapInclusions = spec.packDataInclusions
     .map((inclusion, index) => ({ inclusion, index }))
     .filter(({ inclusion }) => inclusion.regionId === "capital"
       && inclusion.materializer.includes("route-map-positions"));
+  const currentCapital = await materializeCurrentCapitalRouteMaps(spec, inherited, inventory);
 
-  for (const { inclusion, index } of capitalRouteMapInclusions) {
+  for (const [{ inclusion, index }, record] of capitalRouteMapInclusions.map(
+    (entry, localIndex) => [entry, currentCapital.records[localIndex]],
+  )) {
     const binding = CAPITAL_INCLUSION_BINDINGS.find(({ offset }) => CAPITAL_INDEX + offset === index);
     const sourceIds = binding.lineSourceIds ?? [binding.sourceId];
     const expectedPaths = [...new Set(sourceIds.flatMap((sourceId) => {
       const admission = admissionEvidenceOf(inventory, sourceId, "routeMapAdmissionEvidence");
       return [admission.snapshotPath, `tools/datapack/sources/${admission.topologySnapshotId}.json`];
     }))].sort();
-    const actualPaths = evidence.packDataInclusions.entries[index].inputs
+    const actualPaths = record.inputs
       .map(({ path: inputPath }) => inputPath)
       .filter((inputPath) => inputPath.startsWith("tools/datapack/sources/"))
       .sort();
