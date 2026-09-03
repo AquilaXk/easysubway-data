@@ -333,7 +333,7 @@ async function writeSyntheticCurrentExitOciReceipt(root) {
   });
   const target = path.join(root, receiptPath);
   await mkdir(path.dirname(target), { recursive: true });
-  await writeFile(target, Buffer.from(canonicalCurrentExitAdmissionOciReceiptJson(receipt)));
+  await writeFile(target, Buffer.from(`${canonicalCurrentExitAdmissionOciReceiptJson(receipt)}\n`));
 }
 
 export async function nextSyntheticCurrentStaticNetworkNow(root) {

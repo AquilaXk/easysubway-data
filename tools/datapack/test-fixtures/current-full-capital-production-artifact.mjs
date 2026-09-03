@@ -272,9 +272,6 @@ export async function rebindFreshExitAdmissionForCurrentTransition(repositoryRoo
     facility: "tools/datapack/release/current-capital-facility-source-admission.json",
     ledger: "tools/datapack/release/source-snapshots.json",
     inventory: "tools/datapack/source-inventory.json",
-    normalized: "tools/datapack/release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json",
-    admission: "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json",
-    receipt: "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json",
   };
   const bytes = Object.fromEntries(await Promise.all(Object.entries(paths).map(async ([key, relative]) =>
     [key, await readFile(path.join(repositoryRoot, relative))])));
@@ -285,8 +282,22 @@ export async function rebindFreshExitAdmissionForCurrentTransition(repositoryRoo
     ledger: JSON.parse(bytes.ledger), ledgerBytes: bytes.ledger,
     inventory: JSON.parse(bytes.inventory), inventoryBytes: bytes.inventory,
   });
+  await writeReboundExitAdmissionForTransition(
+    repositoryRoot,
+    Buffer.from(canonicalCurrentCapitalAccessibilityTransitionJson(transition)),
+  );
+}
+
+async function writeReboundExitAdmissionForTransition(repositoryRoot, transitionBytes) {
+  const paths = {
+    normalized: "tools/datapack/release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json",
+    admission: "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json",
+    receipt: "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json",
+  };
+  const bytes = Object.fromEntries(await Promise.all(Object.entries(paths).map(async ([key, relative]) =>
+    [key, await readFile(path.join(repositoryRoot, relative))])));
   const rebound = buildReboundCurrentExitAdmissionIdentities({
-    transitionBytes: Buffer.from(canonicalCurrentCapitalAccessibilityTransitionJson(transition)),
+    transitionBytes,
     normalizedBytes: bytes.normalized,
     admissionBytes: bytes.admission,
     receiptBytes: bytes.receipt,
@@ -584,6 +595,7 @@ export async function preparePendingCurrentAccessibilityTransitionRepository(sou
         index === 0 ? baseTransitionBytes : successorBytes,
       )),
     ]);
+    await writeReboundExitAdmissionForTransition(repositoryRoot, successorBytes);
     await bindPendingStationRoutePrestate(repositoryRoot, baseTransitionBytes, successor);
     return repositoryRoot;
   } catch (error) {
