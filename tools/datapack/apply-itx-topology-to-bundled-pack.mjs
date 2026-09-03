@@ -7,10 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
-import {
-  projectedItxDirectionalPairs,
-  validateItxCurrentTopologyAdmission,
-} from "./build-datapack.mjs";
+import { validateItxCurrentTopologyAdmission } from "./build-datapack.mjs";
 import { canonicalRideEdgeSetSha256 } from "./evaluate-route-accessibility-edges.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 
@@ -350,14 +347,12 @@ export function validateAdmittedSourceDocuments(
       now: buildNow,
     });
   }
-  const { pairHashes } = projectedItxDirectionalPairs(source.stationSequences);
   return {
     sourceId: source.artifactKind,
     sourceSnapshotId: source.artifactId,
     evidenceHash: source.evidenceHash,
     verifiedAt: source.observedAt,
     freshUntil: reference.freshUntil,
-    pairHashes,
   };
 }
 
@@ -891,59 +886,7 @@ function ensureVersion19(database, admissionEvidence) {
   ensureRouteServiceEvidenceSchemas(database, admissionEvidence, evidenceLayout);
 }
 
-export function bindItxTopologyEdgeProvenance(topology, edgeAdmission) {
-  const sourceId = edgeAdmission?.sourceId;
-  const sourceSnapshotId = edgeAdmission?.sourceSnapshotId;
-  const evidenceHash = edgeAdmission?.evidenceHash;
-  const pairHashes = edgeAdmission?.pairHashes;
-  const lastVerifiedAt = Math.floor(requiredUtcInstant(
-    edgeAdmission?.verifiedAt,
-    "ITX topology edge verifiedAt",
-  ) / 1000);
-  if (typeof sourceId !== "string" || sourceId.length === 0
-    || typeof sourceSnapshotId !== "string" || sourceSnapshotId.length === 0
-    || !/^[a-f0-9]{64}$/u.test(evidenceHash ?? "")
-    || !(pairHashes instanceof Map)
-    || topology?.edges?.length !== pairHashes.size) {
-    throw new Error("ITX topology edge provenance admission is incomplete");
-  }
-  const projectedPairIds = new Set();
-  const edges = topology.edges.map((edge) => {
-    const [fromStationId] = String(edge.fromNodeId).split(":");
-    const [toStationId] = String(edge.toNodeId).split(":");
-    const pairId = `${fromStationId}\0${toStationId}`;
-    if (projectedPairIds.has(pairId)) {
-      throw new Error("ITX topology edge provenance contains a duplicate directional pair");
-    }
-    projectedPairIds.add(pairId);
-    const providerRecordHash = pairHashes.get(pairId);
-    if (!/^[a-f0-9]{64}$/u.test(providerRecordHash ?? "")) {
-      throw new Error(`ITX topology edge provenance is missing: ${edge.id}`);
-    }
-    return {
-      ...edge,
-      includesStairs: 0,
-      stairAccessState: "UNKNOWN",
-      accessibilityStatus: "UNKNOWN",
-      reliabilityScore: 100,
-      sourceId,
-      sourceSnapshotId,
-      providerRecordHash,
-      provenanceKind: "OFFICIAL_SOURCE",
-      verificationStatus: "VERIFIED",
-      facilityId: null,
-      lastVerifiedAt,
-      evidenceHash,
-    };
-  });
-  if (projectedPairIds.size !== pairHashes.size
-    || [...pairHashes.keys()].some((pairId) => !projectedPairIds.has(pairId))) {
-    throw new Error("ITX topology edge provenance contains an extra directional pair");
-  }
-  return edges;
-}
-
-export function applyTopology(sqlitePath, topology, admissionEvidence, edgeAdmission) {
+export function applyTopology(sqlitePath, topology, admissionEvidence) {
   const database = new DatabaseSync(sqlitePath);
   try {
     database.exec("PRAGMA foreign_keys = ON");
@@ -964,24 +907,16 @@ export function applyTopology(sqlitePath, topology, admissionEvidence, edgeAdmis
           throw new Error(`ITX topology canonical station membership is missing: ${station.stationId}:${station.lineId}`);
         }
       }
-      const boundEdges = bindItxTopologyEdgeProvenance(topology, edgeAdmission);
       database.exec("DELETE FROM network_edges WHERE service_class = 'ITX_CHEONGCHUN'");
       const insert = database.prepare(`
         INSERT INTO network_edges (
           id, from_node_id, to_node_id, duration_seconds, distance_meters,
-          edge_type, service_pattern, service_class, includes_stairs,
-          stair_access_state, accessibility_status, reliability_score,
-          source_id, source_snapshot_id, provider_record_hash, provenance_kind,
-          verification_status, facility_id, last_verified_at, evidence_hash
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          edge_type, service_pattern, service_class
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `);
-      for (const edge of boundEdges) {
+      for (const edge of topology.edges) {
         insert.run(edge.id, edge.fromNodeId, edge.toNodeId, edge.durationSeconds,
-          edge.distanceMeters, edge.edgeType, edge.servicePattern, edge.serviceClass,
-          edge.includesStairs, edge.stairAccessState, edge.accessibilityStatus,
-          edge.reliabilityScore, edge.sourceId, edge.sourceSnapshotId,
-          edge.providerRecordHash, edge.provenanceKind, edge.verificationStatus,
-          edge.facilityId, edge.lastVerifiedAt, edge.evidenceHash);
+          edge.distanceMeters, edge.edgeType, edge.servicePattern, edge.serviceClass);
       }
       writeRouteServiceEvidence(database, admissionEvidence);
       const foreignKeys = database.prepare("PRAGMA foreign_key_check").all();
@@ -998,8 +933,7 @@ export function applyTopology(sqlitePath, topology, admissionEvidence, edgeAdmis
   }
 }
 
-export function assertStoredTopology(sqlitePath, topology, admissionEvidence, edgeAdmission) {
-  const expectedEdges = bindItxTopologyEdgeProvenance(topology, edgeAdmission);
+export function assertStoredTopology(sqlitePath, topology, admissionEvidence) {
   const database = new DatabaseSync(sqlitePath, { readOnly: true });
   try {
     const foreignKeys = database.prepare("PRAGMA foreign_key_check").all();
@@ -1014,20 +948,12 @@ export function assertStoredTopology(sqlitePath, topology, admissionEvidence, ed
       SELECT id, from_node_id AS fromNodeId, to_node_id AS toNodeId,
              duration_seconds AS durationSeconds, distance_meters AS distanceMeters,
              edge_type AS edgeType, service_pattern AS servicePattern,
-             service_class AS serviceClass, includes_stairs AS includesStairs,
-             stair_access_state AS stairAccessState,
-             accessibility_status AS accessibilityStatus,
-             reliability_score AS reliabilityScore, source_id AS sourceId,
-             source_snapshot_id AS sourceSnapshotId,
-             provider_record_hash AS providerRecordHash,
-             provenance_kind AS provenanceKind,
-             verification_status AS verificationStatus, facility_id AS facilityId,
-             last_verified_at AS lastVerifiedAt, evidence_hash AS evidenceHash
+             service_class AS serviceClass
       FROM network_edges
       WHERE service_class = 'ITX_CHEONGCHUN'
       ORDER BY id
     `).all().map((row) => ({ ...row }));
-    if (JSON.stringify(stored) !== JSON.stringify(expectedEdges)) {
+    if (JSON.stringify(stored) !== JSON.stringify(topology.edges)) {
       throw new Error("ITX topology bundled edges are stale");
     }
     const timetableRows = database.prepare(`
@@ -1136,7 +1062,7 @@ async function main() {
         throw new Error("ITX topology bundled SQLite identity is stale");
       }
       await writeFile(sqlitePath, inputSqliteBytes);
-      assertStoredTopology(sqlitePath, topology, admissionEvidence, currentProjection);
+      assertStoredTopology(sqlitePath, topology, admissionEvidence);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -1152,7 +1078,7 @@ async function main() {
       throw new Error("ITX topology input pack does not match the coverage contract");
     }
     await writeFile(sqlitePath, inputSqliteBytes);
-    applyTopology(sqlitePath, topology, admissionEvidence, currentProjection);
+    applyTopology(sqlitePath, topology, admissionEvidence);
     const outputSqliteBytes = await readFile(sqlitePath);
     const outputGzipBytes = gzipSync(outputSqliteBytes, { level: 9, mtime: 0 });
     if (outputGzipBytes.length - inputGzipBytes.length > MAX_GZIP_DELTA_BYTES) {

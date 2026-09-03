@@ -698,14 +698,8 @@ function routeStationLineIndex(stationLines) {
 
 function validateEntryExitBijections(routeEdges, stationLines) {
   const expected = new Set(stationLines.map(stationLineKey));
-  for (const [type, node, stationNode] of [
-    ["ENTRY", "toNodeId", "fromNodeId"],
-    ["EXIT", "fromNodeId", "toNodeId"],
-  ]) {
+  for (const [type, node] of [["ENTRY", "toNodeId"], ["EXIT", "fromNodeId"]]) {
     const selected = routeEdges.filter(({ edgeType }) => edgeType === type);
-    if (selected.some((edge) => stationLineNode(edge[node]).stationId !== edge[stationNode])) {
-      throw new Error("route edge station mismatch");
-    }
     const actual = new Set(selected
       .map((edge) => stationLineKey(stationLineNode(edge[node]))));
     if (selected.length !== expected.size || actual.size !== expected.size

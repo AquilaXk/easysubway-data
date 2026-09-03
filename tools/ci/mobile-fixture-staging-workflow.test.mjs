@@ -10,8 +10,8 @@ const ownership = JSON.parse(
   readFileSync(path.join(root, "tools/ci/data-test-ownership.json"), "utf8"),
 );
 const mobileRepository = "AquilaXk/easysubway-mobile";
-const ciMobileRevision = "23f4262087af99ff49e120707f7de317666679ef";
-const ciCapitalGzipSha256 = "6339daf6de99f9eb69b3940d3eab41302d55cf4c47270625a771d1bc99568cd1";
+const ciMobileRevision = "4d133ad853fa6ef4e024a37a1409b5eaadd1cc69";
+const ciCapitalGzipSha256 = "905e77589971bd53d6ecaab9dbfd211ab56f86de883425747bf1d93d31ebae4f";
 const releaseMobileRevision = "39d2c4723d0ff855041c6162825930c7d12ffad3";
 const releaseCapitalGzipSha256 = "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3";
 const releaseIndexSha256 = "ad801ec865d385e86cf4094e3c007af9cbfbe1d4a8c42bab8f9b2682b229026e";
@@ -168,7 +168,10 @@ test("CI는 병합된 current v19 pack을 ITX current evidence와 직접 검증�
   const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
   const verification = ci.match(/- name: Verify current Mobile v19 ITX topology evidence[\s\S]*?\n\s+- name:/)?.[0];
   assert.ok(verification, "current v19 ITX topology evidence 검증 스텝을 찾지 못함");
-  assert.match(verification, /node --test tools\/datapack\/verify-production-pack-artifact-identity\.test\.mjs/);
+  assert.match(verification, /apply-itx-topology-to-bundled-pack\.mjs/);
+  assert.match(verification, /--check/);
+  assert.match(verification, /apps\/mobile\/assets\/datapacks\/capital\.sqlite\.gz/);
+  assert.match(verification, /node --test tools\/datapack\/readmit-bundled-pack-identity\.test\.mjs/);
   assert.match(verification, /node --test --test-name-pattern='bundled 공식 OD quote\|bundled 차량·출입문 힌트' tools\/datapack\/datapack-tools\.test\.mjs/);
   assert.match(verification, /git diff --exit-code -- tools\/datapack\/itx-cheongchun-topology-evidence\.json/);
   assert.ok(
@@ -208,11 +211,11 @@ test("CI는 migration 없이 current v19 profile 소유 테스트를 실행한�
   ]);
 });
 
-test("CI는 direct current v19 검증 안에서 deployed verifier 회귀를 실행한다", () => {
+test("CI는 direct current v19 검증 안에서 #108 bundled-pack 회귀를 실행한다", () => {
   const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
   const verification = namedWorkflowStep(ci, "Verify current Mobile v19 ITX topology evidence");
   assert.match(verification, /set -euo pipefail/);
-  assert.match(verification, /node --test tools\/datapack\/verify-production-pack-artifact-identity\.test\.mjs/);
+  assert.match(verification, /node --test tools\/datapack\/readmit-bundled-pack-identity\.test\.mjs/);
   assert.match(verification, /node --test --test-name-pattern='bundled 공식 OD quote\|bundled 차량·출입문 힌트' tools\/datapack\/datapack-tools\.test\.mjs/);
   assertWorkflowStepOrder(ci, ["Stage pinned Mobile fixture", "Verify current Mobile v19 ITX topology evidence"]);
 });
