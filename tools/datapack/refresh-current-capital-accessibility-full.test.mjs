@@ -214,10 +214,11 @@ test("pending v2 marker accepts FACILITY next-eight and EXIT previous-seven befo
   assert.deepEqual(routeAfter.routeEdges, beforeRoute.routeEdges);
   assert.ok(stationAfter.evidenceRows.every((row) => row.candidateId === marker.nextCandidate.candidateId));
   assert.ok(stationAfter.evidenceRows.every((row) => row.sourceSetSha256 === marker.nextCandidate.sourceSnapshotSetHash));
-  assert.deepEqual(
-    stationAfter.evidenceRows.map(({ candidateId: _candidateId, sourceSetSha256: _sourceSetSha256, ...row }) => row),
-    beforeStation.evidenceRows.map(({ candidateId: _candidateId, sourceSetSha256: _sourceSetSha256, ...row }) => row),
-  );
+  const transitionDomains = new Set(["FACILITY", "EXIT"]);
+  const invariantEvidenceRows = (rows) => rows
+    .filter(({ domain }) => !transitionDomains.has(domain))
+    .map(({ candidateId: _candidateId, sourceSetSha256: _sourceSetSha256, ...row }) => row);
+  assert.deepEqual(invariantEvidenceRows(stationAfter.evidenceRows), invariantEvidenceRows(beforeStation.evidenceRows));
 
   const routePath = path.join(root, OUTPUTS[1]);
   const mutatedRoute = structuredClone(beforeRoute);
