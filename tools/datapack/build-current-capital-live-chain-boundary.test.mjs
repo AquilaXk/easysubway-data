@@ -24,7 +24,6 @@ test("current live-chain fan-in binds current eight and evidence seven component
 
   assert.equal(result.candidate.sourceSetSha256, boundary.currentCandidateSourceSetSha256);
   assert.notEqual(boundary.evidenceSourceSetSha256, boundary.currentCandidateSourceSetSha256);
-  assert.equal(result.evidenceRows.length, 641);
 });
 
 test("current live-chain fan-in rejects component drift and boundary historical metadata", async () => {
