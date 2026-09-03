@@ -131,6 +131,13 @@ test("EXIT refresh keeps exact-main OCI producer, immutable recovery, and select
   assert.match(yml, /expected_terminal_parents="\$\{terminal_parent_args\[1\]\}"/);
   assert.match(yml, /expected_terminal_parents\+=\" \$\{terminal_parent_args\[3\]\}\"/);
   assert.match(yml, /"\$\{terminal_parents\}" == "\$\{expected_terminal_parents\}"/);
+  assert.match(yml, /expected_markers=\([\s\S]*?current-capital-accessibility-transition-successor\.json[\s\S]*?current-capital-accessibility-transition\.json[\s\S]*?\)/);
+  assert.match(yml, /staged_replacements < <\(git diff --cached --name-only --diff-filter=AM\)/);
+  assert.match(yml, /staged_deletions < <\(git diff --cached --name-only --diff-filter=D\)/);
+  assert.match(yml, /"\$\{#staged_replacements\[@\]\}" -gt 0/);
+  assert.match(yml, /terminal staged replacement is outside verified allowlist/);
+  assert.match(yml, /terminal staged marker deletion mismatch/);
+  assert.doesNotMatch(yml, /terminal staged path set mismatch/);
   assert.match(yml, /git update-ref "refs\/heads\/\$\{EXIT_REFRESH_FACILITY_BRANCH\}" "\$\{final_sha\}" "\$\{EXIT_REFRESH_FACILITY_HEAD_SHA\}"/);
   assert.match(yml, /Refresh KRIC EXIT full-capital snapshot/);
   const terminalPush = yml.indexOf('git push origin "${EXIT_REFRESH_FACILITY_BRANCH}"');
