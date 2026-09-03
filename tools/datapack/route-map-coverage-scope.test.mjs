@@ -89,11 +89,16 @@ async function loadAuditInputs() {
     ...exemptions.documentedCoverageGaps,
     ...exemptions.approvedStationNameAliases,
   ].filter((entry) => entry.evidence?.admissionSourceId);
-  const topologyPaths = topologyBindings.map((entry) => topologyPathForSourceAndLine(
-    inventory,
-    entry.evidence.admissionSourceId,
-    entry.scopeKey.split(":").at(-1),
-  ));
+  const topologyPaths = [
+    ...topologyBindings.map((entry) => topologyPathForSourceAndLine(
+      inventory,
+      entry.evidence.admissionSourceId,
+      entry.scopeKey.split(":").at(-1),
+    )),
+    ...exemptions.documentedCoverageGaps
+      .filter((entry) => entry.reasonCode === "PACK_SCOPE_ABSENT")
+      .map((entry) => entry.evidence.packTopologyPath),
+  ];
   for (const topologyPath of new Set(topologyPaths)) {
     topologiesByPath.set(topologyPath, await readJson(topologyPath));
   }
@@ -266,16 +271,22 @@ test("면제 fixture는 사유별로 요구되는 근거 필드를 모두 싣는
   }
   for (const gap of exemptions.documentedCoverageGaps) {
     const label = `${gap.scopeKey} ${gap.rosterStationName}`;
-    assert.equal(
-      typeof gap.evidence?.admissionSourceId,
-      "string",
-      `${label}: route-map admission source가 없다`,
-    );
+    if (gap.reasonCode === "PACK_SCOPE_ABSENT") {
+      assert.equal(typeof gap.evidence?.snapshotPath, "string", `${label}: historical snapshotPath가 없다`);
+      assert.equal(typeof gap.evidence?.packTopologyPath, "string", `${label}: historical packTopologyPath가 없다`);
+      assert.equal("admissionSourceId" in gap.evidence, false, `${label}: historical evidence가 current selector를 사용한다`);
+    } else {
+      assert.equal(
+        typeof gap.evidence?.admissionSourceId,
+        "string",
+        `${label}: route-map admission source가 없다`,
+      );
+      assert.equal("snapshotPath" in gap.evidence, false, `${label}: current evidence가 dated snapshotPath를 유지한다`);
+      assert.equal("packTopologyPath" in gap.evidence, false, `${label}: current evidence가 dated packTopologyPath를 유지한다`);
+    }
     assert.equal(typeof gap.evidence.officialUrl, "string", `${label}: officialUrl이 없다`);
     assert.equal(typeof gap.evidence.note, "string", `${label}: 근거 서술이 없다`);
     assert.ok(gap.evidence.note.length > 0, `${label}: 근거 서술이 비어 있다`);
-    assert.equal("snapshotPath" in gap.evidence, false, `${label}: dated snapshotPath를 유지하면 안 된다`);
-    assert.equal("packTopologyPath" in gap.evidence, false, `${label}: dated packTopologyPath를 유지하면 안 된다`);
   }
 });
 
@@ -732,22 +743,31 @@ test("quarantine 사유 항목도 공식 출처 URL을 요구한다 (#2516)", as
 test("pack topology가 싣고 있는 역은 pack 결측으로 면제할 수 없다 (#2516)", async () => {
   const inputs = await loadAuditInputs();
   const exemptions = structuredClone(inputs.exemptions);
-  gapNamed(exemptions, "하양").reasonCode = "PACK_SCOPE_ABSENT";
+  const gap = gapNamed(exemptions, "하양");
+  const source = inputs.inventory.sources.find(({ id }) => id === gap.evidence.admissionSourceId);
+  gap.reasonCode = "PACK_SCOPE_ABSENT";
+  gap.evidence.snapshotPath = source.routeMapAdmissionEvidence.snapshotPath;
+  gap.evidence.packTopologyPath = topologyPathForSourceAndLine(
+    inputs.inventory,
+    gap.evidence.admissionSourceId,
+    gap.scopeKey.split(":").at(-1),
+  );
+  delete gap.evidence.admissionSourceId;
 
   const result = auditRouteMapCoverageScopes({ ...inputs, exemptions });
 
   assert.deepEqual(violationKinds(result), ["LEDGER_PACK_TOPOLOGY_STATION_PRESENT", "MISSING_STATION"]);
 });
 
-test("current topology lineage와 다른 재해시 snapshot은 pack 결측 근거로 쓸 수 없다 (#2516)", async () => {
+test("historical lineage와 다른 재해시 snapshot은 pack 결측 근거로 쓸 수 없다 (#2516)", async () => {
   const inputs = await loadAuditInputs();
   const exemptions = structuredClone(inputs.exemptions);
-  // 서울교통공사 노선은 topology lineage 미등재라 재해시 삭제로 세탁할 수 없다.
-  gapNamed(exemptions, "암사역사공원").reasonCode = "PACK_SCOPE_ABSENT";
-  const topologyPath = declaredTopologyPathForLine(inputs, "line-2b2d9eaa53d0");
+  const gap = gapNamed(exemptions, "전대.에버랜드");
+  const topologyPath = gap.evidence.packTopologyPath;
   const topology = structuredClone(inputs.topologiesByPath.get(topologyPath));
-  const line = topology.lines.find(({ lineId }) => lineId === "line-2b2d9eaa53d0");
-  line.scope = line.scope.filter(({ stationName }) => stationName !== "암사역사공원");
+  const lineId = gap.scopeKey.split(":").at(-1);
+  const line = topology.lines.find((candidate) => candidate.lineId === lineId);
+  line.scope = [...line.scope, { stationId: "station-test", stationName: "전대.에버랜드" }];
   const topologiesByPath = new Map(inputs.topologiesByPath).set(topologyPath, rehashTopology(topology));
 
   const result = auditRouteMapCoverageScopes({ ...inputs, exemptions, topologiesByPath });
@@ -759,7 +779,14 @@ test("current topology lineage와 다른 재해시 snapshot은 pack 결측 근�
 test("pack topology에 없는 역은 공식 원문 결측으로 면제할 수 없다 (#2516)", async () => {
   const inputs = await loadAuditInputs();
   const exemptions = structuredClone(inputs.exemptions);
-  gapNamed(exemptions, "신설동").reasonCode = "OFFICIAL_FILE_ROW_ABSENT";
+  const gap = gapNamed(exemptions, "신설동");
+  const source = inputs.inventory.sources.find(({ routeMapAdmissionEvidence }) => (
+    routeMapAdmissionEvidence?.snapshotPath === gap.evidence.snapshotPath
+  ));
+  gap.reasonCode = "OFFICIAL_FILE_ROW_ABSENT";
+  delete gap.evidence.snapshotPath;
+  delete gap.evidence.packTopologyPath;
+  gap.evidence.admissionSourceId = source.id;
 
   const result = auditRouteMapCoverageScopes({ ...inputs, exemptions });
 
