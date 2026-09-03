@@ -58,7 +58,13 @@ export function buildCurrentCapitalStationLineInput(input) {
     candidatePublishedAt,
   });
   const exit = validateExit(input, stationLines, candidate, evidenceSourceSetSha256);
-  const transfer = validateTransfer(input, stationLines, candidate);
+  const transfer = buildValidatedCurrentCapitalTransferEvidenceRows({
+    transferMetrics: input.transferMetrics,
+    transferApplicability: input.transferApplicability,
+    sourceInventory: input.sourceInventory,
+    stationLines,
+    candidate,
+  });
   validatePolicy(input.policy);
   const evidenceRows = [...facility, ...exit, ...transfer].sort(compareEvidence);
   if (evidenceRows.length !== 641 || new Set(evidenceRows.map((row) => `${row.stationId}\0${row.lineId}\0${row.domain}`)).size !== 639) {
@@ -386,8 +392,16 @@ function validateExitEvidenceRow(row, admission) {
   if (row.evidenceHash !== expectedEvidenceHash) throw new Error("full-capital EXIT terminal hash mismatch");
 }
 
-function validateTransfer(input, stationLines, candidate) {
-  const { transferMetrics: metrics, transferApplicability: applicability, sourceInventory: inventory } = input;
+export function buildValidatedCurrentCapitalTransferEvidenceRows({
+  transferMetrics: metrics,
+  transferApplicability: applicability,
+  sourceInventory: inventory,
+  stationLines,
+  candidate,
+}) {
+  if (!Array.isArray(stationLines) || !candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+    throw new Error("full-capital TRANSFER evidence projection mismatch");
+  }
   if (metrics?.artifactKind !== "current-transfer-topology-metrics" || metrics?.physicalPairs?.length !== 15 || metrics?.metrics?.length !== 30
     || metrics.metrics.filter(({ metricProvenance }) => metricProvenance === "OFFICIAL_SOURCE").length !== 28 || metrics.metrics.filter(({ metricProvenance }) => metricProvenance === "DERIVED_RECIPROCAL").length !== 2
     || metrics.metrics.some(({ durationRole, distanceMeters, officialDurationSecondsReference }) => durationRole !== "REFERENCE_ONLY" || !Number.isSafeInteger(distanceMeters) || distanceMeters <= 0 || !Number.isSafeInteger(officialDurationSecondsReference) || officialDurationSecondsReference <= 0)

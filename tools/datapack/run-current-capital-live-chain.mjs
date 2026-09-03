@@ -1353,7 +1353,7 @@ export async function runCurrentCapitalExitTerminalConsumer({
   }
   await verifyPreparedTopologyStage(stagedRoot, preparedTerminal.proof);
   await rebindPublicRouteMapImpl({ repositoryRoot: stagedRoot });
-  await rebindTransferImpl({ repositoryRoot: stagedRoot, observationDirectory: transferObservationDirectory, receiptPath: transferReceiptPath });
+  const transferRebind = await rebindTransferImpl({ repositoryRoot: stagedRoot, observationDirectory: transferObservationDirectory, receiptPath: transferReceiptPath });
   const allowedPredecessorSourceIds = accessibilitySourceHandoff.sources
     .filter(({ action }) => action === "REFRESH")
     .map(({ sourceId }) => sourceId)
@@ -1439,7 +1439,10 @@ export async function runCurrentCapitalExitTerminalConsumer({
   });
   await writeFile(path.join(stagedRoot, "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json"),
     `${canonicalCurrentExitReboundAdmissionOciReceiptJson(exitReceipt)}\n`, { flag: "w", mode: 0o600 });
-  const proposedOutputs = await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: stagedRoot });
+  const proposedOutputs = await buildCurrentCapitalAccessibilityRefreshOutputs({
+    repositoryRoot: stagedRoot,
+    transferRebindOutputs: transferRebind?.outputs,
+  });
   const proposedByPath = new Map([
     ...proposedOutputs.map(({ relative, bytes }) => [relative, bytes]),
     [proposedOutputs[0].fanIn.relative, proposedOutputs[0].fanIn.bytes],
@@ -1450,7 +1453,10 @@ export async function runCurrentCapitalExitTerminalConsumer({
     routeEdgeInputBytes: proposedByPath.get("tools/datapack/release/current-capital-accessibility-full/route-edge-input.json"),
     stationLineInputBytes: proposedByPath.get("tools/datapack/release/current-capital-accessibility-full/station-line-input.json"),
   });
-  const refresh = await refreshCurrentCapitalAccessibilityFull({ repositoryRoot: stagedRoot });
+  const refresh = await refreshCurrentCapitalAccessibilityFull({
+    repositoryRoot: stagedRoot,
+    transferRebindOutputs: transferRebind?.outputs,
+  });
   if (!refresh || JSON.stringify(refresh.outputs) !== JSON.stringify([
     "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
     "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
