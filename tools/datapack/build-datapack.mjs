@@ -955,8 +955,18 @@ export function candidateOverrideAccessibilityFreshUntil({
     "NOT_APPLICABLE",
     "UNVERIFIED_EVIDENCE_BLOCKED",
   ]);
+  const materializationStationLines = Array.isArray(stationLineInput.stationLines)
+    ? stationLineInput.stationLines
+    : [];
+  const expectedMaterializationKeys = new Set(materializationStationLines.flatMap(({ stationId, lineId }) =>
+    ["FACILITY", "EXIT", "TRANSFER"].map((domain) => `${stationId}:${lineId}:${domain}`)));
+  const actualMaterializationKeys = new Set(materialization.rows.map(({ stationId, lineId, domain }) =>
+    `${stationId}:${lineId}:${domain}`));
   if (materialization.materializationDigest !== authority.buildInput.materializationDigest
-    || materialization.rows.length !== 639
+    || expectedMaterializationKeys.size === 0
+    || actualMaterializationKeys.size !== materialization.rows.length
+    || actualMaterializationKeys.size !== expectedMaterializationKeys.size
+    || [...expectedMaterializationKeys].some((key) => !actualMaterializationKeys.has(key))
     || materialization.stateSummary.UNKNOWN !== 0
     || materialization.stateSummary.MISSING !== 0
     || materialization.stateSummary.STALE !== 0
@@ -2351,7 +2361,7 @@ function assertExactCapitalTopologyProjection(pack, admittedLineIds, expectedEdg
   }
 }
 
-function projectedItxDirectionalPairs(stationSequences) {
+export function projectedItxDirectionalPairs(stationSequences) {
   const directionalPairs = [];
   const pairHashes = new Map();
   for (const sequence of stationSequences ?? []) {

@@ -7,6 +7,10 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import * as currentPlan from "./build-current-kric-exit-collection-plan.mjs";
+import {
+  admittedIncheonTopologyEvidence,
+  materializeIncheonNetworkEdges,
+} from "./build-datapack.mjs";
 import { canonicalKricExitPathCollectionPlanJson } from "./plan-kric-exit-path-collection.mjs";
 
 const { buildCurrentKricExitCollectionPlan, main } = currentPlan;
@@ -35,25 +39,41 @@ test("current production 정본에서 exact EXIT collection plan을 결정적으
   const targets = JSON.parse(input.coverageTargetsBytes);
   const activeLineIds = new Set(targets.activeLineScopes.map(({ lineId }) => lineId));
   const activeStationLines = pack.stationLines.filter(({ lineId }) => activeLineIds.has(lineId));
-  const incheonLineIds = new Set(["line-42b5805f3b5a", "line-98718184f016"]);
+  const incheonTopology = JSON.parse(input.incheonTopologyBytes);
+  const incheonLineIds = new Set(incheonTopology.topologyLineIds);
   const retainedLocalRideEdges = pack.networkEdges.filter((edge) => (
     edge.edgeType === "RIDE" && edge.servicePattern === "LOCAL" && edge.serviceClass === "SUBWAY"
       && activeLineIds.has(edge.fromNodeId.split(":")[1])
       && !incheonLineIds.has(edge.fromNodeId.split(":")[1])
   ));
-  const incheonTopology = JSON.parse(input.incheonTopologyBytes);
+  const projectedPack = structuredClone(pack);
+  projectedPack.networkEdges = projectedPack.networkEdges.filter((edge) => (
+    !incheonLineIds.has(edge.fromNodeId.split(":")[1])
+  ));
+  const existingEdgeIds = new Set(projectedPack.networkEdges.map(({ id }) => id));
+  const incheonAdmission = admittedIncheonTopologyEvidence({
+    sourceInventory: JSON.parse(input.sourceInventoryBytes),
+    snapshot: incheonTopology,
+    snapshotBytes: input.incheonTopologyBytes,
+    now: new Date(incheonTopology.capturedAt),
+    requireFresh: true,
+  });
+  materializeIncheonNetworkEdges(projectedPack, incheonTopology, incheonAdmission);
+  const expectedIncheonEdgeIds = projectedPack.networkEdges
+    .filter(({ id }) => !existingEdgeIds.has(id))
+    .map(({ id }) => id)
+    .sort();
+  const actualIncheonEdgeIds = plan.routeEdges
+    .filter(({ lineId }) => incheonLineIds.has(lineId))
+    .map(({ routeEdgeId }) => routeEdgeId)
+    .sort();
 
   assert.match(plan.candidate.candidateId, /^current-production-exit-[a-f0-9]{64}$/);
   assert.equal(plan.providerMappings.length, activeStationLines.length);
   assert.equal(plan.stationLineQueries.length, activeStationLines.length);
   assert.equal(plan.routeEdges.length, retainedLocalRideEdges.length + incheonTopology.edgeCount);
   assert.equal(plan.queryPlan.length, plan.routeEdges.length);
-  assert.equal(plan.routeEdges.filter(({ lineId }) => incheonLineIds.has(lineId)).length, 116);
-  for (const stationId of [
-    "station-3359f701c87e", "station-62fe7e203078", "station-996efa447ecf", "station-b78008d08d1f",
-  ]) {
-    assert.equal(plan.routeEdges.some(({ fromStationId }) => fromStationId === stationId), true);
-  }
+  assert.deepEqual(actualIncheonEdgeIds, expectedIncheonEdgeIds);
   assert.ok(plan.stationLineQueries.every(({ queryIds }) => queryIds.length > 0));
   assert.equal(
     canonicalKricExitPathCollectionPlanJson(plan),
@@ -62,27 +82,38 @@ test("current production 정본에서 exact EXIT collection plan을 결정적으
   for (const [key, value] of Object.entries(input)) assert.deepEqual(value, before[key]);
 });
 
-test("capital Seoul Metro production selector는 canonical metadata와 실제 membership에서 213/420 scope를 만든다", async () => {
+test("capital Seoul Metro production selector는 canonical metadata와 실제 membership의 exact scope를 만든다", async () => {
   const input = await readProductionBytes();
   const plan = buildPlan(input, { coverageSelector: "capital-seoul-metro-production" });
-  const nationwide = buildPlan(input);
+  const pack = JSON.parse(input.canonicalPackBytes).packs[0];
+  const targets = JSON.parse(input.coverageTargetsBytes);
+  const membershipEvidence = JSON.parse(pack.metadata.productionCoverageEvidence)
+    .filter(({ sourceDomain }) => sourceDomain === "station_line_membership");
+  assert.equal(membershipEvidence.length, 1);
+  const [{ regionId, operatorId }] = membershipEvidence;
+  const regionLineIds = new Set(targets.activeLineScopes
+    .filter((scope) => scope.regionId === regionId)
+    .map(({ lineId }) => lineId));
+  const selectedLineIds = new Set(pack.lines
+    .filter((line) => line.operatorId === operatorId && regionLineIds.has(line.id))
+    .map(({ id }) => id));
+  const expectedStationLineKeys = pack.stationLines
+    .filter(({ lineId }) => selectedLineIds.has(lineId))
+    .map(({ stationId, lineId }) => `${stationId}\0${lineId}`)
+    .sort();
+  const actualStationLineKeys = plan.providerMappings
+    .map(({ stationId, lineId }) => `${stationId}\0${lineId}`)
+    .sort();
 
-  assert.equal(nationwide.providerMappings.length, 1102);
-  assert.equal(nationwide.queryPlan.length, 2134);
-  assert.equal(plan.providerMappings.length, 213);
-  assert.equal(plan.stationLineQueries.length, 213);
-  assert.equal(new Set(plan.providerMappings.map(({ stationId }) => stationId)).size, 199);
-  assert.equal(plan.queryPlan.length, 420);
-  assert.deepEqual(Object.fromEntries([...new Map(plan.queryPlan.map(({ lineName }) => [lineName, 0])).keys()]
-    .sort()
-    .map((lineName) => [lineName, plan.queryPlan.filter((query) => query.lineName === lineName).length])), {
-    "수도권 2호선": 102,
-    "수도권 4호선": 100,
-    "수도권 5호선": 110,
-    "수도권 6호선": 78,
-    "수도권 신분당": 30,
-  });
-  assert.equal(new Set(plan.providerMappings.map(({ stationId, lineId }) => `${stationId}\0${lineId}`)).size, 213);
+  assert.deepEqual(actualStationLineKeys, expectedStationLineKeys);
+  assert.deepEqual(
+    plan.stationLineQueries.map(({ stationLineId }) => stationLineId).sort(),
+    expectedStationLineKeys.map((key) => key.replace("\0", ":")).sort(),
+  );
+  assert.deepEqual(
+    plan.queryPlan.map(({ routeEdgeId }) => routeEdgeId).sort(),
+    plan.routeEdges.map(({ routeEdgeId }) => routeEdgeId).sort(),
+  );
   assert.ok(plan.routeEdges.every(({ fromStationId, toStationId, lineId }) => (
     plan.providerMappings.some((row) => row.stationId === fromStationId && row.lineId === lineId)
       && plan.providerMappings.some((row) => row.stationId === toStationId && row.lineId === lineId)
@@ -108,12 +139,11 @@ test("capital Seoul Metro production selector는 canonical metadata와 실제 me
   ));
   assert.ok(reverse);
   reverse.toNodeId = `${alternateStationId}:${targetEdge.lineId}`;
-  const selectedLineIds = new Set(plan.providerMappings.map(({ lineId }) => lineId));
   const alteredSelectedEdges = asymmetricTopology.packs[0].networkEdges.filter((edge) => (
     edge.edgeType === "RIDE" && edge.servicePattern === "LOCAL" && edge.serviceClass === "SUBWAY"
       && selectedLineIds.has(edge.fromNodeId.split(":")[1])
   ));
-  assert.equal(alteredSelectedEdges.length, 420);
+  assert.equal(alteredSelectedEdges.length, plan.routeEdges.length);
   assert.ok(alteredSelectedEdges.every((edge) => {
     const [fromStationId, lineId] = edge.fromNodeId.split(":");
     const [toStationId, toLineId] = edge.toNodeId.split(":");
@@ -160,9 +190,8 @@ test("capital selector는 비대상 Incheon freshness에 결합하지 않고 nat
     ({ stationId, lineId }) => `${stationId}\0${lineId}`,
   ));
 
-  assert.equal(plan.providerMappings.length, 213);
-  assert.equal(new Set(plan.providerMappings.map(({ stationId }) => stationId)).size, 199);
-  assert.equal(plan.queryPlan.length, 420);
+  assert.equal(stationLineKeys.size, plan.providerMappings.length);
+  assert.equal(plan.queryPlan.length, plan.routeEdges.length);
   assert.equal(plan.routeEdges.some(({ lineId }) => incheonLineIds.has(lineId)), false);
   assert.ok(plan.routeEdges.every(({ fromStationId, toStationId, lineId }) => (
     stationLineKeys.has(`${fromStationId}\0${lineId}`)

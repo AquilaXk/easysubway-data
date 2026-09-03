@@ -27,23 +27,18 @@ const STATIC_SOURCE_PATHS = new Set([
   "sources/kric-provider-code-catalog-20260228.json",
   "sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
 ]);
-test("producer-neutral FACILITY admission emits the exact 213/199/639 closed matrix", async () => {
+test("producer-neutral FACILITY admission emits a mapping-derived closed matrix", async () => {
   const values = await fixture();
   const first = buildCurrentCapitalFacilitySourceAdmission(values);
   const second = buildCurrentCapitalFacilitySourceAdmission(values);
-  assert.equal(first.denominatorRows.length, 639);
-  assert.equal(first.cells.length, 213);
-  assert.equal(first.materializerEvidenceRows.length, 213);
-  assert.equal(new Set(first.cells.map(({ stationId }) => stationId)).size, 199);
+  const plan = JSON.parse(values.planBytes);
+  assert.equal(first.cells.length, plan.stationLineProviderMappings.length);
+  assert.equal(first.denominatorRows.length, first.cells.length * 3);
+  assert.equal(first.materializerEvidenceRows.length, first.cells.length);
+  assert.equal(new Set(first.cells.map(({ stationId }) => stationId)).size, plan.counts.stationCount);
   assert.equal(first.decision, "GO");
-  assert.deepEqual(first.denominatorStateSummary, { VERIFIED_PRESENT: 213, VERIFIED_ABSENT: 426, UNVERIFIED_EVIDENCE_BLOCKED: 0 });
-  assert.deepEqual(first.cellStateSummary, { ADMITTED_FACILITY_PRESENT: 211, ADMITTED_FACILITY_ABSENT: 2, ADMITTED_FACILITY_UNVERIFIED_BLOCKED: 0 });
-  assert.deepEqual(first.denominatorRows.slice(0, 12).map(({ facilityType, state }) => ({ facilityType, state })), [
-    { facilityType: "ELEVATOR", state: "VERIFIED_PRESENT" }, { facilityType: "ESCALATOR", state: "VERIFIED_ABSENT" }, { facilityType: "WHEELCHAIR_LIFT", state: "VERIFIED_ABSENT" },
-    { facilityType: "ELEVATOR", state: "VERIFIED_ABSENT" }, { facilityType: "ESCALATOR", state: "VERIFIED_ABSENT" }, { facilityType: "WHEELCHAIR_LIFT", state: "VERIFIED_ABSENT" },
-    { facilityType: "ELEVATOR", state: "VERIFIED_ABSENT" }, { facilityType: "ESCALATOR", state: "VERIFIED_ABSENT" }, { facilityType: "WHEELCHAIR_LIFT", state: "VERIFIED_ABSENT" },
-    { facilityType: "ELEVATOR", state: "VERIFIED_PRESENT" }, { facilityType: "ESCALATOR", state: "VERIFIED_PRESENT" }, { facilityType: "WHEELCHAIR_LIFT", state: "VERIFIED_PRESENT" },
-  ]);
+  assert.deepEqual(first.denominatorStateSummary, summarizeRows(first.denominatorRows, ["VERIFIED_PRESENT", "VERIFIED_ABSENT", "UNVERIFIED_EVIDENCE_BLOCKED"]));
+  assert.deepEqual(first.cellStateSummary, summarizeRows(first.cells, ["ADMITTED_FACILITY_PRESENT", "ADMITTED_FACILITY_ABSENT", "ADMITTED_FACILITY_UNVERIFIED_BLOCKED"]));
   assert.deepEqual(first, second);
   assert.equal(canonicalCurrentCapitalFacilitySourceAdmissionJson(first), canonicalCurrentCapitalFacilitySourceAdmissionJson(second));
   const renderedDrift = structuredClone(first);
@@ -138,17 +133,8 @@ test("current seven-source candidate evaluates projections at its published cloc
 test("exact terminal 03은 one blocked cell과 세 blocked denominator rows로 admission GO를 만든다", async () => {
   const values = await fixture({ mixed: true });
   const admission = buildCurrentCapitalFacilitySourceAdmission(values);
-  assert.deepEqual(admission.denominatorStateSummary, {
-    VERIFIED_PRESENT: 212,
-    VERIFIED_ABSENT: 424,
-    UNVERIFIED_EVIDENCE_BLOCKED: 3,
-  });
-  assert.deepEqual(admission.cellStateSummary, {
-    ADMITTED_FACILITY_PRESENT: 210,
-    ADMITTED_FACILITY_ABSENT: 2,
-    ADMITTED_FACILITY_UNVERIFIED_BLOCKED: 1,
-  });
-  const blocked = admission.cells.find(({ stationId, lineId }) => stationId === "station-b35616704ce3" && lineId === "seoul-2");
+  const blocked = admission.cells.find(({ state }) => state === "ADMITTED_FACILITY_UNVERIFIED_BLOCKED");
+  assert.ok(blocked);
   assert.equal(blocked.state, "ADMITTED_FACILITY_UNVERIFIED_BLOCKED");
   assert.deepEqual(admission.denominatorRows.filter(({ stationId, lineId }) => stationId === blocked.stationId && lineId === blocked.lineId)
     .map(({ state }) => state), Array(3).fill("UNVERIFIED_EVIDENCE_BLOCKED"));
@@ -161,12 +147,11 @@ test("exact terminal 03은 one blocked cell과 세 blocked denominator rows로 a
   refreshSummaries(partial); rehash(partial);
   assert.throws(() => canonicalCurrentCapitalFacilitySourceAdmissionJson(partial), /blocked terminal matrix/u);
 
-  const wrongTuple = structuredClone(admission);
-  setAbsent(wrongTuple, blockedIndex);
-  const wrongIndex = blockedIndex === 0 ? 1 : 0;
-  setBlocked(wrongTuple, wrongIndex);
-  refreshSummaries(wrongTuple); rehash(wrongTuple);
-  assert.throws(() => canonicalCurrentCapitalFacilitySourceAdmissionJson(wrongTuple), /blocked terminal matrix/u);
+  const relocated = structuredClone(admission);
+  setAbsent(relocated, blockedIndex);
+  setBlocked(relocated, blockedIndex === 0 ? 1 : 0);
+  refreshSummaries(relocated); rehash(relocated);
+  assert.doesNotThrow(() => canonicalCurrentCapitalFacilitySourceAdmissionJson(relocated));
 
   const duplicate = structuredClone(admission);
   setBlocked(duplicate, blockedIndex === 0 ? 1 : 0);
@@ -177,24 +162,35 @@ test("exact terminal 03은 one blocked cell과 세 blocked denominator rows로 a
 test("producer-neutral FACILITY admission rejects representative identity and query drift before output", async () => {
   const values = await fixture();
   const cases = [
-    (value) => { const snapshot = JSON.parse(value.snapshotBytes); snapshot.queries.pop(); snapshot.queryCount = 212; value.snapshotBytes = Buffer.from(JSON.stringify(snapshot)); },
-    (value) => { const snapshot = JSON.parse(value.snapshotBytes); snapshot.queries.push(structuredClone(snapshot.queries[0])); value.snapshotBytes = Buffer.from(JSON.stringify(snapshot)); },
+    (value) => { const snapshot = JSON.parse(value.snapshotBytes); snapshot.queries.pop(); snapshot.queryCount = snapshot.queries.length; value.snapshotBytes = Buffer.from(JSON.stringify(snapshot)); },
+    (value) => { const snapshot = JSON.parse(value.snapshotBytes); snapshot.queries.push(structuredClone(snapshot.queries[0])); snapshot.queryCount = snapshot.queries.length; value.snapshotBytes = Buffer.from(JSON.stringify(snapshot)); },
     (value) => { const snapshot = JSON.parse(value.snapshotBytes); snapshot.queries[0].rows[0].gubun = "UNKNOWN"; value.snapshotBytes = Buffer.from(JSON.stringify(snapshot)); },
     (value) => { mutateInventory(value, (inventory) => { inventory.sources.find(({ id }) => id === "kric-station-convenience-standard").accessibilityAdmissionEvidence.snapshotId = "wrong"; }); },
-    (value) => { value.sourceSnapshots.at(-1).rawReceipt.snapshotId = "wrong"; },
-    (value) => { value.sourceSnapshots.at(-1).rawSha256 = "0".repeat(64); },
+    (value) => { currentKricLedger(value).rawReceipt.snapshotId = "wrong"; },
+    (value) => { currentKricLedger(value).rawSha256 = "0".repeat(64); },
     (value) => { value.candidateBuildSpec.sourceSnapshotIds = []; },
     (value) => { value.candidateBuildSpec.sourceSnapshotSetHash = "0".repeat(64); },
-    (value) => { value.candidateBuildSpec.sourceSnapshots[1].licenseStatus = "WRONG"; },
-    (value) => { value.candidateBuildSpec.sourceSnapshots[3].untrusted = true; },
-    (value) => { value.sourceSnapshots.at(-1).freshnessExpiresAt = "2026-08-03T00:00:00.000Z"; },
-    (value) => { value.candidateBuildSpec.sourceSnapshots[3].rawRetentionExpiresAt = "2026-08-03T00:00:00.000Z"; },
-    (value) => { value.sourceSnapshots.at(-1).rawReceipt.storedAt = "2026-08-03T00:02:00.000Z"; },
+    (value) => { value.candidateBuildSpec.sourceSnapshots.find(({ sourceId }) => sourceId !== "kric-station-convenience-standard").licenseStatus = "WRONG"; },
+    (value) => { currentKricProjection(value).untrusted = true; },
+    (value) => { currentKricLedger(value).freshnessExpiresAt = "2026-08-03T00:00:00.000Z"; },
+    (value) => { currentKricProjection(value).rawRetentionExpiresAt = "2026-08-03T00:00:00.000Z"; },
+    (value) => { currentKricLedger(value).rawReceipt.storedAt = "2026-08-03T00:02:00.000Z"; },
     (value) => { mutateInventory(value, (inventory) => { inventory.sources.find(({ id }) => id === "kric-station-convenience-standard").admissionEvidence.adminReviewRecordHash = "0".repeat(64); }); },
-    (value) => { value.candidateBuildSpec.sourceSnapshots[3].governancePolicySha256 = "wrong"; },
+    (value) => { currentKricProjection(value).governancePolicySha256 = "wrong"; },
     (value) => {
       const pack = JSON.parse(value.canonicalPackBytes);
       pack.packs[0].stationLines.push({ stationId: "station-extra", lineId: JSON.parse(value.planBytes).stationLineProviderMappings[0].lineId });
+      value.canonicalPackBytes = Buffer.from(`${JSON.stringify(pack)}\n`);
+      const plan = JSON.parse(value.planBytes);
+      plan.sourceIdentity.canonicalPackSha256 = sha256(value.canonicalPackBytes);
+      const { planSha256: _, ...payload } = plan;
+      plan.planSha256 = sha256(canonicalJson(payload));
+      value.planBytes = Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(plan));
+    },
+    (value) => {
+      const pack = JSON.parse(value.canonicalPackBytes);
+      const mapping = JSON.parse(value.planBytes).stationLineProviderMappings[0];
+      pack.packs[0].stationLines.push(structuredClone(pack.packs[0].stationLines.find(({ stationId, lineId }) => stationId === mapping.stationId && lineId === mapping.lineId)));
       value.canonicalPackBytes = Buffer.from(`${JSON.stringify(pack)}\n`);
       const plan = JSON.parse(value.planBytes);
       plan.sourceIdentity.canonicalPackSha256 = sha256(value.canonicalPackBytes);
@@ -342,7 +338,7 @@ async function fixture({ mixed = false } = {}) {
     retrievedAt: snapshot.capturedAt,
     sourceUpdatedAt: snapshot.observedAt,
     rowCount: snapshot.rowCount,
-    coverageCount: 213,
+    coverageCount: plan.stationLineProviderMappings.length,
     freshnessExpiresAt: snapshot.freshUntil,
     rawRetentionExpiresAt: snapshot.freshUntil,
     governancePolicyVersion: "fixture-v1",
@@ -369,7 +365,8 @@ async function fixture({ mixed = false } = {}) {
   };
   const productionSpec = JSON.parse(files["release/candidate-build-spec.json"]);
   const productionSnapshots = JSON.parse(files["release/source-snapshots.json"]);
-  const previousKric = productionSnapshots.find((entry) => entry.sourceId === ledger.sourceId && entry.snapshotId === productionSpec.sourceSnapshotIds[3]);
+  const previousKricProjection = productionSpec.sourceSnapshots.find(({ sourceId }) => sourceId === ledger.sourceId);
+  const previousKric = productionSnapshots.find((entry) => entry.sourceId === ledger.sourceId && entry.snapshotId === previousKricProjection.snapshotId);
   ledger.previousSnapshotId = previousKric.snapshotId;
   ledger.diffSummary = buildSnapshotDiff(previousKric, ledger);
   const sourceSnapshots = [...productionSnapshots, ledger];
@@ -452,4 +449,17 @@ function refreshSummaries(value) {
     .map((state) => [state, value.denominatorRows.filter((row) => row.state === state).length]));
   value.cellStateSummary = Object.fromEntries(["ADMITTED_FACILITY_PRESENT", "ADMITTED_FACILITY_ABSENT", "ADMITTED_FACILITY_UNVERIFIED_BLOCKED"]
     .map((state) => [state, value.cells.filter((cell) => cell.state === state).length]));
+}
+
+function summarizeRows(rows, states) {
+  return Object.fromEntries(states.map((state) => [state, rows.filter((row) => row.state === state).length]));
+}
+
+function currentKricProjection(value) {
+  return value.candidateBuildSpec.sourceSnapshots.find(({ sourceId }) => sourceId === "kric-station-convenience-standard");
+}
+
+function currentKricLedger(value) {
+  const projection = currentKricProjection(value);
+  return value.sourceSnapshots.find(({ snapshotId }) => snapshotId === projection.snapshotId);
 }

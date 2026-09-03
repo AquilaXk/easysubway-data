@@ -224,7 +224,7 @@
         ]
       },
       "contextInvocations": [
-        "node --test tools/datapack/readmit-bundled-pack-identity.test.mjs",
+        "node --test tools/datapack/verify-production-pack-artifact-identity.test.mjs",
         "node --test --test-name-pattern='bundled 공식 OD quote|bundled 차량·출입문 힌트' tools/datapack/datapack-tools.test.mjs",
         "node --test tools/datapack/run-current-capital-live-chain.test.mjs",
         "node --test tools/datapack/build-current-capital-live-chain-oci-receipt.test.mjs",
@@ -466,7 +466,6 @@
     {"path":"tools/datapack/publish-server-route-bundle.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":940},
     {"path":"tools/datapack/publish-static-network-source-raw.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/purge-expired-source-raw.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":3184},
-    {"path":"tools/datapack/readmit-bundled-pack-identity.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":7711},
     {"path":"tools/datapack/rebind-capital-route-map-admissions.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":170},
     {"path":"tools/datapack/rebind-current-active-facility-derived-identity.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":900},
     {"path":"tools/datapack/rebind-current-active-public-route-map-materialization.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":900},
@@ -571,7 +570,7 @@
       "repository": "AquilaXk/easysubway-mobile",
       "commit": "39d2c4723d0ff855041c6162825930c7d12ffad3",
       "profileCommit": {
-        "mobile-v19": "4d133ad853fa6ef4e024a37a1409b5eaadd1cc69"
+        "mobile-v19": "23f4262087af99ff49e120707f7de317666679ef"
       },
       "checkoutPath": ".external/mobile",
       "sourcePath": "apps/mobile",
@@ -581,7 +580,7 @@
           "path": "assets/datapacks/capital.sqlite.gz",
           "sha256": "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
           "profileSha256": {
-            "mobile-v19": "905e77589971bd53d6ecaab9dbfd211ab56f86de883425747bf1d93d31ebae4f"
+            "mobile-v19": "6339daf6de99f9eb69b3940d3eab41302d55cf4c47270625a771d1bc99568cd1"
           }
         },
         {

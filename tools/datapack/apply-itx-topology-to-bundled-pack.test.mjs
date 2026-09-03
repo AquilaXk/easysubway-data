@@ -12,12 +12,14 @@ import {
   admittedTopologySource,
   applyTopology,
   assertStoredTopology,
+  bindItxTopologyEdgeProvenance,
   deriveTopology,
   parseAuthenticatedAdmittedSourceDocuments,
   projectItxTopologyIntoCanonicalFixture,
   validateAdmittedSourceDocuments,
   validateTopologyEvidence,
 } from "./apply-itx-topology-to-bundled-pack.mjs";
+import { projectedItxDirectionalPairs } from "./build-datapack.mjs";
 import { buildItxCurrentTopologyAdmission } from "./build-itx-current-topology-admission.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -255,6 +257,16 @@ function admissionEvidenceFrom(contract) {
   };
 }
 
+function edgeAdmissionFrom(source) {
+  return {
+    sourceId: source.artifactKind,
+    sourceSnapshotId: source.artifactId,
+    evidenceHash: source.evidenceHash,
+    verifiedAt: source.observedAt,
+    pairHashes: projectedItxDirectionalPairs(source.stationSequences).pairHashes,
+  };
+}
+
 async function createFixture(context, { version = 19, legacyEvidence = false } = {}) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "itx-topology-fixture-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
@@ -390,7 +402,7 @@ async function createFixture(context, { version = 19, legacyEvidence = false } =
   } finally {
     database.close();
   }
-  return { sqlitePath, contract, source, topology };
+  return { sqlitePath, contract, source, topology, edgeAdmission: edgeAdmissionFrom(source) };
 }
 
 function canonicalRows(sqlitePath) {
@@ -461,6 +473,7 @@ async function assertRejectedMutatedTopology(context, mutate, expected) {
   mutate(source);
   assert.throws(() => applyTopology(
     fixture.sqlitePath, deriveTopology(source), admissionEvidenceFrom(fixture.contract),
+    fixture.edgeAdmission,
   ), expected);
 }
 
@@ -573,11 +586,21 @@ test("topology direct seam은 shape, FK, admission evidence를 materialize하고
   const first = await createFixture(context);
   const second = await createFixture(context);
   const evidence = admissionEvidenceFrom(first.contract);
-  applyTopology(first.sqlitePath, first.topology, evidence);
-  applyTopology(second.sqlitePath, second.topology, evidence);
-  assertStoredTopology(first.sqlitePath, first.topology, evidence);
+  applyTopology(first.sqlitePath, first.topology, evidence, first.edgeAdmission);
+  applyTopology(second.sqlitePath, second.topology, evidence, second.edgeAdmission);
+  assertStoredTopology(first.sqlitePath, first.topology, evidence, first.edgeAdmission);
   assert.deepEqual(canonicalRows(first.sqlitePath), canonicalRows(second.sqlitePath));
   assert.equal(canonicalRows(first.sqlitePath).length, first.topology.edges.length);
+  const boundEdges = bindItxTopologyEdgeProvenance(first.topology, first.edgeAdmission);
+  assert.equal(boundEdges.filter(({ verificationStatus }) => verificationStatus === "VERIFIED").length,
+    first.topology.edges.length);
+  assert.ok(boundEdges.every(({ accessibilityStatus, stairAccessState }) =>
+    accessibilityStatus === "UNKNOWN" && stairAccessState === "UNKNOWN"));
+  const incomplete = structuredClone(first.edgeAdmission);
+  incomplete.pairHashes = new Map(first.edgeAdmission.pairHashes);
+  incomplete.pairHashes.delete(incomplete.pairHashes.keys().next().value);
+  assert.throws(() => bindItxTopologyEdgeProvenance(first.topology, incomplete),
+    /provenance admission is incomplete/);
 });
 
 test("topology evidence seam은 self-consistent fixture를 통과하고 파생 count 변조를 거부한다", async (context) => {
@@ -714,7 +737,8 @@ test("authenticated completeness도 exact station identity와 no-legacy를 요�
 test("v18 legacy evidence schema는 current-only에서 mutation 없이 거부한다", async (context) => {
   const fixture = await createFixture(context, { version: 18, legacyEvidence: true });
   const before = sha256(await readFile(fixture.sqlitePath));
-  assert.throws(() => applyTopology(fixture.sqlitePath, fixture.topology, admissionEvidenceFrom(fixture.contract)),
+  assert.throws(() => applyTopology(fixture.sqlitePath, fixture.topology,
+    admissionEvidenceFrom(fixture.contract), fixture.edgeAdmission),
     /requires current catalog user_version 19; found 18/);
   assert.equal(sha256(await readFile(fixture.sqlitePath)), before);
 });
@@ -722,7 +746,8 @@ test("v18 legacy evidence schema는 current-only에서 mutation 없이 거부한
 test("v18 mixed evidence는 current-only에서 mutation 없이 거부한다", async (context) => {
   const fixture = await createFixture(context, { version: 18, legacyEvidence: true });
   const before = sha256(await readFile(fixture.sqlitePath));
-  assert.throws(() => applyTopology(fixture.sqlitePath, fixture.topology, admissionEvidenceFrom(fixture.contract)),
+  assert.throws(() => applyTopology(fixture.sqlitePath, fixture.topology,
+    admissionEvidenceFrom(fixture.contract), fixture.edgeAdmission),
     /requires current catalog user_version 19; found 18/);
   assert.equal(sha256(await readFile(fixture.sqlitePath)), before);
 });
@@ -730,13 +755,13 @@ test("v18 mixed evidence는 current-only에서 mutation 없이 거부한다", as
 test("route service evidence domain split은 ready v19의 stale row도 두 domain exact tuple로 교체한다", async (context) => {
   const fixture = await createFixture(context);
   const evidence = admissionEvidenceFrom(fixture.contract);
-  applyTopology(fixture.sqlitePath, fixture.topology, evidence);
+  applyTopology(fixture.sqlitePath, fixture.topology, evidence, fixture.edgeAdmission);
   const database = new DatabaseSync(fixture.sqlitePath);
   try {
     database.prepare(`UPDATE route_service_artifact_evidence
       SET canonical_pack_sha256 = ? WHERE service_class = 'ITX_CHEONGCHUN'`).run("f".repeat(64));
   } finally { database.close(); }
-  applyTopology(fixture.sqlitePath, fixture.topology, evidence);
+  applyTopology(fixture.sqlitePath, fixture.topology, evidence, fixture.edgeAdmission);
   const output = new DatabaseSync(fixture.sqlitePath, { readOnly: true });
   try {
     assert.equal(output.prepare(`SELECT canonical_pack_sha256 AS canonicalPackSha256
@@ -752,12 +777,14 @@ test("route service evidence domain split은 one-domain missing 또는 freshness
   const evidence = admissionEvidenceFrom(fixture.contract);
   const missingStation = structuredClone(evidence);
   delete missingStation.stationCatalogEvidence;
-  assert.throws(() => applyTopology(fixture.sqlitePath, fixture.topology, missingStation),
+  assert.throws(() => applyTopology(fixture.sqlitePath, fixture.topology, missingStation, fixture.edgeAdmission),
     /independent current route service evidence/);
   assert.equal(sha256(await readFile(fixture.sqlitePath)), before);
   const mismatchedFreshness = structuredClone(evidence);
   mismatchedFreshness.stationCatalogEvidence.freshUntil = "2099-01-02T00:00:00.000Z";
-  assert.throws(() => applyTopology(fixture.sqlitePath, fixture.topology, mismatchedFreshness),
+  assert.throws(() => applyTopology(
+    fixture.sqlitePath, fixture.topology, mismatchedFreshness, fixture.edgeAdmission,
+  ),
     /independent current route service evidence/);
   assert.equal(sha256(await readFile(fixture.sqlitePath)), before);
 });
@@ -773,7 +800,8 @@ test("route service evidence domain split은 malformed v19 station table을 muta
     database.exec(weakened);
   } finally { database.close(); }
   const before = sha256(await readFile(fixture.sqlitePath));
-  assert.throws(() => applyTopology(fixture.sqlitePath, fixture.topology, admissionEvidenceFrom(fixture.contract)),
+  assert.throws(() => applyTopology(fixture.sqlitePath, fixture.topology,
+    admissionEvidenceFrom(fixture.contract), fixture.edgeAdmission),
     /v19 route service evidence schema is malformed or partial/);
   assert.equal(sha256(await readFile(fixture.sqlitePath)), before);
 });
@@ -784,7 +812,8 @@ test("route service evidence domain split은 v19 one-domain count mismatch를 mu
   database.exec("DELETE FROM route_service_station_catalog_evidence");
   database.close();
   const before = sha256(await readFile(fixture.sqlitePath));
-  assert.throws(() => applyTopology(fixture.sqlitePath, fixture.topology, admissionEvidenceFrom(fixture.contract)),
+  assert.throws(() => applyTopology(fixture.sqlitePath, fixture.topology,
+    admissionEvidenceFrom(fixture.contract), fixture.edgeAdmission),
     /requires exactly one row in each domain/);
   assert.equal(sha256(await readFile(fixture.sqlitePath)), before);
 });
@@ -792,7 +821,8 @@ test("route service evidence domain split은 v19 one-domain count mismatch를 mu
 test("v16 catalog는 current-only에서 mutation 없이 거부한다", async (context) => {
   const fixture = await createFixture(context, { version: 16 });
   const before = sha256(await readFile(fixture.sqlitePath));
-  assert.throws(() => applyTopology(fixture.sqlitePath, fixture.topology, admissionEvidenceFrom(fixture.contract)),
+  assert.throws(() => applyTopology(fixture.sqlitePath, fixture.topology,
+    admissionEvidenceFrom(fixture.contract), fixture.edgeAdmission),
     /requires current catalog user_version 19; found 16/);
   assert.equal(sha256(await readFile(fixture.sqlitePath)), before);
 });
@@ -800,7 +830,8 @@ test("v16 catalog는 current-only에서 mutation 없이 거부한다", async (co
 test("unsupported catalog version은 fixture를 변경하지 않고 거부한다", async (context) => {
   const fixture = await createFixture(context, { version: 20 });
   const before = sha256(await readFile(fixture.sqlitePath));
-  assert.throws(() => applyTopology(fixture.sqlitePath, fixture.topology, admissionEvidenceFrom(fixture.contract)),
+  assert.throws(() => applyTopology(fixture.sqlitePath, fixture.topology,
+    admissionEvidenceFrom(fixture.contract), fixture.edgeAdmission),
     /requires current catalog user_version 19; found 20/);
   assert.equal(sha256(await readFile(fixture.sqlitePath)), before);
 });
@@ -969,7 +1000,7 @@ test("canonical fixture topology projection은 resultant network edge floor를 �
 test("assertStoredTopology는 foreign-key 손상을 거부한다", async (context) => {
   const fixture = await createFixture(context);
   const evidence = admissionEvidenceFrom(fixture.contract);
-  applyTopology(fixture.sqlitePath, fixture.topology, evidence);
+  applyTopology(fixture.sqlitePath, fixture.topology, evidence, fixture.edgeAdmission);
   const database = new DatabaseSync(fixture.sqlitePath);
   try {
     database.exec("PRAGMA foreign_keys = OFF");
@@ -977,7 +1008,9 @@ test("assertStoredTopology는 foreign-key 손상을 거부한다", async (contex
       trip_id, stop_sequence, station_id, line_id, arrival_seconds, departure_seconds
     ) VALUES ('fixture-trip', 1, 'missing-station', '${fixture.topology.stations[0].lineId}', 0, 0)`);
   } finally { database.close(); }
-  assert.throws(() => assertStoredTopology(fixture.sqlitePath, fixture.topology, evidence),
+  assert.throws(() => assertStoredTopology(
+    fixture.sqlitePath, fixture.topology, evidence, fixture.edgeAdmission,
+  ),
     /foreign_key_check failed/);
 });
 
@@ -1052,7 +1085,8 @@ test("versions 15와 17과 20은 mutation 없이 거부한다", async (context) 
     await context.test(String(version), async (childContext) => {
       const fixture = await createFixture(childContext, { version });
       const before = sha256(await readFile(fixture.sqlitePath));
-      assert.throws(() => applyTopology(fixture.sqlitePath, fixture.topology, admissionEvidenceFrom(fixture.contract)),
+      assert.throws(() => applyTopology(fixture.sqlitePath, fixture.topology,
+        admissionEvidenceFrom(fixture.contract), fixture.edgeAdmission),
         new RegExp(`requires current catalog user_version 19; found ${version}`));
       assert.equal(sha256(await readFile(fixture.sqlitePath)), before);
     });

@@ -182,7 +182,7 @@ async function finalizeFixture(t, { prepared = false } = {}) {
   const previousId = candidate.sourceSnapshots.find(({ sourceId }) => sourceId === snapshot.sourceId)?.snapshotId;
   const previous = snapshots.find(({ snapshotId }) => snapshotId === previousId); assert.ok(previous);
   const dateToken = snapshot.capturedAt.slice(0, 10).replaceAll("-", "");
-  const next = { ...structuredClone(previous), snapshotId: snapshot.snapshotId, previousSnapshotId: previous.snapshotId, retrievedAt: snapshot.capturedAt, sourceUpdatedAt: snapshot.capturedAt, rowCount: 0, coverageCount: 213, rawSha256: "a".repeat(64), rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-station-convenience-standard/${dateToken}/${"a".repeat(64)}.json`, redactedRequestFingerprint: snapshot.redactedRequestFingerprint, schemaFingerprint: snapshot.schemaFingerprint, contentSha256: snapshot.contentSha256, freshnessExpiresAt: snapshot.freshUntil, rawRetentionExpiresAt: snapshot.freshUntil };
+  const next = { ...structuredClone(previous), snapshotId: snapshot.snapshotId, previousSnapshotId: previous.snapshotId, retrievedAt: snapshot.capturedAt, sourceUpdatedAt: snapshot.capturedAt, rowCount: 0, coverageCount: plan.counts.providerTupleCount, rawSha256: "a".repeat(64), rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-station-convenience-standard/${dateToken}/${"a".repeat(64)}.json`, redactedRequestFingerprint: snapshot.redactedRequestFingerprint, schemaFingerprint: snapshot.schemaFingerprint, contentSha256: snapshot.contentSha256, freshnessExpiresAt: snapshot.freshUntil, rawRetentionExpiresAt: snapshot.freshUntil };
   const governanceBytes = await load("tools/datapack/source-governance-policy.json"); const governance = JSON.parse(governanceBytes);
   const freshnessPolicy = JSON.parse(await load("release/product-gates/datapack-freshness-sla.json"));
   next.freshnessExpiresAt = deriveFreshnessExpiresAt({ policy: freshnessPolicy, sourceClassId: "static_accessibility_facility", basisAt: snapshot.capturedAt, evaluationAt: NOW.toISOString() });
@@ -304,7 +304,7 @@ test("collect journals a complete exact terminal observation as COLLECTED withou
     repositoryRoot, operationRoot, serviceKey: "test", env: OCI_ENV, execFileImpl: async (file, args) => file === "git" ? exactMainExec(file, args) : ({ stdout: args[0] === "sts" ? "123456789012\n" : "" }),
     collectImpl: async () => terminalObservationFor(plan),
   });
-  assert.deepEqual(result, { snapshotId: nextSnapshot(plan).snapshotId, requestCount: 213, status: "COLLECTED" });
+  assert.deepEqual(result, { snapshotId: nextSnapshot(plan).snapshotId, requestCount: plan.counts.providerTupleCount, status: "COLLECTED" });
   assert.equal(JSON.parse(await readFile(path.join(operationRoot, "journal.json"), "utf8")).phase, "COLLECTED");
 });
 
@@ -966,7 +966,7 @@ test("stored complete observation reconciles COLLECTION_STARTED without KRIC rep
   const journalPath = path.join(fixture.operationRoot, "journal.json"); const journal = JSON.parse(await readFile(journalPath, "utf8")); journal.phase = "COLLECTION_STARTED"; await writeJson(journalPath, journal);
   let kricCalls = 0;
   const observation = await collectCurrentCapitalFacilityOperation({ repositoryRoot: fixture.root, operationRoot: fixture.operationRoot, collectImpl: async () => { kricCalls += 1; }, execFileImpl: exactMainExec, now: NOW });
-  assert.equal(kricCalls, 0); assert.deepEqual(observation, { snapshotId: fixture.snapshot.snapshotId, requestCount: 213, status: "COLLECTED" });
+  assert.equal(kricCalls, 0); assert.deepEqual(observation, { snapshotId: fixture.snapshot.snapshotId, requestCount: fixture.plan.counts.providerTupleCount, status: "COLLECTED" });
   assert.equal(JSON.parse(await readFile(journalPath, "utf8")).phase, "COLLECTED");
 });
 

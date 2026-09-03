@@ -49,7 +49,7 @@ export const KRIC_ACCESSIBILITY_OPERATIONS = Object.freeze([{
   tupleIdentityFields: [],
 }]);
 
-const TERMINAL_RESULT_03 = Object.freeze({
+export const KRIC_TERMINAL_RESULT_03 = Object.freeze({
   stationId: "station-b35616704ce3", lineId: "seoul-2", railOprIsttCd: "S1", lnCd: "2", stinCd: "234-4",
 });
 const TERMINAL_POLICY = "EXACT_TUPLE_PROVIDER_RESULT_03";
@@ -143,9 +143,9 @@ async function collectKricAccessibilitySnapshotResults({
       if (response.providerResultCode === "03") providerGaps.push(tuple);
       collected.push({ tuple, response });
     }
-    const isExactTerminal = (tuple) => Object.entries(TERMINAL_RESULT_03).every(([field, value]) => tuple?.[field] === value);
+    const isExactTerminal = (tuple) => Object.entries(KRIC_TERMINAL_RESULT_03).every(([field, value]) => tuple?.[field] === value);
     const isMixed = providerGaps.length === 1 && allowTerminalResult03 === true
-      && operation.sourceId === "kric-station-convenience-standard" && tuples.length === 213
+      && operation.sourceId === "kric-station-convenience-standard"
       && isExactTerminal(providerGaps[0]);
     if (providerGaps.length > 0 && !isMixed) {
       const gaps = providerGaps.map((tuple) => `${operation.sourceId}/${tuple.railOprIsttCd}/${tuple.lnCd}/${tuple.stinCd}/03`);
@@ -439,7 +439,7 @@ export function validateKricAccessibilitySnapshotIdentity(snapshot) {
         || operation.tupleIdentityFields.some((field) => row[field] !== query[field]))) {
       throw new Error("KRIC accessibility snapshot identity is invalid");
     }
-    const isTerminal = isMixed && Object.entries(TERMINAL_RESULT_03).every(([field, value]) => query[field] === value)
+    const isTerminal = isMixed && Object.entries(KRIC_TERMINAL_RESULT_03).every(([field, value]) => query[field] === value)
       && query.providerResultCode === "03";
     if (isTerminal) {
       terminalCount += 1;
@@ -463,7 +463,7 @@ export function validateKricAccessibilitySnapshotIdentity(snapshot) {
     if (tupleKeys.has(tupleKey)) throw new Error("KRIC accessibility snapshot identity is invalid");
     tupleKeys.add(tupleKey);
   }
-  if (isMixed && (snapshot.sourceId !== "kric-station-convenience-standard" || snapshot.queries.length !== 213 || terminalCount !== 1)) {
+  if (isMixed && (snapshot.sourceId !== "kric-station-convenience-standard" || terminalCount !== 1)) {
     throw new Error("KRIC accessibility snapshot identity is invalid");
   }
   const contentSha256 = hash(snapshot.queries.map(({ rawResponseSha256: _, ...query }) => query));
