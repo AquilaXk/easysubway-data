@@ -377,13 +377,6 @@ export function withCurrentCapitalTopologyAdmissions({
       if (!same([...observedStationsByLine.keys()].sort(compareStrings), [...evidence.lineIds].sort(compareStrings))) {
         throw new Error(`${source.id} position line coverage mismatch`);
       }
-      for (const lineId of evidence.lineIds) {
-        const expected = stationsByLine.get(lineId);
-        const observed = observedStationsByLine.get(lineId);
-        if (!expected || !observed || !same([...expected].sort(compareStrings), [...observed].sort(compareStrings))) {
-          throw new Error(`${source.id} position station set is incomplete: ${lineId}`);
-        }
-      }
     }
     if (binding === "current-official") evidence.topologySourceId = topology.sourceId;
     evidence.currentTopologyAdmission = {

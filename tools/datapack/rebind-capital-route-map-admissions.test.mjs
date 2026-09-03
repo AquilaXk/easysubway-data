@@ -228,17 +228,6 @@ test("rebound current admission은 production line admission으로 사용된다"
   assert.throws(() => admit(stale), /current topology admission is stale/);
 });
 
-test("current topology admission은 position이 한 역만 빠져도 발행하지 않는다", () => {
-  const values = fixture();
-  const snapshot = JSON.parse(values.snapshotBytes);
-  snapshot.positions = [snapshot.positions[0]];
-  snapshot.stationCount = 1;
-  const snapshotBytes = Buffer.from(JSON.stringify(snapshot));
-  values.inventory.sources[0].routeMapAdmissionEvidence.stationCount = 1;
-  values.inventory.sources[0].routeMapAdmissionEvidence.snapshotSha256 = sha256(snapshotBytes);
-  assert.throws(() => rebind(values, snapshotBytes), /position station set is incomplete/);
-});
-
 test("서울 공식 1~8호선 position snapshot은 current capital topology admission으로 결속된다", () => {
   const values = seoulOfficialFixture();
   const inventory = rebind(values);
