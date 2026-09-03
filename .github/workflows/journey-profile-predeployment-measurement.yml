@@ -203,10 +203,17 @@ jobs:
             || releaseDecision.strictValidationPassed !== true
             || releaseDecision.sourceSnapshotSetHash !== component.provenance.sourceSnapshotSetHash) throw new Error("release-candidate decision mismatch");
           const routeEvidence = releaseEvidence.candidateServerRouteEvidence;
-          if (!routeEvidence || routeEvidence.candidateId !== releaseEvidence.buildCandidateId
+          if (!routeEvidence || typeof releaseEvidence.buildCandidateId !== "string" || !releaseEvidence.buildCandidateId
+            || typeof routeEvidence.candidateId !== "string" || !routeEvidence.candidateId
+            || routeEvidence.candidateId !== releaseEvidence.buildCandidateId
             || routeEvidence.sourceSnapshotSetHash !== component.provenance.sourceSnapshotSetHash) throw new Error("candidate route evidence identity mismatch");
           for (const [name, expected] of [["eligibility", "server-route-bundle-evidence/route-accessibility-eligibility.json"], ["final", "server-route-bundle-evidence/server-route-bundle-final.json"]]) {
-            if (routeEvidence[name]?.path !== expected || routeEvidence[name].sha256 !== byPath.get(expected)?.sha256) throw new Error("candidate route evidence artifact mismatch");
+            const inventoryEntry = byPath.get(expected);
+            if (typeof routeEvidence[name] !== "object" || routeEvidence[name] === null || Array.isArray(routeEvidence[name])
+              || !inventoryEntry
+              || !/^[a-f0-9]{64}$/.test(routeEvidence[name].sha256 ?? "")
+              || !/^[a-f0-9]{64}$/.test(inventoryEntry.sha256 ?? "")
+              || routeEvidence[name].path !== expected || routeEvidence[name].sha256 !== inventoryEntry.sha256) throw new Error("candidate route evidence artifact mismatch");
           }
           const input = {
             schemaVersion: 1,

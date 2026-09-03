@@ -93,6 +93,18 @@ test("predeployment measurement rejects incomplete artifact and observation attr
   requireText(text, /String\(component\.workflowRunId\) !== process\.env\.DATA_RUN_ID/,
     "component run binding");
   requireText(text, /candidate artifact inventory paths mismatch/, "exact candidate inventory");
+  requireText(text, /typeof releaseEvidence\.buildCandidateId !== "string" \|\| !releaseEvidence\.buildCandidateId/,
+    "nonempty release candidate identity");
+  requireText(text, /typeof routeEvidence\.candidateId !== "string" \|\| !routeEvidence\.candidateId/,
+    "nonempty route evidence candidate identity");
+  requireText(text, /typeof routeEvidence\[name\] !== "object" \|\| routeEvidence\[name\] === null/,
+    "route evidence artifact object");
+  requireText(text, /const inventoryEntry = byPath\.get\(expected\);/,
+    "route evidence inventory entry presence");
+  requireText(text, /!\/\^\[a-f0-9\]\{64\}\$\/\.test\(routeEvidence\[name\]\.sha256 \?\? ""\)/,
+    "route evidence digest shape");
+  requireText(text, /!\/\^\[a-f0-9\]\{64\}\$\/\.test\(inventoryEntry\.sha256 \?\? ""\)/,
+    "inventory digest shape");
   assert.doesNotMatch(text, /matchingScopes|JSON\.stringify\(value\) === JSON\.stringify\(regions\)/,
     "no inferred fan-in field discovery");
   requireText(text, /JourneyProfilePredeploymentMeasurementTest/, "future JUnit harness");
