@@ -1229,6 +1229,13 @@ export async function runCurrentCapitalLiveChain({ repositoryRoot, runnerTemp, r
  * materialization; this function owns the protected ordering and verifies that
  * neither provider collection nor an OCI write can occur on the consumer path.
  */
+export function requireTerminalTransferRebindOutputs(result) {
+  if (!Array.isArray(result?.outputs) || result.outputs.length === 0) {
+    throw new Error("terminal consumer TRANSFER rebind proof mismatch");
+  }
+  return result.outputs;
+}
+
 export async function runCurrentCapitalExitTerminalConsumer({
   repositoryRoot,
   sourceMainRoot,
@@ -1353,7 +1360,11 @@ export async function runCurrentCapitalExitTerminalConsumer({
   }
   await verifyPreparedTopologyStage(stagedRoot, preparedTerminal.proof);
   await rebindPublicRouteMapImpl({ repositoryRoot: stagedRoot });
-  const transferRebind = await rebindTransferImpl({ repositoryRoot: stagedRoot, observationDirectory: transferObservationDirectory, receiptPath: transferReceiptPath });
+  const transferRebindOutputs = requireTerminalTransferRebindOutputs(await rebindTransferImpl({
+    repositoryRoot: stagedRoot,
+    observationDirectory: transferObservationDirectory,
+    receiptPath: transferReceiptPath,
+  }));
   const allowedPredecessorSourceIds = accessibilitySourceHandoff.sources
     .filter(({ action }) => action === "REFRESH")
     .map(({ sourceId }) => sourceId)
@@ -1441,7 +1452,7 @@ export async function runCurrentCapitalExitTerminalConsumer({
     `${canonicalCurrentExitReboundAdmissionOciReceiptJson(exitReceipt)}\n`, { flag: "w", mode: 0o600 });
   const proposedOutputs = await buildCurrentCapitalAccessibilityRefreshOutputs({
     repositoryRoot: stagedRoot,
-    transferRebindOutputs: transferRebind?.outputs,
+    transferRebindOutputs,
   });
   const proposedByPath = new Map([
     ...proposedOutputs.map(({ relative, bytes }) => [relative, bytes]),
@@ -1455,7 +1466,7 @@ export async function runCurrentCapitalExitTerminalConsumer({
   });
   const refresh = await refreshCurrentCapitalAccessibilityFull({
     repositoryRoot: stagedRoot,
-    transferRebindOutputs: transferRebind?.outputs,
+    transferRebindOutputs,
   });
   if (!refresh || JSON.stringify(refresh.outputs) !== JSON.stringify([
     "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
