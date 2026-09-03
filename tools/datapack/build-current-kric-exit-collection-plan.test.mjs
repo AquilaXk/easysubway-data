@@ -47,6 +47,9 @@ test("current production 정본에서 exact EXIT collection plan을 결정적으
       && !incheonLineIds.has(edge.fromNodeId.split(":")[1])
   ));
   const projectedPack = structuredClone(pack);
+  projectedPack.networkEdges = projectedPack.networkEdges.filter((edge) => (
+    !incheonLineIds.has(edge.fromNodeId.split(":")[1])
+  ));
   const existingEdgeIds = new Set(projectedPack.networkEdges.map(({ id }) => id));
   const incheonAdmission = admittedIncheonTopologyEvidence({
     sourceInventory: JSON.parse(input.sourceInventoryBytes),
@@ -84,9 +87,16 @@ test("capital Seoul Metro production selector는 canonical metadata와 실제 me
   const plan = buildPlan(input, { coverageSelector: "capital-seoul-metro-production" });
   const pack = JSON.parse(input.canonicalPackBytes).packs[0];
   const targets = JSON.parse(input.coverageTargetsBytes);
-  const selectedLineIds = new Set(targets.activeLineScopes
-    .filter(({ regionId, operatorId }) => regionId === "capital" && operatorId === "seoul-metro")
+  const membershipEvidence = JSON.parse(pack.metadata.productionCoverageEvidence)
+    .filter(({ sourceDomain }) => sourceDomain === "station_line_membership");
+  assert.equal(membershipEvidence.length, 1);
+  const [{ regionId, operatorId }] = membershipEvidence;
+  const regionLineIds = new Set(targets.activeLineScopes
+    .filter((scope) => scope.regionId === regionId)
     .map(({ lineId }) => lineId));
+  const selectedLineIds = new Set(pack.lines
+    .filter((line) => line.operatorId === operatorId && regionLineIds.has(line.id))
+    .map(({ id }) => id));
   const expectedStationLineKeys = pack.stationLines
     .filter(({ lineId }) => selectedLineIds.has(lineId))
     .map(({ stationId, lineId }) => `${stationId}\0${lineId}`)
