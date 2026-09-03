@@ -344,6 +344,8 @@ function collectScopeCoverage({ inventory, snapshotsByPath, violations }) {
         snapshotPaths: [],
         capturedAts: [],
         rawSha256s: new Set(),
+        topologyPaths: new Set(),
+        topologyContentByPath: new Map(),
         positionsByName: new Map(),
         quarantinedByName: new Map(),
       };
@@ -383,6 +385,8 @@ function collectScopeCoverage({ inventory, snapshotsByPath, violations }) {
       }
       officialRenameEvidenceByScope.set(key, renameEvidence);
       for (const lineage of lineageTopologyPaths(source.routeMapAdmissionEvidence, lineId)) {
+        coverage.topologyPaths.add(lineage.path);
+        coverage.topologyContentByPath.set(lineage.path, lineage.contentSha256);
         addOfficialUrls(officialUrls, topologySources.get(lineage.snapshotId));
       }
       indexScopeCoverage(coverage, snapshot, lineId, (message) => violations.push({
@@ -420,6 +424,31 @@ function resolveTopologyNames({ admissionSourceId, expectedScopeKey, inventory, 
   }
   if (lineage.contentSha256 !== topology.contentSha256) {
     push(`${prefix}_PACK_TOPOLOGY_LINEAGE_MISMATCH`, "pack topology가 admission lineage의 contentSha256과 다르다");
+    return null;
+  }
+  return new Set(line.scope.map((entry) => normalizeStationName(entry?.stationName)));
+}
+
+// PACK_SCOPE_ABSENT는 갱신 포인터가 아니라 당시 선택된 position snapshot과
+// pack topology 사이의 불변 관측이다. current admission으로 바꾸면 과거 결측의
+// 의미가 달라지므로 exact admitted lineage와 digest에 그대로 결속한다.
+function resolveHistoricalTopologyNames({ topologyPath, coverage, topologiesByPath, prefix, push }) {
+  if (!isNonEmptyString(topologyPath) || !coverage.topologyPaths.has(topologyPath)) {
+    push(`${prefix}_PACK_TOPOLOGY_UNBOUND`, "packTopologyPath가 이 scope의 admitted historical lineage가 아니다");
+    return null;
+  }
+  const topology = topologiesByPath.get(topologyPath);
+  const line = topologyLineOf(topology, coverage.lineId);
+  if (!line) {
+    push(`${prefix}_PACK_TOPOLOGY_MISSING`, `pack topology에서 ${coverage.lineId} scope를 찾지 못했다`);
+    return null;
+  }
+  if (!topologyContentMatches(topology, line)) {
+    push(`${prefix}_PACK_TOPOLOGY_CONTENT_MISMATCH`, "pack topology 내용이 선언된 contentSha256과 다르다");
+    return null;
+  }
+  if (coverage.topologyContentByPath.get(topologyPath) !== topology.contentSha256) {
+    push(`${prefix}_PACK_TOPOLOGY_LINEAGE_MISMATCH`, "pack topology가 admitted historical lineage digest와 다르다");
     return null;
   }
   return new Set(line.scope.map((entry) => normalizeStationName(entry?.stationName)));
@@ -786,10 +815,26 @@ function validateGapBinding({ gap, coverage, roster, rosterName, aliased, seen, 
     push("LEDGER_DUPLICATE", "같은 scope에 중복 항목이 있다");
     return false;
   }
+  if (gap.reasonCode === "PACK_SCOPE_ABSENT") {
+    const snapshotPath = gap.evidence.snapshotPath;
+    if (!isNonEmptyString(snapshotPath) || !coverage.snapshotPaths.includes(snapshotPath)) {
+      push("LEDGER_SNAPSHOT_NOT_CLAIMED", "historical evidence.snapshotPath가 이 scope의 admitted snapshot이 아니다");
+      return false;
+    }
+  }
   return true;
 }
 
 function gapTopologyNames(context) {
+  if (context.gap.reasonCode === "PACK_SCOPE_ABSENT") {
+    return resolveHistoricalTopologyNames({
+      topologyPath: context.gap.evidence.packTopologyPath,
+      coverage: context.coverage,
+      topologiesByPath: context.topologiesByPath,
+      prefix: "LEDGER",
+      push: context.push,
+    });
+  }
   return resolveTopologyNames({
     admissionSourceId: context.gap.evidence.admissionSourceId,
     expectedScopeKey: context.gap.scopeKey,
@@ -906,14 +951,16 @@ function validateGaps({
     const rosterName = normalizeStationName(gap.rosterStationName);
     const seen = gapRosterNamesByScope.get(gap.scopeKey) ?? new Set();
     gapRosterNamesByScope.set(gap.scopeKey, seen);
-    const snapshot = currentRouteMapSnapshot({
-      inventory,
-      admissionSourceId: gap.evidence.admissionSourceId,
-      expectedScopeKey: gap.scopeKey,
-      snapshotsByPath,
-      prefix: "LEDGER",
-      push,
-    });
+    const snapshot = gap.reasonCode === "PACK_SCOPE_ABSENT"
+      ? snapshotsByPath.get(gap.evidence.snapshotPath)
+      : currentRouteMapSnapshot({
+        inventory,
+        admissionSourceId: gap.evidence.admissionSourceId,
+        expectedScopeKey: gap.scopeKey,
+        snapshotsByPath,
+        prefix: "LEDGER",
+        push,
+      });
     if (!snapshot) {
       continue;
     }

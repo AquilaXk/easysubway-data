@@ -218,7 +218,8 @@
       "reasonCode": "PACK_SCOPE_ABSENT",
       "evidence": {
         "issue": 2505,
-        "admissionSourceId": "kric-everline-route-map-positions",
+        "snapshotPath": "tools/datapack/sources/kric-everline-route-map-positions-20260725.json",
+        "packTopologyPath": "tools/datapack/sources/capital-route-topology-20260724.json",
         "officialUrl": "https://www.data.go.kr/data/15041326/fileData.do",
         "note": "공식 역위치 파일에는 행이 있으나 pack 노선 topology(14역)가 이 역을 싣지 않아 admission에서 잉여 행으로 제외했다(allowExtraFileRows). pack scope 확장은 별도 배치."
       }
@@ -229,7 +230,8 @@
       "reasonCode": "PACK_SCOPE_ABSENT",
       "evidence": {
         "issue": 2505,
-        "admissionSourceId": "kric-ui-sinseol-route-map-positions",
+        "snapshotPath": "tools/datapack/sources/kric-ui-sinseol-route-map-positions-20260725.json",
+        "packTopologyPath": "tools/datapack/sources/capital-route-topology-20260724.json",
         "officialUrl": "https://www.data.go.kr/data/15041324/fileData.do",
         "note": "공식 역위치 파일에는 행이 있으나 pack 노선 topology(12역)가 우이신설 남단 종점을 싣지 않아 admission에서 잉여 행으로 제외했다(allowExtraFileRows). pack scope 확장은 별도 배치."
       }
