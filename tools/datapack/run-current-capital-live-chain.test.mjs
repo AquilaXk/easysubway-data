@@ -222,16 +222,24 @@ async function cloneCleanFixture(source, target) {
 }
 
 async function pendingTransitionRepository(t, { initializeGit = false } = {}) {
-  const repositoryRoot = await preparePendingCurrentAccessibilityTransitionRepository(ROOT);
-  t.after(() => rm(repositoryRoot, { recursive: true, force: true }));
-  if (initializeGit) {
-    await execFile("git", ["init", "--quiet"], { cwd: repositoryRoot });
-    await execFile("git", ["add", "--all"], { cwd: repositoryRoot });
-    await execFile("git", [
-      "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
-      "commit", "--quiet", "-m", "Create pending transition fixture",
-    ], { cwd: repositoryRoot });
-  }
+  const generatedRoot = await preparePendingCurrentAccessibilityTransitionRepository(ROOT);
+  t.after(() => rm(generatedRoot, { recursive: true, force: true }));
+  if (!initializeGit) return generatedRoot;
+
+  const parent = await mkdtemp(path.join(os.tmpdir(), "pending-transition-git-"));
+  const repositoryRoot = path.join(parent, "repository");
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  await cloneCleanFixture(ROOT, repositoryRoot);
+  await Promise.all(["tools", "release"].map((relative) => cp(
+    path.join(generatedRoot, relative),
+    path.join(repositoryRoot, relative),
+    { recursive: true, force: true },
+  )));
+  await execFile("git", ["add", "--all"], { cwd: repositoryRoot });
+  await execFile("git", [
+    "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+    "commit", "--quiet", "-m", "Create pending transition fixture",
+  ], { cwd: repositoryRoot });
   return repositoryRoot;
 }
 
