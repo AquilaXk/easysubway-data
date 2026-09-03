@@ -85,10 +85,15 @@ async function loadAuditInputs() {
     }
   }
   const topologiesByPath = new Map();
-  const topologyPaths = [
+  const topologyBindings = [
     ...exemptions.documentedCoverageGaps,
     ...exemptions.approvedStationNameAliases,
-  ].map((entry) => entry.evidence?.packTopologyPath).filter(Boolean);
+  ].filter((entry) => entry.evidence?.admissionSourceId);
+  const topologyPaths = topologyBindings.map((entry) => topologyPathForSourceAndLine(
+    inventory,
+    entry.evidence.admissionSourceId,
+    entry.scopeKey.split(":").at(-1),
+  ));
   for (const topologyPath of new Set(topologyPaths)) {
     topologiesByPath.set(topologyPath, await readJson(topologyPath));
   }
@@ -137,30 +142,41 @@ function rehashTopology(topology) {
 function rebindTopologyLineages(inventory, topologyPath, contentSha256) {
   const snapshotId = path.basename(topologyPath, ".json");
   for (const source of inventory.sources) {
-    for (const lineage of source.routeMapAdmissionEvidence?.topologyLineages ?? []) {
-      if (lineage.snapshotId === snapshotId) {
-        lineage.contentSha256 = contentSha256;
+    const evidence = source.routeMapAdmissionEvidence;
+    for (const admission of [evidence, evidence?.currentTopologyAdmission]) {
+      for (const lineage of admission?.topologyLineages ?? []) {
+        if (lineage.snapshotId === snapshotId) {
+          lineage.contentSha256 = contentSha256;
+        }
+      }
+      if (admission?.topologySnapshotId === snapshotId) {
+        admission.topologyContentSha256 = contentSha256;
       }
     }
   }
   return inventory;
 }
 
+function topologyPathForSourceAndLine(inventory, sourceId, lineId) {
+  const sources = inventory.sources.filter((source) => source.id === sourceId);
+  assert.equal(sources.length, 1, `source ${sourceId} must be unique`);
+  const evidence = sources[0].routeMapAdmissionEvidence;
+  const admission = evidence.currentTopologyAdmission ?? evidence;
+  const lineages = (admission.topologyLineages ?? [])
+    .filter((lineage) => lineage.lineId === lineId);
+  assert.equal(lineages.length, 1, `source ${sourceId} must declare one lineage for ${lineId}`);
+  return `tools/datapack/sources/${lineages[0].snapshotId}.json`;
+}
+
 function declaredTopologyPathForLine(inputs, lineId) {
   const paths = new Set();
-  for (const source of inputs.inventory.sources) {
-    for (const lineage of source.routeMapAdmissionEvidence?.topologyLineages ?? []) {
-      if (lineage.lineId === lineId) {
-        paths.add(`tools/datapack/sources/${lineage.snapshotId}.json`);
-      }
-    }
-  }
   for (const exemption of [
     ...inputs.exemptions.documentedCoverageGaps,
     ...inputs.exemptions.approvedStationNameAliases,
   ]) {
-    if (exemption.scopeKey.endsWith(`:${lineId}`) && exemption.evidence?.packTopologyPath) {
-      paths.add(exemption.evidence.packTopologyPath);
+    const sourceId = exemption.evidence?.admissionSourceId;
+    if (exemption.scopeKey.endsWith(`:${lineId}`) && sourceId) {
+      paths.add(topologyPathForSourceAndLine(inputs.inventory, sourceId, lineId));
     }
   }
   assert.equal(paths.size, 1, `line ${lineId} must declare exactly one topology path`);
@@ -235,19 +251,68 @@ test("면제 fixture는 사유별로 요구되는 근거 필드를 모두 싣는
     assert.ok(alias.evidence.officialUrl.startsWith("https://"), `${label}: officialUrl이 https가 아니다`);
     assert.equal(typeof alias.evidence.note, "string", `${label}: 근거 서술이 없다`);
     assert.ok(alias.evidence.note.length > 0, `${label}: 근거 서술이 비어 있다`);
+    assert.equal("packTopologyPath" in alias.evidence, false, `${label}: dated packTopologyPath를 유지하면 안 된다`);
     if (alias.reasonCode === "OFFICIAL_RENAME") {
       assert.match(alias.evidence.renamedAt ?? "", /^\d{4}-\d{2}-\d{2}$/u, `${label}: 시행일이 없다`);
       assert.equal(typeof alias.evidence.crossCheck, "string", `${label}: 교차 근거 방식이 없다`);
+      if (alias.evidence.crossCheck !== "ROSTER_SUBNAME") {
+        assert.equal(
+          typeof alias.evidence.admissionSourceId,
+          "string",
+          `${label}: topology admission source가 없다`,
+        );
+      }
     }
   }
   for (const gap of exemptions.documentedCoverageGaps) {
     const label = `${gap.scopeKey} ${gap.rosterStationName}`;
-    assert.equal(typeof gap.evidence?.snapshotPath, "string", `${label}: snapshotPath가 없다`);
-    assert.ok(gap.evidence.snapshotPath.startsWith("tools/datapack/sources/"), `${label}: snapshotPath 경로가 다르다`);
+    assert.equal(
+      typeof gap.evidence?.admissionSourceId,
+      "string",
+      `${label}: route-map admission source가 없다`,
+    );
     assert.equal(typeof gap.evidence.officialUrl, "string", `${label}: officialUrl이 없다`);
     assert.equal(typeof gap.evidence.note, "string", `${label}: 근거 서술이 없다`);
     assert.ok(gap.evidence.note.length > 0, `${label}: 근거 서술이 비어 있다`);
+    assert.equal("snapshotPath" in gap.evidence, false, `${label}: dated snapshotPath를 유지하면 안 된다`);
+    assert.equal("packTopologyPath" in gap.evidence, false, `${label}: dated packTopologyPath를 유지하면 안 된다`);
   }
+});
+
+test("current admission이 전진해도 면제의 snapshot 날짜를 수정하지 않는다 (#673)", async () => {
+  const inputs = await loadAuditInputs();
+  const exemptions = structuredClone(inputs.exemptions);
+  const inventory = structuredClone(inputs.inventory);
+  const topologiesByPath = new Map(inputs.topologiesByPath);
+  const snapshotsByPath = new Map(inputs.snapshotsByPath);
+
+  const seoul = inventory.sources.find(({ id }) => id === "seoul-metro-route-map-positions");
+  const currentTopology = seoul.routeMapAdmissionEvidence.currentTopologyAdmission;
+  const previousTopologyPath = declaredTopologyPathForLine(inputs, "line-15b3b8a93259");
+  const nextTopologySnapshotId = "capital-route-topology-current-test";
+  const nextTopologyPath = `tools/datapack/sources/${nextTopologySnapshotId}.json`;
+  currentTopology.topologySnapshotId = nextTopologySnapshotId;
+  for (const lineage of currentTopology.topologyLineages) {
+    lineage.snapshotId = nextTopologySnapshotId;
+  }
+  topologiesByPath.set(nextTopologyPath, structuredClone(inputs.topologiesByPath.get(previousTopologyPath)));
+
+  const daegu = inventory.sources.find(({ id }) => id === "daegu-transportation-route-map-positions");
+  const previousPositionPath = daegu.routeMapAdmissionEvidence.snapshotPath;
+  const nextPositionPath = "tools/datapack/sources/daegu-route-map-positions-current-test.json";
+  daegu.routeMapAdmissionEvidence.snapshotPath = nextPositionPath;
+  snapshotsByPath.set(nextPositionPath, structuredClone(inputs.snapshotsByPath.get(previousPositionPath)));
+
+  const result = auditRouteMapCoverageScopes({
+    ...inputs,
+    inventory,
+    exemptions,
+    topologiesByPath,
+    snapshotsByPath,
+  });
+
+  assert.deepEqual(violationKinds(result), []);
+  assert.deepEqual(exemptions, inputs.exemptions);
 });
 
 test("admitted snapshot에서 커버 역이 사라지면 containment가 실패한다 (#2516)", async () => {
@@ -408,12 +473,17 @@ test("교차 근거 방식을 선언하지 않은 개명 별칭은 거부된다 
 test("producer admission과 정확히 결속되지 않은 Incheon 공식 개명 별칭은 거부된다 (#600)", async () => {
   const inputs = await loadAuditInputs();
   const alias = aliasNamed(inputs.exemptions, "서해구청");
-  const topology = inputs.topologiesByPath.get(alias.evidence.packTopologyPath);
+  const topologyPath = topologyPathForSourceAndLine(
+    inputs.inventory,
+    alias.evidence.admissionSourceId,
+    "line-42b5805f3b5a",
+  );
+  const topology = inputs.topologiesByPath.get(topologyPath);
   const inventory = structuredClone(inputs.inventory);
   const source = inventory.sources.find(({ id }) => id === "incheon-transit-station-info");
   source.routeMapAdmissionEvidence.topologyLineages = topology.topologyLineIds.map((lineId) => ({
     sourceId: source.id,
-    snapshotId: path.basename(alias.evidence.packTopologyPath, ".json"),
+    snapshotId: path.basename(topologyPath, ".json"),
     contentSha256: topology.contentSha256,
     lineId,
   }));
@@ -566,15 +636,14 @@ test("snapshot 표기 오염은 모든 교차 근거 경로에서 거부된다 (
       issue: 2516,
       renamedAt: "2024-01-01",
       officialUrl: "https://www.data.go.kr/data/15099316/fileData.do",
-      packTopologyPath: declaredTopologyPathForLine(inputs, "line-828f04afc588"),
+      admissionSourceId: "seoul-metro-route-map-positions",
       officialRawPath: "tools/datapack/fixtures/seoul-route-map-positions-raw/data-go-15099316.csv",
       note: "오염 세탁 시도",
     },
   };
   const rejected = {
     ROSTER_SUBNAME: "ALIAS_RENAME_SUBNAME_ABSENT",
-    // seoul-metro 노선은 topology lineage 미등재라 부재 근거 경로가 lineage 단계에서 먼저 막힌다.
-    PACK_TOPOLOGY_ADOPTED_NAME: "ALIAS_PACK_TOPOLOGY_LINEAGE_UNDECLARED",
+    PACK_TOPOLOGY_ADOPTED_NAME: "ALIAS_RENAME_ADOPTED_NAME_ABSENT",
     OFFICIAL_FILE_STALE_NAME: "ALIAS_RENAME_RAW_NAME_ABSENT",
   };
 
@@ -612,7 +681,7 @@ test("공식 원문에 실재하는 표기로 오염시켜도 구표기 근거�
         renamedAt: "2024-01-01",
         crossCheck: "OFFICIAL_FILE_STALE_NAME",
         officialUrl: "https://www.data.go.kr/data/15099316/fileData.do",
-        packTopologyPath: declaredTopologyPathForLine(inputs, "line-828f04afc588"),
+        admissionSourceId: "seoul-metro-route-map-positions",
         officialRawPath: "tools/datapack/fixtures/seoul-route-map-positions-raw/data-go-15099316.csv",
         note: "오염 세탁 시도",
       },
@@ -670,7 +739,7 @@ test("pack topology가 싣고 있는 역은 pack 결측으로 면제할 수 없�
   assert.deepEqual(violationKinds(result), ["LEDGER_PACK_TOPOLOGY_STATION_PRESENT", "MISSING_STATION"]);
 });
 
-test("lineage 미등재 topology는 pack 결측 근거로 쓸 수 없다 (#2516)", async () => {
+test("current topology lineage와 다른 재해시 snapshot은 pack 결측 근거로 쓸 수 없다 (#2516)", async () => {
   const inputs = await loadAuditInputs();
   const exemptions = structuredClone(inputs.exemptions);
   // 서울교통공사 노선은 topology lineage 미등재라 재해시 삭제로 세탁할 수 없다.
@@ -683,7 +752,7 @@ test("lineage 미등재 topology는 pack 결측 근거로 쓸 수 없다 (#2516)
 
   const result = auditRouteMapCoverageScopes({ ...inputs, exemptions, topologiesByPath });
 
-  assert.ok(violationKinds(result).includes("LEDGER_PACK_TOPOLOGY_LINEAGE_UNDECLARED"));
+  assert.ok(violationKinds(result).includes("LEDGER_PACK_TOPOLOGY_LINEAGE_MISMATCH"));
   assert.ok(violationKinds(result).includes("MISSING_STATION"));
 });
 
@@ -708,15 +777,15 @@ test("collector가 선언하지 않은 결측은 공식 원문 결측으로 면�
   assert.deepEqual(violationKinds(result), ["LEDGER_TOPOLOGY_GAP_NOT_DECLARED", "MISSING_STATION"]);
 });
 
-test("scope에 등재되지 않은 topology 파일을 가리키면 거부된다 (#2516)", async () => {
+test("scope를 claim하지 않는 topology admission source를 가리키면 거부된다 (#2516)", async () => {
   const inputs = await loadAuditInputs();
   const exemptions = structuredClone(inputs.exemptions);
-  gapNamed(exemptions, "하양").evidence.packTopologyPath =
-    declaredTopologyPathForLine(inputs, "line-828f04afc588");
+  gapNamed(exemptions, "하양").evidence.admissionSourceId =
+    "kric-everline-route-map-positions";
 
   const result = auditRouteMapCoverageScopes({ ...inputs, exemptions });
 
-  assert.deepEqual(violationKinds(result), ["LEDGER_PACK_TOPOLOGY_UNBOUND", "MISSING_STATION"]);
+  assert.deepEqual(violationKinds(result), ["LEDGER_PACK_TOPOLOGY_SOURCE_UNBOUND", "MISSING_STATION"]);
 });
 
 test("이미 커버된 역을 임의로 면제하는 ledger 항목은 거부된다 (#2516)", async () => {
@@ -728,8 +797,7 @@ test("이미 커버된 역을 임의로 면제하는 ledger 항목은 거부된�
     reasonCode: "OFFICIAL_FILE_ROW_ABSENT",
     evidence: {
       issue: 2516,
-      snapshotPath: GWANGJU_SNAPSHOT_PATH,
-      packTopologyPath: declaredTopologyPathForLine(inputs, "line-828f04afc588"),
+      admissionSourceId: "gwangju-transportation-route-map-positions",
       officialUrl: "https://www.data.go.kr/data/15109340/fileData.do",
       note: "근거 없는 면제",
     },
@@ -832,7 +900,7 @@ test("quarantine 기록이 있는 역은 공식 원문 결측으로 분류할 �
   const exemptions = structuredClone(inputs.exemptions);
   const gap = gapNamed(exemptions, "마곡");
   gap.reasonCode = "OFFICIAL_FILE_ROW_ABSENT";
-  gap.evidence.packTopologyPath = declaredTopologyPathForLine(inputs, "line-828f04afc588");
+  gap.evidence.admissionSourceId = "seoul-metro-route-map-positions";
 
   const result = auditRouteMapCoverageScopes({ ...inputs, exemptions });
 
