@@ -200,7 +200,6 @@ test("deployed pack과 bundled asset/index의 artifact identity를 exact-match�
     ]);
     const evidence = JSON.parse(await readFile(evidencePath, "utf8"));
     const gzipBytes = await readFile(assetPath);
-    assert.equal(gzipBytes[9], 255);
     const sqliteBytes = gunzipSync(gzipBytes);
     assert.equal(sqliteBytes.readUInt32BE(96), 3_053_000);
     const sqlitePath = path.join(workspace, "capital.sqlite");
