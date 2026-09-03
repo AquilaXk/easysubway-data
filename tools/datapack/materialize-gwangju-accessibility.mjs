@@ -7,7 +7,6 @@ import { pathToFileURL } from "node:url";
 const SOURCE_ID = "gwangju-transportation-accessibility";
 const TOPOLOGY_SOURCE_ID = "gwangju-transportation-route-topology";
 const TOPOLOGY_SNAPSHOT_ID = "gwangju-transportation-route-topology-20260720";
-const TIMETABLE_SOURCE_ID = "gwangju-transportation-cyberstation-timetable";
 const OPERATOR_ID = "gwangju-metropolitan-rapid-transit";
 const PACK_ID = "nationwide-gwangju-accessibility";
 const LINE_ID = "line-e57a361e8892";
@@ -65,8 +64,8 @@ export function materializeGwangjuAccessibility({
   if (!pack.operators.some(({ id }) => id === OPERATOR_ID)) {
     throw new Error("Gwangju accessibility requires gwangju-metropolitan-rapid-transit operator pack");
   }
-  if (!pack.sourceInventory.some(({ id }) => id === TIMETABLE_SOURCE_ID)) {
-    throw new Error("Gwangju accessibility requires gwangju timetable source");
+  if (!pack.sourceInventory.some(({ id }) => id === TOPOLOGY_SOURCE_ID)) {
+    throw new Error("Gwangju accessibility requires gwangju topology source");
   }
 
   validateTopologyLineage(inventory, source.accessibilityAdmissionEvidence, topologySnapshot);

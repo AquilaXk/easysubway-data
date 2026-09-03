@@ -4,7 +4,7 @@
   "issue": 2595,
   "parentIssues": [2510, 2138],
   "candidateId": "nationwide-candidate-20260725",
-  "trackKo": "전국 candidate 트랙의 조립 정본이다. production 게시 트랙(capital pilot)과 분리되며 게시 대상이 아니다. 정본 게이트(report-coverage-gaps.mjs)는 manifest의 required root pack이 단독으로 coverage 계약을 만족해야 한다고 판정하므로 candidate는 root가 되는 단일 pack으로 조립한다. #2514 B0가 파일럿 1 scope 전환을 실증했고, #2549 B1이 대구 1·2·3호선 9 requirement를 같은 승계 모델로 편입했으며, #2580 B2-a가 같은 지역의 route_map_positions·accessibility_facilities 6 requirement를 B1 편입 뒤에 체인으로 올렸고, #2587 B2-b가 두 번째 지역(부산 1·2·3·4호선 5도메인 20 requirement)을 편입했다. #2595 B3이 대전 1호선 5 requirement·광주 1호선 5 requirement와 수도권 노선도 11 requirement, 인천 13 requirement를 같은 스키마로 올린다 — 대전·광주는 topology 전용 materializer가 편입 단위가 아니라 시각표 materializer가 topology·membership·시각표를 한 번에 싣고, 수도권 노선도 네 편입은 경로 그래프 계보를 inventory 소스가 아니라 tracked snapshot 파일로 대조해 승계 pack에 의존하지 않으며, 인천은 부산과 같이 역사정보 편입이 지역 자체(운영기관·노선·역)를 세우고 시각표·편의시설이 그 계보에 붙는다. seoulmetro-cyberstation-route-map은 승계 원본의 historical predecessor audit 행으로만 보존하고 candidate의 현행 line scope에서는 retired 한다. 서울 1~8호선은 공공 좌표 관측·OCI 수령증·v2 admission이 모두 확정된 후 별도 candidate 전환으로만 다시 올린다. 인천 역사정보 소스는 7호선을 세 도메인 scope로 덮지만 구간(network_edges)은 admit하지 않아 그 노선의 route_graph_topology 하나만 열리지 않는다 — 재기술이 그 사실을 nonTransitioningRequirements로 명시하고 하네스가 실측으로 확인한다.",
+  "trackKo": "전국 candidate 트랙의 조립 정본이다. production 게시 트랙(capital pilot)과 분리되며 게시 대상이 아니다. 정본 게이트(report-coverage-gaps.mjs)는 manifest의 required root pack이 단독으로 coverage 계약을 만족해야 한다고 판정하므로 candidate는 root가 되는 단일 pack으로 조립한다. #2514 B0가 파일럿 1 scope 전환을 실증했고, #2549 B1이 대구 1·2·3호선 9 requirement를 같은 승계 모델로 편입했으며, #2580 B2-a가 같은 지역의 route_map_positions·accessibility_facilities 6 requirement를 B1 편입 뒤에 체인으로 올렸고, #2587 B2-b가 두 번째 지역(부산 1·2·3·4호선 5도메인 20 requirement)을 편입했다. #2595 B3이 대전 1호선 5 requirement, 광주 1호선 4 supported requirement와 schedule_timetable MISSING, 수도권 노선도 11 requirement, 인천 13 requirement를 같은 스키마로 올린다. 대전은 시각표 materializer가 topology·membership·시각표를 함께 싣고, 광주는 #504 topology·membership 전용 materializer만 사용한다. 수도권 노선도 네 편입은 경로 그래프 계보를 tracked snapshot으로 대조하며, 인천은 역사정보 편입이 지역 자체를 세우고 시각표·편의시설이 그 계보에 붙는다. seoulmetro-cyberstation-route-map은 historical predecessor audit 행으로만 보존하며, 서울 1~8호선은 공공 좌표 관측·OCI 수령증·v2 admission 확정 후 별도 candidate 전환으로 올린다. 인천 7호선 route_graph_topology는 nonTransitioningRequirements로 명시한다.",
   "harness": "tools/datapack/run-nationwide-candidate-coverage-gate.mjs",
   "productionTrackInvarianceKo": "승계 원본(capital-production-reviewed-pack.json)의 pack.sourceInventory는 게시 시점 스냅샷이므로 operator-scope 기술을 그대로 둔다. line-scope 재기술은 candidate 조립분과 admission 정본(tools/datapack/source-inventory.json)에만 반영한다. 게시 차단 판정(report-coverage-gaps.mjs --release-scope)은 capital pilot targets(schemaVersion 1)로 평가돼 lineIds 기술 유무에 영향을 받지 않으므로 두 정본의 이 차이는 게시 동작을 바꾸지 않는다. 지역 데이터 편입(packDataInclusions)도 candidate 조립분에서만 일어나며 게시 fixture·release-request는 어떤 경로로도 바뀌지 않는다.",
   "inheritsFrom": {
@@ -481,51 +481,59 @@
     },
     {
       "regionId": "gwangju",
-      "materializer": "tools/datapack/materialize-gwangju-timetable.mjs",
+      "materializer": "tools/datapack/materialize-gwangju-route-topology.mjs",
       "materializedAt": "2026-07-20T13:08:47.161Z",
-      "snapshotPath": "tools/datapack/sources/gwangju-transportation-cyberstation-timetable-20260720.json",
-      "topologySnapshotPath": "tools/datapack/sources/gwangju-transportation-route-topology-20260720.json",
-      "stationMapPath": "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv",
       "lines": [
         { "lineNumber": 1, "lineId": "line-e57a361e8892" }
       ],
       "addedRows": {
         "operators": 1,
         "lines": 1,
-        "stations": 20,
-        "stationLines": 20,
+        "stations": {
+          "sourceId": "molit-urban-rail-full-route-gwangju-membership",
+          "evidence": "membershipAdmissionEvidence",
+          "field": "stationCount"
+        },
+        "stationLines": {
+          "sourceId": "molit-urban-rail-full-route-gwangju-membership",
+          "evidence": "membershipAdmissionEvidence",
+          "field": "stationCount"
+        },
         "stationAliases": 0,
         "stationExits": 0,
-        "networkEdges": 38,
+        "networkEdges": {
+          "sourceId": "gwangju-transportation-route-topology",
+          "evidence": "topologyAdmissionEvidence",
+          "field": "edgeCount"
+        },
         "routeMapPositions": 0,
         "routeMapLineTracks": 0,
         "facilities": 0,
         "stationFacilityEvidence": 0,
         "stationAccessibilitySummaries": 0,
         "officialOdFareQuotes": 0,
-        "serviceCalendars": 4,
-        "serviceCalendarDates": 44,
-        "transitRoutes": 3,
-        "transitTrips": 810,
-        "transitStopTimes": 14171,
+        "serviceCalendars": 0,
+        "serviceCalendarDates": 0,
+        "transitRoutes": 0,
+        "transitTrips": 0,
+        "transitStopTimes": 0,
         "transitFrequencies": 0,
         "transitFeedInfo": 0,
         "routeServiceArtifactEvidence": 0,
         "movementPathCandidates": 0,
         "representativeRouteRegressions": 0,
         "requiredTables": 0,
-        "sourceInventory": 3
+        "sourceInventory": 2
       },
-      "addedRowsKo": "이 편입 하나가 소스 3건(MOLIT membership·topology·시각표)을 등재한다 — 대전은 시각표 materializer가 topology materializer를 호출하는 구조인 반면 광주는 topology 전용 materializer가 아예 없고 한 함수가 세 소스를 함께 등재해 역·역노선·구간·시각표를 한 번에 싣는다. 역 20행과 역·노선 쌍 20행이 같은 것은 광주 1호선이 단일 노선이기 때문이며, 구간 38행은 인접 19쌍의 양방향이다. stop_time 14,171행 중 13,360행이 OFFICIAL이고 811행은 GENERATED다 — 810행은 각 trip의 종착 도착 시각을 topology 구간 소요로 채운 것(trip 수와 같다)이고 나머지 1행은 중간 결측 정차를 앞 정차 시각 + 구간 소요로 복구한 것이다.",
-      "reasonKo": "#2595 B3. 광주 1호선 station_line_membership·route_graph_topology·schedule_timetable requirement를 판정에 올리려면 candidate root pack이 공식 역 소속·구간·시각표 행을 담아야 한다. 승계 원본에는 광주 운영기관·노선·역이 아예 없으므로 이 편입이 그 셋을 함께 싣고, 광주의 나머지 두 도메인 편입이 이 편입 결과를 선행 조건으로 검사한다. 신규 admission·재수집은 없고 이미 admission이 끝난 snapshot(#2383)을 재생한다.",
-      "materializedAtReasonKo": "이 편입 하나가 시각표·topology 두 창의 판정을 동시에 받는다 — 시각표 창 [2026-07-20T12:55:50.079Z, 2026-07-21T12:55:50.079Z), topology 창 [2026-07-20T13:08:47.161Z, 2026-07-21T13:08:47.161Z). 두 창은 서로 겹치지만 같지 않고, 겹친 구간 [2026-07-20T13:08:47.161Z, 2026-07-21T12:55:50.079Z)의 하한 정각이 pin이다. 즉 이 pin의 하한을 정하는 것은 시각표가 아니라 topology snapshot의 capturedAt이다. membership 정본에는 시각 판정이 걸려 있지 않다(대전과 다른 점)."
+      "addedRowsKo": "역·역노선·구간 수는 current membership·topology admission evidence의 표별 count에서 파생한다. 이 편입은 두 소스만 등재하며 schedule 행은 만들지 않는다.",
+      "reasonKo": "#504. 광주 1호선 station_line_membership·route_graph_topology만 공식 non-web 정본으로 판정한다. schedule_timetable은 admitted source가 없으므로 MISSING을 유지한다.",
+      "materializedAtReasonKo": "materializer는 inventory가 결속한 topology freshness 창 안에서만 실행되며 snapshot 경로와 mutable count는 admission evidence에서 파생한다."
     },
     {
       "regionId": "gwangju",
       "materializer": "tools/datapack/materialize-gwangju-route-map-positions.mjs",
       "materializedAt": "2026-07-25T02:00:00.000Z",
       "snapshotPath": "tools/datapack/sources/gwangju-transportation-route-map-positions-20260725.json",
-      "topologySnapshotPath": "tools/datapack/sources/gwangju-transportation-route-topology-20260720.json",
       "lines": [
         { "lineNumber": 1, "lineId": "line-e57a361e8892" }
       ],
@@ -556,7 +564,7 @@
         "requiredTables": 0,
         "sourceInventory": 1
       },
-      "reasonKo": "#2595 B3. 광주 1호선 route_map_positions requirement를 판정에 올리려면 candidate root pack이 공식 노선도 좌표 행을 담아야 한다. materializer가 pack에 광주 운영기관이 있을 것·시각표 소스가 등재돼 있을 것·역노선 station_code 계보가 topology 소스에서 온 것을 선행 조건으로 검사하므로 시각표 편입 뒤에 체인한다(시각표보다 앞서면 운영기관 조건에서 먼저 걸린다). 이미 admission이 끝난 snapshot(#2496)을 재생한다.",
+      "reasonKo": "#2595 B3. 광주 1호선 route_map_positions requirement를 판정에 올리려면 candidate root pack이 공식 노선도 좌표 행을 담아야 한다. materializer는 광주 운영기관·topology 소스·역노선 station_code 계보를 선행 조건으로 검사한다. 이미 admission이 끝난 snapshot(#2496)을 재생한다.",
       "materializedAtReasonKo": "이 snapshot의 P1Y 신선도 창은 [2026-07-25T02:00:00Z, 2027-07-25T02:00:00Z)이고 materializer가 양끝 밖의 기준 시각을 fail closed 한다. pin은 이 창의 하한에 맞춘다."
     },
     {
@@ -564,7 +572,6 @@
       "materializer": "tools/datapack/materialize-gwangju-accessibility.mjs",
       "materializedAt": "2026-07-24T03:00:00.000Z",
       "snapshotPath": "tools/datapack/sources/gwangju-transportation-accessibility-20260724.json",
-      "topologySnapshotPath": "tools/datapack/sources/gwangju-transportation-route-topology-20260720.json",
       "lines": [
         { "lineNumber": 1, "lineId": "line-e57a361e8892" }
       ],
@@ -596,7 +603,7 @@
         "sourceInventory": 1
       },
       "addedRowsKo": "20 역·노선 쌍 × 3종(엘리베이터·에스컬레이터·휠체어리프트) = 60행이며 미설치도 NOT_EXISTS 근거로 함께 싣는다. 광주 1호선은 단일 노선이라 역 수 20과 역·노선 쌍 수 20이 같다.",
-      "reasonKo": "#2595 B3. 광주 1호선 accessibility_facilities requirement를 판정에 올리려면 candidate root pack이 공식 편의시설 행을 담아야 한다. 이 materializer도 광주 운영기관·시각표 소스 등재와 topology 계보를 선행 조건으로 검사하므로 같은 체인 뒤에 붙인다. 노선도 편입과는 서로 선행 조건이 없어 둘의 순서를 바꿔도 조립은 통과한다(실측). 이미 admission이 끝난 snapshot(#2467)을 재생한다.",
+      "reasonKo": "#2595 B3. 광주 1호선 accessibility_facilities requirement를 판정에 올리려면 candidate root pack이 공식 편의시설 행을 담아야 한다. materializer는 광주 운영기관·topology 소스와 계보를 선행 조건으로 검사한다. 노선도 편입과는 독립이며 이미 admission이 끝난 snapshot(#2467)을 재생한다.",
       "materializedAtReasonKo": "이 snapshot의 신선도 창은 [2026-07-24T03:00:00Z, 2026-07-25T03:00:00Z)이고 materializer가 양끝 밖을 fail closed 한다. 시각표 편입 창 [2026-07-20T13:08:47.161Z, 2026-07-21T12:55:50.079Z)은 이 창과 서로소이지만, 노선도 P1Y 창 [2026-07-25T02:00:00Z, 2027-07-25T02:00:00Z)은 이 창과 [2026-07-25T02:00:00Z, 2026-07-25T03:00:00Z)를 공유한다. 겹치는 창끼리도 한 소스의 snapshot 갱신이 다른 편입의 기준 시각을 흔들지 않도록 pin은 편입마다 따로 둔다."
     },
     {
@@ -1199,14 +1206,6 @@
       "lineIds": ["line-e57a361e8892"],
       "requirementKeys": ["gwangju:gwangju-metropolitan-rapid-transit:line-e57a361e8892:route_graph_topology"],
       "reasonKo": "B3. 광주 1호선 network_edges·duration_seconds·distance_meters를 대는 공식 topology snapshot 소스다.",
-      "inventorySyncKo": "하네스가 spec lineIds와 tracked source-inventory coverageScope.lineIds의 일치를 fail closed로 확인한다."
-    },
-    {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "sourceDomain": "schedule_timetable",
-      "lineIds": ["line-e57a361e8892"],
-      "requirementKeys": ["gwangju:gwangju-metropolitan-rapid-transit:line-e57a361e8892:schedule_timetable"],
-      "reasonKo": "B3. 광주 1호선 service_calendar·trip·stop_time을 대는 공식 시각표 snapshot 소스다.",
       "inventorySyncKo": "하네스가 spec lineIds와 tracked source-inventory coverageScope.lineIds의 일치를 fail closed로 확인한다."
     },
     {

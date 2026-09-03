@@ -64,9 +64,9 @@ import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { verifyProductionPackArtifactIdentity } from "./verify-production-pack-artifact-identity.mjs";
 import {
+  parseAdmittedMolitGwangjuStationMappings,
   parseMolitDaeguStationMappings,
   parseMolitDaejeonStationMappings,
-  parseMolitGwangjuStationMappings,
 } from "./build-molit-nationwide-fixture.mjs";
 import { BUSAN_LINES } from "./collect-busan-route-topology.mjs";
 import { DAEGU_LINES } from "./collect-daegu-datapack-sources.mjs";
@@ -94,7 +94,10 @@ import { DAEJEON_LINES } from "./materialize-daejeon-route-topology.mjs";
 import { materializeDaejeonTimetable } from "./materialize-daejeon-timetable.mjs";
 import { materializeGwangjuAccessibility } from "./materialize-gwangju-accessibility.mjs";
 import { materializeGwangjuRouteMapPositions } from "./materialize-gwangju-route-map-positions.mjs";
-import { GWANGJU_LINES, materializeGwangjuTimetable } from "./materialize-gwangju-timetable.mjs";
+import {
+  GWANGJU_LINES,
+  materializeGwangjuRouteTopology,
+} from "./materialize-gwangju-route-topology.mjs";
 import { materializeIncheonAccessibility } from "./materialize-incheon-accessibility.mjs";
 import { INCHEON_STATION_LINES, materializeIncheonStationInfo } from "./materialize-incheon-station-info.mjs";
 import { materializeIncheonTimetable } from "./materialize-incheon-timetable.mjs";
@@ -118,6 +121,9 @@ export const EVIDENCE_PATH = "tools/datapack/reports/nationwide-candidate-covera
 const TOOL_PATH = "tools/datapack/run-nationwide-candidate-coverage-gate.mjs";
 const BUILDER_PATH = "tools/datapack/build-datapack.mjs";
 const GATE_PATH = "tools/datapack/report-coverage-gaps.mjs";
+const SOURCE_SNAPSHOT_LEDGER_PATH = "tools/datapack/release/source-snapshots.json";
+const MOLIT_SOURCE_ID = "molit-urban-rail-full-route";
+const SHA256 = /^[a-f0-9]{64}$/u;
 const ALLOWED_FLAGS = new Set([
   "spec",
   "targets",
@@ -189,17 +195,17 @@ const PACK_DATA_MATERIALIZERS = new Map([
     materialize: materializeDaejeonAccessibilityInclusion,
     inputs: { paths: ["snapshotPath", "topologySnapshotPath"], linePaths: [] },
   }],
-  ["tools/datapack/materialize-gwangju-timetable.mjs", {
-    materialize: materializeGwangjuTimetableInclusion,
-    inputs: { paths: ["snapshotPath", "topologySnapshotPath", "stationMapPath"], linePaths: [] },
+  ["tools/datapack/materialize-gwangju-route-topology.mjs", {
+    materialize: materializeGwangjuRouteTopologyInclusion,
+    inputs: { paths: [], linePaths: [] },
   }],
   ["tools/datapack/materialize-gwangju-route-map-positions.mjs", {
     materialize: materializeGwangjuRouteMapInclusion,
-    inputs: { paths: ["snapshotPath", "topologySnapshotPath"], linePaths: [] },
+    inputs: { paths: ["snapshotPath"], linePaths: [] },
   }],
   ["tools/datapack/materialize-gwangju-accessibility.mjs", {
     materialize: materializeGwangjuAccessibilityInclusion,
-    inputs: { paths: ["snapshotPath", "topologySnapshotPath"], linePaths: [] },
+    inputs: { paths: ["snapshotPath"], linePaths: [] },
   }],
   // 수도권 노선도 네 편입 중 앞의 둘(#2595). KRIC 광역·경전철 materializer는 소스(=노선) 하나만 처리하므로
   // 편입 하나가 노선별 snapshot을 노선 층 경로 키로 받아 카탈로그 순서대로 체인한다 — 대구 시각표가
@@ -253,7 +259,6 @@ const DAEJEON_TIMETABLE_SOURCE_ID = "daejeon-train-timetable";
 const DAEJEON_ROUTE_MAP_SOURCE_ID = "daejeon-transportation-route-map-positions";
 const DAEJEON_ACCESSIBILITY_SOURCE_ID = "daejeon-transportation-accessibility";
 const GWANGJU_TOPOLOGY_SOURCE_ID = "gwangju-transportation-route-topology";
-const GWANGJU_TIMETABLE_SOURCE_ID = "gwangju-transportation-cyberstation-timetable";
 const GWANGJU_ROUTE_MAP_SOURCE_ID = "gwangju-transportation-route-map-positions";
 const GWANGJU_ACCESSIBILITY_SOURCE_ID = "gwangju-transportation-accessibility";
 // 수도권 9호선·인천 편입이 admission 정본을 찾을 때 쓰는 소스 id(#2595).
@@ -470,7 +475,7 @@ export async function applyPackDataInclusions(
       throw new Error(`${inclusion.materializer} must keep the candidate pack single`);
     }
     const addedRows = subtractRowCounts(packRowCounts(fixture.packs[0]), inheritedSnapshot.counts);
-    assertDeclaredRows(inclusion, addedRows);
+    assertDeclaredRows(inclusion, addedRows, inventory);
     assertInheritedRowsUnchanged(label, inheritedSnapshot, fixture.packs[0]);
     records.push({
       regionId: inclusion.regionId,
@@ -823,43 +828,44 @@ async function materializeDaejeonAccessibilityInclusion(fixture, inclusion, { re
   });
 }
 
-// 광주 편입 3종이 공유하는 topology snapshot 로딩(대전과 같은 축).
-async function gwangjuTopologySnapshot(inclusion, readTracked, inventory) {
+// 광주 편입이 공유하는 topology snapshot은 inventory admission 정본에서 파생한다.
+async function gwangjuTopologySnapshot(readTracked, inventory) {
+  const source = exactlyOneInventorySource(inventory, GWANGJU_TOPOLOGY_SOURCE_ID);
+  const snapshotPath = source.topologyAdmissionEvidence?.snapshotPath;
   assertAdmissionSnapshotPath(
     inventory,
     GWANGJU_TOPOLOGY_SOURCE_ID,
     "topologyAdmissionEvidence",
-    inclusion.topologySnapshotPath,
+    snapshotPath,
   );
   return parseJsonBytes(
-    await readTracked(inclusion.topologySnapshotPath, "topologySnapshotPath"),
-    inclusion.topologySnapshotPath,
+    await readTracked(snapshotPath, "topologyAdmissionEvidence.snapshotPath"),
+    snapshotPath,
   );
 }
 
-// 광주 시각표 편입 어댑터(#2595). 대전과 달리 materializer가 다른 materializer를 호출하는 것이 아니라
-// 한 함수가 topology·membership·시각표 소스 셋을 함께 등재하고 역·역노선·구간·시각표를 한 번에 싣는다.
-// 결과는 같다 — 광주 구간에서 이 편입이 항상 먼저다.
-async function materializeGwangjuTimetableInclusion(fixture, inclusion, { readTracked, inventory }) {
+async function materializeGwangjuRouteTopologyInclusion(
+  fixture,
+  inclusion,
+  { readTracked, inventory },
+) {
   assertDeclaredLinesMatchAdmissionScope(inclusion, inventory, GWANGJU_TOPOLOGY_SOURCE_ID);
   assertDeclaredLineNumbers(inclusion, GWANGJU_LINES);
-  assertAdmissionSnapshotPath(
+  const topologySnapshot = await gwangjuTopologySnapshot(readTracked, inventory);
+  const currentMolit = await loadCurrentMolitMembershipProjection(readTracked, inventory);
+  const membership = exactlyOneInventorySource(
     inventory,
-    GWANGJU_TIMETABLE_SOURCE_ID,
-    "scheduleAdmissionEvidence",
-    inclusion.snapshotPath,
+    "molit-urban-rail-full-route-gwangju-membership",
   );
-  const topologySnapshot = await gwangjuTopologySnapshot(inclusion, readTracked, inventory);
-  const stationMapBytes = await readTracked(inclusion.stationMapPath, "stationMapPath");
-  return materializeGwangjuTimetable({
+  return materializeGwangjuRouteTopology({
     baseFixture: fixture,
-    timetableSnapshot: parseJsonBytes(
-      await readTracked(inclusion.snapshotPath, "snapshotPath"),
-      inclusion.snapshotPath,
-    ),
     topologySnapshot,
     inventory,
-    canonicalStationMappings: parseMolitGwangjuStationMappings(stationMapBytes),
+    canonicalStationMappings: parseAdmittedMolitGwangjuStationMappings(
+      currentMolit.projection,
+      currentMolit.rawSha256,
+      membership.membershipAdmissionEvidence?.stationCount,
+    ),
     now: new Date(inclusion.materializedAt),
   });
 }
@@ -874,7 +880,7 @@ async function materializeGwangjuRouteMapInclusion(fixture, inclusion, { readTra
     "routeMapAdmissionEvidence",
     inclusion.snapshotPath,
   );
-  const topologySnapshot = await gwangjuTopologySnapshot(inclusion, readTracked, inventory);
+  const topologySnapshot = await gwangjuTopologySnapshot(readTracked, inventory);
   const snapshotBytes = await readTracked(inclusion.snapshotPath, "snapshotPath");
   return materializeGwangjuRouteMapPositions({
     baseFixture: fixture,
@@ -896,7 +902,7 @@ async function materializeGwangjuAccessibilityInclusion(fixture, inclusion, { re
     "accessibilityAdmissionEvidence",
     inclusion.snapshotPath,
   );
-  const topologySnapshot = await gwangjuTopologySnapshot(inclusion, readTracked, inventory);
+  const topologySnapshot = await gwangjuTopologySnapshot(readTracked, inventory);
   return materializeGwangjuAccessibility({
     baseFixture: fixture,
     accessibilitySnapshot: parseJsonBytes(
@@ -1216,13 +1222,45 @@ function inclusionLabel(inclusion) {
 
 // 편입이 실제로 실은 행수가 spec 선언과 다르면 조립을 멈춘다 — snapshot drift나 선언하지 않은 표로의
 // 주입이 candidate 구성을 조용히 바꾸지 못하게 하는 축이다.
-function assertDeclaredRows(inclusion, addedRows) {
-  if (JSON.stringify(sortJson(addedRows)) !== JSON.stringify(sortJson(inclusion.addedRows))) {
+function assertDeclaredRows(inclusion, addedRows, inventory) {
+  const expected = Object.fromEntries(Object.entries(inclusion.addedRows).map(([table, value]) => [
+    table,
+    Number.isInteger(value) ? value : resolveAdmissionRowCount(inclusion, table, value, inventory),
+  ]));
+  if (JSON.stringify(sortJson(addedRows)) !== JSON.stringify(sortJson(expected))) {
     throw new Error(
       `${inclusionLabel(inclusion)} pack data inclusion added rows do not match the spec declaration: `
-        + `expected ${JSON.stringify(sortJson(inclusion.addedRows))}, got ${JSON.stringify(sortJson(addedRows))}`,
+        + `expected ${JSON.stringify(sortJson(expected))}, got ${JSON.stringify(sortJson(addedRows))}`,
     );
   }
+}
+
+function resolveAdmissionRowCount(inclusion, table, reference, inventory) {
+  if (!isAdmissionRowCountReference(inclusion, table, reference)) {
+    throw new Error(`${inclusionLabel(inclusion)} has an unsupported added row reference`);
+  }
+  const count = exactlyOneInventorySource(inventory, reference.sourceId)
+    [reference.evidence]?.[reference.field];
+  if (!Number.isSafeInteger(count) || count < 1) {
+    throw new Error(`${inclusionLabel(inclusion)} added row admission evidence is invalid`);
+  }
+  return count;
+}
+
+function isAdmissionRowCountReference(inclusion, table, reference) {
+  if (inclusion.materializer !== "tools/datapack/materialize-gwangju-route-topology.mjs"
+    || !reference || typeof reference !== "object" || Array.isArray(reference)
+    || JSON.stringify(Object.keys(reference).sort(codepointCompare))
+      !== JSON.stringify(["evidence", "field", "sourceId"])) {
+    return false;
+  }
+  if (["stations", "stationLines"].includes(table)) {
+    return reference.sourceId === "molit-urban-rail-full-route-gwangju-membership"
+      && reference.evidence === "membershipAdmissionEvidence"
+      && reference.field === "stationCount";
+  }
+  return table === "networkEdges" && reference.sourceId === GWANGJU_TOPOLOGY_SOURCE_ID
+    && reference.evidence === "topologyAdmissionEvidence" && reference.field === "edgeCount";
 }
 
 export function assertInheritedRowsUnchanged(label, snapshot, pack) {
@@ -1308,6 +1346,56 @@ function parseJsonBytes(bytes, label) {
   } catch {
     throw new Error(`pack data inclusion input is not valid JSON: ${label}`);
   }
+}
+
+async function loadCurrentMolitMembershipProjection(readTracked, inventory) {
+  const source = exactlyOneInventorySource(inventory, MOLIT_SOURCE_ID);
+  const admission = source.admissionEvidence;
+  if (admission?.sourceId !== MOLIT_SOURCE_ID || admission.decision !== "APPROVED"
+    || typeof admission.snapshotId !== "string" || !SHA256.test(admission.rawSha256 ?? "")) {
+    throw new Error("current MOLIT inventory admission is invalid");
+  }
+  const observationPath = `tools/datapack/sources/${admission.snapshotId}.json`;
+  const [observationBytes, ledgerBytes] = await Promise.all([
+    readTracked(observationPath, "currentMolitObservationPath"),
+    readTracked(SOURCE_SNAPSHOT_LEDGER_PATH, "sourceSnapshotLedgerPath"),
+  ]);
+  const ledger = parseJsonBytes(ledgerBytes, SOURCE_SNAPSHOT_LEDGER_PATH);
+  const matches = Array.isArray(ledger) ? ledger.filter(({ sourceId, snapshotId }) =>
+    sourceId === MOLIT_SOURCE_ID && snapshotId === admission.snapshotId) : [];
+  const snapshot = matches[0];
+  if (matches.length !== 1 || snapshot.rawSha256 !== admission.rawSha256
+    || snapshot.schemaFingerprint !== admission.schemaFingerprint
+    || !SHA256.test(snapshot.contentSha256 ?? "")
+    || !SHA256.test(snapshot.normalizedObservationSha256 ?? "")
+    || snapshot.snapshotStatus !== "LOCKED" || snapshot.fetchStatus !== "SUCCESS"
+    || snapshot.schemaStatus !== "PASS" || snapshot.licenseStatus !== "PASS"
+    || snapshot.redistributionAllowed !== true || snapshot.credentialRedacted !== true) {
+    throw new Error("current MOLIT source snapshot binding is invalid");
+  }
+  const observation = parseJsonBytes(observationBytes, observationPath);
+  const projection = observation?.normalizedProjection;
+  if (sha256Hex(observationBytes) !== snapshot.normalizedObservationSha256
+    || observation.sourceId !== MOLIT_SOURCE_ID || observation.snapshotId !== snapshot.snapshotId
+    || observation.capturedAt !== snapshot.retrievedAt || observation.rawSha256 !== snapshot.rawSha256
+    || observation.contentSha256 !== snapshot.contentSha256
+    || observation.schemaFingerprint !== snapshot.schemaFingerprint
+    || observation.rowCount !== snapshot.rowCount || !Array.isArray(projection)
+    || projection.length !== snapshot.rowCount
+    || sha256Hex(Buffer.from(`${JSON.stringify(projection)}\n`)) !== snapshot.contentSha256
+    || JSON.stringify(observation.providerRecordHashes) !== JSON.stringify(snapshot.providerRecordHashes)
+    || JSON.stringify(observation.providerRecordHashes) !== JSON.stringify(
+      projection.map((record) => sha256Hex(JSON.stringify(record))),
+    )) {
+    throw new Error("current MOLIT normalized observation binding is invalid");
+  }
+  return { projection, rawSha256: snapshot.rawSha256 };
+}
+
+function exactlyOneInventorySource(inventory, sourceId) {
+  const matches = (inventory?.sources ?? []).filter(({ id }) => id === sourceId);
+  if (matches.length !== 1) throw new Error(`${sourceId} inventory source must be exactly one`);
+  return matches[0];
 }
 
 // candidate fixture 조립: 편입까지 끝난 pack을 복제하고 candidate 정체성과 line-scope 재기술만 덮어쓴다.
@@ -2748,7 +2836,8 @@ function validatePackDataInclusions(spec, materializers) {
       throw new Error(`${label}.addedRows must declare every pack row table`);
     }
     for (const [table, count] of Object.entries(addedRows)) {
-      if (!Number.isInteger(count) || count < 0) {
+      if ((!Number.isInteger(count) || count < 0)
+        && !isAdmissionRowCountReference(inclusion, table, count)) {
         throw new Error(`${label}.addedRows.${table} must be a non-negative integer`);
       }
     }

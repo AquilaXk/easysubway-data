@@ -1108,6 +1108,38 @@ export function parseCurrentMolitGwangjuStationMappings(projection, sourceRawSha
   return mappings;
 }
 
+export function parseAdmittedMolitGwangjuStationMappings(
+  projection,
+  sourceRawSha256,
+  expectedStationCount,
+) {
+  if (!Number.isSafeInteger(expectedStationCount) || expectedStationCount < 1
+    || typeof sourceRawSha256 !== "string" || !/^[a-f0-9]{64}$/u.test(sourceRawSha256)
+    || !Array.isArray(projection)) {
+    throw new Error("admitted MOLIT Gwangju mapping input is invalid");
+  }
+  const mappings = projection.map(projectionRow)
+    .filter((row) => row.regionName === "광주"
+      && row.operatorName === "광주교통공사"
+      && row.lineName === "1호선")
+    .sort((left, right) => left.sequence - right.sequence)
+    .map((row) => ({
+      stationId: stationIdFor(row.regionName, row.stationName),
+      stationName: row.stationName,
+      stationNumber: String(99 + row.sequence),
+    }));
+  if (lineIdFor("광주", "1호선") !== "line-e57a361e8892"
+    || mappings.length !== expectedStationCount
+    || mappings.some((mapping, index) => mapping.stationNumber !== String(100 + index))
+    || new Set(mappings.map(({ stationId }) => stationId)).size !== mappings.length) {
+    throw new Error("admitted MOLIT Gwangju mapping does not match its evidence");
+  }
+  return Object.defineProperty(mappings, "sourceRawSha256", {
+    value: sourceRawSha256,
+    enumerable: true,
+  });
+}
+
 const DAEGU_MEMBERSHIP_EXPECTATIONS = {
   "1호선": { lineId: "line-5b8d9b05e7e6", stationCount: 35 },
   "2호선": { lineId: "line-e2938a4cc492", stationCount: 29 },

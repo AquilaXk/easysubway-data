@@ -25,7 +25,7 @@ import { materializeBusanTimetable } from "./materialize-busan-timetable.mjs";
 import { materializeDaeguAccessibility } from "./materialize-daegu-accessibility.mjs";
 import { materializeDaeguTimetable } from "./materialize-daegu-timetable.mjs";
 import { materializeDaejeonTimetable } from "./materialize-daejeon-timetable.mjs";
-import { materializeGwangjuTimetable } from "./materialize-gwangju-timetable.mjs";
+import { materializeGwangjuRouteTopology } from "./materialize-gwangju-route-topology.mjs";
 import {
   materializeDaeguRouteMapPositions,
   materializedDaeguRouteMapPackContentHash,
@@ -47,7 +47,7 @@ const DAEGU_ROUTE_MAP_SUPPORTED_COUNT = DAEGU_ACCESSIBILITY_BASELINE_SUPPORTED_C
 async function inputs() {
   const [
     base, busanTopology, busanTimetable, busanRouteMapBytes,
-    daejeonTopology, daejeonTimetable, gwangjuTopology, gwangjuTimetable,
+    daejeonTopology, daejeonTimetable, gwangjuTopology,
     inventory, regionalMap, molitMap, daeguAccessibility, daeguSnapshotBytes,
   ] = await Promise.all([
     readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
@@ -57,7 +57,6 @@ async function inputs() {
     readJson("tools/datapack/sources/daejeon-route-topology-20260720.json"),
     readJson("tools/datapack/sources/daejeon-train-timetable-20260720.json"),
     readJson("tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"),
-    readJson("tools/datapack/sources/gwangju-transportation-cyberstation-timetable-20260720.json"),
     readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
     readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
     readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
@@ -83,8 +82,8 @@ async function inputs() {
     snapshotSha256: createHash("sha256").update(busanRouteMapBytes).digest("hex"),
     topologySnapshot: busanTopology, inventory, now: timetableNow,
   });
-  const gwangjuFixture = materializeGwangjuTimetable({
-    baseFixture: busanPositionsFixture, timetableSnapshot: gwangjuTimetable,
+  const gwangjuFixture = materializeGwangjuRouteTopology({
+    baseFixture: busanPositionsFixture,
     topologySnapshot: gwangjuTopology, inventory,
     canonicalStationMappings: parseMolitGwangjuStationMappings(molitMap), now: timetableNow,
   });

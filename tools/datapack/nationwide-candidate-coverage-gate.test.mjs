@@ -131,7 +131,7 @@ const DAEJEON_MATERIALIZERS = [
   "tools/datapack/materialize-daejeon-accessibility.mjs",
 ];
 const GWANGJU_MATERIALIZERS = [
-  "tools/datapack/materialize-gwangju-timetable.mjs",
+  "tools/datapack/materialize-gwangju-route-topology.mjs",
   "tools/datapack/materialize-gwangju-route-map-positions.mjs",
   "tools/datapack/materialize-gwangju-accessibility.mjs",
 ];
@@ -299,25 +299,25 @@ const DAEJEON_INCLUSION_BINDINGS = [
 ];
 const GWANGJU_INCLUSION_BINDINGS = [
   {
-    labelKo: "시각표",
-    slug: "timetable",
+    labelKo: "topology",
+    slug: "route-topology",
     offset: 0,
-    sourceId: "gwangju-transportation-cyberstation-timetable",
-    evidenceKey: "scheduleAdmissionEvidence",
-    // 대전과 달리 membership 정본에는 시각 판정이 없다 — 하한은 topology snapshot의 capturedAt이 정한다.
+    sourceId: GWANGJU_TOPOLOGY_SOURCE_ID,
+    evidenceKey: "topologyAdmissionEvidence",
+    snapshotPathDerived: true,
+    topologyPathDerived: true,
     lowerBound: {
       sourceId: GWANGJU_TOPOLOGY_SOURCE_ID,
       evidenceKey: "topologyAdmissionEvidence",
       field: "capturedAt",
     },
-    // 상한은 시각표 창이 먼저 닫힌다(topology 창보다 13분 빠르다).
     upperBound: {
-      sourceId: "gwangju-transportation-cyberstation-timetable",
-      evidenceKey: "scheduleAdmissionEvidence",
+      sourceId: GWANGJU_TOPOLOGY_SOURCE_ID,
+      evidenceKey: "topologyAdmissionEvidence",
       field: "freshUntil",
     },
     belowLowerBoundPattern: /gwangju-transportation-route-topology evidence is stale or future-dated/,
-    atUpperBoundPattern: /gwangju-transportation-cyberstation-timetable evidence is stale or future-dated/,
+    atUpperBoundPattern: /gwangju-transportation-route-topology evidence is stale or future-dated/,
     topologyBinding: { sourceId: GWANGJU_TOPOLOGY_SOURCE_ID, evidenceKey: "topologyAdmissionEvidence" },
   },
   {
@@ -326,6 +326,7 @@ const GWANGJU_INCLUSION_BINDINGS = [
     offset: 1,
     sourceId: "gwangju-transportation-route-map-positions",
     evidenceKey: "routeMapAdmissionEvidence",
+    topologyPathDerived: true,
     lowerBound: {
       sourceId: "gwangju-transportation-route-map-positions",
       evidenceKey: "routeMapAdmissionEvidence",
@@ -342,6 +343,7 @@ const GWANGJU_INCLUSION_BINDINGS = [
     offset: 2,
     sourceId: "gwangju-transportation-accessibility",
     evidenceKey: "accessibilityAdmissionEvidence",
+    topologyPathDerived: true,
     lowerBound: {
       sourceId: "gwangju-transportation-accessibility",
       evidenceKey: "accessibilityAdmissionEvidence",
@@ -993,7 +995,11 @@ const SINGLE_LINE_DOMAIN_FIELDS = {
   accessibility_facilities: ["elevator", "escalator", "wheelchair_lift", "status", "verified_at"],
 };
 
-async function assertSingleLineRegionTransition({ requirementKeys, sourceIdsByDomain }) {
+async function assertSingleLineRegionTransition({
+  requirementKeys,
+  sourceIdsByDomain,
+  missingDomains = [],
+}) {
   const evidence = await readJson(EVIDENCE_PATH);
   const byKey = new Map(evidence.variants.lineScoped.pilotRequirements.map((entry) => [entry.requirementKey, entry]));
   const baselineByKey = new Map(
@@ -1008,6 +1014,12 @@ async function assertSingleLineRegionTransition({ requirementKeys, sourceIdsByDo
     assert.equal(before.status, "MISSING", `${requirementKey} baseline`);
     assert.deepEqual(before.sourceIds, [], `${requirementKey} baseline sourceIds`);
     assert.deepEqual(before.missingFields, fields, `${requirementKey} baseline missingFields`);
+    if (missingDomains.includes(sourceDomain)) {
+      assert.equal(after.status, "MISSING", `${requirementKey} lineScoped`);
+      assert.deepEqual(after.sourceIds, [], `${requirementKey} lineScoped sourceIds`);
+      assert.deepEqual(after.missingFields, fields, `${requirementKey} lineScoped missingFields`);
+      continue;
+    }
     assert.equal(after.status, "SUPPORTED", `${requirementKey} lineScoped`);
     assert.equal(after.releaseTier, "LAUNCH_REQUIRED");
     assert.equal(after.denominator, fields.length);
@@ -1103,7 +1115,7 @@ function assertPinsInsideWindows(inventory, evidence, regionIndex, bindings) {
   }
 }
 
-test("광주 5 requirement는 체인 편입으로 MISSING에서 SUPPORTED로 전이한다", async () => {
+test("광주 topology·membership·route-map·accessibility만 SUPPORTED로 전이한다", async () => {
   const evidence = await assertSingleLineRegionTransition({
     requirementKeys: GWANGJU_REQUIREMENT_KEYS,
     sourceIdsByDomain: {
@@ -1112,67 +1124,44 @@ test("광주 5 requirement는 체인 편입으로 MISSING에서 SUPPORTED로 전
         "molit-urban-rail-full-route-gwangju-membership",
       ],
       route_graph_topology: ["gwangju-transportation-route-topology"],
-      schedule_timetable: ["gwangju-transportation-cyberstation-timetable"],
       route_map_positions: ["gwangju-transportation-route-map-positions"],
       accessibility_facilities: ["gwangju-transportation-accessibility"],
     },
+    missingDomains: ["schedule_timetable"],
   });
 
-  const [timetable, routeMap, accessibility] = evidence.packDataInclusions.entries.slice(GWANGJU_INDEX);
-  assert.equal(timetable.addedRows.sourceInventory, 3);
-  assert.equal(timetable.addedRows.operators, 1);
-  assert.equal(timetable.addedRows.lines, 1);
-  assert.equal(timetable.addedRows.stations, 20);
-  assert.equal(timetable.addedRows.stationLines, 20);
-  assert.equal(timetable.addedRows.networkEdges, 38);
-  assert.equal(timetable.addedRows.transitTrips, 810);
-  assert.equal(timetable.addedRows.transitStopTimes, 14_171);
-  assert.equal(timetable.addedRows.routeMapLineTracks, 0);
-  assert.equal(routeMap.addedRows.routeMapPositions, 20);
-  assert.equal(accessibility.addedRows.facilities, 60);
-  assert.equal(accessibility.addedRows.stationFacilityEvidence, 60);
-
-  // 실린 stop_time 14,171행과 판정을 뒷받침한 stop_time 13,360행은 다른 축이다 — 811행은 종착 도착 시각을
-  // 구간 소요로 채운 GENERATED라 official provenance 집계에 들어가지 않는다. 두 수를 뒤섞어 읽지 않도록
-  // 여기서 함께 못박는다.
-  const schedule = evidence.variants.lineScoped.pilotRequirements.find(
-    ({ requirementKey }) => requirementKey.endsWith(":schedule_timetable")
-      && requirementKey.startsWith("gwangju:"),
-  );
-  assert.equal(schedule.supportingRecordCountByField.stop_time, 13_360);
-  assert.equal(timetable.addedRows.transitStopTimes - schedule.supportingRecordCountByField.stop_time, 811);
-
-  // 광주 세 창의 관계는 대전과 다르다 — P1Y 노선도 창의 하한이 편의시설 창 상한보다 이르러 두 창이
-  // 한 시간을 공유한다. "노선도 창은 늘 다른 창을 품는다"도 "지역 안 창은 늘 서로소다"도 아니라는 뜻이라
-  // 실측 부등식을 그대로 고정한다.
   const inventory = await readJson(INVENTORY_PATH);
-  assertPinsInsideWindows(inventory, evidence, GWANGJU_INDEX, GWANGJU_INCLUSION_BINDINGS);
-  const gwangjuRouteMap = admissionEvidenceOf(
+  const membershipEvidence = admissionEvidenceOf(
     inventory,
-    "gwangju-transportation-route-map-positions",
-    "routeMapAdmissionEvidence",
+    "molit-urban-rail-full-route-gwangju-membership",
+    "membershipAdmissionEvidence",
   );
-  const gwangjuAccessibility = admissionEvidenceOf(
+  const topologyEvidence = admissionEvidenceOf(
+    inventory,
+    GWANGJU_TOPOLOGY_SOURCE_ID,
+    "topologyAdmissionEvidence",
+  );
+  const [topology, routeMap, accessibility] = evidence.packDataInclusions.entries.slice(GWANGJU_INDEX);
+  assert.equal(topology.addedRows.sourceInventory, 2);
+  assert.equal(topology.addedRows.operators, 1);
+  assert.equal(topology.addedRows.lines, 1);
+  assert.equal(topology.addedRows.stations, membershipEvidence.stationCount);
+  assert.equal(topology.addedRows.stationLines, membershipEvidence.stationCount);
+  assert.equal(topology.addedRows.networkEdges, topologyEvidence.edgeCount);
+  assert.equal(topology.addedRows.transitTrips, 0);
+  assert.equal(topology.addedRows.transitStopTimes, 0);
+  assert.equal(routeMap.addedRows.routeMapPositions,
+    admissionEvidenceOf(inventory, "gwangju-transportation-route-map-positions",
+      "routeMapAdmissionEvidence").stationCount);
+  const facilityCount = admissionEvidenceOf(
     inventory,
     "gwangju-transportation-accessibility",
     "accessibilityAdmissionEvidence",
-  );
-  assert.ok(Date.parse(gwangjuRouteMap.freshUntil) > Date.parse(gwangjuRouteMap.capturedAt));
-  assert.ok(
-    Date.parse(gwangjuRouteMap.capturedAt) < Date.parse(gwangjuAccessibility.freshUntil)
-      && Date.parse(gwangjuRouteMap.capturedAt) >= Date.parse(gwangjuAccessibility.capturedAt),
-    "광주는 P1Y 노선도 창이 편의시설 창 안에서 시작해 두 창이 겹친다",
-  );
-  // 시각표 편입 창은 두 창 모두와 서로소다(상한이 편의시설 창 하한보다 앞에서 닫힌다).
-  const gwangjuScheduleUpper = admissionEvidenceOf(
-    inventory,
-    "gwangju-transportation-cyberstation-timetable",
-    "scheduleAdmissionEvidence",
-  ).freshUntil;
-  assert.ok(
-    Date.parse(gwangjuScheduleUpper) <= Date.parse(gwangjuAccessibility.capturedAt),
-    "광주 시각표 편입 창은 편의시설 창보다 앞에서 닫혀 겹치지 않는다",
-  );
+  ).facilityCount;
+  assert.equal(accessibility.addedRows.facilities, facilityCount);
+  assert.equal(accessibility.addedRows.stationFacilityEvidence, facilityCount);
+
+  assertPinsInsideWindows(inventory, evidence, GWANGJU_INDEX, GWANGJU_INCLUSION_BINDINGS);
 });
 
 // #2595 B3: 수도권 KRIC 노선도 10 requirement는 두 materializer로 전이한다. 서울 1~8호선은
@@ -1777,7 +1766,7 @@ test("candidate 안전 경계는 spec 편집만으로 넓힐 수 없다", async 
   await context.test("대전·광주 lineNumber도 저장소 정본과 다르면 거부된다", async () => {
     for (const [index, materializer] of [
       [DAEJEON_INDEX, "materialize-daejeon-timetable.mjs"],
-      [GWANGJU_INDEX, "materialize-gwangju-timetable.mjs"],
+      [GWANGJU_INDEX, "materialize-gwangju-route-topology.mjs"],
     ]) {
       await rejectsWith(
         (value) => { value.packDataInclusions[0].lines[0].lineNumber = 2; },
@@ -2063,34 +2052,37 @@ test("candidate 안전 경계는 spec 편집만으로 넓힐 수 없다", async 
   ]) {
     for (const binding of bindings) {
       const { labelKo, slug, offset, sourceId, evidenceKey, topologyBinding } = binding;
-      await context.test(`${regionKo} ${labelKo} 편입 snapshotPath가 정본 밖 바이트 동일 사본이면 거부된다`, async () => {
-        await rejectsSnapshotCopy({
-          index: regionIndex + offset,
-          solo: regionIndex + offset,
-          sourcePath: admissionEvidenceOf(inventory, sourceId, evidenceKey).snapshotPath,
-          copyName: `${regionKo}-${slug}-copy.json`,
-          serialize: (bytes) => bytes,
-          expected: new RegExp(`snapshotPath must match the ${sourceId} admission evidence snapshotPath`),
+      if (!binding.snapshotPathDerived) {
+        await context.test(`${regionKo} ${labelKo} 편입 snapshotPath가 정본 밖 바이트 동일 사본이면 거부된다`, async () => {
+          await rejectsSnapshotCopy({
+            index: regionIndex + offset,
+            solo: regionIndex + offset,
+            sourcePath: admissionEvidenceOf(inventory, sourceId, evidenceKey).snapshotPath,
+            copyName: `${regionKo}-${slug}-copy.json`,
+            serialize: (bytes) => bytes,
+            expected: new RegExp(`snapshotPath must match the ${sourceId} admission evidence snapshotPath`),
+          });
         });
-      });
-      await context.test(`${regionKo} ${labelKo} 편입 topologySnapshotPath가 정본 밖 사본이면 거부된다`, async () => {
-        await rejectsSnapshotCopy({
-          index: regionIndex + offset,
-          solo: regionIndex + offset,
-          key: "topologySnapshotPath",
-          sourcePath: admissionEvidenceOf(
-            inventory,
-            topologyBinding.sourceId,
-            topologyBinding.evidenceKey,
-          ).snapshotPath,
-          copyName: `${regionKo}-${slug}-topology-copy.json`,
-          // 재직렬화 사본도 contentSha256(내용 파생)은 그대로라 materializer의 계보 대조만으로는 통과한다.
-          serialize: (bytes) => JSON.stringify(JSON.parse(bytes.toString("utf8"))),
-          expected: new RegExp(
-            `snapshotPath must match the ${topologyBinding.sourceId} admission evidence snapshotPath`,
-          ),
+      }
+      if (!binding.topologyPathDerived) {
+        await context.test(`${regionKo} ${labelKo} 편입 topologySnapshotPath가 정본 밖 사본이면 거부된다`, async () => {
+          await rejectsSnapshotCopy({
+            index: regionIndex + offset,
+            solo: regionIndex + offset,
+            key: "topologySnapshotPath",
+            sourcePath: admissionEvidenceOf(
+              inventory,
+              topologyBinding.sourceId,
+              topologyBinding.evidenceKey,
+            ).snapshotPath,
+            copyName: `${regionKo}-${slug}-topology-copy.json`,
+            serialize: (bytes) => JSON.stringify(JSON.parse(bytes.toString("utf8"))),
+            expected: new RegExp(
+              `snapshotPath must match the ${topologyBinding.sourceId} admission evidence snapshotPath`,
+            ),
+          });
         });
-      });
+      }
 
       // 창 회귀도 편입 단위다. 이 배치의 시각표 편입은 창 하한·상한이 서로 다른 정본에서 오므로
       // 경계 값을 binding이 가리키는 정본 필드에서 끌어온다.
@@ -2296,9 +2288,7 @@ test("candidate 안전 경계는 spec 편집만으로 넓힐 수 없다", async 
     });
   }
 
-  // 순서 회귀. 대전·광주는 시각표 편입이 지역 자체(운영기관·노선·역)를 세우므로 노선도가 앞서면 선행
-  // 조건이 막는다. 노선도 materializer는 운영기관 존재와 시각표 소스 등재를 둘 다 검사하는데 실측상 먼저
-  // 걸리는 것은 운영기관 쪽이다 — 문구를 그 실측대로 고정한다.
+  // 순서 회귀. 각 지역의 첫 편입이 운영기관·노선·역을 세우므로 노선도가 앞서면 운영기관 선행 조건이 막는다.
   for (const [regionKo, regionIndex, missingOperatorPattern] of [
     ["대전", DAEJEON_INDEX, /Daejeon route map positions require daejeon-transportation operator pack/],
     [
@@ -2307,7 +2297,7 @@ test("candidate 안전 경계는 spec 편집만으로 넓힐 수 없다", async 
       /Gwangju route map positions require gwangju-metropolitan-rapid-transit operator pack/,
     ],
   ]) {
-    await context.test(`${regionKo} 시각표·노선도 편입을 교환하면 선행 조건이 막는다`, async () => {
+    await context.test(`${regionKo} base·노선도 편입을 교환하면 선행 조건이 막는다`, async () => {
       await rejectsWith(
         (value) => {
           const region = value.packDataInclusions.slice(regionIndex, regionIndex + 3);

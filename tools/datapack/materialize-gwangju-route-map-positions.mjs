@@ -10,7 +10,6 @@ import { assertRouteMapAdmissionFreshness } from "./lib/route-map-admission-fres
 const SOURCE_ID = "gwangju-transportation-route-map-positions";
 const TOPOLOGY_SOURCE_ID = "gwangju-transportation-route-topology";
 const TOPOLOGY_SNAPSHOT_ID = "gwangju-transportation-route-topology-20260720";
-const TIMETABLE_SOURCE_ID = "gwangju-transportation-cyberstation-timetable";
 const PACK_ID = "nationwide-gwangju-route-map";
 const OPERATOR_ID = "gwangju-metropolitan-rapid-transit";
 const REGION = "광주권";
@@ -42,8 +41,8 @@ export function materializeGwangjuRouteMapPositions({
   if (!pack.operators.some(({ id }) => id === OPERATOR_ID)) {
     throw new Error("Gwangju route map positions require gwangju-metropolitan-rapid-transit operator pack");
   }
-  if (!pack.sourceInventory.some(({ id }) => id === TIMETABLE_SOURCE_ID)) {
-    throw new Error("Gwangju route map positions require gwangju timetable source");
+  if (!pack.sourceInventory.some(({ id }) => id === TOPOLOGY_SOURCE_ID)) {
+    throw new Error("Gwangju route map positions require gwangju topology source");
   }
 
   validateTopologyLineage(inventory, source.routeMapAdmissionEvidence, topologySnapshot);

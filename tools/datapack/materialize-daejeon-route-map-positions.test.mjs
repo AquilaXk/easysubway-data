@@ -26,7 +26,7 @@ import { materializeBusanTimetable } from "./materialize-busan-timetable.mjs";
 import { materializeDaejeonTimetable } from "./materialize-daejeon-timetable.mjs";
 import { materializeGwangjuAccessibility } from "./materialize-gwangju-accessibility.mjs";
 import { materializeGwangjuRouteMapPositions } from "./materialize-gwangju-route-map-positions.mjs";
-import { materializeGwangjuTimetable } from "./materialize-gwangju-timetable.mjs";
+import { materializeGwangjuRouteTopology } from "./materialize-gwangju-route-topology.mjs";
 import {
   materializeDaejeonRouteMapPositions,
   materializedDaejeonRouteMapPackContentHash,
@@ -57,7 +57,6 @@ async function inputs() {
     daejeonTopology,
     daejeonTimetable,
     gwangjuTopology,
-    gwangjuTimetable,
     accessibilitySnapshot,
     inventory,
     stationMapCsv,
@@ -72,7 +71,6 @@ async function inputs() {
     readJson("tools/datapack/sources/daejeon-route-topology-20260720.json"),
     readJson("tools/datapack/sources/daejeon-train-timetable-20260720.json"),
     readJson("tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"),
-    readJson("tools/datapack/sources/gwangju-transportation-cyberstation-timetable-20260720.json"),
     readJson("tools/datapack/sources/gwangju-transportation-accessibility-20260724.json"),
     readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
     readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
@@ -110,9 +108,8 @@ async function inputs() {
     inventory,
     now: timetableNow,
   });
-  const gwangjuFixture = materializeGwangjuTimetable({
+  const gwangjuFixture = materializeGwangjuRouteTopology({
     baseFixture: routeMapFixture,
-    timetableSnapshot: gwangjuTimetable,
     topologySnapshot: gwangjuTopology,
     inventory,
     canonicalStationMappings: parseMolitGwangjuStationMappings(molitStationMapCsv),

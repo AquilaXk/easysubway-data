@@ -25,7 +25,7 @@ import {
 import { materializeBusanTimetable } from "./materialize-busan-timetable.mjs";
 import { materializeDaejeonTimetable } from "./materialize-daejeon-timetable.mjs";
 import { materializeGwangjuAccessibility } from "./materialize-gwangju-accessibility.mjs";
-import { materializeGwangjuTimetable } from "./materialize-gwangju-timetable.mjs";
+import { materializeGwangjuRouteTopology } from "./materialize-gwangju-route-topology.mjs";
 import {
   materializeIncheonStationInfo,
   materializedIncheonPackContentHash,
@@ -61,7 +61,6 @@ async function inputs() {
     daejeonTopology,
     daejeonTimetable,
     gwangjuTopology,
-    gwangjuTimetable,
     accessibilitySnapshot,
     incheonBytes,
     inventory,
@@ -75,7 +74,6 @@ async function inputs() {
     readJson("tools/datapack/sources/daejeon-route-topology-20260720.json"),
     readJson("tools/datapack/sources/daejeon-train-timetable-20260720.json"),
     readJson("tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"),
-    readJson("tools/datapack/sources/gwangju-transportation-cyberstation-timetable-20260720.json"),
     readJson("tools/datapack/sources/gwangju-transportation-accessibility-20260724.json"),
     readFile(path.join(root, admission.snapshotPath)),
     Promise.resolve(projectHistoricalRegionalMaterializeInventory(currentInventory)),
@@ -112,9 +110,8 @@ async function inputs() {
     inventory,
     now: timetableNow,
   });
-  const gwangjuFixture = materializeGwangjuTimetable({
+  const gwangjuFixture = materializeGwangjuRouteTopology({
     baseFixture: routeMapFixture,
-    timetableSnapshot: gwangjuTimetable,
     topologySnapshot: gwangjuTopology,
     inventory,
     canonicalStationMappings: parseMolitGwangjuStationMappings(molitStationMapCsv),

@@ -1348,87 +1348,6 @@
       "nextAction": "24시간 admission snapshot을 갱신해 immutable production pack을 재생성한다"
     },
     {
-      "id": "gwangju-transportation-cyberstation-timetable",
-      "priority": "P0",
-      "domain": "schedule_timetable",
-      "coverageScope": {
-        "regionIds": [
-          "gwangju"
-        ],
-        "operatorIds": [
-          "gwangju-metropolitan-rapid-transit"
-        ],
-        "lineIds": [
-          "line-e57a361e8892"
-        ]
-      },
-      "displayName": "광주교통공사 사이버스테이션 열차시각표",
-      "detailUrl": "https://www.grtc.co.kr/subway/menu/trainTimetableSubMenu",
-      "requestUrl": "https://www.grtc.co.kr/cyber/portlet/subwayTimetable",
-      "operation": {
-        "method": "POST",
-        "endpoint": "https://www.grtc.co.kr/cyber/portlet/subwayTimetable",
-        "auth": {
-          "placement": "none"
-        },
-        "requiredParameters": [
-          "subwayid"
-        ],
-        "fixedParameters": {
-          "lineNo": "1"
-        },
-        "responseEnvelope": "official HTML fragment per station",
-        "responseFields": [
-          "dayCode",
-          "direction",
-          "hour",
-          "minute"
-        ],
-        "runner": {
-          "command": "node tools/datapack/collect-gwangju-cyberstation-timetable.mjs",
-          "arguments": [
-            "--output",
-            "/tmp/easysubway-gwangju-cyberstation-timetable.json"
-          ],
-          "requiredEnv": []
-        },
-        "secretPolicy": "credential-free-output"
-      },
-      "licenseEvidenceStatus": "covered_by_unrestricted_data_go_timetable_dataset_15111298",
-      "sampleEvidenceStatus": "validated_live_full_snapshot",
-      "admissionStatus": "production_materialized",
-      "mobileEmbeddingAllowed": false,
-      "evidence": {
-        "retrievedAt": "2026-07-20",
-        "officialTimetablePage": "https://www.grtc.co.kr/subway/menu/trainTimetableSubMenu",
-        "officialRequestContractSource": "https://www.grtc.co.kr/cyber?timetable=19",
-        "licenseEvidenceUrl": "https://www.data.go.kr/data/15111298/openapi.do",
-        "license": "unrestricted",
-        "liveSampleRetrievedAt": "2026-07-20T12:55:50.079Z",
-        "liveSampleStationCount": 20,
-        "liveSampleRowCount": 13362,
-        "excludedPlaceholderCount": 1,
-        "normalizedBoundaryMinuteCount": 1,
-        "liveSampleContentSha256": "b050ed92cbdd555e22e987e4854a7d60b5293951992d6c14ae26c110f9b4fb5a",
-        "liveSampleRowsSha256": "2eec08dc30a97c50fd349dc607e77677829881790b5ca896856caa4b9bbd3ccd",
-        "evidenceArtifact": "tools/datapack/sources/gwangju-transportation-cyberstation-timetable-20260720.json",
-        "materializedTripCount": 810,
-        "materializedStopTimeCount": 14171,
-        "admittedOfficialRowCount": 13360,
-        "generatedStopTimeCount": 811,
-        "quarantinedIncompleteTripRowCount": 2,
-        "coverageAssessment": {
-          "state": "SUPPORTED",
-          "requirementCount": 1,
-          "sourceDomain": "schedule_timetable",
-          "artifactKind": "production",
-          "materializer": "tools/datapack/materialize-gwangju-timetable.mjs",
-          "verificationTest": "tools/datapack/materialize-gwangju-timetable.test.mjs"
-        }
-      },
-      "nextAction": "24시간 timetable snapshot을 갱신해 immutable production pack을 재생성한다"
-    },
-    {
       "id": "gwangju-transportation-route-map-positions",
       "apiCatalog": false,
       "priority": "P1",
@@ -1573,8 +1492,8 @@
             "route_graph_topology"
           ],
           "artifactKind": "production",
-          "materializer": "tools/datapack/materialize-gwangju-timetable.mjs",
-          "verificationTest": "tools/datapack/materialize-gwangju-timetable.test.mjs"
+          "materializer": "tools/datapack/materialize-gwangju-route-topology.mjs",
+          "verificationTest": "tools/datapack/materialize-gwangju-route-topology.test.mjs"
         }
       },
       "nextAction": "24시간 topology snapshot을 갱신해 immutable production pack을 재생성한다"
