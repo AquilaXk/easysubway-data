@@ -22,6 +22,7 @@ import {
   materializeStationLineAccessibility,
 } from "./materialize-station-line-accessibility.mjs";
 import { buildCurrentCapitalAccessibilityRefreshOutputs } from "./refresh-current-capital-accessibility-full.mjs";
+import { prepareCurrentStaticNetworkProductionRepository } from "./test-fixtures/current-full-capital-production-artifact.mjs";
 import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 
@@ -95,9 +96,8 @@ test("current full-capital producer 출력은 합성 public successor의 route/e
   const temp = await mkdtemp(path.join(os.tmpdir(), "current-route-edge-public-successor-"));
   t.after(() => rm(temp, { recursive: true, force: true }));
   const repositoryRoot = path.join(temp, "repository");
-  await copySyntheticCurrentPublicRouteMapRepository(process.cwd(), repositoryRoot, {
+  await prepareCurrentStaticNetworkProductionRepository(process.cwd(), repositoryRoot, {
     now: new Date(CURRENT_EVALUATION_AT),
-    activateStaticNetwork: true,
   });
   const [stationOutput, routeOutput] = await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot });
   const policyBytes = await readFile(path.join(
@@ -162,9 +162,8 @@ test("current full-capital producer는 alternate repository root의 nested evide
   const temp = await mkdtemp(path.join(os.tmpdir(), "current-route-edge-root-"));
   t.after(() => rm(temp, { recursive: true, force: true }));
   const repositoryRoot = path.join(temp, "repository");
-  await copySyntheticCurrentPublicRouteMapRepository(process.cwd(), repositoryRoot, {
+  await prepareCurrentStaticNetworkProductionRepository(process.cwd(), repositoryRoot, {
     now: new Date(CURRENT_EVALUATION_AT),
-    activateStaticNetwork: true,
   });
   const outputs = await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot });
   assert.equal(JSON.parse(outputs[1].bytes).routeEdges.length, CURRENT_ROUTE_EDGE_COUNT);

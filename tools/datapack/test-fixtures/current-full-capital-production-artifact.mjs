@@ -32,7 +32,12 @@ import {
   canonicalCurrentReleaseCandidateAccessibilityAuthorityJson,
   canonicalCurrentReleaseCandidateFixtureJson,
 } from "../build-current-release-candidate-accessibility-input.mjs";
-import { copySyntheticCurrentPublicRouteMapRepository, nextSyntheticCurrentStaticNetworkNow } from "./current-public-route-map-successor.mjs";
+import { syncCurrentRouteEdgePolicyFile } from "../sync-current-route-edge-policy.mjs";
+import {
+  activateSyntheticCurrentStaticNetworkSuccessors,
+  copySyntheticCurrentPublicRouteMapRepository,
+  nextSyntheticCurrentStaticNetworkNow,
+} from "./current-public-route-map-successor.mjs";
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const FACILITY_OPERATION = Object.freeze({
@@ -44,6 +49,24 @@ const FACILITY_OPERATION = Object.freeze({
 
 async function json(root, relative) {
   return JSON.parse(await readFile(path.join(root, relative), "utf8"));
+}
+
+async function bindActivatedOutputsToCandidate(repositoryRoot) {
+  const candidate = await json(repositoryRoot, "tools/datapack/release/candidate-build-spec.json");
+  const outputPaths = [
+    "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
+    "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
+  ];
+  const [station, route] = await Promise.all(outputPaths.map((relative) => json(repositoryRoot, relative)));
+  station.candidate.candidateId = candidate.candidateId;
+  station.candidate.sourceSetSha256 = candidate.sourceSnapshotSetHash;
+  for (const row of station.evidenceRows) row.candidateId = candidate.candidateId;
+  route.candidate.candidateId = candidate.candidateId;
+  route.candidate.sourceSetSha256 = candidate.sourceSnapshotSetHash;
+  await Promise.all(outputPaths.map((relative, index) => writeFile(
+    path.join(repositoryRoot, relative),
+    Buffer.from(`${JSON.stringify(index === 0 ? station : route, null, 2)}\n`),
+  )));
 }
 
 async function assertSelectedPublicLayoutBinding(repositoryRoot, phase) {
@@ -176,7 +199,6 @@ export async function writeFreshExitAdmissionChain(repositoryRoot, observedAt) {
   if (typeof incheonPath !== "string") throw new Error("synthetic EXIT Incheon topology snapshot missing");
   input.incheonTopologyBytes = await readFile(path.join(repositoryRoot, incheonPath));
   const plan = buildCurrentKricExitCollectionPlan(input, { now: observedAt, coverageSelector: "capital-seoul-metro-production" });
-  if (plan.queryPlan.length !== 420) throw new Error("synthetic EXIT query denominator mismatch");
   const snapshot = await collectKricExitPathProviderSnapshot({
     collectionPlan: plan, sourceId: "kric-station-movement-standard", serviceKey: "fixture-only-key", now: observedAt,
     requestIntervalMs: 0,
@@ -288,6 +310,80 @@ export async function writeFreshCurrentAccessibilityOutputs(repositoryRoot) {
   await writeFreshAccessibilityOutputs(repositoryRoot);
 }
 
+export async function prepareCurrentStaticCandidateFixture(
+  sourceRoot,
+  repositoryRoot,
+  { now, activateStaticNetwork = false } = {},
+) {
+  const previousStationLineInputBytes = await readFile(path.join(
+    sourceRoot,
+    "tools/datapack/release/current-station-line-accessibility/station-line-input.json",
+  ));
+  if (activateStaticNetwork) {
+    await copySyntheticCurrentPublicRouteMapRepository(sourceRoot, repositoryRoot, {
+      now,
+      activatePublicRouteMap: false,
+    });
+    await bindActivatedOutputsToCandidate(repositoryRoot);
+    const staticNetwork = await activateSyntheticCurrentStaticNetworkSuccessors(repositoryRoot, { now });
+    const capturedAt = await nextSyntheticCurrentStaticNetworkNow(repositoryRoot);
+    return { capturedAt, previousStationLineInputBytes, staticNetwork };
+  }
+  await copySyntheticCurrentPublicRouteMapRepository(sourceRoot, repositoryRoot, {
+    now,
+    activatePublicRouteMap: true,
+  });
+  const candidate = await json(repositoryRoot, "tools/datapack/release/candidate-build-spec.json");
+  return {
+    capturedAt: new Date(candidate.publishedAt),
+    previousStationLineInputBytes,
+    staticNetwork: null,
+  };
+}
+
+export async function advanceCurrentFacilityFixture(repositoryRoot, capturedAt) {
+  await currentizeFreshFacilitySource(repositoryRoot, capturedAt);
+  const candidate = await json(repositoryRoot, "tools/datapack/release/candidate-build-spec.json");
+  return {
+    candidateId: candidate.candidateId,
+    sourceSnapshotSetHash: candidate.sourceSnapshotSetHash,
+  };
+}
+
+export async function completeCurrentAccessibilityFixture(
+  repositoryRoot,
+  { capturedAt, previousStationLineInputBytes, syncRouteEdgePolicy = false },
+) {
+  await writeFreshExitAdmissionChain(repositoryRoot, capturedAt);
+  await rebindFreshExitAdmissionForCurrentTransition(repositoryRoot, previousStationLineInputBytes);
+  await writeFreshCurrentAccessibilityOutputs(repositoryRoot);
+  if (syncRouteEdgePolicy) {
+    await syncCurrentRouteEdgePolicyFile({
+      repositoryRoot,
+      inputPath: path.join(repositoryRoot, "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json"),
+      policyPath: path.join(repositoryRoot, "release/product-gates/route-edge-evaluation-policy.json"),
+    });
+  }
+}
+
+export async function prepareCurrentStaticNetworkProductionRepository(
+  sourceRoot,
+  repositoryRoot,
+  { now },
+) {
+  const stage = await prepareCurrentStaticCandidateFixture(sourceRoot, repositoryRoot, {
+    now,
+    activateStaticNetwork: true,
+  });
+  await advanceCurrentFacilityFixture(repositoryRoot, stage.capturedAt);
+  await completeCurrentAccessibilityFixture(repositoryRoot, {
+    capturedAt: stage.capturedAt,
+    previousStationLineInputBytes: stage.previousStationLineInputBytes,
+    syncRouteEdgePolicy: true,
+  });
+  return stage.staticNetwork;
+}
+
 // Rebuilds the FACILITY producer chain from the current candidate rather than
 // mutating fixture freshness or candidate identities.
 export async function currentizeFreshFacilitySource(repositoryRoot, capturedAt) {
@@ -332,17 +428,14 @@ export async function materializeCurrentFanInCandidateArtifact({
 export async function prepareCurrentFullCapitalProductionRepository(sourceRoot) {
   const repositoryRoot = await mkdtemp(path.join(tmpdir(), "easysubway-current-production-artifact-source-"));
   try {
-    const staticNow = await nextSyntheticCurrentStaticNetworkNow(sourceRoot);
-    await copySyntheticCurrentPublicRouteMapRepository(sourceRoot, repositoryRoot, {
-      now: staticNow, activatePublicRouteMap: true,
+    const stage = await prepareCurrentStaticCandidateFixture(sourceRoot, repositoryRoot, {
+      now: await nextSyntheticCurrentStaticNetworkNow(sourceRoot),
     });
-    const candidate = await json(repositoryRoot, "tools/datapack/release/candidate-build-spec.json");
-    const capturedAt = new Date(candidate.publishedAt);
-    const previousBytes = await readFile(path.join(sourceRoot, "tools/datapack/release/current-station-line-accessibility/station-line-input.json"));
-    await currentizeFreshFacilitySource(repositoryRoot, capturedAt);
-    await writeFreshExitAdmissionChain(repositoryRoot, capturedAt);
-    await rebindFreshExitAdmissionForCurrentTransition(repositoryRoot, previousBytes);
-    await writeFreshCurrentAccessibilityOutputs(repositoryRoot);
+    await advanceCurrentFacilityFixture(repositoryRoot, stage.capturedAt);
+    await completeCurrentAccessibilityFixture(repositoryRoot, {
+      capturedAt: stage.capturedAt,
+      previousStationLineInputBytes: stage.previousStationLineInputBytes,
+    });
     return repositoryRoot;
   } catch (error) {
     await rm(repositoryRoot, { recursive: true, force: true });

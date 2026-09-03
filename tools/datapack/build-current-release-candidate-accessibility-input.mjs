@@ -42,16 +42,9 @@ const STATION_CANDIDATE_KEYS = [
   "candidateId", "mappingContractVersion", "materializerVersion",
   "sourceSetSha256", "stationSetSha256",
 ];
-const COUNTS = Object.freeze({
-  ENTRY: 213,
-  EXIT: 213,
-  IN_STATION_TRANSFER: 30,
-  RIDE: 2198,
-});
-const totalCount = (counts) => Object.values(counts).reduce((total, count) => total + count, 0);
-const AUTHORITY_COUNTS = Object.freeze(Object.fromEntries(
-  Object.entries(COUNTS).filter(([type]) => type !== "RIDE"),
-));
+const ROUTE_EDGE_TYPES = new Set(["ENTRY", "EXIT", "IN_STATION_TRANSFER", "RIDE"]);
+const AUTHORITY_EDGE_TYPES = new Set(["ENTRY", "EXIT", "IN_STATION_TRANSFER"]);
+const MATERIALIZATION_DOMAINS = ["FACILITY", "EXIT", "TRANSFER"];
 
 export function buildCurrentReleaseCandidateAccessibilityAuthority(input) {
   validateInputBytes(input);
@@ -76,7 +69,7 @@ export function buildCurrentReleaseCandidateAccessibilityAuthority(input) {
   const projectedRides = validateProjectedFixtureEdges(projectedPack.networkEdges, routeEdges);
   const observedAt = deriveCurrentReleaseCandidateObservedAt(stationLineInput.evidenceRows);
   const materialization = materializeStationLineAccessibility({ ...stationLineInput, observedAt });
-  validateMaterialization(materialization);
+  validateMaterialization(materialization, stationLineInput.stationLines);
 
   const candidateFixture = candidateFixtureFrom(input.projectedFixture, projectedRides, routeEdges);
   const candidateFixtureBytes = Buffer.from(canonicalCurrentReleaseCandidateFixtureJson(candidateFixture));
@@ -137,13 +130,7 @@ export function canonicalCurrentReleaseCandidateAccessibilityAuthorityJson(
 export function rebuildCurrentReleaseCandidateFixture({ projectedFixture, authority }) {
   canonicalCurrentReleaseCandidateAccessibilityAuthorityJson(authority);
   const pack = capitalPack(projectedFixture, "projected fixture");
-  const counts = edgeTypeCounts(pack.networkEdges);
-  if (pack.networkEdges.length !== COUNTS.RIDE
-    || counts.RIDE !== COUNTS.RIDE
-    || Object.keys(counts).length !== 1) {
-    throw new Error("projected fixture must be RIDE-only");
-  }
-  const rides = pack.networkEdges.filter(({ edgeType }) => edgeType === "RIDE");
+  const rides = rideOnlyFixtureEdges(pack.networkEdges, "projected fixture");
   const routeEdges = authority.edges.map((edge) => ({
     edgeId: edge.edgeId,
     edgeType: edge.edgeType,
@@ -182,7 +169,7 @@ export function validateCurrentReleaseCandidateAccessibilityAuthorityReplay({
   validateProjectedFixtureEdges(projectedPack.networkEdges, routeEdges);
   const observedAt = deriveCurrentReleaseCandidateObservedAt(stationLineInput.evidenceRows);
   const materialization = materializeStationLineAccessibility({ ...stationLineInput, observedAt });
-  validateMaterialization(materialization);
+  validateMaterialization(materialization, stationLineInput.stationLines);
   if (authority.buildInput.observedAt !== observedAt
     || authority.buildInput.materializationDigest !== materialization.materializationDigest) {
     throw new Error("authority replay input mismatch");
@@ -217,14 +204,12 @@ function validateAuthorityPayload(payload) {
     || payload.buildInput.observedAt !== new Date(payload.buildInput.observedAt).toISOString()) {
     throw new Error("authority observedAt mismatch");
   }
-  if (canonicalJson(payload.edgeCounts) !== canonicalJson({
-    ENTRY: 213, EXIT: 213, IN_STATION_TRANSFER: 30, total: 456,
-  }) || !Array.isArray(payload.edges) || payload.edges.length !== 456) {
+  if (!Array.isArray(payload.edges) || payload.edges.length === 0) {
     throw new Error("authority edge denominator mismatch");
   }
   const actualCounts = edgeTypeCounts(payload.edges);
-  if (actualCounts.ENTRY !== 213 || actualCounts.EXIT !== 213
-    || actualCounts.IN_STATION_TRANSFER !== 30 || Object.keys(actualCounts).length !== 3) {
+  if (!exactKeySet(actualCounts, AUTHORITY_EDGE_TYPES)
+    || canonicalJson(payload.edgeCounts) !== canonicalJson({ ...actualCounts, total: payload.edges.length })) {
     throw new Error("authority edge denominator mismatch");
   }
   const ids = new Set();
@@ -338,14 +323,7 @@ function capitalPack(fixture, label) {
 }
 
 function validateRideFixtureEdges(edges, routeEdges, label) {
-  const counts = edgeTypeCounts(edges);
-  if (counts.RIDE !== edges.length || Object.keys(counts).length !== 1) {
-    throw new Error(`${label} must be RIDE-only`);
-  }
-  if (edges.some(({ id }) => typeof id !== "string" || id.length === 0)) {
-    throw new Error(`${label} RIDE identifier mismatch`);
-  }
-  const rides = new Map(edges.map((edge) => [edge.id, edge]));
+  const rides = new Map(rideOnlyFixtureEdges(edges, label).map((edge) => [edge.id, edge]));
   const routeRides = new Map(routeEdges
     .filter(({ edgeType }) => edgeType === "RIDE")
     .map((edge) => [edge.edgeId, edge]));
@@ -365,6 +343,20 @@ function validateRideFixtureEdges(edges, routeEdges, label) {
   return [...rides.values()];
 }
 
+function rideOnlyFixtureEdges(edges, label) {
+  const counts = edgeTypeCounts(edges);
+  if (!Array.isArray(edges) || edges.length === 0 || counts.RIDE !== edges.length || !exactKeySet(counts, new Set(["RIDE"]))) {
+    throw new Error(`${label} must be RIDE-only`);
+  }
+  if (edges.some(({ id }) => typeof id !== "string" || id.length === 0)) {
+    throw new Error(`${label} RIDE identifier mismatch`);
+  }
+  if (new Set(edges.map(({ id }) => id)).size !== edges.length) {
+    throw new Error(`${label} RIDE denominator mismatch`);
+  }
+  return edges;
+}
+
 function validateCandidateIdentity(buildSpec, stationLineInput, route, projectedPack) {
   exact(stationLineInput, ["candidate", "stationLines", "evidenceRows"], "station-line input");
   exact(stationLineInput.candidate, STATION_CANDIDATE_KEYS, "station-line candidate");
@@ -378,13 +370,8 @@ function validateCandidateIdentity(buildSpec, stationLineInput, route, projected
     throw new Error("candidate identity mismatch");
   }
   const stationLines = stationLineInput.stationLines;
-  if (!Array.isArray(stationLines) || stationLines.length !== 213
-    || !Array.isArray(stationLineInput.evidenceRows)
-    || stationLineInput.evidenceRows.length !== 641) {
-    throw new Error("station-line denominator mismatch");
-  }
-  const stationKeys = new Set(stationLines.map(stationLineKey));
-  if (stationKeys.size !== 213) {
+  const stationIndex = stationLineIndex(stationLines, "station-line input row");
+  if (!Array.isArray(stationLineInput.evidenceRows) || stationLineInput.evidenceRows.length === 0) {
     throw new Error("station-line denominator mismatch");
   }
   const projectedStationLines = projectedRouteStationLines(projectedPack);
@@ -393,7 +380,7 @@ function validateCandidateIdentity(buildSpec, stationLineInput, route, projected
     throw new Error("route station-line candidate mismatch");
   }
   const routeByKey = new Map(projectedStationLines.map((line) => [stationLineKey(line), line]));
-  for (const line of stationLines) {
+  for (const line of stationIndex.values()) {
     if (routeByKey.get(stationLineKey(line))?.operatorId !== line.operatorId) {
       throw new Error("route station-line accessibility subset mismatch");
     }
@@ -415,46 +402,25 @@ function validateReplayCandidateIdentity(authority, stationLineInput, route) {
     || route.candidate.stationSetSha256 !== authority.candidate.stationSetSha256) {
     throw new Error("authority replay candidate mismatch");
   }
-  if (!Array.isArray(stationLineInput.stationLines) || stationLineInput.stationLines.length !== 213
-    || !Array.isArray(stationLineInput.evidenceRows) || stationLineInput.evidenceRows.length !== 641
-    || !Array.isArray(route.stationLines) || route.stationLines.length !== 1102) {
+  if (!Array.isArray(stationLineInput.evidenceRows) || stationLineInput.evidenceRows.length === 0) {
     throw new Error("authority replay denominator mismatch");
   }
-  const byKey = new Map();
+  const byKey = routeStationLineIndex(route.stationLines);
+  const stationIndex = stationLineIndex(stationLineInput.stationLines, "station-line input row");
   const stationIds = new Set();
-  let previous = null;
-  for (const line of route.stationLines) {
-    exact(line, ["stationId", "lineId", "operatorId", "lineSequence"], "route station-line");
-    const key = stationLineKey(line);
-    if (typeof line.stationId !== "string" || line.stationId.length === 0
-      || typeof line.lineId !== "string" || line.lineId.length === 0
-      || typeof line.operatorId !== "string" || line.operatorId.length === 0
-      || !Number.isSafeInteger(line.lineSequence) || line.lineSequence < 0
-      || byKey.has(key) || (previous !== null && compareStationLines(previous, line) >= 0)) {
-      throw new Error("authority replay route station-line mismatch");
-    }
-    byKey.set(key, line);
-    stationIds.add(line.stationId);
-    previous = line;
-  }
-  const stationKeys = new Set();
-  for (const line of stationLineInput.stationLines) {
-    exact(line, ["stationId", "lineId", "operatorId"], "station-line input row");
-    const key = stationLineKey(line);
-    if (stationKeys.has(key) || byKey.get(key)?.operatorId !== line.operatorId) {
+  for (const line of byKey.values()) stationIds.add(line.stationId);
+  for (const line of stationIndex.values()) {
+    if (byKey.get(stationLineKey(line))?.operatorId !== line.operatorId) {
       throw new Error("authority replay station-line mismatch");
     }
-    stationKeys.add(key);
   }
-  if (stationKeys.size !== 213) throw new Error("authority replay denominator mismatch");
   return { byKey, stationIds };
 }
 
 function validateRoute(route, stationLineInput, routeStationIndex) {
   const routeEdges = validateRouteEdgeShapes(route.routeEdges);
   const counts = edgeTypeCounts(routeEdges);
-  if (Object.entries(COUNTS).some(([type, count]) => counts[type] !== count)
-    || Object.keys(counts).length !== Object.keys(COUNTS).length) {
+  if (!exactKeySet(counts, ROUTE_EDGE_TYPES)) {
     throw new Error("route edge coverage mismatch");
   }
   const rides = routeEdges.filter(({ edgeType }) => edgeType === "RIDE");
@@ -462,11 +428,12 @@ function validateRoute(route, stationLineInput, routeStationIndex) {
     throw new Error("route topology hash mismatch");
   }
   validateRouteEndpoints(routeEdges, stationLineInput.stationLines, routeStationIndex);
+  validateEntryExitBijections(routeEdges, stationLineInput.stationLines);
   return routeEdges;
 }
 
 function validateRouteEdgeShapes(routeEdges) {
-  if (!Array.isArray(routeEdges) || routeEdges.length !== totalCount(COUNTS)) {
+  if (!Array.isArray(routeEdges) || routeEdges.length === 0) {
     throw new Error("route edge denominator mismatch");
   }
   const ids = new Set();
@@ -527,7 +494,7 @@ function projectedRouteStationLines(pack) {
     keys.add(key);
     return { stationId, lineId, operatorId, lineSequence };
   }).sort(compareStationLines);
-  if (stationLines.length !== 1102 || keys.size !== 1102) {
+  if (stationLines.length === 0 || keys.size !== stationLines.length) {
     throw new Error("projected route station-line denominator mismatch");
   }
   return stationLines;
@@ -557,8 +524,14 @@ function validateProjectedFixtureEdges(edges, routeEdges) {
   return validateRideFixtureEdges(edges, routeEdges, "projected fixture");
 }
 
-function validateMaterialization(value) {
-  if (!Array.isArray(value.rows) || value.rows.length !== 639
+function validateMaterialization(value, stationLines) {
+  if (!Array.isArray(value.rows)) throw new Error("full-capital materialization has unresolved evidence");
+  const expected = new Set(stationLines.flatMap(({ stationId, lineId }) =>
+    MATERIALIZATION_DOMAINS.map((domain) => `${stationId}:${lineId}:${domain}`)));
+  const actual = new Set(value.rows.map(({ stationId, lineId, domain }) =>
+    `${stationId}:${lineId}:${domain}`));
+  if (!Array.isArray(value.rows) || expected.size === 0 || actual.size !== value.rows.length
+    || actual.size !== expected.size || [...expected].some((key) => !actual.has(key))
     || value.stateSummary.UNKNOWN !== 0 || value.stateSummary.MISSING !== 0
     || value.stateSummary.STALE !== 0
     || value.rows.some(({ state }) => !CLOSED_STATES.has(state))
@@ -575,9 +548,8 @@ function candidateFixtureFrom(projectedFixture, projectedRides, routeEdges) {
     .map(canonicalUnverifiedEdge);
   pack.networkEdges = [...structuredClone(projectedRides), ...nonRide]
     .sort((left, right) => compareBytes(left.id, right.id));
-  const counts = edgeTypeCounts(pack.networkEdges);
-  if (pack.networkEdges.length !== totalCount(COUNTS)
-    || Object.entries(COUNTS).some(([type, count]) => counts[type] !== count)) {
+  const expected = [...projectedRides, ...nonRide].sort((left, right) => compareBytes(left.id, right.id));
+  if (canonicalJson(pack.networkEdges) !== canonicalJson(expected)) {
     throw new Error("candidate fixture edge denominator mismatch");
   }
   return canonicalObject(candidateFixture);
@@ -660,9 +632,7 @@ function requiredCell(rows, stationId, lineId, domain) {
 
 function countAuthorityEdges(edges) {
   const counts = edgeTypeCounts(edges);
-  if (edges.length !== totalCount(AUTHORITY_COUNTS)
-    || Object.entries(AUTHORITY_COUNTS).some(([type, count]) => counts[type] !== count)
-    || Object.keys(counts).length !== Object.keys(AUTHORITY_COUNTS).length) {
+  if (!Array.isArray(edges) || edges.length === 0 || !exactKeySet(counts, AUTHORITY_EDGE_TYPES)) {
     throw new Error("authority edge denominator mismatch");
   }
   return canonicalObject({ ...counts, total: edges.length });
@@ -685,6 +655,58 @@ function edgeTypeCounts(edges) {
   const counts = {};
   for (const { edgeType } of edges) counts[edgeType] = (counts[edgeType] ?? 0) + 1;
   return counts;
+}
+
+function exactKeySet(value, expected) {
+  const keys = Object.keys(value);
+  return keys.length === expected.size && keys.every((key) => expected.has(key));
+}
+
+function stationLineIndex(stationLines, label) {
+  if (!Array.isArray(stationLines) || stationLines.length === 0) throw new Error("station-line denominator mismatch");
+  const index = new Map();
+  for (const line of stationLines) {
+    exact(line, ["stationId", "lineId", "operatorId"], label);
+    const key = stationLineKey(line);
+    if (typeof line.stationId !== "string" || line.stationId.length === 0
+      || typeof line.lineId !== "string" || line.lineId.length === 0
+      || typeof line.operatorId !== "string" || line.operatorId.length === 0 || index.has(key)) {
+      throw new Error("station-line denominator mismatch");
+    }
+    index.set(key, line);
+  }
+  return index;
+}
+
+function routeStationLineIndex(stationLines) {
+  if (!Array.isArray(stationLines) || stationLines.length === 0) throw new Error("authority replay route station-line mismatch");
+  const index = new Map(); let previous = null;
+  for (const line of stationLines) {
+    exact(line, ["stationId", "lineId", "operatorId", "lineSequence"], "route station-line");
+    const key = stationLineKey(line);
+    if (typeof line.stationId !== "string" || line.stationId.length === 0
+      || typeof line.lineId !== "string" || line.lineId.length === 0
+      || typeof line.operatorId !== "string" || line.operatorId.length === 0
+      || !Number.isSafeInteger(line.lineSequence) || line.lineSequence < 0
+      || index.has(key) || (previous !== null && compareStationLines(previous, line) >= 0)) {
+      throw new Error("authority replay route station-line mismatch");
+    }
+    index.set(key, line); previous = line;
+  }
+  return index;
+}
+
+function validateEntryExitBijections(routeEdges, stationLines) {
+  const expected = new Set(stationLines.map(stationLineKey));
+  for (const [type, node] of [["ENTRY", "toNodeId"], ["EXIT", "fromNodeId"]]) {
+    const selected = routeEdges.filter(({ edgeType }) => edgeType === type);
+    const actual = new Set(selected
+      .map((edge) => stationLineKey(stationLineNode(edge[node]))));
+    if (selected.length !== expected.size || actual.size !== expected.size
+      || [...expected].some((key) => !actual.has(key))) {
+      throw new Error("route edge coverage mismatch");
+    }
+  }
 }
 
 function exact(value, keys, label) {

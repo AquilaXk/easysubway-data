@@ -386,18 +386,21 @@ function adaptCurrentCapitalFacilityAdmission(value, collectionPlan, candidateBu
   const queries = collectionPlan.stationLineQueries;
   const queryIds = queries?.flatMap((entry) => entry?.queryIds ?? []);
   const planQueryIds = collectionPlan.queryPlan?.map(({ queryId }) => queryId);
-  if (!Array.isArray(mappings) || mappings.length !== 213 || new Set(mappings.map(({ stationId, lineId }) => `${stationId}\0${lineId}`)).size !== 213
-    || !Array.isArray(queries) || queries.length !== 213 || new Set(queries.map(({ stationLineId }) => stationLineId)).size !== 213
-    || !Array.isArray(collectionPlan.queryPlan) || collectionPlan.queryPlan.length !== 420
-    || new Set(planQueryIds).size !== 420 || queryIds.length !== 420 || new Set(queryIds).size !== 420
-    || canonicalJson([...queryIds].sort(compareBytes)) !== canonicalJson([...planQueryIds].sort(compareBytes))) {
+  if (!Array.isArray(mappings) || mappings.length === 0
+    || !Array.isArray(queries) || queries.length === 0
+    || !Array.isArray(collectionPlan.queryPlan) || collectionPlan.queryPlan.length === 0
+    || new Set(mappings.map(({ stationId, lineId }) => `${stationId}\0${lineId}`)).size !== mappings.length
+    || new Set(queries.map(({ stationLineId }) => stationLineId)).size !== queries.length
+    || new Set(planQueryIds).size !== planQueryIds.length
+    || new Set(queryIds).size !== queryIds.length
+    || !sameSet(new Set(queryIds), new Set(planQueryIds))) {
     throw new Error("current capital FACILITY EXIT coverage mismatch");
   }
   const mappingSet = new Set(mappings.map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
   const cellSet = new Set(value.cells.map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
-  const querySet = new Set(queries.map(({ stationLineId }) => stationLineId));
-  if (cellSet.size !== 213 || mappingSet.size !== 213 || querySet.size !== 213
-    || [...mappingSet].some((key) => !cellSet.has(key) || !querySet.has(key.replace("\0", ":")))) {
+  const querySet = new Set(queries.map(({ stationLineId }) => stationLineId.replace(":", "\0")));
+  if (cellSet.size !== value.cells.length || !sameSet(mappingSet, cellSet)
+    || !sameSet(mappingSet, querySet)) {
     throw new Error("current capital FACILITY station-line set mismatch");
   }
   const providerProjection = mappings.map((mapping) => canonicalObject({
@@ -759,6 +762,10 @@ function canonicalObject(value) {
 
 function canonicalJson(value) {
   return JSON.stringify(canonicalObject(value));
+}
+
+function sameSet(left, right) {
+  return left.size === right.size && [...left].every((value) => right.has(value));
 }
 
 function compareStationLines(left, right) {

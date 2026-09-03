@@ -615,7 +615,7 @@ async function prepareProducerNeutralFullRegistration({ repositoryRoot, snapshot
   } catch (error) {
     throw new Error("capital FACILITY full registration identity mismatch", { cause: error });
   }
-  if (snapshot.queryCount !== 213) {
+  if (snapshot.queryCount !== mappings.length) {
     throw new Error("capital FACILITY full registration identity mismatch");
   }
   const expected = new Set(mappings.map((mapping) => [
@@ -624,7 +624,7 @@ async function prepareProducerNeutralFullRegistration({ repositoryRoot, snapshot
   const actual = new Set(snapshot.queries.map((query) => [
     query.stationId, query.lineId, query.railOprIsttCd, query.lnCd, query.stinCd,
   ].join("\0")));
-  if (expected.size !== 213 || actual.size !== 213 || [...expected].some((key) => !actual.has(key))) {
+  if (expected.size !== mappings.length || actual.size !== mappings.length || [...expected].some((key) => !actual.has(key))) {
     throw new Error("capital FACILITY snapshot tuple coverage mismatch");
   }
   if (rawReceipt?.snapshotFileSha256 !== snapshotFileSha256) {

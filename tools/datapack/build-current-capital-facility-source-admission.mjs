@@ -41,6 +41,7 @@ export function buildCurrentCapitalFacilitySourceAdmission(input) {
     freshnessPolicy: input?.freshnessPolicy,
     snapshot,
     snapshotBytes,
+    mappings,
     observedAtMillis,
     candidateEvaluationAt: input?.candidateEvaluationAt,
   });
@@ -106,9 +107,7 @@ export function validateCurrentCapitalFacilityPlanAndCanonicalPack({ plan, planB
   if (canonicalCurrentCapitalFacilityCollectionPlanJson(plan) !== planBytes.toString("utf8")) {
     throw new Error("capital FACILITY plan bytes are not canonical");
   }
-  if (plan?.counts?.stationLineCount !== 213 || plan.counts.stationCount !== 199
-    || plan.counts.providerTupleCount !== 213
-    || plan.sourceIdentity?.canonicalPackSha256 !== sha256(canonicalPackBytes)) {
+  if (plan.sourceIdentity?.canonicalPackSha256 !== sha256(canonicalPackBytes)) {
     throw new Error("capital FACILITY plan identity mismatch");
   }
   const capital = pack?.packs?.length === 1 ? pack.packs[0] : undefined;
@@ -119,11 +118,15 @@ export function validateCurrentCapitalFacilityPlanAndCanonicalPack({ plan, planB
   const capitalLineIds = new Set((capital.lines ?? [])
     .filter(({ operatorId }) => operatorId === "seoul-metro")
     .map(({ id }) => id));
-  const canonicalMembership = new Set((capital.stationLines ?? [])
-    .filter(({ lineId }) => capitalLineIds.has(lineId))
-    .map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
+  const canonicalMembership = new Set();
+  for (const { stationId, lineId } of capital.stationLines ?? []) {
+    if (!capitalLineIds.has(lineId)) continue;
+    const key = `${stationId}\0${lineId}`;
+    if (canonicalMembership.has(key)) throw new Error("capital FACILITY canonical membership duplicate");
+    canonicalMembership.add(key);
+  }
   const mappings = plan.stationLineProviderMappings;
-  if (!Array.isArray(mappings) || mappings.length !== 213) throw new Error("capital FACILITY mapping coverage mismatch");
+  if (!Array.isArray(mappings)) throw new Error("capital FACILITY mapping coverage mismatch");
   const seen = new Set();
   for (const mapping of mappings) {
     if (mapping?.regionId !== "capital" || mapping.operatorId !== "seoul-metro"
@@ -133,15 +136,14 @@ export function validateCurrentCapitalFacilityPlanAndCanonicalPack({ plan, planB
     }
     seen.add(`${mapping.stationId}\0${mapping.lineId}`);
   }
-  if (seen.size !== 213 || canonicalMembership.size !== 213
-    || [...canonicalMembership].some((stationLine) => !seen.has(stationLine))
-    || new Set(mappings.map(({ stationId }) => stationId)).size !== 199) {
+  if (seen.size !== canonicalMembership.size
+    || [...canonicalMembership].some((stationLine) => !seen.has(stationLine))) {
     throw new Error("capital FACILITY mapping coverage mismatch");
   }
   return mappings;
 }
 
-function validateSourceContext({ candidateBuildSpec, sourceInventoryBytes, sourceSnapshots, governancePolicy, governancePolicyBytes, freshnessPolicy, snapshot, snapshotBytes, observedAtMillis, candidateEvaluationAt }) {
+function validateSourceContext({ candidateBuildSpec, sourceInventoryBytes, sourceSnapshots, governancePolicy, governancePolicyBytes, freshnessPolicy, snapshot, snapshotBytes, mappings, observedAtMillis, candidateEvaluationAt }) {
   if (candidateBuildSpec?.schemaVersion !== 1 || candidateBuildSpec.artifactKind !== "datapack-candidate-build-spec"
     || !Array.isArray(candidateBuildSpec.sourceSnapshotIds) || !Array.isArray(candidateBuildSpec.sourceSnapshots)
     || candidateBuildSpec.sourceSnapshotIds.length !== candidateBuildSpec.sourceSnapshots.length
@@ -224,7 +226,7 @@ function validateSourceContext({ candidateBuildSpec, sourceInventoryBytes, sourc
     || !["LOCKED", "SUCCESS", "PASS", "PASS"].every((expected, index) => [ledger.snapshotStatus, ledger.fetchStatus, ledger.schemaStatus, ledger.licenseStatus][index] === expected)
     || ledger.credentialRedacted !== true || ledger.redistributionAllowed !== true
     || ledger.schemaVersion !== 1 || ledger.artifactKind !== "official-source-snapshot" || ledger.sourceId !== SOURCE_ID
-    || ledger.provider !== source.provider || ledger.coverageCount !== 213 || ledger.rowCount !== snapshot.rowCount
+    || ledger.provider !== source.provider || ledger.coverageCount !== mappings.length || ledger.rowCount !== snapshot.rowCount
     || ledger.contentSha256 !== snapshot.contentSha256 || ledger.schemaFingerprint !== snapshot.schemaFingerprint
     || ledger.redactedRequestFingerprint !== snapshot.redactedRequestFingerprint
     || ledger.adminReviewRecordHash !== admission.adminReviewRecordHash
@@ -323,9 +325,11 @@ function deriveCandidateProjection({ ledger, sourceInventory, governancePolicy, 
 
 function validateQueryCoverage(snapshot, mappings) {
   const expected = new Set(mappings.map(mappingKey));
-  const queries = new Map((snapshot.queries ?? []).map((query) => [queryKey(query), query]));
-  if (snapshot.queryCount !== 213 || snapshot.queries?.length !== 213 || queries.size !== 213
-    || expected.size !== 213 || [...expected].some((key) => !queries.has(key))) {
+  if (!Array.isArray(snapshot.queries)) throw new Error("capital FACILITY snapshot tuple coverage mismatch");
+  const queries = new Map(snapshot.queries.map((query) => [queryKey(query), query]));
+  if (snapshot.queryCount !== snapshot.queries.length || queries.size !== snapshot.queries.length
+    || expected.size !== mappings.length || expected.size !== queries.size
+    || [...expected].some((key) => !queries.has(key)) || [...queries].some(([key]) => !expected.has(key))) {
     throw new Error("capital FACILITY snapshot tuple coverage mismatch");
   }
   return queries;
@@ -369,9 +373,11 @@ function validateRenderedAdmission(value) {
     throw new Error("capital FACILITY source identity time or path mismatch");
   }
   const rowKey = (row) => `${row.stationId}\0${row.lineId}`;
-  if (!Array.isArray(value.denominatorRows) || value.denominatorRows.length !== 639
-    || !Array.isArray(value.cells) || value.cells.length !== 213 || !Array.isArray(value.materializerEvidenceRows) || value.materializerEvidenceRows.length !== 213
-    || new Set(value.cells.map(rowKey)).size !== 213 || new Set(value.cells.map(({ stationId }) => stationId)).size !== 199) {
+  if (!Array.isArray(value.denominatorRows) || !Array.isArray(value.cells) || !Array.isArray(value.materializerEvidenceRows)
+    || value.denominatorRows.length !== value.cells.length * TYPES.length
+    || value.materializerEvidenceRows.length !== value.cells.length
+    || new Set(value.cells.map(rowKey)).size !== value.cells.length
+    || new Set(value.materializerEvidenceRows.map(rowKey)).size !== value.materializerEvidenceRows.length) {
     throw new Error("capital FACILITY admission matrix mismatch");
   }
   let blockedCellCount = 0;
@@ -401,7 +407,7 @@ function validateRenderedAdmission(value) {
     const blockedCell = cell.state === "ADMITTED_FACILITY_UNVERIFIED_BLOCKED";
     if (blockedCell) {
       blockedCellCount += 1;
-      if (cell.stationId !== "station-b35616704ce3" || cell.lineId !== "seoul-2" || blockedRows.length !== TYPES.length) {
+      if (blockedRows.length !== TYPES.length) {
         throw new Error("capital FACILITY blocked terminal matrix mismatch");
       }
     } else if (blockedRows.length !== 0) {

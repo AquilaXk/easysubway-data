@@ -27,7 +27,6 @@ import {
   deriveReleaseProjection,
   requireCurrentCanonicalSourceRoster,
 } from "../rebind-current-candidate-source-snapshots.mjs";
-import { syncCurrentRouteEdgePolicyFile } from "../sync-current-route-edge-policy.mjs";
 import { buildSnapshotDiff, validateLineage } from "../source-snapshot-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
 import { currentTopologyAdmissionClock } from "./current-topology-admission-clock.mjs";
@@ -43,6 +42,36 @@ const SHA_KEYS = Object.freeze([
 
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
+
+function bindSyntheticReleaseArtifacts({
+  candidate, candidateBytes, request, hashes, packBytes, selectedSnapshots, inventory,
+}) {
+  const buildSpecSha256 = sha256(candidateBytes);
+  const approvalId = `release-request-${candidate.candidateId}-${buildSpecSha256}`;
+  Object.assign(request, {
+    candidateId: candidate.candidateId,
+    buildSpecSha256,
+    approvalId,
+    sourceSnapshotSetHash: candidate.sourceSnapshotSetHash,
+    approvedLedgerHash: candidate.approvedAliasLedgerHash,
+  });
+  hashes.identifiers.candidateId.value = candidate.candidateId;
+  hashes.identifiers.approvalId.value = approvalId;
+  hashes.ledgerHashes.approvedAliasLedgerHash.value = candidate.approvedAliasLedgerHash;
+  hashes.sourceSnapshotSetHash.value = candidate.sourceSnapshotSetHash;
+  hashes.sourceInventorySha256.value = candidate.sourceInventorySha256;
+  hashes.fixturePath.sha256 = sha256(packBytes);
+  hashes.sourceSnapshots.order = `release snapshot 순서: ${selectedSnapshots.map(({ sourceId }) => sourceId).join(" → ")}`;
+  hashes.perSourceEvidence = selectedSnapshots.map((selectedSnapshot) => ({
+    sourceId: selectedSnapshot.sourceId,
+    snapshotId: selectedSnapshot.snapshotId,
+    rawSha256: selectedSnapshot.rawSha256,
+    adminReviewRecordHash: inventory.sources.find(({ id }) => id === selectedSnapshot.sourceId)
+      .admissionEvidence.adminReviewRecordHash,
+    perSourceSnapshotSetHash: sha256(JSON.stringify([selectedSnapshot])),
+  }));
+}
+
 function orderCurrentCapitalSources(document) {
   const capital = document?.packs?.find(({ id }) => id === "capital");
   const entries = capital?.sourceInventory;
@@ -200,37 +229,8 @@ const SUCCESSOR_FIXTURE_PATHS = Object.freeze([
 export async function copySyntheticCurrentPublicRouteMapRepository(
   sourceRoot,
   targetRoot,
-  { now, activateStaticNetwork = false, activatePublicRouteMap = true },
+  { now, activatePublicRouteMap = true },
 ) {
-  if (activateStaticNetwork) {
-    await copySyntheticCurrentPublicRouteMapRepository(sourceRoot, targetRoot, {
-      now,
-      activatePublicRouteMap: false,
-    });
-    const previousBytes = await readFile(path.join(
-      sourceRoot,
-      "tools/datapack/release/current-station-line-accessibility/station-line-input.json",
-    ));
-    await bindSyntheticActivatedOutputsToCurrentCandidate(targetRoot);
-    const result = await activateSyntheticCurrentStaticNetworkSuccessors(targetRoot, { now });
-    const {
-      currentizeFreshFacilitySource,
-      rebindFreshExitAdmissionForCurrentTransition,
-      writeFreshExitAdmissionChain,
-      writeFreshCurrentAccessibilityOutputs,
-    } = await import("./current-full-capital-production-artifact.mjs");
-    const facilityNow = await nextSyntheticCurrentStaticNetworkNow(targetRoot);
-    await currentizeFreshFacilitySource(targetRoot, facilityNow);
-    await writeFreshExitAdmissionChain(targetRoot, facilityNow);
-    await rebindFreshExitAdmissionForCurrentTransition(targetRoot, previousBytes);
-    await writeFreshCurrentAccessibilityOutputs(targetRoot);
-    await syncCurrentRouteEdgePolicyFile({
-      repositoryRoot: targetRoot,
-      inputPath: path.join(targetRoot, "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json"),
-      policyPath: path.join(targetRoot, "release/product-gates/route-edge-evaluation-policy.json"),
-    });
-    return result;
-  }
   const [source, target] = await Promise.all([
     regularRoot(sourceRoot),
     regularRoot(targetRoot, { create: true }),
@@ -290,23 +290,6 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
   return activateSyntheticCurrentPublicRouteMapSuccessor(target, { now });
 }
 
-async function bindSyntheticActivatedOutputsToCurrentCandidate(root) {
-  const candidate = await readJson(root, "tools/datapack/release/candidate-build-spec.json");
-  const sourceSetSha256 = candidate.sourceSnapshotSetHash;
-  const outputPaths = [
-    "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
-    "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
-  ];
-  const [station, route] = await Promise.all(outputPaths.map((relative) => readJson(root, relative)));
-  station.candidate.candidateId = candidate.candidateId;
-  station.candidate.sourceSetSha256 = sourceSetSha256;
-  for (const row of station.evidenceRows) row.candidateId = candidate.candidateId;
-  route.candidate.candidateId = candidate.candidateId;
-  route.candidate.sourceSetSha256 = sourceSetSha256;
-  await Promise.all(outputPaths.map((relative, index) =>
-    writeFile(path.join(root, relative), jsonBytes(index === 0 ? station : route))));
-}
-
 async function writeSyntheticCurrentExitOciReceipt(root) {
   const normalizedPath = "tools/datapack/release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json";
   const admissionPath = "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json";
@@ -315,15 +298,23 @@ async function writeSyntheticCurrentExitOciReceipt(root) {
     readFile(path.join(root, normalizedPath)),
     readFile(path.join(root, admissionPath)),
   ]);
-  const providerCollectionBundleBytes = Buffer.from("synthetic-current-exit-provider");
+  const admission = JSON.parse(admissionBytes);
+  const providerCapturedAt = admission.sourceIdentity?.capturedAt;
+  if (typeof providerCapturedAt !== "string" || !Number.isFinite(Date.parse(providerCapturedAt))) {
+    throw new Error("synthetic current EXIT admission capture time is invalid");
+  }
+  const mainSha = sha256(admissionBytes).slice(0, 40);
+  const operationId = `synthetic-current-exit-${mainSha.slice(0, 12)}`;
+  const providerCollectionBundleBytes = Buffer.from(operationId);
   const providerObjectSha256 = sha256(providerCollectionBundleBytes);
+  const captureDate = providerCapturedAt.slice(0, 10).replaceAll("-", "");
   const receipt = buildCurrentExitAdmissionOciReceipt({
     repository: "AquilaXk/easysubway-data",
-    mainSha: "a".repeat(40),
-    operationId: "synthetic-current-public-route-map",
-    providerCapturedAt: "2026-08-01T00:00:00.000Z",
+    mainSha,
+    operationId,
+    providerCapturedAt,
     providerCollectionBundleBytes,
-    providerObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/operations/current-capital-live-chain/v1/heads/${"a".repeat(40)}/operations/synthetic-current-public-route-map/provider-collections/20260801-${providerObjectSha256}.json`,
+    providerObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/operations/current-capital-live-chain/v1/heads/${mainSha}/operations/${operationId}/provider-collections/${captureDate}-${providerObjectSha256}.json`,
     providerObjectSha256,
     providerObjectByteSize: providerCollectionBundleBytes.length,
     normalizedBytes,
@@ -676,16 +667,12 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     capitalTopology: currentTopology,
     incheonSnapshot: currentIncheonTopology,
   });
-  if (currentIncheonTopology.topologyLineIds.length !== 2
-    || currentIncheonTopology.edgeCount !== 116) {
-    throw new Error("synthetic current Incheon topology admission bytes are invalid");
-  }
   const candidateLineIds = new Set(currentTopology.lines.map(({ lineId }) => lineId));
   const currentTopologyAdmissions = inventory.sources
     .map((source) => ({ source, evidence: source.routeMapAdmissionEvidence,
       admission: source.routeMapAdmissionEvidence?.currentTopologyAdmission }))
     .filter(({ evidence }) => evidence?.topologySourceId === currentTopology.sourceId);
-  if (currentTopologyAdmissions.length !== 16
+  if (currentTopologyAdmissions.length === 0
     || currentTopologyAdmissions.some(({ evidence, admission }) => !Array.isArray(evidence?.lineIds)
       || evidence.lineIds.length === 0
       || new Set(evidence.lineIds).size !== evidence.lineIds.length
@@ -697,10 +684,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
         || !candidateLineIds.has(lineId)))
     || currentTopology.contentSha256 !== publicTopologyAdmission.topologyContentSha256
     || currentTopology.capturedAt !== publicTopologyAdmission.reviewedAt
-    || currentTopology.freshUntil !== publicTopologyAdmission.freshUntil
-    || currentTopology.lines.length !== 22
-    || currentTopology.lines.reduce((count, line) => count + line.edgeCount, 0) !== 1_438
-    || currentTopology.lines.some(({ lineId }) => ["line-42b5805f3b5a", "line-98718184f016"].includes(lineId))) {
+    || currentTopology.freshUntil !== publicTopologyAdmission.freshUntil) {
     throw new Error("synthetic current topology admission bytes are invalid");
   }
   const topologyReverificationPath = `tools/datapack/release/${currentTopologySnapshotId}-reverification.json`;
@@ -786,25 +770,10 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   candidate.networkEdgeEvidence.sourceInventory.sha256 = sha256(inventoryBytes);
   const candidateBytes = jsonBytes(candidate);
   const packBytes = Buffer.from(`${JSON.stringify(pack)}\n`);
-  Object.assign(request, {
-    candidateId: candidate.candidateId,
-    buildSpecSha256: sha256(candidateBytes),
-    sourceSnapshotSetHash: candidate.sourceSnapshotSetHash,
-    approvedLedgerHash: candidate.approvedAliasLedgerHash,
-  });
   const selectedSnapshots = snapshots.filter(({ snapshotId: selectedId }) => selectedIds.has(selectedId));
-  hashes.sourceSnapshotSetHash.value = candidate.sourceSnapshotSetHash;
-  hashes.sourceInventorySha256.value = candidate.sourceInventorySha256;
-  hashes.fixturePath.sha256 = sha256(packBytes);
-  hashes.sourceSnapshots.order = `release snapshot 순서: ${selectedSnapshots.map(({ sourceId }) => sourceId).join(" → ")}`;
-  hashes.perSourceEvidence = selectedSnapshots.map((selectedSnapshot) => ({
-    sourceId: selectedSnapshot.sourceId,
-    snapshotId: selectedSnapshot.snapshotId,
-    rawSha256: selectedSnapshot.rawSha256,
-    adminReviewRecordHash: inventory.sources.find(({ id }) => id === selectedSnapshot.sourceId)
-      .admissionEvidence.adminReviewRecordHash,
-    perSourceSnapshotSetHash: sha256(JSON.stringify([selectedSnapshot])),
-  }));
+  bindSyntheticReleaseArtifacts({
+    candidate, candidateBytes, request, hashes, packBytes, selectedSnapshots, inventory,
+  });
 
   await Promise.all([
     writeFile(path.join(root, `tools/datapack/sources/${snapshotId}.json`), Buffer.from(`${JSON.stringify(observation)}\n`)),

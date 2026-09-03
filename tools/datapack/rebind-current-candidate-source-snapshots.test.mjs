@@ -58,12 +58,10 @@ test("active candidate source sequence accepts only current Incheon predecessor 
   ]), false);
 });
 
-function kric213Snapshot() {
+function kricSnapshot(membership) {
   const operation = KRIC_ACCESSIBILITY_OPERATIONS[0];
   const capturedAt = new Date(CURRENT_SOURCE_HEAD_AT + 60_000).toISOString();
-  const queries = Array.from({ length: 213 }, (_, index) => {
-    const stationId = `station-${index}`;
-    const lineId = `line-${index}`;
+  const queries = membership.map(({ stationId, lineId }, index) => {
     const railOprIsttCd = `O${index}`;
     const lnCd = `L${index}`;
     const stinCd = `S${index}`;
@@ -102,6 +100,7 @@ async function fixture() {
   const governanceBytes = await readFile(path.join(root, "tools/datapack/source-governance-policy.json"));
   const governancePolicy = JSON.parse(governanceBytes);
   const freshnessPolicy = await readJson("release/product-gates/datapack-freshness-sla.json");
+  const canonicalPack = await readJson("tools/datapack/release/capital-production-canonical-pack.json");
   const candidateBytes = Buffer.from(`${JSON.stringify(candidate, null, 2)}\n`);
   await writeFile(candidatePath, candidateBytes);
   const requestPath = path.join(root, "tools/datapack/release/release-request.json");
@@ -112,14 +111,17 @@ async function fixture() {
     .find(({ sourceId }) => sourceId === "kric-station-convenience-standard")?.snapshotId;
   const previous = snapshots.find(({ snapshotId }) => snapshotId === selectedKricSnapshotId);
   assert.ok(previous);
-  const snapshot = kric213Snapshot();
+  const capital = canonicalPack.packs[0];
+  const seoulMetroLineIds = new Set(capital.lines.filter(({ operatorId }) => operatorId === "seoul-metro").map(({ id }) => id));
+  const membership = capital.stationLines.filter(({ lineId }) => seoulMetroLineIds.has(lineId));
+  const snapshot = kricSnapshot(membership);
   const next = structuredClone(previous);
   next.snapshotId = snapshot.snapshotId;
   next.previousSnapshotId = previous.snapshotId;
   next.retrievedAt = snapshot.capturedAt;
   next.sourceUpdatedAt = next.retrievedAt;
   next.rowCount = snapshot.rowCount;
-  next.coverageCount = 213;
+  next.coverageCount = membership.length;
   next.rawSha256 = "a".repeat(64);
   next.rawObjectUri = `oci://fixture/kric-station-convenience-standard/${next.rawSha256}.json`;
   next.redactedRequestFingerprint = snapshot.redactedRequestFingerprint;
