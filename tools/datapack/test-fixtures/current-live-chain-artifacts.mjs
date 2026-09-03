@@ -24,7 +24,7 @@ import {
 import { canonicalRouteEdgeEvaluationJson, evaluateRouteAccessibilityEdges } from "../evaluate-route-accessibility-edges.mjs";
 import { materializeStationLineAccessibility } from "../materialize-station-line-accessibility.mjs";
 import { buildReboundCurrentExitAdmissionIdentities } from "../rebind-current-exit-admission-identities.mjs";
-import { deriveBoundReleaseArtifacts } from "../rebind-current-candidate-source-snapshots.mjs";
+import { bindCandidateToCurrentSourceInventory } from "../rebind-current-candidate-source-snapshots.mjs";
 import { resolveStagedIncheonTopologyPath } from "../run-current-capital-live-chain.mjs";
 
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
@@ -42,18 +42,15 @@ function bindCurrentLiveChainCandidateAuthority(authorityBytes) {
   const inventoryBytes = bound.get(INVENTORY_PATH);
   const sourceInventory = JSON.parse(inventoryBytes);
   const candidate = JSON.parse(bound.get(CANDIDATE_PATH));
-  candidate.sourceInventorySha256 = sha256(JSON.stringify(sourceInventory));
-  candidate.networkEdgeEvidence.sourceInventory.sha256 = sha256(inventoryBytes);
-  const candidateBytes = Buffer.from(`${JSON.stringify(candidate, null, 2)}\n`);
-  const release = deriveBoundReleaseArtifacts({
+  const release = bindCandidateToCurrentSourceInventory({
     candidate,
-    candidateBytes,
     releaseRequest: JSON.parse(bound.get(RELEASE_REQUEST_PATH)),
     hashEvidence: JSON.parse(bound.get(HASH_EVIDENCE_PATH)),
     sourceSnapshots: JSON.parse(bound.get(SNAPSHOTS_PATH)),
     sourceInventory,
+    sourceInventoryBytes: inventoryBytes,
   });
-  bound.set(CANDIDATE_PATH, candidateBytes);
+  bound.set(CANDIDATE_PATH, release.candidateBytes);
   bound.set(RELEASE_REQUEST_PATH, release.requestBytes);
   bound.set(HASH_EVIDENCE_PATH, release.hashEvidenceBytes);
   return bound;

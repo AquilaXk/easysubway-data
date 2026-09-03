@@ -507,7 +507,7 @@ function selectedLedgerSnapshots(sourceSnapshots, candidate) {
   return selected;
 }
 
-export function deriveBoundReleaseArtifacts({ candidate, candidateBytes, releaseRequest, hashEvidence, sourceSnapshots, sourceInventory }) {
+function deriveBoundReleaseArtifacts({ candidate, candidateBytes, releaseRequest, hashEvidence, sourceSnapshots, sourceInventory }) {
   const request = structuredClone(releaseRequest);
   if (request.candidateId !== candidate.candidateId || request.scopeId !== candidate.productionScopeId
     || typeof request.approvalId !== "string" || request.approvalId === ""
@@ -540,6 +540,31 @@ export function deriveBoundReleaseArtifacts({ candidate, candidateBytes, release
     throw new Error("release request rebinding verification failed");
   }
   return { requestBytes, hashEvidenceBytes: jsonBytes(evidence) };
+}
+
+export function bindCandidateToCurrentSourceInventory({
+  candidate, releaseRequest, hashEvidence, sourceSnapshots, sourceInventory, sourceInventoryBytes,
+}) {
+  if (!Buffer.isBuffer(sourceInventoryBytes)
+    || !isDeepStrictEqual(parse(sourceInventoryBytes, "source inventory"), sourceInventory)) {
+    throw new Error("source inventory is not bound to its authenticated bytes");
+  }
+  const boundCandidate = structuredClone(candidate);
+  boundCandidate.sourceInventorySha256 = sha256(JSON.stringify(sourceInventory));
+  boundCandidate.networkEdgeEvidence.sourceInventory.sha256 = sha256(sourceInventoryBytes);
+  const candidateBytes = jsonBytes(boundCandidate);
+  return {
+    candidate: boundCandidate,
+    candidateBytes,
+    ...deriveBoundReleaseArtifacts({
+      candidate: boundCandidate,
+      candidateBytes,
+      releaseRequest,
+      hashEvidence,
+      sourceSnapshots,
+      sourceInventory,
+    }),
+  };
 }
 
 function transactionRecord(relative, before, after) {
@@ -616,8 +641,15 @@ export async function rebindCurrentCandidateSourceSnapshots({
       candidateBuildSpec: currentCandidate, candidateBuildSpecBytes: input.candidate.bytes, releaseRequest: parse(input.releaseRequest.bytes, "release request"), sourceInventory, sourceInventoryBytes: input.inventory.bytes,
       sourceSnapshots: parse(input.snapshots.bytes, "source snapshot ledger"), canonicalPack: parse(input.pack.bytes, "capital canonical pack"), governancePolicy: parse(input.governance.bytes, "source governance policy"), governancePolicyBytes: input.governance.bytes, freshnessPolicy: parse(input.freshness.bytes, "freshness SLA"), now, kricSnapshotBytes: input.kricSnapshot.bytes,
     });
-    const bytes = jsonBytes(result);
-    const bound = deriveBoundReleaseArtifacts({ candidate: result, candidateBytes: bytes, releaseRequest: parse(input.releaseRequest.bytes, "release request"), hashEvidence: parse(input.hashEvidence.bytes, "hash evidence"), sourceSnapshots: parse(input.snapshots.bytes, "source snapshot ledger"), sourceInventory });
+    const bound = bindCandidateToCurrentSourceInventory({
+      candidate: result,
+      releaseRequest: parse(input.releaseRequest.bytes, "release request"),
+      hashEvidence: parse(input.hashEvidence.bytes, "hash evidence"),
+      sourceSnapshots: parse(input.snapshots.bytes, "source snapshot ledger"),
+      sourceInventory,
+      sourceInventoryBytes: input.inventory.bytes,
+    });
+    const bytes = bound.candidateBytes;
     await beforeReplace({ root, input, bytes });
     for (const snapshot of Object.values(input)) await assertStable(snapshot);
     const outputs = [
@@ -633,7 +665,7 @@ export async function rebindCurrentCandidateSourceSnapshots({
       if (!sameBytes(final.bytes, output.bytes)) throw new Error("candidate rebind output verification failed");
     }
     await unlink(journalPath);
-    return { target: input.candidate.target, bytes, candidate: result };
+    return { target: input.candidate.target, bytes, candidate: bound.candidate };
   } finally { await release(); }
 }
 

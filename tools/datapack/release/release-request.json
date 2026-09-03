@@ -3,7 +3,7 @@
   "artifactKind": "datapack-release-request",
   "candidateId": "capital-pilot-candidate-20260830",
   "scopeId": "capital_pilot_android_v1",
-  "buildSpecSha256": "a9f14c875dc0c013a8a6eabfa7430960bfc86c5a84eb2cfbf6aca1e18a2d1edc",
+  "buildSpecSha256": "c57a4f2bf3d84c4500e4ea0a9adfb3c44fed8724e596a660aba157d8a2b8e5f8",
   "sourceSnapshotSetHash": "9560ff9e2f926d59a8155fa950cb441af7a6aaf568820298b35e13d684422fe6",
   "approvedLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
   "requestedBy": "claude-fable-orchestrator",
