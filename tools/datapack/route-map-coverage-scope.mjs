@@ -178,6 +178,85 @@ function lineageTopologyPaths(admissionEvidence, lineId) {
     }));
 }
 
+// 면제는 갱신될 때마다 snapshot 날짜를 수정하지 않는다. 대신 route-map source와
+// 기존 scopeKey에 결속하고 inventory가 승인한 current topology lineage를 유일하게 해석한다.
+// current admission이 존재하면 손상됐거나 line이 누락된 경우에도 과거 direct lineage로
+// 되돌아가지 않는다.
+function boundRouteMapSource({ inventory, sourceId, expectedScopeKey, prefix, push, fieldName }) {
+  const matchingSources = (inventory.sources ?? [])
+    .filter((source) => source.id === sourceId);
+  if (!isNonEmptyString(sourceId) || matchingSources.length !== 1) {
+    push(`${prefix}_SOURCE_UNBOUND`, `${fieldName}가 inventory의 단일 source와 결속되지 않는다`);
+    return null;
+  }
+  const [source] = matchingSources;
+  if (!claimsRouteMapLineScope(source)
+    || !claimedScopes(source.coverageScope).some(({ key }) => key === expectedScopeKey)) {
+    push(`${prefix}_SOURCE_UNBOUND`, `${fieldName}의 source가 이 region·operator·line scope를 claim하지 않는다`);
+    return null;
+  }
+  return source;
+}
+
+function effectiveTopologyLineage({ inventory, admissionSourceId, expectedScopeKey, lineId, prefix, push }) {
+  const source = boundRouteMapSource({
+    inventory,
+    sourceId: admissionSourceId,
+    expectedScopeKey,
+    prefix: `${prefix}_PACK_TOPOLOGY`,
+    push,
+    fieldName: "admissionSourceId",
+  });
+  if (!source) {
+    return null;
+  }
+  const evidence = source.routeMapAdmissionEvidence;
+  const current = evidence?.currentTopologyAdmission;
+  if (current && current.status !== "ADMITTED") {
+    push(`${prefix}_PACK_TOPOLOGY_UNBOUND`, "current topology admission이 ADMITTED 상태가 아니다");
+    return null;
+  }
+  const admission = current ?? evidence;
+  const lineages = (admission?.topologyLineages ?? [])
+    .filter((lineage) => lineage.lineId === lineId);
+  if (lineages.length !== 1 || !isNonEmptyString(lineages[0].snapshotId)
+    || !isNonEmptyString(lineages[0].contentSha256)) {
+    push(`${prefix}_PACK_TOPOLOGY_LINEAGE_UNDECLARED`, "topology admission이 이 line의 단일 lineage를 선언하지 않았다");
+    return null;
+  }
+  const [lineage] = lineages;
+  if (current && (current.topologySnapshotId !== lineage.snapshotId
+    || current.topologyContentSha256 !== lineage.contentSha256)) {
+    push(`${prefix}_PACK_TOPOLOGY_LINEAGE_MISMATCH`, "current topology tuple이 line lineage와 일치하지 않는다");
+    return null;
+  }
+  return {
+    path: `${TOPOLOGY_SNAPSHOT_DIR}/${lineage.snapshotId}.json`,
+    contentSha256: lineage.contentSha256,
+  };
+}
+
+function currentRouteMapSnapshot({ inventory, admissionSourceId, expectedScopeKey, snapshotsByPath, prefix, push }) {
+  const source = boundRouteMapSource({
+    inventory,
+    sourceId: admissionSourceId,
+    expectedScopeKey,
+    prefix,
+    push,
+    fieldName: "admissionSourceId",
+  });
+  if (!source) {
+    return null;
+  }
+  const snapshotPath = source.routeMapAdmissionEvidence?.snapshotPath;
+  const snapshot = isNonEmptyString(snapshotPath) ? snapshotsByPath.get(snapshotPath) : undefined;
+  if (!snapshot) {
+    push(`${prefix}_SNAPSHOT_NOT_CLAIMED`, "source의 current admitted snapshot을 읽을 수 없다");
+    return null;
+  }
+  return snapshot;
+}
+
 function addOfficialUrls(target, entry) {
   const add = (value) => {
     if (typeof value === "string" && value.startsWith("https://")) {
@@ -321,27 +400,41 @@ function collectScopeCoverage({ inventory, snapshotsByPath, violations }) {
   return { coverageByScope, officialUrlsByScope, officialRenameEvidenceByScope, claims };
 }
 
-// scope가 topology lineage를 등재했으면 그 snapshot만, 없으면 inventory에 등재된
-// route_map topology snapshot 전체를 허용한다(서울 8호선처럼 lineage 미등재 scope 대응).
-function collectRegisteredTopologyPaths(inventory) {
-  const paths = new Set();
-  for (const source of inventory.sources ?? []) {
-    if (!source.coverageScope?.sourceDomains?.includes(ROUTE_MAP_DOMAIN)) {
-      continue;
-    }
-    for (const lineage of source.routeMapAdmissionEvidence?.topologyLineages ?? []) {
-      if (isNonEmptyString(lineage.snapshotId)) {
-        paths.add(`${TOPOLOGY_SNAPSHOT_DIR}/${lineage.snapshotId}.json`);
-      }
-    }
+function resolveTopologyNames({ admissionSourceId, expectedScopeKey, inventory, coverage, topologiesByPath, prefix, push }) {
+  const lineage = effectiveTopologyLineage({
+    inventory,
+    admissionSourceId,
+    expectedScopeKey,
+    lineId: coverage.lineId,
+    prefix,
+    push,
+  });
+  if (!lineage) {
+    return null;
   }
-  return paths;
+  const topology = topologiesByPath.get(lineage.path);
+  const line = topologyLineOf(topology, coverage.lineId);
+  if (!line) {
+    push(`${prefix}_PACK_TOPOLOGY_MISSING`, `pack topology에서 ${coverage.lineId} scope를 찾지 못했다`);
+    return null;
+  }
+  if (!topologyContentMatches(topology, line)) {
+    push(`${prefix}_PACK_TOPOLOGY_CONTENT_MISMATCH`, "pack topology 내용이 선언된 contentSha256과 다르다");
+    return null;
+  }
+  if (lineage.contentSha256 !== topology.contentSha256) {
+    push(`${prefix}_PACK_TOPOLOGY_LINEAGE_MISMATCH`, "pack topology가 admission lineage의 contentSha256과 다르다");
+    return null;
+  }
+  return new Set(line.scope.map((entry) => normalizeStationName(entry?.stationName)));
 }
 
-function resolveTopologyNames({ topologyPath, coverage, registeredTopologyPaths, topologiesByPath, prefix, push, requireLineage = false }) {
-  const allowed = coverage.topologyPaths.size > 0 ? coverage.topologyPaths : registeredTopologyPaths;
-  if (!isNonEmptyString(topologyPath) || !allowed.has(topologyPath)) {
-    push(`${prefix}_PACK_TOPOLOGY_UNBOUND`, "packTopologyPath가 이 scope에 등재된 topology snapshot이 아니다");
+// PACK_SCOPE_ABSENT는 갱신 포인터가 아니라 당시 선택된 position snapshot과
+// pack topology 사이의 불변 관측이다. current admission으로 바꾸면 과거 결측의
+// 의미가 달라지므로 exact admitted lineage와 digest에 그대로 결속한다.
+function resolveHistoricalTopologyNames({ topologyPath, coverage, topologiesByPath, prefix, push }) {
+  if (!isNonEmptyString(topologyPath) || !coverage.topologyPaths.has(topologyPath)) {
+    push(`${prefix}_PACK_TOPOLOGY_UNBOUND`, "packTopologyPath가 이 scope의 admitted historical lineage가 아니다");
     return null;
   }
   const topology = topologiesByPath.get(topologyPath);
@@ -354,15 +447,8 @@ function resolveTopologyNames({ topologyPath, coverage, registeredTopologyPaths,
     push(`${prefix}_PACK_TOPOLOGY_CONTENT_MISMATCH`, "pack topology 내용이 선언된 contentSha256과 다르다");
     return null;
   }
-  const declared = coverage.topologyContentByPath.get(topologyPath);
-  // "topology에 역이 없다"를 근거로 쓰는 검사는 파일 자기정합성만으로는 부족하다. 해시를 함께 다시
-  // 계산해 붙이면 자기정합성은 통과하므로, admission lineage가 선언한 contentSha256 결속을 요구한다.
-  if (requireLineage && !isNonEmptyString(declared)) {
-    push(`${prefix}_PACK_TOPOLOGY_LINEAGE_UNDECLARED`, "이 scope의 admission lineage가 topology contentSha256을 선언하지 않았다");
-    return null;
-  }
-  if (isNonEmptyString(declared) && declared !== topology.contentSha256) {
-    push(`${prefix}_PACK_TOPOLOGY_LINEAGE_MISMATCH`, "pack topology가 admission lineage의 contentSha256과 다르다");
+  if (coverage.topologyContentByPath.get(topologyPath) !== topology.contentSha256) {
+    push(`${prefix}_PACK_TOPOLOGY_LINEAGE_MISMATCH`, "pack topology가 admitted historical lineage digest와 다르다");
     return null;
   }
   return new Set(line.scope.map((entry) => normalizeStationName(entry?.stationName)));
@@ -472,15 +558,15 @@ function verifyRosterSubnameCrossCheck({ alias, snapshotName, push }) {
   return true;
 }
 
-function renameTopologyNames(context, requireLineage) {
+function renameTopologyNames(context) {
   return resolveTopologyNames({
-    topologyPath: context.alias.evidence?.packTopologyPath,
+    admissionSourceId: context.alias.evidence?.admissionSourceId,
+    expectedScopeKey: context.alias.scopeKey,
+    inventory: context.inventory,
     coverage: context.coverage,
-    registeredTopologyPaths: context.registeredTopologyPaths,
     topologiesByPath: context.topologiesByPath,
     prefix: "ALIAS",
     push: context.push,
-    requireLineage,
   });
 }
 
@@ -488,7 +574,7 @@ function renameTopologyNames(context, requireLineage) {
 // snapshot 표기가 오염되면 topology에는 roster측 표기가 남아 있으므로 여기서 걸린다.
 function verifyAdoptedNameCrossCheck(context) {
   const { snapshotName, rosterName, push } = context;
-  const topologyNames = renameTopologyNames(context, true);
+  const topologyNames = renameTopologyNames(context);
   if (!topologyNames) {
     return false;
   }
@@ -530,8 +616,8 @@ function verifyAdmittedOfficialRenameCrossCheck(context) {
 // 실재하는지까지 확인해야 근거가 된다.
 function verifyStaleNameCrossCheck(context) {
   const { alias, coverage, snapshotName, rosterName, rawSourcesByPath, push } = context;
-  // 이 방향의 결정적 근거는 공식 원문 바이트 대조라 lineage 선언까지 요구하지 않는다.
-  const topologyNames = renameTopologyNames(context, false);
+  // 이 방향은 current topology lineage와 공식 원문 바이트가 모두 결속돼야 한다.
+  const topologyNames = renameTopologyNames(context);
   if (!topologyNames) {
     return false;
   }
@@ -640,7 +726,7 @@ function validateAliases({
   rosters,
   officialUrlsByScope,
   officialRenameEvidenceByScope,
-  registeredTopologyPaths,
+  inventory,
   topologiesByPath,
   rawSourcesByPath,
   violations,
@@ -670,7 +756,7 @@ function validateAliases({
       rosterName,
       seen,
       officialRenameEvidenceByScope,
-      registeredTopologyPaths,
+      inventory,
       topologiesByPath,
       rawSourcesByPath,
       push,
@@ -729,23 +815,34 @@ function validateGapBinding({ gap, coverage, roster, rosterName, aliased, seen, 
     push("LEDGER_DUPLICATE", "같은 scope에 중복 항목이 있다");
     return false;
   }
-  const snapshotPath = gap.evidence.snapshotPath;
-  if (!isNonEmptyString(snapshotPath) || !coverage.snapshotPaths.includes(snapshotPath)) {
-    push("LEDGER_SNAPSHOT_NOT_CLAIMED", "evidence.snapshotPath가 이 scope를 커버하는 admitted snapshot이 아니다");
-    return false;
+  if (gap.reasonCode === "PACK_SCOPE_ABSENT") {
+    const snapshotPath = gap.evidence.snapshotPath;
+    if (!isNonEmptyString(snapshotPath) || !coverage.snapshotPaths.includes(snapshotPath)) {
+      push("LEDGER_SNAPSHOT_NOT_CLAIMED", "historical evidence.snapshotPath가 이 scope의 admitted snapshot이 아니다");
+      return false;
+    }
   }
   return true;
 }
 
-function gapTopologyNames(context, requireLineage) {
+function gapTopologyNames(context) {
+  if (context.gap.reasonCode === "PACK_SCOPE_ABSENT") {
+    return resolveHistoricalTopologyNames({
+      topologyPath: context.gap.evidence.packTopologyPath,
+      coverage: context.coverage,
+      topologiesByPath: context.topologiesByPath,
+      prefix: "LEDGER",
+      push: context.push,
+    });
+  }
   return resolveTopologyNames({
-    topologyPath: context.gap.evidence.packTopologyPath,
+    admissionSourceId: context.gap.evidence.admissionSourceId,
+    expectedScopeKey: context.gap.scopeKey,
+    inventory: context.inventory,
     coverage: context.coverage,
-    registeredTopologyPaths: context.registeredTopologyPaths,
     topologiesByPath: context.topologiesByPath,
     prefix: "LEDGER",
     push: context.push,
-    requireLineage,
   });
 }
 
@@ -785,7 +882,7 @@ function verifyOfficialFileRowAbsence({ coverage, rosterName, snapshot, push }) 
 function verifyOfficialFileRowAbsentGap(context) {
   const { coverage, rosterName, push } = context;
   // topology가 역을 싣고 있다는 존재 근거라 재해시 삭제로 유리해지지 않는다.
-  const topologyNames = gapTopologyNames(context, false);
+  const topologyNames = gapTopologyNames(context);
   if (!topologyNames) {
     return false;
   }
@@ -802,7 +899,7 @@ function verifyOfficialFileRowAbsentGap(context) {
 
 // pack 노선 topology 자체가 역을 싣지 않은 경우만 이 사유에 해당한다.
 function verifyPackScopeAbsentGap(context) {
-  const topologyNames = gapTopologyNames(context, true);
+  const topologyNames = gapTopologyNames(context);
   if (!topologyNames) {
     return false;
   }
@@ -835,7 +932,7 @@ function validateGaps({
   rosters,
   aliasedRosterNamesByScope,
   officialUrlsByScope,
-  registeredTopologyPaths,
+  inventory,
   snapshotsByPath,
   topologiesByPath,
   violations,
@@ -854,6 +951,19 @@ function validateGaps({
     const rosterName = normalizeStationName(gap.rosterStationName);
     const seen = gapRosterNamesByScope.get(gap.scopeKey) ?? new Set();
     gapRosterNamesByScope.set(gap.scopeKey, seen);
+    const snapshot = gap.reasonCode === "PACK_SCOPE_ABSENT"
+      ? snapshotsByPath.get(gap.evidence.snapshotPath)
+      : currentRouteMapSnapshot({
+        inventory,
+        admissionSourceId: gap.evidence.admissionSourceId,
+        expectedScopeKey: gap.scopeKey,
+        snapshotsByPath,
+        prefix: "LEDGER",
+        push,
+      });
+    if (!snapshot) {
+      continue;
+    }
     const context = {
       gap,
       coverage: coverageByScope.get(gap.scopeKey),
@@ -861,8 +971,8 @@ function validateGaps({
       rosterName,
       aliased: aliasedRosterNamesByScope.get(gap.scopeKey) ?? new Set(),
       seen,
-      snapshot: snapshotsByPath.get(gap.evidence.snapshotPath),
-      registeredTopologyPaths,
+      snapshot,
+      inventory,
       topologiesByPath,
       push,
     };
@@ -960,7 +1070,7 @@ export function auditRouteMapCoverageScopes({
     rosters,
     officialUrlsByScope,
     officialRenameEvidenceByScope,
-    registeredTopologyPaths: collectRegisteredTopologyPaths(inventory),
+    inventory,
     topologiesByPath,
     rawSourcesByPath,
     violations,

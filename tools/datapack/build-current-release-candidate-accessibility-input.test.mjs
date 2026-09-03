@@ -23,46 +23,36 @@ import {
   buildCurrentCapitalStationLineInput,
   canonicalCurrentCapitalStationLineInputJson,
 } from "./build-current-capital-station-line-input.mjs";
-import { fixture as fullCapitalFixture } from "./build-current-capital-station-line-input.test.mjs";
+import {
+  buildCurrentCapitalStationLineInputFixture as fullCapitalFixture,
+  FIXTURE_CAPTURED_AT,
+} from "./test-fixtures/current-capital-station-line-input.mjs";
 import { buildCurrentCapitalAccessibilityRefreshOutputs } from "./refresh-current-capital-accessibility-full.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
-import {
-  copySyntheticCurrentPublicRouteMapRepository,
-  nextSyntheticCurrentStaticNetworkNow,
-} from "./test-fixtures/current-public-route-map-successor.mjs";
+import { nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
+import { prepareCurrentStaticNetworkProductionRepository } from "./test-fixtures/current-full-capital-production-artifact.mjs";
 
-test("full-capital authority는 213/639 input과 456 non-RIDE를 2,654-edge fixture에 결속한다", async () => {
+test("full-capital authority는 입력-derived edge와 materialization exact sets에 결속한다", async () => {
   const input = await fullInput();
   const before = structuredClone(input.projectedFixture);
   const result = buildCurrentReleaseCandidateAccessibilityAuthority(input);
 
-  assert.deepEqual(edgeCounts(JSON.parse(input.sourceFixtureBytes).packs[0].networkEdges), {
-    RIDE: 2198,
-  });
-  assert.deepEqual(edgeCounts(input.projectedFixture.packs[0].networkEdges), {
-    RIDE: 2198,
-  });
-  assert.equal(result.candidateFixture.packs[0].networkEdges.length, 2654);
-  assert.equal(input.route.stationLines.length, 1102);
-  assert.deepEqual(edgeCounts(result.candidateFixture.packs[0].networkEdges), {
-    ENTRY: 213,
-    EXIT: 213,
-    IN_STATION_TRANSFER: 30,
-    RIDE: 2198,
-  });
-  assert.deepEqual(result.authority.edgeCounts, {
-    ENTRY: 213,
-    EXIT: 213,
-    IN_STATION_TRANSFER: 30,
-    total: 456,
-  });
-  assert.equal(result.authority.edges.length, 456);
-  assert.equal(result.authority.edges.filter(({ requiredCells }) => requiredCells.length === 2).length, 30);
-  assert.equal(result.authority.edges.flatMap(({ requiredCells }) => requiredCells).filter(({ state }) => state === "UNVERIFIED_EVIDENCE_BLOCKED").length, 2);
+  const sourceRides = JSON.parse(input.sourceFixtureBytes).packs[0].networkEdges;
+  const projectedRides = input.projectedFixture.packs[0].networkEdges;
+  const routeCounts = edgeCounts(input.route.routeEdges);
+  const authorityEdges = input.route.routeEdges.filter(({ edgeType }) => edgeType !== "RIDE");
+  assert.equal(sourceRides.length, routeCounts.RIDE);
+  assert.equal(projectedRides.length, routeCounts.RIDE);
+  assert.equal(result.candidateFixture.packs[0].networkEdges.length, input.route.routeEdges.length);
+  assert.deepEqual(edgeCounts(result.candidateFixture.packs[0].networkEdges), routeCounts);
+  assert.deepEqual(result.authority.edgeCounts, { ...edgeCounts(authorityEdges), total: authorityEdges.length });
+  assert.equal(result.authority.edges.length, authorityEdges.length);
+  assert.equal(result.authority.edges.filter(({ requiredCells }) => requiredCells.length === 2).length,
+    authorityEdges.filter(({ edgeType }) => edgeType === "IN_STATION_TRANSFER").length);
   assert.match(result.authority.buildInput.buildSpecSha256, /^[a-f0-9]{64}$/u);
   assert.match(result.authority.buildInput.sourceFixtureSha256, /^[a-f0-9]{64}$/u);
   assert.match(result.authority.buildInput.candidateFixtureSha256, /^[a-f0-9]{64}$/u);
-  assert.equal(result.authority.buildInput.observedAt, "2026-08-01T00:00:00.000Z");
+  assert.equal(result.authority.buildInput.observedAt, FIXTURE_CAPTURED_AT);
   assert.equal(
     result.authority.buildInput.candidateFixtureSha256,
     sha256(Buffer.from(canonicalCurrentReleaseCandidateFixtureJson(result.candidateFixture))),
@@ -74,14 +64,13 @@ test("full-capital authority는 213/639 input과 456 non-RIDE를 2,654-edge fixt
   assert.deepEqual(input.projectedFixture, before);
 });
 
-test("합성 current public successor는 1,102 metadata·2,654 route·456 authority를 완성한다", async (t) => {
+test("합성 current public successor는 input-derived metadata, route, authority를 완성한다", async (t) => {
   const sourceRoot = path.resolve(fileURLToPath(new URL("../../", import.meta.url)));
   const temp = await mkdtemp(path.join(tmpdir(), "public-route-map-authority-"));
   t.after(() => rm(temp, { recursive: true, force: true }));
   const repositoryRoot = path.join(temp, "repository");
-  await copySyntheticCurrentPublicRouteMapRepository(sourceRoot, repositoryRoot, {
+  await prepareCurrentStaticNetworkProductionRepository(sourceRoot, repositoryRoot, {
     now: await nextSyntheticCurrentStaticNetworkNow(sourceRoot),
-    activateStaticNetwork: true,
   });
   const buildSpecBytes = await readFile(
     path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"),
@@ -101,6 +90,10 @@ test("합성 current public successor는 1,102 metadata·2,654 route·456 author
   });
   const stationLineInputBytes = stationOutput.bytes;
   const routeBytes = routeOutput.bytes;
+  const transferMetricsBytes = await readFile(path.join(
+    repositoryRoot,
+    "tools/datapack/release/current-transfer-topology-metrics.json",
+  ));
   const stationLineInput = JSON.parse(stationLineInputBytes);
   const route = JSON.parse(routeBytes);
   assert.equal(
@@ -116,8 +109,8 @@ test("합성 current public successor는 1,102 metadata·2,654 route·456 author
     routeBytes.toString("utf8"),
     canonicalCurrentCapitalRouteEdgeInputJson(route),
   );
-  assert.deepEqual(edgeCounts(sourceFixture.packs[0].networkEdges), { RIDE: 2198 });
-  assert.deepEqual(edgeCounts(projectedFixture.packs[0].networkEdges), { RIDE: 2198 });
+  assert.deepEqual(Object.keys(edgeCounts(sourceFixture.packs[0].networkEdges)), ["RIDE"]);
+  assert.deepEqual(Object.keys(edgeCounts(projectedFixture.packs[0].networkEdges)), ["RIDE"]);
   const result = buildCurrentReleaseCandidateAccessibilityAuthority({
     buildSpec,
     buildSpecBytes,
@@ -127,11 +120,12 @@ test("합성 current public successor는 1,102 metadata·2,654 route·456 author
     sourceFixtureBytes,
     stationLineInput,
     stationLineInputBytes,
+    transferMetrics: JSON.parse(transferMetricsBytes),
+    transferMetricsBytes,
   });
 
-  assert.equal(route.stationLines.length, 1102);
-  assert.equal(route.routeEdges.length, 2654);
-  assert.equal(result.authority.edges.length, 456);
+  assert.ok(route.stationLines.length > 0);
+  assert.equal(result.authority.edges.length, route.routeEdges.filter(({ edgeType }) => edgeType !== "RIDE").length);
   const authorityCells = result.authority.edges.flatMap(({ requiredCells }) => requiredCells);
   const authorityCellKeys = new Set(authorityCells.map(({ stationId, lineId, domain }) =>
     `${stationId}:${lineId}:${domain}`));
@@ -143,13 +137,13 @@ test("합성 current public successor는 1,102 metadata·2,654 route·456 author
     state === "UNVERIFIED_EVIDENCE_BLOCKED" && authorityCellKeys.has(`${stationId}:${lineId}:${domain}`)).length;
   assert.ok(expectedBlockedCellCount > 0);
   assert.equal(authorityCells.filter(({ state }) => state === "UNVERIFIED_EVIDENCE_BLOCKED").length, expectedBlockedCellCount);
-  assert.equal(result.candidateFixture.packs[0].networkEdges.length, 2654);
+  assert.equal(result.candidateFixture.packs[0].networkEdges.length, route.routeEdges.length);
 });
 
 test("unresolved·stale·candidate·route·projected RIDE drift는 output 전에 fail-closed다", async () => {
   const cases = [
     ["unresolved", (value) => { value.stationLineInput.evidenceRows.pop(); }, /unresolved|denominator|missing/i],
-    ["stale", (value) => { value.stationLineInput.evidenceRows[0].freshUntil = "2026-08-01T00:00:00.000Z"; }, /fresh|stale/i],
+    ["stale", (value) => { value.stationLineInput.evidenceRows[0].freshUntil = value.stationLineInput.evidenceRows[0].capturedAt; }, /fresh|stale/i],
     ["candidate", (value) => { value.route.candidate.sourceSetSha256 = "0".repeat(64); }, /candidate/i],
     ["route hash", (value) => { value.route.routeEdges[0].edgeSha256 = "0".repeat(64); }, /hash/i],
     ["route RIDE empty ID", (value) => {
@@ -219,6 +213,20 @@ test("unresolved·stale·candidate·route·projected RIDE drift는 output 전에
   }
 });
 
+test("authority는 authenticated metric의 complete transfer-edge set을 요구한다", async () => {
+  const input = await fullInput();
+  const transferIndex = input.route.routeEdges
+    .findIndex(({ edgeType }) => edgeType === "IN_STATION_TRANSFER");
+  assert.notEqual(transferIndex, -1);
+  input.route.routeEdges.splice(transferIndex, 1);
+  input.routeBytes = Buffer.from(canonical(input.route));
+
+  assert.throws(
+    () => buildCurrentReleaseCandidateAccessibilityAuthority(input),
+    /transfer edge set mismatch/,
+  );
+});
+
 test("authority validator는 actual edge type denominator를 재집계한다", async () => {
   const input = await fullInput();
   const { authority } = buildCurrentReleaseCandidateAccessibilityAuthority(input);
@@ -260,6 +268,7 @@ test("consumer replay는 재봉인한 authority의 required cell·route projecti
     projectedFixture: input.projectedFixture,
     stationLineInputBytes: input.stationLineInputBytes,
     routeEdgeInputBytes: input.routeBytes,
+    transferMetricsBytes: input.transferMetricsBytes,
   }));
 
   const requiredCellDrift = structuredClone(authority);
@@ -271,6 +280,7 @@ test("consumer replay는 재봉인한 authority의 required cell·route projecti
       projectedFixture: input.projectedFixture,
       stationLineInputBytes: input.stationLineInputBytes,
       routeEdgeInputBytes: input.routeBytes,
+      transferMetricsBytes: input.transferMetricsBytes,
     }),
     /authority replay mismatch/,
   );
@@ -295,6 +305,7 @@ test("consumer replay는 재봉인한 authority의 required cell·route projecti
       projectedFixture: input.projectedFixture,
       stationLineInputBytes: input.stationLineInputBytes,
       routeEdgeInputBytes: input.routeBytes,
+      transferMetricsBytes: input.transferMetricsBytes,
     }),
     /authority replay mismatch/,
   );
@@ -325,6 +336,7 @@ test("consumer replay는 재봉인한 authority의 required cell·route projecti
       projectedFixture: input.projectedFixture,
       stationLineInputBytes: input.stationLineInputBytes,
       routeEdgeInputBytes: rideDriftBytes,
+      transferMetricsBytes: input.transferMetricsBytes,
     }),
     /projected fixture RIDE mismatch/,
   );
@@ -367,6 +379,7 @@ test("CLI는 current tuple을 재생성해 canonical input/fixture/authority 네
         bytes: input.routeBytes,
       },
     ],
+    readTransferMetricsImpl: async () => input.transferMetricsBytes,
   });
   const [stationBytes, routeBytes, fixtureBytes, authorityBytes, stationStat, routeStat, fixtureStat, authorityStat] = await Promise.all([
     readFile(files.stationOutput),
@@ -467,6 +480,7 @@ test("CLI는 workflow가 검증한 repo-relative build spec과 fixture의 동일
         },
       ];
     },
+    readTransferMetricsImpl: async () => input.transferMetricsBytes,
   });
 
   const authority = JSON.parse(await readFile(files.authorityOutput, "utf8"));
@@ -560,23 +574,19 @@ async function assertFileAbsent(file) {
 
 async function fullInput() {
   const source = await fullCapitalFixture();
-  const routeOnly = addFullRouteStationLines(source);
+  const routeOnly = source.canonicalPack.packs[0].stationLines;
   source.canonicalPack.packs[0].networkEdges = [
-    ...Array.from({ length: 2198 }, (_, index) => ({
+    ...routeOnly.slice(0, 2).map(({ stationId, lineId }, index) => ({
       id: `ride-${index}`,
       edgeType: "RIDE",
-      fromNodeId: "station-000:seoul-2",
-      toNodeId: "station-001:seoul-2",
+      fromNodeId: `${stationId}:${lineId}`,
+      toNodeId: `${routeOnly[(index + 1) % routeOnly.length].stationId}:${routeOnly[(index + 1) % routeOnly.length].lineId}`,
       durationSeconds: 120,
       distanceMeters: 1000,
       serviceClass: "SUBWAY",
       servicePattern: "LOCAL",
     })),
   ];
-  Object.assign(source.canonicalPack.packs[0].networkEdges[0], {
-    fromNodeId: `${routeOnly[0].stationId}:${routeOnly[0].lineId}`,
-    toNodeId: `${routeOnly[1].stationId}:${routeOnly[1].lineId}`,
-  });
   const stationLineInput = buildCurrentCapitalStationLineInput(source);
   const route = buildCurrentCapitalRouteEdgeInput(source);
   const projectedFixture = {
@@ -602,20 +612,9 @@ async function fullInput() {
     sourceFixtureBytes: Buffer.from(canonical(sourceFixture)),
     stationLineInput,
     stationLineInputBytes: Buffer.from(canonical(stationLineInput)),
+    transferMetrics: source.transferMetrics,
+    transferMetricsBytes: Buffer.from(canonical(source.transferMetrics)),
   };
-}
-
-function addFullRouteStationLines(input) {
-  const pack = input.canonicalPack.packs[0];
-  const lineId = "route-only-line";
-  pack.lines.push({ id: lineId, operatorId: "route-only-operator" });
-  const extras = Array.from({ length: 1102 - pack.stationLines.length }, (_, index) => ({
-    stationId: `station-route-${String(index).padStart(4, "0")}`,
-    lineId,
-    lineSequence: index,
-  }));
-  pack.stationLines.push(...extras);
-  return extras;
 }
 
 function routeRide(edge) {

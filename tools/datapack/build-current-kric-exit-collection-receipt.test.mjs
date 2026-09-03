@@ -38,12 +38,24 @@ async function planAndSnapshot() {
   return { plan, snapshot };
 }
 
-test("213/199/420 paired bytes는 결정적 immutable receipt와 exact bundle을 만든다", async () => {
+test("plan-derived paired bytes는 결정적 immutable receipt와 exact bundle을 만든다", async () => {
   const { plan, snapshot } = await planAndSnapshot();
   const planBytes = Buffer.from(canonical(plan)); const snapshotBytes = Buffer.from(canonical(snapshot));
   const input = { collectionPlanBytes: planBytes, providerSnapshotBytes: snapshotBytes, repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-560" };
   const receipt = buildCurrentKricExitCollectionReceipt(input);
-  assert.equal(receipt.queryCount, 420);
+  assert.deepEqual({
+    providerMappingCount: receipt.providerMappingCount,
+    stationLineQueryCount: receipt.stationLineQueryCount,
+    stationCount: receipt.stationCount,
+    routeEdgeCount: receipt.routeEdgeCount,
+    queryCount: receipt.queryCount,
+  }, {
+    providerMappingCount: plan.providerMappings.length,
+    stationLineQueryCount: plan.stationLineQueries.length,
+    stationCount: new Set(plan.providerMappings.map(({ stationId }) => stationId)).size,
+    routeEdgeCount: plan.routeEdges.length,
+    queryCount: plan.queryPlan.length,
+  });
   assert.equal(canonicalCurrentKricExitCollectionReceiptJson(receipt), canonicalCurrentKricExitCollectionReceiptJson(buildCurrentKricExitCollectionReceipt(input)));
   const recovered = buildCurrentKricExitCollectionReceipt({
     ...input,
@@ -137,7 +149,7 @@ test("bundle은 cross-collection receipt, cross-line label, scalar coercion을 �
   const swapped = structuredClone(plan); const other = swapped.queryPlan.findIndex((query) => query.lineName !== swapped.queryPlan[0].lineName); [swapped.queryPlan[0].lineName, swapped.queryPlan[other].lineName] = [swapped.queryPlan[other].lineName, swapped.queryPlan[0].lineName]; swapped.queryPlanSha256 = hash(canonical(swapped.queryPlan)); rehashPlan(swapped);
   const swappedSnapshot = rebindSnapshotPlan(snapshot, swapped);
   assert.throws(() => buildCurrentKricExitCollectionReceipt({ collectionPlanBytes: Buffer.from(canonical(swapped)), providerSnapshotBytes: Buffer.from(canonical(swappedSnapshot)), repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-560" }), /line identity mismatch/);
-  const coerced = structuredClone(receipt); coerced.queryCount = "420"; rehashReceipt(coerced);
+  const coerced = structuredClone(receipt); coerced.queryCount = String(receipt.queryCount); rehashReceipt(coerced);
   assert.throws(() => buildCurrentKricExitCollectionBundle({ collectionPlanBytes: planBytes, providerSnapshotBytes: snapshotBytes, receipt: coerced }), /receipt identity mismatch/);
 });
 

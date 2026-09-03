@@ -206,7 +206,12 @@ async function validateReleasePreflight(root, planBytes, now, { replacingSourceI
   if (!ledger || evidence.snapshotFileSha256 !== hash(snapshot.bytes) || evidence.rawSha256 !== snapshotValue.rawSha256 || evidence.contentSha256 !== snapshotValue.contentSha256 || evidence.schemaFingerprint !== snapshotValue.schemaFingerprint || ledger.rawReceipt?.snapshotId !== snapshotValue.snapshotId || ledger.rawReceipt?.snapshotRawSha256 !== snapshotValue.rawSha256 || ledger.contentSha256 !== snapshotValue.contentSha256 || ledger.schemaFingerprint !== snapshotValue.schemaFingerprint) throw new Error("KRIC source raw/ledger binding mismatch");
 }
 function summary(observation) { return { snapshotId: observation.snapshot.snapshotId, requestCount: observation.rawArtifact.requestCount, status: "COLLECTED" }; }
-async function isRegisteredState({ root, snapshot, snapshotBytes, receipt, targetSnapshot }) {
+function validatedOperationPlan(planBytes) {
+  const plan = parse(planBytes, "operation plan");
+  if (canonicalCurrentCapitalFacilityCollectionPlanJson(plan) !== planBytes.toString("utf8")) throw new Error("operation plan is invalid");
+  return plan;
+}
+async function isRegisteredState({ root, snapshot, snapshotBytes, receipt, targetSnapshot, expectedCoverageCount }) {
   const targetBytes = await existingRegularBytes(targetSnapshot, "registered snapshot"); if (targetBytes == null || !targetBytes.equals(snapshotBytes)) return false;
   const [inventoryFile, snapshotsFile] = await Promise.all([readStableRegularFile(path.join(root, RELEASE_INPUTS.inventory), "source inventory"), readStableRegularFile(path.join(root, RELEASE_INPUTS.snapshots), "source snapshot ledger")]);
   const inventory = parse(inventoryFile.bytes, "source inventory"); const snapshots = parse(snapshotsFile.bytes, "source snapshot ledger"); const source = inventory.sources?.find(({ id }) => id === snapshot.sourceId); const evidence = source?.accessibilityAdmissionEvidence;
@@ -214,7 +219,7 @@ async function isRegisteredState({ root, snapshot, snapshotBytes, receipt, targe
   try { heads = validateLineage(snapshots).headsBySource; } catch { return false; }
   const ledger = matches[0]; const rawReceipt = ledger?.rawReceipt;
   const receiptKeys = ["sourceId", "snapshotId", "snapshotRawSha256", "snapshotFileSha256", "rawObjectSha256", "byteSize", "capturedAt", "storedAt"];
-  return source?.requiredForProductionPack === true && source.productionUseAllowed === true && source.capabilities?.facility?.productionUseAllowed === true && source.license?.redistributionAllowed === true && source.admissionEvidence?.decision === "APPROVED" && evidence?.decision === "APPROVED" && evidence.productionUseAllowed === true && evidence.licenseEvidenceHash === source.admissionEvidence?.licenseEvidenceHash && evidence.snapshotId === snapshot.snapshotId && evidence.snapshotPath === `tools/datapack/sources/${snapshot.snapshotId}.json` && evidence.snapshotFileSha256 === hash(snapshotBytes) && evidence.rawSha256 === snapshot.rawSha256 && evidence.contentSha256 === snapshot.contentSha256 && evidence.schemaFingerprint === snapshot.schemaFingerprint && matches.length === 1 && heads[snapshot.sourceId] === snapshot.snapshotId && [ledger?.snapshotStatus, ledger?.fetchStatus, ledger?.schemaStatus, ledger?.licenseStatus].join("\0") === "LOCKED\0SUCCESS\0PASS\0PASS" && ledger.coverageCount === 213 && ledger.contentSha256 === snapshot.contentSha256 && ledger.schemaFingerprint === snapshot.schemaFingerprint && ledger.rawSha256 === rawReceipt?.rawObjectSha256 && receiptKeys.every((key) => receipt?.[key] === rawReceipt?.[key]) && rawReceipt?.sourceId === snapshot.sourceId && rawReceipt?.snapshotId === snapshot.snapshotId && rawReceipt?.snapshotRawSha256 === snapshot.rawSha256 && rawReceipt?.snapshotFileSha256 === hash(snapshotBytes) && rawReceipt?.capturedAt === snapshot.capturedAt;
+  return source?.requiredForProductionPack === true && source.productionUseAllowed === true && source.capabilities?.facility?.productionUseAllowed === true && source.license?.redistributionAllowed === true && source.admissionEvidence?.decision === "APPROVED" && evidence?.decision === "APPROVED" && evidence.productionUseAllowed === true && evidence.licenseEvidenceHash === source.admissionEvidence?.licenseEvidenceHash && evidence.snapshotId === snapshot.snapshotId && evidence.snapshotPath === `tools/datapack/sources/${snapshot.snapshotId}.json` && evidence.snapshotFileSha256 === hash(snapshotBytes) && evidence.rawSha256 === snapshot.rawSha256 && evidence.contentSha256 === snapshot.contentSha256 && evidence.schemaFingerprint === snapshot.schemaFingerprint && matches.length === 1 && heads[snapshot.sourceId] === snapshot.snapshotId && [ledger?.snapshotStatus, ledger?.fetchStatus, ledger?.schemaStatus, ledger?.licenseStatus].join("\0") === "LOCKED\0SUCCESS\0PASS\0PASS" && snapshot.queryCount === expectedCoverageCount && ledger.coverageCount === snapshot.queryCount && ledger.contentSha256 === snapshot.contentSha256 && ledger.schemaFingerprint === snapshot.schemaFingerprint && ledger.rawSha256 === rawReceipt?.rawObjectSha256 && receiptKeys.every((key) => receipt?.[key] === rawReceipt?.[key]) && rawReceipt?.sourceId === snapshot.sourceId && rawReceipt?.snapshotId === snapshot.snapshotId && rawReceipt?.snapshotRawSha256 === snapshot.rawSha256 && rawReceipt?.snapshotFileSha256 === hash(snapshotBytes) && rawReceipt?.capturedAt === snapshot.capturedAt;
 }
 async function readCompletedObservation(observationRoot) {
   const rootStat = await lstat(observationRoot);
@@ -381,7 +386,6 @@ export async function prepareCurrentCapitalFacilityOperation({ repositoryRoot = 
   await assertExternalOperationRoot(root, output, { allowAbsent: true });
   await assertExactFacilityRepository(root, expectedMainSha, expectedFacilityHeadSha, execFileImpl); await assertNoRegistrarResidues(root);
   const snapshots = await inputSnapshots(root); const bytes = snapshotBytes(snapshots); const plan = buildCurrentCapitalFacilityCollectionPlan(bytes);
-  if (plan.counts.stationLineCount !== 213 || plan.counts.stationCount !== 199 || plan.counts.providerTupleCount !== 213) throw new Error("capital FACILITY plan count mismatch");
   const reread = await inputSnapshots(root); if (Object.entries(snapshots).some(([key, value]) => hash(value.bytes) !== hash(reread[key].bytes) || JSON.stringify(value.identity) !== JSON.stringify(reread[key].identity))) throw new Error("prepared input changed during preflight");
   const priorAdmissionSha256 = hash(await regularBytes(path.join(root, ADMISSION), "current capital facility admission"));
   await mkdir(output, { mode: 0o700 });
@@ -402,8 +406,7 @@ export async function collectCurrentCapitalFacilityOperation({ repositoryRoot = 
   const key = requireText(serviceKey, "KRIC_SERVICE_KEY");
   const replacementSet = normalizeReplacingSourceIds(replacingSourceId, replacingSourceIds);
   await assertExactFacilityRepository(repository, requireText(journal.expectedMainSha, "prepared expected main SHA"), requireText(journal.expectedFacilityHeadSha, "prepared expected facility head SHA"), execFileImpl); await assertNoRegistrarResidues(repository); await assertPreparedInputs(repository, journal); await validateReleasePreflight(repository, planBytes, now, { replacingSourceIds: replacementSet });
-  const plan = parse(planBytes, "operation plan");
-  if (canonicalCurrentCapitalFacilityCollectionPlanJson(plan) !== planBytes.toString("utf8") || plan.counts.providerTupleCount !== 213) throw new Error("operation plan is invalid");
+  const plan = validatedOperationPlan(planBytes);
   requireOciParBaseUrl(env);
   const releaseClaim = await acquireCollectionClaim(root);
   try {
@@ -411,7 +414,7 @@ export async function collectCurrentCapitalFacilityOperation({ repositoryRoot = 
     if (journal.phase !== "PREPARED") throw new Error("collection may only start from PREPARED operation");
     await journalWriteImpl(path.join(root, JOURNAL), { ...journal, phase: "COLLECTION_STARTED", collectionStartedAt: now.toISOString() });
     const observation = await collectImpl({ roster: roster(plan), serviceKey: key, fetchImpl, delayImpl, now, requestTimeoutMs: 30_000, requestIntervalMs: 250 });
-    if (observation.rawArtifact.requestCount !== 213) throw new Error("KRIC collection must make exactly 213 requests");
+    if (observation.rawArtifact.requestCount !== plan.counts.providerTupleCount) throw new Error(`KRIC collection must make exactly ${plan.counts.providerTupleCount} requests`);
     const observationRoot = path.join(root, "observation"); await writeObservationImpl({ outputRoot: observationRoot, observation });
     const completed = await readCompletedObservation(observationRoot); const binding = observationBinding(completed);
     await journalWriteImpl(path.join(root, JOURNAL), { ...journal, phase: "COLLECTED", collectionStartedAt: now.toISOString(), snapshotId: observation.snapshot.snapshotId, completedObservation: binding });
@@ -490,7 +493,7 @@ export async function recoverPublishedCurrentCapitalFacilityOperation({ reposito
   if (!targetPlanBytes.equals(sourcePlanBytes)) throw new Error("published recovery plan identity mismatch");
   const rebuiltPlan = buildCurrentCapitalFacilityCollectionPlan(snapshotBytes(preparedInputs));
   const rebuiltPlanBytes = Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(rebuiltPlan));
-  if (!targetPlanBytes.equals(rebuiltPlanBytes) || rebuiltPlan.counts.stationLineCount !== 213 || rebuiltPlan.counts.stationCount !== 199 || rebuiltPlan.counts.providerTupleCount !== 213) throw new Error("published recovery canonical plan identity mismatch");
+  if (!targetPlanBytes.equals(rebuiltPlanBytes)) throw new Error("published recovery canonical plan identity mismatch");
   await releasePreflightImpl(repository, targetPlanBytes, now);
   const receiptBytes = await regularBytes(path.join(sourceRoot, "receipt.json"), "source raw receipt");
   if (hash(receiptBytes) !== sourcePublished.receiptSha256) throw new Error("published recovery receipt identity mismatch");
@@ -588,7 +591,7 @@ export async function recoverPublishedCurrentCapitalFacilityOperation({ reposito
 export async function finalizeCurrentCapitalFacilityOperation({ repositoryRoot = ROOT, operationRoot, now = new Date(), env = process.env, execFileImpl = execFile, publishImpl = publishKricAccessibilityRawArtifact, registerImpl = registerKricStandardAccessibilitySnapshot, rebindImpl = rebindCurrentCandidateSourceSnapshots, buildAdmissionImpl = buildCurrentCapitalFacilitySourceAdmission } = {}) {
   const root = path.resolve(repositoryRoot); const operation = path.resolve(requireText(operationRoot, "operation root")); const journal = parseJournal(await regularBytes(path.join(operation, JOURNAL), "operation journal"));
   const priorAdmissionSha256 = targetAdmissionBinding(journal);
-  await assertExternalOperationRoot(root, operation); const planBytes = await assertPlanBinding(operation, journal);
+  await assertExternalOperationRoot(root, operation); const planBytes = await assertPlanBinding(operation, journal); const plan = validatedOperationPlan(planBytes);
   if (journal.phase === "COLLECTION_STARTED") {
     await assertExactFacilityRepository(root, requireText(journal.expectedMainSha, "prepared expected main SHA"), requireText(journal.expectedFacilityHeadSha, "prepared expected facility head SHA"), execFileImpl);
   }
@@ -636,15 +639,15 @@ export async function finalizeCurrentCapitalFacilityOperation({ repositoryRoot =
   await assertClosedRawReceipt({ root, receipt, observation: completedObservation, now });
   const targetSnapshot = path.join(root, "tools/datapack/sources", `${snapshot.snapshotId}.json`);
   if (!nextJournal.completedStages.registered) {
-    let registered = await isRegisteredState({ root, snapshot, snapshotBytes, receipt, targetSnapshot });
+    let registered = await isRegisteredState({ root, snapshot, snapshotBytes, receipt, targetSnapshot, expectedCoverageCount: plan.counts.providerTupleCount });
     if (!registered) {
       try {
         await registerImpl({ snapshotFilePath: snapshotPath, snapshotFileSha256: hash(snapshotBytes), snapshotTargetPath: targetSnapshot, rawReceipt: receipt, capitalFacilityPlanPath: path.join(operation, "plan.json"), capitalCanonicalPackPath: path.join(root, INPUTS.canonicalPackBytes), producerNeutralFullRegistration: true, repositoryRoot: root, now });
       } catch (error) {
-        registered = await isRegisteredState({ root, snapshot, snapshotBytes, receipt, targetSnapshot }); if (!registered) throw error;
+        registered = await isRegisteredState({ root, snapshot, snapshotBytes, receipt, targetSnapshot, expectedCoverageCount: plan.counts.providerTupleCount }); if (!registered) throw error;
       }
     }
-    if (!registered) registered = await isRegisteredState({ root, snapshot, snapshotBytes, receipt, targetSnapshot });
+    if (!registered) registered = await isRegisteredState({ root, snapshot, snapshotBytes, receipt, targetSnapshot, expectedCoverageCount: plan.counts.providerTupleCount });
     if (!registered) throw new Error("registered snapshot verification failed");
     nextJournal = { ...nextJournal, completedStages: { ...nextJournal.completedStages, registered: { snapshotSha256: hash(snapshotBytes) } } }; await syncWrite(path.join(operation, JOURNAL), nextJournal);
   } else if (!Buffer.from(await regularBytes(targetSnapshot, "registered snapshot")).equals(snapshotBytes)) throw new Error("registered snapshot verification failed");

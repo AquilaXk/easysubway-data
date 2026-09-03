@@ -30,17 +30,8 @@ const FILES = Object.freeze({
 const SHA = /^[a-f0-9]{64}$/u;
 const MOLIT = "molit-urban-rail-full-route";
 const POSITIONS = "seoul-metro-route-map-positions";
-const CURRENT_CAPITAL_SOURCE_ROSTER = [
-  POSITIONS,
-  "kric-subway-timetable",
-  "seoul-metro-accessibility",
-  "kric-station-convenience-standard",
-  MOLIT,
-  "seoulmetro-station-line-info",
-  "incheon-transit-accessibility",
-  "seoul-metro-transfer-distance-duration",
-];
-const BLOCKED = { stationId: "station-b35616704ce3", lineId: "seoul-2" };
+const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
+const FACILITY_TYPES = Object.freeze(["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"]);
 
 export function buildCurrentCapitalStationLineInput(input) {
   assertInputKeys(input);
@@ -67,7 +58,8 @@ export function buildCurrentCapitalStationLineInput(input) {
   });
   validatePolicy(input.policy);
   const evidenceRows = [...facility, ...exit, ...transfer].sort(compareEvidence);
-  if (evidenceRows.length !== 641 || new Set(evidenceRows.map((row) => `${row.stationId}\0${row.lineId}\0${row.domain}`)).size !== 639) {
+  if (!exactStationLineCoverage(facility, stationLines) || !exactStationLineCoverage(exit, stationLines)
+    || !exactStationLineCoverage(transfer, stationLines)) {
     throw new Error("full-capital evidence denominator mismatch");
   }
   return canonicalObject({ candidate, stationLines, evidenceRows });
@@ -135,11 +127,11 @@ function validateCandidate(input, stationLines) {
     ? ["currentCandidateBytesSha256", "currentCandidateSourceSetSha256", "evidenceSourceSetSha256", "facilityAdmissionBytesSha256", "kind", "molitPreviousSnapshotId", "positionPreviousSnapshotId", "predecessorCandidateSourceSetSha256"]
     : ["currentCandidateBytesSha256", "currentCandidateSourceSetSha256", "evidenceSourceSetSha256", "facilityAdmissionBytesSha256"], "full-capital source-set transition");
   if (typeof spec?.candidateId !== "string" || spec.candidateId === "" || !Array.isArray(spec.sourceSnapshots) || !Array.isArray(spec.sourceSnapshotIds)
-    || spec.sourceSnapshots.length !== CURRENT_CAPITAL_SOURCE_ROSTER.length || spec.sourceSnapshotIds.length !== CURRENT_CAPITAL_SOURCE_ROSTER.length
-    || !equalArrays(spec.sourceSnapshots.map(({ sourceId }) => sourceId), CURRENT_CAPITAL_SOURCE_ROSTER)
+    || spec.sourceSnapshots.length === 0 || spec.sourceSnapshotIds.length !== spec.sourceSnapshots.length
+    || new Set(spec.sourceSnapshots.map(({ sourceId }) => sourceId)).size !== spec.sourceSnapshots.length
     || spec.sourceSnapshots.some((projection, index) => projection?.snapshotId !== spec.sourceSnapshotIds[index])
     || !SHA.test(spec.sourceSnapshotSetHash ?? "")) {
-    throw new Error("full-capital candidate eighth projection mismatch");
+    throw new Error("full-capital candidate projection mismatch");
   }
   const selected = spec.sourceSnapshotIds.map((id, index) => {
     const row = exactlyOne(input.sourceSnapshots, (entry) => entry?.snapshotId === id, "candidate source snapshot");
@@ -148,26 +140,28 @@ function validateCandidate(input, stationLines) {
   });
   const selectedIds = new Set(spec.sourceSnapshotIds);
   const selectedInLedgerOrder = input.sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
-  if (selectedIds.size !== CURRENT_CAPITAL_SOURCE_ROSTER.length || selectedInLedgerOrder.length !== CURRENT_CAPITAL_SOURCE_ROSTER.length || sha256(JSON.stringify(selectedInLedgerOrder)) !== spec.sourceSnapshotSetHash) throw new Error("full-capital candidate source-set mismatch");
+  if (selectedIds.size !== selected.length || selectedInLedgerOrder.length !== selected.length || sha256(JSON.stringify(selectedInLedgerOrder)) !== spec.sourceSnapshotSetHash) throw new Error("full-capital candidate source-set mismatch");
   const publicV2 = publicStaticV2Refresh ? {
     positions: requireCurrentPublicV2Head(selected, input.sourceSnapshots, POSITIONS, transition.positionPreviousSnapshotId),
     molit: requireCurrentPublicV2Head(selected, input.sourceSnapshots, MOLIT, transition.molitPreviousSnapshotId),
   } : null;
-  const predecessorIds = new Set(currentFanIn ? spec.sourceSnapshotIds.slice(0, -1) : publicStaticV2Refresh
-    ? spec.sourceSnapshotIds.slice(0, -1).map((snapshotId, index) => {
-      const sourceId = spec.sourceSnapshots[index].sourceId;
+  const transferProjection = exactlyOne(spec.sourceSnapshots, ({ sourceId }) => sourceId === TRANSFER_SOURCE_ID, "transfer candidate projection");
+  const transferSnapshotId = transferProjection.snapshotId;
+  const predecessorIds = new Set(currentFanIn ? spec.sourceSnapshotIds.filter((snapshotId) => snapshotId !== transferSnapshotId) : publicStaticV2Refresh
+    ? spec.sourceSnapshotIds.filter((snapshotId) => snapshotId !== transferSnapshotId).map((snapshotId) => {
+      const sourceId = exactlyOne(spec.sourceSnapshots, (projection) => projection.snapshotId === snapshotId, "candidate predecessor projection").sourceId;
       if (sourceId === POSITIONS) return publicV2.positions.previousSnapshotId;
       if (sourceId === MOLIT) return publicV2.molit.previousSnapshotId;
       return snapshotId;
     })
-    : spec.sourceSnapshotIds.slice(0, -1));
+    : spec.sourceSnapshotIds.filter((snapshotId) => snapshotId !== transferSnapshotId));
   const predecessorInLedgerOrder = input.sourceSnapshots.filter(({ snapshotId }) => predecessorIds.has(snapshotId));
   const currentSeoulRows = publicStaticV2Refresh ? selected.filter(({ sourceId }) =>
     sourceId === "seoul-metro-accessibility") : [];
   const previousSeoulSnapshotId = currentSeoulRows[0]?.previousSnapshotId;
-  const evidenceIds = currentFanIn ? new Set(spec.sourceSnapshotIds.slice(0, -1)) : publicStaticV2Refresh ? new Set(spec.sourceSnapshotIds.flatMap((snapshotId, index) => {
+  const evidenceIds = currentFanIn ? new Set(spec.sourceSnapshotIds.filter((snapshotId) => snapshotId !== transferSnapshotId)) : publicStaticV2Refresh ? new Set(spec.sourceSnapshotIds.flatMap((snapshotId, index) => {
     const sourceId = spec.sourceSnapshots[index].sourceId;
-    if (sourceId === "seoul-metro-transfer-distance-duration") return [];
+    if (sourceId === TRANSFER_SOURCE_ID) return [];
     if (sourceId === "seoul-metro-accessibility") return [previousSeoulSnapshotId];
     if (sourceId === POSITIONS) return [publicV2.positions.previousSnapshotId];
     if (sourceId === MOLIT) return [publicV2.molit.previousSnapshotId];
@@ -177,11 +171,11 @@ function validateCandidate(input, stationLines) {
   if (currentFanIn
     ? transition.currentCandidateSourceSetSha256 !== spec.sourceSnapshotSetHash
       || transition.evidenceSourceSetSha256 === spec.sourceSnapshotSetHash
-      || predecessorIds.size !== CURRENT_CAPITAL_SOURCE_ROSTER.length - 1
-      || predecessorInLedgerOrder.length !== CURRENT_CAPITAL_SOURCE_ROSTER.length - 1
-      || evidenceIds.size !== CURRENT_CAPITAL_SOURCE_ROSTER.length - 1
-      || evidenceInLedgerOrder.length !== CURRENT_CAPITAL_SOURCE_ROSTER.length - 1
-      || evidenceIds.has(spec.sourceSnapshotIds.at(-1))
+      || predecessorIds.size !== selected.length - 1
+      || predecessorInLedgerOrder.length !== selected.length - 1
+      || evidenceIds.size !== selected.length - 1
+      || evidenceInLedgerOrder.length !== selected.length - 1
+      || evidenceIds.has(transferSnapshotId)
       || sha256(JSON.stringify(evidenceInLedgerOrder)) !== transition.evidenceSourceSetSha256
     : ![transition.currentCandidateBytesSha256, transition.evidenceSourceSetSha256, transition.facilityAdmissionBytesSha256].every((value) => SHA.test(value ?? ""))
       || transition.currentCandidateSourceSetSha256 !== spec.sourceSnapshotSetHash
@@ -190,23 +184,35 @@ function validateCandidate(input, stationLines) {
       ? !SHA.test(transition.predecessorCandidateSourceSetSha256 ?? "")
         || !nonBlank(transition.positionPreviousSnapshotId)
         || !nonBlank(transition.molitPreviousSnapshotId)
-        || predecessorIds.size !== CURRENT_CAPITAL_SOURCE_ROSTER.length - 1 || predecessorInLedgerOrder.length !== CURRENT_CAPITAL_SOURCE_ROSTER.length - 1
+        || predecessorIds.size !== selected.length - 1 || predecessorInLedgerOrder.length !== selected.length - 1
         || currentSeoulRows.length !== 1 || !nonBlank(previousSeoulSnapshotId)
-        || evidenceIds.size !== CURRENT_CAPITAL_SOURCE_ROSTER.length - 1 || evidenceInLedgerOrder.length !== CURRENT_CAPITAL_SOURCE_ROSTER.length - 1
+        || evidenceIds.size !== selected.length - 1 || evidenceInLedgerOrder.length !== selected.length - 1
         || sha256(JSON.stringify(predecessorInLedgerOrder)) !== transition.predecessorCandidateSourceSetSha256
         || sha256(JSON.stringify(evidenceInLedgerOrder)) !== transition.evidenceSourceSetSha256
-      : predecessorIds.size !== CURRENT_CAPITAL_SOURCE_ROSTER.length - 1 || predecessorInLedgerOrder.length !== CURRENT_CAPITAL_SOURCE_ROSTER.length - 1
+      : predecessorIds.size !== selected.length - 1 || predecessorInLedgerOrder.length !== selected.length - 1
         || sha256(JSON.stringify(predecessorInLedgerOrder)) !== transition.evidenceSourceSetSha256)) throw new Error("full-capital source-set transition mismatch");
   if (!Buffer.isBuffer(input.sourceInventoryBytes) || canonicalJson(input.sourceInventory) !== canonicalJson(JSON.parse(input.sourceInventoryBytes.toString("utf8")))) throw new Error("full-capital source inventory raw binding mismatch");
   const inventorySha256 = sha256(JSON.stringify(input.sourceInventory));
   const inventoryRawSha256 = sha256(input.sourceInventoryBytes);
   if (spec.sourceInventorySha256 !== inventorySha256 || spec.networkEdgeEvidence?.sourceInventory?.path !== "tools/datapack/source-inventory.json" || spec.networkEdgeEvidence.sourceInventory.sha256 !== inventoryRawSha256) throw new Error("full-capital candidate inventory binding mismatch");
-  const transferProjection = spec.sourceSnapshots.at(-1);
-  const ledger = selected.at(-1);
-  const source = exactlyOne(input.sourceInventory.sources ?? [], ({ id }) => id === "seoul-metro-transfer-distance-duration", "transfer source inventory");
+  const capital = exactlyOne(input.canonicalPack?.packs ?? [], ({ id }) => id === "capital", "capital canonical pack");
+  const capitalSources = capital.sourceInventory ?? [];
+  const requiredSources = (input.sourceInventory.sources ?? [])
+    .filter(({ requiredForProductionPack }) => requiredForProductionPack === true);
+  const capitalSourceIds = new Set(capitalSources.map(({ id }) => id));
+  const requiredSourceIds = new Set(requiredSources.map(({ id }) => id));
+  if (!Array.isArray(capital.sourceInventory) || !Array.isArray(input.sourceInventory.sources)
+    || capitalSources.some(({ id }) => !nonBlank(id)) || capitalSourceIds.size !== capitalSources.length
+    || requiredSources.some(({ id }) => !nonBlank(id)) || requiredSourceIds.size !== requiredSources.length
+    || requiredSourceIds.size === 0 || !equalSets(new Set(spec.sourceSnapshots.map(({ sourceId }) => sourceId)), requiredSourceIds)
+    || [...requiredSourceIds].some((sourceId) => !capitalSourceIds.has(sourceId))) {
+    throw new Error("full-capital candidate inventory membership mismatch");
+  }
+  const ledger = exactlyOne(selected, ({ sourceId }) => sourceId === TRANSFER_SOURCE_ID, "transfer source ledger");
+  const source = exactlyOne(input.sourceInventory.sources ?? [], ({ id }) => id === TRANSFER_SOURCE_ID, "transfer source inventory");
   const keys = ["snapshotId", "sourceId", "rawObjectUri", "rawSha256", "redactedRequestFingerprint", "schemaFingerprint", "licenseStatus", "redistributionAllowed", "adminReviewRecordHash", "snapshotStatus", "credentialRedacted", "freshnessExpiresAt", "rawRetentionExpiresAt", "governancePolicyVersion", "governancePolicySha256"];
   const expected = Object.fromEntries(keys.map((keyName) => [keyName, keyName === "adminReviewRecordHash" ? source.admissionEvidence?.adminReviewRecordHash : ledger?.[keyName]]));
-  if (ledger.sourceId !== "seoul-metro-transfer-distance-duration" || ledger.snapshotStatus !== "LOCKED" || source.transferAdmissionEvidence?.snapshotId !== ledger.snapshotId || spec.sourceSnapshotIds.at(-1) !== ledger.snapshotId || canonicalJson(transferProjection) !== canonicalJson(expected)) throw new Error("full-capital transfer ledger mismatch");
+  if (ledger.sourceId !== TRANSFER_SOURCE_ID || ledger.snapshotStatus !== "LOCKED" || source.transferAdmissionEvidence?.snapshotId !== ledger.snapshotId || transferSnapshotId !== ledger.snapshotId || canonicalJson(transferProjection) !== canonicalJson(expected)) throw new Error("full-capital transfer ledger mismatch");
   if (!exitCandidate || exitCandidate.candidateId !== spec.candidateId || exitCandidate.sourceSetSha256 !== transition.evidenceSourceSetSha256) throw new Error("full-capital EXIT candidate mismatch");
   const stationIds = [...new Set(stationLines.map(({ stationId }) => stationId))].sort(compareBytes);
   if (exitCandidate.stationSetSha256 !== sha256(canonicalJson(stationIds)) || exitCandidate.mappingContractVersion !== "station-line-v1" || exitCandidate.materializerVersion !== "1") {
@@ -261,7 +267,7 @@ function requireCurrentPublicV2Head(selected, ledger, sourceId, transitionPrevio
 function canonicalStationLines(pack, facilityAdmission) {
   const capital = pack?.packs?.filter(({ id }) => id === "capital");
   if (pack?.manifest?.channel !== "production" || pack?.manifest?.activePack?.id !== "capital" || capital?.length !== 1) throw new Error("full-capital canonical pack mismatch");
-  if (!Array.isArray(facilityAdmission?.cells) || facilityAdmission.cells.length !== 213) throw new Error("full-capital station selector denominator mismatch");
+  if (!Array.isArray(facilityAdmission?.cells) || facilityAdmission.cells.length === 0) throw new Error("full-capital station selector denominator mismatch");
   const selected = new Map();
   for (const { stationId, lineId } of facilityAdmission.cells) {
     if (!nonBlank(stationId) || !nonBlank(lineId) || selected.has(`${stationId}\0${lineId}`)) throw new Error("full-capital station selector mismatch");
@@ -284,7 +290,7 @@ function canonicalStationLines(pack, facilityAdmission) {
     if (stationMatches.length !== 1 || operatorMatches.length !== 1) throw new Error("full-capital canonical station selection mismatch");
     return { ...identity, operatorId: operatorMatches[0].operatorId };
   }).sort(compareStationLine);
-  if (lines.length !== 213 || new Set(lines.map(({ stationId, lineId }) => `${stationId}\0${lineId}`)).size !== 213 || new Set(lines.map(({ stationId }) => stationId)).size !== 199
+  if (lines.length !== selected.size || new Set(lines.map(({ stationId, lineId }) => `${stationId}\0${lineId}`)).size !== selected.size
     || lines.some(({ stationId, lineId, operatorId }) => !nonBlank(stationId) || !nonBlank(lineId) || operatorId !== "seoul-metro")) throw new Error("full-capital station denominator mismatch");
   return lines;
 }
@@ -311,18 +317,19 @@ export function buildAuthenticatedCurrentCapitalFacilityEvidenceRows({
   if (!Number.isFinite(candidatePublishedAt)
     || requiredUtcMillis(value.sourceIdentity.freshUntil, "full-capital FACILITY freshUntil") <= candidatePublishedAt) throw new Error("full-capital FACILITY freshness mismatch");
   const cells = indexExact(value.cells, stationLines, "FACILITY cells");
-  const blocked = cells.get(key(BLOCKED));
-  if (blocked?.state !== "ADMITTED_FACILITY_UNVERIFIED_BLOCKED" || value.cells.filter(({ state }) => state === "ADMITTED_FACILITY_UNVERIFIED_BLOCKED").length !== 1) throw new Error("full-capital FACILITY blocked tuple mismatch");
-  const rows = value.denominatorRows.filter(({ stationId, lineId }) => stationId === BLOCKED.stationId && lineId === BLOCKED.lineId);
-  const requiredFacilityTypes = ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"];
-  if (rows.length !== 3 || rows.some(({ state }) => state !== "UNVERIFIED_EVIDENCE_BLOCKED")
-    || canonicalJson(rows.map(({ facilityType }) => facilityType).sort(compareBytes)) !== canonicalJson(requiredFacilityTypes)) throw new Error("full-capital FACILITY blocked carrier mismatch");
+  const blockedCells = value.cells.filter(({ state }) => state === "ADMITTED_FACILITY_UNVERIFIED_BLOCKED");
+  if (blockedCells.length !== 1) throw new Error("full-capital FACILITY blocked tuple mismatch");
+  const blocked = blockedCells[0];
+  const rows = value.denominatorRows.filter(({ stationId, lineId }) => stationId === blocked.stationId && lineId === blocked.lineId);
+  if (rows.length !== FACILITY_TYPES.length || rows.some(({ state }) => state !== "UNVERIFIED_EVIDENCE_BLOCKED")
+    || !equalSets(new Set(rows.map(({ facilityType }) => facilityType)), new Set(FACILITY_TYPES))) throw new Error("full-capital FACILITY blocked carrier mismatch");
   const queries = indexExact(snapshot.queries, stationLines, "FACILITY snapshot queries");
+  if (queries.get(key(blocked))?.providerResultCode !== "03") throw new Error("full-capital FACILITY blocked provider mismatch");
   return stationLines.flatMap((line) => {
     const cell = cells.get(key(line));
     const blockedCell = cell.state === "ADMITTED_FACILITY_UNVERIFIED_BLOCKED";
     const query = queries.get(key(line));
-    if (blockedCell) return ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"].map((facilityType) => terminalEvidence(line, facilityType, query, value.sourceIdentity, outputCandidate));
+    if (blockedCell) return FACILITY_TYPES.map((facilityType) => terminalEvidence(line, facilityType, query, value.sourceIdentity, outputCandidate));
     const state = cell.state === "ADMITTED_FACILITY_PRESENT" ? "VERIFIED_PRESENT" : "VERIFIED_ABSENT";
     const kind = state === "VERIFIED_PRESENT" ? "OBSERVED" : "EXHAUSTIVE_LIST";
     return [evidence(line, "FACILITY", state, value.sourceIdentity, outputCandidate, kind, query.providerRecordHash)];
@@ -336,7 +343,11 @@ function validateExit(input, stationLines, candidate, evidenceSourceSetSha256) {
   if (canonicalExitPathAdmissionJson(input.exitAdmission) !== input.exitAdmissionBytes.toString("utf8") || input.exitAdmission.admissionDigest !== receipt.admissionDigest || input.exitAdmission.schemaVersion !== 2 || input.exitAdmission.decision !== "GO") throw new Error("full-capital EXIT admission binding mismatch");
   const normalized = input.exitNormalized;
   if (canonicalJson(normalized) !== input.exitNormalizedBytes.toString("utf8") || normalized?.schemaVersion !== 4 || normalized?.sourceId !== input.exitAdmission.sourceIdentity?.sourceId
-    || normalized?.snapshotId !== input.exitAdmission.sourceIdentity?.snapshotId || normalized?.queryPlan?.length !== 420 || normalized?.results?.length !== 420) throw new Error("full-capital EXIT normalized identity mismatch");
+    || normalized?.snapshotId !== input.exitAdmission.sourceIdentity?.snapshotId || !Array.isArray(normalized?.queryPlan) || !Array.isArray(normalized?.results)
+    || normalized.queryPlan.length === 0 || normalized.results.length === 0
+    || new Set(normalized.queryPlan.map(({ queryId }) => queryId)).size !== normalized.queryPlan.length
+    || new Set(normalized.results.map(({ queryId }) => queryId)).size !== normalized.results.length
+    || !equalSets(new Set(normalized.queryPlan.map(({ queryId }) => queryId)), new Set(normalized.results.map(({ queryId }) => queryId)))) throw new Error("full-capital EXIT normalized identity mismatch");
   if (input.exitAdmission.candidate?.candidateId !== candidate.candidateId || input.exitAdmission.candidate?.sourceSetSha256 !== evidenceSourceSetSha256
     || input.exitAdmission.candidate?.stationSetSha256 !== candidate.stationSetSha256) throw new Error("full-capital EXIT candidate mismatch");
   const projection = stationLines.map(({ stationId, lineId, operatorId }) => ({ stationId, lineId, operatorId })).sort(compareStationLine);
@@ -402,31 +413,40 @@ export function buildValidatedCurrentCapitalTransferEvidenceRows({
   if (!Array.isArray(stationLines) || !candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
     throw new Error("full-capital TRANSFER evidence projection mismatch");
   }
-  if (metrics?.artifactKind !== "current-transfer-topology-metrics" || metrics?.physicalPairs?.length !== 15 || metrics?.metrics?.length !== 30
-    || metrics.metrics.filter(({ metricProvenance }) => metricProvenance === "OFFICIAL_SOURCE").length !== 28 || metrics.metrics.filter(({ metricProvenance }) => metricProvenance === "DERIVED_RECIPROCAL").length !== 2
-    || metrics.metrics.some(({ durationRole, distanceMeters, officialDurationSecondsReference }) => durationRole !== "REFERENCE_ONLY" || !Number.isSafeInteger(distanceMeters) || distanceMeters <= 0 || !Number.isSafeInteger(officialDurationSecondsReference) || officialDurationSecondsReference <= 0)
+  if (metrics?.artifactKind !== "current-transfer-topology-metrics" || !Array.isArray(metrics?.physicalPairs) || !Array.isArray(metrics?.metrics)
+    || metrics.physicalPairs.length === 0 || metrics.metrics.length === 0
+    || metrics.metrics.some(({ durationRole, distanceMeters, metricProvenance, officialDurationSecondsReference }) => durationRole !== "REFERENCE_ONLY" || !Number.isSafeInteger(distanceMeters) || distanceMeters <= 0 || !Number.isSafeInteger(officialDurationSecondsReference) || officialDurationSecondsReference <= 0
+      || !["OFFICIAL_SOURCE", "DERIVED_RECIPROCAL"].includes(metricProvenance))
     || metrics.artifactSha256 !== sha256(canonicalJson(without(metrics, "artifactSha256")))) throw new Error("full-capital TRANSFER metrics mismatch");
   const stationLineKeys = new Set(stationLines.map(key));
   const expectedDirections = new Set();
+  const physicalPairs = new Set();
   for (const pair of metrics.physicalPairs) {
     if (!nonBlank(pair?.stationId) || !Array.isArray(pair.lineIds) || pair.lineIds.length !== 2 || pair.lineIds[0] === pair.lineIds[1]
       || pair.lineIds.some((lineId) => !stationLineKeys.has(`${pair.stationId}\0${lineId}`))) throw new Error("full-capital TRANSFER physical pair mismatch");
+    physicalPairs.add(`${pair.stationId}\0${[...pair.lineIds].sort(compareBytes).join("\0")}`);
     expectedDirections.add(transferDirectionKey(pair.stationId, pair.lineIds[0], pair.lineIds[1]));
     expectedDirections.add(transferDirectionKey(pair.stationId, pair.lineIds[1], pair.lineIds[0]));
   }
   const actualDirections = new Set(metrics.metrics.map(({ stationId, fromLineId, toLineId }) => transferDirectionKey(stationId, fromLineId, toLineId)));
-  if (expectedDirections.size !== 30 || actualDirections.size !== 30 || !equalSets(expectedDirections, actualDirections)) throw new Error("full-capital TRANSFER directed pair mismatch");
+  if (physicalPairs.size !== metrics.physicalPairs.length || !equalSets(expectedDirections, actualDirections) || actualDirections.size !== metrics.metrics.length) throw new Error("full-capital TRANSFER directed pair mismatch");
   if (applicability?.artifactKind !== "current-capital-transfer-topology-applicability-pre-candidate" || applicability.candidateBinding !== null || applicability.productionUseAllowed !== false
     || applicability.artifactSha256 !== sha256(`${canonicalJson(without(applicability, "artifactSha256"))}\n`) || canonicalJson(applicability.canonicalIdentity) !== canonicalJson(metrics.canonicalIdentity)
     || canonicalJson(applicability.sourceIdentity) !== canonicalJson(metrics.sourceIdentity) || applicability.transferTopologyMetricsIdentity?.artifactSha256 !== metrics.artifactSha256) throw new Error("full-capital TRANSFER applicability mismatch");
   const source = exactlyOne(inventory?.sources ?? [], ({ id }) => id === "seoul-metro-transfer-distance-duration", "transfer source inventory");
   const admission = source.transferAdmissionEvidence;
+  const officialMetricCount = metrics.metrics.filter(({ metricProvenance }) => metricProvenance === "OFFICIAL_SOURCE").length;
+  const derivedReciprocalMetricCount = metrics.metrics.length - officialMetricCount;
   if (source.requiredForProductionPack !== true || admission?.decision !== "APPROVED" || admission.metricsArtifactSha256 !== metrics.artifactSha256 || admission.applicabilityArtifactSha256 !== applicability.artifactSha256
-    || admission.physicalPairCount !== 15 || admission.directedMetricCount !== 30 || admission.officialMetricCount !== 28 || admission.derivedReciprocalMetricCount !== 2 || admission.durationRole !== "REFERENCE_ONLY") throw new Error("full-capital TRANSFER admission mismatch");
+    || admission.physicalPairCount !== metrics.physicalPairs.length || admission.directedMetricCount !== metrics.metrics.length
+    || admission.officialMetricCount !== officialMetricCount
+    || admission.derivedReciprocalMetricCount !== derivedReciprocalMetricCount
+    || admission.officialMetricCount + admission.derivedReciprocalMetricCount !== admission.directedMetricCount
+    || admission.durationRole !== "REFERENCE_ONLY") throw new Error("full-capital TRANSFER admission mismatch");
   const cells = indexExact(applicability.cells, stationLines, "TRANSFER applicability");
   const endpoints = new Set(metrics.metrics.flatMap(({ stationId, fromLineId, toLineId }) => [`${stationId}\0${fromLineId}`, `${stationId}\0${toLineId}`]));
   const applicableEndpoints = new Set([...cells.entries()].filter(([, { state }]) => state === "APPLICABLE_TRANSFER_ENDPOINT").map(([cellKey]) => cellKey));
-  if (endpoints.size !== 27 || applicableEndpoints.size !== 27 || !equalSets(endpoints, applicableEndpoints)) throw new Error("full-capital TRANSFER endpoint mismatch");
+  if (!equalSets(endpoints, applicableEndpoints)) throw new Error("full-capital TRANSFER endpoint mismatch");
   return stationLines.map((line) => {
     const state = cells.get(key(line)).state;
     if (!["APPLICABLE_TRANSFER_ENDPOINT", "NOT_APPLICABLE_IN_CANONICAL_PAIR_SET"].includes(state)) throw new Error("full-capital TRANSFER state mismatch");
@@ -472,7 +492,16 @@ function verifyCurrentFanInInputProjection(input) {
     if (canonicalJson(value) !== canonicalJson(input.currentFanInComponents?.[name]?.value)) throw new Error(`full-capital current fan-in ${name} projection mismatch`);
   }
 }
-function indexExact(rows, stationLines, label) { if (!Array.isArray(rows) || rows.length !== 213) throw new Error(`${label} denominator mismatch`); const map = new Map(rows.map((row) => [key(row), row])); if (map.size !== 213 || stationLines.some((line) => !map.has(key(line)))) throw new Error(`${label} mapping mismatch`); return map; }
+function indexExact(rows, stationLines, label) {
+  if (!Array.isArray(rows) || rows.length === 0 || !Array.isArray(stationLines) || stationLines.length === 0) throw new Error(`${label} denominator mismatch`);
+  const map = new Map(rows.map((row) => [key(row), row]));
+  if (map.size !== rows.length || !equalSets(new Set(map.keys()), new Set(stationLines.map(key)))) throw new Error(`${label} mapping mismatch`);
+  return map;
+}
+function exactStationLineCoverage(rows, stationLines) {
+  return Array.isArray(rows) && rows.length > 0
+    && equalSets(new Set(rows.map(key)), new Set(stationLines.map(key)));
+}
 async function readJson(root, relative) { return readStable(path.join(root, relative), relative); }
 async function readStable(file, label) {
   if (!Number.isInteger(constants.O_NOFOLLOW)) throw new Error(`${label} cannot enforce O_NOFOLLOW`);

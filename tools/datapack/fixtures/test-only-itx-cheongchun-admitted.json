@@ -17,9 +17,9 @@
     "sha256Source": "FIXTURE_FILE_BYTES"
   },
   "canonicalPackIdentity": {
-    "id": "capital",
-    "sha256": "905e77589971bd53d6ecaab9dbfd211ab56f86de883425747bf1d93d31ebae4f",
-    "sqliteSha256": "f72a384c9515f8ae7636a5dd0115853ecbe42fde5b0bb4d9ce3ed492c05a712f"
+    "id": "test-only-capital-pack-v1",
+    "sha256": "d713da707dc08ffff446aff78452005220a6fcee816732088275d0ff7614bfd6",
+    "sqliteSha256": "3e205808ea6d29491173ebcfd8236309d99d07482fea5602e7035f591f6fbf91"
   },
   "canonicalStations": [
     {

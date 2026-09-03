@@ -273,7 +273,7 @@ async function fullRegistrationInputs(values, { mixed = false } = {}) {
   });
   const planPath = path.join(path.dirname(values.snapshotFilePath), "plan.json");
   await writeFile(planPath, canonicalCurrentCapitalFacilityCollectionPlanJson(plan));
-  const roster213 = plan.stationLineProviderMappings.map((mapping) => ({
+  const planRoster = plan.stationLineProviderMappings.map((mapping) => ({
     stationId: mapping.stationId,
     lineId: mapping.lineId,
     railOprIsttCd: mapping.providerOperatorId,
@@ -288,7 +288,7 @@ async function fullRegistrationInputs(values, { mixed = false } = {}) {
     .filter(Number.isFinite);
   const fixtureNow = new Date(Math.max(...ledgerTimes) + 60_000);
   const [snapshot] = await collectKricAccessibilitySnapshots({
-    roster: roster213,
+    roster: planRoster,
     operations: [operation],
     serviceKey: "fixture-only-key",
     now: fixtureNow,
@@ -313,7 +313,7 @@ async function fullRegistrationInputs(values, { mixed = false } = {}) {
   const repositoryRoot = path.dirname(path.dirname(path.dirname(path.dirname(values.snapshotTargetPath))));
   return {
     plan,
-    roster213,
+    planRoster,
     planPath,
     snapshot,
     snapshotBytes,
@@ -387,7 +387,7 @@ test("producer-neutral full registration requires its closed plan/canonical pair
   ]), /CLI arguments/);
 });
 
-test("producer-neutral full registration atomically registers 213 tuples without mutating pilot input", async (t) => {
+test("producer-neutral full registration atomically registers all plan tuples without mutating pilot input", async (t) => {
   const values = await fixture(t);
   const input = await fullRegistrationInputs(values);
   const beforeInventory = await readFile(values.paths[registryPaths[0]]);
@@ -478,7 +478,7 @@ test("producer-neutral full registration rejects another approved KRIC operation
     tupleIdentityFields: ["railOprIsttCd", "lnCd", "stinCd"],
   };
   const [otherSnapshot] = await collectKricAccessibilitySnapshots({
-    roster: input.roster213,
+    roster: input.planRoster,
     operations: [elevatorOperation],
     serviceKey: "fixture-only-key",
     now: input.fixtureNow,
