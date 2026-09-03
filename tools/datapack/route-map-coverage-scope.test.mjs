@@ -761,12 +761,21 @@ test("pack topology가 싣고 있는 역은 pack 결측으로 면제할 수 없�
 test("historical lineage와 다른 재해시 snapshot은 pack 결측 근거로 쓸 수 없다 (#2516)", async () => {
   const inputs = await loadAuditInputs();
   const exemptions = structuredClone(inputs.exemptions);
-  const gap = gapNamed(exemptions, "전대.에버랜드");
-  const topologyPath = gap.evidence.packTopologyPath;
+  const gap = gapNamed(exemptions, "하양");
+  const source = inputs.inventory.sources.find(({ id }) => id === gap.evidence.admissionSourceId);
+  const topologyPath = topologyPathForSourceAndLine(
+    inputs.inventory,
+    gap.evidence.admissionSourceId,
+    gap.scopeKey.split(":").at(-1),
+  );
+  gap.reasonCode = "PACK_SCOPE_ABSENT";
+  gap.evidence.snapshotPath = source.routeMapAdmissionEvidence.snapshotPath;
+  gap.evidence.packTopologyPath = topologyPath;
+  delete gap.evidence.admissionSourceId;
   const topology = structuredClone(inputs.topologiesByPath.get(topologyPath));
   const lineId = gap.scopeKey.split(":").at(-1);
   const line = topology.lines.find((candidate) => candidate.lineId === lineId);
-  line.scope = [...line.scope, { stationId: "station-test", stationName: "전대.에버랜드" }];
+  line.scope = [...line.scope, { stationId: "station-test", stationName: "검증역" }];
   const topologiesByPath = new Map(inputs.topologiesByPath).set(topologyPath, rehashTopology(topology));
 
   const result = auditRouteMapCoverageScopes({ ...inputs, exemptions, topologiesByPath });
@@ -778,16 +787,30 @@ test("historical lineage와 다른 재해시 snapshot은 pack 결측 근거로 �
 test("pack topology에 없는 역은 공식 원문 결측으로 면제할 수 없다 (#2516)", async () => {
   const inputs = await loadAuditInputs();
   const exemptions = structuredClone(inputs.exemptions);
-  const gap = gapNamed(exemptions, "신설동");
-  const source = inputs.inventory.sources.find(({ routeMapAdmissionEvidence }) => (
-    routeMapAdmissionEvidence?.snapshotPath === gap.evidence.snapshotPath
-  ));
-  gap.reasonCode = "OFFICIAL_FILE_ROW_ABSENT";
-  delete gap.evidence.snapshotPath;
-  delete gap.evidence.packTopologyPath;
-  gap.evidence.admissionSourceId = source.id;
+  const gap = gapNamed(exemptions, "하양");
+  const topologyPath = topologyPathForSourceAndLine(
+    inputs.inventory,
+    gap.evidence.admissionSourceId,
+    gap.scopeKey.split(":").at(-1),
+  );
+  const topology = structuredClone(inputs.topologiesByPath.get(topologyPath));
+  const lineId = gap.scopeKey.split(":").at(-1);
+  const line = topology.lines.find((candidate) => candidate.lineId === lineId);
+  line.scope = line.scope.filter(({ stationName }) => stationName !== gap.rosterStationName);
+  const rehashed = rehashTopology(topology);
+  const inventory = rebindTopologyLineages(
+    structuredClone(inputs.inventory),
+    topologyPath,
+    rehashed.contentSha256,
+  );
+  const topologiesByPath = new Map(inputs.topologiesByPath).set(topologyPath, rehashed);
 
-  const result = auditRouteMapCoverageScopes({ ...inputs, exemptions });
+  const result = auditRouteMapCoverageScopes({
+    ...inputs,
+    inventory,
+    exemptions,
+    topologiesByPath,
+  });
 
   assert.deepEqual(violationKinds(result), ["LEDGER_PACK_TOPOLOGY_STATION_ABSENT", "MISSING_STATION"]);
 });

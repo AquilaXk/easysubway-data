@@ -486,6 +486,39 @@ async function readJson(relativePath) {
   return JSON.parse(await readFile(path.join(root, relativePath), "utf8"));
 }
 
+function capitalRouteMapCountState(inheritedPack) {
+  return {
+    stationIds: new Set((inheritedPack.stations ?? []).map(({ id }) => id)),
+    stationLineKeys: new Set(
+      (inheritedPack.stationLines ?? []).map(({ stationId, lineId }) => `${stationId}\0${lineId}`),
+    ),
+  };
+}
+
+async function deriveCapitalRouteMapAddedRows(state, inventory, sourceIds) {
+  const addedRows = { stations: 0, stationLines: 0, routeMapPositions: 0 };
+  for (const sourceId of sourceIds) {
+    const snapshotPath = admissionEvidenceOf(inventory, sourceId, "routeMapAdmissionEvidence").snapshotPath;
+    const snapshot = await readJson(snapshotPath);
+    const snapshotKeys = new Set();
+    for (const { stationId, lineId } of snapshot.positions) {
+      const stationLineKey = `${stationId}\0${lineId}`;
+      assert.equal(snapshotKeys.has(stationLineKey), false, `${sourceId} duplicate station-line position`);
+      snapshotKeys.add(stationLineKey);
+      addedRows.routeMapPositions += 1;
+      if (!state.stationIds.has(stationId)) {
+        state.stationIds.add(stationId);
+        addedRows.stations += 1;
+      }
+      if (!state.stationLineKeys.has(stationLineKey)) {
+        state.stationLineKeys.add(stationLineKey);
+        addedRows.stationLines += 1;
+      }
+    }
+  }
+  return addedRows;
+}
+
 async function sha256Of(relativePath) {
   return createHash("sha256").update(await readFile(path.join(root, relativePath))).digest("hex");
 }
@@ -1178,7 +1211,11 @@ test("광주 5 requirement는 체인 편입으로 MISSING에서 SUPPORTED로 전
 // #2595 B3: 수도권 KRIC 노선도 10 requirement는 두 materializer로 전이한다. 서울 1~8호선은
 // 공공 관측의 v2 admission 전까지 이 candidate에서 의도적으로 열지 않는다.
 test("수도권 KRIC 노선도 10 requirement는 편입 2건으로 MISSING에서 SUPPORTED로 전이한다", async () => {
-  const evidence = await readJson(EVIDENCE_PATH);
+  const [evidence, inventory, inherited] = await Promise.all([
+    readJson(EVIDENCE_PATH),
+    readJson(INVENTORY_PATH),
+    readJson(REVIEWED_PACK_PATH),
+  ]);
   const byKey = new Map(evidence.variants.lineScoped.pilotRequirements.map((entry) => [entry.requirementKey, entry]));
   const baselineByKey = new Map(
     evidence.variants.baseline.pilotRequirements.map((entry) => [entry.requirementKey, entry]),
@@ -1208,13 +1245,35 @@ test("수도권 KRIC 노선도 10 requirement는 편입 2건으로 MISSING에서
   assert.equal(lightRail.addedRows.coverageLineOperatorScopes, 5);
   assert.equal(wideRail.addedRows.sourceInventory, 8);
   assert.equal(lightRail.addedRows.sourceInventory, 5);
-  // 역 수와 역·노선 쌍 수는 다른 축이다 — 환승역은 역 하나에 노선 소속을 여러 개 낸다.
-  assert.equal(wideRail.addedRows.stations, 192);
-  assert.equal(wideRail.addedRows.stationLines, 217);
-  assert.equal(wideRail.addedRows.routeMapPositions, 217);
-  assert.equal(lightRail.addedRows.stations, 60);
-  assert.equal(lightRail.addedRows.stationLines, 65);
-  assert.equal(lightRail.addedRows.routeMapPositions, 65);
+  // mutable production cardinality를 테스트에 복제하지 않는다. exact admitted snapshot positions와
+  // inherited station/station-line 집합에서 wide → light 순서로 독립 계산한다.
+  const countState = capitalRouteMapCountState(inherited.packs[0]);
+  const wideExpected = await deriveCapitalRouteMapAddedRows(
+    countState,
+    inventory,
+    CAPITAL_WIDE_RAIL_LINE_SOURCE_IDS,
+  );
+  const lightExpected = await deriveCapitalRouteMapAddedRows(
+    countState,
+    inventory,
+    CAPITAL_LIGHT_RAIL_LINE_SOURCE_IDS,
+  );
+  assert.deepEqual(
+    {
+      stations: wideRail.addedRows.stations,
+      stationLines: wideRail.addedRows.stationLines,
+      routeMapPositions: wideRail.addedRows.routeMapPositions,
+    },
+    wideExpected,
+  );
+  assert.deepEqual(
+    {
+      stations: lightRail.addedRows.stations,
+      stationLines: lightRail.addedRows.stationLines,
+      routeMapPositions: lightRail.addedRows.routeMapPositions,
+    },
+    lightExpected,
+  );
   // 재정렬 선언은 evidence에도 남는다. 선언하지 않은 편입에는 키 자체가 없어야 한다(죽은 선언 방지).
   for (const { offset, reorderedTables } of CAPITAL_INCLUSION_BINDINGS) {
     assert.deepEqual(evidence.packDataInclusions.entries[CAPITAL_INDEX + offset].reorderedTables, reorderedTables);
@@ -1484,6 +1543,42 @@ test("candidate spec validation seam은 production 채널을 거부한다", asyn
     () => validateNationwideCandidateCoverageSpec(spec, inventory),
     /manifest\.channel must be candidate/,
   );
+});
+
+test("수도권 노선도 입력 경로는 admission evidence에서만 파생한다", async () => {
+  const [spec, inventory, evidence] = await Promise.all([
+    readJson(SPEC_PATH),
+    readJson(INVENTORY_PATH),
+    readJson(EVIDENCE_PATH),
+  ]);
+  const capitalRouteMapInclusions = spec.packDataInclusions
+    .map((inclusion, index) => ({ inclusion, index }))
+    .filter(({ inclusion }) => inclusion.regionId === "capital"
+      && inclusion.materializer.includes("route-map-positions"));
+
+  for (const { inclusion, index } of capitalRouteMapInclusions) {
+    const binding = CAPITAL_INCLUSION_BINDINGS.find(({ offset }) => CAPITAL_INDEX + offset === index);
+    const sourceIds = binding.lineSourceIds ?? [binding.sourceId];
+    const expectedPaths = [...new Set(sourceIds.flatMap((sourceId) => {
+      const admission = admissionEvidenceOf(inventory, sourceId, "routeMapAdmissionEvidence");
+      return [admission.snapshotPath, `tools/datapack/sources/${admission.topologySnapshotId}.json`];
+    }))].sort();
+    const actualPaths = evidence.packDataInclusions.entries[index].inputs
+      .map(({ path: inputPath }) => inputPath)
+      .filter((inputPath) => inputPath.startsWith("tools/datapack/sources/"))
+      .sort();
+    assert.deepEqual(actualPaths, expectedPaths, inclusion.materializer);
+
+    const withManualPath = structuredClone(spec);
+    const mutated = withManualPath.packDataInclusions[index];
+    if (binding.lineSourceIds === undefined) mutated.snapshotPath = "tools/datapack/sources/copied.json";
+    else mutated.lines[0].snapshotPath = "tools/datapack/sources/copied.json";
+    assert.throws(
+      () => validateNationwideCandidateCoverageSpec(withManualPath, inventory),
+      /has unknown keys: snapshotPath/,
+      inclusion.materializer,
+    );
+  }
 });
 
 test("배포 artifact identity는 SUPPORTED 판정 전에 검증한다", async () => {
@@ -2123,63 +2218,6 @@ test("candidate 안전 경계는 spec 편집만으로 넓힐 수 없다", async 
         );
       });
     }
-  }
-
-  // 수도권 광역·경전철 편입은 결속 단위가 노선(=소스)이다. 노선 하나만 덮으면 나머지 노선의 결속이 풀려도
-  // 회귀가 침묵하므로 편입 안의 노선 전체를 돈다.
-  for (const { labelKo, slug, offset, lineSourceIds } of CAPITAL_INCLUSION_BINDINGS) {
-    if (lineSourceIds === undefined) continue;
-    for (const [lineIndex, lineSourceId] of lineSourceIds.entries()) {
-      await context.test(
-        `수도권 ${labelKo} 편입 ${lineSourceId} snapshotPath가 정본 밖 사본이면 거부된다`,
-        async () => {
-          await rejectsSnapshotCopy({
-            index: CAPITAL_INDEX + offset,
-            solo: CAPITAL_INDEX + offset,
-            lineIndex,
-            sourcePath: admissionEvidenceOf(inventory, lineSourceId, "routeMapAdmissionEvidence").snapshotPath,
-            copyName: `capital-${slug}-${lineIndex}-copy.json`,
-            serialize: (bytes) => bytes,
-            expected: new RegExp(`snapshotPath must match the ${lineSourceId} admission evidence snapshotPath`),
-          });
-        },
-      );
-    }
-  }
-
-  // 9호선 편입은 편입 층 snapshotPath 하나를 쓴다(소스 하나만 싣는다).
-  for (const { labelKo, slug, offset, sourceId, evidenceKey } of CAPITAL_INCLUSION_BINDINGS) {
-    if (sourceId === undefined) continue;
-    await context.test(`수도권 ${labelKo} 편입 snapshotPath가 정본 밖 바이트 동일 사본이면 거부된다`, async () => {
-      await rejectsSnapshotCopy({
-        index: CAPITAL_INDEX + offset,
-        solo: CAPITAL_INDEX + offset,
-        sourcePath: admissionEvidenceOf(inventory, sourceId, evidenceKey).snapshotPath,
-        copyName: `capital-${slug}-copy.json`,
-        serialize: (bytes) => bytes,
-        expected: new RegExp(`snapshotPath must match the ${sourceId} admission evidence snapshotPath`),
-      });
-    });
-  }
-
-  // capital-route-topology는 inventory 소스가 아니라 tracked snapshot 파일로만 존재해 admission 정본에
-  // snapshotPath 항목이 없다 — 노선도 정본의 topologySnapshotId에서 유도한 경로에 결속돼 있다.
-  for (const { labelKo, slug, offset, lineSourceIds, sourceId } of CAPITAL_INCLUSION_BINDINGS) {
-    const topologySourceId = lineSourceIds?.[0] ?? sourceId;
-    await context.test(`수도권 ${labelKo} 편입 topologySnapshotPath가 정본 밖 사본이면 거부된다`, async () => {
-      const declared = admissionEvidenceOf(inventory, topologySourceId, "routeMapAdmissionEvidence");
-      await rejectsSnapshotCopy({
-        index: CAPITAL_INDEX + offset,
-        solo: CAPITAL_INDEX + offset,
-        key: "topologySnapshotPath",
-        sourcePath: `tools/datapack/sources/${declared.topologySnapshotId}.json`,
-        copyName: `capital-${slug}-topology-copy.json`,
-        serialize: (bytes) => JSON.stringify(JSON.parse(bytes.toString("utf8"))),
-        expected: new RegExp(
-          `topologySnapshotPath must match the ${topologySourceId} admission evidence topologySnapshotId path`,
-        ),
-      });
-    });
   }
 
   // 수도권 노선도 편입도 P1Y 반개구간을 공유한다.

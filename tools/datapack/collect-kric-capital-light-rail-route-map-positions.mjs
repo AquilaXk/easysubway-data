@@ -509,14 +509,7 @@ export function collectCapitalLightRailRouteMapPositions({
     contentSha256: topologySnapshot.contentSha256,
     lineId: line.lineId,
   }];
-  const scope = [...positions, ...quarantinedPositions]
-    .map(({ lineId, stationCode, stationName, stationId }) => ({
-      lineId,
-      stationCode,
-      stationName,
-      stationId,
-    }))
-    .sort(comparePositions);
+  const scope = projectScopeEntries([...positions, ...quarantinedPositions]);
   const datasetIds = line.datasetIds ?? [line.datasetId];
   const snapshot = {
     schemaVersion: 1,
@@ -580,6 +573,7 @@ export function collectCapitalLightRailRouteMapPositions({
 export function validateCapitalLightRailRouteMapPositionsSnapshot(snapshot, { schematicCanvas = null } = {}) {
   const line = LINE_BY_SOURCE_ID.get(snapshot?.sourceId);
   if (!line) throw new Error("unknown capital-light rail route map positions sourceId");
+  const topologySnapshotId = requiredTopologySnapshotId(snapshot?.topologySnapshotId);
   const usesOwnerGeometry = snapshot?.schematicGeometrySha256 != null;
   if (usesOwnerGeometry && (
     !Array.isArray(schematicCanvas?.stationNodes)
@@ -645,6 +639,9 @@ export function validateCapitalLightRailRouteMapPositionsSnapshot(snapshot, { sc
       quarantinedKeys.add(key);
       return valid;
     });
+  const projectedScope = validPositions && validQuarantine
+    ? projectScopeEntries([...positions, ...quarantinedPositions])
+    : null;
   const datasetIds = line.datasetIds ?? [line.datasetId];
   if (snapshot?.schemaVersion !== 1 || snapshot.artifactKind !== ARTIFACT_KIND
     || snapshot.sourceId !== line.sourceId || snapshot.official !== true || snapshot.fixture !== false
@@ -667,11 +664,13 @@ export function validateCapitalLightRailRouteMapPositionsSnapshot(snapshot, { sc
     || !/^[a-f0-9]{64}$/.test(snapshot.topologyContentSha256 ?? "")
     || !Array.isArray(snapshot.topologyLineages) || snapshot.topologyLineages.length !== 1
     || snapshot.topologyLineages[0]?.sourceId !== TOPOLOGY_SOURCE_ID
-    || snapshot.topologyLineages[0]?.snapshotId !== snapshot.topologySnapshotId
+    || snapshot.topologyLineages[0]?.snapshotId !== topologySnapshotId
     || snapshot.topologyLineages[0]?.contentSha256 !== snapshot.topologyContentSha256
     || snapshot.topologyLineages[0]?.lineId !== line.lineId
     || !/^[a-f0-9]{64}$/.test(snapshot.rawSha256 ?? "")
     || !/^[a-f0-9]{64}$/.test(snapshot.scopeSha256 ?? "")
+    || !Array.isArray(snapshot.scope)
+    || JSON.stringify(snapshot.scope) !== JSON.stringify(projectedScope)
     || snapshot.scopeSha256 !== sha256(JSON.stringify(snapshot.scope))
     || !validPositions
     || !validQuarantine
@@ -984,6 +983,17 @@ function comparePositions(left, right) {
   return String(left.stationCode).localeCompare(String(right.stationCode), "en")
     || String(left.stationId ?? "").localeCompare(String(right.stationId ?? ""), "en")
     || String(left.stationName ?? "").localeCompare(String(right.stationName ?? ""), "en");
+}
+
+function projectScopeEntries(entries) {
+  return entries
+    .map(({ lineId, stationCode, stationName, stationId }) => ({
+      lineId,
+      stationCode,
+      stationName,
+      stationId,
+    }))
+    .sort(comparePositions);
 }
 
 function validDate(value, label) {

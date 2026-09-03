@@ -207,11 +207,11 @@ const PACK_DATA_MATERIALIZERS = new Map([
   // inventory 소스가 아니라 tracked snapshot 파일로만 대조하고 역·역노선을 스스로 만든다.
   ["tools/datapack/materialize-kric-capital-wide-rail-route-map-positions.mjs", {
     materialize: materializeCapitalWideRailRouteMapInclusion,
-    inputs: { paths: ["topologySnapshotPath"], linePaths: ["snapshotPath"] },
+    inputs: { paths: [], linePaths: [] },
   }],
   ["tools/datapack/materialize-kric-capital-light-rail-route-map-positions.mjs", {
     materialize: materializeCapitalLightRailRouteMapInclusion,
-    inputs: { paths: ["topologySnapshotPath", "schematicGeometryPath"], linePaths: ["snapshotPath"] },
+    inputs: { paths: ["schematicGeometryPath"], linePaths: [] },
   }],
   // 수도권 9호선 편입 2종(#2595). 노선 하나를 두 소스가 나눠 덮는다(1단계 25역 / 2·3단계 13역)라
   // 편입도 소스마다 하나씩이며, 두 소스의 admission 창 하한이 서로 달라(05:00Z / 04:00Z) pin도 갈린다.
@@ -219,11 +219,11 @@ const PACK_DATA_MATERIALIZERS = new Map([
   // 운영기관·노선·역·역노선을 스스로 만든다.
   ["tools/datapack/materialize-seoul9-phase1-route-map-positions.mjs", {
     materialize: materializeSeoul9Phase1RouteMapInclusion,
-    inputs: { paths: ["snapshotPath", "topologySnapshotPath"], linePaths: [] },
+    inputs: { paths: [], linePaths: [] },
   }],
   ["tools/datapack/materialize-seoul9-route-map-positions.mjs", {
     materialize: materializeSeoul9RouteMapInclusion,
-    inputs: { paths: ["snapshotPath", "topologySnapshotPath"], linePaths: [] },
+    inputs: { paths: [], linePaths: [] },
   }],
   // 인천 편입 3종(#2595). 승계 원본에 인천 운영기관·노선·역이 아예 없어 역사정보 편입이 그 셋을 함께
   // 싣고, 시각표·편의시설 편입이 그 소스 등재와 station_lines 계보를 선행 조건으로 검사한다(부산과 같은
@@ -917,9 +917,9 @@ async function materializeGwangjuAccessibilityInclusion(fixture, inclusion, { re
 // 바이트 동일 사본이 통과한다.
 //
 // topologySnapshotPath는 결이 다르다: capital-route-topology는 inventory 소스가 아니라 tracked snapshot
-// 파일로만 존재해 admission 정본에 snapshotPath 항목 자체가 없다. 대신 노선도 정본이 선언한
+// 파일로만 존재해 admission 정본에 snapshotPath 항목 자체가 없다. 대신 각 노선도 정본이 선언한
 // topologySnapshotId에서 저장소 경로 규약(tools/datapack/sources/<snapshotId>.json)으로 경로를 유도해
-// 결속한다 — materializer는 contentSha256만 대조하므로(재직렬화 사본도 통과) 경로 축을 여기서 더한다.
+// 노선별로 결속한다. 한 편입 안에서도 snapshot lineage가 다를 수 있으므로 공통 topology를 추론하지 않는다.
 async function materializeCapitalRailRouteMapInclusion(fixture, inclusion, { readTracked, inventory }, {
   catalog,
   materialize,
@@ -934,27 +934,24 @@ async function materializeCapitalRailRouteMapInclusion(fixture, inclusion, { rea
       `${inclusionLabel(inclusion)} pack data inclusion lines must be distinct tracked catalog lines in catalog order`,
     );
   }
-  const topologySnapshotPath = assertAdmissionTopologySnapshotPath(
-    inventory,
-    catalogByLineId.get(declared[0]).sourceId,
-    inclusion.topologySnapshotPath,
-  );
-  const topologySnapshot = parseJsonBytes(
-    await readTracked(topologySnapshotPath, "topologySnapshotPath"),
-    topologySnapshotPath,
-  );
+  const topologySnapshots = new Map();
   let chained = fixture;
   for (const line of inclusion.lines) {
     const { sourceId } = catalogByLineId.get(line.lineId);
-    // 노선마다 자기 소스의 정본 경로에 결속한다 — 편입 하나가 여러 소스를 싣더라도 결속은 소스 단위다.
-    assertAdmissionSnapshotPath(inventory, sourceId, "routeMapAdmissionEvidence", line.snapshotPath);
-    assertAdmissionTopologySnapshotPath(inventory, sourceId, inclusion.topologySnapshotPath);
-    const snapshotBytes = await readTracked(line.snapshotPath, "lines[].snapshotPath");
+    const snapshotPath = admissionSnapshotPath(inventory, sourceId, "routeMapAdmissionEvidence");
+    const topologySnapshotPath = admissionTopologySnapshotPath(inventory, sourceId);
+    if (!topologySnapshots.has(topologySnapshotPath)) {
+      topologySnapshots.set(topologySnapshotPath, parseJsonBytes(
+        await readTracked(topologySnapshotPath, "routeMapAdmissionEvidence.topologySnapshotId"),
+        topologySnapshotPath,
+      ));
+    }
+    const snapshotBytes = await readTracked(snapshotPath, "routeMapAdmissionEvidence.snapshotPath");
     chained = materialize({
       baseFixture: chained,
-      snapshot: parseJsonBytes(snapshotBytes, line.snapshotPath),
+      snapshot: parseJsonBytes(snapshotBytes, snapshotPath),
       snapshotSha256: sha256Hex(snapshotBytes),
-      topologySnapshot,
+      topologySnapshot: topologySnapshots.get(topologySnapshotPath),
       inventory,
       now: new Date(inclusion.materializedAt),
     });
@@ -993,19 +990,15 @@ async function materializeSeoul9RouteMapInclusionFor(fixture, inclusion, { readT
 }) {
   assertDeclaredLinesMatchAdmissionScope(inclusion, inventory, sourceId);
   assertDeclaredLineNumbers(inclusion, SEOUL9_LINES);
-  assertAdmissionSnapshotPath(inventory, sourceId, "routeMapAdmissionEvidence", inclusion.snapshotPath);
-  const topologySnapshotPath = assertAdmissionTopologySnapshotPath(
-    inventory,
-    sourceId,
-    inclusion.topologySnapshotPath,
-  );
-  const snapshotBytes = await readTracked(inclusion.snapshotPath, "snapshotPath");
+  const snapshotPath = admissionSnapshotPath(inventory, sourceId, "routeMapAdmissionEvidence");
+  const topologySnapshotPath = admissionTopologySnapshotPath(inventory, sourceId);
+  const snapshotBytes = await readTracked(snapshotPath, "routeMapAdmissionEvidence.snapshotPath");
   return materialize({
     baseFixture: fixture,
-    snapshot: parseJsonBytes(snapshotBytes, inclusion.snapshotPath),
+    snapshot: parseJsonBytes(snapshotBytes, snapshotPath),
     snapshotSha256: sha256Hex(snapshotBytes),
     topologySnapshot: parseJsonBytes(
-      await readTracked(topologySnapshotPath, "topologySnapshotPath"),
+      await readTracked(topologySnapshotPath, "routeMapAdmissionEvidence.topologySnapshotId"),
       topologySnapshotPath,
     ),
     inventory,
@@ -1121,28 +1114,36 @@ async function materializeIncheonAccessibilityInclusion(fixture, inclusion, { re
   });
 }
 
-// capital-route-topology는 inventory 소스가 아니라 tracked snapshot 파일로만 존재해 admission 정본에
-// snapshotPath 항목이 없다. 노선도 정본의 topologySnapshotId에서 저장소 경로 규약으로 경로를 유도해
-// 선언과 대조하고, 유도한 경로를 돌려준다.
-function assertAdmissionTopologySnapshotPath(inventory, sourceId, snapshotPath) {
-  const snapshotId = inventory?.sources?.find(({ id }) => id === sourceId)
-    ?.routeMapAdmissionEvidence?.topologySnapshotId;
-  const expected = typeof snapshotId === "string" && snapshotId.trim() !== ""
-    ? `tools/datapack/sources/${snapshotId}.json`
-    : null;
-  if (expected === null || expected !== snapshotPath) {
-    throw new Error(
-      `pack data inclusion topologySnapshotPath must match the ${sourceId} admission evidence topologySnapshotId path: `
-        + `expected ${expected}, got ${snapshotPath}`,
-    );
+function admissionEvidence(inventory, sourceId, evidenceKey) {
+  const evidence = inventory?.sources?.find(({ id }) => id === sourceId)?.[evidenceKey];
+  if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)) {
+    throw new Error(`${sourceId} ${evidenceKey} is required`);
   }
-  return expected;
+  return evidence;
+}
+
+function admissionSnapshotPath(inventory, sourceId, evidenceKey) {
+  const snapshotPath = admissionEvidence(inventory, sourceId, evidenceKey).snapshotPath;
+  if (typeof snapshotPath !== "string" || snapshotPath.trim() === "") {
+    throw new Error(`${sourceId}.${evidenceKey}.snapshotPath is required`);
+  }
+  return snapshotPath;
+}
+
+// capital-route-topology는 inventory 소스가 아니라 tracked snapshot 파일로만 존재한다. 노선도 admission의
+// topologySnapshotId에서 저장소 경로를 유도하므로 consumer가 spec의 날짜 경로에 의존하지 않는다.
+function admissionTopologySnapshotPath(inventory, sourceId) {
+  const snapshotId = admissionEvidence(inventory, sourceId, "routeMapAdmissionEvidence").topologySnapshotId;
+  if (typeof snapshotId !== "string" || snapshotId.trim() === "") {
+    throw new Error(`${sourceId}.routeMapAdmissionEvidence.topologySnapshotId is required`);
+  }
+  return `tools/datapack/sources/${snapshotId}.json`;
 }
 
 // 편입이 읽는 snapshot 경로를 admission 정본이 선언한 경로와 결속한다(바이트 축이 없는 소스의 대칭 보완).
 function assertAdmissionSnapshotPath(inventory, sourceId, evidenceKey, snapshotPath) {
-  const declared = inventory?.sources?.find(({ id }) => id === sourceId)?.[evidenceKey]?.snapshotPath;
-  if (typeof declared !== "string" || declared !== snapshotPath) {
+  const declared = admissionSnapshotPath(inventory, sourceId, evidenceKey);
+  if (declared !== snapshotPath) {
     throw new Error(
       `pack data inclusion snapshotPath must match the ${sourceId} admission evidence snapshotPath: `
         + `expected ${declared}, got ${snapshotPath}`,

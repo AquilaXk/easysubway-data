@@ -2521,7 +2521,7 @@
           "route_map_position",
           "route_map_label_polygon"
         ],
-        "stationCount": 15,
+        "stationCount": 14,
         "datasetId": "15041331",
         "datasetIds": [
           "15041331"
@@ -2589,7 +2589,7 @@
           "route_map_position",
           "route_map_label_polygon"
         ],
-        "stationCount": 14,
+        "stationCount": 15,
         "datasetId": "15041326",
         "datasetIds": [
           "15041326"
@@ -2865,7 +2865,7 @@
           "route_map_position",
           "route_map_label_polygon"
         ],
-        "stationCount": 13,
+        "stationCount": 12,
         "datasetId": "15041486",
         "datasetIds": [
           "15041486"
@@ -5397,7 +5397,7 @@
           "route_map_position",
           "route_map_label_polygon"
         ],
-        "stationCount": 12,
+        "stationCount": 13,
         "datasetId": "15041324",
         "datasetIds": [
           "15041324",

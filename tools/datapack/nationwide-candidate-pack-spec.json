@@ -603,16 +603,15 @@
       "regionId": "capital",
       "materializer": "tools/datapack/materialize-kric-capital-wide-rail-route-map-positions.mjs",
       "materializedAt": "2026-07-25T06:00:00.000Z",
-      "topologySnapshotPath": "tools/datapack/sources/capital-route-topology-20260724.json",
       "lines": [
-        { "lineId": "line-6e39be0cb6e2", "snapshotPath": "tools/datapack/sources/kric-gyeongui-jungang-route-map-positions-20260725.json" },
-        { "lineId": "line-54a7b980b7c3", "snapshotPath": "tools/datapack/sources/kric-gyeongchun-route-map-positions-20260725.json" },
-        { "lineId": "line-558d0bd8312d", "snapshotPath": "tools/datapack/sources/kric-suin-bundang-route-map-positions-20260725.json" },
-        { "lineId": "line-e4939a4b4713", "snapshotPath": "tools/datapack/sources/kric-gyeonggang-route-map-positions-20260725.json" },
-        { "lineId": "line-e9e9a5b520a4", "snapshotPath": "tools/datapack/sources/kric-airport-railroad-route-map-positions-20260725.json" },
-        { "lineId": "line-62096860ab09", "snapshotPath": "tools/datapack/sources/kric-uijeongbu-route-map-positions-20260725.json" },
-        { "lineId": "line-051552e50435", "snapshotPath": "tools/datapack/sources/kric-seohae-route-map-positions-20260725.json" },
-        { "lineId": "line-8604048b6430", "snapshotPath": "tools/datapack/sources/kric-gtx-a-route-map-positions-20260725.json" }
+        { "lineId": "line-6e39be0cb6e2" },
+        { "lineId": "line-54a7b980b7c3" },
+        { "lineId": "line-558d0bd8312d" },
+        { "lineId": "line-e4939a4b4713" },
+        { "lineId": "line-e9e9a5b520a4" },
+        { "lineId": "line-62096860ab09" },
+        { "lineId": "line-051552e50435" },
+        { "lineId": "line-8604048b6430" }
       ],
       "addedRows": {
         "operators": 6,
@@ -645,21 +644,20 @@
       "addedRowsKo": "이 편입은 승계 원본에 없던 표(coverageLineOperatorScopes)를 새로 만든다 — 집계 목록을 pack 자신에서 끌어오므로 새 표도 자동으로 대조 축에 들어오며, 선언하지 않으면 조립이 fail closed 된다. 이후 편입은 그 표를 0으로 선언해야 한다. 8개 snapshot의 좌표 217행 중 정본 station id 기준 고유 역은 192다 — 노선끼리 만나는 환승역 25곳이 역은 한 번만 싣고 소속(역·노선 쌍)만 따로 낸다. 운영기관은 6곳이다: 4개 korail 노선이 한 운영기관을 공유하고 공항철도·의정부경전철·서해철도·지티엑스에이운영·주식회사 SR이 각각 하나씩이다. coverageLineOperatorScopes 10행은 노선 8개 중 서해선·GTX-A가 두 운영기관 scope를 함께 내기 때문이다.",
       "reorderedTables": ["lines", "operators"],
       "reorderedTablesKo": "이 materializer는 append 뒤 pack.operators와 pack.lines를 id 오름차순으로 다시 정렬한다(실측). 승계 행 자체는 바이트 동일하게 남지만 위치가 바뀌므로 접두사 대조가 걸린다 — 재정렬을 표 단위로 명시 선언한 편입에서만 그 표를 다중집합 대조로 본다. coverageLineOperatorScopes는 이 편입이 처음 만드는 표라 승계 행이 없어 선언 대상이 아니다.",
-      "reasonKo": "#2595 B3. 수도권 광역철도 8노선(경의중앙·경춘·수인분당·경강·공항철도·의정부경전철·서해선·GTX-A) route_map_positions requirement를 판정에 올리려면 candidate root pack이 공식 노선도 좌표 행을 담아야 한다. materializer가 노선 하나만 처리하므로 편입 하나가 노선별 snapshot을 카탈로그 순서대로 체인한다. 이 편입은 승계 pack에 의존하지 않는다 — 경로 그래프 계보를 inventory 소스가 아니라 tracked snapshot 파일(capital-route-topology-20260724.json)로 대조하고 역·역노선을 스스로 만든다. 서해선·GTX-A는 이 배치의 첫 묶음에서 빠져 있었다: 두 소스의 admission coverageScope.operatorIds가 2개인데 materializer의 정본 대조가 단일 운영기관만 허용했기 때문이다. 카탈로그가 그 두 번째 운영기관을 additionalCoverageOperators로 등재하고 materializer가 [노선 운영기관, ...등재분]을 정본과 전량 대조하도록 바꾸면서 두 노선이 열렸다. 이미 admission이 끝난 snapshot(#2503)을 재생한다.",
+      "reasonKo": "#2595 B3. 수도권 광역철도 8노선(경의중앙·경춘·수인분당·경강·공항철도·의정부경전철·서해선·GTX-A) route_map_positions requirement를 판정에 올리려면 candidate root pack이 공식 노선도 좌표 행을 담아야 한다. materializer가 노선 하나만 처리하므로 편입 하나가 노선별 snapshot을 카탈로그 순서대로 체인한다. 이 편입은 승계 pack에 의존하지 않는다 — 각 source inventory admission이 가리키는 tracked topology snapshot으로 경로 그래프 계보를 대조하고 역·역노선을 스스로 만든다. 서해선·GTX-A는 이 배치의 첫 묶음에서 빠져 있었다: 두 소스의 admission coverageScope.operatorIds가 2개인데 materializer의 정본 대조가 단일 운영기관만 허용했기 때문이다. 카탈로그가 그 두 번째 운영기관을 additionalCoverageOperators로 등재하고 materializer가 [노선 운영기관, ...등재분]을 정본과 전량 대조하도록 바꾸면서 두 노선이 열렸다. 이미 admission이 끝난 snapshot(#2503)을 재생한다.",
       "materializedAtReasonKo": "이 편입이 싣는 8개 소스는 모두 P1Y 신선도 창 [2026-07-25T06:00:00Z, 2027-07-25T06:00:00Z)을 공유하고 materializer가 양끝 밖을 fail closed 한다. 편입 하나의 pin은 여덟 창의 공통 하한 정각에 둔다."
     },
     {
       "regionId": "capital",
       "materializer": "tools/datapack/materialize-kric-capital-light-rail-route-map-positions.mjs",
       "materializedAt": "2026-07-25T06:00:00.000Z",
-      "topologySnapshotPath": "tools/datapack/sources/capital-route-topology-20260902.json",
       "schematicGeometryPath": "tools/route-map/route-map-defs/easy-subway-sma-v4-geometry.json",
       "lines": [
-        { "lineId": "shinbundang", "snapshotPath": "tools/datapack/sources/kric-shinbundang-route-map-positions-20260725.json" },
-        { "lineId": "line-828f04afc588", "snapshotPath": "tools/datapack/sources/kric-everline-route-map-positions-20260902.json" },
-        { "lineId": "line-30886152e4f8", "snapshotPath": "tools/datapack/sources/kric-ui-sinseol-route-map-positions-20260902.json" },
-        { "lineId": "line-aefa08ccc0a9", "snapshotPath": "tools/datapack/sources/kric-sillim-route-map-positions-20260725.json" },
-        { "lineId": "line-5500c1600f71", "snapshotPath": "tools/datapack/sources/kric-gimpo-goldline-route-map-positions-20260725.json" }
+        { "lineId": "shinbundang" },
+        { "lineId": "line-828f04afc588" },
+        { "lineId": "line-30886152e4f8" },
+        { "lineId": "line-aefa08ccc0a9" },
+        { "lineId": "line-5500c1600f71" }
       ],
       "addedRows": {
         "operators": 5,
@@ -699,8 +697,6 @@
       "regionId": "capital",
       "materializer": "tools/datapack/materialize-seoul9-phase1-route-map-positions.mjs",
       "materializedAt": "2026-07-25T05:00:00.000Z",
-      "snapshotPath": "tools/datapack/sources/kric-seoul-metro-line9-1-route-map-positions-20260725.json",
-      "topologySnapshotPath": "tools/datapack/sources/capital-route-topology-20260724.json",
       "lines": [
         { "lineNumber": 9, "lineId": "line-f0e747248a31" }
       ],
@@ -742,8 +738,6 @@
       "regionId": "capital",
       "materializer": "tools/datapack/materialize-seoul9-route-map-positions.mjs",
       "materializedAt": "2026-07-25T04:00:00.000Z",
-      "snapshotPath": "tools/datapack/sources/seoul-metro-line9-23-route-map-positions-20260725.json",
-      "topologySnapshotPath": "tools/datapack/sources/capital-route-topology-20260724.json",
       "lines": [
         { "lineNumber": 9, "lineId": "line-f0e747248a31" }
       ],

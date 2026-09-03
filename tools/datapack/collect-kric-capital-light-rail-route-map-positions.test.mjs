@@ -251,6 +251,38 @@ test("topology/schematic 미매칭은 fail closed 한다", async () => {
   );
 });
 
+test("persisted snapshot은 row scope와 canonical topology identity를 직접 검증한다", async () => {
+  const line = LINE_FIXTURES.find(({ key }) => key === "gimpo");
+  const { csvBytes, topologySnapshot, topologySnapshotId, schematicCanvas } = await loadLine(line);
+  const snapshot = collectCapitalLightRailRouteMapPositions({
+    lineKey: line.key,
+    csvBytes,
+    topologySnapshot,
+    topologySnapshotId,
+    schematicCanvas,
+    now: new Date(capturedAt),
+  });
+
+  const emptyRows = structuredClone(snapshot);
+  emptyRows.positions = [];
+  emptyRows.stationCount = 0;
+  emptyRows.rawStationCount = 0;
+  emptyRows.lineStationCounts = { gimpo: 0 };
+  emptyRows.positionsSha256 = createHash("sha256").update("[]").digest("hex");
+  assert.throws(
+    () => validateCapitalLightRailRouteMapPositionsSnapshot(emptyRows),
+    /invalid kric-gimpo-goldline-route-map-positions route map positions snapshot/,
+  );
+
+  const arbitraryTopology = structuredClone(snapshot);
+  arbitraryTopology.topologySnapshotId = "unbound-topology";
+  arbitraryTopology.topologyLineages[0].snapshotId = "unbound-topology";
+  assert.throws(
+    () => validateCapitalLightRailRouteMapPositionsSnapshot(arbitraryTopology),
+    /capital light-rail topology snapshotId is required/,
+  );
+});
+
 test("#2505 inventory·candidate는 snapshot byte identity와 자유 이용 근거를 고정한다", async () => {
   const [inventory, candidates] = await Promise.all([
     readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
@@ -265,7 +297,8 @@ test("#2505 inventory·candidate는 snapshot byte identity와 자유 이용 근�
     assert.equal(source.routeMapAdmissionEvidence.admissionKind, "official-file-latlon");
     assert.equal(source.routeMapAdmissionEvidence.issue, 2505);
     assert.equal(source.routeMapAdmissionEvidence.quarantinedCount, 0);
-    assert.equal(source.routeMapAdmissionEvidence.stationCount, JSON.parse(snapshotBytes).stationCount);
+    const snapshot = JSON.parse(snapshotBytes);
+    assert.equal(source.routeMapAdmissionEvidence.stationCount, snapshot.stationCount);
     assert.equal(
       source.routeMapAdmissionEvidence.snapshotSha256,
       createHash("sha256").update(snapshotBytes).digest("hex"),
@@ -274,6 +307,8 @@ test("#2505 inventory·candidate는 snapshot byte identity와 자유 이용 근�
     assert.equal(candidate.apiCatalog, false);
     assert.equal(candidate.serviceKeyHandling, "not_required");
     assert.equal(candidate.evidence.coverageAssessment.state, "SUPPORTED");
+    assert.equal(candidate.evidence.stationCount, snapshot.stationCount);
+    assert.deepEqual(candidate.evidence.lineStationCounts, snapshot.lineStationCounts);
   }
 });
 
