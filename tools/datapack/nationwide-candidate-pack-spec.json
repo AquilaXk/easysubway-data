@@ -652,23 +652,24 @@
       "regionId": "capital",
       "materializer": "tools/datapack/materialize-kric-capital-light-rail-route-map-positions.mjs",
       "materializedAt": "2026-07-25T06:00:00.000Z",
-      "topologySnapshotPath": "tools/datapack/sources/capital-route-topology-20260724.json",
+      "topologySnapshotPath": "tools/datapack/sources/capital-route-topology-20260902.json",
+      "schematicGeometryPath": "tools/route-map/route-map-defs/easy-subway-sma-v4-geometry.json",
       "lines": [
         { "lineId": "shinbundang", "snapshotPath": "tools/datapack/sources/kric-shinbundang-route-map-positions-20260725.json" },
-        { "lineId": "line-828f04afc588", "snapshotPath": "tools/datapack/sources/kric-everline-route-map-positions-20260725.json" },
-        { "lineId": "line-30886152e4f8", "snapshotPath": "tools/datapack/sources/kric-ui-sinseol-route-map-positions-20260725.json" },
+        { "lineId": "line-828f04afc588", "snapshotPath": "tools/datapack/sources/kric-everline-route-map-positions-20260902.json" },
+        { "lineId": "line-30886152e4f8", "snapshotPath": "tools/datapack/sources/kric-ui-sinseol-route-map-positions-20260902.json" },
         { "lineId": "line-aefa08ccc0a9", "snapshotPath": "tools/datapack/sources/kric-sillim-route-map-positions-20260725.json" },
         { "lineId": "line-5500c1600f71", "snapshotPath": "tools/datapack/sources/kric-gimpo-goldline-route-map-positions-20260725.json" }
       ],
       "addedRows": {
         "operators": 5,
         "lines": 5,
-        "stations": 58,
-        "stationLines": 63,
+        "stations": 60,
+        "stationLines": 65,
         "stationAliases": 0,
         "stationExits": 0,
         "networkEdges": 0,
-        "routeMapPositions": 63,
+        "routeMapPositions": 65,
         "routeMapLineTracks": 0,
         "coverageLineOperatorScopes": 5,
         "facilities": 0,
@@ -688,10 +689,10 @@
         "requiredTables": 0,
         "sourceInventory": 5
       },
-      "addedRowsKo": "5개 snapshot의 좌표 63행에는 노선끼리 겹치는 역이 없지만(고유 역 63) 그중 5곳이 광역철도 편입이 이미 실은 역과 같아 역은 58행만 는다 — 겹친 역은 소속(역·노선 쌍)만 늘고 역 자체는 다시 실리지 않는다(신분당선 판교·정자·미금 3곳과 나머지 네 노선 2곳). 운영기관 5곳은 다섯 노선이 각각 다른 사업자이고 신분당선이 노선 운영기관인 네오트랜스를 더하기 때문이다 — 신분당선 정본의 다른 운영기관 표기(서울교통공사)는 승계 원본에 이미 있다. coverageLineOperatorScopes 5행은 노선 하나에 scope 하나씩이다 — 신분당선 정본은 두 운영기관을 등재하지만 서울교통공사 표기는 FILE admission 계보 항목이라(#2138 activeLineScopes에 대응 scope가 없다) 카탈로그가 lineageOnlyOperatorIds로 갈라 scope 행으로는 내지 않는다.",
+      "addedRowsKo": "5개 snapshot의 좌표 65행에는 노선끼리 겹치는 역이 없지만(고유 역 65) 그중 5곳이 광역철도 편입이 이미 실은 역과 같아 역은 60행만 는다 — 겹친 역은 소속(역·노선 쌍)만 늘고 역 자체는 다시 실리지 않는다(신분당선 판교·정자·미금 3곳과 나머지 네 노선 2곳). 운영기관 5곳은 다섯 노선이 각각 다른 사업자이고 신분당선이 노선 운영기관인 네오트랜스를 더하기 때문이다 — 신분당선 정본의 다른 운영기관 표기(서울교통공사)는 승계 원본에 이미 있다. coverageLineOperatorScopes 5행은 노선 하나에 scope 하나씩이다 — 신분당선 정본은 두 운영기관을 등재하지만 서울교통공사 표기는 FILE admission 계보 항목이라(#2138 activeLineScopes에 대응 scope가 없다) 카탈로그가 lineageOnlyOperatorIds로 갈라 정본 대조·운영기관 등재에만 쓰고 scope 행으로는 내지 않는다.",
       "reorderedTables": ["coverageLineOperatorScopes", "lines", "operators"],
       "reorderedTablesKo": "이 materializer도 append 뒤 pack.operators·pack.lines를 id 오름차순으로 다시 정렬하며, 광역철도 편입이 이미 만들어 둔 coverageLineOperatorScopes까지 같은 축으로 다시 정렬한다(실측). 그래서 선언 표가 광역철도 편입보다 하나 많다 — 그 표가 이 편입에는 승계 행이 있는 표이기 때문이다.",
-      "reasonKo": "#2595 B3. 수도권 경전철 5노선(신분당·에버라인·우이신설·신림·김포골드라인) route_map_positions requirement를 판정에 올리려면 candidate root pack이 공식 노선도 좌표 행을 담아야 한다. 광역철도 편입과 형상이 같고(노선별 snapshot 체인) 서로 선행 조건이 없다. 신분당선은 이 배치의 첫 묶음에서 빠져 있었다: admission coverageScope.operatorIds가 2개라 서해선·GTX-A와 같은 이유로 거부됐고, 같은 카탈로그 등재 축으로 열렸다. 신분당선 정본은 두 운영기관을 등재하지만 pack scope와 requirement는 하나씩이다 — 정본의 서울교통공사 표기는 FILE admission 계보 항목이라 #2138 activeLineScopes에 대응 scope가 없고, 카탈로그가 그 표기를 lineageOnlyOperatorIds로 갈라 정본 대조·운영기관 등재에만 쓰고 scope 행으로는 내지 않는다. 이미 admission이 끝난 snapshot(#2505)을 재생한다.",
+      "reasonKo": "#2595 B3·Data #458. 수도권 경전철 5노선(신분당·에버라인·우이신설·신림·김포골드라인) route_map_positions requirement를 current capital topology에 결속한다. 에버라인 전대.에버랜드와 우이신설 신설동은 보존된 공식 FILE bytes, canonical station identity, owner-authored geometry로 재물질화한 successor를 사용한다. 나머지 세 source snapshot과 원본 freshness는 그대로 유지한다. 신분당선 정본은 두 운영기관을 등재하지만 pack scope와 requirement는 하나씩이며 서울교통공사 표기는 FILE admission 계보 항목이라 lineageOnlyOperatorIds로 분리한다.",
       "materializedAtReasonKo": "이 편입이 싣는 5개 소스는 모두 P1Y 신선도 창 [2026-07-25T06:00:00Z, 2027-07-25T06:00:00Z)을 공유하고 materializer가 양끝 밖을 fail closed 한다. 광역철도 편입과 현재 pin 값이 같아도 한쪽 snapshot 갱신이 다른 편입의 기준 시각을 흔들지 않도록 pin은 따로 둔다."
     },
     {

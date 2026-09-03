@@ -2923,7 +2923,7 @@
       "sourceSystem": "국가철도공단·공공데이터포털",
       "datasetUrl": "https://www.data.go.kr/data/15041326/fileData.do",
       "datasetKind": "official-file-data",
-      "coverage": "국가철도공단 data.go.kr FILE 15041326 용인에버라인 역위치 CSV 14역 admit(전대·에버랜드 FILE 잉여 무시, 운동장·송담대→용인중앙시장 rename join). coverage operator는 operator-b2d80436b438. canvas join + pack station_code(위경도 투영 금지).",
+      "coverage": "국가철도공단 data.go.kr FILE 15041326 용인에버라인 역위치 CSV를 current capital topology 15역과 owner schematic geometry로 결속한다(운동장·송담대→용인중앙시장 rename join, 위경도 투영 금지). coverage operator는 operator-b2d80436b438.",
       "coverageScope": {
         "regionIds": [
           "capital"
@@ -2986,34 +2986,35 @@
         "admissionKind": "official-file-latlon",
         "materializer": "tools/datapack/materialize-kric-capital-light-rail-route-map-positions.mjs",
         "verificationTest": "tools/datapack/materialize-kric-capital-light-rail-route-map-positions.test.mjs",
-        "snapshotId": "kric-everline-route-map-positions-20260725",
-        "snapshotPath": "tools/datapack/sources/kric-everline-route-map-positions-20260725.json",
-        "snapshotSha256": "28e9ca549190c7a0003d476208efc8f8bbe96cab8741643f0495cbb94e9e9a82",
+        "snapshotId": "kric-everline-route-map-positions-20260902",
+        "snapshotPath": "tools/datapack/sources/kric-everline-route-map-positions-20260902.json",
+        "snapshotSha256": "84f3578b3eff8946c8f3fcf54746509187df24c2850128418940a650b914a2cb",
         "capturedAt": "2026-07-25T06:00:00.000Z",
-        "stationCount": 14,
-        "rawStationCount": 14,
+        "stationCount": 15,
+        "rawStationCount": 15,
         "quarantinedCount": 0,
         "datasetId": "15041326",
         "datasetIds": [
           "15041326"
         ],
         "rawSha256": "2160020177352775418c863ebd9846ab5cc0df08c1da0f4b435dbf599b214187",
-        "positionsSha256": "cda5fa54ab66e79de7b6fa025c81c7276a3dbd21dbcf8d57db6a4097e3f2651a",
+        "positionsSha256": "29e4b1017adf05916ad38c7cce94dadb1658b40b4c203937cf7704680f1a9d72",
+        "schematicGeometrySha256": "fde0d2878949a9cce42261a783ddcfd5bfc112efa6c0670bb2e4f1be28d4d44a",
         "lineIds": [
           "line-828f04afc588"
         ],
         "lineStationCounts": {
-          "everline": 14
+          "everline": 15
         },
         "observedDataUpdatedAt": "2024-10-15",
         "topologySourceId": "capital-route-topology",
-        "topologySnapshotId": "capital-route-topology-20260724",
-        "topologyContentSha256": "0492df28ff51dc4262508363e960ed1a5fed847d3aa5f593ea62ad0fd3d773f3",
+        "topologySnapshotId": "capital-route-topology-20260902",
+        "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
         "topologyLineages": [
           {
             "sourceId": "capital-route-topology",
-            "snapshotId": "capital-route-topology-20260724",
-            "contentSha256": "0492df28ff51dc4262508363e960ed1a5fed847d3aa5f593ea62ad0fd3d773f3",
+            "snapshotId": "capital-route-topology-20260902",
+            "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
             "lineId": "line-828f04afc588"
           }
         ],
@@ -3025,7 +3026,7 @@
           "status": "ADMITTED",
           "topologySnapshotId": "capital-route-topology-20260902",
           "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
-          "positionSnapshotSha256": "28e9ca549190c7a0003d476208efc8f8bbe96cab8741643f0495cbb94e9e9a82",
+          "positionSnapshotSha256": "84f3578b3eff8946c8f3fcf54746509187df24c2850128418940a650b914a2cb",
           "reviewedAt": "2026-09-02T20:08:09.581Z",
           "freshUntil": "2026-09-03T20:08:09.581Z",
           "topologyLineages": [
@@ -5921,7 +5922,7 @@
       "sourceSystem": "국가철도공단·공공데이터포털",
       "datasetUrl": "https://www.data.go.kr/data/15041324/fileData.do",
       "datasetKind": "official-file-data",
-      "coverage": "국가철도공단 data.go.kr FILE 15041324 우이신설 역사정보 XLSX(정규화 CSV) 12역 admit(신설동 FILE 잉여 무시, 위경도는 KRIC 1294 overlay). coverage operator는 operator-3c623bf1a427. canvas join + pack station_code(위경도 투영 금지).",
+      "coverage": "국가철도공단 data.go.kr FILE 15041324 우이신설 역사정보 XLSX(정규화 CSV)를 current capital topology 13역과 owner schematic geometry로 결속한다(위경도는 KRIC 1294 overlay, 위경도 투영 금지). coverage operator는 operator-3c623bf1a427.",
       "coverageScope": {
         "regionIds": [
           "capital"
@@ -5984,12 +5985,12 @@
         "admissionKind": "official-file-latlon",
         "materializer": "tools/datapack/materialize-kric-capital-light-rail-route-map-positions.mjs",
         "verificationTest": "tools/datapack/materialize-kric-capital-light-rail-route-map-positions.test.mjs",
-        "snapshotId": "kric-ui-sinseol-route-map-positions-20260725",
-        "snapshotPath": "tools/datapack/sources/kric-ui-sinseol-route-map-positions-20260725.json",
-        "snapshotSha256": "1f5e9778790df73b73dd2faaa131415df6b87e977d61eb1d73e729f1c192d1c4",
+        "snapshotId": "kric-ui-sinseol-route-map-positions-20260902",
+        "snapshotPath": "tools/datapack/sources/kric-ui-sinseol-route-map-positions-20260902.json",
+        "snapshotSha256": "0c91748e2586d7f6341aa800b5affb5660a71a280dc43ec40da43fea35d1a757",
         "capturedAt": "2026-07-25T06:00:00.000Z",
-        "stationCount": 12,
-        "rawStationCount": 12,
+        "stationCount": 13,
+        "rawStationCount": 13,
         "quarantinedCount": 0,
         "datasetId": "15041324",
         "datasetIds": [
@@ -5997,22 +5998,23 @@
           "1294"
         ],
         "rawSha256": "fe2d8d0b24d16561c8fbbafe1b2b8bf1bb67bb24ca0c200bae222f502fefe055",
-        "positionsSha256": "432088124437b63148bcacf7274472d02147f53d5e32a310c0c065f5e4cbd8ed",
+        "positionsSha256": "a3bbf767216f7074cfcdb7742807dcf43be259272b4a592f9e53b4b63a62560b",
+        "schematicGeometrySha256": "fde0d2878949a9cce42261a783ddcfd5bfc112efa6c0670bb2e4f1be28d4d44a",
         "lineIds": [
           "line-30886152e4f8"
         ],
         "lineStationCounts": {
-          "ui": 12
+          "ui": 13
         },
         "observedDataUpdatedAt": "2024-10-15",
         "topologySourceId": "capital-route-topology",
-        "topologySnapshotId": "capital-route-topology-20260724",
-        "topologyContentSha256": "0492df28ff51dc4262508363e960ed1a5fed847d3aa5f593ea62ad0fd3d773f3",
+        "topologySnapshotId": "capital-route-topology-20260902",
+        "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
         "topologyLineages": [
           {
             "sourceId": "capital-route-topology",
-            "snapshotId": "capital-route-topology-20260724",
-            "contentSha256": "0492df28ff51dc4262508363e960ed1a5fed847d3aa5f593ea62ad0fd3d773f3",
+            "snapshotId": "capital-route-topology-20260902",
+            "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
             "lineId": "line-30886152e4f8"
           }
         ],
@@ -6024,7 +6026,7 @@
           "status": "ADMITTED",
           "topologySnapshotId": "capital-route-topology-20260902",
           "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
-          "positionSnapshotSha256": "1f5e9778790df73b73dd2faaa131415df6b87e977d61eb1d73e729f1c192d1c4",
+          "positionSnapshotSha256": "0c91748e2586d7f6341aa800b5affb5660a71a280dc43ec40da43fea35d1a757",
           "reviewedAt": "2026-09-02T20:08:09.581Z",
           "freshUntil": "2026-09-03T20:08:09.581Z",
           "topologyLineages": [

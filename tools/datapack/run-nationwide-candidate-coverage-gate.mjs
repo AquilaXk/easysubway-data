@@ -211,7 +211,7 @@ const PACK_DATA_MATERIALIZERS = new Map([
   }],
   ["tools/datapack/materialize-kric-capital-light-rail-route-map-positions.mjs", {
     materialize: materializeCapitalLightRailRouteMapInclusion,
-    inputs: { paths: ["topologySnapshotPath"], linePaths: ["snapshotPath"] },
+    inputs: { paths: ["topologySnapshotPath", "schematicGeometryPath"], linePaths: ["snapshotPath"] },
   }],
   // 수도권 9호선 편입 2종(#2595). 노선 하나를 두 소스가 나눠 덮는다(1단계 25역 / 2·3단계 13역)라
   // 편입도 소스마다 하나씩이며, 두 소스의 admission 창 하한이 서로 달라(05:00Z / 04:00Z) pin도 갈린다.
@@ -970,9 +970,16 @@ async function materializeCapitalWideRailRouteMapInclusion(fixture, inclusion, c
 }
 
 async function materializeCapitalLightRailRouteMapInclusion(fixture, inclusion, context) {
+  const schematicCanvas = parseJsonBytes(
+    await context.readTracked(inclusion.schematicGeometryPath, "schematicGeometryPath"),
+    inclusion.schematicGeometryPath,
+  );
   return materializeCapitalRailRouteMapInclusion(fixture, inclusion, context, {
     catalog: listCapitalLightRailRouteMapPositionLines(),
-    materialize: materializeCapitalLightRailRouteMapPositions,
+    materialize: (args) => materializeCapitalLightRailRouteMapPositions({
+      ...args,
+      schematicCanvas: args.snapshot.schematicGeometrySha256 ? schematicCanvas : null,
+    }),
   });
 }
 

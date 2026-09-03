@@ -12,7 +12,6 @@ const MOLIT_ROSTER_PATH = "tools/datapack/sources/molit-urban-rail-full-route-20
 const EXEMPTIONS_PATH = "tools/datapack/route-map-coverage-scope-exemptions.json";
 const SEOUL_SNAPSHOT_PATH = "tools/datapack/sources/seoul-metro-route-map-positions-20260724.json";
 const GWANGJU_SNAPSHOT_PATH = "tools/datapack/sources/gwangju-transportation-route-map-positions-20260725.json";
-const UI_SNAPSHOT_PATH = "tools/datapack/sources/kric-ui-sinseol-route-map-positions-20260725.json";
 const DAEGU_SNAPSHOT_PATH = "tools/datapack/sources/daegu-transportation-route-map-positions-20260724.json";
 
 // #2499·#2508에서 배선한 dual-operator containment는 전 scope 감사의 부분집합으로 유지한다.
@@ -837,11 +836,22 @@ test("이미 커버된 역을 임의로 면제하는 ledger 항목은 거부된�
 
 test("admission으로 해소된 결측은 ledger에 남길 수 없다 (#2516)", async () => {
   const inputs = await loadAuditInputs();
-  const snapshot = structuredClone(inputs.snapshotsByPath.get(UI_SNAPSHOT_PATH));
-  snapshot.positions = [...snapshot.positions, { ...snapshot.positions[0], stationName: "신설동" }];
-  const snapshotsByPath = new Map(inputs.snapshotsByPath).set(UI_SNAPSHOT_PATH, snapshot);
+  const exemptions = structuredClone(inputs.exemptions);
+  const source = inputs.inventory.sources.find(({ id }) => id === "kric-ui-sinseol-route-map-positions");
+  exemptions.documentedCoverageGaps.push({
+    scopeKey: "capital:operator-3c623bf1a427:line-30886152e4f8",
+    rosterStationName: "신설동",
+    reasonCode: "PACK_SCOPE_ABSENT",
+    evidence: {
+      issue: 458,
+      snapshotPath: source.routeMapAdmissionEvidence.snapshotPath,
+      packTopologyPath: `tools/datapack/sources/${source.routeMapAdmissionEvidence.topologySnapshotId}.json`,
+      officialUrl: source.datasetUrl,
+      note: "current admission으로 해소된 결측을 다시 등재하면 안 된다.",
+    },
+  });
 
-  const result = auditRouteMapCoverageScopes({ ...inputs, snapshotsByPath });
+  const result = auditRouteMapCoverageScopes({ ...inputs, exemptions });
 
   assert.deepEqual(violationKinds(result), ["LEDGER_NOT_NEEDED"]);
 });

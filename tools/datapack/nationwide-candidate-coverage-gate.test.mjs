@@ -1212,8 +1212,9 @@ test("수도권 KRIC 노선도 10 requirement는 편입 2건으로 MISSING에서
   assert.equal(wideRail.addedRows.stations, 192);
   assert.equal(wideRail.addedRows.stationLines, 217);
   assert.equal(wideRail.addedRows.routeMapPositions, 217);
-  assert.equal(lightRail.addedRows.stations, 58);
-  assert.equal(lightRail.addedRows.stationLines, 63);
+  assert.equal(lightRail.addedRows.stations, 60);
+  assert.equal(lightRail.addedRows.stationLines, 65);
+  assert.equal(lightRail.addedRows.routeMapPositions, 65);
   // 재정렬 선언은 evidence에도 남는다. 선언하지 않은 편입에는 키 자체가 없어야 한다(죽은 선언 방지).
   for (const { offset, reorderedTables } of CAPITAL_INCLUSION_BINDINGS) {
     assert.deepEqual(evidence.packDataInclusions.entries[CAPITAL_INDEX + offset].reorderedTables, reorderedTables);

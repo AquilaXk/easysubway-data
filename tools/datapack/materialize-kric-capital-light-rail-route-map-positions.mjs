@@ -12,7 +12,6 @@ import {
 import { assertRouteMapAdmissionFreshness } from "./lib/route-map-admission-freshness.mjs";
 
 const TOPOLOGY_SOURCE_ID = "capital-route-topology";
-const TOPOLOGY_SNAPSHOT_ID = "capital-route-topology-20260724";
 const PACK_ID_PREFIX = "nationwide-capital-light-rail-route-map";
 const REGION = "수도권";
 const MATERIALIZER = "tools/datapack/materialize-kric-capital-light-rail-route-map-positions.mjs";
@@ -23,10 +22,11 @@ export function materializeCapitalLightRailRouteMapPositions({
   snapshot,
   snapshotSha256,
   topologySnapshot,
+  schematicCanvas = null,
   inventory,
   now = new Date(),
 } = {}) {
-  validateCapitalLightRailRouteMapPositionsSnapshot(snapshot);
+  validateCapitalLightRailRouteMapPositionsSnapshot(snapshot, { schematicCanvas });
   const line = getCapitalLightRailRouteMapPositionLine(snapshot.sourceId);
   const source = requiredSource(inventory, snapshot, snapshotSha256, topologySnapshot, line, now);
   const fixture = structuredClone(baseFixture);
@@ -38,7 +38,7 @@ export function materializeCapitalLightRailRouteMapPositions({
     throw new Error(`${line.sourceId} already exists`);
   }
 
-  validateTopologyLineage(source.routeMapAdmissionEvidence, topologySnapshot, line);
+  validateTopologyLineage(source.routeMapAdmissionEvidence, snapshot, topologySnapshot, line);
   for (const { operatorId, nameKo } of coverageOperators(line)) {
     ensureOperator(pack, operatorId, nameKo);
   }
@@ -80,7 +80,7 @@ export function materializeCapitalLightRailRouteMapPositions({
       updatedAt: snapshot.capturedAt,
     });
   }
-  if (rows.length !== line.expectedStationCount) {
+  if (rows.length !== snapshot.stationCount) {
     throw new Error(`${line.sourceId} materialized row count mismatch: ${rows.length}`);
   }
 
@@ -152,7 +152,7 @@ function scopeOperators(line) {
 function requiredSource(inventory, snapshot, snapshotSha256, topologySnapshot, line, now) {
   const source = inventory?.sources?.find(({ id }) => id === line.sourceId);
   const evidence = source?.routeMapAdmissionEvidence;
-  const snapshotId = `${line.sourceId}-20260725`;
+  const snapshotId = evidence?.snapshotId;
   const snapshotPath = `tools/datapack/sources/${snapshotId}.json`;
   if (!/^[a-f0-9]{64}$/.test(snapshotSha256 ?? "") || evidence?.snapshotSha256 !== snapshotSha256) {
     throw new Error(`${line.sourceId} snapshot byte identity mismatch`);
@@ -175,11 +175,12 @@ function requiredSource(inventory, snapshot, snapshotSha256, topologySnapshot, l
     || JSON.stringify(evidence.datasetIds) !== JSON.stringify(snapshot.datasetIds)
     || evidence.rawSha256 !== snapshot.rawSha256
     || evidence.positionsSha256 !== snapshot.positionsSha256
+    || evidence.schematicGeometrySha256 !== snapshot.schematicGeometrySha256
     || evidence.observedDataUpdatedAt !== snapshot.observedDataUpdatedAt
     || JSON.stringify(evidence.lineIds) !== JSON.stringify(snapshot.lineIds)
     || JSON.stringify(evidence.lineStationCounts) !== JSON.stringify(snapshot.lineStationCounts)
     || evidence.topologySourceId !== TOPOLOGY_SOURCE_ID
-    || evidence.topologySnapshotId !== TOPOLOGY_SNAPSHOT_ID
+    || evidence.topologySnapshotId !== snapshot.topologySnapshotId
     || evidence.topologyContentSha256 !== snapshot.topologyContentSha256
     || JSON.stringify(evidence.topologyLineages) !== JSON.stringify(snapshot.topologyLineages)
     || JSON.stringify(source.coverageScope) !== JSON.stringify({
@@ -192,11 +193,11 @@ function requiredSource(inventory, snapshot, snapshotSha256, topologySnapshot, l
     || !Number.isFinite(observedNow) || observedNow < Date.parse(snapshot.capturedAt)) {
     throw new Error(`${line.sourceId} inventory evidence does not match snapshot`);
   }
-  validateTopologyLineage(evidence, topologySnapshot, line);
+  validateTopologyLineage(evidence, snapshot, topologySnapshot, line);
   return source;
 }
 
-function validateTopologyLineage(evidence, topologySnapshot, line) {
+function validateTopologyLineage(evidence, snapshot, topologySnapshot, line) {
   const lineage = evidence?.topologyLineages?.[0];
   const topologyLine = Array.isArray(topologySnapshot?.lines)
     ? topologySnapshot.lines.find(({ lineId }) => lineId === line.lineId)
@@ -211,14 +212,14 @@ function validateTopologyLineage(evidence, topologySnapshot, line) {
     }
   }
   if (evidence?.topologySourceId !== TOPOLOGY_SOURCE_ID
-    || evidence.topologySnapshotId !== TOPOLOGY_SNAPSHOT_ID
+    || evidence.topologySnapshotId !== snapshot.topologySnapshotId
     || evidence.topologyContentSha256 !== topologySnapshot?.contentSha256
     || topologySnapshot?.sourceId !== TOPOLOGY_SOURCE_ID
     || !/^[a-f0-9]{64}$/.test(topologySnapshot?.contentSha256 ?? "")
     || !topologyLine
     || !Array.isArray(topologyLine.scope)
     || lineage?.sourceId !== TOPOLOGY_SOURCE_ID
-    || lineage.snapshotId !== TOPOLOGY_SNAPSHOT_ID
+    || lineage.snapshotId !== snapshot.topologySnapshotId
     || lineage.contentSha256 !== topologySnapshot.contentSha256
     || lineage.lineId !== line.lineId) {
     throw new Error(`${line.sourceId} topology lineage mismatch`);
@@ -352,7 +353,7 @@ function ensureStationsAndMembership(pack, snapshot, line) {
     }
     mapping.set(position.stationId, station.id);
   }
-  if (mapping.size !== line.expectedStationCount) {
+  if (mapping.size !== snapshot.stationCount) {
     throw new Error(`${line.sourceId} station mapping size mismatch: ${mapping.size}`);
   }
   return mapping;
@@ -387,20 +388,29 @@ function sha256(value) {
 
 function parseArgs(argv) {
   const expected = ["--base-fixture", "--snapshot", "--inventory", "--topology", "--output"];
-  if (argv.length !== expected.length * 2 || expected.some((flag, index) => argv[index * 2] !== flag)
-    || !path.isAbsolute(argv.at(-1))) {
-    throw new Error("usage: materialize-kric-capital-light-rail-route-map-positions.mjs --base-fixture <json> --snapshot <json> --inventory <json> --topology <json> --output <absolute.json>");
+  const hasSchematic = argv.length === (expected.length + 1) * 2
+    && argv.at(-2) === "--schematic";
+  if (![expected.length * 2, (expected.length + 1) * 2].includes(argv.length)
+    || expected.some((flag, index) => argv[index * 2] !== flag)
+    || (argv.length !== expected.length * 2 && !hasSchematic)
+    || !path.isAbsolute(argv[expected.indexOf("--output") * 2 + 1])
+    || (hasSchematic && !path.isAbsolute(argv.at(-1)))) {
+    throw new Error("usage: materialize-kric-capital-light-rail-route-map-positions.mjs --base-fixture <json> --snapshot <json> --inventory <json> --topology <json> --output <absolute.json> [--schematic <json>]");
   }
-  return Object.fromEntries(expected.map((flag, index) => [flag.slice(2), argv[index * 2 + 1]]));
+  return {
+    ...Object.fromEntries(expected.map((flag, index) => [flag.slice(2), argv[index * 2 + 1]])),
+    ...(hasSchematic ? { schematic: argv.at(-1) } : {}),
+  };
 }
 
 async function main(argv) {
   const args = parseArgs(argv);
-  const [baseFixture, snapshotBytes, inventory, topologySnapshot] = await Promise.all([
+  const [baseFixture, snapshotBytes, inventory, topologySnapshot, schematicCanvas = null] = await Promise.all([
     readFile(args["base-fixture"], "utf8").then(JSON.parse),
     readFile(args.snapshot),
     readFile(args.inventory, "utf8").then(JSON.parse),
     readFile(args.topology, "utf8").then(JSON.parse),
+    ...(args.schematic ? [readFile(args.schematic, "utf8").then(JSON.parse)] : []),
   ]);
   const snapshot = JSON.parse(snapshotBytes);
   const fixture = materializeCapitalLightRailRouteMapPositions({
@@ -408,6 +418,7 @@ async function main(argv) {
     snapshot,
     snapshotSha256: sha256(snapshotBytes),
     topologySnapshot,
+    schematicCanvas,
     inventory,
   });
   await writeFile(args.output, `${JSON.stringify(fixture, null, 2)}\n`);

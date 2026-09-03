@@ -24,6 +24,8 @@ const OVERLAY_PATH = path.join(
 const TOPOLOGY_PATH = path.join(root, "tools/datapack/sources/capital-route-topology-20260724.json");
 const capturedAt = "2026-07-25T06:00:00.000Z";
 const GEO_SCALE_FLOOR = 5000;
+const OWNER_GEOMETRY_PATH = path.join(root, "tools/route-map/route-map-defs/easy-subway-sma-v4-geometry.json");
+const STATION_IDENTITIES_PATH = path.join(root, "tools/route-map/route-map-defs/seoul-alignment-fixture.json");
 
 const LINE_FIXTURES = Object.freeze([
   {
@@ -76,40 +78,68 @@ const LINE_FIXTURES = Object.freeze([
 ]);
 
 async function loadLine(line) {
+  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const source = inventory.sources.find(({ id }) => id === line.sourceId);
+  const currentTopology = source?.routeMapAdmissionEvidence?.currentTopologyAdmission;
+  const usesCurrentGeometry = ["everline", "ui"].includes(line.key);
+  const topologySnapshotId = usesCurrentGeometry
+    ? currentTopology?.topologySnapshotId
+    : path.basename(TOPOLOGY_PATH, ".json");
+  const topologyPath = path.join(root, "tools/datapack/sources", `${topologySnapshotId}.json`);
   const reads = [
     readFile(path.join(FIXTURE_ROOT, line.key, line.input)),
-    readFile(TOPOLOGY_PATH, "utf8").then(JSON.parse),
-    readFile(
-      path.join(FIXTURE_ROOT, line.key, "owner-self-drawn-sma-schematic-canvas-20260725.json"),
-      "utf8",
-    ).then(JSON.parse),
+    readFile(topologyPath, "utf8").then(JSON.parse),
+    usesCurrentGeometry
+      ? readFile(OWNER_GEOMETRY_PATH, "utf8").then(JSON.parse)
+      : readFile(
+        path.join(FIXTURE_ROOT, line.key, "owner-self-drawn-sma-schematic-canvas-20260725.json"),
+        "utf8",
+      ).then(JSON.parse),
   ];
+  if (usesCurrentGeometry) {
+    reads.push(readFile(path.join(root, source.routeMapAdmissionEvidence.snapshotPath), "utf8").then(JSON.parse));
+    reads.push(readFile(STATION_IDENTITIES_PATH, "utf8").then(JSON.parse));
+  }
   if (line.needsOverlay) reads.push(readFile(OVERLAY_PATH));
-  const [csvBytes, topologySnapshot, schematicCanvas, overlayCsvBytes = null] = await Promise.all(reads);
-  return { csvBytes, topologySnapshot, schematicCanvas, overlayCsvBytes };
+  const values = await Promise.all(reads);
+  const [csvBytes, topologySnapshot, schematicCanvas] = values;
+  const offset = 3;
+  const previousSnapshot = usesCurrentGeometry ? values[offset] : null;
+  const canonicalStationIdentities = usesCurrentGeometry ? values[offset + 1] : null;
+  const overlayCsvBytes = line.needsOverlay ? values[offset + (usesCurrentGeometry ? 2 : 0)] : null;
+  return {
+    csvBytes, topologySnapshot, topologySnapshotId, schematicCanvas, overlayCsvBytes,
+    previousSnapshot, canonicalStationIdentities,
+  };
 }
 
 test("수도권 경전철 5노선 공식 FILE 위경도 + schematic canvas snapshot을 quarantine 0으로 결속한다", async () => {
   assert.equal(listCapitalLightRailRouteMapPositionLines().length, 5);
   for (const line of LINE_FIXTURES) {
-    const { csvBytes, topologySnapshot, schematicCanvas, overlayCsvBytes } = await loadLine(line);
+    const {
+      csvBytes, topologySnapshot, topologySnapshotId, schematicCanvas, overlayCsvBytes,
+      previousSnapshot, canonicalStationIdentities,
+    } = await loadLine(line);
     const snapshot = collectCapitalLightRailRouteMapPositions({
       lineKey: line.key,
       csvBytes,
       overlayCsvBytes,
       topologySnapshot,
+      topologySnapshotId,
       schematicCanvas,
+      previousSnapshot,
+      canonicalStationIdentities,
       now: new Date(capturedAt),
     });
     assert.equal(snapshot.artifactKind, "capital-light-rail-route-map-positions-snapshot");
     assert.equal(snapshot.sourceId, line.sourceId);
-    assert.equal(snapshot.stationCount, line.admit);
+    assert.equal(snapshot.stationCount, snapshot.positions.length);
     assert.equal(snapshot.quarantinedCount, 0);
-    assert.equal(snapshot.rawStationCount, line.admit);
+    assert.equal(snapshot.rawStationCount, snapshot.positions.length);
     assert.deepEqual(snapshot.quarantinedPositions, []);
     assert.equal(snapshot.credentialRequired, false);
     assert.equal(snapshot.schematicCanvasSourceId, "owner-self-drawn-sma-schematic");
-    assert.equal(snapshot.topologySnapshotId, "capital-route-topology-20260724");
+    assert.equal(snapshot.topologySnapshotId, topologySnapshotId);
     assert.equal(snapshot.rawSha256, line.rawSha256);
     assert.equal(snapshot.rawSha256, createHash("sha256").update(csvBytes).digest("hex"));
     assert.equal(
@@ -127,11 +157,12 @@ test("수도권 경전철 5노선 공식 FILE 위경도 + schematic canvas snaps
       assert.equal(snapshot.overlayDatasetId, "1294");
       assert.match(snapshot.license.attribution, /1294/);
     }
-    assert.equal(validateCapitalLightRailRouteMapPositionsSnapshot(snapshot), snapshot);
-    const committed = JSON.parse(await readFile(
-      path.join(root, "tools/datapack/sources", `${line.sourceId}-20260725.json`),
-      "utf8",
-    ));
+    assert.equal(validateCapitalLightRailRouteMapPositionsSnapshot(snapshot, {
+      schematicCanvas: snapshot.schematicGeometrySha256 ? schematicCanvas : null,
+    }), snapshot);
+    const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+    const admitted = inventory.sources.find(({ id }) => id === line.sourceId).routeMapAdmissionEvidence;
+    const committed = JSON.parse(await readFile(path.join(root, admitted.snapshotPath), "utf8"));
     assert.equal(committed.positionsSha256, snapshot.positionsSha256);
     assert.equal(committed.rawSha256, snapshot.rawSha256);
     assert.equal(committed.quarantinedCount, 0);
@@ -139,31 +170,45 @@ test("수도권 경전철 5노선 공식 FILE 위경도 + schematic canvas snaps
   }
 });
 
-test("에버라인 FILE 잉여(전대·에버랜드)는 무시하고 운동장·송담대 rename join한다", async () => {
+test("에버라인 FILE 전역과 운동장·송담대 rename을 current topology에 결속한다", async () => {
   const line = LINE_FIXTURES.find(({ key }) => key === "everline");
-  const { csvBytes, topologySnapshot, schematicCanvas } = await loadLine(line);
+  const catalogLine = listCapitalLightRailRouteMapPositionLines().find(({ key }) => key === line.key);
+  const {
+    csvBytes, topologySnapshot, schematicCanvas, previousSnapshot, canonicalStationIdentities,
+  } = await loadLine(line);
   const { positions, quarantinedPositions } = parseCapitalLightRailRouteMapPositionsCsv({
     lineKey: "everline",
     csvBytes,
     topologySnapshot,
     schematicCanvas,
+    previousSnapshot,
+    canonicalStationIdentities,
   });
-  assert.equal(positions.length, 14);
+  assert.equal(
+    positions.length,
+    topologySnapshot.lines.find(({ lineId }) => lineId === catalogLine.lineId).stationCount,
+  );
   assert.deepEqual(quarantinedPositions, []);
   assert.ok(positions.some(({ stationName }) => stationName === "용인중앙시장"));
-  assert.equal(positions.some(({ stationName }) => stationName.includes("에버랜드")), false);
+  assert.ok(positions.some(({ stationName }) => stationName.includes("에버랜드")));
 });
 
 test("신분당 상현·우이신설 전역 empty lat/lon은 KRIC 1294 overlay로 admit한다", async () => {
   for (const key of ["shinbundang", "ui"]) {
     const line = LINE_FIXTURES.find((entry) => entry.key === key);
-    const { csvBytes, topologySnapshot, schematicCanvas, overlayCsvBytes } = await loadLine(line);
+    const {
+      csvBytes, topologySnapshot, topologySnapshotId, schematicCanvas, overlayCsvBytes,
+      previousSnapshot, canonicalStationIdentities,
+    } = await loadLine(line);
     const snapshot = collectCapitalLightRailRouteMapPositions({
       lineKey: key,
       csvBytes,
       overlayCsvBytes,
       topologySnapshot,
+      topologySnapshotId,
       schematicCanvas,
+      previousSnapshot,
+      canonicalStationIdentities,
       now: new Date(capturedAt),
     });
     assert.equal(snapshot.quarantinedCount, 0);
@@ -212,17 +257,15 @@ test("#2505 inventory·candidate는 snapshot byte identity와 자유 이용 근�
     readFile(path.join(root, "tools/datapack/source-candidates.json"), "utf8").then(JSON.parse),
   ]);
   for (const line of LINE_FIXTURES) {
-    const snapshotBytes = await readFile(
-      path.join(root, "tools/datapack/sources", `${line.sourceId}-20260725.json`),
-    );
     const source = inventory.sources.find(({ id }) => id === line.sourceId);
+    const snapshotBytes = await readFile(path.join(root, source.routeMapAdmissionEvidence.snapshotPath));
     const candidate = candidates.candidates.find(({ id }) => id === line.sourceId);
     assert.equal(source.productionUseAllowed, true);
     assert.equal(source.license.redistributionAllowed, true);
     assert.equal(source.routeMapAdmissionEvidence.admissionKind, "official-file-latlon");
     assert.equal(source.routeMapAdmissionEvidence.issue, 2505);
     assert.equal(source.routeMapAdmissionEvidence.quarantinedCount, 0);
-    assert.equal(source.routeMapAdmissionEvidence.stationCount, line.admit);
+    assert.equal(source.routeMapAdmissionEvidence.stationCount, JSON.parse(snapshotBytes).stationCount);
     assert.equal(
       source.routeMapAdmissionEvidence.snapshotSha256,
       createHash("sha256").update(snapshotBytes).digest("hex"),

@@ -270,11 +270,11 @@ test("dual-operator 노선은 카탈로그 등재 집합과 정본이 같을 때
 test("5노선 inventory evidence·snapshot byte identity가 모두 맞물린다", async () => {
   const inventory = await readJson("tools/datapack/source-inventory.json");
   for (const line of listCapitalLightRailRouteMapPositionLines()) {
+    const source = inventory.sources.find(({ id }) => id === line.sourceId);
     const snapshotBytes = await readFile(
-      path.join(root, "tools/datapack/sources", `${line.sourceId}-20260725.json`),
+      path.join(root, source.routeMapAdmissionEvidence.snapshotPath),
     );
     const snapshot = JSON.parse(snapshotBytes);
-    const source = inventory.sources.find(({ id }) => id === line.sourceId);
     assert.ok(source, line.sourceId);
     assert.equal(
       source.routeMapAdmissionEvidence.snapshotSha256,
