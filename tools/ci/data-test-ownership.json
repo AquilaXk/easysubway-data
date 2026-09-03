@@ -184,6 +184,10 @@
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455",
       "title": "[Data][Nationwide] KRIC 역·노선 소속 source admission"
     },
+    "data456": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456",
+      "title": "Admit the Seoul Metro capital topology source"
+    },
     "data529": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/529",
       "title": "[Data][Release] candidate 생성과 cross-run attestation 분리"
@@ -311,6 +315,7 @@
     {"path":"tools/datapack/activate-current-source-set.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":389},
     {"path":"tools/datapack/admit-reviewed-incheon-accessibility.test.mjs","semanticOwner":"data622","classes":["required-pr"],"durationMs":484},
     {"path":"tools/datapack/register-reviewed-incheon-accessibility.test.mjs","semanticOwner":"data622","classes":["required-pr"],"durationMs":520},
+    {"path":"tools/datapack/register-current-capital-route-topology.test.mjs","semanticOwner":"data456","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/run-current-incheon-accessibility-registration.test.mjs","semanticOwner":"data622","classes":["required-pr"],"durationMs":520},
     {"path":"tools/datapack/admit-reviewed-kric-candidates.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":167},
     {"path":"tools/datapack/apply-accessibility-evidence-to-bundled-pack.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":320},
