@@ -569,7 +569,7 @@
     {"path":"tools/datapack/validate-source-inventory-transfer.test.mjs","semanticOwner":"data350","classes":["required-pr"],"durationMs":57},
     {"path":"tools/datapack/validate-source-snapshot-freshness.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":233},
     {"path":"tools/datapack/validate-timetable-ride-consistency.test.mjs","semanticOwner":"data9","classes":["deterministic-release"],"durationMs":null},
-    {"path":"tools/datapack/verify-production-pack-artifact-identity.test.mjs","semanticOwner":"data7","classes":["required-pr","deterministic-release"],"executionProfile":"mobile-v19","durationMs":null},
+    {"path":"tools/datapack/verify-production-pack-artifact-identity.test.mjs","semanticOwner":"data7","classes":["required-pr","deterministic-release"],"executionProfile":"mobile-v19","durationMs":16099},
     {"path":"tools/datapack/verify-release-request-binding.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":325},
     {"path":"tools/release/validate-promotion-request.test.mjs","semanticOwner":"data54","classes":["required-pr"],"durationMs":1120},
     {"path":"tools/route-map/add-daegu-buksam-catalog.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":133},
