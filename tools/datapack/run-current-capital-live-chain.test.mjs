@@ -931,7 +931,7 @@ async function terminalProviderHandoff({ repositoryRoot = ROOT, mutatePlan = (pl
   const inventory = JSON.parse(input.sourceInventoryBytes);
   const incheon = inventory.sources.find(({ id }) => id === "incheon-transit-station-info").topologyAdmissionEvidence;
   input.incheonTopologyBytes = await readFile(path.join(repositoryRoot, incheon.snapshotPath));
-  const operationNow = (await currentTopologyAdmissionClock(repositoryRoot)).inWindow;
+  const operationNow = await nextSyntheticCurrentStaticNetworkNow(repositoryRoot);
   const capturedAt = operationNow.toISOString();
   const plan = buildCurrentKricExitCollectionPlan(input, {
     now: operationNow, coverageSelector: "capital-seoul-metro-production",
