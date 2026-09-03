@@ -224,8 +224,6 @@ async function cloneCleanFixture(source, target) {
 async function pendingTransitionRepository(t, { initializeGit = false } = {}) {
   const generatedRoot = await preparePendingCurrentAccessibilityTransitionRepository(ROOT);
   t.after(() => rm(generatedRoot, { recursive: true, force: true }));
-  if (!initializeGit) return generatedRoot;
-
   const parent = await mkdtemp(path.join(os.tmpdir(), "pending-transition-git-"));
   const repositoryRoot = path.join(parent, "repository");
   t.after(() => rm(parent, { recursive: true, force: true }));
@@ -235,6 +233,8 @@ async function pendingTransitionRepository(t, { initializeGit = false } = {}) {
     path.join(repositoryRoot, relative),
     { recursive: true, force: true },
   )));
+  if (!initializeGit) return repositoryRoot;
+
   await execFile("git", ["add", "--all"], { cwd: repositoryRoot });
   await execFile("git", [
     "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
