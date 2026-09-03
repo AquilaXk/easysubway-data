@@ -275,9 +275,7 @@ function requireCurrentPublicV2Head(selected, ledger, sourceId) {
   return { head, previousSnapshotId };
 }
 
-function buildRefreshProof({ phase, candidateFile, inventoryFile, ledgerFile, requestFile, hashesFile, facilityFile, exitFile, stationFile, routeFile }) {
-  const candidate = parse(candidateFile.bytes, "current candidate"); const inventory = parse(inventoryFile.bytes, "source inventory"); const ledger = parse(ledgerFile.bytes, "source snapshot ledger");
-  const station = parse(stationFile.bytes, "activated station input"); const route = parse(routeFile.bytes, "activated route input");
+function validateCurrentCandidateSourceSet({ candidate, inventory, inventoryFile }) {
   const inventorySources = inventory?.sources;
   const requiredSourceIds = Array.isArray(inventorySources)
     ? inventorySources.filter(({ requiredForProductionPack }) => requiredForProductionPack === true).map(({ id }) => id)
@@ -302,13 +300,9 @@ function buildRefreshProof({ phase, candidateFile, inventoryFile, ledgerFile, re
     || candidate.networkEdgeEvidence.sourceInventory.sha256 !== sha(inventoryFile.bytes)) {
     throw new Error("current candidate source-set mismatch");
   }
-  if (phase === ACTIVATED_CURRENT_OUTPUT) {
-    const request = parse(requestFile.bytes, "release request"); const hashes = parse(hashesFile.bytes, "hash evidence");
-    if (candidate.sourceSnapshotSetHash !== request.sourceSnapshotSetHash
-      || candidate.sourceSnapshotSetHash !== hashes.sourceSnapshotSetHash?.value) {
-      throw new Error("current candidate/request/hash binding mismatch");
-    }
-  }
+}
+
+function deriveRefreshSourceProof({ candidate, ledger }) {
   const selected = candidate.sourceSnapshotIds.map((snapshotId, index) => {
     const row = requireOne(ledger, (entry) => entry?.snapshotId === snapshotId, "current candidate ledger");
     if (row.sourceId !== candidate.sourceSnapshots[index]?.sourceId) throw new Error("current candidate source identity mismatch");
@@ -344,21 +338,51 @@ function buildRefreshProof({ phase, candidateFile, inventoryFile, ledgerFile, re
     || terminalPredecessor.length !== predecessorProjections.length) {
     throw new Error("current accessibility terminal predecessor mismatch");
   }
-  const terminalPredecessorHash = sha(JSON.stringify(terminalPredecessor));
-  const transitionIdentity = { kind: PUBLIC_STATIC_NETWORK_V2_SUCCESSOR };
   const predecessorIds = predecessorProjections.map(({ snapshotId, index }) => {
     if (index === positionIndex) return position.previousSnapshotId;
     if (index === molitIndex) return molit.previousSnapshotId;
     return snapshotId;
   });
-  const predecessorIdSet = new Set(predecessorIds); const predecessor = ledger.filter(({ snapshotId }) => predecessorIdSet.has(snapshotId));
-  const predecessorHash = sha(JSON.stringify(predecessor));
-  const evidenceIds = new Set(predecessorIds.flatMap((snapshotId, index) => {
+  const predecessorIdSet = new Set(predecessorIds);
+  const predecessor = ledger.filter(({ snapshotId }) => predecessorIdSet.has(snapshotId));
+  const evidenceIds = new Set(predecessorIds.map((snapshotId, index) => {
     const sourceId = predecessorProjections[index].projection.sourceId;
-    return [sourceId === SEOUL ? previousSeoulSnapshotId : snapshotId];
+    return sourceId === SEOUL ? previousSeoulSnapshotId : snapshotId;
   }));
   const evidence = ledger.filter(({ snapshotId }) => evidenceIds.has(snapshotId));
-  const evidenceHash = sha(JSON.stringify(evidence));
+  return {
+    evidenceHash: sha(JSON.stringify(evidence)),
+    molitPreviousSnapshotId: molit.previousSnapshotId,
+    positionPreviousSnapshotId: position.previousSnapshotId,
+    predecessorComplete: predecessorIdSet.size === predecessorProjections.length
+      && predecessor.length === predecessorProjections.length
+      && evidenceIds.size === predecessorProjections.length
+      && evidence.length === predecessorProjections.length,
+    predecessorHash: sha(JSON.stringify(predecessor)),
+    terminalPredecessorHash: sha(JSON.stringify(terminalPredecessor)),
+  };
+}
+
+function buildRefreshProof({ phase, candidateFile, inventoryFile, ledgerFile, requestFile, hashesFile, facilityFile, exitFile, stationFile, routeFile }) {
+  const candidate = parse(candidateFile.bytes, "current candidate"); const inventory = parse(inventoryFile.bytes, "source inventory"); const ledger = parse(ledgerFile.bytes, "source snapshot ledger");
+  const station = parse(stationFile.bytes, "activated station input"); const route = parse(routeFile.bytes, "activated route input");
+  validateCurrentCandidateSourceSet({ candidate, inventory, inventoryFile });
+  if (phase === ACTIVATED_CURRENT_OUTPUT) {
+    const request = parse(requestFile.bytes, "release request"); const hashes = parse(hashesFile.bytes, "hash evidence");
+    if (candidate.sourceSnapshotSetHash !== request.sourceSnapshotSetHash
+      || candidate.sourceSnapshotSetHash !== hashes.sourceSnapshotSetHash?.value) {
+      throw new Error("current candidate/request/hash binding mismatch");
+    }
+  }
+  const {
+    evidenceHash,
+    molitPreviousSnapshotId,
+    positionPreviousSnapshotId,
+    predecessorComplete,
+    predecessorHash,
+    terminalPredecessorHash,
+  } = deriveRefreshSourceProof({ candidate, ledger });
+  const transitionIdentity = { kind: PUBLIC_STATIC_NETWORK_V2_SUCCESSOR };
   const activatedSourceSet = station.candidate?.sourceSetSha256;
   if (phase === ACTIVATED_CURRENT_OUTPUT || phase === PRE_APPROVAL_CURRENT_CANDIDATE) {
     const facility = parse(facilityFile.bytes, "FACILITY admission");
@@ -380,9 +404,8 @@ function buildRefreshProof({ phase, candidateFile, inventoryFile, ledgerFile, re
       throw new Error("activated producer boundary mismatch");
     }
   }
-  if (predecessorIdSet.size !== predecessorProjections.length || predecessor.length !== predecessorProjections.length
-    || evidenceIds.size !== predecessorProjections.length || evidence.length !== predecessorProjections.length
-    || activatedSourceSet !== route.candidate?.sourceSetSha256 || ![predecessorHash, candidate.sourceSnapshotSetHash].includes(activatedSourceSet)
+  if (!predecessorComplete || activatedSourceSet !== route.candidate?.sourceSetSha256
+    || ![predecessorHash, candidate.sourceSnapshotSetHash].includes(activatedSourceSet)
     || station.candidate?.candidateId !== candidate.candidateId || route.candidate?.candidateId !== candidate.candidateId) {
     throw new Error("activated predecessor source-set mismatch");
   }
@@ -391,8 +414,8 @@ function buildRefreshProof({ phase, candidateFile, inventoryFile, ledgerFile, re
     evidenceSourceSetSha256: evidenceHash, facilityAdmissionBytesSha256: null,
     ...transitionIdentity,
     predecessorCandidateSourceSetSha256: predecessorHash,
-    positionPreviousSnapshotId: position.previousSnapshotId,
-    molitPreviousSnapshotId: molit.previousSnapshotId,
+    positionPreviousSnapshotId,
+    molitPreviousSnapshotId,
   };
 }
 

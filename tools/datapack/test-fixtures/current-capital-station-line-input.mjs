@@ -6,6 +6,7 @@ import {
   collectKricAccessibilitySnapshots,
   KRIC_TERMINAL_RESULT_03,
 } from "../collect-kric-accessibility-snapshots.mjs";
+import { codepointCompare } from "../../lib/codepoint-compare.mjs";
 
 export const FIXTURE_CAPTURED_AT = new Date(0).toISOString();
 export const FIXTURE_PUBLISHED_AT = new Date(1_000).toISOString();
@@ -13,7 +14,7 @@ export const FIXTURE_FRESH_UNTIL = new Date(86_400_000).toISOString();
 export const FIXTURE_RETENTION_UNTIL = new Date(172_800_000).toISOString();
 
 export async function buildCurrentCapitalStationLineInputFixture() {
-  const lines = stationLines(); const stationIds = [...new Set(lines.map(({ stationId }) => stationId))].sort();
+  const lines = stationLines(); const stationIds = [...new Set(lines.map(({ stationId }) => stationId))].sort(codepointCompare);
   const sourceIds = ["seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info", "incheon-transit-accessibility", "seoul-metro-transfer-distance-duration"];
   const sourceSnapshots = sourceIds.map((sourceId) => {
     const snapshotId = `${sourceId}-snapshot`;
@@ -61,6 +62,6 @@ function receipt(normalizedBytes, admissionBytes) { const provider = Buffer.from
 function transferMetrics(lines) { const grouped = Map.groupBy(lines, ({ stationId }) => stationId); const pair = [...grouped.entries()].find(([, stationLines]) => stationLines.length === 2); assert.ok(pair); const [stationId, stationLines] = pair; const lineIds = stationLines.map(({ lineId }) => lineId); const physicalPairs = [{ stationId, lineIds }]; const metrics = lineIds.map((fromLineId, index) => ({ stationId, fromLineId, toLineId: lineIds[1 - index], distanceMeters: 1, officialDurationSecondsReference: 1, durationRole: "REFERENCE_ONLY", metricProvenance: "DERIVED_RECIPROCAL" })); const canonicalIdentity = { stationLineCount: lines.length, stationCount: new Set(lines.map((line) => line.stationId)).size, physicalPairCount: physicalPairs.length }; const sourceIdentity = { sourceId: "seoul-metro-transfer-distance-duration", rawSha256: "f".repeat(64), capturedAt: FIXTURE_CAPTURED_AT }; const payload = { artifactKind: "current-transfer-topology-metrics", physicalPairs, metrics, canonicalIdentity, sourceIdentity }; return { ...payload, artifactSha256: fixtureSha256(fixtureCanonicalJson(payload)) }; }
 function transferApplicability(lines, metrics) { const endpoints = new Set(metrics.metrics.flatMap((metric) => [`${metric.stationId}\0${metric.fromLineId}`, `${metric.stationId}\0${metric.toLineId}`])); const cells = lines.map((line) => ({ ...line, state: endpoints.has(`${line.stationId}\0${line.lineId}`) ? "APPLICABLE_TRANSFER_ENDPOINT" : "NOT_APPLICABLE_IN_CANONICAL_PAIR_SET" })); const payload = { artifactKind: "current-capital-transfer-topology-applicability-pre-candidate", candidateBinding: null, productionUseAllowed: false, canonicalIdentity: metrics.canonicalIdentity, sourceIdentity: metrics.sourceIdentity, transferTopologyMetricsIdentity: { artifactSha256: metrics.artifactSha256 }, cells }; return { ...payload, artifactSha256: fixtureSha256(`${fixtureCanonicalJson(payload)}\n`) }; }
 export function resealFixtureFacilityAdmission(value) { const { admissionDigest: _ignored, ...payload } = value; value.admissionDigest = fixtureSha256(fixtureCanonicalJson(payload)); }
-export function fixtureCanonicalJson(value) { if (Array.isArray(value)) return `[${value.map(fixtureCanonicalJson).join(",")}]`; if (value && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${fixtureCanonicalJson(value[key])}`).join(",")}}`; return JSON.stringify(value); }
+export function fixtureCanonicalJson(value) { if (Array.isArray(value)) return `[${value.map(fixtureCanonicalJson).join(",")}]`; if (value && typeof value === "object") return `{${Object.keys(value).sort(codepointCompare).map((key) => `${JSON.stringify(key)}:${fixtureCanonicalJson(value[key])}`).join(",")}}`; return JSON.stringify(value); }
 export function fixtureSha256(value) { return createHash("sha256").update(value).digest("hex"); }
 function summarize(rows, states) { return Object.fromEntries(states.map((state) => [state, rows.filter((row) => row.state === state).length])); }
