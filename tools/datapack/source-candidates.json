@@ -7367,6 +7367,75 @@
         "operatorIds": ["capital-urban-rail-operators"]
       },
       "displayName": "수도권 도시철도 노선별 역간거리 FILE source set",
+      "registrationMetadata": {
+        "inventory": {
+          "owner": "국가철도공단·국토교통부",
+          "provider": "data.go.kr official FILE",
+          "providerDepartment": "복수 공식 제공부서",
+          "sourceSystem": "공공데이터포털",
+          "datasetUrl": "https://www.data.go.kr/",
+          "datasetKind": "official-file-source-set",
+          "coverage": "24 ordered Capital topology source definitions",
+          "licenseName": "공공누리 제1유형",
+          "licenseTermsUrl": "https://www.kogl.or.kr/info/faqList.do?dataGroup=2&mstIdx=KOGL_005",
+          "commercialUseAllowed": true,
+          "derivativeWorkAllowed": true,
+          "redistributionAllowed": true,
+          "capabilities": {
+            "schedule": {
+              "status": "UNSUPPORTED",
+              "productionUseAllowed": false,
+              "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+              "updateFrequency": "P1D",
+              "unsupportedNotes": "source does not provide scheduled timetable data"
+            },
+            "realtime": {
+              "status": "UNSUPPORTED",
+              "productionUseAllowed": false,
+              "liveEtaEligible": false,
+              "rateLimitStatus": "NOT_APPLICABLE",
+              "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+              "updateFrequency": "P1D",
+              "unsupportedNotes": "source provides static route topology, not realtime arrivals"
+            },
+            "facility": {
+              "status": "UNSUPPORTED",
+              "productionUseAllowed": false,
+              "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+              "updateFrequency": "P1D",
+              "unsupportedNotes": "source does not provide accessibility facility records"
+            }
+          }
+        },
+        "governance": {
+          "retentionClassId": "standard-90d",
+          "ownerRole": "datapack-source-owner",
+          "stewardRole": "datapack-data-steward",
+          "approvalRole": "datapack-release-approver",
+          "escalationHours": 4,
+          "alertRoute": "github:area-datapack",
+          "licenseReview": {
+            "status": "APPROVED",
+            "termsHash": "8af4d3c1d50cfa78ba2be42b46ffcfeba5366f91e07592dae863b9a76e98bd54",
+            "reviewedAt": "2026-09-03T14:01:45Z",
+            "nextReviewAt": "2027-09-03T14:01:45Z",
+            "termsUrl": "https://www.kogl.or.kr/info/faqList.do?dataGroup=2&mstIdx=KOGL_005",
+            "reviewedProvider": "국가철도공단·국토교통부",
+            "reviewedDatasetUrl": "https://www.data.go.kr/",
+            "redistributionScopes": ["DERIVED_DATAPACK"],
+            "approvedByRole": "datapack-release-approver"
+          }
+        },
+        "freshness": {
+          "examples": ["official capital route graph topology"],
+          "basisField": "retrievedAt",
+          "reverificationCadence": "P1D",
+          "offlinePackEligible": true,
+          "eventTriggers": ["official source revision", "line extension opening"],
+          "changePublishSla": "P3D",
+          "freshnessMetric": "routeTopologyFreshnessRatio"
+        }
+      },
       "operation": {
         "kind": "AGGREGATE_SOURCE_SET",
         "method": "GET",

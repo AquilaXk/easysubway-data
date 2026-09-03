@@ -567,6 +567,13 @@
               "semanticOutputSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
             }
           },
+          "capitalTopologyAdmissionEvidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["schemaVersion", "artifactKind", "status", "issue", "sourceId", "snapshotId", "snapshotPath", "snapshotFileSha256", "snapshotRawSha256", "contentSha256", "lineIds", "orderedScopeSha256", "operationSetSha256", "rawReceiptSha256", "rawObjectUri", "rawObjectSha256", "byteSize", "licenseSha256", "governanceRecordSha256", "freshnessClassSha256", "evaluatedAt", "predecessorSnapshotIds"],
+            "properties": {
+              "schemaVersion": { "const": 1 }, "artifactKind": { "const": "capital-topology-admission-evidence" }, "status": { "const": "APPROVED" }, "issue": { "const": 456 }, "sourceId": { "const": "capital-route-topology" }, "snapshotId": { "type": "string", "pattern": "^capital-route-topology-[0-9]{8}$" }, "snapshotPath": { "type": "string", "pattern": "^tools/datapack/sources/capital-route-topology-[0-9]{8}\\.json$" }, "snapshotFileSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "snapshotRawSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "contentSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "lineIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }, "orderedScopeSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "operationSetSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "rawReceiptSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "rawObjectUri": { "type": "string", "pattern": "^oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/" }, "rawObjectSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "byteSize": { "type": "integer", "minimum": 1 }, "licenseSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "governanceRecordSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "freshnessClassSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "evaluatedAt": { "type": "string", "format": "date-time" }, "predecessorSnapshotIds": { "type": "array", "maxItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^capital-route-topology-[0-9]{8}$" } } }
+          },
           "scheduleAdmissionEvidence": {
             "type": "object",
             "description": "공식 timetable snapshot의 production materialization 승인 근거다.",
