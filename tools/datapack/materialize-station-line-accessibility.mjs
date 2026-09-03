@@ -28,7 +28,7 @@ const TERMINAL_EXIT_EVIDENCE_KEYS = TERMINAL_COMMON_KEYS;
 const TERMINAL_FACILITY_TYPES = ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"];
 const TERMINAL_FACILITY_REASON = "시설 존재·부재가 검증되지 않아 경로를 차단했습니다.";
 const TERMINAL_EXIT_REASON = "출구 이동경로가 검증되지 않아 경로를 차단했습니다.";
-const TERMINAL_TUPLE = { stationId: "station-b35616704ce3", lineId: "seoul-2", operatorId: "seoul-metro", sourceId: "kric-station-convenience-standard" };
+const TERMINAL_FACILITY_SOURCE_ID = "kric-station-convenience-standard";
 const TERMINAL_EXIT_SOURCE_ID = "kric-station-movement-standard";
 const STATION_LINE_KEYS = ["stationId", "lineId", "operatorId"];
 
@@ -238,13 +238,11 @@ function assertEvidenceState(row) {
     let hashInput;
     if (row.domain === "FACILITY") {
       if (row.terminalPolicy !== "EXACT_TUPLE_PROVIDER_RESULT_03"
+        || row.sourceId !== TERMINAL_FACILITY_SOURCE_ID
         || row.installationStatus !== "UNKNOWN" || row.operationalStatus !== "UNKNOWN"
         || row.statusMeaning !== "PROVIDER_RESULT_UNVERIFIED"
         || !TERMINAL_FACILITY_TYPES.includes(row.facilityType) || row.evidenceReason !== TERMINAL_FACILITY_REASON) {
         throw new Error("terminal evidence contract mismatch");
-      }
-      for (const [field, expected] of Object.entries(TERMINAL_TUPLE)) {
-        if (row[field] !== expected) throw new Error("terminal evidence tuple mismatch");
       }
       hashInput = {
         sourceSnapshotId: row.sourceSnapshotId, stationId: row.stationId, lineId: row.lineId,

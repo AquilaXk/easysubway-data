@@ -442,11 +442,9 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   );
 });
 
-test("candidate override accessibility freshness는 authority input identity와 earliest expiry에 결속된다", async (context) => {
-  const directory = await prepareCurrentFullCapitalProductionRepository(root);
-  context.after(() => rm(directory, { recursive: true, force: true }));
+test("candidate override accessibility freshness는 authority input identity와 earliest expiry에 결속된다", async () => {
   const stationLineInputBytes = await readFile(path.join(
-    directory,
+    root,
     "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
   ));
   const stationLineInput = JSON.parse(stationLineInputBytes);
@@ -471,7 +469,7 @@ test("candidate override accessibility freshness는 authority input identity와 
   assert.equal(candidateOverrideAccessibilityFreshUntil({
     authority,
     stationLineInputBytes,
-    validationNow: new Date("2026-08-14T15:34:07.000Z"),
+    validationNow: new Date(stationLineInput.evidenceRows[0].capturedAt),
   }), expected);
   assert.throws(() => candidateOverrideAccessibilityFreshUntil({
     authority,
@@ -484,15 +482,15 @@ test("candidate override accessibility freshness는 authority input identity와 
       buildInput: { ...authority.buildInput, stationLineInputSha256: "0".repeat(64) },
     },
     stationLineInputBytes,
-    validationNow: new Date("2026-08-14T15:34:07.000Z"),
+    validationNow: new Date(stationLineInput.evidenceRows[0].capturedAt),
   }), /station-line input identity mismatch/);
   assert.throws(() => candidateOverrideAccessibilityFreshUntil({
     authority: {
       ...authority,
-      buildInput: { ...authority.buildInput, observedAt: "2026-08-18T00:00:00.000Z" },
+      buildInput: { ...authority.buildInput, observedAt: new Date(Date.parse(observedAt) + 1_000).toISOString() },
     },
     stationLineInputBytes,
-    validationNow: new Date("2026-08-14T15:34:07.000Z"),
+    validationNow: new Date(stationLineInput.evidenceRows[0].capturedAt),
   }), /station-line input identity mismatch/);
 });
 

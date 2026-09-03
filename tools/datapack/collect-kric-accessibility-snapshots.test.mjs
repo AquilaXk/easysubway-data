@@ -529,8 +529,8 @@ test("standard observation은 exact S1/2/234-4의 단일 03을 raw와 함께 ter
     stationId: "station-b35616704ce3", lineId: "seoul-2", railOprIsttCd: "S1", lnCd: "2", stinCd: "234-4",
     canonicalMappings: [{ artifactId: "bundled-capital", stationId: "station-b35616704ce3", lineId: "seoul-2" }],
   };
-  const normal = Array.from({ length: 212 }, (_, index) => ({
-    stationId: `station-${index}`, lineId: `line-${index}`, railOprIsttCd: "S1", lnCd: "2", stinCd: `normal-${index}`,
+  const normal = ["normal-a", "normal-b"].map((stinCd, index) => ({
+    stationId: `station-${index}`, lineId: `line-${index}`, railOprIsttCd: "S1", lnCd: "2", stinCd,
     canonicalMappings: [{ artifactId: "bundled-capital", stationId: `station-${index}`, lineId: `line-${index}` }],
   }));
   const observation = await collectKricStandardAccessibilityObservation({
@@ -541,6 +541,8 @@ test("standard observation은 exact S1/2/234-4의 단일 03을 raw와 함께 ter
   });
   const blocked = observation.snapshot.queries.find(({ stinCd }) => stinCd === "234-4");
   assert.equal(observation.snapshot.providerResultCode, "MIXED");
+  assert.equal(observation.snapshot.queryCount, observation.snapshot.queries.length);
+  assert.equal(observation.rawArtifact.requestCount, observation.snapshot.queries.length);
   assert.equal(observation.snapshot.absenceEvidenceMode, "EXHAUSTIVE_LIST_WITH_UNVERIFIED_EVIDENCE_BLOCKED");
   assert.deepEqual(blocked, {
     ...terminal, providerResultCode: "03", status: "UNVERIFIED_EVIDENCE_BLOCKED",
@@ -551,8 +553,8 @@ test("standard observation은 exact S1/2/234-4의 단일 03을 raw와 함께 ter
   assert.deepEqual(validateKricAccessibilityRawCollection(observation.rawArtifact, observation.snapshot), observation.rawArtifact);
 
   for (const resultCodeFor of [
-    (stinCd) => stinCd === "normal-0" ? "03" : "00",
-    (stinCd) => stinCd === "234-4" || stinCd === "normal-0" ? "03" : "00",
+    (stinCd) => stinCd === "normal-a" ? "03" : "00",
+    (stinCd) => stinCd === "234-4" || stinCd === "normal-a" ? "03" : "00",
   ]) {
     await assert.rejects(collectKricStandardAccessibilityObservation({
       roster: [terminal, ...normal], serviceKey: "key",

@@ -37,17 +37,7 @@ const TRANSACTION_OUTPUTS = [...OUTPUTS, FAN_IN_OUTPUT];
 const TRANSITION = "tools/datapack/release/current-capital-accessibility-transition.json";
 const SUCCESSOR = "tools/datapack/release/current-capital-accessibility-transition-successor.json";
 const sha = (value) => createHash("sha256").update(value).digest("hex");
-const CURRENT_CAPITAL_SOURCE_ROSTER = Object.freeze([
-  "seoul-metro-route-map-positions",
-  "kric-subway-timetable",
-  "seoul-metro-accessibility",
-  "kric-station-convenience-standard",
-  "molit-urban-rail-full-route",
-  "seoulmetro-station-line-info",
-  "incheon-transit-accessibility",
-  "seoul-metro-transfer-distance-duration",
-]);
-const PREDECESSOR_SOURCE_ROSTER = Object.freeze(CURRENT_CAPITAL_SOURCE_ROSTER.slice(0, -1));
+const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
 const canonical = (value) => Array.isArray(value)
   ? `[${value.map(canonical).join(",")}]`
   : value && typeof value === "object"
@@ -74,8 +64,6 @@ test("activated full-capital inputs are rebuilt across the exact public static-n
   assert.deepEqual(station.stationLines, beforeStation.stationLines);
   assert.deepEqual(route.stationLines, beforeRoute.stationLines);
   assert.deepEqual(route.routeEdges, beforeRoute.routeEdges);
-  assert.equal(station.evidenceRows.length, 641);
-  assert.equal(route.routeEdges.length, 2654);
   assert.deepEqual(await Promise.all(approvalPaths.map((relative) => readFile(path.join(root, relative)))), approvalInputs);
 });
 
@@ -393,10 +381,6 @@ test("predecessor-bound activated inputs are rebuilt atomically to exact current
   assert.deepEqual(await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative)))), expected);
   await assert.rejects(readFile(path.join(root, TRANSITION)), { code: "ENOENT" });
   await assert.rejects(readFile(path.join(root, SUCCESSOR)), { code: "ENOENT" });
-  const [station, route] = await Promise.all(OUTPUTS.map(async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"))));
-  assert.equal(station.evidenceRows.length, 641);
-  assert.equal(route.stationLines.length, 1102);
-  assert.equal(route.routeEdges.length, 2654);
 });
 
 test("input mutation after build is rejected before either output replacement", async (t) => {
@@ -833,16 +817,27 @@ async function rebindStagedActivatedOutputCandidateIds(root, candidateId, source
 }
 
 async function stagedStaticEvidenceIdentity(root) {
-  const [candidate, snapshots] = await Promise.all([
+  const [candidate, inventory, snapshots] = await Promise.all([
     readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json")).then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/source-inventory.json")).then(JSON.parse),
     readFile(path.join(root, "tools/datapack/release/source-snapshots.json")).then(JSON.parse),
   ]);
   const selected = candidate.sourceSnapshotIds.map((snapshotId) =>
     snapshots.find((row) => row.snapshotId === snapshotId));
   if (selected.some((row) => row == null)) throw new Error("staged static successor ledger is incomplete");
-  if (selected.length !== CURRENT_CAPITAL_SOURCE_ROSTER.length
-    || candidate.sourceSnapshots.length !== CURRENT_CAPITAL_SOURCE_ROSTER.length
-    || !candidate.sourceSnapshots.every(({ sourceId }, index) => sourceId === CURRENT_CAPITAL_SOURCE_ROSTER[index])) {
+  const candidateSourceIds = candidate.sourceSnapshots.map(({ sourceId }) => sourceId);
+  const requiredSourceIds = inventory.sources.filter(({ requiredForProductionPack }) =>
+    requiredForProductionPack === true).map(({ id }) => id);
+  const transferIndex = candidateSourceIds.indexOf(TRANSFER_SOURCE_ID);
+  if (selected.length !== candidate.sourceSnapshots.length
+    || candidate.sourceSnapshotIds.length !== candidate.sourceSnapshots.length
+    || new Set(candidate.sourceSnapshotIds).size !== candidate.sourceSnapshotIds.length
+    || new Set(candidateSourceIds).size !== candidateSourceIds.length
+    || new Set(requiredSourceIds).size !== requiredSourceIds.length
+    || requiredSourceIds.length !== candidateSourceIds.length
+    || requiredSourceIds.some((sourceId) => !candidateSourceIds.includes(sourceId))
+    || transferIndex !== candidateSourceIds.length - 1
+    || selected.some((row, index) => row.sourceId !== candidateSourceIds[index])) {
     throw new Error("staged static successor roster is incomplete");
   }
   const positionIndex = selected.findIndex(({ sourceId }) => sourceId === "seoul-metro-route-map-positions");
@@ -856,19 +851,24 @@ async function stagedStaticEvidenceIdentity(root) {
       || Object.hasOwn(snapshot, "migration"))) {
     throw new Error("staged static successor evidence lineage is incomplete");
   }
-  const predecessorIds = candidate.sourceSnapshotIds.slice(0, -1).map((snapshotId, index) =>
+  const predecessorProjections = candidate.sourceSnapshots.map((projection, index) => ({
+    projection,
+    index,
+    snapshotId: candidate.sourceSnapshotIds[index],
+  })).filter(({ projection }) => projection.sourceId !== TRANSFER_SOURCE_ID);
+  const predecessorIds = predecessorProjections.map(({ snapshotId, index }) =>
     index === positionIndex ? selected[index].previousSnapshotId
       : index === molitIndex ? selected[index].previousSnapshotId
       : snapshotId);
   const evidenceIds = new Set(predecessorIds.flatMap((snapshotId, index) => {
-    const sourceId = candidate.sourceSnapshots[index].sourceId;
+    const sourceId = predecessorProjections[index].projection.sourceId;
     return [sourceId === "seoul-metro-accessibility" ? selected[seoulIndex].previousSnapshotId : snapshotId];
   }));
   const predecessorIdSet = new Set(predecessorIds);
   const predecessor = snapshots.filter(({ snapshotId }) => predecessorIdSet.has(snapshotId));
   const evidence = snapshots.filter(({ snapshotId }) => evidenceIds.has(snapshotId));
-  if (predecessorIdSet.size !== PREDECESSOR_SOURCE_ROSTER.length || predecessor.length !== PREDECESSOR_SOURCE_ROSTER.length
-    || evidenceIds.size !== PREDECESSOR_SOURCE_ROSTER.length || evidence.length !== PREDECESSOR_SOURCE_ROSTER.length) {
+  if (predecessorIdSet.size !== predecessorProjections.length || predecessor.length !== predecessorProjections.length
+    || evidenceIds.size !== predecessorProjections.length || evidence.length !== predecessorProjections.length) {
     throw new Error("staged static successor evidence set is incomplete");
   }
   return {

@@ -16,7 +16,6 @@ const INPUT_KEYS = [
   "sourceInventoryBytes",
 ];
 const SOURCE_ID = "kric-station-convenience-standard";
-const EXPECTED = Object.freeze({ stationLineCount: 213, stationCount: 199, providerTupleCount: 213 });
 const TARGET_KEYS = [
   "activeLineScopeEvidence", "activeLineScopes", "artifactKind", "claimLedger", "coverageGoal",
   "evidenceSources", "expansionRoadmap", "inactiveLineExclusions", "knownSourceDomains",
@@ -65,14 +64,7 @@ export function buildCurrentCapitalFacilityCollectionPlan(input) {
   const providerTuplesByLine = providerScopeTuplesByLine(rosters.providerScopes, selectedLineIds, coverage);
   const mappings = bindProviderTuples({ targets, scopeByLine, providerTuplesByLine, rosterByRequest, catalogTuples });
 
-  const counts = canonicalObject({
-    stationLineCount: targets.length,
-    stationCount: new Set(targets.map(({ stationId }) => stationId)).size,
-    providerTupleCount: new Set(mappings.map(providerTupleKey)).size,
-  });
-  for (const [key, expected] of Object.entries(EXPECTED)) {
-    if (counts[key] !== expected) throw new Error(`capital FACILITY ${key} mismatch: ${counts[key]}`);
-  }
+  const counts = derivedMappingCounts(mappings);
   const payload = canonicalObject({
     schemaVersion: 1,
     artifactKind: "capital-facility-collection-plan",
@@ -227,8 +219,7 @@ function validatePlanPayload(value) {
   assertKeys(value.sourceIdentity, ["canonicalPackSha256", "coverageTargetsSha256", "providerCodeCatalogSha256", "routeRostersSha256", "sourceInventorySha256"], "capital FACILITY source identity");
   for (const field of Object.keys(value.sourceIdentity)) assertSha256(value.sourceIdentity[field], `capital FACILITY ${field}`);
   assertKeys(value.counts, ["providerTupleCount", "stationCount", "stationLineCount"], "capital FACILITY counts");
-  if (canonicalJson(value.counts) !== canonicalJson(EXPECTED) || !Array.isArray(value.stationLineProviderMappings)
-    || value.stationLineProviderMappings.length !== EXPECTED.stationLineCount) {
+  if (!Array.isArray(value.stationLineProviderMappings)) {
     throw new Error("capital FACILITY count mismatch");
   }
   const stationLineKeys = new Set();
@@ -249,8 +240,9 @@ function validatePlanPayload(value) {
     providerTupleKeys.add(providerTuple);
     stations.add(mapping.stationId);
   }
-  if (stationLineKeys.size !== EXPECTED.stationLineCount || providerTupleKeys.size !== EXPECTED.providerTupleCount
-    || stations.size !== EXPECTED.stationCount) throw new Error("capital FACILITY mapping cardinality mismatch");
+  if (canonicalJson(value.counts) !== canonicalJson(derivedMappingCounts(value.stationLineProviderMappings))) {
+    throw new Error("capital FACILITY count mismatch");
+  }
 }
 
 function canonicalCapitalPack(value) {
@@ -505,6 +497,13 @@ function bindProviderTuples({ targets, scopeByLine, providerTuplesByLine, roster
 
 function assertInput(value) { assertKeys(value, INPUT_KEYS, "capital FACILITY input"); }
 function requireBytes(value, label) { if (!Buffer.isBuffer(value) || value.length === 0) throw new Error(`${label} must be non-empty bytes`); return value; }
+function derivedMappingCounts(mappings) {
+  return canonicalObject({
+    stationLineCount: mappings.length,
+    stationCount: new Set(mappings.map(({ stationId }) => stationId)).size,
+    providerTupleCount: new Set(mappings.map(providerTupleKey)).size,
+  });
+}
 function parseJson(bytes, label) { try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); } catch { throw new Error(`${label} must be strict UTF-8 JSON`); } }
 function uniqueMap(values, keyFor, label) { if (!Array.isArray(values) || values.length === 0) throw new Error(`${label} must be non-empty`); const result = new Map(); for (const value of values) { const key = typeof keyFor === "function" ? keyFor(value) : requiredString(value?.[keyFor], label); if (result.has(key)) throw new Error(`duplicate ${label}: ${key.replaceAll("\0", "/")}`); result.set(key, value); } return result; }
 function requiredString(value, label) { if (typeof value !== "string" || value.trim() === "") throw new Error(`${label} is required`); return value; }

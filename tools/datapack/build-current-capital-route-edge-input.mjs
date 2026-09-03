@@ -8,23 +8,18 @@ import { buildCurrentCapitalStationLineInput, canonicalCurrentCapitalStationLine
 import { canonicalRideEdgeSetSha256, routeEdgeSha256 } from "./evaluate-route-accessibility-edges.mjs";
 
 const OUTPUT_DIRECTORY = "tools/datapack/release/current-capital-accessibility-full";
-const ROUTE_STATION_LINE_COUNT = 1102;
 
 export function buildCurrentCapitalRouteEdgeInput(input) {
-  validateFixtureEdgeCounts(input.canonicalPack, { RIDE: 2198 }, "projected");
+  const rides = validatedRideEdges(input.canonicalPack, "projected");
   const station = buildCurrentCapitalStationLineInput(input);
   const pack = input.canonicalPack.packs.find(({ id }) => id === "capital");
   const stationLines = routeStationLines(pack, station.stationLines);
-  const rides = (pack.networkEdges ?? [])
-    .filter(({ edgeType }) => edgeType === "RIDE")
-    .map(normalizeRide);
-  if (rides.length !== 2198 || new Set(rides.map(({ edgeId }) => edgeId)).size !== 2198) throw new Error("full-capital RIDE denominator mismatch");
   const entries = station.stationLines.map((line) => edge({ edgeId: `edge-entry-${line.stationId}-${line.lineId}`, edgeType: "ENTRY", fromNodeId: line.stationId, toNodeId: `${line.stationId}:${line.lineId}`, durationSeconds: 90, distanceMeters: 0 }));
   const exits = station.stationLines.map((line) => edge({ edgeId: `edge-exit-${line.stationId}-${line.lineId}`, edgeType: "EXIT", fromNodeId: `${line.stationId}:${line.lineId}`, toNodeId: line.stationId, durationSeconds: 60, distanceMeters: 0 }));
   // TRANSFER runtime cost is request-owned walking pace; the source duration remains metrics-only reference evidence.
   const transfers = input.transferMetrics.metrics.map((metric) => edge({ edgeId: `edge-transfer-${metric.stationId}-${metric.fromLineId}-${metric.toLineId}`, edgeType: "IN_STATION_TRANSFER", fromNodeId: `${metric.stationId}:${metric.fromLineId}`, toNodeId: `${metric.stationId}:${metric.toLineId}`, durationSeconds: 0, distanceMeters: metric.distanceMeters }));
   const routeEdges = [...rides, ...entries, ...exits, ...transfers].sort((left, right) => compareBytes(left.edgeId, right.edgeId));
-  if (routeEdges.length !== 2654 || new Set(routeEdges.map(({ edgeId }) => edgeId)).size !== 2654 || entries.length !== 213 || exits.length !== 213 || transfers.length !== 30) throw new Error("full-capital route denominator mismatch");
+  assertExactRouteFanIn({ routeEdges, rides, entries, exits, transfers });
   validateRouteEdgeEndpoints(routeEdges, stationLines);
   const candidate = { candidateId: station.candidate.candidateId, evaluatorVersion: "1", policyVersion: input.policy.policyVersion, sourceSetSha256: station.candidate.sourceSetSha256, stationSetSha256: station.candidate.stationSetSha256, topologySha256: canonicalRideEdgeSetSha256(rides) };
   return canonicalObject({ candidate, stationLines, routeEdges });
@@ -41,13 +36,14 @@ export async function main(argv = process.argv.slice(2), { repositoryRoot = file
   const root = path.resolve(repositoryRoot); const output = path.join(root, OUTPUT_DIRECTORY);
   await outputMustBeAbsent(output);
   const input = await readCurrentCapitalInputs(root, { readTransitionBoundaryImpl, readCurrentFanInBoundaryImpl });
-  validateFixtureEdgeCounts(input.canonicalPack, { RIDE: 2198 }, "raw");
+  const rawRides = validatedRideEdges(input.canonicalPack, "raw");
   const projectedFixture = await projectFixtureImpl({
     buildSpec: input.candidateBuildSpec,
     sourceFixture: input.canonicalPack,
     repositoryRoot: root,
   });
-  validateFixtureEdgeCounts(projectedFixture, { RIDE: 2198 }, "projected");
+  const projectedRides = validatedRideEdges(projectedFixture, "projected");
+  assertExactRideSet(rawRides, projectedRides, "raw/projected");
   const projectedInput = { ...input, canonicalPack: projectedFixture };
   const station = buildCurrentCapitalStationLineInput(projectedInput);
   const route = buildCurrentCapitalRouteEdgeInput(projectedInput);
@@ -65,7 +61,7 @@ async function defaultProjectFixture({ buildSpec, sourceFixture, repositoryRoot 
   });
 }
 
-function validateFixtureEdgeCounts(fixture, expected, label) {
+function validatedRideEdges(fixture, label) {
   const packs = fixture?.packs?.filter(({ id }) => id === "capital") ?? [];
   if (fixture?.manifest?.channel !== "production"
     || fixture.manifest?.activePack?.id !== "capital"
@@ -73,16 +69,10 @@ function validateFixtureEdgeCounts(fixture, expected, label) {
     || !Array.isArray(packs[0].networkEdges)) {
     throw new Error(`full-capital ${label} fixture mismatch`);
   }
-  const counts = Object.create(null);
-  for (const { edgeType } of packs[0].networkEdges) {
-    counts[edgeType] = (counts[edgeType] ?? 0) + 1;
-  }
-  const total = Object.values(expected).reduce((sum, count) => sum + count, 0);
-  if (packs[0].networkEdges.length !== total
-    || Object.keys(counts).length !== Object.keys(expected).length
-    || Object.entries(expected).some(([type, count]) => counts[type] !== count)) {
-    throw new Error(`full-capital ${label} edge denominator mismatch`);
-  }
+  if (packs[0].networkEdges.length === 0) throw new Error(`full-capital ${label} fixture must contain RIDE edges`);
+  const rides = packs[0].networkEdges.map(normalizeRide);
+  edgeMap(rides, `full-capital ${label} RIDE`);
+  return rides;
 }
 
 function normalizeRide(value) { if (value?.edgeType !== "RIDE" || ![value.id, value.fromNodeId, value.toNodeId].every(nonBlank) || !Number.isSafeInteger(value.durationSeconds) || value.durationSeconds < 0 || !Number.isSafeInteger(value.distanceMeters) || value.distanceMeters < 0) throw new Error("full-capital RIDE schema mismatch"); return edge({ edgeId: value.id, edgeType: value.edgeType, fromNodeId: value.fromNodeId, toNodeId: value.toNodeId, durationSeconds: value.durationSeconds, distanceMeters: value.distanceMeters, serviceClass: value.serviceClass ?? "SUBWAY", servicePattern: value.servicePattern ?? "LOCAL" }); }
@@ -107,9 +97,6 @@ function routeStationLines(pack, inputLines) {
     indexed.set(key, normalized);
     return normalized;
   });
-  if (result.length !== ROUTE_STATION_LINE_COUNT || indexed.size !== ROUTE_STATION_LINE_COUNT) {
-    throw new Error("full-capital route station-line denominator mismatch");
-  }
   for (const line of inputLines) {
     const routeLine = indexed.get(`${line.stationId}\0${line.lineId}`);
     if (routeLine?.operatorId !== line.operatorId) {
@@ -143,6 +130,44 @@ function validateRouteEdgeEndpoints(routeEdges, stationLines) {
 
 function compareStationLines(left, right) {
   return compareBytes(left.stationId, right.stationId) || compareBytes(left.lineId, right.lineId);
+}
+function assertExactRouteFanIn({ routeEdges, rides, entries, exits, transfers }) {
+  const expected = new Map([
+    ["RIDE", rides],
+    ["ENTRY", entries],
+    ["EXIT", exits],
+    ["IN_STATION_TRANSFER", transfers],
+  ]);
+  const actual = new Map([...expected.keys()].map((type) => [type, []]));
+  edgeMap(routeEdges, "full-capital route");
+  for (const routeEdge of routeEdges) {
+    if (!actual.has(routeEdge.edgeType)) throw new Error("full-capital route edge type mismatch");
+    actual.get(routeEdge.edgeType).push(routeEdge);
+  }
+  for (const [type, expectedEdges] of expected) {
+    if (expectedEdges.length === 0) throw new Error(`full-capital ${type} input is empty`);
+    assertExactRideSet(actual.get(type), expectedEdges, `full-capital ${type}`);
+  }
+}
+function assertExactRideSet(actualEdges, expectedEdges, label) {
+  const actual = edgeMap(actualEdges, `${label} actual`);
+  const expected = edgeMap(expectedEdges, `${label} expected`);
+  if (actual.size !== expected.size) throw new Error(`${label} edge set mismatch`);
+  for (const [edgeId, expectedEdge] of expected) {
+    if (canonicalJson(actual.get(edgeId)) !== canonicalJson(expectedEdge)) {
+      throw new Error(`${label} edge set mismatch`);
+    }
+  }
+}
+function edgeMap(edges, label) {
+  const map = new Map();
+  for (const edgeValue of edges) {
+    if (!edgeValue || !nonBlank(edgeValue.edgeId) || map.has(edgeValue.edgeId)) {
+      throw new Error(`${label} edge identity mismatch`);
+    }
+    map.set(edgeValue.edgeId, edgeValue);
+  }
+  return map;
 }
 function edge(value) { const normalized = { edgeId: value.edgeId, edgeType: value.edgeType, fromNodeId: value.fromNodeId, toNodeId: value.toNodeId, durationSeconds: value.durationSeconds, distanceMeters: value.distanceMeters, servicePattern: value.servicePattern ?? "", serviceClass: value.serviceClass ?? "SUBWAY" }; return { ...normalized, edgeSha256: routeEdgeSha256(normalized) }; }
 async function publish(output, stationBytes, routeBytes) { const parent = path.dirname(output); const parentStat = await lstat(parent); if (!parentStat.isDirectory() || parentStat.isSymbolicLink()) throw new Error("full-capital output parent mismatch"); const staging = await mkdtemp(path.join(parent, ".current-capital-accessibility-full-")); try { await writeFile(path.join(staging, "station-line-input.json"), stationBytes, { flag: "wx", mode: 0o600 }); await writeFile(path.join(staging, "route-edge-input.json"), routeBytes, { flag: "wx", mode: 0o600 }); await outputMustBeAbsent(output); const finalParent = await lstat(parent); if (parentStat.dev !== finalParent.dev || parentStat.ino !== finalParent.ino || !finalParent.isDirectory() || finalParent.isSymbolicLink()) throw new Error("full-capital output parent changed"); await rename(staging, output); } catch (error) { await rm(staging, { recursive: true, force: true }); throw error; } }

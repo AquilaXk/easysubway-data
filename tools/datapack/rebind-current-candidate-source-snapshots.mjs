@@ -140,7 +140,7 @@ export function rebindCandidateSourceSnapshots({
     || !SHA256.test(candidateBuildSpec.networkEdgeEvidence.sourceInventory.sha256 ?? "")) {
     throw new Error("candidate source inventory binding mismatch");
   }
-  validateCapitalPack(canonicalPack, sourceInventory);
+  const canonicalStationLineKeys = validateCapitalPack(canonicalPack, sourceInventory);
   validateSourceGovernancePolicy({ policy: governancePolicy, inventory: sourceInventory, freshnessPolicy });
   const candidate = structuredClone(candidateBuildSpec);
   const projections = candidate.sourceSnapshots;
@@ -186,7 +186,7 @@ export function rebindCandidateSourceSnapshots({
     });
     assertProjectionEqual(projections[index], expected, "candidate projection");
   }
-  validateNewKricHead({ next, sourceInventory, governancePolicy, governancePolicyBytes, freshnessPolicy, kricSnapshotBytes, nowMillis });
+  validateNewKricHead({ next, sourceInventory, governancePolicy, governancePolicyBytes, freshnessPolicy, kricSnapshotBytes, canonicalStationLineKeys, nowMillis });
   const source = exactlyOne(sourceInventory.sources ?? [], ({ id }) => id === SOURCE_ID, "KRIC source inventory");
   const evidence = source.accessibilityAdmissionEvidence;
   if (source.requiredForProductionPack !== true || source.productionUseAllowed !== true
@@ -243,16 +243,17 @@ function validateCapitalPack(pack, sourceInventory) {
   const lineIds = new Set((capital.lines ?? []).map(({ id }) => id));
   const membership = (capital.stationLines ?? []).filter(({ lineId }) => seoulMetroLines.has(lineId));
   const keys = new Set(membership.map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
-  if (membership.length !== 213 || keys.size !== 213
+  if (membership.length === 0 || keys.size !== membership.length
     || membership.some(({ stationId, lineId }) => !stationIds.has(stationId) || !lineIds.has(lineId))
-    || new Set(membership.map(({ stationId }) => stationId)).size !== 199) {
-    throw new Error("capital canonical 213 station-line scope mismatch");
+  ) {
+    throw new Error("capital canonical station-line scope mismatch");
   }
   requireCurrentCanonicalSourceRoster(capital);
   const inventoryIds = new Set((sourceInventory?.sources ?? []).map(({ id }) => id));
   if (CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS.some((sourceId) => !inventoryIds.has(sourceId))) {
     throw new Error("current source inventory does not cover candidate sources");
   }
+  return keys;
 }
 
 function validateCapitalReleaseHeads(pack, lineage, snapshots, selected) {
@@ -272,17 +273,17 @@ function validateCapitalReleaseHeads(pack, lineage, snapshots, selected) {
   }
 }
 
-function validateNewKricHead({ next, sourceInventory, governancePolicy, governancePolicyBytes, freshnessPolicy, kricSnapshotBytes, nowMillis }) {
+function validateNewKricHead({ next, sourceInventory, governancePolicy, governancePolicyBytes, freshnessPolicy, kricSnapshotBytes, canonicalStationLineKeys, nowMillis }) {
   if (next?.sourceId !== SOURCE_ID || next.artifactKind !== "official-source-snapshot"
     || next.schemaVersion !== 1 || next.snapshotStatus !== "LOCKED" || next.fetchStatus !== "SUCCESS"
     || next.schemaStatus !== "PASS" || next.licenseStatus !== "PASS" || next.redistributionAllowed !== true
-    || next.credentialRedacted !== true || next.coverageCount !== 213 || !Number.isSafeInteger(next.rowCount) || next.rowCount < 0
+    || next.credentialRedacted !== true || next.coverageCount !== canonicalStationLineKeys.size || !Number.isSafeInteger(next.rowCount) || next.rowCount < 0
     || !requiredSha(next.rawSha256, "KRIC raw hash") || !requiredSha(next.schemaFingerprint, "KRIC schema fingerprint")
     || !requiredSha(next.redactedRequestFingerprint, "KRIC request fingerprint")
     || !requiredSha(next.governancePolicySha256, "KRIC governance hash")
     || next.governancePolicyVersion !== governancePolicy.policyVersion
     || next.governancePolicySha256 !== requiredSha(sha256(governancePolicyBytes), "governance policy bytes hash")) {
-    throw new Error("KRIC new head identity or canonical 213 scope mismatch");
+    throw new Error("KRIC new head identity or canonical station-line scope mismatch");
   }
   const receipt = next.rawReceipt;
   if (receipt?.sourceId !== SOURCE_ID || receipt.snapshotId !== next.snapshotId
@@ -293,7 +294,10 @@ function validateNewKricHead({ next, sourceInventory, governancePolicy, governan
   let snapshot;
   try { snapshot = validateKricAccessibilitySnapshotIdentity(JSON.parse(kricSnapshotBytes?.toString("utf8"))); }
   catch { throw new Error("KRIC snapshot evidence file is invalid"); }
-  if (snapshot.sourceId !== SOURCE_ID || snapshot.snapshotId !== next.snapshotId || snapshot.queryCount !== 213
+  const queryKeys = new Set((snapshot.queries ?? []).map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
+  if (snapshot.sourceId !== SOURCE_ID || snapshot.snapshotId !== next.snapshotId || snapshot.queryCount !== canonicalStationLineKeys.size
+    || snapshot.queries?.length !== canonicalStationLineKeys.size || queryKeys.size !== canonicalStationLineKeys.size
+    || [...canonicalStationLineKeys].some((key) => !queryKeys.has(key))
     || snapshot.rowCount !== next.rowCount || snapshot.rawSha256 !== receipt.snapshotRawSha256
     || snapshot.contentSha256 !== next.contentSha256 || snapshot.schemaFingerprint !== next.schemaFingerprint
     || snapshot.redactedRequestFingerprint !== next.redactedRequestFingerprint

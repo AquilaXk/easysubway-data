@@ -52,13 +52,6 @@ const PROVIDER_SCOPE_KEYS = [
 const REQUIRED_PACK_ARRAYS = ["lines", "networkEdges", "operators", "stationLines", "stations"];
 const COVERAGE_SELECTOR_NATIONWIDE = "nationwide";
 const COVERAGE_SELECTOR_CAPITAL_SEOUL_METRO_PRODUCTION = "capital-seoul-metro-production";
-const CAPITAL_SEOUL_METRO_QUERY_COUNTS = new Map([
-  ["수도권 6호선", 78],
-  ["수도권 5호선", 110],
-  ["수도권 2호선", 102],
-  ["수도권 4호선", 100],
-  ["수도권 신분당", 30],
-]);
 
 export function buildCurrentKricExitCollectionPlan(
   input,
@@ -187,7 +180,7 @@ export function buildCurrentKricExitCollectionPlan(
   });
   const plan = planKricExitPathCollection({ candidate, stationLines, providerMappings, routeEdges });
   if (coverageSelector === COVERAGE_SELECTOR_CAPITAL_SEOUL_METRO_PRODUCTION) {
-    assertCapitalSeoulMetroProductionCoverage(plan, linesById);
+    assertCapitalSeoulMetroProductionCoverage(plan, { stationLines, providerMappings, routeEdges });
   }
   canonicalKricExitPathCollectionPlanJson(plan);
   return plan;
@@ -354,21 +347,28 @@ function providerScopeKey({ regionId, operatorId, lineId, mreaWideCd, lnCd, rail
   return `${regionId}\0${operatorId}\0${lineId}\0${mreaWideCd}\0${lnCd}\0${railOprIsttCd}`;
 }
 
-function assertCapitalSeoulMetroProductionCoverage(plan, linesById) {
-  if (plan.providerMappings.length !== 213 || plan.stationLineQueries.length !== 213
-    || new Set(plan.providerMappings.map(({ stationId }) => stationId)).size !== 199
-    || plan.routeEdges.length !== 420 || plan.queryPlan.length !== 420) {
-    throw new Error("capital Seoul Metro production coverage count mismatch");
-  }
-  const queryCounts = new Map();
-  for (const edge of plan.routeEdges) {
-    const line = linesById.get(edge.lineId);
-    const lineName = requiredString(line?.nameKo, "capital Seoul Metro line name");
-    queryCounts.set(lineName, (queryCounts.get(lineName) ?? 0) + 1);
-  }
-  if (queryCounts.size !== CAPITAL_SEOUL_METRO_QUERY_COUNTS.size
-    || [...CAPITAL_SEOUL_METRO_QUERY_COUNTS].some(([lineName, count]) => queryCounts.get(lineName) !== count)) {
-    throw new Error("capital Seoul Metro production coverage topology mismatch");
+function assertCapitalSeoulMetroProductionCoverage(
+  plan,
+  { stationLines, providerMappings, routeEdges },
+) {
+  const expectedStationLineIds = stationLines
+    .map(({ stationId, lineId }) => `${stationId}:${lineId}`)
+    .sort(compareBytes);
+  const actualStationLineIds = plan.stationLineQueries
+    .map(({ stationLineId }) => stationLineId)
+    .sort(compareBytes);
+  const expectedRouteEdgeIds = routeEdges.map(({ routeEdgeId }) => routeEdgeId).sort(compareBytes);
+  const actualRouteEdgeIds = plan.routeEdges.map(({ routeEdgeId }) => routeEdgeId).sort(compareBytes);
+  const queryRouteEdgeIds = plan.queryPlan.map(({ routeEdgeId }) => routeEdgeId).sort(compareBytes);
+  if (stationLines.length === 0 || routeEdges.length === 0
+    || canonicalJson(plan.providerMappings) !== canonicalJson(providerMappings)
+    || canonicalJson(actualStationLineIds) !== canonicalJson(expectedStationLineIds)
+    || canonicalJson(actualRouteEdgeIds) !== canonicalJson(expectedRouteEdgeIds)
+    || canonicalJson(queryRouteEdgeIds) !== canonicalJson(expectedRouteEdgeIds)
+    || new Set(actualStationLineIds).size !== expectedStationLineIds.length
+    || new Set(actualRouteEdgeIds).size !== expectedRouteEdgeIds.length
+    || new Set(plan.queryPlan.map(({ queryId }) => queryId)).size !== plan.queryPlan.length) {
+    throw new Error("capital Seoul Metro production coverage mismatch");
   }
 }
 

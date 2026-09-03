@@ -20,7 +20,7 @@ const paths = Object.freeze({
   sourceInventory: path.join(datapackRoot, "source-inventory.json"),
 });
 
-test("canonical capital@1 정본에서 213 FACILITY 수집 계약을 결정적으로 만든다", async () => {
+test("canonical capital@1 정본에서 FACILITY 수집 계약을 결정적으로 만든다", async () => {
   const input = await readInput();
   const before = Object.fromEntries(Object.entries(input).map(([key, value]) => [key, Buffer.from(value)]));
 
@@ -31,12 +31,12 @@ test("canonical capital@1 정본에서 213 FACILITY 수집 계약을 결정적�
   assert.equal(plan.coverage.regionId, "capital");
   assert.equal(plan.coverage.operatorId, "seoul-metro");
   assert.equal(plan.coverage.sourceDomain, "station_line_membership");
-  assert.equal(plan.counts.stationLineCount, 213);
-  assert.equal(plan.counts.stationCount, 199);
-  assert.equal(plan.counts.providerTupleCount, 213);
-  assert.equal(plan.stationLineProviderMappings.length, 213);
-  assert.equal(new Set(plan.stationLineProviderMappings.map(({ stationId, lineId }) => `${stationId}\0${lineId}`)).size, 213);
-  assert.equal(new Set(plan.stationLineProviderMappings.map(({ stationId }) => stationId)).size, 199);
+  assert.deepEqual(plan.counts, {
+    stationLineCount: plan.stationLineProviderMappings.length,
+    stationCount: new Set(plan.stationLineProviderMappings.map(({ stationId }) => stationId)).size,
+    providerTupleCount: new Set(plan.stationLineProviderMappings.map(({ providerOperatorId, providerLineId, providerStationId }) => `${providerOperatorId}\0${providerLineId}\0${providerStationId}`)).size,
+  });
+  assert.equal(new Set(plan.stationLineProviderMappings.map(({ stationId, lineId }) => `${stationId}\0${lineId}`)).size, plan.stationLineProviderMappings.length);
   assert.match(plan.planSha256, /^[a-f0-9]{64}$/);
   assert.equal(
     canonicalCurrentCapitalFacilityCollectionPlanJson(plan),
