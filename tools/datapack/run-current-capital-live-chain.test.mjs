@@ -121,13 +121,18 @@ function terminalAccessibilitySourceHandoff({
   return { ...payload, handoffSha256: sha(Buffer.from(canonicalJson(payload))) };
 }
 
-function terminalAccessibilityVerifierResult(outputs = []) {
+async function terminalAccessibilityVerifierResult(repositoryRoot, outputs = []) {
+  const [candidateBytes, operationNow] = await Promise.all([
+    readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json")),
+    nextSyntheticCurrentStaticNetworkNow(repositoryRoot),
+  ]);
+  const operationNowValue = operationNow.toISOString();
   return {
     handoffSha256: "9".repeat(64),
     operationId: "current-capital-560",
-    providerStartedAt: "2026-08-30T17:58:00.000Z",
-    operationNow: "2026-08-30T17:59:00.000Z",
-    protectedCandidateId: "terminal-candidate",
+    providerStartedAt: new Date(operationNow.getTime() - 60_000).toISOString(),
+    operationNow: operationNowValue,
+    protectedCandidateId: JSON.parse(candidateBytes).candidateId,
     sources: [
       { action: "REFRESH", sourceId: "kric-station-convenience-standard" },
       { action: "REFRESH", sourceId: "seoul-metro-accessibility" },
@@ -1019,7 +1024,7 @@ test("terminal consumer orders P/T/F and CAS before one OCI recovery and semanti
   const accessibilityBytes = Buffer.from("prepared fresh accessibility\n");
   await mkdir(path.join(preparedRoot, path.dirname(accessibilityPath)), { recursive: true });
   await writeFile(path.join(preparedRoot, accessibilityPath), accessibilityBytes);
-  const accessibilitySourceHandoff = terminalAccessibilityVerifierResult([{
+  const accessibilitySourceHandoff = await terminalAccessibilityVerifierResult(repositoryRoot, [{
       relativePath: accessibilityPath,
       operation: "create",
       beforeSha256: null,
@@ -1103,7 +1108,7 @@ test("terminal consumer rejects accessibility identity outside the topology v2 p
   t.after(() => rm(runnerTemp, { recursive: true, force: true }));
   const repositoryRoot = await pendingTransitionRepository(t);
   const operationNow = await nextSyntheticCurrentStaticNetworkNow(repositoryRoot);
-  const accessibilitySourceHandoff = terminalAccessibilityVerifierResult();
+  const accessibilitySourceHandoff = await terminalAccessibilityVerifierResult(repositoryRoot);
   let rebindStarted = false;
   await assert.rejects(runCurrentCapitalExitTerminalConsumer({
     repositoryRoot,
@@ -1146,7 +1151,7 @@ test("terminal consumer verifies generated topology bytes before the first rebin
   const handoff = await terminalProviderHandoff({ repositoryRoot });
   const topologyOutputPath = "tools/datapack/source-inventory.json";
   const topologyBefore = await readFile(path.join(repositoryRoot, topologyOutputPath));
-  const accessibilitySourceHandoff = terminalAccessibilityVerifierResult();
+  const accessibilitySourceHandoff = await terminalAccessibilityVerifierResult(repositoryRoot);
   let firstRebindCalled = false;
   await assert.rejects(runCurrentCapitalExitTerminalConsumer({
     repositoryRoot, runnerTemp, repository: "AquilaXk/easysubway-data", candidateOperationId: "current-capital-647",
@@ -1190,7 +1195,7 @@ test("terminal consumer rejects an inconsistent real OCI source before refresh o
   const repositoryRoot = await pendingTransitionRepository(t);
   const handoff = await terminalProviderHandoff({ repositoryRoot, mutatePlan: changeProviderMappingIdentity });
   const client = memoryOciObject(handoff.bundleBytes, handoff.providerObject.objectKey);
-  const accessibilitySourceHandoff = terminalAccessibilityVerifierResult();
+  const accessibilitySourceHandoff = await terminalAccessibilityVerifierResult(repositoryRoot);
   const routeEvaluationRelative = "tools/datapack/release/current-capital-accessibility-full/route-edge-evaluation.json";
   const routeEvaluationPrestate = await readFile(path.join(repositoryRoot, routeEvaluationRelative));
   let stagedRoot;

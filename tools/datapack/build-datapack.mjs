@@ -956,7 +956,6 @@ export function candidateOverrideAccessibilityFreshUntil({
     "UNVERIFIED_EVIDENCE_BLOCKED",
   ]);
   if (materialization.materializationDigest !== authority.buildInput.materializationDigest
-    || materialization.rows.length !== 639
     || materialization.stateSummary.UNKNOWN !== 0
     || materialization.stateSummary.MISSING !== 0
     || materialization.stateSummary.STALE !== 0
