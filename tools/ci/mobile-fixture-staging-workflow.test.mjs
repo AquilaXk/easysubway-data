@@ -168,10 +168,7 @@ test("CI는 병합된 current v19 pack을 ITX current evidence와 직접 검증�
   const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
   const verification = ci.match(/- name: Verify current Mobile v19 ITX topology evidence[\s\S]*?\n\s+- name:/)?.[0];
   assert.ok(verification, "current v19 ITX topology evidence 검증 스텝을 찾지 못함");
-  assert.match(verification, /apply-itx-topology-to-bundled-pack\.mjs/);
-  assert.match(verification, /--check/);
-  assert.match(verification, /apps\/mobile\/assets\/datapacks\/capital\.sqlite\.gz/);
-  assert.match(verification, /node --test tools\/datapack\/readmit-bundled-pack-identity\.test\.mjs/);
+  assert.match(verification, /node --test tools\/datapack\/verify-production-pack-artifact-identity\.test\.mjs/);
   assert.match(verification, /node --test --test-name-pattern='bundled 공식 OD quote\|bundled 차량·출입문 힌트' tools\/datapack\/datapack-tools\.test\.mjs/);
   assert.match(verification, /git diff --exit-code -- tools\/datapack\/itx-cheongchun-topology-evidence\.json/);
   assert.ok(
@@ -211,11 +208,11 @@ test("CI는 migration 없이 current v19 profile 소유 테스트를 실행한�
   ]);
 });
 
-test("CI는 direct current v19 검증 안에서 #108 bundled-pack 회귀를 실행한다", () => {
+test("CI는 direct current v19 검증 안에서 deployed verifier 회귀를 실행한다", () => {
   const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
   const verification = namedWorkflowStep(ci, "Verify current Mobile v19 ITX topology evidence");
   assert.match(verification, /set -euo pipefail/);
-  assert.match(verification, /node --test tools\/datapack\/readmit-bundled-pack-identity\.test\.mjs/);
+  assert.match(verification, /node --test tools\/datapack\/verify-production-pack-artifact-identity\.test\.mjs/);
   assert.match(verification, /node --test --test-name-pattern='bundled 공식 OD quote\|bundled 차량·출입문 힌트' tools\/datapack\/datapack-tools\.test\.mjs/);
   assertWorkflowStepOrder(ci, ["Stage pinned Mobile fixture", "Verify current Mobile v19 ITX topology evidence"]);
 });
