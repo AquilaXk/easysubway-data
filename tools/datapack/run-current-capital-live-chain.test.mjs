@@ -50,6 +50,8 @@ import {
 import { commitCurrentCapitalTerminalManifest, validateCurrentCapitalTerminalManifest } from "./refresh-current-capital-accessibility-full.mjs";
 import { CURRENT_CAPITAL_ACCESSIBILITY_SOURCE_FIXED_OUTPUTS } from "./current-capital-accessibility-source-handoff.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { preparePendingCurrentAccessibilityTransitionRepository } from "./test-fixtures/current-full-capital-production-artifact.mjs";
+import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const execFile = promisify(execFileCallback);
@@ -217,6 +219,20 @@ test("EXIT topology preflight rejects a stale selected ITX authority before coll
 async function cloneCleanFixture(source, target) {
   await execFile("git", ["clone", "--shared", "--quiet", source, target]);
   return (await execFile("git", ["rev-parse", "HEAD"], { cwd: target })).stdout.trim();
+}
+
+async function pendingTransitionRepository(t, { initializeGit = false } = {}) {
+  const repositoryRoot = await preparePendingCurrentAccessibilityTransitionRepository(ROOT);
+  t.after(() => rm(repositoryRoot, { recursive: true, force: true }));
+  if (initializeGit) {
+    await execFile("git", ["init", "--quiet"], { cwd: repositoryRoot });
+    await execFile("git", ["add", "--all"], { cwd: repositoryRoot });
+    await execFile("git", [
+      "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+      "commit", "--quiet", "-m", "Create pending transition fixture",
+    ], { cwd: repositoryRoot });
+  }
+  return repositoryRoot;
 }
 
 async function buildRetainedFacilityFixture(root) {
@@ -403,17 +419,18 @@ test("live chain fixes the staged P/F/T to EXIT to full-capital order and invoke
   assert.throws(() => buildCurrentCapitalLiveChainPlan({ ...planInput, transferReceiptPath: "relative.json" }), /paths must be absolute/);
 });
 
-test("terminal manifest accepts only a verifier-shaped proof and rejects caller lineage hashes", async () => {
+test("terminal manifest accepts only a verifier-shaped proof and rejects caller lineage hashes", async (t) => {
+  const repositoryRoot = await pendingTransitionRepository(t);
   const markers = [
     "tools/datapack/release/current-capital-accessibility-transition.json",
     "tools/datapack/release/current-capital-accessibility-transition-successor.json",
   ];
-  const markerBytes = await Promise.all(markers.map((relative) => readFile(path.join(ROOT, relative))));
+  const markerBytes = await Promise.all(markers.map((relative) => readFile(path.join(repositoryRoot, relative))));
   const [candidate, inventory, ledger] = await Promise.all([
     "tools/datapack/release/candidate-build-spec.json",
     "tools/datapack/source-inventory.json",
     "tools/datapack/release/source-snapshots.json",
-  ].map(async (relative) => JSON.parse(await readFile(path.join(ROOT, relative), "utf8"))));
+  ].map(async (relative) => JSON.parse(await readFile(path.join(repositoryRoot, relative), "utf8"))));
   const liveChainOutputs = currentCapitalLiveChainOutputPaths({
     candidate, sourceInventory: inventory, sourceSnapshotLedger: ledger,
   });
@@ -486,7 +503,7 @@ test("terminal manifest accepts only a verifier-shaped proof and rejects caller 
   assert.deepEqual(checked.replacements, replacementPaths);
   assert.equal(checked.topologyInputs.length, 4);
   assert.equal(checked.liveChainOutputs.length, 17);
-  assert.deepEqual(await Promise.all(markers.map((relative) => readFile(path.join(ROOT, relative)))), markerBytes);
+  assert.deepEqual(await Promise.all(markers.map((relative) => readFile(path.join(repositoryRoot, relative)))), markerBytes);
   assert.throws(() => validateCurrentCapitalTerminalManifest({
     ...manifest, replacementPaths: replacementPaths.slice(1),
   }), /replacement manifest mismatch/);
@@ -588,8 +605,9 @@ async function terminalCommitFixture(repositoryRoot) {
 test("terminal CAS verifies proof-bound fan-in and every replacement prestate", async (t) => {
   const parent = await mkdtemp(path.join(os.tmpdir(), "current-capital-terminal-commit-"));
   t.after(() => rm(parent, { recursive: true, force: true }));
+  const fixtureSource = await pendingTransitionRepository(t, { initializeGit: true });
   const successRoot = path.join(parent, "success");
-  await cloneCleanFixture(ROOT, successRoot);
+  await cloneCleanFixture(fixtureSource, successRoot);
   const success = await terminalCommitFixture(successRoot);
   await commitCurrentCapitalTerminalManifest({ repositoryRoot: successRoot, ...success });
   assert.deepEqual(await readFile(path.join(successRoot, success.fanInPath)), success.outputs.find(({ relative }) => relative === success.fanInPath).bytes);
@@ -599,7 +617,7 @@ test("terminal CAS verifies proof-bound fan-in and every replacement prestate", 
     ["route-evaluation", "tools/datapack/release/current-capital-accessibility-full/route-edge-evaluation.json"],
   ]) {
     const tamperedRoot = path.join(parent, `tampered-${name}`);
-    await cloneCleanFixture(ROOT, tamperedRoot);
+    await cloneCleanFixture(fixtureSource, tamperedRoot);
     const fixture = await terminalCommitFixture(tamperedRoot);
     await writeFile(path.join(tamperedRoot, target), "foreign replacement");
     await assert.rejects(
@@ -612,12 +630,13 @@ test("terminal CAS verifies proof-bound fan-in and every replacement prestate", 
 test("terminal lineage replays the retained FACILITY producer and rejects builder tampering before journaling", async (t) => {
   const parent = await mkdtemp(path.join(os.tmpdir(), "current-terminal-lineage-"));
   t.after(() => rm(parent, { recursive: true, force: true }));
+  const fixtureSource = await pendingTransitionRepository(t, { initializeGit: true });
   const sourceMainRoot = path.join(parent, "source-main");
   const retainedRoot = path.join(parent, "retained");
   const privateBuilderRoot = path.join(parent, "private-builder");
-  const sourceMainGitSha = await cloneCleanFixture(ROOT, sourceMainRoot);
-  await cloneCleanFixture(ROOT, retainedRoot);
-  const builderGitSha = await cloneCleanFixture(ROOT, privateBuilderRoot);
+  const sourceMainGitSha = await cloneCleanFixture(fixtureSource, sourceMainRoot);
+  await cloneCleanFixture(fixtureSource, retainedRoot);
+  const builderGitSha = await cloneCleanFixture(fixtureSource, privateBuilderRoot);
   const facilityHeadGitSha = await buildRetainedFacilityFixture(retainedRoot);
   const topologyBuild = await currentTopologyFixture(privateBuilderRoot);
   let observedTerminalCandidateId = null;
@@ -682,13 +701,14 @@ test("lineage proof purpose separates topology-derived and protected terminal ca
 test("ancestor recovery rebuilds only a current-head topology handoff and rejects retained byte drift", async (t) => {
   const parent = await mkdtemp(path.join(os.tmpdir(), "current-terminal-ancestor-recovery-"));
   t.after(() => rm(parent, { recursive: true, force: true }));
+  const fixtureSource = await pendingTransitionRepository(t, { initializeGit: true });
   const sourceMainRoot = path.join(parent, "source-main");
   const ancestorRetainedRoot = path.join(parent, "ancestor-retained");
   const originalPrivateBuilderRoot = path.join(parent, "original-private-builder");
   const currentRetainedRoot = path.join(parent, "current-retained");
-  const sourceMainGitSha = await cloneCleanFixture(ROOT, sourceMainRoot);
-  await cloneCleanFixture(ROOT, ancestorRetainedRoot);
-  const originalBuilderGitSha = await cloneCleanFixture(ROOT, originalPrivateBuilderRoot);
+  const sourceMainGitSha = await cloneCleanFixture(fixtureSource, sourceMainRoot);
+  await cloneCleanFixture(fixtureSource, ancestorRetainedRoot);
+  const originalBuilderGitSha = await cloneCleanFixture(fixtureSource, originalPrivateBuilderRoot);
   const ancestorFacilityHeadGitSha = await buildRetainedFacilityFixture(ancestorRetainedRoot);
   const topologyBuild = await currentTopologyFixture(originalPrivateBuilderRoot);
   const originalProof = await verifyCurrentCapitalTerminalLineage({
@@ -883,7 +903,7 @@ function memoryOciObject(bytes, key) {
   };
 }
 
-async function terminalProviderHandoff({ mutatePlan = (plan) => plan } = {}) {
+async function terminalProviderHandoff({ repositoryRoot = ROOT, mutatePlan = (plan) => plan } = {}) {
   const paths = {
     canonicalPackBytes: "tools/datapack/release/capital-production-canonical-pack.json",
     coverageTargetsBytes: "tools/datapack/nationwide-coverage-targets.json",
@@ -892,11 +912,11 @@ async function terminalProviderHandoff({ mutatePlan = (plan) => plan } = {}) {
     sourceInventoryBytes: "tools/datapack/source-inventory.json",
   };
   const input = Object.fromEntries(await Promise.all(Object.entries(paths).map(async ([key, relative]) =>
-    [key, await readFile(path.join(ROOT, relative))],
+    [key, await readFile(path.join(repositoryRoot, relative))],
   )));
   const inventory = JSON.parse(input.sourceInventoryBytes);
   const incheon = inventory.sources.find(({ id }) => id === "incheon-transit-station-info").topologyAdmissionEvidence;
-  input.incheonTopologyBytes = await readFile(path.join(ROOT, incheon.snapshotPath));
+  input.incheonTopologyBytes = await readFile(path.join(repositoryRoot, incheon.snapshotPath));
   const plan = buildCurrentKricExitCollectionPlan(input, {
     now: new Date(incheon.capturedAt), coverageSelector: "capital-seoul-metro-production",
   });
@@ -980,7 +1000,8 @@ function changeProviderMappingIdentity(plan) {
 test("terminal consumer orders P/T/F and CAS before one OCI recovery and semantic refresh", async (t) => {
   const runnerTemp = await mkdtemp(path.join(os.tmpdir(), "current-capital-terminal-consumer-"));
   t.after(() => rm(runnerTemp, { recursive: true, force: true }));
-  const handoff = await terminalProviderHandoff();
+  const repositoryRoot = await pendingTransitionRepository(t);
+  const handoff = await terminalProviderHandoff({ repositoryRoot });
   const preparedRoot = path.join(runnerTemp, "prepared-accessibility");
   const accessibilityPath = "tools/datapack/sources/seoul-metro-accessibility-20990101T000000000Z.json";
   const accessibilityBytes = Buffer.from("prepared fresh accessibility\n");
@@ -998,20 +1019,20 @@ test("terminal consumer orders P/T/F and CAS before one OCI recovery and semanti
   ];
   const rootPrestates = await Promise.all([
     "tools/datapack/release/candidate-build-spec.json", ...markers,
-  ].map(async (relative) => [relative, await readFile(path.join(ROOT, relative))]));
+  ].map(async (relative) => [relative, await readFile(path.join(repositoryRoot, relative))]));
   const calls = [];
   const client = memoryOciObject(handoff.bundleBytes, handoff.providerObject.objectKey);
   const stageRoots = [];
   let terminalCommit;
   const result = await runCurrentCapitalExitTerminalConsumer({
-    repositoryRoot: ROOT, runnerTemp, repository: "AquilaXk/easysubway-data", candidateOperationId: "current-capital-647",
-    sourceMainRoot: ROOT, sourceMainGitSha: "a".repeat(40), privateBuilderRoot: preparedRoot, builderGitSha: "b".repeat(40), topologyBuild: {
+    repositoryRoot, runnerTemp, repository: "AquilaXk/easysubway-data", candidateOperationId: "current-capital-647",
+    sourceMainRoot: repositoryRoot, sourceMainGitSha: "a".repeat(40), privateBuilderRoot: preparedRoot, builderGitSha: "b".repeat(40), topologyBuild: {
       buildNow: "2026-09-01T00:00:00.000Z", capitalTopologyPath: "tools/datapack/sources/capital-route-topology-20260901.json",
       incheonAccessibilityPath: "tools/datapack/sources/incheon-transit-accessibility-20260901.json", incheonLine1TimetablePath: "tools/datapack/sources/incheon-line1-train-timetable-20260901.json",
       incheonLine2TimetablePath: "tools/datapack/sources/incheon-line2-train-timetable-20260901.json", incheonTopologyPath: "tools/datapack/sources/incheon-transit-station-info-20260901.json",
       itxCurrentAdmissionPath: "tools/datapack/release/current-itx-admission.json", itxTopologyEvidencePath: "tools/datapack/itx-topology-evidence.json",
     }, topologyHandoffBytes: Buffer.from("{}\n"), accessibilitySourceHandoffBytes: Buffer.from("{}\n"), verifyTerminalLineageImpl: async () => ({
-      proof: await terminalConsumerProof(), topologyInputs: [], topologyOutputs: [],
+      proof: await terminalConsumerProof(repositoryRoot), topologyInputs: [], topologyOutputs: [],
     }),
     verifyTopologyHandoffImpl: () => ({
       operationId: "current-capital-560",
@@ -1019,7 +1040,7 @@ test("terminal consumer orders P/T/F and CAS before one OCI recovery and semanti
     }),
     verifyAccessibilityHandoffImpl: async () => accessibilitySourceHandoff,
     commitTerminalManifestImpl: async (input) => { terminalCommit = input; return { repositoryRoot: stageRoots[0] }; },
-    operationNow: new Date("2026-08-30T18:00:00.000Z"), sourceReceiptBytes: handoff.sourceReceiptBytes,
+    operationNow: handoff.operationNow, sourceReceiptBytes: handoff.sourceReceiptBytes,
     providerOciPlanBytes: handoff.providerOciPlanBytes, providerOciReceiptBytes: handoff.providerOciReceiptBytes,
     client, isAncestor: async (from, to) => from === "a".repeat(40) && to === "b".repeat(40),
     transferObservationDirectory: "/retained/transfer/observation", transferReceiptPath: "/retained/transfer/receipt.json",
@@ -1059,20 +1080,24 @@ test("terminal consumer orders P/T/F and CAS before one OCI recovery and semanti
   await stat(path.join(result.stagedRoot, result.fanInPath));
   await Promise.all(markers.map((relative) => assert.rejects(stat(path.join(result.stagedRoot, relative)), { code: "ENOENT" })));
   assert.deepEqual(result.deletedMarkerPaths, markers);
-  await assert.rejects(stat(path.join(ROOT, accessibilityPath)), { code: "ENOENT" });
-  for (const [relative, before] of rootPrestates) assert.deepEqual(await readFile(path.join(ROOT, relative)), before, `ROOT mutated: ${relative}`);
+  await assert.rejects(stat(path.join(repositoryRoot, accessibilityPath)), { code: "ENOENT" });
+  for (const [relative, before] of rootPrestates) {
+    assert.deepEqual(await readFile(path.join(repositoryRoot, relative)), before, `source root mutated: ${relative}`);
+  }
 });
 
 test("terminal consumer rejects accessibility identity outside the topology v2 projection", async (t) => {
   const runnerTemp = await mkdtemp(path.join(os.tmpdir(), "current-capital-terminal-accessibility-identity-"));
   t.after(() => rm(runnerTemp, { recursive: true, force: true }));
+  const repositoryRoot = await pendingTransitionRepository(t);
+  const operationNow = (await currentTopologyAdmissionClock(repositoryRoot)).inWindow;
   const accessibilitySourceHandoff = terminalAccessibilityVerifierResult();
   let rebindStarted = false;
   await assert.rejects(runCurrentCapitalExitTerminalConsumer({
-    repositoryRoot: ROOT,
-    sourceMainRoot: ROOT,
+    repositoryRoot,
+    sourceMainRoot: repositoryRoot,
     sourceMainGitSha: "a".repeat(40),
-    privateBuilderRoot: ROOT,
+    privateBuilderRoot: repositoryRoot,
     builderGitSha: "b".repeat(40),
     topologyBuild: {},
     topologyHandoffBytes: Buffer.from("{}\n"),
@@ -1080,7 +1105,7 @@ test("terminal consumer rejects accessibility identity outside the topology v2 p
     runnerTemp,
     repository: "AquilaXk/easysubway-data",
     candidateOperationId: "current-capital-647",
-    operationNow: new Date("2026-08-30T18:00:00.000Z"),
+    operationNow,
     sourceReceiptBytes: Buffer.from("{}\n"),
     providerOciPlanBytes: Buffer.from("{}\n"),
     providerOciReceiptBytes: Buffer.from("{}\n"),
@@ -1105,20 +1130,21 @@ test("terminal consumer rejects accessibility identity outside the topology v2 p
 test("terminal consumer verifies generated topology bytes before the first rebind", async (t) => {
   const runnerTemp = await mkdtemp(path.join(os.tmpdir(), "current-capital-terminal-generated-proof-"));
   t.after(() => rm(runnerTemp, { recursive: true, force: true }));
-  const handoff = await terminalProviderHandoff();
+  const repositoryRoot = await pendingTransitionRepository(t);
+  const handoff = await terminalProviderHandoff({ repositoryRoot });
   const topologyOutputPath = "tools/datapack/source-inventory.json";
-  const topologyBefore = await readFile(path.join(ROOT, topologyOutputPath));
+  const topologyBefore = await readFile(path.join(repositoryRoot, topologyOutputPath));
   const accessibilitySourceHandoff = terminalAccessibilityVerifierResult();
   let firstRebindCalled = false;
   await assert.rejects(runCurrentCapitalExitTerminalConsumer({
-    repositoryRoot: ROOT, runnerTemp, repository: "AquilaXk/easysubway-data", candidateOperationId: "current-capital-647",
-    sourceMainRoot: ROOT, sourceMainGitSha: "a".repeat(40), privateBuilderRoot: ROOT, builderGitSha: "b".repeat(40), topologyBuild: {
+    repositoryRoot, runnerTemp, repository: "AquilaXk/easysubway-data", candidateOperationId: "current-capital-647",
+    sourceMainRoot: repositoryRoot, sourceMainGitSha: "a".repeat(40), privateBuilderRoot: repositoryRoot, builderGitSha: "b".repeat(40), topologyBuild: {
       buildNow: "2026-09-01T00:00:00.000Z", capitalTopologyPath: "tools/datapack/sources/capital-route-topology-20260901.json",
       incheonAccessibilityPath: "tools/datapack/sources/incheon-transit-accessibility-20260901.json", incheonLine1TimetablePath: "tools/datapack/sources/incheon-line1-train-timetable-20260901.json",
       incheonLine2TimetablePath: "tools/datapack/sources/incheon-line2-train-timetable-20260901.json", incheonTopologyPath: "tools/datapack/sources/incheon-transit-station-info-20260901.json",
       itxCurrentAdmissionPath: "tools/datapack/release/current-itx-admission.json", itxTopologyEvidencePath: "tools/datapack/itx-topology-evidence.json",
     }, topologyHandoffBytes: Buffer.from("{}\n"), accessibilitySourceHandoffBytes: Buffer.from("{}\n"), verifyTerminalLineageImpl: async () => {
-      const proof = await terminalConsumerProof();
+      const proof = await terminalConsumerProof(repositoryRoot);
       proof.topologyOutputs = [{
         relativePath: topologyOutputPath,
         beforeSha256: sha(topologyBefore), generatedSha256: sha(topologyBefore),
@@ -1134,7 +1160,7 @@ test("terminal consumer verifies generated topology bytes before the first rebin
     }),
     verifyAccessibilityHandoffImpl: async () => accessibilitySourceHandoff,
     commitTerminalManifestImpl: async () => { throw new Error("terminal commit must not start"); },
-    operationNow: new Date("2026-08-30T18:00:00.000Z"), sourceReceiptBytes: handoff.sourceReceiptBytes,
+    operationNow: handoff.operationNow, sourceReceiptBytes: handoff.sourceReceiptBytes,
     providerOciPlanBytes: handoff.providerOciPlanBytes, providerOciReceiptBytes: handoff.providerOciReceiptBytes,
     client: memoryOciObject(handoff.bundleBytes, handoff.providerObject.objectKey), isAncestor: async () => true,
     transferObservationDirectory: "/retained/transfer/observation", transferReceiptPath: "/retained/transfer/receipt.json",
@@ -1149,21 +1175,22 @@ test("terminal consumer verifies generated topology bytes before the first rebin
 test("terminal consumer rejects an inconsistent real OCI source before refresh or marker deletion", async (t) => {
   const runnerTemp = await mkdtemp(path.join(os.tmpdir(), "current-capital-terminal-reject-"));
   t.after(() => rm(runnerTemp, { recursive: true, force: true }));
-  const handoff = await terminalProviderHandoff({ mutatePlan: changeProviderMappingIdentity });
+  const repositoryRoot = await pendingTransitionRepository(t);
+  const handoff = await terminalProviderHandoff({ repositoryRoot, mutatePlan: changeProviderMappingIdentity });
   const client = memoryOciObject(handoff.bundleBytes, handoff.providerObject.objectKey);
   const accessibilitySourceHandoff = terminalAccessibilityVerifierResult();
   const routeEvaluationRelative = "tools/datapack/release/current-capital-accessibility-full/route-edge-evaluation.json";
-  const routeEvaluationPrestate = await readFile(path.join(ROOT, routeEvaluationRelative));
+  const routeEvaluationPrestate = await readFile(path.join(repositoryRoot, routeEvaluationRelative));
   let stagedRoot;
   await assert.rejects(runCurrentCapitalExitTerminalConsumer({
-    repositoryRoot: ROOT, runnerTemp, repository: "AquilaXk/easysubway-data", candidateOperationId: "current-capital-647",
-    sourceMainRoot: ROOT, sourceMainGitSha: "a".repeat(40), privateBuilderRoot: ROOT, builderGitSha: "b".repeat(40), topologyBuild: {
+    repositoryRoot, runnerTemp, repository: "AquilaXk/easysubway-data", candidateOperationId: "current-capital-647",
+    sourceMainRoot: repositoryRoot, sourceMainGitSha: "a".repeat(40), privateBuilderRoot: repositoryRoot, builderGitSha: "b".repeat(40), topologyBuild: {
       buildNow: "2026-09-01T00:00:00.000Z", capitalTopologyPath: "tools/datapack/sources/capital-route-topology-20260901.json",
       incheonAccessibilityPath: "tools/datapack/sources/incheon-transit-accessibility-20260901.json", incheonLine1TimetablePath: "tools/datapack/sources/incheon-line1-train-timetable-20260901.json",
       incheonLine2TimetablePath: "tools/datapack/sources/incheon-line2-train-timetable-20260901.json", incheonTopologyPath: "tools/datapack/sources/incheon-transit-station-info-20260901.json",
       itxCurrentAdmissionPath: "tools/datapack/release/current-itx-admission.json", itxTopologyEvidencePath: "tools/datapack/itx-topology-evidence.json",
     }, topologyHandoffBytes: Buffer.from("{}\n"), accessibilitySourceHandoffBytes: Buffer.from("{}\n"), verifyTerminalLineageImpl: async () => ({
-      proof: await terminalConsumerProof(), topologyInputs: [], topologyOutputs: [],
+      proof: await terminalConsumerProof(repositoryRoot), topologyInputs: [], topologyOutputs: [],
     }),
     verifyTopologyHandoffImpl: () => ({
       operationId: "current-capital-560",
@@ -1171,7 +1198,7 @@ test("terminal consumer rejects an inconsistent real OCI source before refresh o
     }),
     verifyAccessibilityHandoffImpl: async () => accessibilitySourceHandoff,
     commitTerminalManifestImpl: async () => ({ repositoryRoot: stagedRoot }),
-    operationNow: new Date("2026-08-30T18:00:00.000Z"), sourceReceiptBytes: handoff.sourceReceiptBytes,
+    operationNow: handoff.operationNow, sourceReceiptBytes: handoff.sourceReceiptBytes,
     providerOciPlanBytes: handoff.providerOciPlanBytes, providerOciReceiptBytes: handoff.providerOciReceiptBytes,
     client, isAncestor: async () => true,
     transferObservationDirectory: "/retained/transfer/observation", transferReceiptPath: "/retained/transfer/receipt.json",

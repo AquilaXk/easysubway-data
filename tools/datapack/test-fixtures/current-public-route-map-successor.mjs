@@ -200,6 +200,7 @@ async function regularDestination(root, relative) {
 }
 
 const SUCCESSOR_FIXTURE_PATHS = Object.freeze([
+  "tools/datapack/source-candidates.json",
   "tools/datapack/fixtures/seoul-route-map-positions-raw/data-go-15099316.csv",
   "tools/datapack/release/candidate-build-spec.json",
   "tools/datapack/release/release-request.json",
@@ -215,6 +216,7 @@ const SUCCESSOR_FIXTURE_PATHS = Object.freeze([
   "tools/datapack/nationwide-coverage-targets.json",
   "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
   "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
+  "tools/datapack/release/current-capital-accessibility-full/route-edge-evaluation.json",
   "tools/datapack/release/current-station-line-accessibility/station-line-input.json",
   "tools/datapack/release/current-capital-live-chain-fan-in.json",
   "tools/datapack/release/current-capital-facility-source-admission.json",

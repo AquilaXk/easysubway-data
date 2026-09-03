@@ -25,7 +25,12 @@ import { deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
 import { registerKricStandardAccessibilitySnapshot } from "../register-kric-standard-accessibility-snapshot.mjs";
 import { rebindCurrentCandidateSourceSnapshots } from "../rebind-current-candidate-source-snapshots.mjs";
 import { rebindCurrentActivePublicRouteMapMaterialization } from "../rebind-current-active-public-route-map-materialization.mjs";
-import { buildCurrentCapitalStationLineInput, canonicalCurrentCapitalStationLineInputJson, readCurrentCapitalInputs } from "../build-current-capital-station-line-input.mjs";
+import {
+  buildAuthenticatedCurrentCapitalFacilityEvidenceRows,
+  buildCurrentCapitalStationLineInput,
+  canonicalCurrentCapitalStationLineInputJson,
+  readCurrentCapitalInputs,
+} from "../build-current-capital-station-line-input.mjs";
 import { buildCurrentCapitalRouteEdgeInput, canonicalCurrentCapitalRouteEdgeInputJson } from "../build-current-capital-route-edge-input.mjs";
 import { projectCandidateFixtureForAccessibilityAuthority } from "../build-datapack.mjs";
 import { readCurrentCapitalLiveChainFanInBoundary } from "../build-current-capital-live-chain-boundary.mjs";
@@ -449,6 +454,65 @@ export async function prepareCurrentFullCapitalProductionRepository(sourceRoot) 
   }
 }
 
+async function bindPendingStationRoutePrestate(repositoryRoot, baseTransitionBytes, successor) {
+  if (successor.supersededTransition?.sha256 !== sha256(baseTransitionBytes)) {
+    throw new Error("pending transition base binding mismatch");
+  }
+  const baseTransition = JSON.parse(baseTransitionBytes);
+  const previousFacilityBytes = Buffer.from(successor.previousFacilityAdmissionBase64 ?? "", "base64");
+  if (previousFacilityBytes.length === 0
+    || previousFacilityBytes.toString("base64") !== successor.previousFacilityAdmissionBase64) {
+    throw new Error("pending transition FACILITY prestate mismatch");
+  }
+  const previousFacility = JSON.parse(previousFacilityBytes);
+  const [previousSnapshotBytes, station, route] = await Promise.all([
+    readFile(path.join(repositoryRoot, previousFacility.sourceIdentity.snapshotPath)),
+    json(repositoryRoot, "tools/datapack/release/current-capital-accessibility-full/station-line-input.json"),
+    json(repositoryRoot, "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json"),
+  ]);
+  const previousCandidate = baseTransition.previousCandidate;
+  const outputCandidate = {
+    ...station.candidate,
+    candidateId: previousCandidate.candidateId,
+    sourceSetSha256: previousCandidate.sourceSnapshotSetHash,
+  };
+  const facilityRows = buildAuthenticatedCurrentCapitalFacilityEvidenceRows({
+    facilityAdmission: previousFacility,
+    facilitySnapshotBytes: previousSnapshotBytes,
+    stationLines: station.stationLines,
+    admissionCandidate: baseTransition.nextCandidate,
+    outputCandidate,
+    candidatePublishedAt: Date.parse(previousCandidate.canonicalCandidate?.publishedAt ?? ""),
+  });
+  if (facilityRows.length !== station.evidenceRows.filter(({ domain }) => domain === "FACILITY").length) {
+    throw new Error("pending transition FACILITY row set mismatch");
+  }
+  station.candidate = outputCandidate;
+  let facilityIndex = 0;
+  station.evidenceRows = station.evidenceRows.map((row) => row.domain === "FACILITY"
+    ? facilityRows[facilityIndex++]
+    : {
+        ...row,
+        candidateId: previousCandidate.candidateId,
+        sourceSetSha256: previousCandidate.sourceSnapshotSetHash,
+      });
+  route.candidate = {
+    ...route.candidate,
+    candidateId: previousCandidate.candidateId,
+    sourceSetSha256: previousCandidate.sourceSnapshotSetHash,
+  };
+  await Promise.all([
+    writeFile(
+      path.join(repositoryRoot, "tools/datapack/release/current-capital-accessibility-full/station-line-input.json"),
+      canonicalCurrentCapitalStationLineInputJson(station),
+    ),
+    writeFile(
+      path.join(repositoryRoot, "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json"),
+      canonicalCurrentCapitalRouteEdgeInputJson(route),
+    ),
+  ]);
+}
+
 export async function preparePendingCurrentAccessibilityTransitionRepository(sourceRoot) {
   const repositoryRoot = await mkdtemp(path.join(tmpdir(), "easysubway-pending-accessibility-transition-"));
   try {
@@ -516,6 +580,7 @@ export async function preparePendingCurrentAccessibilityTransitionRepository(sou
       repositoryRoot,
       stage.previousStationLineInputBytes,
     );
+    await bindPendingStationRoutePrestate(repositoryRoot, baseTransitionBytes, successor);
     return repositoryRoot;
   } catch (error) {
     await rm(repositoryRoot, { recursive: true, force: true });
