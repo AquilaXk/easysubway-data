@@ -542,37 +542,6 @@ async function stagedPreApprovalRepository(t) {
 async function actualPendingMarkerRepository(t) {
   const root = await preparePendingCurrentAccessibilityTransitionRepository(ROOT);
   t.after(() => rm(root, { recursive: true, force: true }));
-  const [baseBytes, successor, station] = await Promise.all([
-    readFile(path.join(root, TRANSITION)),
-    readFile(path.join(root, SUCCESSOR)).then(JSON.parse),
-    readFile(path.join(root, OUTPUTS[0])).then(JSON.parse),
-  ]);
-  const marker = JSON.parse(baseBytes);
-  assert.equal(successor.supersededTransition.sha256, sha(baseBytes));
-  const previousFacilityBytes = Buffer.from(successor.previousFacilityAdmissionBase64, "base64");
-  const previousFacility = JSON.parse(previousFacilityBytes);
-  const previousSnapshotBytes = await readFile(path.join(root, previousFacility.sourceIdentity.snapshotPath));
-  const outputCandidate = {
-    ...station.candidate,
-    candidateId: marker.previousCandidate.candidateId,
-    sourceSetSha256: marker.previousCandidate.sourceSnapshotSetHash,
-  };
-  await rebindStagedActivatedOutputCandidateIds(
-    root,
-    marker.previousCandidate.candidateId,
-    marker.previousCandidate.sourceSnapshotSetHash,
-    {
-      facilityEvidenceRows: buildAuthenticatedCurrentCapitalFacilityEvidenceRows({
-        facilityAdmission: previousFacility,
-        facilitySnapshotBytes: previousSnapshotBytes,
-        stationLines: station.stationLines,
-        admissionCandidate: marker.nextCandidate,
-        outputCandidate,
-        candidatePublishedAt: Date.parse(marker.previousCandidate.canonicalCandidate.publishedAt),
-      }),
-      rebindAdmissions: false,
-    },
-  );
   return root;
 }
 
@@ -765,74 +734,6 @@ async function admittedIncheonSnapshot(root, sourceInventory, sourceId, admissio
     `staged ${sourceId} snapshot bytes must be exact`,
   );
   return { snapshotPath, bytes, value };
-}
-
-async function rebindStagedActivatedOutputCandidateIds(
-  root,
-  candidateId,
-  sourceSetSha256,
-  { facilityEvidenceRows = null, rebindAdmissions = true } = {},
-) {
-  if (typeof candidateId !== "string" || !/^(?:capital-pilot-candidate-[0-9]{8}|capital-accessibility-predecessor-[a-f0-9]{64})$/u.test(candidateId)) {
-    throw new Error("staged candidate identity is invalid");
-  }
-  if (typeof sourceSetSha256 !== "string" || !/^[a-f0-9]{64}$/u.test(sourceSetSha256)) {
-    throw new Error("staged candidate source set is invalid");
-  }
-  const documents = await Promise.all(OUTPUTS.map(async (relative) => ({
-    relative,
-    bytes: await readFile(path.join(root, relative)),
-  })));
-  const parsed = documents.map(({ relative, bytes }) => ({ relative, value: JSON.parse(bytes) }));
-  const [station, route] = parsed.map(({ value }) => value);
-  const stationIds = [station?.candidate?.candidateId, ...(station?.evidenceRows ?? []).map(({ candidateId: value }) => value)];
-  const stationSourceSets = [station?.candidate?.sourceSetSha256, ...(station?.evidenceRows ?? []).map(({ sourceSetSha256: value }) => value)];
-  const routeIds = [route?.candidate?.candidateId];
-  if (!Array.isArray(station?.evidenceRows) || stationIds.length !== station.evidenceRows.length + 1
-    || [...stationIds, ...stationSourceSets, ...routeIds, route?.candidate?.sourceSetSha256].some((value) => typeof value !== "string")
-    || new Set([...stationIds, ...routeIds]).size !== 1 || new Set([...stationSourceSets, route.candidate.sourceSetSha256]).size !== 1) {
-    throw new Error("staged activated output candidate identity is invalid");
-  }
-  const [previousCandidateId] = stationIds;
-  if (previousCandidateId === candidateId
-    && station.candidate.sourceSetSha256 === sourceSetSha256
-    && route.candidate.sourceSetSha256 === sourceSetSha256
-    && facilityEvidenceRows === null) return;
-  const facilityRowCount = station.evidenceRows.filter(({ domain }) => domain === "FACILITY").length;
-  if (facilityEvidenceRows !== null && (!Array.isArray(facilityEvidenceRows)
-    || facilityEvidenceRows.length !== facilityRowCount
-    || facilityEvidenceRows.some((row) => row.domain !== "FACILITY"
-      || row.candidateId !== candidateId
-      || row.sourceSetSha256 !== sourceSetSha256))) {
-    throw new Error("staged FACILITY prestate evidence is invalid");
-  }
-  const before = structuredClone(parsed.map(({ value }) => value));
-  station.candidate.candidateId = candidateId; station.candidate.sourceSetSha256 = sourceSetSha256;
-  for (const row of station.evidenceRows) { row.candidateId = candidateId; row.sourceSetSha256 = sourceSetSha256; }
-  if (facilityEvidenceRows !== null) {
-    let facilityIndex = 0;
-    station.evidenceRows = station.evidenceRows.map((row) =>
-      row.domain === "FACILITY" ? facilityEvidenceRows[facilityIndex++] : row);
-  }
-  route.candidate.candidateId = candidateId; route.candidate.sourceSetSha256 = sourceSetSha256;
-  const restored = structuredClone(parsed.map(({ value }) => value));
-  restored[0].candidate.candidateId = previousCandidateId; restored[0].candidate.sourceSetSha256 = before[0].candidate.sourceSetSha256;
-  for (const row of restored[0].evidenceRows) { row.candidateId = previousCandidateId; row.sourceSetSha256 = before[0].candidate.sourceSetSha256; }
-  if (facilityEvidenceRows !== null) {
-    let facilityIndex = 0;
-    restored[0].evidenceRows = restored[0].evidenceRows.map((row) =>
-      row.domain === "FACILITY"
-        ? before[0].evidenceRows.filter(({ domain }) => domain === "FACILITY")[facilityIndex++]
-        : row);
-  }
-  restored[1].candidate.candidateId = previousCandidateId; restored[1].candidate.sourceSetSha256 = before[1].candidate.sourceSetSha256;
-  assert.deepEqual(restored, before, "staged candidate rebind must not change other semantics");
-  await Promise.all(parsed.map(({ relative, value }) =>
-    writeFile(path.join(root, relative), JSON.stringify(value))));
-  if (rebindAdmissions) {
-    await rebindStagedFacilityCandidateId(root, candidateId);
-    await rebindStagedExitCandidateId(root, candidateId);
-  }
 }
 
 async function stagedStaticEvidenceIdentity(root) {

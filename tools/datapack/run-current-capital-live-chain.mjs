@@ -309,7 +309,11 @@ export async function verifyCurrentCapitalTerminalLineage({
     inventory: JSON.parse(source.inventory.bytes), inventoryBytes: source.inventory.bytes,
   });
   const rebuiltSuccessor = buildCurrentCapitalAccessibilityTransitionSuccessor({
-    baseTransitionBytes: source.transition.bytes, previousFacilityBytes, currentTransition,
+    baseTransitionBytes: source.transition.bytes,
+    previousFacilityBytes,
+    currentFacilityBytes: source.facility.bytes,
+    currentLedger: JSON.parse(source.ledger.bytes),
+    currentTransition,
   });
   if (!source.successor.bytes.equals(Buffer.from(canonicalCurrentCapitalAccessibilityTransitionSuccessorJson(rebuiltSuccessor)))) {
     throw new Error("source-main successor replay mismatch");
