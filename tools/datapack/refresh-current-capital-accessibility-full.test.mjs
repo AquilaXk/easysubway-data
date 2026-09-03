@@ -7,6 +7,7 @@ import test from "node:test";
 
 import {
   assertExactCurrentCapitalFacilityEvidenceTransition,
+  assertExactCurrentCapitalTransferEvidenceTransition,
   assertPendingMarkerProducerBoundary,
   buildCurrentCapitalAccessibilityRefreshOutputs,
   refreshCurrentCapitalAccessibilityFull,
@@ -15,6 +16,7 @@ import { buildAuthenticatedCurrentCapitalFacilityEvidenceRows } from "./build-cu
 import { buildCurrentExitAdmissionOciReceipt, canonicalCurrentExitAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
 import { buildReboundCurrentExitAdmissionIdentities } from "./rebind-current-exit-admission-identities.mjs";
 import { rebindCurrentActiveFacilityDerivedIdentity } from "./rebind-current-active-facility-derived-identity.mjs";
+import { currentLiveChainTransferOutputPaths } from "./rebind-current-live-chain-transfer-derived-identities.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 import { activateSyntheticCurrentStaticNetworkSuccessors, nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
 import { currentizeFreshFacilitySource, writeFreshCurrentAccessibilityOutputs, writeFreshExitAdmissionChain } from "./test-fixtures/current-full-capital-production-artifact.mjs";
@@ -287,6 +289,46 @@ test("pending marker authenticates an exact FACILITY snapshot transition", async
     }),
     /FACILITY evidence projection mismatch/,
   );
+});
+
+test("pending marker accepts only an exact authenticated TRANSFER evidence transition", async (t) => {
+  const root = await actualPendingMarkerRepository(t);
+  const [beforeStation, inventory] = await Promise.all([
+    readFile(path.join(root, OUTPUTS[0])).then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/source-inventory.json")).then(JSON.parse),
+  ]);
+  const descriptorPath = inventory.sources.find(({ id }) =>
+    id === "seoul-metro-transfer-distance-duration").transferAdmissionEvidence.snapshotPath;
+  const transferRebindOutputs = await Promise.all(
+    currentLiveChainTransferOutputPaths(descriptorPath).map(async (relative) => {
+      const bytes = await readFile(path.join(root, relative));
+      return { relative, bytes, prestate: Buffer.from(bytes) };
+    }),
+  );
+  const [rebuiltStation] = (await buildCurrentCapitalAccessibilityRefreshOutputs({
+    repositoryRoot: root,
+    transferRebindOutputs,
+  })).map(({ bytes }) => JSON.parse(bytes));
+  const beforeRows = beforeStation.evidenceRows.filter(({ domain }) => domain === "TRANSFER");
+  const afterRows = rebuiltStation.evidenceRows.filter(({ domain }) => domain === "TRANSFER");
+
+  assert.doesNotThrow(() => assertExactCurrentCapitalTransferEvidenceTransition({
+    beforeRows,
+    afterRows,
+    expectedBeforeRows: beforeRows,
+    expectedAfterRows: afterRows,
+  }));
+
+  const corrupted = structuredClone(beforeRows);
+  corrupted[0].providerRecordHash = corrupted[0].providerRecordHash === "a".repeat(64)
+    ? "b".repeat(64)
+    : "a".repeat(64);
+  assert.throws(() => assertExactCurrentCapitalTransferEvidenceTransition({
+    beforeRows: corrupted,
+    afterRows,
+    expectedBeforeRows: beforeRows,
+    expectedAfterRows: afterRows,
+  }), /TRANSFER evidence projection mismatch/);
 });
 
 test("pending marker producer boundary distinguishes base prestates from effective evidence", async (t) => {

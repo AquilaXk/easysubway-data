@@ -23,6 +23,7 @@ import {
   resolveCurrentExitDerivationAt,
   runCurrentCapitalExitOnlyProducer,
   runCurrentCapitalExitTerminalConsumer,
+  requireTerminalTransferRebindOutputs,
   rebuildCurrentCapitalTopologyTerminalHandoffForAncestorRecovery,
   runCurrentCapitalLiveChain,
   terminalCandidateIdForLineageProof,
@@ -32,6 +33,7 @@ import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacil
 import { buildCurrentCapitalFacilitySourceAdmission, canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-current-capital-facility-source-admission.mjs";
 import { collectKricAccessibilitySnapshots } from "./collect-kric-accessibility-snapshots.mjs";
 import { rebindCurrentCandidateSourceSnapshots } from "./rebind-current-candidate-source-snapshots.mjs";
+import { currentLiveChainTransferOutputPaths } from "./rebind-current-live-chain-transfer-derived-identities.mjs";
 import { registerKricStandardAccessibilitySnapshot } from "./register-kric-standard-accessibility-snapshot.mjs";
 import { buildCurrentCapitalTopologyRefreshOutputs } from "./activate-current-source-set.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
@@ -54,6 +56,19 @@ const execFile = promisify(execFileCallback);
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const canonical = (value) => JSON.stringify(sort(value));
 function sort(value) { if (Array.isArray(value)) return value.map(sort); if (!value || typeof value !== "object") return value; return Object.fromEntries(Object.keys(value).sort((left, right) => left.localeCompare(right, "en")).map((key) => [key, sort(value[key])])); }
+
+async function unchangedTransferRebindProof({ repositoryRoot }) {
+  const inventory = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/source-inventory.json")));
+  const descriptorPath = inventory.sources.find(({ id }) =>
+    id === "seoul-metro-transfer-distance-duration")?.transferAdmissionEvidence?.snapshotPath;
+  assert.equal(typeof descriptorPath, "string");
+  return {
+    outputs: await Promise.all(currentLiveChainTransferOutputPaths(descriptorPath).map(async (relative) => {
+      const bytes = await readFile(path.join(repositoryRoot, relative));
+      return { relative, bytes, prestate: Buffer.from(bytes) };
+    })),
+  };
+}
 
 function terminalAccessibilitySourceHandoff({
   beforeByPath = new Map(),
@@ -149,6 +164,19 @@ async function terminalConsumerProof(repositoryRoot = ROOT) {
     }))),
   };
 }
+
+test("terminal consumer requires a TRANSFER rebind proof", () => {
+  assert.throws(
+    () => requireTerminalTransferRebindOutputs(undefined),
+    /terminal consumer TRANSFER rebind proof mismatch/,
+  );
+  assert.throws(
+    () => requireTerminalTransferRebindOutputs({ outputs: [] }),
+    /terminal consumer TRANSFER rebind proof mismatch/,
+  );
+  const outputs = [{ relative: "tools/datapack/release/candidate-build-spec.json" }];
+  assert.equal(requireTerminalTransferRebindOutputs({ outputs }), outputs);
+});
 
 test("EXIT topology preflight rejects a stale selected ITX authority before collection", async (t) => {
   const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "current-exit-itx-preflight-"));
@@ -1002,7 +1030,11 @@ test("terminal consumer orders P/T/F and CAS before one OCI recovery and semanti
       calls.push("P"); stageRoots.push(repositoryRoot);
       assert.deepEqual(await readFile(path.join(repositoryRoot, accessibilityPath)), accessibilityBytes);
     },
-    rebindTransferImpl: async ({ repositoryRoot }) => { calls.push("T"); assert.equal(repositoryRoot, stageRoots[0]); },
+    rebindTransferImpl: async ({ repositoryRoot }) => {
+      calls.push("T");
+      assert.equal(repositoryRoot, stageRoots[0]);
+      return unchangedTransferRebindProof({ repositoryRoot });
+    },
     rebindFacilityImpl: async ({ repositoryRoot, replaceExistingSuccessor, allowedPredecessorSourceIds }) => {
       calls.push("F");
       assert.equal(repositoryRoot, stageRoots[0]);
@@ -1147,7 +1179,7 @@ test("terminal consumer rejects an inconsistent real OCI source before refresh o
       ? terminalGitPreflight(command, args)
       : (await import("node:child_process")).execFileSync(command, args, options),
     rebindPublicRouteMapImpl: async ({ repositoryRoot }) => { stagedRoot = repositoryRoot; },
-    rebindTransferImpl: async () => {}, rebindFacilityImpl: async () => {},
+    rebindTransferImpl: unchangedTransferRebindProof, rebindFacilityImpl: async () => {},
   }), /not provider-equivalent to the current plan/);
   assert.equal(client.gets, 1);
   assert.ok(stagedRoot);
