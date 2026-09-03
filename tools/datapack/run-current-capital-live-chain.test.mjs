@@ -1033,7 +1033,7 @@ test("terminal consumer orders P/T/F and CAS before one OCI recovery and semanti
     rebindTransferImpl: async ({ repositoryRoot }) => {
       calls.push("T");
       assert.equal(repositoryRoot, stageRoots[0]);
-      return unchangedTransferRebindProof(repositoryRoot);
+      return unchangedTransferRebindProof({ repositoryRoot });
     },
     rebindFacilityImpl: async ({ repositoryRoot, replaceExistingSuccessor, allowedPredecessorSourceIds }) => {
       calls.push("F");
