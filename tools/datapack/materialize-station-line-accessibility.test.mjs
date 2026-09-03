@@ -176,7 +176,9 @@ test("exact provider result 03의 EV/ES/WCLF carrier를 하나의 FACILITY termi
   assert.equal(cell.providerResponseSha256, "c".repeat(64));
   assert.equal(result.rows.filter(({ stationId, lineId, domain }) => stationId === terminalLine.stationId && lineId === terminalLine.lineId && domain === "FACILITY").length, 1);
   for (const field of ["stationId", "lineId", "sourceId"]) {
-    const invalid = structuredClone(rows); invalid[0][field] = "wrong";
+    const invalid = structuredClone(rows);
+    invalid[0][field] = "wrong";
+    invalid[0].evidenceHash = terminalEvidenceHash(invalid[0].facilityType, invalid[0]);
     assert.throws(() => materializeStationLineAccessibility({ candidate: candidate(), stationLines: [terminalLine], evidenceRows: invalid, observedAt: NOW }), /terminal evidence contract mismatch|terminal evidence identity mismatch|unmapped evidence row/);
   }
   const tampered = structuredClone(rows); tampered[0].evidenceHash = "0".repeat(64);

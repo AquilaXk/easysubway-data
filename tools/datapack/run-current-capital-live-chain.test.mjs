@@ -51,7 +51,7 @@ import { commitCurrentCapitalTerminalManifest, validateCurrentCapitalTerminalMan
 import { CURRENT_CAPITAL_ACCESSIBILITY_SOURCE_FIXED_OUTPUTS } from "./current-capital-accessibility-source-handoff.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { preparePendingCurrentAccessibilityTransitionRepository } from "./test-fixtures/current-full-capital-production-artifact.mjs";
-import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
+import { nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const execFile = promisify(execFileCallback);
@@ -925,8 +925,10 @@ async function terminalProviderHandoff({ repositoryRoot = ROOT, mutatePlan = (pl
   const inventory = JSON.parse(input.sourceInventoryBytes);
   const incheon = inventory.sources.find(({ id }) => id === "incheon-transit-station-info").topologyAdmissionEvidence;
   input.incheonTopologyBytes = await readFile(path.join(repositoryRoot, incheon.snapshotPath));
+  const operationNow = await nextSyntheticCurrentStaticNetworkNow(repositoryRoot);
+  const capturedAt = operationNow.toISOString();
   const plan = buildCurrentKricExitCollectionPlan(input, {
-    now: new Date(incheon.capturedAt), coverageSelector: "capital-seoul-metro-production",
+    now: operationNow, coverageSelector: "capital-seoul-metro-production",
   });
   plan.candidate.candidateId = `${plan.candidate.candidateId}-source`;
   mutatePlan(plan);
@@ -941,8 +943,8 @@ async function terminalProviderHandoff({ repositoryRoot = ROOT, mutatePlan = (pl
   }));
   const snapshotPayload = {
     schemaVersion: 1, artifactKind: "kric-exit-path-provider-snapshot", sourceId: "kric-station-movement-standard",
-    snapshotId: `kric-station-movement-standard-${incheon.capturedAt.replaceAll(/[-:.]/gu, "")}`,
-    capturedAt: incheon.capturedAt, freshUntil: incheon.freshUntil, credentialRedacted: true,
+    snapshotId: `kric-station-movement-standard-${capturedAt.replaceAll(/[-:.]/gu, "")}`,
+    capturedAt, freshUntil: incheon.freshUntil, credentialRedacted: true,
     collectionPlanDigest: plan.collectionPlanDigest, queryPlanSha256: plan.queryPlanSha256,
     coverage: { requestPlanComplete: true, queryIds: plan.queryPlan.map(({ queryId }) => queryId) }, queryPlan: plan.queryPlan, results,
   };
@@ -956,7 +958,7 @@ async function terminalProviderHandoff({ repositoryRoot = ROOT, mutatePlan = (pl
   })));
   const providerPlan = buildCurrentKricExitProviderOciPlan({
     mainSha: "a".repeat(40), operationId: "current-capital-560", providerCollectionBundleBytes: bundleBytes,
-    providerCapturedAt: incheon.capturedAt,
+    providerCapturedAt: capturedAt,
   });
   const providerOciPlanBytes = Buffer.from(`${canonicalCurrentKricExitProviderOciPlanJson(providerPlan)}\n`);
   const providerOciReceiptBytes = Buffer.from(`${canonicalCurrentKricExitProviderOciReceiptJson(
@@ -967,7 +969,7 @@ async function terminalProviderHandoff({ repositoryRoot = ROOT, mutatePlan = (pl
     repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-560",
   });
   return {
-    operationNow: new Date(incheon.capturedAt), bundleBytes, providerObject: providerPlan.providerObject,
+    operationNow, bundleBytes, providerObject: providerPlan.providerObject,
     providerOciPlanBytes, providerOciReceiptBytes,
     sourceReceiptBytes: Buffer.from(`${canonicalCurrentCapitalExitProviderSourceHandoffJson(source)}\n`),
   };
@@ -1098,7 +1100,7 @@ test("terminal consumer rejects accessibility identity outside the topology v2 p
   const runnerTemp = await mkdtemp(path.join(os.tmpdir(), "current-capital-terminal-accessibility-identity-"));
   t.after(() => rm(runnerTemp, { recursive: true, force: true }));
   const repositoryRoot = await pendingTransitionRepository(t);
-  const operationNow = (await currentTopologyAdmissionClock(repositoryRoot)).inWindow;
+  const operationNow = await nextSyntheticCurrentStaticNetworkNow(repositoryRoot);
   const accessibilitySourceHandoff = terminalAccessibilityVerifierResult();
   let rebindStarted = false;
   await assert.rejects(runCurrentCapitalExitTerminalConsumer({
