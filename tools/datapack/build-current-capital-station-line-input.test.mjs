@@ -122,7 +122,7 @@ test("current capital candidate는 inventory-bound source roster만 허용한다
     (value) => { value.candidateBuildSpec.sourceSnapshots.push({ sourceId: "extra-source", snapshotId: "extra-snapshot" }); value.candidateBuildSpec.sourceSnapshotIds.push("extra-snapshot"); },
   ]) {
     const value = await buildCurrentCapitalStationLineInputFixture(); mutate(value);
-    assert.throws(() => buildCurrentCapitalStationLineInput(value), /projection|inventory|source-set/i);
+    assert.throws(() => buildCurrentCapitalStationLineInput(value), /candidate source snapshot|projection|inventory|source-set/i);
   }
 });
 
@@ -164,7 +164,7 @@ test("public static-network V2 두 head는 first-seven predecessor/evidence seve
     const selected = value.sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
     value.candidateBuildSpec.sourceSnapshotSetHash = sha(JSON.stringify(selected));
     value.sourceSetTransition.currentCandidateSourceSetSha256 = value.candidateBuildSpec.sourceSnapshotSetHash;
-    assert.throws(() => buildCurrentCapitalStationLineInput(value), /public v2|source identity|eighth projection/i);
+    assert.throws(() => buildCurrentCapitalStationLineInput(value), /candidate projection|public v2|source identity|eighth projection/i);
   }
 });
 
