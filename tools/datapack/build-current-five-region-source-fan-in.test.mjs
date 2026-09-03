@@ -60,9 +60,21 @@ function fixture() {
     sources: [{
       id: "official-five-region-timetable",
       provider: "Official Rail Provider",
+      requiredForProductionPack: true,
       productionUseAllowed: true,
-      license: { commercialUseAllowed: true },
-      admissionEvidence: { decision: "APPROVED" },
+      license: {
+        commercialUseAllowed: true,
+        derivativeWorkAllowed: true,
+        redistributionAllowed: true,
+      },
+      admissionEvidence: {
+        decision: "APPROVED",
+        sourceId: "official-five-region-timetable",
+        snapshotId: "official-five-region-timetable-v1",
+        rawSha256: SHA,
+        capturedAt: "2026-09-02T00:00:00.000Z",
+        freshUntil: "2026-09-04T00:00:00.000Z",
+      },
     }],
   };
   const sourceSnapshots = [{
@@ -71,6 +83,7 @@ function fixture() {
     snapshotId: "official-five-region-timetable-v1",
     sourceId: "official-five-region-timetable",
     provider: "Official Rail Provider",
+    retrievedAt: "2026-09-02T00:00:00.000Z",
     rawSha256: SHA,
     rawObjectUri: `oci://namespace/bucket/source/${SHA}.json`,
     previousSnapshotId: null,
@@ -80,6 +93,7 @@ function fixture() {
     licenseStatus: "PASS",
     fetchStatus: "SUCCESS",
     redistributionAllowed: true,
+    credentialRedacted: true,
   }];
   const values = { targets, tally, ownership, inventory, sourceSnapshots };
   return {
@@ -108,9 +122,12 @@ test("#687 builds a candidate-independent five-region OCI source fan-in", () => 
     freshnessExpiresAt: "2026-09-04T00:00:00.000Z",
     inventoryRecordSha256: fanIn.selectedSources[0].inventoryRecordSha256,
     snapshotRecordSha256: fanIn.selectedSources[0].snapshotRecordSha256,
+    licenseRecordSha256: fanIn.selectedSources[0].licenseRecordSha256,
+    admissionRecordSha256s: fanIn.selectedSources[0].admissionRecordSha256s,
   });
   assert.match(fanIn.scopeSha256, /^[a-f0-9]{64}$/u);
   assert.match(fanIn.sourceSetSha256, /^[a-f0-9]{64}$/u);
+  assert.equal(fanIn.regionalMatrixSha256, fanIn.inputs.tally.sha256);
   assert.match(fanIn.fanInSha256, /^[a-f0-9]{64}$/u);
   assert.equal(fanIn.inputs.targets.sha256, sha256(input.inputBytes.targets));
   assert.equal(fanIn.inputs.sourceSnapshots.sha256, sha256(input.inputBytes.sourceSnapshots));
@@ -157,6 +174,46 @@ test("#687 fails closed on ambiguous, non-OCI, stale, or unbound source heads", 
   stale.sourceSnapshots[0].freshnessExpiresAt = EVALUATED_AT;
   stale.inputBytes.sourceSnapshots = bytes(stale.sourceSnapshots);
   assert.throws(() => buildCurrentFiveRegionSourceFanIn(stale), /freshness/);
+
+  const future = fixture();
+  future.sourceSnapshots[0].retrievedAt = "2026-09-03T00:00:00.001Z";
+  future.inputBytes.sourceSnapshots = bytes(future.sourceSnapshots);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(future), /future/);
+
+  const unboundAdmission = fixture();
+  unboundAdmission.inventory.sources[0].admissionEvidence.snapshotId = "another-snapshot";
+  unboundAdmission.inputBytes.inventory = bytes(unboundAdmission.inventory);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(unboundAdmission), /admission.*snapshot/);
+
+  const unboundDigest = fixture();
+  unboundDigest.inventory.sources[0].admissionEvidence.rawSha256 = "b".repeat(64);
+  unboundDigest.inputBytes.inventory = bytes(unboundDigest.inventory);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(unboundDigest), /admission.*digest/);
+
+  const noAffirmativeAdmission = fixture();
+  delete noAffirmativeAdmission.inventory.sources[0].admissionEvidence.decision;
+  noAffirmativeAdmission.inputBytes.inventory = bytes(noAffirmativeAdmission.inventory);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(noAffirmativeAdmission), /admission.*approval/);
+
+  const staleAdmission = fixture();
+  staleAdmission.inventory.sources[0].admissionEvidence.freshUntil = EVALUATED_AT;
+  staleAdmission.inputBytes.inventory = bytes(staleAdmission.inventory);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(staleAdmission), /admission.*freshness/);
+
+  const futureAdmission = fixture();
+  futureAdmission.inventory.sources[0].admissionEvidence.capturedAt = "2026-09-03T00:00:00.001Z";
+  futureAdmission.inputBytes.inventory = bytes(futureAdmission.inventory);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(futureAdmission), /admission.*future/);
+
+  const notRequired = fixture();
+  notRequired.inventory.sources[0].requiredForProductionPack = false;
+  notRequired.inputBytes.inventory = bytes(notRequired.inventory);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(notRequired), /production source/);
+
+  const exposedCredential = fixture();
+  exposedCredential.sourceSnapshots[0].credentialRedacted = false;
+  exposedCredential.inputBytes.sourceSnapshots = bytes(exposedCredential.sourceSnapshots);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(exposedCredential), /immutable OCI/);
 
   const unbound = fixture();
   unbound.inventory.sources = [];

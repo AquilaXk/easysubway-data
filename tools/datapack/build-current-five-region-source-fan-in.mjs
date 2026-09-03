@@ -101,6 +101,53 @@ function admittedEvidence(source) {
     && value && typeof value === "object" && !Array.isArray(value));
 }
 
+function licenseEvidence(source, sourceId) {
+  const evidence = source.license ?? source.licenseReview;
+  if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)) {
+    throw new Error(`inventory source license mismatch for ${sourceId}`);
+  }
+  if (source.license && (evidence.commercialUseAllowed !== true
+    || evidence.derivativeWorkAllowed !== true || evidence.redistributionAllowed !== true)) {
+    throw new Error(`inventory source license mismatch for ${sourceId}`);
+  }
+  return evidence;
+}
+
+function headAdmissionEvidence(source, sourceId, snapshot, evaluatedAt) {
+  const matching = admittedEvidence(source).filter(([, evidence]) =>
+    evidence.snapshotId === snapshot.snapshotId
+    && (evidence.sourceId === undefined || evidence.sourceId === sourceId));
+  if (matching.length === 0) throw new Error(`admission snapshot mismatch for ${sourceId}`);
+
+  const approved = matching.filter(([, evidence]) => evidence.decision === "APPROVED"
+    || evidence.productionUseAllowed === true);
+  if (approved.length === 0) throw new Error(`admission approval mismatch for ${sourceId}`);
+
+  const bound = approved.filter(([, evidence]) => evidence.rawSha256 === snapshot.rawSha256);
+  if (bound.length === 0) throw new Error(`admission digest mismatch for ${sourceId}`);
+
+  const current = bound.filter(([, evidence]) => {
+    const observedAt = evidence.observedAt ?? evidence.capturedAt
+      ?? evidence.verifiedAt ?? evidence.approvedAt;
+    return observedAt !== undefined && evidence.freshUntil !== undefined
+      && instant(observedAt, "admission observation") <= evaluatedAt
+      && instant(evidence.freshUntil, "admission freshness") > evaluatedAt;
+  });
+  if (current.length === 0) {
+    const hasFutureObservation = bound.some(([, evidence]) => {
+      const observedAt = evidence.observedAt ?? evidence.capturedAt
+        ?? evidence.verifiedAt ?? evidence.approvedAt;
+      return observedAt !== undefined && instant(observedAt, "admission observation") > evaluatedAt;
+    });
+    if (hasFutureObservation) throw new Error(`admission future observation mismatch for ${sourceId}`);
+    throw new Error(`admission freshness mismatch for ${sourceId}`);
+  }
+  return current.map(([kind, evidence]) => ({
+    kind,
+    sha256: sha256(Buffer.from(canonical(evidence))),
+  })).sort((left, right) => compare(left.kind, right.kind));
+}
+
 function isImmutableOciObjectUri(value) {
   try {
     const uri = new URL(value);
@@ -164,22 +211,28 @@ function selectedSources(rows, inventory, sourceSnapshots, evaluatedAt) {
   return [...admittedIds].sort(compare).map((sourceId) => {
     const source = inventoryById.get(sourceId);
     if (!source) throw new Error(`inventory source missing for ${sourceId}`);
-    if (source.productionUseAllowed !== true || typeof source.provider !== "string" || source.provider.length === 0
-      || (!source.license && !source.licenseReview)
-      || !admittedEvidence(source).some(([, evidence]) => evidence.decision === "APPROVED")) {
+    if (source.requiredForProductionPack !== true || source.productionUseAllowed !== true) {
+      throw new Error(`production source admission mismatch for ${sourceId}`);
+    }
+    if (typeof source.provider !== "string" || source.provider.length === 0) {
       throw new Error(`inventory source admission mismatch for ${sourceId}`);
     }
+    const license = licenseEvidence(source, sourceId);
     const snapshot = terminalHead(sourceId, sourceSnapshots);
     if (snapshot.provider !== source.provider || !SHA256.test(snapshot.rawSha256 ?? "")
       || !isImmutableOciObjectUri(snapshot.rawObjectUri)
       || snapshot.snapshotStatus !== "LOCKED" || snapshot.schemaStatus !== "PASS"
       || snapshot.licenseStatus !== "PASS" || snapshot.fetchStatus !== "SUCCESS"
-      || snapshot.redistributionAllowed !== true) {
+      || snapshot.redistributionAllowed !== true || snapshot.credentialRedacted !== true) {
       throw new Error(`immutable OCI snapshot mismatch for ${sourceId}`);
+    }
+    if (instant(snapshot.retrievedAt, "snapshot retrieval") > evaluatedAt) {
+      throw new Error(`snapshot future retrieval mismatch for ${sourceId}`);
     }
     if (instant(snapshot.freshnessExpiresAt, "snapshot freshness") <= evaluatedAt) {
       throw new Error(`snapshot freshness mismatch for ${sourceId}`);
     }
+    const admissions = headAdmissionEvidence(source, sourceId, snapshot, evaluatedAt);
     return {
       sourceId,
       provider: source.provider,
@@ -189,6 +242,8 @@ function selectedSources(rows, inventory, sourceSnapshots, evaluatedAt) {
       freshnessExpiresAt: snapshot.freshnessExpiresAt,
       inventoryRecordSha256: sha256(Buffer.from(canonical(source))),
       snapshotRecordSha256: sha256(Buffer.from(canonical(snapshot))),
+      licenseRecordSha256: sha256(Buffer.from(canonical(license))),
+      admissionRecordSha256s: admissions,
     };
   });
 }
@@ -222,8 +277,6 @@ export function buildCurrentFiveRegionSourceFanIn(input = {}) {
     activeLineScopes: [...targets.activeLineScopes].sort((left, right) => compare(pk({ ...left, sourceDomain: "" }), pk({ ...right, sourceDomain: "" }))),
     requiredSourceDomains: [...targets.requiredSourceDomains].sort((left, right) => compare(left.id, right.id)),
   };
-  const sourceSet = sources.map(({ sourceId, snapshotId, rawSha256, rawObjectUri, freshnessExpiresAt }) =>
-    ({ sourceId, snapshotId, rawSha256, rawObjectUri, freshnessExpiresAt }));
   const payload = {
     schemaVersion: 1,
     artifactKind: "current-five-region-source-fan-in",
@@ -235,7 +288,8 @@ export function buildCurrentFiveRegionSourceFanIn(input = {}) {
       sha256: sha256(records[name].bytes),
     }])),
     scopeSha256: sha256(Buffer.from(canonical(scope))),
-    sourceSetSha256: sha256(Buffer.from(canonical(sourceSet))),
+    regionalMatrixSha256: sha256(records.tally.bytes),
+    sourceSetSha256: sha256(Buffer.from(canonical(sources))),
     selectedSources: sources,
   };
   return { ...payload, fanInSha256: sha256(Buffer.from(canonical(payload))) };
