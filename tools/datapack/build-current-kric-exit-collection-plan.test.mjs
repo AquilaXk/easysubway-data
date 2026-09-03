@@ -47,7 +47,6 @@ test("current production 정본에서 exact EXIT collection plan을 결정적으
       && !incheonLineIds.has(edge.fromNodeId.split(":")[1])
   ));
   const projectedPack = structuredClone(pack);
-  const existingEdgeIds = new Set(projectedPack.networkEdges.map(({ id }) => id));
   const incheonAdmission = admittedIncheonTopologyEvidence({
     sourceInventory: JSON.parse(input.sourceInventoryBytes),
     snapshot: incheonTopology,
@@ -57,7 +56,10 @@ test("current production 정본에서 exact EXIT collection plan을 결정적으
   });
   materializeIncheonNetworkEdges(projectedPack, incheonTopology, incheonAdmission);
   const expectedIncheonEdgeIds = projectedPack.networkEdges
-    .filter(({ id }) => !existingEdgeIds.has(id))
+    .filter((edge) => edge.edgeType === "RIDE"
+      && edge.servicePattern === "LOCAL"
+      && edge.serviceClass === "SUBWAY"
+      && incheonLineIds.has(edge.fromNodeId.split(":")[1]))
     .map(({ id }) => id)
     .sort();
   const actualIncheonEdgeIds = plan.routeEdges
@@ -84,9 +86,15 @@ test("capital Seoul Metro production selector는 canonical metadata와 실제 me
   const plan = buildPlan(input, { coverageSelector: "capital-seoul-metro-production" });
   const pack = JSON.parse(input.canonicalPackBytes).packs[0];
   const targets = JSON.parse(input.coverageTargetsBytes);
-  const selectedLineIds = new Set(targets.activeLineScopes
-    .filter(({ regionId, operatorId }) => regionId === "capital" && operatorId === "seoul-metro")
+  const [membershipEvidence] = JSON.parse(pack.metadata.productionCoverageEvidence)
+    .filter(({ sourceDomain }) => sourceDomain === "station_line_membership");
+  const activeRegionLineIds = new Set(targets.activeLineScopes
+    .filter(({ regionId }) => regionId === membershipEvidence.regionId)
     .map(({ lineId }) => lineId));
+  const selectedLineIds = new Set(pack.lines
+    .filter(({ id, operatorId }) => operatorId === membershipEvidence.operatorId
+      && activeRegionLineIds.has(id))
+    .map(({ id }) => id));
   const expectedStationLineKeys = pack.stationLines
     .filter(({ lineId }) => selectedLineIds.has(lineId))
     .map(({ stationId, lineId }) => `${stationId}\0${lineId}`)
