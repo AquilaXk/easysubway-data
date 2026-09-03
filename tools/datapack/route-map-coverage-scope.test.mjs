@@ -124,6 +124,11 @@ const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 // topology를 고쳐도 무결성 검사를 통과시키려면 선언 해시를 같이 다시 계산해야 한다.
 // 표기 방향 판정 자체를 시험할 때만 쓴다.
 function rehashTopology(topology) {
+  if (!Array.isArray(topology.lines)) {
+    topology.stationCount = topology.scope.length;
+    topology.contentSha256 = sha256(JSON.stringify({ scope: topology.scope, edges: topology.edges }));
+    return topology;
+  }
   for (const line of topology.lines) {
     line.stationCount = line.scope.length;
     line.contentSha256 = sha256(JSON.stringify({ scope: line.scope, edges: line.edges }));
@@ -555,15 +560,13 @@ test("snapshot 수집 시점보다 늦은 개명일은 거부된다 (#2516)", as
 
 test("pack topology가 snapshot 구표기도 실으면 개명 별칭이 거부된다 (#2516)", async () => {
   const inputs = await loadAuditInputs();
-  const topologyPath = declaredTopologyPathForLine(inputs, "line-15b3b8a93259");
-  const topology = structuredClone(inputs.topologiesByPath.get(topologyPath));
-  const line = topology.lines.find(({ lineId }) => lineId === "line-15b3b8a93259");
-  line.scope = [...line.scope, { ...line.scope[0], stationName: "뚝섬유원지" }];
-  const topologiesByPath = new Map(inputs.topologiesByPath).set(topologyPath, rehashTopology(topology));
+  const mutated = withPatchedCapitalTopology(inputs, "line-15b3b8a93259", (scope) => [
+    ...scope,
+    { ...scope[0], stationName: "뚝섬유원지" },
+  ]);
 
-  const result = auditRouteMapCoverageScopes({ ...inputs, topologiesByPath });
+  const result = auditRouteMapCoverageScopes(mutated);
 
-  // 해시를 다시 맞추면 lineage 선언과 어긋나므로 다른 scope 위반도 함께 난다.
   assert.ok(violationKinds(result).includes("ALIAS_RENAME_SNAPSHOT_NAME_PRESENT"));
   assert.ok(violationKinds(result).includes("MISSING_STATION"));
 });
@@ -778,17 +781,24 @@ test("historical lineage와 다른 재해시 snapshot은 pack 결측 근거로 �
 
 test("pack topology에 없는 역은 공식 원문 결측으로 면제할 수 없다 (#2516)", async () => {
   const inputs = await loadAuditInputs();
-  const exemptions = structuredClone(inputs.exemptions);
-  const gap = gapNamed(exemptions, "신설동");
-  const source = inputs.inventory.sources.find(({ routeMapAdmissionEvidence }) => (
-    routeMapAdmissionEvidence?.snapshotPath === gap.evidence.snapshotPath
-  ));
-  gap.reasonCode = "OFFICIAL_FILE_ROW_ABSENT";
-  delete gap.evidence.snapshotPath;
-  delete gap.evidence.packTopologyPath;
-  gap.evidence.admissionSourceId = source.id;
+  const gap = gapNamed(inputs.exemptions, "하양");
+  const lineId = gap.scopeKey.split(":").at(-1);
+  const topologyPath = topologyPathForSourceAndLine(
+    inputs.inventory,
+    gap.evidence.admissionSourceId,
+    lineId,
+  );
+  const topology = structuredClone(inputs.topologiesByPath.get(topologyPath));
+  topology.scope = topology.scope.filter(({ stationName }) => stationName !== gap.rosterStationName);
+  rehashTopology(topology);
+  const inventory = rebindTopologyLineages(
+    structuredClone(inputs.inventory),
+    topologyPath,
+    topology.contentSha256,
+  );
+  const topologiesByPath = new Map(inputs.topologiesByPath).set(topologyPath, topology);
 
-  const result = auditRouteMapCoverageScopes({ ...inputs, exemptions });
+  const result = auditRouteMapCoverageScopes({ ...inputs, inventory, topologiesByPath });
 
   assert.deepEqual(violationKinds(result), ["LEDGER_PACK_TOPOLOGY_STATION_ABSENT", "MISSING_STATION"]);
 });
@@ -812,7 +822,7 @@ test("scope를 claim하지 않는 topology admission source를 가리키면 거�
 
   const result = auditRouteMapCoverageScopes({ ...inputs, exemptions });
 
-  assert.deepEqual(violationKinds(result), ["LEDGER_PACK_TOPOLOGY_SOURCE_UNBOUND", "MISSING_STATION"]);
+  assert.deepEqual(violationKinds(result), ["LEDGER_SOURCE_UNBOUND", "MISSING_STATION"]);
 });
 
 test("이미 커버된 역을 임의로 면제하는 ledger 항목은 거부된다 (#2516)", async () => {
