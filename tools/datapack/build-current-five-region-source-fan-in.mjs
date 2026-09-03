@@ -16,6 +16,7 @@ const INPUT_PATHS = Object.freeze({
 });
 const SHA256 = /^[a-f0-9]{64}$/u;
 const REQUIRED_REGION_IDS = Object.freeze(["busan", "capital", "daegu", "daejeon", "gwangju"]);
+const RELEASE_TIERS = new Set(["LAUNCH_REQUIRED", "ENHANCEMENT"]);
 const TALLY_STATUSES = new Set([
   "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE",
   "INVENTORY_ADMITTED",
@@ -79,7 +80,11 @@ function requiredRows(targets, tally) {
     throw new Error("five-region target or tally shape mismatch");
   }
   const domainTier = new Map(targets.requiredSourceDomains.map((domain) => [domain.id, domain.releaseTier]));
-  if (domainTier.size !== targets.requiredSourceDomains.length) throw new Error("target source domain mismatch");
+  if (domainTier.size !== targets.requiredSourceDomains.length
+    || targets.requiredSourceDomains.some(({ id, releaseTier }) =>
+      typeof id !== "string" || id.length === 0 || !RELEASE_TIERS.has(releaseTier))) {
+    throw new Error("target source domain release tier mismatch");
+  }
   const expected = new Set(targets.activeLineScopes.flatMap((scope) => targets.requiredSourceDomains
     .map((domain) => [scope.regionId, scope.operatorId, scope.lineId, domain.id].join(":"))));
   const rows = [...tally.launchRequired.requirements, ...tally.enhancement.requirements];
@@ -206,7 +211,9 @@ function selectedSources(rows, inventory, sourceSnapshots, evaluatedAt) {
       || (row.status !== "INVENTORY_ADMITTED" && ids.length !== 0)) {
       throw new Error(`requirement disposition mismatch for ${pk(row)}`);
     }
-    ids.forEach((id) => admittedIds.add(id));
+    if (row.releaseTier === "LAUNCH_REQUIRED") {
+      ids.forEach((id) => admittedIds.add(id));
+    }
   }
   return [...admittedIds].sort(compare).map((sourceId) => {
     const source = inventoryById.get(sourceId);
