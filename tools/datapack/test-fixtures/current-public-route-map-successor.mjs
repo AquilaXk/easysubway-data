@@ -215,9 +215,12 @@ const SUCCESSOR_FIXTURE_PATHS = Object.freeze([
   "tools/datapack/nationwide-coverage-targets.json",
   "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
   "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
+  "tools/datapack/release/current-station-line-accessibility/station-line-input.json",
+  "tools/datapack/release/current-capital-live-chain-fan-in.json",
   "tools/datapack/release/current-capital-facility-source-admission.json",
   "tools/datapack/release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json",
   "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json",
+  "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json",
   "tools/datapack/release/current-transfer-topology-metrics.json",
   "tools/datapack/release/current-capital-transfer-topology-applicability.json",
   "release/product-gates/route-edge-evaluation-policy.json",
@@ -260,6 +263,7 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
     ...inventory.sources.map((source) => source.routeMapAdmissionEvidence?.snapshotPath),
     ...inventory.sources.map((source) => source.routeMapAdmissionEvidence?.currentLayoutAdmission?.snapshotPath),
     ...inventory.sources.map((source) => source.accessibilityAdmissionEvidence?.snapshotPath),
+    ...inventory.sources.map((source) => source.transferAdmissionEvidence?.snapshotPath),
     ...inventory.sources.map((source) => source.topologyAdmissionEvidence?.snapshotPath),
     ...inventory.sources.map((source) => {
       const snapshotId = source.registrationEvidence?.snapshotId;

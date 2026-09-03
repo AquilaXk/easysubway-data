@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { cp, mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -14,12 +14,15 @@ import {
 } from "./refresh-current-capital-accessibility-full.mjs";
 import { buildAuthenticatedCurrentCapitalFacilityEvidenceRows } from "./build-current-capital-station-line-input.mjs";
 import { buildCurrentExitAdmissionOciReceipt, canonicalCurrentExitAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
-import { buildReboundCurrentExitAdmissionIdentities } from "./rebind-current-exit-admission-identities.mjs";
-import { rebindCurrentActiveFacilityDerivedIdentity } from "./rebind-current-active-facility-derived-identity.mjs";
 import { currentLiveChainTransferOutputPaths } from "./rebind-current-live-chain-transfer-derived-identities.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 import { activateSyntheticCurrentStaticNetworkSuccessors, nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
-import { currentizeFreshFacilitySource, writeFreshCurrentAccessibilityOutputs, writeFreshExitAdmissionChain } from "./test-fixtures/current-full-capital-production-artifact.mjs";
+import {
+  currentizeFreshFacilitySource,
+  preparePendingCurrentAccessibilityTransitionRepository,
+  writeFreshCurrentAccessibilityOutputs,
+  writeFreshExitAdmissionChain,
+} from "./test-fixtures/current-full-capital-production-artifact.mjs";
 import {
   buildCurrentTopologyRefreshPrimaryOutputs,
   collectLayoutTopologySnapshotBytes,
@@ -186,6 +189,7 @@ test("pending v2 marker accepts FACILITY next-eight and EXIT previous-seven befo
     readFile(path.join(root, OUTPUTS[0])).then(JSON.parse),
     readFile(path.join(root, OUTPUTS[1])).then(JSON.parse),
   ]);
+  const baseMarker = JSON.parse(baseBytes);
   assert.equal(marker.supersededTransition.sha256, sha(baseBytes));
   assert.equal(facility.candidate.candidateId, marker.nextCandidate.candidateId);
   assert.equal(facility.candidate.sourceSnapshotSetHash, marker.nextCandidate.sourceSnapshotSetHash);
@@ -193,10 +197,10 @@ test("pending v2 marker accepts FACILITY next-eight and EXIT previous-seven befo
   assert.equal(exit.candidate.sourceSetSha256, marker.previousCandidate.sourceSnapshotSetHash);
   assert.notEqual(beforeStation.candidate.candidateId, marker.nextCandidate.candidateId);
   assert.notEqual(beforeRoute.candidate.candidateId, marker.nextCandidate.candidateId);
-  assert.equal(beforeStation.candidate.sourceSetSha256, marker.previousCandidate.sourceSnapshotSetHash);
-  assert.equal(beforeRoute.candidate.sourceSetSha256, marker.previousCandidate.sourceSnapshotSetHash);
-  assert.ok(beforeStation.evidenceRows.every((row) => row.candidateId === marker.previousCandidate.candidateId));
-  assert.ok(beforeStation.evidenceRows.every((row) => row.sourceSetSha256 === marker.previousCandidate.sourceSnapshotSetHash));
+  assert.equal(beforeStation.candidate.sourceSetSha256, baseMarker.previousCandidate.sourceSnapshotSetHash);
+  assert.equal(beforeRoute.candidate.sourceSetSha256, baseMarker.previousCandidate.sourceSnapshotSetHash);
+  assert.ok(beforeStation.evidenceRows.every((row) => row.candidateId === baseMarker.previousCandidate.candidateId));
+  assert.ok(beforeStation.evidenceRows.every((row) => row.sourceSetSha256 === baseMarker.previousCandidate.sourceSnapshotSetHash));
 
   const outputs = await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root });
   for (const { bytes } of outputs) {
@@ -536,49 +540,38 @@ async function stagedPreApprovalRepository(t) {
 }
 
 async function actualPendingMarkerRepository(t) {
-  const root = await mkdtemp(path.join(os.tmpdir(), "current-capital-refresh-marker-"));
+  const root = await preparePendingCurrentAccessibilityTransitionRepository(ROOT);
   t.after(() => rm(root, { recursive: true, force: true }));
-  for (const relative of ["tools/datapack/release", "tools/datapack/inputs", "release/product-gates"]) {
-    await cp(path.join(ROOT, relative), path.join(root, relative), { recursive: true });
-  }
-  for (const relative of [
-    "tools/datapack/source-inventory.json", "tools/datapack/source-governance-policy.json",
-    "tools/datapack/official-od-fare-admission.json", "tools/datapack/nationwide-coverage-targets.json",
-  ]) {
-    const destination = path.join(root, relative); await mkdir(path.dirname(destination), { recursive: true });
-    await cp(path.join(ROOT, relative), destination);
-  }
-  await cp(path.join(ROOT, "tools/datapack/sources"), path.join(root, "tools/datapack/sources"), { recursive: true });
-  await copyCurrentCandidateEvidenceInputs(
-    root,
-    JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"))),
-  );
-  await rebindCurrentActiveFacilityDerivedIdentity({ repositoryRoot: root });
-  const marker = JSON.parse(await readFile(path.join(root, SUCCESSOR), "utf8"));
-  const paths = {
-    transition: SUCCESSOR,
-    normalized: "tools/datapack/release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json",
-    admission: "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json",
-    receipt: "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json",
-  };
-  const bytes = Object.fromEntries(await Promise.all(Object.entries(paths).map(async ([key, relative]) =>
-    [key, await readFile(path.join(root, relative))])));
-  const rebound = buildReboundCurrentExitAdmissionIdentities({
-    transitionBytes: bytes.transition,
-    normalizedBytes: bytes.normalized,
-    admissionBytes: bytes.admission,
-    receiptBytes: bytes.receipt,
-  });
-  await Promise.all([
-    writeFile(path.join(root, paths.admission), rebound.admissionBytes),
-    writeFile(path.join(root, paths.receipt), rebound.receiptBytes),
+  const [baseBytes, successor, station] = await Promise.all([
+    readFile(path.join(root, TRANSITION)),
+    readFile(path.join(root, SUCCESSOR)).then(JSON.parse),
+    readFile(path.join(root, OUTPUTS[0])).then(JSON.parse),
   ]);
-  await writeFreshCurrentAccessibilityOutputs(root);
+  const marker = JSON.parse(baseBytes);
+  assert.equal(successor.supersededTransition.sha256, sha(baseBytes));
+  const previousFacilityBytes = Buffer.from(successor.previousFacilityAdmissionBase64, "base64");
+  const previousFacility = JSON.parse(previousFacilityBytes);
+  const previousSnapshotBytes = await readFile(path.join(root, previousFacility.sourceIdentity.snapshotPath));
+  const outputCandidate = {
+    ...station.candidate,
+    candidateId: marker.previousCandidate.candidateId,
+    sourceSetSha256: marker.previousCandidate.sourceSnapshotSetHash,
+  };
   await rebindStagedActivatedOutputCandidateIds(
     root,
     marker.previousCandidate.candidateId,
     marker.previousCandidate.sourceSnapshotSetHash,
-    { rebindAdmissions: false },
+    {
+      facilityEvidenceRows: buildAuthenticatedCurrentCapitalFacilityEvidenceRows({
+        facilityAdmission: previousFacility,
+        facilitySnapshotBytes: previousSnapshotBytes,
+        stationLines: station.stationLines,
+        admissionCandidate: marker.nextCandidate,
+        outputCandidate,
+        candidatePublishedAt: Date.parse(marker.previousCandidate.canonicalCandidate.publishedAt),
+      }),
+      rebindAdmissions: false,
+    },
   );
   return root;
 }
@@ -774,7 +767,12 @@ async function admittedIncheonSnapshot(root, sourceInventory, sourceId, admissio
   return { snapshotPath, bytes, value };
 }
 
-async function rebindStagedActivatedOutputCandidateIds(root, candidateId, sourceSetSha256, { rebindAdmissions = true } = {}) {
+async function rebindStagedActivatedOutputCandidateIds(
+  root,
+  candidateId,
+  sourceSetSha256,
+  { facilityEvidenceRows = null, rebindAdmissions = true } = {},
+) {
   if (typeof candidateId !== "string" || !/^(?:capital-pilot-candidate-[0-9]{8}|capital-accessibility-predecessor-[a-f0-9]{64})$/u.test(candidateId)) {
     throw new Error("staged candidate identity is invalid");
   }
@@ -798,14 +796,35 @@ async function rebindStagedActivatedOutputCandidateIds(root, candidateId, source
   const [previousCandidateId] = stationIds;
   if (previousCandidateId === candidateId
     && station.candidate.sourceSetSha256 === sourceSetSha256
-    && route.candidate.sourceSetSha256 === sourceSetSha256) return;
+    && route.candidate.sourceSetSha256 === sourceSetSha256
+    && facilityEvidenceRows === null) return;
+  const facilityRowCount = station.evidenceRows.filter(({ domain }) => domain === "FACILITY").length;
+  if (facilityEvidenceRows !== null && (!Array.isArray(facilityEvidenceRows)
+    || facilityEvidenceRows.length !== facilityRowCount
+    || facilityEvidenceRows.some((row) => row.domain !== "FACILITY"
+      || row.candidateId !== candidateId
+      || row.sourceSetSha256 !== sourceSetSha256))) {
+    throw new Error("staged FACILITY prestate evidence is invalid");
+  }
   const before = structuredClone(parsed.map(({ value }) => value));
   station.candidate.candidateId = candidateId; station.candidate.sourceSetSha256 = sourceSetSha256;
   for (const row of station.evidenceRows) { row.candidateId = candidateId; row.sourceSetSha256 = sourceSetSha256; }
+  if (facilityEvidenceRows !== null) {
+    let facilityIndex = 0;
+    station.evidenceRows = station.evidenceRows.map((row) =>
+      row.domain === "FACILITY" ? facilityEvidenceRows[facilityIndex++] : row);
+  }
   route.candidate.candidateId = candidateId; route.candidate.sourceSetSha256 = sourceSetSha256;
   const restored = structuredClone(parsed.map(({ value }) => value));
   restored[0].candidate.candidateId = previousCandidateId; restored[0].candidate.sourceSetSha256 = before[0].candidate.sourceSetSha256;
   for (const row of restored[0].evidenceRows) { row.candidateId = previousCandidateId; row.sourceSetSha256 = before[0].candidate.sourceSetSha256; }
+  if (facilityEvidenceRows !== null) {
+    let facilityIndex = 0;
+    restored[0].evidenceRows = restored[0].evidenceRows.map((row) =>
+      row.domain === "FACILITY"
+        ? before[0].evidenceRows.filter(({ domain }) => domain === "FACILITY")[facilityIndex++]
+        : row);
+  }
   restored[1].candidate.candidateId = previousCandidateId; restored[1].candidate.sourceSetSha256 = before[1].candidate.sourceSetSha256;
   assert.deepEqual(restored, before, "staged candidate rebind must not change other semantics");
   await Promise.all(parsed.map(({ relative, value }) =>
@@ -952,34 +971,6 @@ async function rebindStagedExitCandidateId(root, candidateId, sourceSetSha256) {
     writeFile(path.join(root, admissionPath), admissionBytes),
     writeFile(path.join(root, receiptPath), canonical(receipt)),
   ]);
-}
-
-async function copyCurrentCandidateEvidenceInputs(root, candidate) {
-  const facility = JSON.parse(await readFile(path.join(ROOT, "tools/datapack/release/current-capital-facility-source-admission.json"), "utf8"));
-  const paths = [
-    facility.sourceIdentity.snapshotPath,
-    candidate.itxTopologyEvidencePath,
-    candidate.networkEdgeEvidence?.capitalTopology?.path,
-    candidate.networkEdgeEvidence?.capitalTopologyCandidate?.path,
-    candidate.networkEdgeEvidence?.capitalTopologyReverification?.path,
-    candidate.networkEdgeEvidence?.itxCoverageContract?.path,
-    candidate.networkEdgeEvidence?.itxCurrentTopologyAdmission?.path,
-  ];
-  for (const relative of paths) {
-    if (relative == null) continue;
-    if (typeof relative !== "string") throw new Error("current candidate evidence path is invalid");
-    const source = path.resolve(ROOT, relative);
-    if (relative.length === 0 || path.isAbsolute(relative)
-      || !source.startsWith(`${ROOT}${path.sep}`)) {
-      throw new Error("current candidate evidence path is unsafe");
-    }
-    const target = path.resolve(root, relative);
-    if (!target.startsWith(`${root}${path.sep}`)) {
-      throw new Error("current candidate evidence path is unsafe");
-    }
-    await mkdir(path.dirname(target), { recursive: true });
-    await cp(source, target);
-  }
 }
 
 async function bindCurrentCandidateApprovalFixture(root) {

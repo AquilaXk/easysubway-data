@@ -15,7 +15,9 @@ import { canonicalExitPathAdmissionJson } from "../build-exit-path-admission.mjs
 import { buildCurrentExitAdmissionOciReceipt, canonicalCurrentExitAdmissionOciReceiptJson } from "../build-current-exit-admission-oci-receipt.mjs";
 import {
   buildCurrentCapitalAccessibilityTransition,
+  buildCurrentCapitalAccessibilityTransitionSuccessor,
   canonicalCurrentCapitalAccessibilityTransitionJson,
+  canonicalCurrentCapitalAccessibilityTransitionSuccessorJson,
 } from "../current-capital-accessibility-transition.mjs";
 import { buildReboundCurrentExitAdmissionIdentities } from "../rebind-current-exit-admission-identities.mjs";
 import { buildCurrentCapitalLiveChainFanInBoundary, canonicalCurrentCapitalLiveChainFanInBoundaryJson, CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS } from "../build-current-capital-live-chain-boundary.mjs";
@@ -118,7 +120,7 @@ async function registerFreshFacilitySnapshot(repositoryRoot, now) {
         ] },
     }),
   });
-  const stagingPath = path.join(repositoryRoot, "fresh-facility-snapshot.json");
+  const stagingPath = path.join(repositoryRoot, `fresh-facility-snapshot-${snapshot.snapshotId}.json`);
   const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot, null, 2)}\n`);
   await writeFile(stagingPath, snapshotBytes, { flag: "wx", mode: 0o600 });
   const retainedRawBytes = Buffer.from(JSON.stringify({
@@ -126,8 +128,12 @@ async function registerFreshFacilitySnapshot(repositoryRoot, now) {
     snapshotId: snapshot.snapshotId, snapshotRawSha256: snapshot.rawSha256,
   }));
   const retainedRawSha256 = sha256(retainedRawBytes);
-  await writeFile(path.join(repositoryRoot, "fresh-facility-retained-raw.json"), retainedRawBytes, { flag: "wx", mode: 0o600 });
-  const planPath = path.join(repositoryRoot, "fresh-facility-plan.json");
+  await writeFile(
+    path.join(repositoryRoot, `fresh-facility-retained-raw-${snapshot.snapshotId}.json`),
+    retainedRawBytes,
+    { flag: "wx", mode: 0o600 },
+  );
+  const planPath = path.join(repositoryRoot, `fresh-facility-plan-${snapshot.snapshotId}.json`);
   await writeFile(planPath, canonicalCurrentCapitalFacilityCollectionPlanJson(plan), { flag: "wx", mode: 0o600 });
   const governance = JSON.parse(governanceBytes);
   await registerKricStandardAccessibilitySnapshot({
@@ -436,6 +442,80 @@ export async function prepareCurrentFullCapitalProductionRepository(sourceRoot) 
       capturedAt: stage.capturedAt,
       previousStationLineInputBytes: stage.previousStationLineInputBytes,
     });
+    return repositoryRoot;
+  } catch (error) {
+    await rm(repositoryRoot, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+export async function preparePendingCurrentAccessibilityTransitionRepository(sourceRoot) {
+  const repositoryRoot = await mkdtemp(path.join(tmpdir(), "easysubway-pending-accessibility-transition-"));
+  try {
+    const stage = await prepareCurrentStaticCandidateFixture(sourceRoot, repositoryRoot, {
+      now: await nextSyntheticCurrentStaticNetworkNow(sourceRoot),
+    });
+    await advanceCurrentFacilityFixture(repositoryRoot, stage.capturedAt);
+    const [baseCandidateBytes, baseFacilityBytes, baseLedgerBytes, baseInventoryBytes] = await Promise.all([
+      readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json")),
+      readFile(path.join(repositoryRoot, "tools/datapack/release/current-capital-facility-source-admission.json")),
+      readFile(path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json")),
+      readFile(path.join(repositoryRoot, "tools/datapack/source-inventory.json")),
+    ]);
+    const baseTransition = buildCurrentCapitalAccessibilityTransition({
+      candidate: JSON.parse(baseCandidateBytes),
+      candidateBytes: baseCandidateBytes,
+      previous: JSON.parse(stage.previousStationLineInputBytes),
+      previousBytes: stage.previousStationLineInputBytes,
+      facilityAdmission: JSON.parse(baseFacilityBytes),
+      facilityBytes: baseFacilityBytes,
+      ledger: JSON.parse(baseLedgerBytes),
+      ledgerBytes: baseLedgerBytes,
+      inventory: JSON.parse(baseInventoryBytes),
+      inventoryBytes: baseInventoryBytes,
+    });
+    const baseTransitionBytes = Buffer.from(canonicalCurrentCapitalAccessibilityTransitionJson(baseTransition));
+    await writeFile(
+      path.join(repositoryRoot, "tools/datapack/release/current-capital-accessibility-transition.json"),
+      baseTransitionBytes,
+    );
+
+    const successorCapturedAt = new Date(stage.capturedAt.getTime() + 2_000);
+    await advanceCurrentFacilityFixture(repositoryRoot, successorCapturedAt);
+    const [candidateBytes, facilityBytes, ledgerBytes, inventoryBytes] = await Promise.all([
+      readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json")),
+      readFile(path.join(repositoryRoot, "tools/datapack/release/current-capital-facility-source-admission.json")),
+      readFile(path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json")),
+      readFile(path.join(repositoryRoot, "tools/datapack/source-inventory.json")),
+    ]);
+    const currentTransition = buildCurrentCapitalAccessibilityTransition({
+      candidate: JSON.parse(candidateBytes),
+      candidateBytes,
+      previous: JSON.parse(stage.previousStationLineInputBytes),
+      previousBytes: stage.previousStationLineInputBytes,
+      facilityAdmission: JSON.parse(facilityBytes),
+      facilityBytes,
+      ledger: JSON.parse(ledgerBytes),
+      ledgerBytes,
+      inventory: JSON.parse(inventoryBytes),
+      inventoryBytes,
+    });
+    const successor = buildCurrentCapitalAccessibilityTransitionSuccessor({
+      baseTransitionBytes,
+      previousFacilityBytes: baseFacilityBytes,
+      currentFacilityBytes: facilityBytes,
+      currentLedger: JSON.parse(ledgerBytes),
+      currentTransition,
+    });
+    await writeFile(
+      path.join(repositoryRoot, "tools/datapack/release/current-capital-accessibility-transition-successor.json"),
+      canonicalCurrentCapitalAccessibilityTransitionSuccessorJson(successor),
+    );
+    await writeFreshExitAdmissionChain(repositoryRoot, successorCapturedAt);
+    await rebindFreshExitAdmissionForCurrentTransition(
+      repositoryRoot,
+      stage.previousStationLineInputBytes,
+    );
     return repositoryRoot;
   } catch (error) {
     await rm(repositoryRoot, { recursive: true, force: true });
