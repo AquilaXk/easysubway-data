@@ -27,9 +27,10 @@ test("full-capital route fan-in은 input-derived edge sets를 만든다", async 
   const rides = routeFixtureRides(input.canonicalPack.packs[0].networkEdges);
   assertExactRouteFanIn(result.routeEdges, { rides, stationLines: station.stationLines, metrics: input.transferMetrics.metrics });
   assert.ok(result.stationLines.some(({ stationId }) => stationId === routeOnly[0].stationId));
-  const materialization = materializeStationLineAccessibility({ ...station, observedAt: "2026-08-01T01:00:00.000Z" });
+  const evaluationAt = input.candidateBuildSpec.publishedAt;
+  const materialization = materializeStationLineAccessibility({ ...station, observedAt: evaluationAt });
   const policy = evaluatorPolicy(canonicalRideEdgeSetSha256(rides));
-  const evaluated = evaluateRouteAccessibilityEdges({ candidate: result.candidate, evaluationAt: "2026-08-01T01:00:00.000Z", stationLines: result.stationLines, routeEdges: result.routeEdges, materialization }, policy);
+  const evaluated = evaluateRouteAccessibilityEdges({ candidate: result.candidate, evaluationAt, stationLines: result.stationLines, routeEdges: result.routeEdges, materialization }, policy);
   assert.equal(evaluated.denominator.edgeCount, result.routeEdges.length);
   const terminalExit = materialization.rows.find(({ state, domain }) => state === "UNVERIFIED_EVIDENCE_BLOCKED" && domain === "EXIT");
   assert.ok(terminalExit);
@@ -57,7 +58,7 @@ test("route builder 직접 호출은 projected fixture의 non-RIDE drift를 거�
 
   assert.throws(
     () => buildCurrentCapitalRouteEdgeInput(input),
-    /projected fixture must be RIDE-only/,
+    /full-capital RIDE schema mismatch/,
   );
 });
 
