@@ -944,7 +944,9 @@ async function terminalProviderHandoff({ repositoryRoot = ROOT, mutatePlan = (pl
   const snapshotPayload = {
     schemaVersion: 1, artifactKind: "kric-exit-path-provider-snapshot", sourceId: "kric-station-movement-standard",
     snapshotId: `kric-station-movement-standard-${capturedAt.replaceAll(/[-:.]/gu, "")}`,
-    capturedAt, freshUntil: incheon.freshUntil, credentialRedacted: true,
+    capturedAt,
+    freshUntil: new Date(operationNow.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+    credentialRedacted: true,
     collectionPlanDigest: plan.collectionPlanDigest, queryPlanSha256: plan.queryPlanSha256,
     coverage: { requestPlanComplete: true, queryIds: plan.queryPlan.map(({ queryId }) => queryId) }, queryPlan: plan.queryPlan, results,
   };
