@@ -15,7 +15,9 @@ import { canonicalExitPathAdmissionJson } from "../build-exit-path-admission.mjs
 import { buildCurrentExitAdmissionOciReceipt, canonicalCurrentExitAdmissionOciReceiptJson } from "../build-current-exit-admission-oci-receipt.mjs";
 import {
   buildCurrentCapitalAccessibilityTransition,
+  buildCurrentCapitalAccessibilityTransitionSuccessor,
   canonicalCurrentCapitalAccessibilityTransitionJson,
+  canonicalCurrentCapitalAccessibilityTransitionSuccessorJson,
 } from "../current-capital-accessibility-transition.mjs";
 import { buildReboundCurrentExitAdmissionIdentities } from "../rebind-current-exit-admission-identities.mjs";
 import { buildCurrentCapitalLiveChainFanInBoundary, canonicalCurrentCapitalLiveChainFanInBoundaryJson, CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS } from "../build-current-capital-live-chain-boundary.mjs";
@@ -88,7 +90,7 @@ async function assertSelectedPublicLayoutBinding(repositoryRoot, phase) {
   }
 }
 
-async function registerFreshFacilitySnapshot(repositoryRoot, now) {
+async function registerFreshFacilitySnapshot(repositoryRoot, now, repeatedSnapshot = null) {
   const files = await Promise.all([
     "tools/datapack/release/capital-production-canonical-pack.json",
     "tools/datapack/nationwide-coverage-targets.json",
@@ -109,19 +111,32 @@ async function registerFreshFacilitySnapshot(repositoryRoot, now) {
   const [snapshot] = await collectKricAccessibilitySnapshots({
     roster, operations: [FACILITY_OPERATION], serviceKey: "fixture-only-key", now,
     allowTerminalResult03: true,
-    fetchImpl: async (url) => ({
-      ok: true, status: 200,
-      json: async () => new URL(url).searchParams.get("stinCd") === "234-4"
-        ? { header: { resultCode: "03" } }
-        : { header: { resultCode: "00" }, body: [
-          {
-            dtlLoc: "synthetic current A", grndDvCd: "1", gubun: "EV", imgPath: "", mlFmlDvCd: "", stinFlor: 1, trfcWeakDvCd: "01",
-          },
-          {
-            dtlLoc: "synthetic current B", grndDvCd: "1", gubun: "EV", imgPath: "", mlFmlDvCd: "", stinFlor: 2, trfcWeakDvCd: "01",
-          },
-        ] },
-    }),
+    fetchImpl: async (url) => {
+      const search = new URL(url).searchParams;
+      const repeated = repeatedSnapshot?.queries?.find((query) =>
+        query.railOprIsttCd === search.get("railOprIsttCd")
+        && query.lnCd === search.get("lnCd")
+        && query.stinCd === search.get("stinCd"));
+      if (repeatedSnapshot != null && repeated == null) {
+        throw new Error("synthetic FACILITY replay query is missing");
+      }
+      const resultCode = repeated?.providerResultCode
+        ?? (search.get("stinCd") === "234-4" ? "03" : "00");
+      return {
+        ok: true,
+        status: 200,
+        json: async () => resultCode === "03"
+          ? { header: { resultCode } }
+          : { header: { resultCode }, body: repeated?.rows ?? [
+            {
+              dtlLoc: "synthetic current A", grndDvCd: "1", gubun: "EV", imgPath: "", mlFmlDvCd: "", stinFlor: 1, trfcWeakDvCd: "01",
+            },
+            {
+              dtlLoc: "synthetic current B", grndDvCd: "1", gubun: "EV", imgPath: "", mlFmlDvCd: "", stinFlor: 2, trfcWeakDvCd: "01",
+            },
+          ] },
+      };
+    },
   });
   const stagingPath = path.join(repositoryRoot, `fresh-facility-snapshot-${snapshot.snapshotId}.json`);
   const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot, null, 2)}\n`);
@@ -395,8 +410,8 @@ export async function prepareCurrentStaticNetworkProductionRepository(
 
 // Rebuilds the FACILITY producer chain from the current candidate rather than
 // mutating fixture freshness or candidate identities.
-export async function currentizeFreshFacilitySource(repositoryRoot, capturedAt) {
-  await registerFreshFacilitySnapshot(repositoryRoot, capturedAt);
+export async function currentizeFreshFacilitySource(repositoryRoot, capturedAt, repeatedSnapshot = null) {
+  await registerFreshFacilitySnapshot(repositoryRoot, capturedAt, repeatedSnapshot);
   await assertSelectedPublicLayoutBinding(repositoryRoot, "FACILITY registration");
   await rebindCurrentCandidateSourceSnapshots({ repositoryRoot, now: capturedAt });
   await assertSelectedPublicLayoutBinding(repositoryRoot, "candidate rebind");
@@ -523,27 +538,51 @@ export async function preparePendingCurrentAccessibilityTransitionRepository(sou
       "tools/datapack/release/current-capital-accessibility-transition.json",
       "tools/datapack/release/current-capital-accessibility-transition-successor.json",
     ];
-    const [baseTransitionBytes, successorBytes] = await Promise.all(markerPaths.map((relative) =>
-      readFile(path.join(sourceRoot, relative))));
-    const successor = JSON.parse(successorBytes);
-    const previousFacilityBytes = Buffer.from(successor.previousFacilityAdmissionBase64 ?? "", "base64");
-    if (previousFacilityBytes.length === 0
-      || previousFacilityBytes.toString("base64") !== successor.previousFacilityAdmissionBase64) {
-      throw new Error("pending transition FACILITY prestate mismatch");
-    }
-    const previousFacility = JSON.parse(previousFacilityBytes);
-    const previousSnapshotPath = previousFacility.sourceIdentity?.snapshotPath;
-    if (typeof previousSnapshotPath !== "string"
-      || !/^tools\/datapack\/sources\/kric-station-convenience-standard-[A-Za-z0-9]+\.json$/u.test(previousSnapshotPath)) {
-      throw new Error("pending transition FACILITY snapshot path mismatch");
-    }
-    const previousSnapshotBytes = await readFile(path.join(sourceRoot, previousSnapshotPath));
+    const transitionInputs = async () => {
+      const [candidateBytes, previousBytes, facilityBytes, ledgerBytes, inventoryBytes] = await Promise.all([
+        "tools/datapack/release/candidate-build-spec.json",
+        "tools/datapack/release/current-station-line-accessibility/station-line-input.json",
+        "tools/datapack/release/current-capital-facility-source-admission.json",
+        "tools/datapack/release/source-snapshots.json",
+        "tools/datapack/source-inventory.json",
+      ].map((relative) => readFile(path.join(repositoryRoot, relative))));
+      return {
+        candidate: JSON.parse(candidateBytes), candidateBytes,
+        previous: JSON.parse(previousBytes), previousBytes,
+        facilityAdmission: JSON.parse(facilityBytes), facilityBytes,
+        ledger: JSON.parse(ledgerBytes), ledgerBytes,
+        inventory: JSON.parse(inventoryBytes), inventoryBytes,
+      };
+    };
+    const baseInput = await transitionInputs();
+    const baseTransition = buildCurrentCapitalAccessibilityTransition(baseInput);
+    const baseTransitionBytes = Buffer.from(canonicalCurrentCapitalAccessibilityTransitionJson(baseTransition));
+    const repeatedSnapshot = JSON.parse(await readFile(path.join(
+      repositoryRoot,
+      baseInput.facilityAdmission.sourceIdentity.snapshotPath,
+    )));
+    await currentizeFreshFacilitySource(
+      repositoryRoot,
+      await nextSyntheticCurrentStaticNetworkNow(repositoryRoot),
+      repeatedSnapshot,
+    );
+    const currentInput = await transitionInputs();
+    const currentTransition = buildCurrentCapitalAccessibilityTransition(currentInput);
+    const successor = buildCurrentCapitalAccessibilityTransitionSuccessor({
+      baseTransitionBytes,
+      previousFacilityBytes: baseInput.facilityBytes,
+      currentFacilityBytes: currentInput.facilityBytes,
+      currentLedger: currentInput.ledger,
+      currentTransition,
+    });
+    const successorBytes = Buffer.from(
+      canonicalCurrentCapitalAccessibilityTransitionSuccessorJson(successor),
+    );
     await Promise.all([
       ...markerPaths.map((relative, index) => writeFile(
         path.join(repositoryRoot, relative),
         index === 0 ? baseTransitionBytes : successorBytes,
       )),
-      writeFile(path.join(repositoryRoot, previousSnapshotPath), previousSnapshotBytes),
     ]);
     await bindPendingStationRoutePrestate(repositoryRoot, baseTransitionBytes, successor);
     return repositoryRoot;
