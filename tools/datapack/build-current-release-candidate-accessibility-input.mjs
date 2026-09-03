@@ -13,7 +13,10 @@ import {
   canonicalRideEdgeSetSha256,
   routeEdgeSha256,
 } from "./evaluate-route-accessibility-edges.mjs";
-import { canonicalCurrentCapitalRouteEdgeInputJson } from "./build-current-capital-route-edge-input.mjs";
+import {
+  canonicalCurrentCapitalRouteEdgeInputJson,
+  currentCapitalTransferEdgesFromMetrics,
+} from "./build-current-capital-route-edge-input.mjs";
 import {
   canonicalCurrentCapitalStationLineInputJson,
   deriveCurrentReleaseCandidateObservedAt,
@@ -22,6 +25,7 @@ import { buildCurrentCapitalAccessibilityRefreshOutputs } from "./refresh-curren
 
 const CURRENT_STATION_INPUT = "tools/datapack/release/current-capital-accessibility-full/station-line-input.json";
 const CURRENT_ROUTE_INPUT = "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json";
+export const CURRENT_TRANSFER_METRICS = "tools/datapack/release/current-transfer-topology-metrics.json";
 const REJECTED_INPUT_PATH_TOKEN = /fixture|debug|demo|sample/iu;
 
 const CLOSED_STATES = new Set([
@@ -56,6 +60,11 @@ export function buildCurrentReleaseCandidateAccessibilityAuthority(input) {
     "station-line input",
   );
   const route = parseBoundJson(input.routeBytes, input.route, "route-edge input");
+  const transferMetrics = parseBoundJson(
+    input.transferMetricsBytes,
+    input.transferMetrics,
+    "transfer metrics",
+  );
   const sourcePack = capitalPack(sourceFixture, "source fixture");
   const projectedPack = capitalPack(input.projectedFixture, "projected fixture");
   const routeStationIndex = validateCandidateIdentity(
@@ -65,6 +74,7 @@ export function buildCurrentReleaseCandidateAccessibilityAuthority(input) {
     projectedPack,
   );
   const routeEdges = validateRoute(route, stationLineInput, routeStationIndex);
+  validateTransferEdgeSet(transferMetrics, stationLineInput, routeEdges);
   validateRideFixtureEdges(sourcePack.networkEdges, routeEdges, "source fixture");
   const projectedRides = validateProjectedFixtureEdges(projectedPack.networkEdges, routeEdges);
   const observedAt = deriveCurrentReleaseCandidateObservedAt(stationLineInput.evidenceRows);
@@ -88,6 +98,7 @@ export function buildCurrentReleaseCandidateAccessibilityAuthority(input) {
       candidateFixtureSha256: sha256(candidateFixtureBytes),
       stationLineInputSha256: sha256(input.stationLineInputBytes),
       routeEdgeInputSha256: sha256(input.routeBytes),
+      transferMetricsSha256: sha256(input.transferMetricsBytes),
       materializationDigest: materialization.materializationDigest,
       observedAt,
     },
@@ -150,21 +161,26 @@ export function validateCurrentReleaseCandidateAccessibilityAuthorityReplay({
   projectedFixture,
   stationLineInputBytes,
   routeEdgeInputBytes,
+  transferMetricsBytes,
 }) {
   canonicalCurrentReleaseCandidateAccessibilityAuthorityJson(authority);
-  if (!Buffer.isBuffer(stationLineInputBytes) || !Buffer.isBuffer(routeEdgeInputBytes)) {
+  if (!Buffer.isBuffer(stationLineInputBytes) || !Buffer.isBuffer(routeEdgeInputBytes)
+    || !Buffer.isBuffer(transferMetricsBytes)) {
     throw new TypeError("authority replay inputs must be bytes");
   }
   const stationLineInput = parseBoundJson(stationLineInputBytes, null, "station-line input");
   const route = parseBoundJson(routeEdgeInputBytes, null, "route-edge input");
+  const transferMetrics = parseBoundJson(transferMetricsBytes, null, "transfer metrics");
   if (stationLineInputBytes.toString("utf8") !== canonicalCurrentCapitalStationLineInputJson(stationLineInput)
     || routeEdgeInputBytes.toString("utf8") !== canonicalCurrentCapitalRouteEdgeInputJson(route)
     || sha256(stationLineInputBytes) !== authority.buildInput.stationLineInputSha256
-    || sha256(routeEdgeInputBytes) !== authority.buildInput.routeEdgeInputSha256) {
+    || sha256(routeEdgeInputBytes) !== authority.buildInput.routeEdgeInputSha256
+    || sha256(transferMetricsBytes) !== authority.buildInput.transferMetricsSha256) {
     throw new Error("authority replay input mismatch");
   }
   const routeStationIndex = validateReplayCandidateIdentity(authority, stationLineInput, route);
   const routeEdges = validateRoute(route, stationLineInput, routeStationIndex);
+  validateTransferEdgeSet(transferMetrics, stationLineInput, routeEdges);
   const projectedPack = capitalPack(projectedFixture, "projected fixture");
   validateProjectedFixtureEdges(projectedPack.networkEdges, routeEdges);
   const observedAt = deriveCurrentReleaseCandidateObservedAt(stationLineInput.evidenceRows);
@@ -191,12 +207,14 @@ function validateAuthorityPayload(payload) {
   exact(payload.candidate, STATION_CANDIDATE_KEYS, "authority candidate");
   exact(payload.buildInput, [
     "buildSpecSha256", "sourceFixtureSha256", "candidateFixtureSha256",
-    "stationLineInputSha256", "routeEdgeInputSha256", "materializationDigest", "observedAt",
+    "stationLineInputSha256", "routeEdgeInputSha256", "transferMetricsSha256",
+    "materializationDigest", "observedAt",
   ], "authority build input");
   exact(payload.edgeCounts, ["ENTRY", "EXIT", "IN_STATION_TRANSFER", "total"], "authority edge counts");
   for (const key of [
     "buildSpecSha256", "sourceFixtureSha256", "candidateFixtureSha256",
-    "stationLineInputSha256", "routeEdgeInputSha256", "materializationDigest",
+    "stationLineInputSha256", "routeEdgeInputSha256", "transferMetricsSha256",
+    "materializationDigest",
   ]) {
     if (!/^[a-f0-9]{64}$/u.test(payload.buildInput[key])) throw new Error("authority input hash mismatch");
   }
@@ -291,9 +309,11 @@ function validateInputBytes(input) {
   exact(input, [
     "buildSpec", "buildSpecBytes", "projectedFixture", "route", "routeBytes",
     "sourceFixtureBytes", "stationLineInput", "stationLineInputBytes",
+    "transferMetrics", "transferMetricsBytes",
   ], "authority input");
   for (const key of [
     "buildSpecBytes", "routeBytes", "sourceFixtureBytes", "stationLineInputBytes",
+    "transferMetricsBytes",
   ]) {
     if (!Buffer.isBuffer(input[key])) throw new Error(`${key} must be bytes`);
   }
@@ -709,6 +729,34 @@ function validateEntryExitBijections(routeEdges, stationLines) {
   }
 }
 
+function validateTransferEdgeSet(metrics, stationLineInput, routeEdges) {
+  if (metrics?.artifactKind !== "current-transfer-topology-metrics"
+    || !Array.isArray(metrics.metrics) || metrics.metrics.length === 0
+    || metrics.artifactSha256 !== sha256(Buffer.from(canonicalJson(without(metrics, "artifactSha256"))))) {
+    throw new Error("transfer metrics identity mismatch");
+  }
+  const transferEvidence = stationLineInput.evidenceRows
+    .filter(({ domain }) => domain === "TRANSFER");
+  if (transferEvidence.length === 0
+    || transferEvidence.some(({ providerRecordHash, sourceId }) =>
+      providerRecordHash !== metrics.artifactSha256
+      || sourceId !== metrics.sourceIdentity?.sourceId)) {
+    throw new Error("transfer metrics evidence mismatch");
+  }
+  const expected = currentCapitalTransferEdgesFromMetrics(metrics.metrics)
+    .sort((left, right) => compareBytes(left.edgeId, right.edgeId));
+  const actual = routeEdges
+    .filter(({ edgeType }) => edgeType === "IN_STATION_TRANSFER")
+    .sort((left, right) => compareBytes(left.edgeId, right.edgeId));
+  if (canonicalJson(actual) !== canonicalJson(expected)) {
+    throw new Error("transfer edge set mismatch");
+  }
+}
+
+function without(value, key) {
+  return Object.fromEntries(Object.entries(value).filter(([name]) => name !== key));
+}
+
 function exact(value, keys, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)
     || Object.keys(value).length !== keys.length
@@ -739,6 +787,7 @@ export async function main(
     repositoryRoot = fileURLToPath(new URL("../../", import.meta.url)),
     projectFixtureImpl = defaultProjectFixture,
     buildRefreshOutputsImpl = buildCurrentCapitalAccessibilityRefreshOutputs,
+    readTransferMetricsImpl = defaultReadTransferMetrics,
   } = {},
 ) {
   if (argv.length !== 12) throw new Error("CLI arguments mismatch");
@@ -791,6 +840,8 @@ export async function main(
   const routeBytes = refreshedByPath.get(CURRENT_ROUTE_INPUT);
   const stationLineInput = JSON.parse(stationLineInputBytes.toString("utf8"));
   const route = JSON.parse(routeBytes.toString("utf8"));
+  const transferMetricsBytes = await readTransferMetricsImpl(root);
+  const transferMetrics = parseInputJson(transferMetricsBytes, "transfer metrics");
   const projectedFixture = await projectFixtureImpl({ buildSpec, sourceFixture, repositoryRoot: root });
   const result = buildCurrentReleaseCandidateAccessibilityAuthority({
     buildSpec,
@@ -801,6 +852,8 @@ export async function main(
     sourceFixtureBytes,
     stationLineInput,
     stationLineInputBytes,
+    transferMetrics,
+    transferMetricsBytes,
   });
   await Promise.all([
     writeFile(stationLineOutput, stationLineInputBytes, { flag: "wx", mode: 0o600 }),
@@ -809,6 +862,14 @@ export async function main(
     writeFile(authorityOutput, canonicalCurrentReleaseCandidateAccessibilityAuthorityJson(result.authority), { flag: "wx", mode: 0o600 }),
   ]);
   return result;
+}
+
+async function defaultReadTransferMetrics(repositoryRoot) {
+  return (await readAuthenticatedRegularRepoFile(
+    repositoryRoot,
+    CURRENT_TRANSFER_METRICS,
+    "transfer metrics",
+  )).bytes;
 }
 
 async function outputMustBeAbsent(target) {

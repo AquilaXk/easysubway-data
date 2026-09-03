@@ -412,11 +412,12 @@ export async function materializeCurrentFanInCandidateArtifact({
   repositoryRoot, stationLineOutput, routeEdgeOutput, fixtureOutput, authorityOutput,
 }) {
   const buildSpecPath = "tools/datapack/release/candidate-build-spec.json";
-  const [buildSpecBytes, sourceFixtureBytes, stationLineInputBytes, routeBytes] = await Promise.all([
+  const [buildSpecBytes, sourceFixtureBytes, stationLineInputBytes, routeBytes, transferMetricsBytes] = await Promise.all([
     readFile(path.join(repositoryRoot, buildSpecPath)),
     readFile(path.join(repositoryRoot, "tools/datapack/release/capital-production-canonical-pack.json")),
     readFile(path.join(repositoryRoot, "tools/datapack/release/current-capital-accessibility-full/station-line-input.json")),
     readFile(path.join(repositoryRoot, "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json")),
+    readFile(path.join(repositoryRoot, "tools/datapack/release/current-transfer-topology-metrics.json")),
   ]);
   const buildSpec = JSON.parse(buildSpecBytes);
   const sourceFixture = JSON.parse(sourceFixtureBytes);
@@ -424,6 +425,7 @@ export async function materializeCurrentFanInCandidateArtifact({
   const rebuilt = buildCurrentReleaseCandidateAccessibilityAuthority({
     buildSpec, buildSpecBytes, projectedFixture, route: JSON.parse(routeBytes), routeBytes, sourceFixtureBytes,
     stationLineInput: JSON.parse(stationLineInputBytes), stationLineInputBytes,
+    transferMetrics: JSON.parse(transferMetricsBytes), transferMetricsBytes,
   });
   await Promise.all([
     writeFile(stationLineOutput, stationLineInputBytes, { flag: "wx", mode: 0o600 }),
