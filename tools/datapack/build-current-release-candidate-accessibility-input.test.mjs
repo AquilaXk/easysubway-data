@@ -90,6 +90,10 @@ test("합성 current public successor는 input-derived metadata, route, authorit
   });
   const stationLineInputBytes = stationOutput.bytes;
   const routeBytes = routeOutput.bytes;
+  const transferMetricsBytes = await readFile(path.join(
+    repositoryRoot,
+    "tools/datapack/release/current-transfer-topology-metrics.json",
+  ));
   const stationLineInput = JSON.parse(stationLineInputBytes);
   const route = JSON.parse(routeBytes);
   assert.equal(
@@ -116,6 +120,8 @@ test("합성 current public successor는 input-derived metadata, route, authorit
     sourceFixtureBytes,
     stationLineInput,
     stationLineInputBytes,
+    transferMetrics: JSON.parse(transferMetricsBytes),
+    transferMetricsBytes,
   });
 
   assert.ok(route.stationLines.length > 0);
@@ -207,6 +213,20 @@ test("unresolved·stale·candidate·route·projected RIDE drift는 output 전에
   }
 });
 
+test("authority는 authenticated metric의 complete transfer-edge set을 요구한다", async () => {
+  const input = await fullInput();
+  const transferIndex = input.route.routeEdges
+    .findIndex(({ edgeType }) => edgeType === "IN_STATION_TRANSFER");
+  assert.notEqual(transferIndex, -1);
+  input.route.routeEdges.splice(transferIndex, 1);
+  input.routeBytes = Buffer.from(canonical(input.route));
+
+  assert.throws(
+    () => buildCurrentReleaseCandidateAccessibilityAuthority(input),
+    /transfer edge set mismatch/,
+  );
+});
+
 test("authority validator는 actual edge type denominator를 재집계한다", async () => {
   const input = await fullInput();
   const { authority } = buildCurrentReleaseCandidateAccessibilityAuthority(input);
@@ -248,6 +268,7 @@ test("consumer replay는 재봉인한 authority의 required cell·route projecti
     projectedFixture: input.projectedFixture,
     stationLineInputBytes: input.stationLineInputBytes,
     routeEdgeInputBytes: input.routeBytes,
+    transferMetricsBytes: input.transferMetricsBytes,
   }));
 
   const requiredCellDrift = structuredClone(authority);
@@ -259,6 +280,7 @@ test("consumer replay는 재봉인한 authority의 required cell·route projecti
       projectedFixture: input.projectedFixture,
       stationLineInputBytes: input.stationLineInputBytes,
       routeEdgeInputBytes: input.routeBytes,
+      transferMetricsBytes: input.transferMetricsBytes,
     }),
     /authority replay mismatch/,
   );
@@ -283,6 +305,7 @@ test("consumer replay는 재봉인한 authority의 required cell·route projecti
       projectedFixture: input.projectedFixture,
       stationLineInputBytes: input.stationLineInputBytes,
       routeEdgeInputBytes: input.routeBytes,
+      transferMetricsBytes: input.transferMetricsBytes,
     }),
     /authority replay mismatch/,
   );
@@ -313,6 +336,7 @@ test("consumer replay는 재봉인한 authority의 required cell·route projecti
       projectedFixture: input.projectedFixture,
       stationLineInputBytes: input.stationLineInputBytes,
       routeEdgeInputBytes: rideDriftBytes,
+      transferMetricsBytes: input.transferMetricsBytes,
     }),
     /projected fixture RIDE mismatch/,
   );
@@ -355,6 +379,7 @@ test("CLI는 current tuple을 재생성해 canonical input/fixture/authority 네
         bytes: input.routeBytes,
       },
     ],
+    readTransferMetricsImpl: async () => input.transferMetricsBytes,
   });
   const [stationBytes, routeBytes, fixtureBytes, authorityBytes, stationStat, routeStat, fixtureStat, authorityStat] = await Promise.all([
     readFile(files.stationOutput),
@@ -455,6 +480,7 @@ test("CLI는 workflow가 검증한 repo-relative build spec과 fixture의 동일
         },
       ];
     },
+    readTransferMetricsImpl: async () => input.transferMetricsBytes,
   });
 
   const authority = JSON.parse(await readFile(files.authorityOutput, "utf8"));
@@ -586,6 +612,8 @@ async function fullInput() {
     sourceFixtureBytes: Buffer.from(canonical(sourceFixture)),
     stationLineInput,
     stationLineInputBytes: Buffer.from(canonical(stationLineInput)),
+    transferMetrics: source.transferMetrics,
+    transferMetricsBytes: Buffer.from(canonical(source.transferMetrics)),
   };
 }
 

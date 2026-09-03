@@ -15,9 +15,7 @@ import { canonicalExitPathAdmissionJson } from "../build-exit-path-admission.mjs
 import { buildCurrentExitAdmissionOciReceipt, canonicalCurrentExitAdmissionOciReceiptJson } from "../build-current-exit-admission-oci-receipt.mjs";
 import {
   buildCurrentCapitalAccessibilityTransition,
-  buildCurrentCapitalAccessibilityTransitionSuccessor,
   canonicalCurrentCapitalAccessibilityTransitionJson,
-  canonicalCurrentCapitalAccessibilityTransitionSuccessorJson,
 } from "../current-capital-accessibility-transition.mjs";
 import { buildReboundCurrentExitAdmissionIdentities } from "../rebind-current-exit-admission-identities.mjs";
 import { buildCurrentCapitalLiveChainFanInBoundary, canonicalCurrentCapitalLiveChainFanInBoundaryJson, CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS } from "../build-current-capital-live-chain-boundary.mjs";
@@ -412,11 +410,12 @@ export async function materializeCurrentFanInCandidateArtifact({
   repositoryRoot, stationLineOutput, routeEdgeOutput, fixtureOutput, authorityOutput,
 }) {
   const buildSpecPath = "tools/datapack/release/candidate-build-spec.json";
-  const [buildSpecBytes, sourceFixtureBytes, stationLineInputBytes, routeBytes] = await Promise.all([
+  const [buildSpecBytes, sourceFixtureBytes, stationLineInputBytes, routeBytes, transferMetricsBytes] = await Promise.all([
     readFile(path.join(repositoryRoot, buildSpecPath)),
     readFile(path.join(repositoryRoot, "tools/datapack/release/capital-production-canonical-pack.json")),
     readFile(path.join(repositoryRoot, "tools/datapack/release/current-capital-accessibility-full/station-line-input.json")),
     readFile(path.join(repositoryRoot, "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json")),
+    readFile(path.join(repositoryRoot, "tools/datapack/release/current-transfer-topology-metrics.json")),
   ]);
   const buildSpec = JSON.parse(buildSpecBytes);
   const sourceFixture = JSON.parse(sourceFixtureBytes);
@@ -424,6 +423,7 @@ export async function materializeCurrentFanInCandidateArtifact({
   const rebuilt = buildCurrentReleaseCandidateAccessibilityAuthority({
     buildSpec, buildSpecBytes, projectedFixture, route: JSON.parse(routeBytes), routeBytes, sourceFixtureBytes,
     stationLineInput: JSON.parse(stationLineInputBytes), stationLineInputBytes,
+    transferMetrics: JSON.parse(transferMetricsBytes), transferMetricsBytes,
   });
   await Promise.all([
     writeFile(stationLineOutput, stationLineInputBytes, { flag: "wx", mode: 0o600 }),
@@ -516,70 +516,35 @@ async function bindPendingStationRoutePrestate(repositoryRoot, baseTransitionByt
 export async function preparePendingCurrentAccessibilityTransitionRepository(sourceRoot) {
   const repositoryRoot = await mkdtemp(path.join(tmpdir(), "easysubway-pending-accessibility-transition-"));
   try {
-    const stage = await prepareCurrentStaticCandidateFixture(sourceRoot, repositoryRoot, {
-      now: await nextSyntheticCurrentStaticNetworkNow(sourceRoot),
+    await copySyntheticCurrentPublicRouteMapRepository(sourceRoot, repositoryRoot, {
+      activatePublicRouteMap: false,
     });
-    await advanceCurrentFacilityFixture(repositoryRoot, stage.capturedAt);
-    const [baseCandidateBytes, baseFacilityBytes, baseLedgerBytes, baseInventoryBytes] = await Promise.all([
-      readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json")),
-      readFile(path.join(repositoryRoot, "tools/datapack/release/current-capital-facility-source-admission.json")),
-      readFile(path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json")),
-      readFile(path.join(repositoryRoot, "tools/datapack/source-inventory.json")),
+    const markerPaths = [
+      "tools/datapack/release/current-capital-accessibility-transition.json",
+      "tools/datapack/release/current-capital-accessibility-transition-successor.json",
+    ];
+    const [baseTransitionBytes, successorBytes] = await Promise.all(markerPaths.map((relative) =>
+      readFile(path.join(sourceRoot, relative))));
+    const successor = JSON.parse(successorBytes);
+    const previousFacilityBytes = Buffer.from(successor.previousFacilityAdmissionBase64 ?? "", "base64");
+    if (previousFacilityBytes.length === 0
+      || previousFacilityBytes.toString("base64") !== successor.previousFacilityAdmissionBase64) {
+      throw new Error("pending transition FACILITY prestate mismatch");
+    }
+    const previousFacility = JSON.parse(previousFacilityBytes);
+    const previousSnapshotPath = previousFacility.sourceIdentity?.snapshotPath;
+    if (typeof previousSnapshotPath !== "string"
+      || !/^tools\/datapack\/sources\/kric-station-convenience-standard-[A-Za-z0-9]+\.json$/u.test(previousSnapshotPath)) {
+      throw new Error("pending transition FACILITY snapshot path mismatch");
+    }
+    const previousSnapshotBytes = await readFile(path.join(sourceRoot, previousSnapshotPath));
+    await Promise.all([
+      ...markerPaths.map((relative, index) => writeFile(
+        path.join(repositoryRoot, relative),
+        index === 0 ? baseTransitionBytes : successorBytes,
+      )),
+      writeFile(path.join(repositoryRoot, previousSnapshotPath), previousSnapshotBytes),
     ]);
-    const baseTransition = buildCurrentCapitalAccessibilityTransition({
-      candidate: JSON.parse(baseCandidateBytes),
-      candidateBytes: baseCandidateBytes,
-      previous: JSON.parse(stage.previousStationLineInputBytes),
-      previousBytes: stage.previousStationLineInputBytes,
-      facilityAdmission: JSON.parse(baseFacilityBytes),
-      facilityBytes: baseFacilityBytes,
-      ledger: JSON.parse(baseLedgerBytes),
-      ledgerBytes: baseLedgerBytes,
-      inventory: JSON.parse(baseInventoryBytes),
-      inventoryBytes: baseInventoryBytes,
-    });
-    const baseTransitionBytes = Buffer.from(canonicalCurrentCapitalAccessibilityTransitionJson(baseTransition));
-    await writeFile(
-      path.join(repositoryRoot, "tools/datapack/release/current-capital-accessibility-transition.json"),
-      baseTransitionBytes,
-    );
-
-    const successorCapturedAt = new Date(stage.capturedAt.getTime() + 2_000);
-    await advanceCurrentFacilityFixture(repositoryRoot, successorCapturedAt);
-    const [candidateBytes, facilityBytes, ledgerBytes, inventoryBytes] = await Promise.all([
-      readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json")),
-      readFile(path.join(repositoryRoot, "tools/datapack/release/current-capital-facility-source-admission.json")),
-      readFile(path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json")),
-      readFile(path.join(repositoryRoot, "tools/datapack/source-inventory.json")),
-    ]);
-    const currentTransition = buildCurrentCapitalAccessibilityTransition({
-      candidate: JSON.parse(candidateBytes),
-      candidateBytes,
-      previous: JSON.parse(stage.previousStationLineInputBytes),
-      previousBytes: stage.previousStationLineInputBytes,
-      facilityAdmission: JSON.parse(facilityBytes),
-      facilityBytes,
-      ledger: JSON.parse(ledgerBytes),
-      ledgerBytes,
-      inventory: JSON.parse(inventoryBytes),
-      inventoryBytes,
-    });
-    const successor = buildCurrentCapitalAccessibilityTransitionSuccessor({
-      baseTransitionBytes,
-      previousFacilityBytes: baseFacilityBytes,
-      currentFacilityBytes: facilityBytes,
-      currentLedger: JSON.parse(ledgerBytes),
-      currentTransition,
-    });
-    await writeFile(
-      path.join(repositoryRoot, "tools/datapack/release/current-capital-accessibility-transition-successor.json"),
-      canonicalCurrentCapitalAccessibilityTransitionSuccessorJson(successor),
-    );
-    await writeFreshExitAdmissionChain(repositoryRoot, successorCapturedAt);
-    await rebindFreshExitAdmissionForCurrentTransition(
-      repositoryRoot,
-      stage.previousStationLineInputBytes,
-    );
     await bindPendingStationRoutePrestate(repositoryRoot, baseTransitionBytes, successor);
     return repositoryRoot;
   } catch (error) {

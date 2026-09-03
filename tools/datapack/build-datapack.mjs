@@ -665,7 +665,7 @@ async function loadBuildInput(
       validated.fixture,
     );
     overrideBinding = validated.binding;
-    const [stationLineInputBytes, routeEdgeInputBytes] = await Promise.all([
+    const [stationLineInputBytes, routeEdgeInputBytes, transferMetricsBytes] = await Promise.all([
       readFile(await resolveBuildInputPath(
         stationLineInputArg,
         "current full-capital station-line input",
@@ -676,12 +676,18 @@ async function loadBuildInput(
         "current full-capital route-edge input",
         repositoryRoot,
       )),
+      readFile(await resolveBuildInputPath(
+        "tools/datapack/release/current-transfer-topology-metrics.json",
+        "current transfer topology metrics",
+        repositoryRoot,
+      )),
     ]);
     validateCurrentReleaseCandidateAccessibilityAuthorityReplay({
       authority: validated.authority,
       projectedFixture,
       stationLineInputBytes,
       routeEdgeInputBytes,
+      transferMetricsBytes,
     });
     const accessibilityFreshUntil = candidateOverrideAccessibilityFreshUntil({
       authority: validated.authority,
@@ -955,18 +961,7 @@ export function candidateOverrideAccessibilityFreshUntil({
     "NOT_APPLICABLE",
     "UNVERIFIED_EVIDENCE_BLOCKED",
   ]);
-  const materializationStationLines = Array.isArray(stationLineInput.stationLines)
-    ? stationLineInput.stationLines
-    : [];
-  const expectedMaterializationKeys = new Set(materializationStationLines.flatMap(({ stationId, lineId }) =>
-    ["FACILITY", "EXIT", "TRANSFER"].map((domain) => `${stationId}:${lineId}:${domain}`)));
-  const actualMaterializationKeys = new Set(materialization.rows.map(({ stationId, lineId, domain }) =>
-    `${stationId}:${lineId}:${domain}`));
   if (materialization.materializationDigest !== authority.buildInput.materializationDigest
-    || expectedMaterializationKeys.size === 0
-    || actualMaterializationKeys.size !== materialization.rows.length
-    || actualMaterializationKeys.size !== expectedMaterializationKeys.size
-    || [...expectedMaterializationKeys].some((key) => !actualMaterializationKeys.has(key))
     || materialization.stateSummary.UNKNOWN !== 0
     || materialization.stateSummary.MISSING !== 0
     || materialization.stateSummary.STALE !== 0

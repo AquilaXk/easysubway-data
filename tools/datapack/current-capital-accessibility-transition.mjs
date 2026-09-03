@@ -463,7 +463,7 @@ function normalizeAllowedPredecessorSourceIds(value) {
   return value;
 }
 
-function changedPredecessorSourceIds(base, currentTransition) {
+export function changedPredecessorSourceIds(base, currentTransition) {
   const baseProjections = base.previousCandidate.canonicalCandidate.sourceSnapshots;
   const currentProjections = currentTransition.previousCandidate.canonicalCandidate.sourceSnapshots;
   if (baseProjections.length !== currentProjections.length) {
