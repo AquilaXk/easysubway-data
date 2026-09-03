@@ -27,6 +27,7 @@ const SHA256 = /^[a-f0-9]{64}$/u;
 const SNAPSHOT_ID = new RegExp("^" + SOURCE_ID + "-[0-9]{8}$", "u");
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const jsonBytes = (value) => Buffer.from(JSON.stringify(value, null, 2) + "\n");
+const ADMISSION_INPUT_KEYS = Object.freeze(["inventoryBytes", "candidateBytes", "governanceBytes", "freshnessBytes"]);
 
 function parse(bytes, label) {
   try { return JSON.parse(bytes); } catch { throw new Error(label + " is invalid JSON"); }
@@ -89,18 +90,34 @@ function registrationMetadata(candidate) {
   return metadata;
 }
 
-export async function readCurrentCapitalRouteTopologyAdmission({ repositoryRoot, now = new Date() } = {}) {
+async function admissionInputBytes(root, supplied) {
+  if (supplied == null) {
+    const values = await Promise.all([
+      readFile(path.join(root, OUTPUTS[0])),
+      readFile(path.join(root, "tools/datapack/source-candidates.json")),
+      readFile(path.join(root, OUTPUTS[2])),
+      readFile(path.join(root, OUTPUTS[3])),
+    ]);
+    return Object.fromEntries(ADMISSION_INPUT_KEYS.map((key, index) => [key, values[index]]));
+  }
+  if (typeof supplied !== "object" || Array.isArray(supplied)
+    || JSON.stringify(Object.keys(supplied).sort()) !== JSON.stringify([...ADMISSION_INPUT_KEYS].sort())
+    || ADMISSION_INPUT_KEYS.some((key) => !Buffer.isBuffer(supplied[key]))) {
+    throw new Error("capital topology admission input snapshot is invalid");
+  }
+  return Object.fromEntries(ADMISSION_INPUT_KEYS.map((key) => [key, Buffer.from(supplied[key])]));
+}
+
+export async function readCurrentCapitalRouteTopologyAdmission({ repositoryRoot, now = new Date(), inputBytes = null } = {}) {
   const root = rootPath(repositoryRoot);
   if (!(now instanceof Date) || Number.isNaN(now.valueOf())) throw new Error("capital topology admission time is invalid");
-  const [inventoryBytes, candidateBytes, governanceBytes, freshnessBytes, protectedTopology] = await Promise.all([
-    readFile(path.join(root, OUTPUTS[0])),
-    readFile(path.join(root, "tools/datapack/source-candidates.json")),
-    readFile(path.join(root, "tools/datapack/source-governance-policy.json")),
-    readFile(path.join(root, "release/product-gates/datapack-freshness-sla.json")),
-    assertCurrentStaticNetworkTopologyAdmission({ repositoryRoot: root, now }),
-  ]);
+  const { inventoryBytes, candidateBytes, governanceBytes, freshnessBytes } = await admissionInputBytes(root, inputBytes);
   const inventory = parse(inventoryBytes, "source inventory");
   const canonicalOwner = selected(Array.isArray(inventory.sources) ? inventory.sources : [], (source) => source?.id === OWNER_SOURCE_ID, "capital topology canonical owner");
+  const protectedTopology = await assertCurrentStaticNetworkTopologyAdmission({ repositoryRoot: root, now });
+  if (!isDeepStrictEqual(canonicalOwner.routeMapAdmissionEvidence?.currentTopologyAdmission, protectedTopology.topologyAdmission)) {
+    throw new Error("capital topology input snapshot changed during validation");
+  }
   const ownerScope = canonicalOwner.coverageScope;
   const lineIds = ownerScope?.lineIds;
   if (!Array.isArray(lineIds) || lineIds.length === 0 || new Set(lineIds).size !== lineIds.length
@@ -198,11 +215,15 @@ function currentHead(ledger, snapshotId) {
 export async function buildCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot, receiptPath, now = new Date() } = {}) {
   const root = rootPath(repositoryRoot);
   if (!path.isAbsolute(receiptPath ?? "") || !(now instanceof Date) || Number.isNaN(now.valueOf())) throw new Error("capital topology registration arguments are invalid");
-  const admission = await readCurrentCapitalRouteTopologyAdmission({ repositoryRoot: root, now });
-  const [inventoryBytes, ledgerBytes, governanceBytes, freshnessBytes, receiptBytes] = await Promise.all([
-    readFile(target(root, OUTPUTS[0])), readFile(target(root, OUTPUTS[1])),
+  const [inventoryBytes, ledgerBytes, candidateBytes, governanceBytes, freshnessBytes, receiptBytes] = await Promise.all([
+    readFile(target(root, OUTPUTS[0])), readFile(target(root, OUTPUTS[1])), readFile(path.join(root, "tools/datapack/source-candidates.json")),
     readFile(target(root, OUTPUTS[2])), readFile(target(root, OUTPUTS[3])), readFile(receiptPath),
   ]);
+  const admission = await readCurrentCapitalRouteTopologyAdmission({
+    repositoryRoot: root,
+    now,
+    inputBytes: { inventoryBytes, candidateBytes, governanceBytes, freshnessBytes },
+  });
   const inventory = parse(inventoryBytes, "source inventory");
   const ledger = parse(ledgerBytes, "source snapshot ledger");
   const { receipt, rawReceiptSha256 } = receiptFor({ receipt: parse(receiptBytes, "capital topology receipt"), admission, receiptBytes, now });

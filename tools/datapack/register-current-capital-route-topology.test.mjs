@@ -78,6 +78,15 @@ async function receiptFixture(root, now) {
   return { admission, receipt, receiptPath };
 }
 
+async function registrationInputBytes(root) {
+  return {
+    inventoryBytes: await readFile(path.join(root, "tools/datapack/source-inventory.json")),
+    candidateBytes: await readFile(path.join(root, "tools/datapack/source-candidates.json")),
+    governanceBytes: await readFile(path.join(root, "tools/datapack/source-governance-policy.json")),
+    freshnessBytes: await readFile(path.join(root, "release/product-gates/datapack-freshness-sla.json")),
+  };
+}
+
 async function advanceProtectedTopology(root, previousNow, minimumCapturedAt = null) {
   const inventoryPath = path.join(root, "tools/datapack/source-inventory.json");
   const inventory = JSON.parse(await readFile(inventoryPath));
@@ -147,6 +156,26 @@ test("publishes exactly the protected topology bytes and builds an initial regis
   assert.equal(source.license.name, "공공누리 제1유형");
   assert.equal(snapshot.rawSha256, sha(admission.topologyBytes));
   assert.equal(snapshot.byteSize, admission.topologyBytes.length);
+});
+
+test("places capital topology evidence on the source schema", async () => {
+  const schema = JSON.parse(await readFile(path.join(ROOT, "contracts/datapack/source-inventory.schema.json")));
+  const sourceProperties = schema.properties.sources.items.properties;
+  assert.ok(sourceProperties.capitalTopologyAdmissionEvidence);
+  assert.equal(Object.hasOwn(sourceProperties.routeMapAdmissionEvidence.properties, "capitalTopologyAdmissionEvidence"), false);
+});
+
+test("derives admission from one captured repository input snapshot", async (t) => {
+  const { root, now } = await fixture(t);
+  const inputBytes = await registrationInputBytes(root);
+  const governancePath = path.join(root, "tools/datapack/source-governance-policy.json");
+  const changedGovernance = JSON.parse(inputBytes.governanceBytes);
+  changedGovernance.concurrentSentinel = true;
+  await writeJson(governancePath, changedGovernance);
+
+  const admission = await readCurrentCapitalRouteTopologyAdmission({ repositoryRoot: root, now, inputBytes });
+
+  assert.equal(Object.hasOwn(admission.governancePolicy, "concurrentSentinel"), false);
 });
 
 test("commits initial registration then replaces only its inventory record for a unique successor", async (t) => {
