@@ -24,7 +24,12 @@ test("current live-chain fan-in binds current eight and evidence seven component
 
   assert.equal(result.candidate.sourceSetSha256, boundary.currentCandidateSourceSetSha256);
   assert.notEqual(boundary.evidenceSourceSetSha256, boundary.currentCandidateSourceSetSha256);
-  assert.equal(result.evidenceRows.length, 641);
+  const admittedKeys = new Set(input.facilityAdmission.cells.map(({ stationId, lineId }) =>
+    `${stationId}\0${lineId}`));
+  for (const domain of ["FACILITY", "EXIT", "TRANSFER"]) {
+    assert.deepEqual(new Set(result.evidenceRows.filter((row) => row.domain === domain)
+      .map(({ stationId, lineId }) => `${stationId}\0${lineId}`)), admittedKeys);
+  }
 });
 
 test("current live-chain fan-in rejects component drift and boundary historical metadata", async () => {
