@@ -233,9 +233,9 @@ export async function collectSeoulAccessibility({
     for (let attempt = 0; attempt < requestAttempts; attempt += 1) {
       try {
         response = await fetchImpl(url, { signal: AbortSignal.timeout(requestTimeoutMs) });
-      } catch {
+      } catch (error) {
         if (attempt < requestAttempts - 1) continue;
-        throw new Error("Seoul accessibility API request failed");
+        throw new Error(`Seoul accessibility API request failed: ${classifySeoulTransportFailure(error)}`);
       }
       if (response.ok || response.status < 500 || attempt === requestAttempts - 1) break;
     }
@@ -301,6 +301,43 @@ export async function collectSeoulAccessibility({
     rawSha256: hash(rawPages),
     ...(retainRawResponses ? { rawResponses } : {}),
   };
+}
+
+function classifySeoulTransportFailure(error) {
+  const dnsCodes = new Set(["EAI_AGAIN", "ENOTFOUND"]);
+  const timeoutCodes = new Set([
+    "ETIMEDOUT", "UND_ERR_BODY_TIMEOUT", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT",
+  ]);
+  const socketCodes = new Set([
+    "ECONNREFUSED", "ECONNRESET", "EHOSTUNREACH", "ENETUNREACH", "EPIPE", "UND_ERR_SOCKET",
+  ]);
+  const seen = new Set();
+  let current = error;
+  for (let depth = 0; current != null && depth < 8 && !seen.has(current); depth += 1) {
+    seen.add(current);
+    let code;
+    let name;
+    let cause;
+    try {
+      code = typeof current.code === "string" ? current.code : "";
+      name = typeof current.name === "string" ? current.name : "";
+      cause = current.cause;
+    } catch {
+      return "NETWORK_UNKNOWN";
+    }
+    if (dnsCodes.has(code)) return "NETWORK_DNS";
+    if (code.startsWith("ERR_TLS_") || code.startsWith("ERR_SSL_") || code.startsWith("CERT_")
+      || [
+        "DEPTH_ZERO_SELF_SIGNED_CERT",
+        "SELF_SIGNED_CERT_IN_CHAIN",
+        "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+        "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+      ].includes(code)) return "NETWORK_TLS";
+    if (timeoutCodes.has(code) || name === "AbortError" || name === "TimeoutError") return "NETWORK_TIMEOUT";
+    if (socketCodes.has(code)) return "NETWORK_SOCKET";
+    current = cause;
+  }
+  return "NETWORK_UNKNOWN";
 }
 
 export async function collectSeoulAccessibilityObservation({
