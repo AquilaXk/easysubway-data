@@ -158,6 +158,17 @@ function terminalVerifierProof(proof) {
   return { markerState: proof.markerState, retained, inputs, outputs, replacementPrestates };
 }
 
+function assertTerminalManifestShape(manifest) {
+  const keys = [
+    "accessibilitySourceHandoff", "fanInPath", "liveChainOutputs", "markerPaths", "markerState",
+    "materialization", "proof", "replacementPaths", "topologyInputs", "topologyOutputs",
+  ];
+  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)
+    || JSON.stringify(Object.keys(manifest).sort(codepointCompare)) !== JSON.stringify(keys)) {
+    throw new Error("current-capital terminal manifest mismatch");
+  }
+}
+
 /**
  * Validate the only manifest shape permitted to retire the two protected
  * current-capital transition markers.  This is intentionally not a general
@@ -165,12 +176,7 @@ function terminalVerifierProof(proof) {
  * of the executable #673 contract.
  */
 export function validateCurrentCapitalTerminalManifest(manifest) {
-  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)
-    || JSON.stringify(Object.keys(manifest).sort(codepointCompare)) !== JSON.stringify([
-      "accessibilitySourceHandoff", "fanInPath", "liveChainOutputs", "markerPaths", "markerState", "materialization", "proof", "replacementPaths", "topologyInputs", "topologyOutputs",
-    ])) {
-    throw new Error("current-capital terminal manifest mismatch");
-  }
+  assertTerminalManifestShape(manifest);
   const accessibilitySourceHandoff = validateCurrentCapitalAccessibilitySourceHandoff(manifest.accessibilitySourceHandoff);
   const accessibilityOutputs = new Map(accessibilitySourceHandoff.outputs.map((entry) => [entry.relativePath, entry]));
   terminalTopologyInputs(manifest.topologyInputs);

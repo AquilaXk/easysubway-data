@@ -373,7 +373,7 @@ export async function verifyCurrentCapitalTerminalLineage({
     });
     successorBytes = Buffer.from(canonicalCurrentCapitalAccessibilityTransitionSuccessorJson(derivedSuccessor));
   }
-  const transition = parsedCanonical(transitionBytes, canonicalCurrentCapitalAccessibilityTransitionJson, "terminal transition");
+  parsedCanonical(transitionBytes, canonicalCurrentCapitalAccessibilityTransitionJson, "terminal transition");
   const successor = parsedCanonical(successorBytes, canonicalCurrentCapitalAccessibilityTransitionSuccessorJson, "terminal successor");
   const protectedTerminalCandidateId = successor.nextCandidate?.candidateId;
   if (typeof protectedTerminalCandidateId !== "string" || protectedTerminalCandidateId === ""
