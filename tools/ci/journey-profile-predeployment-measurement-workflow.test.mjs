@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 const workflow = resolve(import.meta.dirname,
@@ -12,6 +14,17 @@ function source() {
 
 function requireText(text, pattern, label) {
   assert.match(text, pattern, label);
+}
+
+function runBlock(text, name) {
+  const block = text.match(new RegExp(`- name: ${name}\\n[\\s\\S]*?\\n        run: \\|\\n([\\s\\S]*?)(?=\\n      - name:|$)`))?.[1];
+  assert.ok(block, `${name} run block`);
+  return block.replace(/^          /gm, "");
+}
+
+function writeExecutable(path, source) {
+  writeFileSync(path, source.replace(/^(#![^\n]+\n)/, "$1set -eu\n"), { mode: 0o755 });
+  chmodSync(path, 0o755);
 }
 
 test("predeployment measurement is a trusted main-only manual workflow", () => {
@@ -34,6 +47,9 @@ test("predeployment measurement is a trusted main-only manual workflow", () => {
     "pinned node setup");
   requireText(text, /actions\/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961/,
     "pinned Java setup");
+  requireText(text, /oras-project\/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d/,
+    "pinned ORAS setup");
+  requireText(text, /version: 1\.3\.3/, "pinned ORAS version");
   requireText(text, /java-version: "21\.0\.11"/, "pinned Java version");
 });
 
@@ -127,7 +143,84 @@ test("predeployment measurement binds the JUnit harness to the validated candida
     "required top-level route artifacts");
   requireText(harness, /payload\/accessibility\.sqlite\.zst\s+payload\/fare\.sqlite\.zst\s+payload\/timetable\.sqlite\.zst\s+payload\/topology\.sqlite\.zst\s+provenance\.json/,
     "required payload and provenance artifacts");
-  requireText(harness, /\.\/gradlew :backend:test/, "validation precedes Gradle");
+  requireText(harness, /EASYSUBWAY_CONTRACTS_BUNDLE: \$\{\{ runner\.temp \}\}\/backend-contracts\.json/,
+    "Hub bundle is passed to Gradle");
+  requireText(harness, /cd "\$\{RUNNER_TEMP\}\/backend-source\/backend"/,
+    "Backend-only Gradle working directory");
+  requireText(harness, /\.\/gradlew test --tests com\.easysubway\.journey\.application\.JourneyProfilePredeploymentMeasurementTest --no-daemon --max-workers=1/,
+    "one bounded JUnit measurement invocation");
+});
+
+test("predeployment measurement stages locked contracts before the backend-only harness", () => {
+  const text = source();
+  const blocks = [
+    runBlock(text, "Stage locked Backend Hub contracts"),
+    runBlock(text, "Stage locked Backend Journey contracts"),
+    runBlock(text, "Run future PR-owned JUnit measurement harness").slice(
+      runBlock(text, "Run future PR-owned JUnit measurement harness").indexOf('cd "${RUNNER_TEMP}/backend-source/backend"'),
+    ),
+  ].join("\n");
+  const root = mkdtempSync(join(tmpdir(), "journey-profile-measurement-"));
+  const runnerTemp = join(root, "runner");
+  const backend = join(runnerTemp, "backend-source", "backend");
+  const bin = join(root, "bin");
+  const log = join(root, "calls.log");
+  try {
+    mkdirSync(join(backend, "tools"), { recursive: true });
+    mkdirSync(bin);
+    writeFileSync(join(backend, "contracts.lock.json"), "{}\n");
+    writeFileSync(join(backend, "journey-contracts.lock.json"), "{}\n");
+    const candidate = join(runnerTemp, "data-candidate", "server-route-bundle");
+    mkdirSync(join(candidate, "payload"), { recursive: true });
+    for (const path of [
+      "compatibility.json", "manifest.json", "manifest.signing-input.json", "provenance.json",
+      "payload/accessibility.sqlite.zst", "payload/fare.sqlite.zst",
+      "payload/timetable.sqlite.zst", "payload/topology.sqlite.zst",
+    ]) writeFileSync(join(candidate, path), "fixture\n");
+    writeFileSync(join(runnerTemp, "journey-profile-measurement-input.json"), "{}\n");
+    writeExecutable(join(bin, "jq"), `#!/bin/bash\nif [[ "$*" == *journey-contracts.lock.json* ]]; then\n  printf '%s\\n' "ghcr.io/aquilaxk/easysubway-backend-contracts@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"\nelse\n  printf '%s\\n' "https://raw.githubusercontent.com/AquilaXk/easysubway/0123456789abcdef0123456789abcdef01234567/contracts/bundles/backend-contracts-v1.0.0.json"\nfi\n`);
+    writeExecutable(join(bin, "curl"), `#!/usr/bin/env bash\necho "curl:$PWD:$*" >> "$CALL_LOG"\nwhile [[ "$1" != --output ]]; do shift; done; mkdir -p "$(dirname "$2")"; printf bundle > "$2"\n`);
+    writeExecutable(join(bin, "oras"), `#!/usr/bin/env bash\necho "oras:$PWD:$*" >> "$CALL_LOG"\n[[ "$FAIL_ORAS" == 1 ]] && exit 1\nwhile [[ "$1" != --output ]]; do shift; done; mkdir -p "$2"; printf bundle > "$2/journey-v3-contract-bundle-v2.json"\n`);
+    // Node 자체를 가리지 않고 선택한 두 stager 경계만 대체한다.
+    for (const name of ["stage-contracts.mjs", "stage-journey-contracts.mjs"]) {
+      writeFileSync(join(backend, "tools", name), `
+import { appendFileSync, mkdirSync } from "node:fs";
+const args = process.argv.slice(2);
+const output = args.indexOf("--output");
+if (output < 0 || !args[output + 1]) process.exit(2);
+appendFileSync(process.env.CALL_LOG, "node:" + process.cwd() + ":" + process.argv.slice(1).join(" ") + "\\n");
+mkdirSync(args[output + 1], { recursive: true });
+`);
+    }
+    writeExecutable(join(bin, "find"), `#!/usr/bin/env bash\nprintf '%s\\n' compatibility.json manifest.json manifest.signing-input.json payload payload/accessibility.sqlite.zst payload/fare.sqlite.zst payload/timetable.sqlite.zst payload/topology.sqlite.zst provenance.json\n`);
+    writeExecutable(join(backend, "gradlew"), `#!/usr/bin/env bash\necho "gradle:$PWD:$EASYSUBWAY_CONTRACTS_BUNDLE:$*" >> "$CALL_LOG"\nprintf observation > "$MEASUREMENT_OUTPUT"\n`);
+    const environment = {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH}`,
+      RUNNER_TEMP: runnerTemp,
+      CANDIDATE_ROOT: join(runnerTemp, "data-candidate"),
+      MEASUREMENT_INPUT: join(runnerTemp, "journey-profile-measurement-input.json"),
+      MEASUREMENT_OUTPUT: join(runnerTemp, "journey-profile-measurement-observation.json"),
+      EASYSUBWAY_CONTRACTS_BUNDLE: join(runnerTemp, "backend-contracts.json"),
+      CALL_LOG: log,
+      FAIL_ORAS: "0",
+    };
+    const success = spawnSync("/bin/bash", ["-c", blocks], { env: environment, encoding: "utf8", timeout: 5000 });
+    assert.equal(success.status, 0, success.stderr);
+    const calls = readFileSync(log, "utf8");
+    assert.deepEqual(calls.trim().split("\n").map((line) => line.split(":")[0]),
+      ["curl", "node", "oras", "node", "gradle"], "preparation completes before Gradle");
+    assert.match(calls, /node:.*stage-contracts\.mjs .*--lock .*contracts\.lock\.json .*--input .*backend-contracts\.json .*--output .*build\/contracts-staging/);
+    assert.match(calls, /oras:.*pull ghcr\.io\/aquilaxk\/easysubway-backend-contracts@sha256:[a-f0-9]{64} --output/);
+    assert.match(calls, /node:.*stage-journey-contracts\.mjs .*--lock .*journey-contracts\.lock\.json .*--input .*journey-v3-contract-bundle-v2\.json .*--output .*build\/journey-contracts-staging/);
+    assert.match(calls, new RegExp(`gradle:${backend.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}:${join(runnerTemp, "backend-contracts.json").replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}:test --tests com\\.easysubway\\.journey\\.application\\.JourneyProfilePredeploymentMeasurementTest --no-daemon --max-workers=1`));
+    const stopped = spawnSync("/bin/bash", ["-c", blocks], { env: { ...environment, FAIL_ORAS: "1" }, encoding: "utf8", timeout: 5000 });
+    assert.notEqual(stopped.status, 0, "Journey staging failure stops the harness");
+    assert.equal((readFileSync(log, "utf8").match(/^gradle:/gm) ?? []).length, 1,
+      "a failed preparation does not invoke Gradle");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("predeployment measurement derives regions from the canonical fan-in v2 scope", () => {
