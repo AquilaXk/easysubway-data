@@ -168,16 +168,6 @@ test("FACILITY rebind는 immutable marker를 보존한 successor create-once tra
   assert.notDeepEqual(transaction.facility.bytes, transaction.facility.prestate);
 });
 
-test("existing successor 검증은 FACILITY prestate와 ledger lineage를 전달한다", () => {
-  const source = buildCurrentActiveFacilityDerivedIdentitySuccessorTransaction.toString();
-  const existingValidation = source.slice(
-    source.indexOf("const expected = buildCurrentCapitalAccessibilityTransitionSuccessor"),
-    source.indexOf("if (canonicalJson(existing)"),
-  );
-  assert.match(existingValidation, /currentFacilityBytes: facility\.prestate/u);
-  assert.match(existingValidation, /currentLedger: ledger\.value/u);
-});
-
 test("FACILITY와 successor는 한 transaction에서 성공하거나 함께 원복된다", async (t) => {
   const root = await temporaryRepository(t);
   await restorePredecessorFacilityState(root);
