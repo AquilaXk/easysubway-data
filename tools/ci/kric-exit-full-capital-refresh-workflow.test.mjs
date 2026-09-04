@@ -132,6 +132,10 @@ test("EXIT refresh keeps exact-main OCI producer, immutable recovery, and select
   assert.match(yml, /expected_terminal_parents\+=\" \$\{terminal_parent_args\[3\]\}\"/);
   assert.match(yml, /"\$\{terminal_parents\}" == "\$\{expected_terminal_parents\}"/);
   assert.match(yml, /expected_markers=\([\s\S]*?current-capital-accessibility-transition-successor\.json[\s\S]*?current-capital-accessibility-transition\.json[\s\S]*?\)/);
+  assert.match(yml, /marker_state="\$\(node -e 'const value=JSON\.parse/);
+  assert.match(yml, /case "\$\{marker_state\}" in[\s\S]*?PRESENT\)[\s\S]*?DERIVED_ABSENT\)/);
+  assert.match(yml, /DERIVED_ABSENT\)[\s\S]*?"\$\{#markers\[@\]\}" == "0"[\s\S]*?expected_markers=\(\)/);
+  assert.match(yml, /if \[\[ "\$\{marker_state\}" == "PRESENT" \]\]; then git add -u -- "\$\{markers\[@\]\}"; fi/);
   assert.match(yml, /staged_replacements < <\(git diff --cached --name-only --diff-filter=AM\)/);
   assert.match(yml, /staged_deletions < <\(git diff --cached --name-only --diff-filter=D\)/);
   assert.match(yml, /"\$\{#staged_replacements\[@\]\}" -gt 0/);

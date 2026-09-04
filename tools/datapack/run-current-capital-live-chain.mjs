@@ -156,6 +156,17 @@ const CURRENT_CAPITAL_TERMINAL_MARKERS = Object.freeze([
   "tools/datapack/release/current-capital-accessibility-transition-successor.json",
 ]);
 
+async function readTerminalMarkerState(root, label) {
+  const [marker, successor] = await Promise.all(CURRENT_CAPITAL_TERMINAL_MARKERS.map((relative) =>
+    optionalLineageFile(root, relative, `${label} ${relative}`)));
+  if ((marker == null) !== (successor == null)) throw new Error(`${label} terminal marker state mismatch`);
+  return Object.freeze({
+    markerState: marker == null ? "DERIVED_ABSENT" : "PRESENT",
+    marker,
+    successor,
+  });
+}
+
 export async function assertCurrentCapitalExitItxAuthorityFresh({ repositoryRoot, now = new Date() } = {}) {
   if (!path.isAbsolute(repositoryRoot ?? "") || !(now instanceof Date) || Number.isNaN(now.valueOf())) {
     throw new Error("EXIT topology ITX preflight inputs mismatch");
@@ -282,42 +293,18 @@ export async function verifyCurrentCapitalTerminalLineage({
   const source = Object.fromEntries(await Promise.all([
     ["candidate", "tools/datapack/release/candidate-build-spec.json"],
     ["facility", "tools/datapack/release/current-capital-facility-source-admission.json"],
-    ["transition", "tools/datapack/release/current-capital-accessibility-transition.json"],
-    ["successor", "tools/datapack/release/current-capital-accessibility-transition-successor.json"],
     ["previous", "tools/datapack/release/current-station-line-accessibility/station-line-input.json"],
     ["ledger", "tools/datapack/release/source-snapshots.json"],
     ["inventory", "tools/datapack/source-inventory.json"],
   ].map(async ([key, relative]) => [key, await lineageFile(sourceMainRoot, relative, `source-main ${key}`)])));
-  const transition = parsedCanonical(source.transition.bytes, canonicalCurrentCapitalAccessibilityTransitionJson, "source-main transition");
   const sourceFacility = parsedCanonical(source.facility.bytes, canonicalCurrentCapitalFacilitySourceAdmissionJson, "source-main FACILITY");
-  const successor = parsedCanonical(source.successor.bytes, canonicalCurrentCapitalAccessibilityTransitionSuccessorJson, "source-main successor");
-  const previousFacilityBytes = Buffer.from(successor.previousFacilityAdmissionBase64, "base64");
-  const previousFacility = parsedCanonical(previousFacilityBytes, canonicalCurrentCapitalFacilitySourceAdmissionJson, "source-main predecessor FACILITY");
-  if (successor.supersededTransition.sha256 !== sha256(source.transition.bytes)
-    || successor.supersededTransition.transitionSha256 !== transition.transitionSha256
-    || successor.previousFacilityAdmission.sha256 !== sha256(previousFacilityBytes)
-    || successor.previousFacilityAdmission.admissionDigest !== previousFacility.admissionDigest
-    || successor.previousFacilityAdmission.snapshotId !== previousFacility.sourceIdentity.snapshotId) {
-    throw new Error("source-main protected marker lineage mismatch");
-  }
-  const currentTransition = buildCurrentCapitalAccessibilityTransition({
+  const sourceTransition = buildCurrentCapitalAccessibilityTransition({
     candidate: JSON.parse(source.candidate.bytes), candidateBytes: source.candidate.bytes,
     previous: JSON.parse(source.previous.bytes), previousBytes: source.previous.bytes,
     facilityAdmission: sourceFacility, facilityBytes: source.facility.bytes,
     ledger: JSON.parse(source.ledger.bytes), ledgerBytes: source.ledger.bytes,
     inventory: JSON.parse(source.inventory.bytes), inventoryBytes: source.inventory.bytes,
   });
-  const rebuiltSuccessor = buildCurrentCapitalAccessibilityTransitionSuccessor({
-    baseTransitionBytes: source.transition.bytes,
-    previousFacilityBytes,
-    currentFacilityBytes: source.facility.bytes,
-    currentLedger: JSON.parse(source.ledger.bytes),
-    currentTransition,
-    allowedPredecessorSourceIds: changedPredecessorSourceIds(transition, currentTransition),
-  });
-  if (!source.successor.bytes.equals(Buffer.from(canonicalCurrentCapitalAccessibilityTransitionSuccessorJson(rebuiltSuccessor)))) {
-    throw new Error("source-main successor replay mismatch");
-  }
   const retained = Object.fromEntries(await Promise.all(RETAINED_LINEAGE_OUTPUTS.map(async (relative) => [relative, await lineageFile(retainedRoot, relative, `retained ${relative}`)])));
   const retainedFacility = parsedCanonical(retained["tools/datapack/release/current-capital-facility-source-admission.json"].bytes, canonicalCurrentCapitalFacilitySourceAdmissionJson, "retained FACILITY");
   const retainedSnapshotPath = requiredRelativePath(retainedFacility.sourceIdentity?.snapshotPath, "retained FACILITY snapshot");
@@ -326,13 +313,74 @@ export async function verifyCurrentCapitalTerminalLineage({
   }
   retained[retainedSnapshotPath] = await lineageFile(retainedRoot, retainedSnapshotPath, "retained FACILITY snapshot");
   const retainedCandidate = JSON.parse(retained["tools/datapack/release/candidate-build-spec.json"].bytes);
-  const protectedTerminalCandidateId = successor.nextCandidate?.candidateId;
-  if (typeof protectedTerminalCandidateId !== "string" || protectedTerminalCandidateId === ""
-    || retainedCandidate?.candidateId !== protectedTerminalCandidateId) {
-    throw new Error("terminal protected candidate identity mismatch");
-  }
   const retainedInventory = JSON.parse(retained["tools/datapack/source-inventory.json"].bytes);
   const retainedLedger = JSON.parse(retained["tools/datapack/release/source-snapshots.json"].bytes);
+  const [sourceMarkers, retainedMarkers] = await Promise.all([
+    readTerminalMarkerState(sourceMainRoot, "source-main"),
+    readTerminalMarkerState(retainedRoot, "retained"),
+  ]);
+  if (sourceMarkers.markerState !== retainedMarkers.markerState) {
+    throw new Error("terminal marker state differs between authenticated roots");
+  }
+  const markerState = sourceMarkers.markerState;
+  let transitionBytes;
+  let successorBytes;
+  if (markerState === "PRESENT") {
+    if (!sourceMarkers.marker?.bytes.equals(retainedMarkers.marker?.bytes)
+      || !sourceMarkers.successor?.bytes.equals(retainedMarkers.successor?.bytes)) {
+      throw new Error("terminal protected marker lineage mismatch");
+    }
+    const transition = parsedCanonical(sourceMarkers.marker.bytes, canonicalCurrentCapitalAccessibilityTransitionJson, "source-main transition");
+    const successor = parsedCanonical(sourceMarkers.successor.bytes, canonicalCurrentCapitalAccessibilityTransitionSuccessorJson, "source-main successor");
+    const previousFacilityBytes = Buffer.from(successor.previousFacilityAdmissionBase64, "base64");
+    const previousFacility = parsedCanonical(previousFacilityBytes, canonicalCurrentCapitalFacilitySourceAdmissionJson, "source-main predecessor FACILITY");
+    if (successor.supersededTransition.sha256 !== sha256(sourceMarkers.marker.bytes)
+      || successor.supersededTransition.transitionSha256 !== transition.transitionSha256
+      || successor.previousFacilityAdmission.sha256 !== sha256(previousFacilityBytes)
+      || successor.previousFacilityAdmission.admissionDigest !== previousFacility.admissionDigest
+      || successor.previousFacilityAdmission.snapshotId !== previousFacility.sourceIdentity.snapshotId) {
+      throw new Error("source-main protected marker lineage mismatch");
+    }
+    const rebuiltSuccessor = buildCurrentCapitalAccessibilityTransitionSuccessor({
+      baseTransitionBytes: sourceMarkers.marker.bytes,
+      previousFacilityBytes,
+      currentFacilityBytes: source.facility.bytes,
+      currentLedger: JSON.parse(source.ledger.bytes),
+      currentTransition: sourceTransition,
+      allowedPredecessorSourceIds: changedPredecessorSourceIds(transition, sourceTransition),
+    });
+    if (!sourceMarkers.successor.bytes.equals(Buffer.from(canonicalCurrentCapitalAccessibilityTransitionSuccessorJson(rebuiltSuccessor)))) {
+      throw new Error("source-main successor replay mismatch");
+    }
+    transitionBytes = Buffer.from(sourceMarkers.marker.bytes);
+    successorBytes = Buffer.from(sourceMarkers.successor.bytes);
+  } else {
+    const retainedTransition = buildCurrentCapitalAccessibilityTransition({
+      candidate: retainedCandidate, candidateBytes: retained["tools/datapack/release/candidate-build-spec.json"].bytes,
+      previous: JSON.parse(source.previous.bytes), previousBytes: source.previous.bytes,
+      facilityAdmission: retainedFacility, facilityBytes: retained["tools/datapack/release/current-capital-facility-source-admission.json"].bytes,
+      ledger: retainedLedger, ledgerBytes: retained["tools/datapack/release/source-snapshots.json"].bytes,
+      inventory: retainedInventory, inventoryBytes: retained["tools/datapack/source-inventory.json"].bytes,
+    });
+    transitionBytes = Buffer.from(canonicalCurrentCapitalAccessibilityTransitionJson(sourceTransition));
+    const derivedSuccessor = buildCurrentCapitalAccessibilityTransitionSuccessor({
+      baseTransitionBytes: transitionBytes,
+      previousFacilityBytes: source.facility.bytes,
+      currentFacilityBytes: retained["tools/datapack/release/current-capital-facility-source-admission.json"].bytes,
+      currentLedger: retainedLedger,
+      currentTransition: retainedTransition,
+      allowedPredecessorSourceIds: changedPredecessorSourceIds(sourceTransition, retainedTransition),
+    });
+    successorBytes = Buffer.from(canonicalCurrentCapitalAccessibilityTransitionSuccessorJson(derivedSuccessor));
+  }
+  parsedCanonical(transitionBytes, canonicalCurrentCapitalAccessibilityTransitionJson, "terminal transition");
+  const successor = parsedCanonical(successorBytes, canonicalCurrentCapitalAccessibilityTransitionSuccessorJson, "terminal successor");
+  const protectedTerminalCandidateId = successor.nextCandidate?.candidateId;
+  if (typeof protectedTerminalCandidateId !== "string" || protectedTerminalCandidateId === ""
+    || retainedCandidate?.candidateId !== protectedTerminalCandidateId
+    || (markerState === "DERIVED_ABSENT" && sourceTransition.nextCandidate.candidateId !== protectedTerminalCandidateId)) {
+    throw new Error("terminal protected candidate identity mismatch");
+  }
   const retainedSnapshot = JSON.parse(retained[retainedSnapshotPath].bytes);
   const retainedLedgerEntry = retainedLedger.find((entry) => entry?.sourceId === "kric-station-convenience-standard"
     && entry.snapshotId === retainedSnapshot.snapshotId);
@@ -462,7 +510,7 @@ export async function verifyCurrentCapitalTerminalLineage({
     facilityHeadGitSha,
     builderGitSha,
     transition: Object.freeze({
-      baseSha256: sha256(source.transition.bytes), successorSha256: sha256(source.successor.bytes),
+      baseSha256: sha256(transitionBytes), successorSha256: sha256(successorBytes),
       sourceMainCandidateSha256: sha256(source.candidate.bytes), sourceMainFacilitySha256: sha256(source.facility.bytes),
     }),
     retainedOutputs: Object.freeze(retainedPaths.map(Object.freeze)),
@@ -472,6 +520,9 @@ export async function verifyCurrentCapitalTerminalLineage({
   });
   return Object.freeze({
     proof,
+    markerState,
+    marker: Object.freeze({ bytes: transitionBytes }),
+    successor: Object.freeze({ bytes: successorBytes }),
     topologyInputs: Object.freeze((await Promise.all(topologyInputs.map(async ({ relativePath }) => Object.freeze({
       relativePath,
       bytes: Buffer.from((await lineageFile(privateBuilderRoot, relativePath, `builder topology ${relativePath}`)).bytes),
@@ -694,13 +745,17 @@ export async function rebuildCurrentCapitalTopologyTerminalHandoffForAncestorRec
     ancestorRoot: path.resolve(ancestorRetainedRoot), currentRoot: path.resolve(currentRetainedRoot),
     entries: originalPrepared.proof.replacementPrestates, pathKey: "relativePath", label: "ancestor recovery replacement prestates",
   });
-  await Promise.all(CURRENT_CAPITAL_TERMINAL_MARKERS.map(async (relativePath) => {
-    const [ancestor, current] = await Promise.all([
-      lineageFile(path.resolve(ancestorRetainedRoot), relativePath, `ancestor recovery ancestor ${relativePath}`),
-      lineageFile(path.resolve(currentRetainedRoot), relativePath, `ancestor recovery current ${relativePath}`),
-    ]);
-    if (!ancestor.bytes.equals(current.bytes)) throw new Error("ancestor recovery retained terminal input mismatch");
-  }));
+  const [ancestorMarkers, currentMarkers] = await Promise.all([
+    readTerminalMarkerState(path.resolve(ancestorRetainedRoot), "ancestor recovery ancestor"),
+    readTerminalMarkerState(path.resolve(currentRetainedRoot), "ancestor recovery current"),
+  ]);
+  if (ancestorMarkers.markerState !== currentMarkers.markerState
+    || ancestorMarkers.markerState !== originalPrepared.markerState
+    || (ancestorMarkers.markerState === "PRESENT"
+      && (!ancestorMarkers.marker.bytes.equals(currentMarkers.marker.bytes)
+        || !ancestorMarkers.successor.bytes.equals(currentMarkers.successor.bytes)))) {
+    throw new Error("ancestor recovery retained terminal input mismatch");
+  }
   const currentPrepared = await verifyTerminalLineageImpl({
     sourceMainRoot: path.resolve(sourceMainRoot), retainedRoot: path.resolve(currentRetainedRoot),
     privateBuilderRoot: path.resolve(originalPrivateBuilderRoot), sourceMainGitSha,
@@ -1173,8 +1228,10 @@ export async function runCurrentCapitalExitTerminalConsumer({
     sourceMainRoot: path.resolve(sourceMainRoot), retainedRoot: root, privateBuilderRoot: path.resolve(privateBuilderRoot),
     sourceMainGitSha, facilityHeadGitSha: candidateRootSha, builderGitSha, topologyBuild, execFileImpl,
   });
-  if (!preparedTerminal?.proof || !Array.isArray(preparedTerminal.topologyInputs)
-    || !Array.isArray(preparedTerminal.topologyOutputs)) {
+  if (!preparedTerminal?.proof || !["PRESENT", "DERIVED_ABSENT"].includes(preparedTerminal.markerState)
+    || (preparedTerminal.markerState === "DERIVED_ABSENT"
+      && (!preparedTerminal.marker?.bytes || !preparedTerminal.successor?.bytes))
+    || !Array.isArray(preparedTerminal.topologyInputs) || !Array.isArray(preparedTerminal.topologyOutputs)) {
     throw new Error("terminal consumer lineage preparation mismatch");
   }
   const topologyHandoff = verifyTopologyHandoffImpl(topologyHandoffBytes, {
@@ -1223,6 +1280,17 @@ export async function runCurrentCapitalExitTerminalConsumer({
     await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
     await cp(source, destination, { recursive: true, force: false, verbatimSymlinks: true,
       filter: (entry) => stagedCopyAllowed(root, entry, []) });
+  }
+  if (preparedTerminal.markerState === "DERIVED_ABSENT") {
+    for (const [relative, bytes] of [
+      [CURRENT_CAPITAL_TERMINAL_MARKERS[0], preparedTerminal.marker.bytes],
+      [CURRENT_CAPITAL_TERMINAL_MARKERS[1], preparedTerminal.successor.bytes],
+    ]) {
+      await requireAbsent(path.join(root, relative), "terminal derived marker root");
+      const destination = path.join(stagedRoot, relative);
+      await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
+      await writeFile(destination, bytes, { flag: "wx", mode: 0o600 });
+    }
   }
   for (const { relativePath, operation } of accessibilitySourceHandoff.outputs) {
     requiredRelativePath(relativePath, "terminal accessibility source output");
@@ -1412,11 +1480,16 @@ export async function runCurrentCapitalExitTerminalConsumer({
     }
     return { relative, bytes: staged.bytes, prestate };
   }));
-  const [marker, successor] = await Promise.all(markerPaths.map((relative) => readStagedRegularFile(root, relative, `terminal retained ${relative}`)));
+  const [marker, successor] = preparedTerminal.markerState === "PRESENT"
+    ? await Promise.all([
+      preparedTerminal.marker ?? readStagedRegularFile(root, markerPaths[0], `terminal retained ${markerPaths[0]}`),
+      preparedTerminal.successor ?? readStagedRegularFile(root, markerPaths[1], `terminal retained ${markerPaths[1]}`),
+    ])
+    : [preparedTerminal.marker, preparedTerminal.successor];
   const manifest = {
     accessibilitySourceHandoff,
     topologyInputs, topologyOutputs, liveChainOutputs: outputPaths,
-    fanInPath: CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH, markerPaths, replacementPaths,
+    fanInPath: CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH, markerPaths, markerState: preparedTerminal.markerState, replacementPaths,
     proof: preparedTerminal.proof, materialization,
   };
   const commitResult = await commitTerminalManifestImpl({ repositoryRoot: root, manifest, outputs: terminalOutputs, marker, successor });
@@ -1434,7 +1507,8 @@ export async function runCurrentCapitalExitTerminalConsumer({
     stagedRoot: finalRoot,
     outputPaths,
     fanInPath: CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH,
-    deletedMarkerPaths: Object.freeze(markerPaths),
+    markerState: preparedTerminal.markerState,
+    deletedMarkerPaths: Object.freeze(preparedTerminal.markerState === "PRESENT" ? markerPaths : []),
     replacementPaths: Object.freeze(replacementPaths),
   });
 }
