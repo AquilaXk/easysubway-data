@@ -1342,10 +1342,14 @@ export async function runCurrentCapitalExitTerminalConsumer({
     observationDirectory: transferObservationDirectory,
     receiptPath: transferReceiptPath,
   }));
-  const allowedPredecessorSourceIds = accessibilitySourceHandoff.sources
-    .filter(({ action }) => action === "REFRESH")
-    .map(({ sourceId }) => sourceId)
-    .sort();
+  // 이번 복구에서 KRIC를 RETAIN해도 immutable base 이후의 누적 변경에는
+  // 앞서 완료한 FACILITY 교체가 포함되므로 predecessor 집합에서 빠뜨리지 않는다.
+  const allowedPredecessorSourceIds = [...new Set([
+    "kric-station-convenience-standard",
+    ...accessibilitySourceHandoff.sources
+      .filter(({ action }) => action === "REFRESH")
+      .map(({ sourceId }) => sourceId),
+  ])].sort(codepointCompare);
   await rebindFacilityImpl({
     repositoryRoot: stagedRoot,
     replaceExistingSuccessor: true,
