@@ -43,8 +43,8 @@ test("does not register after publication failure", async (t) => {
   });
   assert.equal(registered, false);
 });
-test("retains a published receipt and recovers registration without a second publish", async (t) => {
-  const f = await fixture(); const recoveryRoot = path.join(f.base, "recovery"); t.after(() => rm(f.base, { recursive: true, force: true }));
+test("retains a published receipt and recovers every deliverable journal phase without a second publish", async (t) => {
+  const f = await fixture(); t.after(() => rm(f.base, { recursive: true, force: true }));
   const bytes = Buffer.from("{}\n"); let publishes = 0;
   await assert.rejects(() => runCurrentCapitalRouteTopologyRegistration({ repositoryRoot: f.repositoryRoot, operationRoot: f.operationRoot, expectedMainSha: SHA,
     readAdmission: async () => ({ sourceId: "capital-route-topology", snapshotId: "capital-route-topology-20260904", topologyBytes: bytes }),
@@ -53,10 +53,12 @@ test("retains a published receipt and recovers registration without a second pub
   }), /registrar failed/);
   assert.equal(publishes, 1);
   const journalPath = path.join(f.operationRoot, "capital-route-topology-registration.json"); const journal = JSON.parse(await readFile(journalPath, "utf8"));
-  await writeFile(journalPath, `${JSON.stringify({ ...journal, phase: "PUBLISHING" }, null, 2)}\n`);
-  const result = await recoverPublishedCurrentCapitalRouteTopologyRegistration({ repositoryRoot: f.repositoryRoot, sourceOperationRoot: f.operationRoot, targetOperationRoot: recoveryRoot, expectedMainSha: SHA,
-    expectedPublicationOperationId: path.basename(f.operationRoot), readAdmission: async () => ({ sourceId: "capital-route-topology", snapshotId: "capital-route-topology-20260904", topologyBytes: bytes }), register: async () => ({ targets: TARGETS }), exactMain: async () => ({}) });
-  assert.equal(publishes, 1); assert.equal(result.status, "PASS");
+  for (const phase of ["PUBLISHING", "PUBLISHED", "FINALIZED"]) {
+    await writeFile(journalPath, `${JSON.stringify({ ...journal, phase }, null, 2)}\n`);
+    const result = await recoverPublishedCurrentCapitalRouteTopologyRegistration({ repositoryRoot: f.repositoryRoot, sourceOperationRoot: f.operationRoot, targetOperationRoot: path.join(f.base, `recovery-${phase.toLowerCase()}`), expectedMainSha: SHA,
+      expectedPublicationOperationId: path.basename(f.operationRoot), readAdmission: async () => ({ sourceId: "capital-route-topology", snapshotId: "capital-route-topology-20260904", topologyBytes: bytes }), register: async () => ({ targets: TARGETS }), exactMain: async () => ({}) });
+    assert.equal(publishes, 1); assert.equal(result.status, "PASS");
+  }
 });
 test("accepts only the closed CLI contract", () => {
   assert.deepEqual(parseArgs(["--repository-root", "/repo", "--operation-root", "/tmp/op", "--expected-main-sha", SHA]), { phase: "run", repositoryRoot: "/repo", operationRoot: "/tmp/op", expectedMainSha: SHA });
@@ -68,6 +70,7 @@ test("workflow fails closed on claim reads and retains only recovery metadata", 
   const workflow = await readFile(new URL("../../.github/workflows/current-capital-topology-registration.yml", import.meta.url), "utf8");
   assert.match(workflow, /environment: datapack-release-check/u);
   assert.match(workflow, /git ls-remote --heads origin[^\n]+ > "\$\{claims\}"/u);
+  assert.match(workflow, /source_root=[^\n]+[\s\S]*mkdir -p "\$\{source_root\}"[\s\S]*chmod 700 "\$\{source_root\}"[\s\S]*gh run download[^\n]+--dir "\$\{source_root\}"/u);
   assert.doesNotMatch(workflow, /mkdir -m 700 -p "\$\{REGISTRATION_OPERATION_ROOT\}"/u);
   assert.match(workflow, /Recover published registration without OCI/u);
   assert.match(workflow, /capital-route-topology-registration\.json/u);

@@ -61,6 +61,8 @@ jobs:
             git diff --quiet "${claim_parent}" "${claim_head}" || { echo "recovery claim is not empty" >&2; exit 1; }
             [[ "$(gh pr list --repo "${GITHUB_REPOSITORY}" --state all --head "${branch}" --json number --jq 'length')" == "0" ]] || { echo "recovery claim already has a pull request" >&2; exit 1; }
             source_root="${RUNNER_TEMP}/current-capital-topology-registration/retained-${RECOVERY_RUN_ID}"
+            mkdir -p "${source_root}"
+            chmod 700 "${source_root}"
             gh run download "${RECOVERY_RUN_ID}" --repo "${GITHUB_REPOSITORY}" --name "current-capital-topology-registration-${RECOVERY_RUN_ID}" --dir "${source_root}"
             [[ -f "${source_root}/capital-route-topology-registration.json" && -f "${source_root}/capital-route-topology.raw-receipt.json" ]] || { echo "retained registration evidence is incomplete" >&2; exit 1; }
             git switch --track -c "${branch}" "origin/${branch}"
