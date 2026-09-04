@@ -491,11 +491,24 @@ function fanInComponents(files) {
   }));
 }
 
-export function assertPendingMarkerProducerBoundary({ baseMarker, effectiveMarker, candidate, facility, exit, station, route }) {
+function requireTerminalMarkerState(markerState) {
+  if (!["PRESENT", "DERIVED_ABSENT"].includes(markerState)) {
+    throw new Error("current-capital refresh terminal marker state mismatch");
+  }
+}
+
+export function assertPendingMarkerProducerBoundary({
+  markerState = "PRESENT", baseMarker, effectiveMarker, candidate, facility, exit, station, route,
+}) {
+  requireTerminalMarkerState(markerState);
   const basePrevious = baseMarker?.previousCandidate;
+  // DERIVED_ABSENT의 station/route는 이미 terminal 산출물이므로 base의
+  // 다음 후보에 고정한다. PRESENT와 기본 경로는 원래 predecessor를 유지한다.
+  const producerPrestate = markerState === "DERIVED_ABSENT" ? baseMarker?.nextCandidate : basePrevious;
   const next = effectiveMarker?.nextCandidate; const effectivePrevious = effectiveMarker?.previousCandidate;
   if (next?.candidateId == null || next?.sourceSnapshotSetHash == null
     || basePrevious?.candidateId == null || basePrevious?.sourceSnapshotSetHash == null
+    || producerPrestate?.candidateId == null || producerPrestate?.sourceSnapshotSetHash == null
     || effectivePrevious?.candidateId == null || effectivePrevious?.sourceSnapshotSetHash == null
     || candidate?.candidateId == null || candidate?.sourceSnapshotSetHash == null
     || next.candidateId !== candidate.candidateId
@@ -503,10 +516,10 @@ export function assertPendingMarkerProducerBoundary({ baseMarker, effectiveMarke
     || facility.candidate?.sourceSnapshotSetHash !== candidate.sourceSnapshotSetHash
     || exit?.candidate?.candidateId !== next.candidateId
     || exit.candidate?.sourceSetSha256 !== effectivePrevious.sourceSnapshotSetHash
-    || station?.candidate?.candidateId !== basePrevious.candidateId
-    || station.candidate?.sourceSetSha256 !== basePrevious.sourceSnapshotSetHash
-    || route?.candidate?.candidateId !== basePrevious.candidateId
-    || route.candidate?.sourceSetSha256 !== basePrevious.sourceSnapshotSetHash) {
+    || station?.candidate?.candidateId !== producerPrestate.candidateId
+    || station.candidate?.sourceSetSha256 !== producerPrestate.sourceSnapshotSetHash
+    || route?.candidate?.candidateId !== producerPrestate.candidateId
+    || route.candidate?.sourceSetSha256 !== producerPrestate.sourceSnapshotSetHash) {
     throw new Error("current-capital refresh pending marker producer boundary mismatch");
   }
 }
@@ -687,7 +700,9 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
   candidateBuildSpec = undefined,
   canonicalPack = undefined,
   transferRebindOutputs = undefined,
+  markerState = "PRESENT",
 } = {}) {
+  requireTerminalMarkerState(markerState);
   requirePhase(phase);
   const root = path.resolve(repositoryRoot); const files = await inputFiles(root, phase);
   const marker = files[TRANSITION]; const effectiveMarker = files[SUCCESSOR];
@@ -705,6 +720,7 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
     const currentSuccessor = await readStableRegularFile(target(root, SUCCESSOR), SUCCESSOR);
     if (!currentSuccessor.bytes.equals(files[SUCCESSOR].bytes)) throw new Error("current-capital refresh transition successor changed during validation");
     assertPendingMarkerProducerBoundary({
+      markerState,
       baseMarker,
       effectiveMarker: effectiveMarkerValue,
       candidate: parse(files[CANDIDATE_BUILD_SPEC].bytes, "current candidate"),
@@ -1202,11 +1218,14 @@ export async function commitCurrentCapitalTerminalManifest({
     throw error;
   } finally { await release(); }
 }
-export async function refreshCurrentCapitalAccessibilityFull({ repositoryRoot = ROOT, beforeCommit = async () => {}, transferRebindOutputs = undefined } = {}) {
+export async function refreshCurrentCapitalAccessibilityFull({
+  repositoryRoot = ROOT, beforeCommit = async () => {}, transferRebindOutputs = undefined, markerState = "PRESENT",
+} = {}) {
+  requireTerminalMarkerState(markerState);
   const root = path.resolve(repositoryRoot); const release = await acquireLock(root);
   try {
     await recover(root);
-    const outputs = await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root, transferRebindOutputs });
+    const outputs = await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root, transferRebindOutputs, markerState });
     await assertInputsStable(outputs.flatMap(({ inputs = [] }) => inputs));
     const marker = outputs[0]?.inputs?.find(({ target: inputTarget }) => inputTarget === target(root, TRANSITION));
     const transactionOutputs = [...outputs, outputs[0].fanIn];

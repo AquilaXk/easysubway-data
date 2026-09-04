@@ -1435,6 +1435,7 @@ export async function runCurrentCapitalExitTerminalConsumer({
   const proposedOutputs = await buildCurrentCapitalAccessibilityRefreshOutputs({
     repositoryRoot: stagedRoot,
     transferRebindOutputs,
+    markerState: preparedTerminal.markerState,
   });
   const proposedByPath = new Map([
     ...proposedOutputs.map(({ relative, bytes }) => [relative, bytes]),
@@ -1449,6 +1450,7 @@ export async function runCurrentCapitalExitTerminalConsumer({
   const refresh = await refreshCurrentCapitalAccessibilityFull({
     repositoryRoot: stagedRoot,
     transferRebindOutputs,
+    markerState: preparedTerminal.markerState,
   });
   if (!refresh || JSON.stringify(refresh.outputs) !== JSON.stringify([
     "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
