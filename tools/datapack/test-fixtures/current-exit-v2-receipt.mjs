@@ -21,7 +21,8 @@ export function buildFixtureCurrentExitV2Receipt({
   admissionBytes,
   candidateBytes,
 } = {}) {
-  if (![providerCollectionBundleBytes, normalizedBytes, admissionBytes, candidateBytes].every(Buffer.isBuffer)
+  if (![providerCollectionBundleBytes, normalizedBytes, admissionBytes, candidateBytes]
+    .every((value) => Buffer.isBuffer(value))
     || typeof providerCapturedAt !== "string" || Number.isNaN(Date.parse(providerCapturedAt))) {
     throw new Error("fixture EXIT v2 receipt inputs are invalid");
   }
@@ -60,7 +61,8 @@ export function rebindFixtureCurrentExitV2Admission({ admissionBytes, normalized
     throw new Error("fixture EXIT v2 rebind candidate identity is invalid");
   }
   for (const row of rows) { row.candidateId = candidateId; row.sourceSetSha256 = sourceSetSha256; }
-  const { admissionDigest: _ignored, ...unsigned } = rebound;
+  const unsigned = structuredClone(rebound);
+  delete unsigned.admissionDigest;
   rebound.admissionDigest = sha256(Buffer.from(canonicalJson(unsigned)));
   const reboundAdmissionBytes = Buffer.from(canonicalExitPathAdmissionJson(rebound));
   const receipt = buildFixtureCurrentExitV2Receipt({ providerCollectionBundleBytes, providerCapturedAt, normalizedBytes, admissionBytes: reboundAdmissionBytes, candidateBytes });

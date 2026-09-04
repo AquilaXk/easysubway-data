@@ -3,12 +3,13 @@ import { execFile as execFileCallback } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { cp, lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
-import { currentCapitalLiveChainOutputPaths } from "./validate-current-capital-live-chain-materialization.mjs";
 import {
-  CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS,
+  currentCapitalLiveChainOutputPaths,
+  validateCurrentCapitalLiveChainMaterialization,
+} from "./validate-current-capital-live-chain-materialization.mjs";
+import {
   CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH,
 } from "./build-current-capital-live-chain-boundary.mjs";
 import { buildCurrentKricExitProviderOciPlan, canonicalCurrentKricExitProviderOciPlanJson } from "./build-current-kric-exit-provider-oci-plan.mjs";
@@ -38,8 +39,11 @@ import {
   CURRENT_CAPITAL_EXIT_PROVIDER_SOURCE_RECEIPT,
 } from "./current-capital-exit-provider-handoff.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
-import { publishCurrentKricExitProviderOciPlan, requireCurrentCapitalLiveChainOciParBaseUrl } from "./publish-object-storage.mjs";
-import { preauthenticatedObjectStorageClient } from "./publish-object-storage.mjs";
+import {
+  preauthenticatedObjectStorageClient,
+  publishCurrentKricExitProviderOciPlan,
+  requireCurrentCapitalLiveChainOciParBaseUrl,
+} from "./publish-object-storage.mjs";
 import { recoverCurrentCapitalExitProviderCandidate } from "./current-capital-exit-provider-handoff.mjs";
 import { rebindCandidateSourceSnapshots, rebindCurrentCandidateSourceSnapshots } from "./rebind-current-candidate-source-snapshots.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
@@ -66,7 +70,6 @@ import {
 import { rebindCurrentActivePublicRouteMapMaterialization } from "./rebind-current-active-public-route-map-materialization.mjs";
 import { currentLiveChainTransferStageInputs, rebindCurrentLiveChainTransferDerivedIdentities } from "./rebind-current-live-chain-transfer-derived-identities.mjs";
 import { assertCurrentStaticNetworkTopologyAdmission } from "./register-current-static-network-successors.mjs";
-import { validateCurrentCapitalLiveChainMaterialization } from "./validate-current-capital-live-chain-materialization.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const execFile = promisify(execFileCallback);

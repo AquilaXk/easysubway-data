@@ -10,7 +10,6 @@ import { canonicalExitPathAdmissionJson } from "../build-exit-path-admission.mjs
 import {
   buildCurrentCapitalLiveChainFanInBoundary,
   CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS,
-  canonicalCurrentCapitalLiveChainFanInBoundaryJson,
 } from "../build-current-capital-live-chain-boundary.mjs";
 import { buildCurrentExitPathSourceAdmission } from "../build-current-exit-path-source-admission.mjs";
 import { buildCurrentKricExitCollectionPlan } from "../build-current-kric-exit-collection-plan.mjs";
