@@ -374,6 +374,7 @@ export function deriveReleaseProjection({ snapshot, sourceInventory, governanceP
     snapshot: governanceSnapshot,
     currentPolicyVersion: governancePolicy.policyVersion,
     currentPolicySha256: sha256(governancePolicyBytes),
+    currentPolicyBytes: governancePolicyBytes,
   });
   return {
     snapshotId: snapshot.snapshotId, sourceId: snapshot.sourceId, rawObjectUri: snapshot.rawObjectUri,

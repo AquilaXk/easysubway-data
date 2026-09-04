@@ -145,6 +145,7 @@ export function deriveCurrentOnlyProjection({ snapshot, inventory, governance, g
   }
   const binding = approvedGovernanceBindingTransition({
     snapshot, currentPolicyVersion: governance.policyVersion, currentPolicySha256: sha256(governanceBytes),
+    currentPolicyBytes: governanceBytes,
   });
   if (binding.governancePolicyVersion !== snapshot.governancePolicyVersion || binding.governancePolicySha256 !== snapshot.governancePolicySha256) {
     throw new Error("current source governance binding changed during projection");

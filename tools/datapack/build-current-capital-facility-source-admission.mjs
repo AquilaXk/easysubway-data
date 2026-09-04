@@ -214,11 +214,14 @@ function validateSourceContext({ candidateBuildSpec, sourceInventoryBytes, sourc
     snapshot: ledger,
     currentPolicyVersion: governancePolicy.policyVersion,
     currentPolicySha256: sha256(normalizedGovernancePolicyBytes),
+    currentPolicyBytes: normalizedGovernancePolicyBytes,
   });
   if (!isApprovedCurrentOrPriorGovernanceBinding({
     binding: approvedGovernanceBinding,
+    sourceId: SOURCE_ID,
     currentPolicyVersion: governancePolicy.policyVersion,
     currentPolicySha256: sha256(normalizedGovernancePolicyBytes),
+    currentPolicyBytes: normalizedGovernancePolicyBytes,
   })) {
     throw new Error("KRIC current governance binding mismatch");
   }

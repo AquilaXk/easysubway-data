@@ -8,7 +8,7 @@ import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { assertCurrentStaticNetworkTopologyAdmission } from "./register-current-static-network-successors.mjs";
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
-import { deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
+import { buildAppendOnlyGovernancePolicyRegistration, deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 import { isDeepStrictEqual } from "node:util";
 
 const SOURCE_ID = "capital-route-topology";
@@ -148,7 +148,11 @@ export async function readCurrentCapitalRouteTopologyAdmission({ repositoryRoot,
     || (existingGovernance.length === 1 && (!isDeepStrictEqual(existingGovernance[0], governance) || !isDeepStrictEqual(existingFreshness[0], freshness)))) {
     throw new Error("capital topology registration policy binding is invalid");
   }
-  const governancePolicy = existingGovernance.length === 1 ? baseGovernancePolicy : { ...baseGovernancePolicy, sources: [...baseGovernancePolicy.sources, governance] };
+  const governancePolicy = existingGovernance.length === 1 ? baseGovernancePolicy
+    : buildAppendOnlyGovernancePolicyRegistration({
+      predecessorPolicyBytes: governanceBytes,
+      addedSources: [governance],
+    }).policy;
   const freshnessPolicy = existingFreshness.length === 1 ? baseFreshnessPolicy : { ...baseFreshnessPolicy, sourceClasses: [...baseFreshnessPolicy.sourceClasses, freshness] };
   const review = governance.licenseReview;
   const reviewedAt = instant(review?.reviewedAt, "capital topology license reviewedAt");

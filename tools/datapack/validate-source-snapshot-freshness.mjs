@@ -44,6 +44,7 @@ export function validateSourceSnapshotFreshness({
   governancePolicy = null,
   inventory = null,
   governancePolicySha256 = null,
+  governancePolicyBytes = undefined,
   purgeReport = null,
   purgeAttestation = null,
 }) {
@@ -136,6 +137,7 @@ export function validateSourceSnapshotFreshness({
       snapshot,
       currentPolicyVersion: governancePolicy.policyVersion,
       currentPolicySha256: governancePolicySha256,
+      currentPolicyBytes: governancePolicyBytes,
     });
     const sources = new Map(inventory.sources.map((source) => [source.id, source]));
     governanceResults = effectiveSnapshots.map((snapshot) => {
@@ -250,6 +252,7 @@ async function main(argv) {
     policy,
     evaluationAt: args.get("evaluation-at") ?? new Date().toISOString(),
     governancePolicy,
+    governancePolicyBytes: governancePolicyText == null ? null : Buffer.from(governancePolicyText),
     inventory,
     governancePolicySha256,
     purgeReport,

@@ -158,6 +158,35 @@ test("publishes exactly the protected topology bytes and builds an initial regis
   assert.equal(snapshot.byteSize, admission.topologyBytes.length);
 });
 
+test("first registration binds the exact policy prestate without changing prior approvals", async (t) => {
+  const { root, now } = await fixture(t);
+  const policyPath = path.join(root, "tools/datapack/source-governance-policy.json");
+  const policy = JSON.parse(await readFile(policyPath));
+  const lineage = policy.registrationLineage;
+  const sourceIds = new Set(lineage.addedSourceIds);
+  const previousPolicyBytes = Buffer.from(lineage.predecessorPolicyText);
+  assert.equal(sha(previousPolicyBytes), lineage.predecessorPolicySha256);
+  await writeFile(policyPath, previousPolicyBytes);
+  const inventoryPath = path.join(root, "tools/datapack/source-inventory.json");
+  const inventory = JSON.parse(await readFile(inventoryPath));
+  inventory.sources = inventory.sources.filter(({ id }) => !sourceIds.has(id));
+  await writeJson(inventoryPath, inventory);
+  const ledgerPath = path.join(root, "tools/datapack/release/source-snapshots.json");
+  await writeJson(ledgerPath, JSON.parse(await readFile(ledgerPath))
+    .filter(({ sourceId }) => !sourceIds.has(sourceId)));
+  const freshnessPath = path.join(root, "release/product-gates/datapack-freshness-sla.json");
+  const freshness = JSON.parse(await readFile(freshnessPath));
+  freshness.sourceClasses = freshness.sourceClasses.filter((entry) =>
+    !entry.sourceIds.every((id) => sourceIds.has(id)));
+  await writeJson(freshnessPath, freshness);
+  const { receiptPath } = await receiptFixture(root, now);
+  const outputs = await buildCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot: root, receiptPath, now });
+  const output = outputs.find(({ relative }) => relative === "tools/datapack/source-governance-policy.json");
+  assert.deepEqual(output.prestateBytes, previousPolicyBytes);
+  assert.equal(JSON.parse(output.bytes).registrationLineage.predecessorPolicySha256, sha(previousPolicyBytes));
+  assert.deepEqual(JSON.parse(output.bytes).sources.slice(0, -sourceIds.size), JSON.parse(previousPolicyBytes).sources);
+});
+
 test("places capital topology evidence on the source schema", async () => {
   const schema = JSON.parse(await readFile(path.join(ROOT, "contracts/datapack/source-inventory.schema.json")));
   const sourceProperties = schema.properties.sources.items.properties;
@@ -178,8 +207,10 @@ test("derives admission from one captured repository input snapshot", async (t) 
   assert.equal(Object.hasOwn(admission.governancePolicy, "concurrentSentinel"), false);
 });
 
-test("commits initial registration then replaces only its inventory record for a unique successor", async (t) => {
+test("commits two registrations while preserving existing ledger history and one inventory record", async (t) => {
   const { root, now } = await fixture(t);
+  const previousSnapshots = JSON.parse(await readFile(path.join(root, "tools/datapack/release/source-snapshots.json")))
+    .filter((snapshot) => snapshot.sourceId === "capital-route-topology");
   let receipt = await receiptFixture(root, now);
   let outputs = await buildCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot: root, receiptPath: receipt.receiptPath, now });
   await commitCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot: root, outputs });
@@ -192,7 +223,9 @@ test("commits initial registration then replaces only its inventory record for a
   const snapshots = JSON.parse(await readFile(path.join(root, "tools/datapack/release/source-snapshots.json")))
     .filter((snapshot) => snapshot.sourceId === "capital-route-topology");
   assert.equal(inventory.sources.filter((source) => source.id === "capital-route-topology").length, 1);
-  assert.equal(snapshots.length, 2);
+  assert.equal(snapshots.length, previousSnapshots.length + 2);
+  assert.deepEqual(snapshots.slice(0, previousSnapshots.length), previousSnapshots);
+  assert.equal(snapshots.at(-2).previousSnapshotId, previousSnapshots.at(-1)?.snapshotId ?? null);
   assert.equal(snapshots.at(-1).previousSnapshotId, initialSnapshot);
   assert.deepEqual(snapshots.at(-1).admissionEvidence.predecessorSnapshotIds, [initialSnapshot]);
 });
