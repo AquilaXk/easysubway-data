@@ -73,7 +73,6 @@ test("predeployment measurement rejects incomplete artifact and observation attr
     "tools/datapack/release/current-five-region-source-fan-in.json",
     "release-evidence-bundle.json",
     "release-decision.json",
-    "capital", "gwangju", "daejeon", "daegu", "busan",
     "POINT", "DEPARTURE_PROFILE", "ARRIVE_BY", "LAST_CONNECTION", "CUTOFF", "TYPED_FAILURE",
     "routeBundleSha256", "corpusSha256", "regionalMatrixSha256", "algorithmSha256", "frontierSha256",
     "observedWork", "observedStateLabels", "observedDestinationLabels", "observedBreakpoints",
@@ -129,4 +128,17 @@ test("predeployment measurement binds the JUnit harness to the validated candida
   requireText(harness, /payload\/accessibility\.sqlite\.zst\s+payload\/fare\.sqlite\.zst\s+payload\/timetable\.sqlite\.zst\s+payload\/topology\.sqlite\.zst\s+provenance\.json/,
     "required payload and provenance artifacts");
   requireText(harness, /\.\/gradlew :backend:test/, "validation precedes Gradle");
+});
+
+test("predeployment measurement derives regions from the canonical fan-in v2 scope", () => {
+  const text = source();
+  requireText(text, /import \{\s+validateCurrentFiveRegionSourceFanIn,\s+\} from/,
+    "shared fan-in validator");
+  requireText(text, /const fanIn = validateCurrentFiveRegionSourceFanIn\(/,
+    "inventory-bound fan-in v2 validation");
+  requireText(text, /fanIn\.regionalMatrixSha256 !== releaseEvidence\.identityLinkageMatrixSha256/,
+    "release matrix binding");
+  requireText(text, /regionIds: fanIn\.scope\.regionIds/, "measurement input derives regions");
+  assert.doesNotMatch(text, /const regions = \["capital", "gwangju", "daejeon", "daegu", "busan"\]/,
+    "no duplicate mutable region projection");
 });
