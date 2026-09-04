@@ -121,10 +121,11 @@ function terminalMaterializationReceipt(receipt, liveChainOutputs, fanInPath) {
   return new Map([...entries, { relative: receipt.fanIn.path, digest: receipt.fanIn.sha256 }].map(({ relative, digest }) => [relative, digest]));
 }
 function terminalVerifierProof(proof) {
-  const keys = ["artifactKind", "builderGitSha", "facilityHeadGitSha", "replacementPrestates", "retainedOutputs", "schemaVersion", "sourceMainGitSha", "topologyInputs", "topologyOutputs", "transition"];
+  const keys = ["artifactKind", "builderGitSha", "facilityHeadGitSha", "markerState", "replacementPrestates", "retainedOutputs", "schemaVersion", "sourceMainGitSha", "topologyInputs", "topologyOutputs", "transition"];
   if (!proof || typeof proof !== "object" || Array.isArray(proof)
     || JSON.stringify(Object.keys(proof).sort(codepointCompare)) !== JSON.stringify(keys)
     || proof.schemaVersion !== 2 || proof.artifactKind !== "current-capital-terminal-lineage"
+    || !["PRESENT", "DERIVED_ABSENT"].includes(proof.markerState)
     || ![proof.sourceMainGitSha, proof.facilityHeadGitSha, proof.builderGitSha].every((value) => /^[a-f0-9]{40}$/u.test(value ?? ""))
     || !proof.transition || ![proof.transition.baseSha256, proof.transition.successorSha256,
       proof.transition.sourceMainCandidateSha256, proof.transition.sourceMainFacilitySha256].every((value) => /^[a-f0-9]{64}$/u.test(value ?? ""))
@@ -154,7 +155,7 @@ function terminalVerifierProof(proof) {
     || [...replacementPrestates].some(([relative, digest]) => typeof relative !== "string" || !/^[a-f0-9]{64}$/u.test(digest ?? ""))) {
     throw new Error("current-capital terminal lineage proof mismatch");
   }
-  return { retained, inputs, outputs, replacementPrestates };
+  return { markerState: proof.markerState, retained, inputs, outputs, replacementPrestates };
 }
 
 /**
@@ -166,7 +167,7 @@ function terminalVerifierProof(proof) {
 export function validateCurrentCapitalTerminalManifest(manifest) {
   if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)
     || JSON.stringify(Object.keys(manifest).sort(codepointCompare)) !== JSON.stringify([
-      "accessibilitySourceHandoff", "fanInPath", "liveChainOutputs", "markerPaths", "materialization", "proof", "replacementPaths", "topologyInputs", "topologyOutputs",
+      "accessibilitySourceHandoff", "fanInPath", "liveChainOutputs", "markerPaths", "markerState", "materialization", "proof", "replacementPaths", "topologyInputs", "topologyOutputs",
     ])) {
     throw new Error("current-capital terminal manifest mismatch");
   }
@@ -179,6 +180,7 @@ export function validateCurrentCapitalTerminalManifest(manifest) {
   const proof = terminalVerifierProof(manifest.proof);
   if (manifest.fanInPath !== FAN_IN_OUTPUT) throw new Error("current-capital terminal fan-in manifest mismatch");
   exactPathSet(manifest.markerPaths, TERMINAL_MARKERS, "current-capital terminal marker manifest");
+  if (manifest.markerState !== proof.markerState) throw new Error("current-capital terminal marker state mismatch");
   const classPaths = [
     ...accessibilityOutputs.keys(),
     ...manifest.topologyInputs,
@@ -227,6 +229,7 @@ export function validateCurrentCapitalTerminalManifest(manifest) {
     liveChainOutputs: Object.freeze([...manifest.liveChainOutputs]),
     fanInPath: manifest.fanInPath,
     markerPaths: Object.freeze([...TERMINAL_MARKERS]),
+    markerState: manifest.markerState,
     proof: manifest.proof,
     retainedProof: proof.retained,
     topologyInputProof: proof.inputs,
@@ -1020,12 +1023,13 @@ function validateCurrentCapitalTerminalJournal(journal) {
   if (!journal || journal.schemaVersion !== 1 || !["PREPARED", "COMMITTED"].includes(journal.state)
     || !Array.isArray(journal.records)) terminalJournalError();
   const manifest = validateCurrentCapitalTerminalManifest(journal.manifest);
-  if (journal.records.length !== manifest.replacements.length + 2
-    || JSON.stringify(journal.records.slice(0, -2).map(({ relative }) => relative))
+  const markerRecords = manifest.markerState === "PRESENT" ? 2 : 0;
+  if (journal.records.length !== manifest.replacements.length + markerRecords
+    || JSON.stringify(journal.records.slice(0, manifest.replacements.length).map(({ relative }) => relative))
       !== JSON.stringify(manifest.replacements)
-    || JSON.stringify(journal.records.slice(-2).map(({ relative }) => relative))
-      !== JSON.stringify(manifest.markerPaths)) terminalJournalError();
-  for (const [index, record] of journal.records.slice(0, -2).entries()) {
+    || (markerRecords !== 0 && JSON.stringify(journal.records.slice(-markerRecords).map(({ relative }) => relative))
+      !== JSON.stringify(manifest.markerPaths))) terminalJournalError();
+  for (const [index, record] of journal.records.slice(0, manifest.replacements.length).entries()) {
     const create = manifest.createOncePaths.includes(record.relative);
     if (record.operation !== (create ? "create" : "replace") || typeof record.after !== "string"
       || sha(Buffer.from(record.after, "base64")) !== record.afterSha256) terminalJournalError();
@@ -1033,7 +1037,7 @@ function validateCurrentCapitalTerminalJournal(journal) {
       : typeof record.before !== "string" || sha(Buffer.from(record.before, "base64")) !== record.beforeSha256) terminalJournalError();
     if (record.relative !== manifest.replacements[index]) terminalJournalError();
   }
-  for (const marker of journal.records.slice(-2)) {
+  for (const marker of journal.records.slice(manifest.replacements.length)) {
     if (marker.operation !== "delete" || typeof marker.before !== "string"
       || sha(Buffer.from(marker.before, "base64")) !== marker.beforeSha256) terminalJournalError();
   }
@@ -1044,7 +1048,12 @@ async function recoverCurrentCapitalTerminalTransaction(root) {
   try { journalFile = await readStableRegularFile(journalPath, "current-capital terminal journal"); }
   catch (error) { if (error?.code === "ENOENT" || error?.cause?.code === "ENOENT") return; throw error; }
   const journal = parse(journalFile.bytes, "current-capital terminal journal");
-  validateCurrentCapitalTerminalJournal(journal);
+  const manifest = validateCurrentCapitalTerminalJournal(journal);
+  if (manifest.markerState === "DERIVED_ABSENT"
+    && (await readOptionalStable(target(root, TRANSITION), TRANSITION)
+      || await readOptionalStable(target(root, SUCCESSOR), SUCCESSOR))) {
+    throw new Error("current-capital terminal marker resurrection");
+  }
   for (const record of journal.records) {
     const file = target(root, record.relative);
     if (record.operation === "delete") {
@@ -1071,6 +1080,11 @@ async function recoverCurrentCapitalTerminalTransaction(root) {
     else if (!(journal.state === "PREPARED" ? current.bytes.equals(before) : current.bytes.equals(after))) {
       throw new Error("current-capital terminal preserves foreign replacement");
     }
+  }
+  if (manifest.markerState === "DERIVED_ABSENT"
+    && (await readOptionalStable(target(root, TRANSITION), TRANSITION)
+      || await readOptionalStable(target(root, SUCCESSOR), SUCCESSOR))) {
+    throw new Error("current-capital terminal marker resurrection");
   }
   await unlink(journalPath); await syncParent(journalPath);
 }
@@ -1135,17 +1149,24 @@ export async function commitCurrentCapitalTerminalManifest({
         authenticatedPrestates.set(output.relative, current);
       }
     }
-    const currentMarker = await readStableRegularFile(target(root, TRANSITION), TRANSITION);
-    const currentSuccessor = await readStableRegularFile(target(root, SUCCESSOR), SUCCESSOR);
-    if (!currentMarker.bytes.equals(marker.bytes) || !currentSuccessor.bytes.equals(successor.bytes)) {
-      throw new Error("current-capital terminal preserves foreign replacement");
+    if (checkedManifest.markerState === "PRESENT") {
+      const currentMarker = await readStableRegularFile(target(root, TRANSITION), TRANSITION);
+      const currentSuccessor = await readStableRegularFile(target(root, SUCCESSOR), SUCCESSOR);
+      if (!currentMarker.bytes.equals(marker.bytes) || !currentSuccessor.bytes.equals(successor.bytes)) {
+        throw new Error("current-capital terminal preserves foreign replacement");
+      }
+    } else if (await readOptionalStable(target(root, TRANSITION), TRANSITION)
+      || await readOptionalStable(target(root, SUCCESSOR), SUCCESSOR)) {
+      throw new Error("current-capital terminal marker resurrection");
     }
     const records = [
       ...outputs.map(({ relative, bytes, prestate }) => checkedManifest.createOncePaths.includes(relative)
         ? { operation: "create", relative, before: null, beforeSha256: null, after: bytes.toString("base64"), afterSha256: sha(bytes) }
         : { operation: "replace", relative, before: prestate.bytes.toString("base64"), beforeSha256: sha(prestate.bytes), after: bytes.toString("base64"), afterSha256: sha(bytes) }),
-      { operation: "delete", relative: TRANSITION, before: marker.bytes.toString("base64"), beforeSha256: sha(marker.bytes) },
-      { operation: "delete", relative: SUCCESSOR, before: successor.bytes.toString("base64"), beforeSha256: sha(successor.bytes) },
+      ...(checkedManifest.markerState === "PRESENT" ? [
+        { operation: "delete", relative: TRANSITION, before: marker.bytes.toString("base64"), beforeSha256: sha(marker.bytes) },
+        { operation: "delete", relative: SUCCESSOR, before: successor.bytes.toString("base64"), beforeSha256: sha(successor.bytes) },
+      ] : []),
     ];
     const journalPath = target(root, TERMINAL_JOURNAL);
     const journal = { schemaVersion: 1, state: "PREPARED", manifest, records };
@@ -1158,11 +1179,17 @@ export async function commitCurrentCapitalTerminalManifest({
       const current = await readStableRegularFile(file, "current-capital terminal final target");
       if (!current.bytes.equals(output.bytes)) throw new Error("current-capital terminal final byte mismatch");
     }
-    await deleteExpectedFile(target(root, TRANSITION), marker.bytes);
-    await deleteExpectedFile(target(root, SUCCESSOR), successor.bytes);
+    if (checkedManifest.markerState === "PRESENT") {
+      await deleteExpectedFile(target(root, TRANSITION), marker.bytes);
+      await deleteExpectedFile(target(root, SUCCESSOR), successor.bytes);
+    }
     const currentJournal = await readStableRegularFile(journalPath, "current-capital terminal journal");
     await atomicReplace(journalPath, Buffer.from(JSON.stringify({ ...journal, state: "COMMITTED" })), { original: currentJournal });
     await recoverCurrentCapitalTerminalTransaction(root); prepared = false;
+    if (await readOptionalStable(target(root, TRANSITION), TRANSITION)
+      || await readOptionalStable(target(root, SUCCESSOR), SUCCESSOR)) {
+      throw new Error("current-capital terminal final marker mismatch");
+    }
   } catch (error) {
     if (prepared) await recoverCurrentCapitalTerminalTransaction(root);
     throw error;

@@ -30,7 +30,6 @@ import {
 } from "./run-current-capital-live-chain.mjs";
 import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
 import { buildCurrentCapitalFacilitySourceAdmission, canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-current-capital-facility-source-admission.mjs";
-import { collectKricAccessibilitySnapshots } from "./collect-kric-accessibility-snapshots.mjs";
 import { rebindCurrentCandidateSourceSnapshots } from "./rebind-current-candidate-source-snapshots.mjs";
 import { currentLiveChainTransferOutputPaths } from "./rebind-current-live-chain-transfer-derived-identities.mjs";
 import { registerKricStandardAccessibilitySnapshot } from "./register-kric-standard-accessibility-snapshot.mjs";
@@ -162,6 +161,7 @@ async function terminalConsumerProof(repositoryRoot = ROOT) {
     schemaVersion: 2,
     artifactKind: "current-capital-terminal-lineage",
     sourceMainGitSha: "a".repeat(40), facilityHeadGitSha: "b".repeat(40), builderGitSha: "c".repeat(40),
+    markerState: "PRESENT",
     transition: {
       baseSha256: "d".repeat(64), successorSha256: "e".repeat(64),
       sourceMainCandidateSha256: "f".repeat(64), sourceMainFacilitySha256: "0".repeat(64),
@@ -227,6 +227,17 @@ async function cloneCleanFixture(source, target) {
   return (await execFile("git", ["rev-parse", "HEAD"], { cwd: target })).stdout.trim();
 }
 
+async function removeTerminalMarkersAndCommit(root) {
+  const markers = [
+    "tools/datapack/release/current-capital-accessibility-transition.json",
+    "tools/datapack/release/current-capital-accessibility-transition-successor.json",
+  ];
+  await Promise.all(markers.map((relative) => rm(path.join(root, relative))));
+  await execFile("git", ["add", "-u", "--", ...markers], { cwd: root });
+  await execFile("git", ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--quiet", "-m", "Remove terminal markers"], { cwd: root });
+  return (await execFile("git", ["rev-parse", "HEAD"], { cwd: root })).stdout.trim();
+}
+
 async function pendingTransitionRepository(t, { initializeGit = false } = {}) {
   const generatedRoot = await preparePendingCurrentAccessibilityTransitionRepository(ROOT);
   t.after(() => rm(generatedRoot, { recursive: true, force: true }));
@@ -260,16 +271,6 @@ async function buildRetainedFacilityFixture(root) {
     sourceInventoryBytes: await read("tools/datapack/source-inventory.json"),
   };
   const plan = buildCurrentCapitalFacilityCollectionPlan(input);
-  const roster = plan.stationLineProviderMappings.map((mapping) => ({
-    stationId: mapping.stationId,
-    lineId: mapping.lineId,
-    railOprIsttCd: mapping.providerOperatorId,
-    lnCd: mapping.providerLineId,
-    stinCd: mapping.providerStationId,
-    canonicalMappings: [{
-      artifactId: "bundled-capital", stationId: mapping.stationId, lineId: mapping.lineId,
-    }],
-  }));
   const inventory = JSON.parse(input.sourceInventoryBytes);
   const selected = ["kric-station-convenience-standard", "seoul-metro-accessibility"]
     .map((sourceId) => inventory.sources.find(({ id }) => id === sourceId)?.accessibilityAdmissionEvidence);
@@ -278,22 +279,15 @@ async function buildRetainedFacilityFixture(root) {
     throw new Error("retained FACILITY fixture has no shared source window");
   }
   const operationNow = new Date(capturedAt);
-  const [snapshot] = await collectKricAccessibilitySnapshots({
-    roster,
-    serviceKey: "test-only-key-do-not-reflect",
-    now: operationNow,
-    fetchImpl: async (url) => ({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        header: { resultCode: "00" },
-        body: [{
-          dtlLoc: `location-${url.searchParams.get("stinCd")}`,
-          grndDvCd: "1", gubun: "EV", imgPath: "", mlFmlDvCd: "", stinFlor: 1, trfcWeakDvCd: "01",
-        }],
-      }),
-    }),
-  });
+  const previousSnapshot = await parsed(selected[0].snapshotPath);
+  const capturedAtIso = operationNow.toISOString();
+  const snapshot = {
+    ...previousSnapshot,
+    snapshotId: `kric-station-convenience-standard-${capturedAtIso.replaceAll(/[-:.]/g, "")}`,
+    capturedAt: capturedAtIso,
+    observedAt: capturedAtIso,
+    freshUntil: new Date(operationNow.getTime() + 86_400_000).toISOString(),
+  };
   const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot, null, 2)}\n`);
   const stagingPath = path.join(root, "staging", `${snapshot.snapshotId}.json`);
   const snapshotRelative = `tools/datapack/sources/${snapshot.snapshotId}.json`;
@@ -486,6 +480,7 @@ test("terminal manifest accepts only a verifier-shaped proof and rejects caller 
     sourceMainGitSha: "a".repeat(40),
     facilityHeadGitSha: "b".repeat(40),
     builderGitSha: "c".repeat(40),
+    markerState: "PRESENT",
     transition: {
       baseSha256: sha(markerBytes[0]), successorSha256: sha(markerBytes[1]),
       sourceMainCandidateSha256: sha(Buffer.from(JSON.stringify(candidate))),
@@ -505,6 +500,7 @@ test("terminal manifest accepts only a verifier-shaped proof and rejects caller 
     topologyInputs, topologyOutputs, liveChainOutputs,
     fanInPath: "tools/datapack/release/current-capital-live-chain-fan-in.json",
     markerPaths: markers,
+    markerState: "PRESENT",
     replacementPaths,
     proof,
     materialization: {
@@ -578,6 +574,7 @@ async function terminalCommitFixture(repositoryRoot) {
   const proof = {
     schemaVersion: 2, artifactKind: "current-capital-terminal-lineage",
     sourceMainGitSha: "a".repeat(40), facilityHeadGitSha: "b".repeat(40), builderGitSha: "c".repeat(40),
+    markerState: "PRESENT",
     transition: {
       baseSha256: sha(marker), successorSha256: sha(successor),
       sourceMainCandidateSha256: sha(candidate), sourceMainFacilitySha256: "d".repeat(64),
@@ -598,6 +595,7 @@ async function terminalCommitFixture(repositoryRoot) {
       "tools/datapack/release/current-capital-accessibility-transition.json",
       "tools/datapack/release/current-capital-accessibility-transition-successor.json",
     ],
+    markerState: "PRESENT",
     replacementPaths, proof,
     materialization: {
       repository: "AquilaXk/easysubway-data", repositorySha: "e".repeat(40), operationId: "current-capital-673",
@@ -639,6 +637,56 @@ test("terminal CAS verifies proof-bound fan-in and every replacement prestate", 
       /preserves foreign replacement/,
     );
   }
+});
+
+test("DERIVED_ABSENT terminal CAS keeps absent markers out of the journaled transaction", async (t) => {
+  const parent = await mkdtemp(path.join(os.tmpdir(), "current-capital-terminal-derived-commit-"));
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  const fixtureSource = await pendingTransitionRepository(t, { initializeGit: true });
+  const root = path.join(parent, "derived");
+  await cloneCleanFixture(fixtureSource, root);
+  const fixture = await terminalCommitFixture(root);
+  fixture.manifest.markerState = "DERIVED_ABSENT";
+  fixture.manifest.proof.markerState = "DERIVED_ABSENT";
+  await Promise.all(fixture.manifest.markerPaths.map((relative) => rm(path.join(root, relative))));
+  await commitCurrentCapitalTerminalManifest({ repositoryRoot: root, ...fixture });
+  await Promise.all(fixture.manifest.markerPaths.map((relative) =>
+    assert.rejects(stat(path.join(root, relative)), { code: "ENOENT" })));
+});
+
+test("DERIVED_ABSENT terminal recovery rejects marker resurrection before replay", async (t) => {
+  const parent = await mkdtemp(path.join(os.tmpdir(), "current-capital-terminal-derived-recovery-"));
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  const fixtureSource = await pendingTransitionRepository(t, { initializeGit: true });
+  const root = path.join(parent, "derived");
+  await cloneCleanFixture(fixtureSource, root);
+  const fixture = await terminalCommitFixture(root);
+  fixture.manifest.markerState = "DERIVED_ABSENT";
+  fixture.manifest.proof.markerState = "DERIVED_ABSENT";
+  await Promise.all(fixture.manifest.markerPaths.map((relative) => rm(path.join(root, relative))));
+  const records = fixture.outputs.map(({ relative, bytes, prestate }) => ({
+    operation: prestate == null ? "create" : "replace",
+    relative,
+    before: prestate == null ? null : prestate.bytes.toString("base64"),
+    beforeSha256: prestate == null ? null : sha(prestate.bytes),
+    after: bytes.toString("base64"),
+    afterSha256: sha(bytes),
+  }));
+  const journalPath = path.join(root, "tools/datapack/.current-capital-terminal-transaction.json");
+  await writeFile(journalPath, JSON.stringify({
+    schemaVersion: 1,
+    state: "PREPARED",
+    manifest: fixture.manifest,
+    records,
+  }));
+  const resurrectedPath = path.join(root, fixture.manifest.markerPaths[0]);
+  await writeFile(resurrectedPath, fixture.marker.bytes);
+  await assert.rejects(
+    commitCurrentCapitalTerminalManifest({ repositoryRoot: root, ...fixture }),
+    /marker resurrection/,
+  );
+  assert.equal((await readFile(journalPath)).length > 0, true);
+  assert.deepEqual(await readFile(resurrectedPath), fixture.marker.bytes);
 });
 
 test("terminal lineage replays the retained FACILITY producer and rejects builder tampering before journaling", async (t) => {
@@ -696,6 +744,55 @@ test("terminal lineage replays the retained FACILITY producer and rejects builde
     stat(path.join(retainedRoot, "tools/datapack/.current-capital-terminal-transaction.json")),
     { code: "ENOENT" },
   );
+});
+
+test("DERIVED_ABSENT terminal lineage derives staging-only canonical markers from clean roots", async (t) => {
+  const parent = await mkdtemp(path.join(os.tmpdir(), "current-terminal-derived-absent-"));
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  const fixtureSource = await pendingTransitionRepository(t, { initializeGit: true });
+  const sourceMainRoot = path.join(parent, "source-main");
+  const retainedRoot = path.join(parent, "retained");
+  const privateBuilderRoot = path.join(parent, "private-builder");
+  await cloneCleanFixture(fixtureSource, sourceMainRoot);
+  const sourceMainGitSha = await removeTerminalMarkersAndCommit(sourceMainRoot);
+  await cloneCleanFixture(sourceMainRoot, retainedRoot);
+  const facilityHeadGitSha = await buildRetainedFacilityFixture(retainedRoot);
+  await cloneCleanFixture(sourceMainRoot, privateBuilderRoot);
+  const builderGitSha = (await execFile("git", ["rev-parse", "HEAD"], { cwd: privateBuilderRoot })).stdout.trim();
+  const topologyBuild = await currentTopologyFixture(privateBuilderRoot);
+
+  const derived = await verifyCurrentCapitalTerminalLineage({
+    sourceMainRoot,
+    retainedRoot,
+    privateBuilderRoot,
+    sourceMainGitSha,
+    facilityHeadGitSha,
+    builderGitSha,
+    topologyBuild,
+  });
+  assert.equal(derived.proof.markerState, "DERIVED_ABSENT");
+  assert.ok(Buffer.isBuffer(derived.marker.bytes));
+  assert.ok(Buffer.isBuffer(derived.successor.bytes));
+  assert.notEqual(sha(derived.marker.bytes), sha(derived.successor.bytes));
+  await Promise.all([
+    assert.rejects(stat(path.join(sourceMainRoot, "tools/datapack/release/current-capital-accessibility-transition.json")), { code: "ENOENT" }),
+    assert.rejects(stat(path.join(retainedRoot, "tools/datapack/release/current-capital-accessibility-transition-successor.json")), { code: "ENOENT" }),
+  ]);
+
+  const mixedMarker = "tools/datapack/release/current-capital-accessibility-transition.json";
+  await writeFile(path.join(retainedRoot, mixedMarker), await readFile(path.join(fixtureSource, mixedMarker)));
+  await execFile("git", ["add", "--", mixedMarker], { cwd: retainedRoot });
+  await execFile("git", ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--quiet", "-m", "Create mixed terminal marker fixture"], { cwd: retainedRoot });
+  const mixedHead = (await execFile("git", ["rev-parse", "HEAD"], { cwd: retainedRoot })).stdout.trim();
+  await assert.rejects(verifyCurrentCapitalTerminalLineage({
+    sourceMainRoot,
+    retainedRoot,
+    privateBuilderRoot,
+    sourceMainGitSha,
+    facilityHeadGitSha: mixedHead,
+    builderGitSha,
+    topologyBuild,
+  }), /retained terminal marker state mismatch/);
 });
 
 test("lineage proof purpose separates topology-derived and protected terminal candidates", () => {
@@ -1095,7 +1192,7 @@ test("terminal consumer orders P/T/F and CAS before one OCI recovery and semanti
       incheonLine2TimetablePath: "tools/datapack/sources/incheon-line2-train-timetable-20260901.json", incheonTopologyPath: "tools/datapack/sources/incheon-transit-station-info-20260901.json",
       itxCurrentAdmissionPath: "tools/datapack/release/current-itx-admission.json", itxTopologyEvidencePath: "tools/datapack/itx-topology-evidence.json",
     }, topologyHandoffBytes: Buffer.from("{}\n"), accessibilitySourceHandoffBytes: Buffer.from("{}\n"), verifyTerminalLineageImpl: async () => ({
-      proof: await terminalConsumerProof(repositoryRoot), topologyInputs: [], topologyOutputs: [],
+      markerState: "PRESENT", proof: await terminalConsumerProof(repositoryRoot), topologyInputs: [], topologyOutputs: [],
     }),
     verifyTopologyHandoffImpl: () => ({
       operationId: "current-capital-560",
@@ -1134,6 +1231,7 @@ test("terminal consumer orders P/T/F and CAS before one OCI recovery and semanti
   assert.deepEqual({ providerCalls: result.providerCalls, ociGetCalls: result.ociGetCalls, ociPutCalls: result.ociPutCalls }, { providerCalls: 0, ociGetCalls: 1, ociPutCalls: 0 });
   assert.equal(result.outputPaths.length, 17);
   assert.equal(result.fanInPath, "tools/datapack/release/current-capital-live-chain-fan-in.json");
+  assert.equal(result.markerState, "PRESENT");
   assert.ok(terminalCommit);
   assert.equal(terminalCommit.manifest.accessibilitySourceHandoff, accessibilitySourceHandoff);
   assert.equal(terminalCommit.outputs.length, new Set(terminalCommit.manifest.replacementPaths).size);
@@ -1180,7 +1278,7 @@ test("terminal consumer stops before OCI recovery when route-map rebind fails", 
     transferReceiptPath: path.join(runnerTemp, "unused-transfer-receipt.json"),
     execFileImpl: terminalGitPreflight,
     verifyTerminalLineageImpl: async () => ({
-      proof: await terminalConsumerProof(repositoryRoot),
+      markerState: "PRESENT", proof: await terminalConsumerProof(repositoryRoot),
       topologyInputs: [],
       topologyOutputs: [],
     }),
@@ -1221,7 +1319,7 @@ test("terminal consumer rejects accessibility identity outside the topology v2 p
     transferReceiptPath: "/retained/transfer/receipt.json",
     isAncestor: async () => true,
     execFileImpl: async (command, args) => command === "git" ? terminalGitPreflight(command, args) : null,
-    verifyTerminalLineageImpl: async () => ({ proof: {}, topologyInputs: [], topologyOutputs: [] }),
+    verifyTerminalLineageImpl: async () => ({ markerState: "PRESENT", proof: {}, topologyInputs: [], topologyOutputs: [] }),
     verifyTopologyHandoffImpl: () => ({
       operationId: accessibilitySourceHandoff.operationId,
       accessibilitySourceHandoff: {
@@ -1258,7 +1356,7 @@ test("terminal consumer verifies generated topology bytes before the first rebin
         beforeSha256: sha(topologyBefore), generatedSha256: sha(topologyBefore),
       }];
       return {
-        proof, topologyInputs: [],
+        markerState: "PRESENT", proof, topologyInputs: [],
         topologyOutputs: [{ relativePath: topologyOutputPath, bytes: Buffer.from("tampered generated topology") }],
       };
     },
@@ -1298,7 +1396,7 @@ test("terminal consumer rejects an inconsistent real OCI source before refresh o
       incheonLine2TimetablePath: "tools/datapack/sources/incheon-line2-train-timetable-20260901.json", incheonTopologyPath: "tools/datapack/sources/incheon-transit-station-info-20260901.json",
       itxCurrentAdmissionPath: "tools/datapack/release/current-itx-admission.json", itxTopologyEvidencePath: "tools/datapack/itx-topology-evidence.json",
     }, topologyHandoffBytes: Buffer.from("{}\n"), accessibilitySourceHandoffBytes: Buffer.from("{}\n"), verifyTerminalLineageImpl: async () => ({
-      proof: await terminalConsumerProof(repositoryRoot), topologyInputs: [], topologyOutputs: [],
+      markerState: "PRESENT", proof: await terminalConsumerProof(repositoryRoot), topologyInputs: [], topologyOutputs: [],
     }),
     verifyTopologyHandoffImpl: () => ({
       operationId: "current-capital-560",

@@ -694,17 +694,28 @@ jobs:
           set -euo pipefail
           mapfile -t replacements < <(node -e 'const value=JSON.parse(require("fs").readFileSync(process.env.EXIT_REFRESH_OPERATION_ROOT + "/terminal-result.json")); process.stdout.write(value.replacementPaths.join("\n"))')
           mapfile -t markers < <(node -e 'const value=JSON.parse(require("fs").readFileSync(process.env.EXIT_REFRESH_OPERATION_ROOT + "/terminal-result.json")); process.stdout.write(value.deletedMarkerPaths.join("\n"))')
+          marker_state="$(node -e 'const value=JSON.parse(require("fs").readFileSync(process.env.EXIT_REFRESH_OPERATION_ROOT + "/terminal-result.json")); if (typeof value.markerState !== "string") process.exit(1); process.stdout.write(value.markerState)')"
           expected_markers=(
             "tools/datapack/release/current-capital-accessibility-transition-successor.json"
             "tools/datapack/release/current-capital-accessibility-transition.json"
           )
           mapfile -t replacement_allowlist < <(printf '%s\n' "${replacements[@]}" | LC_ALL=C sort -u)
           mapfile -t marker_allowlist < <(printf '%s\n' "${markers[@]}" | LC_ALL=C sort -u)
-          [[ "${#replacement_allowlist[@]}" -gt 0 && "${#replacement_allowlist[@]}" == "${#replacements[@]}"
-            && "$(printf '%s\n' "${marker_allowlist[@]}")" == "$(printf '%s\n' "${expected_markers[@]}")" ]] \
-            || { echo "terminal result path identity mismatch" >&2; exit 1; }
+          [[ "${#replacement_allowlist[@]}" -gt 0 && "${#replacement_allowlist[@]}" == "${#replacements[@]}" ]] \
+            || { echo "terminal result replacement identity mismatch" >&2; exit 1; }
+          case "${marker_state}" in
+            PRESENT)
+              [[ "${#markers[@]}" == "${#expected_markers[@]}" && "$(printf '%s\n' "${marker_allowlist[@]}")" == "$(printf '%s\n' "${expected_markers[@]}")" ]] \
+                || { echo "terminal PRESENT marker identity mismatch" >&2; exit 1; }
+              ;;
+            DERIVED_ABSENT)
+              [[ "${#markers[@]}" == "0" ]] || { echo "terminal DERIVED_ABSENT marker identity mismatch" >&2; exit 1; }
+              expected_markers=()
+              ;;
+            *) echo "terminal marker state mismatch" >&2; exit 1 ;;
+          esac
           git add -- "${replacements[@]}"
-          git add -u -- "${markers[@]}"
+          if [[ "${marker_state}" == "PRESENT" ]]; then git add -u -- "${markers[@]}"; fi
           mapfile -t staged_paths < <(git diff --cached --name-only)
           mapfile -t staged_replacements < <(git diff --cached --name-only --diff-filter=AM)
           mapfile -t staged_deletions < <(git diff --cached --name-only --diff-filter=D)
