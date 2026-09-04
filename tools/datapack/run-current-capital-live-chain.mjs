@@ -1349,7 +1349,7 @@ export async function runCurrentCapitalExitTerminalConsumer({
     ...accessibilitySourceHandoff.sources
       .filter(({ action }) => action === "REFRESH")
       .map(({ sourceId }) => sourceId),
-  ])].sort();
+  ])].sort(codepointCompare);
   await rebindFacilityImpl({
     repositoryRoot: stagedRoot,
     replaceExistingSuccessor: true,
