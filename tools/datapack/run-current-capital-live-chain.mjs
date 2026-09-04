@@ -800,6 +800,23 @@ async function readStagedRegularFile(stagedRoot, relativePath, label) {
   return { path: current, bytes: await readFile(current) };
 }
 
+async function stageAccessibilitySourceOutputs({ handoff, sourceRoot, stagedRoot }) {
+  for (const { relativePath, operation, afterSha256 } of handoff.outputs) {
+    requiredRelativePath(relativePath, "accessibility source output");
+    const source = await readStagedRegularFile(
+      path.resolve(sourceRoot),
+      relativePath,
+      "prepared accessibility source output",
+    );
+    if (sha256(source.bytes) !== afterSha256) {
+      throw new Error("prepared accessibility source output digest mismatch");
+    }
+    const destination = path.join(stagedRoot, relativePath);
+    await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
+    await writeFile(destination, source.bytes, { flag: operation === "create" ? "wx" : "w", mode: 0o600 });
+  }
+}
+
 async function verifyPreparedTopologyStage(stagedRoot, proof) {
   if (!proof || proof.schemaVersion !== 2
     || !Array.isArray(proof.topologyInputs) || !Array.isArray(proof.topologyOutputs)) {
@@ -1292,13 +1309,11 @@ export async function runCurrentCapitalExitTerminalConsumer({
       await writeFile(destination, bytes, { flag: "wx", mode: 0o600 });
     }
   }
-  for (const { relativePath, operation } of accessibilitySourceHandoff.outputs) {
-    requiredRelativePath(relativePath, "terminal accessibility source output");
-    const bytes = await readStagedRegularFile(path.resolve(privateBuilderRoot), relativePath, "prepared accessibility source output");
-    const destination = path.join(stagedRoot, relativePath);
-    await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
-    await writeFile(destination, bytes.bytes, { flag: operation === "create" ? "wx" : "w", mode: 0o600 });
-  }
+  await stageAccessibilitySourceOutputs({
+    handoff: accessibilitySourceHandoff,
+    sourceRoot: privateBuilderRoot,
+    stagedRoot,
+  });
   for (const { relativePath, bytes } of preparedTerminal.topologyInputs) {
     requiredRelativePath(relativePath, "terminal topology input");
     if (!Buffer.isBuffer(bytes)) throw new Error("terminal topology input bytes mismatch");
@@ -1554,6 +1569,7 @@ export async function runCurrentCapitalExitOnlyProducer({
   assertCurrentFacilityAdmissionImpl = assertCurrentCapitalFacilityAdmission,
   publishImpl = publishCurrentKricExitProviderOciPlan,
   verifyTerminalLineageImpl = verifyCurrentCapitalTerminalLineage,
+  verifyAccessibilityHandoffImpl = verifyCurrentCapitalAccessibilitySourceHandoff,
   buildTopologyHandoffImpl = buildCurrentCapitalTopologyTerminalHandoff,
 }) {
   if (repository !== "AquilaXk/easysubway-data") throw new Error("repository identity mismatch");
@@ -1565,7 +1581,8 @@ export async function runCurrentCapitalExitOnlyProducer({
   if (![repositoryRoot, retainedRoot, privateBuilderRoot, runnerTemp, handoffDirectory]
     .every((value) => path.isAbsolute(value ?? ""))) throw new Error("EXIT-only producer paths must be absolute");
   requiredSha(repositorySha); requiredSha(builderGitSha); requiredOperation(operationId);
-  if (typeof verifyTerminalLineageImpl !== "function" || typeof buildTopologyHandoffImpl !== "function") {
+  if (typeof verifyTerminalLineageImpl !== "function" || typeof verifyAccessibilityHandoffImpl !== "function"
+    || typeof buildTopologyHandoffImpl !== "function") {
     throw new Error("EXIT-only producer lineage collaborators are required");
   }
   if (typeof env.KRIC_SERVICE_KEY !== "string" || env.KRIC_SERVICE_KEY === "") throw new Error("KRIC service key is required");
@@ -1618,6 +1635,23 @@ export async function runCurrentCapitalExitOnlyProducer({
     || preparedTerminal.topologyOutputs.length === 0) {
     throw new Error("EXIT-only producer topology lineage mismatch");
   }
+  let candidate;
+  const retained = path.resolve(retainedRoot);
+  try { candidate = JSON.parse(await readFile(path.join(retained, "tools/datapack/release/candidate-build-spec.json"), "utf8")); } catch { throw new Error("retained candidate JSON mismatch"); }
+  const candidateStageInputs = await resolveCurrentLiveChainCandidateStageInputs(candidate, retained);
+  const verifiedAccessibilitySourceHandoff = await verifyAccessibilityHandoffImpl({
+    handoffBytes: Buffer.from(`${canonicalJson(accessibilitySourceHandoff)}\n`),
+    retainedRoot: retained,
+    preparedRoot: path.resolve(privateBuilderRoot),
+    expected: {
+      repository,
+      operationId,
+      sourceMainGitSha: repositorySha,
+      facilityBranch: facilityPullRequest.branch,
+      facilityHeadGitSha: facilityPullRequest.headSha,
+      protectedCandidateId: candidate.candidateId,
+    },
+  });
   const topologyHandoff = await buildTopologyHandoffImpl({
     repository,
     operationId,
@@ -1628,18 +1662,19 @@ export async function runCurrentCapitalExitOnlyProducer({
     topologyBuild,
     privateBuilderRoot: path.resolve(privateBuilderRoot),
     proof: preparedTerminal.proof,
-    accessibilitySourceHandoff,
+    accessibilitySourceHandoff: verifiedAccessibilitySourceHandoff,
   });
-  let candidate;
-  const retained = path.resolve(retainedRoot);
-  try { candidate = JSON.parse(await readFile(path.join(retained, "tools/datapack/release/candidate-build-spec.json"), "utf8")); } catch { throw new Error("retained candidate JSON mismatch"); }
-  const candidateStageInputs = await resolveCurrentLiveChainCandidateStageInputs(candidate, retained);
   const stagedRoot = await mkdtemp(path.join(path.resolve(runnerTemp), "current-capital-exit-producer-"));
   for (const relative of new Set([...STAGED_INPUTS, ...candidateStageInputs])) {
     const source = path.join(retained, relative); const destination = path.join(stagedRoot, relative);
     await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
     await cp(source, destination, { recursive: true, force: false, verbatimSymlinks: true, filter: (entry) => stagedCopyAllowed(retained, entry) });
   }
+  await stageAccessibilitySourceOutputs({
+    handoff: verifiedAccessibilitySourceHandoff,
+    sourceRoot: privateBuilderRoot,
+    stagedRoot,
+  });
   for (const { relativePath, bytes } of preparedTerminal.topologyInputs) {
     const destination = path.join(stagedRoot, requiredRelativePath(relativePath, "producer topology input"));
     await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });

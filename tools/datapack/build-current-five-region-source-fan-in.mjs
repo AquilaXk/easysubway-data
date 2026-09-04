@@ -37,6 +37,11 @@ function canonical(value) {
   return JSON.stringify(canonicalObject(value));
 }
 
+function sameKeys(value, expected) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    && canonical(Object.keys(value).sort(compare)) === canonical([...expected].sort(compare));
+}
+
 function object(value, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(`${label} mismatch`);
@@ -259,6 +264,55 @@ export function canonicalCurrentFiveRegionSourceFanInJson(value) {
   return canonical(value);
 }
 
+export function validateCurrentFiveRegionSourceFanIn(value, inputBytes) {
+  const fanIn = object(value, "five-region source fan-in");
+  if (!sameKeys(fanIn, [
+    "schemaVersion", "artifactKind", "evaluatedAt", "scope", "inputs", "scopeSha256",
+    "regionalMatrixSha256", "sourceSetSha256", "selectedSources", "fanInSha256",
+  ]) || fanIn.schemaVersion !== 2 || fanIn.artifactKind !== "current-five-region-source-fan-in") {
+    throw new Error("five-region source fan-in shape mismatch");
+  }
+  const scope = object(fanIn.scope, "five-region source fan-in scope");
+  if (!sameKeys(scope, [
+    "targetVersion", "regionIds", "activeLineScopes", "requiredSourceDomains",
+  ]) || typeof scope.targetVersion !== "string" || scope.targetVersion.length === 0
+    || canonical(scope.regionIds) !== canonical(REQUIRED_REGION_IDS)
+    || !Array.isArray(scope.activeLineScopes) || scope.activeLineScopes.length === 0
+    || !Array.isArray(scope.requiredSourceDomains) || scope.requiredSourceDomains.length === 0) {
+    throw new Error("five-region source fan-in scope mismatch");
+  }
+  const lineKeys = scope.activeLineScopes.map((line) => {
+    if (!sameKeys(line, ["lineId", "operatorId", "regionId"])
+      || !REQUIRED_REGION_IDS.includes(line.regionId)
+      || [line.lineId, line.operatorId].some((entry) => typeof entry !== "string" || entry.length === 0)) {
+      throw new Error("five-region source fan-in line scope mismatch");
+    }
+    return pk({ ...line, sourceDomain: "" });
+  });
+  const domainIds = scope.requiredSourceDomains.map((domain) => string(domain?.id, "source domain ID"));
+  if (new Set(lineKeys).size !== lineKeys.length
+    || canonical(lineKeys) !== canonical([...lineKeys].sort(compare))
+    || new Set(domainIds).size !== domainIds.length
+    || canonical(domainIds) !== canonical([...domainIds].sort(compare))) {
+    throw new Error("five-region source fan-in scope ordering mismatch");
+  }
+  if (sha256(Buffer.from(canonical(scope))) !== fanIn.scopeSha256) {
+    throw new Error("five-region source fan-in scope digest mismatch");
+  }
+  const { fanInSha256, ...payload } = fanIn;
+  if (!SHA256.test(fanInSha256 ?? "")
+    || sha256(Buffer.from(canonical(payload))) !== fanInSha256) {
+    throw new Error("five-region source fan-in self digest mismatch");
+  }
+  if (inputBytes !== undefined) {
+    const bytes = Buffer.isBuffer(inputBytes) ? inputBytes : Buffer.from(inputBytes);
+    if (!bytes.equals(Buffer.from(`${canonical(fanIn)}\n`))) {
+      throw new Error("five-region source fan-in canonical bytes mismatch");
+    }
+  }
+  return fanIn;
+}
+
 export function buildCurrentFiveRegionSourceFanIn(input = {}) {
   const records = Object.fromEntries(Object.keys(INPUT_PATHS).map((name) => [
     name,
@@ -285,11 +339,10 @@ export function buildCurrentFiveRegionSourceFanIn(input = {}) {
     requiredSourceDomains: [...targets.requiredSourceDomains].sort((left, right) => compare(left.id, right.id)),
   };
   const payload = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     artifactKind: "current-five-region-source-fan-in",
-    targetVersion,
     evaluatedAt: input.evaluatedAt,
-    regionIds,
+    scope,
     inputs: Object.fromEntries(Object.entries(INPUT_PATHS).map(([name, inputPath]) => [name, {
       path: inputPath,
       sha256: sha256(records[name].bytes),
@@ -299,7 +352,10 @@ export function buildCurrentFiveRegionSourceFanIn(input = {}) {
     sourceSetSha256: sha256(Buffer.from(canonical(sources))),
     selectedSources: sources,
   };
-  return { ...payload, fanInSha256: sha256(Buffer.from(canonical(payload))) };
+  return validateCurrentFiveRegionSourceFanIn({
+    ...payload,
+    fanInSha256: sha256(Buffer.from(canonical(payload))),
+  });
 }
 
 function argumentsFrom(argv) {

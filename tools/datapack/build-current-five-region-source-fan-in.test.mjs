@@ -9,6 +9,7 @@ import { test } from "node:test";
 import {
   buildCurrentFiveRegionSourceFanIn,
   canonicalCurrentFiveRegionSourceFanInJson,
+  validateCurrentFiveRegionSourceFanIn,
 } from "./build-current-five-region-source-fan-in.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
@@ -107,11 +108,17 @@ test("#687 builds a candidate-independent five-region OCI source fan-in", () => 
   const input = fixture();
   const fanIn = buildCurrentFiveRegionSourceFanIn(input);
 
-  assert.equal(fanIn.schemaVersion, 1);
+  assert.equal(fanIn.schemaVersion, 2);
   assert.equal(fanIn.artifactKind, "current-five-region-source-fan-in");
-  assert.equal(fanIn.targetVersion, input.targets.targetVersion);
   assert.equal(fanIn.evaluatedAt, EVALUATED_AT);
-  assert.deepEqual(fanIn.regionIds, REGIONS);
+  assert.equal(Object.hasOwn(fanIn, "targetVersion"), false);
+  assert.equal(Object.hasOwn(fanIn, "regionIds"), false);
+  assert.deepEqual(fanIn.scope, {
+    targetVersion: input.targets.targetVersion,
+    regionIds: REGIONS,
+    activeLineScopes: input.targets.activeLineScopes,
+    requiredSourceDomains: input.targets.requiredSourceDomains,
+  });
   assert.equal(fanIn.selectedSources.length, 1);
   assert.deepEqual(fanIn.selectedSources[0], {
     sourceId: "official-five-region-timetable",
@@ -131,8 +138,17 @@ test("#687 builds a candidate-independent five-region OCI source fan-in", () => 
   assert.match(fanIn.fanInSha256, /^[a-f0-9]{64}$/u);
   assert.equal(fanIn.inputs.targets.sha256, sha256(input.inputBytes.targets));
   assert.equal(fanIn.inputs.sourceSnapshots.sha256, sha256(input.inputBytes.sourceSnapshots));
+  assert.equal(validateCurrentFiveRegionSourceFanIn(
+    fanIn,
+    Buffer.from(`${canonicalCurrentFiveRegionSourceFanInJson(fanIn)}\n`),
+  ), fanIn);
+  assert.throws(
+    () => validateCurrentFiveRegionSourceFanIn({ ...fanIn, evaluatedAt: "2026-09-03T00:00:01.000Z" }),
+    /self digest/,
+  );
   assert.equal(canonicalCurrentFiveRegionSourceFanInJson(fanIn).includes("candidate"), false);
   assert.equal(canonicalCurrentFiveRegionSourceFanInJson(fanIn).includes("s3://"), false);
+  assert.equal(fanIn.scopeSha256, sha256(Buffer.from(canonicalCurrentFiveRegionSourceFanInJson(fanIn.scope))));
 });
 
 test("#687 keeps enhancement heads non-blocking until their tier is promoted", () => {
