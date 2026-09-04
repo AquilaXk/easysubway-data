@@ -3,7 +3,7 @@
   "artifactKind": "datapack-candidate-build-spec",
   "candidateId": "capital-pilot-candidate-20260830",
   "productionScopeId": "capital_pilot_android_v1",
-  "publishedAt": "2026-09-04T04:40:47.187Z",
+  "publishedAt": "2026-09-04T17:29:17.761Z",
   "releaseSequence": 115,
   "fixturePath": "tools/datapack/release/capital-production-canonical-pack.json",
   "itxTopologyEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence-20260830151508786.json",
@@ -11,7 +11,7 @@
   "networkEdgeEvidence": {
     "sourceInventory": {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "ce2953cd63eb192ef68771f09970fae0eeb372e82fdbdc1257c94b81bd940a96"
+      "sha256": "766c9c95ec4d5dabf87566ba865227b03e1e5a86048eebe125e58473fe01b1c8"
     },
     "capitalTopology": {
       "path": "tools/datapack/sources/capital-route-topology-20260724.json",
@@ -59,7 +59,7 @@
   "sourceSnapshotIds": [
     "seoul-metro-route-map-positions-current-20260826T035408251Z",
     "kric-subway-timetable-line4-pilot-20260809",
-    "seoul-metro-accessibility-20260902T200616033Z",
+    "seoul-metro-accessibility-20260904T172912421Z",
     "kric-station-convenience-standard-20260904T043909603Z",
     "molit-urban-rail-full-route-current-20260826T035408251Z",
     "seoulmetro-station-line-info-revalidated-20260814",
@@ -102,10 +102,10 @@
       "governancePolicySha256": "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70"
     },
     {
-      "snapshotId": "seoul-metro-accessibility-20260902T200616033Z",
+      "snapshotId": "seoul-metro-accessibility-20260904T172912421Z",
       "sourceId": "seoul-metro-accessibility",
-      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-accessibility/20260902/2aa01ccba54f377d63db75f18ab5e379fa633987481e2376ddaf66e754c564de.json",
-      "rawSha256": "2aa01ccba54f377d63db75f18ab5e379fa633987481e2376ddaf66e754c564de",
+      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-accessibility/20260904/14d6c90b5e8762236ad3312465212680b78f100410608fbefd20a40d75c304b2.json",
+      "rawSha256": "14d6c90b5e8762236ad3312465212680b78f100410608fbefd20a40d75c304b2",
       "redactedRequestFingerprint": "f2b9752b0554f3945909d44e7f42dddc5ca8d87b1d14f6cfd542291120c9faa5",
       "schemaFingerprint": "89175633c9f84c1593c92cfcb89dc25a64030d970be6c8970d51097dc7075982",
       "licenseStatus": "PASS",
@@ -113,8 +113,8 @@
       "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",
       "snapshotStatus": "LOCKED",
       "credentialRedacted": true,
-      "freshnessExpiresAt": "2026-12-01T20:06:16.033Z",
-      "rawRetentionExpiresAt": "2026-12-01T20:06:16.033Z",
+      "freshnessExpiresAt": "2026-12-03T17:29:12.421Z",
+      "rawRetentionExpiresAt": "2026-12-03T17:29:12.421Z",
       "governancePolicyVersion": "2026-08-29",
       "governancePolicySha256": "b4656dca1fdb660da495d0269ff91c7d31469045fd1db66a1534e3feffeeba33"
     },
@@ -204,12 +204,12 @@
       "governancePolicySha256": "13f8a78c0ae0f7bfa6817005f44a92be3131e6f6708a69a4024747478203beaa"
     }
   ],
-  "sourceSnapshotSetHash": "8ec5b314d9895161c83485bed36e1721cd22f37b033460409bc59883ccf3d1cb",
+  "sourceSnapshotSetHash": "748b981b8840580c578ec1561bff7e2ecca68f5a5f6839adcf5eb6547dfc6025",
   "approvedAliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
   "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
   "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
   "approvedOverrideSetHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
-  "sourceInventorySha256": "24019cbbcc70b6c92ef997f25b19d06f1fbb01c42aedaafecea583480169dd01",
+  "sourceInventorySha256": "063c5d516bd4d7bda885e23d9c596c8044b4231710c6d309a410c44e2d028160",
   "builderGitSha": "f406e7e14a9f85fb031f9c7cb87ccd1b421cafff",
   "builderVersion": "build-datapack.mjs@26",
   "officialOdFareEvidence": {
