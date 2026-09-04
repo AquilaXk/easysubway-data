@@ -916,6 +916,7 @@ async function rejectExitOnlyProducerAtPreflight({
   privateBuilderRoot = ROOT,
   accessibilitySourceHandoff = { outputs: [] },
   inspectFacility,
+  verificationFailure,
 }) {
   const temporary = await mkdtemp(path.join(os.tmpdir(), "current-exit-producer-facility-paths-"));
   const runnerTemp = path.join(temporary, "runner");
@@ -963,6 +964,10 @@ async function rejectExitOnlyProducerAtPreflight({
         headSha: "b".repeat(40),
       },
       accessibilitySourceHandoff,
+      verifyAccessibilityHandoffImpl: async () => {
+        if (verificationFailure) throw new Error(verificationFailure);
+        return accessibilitySourceHandoff;
+      },
       env: {
         PATH: process.env.PATH,
         KRIC_SERVICE_KEY: "test-key",
@@ -1017,7 +1022,7 @@ async function rejectExitOnlyProducerAtPreflight({
         if (facilityFailure) throw new Error(facilityFailure);
       },
       publishImpl: async () => { publicationCalls += 1; throw new Error("OCI publication must not start"); },
-    }), new RegExp(topologyFailure ?? facilityFailure));
+    }), new RegExp(verificationFailure ?? topologyFailure ?? facilityFailure));
     return { reachedPlanning, stagedCandidateEvidenceVerified, topologyPreflightReached, facilityPreflightReached, providerCalls, publicationCalls };
   } finally {
     await rm(temporary, { recursive: true, force: true });
@@ -1043,6 +1048,21 @@ test("EXIT-only producer validates FACILITY after topology and before provider o
     stagedCandidateEvidenceVerified: true,
     topologyPreflightReached: true,
     facilityPreflightReached: true,
+    providerCalls: 0,
+    publicationCalls: 0,
+  });
+});
+
+test("EXIT-only producer verifies accessibility outputs before preflight", async () => {
+  const result = await rejectExitOnlyProducerAtPreflight({
+    verificationFailure: "prepared output digest mismatch",
+    facilityFailure: "facility preflight must not start",
+  });
+  assert.deepEqual(result, {
+    reachedPlanning: false,
+    stagedCandidateEvidenceVerified: false,
+    topologyPreflightReached: false,
+    facilityPreflightReached: false,
     providerCalls: 0,
     publicationCalls: 0,
   });

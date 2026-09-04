@@ -1566,6 +1566,7 @@ export async function runCurrentCapitalExitOnlyProducer({
   assertCurrentFacilityAdmissionImpl = assertCurrentCapitalFacilityAdmission,
   publishImpl = publishCurrentKricExitProviderOciPlan,
   verifyTerminalLineageImpl = verifyCurrentCapitalTerminalLineage,
+  verifyAccessibilityHandoffImpl = verifyCurrentCapitalAccessibilitySourceHandoff,
   buildTopologyHandoffImpl = buildCurrentCapitalTopologyTerminalHandoff,
 }) {
   if (repository !== "AquilaXk/easysubway-data") throw new Error("repository identity mismatch");
@@ -1577,7 +1578,8 @@ export async function runCurrentCapitalExitOnlyProducer({
   if (![repositoryRoot, retainedRoot, privateBuilderRoot, runnerTemp, handoffDirectory]
     .every((value) => path.isAbsolute(value ?? ""))) throw new Error("EXIT-only producer paths must be absolute");
   requiredSha(repositorySha); requiredSha(builderGitSha); requiredOperation(operationId);
-  if (typeof verifyTerminalLineageImpl !== "function" || typeof buildTopologyHandoffImpl !== "function") {
+  if (typeof verifyTerminalLineageImpl !== "function" || typeof verifyAccessibilityHandoffImpl !== "function"
+    || typeof buildTopologyHandoffImpl !== "function") {
     throw new Error("EXIT-only producer lineage collaborators are required");
   }
   if (typeof env.KRIC_SERVICE_KEY !== "string" || env.KRIC_SERVICE_KEY === "") throw new Error("KRIC service key is required");
@@ -1630,6 +1632,23 @@ export async function runCurrentCapitalExitOnlyProducer({
     || preparedTerminal.topologyOutputs.length === 0) {
     throw new Error("EXIT-only producer topology lineage mismatch");
   }
+  let candidate;
+  const retained = path.resolve(retainedRoot);
+  try { candidate = JSON.parse(await readFile(path.join(retained, "tools/datapack/release/candidate-build-spec.json"), "utf8")); } catch { throw new Error("retained candidate JSON mismatch"); }
+  const candidateStageInputs = await resolveCurrentLiveChainCandidateStageInputs(candidate, retained);
+  const verifiedAccessibilitySourceHandoff = await verifyAccessibilityHandoffImpl({
+    handoffBytes: Buffer.from(`${canonicalJson(accessibilitySourceHandoff)}\n`),
+    retainedRoot: retained,
+    preparedRoot: path.resolve(privateBuilderRoot),
+    expected: {
+      repository,
+      operationId,
+      sourceMainGitSha: repositorySha,
+      facilityBranch: facilityPullRequest.branch,
+      facilityHeadGitSha: facilityPullRequest.headSha,
+      protectedCandidateId: candidate.candidateId,
+    },
+  });
   const topologyHandoff = await buildTopologyHandoffImpl({
     repository,
     operationId,
@@ -1640,12 +1659,8 @@ export async function runCurrentCapitalExitOnlyProducer({
     topologyBuild,
     privateBuilderRoot: path.resolve(privateBuilderRoot),
     proof: preparedTerminal.proof,
-    accessibilitySourceHandoff,
+    accessibilitySourceHandoff: verifiedAccessibilitySourceHandoff,
   });
-  let candidate;
-  const retained = path.resolve(retainedRoot);
-  try { candidate = JSON.parse(await readFile(path.join(retained, "tools/datapack/release/candidate-build-spec.json"), "utf8")); } catch { throw new Error("retained candidate JSON mismatch"); }
-  const candidateStageInputs = await resolveCurrentLiveChainCandidateStageInputs(candidate, retained);
   const stagedRoot = await mkdtemp(path.join(path.resolve(runnerTemp), "current-capital-exit-producer-"));
   for (const relative of new Set([...STAGED_INPUTS, ...candidateStageInputs])) {
     const source = path.join(retained, relative); const destination = path.join(stagedRoot, relative);
@@ -1653,7 +1668,7 @@ export async function runCurrentCapitalExitOnlyProducer({
     await cp(source, destination, { recursive: true, force: false, verbatimSymlinks: true, filter: (entry) => stagedCopyAllowed(retained, entry) });
   }
   await stageAccessibilitySourceOutputs({
-    handoff: accessibilitySourceHandoff,
+    handoff: verifiedAccessibilitySourceHandoff,
     sourceRoot: privateBuilderRoot,
     stagedRoot,
   });
