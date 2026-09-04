@@ -2356,7 +2356,7 @@ function assertExactCapitalTopologyProjection(pack, admittedLineIds, expectedEdg
   }
 }
 
-function projectedItxDirectionalPairs(stationSequences) {
+export function projectedItxDirectionalPairs(stationSequences) {
   const directionalPairs = [];
   const pairHashes = new Map();
   for (const sequence of stationSequences ?? []) {

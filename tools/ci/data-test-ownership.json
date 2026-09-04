@@ -257,14 +257,14 @@
       "fixtureStageContracts": {
         "mobile": [
           "source=\".external/mobile/apps/mobile\"",
-          "expected_revision=\"4d133ad853fa6ef4e024a37a1409b5eaadd1cc69\"",
-          "expected_sha256=\"905e77589971bd53d6ecaab9dbfd211ab56f86de883425747bf1d93d31ebae4f\"",
+          "expected_revision=\"23f4262087af99ff49e120707f7de317666679ef\"",
+          "expected_sha256=\"6339daf6de99f9eb69b3940d3eab41302d55cf4c47270625a771d1bc99568cd1\"",
           "fetch-depth: 0",
           "cp -a \"${source}\" apps/mobile"
         ]
       },
       "contextInvocations": [
-        "node --test tools/datapack/readmit-bundled-pack-identity.test.mjs",
+        "node --test tools/datapack/verify-production-pack-artifact-identity.test.mjs",
         "node --test --test-name-pattern='bundled 공식 OD quote|bundled 차량·출입문 힌트' tools/datapack/datapack-tools.test.mjs",
         "node --test tools/datapack/run-current-capital-live-chain.test.mjs",
         "node --test tools/datapack/build-current-capital-live-chain-oci-receipt.test.mjs",
@@ -356,7 +356,6 @@
     {"path":"tools/datapack/build-current-release-candidate-accessibility-input.test.mjs","semanticOwner":"data530","classes":["required-pr"],"durationMs":47},
     {"path":"tools/datapack/build-current-station-line-accessibility.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":72},
     {"path":"tools/datapack/build-current-strict-route-regression-report.test.mjs","semanticOwner":"data309","classes":["required-pr"],"durationMs":43},
-    {"path":"tools/datapack/build-current-source-set-handoff.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":1100},
     {"path":"tools/datapack/build-current-transfer-source-admission.test.mjs","semanticOwner":"data27","classes":["required-pr"],"durationMs":568},
     {"path":"tools/datapack/build-current-transfer-topology-metrics.test.mjs","semanticOwner":"data339","classes":["required-pr"],"durationMs":96},
     {"path":"tools/datapack/build-data-component-manifest.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":896},
@@ -464,7 +463,6 @@
     {"path":"tools/datapack/itx-cheongchun-coverage-contract.test.mjs","semanticOwner":"data38","classes":["required-pr","deterministic-release"],"durationMs":183},
     {"path":"tools/datapack/itx-cheongchun-service-layer.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":726},
     {"path":"tools/datapack/launch-candidate-binding.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":118},
-    {"path":"tools/datapack/materialize-current-source-set.test.mjs","semanticOwner":"data96","classes":["required-pr"],"durationMs":3572},
     {"path":"tools/datapack/lib/datapack-manifest-schema.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":131},
     {"path":"tools/datapack/lib/map-catalog-oci-publisher.test.mjs","semanticOwner":"data535","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/lib/molit-svg-provider-identity.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":107},
@@ -530,7 +528,6 @@
     {"path":"tools/datapack/publish-server-route-bundle.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":940},
     {"path":"tools/datapack/publish-static-network-source-raw.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/purge-expired-source-raw.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":3184},
-    {"path":"tools/datapack/readmit-bundled-pack-identity.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":7711},
     {"path":"tools/datapack/rebind-capital-route-map-admissions.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":170},
     {"path":"tools/datapack/rebind-current-active-facility-derived-identity.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":900},
     {"path":"tools/datapack/rebind-current-active-public-route-map-materialization.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":900},
@@ -581,7 +578,7 @@
     {"path":"tools/datapack/validate-source-inventory-transfer.test.mjs","semanticOwner":"data350","classes":["required-pr"],"durationMs":57},
     {"path":"tools/datapack/validate-source-snapshot-freshness.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":233},
     {"path":"tools/datapack/validate-timetable-ride-consistency.test.mjs","semanticOwner":"data9","classes":["deterministic-release"],"durationMs":null},
-    {"path":"tools/datapack/verify-production-pack-artifact-identity.test.mjs","semanticOwner":"data7","classes":["deterministic-release"],"durationMs":null},
+    {"path":"tools/datapack/verify-production-pack-artifact-identity.test.mjs","semanticOwner":"data7","classes":["required-pr","deterministic-release"],"executionProfile":"mobile-v19","durationMs":16099},
     {"path":"tools/datapack/verify-release-request-binding.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":325},
     {"path":"tools/release/validate-promotion-request.test.mjs","semanticOwner":"data54","classes":["required-pr"],"durationMs":1120},
     {"path":"tools/route-map/add-daegu-buksam-catalog.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":133},
@@ -636,7 +633,7 @@
       "repository": "AquilaXk/easysubway-mobile",
       "commit": "39d2c4723d0ff855041c6162825930c7d12ffad3",
       "profileCommit": {
-        "mobile-v19": "4d133ad853fa6ef4e024a37a1409b5eaadd1cc69"
+        "mobile-v19": "23f4262087af99ff49e120707f7de317666679ef"
       },
       "checkoutPath": ".external/mobile",
       "sourcePath": "apps/mobile",
@@ -646,7 +643,7 @@
           "path": "assets/datapacks/capital.sqlite.gz",
           "sha256": "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
           "profileSha256": {
-            "mobile-v19": "905e77589971bd53d6ecaab9dbfd211ab56f86de883425747bf1d93d31ebae4f"
+            "mobile-v19": "6339daf6de99f9eb69b3940d3eab41302d55cf4c47270625a771d1bc99568cd1"
           }
         },
         {

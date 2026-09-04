@@ -57,6 +57,7 @@ import { rebindCurrentActiveFacilityDerivedIdentity } from "./rebind-current-act
 import {
   buildCurrentCapitalAccessibilityTransition,
   buildCurrentCapitalAccessibilityTransitionSuccessor,
+  changedPredecessorSourceIds,
   canonicalCurrentCapitalAccessibilityTransitionJson,
   canonicalCurrentCapitalAccessibilityTransitionSuccessorJson,
 } from "./current-capital-accessibility-transition.mjs";
@@ -314,6 +315,7 @@ export async function verifyCurrentCapitalTerminalLineage({
     currentFacilityBytes: source.facility.bytes,
     currentLedger: JSON.parse(source.ledger.bytes),
     currentTransition,
+    allowedPredecessorSourceIds: changedPredecessorSourceIds(transition, currentTransition),
   });
   if (!source.successor.bytes.equals(Buffer.from(canonicalCurrentCapitalAccessibilityTransitionSuccessorJson(rebuiltSuccessor)))) {
     throw new Error("source-main successor replay mismatch");

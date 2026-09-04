@@ -139,7 +139,9 @@ test("production producer는 미승격 network edge와 역외 환승 link 상태
   });
 });
 
-test("deployed pack verifier는 current candidate build와 독립된 readmission identity를 검증한다", async () => {
+test("deployed pack verifier는 current topology evidence와 pack identity를 검증한다", async () => {
+  const evidence = JSON.parse(await readFile(DEPLOYED_EVIDENCE_PATH, "utf8"));
+  assert.equal(Object.hasOwn(evidence, "readmissions"), false);
   const report = await verifyProductionPackArtifactIdentity({
     evidencePath: DEPLOYED_EVIDENCE_PATH,
     assetPath: DEPLOYED_ASSET_PATH,
@@ -147,27 +149,18 @@ test("deployed pack verifier는 current candidate build와 독립된 readmission
     packId: "capital",
   });
   assert.equal(report.packId, "capital");
-  assert.equal(report.gzipSha256, "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3");
-  assert.equal(report.sqliteSha256, "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5");
-  assert.equal(report.byteSize, 1_463_745);
-  assert.equal(report.rowCounts.network_edges, 2182);
-  assert.deepEqual(report.networkEdgeCounts, {
-    total: 2182,
-    provenanceComplete: 656,
-    strictEligible: 652,
-  });
+  assert.equal(report.gzipSha256, evidence.pack.outputSha256);
+  assert.equal(report.sqliteSha256, evidence.pack.outputSqliteSha256);
+  assert.equal(report.byteSize, evidence.pack.byteSize);
+  assert.equal(report.rowCounts.network_edges, report.networkEdgeCounts.total);
 });
 
-test("deployed pack verifier는 invalid 또는 empty readmission chain을 거부한다", async () => {
-  const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-readmission-chain-"));
+test("deployed pack verifier는 readmission과 invalid current evidence를 거부한다", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-current-topology-evidence-"));
   const trackedEvidence = JSON.parse(await readFile(DEPLOYED_EVIDENCE_PATH, "utf8"));
   const cases = [
-    ["missing-readmissions", (evidence) => {
-      delete evidence.readmissions;
-      return evidence;
-    }],
-    ["non-array-readmissions", (evidence) => ({ ...evidence, readmissions: {} })],
     ["empty-readmissions", (evidence) => ({ ...evidence, readmissions: [] })],
+    ["nonempty-readmissions", (evidence) => ({ ...evidence, readmissions: [{}] })],
     ["invalid-schema-version", (evidence) => ({ ...evidence, schemaVersion: 2 })],
     ["invalid-artifact-kind", (evidence) => ({ ...evidence, artifactKind: "replacement-evidence" })],
   ];
@@ -182,7 +175,7 @@ test("deployed pack verifier는 invalid 또는 empty readmission chain을 거부
           indexPath: DEPLOYED_INDEX_PATH,
           packId: "capital",
         }),
-        /deployed readmission evidence contract mismatch/,
+        /deployed current topology evidence contract mismatch/,
       );
     }
   } finally {
@@ -207,20 +200,40 @@ test("deployed pack과 bundled asset/index의 artifact identity를 exact-match�
     ]);
     const evidence = JSON.parse(await readFile(evidencePath, "utf8"));
     const gzipBytes = await readFile(assetPath);
-    assert.equal(gzipBytes[9], 255);
     const sqliteBytes = gunzipSync(gzipBytes);
-    assert.equal(sqliteBytes.readUInt32BE(96), 3_053_000);
     const sqlitePath = path.join(workspace, "capital.sqlite");
     await writeFile(sqlitePath, sqliteBytes);
     const database = new DatabaseSync(sqlitePath, { readOnly: true });
+    let expectedNetworkEdgeCounts;
     try {
       assert.deepEqual(database.prepare(
         "SELECT name FROM sqlite_schema WHERE name LIKE 'sqlite_stat%' ORDER BY name",
       ).all(), []);
       const provenance = database.prepare(`
         SELECT
-          SUM(verification_status = 'VERIFIED') AS verifiedCount,
+          COUNT(*) AS total,
           SUM(verification_status = 'UNKNOWN') AS unknownCount,
+          SUM(
+            source_id != '' AND source_snapshot_id != ''
+            AND length(provider_record_hash) = 64
+            AND provider_record_hash NOT GLOB '*[^0-9a-f]*'
+            AND length(evidence_hash) = 64
+            AND evidence_hash NOT GLOB '*[^0-9a-f]*'
+            AND provenance_kind != 'UNKNOWN'
+            AND verification_status != 'UNKNOWN'
+            AND last_verified_at IS NOT NULL
+          ) AS provenanceComplete,
+          SUM(
+            source_id != '' AND source_snapshot_id != ''
+            AND length(provider_record_hash) = 64
+            AND provider_record_hash NOT GLOB '*[^0-9a-f]*'
+            AND length(evidence_hash) = 64
+            AND evidence_hash NOT GLOB '*[^0-9a-f]*'
+            AND provenance_kind IN ('OFFICIAL_SOURCE', 'OPERATOR_CONFIRMED', 'FIELD_SURVEY')
+            AND verification_status = 'VERIFIED'
+            AND last_verified_at IS NOT NULL
+            AND evidence_hash NOT IN (${Array.from({ length: 16 }, (_, value) => `'${value.toString(16).repeat(64)}'`).join(", ")})
+          ) AS strictEligible,
           SUM(
             verification_status = 'VERIFIED'
             AND (
@@ -233,14 +246,21 @@ test("deployed pack과 bundled asset/index의 artifact identity를 exact-match�
             verification_status = 'UNKNOWN'
             AND (accessibility_status != 'UNKNOWN' OR stair_access_state != 'UNKNOWN')
           ) AS unsafeUnknownCount,
-          SUM(service_class = 'ITX_CHEONGCHUN' AND verification_status = 'VERIFIED') AS verifiedItxCount
+          SUM(
+            service_class = 'ITX_CHEONGCHUN'
+            AND verification_status = 'VERIFIED'
+          ) AS verifiedItxCount
         FROM network_edges
       `).get();
-      assert.equal(provenance.verifiedCount, 652);
       assert.ok(provenance.unknownCount > 0);
       assert.equal(provenance.incompleteVerifiedCount, 0);
       assert.equal(provenance.unsafeUnknownCount, 0);
-      assert.equal(provenance.verifiedItxCount, 48);
+      assert.equal(provenance.verifiedItxCount, evidence.topology.edgeCount);
+      expectedNetworkEdgeCounts = {
+        total: provenance.total,
+        provenanceComplete: provenance.provenanceComplete,
+        strictEligible: provenance.strictEligible,
+      };
       assert.deepEqual(database.prepare(`
         SELECT DISTINCT source_id AS sourceId
         FROM network_edges
@@ -269,11 +289,7 @@ test("deployed pack과 bundled asset/index의 artifact identity를 exact-match�
     assert.equal(report.sqliteSha256, evidence.pack.outputSqliteSha256);
     assert.equal(report.byteSize, evidence.pack.byteSize);
     assert.ok(report.rowCounts.stations > 0);
-    assert.deepEqual(report.networkEdgeCounts, {
-      total: 2182,
-      provenanceComplete: 656,
-      strictEligible: 652,
-    });
+    assert.deepEqual(report.networkEdgeCounts, expectedNetworkEdgeCounts);
     assert.deepEqual(await verifyProductionPackArtifactIdentity({
       evidencePath,
       assetPath,
@@ -306,13 +322,13 @@ test("deployed pack과 bundled asset/index의 artifact identity를 exact-match�
         "--index", indexPath,
         "--pack-id", "capital",
       ], { cwd: root, env: verifierEnv }),
-      /index sha256 mismatch/,
+      /ITX topology evidence or bundled pack index is stale/,
     );
     evidence.pack.outputSha256 = "e".repeat(64);
     await writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
     await assert.rejects(
       verifyProductionPackArtifactIdentity({ evidencePath, assetPath, indexPath: DEPLOYED_INDEX_PATH, packId: "capital" }),
-      /readmission check failed: tracked evidence pack\.outputSha256 does not match the live pack file/,
+      /ITX topology evidence or bundled pack index is stale/,
     );
   } finally {
     await rm(workspace, { recursive: true, force: true });

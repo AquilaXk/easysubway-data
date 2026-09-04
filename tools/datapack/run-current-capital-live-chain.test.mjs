@@ -52,6 +52,7 @@ import { CURRENT_CAPITAL_ACCESSIBILITY_SOURCE_FIXED_OUTPUTS } from "./current-ca
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { preparePendingCurrentAccessibilityTransitionRepository } from "./test-fixtures/current-full-capital-production-artifact.mjs";
 import { nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
+import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const execFile = promisify(execFileCallback);
@@ -1107,7 +1108,7 @@ test("terminal consumer rejects accessibility identity outside the topology v2 p
   const runnerTemp = await mkdtemp(path.join(os.tmpdir(), "current-capital-terminal-accessibility-identity-"));
   t.after(() => rm(runnerTemp, { recursive: true, force: true }));
   const repositoryRoot = await pendingTransitionRepository(t);
-  const operationNow = await nextSyntheticCurrentStaticNetworkNow(repositoryRoot);
+  const operationNow = (await currentTopologyAdmissionClock(repositoryRoot)).inWindow;
   const accessibilitySourceHandoff = await terminalAccessibilityVerifierResult(repositoryRoot);
   let rebindStarted = false;
   await assert.rejects(runCurrentCapitalExitTerminalConsumer({
