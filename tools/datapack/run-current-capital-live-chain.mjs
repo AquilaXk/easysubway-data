@@ -801,13 +801,16 @@ async function readStagedRegularFile(stagedRoot, relativePath, label) {
 }
 
 async function stageAccessibilitySourceOutputs({ handoff, sourceRoot, stagedRoot }) {
-  for (const { relativePath, operation } of handoff.outputs) {
+  for (const { relativePath, operation, afterSha256 } of handoff.outputs) {
     requiredRelativePath(relativePath, "accessibility source output");
     const source = await readStagedRegularFile(
       path.resolve(sourceRoot),
       relativePath,
       "prepared accessibility source output",
     );
+    if (sha256(source.bytes) !== afterSha256) {
+      throw new Error("prepared accessibility source output digest mismatch");
+    }
     const destination = path.join(stagedRoot, relativePath);
     await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
     await writeFile(destination, source.bytes, { flag: operation === "create" ? "wx" : "w", mode: 0o600 });

@@ -915,6 +915,8 @@ async function rejectExitOnlyProducerAtPreflight({
   facilityFailure,
   privateBuilderRoot = ROOT,
   accessibilitySourceHandoff = { outputs: [] },
+  afterVerification,
+  expectedFailure,
   inspectFacility,
   verificationFailure,
 }) {
@@ -966,6 +968,7 @@ async function rejectExitOnlyProducerAtPreflight({
       accessibilitySourceHandoff,
       verifyAccessibilityHandoffImpl: async () => {
         if (verificationFailure) throw new Error(verificationFailure);
+        if (afterVerification) await afterVerification();
         return accessibilitySourceHandoff;
       },
       env: {
@@ -1022,7 +1025,7 @@ async function rejectExitOnlyProducerAtPreflight({
         if (facilityFailure) throw new Error(facilityFailure);
       },
       publishImpl: async () => { publicationCalls += 1; throw new Error("OCI publication must not start"); },
-    }), new RegExp(verificationFailure ?? topologyFailure ?? facilityFailure));
+    }), new RegExp(expectedFailure ?? verificationFailure ?? topologyFailure ?? facilityFailure));
     return { reachedPlanning, stagedCandidateEvidenceVerified, topologyPreflightReached, facilityPreflightReached, providerCalls, publicationCalls };
   } finally {
     await rm(temporary, { recursive: true, force: true });
@@ -1068,6 +1071,48 @@ test("EXIT-only producer verifies accessibility outputs before preflight", async
   });
 });
 
+test("EXIT-only producer rejects accessibility bytes changed after verification", async () => {
+  const temporary = await mkdtemp(path.join(os.tmpdir(), "current-exit-producer-accessibility-drift-"));
+  const privateBuilderRoot = path.join(temporary, "private-builder");
+  const inventoryPath = "tools/datapack/source-inventory.json";
+  const outputPath = "tools/datapack/sources/seoul-accessibility-test.json";
+  const verifiedBytes = Buffer.from('{"identity":"verified"}\n');
+  try {
+    await mkdir(path.join(privateBuilderRoot, "tools/datapack/sources"), { recursive: true });
+    await writeFile(
+      path.join(privateBuilderRoot, inventoryPath),
+      await readFile(path.join(ROOT, inventoryPath)),
+    );
+    await writeFile(path.join(privateBuilderRoot, outputPath), verifiedBytes);
+    const result = await rejectExitOnlyProducerAtPreflight({
+      privateBuilderRoot,
+      accessibilitySourceHandoff: {
+        outputs: [{
+          relativePath: outputPath,
+          operation: "create",
+          afterSha256: sha(verifiedBytes),
+        }],
+      },
+      afterVerification: () => writeFile(
+        path.join(privateBuilderRoot, outputPath),
+        '{"identity":"changed"}\n',
+      ),
+      expectedFailure: "prepared accessibility source output digest mismatch",
+      facilityFailure: "facility preflight must not start",
+    });
+    assert.deepEqual(result, {
+      reachedPlanning: false,
+      stagedCandidateEvidenceVerified: false,
+      topologyPreflightReached: false,
+      facilityPreflightReached: false,
+      providerCalls: 0,
+      publicationCalls: 0,
+    });
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
+});
+
 test("EXIT-only producer applies authenticated accessibility outputs before preflight", async () => {
   const temporary = await mkdtemp(path.join(os.tmpdir(), "current-exit-producer-accessibility-overlay-"));
   const privateBuilderRoot = path.join(temporary, "private-builder");
@@ -1075,13 +1120,18 @@ test("EXIT-only producer applies authenticated accessibility outputs before pref
   try {
     const inventory = JSON.parse(await readFile(path.join(ROOT, inventoryPath), "utf8"));
     inventory.testPreparedAccessibilityIdentity = "refreshed-seoul";
+    const inventoryBytes = Buffer.from(`${JSON.stringify(inventory)}\n`);
     await mkdir(path.join(privateBuilderRoot, "tools/datapack"), { recursive: true });
-    await writeFile(path.join(privateBuilderRoot, inventoryPath), `${JSON.stringify(inventory)}\n`);
+    await writeFile(path.join(privateBuilderRoot, inventoryPath), inventoryBytes);
     const result = await rejectExitOnlyProducerAtPreflight({
       facilityFailure: "producer facility preflight reached",
       privateBuilderRoot,
       accessibilitySourceHandoff: {
-        outputs: [{ relativePath: inventoryPath, operation: "replace" }],
+        outputs: [{
+          relativePath: inventoryPath,
+          operation: "replace",
+          afterSha256: sha(inventoryBytes),
+        }],
       },
       inspectFacility: async (stagedRoot) => {
         const stagedInventory = JSON.parse(await readFile(path.join(stagedRoot, inventoryPath), "utf8"));
