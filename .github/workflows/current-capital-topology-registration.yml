@@ -89,11 +89,13 @@ jobs:
           node tools/datapack/run-current-capital-route-topology-registration.mjs --repository-root "${GITHUB_WORKSPACE}" --operation-root "${REGISTRATION_OPERATION_ROOT}" --expected-main-sha "${REGISTRATION_MAIN_SHA}"
       - name: Recover published registration without OCI
         if: ${{ inputs.recovery_run_id != '' }}
+        env:
+          RECOVERY_RUN_ID: ${{ inputs.recovery_run_id }}
         run: |
           set -euo pipefail
           git fetch --no-tags origin main:refs/remotes/origin/main
           [[ "$(git rev-parse HEAD)" == "${REGISTRATION_MAIN_SHA}" && "$(git rev-parse origin/main)" == "${REGISTRATION_MAIN_SHA}" ]] || { echo "main changed after claim" >&2; exit 1; }
-          node tools/datapack/run-current-capital-route-topology-registration.mjs recover-published --repository-root "${GITHUB_WORKSPACE}" --source-operation-root "${REGISTRATION_SOURCE_OPERATION_ROOT}" --target-operation-root "${REGISTRATION_OPERATION_ROOT}" --expected-main-sha "${REGISTRATION_MAIN_SHA}" --expected-publication-operation-id "${{ inputs.recovery_run_id }}"
+          node tools/datapack/run-current-capital-route-topology-registration.mjs recover-published --repository-root "${GITHUB_WORKSPACE}" --source-operation-root "${REGISTRATION_SOURCE_OPERATION_ROOT}" --target-operation-root "${REGISTRATION_OPERATION_ROOT}" --expected-main-sha "${REGISTRATION_MAIN_SHA}" --expected-publication-operation-id "${RECOVERY_RUN_ID}"
       - name: Commit exactly four registration outputs and open draft PR
         env:
           GH_TOKEN: ${{ github.token }}
