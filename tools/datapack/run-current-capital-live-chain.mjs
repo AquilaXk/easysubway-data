@@ -325,6 +325,7 @@ export async function verifyCurrentCapitalTerminalLineage({
   const markerState = sourceMarkers.markerState;
   let transitionBytes;
   let successorBytes;
+  let successorFacilityBytes;
   if (markerState === "PRESENT") {
     if (!sourceMarkers.marker?.bytes.equals(retainedMarkers.marker?.bytes)
       || !sourceMarkers.successor?.bytes.equals(retainedMarkers.successor?.bytes)) {
@@ -341,10 +342,11 @@ export async function verifyCurrentCapitalTerminalLineage({
       || successor.previousFacilityAdmission.snapshotId !== previousFacility.sourceIdentity.snapshotId) {
       throw new Error("source-main protected marker lineage mismatch");
     }
+    successorFacilityBytes = Buffer.from(source.facility.bytes);
     const rebuiltSuccessor = buildCurrentCapitalAccessibilityTransitionSuccessor({
       baseTransitionBytes: sourceMarkers.marker.bytes,
       previousFacilityBytes,
-      currentFacilityBytes: source.facility.bytes,
+      currentFacilityBytes: successorFacilityBytes,
       currentLedger: JSON.parse(source.ledger.bytes),
       currentTransition: sourceTransition,
       allowedPredecessorSourceIds: changedPredecessorSourceIds(transition, sourceTransition),
@@ -363,10 +365,13 @@ export async function verifyCurrentCapitalTerminalLineage({
       inventory: retainedInventory, inventoryBytes: retained["tools/datapack/source-inventory.json"].bytes,
     });
     transitionBytes = Buffer.from(canonicalCurrentCapitalAccessibilityTransitionJson(sourceTransition));
+    successorFacilityBytes = Buffer.from(
+      retained["tools/datapack/release/current-capital-facility-source-admission.json"].bytes,
+    );
     const derivedSuccessor = buildCurrentCapitalAccessibilityTransitionSuccessor({
       baseTransitionBytes: transitionBytes,
       previousFacilityBytes: source.facility.bytes,
-      currentFacilityBytes: retained["tools/datapack/release/current-capital-facility-source-admission.json"].bytes,
+      currentFacilityBytes: successorFacilityBytes,
       currentLedger: retainedLedger,
       currentTransition: retainedTransition,
       allowedPredecessorSourceIds: changedPredecessorSourceIds(sourceTransition, retainedTransition),
@@ -523,6 +528,7 @@ export async function verifyCurrentCapitalTerminalLineage({
     markerState,
     marker: Object.freeze({ bytes: transitionBytes }),
     successor: Object.freeze({ bytes: successorBytes }),
+    successorFacilityBytes,
     topologyInputs: Object.freeze((await Promise.all(topologyInputs.map(async ({ relativePath }) => Object.freeze({
       relativePath,
       bytes: Buffer.from((await lineageFile(privateBuilderRoot, relativePath, `builder topology ${relativePath}`)).bytes),
@@ -1248,6 +1254,7 @@ export async function runCurrentCapitalExitTerminalConsumer({
   if (!preparedTerminal?.proof || !["PRESENT", "DERIVED_ABSENT"].includes(preparedTerminal.markerState)
     || (preparedTerminal.markerState === "DERIVED_ABSENT"
       && (!preparedTerminal.marker?.bytes || !preparedTerminal.successor?.bytes))
+    || !Buffer.isBuffer(preparedTerminal.successorFacilityBytes)
     || !Array.isArray(preparedTerminal.topologyInputs) || !Array.isArray(preparedTerminal.topologyOutputs)) {
     throw new Error("terminal consumer lineage preparation mismatch");
   }
@@ -1343,6 +1350,7 @@ export async function runCurrentCapitalExitTerminalConsumer({
     repositoryRoot: stagedRoot,
     replaceExistingSuccessor: true,
     allowedPredecessorSourceIds,
+    existingSuccessorFacilityBytes: preparedTerminal.successorFacilityBytes,
   });
   // This create-once transaction is the boundary between P/T/F materialization
   // and every candidate-dependent EXIT/fan-in operation.  All later inputs are
