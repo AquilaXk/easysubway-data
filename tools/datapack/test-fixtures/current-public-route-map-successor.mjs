@@ -13,11 +13,9 @@ import {
   projectCapitalTopologyIntoCanonicalFixture,
   validateSourceSeparatedCurrentTopology,
 } from "../build-datapack.mjs";
-import {
-  buildCurrentExitAdmissionOciReceipt,
-  canonicalCurrentExitAdmissionOciReceiptJson,
-} from "../build-current-exit-admission-oci-receipt.mjs";
+import { buildFixtureCurrentExitV2Receipt, canonicalFixtureCurrentExitV2ReceiptJson } from "./current-exit-v2-receipt.mjs";
 import { deriveFreshnessExpiresAt } from "../freshness-policy.mjs";
+import { canonicalJson } from "../lib/manifest-validation.mjs";
 import {
   CURRENT_SEOUL_PUBLIC_ROUTE_MAP_COVERAGE,
   materializeSeoulRouteMapPositions,
@@ -314,26 +312,14 @@ async function writeSyntheticCurrentExitOciReceipt(root) {
   if (typeof providerCapturedAt !== "string" || !Number.isFinite(Date.parse(providerCapturedAt))) {
     throw new Error("synthetic current EXIT admission capture time is invalid");
   }
-  const mainSha = sha256(admissionBytes).slice(0, 40);
-  const operationId = `synthetic-current-exit-${mainSha.slice(0, 12)}`;
-  const providerCollectionBundleBytes = Buffer.from(operationId);
-  const providerObjectSha256 = sha256(providerCollectionBundleBytes);
-  const captureDate = providerCapturedAt.slice(0, 10).replaceAll("-", "");
-  const receipt = buildCurrentExitAdmissionOciReceipt({
-    repository: "AquilaXk/easysubway-data",
-    mainSha,
-    operationId,
-    providerCapturedAt,
-    providerCollectionBundleBytes,
-    providerObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/operations/current-capital-live-chain/v1/heads/${mainSha}/operations/${operationId}/provider-collections/${captureDate}-${providerObjectSha256}.json`,
-    providerObjectSha256,
-    providerObjectByteSize: providerCollectionBundleBytes.length,
-    normalizedBytes,
-    admissionBytes,
+  const providerCollectionBundleBytes = Buffer.from(canonicalJson({ normalized: sha256(normalizedBytes), admission: sha256(admissionBytes) }));
+  const receipt = buildFixtureCurrentExitV2Receipt({
+    providerCollectionBundleBytes, providerCapturedAt, normalizedBytes, admissionBytes,
+    candidateBytes: Buffer.from(canonicalJson(admission.candidate)),
   });
   const target = path.join(root, receiptPath);
   await mkdir(path.dirname(target), { recursive: true });
-  await writeFile(target, Buffer.from(`${canonicalCurrentExitAdmissionOciReceiptJson(receipt)}\n`));
+  await writeFile(target, Buffer.from(`${canonicalFixtureCurrentExitV2ReceiptJson(receipt)}\n`));
 }
 
 export async function nextSyntheticCurrentStaticNetworkNow(root) {

@@ -6,12 +6,7 @@ import https from "node:https";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
-import { canonicalCurrentCapitalLiveChainOciPlanJson } from "./build-current-capital-live-chain-oci-plan.mjs";
 import { canonicalCurrentKricExitProviderOciPlanJson } from "./build-current-kric-exit-provider-oci-plan.mjs";
-import {
-  readCurrentCapitalLiveChainOciReceipt,
-  writeCurrentCapitalLiveChainOciReceipt,
-} from "./build-current-capital-live-chain-oci-receipt.mjs";
 import { writeCurrentKricExitProviderOciReceipt } from "./build-current-kric-exit-provider-oci-receipt.mjs";
 
 const emptySha256 = sha256(Buffer.alloc(0));
@@ -31,20 +26,6 @@ async function main() {
     if (dryRun) return;
     if (verifyOnly) throw new Error("current EXIT provider OCI plan requires exact immutable publish and readback");
     await publishCurrentKricExitProviderOciPlan({ planBytes: await readFile(planPath), root, receiptPath: path.resolve(requireArg(args, "receipt")) });
-    return;
-  }
-  if (plan?.artifactKind === "current-capital-live-chain-oci-plan") {
-    if (JSON.stringify(plan) !== canonicalCurrentCapitalLiveChainOciPlanJson(plan)) {
-      throw new Error("current live-chain OCI plan must be canonical JSON");
-    }
-    if (dryRun) return;
-    if (verifyOnly) throw new Error("current live-chain OCI plan requires exact immutable publish and readback");
-    const receiptPath = path.resolve(requireArg(args, "receipt"));
-    await publishCurrentCapitalLiveChainOciPlan({
-      planBytes: await readFile(planPath),
-      root,
-      receiptPath,
-    });
     return;
   }
   validatePlan(plan);
@@ -198,55 +179,6 @@ export function requireCurrentCapitalLiveChainOciParBaseUrl(env = process.env) {
   return new URL(value.trim());
 }
 
-function parseCanonicalCurrentLiveChainPlan(planBytes) {
-  if (!Buffer.isBuffer(planBytes) || planBytes.length === 0) {
-    throw new Error("current live-chain OCI plan bytes mismatch");
-  }
-  let plan;
-  try {
-    plan = JSON.parse(planBytes.toString("utf8"));
-  } catch {
-    throw new Error("current live-chain OCI plan JSON mismatch");
-  }
-  if (!planBytes.equals(Buffer.from(`${canonicalCurrentCapitalLiveChainOciPlanJson(plan)}\n`))) {
-    throw new Error("current live-chain OCI plan must be canonical bytes");
-  }
-  return plan;
-}
-
-/** Publish both immutable objects, fully read them back, then create the receipt. */
-export async function publishCurrentCapitalLiveChainOciPlan({
-  planBytes,
-  root,
-  receiptPath,
-  env = process.env,
-  client = null,
-} = {}) {
-  const plan = parseCanonicalCurrentLiveChainPlan(planBytes);
-  if (!path.isAbsolute(root ?? "") || !path.isAbsolute(receiptPath ?? "")) {
-    throw new Error("current live-chain publication paths must be absolute");
-  }
-  // Validate even for an injected client: tests cannot accidentally mask an
-  // AWS/generic endpoint fallback that production would reject.
-  const parBaseUrl = requireCurrentCapitalLiveChainOciParBaseUrl(env);
-  const storage = client ?? preauthenticatedObjectStorageClient(parBaseUrl, { includeErrorBody: false });
-  const resolvedRoot = path.resolve(root);
-  validateImmutableObjectPlan(plan.publishPlan);
-
-  for (const step of plan.publishPlan.steps) {
-    if (step.type === "put-immutable-bundle-object") {
-      await putImmutableObject(storage, resolvedRoot, step);
-    } else if (step.type === "verify-immutable-bundle-object") {
-      await verifyImmutableObject(storage, step);
-    } else {
-      throw new Error(`unsupported current live-chain OCI step: ${step.type}`);
-    }
-  }
-  // Receipt creation is deliberately last: a failed PUT/readback must leave
-  // no success-shaped receipt behind.
-  return writeCurrentCapitalLiveChainOciReceipt({ planBytes, outputPath: receiptPath });
-}
-
 /** Publish the one EXIT provider bundle, fully read it back, then create its receipt. */
 export async function publishCurrentKricExitProviderOciPlan({
   planBytes,
@@ -273,52 +205,6 @@ function parseCanonicalCurrentKricExitProviderPlan(planBytes) {
   let plan; try { plan = JSON.parse(planBytes.toString("utf8")); } catch { throw new Error("current EXIT provider OCI plan JSON mismatch"); }
   if (!planBytes.equals(Buffer.from(`${canonicalCurrentKricExitProviderOciPlanJson(plan)}\n`))) throw new Error("current EXIT provider OCI plan must be canonical bytes");
   return plan;
-}
-
-/** Fetch both OCI objects named by a canonical plan and receipt, after exact full GET verification. */
-export async function fetchCurrentCapitalLiveChainComposite({
-  planBytes,
-  receiptPath,
-  providerDestinationPath,
-  destinationPath,
-  env = process.env,
-  client = null,
-} = {}) {
-  const plan = parseCanonicalCurrentLiveChainPlan(planBytes);
-  if (!path.isAbsolute(receiptPath ?? "") || !path.isAbsolute(providerDestinationPath ?? "") || !path.isAbsolute(destinationPath ?? "")) {
-    throw new Error("current live-chain fetch paths must be absolute");
-  }
-  const parBaseUrl = requireCurrentCapitalLiveChainOciParBaseUrl(env);
-  const receipt = await readCurrentCapitalLiveChainOciReceipt({ planBytes, receiptPath });
-  for (const [label, expected] of [["provider", plan.providerObject], ["composite", plan.compositeObject]]) {
-    const actual = receipt[`${label}Object`];
-    if (actual.objectKey !== expected.objectKey || actual.sha256 !== expected.sha256 || actual.sizeBytes !== expected.sizeBytes) {
-      throw new Error(`current live-chain OCI receipt ${label} binding mismatch`);
-    }
-  }
-  const storage = client ?? preauthenticatedObjectStorageClient(parBaseUrl, { includeErrorBody: false });
-  const providerOutputPath = await safeCreateNewAbsoluteOutputPath(providerDestinationPath);
-  const outputPath = await safeCreateNewAbsoluteOutputPath(destinationPath);
-  const provider = await storage.readObject(plan.providerObject.objectKey);
-  const composite = await storage.readObject(plan.compositeObject.objectKey);
-  if (!exactStoredObject(provider, plan.providerObject) || !exactStoredObject(composite, plan.compositeObject)) {
-    throw new Error("current live-chain OCI full GET bytes mismatch");
-  }
-  const created = [];
-  let complete = false;
-  try {
-    for (const [target, bytes, expected] of [[providerOutputPath, provider.body, plan.providerObject], [outputPath, composite.body, plan.compositeObject]]) {
-      const output = await open(target, "wx", 0o600);
-      created.push(target);
-      try { await output.writeFile(bytes); await output.sync(); } finally { await output.close(); }
-      const written = await readFile(target);
-      if (written.length !== expected.sizeBytes || sha256(written) !== expected.sha256) throw new Error("current live-chain destination bytes mismatch");
-    }
-    complete = true;
-    return { providerObjectKey: plan.providerObject.objectKey, providerDestinationPath: providerOutputPath, providerSha256: plan.providerObject.sha256, providerSizeBytes: plan.providerObject.sizeBytes, objectKey: plan.compositeObject.objectKey, destinationPath: outputPath, sha256: plan.compositeObject.sha256, sizeBytes: plan.compositeObject.sizeBytes };
-  } finally {
-    if (!complete) for (const target of created) await unlink(target).catch((error) => { if (error?.code !== "ENOENT") throw error; });
-  }
 }
 
 export async function publishImmutableObjectPlan({ plan, root, client = null, env = process.env }) {

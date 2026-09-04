@@ -113,8 +113,6 @@ jobs:
       - name: Verify current capital live-chain OCI contracts
         run: |
           node --test tools/datapack/run-current-capital-live-chain.test.mjs
-          node --test tools/datapack/build-current-capital-live-chain-oci-receipt.test.mjs
-          node --test tools/datapack/extract-current-capital-live-chain-directory.test.mjs
 
       - name: Set up Chrome for browser-dependent required tests
         id: setup-chrome

@@ -12,14 +12,13 @@ import { collectKricExitPathProviderSnapshot, canonicalKricExitPathProviderSnaps
 import { buildCurrentKricExitCollectionBundle, buildCurrentKricExitCollectionReceipt, canonicalCurrentKricExitCollectionBundleJson } from "../build-current-kric-exit-collection-receipt.mjs";
 import { buildCurrentExitPathSourceAdmission } from "../build-current-exit-path-source-admission.mjs";
 import { canonicalExitPathAdmissionJson } from "../build-exit-path-admission.mjs";
-import { buildCurrentExitAdmissionOciReceipt, canonicalCurrentExitAdmissionOciReceiptJson } from "../build-current-exit-admission-oci-receipt.mjs";
 import {
   buildCurrentCapitalAccessibilityTransition,
   buildCurrentCapitalAccessibilityTransitionSuccessor,
   canonicalCurrentCapitalAccessibilityTransitionJson,
   canonicalCurrentCapitalAccessibilityTransitionSuccessorJson,
 } from "../current-capital-accessibility-transition.mjs";
-import { buildReboundCurrentExitAdmissionIdentities } from "../rebind-current-exit-admission-identities.mjs";
+import { buildFixtureCurrentExitV2Receipt, canonicalFixtureCurrentExitV2ReceiptJson, rebindFixtureCurrentExitV2Admission } from "./current-exit-v2-receipt.mjs";
 import { buildCurrentCapitalLiveChainFanInBoundary, canonicalCurrentCapitalLiveChainFanInBoundaryJson, CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS } from "../build-current-capital-live-chain-boundary.mjs";
 import { deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
 import { registerKricStandardAccessibilitySnapshot } from "../register-kric-standard-accessibility-snapshot.mjs";
@@ -252,18 +251,15 @@ export async function writeFreshExitAdmissionChain(repositoryRoot, observedAt) {
   });
   const normalizedBytes = Buffer.from(JSON.stringify(normalizedSnapshot));
   const admissionBytes = Buffer.from(canonicalExitPathAdmissionJson(admission));
-  const providerSha256 = sha256(bundleBytes);
-  const providerObjectUri = `oci://axvym6vk8g7i/easysubway-datapacks/operations/current-capital-live-chain/v1/heads/${syntheticRepositorySha}/operations/${operationId}/provider-collections/${snapshot.capturedAt.slice(0, 10).replaceAll("-", "")}-${providerSha256}.json`;
-  const ociReceipt = buildCurrentExitAdmissionOciReceipt({
-    repository: "AquilaXk/easysubway-data", mainSha: syntheticRepositorySha, operationId, providerCapturedAt: snapshot.capturedAt,
-    providerCollectionBundleBytes: bundleBytes, providerObjectUri, providerObjectSha256: providerSha256,
-    providerObjectByteSize: bundleBytes.length, normalizedBytes, admissionBytes,
+  const ociReceipt = buildFixtureCurrentExitV2Receipt({
+    providerCollectionBundleBytes: bundleBytes, providerCapturedAt: snapshot.capturedAt,
+    normalizedBytes, admissionBytes, candidateBytes: Buffer.from(canonicalJson(candidate)),
   });
   const output = "tools/datapack/release/current-exit-admission-v2";
   await Promise.all([
     writeFile(path.join(repositoryRoot, output, "exit-path-normalized-source-snapshot.json"), normalizedBytes),
     writeFile(path.join(repositoryRoot, output, "exit-path-source-admission.json"), admissionBytes),
-    writeFile(path.join(repositoryRoot, output, "exit-path-admission-oci-receipt.json"), `${canonicalCurrentExitAdmissionOciReceiptJson(ociReceipt)}\n`),
+    writeFile(path.join(repositoryRoot, output, "exit-path-admission-oci-receipt.json"), `${canonicalFixtureCurrentExitV2ReceiptJson(ociReceipt)}\n`),
   ]);
 }
 
@@ -297,11 +293,15 @@ async function writeReboundExitAdmissionForTransition(repositoryRoot, transition
   };
   const bytes = Object.fromEntries(await Promise.all(Object.entries(paths).map(async ([key, relative]) =>
     [key, await readFile(path.join(repositoryRoot, relative))])));
-  const rebound = buildReboundCurrentExitAdmissionIdentities({
-    transitionBytes,
+  const transition = JSON.parse(transitionBytes);
+  const rebound = rebindFixtureCurrentExitV2Admission({
     normalizedBytes: bytes.normalized,
     admissionBytes: bytes.admission,
-    receiptBytes: bytes.receipt,
+    providerCollectionBundleBytes: Buffer.from(canonicalJson({ transition, receipt: JSON.parse(bytes.receipt) })),
+    providerCapturedAt: JSON.parse(bytes.admission).sourceIdentity.capturedAt,
+    candidateBytes: transitionBytes,
+    candidateId: transition.nextCandidate.candidateId,
+    sourceSetSha256: transition.previousCandidate.sourceSnapshotSetHash,
   });
   await Promise.all([
     writeFile(path.join(repositoryRoot, paths.admission), rebound.admissionBytes),
