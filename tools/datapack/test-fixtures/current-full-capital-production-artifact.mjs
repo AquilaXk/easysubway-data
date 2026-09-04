@@ -40,6 +40,7 @@ import {
   canonicalCurrentReleaseCandidateFixtureJson,
 } from "../build-current-release-candidate-accessibility-input.mjs";
 import { syncCurrentRouteEdgePolicyFile } from "../sync-current-route-edge-policy.mjs";
+import { canonicalJson } from "../lib/manifest-validation.mjs";
 import {
   activateSyntheticCurrentStaticNetworkSuccessors,
   copySyntheticCurrentPublicRouteMapRepository,
@@ -539,6 +540,61 @@ async function bindPendingStationRoutePrestate(repositoryRoot, baseTransitionByt
   ]);
 }
 
+async function readCurrentAccessibilityTransitionInputs(repositoryRoot) {
+  const [candidateBytes, previousBytes, facilityBytes, ledgerBytes, inventoryBytes] = await Promise.all([
+    "tools/datapack/release/candidate-build-spec.json",
+    "tools/datapack/release/current-station-line-accessibility/station-line-input.json",
+    "tools/datapack/release/current-capital-facility-source-admission.json",
+    "tools/datapack/release/source-snapshots.json",
+    "tools/datapack/source-inventory.json",
+  ].map((relative) => readFile(path.join(repositoryRoot, relative))));
+  return {
+    candidate: JSON.parse(candidateBytes), candidateBytes,
+    previous: JSON.parse(previousBytes), previousBytes,
+    facilityAdmission: JSON.parse(facilityBytes), facilityBytes,
+    ledger: JSON.parse(ledgerBytes), ledgerBytes,
+    inventory: JSON.parse(inventoryBytes), inventoryBytes,
+  };
+}
+
+function transferDerivedBaseTransitionInputs(current) {
+  const transferSnapshotId = current.candidate.sourceSnapshotIds.at(-1);
+  const transferProjection = current.candidate.sourceSnapshots.at(-1);
+  if (typeof transferProjection?.sourceId !== "string" || transferProjection.sourceId === ""
+    || typeof transferSnapshotId !== "string" || transferSnapshotId === "") {
+    throw new Error("synthetic TRANSFER binding fixture is incomplete");
+  }
+  const ledger = structuredClone(current.ledger);
+  const transfer = ledger.filter(({ snapshotId, sourceId }) =>
+    snapshotId === transferSnapshotId && sourceId === transferProjection.sourceId);
+  if (transfer.length !== 1 || !transfer[0].transferTopology
+    || typeof transfer[0].transferTopology !== "object" || Array.isArray(transfer[0].transferTopology)) {
+    throw new Error("synthetic TRANSFER derived binding is missing");
+  }
+  delete transfer[0].transferTopology;
+  const candidate = structuredClone(current.candidate);
+  const selected = ledger.filter(({ snapshotId }) => candidate.sourceSnapshotIds.includes(snapshotId));
+  if (selected.length !== candidate.sourceSnapshotIds.length) {
+    throw new Error("synthetic TRANSFER selected ledger relation is incomplete");
+  }
+  candidate.sourceSnapshotSetHash = sha256(Buffer.from(JSON.stringify(selected)));
+  const candidateBytes = Buffer.from(canonicalJson(candidate));
+  const facilityAdmission = structuredClone(current.facilityAdmission);
+  facilityAdmission.candidate.sourceSnapshotSetHash = candidate.sourceSnapshotSetHash;
+  const { admissionDigest: _admissionDigest, ...facilityPayload } = facilityAdmission;
+  facilityAdmission.admissionDigest = sha256(Buffer.from(canonicalJson(facilityPayload)));
+  const facilityBytes = Buffer.from(canonicalCurrentCapitalFacilitySourceAdmissionJson(facilityAdmission));
+  return {
+    ...current,
+    candidate,
+    candidateBytes,
+    facilityAdmission,
+    facilityBytes,
+    ledger,
+    ledgerBytes: Buffer.from(`${JSON.stringify(ledger, null, 2)}\n`),
+  };
+}
+
 export async function preparePendingCurrentAccessibilityTransitionRepository(sourceRoot) {
   const repositoryRoot = await mkdtemp(path.join(tmpdir(), "easysubway-pending-accessibility-transition-"));
   try {
@@ -549,36 +605,17 @@ export async function preparePendingCurrentAccessibilityTransitionRepository(sou
       "tools/datapack/release/current-capital-accessibility-transition.json",
       "tools/datapack/release/current-capital-accessibility-transition-successor.json",
     ];
-    const transitionInputs = async () => {
-      const [candidateBytes, previousBytes, facilityBytes, ledgerBytes, inventoryBytes] = await Promise.all([
-        "tools/datapack/release/candidate-build-spec.json",
-        "tools/datapack/release/current-station-line-accessibility/station-line-input.json",
-        "tools/datapack/release/current-capital-facility-source-admission.json",
-        "tools/datapack/release/source-snapshots.json",
-        "tools/datapack/source-inventory.json",
-      ].map((relative) => readFile(path.join(repositoryRoot, relative))));
-      return {
-        candidate: JSON.parse(candidateBytes), candidateBytes,
-        previous: JSON.parse(previousBytes), previousBytes,
-        facilityAdmission: JSON.parse(facilityBytes), facilityBytes,
-        ledger: JSON.parse(ledgerBytes), ledgerBytes,
-        inventory: JSON.parse(inventoryBytes), inventoryBytes,
-      };
-    };
-    const baseInput = await transitionInputs();
+    const currentInput = await readCurrentAccessibilityTransitionInputs(repositoryRoot);
+    const baseInput = transferDerivedBaseTransitionInputs(currentInput);
     const baseTransition = buildCurrentCapitalAccessibilityTransition(baseInput);
     const baseTransitionBytes = Buffer.from(canonicalCurrentCapitalAccessibilityTransitionJson(baseTransition));
-    const repeatedSnapshot = JSON.parse(await readFile(path.join(
-      repositoryRoot,
-      baseInput.facilityAdmission.sourceIdentity.snapshotPath,
-    )));
-    await currentizeFreshFacilitySource(
-      repositoryRoot,
-      await nextSyntheticCurrentStaticNetworkNow(repositoryRoot),
-      repeatedSnapshot,
-    );
-    const currentInput = await transitionInputs();
     const currentTransition = buildCurrentCapitalAccessibilityTransition(currentInput);
+    if (canonicalJson(baseTransition.previousCandidate.canonicalCandidate)
+        !== canonicalJson(currentTransition.previousCandidate.canonicalCandidate)
+      || baseTransition.nextCandidate.candidateId !== currentTransition.nextCandidate.candidateId
+      || baseTransition.nextCandidate.sourceSnapshotSetHash === currentTransition.nextCandidate.sourceSnapshotSetHash) {
+      throw new Error("synthetic TRANSFER derived transition relation is invalid");
+    }
     const successor = buildCurrentCapitalAccessibilityTransitionSuccessor({
       baseTransitionBytes,
       previousFacilityBytes: baseInput.facilityBytes,
@@ -590,6 +627,10 @@ export async function preparePendingCurrentAccessibilityTransitionRepository(sou
       canonicalCurrentCapitalAccessibilityTransitionSuccessorJson(successor),
     );
     await Promise.all([
+      writeFile(
+        path.join(repositoryRoot, "tools/datapack/release/current-capital-facility-source-admission.json"),
+        baseInput.facilityBytes,
+      ),
       ...markerPaths.map((relative, index) => writeFile(
         path.join(repositoryRoot, relative),
         index === 0 ? baseTransitionBytes : successorBytes,
