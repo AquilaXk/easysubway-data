@@ -17,10 +17,20 @@ function requireText(text, pattern, label) {
 }
 
 function runBlock(text, name) {
-  const block = text.match(new RegExp(`- name: ${name}\\n[\\s\\S]*?\\n        run: \\|\\n([\\s\\S]*?)(?=\\n      - name:|$)`))?.[1];
-  assert.ok(block, `${name} run block`);
-  return block.replace(/^          /gm, "");
+  const step = text.split("\n      - ").find((value) => value.startsWith(`name: ${name}\n`));
+  const marker = "\n        run: |\n";
+  const start = step?.indexOf(marker) ?? -1;
+  assert.ok(start >= 0, `${name} run block`);
+  return step.slice(start + marker.length).replace(/^          /gm, "");
 }
+
+test("workflow run extraction stays inside the named step", () => {
+  const text = "steps:\n      - name: First\n        run: |\n          first\n"
+    + "      - name: Second\n        env:\n          VALUE: input\n        run: |\n          second\n";
+  assert.equal(runBlock(text, "First"), "first");
+  assert.equal(runBlock(text, "Second"), "second\n");
+  assert.throws(() => runBlock(text, "Missing"), /Missing run block/);
+});
 
 function writeExecutable(path, source) {
   writeFileSync(path, source.replace(/^(#![^\n]+\n)/, "$1set -eu\n"), { mode: 0o755 });
