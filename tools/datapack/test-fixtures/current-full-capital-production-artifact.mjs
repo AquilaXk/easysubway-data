@@ -595,7 +595,9 @@ function transferDerivedBaseTransitionInputs(current) {
   };
 }
 
-export async function preparePendingCurrentAccessibilityTransitionRepository(sourceRoot) {
+export async function preparePendingCurrentAccessibilityTransitionRepository(sourceRoot, {
+  transitionKind = "FACILITY_SOURCE_ADVANCE",
+} = {}) {
   const repositoryRoot = await mkdtemp(path.join(tmpdir(), "easysubway-pending-accessibility-transition-"));
   try {
     await copySyntheticCurrentPublicRouteMapRepository(sourceRoot, repositoryRoot, {
@@ -605,15 +607,34 @@ export async function preparePendingCurrentAccessibilityTransitionRepository(sou
       "tools/datapack/release/current-capital-accessibility-transition.json",
       "tools/datapack/release/current-capital-accessibility-transition-successor.json",
     ];
-    const currentInput = await readCurrentAccessibilityTransitionInputs(repositoryRoot);
-    const baseInput = transferDerivedBaseTransitionInputs(currentInput);
+    const initialInput = await readCurrentAccessibilityTransitionInputs(repositoryRoot);
+    let baseInput = initialInput;
+    let currentInput;
+    if (transitionKind === "TRANSFER_DERIVED_BINDING") {
+      currentInput = initialInput;
+      baseInput = transferDerivedBaseTransitionInputs(currentInput);
+    } else if (transitionKind === "FACILITY_SOURCE_ADVANCE") {
+      const repeatedSnapshot = JSON.parse(await readFile(path.join(
+        repositoryRoot,
+        baseInput.facilityAdmission.sourceIdentity.snapshotPath,
+      )));
+      await currentizeFreshFacilitySource(
+        repositoryRoot,
+        await nextSyntheticCurrentStaticNetworkNow(repositoryRoot),
+        repeatedSnapshot,
+      );
+      currentInput = await readCurrentAccessibilityTransitionInputs(repositoryRoot);
+    } else {
+      throw new Error("synthetic accessibility transition kind is invalid");
+    }
     const baseTransition = buildCurrentCapitalAccessibilityTransition(baseInput);
     const baseTransitionBytes = Buffer.from(canonicalCurrentCapitalAccessibilityTransitionJson(baseTransition));
     const currentTransition = buildCurrentCapitalAccessibilityTransition(currentInput);
-    if (canonicalJson(baseTransition.previousCandidate.canonicalCandidate)
-        !== canonicalJson(currentTransition.previousCandidate.canonicalCandidate)
-      || baseTransition.nextCandidate.candidateId !== currentTransition.nextCandidate.candidateId
-      || baseTransition.nextCandidate.sourceSnapshotSetHash === currentTransition.nextCandidate.sourceSnapshotSetHash) {
+    if (transitionKind === "TRANSFER_DERIVED_BINDING"
+      && (canonicalJson(baseTransition.previousCandidate.canonicalCandidate)
+          !== canonicalJson(currentTransition.previousCandidate.canonicalCandidate)
+        || baseTransition.nextCandidate.candidateId !== currentTransition.nextCandidate.candidateId
+        || baseTransition.nextCandidate.sourceSnapshotSetHash === currentTransition.nextCandidate.sourceSnapshotSetHash)) {
       throw new Error("synthetic TRANSFER derived transition relation is invalid");
     }
     const successor = buildCurrentCapitalAccessibilityTransitionSuccessor({
@@ -626,16 +647,10 @@ export async function preparePendingCurrentAccessibilityTransitionRepository(sou
     const successorBytes = Buffer.from(
       canonicalCurrentCapitalAccessibilityTransitionSuccessorJson(successor),
     );
-    await Promise.all([
-      writeFile(
-        path.join(repositoryRoot, "tools/datapack/release/current-capital-facility-source-admission.json"),
-        baseInput.facilityBytes,
-      ),
-      ...markerPaths.map((relative, index) => writeFile(
+    await Promise.all(markerPaths.map((relative, index) => writeFile(
         path.join(repositoryRoot, relative),
         index === 0 ? baseTransitionBytes : successorBytes,
-      )),
-    ]);
+      )));
     await writeReboundExitAdmissionForTransition(repositoryRoot, successorBytes);
     await bindPendingStationRoutePrestate(repositoryRoot, baseTransitionBytes, successor);
     return repositoryRoot;

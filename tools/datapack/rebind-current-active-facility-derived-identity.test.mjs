@@ -242,7 +242,9 @@ test("terminal staging은 검증된 기존 successor를 exact-prestate로 교체
 });
 
 async function temporaryRepository(t) {
-  const root = await preparePendingCurrentAccessibilityTransitionRepository(ROOT);
+  const root = await preparePendingCurrentAccessibilityTransitionRepository(ROOT, {
+    transitionKind: "TRANSFER_DERIVED_BINDING",
+  });
   t.after(() => rm(root, { recursive: true, force: true }));
   return root;
 }
