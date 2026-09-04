@@ -1308,6 +1308,10 @@ test("terminal consumer orders P/T/F and CAS before one OCI recovery and semanti
       beforeSha256: null,
       afterSha256: sha(accessibilityBytes),
     }]);
+  // Ancestor recovery retains KRIC, but its prior replacement remains part
+  // of the immutable-base predecessor advancement alongside refreshed Seoul.
+  accessibilitySourceHandoff.sources.find(({ sourceId }) =>
+    sourceId === "kric-station-convenience-standard").action = "RETAIN";
   const markers = [
     "tools/datapack/release/current-capital-accessibility-transition.json",
     "tools/datapack/release/current-capital-accessibility-transition-successor.json",

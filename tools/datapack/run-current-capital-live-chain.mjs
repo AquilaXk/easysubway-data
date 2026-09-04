@@ -1342,10 +1342,14 @@ export async function runCurrentCapitalExitTerminalConsumer({
     observationDirectory: transferObservationDirectory,
     receiptPath: transferReceiptPath,
   }));
-  const allowedPredecessorSourceIds = accessibilitySourceHandoff.sources
-    .filter(({ action }) => action === "REFRESH")
-    .map(({ sourceId }) => sourceId)
-    .sort();
+  // The immutable-base transition includes the earlier FACILITY replacement,
+  // even when this recovery operation retains that already-refreshed source.
+  const allowedPredecessorSourceIds = [...new Set([
+    "kric-station-convenience-standard",
+    ...accessibilitySourceHandoff.sources
+      .filter(({ action }) => action === "REFRESH")
+      .map(({ sourceId }) => sourceId),
+  ])].sort();
   await rebindFacilityImpl({
     repositoryRoot: stagedRoot,
     replaceExistingSuccessor: true,
