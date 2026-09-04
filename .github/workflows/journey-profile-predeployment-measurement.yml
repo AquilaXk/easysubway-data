@@ -109,10 +109,12 @@ jobs:
           import { createHash } from "node:crypto";
           import { lstatSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
           import { join, relative, resolve } from "node:path";
+          import {
+            validateCurrentFiveRegionSourceFanIn,
+          } from "./tools/datapack/build-current-five-region-source-fan-in.mjs";
 
           const candidateRoot = resolve(process.env.CANDIDATE_ROOT);
           const executionRoot = resolve(process.env.EXECUTION_ROOT);
-          const regions = ["capital", "gwangju", "daejeon", "daegu", "busan"];
           const queryClasses = ["POINT", "DEPARTURE_PROFILE", "ARRIVE_BY", "LAST_CONNECTION", "CUTOFF", "TYPED_FAILURE"];
           const fanInPath = "tools/datapack/release/current-five-region-source-fan-in.json";
           const routePaths = [
@@ -181,6 +183,9 @@ jobs:
           const fanInBytes = regular(join(candidateRoot, fanInPath));
           const fanInSha256 = sha256(fanInBytes);
           if (byPath.get(fanInPath).sha256 !== fanInSha256) throw new Error("canonical five-region source fan-in digest mismatch");
+          const fanIn = validateCurrentFiveRegionSourceFanIn(
+            parseBytes(fanInBytes, "five-region source fan-in"), fanInBytes,
+          );
           const routeEntries = routePaths.map((path) => {
             const relativePath = `server-route-bundle/${path}`;
             const entry = byPath.get(relativePath);
@@ -199,6 +204,9 @@ jobs:
             || releaseEvidence.sourceSnapshotSetHash !== component.provenance.sourceSnapshotSetHash
             || releaseEvidence.launchDenominatorDecision !== "GO"
             || !/^[a-f0-9]{64}$/.test(releaseEvidence.identityLinkageMatrixSha256 ?? "")) throw new Error("release-candidate evidence identity mismatch");
+          if (fanIn.regionalMatrixSha256 !== releaseEvidence.identityLinkageMatrixSha256) {
+            throw new Error("five-region source fan-in regional matrix mismatch");
+          }
           if (releaseDecision.schemaVersion !== 1 || releaseDecision.artifactKind !== "datapack-release-decision"
             || releaseDecision.strictValidationPassed !== true
             || releaseDecision.sourceSnapshotSetHash !== component.provenance.sourceSnapshotSetHash) throw new Error("release-candidate decision mismatch");
@@ -222,7 +230,7 @@ jobs:
             dataRepository: "AquilaXk/easysubway-data",
             dataHeadSha: process.env.DATA_HEAD,
             dataRunId: process.env.DATA_RUN_ID,
-            regionIds: regions,
+            regionIds: fanIn.scope.regionIds,
             queryClasses,
             fanIn: { path: fanInPath, sha256: fanInSha256 },
             routeBundleSha256,
