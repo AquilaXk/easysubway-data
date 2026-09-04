@@ -345,10 +345,16 @@ test("route graph topology report는 current evidence가 pin한 v19 ITX pack만 
   const candidate = JSON.parse(await readFile(
     path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8",
   ));
-  const evidenceBytes = await readFile(path.join(root, candidate.itxTopologyEvidencePath));
+  const candidateEvidenceBytes = await readFile(path.join(root, candidate.itxTopologyEvidencePath));
+  assert.equal(sha256(candidateEvidenceBytes), candidate.itxTopologyEvidenceSha256);
+  const evidenceBytes = await readFile(topologyEvidencePath);
   const evidence = JSON.parse(evidenceBytes);
+  const deployedBuildSpec = {
+    ...candidate,
+    itxTopologyEvidencePath: path.relative(root, topologyEvidencePath),
+    itxTopologyEvidenceSha256: sha256(evidenceBytes),
+  };
   const mobilePackBytes = await readFile(path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"));
-  assert.equal(sha256(evidenceBytes), candidate.itxTopologyEvidenceSha256);
   assert.equal(sha256(mobilePackBytes), evidence.pack.outputSha256);
   await writeFile(sqlitePath, gunzipSync(mobilePackBytes));
   const database = new DatabaseSync(sqlitePath, { readOnly: true });
@@ -360,7 +366,7 @@ test("route graph topology report는 current evidence가 pin한 v19 ITX pack만 
     sqliteBytes: gunzipSync(mobilePackBytes),
     sqlitePath,
     pack: { id: "capital", version: "1" },
-    buildSpec: candidate,
+    buildSpec: deployedBuildSpec,
     repositoryRoot: root,
   });
   const report = buildRouteGraphTopologyReport(sqlitePath, {

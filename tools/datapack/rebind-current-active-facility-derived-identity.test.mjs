@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
-import { cp, mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { readFile, rm, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
@@ -15,6 +14,7 @@ import {
   validateCurrentPublicRouteMapReplacementProof,
 } from "./rebind-current-active-facility-derived-identity.mjs";
 import { sha256 } from "./lib/manifest-validation.mjs";
+import { preparePendingCurrentAccessibilityTransitionRepository } from "./test-fixtures/current-full-capital-production-artifact.mjs";
 const ROOT = path.resolve(import.meta.dirname, "../..");
 
 test("current route-map proof는 two-hop same-source current head에서 유일한 replacement ancestor를 요구한다", async () => {
@@ -242,21 +242,10 @@ test("terminal staging은 검증된 기존 successor를 exact-prestate로 교체
 });
 
 async function temporaryRepository(t) {
-  const root = await mkdtemp(path.join(os.tmpdir(), "current-facility-successor-"));
+  const root = await preparePendingCurrentAccessibilityTransitionRepository(ROOT, {
+    transitionKind: "TRANSFER_DERIVED_BINDING",
+  });
   t.after(() => rm(root, { recursive: true, force: true }));
-  for (const relative of ["tools/datapack/release", "tools/datapack/sources"]) {
-    await cp(path.join(ROOT, relative), path.join(root, relative), { recursive: true });
-  }
-  for (const relative of [
-    "tools/datapack/nationwide-coverage-targets.json",
-    "tools/datapack/source-inventory.json",
-    "tools/datapack/source-governance-policy.json",
-    "release/product-gates/datapack-freshness-sla.json",
-  ]) {
-    const destination = path.join(root, relative);
-    await mkdir(path.dirname(destination), { recursive: true });
-    await cp(path.join(ROOT, relative), destination);
-  }
   return root;
 }
 

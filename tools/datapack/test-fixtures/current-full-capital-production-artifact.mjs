@@ -40,6 +40,7 @@ import {
   canonicalCurrentReleaseCandidateFixtureJson,
 } from "../build-current-release-candidate-accessibility-input.mjs";
 import { syncCurrentRouteEdgePolicyFile } from "../sync-current-route-edge-policy.mjs";
+import { canonicalJson } from "../lib/manifest-validation.mjs";
 import {
   activateSyntheticCurrentStaticNetworkSuccessors,
   copySyntheticCurrentPublicRouteMapRepository,
@@ -90,7 +91,7 @@ async function assertSelectedPublicLayoutBinding(repositoryRoot, phase) {
   }
 }
 
-async function registerFreshFacilitySnapshot(repositoryRoot, now) {
+async function registerFreshFacilitySnapshot(repositoryRoot, now, repeatedSnapshot = null) {
   const files = await Promise.all([
     "tools/datapack/release/capital-production-canonical-pack.json",
     "tools/datapack/nationwide-coverage-targets.json",
@@ -111,19 +112,32 @@ async function registerFreshFacilitySnapshot(repositoryRoot, now) {
   const [snapshot] = await collectKricAccessibilitySnapshots({
     roster, operations: [FACILITY_OPERATION], serviceKey: "fixture-only-key", now,
     allowTerminalResult03: true,
-    fetchImpl: async (url) => ({
-      ok: true, status: 200,
-      json: async () => new URL(url).searchParams.get("stinCd") === "234-4"
-        ? { header: { resultCode: "03" } }
-        : { header: { resultCode: "00" }, body: [
-          {
-            dtlLoc: "synthetic current A", grndDvCd: "1", gubun: "EV", imgPath: "", mlFmlDvCd: "", stinFlor: 1, trfcWeakDvCd: "01",
-          },
-          {
-            dtlLoc: "synthetic current B", grndDvCd: "1", gubun: "EV", imgPath: "", mlFmlDvCd: "", stinFlor: 2, trfcWeakDvCd: "01",
-          },
-        ] },
-    }),
+    fetchImpl: async (url) => {
+      const search = new URL(url).searchParams;
+      const repeated = repeatedSnapshot?.queries?.find((query) =>
+        query.railOprIsttCd === search.get("railOprIsttCd")
+        && query.lnCd === search.get("lnCd")
+        && query.stinCd === search.get("stinCd"));
+      if (repeatedSnapshot != null && repeated == null) {
+        throw new Error("synthetic FACILITY replay query is missing");
+      }
+      const resultCode = repeated?.providerResultCode
+        ?? (search.get("stinCd") === "234-4" ? "03" : "00");
+      return {
+        ok: true,
+        status: 200,
+        json: async () => resultCode === "03"
+          ? { header: { resultCode } }
+          : { header: { resultCode }, body: repeated?.rows ?? [
+            {
+              dtlLoc: "synthetic current A", grndDvCd: "1", gubun: "EV", imgPath: "", mlFmlDvCd: "", stinFlor: 1, trfcWeakDvCd: "01",
+            },
+            {
+              dtlLoc: "synthetic current B", grndDvCd: "1", gubun: "EV", imgPath: "", mlFmlDvCd: "", stinFlor: 2, trfcWeakDvCd: "01",
+            },
+          ] },
+      };
+    },
   });
   const stagingPath = path.join(repositoryRoot, `fresh-facility-snapshot-${snapshot.snapshotId}.json`);
   const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot, null, 2)}\n`);
@@ -259,9 +273,6 @@ export async function rebindFreshExitAdmissionForCurrentTransition(repositoryRoo
     facility: "tools/datapack/release/current-capital-facility-source-admission.json",
     ledger: "tools/datapack/release/source-snapshots.json",
     inventory: "tools/datapack/source-inventory.json",
-    normalized: "tools/datapack/release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json",
-    admission: "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json",
-    receipt: "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json",
   };
   const bytes = Object.fromEntries(await Promise.all(Object.entries(paths).map(async ([key, relative]) =>
     [key, await readFile(path.join(repositoryRoot, relative))])));
@@ -272,8 +283,22 @@ export async function rebindFreshExitAdmissionForCurrentTransition(repositoryRoo
     ledger: JSON.parse(bytes.ledger), ledgerBytes: bytes.ledger,
     inventory: JSON.parse(bytes.inventory), inventoryBytes: bytes.inventory,
   });
+  await writeReboundExitAdmissionForTransition(
+    repositoryRoot,
+    Buffer.from(canonicalCurrentCapitalAccessibilityTransitionJson(transition)),
+  );
+}
+
+async function writeReboundExitAdmissionForTransition(repositoryRoot, transitionBytes) {
+  const paths = {
+    normalized: "tools/datapack/release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json",
+    admission: "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json",
+    receipt: "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json",
+  };
+  const bytes = Object.fromEntries(await Promise.all(Object.entries(paths).map(async ([key, relative]) =>
+    [key, await readFile(path.join(repositoryRoot, relative))])));
   const rebound = buildReboundCurrentExitAdmissionIdentities({
-    transitionBytes: Buffer.from(canonicalCurrentCapitalAccessibilityTransitionJson(transition)),
+    transitionBytes,
     normalizedBytes: bytes.normalized,
     admissionBytes: bytes.admission,
     receiptBytes: bytes.receipt,
@@ -397,8 +422,8 @@ export async function prepareCurrentStaticNetworkProductionRepository(
 
 // Rebuilds the FACILITY producer chain from the current candidate rather than
 // mutating fixture freshness or candidate identities.
-export async function currentizeFreshFacilitySource(repositoryRoot, capturedAt) {
-  await registerFreshFacilitySnapshot(repositoryRoot, capturedAt);
+export async function currentizeFreshFacilitySource(repositoryRoot, capturedAt, repeatedSnapshot = null) {
+  await registerFreshFacilitySnapshot(repositoryRoot, capturedAt, repeatedSnapshot);
   await assertSelectedPublicLayoutBinding(repositoryRoot, "FACILITY registration");
   await rebindCurrentCandidateSourceSnapshots({ repositoryRoot, now: capturedAt });
   await assertSelectedPublicLayoutBinding(repositoryRoot, "candidate rebind");
@@ -515,73 +540,118 @@ async function bindPendingStationRoutePrestate(repositoryRoot, baseTransitionByt
   ]);
 }
 
-export async function preparePendingCurrentAccessibilityTransitionRepository(sourceRoot) {
+async function readCurrentAccessibilityTransitionInputs(repositoryRoot) {
+  const [candidateBytes, previousBytes, facilityBytes, ledgerBytes, inventoryBytes] = await Promise.all([
+    "tools/datapack/release/candidate-build-spec.json",
+    "tools/datapack/release/current-station-line-accessibility/station-line-input.json",
+    "tools/datapack/release/current-capital-facility-source-admission.json",
+    "tools/datapack/release/source-snapshots.json",
+    "tools/datapack/source-inventory.json",
+  ].map((relative) => readFile(path.join(repositoryRoot, relative))));
+  return {
+    candidate: JSON.parse(candidateBytes), candidateBytes,
+    previous: JSON.parse(previousBytes), previousBytes,
+    facilityAdmission: JSON.parse(facilityBytes), facilityBytes,
+    ledger: JSON.parse(ledgerBytes), ledgerBytes,
+    inventory: JSON.parse(inventoryBytes), inventoryBytes,
+  };
+}
+
+function transferDerivedBaseTransitionInputs(current) {
+  const transferSnapshotId = current.candidate.sourceSnapshotIds.at(-1);
+  const transferProjection = current.candidate.sourceSnapshots.at(-1);
+  if (typeof transferProjection?.sourceId !== "string" || transferProjection.sourceId === ""
+    || typeof transferSnapshotId !== "string" || transferSnapshotId === "") {
+    throw new Error("synthetic TRANSFER binding fixture is incomplete");
+  }
+  const ledger = structuredClone(current.ledger);
+  const transfer = ledger.filter(({ snapshotId, sourceId }) =>
+    snapshotId === transferSnapshotId && sourceId === transferProjection.sourceId);
+  if (transfer.length !== 1 || !transfer[0].transferTopology
+    || typeof transfer[0].transferTopology !== "object" || Array.isArray(transfer[0].transferTopology)) {
+    throw new Error("synthetic TRANSFER derived binding is missing");
+  }
+  delete transfer[0].transferTopology;
+  const candidate = structuredClone(current.candidate);
+  const selected = ledger.filter(({ snapshotId }) => candidate.sourceSnapshotIds.includes(snapshotId));
+  if (selected.length !== candidate.sourceSnapshotIds.length) {
+    throw new Error("synthetic TRANSFER selected ledger relation is incomplete");
+  }
+  candidate.sourceSnapshotSetHash = sha256(Buffer.from(JSON.stringify(selected)));
+  const candidateBytes = Buffer.from(canonicalJson(candidate));
+  const facilityAdmission = structuredClone(current.facilityAdmission);
+  facilityAdmission.candidate.sourceSnapshotSetHash = candidate.sourceSnapshotSetHash;
+  const { admissionDigest: _admissionDigest, ...facilityPayload } = facilityAdmission;
+  facilityAdmission.admissionDigest = sha256(Buffer.from(canonicalJson(facilityPayload)));
+  const facilityBytes = Buffer.from(canonicalCurrentCapitalFacilitySourceAdmissionJson(facilityAdmission));
+  return {
+    ...current,
+    candidate,
+    candidateBytes,
+    facilityAdmission,
+    facilityBytes,
+    ledger,
+    ledgerBytes: Buffer.from(`${JSON.stringify(ledger, null, 2)}\n`),
+  };
+}
+
+export async function preparePendingCurrentAccessibilityTransitionRepository(sourceRoot, {
+  transitionKind = "FACILITY_SOURCE_ADVANCE",
+} = {}) {
   const repositoryRoot = await mkdtemp(path.join(tmpdir(), "easysubway-pending-accessibility-transition-"));
   try {
-    const stage = await prepareCurrentStaticCandidateFixture(sourceRoot, repositoryRoot, {
-      now: await nextSyntheticCurrentStaticNetworkNow(sourceRoot),
+    await copySyntheticCurrentPublicRouteMapRepository(sourceRoot, repositoryRoot, {
+      activatePublicRouteMap: false,
     });
-    await advanceCurrentFacilityFixture(repositoryRoot, stage.capturedAt);
-    const [baseCandidateBytes, baseFacilityBytes, baseLedgerBytes, baseInventoryBytes] = await Promise.all([
-      readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json")),
-      readFile(path.join(repositoryRoot, "tools/datapack/release/current-capital-facility-source-admission.json")),
-      readFile(path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json")),
-      readFile(path.join(repositoryRoot, "tools/datapack/source-inventory.json")),
-    ]);
-    const baseTransition = buildCurrentCapitalAccessibilityTransition({
-      candidate: JSON.parse(baseCandidateBytes),
-      candidateBytes: baseCandidateBytes,
-      previous: JSON.parse(stage.previousStationLineInputBytes),
-      previousBytes: stage.previousStationLineInputBytes,
-      facilityAdmission: JSON.parse(baseFacilityBytes),
-      facilityBytes: baseFacilityBytes,
-      ledger: JSON.parse(baseLedgerBytes),
-      ledgerBytes: baseLedgerBytes,
-      inventory: JSON.parse(baseInventoryBytes),
-      inventoryBytes: baseInventoryBytes,
-    });
+    const markerPaths = [
+      "tools/datapack/release/current-capital-accessibility-transition.json",
+      "tools/datapack/release/current-capital-accessibility-transition-successor.json",
+    ];
+    const initialInput = await readCurrentAccessibilityTransitionInputs(repositoryRoot);
+    let baseInput = initialInput;
+    let currentInput;
+    if (transitionKind === "TRANSFER_DERIVED_BINDING") {
+      currentInput = initialInput;
+      baseInput = transferDerivedBaseTransitionInputs(currentInput);
+    } else if (transitionKind === "FACILITY_SOURCE_ADVANCE") {
+      const repeatedSnapshot = JSON.parse(await readFile(path.join(
+        repositoryRoot,
+        baseInput.facilityAdmission.sourceIdentity.snapshotPath,
+      )));
+      await currentizeFreshFacilitySource(
+        repositoryRoot,
+        await nextSyntheticCurrentStaticNetworkNow(repositoryRoot),
+        repeatedSnapshot,
+      );
+      currentInput = await readCurrentAccessibilityTransitionInputs(repositoryRoot);
+    } else {
+      throw new Error("synthetic accessibility transition kind is invalid");
+    }
+    const baseTransition = buildCurrentCapitalAccessibilityTransition(baseInput);
     const baseTransitionBytes = Buffer.from(canonicalCurrentCapitalAccessibilityTransitionJson(baseTransition));
-    await writeFile(
-      path.join(repositoryRoot, "tools/datapack/release/current-capital-accessibility-transition.json"),
-      baseTransitionBytes,
-    );
-
-    const successorCapturedAt = new Date(stage.capturedAt.getTime() + 2_000);
-    await advanceCurrentFacilityFixture(repositoryRoot, successorCapturedAt);
-    const [candidateBytes, facilityBytes, ledgerBytes, inventoryBytes] = await Promise.all([
-      readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json")),
-      readFile(path.join(repositoryRoot, "tools/datapack/release/current-capital-facility-source-admission.json")),
-      readFile(path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json")),
-      readFile(path.join(repositoryRoot, "tools/datapack/source-inventory.json")),
-    ]);
-    const currentTransition = buildCurrentCapitalAccessibilityTransition({
-      candidate: JSON.parse(candidateBytes),
-      candidateBytes,
-      previous: JSON.parse(stage.previousStationLineInputBytes),
-      previousBytes: stage.previousStationLineInputBytes,
-      facilityAdmission: JSON.parse(facilityBytes),
-      facilityBytes,
-      ledger: JSON.parse(ledgerBytes),
-      ledgerBytes,
-      inventory: JSON.parse(inventoryBytes),
-      inventoryBytes,
-    });
+    const currentTransition = buildCurrentCapitalAccessibilityTransition(currentInput);
+    if (transitionKind === "TRANSFER_DERIVED_BINDING"
+      && (canonicalJson(baseTransition.previousCandidate.canonicalCandidate)
+          !== canonicalJson(currentTransition.previousCandidate.canonicalCandidate)
+        || baseTransition.nextCandidate.candidateId !== currentTransition.nextCandidate.candidateId
+        || baseTransition.nextCandidate.sourceSnapshotSetHash === currentTransition.nextCandidate.sourceSnapshotSetHash)) {
+      throw new Error("synthetic TRANSFER derived transition relation is invalid");
+    }
     const successor = buildCurrentCapitalAccessibilityTransitionSuccessor({
       baseTransitionBytes,
-      previousFacilityBytes: baseFacilityBytes,
-      currentFacilityBytes: facilityBytes,
-      currentLedger: JSON.parse(ledgerBytes),
+      previousFacilityBytes: baseInput.facilityBytes,
+      currentFacilityBytes: currentInput.facilityBytes,
+      currentLedger: currentInput.ledger,
       currentTransition,
     });
-    await writeFile(
-      path.join(repositoryRoot, "tools/datapack/release/current-capital-accessibility-transition-successor.json"),
+    const successorBytes = Buffer.from(
       canonicalCurrentCapitalAccessibilityTransitionSuccessorJson(successor),
     );
-    await writeFreshExitAdmissionChain(repositoryRoot, successorCapturedAt);
-    await rebindFreshExitAdmissionForCurrentTransition(
-      repositoryRoot,
-      stage.previousStationLineInputBytes,
-    );
+    await Promise.all(markerPaths.map((relative, index) => writeFile(
+        path.join(repositoryRoot, relative),
+        index === 0 ? baseTransitionBytes : successorBytes,
+      )));
+    await writeReboundExitAdmissionForTransition(repositoryRoot, successorBytes);
     await bindPendingStationRoutePrestate(repositoryRoot, baseTransitionBytes, successor);
     return repositoryRoot;
   } catch (error) {

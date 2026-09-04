@@ -265,6 +265,10 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
       .filter((relative) => relative !== historicalTopologyEvidence.path),
     ...inventory.sources.map((source) => source.routeMapAdmissionEvidence?.snapshotPath),
     ...inventory.sources.map((source) => source.routeMapAdmissionEvidence?.currentLayoutAdmission?.snapshotPath),
+    ...inventory.sources.map((source) => {
+      const snapshotId = source.routeMapAdmissionEvidence?.currentLayoutAdmission?.topologySnapshotId;
+      return typeof snapshotId === "string" ? `tools/datapack/sources/${snapshotId}.json` : null;
+    }),
     ...inventory.sources.map((source) => source.accessibilityAdmissionEvidence?.snapshotPath),
     ...inventory.sources.map((source) => source.transferAdmissionEvidence?.snapshotPath),
     ...inventory.sources.map((source) => source.topologyAdmissionEvidence?.snapshotPath),
@@ -329,7 +333,7 @@ async function writeSyntheticCurrentExitOciReceipt(root) {
   });
   const target = path.join(root, receiptPath);
   await mkdir(path.dirname(target), { recursive: true });
-  await writeFile(target, Buffer.from(canonicalCurrentExitAdmissionOciReceiptJson(receipt)));
+  await writeFile(target, Buffer.from(`${canonicalCurrentExitAdmissionOciReceiptJson(receipt)}\n`));
 }
 
 export async function nextSyntheticCurrentStaticNetworkNow(root) {

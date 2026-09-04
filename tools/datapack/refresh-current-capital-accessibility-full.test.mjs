@@ -326,7 +326,7 @@ test("pending marker accepts only an exact authenticated TRANSFER evidence trans
 
 test("pending marker producer boundary distinguishes base prestates from effective evidence", async (t) => {
   const root = await actualPendingMarkerRepository(t);
-  const [baseMarker, effectiveMarker, candidate, facility, exit, station, route] = await Promise.all([
+  const [baseMarker, effectiveMarker, candidate, facility, exit, station, route, receiptBytes] = await Promise.all([
     readFile(path.join(root, TRANSITION)).then(JSON.parse),
     readFile(path.join(root, SUCCESSOR)).then(JSON.parse),
     readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json")).then(JSON.parse),
@@ -334,15 +334,10 @@ test("pending marker producer boundary distinguishes base prestates from effecti
     readFile(path.join(root, "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json")).then(JSON.parse),
     readFile(path.join(root, OUTPUTS[0])).then(JSON.parse),
     readFile(path.join(root, OUTPUTS[1])).then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json")),
   ]);
 
-  const currentSourceSetSha256 = "a".repeat(64);
-  const refreshedPredecessorSourceSetSha256 = "b".repeat(64);
-  candidate.sourceSnapshotSetHash = currentSourceSetSha256;
-  facility.candidate.sourceSnapshotSetHash = currentSourceSetSha256;
-  effectiveMarker.previousCandidate.candidateId = "capital-accessibility-20260902-refreshed-seven";
-  effectiveMarker.previousCandidate.sourceSnapshotSetHash = refreshedPredecessorSourceSetSha256;
-  exit.candidate.sourceSetSha256 = refreshedPredecessorSourceSetSha256;
+  const receipt = JSON.parse(receiptBytes);
   assert.notEqual(baseMarker.previousCandidate.candidateId, effectiveMarker.previousCandidate.candidateId);
   assert.notEqual(baseMarker.previousCandidate.sourceSnapshotSetHash, effectiveMarker.previousCandidate.sourceSnapshotSetHash);
   assert.equal(effectiveMarker.nextCandidate.candidateId, candidate.candidateId);
@@ -351,6 +346,10 @@ test("pending marker producer boundary distinguishes base prestates from effecti
   assert.equal(exit.candidate.sourceSetSha256, effectiveMarker.previousCandidate.sourceSnapshotSetHash);
   assert.equal(station.candidate.sourceSetSha256, baseMarker.previousCandidate.sourceSnapshotSetHash);
   assert.equal(route.candidate.sourceSetSha256, baseMarker.previousCandidate.sourceSnapshotSetHash);
+  assert.equal(
+    receiptBytes.toString("utf8"),
+    `${canonicalCurrentExitAdmissionOciReceiptJson(receipt)}\n`,
+  );
   assertPendingMarkerProducerBoundary({ baseMarker, effectiveMarker, candidate, facility, exit, station, route });
 });
 

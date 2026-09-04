@@ -19,13 +19,13 @@
     "manifestSha256": "8fcfe922559989998ff6fcdbb04f583b863a49f4bf7225177822d6e656f3e694",
     "observationSha256": "2014adb22ab221aab82b83c821cdd480de560ffc344df56d1006e5b616efb555",
     "rawSnapshotSha256": "3d872c9ac390426b5e0e26fa1916ae9d9a44b70077b632d3c85cb8e82381f7cf",
-    "sourceCandidateSha256": "7387ad5e2634359da4ec69477bb04cd28cd71e2fae81c1f7ed056898b3339bfd",
+    "sourceCandidateSha256": "f1be4b1fae88bddccc2882a5f1825bcae17f0ec7711dce52bc22b5a89fca0f6d",
     "kricProviderCatalogSha256": "18ef12fce6a42f63e39f6804e62654f27c2dc199485fc5e6e49c77a02acbb837"
   },
   "transferTopology": {
-    "canonicalPackSha256": "d2570d183a0a320723b7f1987785cda75d6ba6b72e77f90674f8c5817ddf134c",
-    "metricsArtifactSha256": "56f5f8d1de6e8fd3948cd7cf3a01beabf78ce91e27e8cf3542f21bca266ca1f5",
-    "applicabilityArtifactSha256": "de2e8bb5992b043ade07b30b9c2d28baaf27c11bd8053cdd48f6d45e4fe013ad",
+    "canonicalPackSha256": "40df2d134eea5b8e5664dadb1f9d4e6bb40bac73af25a0748f9d8754ae0e136c",
+    "metricsArtifactSha256": "7e6d797cd5e8e32f711232444dc896dcbc263c704f22cd5869f7512cf6b2a25a",
+    "applicabilityArtifactSha256": "9ab31332ef35e3f33151b671c3f6a8f467f6565fb62be419eea4825b18f80103",
     "stationLineCount": 213,
     "stationCount": 199,
     "physicalPairCount": 15,
@@ -36,5 +36,5 @@
     "notApplicableStationLineCount": 186,
     "durationRole": "REFERENCE_ONLY"
   },
-  "snapshotSha256": "b6703ec7178e133ac15251459a8290abb07f697c784794f9ee375c9b8dcd8f59"
+  "snapshotSha256": "691f00a509bbf24d5edc2ec239673cabde83b418c9a655c2bf70c8d51b239a50"
 }
