@@ -1260,10 +1260,11 @@ export async function runCurrentCapitalExitTerminalConsumer({
     topologyBuild,
     proof: preparedTerminal.proof,
   });
-  const [currentCandidate, candidateStageInputs] = await Promise.all([
+  const [currentCandidate, candidateStageInputs, existingSuccessorFacilityBytes] = await Promise.all([
     readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
     readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse)
       .then((candidate) => resolveCurrentLiveChainCandidateStageInputs(candidate, root)),
+    readFile(path.join(root, "tools/datapack/release/current-capital-facility-source-admission.json")),
   ]);
   const accessibilitySourceHandoff = await verifyAccessibilityHandoffImpl({
     handoffBytes: accessibilitySourceHandoffBytes,
@@ -1343,6 +1344,7 @@ export async function runCurrentCapitalExitTerminalConsumer({
     repositoryRoot: stagedRoot,
     replaceExistingSuccessor: true,
     allowedPredecessorSourceIds,
+    existingSuccessorFacilityBytes,
   });
   // This create-once transaction is the boundary between P/T/F materialization
   // and every candidate-dependent EXIT/fan-in operation.  All later inputs are

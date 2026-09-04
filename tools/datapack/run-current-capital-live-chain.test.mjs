@@ -1298,6 +1298,15 @@ test("terminal consumer orders P/T/F and CAS before one OCI recovery and semanti
   const rootPrestates = await Promise.all([
     "tools/datapack/release/candidate-build-spec.json", ...markers,
   ].map(async (relative) => [relative, await readFile(path.join(repositoryRoot, relative))]));
+  const retainedFacilityBytes = await readFile(path.join(
+    repositoryRoot,
+    "tools/datapack/release/current-capital-facility-source-admission.json",
+  ));
+  const stagedFacility = JSON.parse(retainedFacilityBytes);
+  stagedFacility.candidate.sourceSnapshotSetHash = "f".repeat(64);
+  delete stagedFacility.admissionDigest;
+  stagedFacility.admissionDigest = sha(canonicalJson(stagedFacility));
+  const stagedFacilityBytes = Buffer.from(canonicalCurrentCapitalFacilitySourceAdmissionJson(stagedFacility));
   const calls = [];
   const client = memoryOciObject(handoff.bundleBytes, handoff.providerObject.objectKey);
   const stageRoots = [];
@@ -1328,16 +1337,34 @@ test("terminal consumer orders P/T/F and CAS before one OCI recovery and semanti
     rebindPublicRouteMapImpl: async ({ repositoryRoot }) => {
       calls.push("P"); stageRoots.push(repositoryRoot);
       assert.deepEqual(await readFile(path.join(repositoryRoot, accessibilityPath)), accessibilityBytes);
+      await writeFile(
+        path.join(repositoryRoot, "tools/datapack/release/current-capital-facility-source-admission.json"),
+        stagedFacilityBytes,
+      );
     },
     rebindTransferImpl: async ({ repositoryRoot }) => {
       calls.push("T");
       assert.equal(repositoryRoot, stageRoots[0]);
       return unchangedTransferRebindProof({ repositoryRoot });
     },
-    rebindFacilityImpl: async ({ repositoryRoot, replaceExistingSuccessor, allowedPredecessorSourceIds }) => {
+    rebindFacilityImpl: async ({
+      repositoryRoot,
+      replaceExistingSuccessor,
+      allowedPredecessorSourceIds,
+      existingSuccessorFacilityBytes,
+    }) => {
       calls.push("F");
       assert.equal(repositoryRoot, stageRoots[0]);
       assert.equal(replaceExistingSuccessor, true);
+      assert.deepEqual(existingSuccessorFacilityBytes, retainedFacilityBytes);
+      assert.deepEqual(
+        await readFile(path.join(repositoryRoot, "tools/datapack/release/current-capital-facility-source-admission.json")),
+        stagedFacilityBytes,
+      );
+      await writeFile(
+        path.join(repositoryRoot, "tools/datapack/release/current-capital-facility-source-admission.json"),
+        retainedFacilityBytes,
+      );
       assert.deepEqual(allowedPredecessorSourceIds, [
         "kric-station-convenience-standard",
         "seoul-metro-accessibility",
