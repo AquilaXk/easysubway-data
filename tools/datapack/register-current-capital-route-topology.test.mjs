@@ -131,7 +131,7 @@ test("publishes exactly the protected topology bytes and builds an initial regis
     repositoryRoot: root, operationRoot, expectedMainSha: "a".repeat(40),
     gitRunner: async (args) => args[0] === "status" ? "" : "a".repeat(40),
     env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.example.oraclecloud.com/p/test/n/axvym6vk8g7i/b/easysubway-datapacks/o/" },
-    client, now,
+    client, now, receiptPath: path.join(operationRoot, "capital-route-topology.raw-receipt.json"),
   });
   assert.equal(receipt.rawObjectSha256, sha(admission.topologyBytes));
   assert.equal(receipt.byteSize, admission.topologyBytes.length);
