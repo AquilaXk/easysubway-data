@@ -238,6 +238,17 @@ async function removeTerminalMarkersAndCommit(root) {
   return (await execFile("git", ["rev-parse", "HEAD"], { cwd: root })).stdout.trim();
 }
 
+async function terminalLineageRoots(t, prefix) {
+  const parent = await mkdtemp(path.join(os.tmpdir(), prefix));
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  return {
+    fixtureSource: await pendingTransitionRepository(t, { initializeGit: true }),
+    sourceMainRoot: path.join(parent, "source-main"),
+    retainedRoot: path.join(parent, "retained"),
+    privateBuilderRoot: path.join(parent, "private-builder"),
+  };
+}
+
 async function pendingTransitionRepository(t, { initializeGit = false } = {}) {
   const generatedRoot = await preparePendingCurrentAccessibilityTransitionRepository(ROOT);
   t.after(() => rm(generatedRoot, { recursive: true, force: true }));
@@ -614,6 +625,19 @@ async function terminalCommitFixture(repositoryRoot) {
   };
 }
 
+async function derivedAbsentTerminalCommitFixture(t, prefix) {
+  const parent = await mkdtemp(path.join(os.tmpdir(), prefix));
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  const fixtureSource = await pendingTransitionRepository(t, { initializeGit: true });
+  const root = path.join(parent, "derived");
+  await cloneCleanFixture(fixtureSource, root);
+  const fixture = await terminalCommitFixture(root);
+  fixture.manifest.markerState = "DERIVED_ABSENT";
+  fixture.manifest.proof.markerState = "DERIVED_ABSENT";
+  await Promise.all(fixture.manifest.markerPaths.map((relative) => rm(path.join(root, relative))));
+  return { root, fixture };
+}
+
 test("terminal CAS verifies proof-bound fan-in and every replacement prestate", async (t) => {
   const parent = await mkdtemp(path.join(os.tmpdir(), "current-capital-terminal-commit-"));
   t.after(() => rm(parent, { recursive: true, force: true }));
@@ -640,30 +664,20 @@ test("terminal CAS verifies proof-bound fan-in and every replacement prestate", 
 });
 
 test("DERIVED_ABSENT terminal CAS keeps absent markers out of the journaled transaction", async (t) => {
-  const parent = await mkdtemp(path.join(os.tmpdir(), "current-capital-terminal-derived-commit-"));
-  t.after(() => rm(parent, { recursive: true, force: true }));
-  const fixtureSource = await pendingTransitionRepository(t, { initializeGit: true });
-  const root = path.join(parent, "derived");
-  await cloneCleanFixture(fixtureSource, root);
-  const fixture = await terminalCommitFixture(root);
-  fixture.manifest.markerState = "DERIVED_ABSENT";
-  fixture.manifest.proof.markerState = "DERIVED_ABSENT";
-  await Promise.all(fixture.manifest.markerPaths.map((relative) => rm(path.join(root, relative))));
+  const { root, fixture } = await derivedAbsentTerminalCommitFixture(
+    t,
+    "current-capital-terminal-derived-commit-",
+  );
   await commitCurrentCapitalTerminalManifest({ repositoryRoot: root, ...fixture });
   await Promise.all(fixture.manifest.markerPaths.map((relative) =>
     assert.rejects(stat(path.join(root, relative)), { code: "ENOENT" })));
 });
 
 test("DERIVED_ABSENT terminal recovery rejects marker resurrection before replay", async (t) => {
-  const parent = await mkdtemp(path.join(os.tmpdir(), "current-capital-terminal-derived-recovery-"));
-  t.after(() => rm(parent, { recursive: true, force: true }));
-  const fixtureSource = await pendingTransitionRepository(t, { initializeGit: true });
-  const root = path.join(parent, "derived");
-  await cloneCleanFixture(fixtureSource, root);
-  const fixture = await terminalCommitFixture(root);
-  fixture.manifest.markerState = "DERIVED_ABSENT";
-  fixture.manifest.proof.markerState = "DERIVED_ABSENT";
-  await Promise.all(fixture.manifest.markerPaths.map((relative) => rm(path.join(root, relative))));
+  const { root, fixture } = await derivedAbsentTerminalCommitFixture(
+    t,
+    "current-capital-terminal-derived-recovery-",
+  );
   const records = fixture.outputs.map(({ relative, bytes, prestate }) => ({
     operation: prestate == null ? "create" : "replace",
     relative,
@@ -690,12 +704,10 @@ test("DERIVED_ABSENT terminal recovery rejects marker resurrection before replay
 });
 
 test("terminal lineage replays the retained FACILITY producer and rejects builder tampering before journaling", async (t) => {
-  const parent = await mkdtemp(path.join(os.tmpdir(), "current-terminal-lineage-"));
-  t.after(() => rm(parent, { recursive: true, force: true }));
-  const fixtureSource = await pendingTransitionRepository(t, { initializeGit: true });
-  const sourceMainRoot = path.join(parent, "source-main");
-  const retainedRoot = path.join(parent, "retained");
-  const privateBuilderRoot = path.join(parent, "private-builder");
+  const { fixtureSource, sourceMainRoot, retainedRoot, privateBuilderRoot } = await terminalLineageRoots(
+    t,
+    "current-terminal-lineage-",
+  );
   const sourceMainGitSha = await cloneCleanFixture(fixtureSource, sourceMainRoot);
   await cloneCleanFixture(fixtureSource, retainedRoot);
   const builderGitSha = await cloneCleanFixture(fixtureSource, privateBuilderRoot);
@@ -747,12 +759,10 @@ test("terminal lineage replays the retained FACILITY producer and rejects builde
 });
 
 test("DERIVED_ABSENT terminal lineage derives staging-only canonical markers from clean roots", async (t) => {
-  const parent = await mkdtemp(path.join(os.tmpdir(), "current-terminal-derived-absent-"));
-  t.after(() => rm(parent, { recursive: true, force: true }));
-  const fixtureSource = await pendingTransitionRepository(t, { initializeGit: true });
-  const sourceMainRoot = path.join(parent, "source-main");
-  const retainedRoot = path.join(parent, "retained");
-  const privateBuilderRoot = path.join(parent, "private-builder");
+  const { fixtureSource, sourceMainRoot, retainedRoot, privateBuilderRoot } = await terminalLineageRoots(
+    t,
+    "current-terminal-derived-absent-",
+  );
   await cloneCleanFixture(fixtureSource, sourceMainRoot);
   const sourceMainGitSha = await removeTerminalMarkersAndCommit(sourceMainRoot);
   await cloneCleanFixture(sourceMainRoot, retainedRoot);
