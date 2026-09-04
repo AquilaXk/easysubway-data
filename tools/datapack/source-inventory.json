@@ -8448,6 +8448,120 @@
         "rowCount": 8054,
         "status": "LOCKED"
       }
+    },
+    {
+      "id": "capital-route-topology",
+      "displayName": "수도권 도시철도 노선별 역간거리 FILE source set",
+      "owner": "국가철도공단·국토교통부",
+      "provider": "data.go.kr official FILE",
+      "providerDepartment": "복수 공식 제공부서",
+      "sourceSystem": "공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/",
+      "datasetKind": "official-file-source-set",
+      "coverage": "24 ordered Capital topology source definitions",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "seoul-metro"
+        ],
+        "lineIds": [
+          "line-472a81add377",
+          "seoul-2",
+          "line-41a8c75ec9d8",
+          "seoul-4",
+          "line-80fc4d5350d4",
+          "line-3f41718e0833",
+          "line-15b3b8a93259",
+          "line-2b2d9eaa53d0"
+        ],
+        "sourceDomains": [
+          "route_graph_topology"
+        ]
+      },
+      "requiredForProductionPack": true,
+      "productionUseAllowed": true,
+      "updateFrequency": "P1D",
+      "observedDataUpdatedAt": "2026-09-04",
+      "retrievedAt": "2026-09-04",
+      "license": {
+        "type": "KOGL-1",
+        "name": "공공누리 제1유형",
+        "attribution": "국가철도공단, 국토교통부(MOLIT 도시철도 전체노선), 공공누리 제1유형(출처표시)",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/"
+      },
+      "admissionEvidence": {
+        "licenseEvidenceHash": "8af4d3c1d50cfa78ba2be42b46ffcfeba5366f91e07592dae863b9a76e98bd54"
+      },
+      "fieldsProvided": [
+        "network_edges",
+        "distance_meters",
+        "line",
+        "station_name",
+        "branch_name"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "P1D",
+          "unsupportedNotes": "source does not provide scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "P1D",
+          "unsupportedNotes": "source provides static route topology, not realtime arrivals"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "P1D",
+          "unsupportedNotes": "source does not provide accessibility facility records"
+        }
+      },
+      "capitalTopologyAdmissionEvidence": {
+        "schemaVersion": 1,
+        "artifactKind": "capital-topology-admission-evidence",
+        "status": "APPROVED",
+        "issue": 456,
+        "sourceId": "capital-route-topology",
+        "snapshotId": "capital-route-topology-20260904",
+        "snapshotPath": "tools/datapack/sources/capital-route-topology-20260904.json",
+        "snapshotFileSha256": "6734a85960a9c14c177f1df6754f764fadfd44a9e2c2627ce77d771b75208d18",
+        "snapshotRawSha256": "6734a85960a9c14c177f1df6754f764fadfd44a9e2c2627ce77d771b75208d18",
+        "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+        "lineIds": [
+          "line-472a81add377",
+          "seoul-2",
+          "line-41a8c75ec9d8",
+          "seoul-4",
+          "line-80fc4d5350d4",
+          "line-3f41718e0833",
+          "line-15b3b8a93259",
+          "line-2b2d9eaa53d0"
+        ],
+        "orderedScopeSha256": "93925de2014fe87c5a0003fcb6294f6675147c7c856992551e97b2386ff7dc75",
+        "operationSetSha256": "15c9bc1573f1b6e35b478472c29b9b404b2cf2d60a68cf7fff4187a2f6e08534",
+        "rawReceiptSha256": "73504a6279b36677d2901db9a76a2eaea7daa7fd7443a04ef0e63db560b616f1",
+        "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20260904/6734a85960a9c14c177f1df6754f764fadfd44a9e2c2627ce77d771b75208d18.json",
+        "rawObjectSha256": "6734a85960a9c14c177f1df6754f764fadfd44a9e2c2627ce77d771b75208d18",
+        "byteSize": 260470,
+        "licenseSha256": "8af4d3c1d50cfa78ba2be42b46ffcfeba5366f91e07592dae863b9a76e98bd54",
+        "governanceRecordSha256": "d0d04a13617508536d5ebba010ade19912f8caa79d891c401e22b0a53f943582",
+        "freshnessClassSha256": "f62b2344b7339d7c97fc26092b4093f8260a1ba2b3643c14ed7c6c2e762ef5eb",
+        "evaluatedAt": "2026-09-04T20:50:46.368Z",
+        "predecessorSnapshotIds": []
+      }
     }
   ]
 }
