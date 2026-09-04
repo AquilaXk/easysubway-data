@@ -209,6 +209,7 @@ export async function buildCurrentSeoulAccessibilityRegistrationOutputs({ reposi
   const nextInventoryBytes = jsonBytes(nextInventory); const derived = deriveReleaseEvidence({ snapshots: nextSnapshots, inventory: nextInventory, canonical: parse(canonicalBytes, "canonical pack"), governance, freshness, spec: currentCandidate, request: parse(requestBytes, "release request"), hashes: parse(hashBytes, "hash evidence"), canonicalBytes, inventoryBytes: nextInventoryBytes, governanceBytes, itxBytes: await readRepository(currentCandidate.itxTopologyEvidencePath, "ITX evidence") });
   const allDerivedCandidate = parse(derived.specBytes, "derived candidate build spec");
   const nextCandidate = structuredClone(currentCandidate);
+  nextCandidate.publishedAt = now.toISOString();
   const seoulIndex = nextCandidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === SOURCE_ID);
   const derivedSeoulProjection = allDerivedCandidate.sourceSnapshots.find(({ sourceId }) => sourceId === SOURCE_ID);
   if (seoulIndex < 0 || !derivedSeoulProjection) throw new Error("current Seoul candidate projection is missing");

@@ -56,7 +56,7 @@ async function fixture() {
   await cp(path.join(ROOT, kricPath), path.join(root, kricPath));
   const seoul = inventory.sources.find(({ id }) => id === "seoul-metro-accessibility");
   const prior = await readJson(seoul.accessibilityAdmissionEvidence.snapshotPath);
-  const capturedMillis = Date.parse(prior.retrievedAt) + 60_000;
+  const capturedMillis = Math.max(Date.parse(prior.retrievedAt), Date.parse(candidate.publishedAt)) + 60_000;
   const capturedAt = new Date(capturedMillis).toISOString();
   const snapshotId = `seoul-metro-accessibility-${capturedAt.replaceAll(/[-:.]/gu, "")}`;
   const snapshot = {
@@ -122,6 +122,7 @@ test("fresh Seoul observation and OCI receipt rebind exactly seven outputs", asy
   assert.equal(ledger.at(-1).sourceId, "seoul-metro-accessibility");
   assert.equal(ledger.at(-1).rawObjectUri.startsWith("oci://"), true);
   const candidate = JSON.parse(await readFile(path.join(values.root, OUTPUTS[3]), "utf8"));
+  assert.equal(candidate.publishedAt, values.now.toISOString());
   assert.equal(candidate.sourceSnapshots.find(({ sourceId }) => sourceId === "seoul-metro-accessibility").snapshotId, ledger.at(-1).snapshotId);
   const beforeCandidate = JSON.parse(before[3]);
   for (const projection of beforeCandidate.sourceSnapshots.filter(({ sourceId }) => sourceId !== "seoul-metro-accessibility")) {
