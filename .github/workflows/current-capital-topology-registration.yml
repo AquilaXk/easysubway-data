@@ -35,7 +35,9 @@ jobs:
         run: |
           set -euo pipefail
           operation_root="${RUNNER_TEMP}/current-capital-topology-registration/${GITHUB_RUN_ID}"
-          mkdir -m 700 -p "$(dirname "${operation_root}")"
+          operation_parent="$(dirname "${operation_root}")"
+          mkdir -p "${operation_parent}"
+          chmod 700 "${operation_parent}"
           printf 'REGISTRATION_OPERATION_ROOT=%s\n' "${operation_root}" >> "${GITHUB_ENV}"
       - name: Claim exact main before OCI publication
         env:
