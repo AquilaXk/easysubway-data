@@ -2,8 +2,14 @@ name: Current Capital Topology Registration
 
 on:
   workflow_dispatch:
+    inputs:
+      recovery_run_id:
+        description: Recover one exact failed run after verified OCI publication
+        required: false
+        type: string
 
 permissions:
+  actions: read
   contents: write
   pull-requests: write
 
@@ -15,6 +21,7 @@ jobs:
   register:
     if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
+    environment: datapack-release-check
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -24,32 +31,67 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: "24.19.0"
+      - name: Prepare private operation parent
+        run: |
+          set -euo pipefail
+          operation_root="${RUNNER_TEMP}/current-capital-topology-registration/${GITHUB_RUN_ID}"
+          mkdir -m 700 -p "$(dirname "${operation_root}")"
+          printf 'REGISTRATION_OPERATION_ROOT=%s\n' "${operation_root}" >> "${GITHUB_ENV}"
       - name: Claim exact main before OCI publication
         env:
           GH_TOKEN: ${{ github.token }}
+          RECOVERY_RUN_ID: ${{ inputs.recovery_run_id }}
         run: |
           set -euo pipefail
           main_sha="$(git rev-parse HEAD)"
-          branch="automation/456-capital-topology-registration-${GITHUB_RUN_ID}"
-          [[ "$(git ls-remote --heads origin "refs/heads/automation/456-capital-topology-registration-*")" == "" ]] || { echo "competing registration claim exists" >&2; exit 1; }
-          [[ "$(gh pr list --repo "${GITHUB_REPOSITORY}" --state open --head "${branch}" --json number --jq 'length')" == "0" ]] || { echo "registration claim PR exists" >&2; exit 1; }
-          git switch -c "${branch}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit --allow-empty -m "Claim capital topology registration"
           gh auth setup-git
-          git push origin "${branch}"
-          git switch --detach "${main_sha}"
-          printf 'REGISTRATION_BRANCH=%s\nREGISTRATION_MAIN_SHA=%s\nREGISTRATION_OPERATION_ROOT=%s/current-capital-topology-registration/%s\n' "${branch}" "${main_sha}" "${RUNNER_TEMP}" "${GITHUB_RUN_ID}" >> "${GITHUB_ENV}"
+          if [[ -n "${RECOVERY_RUN_ID}" ]]; then
+            [[ "${RECOVERY_RUN_ID}" =~ ^[1-9][0-9]*$ ]] || { echo "recovery run ID is invalid" >&2; exit 1; }
+            metadata="$(gh run view "${RECOVERY_RUN_ID}" --repo "${GITHUB_REPOSITORY}" --json databaseId,status,conclusion,event,workflowName,headBranch,headSha --jq '[.databaseId,.status,.conclusion,.event,.workflowName,.headBranch,.headSha] | @tsv')"
+            IFS=$'\t' read -r run_id run_status run_conclusion run_event run_workflow run_branch run_head <<< "${metadata}"
+            [[ "${run_id}" == "${RECOVERY_RUN_ID}" && "${run_status}" == "completed" && "${run_conclusion}" == "failure" && "${run_event}" == "workflow_dispatch" && "${run_workflow}" == "Current Capital Topology Registration" && "${run_branch}" == "main" && "${run_head}" == "${main_sha}" ]] || { echo "recovery producer run identity is invalid" >&2; exit 1; }
+            branch="automation/456-capital-topology-registration-${RECOVERY_RUN_ID}"
+            git fetch --no-tags origin "refs/heads/${branch}:refs/remotes/origin/${branch}"
+            read -r claim_head claim_parent extra_parent <<< "$(git rev-list --parents -n 1 "origin/${branch}")"
+            [[ "${claim_head}" == "$(git rev-parse "origin/${branch}")" && "${claim_parent}" == "${main_sha}" && -z "${extra_parent:-}" && "$(git show -s --format=%s "origin/${branch}")" == "Claim capital topology registration" ]] || { echo "recovery claim identity is invalid" >&2; exit 1; }
+            git diff --quiet "${claim_parent}" "${claim_head}" || { echo "recovery claim is not empty" >&2; exit 1; }
+            [[ "$(gh pr list --repo "${GITHUB_REPOSITORY}" --state all --head "${branch}" --json number --jq 'length')" == "0" ]] || { echo "recovery claim already has a pull request" >&2; exit 1; }
+            source_root="${RUNNER_TEMP}/current-capital-topology-registration/retained-${RECOVERY_RUN_ID}"
+            gh run download "${RECOVERY_RUN_ID}" --repo "${GITHUB_REPOSITORY}" --name "current-capital-topology-registration-${RECOVERY_RUN_ID}" --dir "${source_root}"
+            [[ -f "${source_root}/capital-route-topology-registration.json" && -f "${source_root}/capital-route-topology.raw-receipt.json" ]] || { echo "retained registration evidence is incomplete" >&2; exit 1; }
+            git switch --track -c "${branch}" "origin/${branch}"
+            git switch --detach "${main_sha}"
+            printf 'REGISTRATION_SOURCE_OPERATION_ROOT=%s\n' "${source_root}" >> "${GITHUB_ENV}"
+          else
+            branch="automation/456-capital-topology-registration-${GITHUB_RUN_ID}"
+            claims="${RUNNER_TEMP}/current-capital-topology-registration/claims.txt"
+            git ls-remote --heads origin "refs/heads/automation/456-capital-topology-registration-*" > "${claims}"
+            [[ ! -s "${claims}" ]] || { echo "competing registration claim exists" >&2; exit 1; }
+            [[ "$(gh pr list --repo "${GITHUB_REPOSITORY}" --state open --head "${branch}" --json number --jq 'length')" == "0" ]] || { echo "registration claim PR exists" >&2; exit 1; }
+            git switch -c "${branch}"
+            git commit --allow-empty -m "Claim capital topology registration"
+            git push origin "${branch}"
+            git switch --detach "${main_sha}"
+          fi
+          printf 'REGISTRATION_BRANCH=%s\nREGISTRATION_MAIN_SHA=%s\n' "${branch}" "${main_sha}" >> "${GITHUB_ENV}"
       - name: Publish and register once
+        if: ${{ inputs.recovery_run_id == '' }}
         env:
           EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
         run: |
           set -euo pipefail
-          mkdir -m 700 -p "${REGISTRATION_OPERATION_ROOT}"
           git fetch --no-tags origin main:refs/remotes/origin/main
           [[ "$(git rev-parse HEAD)" == "${REGISTRATION_MAIN_SHA}" && "$(git rev-parse origin/main)" == "${REGISTRATION_MAIN_SHA}" ]] || { echo "main changed after claim" >&2; exit 1; }
           node tools/datapack/run-current-capital-route-topology-registration.mjs --repository-root "${GITHUB_WORKSPACE}" --operation-root "${REGISTRATION_OPERATION_ROOT}" --expected-main-sha "${REGISTRATION_MAIN_SHA}"
+      - name: Recover published registration without OCI
+        if: ${{ inputs.recovery_run_id != '' }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          [[ "$(git rev-parse HEAD)" == "${REGISTRATION_MAIN_SHA}" && "$(git rev-parse origin/main)" == "${REGISTRATION_MAIN_SHA}" ]] || { echo "main changed after claim" >&2; exit 1; }
+          node tools/datapack/run-current-capital-route-topology-registration.mjs recover-published --repository-root "${GITHUB_WORKSPACE}" --source-operation-root "${REGISTRATION_SOURCE_OPERATION_ROOT}" --target-operation-root "${REGISTRATION_OPERATION_ROOT}" --expected-main-sha "${REGISTRATION_MAIN_SHA}" --expected-publication-operation-id "${{ inputs.recovery_run_id }}"
       - name: Commit exactly four registration outputs and open draft PR
         env:
           GH_TOKEN: ${{ github.token }}
@@ -64,3 +106,13 @@ jobs:
           git commit -m "Register current capital topology"
           git push origin "${REGISTRATION_BRANCH}"
           gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${REGISTRATION_BRANCH}" --title "Register current capital topology" --body "Register the protected current capital topology receipt.\n\nRefs #456"
+      - name: Retain sanitized publication recovery evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: current-capital-topology-registration-${{ github.run_id }}
+          path: |
+            ${{ env.REGISTRATION_OPERATION_ROOT }}/capital-route-topology-registration.json
+            ${{ env.REGISTRATION_OPERATION_ROOT }}/capital-route-topology.raw-receipt.json
+          if-no-files-found: ignore
+          retention-days: 14
