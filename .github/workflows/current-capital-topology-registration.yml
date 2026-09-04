@@ -1,0 +1,66 @@
+name: Current Capital Topology Registration
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: current-capital-topology-registration-main
+  cancel-in-progress: false
+
+jobs:
+  register:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
+      - name: Claim exact main before OCI publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          main_sha="$(git rev-parse HEAD)"
+          branch="automation/456-capital-topology-registration-${GITHUB_RUN_ID}"
+          [[ "$(git ls-remote --heads origin "refs/heads/automation/456-capital-topology-registration-*")" == "" ]] || { echo "competing registration claim exists" >&2; exit 1; }
+          [[ "$(gh pr list --repo "${GITHUB_REPOSITORY}" --state open --head "${branch}" --json number --jq 'length')" == "0" ]] || { echo "registration claim PR exists" >&2; exit 1; }
+          git switch -c "${branch}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "Claim capital topology registration"
+          gh auth setup-git
+          git push origin "${branch}"
+          git switch --detach "${main_sha}"
+          printf 'REGISTRATION_BRANCH=%s\nREGISTRATION_MAIN_SHA=%s\nREGISTRATION_OPERATION_ROOT=%s/current-capital-topology-registration/%s\n' "${branch}" "${main_sha}" "${RUNNER_TEMP}" "${GITHUB_RUN_ID}" >> "${GITHUB_ENV}"
+      - name: Publish and register once
+        env:
+          EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
+        run: |
+          set -euo pipefail
+          mkdir -m 700 -p "${REGISTRATION_OPERATION_ROOT}"
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          [[ "$(git rev-parse HEAD)" == "${REGISTRATION_MAIN_SHA}" && "$(git rev-parse origin/main)" == "${REGISTRATION_MAIN_SHA}" ]] || { echo "main changed after claim" >&2; exit 1; }
+          node tools/datapack/run-current-capital-route-topology-registration.mjs --repository-root "${GITHUB_WORKSPACE}" --operation-root "${REGISTRATION_OPERATION_ROOT}" --expected-main-sha "${REGISTRATION_MAIN_SHA}"
+      - name: Commit exactly four registration outputs and open draft PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git switch "${REGISTRATION_BRANCH}"
+          expected=(tools/datapack/source-inventory.json tools/datapack/release/source-snapshots.json tools/datapack/source-governance-policy.json release/product-gates/datapack-freshness-sla.json)
+          mapfile -t changed < <(git status --porcelain=v1 | sed -E 's/^.. //')
+          [[ "${#changed[@]}" == "4" ]] || { echo "registration changed an invalid path count" >&2; exit 1; }
+          for file in "${expected[@]}"; do printf '%s\n' "${changed[@]}" | grep -Fqx "${file}" || { echo "registration output is missing" >&2; exit 1; }; done
+          git add "${expected[@]}"
+          git commit -m "Register current capital topology"
+          git push origin "${REGISTRATION_BRANCH}"
+          gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${REGISTRATION_BRANCH}" --title "Register current capital topology" --body "Register the protected current capital topology receipt.\n\nRefs #456"
