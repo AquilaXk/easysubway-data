@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "capital-topology-reverification-evidence",
+  "sourceIssue": 60,
+  "admissionIssue": 2649,
+  "baseline": {
+    "snapshotId": "capital-route-topology-20260724",
+    "contentSha256": "95808e98b9dc141ddf34cfbfcb01c4c92a000db8ab1c11d9912d68b3f6ee0e67",
+    "normalizedLineSetSha256": "c7e9950524d88cfb1bc8140771d510a9ad9f866e5e364165b313d5c5f0a96adb"
+  },
+  "candidate": {
+    "capturedAt": "2026-09-04T17:29:18.428Z",
+    "freshUntil": "2026-09-05T17:29:18.428Z",
+    "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+    "normalizedLineSetSha256": "c7e9950524d88cfb1bc8140771d510a9ad9f866e5e364165b313d5c5f0a96adb",
+    "lineCount": 22,
+    "totalEdgeCount": 1438,
+    "lines": [
+      {
+        "lineId": "line-051552e50435",
+        "datasetId": "15081858",
+        "rawSha256": "e78e157098dcf1ce968719ebfb6dc23634b8950aef948cb927dc72675ad50f6e",
+        "contentSha256": "ec33a5ddf1857e93a9aa46bc8fb059eb140f4a6349b185468b46f15ba4a4c41c"
+      },
+      {
+        "lineId": "line-15b3b8a93259",
+        "datasetId": "15041340",
+        "rawSha256": "46d912527bbbf7c2ec7c155047962cf868b25657de0a7ab0135ead1823375928",
+        "contentSha256": "42a145ddb94e929ddae70bbed352de667de5d26050561378b0bcaec747171f82"
+      },
+      {
+        "lineId": "line-2b2d9eaa53d0",
+        "datasetId": "15041299",
+        "rawSha256": "638ad79cb547ff29a556f56da856d03420bd060443a69780e1db9ccf3e9cd964",
+        "contentSha256": "3ef1c5c8c8e181d647317dda02b8fe6ddf762f229269712dbce65298fcc9f78b"
+      },
+      {
+        "lineId": "line-30886152e4f8",
+        "datasetId": "15081853",
+        "rawSha256": "491f4a6a9bccac82c760c55d5fa0239d0b4213f2368441fa03d1a65f219e954b",
+        "contentSha256": "654609d2703e70bfd37c2679dd759a6da0935e52ed59bc2930677392414dafbe"
+      },
+      {
+        "lineId": "line-3f41718e0833",
+        "datasetId": "15041297",
+        "rawSha256": "1a1de64fefb82255620b970abf7f94ff32fbca0daefac9d80c2bc4b1e9afc992",
+        "contentSha256": "b092e4f68b2b5f57b8c0f4867700eafaef2514059e9be3bb247f6c0c15b25e10"
+      },
+      {
+        "lineId": "line-41a8c75ec9d8",
+        "datasetId": "15041423",
+        "rawSha256": "da7ad50e282d5f916778b7473527be47980c680fe05a6f8bcd8a08cb0c1f43ed",
+        "contentSha256": "3b0311a753e149b6f32ecad44b07fb8d27fc6b6e8bbc425aa8291eea1355dd53"
+      },
+      {
+        "lineId": "line-472a81add377",
+        "datasetId": "15041460",
+        "rawSha256": "683388f3004c8880e9b701f10cebe3ff9037651d848277ed1995265e9aa84d96",
+        "contentSha256": "2626a1897dbcee186aa56fe6eaa043dc7007774d8c528df169d5a436c646a525"
+      },
+      {
+        "lineId": "line-54a7b980b7c3",
+        "datasetId": "15041295",
+        "rawSha256": "e0c9fd034f9d563f930e836f6f623bacd11fcaec4d0a64e5f12796dbae601d91",
+        "contentSha256": "26e3de85b9e8773e631c422dc81049224391c62d6916710bb31f2ca569d20a61"
+      },
+      {
+        "lineId": "line-5500c1600f71",
+        "datasetId": "15122916",
+        "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
+        "contentSha256": "186525a0b4e40ac1602ff34d102a3fa5344e0484108142620abf677aec65fa46"
+      },
+      {
+        "lineId": "line-558d0bd8312d",
+        "datasetId": "15041284",
+        "rawSha256": "a2a6024a8c77ec564331ed05c689f7096aab2b25d6013cf500e85b378d92eed0",
+        "contentSha256": "a4b9ccb614e580516d1a1506e58d13d85f47876fd6de7d36d45fe884c963b6d1"
+      },
+      {
+        "lineId": "line-62096860ab09",
+        "datasetId": "15081852",
+        "rawSha256": "935aab052112c10080e72f7b8432ab4f85f9d6a344fe1cc2b9878cd457cbac38",
+        "contentSha256": "14dd5e3d51db2f92aff75ec997be944f98d74f6365dc1e6442f13c9a725ee734"
+      },
+      {
+        "lineId": "line-6e39be0cb6e2",
+        "datasetId": "15041327",
+        "rawSha256": "5113b9a6db269042467f969f946287510d3ffc5f3d60d328018390cf10475a8f",
+        "contentSha256": "4bb964fa6ee15e456af7acc258bafa3e50ccc206bc01037b20ee54fa1ed594a2"
+      },
+      {
+        "lineId": "line-80fc4d5350d4",
+        "datasetId": "15041348",
+        "rawSha256": "3226eccd77a7988a428fede1a01cc1e237147431115ee28a3a73affeb13a7805",
+        "contentSha256": "aab1d0245a3dad3e2656802a65787e2c28eb4da09f0c8e56c9d8e6f1a543f204"
+      },
+      {
+        "lineId": "line-828f04afc588",
+        "datasetId": "15081850",
+        "rawSha256": "71567fc3c5becdc5bb2d4a33e1825e83a0d8cdc73fb4a973563b57e7fa91de56",
+        "contentSha256": "ca37ccc7791e19fc637d7c99c7a66b866304643e07944c9b4d375780899d9588"
+      },
+      {
+        "lineId": "line-8604048b6430",
+        "datasetId": "15138908",
+        "rawSha256": "6a50832e59f4edb9ac3ebbd640d3d0b6099c6e4843504264a1e74bc41e9ece1e",
+        "contentSha256": "0cf3bd7f331b85b52218e61c4410302c4503fa395c0b36ae142e9409c117704f"
+      },
+      {
+        "lineId": "line-aefa08ccc0a9",
+        "datasetId": "15122916",
+        "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
+        "contentSha256": "cc5fd2452131c6a1dac5c7ba51e7506e1f4c9f2e5d9f8d5fdfe1333b2a7ad466"
+      },
+      {
+        "lineId": "line-e4939a4b4713",
+        "datasetId": "15041296",
+        "rawSha256": "5bc99145c2e69e6350b9315192d9bb81a5b1253b0d903f8e3c003ac2edbaae0c",
+        "contentSha256": "a8b388badaf8048e562586a2691dbb888a9eb7f9ac8c8f9c4b962be35772465f"
+      },
+      {
+        "lineId": "line-e9e9a5b520a4",
+        "datasetId": "15041310",
+        "rawSha256": "96bc2ead59f798a9ec9df0494c6ebd0b3847b7b622e2d5fb2d4b37bc6a6c649a",
+        "contentSha256": "46973cf7aa0c0936f7be7cdb38cf0ae7d3d8e8137cc7591f37bfd248ed68b7cf"
+      },
+      {
+        "lineId": "line-f0e747248a31",
+        "datasetId": "15041298",
+        "rawSha256": "64faed606c011f08f675e0c8b6b07993f74a2a89df110898a2622c3f8e25538d",
+        "contentSha256": "ba1ddab160bf00ad95c687890379fec025e3c4e0794eb306cb14e8c88a0c58de"
+      },
+      {
+        "lineId": "seoul-2",
+        "datasetId": "15041425",
+        "rawSha256": "75fa3d860f0bec47cf77d65f764fb4ff1dd5c037a2c5b2bf1c6386bfa42e5dab",
+        "contentSha256": "5f991b706e5a05225ee7c4b2f9d9065c255e179d804bacd95cea7fbe9653e1f1"
+      },
+      {
+        "lineId": "seoul-4",
+        "datasetId": "15041350",
+        "rawSha256": "e03dbf3827a1ff99f1aa2ffa907562ad6fc9b6908450c6c401f697fb86bf3ef9",
+        "contentSha256": "145a7dc3a386a0fec6be5738ee5bd324cefc3af2ea4019623142cb22bf047ec9"
+      },
+      {
+        "lineId": "shinbundang",
+        "datasetId": "15041074",
+        "rawSha256": "2a2b4a161fbb7ff85097417404012abbffd6773fc9f0741c81d6838b6a601048",
+        "contentSha256": "0c4c82231d986ccedbe79f6aea660dd9d7a158018287533651dbe940feef3eb1"
+      }
+    ]
+  },
+  "comparison": {
+    "changedLineCount": 0,
+    "addedEdgeCount": 0,
+    "removedEdgeCount": 0,
+    "modifiedEdgeCount": 0
+  }
+}
