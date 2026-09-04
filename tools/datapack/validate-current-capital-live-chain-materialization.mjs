@@ -4,7 +4,7 @@ import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH, canonicalCurrentCapitalLiveChainFanInBoundaryJson, deriveCurrentLiveChainTransferDescriptorIdentity, validateCurrentCapitalLiveChainFanInBoundary } from "./build-current-capital-live-chain-boundary.mjs";
-import { canonicalCurrentExitAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
+import { canonicalCurrentExitReboundAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
 import { canonicalExitPathAdmissionJson } from "./build-exit-path-admission.mjs";
 import { canonicalRouteEdgeEvaluationJson, evaluateRouteAccessibilityEdges } from "./evaluate-route-accessibility-edges.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
@@ -93,14 +93,13 @@ function validateRouteEdgeEvaluationEntries(byPath, { repository, repositorySha,
   const admission = entryJson(byPath, "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json");
   const receipt = entryJson(byPath, CURRENT_CAPITAL_LIVE_CHAIN_PROVIDER_RECEIPT_PATH);
   if (admissionBytes.toString("utf8") !== canonicalExitPathAdmissionJson(admission)
-    || receiptBytes.toString("utf8") !== `${canonicalCurrentExitAdmissionOciReceiptJson(receipt)}\n`) {
+    || receiptBytes.toString("utf8") !== `${canonicalCurrentExitReboundAdmissionOciReceiptJson(receipt)}\n`) {
     throw new Error("live-chain EXIT bytes are not canonical");
   }
-  const receiptHeadSha = receipt.schemaVersion === 1 ? receipt.mainSha : receipt.candidateHeadSha;
-  const receiptOperationId = receipt.schemaVersion === 1 ? receipt.operationId : receipt.candidateOperationId;
   if (admission.decision !== "GO" || receipt.admissionSha256 !== sha256(admissionBytes)
     || receipt.admissionDigest !== admission.admissionDigest
-    || receipt.repository !== repository || receiptHeadSha !== repositorySha || receiptOperationId !== operationId) {
+    || receipt.repository !== repository || receipt.candidateHeadSha !== repositorySha
+    || receipt.candidateOperationId !== operationId) {
     throw new Error("live-chain EXIT identity mismatch");
   }
   const currentCandidates = [routeEdgeInput.candidate, stationLineInput.candidate];

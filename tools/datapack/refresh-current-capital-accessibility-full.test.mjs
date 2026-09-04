@@ -13,7 +13,8 @@ import {
   refreshCurrentCapitalAccessibilityFull,
 } from "./refresh-current-capital-accessibility-full.mjs";
 import { buildAuthenticatedCurrentCapitalFacilityEvidenceRows } from "./build-current-capital-station-line-input.mjs";
-import { buildCurrentExitAdmissionOciReceipt, canonicalCurrentExitAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
+import { canonicalCurrentExitReboundAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
+import { buildFixtureCurrentExitV2Receipt } from "./test-fixtures/current-exit-v2-receipt.mjs";
 import { currentLiveChainTransferOutputPaths } from "./rebind-current-live-chain-transfer-derived-identities.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 import { activateSyntheticCurrentStaticNetworkSuccessors, nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
@@ -348,7 +349,7 @@ test("pending marker producer boundary distinguishes base prestates from effecti
   assert.equal(route.candidate.sourceSetSha256, baseMarker.previousCandidate.sourceSnapshotSetHash);
   assert.equal(
     receiptBytes.toString("utf8"),
-    `${canonicalCurrentExitAdmissionOciReceiptJson(receipt)}\n`,
+    `${canonicalCurrentExitReboundAdmissionOciReceiptJson(receipt)}\n`,
   );
   assertPendingMarkerProducerBoundary({ baseMarker, effectiveMarker, candidate, facility, exit, station, route });
 });
@@ -584,25 +585,21 @@ async function writeStagedExitOciReceipt(root) {
   const normalizedPath = "tools/datapack/release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json";
   const admissionPath = "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json";
   const receiptPath = "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json";
-  const [normalizedBytes, admissionBytes] = await Promise.all([
+  const [normalizedBytes, admissionBytes, candidateBytes] = await Promise.all([
     readFile(path.join(root, normalizedPath)),
     readFile(path.join(root, admissionPath)),
+    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json")),
   ]);
-  const providerCollectionBundleBytes = Buffer.from("synthetic-current-exit-provider");
-  const providerObjectSha256 = sha(providerCollectionBundleBytes);
-  const receipt = buildCurrentExitAdmissionOciReceipt({
-    repository: "AquilaXk/easysubway-data",
-    mainSha: "a".repeat(40),
-    operationId: "synthetic-current-refresh",
-    providerCapturedAt: "2026-08-01T00:00:00.000Z",
+  const admission = JSON.parse(admissionBytes);
+  const providerCollectionBundleBytes = Buffer.from(canonical({ sourceIdentity: admission.sourceIdentity }));
+  const receipt = buildFixtureCurrentExitV2Receipt({
+    candidateBytes,
+    providerCapturedAt: admission.sourceIdentity.capturedAt,
     providerCollectionBundleBytes,
-    providerObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/operations/current-capital-live-chain/v1/heads/${"a".repeat(40)}/operations/synthetic-current-refresh/provider-collections/20260801-${providerObjectSha256}.json`,
-    providerObjectSha256,
-    providerObjectByteSize: providerCollectionBundleBytes.length,
     normalizedBytes,
     admissionBytes,
   });
-  await writeFile(path.join(root, receiptPath), canonicalCurrentExitAdmissionOciReceiptJson(receipt));
+  await writeFile(path.join(root, receiptPath), canonicalCurrentExitReboundAdmissionOciReceiptJson(receipt));
 }
 
 // Staged repository 전용 bootstrap이다. inventory가 선언한 현재 Incheon producer

@@ -106,6 +106,11 @@ export function buildCurrentKricExitCollectionBundle({ collectionPlanBytes, prov
 }
 
 export function canonicalCurrentKricExitCollectionBundleJson(bundle) {
+  validateCurrentKricExitCollectionBundle(bundle);
+  return canonicalJson(bundle);
+}
+
+function validateCurrentKricExitCollectionBundle(bundle) {
   assertKeys(bundle, ["schemaVersion", "artifactKind", "collectionPlanJson", "providerSnapshotJson", "collectionReceiptJson", "bundleSha256"], "collection bundle keys");
   const { bundleSha256, ...payload } = bundle;
   if (bundle.schemaVersion !== 1 || bundle.artifactKind !== "kric-exit-path-collection-bundle" || [bundle.collectionPlanJson, bundle.providerSnapshotJson, bundle.collectionReceiptJson].some((value) => typeof value !== "string" || value === "")) throw new Error("collection bundle identity mismatch");
@@ -119,7 +124,15 @@ export function canonicalCurrentKricExitCollectionBundleJson(bundle) {
   const receipt = parseJson(receiptBytes, "collection receipt");
   if (!receiptBytes.equals(Buffer.from(canonicalCurrentKricExitCollectionReceiptJson(receipt)))) throw new Error("collection receipt must be canonical JSON");
   assertReceiptBinds({ plan, snapshot, receipt });
-  return canonicalJson(bundle);
+  return { bundle, plan, snapshot, receipt };
+}
+
+export function readCanonicalCurrentKricExitCollectionBundle(input) {
+  const bundleBytes = bytes(input, "collection bundle");
+  const bundle = parseJson(bundleBytes, "collection bundle");
+  const validated = validateCurrentKricExitCollectionBundle(bundle);
+  if (!bundleBytes.equals(Buffer.from(canonicalJson(bundle)))) throw new Error("collection bundle must be canonical JSON");
+  return validated;
 }
 
 function assertReceiptBinds({ plan, snapshot, receipt }) {
