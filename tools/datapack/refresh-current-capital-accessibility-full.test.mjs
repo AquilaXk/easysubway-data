@@ -354,6 +354,50 @@ test("pending marker producer boundary distinguishes base prestates from effecti
   assertPendingMarkerProducerBoundary({ baseMarker, effectiveMarker, candidate, facility, exit, station, route });
 });
 
+test("terminal marker state selects exact producer prestate", async () => {
+  const previous = { candidateId: "previous", sourceSnapshotSetHash: "previous-hash" };
+  const next = { candidateId: "next", sourceSnapshotSetHash: "next-hash" };
+  const current = { ...next, sourceSnapshotSetHash: "current-hash" };
+  const effectivePrevious = { candidateId: "effective-previous", sourceSnapshotSetHash: "effective-previous-hash" };
+  const baseMarker = { previousCandidate: previous, nextCandidate: next };
+  const effectiveMarker = { previousCandidate: effectivePrevious, nextCandidate: current };
+  const boundary = {
+    baseMarker,
+    effectiveMarker,
+    candidate: current,
+    facility: { candidate: current },
+    exit: { candidate: { candidateId: next.candidateId, sourceSetSha256: effectivePrevious.sourceSnapshotSetHash } },
+    station: { candidate: { candidateId: next.candidateId, sourceSetSha256: next.sourceSnapshotSetHash } },
+    route: { candidate: { candidateId: next.candidateId, sourceSetSha256: next.sourceSnapshotSetHash } },
+  };
+
+  assert.doesNotThrow(() => assertPendingMarkerProducerBoundary({ ...boundary, markerState: "DERIVED_ABSENT" }));
+  assert.throws(() => assertPendingMarkerProducerBoundary({
+    ...boundary,
+    markerState: "DERIVED_ABSENT",
+    station: { candidate: { candidateId: previous.candidateId, sourceSetSha256: next.sourceSnapshotSetHash } },
+  }), /pending marker producer boundary mismatch/);
+  assert.throws(() => assertPendingMarkerProducerBoundary({
+    ...boundary,
+    markerState: "DERIVED_ABSENT",
+    route: { candidate: { candidateId: next.candidateId, sourceSetSha256: previous.sourceSnapshotSetHash } },
+  }), /pending marker producer boundary mismatch/);
+  assert.throws(() => assertPendingMarkerProducerBoundary({ markerState: "UNKNOWN" }), /terminal marker state mismatch/);
+  await assert.rejects(buildCurrentCapitalAccessibilityRefreshOutputs({ markerState: "UNKNOWN" }), /terminal marker state mismatch/);
+  await assert.rejects(refreshCurrentCapitalAccessibilityFull({ markerState: "UNKNOWN" }), /terminal marker state mismatch/);
+  assert.doesNotThrow(() => assertPendingMarkerProducerBoundary({
+    ...boundary,
+    station: { candidate: { candidateId: previous.candidateId, sourceSetSha256: previous.sourceSnapshotSetHash } },
+    route: { candidate: { candidateId: previous.candidateId, sourceSetSha256: previous.sourceSnapshotSetHash } },
+  }));
+  assert.doesNotThrow(() => assertPendingMarkerProducerBoundary({
+    ...boundary,
+    markerState: "PRESENT",
+    station: { candidate: { candidateId: previous.candidateId, sourceSetSha256: previous.sourceSnapshotSetHash } },
+    route: { candidate: { candidateId: previous.candidateId, sourceSetSha256: previous.sourceSnapshotSetHash } },
+  }));
+});
+
 test("pre-approval projection consumes the validated pending v2 marker without mutating tracked bytes", async (t) => {
   const root = await actualPendingMarkerRepository(t);
   const candidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json")));
