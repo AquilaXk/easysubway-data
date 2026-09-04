@@ -800,6 +800,20 @@ async function readStagedRegularFile(stagedRoot, relativePath, label) {
   return { path: current, bytes: await readFile(current) };
 }
 
+async function stageAccessibilitySourceOutputs({ handoff, sourceRoot, stagedRoot }) {
+  for (const { relativePath, operation } of handoff.outputs) {
+    requiredRelativePath(relativePath, "accessibility source output");
+    const source = await readStagedRegularFile(
+      path.resolve(sourceRoot),
+      relativePath,
+      "prepared accessibility source output",
+    );
+    const destination = path.join(stagedRoot, relativePath);
+    await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
+    await writeFile(destination, source.bytes, { flag: operation === "create" ? "wx" : "w", mode: 0o600 });
+  }
+}
+
 async function verifyPreparedTopologyStage(stagedRoot, proof) {
   if (!proof || proof.schemaVersion !== 2
     || !Array.isArray(proof.topologyInputs) || !Array.isArray(proof.topologyOutputs)) {
@@ -1292,13 +1306,11 @@ export async function runCurrentCapitalExitTerminalConsumer({
       await writeFile(destination, bytes, { flag: "wx", mode: 0o600 });
     }
   }
-  for (const { relativePath, operation } of accessibilitySourceHandoff.outputs) {
-    requiredRelativePath(relativePath, "terminal accessibility source output");
-    const bytes = await readStagedRegularFile(path.resolve(privateBuilderRoot), relativePath, "prepared accessibility source output");
-    const destination = path.join(stagedRoot, relativePath);
-    await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
-    await writeFile(destination, bytes.bytes, { flag: operation === "create" ? "wx" : "w", mode: 0o600 });
-  }
+  await stageAccessibilitySourceOutputs({
+    handoff: accessibilitySourceHandoff,
+    sourceRoot: privateBuilderRoot,
+    stagedRoot,
+  });
   for (const { relativePath, bytes } of preparedTerminal.topologyInputs) {
     requiredRelativePath(relativePath, "terminal topology input");
     if (!Buffer.isBuffer(bytes)) throw new Error("terminal topology input bytes mismatch");
@@ -1640,6 +1652,11 @@ export async function runCurrentCapitalExitOnlyProducer({
     await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
     await cp(source, destination, { recursive: true, force: false, verbatimSymlinks: true, filter: (entry) => stagedCopyAllowed(retained, entry) });
   }
+  await stageAccessibilitySourceOutputs({
+    handoff: accessibilitySourceHandoff,
+    sourceRoot: privateBuilderRoot,
+    stagedRoot,
+  });
   for (const { relativePath, bytes } of preparedTerminal.topologyInputs) {
     const destination = path.join(stagedRoot, requiredRelativePath(relativePath, "producer topology input"));
     await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });

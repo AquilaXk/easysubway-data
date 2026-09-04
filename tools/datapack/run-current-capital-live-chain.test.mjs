@@ -910,7 +910,13 @@ test("EXIT-only producer refuses provider access without a validated same-reposi
   }), /validated same-repository FACILITY pull request is required/);
 });
 
-async function rejectExitOnlyProducerAtPreflight({ topologyFailure, facilityFailure }) {
+async function rejectExitOnlyProducerAtPreflight({
+  topologyFailure,
+  facilityFailure,
+  privateBuilderRoot = ROOT,
+  accessibilitySourceHandoff = { outputs: [] },
+  inspectFacility,
+}) {
   const temporary = await mkdtemp(path.join(os.tmpdir(), "current-exit-producer-facility-paths-"));
   const runnerTemp = path.join(temporary, "runner");
   const handoffParent = path.join(temporary, "handoff-parent");
@@ -934,7 +940,7 @@ async function rejectExitOnlyProducerAtPreflight({ topologyFailure, facilityFail
     await assert.rejects(runCurrentCapitalExitOnlyProducer({
       repositoryRoot: ROOT,
       retainedRoot: ROOT,
-      privateBuilderRoot: ROOT,
+      privateBuilderRoot,
       builderGitSha: "b".repeat(40),
       topologyBuild: {
         buildNow: "2099-01-01T00:00:00.000Z",
@@ -956,6 +962,7 @@ async function rejectExitOnlyProducerAtPreflight({ topologyFailure, facilityFail
         branch: "automation/629-kric-facility-refresh-123",
         headSha: "b".repeat(40),
       },
+      accessibilitySourceHandoff,
       env: {
         PATH: process.env.PATH,
         KRIC_SERVICE_KEY: "test-key",
@@ -971,7 +978,7 @@ async function rejectExitOnlyProducerAtPreflight({ topologyFailure, facilityFail
         ].map((name) => ({ relativePath: `tools/datapack/sources/${name}`, bytes: Buffer.from(`fixture:${name}`) })),
         topologyOutputs: [{
           relativePath: "tools/datapack/source-inventory.json",
-          bytes: await readFile(path.join(ROOT, "tools/datapack/source-inventory.json")),
+          bytes: await readFile(path.join(privateBuilderRoot, "tools/datapack/source-inventory.json")),
         }],
       }),
       buildTopologyHandoffImpl: async () => ({ schemaVersion: 1, artifactKind: "test-topology-handoff" }),
@@ -1004,8 +1011,9 @@ async function rejectExitOnlyProducerAtPreflight({ topologyFailure, facilityFail
         topologyPreflightReached = true;
         if (topologyFailure) throw new Error(topologyFailure);
       },
-      assertCurrentFacilityAdmissionImpl: async () => {
+      assertCurrentFacilityAdmissionImpl: async ({ stagedRoot }) => {
         facilityPreflightReached = true;
+        if (inspectFacility) await inspectFacility(stagedRoot);
         if (facilityFailure) throw new Error(facilityFailure);
       },
       publishImpl: async () => { publicationCalls += 1; throw new Error("OCI publication must not start"); },
@@ -1038,6 +1046,39 @@ test("EXIT-only producer validates FACILITY after topology and before provider o
     providerCalls: 0,
     publicationCalls: 0,
   });
+});
+
+test("EXIT-only producer applies authenticated accessibility outputs before preflight", async () => {
+  const temporary = await mkdtemp(path.join(os.tmpdir(), "current-exit-producer-accessibility-overlay-"));
+  const privateBuilderRoot = path.join(temporary, "private-builder");
+  const inventoryPath = "tools/datapack/source-inventory.json";
+  try {
+    const inventory = JSON.parse(await readFile(path.join(ROOT, inventoryPath), "utf8"));
+    inventory.testPreparedAccessibilityIdentity = "refreshed-seoul";
+    await mkdir(path.join(privateBuilderRoot, "tools/datapack"), { recursive: true });
+    await writeFile(path.join(privateBuilderRoot, inventoryPath), `${JSON.stringify(inventory)}\n`);
+    const result = await rejectExitOnlyProducerAtPreflight({
+      facilityFailure: "producer facility preflight reached",
+      privateBuilderRoot,
+      accessibilitySourceHandoff: {
+        outputs: [{ relativePath: inventoryPath, operation: "replace" }],
+      },
+      inspectFacility: async (stagedRoot) => {
+        const stagedInventory = JSON.parse(await readFile(path.join(stagedRoot, inventoryPath), "utf8"));
+        assert.equal(stagedInventory.testPreparedAccessibilityIdentity, "refreshed-seoul");
+      },
+    });
+    assert.deepEqual(result, {
+      reachedPlanning: true,
+      stagedCandidateEvidenceVerified: true,
+      topologyPreflightReached: true,
+      facilityPreflightReached: true,
+      providerCalls: 0,
+      publicationCalls: 0,
+    });
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
 });
 
 function terminalGitPreflight(command, args) {
