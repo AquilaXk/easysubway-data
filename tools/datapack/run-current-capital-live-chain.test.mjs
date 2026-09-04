@@ -726,6 +726,16 @@ test("terminal lineage replays the retained FACILITY producer and rejects builde
   assert.equal(verified.proof.sourceMainGitSha, sourceMainGitSha);
   assert.equal(verified.proof.facilityHeadGitSha, facilityHeadGitSha);
   assert.equal(verified.proof.builderGitSha, builderGitSha);
+  const sourceFacilityBytes = await readFile(path.join(
+    sourceMainRoot,
+    "tools/datapack/release/current-capital-facility-source-admission.json",
+  ));
+  const retainedFacilityBytes = await readFile(path.join(
+    retainedRoot,
+    "tools/datapack/release/current-capital-facility-source-admission.json",
+  ));
+  assert.deepEqual(verified.successorFacilityBytes, sourceFacilityBytes);
+  assert.notDeepEqual(verified.successorFacilityBytes, retainedFacilityBytes);
   assert.equal(verified.topologyInputs.length, 4);
   assert.ok(verified.topologyOutputs.length > 0);
   const retainedCandidate = JSON.parse(await readFile(
@@ -780,6 +790,13 @@ test("DERIVED_ABSENT terminal lineage derives staging-only canonical markers fro
   assert.equal(Object.hasOwn(derived.proof, "markerState"), false);
   assert.ok(Buffer.isBuffer(derived.marker.bytes));
   assert.ok(Buffer.isBuffer(derived.successor.bytes));
+  assert.deepEqual(
+    derived.successorFacilityBytes,
+    await readFile(path.join(
+      retainedRoot,
+      "tools/datapack/release/current-capital-facility-source-admission.json",
+    )),
+  );
   assert.notEqual(sha(derived.marker.bytes), sha(derived.successor.bytes));
   await Promise.all([
     assert.rejects(stat(path.join(sourceMainRoot, "tools/datapack/release/current-capital-accessibility-transition.json")), { code: "ENOENT" }),
@@ -1319,7 +1336,8 @@ test("terminal consumer orders P/T/F and CAS before one OCI recovery and semanti
       incheonLine2TimetablePath: "tools/datapack/sources/incheon-line2-train-timetable-20260901.json", incheonTopologyPath: "tools/datapack/sources/incheon-transit-station-info-20260901.json",
       itxCurrentAdmissionPath: "tools/datapack/release/current-itx-admission.json", itxTopologyEvidencePath: "tools/datapack/itx-topology-evidence.json",
     }, topologyHandoffBytes: Buffer.from("{}\n"), accessibilitySourceHandoffBytes: Buffer.from("{}\n"), verifyTerminalLineageImpl: async () => ({
-      markerState: "PRESENT", proof: await terminalConsumerProof(repositoryRoot), topologyInputs: [], topologyOutputs: [],
+      markerState: "PRESENT", proof: await terminalConsumerProof(repositoryRoot),
+      successorFacilityBytes: retainedFacilityBytes, topologyInputs: [], topologyOutputs: [],
     }),
     verifyTopologyHandoffImpl: () => ({
       operationId: "current-capital-560",
@@ -1424,6 +1442,10 @@ test("terminal consumer stops before OCI recovery when route-map rebind fails", 
     execFileImpl: terminalGitPreflight,
     verifyTerminalLineageImpl: async () => ({
       markerState: "PRESENT", proof: await terminalConsumerProof(repositoryRoot),
+      successorFacilityBytes: await readFile(path.join(
+        repositoryRoot,
+        "tools/datapack/release/current-capital-facility-source-admission.json",
+      )),
       topologyInputs: [],
       topologyOutputs: [],
     }),
@@ -1464,7 +1486,16 @@ test("terminal consumer rejects accessibility identity outside the topology v2 p
     transferReceiptPath: "/retained/transfer/receipt.json",
     isAncestor: async () => true,
     execFileImpl: async (command, args) => command === "git" ? terminalGitPreflight(command, args) : null,
-    verifyTerminalLineageImpl: async () => ({ markerState: "PRESENT", proof: {}, topologyInputs: [], topologyOutputs: [] }),
+    verifyTerminalLineageImpl: async () => ({
+      markerState: "PRESENT",
+      proof: {},
+      successorFacilityBytes: await readFile(path.join(
+        repositoryRoot,
+        "tools/datapack/release/current-capital-facility-source-admission.json",
+      )),
+      topologyInputs: [],
+      topologyOutputs: [],
+    }),
     verifyTopologyHandoffImpl: () => ({
       operationId: accessibilitySourceHandoff.operationId,
       accessibilitySourceHandoff: {
@@ -1502,6 +1533,10 @@ test("terminal consumer verifies generated topology bytes before the first rebin
       }];
       return {
         markerState: "PRESENT", proof, topologyInputs: [],
+        successorFacilityBytes: await readFile(path.join(
+          repositoryRoot,
+          "tools/datapack/release/current-capital-facility-source-admission.json",
+        )),
         topologyOutputs: [{ relativePath: topologyOutputPath, bytes: Buffer.from("tampered generated topology") }],
       };
     },
@@ -1541,7 +1576,12 @@ test("terminal consumer rejects an inconsistent real OCI source before refresh o
       incheonLine2TimetablePath: "tools/datapack/sources/incheon-line2-train-timetable-20260901.json", incheonTopologyPath: "tools/datapack/sources/incheon-transit-station-info-20260901.json",
       itxCurrentAdmissionPath: "tools/datapack/release/current-itx-admission.json", itxTopologyEvidencePath: "tools/datapack/itx-topology-evidence.json",
     }, topologyHandoffBytes: Buffer.from("{}\n"), accessibilitySourceHandoffBytes: Buffer.from("{}\n"), verifyTerminalLineageImpl: async () => ({
-      markerState: "PRESENT", proof: await terminalConsumerProof(repositoryRoot), topologyInputs: [], topologyOutputs: [],
+      markerState: "PRESENT", proof: await terminalConsumerProof(repositoryRoot),
+      successorFacilityBytes: await readFile(path.join(
+        repositoryRoot,
+        "tools/datapack/release/current-capital-facility-source-admission.json",
+      )),
+      topologyInputs: [], topologyOutputs: [],
     }),
     verifyTopologyHandoffImpl: () => ({
       operationId: "current-capital-560",
