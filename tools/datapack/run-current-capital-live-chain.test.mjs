@@ -161,7 +161,6 @@ async function terminalConsumerProof(repositoryRoot = ROOT) {
     schemaVersion: 2,
     artifactKind: "current-capital-terminal-lineage",
     sourceMainGitSha: "a".repeat(40), facilityHeadGitSha: "b".repeat(40), builderGitSha: "c".repeat(40),
-    markerState: "PRESENT",
     transition: {
       baseSha256: "d".repeat(64), successorSha256: "e".repeat(64),
       sourceMainCandidateSha256: "f".repeat(64), sourceMainFacilitySha256: "0".repeat(64),
@@ -491,7 +490,6 @@ test("terminal manifest accepts only a verifier-shaped proof and rejects caller 
     sourceMainGitSha: "a".repeat(40),
     facilityHeadGitSha: "b".repeat(40),
     builderGitSha: "c".repeat(40),
-    markerState: "PRESENT",
     transition: {
       baseSha256: sha(markerBytes[0]), successorSha256: sha(markerBytes[1]),
       sourceMainCandidateSha256: sha(Buffer.from(JSON.stringify(candidate))),
@@ -585,7 +583,6 @@ async function terminalCommitFixture(repositoryRoot) {
   const proof = {
     schemaVersion: 2, artifactKind: "current-capital-terminal-lineage",
     sourceMainGitSha: "a".repeat(40), facilityHeadGitSha: "b".repeat(40), builderGitSha: "c".repeat(40),
-    markerState: "PRESENT",
     transition: {
       baseSha256: sha(marker), successorSha256: sha(successor),
       sourceMainCandidateSha256: sha(candidate), sourceMainFacilitySha256: "d".repeat(64),
@@ -633,7 +630,6 @@ async function derivedAbsentTerminalCommitFixture(t, prefix) {
   await cloneCleanFixture(fixtureSource, root);
   const fixture = await terminalCommitFixture(root);
   fixture.manifest.markerState = "DERIVED_ABSENT";
-  fixture.manifest.proof.markerState = "DERIVED_ABSENT";
   await Promise.all(fixture.manifest.markerPaths.map((relative) => rm(path.join(root, relative))));
   return { root, fixture };
 }
@@ -780,7 +776,8 @@ test("DERIVED_ABSENT terminal lineage derives staging-only canonical markers fro
     builderGitSha,
     topologyBuild,
   });
-  assert.equal(derived.proof.markerState, "DERIVED_ABSENT");
+  assert.equal(derived.markerState, "DERIVED_ABSENT");
+  assert.equal(Object.hasOwn(derived.proof, "markerState"), false);
   assert.ok(Buffer.isBuffer(derived.marker.bytes));
   assert.ok(Buffer.isBuffer(derived.successor.bytes));
   assert.notEqual(sha(derived.marker.bytes), sha(derived.successor.bytes));

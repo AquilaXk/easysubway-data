@@ -509,7 +509,6 @@ export async function verifyCurrentCapitalTerminalLineage({
     sourceMainGitSha,
     facilityHeadGitSha,
     builderGitSha,
-    markerState,
     transition: Object.freeze({
       baseSha256: sha256(transitionBytes), successorSha256: sha256(successorBytes),
       sourceMainCandidateSha256: sha256(source.candidate.bytes), sourceMainFacilitySha256: sha256(source.facility.bytes),
@@ -751,7 +750,7 @@ export async function rebuildCurrentCapitalTopologyTerminalHandoffForAncestorRec
     readTerminalMarkerState(path.resolve(currentRetainedRoot), "ancestor recovery current"),
   ]);
   if (ancestorMarkers.markerState !== currentMarkers.markerState
-    || ancestorMarkers.markerState !== originalPrepared.proof.markerState
+    || ancestorMarkers.markerState !== originalPrepared.markerState
     || (ancestorMarkers.markerState === "PRESENT"
       && (!ancestorMarkers.marker.bytes.equals(currentMarkers.marker.bytes)
         || !ancestorMarkers.successor.bytes.equals(currentMarkers.successor.bytes)))) {

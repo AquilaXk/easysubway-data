@@ -121,11 +121,10 @@ function terminalMaterializationReceipt(receipt, liveChainOutputs, fanInPath) {
   return new Map([...entries, { relative: receipt.fanIn.path, digest: receipt.fanIn.sha256 }].map(({ relative, digest }) => [relative, digest]));
 }
 function terminalVerifierProof(proof) {
-  const keys = ["artifactKind", "builderGitSha", "facilityHeadGitSha", "markerState", "replacementPrestates", "retainedOutputs", "schemaVersion", "sourceMainGitSha", "topologyInputs", "topologyOutputs", "transition"];
+  const keys = ["artifactKind", "builderGitSha", "facilityHeadGitSha", "replacementPrestates", "retainedOutputs", "schemaVersion", "sourceMainGitSha", "topologyInputs", "topologyOutputs", "transition"];
   if (!proof || typeof proof !== "object" || Array.isArray(proof)
     || JSON.stringify(Object.keys(proof).sort(codepointCompare)) !== JSON.stringify(keys)
     || proof.schemaVersion !== 2 || proof.artifactKind !== "current-capital-terminal-lineage"
-    || !["PRESENT", "DERIVED_ABSENT"].includes(proof.markerState)
     || ![proof.sourceMainGitSha, proof.facilityHeadGitSha, proof.builderGitSha].every((value) => /^[a-f0-9]{40}$/u.test(value ?? ""))
     || !proof.transition || ![proof.transition.baseSha256, proof.transition.successorSha256,
       proof.transition.sourceMainCandidateSha256, proof.transition.sourceMainFacilitySha256].every((value) => /^[a-f0-9]{64}$/u.test(value ?? ""))
@@ -155,7 +154,7 @@ function terminalVerifierProof(proof) {
     || [...replacementPrestates].some(([relative, digest]) => typeof relative !== "string" || !/^[a-f0-9]{64}$/u.test(digest ?? ""))) {
     throw new Error("current-capital terminal lineage proof mismatch");
   }
-  return { markerState: proof.markerState, retained, inputs, outputs, replacementPrestates };
+  return { retained, inputs, outputs, replacementPrestates };
 }
 
 function assertTerminalManifestShape(manifest) {
@@ -186,7 +185,9 @@ export function validateCurrentCapitalTerminalManifest(manifest) {
   const proof = terminalVerifierProof(manifest.proof);
   if (manifest.fanInPath !== FAN_IN_OUTPUT) throw new Error("current-capital terminal fan-in manifest mismatch");
   exactPathSet(manifest.markerPaths, TERMINAL_MARKERS, "current-capital terminal marker manifest");
-  if (manifest.markerState !== proof.markerState) throw new Error("current-capital terminal marker state mismatch");
+  if (!["PRESENT", "DERIVED_ABSENT"].includes(manifest.markerState)) {
+    throw new Error("current-capital terminal marker state mismatch");
+  }
   const classPaths = [
     ...accessibilityOutputs.keys(),
     ...manifest.topologyInputs,
