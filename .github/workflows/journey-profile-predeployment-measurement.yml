@@ -236,12 +236,36 @@ jobs:
           NODE
       - name: Run future PR-owned JUnit measurement harness
         env:
+          CANDIDATE_ROOT: ${{ runner.temp }}/data-candidate
           MEASUREMENT_INPUT: ${{ runner.temp }}/journey-profile-measurement-input.json
           MEASUREMENT_OUTPUT: ${{ runner.temp }}/journey-profile-measurement-observation.json
         run: |
           set -euo pipefail
           test -f "${MEASUREMENT_INPUT}"
           test ! -e "${MEASUREMENT_OUTPUT}"
+          test -d "${CANDIDATE_ROOT}"
+          test ! -L "${CANDIDATE_ROOT}"
+          test -d "${CANDIDATE_ROOT}/server-route-bundle"
+          test ! -L "${CANDIDATE_ROOT}/server-route-bundle"
+          test -d "${CANDIDATE_ROOT}/server-route-bundle/payload"
+          test ! -L "${CANDIDATE_ROOT}/server-route-bundle/payload"
+          expectedCandidateFiles=(
+            compatibility.json manifest.json manifest.signing-input.json
+            payload/accessibility.sqlite.zst payload/fare.sqlite.zst
+            payload/timetable.sqlite.zst payload/topology.sqlite.zst provenance.json
+          )
+          for candidateFile in "${expectedCandidateFiles[@]}"; do
+            candidatePath="${CANDIDATE_ROOT}/server-route-bundle/${candidateFile}"
+            test -f "${candidatePath}"
+            test ! -L "${candidatePath}"
+          done
+          mapfile -t actualCandidateEntries < <(find "${CANDIDATE_ROOT}/server-route-bundle" -mindepth 1 -printf '%P\n' | LC_ALL=C sort)
+          expectedCandidateEntries=(
+            compatibility.json manifest.json manifest.signing-input.json payload
+            payload/accessibility.sqlite.zst payload/fare.sqlite.zst
+            payload/timetable.sqlite.zst payload/topology.sqlite.zst provenance.json
+          )
+          [[ "${actualCandidateEntries[*]}" == "${expectedCandidateEntries[*]}" ]]
           cd "${RUNNER_TEMP}/backend-source"
           ./gradlew :backend:test --tests com.easysubway.journey.application.JourneyProfilePredeploymentMeasurementTest
           test -s "${MEASUREMENT_OUTPUT}"

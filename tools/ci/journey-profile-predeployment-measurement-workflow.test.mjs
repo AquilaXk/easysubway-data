@@ -112,3 +112,21 @@ test("predeployment measurement rejects incomplete artifact and observation attr
   assert.doesNotMatch(text, /gh workflow run|--method POST.*\/dispatches/,
     "workflow does not dispatch another workflow");
 });
+
+test("predeployment measurement binds the JUnit harness to the validated candidate root", () => {
+  const text = source();
+  const harness = text.match(/- name: Run future PR-owned JUnit measurement harness\n([\s\S]*?)(?=\n      - name:)/)?.[0] ?? "";
+  requireText(harness, /CANDIDATE_ROOT: \$\{\{ runner\.temp \}\}\/data-candidate/,
+    "harness receives the downloaded candidate root");
+  requireText(harness, /test -d "\$\{CANDIDATE_ROOT\}"\n\s+test ! -L "\$\{CANDIDATE_ROOT\}"/,
+    "candidate root is a real directory");
+  requireText(harness, /server-route-bundle\/\$\{candidateFile\}/,
+    "harness validates the route bundle under the candidate root");
+  requireText(harness, /test -f "\$\{candidatePath\}"\n\s+test ! -L "\$\{candidatePath\}"/,
+    "required route artifacts are regular non-symlink files");
+  requireText(harness, /compatibility\.json manifest\.json manifest\.signing-input\.json/,
+    "required top-level route artifacts");
+  requireText(harness, /payload\/accessibility\.sqlite\.zst\s+payload\/fare\.sqlite\.zst\s+payload\/timetable\.sqlite\.zst\s+payload\/topology\.sqlite\.zst\s+provenance\.json/,
+    "required payload and provenance artifacts");
+  requireText(harness, /\.\/gradlew :backend:test/, "validation precedes Gradle");
+});
