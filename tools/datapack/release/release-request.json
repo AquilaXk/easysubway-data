@@ -3,11 +3,11 @@
   "artifactKind": "datapack-release-request",
   "candidateId": "capital-pilot-candidate-20260830",
   "scopeId": "capital_pilot_android_v1",
-  "buildSpecSha256": "b0fc70bb2f191e9da72563d4b42d62be9cd2699fd8cfeb1b181ef9698c7a1c95",
-  "sourceSnapshotSetHash": "8ec5b314d9895161c83485bed36e1721cd22f37b033460409bc59883ccf3d1cb",
+  "buildSpecSha256": "8a18f3ee9872aa748c216c8e0834b6978d2bb288a8de5172e116f06ad75dcebd",
+  "sourceSnapshotSetHash": "a1638b3df8e92c59db8525b68d687580177345cc983a22645f60833f52322fb0",
   "approvedLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
   "requestedBy": "claude-fable-orchestrator",
   "approvedBy": "aquilaXk10",
-  "approvalId": "release-request-capital-pilot-candidate-20260830-7dd8013754d5a01e3b2d602878a77960a055b89c6d77ffc43ad7fd77c84c180c",
+  "approvalId": "release-request-capital-pilot-candidate-20260830-9cc27ada3cceca402264005d588157b8810df561bb4dfe6ca10fb0c66dad47be",
   "targetChannel": "production"
 }
