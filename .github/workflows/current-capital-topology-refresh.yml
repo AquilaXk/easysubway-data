@@ -244,6 +244,8 @@ jobs:
           set -euo pipefail
           git switch "${TOPOLOGY_BRANCH}"
           [[ "$(git rev-parse HEAD^)" == "${TOPOLOGY_MAIN_SHA}" ]] || { echo "topology claim is not based on its operation main" >&2; exit 1; }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           input_keys=(TOPOLOGY_CAPITAL_PATH TOPOLOGY_INCHEON_PATH TOPOLOGY_LINE1_PATH TOPOLOGY_LINE2_PATH)
           if [[ "${{ steps.decision.outputs.itx_refresh_required }}" == "true" ]]; then input_keys+=(TOPOLOGY_ITX_ADMISSION_PATH); fi
           input_targets=()
