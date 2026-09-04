@@ -4,7 +4,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { canonicalKricExitPathCollectionPlanJson } from "./plan-kric-exit-path-collection.mjs";
-import { readCanonicalCurrentKricExitCollectionBundle } from "./build-current-capital-live-chain-oci-plan.mjs";
+import { readCanonicalCurrentKricExitCollectionBundle } from "./build-current-kric-exit-collection-receipt.mjs";
 
 export const OCI_NAMESPACE = "axvym6vk8g7i";
 export const OCI_BUCKET = "easysubway-datapacks";

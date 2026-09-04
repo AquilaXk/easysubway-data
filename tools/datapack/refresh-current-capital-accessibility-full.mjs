@@ -20,7 +20,7 @@ import {
   CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH,
   readCurrentCapitalLiveChainFanInBoundary,
 } from "./build-current-capital-live-chain-boundary.mjs";
-import { CURRENT_CAPITAL_LIVE_CHAIN_FIXED_OUTPUT_PATHS } from "./build-current-capital-live-chain-bundle.mjs";
+import { CURRENT_CAPITAL_LIVE_CHAIN_FIXED_OUTPUT_PATHS } from "./validate-current-capital-live-chain-materialization.mjs";
 import { CURRENT_TOPOLOGY_REFRESH_OUTPUTS } from "./activate-current-source-set.mjs";
 import { validateCurrentCapitalAccessibilitySourceHandoff } from "./current-capital-accessibility-source-handoff.mjs";
 import { readCurrentCapitalAccessibilityTransitionBoundary, readEffectiveCurrentCapitalAccessibilityTransition } from "./current-capital-accessibility-transition.mjs";

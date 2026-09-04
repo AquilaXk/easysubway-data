@@ -11,11 +11,10 @@ import {
   CURRENT_KRIC_EXIT_REQUEST_INTERVAL_MS,
   CURRENT_KRIC_EXIT_REQUEST_TIMEOUT_MS,
   assertCurrentCapitalExitItxAuthorityFresh,
-  buildCurrentCapitalLiveChainPlan,
+  buildCurrentCapitalExitExecutionPlan,
   buildCurrentCapitalTopologyTerminalHandoff,
   assertCurrentCapitalFacilityAdmission,
-  evaluateStagedRoutePolicy,
-  parseArgs,
+  assertRemoteMain,
   resolveCurrentLiveChainCandidateStageInputs,
   resolveCurrentKricExitPlanInputs,
   resolveStagedIncheonTopologyPath,
@@ -25,9 +24,9 @@ import {
   runCurrentCapitalExitTerminalConsumer,
   requireTerminalTransferRebindOutputs,
   rebuildCurrentCapitalTopologyTerminalHandoffForAncestorRecovery,
-  runCurrentCapitalLiveChain,
   terminalCandidateIdForLineageProof,
   verifyCurrentCapitalTerminalLineage,
+  writeTerminalRoutePolicyEvaluation,
 } from "./run-current-capital-live-chain.mjs";
 import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
 import { buildCurrentCapitalFacilitySourceAdmission, canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-current-capital-facility-source-admission.mjs";
@@ -39,7 +38,7 @@ import { buildCurrentCapitalTopologyRefreshOutputs } from "./activate-current-so
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { buildCurrentKricExitCollectionBundle, buildCurrentKricExitCollectionReceipt, canonicalCurrentKricExitCollectionBundleJson } from "./build-current-kric-exit-collection-receipt.mjs";
 import { buildCurrentKricExitCollectionPlan } from "./build-current-kric-exit-collection-plan.mjs";
-import { currentCapitalLiveChainOutputPaths } from "./build-current-capital-live-chain-bundle.mjs";
+import { currentCapitalLiveChainOutputPaths } from "./validate-current-capital-live-chain-materialization.mjs";
 import { canonicalKricExitPathCollectionPlanJson } from "./plan-kric-exit-path-collection.mjs";
 import { buildCurrentKricExitProviderOciPlan, canonicalCurrentKricExitProviderOciPlanJson } from "./build-current-kric-exit-provider-oci-plan.mjs";
 import { buildCurrentKricExitProviderOciReceipt, canonicalCurrentKricExitProviderOciReceiptJson } from "./build-current-kric-exit-provider-oci-receipt.mjs";
@@ -53,6 +52,7 @@ import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { preparePendingCurrentAccessibilityTransitionRepository } from "./test-fixtures/current-full-capital-production-artifact.mjs";
 import { nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
+import { assertCurrentStaticNetworkTopologyAdmission } from "./register-current-static-network-successors.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const execFile = promisify(execFileCallback);
@@ -412,12 +412,12 @@ const planInput = {
   outputPaths: ["derived/current-output.json"],
 };
 
-test("live chain fixes the staged P/F/T to EXIT to full-capital order and invokes the collector exactly once", () => {
-  const plan = buildCurrentCapitalLiveChainPlan(planInput);
+test("EXIT execution plan fixes the staged P/F/T to EXIT to full-capital order and invokes the collector exactly once", () => {
+  const plan = buildCurrentCapitalExitExecutionPlan(planInput);
   assert.equal(plan.steps.filter(({ id }) => id === "collect-kric-exit").length, 1);
   assert.deepEqual(plan.steps.map(({ id }) => id), [
     "materialize-public-route-map", "rebind-transfer", "rebind-facility", "build-exit-plan", "assert-current-topology-freshness",
-    "collect-kric-exit", "bind-exit-collection", "admit-exit", "bind-current-fan-in", "build-full-capital", "evaluate-route-policy", "bundle",
+    "collect-kric-exit", "bind-exit-collection", "admit-exit", "bind-current-fan-in", "build-full-capital", "evaluate-route-policy",
   ]);
   assert.equal(plan.steps.findIndex(({ id }) => id === "materialize-public-route-map") + 1, plan.steps.findIndex(({ id }) => id === "rebind-transfer"));
   assert.equal(plan.steps.findIndex(({ id }) => id === "build-exit-plan") + 1, plan.steps.findIndex(({ id }) => id === "assert-current-topology-freshness"));
@@ -429,8 +429,8 @@ test("live chain fixes the staged P/F/T to EXIT to full-capital order and invoke
   const evaluationArgs = plan.steps.find(({ id }) => id === "evaluate-route-policy").args;
   assert.equal(evaluationArgs[evaluationArgs.indexOf("--output") + 1], path.join(planInput.stagedRoot, "tools/datapack/release/current-capital-accessibility-full/route-edge-evaluation.json"));
   assert.deepEqual(plan.outputs, planInput.outputPaths);
-  assert.throws(() => buildCurrentCapitalLiveChainPlan({ ...planInput, repositorySha: "not-a-sha" }), /repository SHA/);
-  assert.throws(() => buildCurrentCapitalLiveChainPlan({ ...planInput, transferReceiptPath: "relative.json" }), /paths must be absolute/);
+  assert.throws(() => buildCurrentCapitalExitExecutionPlan({ ...planInput, repositorySha: "not-a-sha" }), /repository SHA/);
+  assert.throws(() => buildCurrentCapitalExitExecutionPlan({ ...planInput, transferReceiptPath: "relative.json" }), /paths must be absolute/);
 });
 
 test("terminal manifest accepts only a verifier-shaped proof and rejects caller lineage hashes", async (t) => {
@@ -806,7 +806,7 @@ test("EXIT-only producer refuses provider access without a validated same-reposi
   }), /validated same-repository FACILITY pull request is required/);
 });
 
-test("EXIT-only producer requires every fixed FACILITY release artifact", async () => {
+async function rejectExitOnlyProducerAtPreflight({ topologyFailure, facilityFailure }) {
   const temporary = await mkdtemp(path.join(os.tmpdir(), "current-exit-producer-facility-paths-"));
   const runnerTemp = path.join(temporary, "runner");
   const handoffParent = path.join(temporary, "handoff-parent");
@@ -820,6 +820,11 @@ test("EXIT-only producer requires every fixed FACILITY release artifact", async 
     "tools/datapack/sources/kric-station-convenience-standard-fixture.json",
   ];
   let reachedPlanning = false;
+  let stagedCandidateEvidenceVerified = false;
+  let topologyPreflightReached = false;
+  let facilityPreflightReached = false;
+  let providerCalls = 0;
+  let publicationCalls = 0;
   try {
     await mkdir(runnerTemp); await mkdir(handoffParent);
     await assert.rejects(runCurrentCapitalExitOnlyProducer({
@@ -866,7 +871,7 @@ test("EXIT-only producer requires every fixed FACILITY release artifact", async 
         }],
       }),
       buildTopologyHandoffImpl: async () => ({ schemaVersion: 1, artifactKind: "test-topology-handoff" }),
-      execFileImpl: async (_command, args) => {
+      execFileImpl: async (commandPath, args, options) => {
         const command = args.join(" ");
         if (command === "remote get-url origin") return { stdout: "https://github.com/AquilaXk/easysubway-data.git\n" };
         if (command === "rev-parse HEAD" || command === "rev-parse origin/main") return { stdout: `${"a".repeat(40)}\n` };
@@ -877,18 +882,58 @@ test("EXIT-only producer requires every fixed FACILITY release artifact", async 
         if (command === `merge-base --is-ancestor ${"a".repeat(40)} ${"b".repeat(40)}`) return { stdout: "" };
         if (command === `diff --name-only ${"a".repeat(40)} ${"b".repeat(40)}`) return { stdout: `${required.join("\n")}\n` };
         if (args[0] === "tools/datapack/build-current-kric-exit-collection-plan.mjs") {
+          const canonicalPackPath = args[args.indexOf("--canonical-pack") + 1];
+          const stagedRoot = path.resolve(path.dirname(canonicalPackPath), "../../..");
+          const candidate = JSON.parse(await readFile(path.join(stagedRoot, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
+          await stat(path.join(stagedRoot, candidate.itxTopologyEvidencePath));
+          await stat(path.join(stagedRoot, candidate.networkEdgeEvidence.itxCoverageContract.path));
+          await assert.rejects(stat(path.join(stagedRoot, "tools/datapack/itx-cheongchun-topology-evidence.json")), { code: "ENOENT" });
+          await assert.rejects(stat(path.join(stagedRoot, "tools/datapack/release/current-capital-live-chain-fan-in.json")), { code: "ENOENT" });
+          stagedCandidateEvidenceVerified = true;
           reachedPlanning = true;
-          throw new Error("producer planning reached");
+          return execFile(commandPath, args, options);
         }
+        if (args[0] === "tools/datapack/collect-current-kric-exit-path-provider-snapshot.mjs") providerCalls += 1;
         throw new Error(`provider boundary must not start: ${command}`);
       },
-      assertCurrentTopologyAdmissionImpl: async () => { throw new Error("producer planning reached"); },
-      publishImpl: async () => { throw new Error("OCI publication must not start"); },
-    }), /producer planning reached/);
-    assert.equal(reachedPlanning, true);
+      assertCurrentTopologyAdmissionImpl: async () => {
+        topologyPreflightReached = true;
+        if (topologyFailure) throw new Error(topologyFailure);
+      },
+      assertCurrentFacilityAdmissionImpl: async () => {
+        facilityPreflightReached = true;
+        if (facilityFailure) throw new Error(facilityFailure);
+      },
+      publishImpl: async () => { publicationCalls += 1; throw new Error("OCI publication must not start"); },
+    }), new RegExp(topologyFailure ?? facilityFailure));
+    return { reachedPlanning, stagedCandidateEvidenceVerified, topologyPreflightReached, facilityPreflightReached, providerCalls, publicationCalls };
   } finally {
     await rm(temporary, { recursive: true, force: true });
   }
+}
+
+test("EXIT-only producer validates staged inputs and topology before provider or OCI", async () => {
+  const result = await rejectExitOnlyProducerAtPreflight({ topologyFailure: "producer topology preflight reached" });
+  assert.deepEqual(result, {
+    reachedPlanning: true,
+    stagedCandidateEvidenceVerified: true,
+    topologyPreflightReached: true,
+    facilityPreflightReached: false,
+    providerCalls: 0,
+    publicationCalls: 0,
+  });
+});
+
+test("EXIT-only producer validates FACILITY after topology and before provider or OCI", async () => {
+  const result = await rejectExitOnlyProducerAtPreflight({ facilityFailure: "current capital facility admission is stale" });
+  assert.deepEqual(result, {
+    reachedPlanning: true,
+    stagedCandidateEvidenceVerified: true,
+    topologyPreflightReached: true,
+    facilityPreflightReached: true,
+    providerCalls: 0,
+    publicationCalls: 0,
+  });
 });
 
 function terminalGitPreflight(command, args) {
@@ -1104,6 +1149,51 @@ test("terminal consumer orders P/T/F and CAS before one OCI recovery and semanti
   }
 });
 
+test("terminal consumer stops before OCI recovery when route-map rebind fails", async (t) => {
+  const runnerTemp = await mkdtemp(path.join(os.tmpdir(), "current-capital-terminal-route-map-failure-"));
+  t.after(() => rm(runnerTemp, { recursive: true, force: true }));
+  const repositoryRoot = await pendingTransitionRepository(t);
+  const handoff = await terminalProviderHandoff({ repositoryRoot });
+  const sourceReceipt = JSON.parse(handoff.sourceReceiptBytes);
+  const accessibilitySourceHandoff = await terminalAccessibilityVerifierResult(repositoryRoot);
+  const client = memoryOciObject(handoff.bundleBytes, handoff.providerObject.objectKey);
+  const terminalHeadSha = (await terminalGitPreflight("git", ["rev-parse", "HEAD"])).stdout.trim();
+  await assert.rejects(runCurrentCapitalExitTerminalConsumer({
+    repositoryRoot,
+    sourceMainRoot: repositoryRoot,
+    sourceMainGitSha: sourceReceipt.sourceMainSha,
+    privateBuilderRoot: repositoryRoot,
+    builderGitSha: terminalHeadSha,
+    topologyBuild: await currentTopologyFixture(repositoryRoot),
+    topologyHandoffBytes: Buffer.from("{}\n"),
+    accessibilitySourceHandoffBytes: Buffer.from("{}\n"),
+    runnerTemp,
+    repository: sourceReceipt.repository,
+    candidateOperationId: `${sourceReceipt.sourceOperationId}-candidate`,
+    operationNow: handoff.operationNow,
+    sourceReceiptBytes: handoff.sourceReceiptBytes,
+    providerOciPlanBytes: handoff.providerOciPlanBytes,
+    providerOciReceiptBytes: handoff.providerOciReceiptBytes,
+    client,
+    isAncestor: async () => true,
+    transferObservationDirectory: path.join(runnerTemp, "unused-transfer-observation"),
+    transferReceiptPath: path.join(runnerTemp, "unused-transfer-receipt.json"),
+    execFileImpl: terminalGitPreflight,
+    verifyTerminalLineageImpl: async () => ({
+      proof: await terminalConsumerProof(repositoryRoot),
+      topologyInputs: [],
+      topologyOutputs: [],
+    }),
+    verifyTopologyHandoffImpl: () => ({
+      operationId: sourceReceipt.sourceOperationId,
+      accessibilitySourceHandoff: terminalAccessibilityProjection(accessibilitySourceHandoff),
+    }),
+    verifyAccessibilityHandoffImpl: async () => accessibilitySourceHandoff,
+    rebindPublicRouteMapImpl: async () => { throw new Error("route-map rebind failed"); },
+  }), /route-map rebind failed/);
+  assert.equal(client.gets, 0);
+});
+
 test("terminal consumer rejects accessibility identity outside the topology v2 projection", async (t) => {
   const runnerTemp = await mkdtemp(path.join(os.tmpdir(), "current-capital-terminal-accessibility-identity-"));
   t.after(() => rm(runnerTemp, { recursive: true, force: true }));
@@ -1274,7 +1364,7 @@ test("current KRIC EXIT plan inputs are exact staged bindings and reject identit
     providerCodeCatalogRelativePath: "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
     routeRostersRelativePath: "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
   });
-  const plan = buildCurrentCapitalLiveChainPlan({ ...planInput, stagedRoot, ...resolved });
+  const plan = buildCurrentCapitalExitExecutionPlan({ ...planInput, stagedRoot, ...resolved });
   const exitPlanArgs = plan.steps.find(({ id }) => id === "build-exit-plan").args;
   assert.equal(exitPlanArgs[exitPlanArgs.indexOf("--provider-code-catalog") + 1], path.join(stagedRoot, resolved.providerCodeCatalogRelativePath));
   assert.equal(exitPlanArgs[exitPlanArgs.indexOf("--route-rosters") + 1], path.join(stagedRoot, resolved.routeRostersRelativePath));
@@ -1301,23 +1391,6 @@ test("current KRIC EXIT plan inputs are exact staged bindings and reject identit
   targets.targetVersion = "2099-01-01";
   await writeFile(targetPath, `${JSON.stringify(targets)}\n`);
   await assert.rejects(resolveCurrentKricExitPlanInputs(stagedRoot), /route roster targetVersion mismatch/);
-});
-
-test("CLI accepts every exact live-chain identity and path once", () => {
-  const argv = [
-    "--repository-root", "/repo", "--runner-temp", "/runner", "--repository", "AquilaXk/easysubway-data",
-    "--repository-sha", "a".repeat(40), "--operation-id", "current-capital-560",
-    "--transfer-observation-directory", planInput.transferObservationDirectory, "--transfer-receipt", planInput.transferReceiptPath,
-    "--handoff-directory", "/handoff/current-capital-560",
-  ];
-  assert.equal(parseArgs(argv)["handoff-directory"], "/handoff/current-capital-560");
-  assert.throws(() => parseArgs([...argv.slice(0, -2), "--handoff-directory", "relative"]), /paths must be absolute/);
-  assert.throws(() => parseArgs([...argv.slice(0, -2), "--repository-root", "/other"]), /arguments mismatch/);
-  assert.throws(() => parseArgs(argv.filter((value) => value !== "--operation-id" && value !== "current-capital-560")), /arguments mismatch/);
-  const retainedArgs = [...argv, "--retained-exit-bundle", "/retained/current-kric-exit.json", "--retained-exit-bundle-sha256", "d".repeat(64)];
-  assert.equal(parseArgs(retainedArgs)["retained-exit-bundle"], "/retained/current-kric-exit.json");
-  assert.throws(() => parseArgs([...argv, "--retained-exit-bundle", "/retained/current-kric-exit.json"]), /arguments mismatch/);
-  assert.throws(() => parseArgs([...argv, "--retained-exit-bundle-sha256", "d".repeat(64)]), /arguments mismatch/);
 });
 
 test("current FACILITY admission is canonical and fresh at the actual operation clock", async (t) => {
@@ -1362,6 +1435,14 @@ test("current FACILITY admission is canonical and fresh at the actual operation 
   await assert.rejects(assertCurrentCapitalFacilityAdmission({
     stagedRoot, now: commonNow,
   }), /selected accessibility source is stale: seoul-metro-accessibility/);
+});
+
+test("retained topology admission fails closed at its derived freshness boundary", async () => {
+  const clock = await currentTopologyAdmissionClock(ROOT);
+  await assert.rejects(assertCurrentStaticNetworkTopologyAdmission({
+    repositoryRoot: ROOT,
+    now: clock.expiredAt,
+  }), /topology|fresh|stale|current/i);
 });
 
 async function retainedExitBundleFixture() {
@@ -1501,31 +1582,17 @@ test("retained EXIT recovery rebuilds v2 provenance from an exact current plan w
   }), /source SHA is not an ancestor/);
 });
 
-test("stale 또는 malformed remote main은 provider/OCI boundary 전에 중단한다", async () => {
-  const temporary = await mkdtemp(path.join(os.tmpdir(), "current-live-chain-remote-main-"));
-  const runnerTemp = path.join(temporary, "runner");
-  const handoffParent = path.join(temporary, "handoff-parent");
-  const calls = [];
-  try {
-    await mkdir(runnerTemp); await mkdir(handoffParent);
-    await assert.rejects(runCurrentCapitalLiveChain({
-      repositoryRoot: ROOT, runnerTemp, repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-560",
-      transferObservationDirectory: "/retained/transfer/observation", transferReceiptPath: "/retained/transfer/receipt.json", handoffDirectory: path.join(handoffParent, "handoff"),
-      env: { PATH: process.env.PATH, KRIC_SERVICE_KEY: "test-key", EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/test/n/axvym6vk8g7i/b/easysubway-datapacks/o/" },
-      execFileImpl: async (_command, args) => {
-        calls.push(args);
-        if (args.join(" ") === "remote get-url origin") return { stdout: "https://github.com/AquilaXk/easysubway-data.git\n" };
-        if (args.join(" ") === "rev-parse HEAD" || args.join(" ") === "rev-parse origin/main") return { stdout: `${"a".repeat(40)}\n` };
-        if (args.join(" ") === "branch --show-current") return { stdout: "main\n" };
-        if (args.join(" ") === "status --porcelain=v1 --untracked-files=all") return { stdout: "" };
-        if (args[0] === "ls-remote") return { stdout: `${"b".repeat(40)}\trefs/heads/main\n` };
-        throw new Error("provider or OCI boundary must not start");
-      },
-    }), /exact remote main preflight failed/);
-    assert.equal(calls.some((args) => args[0] === "collect-current-kric-exit-path-provider-snapshot.mjs"), false);
-  } finally {
-    await rm(temporary, { recursive: true, force: true });
-  }
+test("retained producer preflight rejects stale remote main", async () => {
+  const repositorySha = "a".repeat(40);
+  await assert.rejects(assertRemoteMain({
+    root: ROOT,
+    repositorySha,
+    execFileImpl: async (command, args) => {
+      assert.equal(command, "git");
+      assert.deepEqual(args, ["ls-remote", "--exit-code", "https://github.com/AquilaXk/easysubway-data.git", "refs/heads/main"]);
+      return { stdout: `${"b".repeat(40)}\trefs/heads/main\n` };
+    },
+  }), /exact remote main preflight failed/);
 });
 
 test("route policy evaluation preserves policy bytes and writes a separate staged evaluation", async () => {
@@ -1546,7 +1613,7 @@ test("route policy evaluation preserves policy bytes and writes a separate stage
     await writeFile(routeEdgeInputPath, JSON.stringify(builtRouteEdgeInput));
     await writeFile(stationLineInputPath, JSON.stringify(builtStationLineInput));
     await writeFile(policyPath, JSON.stringify(stagedPolicy));
-    const bytes = await evaluateStagedRoutePolicy({
+    const bytes = await writeTerminalRoutePolicyEvaluation({
       stagedRoot: temporary,
       evaluationAt,
       materializeStationLineAccessibilityImpl: (input) => {
@@ -1598,108 +1665,6 @@ test("current-only delivery removes legacy EXIT workflows and retains the OCI co
   ]) assert.doesNotMatch(ci, new RegExp(oldTest.replaceAll(".", "\\.")));
 });
 
-test("public route-map materialization failure stops before the provider and OCI boundaries", async () => {
-  const temporary = await mkdtemp(path.join(os.tmpdir(), "current-live-chain-preparer-"));
-  const runnerTemp = path.join(temporary, "runner");
-  const handoffParent = path.join(temporary, "handoff-parent");
-  const calls = [];
-  try {
-    await mkdir(runnerTemp); await mkdir(handoffParent);
-    await assert.rejects(runCurrentCapitalLiveChain({
-      repositoryRoot: ROOT, runnerTemp, repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-560",
-      transferObservationDirectory: "/retained/transfer/observation", transferReceiptPath: "/retained/transfer/receipt.json", handoffDirectory: path.join(handoffParent, "handoff"),
-      env: { PATH: process.env.PATH, KRIC_SERVICE_KEY: "test-key", EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/test/n/axvym6vk8g7i/b/easysubway-datapacks/o/" },
-      execFileImpl: async (command, args) => {
-        calls.push([command, args]);
-        if (args.join(" ") === "remote get-url origin") return { stdout: "https://github.com/AquilaXk/easysubway-data.git\n" };
-        if (args.join(" ") === "rev-parse HEAD" || args.join(" ") === "rev-parse origin/main") return { stdout: `${"a".repeat(40)}\n` };
-        if (args.join(" ") === "branch --show-current") return { stdout: "main\n" };
-        if (args.join(" ") === "status --porcelain=v1 --untracked-files=all") return { stdout: "" };
-        if (args.join(" ") === `ls-remote --exit-code https://github.com/AquilaXk/easysubway-data.git refs/heads/main`) return { stdout: `${"a".repeat(40)}\trefs/heads/main\n` };
-        throw new Error("provider execution must not start");
-      },
-      rebindPublicRouteMapImpl: async () => { throw new Error("public route-map materialization failed"); },
-      publishImpl: async () => { throw new Error("OCI publication must not start"); },
-    }), /public route-map materialization failed/);
-    assert.equal(calls.length, 6);
-  } finally {
-    await rm(temporary, { recursive: true, force: true });
-  }
-});
-
-test("tracked live-chain fan-in is not copied into create-new staging output", async () => {
-  const temporary = await mkdtemp(path.join(os.tmpdir(), "current-live-chain-fan-in-staging-"));
-  const runnerTemp = path.join(temporary, "runner");
-  const handoffParent = path.join(temporary, "handoff-parent");
-  const fanInPath = "tools/datapack/release/current-capital-live-chain-fan-in.json";
-  try {
-    await mkdir(runnerTemp); await mkdir(handoffParent);
-    await stat(path.join(ROOT, fanInPath));
-    await assert.rejects(runCurrentCapitalLiveChain({
-      repositoryRoot: ROOT, runnerTemp, repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-560",
-      transferObservationDirectory: "/retained/transfer/observation", transferReceiptPath: "/retained/transfer/receipt.json", handoffDirectory: path.join(handoffParent, "handoff"),
-      env: { PATH: process.env.PATH, KRIC_SERVICE_KEY: "test-key", EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/test/n/axvym6vk8g7i/b/easysubway-datapacks/o/" },
-      execFileImpl: async (_command, args) => {
-        if (args.join(" ") === "remote get-url origin") return { stdout: "https://github.com/AquilaXk/easysubway-data.git\n" };
-        if (args.join(" ") === "rev-parse HEAD" || args.join(" ") === "rev-parse origin/main") return { stdout: `${"a".repeat(40)}\n` };
-        if (args.join(" ") === "branch --show-current") return { stdout: "main\n" };
-        if (args.join(" ") === "status --porcelain=v1 --untracked-files=all") return { stdout: "" };
-        if (args.join(" ") === `ls-remote --exit-code https://github.com/AquilaXk/easysubway-data.git refs/heads/main`) return { stdout: `${"a".repeat(40)}\trefs/heads/main\n` };
-        throw new Error("provider execution must not start");
-      },
-      rebindPublicRouteMapImpl: async ({ repositoryRoot }) => {
-        await assert.rejects(stat(path.join(repositoryRoot, fanInPath)), { code: "ENOENT" });
-        throw new Error("fan-in staging exclusion verified");
-      },
-      publishImpl: async () => { throw new Error("OCI publication must not start"); },
-    }), /fan-in staging exclusion verified/);
-  } finally {
-    await rm(temporary, { recursive: true, force: true });
-  }
-});
-
-test("candidate-selected versioned ITX topology evidence is staged before every provider or OCI effect", async () => {
-  const temporary = await mkdtemp(path.join(os.tmpdir(), "current-live-chain-itx-stage-"));
-  const runnerTemp = path.join(temporary, "runner");
-  const handoffParent = path.join(temporary, "handoff-parent");
-  const handoffDirectory = path.join(handoffParent, "handoff");
-  const candidate = JSON.parse(await readFile(path.join(ROOT, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
-  const selectedPath = candidate.itxTopologyEvidencePath;
-  const coveragePath = candidate.networkEdgeEvidence.itxCoverageContract.path;
-  let providerCount = 0;
-  let publicationCount = 0;
-  try {
-    await mkdir(runnerTemp); await mkdir(handoffParent);
-    await assert.rejects(runCurrentCapitalLiveChain({
-      repositoryRoot: ROOT, runnerTemp, repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-560",
-      transferObservationDirectory: "/retained/transfer/observation", transferReceiptPath: "/retained/transfer/receipt.json", handoffDirectory,
-      env: { PATH: process.env.PATH, KRIC_SERVICE_KEY: "test-key", EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/test/n/axvym6vk8g7i/b/easysubway-datapacks/o/" },
-      execFileImpl: async (command, args) => {
-        if (args.join(" ") === "remote get-url origin") return { stdout: "https://github.com/AquilaXk/easysubway-data.git\n" };
-        if (args.join(" ") === "rev-parse HEAD" || args.join(" ") === "rev-parse origin/main") return { stdout: `${"a".repeat(40)}\n` };
-        if (args.join(" ") === "branch --show-current") return { stdout: "main\n" };
-        if (args.join(" ") === "status --porcelain=v1 --untracked-files=all") return { stdout: "" };
-        if (args.join(" ") === `ls-remote --exit-code https://github.com/AquilaXk/easysubway-data.git refs/heads/main`) return { stdout: `${"a".repeat(40)}\trefs/heads/main\n` };
-        if (command === process.execPath && args[0] === "tools/datapack/collect-current-kric-exit-path-provider-snapshot.mjs") providerCount += 1;
-        throw new Error("provider execution must not start");
-      },
-      rebindPublicRouteMapImpl: async () => {},
-      rebindTransferImpl: async ({ repositoryRoot }) => {
-        await stat(path.join(repositoryRoot, selectedPath));
-        await stat(path.join(repositoryRoot, coveragePath));
-        await assert.rejects(stat(path.join(repositoryRoot, "tools/datapack/itx-cheongchun-topology-evidence.json")), { code: "ENOENT" });
-        throw new Error("staged candidate ITX evidence verified");
-      },
-      publishImpl: async () => { publicationCount += 1; },
-    }), /staged candidate ITX evidence verified/);
-    assert.equal(providerCount, 0);
-    assert.equal(publicationCount, 0);
-    await assert.rejects(stat(handoffDirectory), { code: "ENOENT" });
-  } finally {
-    await rm(temporary, { recursive: true, force: true });
-  }
-});
-
 test("candidate-pinned ITX network evidence rejects path escape and digest drift before staging", async () => {
   const candidate = JSON.parse(await readFile(path.join(ROOT, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
   const expected = [candidate.itxTopologyEvidencePath, candidate.networkEdgeEvidence.itxCoverageContract.path].sort();
@@ -1712,92 +1677,4 @@ test("candidate-pinned ITX network evidence rejects path escape and digest drift
   const drifted = structuredClone(candidate);
   drifted.networkEdgeEvidence.itxCoverageContract.sha256 = "0".repeat(64);
   await assert.rejects(resolveCurrentLiveChainCandidateStageInputs(drifted, ROOT), /ITX coverage contract hash mismatch/);
-});
-
-test("actual-now topology freshness failure stops before every provider and OCI side effect", async () => {
-  const temporary = await mkdtemp(path.join(os.tmpdir(), "current-live-chain-topology-freshness-"));
-  const runnerTemp = path.join(temporary, "runner");
-  const handoffParent = path.join(temporary, "handoff-parent");
-  const operationNow = new Date("2026-08-26T01:02:03.004Z");
-  const calls = [];
-  let publicationCount = 0;
-  let fetchCount = 0;
-  let extractionCount = 0;
-  try {
-    await mkdir(runnerTemp); await mkdir(handoffParent);
-    await assert.rejects(runCurrentCapitalLiveChain({
-      repositoryRoot: ROOT, runnerTemp, repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-560",
-      transferObservationDirectory: "/retained/transfer/observation", transferReceiptPath: "/retained/transfer/receipt.json", handoffDirectory: path.join(handoffParent, "handoff"),
-      env: { PATH: process.env.PATH, KRIC_SERVICE_KEY: "test-key", EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/test/n/axvym6vk8g7i/b/easysubway-datapacks/o/" },
-      execFileImpl: async (command, args) => {
-        calls.push([command, args]);
-        if (args.join(" ") === "remote get-url origin") return { stdout: "https://github.com/AquilaXk/easysubway-data.git\n" };
-        if (args.join(" ") === "rev-parse HEAD" || args.join(" ") === "rev-parse origin/main") return { stdout: `${"a".repeat(40)}\n` };
-        if (args.join(" ") === "branch --show-current") return { stdout: "main\n" };
-        if (args.join(" ") === "status --porcelain=v1 --untracked-files=all") return { stdout: "" };
-        if (args.join(" ") === `ls-remote --exit-code https://github.com/AquilaXk/easysubway-data.git refs/heads/main`) return { stdout: `${"a".repeat(40)}\trefs/heads/main\n` };
-        if (command === process.execPath && args[0] === "tools/datapack/build-current-kric-exit-collection-plan.mjs") return { stdout: "" };
-        throw new Error("provider execution must not start");
-      },
-      clock: () => operationNow,
-      rebindPublicRouteMapImpl: async () => {},
-      rebindTransferImpl: async () => {},
-      rebindFacilityImpl: async () => {},
-      assertCurrentTopologyAdmissionImpl: async ({ repositoryRoot, now }) => {
-        assert.ok(repositoryRoot.includes("current-capital-live-chain-"));
-        assert.equal(now, operationNow);
-        throw new Error("current topology admission is stale");
-      },
-      publishImpl: async () => { publicationCount += 1; },
-      fetchImpl: async () => { fetchCount += 1; },
-      extractImpl: async () => { extractionCount += 1; },
-    }), /current topology admission is stale/);
-    assert.equal(calls.filter(([, args]) => args[0] === "tools/datapack/collect-current-kric-exit-path-provider-snapshot.mjs").length, 0);
-    assert.equal(publicationCount, 0);
-    assert.equal(fetchCount, 0);
-    assert.equal(extractionCount, 0);
-  } finally {
-    await rm(temporary, { recursive: true, force: true });
-  }
-});
-
-test("stale current FACILITY admission stops before provider, publish, fetch, and extraction", async () => {
-  const temporary = await mkdtemp(path.join(os.tmpdir(), "current-live-chain-facility-freshness-"));
-  const runnerTemp = path.join(temporary, "runner");
-  const handoffParent = path.join(temporary, "handoff-parent");
-  let providerCount = 0;
-  let publicationCount = 0;
-  let fetchCount = 0;
-  let extractionCount = 0;
-  try {
-    await mkdir(runnerTemp); await mkdir(handoffParent);
-    await assert.rejects(runCurrentCapitalLiveChain({
-      repositoryRoot: ROOT, runnerTemp, repository: "AquilaXk/easysubway-data", repositorySha: "a".repeat(40), operationId: "current-capital-560",
-      transferObservationDirectory: "/retained/transfer/observation", transferReceiptPath: "/retained/transfer/receipt.json", handoffDirectory: path.join(handoffParent, "handoff"),
-      env: { PATH: process.env.PATH, KRIC_SERVICE_KEY: "test-key", EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/test/n/axvym6vk8g7i/b/easysubway-datapacks/o/" },
-      execFileImpl: async (command, args) => {
-        if (args.join(" ") === "remote get-url origin") return { stdout: "https://github.com/AquilaXk/easysubway-data.git\n" };
-        if (args.join(" ") === "rev-parse HEAD" || args.join(" ") === "rev-parse origin/main") return { stdout: `${"a".repeat(40)}\n` };
-        if (args.join(" ") === "branch --show-current") return { stdout: "main\n" };
-        if (args.join(" ") === "status --porcelain=v1 --untracked-files=all") return { stdout: "" };
-        if (args.join(" ") === `ls-remote --exit-code https://github.com/AquilaXk/easysubway-data.git refs/heads/main`) return { stdout: `${"a".repeat(40)}\trefs/heads/main\n` };
-        if (command === process.execPath && args[0] === "tools/datapack/build-current-kric-exit-collection-plan.mjs") return { stdout: "" };
-        if (command === process.execPath && args[0] === "tools/datapack/collect-current-kric-exit-path-provider-snapshot.mjs") providerCount += 1;
-        throw new Error("provider execution must not start");
-      },
-      clock: () => new Date("2026-08-26T01:02:03.004Z"),
-      rebindPublicRouteMapImpl: async () => {}, rebindTransferImpl: async () => {}, rebindFacilityImpl: async () => {},
-      assertCurrentTopologyAdmissionImpl: async () => {},
-      assertCurrentFacilityAdmissionImpl: async () => { throw new Error("current capital facility admission is stale"); },
-      publishImpl: async () => { publicationCount += 1; },
-      fetchImpl: async () => { fetchCount += 1; },
-      extractImpl: async () => { extractionCount += 1; },
-    }), /current capital facility admission is stale/);
-    assert.equal(providerCount, 0);
-    assert.equal(publicationCount, 0);
-    assert.equal(fetchCount, 0);
-    assert.equal(extractionCount, 0);
-  } finally {
-    await rm(temporary, { recursive: true, force: true });
-  }
 });
