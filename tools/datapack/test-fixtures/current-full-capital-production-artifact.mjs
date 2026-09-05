@@ -41,6 +41,7 @@ import {
 import { syncCurrentRouteEdgePolicyFile } from "../sync-current-route-edge-policy.mjs";
 import { canonicalJson } from "../lib/manifest-validation.mjs";
 import {
+  activateSyntheticCurrentPublicRouteMapSuccessor,
   activateSyntheticCurrentStaticNetworkSuccessors,
   copySyntheticCurrentPublicRouteMapRepository,
   nextSyntheticCurrentStaticNetworkNow,
@@ -609,6 +610,20 @@ export async function preparePendingCurrentAccessibilityTransitionRepository(sou
     await copySyntheticCurrentPublicRouteMapRepository(sourceRoot, repositoryRoot, {
       activatePublicRouteMap: false,
     });
+    if (transitionKind === "FACILITY_SOURCE_ADVANCE") {
+      const fixtureNow = await nextSyntheticCurrentStaticNetworkNow(repositoryRoot);
+      await activateSyntheticCurrentPublicRouteMapSuccessor(repositoryRoot, { now: fixtureNow });
+      // 같은 governance 아래의 두 snapshot으로 갱신 관계를 만든다. 과거 hash는 덮어쓰지 않는다.
+      const retained = await readCurrentAccessibilityTransitionInputs(repositoryRoot);
+      const retainedSnapshot = JSON.parse(await readFile(path.join(
+        repositoryRoot, retained.facilityAdmission.sourceIdentity.snapshotPath,
+      )));
+      await currentizeFreshFacilitySource(
+        repositoryRoot,
+        await nextSyntheticCurrentStaticNetworkNow(repositoryRoot),
+        retainedSnapshot,
+      );
+    }
     const markerPaths = [
       "tools/datapack/release/current-capital-accessibility-transition.json",
       "tools/datapack/release/current-capital-accessibility-transition-successor.json",
