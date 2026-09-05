@@ -250,7 +250,8 @@ function isPinnedPreMaterializationTopology(sourceId, selected, candidate) {
   const row = rows[0];
   const admission = row.admissionEvidence;
   const pin = candidate?.networkEdgeEvidence?.capitalTopologyCandidate;
-  return pin != null && Object.keys(pin).sort().join(",") === "path,sha256,snapshotId"
+  return pin != null && Object.keys(pin).length === 3
+    && ["path", "sha256", "snapshotId"].every((key) => Object.hasOwn(pin, key))
     && pin.snapshotId === row.snapshotId
     && pin.path === `tools/datapack/sources/${row.snapshotId}.json`
     && SHA256.test(pin.sha256 ?? "") && pin.sha256 === row.rawSha256

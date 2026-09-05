@@ -902,9 +902,6 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   });
   inventory = topologyRegistration.inventory;
   snapshots = topologyRegistration.snapshots;
-  governanceBytes = topologyRegistration.governanceBytes;
-  governancePolicy = topologyRegistration.governancePolicy;
-  freshnessPolicy = topologyRegistration.freshnessPolicy;
   addFixtureTopologySelection(candidate, topologyRegistration.topologySnapshot);
   addFixtureTopologyScope(scope);
   const inventoryBytes = jsonBytes(inventory);
