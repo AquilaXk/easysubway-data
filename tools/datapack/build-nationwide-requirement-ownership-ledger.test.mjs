@@ -3,7 +3,25 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { test } from "node:test";
 
-import { buildNationwideRequirementOwnershipLedger } from "./build-nationwide-requirement-ownership-ledger.mjs";
+import { buildNationwideRequirementOwnershipLedger, resolveNationwideRequirementOwner } from "./build-nationwide-requirement-ownership-ledger.mjs";
+
+test("owner work selection preserves overrides without candidate or GO inputs", () => {
+  const rules = [
+    { issue: 454, sourceDomain: "schedule_timetable" },
+    { issue: 504, regionId: "gwangju", sourceDomain: "schedule_timetable" },
+    { issue: 455, sourceDomain: "station_line_membership" },
+  ];
+  assert.equal(resolveNationwideRequirementOwner(rules,
+    { regionId: "gwangju", sourceDomain: "schedule_timetable" }).issue, 504);
+  assert.equal(resolveNationwideRequirementOwner(rules,
+    { regionId: "capital", sourceDomain: "schedule_timetable" }).issue, 454);
+  assert.equal(resolveNationwideRequirementOwner(rules,
+    { regionId: "gwangju", sourceDomain: "station_line_membership" }).issue, 455);
+  assert.throws(() => resolveNationwideRequirementOwner(rules,
+    { sourceDomain: "unknown" }), /unowned or ambiguous PK/);
+  assert.throws(() => resolveNationwideRequirementOwner([...rules, rules[0]],
+    { regionId: "capital", sourceDomain: "schedule_timetable" }), /unowned or ambiguous PK/);
+});
 
 const root = path.resolve(import.meta.dirname, "../..");
 const paths = {
