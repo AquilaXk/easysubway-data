@@ -17,6 +17,7 @@ import { buildCurrentCapitalFacilitySourceAdmission, canonicalCurrentCapitalFaci
 import { validateLineage } from "./source-snapshot-policy.mjs";
 import { deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import { validateCandidateSourceSet } from "./validate-candidate-source-set.mjs";
 
 const execFile = promisify(execFileCallback);
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -39,16 +40,6 @@ const RELEASE_INPUTS = Object.freeze({
 const ADMISSION = "tools/datapack/release/current-capital-facility-source-admission.json";
 const JOURNAL = "journal.json";
 const REGISTRAR_RESIDUES = Object.freeze(["tools/datapack/.kric-standard-registration-transaction.json", "tools/datapack/.kric-standard-registration.lock", "tools/datapack/.candidate-source-rebind.lock", "tools/datapack/.active-facility-derived-identity-rebind.lock"]);
-const CURRENT_SOURCE_IDS = Object.freeze([
-  "seoul-metro-route-map-positions",
-  "kric-subway-timetable",
-  "seoul-metro-accessibility",
-  "kric-station-convenience-standard",
-  "molit-urban-rail-full-route",
-  "seoulmetro-station-line-info",
-  "incheon-transit-accessibility",
-  "seoul-metro-transfer-distance-duration",
-]);
 const JOURNAL_KEYS = new Set(["schemaVersion", "artifactKind", "operationId", "phase", "preparedAt", "expectedMainSha", "expectedFacilityHeadSha", "planSha256", "inputSha256", "priorAdmissionSha256", "completedStages", "collectionStartedAt", "snapshotId", "completedObservation", "collectionReconciledAt", "finalizeObservedAt", "reboundExpectedCandidateSha256", "finalizedAt"]);
 const RAW_RECEIPT_KEYS = ["schemaVersion", "artifactKind", "sourceId", "snapshotId", "snapshotRawSha256", "capturedAt", "snapshotFileSha256", "rawObjectUri", "rawObjectSha256", "byteSize", "storedAt", "rawRetentionExpiresAt"];
 
@@ -192,8 +183,15 @@ async function validateReleasePreflight(root, planBytes, now, { replacingSourceI
   const candidate = parse(release.candidate.bytes, "candidate"); const request = parse(release.releaseRequest.bytes, "release request"); const inventory = parse(release.inventory.bytes, "source inventory"); const snapshots = parse(release.snapshots.bytes, "source snapshot ledger"); const governance = parse(release.governance.bytes, "source governance policy"); const freshness = parse(release.freshness.bytes, "freshness SLA");
   if (request?.buildSpecSha256 !== hash(release.candidate.bytes)) throw new Error("release request is not bound to candidate bytes");
   validateSourceGovernancePolicy({ policy: governance, inventory, freshnessPolicy: freshness });
-  const heads = validateLineage(snapshots).headsBySource;
-  if (!Array.isArray(candidate?.sourceSnapshotIds) || !Array.isArray(candidate?.sourceSnapshots) || candidate.sourceSnapshotIds.length !== candidate.sourceSnapshots.length || JSON.stringify(candidate.sourceSnapshots.map(({ sourceId }) => sourceId)) !== JSON.stringify(CURRENT_SOURCE_IDS)) throw new Error("candidate source ledger/freshness binding mismatch");
+  const { headsBySource: heads } = validateCandidateSourceSet({
+    productionScopeBytes: release.productionScope.bytes,
+    sourceInventoryBytes: release.inventory.bytes,
+    candidate,
+    ledger: snapshots,
+  });
+  if (candidate.sourceSnapshots.at(-1).sourceId !== "seoul-metro-transfer-distance-duration") {
+    throw new Error("candidate terminal TRANSFER source order mismatch");
+  }
   for (const [index, snapshotId] of candidate.sourceSnapshotIds.entries()) {
     const ledger = snapshots.find((entry) => entry?.snapshotId === snapshotId); const projection = candidate.sourceSnapshots[index]; const source = inventory.sources?.find(({ id }) => id === ledger?.sourceId); const governanceSource = governance.sources?.find(({ sourceId }) => sourceId === ledger?.sourceId); const review = governanceSource?.licenseReview;
     let freshnessExpiresAt; let rawRetentionExpiresAt; let nextReviewAt;

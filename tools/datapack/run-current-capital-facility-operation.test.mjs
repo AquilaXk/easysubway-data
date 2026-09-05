@@ -309,6 +309,24 @@ test("collect journals a complete exact terminal observation as COLLECTED withou
   assert.equal(JSON.parse(await readFile(path.join(operationRoot, "journal.json"), "utf8")).phase, "COLLECTED");
 });
 
+test("collection preflight accepts the scope-bound expanded source set", async (t) => {
+  const repositoryRoot = await currentReleaseFixture(t);
+  const parent = await mkdtemp(path.join(tmpdir(), "facility-source-set-"));
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  const operationRoot = path.join(parent, "operation");
+  await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot,
+    expectedMainSha: EXACT_MAIN, expectedFacilityHeadSha: EXACT_MAIN,
+    execFileImpl: exactMainExec, now: NOW });
+  const reachedCollector = new Error("test collector boundary reached");
+  let calls = 0;
+  await assert.rejects(collectCurrentCapitalFacilityOperation({
+    repositoryRoot, operationRoot, serviceKey: "test", env: OCI_ENV,
+    now: NOW, execFileImpl: exactMainExec,
+    collectImpl: async () => { calls += 1; throw reachedCollector; },
+  }), (error) => error === reachedCollector);
+  assert.equal(calls, 1);
+});
+
 test("missing OCI PAR preflight stops before COLLECTION_STARTED and provider call 0", async (t) => {
   const temporaryRoot = await mkdtemp(path.join(tmpdir(), "facility-operation-")); const root = path.join(temporaryRoot, "operation");
   const repositoryRoot = await currentReleaseFixture(t); const sha = EXACT_MAIN;
