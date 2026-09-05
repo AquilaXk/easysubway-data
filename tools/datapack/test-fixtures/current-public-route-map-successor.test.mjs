@@ -238,6 +238,14 @@ test("advancing a current public head keeps retrieval time monotonic in a one-se
     activatePublicRouteMap: false,
   });
 
+  // Fixture는 수집 시각을 실행보다 1분 앞에 둔다. 유효한 parent를 먼저 만들고
+  // 아래 검증에서는 그 parent로부터 정확히 1초만 전진한다.
+  const seedNow = new Date((await nextSyntheticCurrentStaticNetworkNow(root)).getTime() + 60_000);
+  await activateSyntheticCurrentPublicRouteMapSuccessor(root, {
+    now: seedNow,
+    advanceCurrentPublicHead: true,
+  });
+
   const [candidate, beforeSnapshots] = await Promise.all([
     readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
     readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
