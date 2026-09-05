@@ -24,6 +24,7 @@ import { deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
 import { registerKricStandardAccessibilitySnapshot } from "../register-kric-standard-accessibility-snapshot.mjs";
 import { rebindCurrentCandidateSourceSnapshots } from "../rebind-current-candidate-source-snapshots.mjs";
 import { rebindCurrentActivePublicRouteMapMaterialization } from "../rebind-current-active-public-route-map-materialization.mjs";
+import { buildCurrentActiveFacilityDerivedIdentityOutput } from "../rebind-current-active-facility-derived-identity.mjs";
 import {
   buildAuthenticatedCurrentCapitalFacilityEvidenceRows,
   buildCurrentCapitalStationLineInput,
@@ -610,9 +611,9 @@ export async function preparePendingCurrentAccessibilityTransitionRepository(sou
     await copySyntheticCurrentPublicRouteMapRepository(sourceRoot, repositoryRoot, {
       activatePublicRouteMap: false,
     });
+    const fixtureNow = await nextSyntheticCurrentStaticNetworkNow(repositoryRoot);
+    await activateSyntheticCurrentPublicRouteMapSuccessor(repositoryRoot, { now: fixtureNow });
     if (transitionKind === "FACILITY_SOURCE_ADVANCE") {
-      const fixtureNow = await nextSyntheticCurrentStaticNetworkNow(repositoryRoot);
-      await activateSyntheticCurrentPublicRouteMapSuccessor(repositoryRoot, { now: fixtureNow });
       // 같은 governance 아래의 두 snapshot으로 갱신 관계를 만든다. 과거 hash는 덮어쓰지 않는다.
       const retained = await readCurrentAccessibilityTransitionInputs(repositoryRoot);
       const retainedSnapshot = JSON.parse(await readFile(path.join(
@@ -623,6 +624,9 @@ export async function preparePendingCurrentAccessibilityTransitionRepository(sou
         await nextSyntheticCurrentStaticNetworkNow(repositoryRoot),
         retainedSnapshot,
       );
+    } else if (transitionKind === "TRANSFER_DERIVED_BINDING") {
+      const facility = await buildCurrentActiveFacilityDerivedIdentityOutput({ repositoryRoot });
+      await writeFile(path.join(repositoryRoot, facility.relative), facility.bytes);
     }
     const markerPaths = [
       "tools/datapack/release/current-capital-accessibility-transition.json",

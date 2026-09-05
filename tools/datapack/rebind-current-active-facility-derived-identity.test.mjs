@@ -133,8 +133,10 @@ test("FACILITY protected semantics는 object key order를 무시하고 값과 �
   assert.throws(() => validateFacilityProtectedSemanticIdentity(previous, rowOrderMutation), /semantic identity changed/);
 });
 
-test("tracked admission은 current candidate로 rebind되고 protected semantics를 보존한다", async () => {
-  const output = await buildCurrentActiveFacilityDerivedIdentityOutput({ repositoryRoot: ROOT });
+test("generated admission은 current candidate로 rebind되고 protected semantics를 보존한다", async (t) => {
+  const repositoryRoot = await temporaryRepository(t);
+  await restorePredecessorFacilityState(repositoryRoot);
+  const output = await buildCurrentActiveFacilityDerivedIdentityOutput({ repositoryRoot });
   const previous = JSON.parse(output.prestate.toString("utf8"));
   const next = JSON.parse(output.bytes.toString("utf8"));
   assert.doesNotThrow(() => validateFacilityProtectedSemanticIdentity(previous, next));
