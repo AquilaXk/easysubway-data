@@ -109,6 +109,18 @@ async function loadLine(line) {
   };
 }
 
+function expectedOverlayNames(csvBytes) {
+  // 공식 CSV의 좌표 결측 행에서 기대 역 집합을 구한다.
+  const [header, ...rows] = decodeOfficialCsv(csvBytes).trim().split(/\r?\n/).map((row) => row.split(","));
+  const stationColumn = header.indexOf("역명");
+  const latitudeColumn = header.indexOf("위도");
+  const longitudeColumn = header.indexOf("경도");
+  assert.ok([stationColumn, latitudeColumn, longitudeColumn].every((index) => index >= 0));
+  return rows.filter((row) =>
+    row[latitudeColumn].trim() === "" || row[longitudeColumn].trim() === ""
+  ).map((row) => row[stationColumn].trim());
+}
+
 test("수도권 경전철 5노선 공식 FILE 위경도 + schematic canvas snapshot을 quarantine 0으로 결속한다", async () => {
   assert.equal(listCapitalLightRailRouteMapPositionLines().length, 5);
   for (const line of LINE_FIXTURES) {
@@ -149,16 +161,7 @@ test("수도권 경전철 5노선 공식 FILE 위경도 + schematic canvas snaps
       assert.equal(position.labelPolygon.length, 4);
     }
     if (line.needsOverlay) {
-      // 보존된 단순 CSV의 결측 행이 독립 기대값이며, 현재 역 목록은 복사하지 않는다.
-      const [header, ...rows] = decodeOfficialCsv(csvBytes).trim().split(/\r?\n/).map((row) => row.split(","));
-      const stationColumn = header.indexOf("역명");
-      const latitudeColumn = header.indexOf("위도");
-      const longitudeColumn = header.indexOf("경도");
-      assert.ok([stationColumn, latitudeColumn, longitudeColumn].every((index) => index >= 0));
-      const expectedOverlayNames = rows.filter((row) =>
-        row[latitudeColumn].trim() === "" || row[longitudeColumn].trim() === ""
-      ).map((row) => row[stationColumn].trim());
-      assert.deepEqual(new Set(snapshot.overlayStationNames), new Set(expectedOverlayNames));
+      assert.deepEqual(new Set(snapshot.overlayStationNames), new Set(expectedOverlayNames(csvBytes)));
       assert.equal(snapshot.overlayDatasetId, "1294");
       assert.match(snapshot.license.attribution, /1294/);
     }
@@ -217,7 +220,9 @@ test("신분당 상현·우이신설 전역 empty lat/lon은 KRIC 1294 overlay�
       now: new Date(capturedAt),
     });
     assert.equal(snapshot.quarantinedCount, 0);
-    for (const name of line.overlayNames) {
+    const overlayNames = expectedOverlayNames(csvBytes);
+    assert.ok(overlayNames.length > 0);
+    for (const name of overlayNames) {
       const position = snapshot.positions.find(({ stationName }) => stationName === name);
       assert.ok(position, name);
       assert.equal(position.coordinateSourceDatasetId, "1294");
