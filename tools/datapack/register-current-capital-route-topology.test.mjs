@@ -12,6 +12,7 @@ import {
   readCurrentCapitalRouteTopologyAdmission,
 } from "./register-current-capital-route-topology.mjs";
 import { createFixtureCapitalTopologyReceipt } from "./test-fixtures/current-capital-topology-registration.mjs";
+import { evaluateSourceGovernance } from "./source-governance-policy.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const sha = (value) => createHash("sha256").update(value).digest("hex");
@@ -91,6 +92,30 @@ async function advanceProtectedTopology(root, previousNow, minimumCapturedAt = n
   await writeJson(inventoryPath, inventory);
   return new Date(Math.max(Date.parse(captured) + 1_000, previousNow.valueOf() + 1));
 }
+
+test("registered topology license identity satisfies the downstream governance evaluator", async (t) => {
+  const { root, now } = await fixture(t);
+  const { receiptPath } = await receiptFixture(root, now);
+  const outputs = await buildCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot: root, receiptPath, now });
+  const source = JSON.parse(outputs[0].bytes).sources.find(({ id }) => id === "capital-route-topology");
+  const snapshot = JSON.parse(outputs[1].bytes).at(-1);
+  const result = evaluateSourceGovernance({
+    source,
+    snapshot,
+    policy: JSON.parse(outputs[2].bytes),
+    freshnessPolicy: JSON.parse(outputs[3].bytes),
+    evaluationAt: now.toISOString(),
+  });
+  assert.equal(result.reasonCodes.includes("LICENSE_REVIEW_REQUIRED"), false);
+  const mismatchedPolicy = JSON.parse(outputs[2].bytes);
+  mismatchedPolicy.sources.find(({ sourceId }) => sourceId === source.id)
+    .licenseReview.reviewedProvider = source.owner;
+  assert.notEqual(source.owner, source.provider);
+  assert.equal(evaluateSourceGovernance({
+    source, snapshot, policy: mismatchedPolicy,
+    freshnessPolicy: JSON.parse(outputs[3].bytes), evaluationAt: now.toISOString(),
+  }).reasonCodes.includes("LICENSE_REVIEW_REQUIRED"), true);
+});
 
 test("publishes exactly the protected topology bytes and builds an initial registration", async (t) => {
   const { root, now } = await fixture(t);

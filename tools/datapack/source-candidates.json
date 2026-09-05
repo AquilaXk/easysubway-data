@@ -7420,7 +7420,7 @@
             "reviewedAt": "2026-09-03T14:01:45Z",
             "nextReviewAt": "2027-09-03T14:01:45Z",
             "termsUrl": "https://www.kogl.or.kr/info/faqList.do?dataGroup=2&mstIdx=KOGL_005",
-            "reviewedProvider": "국가철도공단·국토교통부",
+            "reviewedProvider": "data.go.kr official FILE",
             "reviewedDatasetUrl": "https://www.data.go.kr/",
             "redistributionScopes": ["DERIVED_DATAPACK"],
             "approvedByRole": "datapack-release-approver"
