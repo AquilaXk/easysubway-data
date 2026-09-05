@@ -727,7 +727,7 @@ async function createFixture(t, options = {}) {
     stationLineInput,
     routeEdgeInput,
     options.evaluationAt ?? FRESH_AT,
-    options.freshUntil,
+    options.freshUntil ?? (await selectedSourceWindow(repositoryRoot)).freshUntil,
   );
   return { temp, repositoryRoot, repositoryGitSha, artifactRoot, buildSpec, manifest, stationLineInput, routeEdgeInput };
 }
@@ -753,10 +753,10 @@ async function copyRepositoryInputs(repositoryRoot) {
   });
 }
 
-async function selectedSourceWindow() {
+async function selectedSourceWindow(repositoryRoot = process.cwd()) {
   const [buildSpec, sourceSnapshots] = await Promise.all([
-    readJson("tools/datapack/release/candidate-build-spec.json"),
-    readJson("tools/datapack/release/source-snapshots.json"),
+    readJson(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json")),
+    readJson(path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json")),
   ]);
   const selected = buildSpec.sourceSnapshotIds.map((snapshotId) => {
     const matches = sourceSnapshots.filter((entry) => entry.snapshotId === snapshotId);
@@ -769,7 +769,7 @@ async function selectedSourceWindow() {
     entry.rawReceipt?.storedAt,
   ].filter(Boolean).map(Date.parse)));
   const freshUntil = Math.min(...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)));
-  const evaluationAt = await nextSyntheticCurrentStaticNetworkNow(process.cwd());
+  const evaluationAt = await nextSyntheticCurrentStaticNetworkNow(repositoryRoot);
   assert.ok(Number.isFinite(basisAt) && Number.isFinite(freshUntil) && evaluationAt.getTime() < freshUntil);
   return {
     evaluationAt: evaluationAt.toISOString(),
