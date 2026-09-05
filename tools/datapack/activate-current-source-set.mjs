@@ -3051,6 +3051,7 @@ export async function generateCurrentCapitalTopologyRefresh({
       ),
     ]);
     await prepareReleaseEvidenceRoot(temporaryRoot, primary.spec, {
+      repositoryRoot: repositoryPath,
       readMutableInput,
       topologyEvidenceBytes: approvedItxBootstrap ? currentItxTopologyEvidenceBytes : null,
     });
