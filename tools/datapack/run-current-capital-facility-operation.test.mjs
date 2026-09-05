@@ -374,8 +374,8 @@ test("missing KRIC_SERVICE_KEY leaves PREPARED before any claim", async (t) => {
   assert.equal(JSON.parse(await readFile(path.join(operationRoot, "journal.json"), "utf8")).phase, "PREPARED");
 });
 
-test("current release preflight requires the exact eight-source roster before a provider call", async (t) => {
-  const temporaryRoot = await mkdtemp(path.join(tmpdir(), "facility-eight-source-preflight-"));
+test("current release preflight rejects a missing required source before a provider call", async (t) => {
+  const temporaryRoot = await mkdtemp(path.join(tmpdir(), "facility-source-preflight-"));
   const operationRoot = path.join(temporaryRoot, "operation");
   t.after(() => rm(temporaryRoot, { recursive: true, force: true }));
   const repositoryRoot = await currentReleaseFixture(t);
@@ -383,7 +383,7 @@ test("current release preflight requires the exact eight-source roster before a 
   const candidatePath = path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json");
   const candidate = JSON.parse(await readFile(candidatePath, "utf8"));
   const incheonIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === "incheon-transit-accessibility");
-  assert.equal(incheonIndex, 6);
+  assert.notEqual(incheonIndex, -1);
   candidate.sourceSnapshots.splice(incheonIndex, 1);
   candidate.sourceSnapshotIds.splice(incheonIndex, 1);
   await writeJson(candidatePath, candidate);
@@ -392,7 +392,7 @@ test("current release preflight requires the exact eight-source roster before a 
   await assert.rejects(collectCurrentCapitalFacilityOperation({
     repositoryRoot, operationRoot, serviceKey: "test", env: OCI_ENV, execFileImpl: exactMainExec,
     collectImpl: async () => { providerCalls += 1; },
-  }), /candidate source ledger\/freshness binding mismatch/);
+  }), /candidate source set mismatch/);
   assert.equal(providerCalls, 0);
 });
 
