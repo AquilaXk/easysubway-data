@@ -327,15 +327,20 @@ jobs:
             if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
             return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
           };
-          const required = ["schemaVersion", "artifactKind", "backendHeadSha", "dataHeadSha", "dataRunId", "fanInSha256", "routeBundleSha256", "regionalMatrixSha256", "corpusSha256", "algorithmId", "algorithmSha256", "frontierPolicyId", "frontierSha256", "measurements"];
+          const required = ["schemaVersion", "artifactKind", "observationScope", "servingBoundary", "backendHeadSha", "dataHeadSha", "dataRunId", "fanInSha256", "routeBundleSha256", "regionalMatrixSha256", "corpusSha256", "algorithmId", "algorithmSha256", "frontierPolicyId", "frontierSha256", "measurements"];
           if (JSON.stringify(Object.keys(observation).sort()) !== JSON.stringify(required.sort())) throw new Error("measurement observation shape is not closed");
-          if (observation.schemaVersion !== 1 || observation.artifactKind !== "journey-profile-predeployment-observation"
+          if (observation.schemaVersion !== 2 || observation.artifactKind !== "journey-profile-predeployment-observation"
             || observation.backendHeadSha !== process.env.BACKEND_HEAD || observation.dataHeadSha !== process.env.DATA_HEAD
             || String(observation.dataRunId) !== process.env.DATA_RUN_ID || observation.fanInSha256 !== input.fanIn.sha256
             || observation.routeBundleSha256 !== input.routeBundleSha256 || observation.regionalMatrixSha256 !== input.regionalMatrixSha256
             || observation.algorithmId !== "EASYSUBWAY_RAPTOR_SUITE_V2" || observation.frontierPolicyId !== "FRONTIER_POLICY_V1") throw new Error("measurement observation identity mismatch");
           for (const name of ["fanInSha256", "routeBundleSha256", "regionalMatrixSha256", "corpusSha256", "algorithmSha256", "frontierSha256"]) if (!/^[a-f0-9]{64}$/.test(observation[name] ?? "")) throw new Error(`invalid ${name}`);
-          const rowKeys = ["regionId", "queryClass", "observedWork", "observedStateLabels", "observedDestinationLabels", "observedBreakpoints", "durationNanos", "allocatedBytes", "saturatedStates", "requiredRepresentativeLoss", "oracleParity", "providerCalls", "cacheHits", "staleArtifactUses", "fallbackUses"];
+          // 순수 planner 측정은 운영 경계를 관측하지 않으며 배포 성공 증거가 아니다.
+          if (observation.observationScope !== "PREDEPLOYMENT_PLANNER"
+            || observation.servingBoundary === null || typeof observation.servingBoundary !== "object"
+            || JSON.stringify(Object.keys(observation.servingBoundary)) !== '["status"]'
+            || observation.servingBoundary.status !== "UNOBSERVABLE") throw new Error("invalid planner observation scope");
+          const rowKeys = ["regionId", "queryClass", "observedWork", "observedStateLabels", "observedDestinationLabels", "observedBreakpoints", "durationNanos", "allocatedBytes", "saturatedStates", "requiredRepresentativeLoss", "oracleParity"];
           const expectedCells = input.regionIds.flatMap((regionId) => input.queryClasses.map((queryClass) => `${regionId}/${queryClass}`));
           if (!Array.isArray(observation.measurements) || observation.measurements.length !== expectedCells.length) throw new Error("measurement coverage matrix is incomplete");
           for (let index = 0; index < observation.measurements.length; index += 1) {
@@ -343,11 +348,10 @@ jobs:
             if (JSON.stringify(Object.keys(row).sort()) !== JSON.stringify([...rowKeys].sort())
               || `${row.regionId}/${row.queryClass}` !== expectedCells[index]) throw new Error("measurement coverage cell mismatch");
             for (const name of rowKeys.slice(2).filter((name) => name !== "oracleParity")) if (!Number.isSafeInteger(row[name]) || row[name] < 0) throw new Error(`invalid ${name}`);
-            if (row.requiredRepresentativeLoss !== 0 || row.oracleParity !== true || row.providerCalls !== 0
-              || row.cacheHits !== 0 || row.staleArtifactUses !== 0 || row.fallbackUses !== 0) throw new Error("untrusted predeployment observation");
+            if (row.requiredRepresentativeLoss !== 0 || row.oracleParity !== true) throw new Error("untrusted predeployment observation");
           }
           const evidencePayload = {
-            schemaVersion: 1,
+            schemaVersion: 2,
             artifactKind: "journey-profile-predeployment-measurement",
             backend: { repository: "AquilaXk/easysubway-backend", headSha: process.env.BACKEND_HEAD },
             data: { repository: input.dataRepository, headSha: process.env.DATA_HEAD, runId: process.env.DATA_RUN_ID, regionIds: input.regionIds, queryClasses: input.queryClasses, fanIn: input.fanIn, componentSha256: input.componentSha256, inventorySha256: input.inventorySha256, releaseEvidenceSha256: input.releaseEvidenceSha256, releaseDecisionSha256: input.releaseDecisionSha256 },
