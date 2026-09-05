@@ -64,7 +64,7 @@ export async function buildCanonicalCurrentKricExitCollectionBundle({ repository
 export async function buildCanonicalCurrentLiveChainArtifacts({ authorityBytes, providerCollectionBundleBytes, repositorySha, operationId }) {
   const readAuthority = (relative) => authorityBytes.get(relative) ?? readFile(path.join(DATAPACK_ROOT, relative));
   const [candidateBytes, inventoryBytes, snapshotsBytes, canonicalPackBytes, coverageTargetsBytes,
-    providerCodeCatalogBytes, routeRostersBytes, governancePolicyBytes, freshnessPolicyBytes,
+    providerCodeCatalogBytes, routeRostersBytes, governancePolicyBytes, freshnessPolicyBytes, productionScopeBytes,
     transferMetricsBytes, transferApplicabilityBytes, policyBytes] = await Promise.all([
     readAuthority("tools/datapack/release/candidate-build-spec.json"),
     readAuthority("tools/datapack/source-inventory.json"),
@@ -75,6 +75,7 @@ export async function buildCanonicalCurrentLiveChainArtifacts({ authorityBytes, 
     readAuthority("tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json"),
     readAuthority("tools/datapack/source-governance-policy.json"),
     readAuthority("release/product-gates/datapack-freshness-sla.json"),
+    readAuthority("release/product-gates/production-datapack-scope.json"),
     readAuthority("tools/datapack/release/current-transfer-topology-metrics.json"),
     readAuthority("tools/datapack/release/current-capital-transfer-topology-applicability.json"),
     readAuthority("release/product-gates/route-edge-evaluation-policy.json"),
@@ -90,6 +91,7 @@ export async function buildCanonicalCurrentLiveChainArtifacts({ authorityBytes, 
   const facility = buildCurrentCapitalFacilitySourceAdmission({
     planBytes: Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(facilityPlan)), canonicalPackBytes,
     snapshotBytes: facilitySnapshotBytes, candidateBuildSpec: candidate, candidateEvaluationAt: candidate.publishedAt,
+    productionScopeBytes,
     sourceInventoryBytes: inventoryBytes, sourceSnapshots, governancePolicy: JSON.parse(governancePolicyBytes),
     governancePolicyBytes, freshnessPolicy: JSON.parse(freshnessPolicyBytes), observedAt: candidate.publishedAt,
   });
@@ -123,6 +125,7 @@ export async function buildCanonicalCurrentLiveChainArtifacts({ authorityBytes, 
     facilityBytes: artifacts.get(facilityPath),
     ledger: sourceSnapshots, ledgerBytes: snapshotsBytes,
     inventory: sourceInventory, inventoryBytes,
+    productionScopeBytes,
   });
   const transitionBytes = Buffer.from(canonicalCurrentCapitalAccessibilityTransitionJson(transition));
   const rebound = rebindFixtureCurrentExitV2Admission({

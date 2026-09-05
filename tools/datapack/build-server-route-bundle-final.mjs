@@ -621,6 +621,7 @@ function evaluateSourceFreshness({ fixed, artifact, evaluationAt }) {
       governancePolicy: fixed.governancePolicy.value,
       inventory: fixed.sourceInventory.value,
       governancePolicySha256: fixed.governancePolicy.sha256,
+      governancePolicyBytes: fixed.governancePolicy.bytes,
     });
   } catch (error) {
     if (!(error instanceof Error) || error.message !== "SOURCE_SNAPSHOT_EXPIRED") throw error;

@@ -8,7 +8,7 @@ import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { assertCurrentStaticNetworkTopologyAdmission } from "./register-current-static-network-successors.mjs";
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
-import { deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
+import { buildAppendOnlyGovernancePolicyRegistration, deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 import { isDeepStrictEqual } from "node:util";
 
 const SOURCE_ID = "capital-route-topology";
@@ -148,7 +148,11 @@ export async function readCurrentCapitalRouteTopologyAdmission({ repositoryRoot,
     || (existingGovernance.length === 1 && (!isDeepStrictEqual(existingGovernance[0], governance) || !isDeepStrictEqual(existingFreshness[0], freshness)))) {
     throw new Error("capital topology registration policy binding is invalid");
   }
-  const governancePolicy = existingGovernance.length === 1 ? baseGovernancePolicy : { ...baseGovernancePolicy, sources: [...baseGovernancePolicy.sources, governance] };
+  const governancePolicy = existingGovernance.length === 1 ? baseGovernancePolicy
+    : buildAppendOnlyGovernancePolicyRegistration({
+      predecessorPolicyBytes: governanceBytes,
+      addedSources: [governance],
+    }).policy;
   const freshnessPolicy = existingFreshness.length === 1 ? baseFreshnessPolicy : { ...baseFreshnessPolicy, sourceClasses: [...baseFreshnessPolicy.sourceClasses, freshness] };
   const review = governance.licenseReview;
   const reviewedAt = instant(review?.reviewedAt, "capital topology license reviewedAt");
@@ -161,7 +165,7 @@ export async function readCurrentCapitalRouteTopologyAdmission({ repositoryRoot,
   if (!license || license.type !== "KOGL-1" || typeof license.attribution !== "string" || license.attribution.length === 0
     || license.redistributionAllowed !== metadata.redistributionAllowed || license.evidenceUrl !== metadata.datasetUrl
     || review.status !== "APPROVED" || review.termsHash !== recordDigest(license) || review.termsUrl !== metadata.licenseTermsUrl
-    || review.reviewedProvider !== metadata.owner || review.reviewedDatasetUrl !== metadata.datasetUrl
+    || review.reviewedProvider !== metadata.provider || review.reviewedDatasetUrl !== metadata.datasetUrl
     || JSON.stringify(review.redistributionScopes) !== JSON.stringify(["DERIVED_DATAPACK"])
     || review.approvedByRole !== governance.approvalRole || reviewedAt > now.valueOf() || nextReviewAt <= now.valueOf()) throw new Error("capital topology license is invalid");
   return { sourceId: SOURCE_ID, snapshotId, capturedDate, topologyAdmission, topologyRelative, topologyBytes, topology, lineIds: [...lineIds], coverageScope: { regionIds: [...ownerScope.regionIds], operatorIds: [...ownerScope.operatorIds] }, fieldsProvided: [...topology.fieldsProvided], candidate, metadata, registration, governancePolicy, governance, freshnessPolicy, freshness, governanceRecordSha256: recordDigest(governance), freshnessClassSha256: recordDigest(freshness), inputBindings: [

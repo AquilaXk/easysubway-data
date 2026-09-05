@@ -17,6 +17,7 @@ import { buildCurrentCapitalFacilitySourceAdmission, canonicalCurrentCapitalFaci
 import { validateLineage } from "./source-snapshot-policy.mjs";
 import { deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import { validateCandidateSourceSet } from "./validate-candidate-source-set.mjs";
 
 const execFile = promisify(execFileCallback);
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -34,20 +35,11 @@ const RELEASE_INPUTS = Object.freeze({
   snapshots: "tools/datapack/release/source-snapshots.json",
   governance: "tools/datapack/source-governance-policy.json",
   freshness: "release/product-gates/datapack-freshness-sla.json",
+  productionScope: "release/product-gates/production-datapack-scope.json",
 });
 const ADMISSION = "tools/datapack/release/current-capital-facility-source-admission.json";
 const JOURNAL = "journal.json";
 const REGISTRAR_RESIDUES = Object.freeze(["tools/datapack/.kric-standard-registration-transaction.json", "tools/datapack/.kric-standard-registration.lock", "tools/datapack/.candidate-source-rebind.lock", "tools/datapack/.active-facility-derived-identity-rebind.lock"]);
-const CURRENT_SOURCE_IDS = Object.freeze([
-  "seoul-metro-route-map-positions",
-  "kric-subway-timetable",
-  "seoul-metro-accessibility",
-  "kric-station-convenience-standard",
-  "molit-urban-rail-full-route",
-  "seoulmetro-station-line-info",
-  "incheon-transit-accessibility",
-  "seoul-metro-transfer-distance-duration",
-]);
 const JOURNAL_KEYS = new Set(["schemaVersion", "artifactKind", "operationId", "phase", "preparedAt", "expectedMainSha", "expectedFacilityHeadSha", "planSha256", "inputSha256", "priorAdmissionSha256", "completedStages", "collectionStartedAt", "snapshotId", "completedObservation", "collectionReconciledAt", "finalizeObservedAt", "reboundExpectedCandidateSha256", "finalizedAt"]);
 const RAW_RECEIPT_KEYS = ["schemaVersion", "artifactKind", "sourceId", "snapshotId", "snapshotRawSha256", "capturedAt", "snapshotFileSha256", "rawObjectUri", "rawObjectSha256", "byteSize", "storedAt", "rawRetentionExpiresAt"];
 
@@ -191,8 +183,15 @@ async function validateReleasePreflight(root, planBytes, now, { replacingSourceI
   const candidate = parse(release.candidate.bytes, "candidate"); const request = parse(release.releaseRequest.bytes, "release request"); const inventory = parse(release.inventory.bytes, "source inventory"); const snapshots = parse(release.snapshots.bytes, "source snapshot ledger"); const governance = parse(release.governance.bytes, "source governance policy"); const freshness = parse(release.freshness.bytes, "freshness SLA");
   if (request?.buildSpecSha256 !== hash(release.candidate.bytes)) throw new Error("release request is not bound to candidate bytes");
   validateSourceGovernancePolicy({ policy: governance, inventory, freshnessPolicy: freshness });
-  const heads = validateLineage(snapshots).headsBySource;
-  if (!Array.isArray(candidate?.sourceSnapshotIds) || !Array.isArray(candidate?.sourceSnapshots) || candidate.sourceSnapshotIds.length !== candidate.sourceSnapshots.length || JSON.stringify(candidate.sourceSnapshots.map(({ sourceId }) => sourceId)) !== JSON.stringify(CURRENT_SOURCE_IDS)) throw new Error("candidate source ledger/freshness binding mismatch");
+  const { headsBySource: heads } = validateCandidateSourceSet({
+    productionScopeBytes: release.productionScope.bytes,
+    sourceInventoryBytes: release.inventory.bytes,
+    candidate,
+    ledger: snapshots,
+  });
+  if (candidate.sourceSnapshots.at(-1).sourceId !== "seoul-metro-transfer-distance-duration") {
+    throw new Error("candidate terminal TRANSFER source order mismatch");
+  }
   for (const [index, snapshotId] of candidate.sourceSnapshotIds.entries()) {
     const ledger = snapshots.find((entry) => entry?.snapshotId === snapshotId); const projection = candidate.sourceSnapshots[index]; const source = inventory.sources?.find(({ id }) => id === ledger?.sourceId); const governanceSource = governance.sources?.find(({ sourceId }) => sourceId === ledger?.sourceId); const review = governanceSource?.licenseReview;
     let freshnessExpiresAt; let rawRetentionExpiresAt; let nextReviewAt;
@@ -659,7 +658,21 @@ export async function finalizeCurrentCapitalFacilityOperation({ repositoryRoot =
   if (reboundExpectedCandidateSha256 != null && hash(candidateBytes) === reboundExpectedCandidateSha256) expectedCandidateBytes = candidateBytes;
   if (expectedCandidateBytes == null) {
     const release = Object.fromEntries(await Promise.all(Object.entries(RELEASE_INPUTS).map(async ([key, relative]) => [key, await readStableRegularFile(path.join(root, relative), key)])));
-    const expectedCandidate = rebindCandidateSourceSnapshots({ candidateBuildSpec: parse(release.candidate.bytes, "candidate"), candidateBuildSpecBytes: release.candidate.bytes, releaseRequest: parse(release.releaseRequest.bytes, "release request"), sourceInventory: parse(release.inventory.bytes, "inventory"), sourceInventoryBytes: release.inventory.bytes, sourceSnapshots: parse(release.snapshots.bytes, "snapshots"), canonicalPack: parse(await regularBytes(path.join(root, INPUTS.canonicalPackBytes), "canonical pack"), "canonical pack"), governancePolicy: parse(release.governance.bytes, "governance"), governancePolicyBytes: release.governance.bytes, freshnessPolicy: parse(release.freshness.bytes, "freshness"), kricSnapshotBytes: snapshotBytes, now });
+    const expectedCandidate = rebindCandidateSourceSnapshots({
+      candidateBuildSpec: parse(release.candidate.bytes, "candidate"),
+      candidateBuildSpecBytes: release.candidate.bytes,
+      productionScopeBytes: release.productionScope.bytes,
+      releaseRequest: parse(release.releaseRequest.bytes, "release request"),
+      sourceInventory: parse(release.inventory.bytes, "inventory"),
+      sourceInventoryBytes: release.inventory.bytes,
+      sourceSnapshots: parse(release.snapshots.bytes, "snapshots"),
+      canonicalPack: parse(await regularBytes(path.join(root, INPUTS.canonicalPackBytes), "canonical pack"), "canonical pack"),
+      governancePolicy: parse(release.governance.bytes, "governance"),
+      governancePolicyBytes: release.governance.bytes,
+      freshnessPolicy: parse(release.freshness.bytes, "freshness"),
+      kricSnapshotBytes: snapshotBytes,
+      now,
+    });
     expectedCandidateBytes = Buffer.from(`${JSON.stringify(expectedCandidate, null, 2)}\n`);
     if (reboundExpectedCandidateSha256 != null && hash(expectedCandidateBytes) !== reboundExpectedCandidateSha256) throw new Error("rebound candidate journal mismatch");
     if (reboundExpectedCandidateSha256 == null) {
@@ -679,7 +692,7 @@ export async function finalizeCurrentCapitalFacilityOperation({ repositoryRoot =
   } else if (!candidateBytes.equals(expectedCandidateBytes)) throw new Error("candidate rebound verification failed");
   const reboundRelease = Object.fromEntries(await Promise.all(Object.entries(RELEASE_INPUTS).map(async ([key, relative]) => [key, await readStableRegularFile(path.join(root, relative), key)])));
   const candidateBuildSpec = parse(reboundRelease.candidate.bytes, "candidate");
-  const admission = buildAdmissionImpl({ observedAt: finalizeObservedAt, candidateEvaluationAt: candidateBuildSpec.publishedAt, planBytes, canonicalPackBytes: await regularBytes(path.join(root, INPUTS.canonicalPackBytes), "canonical pack"), snapshotBytes: await regularBytes(path.join(root, "tools/datapack/sources", `${snapshot.snapshotId}.json`), "registered snapshot"), candidateBuildSpec, sourceInventoryBytes: reboundRelease.inventory.bytes, sourceSnapshots: parse(reboundRelease.snapshots.bytes, "snapshots"), governancePolicy: parse(reboundRelease.governance.bytes, "governance"), governancePolicyBytes: reboundRelease.governance.bytes, freshnessPolicy: parse(reboundRelease.freshness.bytes, "freshness") });
+  const admission = buildAdmissionImpl({ observedAt: finalizeObservedAt, candidateEvaluationAt: candidateBuildSpec.publishedAt, planBytes, canonicalPackBytes: await regularBytes(path.join(root, INPUTS.canonicalPackBytes), "canonical pack"), snapshotBytes: await regularBytes(path.join(root, "tools/datapack/sources", `${snapshot.snapshotId}.json`), "registered snapshot"), candidateBuildSpec, productionScopeBytes: reboundRelease.productionScope.bytes, sourceInventoryBytes: reboundRelease.inventory.bytes, sourceSnapshots: parse(reboundRelease.snapshots.bytes, "snapshots"), governancePolicy: parse(reboundRelease.governance.bytes, "governance"), governancePolicyBytes: reboundRelease.governance.bytes, freshnessPolicy: parse(reboundRelease.freshness.bytes, "freshness") });
   const target = path.join(root, ADMISSION); const admissionBytes = Buffer.from(canonicalCurrentCapitalFacilitySourceAdmissionJson(admission));
   const releaseAdmissionClaim = await acquireAdmissionReplacementClaim(root);
   try {

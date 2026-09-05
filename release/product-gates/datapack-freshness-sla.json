@@ -9,87 +9,180 @@
   "sourceClasses": [
     {
       "id": "static_network_metadata",
-      "sourceIds": ["molit-urban-rail-full-route", "seoulmetro-station-line-info", "kric-train-operation-organ"],
-      "examples": ["station", "line", "operator identity"],
+      "sourceIds": [
+        "molit-urban-rail-full-route",
+        "seoulmetro-station-line-info",
+        "kric-train-operation-organ"
+      ],
+      "examples": [
+        "station",
+        "line",
+        "operator identity"
+      ],
       "basisField": "retrievedAt",
       "reverificationCadence": "P30D",
       "offlinePackEligible": true,
-      "eventTriggers": ["station rename", "operator change", "line extension opening"],
+      "eventTriggers": [
+        "station rename",
+        "operator change",
+        "line extension opening"
+      ],
       "changePublishSla": "P3D",
       "freshnessMetric": "freshnessValidRatio"
     },
     {
       "id": "static_accessibility_facility",
-      "sourceIds": ["incheon-transit-accessibility", "kric-station-convenience-standard", "kric-station-elevator", "kric-station-elevator-movement", "kric-station-escalator", "kric-wheelchair-lift-location", "kric-wheelchair-lift-movement", "seoul-metro-accessibility"],
-      "examples": ["KRIC elevator", "KRIC escalator", "KRIC wheelchair lift"],
+      "sourceIds": [
+        "incheon-transit-accessibility",
+        "kric-station-convenience-standard",
+        "kric-station-elevator",
+        "kric-station-elevator-movement",
+        "kric-station-escalator",
+        "kric-wheelchair-lift-location",
+        "kric-wheelchair-lift-movement",
+        "seoul-metro-accessibility"
+      ],
+      "examples": [
+        "KRIC elevator",
+        "KRIC escalator",
+        "KRIC wheelchair lift"
+      ],
       "basisField": "retrievedAt",
       "reverificationCadence": "P90D",
       "offlinePackEligible": true,
-      "eventTriggers": ["operator construction notice", "facility outage notice", "field verification override"],
+      "eventTriggers": [
+        "operator construction notice",
+        "facility outage notice",
+        "field verification override"
+      ],
       "changePublishSla": "P3D",
       "freshnessMetric": "freshnessValidRatio"
     },
     {
       "id": "planned_timetable",
-      "sourceIds": ["kric-subway-timetable"],
-      "examples": ["service calendar", "trips", "stop_times", "headway"],
+      "sourceIds": [
+        "kric-subway-timetable"
+      ],
+      "examples": [
+        "service calendar",
+        "trips",
+        "stop_times",
+        "headway"
+      ],
       "basisField": "serviceEffectiveAt",
       "maximumReverificationCadence": "P30D",
       "futureBasisAllowed": true,
       "providerValidityEndField": "serviceEffectiveUntil",
       "offlinePackEligible": true,
-      "eventTriggers": ["operator timetable revision", "service calendar expiry", "line extension opening"],
+      "eventTriggers": [
+        "operator timetable revision",
+        "service calendar expiry",
+        "line extension opening"
+      ],
       "changePublishSla": "before-effective-date",
       "freshnessMetric": "plannedEtaCoverageRatio"
     },
     {
       "id": "route_map_positions",
-      "sourceIds": ["seoul-metro-route-map-positions"],
-      "examples": ["official public station code/name/latitude/longitude", "versioned deterministic route-map layout"],
+      "sourceIds": [
+        "seoul-metro-route-map-positions"
+      ],
+      "examples": [
+        "official public station code/name/latitude/longitude",
+        "versioned deterministic route-map layout"
+      ],
       "basisField": "retrievedAt",
       "reverificationCadence": "P90D",
       "offlinePackEligible": true,
-      "eventTriggers": ["official public data revision", "new station opening", "line extension opening"],
+      "eventTriggers": [
+        "official public data revision",
+        "new station opening",
+        "line extension opening"
+      ],
       "changePublishSla": "P3D",
       "freshnessMetric": "routeMapPositionFreshnessRatio"
     },
     {
       "id": "route_map_asset_historical",
-      "sourceIds": ["seoulmetro-cyberstation-route-map"],
-      "examples": ["historical web route-map diagnostic only"],
+      "sourceIds": [
+        "seoulmetro-cyberstation-route-map"
+      ],
+      "examples": [
+        "historical web route-map diagnostic only"
+      ],
       "basisField": "retrievedAt",
       "reverificationCadence": "P1Y",
       "offlinePackEligible": false,
-      "eventTriggers": ["historical evidence review"],
+      "eventTriggers": [
+        "historical evidence review"
+      ],
       "changePublishSla": "not-applicable",
       "freshnessMetric": "routeMapPositionFreshnessRatio"
     },
     {
       "id": "annual_official_file",
-      "sourceIds": ["molit-railway-transfer-movement", "seoul-metro-transfer-distance-duration"],
-      "examples": ["official annual railway transfer movement CSV"],
+      "sourceIds": [
+        "molit-railway-transfer-movement",
+        "seoul-metro-transfer-distance-duration"
+      ],
+      "examples": [
+        "official annual railway transfer movement CSV"
+      ],
       "basisField": "observedAt",
       "reverificationCadence": "P1Y",
       "offlinePackEligible": true,
-      "eventTriggers": ["official file revision", "station transfer path revision", "line or station opening"],
+      "eventTriggers": [
+        "official file revision",
+        "station transfer path revision",
+        "line or station opening"
+      ],
       "changePublishSla": "P14D",
       "freshnessMetric": "freshnessValidRatio"
     },
     {
       "id": "realtime_overlay",
       "sourceIds": [],
-      "examples": ["Seoul TOPIS arrival", "provider train position"],
+      "examples": [
+        "Seoul TOPIS arrival",
+        "provider train position"
+      ],
       "basisField": "observedAt",
       "reverificationCadence": "PT90S",
       "offlinePackEligible": false,
-      "eventTriggers": ["provider stale", "mapping failure spike", "quota or terms change"],
+      "eventTriggers": [
+        "provider stale",
+        "mapping failure spike",
+        "quota or terms change"
+      ],
       "changePublishSla": "online-overlay-only",
       "freshnessMetric": "providerFreshnessSecondsMax"
+    },
+    {
+      "id": "route_graph_topology",
+      "sourceIds": [
+        "capital-route-topology"
+      ],
+      "examples": [
+        "official capital route graph topology"
+      ],
+      "basisField": "retrievedAt",
+      "reverificationCadence": "P1D",
+      "offlinePackEligible": true,
+      "eventTriggers": [
+        "official source revision",
+        "line extension opening"
+      ],
+      "changePublishSla": "P3D",
+      "freshnessMetric": "routeTopologyFreshnessRatio"
     }
   ],
   "monitoring": {
     "manualCheckCadence": "P1D",
-    "channels": ["operator notices", "public data portal update metadata", "GitHub Actions schedule"],
+    "channels": [
+      "operator notices",
+      "public data portal update metadata",
+      "GitHub Actions schedule"
+    ],
     "alertBeforePackExpiry": "PT6H",
     "alertWhenFreshnessInvalid": true,
     "productionChannelAllowsExpiredPack": false
@@ -126,12 +219,19 @@
     "visibleLabelKo": "저장된 데이터 기준 · 갱신 필요",
     "strictProfileCanUseStaleAsFound": false,
     "supportClaimDowngradeRequired": true,
-    "linkedUiIssues": [1396, 1398]
+    "linkedUiIssues": [
+      1396,
+      1398
+    ]
   },
   "rollback": {
     "runbookCommand": "node tools/datapack/run-emergency-datapack-drill.mjs --input <drill-input.json> --output <drill-evidence.json>",
     "rehearsalEvidenceRequired": true,
-    "requiredEvidence": ["manifest-hashes", "rollback-time-seconds", "route-regression-replay"]
+    "requiredEvidence": [
+      "manifest-hashes",
+      "rollback-time-seconds",
+      "route-regression-replay"
+    ]
   },
   "requiredEvidence": [
     "freshness-policy-json",

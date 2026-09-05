@@ -21,7 +21,7 @@ import {
   syncReleaseEvidence,
   syncCanonicalFixture,
 } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
-import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
+import { copySyntheticCurrentPublicRouteMapRepository, nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -362,7 +362,7 @@ test("active canonical source inventory excludes retired movement snapshot heads
   ]);
 });
 
-test("current candidate selects fixed and registered canonical provenance heads", () => {
+test("current candidate selects scope-bound registered canonical provenance heads", () => {
   const canonicalSourceIds = [
     "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
     "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
@@ -393,7 +393,8 @@ test("current candidate selects fixed and registered canonical provenance heads"
     ],
   }] };
   const registered = snapshots.find(({ sourceId }) => sourceId === "incheon-transit-station-info");
-  const sourceInventory = [{
+  const sourceInventory = candidateSourceIds.map((id) => ({ id, requiredForProductionPack: true }));
+  Object.assign(sourceInventory.find(({ id }) => id === registered.sourceId), {
     id: registered.sourceId,
     registrationEvidence: {
       sourceId: registered.sourceId,
@@ -402,10 +403,21 @@ test("current candidate selects fixed and registered canonical provenance heads"
       rawObjectSha256: registered.rawSha256,
       contentSha256: registered.contentSha256,
     },
-  }];
+  });
+  const context = {
+    snapshots, canonical, headsBySource,
+    sourceInventoryBytes: Buffer.from(JSON.stringify({ sources: sourceInventory })),
+    productionScopeBytes: Buffer.from(JSON.stringify({ productionSourceSet: {
+      sourceInventory: "tools/datapack/source-inventory.json", requiredSourceIds: [...candidateSourceIds].reverse(),
+    } })),
+    candidate: {
+      sourceSnapshotIds: candidateSourceIds.map((sourceId) => headsBySource[sourceId]),
+      sourceSnapshots: candidateSourceIds.map((sourceId) => ({ sourceId, snapshotId: headsBySource[sourceId] })),
+    },
+  };
 
   assert.deepEqual(
-    currentCandidateReleaseSnapshots(snapshots, canonical, headsBySource, sourceInventory).map(({ sourceId }) => sourceId),
+    currentCandidateReleaseSnapshots(context).map(({ sourceId }) => sourceId),
     candidateSourceIds,
   );
   for (const invalidCanonical of [
@@ -416,18 +428,23 @@ test("current candidate selects fixed and registered canonical provenance heads"
     { ...canonical.packs[0], sourceInventory: [...canonicalSourceIds, "seoul-metro-route-map-positions"].map((id) => ({ id })) },
   ]) {
     assert.throws(
-      () => currentCandidateReleaseSnapshots(snapshots, { packs: [invalidCanonical] }, headsBySource, sourceInventory),
+      () => currentCandidateReleaseSnapshots({ ...context, canonical: { packs: [invalidCanonical] } }),
       /capital canonical active source identity drift/,
     );
   }
   assert.throws(
-    () => currentCandidateReleaseSnapshots(snapshots.filter(({ sourceId }) => sourceId !== "seoul-metro-transfer-distance-duration"), canonical, headsBySource, sourceInventory),
+    () => currentCandidateReleaseSnapshots({ ...context, snapshots: snapshots.filter(({ sourceId }) => sourceId !== "seoul-metro-transfer-distance-duration") }),
     /current candidate source head is missing: seoul-metro-transfer-distance-duration/,
   );
   assert.throws(
-    () => currentCandidateReleaseSnapshots([...snapshots, registered], canonical, headsBySource, sourceInventory),
+    () => currentCandidateReleaseSnapshots({ ...context, snapshots: [...snapshots, registered] }),
     /current candidate source head is missing: incheon-transit-station-info/,
   );
+  assert.throws(() => currentCandidateReleaseSnapshots({ ...context, productionScopeBytes: undefined }), /production scope/);
+  const missing = structuredClone(context.candidate);
+  missing.sourceSnapshots.splice(0, 1);
+  missing.sourceSnapshotIds.splice(0, 1);
+  assert.throws(() => currentCandidateReleaseSnapshots({ ...context, candidate: missing }), /candidate source set/);
 });
 
 test("reviewed accessibility fixture must preserve the complete current canonical source authority", () => {
@@ -494,7 +511,7 @@ test("candidate-fixtures-only sync succeeds without reading mobile pack paths", 
   );
   try {
     await copySyntheticCurrentPublicRouteMapRepository(repository, directory, {
-      now: new Date("2026-08-24T12:00:00.000Z"),
+      now: await nextSyntheticCurrentStaticNetworkNow(repository),
     });
     await execFileAsync(process.execPath, [
       "tools/datapack/apply-accessibility-evidence-to-bundled-pack.mjs",
@@ -522,7 +539,7 @@ test("generated hash-evidence commands use and enforce the exact candidate snaps
   const repository = path.resolve(import.meta.dirname, "../..");
   try {
     await copySyntheticCurrentPublicRouteMapRepository(repository, directory, {
-      now: new Date("2026-08-24T12:00:00.000Z"),
+      now: await nextSyntheticCurrentStaticNetworkNow(repository),
     });
     await mkdir(path.join(directory, "tools/datapack/lib"), { recursive: true });
     await Promise.all([

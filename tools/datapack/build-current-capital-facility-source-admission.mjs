@@ -1,10 +1,10 @@
 import { canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
-import { deriveReleaseProjection, isActiveCandidateSourceSequence } from "./rebind-current-candidate-source-snapshots.mjs";
+import { deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
 import { approvedGovernanceBindingTransition, isApprovedCurrentOrPriorGovernanceBinding, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
-import { validateLineage } from "./source-snapshot-policy.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import { validateCandidateSourceSet } from "./validate-candidate-source-set.mjs";
 
 const SOURCE_ID = "kric-station-convenience-standard";
 const TYPES = Object.freeze(["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"]);
@@ -34,6 +34,7 @@ export function buildCurrentCapitalFacilitySourceAdmission(input) {
   const mappings = validateCurrentCapitalFacilityPlanAndCanonicalPack({ plan, planBytes, pack, canonicalPackBytes });
   const sourceContext = validateSourceContext({
     candidateBuildSpec: input?.candidateBuildSpec,
+    productionScopeBytes: input?.productionScopeBytes,
     sourceInventoryBytes: input?.sourceInventoryBytes,
     sourceSnapshots: input?.sourceSnapshots,
     governancePolicy: input?.governancePolicy,
@@ -143,7 +144,7 @@ export function validateCurrentCapitalFacilityPlanAndCanonicalPack({ plan, planB
   return mappings;
 }
 
-function validateSourceContext({ candidateBuildSpec, sourceInventoryBytes, sourceSnapshots, governancePolicy, governancePolicyBytes, freshnessPolicy, snapshot, snapshotBytes, mappings, observedAtMillis, candidateEvaluationAt }) {
+function validateSourceContext({ candidateBuildSpec, productionScopeBytes, sourceInventoryBytes, sourceSnapshots, governancePolicy, governancePolicyBytes, freshnessPolicy, snapshot, snapshotBytes, mappings, observedAtMillis, candidateEvaluationAt }) {
   if (candidateBuildSpec?.schemaVersion !== 1 || candidateBuildSpec.artifactKind !== "datapack-candidate-build-spec"
     || !Array.isArray(candidateBuildSpec.sourceSnapshotIds) || !Array.isArray(candidateBuildSpec.sourceSnapshots)
     || candidateBuildSpec.sourceSnapshotIds.length !== candidateBuildSpec.sourceSnapshots.length
@@ -152,6 +153,7 @@ function validateSourceContext({ candidateBuildSpec, sourceInventoryBytes, sourc
     throw new Error("candidate build spec identity mismatch");
   }
   const normalizedSourceInventoryBytes = requireBytes(sourceInventoryBytes, "source inventory");
+  const normalizedProductionScopeBytes = requireBytes(productionScopeBytes, "production scope");
   const normalizedGovernancePolicyBytes = requireBytes(governancePolicyBytes, "source governance policy");
   const sourceInventory = parse(normalizedSourceInventoryBytes, "source inventory");
   if (!Array.isArray(sourceInventory?.sources) || !Array.isArray(sourceSnapshots)
@@ -162,30 +164,20 @@ function validateSourceContext({ candidateBuildSpec, sourceInventoryBytes, sourc
   validateSourceGovernancePolicy({ policy: governancePolicy, inventory: sourceInventory, freshnessPolicy });
   const candidateEvaluationAtMillis = validateCandidateEvaluationClock({ candidateBuildSpec, candidateEvaluationAt });
   validateCandidateInventoryBinding({ candidateBuildSpec, sourceInventory, sourceInventoryBytes: normalizedSourceInventoryBytes });
-  const headsBySource = validateLineage(sourceSnapshots).headsBySource;
-  const candidateSourceIds = candidateBuildSpec.sourceSnapshots.map(({ sourceId }) => sourceId);
-  if (!isActiveCandidateSourceSequence(candidateSourceIds)) {
-    throw new Error("candidate source snapshot membership mismatch");
-  }
-  const selected = candidateBuildSpec.sourceSnapshotIds.map((snapshotId, index) => {
-    const ledger = exactlyOne(sourceSnapshots, (entry) => entry?.snapshotId === snapshotId, "candidate source snapshot");
+  const { selected } = validateCandidateSourceSet({
+    productionScopeBytes: normalizedProductionScopeBytes,
+    sourceInventoryBytes: normalizedSourceInventoryBytes,
+    candidate: candidateBuildSpec,
+    ledger: sourceSnapshots,
+  });
+  for (const [index, ledger] of selected.entries()) {
     const projection = candidateBuildSpec.sourceSnapshots[index];
-    if (ledger.sourceId !== candidateSourceIds[index] || headsBySource[ledger.sourceId] !== ledger.snapshotId) {
-      throw new Error("candidate source snapshot membership mismatch");
-    }
     assertExactKeys(projection, PROJECTION_KEYS, "candidate source snapshot projection");
     assertCandidateEvaluationAfterSelectedBasis({ ledger, freshnessPolicy, candidateEvaluationAtMillis });
     const expected = deriveCandidateProjection({ ledger, sourceInventory, governancePolicy, governancePolicyBytes: normalizedGovernancePolicyBytes, freshnessPolicy, candidateEvaluationAtMillis });
     for (const key of PROJECTION_KEYS) {
       if (projection?.[key] !== expected[key]) throw new Error("candidate source snapshot projection mismatch");
     }
-    return ledger;
-  });
-  const selectedIds = new Set(candidateBuildSpec.sourceSnapshotIds);
-  const selectedInLedgerOrder = sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
-  if (selectedIds.size !== selected.length || selectedInLedgerOrder.length !== selected.length
-    || sha256(JSON.stringify(selectedInLedgerOrder)) !== candidateBuildSpec.sourceSnapshotSetHash) {
-    throw new Error("candidate source snapshot set identity mismatch");
   }
   const source = exactlyOne(sourceInventory.sources, ({ id }) => id === SOURCE_ID, "KRIC source inventory");
   const evidence = source.accessibilityAdmissionEvidence;
@@ -214,11 +206,14 @@ function validateSourceContext({ candidateBuildSpec, sourceInventoryBytes, sourc
     snapshot: ledger,
     currentPolicyVersion: governancePolicy.policyVersion,
     currentPolicySha256: sha256(normalizedGovernancePolicyBytes),
+    currentPolicyBytes: normalizedGovernancePolicyBytes,
   });
   if (!isApprovedCurrentOrPriorGovernanceBinding({
     binding: approvedGovernanceBinding,
+    sourceId: SOURCE_ID,
     currentPolicyVersion: governancePolicy.policyVersion,
     currentPolicySha256: sha256(normalizedGovernancePolicyBytes),
+    currentPolicyBytes: normalizedGovernancePolicyBytes,
   })) {
     throw new Error("KRIC current governance binding mismatch");
   }

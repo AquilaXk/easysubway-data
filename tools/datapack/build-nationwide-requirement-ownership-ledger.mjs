@@ -133,7 +133,10 @@ export function buildNationwideRequirementOwnershipLedger(inputs) {
     const childOwner = requiredOwner(ownership.ownerRules, tallyRow);
     const admittedSourceIds = [...(tallyRow.admittedSourceIds ?? [])].sort(compare);
     const admittedSources = [];
-    if (tallyRow.status === "INVENTORY_ADMITTED") {
+    // 일부 필드의 출처도 검증하되, 요구사항 전체의 MISSING 판정은 유지한다.
+    const partialAdmission = tallyRow.status === "MISSING" && admittedSourceIds.length > 0
+      && tallyRow.admittedFieldCount > 0 && tallyRow.admittedFieldCount < tallyRow.requiredFieldCount;
+    if (tallyRow.status === "INVENTORY_ADMITTED" || partialAdmission) {
       if (admittedSourceIds.length === 0) throw new Error(`admitted source missing for ${key}`);
       const providedFields = new Set();
       for (const sourceId of admittedSourceIds) {

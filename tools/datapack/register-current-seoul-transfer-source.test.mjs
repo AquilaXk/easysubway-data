@@ -8,7 +8,7 @@ import test from "node:test";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 
 import { buildTransferRegistrationOutputs, commitTransferRegistrationOutputs } from "./register-current-seoul-transfer-source.mjs";
-import { CURRENT_FULL_CANDIDATE_SOURCE_IDS, CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS, deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
+import { deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
 import { copySyntheticCurrentPublicRouteMapRepository, nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
 
 const sha = (value) => createHash("sha256").update(value).digest("hex");
@@ -26,7 +26,7 @@ async function compositionFixture(t) {
     const body = readFileSync(path.join(base, relative));
     return { body, value: JSON.parse(body) };
   };
-  const inventory = load("tools/datapack/source-inventory.json"); const candidate = load("tools/datapack/release/candidate-build-spec.json"); const ledger = load("tools/datapack/release/source-snapshots.json"); const scope = load("release/product-gates/production-datapack-scope.json", root); const governance = load("tools/datapack/source-governance-policy.json"); const freshness = load("release/product-gates/datapack-freshness-sla.json"); const pack = load("tools/datapack/release/capital-production-canonical-pack.json");
+  const inventory = load("tools/datapack/source-inventory.json"); const candidate = load("tools/datapack/release/candidate-build-spec.json"); const ledger = load("tools/datapack/release/source-snapshots.json"); const scope = load("release/product-gates/production-datapack-scope.json"); const governance = load("tools/datapack/source-governance-policy.json"); const freshness = load("release/product-gates/datapack-freshness-sla.json"); const pack = load("tools/datapack/release/capital-production-canonical-pack.json");
   const publicTopologySnapshotId = inventory.value.sources.find(({ id }) => id === "seoul-metro-route-map-positions")
     ?.routeMapAdmissionEvidence?.currentTopologyAdmission?.topologySnapshotId;
   const publicTopology = load(`tools/datapack/sources/${publicTopologySnapshotId}.json`).value;
@@ -149,13 +149,19 @@ test("PREPARED rollback and COMMITTED forward recovery preserve foreign replacem
   assert.ok(await readFile(path.join(committed.root, "tools/datapack/.seoul-transfer-registration-transaction.json")));
 });
 
-test("actual composition preserves current Incheon predecessor and appends TRANSFER eighth", async (t) => {
+test("actual composition preserves scope-selected predecessors and appends terminal TRANSFER", async (t) => {
   const input = await compositionFixture(t);
   const outputs = buildTransferRegistrationOutputs(input);
   assert.equal(outputs.length, 5);
   const candidate = JSON.parse(outputs.find(({ relative }) => relative.endsWith("candidate-build-spec.json")).bytes);
-  assert.deepEqual(candidate.sourceSnapshots.map(({ sourceId }) => sourceId), CURRENT_FULL_CANDIDATE_SOURCE_IDS);
-  assert.deepEqual(candidate.sourceSnapshots.slice(0, 7).map(({ sourceId }) => sourceId), CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS);
+  const predecessorSourceIds = input.scope.productionSourceSet.requiredSourceIds;
+  assert.equal(candidate.sourceSnapshots.length, predecessorSourceIds.length + 1);
+  assert.deepEqual(new Set(candidate.sourceSnapshots.slice(0, -1).map(({ sourceId }) => sourceId)), new Set(predecessorSourceIds));
+  assert.deepEqual(candidate.sourceSnapshots.slice(0, -1), input.candidate.sourceSnapshots);
+  const nextScope = JSON.parse(outputs.find(({ relative }) => relative.endsWith("production-datapack-scope.json")).bytes);
+  assert.deepEqual(nextScope.productionSourceSet.requiredSourceIds, [
+    ...predecessorSourceIds, "seoul-metro-transfer-distance-duration",
+  ]);
   assert.equal(candidate.sourceSnapshots.at(-1).sourceId, "seoul-metro-transfer-distance-duration");
   const ledger = JSON.parse(outputs.find(({ relative }) => relative.endsWith("source-snapshots.json")).bytes);
   assert.equal(ledger.at(-1).observedAt, "2026-07-12T15:00:00.000Z");

@@ -11,7 +11,8 @@ import {
   commitCurrentCapitalRouteTopologyRegistrationOutputs,
   readCurrentCapitalRouteTopologyAdmission,
 } from "./register-current-capital-route-topology.mjs";
-import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
+import { createFixtureCapitalTopologyReceipt } from "./test-fixtures/current-capital-topology-registration.mjs";
+import { evaluateSourceGovernance } from "./source-governance-policy.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const sha = (value) => createHash("sha256").update(value).digest("hex");
@@ -50,32 +51,8 @@ async function fixture(t) {
 }
 
 async function receiptFixture(root, now) {
-  const admission = await readCurrentCapitalRouteTopologyAdmission({ repositoryRoot: root, now });
-  const rawObjectSha256 = sha(admission.topologyBytes);
-  const objectKey = "source-raw/" + admission.sourceId + "/" + admission.capturedDate + "/" + rawObjectSha256 + ".json";
-  const receipt = {
-    schemaVersion: 1,
-    artifactKind: "static-network-source-raw-object-receipt",
-    sourceId: admission.sourceId,
-    snapshotId: admission.snapshotId,
-    capturedAt: admission.topology.capturedAt,
-    rawObjectUri: "oci://axvym6vk8g7i/easysubway-datapacks/" + objectKey,
-    rawObjectSha256,
-    byteSize: admission.topologyBytes.length,
-    storedAt: now.toISOString(),
-    rawRetentionExpiresAt: deriveRawRetentionExpiresAt({
-      policy: admission.governancePolicy,
-      sourceId: admission.sourceId,
-      retrievedAt: admission.topology.capturedAt,
-    }),
-    ociNamespace: "axvym6vk8g7i",
-    bucket: "easysubway-datapacks",
-    objectKey,
-    contentType: "application/json",
-  };
   const receiptPath = path.join(root, "receipt.json");
-  await writeJson(receiptPath, receipt);
-  return { admission, receipt, receiptPath };
+  return createFixtureCapitalTopologyReceipt({ repositoryRoot: root, now, receiptPath });
 }
 
 async function registrationInputBytes(root) {
@@ -115,6 +92,30 @@ async function advanceProtectedTopology(root, previousNow, minimumCapturedAt = n
   await writeJson(inventoryPath, inventory);
   return new Date(Math.max(Date.parse(captured) + 1_000, previousNow.valueOf() + 1));
 }
+
+test("registered topology license identity satisfies the downstream governance evaluator", async (t) => {
+  const { root, now } = await fixture(t);
+  const { receiptPath } = await receiptFixture(root, now);
+  const outputs = await buildCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot: root, receiptPath, now });
+  const source = JSON.parse(outputs[0].bytes).sources.find(({ id }) => id === "capital-route-topology");
+  const snapshot = JSON.parse(outputs[1].bytes).at(-1);
+  const result = evaluateSourceGovernance({
+    source,
+    snapshot,
+    policy: JSON.parse(outputs[2].bytes),
+    freshnessPolicy: JSON.parse(outputs[3].bytes),
+    evaluationAt: now.toISOString(),
+  });
+  assert.equal(result.reasonCodes.includes("LICENSE_REVIEW_REQUIRED"), false);
+  const mismatchedPolicy = JSON.parse(outputs[2].bytes);
+  mismatchedPolicy.sources.find(({ sourceId }) => sourceId === source.id)
+    .licenseReview.reviewedProvider = source.owner;
+  assert.notEqual(source.owner, source.provider);
+  assert.equal(evaluateSourceGovernance({
+    source, snapshot, policy: mismatchedPolicy,
+    freshnessPolicy: JSON.parse(outputs[3].bytes), evaluationAt: now.toISOString(),
+  }).reasonCodes.includes("LICENSE_REVIEW_REQUIRED"), true);
+});
 
 test("publishes exactly the protected topology bytes and builds an initial registration", async (t) => {
   const { root, now } = await fixture(t);
@@ -158,6 +159,35 @@ test("publishes exactly the protected topology bytes and builds an initial regis
   assert.equal(snapshot.byteSize, admission.topologyBytes.length);
 });
 
+test("first registration binds the exact policy prestate without changing prior approvals", async (t) => {
+  const { root, now } = await fixture(t);
+  const policyPath = path.join(root, "tools/datapack/source-governance-policy.json");
+  const policy = JSON.parse(await readFile(policyPath));
+  const lineage = policy.registrationLineage;
+  const sourceIds = new Set(lineage.addedSourceIds);
+  const previousPolicyBytes = Buffer.from(lineage.predecessorPolicyText);
+  assert.equal(sha(previousPolicyBytes), lineage.predecessorPolicySha256);
+  await writeFile(policyPath, previousPolicyBytes);
+  const inventoryPath = path.join(root, "tools/datapack/source-inventory.json");
+  const inventory = JSON.parse(await readFile(inventoryPath));
+  inventory.sources = inventory.sources.filter(({ id }) => !sourceIds.has(id));
+  await writeJson(inventoryPath, inventory);
+  const ledgerPath = path.join(root, "tools/datapack/release/source-snapshots.json");
+  await writeJson(ledgerPath, JSON.parse(await readFile(ledgerPath))
+    .filter(({ sourceId }) => !sourceIds.has(sourceId)));
+  const freshnessPath = path.join(root, "release/product-gates/datapack-freshness-sla.json");
+  const freshness = JSON.parse(await readFile(freshnessPath));
+  freshness.sourceClasses = freshness.sourceClasses.filter((entry) =>
+    !entry.sourceIds.every((id) => sourceIds.has(id)));
+  await writeJson(freshnessPath, freshness);
+  const { receiptPath } = await receiptFixture(root, now);
+  const outputs = await buildCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot: root, receiptPath, now });
+  const output = outputs.find(({ relative }) => relative === "tools/datapack/source-governance-policy.json");
+  assert.deepEqual(output.prestateBytes, previousPolicyBytes);
+  assert.equal(JSON.parse(output.bytes).registrationLineage.predecessorPolicySha256, sha(previousPolicyBytes));
+  assert.deepEqual(JSON.parse(output.bytes).sources.slice(0, -sourceIds.size), JSON.parse(previousPolicyBytes).sources);
+});
+
 test("places capital topology evidence on the source schema", async () => {
   const schema = JSON.parse(await readFile(path.join(ROOT, "contracts/datapack/source-inventory.schema.json")));
   const sourceProperties = schema.properties.sources.items.properties;
@@ -178,8 +208,10 @@ test("derives admission from one captured repository input snapshot", async (t) 
   assert.equal(Object.hasOwn(admission.governancePolicy, "concurrentSentinel"), false);
 });
 
-test("commits initial registration then replaces only its inventory record for a unique successor", async (t) => {
+test("commits two registrations while preserving existing ledger history and one inventory record", async (t) => {
   const { root, now } = await fixture(t);
+  const previousSnapshots = JSON.parse(await readFile(path.join(root, "tools/datapack/release/source-snapshots.json")))
+    .filter((snapshot) => snapshot.sourceId === "capital-route-topology");
   let receipt = await receiptFixture(root, now);
   let outputs = await buildCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot: root, receiptPath: receipt.receiptPath, now });
   await commitCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot: root, outputs });
@@ -192,7 +224,9 @@ test("commits initial registration then replaces only its inventory record for a
   const snapshots = JSON.parse(await readFile(path.join(root, "tools/datapack/release/source-snapshots.json")))
     .filter((snapshot) => snapshot.sourceId === "capital-route-topology");
   assert.equal(inventory.sources.filter((source) => source.id === "capital-route-topology").length, 1);
-  assert.equal(snapshots.length, 2);
+  assert.equal(snapshots.length, previousSnapshots.length + 2);
+  assert.deepEqual(snapshots.slice(0, previousSnapshots.length), previousSnapshots);
+  assert.equal(snapshots.at(-2).previousSnapshotId, previousSnapshots.at(-1)?.snapshotId ?? null);
   assert.equal(snapshots.at(-1).previousSnapshotId, initialSnapshot);
   assert.deepEqual(snapshots.at(-1).admissionEvidence.predecessorSnapshotIds, [initialSnapshot]);
 });

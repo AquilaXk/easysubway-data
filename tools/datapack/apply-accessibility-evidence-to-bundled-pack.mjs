@@ -10,6 +10,7 @@ import { gunzipSync, gzipSync, constants as zlibConstants } from "node:zlib";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
+import { readProductionSourceSet } from "./validate-candidate-source-set.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const stationIds = ["station-sadang", "station-sangnoksu"];
@@ -32,11 +33,7 @@ const CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS = Object.freeze([
   "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
   "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
 ]);
-const CURRENT_CANDIDATE_SOURCE_IDS = Object.freeze([
-  "seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility",
-  "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info",
-  "seoul-metro-transfer-distance-duration",
-]);
+const TERMINAL_TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
 const CANONICAL_PROVENANCE_PROPERTIES = Object.freeze([
   "stations", "stationLines", "stationExits", "stationCarDoorHints", "networkEdges",
   "routeMapPositions", "routeMapLineTracks", "facilities", "stationFacilityEvidence",
@@ -674,7 +671,22 @@ function registeredCanonicalTailSourceIds(canonicalTail, snapshots, headsBySourc
   });
 }
 
-export function currentCandidateReleaseSnapshots(snapshots, canonical, headsBySource = validateLineage(snapshots).headsBySource, sourceInventory = []) {
+export function currentCandidateReleaseSnapshots({
+  snapshots, canonical, candidate, productionScopeBytes, sourceInventoryBytes,
+  headsBySource = validateLineage(snapshots).headsBySource,
+}) {
+  const { requiredSourceIds, sourceInventory } = readProductionSourceSet({ productionScopeBytes, sourceInventoryBytes });
+  const candidateSourceIds = candidate?.sourceSnapshots?.map((projection) => projection?.sourceId);
+  if (!Array.isArray(candidateSourceIds) || !Array.isArray(candidate.sourceSnapshotIds)
+    || candidateSourceIds.length !== requiredSourceIds.length
+    || candidate.sourceSnapshotIds.length !== candidateSourceIds.length
+    || new Set(candidateSourceIds).size !== candidateSourceIds.length
+    || new Set(candidate.sourceSnapshotIds).size !== candidate.sourceSnapshotIds.length
+    || candidate.sourceSnapshots.some((projection, index) => projection.snapshotId !== candidate.sourceSnapshotIds[index])
+    || requiredSourceIds.some((sourceId) => !candidateSourceIds.includes(sourceId))
+    || candidateSourceIds.at(-1) !== TERMINAL_TRANSFER_SOURCE_ID) {
+    throw new Error("current candidate source set does not match production scope");
+  }
   const capital = canonical.packs?.find(({ id }) => id === "capital");
   const canonicalSourceIds = capital?.sourceInventory?.map(({ id }) => id);
   const canonicalTail = Array.isArray(canonicalSourceIds)
@@ -685,16 +697,13 @@ export function currentCandidateReleaseSnapshots(snapshots, canonical, headsBySo
       !== JSON.stringify(CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS)
     || new Set(canonicalTail).size !== canonicalTail.length
     || canonicalTail.some((sourceId) => CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS.includes(sourceId)
-      || CURRENT_CANDIDATE_SOURCE_IDS.includes(sourceId)
       || !canonicalProvenanceIds.has(sourceId))) {
     throw new Error("capital canonical active source identity drift");
   }
-  const terminalSourceId = CURRENT_CANDIDATE_SOURCE_IDS.at(-1);
-  const candidateSourceIds = [
-    ...CURRENT_CANDIDATE_SOURCE_IDS.slice(0, -1),
-    ...registeredCanonicalTailSourceIds(canonicalTail, snapshots, headsBySource, sourceInventory),
-    terminalSourceId,
-  ];
+  const registeredTail = new Set(registeredCanonicalTailSourceIds(canonicalTail, snapshots, headsBySource, sourceInventory.sources));
+  if (canonicalTail.some((sourceId) => candidateSourceIds.includes(sourceId) && !registeredTail.has(sourceId))) {
+    throw new Error("current candidate canonical source registration mismatch");
+  }
   return candidateSourceIds.map((sourceId) => {
     const head = headsBySource[sourceId];
     const selected = snapshots.filter((snapshot) => snapshot.sourceId === sourceId && snapshot.snapshotId === head);
@@ -714,8 +723,9 @@ export async function syncReleaseEvidence({ check, releaseRoot: explicitReleaseR
     canonical: path.join(releaseRoot, "tools/datapack/release/capital-production-canonical-pack.json"),
     governance: path.join(releaseRoot, "tools/datapack/source-governance-policy.json"),
     freshness: path.join(releaseRoot, "release/product-gates/datapack-freshness-sla.json"),
+    scope: path.join(releaseRoot, "release/product-gates/production-datapack-scope.json"),
   };
-  const [specBytes, snapshotBytes, inventoryBytes, requestBytes, hashBytes, canonicalBytes, governanceBytes, freshnessBytes] = await Promise.all(
+  const [specBytes, snapshotBytes, inventoryBytes, requestBytes, hashBytes, canonicalBytes, governanceBytes, freshnessBytes, productionScopeBytes] = await Promise.all(
     Object.values(paths).map((file) => readFile(file)),
   );
   const spec = JSON.parse(specBytes);
@@ -727,7 +737,9 @@ export async function syncReleaseEvidence({ check, releaseRoot: explicitReleaseR
   const freshness = JSON.parse(freshnessBytes);
   const inventoryBySource = new Map(inventory.sources.map((entry) => [entry.id, entry]));
   const canonical = JSON.parse(canonicalBytes);
-  const releaseSnapshots = currentCandidateReleaseSnapshots(snapshots, canonical, undefined, inventory.sources);
+  const releaseSnapshots = currentCandidateReleaseSnapshots({
+    snapshots, canonical, candidate: spec, productionScopeBytes, sourceInventoryBytes: inventoryBytes,
+  });
   const selectedSnapshotIds = new Set(releaseSnapshots.map(({ snapshotId }) => snapshotId));
   const selectedInLedgerOrder = snapshots.filter(({ snapshotId }) => selectedSnapshotIds.has(snapshotId));
   if (selectedSnapshotIds.size !== releaseSnapshots.length || selectedInLedgerOrder.length !== releaseSnapshots.length) {

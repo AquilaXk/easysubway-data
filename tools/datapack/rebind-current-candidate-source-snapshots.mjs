@@ -13,20 +13,10 @@ import { requiredCredentialFreeObjectUri, validateLineage } from "./source-snaps
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { approvedLegacyGovernanceBinding } from "./legacy-source-governance.mjs";
 import { releaseRequestBindingViolations } from "./verify-release-request-binding.mjs";
+import { readProductionScopeSourceIds, readProductionSourceSet } from "./validate-candidate-source-set.mjs";
 
 const SOURCE_ID = "kric-station-convenience-standard";
 const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
-const FIXED_CANDIDATE_SOURCE_IDS = Object.freeze([
-  "seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility",
-  SOURCE_ID, "molit-urban-rail-full-route", "seoulmetro-station-line-info",
-]);
-const INCHEON_SOURCE_ID = "incheon-transit-accessibility";
-export const CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS = Object.freeze([
-  ...FIXED_CANDIDATE_SOURCE_IDS, INCHEON_SOURCE_ID,
-]);
-export const CURRENT_FULL_CANDIDATE_SOURCE_IDS = Object.freeze([
-  ...CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS, TRANSFER_SOURCE_ID,
-]);
 const CAPITAL_SOURCE_IDS = Object.freeze([
   "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
   "kric-subway-timetable", "seoul-metro-accessibility", SOURCE_ID, "seoul-metro-official-od-fares",
@@ -63,6 +53,7 @@ const PATHS = Object.freeze({
   pack: "tools/datapack/release/capital-production-canonical-pack.json",
   governance: "tools/datapack/source-governance-policy.json",
   freshness: "release/product-gates/datapack-freshness-sla.json",
+  scope: "release/product-gates/production-datapack-scope.json",
   lock: "tools/datapack/.candidate-source-rebind.lock",
   transaction: "tools/datapack/.candidate-source-rebind-transaction.json",
 });
@@ -83,12 +74,6 @@ function exactlyOne(rows, predicate, label) {
 function sameBytes(left, right) { return Buffer.isBuffer(left) && Buffer.isBuffer(right) && left.equals(right); }
 function identity(stat) { return { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, mode: stat.mode }; }
 function sameIdentity(left, right) { return left.dev === right.dev && left.ino === right.ino && left.size === right.size && left.mtimeMs === right.mtimeMs && left.mode === right.mode; }
-
-export function isActiveCandidateSourceSequence(sourceIds) {
-  return Array.isArray(sourceIds)
-    && [CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS, CURRENT_FULL_CANDIDATE_SOURCE_IDS]
-      .some((expected) => JSON.stringify(sourceIds) === JSON.stringify(expected));
-}
 
 export function requireCurrentCanonicalSourceRoster(capital) {
   const entries = capital?.sourceInventory;
@@ -116,7 +101,7 @@ export function requireCurrentCanonicalSourceRoster(capital) {
 
 export function rebindCandidateSourceSnapshots({
   candidateBuildSpec, candidateBuildSpecBytes, releaseRequest, sourceInventory, sourceInventoryBytes, sourceSnapshots, canonicalPack, governancePolicy, governancePolicyBytes,
-  freshnessPolicy, kricSnapshotBytes,
+  freshnessPolicy, kricSnapshotBytes, productionScopeBytes,
   now = new Date(),
 }) {
   const nowMillis = requiredUtcInstant(now.toISOString(), "now");
@@ -131,6 +116,7 @@ export function rebindCandidateSourceSnapshots({
   candidateBuildSpec = authenticatedCandidate;
   sourceInventory = authenticatedInventory;
   governancePolicy = authenticatedGovernance;
+  const { requiredSourceIds } = readProductionSourceSet({ productionScopeBytes, sourceInventoryBytes });
   validateCandidate(candidateBuildSpec);
   if (!Buffer.isBuffer(candidateBuildSpecBytes) || releaseRequest?.buildSpecSha256 !== sha256(candidateBuildSpecBytes)) {
     throw new Error("release request is not bound to original candidate bytes");
@@ -140,7 +126,7 @@ export function rebindCandidateSourceSnapshots({
     || !SHA256.test(candidateBuildSpec.networkEdgeEvidence.sourceInventory.sha256 ?? "")) {
     throw new Error("candidate source inventory binding mismatch");
   }
-  const canonicalStationLineKeys = validateCapitalPack(canonicalPack, sourceInventory);
+  const canonicalStationLineKeys = validateCapitalPack(canonicalPack, sourceInventory, requiredSourceIds);
   validateSourceGovernancePolicy({ policy: governancePolicy, inventory: sourceInventory, freshnessPolicy });
   const candidate = structuredClone(candidateBuildSpec);
   const projections = candidate.sourceSnapshots;
@@ -148,7 +134,8 @@ export function rebindCandidateSourceSnapshots({
   const sourceIds = projections.map(({ sourceId }) => sourceId);
   if (new Set(ids).size !== ids.length || new Set(sourceIds).size !== sourceIds.length
     || projections.some((projection, index) => projection?.snapshotId !== ids[index])
-    || !isActiveCandidateSourceSequence(sourceIds)) {
+    || sourceIds.length !== requiredSourceIds.length
+    || requiredSourceIds.some((sourceId) => !sourceIds.includes(sourceId))) {
     throw new Error("candidate source identity is not one-to-one");
   }
   const bySnapshotId = new Map();
@@ -165,7 +152,7 @@ export function rebindCandidateSourceSnapshots({
     throw new Error("candidate source snapshot set hash mismatch");
   }
   const lineage = validateLineage(sourceSnapshots);
-  validateCapitalReleaseHeads(canonicalPack, lineage, sourceSnapshots, selected);
+  validateCapitalReleaseHeads(canonicalPack, lineage, sourceSnapshots, selected, requiredSourceIds, candidateBuildSpec);
   const oldIndex = sourceIds.indexOf(SOURCE_ID);
   if (oldIndex < 0) throw new Error("candidate KRIC source is missing");
   const oldSnapshot = selected[oldIndex];
@@ -231,7 +218,7 @@ function validateCandidate(candidate) {
   }
 }
 
-function validateCapitalPack(pack, sourceInventory) {
+function validateCapitalPack(pack, sourceInventory, requiredSourceIds) {
   const capital = pack?.packs?.length === 1 ? pack.packs[0] : null;
   if (pack?.manifest?.channel !== "production" || pack.manifest?.activePack?.id !== "capital"
     || capital?.id !== "capital" || capital.version !== "1") {
@@ -250,25 +237,51 @@ function validateCapitalPack(pack, sourceInventory) {
   }
   requireCurrentCanonicalSourceRoster(capital);
   const inventoryIds = new Set((sourceInventory?.sources ?? []).map(({ id }) => id));
-  if (CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS.some((sourceId) => !inventoryIds.has(sourceId))) {
+  if (requiredSourceIds.some((sourceId) => !inventoryIds.has(sourceId))) {
     throw new Error("current source inventory does not cover candidate sources");
   }
   return keys;
 }
 
-function validateCapitalReleaseHeads(pack, lineage, snapshots, selected) {
+function isPinnedPreMaterializationTopology(sourceId, selected, candidate) {
+  if (sourceId !== "capital-route-topology") return false;
+  const rows = selected.filter((row) => row.sourceId === sourceId);
+  if (rows.length !== 1) return false;
+  const row = rows[0];
+  const admission = row.admissionEvidence;
+  const pin = candidate?.networkEdgeEvidence?.capitalTopologyCandidate;
+  return pin != null && Object.keys(pin).length === 3
+    && ["path", "sha256", "snapshotId"].every((key) => Object.hasOwn(pin, key))
+    && pin.snapshotId === row.snapshotId
+    && pin.path === `tools/datapack/sources/${row.snapshotId}.json`
+    && SHA256.test(pin.sha256 ?? "") && pin.sha256 === row.rawSha256
+    && admission?.artifactKind === "capital-topology-admission-evidence"
+    && admission.status === "APPROVED" && admission.sourceId === sourceId
+    && admission.snapshotId === row.snapshotId && admission.snapshotPath === pin.path
+    && admission.snapshotFileSha256 === pin.sha256;
+}
+
+export function validateCapitalReleaseHeads(pack, lineage, snapshots, selected, requiredSourceIds, candidate) {
+  if (!Array.isArray(requiredSourceIds) || requiredSourceIds.length === 0
+    || new Set(requiredSourceIds).size !== requiredSourceIds.length) {
+    throw new Error("capital active source head identity drift");
+  }
   const capital = pack.packs[0];
   const capitalSourceIds = requireCurrentCanonicalSourceRoster(capital);
   const capitalIds = new Set(capitalSourceIds);
   const byId = new Map(snapshots.map((snapshot) => [snapshot.snapshotId, snapshot]));
-  const releaseHeads = CURRENT_FULL_CANDIDATE_SOURCE_IDS.map((sourceId) => byId.get(lineage.headsBySource[sourceId]));
+  // 후보 집합은 scope를 따른다. 빌드 전 pack roster와 동일하지 않으며,
+  // 추가 source의 물질화·provenance는 build-datapack의 admission 단계가 검증한다.
+  const releaseHeads = requiredSourceIds.map((sourceId) => byId.get(lineage.headsBySource[sourceId]));
   const actualCapitalHeadIds = capitalSourceIds.slice(0, CAPITAL_SOURCE_IDS.length)
     .filter((sourceId) => lineage.headsBySource[sourceId] != null);
   if (CAPITAL_ACTIVE_SOURCE_IDS.some((sourceId) => !capitalIds.has(sourceId))
     || JSON.stringify(actualCapitalHeadIds) !== JSON.stringify(CAPITAL_RELEASE_HEAD_SOURCE_IDS)
-    || CURRENT_FULL_CANDIDATE_SOURCE_IDS.some((sourceId) => !capitalIds.has(sourceId))
-    || releaseHeads.some((snapshot, index) => snapshot?.sourceId !== CURRENT_FULL_CANDIDATE_SOURCE_IDS[index])
-    || selected.filter(({ sourceId }) => CURRENT_FULL_CANDIDATE_SOURCE_IDS.includes(sourceId)).length !== releaseHeads.length) {
+    || requiredSourceIds.some((sourceId) => !capitalIds.has(sourceId)
+      && !isPinnedPreMaterializationTopology(sourceId, selected, candidate))
+    || releaseHeads.some((snapshot, index) => snapshot?.sourceId !== requiredSourceIds[index])
+    || selected.length !== requiredSourceIds.length
+    || requiredSourceIds.some((sourceId) => selected.filter((snapshot) => snapshot.sourceId === sourceId).length !== 1)) {
     throw new Error("capital active source head identity drift");
   }
 }
@@ -374,6 +387,7 @@ export function deriveReleaseProjection({ snapshot, sourceInventory, governanceP
     snapshot: governanceSnapshot,
     currentPolicyVersion: governancePolicy.policyVersion,
     currentPolicySha256: sha256(governancePolicyBytes),
+    currentPolicyBytes: governancePolicyBytes,
   });
   return {
     snapshotId: snapshot.snapshotId, sourceId: snapshot.sourceId, rawObjectUri: snapshot.rawObjectUri,
@@ -395,23 +409,30 @@ export function assertProjectionEqual(projection, expected, label) {
   }
 }
 
-// #350 registration is the only operation allowed to grow the source set. It
-// preserves the current seven-source predecessor and appends terminal TRANSFER.
-export function appendTransferCandidateSourceSnapshot({ candidateBuildSpec, transferSnapshot, transferProjection }) {
+// scope에서 TRANSFER만 제외한 predecessor를 보존하고 마지막 위치에 한 번만 추가한다.
+export function appendTransferCandidateSourceSnapshot({ candidateBuildSpec, transferSnapshot, transferProjection, productionScopeBytes }) {
+  const requiredSourceIds = readProductionScopeSourceIds(productionScopeBytes);
+  const predecessorSourceIds = requiredSourceIds.filter((sourceId) => sourceId !== TRANSFER_SOURCE_ID);
   const ids = candidateBuildSpec?.sourceSnapshotIds;
   const projections = candidateBuildSpec?.sourceSnapshots;
+  const sourceIds = projections?.map((projection) => projection?.sourceId);
   if (!Array.isArray(ids) || !Array.isArray(projections)
-    || JSON.stringify(projections.map(({ sourceId }) => sourceId)) !== JSON.stringify(CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS)
-    || ids.length !== CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS.length || projections.some((row, index) => row.snapshotId !== ids[index])
+    || predecessorSourceIds.length === 0 || !requiredSourceIds.includes(TRANSFER_SOURCE_ID)
+    || ids.length !== predecessorSourceIds.length || projections.length !== ids.length
+    || new Set(ids).size !== ids.length || new Set(sourceIds).size !== sourceIds.length
+    || predecessorSourceIds.some((sourceId) => !sourceIds.includes(sourceId))
+    || projections.some((row, index) => row.snapshotId !== ids[index])
     || transferSnapshot?.sourceId !== TRANSFER_SOURCE_ID || typeof transferSnapshot.snapshotId !== "string"
+    || transferSnapshot.snapshotId.length === 0 || ids.includes(transferSnapshot.snapshotId)
     || transferProjection?.sourceId !== TRANSFER_SOURCE_ID || transferProjection.snapshotId !== transferSnapshot.snapshotId) {
     throw new Error("candidate transfer append identity mismatch");
   }
   const candidate = structuredClone(candidateBuildSpec);
   candidate.sourceSnapshotIds.push(transferSnapshot.snapshotId);
   candidate.sourceSnapshots.push(structuredClone(transferProjection));
-  if (JSON.stringify(candidate.sourceSnapshots.slice(0, CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS.length)) !== JSON.stringify(projections)
-    || JSON.stringify(candidate.sourceSnapshots.map(({ sourceId }) => sourceId)) !== JSON.stringify(CURRENT_FULL_CANDIDATE_SOURCE_IDS)) {
+  if (JSON.stringify(candidate.sourceSnapshots.slice(0, -1)) !== JSON.stringify(projections)
+    || candidate.sourceSnapshots.at(-1).sourceId !== TRANSFER_SOURCE_ID
+    || candidate.sourceSnapshotIds.length !== requiredSourceIds.length) {
     throw new Error("candidate transfer append projection drift");
   }
   return candidate;
@@ -613,6 +634,7 @@ export async function rebindCurrentCandidateSourceSnapshots({
     const currentCandidate = parse(input.candidate.bytes, "candidate");
     const currentKric = currentCandidate.sourceSnapshots?.find(({ sourceId }) => sourceId === SOURCE_ID)?.snapshotId;
     const result = currentKric === kricEvidence.snapshotId ? currentCandidate : rebindCandidateSourceSnapshots({
+      productionScopeBytes: input.scope.bytes,
       candidateBuildSpec: currentCandidate, candidateBuildSpecBytes: input.candidate.bytes, releaseRequest: parse(input.releaseRequest.bytes, "release request"), sourceInventory, sourceInventoryBytes: input.inventory.bytes,
       sourceSnapshots: parse(input.snapshots.bytes, "source snapshot ledger"), canonicalPack: parse(input.pack.bytes, "capital canonical pack"), governancePolicy: parse(input.governance.bytes, "source governance policy"), governancePolicyBytes: input.governance.bytes, freshnessPolicy: parse(input.freshness.bytes, "freshness SLA"), now, kricSnapshotBytes: input.kricSnapshot.bytes,
     });
