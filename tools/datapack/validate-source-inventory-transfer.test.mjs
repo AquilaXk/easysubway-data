@@ -118,14 +118,37 @@ test("transfer production schema requires evidence and types every patterned adm
   assert.deepEqual(item.allOf.find((rule) => rule.if?.properties?.id?.const === SOURCE.id)?.then.required, ["transferAdmissionEvidence"]);
 });
 
-test("current production source inventory and scope agree on every required source", async () => {
-  await assert.doesNotReject(execFileAsync(
-    "node",
-    [
-      "tools/datapack/validate-source-inventory.mjs",
-      "--scope",
-      "release/product-gates/production-datapack-scope.json",
-    ],
-    { cwd: repositoryRoot },
-  ));
+test("production scope CLI rejects missing required sources and accepts an exact source set", async (t) => {
+  const inventory = JSON.parse(readFileSync(path.join(repositoryRoot, "tools/datapack/source-inventory.json"), "utf8"));
+  const trackedScopePath = path.join(repositoryRoot, "release/product-gates/production-datapack-scope.json");
+  const scope = JSON.parse(readFileSync(trackedScopePath, "utf8"));
+  const requiredIds = inventory.sources.filter((source) => source.requiredForProductionPack === true)
+    .map((source) => source.id);
+  const run = (scopePath) => execFileAsync(process.execPath,
+    ["tools/datapack/validate-source-inventory.mjs", "--scope", scopePath],
+    { cwd: repositoryRoot });
+  const rejectsMissing = (scopePath, sourceId) => assert.rejects(run(scopePath), (error) => {
+    assert.equal(error.code, 1);
+    assert.ok(error.stderr.includes(`${sourceId}.requiredForProductionPack must match productionSourceSet.requiredSourceIds`));
+    return true;
+  });
+  const missingId = requiredIds.find((id) => !scope.productionSourceSet.requiredSourceIds.includes(id));
+  if (missingId) await rejectsMissing(trackedScopePath, missingId);
+  else await assert.doesNotReject(run(trackedScopePath));
+
+  // 등록과 출시 scope 발행은 별도 단계다. 실제 scope는 수정하지 않는다.
+  const root = await mkdtemp(path.join(os.tmpdir(), "production-source-scope-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const fixturePath = path.join(root, "scope.json");
+  scope.productionSourceSet.requiredSourceIds = requiredIds;
+  for (const key of ["optionalAccessibilitySourceIds", "excludedFromV1SupportClaims"]) {
+    scope.productionSourceSet[key] = scope.productionSourceSet[key].filter((id) => !requiredIds.includes(id));
+  }
+  await writeFile(fixturePath, JSON.stringify(scope));
+  await assert.doesNotReject(run(fixturePath));
+  assert.ok(requiredIds.length > 0);
+  const omittedId = requiredIds[0];
+  scope.productionSourceSet.requiredSourceIds = requiredIds.slice(1);
+  await writeFile(fixturePath, JSON.stringify(scope));
+  await rejectsMissing(fixturePath, omittedId);
 });
