@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { cp, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
+import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
 
 import {
   buildCurrentActivePublicRouteMapMaterializationOutputs,
@@ -30,27 +31,21 @@ const P_INPUTS = [
   "tools/datapack/source-inventory.json",
   "tools/datapack/source-governance-policy.json",
   "release/product-gates/datapack-freshness-sla.json",
+  "release/product-gates/production-datapack-scope.json",
 ];
 
 async function preparedPStage() {
   const stage = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-stage-"));
-  for (const relative of P_INPUTS) {
-    const destination = path.join(stage, relative);
-    await mkdir(path.dirname(destination), { recursive: true });
-    await cp(path.join(ROOT, relative), destination, { recursive: true });
-  }
-  const inventory = JSON.parse(await readFile(path.join(ROOT, "tools/datapack/source-inventory.json"), "utf8"));
-  const source = inventory.sources.filter(({ id }) => id === "seoul-metro-route-map-positions");
-  assert.equal(source.length, 1);
-  const admission = source[0].routeMapAdmissionEvidence.currentLayoutAdmission;
-  for (const relative of [admission.snapshotPath, `tools/datapack/sources/${admission.topologySnapshotId}.json`]) {
-    await mkdir(path.dirname(path.join(stage, relative)), { recursive: true });
-    await cp(path.join(ROOT, relative), path.join(stage, relative), { recursive: true });
-  }
   const candidate = JSON.parse(await readFile(path.join(ROOT, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
-  const itxEvidence = candidate.itxTopologyEvidencePath;
-  await mkdir(path.dirname(path.join(stage, itxEvidence)), { recursive: true });
-  await cp(path.join(ROOT, itxEvidence), path.join(stage, itxEvidence), { recursive: true });
+  // 등록 중인 inventory와 이전 candidate를 섞지 않고 동일한 테스트 입력을 생성한다.
+  try {
+    await copySyntheticCurrentPublicRouteMapRepository(ROOT, stage, {
+      now: new Date(candidate.publishedAt),
+    });
+  } catch (error) {
+    await rm(stage, { recursive: true, force: true });
+    throw error;
+  }
   return stage;
 }
 
@@ -67,8 +62,24 @@ test("current public route-map materialization preserves capital identity and co
   try {
   const plan = await buildCurrentActivePublicRouteMapMaterializationOutputs({ repositoryRoot: stage });
   assert.deepEqual(plan.outputs.map(({ relative }) => relative), OUTPUTS);
-  assert.equal(plan.inputCapture.length, 11);
-  assert.equal(plan.inputCapture.some(({ relative }) => relative === JSON.parse(plan.inputCapture.find(({ relative }) => relative === "tools/datapack/release/candidate-build-spec.json").bytes).itxTopologyEvidencePath), true);
+  const candidate = JSON.parse(plan.inputCapture.find(({ relative }) => relative === "tools/datapack/release/candidate-build-spec.json").bytes);
+  const stagedInventoryBytes = await readFile(path.join(stage, "tools/datapack/source-inventory.json"));
+  const stagedInventory = JSON.parse(stagedInventoryBytes);
+  const admission = stagedInventory.sources.find(({ id }) => id === "seoul-metro-route-map-positions")
+    .routeMapAdmissionEvidence.currentLayoutAdmission;
+  const expectedInputs = new Set([
+    ...P_INPUTS,
+    candidate.itxTopologyEvidencePath,
+    admission.snapshotPath,
+    `tools/datapack/sources/${admission.topologySnapshotId}.json`,
+  ]);
+  assert.deepEqual(new Set(plan.inputCapture.map(({ relative }) => relative)), expectedInputs);
+  const scopeRelative = "release/product-gates/production-datapack-scope.json";
+  assert.equal(OUTPUTS.includes(scopeRelative), false);
+  assert.deepEqual(
+    plan.inputCapture.find(({ relative }) => relative === scopeRelative).bytes,
+    await readFile(path.join(stage, scopeRelative)),
+  );
 
   const document = JSON.parse(plan.outputs[0].bytes);
   assert.equal(plan.outputs[0].bytes.toString(), `${JSON.stringify(document)}\n`);
@@ -77,9 +88,7 @@ test("current public route-map materialization preserves capital identity and co
   const publicRows = pack.routeMapPositions.filter(({ sourceId }) => sourceId === "seoul-metro-route-map-positions");
   const publicTracks = pack.routeMapLineTracks.filter(({ sourceId }) => sourceId === "seoul-metro-route-map-positions");
   assert.deepEqual(document.manifest.activePack, { id: "capital", version: pack.version });
-  const stagedInventory = JSON.parse(await readFile(path.join(stage, "tools/datapack/source-inventory.json"), "utf8"));
-  const observationPath = stagedInventory.sources.find(({ id }) => id === "seoul-metro-route-map-positions")
-    .routeMapAdmissionEvidence.currentLayoutAdmission.snapshotPath;
+  const observationPath = admission.snapshotPath;
   const observation = JSON.parse(await readFile(path.join(stage, observationPath), "utf8"));
   assert.equal(publicRows.length, observation.routeMapLayoutArtifact.rawPositions.length);
   assert.equal(publicTracks.length, observation.routeMapLayoutArtifact.layoutTracks.length);

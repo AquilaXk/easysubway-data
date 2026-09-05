@@ -27,6 +27,7 @@ const STAGE_INPUTS = Object.freeze([
   "tools/datapack/source-inventory.json",
   "tools/datapack/source-governance-policy.json",
   "release/product-gates/datapack-freshness-sla.json",
+  "release/product-gates/production-datapack-scope.json",
 ]);
 const JOURNAL_PATH = "tools/datapack/release/.current-public-route-map-materialization.journal.json";
 
