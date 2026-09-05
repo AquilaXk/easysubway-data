@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -110,9 +111,6 @@ test("predeployment measurement rejects incomplete artifact and observation attr
     "payload/accessibility.sqlite.zst", "payload/fare.sqlite.zst",
     "payload/timetable.sqlite.zst", "payload/topology.sqlite.zst", "provenance.json",
   ]) requireText(text, new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `route ${path}`);
-  for (const counter of ["providerCalls", "cacheHits", "staleArtifactUses", "fallbackUses"]) {
-    requireText(text, new RegExp(`${counter} !== 0`), `${counter} fails closed`);
-  }
   requireText(text, /expectedCells\.length/, "closed region/query coverage matrix");
   requireText(text, /component\.gitSha !== process\.env\.DATA_HEAD/, "component head binding");
   requireText(text, /String\(component\.workflowRunId\) !== process\.env\.DATA_RUN_ID/,
@@ -244,4 +242,92 @@ test("predeployment measurement derives regions from the canonical fan-in v2 sco
   requireText(text, /regionIds: fanIn\.scope\.regionIds/, "measurement input derives regions");
   assert.doesNotMatch(text, /const regions = \["capital", "gwangju", "daejeon", "daegu", "busan"\]/,
     "no duplicate mutable region projection");
+});
+
+test("executes the closed planner observation validation and emission", () => {
+  const block = runBlock(source(), "Validate observations and create canonical evidence once");
+  const root = mkdtempSync(join(tmpdir(), "journey-profile-predeployment-observation-"));
+  const inputPath = join(root, "input.json");
+  const observationPath = join(root, "observation.json");
+  const digest = "a".repeat(64);
+  const headSha = "a".repeat(40);
+  const input = {
+    dataRepository: "AquilaXk/easysubway-data", regionIds: ["capital"], queryClasses: ["POINT", "ARRIVE_BY"],
+    fanIn: { sha256: digest }, routeBundleSha256: digest, regionalMatrixSha256: digest,
+    componentSha256: digest, inventorySha256: digest, releaseEvidenceSha256: digest, releaseDecisionSha256: digest,
+  };
+  const observation = {
+    schemaVersion: 2, artifactKind: "journey-profile-predeployment-observation",
+    observationScope: "PREDEPLOYMENT_PLANNER", servingBoundary: { status: "UNOBSERVABLE" },
+    backendHeadSha: headSha, dataHeadSha: headSha, dataRunId: "42", fanInSha256: digest,
+    routeBundleSha256: digest, regionalMatrixSha256: digest, corpusSha256: digest,
+    algorithmId: "EASYSUBWAY_RAPTOR_SUITE_V2", algorithmSha256: digest,
+    frontierPolicyId: "FRONTIER_POLICY_V1", frontierSha256: digest,
+    measurements: [
+      {
+        regionId: "capital", queryClass: "POINT", expandedRoutes: 1, expandedTrips: 1,
+        expandedTransfers: 0, durationNanos: 0, allocatedBytes: 0,
+        requiredRepresentativeLoss: 0, oracleParity: true, profileMetrics: { status: "NOT_APPLICABLE" },
+      },
+      {
+        regionId: "capital", queryClass: "ARRIVE_BY", observedWork: 0, observedStateLabels: 0,
+        observedDestinationLabels: 0, observedBreakpoints: 0, durationNanos: 0, allocatedBytes: 0,
+        saturatedStates: 0, requiredRepresentativeLoss: 0, oracleParity: true,
+      },
+    ],
+  };
+  const canonical = (value) => {
+    if (value === null || typeof value !== "object") return JSON.stringify(value);
+    if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
+  };
+  const run = (value, output) => {
+    writeFileSync(inputPath, `${JSON.stringify(input)}\n`);
+    writeFileSync(observationPath, `${JSON.stringify(value)}\n`);
+    return spawnSync("/bin/bash", ["-c", block], {
+      env: { ...process.env, VALIDATED_INPUT: inputPath, MEASUREMENT_OUTPUT: observationPath,
+        EVIDENCE_OUTPUT: output, BACKEND_HEAD: headSha, DATA_HEAD: headSha, DATA_RUN_ID: "42" },
+      encoding: "utf8", timeout: 5000,
+    });
+  };
+  try {
+    const output = join(root, "evidence.json");
+    const positive = run(observation, output);
+    assert.equal(positive.status, 0, positive.stderr);
+    const evidence = JSON.parse(readFileSync(output, "utf8"));
+    assert.equal(evidence.schemaVersion, 2);
+    assert.equal(evidence.observation.observationScope, "PREDEPLOYMENT_PLANNER");
+    assert.deepEqual(evidence.observation.servingBoundary, { status: "UNOBSERVABLE" });
+    const { evidenceSha256, ...payload } = evidence;
+    assert.equal(evidenceSha256, createHash("sha256").update(canonical(payload)).digest("hex"));
+    const originalBytes = readFileSync(output, "utf8");
+    assert.equal(originalBytes, `${canonical(evidence)}\n`);
+    assert.equal(run(observation, output).status, 1, "evidence output is create-once");
+    assert.equal(readFileSync(output, "utf8"), originalBytes, "existing evidence is not overwritten");
+
+    const invalid = [
+      { ...observation, schemaVersion: 1 },
+      { ...observation, observationScope: "SERVING" },
+      { ...observation, servingBoundary: { status: "OBSERVED" } },
+      { ...observation, servingBoundary: { status: "UNOBSERVABLE", providerCalls: 0 } },
+      { ...observation, measurements: [{ ...observation.measurements[0], providerCalls: 0 }, observation.measurements[1]] },
+      { ...observation, measurements: [{ ...observation.measurements[0], observedWork: 0 }, observation.measurements[1]] },
+      { ...observation, measurements: [{ ...observation.measurements[0], expandedTrips: undefined }, observation.measurements[1]] },
+      { ...observation, measurements: [observation.measurements[0], { ...observation.measurements[1], profileMetrics: { status: "NOT_APPLICABLE" } }] },
+      { ...observation, measurements: [{ ...observation.measurements[0], profileMetrics: { status: "APPLICABLE" } }, observation.measurements[1]] },
+      { ...observation, measurements: [{ ...observation.measurements[0], profileMetrics: { status: "NOT_APPLICABLE", extra: 0 } }, observation.measurements[1]] },
+      { ...observation, backendHeadSha: "b".repeat(40) },
+      { ...observation, measurements: [{ ...observation.measurements[0], requiredRepresentativeLoss: 1 }, observation.measurements[1]] },
+      { ...observation, measurements: [{ ...observation.measurements[0], oracleParity: false }, observation.measurements[1]] },
+      { ...observation, measurements: [] },
+    ];
+    for (const [index, value] of invalid.entries()) {
+      const rejectedPath = join(root, `rejected-${index}.json`);
+      const rejected = run(value, rejectedPath);
+      assert.notEqual(rejected.status, 0, `invalid observation ${index} must fail closed`);
+      assert.equal(existsSync(rejectedPath), false, "rejected observation emits no evidence");
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
