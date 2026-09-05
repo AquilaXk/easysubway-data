@@ -26,7 +26,7 @@ async function compositionFixture(t) {
     const body = readFileSync(path.join(base, relative));
     return { body, value: JSON.parse(body) };
   };
-  const inventory = load("tools/datapack/source-inventory.json"); const candidate = load("tools/datapack/release/candidate-build-spec.json"); const ledger = load("tools/datapack/release/source-snapshots.json"); const scope = load("release/product-gates/production-datapack-scope.json", root); const governance = load("tools/datapack/source-governance-policy.json"); const freshness = load("release/product-gates/datapack-freshness-sla.json"); const pack = load("tools/datapack/release/capital-production-canonical-pack.json");
+  const inventory = load("tools/datapack/source-inventory.json"); const candidate = load("tools/datapack/release/candidate-build-spec.json"); const ledger = load("tools/datapack/release/source-snapshots.json"); const scope = load("release/product-gates/production-datapack-scope.json"); const governance = load("tools/datapack/source-governance-policy.json"); const freshness = load("release/product-gates/datapack-freshness-sla.json"); const pack = load("tools/datapack/release/capital-production-canonical-pack.json");
   const publicTopologySnapshotId = inventory.value.sources.find(({ id }) => id === "seoul-metro-route-map-positions")
     ?.routeMapAdmissionEvidence?.currentTopologyAdmission?.topologySnapshotId;
   const publicTopology = load(`tools/datapack/sources/${publicTopologySnapshotId}.json`).value;
