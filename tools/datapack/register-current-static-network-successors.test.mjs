@@ -10,7 +10,7 @@ import { buildPublicStaticNetworkV2SuccessorOutputs, commitStaticNetworkSuccesso
 import { buildPublicStaticNetworkV2Observations } from "./build-public-static-network-v2-observations.mjs";
 import { parseSeoulRouteMapPositionsCsv } from "./collect-seoul-route-map-positions.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
-import { nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
+import { createStaticNetworkRegistrarPredecessorFixture, nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
 
 const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const repositoryRoot = path.resolve(import.meta.dirname, "../..");
@@ -79,13 +79,14 @@ async function publicV2Input(root, capturedAt) {
 test("v2 registrar advances only the exact active V2 heads", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "static-network-v2-registrar-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  await cp(repositoryRoot, root, { recursive: true, filter: (source) => !source.includes("node_modules") });
+  await createStaticNetworkRegistrarPredecessorFixture(repositoryRoot, root, {
+    now: await nextSyntheticCurrentStaticNetworkNow(repositoryRoot),
+  });
   const request = await readFile(path.join(root, "tools/datapack/release/release-request.json")); const hashes = await readFile(path.join(root, "tools/datapack/release/hash-evidence.json"));
   const predecessorLedger = JSON.parse(await readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8"));
-  const predecessorIds = [
-    "seoul-metro-route-map-positions-current-20260826T035408251Z",
-    "molit-urban-rail-full-route-current-20260826T035408251Z",
-  ];
+  const predecessorCandidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
+  const predecessorIds = ["seoul-metro-route-map-positions", "molit-urban-rail-full-route"].map((sourceId) =>
+    predecessorCandidate.sourceSnapshots.find((snapshot) => snapshot.sourceId === sourceId).snapshotId);
   const predecessorSourceBytes = await Promise.all(predecessorIds.map(
     (snapshotId) => readFile(path.join(root, `tools/datapack/sources/${snapshotId}.json`)),
   ));
@@ -190,7 +191,9 @@ test("v2 registrar rejects forged producer observations and stale or mismatched 
 test("v2 registrar requires exact active observation files instead of ledger-only fallback", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "static-network-v2-active-bytes-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  await cp(repositoryRoot, root, { recursive: true, filter: (source) => !source.includes("node_modules") });
+  await createStaticNetworkRegistrarPredecessorFixture(repositoryRoot, root, {
+    now: await nextSyntheticCurrentStaticNetworkNow(repositoryRoot),
+  });
   const input = await publicV2Input(root);
   const candidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
   const activePath = (sourceId) => path.join(
@@ -215,7 +218,9 @@ test("v2 registrar requires exact active observation files instead of ledger-onl
 test("v2 registrar rejects current candidate and active-head drift without a bootstrap fallback", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "static-network-v2-current-only-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  await cp(repositoryRoot, root, { recursive: true, filter: (source) => !source.includes("node_modules") });
+  await createStaticNetworkRegistrarPredecessorFixture(repositoryRoot, root, {
+    now: await nextSyntheticCurrentStaticNetworkNow(repositoryRoot),
+  });
   const input = await publicV2Input(root);
   const candidatePath = path.join(root, "tools/datapack/release/candidate-build-spec.json");
   const candidateBytes = await readFile(candidatePath);
@@ -238,13 +243,15 @@ test("v2 registrar rejects current candidate and active-head drift without a boo
   await writeFile(candidatePath, `${JSON.stringify(candidate, null, 2)}\n`);
   await assert.rejects(
     buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input }),
-    /public v2 candidate source set is invalid/,
+    /public v2 current candidate binding is invalid/,
   );
   await writeFile(candidatePath, candidateBytes);
   const ledgerPath = path.join(root, "tools/datapack/release/source-snapshots.json");
   const ledgerBytes = await readFile(ledgerPath);
   const ledger = JSON.parse(ledgerBytes);
-  ledger.find(({ snapshotId }) => snapshotId === "kric-subway-timetable-line4-pilot-20260809").provider = "drift";
+  const timetableSnapshotId = JSON.parse(candidateBytes).sourceSnapshots
+    .find(({ sourceId }) => sourceId === "kric-subway-timetable").snapshotId;
+  ledger.find(({ snapshotId }) => snapshotId === timetableSnapshotId).provider = "drift";
   await writeFile(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
   await assert.rejects(
     buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input }),
