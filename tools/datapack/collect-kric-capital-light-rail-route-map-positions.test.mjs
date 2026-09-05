@@ -37,7 +37,6 @@ const LINE_FIXTURES = Object.freeze([
     quarantine: 0,
     rawSha256: "3be638e4c7e6272263abdf2803cd16b9c351bd027356cb10f348574ce4d1dea6",
     needsOverlay: true,
-    overlayNames: ["상현"],
   },
   {
     key: "everline",
@@ -55,10 +54,6 @@ const LINE_FIXTURES = Object.freeze([
     quarantine: 0,
     rawSha256: "fe2d8d0b24d16561c8fbbafe1b2b8bf1bb67bb24ca0c200bae222f502fefe055",
     needsOverlay: true,
-    overlayNames: [
-      "4.19민주묘지", "가오리", "보문", "북한산보국문", "북한산우이",
-      "삼양", "삼양사거리", "성신여대입구", "솔밭공원", "솔샘", "정릉", "화계",
-    ],
   },
   {
     key: "sillim",
@@ -153,8 +148,17 @@ test("수도권 경전철 5노선 공식 FILE 위경도 + schematic canvas snaps
       assert.ok(Number.isFinite(position.latitude) && Number.isFinite(position.longitude));
       assert.equal(position.labelPolygon.length, 4);
     }
-    if (line.overlayNames) {
-      assert.deepEqual(new Set(snapshot.overlayStationNames), new Set(line.overlayNames));
+    if (line.needsOverlay) {
+      // 보존된 단순 CSV의 결측 행이 독립 기대값이며, 현재 역 목록은 복사하지 않는다.
+      const [header, ...rows] = decodeOfficialCsv(csvBytes).trim().split(/\r?\n/).map((row) => row.split(","));
+      const stationColumn = header.indexOf("역명");
+      const latitudeColumn = header.indexOf("위도");
+      const longitudeColumn = header.indexOf("경도");
+      assert.ok([stationColumn, latitudeColumn, longitudeColumn].every((index) => index >= 0));
+      const expectedOverlayNames = rows.filter((row) =>
+        row[latitudeColumn].trim() === "" || row[longitudeColumn].trim() === ""
+      ).map((row) => row[stationColumn].trim());
+      assert.deepEqual(new Set(snapshot.overlayStationNames), new Set(expectedOverlayNames));
       assert.equal(snapshot.overlayDatasetId, "1294");
       assert.match(snapshot.license.attribution, /1294/);
     }

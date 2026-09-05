@@ -31,6 +31,14 @@ const DEPLOYED_ASSET_PATH = path.join(root, "apps/mobile/assets/datapacks/capita
 const DEPLOYED_INDEX_PATH = path.join(root, "apps/mobile/assets/datapacks/index.json");
 const DEPLOYED_EVIDENCE_PATH = path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json");
 
+function currentCapitalRouteMapTopologyAdmission(inventory, spec) {
+  const snapshotId = spec.networkEdgeEvidence.capitalTopologyCandidate.snapshotId;
+  const source = inventory.sources.find(({ routeMapAdmissionEvidence }) =>
+    routeMapAdmissionEvidence?.currentTopologyAdmission?.topologySnapshotId === snapshotId);
+  assert.ok(source, `current route-map admission is required for ${snapshotId}`);
+  return source.routeMapAdmissionEvidence.currentTopologyAdmission;
+}
+
 async function loadFixtureBoundCandidate(workspace) {
   const spec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
   const inventoryInput = spec.networkEdgeEvidence.sourceInventory;
@@ -766,9 +774,8 @@ test("network edge evidence는 pinned bytes·freshness·fixture projection misma
     await runRejectedBuild(ungoverned, /network edge source inventory must match buildSpec.sourceInventorySha256/);
 
     const staleInventory = JSON.parse(await readFile("tools/datapack/source-inventory.json", "utf8"));
-    staleInventory.sources.find(({ routeMapAdmissionEvidence }) =>
-      routeMapAdmissionEvidence?.topologySnapshotId === "capital-route-topology-20260724"
-    ).routeMapAdmissionEvidence.currentTopologyAdmission.freshUntil = "2026-07-27T00:00:00.000Z";
+    currentCapitalRouteMapTopologyAdmission(staleInventory, spec).freshUntil =
+      new Date(Date.parse(spec.publishedAt) - 1).toISOString();
     const staleBytes = Buffer.from(`${JSON.stringify(staleInventory, null, 2)}\n`);
     const stalePath = path.join(workspace, "stale-source-inventory.json");
     await writeFile(stalePath, staleBytes);
@@ -779,9 +786,7 @@ test("network edge evidence는 pinned bytes·freshness·fixture projection misma
 
     const futureInventory = JSON.parse(await readFile("tools/datapack/source-inventory.json", "utf8"));
     const futureReviewedAt = new Date(Date.parse(spec.publishedAt) + 1).toISOString();
-    futureInventory.sources.find(({ routeMapAdmissionEvidence }) =>
-      routeMapAdmissionEvidence?.topologySnapshotId === "capital-route-topology-20260724"
-    ).routeMapAdmissionEvidence.currentTopologyAdmission.reviewedAt = futureReviewedAt;
+    currentCapitalRouteMapTopologyAdmission(futureInventory, spec).reviewedAt = futureReviewedAt;
     const futureInventoryBytes = Buffer.from(`${JSON.stringify(futureInventory, null, 2)}\n`);
     const futureInventoryPath = path.join(workspace, "future-source-inventory.json");
     await writeFile(futureInventoryPath, futureInventoryBytes);
@@ -796,10 +801,7 @@ test("network edge evidence는 pinned bytes·freshness·fixture projection misma
     await runRejectedBuild(futureInventorySpec, /capital topology edge admission is future-dated/);
 
     const earlyInventory = JSON.parse(await readFile("tools/datapack/source-inventory.json", "utf8"));
-    earlyInventory.sources.find(({ id, routeMapAdmissionEvidence }) =>
-      id === "kric-everline-route-map-positions"
-      && routeMapAdmissionEvidence?.topologySnapshotId === "capital-route-topology-20260724"
-    ).routeMapAdmissionEvidence.currentTopologyAdmission.freshUntil = new Date(
+    currentCapitalRouteMapTopologyAdmission(earlyInventory, spec).freshUntil = new Date(
       Date.parse(spec.publishedAt) + 30 * 60 * 1000,
     ).toISOString();
     const earlyBytes = Buffer.from(`${JSON.stringify(earlyInventory, null, 2)}\n`);
