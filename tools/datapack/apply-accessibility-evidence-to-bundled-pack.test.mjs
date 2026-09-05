@@ -21,7 +21,7 @@ import {
   syncReleaseEvidence,
   syncCanonicalFixture,
 } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
-import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
+import { copySyntheticCurrentPublicRouteMapRepository, nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -511,7 +511,7 @@ test("candidate-fixtures-only sync succeeds without reading mobile pack paths", 
   );
   try {
     await copySyntheticCurrentPublicRouteMapRepository(repository, directory, {
-      now: new Date("2026-08-24T12:00:00.000Z"),
+      now: await nextSyntheticCurrentStaticNetworkNow(repository),
     });
     await execFileAsync(process.execPath, [
       "tools/datapack/apply-accessibility-evidence-to-bundled-pack.mjs",
@@ -539,7 +539,7 @@ test("generated hash-evidence commands use and enforce the exact candidate snaps
   const repository = path.resolve(import.meta.dirname, "../..");
   try {
     await copySyntheticCurrentPublicRouteMapRepository(repository, directory, {
-      now: new Date("2026-08-24T12:00:00.000Z"),
+      now: await nextSyntheticCurrentStaticNetworkNow(repository),
     });
     await mkdir(path.join(directory, "tools/datapack/lib"), { recursive: true });
     await Promise.all([

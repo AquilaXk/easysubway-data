@@ -33,11 +33,11 @@ import {
   materializeStationLineAccessibility,
 } from "./materialize-station-line-accessibility.mjs";
 import { signServerRouteBundle } from "./sign-server-route-bundle.mjs";
+import { copySyntheticCurrentPublicRouteMapRepository, nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
 
 const CURRENT_SOURCE_WINDOW = await selectedSourceWindow();
 const FRESH_AT = CURRENT_SOURCE_WINDOW.evaluationAt;
 const STALE_AT = CURRENT_SOURCE_WINDOW.staleAt;
-const CANDIDATE_ID = (await readJson("tools/datapack/release/candidate-build-spec.json")).candidateId;
 const BUNDLE_ID = "capital-route-bundle-1";
 const STATION_SET_SHA256 = "1".repeat(64);
 const SCOPED_STATION_SET_SHA256 = sha256(Buffer.from(canonicalJson(["station-a", "station-b"])));
@@ -226,10 +226,9 @@ test("embedded #8/#9 evidence와 current keyless bytes를 deterministic NO_GO FI
 
 test("handoff candidate와 signed bundle identity를 분리한다", async (t) => {
   const fixture = await createFixture(t);
-  assert.equal(fixture.buildSpec.candidateId, CANDIDATE_ID);
-  assert.equal(fixture.stationLineInput.candidate.candidateId, CANDIDATE_ID);
-  assert.equal(fixture.routeEdgeInput.candidate.candidateId, CANDIDATE_ID);
-  assert.notEqual(CANDIDATE_ID, BUNDLE_ID);
+  assert.equal(fixture.stationLineInput.candidate.candidateId, fixture.buildSpec.candidateId);
+  assert.equal(fixture.routeEdgeInput.candidate.candidateId, fixture.buildSpec.candidateId);
+  assert.notEqual(fixture.buildSpec.candidateId, BUNDLE_ID);
 
   const output = path.join(fixture.temp, "distinct-candidate-bundle");
   await build(fixture, output, FRESH_AT);
@@ -706,10 +705,11 @@ async function createFixture(t, options = {}) {
   const policy = await readJson(policyPath);
   const buildSpec = await readJson(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"));
   const artifactRoot = path.join(temp, "server-route-bundle");
-  const stationLineInput = completeStationLineInput(buildSpec.sourceSnapshotSetHash);
+  const stationLineInput = completeStationLineInput(buildSpec.sourceSnapshotSetHash, buildSpec.candidateId);
   const routeEdgeInput = completeRouteEdgeInput(
     buildSpec.sourceSnapshotSetHash,
     sha256(Buffer.from("topology payload")),
+    buildSpec.candidateId,
   );
   options.configureInputs?.({ stationLineInput, routeEdgeInput });
   policy.rideInvariant.subwayLocal.admittedEdgeSetSha256 = canonicalRideEdgeSetSha256(
@@ -747,24 +747,10 @@ async function copyRepositoryInputs(repositoryRoot) {
     await mkdir(path.dirname(path.join(repositoryRoot, relative)), { recursive: true });
     await cp(relative, path.join(repositoryRoot, relative));
   }
-  const candidatePath = path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json");
-  const inventoryPath = path.join(repositoryRoot, "tools/datapack/source-inventory.json");
-  const [candidate, snapshots, inventoryBytes] = await Promise.all([
-    readJson(candidatePath),
-    readJson(path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json")),
-    readFile(inventoryPath),
-  ]);
-  candidate.sourceSnapshots = candidate.sourceSnapshots.filter(
-    ({ sourceId }) => sourceId !== "seoulmetro-cyberstation-route-map",
-  );
-  candidate.sourceSnapshotIds = candidate.sourceSnapshots.map(({ snapshotId }) => snapshotId);
-  const selectedIds = new Set(candidate.sourceSnapshotIds);
-  candidate.sourceSnapshotSetHash = sha256(Buffer.from(JSON.stringify(
-    snapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId)),
-  )));
-  candidate.sourceInventorySha256 = sha256(Buffer.from(JSON.stringify(JSON.parse(inventoryBytes))));
-  candidate.networkEdgeEvidence.sourceInventory.sha256 = sha256(inventoryBytes);
-  await writeFile(candidatePath, `${JSON.stringify(candidate, null, 2)}\n`);
+  // FINAL 테스트도 inventory와 candidate를 동일한 생성 입력에 결속한다.
+  await copySyntheticCurrentPublicRouteMapRepository(process.cwd(), repositoryRoot, {
+    now: new Date(FRESH_AT),
+  });
 }
 
 async function selectedSourceWindow() {
@@ -783,9 +769,10 @@ async function selectedSourceWindow() {
     entry.rawReceipt?.storedAt,
   ].filter(Boolean).map(Date.parse)));
   const freshUntil = Math.min(...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)));
-  assert.ok(Number.isFinite(basisAt) && Number.isFinite(freshUntil) && basisAt + 1_000 < freshUntil);
+  const evaluationAt = await nextSyntheticCurrentStaticNetworkNow(process.cwd());
+  assert.ok(Number.isFinite(basisAt) && Number.isFinite(freshUntil) && evaluationAt.getTime() < freshUntil);
   return {
-    evaluationAt: new Date(basisAt + 1_000).toISOString(),
+    evaluationAt: evaluationAt.toISOString(),
     evidenceFreshUntil: new Date(freshUntil).toISOString(),
     freshUntil: kstInstant(freshUntil),
     staleAt: new Date(freshUntil + 1).toISOString(),
@@ -948,9 +935,9 @@ async function mutateAccessibilityPayload(fixture, sql) {
   await rebindPayloadManifest(fixture.artifactRoot);
 }
 
-function completeStationLineInput(sourceSetSha256) {
+function completeStationLineInput(sourceSetSha256, candidateId) {
   const candidate = {
-    candidateId: CANDIDATE_ID,
+    candidateId,
     stationSetSha256: SCOPED_STATION_SET_SHA256,
     sourceSetSha256,
     mappingContractVersion: "station-line-v1",
@@ -987,9 +974,9 @@ function evidence(candidate, line, domain, state, evidenceKind, evidenceReason) 
   };
 }
 
-function completeRouteEdgeInput(sourceSetSha256, topologySha256) {
+function completeRouteEdgeInput(sourceSetSha256, topologySha256, candidateId) {
   const candidate = {
-    candidateId: CANDIDATE_ID,
+    candidateId,
     stationSetSha256: SCOPED_STATION_SET_SHA256,
     sourceSetSha256,
     topologySha256,
