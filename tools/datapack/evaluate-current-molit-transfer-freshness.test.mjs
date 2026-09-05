@@ -10,6 +10,7 @@ import {
   runCurrentMolitTransferFreshnessEvaluation,
 } from "./evaluate-current-molit-transfer-freshness.mjs";
 import { freshnessPolicySha256 } from "./freshness-policy.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
 
 const observedAt = "2026-08-14T04:53:59.000Z";
 const evaluationAt = "2026-08-14T05:00:00.000Z";
@@ -89,7 +90,31 @@ test("exact official-file observation은 shared #57 POSITIVE extension result가
   assert.equal(result.observationEvidenceSha256, fixture.evidence.evidenceHash);
   assert.equal(result.currentFreshUntil, "2026-08-11T00:00:00.000Z");
   assert.equal(result.extendedFreshUntil, "2027-08-14T04:53:59.000Z");
-  assert.equal(result.resultSha256, "cc682e2114cebf3839ae9fd906ab63f0ff0797d4dea6222f3bebed56ed21b70d");
+  const selectedPolicy = {
+    ...fixture.policy,
+    sourceClasses: fixture.policy.sourceClasses.map((sourceClass) => sourceClass.id === "annual_official_file"
+      ? { ...sourceClass, sourceIds: [fixture.evidence.sourceId] }
+      : sourceClass),
+  };
+  // 과거 digest 대신 실제 반환값과 독립적으로 만든 기대 결과 전체를 결속한다.
+  const expected = {
+    schemaVersion: 1,
+    artifactKind: "source-freshness-extension-result",
+    decision: "EXTENDED",
+    reasonCode: "POSITIVE_OBSERVATION_EXTENDED",
+    sourceId: fixture.evidence.sourceId,
+    snapshotId: fixture.evidence.snapshotId,
+    snapshotSha256: fixture.metadata.gzipSha256,
+    rawEvidenceSha256: fixture.metadata.rawSha256,
+    sourceClassId: "annual_official_file",
+    policySha256: freshnessPolicySha256(selectedPolicy),
+    observationEvidenceSha256: fixture.evidence.evidenceHash,
+    currentFreshUntil: "2026-08-11T00:00:00.000Z",
+    extendedFreshUntil: "2027-08-14T04:53:59.000Z",
+    evaluatedAt: evaluationAt,
+    observedAt,
+  };
+  assert.deepEqual(result, { ...expected, resultSha256: sha256(canonicalJson(expected)) });
 });
 
 test("evidence·operation·source identity drift는 fail closed이고 output 0이다", async () => {
