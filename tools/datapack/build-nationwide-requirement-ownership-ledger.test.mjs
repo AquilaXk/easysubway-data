@@ -61,6 +61,23 @@ test("#449 derives the exact current PK set with one owner and honest NO_GO", as
   assert.equal(inventoryOnly.childOwner.issue, 478);
 });
 
+test("#449 preserves partial admission without promoting missing requirements", async () => {
+  const input = await inputs();
+  const partial = input.tally.launchRequired.requirements.find((row) =>
+    row.status === "MISSING" && row.admittedSourceIds.length > 0);
+  assert.ok(partial);
+  assert.ok(partial.admittedFieldCount > 0 && partial.admittedFieldCount < partial.requiredFieldCount);
+  const ledger = buildNationwideRequirementOwnershipLedger(input);
+  const row = ledger.rows.find(({ pk }) => pk ===
+    [partial.regionId, partial.operatorId, partial.lineId, partial.sourceDomain].join(":"));
+  assert.equal(row.disposition.status, "MISSING");
+  assert.deepEqual(row.disposition.admittedSourceIds, [...partial.admittedSourceIds].sort());
+  assert.equal(ledger.summary.nationwideEligibility, "NO_GO");
+  const invalid = structuredClone(input);
+  invalid.inventory.sources.find(({ id }) => id === partial.admittedSourceIds[0]).coverageScope.lineIds = [];
+  assert.throws(() => buildNationwideRequirementOwnershipLedger(invalid), /empty lineIds/);
+});
+
 test("#449 rejects unsafe inventory scope, owner, and current-head drift", async () => {
   const input = await inputs();
   const admitted = input.tally.launchRequired.requirements.find(({ status }) => status === "INVENTORY_ADMITTED");
