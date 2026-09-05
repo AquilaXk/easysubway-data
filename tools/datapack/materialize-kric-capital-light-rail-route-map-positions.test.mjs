@@ -289,6 +289,37 @@ test("current geometry successors are consumed with their immutable identity", a
   }
 });
 
+test("self-consistent empty or incomplete snapshots cannot escape current topology", async () => {
+  const { baseFixture, sampleSnapshot, topologySnapshot, inventory } = await inputs();
+  for (const positions of [[], sampleSnapshot.positions.slice(1)]) {
+    const snapshot = structuredClone(sampleSnapshot);
+    snapshot.positions = positions;
+    snapshot.quarantinedPositions = [];
+    snapshot.stationCount = positions.length;
+    snapshot.quarantinedCount = 0;
+    snapshot.rawStationCount = positions.length;
+    snapshot.lineStationCounts = { gimpo: positions.length };
+    snapshot.scope = positions.map(({ lineId, stationCode, stationName, stationId }) => ({
+      lineId, stationCode, stationName, stationId,
+    }));
+    snapshot.scopeSha256 = createHash("sha256").update(JSON.stringify(snapshot.scope)).digest("hex");
+    snapshot.positionsSha256 = createHash("sha256").update(JSON.stringify(positions)).digest("hex");
+    const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
+    const changedInventory = structuredClone(inventory);
+    const evidence = changedInventory.sources.find(({ id }) => id === SAMPLE_SOURCE_ID).routeMapAdmissionEvidence;
+    evidence.snapshotSha256 = createHash("sha256").update(snapshotBytes).digest("hex");
+    evidence.stationCount = snapshot.stationCount;
+    evidence.rawStationCount = snapshot.rawStationCount;
+    evidence.quarantinedCount = snapshot.quarantinedCount;
+    evidence.lineStationCounts = structuredClone(snapshot.lineStationCounts);
+    evidence.positionsSha256 = snapshot.positionsSha256;
+    assert.throws(() => materializeCapitalLightRailRouteMapPositions({
+      baseFixture, snapshot, snapshotSha256: evidence.snapshotSha256,
+      topologySnapshot, inventory: changedInventory, now: routeMapNow,
+    }), /topology lineage mismatch/);
+  }
+});
+
 test("5노선 inventory evidence·snapshot byte identity가 모두 맞물린다", async () => {
   const inventory = await readJson("tools/datapack/source-inventory.json");
   for (const line of listCapitalLightRailRouteMapPositionLines()) {

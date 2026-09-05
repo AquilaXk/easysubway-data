@@ -639,7 +639,7 @@ export function buildCapitalLightRailRouteMapSuccessor({
     previousSnapshot,
     canonicalStationIdentities,
   });
-  for (const field of ["rawSha256", "observedDataUpdatedAt", "capturedAt"]) {
+  for (const field of ["rawSha256", "overlayRawSha256", "observedDataUpdatedAt", "capturedAt"]) {
     if (snapshot[field] !== previousSnapshot[field]) {
       throw new Error(`${sourceId} retained admitted snapshot ${field} drift`);
     }
@@ -890,6 +890,9 @@ function geometryCanvas(geometry, line, topologyLine, previousSnapshot, canonica
     const name = normalizeStationName(node.dataStation);
     if (nodesByName.has(name)) throw new Error(`${line.sourceId} owner geometry station is ambiguous: ${node.dataStation}`);
     nodesByName.set(name, node);
+  }
+  if (!sameStationSets(nodesByName.keys(), orderedNames.map(normalizeStationName))) {
+    throw new Error(`${line.sourceId} owner geometry station set differs from topology`);
   }
   const labelsByName = new Map();
   for (const label of geometry.labels) {

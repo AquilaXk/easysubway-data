@@ -212,6 +212,10 @@ function validateTopologyLineage(evidence, snapshot, topologySnapshot, line) {
       topologyNames.add(normalizeStationName(stationName));
     }
   }
+  const persistedNames = new Set([
+    ...(snapshot?.positions ?? []),
+    ...(snapshot?.quarantinedPositions ?? []),
+  ].map(({ stationName }) => normalizeStationName(stationName)));
   if (evidence?.topologySourceId !== TOPOLOGY_SOURCE_ID
     || evidence.topologySnapshotId !== snapshot.topologySnapshotId
     || evidence.topologyContentSha256 !== topologySnapshot?.contentSha256
@@ -222,9 +226,16 @@ function validateTopologyLineage(evidence, snapshot, topologySnapshot, line) {
     || lineage?.sourceId !== TOPOLOGY_SOURCE_ID
     || lineage.snapshotId !== snapshot.topologySnapshotId
     || lineage.contentSha256 !== topologySnapshot.contentSha256
-    || lineage.lineId !== line.lineId) {
+    || lineage.lineId !== line.lineId
+    || !sameStationSets(persistedNames, topologyNames)) {
     throw new Error(`${line.sourceId} topology lineage mismatch`);
   }
+}
+
+function sameStationSets(left, right) {
+  const leftSet = new Set(left);
+  const rightSet = new Set(right);
+  return leftSet.size === rightSet.size && [...leftSet].every((name) => rightSet.has(name));
 }
 
 function ensureOperator(pack, operatorId, nameKo) {

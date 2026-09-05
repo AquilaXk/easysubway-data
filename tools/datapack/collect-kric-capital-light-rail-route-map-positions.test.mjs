@@ -423,3 +423,35 @@ test("successor projection은 tampered predecessor와 current topology binding�
     source: brokenSource, candidate, ...collectorInputs, previousSnapshotBytes,
   }), /current topology admission binding mismatch/);
 });
+
+test("successor projection은 retained overlay bytes drift를 거부한다", async () => {
+  const [inventory, candidates] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/source-candidates.json"), "utf8").then(JSON.parse),
+  ]);
+  const line = LINE_FIXTURES.find(({ key }) => key === "ui");
+  const source = inventory.sources.find(({ id }) => id === line.sourceId);
+  const candidate = candidates.candidates.find(({ id }) => id === line.sourceId);
+  const inputs = await loadLine(line);
+  const previousSnapshotBytes = await readFile(path.join(root, source.routeMapAdmissionEvidence.snapshotPath));
+  assert.throws(() => buildCapitalLightRailRouteMapSuccessor({
+    source, candidate, previousSnapshotBytes, csvBytes: inputs.csvBytes,
+    overlayCsvBytes: Buffer.concat([inputs.overlayCsvBytes, Buffer.from("\n")]),
+    topologySnapshot: inputs.topologySnapshot, topologySnapshotId: inputs.topologySnapshotId,
+    schematicCanvas: inputs.schematicCanvas, canonicalStationIdentities: inputs.canonicalStationIdentities,
+  }), /overlayRawSha256 drift/);
+});
+
+test("owner geometry의 노선 외 역은 topology projection 전에 거부한다", async () => {
+  const line = LINE_FIXTURES.find(({ key }) => key === "ui");
+  const inputs = await loadLine(line);
+  const geometry = structuredClone(inputs.schematicCanvas);
+  geometry.stationNodes.push({
+    dataLine: "ui-sinseol", transferLines: "", dataStation: "노선외역", x: 2000, y: 800,
+  });
+  assert.throws(() => parseCapitalLightRailRouteMapPositionsCsv({
+    lineKey: line.key, csvBytes: inputs.csvBytes, overlayCsvBytes: inputs.overlayCsvBytes,
+    topologySnapshot: inputs.topologySnapshot, schematicCanvas: geometry,
+    previousSnapshot: inputs.previousSnapshot, canonicalStationIdentities: inputs.canonicalStationIdentities,
+  }), /owner geometry station set differs/);
+});
