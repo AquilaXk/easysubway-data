@@ -3022,6 +3022,25 @@ test("allowlist 항목의 inputs 형상이 깨지면 진단 가능한 오류로 
   );
 });
 
+test("current MOLIT membership selectors reject retired station map paths", async () => {
+  const spec = structuredClone(await readJson(SPEC_PATH));
+  const inventory = await readJson(INVENTORY_PATH);
+  for (const materializer of [
+    "tools/datapack/materialize-daegu-timetable.mjs",
+    "tools/datapack/materialize-daejeon-timetable.mjs",
+    "tools/datapack/materialize-gwangju-timetable.mjs",
+  ]) {
+    const inclusion = spec.packDataInclusions.find((entry) => entry.materializer === materializer);
+    inclusion.stationMapPath = "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv";
+    assert.throws(
+      () => validateNationwideCandidateCoverageSpec(spec, inventory),
+      /has unknown keys: stationMapPath/,
+      materializer,
+    );
+    delete inclusion.stationMapPath;
+  }
+});
+
 // 형상 검사가 잡는 것은 형상 자체가 깨진 경우뿐이다. 형상이 성립하면서 어댑터가 실제로 읽는 키보다 좁으면
 // spec 검사가 그 키를 요구하지 않아 결측 값이 readTracked까지 들어온다 — fail closed는 유지되지만 진단이
 // path.resolve TypeError로 붕괴했다(실측). 결측을 spec 검사와 같은 형식으로 되돌리는지 본다.

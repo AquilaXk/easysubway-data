@@ -288,19 +288,20 @@ function assertMembershipAdmission(inventory, lineId, mappings) {
  * Reads the tracked current MOLIT normalized observation and returns the five
  * regional membership mappings bound to the active inventory and ledger head.
  */
-export async function loadCurrentMolitMembershipMappings({ repositoryRoot = REPOSITORY_ROOT } = {}) {
+export async function loadCurrentMolitMembershipMappings({
+  repositoryRoot = REPOSITORY_ROOT,
+  inventory: suppliedInventory = null,
+  readTracked = null,
+} = {}) {
   const root = path.resolve(repositoryRoot);
-  const [inventoryBytes, snapshotBytes] = await Promise.all([
-    readFile(path.join(root, "tools/datapack/source-inventory.json")),
-    readFile(path.join(root, "tools/datapack/release/source-snapshots.json")),
-  ]);
-  const inventory = JSON.parse(inventoryBytes);
-  const snapshots = JSON.parse(snapshotBytes);
+  const read = readTracked ?? ((relativePath) => readFile(path.join(root, relativePath)));
+  const inventory = suppliedInventory ?? JSON.parse(await read("tools/datapack/source-inventory.json"));
+  const snapshots = JSON.parse(await read("tools/datapack/release/source-snapshots.json"));
   const admission = inventory?.sources?.find(({ id }) => id === MOLIT_SOURCE_ID)?.admissionEvidence;
   if (typeof admission?.snapshotId !== "string" || !/^molit-urban-rail-full-route-current-20\d{6}T\d{9}Z$/u.test(admission.snapshotId)) {
     throw new Error("current MOLIT observation snapshot id is invalid");
   }
-  const observationBytes = await readFile(path.join(root, "tools/datapack/sources", `${admission.snapshotId}.json`));
+  const observationBytes = await read(`tools/datapack/sources/${admission.snapshotId}.json`);
   const observation = JSON.parse(observationBytes);
   const { current } = assertCurrentMolitObservation({ inventory, snapshots, observation, observationBytes });
   const projection = observation.normalizedProjection;

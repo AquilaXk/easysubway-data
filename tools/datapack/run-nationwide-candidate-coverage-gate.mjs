@@ -63,11 +63,7 @@ import { promisify } from "node:util";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { verifyProductionPackArtifactIdentity } from "./verify-production-pack-artifact-identity.mjs";
-import {
-  parseMolitDaeguStationMappings,
-  parseMolitDaejeonStationMappings,
-  parseMolitGwangjuStationMappings,
-} from "./build-molit-nationwide-fixture.mjs";
+import { loadCurrentMolitMembershipMappings } from "./materialize-test-fixture.mjs";
 import { BUSAN_LINES } from "./collect-busan-route-topology.mjs";
 import { DAEGU_LINES } from "./collect-daegu-datapack-sources.mjs";
 import { INCHEON_TIMETABLE_LINES } from "./collect-incheon-timetable.mjs";
@@ -145,7 +141,7 @@ const SIGNING_MODE = "EPHEMERAL_RSA_2048";
 const PACK_DATA_MATERIALIZERS = new Map([
   ["tools/datapack/materialize-daegu-timetable.mjs", {
     materialize: materializeDaeguTimetableInclusion,
-    inputs: { paths: ["stationMapPath"], linePaths: ["topologySnapshotPath", "timetableSnapshotPath"] },
+    inputs: { paths: [], linePaths: ["topologySnapshotPath", "timetableSnapshotPath"] },
   }],
   ["tools/datapack/materialize-daegu-route-map-positions.mjs", {
     materialize: materializeDaeguRouteMapInclusion,
@@ -179,7 +175,7 @@ const PACK_DATA_MATERIALIZERS = new Map([
   // 지역마다 편입은 시각표·노선도·편의시설 3건이고 도메인은 5개다.
   ["tools/datapack/materialize-daejeon-timetable.mjs", {
     materialize: materializeDaejeonTimetableInclusion,
-    inputs: { paths: ["snapshotPath", "topologySnapshotPath", "stationMapPath"], linePaths: [] },
+    inputs: { paths: ["snapshotPath", "topologySnapshotPath"], linePaths: [] },
   }],
   ["tools/datapack/materialize-daejeon-route-map-positions.mjs", {
     materialize: materializeDaejeonRouteMapInclusion,
@@ -191,7 +187,7 @@ const PACK_DATA_MATERIALIZERS = new Map([
   }],
   ["tools/datapack/materialize-gwangju-timetable.mjs", {
     materialize: materializeGwangjuTimetableInclusion,
-    inputs: { paths: ["snapshotPath", "topologySnapshotPath", "stationMapPath"], linePaths: [] },
+    inputs: { paths: ["snapshotPath", "topologySnapshotPath"], linePaths: [] },
   }],
   ["tools/datapack/materialize-gwangju-route-map-positions.mjs", {
     materialize: materializeGwangjuRouteMapInclusion,
@@ -514,7 +510,7 @@ async function daeguTopologySnapshots(inclusion, readTracked) {
 // 창은 소스마다 다르므로 pin도 편입마다 따로 둔다.
 async function materializeDaeguTimetableInclusion(fixture, inclusion, { readTracked, inventory }) {
   const topologySnapshots = await daeguTopologySnapshots(inclusion, readTracked);
-  const stationMapBytes = await readTracked(inclusion.stationMapPath, "stationMapPath");
+  const membershipMappings = await loadCurrentMolitMembershipMappings({ inventory, readTracked });
   const timetableSnapshots = {};
   const canonicalStationMappings = {};
   for (const [index, line] of inclusion.lines.entries()) {
@@ -523,7 +519,7 @@ async function materializeDaeguTimetableInclusion(fixture, inclusion, { readTrac
       await readTracked(line.timetableSnapshotPath, "lines[].timetableSnapshotPath"),
       line.timetableSnapshotPath,
     );
-    canonicalStationMappings[config.lineNumber] = parseMolitDaeguStationMappings(stationMapBytes, config.lineName);
+    canonicalStationMappings[config.lineNumber] = membershipMappings[`daeguLine${config.lineNumber}`];
   }
   return materializeDaeguTimetable({
     baseFixture: fixture,
@@ -762,7 +758,7 @@ async function materializeDaejeonTimetableInclusion(fixture, inclusion, { readTr
     inclusion.snapshotPath,
   );
   const topologySnapshot = await daejeonTopologySnapshot(inclusion, readTracked, inventory);
-  const stationMapBytes = await readTracked(inclusion.stationMapPath, "stationMapPath");
+  const membershipMappings = await loadCurrentMolitMembershipMappings({ inventory, readTracked });
   return materializeDaejeonTimetable({
     baseFixture: fixture,
     timetableSnapshot: parseJsonBytes(
@@ -771,7 +767,7 @@ async function materializeDaejeonTimetableInclusion(fixture, inclusion, { readTr
     ),
     topologySnapshot,
     inventory,
-    canonicalStationMappings: parseMolitDaejeonStationMappings(stationMapBytes),
+    canonicalStationMappings: membershipMappings.daejeon,
     now: new Date(inclusion.materializedAt),
   });
 }
@@ -850,7 +846,7 @@ async function materializeGwangjuTimetableInclusion(fixture, inclusion, { readTr
     inclusion.snapshotPath,
   );
   const topologySnapshot = await gwangjuTopologySnapshot(inclusion, readTracked, inventory);
-  const stationMapBytes = await readTracked(inclusion.stationMapPath, "stationMapPath");
+  const membershipMappings = await loadCurrentMolitMembershipMappings({ inventory, readTracked });
   return materializeGwangjuTimetable({
     baseFixture: fixture,
     timetableSnapshot: parseJsonBytes(
@@ -859,7 +855,7 @@ async function materializeGwangjuTimetableInclusion(fixture, inclusion, { readTr
     ),
     topologySnapshot,
     inventory,
-    canonicalStationMappings: parseMolitGwangjuStationMappings(stationMapBytes),
+    canonicalStationMappings: membershipMappings.gwangju,
     now: new Date(inclusion.materializedAt),
   });
 }

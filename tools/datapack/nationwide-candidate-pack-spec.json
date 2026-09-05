@@ -38,7 +38,6 @@
       "regionId": "daegu",
       "materializer": "tools/datapack/materialize-daegu-timetable.mjs",
       "materializedAt": "2026-07-20T16:00:00.000Z",
-      "stationMapPath": "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv",
       "lines": [
         {
           "lineNumber": 1,
@@ -365,7 +364,6 @@
       "materializedAt": "2026-07-20T03:30:00.000Z",
       "snapshotPath": "tools/datapack/sources/daejeon-train-timetable-20260720.json",
       "topologySnapshotPath": "tools/datapack/sources/daejeon-route-topology-20260720.json",
-      "stationMapPath": "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv",
       "lines": [
         { "lineNumber": 1, "lineId": "line-7051a9c2525c" }
       ],
@@ -485,7 +483,6 @@
       "materializedAt": "2026-07-20T13:08:47.161Z",
       "snapshotPath": "tools/datapack/sources/gwangju-transportation-cyberstation-timetable-20260720.json",
       "topologySnapshotPath": "tools/datapack/sources/gwangju-transportation-route-topology-20260720.json",
-      "stationMapPath": "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv",
       "lines": [
         { "lineNumber": 1, "lineId": "line-e57a361e8892" }
       ],
