@@ -30,6 +30,7 @@ const FIXTURE_INPUTS = [
   "tools/datapack/release/current-capital-facility-source-admission.json",
   "tools/datapack/source-inventory.json", "tools/datapack/source-governance-policy.json",
   "release/product-gates/datapack-freshness-sla.json", "tools/datapack/nationwide-coverage-targets.json",
+  "release/product-gates/production-datapack-scope.json",
   "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
   "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
 ];
