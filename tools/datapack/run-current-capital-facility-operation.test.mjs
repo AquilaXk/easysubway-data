@@ -58,9 +58,11 @@ async function selectedSourceHeadAt() {
   return basisAt;
 }
 
-function nextSnapshot(plan) {
+function nextSnapshot(plan, observationFreshUntil) {
   const operation = KRIC_ACCESSIBILITY_OPERATIONS.find(({ sourceId }) => sourceId === "kric-station-convenience-standard");
   const capturedAt = new Date(CURRENT_SOURCE_HEAD_AT + 60_000).toISOString();
+  const freshUntil = observationFreshUntil ?? new Date(Date.parse(capturedAt) + 24 * 60 * 60 * 1_000).toISOString();
+  assert.ok(Date.parse(freshUntil) > Date.parse(capturedAt));
   const mappings = [...plan.stationLineProviderMappings].sort((left, right) => {
     const identity = (mapping) => [mapping.providerOperatorId, mapping.providerLineId, mapping.providerStationId, mapping.stationId, mapping.lineId].join("\0");
     return identity(left) < identity(right) ? -1 : identity(left) > identity(right) ? 1 : 0;
@@ -78,7 +80,7 @@ function nextSnapshot(plan) {
   return {
     schemaVersion: 1, artifactKind: "kric-accessibility-snapshot", sourceId: operation.sourceId,
     snapshotId: `kric-station-convenience-standard-${capturedAt.replaceAll(/[-:.]/g, "")}`, capturedAt, observedAt: capturedAt,
-    freshUntil: new Date(Date.parse(capturedAt) + 24 * 60 * 60 * 1_000).toISOString(), credentialRedacted: true,
+    freshUntil, credentialRedacted: true,
     providerResultCode: "00", schemaStatus: "PASS", absenceEvidenceMode: "EXHAUSTIVE_LIST",
     queryCount: queries.length, rowCount: 0, rawSha256, contentSha256,
     schemaFingerprint: jsonSha([...operation.responseFields].sort()),
@@ -166,7 +168,7 @@ async function currentReleaseFixture(t) {
   return root;
 }
 
-async function finalizeFixture(t, { prepared = false } = {}) {
+async function finalizeFixture(t, { prepared = false, observationFreshUntil } = {}) {
   const root = await currentReleaseFixture(t);
   const operationRoot = await mkdtemp(path.join(tmpdir(), "facility-finalize-operation-"));
   t.after(() => rm(operationRoot, { recursive: true, force: true }));
@@ -176,7 +178,7 @@ async function finalizeFixture(t, { prepared = false } = {}) {
     load("tools/datapack/sources/kric-provider-code-catalog-20260228.json"), load("tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json"), load("tools/datapack/source-inventory.json"),
   ]);
   const plan = buildCurrentCapitalFacilityCollectionPlan({ canonicalPackBytes, coverageTargetsBytes, providerCodeCatalogBytes, routeRostersBytes, sourceInventoryBytes });
-  const snapshot = nextSnapshot(plan); const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot, null, 2)}\n`);
+  const snapshot = nextSnapshot(plan, observationFreshUntil); const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot, null, 2)}\n`);
   const snapshotsPath = path.join(root, "tools/datapack/release/source-snapshots.json"); const inventoryPath = path.join(root, "tools/datapack/source-inventory.json");
   const snapshots = JSON.parse(await readFile(snapshotsPath, "utf8")); const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
   const candidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
@@ -233,8 +235,8 @@ function receipt(fixture) {
   };
 }
 
-async function publishedRecoveryFixture(t) {
-  const source = await finalizeFixture(t);
+async function publishedRecoveryFixture(t, options) {
+  const source = await finalizeFixture(t, options);
   const sourceReceipt = receipt(source);
   const receiptBytes = Buffer.from(`${JSON.stringify(sourceReceipt, null, 2)}\n`);
   await writeFile(path.join(source.operationRoot, "receipt.json"), receiptBytes);
@@ -677,7 +679,8 @@ test("retained FINALIZED publication recovery performs one OCI GET and reconstru
 });
 
 test("published recovery runs current release preflight and rejects an expired observation before target mutation", async (t) => {
-  const { source } = await publishedRecoveryFixture(t);
+  // 전체 candidate 시계를 전진시키지 않고 복구 대상만 만료 경계에 둔다.
+  const { source } = await publishedRecoveryFixture(t, { observationFreshUntil: NOW.toISOString() });
   const repositoryRoot = await currentReleaseFixture(t);
   const targetParent = await mkdtemp(path.join(tmpdir(), "facility-recovery-preflight-"));
   t.after(() => rm(targetParent, { recursive: true, force: true }));
@@ -713,7 +716,7 @@ test("published recovery runs current release preflight and rejects an expired o
     operationRoot: expiredObservation,
     sourceOperationRoot: source.operationRoot,
     execFileImpl: exactMainExec,
-    now: new Date(source.snapshot.freshUntil),
+    now: NOW,
   }), /published recovery observation is stale/u);
   await assertUnchanged(expiredObservation);
 });
