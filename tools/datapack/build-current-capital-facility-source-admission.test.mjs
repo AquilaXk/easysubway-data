@@ -73,7 +73,7 @@ test("producer-neutral FACILITY admission emits a mapping-derived closed matrix"
   assert.throws(() => canonicalCurrentCapitalFacilitySourceAdmissionJson(pathDrift));
 });
 
-test("current seven-source candidate evaluates projections at its published clock, not the active FACILITY clock", async () => {
+test("scope-selected candidate evaluates projections at its published clock, not the active FACILITY clock", async () => {
   const files = Object.fromEntries(await Promise.all([
     "tools/datapack/release/capital-production-canonical-pack.json",
     "tools/datapack/nationwide-coverage-targets.json",
@@ -84,7 +84,11 @@ test("current seven-source candidate evaluates projections at its published cloc
     "tools/datapack/release/source-snapshots.json",
     "tools/datapack/source-governance-policy.json",
     "release/product-gates/datapack-freshness-sla.json",
-  ].map(async (relative) => [relative, await readFile(path.join(REPOSITORY_ROOT, relative))])));
+    "release/product-gates/production-datapack-scope.json",
+  ].map(async (relative) => [relative, await readFile(path.join(
+    STATIC_SOURCE_PATHS.has(relative.replace("tools/datapack/", "")) ? REPOSITORY_ROOT : FIXTURE_REPOSITORY_ROOT,
+    relative,
+  ))])));
   const candidateBuildSpec = JSON.parse(files["tools/datapack/release/candidate-build-spec.json"]);
   const sourceInventory = JSON.parse(files["tools/datapack/source-inventory.json"]);
   const active = sourceInventory.sources.find(({ id }) => id === "kric-station-convenience-standard").accessibilityAdmissionEvidence;
@@ -100,8 +104,9 @@ test("current seven-source candidate evaluates projections at its published cloc
     candidateEvaluationAt: candidateBuildSpec.publishedAt,
     planBytes: Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(plan)),
     canonicalPackBytes: files["tools/datapack/release/capital-production-canonical-pack.json"],
-    snapshotBytes: await readFile(path.join(REPOSITORY_ROOT, active.snapshotPath)),
+    snapshotBytes: await readFile(path.join(FIXTURE_REPOSITORY_ROOT, active.snapshotPath)),
     candidateBuildSpec,
+    productionScopeBytes: files["release/product-gates/production-datapack-scope.json"],
     sourceInventoryBytes: files["tools/datapack/source-inventory.json"],
     sourceSnapshots: JSON.parse(files["tools/datapack/release/source-snapshots.json"]),
     governancePolicy: JSON.parse(files["tools/datapack/source-governance-policy.json"]),
@@ -109,11 +114,15 @@ test("current seven-source candidate evaluates projections at its published cloc
     freshnessPolicy: JSON.parse(files["release/product-gates/datapack-freshness-sla.json"]),
   };
   assert.equal(buildCurrentCapitalFacilitySourceAdmission(values).decision, "GO");
+  assert.throws(() => buildCurrentCapitalFacilitySourceAdmission({ ...values, productionScopeBytes: undefined }), /production scope/u);
   const unapprovedGovernance = structuredClone(values);
   const selectedKricId = unapprovedGovernance.candidateBuildSpec.sourceSnapshotIds.find((snapshotId) => snapshotId.startsWith("kric-station-convenience-standard-"));
   unapprovedGovernance.sourceSnapshots.find(({ snapshotId }) => snapshotId === selectedKricId).governancePolicySha256 = "0".repeat(64);
+  unapprovedGovernance.candidateBuildSpec.sourceSnapshotSetHash = selectedLedgerHash(
+    unapprovedGovernance.sourceSnapshots, unapprovedGovernance.candidateBuildSpec.sourceSnapshotIds,
+  );
   assert.throws(() => buildCurrentCapitalFacilitySourceAdmission(unapprovedGovernance), /governance policy binding/u);
-  assert.throws(() => buildCurrentCapitalFacilitySourceAdmission({ ...values, candidateEvaluationAt: "2026-08-26T03:54:09.250Z" }), /candidate evaluation clock mismatch/u);
+  assert.throws(() => buildCurrentCapitalFacilitySourceAdmission({ ...values, candidateEvaluationAt: new Date(Date.parse(candidateBuildSpec.publishedAt) + 1).toISOString() }), /candidate evaluation clock mismatch/u);
   const beforeBasis = structuredClone(values);
   const timetableIndex = beforeBasis.candidateBuildSpec.sourceSnapshots.findIndex(({ sourceId }) => sourceId === "kric-subway-timetable");
   const futureTimetable = beforeBasis.sourceSnapshots.find(({ snapshotId }) =>
@@ -205,7 +214,7 @@ test("producer-neutral FACILITY admission rejects representative identity and qu
   }
 });
 
-test("producer-neutral FACILITY admission accepts the current six-source derived projection", async () => {
+test("producer-neutral FACILITY admission accepts the scope-selected derived projection", async () => {
   const values = await productionShapedFixture();
   const admission = buildCurrentCapitalFacilitySourceAdmission(values);
   assert.equal(admission.decision, "GO");
@@ -223,7 +232,7 @@ test("replacement head의 source set hash는 selected append-only ledger order�
 
   const drift = structuredClone(values);
   drift.candidateBuildSpec.sourceSnapshotSetHash = sha256(JSON.stringify(candidateOrder));
-  assert.throws(() => buildCurrentCapitalFacilitySourceAdmission(drift), /candidate source snapshot set identity mismatch/u);
+  assert.throws(() => buildCurrentCapitalFacilitySourceAdmission(drift), /candidate source snapshot set hash mismatch/u);
 });
 
 test("producer-neutral FACILITY admission preserves the approved prior governance binding for unchanged sources", async () => {
@@ -284,7 +293,7 @@ test("producer-neutral FACILITY admission normalizes byte inputs before binding 
 });
 
 async function fixture({ mixed = false } = {}) {
-  const files = Object.fromEntries(await Promise.all(["release/capital-production-canonical-pack.json", "nationwide-coverage-targets.json", "sources/kric-provider-code-catalog-20260228.json", "sources/kric-nationwide-route-rosters-20260730T203926676Z.json", "source-inventory.json", "source-governance-policy.json", "../../release/product-gates/datapack-freshness-sla.json", "release/candidate-build-spec.json", "release/source-snapshots.json"].map(async (name) => [
+  const files = Object.fromEntries(await Promise.all(["release/capital-production-canonical-pack.json", "nationwide-coverage-targets.json", "sources/kric-provider-code-catalog-20260228.json", "sources/kric-nationwide-route-rosters-20260730T203926676Z.json", "source-inventory.json", "source-governance-policy.json", "../../release/product-gates/datapack-freshness-sla.json", "../../release/product-gates/production-datapack-scope.json", "release/candidate-build-spec.json", "release/source-snapshots.json"].map(async (name) => [
     name,
     await readFile(path.join(STATIC_SOURCE_PATHS.has(name) ? SOURCE_ROOT : root, name)),
   ])));
@@ -389,7 +398,7 @@ async function fixture({ mixed = false } = {}) {
     sourceInventorySha256: sha256(JSON.stringify(sourceInventory)),
     networkEdgeEvidence: { sourceInventory: { path: "tools/datapack/source-inventory.json", sha256: sha256(sourceInventoryBytes) } },
   };
-  return { planBytes, canonicalPackBytes: files["release/capital-production-canonical-pack.json"], snapshotBytes, sourceInventoryBytes, sourceSnapshots, governancePolicy, governancePolicyBytes: files["source-governance-policy.json"], freshnessPolicy: freshnessSla, candidateBuildSpec, observedAt, candidateEvaluationAt: observedAt };
+  return { planBytes, canonicalPackBytes: files["release/capital-production-canonical-pack.json"], snapshotBytes, productionScopeBytes: files["../../release/product-gates/production-datapack-scope.json"], sourceInventoryBytes, sourceSnapshots, governancePolicy, governancePolicyBytes: files["source-governance-policy.json"], freshnessPolicy: freshnessSla, candidateBuildSpec, observedAt, candidateEvaluationAt: observedAt };
 }
 
 async function selectedSourceHeadAt(datapackRoot) {

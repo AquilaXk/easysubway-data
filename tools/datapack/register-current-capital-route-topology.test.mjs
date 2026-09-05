@@ -11,7 +11,7 @@ import {
   commitCurrentCapitalRouteTopologyRegistrationOutputs,
   readCurrentCapitalRouteTopologyAdmission,
 } from "./register-current-capital-route-topology.mjs";
-import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
+import { createFixtureCapitalTopologyReceipt } from "./test-fixtures/current-capital-topology-registration.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const sha = (value) => createHash("sha256").update(value).digest("hex");
@@ -50,32 +50,8 @@ async function fixture(t) {
 }
 
 async function receiptFixture(root, now) {
-  const admission = await readCurrentCapitalRouteTopologyAdmission({ repositoryRoot: root, now });
-  const rawObjectSha256 = sha(admission.topologyBytes);
-  const objectKey = "source-raw/" + admission.sourceId + "/" + admission.capturedDate + "/" + rawObjectSha256 + ".json";
-  const receipt = {
-    schemaVersion: 1,
-    artifactKind: "static-network-source-raw-object-receipt",
-    sourceId: admission.sourceId,
-    snapshotId: admission.snapshotId,
-    capturedAt: admission.topology.capturedAt,
-    rawObjectUri: "oci://axvym6vk8g7i/easysubway-datapacks/" + objectKey,
-    rawObjectSha256,
-    byteSize: admission.topologyBytes.length,
-    storedAt: now.toISOString(),
-    rawRetentionExpiresAt: deriveRawRetentionExpiresAt({
-      policy: admission.governancePolicy,
-      sourceId: admission.sourceId,
-      retrievedAt: admission.topology.capturedAt,
-    }),
-    ociNamespace: "axvym6vk8g7i",
-    bucket: "easysubway-datapacks",
-    objectKey,
-    contentType: "application/json",
-  };
   const receiptPath = path.join(root, "receipt.json");
-  await writeJson(receiptPath, receipt);
-  return { admission, receipt, receiptPath };
+  return createFixtureCapitalTopologyReceipt({ repositoryRoot: root, now, receiptPath });
 }
 
 async function registrationInputBytes(root) {

@@ -27,10 +27,14 @@ import {
 } from "../rebind-current-candidate-source-snapshots.mjs";
 import { buildSnapshotDiff, validateLineage } from "../source-snapshot-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
+import { buildCurrentCapitalRouteTopologyRegistrationOutputs } from "../register-current-capital-route-topology.mjs";
 import { currentTopologyAdmissionClock } from "./current-topology-admission-clock.mjs";
+import { createFixtureCapitalTopologyReceipt } from "./current-capital-topology-registration.mjs";
 
 const PUBLIC_SOURCE_ID = "seoul-metro-route-map-positions";
 const MOLIT_SOURCE_ID = "molit-urban-rail-full-route";
+const CAPITAL_TOPOLOGY_SOURCE_ID = "capital-route-topology";
+const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
 const SHA_KEYS = Object.freeze([
   "layoutAlgorithmVersion", "topologySnapshotId", "topologySnapshotSha256",
   "topologySnapshotIdentity", "lineOrderSha256", "aliasLedgerVersion", "aliasLedgerSha256",
@@ -68,6 +72,133 @@ function bindSyntheticReleaseArtifacts({
       .admissionEvidence.adminReviewRecordHash,
     perSourceSnapshotSetHash: sha256(JSON.stringify([selectedSnapshot])),
   }));
+}
+
+function outputBytes(outputs, relative) {
+  const matches = outputs.filter((output) => output.relative === relative);
+  if (matches.length !== 1 || !Buffer.isBuffer(matches[0].bytes)) {
+    throw new Error("synthetic capital topology registration output is incomplete");
+  }
+  return matches[0].bytes;
+}
+
+function addFixtureTopologyScope(scope) {
+  const requiredSourceIds = scope?.productionSourceSet?.requiredSourceIds;
+  if (!Array.isArray(requiredSourceIds) || new Set(requiredSourceIds).size !== requiredSourceIds.length) {
+    throw new Error("synthetic production source scope is invalid");
+  }
+  const withoutTopology = requiredSourceIds.filter((sourceId) => sourceId !== CAPITAL_TOPOLOGY_SOURCE_ID);
+  const transferIndex = withoutTopology.indexOf(TRANSFER_SOURCE_ID);
+  if (transferIndex < 0 || transferIndex !== withoutTopology.length - 1) {
+    throw new Error("synthetic production source scope must keep TRANSFER terminal");
+  }
+  scope.productionSourceSet.requiredSourceIds = [
+    ...withoutTopology.slice(0, -1), CAPITAL_TOPOLOGY_SOURCE_ID, TRANSFER_SOURCE_ID,
+  ];
+}
+
+function addFixtureTopologySelection(candidate, snapshot) {
+  const projectionIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === CAPITAL_TOPOLOGY_SOURCE_ID);
+  const transferIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === TRANSFER_SOURCE_ID);
+  if (transferIndex < 0 || transferIndex !== candidate.sourceSnapshots.length - 1
+    || candidate.sourceSnapshotIds[transferIndex] == null) {
+    throw new Error("synthetic candidate source selection must keep TRANSFER terminal");
+  }
+  if (projectionIndex >= 0) {
+    candidate.sourceSnapshotIds[projectionIndex] = snapshot.snapshotId;
+    candidate.sourceSnapshots[projectionIndex] = snapshot.projection;
+    return;
+  }
+  candidate.sourceSnapshotIds.splice(transferIndex, 0, snapshot.snapshotId);
+  candidate.sourceSnapshots.splice(transferIndex, 0, snapshot.projection);
+}
+
+async function registerFixtureCapitalTopology({ root, now, paths, inventory, snapshots, topologyPath, topologyBytes }) {
+  const preRegistrationInventory = {
+    ...inventory,
+    sources: inventory.sources.filter(({ id }) => id !== CAPITAL_TOPOLOGY_SOURCE_ID),
+  };
+  const preRegistrationLedger = snapshots.filter(({ sourceId }) => sourceId !== CAPITAL_TOPOLOGY_SOURCE_ID);
+  const receiptPath = path.join(root, "tools/datapack/release/fixture-capital-topology-raw-receipt.json");
+
+  // 임시 fixture에서만 등록 전 입력을 만든다. 실제 저장소의 immutable 이력은 바꾸지 않는다.
+  await Promise.all([
+    writeFile(path.join(root, topologyPath), topologyBytes),
+    writeFile(path.join(root, paths.inventory), jsonBytes(preRegistrationInventory)),
+    writeFile(path.join(root, paths.snapshots), jsonBytes(preRegistrationLedger)),
+  ]);
+  await createFixtureCapitalTopologyReceipt({ repositoryRoot: root, now, receiptPath });
+  const outputs = await buildCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot: root, receiptPath, now });
+  await Promise.all(outputs.map(({ relative, bytes }) => writeFile(path.join(root, relative), bytes)));
+
+  const registeredInventoryBytes = outputBytes(outputs, paths.inventory);
+  const registeredLedgerBytes = outputBytes(outputs, paths.snapshots);
+  const registeredGovernanceBytes = outputBytes(outputs, paths.governance);
+  const registeredFreshnessBytes = outputBytes(outputs, paths.freshness);
+  const registeredInventory = JSON.parse(registeredInventoryBytes);
+  const registeredLedger = JSON.parse(registeredLedgerBytes);
+  const registeredGovernance = JSON.parse(registeredGovernanceBytes);
+  const registeredFreshness = JSON.parse(registeredFreshnessBytes);
+  const topologySource = registeredInventory.sources.find(({ id }) => id === CAPITAL_TOPOLOGY_SOURCE_ID);
+  const topologySnapshot = registeredLedger.find(({ sourceId }) => sourceId === CAPITAL_TOPOLOGY_SOURCE_ID);
+  const governanceRecord = registeredGovernance.sources.find(({ sourceId }) => sourceId === CAPITAL_TOPOLOGY_SOURCE_ID);
+  if (!topologySource || !topologySnapshot || !governanceRecord
+    || registeredLedger.filter(({ sourceId }) => sourceId === CAPITAL_TOPOLOGY_SOURCE_ID).length !== 1
+    || topologySnapshot.snapshotId !== path.basename(topologyPath, ".json")) {
+    throw new Error("synthetic capital topology registration is incomplete");
+  }
+  const topology = JSON.parse(topologyBytes);
+  if (topology.credentialRequired !== false || topology.credentialRedacted !== true) {
+    throw new Error("synthetic capital topology credential redaction is invalid");
+  }
+  const adminReviewRecord = {
+    schemaVersion: 1,
+    artifactKind: "fixture-capital-topology-admin-review-record",
+    testOnly: true,
+    sourceId: topologySnapshot.sourceId,
+    snapshotId: topologySnapshot.snapshotId,
+    rawSha256: topologySnapshot.rawSha256,
+    contentSha256: topologySnapshot.contentSha256,
+    schemaFingerprint: topologySnapshot.schemaFingerprint,
+    licenseEvidenceHash: topologySource.admissionEvidence?.licenseEvidenceHash,
+    governancePolicyVersion: registeredGovernance.policyVersion,
+    governancePolicySha256: sha256(registeredGovernanceBytes),
+    topologyBytesSha256: sha256(topologyBytes),
+  };
+  if (!/^[a-f0-9]{64}$/u.test(adminReviewRecord.licenseEvidenceHash ?? "")) {
+    throw new Error("synthetic capital topology license review binding is invalid");
+  }
+  const adminReviewRecordBytes = Buffer.from(canonicalJson(adminReviewRecord));
+  const adminReviewRecordHash = sha256(adminReviewRecordBytes);
+  topologySource.admissionEvidence = {
+    ...topologySource.admissionEvidence,
+    adminReviewRecordHash,
+  };
+  Object.assign(topologySnapshot, {
+    adminReviewRecordHash,
+    credentialRedacted: true,
+    governancePolicyVersion: registeredGovernance.policyVersion,
+    governancePolicySha256: sha256(registeredGovernanceBytes),
+  });
+  const adminReviewPath = "tools/datapack/release/fixture-capital-topology-admin-review-record.json";
+  await writeFile(path.join(root, adminReviewPath), Buffer.from(`${canonicalJson(adminReviewRecord)}\n`));
+
+  const topologyProjection = deriveReleaseProjection({
+    snapshot: topologySnapshot,
+    sourceInventory: registeredInventory,
+    governancePolicy: registeredGovernance,
+    governancePolicyBytes: registeredGovernanceBytes,
+    freshnessPolicy: registeredFreshness,
+    nowMillis: now.getTime(),
+  });
+  return {
+    inventory: registeredInventory,
+    snapshots: registeredLedger,
+    governanceBytes: registeredGovernanceBytes,
+    governancePolicy: registeredGovernance,
+    freshnessPolicy: registeredFreshness,
+    topologySnapshot: { ...topologySnapshot, projection: topologyProjection },
+  };
 }
 
 function orderCurrentCapitalSources(document) {
@@ -210,6 +341,7 @@ const SUCCESSOR_FIXTURE_PATHS = Object.freeze([
   "tools/datapack/inputs/capital-pilot-production-source-input.json",
   "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv",
   "release/product-gates/datapack-freshness-sla.json",
+  "release/product-gates/production-datapack-scope.json",
   "tools/datapack/official-od-fare-admission.json",
   "tools/datapack/nationwide-coverage-targets.json",
   "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
@@ -373,13 +505,14 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     inventory: "tools/datapack/source-inventory.json",
     governance: "tools/datapack/source-governance-policy.json",
     freshness: "release/product-gates/datapack-freshness-sla.json",
+    scope: "release/product-gates/production-datapack-scope.json",
   };
-  const [candidate, request, hashes, snapshots, pack, inventory, governanceBytes, freshnessPolicy] = await Promise.all([
+  let [candidate, request, hashes, snapshots, pack, inventory, governanceBytes, freshnessPolicy, scope] = await Promise.all([
     readJson(root, paths.candidate), readJson(root, paths.request), readJson(root, paths.hashes), readJson(root, paths.snapshots),
     readJson(root, paths.pack), readJson(root, paths.inventory), readFile(path.join(root, paths.governance)),
-    readJson(root, paths.freshness),
+    readJson(root, paths.freshness), readJson(root, paths.scope),
   ]);
-  const governancePolicy = JSON.parse(governanceBytes);
+  let governancePolicy = JSON.parse(governanceBytes);
   const historicalTopologyEvidence = structuredClone(candidate.networkEdgeEvidence?.capitalTopology);
   if (!historicalTopologyEvidence
     || !/^tools\/datapack\/sources\/capital-route-topology-[0-9]{8}\.json$/u.test(historicalTopologyEvidence.path ?? "")
@@ -749,7 +882,6 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   incheonSnapshot.stationCodeDerivations = currentIncheonStationCodeDerivations();
   const incheonSnapshotBytes = Buffer.from(`${JSON.stringify(incheonSnapshot)}\n`);
   incheonSource.routeMapAdmissionEvidence.snapshotSha256 = sha256(incheonSnapshotBytes);
-  const inventoryBytes = jsonBytes(inventory);
   candidate.sourceSnapshotIds[predecessorIndex] = snapshotId;
   candidate.sourceSnapshots[predecessorIndex] = deriveReleaseProjection({
     snapshot,
@@ -759,6 +891,24 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     freshnessPolicy,
     nowMillis: now.getTime(),
   });
+  const topologyRegistration = await registerFixtureCapitalTopology({
+    root,
+    now,
+    paths,
+    inventory,
+    snapshots,
+    topologyPath: currentTopologyPath,
+    topologyBytes: topologySnapshotBytes,
+  });
+  inventory = topologyRegistration.inventory;
+  snapshots = topologyRegistration.snapshots;
+  governanceBytes = topologyRegistration.governanceBytes;
+  governancePolicy = topologyRegistration.governancePolicy;
+  freshnessPolicy = topologyRegistration.freshnessPolicy;
+  addFixtureTopologySelection(candidate, topologyRegistration.topologySnapshot);
+  addFixtureTopologyScope(scope);
+  const inventoryBytes = jsonBytes(inventory);
+  const scopeBytes = jsonBytes(scope);
   const selectedIds = new Set(candidate.sourceSnapshotIds);
   candidate.sourceSnapshotSetHash = sha256(JSON.stringify(
     snapshots.filter(({ snapshotId: selectedId }) => selectedIds.has(selectedId)),
@@ -778,6 +928,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     writeFile(path.join(root, incheonSnapshotPath), incheonSnapshotBytes),
     writeFile(path.join(root, paths.snapshots), jsonBytes(snapshots)),
     writeFile(path.join(root, paths.inventory), inventoryBytes),
+    writeFile(path.join(root, paths.scope), scopeBytes),
     writeFile(path.join(root, paths.pack), packBytes),
     writeFile(path.join(root, paths.candidate), candidateBytes),
     writeFile(path.join(root, paths.request), jsonBytes(request)),

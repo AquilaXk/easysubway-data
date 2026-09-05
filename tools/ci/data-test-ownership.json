@@ -318,6 +318,7 @@
     {"path":"tools/datapack/activate-current-source-set.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":389},
     {"path":"tools/datapack/admit-reviewed-incheon-accessibility.test.mjs","semanticOwner":"data622","classes":["required-pr"],"durationMs":484},
     {"path":"tools/datapack/register-reviewed-incheon-accessibility.test.mjs","semanticOwner":"data622","classes":["required-pr"],"durationMs":520},
+    {"path":"tools/datapack/validate-candidate-source-set.test.mjs","semanticOwner":"data456","classes":["required-pr"],"durationMs":52},
     {"path":"tools/datapack/register-current-capital-route-topology.test.mjs","semanticOwner":"data456","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/run-current-capital-route-topology-registration.test.mjs","semanticOwner":"data456","classes":["required-pr"],"durationMs":250},
     {"path":"tools/datapack/run-current-incheon-accessibility-registration.test.mjs","semanticOwner":"data622","classes":["required-pr"],"durationMs":520},

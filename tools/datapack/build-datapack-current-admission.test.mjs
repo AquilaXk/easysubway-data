@@ -243,6 +243,7 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   await mkdir(path.dirname(previousPath), { recursive: true });
   await writeFile(previousPath, previousBytes);
   const transition = buildCurrentCapitalAccessibilityTransition({
+    productionScopeBytes: await readFile(path.join(directory, "release/product-gates/production-datapack-scope.json")),
     candidate: JSON.parse(transitionBytes.candidate),
     candidateBytes: transitionBytes.candidate,
     previous: JSON.parse(previousBytes),

@@ -17,7 +17,7 @@ import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { registerSeoulTransferSourceSnapshot } from "./register-seoul-transfer-source-snapshot.mjs";
 import { validateSeoulTransferRawReceipt } from "./publish-seoul-transfer-raw.mjs";
 import { approvedGovernanceBindingTransition, deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
-import { CURRENT_FULL_CANDIDATE_SOURCE_IDS } from "./rebind-current-candidate-source-snapshots.mjs";
+import { readProductionSourceSet } from "./validate-candidate-source-set.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const SOURCE = "seoul-metro-transfer-distance-duration";
@@ -51,6 +51,7 @@ const STAGE_INPUTS = Object.freeze([
   "tools/datapack/source-candidates.json",
   "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
   "release/product-gates/datapack-freshness-sla.json",
+  "release/product-gates/production-datapack-scope.json",
 ]);
 const JOURNAL = "tools/datapack/.current-live-chain-transfer-derived-identities.json";
 const LOCK = "tools/datapack/.current-live-chain-transfer-derived-identities.lock";
@@ -116,22 +117,31 @@ async function stage(root, inputs) {
     return temporary;
   } catch (error) { await rm(temporary, { recursive: true, force: true }); throw error; }
 }
-export function currentReleaseSnapshots(candidate, snapshots) {
-  if (JSON.stringify(candidate.sourceSnapshots?.map(({ sourceId }) => sourceId)) !== JSON.stringify(CURRENT_FULL_CANDIDATE_SOURCE_IDS)
-    || candidate.sourceSnapshotIds?.length !== CURRENT_FULL_CANDIDATE_SOURCE_IDS.length
-    || new Set(candidate.sourceSnapshotIds).size !== candidate.sourceSnapshotIds.length
+export function currentReleaseSnapshots(candidate, snapshots, { productionScopeBytes, sourceInventoryBytes }) {
+  const { requiredSourceIds } = readProductionSourceSet({ productionScopeBytes, sourceInventoryBytes });
+  const ids = candidate?.sourceSnapshotIds;
+  const projections = candidate?.sourceSnapshots;
+  const candidateSourceIds = projections?.map(({ sourceId }) => sourceId);
+  if (!Array.isArray(ids) || !Array.isArray(projections)
+    || ids.length !== requiredSourceIds.length || projections.length !== ids.length
+    || new Set(ids).size !== ids.length || new Set(candidateSourceIds).size !== candidateSourceIds.length
+    || candidateSourceIds.some((sourceId, index) => typeof sourceId !== "string" || sourceId === ""
+      || projections[index]?.snapshotId !== ids[index])
+    || new Set(requiredSourceIds).size !== candidateSourceIds.length
+    || candidateSourceIds.some((sourceId) => !requiredSourceIds.includes(sourceId))
+    || candidateSourceIds.at(-1) !== SOURCE
     || !Array.isArray(snapshots) || snapshots.some((snapshot) => typeof snapshot?.snapshotId !== "string" || snapshot.snapshotId === "")
     || new Set(snapshots.map(({ snapshotId }) => snapshotId)).size !== snapshots.length) throw new Error("current source sequence is not exact");
-  const orderedRows = candidate.sourceSnapshotIds.map((snapshotId, index) => {
+  const orderedRows = ids.map((snapshotId, index) => {
     const rows = snapshots.filter((snapshot) => snapshot.snapshotId === snapshotId);
     const row = rows.length === 1 ? rows[0] : null;
-    if (!row || row.sourceId !== CURRENT_FULL_CANDIDATE_SOURCE_IDS[index]) throw new Error("current source ledger binding is not exact");
+    if (!row || row.sourceId !== candidateSourceIds[index]) throw new Error("current source ledger binding is not exact");
     if (typeof row.governancePolicyVersion !== "string" || !/^[0-9a-f]{64}$/u.test(row.governancePolicySha256 ?? "")) {
       throw new Error("current source lacks sealed governance binding");
     }
     return row;
   });
-  const selectedIds = new Set(candidate.sourceSnapshotIds);
+  const selectedIds = new Set(ids);
   const ledgerOrderedRows = snapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
   if (ledgerOrderedRows.length !== selectedIds.size) throw new Error("current source ledger binding is not exact");
   return { orderedRows, ledgerOrderedRows };
@@ -176,7 +186,7 @@ export function currentLiveChainTransferPerSourceEvidence(ledgerOrderedRows, inv
   });
 }
 async function refreshCurrentOnlyReleaseEvidence(staging) {
-  const [candidateBytes, snapshotsBytes, inventoryBytes, requestBytes, hashesBytes, canonicalBytes, governanceBytes, freshnessBytes] = await Promise.all([
+  const [candidateBytes, snapshotsBytes, inventoryBytes, requestBytes, hashesBytes, canonicalBytes, governanceBytes, freshnessBytes, productionScopeBytes] = await Promise.all([
     stable(rooted(staging, "tools/datapack/release/candidate-build-spec.json"), "staged candidate"),
     stable(rooted(staging, "tools/datapack/release/source-snapshots.json"), "staged snapshots"),
     stable(rooted(staging, "tools/datapack/source-inventory.json"), "staged inventory"),
@@ -185,10 +195,11 @@ async function refreshCurrentOnlyReleaseEvidence(staging) {
     stable(rooted(staging, "tools/datapack/release/capital-production-canonical-pack.json"), "staged canonical pack"),
     stable(rooted(staging, "tools/datapack/source-governance-policy.json"), "staged governance"),
     stable(rooted(staging, "release/product-gates/datapack-freshness-sla.json"), "staged freshness"),
+    stable(rooted(staging, "release/product-gates/production-datapack-scope.json"), "staged production scope"),
   ]);
   const candidate = JSON.parse(candidateBytes); const snapshots = JSON.parse(snapshotsBytes); const inventory = JSON.parse(inventoryBytes);
   const request = JSON.parse(requestBytes); const hashes = JSON.parse(hashesBytes); const governance = JSON.parse(governanceBytes); const freshness = JSON.parse(freshnessBytes);
-  const { orderedRows, ledgerOrderedRows } = currentReleaseSnapshots(candidate, snapshots);
+  const { orderedRows, ledgerOrderedRows } = currentReleaseSnapshots(candidate, snapshots, { productionScopeBytes, sourceInventoryBytes: inventoryBytes });
   candidate.sourceSnapshots = orderedRows.map((snapshot) => deriveCurrentOnlyProjection({ snapshot, inventory, governance, governanceBytes, freshness }));
   candidate.sourceSnapshotIds = orderedRows.map(({ snapshotId }) => snapshotId);
   candidate.sourceSnapshotSetHash = sha256(JSON.stringify(ledgerOrderedRows));

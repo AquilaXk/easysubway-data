@@ -5,13 +5,32 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { buildReceiptBoundRebindOutputs, buildReviewedIncheonAccessibilityRegistrationOutputs, commitReviewedIncheonAccessibilityRegistrationOutputs, recoverPendingReviewedIncheonAccessibilityRegistration } from "./register-reviewed-incheon-accessibility.mjs";
+import { buildReceiptBoundRebindOutputs, buildReviewedIncheonAccessibilityRegistrationOutputs, commitReviewedIncheonAccessibilityRegistrationOutputs, recoverPendingReviewedIncheonAccessibilityRegistration, incheonPredecessorSourceIds, validateExactIncheonScopeSourceIds } from "./register-reviewed-incheon-accessibility.mjs";
 import { runIncheonAccessibilityCollector } from "./collect-incheon-accessibility.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const noLease = async () => async () => {};
-const fixed = ["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json", "tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json", "tools/datapack/source-candidates.json", "tools/datapack/source-governance-policy.json", "release/product-gates/datapack-freshness-sla.json"];
+const fixed = ["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json", "tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json", "tools/datapack/source-candidates.json", "tools/datapack/source-governance-policy.json", "release/product-gates/datapack-freshness-sla.json", "release/product-gates/production-datapack-scope.json"];
+
+test("Incheon scope source helper accepts expanded membership and rejects missing, extra, duplicate, and nonterminal TRANSFER", () => {
+  const expected = ["alpha", "expanded", "incheon-transit-accessibility", "seoul-metro-transfer-distance-duration"];
+  assert.deepEqual(validateExactIncheonScopeSourceIds({ actualSourceIds: ["expanded", "alpha", "incheon-transit-accessibility", "seoul-metro-transfer-distance-duration"], expectedSourceIds: expected }), ["expanded", "alpha", "incheon-transit-accessibility", "seoul-metro-transfer-distance-duration"]);
+  for (const actualSourceIds of [
+    ["alpha", "incheon-transit-accessibility", "seoul-metro-transfer-distance-duration"],
+    ["alpha", "expanded", "incheon-transit-accessibility", "other"],
+    ["alpha", "expanded", "expanded", "seoul-metro-transfer-distance-duration"],
+    ["alpha", "seoul-metro-transfer-distance-duration", "expanded", "incheon-transit-accessibility"],
+  ]) assert.throws(() => validateExactIncheonScopeSourceIds({ actualSourceIds, expectedSourceIds: expected }), /scope source set/);
+  assert.throws(() => incheonPredecessorSourceIds(undefined), /production scope/);
+  const scopeBytes = Buffer.from(JSON.stringify({ productionSourceSet: {
+    sourceInventory: "tools/datapack/source-inventory.json", requiredSourceIds: expected,
+  } }));
+  const predecessor = incheonPredecessorSourceIds(scopeBytes);
+  assert.deepEqual(predecessor, ["alpha", "expanded", "seoul-metro-transfer-distance-duration"]);
+  assert.doesNotThrow(() => validateExactIncheonScopeSourceIds({ actualSourceIds: predecessor, expectedSourceIds: predecessor }));
+  assert.throws(() => validateExactIncheonScopeSourceIds({ actualSourceIds: predecessor.slice(0, -1), expectedSourceIds: predecessor }), /scope source set/);
+});
 function claimTopologyHash(rows) {
   return sha(JSON.stringify([...rows]
     .map(({ stationId, lineId, stationCode }) => ({ stationId, lineId, stationCode }))
@@ -77,12 +96,10 @@ async function removeTransferPrestate(root) {
     writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`),
   ]);
 }
-test("registers from either current active candidate sequence without a fixed source count", async (t) => {
+test("rejects a TRANSFER-removed prestate while the captured scope still requires TRANSFER", async (t) => {
   const value = await fixture(t);
   await removeTransferPrestate(value.root);
-  const outputs = await buildReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot: value.root, observationRoot: value.observationRoot, receiptPath: value.receiptPath, now: value.now });
-  const candidate = JSON.parse(outputs[3].bytes);
-  assert.equal(candidate.sourceSnapshots.at(-1).sourceId, "incheon-transit-accessibility");
+  await assert.rejects(buildReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot: value.root, observationRoot: value.observationRoot, receiptPath: value.receiptPath, now: value.now }), /candidate prestate/);
 });
 test("registers exactly six reviewed outputs and preserves atomic prestate", async (t) => {
   const value = await fixture(t); const before = await Promise.all(fixed.slice(0, 5).map((relative) => readFile(path.join(value.root, relative))));

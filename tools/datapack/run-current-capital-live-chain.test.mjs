@@ -336,12 +336,13 @@ async function buildRetainedFacilityFixture(root) {
   await rebindCurrentCandidateSourceSnapshots({
     repositoryRoot: root, now: new Date(operationNow.getTime() + 2_000),
   });
-  const [candidate, inventoryBytes, sourceSnapshots, governanceBytes, freshnessPolicy] = await Promise.all([
+  const [candidate, inventoryBytes, sourceSnapshots, governanceBytes, freshnessPolicy, productionScopeBytes] = await Promise.all([
     parsed("tools/datapack/release/candidate-build-spec.json"),
     read("tools/datapack/source-inventory.json"),
     parsed("tools/datapack/release/source-snapshots.json"),
     read("tools/datapack/source-governance-policy.json"),
     parsed("release/product-gates/datapack-freshness-sla.json"),
+    read("release/product-gates/production-datapack-scope.json"),
   ]);
   const admission = buildCurrentCapitalFacilitySourceAdmission({
     observedAt: snapshot.observedAt,
@@ -350,6 +351,7 @@ async function buildRetainedFacilityFixture(root) {
     canonicalPackBytes: input.canonicalPackBytes,
     snapshotBytes: await readFile(snapshotTarget),
     candidateBuildSpec: candidate,
+    productionScopeBytes,
     sourceInventoryBytes: inventoryBytes,
     sourceSnapshots,
     governancePolicy: JSON.parse(governanceBytes),

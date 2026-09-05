@@ -273,11 +273,11 @@ async function finalizedPublishedRecoveryFixture(t) {
 
 async function admissionFor({ root, operationRoot, snapshot }) {
   const read = (relative) => readFile(path.join(root, relative));
-  const [planBytes, canonicalPackBytes, snapshotBytes, candidateBytes, inventoryBytes, snapshotsBytes, governanceBytes, freshnessBytes] = await Promise.all([
-    read(path.relative(root, path.join(operationRoot, "plan.json"))), read("tools/datapack/release/capital-production-canonical-pack.json"), read(`tools/datapack/sources/${snapshot.snapshotId}.json`), read("tools/datapack/release/candidate-build-spec.json"), read("tools/datapack/source-inventory.json"), read("tools/datapack/release/source-snapshots.json"), read("tools/datapack/source-governance-policy.json"), read("release/product-gates/datapack-freshness-sla.json"),
+  const [planBytes, canonicalPackBytes, snapshotBytes, candidateBytes, inventoryBytes, snapshotsBytes, governanceBytes, freshnessBytes, productionScopeBytes] = await Promise.all([
+    read(path.relative(root, path.join(operationRoot, "plan.json"))), read("tools/datapack/release/capital-production-canonical-pack.json"), read(`tools/datapack/sources/${snapshot.snapshotId}.json`), read("tools/datapack/release/candidate-build-spec.json"), read("tools/datapack/source-inventory.json"), read("tools/datapack/release/source-snapshots.json"), read("tools/datapack/source-governance-policy.json"), read("release/product-gates/datapack-freshness-sla.json"), read("release/product-gates/production-datapack-scope.json"),
   ]);
   const candidateBuildSpec = JSON.parse(candidateBytes);
-  return buildCurrentCapitalFacilitySourceAdmission({ observedAt: NOW.toISOString(), candidateEvaluationAt: candidateBuildSpec.publishedAt, planBytes, canonicalPackBytes, snapshotBytes, candidateBuildSpec, sourceInventoryBytes: inventoryBytes, sourceSnapshots: JSON.parse(snapshotsBytes), governancePolicy: JSON.parse(governanceBytes), governancePolicyBytes: governanceBytes, freshnessPolicy: JSON.parse(freshnessBytes) });
+  return buildCurrentCapitalFacilitySourceAdmission({ observedAt: NOW.toISOString(), candidateEvaluationAt: candidateBuildSpec.publishedAt, planBytes, canonicalPackBytes, snapshotBytes, candidateBuildSpec, productionScopeBytes, sourceInventoryBytes: inventoryBytes, sourceSnapshots: JSON.parse(snapshotsBytes), governancePolicy: JSON.parse(governanceBytes), governancePolicyBytes: governanceBytes, freshnessPolicy: JSON.parse(freshnessBytes) });
 }
 
 test("collect records failure after COLLECTION_STARTED and never resumes a provider call", async (t) => {

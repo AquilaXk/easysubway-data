@@ -184,6 +184,7 @@ async function writeFreshFacilityAdmission(repositoryRoot, observedAt) {
     "tools/datapack/release/source-snapshots.json",
     "tools/datapack/source-governance-policy.json",
     "release/product-gates/datapack-freshness-sla.json",
+    "release/product-gates/production-datapack-scope.json",
   ];
   const values = Object.fromEntries(await Promise.all(paths.map(async (relative) => [relative, await readFile(path.join(repositoryRoot, relative))])));
   const plan = buildCurrentCapitalFacilityCollectionPlan({
@@ -198,6 +199,7 @@ async function writeFreshFacilityAdmission(repositoryRoot, observedAt) {
   const admission = buildCurrentCapitalFacilitySourceAdmission({
     observedAt: observedAt.toISOString(), planBytes: Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(plan)),
     candidateEvaluationAt: candidateBuildSpec.publishedAt, canonicalPackBytes: values[paths[0]], snapshotBytes, candidateBuildSpec,
+    productionScopeBytes: values[paths[9]],
     sourceInventoryBytes: values[paths[4]], sourceSnapshots: JSON.parse(values[paths[6]]),
     governancePolicy: JSON.parse(values[paths[7]]), governancePolicyBytes: values[paths[7]],
     freshnessPolicy: JSON.parse(values[paths[8]]),
@@ -269,6 +271,7 @@ export async function rebindFreshExitAdmissionForCurrentTransition(repositoryRoo
     facility: "tools/datapack/release/current-capital-facility-source-admission.json",
     ledger: "tools/datapack/release/source-snapshots.json",
     inventory: "tools/datapack/source-inventory.json",
+    productionScope: "release/product-gates/production-datapack-scope.json",
   };
   const bytes = Object.fromEntries(await Promise.all(Object.entries(paths).map(async ([key, relative]) =>
     [key, await readFile(path.join(repositoryRoot, relative))])));
@@ -278,6 +281,7 @@ export async function rebindFreshExitAdmissionForCurrentTransition(repositoryRoo
     facilityAdmission: JSON.parse(bytes.facility), facilityBytes: bytes.facility,
     ledger: JSON.parse(bytes.ledger), ledgerBytes: bytes.ledger,
     inventory: JSON.parse(bytes.inventory), inventoryBytes: bytes.inventory,
+    productionScopeBytes: bytes.productionScope,
   });
   await writeReboundExitAdmissionForTransition(
     repositoryRoot,
@@ -541,12 +545,13 @@ async function bindPendingStationRoutePrestate(repositoryRoot, baseTransitionByt
 }
 
 async function readCurrentAccessibilityTransitionInputs(repositoryRoot) {
-  const [candidateBytes, previousBytes, facilityBytes, ledgerBytes, inventoryBytes] = await Promise.all([
+  const [candidateBytes, previousBytes, facilityBytes, ledgerBytes, inventoryBytes, productionScopeBytes] = await Promise.all([
     "tools/datapack/release/candidate-build-spec.json",
     "tools/datapack/release/current-station-line-accessibility/station-line-input.json",
     "tools/datapack/release/current-capital-facility-source-admission.json",
     "tools/datapack/release/source-snapshots.json",
     "tools/datapack/source-inventory.json",
+    "release/product-gates/production-datapack-scope.json",
   ].map((relative) => readFile(path.join(repositoryRoot, relative))));
   return {
     candidate: JSON.parse(candidateBytes), candidateBytes,
@@ -554,6 +559,7 @@ async function readCurrentAccessibilityTransitionInputs(repositoryRoot) {
     facilityAdmission: JSON.parse(facilityBytes), facilityBytes,
     ledger: JSON.parse(ledgerBytes), ledgerBytes,
     inventory: JSON.parse(inventoryBytes), inventoryBytes,
+    productionScopeBytes,
   };
 }
 

@@ -296,6 +296,7 @@ export async function verifyCurrentCapitalTerminalLineage({
     ["previous", "tools/datapack/release/current-station-line-accessibility/station-line-input.json"],
     ["ledger", "tools/datapack/release/source-snapshots.json"],
     ["inventory", "tools/datapack/source-inventory.json"],
+    ["productionScope", "release/product-gates/production-datapack-scope.json"],
   ].map(async ([key, relative]) => [key, await lineageFile(sourceMainRoot, relative, `source-main ${key}`)])));
   const sourceFacility = parsedCanonical(source.facility.bytes, canonicalCurrentCapitalFacilitySourceAdmissionJson, "source-main FACILITY");
   const sourceTransition = buildCurrentCapitalAccessibilityTransition({
@@ -304,8 +305,10 @@ export async function verifyCurrentCapitalTerminalLineage({
     facilityAdmission: sourceFacility, facilityBytes: source.facility.bytes,
     ledger: JSON.parse(source.ledger.bytes), ledgerBytes: source.ledger.bytes,
     inventory: JSON.parse(source.inventory.bytes), inventoryBytes: source.inventory.bytes,
+    productionScopeBytes: source.productionScope.bytes,
   });
   const retained = Object.fromEntries(await Promise.all(RETAINED_LINEAGE_OUTPUTS.map(async (relative) => [relative, await lineageFile(retainedRoot, relative, `retained ${relative}`)])));
+  const retainedProductionScope = await lineageFile(retainedRoot, "release/product-gates/production-datapack-scope.json", "retained production scope");
   const retainedFacility = parsedCanonical(retained["tools/datapack/release/current-capital-facility-source-admission.json"].bytes, canonicalCurrentCapitalFacilitySourceAdmissionJson, "retained FACILITY");
   const retainedSnapshotPath = requiredRelativePath(retainedFacility.sourceIdentity?.snapshotPath, "retained FACILITY snapshot");
   if (!/^tools\/datapack\/sources\/kric-station-convenience-standard-[0-9]{8}T[0-9]{9}Z\.json$/u.test(retainedSnapshotPath)) {
@@ -363,6 +366,7 @@ export async function verifyCurrentCapitalTerminalLineage({
       facilityAdmission: retainedFacility, facilityBytes: retained["tools/datapack/release/current-capital-facility-source-admission.json"].bytes,
       ledger: retainedLedger, ledgerBytes: retained["tools/datapack/release/source-snapshots.json"].bytes,
       inventory: retainedInventory, inventoryBytes: retained["tools/datapack/source-inventory.json"].bytes,
+      productionScopeBytes: retainedProductionScope.bytes,
     });
     transitionBytes = Buffer.from(canonicalCurrentCapitalAccessibilityTransitionJson(sourceTransition));
     successorFacilityBytes = Buffer.from(
@@ -438,6 +442,7 @@ export async function verifyCurrentCapitalTerminalLineage({
       candidateBuildSpec: JSON.parse(replay["tools/datapack/release/candidate-build-spec.json"].bytes),
       sourceInventoryBytes: replay["tools/datapack/source-inventory.json"].bytes,
       sourceSnapshots: JSON.parse(replay["tools/datapack/release/source-snapshots.json"].bytes),
+      productionScopeBytes: (await lineageFile(replayRoot, "release/product-gates/production-datapack-scope.json", "replayed production scope")).bytes,
       governancePolicy: JSON.parse((await lineageFile(replayRoot, "tools/datapack/source-governance-policy.json", "replayed governance")).bytes),
       governancePolicyBytes: (await lineageFile(replayRoot, "tools/datapack/source-governance-policy.json", "replayed governance")).bytes,
       freshnessPolicy: JSON.parse((await lineageFile(replayRoot, "release/product-gates/datapack-freshness-sla.json", "replayed freshness")).bytes),

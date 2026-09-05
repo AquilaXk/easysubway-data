@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
+import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import {
   assertCurrentCapitalAccessibilityBuildAllowed,
   buildCurrentCapitalAccessibilityTransition,
@@ -32,6 +33,36 @@ const PROJECTION_KEYS = Object.freeze([
   "snapshotStatus", "credentialRedacted", "freshnessExpiresAt", "rawRetentionExpiresAt",
   "governancePolicyVersion", "governancePolicySha256",
 ]);
+
+test("transition은 명시 scope가 없거나 source 집합이 다르면 거부한다", async (t) => {
+  const fixture = await createFixture(t);
+  assert.throws(() => buildCurrentCapitalAccessibilityTransition({
+    ...fixture.input, productionScopeBytes: undefined,
+  }), /production scope/);
+  const scope = JSON.parse(fixture.input.productionScopeBytes);
+  scope.productionSourceSet.requiredSourceIds.push("unselected-source");
+  assert.throws(() => buildCurrentCapitalAccessibilityTransition({
+    ...fixture.input, productionScopeBytes: Buffer.from(JSON.stringify(scope)),
+  }), /required source set mismatch/);
+});
+
+test("scope-derived predecessor 확장에도 FACILITY와 terminal TRANSFER를 보존한다", async (t) => {
+  const fixture = await createFixture(t, { extraSourceIds: ["additional-official-source"] });
+  const transition = buildCurrentCapitalAccessibilityTransition(fixture.input);
+  assert.deepEqual(transition.previousCandidate.canonicalCandidate.sourceSnapshots,
+    fixture.input.candidate.sourceSnapshots.slice(0, -1));
+  assert.equal(fixture.input.candidate.sourceSnapshots.at(-1).sourceId, TRANSFER_SOURCE_ID);
+  assert.equal(transition.facilityAdmission.admissionDigest, fixture.input.facilityAdmission.admissionDigest);
+  assert.equal(transition.previousCandidate.canonicalCandidate.sourceSnapshots.at(-1).sourceId,
+    "additional-official-source");
+  assert.doesNotThrow(() => canonicalCurrentCapitalAccessibilityTransitionJson(transition));
+  const candidate = structuredClone(fixture.input.candidate);
+  candidate.sourceSnapshots.reverse();
+  candidate.sourceSnapshotIds.reverse();
+  assert.throws(() => buildCurrentCapitalAccessibilityTransition({
+    ...fixture.input, candidate, candidateBytes: Buffer.from(JSON.stringify(candidate)),
+  }), /transition candidate source-set mismatch/);
+});
 
 test("pending full fan-in marker를 exact current identities에 결속하고 route build를 막는다", async (t) => {
   const fixture = await createFixture(t);
@@ -158,6 +189,12 @@ test("terminal successor는 continuous KRIC FACILITY lineage만 exact-seven pred
     freshnessExpiresAt: "2026-09-02T00:00:00.000Z",
     rawRetentionExpiresAt: "2026-12-01T00:00:00.000Z",
   }) - 1;
+  for (const index of [intermediateIndex, ledgerIndex]) {
+    const row = currentLedger[index];
+    const previous = currentLedger.find(({ snapshotId }) => snapshotId === row.previousSnapshotId);
+    row.retrievedAt = new Date(Date.parse(previous.retrievedAt) + 1000).toISOString();
+    row.diffSummary = buildSnapshotDiff(previous, row);
+  }
   const candidate = structuredClone(fixture.input.candidate);
   candidate.sourceSnapshotIds = candidate.sourceSnapshotIds.map((snapshotId) =>
     snapshotId === BASE_FACILITY_SNAPSHOT_ID ? currentSnapshotId : snapshotId);
@@ -216,6 +253,7 @@ test("terminal successor는 continuous KRIC FACILITY lineage만 exact-seven pred
   const dualLedger = structuredClone(currentLedger);
   const seoulLedgerIndex = dualLedger.findIndex(({ sourceId }) => sourceId === SEOUL_ACCESSIBILITY_SOURCE_ID);
   const previousSeoulSnapshotId = dualLedger[seoulLedgerIndex].snapshotId;
+  const previousSeoulSnapshot = dualLedger[seoulLedgerIndex];
   const currentSeoulSnapshotId = "seoul-metro-accessibility-20260902T160000000Z";
   dualLedger[seoulLedgerIndex] = {
     ...dualLedger[seoulLedgerIndex],
@@ -226,6 +264,9 @@ test("terminal successor는 continuous KRIC FACILITY lineage만 exact-seven pred
     freshnessExpiresAt: "2026-09-03T16:00:00.000Z",
     rawRetentionExpiresAt: "2026-12-02T16:00:00.000Z",
   };
+  dualLedger[seoulLedgerIndex].retrievedAt = new Date(Date.parse(previousSeoulSnapshot.retrievedAt) + 1000).toISOString();
+  dualLedger[seoulLedgerIndex].diffSummary = buildSnapshotDiff(previousSeoulSnapshot, dualLedger[seoulLedgerIndex]);
+  dualLedger.push(previousSeoulSnapshot);
   const dualCandidate = structuredClone(candidate);
   dualCandidate.sourceSnapshotIds = dualCandidate.sourceSnapshotIds.map((snapshotId) =>
     snapshotId === previousSeoulSnapshotId ? currentSeoulSnapshotId : snapshotId);
@@ -504,7 +545,7 @@ test("CLI는 marker 게시 직전 결속 입력이 교체되면 output 0으로 �
   await assert.rejects(() => readFile(output), { code: "ENOENT" });
 });
 
-async function createFixture(t) {
+async function createFixture(t, { extraSourceIds = [] } = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), "capital-transition-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const release = path.join(root, "tools/datapack/release");
@@ -516,6 +557,10 @@ async function createFixture(t) {
     sourceId,
     snapshotId,
     previousSnapshotId: null,
+    retrievedAt: new Date(index * 1000).toISOString(),
+    sourceUpdatedAt: null,
+    rowCount: 1,
+    coverageCount: 1,
     contentSha256: "3".repeat(64),
     rawObjectUri: `oci://trusted/${sourceId}.json`,
     rawSha256: String(index + 1).repeat(64).slice(0, 64),
@@ -531,19 +576,20 @@ async function createFixture(t) {
     governancePolicyVersion: "fixture-v1",
     governancePolicySha256: "c".repeat(64),
   });
-  const predecessorLedger = BASE_SOURCE_IDS.map((sourceId, index) => ledgerRow(
+  const predecessorSourceIds = [...BASE_SOURCE_IDS, ...extraSourceIds];
+  const predecessorLedger = predecessorSourceIds.map((sourceId, index) => ledgerRow(
     sourceId,
     sourceId === FACILITY_SOURCE_ID ? BASE_FACILITY_SNAPSHOT_ID : `snapshot-${index}`,
     index,
   ));
-  const transfer = ledgerRow(TRANSFER_SOURCE_ID, "snapshot-transfer", 8);
+  const transfer = ledgerRow(TRANSFER_SOURCE_ID, "snapshot-transfer", predecessorSourceIds.length);
   const baseLedger = [predecessorLedger[0], predecessorLedger[1], transfer, ...predecessorLedger.slice(2)];
   const baseSourceSet = sha256(Buffer.from(JSON.stringify(baseLedger)));
   const predecessorInLedgerOrder = baseLedger.filter(({ sourceId }) => sourceId !== TRANSFER_SOURCE_ID);
   const predecessorSourceSet = sha256(Buffer.from(JSON.stringify(predecessorInLedgerOrder)));
-  const sources = [...BASE_SOURCE_IDS, TRANSFER_SOURCE_ID].map((id, index) => ({
+  const sources = [...predecessorSourceIds, TRANSFER_SOURCE_ID].map((id, index) => ({
     id,
-    requiredForProductionPack: id === TRANSFER_SOURCE_ID,
+    requiredForProductionPack: true,
     capabilities: id === TRANSFER_SOURCE_ID
       ? {
         accessibility: { status: "SUPPORTED" },
@@ -560,6 +606,9 @@ async function createFixture(t) {
     sources,
   };
   const sourceInventoryBytes = Buffer.from(`${JSON.stringify(sourceInventory, null, 2)}\n`);
+  const productionScopeBytes = Buffer.from(JSON.stringify({ productionSourceSet: {
+    sourceInventory: INVENTORY_PATH, requiredSourceIds: sources.map(({ id }) => id),
+  } }));
   const candidate = {
     schemaVersion: 1,
     artifactKind: "datapack-candidate-build-spec",
@@ -585,6 +634,8 @@ async function createFixture(t) {
   await writeFile(path.join(release, "candidate-build-spec.json"), candidateBytes);
   await writeFile(path.join(release, "source-snapshots.json"), ledgerBytes);
   await writeFile(path.join(root, INVENTORY_PATH), sourceInventoryBytes);
+  await mkdir(path.join(root, "release/product-gates"), { recursive: true });
+  await writeFile(path.join(root, "release/product-gates/production-datapack-scope.json"), productionScopeBytes);
   await writeFile(path.join(release, "current-station-line-accessibility/station-line-input.json"), previousBytes);
   await writeFile(path.join(release, "current-capital-facility-source-admission.json"), facilityBytes);
   return {
@@ -594,7 +645,7 @@ async function createFixture(t) {
     previousSourceSet,
     predecessorSourceSet,
     sourceInventory,
-    input: { candidate, candidateBytes, previous, previousBytes, facilityAdmission, facilityBytes, ledger: baseLedger, ledgerBytes, inventory: sourceInventory, inventoryBytes: sourceInventoryBytes },
+    input: { candidate, candidateBytes, previous, previousBytes, facilityAdmission, facilityBytes, ledger: baseLedger, ledgerBytes, inventory: sourceInventory, inventoryBytes: sourceInventoryBytes, productionScopeBytes },
   };
 }
 

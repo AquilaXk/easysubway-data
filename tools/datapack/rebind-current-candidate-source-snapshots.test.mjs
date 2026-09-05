@@ -9,11 +9,9 @@ import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import {
   atomicReplace,
   appendTransferCandidateSourceSnapshot,
-  CURRENT_FULL_CANDIDATE_SOURCE_IDS,
-  CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS,
   deriveReleaseProjection,
-  isActiveCandidateSourceSequence,
   requireCurrentCanonicalSourceRoster,
+  validateCapitalReleaseHeads,
   rebindCandidateSourceSnapshots,
   rebindCurrentCandidateSourceSnapshots,
 } from "./rebind-current-candidate-source-snapshots.mjs";
@@ -35,27 +33,59 @@ const CURRENT_CAPITAL_BASE_SOURCE_IDS = Object.freeze([
   "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
 ]);
 
-test("active candidate source sequence accepts only current Incheon predecessor and TRANSFER terminal rosters", () => {
-  const six = [
-    "seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility",
-    "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info",
+test("capital release heads cover every scope-selected source", () => {
+  const required = [
+    ...CURRENT_CAPITAL_BASE_SOURCE_IDS.filter((id) => id !== "seoul-metro-official-od-fares"),
+    "expanded-source",
   ];
-  const currentPreTransfer = [...six, "incheon-transit-accessibility"];
-  const currentFull = [...currentPreTransfer, "seoul-metro-transfer-distance-duration"];
-  assert.deepEqual(CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS, currentPreTransfer);
-  assert.deepEqual(CURRENT_FULL_CANDIDATE_SOURCE_IDS, currentFull);
-  assert.equal(isActiveCandidateSourceSequence(six), false);
-  assert.equal(isActiveCandidateSourceSequence([...six, "seoul-metro-transfer-distance-duration"]), false);
-  assert.equal(isActiveCandidateSourceSequence(currentPreTransfer), true);
-  assert.equal(isActiveCandidateSourceSequence(currentFull), true);
-  assert.equal(isActiveCandidateSourceSequence([...currentFull].reverse()), false);
-  assert.equal(isActiveCandidateSourceSequence([...six, "other-source"]), false);
-  assert.equal(isActiveCandidateSourceSequence([...six, six.at(-1)]), false);
-  assert.equal(isActiveCandidateSourceSequence([...six, "seoul-metro-transfer-distance-duration", "incheon-transit-accessibility"]), false);
-  assert.equal(isActiveCandidateSourceSequence([...currentPreTransfer, "incheon-transit-accessibility"]), false);
-  assert.equal(isActiveCandidateSourceSequence([
-    "seoulmetro-cyberstation-route-map", ...six.slice(1),
-  ]), false);
+  const canonicalIds = [...CURRENT_CAPITAL_BASE_SOURCE_IDS,
+    ...required.filter((id) => !CURRENT_CAPITAL_BASE_SOURCE_IDS.includes(id))];
+  const pack = { packs: [{
+    sourceInventory: canonicalIds.map((id) => ({ id })),
+    stations: canonicalIds.slice(CURRENT_CAPITAL_BASE_SOURCE_IDS.length).map((sourceId) => ({
+      sourceId, sourceSnapshotId: `${sourceId}-snapshot`,
+      providerRecordHash: "a".repeat(64), evidenceHash: "b".repeat(64),
+    })),
+  }] };
+  const snapshots = required.map((sourceId) => ({ sourceId, snapshotId: `${sourceId}-snapshot` }));
+  const lineage = { headsBySource: Object.fromEntries(snapshots.map(({ sourceId, snapshotId }) => [sourceId, snapshotId])) };
+  assert.doesNotThrow(() => validateCapitalReleaseHeads(pack, lineage, snapshots, snapshots, required));
+  // 빌드 전 pack에는 아직 물질화되지 않은 candidate source의 provenance가 없어야 한다.
+  const beforeMaterialization = structuredClone(pack);
+  beforeMaterialization.packs[0].sourceInventory = beforeMaterialization.packs[0].sourceInventory.filter(({ id }) => id !== "expanded-source");
+  beforeMaterialization.packs[0].stations = [];
+  assert.throws(() => validateCapitalReleaseHeads(beforeMaterialization, lineage, snapshots, snapshots, required), /head identity drift/u);
+  const sourceId = "capital-route-topology";
+  const snapshotId = `${sourceId}-fixture`;
+  const pin = { path: `tools/datapack/sources/${snapshotId}.json`, sha256: "c".repeat(64), snapshotId };
+  const topology = { sourceId, snapshotId, rawSha256: pin.sha256, admissionEvidence: {
+    artifactKind: "capital-topology-admission-evidence", status: "APPROVED", sourceId, snapshotId,
+    snapshotPath: pin.path, snapshotFileSha256: pin.sha256,
+  } };
+  const topologyRows = [...snapshots.slice(0, -1), topology];
+  const topologySources = [...required.slice(0, -1), sourceId];
+  const topologyLineage = { headsBySource: Object.fromEntries(topologyRows.map((row) => [row.sourceId, row.snapshotId])) };
+  const candidate = { networkEdgeEvidence: { capitalTopologyCandidate: pin } };
+  const packBefore = structuredClone(beforeMaterialization);
+  assert.doesNotThrow(() => validateCapitalReleaseHeads(beforeMaterialization, topologyLineage, topologyRows, topologyRows, topologySources, candidate));
+  assert.deepEqual(beforeMaterialization, packBefore);
+  assert.throws(() => validateCapitalReleaseHeads(beforeMaterialization, topologyLineage, topologyRows, topologyRows, topologySources), /head identity drift/u);
+  const wrongPin = structuredClone(candidate);
+  wrongPin.networkEdgeEvidence.capitalTopologyCandidate.sha256 = "d".repeat(64);
+  assert.throws(() => validateCapitalReleaseHeads(beforeMaterialization, topologyLineage, topologyRows, topologyRows, topologySources, wrongPin), /head identity drift/u);
+  const rejectedRows = structuredClone(topologyRows);
+  rejectedRows.at(-1).admissionEvidence.status = "REJECTED";
+  assert.throws(() => validateCapitalReleaseHeads(beforeMaterialization, topologyLineage, rejectedRows, rejectedRows, topologySources, candidate), /head identity drift/u);
+  const missingCanonicalSource = structuredClone(beforeMaterialization);
+  missingCanonicalSource.packs[0].sourceInventory.shift();
+  assert.throws(() => validateCapitalReleaseHeads(missingCanonicalSource, lineage, snapshots, snapshots, required), /canonical source identity drift/u);
+  const missing = structuredClone(lineage);
+  delete missing.headsBySource["expanded-source"];
+  assert.throws(() => validateCapitalReleaseHeads(pack, missing, snapshots, snapshots, required), /head identity drift/u);
+  assert.throws(() => validateCapitalReleaseHeads(pack, lineage, snapshots, snapshots.slice(0, -1), required), /head identity drift/u);
+  const changed = structuredClone(snapshots);
+  changed.at(-1).sourceId = "unselected-source";
+  assert.throws(() => validateCapitalReleaseHeads(pack, lineage, changed, snapshots, required), /head identity drift/u);
 });
 
 function kricSnapshot(membership) {
@@ -193,16 +223,18 @@ async function readInput(root) {
     const bytes = await readFile(path.join(root, relative));
     return { bytes, value: JSON.parse(bytes) };
   };
-  const [candidate, inventory, snapshots, pack, governance, freshness, request] = await Promise.all([
+  const [candidate, inventory, snapshots, pack, governance, freshness, request, scope] = await Promise.all([
     load("tools/datapack/release/candidate-build-spec.json"), load("tools/datapack/source-inventory.json"),
     load("tools/datapack/release/source-snapshots.json"), load("tools/datapack/release/capital-production-canonical-pack.json"),
     load("tools/datapack/source-governance-policy.json"), load("release/product-gates/datapack-freshness-sla.json"),
     load("tools/datapack/release/release-request.json"),
+    load("release/product-gates/production-datapack-scope.json"),
   ]);
   const kric = inventory.value.sources.find(({ id }) => id === "kric-station-convenience-standard");
   const kricSnapshotBytes = await readFile(path.join(root, kric.accessibilityAdmissionEvidence.snapshotPath));
   return {
     candidateBuildSpec: candidate.value, candidateBuildSpecBytes: candidate.bytes, releaseRequest: request.value,
+    productionScopeBytes: scope.bytes,
     sourceInventory: inventory.value, sourceInventoryBytes: inventory.bytes,
     sourceSnapshots: snapshots.value, canonicalPack: pack.value, governancePolicy: governance.value,
     governancePolicyBytes: governance.bytes, freshnessPolicy: freshness.value, kricSnapshotBytes, now: NOW,
@@ -254,32 +286,44 @@ test("current canonical pack binds public positions and TRANSFER, never CyberSta
   assert.ok(Date.parse(rebound.publishedAt) > Date.parse(next.retrievedAt));
 });
 
-test("current seven-source candidate appends TRANSFER as the eighth exact source", async (t) => {
-  const { root } = await fixture();
-  t.after(() => rm(root, { recursive: true, force: true }));
-  const input = await readInput(root);
-  const preTransferCandidate = structuredClone(input.candidateBuildSpec);
-  preTransferCandidate.sourceSnapshots = preTransferCandidate.sourceSnapshots.filter(
-    ({ sourceId }) => sourceId !== "seoul-metro-transfer-distance-duration",
-  );
+test("scope-derived candidate appends terminal TRANSFER without changing predecessor projections", () => {
+  const sourceIds = ["alpha", "expanded-source", "kric-station-convenience-standard"];
+  const preTransferCandidate = { candidateId: "synthetic-predecessor", sourceSnapshots: sourceIds.map((sourceId) => ({
+    sourceId, snapshotId: `${sourceId}-snapshot`, rawSha256: sha(sourceId),
+  })) };
   preTransferCandidate.sourceSnapshotIds = preTransferCandidate.sourceSnapshots.map(({ snapshotId }) => snapshotId);
-  const selectedSnapshotIds = new Set(preTransferCandidate.sourceSnapshotIds);
-  preTransferCandidate.sourceSnapshotSetHash = sha(JSON.stringify(
-    input.sourceSnapshots.filter(({ snapshotId }) => selectedSnapshotIds.has(snapshotId)),
-  ));
   const projection = {
     ...preTransferCandidate.sourceSnapshots[0],
     sourceId: "seoul-metro-transfer-distance-duration",
-    snapshotId: "seoul-metro-transfer-distance-duration-20260712T150000000Z",
+    snapshotId: "synthetic-transfer-snapshot",
   };
-  const rebound = appendTransferCandidateSourceSnapshot({
+  const productionScopeBytes = Buffer.from(JSON.stringify({ productionSourceSet: {
+    sourceInventory: "tools/datapack/source-inventory.json",
+    requiredSourceIds: [projection.sourceId, ...sourceIds].reverse(),
+  } }));
+  const input = {
     candidateBuildSpec: preTransferCandidate,
+    productionScopeBytes,
     transferSnapshot: { sourceId: projection.sourceId, snapshotId: projection.snapshotId },
     transferProjection: projection,
-  });
-  assert.deepEqual(rebound.sourceSnapshots.map(({ sourceId }) => sourceId), CURRENT_FULL_CANDIDATE_SOURCE_IDS);
-  assert.deepEqual(rebound.sourceSnapshots.slice(0, 7), preTransferCandidate.sourceSnapshots);
+  };
+  const rebound = appendTransferCandidateSourceSnapshot(input);
+  assert.deepEqual(rebound.sourceSnapshots.map(({ sourceId }) => sourceId), [...sourceIds, projection.sourceId]);
+  assert.deepEqual(rebound.sourceSnapshots.slice(0, -1), preTransferCandidate.sourceSnapshots);
   assert.equal(rebound.sourceSnapshots.at(-1).sourceId, "seoul-metro-transfer-distance-duration");
+  assert.throws(() => appendTransferCandidateSourceSnapshot({ ...input, productionScopeBytes: undefined }), /production scope/);
+  assert.throws(() => appendTransferCandidateSourceSnapshot({ ...input,
+    transferSnapshot: { ...input.transferSnapshot, snapshotId: preTransferCandidate.sourceSnapshotIds[0] },
+    transferProjection: { ...projection, snapshotId: preTransferCandidate.sourceSnapshotIds[0] },
+  }), /append identity/);
+  for (const mutate of [
+    (value) => { value.sourceSnapshots.pop(); value.sourceSnapshotIds.pop(); },
+    (value) => { value.sourceSnapshots.push(projection); value.sourceSnapshotIds.push(projection.snapshotId); },
+    (value) => { value.sourceSnapshotIds[1] = value.sourceSnapshotIds[0]; },
+  ]) {
+    const invalid = structuredClone(preTransferCandidate); mutate(invalid);
+    assert.throws(() => appendTransferCandidateSourceSnapshot({ ...input, candidateBuildSpec: invalid }), /append identity/);
+  }
 });
 
 test("additive governance successor preserves only approved non-TRANSFER prior projections", async (t) => {
