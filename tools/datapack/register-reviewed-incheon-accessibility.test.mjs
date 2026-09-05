@@ -7,6 +7,7 @@ import test from "node:test";
 
 import { buildReceiptBoundRebindOutputs, buildReviewedIncheonAccessibilityRegistrationOutputs, commitReviewedIncheonAccessibilityRegistrationOutputs, recoverPendingReviewedIncheonAccessibilityRegistration, incheonPredecessorSourceIds, validateExactIncheonScopeSourceIds } from "./register-reviewed-incheon-accessibility.mjs";
 import { runIncheonAccessibilityCollector } from "./collect-incheon-accessibility.mjs";
+import { copySyntheticCurrentPublicRouteMapRepository, nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const sha = (value) => createHash("sha256").update(value).digest("hex");
@@ -39,14 +40,17 @@ function claimTopologyHash(rows) {
 }
 async function fixture(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), "incheon-register-")); t.after(() => rm(root, { recursive: true, force: true }));
-  const sourceInventory = JSON.parse(await readFile(path.join(ROOT, fixed[0]), "utf8"));
+  await copySyntheticCurrentPublicRouteMapRepository(ROOT, root, {
+    now: await nextSyntheticCurrentStaticNetworkNow(ROOT),
+    activatePublicRouteMap: true,
+  });
+  const sourceInventory = JSON.parse(await readFile(path.join(root, fixed[0]), "utf8"));
   const topologySource = sourceInventory.sources.find(({ id }) => id === "incheon-transit-station-info");
   const topologyAdmission = topologySource?.topologyAdmissionEvidence;
   assert.equal(typeof topologyAdmission?.snapshotPath, "string");
   assert.equal(topologyAdmission.snapshotPath.startsWith("tools/datapack/sources/"), true);
   assert.equal(typeof topologyAdmission.snapshotId, "string");
   assert.equal(typeof topologyAdmission.contentSha256, "string");
-  for (const relative of fixed) { await mkdir(path.dirname(path.join(root, relative)), { recursive: true }); await cp(path.join(ROOT, relative), path.join(root, relative)); }
   const topologySnapshotPath = topologyAdmission.snapshotPath;
   await mkdir(path.dirname(path.join(root, topologySnapshotPath)), { recursive: true });
   await cp(path.join(ROOT, topologySnapshotPath), path.join(root, topologySnapshotPath));
@@ -60,6 +64,8 @@ async function fixture(t) {
   await runIncheonAccessibilityCollector(["--elevator-input", path.join(ROOT, "tools/datapack/fixtures/incheon-accessibility-raw/data-go-15083478.csv"), "--escalator-input", path.join(ROOT, "tools/datapack/fixtures/incheon-accessibility-raw/data-go-15010199.csv"), "--wheelchair-input", path.join(ROOT, "tools/datapack/fixtures/incheon-accessibility-raw/data-go-15146049.csv"), "--topology-snapshot", path.join(root, topologySnapshotPath), "--observation-output", observationRoot, "--captured-at", capturedAt]);
   const manifest = JSON.parse(await readFile(path.join(observationRoot, "observation.json"), "utf8")); const snapshot = JSON.parse(await readFile(path.join(observationRoot, manifest.snapshotFile), "utf8")); const rawBytes = await readFile(path.join(observationRoot, manifest.rawArtifactFile));
   assert.equal(snapshot.snapshotId, source.admissionEvidence.snapshotId); assert.equal(snapshot.rawSha256, source.admissionEvidence.rawSha256);
+  // 최초 등록 fixture에서는 ledger뿐 아니라 create-once 대상도 아직 없어야 한다.
+  await rm(path.join(root, "tools/datapack/sources", `${snapshot.snapshotId}.json`));
   const receiptPath = path.join(root, "receipt.json"); const receipt = { schemaVersion: 1, artifactKind: "incheon-accessibility-raw-object-receipt", sourceId: source.id, snapshotId: snapshot.snapshotId, snapshotRawSha256: snapshot.rawSha256, capturedAt, snapshotFileSha256: manifest.snapshotFileSha256, rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/${source.id}/${capturedAt.slice(0, 10).replaceAll("-", "")}/${sha(rawBytes)}.json`, rawObjectSha256: sha(rawBytes), byteSize: rawBytes.length, storedAt: "2026-08-28T04:40:00.000Z", rawRetentionExpiresAt: "2026-11-26T04:33:56.000Z" }; await writeFile(receiptPath, JSON.stringify(receipt));
   const candidate = JSON.parse(await readFile(path.join(root, fixed[2]), "utf8"));
   const ledger = JSON.parse(await readFile(path.join(root, fixed[1]), "utf8"));
@@ -115,10 +121,13 @@ test("registers exactly six reviewed outputs and preserves atomic prestate", asy
   assert.deepEqual(registered.previousSnapshotId, null); assert.deepEqual(registered.providerRecordHashes, registeredSnapshot.rows.map((row) => sha(JSON.stringify(row)))); assert.equal(registered.claimBindingsSha256, registeredSnapshot.claimBindingsSha256); assert.equal(registeredSnapshot.claimBindings.length, 426);
   assert.deepEqual(Object.keys(source.registrationEvidence), ["artifactKind", "sourceId", "snapshotId", "capturedAt", "snapshotFileSha256", "snapshotRawSha256", "rawObjectUri", "rawObjectSha256", "contentSha256", "normalizedSchemaFingerprint", "claimBindingsSha256", "capturedTopology", "rowCount", "coverageCount", "claimBindingCount", "adminReviewRecordHash", "registeredAt"]); assert.equal(source.registrationEvidence.capturedAt, registeredSnapshot.capturedAt); assert.equal(source.registrationEvidence.normalizedSchemaFingerprint, registered.schemaFingerprint); assert.equal(source.registrationEvidence.snapshotRawSha256, registeredSnapshot.rawSha256); assert.equal(source.registrationEvidence.rawObjectSha256, registered.rawSha256); assert.deepEqual(source.registrationEvidence.capturedTopology, { sourceId: "incheon-transit-station-info", snapshotId: topologyAdmission.snapshotId, contentSha256: topologyAdmission.contentSha256, claimTopologySha256: claimTopologyHash(registeredSnapshot.claimTopology) }); assert.equal(source.registrationEvidence.rowCount, 71); assert.equal(source.registrationEvidence.coverageCount, 71); assert.equal(source.registrationEvidence.claimBindingCount, 426); assert.equal(source.registrationEvidence.adminReviewRecordHash, source.admissionEvidence.adminReviewRecordHash);
   assert.notEqual(registered.redactedRequestFingerprint, registered.rawSha256); assert.deepEqual(Object.keys(registered.rawReceipt), ["schemaVersion", "artifactKind", "sourceId", "snapshotId", "snapshotRawSha256", "capturedAt", "snapshotFileSha256", "rawObjectUri", "rawObjectSha256", "byteSize", "storedAt", "rawRetentionExpiresAt"]); assert.equal(registered.rawReceipt.capturedAt, "2026-08-28T04:33:56.000Z"); assert.equal(registered.adminReviewRecordHash, source.admissionEvidence.adminReviewRecordHash);
-  assert.deepEqual(candidate.sourceSnapshots.map(({ sourceId }) => sourceId), ["seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard", "molit-urban-rail-full-route", "seoulmetro-station-line-info", "incheon-transit-accessibility", "seoul-metro-transfer-distance-duration"]);
+  const scope = JSON.parse(await readFile(path.join(value.root, "release/product-gates/production-datapack-scope.json"), "utf8"));
+  const candidateSourceIds = candidate.sourceSnapshots.map(({ sourceId }) => sourceId);
+  assert.deepEqual([...candidateSourceIds].sort(), [...scope.productionSourceSet.requiredSourceIds].sort());
+  assert.equal(candidateSourceIds.at(-1), "seoul-metro-transfer-distance-duration");
   assert.equal(Object.hasOwn(candidate.networkEdgeEvidence, "incheonAccessibility"), false); assert.equal(candidate.publishedAt, value.now.toISOString());
   const selectedLedgerOrder = ledger.filter(({ snapshotId }) => candidate.sourceSnapshotIds.includes(snapshotId));
-  assert.equal(candidate.sourceSnapshotSetHash, sha(JSON.stringify(selectedLedgerOrder))); assert.equal(request.buildSpecSha256, sha(outputs[3].bytes)); assert.deepEqual(evidence.perSourceEvidence.map(({ sourceId }) => sourceId), selectedLedgerOrder.map(({ sourceId }) => sourceId)); assert.equal(evidence.perSourceEvidence.length, 8); assert.equal(evidence.sourceSnapshots.order.includes("incheon-transit-accessibility"), true); assert.match(evidence.sourceSnapshots.specRowRawSha256Note, /OCI object hash/);
+  assert.equal(candidate.sourceSnapshotSetHash, sha(JSON.stringify(selectedLedgerOrder))); assert.equal(request.buildSpecSha256, sha(outputs[3].bytes)); assert.deepEqual(evidence.perSourceEvidence.map(({ sourceId }) => sourceId), selectedLedgerOrder.map(({ sourceId }) => sourceId)); assert.equal(evidence.perSourceEvidence.length, candidateSourceIds.length); assert.equal(evidence.sourceSnapshots.order.includes("incheon-transit-accessibility"), true); assert.match(evidence.sourceSnapshots.specRowRawSha256Note, /OCI object hash/);
   await commitReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot: value.root, outputs, acquireLease: noLease }); assert.equal(JSON.parse(await readFile(path.join(value.root, outputs[0].relative))).sourceId, "incheon-transit-accessibility");
 });
 test("rebinds only the four candidate identities from a receipt-bound registered source", async (t) => {
