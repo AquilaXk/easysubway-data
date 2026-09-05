@@ -18,6 +18,7 @@ const STATIC_INPUT_PATHS = [
   "tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json",
   "tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json", "tools/datapack/source-governance-policy.json",
   "release/product-gates/datapack-freshness-sla.json",
+  "release/product-gates/production-datapack-scope.json",
 ];
 
 function currentCapitalTopologyAdmission(sourceInventory) {
