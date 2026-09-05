@@ -184,6 +184,10 @@
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/455",
       "title": "[Data][Nationwide] KRIC 역·노선 소속 source admission"
     },
+    "data456": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456",
+      "title": "Admit the Seoul Metro capital topology source"
+    },
     "data529": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/529",
       "title": "[Data][Release] candidate 생성과 cross-run attestation 분리"
@@ -227,6 +231,10 @@
     "data673": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/673",
       "title": "Eliminate the pending-fan-in topology freshness cycle"
+    },
+    "data697": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/697",
+      "title": "Add a Data-owned profile predeployment workflow"
     }
   },
   "workflows": {
@@ -258,9 +266,7 @@
       "contextInvocations": [
         "node --test tools/datapack/verify-production-pack-artifact-identity.test.mjs",
         "node --test --test-name-pattern='bundled 공식 OD quote|bundled 차량·출입문 힌트' tools/datapack/datapack-tools.test.mjs",
-        "node --test tools/datapack/run-current-capital-live-chain.test.mjs",
-        "node --test tools/datapack/build-current-capital-live-chain-oci-receipt.test.mjs",
-        "node --test tools/datapack/extract-current-capital-live-chain-directory.test.mjs"
+        "node --test tools/datapack/run-current-capital-live-chain.test.mjs"
       ],
       "profileInvocations": [
         "node tools/ci/data-test-discovery.mjs run --class required-pr --profile mobile-v19 --max-workers 1"
@@ -301,6 +307,7 @@
     {"path":"tools/ci/itx-current-collection-offline-replay-workflow.test.mjs","semanticOwner":"data96","classes":["required-pr"],"durationMs":37},
     {"path":"tools/ci/itx-current-collection-workflow.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":130},
     {"path":"tools/ci/itx-current-replay-admission-candidate-workflow.test.mjs","semanticOwner":"data96","classes":["required-pr"],"durationMs":41},
+    {"path":"tools/ci/journey-profile-predeployment-measurement-workflow.test.mjs","semanticOwner":"data697","classes":["required-pr"],"durationMs":50},
     {"path":"tools/ci/kric-current-facility-refresh-workflow.test.mjs","semanticOwner":"data629","classes":["required-pr"],"durationMs":40},
     {"path":"tools/ci/kric-exit-full-capital-refresh-workflow.test.mjs","semanticOwner":"data647","classes":["required-pr"],"durationMs":40},
     {"path":"tools/ci/mobile-fixture-staging-workflow.test.mjs","semanticOwner":"data25","classes":["required-pr"],"durationMs":122},
@@ -311,6 +318,9 @@
     {"path":"tools/datapack/activate-current-source-set.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":389},
     {"path":"tools/datapack/admit-reviewed-incheon-accessibility.test.mjs","semanticOwner":"data622","classes":["required-pr"],"durationMs":484},
     {"path":"tools/datapack/register-reviewed-incheon-accessibility.test.mjs","semanticOwner":"data622","classes":["required-pr"],"durationMs":520},
+    {"path":"tools/datapack/validate-candidate-source-set.test.mjs","semanticOwner":"data456","classes":["required-pr"],"durationMs":52},
+    {"path":"tools/datapack/register-current-capital-route-topology.test.mjs","semanticOwner":"data456","classes":["required-pr"],"durationMs":120},
+    {"path":"tools/datapack/run-current-capital-route-topology-registration.test.mjs","semanticOwner":"data456","classes":["required-pr"],"durationMs":250},
     {"path":"tools/datapack/run-current-incheon-accessibility-registration.test.mjs","semanticOwner":"data622","classes":["required-pr"],"durationMs":520},
     {"path":"tools/datapack/admit-reviewed-kric-candidates.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":167},
     {"path":"tools/datapack/apply-accessibility-evidence-to-bundled-pack.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":320},
@@ -329,9 +339,6 @@
     {"path":"tools/datapack/build-current-capital-facility-collection-plan.test.mjs","semanticOwner":"data319","classes":["required-pr"],"durationMs":245},
     {"path":"tools/datapack/build-current-capital-facility-source-admission.test.mjs","semanticOwner":"data325","classes":["required-pr"],"durationMs":409},
     {"path":"tools/datapack/build-current-capital-live-chain-boundary.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":180},
-    {"path":"tools/datapack/build-current-capital-live-chain-bundle.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":100},
-    {"path":"tools/datapack/build-current-capital-live-chain-oci-plan.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":100},
-    {"path":"tools/datapack/build-current-capital-live-chain-oci-receipt.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":100},
     {"path":"tools/datapack/current-capital-exit-provider-handoff.test.mjs","semanticOwner":"data633","classes":["required-pr"],"durationMs":1500},
     {"path":"tools/datapack/build-current-capital-route-edge-input.test.mjs","semanticOwner":"data365","classes":["required-pr"],"durationMs":851},
     {"path":"tools/datapack/build-current-capital-station-line-input.test.mjs","semanticOwner":"data365","classes":["required-pr"],"durationMs":399},
@@ -345,7 +352,6 @@
     {"path":"tools/datapack/build-current-release-candidate-accessibility-input.test.mjs","semanticOwner":"data530","classes":["required-pr"],"durationMs":47},
     {"path":"tools/datapack/build-current-station-line-accessibility.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":72},
     {"path":"tools/datapack/build-current-strict-route-regression-report.test.mjs","semanticOwner":"data309","classes":["required-pr"],"durationMs":43},
-    {"path":"tools/datapack/build-current-source-set-handoff.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":1100},
     {"path":"tools/datapack/build-current-transfer-source-admission.test.mjs","semanticOwner":"data27","classes":["required-pr"],"durationMs":568},
     {"path":"tools/datapack/build-current-transfer-topology-metrics.test.mjs","semanticOwner":"data339","classes":["required-pr"],"durationMs":96},
     {"path":"tools/datapack/build-data-component-manifest.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":896},
@@ -394,7 +400,6 @@
     {"path":"tools/datapack/collect-capital-route-topology.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":309},
     {"path":"tools/datapack/collect-current-kric-exit-path-provider-snapshot.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":34},
     {"path":"tools/datapack/collect-current-seoul-transfer-distance-duration-snapshot.test.mjs","semanticOwner":"data321","classes":["required-pr"],"durationMs":118},
-    {"path":"tools/datapack/extract-current-capital-live-chain-directory.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":180},
     {"path":"tools/datapack/collect-public-static-network-v2.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/collect-daegu-accessibility.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":170},
     {"path":"tools/datapack/collect-daegu-datapack-sources.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":264},
@@ -453,7 +458,6 @@
     {"path":"tools/datapack/itx-cheongchun-coverage-contract.test.mjs","semanticOwner":"data38","classes":["required-pr","deterministic-release"],"durationMs":183},
     {"path":"tools/datapack/itx-cheongchun-service-layer.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":726},
     {"path":"tools/datapack/launch-candidate-binding.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":118},
-    {"path":"tools/datapack/materialize-current-source-set.test.mjs","semanticOwner":"data96","classes":["required-pr"],"durationMs":3572},
     {"path":"tools/datapack/lib/datapack-manifest-schema.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":131},
     {"path":"tools/datapack/lib/map-catalog-oci-publisher.test.mjs","semanticOwner":"data535","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/lib/molit-svg-provider-identity.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":107},
@@ -523,7 +527,6 @@
     {"path":"tools/datapack/rebind-current-active-facility-derived-identity.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":900},
     {"path":"tools/datapack/rebind-current-active-public-route-map-materialization.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":900},
     {"path":"tools/datapack/rebind-current-candidate-source-snapshots.test.mjs","semanticOwner":"data329","classes":["required-pr"],"durationMs":696},
-    {"path":"tools/datapack/rebind-current-exit-admission-identities.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":250},
     {"path":"tools/datapack/rebind-current-live-chain-transfer-derived-identities.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":900},
     {"path":"tools/datapack/recover-current-live-chain-transfer-observation.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":300},
     {"path":"tools/datapack/reconstruct-transit-trips.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":131},

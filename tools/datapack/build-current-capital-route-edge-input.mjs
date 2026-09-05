@@ -17,12 +17,26 @@ export function buildCurrentCapitalRouteEdgeInput(input) {
   const entries = station.stationLines.map((line) => edge({ edgeId: `edge-entry-${line.stationId}-${line.lineId}`, edgeType: "ENTRY", fromNodeId: line.stationId, toNodeId: `${line.stationId}:${line.lineId}`, durationSeconds: 90, distanceMeters: 0 }));
   const exits = station.stationLines.map((line) => edge({ edgeId: `edge-exit-${line.stationId}-${line.lineId}`, edgeType: "EXIT", fromNodeId: `${line.stationId}:${line.lineId}`, toNodeId: line.stationId, durationSeconds: 60, distanceMeters: 0 }));
   // TRANSFER runtime cost is request-owned walking pace; the source duration remains metrics-only reference evidence.
-  const transfers = input.transferMetrics.metrics.map((metric) => edge({ edgeId: `edge-transfer-${metric.stationId}-${metric.fromLineId}-${metric.toLineId}`, edgeType: "IN_STATION_TRANSFER", fromNodeId: `${metric.stationId}:${metric.fromLineId}`, toNodeId: `${metric.stationId}:${metric.toLineId}`, durationSeconds: 0, distanceMeters: metric.distanceMeters }));
+  const transfers = currentCapitalTransferEdgesFromMetrics(input.transferMetrics.metrics);
   const routeEdges = [...rides, ...entries, ...exits, ...transfers].sort((left, right) => compareBytes(left.edgeId, right.edgeId));
   assertExactRouteFanIn({ routeEdges, rides, entries, exits, transfers });
   validateRouteEdgeEndpoints(routeEdges, stationLines);
   const candidate = { candidateId: station.candidate.candidateId, evaluatorVersion: "1", policyVersion: input.policy.policyVersion, sourceSetSha256: station.candidate.sourceSetSha256, stationSetSha256: station.candidate.stationSetSha256, topologySha256: canonicalRideEdgeSetSha256(rides) };
   return canonicalObject({ candidate, stationLines, routeEdges });
+}
+
+export function currentCapitalTransferEdgesFromMetrics(metrics) {
+  if (!Array.isArray(metrics) || metrics.length === 0) {
+    throw new Error("full-capital TRANSFER metrics are required");
+  }
+  return metrics.map((metric) => edge({
+    edgeId: `edge-transfer-${metric.stationId}-${metric.fromLineId}-${metric.toLineId}`,
+    edgeType: "IN_STATION_TRANSFER",
+    fromNodeId: `${metric.stationId}:${metric.fromLineId}`,
+    toNodeId: `${metric.stationId}:${metric.toLineId}`,
+    durationSeconds: 0,
+    distanceMeters: metric.distanceMeters,
+  }));
 }
 
 export function canonicalCurrentCapitalRouteEdgeInputJson(value) {

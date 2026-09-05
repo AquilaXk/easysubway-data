@@ -90,7 +90,8 @@ export function materializeCapitalLightRailRouteMapPositions({
     ...pack.minimumTableRows,
     route_map_positions: pack.routeMapPositions.length,
   };
-  const version = source.routeMapAdmissionEvidence.snapshotId.slice(-8);
+  // 파일 identity는 내용 해시이며, pack 날짜 버전은 보존된 관측 시각에서 얻는다.
+  const version = snapshot.capturedAt.slice(0, 10).replaceAll("-", "");
   const composition = sha256(JSON.stringify({
     previousPackId: pack.id,
     snapshotId: source.routeMapAdmissionEvidence.snapshotId,

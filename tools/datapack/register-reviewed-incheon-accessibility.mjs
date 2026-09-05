@@ -16,11 +16,9 @@ import { deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./s
 import { validateLineage } from "./source-snapshot-policy.mjs";
 import {
   assertProjectionEqual,
-  CURRENT_FULL_CANDIDATE_SOURCE_IDS,
-  CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS,
   deriveReleaseProjection,
-  isActiveCandidateSourceSequence,
 } from "./rebind-current-candidate-source-snapshots.mjs";
+import { readProductionScopeSourceIds, validateCandidateSourceSet } from "./validate-candidate-source-set.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const SOURCE = "incheon-transit-accessibility";
@@ -30,10 +28,6 @@ const JOURNAL = "tools/datapack/.incheon-accessibility-registration-transaction.
 const LOCK = "tools/datapack/.incheon-accessibility-registration.lock";
 const FIXED = ["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json", "tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json"];
 const REBIND_FIXED = [FIXED[0], FIXED[2], FIXED[3], FIXED[4]];
-const PRE_REGISTRATION_SOURCE_SEQUENCES = Object.freeze([
-  CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS.filter((sourceId) => sourceId !== SOURCE),
-  CURRENT_FULL_CANDIDATE_SOURCE_IDS.filter((sourceId) => sourceId !== SOURCE),
-]);
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 const bytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 function parse(value, label) { try { return JSON.parse(value.toString("utf8")); } catch { throw new Error(`${label} is invalid JSON`); } }
@@ -86,13 +80,25 @@ function ledgerOrderedSnapshots(ledger, ids) {
 function operationFingerprint(rawArtifact) {
   return hash(JSON.stringify({ sourceId: rawArtifact.sourceId, datasetIds: rawArtifact.payloads.map(({ datasetId }) => datasetId), requests: rawArtifact.payloads.map(({ detailUrl, fileName }) => ({ detailUrl, fileName })), topologySnapshotId: rawArtifact.topologySnapshotId, topologyContentSha256: rawArtifact.topologyContentSha256, freshnessPolicy: rawArtifact.freshnessPolicy }));
 }
-function isIncheonRegistrationPrestateSourceSequence(sourceIds) {
-  return Array.isArray(sourceIds) && PRE_REGISTRATION_SOURCE_SEQUENCES
-    .some((expected) => JSON.stringify(sourceIds) === JSON.stringify(expected));
+export function validateExactIncheonScopeSourceIds({ actualSourceIds, expectedSourceIds }) {
+  if (!Array.isArray(actualSourceIds) || !Array.isArray(expectedSourceIds) || actualSourceIds.length === 0
+    || actualSourceIds.length !== expectedSourceIds.length || new Set(actualSourceIds).size !== actualSourceIds.length
+    || new Set(expectedSourceIds).size !== expectedSourceIds.length
+    || actualSourceIds.some((sourceId) => typeof sourceId !== "string" || sourceId === "" || !expectedSourceIds.includes(sourceId))
+    || (actualSourceIds.includes("seoul-metro-transfer-distance-duration") && actualSourceIds.at(-1) !== "seoul-metro-transfer-distance-duration")) throw new Error("Incheon candidate scope source set is invalid");
+  return actualSourceIds;
 }
-function validateCurrentRelease({ inventory, inventoryBytes, ledger, candidate, candidateBytes, request, evidence, governance, governanceBytes, freshness }) {
+export function incheonPredecessorSourceIds(scopeBytes) {
+  const requiredSourceIds = readProductionScopeSourceIds(scopeBytes);
+  if (!requiredSourceIds.includes(SOURCE)) throw new Error("Incheon source is required by production scope");
+  return requiredSourceIds.filter((sourceId) => sourceId !== SOURCE);
+}
+function validateCurrentRelease({ inventory, inventoryBytes, scopeBytes, ledger, candidate, candidateBytes, request, evidence, governance, governanceBytes, freshness }) {
   const lineage = validateLineage(ledger); const ids = candidate?.sourceSnapshotIds; const projections = candidate?.sourceSnapshots;
-  if (candidate?.schemaVersion !== 1 || candidate.artifactKind !== "datapack-candidate-build-spec" || !Array.isArray(ids) || !Array.isArray(projections) || ids.length === 0 || projections.length !== ids.length || !isIncheonRegistrationPrestateSourceSequence(projections.map(({ sourceId }) => sourceId)) || new Set(ids).size !== ids.length || new Set(projections.map(({ sourceId }) => sourceId)).size !== ids.length || ids.some((id, index) => projections[index]?.snapshotId !== id) || projections.some(({ sourceId }) => sourceId === SOURCE)) throw new Error("candidate prestate is invalid");
+  let predecessorSourceIds;
+  try { predecessorSourceIds = incheonPredecessorSourceIds(scopeBytes); } catch { throw new Error("candidate prestate is invalid"); }
+  if (candidate?.schemaVersion !== 1 || candidate.artifactKind !== "datapack-candidate-build-spec" || !Array.isArray(ids) || !Array.isArray(projections) || ids.length === 0 || projections.length !== ids.length || new Set(ids).size !== ids.length || ids.some((id, index) => projections[index]?.snapshotId !== id) || projections.some(({ sourceId }) => sourceId === SOURCE)) throw new Error("candidate prestate is invalid");
+  try { validateExactIncheonScopeSourceIds({ actualSourceIds: projections.map(({ sourceId }) => sourceId), expectedSourceIds: predecessorSourceIds }); } catch { throw new Error("candidate prestate is invalid"); }
   const selected = ids.map((snapshotId) => { const snapshot = ledger.find((row) => row.snapshotId === snapshotId); if (!snapshot || lineage.headsBySource[snapshot.sourceId] !== snapshotId) throw new Error("candidate source is not the active ledger head"); return snapshot; });
   const expectedSet = ledgerOrderedSnapshots(ledger, ids);
   if (candidate.sourceSnapshotSetHash !== hash(JSON.stringify(expectedSet)) || candidate.sourceInventorySha256 !== hash(JSON.stringify(inventory)) || candidate.networkEdgeEvidence?.sourceInventory?.path !== FIXED[0] || candidate.networkEdgeEvidence.sourceInventory.sha256 !== hash(inventoryBytes)) throw new Error("candidate prestate binding is invalid");
@@ -104,7 +110,7 @@ function validateCurrentRelease({ inventory, inventoryBytes, ledger, candidate, 
   for (const [index, snapshot] of expectedSet.entries()) { const row = evidence.perSourceEvidence[index]; const source = one(inventory.sources, ({ id }) => id === snapshot.sourceId, "release source"); if (row?.sourceId !== snapshot.sourceId || row.snapshotId !== snapshot.snapshotId || row.rawSha256 !== snapshot.rawSha256 || row.adminReviewRecordHash !== source.admissionEvidence?.adminReviewRecordHash || row.perSourceSnapshotSetHash !== hash(JSON.stringify([snapshot]))) throw new Error("hash evidence prestate is invalid"); }
   return { lineage, selected };
 }
-function build({ snapshot, snapshotBytes, rawArtifact, rawArtifactBytes, receipt, inventory, inventoryBytes, ledger, governance, governanceBytes, freshness, candidate, candidateBytes, request, evidence, now, topology, topologySnapshotId }) {
+function build({ snapshot, snapshotBytes, rawArtifact, rawArtifactBytes, receipt, inventory, inventoryBytes, scopeBytes, ledger, governance, governanceBytes, freshness, candidate, candidateBytes, request, evidence, now, topology, topologySnapshotId }) {
   validateIncheonAccessibilitySnapshotIdentity(snapshot, freshness, topology);
   validateSourceGovernancePolicy({ policy: governance, inventory, freshnessPolicy: freshness });
   const source = one(inventory.sources ?? [], ({ id }) => id === SOURCE, "Incheon source");
@@ -113,7 +119,7 @@ function build({ snapshot, snapshotBytes, rawArtifact, rawArtifactBytes, receipt
   validateReceipt(receipt, snapshot, snapshotBytes, rawArtifactBytes, governance, now);
   const fresh = deriveFreshnessExpiresAt({ policy: freshness, sourceClassId: policy.sourceClassId, basisAt: snapshot.capturedAt, evaluationAt: now.toISOString() });
   if (instant(fresh, "freshness") <= now.getTime() || instant(snapshot.freshUntil, "snapshot freshness") <= now.getTime()) throw new Error("Incheon snapshot is stale");
-  const { lineage, selected: currentSnapshots } = validateCurrentRelease({ inventory, inventoryBytes, ledger, candidate, candidateBytes, request, evidence, governance, governanceBytes, freshness });
+  const { lineage, selected: currentSnapshots } = validateCurrentRelease({ inventory, inventoryBytes, scopeBytes, ledger, candidate, candidateBytes, request, evidence, governance, governanceBytes, freshness });
   const nowMillis = now.getTime();
   if (nowMillis < instant(candidate.publishedAt, "candidate publishedAt")
     || currentSnapshots.some((current) => nowMillis < instant(current.retrievedAt, "current snapshot retrievedAt")
@@ -143,7 +149,7 @@ function build({ snapshot, snapshotBytes, rawArtifact, rawArtifactBytes, receipt
   if (transferIndex !== -1 && transferIndex !== nextCandidate.sourceSnapshots.length - 1) throw new Error("candidate transfer ordering is invalid");
   const insertionIndex = transferIndex === -1 ? nextCandidate.sourceSnapshots.length : transferIndex;
   nextCandidate.sourceSnapshotIds.splice(insertionIndex, 0, next.snapshotId); nextCandidate.sourceSnapshots.splice(insertionIndex, 0, projection);
-  if (!isActiveCandidateSourceSequence(nextCandidate.sourceSnapshots.map(({ sourceId }) => sourceId))) throw new Error("candidate Incheon sequence is invalid");
+  validateExactIncheonScopeSourceIds({ actualSourceIds: nextCandidate.sourceSnapshots.map(({ sourceId }) => sourceId), expectedSourceIds: readProductionScopeSourceIds(scopeBytes) });
   const selected = ledgerOrderedSnapshots(nextLedger, nextCandidate.sourceSnapshotIds);
   nextCandidate.sourceSnapshotSetHash = hash(JSON.stringify(selected)); nextCandidate.sourceInventorySha256 = hash(JSON.stringify(nextInventory)); nextCandidate.publishedAt = now.toISOString();
   if (nextCandidate.networkEdgeEvidence?.sourceInventory) nextCandidate.networkEdgeEvidence.sourceInventory.sha256 = hash(nextInventoryBytes);
@@ -214,11 +220,13 @@ function registrationEvidenceMatches({ evidence, snapshot, snapshotBytes, receip
 export async function buildReceiptBoundRebindOutputs({ repositoryRoot = ROOT, receiptPath } = {}) {
   const root = path.resolve(repositoryRoot); await regularDirectory(root, "repository root");
   if (!path.isAbsolute(receiptPath ?? "")) throw new Error("absolute OCI receipt is required");
-  const [inventoryBytes, ledgerBytes, candidateBytes, requestBytes, evidenceBytes] = await Promise.all(FIXED.map((relative) => read(target(root, relative), relative)));
+  const [inventoryBytes, ledgerBytes, candidateBytes, requestBytes, evidenceBytes, scopeBytes] = await Promise.all([...FIXED, "release/product-gates/production-datapack-scope.json"].map((relative) => read(target(root, relative), relative)));
   const [inventory, ledger, candidate, request, evidence] = [inventoryBytes, ledgerBytes, candidateBytes, requestBytes, evidenceBytes].map((value, index) => parse(value, FIXED[index]));
   const source = one(inventory.sources ?? [], ({ id }) => id === SOURCE, "registered Incheon source");
   if (source.requiredForProductionPack !== true || source.registrationEvidence != null || source.admissionEvidence?.decision !== "APPROVED" || !SHA.test(source.admissionEvidence?.adminReviewRecordHash ?? "")) throw new Error("Incheon receipt-bound rebind requires an unbound registered source");
   const official = one(ledger, ({ sourceId }) => sourceId === SOURCE, "registered Incheon ledger head");
+  const { requiredSourceIds } = validateCandidateSourceSet({ productionScopeBytes: scopeBytes, sourceInventoryBytes: inventoryBytes, candidate, ledger });
+  validateExactIncheonScopeSourceIds({ actualSourceIds: candidate.sourceSnapshots.map(({ sourceId }) => sourceId), expectedSourceIds: requiredSourceIds });
   if (candidate?.sourceInventorySha256 !== hash(JSON.stringify(inventory)) || candidate?.networkEdgeEvidence?.sourceInventory?.path !== FIXED[0] || candidate.networkEdgeEvidence.sourceInventory.sha256 !== hash(inventoryBytes) || request?.buildSpecSha256 !== hash(candidateBytes) || request.sourceSnapshotSetHash !== candidate.sourceSnapshotSetHash || evidence?.sourceInventorySha256?.value !== candidate.sourceInventorySha256 || evidence?.sourceSnapshotSetHash?.value !== candidate.sourceSnapshotSetHash) throw new Error("Incheon receipt-bound rebind prestate is invalid");
   const selected = ledgerOrderedSnapshots(ledger, candidate.sourceSnapshotIds ?? []);
   if (!candidate.sourceSnapshotIds.includes(official.snapshotId) || candidate.sourceSnapshotSetHash !== hash(JSON.stringify(selected)) || !candidate.sourceSnapshots?.some(({ sourceId, snapshotId }) => sourceId === SOURCE && snapshotId === official.snapshotId)) throw new Error("Incheon receipt-bound candidate is invalid");
@@ -239,12 +247,13 @@ export async function buildReceiptBoundRebindOutputs({ repositoryRoot = ROOT, re
   const nextInventoryBytes = bytes(nextInventory); const nextCandidate = structuredClone(candidate); nextCandidate.sourceInventorySha256 = hash(JSON.stringify(nextInventory)); nextCandidate.networkEdgeEvidence.sourceInventory.sha256 = hash(nextInventoryBytes);
   const nextCandidateBytes = bytes(nextCandidate); const nextRequest = { ...request, buildSpecSha256: hash(nextCandidateBytes) }; const nextEvidence = structuredClone(evidence); nextEvidence.sourceInventorySha256.value = nextCandidate.sourceInventorySha256;
   if (nextRequest.sourceSnapshotSetHash !== candidate.sourceSnapshotSetHash || nextEvidence.sourceSnapshotSetHash.value !== candidate.sourceSnapshotSetHash || JSON.stringify(nextEvidence.perSourceEvidence) !== JSON.stringify(evidence.perSourceEvidence)) throw new Error("Incheon receipt-bound rebind changed release snapshot evidence");
-  return REBIND_FIXED.map((relative, index) => ({ relative, bytes: [nextInventoryBytes, nextCandidateBytes, bytes(nextRequest), bytes(nextEvidence)][index], prestateBytes: [inventoryBytes, candidateBytes, requestBytes, evidenceBytes][index] }));
+  const inputs = [{ relative: "release/product-gates/production-datapack-scope.json", bytes: scopeBytes }];
+  return REBIND_FIXED.map((relative, index) => ({ relative, bytes: [nextInventoryBytes, nextCandidateBytes, bytes(nextRequest), bytes(nextEvidence)][index], prestateBytes: [inventoryBytes, candidateBytes, requestBytes, evidenceBytes][index], inputs }));
 }
 export async function rebindReceiptBoundIncheonAccessibilityCandidate(options = {}) { const outputs = await buildReceiptBoundRebindOutputs(options); await commitReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot: options.repositoryRoot, outputs }); return { outputs: outputs.map(({ relative }) => relative) }; }
 export async function buildReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot = ROOT, observationRoot, receiptPath, now = new Date() } = {}) {
   const root = path.resolve(repositoryRoot); await regularDirectory(root, "repository root");
-  const [inventoryBytes, governanceBytes, ledgerBytes, candidateBytes, requestBytes, evidenceBytes, freshnessBytes] = await Promise.all([FIXED[0], "tools/datapack/source-governance-policy.json", FIXED[1], FIXED[2], FIXED[3], FIXED[4], "release/product-gates/datapack-freshness-sla.json"].map((relative) => read(target(root, relative), relative)));
+  const [inventoryBytes, governanceBytes, ledgerBytes, candidateBytes, requestBytes, evidenceBytes, freshnessBytes, scopeBytes] = await Promise.all([FIXED[0], "tools/datapack/source-governance-policy.json", FIXED[1], FIXED[2], FIXED[3], FIXED[4], "release/product-gates/datapack-freshness-sla.json", "release/product-gates/production-datapack-scope.json"].map((relative) => read(target(root, relative), relative)));
   const inventory = parse(inventoryBytes, "source inventory"); const admitted = one(inventory.sources ?? [], ({ id }) => id === SOURCE, "Incheon source");
   const topologySource = one(inventory.sources ?? [], ({ id }) => id === "incheon-transit-station-info", "Incheon topology source");
   const topologyAdmission = topologySource.topologyAdmissionEvidence;
@@ -258,8 +267,8 @@ export async function buildReviewedIncheonAccessibilityRegistrationOutputs({ rep
   if (topology.sourceId !== topologySource.id || topology.contentSha256 !== topologyAdmission.contentSha256) throw new Error("Incheon admitted topology content is invalid");
   const freshness = parse(freshnessBytes, "freshness"); const observation = await readObservation(observationRoot, receiptPath, freshness, topology, topologyAdmission.snapshotId);
   validateIncheonAccessibilitySnapshotIdentity(observation.snapshot, freshness, topology);
-  const inputs = [[FIXED[0], inventoryBytes], ["tools/datapack/source-governance-policy.json", governanceBytes], [FIXED[1], ledgerBytes], [FIXED[2], candidateBytes], [FIXED[3], requestBytes], [FIXED[4], evidenceBytes], ["release/product-gates/datapack-freshness-sla.json", freshnessBytes], [topologyRelative, topologyBytes]].map(([relative, value]) => ({ relative, bytes: value }));
-  const outputs = build({ snapshot: observation.snapshot, snapshotBytes: observation.snapshotBytes, rawArtifact: observation.rawArtifact, rawArtifactBytes: observation.rawArtifactBytes, receipt: observation.receipt, inventory, inventoryBytes, ledger: parse(ledgerBytes, "ledger"), governance: parse(governanceBytes, "source governance policy"), governanceBytes, freshness, candidate: parse(candidateBytes, "candidate"), candidateBytes, request: parse(requestBytes, "release request"), evidence: parse(evidenceBytes, "hash evidence"), now, topology, topologySnapshotId: topologyAdmission.snapshotId }).map((output) => ({ ...output, inputs }));
+  const inputs = [[FIXED[0], inventoryBytes], ["tools/datapack/source-governance-policy.json", governanceBytes], [FIXED[1], ledgerBytes], [FIXED[2], candidateBytes], [FIXED[3], requestBytes], [FIXED[4], evidenceBytes], ["release/product-gates/datapack-freshness-sla.json", freshnessBytes], ["release/product-gates/production-datapack-scope.json", scopeBytes], [topologyRelative, topologyBytes]].map(([relative, value]) => ({ relative, bytes: value }));
+  const outputs = build({ snapshot: observation.snapshot, snapshotBytes: observation.snapshotBytes, rawArtifact: observation.rawArtifact, rawArtifactBytes: observation.rawArtifactBytes, receipt: observation.receipt, inventory, inventoryBytes, scopeBytes, ledger: parse(ledgerBytes, "ledger"), governance: parse(governanceBytes, "source governance policy"), governanceBytes, freshness, candidate: parse(candidateBytes, "candidate"), candidateBytes, request: parse(requestBytes, "release request"), evidence: parse(evidenceBytes, "hash evidence"), now, topology, topologySnapshotId: topologyAdmission.snapshotId }).map((output) => ({ ...output, inputs }));
   outputs[1].prestateBytes = await read(target(root, FIXED[0]), FIXED[0]); for (let i = 2; i < outputs.length; i += 1) outputs[i].prestateBytes = await read(target(root, outputs[i].relative), outputs[i].relative); outputAllowlist(outputs); return outputs;
 }
 async function safeParent(file) { await regularDirectory(path.dirname(file), "Incheon registration target parent"); }

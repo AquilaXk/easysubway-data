@@ -50,21 +50,6 @@ function sourceProviderObject({ sourceMainSha, sourceOperationId, providerCaptur
   return { providerObjectKey, capturedAt };
 }
 
-export function buildCurrentExitAdmissionOciReceipt({ repository, mainSha, operationId, providerCapturedAt, providerCollectionBundleBytes, providerObjectUri, providerObjectSha256, providerObjectByteSize, normalizedBytes, admissionBytes }) {
-  if (repository !== "AquilaXk/easysubway-data" || !Buffer.isBuffer(normalizedBytes) || !Buffer.isBuffer(admissionBytes)) throw new Error("EXIT OCI receipt input mismatch");
-  const { providerObjectKey, capturedAt } = sourceProviderObject({ sourceMainSha: mainSha, sourceOperationId: operationId, providerCapturedAt, providerCollectionBundleBytes, providerObjectUri, providerObjectSha256, providerObjectByteSize });
-  const admission = admissionValues(admissionBytes);
-  const payload = { schemaVersion: 1, artifactKind: "current-exit-admission-oci-receipt", repository, mainSha, operationId, ociNamespace: "axvym6vk8g7i", bucket: "easysubway-datapacks", providerCapturedAt, providerCollectionBundleSha256: providerObjectSha256, providerCollectionBundleByteSize: providerObjectByteSize, providerObjectUri, providerObjectKey, normalizedSnapshotSha256: sha(normalizedBytes), admissionSha256: sha(admissionBytes), admissionDigest: admission.admissionDigest };
-  return { ...payload, receiptSha256: sha(canonical(payload)) };
-}
-function canonicalCurrentExitAdmissionOciReceiptV1Json(receipt) {
-  const { receiptSha256, ...payload } = receipt ?? {};
-  const uri = OCI.exec(receipt?.providerObjectUri ?? "");
-  exactReceiptKeys(receipt, ["schemaVersion", "artifactKind", "repository", "mainSha", "operationId", "ociNamespace", "bucket", "providerCapturedAt", "providerCollectionBundleSha256", "providerCollectionBundleByteSize", "providerObjectUri", "providerObjectKey", "normalizedSnapshotSha256", "admissionSha256", "admissionDigest", "receiptSha256"], "EXIT OCI receipt");
-  if (receipt.schemaVersion !== 1 || receipt.artifactKind !== "current-exit-admission-oci-receipt" || receipt.repository !== "AquilaXk/easysubway-data" || !GIT_SHA.test(receipt.mainSha ?? "") || !OPERATION.test(receipt.operationId ?? "") || receipt.ociNamespace !== "axvym6vk8g7i" || receipt.bucket !== "easysubway-datapacks" || !SHA.test(receipt.providerCollectionBundleSha256 ?? "") || !SHA.test(receipt.normalizedSnapshotSha256 ?? "") || !SHA.test(receipt.admissionSha256 ?? "") || !SHA.test(receipt.admissionDigest ?? "") || !SHA.test(receiptSha256 ?? "") || !Number.isSafeInteger(receipt.providerCollectionBundleByteSize) || receipt.providerCollectionBundleByteSize < 1 || !uri || receipt.providerObjectKey !== uri[1] || uri[2] !== receipt.mainSha || uri[3] !== receipt.operationId || uri[4] !== receiptTimestamp(receipt.providerCapturedAt).slice(0, 10).replaceAll("-", "") || uri[5] !== receipt.providerCollectionBundleSha256 || sha(canonical(payload)) !== receiptSha256) throw new Error("EXIT OCI receipt mismatch");
-  return canonical(receipt);
-}
-
 export function buildCurrentExitReboundAdmissionOciReceipt({ repository, sourceMainSha, sourceOperationId, candidateHeadSha, candidateOperationId, providerCapturedAt, providerCollectionBundleBytes, providerObjectUri, providerObjectSha256, providerObjectByteSize, sourceReceiptSha256, candidateReceiptSha256, reboundCollectionBundleBytes, normalizedBytes, admissionBytes }) {
   if (repository !== "AquilaXk/easysubway-data" || !GIT_SHA.test(candidateHeadSha ?? "") || !OPERATION.test(candidateOperationId ?? "")
     || sourceMainSha === candidateHeadSha || sourceOperationId === candidateOperationId || !SHA.test(sourceReceiptSha256 ?? "")
@@ -122,10 +107,4 @@ export function canonicalCurrentExitReboundAdmissionOciReceiptJson(receipt) {
     throw new Error("EXIT rebound OCI receipt mismatch");
   }
   return canonical(receipt);
-}
-
-export function canonicalCurrentExitAdmissionOciReceiptJson(receipt) {
-  if (receipt?.schemaVersion === 1) return canonicalCurrentExitAdmissionOciReceiptV1Json(receipt);
-  if (receipt?.schemaVersion === 2) return canonicalCurrentExitReboundAdmissionOciReceiptJson(receipt);
-  throw new Error("EXIT OCI receipt schema mismatch");
 }

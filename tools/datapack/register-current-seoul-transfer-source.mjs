@@ -4,7 +4,7 @@ import { link, lstat, mkdir, open, readFile, rename, rmdir, rm, unlink } from "n
 import path from "node:path";
 
 import { registerSeoulTransferSourceSnapshot, TRANSFER_REGISTRATION_PATHS } from "./register-seoul-transfer-source-snapshot.mjs";
-import { appendTransferCandidateSourceSnapshot, assertProjectionEqual, CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS, deriveReleaseProjection, readStableRegularFile } from "./rebind-current-candidate-source-snapshots.mjs";
+import { appendTransferCandidateSourceSnapshot, assertProjectionEqual, deriveReleaseProjection, readStableRegularFile } from "./rebind-current-candidate-source-snapshots.mjs";
 import { assertExactMainPreflight, validateSeoulTransferRawReceipt } from "./publish-seoul-transfer-raw.mjs";
 import { readSeoulTransferObservationDirectory } from "./collect-current-seoul-transfer-distance-duration-snapshot.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
@@ -14,6 +14,7 @@ import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { rebuildAuthenticatedTransferTopologyMetrics } from "./build-current-transfer-topology-metrics.mjs";
 import { buildApplicability } from "./build-current-capital-transfer-topology-applicability.mjs";
 import { verifyCurrentCapitalPublicRouteMapDocument } from "./materialize-seoul-route-map-positions.mjs";
+import { readProductionScopeSourceIds } from "./validate-candidate-source-set.mjs";
 
 const JOURNAL = "tools/datapack/.seoul-transfer-registration-transaction.json";
 const LOCK = "tools/datapack/.seoul-transfer-registration.lock";
@@ -220,14 +221,31 @@ function validateTransferGovernance({ inventory, governancePolicy, governancePol
   return { freshUntil, retention };
 }
 
-function validatePreTransferCandidate({ candidate, ledger, inventory, inventoryInputBytes, governancePolicy, governancePolicyBytes, freshnessPolicy, approvedAt }) {
-  if (!Buffer.isBuffer(inventoryInputBytes) || JSON.stringify(candidate?.sourceSnapshots?.map(({ sourceId }) => sourceId)) !== JSON.stringify(CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS)
-    || candidate.sourceSnapshotIds?.length !== CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS.length || candidate.sourceSnapshots.some((projection, index) => projection.snapshotId !== candidate.sourceSnapshotIds[index])) throw new Error("transfer pre-candidate source order mismatch");
+function validatePreTransferCandidate({ candidate, ledger, inventory, inventoryInputBytes, scopeBytes, governancePolicy, governancePolicyBytes, freshnessPolicy, approvedAt }) {
+  const requiredSourceIds = readProductionScopeSourceIds(scopeBytes);
+  const predecessorSourceIds = requiredSourceIds;
+  if (requiredSourceIds.includes(SOURCE_ID)) {
+    throw new Error("production scope transfer source set is invalid");
+  }
+  const candidateSourceIds = candidate?.sourceSnapshots?.map(({ sourceId }) => sourceId);
+  if (!Buffer.isBuffer(inventoryInputBytes) || !Array.isArray(candidate?.sourceSnapshotIds)
+    || !Array.isArray(candidate?.sourceSnapshots)
+    || candidate.sourceSnapshotIds.length !== predecessorSourceIds.length
+    || candidate.sourceSnapshots.length !== candidate.sourceSnapshotIds.length
+    || new Set(candidate.sourceSnapshotIds).size !== candidate.sourceSnapshotIds.length
+    || new Set(candidateSourceIds).size !== candidateSourceIds.length
+    || candidateSourceIds.some((sourceId, index) => typeof sourceId !== "string" || sourceId === ""
+      || candidate.sourceSnapshots[index]?.snapshotId !== candidate.sourceSnapshotIds[index])
+    || new Set(predecessorSourceIds).size !== candidateSourceIds.length
+    || candidateSourceIds.some((sourceId) => !predecessorSourceIds.includes(sourceId))) throw new Error("transfer pre-candidate source order mismatch");
   const lineage = validateLineage(ledger);
-  const selected = candidate.sourceSnapshotIds.map((snapshotId) => ledger.find((row) => row.snapshotId === snapshotId));
+  const selected = candidate.sourceSnapshotIds.map((snapshotId) => {
+    const rows = ledger.filter((row) => row.snapshotId === snapshotId);
+    return rows.length === 1 ? rows[0] : null;
+  });
   const selectedIds = new Set(candidate.sourceSnapshotIds);
   const selectedInLedgerOrder = ledger.filter(({ snapshotId }) => selectedIds.has(snapshotId));
-  if (selected.some((row) => !row) || selected.some((row, index) => row.sourceId !== CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS[index] || lineage.headsBySource[row.sourceId] !== row.snapshotId)
+  if (selected.some((row) => !row) || selected.some((row, index) => row.sourceId !== candidateSourceIds[index] || lineage.headsBySource[row.sourceId] !== row.snapshotId)
     || selectedIds.size !== selected.length || selectedInLedgerOrder.length !== selected.length
     || candidate.sourceSnapshotSetHash !== sha(Buffer.from(JSON.stringify(selectedInLedgerOrder))) || candidate.sourceInventorySha256 !== sha(Buffer.from(JSON.stringify(inventory)))
     || candidate.networkEdgeEvidence?.sourceInventory?.path !== "tools/datapack/source-inventory.json" || candidate.networkEdgeEvidence.sourceInventory.sha256 !== sha(inventoryInputBytes)) throw new Error("transfer pre-candidate ledger or inventory binding mismatch");
@@ -237,14 +255,20 @@ function validatePreTransferCandidate({ candidate, ledger, inventory, inventoryI
     try { assertProjectionEqual(projection, expected, "transfer pre-candidate projection"); }
     catch { throw new Error("transfer pre-candidate projection mismatch"); }
   }
-  return selected[0];
+  const publicRouteMapRows = selected.filter(({ sourceId }) => sourceId === "seoul-metro-route-map-positions");
+  if (publicRouteMapRows.length !== 1) throw new Error("transfer public route-map source binding mismatch");
+  return publicRouteMapRows[0];
 }
 
 export function buildTransferRegistrationOutputs({ observation, receipt, metrics, metricsBytes, applicability, applicabilityBytes, inventory, inventoryBytes: inventoryInputBytes, scope, scopeBytes, ledger, ledgerBytes: ledgerInputBytes, candidate, candidateBytes: candidateInputBytes, governancePolicy, governancePolicyBytes, freshnessPolicy, freshnessPolicyBytes, canonicalPack, canonicalPackBytes, approvedAt }) {
   validateSeoulTransferRawReceipt(receipt);
   validateCurrentTransferInputs({ observation, receipt, metrics, metricsBytes, applicability, applicabilityBytes, canonicalPack, canonicalPackBytes });
   const governance = validateTransferGovernance({ inventory, governancePolicy, governancePolicyBytes, freshnessPolicy, freshnessPolicyBytes, observation, receipt, approvedAt });
-  const publicRouteMapSuccessor = validatePreTransferCandidate({ candidate, ledger, inventory, inventoryInputBytes, governancePolicy, governancePolicyBytes, freshnessPolicy, approvedAt });
+  if (canonicalJson(scope) !== canonicalJson(parseCanonical(scopeBytes, "production scope"))) {
+    throw new Error("transfer scope byte binding mismatch");
+  }
+  const requiredSourceIds = readProductionScopeSourceIds(scopeBytes);
+  const publicRouteMapSuccessor = validatePreTransferCandidate({ candidate, ledger, inventory, inventoryInputBytes, scopeBytes, governancePolicy, governancePolicyBytes, freshnessPolicy, approvedAt });
   verifyCurrentCapitalPublicRouteMapDocument(
     canonicalPack,
     publicRouteMapSuccessor,
@@ -252,8 +276,8 @@ export function buildTransferRegistrationOutputs({ observation, receipt, metrics
   );
   const snapshot = registerSeoulTransferSourceSnapshot({ observation, receipt, metrics, metricsBytes, applicability, applicabilityBytes, now: new Date(approvedAt) });
   const source = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
-  if (!source || source.requiredForProductionPack !== false || candidate?.sourceSnapshots?.length !== CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS.length
-    || scope?.productionSourceSet?.requiredSourceIds?.includes(SOURCE_ID)) throw new Error("transfer registration pre-operation state mismatch");
+  if (!source || source.requiredForProductionPack !== false || candidate?.sourceSnapshots?.length !== requiredSourceIds.length
+    || requiredSourceIds.includes(SOURCE_ID)) throw new Error("transfer registration pre-operation state mismatch");
   const snapshotRelative = `tools/datapack/sources/${snapshot.snapshotId}.json`;
   const snapshotBytes = jsonBytes(snapshot);
   const admission = {
@@ -293,7 +317,11 @@ export function buildTransferRegistrationOutputs({ observation, receipt, metrics
     freshnessExpiresAt: ledgerRow.freshnessExpiresAt, rawRetentionExpiresAt: ledgerRow.rawRetentionExpiresAt,
     governancePolicyVersion: ledgerRow.governancePolicyVersion, governancePolicySha256: ledgerRow.governancePolicySha256,
   };
-  const nextCandidate = appendTransferCandidateSourceSnapshot({ candidateBuildSpec: candidate, transferSnapshot: ledgerRow, transferProjection: projection });
+  const nextScope = structuredClone(scope);
+  nextScope.productionSourceSet.requiredSourceIds.push(SOURCE_ID);
+  nextScope.productionSourceSet.optionalAccessibilitySourceIds = nextScope.productionSourceSet.optionalAccessibilitySourceIds.filter((id) => id !== SOURCE_ID);
+  nextScope.productionSourceSet.excludedFromV1SupportClaims = nextScope.productionSourceSet.excludedFromV1SupportClaims.filter((id) => id !== SOURCE_ID);
+  const nextCandidate = appendTransferCandidateSourceSnapshot({ candidateBuildSpec: candidate, transferSnapshot: ledgerRow, transferProjection: projection, productionScopeBytes: jsonBytes(nextScope) });
   const nextSelectedIds = new Set(nextCandidate.sourceSnapshotIds);
   const nextSelectedInLedgerOrder = nextLedger.filter(({ snapshotId }) => nextSelectedIds.has(snapshotId));
   if (nextSelectedIds.size !== nextCandidate.sourceSnapshotIds.length || nextSelectedInLedgerOrder.length !== nextCandidate.sourceSnapshotIds.length) throw new Error("candidate source ledger binding mismatch");
@@ -301,10 +329,6 @@ export function buildTransferRegistrationOutputs({ observation, receipt, metrics
   nextCandidate.sourceInventorySha256 = sha(Buffer.from(JSON.stringify(nextInventory)));
   nextCandidate.networkEdgeEvidence.sourceInventory.sha256 = sha(inventoryBytes);
   if (!Buffer.isBuffer(scopeBytes) || !Buffer.isBuffer(ledgerInputBytes) || !Buffer.isBuffer(candidateInputBytes)) throw new Error("transfer prestate byte binding mismatch");
-  const nextScope = structuredClone(scope);
-  nextScope.productionSourceSet.requiredSourceIds.push(SOURCE_ID);
-  nextScope.productionSourceSet.optionalAccessibilitySourceIds = nextScope.productionSourceSet.optionalAccessibilitySourceIds.filter((id) => id !== SOURCE_ID);
-  nextScope.productionSourceSet.excludedFromV1SupportClaims = nextScope.productionSourceSet.excludedFromV1SupportClaims.filter((id) => id !== SOURCE_ID);
   return [
     { relative: snapshotRelative, bytes: snapshotBytes, prestateBytes: null }, { relative: "tools/datapack/source-inventory.json", bytes: inventoryBytes, prestateBytes: inventoryInputBytes },
     { relative: "release/product-gates/production-datapack-scope.json", bytes: jsonBytes(nextScope), prestateBytes: scopeBytes },

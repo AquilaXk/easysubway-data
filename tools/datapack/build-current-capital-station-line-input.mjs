@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-current-capital-facility-source-admission.mjs";
-import { canonicalCurrentExitAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
+import { canonicalCurrentExitReboundAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
 import { canonicalExitPathAdmissionJson } from "./build-exit-path-admission.mjs";
 import { CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_KIND, verifyCurrentCapitalLiveChainFanInComponents } from "./build-current-capital-live-chain-boundary.mjs";
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
@@ -338,7 +338,7 @@ export function buildAuthenticatedCurrentCapitalFacilityEvidenceRows({
 
 function validateExit(input, stationLines, candidate, evidenceSourceSetSha256) {
   const receipt = input.exitReceipt;
-  if (canonicalCurrentExitAdmissionOciReceiptJson(receipt) !== canonicalJson(receipt)
+  if (canonicalCurrentExitReboundAdmissionOciReceiptJson(receipt) !== canonicalJson(receipt)
     || sha256(input.exitNormalizedBytes) !== receipt.normalizedSnapshotSha256 || sha256(input.exitAdmissionBytes) !== receipt.admissionSha256) throw new Error("full-capital EXIT receipt binding mismatch");
   if (canonicalExitPathAdmissionJson(input.exitAdmission) !== input.exitAdmissionBytes.toString("utf8") || input.exitAdmission.admissionDigest !== receipt.admissionDigest || input.exitAdmission.schemaVersion !== 2 || input.exitAdmission.decision !== "GO") throw new Error("full-capital EXIT admission binding mismatch");
   const normalized = input.exitNormalized;
@@ -415,7 +415,8 @@ export function buildValidatedCurrentCapitalTransferEvidenceRows({
   }
   if (metrics?.artifactKind !== "current-transfer-topology-metrics" || !Array.isArray(metrics?.physicalPairs) || !Array.isArray(metrics?.metrics)
     || metrics.physicalPairs.length === 0 || metrics.metrics.length === 0
-    || metrics.metrics.some(({ durationRole, distanceMeters, officialDurationSecondsReference }) => durationRole !== "REFERENCE_ONLY" || !Number.isSafeInteger(distanceMeters) || distanceMeters <= 0 || !Number.isSafeInteger(officialDurationSecondsReference) || officialDurationSecondsReference <= 0)
+    || metrics.metrics.some(({ durationRole, distanceMeters, metricProvenance, officialDurationSecondsReference }) => durationRole !== "REFERENCE_ONLY" || !Number.isSafeInteger(distanceMeters) || distanceMeters <= 0 || !Number.isSafeInteger(officialDurationSecondsReference) || officialDurationSecondsReference <= 0
+      || !["OFFICIAL_SOURCE", "DERIVED_RECIPROCAL"].includes(metricProvenance))
     || metrics.artifactSha256 !== sha256(canonicalJson(without(metrics, "artifactSha256")))) throw new Error("full-capital TRANSFER metrics mismatch");
   const stationLineKeys = new Set(stationLines.map(key));
   const expectedDirections = new Set();
@@ -434,10 +435,13 @@ export function buildValidatedCurrentCapitalTransferEvidenceRows({
     || canonicalJson(applicability.sourceIdentity) !== canonicalJson(metrics.sourceIdentity) || applicability.transferTopologyMetricsIdentity?.artifactSha256 !== metrics.artifactSha256) throw new Error("full-capital TRANSFER applicability mismatch");
   const source = exactlyOne(inventory?.sources ?? [], ({ id }) => id === "seoul-metro-transfer-distance-duration", "transfer source inventory");
   const admission = source.transferAdmissionEvidence;
+  const officialMetricCount = metrics.metrics.filter(({ metricProvenance }) => metricProvenance === "OFFICIAL_SOURCE").length;
+  const derivedReciprocalMetricCount = metrics.metrics.length - officialMetricCount;
   if (source.requiredForProductionPack !== true || admission?.decision !== "APPROVED" || admission.metricsArtifactSha256 !== metrics.artifactSha256 || admission.applicabilityArtifactSha256 !== applicability.artifactSha256
     || admission.physicalPairCount !== metrics.physicalPairs.length || admission.directedMetricCount !== metrics.metrics.length
-    || admission.officialMetricCount !== metrics.metrics.filter(({ metricProvenance }) => metricProvenance === "OFFICIAL_SOURCE").length
-    || admission.derivedReciprocalMetricCount !== metrics.metrics.filter(({ metricProvenance }) => metricProvenance === "DERIVED_RECIPROCAL").length
+    || admission.officialMetricCount !== officialMetricCount
+    || admission.derivedReciprocalMetricCount !== derivedReciprocalMetricCount
+    || admission.officialMetricCount + admission.derivedReciprocalMetricCount !== admission.directedMetricCount
     || admission.durationRole !== "REFERENCE_ONLY") throw new Error("full-capital TRANSFER admission mismatch");
   const cells = indexExact(applicability.cells, stationLines, "TRANSFER applicability");
   const endpoints = new Set(metrics.metrics.flatMap(({ stationId, fromLineId, toLineId }) => [`${stationId}\0${fromLineId}`, `${stationId}\0${toLineId}`]));

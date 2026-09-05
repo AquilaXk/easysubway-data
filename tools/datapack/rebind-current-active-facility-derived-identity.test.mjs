@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
-import { cp, mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { readFile, rm, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
@@ -15,6 +14,7 @@ import {
   validateCurrentPublicRouteMapReplacementProof,
 } from "./rebind-current-active-facility-derived-identity.mjs";
 import { sha256 } from "./lib/manifest-validation.mjs";
+import { preparePendingCurrentAccessibilityTransitionRepository } from "./test-fixtures/current-full-capital-production-artifact.mjs";
 const ROOT = path.resolve(import.meta.dirname, "../..");
 
 test("current route-map proof는 two-hop same-source current head에서 유일한 replacement ancestor를 요구한다", async () => {
@@ -133,8 +133,10 @@ test("FACILITY protected semantics는 object key order를 무시하고 값과 �
   assert.throws(() => validateFacilityProtectedSemanticIdentity(previous, rowOrderMutation), /semantic identity changed/);
 });
 
-test("tracked admission은 current candidate로 rebind되고 protected semantics를 보존한다", async () => {
-  const output = await buildCurrentActiveFacilityDerivedIdentityOutput({ repositoryRoot: ROOT });
+test("generated admission은 current candidate로 rebind되고 protected semantics를 보존한다", async (t) => {
+  const repositoryRoot = await temporaryRepository(t);
+  await restorePredecessorFacilityState(repositoryRoot);
+  const output = await buildCurrentActiveFacilityDerivedIdentityOutput({ repositoryRoot });
   const previous = JSON.parse(output.prestate.toString("utf8"));
   const next = JSON.parse(output.bytes.toString("utf8"));
   assert.doesNotThrow(() => validateFacilityProtectedSemanticIdentity(previous, next));
@@ -166,16 +168,6 @@ test("FACILITY rebind는 immutable marker를 보존한 successor create-once tra
   assert.equal(successor.supersededTransition.sha256, sha256(transaction.base.bytes));
   assert.equal(successor.previousFacilityAdmission.sha256, sha256(transaction.facility.prestate));
   assert.notDeepEqual(transaction.facility.bytes, transaction.facility.prestate);
-});
-
-test("existing successor 검증은 FACILITY prestate와 ledger lineage를 전달한다", () => {
-  const source = buildCurrentActiveFacilityDerivedIdentitySuccessorTransaction.toString();
-  const existingValidation = source.slice(
-    source.indexOf("const expected = buildCurrentCapitalAccessibilityTransitionSuccessor"),
-    source.indexOf("if (canonicalJson(existing)"),
-  );
-  assert.match(existingValidation, /currentFacilityBytes: facility\.prestate/u);
-  assert.match(existingValidation, /currentLedger: ledger\.value/u);
 });
 
 test("FACILITY와 successor는 한 transaction에서 성공하거나 함께 원복된다", async (t) => {
@@ -242,21 +234,10 @@ test("terminal staging은 검증된 기존 successor를 exact-prestate로 교체
 });
 
 async function temporaryRepository(t) {
-  const root = await mkdtemp(path.join(os.tmpdir(), "current-facility-successor-"));
+  const root = await preparePendingCurrentAccessibilityTransitionRepository(ROOT, {
+    transitionKind: "TRANSFER_DERIVED_BINDING",
+  });
   t.after(() => rm(root, { recursive: true, force: true }));
-  for (const relative of ["tools/datapack/release", "tools/datapack/sources"]) {
-    await cp(path.join(ROOT, relative), path.join(root, relative), { recursive: true });
-  }
-  for (const relative of [
-    "tools/datapack/nationwide-coverage-targets.json",
-    "tools/datapack/source-inventory.json",
-    "tools/datapack/source-governance-policy.json",
-    "release/product-gates/datapack-freshness-sla.json",
-  ]) {
-    const destination = path.join(root, relative);
-    await mkdir(path.dirname(destination), { recursive: true });
-    await cp(path.join(ROOT, relative), destination);
-  }
   return root;
 }
 

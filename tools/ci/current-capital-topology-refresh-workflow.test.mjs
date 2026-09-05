@@ -39,6 +39,7 @@ test("an exact empty claim is reused without creating another claim", () => {
   const create = stepBody("Create durable claim before provider access");
   const reuse = stepBody("Reuse an exact empty claim after provider failure");
   const collect = stepBody("Collect each official current topology input once");
+  const commit = stepBody("Commit exactly four or five immutable current topology inputs");
   assert.match(preflight, /steps\.decision\.outputs\.state == 'REUSE_CLAIM'/);
   assert.doesNotMatch(create, /REUSE_CLAIM/);
   assert.match(reuse, /steps\.decision\.outputs\.state == 'REUSE_CLAIM'/);
@@ -49,6 +50,7 @@ test("an exact empty claim is reused without creating another claim", () => {
   assert.match(reuse, /TOPOLOGY_BRANCH/);
   assert.match(reuse, /TOPOLOGY_MAIN_SHA/);
   assert.match(collect, /steps\.decision\.outputs\.state == 'REUSE_CLAIM'/);
+  assert.match(commit, /git config user\.name "github-actions\[bot\]"[\s\S]*git config user\.email "41898282\+github-actions\[bot\]@users\.noreply\.github\.com"[\s\S]*git commit -m "Register current topology inputs"/);
 });
 test("pending full fan-in cannot reach a topology side effect", () => {
   const effectSteps = [

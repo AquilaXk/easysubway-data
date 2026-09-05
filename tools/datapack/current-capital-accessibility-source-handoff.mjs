@@ -697,6 +697,7 @@ export async function stageCurrentCapitalTerminalAccessibilitySources({
     snapshots: "tools/datapack/release/source-snapshots.json",
     governance: "tools/datapack/source-governance-policy.json",
     freshness: "release/product-gates/datapack-freshness-sla.json",
+    productionScope: "release/product-gates/production-datapack-scope.json",
     canonical: "tools/datapack/release/capital-production-canonical-pack.json",
   };
   const release = Object.fromEntries(await Promise.all(Object.entries(releasePaths).map(async ([key, relative]) => [key, await regularBytes(prepared, relative, `prepared ${key}`)])));
@@ -710,6 +711,7 @@ export async function stageCurrentCapitalTerminalAccessibilitySources({
     canonicalPackBytes: release.canonical,
     snapshotBytes: selectedKric.snapshotBytes,
     candidateBuildSpec: candidate,
+    productionScopeBytes: release.productionScope,
     sourceInventoryBytes: release.inventory,
     sourceSnapshots: parseJson(release.snapshots, "prepared source ledger"),
     governancePolicy: parseJson(release.governance, "prepared governance policy"),

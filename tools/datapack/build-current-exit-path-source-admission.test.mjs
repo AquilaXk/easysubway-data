@@ -15,6 +15,7 @@ import {
   buildCurrentKricExitCollectionReceipt,
 } from "./build-current-kric-exit-collection-receipt.mjs";
 import { canonicalExitPathAdmissionJson } from "./build-exit-path-admission.mjs";
+import { canonicalCurrentExitReboundAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
 import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
 import { buildCurrentCapitalFacilitySourceAdmission } from "./build-current-capital-facility-source-admission.mjs";
 import { collectKricAccessibilitySnapshots } from "./collect-kric-accessibility-snapshots.mjs";
@@ -97,31 +98,29 @@ test("current EXIT admission rejects a selected TRANSFER that is not terminal", 
 });
 
 test("tracked current EXIT handoff는 exact immutable snapshot과 GO admission을 고정한다", async () => {
-  const [normalizedBytes, admissionBytes] = await Promise.all([
-    readFile(new URL("./release/current-exit-admission/exit-path-normalized-source-snapshot.json", import.meta.url)),
-    readFile(new URL("./release/current-exit-admission/exit-path-source-admission.json", import.meta.url)),
+  const [normalizedBytes, admissionBytes, receiptBytes] = await Promise.all([
+    readFile(new URL("./release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json", import.meta.url)),
+    readFile(new URL("./release/current-exit-admission-v2/exit-path-source-admission.json", import.meta.url)),
+    readFile(new URL("./release/current-exit-admission-v2/exit-path-admission-oci-receipt.json", import.meta.url)),
   ]);
-  assert.equal(sha256(normalizedBytes), "aff6a382042e8cd6d493f1c7a89d3496242f7c04b67dfaf81bc6d0eacd4c176f");
-  assert.equal(sha256(admissionBytes), "965decb43a399958f41eaa6a0144da20d04f49c791a822eaf62b8e99c0386d4b");
   const normalized = JSON.parse(normalizedBytes);
   const admission = JSON.parse(admissionBytes);
-  assert.equal(normalized.providerSnapshotIdentity.snapshotDigest,
-    "68cdeac2b478a651eb3ea428dd6be5c0ea0a7462e5cba853d9308d6fa96bfb13");
-  assert.equal(normalized.providerSnapshotIdentity.rawSha256,
-    "6eeb132847590f702babffdc22c7ed8188efa560ad42b78623e258ca79420bbd");
-  assert.equal(admission.admissionDigest,
-    "d64f812b5e35680886e9377eda33e6fbabf1530c4da8b6f933b1204149a61f4c");
+  const receipt = JSON.parse(receiptBytes);
+  assert.equal(normalized.schemaVersion, 4);
+  assert.equal(admission.schemaVersion, 2);
+  assert.equal(receipt.schemaVersion, 2);
   assert.equal(admission.decision, "GO");
-  assert.deepEqual(admission.stateSummary, {
-    ADMITTED_EXIT_PATH: 2,
-    ADMITTED_VERIFIED_ABSENCE: 0,
-    BLOCKED_WITH_EVIDENCE: 0,
-    MISSING: 0,
-    STALE: 0,
-    UNKNOWN: 0,
-  });
+  const derivedStateSummary = Object.fromEntries(Object.keys(admission.stateSummary).map((state) => [
+    state,
+    admission.cells.filter((cell) => cell.state === state).length,
+  ]));
+  assert.deepEqual(admission.stateSummary, derivedStateSummary);
   assert.equal(admission.sourceIdentity.rawSha256, sha256(normalizedBytes));
+  assert.equal(receipt.normalizedSnapshotSha256, sha256(normalizedBytes));
+  assert.equal(receipt.admissionSha256, sha256(admissionBytes));
+  assert.equal(receipt.admissionDigest, admission.admissionDigest);
   assert.equal(canonicalExitPathAdmissionJson(admission), admissionBytes.toString("utf8"));
+  assert.equal(`${canonicalCurrentExitReboundAdmissionOciReceiptJson(receipt)}\n`, receiptBytes.toString("utf8"));
 });
 
 test("positive observation이 없는 provider no-data station-line은 terminal blocked로 닫는다", async () => {
@@ -432,9 +431,9 @@ async function fullBundleFixture() {
 }
 
 async function fullCapitalFixture() {
-  const [canonicalPackBytes, coverageTargetsBytes, providerCodeCatalogBytes, routeRostersBytes, inventoryBytes, governancePolicyBytes, freshnessPolicyBytes, productionSnapshotsBytes, productionSpecBytes] = await Promise.all([
+  const [canonicalPackBytes, coverageTargetsBytes, providerCodeCatalogBytes, routeRostersBytes, inventoryBytes, governancePolicyBytes, freshnessPolicyBytes, productionScopeBytes, productionSnapshotsBytes, productionSpecBytes] = await Promise.all([
     "release/capital-production-canonical-pack.json", "nationwide-coverage-targets.json", "sources/kric-provider-code-catalog-20260228.json",
-    "sources/kric-nationwide-route-rosters-20260730T203926676Z.json", "source-inventory.json", "source-governance-policy.json", "../../release/product-gates/datapack-freshness-sla.json", "release/source-snapshots.json", "release/candidate-build-spec.json",
+    "sources/kric-nationwide-route-rosters-20260730T203926676Z.json", "source-inventory.json", "source-governance-policy.json", "../../release/product-gates/datapack-freshness-sla.json", "../../release/product-gates/production-datapack-scope.json", "release/source-snapshots.json", "release/candidate-build-spec.json",
   ].map((name) => readFile(path.join(name.startsWith("sources/kric-") ? SOURCE_ROOT : CURRENT_DATAPACK_ROOT, name))));
   const facilityPlan = buildCurrentCapitalFacilityCollectionPlan({ canonicalPackBytes, coverageTargetsBytes, providerCodeCatalogBytes, routeRostersBytes, sourceInventoryBytes: inventoryBytes });
   const roster = facilityPlan.stationLineProviderMappings.map((entry) => ({ stationId: entry.stationId, lineId: entry.lineId, railOprIsttCd: entry.providerOperatorId, lnCd: entry.providerLineId, stinCd: entry.providerStationId, canonicalMappings: [{ artifactId: "fixture", stationId: entry.stationId, lineId: entry.lineId }] }));
@@ -475,7 +474,7 @@ async function fullCapitalFixture() {
   const selectedInLedgerOrder = sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
   const projection = (entry) => deriveReleaseProjection({ snapshot: entry, sourceInventory: inventory, governancePolicy, governancePolicyBytes, freshnessPolicy, nowMillis: Date.parse(successorObservedAt) });
   const candidateBuildSpec = { ...productionSpec, candidateId: "fixture", sourceSnapshotIds: selected.map(({ snapshotId }) => snapshotId), sourceSnapshots: selected.map(projection), sourceSnapshotSetHash: sha256(JSON.stringify(selectedInLedgerOrder)), sourceInventorySha256: sha256(Buffer.from(JSON.stringify(inventory))), networkEdgeEvidence: { sourceInventory: { path: "tools/datapack/source-inventory.json", sha256: sha256(Buffer.from(JSON.stringify(inventory))) } } };
-  const facilityAdmission = buildCurrentCapitalFacilitySourceAdmission({ planBytes: Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(facilityPlan)), canonicalPackBytes, snapshotBytes, candidateBuildSpec, candidateEvaluationAt: candidateBuildSpec.publishedAt, sourceInventoryBytes: Buffer.from(JSON.stringify(inventory)), sourceSnapshots, governancePolicy, governancePolicyBytes, freshnessPolicy, observedAt: successorObservedAt });
+  const facilityAdmission = buildCurrentCapitalFacilitySourceAdmission({ planBytes: Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(facilityPlan)), canonicalPackBytes, snapshotBytes, candidateBuildSpec, candidateEvaluationAt: candidateBuildSpec.publishedAt, productionScopeBytes, sourceInventoryBytes: Buffer.from(JSON.stringify(inventory)), sourceSnapshots, governancePolicy, governancePolicyBytes, freshnessPolicy, observedAt: successorObservedAt });
   return { bundle: await fullBundleFixture(), candidateBuildSpec, facilityAdmission, inventory, ledger, sourceSnapshots, successorObservedAt };
 }
 

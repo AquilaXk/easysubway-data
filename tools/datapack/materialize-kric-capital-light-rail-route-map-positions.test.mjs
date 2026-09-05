@@ -267,6 +267,28 @@ test("dual-operator 노선은 카탈로그 등재 집합과 정본이 같을 때
   }
 });
 
+test("current geometry successors are consumed with their immutable identity", async () => {
+  const inventory = await readJson("tools/datapack/source-inventory.json");
+  const schematicCanvas = await readJson("tools/route-map/route-map-defs/easy-subway-sma-v4-geometry.json");
+  let fixture = await readJson("tools/datapack/release/capital-production-reviewed-pack.json");
+  for (const line of listCapitalLightRailRouteMapPositionLines().filter(({ geometryLine }) => geometryLine)) {
+    const source = inventory.sources.find(({ id }) => id === line.sourceId);
+    const evidence = source.routeMapAdmissionEvidence;
+    const bytes = await readFile(path.join(root, evidence.snapshotPath));
+    const snapshot = JSON.parse(bytes);
+    const topologySnapshot = await readJson(`tools/datapack/sources/${evidence.topologySnapshotId}.json`);
+    fixture = materializeCapitalLightRailRouteMapPositions({
+      baseFixture: fixture, snapshot,
+      snapshotSha256: createHash("sha256").update(bytes).digest("hex"),
+      topologySnapshot, schematicCanvas, inventory, now: new Date(snapshot.capturedAt),
+    });
+    const rows = fixture.packs[0].routeMapPositions.filter(({ sourceId }) => sourceId === source.id);
+    assert.deepEqual(rows.map(({ stationId }) => stationId).sort(), snapshot.positions.map(({ stationId }) => stationId).sort());
+    assert.ok(rows.every(({ sourceSnapshotId }) => sourceSnapshotId === evidence.snapshotId));
+    assert.equal(fixture.packs[0].version, snapshot.capturedAt.slice(0, 10).replaceAll("-", ""));
+  }
+});
+
 test("5노선 inventory evidence·snapshot byte identity가 모두 맞물린다", async () => {
   const inventory = await readJson("tools/datapack/source-inventory.json");
   for (const line of listCapitalLightRailRouteMapPositionLines()) {

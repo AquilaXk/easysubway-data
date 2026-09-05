@@ -2675,6 +2675,7 @@ async function prepareReleaseEvidenceRoot(temporaryRoot, spec, {
   for (const relativePath of [
     "tools/datapack/source-governance-policy.json",
     "release/product-gates/datapack-freshness-sla.json",
+    "release/product-gates/production-datapack-scope.json",
   ]) {
     await writeTempFile(
       temporaryRoot,
@@ -3050,6 +3051,7 @@ export async function generateCurrentCapitalTopologyRefresh({
       ),
     ]);
     await prepareReleaseEvidenceRoot(temporaryRoot, primary.spec, {
+      repositoryRoot: repositoryPath,
       readMutableInput,
       topologyEvidenceBytes: approvedItxBootstrap ? currentItxTopologyEvidenceBytes : null,
     });

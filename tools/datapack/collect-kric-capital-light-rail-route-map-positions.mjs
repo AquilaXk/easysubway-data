@@ -27,6 +27,24 @@ const ARTIFACT_KIND = "capital-light-rail-route-map-positions-snapshot";
 const TOPOLOGY_SOURCE_ID = "capital-route-topology";
 const SCHEMATIC_CANVAS_SOURCE_ID = "owner-self-drawn-sma-schematic";
 const FIELDS_PROVIDED = Object.freeze(["route_map_position", "route_map_label_polygon"]);
+const SUCCESSOR_SNAPSHOT_FIELDS = Object.freeze([
+  "stationCount",
+  "rawStationCount",
+  "quarantinedCount",
+  "rawSha256",
+  "positionsSha256",
+  "schematicGeometrySha256",
+  "lineIds",
+  "lineStationCounts",
+  "topologySourceId",
+  "topologySnapshotId",
+  "topologyContentSha256",
+  "topologyLineages",
+]);
+const SUCCESSOR_COVERAGE = "Official route-map position data joined to approved schematic geometry; geographic projection is not used.";
+const SUCCESSOR_COVERAGE_LIMITATIONS = Object.freeze([
+  "Official route-map position data is limited to the admitted line and approved schematic geometry.",
+]);
 const OFFICIAL_MISSING_LATLON = "OFFICIAL_MISSING_LATLON";
 const OFFICIAL_MISSING_FILE_ROW = "OFFICIAL_MISSING_FILE_ROW";
 const ISSUE = 2505;
@@ -568,6 +586,90 @@ export function collectCapitalLightRailRouteMapPositions({
   return validateCapitalLightRailRouteMapPositionsSnapshot(snapshot, {
     schematicCanvas: schematicCanvas?.stationNodes ? schematicCanvas : null,
   });
+}
+
+export function buildCapitalLightRailRouteMapSuccessor({
+  source,
+  candidate,
+  previousSnapshotBytes,
+  csvBytes,
+  overlayCsvBytes = null,
+  topologySnapshot,
+  topologySnapshotId,
+  schematicCanvas,
+  canonicalStationIdentities,
+} = {}) {
+  const sourceId = source?.id;
+  const line = LINE_BY_SOURCE_ID.get(sourceId);
+  if (!line?.geometryLine) {
+    throw new Error("capital light-rail successor requires a cataloged owner geometry line");
+  }
+  if (candidate?.id !== sourceId) {
+    throw new Error("capital light-rail successor source and candidate identities must match");
+  }
+  if (!(previousSnapshotBytes instanceof Uint8Array) || previousSnapshotBytes.byteLength === 0) {
+    throw new Error(`${sourceId} retained admitted snapshot bytes are required`);
+  }
+  const evidence = source.routeMapAdmissionEvidence;
+  if (sha256(Buffer.from(previousSnapshotBytes)) !== evidence?.snapshotSha256) {
+    throw new Error(`${sourceId} retained admitted snapshot byte identity mismatch`);
+  }
+  let previousSnapshot;
+  try {
+    previousSnapshot = JSON.parse(Buffer.from(previousSnapshotBytes).toString("utf8"));
+  } catch {
+    throw new Error(`${sourceId} retained admitted snapshot JSON is invalid`);
+  }
+  if (previousSnapshot?.sourceId !== sourceId) {
+    throw new Error(`${sourceId} retained admitted snapshot source identity mismatch`);
+  }
+  const currentTopology = evidence?.currentTopologyAdmission;
+  if (currentTopology?.topologySnapshotId !== topologySnapshotId
+    || currentTopology?.topologyContentSha256 !== topologySnapshot?.contentSha256
+    || currentTopology?.positionSnapshotSha256 !== evidence?.snapshotSha256) {
+    throw new Error(`${sourceId} current topology admission binding mismatch`);
+  }
+  const snapshot = collectCapitalLightRailRouteMapPositions({
+    sourceId,
+    csvBytes,
+    overlayCsvBytes,
+    topologySnapshot,
+    topologySnapshotId,
+    schematicCanvas,
+    previousSnapshot,
+    canonicalStationIdentities,
+  });
+  for (const field of ["rawSha256", "observedDataUpdatedAt", "capturedAt"]) {
+    if (snapshot[field] !== previousSnapshot[field]) {
+      throw new Error(`${sourceId} retained admitted snapshot ${field} drift`);
+    }
+  }
+  if (JSON.stringify(snapshot.license) !== JSON.stringify(previousSnapshot.license)) {
+    throw new Error(`${sourceId} retained admitted snapshot license drift`);
+  }
+  const bytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
+  const snapshotSha256 = sha256(bytes);
+  const snapshotId = `${sourceId}-${snapshotSha256}`;
+  const snapshotPath = `tools/datapack/sources/${snapshotId}.json`;
+  const successorSource = structuredClone(source);
+  const successorCandidate = structuredClone(candidate);
+  const sourceEvidence = successorSource.routeMapAdmissionEvidence;
+  for (const field of SUCCESSOR_SNAPSHOT_FIELDS) sourceEvidence[field] = structuredClone(snapshot[field]);
+  Object.assign(sourceEvidence, { snapshotId, snapshotPath, snapshotSha256 });
+  sourceEvidence.currentTopologyAdmission.positionSnapshotSha256 = snapshotSha256;
+  successorSource.coverage = SUCCESSOR_COVERAGE;
+  const candidateEvidence = successorCandidate.evidence;
+  for (const field of SUCCESSOR_SNAPSHOT_FIELDS) candidateEvidence[field] = structuredClone(snapshot[field]);
+  Object.assign(candidateEvidence, { evidenceArtifact: snapshotPath });
+  candidateEvidence.coverageLimitations = [...SUCCESSOR_COVERAGE_LIMITATIONS];
+  return {
+    snapshot: structuredClone(snapshot),
+    bytes,
+    snapshotId,
+    snapshotPath,
+    source: successorSource,
+    candidate: successorCandidate,
+  };
 }
 
 export function validateCapitalLightRailRouteMapPositionsSnapshot(snapshot, { schematicCanvas = null } = {}) {

@@ -38,6 +38,7 @@ import {
 import { activateCurrentIncheonSourceAdmissions } from "./activate-current-source-set.mjs";
 import { retainPreAuthorityRideEdges } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
+import { buildCurrentCapitalStationLineInput } from "./build-current-capital-station-line-input.mjs";
 import {
   buildCurrentCapitalAccessibilityTransition,
   canonicalCurrentCapitalAccessibilityTransitionJson,
@@ -46,6 +47,7 @@ import {
   materializeCurrentFanInCandidateArtifact,
   prepareCurrentFullCapitalProductionRepository,
 } from "./test-fixtures/current-full-capital-production-artifact.mjs";
+import { buildCurrentCapitalStationLineInputFixture } from "./test-fixtures/current-capital-station-line-input.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -241,6 +243,7 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   await mkdir(path.dirname(previousPath), { recursive: true });
   await writeFile(previousPath, previousBytes);
   const transition = buildCurrentCapitalAccessibilityTransition({
+    productionScopeBytes: await readFile(path.join(directory, "release/product-gates/production-datapack-scope.json")),
     candidate: JSON.parse(transitionBytes.candidate),
     candidateBytes: transitionBytes.candidate,
     previous: JSON.parse(previousBytes),
@@ -443,11 +446,10 @@ test("candidate build spec release identity는 wall clock과 workflow run number
 });
 
 test("candidate override accessibility freshness는 authority input identity와 earliest expiry에 결속된다", async () => {
-  const stationLineInputBytes = await readFile(path.join(
-    root,
-    "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
-  ));
-  const stationLineInput = JSON.parse(stationLineInputBytes);
+  const stationLineInput = buildCurrentCapitalStationLineInput(
+    await buildCurrentCapitalStationLineInputFixture(),
+  );
+  const stationLineInputBytes = Buffer.from(JSON.stringify(stationLineInput));
   const observedAt = new Date(Math.max(...stationLineInput.evidenceRows
     .map(({ capturedAt }) => Date.parse(capturedAt)))).toISOString();
   const materialization = materializeStationLineAccessibility({

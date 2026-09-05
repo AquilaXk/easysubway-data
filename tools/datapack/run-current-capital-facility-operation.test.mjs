@@ -30,6 +30,7 @@ const FIXTURE_INPUTS = [
   "tools/datapack/release/current-capital-facility-source-admission.json",
   "tools/datapack/source-inventory.json", "tools/datapack/source-governance-policy.json",
   "release/product-gates/datapack-freshness-sla.json", "tools/datapack/nationwide-coverage-targets.json",
+  "release/product-gates/production-datapack-scope.json",
   "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
   "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
 ];
@@ -57,9 +58,11 @@ async function selectedSourceHeadAt() {
   return basisAt;
 }
 
-function nextSnapshot(plan) {
+function nextSnapshot(plan, observationFreshUntil) {
   const operation = KRIC_ACCESSIBILITY_OPERATIONS.find(({ sourceId }) => sourceId === "kric-station-convenience-standard");
   const capturedAt = new Date(CURRENT_SOURCE_HEAD_AT + 60_000).toISOString();
+  const freshUntil = observationFreshUntil ?? new Date(Date.parse(capturedAt) + 24 * 60 * 60 * 1_000).toISOString();
+  assert.ok(Date.parse(freshUntil) > Date.parse(capturedAt));
   const mappings = [...plan.stationLineProviderMappings].sort((left, right) => {
     const identity = (mapping) => [mapping.providerOperatorId, mapping.providerLineId, mapping.providerStationId, mapping.stationId, mapping.lineId].join("\0");
     return identity(left) < identity(right) ? -1 : identity(left) > identity(right) ? 1 : 0;
@@ -77,7 +80,7 @@ function nextSnapshot(plan) {
   return {
     schemaVersion: 1, artifactKind: "kric-accessibility-snapshot", sourceId: operation.sourceId,
     snapshotId: `kric-station-convenience-standard-${capturedAt.replaceAll(/[-:.]/g, "")}`, capturedAt, observedAt: capturedAt,
-    freshUntil: new Date(Date.parse(capturedAt) + 24 * 60 * 60 * 1_000).toISOString(), credentialRedacted: true,
+    freshUntil, credentialRedacted: true,
     providerResultCode: "00", schemaStatus: "PASS", absenceEvidenceMode: "EXHAUSTIVE_LIST",
     queryCount: queries.length, rowCount: 0, rawSha256, contentSha256,
     schemaFingerprint: jsonSha([...operation.responseFields].sort()),
@@ -165,7 +168,7 @@ async function currentReleaseFixture(t) {
   return root;
 }
 
-async function finalizeFixture(t, { prepared = false } = {}) {
+async function finalizeFixture(t, { prepared = false, observationFreshUntil } = {}) {
   const root = await currentReleaseFixture(t);
   const operationRoot = await mkdtemp(path.join(tmpdir(), "facility-finalize-operation-"));
   t.after(() => rm(operationRoot, { recursive: true, force: true }));
@@ -175,7 +178,7 @@ async function finalizeFixture(t, { prepared = false } = {}) {
     load("tools/datapack/sources/kric-provider-code-catalog-20260228.json"), load("tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json"), load("tools/datapack/source-inventory.json"),
   ]);
   const plan = buildCurrentCapitalFacilityCollectionPlan({ canonicalPackBytes, coverageTargetsBytes, providerCodeCatalogBytes, routeRostersBytes, sourceInventoryBytes });
-  const snapshot = nextSnapshot(plan); const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot, null, 2)}\n`);
+  const snapshot = nextSnapshot(plan, observationFreshUntil); const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot, null, 2)}\n`);
   const snapshotsPath = path.join(root, "tools/datapack/release/source-snapshots.json"); const inventoryPath = path.join(root, "tools/datapack/source-inventory.json");
   const snapshots = JSON.parse(await readFile(snapshotsPath, "utf8")); const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
   const candidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
@@ -232,8 +235,8 @@ function receipt(fixture) {
   };
 }
 
-async function publishedRecoveryFixture(t) {
-  const source = await finalizeFixture(t);
+async function publishedRecoveryFixture(t, options) {
+  const source = await finalizeFixture(t, options);
   const sourceReceipt = receipt(source);
   const receiptBytes = Buffer.from(`${JSON.stringify(sourceReceipt, null, 2)}\n`);
   await writeFile(path.join(source.operationRoot, "receipt.json"), receiptBytes);
@@ -273,11 +276,11 @@ async function finalizedPublishedRecoveryFixture(t) {
 
 async function admissionFor({ root, operationRoot, snapshot }) {
   const read = (relative) => readFile(path.join(root, relative));
-  const [planBytes, canonicalPackBytes, snapshotBytes, candidateBytes, inventoryBytes, snapshotsBytes, governanceBytes, freshnessBytes] = await Promise.all([
-    read(path.relative(root, path.join(operationRoot, "plan.json"))), read("tools/datapack/release/capital-production-canonical-pack.json"), read(`tools/datapack/sources/${snapshot.snapshotId}.json`), read("tools/datapack/release/candidate-build-spec.json"), read("tools/datapack/source-inventory.json"), read("tools/datapack/release/source-snapshots.json"), read("tools/datapack/source-governance-policy.json"), read("release/product-gates/datapack-freshness-sla.json"),
+  const [planBytes, canonicalPackBytes, snapshotBytes, candidateBytes, inventoryBytes, snapshotsBytes, governanceBytes, freshnessBytes, productionScopeBytes] = await Promise.all([
+    read(path.relative(root, path.join(operationRoot, "plan.json"))), read("tools/datapack/release/capital-production-canonical-pack.json"), read(`tools/datapack/sources/${snapshot.snapshotId}.json`), read("tools/datapack/release/candidate-build-spec.json"), read("tools/datapack/source-inventory.json"), read("tools/datapack/release/source-snapshots.json"), read("tools/datapack/source-governance-policy.json"), read("release/product-gates/datapack-freshness-sla.json"), read("release/product-gates/production-datapack-scope.json"),
   ]);
   const candidateBuildSpec = JSON.parse(candidateBytes);
-  return buildCurrentCapitalFacilitySourceAdmission({ observedAt: NOW.toISOString(), candidateEvaluationAt: candidateBuildSpec.publishedAt, planBytes, canonicalPackBytes, snapshotBytes, candidateBuildSpec, sourceInventoryBytes: inventoryBytes, sourceSnapshots: JSON.parse(snapshotsBytes), governancePolicy: JSON.parse(governanceBytes), governancePolicyBytes: governanceBytes, freshnessPolicy: JSON.parse(freshnessBytes) });
+  return buildCurrentCapitalFacilitySourceAdmission({ observedAt: NOW.toISOString(), candidateEvaluationAt: candidateBuildSpec.publishedAt, planBytes, canonicalPackBytes, snapshotBytes, candidateBuildSpec, productionScopeBytes, sourceInventoryBytes: inventoryBytes, sourceSnapshots: JSON.parse(snapshotsBytes), governancePolicy: JSON.parse(governanceBytes), governancePolicyBytes: governanceBytes, freshnessPolicy: JSON.parse(freshnessBytes) });
 }
 
 test("collect records failure after COLLECTION_STARTED and never resumes a provider call", async (t) => {
@@ -306,6 +309,24 @@ test("collect journals a complete exact terminal observation as COLLECTED withou
   });
   assert.deepEqual(result, { snapshotId: nextSnapshot(plan).snapshotId, requestCount: plan.counts.providerTupleCount, status: "COLLECTED" });
   assert.equal(JSON.parse(await readFile(path.join(operationRoot, "journal.json"), "utf8")).phase, "COLLECTED");
+});
+
+test("collection preflight accepts the scope-bound expanded source set", async (t) => {
+  const repositoryRoot = await currentReleaseFixture(t);
+  const parent = await mkdtemp(path.join(tmpdir(), "facility-source-set-"));
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  const operationRoot = path.join(parent, "operation");
+  await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot,
+    expectedMainSha: EXACT_MAIN, expectedFacilityHeadSha: EXACT_MAIN,
+    execFileImpl: exactMainExec, now: NOW });
+  const reachedCollector = new Error("test collector boundary reached");
+  let calls = 0;
+  await assert.rejects(collectCurrentCapitalFacilityOperation({
+    repositoryRoot, operationRoot, serviceKey: "test", env: OCI_ENV,
+    now: NOW, execFileImpl: exactMainExec,
+    collectImpl: async () => { calls += 1; throw reachedCollector; },
+  }), (error) => error === reachedCollector);
+  assert.equal(calls, 1);
 });
 
 test("missing OCI PAR preflight stops before COLLECTION_STARTED and provider call 0", async (t) => {
@@ -355,8 +376,8 @@ test("missing KRIC_SERVICE_KEY leaves PREPARED before any claim", async (t) => {
   assert.equal(JSON.parse(await readFile(path.join(operationRoot, "journal.json"), "utf8")).phase, "PREPARED");
 });
 
-test("current release preflight requires the exact eight-source roster before a provider call", async (t) => {
-  const temporaryRoot = await mkdtemp(path.join(tmpdir(), "facility-eight-source-preflight-"));
+test("current release preflight rejects a missing required source before a provider call", async (t) => {
+  const temporaryRoot = await mkdtemp(path.join(tmpdir(), "facility-source-preflight-"));
   const operationRoot = path.join(temporaryRoot, "operation");
   t.after(() => rm(temporaryRoot, { recursive: true, force: true }));
   const repositoryRoot = await currentReleaseFixture(t);
@@ -364,7 +385,7 @@ test("current release preflight requires the exact eight-source roster before a 
   const candidatePath = path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json");
   const candidate = JSON.parse(await readFile(candidatePath, "utf8"));
   const incheonIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === "incheon-transit-accessibility");
-  assert.equal(incheonIndex, 6);
+  assert.notEqual(incheonIndex, -1);
   candidate.sourceSnapshots.splice(incheonIndex, 1);
   candidate.sourceSnapshotIds.splice(incheonIndex, 1);
   await writeJson(candidatePath, candidate);
@@ -373,7 +394,7 @@ test("current release preflight requires the exact eight-source roster before a 
   await assert.rejects(collectCurrentCapitalFacilityOperation({
     repositoryRoot, operationRoot, serviceKey: "test", env: OCI_ENV, execFileImpl: exactMainExec,
     collectImpl: async () => { providerCalls += 1; },
-  }), /candidate source ledger\/freshness binding mismatch/);
+  }), /candidate source set mismatch/);
   assert.equal(providerCalls, 0);
 });
 
@@ -658,7 +679,8 @@ test("retained FINALIZED publication recovery performs one OCI GET and reconstru
 });
 
 test("published recovery runs current release preflight and rejects an expired observation before target mutation", async (t) => {
-  const { source } = await publishedRecoveryFixture(t);
+  // 전체 candidate 시계를 전진시키지 않고 복구 대상만 만료 경계에 둔다.
+  const { source } = await publishedRecoveryFixture(t, { observationFreshUntil: NOW.toISOString() });
   const repositoryRoot = await currentReleaseFixture(t);
   const targetParent = await mkdtemp(path.join(tmpdir(), "facility-recovery-preflight-"));
   t.after(() => rm(targetParent, { recursive: true, force: true }));
@@ -694,7 +716,7 @@ test("published recovery runs current release preflight and rejects an expired o
     operationRoot: expiredObservation,
     sourceOperationRoot: source.operationRoot,
     execFileImpl: exactMainExec,
-    now: new Date(source.snapshot.freshUntil),
+    now: NOW,
   }), /published recovery observation is stale/u);
   await assertUnchanged(expiredObservation);
 });

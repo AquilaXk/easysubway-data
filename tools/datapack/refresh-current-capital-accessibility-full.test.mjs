@@ -13,7 +13,8 @@ import {
   refreshCurrentCapitalAccessibilityFull,
 } from "./refresh-current-capital-accessibility-full.mjs";
 import { buildAuthenticatedCurrentCapitalFacilityEvidenceRows } from "./build-current-capital-station-line-input.mjs";
-import { buildCurrentExitAdmissionOciReceipt, canonicalCurrentExitAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
+import { canonicalCurrentExitReboundAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
+import { buildFixtureCurrentExitV2Receipt } from "./test-fixtures/current-exit-v2-receipt.mjs";
 import { currentLiveChainTransferOutputPaths } from "./rebind-current-live-chain-transfer-derived-identities.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 import { activateSyntheticCurrentStaticNetworkSuccessors, nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
@@ -214,10 +215,11 @@ test("pending v2 marker accepts FACILITY next-eight and EXIT previous-seven befo
   assert.deepEqual(routeAfter.routeEdges, beforeRoute.routeEdges);
   assert.ok(stationAfter.evidenceRows.every((row) => row.candidateId === marker.nextCandidate.candidateId));
   assert.ok(stationAfter.evidenceRows.every((row) => row.sourceSetSha256 === marker.nextCandidate.sourceSnapshotSetHash));
-  assert.deepEqual(
-    stationAfter.evidenceRows.map(({ candidateId: _candidateId, sourceSetSha256: _sourceSetSha256, ...row }) => row),
-    beforeStation.evidenceRows.map(({ candidateId: _candidateId, sourceSetSha256: _sourceSetSha256, ...row }) => row),
-  );
+  const transitionDomains = new Set(["FACILITY", "EXIT"]);
+  const invariantEvidenceRows = (rows) => rows
+    .filter(({ domain }) => !transitionDomains.has(domain))
+    .map(({ candidateId: _candidateId, sourceSetSha256: _sourceSetSha256, ...row }) => row);
+  assert.deepEqual(invariantEvidenceRows(stationAfter.evidenceRows), invariantEvidenceRows(beforeStation.evidenceRows));
 
   const routePath = path.join(root, OUTPUTS[1]);
   const mutatedRoute = structuredClone(beforeRoute);
@@ -325,7 +327,7 @@ test("pending marker accepts only an exact authenticated TRANSFER evidence trans
 
 test("pending marker producer boundary distinguishes base prestates from effective evidence", async (t) => {
   const root = await actualPendingMarkerRepository(t);
-  const [baseMarker, effectiveMarker, candidate, facility, exit, station, route] = await Promise.all([
+  const [baseMarker, effectiveMarker, candidate, facility, exit, station, route, receiptBytes] = await Promise.all([
     readFile(path.join(root, TRANSITION)).then(JSON.parse),
     readFile(path.join(root, SUCCESSOR)).then(JSON.parse),
     readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json")).then(JSON.parse),
@@ -333,15 +335,10 @@ test("pending marker producer boundary distinguishes base prestates from effecti
     readFile(path.join(root, "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json")).then(JSON.parse),
     readFile(path.join(root, OUTPUTS[0])).then(JSON.parse),
     readFile(path.join(root, OUTPUTS[1])).then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json")),
   ]);
 
-  const currentSourceSetSha256 = "a".repeat(64);
-  const refreshedPredecessorSourceSetSha256 = "b".repeat(64);
-  candidate.sourceSnapshotSetHash = currentSourceSetSha256;
-  facility.candidate.sourceSnapshotSetHash = currentSourceSetSha256;
-  effectiveMarker.previousCandidate.candidateId = "capital-accessibility-20260902-refreshed-seven";
-  effectiveMarker.previousCandidate.sourceSnapshotSetHash = refreshedPredecessorSourceSetSha256;
-  exit.candidate.sourceSetSha256 = refreshedPredecessorSourceSetSha256;
+  const receipt = JSON.parse(receiptBytes);
   assert.notEqual(baseMarker.previousCandidate.candidateId, effectiveMarker.previousCandidate.candidateId);
   assert.notEqual(baseMarker.previousCandidate.sourceSnapshotSetHash, effectiveMarker.previousCandidate.sourceSnapshotSetHash);
   assert.equal(effectiveMarker.nextCandidate.candidateId, candidate.candidateId);
@@ -350,7 +347,55 @@ test("pending marker producer boundary distinguishes base prestates from effecti
   assert.equal(exit.candidate.sourceSetSha256, effectiveMarker.previousCandidate.sourceSnapshotSetHash);
   assert.equal(station.candidate.sourceSetSha256, baseMarker.previousCandidate.sourceSnapshotSetHash);
   assert.equal(route.candidate.sourceSetSha256, baseMarker.previousCandidate.sourceSnapshotSetHash);
+  assert.equal(
+    receiptBytes.toString("utf8"),
+    `${canonicalCurrentExitReboundAdmissionOciReceiptJson(receipt)}\n`,
+  );
   assertPendingMarkerProducerBoundary({ baseMarker, effectiveMarker, candidate, facility, exit, station, route });
+});
+
+test("terminal marker state selects exact producer prestate", async () => {
+  const previous = { candidateId: "previous", sourceSnapshotSetHash: "previous-hash" };
+  const next = { candidateId: "next", sourceSnapshotSetHash: "next-hash" };
+  const current = { ...next, sourceSnapshotSetHash: "current-hash" };
+  const effectivePrevious = { candidateId: "effective-previous", sourceSnapshotSetHash: "effective-previous-hash" };
+  const baseMarker = { previousCandidate: previous, nextCandidate: next };
+  const effectiveMarker = { previousCandidate: effectivePrevious, nextCandidate: current };
+  const boundary = {
+    baseMarker,
+    effectiveMarker,
+    candidate: current,
+    facility: { candidate: current },
+    exit: { candidate: { candidateId: next.candidateId, sourceSetSha256: effectivePrevious.sourceSnapshotSetHash } },
+    station: { candidate: { candidateId: next.candidateId, sourceSetSha256: next.sourceSnapshotSetHash } },
+    route: { candidate: { candidateId: next.candidateId, sourceSetSha256: next.sourceSnapshotSetHash } },
+  };
+
+  assert.doesNotThrow(() => assertPendingMarkerProducerBoundary({ ...boundary, markerState: "DERIVED_ABSENT" }));
+  assert.throws(() => assertPendingMarkerProducerBoundary({
+    ...boundary,
+    markerState: "DERIVED_ABSENT",
+    station: { candidate: { candidateId: previous.candidateId, sourceSetSha256: next.sourceSnapshotSetHash } },
+  }), /pending marker producer boundary mismatch/);
+  assert.throws(() => assertPendingMarkerProducerBoundary({
+    ...boundary,
+    markerState: "DERIVED_ABSENT",
+    route: { candidate: { candidateId: next.candidateId, sourceSetSha256: previous.sourceSnapshotSetHash } },
+  }), /pending marker producer boundary mismatch/);
+  assert.throws(() => assertPendingMarkerProducerBoundary({ markerState: "UNKNOWN" }), /terminal marker state mismatch/);
+  await assert.rejects(buildCurrentCapitalAccessibilityRefreshOutputs({ markerState: "UNKNOWN" }), /terminal marker state mismatch/);
+  await assert.rejects(refreshCurrentCapitalAccessibilityFull({ markerState: "UNKNOWN" }), /terminal marker state mismatch/);
+  assert.doesNotThrow(() => assertPendingMarkerProducerBoundary({
+    ...boundary,
+    station: { candidate: { candidateId: previous.candidateId, sourceSetSha256: previous.sourceSnapshotSetHash } },
+    route: { candidate: { candidateId: previous.candidateId, sourceSetSha256: previous.sourceSnapshotSetHash } },
+  }));
+  assert.doesNotThrow(() => assertPendingMarkerProducerBoundary({
+    ...boundary,
+    markerState: "PRESENT",
+    station: { candidate: { candidateId: previous.candidateId, sourceSetSha256: previous.sourceSnapshotSetHash } },
+    route: { candidate: { candidateId: previous.candidateId, sourceSetSha256: previous.sourceSnapshotSetHash } },
+  }));
 });
 
 test("pre-approval projection consumes the validated pending v2 marker without mutating tracked bytes", async (t) => {
@@ -584,25 +629,21 @@ async function writeStagedExitOciReceipt(root) {
   const normalizedPath = "tools/datapack/release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json";
   const admissionPath = "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json";
   const receiptPath = "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json";
-  const [normalizedBytes, admissionBytes] = await Promise.all([
+  const [normalizedBytes, admissionBytes, candidateBytes] = await Promise.all([
     readFile(path.join(root, normalizedPath)),
     readFile(path.join(root, admissionPath)),
+    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json")),
   ]);
-  const providerCollectionBundleBytes = Buffer.from("synthetic-current-exit-provider");
-  const providerObjectSha256 = sha(providerCollectionBundleBytes);
-  const receipt = buildCurrentExitAdmissionOciReceipt({
-    repository: "AquilaXk/easysubway-data",
-    mainSha: "a".repeat(40),
-    operationId: "synthetic-current-refresh",
-    providerCapturedAt: "2026-08-01T00:00:00.000Z",
+  const admission = JSON.parse(admissionBytes);
+  const providerCollectionBundleBytes = Buffer.from(canonical({ sourceIdentity: admission.sourceIdentity }));
+  const receipt = buildFixtureCurrentExitV2Receipt({
+    candidateBytes,
+    providerCapturedAt: admission.sourceIdentity.capturedAt,
     providerCollectionBundleBytes,
-    providerObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/operations/current-capital-live-chain/v1/heads/${"a".repeat(40)}/operations/synthetic-current-refresh/provider-collections/20260801-${providerObjectSha256}.json`,
-    providerObjectSha256,
-    providerObjectByteSize: providerCollectionBundleBytes.length,
     normalizedBytes,
     admissionBytes,
   });
-  await writeFile(path.join(root, receiptPath), canonicalCurrentExitAdmissionOciReceiptJson(receipt));
+  await writeFile(path.join(root, receiptPath), canonicalCurrentExitReboundAdmissionOciReceiptJson(receipt));
 }
 
 // Staged repository 전용 bootstrap이다. inventory가 선언한 현재 Incheon producer

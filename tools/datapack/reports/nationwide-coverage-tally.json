@@ -1075,7 +1075,7 @@
     "inventory": {
       "path": "tools/datapack/source-inventory.json",
       "retrievedAt": "2026-06-22",
-      "sha256": "374e8ee9385b777c113b1e25fea50676d63619e8f5e1bd163bb3c535afe432f5"
+      "sha256": "2202adb683ca942c1e5f5fd2cbd84f83bbbe3be85d5ef9e00e69d2c3d643c63c"
     },
     "resolutions": {
       "entryCount": 4,
@@ -5311,9 +5311,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "capital-route-topology"
+        ],
         "blockingThreshold": 1,
         "dualOperator": {
           "coveringOperatorIds": [
@@ -5334,9 +5336,7 @@
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
-          "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -5463,9 +5463,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "capital-route-topology"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-2b2d9eaa53d0",
@@ -5479,9 +5481,7 @@
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
-          "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -5594,9 +5594,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "capital-route-topology"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-3f41718e0833",
@@ -5610,9 +5612,7 @@
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
-          "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -5725,9 +5725,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "capital-route-topology"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-41a8c75ec9d8",
@@ -5741,9 +5743,7 @@
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
-          "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -5856,9 +5856,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "capital-route-topology"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-472a81add377",
@@ -5872,9 +5874,7 @@
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
-          "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -5987,9 +5987,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "capital-route-topology"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-80fc4d5350d4",
@@ -6003,9 +6005,7 @@
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
-          "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -6118,9 +6118,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "capital-route-topology"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "seoul-2",
@@ -6134,9 +6136,7 @@
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
-          "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -6249,9 +6249,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "capital-route-topology"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "seoul-4",
@@ -6265,9 +6267,7 @@
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
-          "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {

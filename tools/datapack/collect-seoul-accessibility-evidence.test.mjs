@@ -68,6 +68,33 @@ test("collector redacts request details from network failures", async () => {
   );
 });
 
+test("collector classifies fetch rejections with closed redaction-safe transport codes", async () => {
+  const endpoint = "https://apis.data.go.kr/example";
+  const serviceKey = "secret";
+  const cases = [
+    ["NETWORK_DNS", new Error(`${endpoint}?serviceKey=${serviceKey}`, { cause: { code: "ENOTFOUND" } })],
+    ["NETWORK_TLS", Object.assign(new Error(`${endpoint}?serviceKey=${serviceKey}`), { code: "ERR_TLS_CERT_ALTNAME_INVALID" })],
+    ["NETWORK_TIMEOUT", new Error(`${endpoint}?serviceKey=${serviceKey}`, { cause: { name: "TimeoutError" } })],
+    ["NETWORK_SOCKET", new Error(`${endpoint}?serviceKey=${serviceKey}`, { cause: { code: "ECONNRESET" } })],
+    ["NETWORK_UNKNOWN", new Error(`${endpoint}?serviceKey=${serviceKey}`)],
+  ];
+  for (const [transportCode, failure] of cases) {
+    await assert.rejects(
+      collectSeoulAccessibility({
+        endpoint,
+        serviceKey,
+        requestAttempts: 1,
+        fetchImpl: async () => { throw failure; },
+      }),
+      (error) => {
+        assert.equal(error.message, `Seoul accessibility API request failed: ${transportCode}`);
+        assert.doesNotMatch(error.message, /secret|https?:\/\/|ENOTFOUND|ERR_TLS|TimeoutError|ECONNRESET/);
+        return true;
+      },
+    );
+  }
+});
+
 test("facility-location collector does not retry network failures", async () => {
   let calls = 0;
   await assert.rejects(

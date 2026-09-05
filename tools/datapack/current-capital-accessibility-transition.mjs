@@ -8,10 +8,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-current-capital-facility-source-admission.mjs";
 import { canonicalCurrentCapitalStationLineInputJson } from "./current-capital-station-line-contract.mjs";
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
-import {
-  CURRENT_FULL_CANDIDATE_SOURCE_IDS,
-  CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS,
-} from "./rebind-current-candidate-source-snapshots.mjs";
+import { validateCandidateSourceSet } from "./validate-candidate-source-set.mjs";
 
 const FILES = Object.freeze({
   candidate: "tools/datapack/release/candidate-build-spec.json",
@@ -19,6 +16,7 @@ const FILES = Object.freeze({
   facility: "tools/datapack/release/current-capital-facility-source-admission.json",
   inventory: "tools/datapack/source-inventory.json",
   snapshots: "tools/datapack/release/source-snapshots.json",
+  scope: "release/product-gates/production-datapack-scope.json",
   transition: "tools/datapack/release/current-capital-accessibility-transition.json",
   successor: "tools/datapack/release/current-capital-accessibility-transition-successor.json",
 });
@@ -81,6 +79,12 @@ export function buildCurrentCapitalAccessibilityTransition(input) {
   const ledger = bindParsed(input?.ledger, ledgerBytes, "source snapshot ledger");
   const inventory = bindParsed(input?.inventory, inventoryBytes, "source inventory");
   assertExactTransitionCandidate(candidate);
+  validateCandidateSourceSet({
+    productionScopeBytes: input?.productionScopeBytes,
+    sourceInventoryBytes: inventoryBytes,
+    candidate,
+    ledger,
+  });
   const candidateId = requiredString(candidate.candidateId, "candidateId");
   const nextSourceSet = requiredSha(candidate.sourceSnapshotSetHash, "candidate source snapshot set");
   const predecessor = derivePreviousCandidate({ candidate, inventory, inventoryBytes, ledger });
@@ -234,12 +238,13 @@ async function inspectCurrentCapitalAccessibilityTransition({ repositoryRoot, al
   let successorBytes;
   try { successorBytes = await readStableRegular(path.join(root, FILES.successor), "current accessibility transition successor"); }
   catch (error) { if (error?.code !== "ENOENT") throw error; }
-  const [candidateBytes, previousBytes, facilityBytes, ledgerBytes, inventoryBytes] = await Promise.all([
+  const [candidateBytes, previousBytes, facilityBytes, ledgerBytes, inventoryBytes, productionScopeBytes] = await Promise.all([
     readStableRegular(path.join(root, FILES.candidate), "candidate build spec"),
     readStableRegular(path.join(root, FILES.previous), "previous production station-line input"),
     readStableRegular(path.join(root, FILES.facility), "current FACILITY admission"),
     readStableRegular(path.join(root, FILES.snapshots), "source snapshot ledger"),
     readStableRegular(path.join(root, FILES.inventory), "source inventory"),
+    readStableRegular(path.join(root, FILES.scope), "production scope"),
   ]);
   const base = parse(transition, "current accessibility transition");
   if (canonicalCurrentCapitalAccessibilityTransitionJson(base) !== transition.toString("utf8")) {
@@ -261,6 +266,7 @@ async function inspectCurrentCapitalAccessibilityTransition({ repositoryRoot, al
       ledgerBytes,
       inventory: parse(inventoryBytes, "source inventory"),
       inventoryBytes,
+      productionScopeBytes,
     });
     const effective = successorBytes ? parse(successorBytes, "current accessibility transition successor") : base;
     if (successorBytes) {
@@ -463,7 +469,7 @@ function normalizeAllowedPredecessorSourceIds(value) {
   return value;
 }
 
-function changedPredecessorSourceIds(base, currentTransition) {
+export function changedPredecessorSourceIds(base, currentTransition) {
   const baseProjections = base.previousCandidate.canonicalCandidate.sourceSnapshots;
   const currentProjections = currentTransition.previousCandidate.canonicalCandidate.sourceSnapshots;
   if (baseProjections.length !== currentProjections.length) {
@@ -540,8 +546,9 @@ function assertExactTransitionCandidate(candidate) {
   if (candidate?.schemaVersion !== 1 || candidate.artifactKind !== "datapack-candidate-build-spec"
     || !Array.isArray(candidate.sourceSnapshotIds) || !Array.isArray(candidate.sourceSnapshots)
     || candidate.sourceSnapshotIds.length !== candidate.sourceSnapshots.length
-    || candidate.sourceSnapshotIds.length !== CURRENT_FULL_CANDIDATE_SOURCE_IDS.length
-    || JSON.stringify(sourceIds) !== JSON.stringify(CURRENT_FULL_CANDIDATE_SOURCE_IDS)) {
+    || sourceIds.length < 2 || sourceIds.at(-1) !== TRANSFER_SOURCE_ID
+    || !sourceIds.includes(FACILITY_SOURCE_ID)
+    || new Set(sourceIds).size !== sourceIds.length) {
     throw new Error("transition candidate source-set mismatch");
   }
   if (new Set(candidate.sourceSnapshotIds).size !== candidate.sourceSnapshotIds.length
@@ -572,7 +579,7 @@ function derivePreviousCandidate({ candidate, inventory, inventoryBytes, ledger 
   assertExactTransitionCandidate(candidate);
   if (!Array.isArray(ledger)) throw new Error("transition append ledger mismatch");
   const selectedIds = new Set(candidate.sourceSnapshotIds);
-  if (selectedIds.size !== CURRENT_FULL_CANDIDATE_SOURCE_IDS.length) {
+  if (selectedIds.size !== candidate.sourceSnapshotIds.length) {
     throw new Error("transition append projection mismatch");
   }
   for (const [index, snapshotId] of candidate.sourceSnapshotIds.entries()) {
@@ -595,8 +602,8 @@ function derivePreviousCandidate({ candidate, inventory, inventoryBytes, ledger 
   const selected = ledger.filter(({ snapshotId }) => selectedIds.has(snapshotId));
   const predecessorIds = new Set(candidate.sourceSnapshotIds.slice(0, -1));
   const predecessorLedger = ledger.filter(({ snapshotId }) => predecessorIds.has(snapshotId));
-  if (selected.length !== CURRENT_FULL_CANDIDATE_SOURCE_IDS.length
-    || predecessorLedger.length !== CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS.length
+  if (selected.length !== candidate.sourceSnapshotIds.length
+    || predecessorLedger.length !== candidate.sourceSnapshotIds.length - 1
     || sha256(Buffer.from(JSON.stringify(selected))) !== candidate.sourceSnapshotSetHash) {
     throw new Error("transition append source-set mismatch");
   }
@@ -665,12 +672,13 @@ export async function main(argv = process.argv.slice(2), {
 } = {}) {
   if (!Array.isArray(argv) || argv.length !== 0) throw new Error("current accessibility transition arguments mismatch");
   const root = path.resolve(repositoryRoot);
-  const [candidateBytes, previousBytes, facilityBytes, ledgerBytes, inventoryBytes] = await Promise.all([
+  const [candidateBytes, previousBytes, facilityBytes, ledgerBytes, inventoryBytes, productionScopeBytes] = await Promise.all([
     readStableRegular(path.join(root, FILES.candidate), "candidate build spec"),
     readStableRegular(path.join(root, FILES.previous), "previous production station-line input"),
     readStableRegular(path.join(root, FILES.facility), "current FACILITY admission"),
     readStableRegular(path.join(root, FILES.snapshots), "source snapshot ledger"),
     readStableRegular(path.join(root, FILES.inventory), "source inventory"),
+    readStableRegular(path.join(root, FILES.scope), "production scope"),
   ]);
   const result = buildCurrentCapitalAccessibilityTransition({
     candidate: parse(candidateBytes, "candidate build spec"),
@@ -683,6 +691,7 @@ export async function main(argv = process.argv.slice(2), {
     ledgerBytes,
     inventory: parse(inventoryBytes, "source inventory"),
     inventoryBytes,
+    productionScopeBytes,
   });
   const boundInputs = [
     { target: path.join(root, FILES.candidate), label: "candidate build spec", bytes: candidateBytes },
@@ -690,6 +699,7 @@ export async function main(argv = process.argv.slice(2), {
     { target: path.join(root, FILES.facility), label: "current FACILITY admission", bytes: facilityBytes },
     { target: path.join(root, FILES.snapshots), label: "source snapshot ledger", bytes: ledgerBytes },
     { target: path.join(root, FILES.inventory), label: "source inventory", bytes: inventoryBytes },
+    { target: path.join(root, FILES.scope), label: "production scope", bytes: productionScopeBytes },
   ];
   await beforePublish();
   await publish(
@@ -784,12 +794,15 @@ function validateSuccessorTransition(value) {
 }
 
 function assertEmbeddedPreviousCandidate(candidate) {
+  const sourceIds = candidate?.sourceSnapshots?.map((projection) => projection?.sourceId);
   if (candidate?.schemaVersion !== 1 || candidate.artifactKind !== "datapack-candidate-build-spec"
     || !Array.isArray(candidate.sourceSnapshotIds) || !Array.isArray(candidate.sourceSnapshots)
-    || candidate.sourceSnapshotIds.length !== CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS.length
-    || candidate.sourceSnapshots.length !== CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS.length
-    || new Set(candidate.sourceSnapshotIds).size !== CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS.length
-    || JSON.stringify(candidate.sourceSnapshots.map(({ sourceId }) => sourceId)) !== JSON.stringify(CURRENT_PRE_TRANSFER_CANDIDATE_SOURCE_IDS)
+    || candidate.sourceSnapshotIds.length === 0
+    || candidate.sourceSnapshots.length !== candidate.sourceSnapshotIds.length
+    || new Set(candidate.sourceSnapshotIds).size !== candidate.sourceSnapshotIds.length
+    || sourceIds.some((sourceId) => typeof sourceId !== "string" || sourceId.length === 0)
+    || new Set(sourceIds).size !== sourceIds.length
+    || !sourceIds.includes(FACILITY_SOURCE_ID) || sourceIds.includes(TRANSFER_SOURCE_ID)
     || candidate.sourceSnapshots.some((projection, index) => projection?.snapshotId !== candidate.sourceSnapshotIds[index])
     || !SHA.test(candidate.sourceSnapshotSetHash ?? "")
     || !requiredString(candidate.candidateId, "embedded previous candidateId")) {

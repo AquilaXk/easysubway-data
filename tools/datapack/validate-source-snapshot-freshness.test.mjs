@@ -496,6 +496,7 @@ test("freshness validator는 hash-bound purge report를 retention 완료 근거�
   };
   bindInventory(value);
   value.governancePolicy = governancePolicy;
+  value.governancePolicyBytes = Buffer.from(governancePolicyText);
   value.governancePolicySha256 = policyBinding.policySha256;
   bindPurgeReport(value, purgeReport([{
     sourceId: value.snapshots[0].sourceId,

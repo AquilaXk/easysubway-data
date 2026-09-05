@@ -5,6 +5,7 @@ import { lstat, mkdir, open, readFile, realpath, rename, rm, writeFile } from "n
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { classifyKricTransportFailure as classifyTransportFailure } from "./collect-kric-accessibility-snapshots.mjs";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 
 const SOURCES = {
@@ -233,9 +234,9 @@ export async function collectSeoulAccessibility({
     for (let attempt = 0; attempt < requestAttempts; attempt += 1) {
       try {
         response = await fetchImpl(url, { signal: AbortSignal.timeout(requestTimeoutMs) });
-      } catch {
+      } catch (error) {
         if (attempt < requestAttempts - 1) continue;
-        throw new Error("Seoul accessibility API request failed");
+        throw new Error(`Seoul accessibility API request failed: ${classifyTransportFailure(error) ?? "NETWORK_UNKNOWN"}`);
       }
       if (response.ok || response.status < 500 || attempt === requestAttempts - 1) break;
     }

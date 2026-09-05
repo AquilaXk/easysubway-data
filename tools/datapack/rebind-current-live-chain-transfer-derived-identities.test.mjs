@@ -15,8 +15,6 @@ import {
   currentLiveChainTransferStageInputs,
   deriveCurrentOnlyProjection,
 } from "./rebind-current-live-chain-transfer-derived-identities.mjs";
-import { CURRENT_FULL_CANDIDATE_SOURCE_IDS } from "./rebind-current-candidate-source-snapshots.mjs";
-
 const ROOT = path.resolve(import.meta.dirname, "../..");
 
 test("candidate-selected versioned ITX topology evidence is the only TRANSFER stage input", () => {
@@ -61,24 +59,38 @@ test("rebuilt TRANSFER candidate keeps identity and selected IDs while deriving 
   assert.throws(() => assertRebuiltCurrentLiveChainTransferCandidateIdentity(unknown, { ...unknown }, snapshots), /rebuilt TRANSFER candidate identity mismatch/);
 });
 
-test("current release selection preserves candidate order while exposing rebuilt ledger order solely for the set hash", async () => {
-  const [candidate, snapshots] = await Promise.all([
-    readFile(path.join(ROOT, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
-    readFile(path.join(ROOT, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
-  ]);
-  const selected = candidate.sourceSnapshotIds.map((snapshotId) => ({
-    ...snapshots.find((snapshot) => snapshot.snapshotId === snapshotId),
-    governancePolicyVersion: "test", governancePolicySha256: "a".repeat(64),
+test("current release selection uses exact scope membership while preserving candidate and ledger order", () => {
+  const sourceIds = ["alpha", "expanded", "beta", "seoul-metro-transfer-distance-duration"];
+  const sourceInventory = { sources: sourceIds.map((id) => ({ id, requiredForProductionPack: true })) };
+  const productionScopeBytes = Buffer.from(JSON.stringify({ productionSourceSet: {
+    sourceInventory: "tools/datapack/source-inventory.json", requiredSourceIds: sourceIds,
+  } }));
+  const sourceInventoryBytes = Buffer.from(JSON.stringify(sourceInventory));
+  const candidateOrder = ["expanded", "alpha", "beta", "seoul-metro-transfer-distance-duration"];
+  const candidate = {
+    candidateId: "capital-current",
+    sourceSnapshotIds: candidateOrder.map((sourceId) => `${sourceId}-head`),
+    sourceSnapshots: candidateOrder.map((sourceId) => ({ sourceId, snapshotId: `${sourceId}-head` })),
+  };
+  const snapshots = ["beta", "alpha", "seoul-metro-transfer-distance-duration", "expanded"].map((sourceId) => ({
+    sourceId, snapshotId: `${sourceId}-head`, governancePolicyVersion: "test", governancePolicySha256: "a".repeat(64),
   }));
-  const reversedLedger = [...selected].reverse();
-  const result = currentReleaseSnapshots(candidate, reversedLedger);
-  assert.deepEqual(candidate.sourceSnapshots.map(({ sourceId }) => sourceId), CURRENT_FULL_CANDIDATE_SOURCE_IDS);
-  assert.deepEqual(result.orderedRows.map(({ snapshotId }) => snapshotId), candidate.sourceSnapshotIds);
-  assert.deepEqual(result.ledgerOrderedRows.map(({ snapshotId }) => snapshotId), reversedLedger.map(({ snapshotId }) => snapshotId));
+  const result = currentReleaseSnapshots(candidate, snapshots, { productionScopeBytes, sourceInventoryBytes });
+  assert.deepEqual(result.orderedRows.map(({ sourceId }) => sourceId), candidateOrder);
+  assert.deepEqual(result.ledgerOrderedRows.map(({ sourceId }) => sourceId), ["beta", "alpha", "seoul-metro-transfer-distance-duration", "expanded"]);
   const rebuilt = { candidateId: candidate.candidateId, sourceSnapshotIds: result.orderedRows.map(({ snapshotId }) => snapshotId), sourceSnapshotSetHash: createHash("sha256").update(JSON.stringify(result.ledgerOrderedRows)).digest("hex") };
-  assert.doesNotThrow(() => assertRebuiltCurrentLiveChainTransferCandidateIdentity(candidate, rebuilt, reversedLedger));
-  const evidence = currentLiveChainTransferPerSourceEvidence(result.ledgerOrderedRows, { sources: reversedLedger.map((snapshot) => ({ id: snapshot.sourceId, admissionEvidence: { adminReviewRecordHash: `review-${snapshot.sourceId}` } })) });
-  assert.deepEqual(evidence.map(({ snapshotId }) => snapshotId), reversedLedger.map(({ snapshotId }) => snapshotId));
+  assert.doesNotThrow(() => assertRebuiltCurrentLiveChainTransferCandidateIdentity(candidate, rebuilt, snapshots));
+  const evidence = currentLiveChainTransferPerSourceEvidence(result.ledgerOrderedRows, { sources: snapshots.map(({ sourceId }) => ({ id: sourceId, admissionEvidence: { adminReviewRecordHash: `review-${sourceId}` } })) });
+  assert.deepEqual(evidence.map(({ snapshotId }) => snapshotId), snapshots.map(({ snapshotId }) => snapshotId));
+
+  for (const mutate of [
+    (value) => value.sourceSnapshotIds.pop(),
+    (value) => value.sourceSnapshots.push({ sourceId: "extra", snapshotId: "extra-head" }),
+    (value) => { value.sourceSnapshotIds[1] = value.sourceSnapshotIds[0]; },
+  ]) {
+    const invalid = structuredClone(candidate); mutate(invalid);
+    assert.throws(() => currentReleaseSnapshots(invalid, snapshots, { productionScopeBytes, sourceInventoryBytes }));
+  }
 });
 
 test("current live-chain TRANSFER producer has no predecessor or station/transition dependency", async () => {

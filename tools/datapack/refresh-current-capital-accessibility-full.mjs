@@ -20,7 +20,7 @@ import {
   CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH,
   readCurrentCapitalLiveChainFanInBoundary,
 } from "./build-current-capital-live-chain-boundary.mjs";
-import { CURRENT_CAPITAL_LIVE_CHAIN_FIXED_OUTPUT_PATHS } from "./build-current-capital-live-chain-bundle.mjs";
+import { CURRENT_CAPITAL_LIVE_CHAIN_FIXED_OUTPUT_PATHS } from "./validate-current-capital-live-chain-materialization.mjs";
 import { CURRENT_TOPOLOGY_REFRESH_OUTPUTS } from "./activate-current-source-set.mjs";
 import { validateCurrentCapitalAccessibilitySourceHandoff } from "./current-capital-accessibility-source-handoff.mjs";
 import { readCurrentCapitalAccessibilityTransitionBoundary, readEffectiveCurrentCapitalAccessibilityTransition } from "./current-capital-accessibility-transition.mjs";
@@ -157,6 +157,17 @@ function terminalVerifierProof(proof) {
   return { retained, inputs, outputs, replacementPrestates };
 }
 
+function assertTerminalManifestShape(manifest) {
+  const keys = [
+    "accessibilitySourceHandoff", "fanInPath", "liveChainOutputs", "markerPaths", "markerState",
+    "materialization", "proof", "replacementPaths", "topologyInputs", "topologyOutputs",
+  ];
+  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)
+    || JSON.stringify(Object.keys(manifest).sort(codepointCompare)) !== JSON.stringify(keys)) {
+    throw new Error("current-capital terminal manifest mismatch");
+  }
+}
+
 /**
  * Validate the only manifest shape permitted to retire the two protected
  * current-capital transition markers.  This is intentionally not a general
@@ -164,12 +175,7 @@ function terminalVerifierProof(proof) {
  * of the executable #673 contract.
  */
 export function validateCurrentCapitalTerminalManifest(manifest) {
-  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)
-    || JSON.stringify(Object.keys(manifest).sort(codepointCompare)) !== JSON.stringify([
-      "accessibilitySourceHandoff", "fanInPath", "liveChainOutputs", "markerPaths", "materialization", "proof", "replacementPaths", "topologyInputs", "topologyOutputs",
-    ])) {
-    throw new Error("current-capital terminal manifest mismatch");
-  }
+  assertTerminalManifestShape(manifest);
   const accessibilitySourceHandoff = validateCurrentCapitalAccessibilitySourceHandoff(manifest.accessibilitySourceHandoff);
   const accessibilityOutputs = new Map(accessibilitySourceHandoff.outputs.map((entry) => [entry.relativePath, entry]));
   terminalTopologyInputs(manifest.topologyInputs);
@@ -179,6 +185,9 @@ export function validateCurrentCapitalTerminalManifest(manifest) {
   const proof = terminalVerifierProof(manifest.proof);
   if (manifest.fanInPath !== FAN_IN_OUTPUT) throw new Error("current-capital terminal fan-in manifest mismatch");
   exactPathSet(manifest.markerPaths, TERMINAL_MARKERS, "current-capital terminal marker manifest");
+  if (!["PRESENT", "DERIVED_ABSENT"].includes(manifest.markerState)) {
+    throw new Error("current-capital terminal marker state mismatch");
+  }
   const classPaths = [
     ...accessibilityOutputs.keys(),
     ...manifest.topologyInputs,
@@ -227,6 +236,7 @@ export function validateCurrentCapitalTerminalManifest(manifest) {
     liveChainOutputs: Object.freeze([...manifest.liveChainOutputs]),
     fanInPath: manifest.fanInPath,
     markerPaths: Object.freeze([...TERMINAL_MARKERS]),
+    markerState: manifest.markerState,
     proof: manifest.proof,
     retainedProof: proof.retained,
     topologyInputProof: proof.inputs,
@@ -275,9 +285,7 @@ function requireCurrentPublicV2Head(selected, ledger, sourceId) {
   return { head, previousSnapshotId };
 }
 
-function buildRefreshProof({ phase, candidateFile, inventoryFile, ledgerFile, requestFile, hashesFile, facilityFile, exitFile, stationFile, routeFile }) {
-  const candidate = parse(candidateFile.bytes, "current candidate"); const inventory = parse(inventoryFile.bytes, "source inventory"); const ledger = parse(ledgerFile.bytes, "source snapshot ledger");
-  const station = parse(stationFile.bytes, "activated station input"); const route = parse(routeFile.bytes, "activated route input");
+function validateCurrentCandidateSourceSet({ candidate, inventory, inventoryFile }) {
   const inventorySources = inventory?.sources;
   const requiredSourceIds = Array.isArray(inventorySources)
     ? inventorySources.filter(({ requiredForProductionPack }) => requiredForProductionPack === true).map(({ id }) => id)
@@ -302,13 +310,9 @@ function buildRefreshProof({ phase, candidateFile, inventoryFile, ledgerFile, re
     || candidate.networkEdgeEvidence.sourceInventory.sha256 !== sha(inventoryFile.bytes)) {
     throw new Error("current candidate source-set mismatch");
   }
-  if (phase === ACTIVATED_CURRENT_OUTPUT) {
-    const request = parse(requestFile.bytes, "release request"); const hashes = parse(hashesFile.bytes, "hash evidence");
-    if (candidate.sourceSnapshotSetHash !== request.sourceSnapshotSetHash
-      || candidate.sourceSnapshotSetHash !== hashes.sourceSnapshotSetHash?.value) {
-      throw new Error("current candidate/request/hash binding mismatch");
-    }
-  }
+}
+
+function deriveRefreshSourceProof({ candidate, ledger }) {
   const selected = candidate.sourceSnapshotIds.map((snapshotId, index) => {
     const row = requireOne(ledger, (entry) => entry?.snapshotId === snapshotId, "current candidate ledger");
     if (row.sourceId !== candidate.sourceSnapshots[index]?.sourceId) throw new Error("current candidate source identity mismatch");
@@ -344,21 +348,51 @@ function buildRefreshProof({ phase, candidateFile, inventoryFile, ledgerFile, re
     || terminalPredecessor.length !== predecessorProjections.length) {
     throw new Error("current accessibility terminal predecessor mismatch");
   }
-  const terminalPredecessorHash = sha(JSON.stringify(terminalPredecessor));
-  const transitionIdentity = { kind: PUBLIC_STATIC_NETWORK_V2_SUCCESSOR };
   const predecessorIds = predecessorProjections.map(({ snapshotId, index }) => {
     if (index === positionIndex) return position.previousSnapshotId;
     if (index === molitIndex) return molit.previousSnapshotId;
     return snapshotId;
   });
-  const predecessorIdSet = new Set(predecessorIds); const predecessor = ledger.filter(({ snapshotId }) => predecessorIdSet.has(snapshotId));
-  const predecessorHash = sha(JSON.stringify(predecessor));
-  const evidenceIds = new Set(predecessorIds.flatMap((snapshotId, index) => {
+  const predecessorIdSet = new Set(predecessorIds);
+  const predecessor = ledger.filter(({ snapshotId }) => predecessorIdSet.has(snapshotId));
+  const evidenceIds = new Set(predecessorIds.map((snapshotId, index) => {
     const sourceId = predecessorProjections[index].projection.sourceId;
-    return [sourceId === SEOUL ? previousSeoulSnapshotId : snapshotId];
+    return sourceId === SEOUL ? previousSeoulSnapshotId : snapshotId;
   }));
   const evidence = ledger.filter(({ snapshotId }) => evidenceIds.has(snapshotId));
-  const evidenceHash = sha(JSON.stringify(evidence));
+  return {
+    evidenceHash: sha(JSON.stringify(evidence)),
+    molitPreviousSnapshotId: molit.previousSnapshotId,
+    positionPreviousSnapshotId: position.previousSnapshotId,
+    predecessorComplete: predecessorIdSet.size === predecessorProjections.length
+      && predecessor.length === predecessorProjections.length
+      && evidenceIds.size === predecessorProjections.length
+      && evidence.length === predecessorProjections.length,
+    predecessorHash: sha(JSON.stringify(predecessor)),
+    terminalPredecessorHash: sha(JSON.stringify(terminalPredecessor)),
+  };
+}
+
+function buildRefreshProof({ phase, candidateFile, inventoryFile, ledgerFile, requestFile, hashesFile, facilityFile, exitFile, stationFile, routeFile }) {
+  const candidate = parse(candidateFile.bytes, "current candidate"); const inventory = parse(inventoryFile.bytes, "source inventory"); const ledger = parse(ledgerFile.bytes, "source snapshot ledger");
+  const station = parse(stationFile.bytes, "activated station input"); const route = parse(routeFile.bytes, "activated route input");
+  validateCurrentCandidateSourceSet({ candidate, inventory, inventoryFile });
+  if (phase === ACTIVATED_CURRENT_OUTPUT) {
+    const request = parse(requestFile.bytes, "release request"); const hashes = parse(hashesFile.bytes, "hash evidence");
+    if (candidate.sourceSnapshotSetHash !== request.sourceSnapshotSetHash
+      || candidate.sourceSnapshotSetHash !== hashes.sourceSnapshotSetHash?.value) {
+      throw new Error("current candidate/request/hash binding mismatch");
+    }
+  }
+  const {
+    evidenceHash,
+    molitPreviousSnapshotId,
+    positionPreviousSnapshotId,
+    predecessorComplete,
+    predecessorHash,
+    terminalPredecessorHash,
+  } = deriveRefreshSourceProof({ candidate, ledger });
+  const transitionIdentity = { kind: PUBLIC_STATIC_NETWORK_V2_SUCCESSOR };
   const activatedSourceSet = station.candidate?.sourceSetSha256;
   if (phase === ACTIVATED_CURRENT_OUTPUT || phase === PRE_APPROVAL_CURRENT_CANDIDATE) {
     const facility = parse(facilityFile.bytes, "FACILITY admission");
@@ -380,9 +414,8 @@ function buildRefreshProof({ phase, candidateFile, inventoryFile, ledgerFile, re
       throw new Error("activated producer boundary mismatch");
     }
   }
-  if (predecessorIdSet.size !== predecessorProjections.length || predecessor.length !== predecessorProjections.length
-    || evidenceIds.size !== predecessorProjections.length || evidence.length !== predecessorProjections.length
-    || activatedSourceSet !== route.candidate?.sourceSetSha256 || ![predecessorHash, candidate.sourceSnapshotSetHash].includes(activatedSourceSet)
+  if (!predecessorComplete || activatedSourceSet !== route.candidate?.sourceSetSha256
+    || ![predecessorHash, candidate.sourceSnapshotSetHash].includes(activatedSourceSet)
     || station.candidate?.candidateId !== candidate.candidateId || route.candidate?.candidateId !== candidate.candidateId) {
     throw new Error("activated predecessor source-set mismatch");
   }
@@ -391,8 +424,8 @@ function buildRefreshProof({ phase, candidateFile, inventoryFile, ledgerFile, re
     evidenceSourceSetSha256: evidenceHash, facilityAdmissionBytesSha256: null,
     ...transitionIdentity,
     predecessorCandidateSourceSetSha256: predecessorHash,
-    positionPreviousSnapshotId: position.previousSnapshotId,
-    molitPreviousSnapshotId: molit.previousSnapshotId,
+    positionPreviousSnapshotId,
+    molitPreviousSnapshotId,
   };
 }
 
@@ -458,11 +491,24 @@ function fanInComponents(files) {
   }));
 }
 
-export function assertPendingMarkerProducerBoundary({ baseMarker, effectiveMarker, candidate, facility, exit, station, route }) {
+function requireTerminalMarkerState(markerState) {
+  if (!["PRESENT", "DERIVED_ABSENT"].includes(markerState)) {
+    throw new Error("current-capital refresh terminal marker state mismatch");
+  }
+}
+
+export function assertPendingMarkerProducerBoundary({
+  markerState = "PRESENT", baseMarker, effectiveMarker, candidate, facility, exit, station, route,
+}) {
+  requireTerminalMarkerState(markerState);
   const basePrevious = baseMarker?.previousCandidate;
+  // DERIVED_ABSENT의 station/route는 이미 terminal 산출물이므로 base의
+  // 다음 후보에 고정한다. PRESENT와 기본 경로는 원래 predecessor를 유지한다.
+  const producerPrestate = markerState === "DERIVED_ABSENT" ? baseMarker?.nextCandidate : basePrevious;
   const next = effectiveMarker?.nextCandidate; const effectivePrevious = effectiveMarker?.previousCandidate;
   if (next?.candidateId == null || next?.sourceSnapshotSetHash == null
     || basePrevious?.candidateId == null || basePrevious?.sourceSnapshotSetHash == null
+    || producerPrestate?.candidateId == null || producerPrestate?.sourceSnapshotSetHash == null
     || effectivePrevious?.candidateId == null || effectivePrevious?.sourceSnapshotSetHash == null
     || candidate?.candidateId == null || candidate?.sourceSnapshotSetHash == null
     || next.candidateId !== candidate.candidateId
@@ -470,10 +516,10 @@ export function assertPendingMarkerProducerBoundary({ baseMarker, effectiveMarke
     || facility.candidate?.sourceSnapshotSetHash !== candidate.sourceSnapshotSetHash
     || exit?.candidate?.candidateId !== next.candidateId
     || exit.candidate?.sourceSetSha256 !== effectivePrevious.sourceSnapshotSetHash
-    || station?.candidate?.candidateId !== basePrevious.candidateId
-    || station.candidate?.sourceSetSha256 !== basePrevious.sourceSnapshotSetHash
-    || route?.candidate?.candidateId !== basePrevious.candidateId
-    || route.candidate?.sourceSetSha256 !== basePrevious.sourceSnapshotSetHash) {
+    || station?.candidate?.candidateId !== producerPrestate.candidateId
+    || station.candidate?.sourceSetSha256 !== producerPrestate.sourceSnapshotSetHash
+    || route?.candidate?.candidateId !== producerPrestate.candidateId
+    || route.candidate?.sourceSetSha256 !== producerPrestate.sourceSnapshotSetHash) {
     throw new Error("current-capital refresh pending marker producer boundary mismatch");
   }
 }
@@ -654,7 +700,9 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
   candidateBuildSpec = undefined,
   canonicalPack = undefined,
   transferRebindOutputs = undefined,
+  markerState = "PRESENT",
 } = {}) {
+  requireTerminalMarkerState(markerState);
   requirePhase(phase);
   const root = path.resolve(repositoryRoot); const files = await inputFiles(root, phase);
   const marker = files[TRANSITION]; const effectiveMarker = files[SUCCESSOR];
@@ -672,6 +720,7 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
     const currentSuccessor = await readStableRegularFile(target(root, SUCCESSOR), SUCCESSOR);
     if (!currentSuccessor.bytes.equals(files[SUCCESSOR].bytes)) throw new Error("current-capital refresh transition successor changed during validation");
     assertPendingMarkerProducerBoundary({
+      markerState,
       baseMarker,
       effectiveMarker: effectiveMarkerValue,
       candidate: parse(files[CANDIDATE_BUILD_SPEC].bytes, "current candidate"),
@@ -997,12 +1046,13 @@ function validateCurrentCapitalTerminalJournal(journal) {
   if (!journal || journal.schemaVersion !== 1 || !["PREPARED", "COMMITTED"].includes(journal.state)
     || !Array.isArray(journal.records)) terminalJournalError();
   const manifest = validateCurrentCapitalTerminalManifest(journal.manifest);
-  if (journal.records.length !== manifest.replacements.length + 2
-    || JSON.stringify(journal.records.slice(0, -2).map(({ relative }) => relative))
+  const markerRecords = manifest.markerState === "PRESENT" ? 2 : 0;
+  if (journal.records.length !== manifest.replacements.length + markerRecords
+    || JSON.stringify(journal.records.slice(0, manifest.replacements.length).map(({ relative }) => relative))
       !== JSON.stringify(manifest.replacements)
-    || JSON.stringify(journal.records.slice(-2).map(({ relative }) => relative))
-      !== JSON.stringify(manifest.markerPaths)) terminalJournalError();
-  for (const [index, record] of journal.records.slice(0, -2).entries()) {
+    || (markerRecords !== 0 && JSON.stringify(journal.records.slice(-markerRecords).map(({ relative }) => relative))
+      !== JSON.stringify(manifest.markerPaths))) terminalJournalError();
+  for (const [index, record] of journal.records.slice(0, manifest.replacements.length).entries()) {
     const create = manifest.createOncePaths.includes(record.relative);
     if (record.operation !== (create ? "create" : "replace") || typeof record.after !== "string"
       || sha(Buffer.from(record.after, "base64")) !== record.afterSha256) terminalJournalError();
@@ -1010,7 +1060,7 @@ function validateCurrentCapitalTerminalJournal(journal) {
       : typeof record.before !== "string" || sha(Buffer.from(record.before, "base64")) !== record.beforeSha256) terminalJournalError();
     if (record.relative !== manifest.replacements[index]) terminalJournalError();
   }
-  for (const marker of journal.records.slice(-2)) {
+  for (const marker of journal.records.slice(manifest.replacements.length)) {
     if (marker.operation !== "delete" || typeof marker.before !== "string"
       || sha(Buffer.from(marker.before, "base64")) !== marker.beforeSha256) terminalJournalError();
   }
@@ -1021,7 +1071,12 @@ async function recoverCurrentCapitalTerminalTransaction(root) {
   try { journalFile = await readStableRegularFile(journalPath, "current-capital terminal journal"); }
   catch (error) { if (error?.code === "ENOENT" || error?.cause?.code === "ENOENT") return; throw error; }
   const journal = parse(journalFile.bytes, "current-capital terminal journal");
-  validateCurrentCapitalTerminalJournal(journal);
+  const manifest = validateCurrentCapitalTerminalJournal(journal);
+  if (manifest.markerState === "DERIVED_ABSENT"
+    && (await readOptionalStable(target(root, TRANSITION), TRANSITION)
+      || await readOptionalStable(target(root, SUCCESSOR), SUCCESSOR))) {
+    throw new Error("current-capital terminal marker resurrection");
+  }
   for (const record of journal.records) {
     const file = target(root, record.relative);
     if (record.operation === "delete") {
@@ -1048,6 +1103,11 @@ async function recoverCurrentCapitalTerminalTransaction(root) {
     else if (!(journal.state === "PREPARED" ? current.bytes.equals(before) : current.bytes.equals(after))) {
       throw new Error("current-capital terminal preserves foreign replacement");
     }
+  }
+  if (manifest.markerState === "DERIVED_ABSENT"
+    && (await readOptionalStable(target(root, TRANSITION), TRANSITION)
+      || await readOptionalStable(target(root, SUCCESSOR), SUCCESSOR))) {
+    throw new Error("current-capital terminal marker resurrection");
   }
   await unlink(journalPath); await syncParent(journalPath);
 }
@@ -1112,17 +1172,24 @@ export async function commitCurrentCapitalTerminalManifest({
         authenticatedPrestates.set(output.relative, current);
       }
     }
-    const currentMarker = await readStableRegularFile(target(root, TRANSITION), TRANSITION);
-    const currentSuccessor = await readStableRegularFile(target(root, SUCCESSOR), SUCCESSOR);
-    if (!currentMarker.bytes.equals(marker.bytes) || !currentSuccessor.bytes.equals(successor.bytes)) {
-      throw new Error("current-capital terminal preserves foreign replacement");
+    if (checkedManifest.markerState === "PRESENT") {
+      const currentMarker = await readStableRegularFile(target(root, TRANSITION), TRANSITION);
+      const currentSuccessor = await readStableRegularFile(target(root, SUCCESSOR), SUCCESSOR);
+      if (!currentMarker.bytes.equals(marker.bytes) || !currentSuccessor.bytes.equals(successor.bytes)) {
+        throw new Error("current-capital terminal preserves foreign replacement");
+      }
+    } else if (await readOptionalStable(target(root, TRANSITION), TRANSITION)
+      || await readOptionalStable(target(root, SUCCESSOR), SUCCESSOR)) {
+      throw new Error("current-capital terminal marker resurrection");
     }
     const records = [
       ...outputs.map(({ relative, bytes, prestate }) => checkedManifest.createOncePaths.includes(relative)
         ? { operation: "create", relative, before: null, beforeSha256: null, after: bytes.toString("base64"), afterSha256: sha(bytes) }
         : { operation: "replace", relative, before: prestate.bytes.toString("base64"), beforeSha256: sha(prestate.bytes), after: bytes.toString("base64"), afterSha256: sha(bytes) }),
-      { operation: "delete", relative: TRANSITION, before: marker.bytes.toString("base64"), beforeSha256: sha(marker.bytes) },
-      { operation: "delete", relative: SUCCESSOR, before: successor.bytes.toString("base64"), beforeSha256: sha(successor.bytes) },
+      ...(checkedManifest.markerState === "PRESENT" ? [
+        { operation: "delete", relative: TRANSITION, before: marker.bytes.toString("base64"), beforeSha256: sha(marker.bytes) },
+        { operation: "delete", relative: SUCCESSOR, before: successor.bytes.toString("base64"), beforeSha256: sha(successor.bytes) },
+      ] : []),
     ];
     const journalPath = target(root, TERMINAL_JOURNAL);
     const journal = { schemaVersion: 1, state: "PREPARED", manifest, records };
@@ -1135,21 +1202,30 @@ export async function commitCurrentCapitalTerminalManifest({
       const current = await readStableRegularFile(file, "current-capital terminal final target");
       if (!current.bytes.equals(output.bytes)) throw new Error("current-capital terminal final byte mismatch");
     }
-    await deleteExpectedFile(target(root, TRANSITION), marker.bytes);
-    await deleteExpectedFile(target(root, SUCCESSOR), successor.bytes);
+    if (checkedManifest.markerState === "PRESENT") {
+      await deleteExpectedFile(target(root, TRANSITION), marker.bytes);
+      await deleteExpectedFile(target(root, SUCCESSOR), successor.bytes);
+    }
     const currentJournal = await readStableRegularFile(journalPath, "current-capital terminal journal");
     await atomicReplace(journalPath, Buffer.from(JSON.stringify({ ...journal, state: "COMMITTED" })), { original: currentJournal });
     await recoverCurrentCapitalTerminalTransaction(root); prepared = false;
+    if (await readOptionalStable(target(root, TRANSITION), TRANSITION)
+      || await readOptionalStable(target(root, SUCCESSOR), SUCCESSOR)) {
+      throw new Error("current-capital terminal final marker mismatch");
+    }
   } catch (error) {
     if (prepared) await recoverCurrentCapitalTerminalTransaction(root);
     throw error;
   } finally { await release(); }
 }
-export async function refreshCurrentCapitalAccessibilityFull({ repositoryRoot = ROOT, beforeCommit = async () => {}, transferRebindOutputs = undefined } = {}) {
+export async function refreshCurrentCapitalAccessibilityFull({
+  repositoryRoot = ROOT, beforeCommit = async () => {}, transferRebindOutputs = undefined, markerState = "PRESENT",
+} = {}) {
+  requireTerminalMarkerState(markerState);
   const root = path.resolve(repositoryRoot); const release = await acquireLock(root);
   try {
     await recover(root);
-    const outputs = await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root, transferRebindOutputs });
+    const outputs = await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root, transferRebindOutputs, markerState });
     await assertInputsStable(outputs.flatMap(({ inputs = [] }) => inputs));
     const marker = outputs[0]?.inputs?.find(({ target: inputTarget }) => inputTarget === target(root, TRANSITION));
     const transactionOutputs = [...outputs, outputs[0].fanIn];

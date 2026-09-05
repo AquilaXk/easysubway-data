@@ -92,7 +92,7 @@ export async function emitArtifactComponents(input) {
   const provenance = parseJson(provenanceBytes, "source provenance");
   const current = parseJson(currentBytes, "current manifest");
   validateInputBinding(provenance, current, sha(currentBytes), sha(sourceBytes), sha(buildSpecBytes));
-  const freshness = validateSourceSnapshotFreshness({ buildSpec, snapshots, policy, evaluationAt: ids.builtAt, governancePolicy: parseJson(governanceBytes, "governance policy"), inventory: parseJson(inventoryBytes, "source inventory"), governancePolicySha256: sha(governanceBytes) });
+  const freshness = validateSourceSnapshotFreshness({ buildSpec, snapshots, policy, evaluationAt: ids.builtAt, governancePolicy: parseJson(governanceBytes, "governance policy"), inventory: parseJson(inventoryBytes, "source inventory"), governancePolicySha256: sha(governanceBytes), governancePolicyBytes: governanceBytes });
   const cap = Math.min(requiredUtcInstant(current.expiresAt, "current.json.expiresAt"), ...freshness.results.map((result) => requiredUtcInstant(result.freshnessExpiresAt, "source freshness")));
   if (Date.parse(ids.freshUntil) > cap) throw new Error("--fresh-until exceeds source freshness");
 

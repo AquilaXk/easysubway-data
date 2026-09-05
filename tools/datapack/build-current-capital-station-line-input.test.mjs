@@ -189,6 +189,24 @@ test("blocked tuple·receipt·TRANSFER admission drift는 output 없이 fail-clo
   }
 });
 
+test("TRANSFER admission은 허용된 provenance가 전체 metric을 소진해야 한다", async () => {
+  const value = await buildCurrentCapitalStationLineInputFixture();
+  value.transferMetrics.metrics[0].metricProvenance = "UNKNOWN_PROVENANCE";
+  const admission = value.sourceInventory.sources
+    .find(({ id }) => id === "seoul-metro-transfer-distance-duration")
+    .transferAdmissionEvidence;
+  admission.officialMetricCount = value.transferMetrics.metrics
+    .filter(({ metricProvenance }) => metricProvenance === "OFFICIAL_SOURCE").length;
+  admission.derivedReciprocalMetricCount = value.transferMetrics.metrics
+    .filter(({ metricProvenance }) => metricProvenance === "DERIVED_RECIPROCAL").length;
+  rebindTransferArtifacts(value);
+
+  assert.throws(
+    () => buildCurrentCapitalStationLineInput(value),
+    /full-capital TRANSFER metrics mismatch/,
+  );
+});
+
 test("count를 유지한 blocked carrier·directed pair·applicability swap drift도 fail-closed다", async () => {
   for (const mutate of [
     (value) => {

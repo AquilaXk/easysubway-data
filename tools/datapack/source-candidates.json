@@ -2596,14 +2596,13 @@
         ],
         "rawSha256": "2160020177352775418c863ebd9846ab5cc0df08c1da0f4b435dbf599b214187",
         "positionsSha256": "29e4b1017adf05916ad38c7cce94dadb1658b40b4c203937cf7704680f1a9d72",
-        "schematicGeometrySha256": "fde0d2878949a9cce42261a783ddcfd5bfc112efa6c0670bb2e4f1be28d4d44a",
         "lineIds": [
           "line-828f04afc588"
         ],
         "lineStationCounts": {
           "everline": 15
         },
-        "evidenceArtifact": "tools/datapack/sources/kric-everline-route-map-positions-20260902.json",
+        "evidenceArtifact": "tools/datapack/sources/kric-everline-route-map-positions-ac71a346f351d059fb3563b0baef920d9d294015028d15be98bb36184f040aa9.json",
         "coverageAssessment": {
           "state": "SUPPORTED",
           "requirementCount": 1,
@@ -2613,7 +2612,21 @@
           "verificationTest": "tools/datapack/materialize-kric-capital-light-rail-route-map-positions.test.mjs"
         },
         "coverageLimitations": [
-          "data.go.kr FILE 15041326 용인에버라인 15역을 current capital topology와 owner geometry로 결속"
+          "Official route-map position data is limited to the admitted line and approved schematic geometry."
+        ],
+        "rawStationCount": 15,
+        "quarantinedCount": 0,
+        "schematicGeometrySha256": "fde0d2878949a9cce42261a783ddcfd5bfc112efa6c0670bb2e4f1be28d4d44a",
+        "topologySourceId": "capital-route-topology",
+        "topologySnapshotId": "capital-route-topology-20260904",
+        "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+        "topologyLineages": [
+          {
+            "sourceId": "capital-route-topology",
+            "snapshotId": "capital-route-topology-20260904",
+            "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+            "lineId": "line-828f04afc588"
+          }
         ]
       },
       "nextAction": "공식 FILE 갱신 시 CSV byte hash와 admitted 좌표 snapshot을 함께 갱신한다"
@@ -5405,14 +5418,13 @@
         ],
         "rawSha256": "fe2d8d0b24d16561c8fbbafe1b2b8bf1bb67bb24ca0c200bae222f502fefe055",
         "positionsSha256": "a3bbf767216f7074cfcdb7742807dcf43be259272b4a592f9e53b4b63a62560b",
-        "schematicGeometrySha256": "fde0d2878949a9cce42261a783ddcfd5bfc112efa6c0670bb2e4f1be28d4d44a",
         "lineIds": [
           "line-30886152e4f8"
         ],
         "lineStationCounts": {
           "ui": 13
         },
-        "evidenceArtifact": "tools/datapack/sources/kric-ui-sinseol-route-map-positions-20260902.json",
+        "evidenceArtifact": "tools/datapack/sources/kric-ui-sinseol-route-map-positions-ea86b8629935d416de0e54bd1993cedeafbc61f6e825f97d69e56abbcebf4dbf.json",
         "coverageAssessment": {
           "state": "SUPPORTED",
           "requirementCount": 1,
@@ -5422,7 +5434,21 @@
           "verificationTest": "tools/datapack/materialize-kric-capital-light-rail-route-map-positions.test.mjs"
         },
         "coverageLimitations": [
-          "data.go.kr FILE 15041324 우이신설 13역을 current capital topology와 owner geometry로 결속(위경도 KRIC 1294 overlay)"
+          "Official route-map position data is limited to the admitted line and approved schematic geometry."
+        ],
+        "rawStationCount": 13,
+        "quarantinedCount": 0,
+        "schematicGeometrySha256": "fde0d2878949a9cce42261a783ddcfd5bfc112efa6c0670bb2e4f1be28d4d44a",
+        "topologySourceId": "capital-route-topology",
+        "topologySnapshotId": "capital-route-topology-20260904",
+        "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+        "topologyLineages": [
+          {
+            "sourceId": "capital-route-topology",
+            "snapshotId": "capital-route-topology-20260904",
+            "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+            "lineId": "line-30886152e4f8"
+          }
         ]
       },
       "nextAction": "공식 FILE 갱신 시 CSV byte hash와 admitted 좌표 snapshot을 함께 갱신한다"
@@ -7369,6 +7395,75 @@
         "operatorIds": ["capital-urban-rail-operators"]
       },
       "displayName": "수도권 도시철도 노선별 역간거리 FILE source set",
+      "registrationMetadata": {
+        "inventory": {
+          "owner": "국가철도공단·국토교통부",
+          "provider": "data.go.kr official FILE",
+          "providerDepartment": "복수 공식 제공부서",
+          "sourceSystem": "공공데이터포털",
+          "datasetUrl": "https://www.data.go.kr/",
+          "datasetKind": "official-file-source-set",
+          "coverage": "24 ordered Capital topology source definitions",
+          "licenseName": "공공누리 제1유형",
+          "licenseTermsUrl": "https://www.kogl.or.kr/info/faqList.do?dataGroup=2&mstIdx=KOGL_005",
+          "commercialUseAllowed": true,
+          "derivativeWorkAllowed": true,
+          "redistributionAllowed": true,
+          "capabilities": {
+            "schedule": {
+              "status": "UNSUPPORTED",
+              "productionUseAllowed": false,
+              "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+              "updateFrequency": "P1D",
+              "unsupportedNotes": "source does not provide scheduled timetable data"
+            },
+            "realtime": {
+              "status": "UNSUPPORTED",
+              "productionUseAllowed": false,
+              "liveEtaEligible": false,
+              "rateLimitStatus": "NOT_APPLICABLE",
+              "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+              "updateFrequency": "P1D",
+              "unsupportedNotes": "source provides static route topology, not realtime arrivals"
+            },
+            "facility": {
+              "status": "UNSUPPORTED",
+              "productionUseAllowed": false,
+              "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+              "updateFrequency": "P1D",
+              "unsupportedNotes": "source does not provide accessibility facility records"
+            }
+          }
+        },
+        "governance": {
+          "retentionClassId": "standard-90d",
+          "ownerRole": "datapack-source-owner",
+          "stewardRole": "datapack-data-steward",
+          "approvalRole": "datapack-release-approver",
+          "escalationHours": 4,
+          "alertRoute": "github:area-datapack",
+          "licenseReview": {
+            "status": "APPROVED",
+            "termsHash": "8af4d3c1d50cfa78ba2be42b46ffcfeba5366f91e07592dae863b9a76e98bd54",
+            "reviewedAt": "2026-09-03T14:01:45Z",
+            "nextReviewAt": "2027-09-03T14:01:45Z",
+            "termsUrl": "https://www.kogl.or.kr/info/faqList.do?dataGroup=2&mstIdx=KOGL_005",
+            "reviewedProvider": "data.go.kr official FILE",
+            "reviewedDatasetUrl": "https://www.data.go.kr/",
+            "redistributionScopes": ["DERIVED_DATAPACK"],
+            "approvedByRole": "datapack-release-approver"
+          }
+        },
+        "freshness": {
+          "examples": ["official capital route graph topology"],
+          "basisField": "retrievedAt",
+          "reverificationCadence": "P1D",
+          "offlinePackEligible": true,
+          "eventTriggers": ["official source revision", "line extension opening"],
+          "changePublishSla": "P3D",
+          "freshnessMetric": "routeTopologyFreshnessRatio"
+        }
+      },
       "operation": {
         "kind": "AGGREGATE_SOURCE_SET",
         "method": "GET",

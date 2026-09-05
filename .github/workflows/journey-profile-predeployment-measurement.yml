@@ -1,0 +1,377 @@
+name: Journey Profile Predeployment Measurement
+
+on:
+  workflow_dispatch:
+    inputs:
+      backendPullRequestNumber:
+        description: Open same-repository Backend profile PR number
+        required: true
+        type: string
+      expectedBackendHeadSha:
+        description: Exact open Backend PR head SHA
+        required: true
+        type: string
+      dataRunId:
+        description: Successful Data #6 candidate release run ID
+        required: true
+        type: string
+      expectedDataHeadSha:
+        description: Exact Data release run head SHA
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+jobs:
+  measure:
+    if: ${{ github.repository == 'AquilaXk/easysubway-data' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24"
+      - uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d
+        with:
+          version: 1.3.3
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: "21.0.11"
+      - name: Verify trusted Backend PR and Data #6 release identities
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BACKEND_PR: ${{ inputs.backendPullRequestNumber }}
+          BACKEND_HEAD: ${{ inputs.expectedBackendHeadSha }}
+          DATA_RUN_ID: ${{ inputs.dataRunId }}
+          DATA_HEAD: ${{ inputs.expectedDataHeadSha }}
+        run: |
+          set -euo pipefail
+          [[ "${BACKEND_PR}" =~ ^[1-9][0-9]*$ ]]
+          [[ "${DATA_RUN_ID}" =~ ^[1-9][0-9]*$ ]]
+          [[ "${BACKEND_HEAD}" =~ ^[a-f0-9]{40}$ ]]
+          [[ "${DATA_HEAD}" =~ ^[a-f0-9]{40}$ ]]
+          [[ "${BACKEND_PR}" == "312" ]]
+          gh api "repos/AquilaXk/easysubway-backend/pulls/${BACKEND_PR}" > "${RUNNER_TEMP}/backend-pr.json"
+          jq -e --arg expected "${BACKEND_HEAD}" '
+            .state == "open" and .base.ref == "main" and
+            .head.repo.full_name == "AquilaXk/easysubway-backend" and
+            .head.repo.fork == false and .head.sha == $expected
+          ' "${RUNNER_TEMP}/backend-pr.json" >/dev/null
+          gh api "repos/AquilaXk/easysubway-data/actions/runs/${DATA_RUN_ID}" > "${RUNNER_TEMP}/data-run.json"
+          jq -e --arg expected "${DATA_HEAD}" '
+            .status == "completed" and .conclusion == "success" and
+            .workflow_id == 323921971 and .event == "workflow_dispatch" and
+            .head_branch == "main" and .run_attempt == 1 and
+            .head_repository.full_name == "AquilaXk/easysubway-data" and
+            .head_sha == $expected
+          ' "${RUNNER_TEMP}/data-run.json" >/dev/null
+      - name: Fetch verified Backend source without executing it
+        env:
+          BACKEND_HEAD: ${{ inputs.expectedBackendHeadSha }}
+        run: |
+          set -euo pipefail
+          git init "${RUNNER_TEMP}/backend-source"
+          git -C "${RUNNER_TEMP}/backend-source" remote add origin https://github.com/AquilaXk/easysubway-backend.git
+          git -C "${RUNNER_TEMP}/backend-source" fetch --depth=1 --no-tags origin "${BACKEND_HEAD}"
+          [[ "$(git -C "${RUNNER_TEMP}/backend-source" rev-parse FETCH_HEAD)" == "${BACKEND_HEAD}" ]]
+          git -C "${RUNNER_TEMP}/backend-source" checkout --detach "${BACKEND_HEAD}"
+      - name: Stage locked Backend Hub contracts
+        run: |
+          set -euo pipefail
+          backend_root="${RUNNER_TEMP}/backend-source/backend"
+          # 잠금 파일의 소유자·불변 commit 경로만 허용해 현재 값의 재기록을 막는다.
+          hub_contract_url="$(jq -er '.artifactUrl | select(type == "string")' "${backend_root}/contracts.lock.json")"
+          [[ "${hub_contract_url}" =~ ^https://raw\.githubusercontent\.com/AquilaXk/easysubway/[a-f0-9]{40}/contracts/bundles/backend-contracts-v1\.0\.0\.json$ ]]
+          curl --fail --silent --show-error --location \
+            --connect-timeout 10 --max-time 60 \
+            --output "${RUNNER_TEMP}/backend-contracts.json" \
+            "${hub_contract_url}"
+          node "${backend_root}/tools/stage-contracts.mjs" \
+            --lock "${backend_root}/contracts.lock.json" \
+            --input "${RUNNER_TEMP}/backend-contracts.json" \
+            --output "${backend_root}/build/contracts-staging"
+      - name: Stage locked Backend Journey contracts
+        run: |
+          set -euo pipefail
+          backend_root="${RUNNER_TEMP}/backend-source/backend"
+          journey_contract_subject="$(jq -er '.artifact | if type == "object" and (.repository == "ghcr.io/aquilaxk/easysubway-backend-contracts") and (.manifestDigest | type == "string" and test("^sha256:[a-f0-9]{64}$")) then "\(.repository)@\(.manifestDigest)" else error("invalid Journey contract OCI subject") end' "${backend_root}/journey-contracts.lock.json")"
+          [[ "${journey_contract_subject}" =~ ^ghcr\.io/aquilaxk/easysubway-backend-contracts@sha256:[a-f0-9]{64}$ ]]
+          oras pull "${journey_contract_subject}" --output "${RUNNER_TEMP}/journey-contract-pull"
+          node "${backend_root}/tools/stage-journey-contracts.mjs" \
+            --lock "${backend_root}/journey-contracts.lock.json" \
+            --input "${RUNNER_TEMP}/journey-contract-pull/journey-v3-contract-bundle-v2.json" \
+            --output "${backend_root}/build/journey-contracts-staging"
+      - name: Download exact Data candidate artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          repository: AquilaXk/easysubway-data
+          name: easysubway-datapack-candidate-${{ inputs.dataRunId }}
+          path: ${{ runner.temp }}/data-candidate
+          run-id: ${{ inputs.dataRunId }}
+          github-token: ${{ github.token }}
+      - name: Download exact Data candidate execution evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          repository: AquilaXk/easysubway-data
+          name: easysubway-datapack-candidate-execution-evidence-${{ inputs.dataRunId }}
+          path: ${{ runner.temp }}/data-execution-evidence
+          run-id: ${{ inputs.dataRunId }}
+          github-token: ${{ github.token }}
+      - name: Validate Data candidate identities and exact artifact inventories
+        env:
+          BACKEND_HEAD: ${{ inputs.expectedBackendHeadSha }}
+          DATA_HEAD: ${{ inputs.expectedDataHeadSha }}
+          DATA_RUN_ID: ${{ inputs.dataRunId }}
+          CANDIDATE_ROOT: ${{ runner.temp }}/data-candidate
+          EXECUTION_ROOT: ${{ runner.temp }}/data-execution-evidence
+          VALIDATED_INPUT: ${{ runner.temp }}/journey-profile-measurement-input.json
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { createHash } from "node:crypto";
+          import { lstatSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+          import { join, relative, resolve } from "node:path";
+          import {
+            validateCurrentFiveRegionSourceFanIn,
+          } from "./tools/datapack/build-current-five-region-source-fan-in.mjs";
+
+          const candidateRoot = resolve(process.env.CANDIDATE_ROOT);
+          const executionRoot = resolve(process.env.EXECUTION_ROOT);
+          const queryClasses = ["POINT", "DEPARTURE_PROFILE", "ARRIVE_BY", "LAST_CONNECTION", "CUTOFF", "TYPED_FAILURE"];
+          const fanInPath = "tools/datapack/release/current-five-region-source-fan-in.json";
+          const routePaths = [
+            "compatibility.json", "manifest.json", "manifest.signing-input.json",
+            "payload/accessibility.sqlite.zst", "payload/fare.sqlite.zst",
+            "payload/timetable.sqlite.zst", "payload/topology.sqlite.zst", "provenance.json",
+          ];
+          const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+          const sameKeys = (value, expected) => value && typeof value === "object" && !Array.isArray(value)
+            && JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...expected].sort());
+          const canonical = (value) => {
+            if (value === null || typeof value !== "object") return JSON.stringify(value);
+            if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+            return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
+          };
+          const regular = (path) => {
+            const stat = lstatSync(path);
+            if (!stat.isFile() || stat.isSymbolicLink() || stat.size === 0) throw new Error("non-regular artifact input");
+            return readFileSync(path);
+          };
+          const files = (root) => {
+            const found = [];
+            const visit = (path) => {
+              const stat = lstatSync(path);
+              if (stat.isSymbolicLink()) throw new Error("symlinked Data artifact input");
+              if (stat.isDirectory()) for (const name of readdirSync(path).sort()) visit(join(path, name));
+              else if (stat.isFile()) found.push(path);
+              else throw new Error("non-regular Data artifact input");
+            };
+            visit(root); return found.sort();
+          };
+          const parseBytes = (bytes, label) => {
+            try { return JSON.parse(bytes); } catch { throw new Error(`${label} must be JSON`); }
+          };
+          const parse = (path, label) => parseBytes(regular(path), label);
+          const candidateFiles = files(candidateRoot);
+          const executionFiles = files(executionRoot);
+          const expectedExecution = ["release-decision.json", "release-evidence-bundle.json"];
+          if (executionFiles.length !== expectedExecution.length || executionFiles.some((path) => !expectedExecution.includes(relative(executionRoot, path)))) throw new Error("execution evidence inventory is not exact");
+          const inventoryBytes = regular(join(candidateRoot, "data-artifact-inventory.json"));
+          const component = parse(join(candidateRoot, "data-component-manifest.json"), "data component manifest");
+          const inventory = parseBytes(inventoryBytes, "data artifact inventory");
+          if (!sameKeys(inventory, ["schemaVersion", "artifactKind", "entries"])
+            || inventory.schemaVersion !== 1 || inventory.artifactKind !== "datapack-candidate-inventory"
+            || !Array.isArray(inventory.entries)) throw new Error("data artifact inventory shape mismatch");
+          const excluded = new Set(["data-artifact-inventory.json", "data-component-manifest.json"]);
+          const actual = candidateFiles.map((path) => relative(candidateRoot, path)).filter((path) => !excluded.has(path)).sort();
+          const declared = inventory.entries.map((entry) => entry.path);
+          if (JSON.stringify(declared) !== JSON.stringify([...declared].sort())
+            || JSON.stringify(actual) !== JSON.stringify(declared)) throw new Error("candidate artifact inventory paths mismatch");
+          for (const entry of inventory.entries) {
+            if (!sameKeys(entry, ["path", "sizeBytes", "sha256"]) || !/^[a-f0-9]{64}$/.test(entry.sha256 ?? "")
+              || !Number.isSafeInteger(entry.sizeBytes) || entry.sizeBytes < 1) throw new Error("candidate inventory entry mismatch");
+            const bytes = regular(join(candidateRoot, entry.path));
+            if (bytes.length !== entry.sizeBytes || sha256(bytes) !== entry.sha256) throw new Error("candidate inventory digest mismatch");
+          }
+          if (!sameKeys(component, ["schemaVersion", "component", "repository", "gitSha", "workflowRunId", "dataVersion", "releaseSequence", "manifestSha256", "provenance", "artifactInventorySha256", "contractVersion", "issueRef"])
+            || component.schemaVersion !== 1 || component.component !== "data"
+            || component.repository !== "AquilaXk/easysubway-data" || component.gitSha !== process.env.DATA_HEAD
+            || String(component.workflowRunId) !== process.env.DATA_RUN_ID || component.contractVersion !== "datapack-contract-v3"
+            || component.artifactInventorySha256 !== sha256(inventoryBytes)
+            || !sameKeys(component.provenance, ["sourceSnapshotSetHash"])
+            || !/^[a-f0-9]{64}$/.test(component.provenance.sourceSnapshotSetHash ?? "")) throw new Error("data component identity mismatch");
+          const byPath = new Map(inventory.entries.map((entry) => [entry.path, entry]));
+          if (byPath.size !== inventory.entries.length || !byPath.has(fanInPath)) throw new Error("canonical five-region source fan-in is not inventory-bound");
+          const fanInBytes = regular(join(candidateRoot, fanInPath));
+          const fanInSha256 = sha256(fanInBytes);
+          if (byPath.get(fanInPath).sha256 !== fanInSha256) throw new Error("canonical five-region source fan-in digest mismatch");
+          const fanIn = validateCurrentFiveRegionSourceFanIn(
+            parseBytes(fanInBytes, "five-region source fan-in"), fanInBytes,
+          );
+          const routeEntries = routePaths.map((path) => {
+            const relativePath = `server-route-bundle/${path}`;
+            const entry = byPath.get(relativePath);
+            if (!entry) throw new Error("signed server-route-bundle inventory is not exact");
+            return entry;
+          });
+          if (inventory.entries.filter(({ path }) => path.startsWith("server-route-bundle/")).length !== routePaths.length) throw new Error("signed server-route-bundle inventory is not exact");
+          const routeBundleSha256 = sha256(Buffer.from(canonical(routeEntries)));
+          const releaseEvidenceBytes = regular(join(executionRoot, "release-evidence-bundle.json"));
+          const releaseEvidence = parseBytes(releaseEvidenceBytes, "release evidence bundle");
+          const releaseDecision = parse(join(executionRoot, "release-decision.json"), "release decision");
+          if (releaseEvidence.schemaVersion !== 1 || releaseEvidence.artifactKind !== "datapack-release-evidence-bundle"
+            || releaseEvidence.releaseMode !== "release-candidate" || releaseEvidence.candidateBuilderGitSha !== process.env.DATA_HEAD
+            || releaseEvidence.builderGitSha !== process.env.DATA_HEAD || releaseEvidence.releaseSequence !== component.releaseSequence
+            || releaseEvidence.manifestSha256 !== component.manifestSha256
+            || releaseEvidence.sourceSnapshotSetHash !== component.provenance.sourceSnapshotSetHash
+            || releaseEvidence.launchDenominatorDecision !== "GO"
+            || !/^[a-f0-9]{64}$/.test(releaseEvidence.identityLinkageMatrixSha256 ?? "")) throw new Error("release-candidate evidence identity mismatch");
+          if (fanIn.regionalMatrixSha256 !== releaseEvidence.identityLinkageMatrixSha256) {
+            throw new Error("five-region source fan-in regional matrix mismatch");
+          }
+          if (releaseDecision.schemaVersion !== 1 || releaseDecision.artifactKind !== "datapack-release-decision"
+            || releaseDecision.strictValidationPassed !== true
+            || releaseDecision.sourceSnapshotSetHash !== component.provenance.sourceSnapshotSetHash) throw new Error("release-candidate decision mismatch");
+          const routeEvidence = releaseEvidence.candidateServerRouteEvidence;
+          if (!routeEvidence || typeof releaseEvidence.buildCandidateId !== "string" || !releaseEvidence.buildCandidateId
+            || typeof routeEvidence.candidateId !== "string" || !routeEvidence.candidateId
+            || routeEvidence.candidateId !== releaseEvidence.buildCandidateId
+            || routeEvidence.sourceSnapshotSetHash !== component.provenance.sourceSnapshotSetHash) throw new Error("candidate route evidence identity mismatch");
+          for (const [name, expected] of [["eligibility", "server-route-bundle-evidence/route-accessibility-eligibility.json"], ["final", "server-route-bundle-evidence/server-route-bundle-final.json"]]) {
+            const inventoryEntry = byPath.get(expected);
+            if (typeof routeEvidence[name] !== "object" || routeEvidence[name] === null || Array.isArray(routeEvidence[name])
+              || !inventoryEntry
+              || !/^[a-f0-9]{64}$/.test(routeEvidence[name].sha256 ?? "")
+              || !/^[a-f0-9]{64}$/.test(inventoryEntry.sha256 ?? "")
+              || routeEvidence[name].path !== expected || routeEvidence[name].sha256 !== inventoryEntry.sha256) throw new Error("candidate route evidence artifact mismatch");
+          }
+          const input = {
+            schemaVersion: 1,
+            artifactKind: "journey-profile-predeployment-measurement-input",
+            backendHeadSha: process.env.BACKEND_HEAD,
+            dataRepository: "AquilaXk/easysubway-data",
+            dataHeadSha: process.env.DATA_HEAD,
+            dataRunId: process.env.DATA_RUN_ID,
+            regionIds: fanIn.scope.regionIds,
+            queryClasses,
+            fanIn: { path: fanInPath, sha256: fanInSha256 },
+            routeBundleSha256,
+            regionalMatrixSha256: releaseEvidence.identityLinkageMatrixSha256,
+            componentSha256: sha256(regular(join(candidateRoot, "data-component-manifest.json"))),
+            inventorySha256: sha256(inventoryBytes),
+            releaseEvidenceSha256: sha256(releaseEvidenceBytes),
+            releaseDecisionSha256: sha256(regular(join(executionRoot, "release-decision.json"))),
+          };
+          writeFileSync(process.env.VALIDATED_INPUT, `${canonical(input)}\n`, { flag: "wx", mode: 0o600 });
+          NODE
+      - name: Run future PR-owned JUnit measurement harness
+        env:
+          CANDIDATE_ROOT: ${{ runner.temp }}/data-candidate
+          MEASUREMENT_INPUT: ${{ runner.temp }}/journey-profile-measurement-input.json
+          MEASUREMENT_OUTPUT: ${{ runner.temp }}/journey-profile-measurement-observation.json
+          EASYSUBWAY_CONTRACTS_BUNDLE: ${{ runner.temp }}/backend-contracts.json
+        run: |
+          set -euo pipefail
+          test -f "${MEASUREMENT_INPUT}"
+          test ! -e "${MEASUREMENT_OUTPUT}"
+          test -d "${CANDIDATE_ROOT}"
+          test ! -L "${CANDIDATE_ROOT}"
+          test -d "${CANDIDATE_ROOT}/server-route-bundle"
+          test ! -L "${CANDIDATE_ROOT}/server-route-bundle"
+          test -d "${CANDIDATE_ROOT}/server-route-bundle/payload"
+          test ! -L "${CANDIDATE_ROOT}/server-route-bundle/payload"
+          expectedCandidateFiles=(
+            compatibility.json manifest.json manifest.signing-input.json
+            payload/accessibility.sqlite.zst payload/fare.sqlite.zst
+            payload/timetable.sqlite.zst payload/topology.sqlite.zst provenance.json
+          )
+          for candidateFile in "${expectedCandidateFiles[@]}"; do
+            candidatePath="${CANDIDATE_ROOT}/server-route-bundle/${candidateFile}"
+            test -f "${candidatePath}"
+            test ! -L "${candidatePath}"
+          done
+          mapfile -t actualCandidateEntries < <(find "${CANDIDATE_ROOT}/server-route-bundle" -mindepth 1 -printf '%P\n' | LC_ALL=C sort)
+          expectedCandidateEntries=(
+            compatibility.json manifest.json manifest.signing-input.json payload
+            payload/accessibility.sqlite.zst payload/fare.sqlite.zst
+            payload/timetable.sqlite.zst payload/topology.sqlite.zst provenance.json
+          )
+          [[ "${actualCandidateEntries[*]}" == "${expectedCandidateEntries[*]}" ]]
+          cd "${RUNNER_TEMP}/backend-source/backend"
+          ./gradlew test --tests com.easysubway.journey.application.JourneyProfilePredeploymentMeasurementTest --no-daemon --max-workers=1
+          test -s "${MEASUREMENT_OUTPUT}"
+      - name: Validate observations and create canonical evidence once
+        env:
+          BACKEND_HEAD: ${{ inputs.expectedBackendHeadSha }}
+          DATA_HEAD: ${{ inputs.expectedDataHeadSha }}
+          DATA_RUN_ID: ${{ inputs.dataRunId }}
+          VALIDATED_INPUT: ${{ runner.temp }}/journey-profile-measurement-input.json
+          MEASUREMENT_OUTPUT: ${{ runner.temp }}/journey-profile-measurement-observation.json
+          EVIDENCE_OUTPUT: ${{ runner.temp }}/journey-profile-predeployment-measurement.json
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { createHash } from "node:crypto";
+          import { readFileSync, writeFileSync } from "node:fs";
+          const input = JSON.parse(readFileSync(process.env.VALIDATED_INPUT));
+          const observation = JSON.parse(readFileSync(process.env.MEASUREMENT_OUTPUT));
+          const canonical = (value) => {
+            if (value === null || typeof value !== "object") return JSON.stringify(value);
+            if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+            return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
+          };
+          const required = ["schemaVersion", "artifactKind", "observationScope", "servingBoundary", "backendHeadSha", "dataHeadSha", "dataRunId", "fanInSha256", "routeBundleSha256", "regionalMatrixSha256", "corpusSha256", "algorithmId", "algorithmSha256", "frontierPolicyId", "frontierSha256", "measurements"];
+          if (JSON.stringify(Object.keys(observation).sort()) !== JSON.stringify(required.sort())) throw new Error("measurement observation shape is not closed");
+          if (observation.schemaVersion !== 2 || observation.artifactKind !== "journey-profile-predeployment-observation"
+            || observation.backendHeadSha !== process.env.BACKEND_HEAD || observation.dataHeadSha !== process.env.DATA_HEAD
+            || String(observation.dataRunId) !== process.env.DATA_RUN_ID || observation.fanInSha256 !== input.fanIn.sha256
+            || observation.routeBundleSha256 !== input.routeBundleSha256 || observation.regionalMatrixSha256 !== input.regionalMatrixSha256
+            || observation.algorithmId !== "EASYSUBWAY_RAPTOR_SUITE_V2" || observation.frontierPolicyId !== "FRONTIER_POLICY_V1") throw new Error("measurement observation identity mismatch");
+          for (const name of ["fanInSha256", "routeBundleSha256", "regionalMatrixSha256", "corpusSha256", "algorithmSha256", "frontierSha256"]) if (!/^[a-f0-9]{64}$/.test(observation[name] ?? "")) throw new Error(`invalid ${name}`);
+          // 순수 planner 측정은 운영 경계를 관측하지 않으며 배포 성공 증거가 아니다.
+          if (observation.observationScope !== "PREDEPLOYMENT_PLANNER"
+            || observation.servingBoundary === null || typeof observation.servingBoundary !== "object"
+            || JSON.stringify(Object.keys(observation.servingBoundary)) !== '["status"]'
+            || observation.servingBoundary.status !== "UNOBSERVABLE") throw new Error("invalid planner observation scope");
+          const profileRowKeys = ["regionId", "queryClass", "observedWork", "observedStateLabels", "observedDestinationLabels", "observedBreakpoints", "durationNanos", "allocatedBytes", "saturatedStates", "requiredRepresentativeLoss", "oracleParity"];
+          const pointRowKeys = ["regionId", "queryClass", "expandedRoutes", "expandedTrips", "expandedTransfers", "durationNanos", "allocatedBytes", "requiredRepresentativeLoss", "oracleParity", "profileMetrics"];
+          const expectedCells = input.regionIds.flatMap((regionId) => input.queryClasses.map((queryClass) => `${regionId}/${queryClass}`));
+          if (!Array.isArray(observation.measurements) || observation.measurements.length !== expectedCells.length) throw new Error("measurement coverage matrix is incomplete");
+          for (let index = 0; index < observation.measurements.length; index += 1) {
+            const row = observation.measurements[index];
+            if (`${row.regionId}/${row.queryClass}` !== expectedCells[index]) throw new Error("measurement coverage cell mismatch");
+            const point = row.queryClass === "POINT";
+            const rowKeys = point ? pointRowKeys : profileRowKeys;
+            if (JSON.stringify(Object.keys(row).sort()) !== JSON.stringify([...rowKeys].sort())) throw new Error("measurement row shape is not closed");
+            const numeric = point
+              ? ["expandedRoutes", "expandedTrips", "expandedTransfers", "durationNanos", "allocatedBytes", "requiredRepresentativeLoss"]
+              : ["observedWork", "observedStateLabels", "observedDestinationLabels", "observedBreakpoints", "durationNanos", "allocatedBytes", "saturatedStates", "requiredRepresentativeLoss"];
+            for (const name of numeric) if (!Number.isSafeInteger(row[name]) || row[name] < 0) throw new Error(`invalid ${name}`);
+            if (point && (row.profileMetrics === null || typeof row.profileMetrics !== "object"
+              || JSON.stringify(Object.keys(row.profileMetrics)) !== '["status"]'
+              || row.profileMetrics.status !== "NOT_APPLICABLE")) throw new Error("invalid point profile metrics");
+            if (row.requiredRepresentativeLoss !== 0 || row.oracleParity !== true) throw new Error("untrusted predeployment observation");
+          }
+          const evidencePayload = {
+            schemaVersion: 2,
+            artifactKind: "journey-profile-predeployment-measurement",
+            backend: { repository: "AquilaXk/easysubway-backend", headSha: process.env.BACKEND_HEAD },
+            data: { repository: input.dataRepository, headSha: process.env.DATA_HEAD, runId: process.env.DATA_RUN_ID, regionIds: input.regionIds, queryClasses: input.queryClasses, fanIn: input.fanIn, componentSha256: input.componentSha256, inventorySha256: input.inventorySha256, releaseEvidenceSha256: input.releaseEvidenceSha256, releaseDecisionSha256: input.releaseDecisionSha256 },
+            observation,
+          };
+          const evidence = { ...evidencePayload, evidenceSha256: createHash("sha256").update(canonical(evidencePayload)).digest("hex") };
+          writeFileSync(process.env.EVIDENCE_OUTPUT, `${canonical(evidence)}\n`, { flag: "wx", mode: 0o600 });
+          NODE
+      - name: Upload predeployment measurement evidence
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: journey-profile-predeployment-measurement-${{ github.run_id }}
+          path: ${{ runner.temp }}/journey-profile-predeployment-measurement.json
+          if-no-files-found: error

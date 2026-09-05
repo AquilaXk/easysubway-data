@@ -47,6 +47,10 @@ test("current production 정본에서 exact EXIT collection plan을 결정적으
       && !incheonLineIds.has(edge.fromNodeId.split(":")[1])
   ));
   const projectedPack = structuredClone(pack);
+  projectedPack.networkEdges = projectedPack.networkEdges.filter((edge) => (
+    !incheonLineIds.has(edge.fromNodeId.split(":")[1])
+  ));
+  const existingEdgeIds = new Set(projectedPack.networkEdges.map(({ id }) => id));
   const incheonAdmission = admittedIncheonTopologyEvidence({
     sourceInventory: JSON.parse(input.sourceInventoryBytes),
     snapshot: incheonTopology,
@@ -56,10 +60,7 @@ test("current production 정본에서 exact EXIT collection plan을 결정적으
   });
   materializeIncheonNetworkEdges(projectedPack, incheonTopology, incheonAdmission);
   const expectedIncheonEdgeIds = projectedPack.networkEdges
-    .filter((edge) => edge.edgeType === "RIDE"
-      && edge.servicePattern === "LOCAL"
-      && edge.serviceClass === "SUBWAY"
-      && incheonLineIds.has(edge.fromNodeId.split(":")[1]))
+    .filter(({ id }) => !existingEdgeIds.has(id))
     .map(({ id }) => id)
     .sort();
   const actualIncheonEdgeIds = plan.routeEdges
@@ -86,14 +87,15 @@ test("capital Seoul Metro production selector는 canonical metadata와 실제 me
   const plan = buildPlan(input, { coverageSelector: "capital-seoul-metro-production" });
   const pack = JSON.parse(input.canonicalPackBytes).packs[0];
   const targets = JSON.parse(input.coverageTargetsBytes);
-  const [membershipEvidence] = JSON.parse(pack.metadata.productionCoverageEvidence)
+  const membershipEvidence = JSON.parse(pack.metadata.productionCoverageEvidence)
     .filter(({ sourceDomain }) => sourceDomain === "station_line_membership");
-  const activeRegionLineIds = new Set(targets.activeLineScopes
-    .filter(({ regionId }) => regionId === membershipEvidence.regionId)
+  assert.equal(membershipEvidence.length, 1);
+  const [{ regionId, operatorId }] = membershipEvidence;
+  const regionLineIds = new Set(targets.activeLineScopes
+    .filter((scope) => scope.regionId === regionId)
     .map(({ lineId }) => lineId));
   const selectedLineIds = new Set(pack.lines
-    .filter(({ id, operatorId }) => operatorId === membershipEvidence.operatorId
-      && activeRegionLineIds.has(id))
+    .filter((line) => line.operatorId === operatorId && regionLineIds.has(line.id))
     .map(({ id }) => id));
   const expectedStationLineKeys = pack.stationLines
     .filter(({ lineId }) => selectedLineIds.has(lineId))

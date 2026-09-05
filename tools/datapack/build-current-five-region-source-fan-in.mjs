@@ -16,6 +16,7 @@ const INPUT_PATHS = Object.freeze({
 });
 const SHA256 = /^[a-f0-9]{64}$/u;
 const REQUIRED_REGION_IDS = Object.freeze(["busan", "capital", "daegu", "daejeon", "gwangju"]);
+const RELEASE_TIERS = new Set(["LAUNCH_REQUIRED", "ENHANCEMENT"]);
 const TALLY_STATUSES = new Set([
   "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE",
   "INVENTORY_ADMITTED",
@@ -34,6 +35,11 @@ function canonicalObject(value) {
 
 function canonical(value) {
   return JSON.stringify(canonicalObject(value));
+}
+
+function sameKeys(value, expected) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    && canonical(Object.keys(value).sort(compare)) === canonical([...expected].sort(compare));
 }
 
 function object(value, label) {
@@ -79,7 +85,11 @@ function requiredRows(targets, tally) {
     throw new Error("five-region target or tally shape mismatch");
   }
   const domainTier = new Map(targets.requiredSourceDomains.map((domain) => [domain.id, domain.releaseTier]));
-  if (domainTier.size !== targets.requiredSourceDomains.length) throw new Error("target source domain mismatch");
+  if (domainTier.size !== targets.requiredSourceDomains.length
+    || targets.requiredSourceDomains.some(({ id, releaseTier }) =>
+      typeof id !== "string" || id.length === 0 || !RELEASE_TIERS.has(releaseTier))) {
+    throw new Error("target source domain release tier mismatch");
+  }
   const expected = new Set(targets.activeLineScopes.flatMap((scope) => targets.requiredSourceDomains
     .map((domain) => [scope.regionId, scope.operatorId, scope.lineId, domain.id].join(":"))));
   const rows = [...tally.launchRequired.requirements, ...tally.enhancement.requirements];
@@ -99,6 +109,53 @@ function admittedEvidence(source) {
   return Object.entries(source).filter(([key, value]) =>
     (key === "admissionEvidence" || key.endsWith("AdmissionEvidence"))
     && value && typeof value === "object" && !Array.isArray(value));
+}
+
+function licenseEvidence(source, sourceId) {
+  const evidence = source.license ?? source.licenseReview;
+  if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)) {
+    throw new Error(`inventory source license mismatch for ${sourceId}`);
+  }
+  if (source.license && (evidence.commercialUseAllowed !== true
+    || evidence.derivativeWorkAllowed !== true || evidence.redistributionAllowed !== true)) {
+    throw new Error(`inventory source license mismatch for ${sourceId}`);
+  }
+  return evidence;
+}
+
+function headAdmissionEvidence(source, sourceId, snapshot, evaluatedAt) {
+  const matching = admittedEvidence(source).filter(([, evidence]) =>
+    evidence.snapshotId === snapshot.snapshotId
+    && (evidence.sourceId === undefined || evidence.sourceId === sourceId));
+  if (matching.length === 0) throw new Error(`admission snapshot mismatch for ${sourceId}`);
+
+  const approved = matching.filter(([, evidence]) => evidence.decision === "APPROVED"
+    || evidence.productionUseAllowed === true);
+  if (approved.length === 0) throw new Error(`admission approval mismatch for ${sourceId}`);
+
+  const bound = approved.filter(([, evidence]) => evidence.rawSha256 === snapshot.rawSha256);
+  if (bound.length === 0) throw new Error(`admission digest mismatch for ${sourceId}`);
+
+  const current = bound.filter(([, evidence]) => {
+    const observedAt = evidence.observedAt ?? evidence.capturedAt
+      ?? evidence.verifiedAt ?? evidence.approvedAt;
+    return observedAt !== undefined && evidence.freshUntil !== undefined
+      && instant(observedAt, "admission observation") <= evaluatedAt
+      && instant(evidence.freshUntil, "admission freshness") > evaluatedAt;
+  });
+  if (current.length === 0) {
+    const hasFutureObservation = bound.some(([, evidence]) => {
+      const observedAt = evidence.observedAt ?? evidence.capturedAt
+        ?? evidence.verifiedAt ?? evidence.approvedAt;
+      return observedAt !== undefined && instant(observedAt, "admission observation") > evaluatedAt;
+    });
+    if (hasFutureObservation) throw new Error(`admission future observation mismatch for ${sourceId}`);
+    throw new Error(`admission freshness mismatch for ${sourceId}`);
+  }
+  return current.map(([kind, evidence]) => ({
+    kind,
+    sha256: sha256(Buffer.from(canonical(evidence))),
+  })).sort((left, right) => compare(left.kind, right.kind));
 }
 
 function isImmutableOciObjectUri(value) {
@@ -159,27 +216,35 @@ function selectedSources(rows, inventory, sourceSnapshots, evaluatedAt) {
       || (row.status !== "INVENTORY_ADMITTED" && ids.length !== 0)) {
       throw new Error(`requirement disposition mismatch for ${pk(row)}`);
     }
-    ids.forEach((id) => admittedIds.add(id));
+    if (row.releaseTier === "LAUNCH_REQUIRED") {
+      ids.forEach((id) => admittedIds.add(id));
+    }
   }
   return [...admittedIds].sort(compare).map((sourceId) => {
     const source = inventoryById.get(sourceId);
     if (!source) throw new Error(`inventory source missing for ${sourceId}`);
-    if (source.productionUseAllowed !== true || typeof source.provider !== "string" || source.provider.length === 0
-      || (!source.license && !source.licenseReview)
-      || !admittedEvidence(source).some(([, evidence]) => evidence.decision === "APPROVED")) {
+    if (source.requiredForProductionPack !== true || source.productionUseAllowed !== true) {
+      throw new Error(`production source admission mismatch for ${sourceId}`);
+    }
+    if (typeof source.provider !== "string" || source.provider.length === 0) {
       throw new Error(`inventory source admission mismatch for ${sourceId}`);
     }
+    const license = licenseEvidence(source, sourceId);
     const snapshot = terminalHead(sourceId, sourceSnapshots);
     if (snapshot.provider !== source.provider || !SHA256.test(snapshot.rawSha256 ?? "")
       || !isImmutableOciObjectUri(snapshot.rawObjectUri)
       || snapshot.snapshotStatus !== "LOCKED" || snapshot.schemaStatus !== "PASS"
       || snapshot.licenseStatus !== "PASS" || snapshot.fetchStatus !== "SUCCESS"
-      || snapshot.redistributionAllowed !== true) {
+      || snapshot.redistributionAllowed !== true || snapshot.credentialRedacted !== true) {
       throw new Error(`immutable OCI snapshot mismatch for ${sourceId}`);
+    }
+    if (instant(snapshot.retrievedAt, "snapshot retrieval") > evaluatedAt) {
+      throw new Error(`snapshot future retrieval mismatch for ${sourceId}`);
     }
     if (instant(snapshot.freshnessExpiresAt, "snapshot freshness") <= evaluatedAt) {
       throw new Error(`snapshot freshness mismatch for ${sourceId}`);
     }
+    const admissions = headAdmissionEvidence(source, sourceId, snapshot, evaluatedAt);
     return {
       sourceId,
       provider: source.provider,
@@ -189,12 +254,63 @@ function selectedSources(rows, inventory, sourceSnapshots, evaluatedAt) {
       freshnessExpiresAt: snapshot.freshnessExpiresAt,
       inventoryRecordSha256: sha256(Buffer.from(canonical(source))),
       snapshotRecordSha256: sha256(Buffer.from(canonical(snapshot))),
+      licenseRecordSha256: sha256(Buffer.from(canonical(license))),
+      admissionRecordSha256s: admissions,
     };
   });
 }
 
 export function canonicalCurrentFiveRegionSourceFanInJson(value) {
   return canonical(value);
+}
+
+export function validateCurrentFiveRegionSourceFanIn(value, inputBytes) {
+  const fanIn = object(value, "five-region source fan-in");
+  if (!sameKeys(fanIn, [
+    "schemaVersion", "artifactKind", "evaluatedAt", "scope", "inputs", "scopeSha256",
+    "regionalMatrixSha256", "sourceSetSha256", "selectedSources", "fanInSha256",
+  ]) || fanIn.schemaVersion !== 2 || fanIn.artifactKind !== "current-five-region-source-fan-in") {
+    throw new Error("five-region source fan-in shape mismatch");
+  }
+  const scope = object(fanIn.scope, "five-region source fan-in scope");
+  if (!sameKeys(scope, [
+    "targetVersion", "regionIds", "activeLineScopes", "requiredSourceDomains",
+  ]) || typeof scope.targetVersion !== "string" || scope.targetVersion.length === 0
+    || canonical(scope.regionIds) !== canonical(REQUIRED_REGION_IDS)
+    || !Array.isArray(scope.activeLineScopes) || scope.activeLineScopes.length === 0
+    || !Array.isArray(scope.requiredSourceDomains) || scope.requiredSourceDomains.length === 0) {
+    throw new Error("five-region source fan-in scope mismatch");
+  }
+  const lineKeys = scope.activeLineScopes.map((line) => {
+    if (!sameKeys(line, ["lineId", "operatorId", "regionId"])
+      || !REQUIRED_REGION_IDS.includes(line.regionId)
+      || [line.lineId, line.operatorId].some((entry) => typeof entry !== "string" || entry.length === 0)) {
+      throw new Error("five-region source fan-in line scope mismatch");
+    }
+    return pk({ ...line, sourceDomain: "" });
+  });
+  const domainIds = scope.requiredSourceDomains.map((domain) => string(domain?.id, "source domain ID"));
+  if (new Set(lineKeys).size !== lineKeys.length
+    || canonical(lineKeys) !== canonical([...lineKeys].sort(compare))
+    || new Set(domainIds).size !== domainIds.length
+    || canonical(domainIds) !== canonical([...domainIds].sort(compare))) {
+    throw new Error("five-region source fan-in scope ordering mismatch");
+  }
+  if (sha256(Buffer.from(canonical(scope))) !== fanIn.scopeSha256) {
+    throw new Error("five-region source fan-in scope digest mismatch");
+  }
+  const { fanInSha256, ...payload } = fanIn;
+  if (!SHA256.test(fanInSha256 ?? "")
+    || sha256(Buffer.from(canonical(payload))) !== fanInSha256) {
+    throw new Error("five-region source fan-in self digest mismatch");
+  }
+  if (inputBytes !== undefined) {
+    const bytes = Buffer.isBuffer(inputBytes) ? inputBytes : Buffer.from(inputBytes);
+    if (!bytes.equals(Buffer.from(`${canonical(fanIn)}\n`))) {
+      throw new Error("five-region source fan-in canonical bytes mismatch");
+    }
+  }
+  return fanIn;
 }
 
 export function buildCurrentFiveRegionSourceFanIn(input = {}) {
@@ -222,23 +338,24 @@ export function buildCurrentFiveRegionSourceFanIn(input = {}) {
     activeLineScopes: [...targets.activeLineScopes].sort((left, right) => compare(pk({ ...left, sourceDomain: "" }), pk({ ...right, sourceDomain: "" }))),
     requiredSourceDomains: [...targets.requiredSourceDomains].sort((left, right) => compare(left.id, right.id)),
   };
-  const sourceSet = sources.map(({ sourceId, snapshotId, rawSha256, rawObjectUri, freshnessExpiresAt }) =>
-    ({ sourceId, snapshotId, rawSha256, rawObjectUri, freshnessExpiresAt }));
   const payload = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     artifactKind: "current-five-region-source-fan-in",
-    targetVersion,
     evaluatedAt: input.evaluatedAt,
-    regionIds,
+    scope,
     inputs: Object.fromEntries(Object.entries(INPUT_PATHS).map(([name, inputPath]) => [name, {
       path: inputPath,
       sha256: sha256(records[name].bytes),
     }])),
     scopeSha256: sha256(Buffer.from(canonical(scope))),
-    sourceSetSha256: sha256(Buffer.from(canonical(sourceSet))),
+    regionalMatrixSha256: sha256(records.tally.bytes),
+    sourceSetSha256: sha256(Buffer.from(canonical(sources))),
     selectedSources: sources,
   };
-  return { ...payload, fanInSha256: sha256(Buffer.from(canonical(payload))) };
+  return validateCurrentFiveRegionSourceFanIn({
+    ...payload,
+    fanInSha256: sha256(Buffer.from(canonical(payload))),
+  });
 }
 
 function argumentsFrom(argv) {

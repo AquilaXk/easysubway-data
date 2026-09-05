@@ -6,6 +6,7 @@ import test from "node:test";
 
 import { decodeOfficialCsv } from "./collect-daegu-datapack-sources.mjs";
 import {
+  buildCapitalLightRailRouteMapSuccessor,
   collectCapitalLightRailRouteMapPositions,
   listCapitalLightRailRouteMapPositionLines,
   parseCapitalLightRailRouteMapPositionsCsv,
@@ -343,4 +344,73 @@ test("이번 변경은 metro_map_pack·capital.sqlite.gz·basemap asset을 수�
     "apps/mobile/assets/maps",
   ], { cwd: root });
   assert.equal(stdout.trim(), "");
+});
+
+test("successor projection은 retained bytes와 current topology binding으로 결정론적으로 생성한다", async () => {
+  const [inventory, candidates] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/source-candidates.json"), "utf8").then(JSON.parse),
+  ]);
+  for (const key of ["everline", "ui"]) {
+    const line = LINE_FIXTURES.find((entry) => entry.key === key);
+    const source = inventory.sources.find(({ id }) => id === line.sourceId);
+    const candidate = candidates.candidates.find(({ id }) => id === line.sourceId);
+    const inputs = await loadLine(line);
+    const previousSnapshotBytes = await readFile(path.join(root, source.routeMapAdmissionEvidence.snapshotPath));
+    const originalSource = structuredClone(source);
+    const originalCandidate = structuredClone(candidate);
+    const collectorInputs = {
+      previousSnapshotBytes,
+      csvBytes: inputs.csvBytes,
+      overlayCsvBytes: inputs.overlayCsvBytes,
+      topologySnapshot: inputs.topologySnapshot,
+      topologySnapshotId: inputs.topologySnapshotId,
+      schematicCanvas: inputs.schematicCanvas,
+      canonicalStationIdentities: inputs.canonicalStationIdentities,
+    };
+    const first = buildCapitalLightRailRouteMapSuccessor({ source, candidate, ...collectorInputs });
+    const second = buildCapitalLightRailRouteMapSuccessor({ source, candidate, ...collectorInputs });
+    assert.deepEqual(first, second);
+    assert.deepEqual(source, originalSource);
+    assert.deepEqual(candidate, originalCandidate);
+    assert.equal(first.snapshotId, `${source.id}-${createHash("sha256").update(first.bytes).digest("hex")}`);
+    assert.equal(path.basename(first.snapshotPath, ".json"), first.snapshotId);
+    assert.equal(first.snapshot.capturedAt, inputs.previousSnapshot.capturedAt);
+    assert.equal(first.snapshot.observedDataUpdatedAt, inputs.previousSnapshot.observedDataUpdatedAt);
+    assert.deepEqual(first.snapshot.license, inputs.previousSnapshot.license);
+    assert.equal(first.source.routeMapAdmissionEvidence.snapshotSha256, createHash("sha256").update(first.bytes).digest("hex"));
+    assert.equal(first.source.routeMapAdmissionEvidence.currentTopologyAdmission.positionSnapshotSha256, first.source.routeMapAdmissionEvidence.snapshotSha256);
+    assert.equal(first.source.routeMapAdmissionEvidence.currentTopologyAdmission.reviewedAt, source.routeMapAdmissionEvidence.currentTopologyAdmission.reviewedAt);
+    assert.equal(first.source.routeMapAdmissionEvidence.currentTopologyAdmission.freshUntil, source.routeMapAdmissionEvidence.currentTopologyAdmission.freshUntil);
+    assert.equal(first.source.coverage, "Official route-map position data joined to approved schematic geometry; geographic projection is not used.");
+    assert.deepEqual(first.candidate.evidence.coverageLimitations, ["Official route-map position data is limited to the admitted line and approved schematic geometry."]);
+    assert.equal(first.candidate.evidence.evidenceArtifact, first.snapshotPath);
+  }
+});
+
+test("successor projection은 tampered predecessor와 current topology binding을 거부한다", async () => {
+  const [inventory, candidates] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/source-candidates.json"), "utf8").then(JSON.parse),
+  ]);
+  const line = LINE_FIXTURES.find(({ key }) => key === "everline");
+  const source = inventory.sources.find(({ id }) => id === line.sourceId);
+  const candidate = candidates.candidates.find(({ id }) => id === line.sourceId);
+  const inputs = await loadLine(line);
+  const previousSnapshotBytes = await readFile(path.join(root, source.routeMapAdmissionEvidence.snapshotPath));
+  const collectorInputs = {
+    csvBytes: inputs.csvBytes,
+    topologySnapshot: inputs.topologySnapshot,
+    topologySnapshotId: inputs.topologySnapshotId,
+    schematicCanvas: inputs.schematicCanvas,
+    canonicalStationIdentities: inputs.canonicalStationIdentities,
+  };
+  assert.throws(() => buildCapitalLightRailRouteMapSuccessor({
+    source, candidate, ...collectorInputs, previousSnapshotBytes: Buffer.concat([previousSnapshotBytes, Buffer.from(" ")]),
+  }), /byte identity mismatch/);
+  const brokenSource = structuredClone(source);
+  brokenSource.routeMapAdmissionEvidence.currentTopologyAdmission.topologyContentSha256 = "0".repeat(64);
+  assert.throws(() => buildCapitalLightRailRouteMapSuccessor({
+    source: brokenSource, candidate, ...collectorInputs, previousSnapshotBytes,
+  }), /current topology admission binding mismatch/);
 });

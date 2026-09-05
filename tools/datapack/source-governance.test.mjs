@@ -15,6 +15,7 @@ import {
 } from "./source-snapshot-policy.mjs";
 import {
   approvedGovernanceBindingTransition,
+  buildAppendOnlyGovernancePolicyRegistration,
   buildGovernanceSummary,
   deriveRawRetentionExpiresAt,
   evaluateSourceGovernance,
@@ -54,12 +55,8 @@ test("서울 공공 노선도 위치는 90일 보존·독립 freshness class를 
 });
 
 test("governance policy transition preserves each exact epoch and its closed predecessor chain", async () => {
-  const admissionPolicySha256 = createHash("sha256").update(await readFile(
-    path.join(root, "tools/datapack/source-governance-policy.json"),
-  )).digest("hex");
-  assert.equal(admissionPolicySha256, "b4656dca1fdb660da495d0269ff91c7d31469045fd1db66a1534e3feffeeba33");
   const oldEpoch = { version: "2026-07-15", sha256: "e6e607e0711bebafbc25843996a0d6ff1dce6e6e82b4cadb425e78ccd284d9f3" };
-  const admissionEpoch = { version: "2026-08-29", sha256: admissionPolicySha256 };
+  const admissionEpoch = { version: "2026-08-29", sha256: "b4656dca1fdb660da495d0269ff91c7d31469045fd1db66a1534e3feffeeba33" };
   const transition = ({ sourceId, governancePolicyVersion = "2026-07-15", governancePolicySha256, epoch }) => approvedGovernanceBindingTransition({
     snapshot: { sourceId, governancePolicyVersion, governancePolicySha256 },
     currentPolicyVersion: epoch.version,
@@ -77,6 +74,76 @@ test("governance policy transition preserves each exact epoch and its closed pre
   assert.equal(isApprovedCurrentOrPriorGovernanceBinding({ binding: { governancePolicyVersion: "2026-07-15", governancePolicySha256: prior }, currentPolicyVersion: admissionEpoch.version, currentPolicySha256: admissionEpoch.sha256 }), false);
   assert.throws(() => transition({ sourceId: "molit-urban-rail-full-route", governancePolicySha256: "0".repeat(64), epoch: admissionEpoch }), /governance policy binding/);
   assert.throws(() => transition({ sourceId: "molit-urban-rail-full-route", governancePolicySha256: admissionEpoch.sha256, epoch: { version: "2099-01-01", sha256: admissionEpoch.sha256 } }), /governance policy binding/);
+});
+
+test("등록으로 추가한 policy는 이전 bytes 결속을 증명하고 신규 source의 과거 승인을 거부한다", async () => {
+  const policy = JSON.parse(await readFile(path.join(root, "tools/datapack/source-governance-policy.json"), "utf8"));
+  const added = policy.sources.at(-1);
+  const predecessor = { ...policy, sources: policy.sources.slice(0, -1) };
+  delete predecessor.registrationLineage;
+  const predecessorLineage = policy.registrationLineage?.predecessorLineage ?? null;
+  if (predecessorLineage !== null) predecessor.registrationLineage = predecessorLineage;
+  const bytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
+  const digest = (value) => createHash("sha256").update(value).digest("hex");
+  const predecessorPolicyText = policy.registrationLineage.predecessorPolicyText;
+  const predecessorBytes = predecessorPolicyText === null
+    ? bytes(predecessor) : Buffer.from(predecessorPolicyText);
+  assert.deepEqual(JSON.parse(predecessorBytes), predecessor);
+  const predecessorSha256 = digest(predecessorBytes);
+  const successor = { ...policy, registrationLineage: {
+    predecessorPolicySha256: predecessorSha256,
+    addedSourceIds: [added.sourceId],
+    predecessorLineage,
+    predecessorPolicyText,
+  } };
+  const snapshot = {
+    sourceId: predecessor.sources[0].sourceId,
+    governancePolicyVersion: predecessor.policyVersion,
+    governancePolicySha256: predecessorSha256,
+  };
+  const transition = (current, selected = snapshot) => approvedGovernanceBindingTransition({
+    snapshot: selected,
+    currentPolicyVersion: current.policyVersion,
+    currentPolicySha256: digest(bytes(current)),
+    currentPolicyBytes: bytes(current),
+  });
+  const registration = buildAppendOnlyGovernancePolicyRegistration({
+    predecessorPolicyBytes: predecessorBytes,
+    addedSources: [added],
+  });
+  assert.deepEqual(registration.policy, successor);
+  const secondAdded = { ...added, sourceId: `${added.sourceId}-second` };
+  const multiHop = buildAppendOnlyGovernancePolicyRegistration({
+    predecessorPolicyBytes: registration.bytes,
+    addedSources: [secondAdded],
+  });
+  assert.equal(multiHop.registrationLineage.predecessorPolicyText, null);
+  assert.deepEqual(transition(successor), {
+    governancePolicyVersion: snapshot.governancePolicyVersion,
+    governancePolicySha256: snapshot.governancePolicySha256,
+  });
+  assert.throws(() => transition(successor, { ...snapshot, sourceId: added.sourceId }), /governance policy binding/);
+  assert.deepEqual(transition(multiHop.policy, {
+    ...snapshot,
+    sourceId: added.sourceId,
+    governancePolicyVersion: multiHop.policy.policyVersion,
+    governancePolicySha256: digest(registration.bytes),
+  }), {
+    governancePolicyVersion: multiHop.policy.policyVersion,
+    governancePolicySha256: digest(registration.bytes),
+  });
+  assert.throws(() => transition(multiHop.policy, {
+    ...snapshot,
+    sourceId: secondAdded.sourceId,
+    governancePolicyVersion: multiHop.policy.policyVersion,
+    governancePolicySha256: digest(registration.bytes),
+  }), /governance policy binding/);
+  const changed = structuredClone(successor);
+  changed.sources[0].retentionClassId = "unapproved-retention";
+  assert.throws(() => transition(changed), /governance policy binding/);
+  const changedWitness = structuredClone(successor);
+  changedWitness.registrationLineage.predecessorPolicyText += " ";
+  assert.throws(() => transition(changedWitness), /governance policy binding/);
 });
 
 test("snapshot object URI는 dot-segment를 거부하고 Unicode·공백 key를 보존한다", () => {

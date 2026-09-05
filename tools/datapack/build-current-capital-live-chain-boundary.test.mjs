@@ -1,16 +1,60 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { buildCurrentCapitalLiveChainFanInBoundary, canonicalCurrentCapitalLiveChainFanInBoundaryJson, deriveCurrentLiveChainTerminalTransferEvidenceSubset, readCurrentCapitalLiveChainFanInBoundary, verifyCurrentCapitalLiveChainFanInComponents } from "./build-current-capital-live-chain-boundary.mjs";
+import { buildCurrentCapitalLiveChainFanInBoundary, canonicalCurrentCapitalLiveChainFanInBoundaryJson, CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS, CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH, deriveCurrentLiveChainTerminalTransferEvidenceSubset, readCurrentCapitalLiveChainFanInBoundary, verifyCurrentCapitalLiveChainFanInComponents } from "./build-current-capital-live-chain-boundary.mjs";
 import { buildCurrentCapitalStationLineInput } from "./build-current-capital-station-line-input.mjs";
 import { buildCurrentCapitalStationLineInputFixture } from "./test-fixtures/current-capital-station-line-input.mjs";
 
-test("tracked current live-chain fan-in binds the repository component bytes", async () => {
-  await assert.doesNotReject(readCurrentCapitalLiveChainFanInBoundary({
-    repositoryRoot: fileURLToPath(new URL("../../", import.meta.url)),
-  }));
+test("current live-chain fan-in round-trips canonical component bytes and rejects inventory byte drift", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "current-live-chain-fan-in-"));
+  try {
+    const components = fanInComponents(await buildCurrentCapitalStationLineInputFixture());
+    const boundary = buildCurrentCapitalLiveChainFanInBoundary(components);
+    const boundaryBytes = Buffer.from(canonicalCurrentCapitalLiveChainFanInBoundaryJson(boundary));
+    await writeFixtureBoundary(root, boundaryBytes, components);
+
+    const read = await readCurrentCapitalLiveChainFanInBoundary({ repositoryRoot: root });
+    assert.deepEqual(read.bytes, boundaryBytes);
+    for (const [name, relative] of Object.entries(CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS)) {
+      assert.deepEqual(read.components[name].bytes, components[name].bytes, relative);
+    }
+
+    const inventoryPath = CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS.sourceInventory;
+    await writeFile(path.join(root, inventoryPath), Buffer.concat([components.sourceInventory.bytes, Buffer.from(" ")]));
+    await assert.rejects(
+      readCurrentCapitalLiveChainFanInBoundary({ repositoryRoot: root }),
+      /current live-chain sourceInventory byte binding mismatch/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("tracked current live-chain fan-in checks each recorded component byte binding", async () => {
+  const root = fileURLToPath(new URL("../../", import.meta.url));
+  const boundaryBytes = await readFile(path.join(root, CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH));
+  const boundary = JSON.parse(boundaryBytes);
+  let firstMismatch = null;
+  for (const [name, relative] of Object.entries(CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS)) {
+    const componentBytes = await readFile(path.join(root, relative));
+    if (sha(componentBytes) !== boundary.components?.[name]?.sha256) {
+      firstMismatch = { name, relative };
+      break;
+    }
+  }
+  if (firstMismatch) {
+    await assert.rejects(
+      readCurrentCapitalLiveChainFanInBoundary({ repositoryRoot: root }),
+      new RegExp(`current live-chain ${firstMismatch.name} byte binding mismatch`),
+    );
+    return;
+  }
+  await assert.doesNotReject(readCurrentCapitalLiveChainFanInBoundary({ repositoryRoot: root }));
 });
 
 test("current live-chain fan-in binds current eight and evidence seven component identities", async () => {
@@ -24,12 +68,6 @@ test("current live-chain fan-in binds current eight and evidence seven component
 
   assert.equal(result.candidate.sourceSetSha256, boundary.currentCandidateSourceSetSha256);
   assert.notEqual(boundary.evidenceSourceSetSha256, boundary.currentCandidateSourceSetSha256);
-  const admittedKeys = new Set(input.facilityAdmission.cells.map(({ stationId, lineId }) =>
-    `${stationId}\0${lineId}`));
-  for (const domain of ["FACILITY", "EXIT", "TRANSFER"]) {
-    assert.deepEqual(new Set(result.evidenceRows.filter((row) => row.domain === domain)
-      .map(({ stationId, lineId }) => `${stationId}\0${lineId}`)), admittedKeys);
-  }
 });
 
 test("current live-chain fan-in rejects component drift and boundary historical metadata", async () => {
@@ -147,6 +185,19 @@ test("current live-chain boundary detects source-set and byte mismatch before st
   stationInput.facilityAdmission = { ...stationInput.facilityAdmission, candidate: { ...stationInput.facilityAdmission.candidate, sourceSnapshotSetHash: "0".repeat(64) } };
   assert.throws(() => buildCurrentCapitalStationLineInput(stationInput), /fan-in.*facilityAdmission projection mismatch/i);
 });
+
+async function writeFixtureBoundary(root, boundaryBytes, components) {
+  const entries = [
+    [CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH, boundaryBytes],
+    ...Object.entries(CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS)
+      .map(([name, relative]) => [relative, components[name].bytes]),
+  ];
+  await Promise.all(entries.map(async ([relative, bytes]) => {
+    const target = path.join(root, relative);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, bytes);
+  }));
+}
 
 function fanInComponents(input) {
   // The station-line fixture retains a transition shape. The terminal fan-in

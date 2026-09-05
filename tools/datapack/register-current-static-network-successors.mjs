@@ -7,7 +7,8 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 
-import { CURRENT_FULL_CANDIDATE_SOURCE_IDS, deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
+import { deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
+import { validateCandidateSourceSet } from "./validate-candidate-source-set.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
@@ -30,10 +31,9 @@ import { assertCurrentTopologyAdmissionFreshness } from "./lib/route-map-admissi
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const TARGETS = Object.freeze(["seoul-metro-route-map-positions", "molit-urban-rail-full-route"]);
-const CANDIDATE_SOURCE_IDS = CURRENT_FULL_CANDIDATE_SOURCE_IDS;
 const FIXED_OUTPUTS = Object.freeze(["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json"]);
 const APPROVAL_INPUTS = Object.freeze(["tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json"]);
-const INPUTS = Object.freeze([...FIXED_OUTPUTS, ...APPROVAL_INPUTS, "tools/datapack/source-governance-policy.json", "release/product-gates/datapack-freshness-sla.json"]);
+const INPUTS = Object.freeze([...FIXED_OUTPUTS, ...APPROVAL_INPUTS, "tools/datapack/source-governance-policy.json", "release/product-gates/datapack-freshness-sla.json", "release/product-gates/production-datapack-scope.json"]);
 const OUTPUT_COUNT = TARGETS.length + FIXED_OUTPUTS.length;
 const RECEIPT_TYPES = Object.freeze({
   "seoul-metro-route-map-positions": { extension: "json", contentType: "application/json" },
@@ -150,25 +150,20 @@ function rebindMolitMembershipEvidence(inventory, snapshot, rawBytes) {
 }
 
 function selectedInLedgerOrder(ledger, ids) {
-  if (!Array.isArray(ids) || new Set(ids).size !== ids.length || ids.length !== CANDIDATE_SOURCE_IDS.length) throw new Error("static network selected snapshot set is invalid");
+  if (!Array.isArray(ids) || ids.length === 0 || new Set(ids).size !== ids.length) throw new Error("static network selected snapshot set is invalid");
   const selected = ledger.filter(({ snapshotId }) => ids.includes(snapshotId));
   if (selected.length !== ids.length || ids.some((snapshotId) => ledger.filter((snapshot) => snapshot.snapshotId === snapshotId).length !== 1)) throw new Error("static network selected snapshot set is invalid");
   return selected;
 }
 
-function requireCurrentCandidateBinding({ candidate, ledger, heads, inventory, inventoryBytes, governance, governanceBytes, freshness, now }) {
+function requireCurrentCandidateBinding({ candidate, ledger, productionScopeBytes, inventory, inventoryBytes, governance, governanceBytes, freshness, now }) {
   try {
-    const selected = selectedInLedgerOrder(ledger, candidate.sourceSnapshotIds);
-    if (candidate.sourceInventorySha256 !== sha(JSON.stringify(inventory))
-      || candidate.networkEdgeEvidence?.sourceInventory?.sha256 !== sha(inventoryBytes)
-      || candidate.sourceSnapshotSetHash !== sha(JSON.stringify(selected))) throw new Error("hash");
-    const bySnapshotId = new Map(selected.map((snapshot) => [snapshot.snapshotId, snapshot]));
-    for (const [index, sourceId] of CANDIDATE_SOURCE_IDS.entries()) {
+    const { selected, headsBySource } = validateCandidateSourceSet({
+      productionScopeBytes, sourceInventoryBytes: inventoryBytes, candidate, ledger,
+    });
+    for (const [index, snapshot] of selected.entries()) {
       const projection = candidate.sourceSnapshots[index];
-      const snapshot = bySnapshotId.get(candidate.sourceSnapshotIds[index]);
-      if (!snapshot || snapshot.sourceId !== sourceId || projection.sourceId !== sourceId
-        || projection.snapshotId !== snapshot.snapshotId || heads[sourceId] !== snapshot.snapshotId
-        || !isDeepStrictEqual(projection, deriveReleaseProjection({
+      if (!isDeepStrictEqual(projection, deriveReleaseProjection({
           snapshot,
           sourceInventory: inventory,
           governancePolicy: governance,
@@ -177,6 +172,7 @@ function requireCurrentCandidateBinding({ candidate, ledger, heads, inventory, i
           nowMillis: now.getTime(),
         }))) throw new Error("projection");
     }
+    return headsBySource;
   } catch {
     throw new Error("public v2 current candidate binding is invalid");
   }
@@ -380,20 +376,18 @@ export async function buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoo
   const root = path.resolve(repositoryRoot); await regularDirectory(root, "repository root");
   assertV2ProducerOutput(producerOutput, rawBytesBySource);
   const read = async (relative) => bytes(target(root, relative), relative);
-  const [inventoryBytes, ledgerBytes, candidateBytes, requestBytes, hashBytes, governanceBytes, freshnessBytes] = await Promise.all([
+  const [inventoryBytes, ledgerBytes, candidateBytes, requestBytes, hashBytes, governanceBytes, freshnessBytes, productionScopeBytes] = await Promise.all([
     read(FIXED_OUTPUTS[0]), read(FIXED_OUTPUTS[1]), read(FIXED_OUTPUTS[2]), read(APPROVAL_INPUTS[0]), read(APPROVAL_INPUTS[1]),
     read("tools/datapack/source-governance-policy.json"), read("release/product-gates/datapack-freshness-sla.json"),
+    read("release/product-gates/production-datapack-scope.json"),
   ]);
   const inventory = parse(inventoryBytes, "source inventory"); const ledger = parse(ledgerBytes, "source ledger"); const candidate = parse(candidateBytes, "candidate build spec");
   const governance = parse(governanceBytes, "source governance policy"); const freshness = parse(freshnessBytes, "freshness policy");
   const { topologyAdmission, topologyRelative, topologyBytes } = await readCurrentTopologyAdmissionInput({ root, inventory, now, read });
   revalidateV2ProducerOutput({ producerOutput, rawBytesBySource, sourceInventory: inventory, topologyAdmission, topologyBytes });
-  const inputs = INPUTS.map((relative, index) => ({ relative, bytes: [inventoryBytes, ledgerBytes, candidateBytes, requestBytes, hashBytes, governanceBytes, freshnessBytes][index] }));
+  const inputs = INPUTS.map((relative, index) => ({ relative, bytes: [inventoryBytes, ledgerBytes, candidateBytes, requestBytes, hashBytes, governanceBytes, freshnessBytes, productionScopeBytes][index] }));
   inputs.push({ relative: topologyRelative, bytes: topologyBytes });
-  if (JSON.stringify(candidate.sourceSnapshots?.map(({ sourceId }) => sourceId)) !== JSON.stringify(CANDIDATE_SOURCE_IDS)
-    || JSON.stringify(candidate.sourceSnapshotIds) !== JSON.stringify(candidate.sourceSnapshots.map(({ snapshotId }) => snapshotId))) throw new Error("public v2 candidate source set is invalid");
-  const heads = validateLineage(ledger).headsBySource;
-  requireCurrentCandidateBinding({ candidate, ledger, heads, inventory, inventoryBytes, governance, governanceBytes, freshness, now });
+  const heads = requireCurrentCandidateBinding({ candidate, ledger, productionScopeBytes, inventory, inventoryBytes, governance, governanceBytes, freshness, now });
   inputs.push(...await requireActivePublicV2Predecessors({ ledger, heads, inventory, now, read }));
   const nextInventory = structuredClone(inventory); const snapshots = materializePublicV2Snapshots({ producerOutput, ledger, heads, nextInventory, governance, governanceBytes, freshness, now }); const nextLedger = [...ledger, ...snapshots];
   rebindMolitMembershipEvidence(nextInventory, snapshots.find(({ sourceId }) => sourceId === TARGETS[1]), rawBytesBySource[TARGETS[1]]);

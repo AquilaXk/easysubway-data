@@ -21,7 +21,8 @@ const ROOT = path.resolve(import.meta.dirname, "../..");
 const SOURCE_MAIN_SHA = "a".repeat(40);
 const FACILITY_HEAD_SHA = "b".repeat(40);
 const PROTECTED_CANDIDATE_ID = "capital-candidate-protected";
-const OPERATION_NOW = "2026-09-02T12:00:00.000Z";
+const MINUTE_MS = 60_000;
+const DAY_MS = 24 * 60 * MINUTE_MS;
 
 async function write(root, relative, bytes) {
   const target = path.join(root, relative);
@@ -29,7 +30,8 @@ async function write(root, relative, bytes) {
   await writeFile(target, bytes);
 }
 
-function snapshot(sourceId, stamp, previousSnapshotId) {
+function snapshot(sourceId, capturedAt, previousSnapshotId, freshUntil) {
+  const stamp = capturedAt.replaceAll("-", "").replaceAll(":", "").replace(".", "");
   const snapshotId = `${sourceId}-${stamp}`;
   const rawSha256 = (sourceId === "seoul-metro-accessibility" ? "c" : "d").repeat(64);
   return {
@@ -40,15 +42,15 @@ function snapshot(sourceId, stamp, previousSnapshotId) {
       sourceId,
       snapshotId,
       previousSnapshotId,
-      capturedAt: "2026-09-02T11:58:00.000Z",
-      observedAt: "2026-09-02T11:58:00.000Z",
-      freshUntil: "2026-09-03T11:58:00.000Z",
+      capturedAt,
+      observedAt: capturedAt,
+      freshUntil,
       rawSha256,
     })}\n`),
   };
 }
 
-function receipt(source, fill) {
+function receipt(source, fill, { capturedAt, storedAt, rawRetentionExpiresAt }) {
   return Buffer.from(`${JSON.stringify({
     schemaVersion: 1,
     artifactKind: source.sourceId === "seoul-metro-accessibility"
@@ -57,13 +59,13 @@ function receipt(source, fill) {
     sourceId: source.sourceId,
     snapshotId: source.snapshotId,
     snapshotRawSha256: fill.repeat(64),
-    capturedAt: "2026-09-02T11:58:00.000Z",
+    capturedAt,
     snapshotFileSha256: sha256(source.bytes),
     rawObjectUri: `oci://fixture/${source.sourceId}/${fill.repeat(64)}.json`,
     rawObjectSha256: fill.repeat(64),
     byteSize: 123,
-    storedAt: "2026-09-02T11:59:00.000Z",
-    rawRetentionExpiresAt: "2026-12-01T11:58:00.000Z",
+    storedAt,
+    rawRetentionExpiresAt,
   })}\n`);
 }
 
@@ -73,17 +75,40 @@ async function fixture(t) {
   const retainedRoot = path.join(parent, "retained");
   const preparedRoot = path.join(parent, "prepared");
   await Promise.all([mkdir(retainedRoot), mkdir(preparedRoot)]);
-  const seoul = snapshot("seoul-metro-accessibility", "20260902T115800000Z", "seoul-old");
-  const kric = snapshot("kric-station-convenience-standard", "20260902T115900000Z", "kric-old");
-  const preparedSources = [
-    { action: "REFRESH", ...seoul, receiptBytes: receipt(seoul, "c") },
-    { action: "REFRESH", ...kric, receiptBytes: receipt(kric, "d") },
-  ];
   const [candidate, inventory, ledger] = await Promise.all([
     "tools/datapack/release/candidate-build-spec.json",
     "tools/datapack/source-inventory.json",
     "tools/datapack/release/source-snapshots.json",
   ].map(async (relative) => JSON.parse(await readFile(path.join(ROOT, relative), "utf8"))));
+  const selectedSourceIds = ["seoul-metro-accessibility", "kric-station-convenience-standard"];
+  const selectedPrevious = candidate.sourceSnapshots
+    .filter(({ sourceId }) => selectedSourceIds.includes(sourceId))
+    .map(({ snapshotId }) => ledger.find((entry) => entry.snapshotId === snapshotId));
+  assert.equal(selectedPrevious.length, 2);
+  assert.equal(selectedPrevious.every(Boolean), true);
+  const providerStartedAtMs = Math.max(...selectedPrevious.flatMap(({ retrievedAt, sourceUpdatedAt }) => [
+    Date.parse(retrievedAt), Date.parse(sourceUpdatedAt),
+  ]), ...selectedSourceIds.map((sourceId) => Date.parse(inventory.sources.find(({ id }) => id === sourceId)
+    .accessibilityAdmissionEvidence.freshUntil))) + MINUTE_MS;
+  const temporal = {
+    capturedAt: new Date(providerStartedAtMs).toISOString(),
+    storedAt: new Date(providerStartedAtMs + MINUTE_MS).toISOString(),
+    operationNow: new Date(providerStartedAtMs + (2 * MINUTE_MS)).toISOString(),
+    freshUntil: new Date(providerStartedAtMs + DAY_MS).toISOString(),
+    rawRetentionExpiresAt: new Date(providerStartedAtMs + (90 * DAY_MS)).toISOString(),
+  };
+  const seoulPreviousId = candidate.sourceSnapshotIds[candidate.sourceSnapshots.findIndex(
+    ({ sourceId }) => sourceId === "seoul-metro-accessibility",
+  )];
+  const kricPreviousId = candidate.sourceSnapshotIds[candidate.sourceSnapshots.findIndex(
+    ({ sourceId }) => sourceId === "kric-station-convenience-standard",
+  )];
+  const seoul = snapshot("seoul-metro-accessibility", temporal.capturedAt, seoulPreviousId, temporal.freshUntil);
+  const kric = snapshot("kric-station-convenience-standard", temporal.capturedAt, kricPreviousId, temporal.freshUntil);
+  const preparedSources = [
+    { action: "REFRESH", ...seoul, receiptBytes: receipt(seoul, "c", temporal) },
+    { action: "REFRESH", ...kric, receiptBytes: receipt(kric, "d", temporal) },
+  ];
   for (const sourceId of ["seoul-metro-accessibility", "kric-station-convenience-standard"]) {
     const relative = inventory.sources.find(({ id }) => id === sourceId).accessibilityAdmissionEvidence.snapshotPath;
     await write(retainedRoot, relative, await readFile(path.join(ROOT, relative)));
@@ -98,7 +123,7 @@ async function fixture(t) {
       ...structuredClone(previous), snapshotId: source.snapshotId, previousSnapshotId,
       retrievedAt: rawReceipt.capturedAt, sourceUpdatedAt: rawReceipt.capturedAt,
       rawSha256: rawReceipt.rawObjectSha256, rawObjectUri: rawReceipt.rawObjectUri, rawReceipt,
-      freshnessExpiresAt: "2026-12-01T11:58:00.000Z", rawRetentionExpiresAt: rawReceipt.rawRetentionExpiresAt,
+      freshnessExpiresAt: temporal.rawRetentionExpiresAt, rawRetentionExpiresAt: rawReceipt.rawRetentionExpiresAt,
       diffSummary: {
         status: "CHANGED", rawHashChanged: previous.rawSha256 !== rawReceipt.rawObjectSha256,
         schemaHashChanged: false, requestHashChanged: false, sourceUpdatedAtChanged: true,
@@ -113,7 +138,7 @@ async function fixture(t) {
     selected.accessibilityAdmissionEvidence.snapshotPath = source.relativePath;
     selected.accessibilityAdmissionEvidence.capturedAt = rawReceipt.capturedAt;
     selected.accessibilityAdmissionEvidence.observedAt = rawReceipt.capturedAt;
-    selected.accessibilityAdmissionEvidence.freshUntil = "2026-09-03T11:58:00.000Z";
+    selected.accessibilityAdmissionEvidence.freshUntil = temporal.freshUntil;
     selected.accessibilityAdmissionEvidence.rawSha256 = rawReceipt.snapshotRawSha256;
     selected.accessibilityAdmissionEvidence.snapshotFileSha256 = sha256(source.bytes);
   }
@@ -128,7 +153,7 @@ async function fixture(t) {
     let bytes = Buffer.from(`after:${relative}\n`);
     if (relative === "tools/datapack/release/candidate-build-spec.json") bytes = Buffer.from(`${JSON.stringify(candidate)}\n`);
     if (relative === "tools/datapack/release/current-capital-facility-source-admission.json") {
-      bytes = Buffer.from(`${JSON.stringify({ observedAt: OPERATION_NOW })}\n`);
+      bytes = Buffer.from(`${JSON.stringify({ observedAt: temporal.operationNow })}\n`);
     }
     if (relative === "tools/datapack/source-inventory.json") bytes = Buffer.from(`${JSON.stringify(inventory)}\n`);
     if (relative === "tools/datapack/release/source-snapshots.json") bytes = Buffer.from(`${JSON.stringify(ledger)}\n`);
@@ -140,6 +165,8 @@ async function fixture(t) {
     retainedRoot,
     preparedRoot,
     sources: preparedSources,
+    providerStartedAt: temporal.capturedAt,
+    operationNow: temporal.operationNow,
   };
 }
 
@@ -153,8 +180,8 @@ test("closed handoff binds two fresh sources and seven protected replacements", 
     sourceMainGitSha: SOURCE_MAIN_SHA,
     facilityBranch: "automation/629-kric-facility-refresh-123456",
     facilityHeadGitSha: FACILITY_HEAD_SHA,
-    providerStartedAt: new Date(OPERATION_NOW),
-    operationNow: new Date(OPERATION_NOW),
+    providerStartedAt: new Date(input.providerStartedAt),
+    operationNow: new Date(input.operationNow),
     protectedCandidateId: PROTECTED_CANDIDATE_ID,
     retainedRoot: input.retainedRoot,
     preparedRoot: input.preparedRoot,
@@ -235,8 +262,8 @@ test("mixed handoff retains Seoul bytes and refreshes only KRIC", async (t) => {
     sourceMainGitSha: SOURCE_MAIN_SHA,
     facilityBranch: "automation/629-kric-facility-refresh-123456",
     facilityHeadGitSha: FACILITY_HEAD_SHA,
-    providerStartedAt: new Date("2026-09-02T11:58:00.000Z"),
-    operationNow: new Date(OPERATION_NOW),
+    providerStartedAt: new Date(input.providerStartedAt),
+    operationNow: new Date(input.operationNow),
     protectedCandidateId: PROTECTED_CANDIDATE_ID,
     retainedRoot: input.retainedRoot,
     preparedRoot: input.preparedRoot,
@@ -267,8 +294,8 @@ test("mixed handoff retains Seoul bytes and refreshes only KRIC", async (t) => {
     sourceMainGitSha: SOURCE_MAIN_SHA,
     facilityBranch: "automation/629-kric-facility-refresh-123456",
     facilityHeadGitSha: FACILITY_HEAD_SHA,
-    providerStartedAt: new Date("2026-09-02T11:58:00.000Z"),
-    operationNow: new Date(OPERATION_NOW),
+    providerStartedAt: new Date(input.providerStartedAt),
+    operationNow: new Date(input.operationNow),
     protectedCandidateId: PROTECTED_CANDIDATE_ID,
     retainedRoot: input.retainedRoot,
     preparedRoot: input.preparedRoot,
@@ -297,8 +324,8 @@ test("retain-only handoff preserves both current sources without provider output
     sourceMainGitSha: SOURCE_MAIN_SHA,
     facilityBranch: "automation/629-kric-facility-refresh-123456",
     facilityHeadGitSha: FACILITY_HEAD_SHA,
-    providerStartedAt: new Date(OPERATION_NOW),
-    operationNow: new Date(OPERATION_NOW),
+    providerStartedAt: new Date(input.providerStartedAt),
+    operationNow: new Date(input.operationNow),
     protectedCandidateId: PROTECTED_CANDIDATE_ID,
     retainedRoot: input.retainedRoot,
     preparedRoot: input.preparedRoot,
@@ -331,19 +358,21 @@ test("roots-only rebuild preserves caller-supplied operation clocks", async (t) 
     sourceMainGitSha: SOURCE_MAIN_SHA,
     facilityBranch: "automation/629-kric-facility-refresh-123456",
     facilityHeadGitSha: FACILITY_HEAD_SHA,
-    providerStartedAt: new Date("2026-09-02T11:58:00.000Z"),
-    operationNow: new Date(OPERATION_NOW),
+    providerStartedAt: new Date(input.providerStartedAt),
+    operationNow: new Date(input.operationNow),
     protectedCandidateId: PROTECTED_CANDIDATE_ID,
     retainedRoot: input.retainedRoot,
     preparedRoot: input.preparedRoot,
   });
-  assert.equal(rebuilt.providerStartedAt, "2026-09-02T11:58:00.000Z");
-  assert.equal(rebuilt.operationNow, OPERATION_NOW);
+  assert.equal(rebuilt.providerStartedAt, input.providerStartedAt);
+  assert.equal(rebuilt.operationNow, input.operationNow);
 });
 
 test("handoff rejects a source outside the exact Seoul and KRIC pair", async (t) => {
   const input = await fixture(t);
-  const foreign = snapshot("foreign-accessibility", "20260902T115900000Z", "foreign-old");
+  const foreign = snapshot("foreign-accessibility", input.providerStartedAt, "foreign-old", new Date(
+    Date.parse(input.providerStartedAt) + DAY_MS,
+  ).toISOString());
   await write(input.preparedRoot, foreign.relativePath, foreign.bytes);
   await assert.rejects(buildCurrentCapitalAccessibilitySourceHandoff({
     repository: "AquilaXk/easysubway-data",
@@ -351,16 +380,20 @@ test("handoff rejects a source outside the exact Seoul and KRIC pair", async (t)
     sourceMainGitSha: SOURCE_MAIN_SHA,
     facilityBranch: "automation/629-kric-facility-refresh-123456",
     facilityHeadGitSha: FACILITY_HEAD_SHA,
-    providerStartedAt: new Date(OPERATION_NOW),
-    operationNow: new Date(OPERATION_NOW),
+    providerStartedAt: new Date(input.providerStartedAt),
+    operationNow: new Date(input.operationNow),
     protectedCandidateId: PROTECTED_CANDIDATE_ID,
     retainedRoot: input.retainedRoot,
     preparedRoot: input.preparedRoot,
-    sources: [...input.sources, { ...foreign, receiptBytes: receipt(foreign, "e") }],
+    sources: [...input.sources, { ...foreign, receiptBytes: receipt(foreign, "e", {
+      capturedAt: input.providerStartedAt,
+      storedAt: new Date(Date.parse(input.providerStartedAt) + MINUTE_MS).toISOString(),
+      rawRetentionExpiresAt: new Date(Date.parse(input.providerStartedAt) + (90 * DAY_MS)).toISOString(),
+    }) }],
   }), /source set mismatch/);
 });
 
-test("refresh decision expires only the selected source whose direct freshUntil elapsed", async (t) => {
+test("refresh decision expires exactly the sources whose direct freshUntil elapsed", async (t) => {
   const parent = await mkdtemp(path.join(tmpdir(), "capital-accessibility-decision-"));
   t.after(() => rm(parent, { recursive: true, force: true }));
   for (const relative of [
@@ -389,9 +422,12 @@ test("refresh decision expires only the selected source whose direct freshUntil 
     now: new Date(selected[0].freshUntil),
   });
   assert.equal(firstExpired.state, "EXPIRED");
-  assert.deepEqual(firstExpired.refreshSourceIds, [
-    inventory.sources.find(({ accessibilityAdmissionEvidence }) => accessibilityAdmissionEvidence?.snapshotId === selected[0].snapshotId).id,
-  ]);
+  assert.deepEqual(firstExpired.refreshSourceIds, inventory.sources
+    .filter(({ id }) => ["kric-station-convenience-standard", "seoul-metro-accessibility"].includes(id))
+    .filter(({ accessibilityAdmissionEvidence }) => Date.parse(accessibilityAdmissionEvidence.freshUntil)
+      <= Date.parse(selected[0].freshUntil))
+    .map(({ id }) => id)
+    .sort());
 
   const bothExpired = await decideCurrentCapitalAccessibilitySourceRefresh({
     repositoryRoot: parent,
@@ -451,7 +487,12 @@ test("current sources prepare retain-only inputs with zero provider or OCI calls
 test("malformed DATA_GO credential fails before every source delegate", async (t) => {
   const parent = await mkdtemp(path.join(tmpdir(), "capital-accessibility-credential-"));
   t.after(() => rm(parent, { recursive: true, force: true }));
-  const providerStartedAt = new Date("2027-01-01T00:00:00.000Z");
+  const inventory = JSON.parse(await readFile(path.join(ROOT, "tools/datapack/source-inventory.json")));
+  const providerStartedAt = new Date(Math.max(...[
+    "kric-station-convenience-standard",
+    "seoul-metro-accessibility",
+  ].map((sourceId) => Date.parse(inventory.sources.find(({ id }) => id === sourceId)
+    .accessibilityAdmissionEvidence.freshUntil))));
   const decision = await decideCurrentCapitalAccessibilitySourceRefresh({
     repositoryRoot: ROOT,
     now: providerStartedAt,

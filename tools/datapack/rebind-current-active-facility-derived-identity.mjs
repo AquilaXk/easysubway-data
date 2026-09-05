@@ -89,15 +89,15 @@ export function validateFacilityProtectedSemanticIdentity(previous, next) {
 export async function buildCurrentActiveFacilityDerivedIdentityOutput({ repositoryRoot = ROOT } = {}) {
   const root = rootOf(repositoryRoot);
   const files = await Promise.all([
-    "tools/datapack/release/capital-production-canonical-pack.json", "tools/datapack/nationwide-coverage-targets.json", "tools/datapack/sources/kric-provider-code-catalog-20260228.json", "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json", "tools/datapack/source-inventory.json", "tools/datapack/release/candidate-build-spec.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/source-governance-policy.json", "release/product-gates/datapack-freshness-sla.json", OUTPUT,
+    "tools/datapack/release/capital-production-canonical-pack.json", "tools/datapack/nationwide-coverage-targets.json", "tools/datapack/sources/kric-provider-code-catalog-20260228.json", "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json", "tools/datapack/source-inventory.json", "tools/datapack/release/candidate-build-spec.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/source-governance-policy.json", "release/product-gates/datapack-freshness-sla.json", "release/product-gates/production-datapack-scope.json", OUTPUT,
   ].map((relative) => json(root, relative)));
-  const [pack, coverage, catalog, rosters, inventory, candidate, snapshots, governance, freshness, previous] = files;
+  const [pack, coverage, catalog, rosters, inventory, candidate, snapshots, governance, freshness, productionScope, previous] = files;
   validateCurrentPublicRouteMapReplacementProof(candidate.value, inventory.value, snapshots.value, pack.value);
   const active = inventory.value.sources.find(({ id }) => id === SOURCE)?.accessibilityAdmissionEvidence;
   if (!active?.snapshotPath || active.snapshotId !== candidate.value.sourceSnapshots.find(({ sourceId }) => sourceId === SOURCE)?.snapshotId) throw new Error("active FACILITY snapshot proof mismatch");
   const snapshotBytes = await stable(path.join(root, active.snapshotPath), "active FACILITY snapshot");
   const plan = buildCurrentCapitalFacilityCollectionPlan({ canonicalPackBytes: pack.bytes, coverageTargetsBytes: coverage.bytes, providerCodeCatalogBytes: catalog.bytes, routeRostersBytes: rosters.bytes, sourceInventoryBytes: inventory.bytes });
-  const next = buildCurrentCapitalFacilitySourceAdmission({ observedAt: activeFacilitySnapshotObservedAt(snapshotBytes), candidateEvaluationAt: candidate.value.publishedAt, planBytes: Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(plan)), canonicalPackBytes: pack.bytes, snapshotBytes, candidateBuildSpec: candidate.value, sourceInventoryBytes: inventory.bytes, sourceSnapshots: snapshots.value, governancePolicy: governance.value, governancePolicyBytes: governance.bytes, freshnessPolicy: freshness.value });
+  const next = buildCurrentCapitalFacilitySourceAdmission({ observedAt: activeFacilitySnapshotObservedAt(snapshotBytes), candidateEvaluationAt: candidate.value.publishedAt, planBytes: Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(plan)), canonicalPackBytes: pack.bytes, snapshotBytes, candidateBuildSpec: candidate.value, productionScopeBytes: productionScope.bytes, sourceInventoryBytes: inventory.bytes, sourceSnapshots: snapshots.value, governancePolicy: governance.value, governancePolicyBytes: governance.bytes, freshnessPolicy: freshness.value });
   const bytes = Buffer.from(canonicalCurrentCapitalFacilitySourceAdmissionJson(next));
   const old = previous.value;
   if (canonicalCurrentCapitalFacilitySourceAdmissionJson(old) !== previous.bytes.toString("utf8")) throw new Error("active FACILITY admission bytes are not canonical");
@@ -105,19 +105,29 @@ export async function buildCurrentActiveFacilityDerivedIdentityOutput({ reposito
   validateFacilityDerivedIdentityRebind(old, next, previous.bytes, bytes);
   return { relative: OUTPUT, bytes, prestate: previous.bytes };
 }
-export async function buildCurrentActiveFacilityDerivedIdentitySuccessorTransaction({ repositoryRoot = ROOT, replaceExistingSuccessor = false, allowedPredecessorSourceIds = undefined } = {}) {
+export async function buildCurrentActiveFacilityDerivedIdentitySuccessorTransaction({
+  repositoryRoot = ROOT,
+  replaceExistingSuccessor = false,
+  allowedPredecessorSourceIds = undefined,
+  existingSuccessorFacilityBytes = undefined,
+} = {}) {
   if (allowedPredecessorSourceIds !== undefined && !replaceExistingSuccessor) {
     throw new Error("expanded predecessor source set requires terminal successor replacement");
+  }
+  if (existingSuccessorFacilityBytes !== undefined
+    && (!replaceExistingSuccessor || !Buffer.isBuffer(existingSuccessorFacilityBytes))) {
+    throw new Error("existing successor FACILITY bytes require terminal replacement");
   }
   const root = rootOf(repositoryRoot);
   const facility = await buildCurrentActiveFacilityDerivedIdentityOutput({ repositoryRoot: root });
   if (!facilityDerivedIdentityRebindState(facility)) return { facility, successor: null, base: null };
-  const [baseBytes, candidate, previous, ledger, inventory] = await Promise.all([
+  const [baseBytes, candidate, previous, ledger, inventory, productionScope] = await Promise.all([
     stable(path.join(root, TRANSITION), "current accessibility transition"),
     json(root, "tools/datapack/release/candidate-build-spec.json"),
     json(root, "tools/datapack/release/current-station-line-accessibility/station-line-input.json"),
     json(root, "tools/datapack/release/source-snapshots.json"),
     json(root, "tools/datapack/source-inventory.json"),
+    json(root, "release/product-gates/production-datapack-scope.json"),
   ]);
   let successorPrestate = null;
   let previousFacilityBytes = facility.prestate;
@@ -143,7 +153,7 @@ export async function buildCurrentActiveFacilityDerivedIdentitySuccessorTransact
     const expected = buildCurrentCapitalAccessibilityTransitionSuccessor({
       baseTransitionBytes: baseBytes,
       previousFacilityBytes,
-      currentFacilityBytes: facility.prestate,
+      currentFacilityBytes: existingSuccessorFacilityBytes ?? facility.prestate,
       currentLedger: ledger.value,
       currentTransition: existingTransition,
     });
@@ -160,6 +170,7 @@ export async function buildCurrentActiveFacilityDerivedIdentitySuccessorTransact
     facilityAdmission: JSON.parse(facility.bytes), facilityBytes: facility.bytes,
     ledger: ledger.value, ledgerBytes: ledger.bytes,
     inventory: inventory.value, inventoryBytes: inventory.bytes,
+    productionScopeBytes: productionScope.bytes,
   });
   const successorValue = buildCurrentCapitalAccessibilityTransitionSuccessor({
     baseTransitionBytes: baseBytes,
@@ -196,8 +207,21 @@ export function facilityDerivedIdentityRebindState(output, { check = false } = {
   if (check) throw new Error("active FACILITY derived identity drift");
   return true;
 }
-export async function rebindCurrentActiveFacilityDerivedIdentity({ repositoryRoot = ROOT, check = false, replaceExistingSuccessor = false, allowedPredecessorSourceIds = undefined, failAfter = async () => {} } = {}) {
-  const root = rootOf(repositoryRoot); const transaction = await buildCurrentActiveFacilityDerivedIdentitySuccessorTransaction({ repositoryRoot: root, replaceExistingSuccessor, allowedPredecessorSourceIds });
+export async function rebindCurrentActiveFacilityDerivedIdentity({
+  repositoryRoot = ROOT,
+  check = false,
+  replaceExistingSuccessor = false,
+  allowedPredecessorSourceIds = undefined,
+  existingSuccessorFacilityBytes = undefined,
+  failAfter = async () => {},
+} = {}) {
+  const root = rootOf(repositoryRoot);
+  const transaction = await buildCurrentActiveFacilityDerivedIdentitySuccessorTransaction({
+    repositoryRoot: root,
+    replaceExistingSuccessor,
+    allowedPredecessorSourceIds,
+    existingSuccessorFacilityBytes,
+  });
   if (!facilityDerivedIdentityRebindState(transaction.facility, { check })) return { changed: false };
   const lock = path.join(root, LOCK); await mkdir(lock, { mode: 0o700 }); const journal = path.join(root, JOURNAL);
   let preserveJournal = false;
