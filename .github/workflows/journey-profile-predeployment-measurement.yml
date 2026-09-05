@@ -340,14 +340,23 @@ jobs:
             || observation.servingBoundary === null || typeof observation.servingBoundary !== "object"
             || JSON.stringify(Object.keys(observation.servingBoundary)) !== '["status"]'
             || observation.servingBoundary.status !== "UNOBSERVABLE") throw new Error("invalid planner observation scope");
-          const rowKeys = ["regionId", "queryClass", "observedWork", "observedStateLabels", "observedDestinationLabels", "observedBreakpoints", "durationNanos", "allocatedBytes", "saturatedStates", "requiredRepresentativeLoss", "oracleParity"];
+          const profileRowKeys = ["regionId", "queryClass", "observedWork", "observedStateLabels", "observedDestinationLabels", "observedBreakpoints", "durationNanos", "allocatedBytes", "saturatedStates", "requiredRepresentativeLoss", "oracleParity"];
+          const pointRowKeys = ["regionId", "queryClass", "expandedRoutes", "expandedTrips", "expandedTransfers", "durationNanos", "allocatedBytes", "requiredRepresentativeLoss", "oracleParity", "profileMetrics"];
           const expectedCells = input.regionIds.flatMap((regionId) => input.queryClasses.map((queryClass) => `${regionId}/${queryClass}`));
           if (!Array.isArray(observation.measurements) || observation.measurements.length !== expectedCells.length) throw new Error("measurement coverage matrix is incomplete");
           for (let index = 0; index < observation.measurements.length; index += 1) {
             const row = observation.measurements[index];
-            if (JSON.stringify(Object.keys(row).sort()) !== JSON.stringify([...rowKeys].sort())
-              || `${row.regionId}/${row.queryClass}` !== expectedCells[index]) throw new Error("measurement coverage cell mismatch");
-            for (const name of rowKeys.slice(2).filter((name) => name !== "oracleParity")) if (!Number.isSafeInteger(row[name]) || row[name] < 0) throw new Error(`invalid ${name}`);
+            if (`${row.regionId}/${row.queryClass}` !== expectedCells[index]) throw new Error("measurement coverage cell mismatch");
+            const point = row.queryClass === "POINT";
+            const rowKeys = point ? pointRowKeys : profileRowKeys;
+            if (JSON.stringify(Object.keys(row).sort()) !== JSON.stringify([...rowKeys].sort())) throw new Error("measurement row shape is not closed");
+            const numeric = point
+              ? ["expandedRoutes", "expandedTrips", "expandedTransfers", "durationNanos", "allocatedBytes", "requiredRepresentativeLoss"]
+              : ["observedWork", "observedStateLabels", "observedDestinationLabels", "observedBreakpoints", "durationNanos", "allocatedBytes", "saturatedStates", "requiredRepresentativeLoss"];
+            for (const name of numeric) if (!Number.isSafeInteger(row[name]) || row[name] < 0) throw new Error(`invalid ${name}`);
+            if (point && (row.profileMetrics === null || typeof row.profileMetrics !== "object"
+              || JSON.stringify(Object.keys(row.profileMetrics)) !== '["status"]'
+              || row.profileMetrics.status !== "NOT_APPLICABLE")) throw new Error("invalid point profile metrics");
             if (row.requiredRepresentativeLoss !== 0 || row.oracleParity !== true) throw new Error("untrusted predeployment observation");
           }
           const evidencePayload = {

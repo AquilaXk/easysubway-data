@@ -252,7 +252,7 @@ test("executes the closed planner observation validation and emission", () => {
   const digest = "a".repeat(64);
   const headSha = "a".repeat(40);
   const input = {
-    dataRepository: "AquilaXk/easysubway-data", regionIds: ["capital"], queryClasses: ["POINT"],
+    dataRepository: "AquilaXk/easysubway-data", regionIds: ["capital"], queryClasses: ["POINT", "ARRIVE_BY"],
     fanIn: { sha256: digest }, routeBundleSha256: digest, regionalMatrixSha256: digest,
     componentSha256: digest, inventorySha256: digest, releaseEvidenceSha256: digest, releaseDecisionSha256: digest,
   };
@@ -263,11 +263,18 @@ test("executes the closed planner observation validation and emission", () => {
     routeBundleSha256: digest, regionalMatrixSha256: digest, corpusSha256: digest,
     algorithmId: "EASYSUBWAY_RAPTOR_SUITE_V2", algorithmSha256: digest,
     frontierPolicyId: "FRONTIER_POLICY_V1", frontierSha256: digest,
-    measurements: [{
-      regionId: "capital", queryClass: "POINT", observedWork: 0, observedStateLabels: 0,
-      observedDestinationLabels: 0, observedBreakpoints: 0, durationNanos: 0, allocatedBytes: 0,
-      saturatedStates: 0, requiredRepresentativeLoss: 0, oracleParity: true,
-    }],
+    measurements: [
+      {
+        regionId: "capital", queryClass: "POINT", expandedRoutes: 1, expandedTrips: 1,
+        expandedTransfers: 0, durationNanos: 0, allocatedBytes: 0,
+        requiredRepresentativeLoss: 0, oracleParity: true, profileMetrics: { status: "NOT_APPLICABLE" },
+      },
+      {
+        regionId: "capital", queryClass: "ARRIVE_BY", observedWork: 0, observedStateLabels: 0,
+        observedDestinationLabels: 0, observedBreakpoints: 0, durationNanos: 0, allocatedBytes: 0,
+        saturatedStates: 0, requiredRepresentativeLoss: 0, oracleParity: true,
+      },
+    ],
   };
   const canonical = (value) => {
     if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -303,10 +310,15 @@ test("executes the closed planner observation validation and emission", () => {
       { ...observation, observationScope: "SERVING" },
       { ...observation, servingBoundary: { status: "OBSERVED" } },
       { ...observation, servingBoundary: { status: "UNOBSERVABLE", providerCalls: 0 } },
-      { ...observation, measurements: [{ ...observation.measurements[0], providerCalls: 0 }] },
+      { ...observation, measurements: [{ ...observation.measurements[0], providerCalls: 0 }, observation.measurements[1]] },
+      { ...observation, measurements: [{ ...observation.measurements[0], observedWork: 0 }, observation.measurements[1]] },
+      { ...observation, measurements: [{ ...observation.measurements[0], expandedTrips: undefined }, observation.measurements[1]] },
+      { ...observation, measurements: [observation.measurements[0], { ...observation.measurements[1], profileMetrics: { status: "NOT_APPLICABLE" } }] },
+      { ...observation, measurements: [{ ...observation.measurements[0], profileMetrics: { status: "APPLICABLE" } }, observation.measurements[1]] },
+      { ...observation, measurements: [{ ...observation.measurements[0], profileMetrics: { status: "NOT_APPLICABLE", extra: 0 } }, observation.measurements[1]] },
       { ...observation, backendHeadSha: "b".repeat(40) },
-      { ...observation, measurements: [{ ...observation.measurements[0], requiredRepresentativeLoss: 1 }] },
-      { ...observation, measurements: [{ ...observation.measurements[0], oracleParity: false }] },
+      { ...observation, measurements: [{ ...observation.measurements[0], requiredRepresentativeLoss: 1 }, observation.measurements[1]] },
+      { ...observation, measurements: [{ ...observation.measurements[0], oracleParity: false }, observation.measurements[1]] },
       { ...observation, measurements: [] },
     ];
     for (const [index, value] of invalid.entries()) {
