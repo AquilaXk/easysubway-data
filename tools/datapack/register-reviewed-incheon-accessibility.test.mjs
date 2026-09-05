@@ -155,7 +155,13 @@ test("rejects receipt raw, captured-at, URI, and admitted-topology mutations bef
   }
   const value = await fixture(t); const topology = path.join(value.root, value.topologySnapshotPath); const mutated = JSON.parse(await readFile(topology, "utf8")); mutated.contentSha256 = "0".repeat(64); await writeFile(topology, `${JSON.stringify(mutated)}\n`); await assert.rejects(buildReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot: value.root, observationRoot: value.observationRoot, receiptPath: value.receiptPath, now: value.now }), /topology/);
 
-  const reordered = await fixture(t); const candidatePath = path.join(reordered.root, fixed[2]); const candidate = JSON.parse(await readFile(candidatePath, "utf8")); [candidate.sourceSnapshotIds[0], candidate.sourceSnapshotIds[1]] = [candidate.sourceSnapshotIds[1], candidate.sourceSnapshotIds[0]]; [candidate.sourceSnapshots[0], candidate.sourceSnapshots[1]] = [candidate.sourceSnapshots[1], candidate.sourceSnapshots[0]]; await writeFile(candidatePath, `${JSON.stringify(candidate)}\n`); await assert.rejects(buildReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot: reordered.root, observationRoot: reordered.observationRoot, receiptPath: reordered.receiptPath, now: reordered.now }), /candidate prestate/);
+  const reordered = await fixture(t);
+  const candidatePath = path.join(reordered.root, fixed[2]);
+  const candidate = JSON.parse(await readFile(candidatePath, "utf8"));
+  // ID 순서만 변경하여 projection과의 위치 결속을 직접 위반한다.
+  [candidate.sourceSnapshotIds[0], candidate.sourceSnapshotIds[1]] = [candidate.sourceSnapshotIds[1], candidate.sourceSnapshotIds[0]];
+  await writeFile(candidatePath, `${JSON.stringify(candidate)}\n`);
+  await assert.rejects(buildReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot: reordered.root, observationRoot: reordered.observationRoot, receiptPath: reordered.receiptPath, now: reordered.now }), /candidate prestate/);
 
   const licenseDrift = await fixture(t); const inventoryPath = path.join(licenseDrift.root, fixed[0]); const inventory = JSON.parse(await readFile(inventoryPath, "utf8")); inventory.sources.find(({ id }) => id === "incheon-transit-accessibility").admissionEvidence.licenseEvidenceHash = "0".repeat(64); await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`); await assert.rejects(buildReviewedIncheonAccessibilityRegistrationOutputs({ repositoryRoot: licenseDrift.root, observationRoot: licenseDrift.observationRoot, receiptPath: licenseDrift.receiptPath, now: licenseDrift.now }), /receipt-pending production admission/);
 
