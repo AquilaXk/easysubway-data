@@ -198,7 +198,7 @@ test("advancing a current public head derives records from its admitted current 
   assert.ok(parent);
 
   const result = await activateSyntheticCurrentPublicRouteMapSuccessor(root, {
-    now: new Date(Date.parse(parent.retrievedAt) + 120_000),
+    now: await nextSyntheticCurrentStaticNetworkNow(root),
     advanceCurrentPublicHead: true,
   });
   const afterSnapshots = JSON.parse(await readFile(
