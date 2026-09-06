@@ -48,11 +48,14 @@ export function parseWorksheetRows(xml, sharedStrings) {
   for (const rowMatch of xml.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/gi)) {
     if (rows.length >= MAXIMUM_ROWS) throw new Error("KRIC XLSX row limit exceeded");
     const row = [];
-    for (const cellMatch of rowMatch[1].matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>/gi)) {
+    for (const cellMatch of rowMatch[1].matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/gi)) {
       const attributes = xmlAttributes(cellMatch[1]);
       const column = columnIndex(attributes.r);
       if (column >= MAXIMUM_COLUMNS) throw new Error("KRIC XLSX column limit exceeded");
-      row[column] = boundedText(worksheetCellValue(attributes, cellMatch[2], sharedStrings), "cell");
+      // 자체 닫힘 셀은 빈 열이며, 다음 셀의 값을 소비하면 안 된다.
+      row[column] = cellMatch[2] === undefined
+        ? ""
+        : boundedText(worksheetCellValue(attributes, cellMatch[2], sharedStrings), "cell");
     }
     while (row.length > 0 && row.at(-1) === undefined) row.pop();
     rows.push(Array.from({ length: row.length }, (_, index) => row[index] ?? ""));
