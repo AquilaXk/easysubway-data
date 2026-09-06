@@ -27,6 +27,22 @@ on:
         description: Independently supplied lowercase SHA-256 of experimental policy bytes
         required: true
         type: string
+      oracleMaxWork:
+        description: Exact positive oracle maximum work bound
+        required: true
+        type: string
+      oracleMaxRides:
+        description: Exact positive oracle maximum rides bound
+        required: true
+        type: string
+      oracleMaxAccesses:
+        description: Exact positive oracle maximum accesses bound
+        required: true
+        type: string
+      oracleBoardingSlackSeconds:
+        description: Exact nonnegative oracle boarding slack seconds
+        required: true
+        type: string
 
 permissions:
   actions: read
@@ -308,11 +324,16 @@ jobs:
           MEASUREMENT_OUTPUT: ${{ runner.temp }}/journey-profile-measurement-observation.json
           MEASUREMENT_POLICY: ${{ runner.temp }}/journey-profile-experimental-policy.json
           MEASUREMENT_POLICY_SHA256: ${{ inputs.experimentalPolicySha256 }}
+          MEASUREMENT_ORACLE_MAX_WORK: ${{ inputs.oracleMaxWork }}
+          MEASUREMENT_ORACLE_MAX_RIDES: ${{ inputs.oracleMaxRides }}
+          MEASUREMENT_ORACLE_MAX_ACCESSES: ${{ inputs.oracleMaxAccesses }}
+          MEASUREMENT_ORACLE_BOARDING_SLACK_SECONDS: ${{ inputs.oracleBoardingSlackSeconds }}
           EASYSUBWAY_CONTRACTS_BUNDLE: ${{ runner.temp }}/backend-contracts.json
         run: |
           set -euo pipefail
           test -f "${MEASUREMENT_INPUT}"
           test ! -e "${MEASUREMENT_OUTPUT}"
+          test ! -e "${MEASUREMENT_OUTPUT}.corpus.json"
           test -d "${CANDIDATE_ROOT}"
           test ! -L "${CANDIDATE_ROOT}"
           test -d "${CANDIDATE_ROOT}/server-route-bundle"
@@ -339,6 +360,7 @@ jobs:
           cd "${RUNNER_TEMP}/backend-source/backend"
           ./gradlew test --tests com.easysubway.journey.application.JourneyProfilePredeploymentMeasurementTest --no-daemon --max-workers=1
           test -s "${MEASUREMENT_OUTPUT}"
+          test -s "${MEASUREMENT_OUTPUT}.corpus.json"
       - name: Validate observations and create canonical evidence once
         env:
           BACKEND_HEAD: ${{ inputs.expectedBackendHeadSha }}
@@ -348,6 +370,10 @@ jobs:
           MEASUREMENT_OUTPUT: ${{ runner.temp }}/journey-profile-measurement-observation.json
           MEASUREMENT_POLICY: ${{ runner.temp }}/journey-profile-experimental-policy.json
           EXPERIMENTAL_POLICY_SHA256: ${{ inputs.experimentalPolicySha256 }}
+          MEASUREMENT_ORACLE_MAX_WORK: ${{ inputs.oracleMaxWork }}
+          MEASUREMENT_ORACLE_MAX_RIDES: ${{ inputs.oracleMaxRides }}
+          MEASUREMENT_ORACLE_MAX_ACCESSES: ${{ inputs.oracleMaxAccesses }}
+          MEASUREMENT_ORACLE_BOARDING_SLACK_SECONDS: ${{ inputs.oracleBoardingSlackSeconds }}
           EVIDENCE_OUTPUT: ${{ runner.temp }}/journey-profile-predeployment-measurement.json
         run: |
           set -euo pipefail
@@ -356,6 +382,9 @@ jobs:
           import { readFileSync, writeFileSync } from "node:fs";
           const input = JSON.parse(readFileSync(process.env.VALIDATED_INPUT));
           const observation = JSON.parse(readFileSync(process.env.MEASUREMENT_OUTPUT));
+          const corpusPath = `${process.env.MEASUREMENT_OUTPUT}.corpus.json`;
+          const corpusBytes = readFileSync(corpusPath);
+          const corpus = JSON.parse(corpusBytes);
           const experimentalPolicySha256 = process.env.EXPERIMENTAL_POLICY_SHA256;
           const experimentalPolicy = readFileSync(process.env.MEASUREMENT_POLICY);
           const canonical = (value) => {
@@ -366,6 +395,32 @@ jobs:
           if (!/^[a-f0-9]{64}$/.test(experimentalPolicySha256 ?? "")
             || createHash("sha256").update(experimentalPolicy).digest("hex") !== experimentalPolicySha256) {
             throw new Error("experimental policy evidence binding mismatch");
+          }
+          const plainObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+          const oracleLimits = {
+            maxWork: process.env.MEASUREMENT_ORACLE_MAX_WORK,
+            maxRides: process.env.MEASUREMENT_ORACLE_MAX_RIDES,
+            maxAccesses: process.env.MEASUREMENT_ORACLE_MAX_ACCESSES,
+            boardingSlackSeconds: process.env.MEASUREMENT_ORACLE_BOARDING_SLACK_SECONDS,
+          };
+          if (!plainObject(corpus) || !Buffer.from(`${canonical(corpus)}\n`, "utf8").equals(corpusBytes)) {
+            throw new Error("measurement corpus bytes are not canonical");
+          }
+          if (createHash("sha256").update(Buffer.from(canonical(corpus), "utf8")).digest("hex") !== observation.corpusSha256) {
+            throw new Error("measurement corpus digest mismatch");
+          }
+          if (!plainObject(corpus.algorithmIdentity)
+            || createHash("sha256").update(Buffer.from(canonical(corpus.algorithmIdentity), "utf8")).digest("hex") !== observation.algorithmSha256
+            || !plainObject(corpus.frontierIdentity)
+            || createHash("sha256").update(Buffer.from(canonical(corpus.frontierIdentity), "utf8")).digest("hex") !== observation.frontierSha256) {
+            throw new Error("measurement corpus identity mismatch");
+          }
+          if (!plainObject(corpus.resourcePolicyIdentity)
+            || corpus.resourcePolicyIdentity.resourcePolicySha256 !== experimentalPolicySha256
+            || !plainObject(corpus.oracleLimits)
+            || JSON.stringify(Object.keys(corpus.oracleLimits).sort()) !== JSON.stringify(Object.keys(oracleLimits).sort())
+            || Object.entries(oracleLimits).some(([name, value]) => corpus.oracleLimits[name] !== value)) {
+            throw new Error("measurement corpus configuration mismatch");
           }
           const required = ["schemaVersion", "artifactKind", "observationScope", "servingBoundary", "backendHeadSha", "dataHeadSha", "dataRunId", "fanInSha256", "routeBundleSha256", "regionalMatrixSha256", "corpusSha256", "algorithmId", "algorithmSha256", "frontierPolicyId", "frontierSha256", "measurements"];
           if (JSON.stringify(Object.keys(observation).sort()) !== JSON.stringify(required.sort())) throw new Error("measurement observation shape is not closed");
@@ -403,8 +458,10 @@ jobs:
             schemaVersion: 2,
             artifactKind: "journey-profile-predeployment-measurement",
             experimentalPolicySha256,
+            oracleLimits,
             backend: { repository: "AquilaXk/easysubway-backend", headSha: process.env.BACKEND_HEAD },
             data: { repository: input.dataRepository, headSha: process.env.DATA_HEAD, runId: process.env.DATA_RUN_ID, regionIds: input.regionIds, queryClasses: input.queryClasses, fanIn: input.fanIn, componentSha256: input.componentSha256, inventorySha256: input.inventorySha256, releaseEvidenceSha256: input.releaseEvidenceSha256, releaseDecisionSha256: input.releaseDecisionSha256 },
+            corpus,
             observation,
           };
           const evidence = { ...evidencePayload, evidenceSha256: createHash("sha256").update(canonical(evidencePayload)).digest("hex") };
