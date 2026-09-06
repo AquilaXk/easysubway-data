@@ -19,6 +19,30 @@ test("release workflow는 owned deterministic-release subset만 실행한다", (
   assert.doesNotMatch(step, /node\s+--test|\.test\.mjs/);
 });
 
+test("current release freshness gate는 deterministic-release와 같은 조건에서 evidence generation 전에 실행된다", () => {
+  const step = (name) => yml.match(
+    new RegExp(`- name: ${name}[\\s\\S]*?\\n\\s+- name:`),
+  )?.[0];
+  const deterministicRelease = step("Data Pack Release / Validate ITX-청춘 coverage contract");
+  const currentFreshness = step("Data Pack Release / Verify current ITX-청춘 release freshness");
+  assert.ok(deterministicRelease, "deterministic-release step을 찾지 못함");
+  assert.ok(currentFreshness, "current release freshness step을 찾지 못함");
+  const condition = "steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish'";
+  assert.match(deterministicRelease, new RegExp(condition));
+  assert.match(currentFreshness, new RegExp(condition));
+  assert.match(currentFreshness, /node tools\/datapack\/apply-itx-topology-to-bundled-pack\.mjs --check/);
+  assert.ok(
+    yml.indexOf("Data Pack Release / Validate ITX-청춘 coverage contract")
+      < yml.indexOf("Data Pack Release / Verify current ITX-청춘 release freshness"),
+    "current release freshness는 deterministic-release 뒤에 실행되어야 한다",
+  );
+  assert.ok(
+    yml.indexOf("Data Pack Release / Verify current ITX-청춘 release freshness")
+      < yml.indexOf("Data Pack Release / Write release evidence bundle"),
+    "current release freshness는 release evidence 생성 전에 실행되어야 한다",
+  );
+});
+
 test("observability metadata는 active pack만 식별하고 첫 pack으로 대체하지 않는다", () => {
   const metadata = yml.match(
     /- name: Data Pack Release \/ Write observability metadata[\s\S]*?\n\s+- name:/,
