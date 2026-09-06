@@ -1085,7 +1085,7 @@
     },
     "targets": {
       "path": "tools/datapack/nationwide-coverage-targets.json",
-      "sha256": "925847f9b45844edd573c7e695a92c28b22729c05a592bb48b821e5e707f1641",
+      "sha256": "8f9caee0c2149a8cb40483fa0fa598086ba365d378b7acc1171a1f50f18e4122",
       "targetVersion": "2026-07-13"
     }
   },
@@ -1323,7 +1323,7 @@
       },
       {
         "admissionRatio": 1,
-        "admittedFieldCount": 3,
+        "admittedFieldCount": 2,
         "admittedSourceIds": [
           "busan-transportation-route-topology"
         ],
@@ -1334,7 +1334,7 @@
         "operatorId": "busan-transportation",
         "regionId": "busan",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
@@ -1443,7 +1443,7 @@
       },
       {
         "admissionRatio": 1,
-        "admittedFieldCount": 3,
+        "admittedFieldCount": 2,
         "admittedSourceIds": [
           "busan-transportation-route-topology"
         ],
@@ -1454,7 +1454,7 @@
         "operatorId": "busan-transportation",
         "regionId": "busan",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
@@ -1563,7 +1563,7 @@
       },
       {
         "admissionRatio": 1,
-        "admittedFieldCount": 3,
+        "admittedFieldCount": 2,
         "admittedSourceIds": [
           "busan-transportation-route-topology"
         ],
@@ -1574,7 +1574,7 @@
         "operatorId": "busan-transportation",
         "regionId": "busan",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
@@ -1683,7 +1683,7 @@
       },
       {
         "admissionRatio": 1,
-        "admittedFieldCount": 3,
+        "admittedFieldCount": 2,
         "admittedSourceIds": [
           "busan-transportation-route-topology"
         ],
@@ -1694,7 +1694,7 @@
         "operatorId": "busan-transportation",
         "regionId": "busan",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
@@ -1816,15 +1816,14 @@
         "operatorId": "korail",
         "regionId": "busan",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
           "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -1954,15 +1953,14 @@
         "operatorId": "operator-72566d06475a",
         "regionId": "busan",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
           "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -2072,7 +2070,7 @@
       },
       {
         "admissionRatio": 1,
-        "admittedFieldCount": 3,
+        "admittedFieldCount": 2,
         "admittedSourceIds": [
           "incheon-transit-station-info"
         ],
@@ -2083,7 +2081,7 @@
         "operatorId": "incheon-transit",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
@@ -2194,7 +2192,7 @@
       },
       {
         "admissionRatio": 1,
-        "admittedFieldCount": 3,
+        "admittedFieldCount": 2,
         "admittedSourceIds": [
           "incheon-transit-station-info"
         ],
@@ -2205,7 +2203,7 @@
         "operatorId": "incheon-transit",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
@@ -2314,7 +2312,7 @@
       },
       {
         "admissionRatio": 1,
-        "admittedFieldCount": 3,
+        "admittedFieldCount": 2,
         "admittedSourceIds": [
           "incheon-transit-station-info"
         ],
@@ -2325,7 +2323,7 @@
         "operatorId": "incheon-transit",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
@@ -2447,15 +2445,14 @@
         "operatorId": "korail",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
           "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -2577,15 +2574,14 @@
         "operatorId": "korail",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
           "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -2708,15 +2704,14 @@
         "operatorId": "korail",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
           "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -2839,15 +2834,14 @@
         "operatorId": "korail",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
           "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -2969,15 +2963,14 @@
         "operatorId": "korail",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
           "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -3099,15 +3092,14 @@
         "operatorId": "korail",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
           "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -3229,15 +3221,14 @@
         "operatorId": "korail",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
           "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -3359,15 +3350,14 @@
         "operatorId": "korail",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
           "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -3490,15 +3480,14 @@
         "operatorId": "operator-07a9e77a02b6",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
           "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -3621,15 +3610,14 @@
         "operatorId": "operator-10d7cf275a80",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
           "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -3751,15 +3739,14 @@
         "operatorId": "operator-28e01fb8509d",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
           "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -3881,15 +3868,14 @@
         "operatorId": "operator-29e323a78a93",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
           "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -4011,15 +3997,14 @@
         "operatorId": "operator-2e23276dfa94",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
           "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -4141,15 +4126,14 @@
         "operatorId": "operator-38450e138464",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
           "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -4271,15 +4255,14 @@
         "operatorId": "operator-3c623bf1a427",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
           "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -4401,15 +4384,14 @@
         "operatorId": "operator-5ca780d7dee1",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
           "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -4531,15 +4513,14 @@
         "operatorId": "operator-8134e61f8dbd",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
           "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -4661,15 +4642,14 @@
         "operatorId": "operator-936e454d0bfb",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
           "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -4792,15 +4772,14 @@
         "operatorId": "operator-9e999d4aa596",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
           "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -4922,15 +4901,14 @@
         "operatorId": "operator-b2d80436b438",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
           "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -5052,15 +5030,14 @@
         "operatorId": "operator-c361f9fc17e9",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
           "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -5183,15 +5160,14 @@
         "operatorId": "operator-c361f9fc17e9",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
           "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -5311,8 +5287,8 @@
         ]
       },
       {
-        "admissionRatio": 0.6667,
-        "admittedFieldCount": 2,
+        "admissionRatio": 0.5,
+        "admittedFieldCount": 1,
         "admittedSourceIds": [
           "capital-route-topology"
         ],
@@ -5330,7 +5306,7 @@
         "operatorId": "seoul-metro",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
@@ -5463,8 +5439,8 @@
         ]
       },
       {
-        "admissionRatio": 0.6667,
-        "admittedFieldCount": 2,
+        "admissionRatio": 0.5,
+        "admittedFieldCount": 1,
         "admittedSourceIds": [
           "capital-route-topology"
         ],
@@ -5475,7 +5451,7 @@
         "operatorId": "seoul-metro",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
@@ -5594,8 +5570,8 @@
         ]
       },
       {
-        "admissionRatio": 0.6667,
-        "admittedFieldCount": 2,
+        "admissionRatio": 0.5,
+        "admittedFieldCount": 1,
         "admittedSourceIds": [
           "capital-route-topology"
         ],
@@ -5606,7 +5582,7 @@
         "operatorId": "seoul-metro",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
@@ -5725,8 +5701,8 @@
         ]
       },
       {
-        "admissionRatio": 0.6667,
-        "admittedFieldCount": 2,
+        "admissionRatio": 0.5,
+        "admittedFieldCount": 1,
         "admittedSourceIds": [
           "capital-route-topology"
         ],
@@ -5737,7 +5713,7 @@
         "operatorId": "seoul-metro",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
@@ -5856,8 +5832,8 @@
         ]
       },
       {
-        "admissionRatio": 0.6667,
-        "admittedFieldCount": 2,
+        "admissionRatio": 0.5,
+        "admittedFieldCount": 1,
         "admittedSourceIds": [
           "capital-route-topology"
         ],
@@ -5868,7 +5844,7 @@
         "operatorId": "seoul-metro",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
@@ -5987,8 +5963,8 @@
         ]
       },
       {
-        "admissionRatio": 0.6667,
-        "admittedFieldCount": 2,
+        "admissionRatio": 0.5,
+        "admittedFieldCount": 1,
         "admittedSourceIds": [
           "capital-route-topology"
         ],
@@ -5999,7 +5975,7 @@
         "operatorId": "seoul-metro",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
@@ -6118,8 +6094,8 @@
         ]
       },
       {
-        "admissionRatio": 0.6667,
-        "admittedFieldCount": 2,
+        "admissionRatio": 0.5,
+        "admittedFieldCount": 1,
         "admittedSourceIds": [
           "capital-route-topology"
         ],
@@ -6130,7 +6106,7 @@
         "operatorId": "seoul-metro",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
@@ -6249,8 +6225,8 @@
         ]
       },
       {
-        "admissionRatio": 0.6667,
-        "admittedFieldCount": 2,
+        "admissionRatio": 0.5,
+        "admittedFieldCount": 1,
         "admittedSourceIds": [
           "capital-route-topology"
         ],
@@ -6261,7 +6237,7 @@
         "operatorId": "seoul-metro",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
@@ -6384,7 +6360,7 @@
       },
       {
         "admissionRatio": 1,
-        "admittedFieldCount": 3,
+        "admittedFieldCount": 2,
         "admittedSourceIds": [
           "daegu-line3-route-topology"
         ],
@@ -6395,7 +6371,7 @@
         "operatorId": "daegu-transportation",
         "regionId": "daegu",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
@@ -6512,7 +6488,7 @@
       },
       {
         "admissionRatio": 1,
-        "admittedFieldCount": 3,
+        "admittedFieldCount": 2,
         "admittedSourceIds": [
           "daegu-line1-route-topology"
         ],
@@ -6523,7 +6499,7 @@
         "operatorId": "daegu-transportation",
         "regionId": "daegu",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
@@ -6640,7 +6616,7 @@
       },
       {
         "admissionRatio": 1,
-        "admittedFieldCount": 3,
+        "admittedFieldCount": 2,
         "admittedSourceIds": [
           "daegu-line2-route-topology"
         ],
@@ -6651,7 +6627,7 @@
         "operatorId": "daegu-transportation",
         "regionId": "daegu",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
@@ -6774,15 +6750,14 @@
         "operatorId": "korail",
         "regionId": "daegu",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
         "status": "MISSING",
         "unadmittedFields": [
           "network_edges",
-          "duration_seconds",
-          "distance_meters"
+          "duration_seconds"
         ]
       },
       {
@@ -6892,7 +6867,7 @@
       },
       {
         "admissionRatio": 1,
-        "admittedFieldCount": 3,
+        "admittedFieldCount": 2,
         "admittedSourceIds": [
           "daejeon-station-distance-fare"
         ],
@@ -6903,7 +6878,7 @@
         "operatorId": "daejeon-transportation",
         "regionId": "daejeon",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
@@ -7013,7 +6988,7 @@
       },
       {
         "admissionRatio": 1,
-        "admittedFieldCount": 3,
+        "admittedFieldCount": 2,
         "admittedSourceIds": [
           "gwangju-transportation-route-topology"
         ],
@@ -7024,7 +6999,7 @@
         "operatorId": "gwangju-metropolitan-rapid-transit",
         "regionId": "gwangju",
         "releaseTier": "LAUNCH_REQUIRED",
-        "requiredFieldCount": 3,
+        "requiredFieldCount": 2,
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",

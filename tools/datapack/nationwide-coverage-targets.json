@@ -94,8 +94,7 @@
       "releaseTier": "LAUNCH_REQUIRED",
       "requiredFields": [
         "network_edges",
-        "duration_seconds",
-        "distance_meters"
+        "duration_seconds"
       ],
       "blockingThreshold": {
         "minimumOfficialFieldCoverageRatio": 1
