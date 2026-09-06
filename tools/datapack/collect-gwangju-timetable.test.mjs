@@ -2,7 +2,44 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 
-import { collectGwangjuTimetable } from "./collect-gwangju-timetable.mjs";
+import { collectGwangjuTimetable, readRetainedGwangjuTimetableCsv } from "./collect-gwangju-timetable.mjs";
+
+const retainedCsvHeader = "요일,종착역 코드,방향(상_하행),도착시간,역사코드,기준일자,호선,종착역명,역사명";
+
+test("retained CSV reader는 BOM과 CRLF 원문을 검증된 행으로 보존한다", () => {
+  const csvBytes = Buffer.from(`\uFEFF${retainedCsvHeader}\r\n평일,100,상행,05:30,101,20250801,1호선,녹동역,평동역\r\n`);
+
+  const retained = readRetainedGwangjuTimetableCsv(csvBytes);
+
+  assert.equal(retained.datasetId, "15111497");
+  assert.equal(retained.rawSha256, createHash("sha256").update(csvBytes).digest("hex"));
+  assert.equal(retained.rawByteLength, csvBytes.byteLength);
+  assert.deepEqual(retained.rows, [{
+    day: "평일", endCord: "100", direction: "상행", time: "05:30", subwayCord: "101",
+    updateDt: "20250801", subwayLine: "1호선", endName: "녹동역", subwayName: "평동역",
+  }]);
+  for (const field of ["tripId", "freshUntil", "capturedAt", "fieldsProvided", "calendar"]) {
+    assert.equal(Object.hasOwn(retained, field), false);
+    assert.equal(Object.hasOwn(retained.rows[0], field), false);
+  }
+});
+
+test("retained CSV reader는 header, column, UTF-8, empty 입력을 거부한다", () => {
+  const validRow = "평일,100,상행,05:30,101,20250801,1호선,녹동역,평동역";
+  assert.throws(
+    () => readRetainedGwangjuTimetableCsv(Buffer.from(`wrong,header\n${validRow}\n`)),
+    /header mismatch/,
+  );
+  assert.throws(
+    () => readRetainedGwangjuTimetableCsv(Buffer.from(`${retainedCsvHeader}\n${validRow.split(",").slice(0, -1).join(",")}\n`)),
+    /column count mismatch/,
+  );
+  assert.throws(
+    () => readRetainedGwangjuTimetableCsv(new Uint8Array([0xff])),
+    /not valid UTF-8/,
+  );
+  assert.throws(() => readRetainedGwangjuTimetableCsv(new Uint8Array()), /is empty/);
+});
 
 test("광주 timetable collector는 malformed credential로 provider를 호출하지 않는다", async () => {
   let calls = 0;

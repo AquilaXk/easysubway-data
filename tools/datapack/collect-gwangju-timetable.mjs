@@ -11,7 +11,45 @@ const DETAIL_URL = "https://www.data.go.kr/data/15111298/openapi.do";
 const OUTPUT_FIELDS = Object.freeze([
   "day", "endCord", "direction", "time", "subwayCord", "updateDt", "subwayLine", "endName", "subwayName",
 ]);
+const RETAINED_CSV_HEADER = "요일,종착역 코드,방향(상_하행),도착시간,역사코드,기준일자,호선,종착역명,역사명";
 const XML_CONTENT_TYPES = new Set(["application/xml", "text/xml"]);
+
+export function readRetainedGwangjuTimetableCsv(csvBytes) {
+  if (!(csvBytes instanceof Uint8Array) || csvBytes.byteLength === 0) {
+    throw new Error("Gwangju retained timetable CSV is empty");
+  }
+  let csv;
+  try {
+    csv = new TextDecoder("utf-8", { fatal: true }).decode(csvBytes);
+  } catch {
+    throw new Error("Gwangju retained timetable CSV is not valid UTF-8");
+  }
+  if (csv.startsWith("\uFEFF")) csv = csv.slice(1);
+  if (csv.includes("\uFEFF") || csv.includes('"') || /\r(?!\n)/u.test(csv)) {
+    throw new Error("Gwangju retained timetable CSV syntax is unsupported");
+  }
+  const lines = csv.split(/\r?\n/u);
+  if (lines.at(-1) === "") lines.pop();
+  if (lines[0] !== RETAINED_CSV_HEADER) {
+    throw new Error("Gwangju retained timetable CSV header mismatch");
+  }
+  const rows = lines.slice(1).map((line, index) => {
+    const columns = line.split(",");
+    if (columns.length !== OUTPUT_FIELDS.length) {
+      throw new Error(`Gwangju retained timetable CSV row[${index}] column count mismatch`);
+    }
+    return validateRow(Object.fromEntries(
+      OUTPUT_FIELDS.map((field, column) => [field, columns[column]]),
+    ), index);
+  }).sort(compareRows);
+  validateRows(rows);
+  return {
+    datasetId: "15111497",
+    rawSha256: sha256(csvBytes),
+    rawByteLength: csvBytes.byteLength,
+    rows,
+  };
+}
 
 export async function collectGwangjuTimetable({
   serviceKey,
