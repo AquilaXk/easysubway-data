@@ -12,7 +12,6 @@ const OUTPUT_FIELDS = Object.freeze([
   "day", "endCord", "direction", "time", "subwayCord", "updateDt", "subwayLine", "endName", "subwayName",
 ]);
 const XML_CONTENT_TYPES = new Set(["application/xml", "text/xml"]);
-const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
 
 export async function collectGwangjuTimetable({
   serviceKey,
@@ -62,13 +61,12 @@ export async function collectGwangjuTimetable({
   }))));
   const responseEncodings = [...new Set(pages.map(({ responseEncoding }) => responseEncoding))].sort(compareText);
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     artifactKind: "gwangju-timetable-snapshot",
     sourceId: SOURCE_ID,
     detailUrl: DETAIL_URL,
     endpoint: ENDPOINT,
     capturedAt: capturedAt.toISOString(),
-    freshUntil: new Date(capturedAt.getTime() + FRESHNESS_MILLIS).toISOString(),
     httpStatus: 200,
     providerResultCode: "00",
     schemaStatus: "EXPECTED",
@@ -81,7 +79,6 @@ export async function collectGwangjuTimetable({
     directions: [...new Set(rows.map(({ direction }) => direction))].sort(compareText),
     stationCodes: [...new Set(rows.map(({ subwayCord }) => subwayCord))].sort(compareText),
     outputFields: [...OUTPUT_FIELDS],
-    fieldsProvided: ["service_calendar", "trip", "stop_time"],
     responseEncodings,
     license: {
       type: "UNRESTRICTED",

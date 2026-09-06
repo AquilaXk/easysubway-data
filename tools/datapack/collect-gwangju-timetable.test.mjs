@@ -60,6 +60,26 @@ test("광주 timetable collector는 공식 XML을 redacted deterministic snapsho
   assert.doesNotMatch(JSON.stringify(snapshot), new RegExp(secret));
 });
 
+test("광주 정적 관측은 수집 시각으로 유효기간이나 열차 연결을 합성하지 않는다", async () => {
+  const rows = sampleRows();
+  const firstCapture = new Date(`${rows[0].updateDt}T12:00:00.000Z`);
+  const secondCapture = new Date(firstCapture.getTime() + 60 * 60 * 1_000);
+  const snapshots = [];
+  for (const now of [firstCapture, secondCapture]) {
+    const snapshot = await collectGwangjuTimetable({
+      serviceKey: "key", now, fetchImpl: async () => xmlResponse({ rows }),
+    });
+    assert.equal(snapshot.schemaVersion, 2);
+    assert.equal(Object.hasOwn(snapshot, "freshUntil"), false);
+    assert.equal(Object.hasOwn(snapshot, "fieldsProvided"), false);
+    assert.equal(snapshot.capturedAt, now.toISOString());
+    assert.deepEqual(snapshot.rows.map(({ updateDt }) => updateDt), rows.map(({ updateDt }) => updateDt));
+    snapshots.push(snapshot);
+  }
+  assert.equal(snapshots[0].rawSha256, snapshots[1].rawSha256);
+  assert.equal(snapshots[0].rowsSha256, snapshots[1].rowsSha256);
+});
+
 test("광주 timetable collector는 provider 500건 cap을 bounded pagination으로 완결한다", async () => {
   const rows = [...sampleRows(), {
     day: "평일", endCord: "100", direction: "상행", time: "0534", subwayCord: "102",
