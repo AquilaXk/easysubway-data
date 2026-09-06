@@ -355,17 +355,22 @@ test("이번 변경은 metro_map_pack·capital.sqlite.gz·basemap asset을 수�
   assert.equal(stdout.trim(), "");
 });
 
-test("successor projection은 retained bytes와 current topology binding으로 결정론적으로 생성한다", async () => {
+async function loadSuccessorInputs(key) {
   const [inventory, candidates] = await Promise.all([
     readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
     readFile(path.join(root, "tools/datapack/source-candidates.json"), "utf8").then(JSON.parse),
   ]);
+  const line = LINE_FIXTURES.find((entry) => entry.key === key);
+  const source = inventory.sources.find(({ id }) => id === line.sourceId);
+  const candidate = candidates.candidates.find(({ id }) => id === line.sourceId);
+  const inputs = await loadLine(line);
+  const previousSnapshotBytes = await readFile(path.join(root, source.routeMapAdmissionEvidence.snapshotPath));
+  return { source, candidate, inputs, previousSnapshotBytes };
+}
+
+test("successor projection은 retained bytes와 current topology binding으로 결정론적으로 생성한다", async () => {
   for (const key of ["everline", "ui"]) {
-    const line = LINE_FIXTURES.find((entry) => entry.key === key);
-    const source = inventory.sources.find(({ id }) => id === line.sourceId);
-    const candidate = candidates.candidates.find(({ id }) => id === line.sourceId);
-    const inputs = await loadLine(line);
-    const previousSnapshotBytes = await readFile(path.join(root, source.routeMapAdmissionEvidence.snapshotPath));
+    const { source, candidate, inputs, previousSnapshotBytes } = await loadSuccessorInputs(key);
     const originalSource = structuredClone(source);
     const originalCandidate = structuredClone(candidate);
     const collectorInputs = {
@@ -398,15 +403,7 @@ test("successor projection은 retained bytes와 current topology binding으로 �
 });
 
 test("successor projection은 tampered predecessor와 current topology binding을 거부한다", async () => {
-  const [inventory, candidates] = await Promise.all([
-    readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
-    readFile(path.join(root, "tools/datapack/source-candidates.json"), "utf8").then(JSON.parse),
-  ]);
-  const line = LINE_FIXTURES.find(({ key }) => key === "everline");
-  const source = inventory.sources.find(({ id }) => id === line.sourceId);
-  const candidate = candidates.candidates.find(({ id }) => id === line.sourceId);
-  const inputs = await loadLine(line);
-  const previousSnapshotBytes = await readFile(path.join(root, source.routeMapAdmissionEvidence.snapshotPath));
+  const { source, candidate, inputs, previousSnapshotBytes } = await loadSuccessorInputs("everline");
   const collectorInputs = {
     csvBytes: inputs.csvBytes,
     topologySnapshot: inputs.topologySnapshot,
@@ -425,15 +422,7 @@ test("successor projection은 tampered predecessor와 current topology binding�
 });
 
 test("successor projection은 retained overlay bytes drift를 거부한다", async () => {
-  const [inventory, candidates] = await Promise.all([
-    readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
-    readFile(path.join(root, "tools/datapack/source-candidates.json"), "utf8").then(JSON.parse),
-  ]);
-  const line = LINE_FIXTURES.find(({ key }) => key === "ui");
-  const source = inventory.sources.find(({ id }) => id === line.sourceId);
-  const candidate = candidates.candidates.find(({ id }) => id === line.sourceId);
-  const inputs = await loadLine(line);
-  const previousSnapshotBytes = await readFile(path.join(root, source.routeMapAdmissionEvidence.snapshotPath));
+  const { source, candidate, inputs, previousSnapshotBytes } = await loadSuccessorInputs("ui");
   assert.throws(() => buildCapitalLightRailRouteMapSuccessor({
     source, candidate, previousSnapshotBytes, csvBytes: inputs.csvBytes,
     overlayCsvBytes: Buffer.concat([inputs.overlayCsvBytes, Buffer.from("\n")]),
