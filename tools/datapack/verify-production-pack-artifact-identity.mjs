@@ -85,7 +85,15 @@ function networkEdgeCounts(sqlitePath) {
   }
 }
 
-export async function verifyProductionPackArtifactIdentity({ evidencePath, assetPath, indexPath, packId }) {
+export function verifyProductionPackArtifactIdentity(inputs) {
+  return verifyProductionPackArtifact(inputs, "current");
+}
+
+export function verifyProductionPackArtifactIntegrity(inputs) {
+  return verifyProductionPackArtifact(inputs, "immutable-integrity");
+}
+
+async function verifyProductionPackArtifact({ evidencePath, assetPath, indexPath, packId }, verification) {
   evidencePath = path.resolve(evidencePath);
   assetPath = path.resolve(assetPath);
   indexPath = path.resolve(indexPath);
@@ -98,11 +106,11 @@ export async function verifyProductionPackArtifactIdentity({ evidencePath, asset
       throw new Error("deployed current topology evidence contract mismatch");
     }
 
-    // Validate the deployed bytes against the current admitted topology and its v19 route-service
-    // evidence. This stays independent from the advancing nationwide candidate replay.
+    // Validate immutable deployed bytes and v19 route-service evidence. Release eligibility is
+    // separately checked by the default current verifier in the release workflow.
     await execFileAsync(process.execPath, [
       CURRENT_TOPOLOGY_VERIFIER_PATH,
-      "--check",
+      verification === "current" ? "--check" : "--verify-immutable-integrity",
       "--pack", assetPath,
       "--evidence", evidencePath,
       "--index", indexPath,
@@ -136,6 +144,7 @@ export async function verifyProductionPackArtifactIdentity({ evidencePath, asset
     await writeFile(sqlitePath, assetSqlite);
 
     return {
+      verification,
       packId,
       gzipSha256,
       sqliteSha256,
@@ -150,7 +159,13 @@ export async function verifyProductionPackArtifactIdentity({ evidencePath, asset
 
 async function main(argv) {
   const args = parseArgs(argv);
-  const report = await verifyProductionPackArtifactIdentity({
+  const verification = args.verification ?? "current";
+  if (!["current", "immutable-integrity"].includes(verification)) {
+    throw new Error("unknown production pack verification mode");
+  }
+  const verify = verification === "current"
+    ? verifyProductionPackArtifactIdentity : verifyProductionPackArtifactIntegrity;
+  const report = await verify({
     evidencePath: requiredArg(args, "evidence"),
     assetPath: requiredArg(args, "asset"),
     indexPath: requiredArg(args, "index"),
