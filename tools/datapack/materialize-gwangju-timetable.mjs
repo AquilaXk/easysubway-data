@@ -153,6 +153,153 @@ export function materializeGwangjuTimetable({
   return fixture;
 }
 
+const RETAINED_TRIP_GROUP_FIELDS = Object.freeze([
+  "trainNumber", "routeNumber", "routeName", "originStationName", "destinationStationName",
+  "serviceType", "weekdayType",
+]);
+
+export function projectRetainedGwangjuTrips({
+  records, stationBindings, directedEdges, excludedEndpointLabels,
+}) {
+  if (!Array.isArray(records) || !Array.isArray(stationBindings)
+    || !Array.isArray(directedEdges) || !Array.isArray(excludedEndpointLabels)
+    || excludedEndpointLabels.some((label) => typeof label !== "string")) {
+    throw new Error("retained Gwangju trip input is invalid");
+  }
+  const bindings = new Map();
+  for (const binding of stationBindings) {
+    if (!binding || typeof binding.sourceLabel !== "string" || binding.sourceLabel.trim() === ""
+      || typeof binding.stationId !== "string" || binding.stationId.trim() === ""
+      || typeof binding.stationCode !== "string" || binding.stationCode.trim() === ""
+      || bindings.has(binding.sourceLabel)) {
+      throw new Error("retained Gwangju station bindings are ambiguous");
+    }
+    bindings.set(binding.sourceLabel, binding);
+  }
+  const edges = new Set();
+  for (const edge of directedEdges) {
+    if (!edge || typeof edge.fromStationCode !== "string" || edge.fromStationCode.trim() === ""
+      || typeof edge.toStationCode !== "string" || edge.toStationCode.trim() === "") {
+      throw new Error("retained Gwangju directed edge is invalid");
+    }
+    edges.add(`${edge.fromStationCode}:${edge.toStationCode}`);
+  }
+  const excluded = new Set(excludedEndpointLabels);
+  if ([...excluded].some((label) => bindings.has(label))) {
+    throw new Error("retained Gwangju endpoint classification is ambiguous");
+  }
+  const ordered = records.map((record) => retainedNativeRecord(record)).sort((left, right) =>
+    left.sourceRowNumber - right.sourceRowNumber);
+  for (const [index, record] of ordered.entries()) {
+    if (index > 0 && record.sourceRowNumber === ordered[index - 1].sourceRowNumber) {
+      throw new Error("retained Gwangju source row order is ambiguous");
+    }
+  }
+  const groups = new Map();
+  const seenGroups = new Set();
+  let previousGroupKey;
+  for (const record of ordered) {
+    const key = JSON.stringify(RETAINED_TRIP_GROUP_FIELDS.map((field) => record[field]));
+    if (key !== previousGroupKey) {
+      if (seenGroups.has(key)) throw new Error("retained Gwangju trip group is discontiguous");
+      seenGroups.add(key);
+      groups.set(key, { identity: retainedTripIdentity(record), records: [] });
+      previousGroupKey = key;
+    }
+    groups.get(key).records.push(record);
+  }
+
+  const trips = [];
+  const nonRoutableGroups = [];
+  for (const group of groups.values()) {
+    const nativeRows = group.records.map((record) => projectRetainedNativeRow(record));
+    for (const [index, row] of nativeRows.entries()) {
+      if (row.arrival.seconds > row.departure.seconds) {
+        throw new Error("retained Gwangju trip arrival is after departure");
+      }
+      if (index > 0 && nativeRows[index - 1].departure.seconds > row.arrival.seconds) {
+        throw new Error("retained Gwangju trip time order is invalid");
+      }
+    }
+    const passengerIndexes = nativeRows.flatMap((row, index) =>
+      bindings.has(row.record.stationName) ? [index] : []);
+    const firstPassenger = passengerIndexes[0];
+    const lastPassenger = passengerIndexes.at(-1);
+    const excludedEndpoints = [];
+    for (const [index, row] of nativeRows.entries()) {
+      if (bindings.has(row.record.stationName)) continue;
+      if (!excluded.has(row.record.stationName)) {
+        throw new Error("retained Gwangju trip station binding is missing");
+      }
+      if (firstPassenger !== undefined && index > firstPassenger && index < lastPassenger) {
+        throw new Error("retained Gwangju trip endpoint exclusion is interior");
+      }
+      excludedEndpoints.push(row);
+    }
+    const stops = nativeRows.filter((row) => bindings.has(row.record.stationName)).map((row) => ({
+      ...row,
+      stationId: bindings.get(row.record.stationName).stationId,
+      stationCode: bindings.get(row.record.stationName).stationCode,
+    }));
+    const stationIds = new Set();
+    for (const stop of stops) {
+      if (stationIds.has(stop.stationId)) throw new Error("retained Gwangju trip station repeats");
+      stationIds.add(stop.stationId);
+    }
+    for (const [index, stop] of stops.entries()) {
+      if (index > 0 && !edges.has(`${stops[index - 1].stationCode}:${stop.stationCode}`)) {
+        throw new Error("retained Gwangju trip directed edge is missing");
+      }
+    }
+    const projection = { identity: group.identity, records: nativeRows, excludedEndpoints };
+    // 승객 정류장이 둘 미만인 원문 그룹은 누락시키지 않고 비운행 근거로 남긴다.
+    if (stops.length < 2) {
+      nonRoutableGroups.push({ ...projection, reason: "PASSENGER_STOP_COUNT_LT_2" });
+    } else {
+      trips.push({ ...projection, stops });
+    }
+  }
+  return { trips, nonRoutableGroups };
+}
+
+function retainedNativeRecord(record) {
+  if (!record || typeof record !== "object" || record.routeNumber !== "S2901"
+    || !Number.isSafeInteger(record.sourceRowNumber) || record.sourceRowNumber <= 0
+    || !/^[a-f0-9]{64}$/u.test(record.sourceRowSha256 ?? "")) {
+    throw new Error("retained Gwangju native record is invalid");
+  }
+  for (const field of [...RETAINED_TRIP_GROUP_FIELDS, "stationName"]) {
+    if (typeof record[field] !== "string" || record[field].trim() === "") {
+      throw new Error(`retained Gwangju native record ${field} is invalid`);
+    }
+  }
+  return record;
+}
+
+function retainedTripIdentity(record) {
+  return Object.fromEntries(RETAINED_TRIP_GROUP_FIELDS.map((field) => [field, record[field]]));
+}
+
+function projectRetainedNativeRow(record) {
+  return {
+    sourceRowNumber: record.sourceRowNumber,
+    sourceRowSha256: record.sourceRowSha256,
+    arrival: retainedServiceTime(record.arrivalTime, "arrivalTime"),
+    departure: retainedServiceTime(record.departureTime, "departureTime"),
+    record: structuredClone(record),
+  };
+}
+
+function retainedServiceTime(cell, field) {
+  if (!cell || typeof cell.value !== "string" || !/^(\d{2,}):[0-5]\d:[0-5]\d$/u.test(cell.value)) {
+    throw new Error(`retained Gwangju ${field} is invalid`);
+  }
+  const [hours, minutes, seconds] = cell.value.split(":").map(Number);
+  const total = hours * 3_600 + minutes * 60 + seconds;
+  if (!Number.isSafeInteger(total)) throw new Error(`retained Gwangju ${field} is invalid`);
+  return { value: cell.value, seconds: total };
+}
+
 export function materializedPackContentHash(pack, version) {
   const content = { ...pack };
   delete content.id;

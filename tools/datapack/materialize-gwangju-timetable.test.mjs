@@ -23,6 +23,7 @@ import { materializeBusanTimetable } from "./materialize-busan-timetable.mjs";
 import { materializeDaejeonTimetable } from "./materialize-daejeon-timetable.mjs";
 import {
   materializeGwangjuTimetable,
+  projectRetainedGwangjuTrips,
   runGwangjuTimetableMaterializer,
 } from "./materialize-gwangju-timetable.mjs";
 
@@ -30,6 +31,102 @@ const root = path.resolve(import.meta.dirname, "../..");
 process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
 const now = new Date("2026-07-20T13:09:00.000Z");
 const execFileAsync = promisify(execFile);
+
+function retainedNativeRecord(sourceRowNumber, stationName, overrides = {}) {
+  const record = {
+    trainNumber: "1001", routeNumber: "S2901", routeName: "광주 1호선",
+    originStationName: "A", destinationStationName: "B", serviceType: "LOCAL", weekdayType: "WEEKDAY",
+    stationName, arrivalTime: { value: "24:00:00" }, departureTime: { value: "24:00:30" },
+    sourceRowNumber, sourceRowSha256: "a".repeat(64), nativeMarker: `native-${sourceRowNumber}`,
+    ...overrides,
+  };
+  return record;
+}
+
+const retainedBindings = Object.freeze([
+  { sourceLabel: "A", stationId: "station-a", stationCode: "A" },
+  { sourceLabel: "B", stationId: "station-b", stationCode: "B" },
+]);
+const retainedEdges = Object.freeze([{ fromStationCode: "A", toStationCode: "B" }]);
+const retainedProjection = (records, overrides = {}) => projectRetainedGwangjuTrips({
+  records, stationBindings: retainedBindings, directedEdges: retainedEdges, excludedEndpointLabels: ["외부"], ...overrides,
+});
+
+test("retained native trip projection은 source 행 순서와 24시 이후 시각·원문 근거를 보존한다", () => {
+  const first = [
+    retainedNativeRecord(1, "외부", { arrivalTime: { value: "24:00:00" }, departureTime: { value: "24:00:00" } }),
+    retainedNativeRecord(2, "A", { arrivalTime: { value: "24:01:00" }, departureTime: { value: "24:01:30" } }),
+    retainedNativeRecord(3, "B", { arrivalTime: { value: "24:02:00" }, departureTime: { value: "24:02:00" } }),
+  ];
+  const second = [
+    retainedNativeRecord(4, "A", {
+      trainNumber: "1002", weekdayType: "SATURDAY", arrivalTime: { value: "25:00:00" }, departureTime: { value: "25:00:30" },
+    }),
+    retainedNativeRecord(5, "B", {
+      trainNumber: "1002", weekdayType: "SATURDAY", arrivalTime: { value: "25:01:00" }, departureTime: { value: "25:01:00" },
+    }),
+  ];
+
+  const projected = retainedProjection([second[1], first[2], second[0], first[0], first[1]]);
+
+  assert.deepEqual(projected.trips.map(({ identity }) => [identity.trainNumber, identity.weekdayType]), [
+    ["1001", "WEEKDAY"], ["1002", "SATURDAY"],
+  ]);
+  assert.deepEqual(projected.trips[0].stops.map(({ sourceRowNumber, stationCode, arrival, departure }) => ({
+    sourceRowNumber, stationCode, arrival, departure,
+  })), [
+    { sourceRowNumber: 2, stationCode: "A", arrival: { value: "24:01:00", seconds: 86_460 }, departure: { value: "24:01:30", seconds: 86_490 } },
+    { sourceRowNumber: 3, stationCode: "B", arrival: { value: "24:02:00", seconds: 86_520 }, departure: { value: "24:02:00", seconds: 86_520 } },
+  ]);
+  assert.equal(projected.trips[0].excludedEndpoints.length, 1);
+  assert.equal(projected.trips[0].excludedEndpoints[0].record.stationName, "외부");
+  assert.equal(projected.trips[0].stops.some(({ stationId }) => stationId === "station-외부"), false);
+  assert.deepEqual(projected.trips[0].stops[0].record, first[1]);
+  assert.equal(projected.nonRoutableGroups.length, 0);
+  assert.equal(JSON.stringify(projected).includes("tripId"), false);
+  assert.equal(JSON.stringify(projected).includes("freshUntil"), false);
+});
+
+test("retained native trip projection은 binding·edge·순서 계약 위반을 거부한다", () => {
+  const records = [
+    retainedNativeRecord(1, "A"),
+    retainedNativeRecord(2, "B", { arrivalTime: { value: "24:01:00" }, departureTime: { value: "24:01:00" } }),
+  ];
+  const cases = [
+    ["ambiguous exclusion", () => retainedProjection(records, { excludedEndpointLabels: ["A"] }), /classification is ambiguous/],
+    ["unknown", () => retainedProjection([{ ...records[0], stationName: "UNKNOWN" }, records[1]]), /station binding is missing/],
+    ["edge", () => retainedProjection(records, { directedEdges: [] }), /directed edge is missing/],
+    ["interior exclusion", () => retainedProjection([
+      records[0], retainedNativeRecord(2, "외부", { arrivalTime: { value: "24:00:40" }, departureTime: { value: "24:00:40" } }),
+      { ...records[1], sourceRowNumber: 3 },
+    ]), /endpoint exclusion is interior/],
+    ["time", () => retainedProjection([
+      { ...records[0], departureTime: { value: "25:00:00" } }, records[1],
+    ]), /time order is invalid/],
+    ["duplicate", () => retainedProjection([{ ...records[0] }, { ...records[1], stationName: "A" }]), /station repeats/],
+    ["discontiguous", () => retainedProjection([
+      records[0], retainedNativeRecord(2, "A", { trainNumber: "1002" }),
+      { ...records[1], sourceRowNumber: 3 },
+    ]), /group is discontiguous/],
+    ["ambiguous bindings", () => retainedProjection(records, {
+      stationBindings: [...retainedBindings, { sourceLabel: "A", stationId: "station-other", stationCode: "C" }],
+    }), /station bindings are ambiguous/],
+  ];
+  for (const [name, invoke, pattern] of cases) assert.throws(invoke, pattern, name);
+});
+
+test("retained native trip projection은 한 승객 정류장 그룹을 비운행 근거로 보존한다", () => {
+  const projected = retainedProjection([
+    retainedNativeRecord(1, "외부"),
+    retainedNativeRecord(2, "A", { arrivalTime: { value: "24:01:00" }, departureTime: { value: "24:01:00" } }),
+  ]);
+
+  assert.equal(projected.trips.length, 0);
+  assert.equal(projected.nonRoutableGroups.length, 1);
+  assert.equal(projected.nonRoutableGroups[0].reason, "PASSENGER_STOP_COUNT_LT_2");
+  assert.deepEqual(projected.nonRoutableGroups[0].records.map(({ sourceRowNumber }) => sourceRowNumber), [1, 2]);
+  assert.equal(projected.nonRoutableGroups[0].excludedEndpoints[0].record.stationName, "외부");
+});
 
 test("광주 공식 topology·시간표를 20역·38 edge·810 trip·14171 stop_time으로 materialize한다", async () => {
   const values = await inputs();
