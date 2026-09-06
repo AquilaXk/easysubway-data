@@ -18365,6 +18365,9 @@ async function writeTransitionFreeCandidateRoot(workspace) {
     await mkdir(path.dirname(target), { recursive: true });
     await copyFile(path.join(root, relativePath), target);
   }
+  const candidatePath = path.join(repositoryRoot, "tools/datapack/fixtures/candidate-build-spec.json");
+  const candidate = JSON.parse(await readFile(candidatePath, "utf8"));
+  await writeFile(candidatePath, await bindCurrentProductionScopePolicy(candidate, repositoryRoot));
   return repositoryRoot;
 }
 
