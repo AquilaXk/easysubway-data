@@ -491,7 +491,6 @@
     {"path":"tools/datapack/materialize-seoul9-route-map-positions.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":21482},
     {"path":"tools/datapack/materialize-station-line-accessibility.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":134},
     {"path":"tools/datapack/materialize-test-fixture.test.mjs","semanticOwner":"data101","classes":["required-pr"],"durationMs":155},
-    {"path":"tools/datapack/nationwide-candidate-coverage-gate.test.mjs","semanticOwner":"data447","classes":["deterministic-release"],"durationMs":null},
     {"path":"tools/datapack/nationwide-public-api-coverage-evidence.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":281},
     {"path":"tools/datapack/normalize-kric-timetable.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":119},
     {"path":"tools/datapack/normalize-transfer-distance-duration-rows.test.mjs","semanticOwner":"data27","classes":["required-pr"],"durationMs":200},
