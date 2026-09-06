@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -46,7 +46,8 @@ test("predeployment measurement is a trusted main-only manual workflow", () => {
   requireText(text, /github\.repository == 'AquilaXk\/easysubway-data'/,
     "trusted repository");
   requireText(text, /github\.ref == 'refs\/heads\/main'/, "default branch");
-  for (const input of ["backendPullRequestNumber", "expectedBackendHeadSha", "dataRunId", "expectedDataHeadSha"]) {
+  for (const input of ["backendPullRequestNumber", "expectedBackendHeadSha", "dataRunId", "expectedDataHeadSha",
+    "experimentalPolicyJson", "experimentalPolicySha256"]) {
     requireText(text, new RegExp(`^      ${input}:\\n        description: [^\\n]+\\n        required: true$`, "m"), `${input} input`);
   }
   requireText(text, /^  actions: read$/m, "artifact read permission");
@@ -62,6 +63,51 @@ test("predeployment measurement is a trusted main-only manual workflow", () => {
     "pinned ORAS setup");
   requireText(text, /version: 1\.3\.3/, "pinned ORAS version");
   requireText(text, /java-version: "21\.0\.11"/, "pinned Java version");
+});
+
+test("predeployment measurement seals independently supplied experimental policy bytes before JUnit", () => {
+  const text = source();
+  const block = runBlock(text, "Validate experimental policy bytes and create once");
+  requireText(block, /process\.env\.EXPERIMENTAL_POLICY_JSON/, "policy JSON comes only from environment");
+  requireText(block, /process\.env\.EXPERIMENTAL_POLICY_SHA256/, "policy digest comes only from environment");
+  requireText(block, /\^\[a-f0-9\]\{64\}\$/, "lowercase SHA-256 requirement");
+  requireText(block, /Buffer\.from\(policyJson, "utf8"\)/, "exact UTF-8 policy bytes");
+  requireText(block, /flag: "wx", mode: 0o600/, "create-once private policy file");
+  assert.doesNotMatch(block, /JSON\.parse\(policyJson\)|JSON\.parse\(process\.env\.EXPERIMENTAL_POLICY_JSON\)/,
+    "Data does not parse the Backend policy schema");
+
+  const root = mkdtempSync(join(tmpdir(), "journey-profile-policy-input-"));
+  const policyPath = join(root, "policy.json");
+  const policyJson = '{"experimental":true}\n';
+  const sha256 = createHash("sha256").update(Buffer.from(policyJson, "utf8")).digest("hex");
+  const run = (environment) => spawnSync("/bin/bash", ["-c", block], {
+    env: { ...process.env, MEASUREMENT_POLICY: policyPath, EXPERIMENTAL_POLICY_JSON: policyJson,
+      EXPERIMENTAL_POLICY_SHA256: sha256, ...environment },
+    encoding: "utf8", timeout: 5000,
+  });
+  try {
+    const first = run({});
+    assert.equal(first.status, 0, first.stderr);
+    assert.deepEqual(readFileSync(policyPath), Buffer.from(policyJson, "utf8"));
+    assert.equal(statSync(policyPath).mode & 0o777, 0o600);
+    assert.notEqual(run({}).status, 0, "policy file is create-once");
+    const mismatched = join(root, "mismatched.json");
+    const rejected = spawnSync("/bin/bash", ["-c", block], {
+      env: { ...process.env, MEASUREMENT_POLICY: mismatched, EXPERIMENTAL_POLICY_JSON: policyJson,
+        EXPERIMENTAL_POLICY_SHA256: "0".repeat(64) }, encoding: "utf8", timeout: 5000,
+    });
+    assert.notEqual(rejected.status, 0, "mismatched policy digest fails closed");
+    assert.equal(existsSync(mismatched), false, "mismatched policy emits no file");
+    const malformed = join(root, "malformed.json");
+    const malformedHash = spawnSync("/bin/bash", ["-c", block], {
+      env: { ...process.env, MEASUREMENT_POLICY: malformed, EXPERIMENTAL_POLICY_JSON: policyJson,
+        EXPERIMENTAL_POLICY_SHA256: "A".repeat(64) }, encoding: "utf8", timeout: 5000,
+    });
+    assert.notEqual(malformedHash.status, 0, "non-lowercase policy digest fails closed");
+    assert.equal(existsSync(malformed), false, "malformed digest emits no file");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("predeployment measurement binds one trusted Backend PR and Data #6 release", () => {
@@ -153,6 +199,10 @@ test("predeployment measurement binds the JUnit harness to the validated candida
     "required payload and provenance artifacts");
   requireText(harness, /EASYSUBWAY_CONTRACTS_BUNDLE: \$\{\{ runner\.temp \}\}\/backend-contracts\.json/,
     "Hub bundle is passed to Gradle");
+  requireText(harness, /MEASUREMENT_POLICY: \$\{\{ runner\.temp \}\}\/journey-profile-experimental-policy\.json/,
+    "harness receives the sealed experimental policy file");
+  requireText(harness, /MEASUREMENT_POLICY_SHA256: \$\{\{ inputs\.experimentalPolicySha256 \}\}/,
+    "harness receives the independently supplied policy digest");
   requireText(harness, /cd "\$\{RUNNER_TEMP\}\/backend-source\/backend"/,
     "Backend-only Gradle working directory");
   requireText(harness, /\.\/gradlew test --tests com\.easysubway\.journey\.application\.JourneyProfilePredeploymentMeasurementTest --no-daemon --max-workers=1/,
@@ -249,6 +299,9 @@ test("executes the closed planner observation validation and emission", () => {
   const root = mkdtempSync(join(tmpdir(), "journey-profile-predeployment-observation-"));
   const inputPath = join(root, "input.json");
   const observationPath = join(root, "observation.json");
+  const policyPath = join(root, "policy.json");
+  const policyBytes = Buffer.from('{"experimental":true}\n', "utf8");
+  const policySha256 = createHash("sha256").update(policyBytes).digest("hex");
   const digest = "a".repeat(64);
   const headSha = "a".repeat(40);
   const input = {
@@ -284,9 +337,11 @@ test("executes the closed planner observation validation and emission", () => {
   const run = (value, output) => {
     writeFileSync(inputPath, `${JSON.stringify(input)}\n`);
     writeFileSync(observationPath, `${JSON.stringify(value)}\n`);
+    writeFileSync(policyPath, policyBytes);
     return spawnSync("/bin/bash", ["-c", block], {
       env: { ...process.env, VALIDATED_INPUT: inputPath, MEASUREMENT_OUTPUT: observationPath,
-        EVIDENCE_OUTPUT: output, BACKEND_HEAD: headSha, DATA_HEAD: headSha, DATA_RUN_ID: "42" },
+        EVIDENCE_OUTPUT: output, BACKEND_HEAD: headSha, DATA_HEAD: headSha, DATA_RUN_ID: "42",
+        MEASUREMENT_POLICY: policyPath, EXPERIMENTAL_POLICY_SHA256: policySha256 },
       encoding: "utf8", timeout: 5000,
     });
   };
@@ -296,6 +351,7 @@ test("executes the closed planner observation validation and emission", () => {
     assert.equal(positive.status, 0, positive.stderr);
     const evidence = JSON.parse(readFileSync(output, "utf8"));
     assert.equal(evidence.schemaVersion, 2);
+    assert.equal(evidence.experimentalPolicySha256, policySha256);
     assert.equal(evidence.observation.observationScope, "PREDEPLOYMENT_PLANNER");
     assert.deepEqual(evidence.observation.servingBoundary, { status: "UNOBSERVABLE" });
     const { evidenceSha256, ...payload } = evidence;

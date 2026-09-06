@@ -19,6 +19,14 @@ on:
         description: Exact Data release run head SHA
         required: true
         type: string
+      experimentalPolicyJson:
+        description: Exact UTF-8 experimental policy JSON bytes
+        required: true
+        type: string
+      experimentalPolicySha256:
+        description: Independently supplied lowercase SHA-256 of experimental policy bytes
+        required: true
+        type: string
 
 permissions:
   actions: read
@@ -271,11 +279,35 @@ jobs:
           };
           writeFileSync(process.env.VALIDATED_INPUT, `${canonical(input)}\n`, { flag: "wx", mode: 0o600 });
           NODE
+      - name: Validate experimental policy bytes and create once
+        env:
+          EXPERIMENTAL_POLICY_JSON: ${{ inputs.experimentalPolicyJson }}
+          EXPERIMENTAL_POLICY_SHA256: ${{ inputs.experimentalPolicySha256 }}
+          MEASUREMENT_POLICY: ${{ runner.temp }}/journey-profile-experimental-policy.json
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { createHash } from "node:crypto";
+          import { writeFileSync } from "node:fs";
+          const policyJson = process.env.EXPERIMENTAL_POLICY_JSON;
+          const policySha256 = process.env.EXPERIMENTAL_POLICY_SHA256;
+          const policyPath = process.env.MEASUREMENT_POLICY;
+          if (!policyJson || !policyPath || !/^[a-f0-9]{64}$/.test(policySha256 ?? "")) {
+            throw new Error("experimental policy input is invalid");
+          }
+          const bytes = Buffer.from(policyJson, "utf8");
+          if (createHash("sha256").update(bytes).digest("hex") !== policySha256) {
+            throw new Error("experimental policy digest mismatch");
+          }
+          writeFileSync(policyPath, bytes, { flag: "wx", mode: 0o600 });
+          NODE
       - name: Run future PR-owned JUnit measurement harness
         env:
           CANDIDATE_ROOT: ${{ runner.temp }}/data-candidate
           MEASUREMENT_INPUT: ${{ runner.temp }}/journey-profile-measurement-input.json
           MEASUREMENT_OUTPUT: ${{ runner.temp }}/journey-profile-measurement-observation.json
+          MEASUREMENT_POLICY: ${{ runner.temp }}/journey-profile-experimental-policy.json
+          MEASUREMENT_POLICY_SHA256: ${{ inputs.experimentalPolicySha256 }}
           EASYSUBWAY_CONTRACTS_BUNDLE: ${{ runner.temp }}/backend-contracts.json
         run: |
           set -euo pipefail
@@ -314,6 +346,8 @@ jobs:
           DATA_RUN_ID: ${{ inputs.dataRunId }}
           VALIDATED_INPUT: ${{ runner.temp }}/journey-profile-measurement-input.json
           MEASUREMENT_OUTPUT: ${{ runner.temp }}/journey-profile-measurement-observation.json
+          MEASUREMENT_POLICY: ${{ runner.temp }}/journey-profile-experimental-policy.json
+          EXPERIMENTAL_POLICY_SHA256: ${{ inputs.experimentalPolicySha256 }}
           EVIDENCE_OUTPUT: ${{ runner.temp }}/journey-profile-predeployment-measurement.json
         run: |
           set -euo pipefail
@@ -322,11 +356,17 @@ jobs:
           import { readFileSync, writeFileSync } from "node:fs";
           const input = JSON.parse(readFileSync(process.env.VALIDATED_INPUT));
           const observation = JSON.parse(readFileSync(process.env.MEASUREMENT_OUTPUT));
+          const experimentalPolicySha256 = process.env.EXPERIMENTAL_POLICY_SHA256;
+          const experimentalPolicy = readFileSync(process.env.MEASUREMENT_POLICY);
           const canonical = (value) => {
             if (value === null || typeof value !== "object") return JSON.stringify(value);
             if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
             return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
           };
+          if (!/^[a-f0-9]{64}$/.test(experimentalPolicySha256 ?? "")
+            || createHash("sha256").update(experimentalPolicy).digest("hex") !== experimentalPolicySha256) {
+            throw new Error("experimental policy evidence binding mismatch");
+          }
           const required = ["schemaVersion", "artifactKind", "observationScope", "servingBoundary", "backendHeadSha", "dataHeadSha", "dataRunId", "fanInSha256", "routeBundleSha256", "regionalMatrixSha256", "corpusSha256", "algorithmId", "algorithmSha256", "frontierPolicyId", "frontierSha256", "measurements"];
           if (JSON.stringify(Object.keys(observation).sort()) !== JSON.stringify(required.sort())) throw new Error("measurement observation shape is not closed");
           if (observation.schemaVersion !== 2 || observation.artifactKind !== "journey-profile-predeployment-observation"
@@ -362,6 +402,7 @@ jobs:
           const evidencePayload = {
             schemaVersion: 2,
             artifactKind: "journey-profile-predeployment-measurement",
+            experimentalPolicySha256,
             backend: { repository: "AquilaXk/easysubway-backend", headSha: process.env.BACKEND_HEAD },
             data: { repository: input.dataRepository, headSha: process.env.DATA_HEAD, runId: process.env.DATA_RUN_ID, regionIds: input.regionIds, queryClasses: input.queryClasses, fanIn: input.fanIn, componentSha256: input.componentSha256, inventorySha256: input.inventorySha256, releaseEvidenceSha256: input.releaseEvidenceSha256, releaseDecisionSha256: input.releaseDecisionSha256 },
             observation,
