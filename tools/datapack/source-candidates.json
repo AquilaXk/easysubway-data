@@ -2589,20 +2589,20 @@
           "route_map_position",
           "route_map_label_polygon"
         ],
-        "stationCount": 14,
+        "stationCount": 15,
         "datasetId": "15041326",
         "datasetIds": [
           "15041326"
         ],
         "rawSha256": "2160020177352775418c863ebd9846ab5cc0df08c1da0f4b435dbf599b214187",
-        "positionsSha256": "cda5fa54ab66e79de7b6fa025c81c7276a3dbd21dbcf8d57db6a4097e3f2651a",
+        "positionsSha256": "29e4b1017adf05916ad38c7cce94dadb1658b40b4c203937cf7704680f1a9d72",
         "lineIds": [
           "line-828f04afc588"
         ],
         "lineStationCounts": {
-          "everline": 14
+          "everline": 15
         },
-        "evidenceArtifact": "tools/datapack/sources/kric-everline-route-map-positions-20260725.json",
+        "evidenceArtifact": "tools/datapack/sources/kric-everline-route-map-positions-ac71a346f351d059fb3563b0baef920d9d294015028d15be98bb36184f040aa9.json",
         "coverageAssessment": {
           "state": "SUPPORTED",
           "requirementCount": 1,
@@ -2612,7 +2612,21 @@
           "verificationTest": "tools/datapack/materialize-kric-capital-light-rail-route-map-positions.test.mjs"
         },
         "coverageLimitations": [
-          "data.go.kr FILE 15041326 용인에버라인 14역 admit(전대·에버랜드 잉여 무시)"
+          "Official route-map position data is limited to the admitted line and approved schematic geometry."
+        ],
+        "rawStationCount": 15,
+        "quarantinedCount": 0,
+        "schematicGeometrySha256": "fde0d2878949a9cce42261a783ddcfd5bfc112efa6c0670bb2e4f1be28d4d44a",
+        "topologySourceId": "capital-route-topology",
+        "topologySnapshotId": "capital-route-topology-20260904",
+        "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+        "topologyLineages": [
+          {
+            "sourceId": "capital-route-topology",
+            "snapshotId": "capital-route-topology-20260904",
+            "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+            "lineId": "line-828f04afc588"
+          }
         ]
       },
       "nextAction": "공식 FILE 갱신 시 CSV byte hash와 admitted 좌표 snapshot을 함께 갱신한다"
@@ -5396,21 +5410,21 @@
           "route_map_position",
           "route_map_label_polygon"
         ],
-        "stationCount": 12,
+        "stationCount": 13,
         "datasetId": "15041324",
         "datasetIds": [
           "15041324",
           "1294"
         ],
         "rawSha256": "fe2d8d0b24d16561c8fbbafe1b2b8bf1bb67bb24ca0c200bae222f502fefe055",
-        "positionsSha256": "432088124437b63148bcacf7274472d02147f53d5e32a310c0c065f5e4cbd8ed",
+        "positionsSha256": "a3bbf767216f7074cfcdb7742807dcf43be259272b4a592f9e53b4b63a62560b",
         "lineIds": [
           "line-30886152e4f8"
         ],
         "lineStationCounts": {
-          "ui": 12
+          "ui": 13
         },
-        "evidenceArtifact": "tools/datapack/sources/kric-ui-sinseol-route-map-positions-20260725.json",
+        "evidenceArtifact": "tools/datapack/sources/kric-ui-sinseol-route-map-positions-ea86b8629935d416de0e54bd1993cedeafbc61f6e825f97d69e56abbcebf4dbf.json",
         "coverageAssessment": {
           "state": "SUPPORTED",
           "requirementCount": 1,
@@ -5420,7 +5434,21 @@
           "verificationTest": "tools/datapack/materialize-kric-capital-light-rail-route-map-positions.test.mjs"
         },
         "coverageLimitations": [
-          "data.go.kr FILE 15041324 우이신설 12역 admit(신설동 잉여 무시, 위경도 KRIC 1294 overlay)"
+          "Official route-map position data is limited to the admitted line and approved schematic geometry."
+        ],
+        "rawStationCount": 13,
+        "quarantinedCount": 0,
+        "schematicGeometrySha256": "fde0d2878949a9cce42261a783ddcfd5bfc112efa6c0670bb2e4f1be28d4d44a",
+        "topologySourceId": "capital-route-topology",
+        "topologySnapshotId": "capital-route-topology-20260904",
+        "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+        "topologyLineages": [
+          {
+            "sourceId": "capital-route-topology",
+            "snapshotId": "capital-route-topology-20260904",
+            "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+            "lineId": "line-30886152e4f8"
+          }
         ]
       },
       "nextAction": "공식 FILE 갱신 시 CSV byte hash와 admitted 좌표 snapshot을 함께 갱신한다"

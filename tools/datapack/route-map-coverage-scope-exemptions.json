@@ -211,30 +211,6 @@
         "officialUrl": "https://www.data.go.kr/data/15099316/fileData.do",
         "note": "8호선 연장 구간 암사역사공원. pack topology에는 있으나 공식 역사 좌표 파일(2025-08-14 기준)의 8호선 행 18건에 포함되지 않는다. 원본 행은 admitted 274 + quarantined 2 = 276으로 전부 회계된다."
       }
-    },
-    {
-      "scopeKey": "capital:operator-b2d80436b438:line-828f04afc588",
-      "rosterStationName": "전대.에버랜드",
-      "reasonCode": "PACK_SCOPE_ABSENT",
-      "evidence": {
-        "issue": 2505,
-        "snapshotPath": "tools/datapack/sources/kric-everline-route-map-positions-20260725.json",
-        "packTopologyPath": "tools/datapack/sources/capital-route-topology-20260724.json",
-        "officialUrl": "https://www.data.go.kr/data/15041326/fileData.do",
-        "note": "공식 역위치 파일에는 행이 있으나 pack 노선 topology(14역)가 이 역을 싣지 않아 admission에서 잉여 행으로 제외했다(allowExtraFileRows). pack scope 확장은 별도 배치."
-      }
-    },
-    {
-      "scopeKey": "capital:operator-3c623bf1a427:line-30886152e4f8",
-      "rosterStationName": "신설동",
-      "reasonCode": "PACK_SCOPE_ABSENT",
-      "evidence": {
-        "issue": 2505,
-        "snapshotPath": "tools/datapack/sources/kric-ui-sinseol-route-map-positions-20260725.json",
-        "packTopologyPath": "tools/datapack/sources/capital-route-topology-20260724.json",
-        "officialUrl": "https://www.data.go.kr/data/15041324/fileData.do",
-        "note": "공식 역위치 파일에는 행이 있으나 pack 노선 topology(12역)가 우이신설 남단 종점을 싣지 않아 admission에서 잉여 행으로 제외했다(allowExtraFileRows). pack scope 확장은 별도 배치."
-      }
     }
   ],
   "renamedAtBasis": "renamedAt은 공식 역명 변경 시행일(고시와 시행이 같은 날이면 그 날)을 단일 기준으로 적는다."

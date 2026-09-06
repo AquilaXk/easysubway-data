@@ -12,7 +12,6 @@ const MOLIT_ROSTER_PATH = "tools/datapack/sources/molit-urban-rail-full-route-20
 const EXEMPTIONS_PATH = "tools/datapack/route-map-coverage-scope-exemptions.json";
 const SEOUL_SNAPSHOT_PATH = "tools/datapack/sources/seoul-metro-route-map-positions-20260724.json";
 const GWANGJU_SNAPSHOT_PATH = "tools/datapack/sources/gwangju-transportation-route-map-positions-20260725.json";
-const UI_SNAPSHOT_PATH = "tools/datapack/sources/kric-ui-sinseol-route-map-positions-20260725.json";
 const DAEGU_SNAPSHOT_PATH = "tools/datapack/sources/daegu-transportation-route-map-positions-20260724.json";
 
 // #2499·#2508에서 배선한 dual-operator containment는 전 scope 감사의 부분집합으로 유지한다.
@@ -370,6 +369,12 @@ test("결측을 가리는 별칭은 거부된다 (#2516)", async () => {
 
 test("snapshot에 없는 역을 가리키는 별칭은 거부된다 (#2516)", async () => {
   const inputs = await loadAuditInputs();
+  const source = inputs.inventory.sources.find(({ id }) => id === "kric-ui-sinseol-route-map-positions");
+  const snapshotPath = source.routeMapAdmissionEvidence.snapshotPath;
+  const snapshot = structuredClone(inputs.snapshotsByPath.get(snapshotPath));
+  // 현재 admission의 포함 여부와 무관하게 이 회귀가 요구하는 결측을 구성한다.
+  snapshot.positions = snapshot.positions.filter(({ stationName }) => stationName !== "신설동");
+  const snapshotsByPath = new Map(inputs.snapshotsByPath).set(snapshotPath, snapshot);
   const exemptions = structuredClone(inputs.exemptions);
   exemptions.documentedCoverageGaps = exemptions.documentedCoverageGaps
     .filter(({ rosterStationName }) => rosterStationName !== "신설동");
@@ -387,7 +392,7 @@ test("snapshot에 없는 역을 가리키는 별칭은 거부된다 (#2516)", as
     },
   });
 
-  const result = auditRouteMapCoverageScopes({ ...inputs, exemptions });
+  const result = auditRouteMapCoverageScopes({ ...inputs, exemptions, snapshotsByPath });
 
   assert.deepEqual(violationKinds(result), ["ALIAS_SNAPSHOT_STATION_ABSENT", "MISSING_STATION"]);
 });
@@ -765,12 +770,17 @@ test("pack topology가 싣고 있는 역은 pack 결측으로 면제할 수 없�
 test("historical lineage와 다른 재해시 snapshot은 pack 결측 근거로 쓸 수 없다 (#2516)", async () => {
   const inputs = await loadAuditInputs();
   const exemptions = structuredClone(inputs.exemptions);
-  const gap = gapNamed(exemptions, "전대.에버랜드");
-  const topologyPath = gap.evidence.packTopologyPath;
-  const topology = structuredClone(inputs.topologiesByPath.get(topologyPath));
+  const gap = gapNamed(exemptions, "하양");
+  const source = inputs.inventory.sources.find(({ id }) => id === gap.evidence.admissionSourceId);
   const lineId = gap.scopeKey.split(":").at(-1);
-  const line = topology.lines.find((candidate) => candidate.lineId === lineId);
-  line.scope = [...line.scope, { stationId: "station-test", stationName: "전대.에버랜드" }];
+  const topologyPath = topologyPathForSourceAndLine(inputs.inventory, source.id, lineId);
+  gap.reasonCode = "PACK_SCOPE_ABSENT";
+  gap.evidence.snapshotPath = source.routeMapAdmissionEvidence.snapshotPath;
+  gap.evidence.packTopologyPath = topologyPath;
+  delete gap.evidence.admissionSourceId;
+  const topology = structuredClone(inputs.topologiesByPath.get(topologyPath));
+  const line = topology.lines?.find((candidate) => candidate.lineId === lineId) ?? topology;
+  line.scope = [...line.scope, { stationId: "station-test", stationName: "test-only-station" }];
   const topologiesByPath = new Map(inputs.topologiesByPath).set(topologyPath, rehashTopology(topology));
 
   const result = auditRouteMapCoverageScopes({ ...inputs, exemptions, topologiesByPath });
@@ -847,9 +857,15 @@ test("이미 커버된 역을 임의로 면제하는 ledger 항목은 거부된�
 
 test("admission으로 해소된 결측은 ledger에 남길 수 없다 (#2516)", async () => {
   const inputs = await loadAuditInputs();
-  const snapshot = structuredClone(inputs.snapshotsByPath.get(UI_SNAPSHOT_PATH));
-  snapshot.positions = [...snapshot.positions, { ...snapshot.positions[0], stationName: "신설동" }];
-  const snapshotsByPath = new Map(inputs.snapshotsByPath).set(UI_SNAPSHOT_PATH, snapshot);
+  const gap = gapNamed(inputs.exemptions, "하양");
+  const source = inputs.inventory.sources.find(({ id }) => id === gap.evidence.admissionSourceId);
+  const snapshotPath = source.routeMapAdmissionEvidence.snapshotPath;
+  const snapshot = structuredClone(inputs.snapshotsByPath.get(snapshotPath));
+  snapshot.positions = [...snapshot.positions, {
+    ...snapshot.positions.find(({ lineId }) => lineId === gap.scopeKey.split(":").at(-1)),
+    stationName: gap.rosterStationName,
+  }];
+  const snapshotsByPath = new Map(inputs.snapshotsByPath).set(snapshotPath, snapshot);
 
   const result = auditRouteMapCoverageScopes({ ...inputs, snapshotsByPath });
 

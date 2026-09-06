@@ -267,14 +267,67 @@ test("dual-operator 노선은 카탈로그 등재 집합과 정본이 같을 때
   }
 });
 
+test("current geometry successors are consumed with their immutable identity", async () => {
+  const inventory = await readJson("tools/datapack/source-inventory.json");
+  const schematicCanvas = await readJson("tools/route-map/route-map-defs/easy-subway-sma-v4-geometry.json");
+  let fixture = await readJson("tools/datapack/release/capital-production-reviewed-pack.json");
+  for (const line of listCapitalLightRailRouteMapPositionLines().filter(({ geometryLine }) => geometryLine)) {
+    const source = inventory.sources.find(({ id }) => id === line.sourceId);
+    const evidence = source.routeMapAdmissionEvidence;
+    const bytes = await readFile(path.join(root, evidence.snapshotPath));
+    const snapshot = JSON.parse(bytes);
+    const topologySnapshot = await readJson(`tools/datapack/sources/${evidence.topologySnapshotId}.json`);
+    fixture = materializeCapitalLightRailRouteMapPositions({
+      baseFixture: fixture, snapshot,
+      snapshotSha256: createHash("sha256").update(bytes).digest("hex"),
+      topologySnapshot, schematicCanvas, inventory, now: new Date(snapshot.capturedAt),
+    });
+    const rows = fixture.packs[0].routeMapPositions.filter(({ sourceId }) => sourceId === source.id);
+    assert.deepEqual(rows.map(({ stationId }) => stationId).sort(), snapshot.positions.map(({ stationId }) => stationId).sort());
+    assert.ok(rows.every(({ sourceSnapshotId }) => sourceSnapshotId === evidence.snapshotId));
+    assert.equal(fixture.packs[0].version, snapshot.capturedAt.slice(0, 10).replaceAll("-", ""));
+  }
+});
+
+test("self-consistent empty or incomplete snapshots cannot escape current topology", async () => {
+  const { baseFixture, sampleSnapshot, topologySnapshot, inventory } = await inputs();
+  for (const positions of [[], sampleSnapshot.positions.slice(1)]) {
+    const snapshot = structuredClone(sampleSnapshot);
+    snapshot.positions = positions;
+    snapshot.quarantinedPositions = [];
+    snapshot.stationCount = positions.length;
+    snapshot.quarantinedCount = 0;
+    snapshot.rawStationCount = positions.length;
+    snapshot.lineStationCounts = { gimpo: positions.length };
+    snapshot.scope = positions.map(({ lineId, stationCode, stationName, stationId }) => ({
+      lineId, stationCode, stationName, stationId,
+    }));
+    snapshot.scopeSha256 = createHash("sha256").update(JSON.stringify(snapshot.scope)).digest("hex");
+    snapshot.positionsSha256 = createHash("sha256").update(JSON.stringify(positions)).digest("hex");
+    const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
+    const changedInventory = structuredClone(inventory);
+    const evidence = changedInventory.sources.find(({ id }) => id === SAMPLE_SOURCE_ID).routeMapAdmissionEvidence;
+    evidence.snapshotSha256 = createHash("sha256").update(snapshotBytes).digest("hex");
+    evidence.stationCount = snapshot.stationCount;
+    evidence.rawStationCount = snapshot.rawStationCount;
+    evidence.quarantinedCount = snapshot.quarantinedCount;
+    evidence.lineStationCounts = structuredClone(snapshot.lineStationCounts);
+    evidence.positionsSha256 = snapshot.positionsSha256;
+    assert.throws(() => materializeCapitalLightRailRouteMapPositions({
+      baseFixture, snapshot, snapshotSha256: evidence.snapshotSha256,
+      topologySnapshot, inventory: changedInventory, now: routeMapNow,
+    }), /topology lineage mismatch/);
+  }
+});
+
 test("5노선 inventory evidence·snapshot byte identity가 모두 맞물린다", async () => {
   const inventory = await readJson("tools/datapack/source-inventory.json");
   for (const line of listCapitalLightRailRouteMapPositionLines()) {
+    const source = inventory.sources.find(({ id }) => id === line.sourceId);
     const snapshotBytes = await readFile(
-      path.join(root, "tools/datapack/sources", `${line.sourceId}-20260725.json`),
+      path.join(root, source.routeMapAdmissionEvidence.snapshotPath),
     );
     const snapshot = JSON.parse(snapshotBytes);
-    const source = inventory.sources.find(({ id }) => id === line.sourceId);
     assert.ok(source, line.sourceId);
     assert.equal(
       source.routeMapAdmissionEvidence.snapshotSha256,
