@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 
 import { collectGwangjuTimetable } from "./collect-gwangju-timetable.mjs";
@@ -78,6 +79,20 @@ test("광주 정적 관측은 수집 시각으로 유효기간이나 열차 연�
   }
   assert.equal(snapshots[0].rawSha256, snapshots[1].rawSha256);
   assert.equal(snapshots[0].rowsSha256, snapshots[1].rowsSha256);
+});
+
+test("광주 정적 관측은 투영하지 않은 필드를 포함한 응답 원문을 보존한다", async () => {
+  const body = Buffer.from((await xmlResponse().text()).replace(
+    "<item>", "<item>\n<sourceNote>official observation</sourceNote>\n",
+  ));
+  const snapshot = await collectGwangjuTimetable({
+    serviceKey: "test-service-key",
+    fetchImpl: async () => new Response(body, { headers: { "content-type": "application/xml" } }),
+  });
+  assert.equal(snapshot.rawPages.length, 1);
+  assert.equal(snapshot.rawPages[0].pageNo, 1);
+  assert.deepEqual(Buffer.from(snapshot.rawPages[0].bodyBase64, "base64"), body);
+  assert.equal(snapshot.rawPages[0].rawSha256, createHash("sha256").update(body).digest("hex"));
 });
 
 test("광주 timetable collector는 provider 500건 cap을 bounded pagination으로 완결한다", async () => {

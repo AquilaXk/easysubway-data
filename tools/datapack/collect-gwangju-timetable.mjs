@@ -88,6 +88,10 @@ export async function collectGwangjuTimetable({
     },
     rawSha256,
     rowsSha256: sha256(JSON.stringify(rows)),
+    // 원문을 보존해 재수집 없이 필드 의미와 파싱 결과를 다시 확인한다.
+    rawPages: pages.map(({ pageNo, rawSha256: pageSha256, bodyBase64 }) => ({
+      pageNo, rawSha256: pageSha256, bodyBase64,
+    })),
     rows,
   };
 }
@@ -136,6 +140,7 @@ async function collectPage({ pageNo, key, fetchImpl }) {
     numOfRows: Number(numOfRows),
     responseEncoding,
     rawSha256,
+    bodyBase64: bytes.toString("base64"),
     rows,
   };
 }
