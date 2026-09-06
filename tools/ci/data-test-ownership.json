@@ -188,6 +188,10 @@
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456",
       "title": "Admit the Seoul Metro capital topology source"
     },
+    "data506": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506",
+      "title": "Preserve explicit SVG station-label identity metadata"
+    },
     "data529": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/529",
       "title": "[Data][Release] candidate 생성과 cross-run attestation 분리"
@@ -596,6 +600,7 @@
     {"path":"tools/route-map/daegu-free-crossing-gate.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":173},
     {"path":"tools/route-map/densify-corridors.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":132},
     {"path":"tools/route-map/densify-hubs.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":114},
+    {"path":"tools/route-map/extract-svg-geometry.test.mjs","semanticOwner":"data506","classes":["required-pr"],"durationMs":59},
     {"path":"tools/route-map/export-loom-geojson.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":123},
     {"path":"tools/route-map/fix-svg-station-line-membership.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":131},
     {"path":"tools/route-map/line-branches.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":167},

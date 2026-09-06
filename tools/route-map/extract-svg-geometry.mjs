@@ -6,6 +6,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -100,9 +101,19 @@ function stripSvgPreamble(svg) {
   return svg.replace(/^\s*<\?xml[\s\S]*?\?>/i, "").replace(/^\s*<!doctype[\s\S]*?>/i, "");
 }
 
+// 원본 SVG가 명시한 라벨 정체만 보존한다. 누락값을 텍스트·좌표로 추정하지 않는다.
+export function stationLabelIdentity(element) {
+  return {
+    dataStationKey: element.getAttribute("data-station-key") || "",
+    dataStation: element.getAttribute("data-station") || "",
+    dataLine: element.getAttribute("data-line") || "",
+    labelRole: element.getAttribute("data-label-role") || "",
+  };
+}
+
 function browserExtractorExpression(svg) {
   const svgBase64 = Buffer.from(stripSvgPreamble(svg), "utf8").toString("base64");
-  return `(${async function extract(value, config) {
+  return `(${async function extract(value, config, stationLabelIdentity) {
     function decodeBase64Utf8(base64) {
       const binary = atob(base64);
       const bytes = new Uint8Array(binary.length);
@@ -354,6 +365,7 @@ function browserExtractorExpression(svg) {
         sourceText,
         normalizedText: sourceText.replace(/역$/, ""),
         classification: classifyText(element, sourceText),
+        ...stationLabelIdentity(element),
         polygon,
         bounds: {
           minX: Math.min(...xs),
@@ -683,7 +695,7 @@ function browserExtractorExpression(svg) {
   }})(${JSON.stringify(svgBase64)}, ${JSON.stringify({
     minStrokeLength: MIN_STROKE_LENGTH,
     pathSampleSpacing: PATH_SAMPLE_SPACING,
-  })})`;
+  })}, ${stationLabelIdentity.toString()})`;
 }
 
 async function browserVersion(browser) {
@@ -874,7 +886,9 @@ async function main() {
   else process.stdout.write(json);
 }
 
-main().catch((error) => {
-  process.stderr.write(`${error.message}\n`);
-  process.exitCode = 1;
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    process.stderr.write(`${error.message}\n`);
+    process.exitCode = 1;
+  });
+}
