@@ -105,13 +105,28 @@ test("광주 timetable collector는 provider·pagination·row schema 오류를 f
 
 test("광주 timetable collector는 credential과 provider body 없이 transport code만 진단한다", async () => {
   const transport = Object.assign(new Error("secret-bearing provider body"), { code: "ENOTFOUND" });
+  let calls = 0;
   await assert.rejects(collectGwangjuTimetable({
     serviceKey: "never-print-gwangju-key",
-    sleepImpl: async () => {},
-    fetchImpl: async () => { throw transport; },
+    fetchImpl: async () => { calls += 1; throw transport; },
   }), (error) => {
     assert.match(error.message, /transport failure; code=ENOTFOUND/);
     assert.doesNotMatch(error.message, /never-print|secret-bearing/);
     return true;
   });
+  assert.equal(calls, 1);
+});
+
+test("광주 timetable collector는 첫 HTTP 실패를 재시도하지 않는다", async () => {
+  for (const status of [429, 500]) {
+    let calls = 0;
+    await assert.rejects(collectGwangjuTimetable({
+      serviceKey: "key",
+      fetchImpl: async () => {
+        calls += 1;
+        return new Response("unavailable", { status });
+      },
+    }), new RegExp(`HTTP ${status}`));
+    assert.equal(calls, 1);
+  }
 });

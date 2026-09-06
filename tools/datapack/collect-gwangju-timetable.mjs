@@ -18,13 +18,12 @@ export async function collectGwangjuTimetable({
   serviceKey,
   fetchImpl = fetch,
   now = new Date(),
-  sleepImpl = sleep,
   concurrency = 4,
 } = {}) {
   const capturedAt = validDate(now, "now");
   const key = normalizeDataGoKrServiceKey(serviceKey);
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4) throw new Error("concurrency is invalid");
-  const first = await collectPage({ pageNo: 1, key, fetchImpl, sleepImpl });
+  const first = await collectPage({ pageNo: 1, key, fetchImpl });
   const pageCount = Math.ceil(first.totalCount / first.numOfRows);
   if (!Number.isSafeInteger(pageCount) || pageCount < 1 || pageCount > 100) {
     throw new Error(`Gwangju timetable schema mismatch: pageCount=${safeToken(String(pageCount))}`);
@@ -38,7 +37,7 @@ export async function collectGwangjuTimetable({
       const pageNo = nextPageNo;
       nextPageNo += 1;
       try {
-        pages[pageNo - 1] = await collectPage({ pageNo, key, fetchImpl, sleepImpl });
+        pages[pageNo - 1] = await collectPage({ pageNo, key, fetchImpl });
       } catch (error) {
         failure = error;
       }
@@ -96,12 +95,12 @@ export async function collectGwangjuTimetable({
   };
 }
 
-async function collectPage({ pageNo, key, fetchImpl, sleepImpl }) {
+async function collectPage({ pageNo, key, fetchImpl }) {
   const url = new URL(ENDPOINT);
   url.searchParams.set("serviceKey", key);
   url.searchParams.set("pageNo", String(pageNo));
   url.searchParams.set("numOfRows", "500");
-  const response = await fetchWithRetry(url, fetchImpl, sleepImpl);
+  const response = await fetchPageOnce(url, fetchImpl);
   const bytes = Buffer.from(await response.arrayBuffer());
   const rawSha256 = sha256(bytes);
   if (!response.ok) {
@@ -174,27 +173,17 @@ function validateRows(rows) {
   }
 }
 
-async function fetchWithRetry(url, fetchImpl, sleepImpl) {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const response = await fetchImpl(url, {
-        redirect: "error",
-        signal: AbortSignal.timeout(15_000),
-        headers: { accept: "application/xml,text/xml" },
-      });
-      if (attempt === 0 && (response.status === 429 || response.status >= 500)) {
-        await sleepImpl(250);
-        continue;
-      }
-      return response;
-    } catch (error) {
-      if (attempt === 1) {
-        const code = error?.code ?? error?.cause?.code ?? "UNKNOWN";
-        throw new Error(`Gwangju timetable transport failure; code=${safeToken(String(code))}`);
-      }
-    }
+async function fetchPageOnce(url, fetchImpl) {
+  try {
+    return await fetchImpl(url, {
+      redirect: "error",
+      signal: AbortSignal.timeout(15_000),
+      headers: { accept: "application/xml,text/xml" },
+    });
+  } catch (error) {
+    const code = error?.code ?? error?.cause?.code ?? "UNKNOWN";
+    throw new Error(`Gwangju timetable transport failure; code=${safeToken(String(code))}`);
   }
-  throw new Error("Gwangju timetable transport failure");
 }
 
 function decodeXml(bytes) {
@@ -242,7 +231,6 @@ function compareRows(left, right) {
 }
 function compareText(left, right) { return left.localeCompare(right, "en"); }
 function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
-function sleep(milliseconds) { return new Promise((resolve) => setTimeout(resolve, milliseconds)); }
 
 async function main(args = process.argv.slice(2)) {
   if (args.length !== 2 || args[0] !== "--output") {
