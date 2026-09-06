@@ -47,7 +47,8 @@ test("predeployment measurement is a trusted main-only manual workflow", () => {
     "trusted repository");
   requireText(text, /github\.ref == 'refs\/heads\/main'/, "default branch");
   for (const input of ["backendPullRequestNumber", "expectedBackendHeadSha", "dataRunId", "expectedDataHeadSha",
-    "experimentalPolicyJson", "experimentalPolicySha256"]) {
+    "experimentalPolicyJson", "experimentalPolicySha256", "oracleMaxWork", "oracleMaxRides",
+    "oracleMaxAccesses", "oracleBoardingSlackSeconds"]) {
     requireText(text, new RegExp(`^      ${input}:\\n        description: [^\\n]+\\n        required: true$`, "m"), `${input} input`);
   }
   requireText(text, /^  actions: read$/m, "artifact read permission");
@@ -203,6 +204,13 @@ test("predeployment measurement binds the JUnit harness to the validated candida
     "harness receives the sealed experimental policy file");
   requireText(harness, /MEASUREMENT_POLICY_SHA256: \$\{\{ inputs\.experimentalPolicySha256 \}\}/,
     "harness receives the independently supplied policy digest");
+  for (const [environment, input] of [
+    ["MEASUREMENT_ORACLE_MAX_WORK", "oracleMaxWork"],
+    ["MEASUREMENT_ORACLE_MAX_RIDES", "oracleMaxRides"],
+    ["MEASUREMENT_ORACLE_MAX_ACCESSES", "oracleMaxAccesses"],
+    ["MEASUREMENT_ORACLE_BOARDING_SLACK_SECONDS", "oracleBoardingSlackSeconds"],
+  ]) requireText(harness, new RegExp(`${environment}: \\$\\{\\{ inputs\\.${input} \\}\\}`),
+    `${environment} comes only from workflow input environment`);
   requireText(harness, /cd "\$\{RUNNER_TEMP\}\/backend-source\/backend"/,
     "Backend-only Gradle working directory");
   requireText(harness, /\.\/gradlew test --tests com\.easysubway\.journey\.application\.JourneyProfilePredeploymentMeasurementTest --no-daemon --max-workers=1/,
@@ -251,7 +259,7 @@ mkdirSync(args[output + 1], { recursive: true });
 `);
     }
     writeExecutable(join(bin, "find"), `#!/usr/bin/env bash\nprintf '%s\\n' compatibility.json manifest.json manifest.signing-input.json payload payload/accessibility.sqlite.zst payload/fare.sqlite.zst payload/timetable.sqlite.zst payload/topology.sqlite.zst provenance.json\n`);
-    writeExecutable(join(backend, "gradlew"), `#!/usr/bin/env bash\necho "gradle:$PWD:$EASYSUBWAY_CONTRACTS_BUNDLE:$*" >> "$CALL_LOG"\nprintf observation > "$MEASUREMENT_OUTPUT"\n`);
+    writeExecutable(join(backend, "gradlew"), `#!/usr/bin/env bash\necho "gradle:$PWD:$EASYSUBWAY_CONTRACTS_BUNDLE:$*" >> "$CALL_LOG"\nprintf observation > "$MEASUREMENT_OUTPUT"\nprintf corpus > "$MEASUREMENT_OUTPUT.corpus.json"\n`);
     const environment = {
       ...process.env,
       PATH: `${bin}:${process.env.PATH}`,
@@ -299,11 +307,29 @@ test("executes the closed planner observation validation and emission", () => {
   const root = mkdtempSync(join(tmpdir(), "journey-profile-predeployment-observation-"));
   const inputPath = join(root, "input.json");
   const observationPath = join(root, "observation.json");
+  const corpusPath = `${observationPath}.corpus.json`;
   const policyPath = join(root, "policy.json");
   const policyBytes = Buffer.from('{"experimental":true}\n', "utf8");
   const policySha256 = createHash("sha256").update(policyBytes).digest("hex");
   const digest = "a".repeat(64);
   const headSha = "a".repeat(40);
+  const canonical = (value) => {
+    if (value === null || typeof value !== "object") return JSON.stringify(value);
+    if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
+  };
+  const oracleLimits = {
+    maxWork: "100", maxRides: "20", maxAccesses: "30", boardingSlackSeconds: "45",
+  };
+  const algorithmIdentity = { suite: "EASYSUBWAY_RAPTOR_SUITE_V2", version: 2 };
+  const frontierIdentity = { policy: "FRONTIER_POLICY_V1", version: 1 };
+  const corpus = {
+    resourcePolicyIdentity: { resourcePolicySha256: policySha256 },
+    oracleLimits,
+    algorithmIdentity,
+    frontierIdentity,
+    queries: [{ queryClass: "POINT", regionId: "capital" }],
+  };
   const input = {
     dataRepository: "AquilaXk/easysubway-data", regionIds: ["capital"], queryClasses: ["POINT", "ARRIVE_BY"],
     fanIn: { sha256: digest }, routeBundleSha256: digest, regionalMatrixSha256: digest,
@@ -313,9 +339,12 @@ test("executes the closed planner observation validation and emission", () => {
     schemaVersion: 2, artifactKind: "journey-profile-predeployment-observation",
     observationScope: "PREDEPLOYMENT_PLANNER", servingBoundary: { status: "UNOBSERVABLE" },
     backendHeadSha: headSha, dataHeadSha: headSha, dataRunId: "42", fanInSha256: digest,
-    routeBundleSha256: digest, regionalMatrixSha256: digest, corpusSha256: digest,
-    algorithmId: "EASYSUBWAY_RAPTOR_SUITE_V2", algorithmSha256: digest,
-    frontierPolicyId: "FRONTIER_POLICY_V1", frontierSha256: digest,
+    routeBundleSha256: digest, regionalMatrixSha256: digest,
+    corpusSha256: createHash("sha256").update(canonical(corpus)).digest("hex"),
+    algorithmId: "EASYSUBWAY_RAPTOR_SUITE_V2",
+    algorithmSha256: createHash("sha256").update(canonical(algorithmIdentity)).digest("hex"),
+    frontierPolicyId: "FRONTIER_POLICY_V1",
+    frontierSha256: createHash("sha256").update(canonical(frontierIdentity)).digest("hex"),
     measurements: [
       {
         regionId: "capital", queryClass: "POINT", expandedRoutes: 1, expandedTrips: 1,
@@ -329,19 +358,19 @@ test("executes the closed planner observation validation and emission", () => {
       },
     ],
   };
-  const canonical = (value) => {
-    if (value === null || typeof value !== "object") return JSON.stringify(value);
-    if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
-  };
-  const run = (value, output) => {
+  const run = (value, output, corpusValue = corpus, corpusBytes = `${canonical(corpusValue)}\n`) => {
     writeFileSync(inputPath, `${JSON.stringify(input)}\n`);
     writeFileSync(observationPath, `${JSON.stringify(value)}\n`);
+    writeFileSync(corpusPath, corpusBytes);
     writeFileSync(policyPath, policyBytes);
     return spawnSync("/bin/bash", ["-c", block], {
       env: { ...process.env, VALIDATED_INPUT: inputPath, MEASUREMENT_OUTPUT: observationPath,
         EVIDENCE_OUTPUT: output, BACKEND_HEAD: headSha, DATA_HEAD: headSha, DATA_RUN_ID: "42",
-        MEASUREMENT_POLICY: policyPath, EXPERIMENTAL_POLICY_SHA256: policySha256 },
+        MEASUREMENT_POLICY: policyPath, EXPERIMENTAL_POLICY_SHA256: policySha256,
+        MEASUREMENT_ORACLE_MAX_WORK: oracleLimits.maxWork,
+        MEASUREMENT_ORACLE_MAX_RIDES: oracleLimits.maxRides,
+        MEASUREMENT_ORACLE_MAX_ACCESSES: oracleLimits.maxAccesses,
+        MEASUREMENT_ORACLE_BOARDING_SLACK_SECONDS: oracleLimits.boardingSlackSeconds },
       encoding: "utf8", timeout: 5000,
     });
   };
@@ -352,6 +381,8 @@ test("executes the closed planner observation validation and emission", () => {
     const evidence = JSON.parse(readFileSync(output, "utf8"));
     assert.equal(evidence.schemaVersion, 2);
     assert.equal(evidence.experimentalPolicySha256, policySha256);
+    assert.deepEqual(evidence.oracleLimits, oracleLimits);
+    assert.deepEqual(evidence.corpus, corpus);
     assert.equal(evidence.observation.observationScope, "PREDEPLOYMENT_PLANNER");
     assert.deepEqual(evidence.observation.servingBoundary, { status: "UNOBSERVABLE" });
     const { evidenceSha256, ...payload } = evidence;
@@ -360,6 +391,19 @@ test("executes the closed planner observation validation and emission", () => {
     assert.equal(originalBytes, `${canonical(evidence)}\n`);
     assert.equal(run(observation, output).status, 1, "evidence output is create-once");
     assert.equal(readFileSync(output, "utf8"), originalBytes, "existing evidence is not overwritten");
+
+    const tamperedCorpus = {
+      ...corpus,
+      resourcePolicyIdentity: { resourcePolicySha256: "b".repeat(64) },
+    };
+    const tamperedObservation = {
+      ...observation,
+      corpusSha256: createHash("sha256").update(canonical(tamperedCorpus)).digest("hex"),
+    };
+    const tamperedPath = join(root, "tampered-corpus.json");
+    const tampered = run(tamperedObservation, tamperedPath, tamperedCorpus);
+    assert.notEqual(tampered.status, 0, "tampered corpus fails closed");
+    assert.equal(existsSync(tamperedPath), false, "tampered corpus emits no evidence");
 
     const invalid = [
       { ...observation, schemaVersion: 1 },
