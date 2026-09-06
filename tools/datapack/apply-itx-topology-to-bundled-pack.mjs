@@ -236,6 +236,15 @@ export function deriveAdmittedItxRideEdgeSetSha256(source) {
   return canonicalRideEdgeSetSha256(rides);
 }
 
+export async function readImmutableItxRideEdgeSetSha256(repositoryRoot = root) {
+  const resolvedRoot = path.resolve(repositoryRoot);
+  const { source } = await admittedSource(
+    path.join(resolvedRoot, "tools/datapack/itx-cheongchun-coverage-contract.json"),
+    { repositoryRoot: resolvedRoot, verificationMode: IMMUTABLE_INTEGRITY_VERIFICATION_MODE },
+  );
+  return deriveAdmittedItxRideEdgeSetSha256(source);
+}
+
 export async function readAdmittedItxRideEdgeSetSha256(
   repositoryRoot = root,
   { buildNow = candidateBuildNow() } = {},
