@@ -41,6 +41,12 @@ function currentCapitalRouteMapTopologyAdmission(inventory, spec) {
 
 async function loadFixtureBoundCandidate(workspace) {
   const spec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
+  const productionScopePolicyInput = spec.productionScopePolicy;
+  const productionScopePolicyBytes = await readFile(productionScopePolicyInput.path);
+  spec.productionScopePolicy = {
+    ...productionScopePolicyInput,
+    sha256: sha256(productionScopePolicyBytes),
+  };
   const inventoryInput = spec.networkEdgeEvidence.sourceInventory;
   const inventoryBytes = await readFile(inventoryInput.path);
   const inventoryPath = path.join(workspace, "source-inventory.json");
@@ -362,6 +368,9 @@ test("unchanged candidate는 현재 source inventory 결속을 그대로 검증�
   const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-current-source-inventory-binding-"));
   try {
     const spec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
+    const productionScopePolicyBytes = await readFile(spec.productionScopePolicy.path);
+    const productionScopePolicyBound = spec.productionScopePolicy.sha256
+      === sha256(productionScopePolicyBytes);
     const inventoryBytes = await readFile(spec.networkEdgeEvidence.sourceInventory.path);
     const rawInventoryBound = spec.networkEdgeEvidence.sourceInventory.sha256 === sha256(inventoryBytes);
     const semanticInventoryBound = spec.sourceInventorySha256
@@ -380,7 +389,10 @@ test("unchanged candidate는 현재 source inventory 결속을 그대로 검증�
       failure = error;
     }
     const output = `${failure?.stderr ?? ""}${failure?.stdout ?? ""}`;
-    if (!rawInventoryBound) {
+    if (!productionScopePolicyBound) {
+      assert.ok(failure, "unbound production scope policy must be rejected");
+      assert.match(output, /production scope policy identity mismatch/);
+    } else if (!rawInventoryBound) {
       assert.ok(failure, "unbound raw inventory must be rejected");
       assert.match(output, /sourceInventory\.sha256 must match tracked input bytes/);
     } else if (!semanticInventoryBound) {

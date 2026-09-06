@@ -11,15 +11,15 @@
     "inputs": {
       "targets": {
         "path": "tools/datapack/nationwide-coverage-targets.json",
-        "sha256": "925847f9b45844edd573c7e695a92c28b22729c05a592bb48b821e5e707f1641"
+        "sha256": "8f9caee0c2149a8cb40483fa0fa598086ba365d378b7acc1171a1f50f18e4122"
       },
       "tally": {
         "path": "tools/datapack/reports/nationwide-coverage-tally.json",
-        "sha256": "1efc70825a0dadf73c7e3d98f9b568e0123ea389625e0022fbe8496038b940ac"
+        "sha256": "8f7719326e8d587860f8a8b1becb5a9b7b4b0f7f0adbed6a9b76923198a8400a"
       },
       "inventory": {
         "path": "tools/datapack/source-inventory.json",
-        "sha256": "c0ac67ec0f9365546020d17eae9328eee3b95165dafb3784641775c5db10a17d"
+        "sha256": "ac87a6385721cbc8ab597401c8d49e0b104d89cc4d4521354a0ae392d496e0a7"
       },
       "ownership": {
         "path": "tools/datapack/release/nationwide-requirement-ownership.json",
@@ -27,11 +27,11 @@
       },
       "sourceSnapshots": {
         "path": "tools/datapack/release/source-snapshots.json",
-        "sha256": "400856551d5b87751e59ac3a22b0bd5ff18c139ceb0b12ce17de90035d2c7048"
+        "sha256": "4c750e29932f02742646f31a31b8f36a710d3354ccba698ec9e1759414c53fa4"
       },
       "candidateBuildSpec": {
         "path": "tools/datapack/release/candidate-build-spec.json",
-        "sha256": "6c66cc20e800e7bf0ffb89d00d4453ca756e33644d2489099da90f35cc1e675d"
+        "sha256": "8a18f3ee9872aa748c216c8e0834b6978d2bb288a8de5172e116f06ad75dcebd"
       }
     }
   },
@@ -3302,34 +3302,73 @@
           "refs": [
             {
               "sourceId": "incheon-transit-accessibility",
-              "observedDataUpdatedAt": "2026-07-24",
+              "observedDataUpdatedAt": "2026-08-28",
               "retrievedAt": "2026-08-28",
               "admissionEvidence": [
                 {
-                  "kind": "accessibilityAdmissionEvidence",
-                  "capturedAt": "2026-08-28T04:33:56.000Z",
-                  "freshUntil": "2026-08-29T04:33:56.000Z"
+                  "kind": "admissionEvidence",
+                  "capturedAt": null,
+                  "freshUntil": null
                 }
               ],
-              "currentHead": null
+              "currentHead": {
+                "snapshotId": "incheon-transit-accessibility-20260828T043356000Z",
+                "freshnessExpiresAt": "2026-11-26T04:33:56.000Z"
+              }
             }
           ]
         },
         "admissionLineage": {
-          "state": "PENDING",
-          "reason": "PRODUCTION_ADMISSION_REQUIRED",
-          "owner": {
-            "issue": 622,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/622"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "incheon-transit-accessibility",
+              "productionUseAllowed": true,
+              "admissions": [
+                {
+                  "kind": "admissionEvidence",
+                  "artifactKind": "source-admission-pipeline-evidence-summary",
+                  "issue": 622,
+                  "candidateId": "incheon-transit-accessibility",
+                  "sourceId": "incheon-transit-accessibility",
+                  "snapshotId": "incheon-transit-accessibility-20260828T043356000Z",
+                  "decision": "APPROVED",
+                  "approvedBy": "AquilaXk",
+                  "approvedAt": "2026-08-29T04:49:49.000Z",
+                  "sampleEvidenceHash": "95017fce6e5ba984e1d43281891d57e6d2e49347939c118e1c36e5c67c905bd3",
+                  "rawSha256": "3f29b437f2c6f4145dea67535839684223f8458d610b241580ed0a6a499ba67c",
+                  "schemaFingerprint": "a4772b125dbc6882b456b94ebfdea99afd8c2666c91cce06abd2bac4a7159ca2",
+                  "sourceSnapshotSetHash": "7aedb7294bc8626adb609b25a7fabeb60ed1927ed705726d59a838a8473fcad1",
+                  "adminReviewRecordHash": "3c705c2f2d65bd171d2cd4125266c63d0c3dee506cd76405e727573955f580f4",
+                  "licenseEvidenceHash": "16d4e5ffd5eacf0514a6f08ea69b21589c1f5f38a3d9dd48c677b4c81e66ac71",
+                  "aliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
+                  "operatorMappingLedgerHash": "35875abc304e8aaa49cfab7b3c389cc45abde3dda82834634c80ea0f863704cf",
+                  "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
+                  "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
+                  "overrideHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
+                  "admissionDurationSeconds": 0,
+                  "quotaEvidence": {
+                    "defaultDailyLimit": "unlimited",
+                    "portal": "data.go.kr",
+                    "productionUseAllowed": true,
+                    "unlockStatus": "not_required"
+                  },
+                  "sourceInventorySha256": "805c5da1d02ab8ad266a30fee667295a31db95f1b3a22efe84c16ff2fa566bba"
+                }
+              ]
+            }
+          ]
         },
         "artifactLineage": {
-          "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
-          "owner": {
-            "issue": 622,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/622"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "incheon-transit-accessibility",
+              "snapshotId": "incheon-transit-accessibility-20260828T043356000Z",
+              "rawSha256": "ccfac4c6c454fe2c2b81373a33909e4bd34cc9ff6b0186276a28226a2262610f",
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/incheon-transit-accessibility/20260828/ccfac4c6c454fe2c2b81373a33909e4bd34cc9ff6b0186276a28226a2262610f.json"
+            }
+          ]
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -3532,7 +3571,7 @@
             {
               "sourceId": "incheon-transit-station-info",
               "observedDataUpdatedAt": "2026-06-30",
-              "retrievedAt": "2026-08-28",
+              "retrievedAt": "2026-09-04",
               "admissionEvidence": [
                 {
                   "kind": "membershipAdmissionEvidence",
@@ -3541,13 +3580,13 @@
                 },
                 {
                   "kind": "topologyAdmissionEvidence",
-                  "capturedAt": "2026-08-28T04:30:44.000Z",
-                  "freshUntil": "2026-08-29T04:30:44.000Z"
+                  "capturedAt": "2026-09-04T17:29:25.644Z",
+                  "freshUntil": "2026-09-05T17:29:25.644Z"
                 },
                 {
                   "kind": "routeMapAdmissionEvidence",
-                  "capturedAt": "2026-08-28T04:30:44.000Z",
-                  "freshUntil": "2027-08-28T04:30:44.000Z"
+                  "capturedAt": "2026-09-04T17:29:25.644Z",
+                  "freshUntil": "2027-09-04T17:29:25.644Z"
                 }
               ],
               "currentHead": null
@@ -3635,7 +3674,7 @@
             {
               "sourceId": "incheon-transit-station-info",
               "observedDataUpdatedAt": "2026-06-30",
-              "retrievedAt": "2026-08-28",
+              "retrievedAt": "2026-09-04",
               "admissionEvidence": [
                 {
                   "kind": "membershipAdmissionEvidence",
@@ -3644,13 +3683,13 @@
                 },
                 {
                   "kind": "topologyAdmissionEvidence",
-                  "capturedAt": "2026-08-28T04:30:44.000Z",
-                  "freshUntil": "2026-08-29T04:30:44.000Z"
+                  "capturedAt": "2026-09-04T17:29:25.644Z",
+                  "freshUntil": "2026-09-05T17:29:25.644Z"
                 },
                 {
                   "kind": "routeMapAdmissionEvidence",
-                  "capturedAt": "2026-08-28T04:30:44.000Z",
-                  "freshUntil": "2027-08-28T04:30:44.000Z"
+                  "capturedAt": "2026-09-04T17:29:25.644Z",
+                  "freshUntil": "2027-09-04T17:29:25.644Z"
                 }
               ],
               "currentHead": null
@@ -3806,7 +3845,7 @@
             {
               "sourceId": "incheon-transit-station-info",
               "observedDataUpdatedAt": "2026-06-30",
-              "retrievedAt": "2026-08-28",
+              "retrievedAt": "2026-09-04",
               "admissionEvidence": [
                 {
                   "kind": "membershipAdmissionEvidence",
@@ -3815,13 +3854,13 @@
                 },
                 {
                   "kind": "topologyAdmissionEvidence",
-                  "capturedAt": "2026-08-28T04:30:44.000Z",
-                  "freshUntil": "2026-08-29T04:30:44.000Z"
+                  "capturedAt": "2026-09-04T17:29:25.644Z",
+                  "freshUntil": "2026-09-05T17:29:25.644Z"
                 },
                 {
                   "kind": "routeMapAdmissionEvidence",
-                  "capturedAt": "2026-08-28T04:30:44.000Z",
-                  "freshUntil": "2027-08-28T04:30:44.000Z"
+                  "capturedAt": "2026-09-04T17:29:25.644Z",
+                  "freshUntil": "2027-09-04T17:29:25.644Z"
                 }
               ],
               "currentHead": null
@@ -3908,34 +3947,73 @@
           "refs": [
             {
               "sourceId": "incheon-transit-accessibility",
-              "observedDataUpdatedAt": "2026-07-24",
+              "observedDataUpdatedAt": "2026-08-28",
               "retrievedAt": "2026-08-28",
               "admissionEvidence": [
                 {
-                  "kind": "accessibilityAdmissionEvidence",
-                  "capturedAt": "2026-08-28T04:33:56.000Z",
-                  "freshUntil": "2026-08-29T04:33:56.000Z"
+                  "kind": "admissionEvidence",
+                  "capturedAt": null,
+                  "freshUntil": null
                 }
               ],
-              "currentHead": null
+              "currentHead": {
+                "snapshotId": "incheon-transit-accessibility-20260828T043356000Z",
+                "freshnessExpiresAt": "2026-11-26T04:33:56.000Z"
+              }
             }
           ]
         },
         "admissionLineage": {
-          "state": "PENDING",
-          "reason": "PRODUCTION_ADMISSION_REQUIRED",
-          "owner": {
-            "issue": 622,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/622"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "incheon-transit-accessibility",
+              "productionUseAllowed": true,
+              "admissions": [
+                {
+                  "kind": "admissionEvidence",
+                  "artifactKind": "source-admission-pipeline-evidence-summary",
+                  "issue": 622,
+                  "candidateId": "incheon-transit-accessibility",
+                  "sourceId": "incheon-transit-accessibility",
+                  "snapshotId": "incheon-transit-accessibility-20260828T043356000Z",
+                  "decision": "APPROVED",
+                  "approvedBy": "AquilaXk",
+                  "approvedAt": "2026-08-29T04:49:49.000Z",
+                  "sampleEvidenceHash": "95017fce6e5ba984e1d43281891d57e6d2e49347939c118e1c36e5c67c905bd3",
+                  "rawSha256": "3f29b437f2c6f4145dea67535839684223f8458d610b241580ed0a6a499ba67c",
+                  "schemaFingerprint": "a4772b125dbc6882b456b94ebfdea99afd8c2666c91cce06abd2bac4a7159ca2",
+                  "sourceSnapshotSetHash": "7aedb7294bc8626adb609b25a7fabeb60ed1927ed705726d59a838a8473fcad1",
+                  "adminReviewRecordHash": "3c705c2f2d65bd171d2cd4125266c63d0c3dee506cd76405e727573955f580f4",
+                  "licenseEvidenceHash": "16d4e5ffd5eacf0514a6f08ea69b21589c1f5f38a3d9dd48c677b4c81e66ac71",
+                  "aliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
+                  "operatorMappingLedgerHash": "35875abc304e8aaa49cfab7b3c389cc45abde3dda82834634c80ea0f863704cf",
+                  "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
+                  "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
+                  "overrideHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
+                  "admissionDurationSeconds": 0,
+                  "quotaEvidence": {
+                    "defaultDailyLimit": "unlimited",
+                    "portal": "data.go.kr",
+                    "productionUseAllowed": true,
+                    "unlockStatus": "not_required"
+                  },
+                  "sourceInventorySha256": "805c5da1d02ab8ad266a30fee667295a31db95f1b3a22efe84c16ff2fa566bba"
+                }
+              ]
+            }
+          ]
         },
         "artifactLineage": {
-          "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
-          "owner": {
-            "issue": 622,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/622"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "incheon-transit-accessibility",
+              "snapshotId": "incheon-transit-accessibility-20260828T043356000Z",
+              "rawSha256": "ccfac4c6c454fe2c2b81373a33909e4bd34cc9ff6b0186276a28226a2262610f",
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/incheon-transit-accessibility/20260828/ccfac4c6c454fe2c2b81373a33909e4bd34cc9ff6b0186276a28226a2262610f.json"
+            }
+          ]
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -4138,7 +4216,7 @@
             {
               "sourceId": "incheon-transit-station-info",
               "observedDataUpdatedAt": "2026-06-30",
-              "retrievedAt": "2026-08-28",
+              "retrievedAt": "2026-09-04",
               "admissionEvidence": [
                 {
                   "kind": "membershipAdmissionEvidence",
@@ -4147,13 +4225,13 @@
                 },
                 {
                   "kind": "topologyAdmissionEvidence",
-                  "capturedAt": "2026-08-28T04:30:44.000Z",
-                  "freshUntil": "2026-08-29T04:30:44.000Z"
+                  "capturedAt": "2026-09-04T17:29:25.644Z",
+                  "freshUntil": "2026-09-05T17:29:25.644Z"
                 },
                 {
                   "kind": "routeMapAdmissionEvidence",
-                  "capturedAt": "2026-08-28T04:30:44.000Z",
-                  "freshUntil": "2027-08-28T04:30:44.000Z"
+                  "capturedAt": "2026-09-04T17:29:25.644Z",
+                  "freshUntil": "2027-09-04T17:29:25.644Z"
                 }
               ],
               "currentHead": null
@@ -4241,7 +4319,7 @@
             {
               "sourceId": "incheon-transit-station-info",
               "observedDataUpdatedAt": "2026-06-30",
-              "retrievedAt": "2026-08-28",
+              "retrievedAt": "2026-09-04",
               "admissionEvidence": [
                 {
                   "kind": "membershipAdmissionEvidence",
@@ -4250,13 +4328,13 @@
                 },
                 {
                   "kind": "topologyAdmissionEvidence",
-                  "capturedAt": "2026-08-28T04:30:44.000Z",
-                  "freshUntil": "2026-08-29T04:30:44.000Z"
+                  "capturedAt": "2026-09-04T17:29:25.644Z",
+                  "freshUntil": "2026-09-05T17:29:25.644Z"
                 },
                 {
                   "kind": "routeMapAdmissionEvidence",
-                  "capturedAt": "2026-08-28T04:30:44.000Z",
-                  "freshUntil": "2027-08-28T04:30:44.000Z"
+                  "capturedAt": "2026-09-04T17:29:25.644Z",
+                  "freshUntil": "2027-09-04T17:29:25.644Z"
                 }
               ],
               "currentHead": null
@@ -4344,12 +4422,12 @@
             {
               "sourceId": "incheon-line2-train-timetable",
               "observedDataUpdatedAt": "2025-06-30",
-              "retrievedAt": "2026-08-28",
+              "retrievedAt": "2026-09-04",
               "admissionEvidence": [
                 {
                   "kind": "scheduleAdmissionEvidence",
-                  "capturedAt": "2026-08-28T04:33:56.000Z",
-                  "freshUntil": "2026-08-29T04:33:56.000Z"
+                  "capturedAt": "2026-09-04T17:29:32.501Z",
+                  "freshUntil": "2026-09-05T17:29:32.501Z"
                 }
               ],
               "currentHead": null
@@ -4437,7 +4515,7 @@
             {
               "sourceId": "incheon-transit-station-info",
               "observedDataUpdatedAt": "2026-06-30",
-              "retrievedAt": "2026-08-28",
+              "retrievedAt": "2026-09-04",
               "admissionEvidence": [
                 {
                   "kind": "membershipAdmissionEvidence",
@@ -4446,13 +4524,13 @@
                 },
                 {
                   "kind": "topologyAdmissionEvidence",
-                  "capturedAt": "2026-08-28T04:30:44.000Z",
-                  "freshUntil": "2026-08-29T04:30:44.000Z"
+                  "capturedAt": "2026-09-04T17:29:25.644Z",
+                  "freshUntil": "2026-09-05T17:29:25.644Z"
                 },
                 {
                   "kind": "routeMapAdmissionEvidence",
-                  "capturedAt": "2026-08-28T04:30:44.000Z",
-                  "freshUntil": "2027-08-28T04:30:44.000Z"
+                  "capturedAt": "2026-09-04T17:29:25.644Z",
+                  "freshUntil": "2027-09-04T17:29:25.644Z"
                 }
               ],
               "currentHead": null
@@ -4539,34 +4617,73 @@
           "refs": [
             {
               "sourceId": "incheon-transit-accessibility",
-              "observedDataUpdatedAt": "2026-07-24",
+              "observedDataUpdatedAt": "2026-08-28",
               "retrievedAt": "2026-08-28",
               "admissionEvidence": [
                 {
-                  "kind": "accessibilityAdmissionEvidence",
-                  "capturedAt": "2026-08-28T04:33:56.000Z",
-                  "freshUntil": "2026-08-29T04:33:56.000Z"
+                  "kind": "admissionEvidence",
+                  "capturedAt": null,
+                  "freshUntil": null
                 }
               ],
-              "currentHead": null
+              "currentHead": {
+                "snapshotId": "incheon-transit-accessibility-20260828T043356000Z",
+                "freshnessExpiresAt": "2026-11-26T04:33:56.000Z"
+              }
             }
           ]
         },
         "admissionLineage": {
-          "state": "PENDING",
-          "reason": "PRODUCTION_ADMISSION_REQUIRED",
-          "owner": {
-            "issue": 622,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/622"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "incheon-transit-accessibility",
+              "productionUseAllowed": true,
+              "admissions": [
+                {
+                  "kind": "admissionEvidence",
+                  "artifactKind": "source-admission-pipeline-evidence-summary",
+                  "issue": 622,
+                  "candidateId": "incheon-transit-accessibility",
+                  "sourceId": "incheon-transit-accessibility",
+                  "snapshotId": "incheon-transit-accessibility-20260828T043356000Z",
+                  "decision": "APPROVED",
+                  "approvedBy": "AquilaXk",
+                  "approvedAt": "2026-08-29T04:49:49.000Z",
+                  "sampleEvidenceHash": "95017fce6e5ba984e1d43281891d57e6d2e49347939c118e1c36e5c67c905bd3",
+                  "rawSha256": "3f29b437f2c6f4145dea67535839684223f8458d610b241580ed0a6a499ba67c",
+                  "schemaFingerprint": "a4772b125dbc6882b456b94ebfdea99afd8c2666c91cce06abd2bac4a7159ca2",
+                  "sourceSnapshotSetHash": "7aedb7294bc8626adb609b25a7fabeb60ed1927ed705726d59a838a8473fcad1",
+                  "adminReviewRecordHash": "3c705c2f2d65bd171d2cd4125266c63d0c3dee506cd76405e727573955f580f4",
+                  "licenseEvidenceHash": "16d4e5ffd5eacf0514a6f08ea69b21589c1f5f38a3d9dd48c677b4c81e66ac71",
+                  "aliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
+                  "operatorMappingLedgerHash": "35875abc304e8aaa49cfab7b3c389cc45abde3dda82834634c80ea0f863704cf",
+                  "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
+                  "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
+                  "overrideHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
+                  "admissionDurationSeconds": 0,
+                  "quotaEvidence": {
+                    "defaultDailyLimit": "unlimited",
+                    "portal": "data.go.kr",
+                    "productionUseAllowed": true,
+                    "unlockStatus": "not_required"
+                  },
+                  "sourceInventorySha256": "805c5da1d02ab8ad266a30fee667295a31db95f1b3a22efe84c16ff2fa566bba"
+                }
+              ]
+            }
+          ]
         },
         "artifactLineage": {
-          "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
-          "owner": {
-            "issue": 622,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/622"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "incheon-transit-accessibility",
+              "snapshotId": "incheon-transit-accessibility-20260828T043356000Z",
+              "rawSha256": "ccfac4c6c454fe2c2b81373a33909e4bd34cc9ff6b0186276a28226a2262610f",
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/incheon-transit-accessibility/20260828/ccfac4c6c454fe2c2b81373a33909e4bd34cc9ff6b0186276a28226a2262610f.json"
+            }
+          ]
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -4769,7 +4886,7 @@
             {
               "sourceId": "incheon-transit-station-info",
               "observedDataUpdatedAt": "2026-06-30",
-              "retrievedAt": "2026-08-28",
+              "retrievedAt": "2026-09-04",
               "admissionEvidence": [
                 {
                   "kind": "membershipAdmissionEvidence",
@@ -4778,13 +4895,13 @@
                 },
                 {
                   "kind": "topologyAdmissionEvidence",
-                  "capturedAt": "2026-08-28T04:30:44.000Z",
-                  "freshUntil": "2026-08-29T04:30:44.000Z"
+                  "capturedAt": "2026-09-04T17:29:25.644Z",
+                  "freshUntil": "2026-09-05T17:29:25.644Z"
                 },
                 {
                   "kind": "routeMapAdmissionEvidence",
-                  "capturedAt": "2026-08-28T04:30:44.000Z",
-                  "freshUntil": "2027-08-28T04:30:44.000Z"
+                  "capturedAt": "2026-09-04T17:29:25.644Z",
+                  "freshUntil": "2027-09-04T17:29:25.644Z"
                 }
               ],
               "currentHead": null
@@ -4872,7 +4989,7 @@
             {
               "sourceId": "incheon-transit-station-info",
               "observedDataUpdatedAt": "2026-06-30",
-              "retrievedAt": "2026-08-28",
+              "retrievedAt": "2026-09-04",
               "admissionEvidence": [
                 {
                   "kind": "membershipAdmissionEvidence",
@@ -4881,13 +4998,13 @@
                 },
                 {
                   "kind": "topologyAdmissionEvidence",
-                  "capturedAt": "2026-08-28T04:30:44.000Z",
-                  "freshUntil": "2026-08-29T04:30:44.000Z"
+                  "capturedAt": "2026-09-04T17:29:25.644Z",
+                  "freshUntil": "2026-09-05T17:29:25.644Z"
                 },
                 {
                   "kind": "routeMapAdmissionEvidence",
-                  "capturedAt": "2026-08-28T04:30:44.000Z",
-                  "freshUntil": "2027-08-28T04:30:44.000Z"
+                  "capturedAt": "2026-09-04T17:29:25.644Z",
+                  "freshUntil": "2027-09-04T17:29:25.644Z"
                 }
               ],
               "currentHead": null
@@ -4975,12 +5092,12 @@
             {
               "sourceId": "incheon-line1-train-timetable",
               "observedDataUpdatedAt": "2025-04-12",
-              "retrievedAt": "2026-08-28",
+              "retrievedAt": "2026-09-04",
               "admissionEvidence": [
                 {
                   "kind": "scheduleAdmissionEvidence",
-                  "capturedAt": "2026-08-28T04:33:56.000Z",
-                  "freshUntil": "2026-08-29T04:33:56.000Z"
+                  "capturedAt": "2026-09-04T17:29:32.501Z",
+                  "freshUntil": "2026-09-05T17:29:32.501Z"
                 }
               ],
               "currentHead": null
@@ -5068,7 +5185,7 @@
             {
               "sourceId": "incheon-transit-station-info",
               "observedDataUpdatedAt": "2026-06-30",
-              "retrievedAt": "2026-08-28",
+              "retrievedAt": "2026-09-04",
               "admissionEvidence": [
                 {
                   "kind": "membershipAdmissionEvidence",
@@ -5077,13 +5194,13 @@
                 },
                 {
                   "kind": "topologyAdmissionEvidence",
-                  "capturedAt": "2026-08-28T04:30:44.000Z",
-                  "freshUntil": "2026-08-29T04:30:44.000Z"
+                  "capturedAt": "2026-09-04T17:29:25.644Z",
+                  "freshUntil": "2026-09-05T17:29:25.644Z"
                 },
                 {
                   "kind": "routeMapAdmissionEvidence",
-                  "capturedAt": "2026-08-28T04:30:44.000Z",
-                  "freshUntil": "2027-08-28T04:30:44.000Z"
+                  "capturedAt": "2026-09-04T17:29:25.644Z",
+                  "freshUntil": "2027-09-04T17:29:25.644Z"
                 }
               ],
               "currentHead": null
@@ -16236,28 +16353,43 @@
         "status": "MISSING",
         "missingKind": "DUAL_OPERATOR_UNMATCHED",
         "resolutionReviewStatus": null,
-        "admittedSourceIds": []
+        "admittedSourceIds": [
+          "capital-route-topology"
+        ]
       },
       "childOwner": {
         "issue": 456,
         "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
       },
       "officialSourceFamily": {
-        "state": "PENDING",
-        "reason": "CONTRACT_GAP",
-        "owner": {
-          "issue": 456,
-          "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
-        }
+        "state": "EVIDENCED",
+        "refs": [
+          {
+            "sourceId": "capital-route-topology",
+            "provider": "data.go.kr official FILE",
+            "datasetUrl": "https://www.data.go.kr/",
+            "sourceSystem": "공공데이터포털"
+          }
+        ]
       },
       "lineage": {
         "licenseLineage": {
-          "state": "PENDING",
-          "reason": "CONTRACT_GAP",
-          "owner": {
-            "issue": 456,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "capital-route-topology",
+              "license": {
+                "type": "KOGL-1",
+                "name": "공공누리 제1유형",
+                "attribution": "국가철도공단, 국토교통부(MOLIT 도시철도 전체노선), 공공누리 제1유형(출처표시)",
+                "commercialUseAllowed": true,
+                "derivativeWorkAllowed": true,
+                "redistributionAllowed": true,
+                "evidenceUrl": "https://www.data.go.kr/"
+              },
+              "licenseReview": null
+            }
+          ]
         },
         "freshnessLineage": {
           "state": "PENDING",
@@ -16712,28 +16844,43 @@
         "status": "MISSING",
         "missingKind": "NO_ADMITTED_SOURCE",
         "resolutionReviewStatus": null,
-        "admittedSourceIds": []
+        "admittedSourceIds": [
+          "capital-route-topology"
+        ]
       },
       "childOwner": {
         "issue": 456,
         "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
       },
       "officialSourceFamily": {
-        "state": "PENDING",
-        "reason": "CONTRACT_GAP",
-        "owner": {
-          "issue": 456,
-          "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
-        }
+        "state": "EVIDENCED",
+        "refs": [
+          {
+            "sourceId": "capital-route-topology",
+            "provider": "data.go.kr official FILE",
+            "datasetUrl": "https://www.data.go.kr/",
+            "sourceSystem": "공공데이터포털"
+          }
+        ]
       },
       "lineage": {
         "licenseLineage": {
-          "state": "PENDING",
-          "reason": "CONTRACT_GAP",
-          "owner": {
-            "issue": 456,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "capital-route-topology",
+              "license": {
+                "type": "KOGL-1",
+                "name": "공공누리 제1유형",
+                "attribution": "국가철도공단, 국토교통부(MOLIT 도시철도 전체노선), 공공누리 제1유형(출처표시)",
+                "commercialUseAllowed": true,
+                "derivativeWorkAllowed": true,
+                "redistributionAllowed": true,
+                "evidenceUrl": "https://www.data.go.kr/"
+              },
+              "licenseReview": null
+            }
+          ]
         },
         "freshnessLineage": {
           "state": "PENDING",
@@ -17188,28 +17335,43 @@
         "status": "MISSING",
         "missingKind": "NO_ADMITTED_SOURCE",
         "resolutionReviewStatus": null,
-        "admittedSourceIds": []
+        "admittedSourceIds": [
+          "capital-route-topology"
+        ]
       },
       "childOwner": {
         "issue": 456,
         "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
       },
       "officialSourceFamily": {
-        "state": "PENDING",
-        "reason": "CONTRACT_GAP",
-        "owner": {
-          "issue": 456,
-          "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
-        }
+        "state": "EVIDENCED",
+        "refs": [
+          {
+            "sourceId": "capital-route-topology",
+            "provider": "data.go.kr official FILE",
+            "datasetUrl": "https://www.data.go.kr/",
+            "sourceSystem": "공공데이터포털"
+          }
+        ]
       },
       "lineage": {
         "licenseLineage": {
-          "state": "PENDING",
-          "reason": "CONTRACT_GAP",
-          "owner": {
-            "issue": 456,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "capital-route-topology",
+              "license": {
+                "type": "KOGL-1",
+                "name": "공공누리 제1유형",
+                "attribution": "국가철도공단, 국토교통부(MOLIT 도시철도 전체노선), 공공누리 제1유형(출처표시)",
+                "commercialUseAllowed": true,
+                "derivativeWorkAllowed": true,
+                "redistributionAllowed": true,
+                "evidenceUrl": "https://www.data.go.kr/"
+              },
+              "licenseReview": null
+            }
+          ]
         },
         "freshnessLineage": {
           "state": "PENDING",
@@ -17664,28 +17826,43 @@
         "status": "MISSING",
         "missingKind": "NO_ADMITTED_SOURCE",
         "resolutionReviewStatus": null,
-        "admittedSourceIds": []
+        "admittedSourceIds": [
+          "capital-route-topology"
+        ]
       },
       "childOwner": {
         "issue": 456,
         "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
       },
       "officialSourceFamily": {
-        "state": "PENDING",
-        "reason": "CONTRACT_GAP",
-        "owner": {
-          "issue": 456,
-          "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
-        }
+        "state": "EVIDENCED",
+        "refs": [
+          {
+            "sourceId": "capital-route-topology",
+            "provider": "data.go.kr official FILE",
+            "datasetUrl": "https://www.data.go.kr/",
+            "sourceSystem": "공공데이터포털"
+          }
+        ]
       },
       "lineage": {
         "licenseLineage": {
-          "state": "PENDING",
-          "reason": "CONTRACT_GAP",
-          "owner": {
-            "issue": 456,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "capital-route-topology",
+              "license": {
+                "type": "KOGL-1",
+                "name": "공공누리 제1유형",
+                "attribution": "국가철도공단, 국토교통부(MOLIT 도시철도 전체노선), 공공누리 제1유형(출처표시)",
+                "commercialUseAllowed": true,
+                "derivativeWorkAllowed": true,
+                "redistributionAllowed": true,
+                "evidenceUrl": "https://www.data.go.kr/"
+              },
+              "licenseReview": null
+            }
+          ]
         },
         "freshnessLineage": {
           "state": "PENDING",
@@ -18140,28 +18317,43 @@
         "status": "MISSING",
         "missingKind": "NO_ADMITTED_SOURCE",
         "resolutionReviewStatus": null,
-        "admittedSourceIds": []
+        "admittedSourceIds": [
+          "capital-route-topology"
+        ]
       },
       "childOwner": {
         "issue": 456,
         "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
       },
       "officialSourceFamily": {
-        "state": "PENDING",
-        "reason": "CONTRACT_GAP",
-        "owner": {
-          "issue": 456,
-          "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
-        }
+        "state": "EVIDENCED",
+        "refs": [
+          {
+            "sourceId": "capital-route-topology",
+            "provider": "data.go.kr official FILE",
+            "datasetUrl": "https://www.data.go.kr/",
+            "sourceSystem": "공공데이터포털"
+          }
+        ]
       },
       "lineage": {
         "licenseLineage": {
-          "state": "PENDING",
-          "reason": "CONTRACT_GAP",
-          "owner": {
-            "issue": 456,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "capital-route-topology",
+              "license": {
+                "type": "KOGL-1",
+                "name": "공공누리 제1유형",
+                "attribution": "국가철도공단, 국토교통부(MOLIT 도시철도 전체노선), 공공누리 제1유형(출처표시)",
+                "commercialUseAllowed": true,
+                "derivativeWorkAllowed": true,
+                "redistributionAllowed": true,
+                "evidenceUrl": "https://www.data.go.kr/"
+              },
+              "licenseReview": null
+            }
+          ]
         },
         "freshnessLineage": {
           "state": "PENDING",
@@ -18616,28 +18808,43 @@
         "status": "MISSING",
         "missingKind": "NO_ADMITTED_SOURCE",
         "resolutionReviewStatus": null,
-        "admittedSourceIds": []
+        "admittedSourceIds": [
+          "capital-route-topology"
+        ]
       },
       "childOwner": {
         "issue": 456,
         "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
       },
       "officialSourceFamily": {
-        "state": "PENDING",
-        "reason": "CONTRACT_GAP",
-        "owner": {
-          "issue": 456,
-          "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
-        }
+        "state": "EVIDENCED",
+        "refs": [
+          {
+            "sourceId": "capital-route-topology",
+            "provider": "data.go.kr official FILE",
+            "datasetUrl": "https://www.data.go.kr/",
+            "sourceSystem": "공공데이터포털"
+          }
+        ]
       },
       "lineage": {
         "licenseLineage": {
-          "state": "PENDING",
-          "reason": "CONTRACT_GAP",
-          "owner": {
-            "issue": 456,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "capital-route-topology",
+              "license": {
+                "type": "KOGL-1",
+                "name": "공공누리 제1유형",
+                "attribution": "국가철도공단, 국토교통부(MOLIT 도시철도 전체노선), 공공누리 제1유형(출처표시)",
+                "commercialUseAllowed": true,
+                "derivativeWorkAllowed": true,
+                "redistributionAllowed": true,
+                "evidenceUrl": "https://www.data.go.kr/"
+              },
+              "licenseReview": null
+            }
+          ]
         },
         "freshnessLineage": {
           "state": "PENDING",
@@ -19092,28 +19299,43 @@
         "status": "MISSING",
         "missingKind": "NO_ADMITTED_SOURCE",
         "resolutionReviewStatus": null,
-        "admittedSourceIds": []
+        "admittedSourceIds": [
+          "capital-route-topology"
+        ]
       },
       "childOwner": {
         "issue": 456,
         "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
       },
       "officialSourceFamily": {
-        "state": "PENDING",
-        "reason": "CONTRACT_GAP",
-        "owner": {
-          "issue": 456,
-          "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
-        }
+        "state": "EVIDENCED",
+        "refs": [
+          {
+            "sourceId": "capital-route-topology",
+            "provider": "data.go.kr official FILE",
+            "datasetUrl": "https://www.data.go.kr/",
+            "sourceSystem": "공공데이터포털"
+          }
+        ]
       },
       "lineage": {
         "licenseLineage": {
-          "state": "PENDING",
-          "reason": "CONTRACT_GAP",
-          "owner": {
-            "issue": 456,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "capital-route-topology",
+              "license": {
+                "type": "KOGL-1",
+                "name": "공공누리 제1유형",
+                "attribution": "국가철도공단, 국토교통부(MOLIT 도시철도 전체노선), 공공누리 제1유형(출처표시)",
+                "commercialUseAllowed": true,
+                "derivativeWorkAllowed": true,
+                "redistributionAllowed": true,
+                "evidenceUrl": "https://www.data.go.kr/"
+              },
+              "licenseReview": null
+            }
+          ]
         },
         "freshnessLineage": {
           "state": "PENDING",
@@ -19568,28 +19790,43 @@
         "status": "MISSING",
         "missingKind": "NO_ADMITTED_SOURCE",
         "resolutionReviewStatus": null,
-        "admittedSourceIds": []
+        "admittedSourceIds": [
+          "capital-route-topology"
+        ]
       },
       "childOwner": {
         "issue": 456,
         "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
       },
       "officialSourceFamily": {
-        "state": "PENDING",
-        "reason": "CONTRACT_GAP",
-        "owner": {
-          "issue": 456,
-          "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
-        }
+        "state": "EVIDENCED",
+        "refs": [
+          {
+            "sourceId": "capital-route-topology",
+            "provider": "data.go.kr official FILE",
+            "datasetUrl": "https://www.data.go.kr/",
+            "sourceSystem": "공공데이터포털"
+          }
+        ]
       },
       "lineage": {
         "licenseLineage": {
-          "state": "PENDING",
-          "reason": "CONTRACT_GAP",
-          "owner": {
-            "issue": 456,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "capital-route-topology",
+              "license": {
+                "type": "KOGL-1",
+                "name": "공공누리 제1유형",
+                "attribution": "국가철도공단, 국토교통부(MOLIT 도시철도 전체노선), 공공누리 제1유형(출처표시)",
+                "commercialUseAllowed": true,
+                "derivativeWorkAllowed": true,
+                "redistributionAllowed": true,
+                "evidenceUrl": "https://www.data.go.kr/"
+              },
+              "licenseReview": null
+            }
+          ]
         },
         "freshnessLineage": {
           "state": "PENDING",

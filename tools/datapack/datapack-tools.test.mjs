@@ -10,6 +10,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 import { sortJson } from "./run-source-admission-pipeline.mjs";
+import { bindCurrentProductionScopePolicy } from "./test-fixtures/current-public-route-map-successor.mjs";
 import {
   admittedIncheonTopologyEvidence,
   admittedRegisteredIncheonAccessibilityEvidence,
@@ -18251,7 +18252,7 @@ async function writeCurrentItxReleaseInputs(
     path: currentAdmissionPath, sha256: sha256(currentAdmissionBytes),
   };
   const buildSpecPath = path.join(workspace, "build-spec.json");
-  await writeFile(buildSpecPath, `${JSON.stringify(buildSpec)}\n`);
+  await writeFile(buildSpecPath, await bindCurrentProductionScopePolicy(buildSpec, repositoryRoot));
   return {
     buildSpecPath,
     env: {
@@ -18364,6 +18365,9 @@ async function writeTransitionFreeCandidateRoot(workspace) {
     await mkdir(path.dirname(target), { recursive: true });
     await copyFile(path.join(root, relativePath), target);
   }
+  const candidatePath = path.join(repositoryRoot, "tools/datapack/fixtures/candidate-build-spec.json");
+  const candidate = JSON.parse(await readFile(candidatePath, "utf8"));
+  await writeFile(candidatePath, await bindCurrentProductionScopePolicy(candidate, repositoryRoot));
   return repositoryRoot;
 }
 
