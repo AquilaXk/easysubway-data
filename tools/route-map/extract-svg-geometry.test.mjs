@@ -2,23 +2,23 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { stationLabelIdentity } from "./extract-svg-geometry.mjs";
 
-function element(attributes) {
-  return { getAttribute: (name) => attributes[name] ?? null };
+function element(dataset) {
+  return { dataset };
 }
 
 test("preserves explicit SVG station-label identity without inferring missing values", () => {
   const labels = [
     element({
-      "data-station-key": "busan-101",
-      "data-station": "서면",
-      "data-line": "1",
-      "data-label-role": "station",
+      stationKey: "busan-101",
+      station: "서면",
+      line: "1",
+      labelRole: "station",
     }),
     element({
-      "data-station-key": "busan-201",
-      "data-station": "서면",
-      "data-line": "2",
-      "data-label-role": "station",
+      stationKey: "busan-201",
+      station: "서면",
+      line: "2",
+      labelRole: "station",
     }),
     element({}),
   ];

@@ -104,10 +104,10 @@ function stripSvgPreamble(svg) {
 // 원본 SVG가 명시한 라벨 정체만 보존한다. 누락값을 텍스트·좌표로 추정하지 않는다.
 export function stationLabelIdentity(element) {
   return {
-    dataStationKey: element.getAttribute("data-station-key") || "",
-    dataStation: element.getAttribute("data-station") || "",
-    dataLine: element.getAttribute("data-line") || "",
-    labelRole: element.getAttribute("data-label-role") || "",
+    dataStationKey: element.dataset.stationKey || "",
+    dataStation: element.dataset.station || "",
+    dataLine: element.dataset.line || "",
+    labelRole: element.dataset.labelRole || "",
   };
 }
 
@@ -326,118 +326,126 @@ function browserExtractorExpression(svg) {
       return [0, 0, number(width), number(height)];
     }
 
-    document.body.innerHTML = "<div id='host' style='width:1200px;height:900px;margin:0'></div>";
-    document.getElementById("host").innerHTML = decodeBase64Utf8(value);
-    if (document.fonts?.ready) {
-      await Promise.race([document.fonts.ready, new Promise((resolve) => setTimeout(resolve, 250))]);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    const root = document.querySelector("#host > svg");
-    if (!root) throw new Error("Root <svg> not found.");
-    const rootScreenMatrix = root.getScreenCTM();
-    if (!rootScreenMatrix) throw new Error("Root SVG screen matrix not available.");
-    const rootInverse = rootScreenMatrix.inverse();
-    const labels = [];
-
-    for (const element of root.querySelectorAll("text")) {
-      const sourceText = normalizeText(element.textContent || "");
-      if (!sourceText || !isVisibleText(element, root)) continue;
-      let bbox;
-      try {
-        bbox = element.getBBox();
-      } catch {
-        continue;
+    async function prepareDocument(value) {
+      document.body.innerHTML = "<div id='host' style='width:1200px;height:900px;margin:0'></div>";
+      document.getElementById("host").innerHTML = decodeBase64Utf8(value);
+      if (document.fonts?.ready) {
+        await Promise.race([document.fonts.ready, new Promise((resolve) => setTimeout(resolve, 250))]);
       }
-      if (bbox.width <= 0 || bbox.height <= 0) continue;
-      const elementMatrix = element.getScreenCTM();
-      if (!elementMatrix) continue;
-      const matrix = rootInverse.multiply(elementMatrix);
-      const polygon = [
-        matrixPoint(matrix, bbox.x, bbox.y),
-        matrixPoint(matrix, bbox.x + bbox.width, bbox.y),
-        matrixPoint(matrix, bbox.x + bbox.width, bbox.y + bbox.height),
-        matrixPoint(matrix, bbox.x, bbox.y + bbox.height),
-      ];
-      const xs = polygon.map((point) => point.x);
-      const ys = polygon.map((point) => point.y);
-      labels.push({
-        sourceText,
-        normalizedText: sourceText.replace(/역$/, ""),
-        classification: classifyText(element, sourceText),
-        ...stationLabelIdentity(element),
-        polygon,
-        bounds: {
-          minX: Math.min(...xs),
-          minY: Math.min(...ys),
-          maxX: Math.max(...xs),
-          maxY: Math.max(...ys),
-        },
-        descriptor: descriptorFor(element, sourceText, bbox),
-      });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const root = document.querySelector("#host > svg");
+      if (!root) throw new Error("Root <svg> not found.");
+      const rootScreenMatrix = root.getScreenCTM();
+      if (!rootScreenMatrix) throw new Error("Root SVG screen matrix not available.");
+      return { root, rootInverse: rootScreenMatrix.inverse() };
     }
 
-    // 노선 track geometry: stroke가 있는 line/polyline/polygon/path를 root 좌표
-    // 정점 목록 + 확정 stroke 색으로 모은다. fill 전용 도형(마커/배경)과 장식 틱은
-    // stroke 없음/길이 하한으로 자연 배제한다. 점선(미개통/예정)은 dashed로 표시.
-    const strokes = [];
-    for (const element of root.querySelectorAll("line, polyline, polygon, path")) {
-      if (element.closest("defs") || !isVisibleText(element, root)) continue;
+    function collectLabels(root, rootInverse) {
+      const labels = [];
+      for (const element of root.querySelectorAll("text")) {
+        const sourceText = normalizeText(element.textContent || "");
+        if (!sourceText || !isVisibleText(element, root)) continue;
+        let bbox;
+        try {
+          bbox = element.getBBox();
+        } catch {
+          continue;
+        }
+        if (bbox.width <= 0 || bbox.height <= 0) continue;
+        const elementMatrix = element.getScreenCTM();
+        if (!elementMatrix) continue;
+        const matrix = rootInverse.multiply(elementMatrix);
+        const polygon = [
+          matrixPoint(matrix, bbox.x, bbox.y),
+          matrixPoint(matrix, bbox.x + bbox.width, bbox.y),
+          matrixPoint(matrix, bbox.x + bbox.width, bbox.y + bbox.height),
+          matrixPoint(matrix, bbox.x, bbox.y + bbox.height),
+        ];
+        const xs = polygon.map((point) => point.x);
+        const ys = polygon.map((point) => point.y);
+        labels.push({
+          sourceText,
+          normalizedText: sourceText.replace(/역$/, ""),
+          classification: classifyText(element, sourceText),
+          ...stationLabelIdentity(element),
+          polygon,
+          bounds: {
+            minX: Math.min(...xs),
+            minY: Math.min(...ys),
+            maxX: Math.max(...xs),
+            maxY: Math.max(...ys),
+          },
+          descriptor: descriptorFor(element, sourceText, bbox),
+        });
+      }
+      return labels;
+    }
+
+    function strokeVertices(element, tag, matrix, config) {
+      if (tag !== "path") return localVertices(element, tag);
+      // 곡선 제어점 대신 원본 명령의 끝점을 보존한다. 정점이 부족한 기존 경로만
+      // 동일 path의 길이 기반 샘플링을 사용하며 다른 도형이나 자료를 대입하지 않는다.
+      const vertices = pathEndpointVertices(element.getAttribute("d") || "");
+      if (vertices.length >= 2) return vertices;
+      const totalLength = element.getTotalLength();
+      if (!(totalLength > 0)) return [];
+      const rootLength = totalLength * matrixScale(matrix);
+      const samples = Math.max(2, Math.min(600, Math.ceil(rootLength / config.pathSampleSpacing)));
+      const sampled = [];
+      for (let step = 0; step <= samples; step += 1) {
+        const point = element.getPointAtLength((totalLength * step) / samples);
+        sampled.push({ x: point.x, y: point.y });
+      }
+      return sampled;
+    }
+
+    function extractStroke(element, root, rootInverse, config) {
+      if (element.closest("defs") || !isVisibleText(element, root)) return null;
       const style = getComputedStyle(element);
       const stroke = normalizeColor(style.stroke);
-      if (!stroke) continue; // stroke 없는 도형은 노선 track이 아니다.
+      if (!stroke) return null;
       const elementMatrix = element.getScreenCTM();
-      if (!elementMatrix) continue;
+      if (!elementMatrix) return null;
       const matrix = rootInverse.multiply(elementMatrix);
       const tag = element.tagName.toLowerCase();
-
-      let vertices;
-      if (tag === "path") {
-        // 오너 도식의 route 경로는 8선형 직선(l/h/v)을 짧은 코너 곡선(c/s)으로 이은
-        // 형태다. 등간격 재샘플은 코너 각도를 뭉갠다 → 원본 d의 on-path 정점(직선
-        // 끝점·곡선 끝점)만 뽑아 정확한 8선형 꼭짓점을 보존한다(코너 곡선은 두
-        // 정점으로 근사). d 파싱 실패 시 arc-length 재샘플로 폴백한다.
-        const raw = element.getAttribute("d") || "";
-        vertices = pathEndpointVertices(raw);
-        if (vertices.length < 2) {
-          const totalLength = element.getTotalLength();
-          if (!(totalLength > 0)) continue;
-          const rootLength = totalLength * matrixScale(matrix);
-          const samples = Math.max(2, Math.min(600, Math.ceil(rootLength / config.pathSampleSpacing)));
-          vertices = [];
-          for (let step = 0; step <= samples; step += 1) {
-            const point = element.getPointAtLength((totalLength * step) / samples);
-            vertices.push({ x: point.x, y: point.y });
-          }
-        }
-      } else {
-        vertices = localVertices(element, tag);
-      }
-      if (vertices.length < 2) continue;
-
+      const vertices = strokeVertices(element, tag, matrix, config);
+      if (vertices.length < 2) return null;
       let points = vertices.map((vertex) => matrixPoint(matrix, vertex.x, vertex.y));
-      // 8선형 정리: 코너 곡선 끝점이 만드는 짧은 비축 세그먼트를 인접 8방향 run에
-      // 흡수시켜 track 세그먼트를 0/45/90/135°로 정렬한다(오너 도식은 직선 run이
-      // 이미 8선형이고, 어긋남은 곡선 근사에서만 온다). path stroke에만 적용.
+      // 기존 path 전용 8방향 정리를 유지한다. 다른 도형의 정점은 그대로 둔다.
       if (tag === "path") points = octolinearizePolyline(points);
       let length = 0;
       for (let index = 1; index < points.length; index += 1) {
         length += Math.hypot(points[index].x - points[index - 1].x, points[index].y - points[index - 1].y);
       }
-      if (length < config.minStrokeLength) continue; // 역 마커 틱/장식 배제.
-
+      if (length < config.minStrokeLength) return null;
       const dashArray = style.strokeDasharray;
-      const dashed = Boolean(dashArray) && dashArray !== "none" && dashArray.trim() !== "";
-      strokes.push({
+      return {
         tag,
         stroke,
         strokeWidth: Number.parseFloat(style.strokeWidth) || 0,
-        dashed,
+        dashed: Boolean(dashArray) && dashArray !== "none" && dashArray.trim() !== "",
         length: number(length),
         points,
         descriptor: strokeDescriptor(element, stroke),
-      });
+      };
     }
+
+    function collectStrokes(root, rootInverse, config) {
+      const strokes = [];
+      for (const element of root.querySelectorAll("line, polyline, polygon, path")) {
+        const stroke = extractStroke(element, root, rootInverse, config);
+        if (stroke) strokes.push(stroke);
+      }
+      return strokes;
+    }
+
+    const { root, rootInverse } = await prepareDocument(value);
+    const labels = collectLabels(root, rootInverse);
+
+    // 노선 track geometry: stroke가 있는 line/polyline/polygon/path를 root 좌표
+    // 정점 목록 + 확정 stroke 색으로 모은다. fill 전용 도형(마커/배경)과 장식 틱은
+    // stroke 없음/길이 하한으로 자연 배제한다. 점선(미개통/예정)은 dashed로 표시.
+    const strokes = collectStrokes(root, rootInverse, config);
 
     // #2068 오너 v4 실측: 편집기가 남긴 **빈 <text>/<tspan>**(내용 없는 라인
     // 자리표시자)이 환승 캡슐 <g> 안에 섞여 들어오는 경우가 있다. Chrome의
@@ -565,46 +573,55 @@ function browserExtractorExpression(svg) {
       if (!(bbox.width >= 0) || !(bbox.height >= 0)) return null;
       return { x: bbox.x + bbox.width / 2, y: bbox.y + bbox.height / 2 };
     }
-    const stationNodes = [];
-    const nodeCandidates = [];
-    const ownSymbolInkByStation = new Map();
-    for (const element of root.querySelectorAll("[data-node-role][data-station]")) {
-      if (element.closest("defs")) continue;
-      // 조상 중 이미 data-station 노드가 있으면(예: transfer-symbol g 내부의 circle)
-      // 대표는 최상위 그 하나뿐 — 자식 중복은 배제한다.
-      const owner = element.parentElement?.closest("[data-node-role][data-station]");
-      if (owner) continue;
-      const dataStation = element.getAttribute("data-station") || "";
-      const iconOnly = hasOnlyBorrowedIconInk(element);
-      if (!iconOnly) ownSymbolInkByStation.set(dataStation, true);
-      nodeCandidates.push({ element, dataStation, iconOnly });
+    function attributedStationCandidates(root) {
+      const nodeCandidates = [];
+      const ownSymbolInkByStation = new Map();
+      for (const element of root.querySelectorAll("[data-node-role][data-station]")) {
+        if (element.closest("defs")) continue;
+        // 조상 중 이미 data-station 노드가 있으면(예: transfer-symbol g 내부의 circle)
+        // 대표는 최상위 그 하나뿐 — 자식 중복은 배제한다.
+        const owner = element.parentElement?.closest("[data-node-role][data-station]");
+        if (owner) continue;
+        const dataStation = element.getAttribute("data-station") || "";
+        const iconOnly = hasOnlyBorrowedIconInk(element);
+        if (!iconOnly) ownSymbolInkByStation.set(dataStation, true);
+        nodeCandidates.push({ element, dataStation, iconOnly });
     }
-    for (const { element, dataStation, iconOnly } of nodeCandidates) {
-      // 같은 역에 자기 심벌 잉크를 가진 노드가 따로 있으면 아이콘 노드는 장식
-      // 중복이다(v4 김포공항) — 좌표 후보에서 배제. 아이콘이 그 역의 유일한
-      // 마커면(인천공항1·2터미널, 부산 공항) 그대로 쓴다.
-      if (iconOnly && ownSymbolInkByStation.get(dataStation)) continue;
-      const local = nodeCenterLocal(element);
-      if (!local) continue;
-      const elementMatrix = element.getScreenCTM();
-      if (!elementMatrix) continue;
-      const matrix = rootInverse.multiply(elementMatrix);
-      const center = matrixPoint(matrix, local.x, local.y);
-      const dataName = element.getAttribute("data-name") || dataStation;
-      stationNodes.push({
-        dataStation,
-        dataName,
-        dataStationName: element.getAttribute("data-station-name") || dataName,
-        dataLine: element.getAttribute("data-line") || "",
-        dataLineName: element.getAttribute("data-line-name") || "",
-        dataLineColor: element.getAttribute("data-line-color") || "",
-        nodeRole: element.getAttribute("data-node-role") || "",
-        transferLines: element.getAttribute("data-transfer-lines") || "",
-        tag: element.tagName.toLowerCase(),
-        id: element.id || "",
-        x: center.x,
-        y: center.y,
-      });
+      return { nodeCandidates, ownSymbolInkByStation };
+    }
+
+    function collectAttributedStationNodes(root, rootInverse) {
+      const stationNodes = [];
+      const { nodeCandidates, ownSymbolInkByStation } = attributedStationCandidates(root);
+      for (const { element, dataStation, iconOnly } of nodeCandidates) {
+        // 같은 역에 자기 심벌 잉크를 가진 노드가 따로 있으면 아이콘 노드는 장식
+        // 중복이다(v4 김포공항) — 좌표 후보에서 배제. 아이콘이 그 역의 유일한
+        // 마커면(인천공항1·2터미널, 부산 공항) 그대로 쓴다.
+        if (iconOnly && ownSymbolInkByStation.get(dataStation)) continue;
+        const local = nodeCenterLocal(element);
+        if (!local) continue;
+        const elementMatrix = element.getScreenCTM();
+        if (!elementMatrix) continue;
+        const matrix = rootInverse.multiply(elementMatrix);
+        const center = matrixPoint(matrix, local.x, local.y);
+        const dataName = element.getAttribute("data-name") || dataStation;
+        stationNodes.push({
+          dataStation,
+          dataName,
+          dataStationName: element.getAttribute("data-station-name") || dataName,
+          dataLine: element.getAttribute("data-line") || "",
+          dataLineName: element.getAttribute("data-line-name") || "",
+          dataLineColor: element.getAttribute("data-line-color") || "",
+          nodeRole: element.getAttribute("data-node-role") || "",
+          transferLines: element.getAttribute("data-transfer-lines") || "",
+          tag: element.tagName.toLowerCase(),
+          id: element.id || "",
+          x: center.x,
+          y: center.y,
+        });
+    }
+
+      return stationNodes;
     }
 
     // 라벨 앵커 노드(#2011 3단계 대전 문법): 역 마커 g가 data-node-role 없이
@@ -614,35 +631,39 @@ function browserExtractorExpression(svg) {
     // 가진 요소만 노드로 승격하므로 그 attr가 없는 도식(수도권·부산·대구)에는
     // 아무 영향이 없다(추가만·회귀 0). 좌표는 라벨 bbox가 아니라 명시된 노드
     // 좌표(마커 중심)를 root 좌표로 변환해 쓴다.
-    for (const element of root.querySelectorAll("[data-node-x][data-node-y][data-full-official-name]")) {
-      if (element.closest("defs")) continue;
-      const rawX = element.getAttribute("data-node-x");
-      const rawY = element.getAttribute("data-node-y");
-      const officialName = element.getAttribute("data-full-official-name") || "";
-      const nx = Number.parseFloat(rawX);
-      const ny = Number.parseFloat(rawY);
-      if (!Number.isFinite(nx) || !Number.isFinite(ny) || !officialName) continue;
-      const elementMatrix = element.getScreenCTM();
-      if (!elementMatrix) continue;
-      const matrix = rootInverse.multiply(elementMatrix);
-      const center = matrixPoint(matrix, nx, ny);
-      stationNodes.push({
-        dataStation: officialName,
-        dataName: officialName,
-        dataStationName: officialName,
-        dataLine: element.getAttribute("data-line") || "",
-        dataLineName: element.getAttribute("data-line-name") || "",
-        dataLineColor: element.getAttribute("data-line-color") || "",
-        nodeRole: element.getAttribute("data-label-role") || element.getAttribute("data-node-role") || "",
-        transferLines: element.getAttribute("data-transfer-lines") || "",
-        dataStationCode: element.getAttribute("data-station-code") || "",
-        dataStatus: element.getAttribute("data-status") || "",
-        nodeSource: "label-anchor",
-        tag: element.tagName.toLowerCase(),
-        id: element.id || "",
-        x: center.x,
-        y: center.y,
-      });
+    function collectLabelAnchorNodes(root, rootInverse) {
+      const stationNodes = [];
+      for (const element of root.querySelectorAll("[data-node-x][data-node-y][data-full-official-name]")) {
+        if (element.closest("defs")) continue;
+        const rawX = element.getAttribute("data-node-x");
+        const rawY = element.getAttribute("data-node-y");
+        const officialName = element.getAttribute("data-full-official-name") || "";
+        const nx = Number.parseFloat(rawX);
+        const ny = Number.parseFloat(rawY);
+        if (!Number.isFinite(nx) || !Number.isFinite(ny) || !officialName) continue;
+        const elementMatrix = element.getScreenCTM();
+        if (!elementMatrix) continue;
+        const matrix = rootInverse.multiply(elementMatrix);
+        const center = matrixPoint(matrix, nx, ny);
+        stationNodes.push({
+          dataStation: officialName,
+          dataName: officialName,
+          dataStationName: officialName,
+          dataLine: element.getAttribute("data-line") || "",
+          dataLineName: element.getAttribute("data-line-name") || "",
+          dataLineColor: element.getAttribute("data-line-color") || "",
+          nodeRole: element.getAttribute("data-label-role") || element.getAttribute("data-node-role") || "",
+          transferLines: element.getAttribute("data-transfer-lines") || "",
+          dataStationCode: element.getAttribute("data-station-code") || "",
+          dataStatus: element.getAttribute("data-status") || "",
+          nodeSource: "label-anchor",
+          tag: element.tagName.toLowerCase(),
+          id: element.id || "",
+          x: center.x,
+          y: center.y,
+        });
+    }
+      return stationNodes;
     }
 
     // 라벨 그룹 노드(#2011 3단계 광주 문법): 역 정체(코드+이름)가 label group
@@ -652,44 +673,54 @@ function browserExtractorExpression(svg) {
     // fallback과 동일 발상 — 후속 respace·8선형 스냅이 line_sequence 위상으로
     // 좌표를 정규화한다). 선택자 g[data-label-role]는 광주에만 존재하므로
     // (수도권·부산·대구는 <g>에 data-label-role 0) 다른 권역에 영향이 없다.
-    for (const element of root.querySelectorAll("g[data-label-role][data-station-name][data-station]")) {
-      if (element.closest("defs")) continue;
-      const name = element.getAttribute("data-station-name") || "";
-      const code = element.getAttribute("data-station") || "";
-      if (!name) continue;
-      // 위 nodeCenterLocal과 같은 규칙(퇴화 자식 박스 배제)을 대칭 적용한다 —
-      // 이 경로도 <g> 통짜 getBBox라 같은 잠복 결함을 갖는다.
-      let bbox = renderableBBoxLocal(element);
-      if (!bbox) {
-        try {
-          bbox = element.getBBox();
-        } catch {
-          continue;
+    function collectLabelGroupNodes(root, rootInverse) {
+      const stationNodes = [];
+      for (const element of root.querySelectorAll("g[data-label-role][data-station-name][data-station]")) {
+        if (element.closest("defs")) continue;
+        const name = element.getAttribute("data-station-name") || "";
+        const code = element.getAttribute("data-station") || "";
+        if (!name) continue;
+        // 위 nodeCenterLocal과 같은 규칙(퇴화 자식 박스 배제)을 대칭 적용한다 —
+        // 이 경로도 <g> 통짜 getBBox라 같은 잠복 결함을 갖는다.
+        let bbox = renderableBBoxLocal(element);
+        if (!bbox) {
+          try {
+            bbox = element.getBBox();
+          } catch {
+            continue;
+          }
         }
-      }
-      if (!(bbox.width >= 0) || !(bbox.height >= 0)) continue;
-      const elementMatrix = element.getScreenCTM();
-      if (!elementMatrix) continue;
-      const matrix = rootInverse.multiply(elementMatrix);
-      const center = matrixPoint(matrix, bbox.x + bbox.width / 2, bbox.y + bbox.height / 2);
-      stationNodes.push({
-        dataStation: name,
-        dataName: name,
-        dataStationName: name,
-        dataLine: element.getAttribute("data-line") || "",
-        dataLineName: element.getAttribute("data-line-name") || "",
-        dataLineColor: element.getAttribute("data-line-color") || "",
-        nodeRole: element.getAttribute("data-label-role") || "",
-        transferLines: element.getAttribute("data-transfer-lines") || "",
-        dataStationCode: code,
-        dataStatus: element.getAttribute("data-status") || "",
-        nodeSource: "label-group",
-        tag: element.tagName.toLowerCase(),
-        id: element.id || "",
-        x: center.x,
-        y: center.y,
-      });
+        if (!(bbox.width >= 0) || !(bbox.height >= 0)) continue;
+        const elementMatrix = element.getScreenCTM();
+        if (!elementMatrix) continue;
+        const matrix = rootInverse.multiply(elementMatrix);
+        const center = matrixPoint(matrix, bbox.x + bbox.width / 2, bbox.y + bbox.height / 2);
+        stationNodes.push({
+          dataStation: name,
+          dataName: name,
+          dataStationName: name,
+          dataLine: element.getAttribute("data-line") || "",
+          dataLineName: element.getAttribute("data-line-name") || "",
+          dataLineColor: element.getAttribute("data-line-color") || "",
+          nodeRole: element.getAttribute("data-label-role") || "",
+          transferLines: element.getAttribute("data-transfer-lines") || "",
+          dataStationCode: code,
+          dataStatus: element.getAttribute("data-status") || "",
+          nodeSource: "label-group",
+          tag: element.tagName.toLowerCase(),
+          id: element.id || "",
+          x: center.x,
+          y: center.y,
+        });
     }
+      return stationNodes;
+    }
+
+    const stationNodes = [
+      ...collectAttributedStationNodes(root, rootInverse),
+      ...collectLabelAnchorNodes(root, rootInverse),
+      ...collectLabelGroupNodes(root, rootInverse),
+    ];
 
     return { sourceViewBox: sourceViewBox(root), labels, strokes, stationNodes };
   }})(${JSON.stringify(svgBase64)}, ${JSON.stringify({
