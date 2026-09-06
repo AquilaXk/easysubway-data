@@ -40,6 +40,7 @@ import {
   canonicalCurrentReleaseCandidateFixtureJson,
 } from "../build-current-release-candidate-accessibility-input.mjs";
 import { syncCurrentRouteEdgePolicyFile } from "../sync-current-route-edge-policy.mjs";
+import { readImmutableItxRideEdgeSetSha256 } from "../apply-itx-topology-to-bundled-pack.mjs";
 import { canonicalJson } from "../lib/manifest-validation.mjs";
 import {
   activateSyntheticCurrentPublicRouteMapSuccessor,
@@ -402,6 +403,7 @@ export async function completeCurrentAccessibilityFixture(
   if (syncRouteEdgePolicy) {
     await syncCurrentRouteEdgePolicyFile({
       repositoryRoot,
+      readAdmittedItxRideEdgeSetSha256Impl: readImmutableItxRideEdgeSetSha256,
       inputPath: path.join(repositoryRoot, "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json"),
       policyPath: path.join(repositoryRoot, "release/product-gates/route-edge-evaluation-policy.json"),
     });
