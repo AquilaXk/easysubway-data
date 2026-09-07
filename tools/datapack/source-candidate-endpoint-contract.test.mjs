@@ -83,6 +83,17 @@ const DATA_GO_FOCUSED_TESTS = Object.freeze({
 
 const document = JSON.parse(await readFile(CANDIDATES_PATH, "utf8"));
 
+test("KASI monthly operation registers the retained collector without admission", async () => {
+  const candidate = document.candidates.find(({ id }) => id === "kasi-public-holiday-calendar");
+  assert.ok(candidate);
+  assert.equal(candidate.admissionStatus, "preflight_only");
+  const operation = validateOperation(candidate);
+  assert.equal(operation.runner.command, "node tools/datapack/fetch-kasi-public-holiday-calendar.mjs");
+  const collector = await import("./fetch-kasi-public-holiday-calendar.mjs");
+  assert.equal(typeof collector.collectKasiHolidayCalendarFiles, "function");
+  assert.equal(candidate.evidence.licenseEvidenceUrl, candidate.detailUrl);
+});
+
 test("retained Korail timetable candidate does not claim a provider runner or admission", async () => {
   const candidate = document.candidates.find(({ id }) => id === "korail-metropolitan-timetable-file");
   assert.ok(candidate);
@@ -591,7 +602,7 @@ test("4개 DATA_GO runner는 malformed credential을 URL·cache·fetch·delegate
     {
       runner: "tools/datapack/fetch-kasi-public-holiday-calendar.mjs",
       test: "tools/datapack/fetch-kasi-public-holiday-calendar.test.mjs",
-      functionName: "fetchKasiPublicHolidayCalendar",
+      functionName: "fetchKasiPublicHolidayCalendarObservation",
       before: ["new URL(ENDPOINT)", "fetchImpl("],
     },
     {

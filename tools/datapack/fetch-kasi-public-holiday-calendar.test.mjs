@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
-import { fetchKasiPublicHolidayCalendar, fetchKasiPublicHolidayCalendarObservation, parseRetainedKasiHolidayMonth } from "./fetch-kasi-public-holiday-calendar.mjs";
+import { collectKasiHolidayCalendarFiles, fetchKasiPublicHolidayCalendar, fetchKasiPublicHolidayCalendarObservation, parseRetainedKasiHolidayMonth } from "./fetch-kasi-public-holiday-calendar.mjs";
 
 test("KASI calendar는 유효한 year·months에서 malformed credential을 request URL·provider 호출 전에 거부한다", async () => {
   let calls = 0;
@@ -41,6 +44,23 @@ test("KASI observation retains reusable monthly XML without an extra request", a
     year: month.year, month: month.month }).holidayDates, ["20400102"]);
   assert.equal(Number.isFinite(Date.parse(month.retrievedAt)), true);
   assert.ok(!JSON.stringify(result).includes("test-key"));
+});
+
+test("KASI collection writes reusable files once and rejects an existing output before requests", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "kasi-files-test-"));
+  let calls = 0;
+  const outputDirectory = path.join(root, "collection");
+  const input = { outputDirectory, year: 2040, months: [1], serviceKey: "test-key",
+    fetchImpl: async () => { calls += 1; return { ok: true, text: async () => holidayXml([]) }; } };
+  try {
+    await collectKasiHolidayCalendarFiles(input);
+    const manifest = JSON.parse(await readFile(path.join(outputDirectory, "months.json"), "utf8"));
+    const month = manifest.months[0];
+    const raw = await readFile(path.join(outputDirectory, month.file));
+    assert.deepEqual(parseRetainedKasiHolidayMonth({ ...month, raw }).holidayDates, []);
+    await assert.rejects(collectKasiHolidayCalendarFiles(input));
+    assert.equal(calls, 1);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 test("KASI 기본 전송은 내장 HTTPS request seam으로 정확한 GET 요청을 한 번 종료한다", async () => {

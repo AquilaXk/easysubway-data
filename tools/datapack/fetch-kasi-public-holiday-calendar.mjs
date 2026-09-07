@@ -1,8 +1,27 @@
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { request as httpsRequest } from "node:https";
 import { createHash } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { isMainModule } from "../lib/is-main-module.mjs";
 
 const ENDPOINT = "https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo";
+
+/** 새 디렉터리만 예약한다. 실패한 수집에는 완료 manifest를 남기지 않는다. */
+export async function collectKasiHolidayCalendarFiles({ outputDirectory, ...input }) {
+  if (typeof outputDirectory !== "string" || !path.isAbsolute(outputDirectory)) throw new Error("absolute output directory required");
+  await mkdir(outputDirectory);
+  const observation = await fetchKasiPublicHolidayCalendarObservation(input);
+  const months = [];
+  for (const { xml, ...identity } of observation.months) {
+    const file = `${identity.year}-${String(identity.month).padStart(2, "0")}.xml`;
+    await writeFile(path.join(outputDirectory, file), xml, { flag: "wx", mode: 0o600 });
+    months.push({ ...identity, file });
+  }
+  const manifest = { schemaVersion: 1, sourceId: "kasi-public-holiday-calendar", months };
+  await writeFile(path.join(outputDirectory, "months.json"), `${JSON.stringify(manifest, null, 2)}\n`, { flag: "wx", mode: 0o600 });
+  return manifest;
+}
 
 /** 보관 원문만 소비한다. 조회 월과 원문 해시는 유지하고 수집 시각은 새로 만들지 않는다. */
 export function parseRetainedKasiHolidayMonth({ raw, sha256, year, month }) {
@@ -292,3 +311,19 @@ function categoryFor({ name, code }) {
 function decodeXml(value) { return value.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&#39;/g, "'"); }
 function safeStatus(value) { return Number.isInteger(value) && value >= 100 && value <= 599 ? value : "UNKNOWN"; }
 function safeToken(value) { return /^[A-Za-z0-9._-]{1,32}$/.test(value ?? "") ? value : "UNKNOWN"; }
+
+if (isMainModule(import.meta.url)) {
+  const args = process.argv.slice(2);
+  try {
+    if (args.length !== 6 || args[0] !== "--year" || args[2] !== "--months" || args[4] !== "--output-directory"
+      || !/^\d{4}$/.test(args[1]) || !/^\d{1,2}(,\d{1,2})*$/.test(args[3])) {
+      throw new Error("usage: --year YYYY --months M,M --output-directory <new-absolute-directory>");
+    }
+    await collectKasiHolidayCalendarFiles({ year: Number(args[1]), months: args[3].split(",").map(Number),
+      outputDirectory: args[5], serviceKey: process.env.DATA_GO_KR_SERVICE_KEY });
+    console.log("KASI monthly evidence written");
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
+  }
+}
