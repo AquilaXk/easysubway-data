@@ -93,6 +93,23 @@ async function advanceProtectedTopology(root, previousNow, minimumCapturedAt = n
   return new Date(Math.max(Date.parse(captured) + 1_000, previousNow.valueOf() + 1));
 }
 
+test("shared freshness membership preserves Capital semantics without extending freshness", async (t) => {
+  const { root, now } = await fixture(t);
+  const policyPath = path.join(root, "release/product-gates/datapack-freshness-sla.json");
+  const policy = JSON.parse(await readFile(policyPath));
+  const sourceClass = policy.sourceClasses.find((entry) => entry.sourceIds.includes("capital-route-topology"));
+  const before = await readCurrentCapitalRouteTopologyAdmission({ repositoryRoot: root, now });
+  sourceClass.sourceIds.push("korail-metropolitan-timetable-file");
+  await writeJson(policyPath, policy);
+  const after = await readCurrentCapitalRouteTopologyAdmission({ repositoryRoot: root, now });
+  assert.equal(after.topology.freshUntil, before.topology.freshUntil);
+  assert.equal(after.freshnessClassSha256, before.freshnessClassSha256);
+  assert.deepEqual(after.freshnessPolicy, policy);
+  sourceClass.reverificationCadence = "P2D";
+  await writeJson(policyPath, policy);
+  await assert.rejects(readCurrentCapitalRouteTopologyAdmission({ repositoryRoot: root, now }), /policy binding/);
+});
+
 test("registered topology license identity satisfies the downstream governance evaluator", async (t) => {
   const { root, now } = await fixture(t);
   const { receiptPath } = await receiptFixture(root, now);

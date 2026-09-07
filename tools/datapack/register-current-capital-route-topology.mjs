@@ -140,7 +140,7 @@ export async function readCurrentCapitalRouteTopologyAdmission({ repositoryRoot,
   const existingFreshness = (baseFreshnessPolicy.sourceClasses ?? []).filter((entry) => entry?.id === candidate.domain);
   if (existingGovernance.length > 1 || existingFreshness.length > 1
     || (existingGovernance.length === 1) !== (existingFreshness.length === 1)
-    || (existingGovernance.length === 1 && (!isDeepStrictEqual(existingGovernance[0], governance) || !isDeepStrictEqual(existingFreshness[0], freshness)))) {
+    || (existingGovernance.length === 1 && (!isDeepStrictEqual(existingGovernance[0], governance) || !matchesSourceFreshness(existingFreshness[0], freshness)))) {
     throw new Error("capital topology registration policy binding is invalid");
   }
   const governancePolicy = existingGovernance.length === 1 ? baseGovernancePolicy
@@ -284,6 +284,14 @@ export async function buildCurrentCapitalRouteTopologyRegistrationOutputs({ repo
   ];
   outputs.forEach((output) => { output.inputs = inputs; });
   return outputs;
+}
+
+// class의 source 구성은 확장될 수 있지만 수도권 cadence·basis 계약은 그대로 비교한다.
+function matchesSourceFreshness(actual, expected) {
+  const members = actual?.sourceIds;
+  return Array.isArray(members) && members.every((id) => typeof id === "string" && id.length > 0)
+    && new Set(members).size === members.length && members.includes(SOURCE_ID)
+    && isDeepStrictEqual({ ...actual, sourceIds: expected.sourceIds }, expected);
 }
 
 function exactOutputs(outputs) {

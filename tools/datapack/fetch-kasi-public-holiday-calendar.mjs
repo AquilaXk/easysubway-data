@@ -36,9 +36,9 @@ export async function collectKasiHolidayCalendarFiles({ outputDirectory, ...inpu
   await mkdir(outputDirectory);
   const observation = await fetchKasiPublicHolidayCalendarObservation(input);
   const months = [];
-  for (const { xml, ...identity } of observation.months) {
+  for (const { raw, xml, ...identity } of observation.months) {
     const file = `${identity.year}-${String(identity.month).padStart(2, "0")}.xml`;
-    await writeFile(path.join(outputDirectory, file), xml, { flag: "wx", mode: 0o600 });
+    await writeFile(path.join(outputDirectory, file), raw, { flag: "wx", mode: 0o600 });
     months.push({ ...identity, file });
   }
   const manifest = { schemaVersion: 1, sourceId: "kasi-public-holiday-calendar", months };
@@ -89,9 +89,9 @@ export async function fetchKasiPublicHolidayCalendarObservation({
       ? (options) => fetchImpl(url, options)
       : (options) => nativeHttpsGet(url, options, httpsRequestImpl);
     const { response, attemptCount } = await fetchKasiMonth(request);
-    const { xml, dates } = await readKasiMonthResponse(response, { year, month, attemptCount });
+    const { raw, xml, dates } = await readKasiMonthResponse(response, { year, month, attemptCount });
     for (const date of dates) holidays.add(date);
-    observations.push({ year, month, xml, sha256: createHash("sha256").update(xml, "utf8").digest("hex"),
+    observations.push({ year, month, raw, xml, sha256: createHash("sha256").update(raw).digest("hex"),
       retrievedAt: new Date().toISOString() });
   }
   return { holidays, months: observations };
@@ -99,19 +99,22 @@ export async function fetchKasiPublicHolidayCalendarObservation({
 
 async function readKasiMonthResponse(response, { year, month, attemptCount }) {
     if (!response?.ok) throw kasiFailure(`KASI public holiday request failed: HTTP_${safeStatus(response?.status)}`, "KASI_HTTP", attemptCount);
-    let xml;
+    let raw;
     try {
-      xml = await response.text();
+      raw = Buffer.from(await response.arrayBuffer());
     } catch (error) {
       throw transportFailure(error, attemptCount);
     }
+    let xml;
+    try { xml = new TextDecoder("utf-8", { fatal: true }).decode(raw); }
+    catch (error) { throw kasiFailure(error.message, "KASI_SCHEMA", attemptCount); }
     let dates;
     try {
       dates = parseMonth(xml, { year, month });
     } catch (error) {
       throw kasiFailure(error.message, "KASI_SCHEMA", attemptCount);
     }
-    return { xml, dates };
+    return { raw, xml, dates };
 }
 
 async function fetchKasiMonth(request) {
@@ -149,13 +152,12 @@ function nativeHttpsGet(url, { signal, headers }, httpsRequestImpl) {
         return;
       }
       const chunks = [];
-      response.setEncoding("utf8");
       response.once("error", reject);
-      response.on("data", (chunk) => chunks.push(chunk));
+      response.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
       response.once("end", () => resolve({
         ok: true,
         status: response.statusCode,
-        text: async () => chunks.join(""),
+        arrayBuffer: async () => Buffer.concat(chunks),
       }));
     });
     request.once("socket", (socket) => {

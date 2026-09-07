@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -34,16 +34,45 @@ test("KASI observation retains reusable monthly XML without an extra request", a
   let calls = 0;
   const xml = holidayXml([{ date: "20400102", holiday: "Y" }]);
   const result = await fetchKasiPublicHolidayCalendarObservation({ serviceKey: "test-key", year: 2040, months: [1, 1],
-    fetchImpl: async () => { calls += 1; return { ok: true, text: async () => xml }; } });
+    fetchImpl: async () => { calls += 1; return { ok: true, arrayBuffer: async () => Buffer.from(xml) }; } });
   assert.equal(calls, 1);
   assert.deepEqual([...result.holidays], ["20400102"]);
   assert.equal(result.months.length, 1);
   const month = result.months[0];
   assert.equal(month.xml, xml);
-  assert.deepEqual(parseRetainedKasiHolidayMonth({ raw: Buffer.from(month.xml), sha256: month.sha256,
+  assert.deepEqual(parseRetainedKasiHolidayMonth({ raw: month.raw, sha256: month.sha256,
     year: month.year, month: month.month }).holidayDates, ["20400102"]);
   assert.equal(Number.isFinite(Date.parse(month.retrievedAt)), true);
   assert.ok(!JSON.stringify(result).includes("test-key"));
+});
+
+test("KASI observation hashes and retains the exact BOM-prefixed response bytes", async () => {
+  const xml = holidayXml([{ date: "20400102", holiday: "Y" }]);
+  const raw = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(xml)]);
+  const observation = await fetchKasiPublicHolidayCalendarObservation({ serviceKey: "test-key", year: 2040, months: [1],
+    fetchImpl: async () => ({ ok: true, arrayBuffer: async () => raw }) });
+  assert.deepEqual(observation.months[0].raw, raw);
+  assert.equal(observation.months[0].sha256, createHash("sha256").update(raw).digest("hex"));
+  const root = await mkdtemp(path.join(tmpdir(), "kasi-bom-test-"));
+  try {
+    const outputDirectory = path.join(root, "collection");
+    await collectKasiHolidayCalendarFiles({ outputDirectory, serviceKey: "test-key", year: 2040, months: [1],
+      fetchImpl: async () => ({ ok: true, arrayBuffer: async () => raw }) });
+    assert.deepEqual(await readFile(path.join(outputDirectory, "2040-01.xml")), raw);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("KASI rejects malformed UTF-8 before it writes a success manifest", async () => {
+  const raw = Buffer.from([0xc3, 0x28]);
+  await assert.rejects(fetchKasiPublicHolidayCalendarObservation({ serviceKey: "test-key", year: 2040, months: [1],
+    fetchImpl: async () => ({ ok: true, arrayBuffer: async () => raw }) }), { failureCategory: "KASI_SCHEMA", attemptCount: 1 });
+  const root = await mkdtemp(path.join(tmpdir(), "kasi-utf8-test-"));
+  try {
+    const outputDirectory = path.join(root, "collection");
+    await assert.rejects(collectKasiHolidayCalendarFiles({ outputDirectory, serviceKey: "test-key", year: 2040, months: [1],
+      fetchImpl: async () => ({ ok: true, arrayBuffer: async () => raw }) }), { failureCategory: "KASI_SCHEMA", attemptCount: 1 });
+    assert.deepEqual(await readdir(outputDirectory), []);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 test("KASI collection writes reusable files once and rejects an existing output before requests", async () => {
@@ -51,7 +80,7 @@ test("KASI collection writes reusable files once and rejects an existing output 
   let calls = 0;
   const outputDirectory = path.join(root, "collection");
   const input = { outputDirectory, year: 2040, months: [1], serviceKey: "test-key",
-    fetchImpl: async () => { calls += 1; return { ok: true, text: async () => holidayXml([]) }; } };
+    fetchImpl: async () => { calls += 1; return { ok: true, arrayBuffer: async () => Buffer.from(holidayXml([])) }; } };
   try {
     await collectKasiHolidayCalendarFiles(input);
     const manifest = JSON.parse(await readFile(path.join(outputDirectory, "months.json"), "utf8"));
@@ -86,7 +115,6 @@ test("KASI 기본 전송은 내장 HTTPS request seam으로 정확한 GET 요청
           queueMicrotask(() => {
             const response = {
               statusCode: 200,
-              setEncoding(encoding) { assert.equal(encoding, "utf8"); },
               once(event, listener) {
                 listeners.set(`response:${event}`, listener);
                 if (event === "end") queueMicrotask(listener);
@@ -484,7 +512,7 @@ test("KASI calendar는 connect timeout 밖의 HTTP·schema·body failure를 재�
   const cases = [
     async () => new Response("denied", { status: 403 }),
     async () => new Response("not xml"),
-    async () => ({ ok: true, text: async () => { throw Object.assign(new Error("raw body error"), { code: "ECONNRESET" }); } }),
+    async () => ({ ok: true, arrayBuffer: async () => { throw Object.assign(new Error("raw body error"), { code: "ECONNRESET" }); } }),
   ];
   for (const fetchImpl of cases) {
     let calls = 0;
@@ -528,7 +556,7 @@ test("KASI transport 오류는 원문을 노출하지 않고 closed category로 
     serviceKey: "secret-key",
     year: 2026,
     months: [7],
-    fetchImpl: async () => ({ ok: true, text: async () => { throw error; } }),
+    fetchImpl: async () => ({ ok: true, arrayBuffer: async () => { throw error; } }),
   });
   const transportError = ({ name = "Error", code, cause } = {}) => Object.assign(new Error("https://apis.data.go.kr/?ServiceKey=secret-key raw diagnostic"), { name, code, cause });
   const cases = [
