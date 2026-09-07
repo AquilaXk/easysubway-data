@@ -11,9 +11,30 @@ import {
   projectKorailPassengerTopology,
   bindKorailCanonicalStations,
   korailServiceDayLabel,
+  buildKorailServiceCalendars,
+  buildKorailTimetableTables,
   parseRetainedKorailWorkbook,
   buildRetainedKorailTopologyObservation,
 } from "./parse-korail-metropolitan-timetable.mjs";
+
+test("calendar rows use supplied validity and holiday exceptions without duplicate weekend service", () => {
+  const input = { startDate: "20400101", endDate: "20400110",
+    serviceIds: { "평일": "weekday", "휴일": "holiday" },
+    publicHolidayDates: new Set(["20400108", "20400102", "20400120"]) };
+  const rows = buildKorailServiceCalendars(input);
+  assert.deepEqual(rows.serviceCalendars, [
+    { serviceId: "weekday", monday: true, tuesday: true, wednesday: true, thursday: true,
+      friday: true, saturday: false, sunday: false, startDate: input.startDate, endDate: input.endDate, timezone: "Asia/Seoul" },
+    { serviceId: "holiday", monday: false, tuesday: false, wednesday: false, thursday: false,
+      friday: false, saturday: true, sunday: true, startDate: input.startDate, endDate: input.endDate, timezone: "Asia/Seoul" },
+  ]);
+  assert.deepEqual(rows.serviceCalendarDates, [
+    { serviceId: "weekday", date: "20400102", exceptionType: 2 },
+    { serviceId: "holiday", date: "20400102", exceptionType: 1 },
+  ]);
+  assert.throws(() => buildKorailServiceCalendars({ ...input, startDate: "20400111" }));
+  assert.throws(() => buildKorailServiceCalendars({ ...input, serviceIds: { "평일": "same", "휴일": "same" } }));
+});
 
 test("owner calendar policy selects weekends and supplied public holidays without a year list", () => {
   const publicHolidayDates = new Set(["20400102"]);
@@ -96,6 +117,17 @@ test("retained XLSX parsing binds exact bytes and keeps native sparse row coordi
       canonicalCatalogPath, canonicalCatalogSha256: hash(catalogBytes), lineId: "L",
     };
     const observation = await buildRetainedKorailTopologyObservation(input);
+    const tables = buildKorailTimetableTables({ observation,
+      startDate: "20400101", endDate: "20400110", publicHolidayDates: new Set(["20400102"]),
+      serviceIds: { "평일": "weekday", "휴일": "holiday" }, routeIds: { up: "route-up", down: "route-down" },
+    });
+    assert.equal(tables.transitTrips[0].serviceId, "weekday");
+    assert.deepEqual(tables.transitStopTimes.map(({ arrivalSeconds, departureSeconds, pickupType, dropOffType }) =>
+      ({ arrivalSeconds, departureSeconds, pickupType, dropOffType })), [
+      { arrivalSeconds: 43200, departureSeconds: 43200, pickupType: 0, dropOffType: 1 },
+      { arrivalSeconds: 44064, departureSeconds: 44064, pickupType: 1, dropOffType: 0 },
+    ]);
+    assert.equal(observation.topology.passengerTrips[0].stops[0].arrival.seconds, null);
     assert.equal(observation.sources.catalog.rawSha256, hash(catalogBytes));
     assert.deepEqual(observation.topology.passengerTrips[0].stops.map(({ stationId }) => stationId),
       ["canonical-a", "canonical-b"]);

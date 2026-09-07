@@ -4,6 +4,57 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { unzipEntry, parseWorkbookSheetRefs, parseSharedStrings, parseWorksheetRows } from "./parse-kric-code-catalog.mjs";
 import { selectRetainedKricStationLine } from "./build-kric-retained-file-pending-handoff.mjs";
+import { reconstructTransitTrips } from "./reconstruct-transit-trips.mjs";
+
+/** 원문 관측은 불변으로 두고 기존 provider-neutral 코어에 calendar·trip 행을 연결한다. */
+export function buildKorailTimetableTables({ observation, startDate, endDate, publicHolidayDates, serviceIds, routeIds }) {
+  const calendars = buildKorailServiceCalendars({ startDate, endDate, publicHolidayDates, serviceIds });
+  const lineId = observation.selection.lineId;
+  const lineSequenceByStationLine = Object.fromEntries(observation.stationBindings.map(({ stationId }, index) =>
+    [`${stationId}|${lineId}`, index + 1]));
+  const identities = new Set();
+  const rows = observation.topology.passengerTrips.flatMap((trip) => {
+    const key = JSON.stringify([trip.trainNo, trip.dayLabel]);
+    if (identities.has(key)) throw new Error("duplicate native train/day identity");
+    identities.add(key);
+    return trip.stops.map((stop, index) => ({
+      stationId: stop.stationId, lineId, trnNo: trip.trainNo, dayCd: trip.dayLabel,
+      arrivalSeconds: stop.arrival.seconds, departureSeconds: stop.departure.seconds,
+      stopRole: index === 0 ? "ORIGIN" : index === trip.stops.length - 1 ? "TERMINAL" : "THROUGH",
+      servicePattern: "LOCAL",
+    }));
+  });
+  const timetable = reconstructTransitTrips(rows, {
+    lineSequenceByStationLine,
+    routeIdByLineDirection: { [`${lineId}|up`]: routeIds?.up, [`${lineId}|down`]: routeIds?.down },
+    serviceIdByDayCd: serviceIds,
+  });
+  return { ...calendars, ...timetable };
+}
+
+/** 적용 기간과 공휴일 자료는 호출자가 결속한다. 주말에 중복 예외를 만들지 않는다. */
+export function buildKorailServiceCalendars({ startDate, endDate, serviceIds, publicHolidayDates }) {
+  korailServiceDayLabel({ serviceDate: startDate, publicHolidayDates });
+  korailServiceDayLabel({ serviceDate: endDate, publicHolidayDates });
+  if (startDate > endDate || !serviceIds
+    || [serviceIds["평일"], serviceIds["휴일"]].some((id) => typeof id !== "string" || !id.trim())
+    || serviceIds["평일"] === serviceIds["휴일"]) throw new Error("calendar range or service identity is invalid");
+  const serviceCalendars = ["평일", "휴일"].map((label) => ({
+    serviceId: serviceIds[label], monday: label === "평일", tuesday: label === "평일",
+    wednesday: label === "평일", thursday: label === "평일", friday: label === "평일",
+    saturday: label === "휴일", sunday: label === "휴일", startDate, endDate, timezone: "Asia/Seoul",
+  }));
+  const serviceCalendarDates = [];
+  for (const date of [...publicHolidayDates].sort()) {
+    const ordinaryLabel = korailServiceDayLabel({ serviceDate: date, publicHolidayDates: new Set() });
+    if (date < startDate || date > endDate || ordinaryLabel === "휴일") continue;
+    serviceCalendarDates.push(
+      { serviceId: serviceIds["평일"], date, exceptionType: 2 },
+      { serviceId: serviceIds["휴일"], date, exceptionType: 1 },
+    );
+  }
+  return { serviceCalendars, serviceCalendarDates };
+}
 
 /** 사용자 확정 정책이다. 공휴일 집합은 검증된 달력 입력에서 받아야 하며 원문 기관의 선언으로 위장하지 않는다. */
 export function korailServiceDayLabel({ serviceDate, publicHolidayDates }) {
