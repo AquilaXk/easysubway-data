@@ -1,6 +1,5 @@
-import { createHash, randomUUID } from "node:crypto";
-import { constants } from "node:fs";
-import { link, lstat, mkdir, open, readFile, rename, rmdir, unlink } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
@@ -10,17 +9,13 @@ import { assertCurrentStaticNetworkTopologyAdmission } from "./register-current-
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import { buildAppendOnlyGovernancePolicyRegistration, deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 import { isDeepStrictEqual } from "node:util";
+import { createSourceRegistrationTransaction, SOURCE_REGISTRATION_OUTPUTS } from "./lib/source-registration-transaction.mjs";
 
 const SOURCE_ID = "capital-route-topology";
 const OWNER_SOURCE_ID = "seoul-metro-route-map-positions";
 const NAMESPACE = "axvym6vk8g7i";
 const BUCKET = "easysubway-datapacks";
-const OUTPUTS = Object.freeze([
-  "tools/datapack/source-inventory.json",
-  "tools/datapack/release/source-snapshots.json",
-  "tools/datapack/source-governance-policy.json",
-  "release/product-gates/datapack-freshness-sla.json",
-]);
+const OUTPUTS = SOURCE_REGISTRATION_OUTPUTS;
 const JOURNAL = "tools/datapack/.capital-route-topology-registration-transaction.json";
 const LOCK = "tools/datapack/.capital-route-topology-registration.lock";
 const SHA256 = /^[a-f0-9]{64}$/u;
@@ -291,33 +286,6 @@ export async function buildCurrentCapitalRouteTopologyRegistrationOutputs({ repo
   return outputs;
 }
 
-async function safeParent(file) {
-  const stat = await lstat(path.dirname(file));
-  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("capital topology transaction parent is unsafe");
-}
-async function syncParent(file) {
-  const directory = await open(path.dirname(file), constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
-  try { await directory.sync(); } finally { await directory.close(); }
-}
-async function currentBytes(file) {
-  try { const stat = await lstat(file); if (!stat.isFile() || stat.isSymbolicLink()) throw new Error("capital topology transaction target is unsafe"); return await readFile(file); }
-  catch (error) { if (error?.code === "ENOENT") return null; throw error; }
-}
-async function assertBytes(file, expected) {
-  const actual = await currentBytes(file);
-  if ((actual == null) !== (expected == null) || (actual != null && !actual.equals(expected))) throw new Error("capital topology transaction preserves foreign replacement");
-}
-async function atomicWrite(file, value, expected) {
-  await safeParent(file); if (expected !== undefined) await assertBytes(file, expected);
-  const temporary = path.join(path.dirname(file), "." + path.basename(file) + "." + randomUUID() + ".tmp");
-  try {
-    const handle = await open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
-    try { await handle.writeFile(value); await handle.sync(); } finally { await handle.close(); }
-    if (expected !== undefined) await assertBytes(file, expected);
-    if (expected === null) { await link(temporary, file); await unlink(temporary); } else await rename(temporary, file);
-    await syncParent(file); await assertBytes(file, value);
-  } finally { await unlink(temporary).catch(() => {}); }
-}
 function exactOutputs(outputs) {
   const inputs = outputs?.[0]?.inputs;
   if (!Array.isArray(outputs) || outputs.length !== OUTPUTS.length || JSON.stringify(outputs.map(({ relative }) => relative)) !== JSON.stringify(OUTPUTS)
@@ -327,68 +295,15 @@ function exactOutputs(outputs) {
     || !/^tools\/datapack\/sources\/capital-route-topology-[0-9]{8}\.json$/u.test(inputs[1]?.relative ?? "")
     || !path.isAbsolute(inputs[2]?.absolute ?? "") || inputs.some(({ bytes }) => !Buffer.isBuffer(bytes))) throw new Error("capital topology transaction outputs are invalid");
 }
-function inputFile(root, input) {
-  if (typeof input.relative === "string") {
-    const file = path.resolve(root, input.relative);
-    if (!file.startsWith(root + path.sep)) throw new Error("capital topology transaction input escapes repository");
-    return file;
-  }
-  return input.absolute;
-}
-async function assertInputs(root, inputs) {
-  for (const input of inputs) {
-    const actual = await readFile(inputFile(root, input));
-    if (!actual.equals(input.bytes)) throw new Error("capital topology transaction preserves input binding");
-  }
-}
-function journalRecords(outputs) {
-  return outputs.map(({ relative, bytes, prestateBytes }) => ({ relative, beforeBase64: prestateBytes.toString("base64"), beforeSha256: sha(prestateBytes), nextBase64: bytes.toString("base64"), nextSha256: sha(bytes) }));
-}
-function validateJournal(journal) {
-  if (!journal || journal.schemaVersion !== 1 || !["PREPARED", "COMMITTED"].includes(journal.state) || !Array.isArray(journal.records) || journal.records.length !== OUTPUTS.length || JSON.stringify(journal.records.map(({ relative }) => relative)) !== JSON.stringify(OUTPUTS)) throw new Error("capital topology transaction recovery is invalid");
-  for (const record of journal.records) {
-    const before = Buffer.from(record.beforeBase64 ?? "", "base64"); const next = Buffer.from(record.nextBase64 ?? "", "base64");
-    if (before.toString("base64") !== record.beforeBase64 || next.toString("base64") !== record.nextBase64 || sha(before) !== record.beforeSha256 || sha(next) !== record.nextSha256) throw new Error("capital topology transaction recovery is invalid");
-  }
-}
-async function recover(root) {
-  const journalPath = target(root, JOURNAL); const journalBytes = await currentBytes(journalPath); if (journalBytes == null) return;
-  const journal = parse(journalBytes, "capital topology transaction journal"); validateJournal(journal);
-  for (const record of journal.records) {
-    const before = Buffer.from(record.beforeBase64, "base64"); const next = Buffer.from(record.nextBase64, "base64"); const file = target(root, record.relative); const actual = await currentBytes(file);
-    if (journal.state === "PREPARED") { if (actual.equals(before)) continue; if (!actual.equals(next)) throw new Error("capital topology transaction preserves foreign replacement"); await atomicWrite(file, before, next); }
-    else { if (actual.equals(next)) continue; if (!actual.equals(before)) throw new Error("capital topology transaction preserves foreign replacement"); await atomicWrite(file, next, before); }
-  }
-  await unlink(journalPath); await syncParent(journalPath);
-}
-async function acquireLock(root) {
-  const lock = target(root, LOCK); await safeParent(lock);
-  try { await mkdir(lock, { mode: 0o700 }); } catch (error) { if (error?.code === "EEXIST") throw new Error("capital topology transaction lock residue exists"); throw error; }
-  return async () => { await rmdir(lock); };
-}
+const transaction = createSourceRegistrationTransaction({
+  journalPath: JOURNAL, lockPath: LOCK, label: "capital topology", validateOutputs: exactOutputs,
+});
 
 export async function recoverCurrentCapitalRouteTopologyRegistration({ repositoryRoot } = {}) {
-  const root = rootPath(repositoryRoot); const release = await acquireLock(root);
-  try { await recover(root); } finally { await release(); }
+  return transaction.recover({ repositoryRoot: rootPath(repositoryRoot) });
 }
 export async function commitCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot, outputs, failAfter = null } = {}) {
-  const root = rootPath(repositoryRoot); exactOutputs(outputs); const release = await acquireLock(root);
-  try {
-    await recover(root); for (const output of outputs) await assertBytes(target(root, output.relative), output.prestateBytes);
-    await assertInputs(root, outputs[0].inputs);
-    const records = journalRecords(outputs); const journalPath = target(root, JOURNAL);
-    await atomicWrite(journalPath, Buffer.from(JSON.stringify({ schemaVersion: 1, state: "PREPARED", records })), null);
-    try {
-      for (const [index, record] of records.entries()) {
-        await assertInputs(root, outputs[0].inputs);
-        await atomicWrite(target(root, record.relative), Buffer.from(record.nextBase64, "base64"), Buffer.from(record.beforeBase64, "base64"));
-        if (failAfter === index) throw new Error("injected capital topology transaction failure");
-      }
-    } catch (error) { await recover(root); throw error; }
-    const prepared = await currentBytes(journalPath);
-    await atomicWrite(journalPath, Buffer.from(JSON.stringify({ schemaVersion: 1, state: "COMMITTED", records })), prepared);
-    await recover(root); return { targets: OUTPUTS };
-  } finally { await release(); }
+  return transaction.commit({ repositoryRoot: rootPath(repositoryRoot), outputs, failAfter });
 }
 export async function registerCurrentCapitalRouteTopology(options = {}) {
   await recoverCurrentCapitalRouteTopologyRegistration({ repositoryRoot: options.repositoryRoot });
