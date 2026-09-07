@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
+import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { isMainModule } from "../lib/is-main-module.mjs";
 
-import { parseRetainedKasiHolidayMonth } from "./fetch-kasi-public-holiday-calendar.mjs";
+import { parseRetainedKasiHolidayMonth, readKasiHolidayCalendarFiles } from "./fetch-kasi-public-holiday-calendar.mjs";
 import { buildRetainedGwangjuServiceCalendars, projectRetainedGwangjuTimetable } from "./materialize-gwangju-timetable.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { prepareRetainedKricTimetablePublication } from "./prepare-retained-kric-timetable-publication.mjs";
@@ -114,3 +117,42 @@ function validDate(value) {
 function monthKey(date) { return Number(date.slice(0, 4)) * 12 + Number(date.slice(4, 6)) - 1; }
 function utf16Compare(left, right) { return left < right ? -1 : left > right ? 1 : 0; }
 function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
+
+// workflow는 보관 입력의 위치만 넘긴다. candidate와 topology는 실행 checkout의 inventory에서 선택한다.
+export async function runRetainedGwangjuContractPreparation(argv, {
+  repositoryRoot = path.resolve(import.meta.dirname, "../.."), now = new Date(),
+} = {}) {
+  if (argv.length !== 4 || argv[0] !== "--input" || argv[2] !== "--output"
+    || !path.isAbsolute(argv[1]) || !path.isAbsolute(argv[3])) {
+    throw new Error("usage: --input <absolute.json> --output <new-absolute.json>");
+  }
+  const readJson = async file => JSON.parse(await readFile(file, "utf8"));
+  const input = await readJson(argv[1]);
+  const keys = ["observationPath", "receiptPath", "stationBindingsPath", "holidayDirectory", "routeNumber", "providerValidUntil"];
+  if (!input || JSON.stringify(Object.keys(input).sort()) !== JSON.stringify(keys.sort())
+    || keys.filter(key => key.endsWith("Path") || key.endsWith("Directory")).some(key => !path.isAbsolute(input[key] ?? ""))) {
+    throw new Error("retained Gwangju preparation input is invalid");
+  }
+  const candidates = await readJson(path.join(repositoryRoot, "tools/datapack/source-candidates.json"));
+  const candidate = candidates.candidates.find(row => row.id === "kric-nationwide-timetable-file");
+  const inventory = await readJson(path.join(repositoryRoot, "tools/datapack/source-inventory.json"));
+  const evidence = inventory.sources.find(row => row.id === "gwangju-transportation-route-topology")?.topologyAdmissionEvidence;
+  if (!evidence || !/^gwangju-transportation-route-topology-[A-Za-z0-9-]+$/u.test(evidence.snapshotId ?? "")
+    || evidence.snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`) {
+    throw new Error("retained Gwangju topology selection is invalid");
+  }
+  const bindings = await readJson(input.stationBindingsPath);
+  const result = prepareRetainedGwangjuContract({ candidate, observationBytes: await readFile(input.observationPath),
+    receipt: await readJson(input.receiptPath), routeNumber: input.routeNumber,
+    stationBindings: bindings.stationBindings, excludedEndpointLabels: bindings.excludedEndpointLabels,
+    topologySnapshot: await readJson(path.join(repositoryRoot, evidence.snapshotPath)),
+    holidayCalendar: await readKasiHolidayCalendarFiles(input.holidayDirectory),
+    evaluationAt: now.toISOString(), providerValidUntil: input.providerValidUntil });
+  await writeFile(argv[3], `${JSON.stringify(result.contract, null, 2)}\n`, { flag: "wx", mode: 0o600 });
+  return { contractSha256: result.contractSha256 };
+}
+
+if (isMainModule(import.meta.url)) {
+  try { console.log(JSON.stringify(await runRetainedGwangjuContractPreparation(process.argv.slice(2)))); }
+  catch (error) { console.error(error.message); process.exitCode = 1; }
+}

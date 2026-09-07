@@ -1,14 +1,58 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
 
-import { prepareRetainedGwangjuContract } from "./prepare-retained-gwangju-contract.mjs";
+import { prepareRetainedGwangjuContract, runRetainedGwangjuContractPreparation } from "./prepare-retained-gwangju-contract.mjs";
 
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const candidate = JSON.parse(await readFile("tools/datapack/source-candidates.json", "utf8"))
   .candidates.find(({ id }) => id === "kric-nationwide-timetable-file");
 const cell = (value) => ({ value, cellType: "inlineStr", styleId: null });
+
+test("retained contract CLI binds stored inputs and refuses overwrite", async context => {
+  const directory = await mkdtemp(path.join(tmpdir(), "gwangju-contract-cli-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const args = input();
+  const json = (file, value) => writeFile(file, `${JSON.stringify(value, null, 2)}\n`);
+  await mkdir(path.join(directory, "tools/datapack/sources"), { recursive: true });
+  const topologyId = "gwangju-transportation-route-topology-test";
+  const snapshotPath = `tools/datapack/sources/${topologyId}.json`;
+  await json(path.join(directory, snapshotPath), args.topologySnapshot);
+  await json(path.join(directory, "tools/datapack/source-candidates.json"), { candidates: [candidate] });
+  await json(path.join(directory, "tools/datapack/source-inventory.json"), { sources: [{
+    id: "gwangju-transportation-route-topology", topologyAdmissionEvidence: { snapshotId: topologyId, snapshotPath },
+  }] });
+  const observationPath = path.join(directory, "observation.json"), receiptPath = path.join(directory, "receipt.json");
+  const stationBindingsPath = path.join(directory, "bindings.json"), holidayDirectory = path.join(directory, "holidays");
+  await writeFile(observationPath, args.observationBytes);
+  await json(receiptPath, args.receipt);
+  await json(stationBindingsPath, { stationBindings: args.stationBindings, excludedEndpointLabels: args.excludedEndpointLabels });
+  await mkdir(holidayDirectory);
+  const months = [];
+  for (const { raw, ...month } of args.holidayCalendar.months) {
+    const file = `${month.year}-${String(month.month).padStart(2, "0")}.xml`;
+    await writeFile(path.join(holidayDirectory, file), raw);
+    months.push({ ...month, file });
+  }
+  await json(path.join(holidayDirectory, "months.json"), { schemaVersion: 1, sourceId: "kasi-public-holiday-calendar", months });
+  const inputPath = path.join(directory, "input.json"), outputPath = path.join(directory, "output.json");
+  const specification = { observationPath, receiptPath, stationBindingsPath, holidayDirectory, routeNumber: args.routeNumber, providerValidUntil: null };
+  await json(inputPath, specification);
+  const invoke = () => runRetainedGwangjuContractPreparation(["--input", inputPath, "--output", outputPath], {
+    repositoryRoot: directory, now: new Date(args.evaluationAt),
+  });
+  const result = await invoke();
+  const bytes = await readFile(outputPath);
+  assert.match(result.contractSha256, /^[a-f0-9]{64}$/u);
+  assert.deepEqual(JSON.parse(bytes).calendar.publicHolidayDates, ["20401231", "20410101"]);
+  await assert.rejects(invoke, { code: "EEXIST" });
+  assert.deepEqual(await readFile(outputPath), bytes);
+  await json(inputPath, { ...specification, obsoleteDateOverride: "ignored" });
+  await assert.rejects(invoke, /input is invalid/);
+});
 const monthXml = (date) => Buffer.from(`<?xml version="1.0"?><response><header><resultCode>00</resultCode></header><body><items><item><locdate>${date}</locdate><isHoliday>Y</isHoliday></item></items><totalCount>1</totalCount></body></response>`);
 
 function input() {
