@@ -168,7 +168,7 @@ function confirmationClass(candidate) {
   if (!policy || policy.id !== "official_static_timetable_confirmation" || JSON.stringify(policy.sourceIds) !== JSON.stringify([SOURCE_ID])) fail("CONFIRMATION_POLICY");
   return structuredClone(policy);
 }
-function verifiedGovernanceEntry(entry, candidate, now) {
+export function verifiedGovernanceEntry(entry, candidate, now) {
   const expectedLicense = { type: candidate.evidence?.license, provider: candidate.evidence?.provider, evidenceUrl: candidate.evidence?.licenseEvidenceUrl, redistributionAllowed: true };
   const review = entry?.licenseReview;
   if (candidate.evidence?.license !== "unrestricted"

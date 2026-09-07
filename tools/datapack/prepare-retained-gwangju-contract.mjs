@@ -61,11 +61,7 @@ function prepareCalendar({ holidayCalendar, observedAt, freshnessExpiresAt }) {
   }).sort((left, right) => left.year - right.year || left.month - right.month);
   const monthKeys = new Set(months.map(({ year, month }) => year * 12 + month - 1));
   if (monthKeys.size !== months.length) throw new Error("duplicate holiday month");
-  const startDate = seoulDate(observedAt);
-  const endDate = seoulDate(Date.parse(freshnessExpiresAt) - 1);
-  if (!validDate(startDate) || !validDate(endDate) || startDate > endDate) {
-    throw new Error("retained Gwangju confirmation window is invalid");
-  }
+  const { startDate, endDate } = retainedGwangjuConfirmationWindowDates({ observedAt, freshnessExpiresAt });
   for (let key = monthKey(startDate); key <= monthKey(endDate); key += 1) {
     if (!monthKeys.has(key)) throw new Error("missing official holiday month");
   }
@@ -74,6 +70,15 @@ function prepareCalendar({ holidayCalendar, observedAt, freshnessExpiresAt }) {
       publicHolidayDates: [...new Set(months.flatMap(({ holidayDates }) => holidayDates))].sort(utf16Compare) },
     holidayCalendarEvidence: { manifestSha256: holidayCalendar.manifestSha256, months },
   };
+}
+
+export function retainedGwangjuConfirmationWindowDates({ observedAt, freshnessExpiresAt } = {}) {
+  const startDate = seoulDate(observedAt);
+  const endDate = seoulDate(Date.parse(freshnessExpiresAt) - 1);
+  if (!validDate(startDate) || !validDate(endDate) || startDate > endDate) {
+    throw new Error("retained Gwangju confirmation window is invalid");
+  }
+  return { startDate, endDate };
 }
 
 function prepareRouteBindings({ projection, topologySnapshot, routeNumber }) {
@@ -163,7 +168,7 @@ export async function runRetainedGwangjuContractPreparation(argv, {
   return { contractSha256: result.contractSha256 };
 }
 
-function retainedRoutePolicy(candidate) {
+export function retainedRoutePolicy(candidate) {
   const policy = candidate?.retainedRoutePolicy;
   const aliases = policy?.stationAliases;
   if (!policy || JSON.stringify(Object.keys(policy).sort()) !== JSON.stringify([

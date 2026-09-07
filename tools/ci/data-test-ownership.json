@@ -494,6 +494,7 @@
     {"path":"tools/datapack/prepare-retained-kric-timetable-publication.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":1000},
     {"path":"tools/datapack/prepare-retained-gwangju-contract.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":1000},
     {"path":"tools/ci/decide-retained-gwangju-timetable-refresh.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":1000},
+    {"path":"tools/datapack/run-retained-gwangju-timetable-refresh.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":1000},
     {"path":"tools/datapack/register-retained-kric-timetable.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":535},
     {"path":"tools/datapack/materialize-incheon-accessibility.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":25554},
     {"path":"tools/datapack/materialize-incheon-station-info.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":22043},
