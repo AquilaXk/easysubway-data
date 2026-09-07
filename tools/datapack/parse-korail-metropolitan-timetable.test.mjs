@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { collectKasiHolidayCalendarFiles } from "./fetch-kasi-public-holiday-calendar.mjs";
 import { collectKorailMetropolitanTimetableFile } from "./collect-korail-metropolitan-timetable-file.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
 import {
   normalizeKorailTrainClockCells,
   parseKorailMetropolitanSheet,
@@ -153,7 +154,8 @@ test("retained XLSX parsing binds exact bytes and keeps native sparse row coordi
     assert.deepEqual(collected.sources.timetable.collectionReceipt, receipt);
     assert.equal(collected.sources.timetable.collectionReceiptSha256,
       hash(await readFile(path.join(collectionDirectory, "receipt.json"))));
-    const freshnessPolicy = { sourceClasses: [{ id: "fixture-topology", sourceIds: [receipt.sourceId],
+    const baseFreshness = JSON.parse(await readFile(new URL("../../release/product-gates/datapack-freshness-sla.json", import.meta.url)));
+    const freshnessPolicy = { ...baseFreshness, sourceClasses: [...baseFreshness.sourceClasses, { id: "fixture_topology", sourceIds: [receipt.sourceId],
       basisField: "retrievedAt", reverificationCadence: "P2D" }] };
     const snapshot = await buildCollectedKorailTopologySnapshot({ ...input, collectionDirectory,
       freshnessPolicy, evaluationAt: receipt.capturedAt });
@@ -163,12 +165,45 @@ test("retained XLSX parsing binds exact bytes and keeps native sparse row coordi
     assert.equal(snapshot.edgeCount, collected.topologyDurations.length);
     assert.deepEqual(snapshot.observation, collected);
     assert.equal(snapshot.status, "PENDING");
-    const candidate = { id: receipt.sourceId, topologyRegistration: { sourceClassId: "fixture-topology" } };
-    const unregisteredPolicy = { sourceClasses: [{ ...freshnessPolicy.sourceClasses[0], sourceIds: [] }] };
+    const candidate = { id: receipt.sourceId, topologyRegistration: { sourceClassId: "fixture_topology",
+      retentionClassId: "standard-90d", ownerRole: "datapack-source-owner",
+      stewardRole: "datapack-data-steward", approvalRole: "datapack-release-approver" },
+      detailUrl: "https://www.data.go.kr/data/15052169/fileData.do",
+      evidence: { license: "unrestricted", provider: "한국철도공사",
+        licenseEvidenceUrl: "https://www.data.go.kr/data/15052169/fileData.do" } };
+    const unregisteredPolicy = { ...baseFreshness, sourceClasses: [...baseFreshness.sourceClasses,
+      { ...freshnessPolicy.sourceClasses.at(-1), sourceIds: [] }] };
+    const governancePolicyBytes = await readFile(new URL("./source-governance-policy.json", import.meta.url));
+    const inventory = JSON.parse(await readFile(new URL("./source-inventory.json", import.meta.url)));
+    const license = { type: "unrestricted", provider: "한국철도공사", evidenceUrl: candidate.detailUrl,
+      redistributionAllowed: true };
+    const governanceEntry = { sourceId: candidate.id, ...candidate.topologyRegistration,
+      escalationHours: 1, alertRoute: "fixture-owner", licenseReview: { status: "APPROVED",
+        termsHash: hash(canonicalJson(license)), termsUrl: candidate.detailUrl,
+        reviewedProvider: license.provider, reviewedDatasetUrl: candidate.detailUrl,
+        reviewedAt: receipt.capturedAt, nextReviewAt: snapshot.freshUntil,
+        redistributionScopes: ["DERIVED_DATAPACK"], approvedByRole: candidate.topologyRegistration.approvalRole } };
     const prepared = await prepareKorailTopologyPublication({ ...input, collectionDirectory,
-      candidate, freshnessPolicy: unregisteredPolicy, evaluationAt: receipt.capturedAt });
+      candidate, freshnessPolicy: unregisteredPolicy, evaluationAt: receipt.capturedAt,
+      governancePolicyBytes, inventory, governanceEntry });
+    const predecessor = JSON.parse(governancePolicyBytes);
+    assert.deepEqual(prepared.projectedGovernancePolicy.sources, [...predecessor.sources, governanceEntry]);
+    assert.equal(prepared.projectedGovernancePolicy.registrationLineage.predecessorPolicySha256, hash(governancePolicyBytes));
+    assert.equal(prepared.rawRetentionExpiresAt, new Date(Date.parse(receipt.capturedAt)
+      + predecessor.retentionClasses.find(({ id }) => id === governanceEntry.retentionClassId).retentionDays * 86400000).toISOString());
+    assert.ok(!inventory.sources.some(({ id }) => id === candidate.id));
+    for (const change of [{ termsHash: hash("different license") }, { nextReviewAt: receipt.capturedAt },
+      { reviewedProvider: "different provider" }]) {
+      await assert.rejects(prepareKorailTopologyPublication({ candidate, freshnessPolicy: unregisteredPolicy,
+        governancePolicyBytes, inventory, evaluationAt: receipt.capturedAt,
+        governanceEntry: { ...governanceEntry, licenseReview: { ...governanceEntry.licenseReview, ...change } } }),
+      /governance license binding/);
+    }
     assert.deepEqual(prepared.snapshot, snapshot);
-    assert.deepEqual(unregisteredPolicy.sourceClasses[0].sourceIds, []);
+    assert.deepEqual(prepared.licenseEvidence, { type: "unrestricted", provider: "한국철도공사",
+      evidenceUrl: candidate.detailUrl, redistributionAllowed: true });
+    assert.match(prepared.licenseEvidenceSha256, /^[a-f0-9]{64}$/);
+    assert.deepEqual(unregisteredPolicy.sourceClasses.at(-1).sourceIds, []);
     assert.deepEqual(prepared.publishPlan.steps.map(({ type }) => type),
       ["put-immutable-bundle-object", "verify-immutable-bundle-object"]);
     assert.ok(prepared.publishPlan.steps.every((step) => step.sha256 === sha256 && step.sizeBytes === bytes.length

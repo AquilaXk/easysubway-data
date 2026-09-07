@@ -138,6 +138,7 @@
         "license": "unrestricted",
         "formats": ["XLSX"],
         "retainedReader": "tools/datapack/parse-korail-metropolitan-timetable.mjs#parseRetainedKorailWorkbook",
+        "provider": "한국철도공사",
         "collectionContract": {
           "collector": "tools/datapack/collect-korail-metropolitan-timetable-file.mjs#collectKorailMetropolitanTimetableFile",
           "officialAttachmentOrigin": "https://www.korail.com",

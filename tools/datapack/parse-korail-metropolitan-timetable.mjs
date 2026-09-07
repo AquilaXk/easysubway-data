@@ -9,10 +9,32 @@ import { parseRetainedKasiHolidayMonth, readKasiHolidayCalendarFiles } from "./f
 import { validateKorailTimetableFileReceipt } from "./collect-korail-metropolitan-timetable-file.mjs";
 import { deriveFreshnessExpiresAt, freshnessPolicySha256 } from "./freshness-policy.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import { buildAppendOnlyGovernancePolicyRegistration, validateSourceGovernancePolicy,
+  deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 
 /** 등록 전 staging만 만든다. 정본 정책을 수정하거나 OCI 요청을 실행하지 않는다. */
-export async function prepareKorailTopologyPublication({ candidate, freshnessPolicy, ...input }) {
+export async function prepareKorailTopologyPublication({ candidate, freshnessPolicy,
+  governancePolicyBytes, inventory, governanceEntry, ...input }) {
   if (candidate?.id !== "korail-metropolitan-timetable-file") throw new Error("Korail source candidate required");
+  if (candidate.evidence?.license !== "unrestricted" || candidate.evidence.provider !== "한국철도공사"
+    || candidate.detailUrl !== "https://www.data.go.kr/data/15052169/fileData.do"
+    || candidate.evidence.licenseEvidenceUrl !== candidate.detailUrl) throw new Error("Korail source license evidence missing");
+  const licenseEvidence = { type: candidate.evidence.license, provider: candidate.evidence.provider,
+    evidenceUrl: candidate.evidence.licenseEvidenceUrl, redistributionAllowed: true };
+  const licenseEvidenceSha256 = createHash("sha256").update(canonicalJson(licenseEvidence)).digest("hex");
+  const review = governanceEntry?.licenseReview;
+  const evaluationAt = requiredUtcInstant(input.evaluationAt, "Korail registration evaluationAt");
+  if (governanceEntry?.sourceId !== candidate.id
+    || ["sourceClassId", "retentionClassId", "ownerRole", "stewardRole", "approvalRole"]
+      .some((key) => governanceEntry[key] !== candidate.topologyRegistration?.[key])
+    || review?.status !== "APPROVED" || review.termsHash !== licenseEvidenceSha256
+    || review.termsUrl !== licenseEvidence.evidenceUrl || review.reviewedDatasetUrl !== candidate.detailUrl
+    || review.reviewedProvider !== licenseEvidence.provider
+    || requiredUtcInstant(review.reviewedAt, "Korail license reviewedAt") > evaluationAt
+    || requiredUtcInstant(review.nextReviewAt, "Korail license nextReviewAt") <= evaluationAt) {
+    throw new Error("Korail governance license binding invalid");
+  }
   const policy = structuredClone(freshnessPolicy);
   const classes = policy?.sourceClasses?.filter((entry) => entry.id === candidate.topologyRegistration?.sourceClassId);
   if (classes?.length !== 1 || !Array.isArray(classes[0].sourceIds)) throw new Error("Korail topology class missing");
@@ -20,13 +42,22 @@ export async function prepareKorailTopologyPublication({ candidate, freshnessPol
     throw new Error("Korail topology class conflicts");
   }
   if (!classes[0].sourceIds.includes(candidate.id)) classes[0].sourceIds = [...classes[0].sourceIds, candidate.id].sort();
+  const registration = buildAppendOnlyGovernancePolicyRegistration({ predecessorPolicyBytes: governancePolicyBytes,
+    addedSources: [structuredClone(governanceEntry)] });
+  // 검증용 staging descriptor일 뿐 admission 기록이 아니다. 실제 등록은 OCI receipt 이후 수행한다.
+  validateSourceGovernancePolicy({ policy: registration.policy, freshnessPolicy: policy,
+    inventory: { ...inventory, sources: [...inventory.sources,
+      { id: candidate.id, admissionEvidence: { licenseEvidenceHash: licenseEvidenceSha256 } }] } });
   const snapshot = await buildCollectedKorailTopologySnapshot({ ...input, freshnessPolicy: policy });
+  const rawRetentionExpiresAt = deriveRawRetentionExpiresAt({ policy: registration.policy,
+    sourceId: candidate.id, retrievedAt: snapshot.capturedAt });
   const source = snapshot.observation.sources.timetable;
   const date = source.collectionReceipt.capturedAt.slice(0, 10).replaceAll("-", "");
   const object = { objectKey: `source-raw/${candidate.id}/${date}/${source.rawSha256}.xlsx`,
     sourcePath: source.collectionReceipt.rawFile, sha256: source.rawSha256, sizeBytes: source.rawByteLength,
     contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" };
-  return { snapshot, projectedFreshnessPolicy: policy, publishPlan: { steps: [
+  return { snapshot, licenseEvidence, licenseEvidenceSha256, projectedFreshnessPolicy: policy,
+    projectedGovernancePolicy: registration.policy, rawRetentionExpiresAt, publishPlan: { steps: [
     { type: "put-immutable-bundle-object", ...object }, { type: "verify-immutable-bundle-object", ...object },
   ] } };
 }
