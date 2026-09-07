@@ -130,6 +130,17 @@
         "license": "unrestricted",
         "formats": ["XLSX"],
         "retainedReader": "tools/datapack/parse-korail-metropolitan-timetable.mjs#parseRetainedKorailWorkbook",
+        "collectionContract": {
+          "collector": "tools/datapack/collect-korail-metropolitan-timetable-file.mjs#collectKorailMetropolitanTimetableFile",
+          "officialAttachmentOrigin": "https://www.korail.com",
+          "officialAttachmentPathPrefix": "/file/cubedata/COMMON/jfile/",
+          "expectedAttachmentSha256Required": true,
+          "requestTimeoutMs": 30000,
+          "maximumBytes": 134217728,
+          "maxRetries": 0,
+          "redirect": "error",
+          "receiptIsAdmission": false
+        },
         "membershipSourceId": "kric-current-station-line-file",
         "coverage": "DaeGyeong passenger topology and source-native scheduled segment observations",
         "notes": "The distribution page is not a download operation. Retained attachment SHA is supplied to the reader; no provider runner, calendar applicability or production admission is claimed."

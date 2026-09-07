@@ -106,6 +106,12 @@ test("retained Korail timetable candidate does not claim a provider runner or ad
   const [file, exportedName] = candidate.evidence.retainedReader.split("#");
   const reader = await import(new URL(`../../${file}`, import.meta.url));
   assert.equal(typeof reader[exportedName], "function");
+  const collection = candidate.evidence.collectionContract;
+  const [collectorFile, collectorName] = collection.collector.split("#");
+  const collector = await import(new URL(`../../${collectorFile}`, import.meta.url));
+  assert.equal(typeof collector[collectorName], "function");
+  assert.equal(collection.requestTimeoutMs, collector.REQUEST_TIMEOUT_MS);
+  assert.equal(collection.maximumBytes, collector.MAXIMUM_BYTES);
   assert.equal(candidate.evidence.licenseEvidenceUrl, candidate.detailUrl);
   assert.equal(candidate.evidence.license, "unrestricted");
 });
