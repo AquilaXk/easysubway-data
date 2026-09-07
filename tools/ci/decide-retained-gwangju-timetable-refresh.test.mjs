@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
-import { decideRetainedGwangjuTimetableRefresh } from "./decide-retained-gwangju-timetable-refresh.mjs";
+import { decideRetainedGwangjuTimetableRefresh, readRetainedGwangjuTimetableRefreshDecision } from "./decide-retained-gwangju-timetable-refresh.mjs";
 
 const SOURCE_ID = "kric-nationwide-timetable-file";
 const OBSERVED_AT = "2026-09-07T10:50:18.169Z";
@@ -43,6 +46,26 @@ function inputs({ head = snapshot(), source = {} } = {}) {
     }, ...source }] },
   };
 }
+
+test("repository decision reads the admitted head and rejects duplicate source policy", async (t) => {
+  const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "retained-refresh-decision-"));
+  t.after(() => rm(repositoryRoot, { recursive: true, force: true }));
+  const value = inputs();
+  const writeJson = async (relative, data) => {
+    const file = path.join(repositoryRoot, relative);
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, JSON.stringify(data));
+  };
+  await writeJson("tools/datapack/source-inventory.json", value.inventory);
+  await writeJson("tools/datapack/release/source-snapshots.json", value.snapshots);
+  await writeJson("tools/datapack/source-candidates.json", { candidates: [value.candidate] });
+  const result = await readRetainedGwangjuTimetableRefreshDecision({ repositoryRoot, now: new Date(EXPIRY) });
+  assert.equal(result.state, "DUE");
+  assert.equal(result.snapshotId, snapshotId);
+  await writeJson("tools/datapack/source-candidates.json", { candidates: [value.candidate, value.candidate] });
+  await assert.rejects(readRetainedGwangjuTimetableRefreshDecision({ repositoryRoot, now: new Date(EXPIRY) }),
+    /RETAINED_GWANGJU_TIMETABLE_REFRESH_SOURCE_CANDIDATE/);
+});
 
 test("retained Gwangju timetable은 genuine head가 아직 만료 전이면 CURRENT다", () => {
   const result = decideRetainedGwangjuTimetableRefresh({ ...inputs(), now: new Date("2026-09-10T00:00:00.000Z") });

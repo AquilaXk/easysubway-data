@@ -1,8 +1,25 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { deriveFreshnessExpiresAt } from "../datapack/freshness-policy.mjs";
 import { validateLineage } from "../datapack/source-snapshot-policy.mjs";
 import { requireRetainedTimetableConfirmationPolicy } from "../datapack/prepare-retained-kric-timetable-publication.mjs";
 
 const SOURCE_ID = "kric-nationwide-timetable-file";
+
+// Workflow와 controller는 동일한 current 입력을 읽고, 운영 시각은 호출 시 한 번 캡처한다.
+export async function readRetainedGwangjuTimetableRefreshDecision({
+  repositoryRoot = path.resolve(import.meta.dirname, "../.."), now = new Date(),
+} = {}) {
+  const readJson = async (relative) => JSON.parse(await readFile(path.join(repositoryRoot, relative), "utf8"));
+  const [inventory, snapshots, candidates] = await Promise.all([
+    readJson("tools/datapack/source-inventory.json"),
+    readJson("tools/datapack/release/source-snapshots.json"),
+    readJson("tools/datapack/source-candidates.json"),
+  ]);
+  const candidate = exactlyOne(candidates.candidates, ({ id }) => id === SOURCE_ID, "SOURCE_CANDIDATE");
+  return decideRetainedGwangjuTimetableRefresh({ inventory, snapshots, candidate, now });
+}
 
 // 등록된 head와 발행 경로가 공유하는 정책으로 갱신 시점을 계산한다.
 export function decideRetainedGwangjuTimetableRefresh({ inventory, snapshots, candidate, now = new Date() } = {}) {
@@ -49,3 +66,8 @@ function requiredUtc(value, code) {
 }
 
 function fail(code) { throw new Error(`RETAINED_GWANGJU_TIMETABLE_REFRESH_${code}`); }
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  if (process.argv.length !== 2) fail("CLI_ARGUMENTS");
+  process.stdout.write(`${JSON.stringify(await readRetainedGwangjuTimetableRefreshDecision())}\n`);
+}
