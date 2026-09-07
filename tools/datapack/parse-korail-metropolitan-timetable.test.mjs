@@ -9,6 +9,7 @@ import { collectKasiHolidayCalendarFiles } from "./fetch-kasi-public-holiday-cal
 import { collectKorailMetropolitanTimetableFile } from "./collect-korail-metropolitan-timetable-file.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { buildKorailTopologyRegistrationOutputs, commitKorailTopologyRegistrationOutputs } from "./register-korail-route-topology.mjs";
+import { materializeKorailRouteTopology } from "./materialize-korail-route-topology.mjs";
 import {
   normalizeKorailTrainClockCells,
   parseKorailMetropolitanSheet,
@@ -271,6 +272,20 @@ test("retained XLSX parsing binds exact bytes and keeps native sparse row coordi
     await writeFile(sourceInputPath, originalSourceInput);
     await commitKorailTopologyRegistrationOutputs({ repositoryRoot: root, outputs });
     for (const output of outputs) assert.deepEqual(await readFile(path.join(root, output.relative)), output.bytes);
+    const originalPack = { ...JSON.parse(catalogBytes).packs[0], lines: [{ id: "L", operatorId: "fixture" }],
+      sourceInventory: [], networkEdges: [
+        { id: "old-ride", fromNodeId: "canonical-a:L", toNodeId: "canonical-b:L", edgeType: "RIDE", durationSeconds: 1 },
+        { id: "entry", fromNodeId: "gate", toNodeId: "canonical-a:L", edgeType: "ENTRY", durationSeconds: 20 },
+      ] };
+    const materialized = materializeKorailRouteTopology({ pack: originalPack, snapshot: prepared.snapshot,
+      inventory: JSON.parse(outputs[0].bytes), ledger: JSON.parse(outputs[1].bytes), now: registrationArgs.now });
+    assert.deepEqual(materialized.stations, originalPack.stations);
+    assert.deepEqual(materialized.networkEdges.find(({ id }) => id === "entry"), originalPack.networkEdges[1]);
+    const rides = materialized.networkEdges.filter(({ edgeType }) => edgeType === "RIDE");
+    assert.equal(rides.length, 1);
+    assert.equal(rides[0].durationSeconds, 864);
+    assert.equal(rides[0].sourceSnapshotId, registeredRow.snapshotId);
+    assert.equal(rides[0].witness.departure.cellId, "B21");
     await assert.rejects(buildCollectedKorailTopologySnapshot({ ...input, collectionDirectory,
       freshnessPolicy: { sourceClasses: [] }, evaluationAt: receipt.capturedAt }), /freshness source/);
     const holidayRaw = Buffer.from('<response><header><resultCode>00</resultCode></header><body><items><item><locdate>20400102</locdate><isHoliday>Y</isHoliday></item></items><totalCount>1</totalCount></body></response>');
