@@ -54,7 +54,7 @@ export function parseRetainedKasiHolidayMonth({ raw, sha256, year, month }) {
   if (createHash("sha256").update(raw).digest("hex") !== sha256) throw new Error("retained KASI digest mismatch");
   const xml = new TextDecoder("utf-8", { fatal: true }).decode(raw);
   const dates = parseMonth(xml, { year, month });
-  return { year, month, rawSha256: sha256, rawByteLength: raw.byteLength, holidayDates: [...dates].sort() };
+  return { year, month, rawSha256: sha256, rawByteLength: raw.byteLength, holidayDates: [...dates].sort(utf16Compare) };
 }
 
 export async function fetchKasiPublicHolidayCalendar(input = {}) {
@@ -79,36 +79,7 @@ export async function fetchKasiPublicHolidayCalendarObservation({
   const holidays = new Set();
   const observations = [];
   for (const month of requestedMonths) {
-    const url = new URL(ENDPOINT);
-    url.searchParams.set("ServiceKey", normalizedServiceKey);
-    url.searchParams.set("pageNo", "1");
-    url.searchParams.set("numOfRows", "100");
-    url.searchParams.set("solYear", String(year));
-    url.searchParams.set("solMonth", String(month).padStart(2, "0"));
-    let response;
-    let attemptCount = 0;
-    const transportAttempts = [];
-    for (attemptCount = 1; attemptCount <= 2; attemptCount += 1) {
-      try {
-        response = fetchImpl
-          ? await fetchImpl(url, {
-            redirect: "error",
-            signal: AbortSignal.timeout(15_000),
-            headers: { accept: "application/xml, text/xml" },
-          })
-          : await nativeHttpsGet(url, {
-            signal: AbortSignal.timeout(15_000),
-            headers: { accept: "application/xml, text/xml" },
-          }, httpsRequestImpl);
-        break;
-      } catch (error) {
-        const transportAttempt = closedTransportAttempt(error, attemptCount);
-        if (transportAttempt !== null) transportAttempts.push(transportAttempt);
-        const failure = transportFailure(error, attemptCount, transportAttempts);
-        if (failure.failureCategory === "NETWORK_CONNECT_TIMEOUT" && attemptCount === 1) continue;
-        throw failure;
-      }
-    }
+    const { response, attemptCount } = await fetchKasiMonth({ normalizedServiceKey, year, month, fetchImpl, httpsRequestImpl });
     if (!response?.ok) throw kasiFailure(`KASI public holiday request failed: HTTP_${safeStatus(response?.status)}`, "KASI_HTTP", attemptCount);
     let xml;
     try {
@@ -128,6 +99,27 @@ export async function fetchKasiPublicHolidayCalendarObservation({
   }
   return { holidays, months: observations };
 }
+
+async function fetchKasiMonth({ normalizedServiceKey, year, month, fetchImpl, httpsRequestImpl }) {
+  const url = new URL(ENDPOINT);
+  for (const [name, value] of [["ServiceKey", normalizedServiceKey], ["pageNo", "1"], ["numOfRows", "100"], ["solYear", String(year)], ["solMonth", String(month).padStart(2, "0")]]) url.searchParams.set(name, value);
+  const transportAttempts = [];
+  for (let attemptCount = 1; attemptCount <= 2; attemptCount += 1) {
+    try {
+      const options = { redirect: "error", signal: AbortSignal.timeout(15_000), headers: { accept: "application/xml, text/xml" } };
+      const response = fetchImpl ? await fetchImpl(url, options) : await nativeHttpsGet(url, options, httpsRequestImpl);
+      return { response, attemptCount };
+    } catch (error) {
+      const attempt = closedTransportAttempt(error, attemptCount);
+      if (attempt !== null) transportAttempts.push(attempt);
+      const failure = transportFailure(error, attemptCount, transportAttempts);
+      if (failure.failureCategory !== "NETWORK_CONNECT_TIMEOUT" || attemptCount !== 1) throw failure;
+    }
+  }
+  throw new Error("KASI public holiday request did not complete");
+}
+
+function utf16Compare(left, right) { return left < right ? -1 : left > right ? 1 : 0; }
 
 function nativeHttpsGet(url, { signal, headers }, httpsRequestImpl) {
   return new Promise((resolve, reject) => {

@@ -12,6 +12,11 @@ export const SOURCE_REGISTRATION_OUTPUTS = Object.freeze([
 
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 
+async function syncParent(file) {
+  const directory = await open(path.dirname(file), constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+  try { await directory.sync(); } finally { await directory.close(); }
+}
+
 export function createSourceRegistrationTransaction({ journalPath, lockPath, label, validateOutputs }) {
   const prefix = `${label} transaction`;
   const rootPath = (value) => {
@@ -28,13 +33,15 @@ export function createSourceRegistrationTransaction({ journalPath, lockPath, lab
     const stat = await lstat(path.dirname(file));
     if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error(`${prefix} parent is unsafe`);
   }
-  async function syncParent(file) {
-    const directory = await open(path.dirname(file), constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
-    try { await directory.sync(); } finally { await directory.close(); }
-  }
   async function currentBytes(file) {
-    try { const stat = await lstat(file); if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`${prefix} target is unsafe`); return await readFile(file); }
-    catch (error) { if (error?.code === "ENOENT") return null; throw error; }
+    try {
+      const stat = await lstat(file);
+      if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`${prefix} target is unsafe`);
+      return await readFile(file);
+    } catch (error) {
+      if (error?.code === "ENOENT") return null;
+      throw error;
+    }
   }
   async function assertBytes(file, expected) {
     const actual = await currentBytes(file);
@@ -67,26 +74,36 @@ export function createSourceRegistrationTransaction({ journalPath, lockPath, lab
   }
   const journalRecords = (outputs) => outputs.map(({ relative, bytes, prestateBytes }) => ({ relative, beforeBase64: prestateBytes.toString("base64"), beforeSha256: sha(prestateBytes), nextBase64: bytes.toString("base64"), nextSha256: sha(bytes) }));
   function validateJournal(journal) {
-    if (!journal || journal.schemaVersion !== 1 || !["PREPARED", "COMMITTED"].includes(journal.state) || !Array.isArray(journal.records) || journal.records.length !== SOURCE_REGISTRATION_OUTPUTS.length || JSON.stringify(journal.records.map(({ relative }) => relative)) !== JSON.stringify(SOURCE_REGISTRATION_OUTPUTS)) throw new Error(`${prefix} recovery is invalid`);
+    if (journal?.schemaVersion !== 1 || !["PREPARED", "COMMITTED"].includes(journal.state) || !Array.isArray(journal.records) || journal.records.length !== SOURCE_REGISTRATION_OUTPUTS.length || JSON.stringify(journal.records.map(({ relative }) => relative)) !== JSON.stringify(SOURCE_REGISTRATION_OUTPUTS)) throw new Error(`${prefix} recovery is invalid`);
     for (const record of journal.records) {
       const before = Buffer.from(record.beforeBase64 ?? "", "base64"), next = Buffer.from(record.nextBase64 ?? "", "base64");
       if (before.toString("base64") !== record.beforeBase64 || next.toString("base64") !== record.nextBase64 || sha(before) !== record.beforeSha256 || sha(next) !== record.nextSha256) throw new Error(`${prefix} recovery is invalid`);
     }
   }
   async function recover(root) {
-    const journal = await currentBytes(target(root, journalPath)); if (journal == null) return;
+    const journal = await currentBytes(target(root, journalPath));
+    if (journal == null) return;
     let parsed; try { parsed = JSON.parse(journal); } catch { throw new Error(`${prefix} journal is invalid JSON`); }
     validateJournal(parsed);
     for (const record of parsed.records) {
-      const before = Buffer.from(record.beforeBase64, "base64"), next = Buffer.from(record.nextBase64, "base64"), file = target(root, record.relative), actual = await currentBytes(file);
-      if (parsed.state === "PREPARED") { if (actual.equals(before)) continue; if (!actual.equals(next)) throw new Error(`${prefix} preserves foreign replacement`); await atomicWrite(file, before, next); }
-      else { if (actual.equals(next)) continue; if (!actual.equals(before)) throw new Error(`${prefix} preserves foreign replacement`); await atomicWrite(file, next, before); }
+      const before = Buffer.from(record.beforeBase64, "base64");
+      const next = Buffer.from(record.nextBase64, "base64");
+      const file = target(root, record.relative);
+      const actual = await currentBytes(file);
+      const desired = parsed.state === "PREPARED" ? before : next;
+      const prestate = parsed.state === "PREPARED" ? next : before;
+      if (actual.equals(desired)) continue;
+      if (!actual.equals(prestate)) throw new Error(`${prefix} preserves foreign replacement`);
+      await atomicWrite(file, desired, prestate);
     }
     await unlink(target(root, journalPath)); await syncParent(target(root, journalPath));
   }
   async function acquireLock(root) {
     const lock = target(root, lockPath); await safeParent(lock);
-    try { await mkdir(lock, { mode: 0o700 }); } catch (error) { if (error?.code === "EEXIST") throw new Error(`${prefix} lock residue exists`); throw error; }
+    try { await mkdir(lock, { mode: 0o700 }); } catch (error) {
+      if (error?.code === "EEXIST") throw new Error(`${prefix} lock residue exists`);
+      throw error;
+    }
     return async () => { await rmdir(lock); };
   }
   return {

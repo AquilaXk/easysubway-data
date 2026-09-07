@@ -41,7 +41,7 @@ export async function prepareKorailTopologyPublication({ candidate, freshnessPol
   if (policy.sourceClasses.some((entry) => entry !== classes[0] && entry.sourceIds?.includes(candidate.id))) {
     throw new Error("Korail topology class conflicts");
   }
-  if (!classes[0].sourceIds.includes(candidate.id)) classes[0].sourceIds = [...classes[0].sourceIds, candidate.id].sort();
+  if (!classes[0].sourceIds.includes(candidate.id)) classes[0].sourceIds = [...classes[0].sourceIds, candidate.id].sort(utf16Compare);
   const registration = buildAppendOnlyGovernancePolicyRegistration({ predecessorPolicyBytes: governancePolicyBytes,
     addedSources: [structuredClone(governanceEntry)] });
   // 검증용 staging descriptor일 뿐 admission 기록이 아니다. 실제 등록은 OCI receipt 이후 수행한다.
@@ -128,20 +128,7 @@ export async function buildRetainedKorailTimetable({ holidayDirectory, startDate
 
 /** 원문 관측은 불변으로 두고 기존 provider-neutral 코어에 calendar·trip 행을 연결한다. */
 export function buildKorailTimetableTables({ observation, startDate, endDate, holidayMonths, serviceIds, routeIds }) {
-  const publicHolidayDates = new Set();
-  korailServiceDayLabel({ serviceDate: startDate, publicHolidayDates });
-  korailServiceDayLabel({ serviceDate: endDate, publicHolidayDates });
-  if (!Array.isArray(holidayMonths) || holidayMonths.length === 0) throw new Error("holiday month coverage missing");
-  const months = holidayMonths.map(parseRetainedKasiHolidayMonth);
-  const monthKey = (year, month) => year * 12 + month - 1;
-  const keys = new Set(months.map(({ year, month }) => monthKey(year, month)));
-  if (keys.size !== months.length) throw new Error("holiday month coverage duplicated");
-  const firstMonth = monthKey(Number(startDate.slice(0, 4)), Number(startDate.slice(4, 6)));
-  const lastMonth = monthKey(Number(endDate.slice(0, 4)), Number(endDate.slice(4, 6)));
-  for (let month = firstMonth; month <= lastMonth; month += 1) {
-    if (!keys.has(month)) throw new Error("holiday month coverage missing");
-  }
-  for (const month of months) for (const date of month.holidayDates) publicHolidayDates.add(date);
+  const { months, publicHolidayDates } = retainedHolidayMonths({ holidayMonths, startDate, endDate });
   const holidayCalendarSources = months.map(({ holidayDates, ...identity }) => identity)
     .sort((a, b) => a.year - b.year || a.month - b.month);
   const calendars = buildKorailServiceCalendars({ startDate, endDate, publicHolidayDates, serviceIds });
@@ -193,7 +180,7 @@ export function buildKorailServiceCalendars({ startDate, endDate, serviceIds, pu
     saturday: label === "휴일", sunday: label === "휴일", startDate, endDate, timezone: "Asia/Seoul",
   }));
   const serviceCalendarDates = [];
-  for (const date of [...publicHolidayDates].sort()) {
+  for (const date of [...publicHolidayDates].sort(utf16Compare)) {
     const ordinaryLabel = korailServiceDayLabel({ serviceDate: date, publicHolidayDates: new Set() });
     if (date < startDate || date > endDate || ordinaryLabel === "휴일") continue;
     serviceCalendarDates.push(
@@ -203,6 +190,22 @@ export function buildKorailServiceCalendars({ startDate, endDate, serviceIds, pu
   }
   return { serviceCalendars, serviceCalendarDates };
 }
+
+function retainedHolidayMonths({ holidayMonths, startDate, endDate }) {
+  const publicHolidayDates = new Set();
+  korailServiceDayLabel({ serviceDate: startDate, publicHolidayDates });
+  korailServiceDayLabel({ serviceDate: endDate, publicHolidayDates });
+  if (!Array.isArray(holidayMonths) || holidayMonths.length === 0) throw new Error("holiday month coverage missing");
+  const months = holidayMonths.map(parseRetainedKasiHolidayMonth), monthKey = (year, month) => year * 12 + month - 1;
+  const keys = new Set(months.map(({ year, month }) => monthKey(year, month)));
+  if (keys.size !== months.length) throw new Error("holiday month coverage duplicated");
+  const first = monthKey(Number(startDate.slice(0, 4)), Number(startDate.slice(4, 6))), last = monthKey(Number(endDate.slice(0, 4)), Number(endDate.slice(4, 6)));
+  for (let value = first; value <= last; value += 1) if (!keys.has(value)) throw new Error("holiday month coverage missing");
+  for (const month of months) for (const date of month.holidayDates) publicHolidayDates.add(date);
+  return { months, publicHolidayDates };
+}
+
+function utf16Compare(left, right) { return left < right ? -1 : left > right ? 1 : 0; }
 
 /** 사용자 확정 정책이다. 공휴일 집합은 검증된 달력 입력에서 받아야 하며 원문 기관의 선언으로 위장하지 않는다. */
 export function korailServiceDayLabel({ serviceDate, publicHolidayDates }) {
@@ -227,6 +230,18 @@ export function bindKorailCanonicalStations({ stations, stationLines, lineId, or
   const members = stationLines.filter((row) => row.lineId === lineId).sort((a, b) => a.lineSequence - b.lineSequence);
   if (members.length < 2 || new Set(members.map((row) => row.stationId)).size !== members.length
     || new Set(members.map((row) => row.lineSequence)).size !== members.length) fail();
+  const byName = canonicalStationNames(stations, members, nameKey, fail);
+  const expected = members.map(({ stationId }) => stationId);
+  let binding;
+  for (const order of orders) {
+    const ordered = bindCanonicalOrder(order, members, byName, nameKey, expected, fail);
+    if (binding && JSON.stringify(binding) !== JSON.stringify(ordered)) fail();
+    binding = ordered;
+  }
+  return binding;
+}
+
+function canonicalStationNames(stations, members, nameKey, fail) {
   const byName = new Map();
   for (const row of members) {
     if (!Number.isSafeInteger(row.lineSequence) || row.lineSequence < 1) fail();
@@ -236,9 +251,10 @@ export function bindKorailCanonicalStations({ stations, stationLines, lineId, or
     if (!key || byName.has(key)) fail();
     byName.set(key, row.stationId);
   }
-  const expected = members.map(({ stationId }) => stationId);
-  let binding;
-  for (const order of orders) {
+  return byName;
+}
+
+function bindCanonicalOrder(order, members, byName, nameKey, expected, fail) {
     if (!Array.isArray(order.stations) || order.stations.length !== members.length) fail();
     const mapped = order.stations.map((row) => ({ ...row, stationId: byName.get(nameKey(row.stationName)) }));
     const ids = mapped.map(({ stationId }) => stationId);
@@ -247,11 +263,7 @@ export function bindKorailCanonicalStations({ stations, stationLines, lineId, or
       || new Set(mapped.map(({ stationNumber }) => stationNumber)).size !== members.length) fail();
     if (JSON.stringify(ids) !== JSON.stringify(expected)
       && JSON.stringify(ids) !== JSON.stringify([...expected].reverse())) fail();
-    const ordered = expected.map((id) => mapped.find(({ stationId }) => stationId === id));
-    if (binding && JSON.stringify(binding) !== JSON.stringify(ordered)) fail();
-    binding = ordered;
-  }
-  return binding;
+    return expected.map((id) => mapped.find(({ stationId }) => stationId === id));
 }
 
 /**
@@ -355,6 +367,21 @@ export function projectKorailPassengerTopology({ sheets, membership }) {
   if (!Array.isArray(sheets) || sheets.length === 0 || !Array.isArray(membership) || membership.length < 2) {
     throw new Error("parsed sheets and passenger membership are required");
   }
+  const byName = passengerMembershipByName(membership);
+  const orders = new Map();
+  const edges = new Map();
+  const passengerTrips = [];
+  for (const sheet of sheets) {
+    if (!Array.isArray(sheet.trains) || sheet.trains.length === 0) throw new Error("sheet trains are required");
+    for (const train of sheet.trains) appendPassengerTrain({ sheet, train, byName, orders, edges, passengerTrips });
+  }
+  if ([...edges.values()].some(({ observations }) => observations.length === 0)) {
+    throw new Error("passenger segment has no observed duration");
+  }
+  return { orders: [...orders.values()], edges: [...edges.values()], passengerTrips };
+}
+
+function passengerMembershipByName(membership) {
   const byName = new Map();
   const numbers = new Set();
   for (const row of membership) {
@@ -367,12 +394,10 @@ export function projectKorailPassengerTopology({ sheets, membership }) {
     byName.set(row.stationName, row);
     numbers.add(row.stationNumber);
   }
-  const orders = new Map();
-  const edges = new Map();
-  const passengerTrips = [];
-  for (const sheet of sheets) {
-    if (!Array.isArray(sheet.trains) || sheet.trains.length === 0) throw new Error("sheet trains are required");
-    for (const train of sheet.trains) {
+  return byName;
+}
+
+function appendPassengerTrain({ sheet, train, byName, orders, edges, passengerTrips }) {
       const stops = train.stops.filter(({ stationName }) => byName.has(stationName));
       const names = stops.map(({ stationName }) => stationName);
       if (names.length !== byName.size || new Set(names).size !== byName.size) {
@@ -414,12 +439,6 @@ export function projectKorailPassengerTopology({ sheets, membership }) {
           departure: { ...departure }, arrival: { ...arrival },
         });
       }
-    }
-  }
-  if ([...edges.values()].some(({ observations }) => observations.length === 0)) {
-    throw new Error("passenger segment has no observed duration");
-  }
-  return { orders: [...orders.values()], edges: [...edges.values()], passengerTrips };
 }
 
 /** 공식 시각표의 한 열차 열을 원문 순서대로 해석하며 날짜·freshness는 생성하지 않는다. */
