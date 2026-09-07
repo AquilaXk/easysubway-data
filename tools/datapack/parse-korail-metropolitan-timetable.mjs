@@ -7,6 +7,48 @@ import { selectRetainedKricStationLine } from "./build-kric-retained-file-pendin
 import { reconstructTransitTrips } from "./reconstruct-transit-trips.mjs";
 import { parseRetainedKasiHolidayMonth, readKasiHolidayCalendarFiles } from "./fetch-kasi-public-holiday-calendar.mjs";
 import { validateKorailTimetableFileReceipt } from "./collect-korail-metropolitan-timetable-file.mjs";
+import { deriveFreshnessExpiresAt, freshnessPolicySha256 } from "./freshness-policy.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
+
+/** 등록 전 staging만 만든다. 정본 정책을 수정하거나 OCI 요청을 실행하지 않는다. */
+export async function prepareKorailTopologyPublication({ candidate, freshnessPolicy, ...input }) {
+  if (candidate?.id !== "korail-metropolitan-timetable-file") throw new Error("Korail source candidate required");
+  const policy = structuredClone(freshnessPolicy);
+  const classes = policy?.sourceClasses?.filter((entry) => entry.id === candidate.topologyRegistration?.sourceClassId);
+  if (classes?.length !== 1 || !Array.isArray(classes[0].sourceIds)) throw new Error("Korail topology class missing");
+  if (policy.sourceClasses.some((entry) => entry !== classes[0] && entry.sourceIds?.includes(candidate.id))) {
+    throw new Error("Korail topology class conflicts");
+  }
+  if (!classes[0].sourceIds.includes(candidate.id)) classes[0].sourceIds = [...classes[0].sourceIds, candidate.id].sort();
+  const snapshot = await buildCollectedKorailTopologySnapshot({ ...input, freshnessPolicy: policy });
+  const source = snapshot.observation.sources.timetable;
+  const date = source.collectionReceipt.capturedAt.slice(0, 10).replaceAll("-", "");
+  const object = { objectKey: `source-raw/${candidate.id}/${date}/${source.rawSha256}.xlsx`,
+    sourcePath: source.collectionReceipt.rawFile, sha256: source.rawSha256, sizeBytes: source.rawByteLength,
+    contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" };
+  return { snapshot, projectedFreshnessPolicy: policy, publishPlan: { steps: [
+    { type: "put-immutable-bundle-object", ...object }, { type: "verify-immutable-bundle-object", ...object },
+  ] } };
+}
+
+/** 등록된 source 정책만 사용한다. snapshot 생성은 admission이나 원문 재검증을 뜻하지 않는다. */
+export async function buildCollectedKorailTopologySnapshot({ freshnessPolicy, evaluationAt, ...input }) {
+  const classes = freshnessPolicy?.sourceClasses?.filter((entry) => entry.sourceIds?.includes("korail-metropolitan-timetable-file"));
+  if (classes?.length !== 1 || classes[0].basisField !== "retrievedAt") throw new Error("topology freshness source registration required");
+  const observation = await buildCollectedKorailTopologyObservation(input);
+  const source = observation.sources.timetable;
+  const capturedAt = source.collectionReceipt.capturedAt;
+  const freshUntil = deriveFreshnessExpiresAt({ policy: freshnessPolicy, sourceClassId: classes[0].id,
+    basisAt: capturedAt, evaluationAt });
+  if (Date.parse(evaluationAt) >= Date.parse(freshUntil)) throw new Error("topology source snapshot expired");
+  const content = { schemaVersion: 1, artifactKind: "korail-metropolitan-topology-snapshot",
+    status: "PENDING", releaseEligible: false, sourceId: observation.sourceId, capturedAt, freshUntil,
+    sourceClassId: classes[0].id, freshnessPolicySha256: freshnessPolicySha256(freshnessPolicy),
+    rawSha256: source.rawSha256, stationCount: observation.stationBindings.length,
+    edgeCount: observation.topologyDurations.length, observation };
+  const contentSha256 = createHash("sha256").update(canonicalJson(content)).digest("hex");
+  return { ...content, contentSha256, snapshotId: `${observation.sourceId}-${contentSha256}` };
+}
 
 /** RIDE 메타데이터만 선택한다. 원래 열차별 시각과 모든 관측은 그대로 둔다. */
 export function projectKorailTopologyDurations(observation) {

@@ -119,6 +119,14 @@
         "lineIds": ["line-8f7ed01f290a"]
       },
       "displayName": "한국철도공사 광역전철 시각표 — 대경선",
+      "topologyRegistration": {
+        "sourceClassId": "route_graph_topology",
+        "retentionClassId": "standard-90d",
+        "ownerRole": "datapack-source-owner",
+        "stewardRole": "datapack-data-steward",
+        "approvalRole": "datapack-release-approver",
+        "derivationPolicy": "MIN_OBSERVED_SCHEDULED_DURATION_V1"
+      },
       "detailUrl": "https://www.data.go.kr/data/15052169/fileData.do",
       "requestUrl": "https://www.korail.com/ticket/reserve/train-timeTable",
       "licenseEvidenceStatus": "confirmed_unrestricted_public_data_free_use",

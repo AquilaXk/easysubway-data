@@ -19,6 +19,8 @@ import {
   parseRetainedKorailWorkbook,
   buildRetainedKorailTopologyObservation,
   buildCollectedKorailTopologyObservation,
+  buildCollectedKorailTopologySnapshot,
+  prepareKorailTopologyPublication,
   buildRetainedKorailTimetable,
 } from "./parse-korail-metropolitan-timetable.mjs";
 
@@ -151,6 +153,28 @@ test("retained XLSX parsing binds exact bytes and keeps native sparse row coordi
     assert.deepEqual(collected.sources.timetable.collectionReceipt, receipt);
     assert.equal(collected.sources.timetable.collectionReceiptSha256,
       hash(await readFile(path.join(collectionDirectory, "receipt.json"))));
+    const freshnessPolicy = { sourceClasses: [{ id: "fixture-topology", sourceIds: [receipt.sourceId],
+      basisField: "retrievedAt", reverificationCadence: "P2D" }] };
+    const snapshot = await buildCollectedKorailTopologySnapshot({ ...input, collectionDirectory,
+      freshnessPolicy, evaluationAt: receipt.capturedAt });
+    assert.equal(snapshot.capturedAt, receipt.capturedAt);
+    assert.equal(snapshot.freshUntil, new Date(Date.parse(receipt.capturedAt) + 2 * 86400000).toISOString());
+    assert.equal(snapshot.stationCount, observation.stationBindings.length);
+    assert.equal(snapshot.edgeCount, collected.topologyDurations.length);
+    assert.deepEqual(snapshot.observation, collected);
+    assert.equal(snapshot.status, "PENDING");
+    const candidate = { id: receipt.sourceId, topologyRegistration: { sourceClassId: "fixture-topology" } };
+    const unregisteredPolicy = { sourceClasses: [{ ...freshnessPolicy.sourceClasses[0], sourceIds: [] }] };
+    const prepared = await prepareKorailTopologyPublication({ ...input, collectionDirectory,
+      candidate, freshnessPolicy: unregisteredPolicy, evaluationAt: receipt.capturedAt });
+    assert.deepEqual(prepared.snapshot, snapshot);
+    assert.deepEqual(unregisteredPolicy.sourceClasses[0].sourceIds, []);
+    assert.deepEqual(prepared.publishPlan.steps.map(({ type }) => type),
+      ["put-immutable-bundle-object", "verify-immutable-bundle-object"]);
+    assert.ok(prepared.publishPlan.steps.every((step) => step.sha256 === sha256 && step.sizeBytes === bytes.length
+      && step.sourcePath === "timetable.xlsx" && step.objectKey.endsWith(`/${sha256}.xlsx`)));
+    await assert.rejects(buildCollectedKorailTopologySnapshot({ ...input, collectionDirectory,
+      freshnessPolicy: { sourceClasses: [] }, evaluationAt: receipt.capturedAt }), /freshness source/);
     const holidayRaw = Buffer.from('<response><header><resultCode>00</resultCode></header><body><items><item><locdate>20400102</locdate><isHoliday>Y</isHoliday></item></items><totalCount>1</totalCount></body></response>');
     const tableInput = { observation,
       startDate: "20400101", endDate: "20400110",
