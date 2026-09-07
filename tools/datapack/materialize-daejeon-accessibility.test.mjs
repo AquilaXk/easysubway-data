@@ -14,7 +14,6 @@ import {
 } from "./materialize-test-fixture.mjs";
 
 import { parseMolitDaejeonStationMappings } from "./build-molit-nationwide-fixture.mjs";
-import { materializeBusanRouteMapPositions } from "./materialize-busan-route-map-positions.mjs";
 import {
   materializeBusanRouteTopology,
   parseCanonicalBusanStationMappings,
@@ -46,7 +45,6 @@ async function inputs() {
     baseFixture,
     busanTopology,
     busanTimetable,
-    busanRouteMapBytes,
     daejeonTopology,
     daejeonTimetable,
     accessibilitySnapshot,
@@ -57,7 +55,6 @@ async function inputs() {
     readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
     readJson("tools/datapack/sources/busan-transportation-route-topology-20260720.json"),
     readJson("tools/datapack/sources/busan-transportation-timetable-20260720.json"),
-    readFile(path.join(root, "tools/datapack/sources/busan-transportation-route-map-positions-20260720.json")),
     readJson("tools/datapack/sources/daejeon-route-topology-20260720.json"),
     readJson("tools/datapack/sources/daejeon-train-timetable-20260720.json"),
     readJson("tools/datapack/sources/daejeon-transportation-accessibility-20260724.json"),
@@ -87,16 +84,8 @@ async function inputs() {
     inventory,
     now: timetableNow,
   });
-  const routeMapFixture = materializeBusanRouteMapPositions({
-    baseFixture: timetableFixture,
-    snapshot: JSON.parse(busanRouteMapBytes),
-    snapshotSha256: createHash("sha256").update(busanRouteMapBytes).digest("hex"),
-    topologySnapshot: busanTopology,
-    inventory,
-    now: timetableNow,
-  });
   return {
-    routeMapFixture,
+    timetableFixture,
     topologySnapshot: daejeonTopology,
     accessibilitySnapshot,
     inventory,
@@ -104,9 +93,9 @@ async function inputs() {
 }
 
 test("대전 공식 22역 편의시설을 facility·evidence 66건으로 materialize한다", async () => {
-  const { routeMapFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
+  const { timetableFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
   const fixture = materializeDaejeonAccessibility({
-    baseFixture: routeMapFixture,
+    baseFixture: timetableFixture,
     accessibilitySnapshot,
     topologySnapshot,
     inventory,
@@ -153,10 +142,10 @@ test("대전 공식 22역 편의시설을 facility·evidence 66건으로 materia
 });
 
 test("대전 accessibility admission은 freshness·hash·scope·중복을 fail closed한다", async () => {
-  const { routeMapFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
+  const { timetableFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
 
   assert.throws(() => materializeDaejeonAccessibility({
-    baseFixture: routeMapFixture,
+    baseFixture: timetableFixture,
     accessibilitySnapshot,
     topologySnapshot,
     inventory,
@@ -166,7 +155,7 @@ test("대전 accessibility admission은 freshness·hash·scope·중복을 fail c
   const badHash = structuredClone(accessibilitySnapshot);
   badHash.rowsSha256 = "0".repeat(64);
   assert.throws(() => materializeDaejeonAccessibility({
-    baseFixture: routeMapFixture,
+    baseFixture: timetableFixture,
     accessibilitySnapshot: badHash,
     topologySnapshot,
     inventory,
@@ -176,7 +165,7 @@ test("대전 accessibility admission은 freshness·hash·scope·중복을 fail c
   const badSource = structuredClone(accessibilitySnapshot);
   badSource.sourceId = "wrong-source";
   assert.throws(() => materializeDaejeonAccessibility({
-    baseFixture: routeMapFixture,
+    baseFixture: timetableFixture,
     accessibilitySnapshot: badSource,
     topologySnapshot,
     inventory,
@@ -194,7 +183,7 @@ test("대전 accessibility admission은 freshness·hash·scope·중복을 fail c
     { rowCount: 21, stationCount: 21, facilityCount: 63, rowsSha256: badScope.rowsSha256 },
   );
   assert.throws(() => materializeDaejeonAccessibility({
-    baseFixture: routeMapFixture,
+    baseFixture: timetableFixture,
     accessibilitySnapshot: badScope,
     topologySnapshot,
     inventory: badScopeInventory,
@@ -205,7 +194,7 @@ test("대전 accessibility admission은 freshness·hash·scope·중복을 fail c
   mismatchedInventory.sources.find(({ id }) => id === SOURCE_ID)
     .accessibilityAdmissionEvidence.rowsSha256 = "0".repeat(64);
   assert.throws(() => materializeDaejeonAccessibility({
-    baseFixture: routeMapFixture,
+    baseFixture: timetableFixture,
     accessibilitySnapshot,
     topologySnapshot,
     inventory: mismatchedInventory,
@@ -216,7 +205,7 @@ test("대전 accessibility admission은 freshness·hash·scope·중복을 fail c
   badLineage.sources.find(({ id }) => id === SOURCE_ID)
     .accessibilityAdmissionEvidence.topologyLineages[0].contentSha256 = "0".repeat(64);
   assert.throws(() => materializeDaejeonAccessibility({
-    baseFixture: routeMapFixture,
+    baseFixture: timetableFixture,
     accessibilitySnapshot,
     topologySnapshot,
     inventory: badLineage,
@@ -224,7 +213,7 @@ test("대전 accessibility admission은 freshness·hash·scope·중복을 fail c
   }), /inventory evidence|topology lineage/);
 
   const admitted = materializeDaejeonAccessibility({
-    baseFixture: routeMapFixture,
+    baseFixture: timetableFixture,
     accessibilitySnapshot,
     topologySnapshot,
     inventory,
@@ -245,9 +234,9 @@ test("materialized SQLite와 provenance가 대전 accessibility_facilities 1건�
   const fixturePath = path.join(outputDir, "fixture.json");
   const packOutput = path.join(outputDir, "pack");
   const reportPath = path.join(outputDir, "coverage.json");
-  const { routeMapFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
+  const { timetableFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
   const fixture = materializeDaejeonAccessibility({
-    baseFixture: routeMapFixture,
+    baseFixture: timetableFixture,
     accessibilitySnapshot,
     topologySnapshot,
     inventory,

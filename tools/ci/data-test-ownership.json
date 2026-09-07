@@ -478,7 +478,6 @@
     {"path":"tools/datapack/lib/server-route-bundle-final.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":146},
     {"path":"tools/datapack/materialize-accessibility-source-input.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":166},
     {"path":"tools/datapack/materialize-busan-accessibility.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":16359},
-    {"path":"tools/datapack/materialize-busan-route-map-positions.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":12196},
     {"path":"tools/datapack/materialize-busan-route-topology.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":719},
     {"path":"tools/datapack/materialize-busan-timetable.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":9671},
     {"path":"tools/datapack/materialize-daegu-accessibility.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":28318},
