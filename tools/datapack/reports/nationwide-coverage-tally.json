@@ -1075,7 +1075,7 @@
     "inventory": {
       "path": "tools/datapack/source-inventory.json",
       "retrievedAt": "2026-06-22",
-      "sha256": "b617b156f078c90a04268b7fbffcdd5bc04e0c672aa7531e7acda3460e5acff7"
+      "sha256": "d9dd0515dd2789f5efa1b9d21ff2dfb47a5515bde76df780e81c9b78e19fc938"
     },
     "resolutions": {
       "entryCount": 4,
@@ -1143,17 +1143,17 @@
       {
         "earliestResolutionNextReviewAt": null,
         "explicitlyUnsupportedWithEvidenceCount": 0,
-        "inventoryAdmittedCount": 28,
-        "inventoryAdmittedRatio": 0.6222,
+        "inventoryAdmittedCount": 24,
+        "inventoryAdmittedRatio": 0.5333,
         "missingByKind": {
           "DUAL_OPERATOR_UNMATCHED": 1,
-          "NO_ADMITTED_SOURCE": 16
+          "NO_ADMITTED_SOURCE": 20
         },
-        "missingCount": 17,
+        "missingCount": 21,
         "sourceDomain": "route_map_positions",
         "supportStartedResolutionCount": 0,
-        "terminalCount": 28,
-        "terminalRatio": 0.6222,
+        "terminalCount": 24,
+        "terminalRatio": 0.5333,
         "totalCount": 45
       },
       {
@@ -1193,17 +1193,17 @@
       {
         "earliestResolutionNextReviewAt": "2026-10-23T09:12:39.105Z",
         "explicitlyUnsupportedWithEvidenceCount": 1,
-        "inventoryAdmittedCount": 20,
-        "inventoryAdmittedRatio": 0.5556,
+        "inventoryAdmittedCount": 16,
+        "inventoryAdmittedRatio": 0.4444,
         "missingByKind": {
           "DUAL_OPERATOR_UNMATCHED": 0,
-          "NO_ADMITTED_SOURCE": 15
+          "NO_ADMITTED_SOURCE": 19
         },
-        "missingCount": 15,
+        "missingCount": 19,
         "regionId": "busan",
         "supportStartedResolutionCount": 0,
-        "terminalCount": 21,
-        "terminalRatio": 0.5833,
+        "terminalCount": 17,
+        "terminalRatio": 0.4722,
         "totalCount": 36
       },
       {
@@ -1273,13 +1273,13 @@
     ],
     "earliestResolutionNextReviewAt": "2026-10-23T09:12:39.105Z",
     "explicitlyUnsupportedWithEvidenceCount": 4,
-    "inventoryAdmittedCount": 75,
-    "inventoryAdmittedRatio": 0.2778,
+    "inventoryAdmittedCount": 71,
+    "inventoryAdmittedRatio": 0.263,
     "missingByKind": {
       "DUAL_OPERATOR_UNMATCHED": 4,
-      "NO_ADMITTED_SOURCE": 187
+      "NO_ADMITTED_SOURCE": 191
     },
-    "missingCount": 191,
+    "missingCount": 195,
     "requirements": [
       {
         "admissionRatio": 1,
@@ -1342,15 +1342,13 @@
         "unadmittedFields": []
       },
       {
-        "admissionRatio": 1,
-        "admittedFieldCount": 2,
-        "admittedSourceIds": [
-          "busan-transportation-route-map-positions"
-        ],
+        "admissionRatio": 0,
+        "admittedFieldCount": 0,
+        "admittedSourceIds": [],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-ab1a041f6266",
-        "missingKind": null,
+        "missingKind": "NO_ADMITTED_SOURCE",
         "operatorId": "busan-transportation",
         "regionId": "busan",
         "releaseTier": "LAUNCH_REQUIRED",
@@ -1358,8 +1356,11 @@
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_map_positions",
-        "status": "INVENTORY_ADMITTED",
-        "unadmittedFields": []
+        "status": "MISSING",
+        "unadmittedFields": [
+          "route_map_position",
+          "route_map_label_polygon"
+        ]
       },
       {
         "admissionRatio": 1,
@@ -1462,15 +1463,13 @@
         "unadmittedFields": []
       },
       {
-        "admissionRatio": 1,
-        "admittedFieldCount": 2,
-        "admittedSourceIds": [
-          "busan-transportation-route-map-positions"
-        ],
+        "admissionRatio": 0,
+        "admittedFieldCount": 0,
+        "admittedSourceIds": [],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-d74614a04530",
-        "missingKind": null,
+        "missingKind": "NO_ADMITTED_SOURCE",
         "operatorId": "busan-transportation",
         "regionId": "busan",
         "releaseTier": "LAUNCH_REQUIRED",
@@ -1478,8 +1477,11 @@
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_map_positions",
-        "status": "INVENTORY_ADMITTED",
-        "unadmittedFields": []
+        "status": "MISSING",
+        "unadmittedFields": [
+          "route_map_position",
+          "route_map_label_polygon"
+        ]
       },
       {
         "admissionRatio": 1,
@@ -1582,15 +1584,13 @@
         "unadmittedFields": []
       },
       {
-        "admissionRatio": 1,
-        "admittedFieldCount": 2,
-        "admittedSourceIds": [
-          "busan-transportation-route-map-positions"
-        ],
+        "admissionRatio": 0,
+        "admittedFieldCount": 0,
+        "admittedSourceIds": [],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-d812a5bc1e5f",
-        "missingKind": null,
+        "missingKind": "NO_ADMITTED_SOURCE",
         "operatorId": "busan-transportation",
         "regionId": "busan",
         "releaseTier": "LAUNCH_REQUIRED",
@@ -1598,8 +1598,11 @@
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_map_positions",
-        "status": "INVENTORY_ADMITTED",
-        "unadmittedFields": []
+        "status": "MISSING",
+        "unadmittedFields": [
+          "route_map_position",
+          "route_map_label_polygon"
+        ]
       },
       {
         "admissionRatio": 1,
@@ -1702,15 +1705,13 @@
         "unadmittedFields": []
       },
       {
-        "admissionRatio": 1,
-        "admittedFieldCount": 2,
-        "admittedSourceIds": [
-          "busan-transportation-route-map-positions"
-        ],
+        "admissionRatio": 0,
+        "admittedFieldCount": 0,
+        "admittedSourceIds": [],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-eb7b47920390",
-        "missingKind": null,
+        "missingKind": "NO_ADMITTED_SOURCE",
         "operatorId": "busan-transportation",
         "regionId": "busan",
         "releaseTier": "LAUNCH_REQUIRED",
@@ -1718,8 +1719,11 @@
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_map_positions",
-        "status": "INVENTORY_ADMITTED",
-        "unadmittedFields": []
+        "status": "MISSING",
+        "unadmittedFields": [
+          "route_map_position",
+          "route_map_label_polygon"
+        ]
       },
       {
         "admissionRatio": 1,
@@ -7069,15 +7073,15 @@
       }
     ],
     "supportStartedResolutionCount": 0,
-    "terminalCount": 79,
-    "terminalRatio": 0.2926,
+    "terminalCount": 75,
+    "terminalRatio": 0.2778,
     "totalCount": 270
   },
   "parentIssue": 2138,
   "regeneration": {
     "command": "node tools/datapack/build-nationwide-coverage-tally.mjs --targets tools/datapack/nationwide-coverage-targets.json --inventory tools/datapack/source-inventory.json --resolutions tools/datapack/release/nationwide-public-api-coverage-resolutions-20260725.json --expected-launch-required-total 270 --output tools/datapack/reports/nationwide-coverage-tally.json",
     "ledgerPath": "tools/datapack/reports/nationwide-coverage-tally.json",
-    "pairedUpdateKo": "targets·resolutions 또는 inventory의 consumed coverage projection을 바꾸는 PR은 이 명령으로 ledger를 함께 재생성하고, tools/datapack/build-nationwide-coverage-tally.test.mjs의 집계 기대 상수(admitted/EU/missing)도 같은 커밋에서 갱신해야 한다. inventory digest는 source id와 region/operator/line/domain/fields의 normalized projection에 결속하므로 raw whitespace·display/admission metadata만 바뀌면 ledger를 재생성하지 않는다. consumed projection 재생성 누락은 datapack 도구 테스트에서 fail closed 된다. inventory admission만 늘리는 PR은 search plan·resolutions를 재발행하지 않아도 된다 — 계획은 미admission requirement를 전부 덮기만 하면 되고(포함 관계, tools/datapack/nationwide-public-api-coverage-evidence.test.mjs가 검증), 계획에 남은 admitted entry는 다음 정기 재생성에서 정리한다. 계획을 재생성하면 resolutions의 searchPlanSha256이 어긋나므로 live 재크롤로 두 아티팩트를 같은 커밋에서 함께 재발행해야 한다(tools/datapack/collect-nationwide-public-api-coverage.mjs 헤더의 재발행 절차 참조)."
+    "pairedUpdateKo": "targets·resolutions 또는 inventory의 consumed coverage projection을 바꾸는 PR은 이 명령으로 ledger를 함께 재생성하고, tools/datapack/build-nationwide-coverage-tally.test.mjs의 독립 입력 기반 PK 판정과 집계 검증을 통과해야 한다. 집계 기대값을 수동 갱신하지 않는다. inventory digest는 source id와 region/operator/line/domain/fields의 normalized projection에 결속하므로 raw whitespace·display/admission metadata만 바뀌면 ledger를 재생성하지 않는다. consumed projection 재생성 누락은 datapack 도구 테스트에서 fail closed 된다. inventory admission만 늘리는 PR은 search plan·resolutions를 재발행하지 않아도 된다 — 계획은 미admission requirement를 전부 덮기만 하면 되고(포함 관계, tools/datapack/nationwide-public-api-coverage-evidence.test.mjs가 검증), 계획에 남은 admitted entry는 다음 정기 재생성에서 정리한다. 계획을 재생성하면 resolutions의 searchPlanSha256이 어긋나므로 live 재크롤로 두 아티팩트를 같은 커밋에서 함께 재발행해야 한다(tools/datapack/collect-nationwide-public-api-coverage.mjs 헤더의 재발행 절차 참조)."
   },
   "schemaVersion": 1,
   "statusAxis": {

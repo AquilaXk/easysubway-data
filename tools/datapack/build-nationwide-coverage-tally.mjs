@@ -145,8 +145,8 @@ export function buildNationwideCoverageTally({
       pairedUpdateKo:
         "targets·resolutions 또는 inventory의 consumed coverage projection을 바꾸는 PR은 이 명령으로 "
         + "ledger를 함께 재생성하고, "
-        + "tools/datapack/build-nationwide-coverage-tally.test.mjs의 집계 기대 상수(admitted/EU/missing)도 "
-        + "같은 커밋에서 갱신해야 한다. inventory digest는 source id와 region/operator/line/domain/fields의 "
+        + "tools/datapack/build-nationwide-coverage-tally.test.mjs의 독립 입력 기반 PK 판정과 집계 검증을 "
+        + "통과해야 한다. 집계 기대값을 수동 갱신하지 않는다. inventory digest는 source id와 region/operator/line/domain/fields의 "
         + "normalized projection에 결속하므로 raw whitespace·display/admission metadata만 바뀌면 ledger를 "
         + "재생성하지 않는다. consumed projection 재생성 누락은 datapack 도구 테스트에서 fail closed 된다. "
         + "inventory admission만 늘리는 PR은 search plan·resolutions를 재발행하지 않아도 된다 — 계획은 "

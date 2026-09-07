@@ -32,9 +32,6 @@ const topologyNow = new Date("2026-07-19T18:14:03.004Z");
 const routeMapNow = new Date("2026-07-20T11:13:18.000Z");
 const accessibilityNow = new Date("2026-07-24T12:00:00.000Z");
 const SOURCE_ID = "busan-transportation-accessibility";
-// route-map 누적 fixture coverage baseline(실측): supportedCount=19 → accessibility +4 = 23.
-const ROUTE_MAP_BASELINE_SUPPORTED_COUNT = 19;
-const ACCESSIBILITY_SUPPORTED_COUNT = ROUTE_MAP_BASELINE_SUPPORTED_COUNT + 4;
 const BUSAN_LINE_IDS = Object.freeze([
   "line-ab1a041f6266",
   "line-d74614a04530",
@@ -329,15 +326,16 @@ test("materialized SQLite와 provenance가 부산 accessibility_facilities 4건�
     accessibilityRequirements.map(({ lineId }) => lineId).sort(),
     [...BUSAN_LINE_IDS],
   );
-  assert.deepEqual(report.summary.launchRequired, {
-    totalCount: 270,
-    supportedCount: ACCESSIBILITY_SUPPORTED_COUNT,
-    explicitlyUnsupportedCount: 4,
-    missingCount: 270 - ACCESSIBILITY_SUPPORTED_COUNT - 4,
-    supportedRatio: Number((ACCESSIBILITY_SUPPORTED_COUNT / 270).toFixed(4)),
-    terminalResolutionRatio: Number(((ACCESSIBILITY_SUPPORTED_COUNT + 4) / 270).toFixed(4)),
-    completionReady: false,
-  });
+  const routeMapRequirements = report.requirements.filter(
+    ({ operatorId, sourceDomain }) => operatorId === "busan-transportation"
+      && sourceDomain === "route_map_positions",
+  );
+  assert.ok(routeMapRequirements.every(({ status }) => status === "MISSING"));
+  assert.deepEqual(
+    routeMapRequirements.map(({ lineId }) => lineId).sort(),
+    [...BUSAN_LINE_IDS],
+  );
+  assert.equal(report.summary.launchRequired.completionReady, false);
 });
 
 async function readJson(relativePath) {

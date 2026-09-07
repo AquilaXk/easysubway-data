@@ -45,10 +45,6 @@ const SOURCE_ID = "seoul-metro-line9-23-route-map-positions";
 const LINE_ID = "line-f0e747248a31";
 const FILE_OPERATOR_ID = "seoul-metro";
 const LINE_OPERATOR_ID = "operator-936e454d0bfb";
-// daejeon route_map 누적 fixture coverage baseline(실측): supportedCount=25.
-// 이번 FILE admission이 seoul9 route_map_positions +1을 만든다.
-const DAEJEON_ROUTE_MAP_BASELINE = 25;
-const SEOUL9_ROUTE_MAP_SUPPORTED_COUNT = DAEJEON_ROUTE_MAP_BASELINE + 1;
 const SCHEMATIC_X_MIN = 2284;
 const SCHEMATIC_X_MAX = 3171;
 const SCHEMATIC_Y_MIN = 1620;
@@ -305,15 +301,7 @@ test("materialized SQLite와 provenance가 서울 9호선 route_map_positions를
   assert.ok(routeMapRequirements.every(({ operatorId }) => (
     operatorId === LINE_OPERATOR_ID || operatorId === FILE_OPERATOR_ID
   )));
-  assert.deepEqual(report.summary.launchRequired, {
-    totalCount: 270,
-    supportedCount: SEOUL9_ROUTE_MAP_SUPPORTED_COUNT,
-    explicitlyUnsupportedCount: 4,
-    missingCount: 270 - SEOUL9_ROUTE_MAP_SUPPORTED_COUNT - 4,
-    supportedRatio: Number((SEOUL9_ROUTE_MAP_SUPPORTED_COUNT / 270).toFixed(4)),
-    terminalResolutionRatio: Number(((SEOUL9_ROUTE_MAP_SUPPORTED_COUNT + 4) / 270).toFixed(4)),
-    completionReady: false,
-  });
+  assert.equal(report.summary.launchRequired.completionReady, false);
 });
 
 test("서울9 route_map_positions materialize는 metro_map_pack·capital.sqlite.gz를 건드리지 않는다", async () => {

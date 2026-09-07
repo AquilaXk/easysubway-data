@@ -149,6 +149,59 @@ async function assertNoLedgerTempResidue(output) {
   assert.deepEqual(entries.filter((entry) => entry.startsWith(prefix)), []);
 }
 
+// 출력이나 production 판정 함수를 사용하지 않는 입력 기반 참조 판정이다.
+// 운영 합계 대신 정확한 PK별 상태까지 비교하여 합계가 같은 오분류도 검출한다.
+function expectedLaunchRequirements({ targets, inventory, resolutions }) {
+  const sources = inventory.sources.filter(({ rawSnapshotAdmission }) => rawSnapshotAdmission == null);
+  const domains = targets.requiredSourceDomains.filter(({ releaseTier }) => releaseTier === "LAUNCH_REQUIRED");
+  return targets.activeLineScopes.flatMap((scope) => domains.map((domain) => {
+    const pk = [scope.regionId, scope.operatorId, scope.lineId, domain.id].join(":");
+    const resolution = resolutions.entries.find((entry) =>
+      [entry.regionId, entry.operatorId, entry.lineId, entry.sourceDomain].join(":") === pk);
+    const covered = (ignoreOperator) => domain.requiredFields.filter((field) => sources.some((source) => {
+      const coverage = source.coverageScope;
+      return coverage.regionIds.includes(scope.regionId)
+        && (ignoreOperator || coverage.operatorIds.includes(scope.operatorId))
+        && (coverage.lineIds ?? []).includes(scope.lineId)
+        && coverage.sourceDomains.includes(domain.id)
+        && (source.fieldsProvided ?? source.fields).includes(field);
+    })).length;
+    const meetsThreshold = (count) => Number((count / domain.requiredFields.length).toFixed(4))
+      >= (domain.blockingThreshold?.minimumOfficialFieldCoverageRatio ?? 1);
+    if (meetsThreshold(covered(false))) {
+      assert.equal(resolution, undefined, `admitted PK has resolution: ${pk}`);
+      return { pk, status: "INVENTORY_ADMITTED", missingKind: null };
+    }
+    if (resolution && !resolution.supportStartedAt) {
+      return { pk, status: "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE", missingKind: null };
+    }
+    return { pk, status: "MISSING", missingKind: meetsThreshold(covered(true))
+      ? "DUAL_OPERATOR_UNMATCHED" : "NO_ADMITTED_SOURCE" };
+  }));
+}
+
+test("입력 기반 참조 판정은 독립적인 네 상태와 support-started 전이를 보존한다", () => {
+  const targets = fixtureTargets();
+  targets.activeLineScopes.push(
+    { regionId: "capital", operatorId: "operator-c", lineId: "line-b" },
+    { regionId: "capital", operatorId: "operator-d", lineId: "line-a" },
+  );
+  const inventory = fixtureInventory([operatorAMembershipSource()]);
+  const resolutions = fixtureResolutions([fixtureResolutionEntry()]);
+  const states = () => expectedLaunchRequirements({ targets, inventory, resolutions })
+    .map(({ status, missingKind }) => [status, missingKind]);
+  assert.deepEqual(states(), [
+    ["INVENTORY_ADMITTED", null],
+    ["EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE", null],
+    ["MISSING", "NO_ADMITTED_SOURCE"],
+    ["MISSING", "DUAL_OPERATOR_UNMATCHED"],
+  ]);
+  resolutions.entries[0].supportStartedAt = "2026-07-24T00:00:00.000Z";
+  assert.deepEqual(states()[1], ["MISSING", "DUAL_OPERATOR_UNMATCHED"]);
+  inventory.sources[0].rawSnapshotAdmission = {};
+  assert.deepEqual(states(), Array.from({ length: 4 }, () => ["MISSING", "NO_ADMITTED_SOURCE"]));
+});
+
 test("커밋된 전국 coverage tally ledger는 현행 입력에서 바이트 단위로 재생성된다", async () => {
   const workspace = await stageWorkspace();
   try {
@@ -196,18 +249,26 @@ test("커밋된 전국 coverage tally ledger는 현행 입력에서 바이트 �
       enhancementTotal: 45,
       expectedLaunchRequiredTotal: 270,
     });
-    // 아래 집계 상수는 tracked ledger와 짝을 이루는 이중 장부다. targets·inventory·resolutions를 바꾸는
-    // 후속 #2138 admission PR은 (1) ledger.regeneration.command로 ledger를 재생성하고 (2) 이 상수를
-    // 같은 커밋에서 함께 갱신해야 한다. 둘 중 하나만 하면 이 테스트가 fail closed 된다.
+    const [targets, inventory, resolutions] = await Promise.all(INPUT_PATHS.map(async (relativePath) =>
+      JSON.parse(await readFile(path.join(root, relativePath), "utf8"))));
+    const expected = expectedLaunchRequirements({ targets, inventory, resolutions });
+    const actual = ledger.launchRequired.requirements.map((row) => ({
+      pk: [row.regionId, row.operatorId, row.lineId, row.sourceDomain].join(":"),
+      status: row.status, missingKind: row.missingKind,
+    }));
+    const byPk = (a, b) => a.pk < b.pk ? -1 : a.pk > b.pk ? 1 : 0;
+    assert.deepEqual(actual.sort(byPk), expected.sort(byPk));
+    const admittedCount = expected.filter(({ status }) => status === "INVENTORY_ADMITTED").length;
+    const missing = expected.filter(({ status }) => status === "MISSING");
     assert.equal(ledger.launchRequired.totalCount, 270);
-    assert.equal(ledger.launchRequired.inventoryAdmittedCount, 75);
+    assert.equal(ledger.launchRequired.inventoryAdmittedCount, admittedCount);
     assert.equal(ledger.launchRequired.explicitlyUnsupportedWithEvidenceCount, 4);
-    assert.equal(ledger.launchRequired.missingCount, 191);
+    assert.equal(ledger.launchRequired.missingCount, missing.length);
     assert.deepEqual(ledger.launchRequired.missingByKind, {
-      DUAL_OPERATOR_UNMATCHED: 4,
-      NO_ADMITTED_SOURCE: 187,
+      DUAL_OPERATOR_UNMATCHED: missing.filter(({ missingKind }) => missingKind === "DUAL_OPERATOR_UNMATCHED").length,
+      NO_ADMITTED_SOURCE: missing.filter(({ missingKind }) => missingKind === "NO_ADMITTED_SOURCE").length,
     });
-    assert.equal(ledger.launchRequired.terminalCount, 79);
+    assert.equal(ledger.launchRequired.terminalCount, expected.length - missing.length);
     assert.equal(ledger.launchRequired.supportStartedResolutionCount, 0);
     assert.equal(ledger.launchRequired.earliestResolutionNextReviewAt, "2026-10-23T09:12:39.105Z");
     assert.equal(ledger.launchRequired.requirements.length, 270);

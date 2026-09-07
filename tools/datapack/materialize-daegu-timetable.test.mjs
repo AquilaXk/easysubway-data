@@ -308,15 +308,7 @@ test("materialized SQLite·provenance가 대구 membership·topology·schedule 9
       "route_graph_topology", "schedule_timetable", "station_line_membership",
     ], JSON.stringify(requirements, null, 2));
   }
-  assert.deepEqual(report.summary.launchRequired, {
-    totalCount: 270,
-    supportedCount: 31,
-    explicitlyUnsupportedCount: 4,
-    missingCount: 235,
-    supportedRatio: 0.1148,
-    terminalResolutionRatio: 0.1296,
-    completionReady: false,
-  });
+  assert.equal(report.summary.launchRequired.completionReady, false);
 });
 
 async function inputs({ materialize = true } = {}) {

@@ -42,10 +42,6 @@ const execFileAsync = promisify(execFile);
 const SOURCE_ID = "daejeon-transportation-route-map-positions";
 const LINE_ID = "line-7051a9c2525c";
 const OPERATOR_ID = "daejeon-transportation";
-// gwangju route_map 누적 fixture coverage baseline(실측): supportedCount=24.
-// 이번 FILE admission이 daejeon route_map_positions +1을 만든다.
-const GWANGJU_ROUTE_MAP_BASELINE_SUPPORTED_COUNT = 24;
-const DAEJEON_ROUTE_MAP_SUPPORTED_COUNT = GWANGJU_ROUTE_MAP_BASELINE_SUPPORTED_COUNT + 1;
 
 async function inputs() {
   const [
@@ -261,15 +257,7 @@ test("materialized SQLite와 provenance가 대전 1호선 route_map_positions를
   assert.equal(routeMapRequirements.length, 1);
   assert.ok(routeMapRequirements.every(({ status }) => status === "SUPPORTED"));
   assert.deepEqual(routeMapRequirements.map(({ lineId }) => lineId), [LINE_ID]);
-  assert.deepEqual(report.summary.launchRequired, {
-    totalCount: 270,
-    supportedCount: DAEJEON_ROUTE_MAP_SUPPORTED_COUNT,
-    explicitlyUnsupportedCount: 4,
-    missingCount: 270 - DAEJEON_ROUTE_MAP_SUPPORTED_COUNT - 4,
-    supportedRatio: Number((DAEJEON_ROUTE_MAP_SUPPORTED_COUNT / 270).toFixed(4)),
-    terminalResolutionRatio: Number(((DAEJEON_ROUTE_MAP_SUPPORTED_COUNT + 4) / 270).toFixed(4)),
-    completionReady: false,
-  });
+  assert.equal(report.summary.launchRequired.completionReady, false);
 });
 
 test("대전 route_map_positions materialize는 metro_map_pack·capital.sqlite.gz를 건드리지 않는다", async () => {

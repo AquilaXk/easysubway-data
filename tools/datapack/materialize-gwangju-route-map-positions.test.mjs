@@ -40,10 +40,6 @@ const execFileAsync = promisify(execFile);
 const SOURCE_ID = "gwangju-transportation-route-map-positions";
 const LINE_ID = "line-e57a361e8892";
 const OPERATOR_ID = "gwangju-metropolitan-rapid-transit";
-// gwangju accessibility 누적 fixture coverage baseline(실측): supportedCount=23.
-// 이번 FILE admission이 gwangju route_map_positions +1을 만든다.
-const GWANGJU_ACCESSIBILITY_BASELINE_SUPPORTED_COUNT = 23;
-const GWANGJU_ROUTE_MAP_SUPPORTED_COUNT = GWANGJU_ACCESSIBILITY_BASELINE_SUPPORTED_COUNT + 1;
 
 async function inputs() {
   const [
@@ -257,15 +253,7 @@ test("materialized SQLite와 provenance가 광주 1호선 route_map_positions를
   assert.equal(routeMapRequirements.length, 1);
   assert.ok(routeMapRequirements.every(({ status }) => status === "SUPPORTED"));
   assert.deepEqual(routeMapRequirements.map(({ lineId }) => lineId), [LINE_ID]);
-  assert.deepEqual(report.summary.launchRequired, {
-    totalCount: 270,
-    supportedCount: GWANGJU_ROUTE_MAP_SUPPORTED_COUNT,
-    explicitlyUnsupportedCount: 4,
-    missingCount: 270 - GWANGJU_ROUTE_MAP_SUPPORTED_COUNT - 4,
-    supportedRatio: Number((GWANGJU_ROUTE_MAP_SUPPORTED_COUNT / 270).toFixed(4)),
-    terminalResolutionRatio: Number(((GWANGJU_ROUTE_MAP_SUPPORTED_COUNT + 4) / 270).toFixed(4)),
-    completionReady: false,
-  });
+  assert.equal(report.summary.launchRequired.completionReady, false);
 });
 
 test("광주 route_map_positions materialize는 metro_map_pack·capital.sqlite.gz를 건드리지 않는다", async () => {
