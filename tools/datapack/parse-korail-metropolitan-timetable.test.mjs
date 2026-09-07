@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { collectKasiHolidayCalendarFiles } from "./fetch-kasi-public-holiday-calendar.mjs";
 import {
   normalizeKorailTrainClockCells,
   parseKorailMetropolitanSheet,
@@ -15,6 +16,7 @@ import {
   buildKorailTimetableTables,
   parseRetainedKorailWorkbook,
   buildRetainedKorailTopologyObservation,
+  buildRetainedKorailTimetable,
 } from "./parse-korail-metropolitan-timetable.mjs";
 
 test("calendar rows use supplied validity and holiday exceptions without duplicate weekend service", () => {
@@ -124,10 +126,22 @@ test("retained XLSX parsing binds exact bytes and keeps native sparse row coordi
       serviceIds: { "평일": "weekday", "휴일": "holiday" }, routeIds: { up: "route-up", down: "route-down" },
     };
     const tables = buildKorailTimetableTables(tableInput);
+    assert.deepEqual(tables.transitRoutes, [{ id: "route-up", lineId: "L",
+      routeShortName: "대구선", routeLongName: "대구선 나 방면", directionName: "나 방면", timezone: "Asia/Seoul" }]);
+    assert.ok(tables.transitTrips.every((trip) => tables.transitRoutes.some(({ id }) => id === trip.routeId)));
     assert.equal(tables.holidayCalendarSources[0].rawSha256, hash(holidayRaw));
     assert.throws(() => buildKorailTimetableTables({ ...tableInput, endDate: "20400201" }), /month coverage/);
     assert.throws(() => buildKorailTimetableTables({ ...tableInput, holidayMonths: [] }), /month coverage/);
     assert.equal(tables.transitTrips[0].serviceId, "weekday");
+    const holidayDirectory = path.join(root, "holidays");
+    await collectKasiHolidayCalendarFiles({ outputDirectory: holidayDirectory, year: 2040, months: [1],
+      serviceKey: "test-key", fetchImpl: async () => ({ ok: true, text: async () => holidayRaw.toString("utf8") }) });
+    const combined = await buildRetainedKorailTimetable({ ...input, holidayDirectory,
+      startDate: tableInput.startDate, endDate: tableInput.endDate,
+      serviceIds: tableInput.serviceIds, routeIds: tableInput.routeIds });
+    assert.deepEqual(combined.observation, observation);
+    assert.deepEqual(combined.tables, tables);
+    assert.equal(combined.calendarManifestSha256, hash(await readFile(path.join(holidayDirectory, "months.json"))));
     assert.deepEqual(tables.transitStopTimes.map(({ arrivalSeconds, departureSeconds, pickupType, dropOffType }) =>
       ({ arrivalSeconds, departureSeconds, pickupType, dropOffType })), [
       { arrivalSeconds: 43200, departureSeconds: 43200, pickupType: 0, dropOffType: 1 },

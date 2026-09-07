@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { collectKasiHolidayCalendarFiles, fetchKasiPublicHolidayCalendar, fetchKasiPublicHolidayCalendarObservation, parseRetainedKasiHolidayMonth } from "./fetch-kasi-public-holiday-calendar.mjs";
+import { readKasiHolidayCalendarFiles, collectKasiHolidayCalendarFiles, fetchKasiPublicHolidayCalendar, fetchKasiPublicHolidayCalendarObservation, parseRetainedKasiHolidayMonth } from "./fetch-kasi-public-holiday-calendar.mjs";
 
 test("KASI calendar는 유효한 year·months에서 malformed credential을 request URL·provider 호출 전에 거부한다", async () => {
   let calls = 0;
@@ -58,8 +58,13 @@ test("KASI collection writes reusable files once and rejects an existing output 
     const month = manifest.months[0];
     const raw = await readFile(path.join(outputDirectory, month.file));
     assert.deepEqual(parseRetainedKasiHolidayMonth({ ...month, raw }).holidayDates, []);
+    const retained = await readKasiHolidayCalendarFiles(outputDirectory);
+    assert.deepEqual(retained.months, [{ ...month, raw }]);
+    assert.equal(retained.manifestSha256, createHash("sha256").update(await readFile(path.join(outputDirectory, "months.json"))).digest("hex"));
     await assert.rejects(collectKasiHolidayCalendarFiles(input));
     assert.equal(calls, 1);
+    await writeFile(path.join(outputDirectory, month.file), "changed");
+    await assert.rejects(readKasiHolidayCalendarFiles(outputDirectory), /digest/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

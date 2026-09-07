@@ -5,7 +5,16 @@ import path from "node:path";
 import { unzipEntry, parseWorkbookSheetRefs, parseSharedStrings, parseWorksheetRows } from "./parse-kric-code-catalog.mjs";
 import { selectRetainedKricStationLine } from "./build-kric-retained-file-pending-handoff.mjs";
 import { reconstructTransitTrips } from "./reconstruct-transit-trips.mjs";
-import { parseRetainedKasiHolidayMonth } from "./fetch-kasi-public-holiday-calendar.mjs";
+import { parseRetainedKasiHolidayMonth, readKasiHolidayCalendarFiles } from "./fetch-kasi-public-holiday-calendar.mjs";
+
+/** 보관 입력을 한 경로로 연결한다. admission 판단이나 원본 재수집은 수행하지 않는다. */
+export async function buildRetainedKorailTimetable({ holidayDirectory, startDate, endDate, serviceIds, routeIds, ...sourceInput }) {
+  const calendar = await readKasiHolidayCalendarFiles(holidayDirectory);
+  const observation = await buildRetainedKorailTopologyObservation(sourceInput);
+  const tables = buildKorailTimetableTables({ observation, startDate, endDate, serviceIds, routeIds,
+    holidayMonths: calendar.months });
+  return { observation, tables, calendarManifestSha256: calendar.manifestSha256 };
+}
 
 /** 원문 관측은 불변으로 두고 기존 provider-neutral 코어에 calendar·trip 행을 연결한다. */
 export function buildKorailTimetableTables({ observation, startDate, endDate, holidayMonths, serviceIds, routeIds }) {
@@ -46,7 +55,19 @@ export function buildKorailTimetableTables({ observation, startDate, endDate, ho
     routeIdByLineDirection: { [`${lineId}|up`]: routeIds?.up, [`${lineId}|down`]: routeIds?.down },
     serviceIdByDayCd: serviceIds,
   });
-  return { ...calendars, ...timetable, holidayCalendarSources };
+  // 관측된 운행 방향만 route로 물질화한다. 열차가 없는 방향은 합성하지 않는다.
+  const routes = new Map();
+  for (const { routeId, directionId } of timetable.transitTrips) {
+    const terminal = directionId === "up" ? observation.stationBindings.at(-1) : observation.stationBindings[0];
+    const directionName = `${terminal.stationName} 방면`;
+    if (routes.has(routeId)) {
+      if (routes.get(routeId).directionName !== directionName) throw new Error("route identity spans opposite directions");
+      continue;
+    }
+    routes.set(routeId, { id: routeId, lineId, routeShortName: observation.selection.lineName,
+      routeLongName: `${observation.selection.lineName} ${directionName}`, directionName, timezone: "Asia/Seoul" });
+  }
+  return { ...calendars, ...timetable, transitRoutes: [...routes.values()], holidayCalendarSources };
 }
 
 /** 적용 기간과 공휴일 자료는 호출자가 결속한다. 주말에 중복 예외를 만들지 않는다. */

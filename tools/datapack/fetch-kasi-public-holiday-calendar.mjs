@@ -1,11 +1,34 @@
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { request as httpsRequest } from "node:https";
 import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isMainModule } from "../lib/is-main-module.mjs";
 
 const ENDPOINT = "https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo";
+
+/** 완료 manifest가 지목한 원문을 읽는다. 수집 시각을 갱신하거나 부족한 월을 보충하지 않는다. */
+export async function readKasiHolidayCalendarFiles(directory) {
+  if (typeof directory !== "string" || !path.isAbsolute(directory)) throw new Error("absolute calendar directory required");
+  const bytes = await readFile(path.join(directory, "months.json"));
+  const manifest = JSON.parse(bytes.toString("utf8"));
+  if (manifest.schemaVersion !== 1 || manifest.sourceId !== "kasi-public-holiday-calendar"
+    || !Array.isArray(manifest.months) || manifest.months.length === 0) throw new Error("KASI manifest is invalid");
+  const months = [];
+  const files = new Set();
+  for (const entry of manifest.months) {
+    const file = `${entry.year}-${String(entry.month).padStart(2, "0")}.xml`;
+    if (!/^\d{4}-\d{2}\.xml$/.test(file) || entry.file !== file || files.has(file)
+      || typeof entry.retrievedAt !== "string" || !Number.isFinite(Date.parse(entry.retrievedAt))) {
+      throw new Error("KASI manifest month is invalid");
+    }
+    files.add(file);
+    const raw = await readFile(path.join(directory, file));
+    parseRetainedKasiHolidayMonth({ ...entry, raw });
+    months.push({ ...entry, raw });
+  }
+  return { manifestSha256: createHash("sha256").update(bytes).digest("hex"), months };
+}
 
 /** 새 디렉터리만 예약한다. 실패한 수집에는 완료 manifest를 남기지 않는다. */
 export async function collectKasiHolidayCalendarFiles({ outputDirectory, ...input }) {
