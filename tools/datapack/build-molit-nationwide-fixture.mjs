@@ -1069,6 +1069,28 @@ export function parseMolitGwangjuStationMappings(csvBytes, topologySnapshot) {
   if (!(csvBytes instanceof Uint8Array) || csvBytes.byteLength === 0) {
     throw new Error("MOLIT nationwide station CSV bytes are required");
   }
+  const rows = parseCsv(new TextDecoder("euc-kr").decode(csvBytes))
+    .map(rowFromCsv)
+    .filter((row) => row?.regionName === "광주"
+      && row.operatorName === "광주교통공사"
+      && row.lineName === "1호선")
+    .sort((left, right) => left.sequence - right.sequence);
+  return bindGwangjuTopologyMappings(rows, sha256(csvBytes), topologySnapshot);
+}
+
+export function parseCurrentMolitGwangjuStationMappings(projection, sourceRawSha256, topologySnapshot) {
+  if (typeof sourceRawSha256 !== "string" || !/^[a-f0-9]{64}$/u.test(sourceRawSha256)) {
+    throw new Error("current MOLIT source raw hash is invalid");
+  }
+  assertCurrentMolitFullRouteCompleteness(projection);
+  const rows = projection.map(projectionRow)
+    .filter((row) => row.regionName === "광주"
+      && row.operatorName === "광주교통공사"
+      && row.lineName === "1호선");
+  return bindGwangjuTopologyMappings(rows, sourceRawSha256, topologySnapshot);
+}
+
+function bindGwangjuTopologyMappings(rows, sourceRawSha256, topologySnapshot) {
   if (!Array.isArray(topologySnapshot?.scope) || topologySnapshot.scope.length === 0) {
     throw new Error("MOLIT Gwangju station mapping requires a topology snapshot scope");
   }
@@ -1085,12 +1107,6 @@ export function parseMolitGwangjuStationMappings(csvBytes, topologySnapshot) {
     scopeByName.set(scope.stationName, scope.stationCode);
     scopeCodes.add(scope.stationCode);
   }
-  const rows = parseCsv(new TextDecoder("euc-kr").decode(csvBytes))
-    .map(rowFromCsv)
-    .filter((row) => row?.regionName === "광주"
-      && row.operatorName === "광주교통공사"
-      && row.lineName === "1호선")
-    .sort((left, right) => left.sequence - right.sequence);
   const mappings = rows.map((row) => {
     // collect-gwangju-route-map-positions.mjs의 반대 방향 별칭과 동일한 유일한 명시적 결합이다.
     const topologyName = row.stationName === "광주송정역" ? "광주송정" : row.stationName;
@@ -1111,25 +1127,9 @@ export function parseMolitGwangjuStationMappings(csvBytes, topologySnapshot) {
     throw new Error("MOLIT Gwangju topology mapping must be a unique station-name and station-code bijection");
   }
   return Object.defineProperty(mappings, "sourceRawSha256", {
-    value: sha256(csvBytes),
+    value: sourceRawSha256,
     enumerable: true,
   });
-}
-
-export function parseCurrentMolitGwangjuStationMappings(projection, sourceRawSha256) {
-  const mappings = bindCurrentProjectionMappings(projection, sourceRawSha256, {
-    regionName: "광주", operatorName: "광주교통공사", lineName: "1호선",
-    lineId: "line-e57a361e8892", stationCount: 20, label: "Gwangju Line 1",
-    map: (row) => ({
-      stationId: stationIdFor(row.regionName, row.stationName),
-      stationName: row.stationName,
-      stationNumber: String(99 + row.sequence),
-    }),
-  });
-  if (mappings.some((mapping, index) => mapping.stationNumber !== String(100 + index))) {
-    throw new Error("current MOLIT Gwangju Line 1 station numbering is invalid");
-  }
-  return mappings;
 }
 
 const DAEGU_MEMBERSHIP_EXPECTATIONS = {

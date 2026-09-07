@@ -5,10 +5,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { parseMolitGwangjuStationMappings } from "./build-molit-nationwide-fixture.mjs";
+import { parseCurrentMolitGwangjuStationMappings } from "./build-molit-nationwide-fixture.mjs";
 import { buildAppendOnlyGovernancePolicyRegistration, deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { prepareRetainedKricTimetablePublication } from "./prepare-retained-kric-timetable-publication.mjs";
-import { projectHistoricalRegionalMaterializeInventory } from "./materialize-test-fixture.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { materializeGwangjuTimetable } from "./materialize-gwangju-timetable.mjs";
 import { createRetainedGwangjuTestInput } from "./gwangju-retained-test-fixture.mjs";
@@ -29,6 +28,8 @@ test("receipt-bound retained registration projects exactly four CAS outputs and 
   assert.equal(JSON.parse(registered[0].bytes).sources.find(row => row.id === "kric-nationwide-timetable-file").license.type, "PUBLIC_DATA_FREE_USE");
   assert.deepEqual(registered.map(({ relative }) => relative), outputs);
   assert.equal(new Set(registered[0].inputs.map(({ absolute }) => absolute)).size, registered[0].inputs.length);
+  assert.ok(registered[0].inputs.some(({ absolute }) => absolute.endsWith(fixture.molitObservationPath)));
+  assert.ok(registered[0].inputs.every(({ absolute }) => !absolute.endsWith("molit-urban-rail-full-route-20251211.csv")));
   assert.throws(() => materializeGwangjuTimetable({
     ...fixture.materializerInput, inventory: JSON.parse(registered[0].bytes), now: fixture.now,
   }), /evidence is stale/);
@@ -109,17 +110,20 @@ async function registrationFixture(context) {
   const directory = await mkdtemp(path.join(tmpdir(), "retained-kric-registration-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
   const repositoryRoot = path.join(directory, "repo");
-  for (const relative of [...outputs, "tools/datapack/source-candidates.json", "tools/datapack/sources/gwangju-transportation-route-topology-20260720.json", "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv"]) {
+  for (const relative of [...outputs, "tools/datapack/source-candidates.json", "tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"]) {
     const target = path.join(repositoryRoot, relative); await mkdir(path.dirname(target), { recursive: true });
     await writeFile(target, await readFile(path.join(root, relative)));
   }
-  const [currentInventory, currentGovernance, candidates, topologySnapshot, mappingBytes] = await Promise.all([
+  const [currentInventory, currentGovernance, candidates, topologySnapshot] = await Promise.all([
     readJson(path.join(repositoryRoot, outputs[0])), readJson(path.join(repositoryRoot, outputs[2])),
     readJson(path.join(repositoryRoot, "tools/datapack/source-candidates.json")),
     readJson(path.join(repositoryRoot, "tools/datapack/sources/gwangju-transportation-route-topology-20260720.json")),
-    readFile(path.join(repositoryRoot, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
   ]);
-  const inventory = projectHistoricalRegionalMaterializeInventory(currentInventory);
+  const inventory = structuredClone(currentInventory);
+  const molitAdmission = inventory.sources.find(({ id }) => id === "molit-urban-rail-full-route").admissionEvidence;
+  const molitObservationPath = `tools/datapack/sources/${molitAdmission.snapshotId}.json`;
+  await mkdir(path.dirname(path.join(repositoryRoot, molitObservationPath)), { recursive: true });
+  await writeFile(path.join(repositoryRoot, molitObservationPath), await readFile(path.join(root, molitObservationPath)));
   const sourceId = "kric-nationwide-timetable-file";
   inventory.sources = inventory.sources.filter(row => row.id !== sourceId);
   if (!inventory.sources.some(row => row.id === "gwangju-transportation-cyberstation-timetable")) {
@@ -139,13 +143,15 @@ async function registrationFixture(context) {
   const pack = { ...Object.fromEntries(arrays.map((key) => [key, []])),
     id: "base", version: "1", artifactKind: "production", url: "", minimumTableRows: {} };
   const baseFixture = { manifest: { activePack: { id: pack.id, version: pack.version } }, packs: [pack] };
-  const mappings = parseMolitGwangjuStationMappings(mappingBytes, topologySnapshot);
+  const molitObservation = await readJson(path.join(repositoryRoot, molitObservationPath));
+  const mappings = parseCurrentMolitGwangjuStationMappings(
+    molitObservation.normalizedProjection, molitAdmission.rawSha256, topologySnapshot,
+  );
   const retained = createRetainedGwangjuTestInput({ baseFixture, topologySnapshot,
     inventory: structuredClone(inventory), canonicalStationMappings: mappings }).retainedTimetable;
   const candidate = candidates.candidates.find(({ id }) => id === "kric-nationwide-timetable-file");
   const observationPath = path.join(directory, "observation.json"), collectionReceiptPath = path.join(directory, "collection-receipt.json");
   const publicationReceiptPath = path.join(directory, "publication-receipt.json"), retainedContractPath = path.join(directory, "contract.json");
-  const canonicalStationMappingsPath = path.join(repositoryRoot, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv");
   const observationBytes = Buffer.from(`${JSON.stringify(retained.observation, null, 2)}\n`);
   const governanceEntry = governanceEntryFor(candidate, now);
   const prepared = prepareRetainedKricTimetablePublication({ candidate, observationBytes, receipt: retained.receipt, routeNumber: retained.routeNumber,
@@ -164,9 +170,10 @@ async function registrationFixture(context) {
   ]);
   const sourceInputPath = path.join(directory, "input.json");
   await writeFile(sourceInputPath, `${JSON.stringify({ schemaVersion: 1, artifactKind: "retained-kric-timetable-registration-input", observationPath,
-    collectionReceiptPath, publicationReceiptPath, retainedContractPath, canonicalStationMappingsPath, governanceEntry, providerValidUntil: null }, null, 2)}\n`);
+    collectionReceiptPath, publicationReceiptPath, retainedContractPath, governanceEntry, providerValidUntil: null }, null, 2)}\n`);
   return { repositoryRoot, sourceInputPath, publicationReceiptPath, now, env,
-    materializerInput: { baseFixture, retainedTimetable: retained, topologySnapshot, canonicalStationMappings: mappings } };
+    materializerInput: { baseFixture, retainedTimetable: retained, topologySnapshot, canonicalStationMappings: mappings },
+    molitObservationPath };
 }
 function governanceEntryFor(candidate, now) {
   const terms = { type: candidate.evidence.license, provider: candidate.evidence.provider, evidenceUrl: candidate.evidence.licenseEvidenceUrl, redistributionAllowed: true };

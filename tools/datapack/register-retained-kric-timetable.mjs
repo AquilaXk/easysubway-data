@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { parseMolitGwangjuStationMappings } from "./build-molit-nationwide-fixture.mjs";
 import { selectRetainedKricTimetable } from "./build-kric-retained-file-pending-handoff.mjs";
+import { loadCurrentMolitGwangjuStationMappings } from "./current-molit-observation.mjs";
 import { validateRetainedGwangjuSource } from "./materialize-gwangju-timetable.mjs";
 import { validateRetainedKricTimetableReceipt } from "./publish-retained-kric-timetable.mjs";
 import { prepareRetainedKricTimetablePublication } from "./prepare-retained-kric-timetable-publication.mjs";
@@ -34,9 +34,9 @@ export async function buildRetainedKricTimetableRegistrationOutputs({ repository
   const outputPaths = OUTPUTS.map((relative) => path.join(root, relative));
   if (new Set(unique).size !== unique.length || unique.includes(inputPath)
     || [...unique, inputPath].some((value) => outputPaths.includes(value))) fail("INPUT_ALIAS");
-  const [observationBytes, collectionReceiptBytes, publicationReceiptBytes, contractBytes, mappingBytes] = await Promise.all([
+  const [observationBytes, collectionReceiptBytes, publicationReceiptBytes, contractBytes] = await Promise.all([
     readFile(resolved.observationPath), readFile(resolved.collectionReceiptPath), readFile(resolved.publicationReceiptPath),
-    readFile(resolved.retainedContractPath), readFile(resolved.canonicalStationMappingsPath),
+    readFile(resolved.retainedContractPath),
   ]);
   const [inventory, ledger, governance, freshness, candidates, observation, collectionReceipt, contract] = [
     parse(inventoryBytes, "INVENTORY"), parse(ledgerBytes, "LEDGER"), parse(governanceBytes, "GOVERNANCE"), parse(freshnessBytes, "FRESHNESS"),
@@ -49,7 +49,11 @@ export async function buildRetainedKricTimetableRegistrationOutputs({ repository
   const topologyPath = topologySnapshotPath(root, topology);
   const topologyBytes = await readFile(topologyPath);
   const topologySnapshot = parse(topologyBytes, "TOPOLOGY_SNAPSHOT");
-  const mappings = parseMolitGwangjuStationMappings(mappingBytes, topologySnapshot);
+  const molit = await loadCurrentMolitGwangjuStationMappings({
+    repositoryRoot: root, inventory, inventoryBytes, snapshots: ledger, snapshotsBytes: ledgerBytes,
+    topologySnapshot, topologyBytes,
+  });
+  const mappings = molit.mappings;
   const governanceEntry = verifiedGovernanceEntry(input.governanceEntry, candidate, now);
   const registration = state.kind === "initial"
     ? buildAppendOnlyGovernancePolicyRegistration({ predecessorPolicyBytes: governanceBytes, addedSources: [governanceEntry] })
@@ -127,7 +131,7 @@ export async function buildRetainedKricTimetableRegistrationOutputs({ repository
     [inputPath, inputBytes], [path.join(root, "tools/datapack/source-candidates.json"), candidateBytes],
     [resolved.observationPath, observationBytes], [resolved.collectionReceiptPath, collectionReceiptBytes],
     [resolved.publicationReceiptPath, publicationReceiptBytes], [resolved.retainedContractPath, contractBytes],
-    [resolved.canonicalStationMappingsPath, mappingBytes], [topologyPath, topologyBytes],
+    [path.join(root, molit.observationPath), molit.observationBytes], [topologyPath, topologyBytes],
   ].map(([absolute, value]) => ({ absolute, bytes: value }));
   exactInputs(inputs);
   const values = [bytes(nextInventory), bytes(nextLedger), governancePolicyBytes,
@@ -185,9 +189,9 @@ function topologySnapshotPath(root, topology) {
 }
 function select(items, predicate, code) { const matches = Array.isArray(items) ? items.filter(predicate) : []; if (matches.length !== 1) fail(code); return matches[0]; }
 function exactInput(value) {
-  const keys = ["schemaVersion", "artifactKind", "observationPath", "collectionReceiptPath", "publicationReceiptPath", "retainedContractPath", "canonicalStationMappingsPath", "governanceEntry", "providerValidUntil"].sort(compare);
+  const keys = ["schemaVersion", "artifactKind", "observationPath", "collectionReceiptPath", "publicationReceiptPath", "retainedContractPath", "governanceEntry", "providerValidUntil"].sort(compare);
   if (value?.schemaVersion !== 1 || value.artifactKind !== "retained-kric-timetable-registration-input" || JSON.stringify(Object.keys(value).sort(compare)) !== JSON.stringify(keys)
-    || [value.observationPath, value.collectionReceiptPath, value.publicationReceiptPath, value.retainedContractPath, value.canonicalStationMappingsPath].some((item) => !path.isAbsolute(item ?? ""))
+    || [value.observationPath, value.collectionReceiptPath, value.publicationReceiptPath, value.retainedContractPath].some((item) => !path.isAbsolute(item ?? ""))
     || !(value.providerValidUntil === null || utc(value.providerValidUntil))) fail("SOURCE_INPUT"); return value;
 }
 function exactInputs(inputs) { if (new Set(inputs.map(({ absolute }) => absolute)).size !== inputs.length || inputs.some(({ absolute, bytes }) => !path.isAbsolute(absolute) || !Buffer.isBuffer(bytes))) fail("INPUTS"); }

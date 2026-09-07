@@ -10,6 +10,7 @@ import {
   parseCurrentMolitDaejeonStationMappings,
   parseCurrentMolitGwangjuStationMappings,
 } from "./build-molit-nationwide-fixture.mjs";
+import { loadCurrentMolitObservation } from "./current-molit-observation.mjs";
 
 const ITX_TOKEN = /(?:^|[^A-Z0-9])ITX(?:[_-]|$)/;
 const REPOSITORY_ROOT = path.resolve(import.meta.dirname, "../..");
@@ -223,41 +224,6 @@ export function projectHistoricalRegionalMaterializeInventory(input) {
   return inventory;
 }
 
-function assertCurrentMolitObservation({ inventory, snapshots, observation, observationBytes }) {
-  const source = inventory?.sources?.find(({ id }) => id === MOLIT_SOURCE_ID);
-  const admission = source?.admissionEvidence;
-  if (!source || !admission || admission.sourceId !== MOLIT_SOURCE_ID
-    || admission.decision !== "APPROVED" || typeof admission.snapshotId !== "string"
-    || !SHA256.test(admission.rawSha256 ?? "")) {
-    throw new Error("current MOLIT inventory admission is invalid");
-  }
-  const snapshot = snapshots.filter(({ sourceId, snapshotId }) =>
-    sourceId === MOLIT_SOURCE_ID && snapshotId === admission.snapshotId);
-  if (snapshot.length !== 1 || snapshot[0].rawSha256 !== admission.rawSha256
-    || !SHA256.test(snapshot[0].contentSha256 ?? "")
-    || !SHA256.test(snapshot[0].normalizedObservationSha256 ?? "")
-    || snapshot[0].snapshotStatus !== "LOCKED" || snapshot[0].fetchStatus !== "SUCCESS"
-    || snapshot[0].schemaStatus !== "PASS" || snapshot[0].licenseStatus !== "PASS"
-    || snapshot[0].redistributionAllowed !== true || snapshot[0].credentialRedacted !== true) {
-    throw new Error("current MOLIT source snapshot binding is invalid");
-  }
-  const [current] = snapshot;
-  if (sha256(observationBytes) !== current.normalizedObservationSha256
-    || observation?.sourceId !== MOLIT_SOURCE_ID || observation.snapshotId !== current.snapshotId
-    || observation.capturedAt !== current.retrievedAt
-    || observation.rawSha256 !== current.rawSha256 || observation.contentSha256 !== current.contentSha256
-    || observation.schemaFingerprint !== current.schemaFingerprint
-    || observation.rowCount !== current.rowCount || !Array.isArray(observation.normalizedProjection)
-    || sha256(Buffer.from(`${JSON.stringify(observation.normalizedProjection)}\n`)) !== current.contentSha256
-    || JSON.stringify(observation.providerRecordHashes) !== JSON.stringify(current.providerRecordHashes)
-    || JSON.stringify(observation.providerRecordHashes) !== JSON.stringify(
-      observation.normalizedProjection.map((record) => sha256(JSON.stringify(record))),
-    )) {
-    throw new Error("current MOLIT normalized observation binding is invalid");
-  }
-  return { current, source };
-}
-
 function assertMembershipAdmission(inventory, lineId, mappings) {
   const expected = HISTORICAL_MEMBERSHIP_BY_LINE[lineId];
   const matches = inventory.sources.filter(({ membershipAdmissionEvidence: evidence }) =>
@@ -296,17 +262,18 @@ export async function loadCurrentMolitMembershipMappings({
   const root = path.resolve(repositoryRoot);
   const read = readTracked ?? ((relativePath) => readFile(path.join(root, relativePath)));
   const inventory = suppliedInventory ?? JSON.parse(await read("tools/datapack/source-inventory.json"));
-  const snapshots = JSON.parse(await read("tools/datapack/release/source-snapshots.json"));
-  const admission = inventory?.sources?.find(({ id }) => id === MOLIT_SOURCE_ID)?.admissionEvidence;
-  if (typeof admission?.snapshotId !== "string" || !/^molit-urban-rail-full-route-current-20\d{6}T\d{9}Z$/u.test(admission.snapshotId)) {
-    throw new Error("current MOLIT observation snapshot id is invalid");
+  const { current, observation } = await loadCurrentMolitObservation({
+    repositoryRoot: root, inventory, readTracked: read,
+  });
+  const topology = inventory.sources.find(({ id }) => id === "gwangju-transportation-route-topology");
+  const topologyPath = topology?.topologyAdmissionEvidence?.snapshotPath;
+  if (typeof topologyPath !== "string" || !topologyPath.startsWith("tools/datapack/sources/")) {
+    throw new Error("current MOLIT Gwangju topology selection is invalid");
   }
-  const observationBytes = await read(`tools/datapack/sources/${admission.snapshotId}.json`);
-  const observation = JSON.parse(observationBytes);
-  const { current } = assertCurrentMolitObservation({ inventory, snapshots, observation, observationBytes });
+  const gwangjuTopology = JSON.parse(await read(topologyPath));
   const projection = observation.normalizedProjection;
   const daejeon = parseCurrentMolitDaejeonStationMappings(projection, current.rawSha256);
-  const gwangju = parseCurrentMolitGwangjuStationMappings(projection, current.rawSha256);
+  const gwangju = parseCurrentMolitGwangjuStationMappings(projection, current.rawSha256, gwangjuTopology);
   const daeguLine1 = parseCurrentMolitDaeguStationMappings(projection, current.rawSha256, "1호선");
   const daeguLine2 = parseCurrentMolitDaeguStationMappings(projection, current.rawSha256, "2호선");
   const daeguLine3 = parseCurrentMolitDaeguStationMappings(projection, current.rawSha256, "3호선");

@@ -18,14 +18,21 @@ test("retained contract CLI binds stored inputs and refuses overwrite", async co
   const args = input();
   const json = (file, value) => writeFile(file, `${JSON.stringify(value, null, 2)}\n`);
   await mkdir(path.join(directory, "tools/datapack/sources"), { recursive: true });
-  const topologyId = "gwangju-transportation-route-topology-test";
-  const snapshotPath = `tools/datapack/sources/${topologyId}.json`;
   const repositoryTopology = JSON.parse(await readFile("tools/datapack/sources/gwangju-transportation-route-topology-20260720.json", "utf8"));
+  const productionInventory = JSON.parse(await readFile("tools/datapack/source-inventory.json", "utf8"));
+  const topologySource = productionInventory.sources.find(({ id }) => id === "gwangju-transportation-route-topology");
+  const gwangjuMembershipSource = productionInventory.sources.find(({ id }) => id === "molit-urban-rail-full-route-gwangju-membership");
+  const snapshotPath = topologySource.topologyAdmissionEvidence.snapshotPath;
+  const molitSource = productionInventory.sources.find(({ id }) => id === "molit-urban-rail-full-route");
+  const molitSnapshotId = molitSource.admissionEvidence.snapshotId;
   await json(path.join(directory, snapshotPath), repositoryTopology);
   await json(path.join(directory, "tools/datapack/source-candidates.json"), { candidates: [candidate] });
-  await json(path.join(directory, "tools/datapack/source-inventory.json"), { sources: [{
-    id: "gwangju-transportation-route-topology", topologyAdmissionEvidence: { snapshotId: topologyId, snapshotPath },
-  }] });
+  await json(path.join(directory, "tools/datapack/source-inventory.json"), { sources: [
+    topologySource, gwangjuMembershipSource, molitSource,
+  ] });
+  await mkdir(path.join(directory, "tools/datapack/release"), { recursive: true });
+  await writeFile(path.join(directory, "tools/datapack/release/source-snapshots.json"), await readFile("tools/datapack/release/source-snapshots.json"));
+  await writeFile(path.join(directory, `tools/datapack/sources/${molitSnapshotId}.json`), await readFile(`tools/datapack/sources/${molitSnapshotId}.json`));
   const observationPath = path.join(directory, "observation.json"), receiptPath = path.join(directory, "receipt.json"),
     holidayDirectory = path.join(directory, "holidays");
   const records = JSON.parse(args.observationBytes).records.map((record) => {
@@ -50,9 +57,7 @@ test("retained contract CLI binds stored inputs and refuses overwrite", async co
   }
   await json(path.join(holidayDirectory, "months.json"), { schemaVersion: 1, sourceId: "kasi-public-holiday-calendar", months });
   const inputPath = path.join(directory, "input.json"), outputPath = path.join(directory, "output.json");
-  const specification = { observationPath, receiptPath,
-    canonicalStationMappingsPath: path.resolve("tools/datapack/sources/molit-urban-rail-full-route-20251211.csv"),
-    holidayDirectory, providerValidUntil: null };
+  const specification = { observationPath, receiptPath, holidayDirectory, providerValidUntil: null };
   await json(inputPath, specification);
   const invoke = () => runRetainedGwangjuContractPreparation(["--input", inputPath, "--output", outputPath], {
     repositoryRoot: directory, now: new Date(args.evaluationAt),

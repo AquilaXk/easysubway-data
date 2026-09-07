@@ -7,8 +7,8 @@ import { parseRetainedKasiHolidayMonth, readKasiHolidayCalendarFiles } from "./f
 import { buildRetainedGwangjuServiceCalendars, projectRetainedGwangjuTimetable } from "./materialize-gwangju-timetable.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { prepareRetainedKricTimetablePublication } from "./prepare-retained-kric-timetable-publication.mjs";
-import { parseMolitGwangjuStationMappings } from "./build-molit-nationwide-fixture.mjs";
 import { selectRetainedKricTimetable } from "./build-kric-retained-file-pending-handoff.mjs";
+import { loadCurrentMolitGwangjuStationMappings } from "./current-molit-observation.mjs";
 
 const SEOUL_DATE_FORMATTER = new Intl.DateTimeFormat("en", {
   timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
@@ -130,7 +130,7 @@ export async function runRetainedGwangjuContractPreparation(argv, {
   }
   const readJson = async file => JSON.parse(await readFile(file, "utf8"));
   const input = await readJson(argv[1]);
-  const keys = ["observationPath", "receiptPath", "canonicalStationMappingsPath", "holidayDirectory", "providerValidUntil"];
+  const keys = ["observationPath", "receiptPath", "holidayDirectory", "providerValidUntil"];
   if (!input || JSON.stringify(Object.keys(input).sort()) !== JSON.stringify(keys.sort())
     || keys.filter(key => key.endsWith("Path") || key.endsWith("Directory")).some(key => !path.isAbsolute(input[key] ?? ""))) {
     throw new Error("retained Gwangju preparation input is invalid");
@@ -150,9 +150,8 @@ export async function runRetainedGwangjuContractPreparation(argv, {
   const { records } = selectRetainedKricTimetable({
     observation: JSON.parse(observationBytes.toString("utf8")), receipt, routeNumber: routePolicy.routeNumber,
   });
-  const canonicalMappings = parseMolitGwangjuStationMappings(
-    await readFile(input.canonicalStationMappingsPath), topologySnapshot,
-  );
+  const molit = await loadCurrentMolitGwangjuStationMappings({ repositoryRoot, inventory, topologySnapshot });
+  const canonicalMappings = molit.mappings;
   const stationBindings = deriveStationBindings({ records, canonicalMappings, routePolicy });
   const result = prepareRetainedGwangjuContract({ candidate, observationBytes,
     receipt, routeNumber: routePolicy.routeNumber,

@@ -161,6 +161,8 @@ test("current MOLIT loader records supplied ledger and observation inputs while 
   assert.deepEqual(recorded, [
     "tools/datapack/release/source-snapshots.json",
     `tools/datapack/sources/${admission.snapshotId}.json`,
+    inventory.sources.find(({ id }) => id === "gwangju-transportation-route-topology")
+      .topologyAdmissionEvidence.snapshotPath,
   ]);
 
   const denied = structuredClone(inventory);
@@ -212,15 +214,20 @@ test("current MOLIT loader rejects denied snapshots and incomplete dual evidence
   const admission = inventory.sources.find(({ id }) => id === "molit-urban-rail-full-route").admissionEvidence;
   const observationRelative = `tools/datapack/sources/${admission.snapshotId}.json`;
   const observationPath = path.join(repositoryRoot, observationRelative);
+  const topologyRelative = inventory.sources.find(({ id }) => id === "gwangju-transportation-route-topology")
+    .topologyAdmissionEvidence.snapshotPath;
+  const topologyPath = path.join(repositoryRoot, topologyRelative);
   await Promise.all([
     mkdir(path.dirname(inventoryPath), { recursive: true }),
     mkdir(path.dirname(snapshotsPath), { recursive: true }),
     mkdir(path.dirname(observationPath), { recursive: true }),
+    mkdir(path.dirname(topologyPath), { recursive: true }),
   ]);
   await Promise.all([
     writeFile(inventoryPath, JSON.stringify(inventory)),
     writeFile(snapshotsPath, JSON.stringify(snapshots)),
     writeFile(observationPath, await readFile(path.join(root, observationRelative))),
+    writeFile(topologyPath, await readFile(path.join(root, topologyRelative))),
   ]);
 
   const denied = structuredClone(inventory);
