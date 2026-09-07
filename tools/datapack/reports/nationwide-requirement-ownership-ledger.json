@@ -19,7 +19,7 @@
       },
       "inventory": {
         "path": "tools/datapack/source-inventory.json",
-        "sha256": "dd95a501ec9d96c898cfa0626c8a2b4e90cebfd62bf1f9b563d49f451a9a2eff"
+        "sha256": "e0980f63fa197c4a995a22642dd17ff26b0266dbe3af736e168a442be4471dfc"
       },
       "ownership": {
         "path": "tools/datapack/release/nationwide-requirement-ownership.json",
@@ -23298,7 +23298,7 @@
             {
               "sourceId": "kric-nationwide-timetable-file",
               "license": {
-                "type": "unrestricted",
+                "type": "PUBLIC_DATA_FREE_USE",
                 "name": "unrestricted",
                 "attribution": "국가철도공단",
                 "commercialUseAllowed": true,

@@ -79,11 +79,11 @@ export async function buildRetainedKricTimetableRegistrationOutputs({ repository
     coverageScope: { ...structuredClone(topology.coverageScope), sourceDomains: ["schedule_timetable"] },
     requiredForProductionPack: true, productionUseAllowed: true,
     updateFrequency: candidate.confirmationPolicy.reverificationCadence, observedDataUpdatedAt: candidate.evidence.modifiedAt,
-    retrievedAt: selected.summary.observedAt.slice(0, 10), license: { type: candidate.evidence.license, name: candidate.evidence.license,
+    retrievedAt: selected.summary.observedAt.slice(0, 10), license: { type: "PUBLIC_DATA_FREE_USE", name: candidate.evidence.license,
       attribution: candidate.evidence.provider, commercialUseAllowed: true, derivativeWorkAllowed: true, redistributionAllowed: true,
       evidenceUrl: candidate.evidence.licenseEvidenceUrl }, fieldsProvided: ["service_calendar", "trip", "stop_time"],
     capabilities: { schedule: { status: "SUPPORTED", productionUseAllowed: true, updateFrequency: candidate.confirmationPolicy.reverificationCadence,
-      coverageStatus: "GWANGJU_LINE_1", unsupportedNotes: "" }, realtime: unsupported("NO_REALTIME_FIELDS"), facility: unsupported("NO_FACILITY_FIELDS") },
+      coverageStatus: "GWANGJU_LINE_1", unsupportedNotes: "Admission covers the retained Gwangju timetable only; other routes require separate admission." }, realtime: unsupported("NO_REALTIME_FIELDS"), facility: unsupported("NO_FACILITY_FIELDS") },
     retainedScheduleAdmissionEvidence: evidence, admissionEvidence: { licenseEvidenceHash: sha(canonicalJson(licenseEvidence)) },
   };
   const nextInventory = { ...inventory, sources: [...inventory.sources.filter((entry) => entry?.id !== SUPERSEDED_SOURCE_ID), inventorySource] };

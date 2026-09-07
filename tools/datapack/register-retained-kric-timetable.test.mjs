@@ -26,6 +26,7 @@ test("receipt-bound retained registration projects exactly four CAS outputs and 
   const fixture = await registrationFixture(context);
   const before = await outputBytes(fixture.repositoryRoot);
   const registered = await buildRetainedKricTimetableRegistrationOutputs(fixture);
+  assert.equal(JSON.parse(registered[0].bytes).sources.find(row => row.id === "kric-nationwide-timetable-file").license.type, "PUBLIC_DATA_FREE_USE");
   assert.deepEqual(registered.map(({ relative }) => relative), outputs);
   assert.equal(new Set(registered[0].inputs.map(({ absolute }) => absolute)).size, registered[0].inputs.length);
   assert.throws(() => materializeGwangjuTimetable({

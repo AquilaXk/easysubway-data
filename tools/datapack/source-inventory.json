@@ -8508,7 +8508,7 @@
       "observedDataUpdatedAt": "2026-07-06",
       "retrievedAt": "2026-09-07",
       "license": {
-        "type": "unrestricted",
+        "type": "PUBLIC_DATA_FREE_USE",
         "name": "unrestricted",
         "attribution": "국가철도공단",
         "commercialUseAllowed": true,
@@ -8527,7 +8527,7 @@
           "productionUseAllowed": true,
           "updateFrequency": "P7D",
           "coverageStatus": "GWANGJU_LINE_1",
-          "unsupportedNotes": ""
+          "unsupportedNotes": "Admission covers the retained Gwangju timetable only; other routes require separate admission."
         },
         "realtime": {
           "status": "UNSUPPORTED",
