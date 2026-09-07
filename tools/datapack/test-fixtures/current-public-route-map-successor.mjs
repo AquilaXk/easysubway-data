@@ -243,6 +243,7 @@ async function materializeMissingFixtureRequiredSources({
     const sourceRecordPath = `tools/datapack/release/fixture-required-source-${contentSha256}-record.json`;
     const admissionRecordPath = `tools/datapack/release/fixture-required-source-${adminReviewRecordHash}-admission-record.json`;
     await Promise.all([
+      writeFile(path.join(root, `tools/datapack/sources/${snapshotId}.json`), sourceRecordBytes),
       writeFile(path.join(root, sourceRecordPath), sourceRecordBytes),
       writeFile(path.join(root, admissionRecordPath), admissionRecordBytes),
     ]);
