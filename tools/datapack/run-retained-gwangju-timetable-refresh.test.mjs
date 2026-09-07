@@ -38,6 +38,21 @@ test("DUE refresh rejects invalid preflight configuration before collection", as
   assert.equal(collected, 0);
 });
 
+test("DUE refresh rejects malformed credential before provider and filesystem effects", async () => {
+  let calls = 0;
+  const unexpectedEffect = async () => { calls += 1; throw new Error("unexpected effect"); };
+  await assert.rejects(runRetainedGwangjuTimetableRefresh({
+    repositoryRoot: "/tmp/repository", operationRoot: "/tmp/invalid-refresh",
+    env: { ...env, DATA_GO_KR_SERVICE_KEY: "invalid%ZZ" },
+    boundaries: {
+      readDecision: async () => due, preflightDue: async () => preflight,
+      mkdir: unexpectedEffect, collectKric: unexpectedEffect,
+      collectKasi: unexpectedEffect, publish: unexpectedEffect, register: unexpectedEffect,
+    },
+  }), /DATA_GO_KR_SERVICE_KEY/);
+  assert.equal(calls, 0);
+});
+
 test("DUE refresh orders retained artifacts and stops before registration after a later failure", async context => {
   const root = await mkdtemp(path.join(tmpdir(), "retained-refresh-"));
   context.after(() => rm(root, { recursive: true, force: true }));
