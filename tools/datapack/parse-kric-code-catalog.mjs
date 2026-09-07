@@ -138,7 +138,7 @@ function decodeXml(value) {
     .replaceAll("&apos;", "'").replaceAll("&amp;", "&");
 }
 
-async function unzipEntry(input, entry, optional = false) {
+export async function unzipEntry(input, entry, optional = false) {
   try {
     const { stdout } = await execFileAsync("unzip", ["-p", input, entry], { maxBuffer: 50 * 1024 * 1024 });
     return stdout;

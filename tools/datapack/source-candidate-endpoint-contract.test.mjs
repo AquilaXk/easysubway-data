@@ -83,6 +83,22 @@ const DATA_GO_FOCUSED_TESTS = Object.freeze({
 
 const document = JSON.parse(await readFile(CANDIDATES_PATH, "utf8"));
 
+test("retained Korail timetable candidate does not claim a provider runner or admission", async () => {
+  const candidate = document.candidates.find(({ id }) => id === "korail-metropolitan-timetable-file");
+  assert.ok(candidate);
+  assert.equal(candidate.admissionStatus, "preflight_only");
+  assert.equal(candidate.mobileEmbeddingAllowed, false);
+  assert.equal(candidate.detailUrl, "https://www.data.go.kr/data/15052169/fileData.do");
+  assert.equal(candidate.requestUrl, "https://www.korail.com/ticket/reserve/train-timeTable");
+  assert.equal(candidate.operation, undefined);
+  assert.equal(validateOperation(candidate, { allowMissing: true }), null);
+  const [file, exportedName] = candidate.evidence.retainedReader.split("#");
+  const reader = await import(new URL(`../../${file}`, import.meta.url));
+  assert.equal(typeof reader[exportedName], "function");
+  assert.equal(candidate.evidence.licenseEvidenceUrl, candidate.detailUrl);
+  assert.equal(candidate.evidence.license, "unrestricted");
+});
+
 test("Seoul 노선별 지하철역 operation은 blank placeholders와 4호선 request token을 쓴다", () => {
   const candidate = document.candidates.find(({ id }) => id === "seoulmetro-station-line-info");
   assert.ok(candidate);
