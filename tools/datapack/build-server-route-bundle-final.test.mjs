@@ -33,7 +33,7 @@ import {
   materializeStationLineAccessibility,
 } from "./materialize-station-line-accessibility.mjs";
 import { signServerRouteBundle } from "./sign-server-route-bundle.mjs";
-import { copySyntheticCurrentPublicRouteMapRepository, nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
+import { createIndependentSourceGovernanceFixture } from "./test-fixtures/independent-source-governance.mjs";
 
 const CURRENT_SOURCE_WINDOW = await selectedSourceWindow();
 const FRESH_AT = CURRENT_SOURCE_WINDOW.evaluationAt;
@@ -747,17 +747,18 @@ async function copyRepositoryInputs(repositoryRoot) {
     await mkdir(path.dirname(path.join(repositoryRoot, relative)), { recursive: true });
     await cp(relative, path.join(repositoryRoot, relative));
   }
-  // FINAL 테스트도 inventory와 candidate를 동일한 생성 입력에 결속한다.
-  await copySyntheticCurrentPublicRouteMapRepository(process.cwd(), repositoryRoot, {
-    now: new Date(FRESH_AT),
+  // 운영 후보 재생 대신 독립 source 입력으로 실제 FINAL 검증 경계를 실행한다.
+  const specPath = path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json");
+  const fixture = await createIndependentSourceGovernanceFixture({
+    repositoryRoot, buildSpec: await readJson(specPath),
   });
+  await writeFile(specPath, JSON.stringify(fixture.buildSpec));
+  await writeFile(path.join(repositoryRoot, fixture.buildSpec.sourceSnapshotEvidencePath), JSON.stringify(fixture.snapshots));
 }
 
 async function selectedSourceWindow(repositoryRoot = process.cwd()) {
-  const [buildSpec, sourceSnapshots] = await Promise.all([
-    readJson(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json")),
-    readJson(path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json")),
-  ]);
+  const fixture = await createIndependentSourceGovernanceFixture({ repositoryRoot });
+  const buildSpec = fixture.buildSpec, sourceSnapshots = fixture.snapshots;
   const selected = buildSpec.sourceSnapshotIds.map((snapshotId) => {
     const matches = sourceSnapshots.filter((entry) => entry.snapshotId === snapshotId);
     assert.equal(matches.length, 1, `selected source snapshot identity: ${snapshotId}`);
@@ -769,7 +770,7 @@ async function selectedSourceWindow(repositoryRoot = process.cwd()) {
     entry.rawReceipt?.storedAt,
   ].filter(Boolean).map(Date.parse)));
   const freshUntil = Math.min(...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)));
-  const evaluationAt = await nextSyntheticCurrentStaticNetworkNow(repositoryRoot);
+  const evaluationAt = new Date(fixture.evaluationAt);
   assert.ok(Number.isFinite(basisAt) && Number.isFinite(freshUntil) && evaluationAt.getTime() < freshUntil);
   return {
     evaluationAt: evaluationAt.toISOString(),

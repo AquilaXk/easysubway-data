@@ -25,7 +25,7 @@ const REQUIRED_PROVENANCE_FIELDS = [
   "governancePolicySha256",
 ];
 
-// 실제 승인 증거는 inventory의 license/admin hash로만 묶고, fixture raw/content는 별도 test-only record로 만든다.
+// 실제 license 정책은 그대로 읽고, snapshot 내부 결속은 별도 test-only 기록으로 만든다.
 export async function createIndependentSourceGovernanceFixture({
   repositoryRoot = process.cwd(),
   buildSpec = {},
@@ -56,10 +56,6 @@ export async function createIndependentSourceGovernanceFixture({
         && entry.sourceIds?.includes(source.id)),
       `${source.id} freshness class`,
     );
-    const adminReviewRecordHash = requiredSha256(
-      source.admissionEvidence?.adminReviewRecordHash,
-      `${source.id} admin review hash`,
-    );
     requiredSha256(source.admissionEvidence?.licenseEvidenceHash, `${source.id} license evidence hash`);
     const rawRecord = Buffer.from(JSON.stringify({
       schemaVersion: 1,
@@ -79,6 +75,12 @@ export async function createIndependentSourceGovernanceFixture({
     }));
     const rawSha256 = sha256(rawRecord);
     const contentSha256 = sha256(contentRecord);
+    const bindingRecord = Buffer.from(JSON.stringify({
+      artifactKind: "independent-source-governance-test-binding",
+      testOnly: true, sourceId: source.id, rawSha256, contentSha256,
+      governancePolicySha256,
+    }));
+    const adminReviewRecordHash = sha256(bindingRecord);
     const freshnessExpiresAt = deriveFreshnessExpiresAt({
       policy: freshnessPolicy,
       sourceClassId: sourceClass.id,
@@ -128,6 +130,7 @@ export async function createIndependentSourceGovernanceFixture({
       snapshotId: snapshot.snapshotId,
       rawBytes: rawRecord,
       contentBytes: contentRecord,
+      bindingBytes: bindingRecord,
     }));
     return Object.freeze(snapshot);
   });
