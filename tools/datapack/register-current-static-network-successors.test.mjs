@@ -41,7 +41,11 @@ async function registrationOutputs(root) {
   };
   const activeObservationPaths = ["seoul-metro-route-map-positions", "molit-urban-rail-full-route"].map((sourceId) =>
     `tools/datapack/sources/${candidate.sourceSnapshots.find((source) => source.sourceId === sourceId).snapshotId}.json`);
-  const inputs = [...staticInputs, topologyInput, ...await Promise.all(activeObservationPaths.map(async (relative) => ({
+  const inventory = JSON.parse(staticInputs[0].bytes);
+  const gwangjuPath = inventory.sources.find(({ id }) => id === "gwangju-transportation-route-topology").topologyAdmissionEvidence.snapshotPath;
+  const inputs = [...staticInputs, topologyInput,
+    { relative: gwangjuPath, bytes: await readFile(path.join(root, gwangjuPath)) },
+    ...await Promise.all(activeObservationPaths.map(async (relative) => ({
     relative,
     bytes: await readFile(path.join(root, relative)),
   })))];
@@ -92,11 +96,17 @@ test("v2 registrar advances only the exact active V2 heads", async (t) => {
   ));
   const input = await publicV2Input(root); const staged = await buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input });
   assert.equal(staged.length, 5); assert.deepEqual(staged.map(({ relative }) => relative).slice(2), ["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json"]);
-  assert.equal(staged[0].inputs.length, STATIC_INPUT_PATHS.length + 3);
+  assert.equal(staged[0].inputs.length, STATIC_INPUT_PATHS.length + 4);
   assert.deepEqual(staged[0].inputs.slice(-2).map(({ relative }) => relative), predecessorIds.map(
     (snapshotId) => `tools/datapack/sources/${snapshotId}.json`,
   ));
   const stagedInventory = JSON.parse(staged[2].bytes);
+  const gwangjuPath = stagedInventory.sources.find(({ id }) => id === "gwangju-transportation-route-topology").topologyAdmissionEvidence.snapshotPath;
+  const gwangjuBytes = await readFile(path.join(root, gwangjuPath));
+  assert.deepEqual(staged[0].inputs.find(({ relative }) => relative === gwangjuPath)?.bytes, gwangjuBytes);
+  await writeFile(path.join(root, gwangjuPath), Buffer.concat([gwangjuBytes, Buffer.from("\n")]));
+  await assert.rejects(commitStaticNetworkSuccessorOutputs({ repositoryRoot: root, outputs: staged }), /static network registration preserves foreign replacement/);
+  await writeFile(path.join(root, gwangjuPath), gwangjuBytes);
   for (const sourceId of ["seoul-metro-route-map-positions", "molit-urban-rail-full-route"]) {
     const source = stagedInventory.sources.find(({ id }) => id === sourceId);
     assert.equal(source.requiredForProductionPack, true);

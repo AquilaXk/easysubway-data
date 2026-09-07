@@ -169,7 +169,7 @@ test("publishes exactly the protected topology bytes and builds an initial regis
     "tools/datapack/source-governance-policy.json",
     "release/product-gates/datapack-freshness-sla.json",
   ]);
-  const source = JSON.parse(outputs[0].bytes).sources.at(-1);
+  const source = JSON.parse(outputs[0].bytes).sources.find(({ id }) => id === "capital-route-topology");
   const snapshot = JSON.parse(outputs[1].bytes).at(-1);
   for (const key of ["id", "displayName", "owner", "provider", "providerDepartment", "sourceSystem", "datasetUrl", "datasetKind", "coverage"]) {
     assert.equal(typeof source[key], "string", `generated inventory ${key}`);
