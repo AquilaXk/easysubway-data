@@ -17,6 +17,8 @@ import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 const root = path.resolve(import.meta.dirname, "../..");
 const CATALOG_VERSION = 19;
 const MAX_GZIP_DELTA_BYTES = 64 * 1024;
+const CURRENT_VERIFICATION_MODE = "current";
+const IMMUTABLE_INTEGRITY_VERIFICATION_MODE = "immutable-integrity";
 const ADMITTED_TOPOLOGY_INPUTS = new Map([
   [
     "e3c4f942a02712904d44d642627eb909523d55189efce96296a0d2b96e3ea4ad",
@@ -176,11 +178,23 @@ function candidateBuildNow() {
   return buildNow;
 }
 
+function verificationMode(value) {
+  if (value === CURRENT_VERIFICATION_MODE || value === IMMUTABLE_INTEGRITY_VERIFICATION_MODE) {
+    return value;
+  }
+  throw new Error(`unknown ITX topology verification mode: ${value}`);
+}
+
 async function admittedSource(contractPath, {
   repositoryRoot = root,
-  buildNow = candidateBuildNow(),
+  verificationMode: requestedVerificationMode = CURRENT_VERIFICATION_MODE,
+  buildNow,
   currentAdmissionPath = null,
 } = {}) {
+  const mode = verificationMode(requestedVerificationMode);
+  if (mode === IMMUTABLE_INTEGRITY_VERIFICATION_MODE && currentAdmissionPath != null) {
+    throw new Error("immutable integrity verification does not accept current admission input");
+  }
   const contract = JSON.parse(await readFile(contractPath, "utf8"));
   const reference = contract?.sourceTimetableArtifact;
   validateAdmittedSourceReference(contract, reference);
@@ -201,7 +215,9 @@ async function admittedSource(contractPath, {
     completeness,
     sha256(sourceBytes),
     sha256(completenessBytes),
-    { buildNow, currentAdmission },
+    mode === IMMUTABLE_INTEGRITY_VERIFICATION_MODE
+      ? { verificationMode: mode }
+      : { verificationMode: mode, buildNow, currentAdmission },
   );
   return { contract, reference, source, sourceBytes, currentAdmission, currentProjection };
 }
@@ -218,6 +234,15 @@ export function deriveAdmittedItxRideEdgeSetSha256(source) {
     distanceMeters: edge.distanceMeters,
   }));
   return canonicalRideEdgeSetSha256(rides);
+}
+
+export async function readImmutableItxRideEdgeSetSha256(repositoryRoot = root) {
+  const resolvedRoot = path.resolve(repositoryRoot);
+  const { source } = await admittedSource(
+    path.join(resolvedRoot, "tools/datapack/itx-cheongchun-coverage-contract.json"),
+    { repositoryRoot: resolvedRoot, verificationMode: IMMUTABLE_INTEGRITY_VERIFICATION_MODE },
+  );
+  return deriveAdmittedItxRideEdgeSetSha256(source);
 }
 
 export async function readAdmittedItxRideEdgeSetSha256(
@@ -278,18 +303,30 @@ export function validateAdmittedSourceDocuments(
   completenessSha256,
   validation = {},
 ) {
-  const { buildNow, currentAdmission } = validation instanceof Date
-    ? { buildNow: validation, currentAdmission: null }
-    : { buildNow: validation.buildNow ?? candidateBuildNow(), currentAdmission: validation.currentAdmission ?? null };
+  const options = validation instanceof Date
+    ? { verificationMode: CURRENT_VERIFICATION_MODE, buildNow: validation, currentAdmission: null }
+    : validation;
+  const mode = verificationMode(options.verificationMode ?? CURRENT_VERIFICATION_MODE);
+  if (mode === IMMUTABLE_INTEGRITY_VERIFICATION_MODE
+    && (Object.hasOwn(options, "buildNow") || Object.hasOwn(options, "currentAdmission"))) {
+    throw new Error("immutable integrity verification does not accept clock or current admission input");
+  }
+  const buildNow = mode === CURRENT_VERIFICATION_MODE
+    ? options.buildNow ?? candidateBuildNow()
+    : null;
+  const currentAdmission = mode === CURRENT_VERIFICATION_MODE
+    ? options.currentAdmission ?? null
+    : null;
   validateAdmittedSourceReference(contract, reference);
   if (sourceSha256 !== reference.sha256
     || completenessSha256 !== reference.completenessEvidenceSha256) {
     throw new Error("ITX topology source bytes do not match the coverage contract");
   }
   const freshUntilMillis = Date.parse(reference.freshUntil);
-  if (!(buildNow instanceof Date) || Number.isNaN(buildNow.getTime())
-    || !Number.isFinite(freshUntilMillis)
-    || (currentAdmission == null && freshUntilMillis <= buildNow.getTime())) {
+  if (!Number.isFinite(freshUntilMillis)
+    || (mode === CURRENT_VERIFICATION_MODE
+      && (!(buildNow instanceof Date) || Number.isNaN(buildNow.getTime())
+        || (currentAdmission == null && freshUntilMillis <= buildNow.getTime())))) {
     throw new Error("ITX topology source artifact is expired");
   }
   const admission = contract?.officialEvidence?.korailCompletenessAdmission;
@@ -1075,21 +1112,27 @@ async function main() {
   const currentAdmissionPath = currentAdmissionOption == null ? null : path.resolve(root, currentAdmissionOption);
   const fixtureProjectionPath = option("--project-fixture", null);
   const check = process.argv.includes("--check");
+  const immutableIntegrity = process.argv.includes("--verify-immutable-integrity");
   const migrateCurrentV18Requested = process.argv.includes("--migrate-current-v18");
-  if ([check, migrateCurrentV18Requested, fixtureProjectionPath != null].filter(Boolean).length > 1) {
-    throw new Error("--check, --migrate-current-v18 and --project-fixture are mutually exclusive");
+  if ([check, immutableIntegrity, migrateCurrentV18Requested, fixtureProjectionPath != null].filter(Boolean).length > 1) {
+    throw new Error("--check, --verify-immutable-integrity, --migrate-current-v18 and --project-fixture are mutually exclusive");
   }
   if (migrateCurrentV18Requested) {
     throw new Error("--migrate-current-v18 is forbidden by the current-only datapack contract");
   }
-  if (check) {
+  if (check || immutableIntegrity) {
     const evidence = JSON.parse(await readFile(evidencePath, "utf8"));
     if (Object.hasOwn(evidence, "migration")) {
       throw new Error("ITX topology migration evidence is forbidden by the current-only datapack contract");
     }
   }
   const { contract, reference, source, sourceBytes, currentAdmission, currentProjection } =
-    await admittedSource(contractPath, { currentAdmissionPath });
+    await admittedSource(contractPath, {
+      verificationMode: immutableIntegrity
+        ? IMMUTABLE_INTEGRITY_VERIFICATION_MODE
+        : CURRENT_VERIFICATION_MODE,
+      currentAdmissionPath,
+    });
   const topologySource = await admittedTopologySource(reference, source, currentAdmission);
   const topology = deriveTopology(source);
   if (fixtureProjectionPath != null) {
@@ -1116,7 +1159,7 @@ async function main() {
     throw new Error("ITX topology input pack identity does not match the admitted current source");
   }
   const inputGzipBytes = await readFile(packPath);
-  if (check) {
+  if (check || immutableIntegrity) {
     const evidence = JSON.parse(await readFile(evidencePath, "utf8"));
     const index = JSON.parse(await readFile(indexPath, "utf8"));
     const { inputSqliteBytes } = validateTopologyEvidence({

@@ -9,7 +9,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 import { gunzipSync } from "node:zlib";
 import { normalizeUnverifiedNetworkEdgeStates } from "./build-datapack.mjs";
-import { verifyProductionPackArtifactIdentity } from "./verify-production-pack-artifact-identity.mjs";
+import { verifyProductionPackArtifactIntegrity } from "./verify-production-pack-artifact-identity.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -41,6 +41,12 @@ function currentCapitalRouteMapTopologyAdmission(inventory, spec) {
 
 async function loadFixtureBoundCandidate(workspace) {
   const spec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
+  const productionScopePolicyInput = spec.productionScopePolicy;
+  const productionScopePolicyBytes = await readFile(productionScopePolicyInput.path);
+  spec.productionScopePolicy = {
+    ...productionScopePolicyInput,
+    sha256: sha256(productionScopePolicyBytes),
+  };
   const inventoryInput = spec.networkEdgeEvidence.sourceInventory;
   const inventoryBytes = await readFile(inventoryInput.path);
   const inventoryPath = path.join(workspace, "source-inventory.json");
@@ -165,7 +171,7 @@ test("production producer는 미승격 network edge와 역외 환승 link 상태
 test("deployed pack verifier는 current topology evidence와 pack identity를 검증한다", async () => {
   const evidence = JSON.parse(await readFile(DEPLOYED_EVIDENCE_PATH, "utf8"));
   assert.equal(Object.hasOwn(evidence, "readmissions"), false);
-  const report = await verifyProductionPackArtifactIdentity({
+  const report = await verifyProductionPackArtifactIntegrity({
     evidencePath: DEPLOYED_EVIDENCE_PATH,
     assetPath: DEPLOYED_ASSET_PATH,
     indexPath: DEPLOYED_INDEX_PATH,
@@ -192,7 +198,7 @@ test("deployed pack verifier는 readmission과 invalid current evidence를 거�
       const evidencePath = path.join(workspace, `${name}.json`);
       await writeFile(evidencePath, `${JSON.stringify(mutate(structuredClone(trackedEvidence)), null, 2)}\n`);
       await assert.rejects(
-        verifyProductionPackArtifactIdentity({
+        verifyProductionPackArtifactIntegrity({
           evidencePath,
           assetPath: DEPLOYED_ASSET_PATH,
           indexPath: DEPLOYED_INDEX_PATH,
@@ -306,6 +312,7 @@ test("deployed pack과 bundled asset/index의 artifact identity를 exact-match�
       "--asset", assetPath,
       "--index", indexPath,
       "--pack-id", "capital",
+      "--verification", "immutable-integrity",
     ], { cwd: root, env: verifierEnv });
     const report = JSON.parse(stdout);
     assert.equal(report.gzipSha256, evidence.pack.outputSha256);
@@ -313,7 +320,7 @@ test("deployed pack과 bundled asset/index의 artifact identity를 exact-match�
     assert.equal(report.byteSize, evidence.pack.byteSize);
     assert.ok(report.rowCounts.stations > 0);
     assert.deepEqual(report.networkEdgeCounts, expectedNetworkEdgeCounts);
-    assert.deepEqual(await verifyProductionPackArtifactIdentity({
+    assert.deepEqual(await verifyProductionPackArtifactIntegrity({
       evidencePath,
       assetPath,
       indexPath,
@@ -331,6 +338,7 @@ test("deployed pack과 bundled asset/index의 artifact identity를 exact-match�
         "--asset", assetPath,
         "--index", indexPath,
         "--pack-id", "capital",
+        "--verification", "immutable-integrity",
       ], { cwd: root, env: verifierEnv }),
       /index asset mismatch/,
     );
@@ -344,13 +352,14 @@ test("deployed pack과 bundled asset/index의 artifact identity를 exact-match�
         "--asset", assetPath,
         "--index", indexPath,
         "--pack-id", "capital",
+        "--verification", "immutable-integrity",
       ], { cwd: root, env: verifierEnv }),
       /ITX topology evidence or bundled pack index is stale/,
     );
     evidence.pack.outputSha256 = "e".repeat(64);
     await writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
     await assert.rejects(
-      verifyProductionPackArtifactIdentity({ evidencePath, assetPath, indexPath: DEPLOYED_INDEX_PATH, packId: "capital" }),
+      verifyProductionPackArtifactIntegrity({ evidencePath, assetPath, indexPath: DEPLOYED_INDEX_PATH, packId: "capital" }),
       /ITX topology evidence or bundled pack index is stale/,
     );
   } finally {
@@ -362,6 +371,9 @@ test("unchanged candidate는 현재 source inventory 결속을 그대로 검증�
   const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-current-source-inventory-binding-"));
   try {
     const spec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
+    const productionScopePolicyBytes = await readFile(spec.productionScopePolicy.path);
+    const productionScopePolicyBound = spec.productionScopePolicy.sha256
+      === sha256(productionScopePolicyBytes);
     const inventoryBytes = await readFile(spec.networkEdgeEvidence.sourceInventory.path);
     const rawInventoryBound = spec.networkEdgeEvidence.sourceInventory.sha256 === sha256(inventoryBytes);
     const semanticInventoryBound = spec.sourceInventorySha256
@@ -380,7 +392,10 @@ test("unchanged candidate는 현재 source inventory 결속을 그대로 검증�
       failure = error;
     }
     const output = `${failure?.stderr ?? ""}${failure?.stdout ?? ""}`;
-    if (!rawInventoryBound) {
+    if (!productionScopePolicyBound) {
+      assert.ok(failure, "unbound production scope policy must be rejected");
+      assert.match(output, /production scope policy identity mismatch/);
+    } else if (!rawInventoryBound) {
       assert.ok(failure, "unbound raw inventory must be rejected");
       assert.match(output, /sourceInventory\.sha256 must match tracked input bytes/);
     } else if (!semanticInventoryBound) {

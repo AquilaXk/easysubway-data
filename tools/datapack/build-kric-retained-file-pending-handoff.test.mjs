@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 
-import { buildKricRetainedFilePendingHandoff } from "./build-kric-retained-file-pending-handoff.mjs";
+import { buildKricRetainedFilePendingHandoff, selectRetainedKricStationLine } from "./build-kric-retained-file-pending-handoff.mjs";
 
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 const recordHash = (record) => hash(JSON.stringify(record));
@@ -45,6 +45,24 @@ function receipt(observationValue, artifactKind) {
   };
 }
 function cell(value) { return { value, cellType: "inlineStr", styleId: null }; }
+
+test("selects exact retained membership without requiring an unrelated timetable", () => {
+  const { stationLineObservation, stationLineReceipt } = fixture();
+  const select = (observation = stationLineObservation, receipt = stationLineReceipt,
+    operatorName = "KRIC", lineName = "Line 1") => selectRetainedKricStationLine({
+    observation, receipt, operatorName, lineName,
+  });
+  const result = select();
+  assert.deepEqual(result.records, stationLineObservation.records);
+  assert.equal(result.summary.rawSha256, stationLineObservation.rawSha256);
+  assert.throws(() => select(undefined, undefined, "Other operator"), /STATION_LINE_SELECTION/);
+  assert.throws(() => select(undefined, undefined, "KRIC", "Line"), /STATION_LINE_SELECTION/);
+  assert.throws(() => select(undefined, { ...stationLineReceipt, sha256: "b".repeat(64) }), /STATION_LINE_RECEIPT/);
+  const changed = structuredClone(stationLineObservation);
+  changed.records[0].stationName = "Changed";
+  changed.recordsSha256 = hash(`${JSON.stringify(changed.records)}\n`);
+  assert.throws(() => select(changed), /STATION_LINE_RECORD/);
+});
 
 test("builds a deterministic compact pending handoff from both retained observations", () => {
   const input = fixture();

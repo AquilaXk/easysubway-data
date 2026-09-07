@@ -12,6 +12,10 @@
     "tools/routes"
   ],
   "owners": {
+    "data457": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457",
+      "title": "Resolve remaining nationwide route-topology source contracts"
+    },
     "data7": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/7",
       "title": "[Release Blocker][P0][Data] server-route-bundle production eligibility·FINAL coverage producer"
@@ -187,6 +191,10 @@
     "data456": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456",
       "title": "Admit the Seoul Metro capital topology source"
+    },
+    "data506": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506",
+      "title": "Preserve explicit SVG station-label identity metadata"
     },
     "data529": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/529",
@@ -494,6 +502,12 @@
     {"path":"tools/datapack/nationwide-public-api-coverage-evidence.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":281},
     {"path":"tools/datapack/normalize-kric-timetable.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":119},
     {"path":"tools/datapack/normalize-transfer-distance-duration-rows.test.mjs","semanticOwner":"data27","classes":["required-pr"],"durationMs":200},
+    {"path":"tools/datapack/collect-korail-metropolitan-timetable-file.test.mjs","semanticOwner":"data457","classes":["required-pr"],"durationMs":56},
+    {"path":"tools/datapack/publish-korail-metropolitan-timetable-raw.test.mjs","semanticOwner":"data457","classes":["required-pr"],"durationMs":108},
+    {"path":"tools/datapack/register-korail-route-topology.test.mjs","semanticOwner":"data457","classes":["required-pr"],"durationMs":58},
+    {"path":"tools/datapack/materialize-korail-route-topology.test.mjs","semanticOwner":"data457","classes":["required-pr"],"durationMs":67},
+    {"path":"tools/datapack/run-korail-route-topology-registration.test.mjs","semanticOwner":"data457","classes":["required-pr"],"durationMs":2},
+    {"path":"tools/datapack/parse-korail-metropolitan-timetable.test.mjs","semanticOwner":"data457","classes":["required-pr"],"durationMs":84},
     {"path":"tools/datapack/parse-kric-code-catalog.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":118},
     {"path":"tools/datapack/plan-kric-exit-path-collection.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":139},
     {"path":"tools/datapack/plan-kric-line4-collection.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":114},
@@ -596,6 +610,7 @@
     {"path":"tools/route-map/daegu-free-crossing-gate.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":173},
     {"path":"tools/route-map/densify-corridors.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":132},
     {"path":"tools/route-map/densify-hubs.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":114},
+    {"path":"tools/route-map/extract-svg-geometry.test.mjs","semanticOwner":"data506","classes":["required-pr"],"durationMs":59},
     {"path":"tools/route-map/export-loom-geojson.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":123},
     {"path":"tools/route-map/fix-svg-station-line-membership.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":131},
     {"path":"tools/route-map/line-branches.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":167},

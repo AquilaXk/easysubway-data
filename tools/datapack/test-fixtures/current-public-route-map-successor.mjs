@@ -300,6 +300,19 @@ async function regularSourceFile(root, relative) {
   return resolved;
 }
 
+export async function bindCurrentProductionScopePolicy(candidate, root) {
+  const productionScopePolicy = candidate.productionScopePolicy;
+  if (typeof productionScopePolicy?.path !== "string") {
+    throw new Error("synthetic candidate production scope policy is incomplete");
+  }
+  const policyBytes = await readFile(await regularSourceFile(await regularRoot(root), productionScopePolicy.path));
+  candidate.productionScopePolicy = {
+    ...productionScopePolicy,
+    sha256: sha256(policyBytes),
+  };
+  return jsonBytes(candidate);
+}
+
 async function regularDestination(root, relative) {
   const segments = safeSegments(relative);
   const parentSegments = segments.slice(0, -1);
@@ -912,7 +925,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   ));
   candidate.sourceInventorySha256 = sha256(JSON.stringify(inventory));
   candidate.networkEdgeEvidence.sourceInventory.sha256 = sha256(inventoryBytes);
-  const candidateBytes = jsonBytes(candidate);
+  const candidateBytes = await bindCurrentProductionScopePolicy(candidate, root);
   const packBytes = Buffer.from(`${JSON.stringify(pack)}\n`);
   const selectedSnapshots = snapshots.filter(({ snapshotId: selectedId }) => selectedIds.has(selectedId));
   bindSyntheticReleaseArtifacts({
@@ -1056,7 +1069,7 @@ export async function activateSyntheticCurrentStaticNetworkSuccessors(root, { no
   candidate.sourceSnapshotSetHash = sha256(JSON.stringify(selected));
   candidate.sourceInventorySha256 = sha256(JSON.stringify(inventory));
   candidate.networkEdgeEvidence.sourceInventory.sha256 = sha256(inventoryBytes);
-  const candidateBytes = jsonBytes(candidate);
+  const candidateBytes = await bindCurrentProductionScopePolicy(candidate, root);
   Object.assign(request, {
     buildSpecSha256: sha256(candidateBytes),
     sourceSnapshotSetHash: candidate.sourceSnapshotSetHash,

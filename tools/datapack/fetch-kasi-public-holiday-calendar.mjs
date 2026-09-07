@@ -1,9 +1,69 @@
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { request as httpsRequest } from "node:https";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { isMainModule } from "../lib/is-main-module.mjs";
 
 const ENDPOINT = "https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo";
 
-export async function fetchKasiPublicHolidayCalendar({
+/** 완료 manifest가 지목한 원문을 읽는다. 수집 시각을 갱신하거나 부족한 월을 보충하지 않는다. */
+export async function readKasiHolidayCalendarFiles(directory) {
+  if (typeof directory !== "string" || !path.isAbsolute(directory)) throw new Error("absolute calendar directory required");
+  const bytes = await readFile(path.join(directory, "months.json"));
+  const manifest = JSON.parse(bytes.toString("utf8"));
+  if (manifest.schemaVersion !== 1 || manifest.sourceId !== "kasi-public-holiday-calendar"
+    || !Array.isArray(manifest.months) || manifest.months.length === 0) throw new Error("KASI manifest is invalid");
+  const months = [];
+  const files = new Set();
+  for (const entry of manifest.months) {
+    const file = `${entry.year}-${String(entry.month).padStart(2, "0")}.xml`;
+    if (!/^\d{4}-\d{2}\.xml$/.test(file) || entry.file !== file || files.has(file)
+      || typeof entry.retrievedAt !== "string" || !Number.isFinite(Date.parse(entry.retrievedAt))) {
+      throw new Error("KASI manifest month is invalid");
+    }
+    files.add(file);
+    const raw = await readFile(path.join(directory, file));
+    parseRetainedKasiHolidayMonth({ ...entry, raw });
+    months.push({ ...entry, raw });
+  }
+  return { manifestSha256: createHash("sha256").update(bytes).digest("hex"), months };
+}
+
+/** 새 디렉터리만 예약한다. 실패한 수집에는 완료 manifest를 남기지 않는다. */
+export async function collectKasiHolidayCalendarFiles({ outputDirectory, ...input }) {
+  if (typeof outputDirectory !== "string" || !path.isAbsolute(outputDirectory)) throw new Error("absolute output directory required");
+  await mkdir(outputDirectory);
+  const observation = await fetchKasiPublicHolidayCalendarObservation(input);
+  const months = [];
+  for (const { raw, xml, ...identity } of observation.months) {
+    const file = `${identity.year}-${String(identity.month).padStart(2, "0")}.xml`;
+    await writeFile(path.join(outputDirectory, file), raw, { flag: "wx", mode: 0o600 });
+    months.push({ ...identity, file });
+  }
+  const manifest = { schemaVersion: 1, sourceId: "kasi-public-holiday-calendar", months };
+  await writeFile(path.join(outputDirectory, "months.json"), `${JSON.stringify(manifest, null, 2)}\n`, { flag: "wx", mode: 0o600 });
+  return manifest;
+}
+
+/** 보관 원문만 소비한다. 조회 월과 원문 해시는 유지하고 수집 시각은 새로 만들지 않는다. */
+export function parseRetainedKasiHolidayMonth({ raw, sha256, year, month }) {
+  if (!(raw instanceof Uint8Array) || !/^[a-f0-9]{64}$/.test(sha256 ?? "")
+    || !Number.isInteger(year) || year < 2000 || year > 9999
+    || !Number.isInteger(month) || month < 1 || month > 12) throw new Error("retained KASI month identity is invalid");
+  if (createHash("sha256").update(raw).digest("hex") !== sha256) throw new Error("retained KASI digest mismatch");
+  const xml = new TextDecoder("utf-8", { fatal: true }).decode(raw);
+  const dates = parseMonth(xml, { year, month });
+  return { year, month, rawSha256: sha256, rawByteLength: raw.byteLength, holidayDates: [...dates].sort(utf16Compare) };
+}
+
+export async function fetchKasiPublicHolidayCalendar(input = {}) {
+  const observation = await fetchKasiPublicHolidayCalendarObservation(input);
+  return observation.holidays;
+}
+
+/** 기존 요청 한 번에서 날짜 집합과 보관 가능한 월별 XML을 함께 얻는다. */
+export async function fetchKasiPublicHolidayCalendarObservation({
   serviceKey,
   year,
   months,
@@ -17,6 +77,7 @@ export async function fetchKasiPublicHolidayCalendar({
     throw new Error("KASI public holiday months are invalid");
   }
   const holidays = new Set();
+  const observations = [];
   for (const month of requestedMonths) {
     const url = new URL(ENDPOINT);
     url.searchParams.set("ServiceKey", normalizedServiceKey);
@@ -24,47 +85,56 @@ export async function fetchKasiPublicHolidayCalendar({
     url.searchParams.set("numOfRows", "100");
     url.searchParams.set("solYear", String(year));
     url.searchParams.set("solMonth", String(month).padStart(2, "0"));
-    let response;
-    let attemptCount = 0;
-    const transportAttempts = [];
-    for (attemptCount = 1; attemptCount <= 2; attemptCount += 1) {
-      try {
-        response = fetchImpl
-          ? await fetchImpl(url, {
-            redirect: "error",
-            signal: AbortSignal.timeout(15_000),
-            headers: { accept: "application/xml, text/xml" },
-          })
-          : await nativeHttpsGet(url, {
-            signal: AbortSignal.timeout(15_000),
-            headers: { accept: "application/xml, text/xml" },
-          }, httpsRequestImpl);
-        break;
-      } catch (error) {
-        const transportAttempt = closedTransportAttempt(error, attemptCount);
-        if (transportAttempt !== null) transportAttempts.push(transportAttempt);
-        const failure = transportFailure(error, attemptCount, transportAttempts);
-        if (failure.failureCategory === "NETWORK_CONNECT_TIMEOUT" && attemptCount === 1) continue;
-        throw failure;
-      }
-    }
+    const request = fetchImpl
+      ? (options) => fetchImpl(url, options)
+      : (options) => nativeHttpsGet(url, options, httpsRequestImpl);
+    const { response, attemptCount } = await fetchKasiMonth(request);
+    const { raw, xml, dates } = await readKasiMonthResponse(response, { year, month, attemptCount });
+    for (const date of dates) holidays.add(date);
+    observations.push({ year, month, raw, xml, sha256: createHash("sha256").update(raw).digest("hex"),
+      retrievedAt: new Date().toISOString() });
+  }
+  return { holidays, months: observations };
+}
+
+async function readKasiMonthResponse(response, { year, month, attemptCount }) {
     if (!response?.ok) throw kasiFailure(`KASI public holiday request failed: HTTP_${safeStatus(response?.status)}`, "KASI_HTTP", attemptCount);
-    let xml;
+    let raw;
     try {
-      xml = await response.text();
+      raw = Buffer.from(await response.arrayBuffer());
     } catch (error) {
       throw transportFailure(error, attemptCount);
     }
+    let xml;
+    try { xml = new TextDecoder("utf-8", { fatal: true }).decode(raw); }
+    catch (error) { throw kasiFailure(error.message, "KASI_SCHEMA", attemptCount); }
     let dates;
     try {
       dates = parseMonth(xml, { year, month });
     } catch (error) {
       throw kasiFailure(error.message, "KASI_SCHEMA", attemptCount);
     }
-    for (const date of dates) holidays.add(date);
-  }
-  return holidays;
+    return { raw, xml, dates };
 }
+
+async function fetchKasiMonth(request) {
+  const transportAttempts = [];
+  for (let attemptCount = 1; attemptCount <= 2; attemptCount += 1) {
+    try {
+      const options = { redirect: "error", signal: AbortSignal.timeout(15_000), headers: { accept: "application/xml, text/xml" } };
+      const response = await request(options);
+      return { response, attemptCount };
+    } catch (error) {
+      const attempt = closedTransportAttempt(error, attemptCount);
+      if (attempt !== null) transportAttempts.push(attempt);
+      const failure = transportFailure(error, attemptCount, transportAttempts);
+      if (failure.failureCategory !== "NETWORK_CONNECT_TIMEOUT" || attemptCount !== 1) throw failure;
+    }
+  }
+  throw new Error("KASI public holiday request did not complete");
+}
+
+function utf16Compare(left, right) { return left < right ? -1 : left > right ? 1 : 0; }
 
 function nativeHttpsGet(url, { signal, headers }, httpsRequestImpl) {
   return new Promise((resolve, reject) => {
@@ -82,13 +152,12 @@ function nativeHttpsGet(url, { signal, headers }, httpsRequestImpl) {
         return;
       }
       const chunks = [];
-      response.setEncoding("utf8");
       response.once("error", reject);
-      response.on("data", (chunk) => chunks.push(chunk));
+      response.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
       response.once("end", () => resolve({
         ok: true,
         status: response.statusCode,
-        text: async () => chunks.join(""),
+        arrayBuffer: async () => Buffer.concat(chunks),
       }));
     });
     request.once("socket", (socket) => {
@@ -271,3 +340,19 @@ function categoryFor({ name, code }) {
 function decodeXml(value) { return value.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&#39;/g, "'"); }
 function safeStatus(value) { return Number.isInteger(value) && value >= 100 && value <= 599 ? value : "UNKNOWN"; }
 function safeToken(value) { return /^[A-Za-z0-9._-]{1,32}$/.test(value ?? "") ? value : "UNKNOWN"; }
+
+if (isMainModule(import.meta.url)) {
+  const args = process.argv.slice(2);
+  try {
+    if (args.length !== 6 || args[0] !== "--year" || args[2] !== "--months" || args[4] !== "--output-directory"
+      || !/^\d{4}$/.test(args[1]) || !/^\d{1,2}(,\d{1,2})*$/.test(args[3])) {
+      throw new Error("usage: --year YYYY --months M,M --output-directory <new-absolute-directory>");
+    }
+    await collectKasiHolidayCalendarFiles({ year: Number(args[1]), months: args[3].split(",").map(Number),
+      outputDirectory: args[5], serviceKey: process.env.DATA_GO_KR_SERVICE_KEY });
+    console.log("KASI monthly evidence written");
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
+  }
+}

@@ -406,6 +406,55 @@ test("dual-operator 미매칭은 MISSING 하위 구분으로 가시화된다", (
   });
 });
 
+test("route_graph_topology는 distance 없이 edge와 time을 제공하는 scoped source를 admit한다", async () => {
+  const canonicalTargets = JSON.parse(await readFile(path.join(root, TARGETS_PATH), "utf8"));
+  const topologyDomain = canonicalTargets.requiredSourceDomains.find(
+    ({ id }) => id === "route_graph_topology",
+  );
+  assert.ok(topologyDomain, "canonical targets must define route_graph_topology");
+
+  const targets = fixtureTargets({ requiredSourceDomains: [topologyDomain] });
+  const topologySource = {
+    id: "topology-edge-time",
+    coverageScope: {
+      regionIds: ["capital"],
+      operatorIds: ["operator-a"],
+      lineIds: ["line-a"],
+      sourceDomains: ["route_graph_topology"],
+    },
+    fieldsProvided: ["network_edges", "duration_seconds"],
+  };
+
+  const admitted = requirementFor(
+    buildFixtureLedger({
+      targets,
+      inventory: fixtureInventory([topologySource]),
+      resolutions: fixtureResolutions(),
+    }),
+    "operator-a",
+    "route_graph_topology",
+  );
+  assert.equal(admitted.status, "INVENTORY_ADMITTED");
+  assert.deepEqual(admitted.admittedSourceIds, ["topology-edge-time"]);
+
+  for (const missingField of ["network_edges", "duration_seconds"]) {
+    const requirement = requirementFor(
+      buildFixtureLedger({
+        targets,
+        inventory: fixtureInventory([{
+          ...topologySource,
+          fieldsProvided: topologySource.fieldsProvided.filter((field) => field !== missingField),
+        }]),
+        resolutions: fixtureResolutions(),
+      }),
+      "operator-a",
+      "route_graph_topology",
+    );
+    assert.equal(requirement.status, "MISSING", `missing ${missingField} must not be admitted`);
+    assert.equal(requirement.missingKind, "NO_ADMITTED_SOURCE");
+  }
+});
+
 test("빈 lineIds coverageScope는 와일드카드가 아니다", () => {
   const source = operatorAMembershipSource();
   delete source.coverageScope.lineIds;

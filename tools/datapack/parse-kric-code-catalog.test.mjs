@@ -8,6 +8,16 @@ import {
   parseWorksheetRows,
 } from "./parse-kric-code-catalog.mjs";
 
+test("self-closing XLSX cells preserve empty columns and following values", () => {
+  const rows = parseWorksheetRows(`<worksheet><sheetData><row r="1">
+    <c r="A1" s="2"/><c r="B1"><v>0.25</v></c>
+    <c r="C1"/><c r="D1" t="s"><v>0</v></c>
+    <c r="E1"/><c r="F1" t="inlineStr"><is><t>station</t></is></c>
+    <c r="G1"/>
+  </row></sheetData></worksheet>`, ["train"]);
+  assert.deepEqual(rows, [["", "0.25", "", "train", "", "station", ""]]);
+});
+
 test("KRIC XLSX workbook relation과 shared string을 bounded row로 복원한다", () => {
   const workbookXml = `<?xml version="1.0"?><workbook xmlns:r="rels"><sheets>
     <sheet name = "코드정보" sheetId="1" r:id = "rId1"/>

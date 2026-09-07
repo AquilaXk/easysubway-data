@@ -411,6 +411,15 @@ test("SVG geometry extractor returns transformed visible text polygons", async (
 
   const alpha = output.labels.find((label) => label.sourceText === "알파역");
   assert.equal(alpha.classification, "STATION_LABEL");
+  assert.deepEqual(
+    {
+      dataStationKey: alpha.dataStationKey,
+      dataStation: alpha.dataStation,
+      dataLine: alpha.dataLine,
+      labelRole: alpha.labelRole,
+    },
+    { dataStationKey: "fixture-alpha-101", dataStation: "알파", dataLine: "fixture-1", labelRole: "station" },
+  );
   assert.match(alpha.sourceElementKey, /^[a-f0-9]{64}$/);
   assert.equal(alpha.polygon.length, 4);
   assert.ok(alpha.bounds.maxX > alpha.bounds.minX);
