@@ -93,12 +93,16 @@ test("retained XLSX parsing binds exact bytes and keeps native sparse row coordi
   try {
     await mkdir(path.join(root, "xl/_rels"), { recursive: true });
     await mkdir(path.join(root, "xl/worksheets"));
-    await writeFile(path.join(root, "xl/workbook.xml"), '<workbook><sheets><sheet name="평일_상" r:id="rId1"/></sheets></workbook>');
-    await writeFile(path.join(root, "xl/_rels/workbook.xml.rels"), '<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>');
+    await writeFile(path.join(root, "xl/workbook.xml"), '<workbook><sheets><sheet name="평일_상" r:id="rId1"/><sheet name="평일_하" r:id="rId2"/></sheets></workbook>');
+    await writeFile(path.join(root, "xl/_rels/workbook.xml.rels"), '<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Target="worksheets/sheet2.xml"/></Relationships>');
     const rows = [[10, "시발역", "가"], [12, "종착역", "나"], [14, "열차번호", "T"],
       [20, "가", ""], [21, "", "0.5"], [22, "나", "0.51"], [23, "", ""]];
     const xml = rows.map(([r, a, b]) => `<row r="${r}"><c r="A${r}" t="inlineStr"><is><t>${a}</t></is></c><c r="B${r}" t="inlineStr"><is><t>${b}</t></is></c></row>`).join("");
     await writeFile(path.join(root, "xl/worksheets/sheet1.xml"), `<worksheet><sheetData>${xml}</sheetData></worksheet>`);
+    const reverseRows = [[10, "시발역", "나"], [12, "종착역", "가"], [14, "열차번호", "U"],
+      [20, "나", ""], [21, "", "0.5"], [22, "가", "0.51"], [23, "", ""]];
+    const reverseXml = reverseRows.map(([r, a, b]) => `<row r="${r}"><c r="A${r}" t="inlineStr"><is><t>${a}</t></is></c><c r="B${r}" t="inlineStr"><is><t>${b}</t></is></c></row>`).join("");
+    await writeFile(path.join(root, "xl/worksheets/sheet2.xml"), `<worksheet><sheetData>${reverseXml}</sheetData></worksheet>`);
     execFileSync("zip", ["-qr", "input.xlsx", "xl"], { cwd: root });
     const inputPath = path.join(root, "input.xlsx");
     const bytes = await readFile(inputPath);
@@ -284,7 +288,9 @@ test("retained XLSX parsing binds exact bytes and keeps native sparse row coordi
     assert.deepEqual(materialized.stations, originalPack.stations);
     assert.deepEqual(materialized.networkEdges.find(({ id }) => id === "entry"), originalPack.networkEdges[1]);
     const rides = materialized.networkEdges.filter(({ edgeType }) => edgeType === "RIDE");
-    assert.equal(rides.length, 1);
+    assert.equal(rides.length, 2);
+    assert.deepEqual(new Set(rides.map(({ fromNodeId, toNodeId }) => `${fromNodeId}>${toNodeId}`)),
+      new Set(["canonical-a:L>canonical-b:L", "canonical-b:L>canonical-a:L"]));
     assert.equal(rides[0].durationSeconds, 864);
     assert.equal(rides[0].sourceSnapshotId, registeredRow.snapshotId);
     assert.equal(rides[0].witness.departure.cellId, "B21");
@@ -298,7 +304,8 @@ test("retained XLSX parsing binds exact bytes and keeps native sparse row coordi
     };
     const tables = buildKorailTimetableTables(tableInput);
     assert.deepEqual(tables.transitRoutes, [{ id: "route-up", lineId: "L",
-      routeShortName: "대구선", routeLongName: "대구선 나 방면", directionName: "나 방면", timezone: "Asia/Seoul" }]);
+      routeShortName: "대구선", routeLongName: "대구선 나 방면", directionName: "나 방면", timezone: "Asia/Seoul" },
+    { id: "route-down", lineId: "L", routeShortName: "대구선", routeLongName: "대구선 가 방면", directionName: "가 방면", timezone: "Asia/Seoul" }]);
     assert.ok(tables.transitTrips.every((trip) => tables.transitRoutes.some(({ id }) => id === trip.routeId)));
     assert.equal(tables.holidayCalendarSources[0].rawSha256, hash(holidayRaw));
     assert.throws(() => buildKorailTimetableTables({ ...tableInput, endDate: "20400201" }), /month coverage/);
@@ -306,7 +313,7 @@ test("retained XLSX parsing binds exact bytes and keeps native sparse row coordi
     assert.equal(tables.transitTrips[0].serviceId, "weekday");
     const holidayDirectory = path.join(root, "holidays");
     await collectKasiHolidayCalendarFiles({ outputDirectory: holidayDirectory, year: 2040, months: [1],
-      serviceKey: "test-key", fetchImpl: async () => ({ ok: true, text: async () => holidayRaw.toString("utf8") }) });
+      serviceKey: "test-key", fetchImpl: async () => ({ ok: true, arrayBuffer: async () => holidayRaw }) });
     const combined = await buildRetainedKorailTimetable({ ...input, holidayDirectory,
       startDate: tableInput.startDate, endDate: tableInput.endDate,
       serviceIds: tableInput.serviceIds, routeIds: tableInput.routeIds });
@@ -315,6 +322,8 @@ test("retained XLSX parsing binds exact bytes and keeps native sparse row coordi
     assert.equal(combined.calendarManifestSha256, hash(await readFile(path.join(holidayDirectory, "months.json"))));
     assert.deepEqual(tables.transitStopTimes.map(({ arrivalSeconds, departureSeconds, pickupType, dropOffType }) =>
       ({ arrivalSeconds, departureSeconds, pickupType, dropOffType })), [
+      { arrivalSeconds: 43200, departureSeconds: 43200, pickupType: 0, dropOffType: 1 },
+      { arrivalSeconds: 44064, departureSeconds: 44064, pickupType: 1, dropOffType: 0 },
       { arrivalSeconds: 43200, departureSeconds: 43200, pickupType: 0, dropOffType: 1 },
       { arrivalSeconds: 44064, departureSeconds: 44064, pickupType: 1, dropOffType: 0 },
     ]);

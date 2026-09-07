@@ -34,15 +34,29 @@ test("accepts unrelated pack metadata but rejects binding, stale, and ledger ide
   assert.throws(() => materializeKorailRouteTopology({ ...value, ledger: [{ ...value.ledger[0], rawRetentionExpiresAt: "invalid" }], now: NOW }), /LEDGER/);
 });
 
-function fixture() {
+test("rejects incomplete directional coverage without changing the existing pack", () => {
+  const value = fixture(false), before = structuredClone(value.pack);
+  assert.throws(() => materializeKorailRouteTopology({ ...value, now: NOW }), /DIRECTIONAL_COVERAGE/);
+  assert.deepEqual(value.pack, before);
+});
+
+function fixture(complete = true) {
   const capturedAt = new Date(NOW.valueOf() - 86400000).toISOString(), rawSha256 = "a".repeat(64);
   const witness = { sheetName: "weekday", trainNo: "T1", durationSeconds: 120, departure: { cellId: "B1", rawValue: "0.5", seconds: 43200 }, arrival: { cellId: "B2", rawValue: String(43320 / 86400), seconds: 43320 } };
   const bindings = [{ stationNumber: "1", stationName: "A", stationId: "a" }, { stationNumber: "2", stationName: "B", stationId: "b" }];
   const observation = { selection: { lineId: "line-a" }, stationBindings: bindings, topology: { orders: [{ stations: [{ stationNumber: "1", stationName: "A" }, { stationNumber: "2", stationName: "B" }] }], edges: [{ fromStationNumber: "1", toStationNumber: "2", observations: [witness] }] } };
   observation.topologyDurations = [{ lineId: "line-a", fromStationId: "a", toStationId: "b", durationSeconds: 120, derivationPolicy: "MIN_OBSERVED_SCHEDULED_DURATION_V1", witness }];
+  if (complete) {
+    const reverseWitness = { ...witness, sheetName: "reverse", trainNo: "T2" };
+    observation.topology.orders.push({ stations: [...observation.topology.orders[0].stations].reverse() });
+    observation.topology.edges.push({ fromStationNumber: "2", toStationNumber: "1", observations: [reverseWitness] });
+    observation.topologyDurations.push({ lineId: "line-a", fromStationId: "b", toStationId: "a", durationSeconds: 120, derivationPolicy: "MIN_OBSERVED_SCHEDULED_DURATION_V1", witness: reverseWitness });
+  }
   const snapshot = { schemaVersion: 1, artifactKind: "korail-metropolitan-topology-snapshot", status: "PENDING", releaseEligible: false, sourceId: "korail-metropolitan-timetable-file", capturedAt, freshUntil: new Date(NOW.valueOf() + 86400000).toISOString(), rawSha256, stationCount: 2, edgeCount: 1, observation };
+  snapshot.edgeCount = observation.topologyDurations.length;
   snapshot.contentSha256 = sha(canonicalJson(snapshot)); snapshot.snapshotId = `${snapshot.sourceId}-${snapshot.contentSha256}`;
   const evidence = { snapshotId: snapshot.snapshotId, snapshotPath: `tools/datapack/sources/${snapshot.snapshotId}.json`, contentSha256: snapshot.contentSha256, rawSha256, capturedAt, freshUntil: snapshot.freshUntil, stationCount: 2, edgeCount: 1, excludedTransferCount: 0 };
+  evidence.edgeCount = snapshot.edgeCount;
   const source = { id: snapshot.sourceId, requiredForProductionPack: true, productionUseAllowed: true, coverageScope: { lineIds: ["line-a"], operatorIds: ["korail"] }, topologyAdmissionEvidence: evidence };
   Object.assign(source, { owner: "fixture provider", datasetUrl: "https://example.org/fixture", license: { name: "fixture license", redistributionAllowed: true },
     updateFrequency: "P1D", fieldsProvided: ["network_edges", "duration_seconds"] });

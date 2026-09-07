@@ -16,8 +16,6 @@ const OWNER_SOURCE_ID = "seoul-metro-route-map-positions";
 const NAMESPACE = "axvym6vk8g7i";
 const BUCKET = "easysubway-datapacks";
 const OUTPUTS = SOURCE_REGISTRATION_OUTPUTS;
-const JOURNAL = "tools/datapack/.capital-route-topology-registration-transaction.json";
-const LOCK = "tools/datapack/.capital-route-topology-registration.lock";
 const SHA256 = /^[a-f0-9]{64}$/u;
 const SNAPSHOT_ID = new RegExp("^" + SOURCE_ID + "-[0-9]{8}$", "u");
 const sha = (value) => createHash("sha256").update(value).digest("hex");
@@ -39,7 +37,7 @@ function rootPath(value) {
   return path.resolve(value);
 }
 function target(root, relative) {
-  if (!OUTPUTS.includes(relative) && relative !== JOURNAL && relative !== LOCK) throw new Error("capital topology registration target is invalid");
+  if (!OUTPUTS.includes(relative)) throw new Error("capital topology registration target is invalid");
   const file = path.resolve(root, relative);
   if (!file.startsWith(root + path.sep)) throw new Error("capital topology registration target escapes repository");
   return file;
@@ -304,7 +302,7 @@ function exactOutputs(outputs) {
     || !path.isAbsolute(inputs[2]?.absolute ?? "") || inputs.some(({ bytes }) => !Buffer.isBuffer(bytes))) throw new Error("capital topology transaction outputs are invalid");
 }
 const transaction = createSourceRegistrationTransaction({
-  journalPath: JOURNAL, lockPath: LOCK, label: "capital topology", validateOutputs: exactOutputs,
+  label: "capital topology", validateOutputs: exactOutputs,
 });
 
 export async function recoverCurrentCapitalRouteTopologyRegistration({ repositoryRoot } = {}) {

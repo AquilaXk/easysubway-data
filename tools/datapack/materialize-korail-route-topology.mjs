@@ -20,6 +20,9 @@ export function materializeKorailRouteTopology({ pack, snapshot, inventory, ledg
   if (!isDeepStrictEqual(bindings, snapshot.observation.stationBindings)) fail("BINDINGS");
   const rows = projectKorailTopologyDurations(snapshot.observation);
   if (!isDeepStrictEqual(rows, snapshot.observation.topologyDurations) || rows.length !== snapshot.edgeCount || bindings.length !== snapshot.stationCount) fail("PROJECTION");
+  // 전체 노선을 교체하므로 편도 원문만으로 반대편 RIDE를 지우지 않는다.
+  const directions = new Set(rows.map(({ fromStationId, toStationId }) => JSON.stringify([fromStationId, toStationId])));
+  if (rows.some(({ fromStationId, toStationId }) => !directions.has(JSON.stringify([toStationId, fromStationId])))) fail("DIRECTIONAL_COVERAGE");
   // 폐지된 역을 가리키는 옛 RIDE도 선택 노선에 속하면 함께 교체한다.
   const selectedNode = (nodeId) => typeof nodeId === "string" && nodeId.endsWith(`:${lineId}`);
   const retained = result.networkEdges.filter((edge) => edge.edgeType !== "RIDE"

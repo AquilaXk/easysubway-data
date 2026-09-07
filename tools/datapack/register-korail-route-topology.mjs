@@ -10,8 +10,6 @@ import { validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 
 const SOURCE_ID = "korail-metropolitan-timetable-file";
 const OUTPUTS = SOURCE_REGISTRATION_OUTPUTS;
-const JOURNAL = "tools/datapack/.korail-route-topology-registration-transaction.json";
-const LOCK = "tools/datapack/.korail-route-topology-registration.lock";
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const json = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 function utf16Compare(left, right) {
@@ -128,10 +126,16 @@ function exactOutputs(outputs) {
     || !Array.isArray(inputs) || inputs.length !== 9 || new Set(inputs.map((entry) => entry.absolute)).size !== inputs.length
     || inputs.some((entry) => !path.isAbsolute(entry?.absolute ?? "") || !Buffer.isBuffer(entry.bytes))) fail("OUTPUTS");
 }
-const transaction = createSourceRegistrationTransaction({ journalPath: JOURNAL, lockPath: LOCK, label: "Korail route topology", validateOutputs: exactOutputs });
+const transaction = createSourceRegistrationTransaction({
+  label: "Korail route topology",
+  validateOutputs: exactOutputs,
+});
+export async function recoverKorailRouteTopologyRegistration({ repositoryRoot } = {}) {
+  return transaction.recover({ repositoryRoot: rootPath(repositoryRoot) });
+}
 export async function commitKorailTopologyRegistrationOutputs({ repositoryRoot, outputs, failAfter = null } = {}) { return transaction.commit({ repositoryRoot: rootPath(repositoryRoot), outputs, failAfter }); }
 export async function registerKorailRouteTopology(options = {}) {
-  await transaction.recover({ repositoryRoot: rootPath(options.repositoryRoot) });
+  await recoverKorailRouteTopologyRegistration({ repositoryRoot: options.repositoryRoot });
   const outputs = await buildKorailTopologyRegistrationOutputs(options);
   return commitKorailTopologyRegistrationOutputs({ repositoryRoot: options.repositoryRoot, outputs });
 }

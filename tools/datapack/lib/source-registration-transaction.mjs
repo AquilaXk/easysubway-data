@@ -9,6 +9,10 @@ export const SOURCE_REGISTRATION_OUTPUTS = Object.freeze([
   "tools/datapack/source-governance-policy.json",
   "release/product-gates/datapack-freshness-sla.json",
 ]);
+export const SOURCE_REGISTRATION_JOURNAL_PATH =
+  "tools/datapack/.capital-route-topology-registration-transaction.json";
+export const SOURCE_REGISTRATION_LOCK_PATH =
+  "tools/datapack/.capital-route-topology-registration.lock";
 
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 
@@ -17,14 +21,17 @@ async function syncParent(file) {
   try { await directory.sync(); } finally { await directory.close(); }
 }
 
-export function createSourceRegistrationTransaction({ journalPath, lockPath, label, validateOutputs }) {
+export function createSourceRegistrationTransaction({ label, validateOutputs }) {
   const prefix = `${label} transaction`;
   const rootPath = (value) => {
     if (!path.isAbsolute(value ?? "")) throw new Error(`${label} registration requires an absolute repository root`);
     return path.resolve(value);
   };
   const target = (root, relative) => {
-    if (!SOURCE_REGISTRATION_OUTPUTS.includes(relative) && relative !== journalPath && relative !== lockPath) throw new Error(`${label} registration target is invalid`);
+    const allowed = SOURCE_REGISTRATION_OUTPUTS.includes(relative)
+      || relative === SOURCE_REGISTRATION_JOURNAL_PATH
+      || relative === SOURCE_REGISTRATION_LOCK_PATH;
+    if (!allowed) throw new Error(`${label} registration target is invalid`);
     const file = path.resolve(root, relative);
     if (!file.startsWith(root + path.sep)) throw new Error(`${label} registration target escapes repository`);
     return file;
@@ -81,7 +88,7 @@ export function createSourceRegistrationTransaction({ journalPath, lockPath, lab
     }
   }
   async function recover(root) {
-    const journal = await currentBytes(target(root, journalPath));
+    const journal = await currentBytes(target(root, SOURCE_REGISTRATION_JOURNAL_PATH));
     if (journal == null) return;
     let parsed; try { parsed = JSON.parse(journal); } catch { throw new Error(`${prefix} journal is invalid JSON`); }
     validateJournal(parsed);
@@ -96,10 +103,12 @@ export function createSourceRegistrationTransaction({ journalPath, lockPath, lab
       if (!actual.equals(prestate)) throw new Error(`${prefix} preserves foreign replacement`);
       await atomicWrite(file, desired, prestate);
     }
-    await unlink(target(root, journalPath)); await syncParent(target(root, journalPath));
+    const journalFile = target(root, SOURCE_REGISTRATION_JOURNAL_PATH);
+    await unlink(journalFile);
+    await syncParent(journalFile);
   }
   async function acquireLock(root) {
-    const lock = target(root, lockPath); await safeParent(lock);
+    const lock = target(root, SOURCE_REGISTRATION_LOCK_PATH); await safeParent(lock);
     try { await mkdir(lock, { mode: 0o700 }); } catch (error) {
       if (error?.code === "EEXIST") throw new Error(`${prefix} lock residue exists`);
       throw error;
@@ -116,7 +125,7 @@ export function createSourceRegistrationTransaction({ journalPath, lockPath, lab
       try {
         await recover(root); for (const output of outputs) await assertBytes(target(root, output.relative), output.prestateBytes);
         await assertInputs(root, outputs[0].inputs);
-        const records = journalRecords(outputs), journal = target(root, journalPath);
+        const records = journalRecords(outputs), journal = target(root, SOURCE_REGISTRATION_JOURNAL_PATH);
         await atomicWrite(journal, Buffer.from(JSON.stringify({ schemaVersion: 1, state: "PREPARED", records })), null);
         try {
           for (const [index, record] of records.entries()) {

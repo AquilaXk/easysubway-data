@@ -10,7 +10,13 @@ import {
   buildCurrentCapitalRouteTopologyRegistrationOutputs,
   commitCurrentCapitalRouteTopologyRegistrationOutputs,
   readCurrentCapitalRouteTopologyAdmission,
+  recoverCurrentCapitalRouteTopologyRegistration,
 } from "./register-current-capital-route-topology.mjs";
+import { recoverKorailRouteTopologyRegistration } from "./register-korail-route-topology.mjs";
+import {
+  SOURCE_REGISTRATION_JOURNAL_PATH,
+  SOURCE_REGISTRATION_LOCK_PATH,
+} from "./lib/source-registration-transaction.mjs";
 import { createFixtureCapitalTopologyReceipt } from "./test-fixtures/current-capital-topology-registration.mjs";
 import { evaluateSourceGovernance } from "./source-governance-policy.mjs";
 
@@ -289,4 +295,50 @@ test("rolls a prepared transaction back across all registration targets", async 
   await assert.rejects(commitCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot: root, outputs, failAfter: 0 }), /injected capital topology transaction failure/);
   assert.deepEqual(await Promise.all(targets.map((target) => readFile(target))), before);
   await assert.rejects(access(path.join(root, "tools/datapack/.capital-route-topology-registration-transaction.json")));
+});
+
+test("shared registration lock blocks both recovery entrypoints", async (t) => {
+  const { root } = await fixture(t);
+  await mkdir(path.join(root, SOURCE_REGISTRATION_LOCK_PATH));
+
+  await assert.rejects(
+    recoverCurrentCapitalRouteTopologyRegistration({ repositoryRoot: root }),
+    /capital topology transaction lock residue exists/,
+  );
+  await assert.rejects(
+    recoverKorailRouteTopologyRegistration({ repositoryRoot: root }),
+    /Korail route topology transaction lock residue exists/,
+  );
+});
+
+test("Korail recovery completes shared Capital journals and preserves output bytes", async (t) => {
+  const { root, now } = await fixture(t);
+  const { receiptPath } = await receiptFixture(root, now);
+  const outputs = await buildCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot: root, receiptPath, now });
+  const journalPath = path.join(root, SOURCE_REGISTRATION_JOURNAL_PATH);
+  const targets = outputs.map(({ relative }) => path.join(root, relative));
+  const before = outputs.map(({ prestateBytes }) => prestateBytes);
+  const after = outputs.map(({ bytes }) => bytes);
+  const journal = (state) => Buffer.from(JSON.stringify({
+    schemaVersion: 1,
+    state,
+    records: outputs.map(({ relative, prestateBytes, bytes }) => ({
+      relative,
+      beforeBase64: prestateBytes.toString("base64"),
+      beforeSha256: sha(prestateBytes),
+      nextBase64: bytes.toString("base64"),
+      nextSha256: sha(bytes),
+    })),
+  }));
+
+  await Promise.all(targets.map((target, index) => writeFile(target, after[index])));
+  await writeFile(journalPath, journal("PREPARED"));
+  await recoverKorailRouteTopologyRegistration({ repositoryRoot: root });
+  assert.deepEqual(await Promise.all(targets.map((target) => readFile(target))), before);
+  await assert.rejects(access(journalPath));
+
+  await writeFile(journalPath, journal("COMMITTED"));
+  await recoverKorailRouteTopologyRegistration({ repositoryRoot: root });
+  assert.deepEqual(await Promise.all(targets.map((target) => readFile(target))), after);
+  await assert.rejects(access(journalPath));
 });
