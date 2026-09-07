@@ -1065,26 +1065,50 @@ export function parseMolitLineOperatorRosters(csvBytes) {
   return rosters;
 }
 
-export function parseMolitGwangjuStationMappings(csvBytes) {
+export function parseMolitGwangjuStationMappings(csvBytes, topologySnapshot) {
   if (!(csvBytes instanceof Uint8Array) || csvBytes.byteLength === 0) {
     throw new Error("MOLIT nationwide station CSV bytes are required");
   }
-  const mappings = parseCsv(new TextDecoder("euc-kr").decode(csvBytes))
+  if (!Array.isArray(topologySnapshot?.scope) || topologySnapshot.scope.length === 0) {
+    throw new Error("MOLIT Gwangju station mapping requires a topology snapshot scope");
+  }
+  const scopeByName = new Map();
+  const scopeCodes = new Set();
+  for (const scope of topologySnapshot.scope) {
+    if (typeof scope?.stationName !== "string" || scope.stationName.trim() === ""
+      || typeof scope.stationCode !== "string" || scope.stationCode.trim() === "") {
+      throw new Error("MOLIT Gwangju topology scope station is invalid");
+    }
+    if (scopeByName.has(scope.stationName) || scopeCodes.has(scope.stationCode)) {
+      throw new Error("MOLIT Gwangju topology scope has duplicate station names or codes");
+    }
+    scopeByName.set(scope.stationName, scope.stationCode);
+    scopeCodes.add(scope.stationCode);
+  }
+  const rows = parseCsv(new TextDecoder("euc-kr").decode(csvBytes))
     .map(rowFromCsv)
     .filter((row) => row?.regionName === "광주"
       && row.operatorName === "광주교통공사"
       && row.lineName === "1호선")
-    .sort((left, right) => left.sequence - right.sequence)
-    .map((row) => ({
+    .sort((left, right) => left.sequence - right.sequence);
+  const mappings = rows.map((row) => {
+    // collect-gwangju-route-map-positions.mjs의 반대 방향 별칭과 동일한 유일한 명시적 결합이다.
+    const topologyName = row.stationName === "광주송정역" ? "광주송정" : row.stationName;
+    const stationNumber = scopeByName.get(topologyName);
+    if (stationNumber === undefined) {
+      throw new Error(`MOLIT Gwangju topology mapping is missing: ${row.stationName}`);
+    }
+    return {
       stationId: stationIdFor(row.regionName, row.stationName),
       stationName: row.stationName,
-      stationNumber: String(99 + row.sequence),
-    }));
-  if (lineIdFor("광주", "1호선") !== "line-e57a361e8892"
-    || mappings.length !== 20
-    || mappings.some((mapping, index) => mapping.stationNumber !== String(100 + index))
-    || new Set(mappings.map(({ stationId }) => stationId)).size !== mappings.length) {
-    throw new Error("MOLIT Gwangju Line 1 mapping must contain 20 unique stations in sequence");
+      stationNumber,
+    };
+  });
+  if (mappings.length !== topologySnapshot.scope.length
+    || new Set(rows.map(({ stationName }) => stationName)).size !== rows.length
+    || new Set(mappings.map(({ stationId }) => stationId)).size !== mappings.length
+    || new Set(mappings.map(({ stationNumber }) => stationNumber)).size !== mappings.length) {
+    throw new Error("MOLIT Gwangju topology mapping must be a unique station-name and station-code bijection");
   }
   return Object.defineProperty(mappings, "sourceRawSha256", {
     value: sha256(csvBytes),

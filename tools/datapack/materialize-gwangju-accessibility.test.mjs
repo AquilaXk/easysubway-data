@@ -106,7 +106,7 @@ async function inputs() {
     baseFixture: routeMapFixture,
     topologySnapshot: gwangjuTopology,
     inventory,
-    canonicalStationMappings: parseMolitGwangjuStationMappings(molitStationMapCsv),
+    canonicalStationMappings: parseMolitGwangjuStationMappings(molitStationMapCsv, gwangjuTopology),
     now: timetableNow,
   });
   return {

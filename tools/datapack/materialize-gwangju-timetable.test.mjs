@@ -29,6 +29,28 @@ import {
 
 const retainedServices = { "평일": "weekday", "토요일": "saturday", "휴일": "holiday", "명절": "special" };
 
+test("MOLIT Gwangju topology binding preserves canonical IDs with variable topology codes", async () => {
+  const source = await readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv"));
+  const lines = Buffer.from(source).toString("latin1").split("\n").map((line) => Buffer.from(`${line}\n`, "latin1"));
+  const names = new Set(["녹동", "소태", "광주송정역"]);
+  const csv = Buffer.concat([lines[0], ...lines.slice(1).filter((line) => names.has(new TextDecoder("euc-kr").decode(line).trim().split(",").at(-1)))]);
+  const topologySnapshot = { scope: [
+    { stationName: "광주송정", stationCode: "join-77" },
+    { stationName: "소태", stationCode: "join-4" },
+    { stationName: "녹동", stationCode: "join-901" },
+  ] };
+  const mappings = parseMolitGwangjuStationMappings(csv, topologySnapshot);
+  assert.deepEqual(mappings.map(({ stationName, stationNumber }) => [stationName, stationNumber]), [
+    ["녹동", "join-901"], ["소태", "join-4"], ["광주송정역", "join-77"],
+  ]);
+  // 기존 canonical 광주송정역 ID는 topology의 코드 변경과 무관하게 보존한다.
+  assert.equal(mappings[2].stationId, "station-45d732c94df2");
+  assert.throws(() => parseMolitGwangjuStationMappings(csv), /topology/i);
+  assert.throws(() => parseMolitGwangjuStationMappings(csv, { scope: topologySnapshot.scope.slice(1) }), /mapping|topology/i);
+  assert.throws(() => parseMolitGwangjuStationMappings(csv, { scope: [...topologySnapshot.scope, { stationName: "소태", stationCode: "other" }] }), /duplicate/i);
+  assert.throws(() => parseMolitGwangjuStationMappings(csv, { scope: [{ stationName: "녹동", stationCode: "join-4" }, ...topologySnapshot.scope.slice(1)] }), /duplicate/i);
+});
+
 test("retained Gwangju calendars apply owner weekend selection without duplicate native services", () => {
   const result = buildRetainedGwangjuServiceCalendars({ startDate: "20400105", endDate: "20400110", serviceIds: retainedServices,
     publicHolidayDates: new Set(["20400104", "20400105", "20400108", "20400109", "20400111"]) });
@@ -139,7 +161,7 @@ async function retainedProductionInput() {
     readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
     readJson("tools/datapack/source-inventory.json"),
   ]);
-  const mappings = parseMolitGwangjuStationMappings(stationMap);
+  const mappings = parseMolitGwangjuStationMappings(stationMap, topologySnapshot);
   const arrays = ["sourceInventory", "operators", "lines", "stations", "stationLines", "networkEdges", "serviceCalendars", "serviceCalendarDates", "transitRoutes", "transitTrips", "transitStopTimes", "transitFeedInfo"];
   const pack = Object.fromEntries(arrays.map((key) => [key, []]));
   Object.assign(pack, { id: "base", version: "1", artifactKind: "production", url: "", minimumTableRows: {} });

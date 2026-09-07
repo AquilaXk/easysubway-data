@@ -729,7 +729,7 @@ export async function runGwangjuTimetableMaterializer(argv, {
     retainedTimetable,
     topologySnapshot,
     inventory,
-    canonicalStationMappings: parseMolitGwangjuStationMappings(stationMap),
+    canonicalStationMappings: parseMolitGwangjuStationMappings(stationMap, topologySnapshot),
     now,
   });
   await writeFile(args.output, `${JSON.stringify(fixture, null, 2)}\n`);

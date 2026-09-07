@@ -49,7 +49,7 @@ export async function buildRetainedKricTimetableRegistrationOutputs({ repository
   const topologyPath = topologySnapshotPath(root, topology);
   const topologyBytes = await readFile(topologyPath);
   const topologySnapshot = parse(topologyBytes, "TOPOLOGY_SNAPSHOT");
-  const mappings = parseMolitGwangjuStationMappings(mappingBytes);
+  const mappings = parseMolitGwangjuStationMappings(mappingBytes, topologySnapshot);
   const governanceEntry = verifiedGovernanceEntry(input.governanceEntry, candidate, now);
   const registration = state.kind === "initial"
     ? buildAppendOnlyGovernancePolicyRegistration({ predecessorPolicyBytes: governanceBytes, addedSources: [governanceEntry] })

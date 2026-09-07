@@ -148,7 +148,7 @@ async function inputs({ materializeIncheon = true } = {}) {
     baseFixture: routeMapFixture,
     topologySnapshot: gwangjuTopology,
     inventory,
-    canonicalStationMappings: parseMolitGwangjuStationMappings(molitStationMapCsv),
+    canonicalStationMappings: parseMolitGwangjuStationMappings(molitStationMapCsv, gwangjuTopology),
     now: timetableNow,
   });
   const gwangjuAccessibilityFixture = materializeGwangjuAccessibility({

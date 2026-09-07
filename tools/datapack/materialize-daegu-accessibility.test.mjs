@@ -80,7 +80,7 @@ async function inputs() {
   });
   const gwangjuFixture = materializeRetainedGwangjuTestFixture({
     baseFixture: busanPositionsFixture, topologySnapshot: gwangjuTopology,
-    inventory, canonicalStationMappings: parseMolitGwangjuStationMappings(molitMap), now: timetableNow,
+    inventory, canonicalStationMappings: parseMolitGwangjuStationMappings(molitMap, gwangjuTopology), now: timetableNow,
   });
   const topologySnapshots = {};
   const timetableSnapshots = {};

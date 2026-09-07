@@ -85,7 +85,7 @@ async function inputs() {
   const gwangjuFixture = materializeRetainedGwangjuTestFixture({
     baseFixture: busanPositionsFixture,
     topologySnapshot: gwangjuTopology, inventory,
-    canonicalStationMappings: parseMolitGwangjuStationMappings(molitMap), now: timetableNow,
+    canonicalStationMappings: parseMolitGwangjuStationMappings(molitMap, gwangjuTopology), now: timetableNow,
   });
   const topologySnapshots = {};
   const timetableSnapshots = {};

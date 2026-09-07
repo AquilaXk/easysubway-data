@@ -139,7 +139,7 @@ async function registrationFixture(context) {
   const pack = { ...Object.fromEntries(arrays.map((key) => [key, []])),
     id: "base", version: "1", artifactKind: "production", url: "", minimumTableRows: {} };
   const baseFixture = { manifest: { activePack: { id: pack.id, version: pack.version } }, packs: [pack] };
-  const mappings = parseMolitGwangjuStationMappings(mappingBytes);
+  const mappings = parseMolitGwangjuStationMappings(mappingBytes, topologySnapshot);
   const retained = createRetainedGwangjuTestInput({ baseFixture, topologySnapshot,
     inventory: structuredClone(inventory), canonicalStationMappings: mappings }).retainedTimetable;
   const candidate = candidates.candidates.find(({ id }) => id === "kric-nationwide-timetable-file");
