@@ -117,7 +117,7 @@ function requiredFixtureSourceHeads(inventory, snapshots) {
 }
 
 async function materializeMissingFixtureRequiredSources({
-  root, now, inventory, snapshots, candidate, governancePolicy, governanceBytes, freshnessPolicy,
+  root, now, inventory, snapshots, candidate, pack, governancePolicy, governanceBytes, freshnessPolicy,
 }) {
   const selectedSourceIds = candidate?.sourceSnapshots?.map(({ sourceId }) => sourceId);
   if (!Array.isArray(candidate?.sourceSnapshotIds) || candidate.sourceSnapshotIds.length !== selectedSourceIds?.length
@@ -129,12 +129,29 @@ async function materializeMissingFixtureRequiredSources({
     .filter(({ source }) => !selectedSourceIds.includes(source.id));
   for (const { source, snapshot } of missing) {
     const fixtureClock = now.toISOString();
+    if (JSON.stringify(source.coverageScope?.sourceDomains) !== JSON.stringify(["schedule_timetable"])) {
+      throw new Error("missing fixture source requires an explicit domain materializer");
+    }
+    // 운행을 추가하지 않는 독립 합성 행으로 출처를 증명한다. 기존 달력의 출처를 바꾸지 않는다.
+    const calendar = {
+      serviceId: `fixture-inactive-${source.id}`,
+      monday: false, tuesday: false, wednesday: false, thursday: false,
+      friday: false, saturday: false, sunday: false,
+      startDate: fixtureClock.slice(0, 10).replaceAll("-", ""),
+      endDate: fixtureClock.slice(0, 10).replaceAll("-", ""), timezone: "Asia/Seoul",
+    };
+    const capital = pack.packs[0];
+    if (capital.sourceInventory.some(({ id }) => id === source.id)
+      || capital.serviceCalendars.some(({ serviceId }) => serviceId === calendar.serviceId)) {
+      throw new Error("synthetic required source materialization already exists");
+    }
     const sourceRecord = {
       schemaVersion: 1,
       artifactKind: "fixture-required-source-initial-record",
       testOnly: true,
       sourceId: source.id,
       fixtureClock,
+      calendar,
       terminalLedgerHead: {
         snapshotId: snapshot.snapshotId,
         rawSha256: snapshot.rawSha256,
@@ -163,7 +180,7 @@ async function materializeMissingFixtureRequiredSources({
       sourceUpdatedAt: fixtureClock,
       rawSha256,
       contentSha256,
-      rawObjectUri: `fixture://required-source/${source.id}/${snapshotId}.json`,
+      rawObjectUri: `oci://fixture/fixture-required-sources/${source.id}/${snapshotId}.json`,
       rawObjectSha256: rawSha256,
       rawReceiptSha256: sha256(Buffer.from(canonicalJson({ sourceId: source.id, snapshotId, rawSha256 }))),
       byteSize: sourceRecordBytes.length,
@@ -219,12 +236,29 @@ async function materializeMissingFixtureRequiredSources({
     };
     fixtureSnapshot.adminReviewRecordHash = adminReviewRecordHash;
     fixtureSnapshot.admissionEvidence.adminReviewRecordHash = adminReviewRecordHash;
+    source.registrationEvidence = {
+      testOnly: true, sourceId: source.id, snapshotId,
+      rawObjectUri: fixtureSnapshot.rawObjectUri, rawObjectSha256: rawSha256, contentSha256,
+    };
     const sourceRecordPath = `tools/datapack/release/fixture-required-source-${contentSha256}-record.json`;
     const admissionRecordPath = `tools/datapack/release/fixture-required-source-${adminReviewRecordHash}-admission-record.json`;
     await Promise.all([
       writeFile(path.join(root, sourceRecordPath), sourceRecordBytes),
       writeFile(path.join(root, admissionRecordPath), admissionRecordBytes),
     ]);
+    capital.sourceInventory.push({
+      id: source.id, owner: source.owner, url: source.datasetUrl,
+      license: source.license.name, licenseStatus: "redistributable",
+      redistributionAllowed: source.license.redistributionAllowed,
+      updateFrequency: source.updateFrequency, updatedAt: fixtureClock,
+      fields: [...source.fieldsProvided], coverageScope: structuredClone(source.coverageScope),
+    });
+    capital.serviceCalendars.push({
+      ...calendar, sourceId: source.id, sourceSnapshotId: snapshotId,
+      providerRecordHash: sha256(canonicalJson(calendar)), evidenceHash: rawSha256,
+      updatedAt: fixtureClock,
+    });
+    capital.minimumTableRows.service_calendars = capital.serviceCalendars.length;
     snapshots = snapshots.filter(({ sourceId }) => sourceId !== source.id);
     snapshots.push(fixtureSnapshot);
   }
@@ -1074,6 +1108,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     inventory,
     snapshots,
     candidate,
+    pack,
     governancePolicy: topologyRegistration.governancePolicy,
     governanceBytes: topologyRegistration.governanceBytes,
     freshnessPolicy: topologyRegistration.freshnessPolicy,
