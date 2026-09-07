@@ -11,20 +11,56 @@ const DETAIL_URL = "https://www.data.go.kr/data/15111298/openapi.do";
 const OUTPUT_FIELDS = Object.freeze([
   "day", "endCord", "direction", "time", "subwayCord", "updateDt", "subwayLine", "endName", "subwayName",
 ]);
+const RETAINED_CSV_HEADER = "요일,종착역 코드,방향(상_하행),도착시간,역사코드,기준일자,호선,종착역명,역사명";
 const XML_CONTENT_TYPES = new Set(["application/xml", "text/xml"]);
-const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
+
+export function readRetainedGwangjuTimetableCsv(csvBytes) {
+  if (!(csvBytes instanceof Uint8Array) || csvBytes.byteLength === 0) {
+    throw new Error("Gwangju retained timetable CSV is empty");
+  }
+  let csv;
+  try {
+    csv = new TextDecoder("utf-8", { fatal: true }).decode(csvBytes);
+  } catch {
+    throw new Error("Gwangju retained timetable CSV is not valid UTF-8");
+  }
+  if (csv.startsWith("\uFEFF")) csv = csv.slice(1);
+  if (csv.includes("\uFEFF") || csv.includes('"') || /\r(?!\n)/u.test(csv)) {
+    throw new Error("Gwangju retained timetable CSV syntax is unsupported");
+  }
+  const lines = csv.split(/\r?\n/u);
+  if (lines.at(-1) === "") lines.pop();
+  if (lines[0] !== RETAINED_CSV_HEADER) {
+    throw new Error("Gwangju retained timetable CSV header mismatch");
+  }
+  const rows = lines.slice(1).map((line, index) => {
+    const columns = line.split(",");
+    if (columns.length !== OUTPUT_FIELDS.length) {
+      throw new Error(`Gwangju retained timetable CSV row[${index}] column count mismatch`);
+    }
+    return validateRow(Object.fromEntries(
+      OUTPUT_FIELDS.map((field, column) => [field, columns[column]]),
+    ), index);
+  }).sort(compareRows);
+  validateRows(rows);
+  return {
+    datasetId: "15111497",
+    rawSha256: sha256(csvBytes),
+    rawByteLength: csvBytes.byteLength,
+    rows,
+  };
+}
 
 export async function collectGwangjuTimetable({
   serviceKey,
   fetchImpl = fetch,
   now = new Date(),
-  sleepImpl = sleep,
   concurrency = 4,
 } = {}) {
   const capturedAt = validDate(now, "now");
   const key = normalizeDataGoKrServiceKey(serviceKey);
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4) throw new Error("concurrency is invalid");
-  const first = await collectPage({ pageNo: 1, key, fetchImpl, sleepImpl });
+  const first = await collectPage({ pageNo: 1, key, fetchImpl });
   const pageCount = Math.ceil(first.totalCount / first.numOfRows);
   if (!Number.isSafeInteger(pageCount) || pageCount < 1 || pageCount > 100) {
     throw new Error(`Gwangju timetable schema mismatch: pageCount=${safeToken(String(pageCount))}`);
@@ -38,7 +74,7 @@ export async function collectGwangjuTimetable({
       const pageNo = nextPageNo;
       nextPageNo += 1;
       try {
-        pages[pageNo - 1] = await collectPage({ pageNo, key, fetchImpl, sleepImpl });
+        pages[pageNo - 1] = await collectPage({ pageNo, key, fetchImpl });
       } catch (error) {
         failure = error;
       }
@@ -63,13 +99,12 @@ export async function collectGwangjuTimetable({
   }))));
   const responseEncodings = [...new Set(pages.map(({ responseEncoding }) => responseEncoding))].sort(compareText);
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     artifactKind: "gwangju-timetable-snapshot",
     sourceId: SOURCE_ID,
     detailUrl: DETAIL_URL,
     endpoint: ENDPOINT,
     capturedAt: capturedAt.toISOString(),
-    freshUntil: new Date(capturedAt.getTime() + FRESHNESS_MILLIS).toISOString(),
     httpStatus: 200,
     providerResultCode: "00",
     schemaStatus: "EXPECTED",
@@ -82,7 +117,6 @@ export async function collectGwangjuTimetable({
     directions: [...new Set(rows.map(({ direction }) => direction))].sort(compareText),
     stationCodes: [...new Set(rows.map(({ subwayCord }) => subwayCord))].sort(compareText),
     outputFields: [...OUTPUT_FIELDS],
-    fieldsProvided: ["service_calendar", "trip", "stop_time"],
     responseEncodings,
     license: {
       type: "UNRESTRICTED",
@@ -92,16 +126,20 @@ export async function collectGwangjuTimetable({
     },
     rawSha256,
     rowsSha256: sha256(JSON.stringify(rows)),
+    // 원문을 보존해 재수집 없이 필드 의미와 파싱 결과를 다시 확인한다.
+    rawPages: pages.map(({ pageNo, rawSha256: pageSha256, bodyBase64 }) => ({
+      pageNo, rawSha256: pageSha256, bodyBase64,
+    })),
     rows,
   };
 }
 
-async function collectPage({ pageNo, key, fetchImpl, sleepImpl }) {
+async function collectPage({ pageNo, key, fetchImpl }) {
   const url = new URL(ENDPOINT);
   url.searchParams.set("serviceKey", key);
   url.searchParams.set("pageNo", String(pageNo));
   url.searchParams.set("numOfRows", "500");
-  const response = await fetchWithRetry(url, fetchImpl, sleepImpl);
+  const response = await fetchPageOnce(url, fetchImpl);
   const bytes = Buffer.from(await response.arrayBuffer());
   const rawSha256 = sha256(bytes);
   if (!response.ok) {
@@ -140,6 +178,7 @@ async function collectPage({ pageNo, key, fetchImpl, sleepImpl }) {
     numOfRows: Number(numOfRows),
     responseEncoding,
     rawSha256,
+    bodyBase64: bytes.toString("base64"),
     rows,
   };
 }
@@ -174,27 +213,17 @@ function validateRows(rows) {
   }
 }
 
-async function fetchWithRetry(url, fetchImpl, sleepImpl) {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const response = await fetchImpl(url, {
-        redirect: "error",
-        signal: AbortSignal.timeout(15_000),
-        headers: { accept: "application/xml,text/xml" },
-      });
-      if (attempt === 0 && (response.status === 429 || response.status >= 500)) {
-        await sleepImpl(250);
-        continue;
-      }
-      return response;
-    } catch (error) {
-      if (attempt === 1) {
-        const code = error?.code ?? error?.cause?.code ?? "UNKNOWN";
-        throw new Error(`Gwangju timetable transport failure; code=${safeToken(String(code))}`);
-      }
-    }
+async function fetchPageOnce(url, fetchImpl) {
+  try {
+    return await fetchImpl(url, {
+      redirect: "error",
+      signal: AbortSignal.timeout(15_000),
+      headers: { accept: "application/xml,text/xml" },
+    });
+  } catch (error) {
+    const code = error?.code ?? error?.cause?.code ?? "UNKNOWN";
+    throw new Error(`Gwangju timetable transport failure; code=${safeToken(String(code))}`);
   }
-  throw new Error("Gwangju timetable transport failure");
 }
 
 function decodeXml(bytes) {
@@ -242,7 +271,6 @@ function compareRows(left, right) {
 }
 function compareText(left, right) { return left.localeCompare(right, "en"); }
 function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
-function sleep(milliseconds) { return new Promise((resolve) => setTimeout(resolve, milliseconds)); }
 
 async function main(args = process.argv.slice(2)) {
   if (args.length !== 2 || args[0] !== "--output") {

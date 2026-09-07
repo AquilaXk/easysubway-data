@@ -78,6 +78,7 @@ const DATA_GO_FOCUSED_TESTS = Object.freeze({
   "tools/datapack/run-current-itx-collection.mjs": "tools/datapack/run-current-itx-collection.test.mjs",
   "tools/datapack/run-current-seoul-accessibility-registration.mjs": "tools/datapack/run-current-seoul-accessibility-registration.test.mjs",
   "tools/datapack/run-public-static-network-v2-operation.mjs": "tools/datapack/run-public-static-network-v2-operation.test.mjs",
+  "tools/datapack/run-retained-gwangju-timetable-refresh.mjs": "tools/datapack/run-retained-gwangju-timetable-refresh.test.mjs",
   "tools/datapack/validate-tago-schedule-sample.mjs": "tools/datapack/plan-tago-schedule-collection.test.mjs",
 });
 

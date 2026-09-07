@@ -39,6 +39,15 @@ export function selectRetainedKricStationLine({ observation, receipt, operatorNa
   return { summary, records };
 }
 
+/** 원문 전체의 receipt 결속을 한 번 검증하고 명시한 노선 행만 선택한다. */
+export function selectRetainedKricTimetable({ observation, receipt, routeNumber }) {
+  const { summary } = validateTimetable(observation, receipt);
+  if (!normalizedText(routeNumber)) fail("TIMETABLE_SELECTION");
+  const records = observation.records.filter((record) => record.routeNumber === routeNumber);
+  if (records.length === 0) fail("TIMETABLE_SELECTION");
+  return { summary, records };
+}
+
 export function buildKricRetainedFilePendingHandoff(input = {}) {
   assertExactKeys(input, ["stationLineObservation", "stationLineReceipt", "timetableObservation", "timetableReceipt"], "INPUT");
   const timetable = validateTimetable(input.timetableObservation, input.timetableReceipt);

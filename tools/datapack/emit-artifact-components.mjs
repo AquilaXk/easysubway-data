@@ -96,6 +96,23 @@ export async function emitArtifactComponents(input) {
   const cap = Math.min(requiredUtcInstant(current.expiresAt, "current.json.expiresAt"), ...freshness.results.map((result) => requiredUtcInstant(result.freshnessExpiresAt, "source freshness")));
   if (Date.parse(ids.freshUntil) > cap) throw new Error("--fresh-until exceeds source freshness");
 
+  const mapAssets = {
+    basemapManifestBytes: await readFile(path.join(root, buildContract.capitalMapInput.basemapManifestPath)),
+    sourceSvgBytes: await readFile(path.join(root, buildContract.capitalMapInput.sourcePath)),
+  };
+
+  return serializeArtifactComponents({
+    output, sourceBytes, sourceSchema, sourceSchemaBytes, ids, buildSpec, buildSpecBytes,
+    layout, buildContract, mapAssets, evaluationAt, stationLineInput: input.stationLineInput,
+    routeEdgeInput: input.routeEdgeInput, routeEdgePolicy,
+  });
+}
+
+// 검증을 마친 입력만 세 component artifact bytes로 직렬화하고 원자적으로 공개한다.
+export async function serializeArtifactComponents({
+  output, sourceBytes, sourceSchema, sourceSchemaBytes, ids, buildSpec, buildSpecBytes,
+  layout, buildContract, mapAssets, evaluationAt, stationLineInput, routeEdgeInput, routeEdgePolicy,
+} = {}) {
   const temp = await mkdtemp(path.join(path.dirname(output), ".artifact-components-"));
   const snapshot = path.join(temp, ".source.sqlite");
   let sourceDb;
@@ -106,12 +123,12 @@ export async function emitArtifactComponents(input) {
     validateSourceSchema(sourceDb, sourceSchemaBytes);
     const stationSetSha256 = stationSetDigest(sourceDb);
     validateBundleReferences(sourceDb, layout.serverRouteBundle);
-    await emitMap(root, temp, sourceDb, ids, stationSetSha256, buildContract);
+    await emitMap(temp, sourceDb, ids, stationSetSha256, buildContract, mapAssets);
     await emitCatalog(temp, sourceDb, ids, stationSetSha256);
     await emitServer(temp, sourceDb, ids, stationSetSha256, buildSpec, buildSpecBytes, layout, buildContract, {
       evaluationAt,
-      stationLineInput: input.stationLineInput,
-      routeEdgeInput: input.routeEdgeInput,
+      stationLineInput,
+      routeEdgeInput,
       routeEdgePolicy,
     });
     sourceDb.close(); sourceDb = undefined;
@@ -165,12 +182,12 @@ function validateSourceSchema(source, sourceSchemaBytes) {
   }
 }
 
-async function emitMap(root, out, db, ids, stationSetSha256, build) {
+async function emitMap(out, db, ids, stationSetSha256, build, mapAssets) {
   const artifact = path.join(out, "map-pack"); const payload = path.join(artifact, "payload"); await mkdir(payload, { recursive: true });
-  const base = parseJson(await readFile(path.join(root, build.capitalMapInput.basemapManifestPath)), "basemap manifest");
+  const base = parseJson(mapAssets?.basemapManifestBytes, "basemap manifest");
   const seoul = base?.maps?.find?.((entry) => entry.id === "seoul") ?? base?.find?.((entry) => entry.id === "seoul");
   if (!seoul || seoul.source !== build.capitalMapInput.sourcePath || seoul.sourceSvgSha256 !== build.capitalMapInput.sourceSha256) throw new Error("Seoul basemap binding mismatch");
-  const svg = await readFile(path.join(root, build.capitalMapInput.sourcePath));
+  const svg = mapAssets?.sourceSvgBytes;
   if (sha(svg) !== build.capitalMapInput.sourceSha256) throw new Error("Seoul SVG digest mismatch");
   await writeFile(path.join(payload, "metropolitan.svg"), svg);
   const rows = db.prepare("SELECT station_id AS stationId,line_id AS lineId,region,x,y,label_dx AS labelDx,label_dy AS labelDy,label_polygon AS labelPolygon,up_path AS upPath,down_path AS downPath FROM route_map_positions WHERE region='수도권' ORDER BY station_id COLLATE BINARY,line_id COLLATE BINARY").all();

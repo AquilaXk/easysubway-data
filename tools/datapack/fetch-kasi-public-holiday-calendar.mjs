@@ -35,8 +35,25 @@ export async function collectKasiHolidayCalendarFiles({ outputDirectory, ...inpu
   if (typeof outputDirectory !== "string" || !path.isAbsolute(outputDirectory)) throw new Error("absolute output directory required");
   await mkdir(outputDirectory);
   const observation = await fetchKasiPublicHolidayCalendarObservation(input);
+  return writeKasiHolidayCalendarFiles(outputDirectory, observation.months);
+}
+
+/** 한국 날짜의 시작일·종료일을 포함하는 월만 수집하고 하나의 완료 manifest로 묶는다. */
+export async function collectKasiHolidayCalendarWindowFiles({ outputDirectory, startDate, endDate, ...providerInput }) {
+  if (typeof outputDirectory !== "string" || !path.isAbsolute(outputDirectory)) throw new Error("absolute output directory required");
+  const batches = kasiHolidayWindowBatches(startDate, endDate);
+  await mkdir(outputDirectory);
   const months = [];
-  for (const { raw, xml, ...identity } of observation.months) {
+  for (const { year, requestedMonths } of batches) {
+    const observation = await fetchKasiPublicHolidayCalendarObservation({ ...providerInput, year, months: requestedMonths });
+    months.push(...observation.months);
+  }
+  return writeKasiHolidayCalendarFiles(outputDirectory, months);
+}
+
+async function writeKasiHolidayCalendarFiles(outputDirectory, observations) {
+  const months = [];
+  for (const { raw, xml, ...identity } of observations) {
     const file = `${identity.year}-${String(identity.month).padStart(2, "0")}.xml`;
     await writeFile(path.join(outputDirectory, file), raw, { flag: "wx", mode: 0o600 });
     months.push({ ...identity, file });
@@ -44,6 +61,28 @@ export async function collectKasiHolidayCalendarFiles({ outputDirectory, ...inpu
   const manifest = { schemaVersion: 1, sourceId: "kasi-public-holiday-calendar", months };
   await writeFile(path.join(outputDirectory, "months.json"), `${JSON.stringify(manifest, null, 2)}\n`, { flag: "wx", mode: 0o600 });
   return manifest;
+}
+
+function kasiHolidayWindowBatches(startDate, endDate) {
+  const start = parseKasiWindowDate(startDate), end = parseKasiWindowDate(endDate);
+  if (start.value > end.value) throw new Error("KASI public holiday window is invalid");
+  const batches = [];
+  for (let year = start.year; year <= end.year; year += 1) {
+    const firstMonth = year === start.year ? start.month : 1;
+    const lastMonth = year === end.year ? end.month : 12;
+    batches.push({ year, requestedMonths: Array.from({ length: lastMonth - firstMonth + 1 }, (_, index) => firstMonth + index) });
+  }
+  return batches;
+}
+
+function parseKasiWindowDate(value) {
+  if (typeof value !== "string" || !/^\d{8}$/.test(value)) throw new Error("KASI public holiday window is invalid");
+  const year = Number(value.slice(0, 4)), month = Number(value.slice(4, 6));
+  const date = new Date(`${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}T00:00:00.000Z`);
+  if (year < 2000 || year > 9999 || !Number.isFinite(date.valueOf()) || date.toISOString().slice(0, 10) !== `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`) {
+    throw new Error("KASI public holiday window is invalid");
+  }
+  return { value, year, month };
 }
 
 /** 보관 원문만 소비한다. 조회 월과 원문 해시는 유지하고 수집 시각은 새로 만들지 않는다. */

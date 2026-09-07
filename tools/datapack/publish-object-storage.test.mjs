@@ -204,6 +204,55 @@ test("generic immutable bundle object는 conditional create와 full-byte GET 검
   );
 });
 
+test("OCI PAR immutable readback은 plan 크기만큼 응답 제한을 설정하고 불일치를 거부한다", async (t) => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "publish-immutable-readback-bound-"));
+  t.after(() => rm(workspace, { recursive: true, force: true }));
+  const sourceBytes = Buffer.from("x");
+  await writeFile(path.join(workspace, "payload.json"), sourceBytes);
+  const objectKey = `server-route-bundles/v1/${"b".repeat(64)}/payload.json`;
+  const captured = [];
+  const client = preauthenticatedObjectStorageClient(new URL(OCI_PAR), {
+    requestImpl: async (input) => {
+      captured.push(input);
+      if (input.method === "PUT") return { statusCode: 412, headers: {}, body: Buffer.alloc(0) };
+      return { statusCode: 200, headers: {}, body: Buffer.from("wrong") };
+    },
+  });
+
+  await assert.rejects(
+    () => publishImmutableObjectPlan({
+      root: workspace,
+      client,
+      plan: { steps: [{
+        type: "put-immutable-bundle-object",
+        sourcePath: "payload.json",
+        objectKey,
+        sha256: sha256(sourceBytes),
+        sizeBytes: sourceBytes.length,
+      }] },
+    }),
+    /immutable violation/,
+  );
+  assert.equal(captured.at(-1).maxResponseBytes, sourceBytes.length);
+
+  const retainedSizeBytes = 161 * 1024 * 1024;
+  await assert.rejects(
+    () => publishImmutableObjectPlan({
+      root: workspace,
+      client,
+      plan: { steps: [{
+        type: "verify-immutable-bundle-object",
+        sourcePath: "payload.json",
+        objectKey,
+        sha256: sha256(sourceBytes),
+        sizeBytes: retainedSizeBytes,
+      }] },
+    }),
+    /uploaded checksum mismatch/,
+  );
+  assert.equal(captured.at(-1).maxResponseBytes, retainedSizeBytes);
+});
+
 test("generic immutable publisher는 주입된 OCI 환경으로 기본 client를 생성한다", async (t) => {
   const mock = await startMockStorage();
   const workspace = await mkdtemp(path.join(tmpdir(), "publish-immutable-env-"));

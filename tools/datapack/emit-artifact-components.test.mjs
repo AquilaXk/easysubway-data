@@ -10,7 +10,7 @@ import { zstdDecompressSync } from "node:zlib";
 
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { canonicalCurrentCapitalRouteEdgeInputJson } from "./build-current-capital-route-edge-input.mjs";
-import { emitArtifactComponents } from "./emit-artifact-components.mjs";
+import { emitArtifactComponents, serializeArtifactComponents } from "./emit-artifact-components.mjs";
 import {
   canonicalRouteEdgeEvaluationJson,
   canonicalRideEdgeSetSha256,
@@ -25,6 +25,7 @@ import { buildCurrentCapitalAccessibilityRefreshOutputs } from "./refresh-curren
 import { prepareCurrentStaticNetworkProductionRepository } from "./test-fixtures/current-full-capital-production-artifact.mjs";
 import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
+import { createIndependentSourceGovernanceFixture } from "./test-fixtures/independent-source-governance.mjs";
 
 const SCRIPT = path.resolve("tools/datapack/emit-artifact-components.mjs");
 const CURRENT_SOURCE_WINDOW = await selectedSourceWindow();
@@ -219,10 +220,42 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
     routeEdgeInput.routeEdges.filter(({ edgeType, serviceClass, servicePattern }) => edgeType === "RIDE" && serviceClass === "SUBWAY" && servicePattern === "LOCAL"),
   );
   await writeFile(routePolicyPath, `${JSON.stringify(routePolicy, null, 2)}\n`);
-  const run = (name, values = {}) => emitArtifactComponents({ repositoryRoot: fixtureRoot, sourceSqlite: source, sourceProvenance: path.join(temp, "current.provenance.json"), buildSpec: "tools/datapack/release/candidate-build-spec.json", output: path.join(temp, name), mapPackId: "map-v1", catalogPackId: "catalog-v1", bundleId: "bundle-v1", releaseSequence: "1", activeFrom: CURRENT_ACTIVE_FROM, freshUntil: CURRENT_FRESH_UNTIL, builtAt: CURRENT_EVALUATION_AT, keyId: "test-key", evaluationAt: CURRENT_EVALUATION_AT, stationLineInput, routeEdgeInput, ...values });
+  const releaseRun = (name, values = {}) => emitArtifactComponents({ repositoryRoot: fixtureRoot, sourceSqlite: source, sourceProvenance: path.join(temp, "current.provenance.json"), buildSpec: "tools/datapack/release/candidate-build-spec.json", output: path.join(temp, name), mapPackId: "map-v1", catalogPackId: "catalog-v1", bundleId: "bundle-v1", releaseSequence: "1", activeFrom: CURRENT_ACTIVE_FROM, freshUntil: CURRENT_FRESH_UNTIL, builtAt: CURRENT_EVALUATION_AT, keyId: "test-key", evaluationAt: CURRENT_EVALUATION_AT, stationLineInput, routeEdgeInput, ...values });
+  const layout = JSON.parse(await readFile(path.join(fixtureRoot, "contracts/datapack/artifact-component-table-layout.json")));
+  const serializationContract = JSON.parse(await readFile(path.join(fixtureRoot, "contracts/datapack/server-route-bundle-build-contract.json")));
+  const sourceSchemaBytes = await readFile(path.join(fixtureRoot, "tools/datapack/schema/catalog-schema.sql"));
+  const mapAssets = {
+    basemapManifestBytes: await readFile(path.join(fixtureRoot, serializationContract.capitalMapInput.basemapManifestPath)),
+    sourceSvgBytes: await readFile(path.join(fixtureRoot, serializationContract.capitalMapInput.sourcePath)),
+  };
+  // 직렬화 속성은 실제 승인 시각과 분리하고, 릴리스 진입점의 승인 검증은 아래에서 유지한다.
+  const run = async (name, values = {}) => serializeArtifactComponents({
+    output: path.join(temp, name), sourceBytes: await readFile(values.sourceSqlite ?? source), sourceSchemaBytes,
+    sourceSchema: layout.serverRouteBundle.sourceSchema, layout,
+    buildSpec, buildSpecBytes: spec, buildContract: serializationContract, mapAssets,
+    ids: { mapPackId: "map-v1", catalogPackId: "catalog-v1", bundleId: "bundle-v1",
+      releaseSequence: 1, activeFrom: CURRENT_ACTIVE_FROM, freshUntil: CURRENT_FRESH_UNTIL,
+      builtAt: CURRENT_EVALUATION_AT, keyId: "test-key" },
+    evaluationAt: CURRENT_EVALUATION_AT, stationLineInput, routeEdgeInput,
+    routeEdgePolicy: routePolicy, ...values,
+  });
+  const selectedSources = new Set(buildSpec.sourceSnapshots.map(({ sourceId }) => sourceId));
+  const governance = JSON.parse(await readFile(path.join(fixtureRoot, "tools/datapack/source-governance-policy.json")));
+  const reviews = governance.sources.filter(({ sourceId }) => selectedSources.has(sourceId));
+  assert.equal(reviews.length, selectedSources.size);
+  const hasLaterApproval = reviews.some(({ licenseReview }) =>
+    Date.parse(licenseReview.reviewedAt) > Date.parse(CURRENT_EVALUATION_AT));
   const applySourceSql = (sql) => { const mutation = new DatabaseSync(source); mutation.exec(sql); mutation.close(); };
   await writeFile(path.join(fixtureRoot, "tools/datapack/release/candidate-build-spec.json"), "{\"tampered\":true}");
-  await run("snapshotted", { buildSpecSnapshotBytes: spec });
+  if (hasLaterApproval) {
+    await assert.rejects(() => releaseRun("snapshotted", { buildSpecSnapshotBytes: spec }), /LICENSE_REVIEW_REQUIRED/);
+    assert.equal(await exists(path.join(temp, "snapshotted")), false);
+  } else {
+    await releaseRun("snapshotted", { buildSpecSnapshotBytes: spec });
+  }
+  await writeFile(path.join(fixtureRoot, "tools/datapack/release/candidate-build-spec.json"), JSON.stringify({ ...buildSpec, candidateId: "unbound-candidate" }));
+  await assert.rejects(() => releaseRun("unbound-spec"), /build spec identity mismatch/);
+  assert.equal(await exists(path.join(temp, "unbound-spec")), false);
   await writeFile(path.join(fixtureRoot, "tools/datapack/release/candidate-build-spec.json"), spec);
   await run("one"); await run("two"); await run("three");
   const paths = await emittedPaths(path.join(temp, "one"));
@@ -322,8 +355,14 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
     "--station-line-input", stationLineInputPath,
     "--route-edge-input", routeEdgeInputPath,
   ], { cwd: fixtureRoot, encoding: "utf8" });
-  assert.equal(cli.status, 0, cli.stderr);
-  assert.deepEqual(await emittedPaths(cliOutput), paths);
+  if (hasLaterApproval) {
+    assert.equal(cli.status, 1, cli.stderr);
+    assert.match(cli.stderr, /LICENSE_REVIEW_REQUIRED/);
+    assert.equal(await exists(cliOutput), false);
+  } else {
+    assert.equal(cli.status, 0, cli.stderr);
+    assert.deepEqual(await emittedPaths(cliOutput), paths);
+  }
   assert.deepEqual((await readdir(path.join(temp, "one"))).sort(), ["map-pack", "server-route-bundle", "station-catalog-pack"]);
   const mapRoot = path.join(temp, "one", "map-pack");
   const mapManifest = JSON.parse(await readFile(path.join(mapRoot, "manifest.json"), "utf8"));
@@ -430,41 +469,58 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   }
   await writeBindings(temp, source, current, spec);
 
-  await assert.rejects(() => run("late", { freshUntil: kstInstant(Date.parse(CURRENT_FRESH_UNTIL) + 1) }), /source freshness/);
-  assert.equal(await exists(path.join(temp, "late")), false);
+  // 운영 snapshot을 재날인하지 않고 독립 입력으로 실제 릴리스 진입점까지 검증한다.
+  const independent = await createIndependentSourceGovernanceFixture({ repositoryRoot: fixtureRoot, buildSpec });
+  const independentSpec = Buffer.from(canonicalJson(independent.buildSpec));
+  const snapshotPath = path.join(fixtureRoot, buildSpec.sourceSnapshotEvidencePath);
+  const originalSnapshots = await readFile(snapshotPath);
+  const independentExpiry = Math.min(...independent.snapshots.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)));
+  const independentCurrent = { ...current, expiresAt: new Date(independentExpiry).toISOString() };
+  const temporalInputs = { builtAt: independent.evaluationAt, evaluationAt: independent.evaluationAt,
+    freshUntil: kstInstant(independentExpiry) };
+  try {
+    await writeFile(snapshotPath, JSON.stringify(independent.snapshots));
+    await writeFile(path.join(fixtureRoot, "tools/datapack/release/candidate-build-spec.json"), independentSpec);
+    await writeBindings(temp, source, independentCurrent, independentSpec);
+    await assert.rejects(() => releaseRun("late", { ...temporalInputs, freshUntil: kstInstant(independentExpiry + 1) }), /source freshness/);
+    assert.equal(await exists(path.join(temp, "late")), false);
 
-  const timezoneLessCurrent = { ...current, expiresAt: "2026-08-14T15:00:00.000" };
-  await writeBindings(temp, source, timezoneLessCurrent, spec);
-  await assert.rejects(() => run("timezone-less-current"), /current\.json\.expiresAt must be an RFC 3339 UTC timestamp/);
-  assert.equal(await exists(path.join(temp, "timezone-less-current")), false);
+    const timezoneLessCurrent = { ...independentCurrent, expiresAt: independentCurrent.expiresAt.replace(/Z$/, "") };
+    await writeBindings(temp, source, timezoneLessCurrent, independentSpec);
+    await assert.rejects(() => releaseRun("timezone-less-current", temporalInputs), /current\.json\.expiresAt must be an RFC 3339 UTC timestamp/);
+    assert.equal(await exists(path.join(temp, "timezone-less-current")), false);
 
-  const overflowCurrent = { ...current, expiresAt: "2026-02-30T15:00:00.000Z" };
-  await writeBindings(temp, source, overflowCurrent, spec);
-  await assert.rejects(() => run("overflow-current"), /current\.json\.expiresAt must be an RFC 3339 UTC timestamp/);
-  assert.equal(await exists(path.join(temp, "overflow-current")), false);
+    const overflowCurrent = { ...independentCurrent, expiresAt: "2026-02-30T15:00:00.000Z" };
+    await writeBindings(temp, source, overflowCurrent, independentSpec);
+    await assert.rejects(() => releaseRun("overflow-current", temporalInputs), /current\.json\.expiresAt must be an RFC 3339 UTC timestamp/);
+    assert.equal(await exists(path.join(temp, "overflow-current")), false);
+  } finally {
+    await writeFile(snapshotPath, originalSnapshots);
+    await writeFile(path.join(fixtureRoot, "tools/datapack/release/candidate-build-spec.json"), spec);
+  }
 
   await writeBindings(temp, source, current, spec);
   await writeFile(path.join(temp, "current.provenance.json"), canonicalJson({ schemaVersion: 1, artifactKind: "datapack-field-provenance", manifestSha256: "0".repeat(64), packs: current.packs, candidateBuild: { buildSpecSha256: hash(spec) } }));
-  await assert.rejects(() => run("rejected"), /raw current\.json/);
+  await assert.rejects(() => releaseRun("rejected"), /raw current\.json/);
   assert.equal(await exists(path.join(temp, "rejected")), false);
 
   await writeBindings(temp, source, current, spec);
   const provenance = JSON.parse(await readFile(path.join(temp, "current.provenance.json"), "utf8"));
   provenance.packs[0].sqliteSha256 = "0".repeat(64);
   await writeFile(path.join(temp, "current.provenance.json"), canonicalJson(provenance));
-  await assert.rejects(() => run("bad-provenance"), /source pack identity/);
+  await assert.rejects(() => releaseRun("bad-provenance"), /source pack identity/);
   assert.equal(await exists(path.join(temp, "bad-provenance")), false);
 
   const missingPack = { ...current, packs: [] };
   await writeFile(path.join(temp, "current.json"), canonicalJson(missingPack));
   await writeFile(path.join(temp, "current.provenance.json"), canonicalJson({ schemaVersion: 1, artifactKind: "datapack-field-provenance", manifestSha256: hash(Buffer.from(canonicalJson(missingPack))), packs: current.packs, candidateBuild: { buildSpecSha256: hash(spec) } }));
-  await assert.rejects(() => run("missing-pack"), /source pack identity/);
+  await assert.rejects(() => releaseRun("missing-pack"), /source pack identity/);
   assert.equal(await exists(path.join(temp, "missing-pack")), false);
 
   const duplicatePack = { ...current, packs: [...current.packs, { ...current.packs[0] }] };
   await writeFile(path.join(temp, "current.json"), canonicalJson(duplicatePack));
   await writeFile(path.join(temp, "current.provenance.json"), canonicalJson({ schemaVersion: 1, artifactKind: "datapack-field-provenance", manifestSha256: hash(Buffer.from(canonicalJson(duplicatePack))), packs: duplicatePack.packs, candidateBuild: { buildSpecSha256: hash(spec) } }));
-  await assert.rejects(() => run("duplicate-pack"), /source pack identity/);
+  await assert.rejects(() => releaseRun("duplicate-pack"), /source pack identity/);
   assert.equal(await exists(path.join(temp, "duplicate-pack")), false);
 
   const mutate = (sql) => { const mutation = new DatabaseSync(source); mutation.exec("PRAGMA foreign_keys=OFF; " + sql); mutation.close(); };
@@ -516,7 +572,7 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   const occupied = path.join(temp, "occupied");
   await writeFile(occupied, "marker");
   const beforeTemps = await taskTemps(temp);
-  await assert.rejects(() => run("occupied"), /must not already exist/);
+  await assert.rejects(() => releaseRun("occupied"), /must not already exist/);
   assert.equal(await readFile(occupied, "utf8"), "marker");
   assert.deepEqual(await taskTemps(temp), beforeTemps);
 });
