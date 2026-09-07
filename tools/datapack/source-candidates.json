@@ -157,6 +157,18 @@
     },
     {
       "id": "kric-nationwide-timetable-file",
+      "retainedRoutePolicy": {
+        "routeNumber": "S2901",
+        "stationAliases": {
+          "광주송정": "광주송정역",
+          "학동증심사": "학동증심사입구",
+          "금남4가": "금남로4가",
+          "금남5가": "금남로5가",
+          "양동": "양동시장",
+          "컨벤션": "김대중컨벤션센터"
+        },
+        "excludedEndpointLabels": ["기지사업소", "옥동기지"]
+      },
       "confirmationPolicy": {
         "id": "official_static_timetable_confirmation",
         "sourceIds": ["kric-nationwide-timetable-file"],

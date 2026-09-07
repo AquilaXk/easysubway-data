@@ -7,6 +7,8 @@ import { parseRetainedKasiHolidayMonth, readKasiHolidayCalendarFiles } from "./f
 import { buildRetainedGwangjuServiceCalendars, projectRetainedGwangjuTimetable } from "./materialize-gwangju-timetable.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { prepareRetainedKricTimetablePublication } from "./prepare-retained-kric-timetable-publication.mjs";
+import { parseMolitGwangjuStationMappings } from "./build-molit-nationwide-fixture.mjs";
+import { selectRetainedKricTimetable } from "./build-kric-retained-file-pending-handoff.mjs";
 
 const SEOUL_DATE_FORMATTER = new Intl.DateTimeFormat("en", {
   timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
@@ -128,7 +130,7 @@ export async function runRetainedGwangjuContractPreparation(argv, {
   }
   const readJson = async file => JSON.parse(await readFile(file, "utf8"));
   const input = await readJson(argv[1]);
-  const keys = ["observationPath", "receiptPath", "stationBindingsPath", "holidayDirectory", "routeNumber", "providerValidUntil"];
+  const keys = ["observationPath", "receiptPath", "canonicalStationMappingsPath", "holidayDirectory", "providerValidUntil"];
   if (!input || JSON.stringify(Object.keys(input).sort()) !== JSON.stringify(keys.sort())
     || keys.filter(key => key.endsWith("Path") || key.endsWith("Directory")).some(key => !path.isAbsolute(input[key] ?? ""))) {
     throw new Error("retained Gwangju preparation input is invalid");
@@ -141,15 +143,79 @@ export async function runRetainedGwangjuContractPreparation(argv, {
     || evidence.snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`) {
     throw new Error("retained Gwangju topology selection is invalid");
   }
-  const bindings = await readJson(input.stationBindingsPath);
-  const result = prepareRetainedGwangjuContract({ candidate, observationBytes: await readFile(input.observationPath),
-    receipt: await readJson(input.receiptPath), routeNumber: input.routeNumber,
-    stationBindings: bindings.stationBindings, excludedEndpointLabels: bindings.excludedEndpointLabels,
-    topologySnapshot: await readJson(path.join(repositoryRoot, evidence.snapshotPath)),
+  const topologySnapshot = await readJson(path.join(repositoryRoot, evidence.snapshotPath));
+  const observationBytes = await readFile(input.observationPath);
+  const receipt = await readJson(input.receiptPath);
+  const routePolicy = retainedRoutePolicy(candidate);
+  const { records } = selectRetainedKricTimetable({
+    observation: JSON.parse(observationBytes.toString("utf8")), receipt, routeNumber: routePolicy.routeNumber,
+  });
+  const canonicalMappings = parseMolitGwangjuStationMappings(
+    await readFile(input.canonicalStationMappingsPath), topologySnapshot,
+  );
+  const stationBindings = deriveStationBindings({ records, canonicalMappings, routePolicy });
+  const result = prepareRetainedGwangjuContract({ candidate, observationBytes,
+    receipt, routeNumber: routePolicy.routeNumber,
+    stationBindings, excludedEndpointLabels: routePolicy.excludedEndpointLabels,
+    topologySnapshot,
     holidayCalendar: await readKasiHolidayCalendarFiles(input.holidayDirectory),
     evaluationAt: now.toISOString(), providerValidUntil: input.providerValidUntil });
   await writeFile(argv[3], `${JSON.stringify(result.contract, null, 2)}\n`, { flag: "wx", mode: 0o600 });
   return { contractSha256: result.contractSha256 };
+}
+
+function retainedRoutePolicy(candidate) {
+  const policy = candidate?.retainedRoutePolicy;
+  const aliases = policy?.stationAliases;
+  if (!policy || JSON.stringify(Object.keys(policy).sort()) !== JSON.stringify([
+    "excludedEndpointLabels", "routeNumber", "stationAliases",
+  ]) || typeof policy.routeNumber !== "string" || policy.routeNumber.trim() === ""
+    || !aliases || typeof aliases !== "object" || Array.isArray(aliases)
+    || !Array.isArray(policy.excludedEndpointLabels)) {
+    throw new Error("retained Gwangju route policy is invalid");
+  }
+  const aliasEntries = Object.entries(aliases);
+  if (aliasEntries.length === 0 || aliasEntries.some(([label, stationName]) =>
+    typeof label !== "string" || label.trim() === "" || typeof stationName !== "string" || stationName.trim() === "")
+    || policy.excludedEndpointLabels.some((label) => typeof label !== "string" || label.trim() === "")
+    || new Set(policy.excludedEndpointLabels).size !== policy.excludedEndpointLabels.length) {
+    throw new Error("retained Gwangju route policy is invalid");
+  }
+  if (new Set(aliasEntries.map(([, stationName]) => stationName)).size !== aliasEntries.length) {
+    throw new Error("retained Gwangju route policy has duplicate aliases");
+  }
+  return policy;
+}
+
+function deriveStationBindings({ records, canonicalMappings, routePolicy }) {
+  const labels = new Set(records.map(({ stationName }) => stationName));
+  const canonicalByName = new Map();
+  for (const mapping of canonicalMappings) {
+    const matches = canonicalByName.get(mapping.stationName) ?? [];
+    matches.push(mapping);
+    canonicalByName.set(mapping.stationName, matches);
+  }
+  const aliases = new Map(Object.entries(routePolicy.stationAliases));
+  const bindings = [];
+  for (const label of labels) {
+    if (routePolicy.excludedEndpointLabels.includes(label)) {
+      if (canonicalByName.has(label) || aliases.has(label)) {
+        throw new Error(`retained Gwangju excluded endpoint overlaps passenger station: ${label}`);
+      }
+      continue;
+    }
+    const canonicalName = aliases.get(label) ?? label;
+    const matches = canonicalByName.get(canonicalName) ?? [];
+    if (matches.length !== 1) throw new Error(`retained Gwangju station mapping is ambiguous: ${label}`);
+    if (routePolicy.excludedEndpointLabels.includes(label) || routePolicy.excludedEndpointLabels.includes(canonicalName)) {
+      throw new Error(`retained Gwangju excluded endpoint overlaps passenger station: ${label}`);
+    }
+    bindings.push({ sourceLabel: label, stationId: matches[0].stationId, stationCode: matches[0].stationNumber });
+  }
+  if (new Set(bindings.map(({ stationId }) => stationId)).size !== bindings.length) {
+    throw new Error("retained Gwangju route policy has duplicate aliases");
+  }
+  return bindings.sort((left, right) => utf16Compare(left.sourceLabel, right.sourceLabel));
 }
 
 if (isMainModule(import.meta.url)) {

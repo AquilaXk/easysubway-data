@@ -20,16 +20,27 @@ test("retained contract CLI binds stored inputs and refuses overwrite", async co
   await mkdir(path.join(directory, "tools/datapack/sources"), { recursive: true });
   const topologyId = "gwangju-transportation-route-topology-test";
   const snapshotPath = `tools/datapack/sources/${topologyId}.json`;
-  await json(path.join(directory, snapshotPath), args.topologySnapshot);
+  const repositoryTopology = JSON.parse(await readFile("tools/datapack/sources/gwangju-transportation-route-topology-20260720.json", "utf8"));
+  await json(path.join(directory, snapshotPath), repositoryTopology);
   await json(path.join(directory, "tools/datapack/source-candidates.json"), { candidates: [candidate] });
   await json(path.join(directory, "tools/datapack/source-inventory.json"), { sources: [{
     id: "gwangju-transportation-route-topology", topologyAdmissionEvidence: { snapshotId: topologyId, snapshotPath },
   }] });
-  const observationPath = path.join(directory, "observation.json"), receiptPath = path.join(directory, "receipt.json");
-  const stationBindingsPath = path.join(directory, "bindings.json"), holidayDirectory = path.join(directory, "holidays");
-  await writeFile(observationPath, args.observationBytes);
+  const observationPath = path.join(directory, "observation.json"), receiptPath = path.join(directory, "receipt.json"),
+    holidayDirectory = path.join(directory, "holidays");
+  const records = JSON.parse(args.observationBytes).records.map((record) => {
+    const sourceLabel = record.stationName === "A" ? "학동증심사" : "소태";
+    const rename = (value) => value === "A" ? "학동증심사" : value === "B" ? "소태" : value;
+    const row = { ...record, originStationName: rename(record.originStationName),
+      destinationStationName: rename(record.destinationStationName), stationName: sourceLabel };
+    delete row.sourceRowSha256;
+    return { ...row, sourceRowSha256: sha256(JSON.stringify(row)) };
+  });
+  const observation = JSON.parse(args.observationBytes);
+  observation.records = records;
+  observation.recordsSha256 = sha256(`${JSON.stringify(records)}\n`);
+  await writeFile(observationPath, JSON.stringify(observation));
   await json(receiptPath, args.receipt);
-  await json(stationBindingsPath, { stationBindings: args.stationBindings, excludedEndpointLabels: args.excludedEndpointLabels });
   await mkdir(holidayDirectory);
   const months = [];
   for (const { raw, ...month } of args.holidayCalendar.months) {
@@ -39,7 +50,9 @@ test("retained contract CLI binds stored inputs and refuses overwrite", async co
   }
   await json(path.join(holidayDirectory, "months.json"), { schemaVersion: 1, sourceId: "kasi-public-holiday-calendar", months });
   const inputPath = path.join(directory, "input.json"), outputPath = path.join(directory, "output.json");
-  const specification = { observationPath, receiptPath, stationBindingsPath, holidayDirectory, routeNumber: args.routeNumber, providerValidUntil: null };
+  const specification = { observationPath, receiptPath,
+    canonicalStationMappingsPath: path.resolve("tools/datapack/sources/molit-urban-rail-full-route-20251211.csv"),
+    holidayDirectory, providerValidUntil: null };
   await json(inputPath, specification);
   const invoke = () => runRetainedGwangjuContractPreparation(["--input", inputPath, "--output", outputPath], {
     repositoryRoot: directory, now: new Date(args.evaluationAt),
@@ -52,6 +65,13 @@ test("retained contract CLI binds stored inputs and refuses overwrite", async co
   assert.deepEqual(await readFile(outputPath), bytes);
   await json(inputPath, { ...specification, obsoleteDateOverride: "ignored" });
   await assert.rejects(invoke, /input is invalid/);
+  await json(inputPath, { ...specification, routeNumber: args.routeNumber });
+  await assert.rejects(invoke, /input is invalid/);
+  await json(inputPath, specification);
+  await json(path.join(directory, "tools/datapack/source-candidates.json"), { candidates: [{ ...candidate,
+    retainedRoutePolicy: { ...candidate.retainedRoutePolicy,
+      stationAliases: { ...candidate.retainedRoutePolicy.stationAliases, "소태": "학동증심사입구" } } }] });
+  await assert.rejects(invoke, /duplicate aliases/);
 });
 const monthXml = (date) => Buffer.from(`<?xml version="1.0"?><response><header><resultCode>00</resultCode></header><body><items><item><locdate>${date}</locdate><isHoliday>Y</isHoliday></item></items><totalCount>1</totalCount></body></response>`);
 
