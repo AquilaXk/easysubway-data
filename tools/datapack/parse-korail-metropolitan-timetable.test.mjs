@@ -8,6 +8,7 @@ import path from "node:path";
 import { collectKasiHolidayCalendarFiles } from "./fetch-kasi-public-holiday-calendar.mjs";
 import { collectKorailMetropolitanTimetableFile } from "./collect-korail-metropolitan-timetable-file.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { buildKorailTopologyRegistrationOutputs, commitKorailTopologyRegistrationOutputs } from "./register-korail-route-topology.mjs";
 import {
   normalizeKorailTrainClockCells,
   parseKorailMetropolitanSheet,
@@ -170,6 +171,7 @@ test("retained XLSX parsing binds exact bytes and keeps native sparse row coordi
       stewardRole: "datapack-data-steward", approvalRole: "datapack-release-approver" },
       detailUrl: "https://www.data.go.kr/data/15052169/fileData.do",
       evidence: { license: "unrestricted", provider: "한국철도공사",
+        collectionContract: { collector: "fixture FILE collector", maxRetries: 0 },
         licenseEvidenceUrl: "https://www.data.go.kr/data/15052169/fileData.do" } };
     const unregisteredPolicy = { ...baseFreshness, sourceClasses: [...baseFreshness.sourceClasses,
       { ...freshnessPolicy.sourceClasses.at(-1), sourceIds: [] }] };
@@ -208,6 +210,67 @@ test("retained XLSX parsing binds exact bytes and keeps native sparse row coordi
       ["put-immutable-bundle-object", "verify-immutable-bundle-object"]);
     assert.ok(prepared.publishPlan.steps.every((step) => step.sha256 === sha256 && step.sizeBytes === bytes.length
       && step.sourcePath === "timetable.xlsx" && step.objectKey.endsWith(`/${sha256}.xlsx`)));
+    const targets = ["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json",
+      "tools/datapack/source-governance-policy.json", "release/product-gates/datapack-freshness-sla.json"];
+    const priorLedger = [{ sourceId: "unrelated-source", snapshotId: "unrelated-snapshot" }];
+    for (const [relative, value] of [
+      [targets[0], inventory], [targets[1], priorLedger], [targets[2], JSON.parse(governancePolicyBytes)],
+      [targets[3], unregisteredPolicy], ["tools/datapack/source-candidates.json", {
+        schemaVersion: 1, artifactKind: "production-source-candidates", candidates: [{
+        ...candidate, domain: "route_graph_topology", displayName: "fixture timetable",
+        coverageScope: { regionIds: ["fixture"], operatorIds: ["fixture"], lineIds: ["L"] } }] }],
+      ["membership.json", stationLineObservation], ["membership-receipt.json", stationLineReceipt],
+    ]) {
+      const file = path.join(root, relative);
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFile(file, `${JSON.stringify(value, null, 2)}\n`);
+    }
+    const sourceInputPath = path.join(root, "registration-input.json"), receiptPath = path.join(root, "raw-receipt.json");
+    const observedDataUpdatedAt = new Date(Date.parse(receipt.capturedAt) - 86400000).toISOString().slice(0, 10);
+    await writeFile(sourceInputPath, JSON.stringify({ schemaVersion: 1, artifactKind: "korail-topology-registration-input",
+      collectionDirectory, stationLineObservationPath: path.join(root, "membership.json"),
+      stationLineReceiptPath: path.join(root, "membership-receipt.json"), canonicalCatalogPath,
+      canonicalCatalogSha256: hash(catalogBytes), operatorName: input.operatorName, lineName: input.lineName,
+      lineId: input.lineId, governanceEntry, observedDataUpdatedAt, sourceUpdatedAt: null }));
+    const rawReceipt = { schemaVersion: 1, artifactKind: "korail-metropolitan-timetable-raw-receipt",
+      sourceId: candidate.id, snapshotId: prepared.snapshot.snapshotId, contentSha256: prepared.snapshot.contentSha256,
+      collectionReceiptSha256: collected.sources.timetable.collectionReceiptSha256,
+      capturedAt: receipt.capturedAt, rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/${prepared.publishPlan.steps[0].objectKey}`,
+      rawObjectSha256: sha256, byteSize: bytes.length, storedAt: receipt.capturedAt,
+      rawRetentionExpiresAt: prepared.rawRetentionExpiresAt };
+    await writeFile(receiptPath, JSON.stringify(rawReceipt));
+    const registrationArgs = { repositoryRoot: root, sourceInputPath, receiptPath, now: new Date(receipt.capturedAt) };
+    const outputs = await buildKorailTopologyRegistrationOutputs(registrationArgs);
+    assert.deepEqual(outputs.map(({ relative }) => relative), targets);
+    const registeredSource = JSON.parse(outputs[0].bytes).sources.at(-1), registeredRow = JSON.parse(outputs[1].bytes).at(-1);
+    assert.equal(registeredSource.observedDataUpdatedAt, observedDataUpdatedAt);
+    assert.equal(registeredSource.retrievedAt, receipt.capturedAt.slice(0, 10));
+    assert.ok(!Object.hasOwn(registeredSource, "sourceUpdatedAt"));
+    assert.equal(registeredRow.sourceUpdatedAt, null);
+    assert.equal(registeredRow.governancePolicyVersion, predecessor.policyVersion);
+    assert.equal(registeredRow.governancePolicySha256, hash(outputs[2].bytes));
+    assert.deepEqual(JSON.parse(outputs[0].bytes).sources.slice(0, -1), inventory.sources);
+    assert.deepEqual(JSON.parse(outputs[1].bytes).slice(0, -1), priorLedger);
+    const inventoryProjectionPath = path.join(root, "registered-source-only.json");
+    await writeFile(inventoryProjectionPath, JSON.stringify({ ...inventory, sources: [registeredSource] }));
+    execFileSync(process.execPath, [path.join(import.meta.dirname, "validate-source-inventory.mjs"),
+      "--inventory", inventoryProjectionPath, "--candidates", path.join(root, "tools/datapack/source-candidates.json")],
+    { cwd: root, stdio: "pipe" });
+    const candidateFile = path.join(root, "tools/datapack/source-candidates.json");
+    const candidateBytes = await readFile(candidateFile);
+    await writeFile(candidateFile, Buffer.concat([candidateBytes, Buffer.from("\n")]));
+    await assert.rejects(commitKorailTopologyRegistrationOutputs({ repositoryRoot: root, outputs }), /input binding/);
+    await writeFile(candidateFile, candidateBytes);
+    assert.ok(outputs[0].inputs.some(({ absolute }) => absolute === path.join(root, registeredSource.topologyAdmissionEvidence.snapshotPath)));
+    await writeFile(receiptPath, JSON.stringify({ ...rawReceipt, rawObjectSha256: hash("wrong raw") }));
+    await assert.rejects(buildKorailTopologyRegistrationOutputs(registrationArgs), /RAW_RECEIPT/);
+    await writeFile(receiptPath, JSON.stringify(rawReceipt));
+    const originalSourceInput = await readFile(sourceInputPath);
+    await writeFile(sourceInputPath, JSON.stringify({ ...JSON.parse(originalSourceInput), observedDataUpdatedAt: "2040-02-30" }));
+    await assert.rejects(buildKorailTopologyRegistrationOutputs(registrationArgs), /SOURCE_INPUT/);
+    await writeFile(sourceInputPath, originalSourceInput);
+    await commitKorailTopologyRegistrationOutputs({ repositoryRoot: root, outputs });
+    for (const output of outputs) assert.deepEqual(await readFile(path.join(root, output.relative)), output.bytes);
     await assert.rejects(buildCollectedKorailTopologySnapshot({ ...input, collectionDirectory,
       freshnessPolicy: { sourceClasses: [] }, evaluationAt: receipt.capturedAt }), /freshness source/);
     const holidayRaw = Buffer.from('<response><header><resultCode>00</resultCode></header><body><items><item><locdate>20400102</locdate><isHoliday>Y</isHoliday></item></items><totalCount>1</totalCount></body></response>');
