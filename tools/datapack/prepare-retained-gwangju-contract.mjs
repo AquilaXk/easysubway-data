@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isMainModule } from "../lib/is-main-module.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 import { parseRetainedKasiHolidayMonth, readKasiHolidayCalendarFiles } from "./fetch-kasi-public-holiday-calendar.mjs";
 import { buildRetainedGwangjuServiceCalendars, projectRetainedGwangjuTimetable } from "./materialize-gwangju-timetable.mjs";
@@ -171,7 +172,7 @@ export async function runRetainedGwangjuContractPreparation(argv, {
 export function retainedRoutePolicy(candidate) {
   const policy = candidate?.retainedRoutePolicy;
   const aliases = policy?.stationAliases;
-  if (!policy || JSON.stringify(Object.keys(policy).sort()) !== JSON.stringify([
+  if (!policy || JSON.stringify(Object.keys(policy).sort(codepointCompare)) !== JSON.stringify([
     "excludedEndpointLabels", "routeNumber", "stationAliases",
   ]) || typeof policy.routeNumber !== "string" || policy.routeNumber.trim() === ""
     || !aliases || typeof aliases !== "object" || Array.isArray(aliases)

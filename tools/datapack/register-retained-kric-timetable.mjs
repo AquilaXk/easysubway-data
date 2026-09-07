@@ -187,7 +187,11 @@ function topologySnapshotPath(root, topology) {
   const directory = path.resolve(root, "tools/datapack/sources"), resolved = path.resolve(root, relative);
   if (!resolved.startsWith(`${directory}${path.sep}`)) fail("TOPOLOGY"); return resolved;
 }
-function select(items, predicate, code) { const matches = Array.isArray(items) ? items.filter(predicate) : []; if (matches.length !== 1) fail(code); return matches[0]; }
+function select(items, predicate, code) {
+  const matches = Array.isArray(items) ? items.filter((item) => predicate(item)) : [];
+  if (matches.length !== 1) fail(code);
+  return matches[0];
+}
 function exactInput(value) {
   const keys = ["schemaVersion", "artifactKind", "observationPath", "collectionReceiptPath", "publicationReceiptPath", "retainedContractPath", "governanceEntry", "providerValidUntil"].sort(compare);
   if (value?.schemaVersion !== 1 || value.artifactKind !== "retained-kric-timetable-registration-input" || JSON.stringify(Object.keys(value).sort(compare)) !== JSON.stringify(keys)

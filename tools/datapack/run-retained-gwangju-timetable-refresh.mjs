@@ -116,7 +116,7 @@ async function writeJson(write, target, value) {
   await write(target, `${JSON.stringify(value, null, 2)}\n`, { flag: "wx", mode: 0o600 });
 }
 function exactlyOne(items, predicate) {
-  const matches = Array.isArray(items) ? items.filter(predicate) : [];
+  const matches = Array.isArray(items) ? items.filter((item) => predicate(item)) : [];
   if (matches.length !== 1) throw new Error("retained Gwangju refresh canonical input is invalid");
   return matches[0];
 }

@@ -30,23 +30,8 @@ export function classifyRetainedGwangjuRefreshDelivery({ decision, repository, c
     || !Array.isArray(claims) || !Array.isArray(pullRequests)) {
     throw new Error("retained Gwangju refresh delivery input is invalid");
   }
-  const byBranch = new Map();
-  for (const pullRequest of pullRequests) {
-    if (!pullRequest || typeof pullRequest !== "object") throw new Error("retained Gwangju refresh PR is invalid");
-    if (!BRANCH.test(pullRequest.headRefName) || pullRequest.baseRefName !== "main"
-      || pullRequest.isCrossRepository !== false || pullRequest.headRepository?.nameWithOwner !== repository) continue;
-    if (!['OPEN', 'CLOSED', 'MERGED'].includes(pullRequest.state) || typeof pullRequest.isDraft !== "boolean"
-      || byBranch.has(pullRequest.headRefName)) throw new Error("retained Gwangju refresh PR is invalid");
-    byBranch.set(pullRequest.headRefName, pullRequest);
-  }
-  const claimBranches = new Set();
-  for (const claim of claims) {
-    if (!claim || typeof claim.sha !== "string" || !/^[a-f0-9]{40}$/u.test(claim.sha)
-      || !BRANCH.test(claim.branch) || claimBranches.has(claim.branch)) {
-      throw new Error("retained Gwangju refresh claim is invalid");
-    }
-    claimBranches.add(claim.branch);
-  }
+  const byBranch = indexRefreshPullRequests(pullRequests, repository);
+  validateRefreshClaims(claims);
   const live = claims.filter(({ branch }) => byBranch.get(branch)?.state !== "MERGED");
   if (live.length > 1) throw new Error("retained Gwangju refresh has multiple live claims");
   const open = [...byBranch.values()].filter(({ state }) => state === "OPEN");
@@ -64,6 +49,31 @@ export function classifyRetainedGwangjuRefreshDelivery({ decision, repository, c
     return { state: "RECOVER_CLAIM", branch: live[0].branch };
   }
   return { state: "DUE" };
+}
+
+// 같은 저장소의 갱신 PR만 연결하고, 판단 전에 중복·형식을 검증한다.
+function indexRefreshPullRequests(pullRequests, repository) {
+  const byBranch = new Map();
+  for (const pullRequest of pullRequests) {
+    if (!pullRequest || typeof pullRequest !== "object") throw new Error("retained Gwangju refresh PR is invalid");
+    if (!BRANCH.test(pullRequest.headRefName) || pullRequest.baseRefName !== "main"
+      || pullRequest.isCrossRepository !== false || pullRequest.headRepository?.nameWithOwner !== repository) continue;
+    if (!['OPEN', 'CLOSED', 'MERGED'].includes(pullRequest.state) || typeof pullRequest.isDraft !== "boolean"
+      || byBranch.has(pullRequest.headRefName)) throw new Error("retained Gwangju refresh PR is invalid");
+    byBranch.set(pullRequest.headRefName, pullRequest);
+  }
+  return byBranch;
+}
+
+function validateRefreshClaims(claims) {
+  const claimBranches = new Set();
+  for (const claim of claims) {
+    if (!claim || typeof claim.sha !== "string" || !/^[a-f0-9]{40}$/u.test(claim.sha)
+      || !BRANCH.test(claim.branch) || claimBranches.has(claim.branch)) {
+      throw new Error("retained Gwangju refresh claim is invalid");
+    }
+    claimBranches.add(claim.branch);
+  }
 }
 
 /** Verifies the only tracked files a successful retained registration may change. */

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { selectRetainedKricTimetable } from "./build-kric-retained-file-pending-handoff.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 
@@ -7,13 +8,13 @@ const SOURCE_ID = "kric-nationwide-timetable-file";
 const POLICY_KEYS = [
   "basisField", "eventTriggers", "futureBasisAllowed", "id",
   "providerValidityEndField", "reverificationCadence", "sourceIds",
-].sort();
+].sort(codepointCompare);
 
 // 보관 원문 검증과 publication 입력만 준비한다. 등록·업로드·관측 시각 갱신은 하지 않는다.
 export function requireRetainedTimetableConfirmationPolicy(candidate) {
   const policy = candidate?.confirmationPolicy;
   if (candidate?.id !== SOURCE_ID || candidate.domain !== "schedule_timetable"
-    || !policy || JSON.stringify(Object.keys(policy).sort()) !== JSON.stringify(POLICY_KEYS)
+    || !policy || JSON.stringify(Object.keys(policy).sort(codepointCompare)) !== JSON.stringify(POLICY_KEYS)
     || typeof policy.id !== "string" || policy.id.length === 0
     || JSON.stringify(policy.sourceIds) !== JSON.stringify([SOURCE_ID])
     || policy.basisField !== "observedAt" || policy.futureBasisAllowed !== false

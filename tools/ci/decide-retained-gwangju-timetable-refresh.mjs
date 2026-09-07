@@ -50,7 +50,7 @@ export function decideRetainedGwangjuTimetableRefresh({ inventory, snapshots, ca
 }
 
 function exactlyOne(items, predicate, code) {
-  const matches = Array.isArray(items) ? items.filter(predicate) : [];
+  const matches = Array.isArray(items) ? items.filter((item) => predicate(item)) : [];
   if (matches.length !== 1) fail(code);
   return matches[0];
 }
