@@ -14,6 +14,10 @@ const JOURNAL = "tools/datapack/.korail-route-topology-registration-transaction.
 const LOCK = "tools/datapack/.korail-route-topology-registration.lock";
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const json = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
+function utf16Compare(left, right) {
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
+}
 
 export async function buildKorailTopologyRegistrationOutputs({ repositoryRoot, sourceInputPath, receiptPath, now = new Date() } = {}) {
   const context = await prepareKorailTopologyRegistration({ repositoryRoot, sourceInputPath, now });
@@ -67,7 +71,7 @@ export async function buildKorailTopologyRegistrationOutputs({ repositoryRoot, s
     rawRetentionExpiresAt: rawReceipt.rawRetentionExpiresAt,
     governancePolicyVersion: preparation.projectedGovernancePolicy.policyVersion,
     governancePolicySha256: sha(policyBytes),
-    schemaFingerprint: sha(canonicalJson({ artifactKind: snapshot.artifactKind, keys: Object.keys(snapshot).sort() })),
+    schemaFingerprint: sha(canonicalJson({ artifactKind: snapshot.artifactKind, keys: Object.keys(snapshot).sort(utf16Compare) })),
     redactedRequestFingerprint: sha(canonicalJson({
       collectionContract: candidate.evidence.collectionContract, officialUrl: collectionReceipt.officialUrl,
     })),
@@ -135,7 +139,7 @@ export async function registerKorailRouteTopology(options = {}) {
 function validateRawReceipt(value, preparation, collectionReceiptBytes, rawSha256, byteSize, now) {
   const snapshot = preparation.snapshot, key = `source-raw/${SOURCE_ID}/${snapshot.capturedAt.slice(0, 10).replaceAll("-", "")}/${rawSha256}.xlsx`, uri = `oci://axvym6vk8g7i/easysubway-datapacks/${key}`;
   const keys = ["schemaVersion", "artifactKind", "sourceId", "snapshotId", "contentSha256", "collectionReceiptSha256", "capturedAt", "rawObjectUri", "rawObjectSha256", "byteSize", "storedAt", "rawRetentionExpiresAt"];
-  if (!same(Object.keys(value).sort(), keys.sort()) || value.schemaVersion !== 1
+  if (!same(Object.keys(value).sort(utf16Compare), keys.toSorted(utf16Compare)) || value.schemaVersion !== 1
     || value.artifactKind !== "korail-metropolitan-timetable-raw-receipt" || value.sourceId !== SOURCE_ID
     || value.snapshotId !== snapshot.snapshotId || value.contentSha256 !== snapshot.contentSha256
     || value.collectionReceiptSha256 !== sha(collectionReceiptBytes) || value.capturedAt !== snapshot.capturedAt
@@ -150,9 +154,9 @@ async function writeDerivedSnapshot(file, bytes) { await mkdir(path.dirname(file
 function exactSourceInput(value) {
   const keys = ["schemaVersion", "artifactKind", "collectionDirectory", "stationLineObservationPath",
     "stationLineReceiptPath", "canonicalCatalogPath", "canonicalCatalogSha256", "operatorName", "lineName",
-    "lineId", "governanceEntry", "observedDataUpdatedAt", "sourceUpdatedAt"].sort();
+    "lineId", "governanceEntry", "observedDataUpdatedAt", "sourceUpdatedAt"].sort(utf16Compare);
   if (value?.schemaVersion !== 1 || value.artifactKind !== "korail-topology-registration-input"
-    || !same(Object.keys(value).sort(), keys)
+    || !same(Object.keys(value).sort(utf16Compare), keys)
     || [value.collectionDirectory, value.stationLineObservationPath, value.stationLineReceiptPath,
       value.canonicalCatalogPath].some((entry) => !path.isAbsolute(entry ?? ""))
     || !/^[a-f0-9]{64}$/u.test(value.canonicalCatalogSha256 ?? "")

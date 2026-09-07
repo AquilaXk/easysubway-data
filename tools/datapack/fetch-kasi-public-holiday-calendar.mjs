@@ -89,6 +89,15 @@ export async function fetchKasiPublicHolidayCalendarObservation({
       ? (options) => fetchImpl(url, options)
       : (options) => nativeHttpsGet(url, options, httpsRequestImpl);
     const { response, attemptCount } = await fetchKasiMonth(request);
+    const { xml, dates } = await readKasiMonthResponse(response, { year, month, attemptCount });
+    for (const date of dates) holidays.add(date);
+    observations.push({ year, month, xml, sha256: createHash("sha256").update(xml, "utf8").digest("hex"),
+      retrievedAt: new Date().toISOString() });
+  }
+  return { holidays, months: observations };
+}
+
+async function readKasiMonthResponse(response, { year, month, attemptCount }) {
     if (!response?.ok) throw kasiFailure(`KASI public holiday request failed: HTTP_${safeStatus(response?.status)}`, "KASI_HTTP", attemptCount);
     let xml;
     try {
@@ -102,11 +111,7 @@ export async function fetchKasiPublicHolidayCalendarObservation({
     } catch (error) {
       throw kasiFailure(error.message, "KASI_SCHEMA", attemptCount);
     }
-    for (const date of dates) holidays.add(date);
-    observations.push({ year, month, xml, sha256: createHash("sha256").update(xml, "utf8").digest("hex"),
-      retrievedAt: new Date().toISOString() });
-  }
-  return { holidays, months: observations };
+    return { xml, dates };
 }
 
 async function fetchKasiMonth(request) {
