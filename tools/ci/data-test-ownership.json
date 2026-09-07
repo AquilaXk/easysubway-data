@@ -12,6 +12,10 @@
     "tools/routes"
   ],
   "owners": {
+    "data457": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457",
+      "title": "Resolve remaining nationwide route-topology source contracts"
+    },
     "data7": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/7",
       "title": "[Release Blocker][P0][Data] server-route-bundle production eligibility·FINAL coverage producer"
@@ -498,6 +502,7 @@
     {"path":"tools/datapack/nationwide-public-api-coverage-evidence.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":281},
     {"path":"tools/datapack/normalize-kric-timetable.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":119},
     {"path":"tools/datapack/normalize-transfer-distance-duration-rows.test.mjs","semanticOwner":"data27","classes":["required-pr"],"durationMs":200},
+    {"path":"tools/datapack/parse-korail-metropolitan-timetable.test.mjs","semanticOwner":"data457","classes":["required-pr"],"durationMs":84},
     {"path":"tools/datapack/parse-kric-code-catalog.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":118},
     {"path":"tools/datapack/plan-kric-exit-path-collection.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":139},
     {"path":"tools/datapack/plan-kric-line4-collection.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":114},
