@@ -11,6 +11,7 @@ import {
   normalizeKorailTrainClockCells,
   parseKorailMetropolitanSheet,
   projectKorailPassengerTopology,
+  projectKorailTopologyDurations,
   bindKorailCanonicalStations,
   korailServiceDayLabel,
   buildKorailServiceCalendars,
@@ -20,6 +21,24 @@ import {
   buildCollectedKorailTopologyObservation,
   buildRetainedKorailTimetable,
 } from "./parse-korail-metropolitan-timetable.mjs";
+
+test("topology duration selects an observed witness without changing trip observations", () => {
+  const witness = (trainNo, durationSeconds) => ({ sheetName: "평일_상", trainNo, durationSeconds,
+    departure: { cellId: "B1", rawValue: "0.5", seconds: 43200 },
+    arrival: { cellId: "B2", rawValue: "source", seconds: 43200 + durationSeconds } });
+  const observation = { selection: { lineId: "L" }, stationBindings: [
+    { stationNumber: "A", stationId: "s-a" }, { stationNumber: "B", stationId: "s-b" }],
+    topology: { edges: [{ fromStationNumber: "A", toStationNumber: "B",
+      observations: [witness("T3", 90), witness("T2", 60), witness("T1", 60)] }] } };
+  const original = structuredClone(observation);
+  const rows = projectKorailTopologyDurations(observation);
+  assert.deepEqual(rows, [{ lineId: "L", fromStationId: "s-a", toStationId: "s-b", durationSeconds: 60,
+    derivationPolicy: "MIN_OBSERVED_SCHEDULED_DURATION_V1", witness: witness("T1", 60) }]);
+  observation.topology.edges[0].observations.reverse();
+  assert.deepEqual(projectKorailTopologyDurations(observation), rows);
+  observation.topology.edges[0].observations.reverse();
+  assert.deepEqual(observation, original);
+});
 
 test("calendar rows use supplied validity and holiday exceptions without duplicate weekend service", () => {
   const input = { startDate: "20400101", endDate: "20400110",

@@ -8,6 +8,27 @@ import { reconstructTransitTrips } from "./reconstruct-transit-trips.mjs";
 import { parseRetainedKasiHolidayMonth, readKasiHolidayCalendarFiles } from "./fetch-kasi-public-holiday-calendar.mjs";
 import { validateKorailTimetableFileReceipt } from "./collect-korail-metropolitan-timetable-file.mjs";
 
+/** RIDE 메타데이터만 선택한다. 원래 열차별 시각과 모든 관측은 그대로 둔다. */
+export function projectKorailTopologyDurations(observation) {
+  const ids = new Map(observation.stationBindings.map(({ stationNumber, stationId }) => [stationNumber, stationId]));
+  const identity = (row) => JSON.stringify([row.sheetName, row.trainNo, row.departure.cellId, row.arrival.cellId]);
+  return observation.topology.edges.map((edge) => {
+    const fromStationId = ids.get(edge.fromStationNumber), toStationId = ids.get(edge.toStationNumber);
+    if (!fromStationId || !toStationId || fromStationId === toStationId || !edge.observations.length) {
+      throw new Error("topology duration endpoint or observation missing");
+    }
+    for (const row of edge.observations) {
+      if (!Number.isSafeInteger(row.durationSeconds) || row.durationSeconds <= 0
+        || row.arrival.seconds - row.departure.seconds !== row.durationSeconds) throw new Error("topology duration witness invalid");
+    }
+    const witness = [...edge.observations].sort((a, b) => a.durationSeconds - b.durationSeconds
+      || (identity(a) < identity(b) ? -1 : identity(a) > identity(b) ? 1 : 0))[0];
+    return { lineId: observation.selection.lineId, fromStationId, toStationId,
+      durationSeconds: witness.durationSeconds, derivationPolicy: "MIN_OBSERVED_SCHEDULED_DURATION_V1",
+      witness: structuredClone(witness) };
+  });
+}
+
 /** 수집 receipt와 파싱한 동일 원문을 결속한다. 수집 시각이나 admission 상태는 바꾸지 않는다. */
 export async function buildCollectedKorailTopologyObservation({ collectionDirectory, ...input }) {
   if (typeof collectionDirectory !== "string" || !path.isAbsolute(collectionDirectory)) throw new Error("absolute collection directory required");
@@ -19,6 +40,7 @@ export async function buildCollectedKorailTopologyObservation({ collectionDirect
   const source = observation.sources.timetable;
   source.collectionReceipt = validateKorailTimetableFileReceipt(receipt, source);
   source.collectionReceiptSha256 = createHash("sha256").update(receiptBytes).digest("hex");
+  observation.topologyDurations = projectKorailTopologyDurations(observation);
   return observation;
 }
 
