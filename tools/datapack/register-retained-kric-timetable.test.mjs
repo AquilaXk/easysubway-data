@@ -55,6 +55,56 @@ test("retained registration fails closed for publication or frozen-input drift w
   assert.deepEqual(await outputBytes(mixed.repositoryRoot), mixedBefore);
 });
 
+test("retained registration appends only a genuine receipt-bound successor", async (context) => {
+  const fixture = await registrationFixture(context);
+  await commitRetainedKricTimetableRegistrationOutputs({ repositoryRoot: fixture.repositoryRoot,
+    outputs: await buildRetainedKricTimetableRegistrationOutputs(fixture) });
+  const policyBytes = await readFile(path.join(fixture.repositoryRoot, outputs[2]));
+  const freshnessBytes = await readFile(path.join(fixture.repositoryRoot, outputs[3]));
+  const initialLedger = await readJson(path.join(fixture.repositoryRoot, outputs[1]));
+
+  await replaceWithSuccessor(fixture);
+  const successor = await buildRetainedKricTimetableRegistrationOutputs(fixture);
+  assert.ok(successor[2].bytes.equals(policyBytes));
+  assert.ok(successor[3].bytes.equals(freshnessBytes));
+  const nextInventory = JSON.parse(successor[0].bytes);
+  const nextLedger = JSON.parse(successor[1].bytes);
+  assert.equal(nextInventory.sources.filter(({ id }) => id === "kric-nationwide-timetable-file").length, 1);
+  assert.deepEqual(nextLedger.slice(0, initialLedger.length), initialLedger);
+  assert.equal(nextLedger.at(-1).previousSnapshotId, initialLedger.find(({ sourceId }) => sourceId === "kric-nationwide-timetable-file").snapshotId);
+  await commitRetainedKricTimetableRegistrationOutputs({ repositoryRoot: fixture.repositoryRoot, outputs: successor });
+
+  const replayBefore = await outputBytes(fixture.repositoryRoot);
+  await assert.rejects(() => buildRetainedKricTimetableRegistrationOutputs(fixture), /REFRESH_OBSERVATION/);
+  assert.deepEqual(await outputBytes(fixture.repositoryRoot), replayBefore);
+
+  const inventoryPath = path.join(fixture.repositoryRoot, outputs[0]);
+  const inventory = await readJson(inventoryPath);
+  inventory.sources.find(({ id }) => id === "kric-nationwide-timetable-file").retainedScheduleAdmissionEvidence.snapshotId = "wrong-head";
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  const headBefore = await outputBytes(fixture.repositoryRoot);
+  await assert.rejects(() => buildRetainedKricTimetableRegistrationOutputs(fixture), /REFRESH_HEAD/);
+  assert.deepEqual(await outputBytes(fixture.repositoryRoot), headBefore);
+  await writeFile(inventoryPath, replayBefore[0]);
+
+  const input = await readJson(fixture.sourceInputPath);
+  input.governanceEntry.ownerRole = "different-owner";
+  await writeFile(fixture.sourceInputPath, `${JSON.stringify(input, null, 2)}\n`);
+  const approvalBefore = await outputBytes(fixture.repositoryRoot);
+  await assert.rejects(() => buildRetainedKricTimetableRegistrationOutputs(fixture), /REFRESH_POLICY/);
+  assert.deepEqual(await outputBytes(fixture.repositoryRoot), approvalBefore);
+  input.governanceEntry.ownerRole = "datapack-source-owner";
+  await writeFile(fixture.sourceInputPath, `${JSON.stringify(input, null, 2)}\n`);
+
+  const governancePath = path.join(fixture.repositoryRoot, outputs[2]);
+  const governance = await readJson(governancePath);
+  governance.sources.find(({ sourceId }) => sourceId === "kric-nationwide-timetable-file").ownerRole = "policy-drift";
+  await writeFile(governancePath, `${JSON.stringify(governance, null, 2)}\n`);
+  const policyBefore = await outputBytes(fixture.repositoryRoot);
+  await assert.rejects(() => buildRetainedKricTimetableRegistrationOutputs(fixture), /REFRESH_POLICY/);
+  assert.deepEqual(await outputBytes(fixture.repositoryRoot), policyBefore);
+});
+
 async function registrationFixture(context) {
   const directory = await mkdtemp(path.join(tmpdir(), "retained-kric-registration-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
@@ -124,6 +174,37 @@ function governanceEntryFor(candidate, now) {
     reviewedAt: new Date(now.valueOf() - 1000).toISOString(),
     nextReviewAt: new Date(now.valueOf() + 86400000).toISOString(),
     termsUrl: candidate.evidence.licenseEvidenceUrl, reviewedProvider: candidate.evidence.provider, reviewedDatasetUrl: candidate.detailUrl, redistributionScopes: ["DERIVED_DATAPACK"], approvedByRole: "datapack-release-approver" } };
+}
+
+async function replaceWithSuccessor(fixture) {
+  const input = await readJson(fixture.sourceInputPath);
+  const [observation, receipt, contract, candidates, governance] = await Promise.all([
+    readJson(input.observationPath), readJson(input.collectionReceiptPath), readJson(input.retainedContractPath),
+    readJson(path.join(fixture.repositoryRoot, "tools/datapack/source-candidates.json")),
+    readJson(path.join(fixture.repositoryRoot, outputs[2])),
+  ]);
+  const observedAt = new Date(fixture.now.valueOf() - 86400000).toISOString();
+  observation.observedAt = observedAt;
+  observation.rawSha256 = "b".repeat(64);
+  receipt.capturedAt = observedAt;
+  receipt.sha256 = observation.rawSha256;
+  const observationBytes = Buffer.from(`${JSON.stringify(observation, null, 2)}\n`);
+  const candidate = candidates.candidates.find(({ id }) => id === "kric-nationwide-timetable-file");
+  const prepared = prepareRetainedKricTimetablePublication({ candidate, observationBytes, receipt,
+    routeNumber: contract.routeNumber, sourcePath: "observation.json", evaluationAt: fixture.now.toISOString(), providerValidUntil: null });
+  const rawRetentionExpiresAt = deriveRawRetentionExpiresAt({ policy: governance, sourceId: candidate.id, retrievedAt: observedAt });
+  const publication = { schemaVersion: 1, artifactKind: "kric-retained-timetable-object-receipt", sourceId: candidate.id,
+    snapshotId: `${candidate.id}-${prepared.source.observationIdentitySha256}`, observedAt,
+    acquisitionRawSha256: prepared.source.rawSha256, rawObjectSha256: prepared.observationSha256,
+    collectionReceiptSha256: prepared.source.receiptSha256, observationIdentitySha256: prepared.source.observationIdentitySha256,
+    recordsSha256: prepared.source.recordsSha256,
+    rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/${prepared.plan.steps[0].objectKey}`,
+    byteSize: observationBytes.length, storedAt: fixture.now.toISOString(), freshnessExpiresAt: prepared.freshnessExpiresAt, rawRetentionExpiresAt };
+  await Promise.all([
+    writeFile(input.observationPath, observationBytes),
+    writeFile(input.collectionReceiptPath, `${JSON.stringify(receipt, null, 2)}\n`),
+    writeFile(input.publicationReceiptPath, `${JSON.stringify(publication, null, 2)}\n`),
+  ]);
 }
 
 // 실제 등록 이력에서 테스트 대상만 제외해 재구성한다. 다른 source가 추가돼도 날짜나 SHA를 갱신하지 않는다.

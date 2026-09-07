@@ -9,7 +9,7 @@ import { validateRetainedKricTimetableReceipt } from "./publish-retained-kric-ti
 import { prepareRetainedKricTimetablePublication } from "./prepare-retained-kric-timetable-publication.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { SOURCE_REGISTRATION_OUTPUTS, createSourceRegistrationTransaction } from "./lib/source-registration-transaction.mjs";
-import { validateLineage } from "./source-snapshot-policy.mjs";
+import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
 import { buildAppendOnlyGovernancePolicyRegistration, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 
 const SOURCE_ID = "kric-nationwide-timetable-file";
@@ -45,15 +45,21 @@ export async function buildRetainedKricTimetableRegistrationOutputs({ repository
   ];
   const candidate = select(candidates.candidates, (entry) => entry?.id === SOURCE_ID, "CANDIDATE");
   const topology = select(inventory.sources, (entry) => entry?.id === TOPOLOGY_SOURCE_ID, "TOPOLOGY");
-  firstOnly({ inventory, ledger, governance, freshness, candidate });
+  const state = registrationState({ inventory, ledger, governance, freshness, candidate });
   const topologyPath = topologySnapshotPath(root, topology);
   const topologyBytes = await readFile(topologyPath);
   const topologySnapshot = parse(topologyBytes, "TOPOLOGY_SNAPSHOT");
   const mappings = parseMolitGwangjuStationMappings(mappingBytes);
   const governanceEntry = verifiedGovernanceEntry(input.governanceEntry, candidate, now);
-  const registration = buildAppendOnlyGovernancePolicyRegistration({ predecessorPolicyBytes: governanceBytes, addedSources: [governanceEntry] });
+  const registration = state.kind === "initial"
+    ? buildAppendOnlyGovernancePolicyRegistration({ predecessorPolicyBytes: governanceBytes, addedSources: [governanceEntry] })
+    : { policy: governance, bytes: governanceBytes };
   const freshnessClass = confirmationClass(candidate);
-  const nextFreshness = { ...freshness, sourceClasses: [...freshness.sourceClasses, freshnessClass] };
+  if (state.kind === "refresh" && (canonicalJson(governanceEntry) !== canonicalJson(state.governanceEntry)
+    || canonicalJson(freshnessClass) !== canonicalJson(state.freshnessClass))) fail("REFRESH_POLICY");
+  const nextFreshness = state.kind === "initial"
+    ? { ...freshness, sourceClasses: [...freshness.sourceClasses, freshnessClass] }
+    : freshness;
   const retainedTimetable = { ...contract, observation, receipt: collectionReceipt };
   const selected = selectRetainedKricTimetable({ observation, receipt: collectionReceipt, routeNumber: retainedTimetable.routeNumber });
   const prepared = prepareRetainedKricTimetablePublication({ candidate, observationBytes, receipt: collectionReceipt,
@@ -86,14 +92,16 @@ export async function buildRetainedKricTimetableRegistrationOutputs({ repository
       coverageStatus: "GWANGJU_LINE_1", unsupportedNotes: "Admission covers the retained Gwangju timetable only; other routes require separate admission." }, realtime: unsupported("NO_REALTIME_FIELDS"), facility: unsupported("NO_FACILITY_FIELDS") },
     retainedScheduleAdmissionEvidence: evidence, admissionEvidence: { licenseEvidenceHash: sha(canonicalJson(licenseEvidence)) },
   };
-  const nextInventory = { ...inventory, sources: [...inventory.sources.filter((entry) => entry?.id !== SUPERSEDED_SOURCE_ID), inventorySource] };
+  const nextInventory = state.kind === "initial"
+    ? { ...inventory, sources: [...inventory.sources.filter((entry) => entry?.id !== SUPERSEDED_SOURCE_ID), inventorySource] }
+    : { ...inventory, sources: inventory.sources.map((entry) => entry?.id === SOURCE_ID ? inventorySource : entry) };
   const semantic = validateRetainedGwangjuSource({
     retainedTimetable, topologySnapshot, canonicalStationMappings: mappings, source: inventorySource,
   });
   const governancePolicyBytes = registration.bytes;
   const ledgerRow = {
     schemaVersion: 1, artifactKind: "official-source-snapshot", sourceId: SOURCE_ID, snapshotId: publication.snapshotId,
-    previousSnapshotId: null, observedAt: selected.summary.observedAt,
+    previousSnapshotId: state.kind === "refresh" ? state.head.snapshotId : null, observedAt: selected.summary.observedAt,
     capturedAt: selected.summary.observedAt, retrievedAt: selected.summary.observedAt, sourceUpdatedAt: null,
     provider: candidate.evidence.provider, rowCount: selected.records.length,
     coverageCount: semantic.tables.transitStopTimes.length,
@@ -107,6 +115,11 @@ export async function buildRetainedKricTimetableRegistrationOutputs({ repository
     fetchStatus: "SUCCESS", redistributionAllowed: true, credentialRedacted: true,
     admissionEvidence: { licenseEvidenceHash: sha(canonicalJson(licenseEvidence)) },
   };
+  if (state.kind === "refresh") {
+    if (ledger.some((entry) => entry?.snapshotId === ledgerRow.snapshotId)
+      || Date.parse(ledgerRow.observedAt) <= Date.parse(state.head.observedAt)) fail("REFRESH_OBSERVATION");
+    ledgerRow.diffSummary = buildSnapshotDiff(state.head, ledgerRow);
+  } else ledgerRow.diffSummary = null;
   const nextLedger = [...ledger, ledgerRow];
   validateLineage(nextLedger);
   validateSourceGovernancePolicy({ policy: registration.policy, inventory: nextInventory, freshnessPolicy: nextFreshness });
@@ -117,18 +130,34 @@ export async function buildRetainedKricTimetableRegistrationOutputs({ repository
     [resolved.canonicalStationMappingsPath, mappingBytes], [topologyPath, topologyBytes],
   ].map(([absolute, value]) => ({ absolute, bytes: value }));
   exactInputs(inputs);
-  const values = [bytes(nextInventory), bytes(nextLedger), governancePolicyBytes, bytes(nextFreshness)];
+  const values = [bytes(nextInventory), bytes(nextLedger), governancePolicyBytes,
+    state.kind === "initial" ? bytes(nextFreshness) : freshnessBytes];
   return OUTPUTS.map((relative, index) => ({ relative, prestateBytes: [inventoryBytes, ledgerBytes, governanceBytes, freshnessBytes][index], bytes: values[index], inputs }));
 }
 
 function unsupported(coverageStatus) { return { status: "UNSUPPORTED", productionUseAllowed: false, liveEtaEligible: false, rateLimitStatus: "NOT_APPLICABLE", updateFrequency: "not applicable", coverageStatus, unsupportedNotes: "Official static timetable does not provide this capability." }; }
-function firstOnly({ inventory, ledger, governance, freshness, candidate }) {
-  if (![inventory.sources, ledger, governance.sources, freshness.sourceClasses].every(Array.isArray)
-    || inventory.sources.some((entry) => entry?.id === SOURCE_ID) || ledger.some((entry) => entry?.sourceId === SOURCE_ID)
-    || governance.sources.some((entry) => entry?.sourceId === SOURCE_ID) || freshness.sourceClasses.some((entry) => entry?.id === candidate.confirmationPolicy?.id)) fail("FIRST_ONLY");
+function registrationState({ inventory, ledger, governance, freshness, candidate }) {
+  if (![inventory.sources, ledger, governance.sources, freshness.sourceClasses].every(Array.isArray)) fail("REGISTRATION_STATE");
+  const inventorySources = inventory.sources.filter((entry) => entry?.id === SOURCE_ID);
+  const sourceLedger = ledger.filter((entry) => entry?.sourceId === SOURCE_ID);
+  const governanceEntries = governance.sources.filter((entry) => entry?.sourceId === SOURCE_ID);
+  const freshnessClasses = freshness.sourceClasses.filter((entry) => entry?.id === candidate.confirmationPolicy?.id);
   const oldInventory = inventory.sources.filter((entry) => entry?.id === SUPERSEDED_SOURCE_ID);
-  if (oldInventory.length !== 1 || ledger.some((entry) => entry?.sourceId === SUPERSEDED_SOURCE_ID)
-    || governance.sources.some((entry) => entry?.sourceId === SUPERSEDED_SOURCE_ID)) fail("SUPERSEDED_SOURCE");
+  const oldAbsent = ledger.some((entry) => entry?.sourceId === SUPERSEDED_SOURCE_ID)
+    || governance.sources.some((entry) => entry?.sourceId === SUPERSEDED_SOURCE_ID);
+  if (inventorySources.length === 0 && sourceLedger.length === 0 && governanceEntries.length === 0 && freshnessClasses.length === 0) {
+    if (oldInventory.length !== 1 || oldAbsent) fail("SUPERSEDED_SOURCE");
+    return { kind: "initial" };
+  }
+  if (inventorySources.length !== 1 || sourceLedger.length === 0 || governanceEntries.length !== 1
+    || freshnessClasses.length !== 1 || oldInventory.length !== 0 || oldAbsent) fail("REFRESH_PARTIAL");
+  const lineage = validateLineage(ledger);
+  const headId = lineage.headsBySource[SOURCE_ID];
+  const head = sourceLedger.find((entry) => entry?.snapshotId === headId);
+  const evidence = inventorySources[0].retainedScheduleAdmissionEvidence;
+  if (!head || evidence?.snapshotId !== head.snapshotId || evidence.rawSha256 !== head.rawSha256
+    || evidence.observationIdentitySha256 !== head.contentSha256 || evidence.observedAt !== head.observedAt) fail("REFRESH_HEAD");
+  return { kind: "refresh", head, governanceEntry: governanceEntries[0], freshnessClass: freshnessClasses[0] };
 }
 function confirmationClass(candidate) {
   const policy = candidate?.confirmationPolicy;
