@@ -107,6 +107,8 @@ export async function buildRetainedKricTimetableRegistrationOutputs({ repository
     schemaVersion: 1, artifactKind: "official-source-snapshot", sourceId: SOURCE_ID, snapshotId: publication.snapshotId,
     previousSnapshotId: state.kind === "refresh" ? state.head.snapshotId : null, observedAt: selected.summary.observedAt,
     capturedAt: selected.summary.observedAt, retrievedAt: selected.summary.observedAt, sourceUpdatedAt: null,
+    serviceEffectiveUntil: input.providerValidUntil,
+    retainedTimetableInputs: { contract, collectionReceipt },
     provider: candidate.evidence.provider, rowCount: selected.records.length,
     coverageCount: semantic.tables.transitStopTimes.length,
     rawSha256: selected.summary.rawSha256, contentSha256: selected.summary.observationIdentitySha256,

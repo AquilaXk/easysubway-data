@@ -63,8 +63,8 @@ jobs:
           git diff --name-only --diff-filter=D "origin/${branch}^" "origin/${branch}" > "${deleted}"
           CHANGED="${changed}" DELETED="${deleted}" node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { validateRetainedGwangjuRefreshOutputPaths } from "./tools/ci/retained-gwangju-refresh-delivery.mjs"; await validateRetainedGwangjuRefreshOutputPaths({ changedPaths: (await readFile(process.env.CHANGED, "utf8")).split("\n").filter(Boolean), deletedPaths: (await readFile(process.env.DELETED, "utf8")).split("\n").filter(Boolean) });'
           existing="${RETAINED_GWANGJU_STATE_ROOT}/recovery-prs.json"
-          gh pr list --repo "${GITHUB_REPOSITORY}" --state all --base main --head "${branch}" --limit 100 --json number,state,headRefName,baseRefName,headRepository,isCrossRepository > "${existing}"
-          [[ "$(tr -d '[:space:]' < "${existing}")" == "[]" ]] || { echo "retained timetable claim already has a pull request" >&2; exit 1; }
+          gh pr list --repo "${GITHUB_REPOSITORY}" --state all --base main --head "${branch}" --limit 100 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > "${existing}"
+          EXISTING="${existing}" BRANCH="${branch}" node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { assertRetainedGwangjuRecoveryPullRequestAbsent } from "./tools/ci/retained-gwangju-refresh-delivery.mjs"; assertRetainedGwangjuRecoveryPullRequestAbsent({ repository: process.env.GITHUB_REPOSITORY, branch: process.env.BRANCH, pullRequests: JSON.parse(await readFile(process.env.EXISTING, "utf8")) });'
           gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${branch}" --title "Refresh retained Gwangju timetable" --body "Refresh the due retained Gwangju timetable through the current official-source operation.\n\nRefs #504"
       - name: Create retained timetable claim before provider access
         if: ${{ steps.decision.outputs.state == 'DUE' }}

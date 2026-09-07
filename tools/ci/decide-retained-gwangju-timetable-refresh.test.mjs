@@ -77,6 +77,19 @@ test("retained Gwangju timetable은 만료 경계에서 DUE다", () => {
   assert.equal(result.state, "DUE");
 });
 
+test("provider validity caps the admitted confirmation window", () => {
+  const cutoff = new Date(Date.parse(OBSERVED_AT) + 86400000).toISOString();
+  const value = inputs({ head: snapshot({ serviceEffectiveUntil: cutoff,
+    freshnessExpiresAt: cutoff, freshUntil: cutoff }) });
+  assert.equal(decideRetainedGwangjuTimetableRefresh({ ...value,
+    now: new Date(Date.parse(cutoff) - 1) }).state, "CURRENT");
+  assert.equal(decideRetainedGwangjuTimetableRefresh({ ...value,
+    now: new Date(cutoff) }).state, "DUE");
+  value.snapshots[0].freshUntil = EXPIRY;
+  assert.throws(() => decideRetainedGwangjuTimetableRefresh({ ...value,
+    now: new Date(cutoff) }), /FRESHNESS_EXPIRES_AT/);
+});
+
 test("정책 cadence 변경은 head observedAt으로 재유도하고 stale ledger를 거부한다", () => {
   const value = inputs();
   value.candidate = candidate("P14D");

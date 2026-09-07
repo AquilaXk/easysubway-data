@@ -51,6 +51,17 @@ export function classifyRetainedGwangjuRefreshDelivery({ decision, repository, c
   return { state: "DUE" };
 }
 
+/** Recovery may create a PR only when the exact claim has no same-repository PR. */
+export function assertRetainedGwangjuRecoveryPullRequestAbsent({ repository, branch, pullRequests } = {}) {
+  if (typeof repository !== "string" || !/^[^/\s]+\/[^/\s]+$/u.test(repository)
+    || !BRANCH.test(branch) || !Array.isArray(pullRequests)) {
+    throw new Error("retained Gwangju refresh recovery PR input is invalid");
+  }
+  if (indexRefreshPullRequests(pullRequests, repository).has(branch)) {
+    throw new Error("retained timetable claim already has a pull request");
+  }
+}
+
 // 같은 저장소의 갱신 PR만 연결하고, 판단 전에 중복·형식을 검증한다.
 function indexRefreshPullRequests(pullRequests, repository) {
   const byBranch = new Map();

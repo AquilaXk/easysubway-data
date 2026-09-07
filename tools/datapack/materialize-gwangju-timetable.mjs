@@ -751,11 +751,36 @@ function compactSeoulDate(value) {
 }
 function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 
+// 등록 시 보존한 contract를 사용해야 달력 재조회로 admission identity가 바뀌지 않는다.
+export function restoreAdmittedGwangjuTimetable({ observationBytes, inventory, snapshots }) {
+  const sources = inventory?.sources?.filter(({ id }) => id === SOURCE_ID) ?? [];
+  const evidence = sources.length === 1 ? sources[0].retainedScheduleAdmissionEvidence : null;
+  const rows = Array.isArray(snapshots) ? snapshots.filter((row) => row.sourceId === SOURCE_ID
+    && row.snapshotId === evidence?.snapshotId) : [];
+  const row = rows.length === 1 ? rows[0] : null;
+  const inputs = row?.retainedTimetableInputs;
+  if (!evidence || !inputs?.contract || !inputs.collectionReceipt
+    || sha256(canonicalJson(inputs.contract)) !== evidence.retainedContractSha256
+    || sha256(observationBytes) !== row.rawObjectSha256) {
+    throw new Error("retained Gwangju persisted input binding is invalid");
+  }
+  const observation = JSON.parse(observationBytes);
+  const { summary } = selectRetainedKricTimetable({ observation, receipt: inputs.collectionReceipt,
+    routeNumber: inputs.contract.routeNumber });
+  if (summary.observationIdentitySha256 !== row.contentSha256
+    || summary.observationIdentitySha256 !== evidence.observationIdentitySha256
+    || summary.receiptSha256 !== evidence.receiptSha256 || summary.rawSha256 !== evidence.rawSha256
+    || summary.recordsSha256 !== evidence.recordsSha256 || summary.observedAt !== evidence.observedAt) {
+    throw new Error("retained Gwangju persisted observation binding is invalid");
+  }
+  return { ...inputs.contract, observation, receipt: inputs.collectionReceipt };
+}
+
 function parseArgs(argv) {
-  const expected = ["--base-fixture", "--retained-timetable", "--inventory", "--station-map", "--output"];
+  const expected = ["--base-fixture", "--retained-observation", "--snapshots", "--inventory", "--station-map", "--output"];
   if (argv.length !== expected.length * 2 || expected.some((flag, index) => argv[index * 2] !== flag)
     || !path.isAbsolute(argv.at(-1))) {
-    throw new Error("usage: materialize-gwangju-timetable.mjs --base-fixture <json> --retained-timetable <json> --inventory <json> --station-map <csv> --output <absolute.json>");
+    throw new Error("usage: materialize-gwangju-timetable.mjs --base-fixture <json> --retained-observation <json> --snapshots <json> --inventory <json> --station-map <csv> --output <absolute.json>");
   }
   return Object.fromEntries(expected.map((flag, index) => [flag.slice(2), argv[index * 2 + 1]]));
 }
@@ -781,15 +806,16 @@ export async function runGwangjuTimetableMaterializer(argv, {
   const args = parseArgs(argv);
   const inventory = JSON.parse(await readFile(args.inventory, "utf8"));
   const topologyPath = resolveTopologySnapshotPath(inventory, repositoryRoot);
-  const [baseFixture, retainedTimetable, topologySnapshot, stationMap] = await Promise.all([
+  const [baseFixture, observationBytes, snapshots, topologySnapshot, stationMap] = await Promise.all([
     readFile(args["base-fixture"], "utf8").then(JSON.parse),
-    readFile(args["retained-timetable"], "utf8").then(JSON.parse),
+    readFile(args["retained-observation"]),
+    readFile(args.snapshots, "utf8").then(JSON.parse),
     readFile(topologyPath, "utf8").then(JSON.parse),
     readFile(args["station-map"]),
   ]);
   const fixture = materializeGwangjuTimetable({
     baseFixture,
-    retainedTimetable,
+    retainedTimetable: restoreAdmittedGwangjuTimetable({ observationBytes, inventory, snapshots }),
     topologySnapshot,
     inventory,
     canonicalStationMappings: parseMolitGwangjuStationMappings(stationMap, topologySnapshot),

@@ -4,12 +4,13 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { decideRetainedGwangjuTimetableRefresh } from "../ci/decide-retained-gwangju-timetable-refresh.mjs";
 
 import { parseCurrentMolitGwangjuStationMappings } from "./build-molit-nationwide-fixture.mjs";
 import { buildAppendOnlyGovernancePolicyRegistration, deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { prepareRetainedKricTimetablePublication } from "./prepare-retained-kric-timetable-publication.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
-import { materializeGwangjuTimetable } from "./materialize-gwangju-timetable.mjs";
+import { materializeGwangjuTimetable, restoreAdmittedGwangjuTimetable, validateRetainedGwangjuSource } from "./materialize-gwangju-timetable.mjs";
 import { createRetainedGwangjuTestInput } from "./gwangju-retained-test-fixture.mjs";
 import {
   buildRetainedKricTimetableRegistrationOutputs,
@@ -39,6 +40,42 @@ test("receipt-bound retained registration projects exactly four CAS outputs and 
   assert.deepEqual(await outputBytes(fixture.repositoryRoot), before);
   await commitRetainedKricTimetableRegistrationOutputs({ repositoryRoot: fixture.repositoryRoot, outputs: registered });
   assert.notDeepEqual(await outputBytes(fixture.repositoryRoot), before);
+});
+
+test("registered timetable remains consumable after operation inputs are removed", async (context) => {
+  const fixture = await registrationFixture(context);
+  const registered = await buildRetainedKricTimetableRegistrationOutputs(fixture);
+  await commitRetainedKricTimetableRegistrationOutputs({ repositoryRoot: fixture.repositoryRoot, outputs: registered });
+  const input = await readJson(fixture.sourceInputPath);
+  const observationBytes = await readFile(input.observationPath);
+  for (const file of [input.observationPath, input.collectionReceiptPath,
+    input.publicationReceiptPath, input.retainedContractPath, fixture.sourceInputPath]) await rm(file);
+  const inventory = await readJson(path.join(fixture.repositoryRoot, outputs[0]));
+  const snapshots = await readJson(path.join(fixture.repositoryRoot, outputs[1]));
+  const restored = restoreAdmittedGwangjuTimetable({ observationBytes, inventory, snapshots });
+  assert.deepEqual(restored, fixture.materializerInput.retainedTimetable);
+  const source = inventory.sources.find(({ id }) => id === "kric-nationwide-timetable-file");
+  assert.deepEqual(validateRetainedGwangjuSource({ ...fixture.materializerInput, source,
+    retainedTimetable: restored }), validateRetainedGwangjuSource({ ...fixture.materializerInput, source }));
+  assert.throws(() => restoreAdmittedGwangjuTimetable({
+    observationBytes: Buffer.concat([observationBytes, Buffer.from(" ")]), inventory, snapshots,
+  }), /persisted input binding/);
+  snapshots.at(-1).retainedTimetableInputs.contract.calendar.publicHolidayDates.push("20990101");
+  assert.throws(() => restoreAdmittedGwangjuTimetable({ observationBytes, inventory, snapshots }), /persisted input binding/);
+});
+
+test("registration preserves the provider cutoff for the refresh consumer", async (context) => {
+  const fixture = await registrationFixture(context, { capped: true });
+  const registered = await buildRetainedKricTimetableRegistrationOutputs(fixture);
+  const input = await readJson(fixture.sourceInputPath);
+  const snapshots = JSON.parse(registered[1].bytes);
+  assert.equal(snapshots.at(-1).serviceEffectiveUntil, input.providerValidUntil);
+  const candidates = await readJson(path.join(fixture.repositoryRoot, "tools/datapack/source-candidates.json"));
+  assert.equal(decideRetainedGwangjuTimetableRefresh({
+    inventory: JSON.parse(registered[0].bytes), snapshots,
+    candidate: candidates.candidates.find(({ id }) => id === "kric-nationwide-timetable-file"),
+    now: new Date(input.providerValidUntil),
+  }).state, "DUE");
 });
 
 test("retained registration fails closed for publication or frozen-input drift without writes", async (context) => {
@@ -106,7 +143,7 @@ test("retained registration appends only a genuine receipt-bound successor", asy
   assert.deepEqual(await outputBytes(fixture.repositoryRoot), policyBefore);
 });
 
-async function registrationFixture(context) {
+async function registrationFixture(context, { capped = false } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), "retained-kric-registration-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
   const repositoryRoot = path.join(directory, "repo");
@@ -154,8 +191,9 @@ async function registrationFixture(context) {
   const publicationReceiptPath = path.join(directory, "publication-receipt.json"), retainedContractPath = path.join(directory, "contract.json");
   const observationBytes = Buffer.from(`${JSON.stringify(retained.observation, null, 2)}\n`);
   const governanceEntry = governanceEntryFor(candidate, now);
+  const providerValidUntil = capped ? new Date(now.valueOf() + 1000).toISOString() : null;
   const prepared = prepareRetainedKricTimetablePublication({ candidate, observationBytes, receipt: retained.receipt, routeNumber: retained.routeNumber,
-    sourcePath: "observation.json", evaluationAt: now.toISOString(), providerValidUntil: null });
+    sourcePath: "observation.json", evaluationAt: now.toISOString(), providerValidUntil });
   const rawRetentionExpiresAt = deriveRawRetentionExpiresAt({ policy: { ...governance, sources: [...governance.sources, governanceEntry] }, sourceId: candidate.id, retrievedAt: retained.observation.observedAt });
   const publication = { schemaVersion: 1, artifactKind: "kric-retained-timetable-object-receipt", sourceId: candidate.id,
     snapshotId: `${candidate.id}-${prepared.source.observationIdentitySha256}`, observedAt: prepared.source.observedAt,
@@ -170,7 +208,7 @@ async function registrationFixture(context) {
   ]);
   const sourceInputPath = path.join(directory, "input.json");
   await writeFile(sourceInputPath, `${JSON.stringify({ schemaVersion: 1, artifactKind: "retained-kric-timetable-registration-input", observationPath,
-    collectionReceiptPath, publicationReceiptPath, retainedContractPath, governanceEntry, providerValidUntil: null }, null, 2)}\n`);
+    collectionReceiptPath, publicationReceiptPath, retainedContractPath, governanceEntry, providerValidUntil }, null, 2)}\n`);
   return { repositoryRoot, sourceInputPath, publicationReceiptPath, now, env,
     materializerInput: { baseFixture, retainedTimetable: retained, topologySnapshot, canonicalStationMappings: mappings },
     molitObservationPath };

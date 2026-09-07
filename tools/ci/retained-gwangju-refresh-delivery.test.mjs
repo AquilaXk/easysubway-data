@@ -1,11 +1,30 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { classifyRetainedGwangjuRefreshDelivery, validateRetainedGwangjuRefreshOutputPaths } from "./retained-gwangju-refresh-delivery.mjs";
+import {
+  assertRetainedGwangjuRecoveryPullRequestAbsent,
+  classifyRetainedGwangjuRefreshDelivery,
+  validateRetainedGwangjuRefreshOutputPaths,
+} from "./retained-gwangju-refresh-delivery.mjs";
 
 const repository = "AquilaXk/easysubway-data";
 const branch = "automation/504-retained-gwangju-timetable-refresh-123";
 const claim = { sha: "a".repeat(40), branch };
+
+test("retained Gwangju recovery ignores fork PRs with the claim name but rejects same-repository PRs", () => {
+  assert.doesNotThrow(() => assertRetainedGwangjuRecoveryPullRequestAbsent({
+    repository, branch, pullRequests: [{
+      state: "OPEN", isDraft: true, headRefName: branch, baseRefName: "main",
+      headRepository: { nameWithOwner: "fork/easysubway-data" }, isCrossRepository: true,
+    }],
+  }));
+  assert.throws(() => assertRetainedGwangjuRecoveryPullRequestAbsent({
+    repository, branch, pullRequests: [{
+      state: "CLOSED", isDraft: true, headRefName: branch, baseRefName: "main",
+      headRepository: { nameWithOwner: repository }, isCrossRepository: false,
+    }],
+  }), /already has a pull request/);
+});
 
 test("retained Gwangju delivery ignores cross-repository PR records and recovers one exact unassociated claim", () => {
   assert.deepEqual(classifyRetainedGwangjuRefreshDelivery({

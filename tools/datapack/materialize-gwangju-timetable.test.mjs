@@ -300,11 +300,17 @@ test("retained production Gwangju CLI serializes the native result and rejects t
   const input = await retainedProductionInput();
   const directory = await mkdtemp(path.join(tmpdir(), "gwangju-retained-cli-"));
   try {
-    const paths = Object.fromEntries(["base", "retained", "inventory", "invalid", "output"].map((name) => [name, path.join(directory, `${name}.json`)]));
+    const paths = Object.fromEntries(["base", "retained", "snapshots", "inventory", "invalid", "output"].map((name) => [name, path.join(directory, `${name}.json`)]));
     await writeFile(paths.base, JSON.stringify(input.baseFixture));
-    await writeFile(paths.retained, JSON.stringify(input.retainedTimetable));
+    const { observation, receipt, ...contract } = input.retainedTimetable;
+    const observationBytes = Buffer.from(JSON.stringify(observation));
+    await writeFile(paths.retained, observationBytes);
+    const evidence = input.inventory.sources.find(({ id }) => id === "kric-nationwide-timetable-file").retainedScheduleAdmissionEvidence;
+    await writeFile(paths.snapshots, JSON.stringify([{ sourceId: "kric-nationwide-timetable-file",
+      snapshotId: evidence.snapshotId, contentSha256: evidence.observationIdentitySha256,
+      rawObjectSha256: digest(observationBytes), retainedTimetableInputs: { contract, collectionReceipt: receipt } }]));
     await writeFile(paths.inventory, JSON.stringify(input.inventory));
-    const argv = ["--base-fixture", paths.base, "--retained-timetable", paths.retained,
+    const argv = ["--base-fixture", paths.base, "--retained-observation", paths.retained, "--snapshots", paths.snapshots,
       "--inventory", paths.inventory, "--station-map", path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv"),
       "--output", paths.output];
     await runGwangjuTimetableMaterializer(argv, { now, repositoryRoot: root });

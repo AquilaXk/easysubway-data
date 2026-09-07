@@ -38,7 +38,7 @@ export function decideRetainedGwangjuTimetableRefresh({ inventory, snapshots, ca
   if (observedMillis > nowMillis) fail("FUTURE_OBSERVATION");
   const freshnessExpiresAt = deriveFreshnessExpiresAt({
     policy: { sourceClasses: [policy] }, sourceClassId: policy.id,
-    basisAt: head.observedAt, providerValidUntil: null, evaluationAt: now.toISOString(),
+    basisAt: head.observedAt, providerValidUntil: head.serviceEffectiveUntil, evaluationAt: now.toISOString(),
   });
   if (head.freshnessExpiresAt !== freshnessExpiresAt || head.freshUntil !== freshnessExpiresAt) {
     fail("FRESHNESS_EXPIRES_AT");
