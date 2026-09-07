@@ -10,10 +10,7 @@ const POLICY_KEYS = [
 ].sort();
 
 // 보관 원문 검증과 publication 입력만 준비한다. 등록·업로드·관측 시각 갱신은 하지 않는다.
-export function prepareRetainedKricTimetablePublication({
-  candidate, observationBytes, receipt, routeNumber, sourcePath,
-  evaluationAt, providerValidUntil,
-}) {
+export function requireRetainedTimetableConfirmationPolicy(candidate) {
   const policy = candidate?.confirmationPolicy;
   if (candidate?.id !== SOURCE_ID || candidate.domain !== "schedule_timetable"
     || !policy || JSON.stringify(Object.keys(policy).sort()) !== JSON.stringify(POLICY_KEYS)
@@ -25,6 +22,14 @@ export function prepareRetainedKricTimetablePublication({
     || policy.eventTriggers.some((event) => typeof event !== "string" || event.trim() === "")) {
     throw new Error("RETAINED_TIMETABLE_CONFIRMATION_POLICY_INVALID");
   }
+  return policy;
+}
+
+export function prepareRetainedKricTimetablePublication({
+  candidate, observationBytes, receipt, routeNumber, sourcePath,
+  evaluationAt, providerValidUntil,
+}) {
+  const policy = requireRetainedTimetableConfirmationPolicy(candidate);
   if (typeof sourcePath !== "string" || sourcePath.length === 0
     || path.posix.isAbsolute(sourcePath) || sourcePath.includes("\\")
     || sourcePath.split("/").some((part) => ["", ".", ".."].includes(part))) {
