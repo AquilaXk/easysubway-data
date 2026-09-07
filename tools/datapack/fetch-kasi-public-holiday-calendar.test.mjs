@@ -5,7 +5,7 @@ import { mkdtemp, readFile, readdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { readKasiHolidayCalendarFiles, collectKasiHolidayCalendarFiles, fetchKasiPublicHolidayCalendar, fetchKasiPublicHolidayCalendarObservation, parseRetainedKasiHolidayMonth } from "./fetch-kasi-public-holiday-calendar.mjs";
+import { readKasiHolidayCalendarFiles, collectKasiHolidayCalendarFiles, collectKasiHolidayCalendarWindowFiles, fetchKasiPublicHolidayCalendar, fetchKasiPublicHolidayCalendarObservation, parseRetainedKasiHolidayMonth } from "./fetch-kasi-public-holiday-calendar.mjs";
 
 test("KASI calendar는 유효한 year·months에서 malformed credential을 request URL·provider 호출 전에 거부한다", async () => {
   let calls = 0;
@@ -15,6 +15,49 @@ test("KASI calendar는 유효한 year·months에서 malformed credential을 requ
 
 const holidayXml = (items, totalCount = items.length) => `<?xml version="1.0" encoding="UTF-8"?>
 <response><header><resultCode>00</resultCode><resultMsg>OK</resultMsg></header><body><items>${items.map(({ date, holiday }) => `<item><locdate>${date}</locdate><isHoliday>${holiday}</isHoliday></item>`).join("")}</items><numOfRows>100</numOfRows><pageNo>1</pageNo><totalCount>${totalCount}</totalCount></body></response>`;
+
+test("KASI window collects the exact cross-year months, stops before a manifest, and rejects invalid windows", async context => {
+  const root = await mkdtemp(path.join(tmpdir(), "kasi-window-test-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const calls = [];
+  const outputDirectory = path.join(root, "complete");
+  const fetchImpl = async (url) => {
+    const year = url.searchParams.get("solYear"), month = url.searchParams.get("solMonth");
+    calls.push(`${year}-${month}`);
+    const date = `${year}${month}${month === "12" ? "31" : "01"}`;
+    return { ok: true, status: 200, arrayBuffer: async () => Buffer.from(holidayXml([{ date, holiday: "Y" }])) };
+  };
+  const manifest = await collectKasiHolidayCalendarWindowFiles({
+    outputDirectory, startDate: "20401231", endDate: "20410101", serviceKey: "test-key", fetchImpl,
+  });
+  assert.deepEqual(calls, ["2040-12", "2041-01"]);
+  assert.deepEqual(manifest.months.map(({ year, month, file }) => [year, month, file]), [
+    [2040, 12, "2040-12.xml"], [2041, 1, "2041-01.xml"],
+  ]);
+  const retained = await readKasiHolidayCalendarFiles(outputDirectory);
+  assert.deepEqual(retained.months.map(entry => {
+    const { year, month, holidayDates } = parseRetainedKasiHolidayMonth(entry);
+    return [year, month, holidayDates];
+  }), [
+    [2040, 12, ["20401231"]], [2041, 1, ["20410101"]],
+  ]);
+
+  const failedDirectory = path.join(root, "failed");
+  await assert.rejects(collectKasiHolidayCalendarWindowFiles({
+    outputDirectory: failedDirectory, startDate: "20401231", endDate: "20410101", serviceKey: "test-key",
+    fetchImpl: async (url) => url.searchParams.get("solYear") === "2041"
+      ? { ok: false, status: 503 }
+      : { ok: true, status: 200, arrayBuffer: async () => Buffer.from(holidayXml([{ date: "20401231", holiday: "Y" }])) },
+  }), /HTTP_503/);
+  assert.deepEqual(await readdir(failedDirectory), []);
+
+  let invalidCalls = 0;
+  await assert.rejects(collectKasiHolidayCalendarWindowFiles({
+    outputDirectory: path.join(root, "invalid"), startDate: "20410101", endDate: "20401231", serviceKey: "test-key",
+    fetchImpl: async () => { invalidCalls += 1; },
+  }), /window is invalid/);
+  assert.equal(invalidCalls, 0);
+});
 
 test("retained KASI month binds original bytes and reuses complete month validation", () => {
   const raw = Buffer.from(holidayXml([{ date: "20400102", holiday: "Y" }, { date: "20400103", holiday: "N" }]));
