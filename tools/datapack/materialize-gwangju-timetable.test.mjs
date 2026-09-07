@@ -26,6 +26,7 @@ import {
   buildRetainedGwangjuTransitTables,
   materializeGwangjuTimetable,
   projectRetainedGwangjuTrips,
+  projectRetainedGwangjuTimetable,
   runGwangjuTimetableMaterializer,
 } from "./materialize-gwangju-timetable.mjs";
 
@@ -88,6 +89,54 @@ const retainedEdges = Object.freeze([{ fromStationCode: "A", toStationCode: "B" 
 const retainedProjection = (records, overrides = {}) => projectRetainedGwangjuTrips({
   records, stationBindings: retainedBindings, directedEdges: retainedEdges, excludedEndpointLabels: ["외부"], ...overrides,
 });
+
+test("receipt-bound Gwangju projection selects native rows without granting admission", () => {
+  const input = retainedTimetableEvidence();
+  const result = projectRetainedGwangjuTimetable(input);
+  assert.equal(result.source.rawSha256, input.observation.rawSha256);
+  assert.equal(result.source.recordsSha256, input.observation.recordsSha256);
+  assert.equal(result.trips.length, 1);
+  assert.deepEqual(result.trips[0].records.map(({ record }) => record), input.observation.records.slice(0, 2));
+  assert.deepEqual(result.trips[0].stops.map((stop) => stop.stationId), ["station-a", "station-b"]);
+  assert.equal(result.trips[0].stops[1].arrival.seconds, 90000);
+  assert.equal(Object.hasOwn(result, "admissionDecision"), false);
+});
+
+test("receipt-bound Gwangju projection rejects unbound receipts, rows, and route selection", () => {
+  const input = retainedTimetableEvidence();
+  assert.throws(() => projectRetainedGwangjuTimetable({ ...input,
+    receipt: { ...input.receipt, sha256: "b".repeat(64) } }), /TIMETABLE_RECEIPT/);
+  const changed = structuredClone(input);
+  changed.observation.records[0].stationName = "Changed";
+  changed.observation.recordsSha256 = digest(`${JSON.stringify(changed.observation.records)}\n`);
+  assert.throws(() => projectRetainedGwangjuTimetable(changed), /TIMETABLE_RECORD/);
+  assert.throws(() => projectRetainedGwangjuTimetable({ ...input, routeNumber: "absent" }), /TIMETABLE_SELECTION/);
+});
+
+function digest(value) { return createHash("sha256").update(value).digest("hex"); }
+
+function retainedTimetableEvidence() {
+  const cell = (value) => ({ value, cellType: "inlineStr", styleId: null });
+  const routeNumber = retainedNativeRecord(1, "A").routeNumber;
+  const rows = [[routeNumber, "A", "24:00:00"], [routeNumber, "B", "25:00:00"],
+    ["other-route", "Other", "08:00:00"]].map(([routeNumber, stationName, time], index) => {
+    const row = { trainNumber: "one", routeNumber, routeName: "Test line", originStationName: "A",
+      destinationStationName: "B", serviceType: "일반", weekdayType: "평일", stationName,
+      arrivalTime: cell(time), departureTime: cell(time), speed: cell(""), operatorPhone: cell(""),
+      dataReferenceDate: cell("2040-01-01"), sourceRowNumber: index + 1 };
+    return { ...row, sourceRowSha256: digest(JSON.stringify(row)) };
+  });
+  const observation = { schemaVersion: 1, artifactKind: "kric-nationwide-timetable-observation",
+    sourceId: "kric-nationwide-timetable-file", observedAt: "2040-01-02T00:00:00.000Z",
+    rawFile: "kric-nationwide-timetable-file-test.xlsx", rawByteLength: 12, rawSha256: "a".repeat(64),
+    rowCount: rows.length, groupCount: 2, records: rows, recordsSha256: digest(`${JSON.stringify(rows)}\n`),
+    gaps: { stopSequence: "ABSENT", timeGrammar: "UNADMITTED" } };
+  const receipt = { schemaVersion: 1, artifactKind: "kric-nationwide-timetable-file-receipt",
+    sourceId: observation.sourceId, capturedAt: observation.observedAt, rawFile: observation.rawFile,
+    byteLength: observation.rawByteLength, sha256: observation.rawSha256, credentialRedacted: true };
+  return { observation, receipt, routeNumber, stationBindings: retainedBindings,
+    directedEdges: retainedEdges, excludedEndpointLabels: [] };
+}
 
 test("retained Gwangju transit tables preserve native identities, clocks, row order, and provenance", () => {
   const records = [

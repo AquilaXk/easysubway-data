@@ -5,6 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { parseMolitGwangjuStationMappings } from "./build-molit-nationwide-fixture.mjs";
+import { selectRetainedKricTimetable } from "./build-kric-retained-file-pending-handoff.mjs";
 
 const SOURCE_ID = "gwangju-transportation-cyberstation-timetable";
 const TOPOLOGY_SOURCE_ID = "gwangju-transportation-route-topology";
@@ -205,6 +206,16 @@ const RETAINED_TRIP_GROUP_FIELDS = Object.freeze([
   "trainNumber", "routeNumber", "routeName", "originStationName", "destinationStationName",
   "serviceType", "weekdayType",
 ]);
+
+/** 수집 근거와 행 투영을 결속한다. 운영 admission과 달력 승인을 대신하지 않는다. */
+export function projectRetainedGwangjuTimetable({
+  observation, receipt, routeNumber, stationBindings, directedEdges, excludedEndpointLabels,
+}) {
+  const { summary, records } = selectRetainedKricTimetable({ observation, receipt, routeNumber });
+  return { source: summary, ...projectRetainedGwangjuTrips({
+    records, stationBindings, directedEdges, excludedEndpointLabels,
+  }) };
+}
 
 export function projectRetainedGwangjuTrips({
   records, stationBindings, directedEdges, excludedEndpointLabels,
