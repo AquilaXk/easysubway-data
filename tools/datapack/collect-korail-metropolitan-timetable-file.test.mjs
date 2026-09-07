@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { collectKorailMetropolitanTimetableFile } from "./collect-korail-metropolitan-timetable-file.mjs";
+import { collectKorailMetropolitanTimetableFile, validateKorailTimetableFileReceipt } from "./collect-korail-metropolitan-timetable-file.mjs";
 
 const URL = "https://www.korail.com/file/cubedata/COMMON/jfile/metropolitan-timetable.xlsx";
 const XLSX = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00]);
@@ -29,6 +29,9 @@ test("collects retained official XLSX bytes and creates the fixed receipt", asyn
     assert.deepEqual(await readdir(outputDirectory), ["receipt.json", "timetable.xlsx"]);
     assert.equal((await stat(path.join(outputDirectory, "receipt.json"))).isFile(), true);
     assert.deepEqual(JSON.parse(await readFile(path.join(outputDirectory, "receipt.json"), "utf8")), receipt);
+    assert.deepEqual(validateKorailTimetableFileReceipt(receipt, { rawSha256: SHA256, rawByteLength: XLSX.length }), receipt);
+    assert.throws(() => validateKorailTimetableFileReceipt({ ...receipt, byteLength: XLSX.length + 1 },
+      { rawSha256: SHA256, rawByteLength: XLSX.length }), /RECEIPT/);
     assert.deepEqual(receipt, {
       schemaVersion: 1, artifactKind: "korail-metropolitan-timetable-file-receipt",
       sourceId: "korail-metropolitan-timetable-file", capturedAt: receipt.capturedAt,

@@ -12,6 +12,19 @@ const URL_PREFIX = "/file/cubedata/COMMON/jfile/";
 const XLSX_CONTENT_TYPE = /^(?:application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|application\/octet-stream)(?:\s*;|$)/iu;
 const XLSX_SIGNATURE = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
 
+export function validateKorailTimetableFileReceipt(receipt, { rawSha256, rawByteLength }) {
+  if (receipt?.schemaVersion !== 1 || receipt.artifactKind !== "korail-metropolitan-timetable-file-receipt"
+    || receipt.sourceId !== KORAIL_METROPOLITAN_TIMETABLE_FILE_SOURCE_ID
+    || receipt.rawFile !== "timetable.xlsx" || receipt.credentialRedacted !== true
+    || receipt.sha256 !== rawSha256 || receipt.byteLength !== rawByteLength
+    || !Number.isSafeInteger(rawByteLength) || rawByteLength < 4
+    || typeof receipt.capturedAt !== "string" || !Number.isFinite(Date.parse(receipt.capturedAt))
+    || new Date(receipt.capturedAt).toISOString() !== receipt.capturedAt) fail("RECEIPT");
+  sha256(rawSha256);
+  officialKorailUrl(receipt.officialUrl);
+  return structuredClone(receipt);
+}
+
 export async function collectKorailMetropolitanTimetableFile({ url, expectedSha256, outputDirectory, fetchImpl = fetch } = {}) {
   const officialUrl = officialKorailUrl(url);
   const expected = sha256(expectedSha256);

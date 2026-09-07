@@ -6,6 +6,7 @@ import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { collectKasiHolidayCalendarFiles } from "./fetch-kasi-public-holiday-calendar.mjs";
+import { collectKorailMetropolitanTimetableFile } from "./collect-korail-metropolitan-timetable-file.mjs";
 import {
   normalizeKorailTrainClockCells,
   parseKorailMetropolitanSheet,
@@ -16,6 +17,7 @@ import {
   buildKorailTimetableTables,
   parseRetainedKorailWorkbook,
   buildRetainedKorailTopologyObservation,
+  buildCollectedKorailTopologyObservation,
   buildRetainedKorailTimetable,
 } from "./parse-korail-metropolitan-timetable.mjs";
 
@@ -119,6 +121,17 @@ test("retained XLSX parsing binds exact bytes and keeps native sparse row coordi
       canonicalCatalogPath, canonicalCatalogSha256: hash(catalogBytes), lineId: "L",
     };
     const observation = await buildRetainedKorailTopologyObservation(input);
+    const collectionDirectory = path.join(root, "collected");
+    const receipt = await collectKorailMetropolitanTimetableFile({
+      url: "https://www.korail.com/file/cubedata/COMMON/jfile/test.xlsx", expectedSha256: sha256,
+      outputDirectory: collectionDirectory,
+      fetchImpl: async () => new Response(bytes, { headers: { "content-type": "application/octet-stream" } }),
+    });
+    const collected = await buildCollectedKorailTopologyObservation({ ...input, collectionDirectory });
+    assert.deepEqual(collected.topology, observation.topology);
+    assert.deepEqual(collected.sources.timetable.collectionReceipt, receipt);
+    assert.equal(collected.sources.timetable.collectionReceiptSha256,
+      hash(await readFile(path.join(collectionDirectory, "receipt.json"))));
     const holidayRaw = Buffer.from('<response><header><resultCode>00</resultCode></header><body><items><item><locdate>20400102</locdate><isHoliday>Y</isHoliday></item></items><totalCount>1</totalCount></body></response>');
     const tableInput = { observation,
       startDate: "20400101", endDate: "20400110",

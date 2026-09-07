@@ -6,6 +6,21 @@ import { unzipEntry, parseWorkbookSheetRefs, parseSharedStrings, parseWorksheetR
 import { selectRetainedKricStationLine } from "./build-kric-retained-file-pending-handoff.mjs";
 import { reconstructTransitTrips } from "./reconstruct-transit-trips.mjs";
 import { parseRetainedKasiHolidayMonth, readKasiHolidayCalendarFiles } from "./fetch-kasi-public-holiday-calendar.mjs";
+import { validateKorailTimetableFileReceipt } from "./collect-korail-metropolitan-timetable-file.mjs";
+
+/** 수집 receipt와 파싱한 동일 원문을 결속한다. 수집 시각이나 admission 상태는 바꾸지 않는다. */
+export async function buildCollectedKorailTopologyObservation({ collectionDirectory, ...input }) {
+  if (typeof collectionDirectory !== "string" || !path.isAbsolute(collectionDirectory)) throw new Error("absolute collection directory required");
+  const receiptBytes = await readFile(path.join(collectionDirectory, "receipt.json"));
+  const receipt = JSON.parse(receiptBytes.toString("utf8"));
+  validateKorailTimetableFileReceipt(receipt, { rawSha256: receipt.sha256, rawByteLength: receipt.byteLength });
+  const observation = await buildRetainedKorailTopologyObservation({ ...input,
+    inputPath: path.join(collectionDirectory, "timetable.xlsx"), sha256: receipt.sha256 });
+  const source = observation.sources.timetable;
+  source.collectionReceipt = validateKorailTimetableFileReceipt(receipt, source);
+  source.collectionReceiptSha256 = createHash("sha256").update(receiptBytes).digest("hex");
+  return observation;
+}
 
 /** 보관 입력을 한 경로로 연결한다. admission 판단이나 원본 재수집은 수행하지 않는다. */
 export async function buildRetainedKorailTimetable({ holidayDirectory, startDate, endDate, serviceIds, routeIds, ...sourceInput }) {
