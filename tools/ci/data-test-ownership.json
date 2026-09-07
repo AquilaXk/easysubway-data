@@ -503,6 +503,7 @@
     {"path":"tools/datapack/normalize-kric-timetable.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":119},
     {"path":"tools/datapack/normalize-transfer-distance-duration-rows.test.mjs","semanticOwner":"data27","classes":["required-pr"],"durationMs":200},
     {"path":"tools/datapack/collect-korail-metropolitan-timetable-file.test.mjs","semanticOwner":"data457","classes":["required-pr"],"durationMs":56},
+    {"path":"tools/datapack/publish-korail-metropolitan-timetable-raw.test.mjs","semanticOwner":"data457","classes":["required-pr"],"durationMs":108},
     {"path":"tools/datapack/parse-korail-metropolitan-timetable.test.mjs","semanticOwner":"data457","classes":["required-pr"],"durationMs":84},
     {"path":"tools/datapack/parse-kric-code-catalog.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":118},
     {"path":"tools/datapack/plan-kric-exit-path-collection.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":139},
