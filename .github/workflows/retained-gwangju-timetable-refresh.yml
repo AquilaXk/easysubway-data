@@ -42,7 +42,7 @@ jobs:
             import { classifyRetainedGwangjuRefreshDelivery, parseRetainedGwangjuRefreshClaims } from "./tools/ci/retained-gwangju-refresh-delivery.mjs";
             const root = process.env.STATE_ROOT;
             const result = classifyRetainedGwangjuRefreshDelivery({ decision: JSON.parse(await readFile(root + "/due.json")), repository: process.env.GITHUB_REPOSITORY, claims: parseRetainedGwangjuRefreshClaims(await readFile(root + "/claims.txt", "utf8")), pullRequests: JSON.parse(await readFile(root + "/prs.json", "utf8")) });
-            await appendFile(process.env.GITHUB_OUTPUT, `state=${result.state}\nbranch=${result.branch ?? ""}\n`);
+            await appendFile(process.env.GITHUB_OUTPUT, "state=" + result.state + "\nbranch=" + (result.branch ?? "") + "\n");
           '
           printf 'RETAINED_GWANGJU_STATE_ROOT=%s\n' "${state_root}" >> "${GITHUB_ENV}"
       - name: Recover completed retained timetable claim
