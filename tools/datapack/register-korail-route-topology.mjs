@@ -16,53 +16,32 @@ const sha = (value) => createHash("sha256").update(value).digest("hex");
 const json = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 
 export async function buildKorailTopologyRegistrationOutputs({ repositoryRoot, sourceInputPath, receiptPath, now = new Date() } = {}) {
-  const root = rootPath(repositoryRoot), inputPath = absolute(sourceInputPath, "SOURCE_INPUT"), rawReceiptPath = absolute(receiptPath, "RECEIPT");
-  if (!(now instanceof Date) || Number.isNaN(now.valueOf())) fail("TIME");
-  const [inventoryBytes, ledgerBytes, governanceBytes, freshnessBytes, candidatesBytes, inputBytes, rawReceiptBytes] = await Promise.all([
-    ...OUTPUTS.map((relative) => readFile(path.join(root, relative))), readFile(path.join(root, "tools/datapack/source-candidates.json")), readFile(inputPath), readFile(rawReceiptPath),
-  ]);
-  const sourceInput = exactSourceInput(parse(inputBytes, "SOURCE_INPUT"));
-  const [membershipBytes, membershipReceiptBytes, catalogBytes, collectionReceiptBytes, rawBytes] = await Promise.all([
-    readFile(sourceInput.stationLineObservationPath), readFile(sourceInput.stationLineReceiptPath), readFile(sourceInput.canonicalCatalogPath),
-    readFile(path.join(sourceInput.collectionDirectory, "receipt.json")), readFile(path.join(sourceInput.collectionDirectory, "timetable.xlsx")),
-  ]);
-  if (sha(catalogBytes) !== sourceInput.canonicalCatalogSha256) fail("CATALOG");
-  const inventory = parse(inventoryBytes, "INVENTORY"), ledger = parse(ledgerBytes, "LEDGER"), candidates = parse(candidatesBytes, "CANDIDATES");
-  if ((inventory.sources ?? []).some((source) => source?.id === SOURCE_ID) || (ledger ?? []).some((snapshot) => snapshot?.sourceId === SOURCE_ID)) fail("FIRST_ONLY");
-  const candidate = (candidates.candidates ?? []).filter((entry) => entry?.id === SOURCE_ID);
-  if (candidate.length !== 1 || !candidate[0].coverageScope?.lineIds?.includes(sourceInput.lineId)) fail("CANDIDATE");
-  const collectionReceipt = parse(collectionReceiptBytes, "COLLECTION_RECEIPT");
-  const rawSha256 = sha(rawBytes);
-  try { validateKorailTimetableFileReceipt(collectionReceipt, { rawSha256, rawByteLength: rawBytes.length }); } catch { fail("COLLECTION_RECEIPT"); }
-  const membership = parse(membershipBytes, "MEMBERSHIP"), membershipReceipt = parse(membershipReceiptBytes, "MEMBERSHIP_RECEIPT");
-  const preparation = await prepareKorailTopologyPublication({ candidate: candidate[0], freshnessPolicy: parse(freshnessBytes, "FRESHNESS"),
-    governancePolicyBytes: governanceBytes, inventory, governanceEntry: sourceInput.governanceEntry, evaluationAt: now.toISOString(), collectionDirectory: sourceInput.collectionDirectory,
-    stationLineObservation: membership, stationLineReceipt: membershipReceipt, canonicalCatalogPath: sourceInput.canonicalCatalogPath,
-    canonicalCatalogSha256: sourceInput.canonicalCatalogSha256, operatorName: sourceInput.operatorName, lineName: sourceInput.lineName, lineId: sourceInput.lineId });
-  const snapshot = preparation.snapshot, source = snapshot.observation?.sources?.timetable;
-  if (sourceInput.observedDataUpdatedAt > snapshot.capturedAt.slice(0, 10)
-    || (sourceInput.sourceUpdatedAt !== null && Date.parse(sourceInput.sourceUpdatedAt) > Date.parse(snapshot.capturedAt))) fail("SOURCE_TIME");
-  if (snapshot.rawSha256 !== rawSha256 || source?.rawSha256 !== rawSha256 || source.rawByteLength !== rawBytes.length
-    || source.collectionReceiptSha256 !== sha(collectionReceiptBytes) || !same(collectionReceipt, source.collectionReceipt)) fail("BINDING");
+  const context = await prepareKorailTopologyRegistration({ repositoryRoot, sourceInputPath, now });
+  const { root, inputPath, sourceInput, inventoryBytes, ledgerBytes, governanceBytes, freshnessBytes, candidatesBytes,
+    inputBytes, membershipBytes, membershipReceiptBytes, catalogBytes, collectionReceiptBytes, rawBytes, inventory,
+    ledger, candidate, collectionReceipt, rawSha256, preparation } = context;
+  const rawReceiptPath = absolute(receiptPath, "RECEIPT");
+  const rawReceiptBytes = await readFile(rawReceiptPath);
+  const snapshot = preparation.snapshot;
   const rawReceipt = validateRawReceipt(parse(rawReceiptBytes, "RAW_RECEIPT"), preparation, collectionReceiptBytes, rawSha256, rawBytes.length, now);
   if (snapshot.snapshotId !== `${SOURCE_ID}-${snapshot.contentSha256}` || (ledger ?? []).some((entry) => entry?.snapshotId === snapshot.snapshotId)) fail("FIRST_ONLY");
   const snapshotRelative = `tools/datapack/sources/${snapshot.snapshotId}.json`, snapshotBytes = json(snapshot);
   await writeDerivedSnapshot(path.join(root, snapshotRelative), snapshotBytes);
-  const cadence = preparation.projectedFreshnessPolicy.sourceClasses.find((entry) => entry.id === candidate[0].topologyRegistration.sourceClassId)?.reverificationCadence;
+  const cadence = preparation.projectedFreshnessPolicy.sourceClasses.find((entry) => entry.id === candidate.topologyRegistration.sourceClassId)?.reverificationCadence;
   if (typeof cadence !== "string") fail("FRESHNESS");
   const evidence = { issue: 457, materializer: "tools/datapack/materialize-korail-route-topology.mjs", verificationTest: "tools/datapack/materialize-korail-route-topology.test.mjs", snapshotId: snapshot.snapshotId, snapshotPath: snapshotRelative, capturedAt: snapshot.capturedAt, freshUntil: snapshot.freshUntil, stationCount: snapshot.stationCount, edgeCount: snapshot.edgeCount, excludedTransferCount: 0, rawSha256, contentSha256: snapshot.contentSha256 };
-  const provider = candidate[0].evidence?.provider;
+  const provider = candidate.evidence?.provider;
   if (typeof provider !== "string" || provider === "") fail("CANDIDATE");
   const inventorySource = {
-    id: SOURCE_ID, displayName: candidate[0].displayName, owner: provider, provider,
-    providerDepartment: "", sourceSystem: "공공데이터포털", datasetUrl: candidate[0].detailUrl,
-    datasetKind: "fileData", coverage: candidate[0].displayName,
-    coverageScope: { ...candidate[0].coverageScope, sourceDomains: [candidate[0].domain] },
+    id: SOURCE_ID, displayName: candidate.displayName, owner: provider, provider,
+    providerDepartment: "", sourceSystem: "공공데이터포털", datasetUrl: candidate.detailUrl,
+    datasetKind: "fileData", coverage: candidate.displayName,
+    coverageScope: { ...candidate.coverageScope, sourceDomains: [candidate.domain] },
     requiredForProductionPack: true, productionUseAllowed: true, updateFrequency: cadence,
     observedDataUpdatedAt: sourceInput.observedDataUpdatedAt, retrievedAt: snapshot.capturedAt.slice(0, 10),
     license: { type: "PUBLIC_DATA_FREE_USE", name: "공공데이터 이용허락범위 제한없음", attribution: provider,
       commercialUseAllowed: true, derivativeWorkAllowed: true, redistributionAllowed: true,
-      evidenceUrl: candidate[0].detailUrl },
+      evidenceUrl: candidate.detailUrl },
     fieldsProvided: ["network_edges", "duration_seconds"],
     capabilities: {
       schedule: { status: "CANDIDATE", productionUseAllowed: false, updateFrequency: cadence,
@@ -90,7 +69,7 @@ export async function buildKorailTopologyRegistrationOutputs({ repositoryRoot, s
     governancePolicySha256: sha(policyBytes),
     schemaFingerprint: sha(canonicalJson({ artifactKind: snapshot.artifactKind, keys: Object.keys(snapshot).sort() })),
     redactedRequestFingerprint: sha(canonicalJson({
-      collectionContract: candidate[0].evidence.collectionContract, officialUrl: collectionReceipt.officialUrl,
+      collectionContract: candidate.evidence.collectionContract, officialUrl: collectionReceipt.officialUrl,
     })),
     snapshotStatus: "LOCKED", schemaStatus: "PASS", licenseStatus: "PASS", fetchStatus: "SUCCESS",
     redistributionAllowed: true, credentialRedacted: true,
@@ -103,6 +82,39 @@ export async function buildKorailTopologyRegistrationOutputs({ repositoryRoot, s
     { absolute: path.join(root, snapshotRelative), bytes: snapshotBytes });
   const values = [json(nextInventory), json(nextLedger), policyBytes, json(preparation.projectedFreshnessPolicy)];
   return OUTPUTS.map((relative, index) => ({ relative, prestateBytes: [inventoryBytes, ledgerBytes, governanceBytes, freshnessBytes][index], bytes: values[index], inputs }));
+}
+
+export async function prepareKorailTopologyRegistration({ repositoryRoot, sourceInputPath, now = new Date() } = {}) {
+  const root = rootPath(repositoryRoot), inputPath = absolute(sourceInputPath, "SOURCE_INPUT");
+  if (!(now instanceof Date) || Number.isNaN(now.valueOf())) fail("TIME");
+  const [inventoryBytes, ledgerBytes, governanceBytes, freshnessBytes, candidatesBytes, inputBytes] = await Promise.all([
+    ...OUTPUTS.map((relative) => readFile(path.join(root, relative))), readFile(path.join(root, "tools/datapack/source-candidates.json")), readFile(inputPath),
+  ]);
+  const sourceInput = exactSourceInput(parse(inputBytes, "SOURCE_INPUT"));
+  const [membershipBytes, membershipReceiptBytes, catalogBytes, collectionReceiptBytes, rawBytes] = await Promise.all([
+    readFile(sourceInput.stationLineObservationPath), readFile(sourceInput.stationLineReceiptPath), readFile(sourceInput.canonicalCatalogPath),
+    readFile(path.join(sourceInput.collectionDirectory, "receipt.json")), readFile(path.join(sourceInput.collectionDirectory, "timetable.xlsx")),
+  ]);
+  if (sha(catalogBytes) !== sourceInput.canonicalCatalogSha256) fail("CATALOG");
+  const inventory = parse(inventoryBytes, "INVENTORY"), ledger = parse(ledgerBytes, "LEDGER"), candidates = parse(candidatesBytes, "CANDIDATES");
+  if ((inventory.sources ?? []).some((source) => source?.id === SOURCE_ID) || (ledger ?? []).some((snapshot) => snapshot?.sourceId === SOURCE_ID)) fail("FIRST_ONLY");
+  const matches = (candidates.candidates ?? []).filter((entry) => entry?.id === SOURCE_ID);
+  if (matches.length !== 1 || !matches[0].coverageScope?.lineIds?.includes(sourceInput.lineId)) fail("CANDIDATE");
+  const candidate = matches[0], collectionReceipt = parse(collectionReceiptBytes, "COLLECTION_RECEIPT"), rawSha256 = sha(rawBytes);
+  try { validateKorailTimetableFileReceipt(collectionReceipt, { rawSha256, rawByteLength: rawBytes.length }); } catch { fail("COLLECTION_RECEIPT"); }
+  const membership = parse(membershipBytes, "MEMBERSHIP"), membershipReceipt = parse(membershipReceiptBytes, "MEMBERSHIP_RECEIPT");
+  const preparation = await prepareKorailTopologyPublication({ candidate, freshnessPolicy: parse(freshnessBytes, "FRESHNESS"),
+    governancePolicyBytes: governanceBytes, inventory, governanceEntry: sourceInput.governanceEntry, evaluationAt: now.toISOString(), collectionDirectory: sourceInput.collectionDirectory,
+    stationLineObservation: membership, stationLineReceipt: membershipReceipt, canonicalCatalogPath: sourceInput.canonicalCatalogPath,
+    canonicalCatalogSha256: sourceInput.canonicalCatalogSha256, operatorName: sourceInput.operatorName, lineName: sourceInput.lineName, lineId: sourceInput.lineId });
+  const snapshot = preparation.snapshot, source = snapshot.observation?.sources?.timetable;
+  if (sourceInput.observedDataUpdatedAt > snapshot.capturedAt.slice(0, 10)
+    || (sourceInput.sourceUpdatedAt !== null && Date.parse(sourceInput.sourceUpdatedAt) > Date.parse(snapshot.capturedAt))) fail("SOURCE_TIME");
+  if (snapshot.rawSha256 !== rawSha256 || source?.rawSha256 !== rawSha256 || source.rawByteLength !== rawBytes.length
+    || source.collectionReceiptSha256 !== sha(collectionReceiptBytes) || !same(collectionReceipt, source.collectionReceipt)) fail("BINDING");
+  return { root, inputPath, sourceInput, inventoryBytes, ledgerBytes, governanceBytes, freshnessBytes, candidatesBytes,
+    inputBytes, membershipBytes, membershipReceiptBytes, catalogBytes, collectionReceiptBytes, rawBytes, inventory,
+    ledger, candidate, collectionReceipt, rawSha256, preparation };
 }
 
 function exactOutputs(outputs) {

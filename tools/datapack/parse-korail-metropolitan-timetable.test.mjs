@@ -9,6 +9,7 @@ import { collectKasiHolidayCalendarFiles } from "./fetch-kasi-public-holiday-cal
 import { collectKorailMetropolitanTimetableFile } from "./collect-korail-metropolitan-timetable-file.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { buildKorailTopologyRegistrationOutputs, commitKorailTopologyRegistrationOutputs } from "./register-korail-route-topology.mjs";
+import { runKorailTopologyRegistration } from "./run-korail-route-topology-registration.mjs";
 import { materializeKorailRouteTopology } from "./materialize-korail-route-topology.mjs";
 import {
   normalizeKorailTrainClockCells,
@@ -270,7 +271,8 @@ test("retained XLSX parsing binds exact bytes and keeps native sparse row coordi
     await writeFile(sourceInputPath, JSON.stringify({ ...JSON.parse(originalSourceInput), observedDataUpdatedAt: "2040-02-30" }));
     await assert.rejects(buildKorailTopologyRegistrationOutputs(registrationArgs), /SOURCE_INPUT/);
     await writeFile(sourceInputPath, originalSourceInput);
-    await commitKorailTopologyRegistrationOutputs({ repositoryRoot: root, outputs });
+    await runKorailTopologyRegistration({ mode: "register-published", repositoryRoot: root,
+      sourceInputPath, receiptPath }, { clock: () => registrationArgs.now });
     for (const output of outputs) assert.deepEqual(await readFile(path.join(root, output.relative)), output.bytes);
     const originalPack = { ...JSON.parse(catalogBytes).packs[0], lines: [{ id: "L", operatorId: "fixture" }],
       sourceInventory: [], networkEdges: [
