@@ -50,14 +50,21 @@ test("current public candidate slot derives a same-source public V2 successor on
     now: await nextSyntheticCurrentStaticNetworkNow(repositoryRoot),
   });
 
-  const [before, sourceCanonical, fixtureCanonical] = await Promise.all([
+  const [before, sourceCanonical, fixtureCanonical, sourceInventory] = await Promise.all([
     readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
     readFile(path.join(repositoryRoot, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8").then(JSON.parse),
     readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8").then(JSON.parse),
+    readFile(path.join(repositoryRoot, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
   ]);
+  const inheritedSourceIds = sourceCanonical.packs[0].sourceInventory.map(({ id }) => id);
+  const newlyRequiredSourceIds = sourceInventory.sources
+    .filter(({ id, requiredForProductionPack, coverageScope }) => requiredForProductionPack
+      && coverageScope.sourceDomains.includes("schedule_timetable")
+      && !inheritedSourceIds.includes(id))
+    .map(({ id }) => id);
   assert.deepEqual(
     fixtureCanonical.packs[0].sourceInventory.map(({ id }) => id),
-    sourceCanonical.packs[0].sourceInventory.map(({ id }) => id),
+    [...inheritedSourceIds, ...newlyRequiredSourceIds],
   );
   const beforePublicIndex = before.sourceSnapshots.findIndex(({ sourceId }) =>
     sourceId === "seoul-metro-route-map-positions");

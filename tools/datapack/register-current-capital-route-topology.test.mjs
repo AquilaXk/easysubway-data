@@ -185,11 +185,27 @@ test("publishes exactly the protected topology bytes and builds an initial regis
 test("first registration binds the exact policy prestate without changing prior approvals", async (t) => {
   const { root, now } = await fixture(t);
   const policyPath = path.join(root, "tools/datapack/source-governance-policy.json");
-  const policy = JSON.parse(await readFile(policyPath));
-  const lineage = policy.registrationLineage;
-  const sourceIds = new Set(lineage.addedSourceIds);
-  const previousPolicyBytes = Buffer.from(lineage.predecessorPolicyText);
-  assert.equal(sha(previousPolicyBytes), lineage.predecessorPolicySha256);
+  let policy = JSON.parse(await readFile(policyPath));
+  const sourceIds = new Set();
+  let previousPolicyBytes;
+  let registrationSourceIds;
+  // 이후 source 등록 수에 의존하지 않고 대상 등록 직전의 검증된 원문까지 되감는다.
+  do {
+    const lineage = policy.registrationLineage;
+    assert.ok(lineage, "capital topology registration must exist in policy lineage");
+    registrationSourceIds = lineage.addedSourceIds;
+    assert.deepEqual(policy.sources.slice(-registrationSourceIds.length).map(({ sourceId }) => sourceId), registrationSourceIds);
+    registrationSourceIds.forEach((id) => sourceIds.add(id));
+    const predecessor = { ...policy, sources: policy.sources.slice(0, -registrationSourceIds.length) };
+    if (lineage.predecessorLineage === null) delete predecessor.registrationLineage;
+    else predecessor.registrationLineage = lineage.predecessorLineage;
+    previousPolicyBytes = lineage.predecessorPolicyText === null
+      ? Buffer.from(`${JSON.stringify(predecessor, null, 2)}\n`)
+      : Buffer.from(lineage.predecessorPolicyText);
+    assert.equal(sha(previousPolicyBytes), lineage.predecessorPolicySha256);
+    assert.deepEqual(JSON.parse(previousPolicyBytes), predecessor);
+    policy = predecessor;
+  } while (!registrationSourceIds.includes("capital-route-topology"));
   await writeFile(policyPath, previousPolicyBytes);
   const inventoryPath = path.join(root, "tools/datapack/source-inventory.json");
   const inventory = JSON.parse(await readFile(inventoryPath));
@@ -208,7 +224,7 @@ test("first registration binds the exact policy prestate without changing prior 
   const output = outputs.find(({ relative }) => relative === "tools/datapack/source-governance-policy.json");
   assert.deepEqual(output.prestateBytes, previousPolicyBytes);
   assert.equal(JSON.parse(output.bytes).registrationLineage.predecessorPolicySha256, sha(previousPolicyBytes));
-  assert.deepEqual(JSON.parse(output.bytes).sources.slice(0, -sourceIds.size), JSON.parse(previousPolicyBytes).sources);
+  assert.deepEqual(JSON.parse(output.bytes).sources.slice(0, -registrationSourceIds.length), JSON.parse(previousPolicyBytes).sources);
 });
 
 test("places capital topology evidence on the source schema", async () => {
